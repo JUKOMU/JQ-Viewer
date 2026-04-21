@@ -1,10 +1,5 @@
 <template>
-  <ion-page>
-    <ion-header>
-      <ion-toolbar>
-        <ion-title>Tab 2</ion-title>
-      </ion-toolbar>
-    </ion-header>
+  <IonPage>
     <ion-content :fullscreen="true">
       <ion-header collapse="condense">
         <ion-toolbar>
@@ -14,7 +9,7 @@
 
       <ExploreContainer name="Tab 2 page" />
     </ion-content>
-  </ion-page>
+  </IonPage>
 </template>
 
 <script setup lang="ts">

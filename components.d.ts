@@ -11,18 +11,24 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
-    ExploreContainer: typeof import('./src/components/ExploreContainer.vue')['default']
     IonButton: typeof import('@ionic/vue')['IonButton']
+    IonButtons: typeof import('@ionic/vue')['IonButtons']
     IonContent: typeof import('@ionic/vue')['IonContent']
     IonHeader: typeof import('@ionic/vue')['IonHeader']
+    IonItem: typeof import('@ionic/vue')['IonItem']
     IonLabel: typeof import('@ionic/vue')['IonLabel']
     IonList: typeof import('@ionic/vue')['IonList']
     IonMenu: typeof import('@ionic/vue')['IonMenu']
+    IonMenuButton: typeof import('@ionic/vue')['IonMenuButton']
     IonMenuToggle: typeof import('@ionic/vue')['IonMenuToggle']
+    IonSearchbar: typeof import('@ionic/vue')['IonSearchbar']
+    IonSegment: typeof import('@ionic/vue')['IonSegment']
+    IonSegmentButton: typeof import('@ionic/vue')['IonSegmentButton']
     IonTitle: typeof import('@ionic/vue')['IonTitle']
     IonToolbar: typeof import('@ionic/vue')['IonToolbar']
-    MainMenu: typeof import('./src/components/MainMenu.vue')['default']
+    MainMenu: typeof import('./src/components/menu/MainMenu.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
+    SearchBar: typeof import('./src/components/search/SearchBar.vue')['default']
   }
 }

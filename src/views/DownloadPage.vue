@@ -8,22 +8,14 @@
       </ion-toolbar>
     </IonHeader>
     <IonContent>
-      <SearchBar class="search-bar"></SearchBar>
+      <IonTitle>下载</IonTitle>
     </IonContent>
   </IonPage>
 </template>
 
 <script setup lang="ts">
 import {IonPage} from "@ionic/vue";
-import SearchBar from "@/components/search/SearchBar.vue";
 </script>
 
 <style scoped>
-.search-bar {
-  position: absolute;
-  top: 25%;
-  right: 0;
-  left: 0;
-  margin: auto;
-}
 </style>

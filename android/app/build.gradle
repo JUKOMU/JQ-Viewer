@@ -40,6 +40,11 @@ dependencies {
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     implementation project(':capacitor-cordova-android-plugins')
+    implementation "io.github.jukomu:jmcomic-api:$jmcomicApiVersion"
+    implementation "io.github.jukomu:jmcomic-core:$jmcomicApiVersion"
+    implementation "io.github.jukomu:jmcomic-android-support:$jmcomicApiVersion"
+    implementation 'org.slf4j:slf4j-api:2.0.17'
+    implementation 'org.slf4j:slf4j-android:1.7.36'
 }
 
 apply from: 'capacitor.build.gradle'

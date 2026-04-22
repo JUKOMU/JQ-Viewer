@@ -8,7 +8,7 @@
       </ion-toolbar>
     </IonHeader>
     <IonContent>
-      <SearchBar class="search-bar"></SearchBar>
+      <SearchBar class="search-bar" :mode-select="false" :filter-select="false"></SearchBar>
     </IonContent>
   </IonPage>
 </template>

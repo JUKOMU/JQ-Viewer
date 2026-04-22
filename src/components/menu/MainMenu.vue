@@ -21,7 +21,7 @@
                    :class="{ selected: isActive('/search') }">
             <IonIcon slot="start" class="menu-icon" :icon="searchSharp"
                      :class="{ selected: isActive('/search') }"/>
-            <IonLabel>搜索</IonLabel>
+            <IonLabel>分类</IonLabel>
           </IonItem>
         </IonMenuToggle>
         <IonMenuToggle>

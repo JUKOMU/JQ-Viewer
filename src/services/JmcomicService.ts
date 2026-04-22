@@ -1,14 +1,15 @@
 import {registerPlugin} from '@capacitor/core'
-import type {GetCategoryListResult} from './JmcomicTypes'
+import type {SearchQuery, SearchResult} from './JmcomicTypes'
 
 interface JmcomicPlugin {
-    getCategoryList(): Promise<GetCategoryListResult>
+    search(options: { query: SearchQuery }): Promise<SearchResult>
 }
 
 const native = registerPlugin<JmcomicPlugin>('Jmcomic')
 
 export const JmcomicService = {
-    getCategoryList() {
-        return native.getCategoryList()
+    native,
+    search(query: SearchQuery) {
+        return native.search({query})
     },
 }

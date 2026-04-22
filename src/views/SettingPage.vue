@@ -1,11 +1,11 @@
 <template>
   <IonPage>
     <IonHeader class="ion-no-border">
-      <ion-toolbar>
-        <ion-buttons slot="start">
-          <ion-menu-button :auto-hide="false"></ion-menu-button>
-        </ion-buttons>
-      </ion-toolbar>
+      <IonToolbar>
+        <IonButtons slot="start">
+          <IonMenuButton :auto-hide="false"/>
+        </IonButtons>
+      </IonToolbar>
     </IonHeader>
     <IonContent>
       <IonTitle>设置</IonTitle>
@@ -14,7 +14,7 @@
 </template>
 
 <script setup lang="ts">
-import {IonPage} from "@ionic/vue";
+import {IonButtons, IonContent, IonHeader, IonMenuButton, IonPage, IonTitle, IonToolbar} from "@ionic/vue";
 </script>
 
 <style scoped>

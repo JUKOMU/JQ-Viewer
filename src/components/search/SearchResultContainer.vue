@@ -81,6 +81,7 @@
               <div v-if="item.tags.length" class="item-tags">
                 <span v-for="tag in item.tags.slice(0, 6)" :key="tag" class="tag-chip">{{ tag }}</span>
               </div>
+
             </template>
           </div>
         </article>
@@ -268,14 +269,14 @@ const setGridColumns = (count: typeof gridColumnOptions[number]) => {
 }
 
 .list-card {
-  display: grid;
-  grid-template-columns: 82px minmax(0, 1fr);
+  display: flex;
+  align-items: stretch;
   gap: 10px;
   height: 108px;
   padding: 8px 10px;
   border-radius: 12px;
   background: #fffaf6;
-  box-shadow: 0 12px 28px rgb(76 42 24 / 0.1);
+  box-shadow: 5px 12px 28px rgb(76 42 24 / 0.2);
 }
 
 .result-grid {
@@ -288,7 +289,7 @@ const setGridColumns = (count: typeof gridColumnOptions[number]) => {
   overflow: hidden;
   border-radius: 12px;
   background: #fffaf6;
-  box-shadow: 0 12px 28px rgb(76 42 24 / 0.1);
+  box-shadow: 5px 12px 28px rgb(76 42 24 / 0.2);
 }
 
 .cover-wrap {
@@ -299,7 +300,8 @@ const setGridColumns = (count: typeof gridColumnOptions[number]) => {
 
 .list-card .cover-wrap {
   height: 100%;
-  aspect-ratio: auto;
+  flex: 0 0 auto;
+  aspect-ratio: 3 / 4;
 }
 
 .grid-card .cover-wrap {
@@ -319,12 +321,15 @@ const setGridColumns = (count: typeof gridColumnOptions[number]) => {
 }
 
 .list-card .item-info {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   justify-content: start;
   gap: 4px;
   overflow: hidden;
-  padding: 0 2px 0 0;
+  padding: 0 2px 0 4px;
+  border-left: 1px solid rgb(85 85 85 / 0.1);
 }
 
 .grid-card .item-info {
@@ -398,10 +403,6 @@ const setGridColumns = (count: typeof gridColumnOptions[number]) => {
     max-width: 1000px;
     margin-right: auto;
     margin-left: auto;
-  }
-
-  .list-card {
-    grid-template-columns: 104px minmax(0, 1fr);
   }
 }
 </style>

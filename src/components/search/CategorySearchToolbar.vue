@@ -96,8 +96,9 @@ const resetQuery = () => {
   max-width: 1000px;
   margin: 0 auto;
   padding: 10px 16px;
-  background: rgb(255 249 244);
+  background: #fff3ea;
   border-radius: 20px;
+  box-shadow: 0 4px 6px 0 rgb(62 39 26 / 0.2);
 }
 
 .option-section + .option-section {
@@ -106,7 +107,7 @@ const resetQuery = () => {
 
 .option-title {
   margin-bottom: 10px;
-  color: rgb(237 123 62);
+  color: #555;
   font-size: 13px;
 }
 

@@ -145,7 +145,7 @@ defineExpose({focusInput})
 .expanded-panel {
   padding: 8px;
   border-radius: 22px;
-  background: #fff9f4;
+  background: #fff3ea;
   box-shadow: 0 8px 22px rgb(76 42 24 / 0.12);
 }
 
@@ -155,7 +155,8 @@ defineExpose({focusInput})
   gap: 6px;
   padding: 2px 2px 2px 8px;
   border-radius: 18px;
-  background: #fff0e7;
+  background: #ffecd9;
+  border: 1px solid rgb(85 85 85 / 0.1);
 }
 
 ion-searchbar.compact-searchbar {

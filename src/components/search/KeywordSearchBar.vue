@@ -169,7 +169,6 @@ onBeforeUnmount(() => {
   max-width: 1000px;
   margin: 0 auto;
   padding: 10px 16px;
-  background: rgb(255 249 244);
   border-radius: 30px;
 }
 
@@ -248,8 +247,10 @@ ion-searchbar.custom {
 
 .option-panel {
   margin-top: 12px;
-  padding: 5px 16px 15px 16px;
+  padding: 10px 16px 15px 16px;
   border-radius: 16px;
+  background: rgb(255 235 223 / 0.6);
+  box-shadow: 0 4px 6px 0 rgb(62 39 26 / 0.2);
 }
 
 .option-section + .option-section {

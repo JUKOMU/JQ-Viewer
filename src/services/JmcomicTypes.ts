@@ -10,6 +10,7 @@ export interface SearchQuery {
 export interface SearchResultItem {
     id: string
     title: string
+    coverUrl: string
     authors: string[]
     tags: string[]
 }

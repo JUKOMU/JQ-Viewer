@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from '@ionic/vue-router';
 import { RouteRecordRaw } from 'vue-router';
 import HomePage from '../views/HomePage.vue'
 import CategoryPage from "@/views/CategoryPage.vue";
+import SearchPage from "@/views/SearchPage.vue";
 import FavoritePage from "@/views/FavoritePage.vue";
 import DownloadPage from "@/views/DownloadPage.vue";
 import SettingPage from "@/views/SettingPage.vue";
@@ -17,8 +18,13 @@ const routes: Array<RouteRecordRaw> = [
     meta: { menu: true }
   },
   {
-    path: '/search',
+    path: '/category',
     component: CategoryPage,
+    meta: { menu: true }
+  },
+  {
+    path: '/search',
+    component: SearchPage,
     meta: { menu: true }
   },
   {

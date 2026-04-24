@@ -2,9 +2,9 @@
   <IonPage>
     <IonHeader class="ion-no-border">
       <IonToolbar>
-        <IonButtons slot="start">
-          <IonMenuButton :auto-hide="false"/>
-        </IonButtons>
+        <div class="toolbar-start">
+          <MenuToggleButton/>
+        </div>
       </IonToolbar>
     </IonHeader>
     <IonContent>
@@ -14,8 +14,21 @@
 </template>
 
 <script setup lang="ts">
-import {IonButtons, IonContent, IonHeader, IonMenuButton, IonPage, IonTitle, IonToolbar} from "@ionic/vue";
+import {IonContent, IonHeader, IonPage, IonTitle, IonToolbar} from "@ionic/vue";
+import MenuToggleButton from "@/components/common/MenuToggleButton.vue";
 </script>
 
 <style scoped>
+.toolbar-start {
+  padding: 0 0 8px 14px;
+}
+
+:deep(ion-header),
+:deep(ion-toolbar) {
+  overflow: visible;
+}
+
+:deep(ion-toolbar) {
+  --min-height: auto;
+}
 </style>

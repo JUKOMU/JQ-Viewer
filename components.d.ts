@@ -12,18 +12,13 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     CategorySearchToolbar: typeof import('./src/components/search/CategorySearchToolbar.vue')['default']
-    IonContent: typeof import('@ionic/vue')['IonContent']
-    IonHeader: typeof import('@ionic/vue')['IonHeader']
-    IonItem: typeof import('@ionic/vue')['IonItem']
-    IonLabel: typeof import('@ionic/vue')['IonLabel']
-    IonList: typeof import('@ionic/vue')['IonList']
-    IonMenu: typeof import('@ionic/vue')['IonMenu']
-    IonMenuToggle: typeof import('@ionic/vue')['IonMenuToggle']
-    IonTitle: typeof import('@ionic/vue')['IonTitle']
-    IonToolbar: typeof import('@ionic/vue')['IonToolbar']
     KeywordSearchBar: typeof import('./src/components/search/KeywordSearchBar.vue')['default']
     MainMenu: typeof import('./src/components/menu/MainMenu.vue')['default']
+    MenuToggleButton: typeof import('./src/components/common/MenuToggleButton.vue')['default']
+    QuickActionFab: typeof import('./src/components/common/QuickActionFab.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
+    SearchHeaderBar: typeof import('./src/components/search/SearchHeaderBar.vue')['default']
+    SearchResultContainer: typeof import('./src/components/search/SearchResultContainer.vue')['default']
   }
 }

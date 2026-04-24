@@ -11,6 +11,7 @@ import io.github.jukomu.jmcomic.api.model.JmAlbumMeta;
 import io.github.jukomu.jmcomic.api.model.JmSearchPage;
 import io.github.jukomu.jmcomic.api.model.SearchQuery;
 import io.github.jukomu.jmcomic.core.JmComic;
+import io.github.jukomu.jmcomic.core.client.AbstractJmClient;
 import io.github.jukomu.jmcomic.core.config.JmConfiguration;
 
 import java.util.List;
@@ -23,6 +24,7 @@ import java.util.List;
  */
 @CapacitorPlugin(name = "Jmcomic")
 public class JmcomicPlugin extends Plugin {
+    private static final String SEARCH_COVER_SIZE = "_3x4";
 
     @PluginMethod
     public void search(PluginCall call) {
@@ -35,21 +37,50 @@ public class JmcomicPlugin extends Plugin {
 
             SearchQuery query = buildQuery(queryObject);
 
-            try (JmClient client = JmComic.newApiClient(new JmConfiguration.Builder().build())) {
-                JmSearchPage page = isKeywordSearch(queryObject)
-                        ? client.search(query)
-                        : client.getCategories(query);
-
-                call.resolve(toSearchPage(page));
+            try (JmClient client = createClient(call)) {
+                if (client == null) {
+                    return;
+                }
+                call.resolve(toSearchPage(client.search(query), (AbstractJmClient) client));
             }
         } catch (Exception e) {
             call.reject(e.getMessage(), e);
         }
     }
 
-    private boolean isKeywordSearch(JSObject queryObject) {
-        String keyword = queryObject.getString("keyword", "");
-        return keyword != null && !keyword.trim().isEmpty();
+    @PluginMethod
+    public void categories(PluginCall call) {
+        try {
+            JSObject queryObject = call.getObject("query");
+            if (queryObject == null) {
+                call.reject("query is required");
+                return;
+            }
+
+            SearchQuery query = buildQuery(queryObject);
+
+            try (JmClient client = createClient(call)) {
+                if (client == null) {
+                    return;
+                }
+                call.resolve(toSearchPage(client.getCategories(query), (AbstractJmClient) client));
+            }
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    private JmClient createClient(PluginCall call) {
+        JmClient client = JmComic.newApiClient(new JmConfiguration.Builder().build());
+        if (!(client instanceof AbstractJmClient)) {
+            call.reject("unsupported jm client");
+            try {
+                client.close();
+            } catch (Exception ignored) {
+            }
+            return null;
+        }
+        return client;
     }
 
     private SearchQuery buildQuery(JSObject queryObject) {
@@ -70,7 +101,7 @@ public class JmcomicPlugin extends Plugin {
                 .build();
     }
 
-    private JSObject toSearchPage(JmSearchPage page) {
+    private JSObject toSearchPage(JmSearchPage page, AbstractJmClient client) {
         JSObject ret = new JSObject();
         ret.put("currentPage", page.getCurrentPage());
         ret.put("totalItems", page.getTotalItems());
@@ -82,6 +113,7 @@ public class JmcomicPlugin extends Plugin {
             JSObject row = new JSObject();
             row.put("id", item.getId());
             row.put("title", item.getTitle());
+            row.put("coverUrl", client.getAlbumCoverUrl(item.getId(), SEARCH_COVER_SIZE));
             row.put("authors", new JSArray(item.getAuthors()));
             row.put("tags", new JSArray(item.getTags()));
             content.put(row);

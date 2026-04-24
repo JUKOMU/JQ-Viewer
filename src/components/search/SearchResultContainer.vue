@@ -1,71 +1,109 @@
 <template>
   <section class="result-shell">
     <div class="result-toolbar">
-      <div class="result-summary">
-        <template v-if="result">
-          共 {{ result.totalItems }} 条，当前第 {{ result.currentPage }}/{{ result.totalPages }} 页
-        </template>
-        <template v-else>
-          {{ idleText }}
-        </template>
-      </div>
-      <div class="mode-switch" aria-label="显示方式">
-        <button
-            type="button"
-            class="mode-btn"
-            :class="{ active: mode === 'list' }"
-            @click="emit('mode-change', 'list')"
-        >
-          列表
-        </button>
-        <button
-            type="button"
-            class="mode-btn"
-            :class="{ active: mode === 'grid' }"
-            @click="emit('mode-change', 'grid')"
-        >
-          网格
-        </button>
-      </div>
-    </div>
-
-    <div v-if="loading" class="state-card">正在搜索...</div>
-    <div v-else-if="errorMessage" class="state-card error">
-      <div>{{ errorMessage }}</div>
-      <button type="button" class="retry-btn" @click="emit('retry')">重试</button>
-    </div>
-    <div v-else-if="result && !result.content.length" class="state-card">
-      {{ emptyText }}
-    </div>
-    <div v-else-if="result" :class="mode === 'grid' ? 'result-grid' : 'result-list'">
-      <article
-          v-for="item in result.content"
-          :key="item.id"
-          :class="mode === 'grid' ? 'grid-card' : 'list-card'"
-          @click="emit('item-click', item)"
-      >
-        <div class="cover-wrap">
-          <img class="cover-img" :src="item.coverUrl" :alt="item.title" loading="lazy">
-        </div>
-        <div class="item-info">
-          <h3 class="item-title">{{ item.title }}</h3>
-          <template v-if="mode === 'list'">
-            <div class="item-meta">ID: {{ item.id }}</div>
-            <div v-if="item.authors.length" class="item-meta">
-              作者：{{ item.authors.join(' / ') }}
-            </div>
-            <div v-if="item.tags.length" class="item-tags">
-              <span v-for="tag in item.tags.slice(0, 6)" :key="tag" class="tag-chip">{{ tag }}</span>
-            </div>
+      <div class="toolbar-main">
+        <div class="result-summary">
+          <template v-if="result">
+            共 {{ result.totalItems }} 条，当前第 {{ result.currentPage }}/{{ result.totalPages }} 页
+          </template>
+          <template v-else>
+            {{ idleText }}
           </template>
         </div>
-      </article>
+        <div class="toolbar-actions">
+          <div class="mode-switch" aria-label="显示方式">
+            <button
+                type="button"
+                class="mode-btn"
+                :class="{ active: mode === 'list' }"
+                @click="emit('mode-change', 'list')"
+            >
+              列表
+            </button>
+            <button
+                type="button"
+                class="mode-btn"
+                :class="{ active: mode === 'grid' }"
+                @click="emit('mode-change', 'grid')"
+            >
+              网格
+            </button>
+          </div>
+        </div>
+      </div>
+      <Transition name="grid-columns-fade">
+        <div v-if="mode === 'grid'" class="grid-columns-switch" aria-label="网格列数">
+          <button
+              v-for="count in gridColumnOptions"
+              :key="count"
+              type="button"
+              class="grid-columns-btn"
+              :class="{ active: gridColumns === count }"
+              @click="setGridColumns(count)"
+          >
+            {{ count }}x
+          </button>
+        </div>
+      </Transition>
     </div>
+
+    <Transition name="result-fade" mode="out-in">
+      <div v-if="loading" key="loading" class="state-card">正在搜索...</div>
+      <div v-else-if="errorMessage" key="error" class="state-card error">
+        <div>{{ errorMessage }}</div>
+        <button type="button" class="retry-btn" @click="emit('retry')">重试</button>
+      </div>
+      <div v-else-if="result && !result.content.length" key="empty" class="state-card">
+        {{ emptyText }}
+      </div>
+      <div
+          v-else-if="result"
+          :key="`result-${mode}`"
+          :class="mode === 'grid' ? 'result-grid' : 'result-list'"
+          :style="mode === 'grid' ? gridStyle : undefined"
+      >
+        <article
+            v-for="item in result.content"
+            :key="item.id"
+            :class="mode === 'grid' ? 'grid-card' : 'list-card'"
+            @click="emit('item-click', item)"
+        >
+          <div class="cover-wrap">
+            <img class="cover-img" :src="item.coverUrl" :alt="item.title" loading="lazy">
+          </div>
+          <div class="item-info">
+            <h3 class="item-title">{{ item.title }}</h3>
+            <template v-if="mode === 'list'">
+              <div class="item-meta">ID: {{ item.id }}</div>
+              <div v-if="item.authors.length" class="item-meta">
+                作者：{{ item.authors.join(' / ') }}
+              </div>
+              <div v-if="item.tags.length" class="item-tags">
+                <span v-for="tag in item.tags.slice(0, 6)" :key="tag" class="tag-chip">{{ tag }}</span>
+              </div>
+            </template>
+          </div>
+        </article>
+      </div>
+    </Transition>
   </section>
 </template>
 
 <script setup lang="ts">
+import {computed, ref} from 'vue'
 import type {SearchResult, SearchResultItem} from '@/services/JmcomicTypes'
+
+const GRID_COLUMNS_STORAGE_KEY = 'search-result-grid-columns'
+const gridColumnOptions = [2, 3, 4, 5] as const
+
+const readInitialGridColumns = () => {
+  if (typeof window === 'undefined') {
+    return 2
+  }
+
+  const savedValue = Number(window.localStorage.getItem(GRID_COLUMNS_STORAGE_KEY))
+  return gridColumnOptions.includes(savedValue as typeof gridColumnOptions[number]) ? savedValue : 2
+}
 
 withDefaults(defineProps<{
   result: SearchResult | null
@@ -79,11 +117,24 @@ withDefaults(defineProps<{
   emptyText: '没有搜索结果',
 })
 
+const gridColumns = ref<number>(readInitialGridColumns())
+
+const gridStyle = computed(() => ({
+  '--grid-columns': String(gridColumns.value),
+}))
+
 const emit = defineEmits<{
   'mode-change': [mode: 'list' | 'grid']
   'item-click': [item: SearchResultItem]
   retry: []
 }>()
+
+const setGridColumns = (count: typeof gridColumnOptions[number]) => {
+  gridColumns.value = count
+  if (typeof window !== 'undefined') {
+    window.localStorage.setItem(GRID_COLUMNS_STORAGE_KEY, String(count))
+  }
+}
 </script>
 
 <style scoped>
@@ -94,8 +145,7 @@ const emit = defineEmits<{
 
 .result-toolbar {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
   gap: 12px;
   margin-bottom: 10px;
   padding: 9px 12px;
@@ -104,10 +154,24 @@ const emit = defineEmits<{
   box-shadow: 0 10px 24px rgb(76 42 24 / 0.08);
 }
 
+.toolbar-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
 .result-summary {
   min-width: 0;
   color: #785947;
   font-size: 12px;
+  line-height: 1.45;
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
 }
 
 .mode-switch {
@@ -119,7 +183,15 @@ const emit = defineEmits<{
   border: 1px solid rgb(250 156 105 / 0.42);
 }
 
+.grid-columns-switch {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .mode-btn,
+.grid-columns-btn,
 .retry-btn {
   border: 0;
   font: inherit;
@@ -132,11 +204,35 @@ const emit = defineEmits<{
   background: transparent;
   color: #8a6048;
   font-size: 12px;
+  transition: background-color 0.2s ease, color 0.2s ease, transform 0.16s ease;
+}
+
+.grid-columns-btn {
+  height: 28px;
+  min-width: 36px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: #fff;
+  color: #8a6048;
+  font-size: 12px;
+  border: 1px solid rgb(250 156 105 / 0.42);
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, transform 0.16s ease;
 }
 
 .mode-btn.active {
   background: rgb(250 156 105);
   color: #fff;
+}
+
+.grid-columns-btn.active {
+  background: rgb(250 156 105);
+  color: #fff;
+  border-color: rgb(250 156 105);
+}
+
+.mode-btn:active,
+.grid-columns-btn:active {
+  transform: scale(0.96);
 }
 
 .state-card {
@@ -168,40 +264,42 @@ const emit = defineEmits<{
 .result-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 2px;
 }
 
 .list-card {
   display: grid;
   grid-template-columns: 82px minmax(0, 1fr);
-  gap: 12px;
-  padding: 10px;
-  border-radius: 20px;
+  gap: 10px;
+  height: 108px;
+  padding: 8px 10px;
+  border-radius: 12px;
   background: #fffaf6;
   box-shadow: 0 12px 28px rgb(76 42 24 / 0.1);
 }
 
 .result-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(var(--grid-columns, 2), minmax(0, 1fr));
+  gap: 4px;
 }
 
 .grid-card {
   overflow: hidden;
-  border-radius: 18px;
+  border-radius: 12px;
   background: #fffaf6;
   box-shadow: 0 12px 28px rgb(76 42 24 / 0.1);
 }
 
 .cover-wrap {
   overflow: hidden;
-  border-radius: 18px;
+  border-radius: 6px;
   background: linear-gradient(145deg, #f3ded0, #ffece0);
 }
 
 .list-card .cover-wrap {
-  aspect-ratio: 3 / 4;
+  height: 100%;
+  aspect-ratio: auto;
 }
 
 .grid-card .cover-wrap {
@@ -213,7 +311,7 @@ const emit = defineEmits<{
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .item-info {
@@ -221,7 +319,12 @@ const emit = defineEmits<{
 }
 
 .list-card .item-info {
-  padding: 3px 2px 0 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: start;
+  gap: 4px;
+  overflow: hidden;
+  padding: 0 2px 0 0;
 }
 
 .grid-card .item-info {
@@ -233,15 +336,18 @@ const emit = defineEmits<{
   overflow: hidden;
   margin: 0;
   color: #30201a;
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 700;
   line-height: 1.4;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
 
+.grid-card .item-title {
+  -webkit-line-clamp: 3;
+}
+
 .item-meta {
-  margin-top: 5px;
   color: #876653;
   font-size: 11px;
   line-height: 1.35;
@@ -251,7 +357,6 @@ const emit = defineEmits<{
   display: flex;
   flex-wrap: wrap;
   gap: 5px;
-  margin-top: 8px;
 }
 
 .tag-chip {
@@ -266,15 +371,33 @@ const emit = defineEmits<{
   white-space: nowrap;
 }
 
+.grid-columns-fade-enter-active,
+.grid-columns-fade-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.grid-columns-fade-enter-from,
+.grid-columns-fade-leave-to {
+  opacity: 0;
+  transform: translateX(8px);
+}
+
+.result-fade-enter-active,
+.result-fade-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.result-fade-enter-from,
+.result-fade-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
 @media (min-width: 680px) {
   .result-shell {
     max-width: 1000px;
     margin-right: auto;
     margin-left: auto;
-  }
-
-  .result-grid {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 
   .list-card {

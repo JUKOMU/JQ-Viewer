@@ -1,14 +1,26 @@
 <template>
   <IonPage>
-    <IonHeader class="ion-no-border">
-      <IonToolbar>
-        <div class="toolbar-start">
-          <MenuToggleButton/>
-        </div>
-      </IonToolbar>
-    </IonHeader>
     <IonContent ref="contentRef">
-      <CategorySearchToolbar @search="handleSearch"/>
+      <Transition name="category-overlay">
+        <div v-if="categoryOverlayVisible" class="category-overlay" @click.self="closeSearchOverlay">
+          <div class="category-overlay-panel">
+            <CategorySearchToolbar
+                @search="submitOverlayCategory"
+            />
+          </div>
+        </div>
+      </Transition>
+
+      <div class="category-page-top">
+        <div class="category-page-toolbar">
+          <MenuToggleButton/>
+          <div class="toolbar-category">
+            <CategorySearchToolbar
+                @search="handleSearch"
+            />
+          </div>
+        </div>
+      </div>
       <SearchResultContainer
           :result="result"
           :loading="loading"
@@ -21,7 +33,7 @@
       <QuickActionFab
           v-if="result"
           slot="fixed"
-          @search="retrySearch"
+          @search="openSearch"
           @jump="jumpToPage"
           @top="scrollToTop"
           @back="clearResult"
@@ -32,7 +44,7 @@
 
 <script setup lang="ts">
 import {ref} from 'vue'
-import {alertController, IonContent, IonHeader, IonPage, IonToolbar} from "@ionic/vue";
+import {alertController, IonContent, IonPage} from "@ionic/vue";
 import CategorySearchToolbar from "@/components/search/CategorySearchToolbar.vue";
 import MenuToggleButton from "@/components/common/MenuToggleButton.vue";
 import QuickActionFab from "@/components/common/QuickActionFab.vue";
@@ -46,6 +58,7 @@ const errorMessage = ref('')
 const displayMode = ref<'list' | 'grid'>('grid')
 const lastQuery = ref<SearchQuery | null>(null)
 const contentRef = ref<InstanceType<typeof IonContent> | null>(null)
+const categoryOverlayVisible = ref(false)
 
 const handleSearch = async (query: SearchQuery) => {
   lastQuery.value = {...query, page: query.page ?? 1}
@@ -65,6 +78,19 @@ const retrySearch = () => {
   if (lastQuery.value) {
     void handleSearch(lastQuery.value)
   }
+}
+
+const openSearch = () => {
+  categoryOverlayVisible.value = true
+}
+
+const closeSearchOverlay = () => {
+  categoryOverlayVisible.value = false
+}
+
+const submitOverlayCategory = async (query: SearchQuery) => {
+  closeSearchOverlay()
+  void handleSearch(query)
 }
 
 const scrollToTop = () => {
@@ -124,5 +150,56 @@ const jumpToPage = async () => {
 
 :deep(ion-toolbar) {
   --min-height: auto;
+}
+
+.category-page-top {
+  padding: calc(var(--ion-safe-area-top) + 2px) 14px 0;
+}
+
+.category-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: calc(10px + var(--ion-safe-area-top)) 14px 14px;
+  background: rgb(16 12 10 / 0.16);
+}
+
+.category-overlay-panel {
+  width: min(100%, 920px);
+}
+
+.category-page-toolbar {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  align-items: start;
+  gap: 5px;
+}
+
+.toolbar-category {
+  min-width: 0;
+}
+
+.category-overlay-enter-active,
+.category-overlay-leave-active {
+  transition: opacity 0.18s ease;
+}
+
+.category-overlay-enter-active .category-overlay-panel,
+.category-overlay-leave-active .category-overlay-panel {
+  transition: transform 0.22s ease, opacity 0.22s ease;
+}
+
+.category-overlay-enter-from,
+.category-overlay-leave-to {
+  opacity: 0;
+}
+
+.category-overlay-enter-from .category-overlay-panel,
+.category-overlay-leave-to .category-overlay-panel {
+  opacity: 0;
+  transform: translateY(-14px);
 }
 </style>

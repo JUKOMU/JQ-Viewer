@@ -63,7 +63,7 @@
           :style="mode === 'grid' ? gridStyle : undefined"
       >
         <article
-            v-for="item in result.content"
+            v-for="(item, index) in result.content"
             :key="item.id"
             :class="mode === 'grid' ? 'grid-card' : 'list-card'"
             @click="emit('item-click', item)"
@@ -81,7 +81,7 @@
               <div v-if="item.tags.length" class="item-tags">
                 <span v-for="tag in item.tags.slice(0, 6)" :key="tag" class="tag-chip">{{ tag }}</span>
               </div>
-
+              <div class="item-serial">{{ getItemSerial(result, index) }}</div>
             </template>
           </div>
         </article>
@@ -130,6 +130,11 @@ const emit = defineEmits<{
   retry: []
 }>()
 
+const getItemSerial = (result: SearchResult, index: number) => {
+  const pageSize = 80
+  return (result.currentPage - 1) * pageSize + index + 1
+}
+
 const setGridColumns = (count: typeof gridColumnOptions[number]) => {
   gridColumns.value = count
   if (typeof window !== 'undefined') {
@@ -151,7 +156,7 @@ const setGridColumns = (count: typeof gridColumnOptions[number]) => {
   margin-bottom: 10px;
   padding: 9px 12px;
   border-radius: 18px;
-  background: rgb(255 249 244 / 0.94);
+  background: #fff3ea;
   box-shadow: 0 10px 24px rgb(76 42 24 / 0.08);
 }
 
@@ -265,7 +270,7 @@ const setGridColumns = (count: typeof gridColumnOptions[number]) => {
 .result-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 6px;
 }
 
 .list-card {
@@ -273,7 +278,7 @@ const setGridColumns = (count: typeof gridColumnOptions[number]) => {
   align-items: stretch;
   gap: 10px;
   height: 108px;
-  padding: 8px 10px;
+  padding: 0 10px;
   border-radius: 12px;
   background: #fffaf6;
   box-shadow: 5px 12px 28px rgb(76 42 24 / 0.2);
@@ -362,6 +367,14 @@ const setGridColumns = (count: typeof gridColumnOptions[number]) => {
   display: flex;
   flex-wrap: wrap;
   gap: 5px;
+}
+
+.item-serial {
+  margin-top: auto;
+  color: rgb(154 122 103 / 0.6);
+  font-size: 9px;
+  line-height: 1.3;
+  text-align: right;
 }
 
 .tag-chip {

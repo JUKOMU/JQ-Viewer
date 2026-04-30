@@ -1,37 +1,45 @@
 <template>
   <IonPage>
-    <IonContent ref="contentRef">
+    <IonContent ref="contentRef" :scroll-events="true" @ionScroll="handleContentScroll">
       <Transition name="category-overlay">
         <div v-if="categoryOverlayVisible" class="category-overlay" @click.self="closeSearchOverlay">
           <div class="category-overlay-panel">
-            <CategorySearchToolbar
-                @search="submitOverlayCategory"
-            />
+            <CategorySearchToolbar @search="submitOverlayCategory" />
           </div>
         </div>
       </Transition>
 
       <div class="category-page-top">
-        <div class="category-page-toolbar">
+        <div class="category-page-toolbar" :class="{ pinned: pullHeaderPinned }">
           <MenuToggleButton/>
           <div class="toolbar-category">
-            <CategorySearchToolbar
-                @search="handleSearch"
-            />
+            <CategorySearchToolbar @search="resetWithPage" />
           </div>
         </div>
       </div>
+
       <SearchResultContainer
-          :result="result"
-          :loading="loading"
+          ref="resultContainerRef"
+          :result="resultMeta"
+          :items="displayItems"
+          :loading="initialLoading"
+          :loading-previous="loadingPrevious"
+          :loading-next="loadingNext"
+          :can-load-previous="canLoadPrevious"
+          :page-at-top="pageAtTop"
           :error-message="errorMessage"
           :mode="displayMode"
+          :loaded-page-start="loadedPageStart"
+          :loaded-page-end="loadedPageEnd"
           idle-text="分类搜索结果将在这里显示"
           @mode-change="displayMode = $event"
+          @load-previous="handleLoadPrevious"
+          @pull-state-change="pullGestureActive = $event"
           @retry="retrySearch"
       />
+
       <QuickActionFab
-          v-if="result"
+          v-if="resultMeta"
           slot="fixed"
           @search="openSearch"
           @jump="jumpToPage"
@@ -43,40 +51,133 @@
 </template>
 
 <script setup lang="ts">
-import {ref} from 'vue'
-import {alertController, IonContent, IonPage} from "@ionic/vue";
-import CategorySearchToolbar from "@/components/search/CategorySearchToolbar.vue";
-import MenuToggleButton from "@/components/common/MenuToggleButton.vue";
-import QuickActionFab from "@/components/common/QuickActionFab.vue";
-import SearchResultContainer from "@/components/search/SearchResultContainer.vue";
-import {JmcomicService} from "@/services/JmcomicService";
-import type {SearchQuery, SearchResult} from "@/services/JmcomicTypes";
+import {computed, nextTick, onMounted, ref} from 'vue'
+import {alertController, IonContent, IonPage} from '@ionic/vue'
+import type {ScrollCustomEvent} from '@ionic/core'
+import CategorySearchToolbar from '@/components/search/CategorySearchToolbar.vue'
+import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
+import QuickActionFab from '@/components/common/QuickActionFab.vue'
+import SearchResultContainer from '@/components/search/SearchResultContainer.vue'
+import type {
+  SearchResultContainerExposed,
+  SearchResultDisplayItem,
+} from '@/components/search/SearchResultContainer.vue'
+import {JmcomicService} from '@/services/JmcomicService'
+import type {SearchQuery, SearchResult, SearchResultItem} from '@/services/JmcomicTypes'
 
-const result = ref<SearchResult | null>(null)
-const loading = ref(false)
+const NEXT_PAGE_THRESHOLD = 220
+
+const resultMeta = ref<SearchResult | null>(null)
+const initialLoading = ref(false)
+const loadingPrevious = ref(false)
+const loadingNext = ref(false)
 const errorMessage = ref('')
 const displayMode = ref<'list' | 'grid'>('grid')
 const lastQuery = ref<SearchQuery | null>(null)
 const contentRef = ref<InstanceType<typeof IonContent> | null>(null)
+const scrollElementRef = ref<HTMLElement | null>(null)
 const categoryOverlayVisible = ref(false)
+const resultContainerRef = ref<SearchResultContainerExposed | null>(null)
+const pageCache = ref<Record<number, SearchResultItem[]>>({})
+const pageAtTop = ref(true)
+const pullGestureActive = ref(false)
 
-const handleSearch = async (query: SearchQuery) => {
-  lastQuery.value = {...query, page: query.page ?? 1}
-  loading.value = true
+const loadedPages = computed(() => (
+    Object.keys(pageCache.value)
+        .map(Number)
+        .filter((page) => Number.isInteger(page))
+        .sort((a, b) => a - b)
+))
+
+const loadedPageStart = computed(() => loadedPages.value[0] ?? null)
+const loadedPageEnd = computed(() => loadedPages.value.at(-1) ?? null)
+
+const displayItems = computed<SearchResultDisplayItem[]>(() => (
+    loadedPages.value.flatMap((page) => (
+        (pageCache.value[page] ?? []).map((item, indexInPage) => ({
+          item,
+          page,
+          indexInPage,
+        }))
+    ))
+))
+
+const canLoadPrevious = computed(() => (
+    !!resultMeta.value && loadedPageStart.value !== null && loadedPageStart.value > 1
+))
+
+const canLoadNext = computed(() => (
+    !!resultMeta.value && loadedPageEnd.value !== null && loadedPageEnd.value < resultMeta.value.totalPages
+))
+
+const pullHeaderPinned = computed(() => (
+    pageAtTop.value && (pullGestureActive.value || loadingPrevious.value)
+))
+
+const resolveScrollElement = async () => {
+  if (scrollElementRef.value) {
+    return scrollElementRef.value
+  }
+
+  const contentEl = contentRef.value?.$el as HTMLIonContentElement | undefined
+  if (!contentEl?.getScrollElement) {
+    return null
+  }
+
+  scrollElementRef.value = await contentEl.getScrollElement()
+  return scrollElementRef.value
+}
+
+const maybeLoadNextAfterRender = async () => {
+  if (!canLoadNext.value || loadingNext.value || initialLoading.value) {
+    return
+  }
+
+  await nextTick()
+
+  const scrollElement = await resolveScrollElement()
+  if (!scrollElement || loadedPageEnd.value === null) {
+    return
+  }
+
+  const remain = scrollElement.scrollHeight - scrollElement.clientHeight - scrollElement.scrollTop
+  if (remain <= NEXT_PAGE_THRESHOLD) {
+    void appendPage(loadedPageEnd.value + 1)
+  }
+}
+
+const fetchPage = async (query: SearchQuery, page: number) => {
+  return await JmcomicService.categories({...query, page})
+}
+
+const resetWithPage = async (query: SearchQuery) => {
+  const targetQuery = {...query, page: query.page ?? 1}
+  lastQuery.value = targetQuery
+  initialLoading.value = true
   errorMessage.value = ''
+  resultMeta.value = null
+  pageCache.value = {}
   try {
-    result.value = await JmcomicService.categories(lastQuery.value)
+    const pageResult = await fetchPage(targetQuery, targetQuery.page!)
+    resultMeta.value = pageResult
+    pageCache.value = {
+      [targetQuery.page!]: pageResult.content,
+    }
+    await nextTick()
+    void contentRef.value?.$el?.scrollToTop?.(0)
+    pageAtTop.value = true
   } catch (error) {
-    result.value = null
+    resultMeta.value = null
+    pageCache.value = {}
     errorMessage.value = error instanceof Error ? error.message : '搜索失败'
   } finally {
-    loading.value = false
+    initialLoading.value = false
   }
 }
 
 const retrySearch = () => {
   if (lastQuery.value) {
-    void handleSearch(lastQuery.value)
+    void resetWithPage(lastQuery.value)
   }
 }
 
@@ -88,34 +189,131 @@ const closeSearchOverlay = () => {
   categoryOverlayVisible.value = false
 }
 
-const submitOverlayCategory = async (query: SearchQuery) => {
+const submitOverlayCategory = (query: SearchQuery) => {
   closeSearchOverlay()
-  void handleSearch(query)
+  void resetWithPage(query)
 }
 
 const scrollToTop = () => {
   void contentRef.value?.$el?.scrollToTop?.(300)
 }
 
+const appendPage = async (page: number) => {
+  if (!lastQuery.value || loadingNext.value || initialLoading.value || !canLoadNext.value) {
+    return
+  }
+
+  loadingNext.value = true
+  try {
+    errorMessage.value = ''
+    const pageResult = await fetchPage(lastQuery.value, page)
+    resultMeta.value = pageResult
+    pageCache.value = {
+      ...pageCache.value,
+      [page]: pageResult.content,
+    }
+    await maybeLoadNextAfterRender()
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : '加载下一页失败'
+  } finally {
+    loadingNext.value = false
+  }
+}
+
+const prependPage = async (page: number) => {
+  if (!lastQuery.value || loadingPrevious.value || initialLoading.value || !canLoadPrevious.value) {
+    return
+  }
+
+  const contentScrollElement = await resolveScrollElement()
+  const anchorEntry = displayItems.value[0]
+  const anchorEntryKey = anchorEntry
+      ? `${anchorEntry.page}-${anchorEntry.indexInPage}-${anchorEntry.item.id}`
+      : null
+  const previousAnchorTop = anchorEntryKey
+      ? resultContainerRef.value?.getEntryElement(anchorEntryKey)?.getBoundingClientRect().top ?? null
+      : null
+  const resultRoot = resultContainerRef.value?.getRootElement()
+  const previousRootTop = resultRoot?.getBoundingClientRect().top ?? null
+
+  if (!contentScrollElement || !resultRoot) {
+    return
+  }
+
+  loadingPrevious.value = true
+  try {
+    errorMessage.value = ''
+    const pageResult = await fetchPage(lastQuery.value, page)
+    resultMeta.value = pageResult
+    pageCache.value = {
+      [page]: pageResult.content,
+      ...pageCache.value,
+    }
+    await nextTick()
+    if (anchorEntryKey && previousAnchorTop !== null) {
+      const nextAnchorTop = resultContainerRef.value?.getEntryElement(anchorEntryKey)?.getBoundingClientRect().top ?? null
+      if (nextAnchorTop !== null) {
+        contentScrollElement.scrollTop += nextAnchorTop - previousAnchorTop
+        return
+      }
+    }
+
+    const nextRootTop = resultRoot.getBoundingClientRect().top
+    if (previousRootTop !== null) {
+      contentScrollElement.scrollTop += nextRootTop - previousRootTop
+    }
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : '加载上一页失败'
+  } finally {
+    loadingPrevious.value = false
+  }
+}
+
+const handleLoadPrevious = () => {
+  if (loadedPageStart.value !== null) {
+    void prependPage(loadedPageStart.value - 1)
+  }
+}
+
+const handleContentScroll = async (event: ScrollCustomEvent) => {
+  pageAtTop.value = event.detail.scrollTop <= 2
+
+  if (!canLoadNext.value || loadingNext.value || initialLoading.value) {
+    return
+  }
+
+  const scrollElement = scrollElementRef.value ?? await resolveScrollElement()
+  if (!scrollElement) {
+    return
+  }
+
+  const remain = scrollElement.scrollHeight - scrollElement.clientHeight - event.detail.scrollTop
+  if (remain <= NEXT_PAGE_THRESHOLD && loadedPageEnd.value !== null) {
+    void appendPage(loadedPageEnd.value + 1)
+  }
+}
+
 const clearResult = () => {
-  result.value = null
+  resultMeta.value = null
+  pageCache.value = {}
   errorMessage.value = ''
+  lastQuery.value = null
 }
 
 const jumpToPage = async () => {
-  if (!result.value || !lastQuery.value) {
+  if (!resultMeta.value || !lastQuery.value) {
     return
   }
 
   const alert = await alertController.create({
     header: '跳转页码',
-    message: `请输入 1 - ${result.value.totalPages} 的页码`,
+    message: `请输入 1 - ${resultMeta.value.totalPages} 的页码`,
     inputs: [{
       name: 'page',
       type: 'number',
       min: 1,
-      max: result.value.totalPages,
-      value: String(result.value.currentPage),
+      max: resultMeta.value.totalPages,
+      value: String(lastQuery.value.page ?? 1),
       placeholder: '页码',
     }],
     buttons: [
@@ -124,10 +322,10 @@ const jumpToPage = async () => {
         text: '跳转',
         handler: (data: { page?: string }) => {
           const page = Number(data.page)
-          if (!Number.isInteger(page) || page < 1 || page > result.value!.totalPages) {
+          if (!Number.isInteger(page) || page < 1 || page > resultMeta.value!.totalPages) {
             return false
           }
-          void handleSearch({...lastQuery.value!, page})
+          void resetWithPage({...lastQuery.value!, page})
           return true
         },
       },
@@ -136,6 +334,10 @@ const jumpToPage = async () => {
 
   await alert.present()
 }
+
+onMounted(() => {
+  void resolveScrollElement()
+})
 </script>
 
 <style scoped>
@@ -176,6 +378,14 @@ const jumpToPage = async () => {
   grid-template-columns: 44px minmax(0, 1fr);
   align-items: start;
   gap: 5px;
+}
+
+.category-page-toolbar.pinned {
+  position: sticky;
+  top: 0;
+  z-index: 8;
+  padding-bottom: 10px;
+  background: linear-gradient(180deg, #fff 0%, #fff 78%, rgb(255 255 255 / 0) 100%);
 }
 
 .toolbar-category {

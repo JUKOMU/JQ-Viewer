@@ -1,5 +1,10 @@
 <template>
-  <IonMenu :content-id="contentId" :disabled="disabled" type="overlay">
+  <IonMenu
+      :content-id="contentId"
+      :disabled="disabled"
+      :max-edge-start="menuEdgeStart"
+      type="overlay"
+  >
     <IonHeader class="ion-no-border">
       <div class="menu-hero">
         <div class="hero-badge">JQ</div>
@@ -81,6 +86,7 @@ defineProps({
 })
 
 const route = useRoute()
+const menuEdgeStart = Math.round(window.innerWidth * 0.55)
 
 function isActive(path: string) {
   return getTopPath(route.path) === getTopPath(path)

@@ -51,6 +51,7 @@
           :loading="previewLoading"
           empty-text="请先选择章节"
           @load-more="navigateToFullPreview"
+          @open-reader="onOpenReader"
         />
         <AlbumCommentsTab
           v-else-if="activeTab === 'comments'"
@@ -209,7 +210,7 @@ const loadPreview = async () => {
     previewImageTotal.value = photo.images.length
 
     const batch = photo.images.slice(0, PREVIEW_BATCH)
-    await JmcomicService.decryptImageUrls(batch)
+    await JmcomicService.decryptThumbnailUrls(batch)
     previewLoadedChapterId.value = chapterId
   } catch { /* ignore */ } finally {
     previewLoading.value = false
@@ -227,6 +228,13 @@ const navigateToFullPreview = () => {
   void router.push({
     path: `/album/${albumId.value}/preview/${selectedChapterId.value}`,
     query: { title: albumTitle.value, total: String(previewImageTotal.value) },
+  })
+}
+
+const onOpenReader = (page: number) => {
+  void router.push({
+    path: `/album/${albumId.value}/read/${selectedChapterId.value}`,
+    query: { page: String(page), title: albumTitle.value },
   })
 }
 
@@ -272,11 +280,11 @@ const handleDownload = async () => {
   await toast.present()
 }
 
-const startReading = async () => {
-  const toast = await toastController.create({
-    message: '阅读器即将推出', duration: 1500, position: 'middle', color: 'medium',
+const startReading = () => {
+  void router.push({
+    path: `/album/${albumId.value}/read/${selectedChapterId.value}`,
+    query: { title: albumTitle.value },
   })
-  await toast.present()
 }
 
 // ---- 导航 ----

@@ -18,7 +18,7 @@ interface JmcomicPlugin {
     getComments(options: ForumQuery): Promise<CommentList>
     toggleAlbumLike(options: { id: string }): Promise<{ success: boolean }>
     toggleAlbumFavorite(options: { id: string; folderId: string }): Promise<{ success: boolean }>
-    decryptImageUrl(options: ImageInfo): Promise<{ dataUrl: string }>
+    decryptThumbnailUrls(options: { images: ImageInfo[] }): Promise<{ results: { sortOrder: number; dataUrl: string }[] }>
     decryptImageUrls(options: { images: ImageInfo[] }): Promise<{ results: { sortOrder: number; dataUrl: string }[] }>
     addListener(event: 'previewImage', handler: (data: PreviewImageEvent) => void): Promise<PluginListenerHandle>
 }
@@ -54,9 +54,11 @@ export const JmcomicService = {
     toggleAlbumFavorite(id: string, folderId: string = '0') {
         return native.toggleAlbumFavorite({id, folderId})
     },
-    decryptImageUrl(image: ImageInfo) {
-        return native.decryptImageUrl(image)
+    /** 批量解密 → 缩略图（缓存原图+缩略图，返回缩略图） */
+    decryptThumbnailUrls(images: ImageInfo[]) {
+        return native.decryptThumbnailUrls({ images })
     },
+    /** 批量解密 → 原图（缓存+返回原图） */
     decryptImageUrls(images: ImageInfo[]) {
         return native.decryptImageUrls({ images })
     },

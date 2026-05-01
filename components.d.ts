@@ -17,13 +17,17 @@ declare module 'vue' {
     AlbumInfoTab: typeof import('./src/components/album/AlbumInfoTab.vue')['default']
     AlbumPreviewTab: typeof import('./src/components/album/AlbumPreviewTab.vue')['default']
     CategorySearchToolbar: typeof import('./src/components/search/CategorySearchToolbar.vue')['default']
+    HorizontalPageView: typeof import('./src/components/reader/HorizontalPageView.vue')['default']
     KeywordSearchBar: typeof import('./src/components/search/KeywordSearchBar.vue')['default']
     MainMenu: typeof import('./src/components/menu/MainMenu.vue')['default']
     MenuToggleButton: typeof import('./src/components/common/MenuToggleButton.vue')['default']
     QuickActionFab: typeof import('./src/components/common/QuickActionFab.vue')['default']
+    ReaderBottomToolbar: typeof import('./src/components/reader/ReaderBottomToolbar.vue')['default']
+    ReaderTopToolbar: typeof import('./src/components/reader/ReaderTopToolbar.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     SearchHeaderBar: typeof import('./src/components/search/SearchHeaderBar.vue')['default']
     SearchResultContainer: typeof import('./src/components/search/SearchResultContainer.vue')['default']
+    VerticalScrollView: typeof import('./src/components/reader/VerticalScrollView.vue')['default']
   }
 }

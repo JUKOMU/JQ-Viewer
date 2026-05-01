@@ -1,43 +1,27 @@
 package io.github.jukomu.plugin;
 
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import com.getcapacitor.*;
-import org.json.JSONObject;
 import com.getcapacitor.annotation.CapacitorPlugin;
-import io.github.jukomu.jmcomic.api.enums.Category;
-import io.github.jukomu.jmcomic.api.enums.ForumMode;
-import io.github.jukomu.jmcomic.api.enums.OrderBy;
-import io.github.jukomu.jmcomic.api.enums.SearchMainTag;
-import io.github.jukomu.jmcomic.api.enums.TimeOption;
-import io.github.jukomu.jmcomic.api.model.ForumQuery;
-import io.github.jukomu.jmcomic.api.model.JmAlbum;
-import io.github.jukomu.jmcomic.api.model.JmAlbumMeta;
-import io.github.jukomu.jmcomic.api.model.JmCategoryMeta;
-import io.github.jukomu.jmcomic.api.model.JmComment;
-import io.github.jukomu.jmcomic.api.model.JmCommentList;
-import io.github.jukomu.jmcomic.api.model.JmImage;
-import io.github.jukomu.jmcomic.api.model.JmPhoto;
-import io.github.jukomu.jmcomic.api.model.JmPhotoMeta;
-import io.github.jukomu.jmcomic.api.model.JmSearchPage;
-import io.github.jukomu.jmcomic.api.model.SearchQuery;
+import io.github.jukomu.jmcomic.api.enums.*;
+import io.github.jukomu.jmcomic.api.model.*;
 import io.github.jukomu.jmcomic.core.JmComic;
 import io.github.jukomu.jmcomic.core.client.AbstractJmClient;
 import io.github.jukomu.jmcomic.core.client.impl.JmApiClient;
 import io.github.jukomu.jmcomic.core.config.JmConfiguration;
 import io.github.jukomu.jmcomic.core.crypto.JmImageTool;
+import org.json.JSONObject;
 
-import java.util.Base64;
-import java.util.List;
+import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Collections;
-import java.util.Comparator;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.io.ByteArrayOutputStream;
-
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 
 /**
  * @author JUKOMU
@@ -51,7 +35,8 @@ public class JmcomicPlugin extends Plugin {
 
     private volatile JmApiClient sharedClient;
     private final ExecutorService imageExecutor = Executors.newFixedThreadPool(6);
-    private final ConcurrentHashMap<String, String> imageCache = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, String> fullImageCache = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, String> thumbnailCache = new ConcurrentHashMap<>();
     private static final int THUMBNAIL_MAX_WIDTH = 300;
     private static final int THUMBNAIL_JPEG_QUALITY = 70;
 
@@ -178,27 +163,104 @@ public class JmcomicPlugin extends Plugin {
     }
 
     @PluginMethod
-    public void decryptImageUrl(PluginCall call) {
+    public void decryptThumbnailUrls(PluginCall call) {
         try {
-            String photoId = call.getString("photoId");
-            String scrambleId = call.getString("scrambleId");
-            String filename = call.getString("filename");
-            String url = call.getString("url");
-            String queryParams = call.getString("queryParams", "");
-            int sortOrder = call.getInt("sortOrder", 0);
-
-            if (photoId == null || scrambleId == null || filename == null || url == null) {
-                call.reject("photoId, scrambleId, filename, url are required");
+            JSArray imagesArray = call.getArray("images");
+            if (imagesArray == null || imagesArray.length() == 0) {
+                call.reject("images array is required");
                 return;
             }
 
-            JmImage image = new JmImage(photoId, scrambleId, filename, url, queryParams, sortOrder);
-            byte[] decrypted = getClient().fetchImageBytes(image);
-            String base64 = "data:image/" + JmImageTool.getFormatName(filename) + ";base64,"
-                    + Base64.getEncoder().encodeToString(decrypted);
-            JSObject ret = new JSObject();
-            ret.put("dataUrl", base64);
-            call.resolve(ret);
+            JmApiClient client = getClient();
+            List<CompletableFuture<Void>> futures = new ArrayList<>();
+            List<JSObject> syncResults = Collections.synchronizedList(new ArrayList<>());
+
+            for (int i = 0; i < imagesArray.length(); i++) {
+                JSONObject jsonObj;
+                JSObject imgObj;
+                try {
+                    jsonObj = imagesArray.getJSONObject(i);
+                    imgObj = JSObject.fromJSONObject(jsonObj);
+                } catch (Exception e) {
+                    continue;
+                }
+
+                final String photoId = imgObj.getString("photoId");
+                final String scrambleId = imgObj.getString("scrambleId");
+                final String filename = imgObj.getString("filename");
+                final String url = imgObj.getString("url");
+                final String queryParams = imgObj.getString("queryParams", "");
+                final int sortOrder = imgObj.getInt("sortOrder");
+                final String cacheKey = photoId + "/" + sortOrder;
+
+                // 查缩略图缓存
+                String cachedThumb = thumbnailCache.get(cacheKey);
+                if (cachedThumb != null) {
+                    pushImage(photoId, sortOrder, cachedThumb);
+                    JSObject item = new JSObject();
+                    item.put("sortOrder", sortOrder);
+                    item.put("dataUrl", cachedThumb);
+                    syncResults.add(item);
+                    continue;
+                }
+
+                // 缩略图缓存未命中 → 查原图缓存，miss 再下载
+                CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+                    try {
+                        byte[] decrypted;
+                        String fullDataUrl = fullImageCache.get(cacheKey);
+                        if (fullDataUrl != null) {
+                            // 原图已缓存 → 直接解码
+                            String base64 = fullDataUrl.substring(fullDataUrl.indexOf(",") + 1);
+                            decrypted = Base64.getDecoder().decode(base64);
+                        } else {
+                            // 下载原图
+                            JmImage jmImage = new JmImage(photoId, scrambleId, filename, url, queryParams, sortOrder);
+                            decrypted = client.fetchImageBytes(jmImage);
+                            String formatName = JmImageTool.getFormatName(filename);
+                            fullDataUrl = "data:image/" + formatName + ";base64,"
+                                    + Base64.getEncoder().encodeToString(decrypted);
+                            fullImageCache.put(cacheKey, fullDataUrl);
+                        }
+
+                        // 生成并缓存缩略图
+                        byte[] thumbnail = createThumbnail(decrypted);
+                        String thumbDataUrl = "data:image/jpeg;base64,"
+                                + Base64.getEncoder().encodeToString(thumbnail);
+                        thumbnailCache.put(cacheKey, thumbDataUrl);
+
+                        pushImage(photoId, sortOrder, thumbDataUrl);
+
+                        JSObject item = new JSObject();
+                        item.put("sortOrder", sortOrder);
+                        item.put("dataUrl", thumbDataUrl);
+                        syncResults.add(item);
+                    } catch (Exception ignored) {
+                        // 单张失败跳过
+                    }
+                }, imageExecutor);
+                futures.add(future);
+            }
+
+            // 全部完成后 resolve
+            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+                    .thenRun(() -> {
+                        syncResults.sort((a, b) -> {
+                            try {
+                                return Integer.compare(a.getInt("sortOrder"), b.getInt("sortOrder"));
+                            } catch (Exception e) {
+                                return 0;
+                            }
+                        });
+                        JSArray results = new JSArray();
+                        for (JSObject item : syncResults) {
+                            results.put(item);
+                        }
+                        JSObject ret = new JSObject();
+                        ret.put("results", results);
+                        call.resolve(ret);
+                    });
+
         } catch (Exception e) {
             call.reject(e.getMessage(), e);
         }
@@ -235,13 +297,13 @@ public class JmcomicPlugin extends Plugin {
                 final int sortOrder = imgObj.getInt("sortOrder");
                 final String cacheKey = photoId + "/" + sortOrder;
 
-                // 查缓存
-                String cached = imageCache.get(cacheKey);
-                if (cached != null) {
-                    pushImage(photoId, sortOrder, cached);
+                // 查原图缓存
+                String cachedFull = fullImageCache.get(cacheKey);
+                if (cachedFull != null) {
+                    pushImage(photoId, sortOrder, cachedFull);
                     JSObject item = new JSObject();
                     item.put("sortOrder", sortOrder);
-                    item.put("dataUrl", cached);
+                    item.put("dataUrl", cachedFull);
                     syncResults.add(item);
                     continue;
                 }
@@ -251,16 +313,17 @@ public class JmcomicPlugin extends Plugin {
                     try {
                         JmImage jmImage = new JmImage(photoId, scrambleId, filename, url, queryParams, sortOrder);
                         byte[] decrypted = client.fetchImageBytes(jmImage);
-                        byte[] thumbnail = createThumbnail(decrypted);
-                        String dataUrl = "data:image/jpeg;base64,"
-                                + Base64.getEncoder().encodeToString(thumbnail);
 
-                        imageCache.put(cacheKey, dataUrl);
-                        pushImage(photoId, sortOrder, dataUrl);
+                        String formatName = JmImageTool.getFormatName(filename);
+                        String fullDataUrl = "data:image/" + formatName + ";base64,"
+                                + Base64.getEncoder().encodeToString(decrypted);
+                        fullImageCache.put(cacheKey, fullDataUrl);
+
+                        pushImage(photoId, sortOrder, fullDataUrl);
 
                         JSObject item = new JSObject();
                         item.put("sortOrder", sortOrder);
-                        item.put("dataUrl", dataUrl);
+                        item.put("dataUrl", fullDataUrl);
                         syncResults.add(item);
                     } catch (Exception ignored) {
                         // 单张失败跳过
@@ -273,8 +336,11 @@ public class JmcomicPlugin extends Plugin {
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
                     .thenRun(() -> {
                         syncResults.sort((a, b) -> {
-                            try { return Integer.compare(a.getInt("sortOrder"), b.getInt("sortOrder")); }
-                            catch (Exception e) { return 0; }
+                            try {
+                                return Integer.compare(a.getInt("sortOrder"), b.getInt("sortOrder"));
+                            } catch (Exception e) {
+                                return 0;
+                            }
                         });
                         JSArray results = new JSArray();
                         for (JSObject item : syncResults) {

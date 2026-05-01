@@ -13,6 +13,7 @@
               :src="slotMap[i - 1]!.dataUrl"
               :alt="'第 ' + i + ' 页'"
               class="preview-thumb"
+              @click="$emit('openReader', i)"
             />
           </template>
           <template v-else>
@@ -55,6 +56,7 @@ const props = defineProps<{
 
 defineEmits<{
   loadMore: []
+  openReader: [page: number]
 }>()
 
 const DISPLAY_MAX = 20

@@ -34,6 +34,7 @@
                   :src="slots[i - 1]!.dataUrl"
                   :alt="'第 ' + i + ' 页'"
                   class="preview-thumb"
+                  @click="openReader(i)"
                 />
               </template>
               <template v-else>
@@ -78,6 +79,7 @@ const NEAR_BOTTOM_THRESHOLD = 200
 const route = useRoute()
 const router = useRouter()
 
+const albumId = computed(() => route.params.albumId as string)
 const chapterId = computed(() => route.params.chapterId as string)
 const chapterTitle = computed(() => (route.query.title as string) || chapterId.value)
 const initialTotal = Number(route.query.total as string) || 0
@@ -196,11 +198,18 @@ const expandBatch = async () => {
   if (cursor.value < totalCount.value) {
     const nextCursor = Math.min(cursor.value + BATCH, totalCount.value)
     const batch = photoDetail.images.slice(cursor.value, nextCursor)
-    JmcomicService.decryptImageUrls(batch).catch(() => {})
+    JmcomicService.decryptThumbnailUrls(batch).catch(() => {})
     cursor.value = nextCursor
   }
 
   loadingMore.value = false
+}
+
+const openReader = (page: number) => {
+  void router.push({
+    path: `/album/${albumId.value}/read/${chapterId.value}`,
+    query: { page: String(page), title: chapterTitle.value },
+  })
 }
 
 const goBack = () => router.back()

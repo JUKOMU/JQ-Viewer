@@ -33,6 +33,7 @@
           :loaded-page-end="loadedPageEnd"
           idle-text="分类搜索结果将在这里显示"
           @mode-change="displayMode = $event"
+          @item-click="handleItemClick"
           @load-previous="handleLoadPrevious"
           @pull-state-change="pullGestureActive = $event"
           @retry="retrySearch"
@@ -52,6 +53,7 @@
 
 <script setup lang="ts">
 import {computed, nextTick, onMounted, ref} from 'vue'
+import {useRouter} from 'vue-router'
 import {alertController, IonContent, IonPage} from '@ionic/vue'
 import type {ScrollCustomEvent} from '@ionic/core'
 import CategorySearchToolbar from '@/components/search/CategorySearchToolbar.vue'
@@ -64,6 +66,8 @@ import type {
 } from '@/components/search/SearchResultContainer.vue'
 import {JmcomicService} from '@/services/JmcomicService'
 import type {SearchQuery, SearchResult, SearchResultItem} from '@/services/JmcomicTypes'
+
+const router = useRouter()
 
 const NEXT_PAGE_THRESHOLD = 220
 
@@ -291,6 +295,17 @@ const handleContentScroll = async (event: ScrollCustomEvent) => {
   if (remain <= NEXT_PAGE_THRESHOLD && loadedPageEnd.value !== null) {
     void appendPage(loadedPageEnd.value + 1)
   }
+}
+
+const handleItemClick = (item: SearchResultItem) => {
+  void router.push({
+    path: `/album/${item.id}`,
+    query: {
+      title: item.title,
+      coverUrl: item.coverUrl,
+      authors: item.authors.join(','),
+    },
+  })
 }
 
 const clearResult = () => {

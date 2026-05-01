@@ -41,6 +41,10 @@ const routes: Array<RouteRecordRaw> = [
     path: '/setting',
     component: SettingPage,
     meta: { menu: true }
+  },
+  {
+    path: '/album/:id',
+    component: () => import('@/views/AlbumDetailPage.vue'),
   }
 ]
 

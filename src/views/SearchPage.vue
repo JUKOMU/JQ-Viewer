@@ -43,6 +43,7 @@
           :loaded-page-end="loadedPageEnd"
           idle-text="请输入关键词开始搜索"
           @mode-change="displayMode = $event"
+          @item-click="handleItemClick"
           @load-previous="handleLoadPrevious"
           @pull-state-change="pullGestureActive = $event"
           @retry="retrySearch"
@@ -350,6 +351,17 @@ const handleContentScroll = async (event: ScrollCustomEvent) => {
   if (remain <= NEXT_PAGE_THRESHOLD && loadedPageEnd.value !== null) {
     void appendPage(loadedPageEnd.value + 1)
   }
+}
+
+const handleItemClick = (item: SearchResultItem) => {
+  void router.push({
+    path: `/album/${item.id}`,
+    query: {
+      title: item.title,
+      coverUrl: item.coverUrl,
+      authors: item.authors.join(','),
+    },
+  })
 }
 
 const goBack = () => {

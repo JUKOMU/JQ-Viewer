@@ -45,6 +45,10 @@ const routes: Array<RouteRecordRaw> = [
   {
     path: '/album/:id',
     component: () => import('@/views/AlbumDetailPage.vue'),
+  },
+  {
+    path: '/album/:albumId/preview/:chapterId',
+    component: () => import('@/views/PreviewAllPage.vue'),
   }
 ]
 

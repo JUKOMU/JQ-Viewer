@@ -1,0 +1,90 @@
+<!-- 章节 Tab -->
+<template>
+  <section class="chapters-section">
+    <div v-if="photoMetas.length" class="chapter-grid">
+      <button
+        v-for="meta in photoMetas"
+        :key="meta.id"
+        type="button"
+        class="chapter-card"
+        :class="{ selected: selectedChapterId === meta.id }"
+        @click="$emit('select-chapter', meta.id)"
+      >
+        <span class="chapter-num">第{{ meta.sortOrder }}话</span>
+        <span class="chapter-title">{{ meta.title }}</span>
+      </button>
+    </div>
+    <div v-else class="chapters-empty">暂无章节</div>
+  </section>
+</template>
+
+<script setup lang="ts">
+import type { PhotoMeta } from '@/services/JmcomicTypes'
+
+defineProps<{
+  photoMetas: PhotoMeta[]
+  selectedChapterId: string
+}>()
+
+defineEmits<{
+  'select-chapter': [chapterId: string]
+}>()
+</script>
+
+<style scoped>
+.chapter-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.chapter-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 14px 10px;
+  border: 1px solid rgb(245 210 188 / 0.7);
+  border-radius: 12px;
+  background: #fffaf6;
+  color: #5a3d2e;
+  text-align: center;
+  transition: background-color 0.18s ease, border-color 0.18s ease;
+}
+
+.chapter-card.selected {
+  background: #fff0e7;
+  border-color: #fa9c69;
+}
+
+.chapter-num {
+  font-size: 11px;
+  font-weight: 700;
+  color: #a07858;
+}
+
+.chapter-card.selected .chapter-num {
+  color: #e07030;
+}
+
+.chapter-title {
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.chapters-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  color: #8a6048;
+  font-size: 13px;
+}
+
+@media (min-width: 680px) {
+  .chapter-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+</style>

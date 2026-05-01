@@ -1,4 +1,5 @@
 import {registerPlugin} from '@capacitor/core'
+import type {PluginListenerHandle} from '@capacitor/core'
 import type {
     AlbumDetail,
     CommentList,
@@ -19,6 +20,13 @@ interface JmcomicPlugin {
     toggleAlbumFavorite(options: { id: string; folderId: string }): Promise<{ success: boolean }>
     decryptImageUrl(options: ImageInfo): Promise<{ dataUrl: string }>
     decryptImageUrls(options: { images: ImageInfo[] }): Promise<{ results: { sortOrder: number; dataUrl: string }[] }>
+    addListener(event: 'previewImage', handler: (data: PreviewImageEvent) => void): Promise<PluginListenerHandle>
+}
+
+interface PreviewImageEvent {
+    photoId: string
+    sortOrder: number
+    dataUrl: string
 }
 
 const native = registerPlugin<JmcomicPlugin>('Jmcomic')
@@ -51,5 +59,18 @@ export const JmcomicService = {
     },
     decryptImageUrls(images: ImageInfo[]) {
         return native.decryptImageUrls({ images })
+    },
+
+    /**
+     * 注册预览图片逐张推送的监听。
+     * @param photoId 当前章节 ID，仅接收此章节的图片事件
+     * @param handler 每张图片完成时调用
+     */
+    addPreviewListener(photoId: string, handler: (img: PreviewImageEvent) => void): Promise<PluginListenerHandle> {
+        return native.addListener('previewImage', (data: PreviewImageEvent) => {
+            if (data.photoId === photoId) {
+                handler(data)
+            }
+        })
     },
 }

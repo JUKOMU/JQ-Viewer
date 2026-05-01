@@ -11,6 +11,11 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AlbumChaptersTab: typeof import('./src/components/album/AlbumChaptersTab.vue')['default']
+    AlbumCommentsTab: typeof import('./src/components/album/AlbumCommentsTab.vue')['default']
+    AlbumHeader: typeof import('./src/components/album/AlbumHeader.vue')['default']
+    AlbumInfoTab: typeof import('./src/components/album/AlbumInfoTab.vue')['default']
+    AlbumPreviewTab: typeof import('./src/components/album/AlbumPreviewTab.vue')['default']
     CategorySearchToolbar: typeof import('./src/components/search/CategorySearchToolbar.vue')['default']
     KeywordSearchBar: typeof import('./src/components/search/KeywordSearchBar.vue')['default']
     MainMenu: typeof import('./src/components/menu/MainMenu.vue')['default']

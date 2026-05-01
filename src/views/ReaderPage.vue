@@ -13,6 +13,7 @@
       <!-- 图片视图 -->
       <VerticalScrollView
         v-if="isVertical"
+        ref="verticalViewRef"
         :image-map="imageMap"
         :total-count="totalCount"
         :initial-index="currentIndex"
@@ -45,7 +46,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { IonPage } from '@ionic/vue'
 import type { PluginListenerHandle } from '@capacitor/core'
@@ -56,9 +57,8 @@ import ReaderBottomToolbar from '@/components/reader/ReaderBottomToolbar.vue'
 import VerticalScrollView from '@/components/reader/VerticalScrollView.vue'
 import HorizontalPageView from '@/components/reader/HorizontalPageView.vue'
 
-const N = 5        // 预加载窗口半径
-const M = 30       // 最大缓存窗口
-const DEBOUNCE_MS = 50
+const N = 15       // 预加载窗口半径
+const M = 60       // 最大缓存窗口
 const AUTO_HIDE_MS = 3000
 
 const route = useRoute()
@@ -76,12 +76,15 @@ const totalCount = ref(0)
 const imageMap = ref<Map<number, string>>(new Map())  // sortOrder -> dataUrl
 const toolbarVisible = ref(true)
 const isDragProgress = ref(false)
-
 let photoDetail: PhotoDetail | null = null
 let previewListenerHandle: PluginListenerHandle | null = null
 let loadedSortOrders = new Set<number>()
-let debounceTimer: ReturnType<typeof setTimeout> | null = null
+let lastWindowCenter = -1
+let pendingImages: Map<number, string> = new Map()
+let frameScheduled = false
+let triggerRafId = 0
 let autoHideTimer: ReturnType<typeof setTimeout> | null = null
+const verticalViewRef = ref<InstanceType<typeof VerticalScrollView> | null>(null)
 
 // ---- 工具栏 ----
 const toggleToolbar = () => {
@@ -172,34 +175,51 @@ const updateWindow = (center: number) => {
   }
 }
 
-// ---- 页码变更（消抖） ----
+// ---- 页码变更（距离阈值触发） ----
 const onPageChange = (index: number) => {
   if (index < 0 || index >= totalCount.value) return
   currentIndex.value = index
   resetAutoHide()
 
-  if (debounceTimer) clearTimeout(debounceTimer)
-  debounceTimer = setTimeout(() => {
+  const threshold = isVertical.value ? 3 : 1
+  if (Math.abs(index - lastWindowCenter) >= threshold) {
+    lastWindowCenter = index
     updateWindow(index)
-    debounceTimer = null
-  }, DEBOUNCE_MS)
+  }
 }
 
-// 进度条拖动跳转（无消抖，直接响应）
+// 进度条拖动跳转（直接响应）
 const onProgressDrag = (page1Based: number) => {
   const index = page1Based - 1
   if (index < 0 || index >= totalCount.value) return
   currentIndex.value = index
+  lastWindowCenter = index
   updateWindow(index)
+  if (isVertical.value) {
+    verticalViewRef.value?.scrollToIndex(index)
+  }
 }
 
-// ---- 图片解密监听 ----
+// ---- 图片解密监听（按帧批处理，创建新 Map 触发子组件响应） ----
 const setupPreviewListener = async () => {
   previewListenerHandle = await JmcomicService.addPreviewListener(chapterId.value, (img) => {
     imageMap.value.set(img.sortOrder, img.dataUrl)
     loadedSortOrders.add(img.sortOrder)
-    // 触发响应式更新
-    imageMap.value = new Map(imageMap.value)
+    pendingImages.set(img.sortOrder, img.dataUrl)
+    if (!frameScheduled) {
+      frameScheduled = true
+      triggerRafId = requestAnimationFrame(() => {
+        // 创建新 Map 赋值 ref，引用变更触发子组件 prop 更新
+        const merged = new Map(imageMap.value)
+        for (const [k, v] of pendingImages) {
+          merged.set(k, v)
+        }
+        imageMap.value = merged
+        pendingImages = new Map()
+        frameScheduled = false
+        triggerRafId = 0
+      })
+    }
   })
 }
 
@@ -241,7 +261,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   previewListenerHandle?.remove()
-  if (debounceTimer) clearTimeout(debounceTimer)
+  if (triggerRafId) cancelAnimationFrame(triggerRafId)
   if (autoHideTimer) clearTimeout(autoHideTimer)
   // 释放所有 blob URL
   for (const [, dataUrl] of imageMap.value) {

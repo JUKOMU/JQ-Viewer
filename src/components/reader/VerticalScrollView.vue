@@ -100,30 +100,67 @@ const onScroll = () => {
   }, 80)
 }
 
-// 初始化滚动到初始页
-onMounted(async () => {
-  await nextTick()
-  recalcImagePositions()
+let trackedIndex = -1
+let trackedTop = 0
+let initialScrollDone = false
 
-  // 滚动到 initialIndex 对应的图片位置
-  if (props.initialIndex > 0 && imageTops.value.length > props.initialIndex) {
-    const targetTop = imageTops.value[props.initialIndex]
-    if (containerRef.value) {
-      containerRef.value.scrollTop = targetTop
-    }
-    scrollTop.value = targetTop
-    lastEmitIndex.value = props.initialIndex
-    emit('update:currentIndex', props.initialIndex)
-  }
+onMounted(() => {
+  nextTick(() => recalcImagePositions())
 })
 
-// 图片加载完成后重新计算位置
+// 数据就绪（totalCount 从 0 变为有值）→ 执行初始滚动
+watch(
+  () => props.totalCount,
+  (count) => {
+    if (initialScrollDone || count <= 0) return
+    initialScrollDone = true
+    trackedIndex = props.initialIndex
+    nextTick(() => {
+      recalcImagePositions()
+      if (trackedIndex >= 0 && trackedIndex < imageTops.value.length) {
+        trackedTop = imageTops.value[trackedIndex]
+        if (containerRef.value) {
+          containerRef.value.scrollTop = trackedTop
+        }
+        scrollTop.value = trackedTop
+        lastEmitIndex.value = trackedIndex
+        emit('update:currentIndex', trackedIndex)
+      }
+    })
+  },
+)
+
+// 图片加载后动态修正 scrollTop，追着目标图片顶部走
 watch(
   () => props.imageMap.size,
   () => {
-    nextTick(() => recalcImagePositions())
+    nextTick(() => {
+      recalcImagePositions()
+      if (trackedIndex >= 0 && trackedIndex < imageTops.value.length) {
+        const newTop = imageTops.value[trackedIndex]
+        const delta = newTop - trackedTop
+        if (delta !== 0 && containerRef.value) {
+          containerRef.value.scrollTop += delta
+          scrollTop.value = containerRef.value.scrollTop
+          trackedTop = newTop
+        }
+      }
+    })
   },
 )
+
+// 暴露给父组件：进度条拖拽跳转
+const scrollToIndex = (index: number) => {
+  if (index < 0 || index >= imageTops.value.length) return
+  trackedIndex = index
+  trackedTop = imageTops.value[index]
+  if (containerRef.value) {
+    containerRef.value.scrollTop = trackedTop
+    scrollTop.value = trackedTop
+  }
+}
+
+defineExpose({ scrollToIndex })
 </script>
 
 <style scoped>

@@ -2,7 +2,6 @@ package io.github.jukomu.plugin;
 
 import com.getcapacitor.*;
 import com.getcapacitor.annotation.CapacitorPlugin;
-import io.github.jukomu.jmcomic.api.client.JmClient;
 import io.github.jukomu.jmcomic.api.enums.Category;
 import io.github.jukomu.jmcomic.api.enums.OrderBy;
 import io.github.jukomu.jmcomic.api.enums.SearchMainTag;
@@ -12,6 +11,7 @@ import io.github.jukomu.jmcomic.api.model.JmSearchPage;
 import io.github.jukomu.jmcomic.api.model.SearchQuery;
 import io.github.jukomu.jmcomic.core.JmComic;
 import io.github.jukomu.jmcomic.core.client.AbstractJmClient;
+import io.github.jukomu.jmcomic.core.client.impl.JmApiClient;
 import io.github.jukomu.jmcomic.core.config.JmConfiguration;
 
 import java.util.List;
@@ -37,7 +37,7 @@ public class JmcomicPlugin extends Plugin {
 
             SearchQuery query = buildQuery(queryObject);
 
-            try (JmClient client = createClient(call)) {
+            try (JmApiClient client = createClient(call)) {
                 if (client == null) {
                     return;
                 }
@@ -59,7 +59,7 @@ public class JmcomicPlugin extends Plugin {
 
             SearchQuery query = buildQuery(queryObject);
 
-            try (JmClient client = createClient(call)) {
+            try (JmApiClient client = createClient(call)) {
                 if (client == null) {
                     return;
                 }
@@ -70,8 +70,8 @@ public class JmcomicPlugin extends Plugin {
         }
     }
 
-    private JmClient createClient(PluginCall call) {
-        JmClient client = JmComic.newApiClient(new JmConfiguration.Builder().build());
+    private JmApiClient createClient(PluginCall call) {
+        JmApiClient client = JmComic.newApiClient(new JmConfiguration.Builder().build());
         if (!(client instanceof AbstractJmClient)) {
             call.reject("unsupported jm client");
             try {

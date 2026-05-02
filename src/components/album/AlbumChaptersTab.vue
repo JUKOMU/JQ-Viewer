@@ -14,6 +14,12 @@
         <span class="chapter-title">{{ meta.title }}</span>
       </button>
     </div>
+    <div v-else-if="loading" class="chapter-grid">
+      <div v-for="n in 6" :key="n" class="skeleton-card">
+        <div class="sk-line sk-line--short" />
+        <div class="sk-line" />
+      </div>
+    </div>
     <div v-else class="chapters-empty">暂无章节</div>
   </section>
 </template>
@@ -24,6 +30,7 @@ import type { PhotoMeta } from '@/services/JmcomicTypes'
 defineProps<{
   photoMetas: PhotoMeta[]
   selectedChapterId: string
+  loading?: boolean
 }>()
 
 defineEmits<{
@@ -80,6 +87,38 @@ defineEmits<{
   min-height: 120px;
   color: #8a6048;
   font-size: 13px;
+}
+
+/* 骨架卡片 */
+.skeleton-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px 10px;
+  border: 1px solid rgb(245 210 188 / 0.3);
+  border-radius: 12px;
+  background: #fffaf6;
+}
+
+.skeleton-card .sk-line {
+  height: 12px;
+  width: 70%;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #f3ded0 25%, #ffece0 50%, #f3ded0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease infinite;
+}
+
+.skeleton-card .sk-line--short {
+  width: 45%;
+  height: 11px;
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 
 @media (min-width: 680px) {

@@ -2,8 +2,15 @@
 <template>
   <section class="comments-section">
     <template v-if="loading">
-      <div class="comments-loading">
-        <ion-spinner name="dots" />
+      <div class="comments-skeleton">
+        <div v-for="n in 4" :key="n" class="sk-card">
+          <div class="sk-header">
+            <div class="sk-avatar" />
+            <div class="sk-line sk-line--short" />
+          </div>
+          <div class="sk-line" />
+          <div class="sk-line sk-line--short" />
+        </div>
       </div>
     </template>
     <template v-else-if="comments.length">
@@ -39,7 +46,6 @@
 </template>
 
 <script setup lang="ts">
-import { IonSpinner } from '@ionic/vue'
 import type { CommentItem } from '@/services/JmcomicTypes'
 
 defineProps<{
@@ -49,12 +55,53 @@ defineProps<{
 </script>
 
 <style scoped>
-.comments-loading {
+/* 骨架屏 */
+.comments-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sk-card {
+  padding: 12px;
+  border-radius: 12px;
+  background: #fffaf6;
+  box-shadow: 0 4px 12px rgb(76 42 24 / 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sk-header {
   display: flex;
   align-items: center;
-  justify-content: center;
-  min-height: 160px;
-  color: #fa9c69;
+  gap: 8px;
+}
+
+.sk-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: linear-gradient(90deg, #f3ded0 25%, #ffece0 50%, #f3ded0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease infinite;
+}
+
+.sk-line {
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #f3ded0 25%, #ffece0 50%, #f3ded0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease infinite;
+}
+
+.sk-line--short {
+  width: 40%;
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 
 .comments-empty {

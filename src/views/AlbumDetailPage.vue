@@ -9,6 +9,7 @@
         :authors="albumAuthors"
         :page-count="selectedChapterPageCount"
         :loading="loading"
+        :chapter-loading="chapterLoading"
         @back="goBack"
         @start-reading="startReading"
       />
@@ -42,6 +43,7 @@
           v-else-if="activeTab === 'chapters'"
           :photo-metas="albumDetail?.photoMetas ?? []"
           :selected-chapter-id="selectedChapterId"
+          :loading="loading"
           @select-chapter="selectChapter"
         />
         <AlbumPreviewTab
@@ -107,6 +109,7 @@ const activeTab = ref<TabKey>('info')
 
 // ---- 章节 ----
 const selectedChapterId = ref('')
+const chapterLoading = ref(false)
 
 // ---- 操作 ----
 const actionBusy = reactive({ like: false, favorite: false })
@@ -131,8 +134,8 @@ const tabBarRef = ref<HTMLElement | null>(null)
 
 // ---- 计算属性 ----
 const selectedChapterPageCount = computed(() => {
-  if (photoDetail.value && photoDetail.value.id === selectedChapterId.value) {
-    return photoDetail.value.images.length
+  if (photoDetail.value && photoDetail.value?.id === selectedChapterId.value) {
+    return photoDetail.value?.images.length
   }
   return albumDetail.value?.pageCount ?? 0
 })
@@ -149,6 +152,9 @@ onMounted(async () => {
 
     const matched = album.photoMetas.find((m) => m.id === albumId.value)
     selectedChapterId.value = matched?.id ?? album.photoMetas[0]?.id ?? ''
+
+    // 若用户已在加载期间切到预览 tab，补加载
+    if (activeTab.value === 'preview') await loadPreview()
   } catch {
     // 保留 query 数据展示
   } finally {
@@ -170,11 +176,14 @@ const switchTab = async (key: TabKey) => {
 const selectChapter = async (chapterId: string) => {
   if (chapterId === selectedChapterId.value) return
   selectedChapterId.value = chapterId
+  chapterLoading.value = true
 
   try {
     const photo = await JmcomicService.getPhoto(chapterId)
     photoDetail.value = photo
-  } catch { /* ignore */ }
+  } catch { /* ignore */ } finally {
+    chapterLoading.value = false
+  }
 
   if (activeTab.value === 'preview') {
     await loadPreview()
@@ -184,7 +193,6 @@ const selectChapter = async (chapterId: string) => {
 // ---- 预览 ----
 const loadPreview = async () => {
   const chapterId = selectedChapterId.value
-  if (!chapterId) return
   if (previewLoadedChapterId.value === chapterId && previewImages.value.length) return
 
   imageReadyListenerHandle?.remove()
@@ -192,6 +200,8 @@ const loadPreview = async () => {
 
   previewLoading.value = true
   previewImages.value = []
+
+  if (!chapterId) return
 
   // 注册图片就绪监听：每完成一张图就追加到列表
   imageReadyListenerHandle = await JmcomicService.addImageReadyListener(chapterId, (sortOrder) => {

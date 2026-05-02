@@ -218,13 +218,14 @@ defineExpose({ scrollToIndex })
 .skeleton-image {
   width: 100%;
   aspect-ratio: 3 / 4;
-  background: linear-gradient(180deg, #1a1a1a, #222);
-  animation: skeleton-pulse 1.5s ease-in-out infinite;
+  background: linear-gradient(90deg, #222 25%, #3a3a3a 50%, #222 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
 }
 
-@keyframes skeleton-pulse {
-  0%, 100% { opacity: 0.3; }
-  50% { opacity: 0.6; }
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 
 .scroll-spacer {

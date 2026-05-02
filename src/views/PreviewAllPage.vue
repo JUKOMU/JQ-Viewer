@@ -231,7 +231,7 @@ const expandBatch = async () => {
 const openReader = (page: number) => {
   void router.push({
     path: `/album/${albumId.value}/read/${chapterId.value}`,
-    query: { page: String(page), title: chapterTitle.value },
+    query: { page: String(page), title: chapterTitle.value, total: String(totalCount.value) },
   })
 }
 

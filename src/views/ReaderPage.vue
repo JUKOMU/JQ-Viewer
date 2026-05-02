@@ -74,10 +74,11 @@ const chapterTitle = computed(() => (route.query.title as string) || chapterId.v
 
 // ---- 核心状态 ----
 const isVertical = ref(true)
+const initialTotal = Number(route.query.total) || 0
 const currentIndex = ref(0)
-const totalCount = ref(0)
+const totalCount = ref(initialTotal)
 const imageMap = ref<Map<number, string>>(new Map())  // sortOrder -> dataUrl
-const toolbarVisible = ref(true)
+const toolbarVisible = ref(initialTotal > 0)  // 有预估 total 时立即显示工具栏，否则等数据加载完再显示
 const isDragProgress = ref(false)
 let photoDetail: PhotoDetail | null = null
 let imageReadyListenerHandle: PluginListenerHandle | null = null
@@ -323,6 +324,8 @@ onMounted(async () => {
     totalCount.value = 0
   }
 
+  // 数据加载完成后显示工具栏（如果之前是隐藏的）
+  toolbarVisible.value = true
   resetAutoHide()
 })
 

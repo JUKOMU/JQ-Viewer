@@ -247,7 +247,7 @@ const navigateToFullPreview = () => {
 const onOpenReader = (page: number) => {
   void router.push({
     path: `/album/${albumId.value}/read/${selectedChapterId.value}`,
-    query: { page: String(page), title: albumTitle.value },
+    query: { page: String(page), title: albumTitle.value, total: String(selectedChapterPageCount.value) },
   })
 }
 
@@ -296,7 +296,7 @@ const handleDownload = async () => {
 const startReading = () => {
   void router.push({
     path: `/album/${albumId.value}/read/${selectedChapterId.value}`,
-    query: { title: albumTitle.value },
+    query: { title: albumTitle.value, total: String(selectedChapterPageCount.value) },
   })
 }
 

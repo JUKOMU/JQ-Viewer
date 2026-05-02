@@ -117,3 +117,15 @@ export interface ForumQuery {
     albumId: string
     page: number
 }
+
+// --- 图片预加载与缓存 ---
+
+export interface PreloadResult {
+    cached: number[]   // sortOrders already in cache
+    pending: number[]  // sortOrders being downloaded
+}
+
+export interface CacheCapacityInfo {
+    capacityMb: number
+    usedMb: number
+}

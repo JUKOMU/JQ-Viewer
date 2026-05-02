@@ -70,8 +70,8 @@ import {
   IonSpinner, IonTitle, IonToolbar,
 } from '@ionic/vue'
 import {arrowBack} from 'ionicons/icons'
-import {JmcomicService} from '@/services/JmcomicService'
-import type {PhotoDetail} from '@/services/JmcomicTypes'
+import {getImageUrl, JmcomicService} from '@/services/JmcomicService'
+import type {PhotoDetail, PreloadResult} from '@/services/JmcomicTypes'
 
 const BATCH = 20
 const NEAR_BOTTOM_THRESHOLD = 200
@@ -98,7 +98,7 @@ const allVisible = computed(() => displayCount.value >= totalCount.value)
 const skeletonCount = computed(() => Math.min(totalCount.value || initialTotal || BATCH, BATCH))
 
 let photoDetail: PhotoDetail | null = null
-let previewListenerHandle: PluginListenerHandle | null = null
+let imageReadyListenerHandle: PluginListenerHandle | null = null
 
 // ---- 滚动容器 ----
 const contentRef = ref<InstanceType<typeof IonContent> | null>(null)
@@ -125,10 +125,13 @@ onMounted(async () => {
     return
   }
 
-  previewListenerHandle = await JmcomicService.addPreviewListener(chapterId.value, (img) => {
-    const idx = img.sortOrder - 1
+  imageReadyListenerHandle = await JmcomicService.addImageReadyListener(chapterId.value, (sortOrder) => {
+    const idx = sortOrder - 1
     if (idx >= 0 && idx < slots.value.length) {
-      slots.value[idx] = img
+      slots.value[idx] = {
+        sortOrder,
+        dataUrl: getImageUrl(chapterId.value, sortOrder, 'thumb'),
+      }
     }
   })
 
@@ -140,10 +143,20 @@ onMounted(async () => {
   displayCount.value = firstCount
   loading.value = false
 
-  // 显示加载动画 → 提交下载 → 延迟 → 关闭动画
+  // 提交预加载首批缩略图
   loadingMore.value = true
   const batch = photoDetail.images.slice(0, firstCount)
-  JmcomicService.decryptImageUrls(batch).catch(() => {})
+  const result: PreloadResult = await JmcomicService.preloadImages(chapterId.value, batch, 'thumb')
+  // 已缓存的图片直接填入槽位
+  for (const so of result.cached) {
+    const idx = so - 1
+    if (idx >= 0 && idx < slots.value.length) {
+      slots.value[idx] = {
+        sortOrder: so,
+        dataUrl: getImageUrl(chapterId.value, so, 'thumb'),
+      }
+    }
+  }
   cursor.value = firstCount
 
   await new Promise(r => setTimeout(r, 300))
@@ -153,7 +166,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  previewListenerHandle?.remove()
+  imageReadyListenerHandle?.remove()
 })
 
 // ---- 滚动 ----
@@ -194,11 +207,21 @@ const expandBatch = async () => {
   }
   displayCount.value = newDisplayCount
 
-  // 提交下载（扩槽后才提交，保证事件能正确填充）
+  // 提交预加载（扩槽后才提交，保证事件能正确填充）
   if (cursor.value < totalCount.value) {
     const nextCursor = Math.min(cursor.value + BATCH, totalCount.value)
     const batch = photoDetail.images.slice(cursor.value, nextCursor)
-    JmcomicService.decryptThumbnailUrls(batch).catch(() => {})
+    JmcomicService.preloadImages(chapterId.value, batch, 'thumb').then((result: PreloadResult) => {
+      for (const so of result.cached) {
+        const idx = so - 1
+        if (idx >= 0 && idx < slots.value.length) {
+          slots.value[idx] = {
+            sortOrder: so,
+            dataUrl: getImageUrl(chapterId.value, so, 'thumb'),
+          }
+        }
+      }
+    }).catch(() => {})
     cursor.value = nextCursor
   }
 

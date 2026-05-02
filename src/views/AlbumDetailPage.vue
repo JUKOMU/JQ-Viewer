@@ -70,8 +70,8 @@ import {computed, onMounted, onUnmounted, reactive, ref} from 'vue'
 import {useRoute, useRouter} from 'vue-router'
 import {IonContent, IonPage, toastController} from '@ionic/vue'
 import type {PluginListenerHandle} from '@capacitor/core'
-import {JmcomicService} from '@/services/JmcomicService'
-import type {AlbumDetail, AlbumMeta, CommentItem, PhotoDetail} from '@/services/JmcomicTypes'
+import {getImageUrl, JmcomicService} from '@/services/JmcomicService'
+import type {AlbumDetail, AlbumMeta, CommentItem, PhotoDetail, PreloadResult} from '@/services/JmcomicTypes'
 import AlbumHeader from '@/components/album/AlbumHeader.vue'
 import AlbumInfoTab from '@/components/album/AlbumInfoTab.vue'
 import AlbumChaptersTab from '@/components/album/AlbumChaptersTab.vue'
@@ -118,7 +118,7 @@ const previewImages = ref<PreviewImage[]>([])
 const previewImageTotal = ref(0)
 const previewLoading = ref(false)
 const previewLoadedChapterId = ref('')
-let previewListenerHandle: PluginListenerHandle | null = null
+let imageReadyListenerHandle: PluginListenerHandle | null = null
 
 // ---- 评论 ----
 const comments = ref<CommentItem[]>([])
@@ -187,21 +187,18 @@ const loadPreview = async () => {
   if (!chapterId) return
   if (previewLoadedChapterId.value === chapterId && previewImages.value.length) return
 
-  // 若当前章节已在 photoDetail 中，直接取总数
-  if (photoDetail.value?.id === chapterId) {
-    previewImageTotal.value = photoDetail.value.images.length
-  }
-
-  // 移除旧监听
-  previewListenerHandle?.remove()
-  previewListenerHandle = null
+  imageReadyListenerHandle?.remove()
+  imageReadyListenerHandle = null
 
   previewLoading.value = true
   previewImages.value = []
 
-  // 注册流式监听：每完成一张图就追加到列表
-  previewListenerHandle = await JmcomicService.addPreviewListener(chapterId, (img) => {
-    previewImages.value.push(img)
+  // 注册图片就绪监听：每完成一张图就追加到列表
+  imageReadyListenerHandle = await JmcomicService.addImageReadyListener(chapterId, (sortOrder) => {
+    previewImages.value.push({
+      sortOrder,
+      dataUrl: getImageUrl(chapterId, sortOrder, 'thumb'),
+    })
   })
 
   try {
@@ -210,17 +207,23 @@ const loadPreview = async () => {
     previewImageTotal.value = photo.images.length
 
     const batch = photo.images.slice(0, PREVIEW_BATCH)
-    await JmcomicService.decryptThumbnailUrls(batch)
+    const result: PreloadResult = await JmcomicService.preloadImages(chapterId, batch, 'thumb')
+
+    // 已缓存图片直接加入列表
+    const cachedItems = result.cached.map(so => ({
+      sortOrder: so,
+      dataUrl: getImageUrl(chapterId, so, 'thumb'),
+    }))
+    previewImages.value = cachedItems
+
     previewLoadedChapterId.value = chapterId
   } catch { /* ignore */ } finally {
     previewLoading.value = false
-    previewListenerHandle?.remove()
-    previewListenerHandle = null
   }
 }
 
 onUnmounted(() => {
-  previewListenerHandle?.remove()
+  imageReadyListenerHandle?.remove()
 })
 
 // 跳转全量预览页

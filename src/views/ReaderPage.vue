@@ -50,8 +50,8 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { IonPage } from '@ionic/vue'
 import type { PluginListenerHandle } from '@capacitor/core'
-import { JmcomicService } from '@/services/JmcomicService'
-import type { ImageInfo, PhotoDetail } from '@/services/JmcomicTypes'
+import { getImageUrl, JmcomicService } from '@/services/JmcomicService'
+import type { ImageInfo, PhotoDetail, PreloadResult } from '@/services/JmcomicTypes'
 import ReaderTopToolbar from '@/components/reader/ReaderTopToolbar.vue'
 import ReaderBottomToolbar from '@/components/reader/ReaderBottomToolbar.vue'
 import VerticalScrollView from '@/components/reader/VerticalScrollView.vue'
@@ -77,11 +77,10 @@ const imageMap = ref<Map<number, string>>(new Map())  // sortOrder -> dataUrl
 const toolbarVisible = ref(true)
 const isDragProgress = ref(false)
 let photoDetail: PhotoDetail | null = null
-let previewListenerHandle: PluginListenerHandle | null = null
-let loadedSortOrders = new Set<number>()
+let imageReadyListenerHandle: PluginListenerHandle | null = null
+let loadedSortOrders = new Set<number>()     // 已加载完成的 sortOrder
+let requestedSortOrders = new Set<number>()  // 已提交预加载的 sortOrder（避免重复请求）
 let lastWindowCenter = -1
-let pendingImages: Map<number, string> = new Map()
-let frameScheduled = false
 let triggerRafId = 0
 let autoHideTimer: ReturnType<typeof setTimeout> | null = null
 const verticalViewRef = ref<InstanceType<typeof VerticalScrollView> | null>(null)
@@ -138,26 +137,37 @@ const calcWindow = (center: number): number[] => {
   return result
 }
 
+const applyImageMap = () => {
+  imageMap.value = new Map(imageMap.value)
+}
+
 const updateWindow = (center: number) => {
   if (!photoDetail) return
   const windowOrders = new Set(calcWindow(center))
   const allImages = photoDetail.images
 
-  // 需要新加载的
   const toLoad: ImageInfo[] = []
   for (const so of windowOrders) {
-    if (!loadedSortOrders.has(so)) {
-      const img = allImages.find((i) => i.sortOrder === so)
-      if (img) toLoad.push(img)
+    if (loadedSortOrders.has(so)) continue  // 已在 imageMap 中，跳过
+    const img = allImages.find((i) => i.sortOrder === so)
+    if (!img) continue
+    toLoad.push(img)
+    if (!requestedSortOrders.has(so)) {
+      requestedSortOrders.add(so)
     }
   }
 
-  // 提交加载
   if (toLoad.length > 0) {
-    JmcomicService.decryptImageUrls(toLoad).catch(() => {})
+    JmcomicService.preloadImages(photoDetail.id, toLoad, 'image').then((result: PreloadResult) => {
+      for (const so of result.cached) {
+        imageMap.value.set(so, getImageUrl(photoDetail!.id, so, 'image'))
+        loadedSortOrders.add(so)
+      }
+      applyImageMap()
+    }).catch(() => {})
   }
 
-  // 卸载窗口外的旧图片（保留最大缓存 M 内的）
+  // 卸载窗口外的旧图片
   const cacheMin = Math.max(0, center - Math.floor(M / 2))
   const cacheMax = Math.min(totalCount.value, center + Math.floor(M / 2) + 1)
   const cacheSet = new Set<number>()
@@ -165,14 +175,11 @@ const updateWindow = (center: number) => {
 
   for (const so of loadedSortOrders) {
     if (!cacheSet.has(so)) {
-      const dataUrl = imageMap.value.get(so)
-      if (dataUrl && dataUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(dataUrl)
-      }
       imageMap.value.delete(so)
       loadedSortOrders.delete(so)
     }
   }
+  applyImageMap()
 }
 
 // ---- 页码变更（距离阈值触发） ----
@@ -200,26 +207,12 @@ const onProgressDrag = (page1Based: number) => {
   }
 }
 
-// ---- 图片解密监听（按帧批处理，创建新 Map 触发子组件响应） ----
-const setupPreviewListener = async () => {
-  previewListenerHandle = await JmcomicService.addPreviewListener(chapterId.value, (img) => {
-    imageMap.value.set(img.sortOrder, img.dataUrl)
-    loadedSortOrders.add(img.sortOrder)
-    pendingImages.set(img.sortOrder, img.dataUrl)
-    if (!frameScheduled) {
-      frameScheduled = true
-      triggerRafId = requestAnimationFrame(() => {
-        // 创建新 Map 赋值 ref，引用变更触发子组件 prop 更新
-        const merged = new Map(imageMap.value)
-        for (const [k, v] of pendingImages) {
-          merged.set(k, v)
-        }
-        imageMap.value = merged
-        pendingImages = new Map()
-        frameScheduled = false
-        triggerRafId = 0
-      })
-    }
+// ---- 图片就绪监听 ----
+const setupImageReadyListener = async () => {
+  imageReadyListenerHandle = await JmcomicService.addImageReadyListener(chapterId.value, (sortOrder) => {
+    imageMap.value.set(sortOrder, getImageUrl(chapterId.value, sortOrder, 'image'))
+    loadedSortOrders.add(sortOrder)
+    applyImageMap()
   })
 }
 
@@ -234,6 +227,10 @@ const goBack = () => {
 
 // ---- 生命周期 ----
 onMounted(async () => {
+  // 重置章节级状态
+  loadedSortOrders = new Set()
+  requestedSortOrders = new Set()
+
   try {
     photoDetail = await JmcomicService.getPhoto(chapterId.value)
     totalCount.value = photoDetail.images.length
@@ -243,14 +240,21 @@ onMounted(async () => {
     currentIndex.value = (pageParam > 0 ? pageParam : 1) - 1
 
     // 注册监听
-    await setupPreviewListener()
+    await setupImageReadyListener()
 
     // 初始加载窗口
     const initOrders = calcWindow(currentIndex.value)
     const initImages = photoDetail.images.filter((i) => initOrders.includes(i.sortOrder))
-    await JmcomicService.decryptImageUrls(initImages)
     for (const so of initOrders) {
-      loadedSortOrders.add(so)
+      requestedSortOrders.add(so)
+    }
+    if (initImages.length > 0) {
+      const result = await JmcomicService.preloadImages(photoDetail.id, initImages, 'image')
+      for (const so of result.cached) {
+        imageMap.value.set(so, getImageUrl(photoDetail.id, so, 'image'))
+        loadedSortOrders.add(so)
+      }
+      applyImageMap()
     }
   } catch {
     totalCount.value = 0
@@ -260,15 +264,9 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  previewListenerHandle?.remove()
+  imageReadyListenerHandle?.remove()
   if (triggerRafId) cancelAnimationFrame(triggerRafId)
   if (autoHideTimer) clearTimeout(autoHideTimer)
-  // 释放所有 blob URL
-  for (const [, dataUrl] of imageMap.value) {
-    if (dataUrl && dataUrl.startsWith('blob:')) {
-      URL.revokeObjectURL(dataUrl)
-    }
-  }
 })
 </script>
 

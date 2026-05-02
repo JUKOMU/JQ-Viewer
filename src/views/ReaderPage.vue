@@ -57,9 +57,12 @@ import ReaderBottomToolbar from '@/components/reader/ReaderBottomToolbar.vue'
 import VerticalScrollView from '@/components/reader/VerticalScrollView.vue'
 import HorizontalPageView from '@/components/reader/HorizontalPageView.vue'
 
-const N = 15       // 预加载窗口半径
-const M = 60       // 最大缓存窗口
+const N = 15               // 正常预加载窗口半径
+const N_FAST = 50           // 快速划动方向预加载半径
+const M = 50               // 最大缓存窗口
 const AUTO_HIDE_MS = 3000
+const SPEED_THRESHOLD = 10  // 页/秒，超过视为快速划动
+const EXPAND_EXPIRE_MS = 2000  // 快速划动停止后回退延时
 
 const route = useRoute()
 const router = useRouter()
@@ -83,6 +86,10 @@ let requestedSortOrders = new Set<number>()  // 已提交预加载的 sortOrder�
 let lastWindowCenter = -1
 let triggerRafId = 0
 let autoHideTimer: ReturnType<typeof setTimeout> | null = null
+let expandDirection: 'forward' | 'backward' | null = null
+let lastScrollTime = 0
+let lastScrollIndex = -1
+let revertTimer: ReturnType<typeof setTimeout> | null = null
 const verticalViewRef = ref<InstanceType<typeof VerticalScrollView> | null>(null)
 
 // ---- 工具栏 ----
@@ -129,8 +136,17 @@ const toggleMode = () => {
 // ---- 滑动窗口预加载 ----
 const calcWindow = (center: number): number[] => {
   const result: number[] = []
-  const start = Math.max(0, center - N)
-  const end = Math.min(totalCount.value, center + N + 1)
+  let start: number, end: number
+  if (expandDirection === 'forward') {
+    start = Math.max(0, center - N)
+    end = Math.min(totalCount.value, center + N_FAST + 1)
+  } else if (expandDirection === 'backward') {
+    start = Math.max(0, center - N_FAST)
+    end = Math.min(totalCount.value, center + N + 1)
+  } else {
+    start = Math.max(0, center - N)
+    end = Math.min(totalCount.value, center + N + 1)
+  }
   for (let i = start; i < end; i++) {
     result.push(i + 1)  // sortOrder = index + 1
   }
@@ -139,6 +155,23 @@ const calcWindow = (center: number): number[] => {
 
 const applyImageMap = () => {
   imageMap.value = new Map(imageMap.value)
+}
+
+// 检查扩展方向区间内是否有正在加载的图片
+const hasPendingInRange = (center: number, dir: 'forward' | 'backward'): boolean => {
+  let checkStart: number, checkEnd: number
+  if (dir === 'forward') {
+    checkStart = center + N + 1
+    checkEnd = Math.min(totalCount.value, center + N_FAST + 1)
+  } else {
+    checkStart = Math.max(0, center - N_FAST)
+    checkEnd = center - N
+  }
+  for (let i = checkStart; i < checkEnd; i++) {
+    const so = i + 1
+    if (requestedSortOrders.has(so) && !loadedSortOrders.has(so)) return true
+  }
+  return false
 }
 
 const updateWindow = (center: number) => {
@@ -167,9 +200,11 @@ const updateWindow = (center: number) => {
     }).catch(() => {})
   }
 
-  // 卸载窗口外的旧图片
-  const cacheMin = Math.max(0, center - Math.floor(M / 2))
-  const cacheMax = Math.min(totalCount.value, center + Math.floor(M / 2) + 1)
+  // 卸载窗口外的旧图片（扩展时清理范围覆盖扩展方向）
+  const cleanBackward = expandDirection === 'backward' ? N_FAST : Math.floor(M / 2)
+  const cleanForward = expandDirection === 'forward' ? N_FAST : Math.floor(M / 2)
+  const cacheMin = Math.max(0, center - cleanBackward)
+  const cacheMax = Math.min(totalCount.value, center + cleanForward + 1)
   const cacheSet = new Set<number>()
   for (let i = cacheMin; i < cacheMax; i++) cacheSet.add(i + 1)
 
@@ -188,6 +223,28 @@ const onPageChange = (index: number) => {
   currentIndex.value = index
   resetAutoHide()
 
+  // 划动速度检测
+  const now = performance.now()
+  if (lastScrollIndex >= 0) {
+    const deltaSec = (now - lastScrollTime) / 1000
+    if (deltaSec > 0) {
+      const speed = Math.abs(index - lastScrollIndex) / deltaSec
+      if (speed >= SPEED_THRESHOLD) {
+        const dir: 'forward' | 'backward' = index > lastScrollIndex ? 'forward' : 'backward'
+        if (!hasPendingInRange(index, dir)) {
+          expandDirection = dir
+        }
+        // 刷新回退定时器
+        if (revertTimer) clearTimeout(revertTimer)
+        revertTimer = setTimeout(() => {
+          expandDirection = null
+        }, EXPAND_EXPIRE_MS)
+      }
+    }
+  }
+  lastScrollTime = now
+  lastScrollIndex = index
+
   const threshold = isVertical.value ? 3 : 1
   if (Math.abs(index - lastWindowCenter) >= threshold) {
     lastWindowCenter = index
@@ -201,6 +258,8 @@ const onProgressDrag = (page1Based: number) => {
   if (index < 0 || index >= totalCount.value) return
   currentIndex.value = index
   lastWindowCenter = index
+  expandDirection = null
+  if (revertTimer) { clearTimeout(revertTimer); revertTimer = null }
   updateWindow(index)
   if (isVertical.value) {
     verticalViewRef.value?.scrollToIndex(index)
@@ -230,6 +289,10 @@ onMounted(async () => {
   // 重置章节级状态
   loadedSortOrders = new Set()
   requestedSortOrders = new Set()
+  expandDirection = null
+  lastScrollTime = 0
+  lastScrollIndex = -1
+  if (revertTimer) { clearTimeout(revertTimer); revertTimer = null }
 
   try {
     photoDetail = await JmcomicService.getPhoto(chapterId.value)
@@ -267,6 +330,7 @@ onUnmounted(() => {
   imageReadyListenerHandle?.remove()
   if (triggerRafId) cancelAnimationFrame(triggerRafId)
   if (autoHideTimer) clearTimeout(autoHideTimer)
+  if (revertTimer) clearTimeout(revertTimer)
 })
 </script>
 

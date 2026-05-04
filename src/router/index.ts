@@ -19,13 +19,15 @@ const routes: Array<RouteRecordRaw> = [
   },
   {
     path: '/category',
+    name: 'CategoryPage',
     component: CategoryPage,
-    meta: { menu: true }
+    meta: { menu: true, keepAlive: true }
   },
   {
     path: '/search',
+    name: 'SearchPage',
     component: SearchPage,
-    meta: { menu: true }
+    meta: { menu: true, keepAlive: true }
   },
   {
     path: '/favorite',

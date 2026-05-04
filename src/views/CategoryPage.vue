@@ -52,7 +52,9 @@
 </template>
 
 <script setup lang="ts">
-import {computed, nextTick, onMounted, ref} from 'vue'
+import {computed, nextTick, onActivated, onDeactivated, onMounted, ref} from 'vue'
+
+defineOptions({ name: 'CategoryPage' })
 import {useRouter} from 'vue-router'
 import {alertController, IonContent, IonPage} from '@ionic/vue'
 import type {ScrollCustomEvent} from '@ionic/core'
@@ -349,6 +351,20 @@ const jumpToPage = async () => {
 
   await alert.present()
 }
+
+const savedScrollTop = ref(0)
+
+onDeactivated(() => {
+  savedScrollTop.value = scrollElementRef.value?.scrollTop ?? 0
+})
+
+onActivated(async () => {
+  await nextTick()
+  const scrollEl = scrollElementRef.value ?? await resolveScrollElement()
+  if (scrollEl && savedScrollTop.value > 0) {
+    scrollEl.scrollTop = savedScrollTop.value
+  }
+})
 
 onMounted(() => {
   void resolveScrollElement()

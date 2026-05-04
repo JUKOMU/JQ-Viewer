@@ -1,17 +1,50 @@
 <template>
   <ion-app>
     <MainMenu content-id="main-content" :disabled="route.meta.menu !== true"></MainMenu>
-    <ion-router-outlet id="main-content"/>
+    <div id="main-content" class="ion-page-container">
+      <router-view v-slot="{ Component }">
+        <transition :name="transitionName" mode="out-in">
+          <keep-alive :include="keepAliveNames">
+            <component :is="Component" />
+          </keep-alive>
+        </transition>
+      </router-view>
+    </div>
   </ion-app>
 </template>
 
 <script setup lang="ts">
-import {createGesture, IonApp, IonRouterOutlet, menuController, type Gesture} from '@ionic/vue';
-import {onBeforeUnmount, onMounted} from 'vue';
+import {createGesture, IonApp, menuController, type Gesture} from '@ionic/vue';
+import {onBeforeUnmount, onMounted, computed, ref} from 'vue';
+import {useRoute, useRouter} from 'vue-router'
 import MainMenu from "@/components/menu/MainMenu.vue";
-import {useRoute} from "vue-router"
 
 const route = useRoute()
+const router = useRouter()
+
+const routeStack = ref<string[]>([])
+const isBack = ref(false)
+
+router.beforeEach((to, from) => {
+  const idx = routeStack.value.lastIndexOf(to.fullPath)
+  if (idx >= 0) {
+    isBack.value = true
+    routeStack.value = routeStack.value.slice(0, idx)
+  } else {
+    isBack.value = false
+    if (from.fullPath) routeStack.value.push(from.fullPath)
+  }
+})
+
+const transitionName = computed(() => isBack.value ? 'page-slide-back' : 'page-slide-forward')
+
+const keepAliveNames = computed(() =>
+  router.getRoutes()
+    .filter(r => r.meta?.keepAlive)
+    .map(r => String(r.name ?? ''))
+    .filter(Boolean)
+)
+
 let menuOpenGesture: Gesture | undefined
 let menuCloseGesture: Gesture | undefined
 let isMenuOpen = false
@@ -93,3 +126,44 @@ onBeforeUnmount(() => {
   menuCloseGesture = undefined
 })
 </script>
+
+<style>
+.ion-page-container {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  contain: layout size style;
+  z-index: 0;
+  overflow: hidden;
+}
+
+/* 页面过渡动画 */
+.page-slide-forward-enter-active,
+.page-slide-forward-leave-active,
+.page-slide-back-enter-active,
+.page-slide-back-leave-active {
+  transition: transform 0.1s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease;
+}
+
+/* 前进：页面从右滑入，旧页向左退出 */
+.page-slide-forward-enter-from {
+  transform: translateX(36px);
+  opacity: 0;
+}
+.page-slide-forward-leave-to {
+  transform: translateX(-24px);
+  opacity: 0;
+}
+
+/* 后退：页面从左滑入，旧页向右退出 */
+.page-slide-back-enter-from {
+  transform: translateX(-24px);
+  opacity: 0;
+}
+.page-slide-back-leave-to {
+  transform: translateX(36px);
+  opacity: 0;
+}
+</style>

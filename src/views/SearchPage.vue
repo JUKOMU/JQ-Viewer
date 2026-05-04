@@ -61,7 +61,9 @@
 </template>
 
 <script setup lang="ts">
-import {computed, nextTick, onMounted, ref, watch} from 'vue'
+import {computed, nextTick, onActivated, onDeactivated, onMounted, ref, watch} from 'vue'
+
+defineOptions({ name: 'SearchPage' })
 import {useRoute, useRouter} from 'vue-router'
 import {alertController, IonContent, IonPage} from '@ionic/vue'
 import type {ScrollCustomEvent} from '@ionic/core'
@@ -407,9 +409,34 @@ const jumpToPage = async () => {
   await alert.present()
 }
 
+const lastSearchedQuery = ref<SearchQuery | null>(null)
+
+function queryEqual(a: SearchQuery, b: SearchQuery): boolean {
+  return a.keyword === b.keyword && a.orderBy === b.orderBy &&
+    a.time === b.time && a.searchMainTag === b.searchMainTag &&
+    a.page === b.page
+}
+
 watch(currentQuery, (query) => {
+  if (route.name !== 'SearchPage') return
+  if (lastSearchedQuery.value && queryEqual(query, lastSearchedQuery.value)) return
+  lastSearchedQuery.value = { ...query }
   void resetWithPage(query)
 }, {immediate: true})
+
+const savedScrollTop = ref(0)
+
+onDeactivated(() => {
+  savedScrollTop.value = scrollElementRef.value?.scrollTop ?? 0
+})
+
+onActivated(async () => {
+  await nextTick()
+  const scrollEl = scrollElementRef.value ?? await resolveScrollElement()
+  if (scrollEl && savedScrollTop.value > 0) {
+    scrollEl.scrollTop = savedScrollTop.value
+  }
+})
 
 onMounted(() => {
   void resolveScrollElement()

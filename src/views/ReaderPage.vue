@@ -46,7 +46,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { IonPage } from '@ionic/vue'
 import type { PluginListenerHandle } from '@capacitor/core'
@@ -286,7 +286,7 @@ const goBack = () => {
 }
 
 // ---- 生命周期 ----
-onMounted(async () => {
+onMounted(() => {
   // 重置章节级状态
   loadedSortOrders = new Set()
   requestedSortOrders = new Set()
@@ -295,38 +295,47 @@ onMounted(async () => {
   lastScrollIndex = -1
   if (revertTimer) { clearTimeout(revertTimer); revertTimer = null }
 
-  try {
-    photoDetail = await JmcomicService.getPhoto(chapterId.value)
-    totalCount.value = photoDetail.images.length
+  JmcomicService.getPhoto(chapterId.value).then((pd) => {
+    photoDetail = pd
 
-    // 初始定位
+    // 初始定位（必须在 totalCount 之前，防止 watch 用旧值）
     const pageParam = Number(route.query.page)
     currentIndex.value = (pageParam > 0 ? pageParam : 1) - 1
 
-    // 注册监听
-    await setupImageReadyListener()
+    totalCount.value = pd.images.length
 
-    // 初始加载窗口
+    // 立即显示工具栏和骨架屏
+    toolbarVisible.value = true
+    resetAutoHide()
+
+    // 注册监听（fire-and-forget）
+    setupImageReadyListener().catch(() => {})
+
+    // 初始加载窗口（fire-and-forget，图片通过 listener 渐进填充）
     const initOrders = calcWindow(currentIndex.value)
-    const initImages = photoDetail.images.filter((i) => initOrders.includes(i.sortOrder))
+    const initImages = pd.images.filter((i) => initOrders.includes(i.sortOrder))
     for (const so of initOrders) {
       requestedSortOrders.add(so)
     }
     if (initImages.length > 0) {
-      const result = await JmcomicService.preloadImages(photoDetail.id, initImages, 'image')
-      for (const so of result.cached) {
-        imageMap.value.set(so, getImageUrl(photoDetail.id, so, 'image'))
-        loadedSortOrders.add(so)
-      }
-      applyImageMap()
+      JmcomicService.preloadImages(pd.id, initImages, 'image').then((result) => {
+        for (const so of result.cached) {
+          imageMap.value.set(so, getImageUrl(pd.id, so, 'image'))
+          loadedSortOrders.add(so)
+        }
+        applyImageMap()
+      }).catch(() => {})
     }
-  } catch {
-    totalCount.value = 0
-  }
 
-  // 数据加载完成后显示工具栏（如果之前是隐藏的）
-  toolbarVisible.value = true
-  resetAutoHide()
+    // 覆盖 totalCount 未变化（route.query.total == 实际总页数）导致 VerticalScrollView watch 不触发的情况
+    nextTick(() => {
+      if (isVertical.value) {
+        verticalViewRef.value?.scrollToIndex(currentIndex.value)
+      }
+    })
+  }).catch(() => {
+    totalCount.value = 0
+  })
 })
 
 onUnmounted(() => {

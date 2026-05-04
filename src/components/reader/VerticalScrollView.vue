@@ -109,6 +109,7 @@ const findCurrentIndex = (st: number): number => {
 let scrollRafId: number | null = null
 const onScroll = () => {
   if (!containerRef.value) return
+  if (isAdjustingScroll) return // 程序性修正滚动不触发页码检测
   scrollTop.value = containerRef.value.scrollTop
   if (scrollRafId !== null) return
   scrollRafId = requestAnimationFrame(() => {
@@ -125,6 +126,7 @@ const onScroll = () => {
 let trackedIndex = -1
 let trackedTop = 0
 let initialScrollDone = false
+let isAdjustingScroll = false // 标记程序性 scrollTop 修正，阻止 onScroll 误判页码
 
 onMounted(() => {
   nextTick(() => recalcImagePositions())
@@ -167,9 +169,12 @@ watch(
         const newTop = imageTops.value[trackedIndex]
         const delta = newTop - trackedTop
         if (delta !== 0 && containerRef.value) {
+          isAdjustingScroll = true
+          if (scrollRafId !== null) { cancelAnimationFrame(scrollRafId); scrollRafId = null }
           containerRef.value.scrollTop += delta
           scrollTop.value = containerRef.value.scrollTop
           trackedTop = newTop
+          isAdjustingScroll = false
         }
       }
     })
@@ -182,6 +187,7 @@ const scrollToIndex = (index: number) => {
   const targetEl = imageEls.value[index]
   if (!targetEl || !containerRef.value) return
   trackedIndex = index
+  lastEmitIndex.value = index // 先设防护：防止 scrollIntoView 触发的 onScroll 误 emit
   targetEl.scrollIntoView({ block: 'start', behavior: 'instant' })
   trackedTop = containerRef.value.scrollTop
   scrollTop.value = trackedTop

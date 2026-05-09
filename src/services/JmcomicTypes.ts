@@ -171,6 +171,7 @@ export interface DownloadTask {
     createdAt: number
     completedAt?: number
     error?: string
+    speed?: number
 }
 
 export interface DownloadTasksResult {
@@ -187,4 +188,5 @@ export interface DownloadProgressEvent {
     totalPages: number
     status: DownloadStatus
     error?: string
+    speed?: number
 }

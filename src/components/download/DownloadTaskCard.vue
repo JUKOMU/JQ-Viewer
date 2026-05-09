@@ -20,6 +20,7 @@
           {{ task.downloadedPages }}/{{ task.totalPages }}
           <span class="progress-pct">{{ progressPct }}%</span>
         </div>
+        <div v-if="speedText" class="speed-text">{{ speedText }}</div>
       </template>
       <div v-else-if="task.status === 'queued'" class="status-tag queued">排队中</div>
       <div v-else-if="task.status === 'completed'" class="status-tag completed">共 {{ task.totalPages }} 页</div>
@@ -75,13 +76,25 @@ const progressPct = computed(() => {
   if (props.task.totalPages <= 0) return 0
   return Math.round((props.task.downloadedPages / props.task.totalPages) * 100)
 })
+
+const speedText = computed(() => {
+  const s = props.task.speed
+  if (!s || s <= 0) return ''
+  if (s >= 1024 * 1024) {
+    return (s / (1024 * 1024)).toFixed(1) + ' MB/s'
+  }
+  if (s >= 1024) {
+    return (s / 1024).toFixed(1) + ' KB/s'
+  }
+  return s + ' B/s'
+})
 </script>
 
 <style scoped>
 .card {
   display: flex;
   gap: 12px;
-  padding: 12px;
+  padding: 2px 8px;
   background: #fffaf6;
   border-radius: 12px;
   border: 1px solid rgb(245 210 188 / 0.5);
@@ -152,6 +165,12 @@ const progressPct = computed(() => {
 .progress-pct {
   color: #f28752;
   margin-left: 6px;
+}
+
+.speed-text {
+  font-size: 11px;
+  color: #b89a84;
+  margin-top: 2px;
 }
 
 .status-tag {

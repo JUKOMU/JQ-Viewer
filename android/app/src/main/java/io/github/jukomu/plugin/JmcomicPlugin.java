@@ -4,8 +4,11 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import com.getcapacitor.*;
 import com.getcapacitor.annotation.CapacitorPlugin;
-import io.github.jukomu.jmcomic.api.client.DownloadRequest;
-import io.github.jukomu.jmcomic.api.client.DownloadResult;
+import io.github.jukomu.jmcomic.api.download.DownloadProgress;
+import io.github.jukomu.jmcomic.api.download.DownloadResult;
+import io.github.jukomu.jmcomic.api.download.enums.TaskState;
+import io.github.jukomu.jmcomic.api.download.task.BaseDownloadTask;
+import io.github.jukomu.jmcomic.api.download.task.TaskObserver;
 import io.github.jukomu.jmcomic.api.enums.*;
 import io.github.jukomu.jmcomic.api.model.*;
 import io.github.jukomu.jmcomic.core.JmComic;
@@ -22,11 +25,10 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.BlockingQueue;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -52,17 +54,18 @@ public class JmcomicPlugin extends Plugin {
 
     // ---- 下载相关 ----
     private DownloadDatabase downloadDb;
-    private final ExecutorService downloadQueueExecutor = Executors.newSingleThreadExecutor();
-    private final BlockingQueue<String> downloadQueue = new LinkedBlockingQueue<>();
-    private final Map<String, AtomicBoolean> cancelFlags = new ConcurrentHashMap<>();
+    /** albumId_chapterId → library taskId */
+    private final Map<String, String> taskIdMap = new ConcurrentHashMap<>();
+    /** library taskId → albumId_chapterId */
+    private final Map<String, String> reverseTaskIdMap = new ConcurrentHashMap<>();
+    /** 在 async 块映射 taskId 之前到达的取消请求 */
+    private final Set<String> pendingCancel = ConcurrentHashMap.newKeySet();
 
     @Override
     public void load() {
         downloadDb = DownloadDatabase.getInstance(getContext());
         FileStorage.getInstance().init(getContext(), downloadDb);
         downloadDb.validateOnStartup(FileStorage.getInstance().getBaseDir());
-        // 启动下载队列消费者
-        downloadQueueExecutor.submit(this::processDownloadQueue);
     }
 
     private synchronized JmApiClient getClient() {
@@ -375,8 +378,82 @@ public class JmcomicPlugin extends Plugin {
             downloadDb.insertTask(taskId, albumId, chapterId,
                     albumTitle, chapterTitle, coverUrl);
 
-            // 加入队列
-            downloadQueue.put(taskId);
+            // 异步执行：获取 Photo → 创建任务 → 提交到 DownloadManager
+            imageExecutor.submit(() -> {
+                try {
+                    JmApiClient client = getClient();
+                    JmPhoto photo = client.getPhoto(chapterId);
+                    List<JmImage> images = photo.getImages();
+
+                    // 写入 images 表
+                    downloadDb.insertImages(taskId, images);
+
+                    // 更新任务详情
+                    downloadDb.updateTaskDetail(taskId, images.size(),
+                            photo.getAuthor(), new org.json.JSONArray(photo.getTags()).toString());
+
+                    // 创建目录 + meta.json
+                    java.io.File chapterDir = FileStorage.getInstance()
+                            .ensureChapterDir(albumId, chapterId);
+                    FileStorage.getInstance().refreshMappings(albumId, chapterId, downloadDb);
+
+                    org.json.JSONObject metaJson = new org.json.JSONObject();
+                    metaJson.put("albumId", albumId);
+                    metaJson.put("chapterId", chapterId);
+                    metaJson.put("title", chapterTitle);
+                    metaJson.put("author", photo.getAuthor());
+                    metaJson.put("tags", new org.json.JSONArray(photo.getTags()));
+                    metaJson.put("totalPages", images.size());
+                    org.json.JSONArray metaImages = new org.json.JSONArray();
+                    for (JmImage img : images) {
+                        org.json.JSONObject im = new org.json.JSONObject();
+                        im.put("sortOrder", img.getSortOrder());
+                        im.put("filename", img.getFilename());
+                        im.put("photoId", img.getPhotoId());
+                        metaImages.put(im);
+                    }
+                    metaJson.put("images", metaImages);
+                    FileStorage.getInstance().saveMeta(albumId, chapterId, metaJson);
+
+                    // 使用库的任务系统创建下载任务
+                    Path chapterPath = chapterDir.toPath();
+                    AbstractJmClient abstractClient = (AbstractJmClient) client;
+                    BaseDownloadTask task = abstractClient.createDownloadTask(photo, chapterPath);
+
+                    // 记录映射
+                    String libTaskId = task.getTaskId();
+                    taskIdMap.put(taskId, libTaskId);
+                    reverseTaskIdMap.put(libTaskId, taskId);
+
+                    // 注册观察者
+                    task.addObserver(new DownloadTaskObserver(taskId, albumId, chapterId, images.size()));
+
+                    // 更新 DB → downloading
+                    downloadDb.updateStatus(taskId, STATUS_DOWNLOADING);
+
+                    // 推送初始进度
+                    pushDownloadProgress(taskId, albumId, chapterId, 0, images.size(),
+                            STATUS_DOWNLOADING, null);
+
+                    // 检查是否有在映射前到达的取消请求
+                    if (pendingCancel.remove(taskId)) {
+                        // 取消已请求，直接清理不再提交
+                        FileStorage.getInstance().deleteChapter(albumId, chapterId);
+                        downloadDb.deleteImages(taskId);
+                        downloadDb.deleteTask(taskId);
+                        cleanupTaskMapping(taskId);
+                        return;
+                    }
+
+                    // 提交到 DownloadManager
+                    abstractClient.downloadManager().submit(task);
+                } catch (Exception e) {
+                    downloadDb.updateFailed(taskId, 0, e.getMessage());
+                    pushDownloadProgress(taskId, albumId, chapterId, 0, 0,
+                            STATUS_FAILED, e.getMessage());
+                    cleanupTaskMapping(taskId);
+                }
+            });
 
             JSObject ret = new JSObject();
             ret.put("taskId", taskId);
@@ -424,16 +501,22 @@ public class JmcomicPlugin extends Plugin {
             String status = task.optString("status");
 
             if (STATUS_QUEUED.equals(status)) {
-                downloadQueue.remove(taskId);
+                // 还未提交到库，直接从 DB 清理
+                pendingCancel.remove(taskId);
                 downloadDb.deleteImages(taskId);
                 downloadDb.deleteTask(taskId);
+                cleanupTaskMapping(taskId);
             } else if (STATUS_DOWNLOADING.equals(status)) {
-                // 设置取消标记，withProgress 回调中检测
-                AtomicBoolean flag = cancelFlags.get(taskId);
-                if (flag != null) {
-                    flag.set(true);
+                // 通过库的 DownloadManager 取消
+                String libTaskId = taskIdMap.get(taskId);
+                if (libTaskId != null) {
+                    JmApiClient client = getClient();
+                    ((AbstractJmClient) client).downloadManager().cancel(libTaskId);
+                } else {
+                    // async 块尚未映射 taskId，加入 pendingCancel 等待其检查
+                    pendingCancel.add(taskId);
                 }
-                // 等待当前任务结束后由队列消费者清理
+                // 清理由 Observer.onStateChanged(CANCELLED) 处理
             } else {
                 // completed/failed → 等同于删除
                 String albumId = task.getString("albumId");
@@ -441,6 +524,7 @@ public class JmcomicPlugin extends Plugin {
                 FileStorage.getInstance().deleteChapter(albumId, chapterId);
                 downloadDb.deleteImages(taskId);
                 downloadDb.deleteTask(taskId);
+                cleanupTaskMapping(taskId);
             }
 
             JSObject ret = new JSObject();
@@ -463,9 +547,15 @@ public class JmcomicPlugin extends Plugin {
 
             String taskId = albumId + "_" + chapterId;
 
-            // 先从队列中移除（如果存在）
-            downloadQueue.remove(taskId);
-            cancelFlags.remove(taskId);
+            // 清理 pendingCancel（如果存在）
+            pendingCancel.remove(taskId);
+
+            // 如果任务正在下载中，先通过库取消
+            String libTaskId = taskIdMap.get(taskId);
+            if (libTaskId != null) {
+                JmApiClient client = getClient();
+                ((AbstractJmClient) client).downloadManager().cancel(libTaskId);
+            }
 
             // 清理文件
             FileStorage.getInstance().deleteChapter(albumId, chapterId);
@@ -473,6 +563,7 @@ public class JmcomicPlugin extends Plugin {
             // 清理 DB
             downloadDb.deleteImages(taskId);
             downloadDb.deleteTask(taskId);
+            cleanupTaskMapping(taskId);
 
             JSObject ret = new JSObject();
             ret.put("success", true);
@@ -534,141 +625,117 @@ public class JmcomicPlugin extends Plugin {
         }
     }
 
-    // ---- 下载队列消费者 ----
+    // ---- TaskObserver：监听库任务状态/进度，同步到 DB 并推送到 JS ----
 
-    private void processDownloadQueue() {
-        while (true) {
-            String taskId;
-            try {
-                taskId = downloadQueue.take();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return;
+    private class DownloadTaskObserver implements TaskObserver {
+        private final String ourTaskId;
+        private final String albumId;
+        private final String chapterId;
+        private final int totalImages;
+        private final AtomicBoolean finalized = new AtomicBoolean(false);
+        private long lastBytes = 0;
+        private long lastTimestamp = 0;
+
+        DownloadTaskObserver(String ourTaskId, String albumId, String chapterId, int totalImages) {
+            this.ourTaskId = ourTaskId;
+            this.albumId = albumId;
+            this.chapterId = chapterId;
+            this.totalImages = totalImages;
+            this.lastTimestamp = System.currentTimeMillis();
+        }
+
+        private boolean markFinalized() {
+            return finalized.compareAndSet(false, true);
+        }
+
+        @Override
+        public void onStateChanged(BaseDownloadTask task, TaskState newState) {
+            if (newState.isTerminal() && !markFinalized()) return;
+
+            if (newState == TaskState.COMPLETED) {
+                Integer firstSO = FileStorage.getInstance()
+                        .getFirstImageSortOrder(albumId, chapterId);
+                downloadDb.updateCompleted(ourTaskId, totalImages,
+                        firstSO != null ? firstSO : 1);
+                pushDownloadProgress(ourTaskId, albumId, chapterId,
+                        totalImages, totalImages, STATUS_COMPLETED, null);
+                cleanupTaskMapping(ourTaskId);
+            } else if (newState == TaskState.FAILED) {
+                downloadDb.updateFailed(ourTaskId, 0, "下载失败");
+                pushDownloadProgress(ourTaskId, albumId, chapterId,
+                        0, totalImages, STATUS_FAILED, "下载失败");
+                cleanupTaskMapping(ourTaskId);
+            } else if (newState == TaskState.CANCELLED) {
+                FileStorage.getInstance().deleteChapter(albumId, chapterId);
+                downloadDb.deleteImages(ourTaskId);
+                downloadDb.deleteTask(ourTaskId);
+                pushDownloadProgress(ourTaskId, albumId, chapterId,
+                        0, totalImages, STATUS_FAILED, "已取消");
+                cleanupTaskMapping(ourTaskId);
+            } else if (newState == TaskState.COMPLETED_WITH_ERRORS) {
+                DownloadResult result = task.getCurrentDownloadResult();
+                int failed = result.getFailedTasks().size();
+                int succeeded = totalImages - failed;
+                downloadDb.updateFailed(ourTaskId, succeeded,
+                        failed + "/" + totalImages + " 张图片下载失败");
+                pushDownloadProgress(ourTaskId, albumId, chapterId,
+                        succeeded, totalImages, STATUS_FAILED,
+                        failed + "/" + totalImages + " 张图片下载失败");
+                cleanupTaskMapping(ourTaskId);
             }
+        }
 
-            org.json.JSONObject taskObj = downloadDb.getTask(taskId);
-            if (taskObj == null) continue;
+        @Override
+        public void onProgressUpdate(BaseDownloadTask task, DownloadProgress progress) {
+            int completed = progress.completedImages();
+            if (completed > 0) {
+                long now = System.currentTimeMillis();
+                long currentBytes = progress.downloadedBytes();
+                long speed = 0;
+                if (lastBytes > 0 && now > lastTimestamp) {
+                    speed = (currentBytes - lastBytes) * 1000 / (now - lastTimestamp);
+                }
+                lastBytes = currentBytes;
+                lastTimestamp = now;
 
-            String albumId;
-            String chapterId;
-            try {
-                albumId = taskObj.getString("albumId");
-                chapterId = taskObj.getString("chapterId");
-            } catch (Exception e) {
-                continue;
+                downloadDb.updateProgress(ourTaskId, completed);
+                pushDownloadProgress(ourTaskId, albumId, chapterId,
+                        completed, totalImages, STATUS_DOWNLOADING, null, speed);
             }
+        }
 
-            // 设置取消标记
-            AtomicBoolean cancelled = new AtomicBoolean(false);
-            cancelFlags.put(taskId, cancelled);
+        @Override
+        public void onFinished(BaseDownloadTask task, DownloadResult result) {
+            // 终态处理已在 onStateChanged 中完成
+        }
 
-            try {
-                // 获取 Photo
-                JmApiClient client = getClient();
-                JmPhoto photo = client.getPhoto(chapterId);
-                List<JmImage> images = photo.getImages();
+        @Override
+        public void onError(BaseDownloadTask task, Exception e) {
+            if (!markFinalized()) return;
+            downloadDb.updateFailed(ourTaskId, 0, e.getMessage());
+            pushDownloadProgress(ourTaskId, albumId, chapterId,
+                    0, totalImages, STATUS_FAILED, e.getMessage());
+            cleanupTaskMapping(ourTaskId);
+        }
+    }
 
-                // 写入 images 表
-                downloadDb.insertImages(taskId, images);
-
-                // 更新任务详情
-                downloadDb.updateTaskDetail(taskId, images.size(),
-                        photo.getAuthor(), new org.json.JSONArray(photo.getTags()).toString());
-                downloadDb.updateStatus(taskId, STATUS_DOWNLOADING);
-
-                // 创建目录 + meta.json
-                java.io.File chapterDir = FileStorage.getInstance()
-                        .ensureChapterDir(albumId, chapterId);
-                FileStorage.getInstance().refreshMappings(albumId, chapterId, downloadDb);
-
-                org.json.JSONObject metaJson = new org.json.JSONObject();
-                metaJson.put("albumId", albumId);
-                metaJson.put("chapterId", chapterId);
-                metaJson.put("title", taskObj.getString("chapterTitle"));
-                metaJson.put("author", photo.getAuthor());
-                metaJson.put("tags", new org.json.JSONArray(photo.getTags()));
-                metaJson.put("totalPages", images.size());
-                org.json.JSONArray metaImages = new org.json.JSONArray();
-                for (JmImage img : images) {
-                    org.json.JSONObject im = new org.json.JSONObject();
-                    im.put("sortOrder", img.getSortOrder());
-                    im.put("filename", img.getFilename());
-                    im.put("photoId", img.getPhotoId());
-                    metaImages.put(im);
-                }
-                metaJson.put("images", metaImages);
-                FileStorage.getInstance().saveMeta(albumId, chapterId, metaJson);
-
-                // 推送初始进度
-                pushDownloadProgress(taskId, albumId, chapterId, 0, images.size(),
-                        STATUS_DOWNLOADING, null);
-
-                // 使用库的 download(JmPhoto) 进行下载
-                Path chapterPath = chapterDir.toPath();
-                int[] lastCompleted = {0};
-
-                DownloadRequest req = client.download(photo)
-                        .withPath(chapterPath)
-                        .withExecutor(imageExecutor)
-                        .withProgress(progress -> {
-                            if (cancelled.get()) return;
-                            int completed = progress.completedImages();
-                            if (completed > lastCompleted[0]) {
-                                lastCompleted[0] = completed;
-                                downloadDb.updateProgress(taskId, completed);
-                                pushDownloadProgress(taskId, albumId, chapterId,
-                                        completed, images.size(), STATUS_DOWNLOADING, null);
-                            }
-                        });
-
-                DownloadResult result = req.execute();
-
-                if (cancelled.get()) {
-                    // 取消：清理文件+DB
-                    FileStorage.getInstance().deleteChapter(albumId, chapterId);
-                    downloadDb.deleteImages(taskId);
-                    downloadDb.deleteTask(taskId);
-                    continue;
-                }
-
-                if (result.isAllSuccess()) {
-                    Integer firstSO = FileStorage.getInstance()
-                            .getFirstImageSortOrder(albumId, chapterId);
-                    downloadDb.updateCompleted(taskId, images.size(),
-                            firstSO != null ? firstSO : 1);
-                    pushDownloadProgress(taskId, albumId, chapterId,
-                            images.size(), images.size(), STATUS_COMPLETED, null);
-                } else {
-                    int failed = result.getFailedTasks().size();
-                    int succeeded = images.size() - failed;
-                    downloadDb.updateFailed(taskId, succeeded,
-                            failed + "/" + images.size() + " 张图片下载失败");
-                    pushDownloadProgress(taskId, albumId, chapterId,
-                            succeeded, images.size(), STATUS_FAILED,
-                            failed + "/" + images.size() + " 张图片下载失败");
-                }
-            } catch (Exception e) {
-                if (!cancelled.get()) {
-                    downloadDb.updateFailed(taskId, 0, e.getMessage());
-                    pushDownloadProgress(taskId, albumId, chapterId,
-                            0, 0, STATUS_FAILED, e.getMessage());
-                } else {
-                    // 取消时清理
-                    try {
-                        FileStorage.getInstance().deleteChapter(albumId, chapterId);
-                    } catch (Exception ignored) {}
-                    downloadDb.deleteImages(taskId);
-                    downloadDb.deleteTask(taskId);
-                }
-            } finally {
-                cancelFlags.remove(taskId);
-            }
+    private void cleanupTaskMapping(String ourTaskId) {
+        String libTaskId = taskIdMap.remove(ourTaskId);
+        if (libTaskId != null) {
+            reverseTaskIdMap.remove(libTaskId);
         }
     }
 
     private void pushDownloadProgress(String taskId, String albumId, String chapterId,
                                       int downloadedPages, int totalPages,
                                       String status, String error) {
+        pushDownloadProgress(taskId, albumId, chapterId, downloadedPages, totalPages,
+                status, error, 0);
+    }
+
+    private void pushDownloadProgress(String taskId, String albumId, String chapterId,
+                                      int downloadedPages, int totalPages,
+                                      String status, String error, long speed) {
         JSObject data = new JSObject();
         data.put("taskId", taskId);
         data.put("albumId", albumId);
@@ -678,6 +745,9 @@ public class JmcomicPlugin extends Plugin {
         data.put("status", status);
         if (error != null) {
             data.put("error", error);
+        }
+        if (speed > 0) {
+            data.put("speed", speed);
         }
         notifyListeners("downloadProgress", data);
     }

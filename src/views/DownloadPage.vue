@@ -144,6 +144,7 @@ onMounted(async () => {
       task.downloadedPages = data.downloadedPages
       task.totalPages = data.totalPages
       task.status = 'downloading'
+      task.speed = data.speed
       OfflineDownloadService.updateProgress(data.taskId, data.downloadedPages, data.totalPages)
     } else if (data.status === 'completed') {
       task.status = 'completed'
@@ -185,9 +186,7 @@ const onCancel = async (task: DownloadTask) => {
 
 const onRetry = async (task: DownloadTask) => {
   try {
-    // 先删除旧任务
-    await JmcomicService.deleteDownloaded(task.albumId, task.chapterId)
-    // 重新提交
+    // 不删除已有文件——库的 ImageDownloadTask 会自动跳过已存在的文件，仅下载缺失图片
     const { taskId } = await JmcomicService.downloadChapter(
       task.albumId, task.chapterId,
       task.albumTitle, task.chapterTitle, task.coverUrl,

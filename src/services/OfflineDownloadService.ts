@@ -12,7 +12,11 @@ const readTasks = (): DownloadTask[] => {
 }
 
 const writeTasks = (tasks: DownloadTask[]) => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks))
+    try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks))
+    } catch {
+        // localStorage 满或不可用，静默丢弃
+    }
 }
 
 export const OfflineDownloadService = {

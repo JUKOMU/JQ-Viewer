@@ -4,6 +4,8 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import com.getcapacitor.*;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import io.github.jukomu.jmcomic.api.client.DownloadRequest;
+import io.github.jukomu.jmcomic.api.client.DownloadResult;
 import io.github.jukomu.jmcomic.api.enums.*;
 import io.github.jukomu.jmcomic.api.model.*;
 import io.github.jukomu.jmcomic.core.JmComic;
@@ -11,13 +13,21 @@ import io.github.jukomu.jmcomic.core.client.AbstractJmClient;
 import io.github.jukomu.jmcomic.core.client.impl.JmApiClient;
 import io.github.jukomu.jmcomic.core.config.JmConfiguration;
 import io.github.jukomu.jmcomic.core.crypto.JmImageTool;
+import io.github.jukomu.storage.DownloadDatabase;
+import io.github.jukomu.storage.FileStorage;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * @author JUKOMU
@@ -29,10 +39,31 @@ import java.util.concurrent.Executors;
 public class JmcomicPlugin extends Plugin {
     private static final String SEARCH_COVER_SIZE = "_3x4";
 
+    // ---- 下载状态常量 ----
+    private static final String STATUS_QUEUED = "queued";
+    private static final String STATUS_DOWNLOADING = "downloading";
+    private static final String STATUS_COMPLETED = "completed";
+    private static final String STATUS_FAILED = "failed";
+
     private volatile JmApiClient sharedClient;
     private final ExecutorService imageExecutor = Executors.newFixedThreadPool(6);
     private static final int THUMBNAIL_MAX_WIDTH = 300;
     private static final int THUMBNAIL_JPEG_QUALITY = 70;
+
+    // ---- 下载相关 ----
+    private DownloadDatabase downloadDb;
+    private final ExecutorService downloadQueueExecutor = Executors.newSingleThreadExecutor();
+    private final BlockingQueue<String> downloadQueue = new LinkedBlockingQueue<>();
+    private final Map<String, AtomicBoolean> cancelFlags = new ConcurrentHashMap<>();
+
+    @Override
+    public void load() {
+        downloadDb = DownloadDatabase.getInstance(getContext());
+        FileStorage.getInstance().init(getContext(), downloadDb);
+        downloadDb.validateOnStartup(FileStorage.getInstance().getBaseDir());
+        // 启动下载队列消费者
+        downloadQueueExecutor.submit(this::processDownloadQueue);
+    }
 
     private synchronized JmApiClient getClient() {
         if (sharedClient == null) {
@@ -133,6 +164,27 @@ public class JmcomicPlugin extends Plugin {
             JSObject ret = new JSObject();
             ret.put("success", true);
             call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void getFavorites(PluginCall call) {
+        try {
+            JSObject queryObject = call.getObject("query");
+            if (queryObject == null) {
+                call.reject("query is required");
+                return;
+            }
+            int folderId = queryObject.getInteger("folderId", 0);
+            int page = queryObject.getInteger("page", 1);
+            FavoriteQuery query = new FavoriteQuery.Builder()
+                    .folderId(folderId)
+                    .page(page)
+                    .build();
+            JmApiClient client = getClient();
+            call.resolve(toFavoritePage(client.getFavorites(query), (AbstractJmClient) client));
         } catch (Exception e) {
             call.reject(e.getMessage(), e);
         }
@@ -290,6 +342,346 @@ public class JmcomicPlugin extends Plugin {
         notifyListeners("imageReady", data);
     }
 
+    // ========== 下载相关 ==========
+
+    @PluginMethod
+    public void downloadChapter(PluginCall call) {
+        try {
+            String albumId = call.getString("albumId");
+            String chapterId = call.getString("chapterId");
+            String albumTitle = call.getString("albumTitle", "");
+            String chapterTitle = call.getString("chapterTitle", "");
+            String coverUrl = call.getString("coverUrl", "");
+
+            if (albumId == null || chapterId == null) {
+                call.reject("albumId and chapterId are required");
+                return;
+            }
+
+            String taskId = albumId + "_" + chapterId;
+
+            // 去重检查
+            if (downloadDb.hasActiveOrCompleted(taskId)) {
+                String curStatus = downloadDb.getTask(taskId).optString("status");
+                if (STATUS_COMPLETED.equals(curStatus)) {
+                    call.reject("该章节已下载完成");
+                } else {
+                    call.reject("该章节已在下载队列中");
+                }
+                return;
+            }
+
+            // 写入 DB（queued）
+            downloadDb.insertTask(taskId, albumId, chapterId,
+                    albumTitle, chapterTitle, coverUrl);
+
+            // 加入队列
+            downloadQueue.put(taskId);
+
+            JSObject ret = new JSObject();
+            ret.put("taskId", taskId);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void getDownloadTasks(PluginCall call) {
+        try {
+            JSArray arr = new JSArray();
+            List<org.json.JSONObject> tasks = downloadDb.getAllTasks();
+            for (org.json.JSONObject task : tasks) {
+                arr.put(JSObject.fromJSONObject(task));
+            }
+            JSObject ret = new JSObject();
+            ret.put("tasks", arr);
+            ret.put("usedBytes", FileStorage.getInstance().getTotalUsedBytes());
+            ret.put("availableBytes", FileStorage.getInstance().getAvailableBytes());
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void cancelDownload(PluginCall call) {
+        try {
+            String taskId = call.getString("taskId");
+            if (taskId == null) {
+                call.reject("taskId is required");
+                return;
+            }
+
+            org.json.JSONObject task = downloadDb.getTask(taskId);
+            if (task == null) {
+                JSObject ret = new JSObject();
+                ret.put("success", true);
+                call.resolve(ret);
+                return;
+            }
+
+            String status = task.optString("status");
+
+            if (STATUS_QUEUED.equals(status)) {
+                downloadQueue.remove(taskId);
+                downloadDb.deleteImages(taskId);
+                downloadDb.deleteTask(taskId);
+            } else if (STATUS_DOWNLOADING.equals(status)) {
+                // 设置取消标记，withProgress 回调中检测
+                AtomicBoolean flag = cancelFlags.get(taskId);
+                if (flag != null) {
+                    flag.set(true);
+                }
+                // 等待当前任务结束后由队列消费者清理
+            } else {
+                // completed/failed → 等同于删除
+                String albumId = task.getString("albumId");
+                String chapterId = task.getString("chapterId");
+                FileStorage.getInstance().deleteChapter(albumId, chapterId);
+                downloadDb.deleteImages(taskId);
+                downloadDb.deleteTask(taskId);
+            }
+
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void deleteDownloaded(PluginCall call) {
+        try {
+            String albumId = call.getString("albumId");
+            String chapterId = call.getString("chapterId");
+            if (albumId == null || chapterId == null) {
+                call.reject("albumId and chapterId are required");
+                return;
+            }
+
+            String taskId = albumId + "_" + chapterId;
+
+            // 先从队列中移除（如果存在）
+            downloadQueue.remove(taskId);
+            cancelFlags.remove(taskId);
+
+            // 清理文件
+            FileStorage.getInstance().deleteChapter(albumId, chapterId);
+
+            // 清理 DB
+            downloadDb.deleteImages(taskId);
+            downloadDb.deleteTask(taskId);
+
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void getDownloadedPhoto(PluginCall call) {
+        try {
+            String albumId = call.getString("albumId");
+            String chapterId = call.getString("chapterId");
+            if (albumId == null || chapterId == null) {
+                call.reject("albumId and chapterId are required");
+                return;
+            }
+
+            String taskId = albumId + "_" + chapterId;
+            org.json.JSONObject task = downloadDb.getTask(taskId);
+            if (task == null) {
+                call.reject("Task not found");
+                return;
+            }
+
+            String status = task.getString("status");
+            if (!STATUS_COMPLETED.equals(status)) {
+                call.reject("Task is not completed");
+                return;
+            }
+
+            List<org.json.JSONObject> images = downloadDb.getImages(taskId);
+
+            JSObject ret = new JSObject();
+            ret.put("id", chapterId);
+            ret.put("title", task.getString("chapterTitle"));
+            ret.put("albumId", albumId);
+            ret.put("sortOrder", 0);
+            ret.put("author", task.optString("author", ""));
+            ret.put("tags", new JSArray()); // tags 作为 JSON string 存储，这里简化处理
+
+            JSArray imageArray = new JSArray();
+            for (org.json.JSONObject img : images) {
+                JSObject imgObj = new JSObject();
+                imgObj.put("photoId", img.optString("photoId"));
+                imgObj.put("scrambleId", img.optString("scrambleId"));
+                imgObj.put("filename", img.optString("filename"));
+                imgObj.put("url", img.optString("url"));
+                imgObj.put("queryParams", img.optString("queryParams", ""));
+                imgObj.put("sortOrder", img.optInt("sortOrder"));
+                imageArray.put(imgObj);
+            }
+            ret.put("images", imageArray);
+
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    // ---- 下载队列消费者 ----
+
+    private void processDownloadQueue() {
+        while (true) {
+            String taskId;
+            try {
+                taskId = downloadQueue.take();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+
+            org.json.JSONObject taskObj = downloadDb.getTask(taskId);
+            if (taskObj == null) continue;
+
+            String albumId;
+            String chapterId;
+            try {
+                albumId = taskObj.getString("albumId");
+                chapterId = taskObj.getString("chapterId");
+            } catch (Exception e) {
+                continue;
+            }
+
+            // 设置取消标记
+            AtomicBoolean cancelled = new AtomicBoolean(false);
+            cancelFlags.put(taskId, cancelled);
+
+            try {
+                // 获取 Photo
+                JmApiClient client = getClient();
+                JmPhoto photo = client.getPhoto(chapterId);
+                List<JmImage> images = photo.getImages();
+
+                // 写入 images 表
+                downloadDb.insertImages(taskId, images);
+
+                // 更新任务详情
+                downloadDb.updateTaskDetail(taskId, images.size(),
+                        photo.getAuthor(), new org.json.JSONArray(photo.getTags()).toString());
+                downloadDb.updateStatus(taskId, STATUS_DOWNLOADING);
+
+                // 创建目录 + meta.json
+                java.io.File chapterDir = FileStorage.getInstance()
+                        .ensureChapterDir(albumId, chapterId);
+                FileStorage.getInstance().refreshMappings(albumId, chapterId, downloadDb);
+
+                org.json.JSONObject metaJson = new org.json.JSONObject();
+                metaJson.put("albumId", albumId);
+                metaJson.put("chapterId", chapterId);
+                metaJson.put("title", taskObj.getString("chapterTitle"));
+                metaJson.put("author", photo.getAuthor());
+                metaJson.put("tags", new org.json.JSONArray(photo.getTags()));
+                metaJson.put("totalPages", images.size());
+                org.json.JSONArray metaImages = new org.json.JSONArray();
+                for (JmImage img : images) {
+                    org.json.JSONObject im = new org.json.JSONObject();
+                    im.put("sortOrder", img.getSortOrder());
+                    im.put("filename", img.getFilename());
+                    im.put("photoId", img.getPhotoId());
+                    metaImages.put(im);
+                }
+                metaJson.put("images", metaImages);
+                FileStorage.getInstance().saveMeta(albumId, chapterId, metaJson);
+
+                // 推送初始进度
+                pushDownloadProgress(taskId, albumId, chapterId, 0, images.size(),
+                        STATUS_DOWNLOADING, null);
+
+                // 使用库的 download(JmPhoto) 进行下载
+                Path chapterPath = chapterDir.toPath();
+                int[] lastCompleted = {0};
+
+                DownloadRequest req = client.download(photo)
+                        .withPath(chapterPath)
+                        .withExecutor(imageExecutor)
+                        .withProgress(progress -> {
+                            if (cancelled.get()) return;
+                            int completed = progress.completedImages();
+                            if (completed > lastCompleted[0]) {
+                                lastCompleted[0] = completed;
+                                downloadDb.updateProgress(taskId, completed);
+                                pushDownloadProgress(taskId, albumId, chapterId,
+                                        completed, images.size(), STATUS_DOWNLOADING, null);
+                            }
+                        });
+
+                DownloadResult result = req.execute();
+
+                if (cancelled.get()) {
+                    // 取消：清理文件+DB
+                    FileStorage.getInstance().deleteChapter(albumId, chapterId);
+                    downloadDb.deleteImages(taskId);
+                    downloadDb.deleteTask(taskId);
+                    continue;
+                }
+
+                if (result.isAllSuccess()) {
+                    Integer firstSO = FileStorage.getInstance()
+                            .getFirstImageSortOrder(albumId, chapterId);
+                    downloadDb.updateCompleted(taskId, images.size(),
+                            firstSO != null ? firstSO : 1);
+                    pushDownloadProgress(taskId, albumId, chapterId,
+                            images.size(), images.size(), STATUS_COMPLETED, null);
+                } else {
+                    int failed = result.getFailedTasks().size();
+                    int succeeded = images.size() - failed;
+                    downloadDb.updateFailed(taskId, succeeded,
+                            failed + "/" + images.size() + " 张图片下载失败");
+                    pushDownloadProgress(taskId, albumId, chapterId,
+                            succeeded, images.size(), STATUS_FAILED,
+                            failed + "/" + images.size() + " 张图片下载失败");
+                }
+            } catch (Exception e) {
+                if (!cancelled.get()) {
+                    downloadDb.updateFailed(taskId, 0, e.getMessage());
+                    pushDownloadProgress(taskId, albumId, chapterId,
+                            0, 0, STATUS_FAILED, e.getMessage());
+                } else {
+                    // 取消时清理
+                    try {
+                        FileStorage.getInstance().deleteChapter(albumId, chapterId);
+                    } catch (Exception ignored) {}
+                    downloadDb.deleteImages(taskId);
+                    downloadDb.deleteTask(taskId);
+                }
+            } finally {
+                cancelFlags.remove(taskId);
+            }
+        }
+    }
+
+    private void pushDownloadProgress(String taskId, String albumId, String chapterId,
+                                      int downloadedPages, int totalPages,
+                                      String status, String error) {
+        JSObject data = new JSObject();
+        data.put("taskId", taskId);
+        data.put("albumId", albumId);
+        data.put("chapterId", chapterId);
+        data.put("downloadedPages", downloadedPages);
+        data.put("totalPages", totalPages);
+        data.put("status", status);
+        if (error != null) {
+            data.put("error", error);
+        }
+        notifyListeners("downloadProgress", data);
+    }
+
     // ---- 缩略图生成 ----
     private byte[] createThumbnail(byte[] imageBytes) {
         Bitmap bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.length);
@@ -351,6 +743,38 @@ public class JmcomicPlugin extends Plugin {
             content.put(row);
         }
         ret.put("content", content);
+        return ret;
+    }
+
+    private JSObject toFavoritePage(JmFavoritePage page, AbstractJmClient client) {
+        JSObject ret = new JSObject();
+        ret.put("folderName", page.getFolderName());
+        ret.put("folderId", page.getFolderId());
+        ret.put("currentPage", page.getCurrentPage());
+        ret.put("totalItems", page.getTotalItems());
+        ret.put("totalPages", page.getTotalPages());
+
+        JSArray content = new JSArray();
+        List<JmAlbumMeta> items = page.getContent();
+        for (JmAlbumMeta item : items) {
+            JSObject row = new JSObject();
+            row.put("id", item.getId());
+            row.put("title", item.getTitle());
+            row.put("coverUrl", client.getAlbumCoverUrl(item.getId(), SEARCH_COVER_SIZE));
+            row.put("authors", new JSArray(item.getAuthors()));
+            row.put("tags", new JSArray(item.getTags()));
+            content.put(row);
+        }
+        ret.put("content", content);
+
+        JSObject folderList = new JSObject();
+        Map<String, String> folders = page.getFolderList();
+        if (folders != null) {
+            for (Map.Entry<String, String> entry : folders.entrySet()) {
+                folderList.put(entry.getKey(), entry.getValue());
+            }
+        }
+        ret.put("folderList", folderList);
         return ret;
     }
 

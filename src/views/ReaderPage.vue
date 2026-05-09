@@ -71,6 +71,7 @@ const router = useRouter()
 const albumId = computed(() => route.params.albumId as string)
 const chapterId = computed(() => route.params.chapterId as string)
 const chapterTitle = computed(() => (route.query.title as string) || chapterId.value)
+const isOffline = computed(() => route.query.source === 'download')
 
 // ---- 核心状态 ----
 const isVertical = ref(true)
@@ -84,6 +85,7 @@ let photoDetail: PhotoDetail | null = null
 let imageReadyListenerHandle: PluginListenerHandle | null = null
 let loadedSortOrders = new Set<number>()     // 已加载完成的 sortOrder
 let requestedSortOrders = new Set<number>()  // 已提交预加载的 sortOrder（避免重复请求）
+let sortOrderToImage = new Map<number, ImageInfo>()  // sortOrder → ImageInfo 查找表
 let lastWindowCenter = -1
 let triggerRafId = 0
 let autoHideTimer: ReturnType<typeof setTimeout> | null = null
@@ -178,27 +180,37 @@ const hasPendingInRange = (center: number, dir: 'forward' | 'backward'): boolean
 const updateWindow = (center: number) => {
   if (!photoDetail) return
   const windowOrders = new Set(calcWindow(center))
-  const allImages = photoDetail.images
 
-  const toLoad: ImageInfo[] = []
-  for (const so of windowOrders) {
-    if (loadedSortOrders.has(so)) continue  // 已在 imageMap 中，跳过
-    const img = allImages.find((i) => i.sortOrder === so)
-    if (!img) continue
-    toLoad.push(img)
-    if (!requestedSortOrders.has(so)) {
-      requestedSortOrders.add(so)
-    }
-  }
-
-  if (toLoad.length > 0) {
-    JmcomicService.preloadImages(photoDetail.id, toLoad, 'image').then((result: PreloadResult) => {
-      for (const so of result.cached) {
-        imageMap.value.set(so, getImageUrl(photoDetail!.id, so, 'image'))
+  if (isOffline.value) {
+    // 离线模式：直接设置 URL（ImageRegistry.handleRequest 自动从 FileStorage 加载）
+    for (const so of windowOrders) {
+      if (!loadedSortOrders.has(so)) {
+        imageMap.value.set(so, getImageUrl(photoDetail.id, so, 'image'))
         loadedSortOrders.add(so)
       }
-      applyImageMap()
-    }).catch(() => {})
+    }
+  } else {
+    // 在线模式：通过 preloadImages 预加载
+    const toLoad: ImageInfo[] = []
+    for (const so of windowOrders) {
+      if (loadedSortOrders.has(so)) continue
+      const img = sortOrderToImage.get(so)
+      if (!img) continue
+      toLoad.push(img)
+      if (!requestedSortOrders.has(so)) {
+        requestedSortOrders.add(so)
+      }
+    }
+
+    if (toLoad.length > 0) {
+      JmcomicService.preloadImages(photoDetail.id, toLoad, 'image').then((result: PreloadResult) => {
+        for (const so of result.cached) {
+          imageMap.value.set(so, getImageUrl(photoDetail!.id, so, 'image'))
+          loadedSortOrders.add(so)
+        }
+        applyImageMap()
+      }).catch(() => {})
+    }
   }
 
   // 卸载窗口外的旧图片（扩展时清理范围覆盖扩展方向）
@@ -290,52 +302,88 @@ onMounted(() => {
   // 重置章节级状态
   loadedSortOrders = new Set()
   requestedSortOrders = new Set()
+  sortOrderToImage = new Map()
   expandDirection = null
   lastScrollTime = 0
   lastScrollIndex = -1
   if (revertTimer) { clearTimeout(revertTimer); revertTimer = null }
 
-  JmcomicService.getPhoto(chapterId.value).then((pd) => {
-    photoDetail = pd
+  if (isOffline.value) {
+    // === 离线模式 ===
+    JmcomicService.getDownloadedPhoto(albumId.value, chapterId.value).then((pd) => {
+      photoDetail = pd
 
-    // 初始定位（必须在 totalCount 之前，防止 watch 用旧值）
-    const pageParam = Number(route.query.page)
-    currentIndex.value = (pageParam > 0 ? pageParam : 1) - 1
+      const pageParam = Number(route.query.page)
+      currentIndex.value = (pageParam > 0 ? pageParam : 1) - 1
 
-    totalCount.value = pd.images.length
+      totalCount.value = pd.images.length
 
-    // 立即显示工具栏和骨架屏
-    toolbarVisible.value = true
-    resetAutoHide()
+      toolbarVisible.value = true
+      resetAutoHide()
 
-    // 注册监听（fire-and-forget）
-    setupImageReadyListener().catch(() => {})
-
-    // 初始加载窗口（fire-and-forget，图片通过 listener 渐进填充）
-    const initOrders = calcWindow(currentIndex.value)
-    const initImages = pd.images.filter((i) => initOrders.includes(i.sortOrder))
-    for (const so of initOrders) {
-      requestedSortOrders.add(so)
-    }
-    if (initImages.length > 0) {
-      JmcomicService.preloadImages(pd.id, initImages, 'image').then((result) => {
-        for (const so of result.cached) {
+      // 初始填充窗口：直接用 getImageUrl（不调 preloadImages、不注册 imageReadyListener）
+      const initOrders = calcWindow(currentIndex.value)
+      for (const so of initOrders) {
+        if (!loadedSortOrders.has(so)) {
           imageMap.value.set(so, getImageUrl(pd.id, so, 'image'))
           loadedSortOrders.add(so)
         }
-        applyImageMap()
-      }).catch(() => {})
-    }
-
-    // 覆盖 totalCount 未变化（route.query.total == 实际总页数）导致 VerticalScrollView watch 不触发的情况
-    nextTick(() => {
-      if (isVertical.value) {
-        verticalViewRef.value?.scrollToIndex(currentIndex.value)
       }
+      applyImageMap()
+
+      nextTick(() => {
+        if (isVertical.value) {
+          verticalViewRef.value?.scrollToIndex(currentIndex.value)
+        }
+      })
+    }).catch(() => {
+      totalCount.value = 0
     })
-  }).catch(() => {
-    totalCount.value = 0
-  })
+  } else {
+    // === 在线模式 ===
+    JmcomicService.getPhoto(chapterId.value).then((pd) => {
+      photoDetail = pd
+      sortOrderToImage = new Map(pd.images.map((i) => [i.sortOrder, i]))
+
+      // 初始定位（必须在 totalCount 之前，防止 watch 用旧值）
+      const pageParam = Number(route.query.page)
+      currentIndex.value = (pageParam > 0 ? pageParam : 1) - 1
+
+      totalCount.value = pd.images.length
+
+      // 立即显示工具栏和骨架屏
+      toolbarVisible.value = true
+      resetAutoHide()
+
+      // 注册监听（fire-and-forget）
+      setupImageReadyListener().catch(() => {})
+
+      // 初始加载窗口（fire-and-forget，图片通过 listener 渐进填充）
+      const initOrders = calcWindow(currentIndex.value)
+      const initImages = pd.images.filter((i) => initOrders.includes(i.sortOrder))
+      for (const so of initOrders) {
+        requestedSortOrders.add(so)
+      }
+      if (initImages.length > 0) {
+        JmcomicService.preloadImages(pd.id, initImages, 'image').then((result) => {
+          for (const so of result.cached) {
+            imageMap.value.set(so, getImageUrl(pd.id, so, 'image'))
+            loadedSortOrders.add(so)
+          }
+          applyImageMap()
+        }).catch(() => {})
+      }
+
+      // 覆盖 totalCount 未变化（route.query.total == 实际总页数）导致 VerticalScrollView watch 不触发的情况
+      nextTick(() => {
+        if (isVertical.value) {
+          verticalViewRef.value?.scrollToIndex(currentIndex.value)
+        }
+      })
+    }).catch(() => {
+      totalCount.value = 0
+    })
+  }
 })
 
 onUnmounted(() => {

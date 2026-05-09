@@ -129,3 +129,62 @@ export interface CacheCapacityInfo {
     capacityMb: number
     usedMb: number
 }
+
+// --- 收藏夹类型 ---
+
+export interface FavoriteQuery {
+    folderId: string  // 收藏夹ID，"0"=全部
+    page: number
+    keyword?: string  // 收藏夹内搜索关键词
+}
+
+export interface FavoriteResult {
+    folderName: string
+    folderId: number
+    currentPage: number
+    totalItems: number
+    totalPages: number
+    content: SearchResultItem[]
+    folderList: Record<string, string>  // id -> name
+}
+
+// --- 下载类型 ---
+
+/** 构建下载任务 ID */
+export function makeTaskId(albumId: string, chapterId: string): string {
+    return albumId + '_' + chapterId
+}
+
+export type DownloadStatus = 'queued' | 'downloading' | 'completed' | 'failed'
+
+export interface DownloadTask {
+    taskId: string          // "albumId_chapterId"
+    albumId: string
+    chapterId: string
+    albumTitle: string
+    chapterTitle: string
+    coverUrl: string
+    firstImageSortOrder?: number
+    totalPages: number
+    downloadedPages: number
+    status: DownloadStatus
+    createdAt: number
+    completedAt?: number
+    error?: string
+}
+
+export interface DownloadTasksResult {
+    tasks: DownloadTask[]
+    usedBytes: number
+    availableBytes: number
+}
+
+export interface DownloadProgressEvent {
+    taskId: string
+    albumId: string
+    chapterId: string
+    downloadedPages: number
+    totalPages: number
+    status: DownloadStatus
+    error?: string
+}

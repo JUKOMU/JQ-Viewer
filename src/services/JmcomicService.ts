@@ -1,9 +1,14 @@
 import {registerPlugin} from '@capacitor/core'
 import type {PluginListenerHandle} from '@capacitor/core'
+import { toastController } from '@ionic/vue'
 import type {
     AlbumDetail,
     CacheCapacityInfo,
     CommentList,
+    DownloadProgressEvent,
+    DownloadTasksResult,
+    FavoriteQuery,
+    FavoriteResult,
     ForumQuery,
     ImageInfo,
     PhotoDetail,
@@ -18,12 +23,25 @@ interface JmcomicPlugin {
     getAlbum(options: { id: string }): Promise<AlbumDetail>
     getPhoto(options: { id: string }): Promise<PhotoDetail>
     getComments(options: ForumQuery): Promise<CommentList>
+    getFavorites(options: { query: FavoriteQuery }): Promise<FavoriteResult>
     toggleAlbumLike(options: { id: string }): Promise<{ success: boolean }>
     toggleAlbumFavorite(options: { id: string; folderId: string }): Promise<{ success: boolean }>
     preloadImages(options: { photoId: string; images: ImageInfo[]; type: string }): Promise<PreloadResult>
     setCacheCapacity(options: { mb: number }): Promise<{ success: boolean; capacityMb: number }>
     getCacheCapacityInfo(): Promise<CacheCapacityInfo>
+    downloadChapter(options: {
+        albumId: string
+        chapterId: string
+        albumTitle: string
+        chapterTitle: string
+        coverUrl: string
+    }): Promise<{ taskId: string }>
+    getDownloadTasks(): Promise<DownloadTasksResult>
+    cancelDownload(options: { taskId: string }): Promise<{ success: boolean }>
+    deleteDownloaded(options: { albumId: string; chapterId: string }): Promise<{ success: boolean }>
+    getDownloadedPhoto(options: { albumId: string; chapterId: string }): Promise<PhotoDetail>
     addListener(event: 'imageReady', handler: (data: ImageReadyEvent) => void): Promise<PluginListenerHandle>
+    addListener(event: 'downloadProgress', handler: (data: DownloadProgressEvent) => void): Promise<PluginListenerHandle>
 }
 
 interface ImageReadyEvent {
@@ -62,6 +80,9 @@ export const JmcomicService = {
     toggleAlbumLike(id: string) {
         return native.toggleAlbumLike({id})
     },
+    favorites(query: FavoriteQuery) {
+        return native.getFavorites({query})
+    },
     toggleAlbumFavorite(id: string, folderId: string = '0') {
         return native.toggleAlbumFavorite({id, folderId})
     },
@@ -99,4 +120,51 @@ export const JmcomicService = {
             }
         })
     },
+
+    // ---- 下载相关 ----
+
+    /**
+     * 提交章节下载任务。
+     * @returns 返回 taskId（albumId_chapterId）
+     */
+    downloadChapter(albumId: string, chapterId: string,
+                     albumTitle: string, chapterTitle: string, coverUrl: string) {
+        return native.downloadChapter({ albumId, chapterId, albumTitle, chapterTitle, coverUrl })
+    },
+
+    /** 获取全部下载任务列表 */
+    getDownloadTasks() {
+        return native.getDownloadTasks()
+    },
+
+    /** 取消/删除下载任务 */
+    cancelDownload(taskId: string) {
+        return native.cancelDownload({ taskId })
+    },
+
+    /** 删除已下载的章节（文件 + 记录） */
+    deleteDownloaded(albumId: string, chapterId: string) {
+        return native.deleteDownloaded({ albumId, chapterId })
+    },
+
+    /** 获取离线下载的章节详情（用于离线阅读） */
+    getDownloadedPhoto(albumId: string, chapterId: string) {
+        return native.getDownloadedPhoto({ albumId, chapterId })
+    },
+
+    /**
+     * 注册下载进度监听。
+     * @param handler 进度更新回调
+     */
+    addDownloadProgressListener(handler: (data: DownloadProgressEvent) => void): Promise<PluginListenerHandle> {
+        return native.addListener('downloadProgress', handler)
+    },
+}
+
+/** 显示简短 toast 提示 */
+export async function showToast(message: string, color: 'success' | 'danger' | 'medium' = 'medium') {
+    const toast = await toastController.create({
+        message, duration: 1500, position: 'middle', color,
+    })
+    await toast.present()
 }

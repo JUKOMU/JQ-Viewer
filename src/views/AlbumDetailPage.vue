@@ -70,10 +70,12 @@
 <script setup lang="ts">
 import {computed, onMounted, onUnmounted, reactive, ref} from 'vue'
 import {useRoute, useRouter} from 'vue-router'
-import {IonContent, IonPage, toastController} from '@ionic/vue'
+import {IonContent, IonPage} from '@ionic/vue'
 import type {PluginListenerHandle} from '@capacitor/core'
-import {getImageUrl, JmcomicService} from '@/services/JmcomicService'
+import {getImageUrl, JmcomicService, showToast} from '@/services/JmcomicService'
 import type {AlbumDetail, AlbumMeta, CommentItem, PhotoDetail, PreloadResult} from '@/services/JmcomicTypes'
+import { makeTaskId } from '@/services/JmcomicTypes'
+import {OfflineDownloadService} from '@/services/OfflineDownloadService'
 import AlbumHeader from '@/components/album/AlbumHeader.vue'
 import AlbumInfoTab from '@/components/album/AlbumInfoTab.vue'
 import AlbumChaptersTab from '@/components/album/AlbumChaptersTab.vue'
@@ -287,10 +289,41 @@ const handleToggleFavorite = async () => {
 }
 
 const handleDownload = async () => {
-  const toast = await toastController.create({
-    message: '下载功能即将推出', duration: 1500, position: 'middle', color: 'medium',
-  })
-  await toast.present()
+  const chapterId = selectedChapterId.value
+  if (!chapterId || !albumDetail.value) return
+
+  const taskId = makeTaskId(albumId.value, chapterId)
+  // 避免重复提交
+  const existing = OfflineDownloadService.getAll().find(t => t.taskId === taskId && t.status !== 'failed')
+  if (existing) {
+    await showToast('该章节已在下载队列中', 'medium')
+    return
+  }
+
+  // 组装参数
+  const albumTitle2 = albumDetail.value.title
+  const coverUrl2 = albumDetail.value.image
+  const chapterTitle2 = albumDetail.value.photoMetas.find(m => m.id === chapterId)?.title || chapterId
+
+  try {
+    await JmcomicService.downloadChapter(albumId.value, chapterId, albumTitle2, chapterTitle2, coverUrl2)
+    // 乐观写入 localStorage
+    OfflineDownloadService.addTask({
+      taskId,
+      albumId: albumId.value,
+      chapterId,
+      albumTitle: albumTitle2,
+      chapterTitle: chapterTitle2,
+      coverUrl: coverUrl2,
+      totalPages: 0,
+      downloadedPages: 0,
+      status: 'queued',
+      createdAt: Date.now(),
+    })
+    await showToast('已加入下载队列', 'success')
+  } catch (e: any) {
+    await showToast(e?.message || '下载提交失败', 'danger')
+  }
 }
 
 const startReading = () => {

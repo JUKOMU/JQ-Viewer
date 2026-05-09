@@ -32,7 +32,7 @@ const routes: Array<RouteRecordRaw> = [
   {
     path: '/favorite',
     component: FavoritePage,
-    meta: { menu: true }
+    meta: { menu: true, keepAlive: true }
   },
   {
     path: '/download',

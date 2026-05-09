@@ -18,6 +18,7 @@ import {createGesture, IonApp, menuController, type Gesture} from '@ionic/vue';
 import {onBeforeUnmount, onMounted, computed, ref} from 'vue';
 import {useRoute, useRouter} from 'vue-router'
 import MainMenu from "@/components/menu/MainMenu.vue";
+import {leftMenuOpen, rightMenuOpen} from '@/composables/sideMenuState'
 
 const route = useRoute()
 const router = useRouter()
@@ -47,14 +48,15 @@ const keepAliveNames = computed(() =>
 
 let menuOpenGesture: Gesture | undefined
 let menuCloseGesture: Gesture | undefined
-let isMenuOpen = false
 
 const handleMenuDidOpen = () => {
-  isMenuOpen = true
+  leftMenuOpen.value = true
+  // 关闭右侧菜单
+  rightMenuOpen.value = false
 }
 
 const handleMenuDidClose = () => {
-  isMenuOpen = false
+  leftMenuOpen.value = false
 }
 
 onMounted(() => {
@@ -72,7 +74,10 @@ onMounted(() => {
     threshold: 0,
     canStart: (detail) => {
       if (route.meta.menu !== true) return false
-      if (detail.startX > window.innerWidth * 0.7) return false
+      // 右侧菜单打开时不允许打开左侧
+      if (rightMenuOpen.value) return false
+      // 左侧 50% 屏幕区域触发（右侧 50% 留给右侧菜单手势）
+      if (detail.startX > window.innerWidth * 0.5) return false
       return true
     },
     onEnd: (detail) => {
@@ -99,10 +104,10 @@ onMounted(() => {
     threshold: 0,
     canStart: () => {
       if (route.meta.menu !== true) return false
-      return isMenuOpen
+      return leftMenuOpen.value
     },
     onEnd: (detail) => {
-      if (!isMenuOpen) return
+      if (!leftMenuOpen.value) return
 
       const isMostlyHorizontal = Math.abs(detail.deltaX) > Math.abs(detail.deltaY)
       const shouldClose = detail.deltaX < -14 || detail.velocityX < -0.18

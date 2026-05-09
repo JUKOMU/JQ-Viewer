@@ -2,6 +2,7 @@ package io.github.jukomu.plugin;
 
 import android.net.Uri;
 import android.webkit.WebResourceResponse;
+import io.github.jukomu.storage.FileStorage;
 
 import java.io.ByteArrayInputStream;
 import java.util.LinkedHashMap;
@@ -176,7 +177,9 @@ public class ImageRegistry {
 
     /**
      * 解析虚拟 URL 并返回 WebResourceResponse。
-     * URL: http://jqviewer.local/{type}/{photoId}/{sortOrder}
+     * URL: https://jqviewer.local/{type}/{photoId}/{sortOrder}
+     * <p>
+     * 查找顺序：内存缓存 → FileStorage（离线下载的图片）→ null（在线等待 preloadImages）
      */
     public static WebResourceResponse handleRequest(String url) {
         try {
@@ -187,20 +190,56 @@ public class ImageRegistry {
             int size = segments.size();
             String type = segments.get(size - 3);
             String photoId = segments.get(size - 2);
-            String sortOrderStr = segments.get(size - 1);
+            int sortOrder;
+            try {
+                sortOrder = Integer.parseInt(segments.get(size - 1));
+            } catch (NumberFormatException e) {
+                return null;
+            }
 
-            String cacheKey = photoId + "/" + sortOrderStr + ("thumb".equals(type) ? "/thumb" : "");
+            String cacheKey = photoId + "/" + sortOrder + ("thumb".equals(type) ? "/thumb" : "");
+
+            // 1. 查内存缓存
             ImageEntry entry = getInstance().get(cacheKey);
-            if (entry == null) return null;
+            if (entry != null) {
+                return new WebResourceResponse(
+                    entry.mimeType,
+                    "UTF-8",
+                    new ByteArrayInputStream(entry.data)
+                );
+            }
 
-            return new WebResourceResponse(
-                entry.mimeType,
-                "UTF-8",
-                new ByteArrayInputStream(entry.data)
-            );
+            // 2. 缓存 miss → 尝试从 FileStorage 加载（离线下载的图片）
+            //    仅 "image" 类型尝试（thumb 类型不存文件）
+            if (!"thumb".equals(type)) {
+                byte[] data = FileStorage.getInstance()
+                        .getImageBytesByPhotoId(photoId, sortOrder);
+                if (data != null) {
+                    String mime = "image/" + guessFormatName(data);
+                    getInstance().put(cacheKey, data, mime);
+                    return new WebResourceResponse(mime, "UTF-8",
+                            new ByteArrayInputStream(data));
+                }
+            }
+
+            // 3. 仍未找到 → 返回 null（在线场景等待 preloadImages 下载）
+            return null;
         } catch (Exception e) {
             return null;
         }
+    }
+
+    /** 通过文件头魔数判断图片格式 */
+    private static String guessFormatName(byte[] data) {
+        if (data == null || data.length < 3) return "jpeg";
+        int b0 = data[0] & 0xFF;
+        int b1 = data[1] & 0xFF;
+        int b2 = data[2] & 0xFF;
+        if (b0 == 0xFF && b1 == 0xD8) return "jpeg";
+        if (b0 == 0x89 && b1 == 0x50 && b2 == 0x4E) return "png";
+        if (b0 == 0x47 && b1 == 0x49 && b2 == 0x46) return "gif";
+        if (b0 == 0x52 && b1 == 0x49 && b2 == 0x46) return "webp"; // RIFF....WEBP
+        return "jpeg";
     }
 
     public static class ImageEntry {

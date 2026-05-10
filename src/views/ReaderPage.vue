@@ -52,12 +52,13 @@ import { IonPage } from '@ionic/vue'
 import type { PluginListenerHandle } from '@capacitor/core'
 import { getImageUrl, JmcomicService } from '@/services/JmcomicService'
 import type { ImageInfo, PhotoDetail, PreloadResult } from '@/services/JmcomicTypes'
+import { SettingsStore } from '@/services/SettingsService'
 import ReaderTopToolbar from '@/components/reader/ReaderTopToolbar.vue'
 import ReaderBottomToolbar from '@/components/reader/ReaderBottomToolbar.vue'
 import VerticalScrollView from '@/components/reader/VerticalScrollView.vue'
 import HorizontalPageView from '@/components/reader/HorizontalPageView.vue'
 
-const N = 15               // 正常预加载窗口半径
+const N = SettingsStore.getReaderPreloadPages()  // 正常预加载窗口半径
 const N_FAST = 50           // 快速划动方向预加载半径
 const M = 50               // 最大缓存窗口
 const AUTO_HIDE_MS = 3000

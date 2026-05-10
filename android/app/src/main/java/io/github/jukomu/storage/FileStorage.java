@@ -1,6 +1,7 @@
 package io.github.jukomu.storage;
 
 import android.content.Context;
+import android.os.Environment;
 import android.util.Log;
 
 import org.json.JSONObject;
@@ -15,7 +16,8 @@ import java.util.Map;
 /**
  * 下载文件存储管理（单例）。
  * <p>
- * 目录结构：{filesDir}/downloads/{albumId}/{chapterId}/
+ * 目录结构（私有）：{filesDir}/downloads/{albumId}/{chapterId}/
+ * 目录结构（公开）：{PICTURES}/JQViewer/{albumId}/{chapterId}/
  * - meta.json: 备份元数据副本
  * - *.jpg: 图片文件（库 downloadPhoto 直接写入）
  * <p>
@@ -47,8 +49,14 @@ public class FileStorage {
 
     // ---- 初始化 ----
 
-    public void init(Context context, DownloadDatabase db) {
-        this.baseDir = new File(context.getFilesDir(), "downloads");
+    public void init(Context context, DownloadDatabase db, boolean usePublicDir) {
+        if (usePublicDir) {
+            this.baseDir = new File(
+                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+                    "JQViewer");
+        } else {
+            this.baseDir = new File(context.getFilesDir(), "downloads");
+        }
         if (!baseDir.exists()) {
             baseDir.mkdirs();
         }
@@ -208,6 +216,49 @@ public class FileStorage {
                 sortOrderToFilename.put(key, filename);
             } catch (Exception ignored) {}
         }
+    }
+
+    // ---- 目录搬迁（公开/私有切换） ----
+
+    /**
+     * 将所有已下载文件从当前目录搬迁到目标目录。
+     * @return 搬迁的文件数，-1 表示无需搬迁
+     */
+    public int relocate(Context context, boolean usePublicDir) {
+        File newDir;
+        if (usePublicDir) {
+            newDir = new File(
+                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+                    "JQViewer");
+        } else {
+            newDir = new File(context.getFilesDir(), "downloads");
+        }
+
+        if (baseDir.getAbsolutePath().equals(newDir.getAbsolutePath())) {
+            return -1;
+        }
+
+        if (!newDir.exists()) {
+            newDir.mkdirs();
+        }
+
+        int moved = 0;
+        File[] children = baseDir.listFiles();
+        if (children != null) {
+            for (File child : children) {
+                File dest = new File(newDir, child.getName());
+                if (child.renameTo(dest)) {
+                    moved++;
+                } else {
+                    Log.e(TAG, "Failed to move: " + child.getAbsolutePath());
+                }
+            }
+        }
+
+        baseDir = newDir;
+        sizeNeedsRecalc = true;
+        Log.i(TAG, "Relocated " + moved + " items to " + (usePublicDir ? "public" : "private"));
+        return moved;
     }
 
     // ---- 空间查询 ----

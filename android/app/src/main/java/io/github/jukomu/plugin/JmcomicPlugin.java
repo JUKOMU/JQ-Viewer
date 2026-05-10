@@ -88,7 +88,7 @@ public class JmcomicPlugin extends Plugin {
 
     private synchronized JmApiClient getClient() {
         if (sharedClient == null) {
-            sharedClient = JmComic.newApiClient(new JmConfiguration.Builder().build());
+            sharedClient = JmComic.newApiClient(new JmConfiguration.Builder().downloadThreadPoolSize(imageConcurrency).build());
         }
         return sharedClient;
     }
@@ -387,10 +387,23 @@ public class JmcomicPlugin extends Plugin {
     @PluginMethod
     public void setDownloadPublic(PluginCall call) {
         boolean open = call.getBoolean("open", false);
+
+        // 检查是否有进行中的下载任务，有则拒绝切换
+        List<org.json.JSONObject> tasks = downloadDb.getAllTasks();
+        for (org.json.JSONObject t : tasks) {
+            String s = t.optString("status");
+            if (STATUS_QUEUED.equals(s) || STATUS_DOWNLOADING.equals(s)) {
+                call.reject("有下载任务进行中，请等待全部完成后再切换");
+                return;
+            }
+        }
+
         prefs.edit().putBoolean("download_public", open).apply();
+        int moved = FileStorage.getInstance().relocate(getContext(), open);
         JSObject ret = new JSObject();
         ret.put("success", true);
         ret.put("downloadPublic", open);
+        ret.put("moved", moved);
         call.resolve(ret);
     }
 

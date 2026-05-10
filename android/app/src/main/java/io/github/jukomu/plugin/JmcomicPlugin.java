@@ -1,5 +1,7 @@
 package io.github.jukomu.plugin;
 
+import android.content.Context;
+import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import com.getcapacitor.*;
@@ -44,11 +46,14 @@ public class JmcomicPlugin extends Plugin {
     // ---- 下载状态常量 ----
     private static final String STATUS_QUEUED = "queued";
     private static final String STATUS_DOWNLOADING = "downloading";
+    private static final String STATUS_PAUSED = "paused";
     private static final String STATUS_COMPLETED = "completed";
     private static final String STATUS_FAILED = "failed";
 
     private volatile JmApiClient sharedClient;
-    private final ExecutorService imageExecutor = Executors.newFixedThreadPool(6);
+    private volatile ExecutorService imageExecutor;
+    private int imageConcurrency = 6;
+    private SharedPreferences prefs;
     private static final int THUMBNAIL_MAX_WIDTH = 300;
     private static final int THUMBNAIL_JPEG_QUALITY = 70;
 
@@ -63,9 +68,22 @@ public class JmcomicPlugin extends Plugin {
 
     @Override
     public void load() {
-        downloadDb = DownloadDatabase.getInstance(getContext());
-        FileStorage.getInstance().init(getContext(), downloadDb);
+        Context ctx = getContext();
+        prefs = ctx.getSharedPreferences("jqviewer_settings", Context.MODE_PRIVATE);
+
+        // 读取下载公开设置 → FileStorage
+        boolean downloadPublic = prefs.getBoolean("download_public", false);
+        downloadDb = DownloadDatabase.getInstance(ctx);
+        FileStorage.getInstance().init(ctx, downloadDb, downloadPublic);
         downloadDb.validateOnStartup(FileStorage.getInstance().getBaseDir());
+
+        // 读取缓存容量 → 初始化 ImageRegistry
+        long cacheCapacityMb = prefs.getLong("cache_capacity_mb", 640);
+        ImageRegistry.getInstance().setCapacity(cacheCapacityMb * 1024 * 1024);
+
+        // 读取并发数设置 → 初始化 imageExecutor
+        imageConcurrency = prefs.getInt("download_concurrency", 6);
+        imageExecutor = Executors.newFixedThreadPool(imageConcurrency);
     }
 
     private synchronized JmApiClient getClient() {
@@ -321,6 +339,7 @@ public class JmcomicPlugin extends Plugin {
         }
         long bytes = mb * 1024 * 1024;
         ImageRegistry.getInstance().setCapacity(bytes);
+        prefs.edit().putLong("cache_capacity_mb", mb).apply();
         JSObject ret = new JSObject();
         ret.put("success", true);
         ret.put("capacityMb", mb);
@@ -333,6 +352,53 @@ public class JmcomicPlugin extends Plugin {
         JSObject ret = new JSObject();
         ret.put("capacityMb", reg.getCapacity() / (1024 * 1024));
         ret.put("usedMb", reg.getCurrentSize() / (1024 * 1024));
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void clearImageCache(PluginCall call) {
+        ImageRegistry.getInstance().clear();
+        JSObject ret = new JSObject();
+        ret.put("success", true);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void setDownloadConcurrency(PluginCall call) {
+        Integer n = call.getInt("n");
+        if (n == null || n < 1 || n > 12) {
+            call.reject("n must be between 1 and 12");
+            return;
+        }
+        prefs.edit().putInt("download_concurrency", n).apply();
+        imageConcurrency = n;
+        // 优雅关闭旧 executor（不中断正在执行的任务）
+        ExecutorService old = imageExecutor;
+        imageExecutor = Executors.newFixedThreadPool(n);
+        if (old != null) {
+            old.shutdown();
+        }
+        JSObject ret = new JSObject();
+        ret.put("success", true);
+        ret.put("concurrency", n);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void setDownloadPublic(PluginCall call) {
+        boolean open = call.getBoolean("open", false);
+        prefs.edit().putBoolean("download_public", open).apply();
+        JSObject ret = new JSObject();
+        ret.put("success", true);
+        ret.put("downloadPublic", open);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void getDownloadPublic(PluginCall call) {
+        boolean open = prefs.getBoolean("download_public", false);
+        JSObject ret = new JSObject();
+        ret.put("downloadPublic", open);
         call.resolve(ret);
     }
 
@@ -506,6 +572,20 @@ public class JmcomicPlugin extends Plugin {
                 downloadDb.deleteImages(taskId);
                 downloadDb.deleteTask(taskId);
                 cleanupTaskMapping(taskId);
+            } else if (STATUS_PAUSED.equals(status)) {
+                // 暂停中的任务，通过库取消，由 Observer 处理清理
+                String libTaskId = taskIdMap.get(taskId);
+                if (libTaskId != null) {
+                    ((AbstractJmClient) getClient()).downloadManager().cancel(libTaskId);
+                } else {
+                    // 兜底：映射丢失时直接清理 DB 和文件
+                    String albumId = task.getString("albumId");
+                    String chapterId = task.getString("chapterId");
+                    FileStorage.getInstance().deleteChapter(albumId, chapterId);
+                    downloadDb.deleteImages(taskId);
+                    downloadDb.deleteTask(taskId);
+                    cleanupTaskMapping(taskId);
+                }
             } else if (STATUS_DOWNLOADING.equals(status)) {
                 // 通过库的 DownloadManager 取消
                 String libTaskId = taskIdMap.get(taskId);
@@ -526,6 +606,104 @@ public class JmcomicPlugin extends Plugin {
                 downloadDb.deleteTask(taskId);
                 cleanupTaskMapping(taskId);
             }
+
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void pauseDownload(PluginCall call) {
+        try {
+            String taskId = call.getString("taskId");
+            if (taskId == null) {
+                call.reject("taskId is required");
+                return;
+            }
+
+            org.json.JSONObject task = downloadDb.getTask(taskId);
+            if (task == null) {
+                call.reject("Task not found");
+                return;
+            }
+
+            String status = task.optString("status");
+            if (!STATUS_DOWNLOADING.equals(status)) {
+                call.reject("只有下载中的任务可以暂停");
+                return;
+            }
+
+            String libTaskId = taskIdMap.get(taskId);
+            if (libTaskId == null) {
+                call.reject("Library task not found");
+                return;
+            }
+
+            AbstractJmClient client = (AbstractJmClient) getClient();
+            if (client.downloadManager().getTask(libTaskId) == null) {
+                call.reject("Task not found in download manager");
+                return;
+            }
+
+            client.downloadManager().pause(libTaskId);
+
+            downloadDb.updateStatus(taskId, STATUS_PAUSED);
+            pushDownloadProgress(taskId, task.getString("albumId"),
+                    task.getString("chapterId"),
+                    task.optInt("downloadedPages"), task.optInt("totalPages"),
+                    STATUS_PAUSED, null);
+
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void resumeDownload(PluginCall call) {
+        try {
+            String taskId = call.getString("taskId");
+            if (taskId == null) {
+                call.reject("taskId is required");
+                return;
+            }
+
+            org.json.JSONObject task = downloadDb.getTask(taskId);
+            if (task == null) {
+                call.reject("Task not found");
+                return;
+            }
+
+            String status = task.optString("status");
+            if (!STATUS_PAUSED.equals(status)) {
+                call.reject("只有已暂停的任务可以继续");
+                return;
+            }
+
+            String libTaskId = taskIdMap.get(taskId);
+            if (libTaskId == null) {
+                call.reject("Library task not found");
+                return;
+            }
+
+            AbstractJmClient client = (AbstractJmClient) getClient();
+            if (client.downloadManager().getTask(libTaskId) == null) {
+                call.reject("Task not found in download manager");
+                return;
+            }
+
+            client.downloadManager().resume(libTaskId);
+
+            downloadDb.updateStatus(taskId, STATUS_DOWNLOADING);
+            pushDownloadProgress(taskId, task.getString("albumId"),
+                    task.getString("chapterId"),
+                    task.optInt("downloadedPages"), task.optInt("totalPages"),
+                    STATUS_DOWNLOADING, null);
 
             JSObject ret = new JSObject();
             ret.put("success", true);
@@ -672,6 +850,11 @@ public class JmcomicPlugin extends Plugin {
                 pushDownloadProgress(ourTaskId, albumId, chapterId,
                         0, totalImages, STATUS_FAILED, "已取消");
                 cleanupTaskMapping(ourTaskId);
+            } else if (newState == TaskState.PAUSED) {
+                int downloadedPages = task.getCompletedCount();
+                downloadDb.updateProgress(ourTaskId, downloadedPages);
+                pushDownloadProgress(ourTaskId, albumId, chapterId,
+                        downloadedPages, totalImages, STATUS_PAUSED, null);
             } else if (newState == TaskState.COMPLETED_WITH_ERRORS) {
                 DownloadResult result = task.getCurrentDownloadResult();
                 int failed = result.getFailedTasks().size();

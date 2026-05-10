@@ -155,7 +155,7 @@ export function makeTaskId(albumId: string, chapterId: string): string {
     return albumId + '_' + chapterId
 }
 
-export type DownloadStatus = 'queued' | 'downloading' | 'completed' | 'failed'
+export type DownloadStatus = 'queued' | 'downloading' | 'paused' | 'completed' | 'failed'
 
 export interface DownloadTask {
     taskId: string          // "albumId_chapterId"

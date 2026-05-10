@@ -23,11 +23,20 @@
         <div v-if="speedText" class="speed-text">{{ speedText }}</div>
       </template>
       <div v-else-if="task.status === 'queued'" class="status-tag queued">排队中</div>
+      <div v-else-if="task.status === 'paused'" class="status-tag paused">已暂停</div>
       <div v-else-if="task.status === 'completed'" class="status-tag completed">共 {{ task.totalPages }} 页</div>
       <div v-else-if="task.status === 'failed'" class="status-tag failed">{{ task.error || '下载失败' }}</div>
 
       <div class="actions">
-        <template v-if="task.status === 'queued' || task.status === 'downloading'">
+        <template v-if="task.status === 'queued'">
+          <button class="btn btn-cancel" @click.stop="$emit('cancel')">取消</button>
+        </template>
+        <template v-if="task.status === 'downloading'">
+          <button class="btn btn-pause" @click.stop="$emit('pause')">暂停</button>
+          <button class="btn btn-cancel" @click.stop="$emit('cancel')">取消</button>
+        </template>
+        <template v-if="task.status === 'paused'">
+          <button class="btn btn-resume" @click.stop="$emit('resume')">继续</button>
           <button class="btn btn-cancel" @click.stop="$emit('cancel')">取消</button>
         </template>
         <template v-if="task.status === 'completed'">
@@ -35,7 +44,7 @@
           <button class="btn btn-delete" @click.stop="$emit('delete')">删除</button>
         </template>
         <template v-if="task.status === 'failed'">
-          <button class="btn btn-retry" @click.stop="$emit('retry')">重试</button>
+          <button class="btn btn-retry" @click.stop="$emit('retry')">{{ retryLabel }}</button>
           <button class="btn btn-delete" @click.stop="$emit('delete')">删除</button>
         </template>
       </div>
@@ -55,6 +64,8 @@ const props = defineProps<{
 
 defineEmits<{
   cancel: []
+  pause: []
+  resume: []
   retry: []
   read: []
   delete: []
@@ -76,6 +87,10 @@ const progressPct = computed(() => {
   if (props.task.totalPages <= 0) return 0
   return Math.round((props.task.downloadedPages / props.task.totalPages) * 100)
 })
+
+const retryLabel = computed(() =>
+  props.task.error?.includes('张图片下载失败') ? '重新下载失败图片' : '重试'
+)
 
 const speedText = computed(() => {
   const s = props.task.speed
@@ -234,5 +249,20 @@ const speedText = computed(() => {
 .btn-retry {
   background: linear-gradient(145deg, #fa9c69, #f28752);
   color: #fff;
+}
+
+.btn-pause {
+  background: #fff3ea;
+  color: #fa9c69;
+}
+
+.btn-resume {
+  background: linear-gradient(145deg, #fa9c69, #f28752);
+  color: #fff;
+}
+
+.status-tag.paused {
+  background: #fff8e1;
+  color: #f0a030;
 }
 </style>

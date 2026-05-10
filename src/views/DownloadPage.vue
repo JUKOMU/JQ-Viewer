@@ -30,6 +30,8 @@
               :task="task"
               :show-progress="true"
               @cancel="onCancel(task)"
+              @pause="onPause(task)"
+              @resume="onResume(task)"
             />
           </div>
         </div>
@@ -89,7 +91,7 @@ let syncPromise: Promise<void> | null = null
 const hasTasks = computed(() => tasks.value.length > 0)
 
 const activeTasks = computed(() =>
-  tasks.value.filter(t => t.status === 'queued' || t.status === 'downloading')
+  tasks.value.filter(t => t.status === 'queued' || t.status === 'downloading' || t.status === 'paused')
 )
 
 const completedTasks = computed(() =>
@@ -146,6 +148,10 @@ onMounted(async () => {
       task.status = 'downloading'
       task.speed = data.speed
       OfflineDownloadService.updateProgress(data.taskId, data.downloadedPages, data.totalPages)
+    } else if (data.status === 'paused') {
+      task.downloadedPages = data.downloadedPages
+      task.status = 'paused'
+      OfflineDownloadService.updateStatus(data.taskId, 'paused', data.downloadedPages, task.totalPages)
     } else if (data.status === 'completed') {
       task.status = 'completed'
       task.downloadedPages = data.downloadedPages
@@ -181,6 +187,22 @@ const onCancel = async (task: DownloadTask) => {
     void syncDownloadState()
   } catch (e: any) {
     await showToast(e?.message || '取消失败', 'danger')
+  }
+}
+
+const onPause = async (task: DownloadTask) => {
+  try {
+    await JmcomicService.pauseDownload(task.taskId)
+  } catch (e: any) {
+    await showToast(e?.message || '暂停失败', 'danger')
+  }
+}
+
+const onResume = async (task: DownloadTask) => {
+  try {
+    await JmcomicService.resumeDownload(task.taskId)
+  } catch (e: any) {
+    await showToast(e?.message || '继续失败', 'danger')
   }
 }
 

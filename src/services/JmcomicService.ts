@@ -29,6 +29,10 @@ interface JmcomicPlugin {
     preloadImages(options: { photoId: string; images: ImageInfo[]; type: string }): Promise<PreloadResult>
     setCacheCapacity(options: { mb: number }): Promise<{ success: boolean; capacityMb: number }>
     getCacheCapacityInfo(): Promise<CacheCapacityInfo>
+    clearImageCache(): Promise<{ success: boolean }>
+    setDownloadConcurrency(options: { n: number }): Promise<{ success: boolean; concurrency: number }>
+    setDownloadPublic(options: { open: boolean }): Promise<{ success: boolean; downloadPublic: boolean }>
+    getDownloadPublic(): Promise<{ downloadPublic: boolean }>
     downloadChapter(options: {
         albumId: string
         chapterId: string
@@ -38,6 +42,8 @@ interface JmcomicPlugin {
     }): Promise<{ taskId: string }>
     getDownloadTasks(): Promise<DownloadTasksResult>
     cancelDownload(options: { taskId: string }): Promise<{ success: boolean }>
+    pauseDownload(options: { taskId: string }): Promise<{ success: boolean }>
+    resumeDownload(options: { taskId: string }): Promise<{ success: boolean }>
     deleteDownloaded(options: { albumId: string; chapterId: string }): Promise<{ success: boolean }>
     getDownloadedPhoto(options: { albumId: string; chapterId: string }): Promise<PhotoDetail>
     addListener(event: 'imageReady', handler: (data: ImageReadyEvent) => void): Promise<PluginListenerHandle>
@@ -108,6 +114,26 @@ export const JmcomicService = {
         return native.getCacheCapacityInfo()
     },
 
+    /** 清空全部图片缓存 */
+    clearImageCache() {
+        return native.clearImageCache()
+    },
+
+    /** 设置下载并发数（1-12） */
+    setDownloadConcurrency(n: number) {
+        return native.setDownloadConcurrency({ n })
+    },
+
+    /** 设置下载内容是否公开（系统相册可见） */
+    setDownloadPublic(open: boolean) {
+        return native.setDownloadPublic({ open })
+    },
+
+    /** 查询下载内容是否公开 */
+    getDownloadPublic() {
+        return native.getDownloadPublic()
+    },
+
     /**
      * 注册图片就绪监听。
      * @param photoId 当前章节 ID，仅接收此章节的事件
@@ -140,6 +166,16 @@ export const JmcomicService = {
     /** 取消/删除下载任务 */
     cancelDownload(taskId: string) {
         return native.cancelDownload({ taskId })
+    },
+
+    /** 暂停下载任务 */
+    pauseDownload(taskId: string) {
+        return native.pauseDownload({ taskId })
+    },
+
+    /** 恢复已暂停的下载任务 */
+    resumeDownload(taskId: string) {
+        return native.resumeDownload({ taskId })
     },
 
     /** 删除已下载的章节（文件 + 记录） */

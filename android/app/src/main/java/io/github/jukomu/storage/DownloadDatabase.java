@@ -180,7 +180,7 @@ public class DownloadDatabase extends SQLiteOpenHelper {
                 if (c.moveToFirst()) {
                     String status = c.getString(0);
                     return "queued".equals(status) || "downloading".equals(status)
-                            || "completed".equals(status);
+                            || "paused".equals(status) || "completed".equals(status);
                 }
             } finally {
                 c.close();
@@ -294,7 +294,7 @@ public class DownloadDatabase extends SQLiteOpenHelper {
             cvZombie.put(COL_STATUS, "failed");
             cvZombie.put(COL_ERROR, "App restart, task interrupted");
             db.update(TABLE_TASKS, cvZombie,
-                    COL_STATUS + " IN ('queued', 'downloading')", null);
+                    COL_STATUS + " IN ('queued', 'downloading', 'paused')", null);
 
             // 2. 校验 completed 任务的文件完整性
             Cursor c = db.query(TABLE_TASKS,

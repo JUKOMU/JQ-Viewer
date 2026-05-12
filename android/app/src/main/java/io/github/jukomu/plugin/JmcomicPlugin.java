@@ -366,28 +366,36 @@ public class JmcomicPlugin extends Plugin {
 
     @PluginMethod
     public void setDownloadConcurrency(PluginCall call) {
-        Integer n = call.getInt("n");
-        if (n == null || n < 1 || n > 12) {
-            call.reject("n must be between 1 and 12");
-            return;
+        try {
+            Integer n = call.getInt("n");
+            if (n == null || n < 1 || n > 12) {
+                call.reject("n must be between 1 and 12");
+                return;
+            }
+            SettingsDatabase.getInstance(getContext()).putString("download_concurrency", String.valueOf(n));
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
         }
-        SettingsDatabase.getInstance(getContext()).putString("download_concurrency", String.valueOf(n));
-        JSObject ret = new JSObject();
-        ret.put("success", true);
-        call.resolve(ret);
     }
 
     @PluginMethod
     public void setPreloadConcurrency(PluginCall call) {
-        Integer n = call.getInt("n");
-        if (n == null || n < 1 || n > 12) {
-            call.reject("n must be between 1 and 12");
-            return;
+        try {
+            Integer n = call.getInt("n");
+            if (n == null || n < 1 || n > 12) {
+                call.reject("n must be between 1 and 12");
+                return;
+            }
+            SettingsDatabase.getInstance(getContext()).putString("preload_concurrency", String.valueOf(n));
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
         }
-        SettingsDatabase.getInstance(getContext()).putString("preload_concurrency", String.valueOf(n));
-        JSObject ret = new JSObject();
-        ret.put("success", true);
-        call.resolve(ret);
     }
 
     @PluginMethod
@@ -423,27 +431,35 @@ public class JmcomicPlugin extends Plugin {
 
     @PluginMethod
     public void getAllSettings(PluginCall call) {
-        SettingsDatabase db = SettingsDatabase.getInstance(getContext());
-        JSObject ret = new JSObject();
-        ret.put("readerPreloadPages", db.getInt("reader_preload_pages", 15));
-        ret.put("preloadConcurrency", db.getInt("preload_concurrency", 6));
-        ret.put("downloadConcurrency", db.getInt("download_concurrency", 6));
-        ret.put("downloadPublic", db.getBoolean("download_public", false));
-        ret.put("cacheCapacityMb", db.getLong("cache_capacity_mb", 640));
-        call.resolve(ret);
+        try {
+            SettingsDatabase db = SettingsDatabase.getInstance(getContext());
+            JSObject ret = new JSObject();
+            ret.put("readerPreloadPages", db.getInt("reader_preload_pages", 15));
+            ret.put("preloadConcurrency", db.getInt("preload_concurrency", 6));
+            ret.put("downloadConcurrency", db.getInt("download_concurrency", 6));
+            ret.put("downloadPublic", db.getBoolean("download_public", false));
+            ret.put("cacheCapacityMb", db.getLong("cache_capacity_mb", 640));
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
     }
 
     @PluginMethod
     public void setReaderPreloadPages(PluginCall call) {
-        Integer n = call.getInt("n");
-        if (n == null || n < 5 || n > 50) {
-            call.reject("n must be between 5 and 50");
-            return;
+        try {
+            Integer n = call.getInt("n");
+            if (n == null || n < 5 || n > 50) {
+                call.reject("n must be between 5 and 50");
+                return;
+            }
+            SettingsDatabase.getInstance(getContext()).putString("reader_preload_pages", String.valueOf(n));
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
         }
-        SettingsDatabase.getInstance(getContext()).putString("reader_preload_pages", String.valueOf(n));
-        JSObject ret = new JSObject();
-        ret.put("success", true);
-        call.resolve(ret);
     }
 
     // ---- 流式推送单张图片就绪通知 ----

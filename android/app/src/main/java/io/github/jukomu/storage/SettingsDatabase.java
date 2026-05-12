@@ -105,12 +105,16 @@ public class SettingsDatabase extends SQLiteOpenHelper {
         return Boolean.parseBoolean(raw);
     }
 
-    public void putString(String key, String value) {
-        ContentValues cv = new ContentValues();
-        cv.put(COL_KEY, key);
-        cv.put(COL_VALUE, value);
-        cv.put(COL_UPDATED_AT, System.currentTimeMillis());
-        getWritableDatabase().insertWithOnConflict(TABLE, null, cv,
-                SQLiteDatabase.CONFLICT_REPLACE);
+    public boolean putString(String key, String value) {
+        try {
+            ContentValues cv = new ContentValues();
+            cv.put(COL_KEY, key);
+            cv.put(COL_VALUE, value);
+            cv.put(COL_UPDATED_AT, System.currentTimeMillis());
+            return getWritableDatabase().insertWithOnConflict(TABLE, null, cv,
+                    SQLiteDatabase.CONFLICT_REPLACE) != -1;
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 }

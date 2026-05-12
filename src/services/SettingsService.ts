@@ -25,8 +25,9 @@ export async function initSettings(): Promise<void> {
         cachedDownloadPublic = all.downloadPublic
         cachedCacheCapacityMb = all.cacheCapacityMb
         settingsLoaded = true
-    } catch {
+    } catch (e) {
         // 使用默认值（已在缓存变量中预设）
+        console.warn('[SettingsService] initSettings failed, using defaults:', e)
     }
 }
 

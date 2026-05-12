@@ -1,53 +1,53 @@
 /**
- * 应用设置持久化服务（localStorage）。
- * 所有设置项均有默认值，读取时若不存在则返回默认值。
+ * 应用设置服务（Android SQLite 持久化 + 内存缓存）。
+ * 启动时由 App.vue 调用 initSettings() 从 DB 加载到缓存，
+ * 之后所有读写走同步缓存，持久化由 SettingPage handler 调用 JmcomicService 完成。
  */
+import { JmcomicService } from './JmcomicService'
 
-const KEYS = {
-    READER_PRELOAD_PAGES: 'settings_reader_preload_pages',
-    DOWNLOAD_CONCURRENCY: 'settings_download_concurrency',
-    DOWNLOAD_PUBLIC: 'settings_download_public',
-} as const
+let settingsLoaded = false
 
-function getNumber(key: string, defaultVal: number): number {
+// ---- 同步缓存（App.vue 启动时由 initSettings 填充） ----
+let cachedReaderPreloadPages = 15
+let cachedPreloadConcurrency = 6
+let cachedDownloadConcurrency = 6
+let cachedDownloadPublic = false
+let cachedCacheCapacityMb = 640
+
+/** App.vue onMounted 调用，从 DB 加载到缓存（幂等）。 */
+export async function initSettings(): Promise<void> {
+    if (settingsLoaded) return
     try {
-        const raw = localStorage.getItem(key)
-        if (raw === null) return defaultVal
-        const n = parseInt(raw, 10)
-        return Number.isFinite(n) && n > 0 ? n : defaultVal
-    } catch { return defaultVal }
-}
-
-function getBool(key: string, defaultVal: boolean): boolean {
-    try {
-        const raw = localStorage.getItem(key)
-        if (raw === null) return defaultVal
-        return raw === 'true'
-    } catch { return defaultVal }
+        const all = await JmcomicService.getAllSettings()
+        cachedReaderPreloadPages = all.readerPreloadPages
+        cachedPreloadConcurrency = all.preloadConcurrency
+        cachedDownloadConcurrency = all.downloadConcurrency
+        cachedDownloadPublic = all.downloadPublic
+        cachedCacheCapacityMb = all.cacheCapacityMb
+        settingsLoaded = true
+    } catch {
+        // 使用默认值（已在缓存变量中预设）
+    }
 }
 
 export const SettingsStore = {
     // ---- 阅读：预加载页数 ----
-    getReaderPreloadPages(): number {
-        return getNumber(KEYS.READER_PRELOAD_PAGES, 15)
-    },
-    setReaderPreloadPages(n: number) {
-        localStorage.setItem(KEYS.READER_PRELOAD_PAGES, String(n))
-    },
+    getReaderPreloadPages(): number { return cachedReaderPreloadPages },
+    setReaderPreloadPages(n: number) { cachedReaderPreloadPages = n },
 
-    // ---- 下载：并发线程数 ----
-    getDownloadConcurrency(): number {
-        return getNumber(KEYS.DOWNLOAD_CONCURRENCY, 6)
-    },
-    setDownloadConcurrency(n: number) {
-        localStorage.setItem(KEYS.DOWNLOAD_CONCURRENCY, String(n))
-    },
+    // ---- 阅读：预加载并发数 ----
+    getPreloadConcurrency(): number { return cachedPreloadConcurrency },
+    setPreloadConcurrency(n: number) { cachedPreloadConcurrency = n },
 
-    // ---- 下载：是否公开下载内容 ----
-    getDownloadPublic(): boolean {
-        return getBool(KEYS.DOWNLOAD_PUBLIC, false)
-    },
-    setDownloadPublic(open: boolean) {
-        localStorage.setItem(KEYS.DOWNLOAD_PUBLIC, String(open))
-    },
+    // ---- 下载：并发数 ----
+    getDownloadConcurrency(): number { return cachedDownloadConcurrency },
+    setDownloadConcurrency(n: number) { cachedDownloadConcurrency = n },
+
+    // ---- 下载：是否公开 ----
+    getDownloadPublic(): boolean { return cachedDownloadPublic },
+    setDownloadPublic(open: boolean) { cachedDownloadPublic = open },
+
+    // ---- 缓存容量 ----
+    getCacheCapacityMb(): number { return cachedCacheCapacityMb },
+    setCacheCapacityMb(mb: number) { cachedCacheCapacityMb = mb },
 }

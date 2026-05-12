@@ -50,7 +50,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { IonPage } from '@ionic/vue'
 import type { PluginListenerHandle } from '@capacitor/core'
-import { getImageUrl, JmcomicService } from '@/services/JmcomicService'
+import {getImageUrl, JmcomicService, showToast} from '@/services/JmcomicService'
 import type { ImageInfo, PhotoDetail, PreloadResult } from '@/services/JmcomicTypes'
 import { SettingsStore } from '@/services/SettingsService'
 import ReaderTopToolbar from '@/components/reader/ReaderTopToolbar.vue'
@@ -58,7 +58,7 @@ import ReaderBottomToolbar from '@/components/reader/ReaderBottomToolbar.vue'
 import VerticalScrollView from '@/components/reader/VerticalScrollView.vue'
 import HorizontalPageView from '@/components/reader/HorizontalPageView.vue'
 
-const N = SettingsStore.getReaderPreloadPages()  // 正常预加载窗口半径
+function getN(): number { return SettingsStore.getReaderPreloadPages() }
 const N_FAST = 50           // 快速划动方向预加载半径
 const M = 50               // 最大缓存窗口
 const AUTO_HIDE_MS = 3000
@@ -142,14 +142,14 @@ const calcWindow = (center: number): number[] => {
   const result: number[] = []
   let start: number, end: number
   if (expandDirection === 'forward') {
-    start = Math.max(0, center - N)
+    start = Math.max(0, center - getN())
     end = Math.min(totalCount.value, center + N_FAST + 1)
   } else if (expandDirection === 'backward') {
     start = Math.max(0, center - N_FAST)
-    end = Math.min(totalCount.value, center + N + 1)
+    end = Math.min(totalCount.value, center + getN() + 1)
   } else {
-    start = Math.max(0, center - N)
-    end = Math.min(totalCount.value, center + N + 1)
+    start = Math.max(0, center - getN())
+    end = Math.min(totalCount.value, center + getN() + 1)
   }
   for (let i = start; i < end; i++) {
     result.push(i + 1)  // sortOrder = index + 1
@@ -165,11 +165,11 @@ const applyImageMap = () => {
 const hasPendingInRange = (center: number, dir: 'forward' | 'backward'): boolean => {
   let checkStart: number, checkEnd: number
   if (dir === 'forward') {
-    checkStart = center + N + 1
+    checkStart = center + getN() + 1
     checkEnd = Math.min(totalCount.value, center + N_FAST + 1)
   } else {
     checkStart = Math.max(0, center - N_FAST)
-    checkEnd = center - N
+    checkEnd = center - getN()
   }
   for (let i = checkStart; i < checkEnd; i++) {
     const so = i + 1
@@ -337,7 +337,8 @@ onMounted(() => {
           verticalViewRef.value?.scrollToIndex(currentIndex.value)
         }
       })
-    }).catch(() => {
+    }).catch((e: any) => {
+      // showToast('[ReaderPage] getDownloadedPhoto failed:', e?.message ?? e)
       totalCount.value = 0
     })
   } else {

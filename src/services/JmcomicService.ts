@@ -3,6 +3,7 @@ import type {PluginListenerHandle} from '@capacitor/core'
 import { toastController } from '@ionic/vue'
 import type {
     AlbumDetail,
+    AllSettings,
     CacheCapacityInfo,
     CommentList,
     DownloadProgressEvent,
@@ -30,9 +31,12 @@ interface JmcomicPlugin {
     setCacheCapacity(options: { mb: number }): Promise<{ success: boolean; capacityMb: number }>
     getCacheCapacityInfo(): Promise<CacheCapacityInfo>
     clearImageCache(): Promise<{ success: boolean }>
-    setDownloadConcurrency(options: { n: number }): Promise<{ success: boolean; concurrency: number }>
+    setDownloadConcurrency(options: { n: number }): Promise<{ success: boolean }>
+    setPreloadConcurrency(options: { n: number }): Promise<{ success: boolean }>
     setDownloadPublic(options: { open: boolean }): Promise<{ success: boolean; downloadPublic: boolean }>
     getDownloadPublic(): Promise<{ downloadPublic: boolean }>
+    getAllSettings(): Promise<AllSettings>
+    setReaderPreloadPages(options: { n: number }): Promise<{ success: boolean }>
     downloadChapter(options: {
         albumId: string
         chapterId: string
@@ -132,6 +136,21 @@ export const JmcomicService = {
     /** 查询下载内容是否公开 */
     getDownloadPublic() {
         return native.getDownloadPublic()
+    },
+
+    /** 获取全部设置（启动时一次性加载） */
+    getAllSettings() {
+        return native.getAllSettings()
+    },
+
+    /** 持久化阅读器预加载页数 */
+    setReaderPreloadPages(n: number) {
+        return native.setReaderPreloadPages({ n })
+    },
+
+    /** 持久化预加载并发数（下次启动生效） */
+    setPreloadConcurrency(n: number) {
+        return native.setPreloadConcurrency({ n })
     },
 
     /**

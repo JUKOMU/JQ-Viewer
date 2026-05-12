@@ -75,16 +75,34 @@
               <span class="unit">页</span>
             </div>
           </div>
+
+          <div class="row divider">
+            <div class="row-left">
+              <span class="row-title">预加载并发数</span>
+              <span class="row-subtitle">阅读时同时加载图片的线程数，下次启动生效</span>
+            </div>
+            <div class="row-right">
+              <input
+                class="num-input"
+                type="number"
+                :value="preloadConcurrency"
+                @change="onPreloadConcurrencyChange"
+                min="1"
+                max="12"
+              />
+              <span class="unit">线程</span>
+            </div>
+          </div>
         </div>
 
         <!-- 分组：下载设置 -->
         <div class="section-label">下载设置</div>
         <div class="card">
-          <!-- 并发数 -->
+          <!-- 下载并发数 -->
           <div class="row">
             <div class="row-left">
-              <span class="row-title">并发下载数</span>
-              <span class="row-subtitle">同时下载的图片线程数</span>
+              <span class="row-title">下载并发数</span>
+              <span class="row-subtitle">章节下载同时进行的图片线程数，下次启动生效</span>
             </div>
             <div class="row-right">
               <input
@@ -132,18 +150,20 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { IonContent, IonHeader, IonPage, IonToggle, IonToolbar, alertController } from '@ionic/vue'
+import { App } from '@capacitor/app'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import { JmcomicService, showToast } from '@/services/JmcomicService'
-import { SettingsStore } from '@/services/SettingsService'
+import { initSettings, SettingsStore } from '@/services/SettingsService'
 import type { CacheCapacityInfo } from '@/services/JmcomicTypes'
 
 const appVersion = ref('0.0.1')
 
 const cacheInfo = ref<CacheCapacityInfo>({ capacityMb: 0, usedMb: 0 })
-const cacheInputMb = ref(640)
-const preloadPages = ref(15)
-const downloadConcurrency = ref(6)
-const downloadPublic = ref(false)
+const cacheInputMb = ref(SettingsStore.getCacheCapacityMb())
+const preloadPages = ref(SettingsStore.getReaderPreloadPages())
+const preloadConcurrency = ref(SettingsStore.getPreloadConcurrency())
+const downloadConcurrency = ref(SettingsStore.getDownloadConcurrency())
+const downloadPublic = ref(SettingsStore.getDownloadPublic())
 
 const usagePercent = computed(() => {
   if (cacheInfo.value.capacityMb <= 0) return 0
@@ -152,35 +172,44 @@ const usagePercent = computed(() => {
 })
 
 onMounted(async () => {
-  // 加载缓存状态
+  // 确保设置缓存已从 DB 加载（App.vue 已调用，此处为幂等安全网）
+  await initSettings()
+
+  // 获取应用版本
+  try {
+    const info = await App.getInfo()
+    appVersion.value = info.version
+  } catch { /* keep default */ }
+
+  // 加载缓存状态（从 ImageRegistry 运行时读取）
   try {
     const info = await JmcomicService.getCacheCapacityInfo()
     cacheInfo.value = info
-    cacheInputMb.value = info.capacityMb
   } catch (e) { /* ignore */ }
 
-  // 加载前端设置
+  // 从缓存刷新 UI（SettingsStore 已被 initSettings 填充）
   preloadPages.value = SettingsStore.getReaderPreloadPages()
+  preloadConcurrency.value = SettingsStore.getPreloadConcurrency()
   downloadConcurrency.value = SettingsStore.getDownloadConcurrency()
   downloadPublic.value = SettingsStore.getDownloadPublic()
-
-  // 从 Android 侧同步公开状态
-  try {
-    const result = await JmcomicService.getDownloadPublic()
-    if (result.downloadPublic !== downloadPublic.value) {
-      downloadPublic.value = result.downloadPublic
-      SettingsStore.setDownloadPublic(result.downloadPublic)
-    }
-  } catch (e) { /* ignore */ }
+  cacheInputMb.value = SettingsStore.getCacheCapacityMb()
 })
 
 // ---- 缓存上限 ----
-function onCacheCapacityChange(e: Event) {
+async function onCacheCapacityChange(e: Event) {
   const val = parseInt((e.target as HTMLInputElement).value, 10)
   if (!Number.isFinite(val)) return
   const mb = Math.max(64, Math.min(2048, val))
+  const prev = cacheInputMb.value
   cacheInputMb.value = mb
-  JmcomicService.setCacheCapacity(mb)
+  SettingsStore.setCacheCapacityMb(mb)
+  try {
+    await JmcomicService.setCacheCapacity(mb)
+  } catch {
+    cacheInputMb.value = prev
+    SettingsStore.setCacheCapacityMb(prev)
+    await showToast('设置失败', 'danger')
+  }
 }
 
 // ---- 清空缓存 ----
@@ -210,24 +239,48 @@ async function onClearCache() {
 }
 
 // ---- 预加载页数 ----
-function onPreloadPagesChange(e: Event) {
+async function onPreloadPagesChange(e: Event) {
   const val = parseInt((e.target as HTMLInputElement).value, 10)
   if (!Number.isFinite(val)) return
   const n = Math.max(5, Math.min(50, val))
   preloadPages.value = n
   SettingsStore.setReaderPreloadPages(n)
-  showToast('已保存，下次阅读生效', 'success')
+  try {
+    await JmcomicService.setReaderPreloadPages(n)
+    await showToast('已保存，下次阅读生效', 'success')
+  } catch {
+    await showToast('保存失败', 'danger')
+  }
 }
 
-// ---- 并发数 ----
-function onConcurrencyChange(e: Event) {
+// ---- 预加载并发数 ----
+async function onPreloadConcurrencyChange(e: Event) {
+  const val = parseInt((e.target as HTMLInputElement).value, 10)
+  if (!Number.isFinite(val)) return
+  const n = Math.max(1, Math.min(12, val))
+  preloadConcurrency.value = n
+  SettingsStore.setPreloadConcurrency(n)
+  try {
+    await JmcomicService.setPreloadConcurrency(n)
+    await showToast('已保存，下次启动生效', 'success')
+  } catch {
+    await showToast('保存失败', 'danger')
+  }
+}
+
+// ---- 下载并发数 ----
+async function onConcurrencyChange(e: Event) {
   const val = parseInt((e.target as HTMLInputElement).value, 10)
   if (!Number.isFinite(val)) return
   const n = Math.max(1, Math.min(12, val))
   downloadConcurrency.value = n
   SettingsStore.setDownloadConcurrency(n)
-  JmcomicService.setDownloadConcurrency(n)
-  showToast('已保存', 'success')
+  try {
+    await JmcomicService.setDownloadConcurrency(n)
+    await showToast('已保存，下次启动生效', 'success')
+  } catch {
+    await showToast('保存失败', 'danger')
+  }
 }
 
 // ---- 公开下载 ----

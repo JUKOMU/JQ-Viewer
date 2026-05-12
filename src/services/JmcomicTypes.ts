@@ -130,6 +130,14 @@ export interface CacheCapacityInfo {
     usedMb: number
 }
 
+export interface AllSettings {
+    readerPreloadPages: number
+    preloadConcurrency: number
+    downloadConcurrency: number
+    downloadPublic: boolean
+    cacheCapacityMb: number
+}
+
 // --- 收藏夹类型 ---
 
 export interface FavoriteQuery {

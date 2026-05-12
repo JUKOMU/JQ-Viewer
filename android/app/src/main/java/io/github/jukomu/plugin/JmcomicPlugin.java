@@ -1,7 +1,6 @@
 package io.github.jukomu.plugin;
 
 import android.content.Context;
-import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import com.getcapacitor.*;
@@ -20,6 +19,7 @@ import io.github.jukomu.jmcomic.core.config.JmConfiguration;
 import io.github.jukomu.jmcomic.core.crypto.JmImageTool;
 import io.github.jukomu.storage.DownloadDatabase;
 import io.github.jukomu.storage.FileStorage;
+import io.github.jukomu.storage.SettingsDatabase;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
@@ -53,7 +53,7 @@ public class JmcomicPlugin extends Plugin {
     private volatile JmApiClient sharedClient;
     private volatile ExecutorService imageExecutor;
     private int imageConcurrency = 6;
-    private SharedPreferences prefs;
+    private int downloadConcurrency = 6;
     private static final int THUMBNAIL_MAX_WIDTH = 300;
     private static final int THUMBNAIL_JPEG_QUALITY = 70;
 
@@ -69,26 +69,27 @@ public class JmcomicPlugin extends Plugin {
     @Override
     public void load() {
         Context ctx = getContext();
-        prefs = ctx.getSharedPreferences("jqviewer_settings", Context.MODE_PRIVATE);
+        SettingsDatabase settingsDb = SettingsDatabase.getInstance(ctx);
 
         // 读取下载公开设置 → FileStorage
-        boolean downloadPublic = prefs.getBoolean("download_public", false);
+        boolean downloadPublic = settingsDb.getBoolean("download_public", false);
         downloadDb = DownloadDatabase.getInstance(ctx);
         FileStorage.getInstance().init(ctx, downloadDb, downloadPublic);
         downloadDb.validateOnStartup(FileStorage.getInstance().getBaseDir());
 
         // 读取缓存容量 → 初始化 ImageRegistry
-        long cacheCapacityMb = prefs.getLong("cache_capacity_mb", 640);
+        long cacheCapacityMb = settingsDb.getLong("cache_capacity_mb", 640);
         ImageRegistry.getInstance().setCapacity(cacheCapacityMb * 1024 * 1024);
 
-        // 读取并发数设置 → 初始化 imageExecutor
-        imageConcurrency = prefs.getInt("download_concurrency", 6);
+        // 读取并发数设置 → 初始化 imageExecutor 和 downloadConcurrency
+        imageConcurrency = settingsDb.getInt("preload_concurrency", 6);
+        downloadConcurrency = settingsDb.getInt("download_concurrency", 6);
         imageExecutor = Executors.newFixedThreadPool(imageConcurrency);
     }
 
     private synchronized JmApiClient getClient() {
         if (sharedClient == null) {
-            sharedClient = JmComic.newApiClient(new JmConfiguration.Builder().downloadThreadPoolSize(imageConcurrency).build());
+            sharedClient = JmComic.newApiClient(new JmConfiguration.Builder().downloadThreadPoolSize(downloadConcurrency).build());
         }
         return sharedClient;
     }
@@ -339,7 +340,7 @@ public class JmcomicPlugin extends Plugin {
         }
         long bytes = mb * 1024 * 1024;
         ImageRegistry.getInstance().setCapacity(bytes);
-        prefs.edit().putLong("cache_capacity_mb", mb).apply();
+        SettingsDatabase.getInstance(getContext()).putString("cache_capacity_mb", String.valueOf(mb));
         JSObject ret = new JSObject();
         ret.put("success", true);
         ret.put("capacityMb", mb);
@@ -350,8 +351,8 @@ public class JmcomicPlugin extends Plugin {
     public void getCacheCapacityInfo(PluginCall call) {
         ImageRegistry reg = ImageRegistry.getInstance();
         JSObject ret = new JSObject();
-        ret.put("capacityMb", reg.getCapacity() / (1024 * 1024));
-        ret.put("usedMb", reg.getCurrentSize() / (1024 * 1024));
+        ret.put("capacityMb", Math.round(reg.getCapacity() / (1024.0 * 1024.0)));
+        ret.put("usedMb", Math.round(reg.getCurrentSize() / (1024.0 * 1024.0)));
         call.resolve(ret);
     }
 
@@ -370,17 +371,22 @@ public class JmcomicPlugin extends Plugin {
             call.reject("n must be between 1 and 12");
             return;
         }
-        prefs.edit().putInt("download_concurrency", n).apply();
-        imageConcurrency = n;
-        // 优雅关闭旧 executor（不中断正在执行的任务）
-        ExecutorService old = imageExecutor;
-        imageExecutor = Executors.newFixedThreadPool(n);
-        if (old != null) {
-            old.shutdown();
-        }
+        SettingsDatabase.getInstance(getContext()).putString("download_concurrency", String.valueOf(n));
         JSObject ret = new JSObject();
         ret.put("success", true);
-        ret.put("concurrency", n);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void setPreloadConcurrency(PluginCall call) {
+        Integer n = call.getInt("n");
+        if (n == null || n < 1 || n > 12) {
+            call.reject("n must be between 1 and 12");
+            return;
+        }
+        SettingsDatabase.getInstance(getContext()).putString("preload_concurrency", String.valueOf(n));
+        JSObject ret = new JSObject();
+        ret.put("success", true);
         call.resolve(ret);
     }
 
@@ -398,8 +404,8 @@ public class JmcomicPlugin extends Plugin {
             }
         }
 
-        prefs.edit().putBoolean("download_public", open).apply();
         int moved = FileStorage.getInstance().relocate(getContext(), open);
+        SettingsDatabase.getInstance(getContext()).putString("download_public", String.valueOf(open));
         JSObject ret = new JSObject();
         ret.put("success", true);
         ret.put("downloadPublic", open);
@@ -409,9 +415,34 @@ public class JmcomicPlugin extends Plugin {
 
     @PluginMethod
     public void getDownloadPublic(PluginCall call) {
-        boolean open = prefs.getBoolean("download_public", false);
+        boolean open = SettingsDatabase.getInstance(getContext()).getBoolean("download_public", false);
         JSObject ret = new JSObject();
         ret.put("downloadPublic", open);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void getAllSettings(PluginCall call) {
+        SettingsDatabase db = SettingsDatabase.getInstance(getContext());
+        JSObject ret = new JSObject();
+        ret.put("readerPreloadPages", db.getInt("reader_preload_pages", 15));
+        ret.put("preloadConcurrency", db.getInt("preload_concurrency", 6));
+        ret.put("downloadConcurrency", db.getInt("download_concurrency", 6));
+        ret.put("downloadPublic", db.getBoolean("download_public", false));
+        ret.put("cacheCapacityMb", db.getLong("cache_capacity_mb", 640));
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void setReaderPreloadPages(PluginCall call) {
+        Integer n = call.getInt("n");
+        if (n == null || n < 5 || n > 50) {
+            call.reject("n must be between 5 and 50");
+            return;
+        }
+        SettingsDatabase.getInstance(getContext()).putString("reader_preload_pages", String.valueOf(n));
+        JSObject ret = new JSObject();
+        ret.put("success", true);
         call.resolve(ret);
     }
 

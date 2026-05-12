@@ -19,6 +19,7 @@ import {onBeforeUnmount, onMounted, computed, ref} from 'vue';
 import {useRoute, useRouter} from 'vue-router'
 import MainMenu from "@/components/menu/MainMenu.vue";
 import {leftMenuOpen, rightMenuOpen} from '@/composables/sideMenuState'
+import {initSettings} from '@/services/SettingsService'
 
 const route = useRoute()
 const router = useRouter()
@@ -59,7 +60,10 @@ const handleMenuDidClose = () => {
   leftMenuOpen.value = false
 }
 
-onMounted(() => {
+onMounted(async () => {
+  // 加载设置到内存缓存（必须在任何页面渲染前完成）
+  await initSettings()
+
   const contentEl = document.getElementById('main-content')
   const menuEl = document.querySelector('ion-menu')
   if (!contentEl || !menuEl) return

@@ -334,6 +334,22 @@ async function onDownloadPublicChange(e: CustomEvent) {
   const open = e.detail.checked
   downloadPublic.value = open
 
+  // 开启时检查"所有文件访问权限"
+  if (open) {
+    try {
+      const { granted } = await JmcomicService.requestManageStorage()
+      if (!granted) {
+        downloadPublic.value = false
+        await showToast('请在系统设置中授予"所有文件访问权限"后重新开启', 'danger')
+        return
+      }
+    } catch (e: any) {
+      downloadPublic.value = false
+      await showToast(String(e?.message ?? '权限检查失败'), 'danger')
+      return
+    }
+  }
+
   // 显示阻塞弹窗
   showRelocationModal.value = true
   relocationCurrent.value = 0

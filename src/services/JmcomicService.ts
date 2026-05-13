@@ -36,6 +36,7 @@ interface JmcomicPlugin {
     setPreloadConcurrency(options: { n: number }): Promise<{ success: boolean }>
     setDownloadPublic(options: { open: boolean }): Promise<{ success: boolean; downloadPublic: boolean; moved: number }>
     getDownloadPublic(): Promise<{ downloadPublic: boolean }>
+    requestManageStorage(): Promise<{ granted: boolean }>
     getAllSettings(): Promise<AllSettings>
     setReaderPreloadPages(options: { n: number }): Promise<{ success: boolean }>
     downloadChapter(options: {
@@ -138,6 +139,11 @@ export const JmcomicService = {
     /** 查询下载内容是否公开 */
     getDownloadPublic() {
         return native.getDownloadPublic()
+    },
+
+    /** 请求"所有文件访问权限"（公开下载需要） */
+    requestManageStorage() {
+        return native.requestManageStorage()
     },
 
     /** 获取全部设置（启动时一次性加载） */

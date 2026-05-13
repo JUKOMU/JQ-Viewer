@@ -1,8 +1,12 @@
 package io.github.jukomu.plugin;
 
 import android.content.Context;
+import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.net.Uri;
+import android.os.Environment;
+import android.provider.Settings;
 import com.getcapacitor.*;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import io.github.jukomu.jmcomic.api.download.DownloadProgress;
@@ -77,6 +81,12 @@ public class JmcomicPlugin extends Plugin {
         downloadDb = DownloadDatabase.getInstance(ctx);
         FileStorage.getInstance().init(ctx, downloadDb, downloadPublic);
 
+        if (downloadPublic && !Environment.isExternalStorageManager()) {
+            android.util.Log.w("JmcomicPlugin",
+                    "公开下载模式已开启，但缺少 MANAGE_EXTERNAL_STORAGE 权限，"
+                    + "文件操作可能失败。请调用 requestManageStorage 申请权限。");
+        }
+
         // 清理僵尸任务的部分下载文件（validateOnStartup 标记前）
         List<org.json.JSONObject> zombieTasks = downloadDb.getAllTasks();
         for (org.json.JSONObject t : zombieTasks) {
@@ -104,6 +114,28 @@ public class JmcomicPlugin extends Plugin {
             sharedClient = JmComic.newApiClient(new JmConfiguration.Builder().downloadThreadPoolSize(downloadConcurrency).build());
         }
         return sharedClient;
+    }
+
+    /**
+     * 请求"所有文件访问权限"（公开下载需要）。
+     * 返回 { granted: boolean }，未授权时打开系统设置页。
+     */
+    @PluginMethod
+    public void requestManageStorage(PluginCall call) {
+        boolean granted = Environment.isExternalStorageManager();
+        if (!granted) {
+            try {
+                Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
+                intent.setData(Uri.parse("package:" + getContext().getPackageName()));
+                getContext().startActivity(intent);
+            } catch (Exception e) {
+                call.reject("无法打开存储权限设置页: " + e.getMessage());
+                return;
+            }
+        }
+        JSObject ret = new JSObject();
+        ret.put("granted", granted);
+        call.resolve(ret);
     }
 
     @PluginMethod

@@ -42,7 +42,6 @@
       <!-- 已完成 -->
       <div v-else-if="task.status === 'completed'" class="status-row">
         <span class="tag completed">共 {{ task.totalPages }} 页</span>
-        <span class="tag id-tag">{{ task.chapterId }}</span>
         <span v-if="sizeText" class="size-text">{{ sizeText }}</span>
       </div>
 
@@ -55,16 +54,12 @@
           已下载 {{ task.downloadedPages }}/{{ task.totalPages }}
           <span class="failed-count">失败 {{ failedCount }}</span>
         </div>
-        <div class="status-row">
-          <span class="tag id-tag">{{ task.chapterId }}</span>
-          <span v-if="sizeText" class="size-text">{{ sizeText }}</span>
-        </div>
+        <div v-if="sizeText" class="size-text size-standalone">{{ sizeText }}</div>
       </template>
 
       <!-- 完全失败 -->
       <div v-else-if="task.status === 'failed'" class="status-row">
         <span class="tag failed">{{ task.error || '下载失败' }}</span>
-        <span class="tag id-tag">{{ task.chapterId }}</span>
       </div>
     </div>
 
@@ -210,12 +205,18 @@ const onCardClick = () => {
 }
 
 .chapter-title {
-  font-size: 12px;
+  display: inline-block;
+  font-size: 10px;
   color: #8a6048;
-  margin-top: 2px;
+  background: #f0ede8;
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-top: 4px;
+  max-width: 100%;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-family: monospace;
 }
 
 .more-btn {
@@ -323,15 +324,12 @@ const onCardClick = () => {
   color: #d9534f;
 }
 
-.tag.id-tag {
-  background: #f0ede8;
-  color: #8a6048;
-  font-family: monospace;
-  font-size: 10px;
-}
-
 .size-text {
   font-size: 11px;
   color: #b89a84;
+}
+
+.size-standalone {
+  margin-top: 4px;
 }
 </style>

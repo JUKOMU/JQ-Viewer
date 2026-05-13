@@ -138,6 +138,15 @@ export interface AllSettings {
     cacheCapacityMb: number
 }
 
+// --- 设置页：文件搬迁 ---
+
+export interface RelocationProgress {
+    current: number      // 已完成文件数
+    total: number        // 文件总数
+    phase: 'copying' | 'verifying' | 'deleting' | 'scanning'
+    currentFile?: string // 当前文件名，如 "albumId/chapterId/05.jpg"
+}
+
 // --- 收藏夹类型 ---
 
 export interface FavoriteQuery {

@@ -143,6 +143,29 @@
         </div>
 
       </div>
+
+      <!-- 搬迁进度遮罩（阻塞式，不可关闭） -->
+      <div v-if="showRelocationModal" class="relocation-overlay">
+        <div class="relocation-dialog">
+          <div class="relocation-title">正在搬迁文件...</div>
+
+          <div class="relocation-progress-bar">
+            <div class="relocation-progress-fill" :style="{ width: relocationPercent + '%' }" />
+          </div>
+          <div class="relocation-percent">{{ relocationPercent }}%</div>
+
+          <div class="relocation-count">
+            已完成：{{ relocationCurrent }} / {{ relocationTotal }} 个文件
+          </div>
+
+          <div class="relocation-phase">{{ phaseLabel }}</div>
+          <div v-if="relocationCurrentFile" class="relocation-file">
+            {{ relocationCurrentFile }}
+          </div>
+
+          <div class="relocation-warning">请勿关闭应用</div>
+        </div>
+      </div>
     </IonContent>
   </IonPage>
 </template>
@@ -151,10 +174,11 @@
 import { computed, onMounted, ref } from 'vue'
 import { IonContent, IonHeader, IonPage, IonToggle, IonToolbar, alertController } from '@ionic/vue'
 import { App } from '@capacitor/app'
+import type { PluginListenerHandle } from '@capacitor/core'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import { JmcomicService, showToast } from '@/services/JmcomicService'
 import { initSettings, SettingsStore } from '@/services/SettingsService'
-import type { CacheCapacityInfo } from '@/services/JmcomicTypes'
+import type { CacheCapacityInfo, RelocationProgress } from '@/services/JmcomicTypes'
 
 const appVersion = ref('0.0.1')
 
@@ -164,6 +188,28 @@ const preloadPages = ref(SettingsStore.getReaderPreloadPages())
 const preloadConcurrency = ref(SettingsStore.getPreloadConcurrency())
 const downloadConcurrency = ref(SettingsStore.getDownloadConcurrency())
 const downloadPublic = ref(SettingsStore.getDownloadPublic())
+
+// ---- 搬迁弹窗状态 ----
+const showRelocationModal = ref(false)
+const relocationCurrent = ref(0)
+const relocationTotal = ref(0)
+const relocationPhase = ref('')
+const relocationCurrentFile = ref('')
+
+const relocationPercent = computed(() => {
+  if (relocationTotal.value <= 0) return 0
+  return Math.round((relocationCurrent.value / relocationTotal.value) * 100)
+})
+
+const phaseLabel = computed(() => {
+  switch (relocationPhase.value) {
+    case 'copying': return '正在复制...'
+    case 'verifying': return '正在校验...'
+    case 'deleting': return '正在清理...'
+    case 'scanning': return '正在通知系统相册...'
+    default: return ''
+  }
+})
 
 const usagePercent = computed(() => {
   if (cacheInfo.value.capacityMb <= 0) return 0
@@ -287,15 +333,41 @@ async function onConcurrencyChange(e: Event) {
 async function onDownloadPublicChange(e: CustomEvent) {
   const open = e.detail.checked
   downloadPublic.value = open
-  SettingsStore.setDownloadPublic(open)
+
+  // 显示阻塞弹窗
+  showRelocationModal.value = true
+  relocationCurrent.value = 0
+  relocationTotal.value = 0
+  relocationPhase.value = ''
+  relocationCurrentFile.value = ''
+
+  // 注册进度监听
+  let handle: PluginListenerHandle | null = null
   try {
-    await JmcomicService.setDownloadPublic(open)
-    showToast(open ? '已公开全部下载内容，系统相册可查看' : '已设为仅应用内可见', 'success')
+    handle = await JmcomicService.addRelocationProgressListener((data: RelocationProgress) => {
+      relocationCurrent.value = data.current
+      relocationTotal.value = data.total
+      relocationPhase.value = data.phase
+      if (data.currentFile) {
+        relocationCurrentFile.value = data.currentFile
+      }
+    })
+  } catch { /* 监听注册失败不影响搬迁 */ }
+
+  try {
+    const result = await JmcomicService.setDownloadPublic(open)
+    SettingsStore.setDownloadPublic(open)
+    const msg = result.moved > 0
+      ? `已搬迁 ${result.moved} 个文件` + (open ? '，系统相册可查看' : '')
+      : (open ? '已设为公开，无文件需搬迁' : '已设为仅应用内可见')
+    await showToast(msg, 'success')
   } catch (e: any) {
-    // 切换失败，回退开关
     downloadPublic.value = !open
     SettingsStore.setDownloadPublic(!open)
-    showToast(String(e?.message ?? '切换失败'), 'danger')
+    await showToast(String(e?.message ?? '切换失败'), 'danger')
+  } finally {
+    handle?.remove()
+    showRelocationModal.value = false
   }
 }
 </script>
@@ -443,5 +515,80 @@ async function onDownloadPublicChange(e: CustomEvent) {
   color: #b89a84;
   width: 30px;
   text-align: right;
+}
+
+/* 搬迁进度遮罩 */
+.relocation-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.relocation-dialog {
+  background: #fff;
+  border-radius: 16px;
+  padding: 32px 28px 24px;
+  width: 300px;
+  text-align: center;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18);
+}
+
+.relocation-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #4c2a18;
+  margin-bottom: 20px;
+}
+
+.relocation-progress-bar {
+  height: 8px;
+  background: #f0e4db;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.relocation-progress-fill {
+  height: 100%;
+  background: linear-gradient(135deg, #f0a060, #e8843c);
+  border-radius: 4px;
+  transition: width 0.25s ease;
+}
+
+.relocation-percent {
+  font-size: 28px;
+  font-weight: 700;
+  color: #e8843c;
+  margin: 12px 0 8px;
+}
+
+.relocation-count {
+  font-size: 13px;
+  color: #8c6b5a;
+  margin-bottom: 4px;
+}
+
+.relocation-phase {
+  font-size: 12px;
+  color: #b89a84;
+  margin-bottom: 2px;
+}
+
+.relocation-file {
+  font-size: 11px;
+  color: #c4a494;
+  margin-bottom: 16px;
+  word-break: break-all;
+  max-height: 32px;
+  overflow: hidden;
+}
+
+.relocation-warning {
+  font-size: 12px;
+  color: #d4a08a;
+  margin-top: 8px;
 }
 </style>

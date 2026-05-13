@@ -402,23 +402,44 @@ public class JmcomicPlugin extends Plugin {
     public void setDownloadPublic(PluginCall call) {
         boolean open = call.getBoolean("open", false);
 
-        // 检查是否有进行中的下载任务，有则拒绝切换
+        // 统一拦截非终态任务（只有 completed/failed 允许切换）
         List<org.json.JSONObject> tasks = downloadDb.getAllTasks();
         for (org.json.JSONObject t : tasks) {
             String s = t.optString("status");
-            if (STATUS_QUEUED.equals(s) || STATUS_DOWNLOADING.equals(s)) {
-                call.reject("有下载任务进行中，请等待全部完成后再切换");
+            if (!"completed".equals(s) && !"failed".equals(s)) {
+                call.reject("有下载任务未完成，请等待全部完成或取消后再切换");
                 return;
             }
         }
 
-        int moved = FileStorage.getInstance().relocate(getContext(), open);
-        SettingsDatabase.getInstance(getContext()).putString("download_public", String.valueOf(open));
-        JSObject ret = new JSObject();
-        ret.put("success", true);
-        ret.put("downloadPublic", open);
-        ret.put("moved", moved);
-        call.resolve(ret);
+        // 后台线程执行搬迁，保持 PluginCall 存活
+        Context ctx = getContext();
+        FileStorage fs = FileStorage.getInstance();
+        new Thread(() -> {
+            try {
+                int moved = fs.relocate(ctx, open, (current, total, phase, currentFile) -> {
+                    JSObject data = new JSObject();
+                    data.put("current", current);
+                    data.put("total", total);
+                    data.put("phase", phase);
+                    if (currentFile != null) {
+                        data.put("currentFile", currentFile);
+                    }
+                    notifyListeners("relocationProgress", data);
+                });
+
+                // 搬迁成功后持久化设置
+                SettingsDatabase.getInstance(ctx).putString("download_public", String.valueOf(open));
+
+                JSObject ret = new JSObject();
+                ret.put("success", true);
+                ret.put("downloadPublic", open);
+                ret.put("moved", moved);
+                call.resolve(ret);
+            } catch (Exception e) {
+                call.reject(e.getMessage(), e);
+            }
+        }).start();
     }
 
     @PluginMethod
@@ -542,9 +563,13 @@ public class JmcomicPlugin extends Plugin {
                     FileStorage.getInstance().saveMeta(albumId, chapterId, metaJson);
 
                     // 使用库的任务系统创建下载任务
-                    Path chapterPath = chapterDir.toPath();
+                    // 多章本子：库会对 path 追加 photoId(chapterId)，传 albumDir 抵消
+                    // 单章本子：库保持路径不变，直接传 chapterDir
+                    Path savePath = photo.isSingleAlbum()
+                            ? chapterDir.toPath()
+                            : chapterDir.getParentFile().toPath();
                     AbstractJmClient abstractClient = (AbstractJmClient) client;
-                    BaseDownloadTask task = abstractClient.createDownloadTask(photo, chapterPath);
+                    BaseDownloadTask task = abstractClient.createDownloadTask(photo, savePath);
 
                     // 记录映射
                     String libTaskId = task.getTaskId();

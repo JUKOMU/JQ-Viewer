@@ -201,6 +201,26 @@ const resetWithPage = async (query: SearchQuery) => {
   errorMessage.value = ''
   resultMeta.value = null
   pageCache.value = {}
+
+  const trimmedKeyword = (query.keyword ?? '').trim()
+  if (/^\d+$/.test(trimmedKeyword)) {
+    try {
+      const album = await JmcomicService.getAlbum(trimmedKeyword)
+      initialLoading.value = false
+      void router.push({
+        path: `/album/${trimmedKeyword}`,
+        query: {
+          title: album.title,
+          coverUrl: album.image,
+          authors: album.authors.join(','),
+        },
+      })
+      return
+    } catch {
+      // ID 对应本子不存在，继续走正常搜索
+    }
+  }
+
   try {
     const pageResult = await fetchPage(query, targetPage)
     resultMeta.value = pageResult

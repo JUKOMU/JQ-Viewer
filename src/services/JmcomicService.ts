@@ -14,6 +14,7 @@ import type {
     ImageInfo,
     PhotoDetail,
     PreloadResult,
+    RelocationProgress,
     SearchQuery,
     SearchResult,
 } from './JmcomicTypes'
@@ -33,7 +34,7 @@ interface JmcomicPlugin {
     clearImageCache(): Promise<{ success: boolean }>
     setDownloadConcurrency(options: { n: number }): Promise<{ success: boolean }>
     setPreloadConcurrency(options: { n: number }): Promise<{ success: boolean }>
-    setDownloadPublic(options: { open: boolean }): Promise<{ success: boolean; downloadPublic: boolean }>
+    setDownloadPublic(options: { open: boolean }): Promise<{ success: boolean; downloadPublic: boolean; moved: number }>
     getDownloadPublic(): Promise<{ downloadPublic: boolean }>
     getAllSettings(): Promise<AllSettings>
     setReaderPreloadPages(options: { n: number }): Promise<{ success: boolean }>
@@ -52,6 +53,7 @@ interface JmcomicPlugin {
     getDownloadedPhoto(options: { albumId: string; chapterId: string }): Promise<PhotoDetail>
     addListener(event: 'imageReady', handler: (data: ImageReadyEvent) => void): Promise<PluginListenerHandle>
     addListener(event: 'downloadProgress', handler: (data: DownloadProgressEvent) => void): Promise<PluginListenerHandle>
+    addListener(event: 'relocationProgress', handler: (data: RelocationProgress) => void): Promise<PluginListenerHandle>
 }
 
 interface ImageReadyEvent {
@@ -213,6 +215,14 @@ export const JmcomicService = {
      */
     addDownloadProgressListener(handler: (data: DownloadProgressEvent) => void): Promise<PluginListenerHandle> {
         return native.addListener('downloadProgress', handler)
+    },
+
+    /**
+     * 注册文件搬迁进度监听。
+     * @param handler 进度更新回调
+     */
+    addRelocationProgressListener(handler: (data: RelocationProgress) => void): Promise<PluginListenerHandle> {
+        return native.addListener('relocationProgress', handler)
     },
 }
 

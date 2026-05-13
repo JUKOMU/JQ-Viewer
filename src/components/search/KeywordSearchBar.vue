@@ -21,7 +21,7 @@
             type="button"
             class="mode-btn"
             :class="{ active: mode === 'single-mode' }"
-            @click="mode = 'single-mode'"
+            @click="mode = mode === 'single-mode' ? '' : 'single-mode'"
         >
           单个解析
         </button>
@@ -29,7 +29,7 @@
             type="button"
             class="mode-btn"
             :class="{ active: mode === 'batch-mode' }"
-            @click="mode = 'batch-mode'"
+            @click="mode = mode === 'batch-mode' ? '' : 'batch-mode'"
         >
           批量解析
         </button>
@@ -127,7 +127,7 @@ const props = withDefaults(defineProps<{
   modeSelect: true,
 })
 
-const mode = ref('single-mode')
+const mode = ref('')
 
 const emit = defineEmits<{
   search: [query: SearchQuery]
@@ -145,7 +145,11 @@ const query = reactive<SearchQuery>({
 })
 
 const emitSearch = () => {
-  emit('search', {...query})
+  const parsed = { ...query }
+  if (mode.value === 'single-mode') {
+    parsed.keyword = (query.keyword ?? '').replace(/\D/g, '')
+  }
+  emit('search', parsed)
 }
 
 const handleNativeKeydown = (event: KeyboardEvent) => {

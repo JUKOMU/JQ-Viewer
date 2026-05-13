@@ -598,6 +598,10 @@ public class JmcomicPlugin extends Plugin {
 
                     // 提交到 DownloadManager
                     abstractClient.downloadManager().submit(task);
+                    // submit 后二次检查，覆盖 TOCTOU 窗口
+                    if (pendingCancel.remove(taskId)) {
+                        abstractClient.downloadManager().cancel(libTaskId);
+                    }
                 } catch (Exception e) {
                     downloadDb.updateFailed(taskId, 0, e.getMessage());
                     pushDownloadProgress(taskId, albumId, chapterId, 0, 0,
@@ -929,6 +933,7 @@ public class JmcomicPlugin extends Plugin {
                         0, totalImages, STATUS_FAILED, "下载失败");
                 cleanupTaskMapping(ourTaskId);
             } else if (newState == TaskState.CANCELLED) {
+                if (downloadDb.getTask(ourTaskId) == null) return; // 已由 cancelDownload 直接清理
                 FileStorage.getInstance().deleteChapter(albumId, chapterId);
                 downloadDb.deleteImages(ourTaskId);
                 downloadDb.deleteTask(ourTaskId);
@@ -949,6 +954,15 @@ public class JmcomicPlugin extends Plugin {
                 pushDownloadProgress(ourTaskId, albumId, chapterId,
                         succeeded, totalImages, STATUS_FAILED,
                         failed + "/" + totalImages + " 张图片下载失败");
+                cleanupTaskMapping(ourTaskId);
+            } else if (newState == TaskState.SKIPPED) {
+                // 所有图片已存在，等同完成
+                Integer firstSO = FileStorage.getInstance()
+                        .getFirstImageSortOrder(albumId, chapterId);
+                downloadDb.updateCompleted(ourTaskId, totalImages,
+                        firstSO != null ? firstSO : 1);
+                pushDownloadProgress(ourTaskId, albumId, chapterId,
+                        totalImages, totalImages, STATUS_COMPLETED, null);
                 cleanupTaskMapping(ourTaskId);
             }
         }

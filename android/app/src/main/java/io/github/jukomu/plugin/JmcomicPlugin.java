@@ -75,6 +75,17 @@ public class JmcomicPlugin extends Plugin {
         boolean downloadPublic = settingsDb.getBoolean("download_public", false);
         downloadDb = DownloadDatabase.getInstance(ctx);
         FileStorage.getInstance().init(ctx, downloadDb, downloadPublic);
+
+        // 清理僵尸任务的部分下载文件（validateOnStartup 标记前）
+        List<org.json.JSONObject> zombieTasks = downloadDb.getAllTasks();
+        for (org.json.JSONObject t : zombieTasks) {
+            String s = t.optString("status");
+            if ("queued".equals(s) || "downloading".equals(s) || "paused".equals(s)) {
+                FileStorage.getInstance().deleteChapter(
+                        t.optString("albumId"), t.optString("chapterId"));
+            }
+        }
+
         downloadDb.validateOnStartup(FileStorage.getInstance().getBaseDir());
 
         // 读取缓存容量 → 初始化 ImageRegistry

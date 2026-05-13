@@ -129,18 +129,13 @@ const syncDownloadState = async () => {
 }
 
 onMounted(async () => {
-  await syncDownloadState()
-
-  // 注册下载进度监听
+  // 注册下载进度监听（先于 sync 注册，避免丢失事件）
   JmcomicService.addDownloadProgressListener((data) => {
     const task = tasks.value.find(t => t.taskId === data.taskId)
     if (!task) {
       void syncDownloadState()
       return
     }
-
-    // 变更检测：状态未变且进度未变时跳过
-    if (task.status === data.status && task.downloadedPages === data.downloadedPages) return
 
     if (data.status === 'downloading') {
       task.downloadedPages = data.downloadedPages
@@ -169,6 +164,8 @@ onMounted(async () => {
   }).then((handle) => {
     downloadProgressHandle = handle
   }).catch(() => {})
+
+  await syncDownloadState()
 })
 
 onIonViewWillEnter(() => {

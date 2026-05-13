@@ -73,7 +73,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onUnmounted, ref } from 'vue'
 import { IonIcon } from '@ionic/vue'
 import { ellipsisVertical } from 'ionicons/icons'
 import { getImageUrl } from '@/services/JmcomicService'
@@ -82,6 +82,7 @@ import type { DownloadTask } from '@/services/JmcomicTypes'
 const props = defineProps<{
   task: DownloadTask
   showProgress: boolean
+  disableLongPress?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -147,9 +148,11 @@ const onCardClick = () => {
 
 // 长按检测
 let longPressTimer: ReturnType<typeof setTimeout> | null = null
+let resetTimer: ReturnType<typeof setTimeout> | null = null
 let longPressTriggered = false
 
 const onTouchStart = () => {
+  if (props.disableLongPress) return
   longPressTriggered = false
   longPressTimer = setTimeout(() => {
     longPressTriggered = true
@@ -162,19 +165,22 @@ const onTouchEnd = () => {
     clearTimeout(longPressTimer)
     longPressTimer = null
   }
-  // 延迟重置，确保 click 事件在 touchend 之后触发时能读取到标志
   if (longPressTriggered) {
-    setTimeout(() => { longPressTriggered = false }, 300)
+    resetTimer = setTimeout(() => { longPressTriggered = false }, 300)
   }
 }
 
 const onTouchMove = () => {
-  // 手指移动则取消长按
   if (longPressTimer) {
     clearTimeout(longPressTimer)
     longPressTimer = null
   }
 }
+
+onUnmounted(() => {
+  if (longPressTimer) clearTimeout(longPressTimer)
+  if (resetTimer) clearTimeout(resetTimer)
+})
 </script>
 
 <style scoped>

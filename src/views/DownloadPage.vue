@@ -7,7 +7,7 @@
         </div>
         <div class="toolbar-title">下载管理</div>
         <div class="toolbar-end">
-          <button class="sort-btn" @click="toggleSort">
+          <button v-if="hasTasks" class="sort-btn" @click="toggleSort">
             <IonIcon :icon="sortIcon" />
           </button>
         </div>
@@ -51,13 +51,14 @@
         <div class="section" v-if="sortedCompletedTasks.length">
           <div class="section-header">
             <span class="section-title">已完成 ({{ sortedCompletedTasks.length }})</span>
-            <button class="clear-btn" @click="clearCompleted">清空</button>
+            <button class="clear-btn" @click="requestClear('completed')">清空</button>
           </div>
           <IonItemSliding v-for="task in sortedCompletedTasks" :key="task.taskId">
             <div class="task-card">
               <DownloadTaskCard
                 :task="task"
                 :show-progress="false"
+                :disable-long-press="true"
                 @click="onRead(task)"
                 @more="openActions(task)"
                 @longpress="openActions(task)"
@@ -73,13 +74,14 @@
         <div class="section" v-if="sortedFailedTasks.length">
           <div class="section-header">
             <span class="section-title">下载失败 ({{ sortedFailedTasks.length }})</span>
-            <button class="clear-btn" @click="clearFailed">清空</button>
+            <button class="clear-btn" @click="requestClear('failed')">清空</button>
           </div>
           <IonItemSliding v-for="task in sortedFailedTasks" :key="task.taskId">
             <div class="task-card">
               <DownloadTaskCard
                 :task="task"
                 :show-progress="false"
+                :disable-long-press="true"
                 @more="openActions(task)"
                 @longpress="openActions(task)"
               />
@@ -100,6 +102,18 @@
       :buttons="actionSheetButtons"
       @did-dismiss="isActionSheetOpen = false; selectedTask = null"
     />
+
+    <!-- 清空确认对话框 -->
+    <IonAlert
+      :is-open="isClearAlertOpen"
+      header="确认清空"
+      :message="clearAlertMessage"
+      :buttons="[
+        { text: '取消', role: 'cancel' },
+        { text: '确定清空', role: 'destructive', handler: executeClear }
+      ]"
+      @did-dismiss="isClearAlertOpen = false"
+    />
   </IonPage>
 </template>
 
@@ -108,6 +122,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   IonActionSheet,
+  IonAlert,
   IonContent,
   IonHeader,
   IonIcon,
@@ -120,7 +135,7 @@ import {
   IonToolbar,
   onIonViewWillEnter,
 } from '@ionic/vue'
-import { cloudDownloadOutline, funnelOutline, saveOutline, textOutline, timeOutline } from 'ionicons/icons'
+import { cloudDownloadOutline, saveOutline, textOutline, timeOutline } from 'ionicons/icons'
 import type { PluginListenerHandle } from '@capacitor/core'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import DownloadTaskCard from '@/components/download/DownloadTaskCard.vue'
@@ -399,15 +414,33 @@ const onDelete = async (task: DownloadTask) => {
   }
 }
 
+// 清空确认
+const isClearAlertOpen = ref(false)
+const clearTarget = ref<'completed' | 'failed'>('completed')
+
+const clearAlertMessage = computed(() =>
+  clearTarget.value === 'completed'
+    ? `将删除所有已完成任务的文件和记录（${completedTasks.value.length} 个），此操作不可恢复。`
+    : `将删除所有失败任务的文件和记录（${failedTasks.value.length} 个），此操作不可恢复。`
+)
+
+const requestClear = (target: 'completed' | 'failed') => {
+  clearTarget.value = target
+  isClearAlertOpen.value = true
+}
+
+const executeClear = () => {
+  if (clearTarget.value === 'completed') clearCompleted()
+  else clearFailed()
+}
+
 const clearCompleted = async () => {
   const list = completedTasks.value
   if (!list.length) return
   await Promise.all(list.map(task =>
     JmcomicService.deleteDownloaded(task.albumId, task.chapterId).catch(() => {})
   ))
-  tasks.value = tasks.value.filter(t => t.status !== 'completed')
-  OfflineDownloadService.setAll(tasks.value)
-  void syncDownloadState()
+  await syncDownloadState()  // 以 DB 为权威源，同时更新 tasks + OfflineDownloadService
 }
 
 const clearFailed = async () => {
@@ -416,9 +449,7 @@ const clearFailed = async () => {
   await Promise.all(list.map(task =>
     JmcomicService.deleteDownloaded(task.albumId, task.chapterId).catch(() => {})
   ))
-  tasks.value = tasks.value.filter(t => t.status !== 'failed')
-  OfflineDownloadService.setAll(tasks.value)
-  void syncDownloadState()
+  await syncDownloadState()
 }
 </script>
 

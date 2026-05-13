@@ -87,9 +87,10 @@ const router = useRouter()
 
 // ---- 路由数据 ----
 const albumId = computed(() => route.params.id as string)
-const coverUrl = computed(() => (route.query.coverUrl as string) || '')
-const albumTitle = computed(() => (route.query.title as string) || '')
+const coverUrl = computed(() => albumDetail.value?.image || (route.query.coverUrl as string) || '')
+const albumTitle = computed(() => albumDetail.value?.title || (route.query.title as string) || '')
 const albumAuthors = computed(() => {
+  if (albumDetail.value?.authors?.length) return albumDetail.value.authors.join(' / ')
   const raw = route.query.authors as string
   return raw ? raw.split(',').join(' / ') : ''
 })

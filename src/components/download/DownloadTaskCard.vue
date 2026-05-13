@@ -295,16 +295,6 @@ const onCardClick = () => {
   color: #fa9c69;
 }
 
-.status-tag.completed {
-  background: #eaf7ea;
-  color: #52a86b;
-}
-
-.status-tag.failed {
-  background: #ffeaea;
-  color: #d9534f;
-}
-
 .status-tag.paused {
   background: #fff8e1;
   color: #f0a030;

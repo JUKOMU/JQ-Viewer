@@ -84,7 +84,7 @@
     <IonPopover
       :is-open="isPopoverOpen"
       :event="popoverEvent"
-      @did-dismiss="isPopoverOpen = false; selectedTask = null; popoverEvent = null"
+      @did-dismiss="isPopoverOpen = false; if (!isDeleteAlertOpen) { selectedTask = null; popoverEvent = null }"
     >
       <IonContent class="popover-content">
         <div class="popover-header">{{ selectedTask?.chapterTitle }}</div>
@@ -248,7 +248,11 @@ const requestDeleteConfirm = () => {
 }
 
 const confirmDelete = () => {
-  if (selectedTask.value) onDelete(selectedTask.value)
+  if (selectedTask.value) {
+    onDelete(selectedTask.value)
+    selectedTask.value = null
+    popoverEvent.value = null
+  }
 }
 
 const hasTasks = computed(() => tasks.value.length > 0)

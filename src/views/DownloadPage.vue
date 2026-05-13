@@ -429,9 +429,9 @@ const requestClear = (target: 'completed' | 'failed') => {
   isClearAlertOpen.value = true
 }
 
-const executeClear = () => {
-  if (clearTarget.value === 'completed') clearCompleted()
-  else clearFailed()
+const executeClear = async () => {
+  if (clearTarget.value === 'completed') await clearCompleted()
+  else await clearFailed()
 }
 
 const clearCompleted = async () => {
@@ -440,7 +440,9 @@ const clearCompleted = async () => {
   await Promise.all(list.map(task =>
     JmcomicService.deleteDownloaded(task.albumId, task.chapterId).catch(() => {})
   ))
-  await syncDownloadState()  // 以 DB 为权威源，同时更新 tasks + OfflineDownloadService
+  tasks.value = tasks.value.filter(t => t.status !== 'completed')
+  OfflineDownloadService.setAll(tasks.value)
+  await syncDownloadState()
 }
 
 const clearFailed = async () => {
@@ -449,6 +451,8 @@ const clearFailed = async () => {
   await Promise.all(list.map(task =>
     JmcomicService.deleteDownloaded(task.albumId, task.chapterId).catch(() => {})
   ))
+  tasks.value = tasks.value.filter(t => t.status !== 'failed')
+  OfflineDownloadService.setAll(tasks.value)
   await syncDownloadState()
 }
 </script>

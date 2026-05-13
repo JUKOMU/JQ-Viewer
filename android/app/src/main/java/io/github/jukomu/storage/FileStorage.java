@@ -51,7 +51,6 @@ public class FileStorage {
     private final Map<String, String> chapterIdToAlbumId = new HashMap<>();
     private final Map<String, String> sortOrderToFilename = new HashMap<>(); // key: "aid_cid_so"
     private long cachedTotalBytes = 0;
-    private boolean sizeNeedsRecalc = true;
 
     public static synchronized FileStorage getInstance() {
         if (instance == null) {
@@ -207,14 +206,10 @@ public class FileStorage {
         if (remaining != null && remaining.length == 0) {
             parentDir.delete();
         }
-        sizeNeedsRecalc = true;
     }
 
     public long getTotalUsedBytes() {
-        if (sizeNeedsRecalc) {
-            cachedTotalBytes = dirSize(baseDir);
-            sizeNeedsRecalc = false;
-        }
+        cachedTotalBytes = dirSize(baseDir);
         return cachedTotalBytes;
     }
 
@@ -268,7 +263,6 @@ public class FileStorage {
         if (totalFiles == 0) {
             this.baseDir = newDir;
             if (!newDir.exists()) newDir.mkdirs();
-            sizeNeedsRecalc = true;
             return 0;
         }
 
@@ -367,7 +361,6 @@ public class FileStorage {
         // 全部完成
         settingsDb.putString("relocation_checkpoint", ""); // 清除 checkpoint
         this.baseDir = newDir;
-        sizeNeedsRecalc = true;
 
         // 删除空的旧目录结构
         deleteEmptyDirs(oldBaseDir);

@@ -3,10 +3,6 @@
     class="card"
     :class="{ clickable: task.status === 'completed' }"
     @click="onCardClick"
-    @touchstart="onTouchStart"
-    @touchend="onTouchEnd"
-    @touchmove="onTouchMove"
-    @contextmenu.prevent
   >
     <div class="cover-wrap">
       <img
@@ -23,9 +19,6 @@
           <div class="album-title">{{ task.albumTitle }}</div>
           <div class="chapter-title">{{ task.chapterTitle }}</div>
         </div>
-        <button class="more-btn" @click.stop="$emit('more')">
-          <IonIcon :icon="ellipsisVertical" />
-        </button>
       </div>
 
       <!-- 下载中：进度条 + 速度 -->
@@ -48,11 +41,12 @@
 
       <!-- 已完成 -->
       <div v-else-if="task.status === 'completed'" class="status-row">
-        <span class="status-tag completed">共 {{ task.totalPages }} 页</span>
-        <span v-if="sizeText" class="size-text">· {{ sizeText }}</span>
+        <span class="tag completed">共 {{ task.totalPages }} 页</span>
+        <span class="tag id-tag">{{ task.chapterId }}</span>
+        <span v-if="sizeText" class="size-text">{{ sizeText }}</span>
       </div>
 
-      <!-- 部分失败：有已下载内容 -->
+      <!-- 部分失败 -->
       <template v-else-if="task.status === 'failed' && task.downloadedPages > 0">
         <div class="progress-bar">
           <div class="progress-fill partial" :style="{ width: progressPct + '%' }" />
@@ -61,19 +55,27 @@
           已下载 {{ task.downloadedPages }}/{{ task.totalPages }}
           <span class="failed-count">失败 {{ failedCount }}</span>
         </div>
-        <div v-if="sizeText" class="size-text">{{ sizeText }}</div>
+        <div class="status-row">
+          <span class="tag id-tag">{{ task.chapterId }}</span>
+          <span v-if="sizeText" class="size-text">{{ sizeText }}</span>
+        </div>
       </template>
 
       <!-- 完全失败 -->
-      <div v-else-if="task.status === 'failed'" class="status-tag failed">
-        {{ task.error || '下载失败' }}
+      <div v-else-if="task.status === 'failed'" class="status-row">
+        <span class="tag failed">{{ task.error || '下载失败' }}</span>
+        <span class="tag id-tag">{{ task.chapterId }}</span>
       </div>
     </div>
+
+    <button class="more-btn" @click.stop="$emit('more', $event)">
+      <IonIcon :icon="ellipsisVertical" />
+    </button>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onUnmounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { IonIcon } from '@ionic/vue'
 import { ellipsisVertical } from 'ionicons/icons'
 import { getImageUrl } from '@/services/JmcomicService'
@@ -82,13 +84,11 @@ import type { DownloadTask } from '@/services/JmcomicTypes'
 const props = defineProps<{
   task: DownloadTask
   showProgress: boolean
-  disableLongPress?: boolean
 }>()
 
 const emit = defineEmits<{
-  more: []
+  more: [event: Event]
   click: []
-  longpress: []
 }>()
 
 const coverError = ref(false)
@@ -140,54 +140,17 @@ const sizeText = computed(() => {
 })
 
 const onCardClick = () => {
-  if (longPressTriggered) return
   if (props.task.status === 'completed') {
     emit('click')
   }
 }
-
-// 长按检测
-let longPressTimer: ReturnType<typeof setTimeout> | null = null
-let resetTimer: ReturnType<typeof setTimeout> | null = null
-let longPressTriggered = false
-
-const onTouchStart = () => {
-  if (props.disableLongPress) return
-  longPressTriggered = false
-  longPressTimer = setTimeout(() => {
-    longPressTriggered = true
-    emit('longpress')
-  }, 500)
-}
-
-const onTouchEnd = () => {
-  if (longPressTimer) {
-    clearTimeout(longPressTimer)
-    longPressTimer = null
-  }
-  if (longPressTriggered) {
-    resetTimer = setTimeout(() => { longPressTriggered = false }, 300)
-  }
-}
-
-const onTouchMove = () => {
-  if (longPressTimer) {
-    clearTimeout(longPressTimer)
-    longPressTimer = null
-  }
-}
-
-onUnmounted(() => {
-  if (longPressTimer) clearTimeout(longPressTimer)
-  if (resetTimer) clearTimeout(resetTimer)
-})
 </script>
 
 <style scoped>
 .card {
   display: flex;
   gap: 12px;
-  padding: 2px 8px;
+  padding: 2px 36px 2px 8px;
   background: #fffaf6;
   border-radius: 12px;
   border: 1px solid rgb(245 210 188 / 0.5);
@@ -256,7 +219,10 @@ onUnmounted(() => {
 }
 
 .more-btn {
-  flex-shrink: 0;
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
   width: 28px;
   height: 28px;
   border: 0;
@@ -268,8 +234,6 @@ onUnmounted(() => {
   justify-content: center;
   border-radius: 6px;
   cursor: pointer;
-  margin-top: -2px;
-  margin-right: -4px;
 }
 
 .more-btn:active {
@@ -349,8 +313,31 @@ onUnmounted(() => {
 .status-row {
   display: flex;
   align-items: center;
+  gap: 6px;
   margin-top: 6px;
-  gap: 2px;
+}
+
+.tag {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.tag.completed {
+  background: #eaf7ea;
+  color: #52a86b;
+}
+
+.tag.failed {
+  background: #ffeaea;
+  color: #d9534f;
+}
+
+.tag.id-tag {
+  background: #f0ede8;
+  color: #8a6048;
+  font-family: monospace;
+  font-size: 10px;
 }
 
 .size-text {

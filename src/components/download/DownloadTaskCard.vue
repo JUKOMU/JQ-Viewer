@@ -1,5 +1,13 @@
 <template>
-  <div class="card">
+  <div
+    class="card"
+    :class="{ clickable: task.status === 'completed' }"
+    @click="onCardClick"
+    @touchstart="onTouchStart"
+    @touchend="onTouchEnd"
+    @touchmove="onTouchMove"
+    @contextmenu.prevent
+  >
     <div class="cover-wrap">
       <img
         :src="coverSrc"
@@ -10,8 +18,17 @@
       />
     </div>
     <div class="info">
-      <div class="album-title">{{ task.albumTitle }}</div>
-      <div class="chapter-title">{{ task.chapterTitle }}</div>
+      <div class="title-row">
+        <div class="titles">
+          <div class="album-title">{{ task.albumTitle }}</div>
+          <div class="chapter-title">{{ task.chapterTitle }}</div>
+        </div>
+        <button class="more-btn" @click.stop="$emit('more')">
+          <IonIcon :icon="ellipsisVertical" />
+        </button>
+      </div>
+
+      <!-- 下载中：进度条 + 速度 -->
       <template v-if="showProgress && task.status === 'downloading'">
         <div class="progress-bar">
           <div class="progress-fill" :style="{ width: progressPct + '%' }" />
@@ -22,31 +39,34 @@
         </div>
         <div v-if="speedText" class="speed-text">{{ speedText }}</div>
       </template>
-      <div v-else-if="task.status === 'queued'" class="status-tag queued">排队中</div>
-      <div v-else-if="task.status === 'paused'" class="status-tag paused">已暂停</div>
-      <div v-else-if="task.status === 'completed'" class="status-tag completed">共 {{ task.totalPages }} 页</div>
-      <div v-else-if="task.status === 'failed'" class="status-tag failed">{{ task.error || '下载失败' }}</div>
 
-      <div class="actions">
-        <template v-if="task.status === 'queued'">
-          <button class="btn btn-cancel" @click.stop="$emit('cancel')">取消</button>
-        </template>
-        <template v-if="task.status === 'downloading'">
-          <button class="btn btn-pause" @click.stop="$emit('pause')">暂停</button>
-          <button class="btn btn-cancel" @click.stop="$emit('cancel')">取消</button>
-        </template>
-        <template v-if="task.status === 'paused'">
-          <button class="btn btn-resume" @click.stop="$emit('resume')">继续</button>
-          <button class="btn btn-cancel" @click.stop="$emit('cancel')">取消</button>
-        </template>
-        <template v-if="task.status === 'completed'">
-          <button class="btn btn-read" @click.stop="$emit('read')">阅读</button>
-          <button class="btn btn-delete" @click.stop="$emit('delete')">删除</button>
-        </template>
-        <template v-if="task.status === 'failed'">
-          <button class="btn btn-retry" @click.stop="$emit('retry')">{{ retryLabel }}</button>
-          <button class="btn btn-delete" @click.stop="$emit('delete')">删除</button>
-        </template>
+      <!-- 排队中 -->
+      <div v-else-if="task.status === 'queued'" class="status-tag queued">排队中</div>
+
+      <!-- 已暂停 -->
+      <div v-else-if="task.status === 'paused'" class="status-tag paused">已暂停</div>
+
+      <!-- 已完成 -->
+      <div v-else-if="task.status === 'completed'" class="status-row">
+        <span class="status-tag completed">共 {{ task.totalPages }} 页</span>
+        <span v-if="sizeText" class="size-text">· {{ sizeText }}</span>
+      </div>
+
+      <!-- 部分失败：有已下载内容 -->
+      <template v-else-if="task.status === 'failed' && task.downloadedPages > 0">
+        <div class="progress-bar">
+          <div class="progress-fill partial" :style="{ width: progressPct + '%' }" />
+        </div>
+        <div class="progress-text">
+          已下载 {{ task.downloadedPages }}/{{ task.totalPages }}
+          <span class="failed-count">失败 {{ failedCount }}</span>
+        </div>
+        <div v-if="sizeText" class="size-text">{{ sizeText }}</div>
+      </template>
+
+      <!-- 完全失败 -->
+      <div v-else-if="task.status === 'failed'" class="status-tag failed">
+        {{ task.error || '下载失败' }}
       </div>
     </div>
   </div>
@@ -54,6 +74,8 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { IonIcon } from '@ionic/vue'
+import { ellipsisVertical } from 'ionicons/icons'
 import { getImageUrl } from '@/services/JmcomicService'
 import type { DownloadTask } from '@/services/JmcomicTypes'
 
@@ -62,13 +84,10 @@ const props = defineProps<{
   showProgress: boolean
 }>()
 
-defineEmits<{
-  cancel: []
-  pause: []
-  resume: []
-  retry: []
-  read: []
-  delete: []
+const emit = defineEmits<{
+  more: []
+  click: []
+  longpress: []
 }>()
 
 const coverError = ref(false)
@@ -88,8 +107,8 @@ const progressPct = computed(() => {
   return Math.round((props.task.downloadedPages / props.task.totalPages) * 100)
 })
 
-const retryLabel = computed(() =>
-  props.task.error?.includes('张图片下载失败') ? '重新下载失败图片' : '重试'
+const failedCount = computed(() =>
+  props.task.totalPages - props.task.downloadedPages
 )
 
 const speedText = computed(() => {
@@ -103,6 +122,59 @@ const speedText = computed(() => {
   }
   return s + ' B/s'
 })
+
+const sizeText = computed(() => {
+  const s = props.task.totalSize
+  if (!s || s <= 0) return ''
+  if (s >= 1024 * 1024 * 1024) {
+    return (s / (1024 * 1024 * 1024)).toFixed(1) + ' GB'
+  }
+  if (s >= 1024 * 1024) {
+    return (s / (1024 * 1024)).toFixed(1) + ' MB'
+  }
+  if (s >= 1024) {
+    return (s / 1024).toFixed(1) + ' KB'
+  }
+  return s + ' B'
+})
+
+const onCardClick = () => {
+  if (longPressTriggered) return
+  if (props.task.status === 'completed') {
+    emit('click')
+  }
+}
+
+// 长按检测
+let longPressTimer: ReturnType<typeof setTimeout> | null = null
+let longPressTriggered = false
+
+const onTouchStart = () => {
+  longPressTriggered = false
+  longPressTimer = setTimeout(() => {
+    longPressTriggered = true
+    emit('longpress')
+  }, 500)
+}
+
+const onTouchEnd = () => {
+  if (longPressTimer) {
+    clearTimeout(longPressTimer)
+    longPressTimer = null
+  }
+  // 延迟重置，确保 click 事件在 touchend 之后触发时能读取到标志
+  if (longPressTriggered) {
+    setTimeout(() => { longPressTriggered = false }, 300)
+  }
+}
+
+const onTouchMove = () => {
+  // 手指移动则取消长按
+  if (longPressTimer) {
+    clearTimeout(longPressTimer)
+    longPressTimer = null
+  }
+}
 </script>
 
 <style scoped>
@@ -113,6 +185,16 @@ const speedText = computed(() => {
   background: #fffaf6;
   border-radius: 12px;
   border: 1px solid rgb(245 210 188 / 0.5);
+  position: relative;
+  user-select: none;
+}
+
+.card.clickable {
+  cursor: pointer;
+}
+
+.card.clickable:active {
+  transform: scale(0.98);
 }
 
 .cover-wrap {
@@ -138,6 +220,17 @@ const speedText = computed(() => {
   justify-content: center;
 }
 
+.title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.titles {
+  flex: 1;
+  min-width: 0;
+}
+
 .album-title {
   font-size: 14px;
   font-weight: 600;
@@ -156,6 +249,27 @@ const speedText = computed(() => {
   text-overflow: ellipsis;
 }
 
+.more-btn {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  background: transparent;
+  color: #8a6048;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  cursor: pointer;
+  margin-top: -2px;
+  margin-right: -4px;
+}
+
+.more-btn:active {
+  background: #f5d2bc;
+}
+
 .progress-bar {
   height: 5px;
   background: #e8d5c4;
@@ -171,6 +285,10 @@ const speedText = computed(() => {
   transition: width 0.3s ease;
 }
 
+.progress-fill.partial {
+  background: linear-gradient(90deg, #fa9c69, #e08860);
+}
+
 .progress-text {
   font-size: 11px;
   color: #8a6048;
@@ -180,6 +298,12 @@ const speedText = computed(() => {
 .progress-pct {
   color: #f28752;
   margin-left: 6px;
+}
+
+.failed-count {
+  color: #d9534f;
+  margin-left: 8px;
+  font-weight: 600;
 }
 
 .speed-text {
@@ -211,58 +335,20 @@ const speedText = computed(() => {
   color: #d9534f;
 }
 
-.actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.btn {
-  font-size: 12px;
-  font-weight: 600;
-  border: 0;
-  border-radius: 6px;
-  padding: 4px 14px;
-  cursor: pointer;
-  transition: opacity 0.15s;
-}
-
-.btn:active {
-  opacity: 0.7;
-}
-
-.btn-read {
-  background: linear-gradient(145deg, #fa9c69, #f28752);
-  color: #fff;
-}
-
-.btn-delete {
-  background: #f5d2bc;
-  color: #8a6048;
-}
-
-.btn-cancel {
-  background: #e8d5c4;
-  color: #8a6048;
-}
-
-.btn-retry {
-  background: linear-gradient(145deg, #fa9c69, #f28752);
-  color: #fff;
-}
-
-.btn-pause {
-  background: #fff3ea;
-  color: #fa9c69;
-}
-
-.btn-resume {
-  background: linear-gradient(145deg, #fa9c69, #f28752);
-  color: #fff;
-}
-
 .status-tag.paused {
   background: #fff8e1;
   color: #f0a030;
+}
+
+.status-row {
+  display: flex;
+  align-items: center;
+  margin-top: 6px;
+  gap: 2px;
+}
+
+.size-text {
+  font-size: 11px;
+  color: #b89a84;
 }
 </style>

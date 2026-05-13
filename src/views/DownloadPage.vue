@@ -6,9 +6,19 @@
           <MenuToggleButton/>
         </div>
         <div class="toolbar-title">下载管理</div>
+        <div class="toolbar-end">
+          <button class="sort-btn" @click="toggleSort">
+            <IonIcon :icon="sortIcon" />
+          </button>
+        </div>
       </IonToolbar>
     </IonHeader>
     <IonContent>
+      <!-- 下拉刷新 -->
+      <IonRefresher slot="fixed" @ion-refresh="onRefresh($event)">
+        <IonRefresherContent />
+      </IonRefresher>
+
       <!-- 空状态 -->
       <div v-if="!hasTasks" class="empty-state">
         <IonIcon :icon="cloudDownloadOutline" class="empty-icon" />
@@ -23,56 +33,94 @@
         </div>
 
         <!-- 下载中 -->
-        <div class="section" v-if="activeTasks.length">
-          <div class="section-title">下载中 ({{ activeTasks.length }})</div>
-          <div v-for="task in activeTasks" :key="task.taskId" class="task-card">
+        <div class="section" v-if="sortedActiveTasks.length">
+          <div class="section-header">
+            <span class="section-title">下载中 ({{ sortedActiveTasks.length }})</span>
+          </div>
+          <div v-for="task in sortedActiveTasks" :key="task.taskId" class="task-card">
             <DownloadTaskCard
               :task="task"
               :show-progress="true"
-              @cancel="onCancel(task)"
-              @pause="onPause(task)"
-              @resume="onResume(task)"
+              @more="openActions(task)"
+              @longpress="openActions(task)"
             />
           </div>
         </div>
 
         <!-- 已完成 -->
-        <div class="section" v-if="completedTasks.length">
-          <div class="section-title">已完成 ({{ completedTasks.length }})</div>
-          <div v-for="task in completedTasks" :key="task.taskId" class="task-card">
-            <DownloadTaskCard
-              :task="task"
-              :show-progress="false"
-              @read="onRead(task)"
-              @delete="onDelete(task)"
-              @retry="onRetry(task)"
-            />
+        <div class="section" v-if="sortedCompletedTasks.length">
+          <div class="section-header">
+            <span class="section-title">已完成 ({{ sortedCompletedTasks.length }})</span>
+            <button class="clear-btn" @click="clearCompleted">清空</button>
           </div>
+          <IonItemSliding v-for="task in sortedCompletedTasks" :key="task.taskId">
+            <div class="task-card">
+              <DownloadTaskCard
+                :task="task"
+                :show-progress="false"
+                @click="onRead(task)"
+                @more="openActions(task)"
+                @longpress="openActions(task)"
+              />
+            </div>
+            <IonItemOptions side="end">
+              <IonItemOption color="danger" @click="onDelete(task)">删除</IonItemOption>
+            </IonItemOptions>
+          </IonItemSliding>
         </div>
 
         <!-- 下载失败 -->
-        <div class="section" v-if="failedTasks.length">
-          <div class="section-title">下载失败 ({{ failedTasks.length }})</div>
-          <div v-for="task in failedTasks" :key="task.taskId" class="task-card">
-            <DownloadTaskCard
-              :task="task"
-              :show-progress="false"
-              @delete="onDelete(task)"
-              @retry="onRetry(task)"
-            />
+        <div class="section" v-if="sortedFailedTasks.length">
+          <div class="section-header">
+            <span class="section-title">下载失败 ({{ sortedFailedTasks.length }})</span>
+            <button class="clear-btn" @click="clearFailed">清空</button>
           </div>
+          <IonItemSliding v-for="task in sortedFailedTasks" :key="task.taskId">
+            <div class="task-card">
+              <DownloadTaskCard
+                :task="task"
+                :show-progress="false"
+                @more="openActions(task)"
+                @longpress="openActions(task)"
+              />
+            </div>
+            <IonItemOptions side="end">
+              <IonItemOption color="danger" @click="onDelete(task)">删除</IonItemOption>
+            </IonItemOptions>
+          </IonItemSliding>
         </div>
         <div class="bottom-spacer" />
       </template>
     </IonContent>
+
+    <!-- 操作菜单 -->
+    <IonActionSheet
+      :is-open="isActionSheetOpen"
+      :header="selectedTask?.chapterTitle || ''"
+      :buttons="actionSheetButtons"
+      @did-dismiss="isActionSheetOpen = false; selectedTask = null"
+    />
   </IonPage>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { IonContent, IonHeader, IonIcon, IonPage, IonToolbar, onIonViewWillEnter } from '@ionic/vue'
-import { cloudDownloadOutline, saveOutline } from 'ionicons/icons'
+import {
+  IonActionSheet,
+  IonContent,
+  IonHeader,
+  IonIcon,
+  IonItemOption,
+  IonItemOptions,
+  IonItemSliding,
+  IonPage,
+  IonRefresher,
+  IonRefresherContent,
+  IonToolbar,
+  onIonViewWillEnter,
+} from '@ionic/vue'
+import { cloudDownloadOutline, funnelOutline, saveOutline, textOutline, timeOutline } from 'ionicons/icons'
 import type { PluginListenerHandle } from '@capacitor/core'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import DownloadTaskCard from '@/components/download/DownloadTaskCard.vue'
@@ -88,6 +136,94 @@ const hasStorageInfo = ref(false)
 let downloadProgressHandle: PluginListenerHandle | null = null
 let syncPromise: Promise<void> | null = null
 
+// 排序
+type SortMode = 'time' | 'title'
+const sortMode = ref<SortMode>('time')
+const sortIcon = computed(() => sortMode.value === 'time' ? timeOutline : textOutline)
+
+const toggleSort = () => {
+  sortMode.value = sortMode.value === 'time' ? 'title' : 'time'
+}
+
+const sortTasks = (list: DownloadTask[]) => {
+  if (sortMode.value === 'title') {
+    return [...list].sort((a, b) => a.albumTitle.localeCompare(b.albumTitle, 'zh'))
+  }
+  return [...list].sort((a, b) => b.createdAt - a.createdAt)
+}
+
+// 操作菜单
+const selectedTask = ref<DownloadTask | null>(null)
+const isActionSheetOpen = ref(false)
+
+const openActions = (task: DownloadTask) => {
+  selectedTask.value = task
+  isActionSheetOpen.value = true
+}
+
+const actionSheetButtons = computed(() => {
+  const t = selectedTask.value
+  if (!t) return []
+
+  const buttons: any[] = []
+
+  if (t.status === 'completed') {
+    buttons.push({
+      text: '阅读',
+      handler: () => onRead(t),
+    })
+  }
+
+  buttons.push({
+    text: '进入详情页',
+    handler: () => onGoToAlbumDetail(t),
+  })
+
+  if (t.status === 'failed') {
+    buttons.push({
+      text: t.error?.includes('张图片下载失败') ? '重新下载失败图片' : '重试',
+      handler: () => onRetry(t),
+    })
+  }
+
+  if (t.status === 'paused') {
+    buttons.push({
+      text: '继续',
+      handler: () => onResume(t),
+    })
+  }
+
+  if (t.status === 'downloading') {
+    buttons.push({
+      text: '暂停',
+      handler: () => onPause(t),
+    })
+  }
+
+  if (t.status === 'queued' || t.status === 'downloading' || t.status === 'paused') {
+    buttons.push({
+      text: '取消',
+      role: 'destructive',
+      handler: () => onCancel(t),
+    })
+  }
+
+  if (t.status === 'completed' || t.status === 'failed') {
+    buttons.push({
+      text: '删除',
+      role: 'destructive',
+      handler: () => onDelete(t),
+    })
+  }
+
+  buttons.push({
+    text: '取消',
+    role: 'cancel',
+  })
+
+  return buttons
+})
+
 const hasTasks = computed(() => tasks.value.length > 0)
 
 const activeTasks = computed(() =>
@@ -102,11 +238,14 @@ const failedTasks = computed(() =>
   tasks.value.filter(t => t.status === 'failed')
 )
 
+const sortedActiveTasks = computed(() => sortTasks(activeTasks.value))
+const sortedCompletedTasks = computed(() => sortTasks(completedTasks.value))
+const sortedFailedTasks = computed(() => sortTasks(failedTasks.value))
+
 const syncDownloadState = async () => {
   if (syncPromise) return syncPromise
 
   syncPromise = (async () => {
-    // 全量同步
     try {
       const result = await JmcomicService.getDownloadTasks()
       tasks.value = result.tasks
@@ -115,7 +254,6 @@ const syncDownloadState = async () => {
       hasStorageInfo.value = true
       OfflineDownloadService.setAll(result.tasks)
     } catch {
-      // 离线回退：使用 localStorage 缓存
       tasks.value = OfflineDownloadService.getAll()
       hasStorageInfo.value = false
     }
@@ -128,8 +266,12 @@ const syncDownloadState = async () => {
   }
 }
 
+const onRefresh = async (event: CustomEvent) => {
+  await syncDownloadState()
+  ;(event.target as HTMLIonRefresherElement).complete()
+}
+
 onMounted(async () => {
-  // 注册下载进度监听（先于 sync 注册，避免丢失事件）
   JmcomicService.addDownloadProgressListener((data) => {
     const task = tasks.value.find(t => t.taskId === data.taskId)
     if (!task) {
@@ -151,6 +293,7 @@ onMounted(async () => {
       task.status = 'completed'
       task.downloadedPages = data.downloadedPages
       task.totalPages = data.totalPages
+      task.totalSize = data.totalSize
       task.completedAt = Date.now()
       OfflineDownloadService.updateStatus(data.taskId, 'completed', data.downloadedPages, data.totalPages)
       void syncDownloadState()
@@ -159,6 +302,7 @@ onMounted(async () => {
       task.downloadedPages = data.downloadedPages
       task.totalPages = data.totalPages
       task.error = data.error
+      task.totalSize = data.totalSize
       OfflineDownloadService.updateStatus(data.taskId, 'failed', data.downloadedPages, data.totalPages, data.error)
     }
   }).then((handle) => {
@@ -205,7 +349,6 @@ const onResume = async (task: DownloadTask) => {
 
 const onRetry = async (task: DownloadTask) => {
   try {
-    // 不删除已有文件——库的 ImageDownloadTask 会自动跳过已存在的文件，仅下载缺失图片
     const { taskId } = await JmcomicService.downloadChapter(
       task.albumId, task.chapterId,
       task.albumTitle, task.chapterTitle, task.coverUrl,
@@ -217,6 +360,7 @@ const onRetry = async (task: DownloadTask) => {
       totalPages: 0,
       downloadedPages: 0,
       error: undefined,
+      totalSize: undefined,
       createdAt: Date.now(),
       completedAt: undefined,
     }
@@ -240,6 +384,10 @@ const onRead = (task: DownloadTask) => {
   })
 }
 
+const onGoToAlbumDetail = (task: DownloadTask) => {
+  void router.push(`/album/${task.albumId}`)
+}
+
 const onDelete = async (task: DownloadTask) => {
   try {
     await JmcomicService.deleteDownloaded(task.albumId, task.chapterId)
@@ -249,6 +397,28 @@ const onDelete = async (task: DownloadTask) => {
   } catch (e: any) {
     await showToast(e?.message || '删除失败', 'danger')
   }
+}
+
+const clearCompleted = async () => {
+  const list = completedTasks.value
+  if (!list.length) return
+  await Promise.all(list.map(task =>
+    JmcomicService.deleteDownloaded(task.albumId, task.chapterId).catch(() => {})
+  ))
+  tasks.value = tasks.value.filter(t => t.status !== 'completed')
+  OfflineDownloadService.setAll(tasks.value)
+  void syncDownloadState()
+}
+
+const clearFailed = async () => {
+  const list = failedTasks.value
+  if (!list.length) return
+  await Promise.all(list.map(task =>
+    JmcomicService.deleteDownloaded(task.albumId, task.chapterId).catch(() => {})
+  ))
+  tasks.value = tasks.value.filter(t => t.status !== 'failed')
+  OfflineDownloadService.setAll(tasks.value)
+  void syncDownloadState()
 }
 </script>
 
@@ -264,6 +434,30 @@ const onDelete = async (task: DownloadTask) => {
   font-size: 16px;
   font-weight: 600;
   color: #4c2a18;
+}
+
+.toolbar-end {
+  position: absolute;
+  right: 12px;
+  bottom: 6px;
+}
+
+.sort-btn {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  background: transparent;
+  color: #8a6048;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.sort-btn:active {
+  background: #f5d2bc;
 }
 
 :deep(ion-header),
@@ -316,13 +510,33 @@ const onDelete = async (task: DownloadTask) => {
   padding: 4px 14px;
 }
 
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 4px 6px;
+}
+
 .section-title {
   font-size: 13px;
   font-weight: 600;
   color: #8a6048;
-  padding: 8px 4px 6px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+}
+
+.clear-btn {
+  font-size: 12px;
+  border: 0;
+  background: transparent;
+  color: #d9534f;
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.clear-btn:active {
+  background: #ffeaea;
 }
 
 .task-card {
@@ -331,5 +545,12 @@ const onDelete = async (task: DownloadTask) => {
 
 .bottom-spacer {
   height: 80px;
+}
+
+:deep(ion-item-sliding) {
+  --background: transparent;
+  background: transparent;
+  border-radius: 12px;
+  margin-bottom: 8px;
 }
 </style>

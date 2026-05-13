@@ -24,7 +24,7 @@ public class DownloadDatabase extends SQLiteOpenHelper {
 
     private static final String TAG = "DownloadDatabase";
     private static final String DB_NAME = "jq_download.db";
-    private static final int DB_VERSION = 1;
+    private static final int DB_VERSION = 2;
 
     // ---- 表名 ----
     static final String TABLE_TASKS = "download_tasks";
@@ -46,6 +46,7 @@ public class DownloadDatabase extends SQLiteOpenHelper {
     static final String COL_ERROR = "error";
     static final String COL_CREATED_AT = "created_at";
     static final String COL_COMPLETED_AT = "completed_at";
+    static final String COL_TOTAL_SIZE = "total_size";
 
     // ---- images 列 ----
     static final String COL_SORT_ORDER = "sort_order";
@@ -84,6 +85,7 @@ public class DownloadDatabase extends SQLiteOpenHelper {
                 + COL_FIRST_IMAGE_SORT_ORDER + " INTEGER,"
                 + COL_STATUS + " TEXT NOT NULL DEFAULT 'queued',"
                 + COL_ERROR + " TEXT,"
+                + COL_TOTAL_SIZE + " INTEGER DEFAULT 0,"
                 + COL_CREATED_AT + " INTEGER NOT NULL,"
                 + COL_COMPLETED_AT + " INTEGER"
                 + ")");
@@ -103,9 +105,9 @@ public class DownloadDatabase extends SQLiteOpenHelper {
 
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        db.execSQL("DROP TABLE IF EXISTS " + TABLE_IMAGES);
-        db.execSQL("DROP TABLE IF EXISTS " + TABLE_TASKS);
-        onCreate(db);
+        if (oldVersion < 2) {
+            db.execSQL("ALTER TABLE " + TABLE_TASKS + " ADD COLUMN " + COL_TOTAL_SIZE + " INTEGER DEFAULT 0");
+        }
     }
 
     // ========== 任务操作 ==========
@@ -167,6 +169,13 @@ public class DownloadDatabase extends SQLiteOpenHelper {
         cv.put(COL_DOWNLOADED_PAGES, downloadedPages);
         cv.put(COL_STATUS, "failed");
         cv.put(COL_ERROR, error);
+        getWritableDatabase().update(TABLE_TASKS, cv,
+                COL_TASK_ID + " = ?", new String[]{taskId});
+    }
+
+    public void updateSize(String taskId, long totalSize) {
+        ContentValues cv = new ContentValues();
+        cv.put(COL_TOTAL_SIZE, totalSize);
         getWritableDatabase().update(TABLE_TASKS, cv,
                 COL_TASK_ID + " = ?", new String[]{taskId});
     }
@@ -382,6 +391,10 @@ public class DownloadDatabase extends SQLiteOpenHelper {
             int compIdx = c.getColumnIndex(COL_COMPLETED_AT);
             if (!c.isNull(compIdx)) {
                 obj.put("completedAt", c.getLong(compIdx));
+            }
+            int sizeIdx = c.getColumnIndex(COL_TOTAL_SIZE);
+            if (sizeIdx >= 0 && !c.isNull(sizeIdx)) {
+                obj.put("totalSize", c.getLong(sizeIdx));
             }
         } catch (Exception ignored) {}
         return obj;

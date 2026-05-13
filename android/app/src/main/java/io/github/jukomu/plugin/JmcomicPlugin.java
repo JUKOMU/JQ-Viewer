@@ -23,6 +23,7 @@ import io.github.jukomu.storage.SettingsDatabase;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -935,8 +936,10 @@ public class JmcomicPlugin extends Plugin {
                         .getFirstImageSortOrder(albumId, chapterId);
                 downloadDb.updateCompleted(ourTaskId, totalImages,
                         firstSO != null ? firstSO : 1);
+                long totalSize = calcChapterFileSize(albumId, chapterId);
+                downloadDb.updateSize(ourTaskId, totalSize);
                 pushDownloadProgress(ourTaskId, albumId, chapterId,
-                        totalImages, totalImages, STATUS_COMPLETED, null);
+                        totalImages, totalImages, STATUS_COMPLETED, null, 0, totalSize);
                 cleanupTaskMapping(ourTaskId);
             } else if (newState == TaskState.FAILED) {
                 downloadDb.updateFailed(ourTaskId, 0, "下载失败");
@@ -962,9 +965,11 @@ public class JmcomicPlugin extends Plugin {
                 int succeeded = totalImages - failed;
                 downloadDb.updateFailed(ourTaskId, succeeded,
                         failed + "/" + totalImages + " 张图片下载失败");
+                long totalSize = calcChapterFileSize(albumId, chapterId);
+                downloadDb.updateSize(ourTaskId, totalSize);
                 pushDownloadProgress(ourTaskId, albumId, chapterId,
                         succeeded, totalImages, STATUS_FAILED,
-                        failed + "/" + totalImages + " 张图片下载失败");
+                        failed + "/" + totalImages + " 张图片下载失败", 0, totalSize);
                 cleanupTaskMapping(ourTaskId);
             } else if (newState == TaskState.SKIPPED) {
                 // 所有图片已存在，等同完成
@@ -972,8 +977,10 @@ public class JmcomicPlugin extends Plugin {
                         .getFirstImageSortOrder(albumId, chapterId);
                 downloadDb.updateCompleted(ourTaskId, totalImages,
                         firstSO != null ? firstSO : 1);
+                long totalSize = calcChapterFileSize(albumId, chapterId);
+                downloadDb.updateSize(ourTaskId, totalSize);
                 pushDownloadProgress(ourTaskId, albumId, chapterId,
-                        totalImages, totalImages, STATUS_COMPLETED, null);
+                        totalImages, totalImages, STATUS_COMPLETED, null, 0, totalSize);
                 cleanupTaskMapping(ourTaskId);
             }
         }
@@ -1029,6 +1036,13 @@ public class JmcomicPlugin extends Plugin {
     private void pushDownloadProgress(String taskId, String albumId, String chapterId,
                                       int downloadedPages, int totalPages,
                                       String status, String error, long speed) {
+        pushDownloadProgress(taskId, albumId, chapterId, downloadedPages, totalPages,
+                status, error, speed, 0);
+    }
+
+    private void pushDownloadProgress(String taskId, String albumId, String chapterId,
+                                      int downloadedPages, int totalPages,
+                                      String status, String error, long speed, long totalSize) {
         JSObject data = new JSObject();
         data.put("taskId", taskId);
         data.put("albumId", albumId);
@@ -1042,7 +1056,24 @@ public class JmcomicPlugin extends Plugin {
         if (speed > 0) {
             data.put("speed", speed);
         }
+        if (totalSize > 0) {
+            data.put("totalSize", totalSize);
+        }
         notifyListeners("downloadProgress", data);
+    }
+
+    /** 计算章节目录下所有图片文件的总大小（排除 meta.json 和 .tmp 文件） */
+    private long calcChapterFileSize(String albumId, String chapterId) {
+        File chapterDir = FileStorage.getInstance().getChapterDir(albumId, chapterId);
+        if (chapterDir == null || !chapterDir.isDirectory()) return 0;
+        File[] files = chapterDir.listFiles(
+                (dir, name) -> !name.equals("meta.json") && !name.endsWith(".tmp"));
+        if (files == null) return 0;
+        long total = 0;
+        for (File f : files) {
+            total += f.length();
+        }
+        return total;
     }
 
     // ---- 缩略图生成 ----

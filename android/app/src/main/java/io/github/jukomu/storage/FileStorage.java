@@ -114,7 +114,7 @@ public class FileStorage {
 
     // ---- 目录/文件操作 ----
 
-    File getChapterDir(String albumId, String chapterId) {
+    public File getChapterDir(String albumId, String chapterId) {
         return new File(baseDir, albumId + File.separator + chapterId);
     }
 

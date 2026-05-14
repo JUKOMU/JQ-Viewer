@@ -18,6 +18,11 @@
         <div class="titles">
           <div class="album-title">{{ task.albumTitle }}</div>
           <div class="chapter-title">{{ task.chapterTitle }}</div>
+          <div v-if="hasMultiChapters" class="chapter-bubbles">
+            <span v-for="ch in downloadedChapters" :key="ch.chapterId" class="bubble">
+              {{ ch.chapterSortOrder ?? parseSortOrder(ch.chapterTitle) }}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -79,12 +84,22 @@ import type { DownloadTask } from '@/services/JmcomicTypes'
 const props = defineProps<{
   task: DownloadTask
   showProgress: boolean
+  downloadedChapters?: DownloadTask[]
 }>()
 
 const emit = defineEmits<{
   more: [event: Event]
   click: []
 }>()
+
+const hasMultiChapters = computed(() =>
+  (props.downloadedChapters?.length ?? 0) > 1
+)
+
+const parseSortOrder = (title: string): number => {
+  const m = title.match(/^第(\d+)/)
+  return m ? parseInt(m[1], 10) : 0
+}
 
 const coverError = ref(false)
 const coverSrc = computed(() => {
@@ -218,6 +233,26 @@ const onCardClick = () => {
   overflow: hidden;
   text-overflow: ellipsis;
   font-family: monospace;
+}
+
+.chapter-bubbles {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.bubble {
+  display: inline-block;
+  font-size: 10px;
+  color: #8a6048;
+  background: #f0ede8;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: monospace;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .more-btn {

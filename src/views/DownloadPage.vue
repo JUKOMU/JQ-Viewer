@@ -47,17 +47,18 @@
         </div>
 
         <!-- 已完成 -->
-        <div class="section" v-if="sortedCompletedTasks.length">
+        <div class="section" v-if="completedGroups.length">
           <div class="section-header">
-            <span class="section-title">已完成 ({{ sortedCompletedTasks.length }})</span>
+            <span class="section-title">已完成 ({{ completedGroups.length }})</span>
             <button class="clear-btn" @click="requestClear('completed')">清空</button>
           </div>
-          <div v-for="task in sortedCompletedTasks" :key="task.taskId" class="task-card">
+          <div v-for="group in completedGroups" :key="group.albumId" class="task-card">
             <DownloadTaskCard
-              :task="task"
+              :task="group.chapters[0]"
               :show-progress="false"
-              @click="onRead(task)"
-              @more="openActions(task, $event)"
+              :downloaded-chapters="group.type === 'multi' ? group.chapters : undefined"
+              @click="onReadGroup(group)"
+              @more="openGroupActions(group, $event)"
             />
           </div>
         </div>
@@ -84,13 +85,13 @@
     <IonPopover
       :is-open="isPopoverOpen"
       :event="popoverEvent"
-      @did-dismiss="isPopoverOpen = false; if (!isDeleteAlertOpen) { selectedTask = null; popoverEvent = null }"
+      @did-dismiss="isPopoverOpen = false; if (!isDeleteAlertOpen) { selectedTask = null; selectedGroup = null; popoverEvent = null }"
     >
       <IonContent class="popover-content">
-        <div class="popover-header">{{ selectedTask?.chapterTitle }}</div>
+        <div class="popover-header">{{ popoverTitle }}</div>
 
         <button v-if="selectedTask?.status === 'completed'" class="popover-btn" @click="popoverAction('read')">
-          <IonIcon :icon="bookOutline" /> 阅读
+          <IonIcon :icon="bookOutline" /> {{ selectedGroup?.type === 'multi' ? '选择章节' : '阅读' }}
         </button>
 
         <button class="popover-btn" @click="popoverAction('detail')">
@@ -178,7 +179,7 @@ import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import DownloadTaskCard from '@/components/download/DownloadTaskCard.vue'
 import { JmcomicService, showToast } from '@/services/JmcomicService'
 import { OfflineDownloadService } from '@/services/OfflineDownloadService'
-import type { DownloadTask } from '@/services/JmcomicTypes'
+import type { CompletedGroup, DownloadTask } from '@/services/JmcomicTypes'
 
 const router = useRouter()
 const tasks = ref<DownloadTask[]>([])
@@ -206,14 +207,30 @@ const sortTasks = (list: DownloadTask[]) => {
 
 // 操作菜单
 const selectedTask = ref<DownloadTask | null>(null)
+const selectedGroup = ref<CompletedGroup | null>(null)
 const isPopoverOpen = ref(false)
 const popoverEvent = ref<Event | null>(null)
 
 const cancelableStatuses = ['queued', 'downloading', 'paused']
 const deletableStatuses = ['completed', 'failed']
 
+const popoverTitle = computed(() => {
+  if (selectedGroup.value?.type === 'multi') {
+    return selectedGroup.value.albumTitle
+  }
+  return selectedTask.value?.chapterTitle ?? ''
+})
+
 const openActions = (task: DownloadTask, event: Event) => {
   selectedTask.value = task
+  selectedGroup.value = null
+  popoverEvent.value = event
+  isPopoverOpen.value = true
+}
+
+const openGroupActions = (group: CompletedGroup, event: Event) => {
+  selectedTask.value = group.chapters[0]
+  selectedGroup.value = group
   popoverEvent.value = event
   isPopoverOpen.value = true
 }
@@ -224,7 +241,13 @@ const popoverAction = (action: string) => {
   if (!t) return
 
   switch (action) {
-    case 'read': onRead(t); break
+    case 'read':
+      if (selectedGroup.value?.type === 'multi') {
+        onOpenChapterSelect(selectedGroup.value)
+      } else {
+        onRead(t)
+      }
+      break
     case 'detail': onGoToAlbumDetail(t); break
     case 'retry': onRetry(t); break
     case 'resume': onResume(t); break
@@ -238,6 +261,10 @@ const popoverAction = (action: string) => {
 const isDeleteAlertOpen = ref(false)
 
 const deleteAlertMessage = computed(() => {
+  const g = selectedGroup.value
+  if (g?.type === 'multi') {
+    return `将删除「${g.albumTitle}」全部已下载章节（${g.chapters.length}个），此操作不可恢复。`
+  }
   const t = selectedTask.value
   if (!t) return ''
   return `将删除「${t.chapterTitle}」的下载文件和记录，此操作不可恢复。`
@@ -248,11 +275,15 @@ const requestDeleteConfirm = () => {
 }
 
 const confirmDelete = () => {
-  if (selectedTask.value) {
+  const g = selectedGroup.value
+  if (g?.type === 'multi') {
+    onDeleteGroup(g)
+  } else if (selectedTask.value) {
     onDelete(selectedTask.value)
-    selectedTask.value = null
-    popoverEvent.value = null
   }
+  selectedTask.value = null
+  selectedGroup.value = null
+  popoverEvent.value = null
 }
 
 const hasTasks = computed(() => tasks.value.length > 0)
@@ -270,8 +301,34 @@ const failedTasks = computed(() =>
 )
 
 const sortedActiveTasks = computed(() => sortTasks(activeTasks.value))
-const sortedCompletedTasks = computed(() => sortTasks(completedTasks.value))
 const sortedFailedTasks = computed(() => sortTasks(failedTasks.value))
+
+const completedGroups = computed<CompletedGroup[]>(() => {
+  const byAlbum = new Map<string, DownloadTask[]>()
+  for (const t of completedTasks.value) {
+    const list = byAlbum.get(t.albumId)
+    if (list) {
+      list.push(t)
+    } else {
+      byAlbum.set(t.albumId, [t])
+    }
+  }
+  const groups: CompletedGroup[] = []
+  for (const [albumId, chapters] of byAlbum) {
+    chapters.sort((a, b) => (a.chapterSortOrder ?? 0) - (b.chapterSortOrder ?? 0))
+    groups.push({
+      type: chapters.length > 1 ? 'multi' : 'single',
+      albumId,
+      albumTitle: chapters[0].albumTitle,
+      coverUrl: chapters[0].coverUrl,
+      chapters,
+      totalSize: chapters.reduce((s, c) => s + (c.totalSize ?? 0), 0),
+    })
+  }
+  return sortMode.value === 'title'
+    ? groups.sort((a, b) => a.albumTitle.localeCompare(b.albumTitle, 'zh'))
+    : groups.sort((a, b) => Math.max(...b.chapters.map(c => c.createdAt)) - Math.max(...a.chapters.map(c => c.createdAt)))
+})
 
 const syncDownloadState = async () => {
   if (syncPromise) return syncPromise
@@ -417,6 +474,18 @@ const onRead = (task: DownloadTask) => {
   })
 }
 
+const onReadGroup = (group: CompletedGroup) => {
+  if (group.type === 'multi') {
+    onOpenChapterSelect(group)
+  } else {
+    onRead(group.chapters[0])
+  }
+}
+
+const onOpenChapterSelect = (group: CompletedGroup) => {
+  void router.push(`/album/${group.albumId}/download-chapters`)
+}
+
 const onGoToAlbumDetail = (task: DownloadTask) => {
   void router.push(`/album/${task.albumId}`)
 }
@@ -426,6 +495,22 @@ const onDelete = async (task: DownloadTask) => {
     await JmcomicService.deleteDownloaded(task.albumId, task.chapterId)
     tasks.value = tasks.value.filter(t => t.taskId !== task.taskId)
     OfflineDownloadService.removeTask(task.taskId)
+    void syncDownloadState()
+  } catch (e: any) {
+    await showToast(e?.message || '删除失败', 'danger')
+  }
+}
+
+const onDeleteGroup = async (group: CompletedGroup) => {
+  try {
+    await Promise.all(group.chapters.map(ch =>
+      JmcomicService.deleteDownloaded(ch.albumId, ch.chapterId).catch(() => {})
+    ))
+    const taskIds = new Set(group.chapters.map(ch => ch.taskId))
+    tasks.value = tasks.value.filter(t => !taskIds.has(t.taskId))
+    for (const ch of group.chapters) {
+      OfflineDownloadService.removeTask(ch.taskId)
+    }
     void syncDownloadState()
   } catch (e: any) {
     await showToast(e?.message || '删除失败', 'danger')

@@ -24,7 +24,7 @@ public class DownloadDatabase extends SQLiteOpenHelper {
 
     private static final String TAG = "DownloadDatabase";
     private static final String DB_NAME = "jq_download.db";
-    private static final int DB_VERSION = 2;
+    private static final int DB_VERSION = 3;
 
     // ---- 表名 ----
     static final String TABLE_TASKS = "download_tasks";
@@ -47,6 +47,7 @@ public class DownloadDatabase extends SQLiteOpenHelper {
     static final String COL_CREATED_AT = "created_at";
     static final String COL_COMPLETED_AT = "completed_at";
     static final String COL_TOTAL_SIZE = "total_size";
+    static final String COL_CHAPTER_SORT_ORDER = "chapter_sort_order";
 
     // ---- images 列 ----
     static final String COL_SORT_ORDER = "sort_order";
@@ -86,6 +87,7 @@ public class DownloadDatabase extends SQLiteOpenHelper {
                 + COL_STATUS + " TEXT NOT NULL DEFAULT 'queued',"
                 + COL_ERROR + " TEXT,"
                 + COL_TOTAL_SIZE + " INTEGER DEFAULT 0,"
+                + COL_CHAPTER_SORT_ORDER + " INTEGER DEFAULT 0,"
                 + COL_CREATED_AT + " INTEGER NOT NULL,"
                 + COL_COMPLETED_AT + " INTEGER"
                 + ")");
@@ -108,6 +110,9 @@ public class DownloadDatabase extends SQLiteOpenHelper {
         if (oldVersion < 2) {
             db.execSQL("ALTER TABLE " + TABLE_TASKS + " ADD COLUMN " + COL_TOTAL_SIZE + " INTEGER DEFAULT 0");
         }
+        if (oldVersion < 3) {
+            db.execSQL("ALTER TABLE " + TABLE_TASKS + " ADD COLUMN " + COL_CHAPTER_SORT_ORDER + " INTEGER DEFAULT 0");
+        }
     }
 
     // ========== 任务操作 ==========
@@ -128,11 +133,12 @@ public class DownloadDatabase extends SQLiteOpenHelper {
                 SQLiteDatabase.CONFLICT_IGNORE);
     }
 
-    public void updateTaskDetail(String taskId, int totalPages, String author, String tags) {
+    public void updateTaskDetail(String taskId, int totalPages, String author, String tags, int sortOrder) {
         ContentValues cv = new ContentValues();
         cv.put(COL_TOTAL_PAGES, totalPages);
         cv.put(COL_AUTHOR, author);
         cv.put(COL_TAGS, tags);
+        cv.put(COL_CHAPTER_SORT_ORDER, sortOrder);
         getWritableDatabase().update(TABLE_TASKS, cv,
                 COL_TASK_ID + " = ?", new String[]{taskId});
     }
@@ -395,6 +401,10 @@ public class DownloadDatabase extends SQLiteOpenHelper {
             int sizeIdx = c.getColumnIndex(COL_TOTAL_SIZE);
             if (sizeIdx >= 0 && !c.isNull(sizeIdx)) {
                 obj.put("totalSize", c.getLong(sizeIdx));
+            }
+            int sortIdx = c.getColumnIndex(COL_CHAPTER_SORT_ORDER);
+            if (sortIdx >= 0 && !c.isNull(sortIdx)) {
+                obj.put("chapterSortOrder", c.getInt(sortIdx));
             }
         } catch (Exception ignored) {}
         return obj;

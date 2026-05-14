@@ -182,6 +182,7 @@ export interface DownloadTask {
     chapterTitle: string
     coverUrl: string
     firstImageSortOrder?: number
+    chapterSortOrder?: number
     totalPages: number
     downloadedPages: number
     status: DownloadStatus
@@ -190,6 +191,15 @@ export interface DownloadTask {
     error?: string
     speed?: number
     totalSize?: number
+}
+
+export interface CompletedGroup {
+    type: 'single' | 'multi'
+    albumId: string
+    albumTitle: string
+    coverUrl: string
+    chapters: DownloadTask[]     // 按 chapterSortOrder 升序
+    totalSize: number
 }
 
 export interface DownloadTasksResult {

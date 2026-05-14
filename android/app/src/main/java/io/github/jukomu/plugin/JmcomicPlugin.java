@@ -581,7 +581,8 @@ public class JmcomicPlugin extends Plugin {
 
                     // 更新任务详情
                     downloadDb.updateTaskDetail(taskId, images.size(),
-                            photo.getAuthor(), new org.json.JSONArray(photo.getTags()).toString());
+                            photo.getAuthor(), new org.json.JSONArray(photo.getTags()).toString(),
+                            photo.getSortOrder());
 
                     // 创建目录 + meta.json
                     java.io.File chapterDir = FileStorage.getInstance()

@@ -80,15 +80,13 @@ onMounted(async () => {
       if (route.meta.menu !== true) return false
       // 右侧菜单打开时不允许打开左侧
       if (rightMenuOpen.value) return false
-      // 左侧 50% 屏幕区域触发（右侧 50% 留给右侧菜单手势）
-      if (detail.startX > window.innerWidth * 0.5) return false
       return true
     },
     onEnd: (detail) => {
       if (route.meta.menu !== true) return
 
       const isMostlyHorizontal = Math.abs(detail.deltaX) > Math.abs(detail.deltaY)
-      const shouldOpen = detail.deltaX > 24 || detail.velocityX > 0.25
+      const shouldOpen = detail.deltaX > 12 || detail.velocityX > 0.15
 
       if (!isMostlyHorizontal || !shouldOpen) return
 

@@ -145,7 +145,7 @@ const onCardClick = () => {
 .card {
   display: flex;
   gap: 12px;
-  padding: 2px 36px 2px 8px;
+  padding: 0 36px 0 0;
   background: #fffaf6;
   border-radius: 12px;
   border: 1px solid rgb(245 210 188 / 0.5);
@@ -168,6 +168,7 @@ const onCardClick = () => {
   border-radius: 6px;
   overflow: hidden;
   background: #ece1d8;
+  box-shadow: 2px 0 2px rgba(0,0,0,0.2);
 }
 
 .cover {

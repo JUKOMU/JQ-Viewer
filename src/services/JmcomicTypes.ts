@@ -206,6 +206,6 @@ export interface DownloadProgressEvent {
     totalPages: number
     status: DownloadStatus
     error?: string
-    speed?: number
+    speed: number
     totalSize?: number
 }

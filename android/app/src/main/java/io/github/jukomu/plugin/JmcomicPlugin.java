@@ -1087,6 +1087,8 @@ public class JmcomicPlugin extends Plugin {
         }
         if (speed > 0) {
             data.put("speed", speed);
+        } else {
+            data.put("speed", 0);
         }
         if (totalSize > 0) {
             data.put("totalSize", totalSize);

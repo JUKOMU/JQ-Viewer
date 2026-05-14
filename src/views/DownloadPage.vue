@@ -314,7 +314,9 @@ onMounted(async () => {
       task.downloadedPages = data.downloadedPages
       task.totalPages = data.totalPages
       task.status = 'downloading'
-      task.speed = data.speed
+      if (data.speed > 0) {
+        task.speed = data.speed
+      }
       OfflineDownloadService.updateProgress(data.taskId, data.downloadedPages, data.totalPages)
     } else if (data.status === 'paused') {
       task.downloadedPages = data.downloadedPages

@@ -2,15 +2,17 @@
   <IonPage>
     <IonHeader class="ion-no-border">
       <IonToolbar>
-        <div class="toolbar-start">
-          <IonBackButton :default-href="'/album/' + albumId" text="" />
-        </div>
-        <div class="toolbar-title">{{ albumTitle || '章节选择' }}</div>
-        <div class="toolbar-end">
+        <IonButtons slot="start">
+          <IonButton @click="$emit('back')" text="">
+            <IonIcon :icon="arrowBack"/>
+          </IonButton>
+        </IonButtons>
+        <IonTitle class="toolbar-title">{{ albumTitle || '章节选择' }}</IonTitle>
+        <IonButtons slot="end">
           <button class="mode-btn" @click="toggleMode" :disabled="loadingAll">
-            {{ showMode === 'downloaded' ? '全部章节' : '已下载' }}
+            {{ showMode === 'downloaded' ? '显示全部章节' : '显示已下载' }}
           </button>
-        </div>
+        </IonButtons>
       </IonToolbar>
     </IonHeader>
     <IonContent>
@@ -20,11 +22,18 @@
           v-for="ch in downloadedChapters"
           :key="ch.chapterId"
           type="button"
-          class="chapter-card"
+          class="chapter-card downloaded"
           @click="onOpenChapter(ch, true)"
         >
           <span class="chapter-num">{{ chapterNum(ch) }}</span>
           <span class="chapter-title">{{ ch.chapterTitle }}</span>
+          <span v-if="ch.totalPages > 0" class="chapter-pages">{{ ch.totalPages }} 页</span>
+          <img
+            v-if="ch.firstImageSortOrder"
+            :src="getImageUrl(ch.chapterId, ch.firstImageSortOrder, 'image')"
+            class="chapter-thumb"
+            alt=""
+          />
         </button>
       </div>
 
@@ -48,6 +57,13 @@
         >
           <span class="chapter-num">第{{ meta.sortOrder }}话</span>
           <span class="chapter-title">{{ meta.title }}</span>
+          <span v-if="downloadedIds.has(meta.id)" class="chapter-pages">{{ getDownloadedPages(meta.id) }} 页</span>
+          <img
+            v-if="downloadedIds.has(meta.id) && getDownloadedImage(meta.id)"
+            :src="getDownloadedImage(meta.id)!"
+            class="chapter-thumb"
+            alt=""
+          />
         </button>
       </div>
 
@@ -61,13 +77,17 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   IonBackButton,
+  IonIcon,
+  IonButtons,
   IonContent,
   IonHeader,
   IonPage,
+  IonTitle,
   IonToolbar,
 } from '@ionic/vue'
-import { JmcomicService } from '@/services/JmcomicService'
+import { getImageUrl, JmcomicService } from '@/services/JmcomicService'
 import type { DownloadTask, PhotoMeta } from '@/services/JmcomicTypes'
+import { arrowBack } from 'ionicons/icons'
 
 const route = useRoute()
 const router = useRouter()
@@ -82,6 +102,13 @@ const loadingAll = ref(false)
 // 已下载章节
 const downloadedChapters = ref<DownloadTask[]>([])
 const downloadedIds = computed(() => new Set(downloadedChapters.value.map(ch => ch.chapterId)))
+const downloadedMap = computed(() => {
+  const map = new Map<string, DownloadTask>()
+  for (const ch of downloadedChapters.value) {
+    map.set(ch.chapterId, ch)
+  }
+  return map
+})
 
 // 全部章节
 const allChapters = ref<PhotoMeta[]>([])
@@ -90,6 +117,16 @@ const skeletonCount = 6
 const chapterNum = (ch: DownloadTask) => {
   const so = ch.chapterSortOrder
   return so && so > 0 ? `第${so}话` : ch.chapterTitle
+}
+
+const getDownloadedPages = (chapterId: string): number => {
+  return downloadedMap.value.get(chapterId)?.totalPages ?? 0
+}
+
+const getDownloadedImage = (chapterId: string): string | null => {
+  const dt = downloadedMap.value.get(chapterId)
+  if (!dt?.firstImageSortOrder) return null
+  return getImageUrl(dt.chapterId, dt.firstImageSortOrder, 'image')
 }
 
 const toggleMode = async () => {
@@ -130,7 +167,6 @@ const onOpenChapter = (ch: PhotoMeta | DownloadTask, isDownloaded: boolean) => {
 }
 
 onMounted(async () => {
-  // 加载已下载章节
   try {
     const result = await JmcomicService.getDownloadTasks()
     downloadedChapters.value = result.tasks
@@ -146,27 +182,11 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.toolbar-start {
-  padding: 0 0 0 4px;
-}
-
 .toolbar-title {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
   font-size: 16px;
   font-weight: 600;
   color: #4c2a18;
-  max-width: 50%;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.toolbar-end {
-  position: absolute;
-  right: 12px;
-  bottom: 6px;
+  padding: 0;
 }
 
 .mode-btn {
@@ -184,19 +204,19 @@ onMounted(async () => {
   background: #f5d2bc;
 }
 
-/* 章节网格（复用 AlbumChaptersTab 样式） */
+/* 章节网格 */
 .chapter-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 8px;
   padding: 12px 14px;
+  align-items: start;
 }
 
 .chapter-card {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
   gap: 4px;
   padding: 14px 10px;
   border: 1px solid rgb(245 210 188 / 0.7);
@@ -232,7 +252,21 @@ onMounted(async () => {
   line-height: 1.3;
 }
 
-/* 骨架卡片（复用 AlbumChaptersTab 样式） */
+.chapter-pages {
+  font-size: 10px;
+  color: #b89a84;
+}
+
+.chapter-thumb {
+  width: 100%;
+  height: auto;
+  max-height: 140px;
+  object-fit: cover;
+  border-radius: 6px;
+  margin-top: 6px;
+}
+
+/* 骨架卡片 */
 .skeleton-card {
   display: flex;
   flex-direction: column;

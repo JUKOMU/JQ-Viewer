@@ -46,7 +46,7 @@
 
       <!-- 已完成 -->
       <div v-else-if="task.status === 'completed'" class="status-row">
-        <span class="tag completed">共 {{ task.totalPages }} 页</span>
+        <span class="tag completed">共 {{ displayTotalPages }} 页</span>
         <span v-if="sizeText" class="size-text">{{ sizeText }}</span>
       </div>
 
@@ -85,6 +85,7 @@ const props = defineProps<{
   task: DownloadTask
   showProgress: boolean
   downloadedChapters?: DownloadTask[]
+  totalSize?: number
 }>()
 
 const emit = defineEmits<{
@@ -95,6 +96,13 @@ const emit = defineEmits<{
 const hasMultiChapters = computed(() =>
   (props.downloadedChapters?.length ?? 0) > 1
 )
+
+const displayTotalPages = computed(() => {
+  if (hasMultiChapters.value && props.downloadedChapters) {
+    return props.downloadedChapters.reduce((s, c) => s + c.totalPages, 0)
+  }
+  return props.task.totalPages
+})
 
 const parseSortOrder = (title: string): number => {
   const m = title.match(/^第(\d+)/)
@@ -135,7 +143,7 @@ const speedText = computed(() => {
 })
 
 const sizeText = computed(() => {
-  const s = props.task.totalSize
+  const s = props.totalSize ?? props.task.totalSize
   if (!s || s <= 0) return ''
   if (s >= 1024 * 1024 * 1024) {
     return (s / (1024 * 1024 * 1024)).toFixed(1) + ' GB'

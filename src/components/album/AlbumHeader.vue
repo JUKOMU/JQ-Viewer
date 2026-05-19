@@ -79,7 +79,7 @@ defineExpose({
 .header-bg-mask {
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, rgb(0 0 0 / 0.5) 0%, rgb(0 0 0 / 0.7) 100%);
+  background: linear-gradient(180deg, rgb(125 125 125 / 0.4) 0%, rgb(125 125 125 / 0.2) 100%);
 }
 
 .header-content {

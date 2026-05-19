@@ -44,7 +44,11 @@
           :photo-metas="albumDetail?.photoMetas ?? []"
           :selected-chapter-id="selectedChapterId"
           :loading="loading"
+          :show-actions="showChapterActions"
+          :chapter-download-statuses="chapterDownloadStatuses"
           @select-chapter="selectChapter"
+          @download-chapter="onDownloadChapter"
+          @dismiss-actions="showChapterActions = false"
         />
         <AlbumPreviewTab
           v-else-if="activeTab === 'preview'"
@@ -114,6 +118,28 @@ const activeTab = ref<TabKey>('info')
 const selectedChapterId = ref('')
 const chapterLoading = ref(false)
 
+// ---- 章节操作栏 ----
+const showChapterActions = ref(false)
+const chapterDownloadStatuses = ref<Map<string, string>>(new Map())
+let downloadProgressHandle: PluginListenerHandle | null = null
+
+const refreshDownloadStatuses = async () => {
+  try {
+    const result = await JmcomicService.getDownloadTasks()
+    if (result?.tasks) {
+      const map = new Map<string, string>()
+      for (const task of result.tasks) {
+        if (task.albumId === albumId.value) {
+          map.set(task.chapterId, task.status)
+        }
+      }
+      chapterDownloadStatuses.value = map
+    }
+  } catch {
+    // ignore
+  }
+}
+
 // ---- 操作 ----
 const actionBusy = reactive({ like: false, favorite: false })
 
@@ -163,10 +189,21 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
+
+  // 获取当前专辑的章节下载状态
+  await refreshDownloadStatuses()
+  // 监听下载进度，实时更新状态
+  downloadProgressHandle = await JmcomicService.addDownloadProgressListener((data) => {
+    if (data.albumId !== albumId.value) return
+    const map = new Map(chapterDownloadStatuses.value)
+    map.set(data.chapterId, data.status)
+    chapterDownloadStatuses.value = map
+  })
 })
 
 // ---- Tab 切换 ----
 const switchTab = async (key: TabKey) => {
+  showChapterActions.value = false
   activeTab.value = key
   if (key === 'preview') {
     await loadPreview()
@@ -177,7 +214,13 @@ const switchTab = async (key: TabKey) => {
 
 // ---- 章节选择 ----
 const selectChapter = async (chapterId: string) => {
-  if (chapterId === selectedChapterId.value) return
+  if (chapterId === selectedChapterId.value) {
+    // 再次点击同一章节：切换操作栏
+    showChapterActions.value = !showChapterActions.value
+    return
+  }
+  // 不同章节：隐藏操作栏，加载新章节
+  showChapterActions.value = false
   selectedChapterId.value = chapterId
   chapterLoading.value = true
 
@@ -191,6 +234,14 @@ const selectChapter = async (chapterId: string) => {
   if (activeTab.value === 'preview') {
     await loadPreview()
   }
+}
+
+const onDownloadChapter = async (chapterId: string) => {
+  if (chapterId !== selectedChapterId.value) {
+    selectedChapterId.value = chapterId
+  }
+  await handleDownload()
+  await refreshDownloadStatuses()
 }
 
 // ---- 预览 ----
@@ -237,6 +288,7 @@ const loadPreview = async () => {
 
 onUnmounted(() => {
   imageReadyListenerHandle?.remove()
+  downloadProgressHandle?.remove()
 })
 
 // 跳转全量预览页
@@ -322,6 +374,7 @@ const handleDownload = async () => {
       createdAt: Date.now(),
     })
     await showToast('已加入下载队列', 'success')
+    await refreshDownloadStatuses()
   } catch (e: any) {
     await showToast(e?.message || '下载提交失败', 'danger')
   }

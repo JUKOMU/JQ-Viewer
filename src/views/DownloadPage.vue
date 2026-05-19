@@ -56,6 +56,7 @@
             <DownloadTaskCard
               :task="group.chapters[0]"
               :show-progress="false"
+              :total-size="group.totalSize"
               :downloaded-chapters="group.type === 'multi' ? group.chapters : undefined"
               @click="onReadGroup(group)"
               @more="openGroupActions(group, $event)"

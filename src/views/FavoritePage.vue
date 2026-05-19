@@ -438,6 +438,8 @@ const setupOpenGesture = () => {
       if (rightMenuOpen.value) return false
       // 右侧 50% 屏幕区域触发（左侧 50% 留给左侧菜单手势）
       if (detail.startX < window.innerWidth * 0.5) return false
+      // 右划留给左侧菜单手势
+      if (detail.deltaX > 6) return false
       return true
     },
     onEnd: (detail) => {

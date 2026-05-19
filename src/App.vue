@@ -3,7 +3,7 @@
     <MainMenu content-id="main-content" :disabled="route.meta.menu !== true"></MainMenu>
     <div id="main-content" class="ion-page-container">
       <router-view v-slot="{ Component }">
-        <transition :name="transitionName" mode="out-in">
+        <transition :name="transitionName" mode="out-in" @after-enter="onAfterEnter">
           <keep-alive :include="keepAliveNames">
             <component :is="Component" />
           </keep-alive>
@@ -39,6 +39,10 @@ router.beforeEach((to, from) => {
 })
 
 const transitionName = computed(() => isBack.value ? 'page-slide-back' : 'page-slide-forward')
+
+const onAfterEnter = (el: Element) => {
+  (el as HTMLElement).style.transform = ''
+}
 
 const keepAliveNames = computed(() =>
   router.getRoutes()
@@ -151,7 +155,7 @@ onBeforeUnmount(() => {
 .page-slide-forward-leave-active,
 .page-slide-back-enter-active,
 .page-slide-back-leave-active {
-  transition: transform 0.1s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease;
+  transition: transform 0.22s cubic-bezier(0.22, 0, 0, 1), opacity 0.22s cubic-bezier(0.22, 0, 0, 1);
 }
 
 /* 前进：页面从右滑入，旧页向左退出 */

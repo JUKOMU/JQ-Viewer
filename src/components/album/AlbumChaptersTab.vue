@@ -7,10 +7,35 @@
         :key="meta.id"
         type="button"
         class="chapter-card"
-        :class="{ selected: selectedChapterId === meta.id }"
+        :class="{
+          selected: selectedChapterId === meta.id,
+          downloaded: chapterDownloadStatuses.get(meta.id) === 'completed'
+        }"
         @click="$emit('select-chapter', meta.id)"
       >
-        <span class="chapter-num">第{{ meta.sortOrder }}话</span>
+        <Transition name="action-swap" mode="out-in">
+          <span v-if="!(showActions && selectedChapterId === meta.id)" class="chapter-num" key="num">
+            第{{ meta.sortOrder }}话
+          </span>
+          <div v-else class="chapter-actions" key="actions">
+            <button
+              type="button"
+              class="action-btn"
+              :class="{ disabled: isDownloadDisabled(meta.id) }"
+              :disabled="isDownloadDisabled(meta.id)"
+              @click.stop="$emit('download-chapter', meta.id)"
+            >
+              <ion-icon :icon="cloudDownloadOutline" />
+            </button>
+            <button
+              type="button"
+              class="action-btn"
+              @click.stop="$emit('dismiss-actions')"
+            >
+              <ion-icon :icon="arrowBack" />
+            </button>
+          </div>
+        </Transition>
         <span class="chapter-title">{{ meta.title }}</span>
       </button>
     </div>
@@ -25,17 +50,28 @@
 </template>
 
 <script setup lang="ts">
+import { IonIcon } from '@ionic/vue'
+import { arrowBack, cloudDownloadOutline } from 'ionicons/icons'
 import type { PhotoMeta } from '@/services/JmcomicTypes'
 
-defineProps<{
+const props = defineProps<{
   photoMetas: PhotoMeta[]
   selectedChapterId: string
   loading?: boolean
+  showActions: boolean
+  chapterDownloadStatuses: Map<string, string>
 }>()
 
 defineEmits<{
   'select-chapter': [chapterId: string]
+  'download-chapter': [chapterId: string]
+  'dismiss-actions': []
 }>()
+
+const isDownloadDisabled = (chapterId: string): boolean => {
+  const status = props.chapterDownloadStatuses.get(chapterId)
+  return status === 'queued' || status === 'downloading' || status === 'paused' || status === 'completed'
+}
 </script>
 
 <style scoped>
@@ -65,19 +101,82 @@ defineEmits<{
   border-color: #fa9c69;
 }
 
+.chapter-card.downloaded {
+  background: #f0faf3;
+  border-color: #6dbf87;
+}
+
+.chapter-card.selected.downloaded {
+  background: #fff0e7;
+  border-color: #fa9c69;
+}
+
 .chapter-num {
   font-size: 11px;
   font-weight: 700;
   color: #a07858;
+  line-height: 28px; /* 与 .action-btn 高度一致，消除切换时高度跳变 */
 }
 
 .chapter-card.selected .chapter-num {
   color: #e07030;
 }
 
+.chapter-card.downloaded .chapter-num {
+  color: #3a8c52;
+}
+
+.chapter-card.selected.downloaded .chapter-num {
+  color: #e07030;
+}
+
 .chapter-title {
   font-size: 11px;
   line-height: 1.3;
+}
+
+/* ---- 操作按钮 ---- */
+.chapter-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 50%;
+  background: #ffe4d1;
+  color: #e07030;
+  font-size: 16px;
+  transition: background-color 0.18s ease, opacity 0.18s ease, transform 0.12s ease;
+  cursor: pointer;
+}
+
+.action-btn:active {
+  transform: scale(0.92);
+}
+
+.action-btn.disabled,
+.action-btn:disabled {
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+/* action-swap 过渡 */
+.action-swap-enter-active,
+.action-swap-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.action-swap-enter-from,
+.action-swap-leave-to {
+  opacity: 0;
 }
 
 .chapters-empty {

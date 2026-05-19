@@ -21,6 +21,7 @@ declare module 'vue' {
     FavoriteSearchBar: typeof import('./src/components/favorite/FavoriteSearchBar.vue')['default']
     FavoriteSideMenu: typeof import('./src/components/favorite/FavoriteSideMenu.vue')['default']
     HorizontalPageView: typeof import('./src/components/reader/HorizontalPageView.vue')['default']
+    IonButton: typeof import('@ionic/vue')['IonButton']
     KeywordSearchBar: typeof import('./src/components/search/KeywordSearchBar.vue')['default']
     MainMenu: typeof import('./src/components/menu/MainMenu.vue')['default']
     MenuToggleButton: typeof import('./src/components/common/MenuToggleButton.vue')['default']

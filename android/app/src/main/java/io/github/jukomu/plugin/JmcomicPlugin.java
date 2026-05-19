@@ -36,6 +36,9 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -57,6 +60,10 @@ public class JmcomicPlugin extends Plugin {
 
     private volatile JmApiClient sharedClient;
     private volatile ExecutorService imageExecutor;
+    private volatile ExecutorService apiExecutor;
+    private volatile ScheduledExecutorService apiTimeoutExecutor;
+    private static final int API_EXECUTOR_SIZE = 6;
+    private static final long API_TIMEOUT_MINUTES = 5;
     private int imageConcurrency = 6;
     private int downloadConcurrency = 6;
     private static final int THUMBNAIL_MAX_WIDTH = 300;
@@ -107,6 +114,18 @@ public class JmcomicPlugin extends Plugin {
         imageConcurrency = settingsDb.getInt("preload_concurrency", 6);
         downloadConcurrency = settingsDb.getInt("download_concurrency", 6);
         imageExecutor = Executors.newFixedThreadPool(imageConcurrency);
+        apiExecutor = Executors.newFixedThreadPool(API_EXECUTOR_SIZE);
+        apiTimeoutExecutor = Executors.newSingleThreadScheduledExecutor();
+
+        // 预热 client，避免首次 API 调用时的冷启动延迟
+        getClient();
+    }
+
+    @Override
+    protected void handleOnDestroy() {
+        if (apiExecutor != null) apiExecutor.shutdownNow();
+        if (apiTimeoutExecutor != null) apiTimeoutExecutor.shutdownNow();
+        if (imageExecutor != null) imageExecutor.shutdownNow();
     }
 
     private synchronized JmApiClient getClient() {
@@ -147,8 +166,10 @@ public class JmcomicPlugin extends Plugin {
                 return;
             }
             SearchQuery query = buildQuery(queryObject);
-            JmApiClient client = getClient();
-            call.resolve(toSearchPage(client.search(query), (AbstractJmClient) client));
+            runOnApiExecutor(call, () -> {
+                JmApiClient client = getClient();
+                call.resolve(toSearchPage(client.search(query), (AbstractJmClient) client));
+            });
         } catch (Exception e) {
             call.reject(e.getMessage(), e);
         }
@@ -163,8 +184,10 @@ public class JmcomicPlugin extends Plugin {
                 return;
             }
             SearchQuery query = buildQuery(queryObject);
-            JmApiClient client = getClient();
-            call.resolve(toSearchPage(client.getCategories(query), (AbstractJmClient) client));
+            runOnApiExecutor(call, () -> {
+                JmApiClient client = getClient();
+                call.resolve(toSearchPage(client.getCategories(query), (AbstractJmClient) client));
+            });
         } catch (Exception e) {
             call.reject(e.getMessage(), e);
         }
@@ -178,9 +201,11 @@ public class JmcomicPlugin extends Plugin {
                 call.reject("id is required");
                 return;
             }
-            JmApiClient client = getClient();
-            JmAlbum album = client.getAlbum(id);
-            call.resolve(toAlbumObject(album, (AbstractJmClient) client));
+            runOnApiExecutor(call, () -> {
+                JmApiClient client = getClient();
+                JmAlbum album = client.getAlbum(id);
+                call.resolve(toAlbumObject(album, (AbstractJmClient) client));
+            });
         } catch (Exception e) {
             call.reject(e.getMessage(), e);
         }
@@ -194,8 +219,10 @@ public class JmcomicPlugin extends Plugin {
                 call.reject("id is required");
                 return;
             }
-            JmPhoto photo = getClient().getPhoto(id);
-            call.resolve(toPhotoObject(photo));
+            runOnApiExecutor(call, () -> {
+                JmPhoto photo = getClient().getPhoto(id);
+                call.resolve(toPhotoObject(photo));
+            });
         } catch (Exception e) {
             call.reject(e.getMessage(), e);
         }
@@ -211,8 +238,10 @@ public class JmcomicPlugin extends Plugin {
             }
             int page = call.getInt("page", 1);
             ForumQuery query = ForumQuery.album(albumId).mode(ForumMode.ALL).page(page).build();
-            JmCommentList commentList = getClient().getComments(query);
-            call.resolve(toCommentListObject(commentList));
+            runOnApiExecutor(call, () -> {
+                JmCommentList commentList = getClient().getComments(query);
+                call.resolve(toCommentListObject(commentList));
+            });
         } catch (Exception e) {
             call.reject(e.getMessage(), e);
         }
@@ -226,10 +255,12 @@ public class JmcomicPlugin extends Plugin {
                 call.reject("id is required");
                 return;
             }
-            getClient().toggleAlbumLike(id);
-            JSObject ret = new JSObject();
-            ret.put("success", true);
-            call.resolve(ret);
+            runOnApiExecutor(call, () -> {
+                getClient().toggleAlbumLike(id);
+                JSObject ret = new JSObject();
+                ret.put("success", true);
+                call.resolve(ret);
+            });
         } catch (Exception e) {
             call.reject(e.getMessage(), e);
         }
@@ -249,8 +280,10 @@ public class JmcomicPlugin extends Plugin {
                     .folderId(folderId)
                     .page(page)
                     .build();
-            JmApiClient client = getClient();
-            call.resolve(toFavoritePage(client.getFavorites(query), (AbstractJmClient) client));
+            runOnApiExecutor(call, () -> {
+                JmApiClient client = getClient();
+                call.resolve(toFavoritePage(client.getFavorites(query), (AbstractJmClient) client));
+            });
         } catch (Exception e) {
             call.reject(e.getMessage(), e);
         }
@@ -265,10 +298,12 @@ public class JmcomicPlugin extends Plugin {
                 return;
             }
             String folderId = call.getString("folderId", "0");
-            getClient().toggleAlbumFavorite(id, folderId);
-            JSObject ret = new JSObject();
-            ret.put("success", true);
-            call.resolve(ret);
+            runOnApiExecutor(call, () -> {
+                getClient().toggleAlbumFavorite(id, folderId);
+                JSObject ret = new JSObject();
+                ret.put("success", true);
+                call.resolve(ret);
+            });
         } catch (Exception e) {
             call.reject(e.getMessage(), e);
         }
@@ -1050,6 +1085,30 @@ public class JmcomicPlugin extends Plugin {
                     0, totalImages, STATUS_FAILED, e.getMessage());
             cleanupTaskMapping(ourTaskId);
         }
+    }
+
+    // ---- API 异步执行 ----
+    private void runOnApiExecutor(PluginCall call, ApiTask task) {
+        call.setKeepAlive(true);
+        Future<?> future = apiExecutor.submit(() -> {
+            try {
+                task.execute();
+            } catch (Exception e) {
+                android.util.Log.e("JmcomicPlugin", "API call failed", e);
+                call.reject(e.getMessage(), e);
+            }
+        });
+        apiTimeoutExecutor.schedule(() -> {
+            if (!future.isDone()) {
+                future.cancel(true);
+                call.reject("API call timeout (" + API_TIMEOUT_MINUTES + " minutes)");
+            }
+        }, API_TIMEOUT_MINUTES, TimeUnit.MINUTES);
+    }
+
+    @FunctionalInterface
+    private interface ApiTask {
+        void execute() throws Exception;
     }
 
     private void cleanupTaskMapping(String ourTaskId) {

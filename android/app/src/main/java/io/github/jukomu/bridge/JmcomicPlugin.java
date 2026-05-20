@@ -3,7 +3,10 @@ package io.github.jukomu.bridge;
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.content.Context;
+import android.net.ConnectivityManager;
+import android.net.Network;
 import android.os.Build;
+import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
 import com.getcapacitor.*;
 import com.getcapacitor.annotation.CapacitorPlugin;
@@ -20,13 +23,17 @@ import io.github.jukomu.jmcomic.core.client.impl.JmApiClient;
 import io.github.jukomu.jmcomic.core.config.JmConfiguration;
 import io.github.jukomu.service.*;
 import io.github.jukomu.service.PermissionState;
+import okhttp3.Cookie;
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -45,6 +52,13 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
     private int imageConcurrency = 6;
     private int downloadConcurrency = 6;
 
+    // ---- 网络变化监听 ----
+    private ConnectivityManager connectivityManager;
+    private ConnectivityManager.NetworkCallback networkCallback;
+    private ScheduledExecutorService domainProbeExecutor;
+    private ScheduledFuture<?> pendingProbe;
+    private final Object probeLock = new Object();
+    private static final long PROBE_DEBOUNCE_MS = 3000;
 
     // ---- 权限相关 ----
     private static JmcomicPlugin instance;
@@ -109,6 +123,9 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         apiExecutor = Executors.newFixedThreadPool(API_EXECUTOR_SIZE);
         apiTimeoutExecutor = Executors.newSingleThreadScheduledExecutor();
 
+        // 注册网络变化监听，网络切换时主动触发域名探活
+        registerNetworkCallback();
+
         // 预热 client，避免首次 API 调用时的冷启动延迟
         getClient();
 
@@ -120,10 +137,50 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
                 FileStore.getInstance(), settingsDb, sharedClient, imageExecutor, this);
         this.downloadService = new DownloadService(downloadDb,
                 FileStore.getInstance(), sharedClient, imageExecutor, this);
+
+        // 恢复登录态（Cookie + username + userInfo）
+        restoreAuthState(settingsDb);
+    }
+
+    private void restoreAuthState(SettingsStore settingsDb) {
+        String savedCookies = settingsDb.getString("auth_cookies_json");
+        if (savedCookies == null || savedCookies.isEmpty()) return;
+
+        try {
+            List<Cookie> cookies = parseCookiesFromJson(new JSONArray(savedCookies));
+            if (!cookies.isEmpty()) {
+                sharedClient.setCookies(cookies);
+            } else {
+                settingsDb.putString("auth_cookies_json", null);
+                settingsDb.putString("auth_username", null);
+                settingsDb.putString("auth_user_info_json", null);
+            }
+        } catch (Exception e) {
+            android.util.Log.w("JmcomicPlugin", "Failed to restore auth state", e);
+            settingsDb.putString("auth_cookies_json", null);
+            settingsDb.putString("auth_username", null);
+            settingsDb.putString("auth_user_info_json", null);
+        }
     }
 
     @Override
     protected void handleOnDestroy() {
+        // 取消待处理的域名探活
+        synchronized (probeLock) {
+            if (pendingProbe != null) {
+                pendingProbe.cancel(false);
+                pendingProbe = null;
+            }
+        }
+        // 取消注册网络回调
+        if (connectivityManager != null && networkCallback != null) {
+            try {
+                connectivityManager.unregisterNetworkCallback(networkCallback);
+            } catch (IllegalArgumentException ignored) {
+            }
+        }
+        shutdownGracefully(domainProbeExecutor);
+
         shutdownGracefully(apiExecutor);
         shutdownGracefully(apiTimeoutExecutor);
         shutdownGracefully(imageExecutor);
@@ -138,6 +195,59 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
             }
         } catch (InterruptedException e) {
             executor.shutdownNow();
+        }
+    }
+
+    /**
+     * 注册默认网络变化监听。当默认网络变为可用时（WiFi/移动数据/VPN 切换），
+     * 经过去抖动后触发域名重新探活，使库的域名拦截器能及时发现新网络下的可达域名。
+     */
+    private void registerNetworkCallback() {
+        Context ctx = getContext();
+        connectivityManager = (ConnectivityManager) ctx.getSystemService(Context.CONNECTIVITY_SERVICE);
+        if (connectivityManager == null) {
+            android.util.Log.w("JmcomicPlugin", "ConnectivityManager 不可用，跳过网络监听");
+            return;
+        }
+
+        domainProbeExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "domain-probe-debounce");
+            t.setDaemon(true);
+            return t;
+        });
+
+        networkCallback = new ConnectivityManager.NetworkCallback() {
+            @Override
+            public void onAvailable(@NonNull Network network) {
+                scheduleDomainProbe();
+            }
+        };
+
+        connectivityManager.registerDefaultNetworkCallback(networkCallback);
+        android.util.Log.i("JmcomicPlugin", "网络变化监听已注册");
+    }
+
+    /**
+     * 经过去抖动后触发域名重新探活。
+     * 若在去抖动窗口内多次调用，仅最后一次生效。
+     */
+    private void scheduleDomainProbe() {
+        final JmApiClient client = sharedClient;
+        if (client == null) return;
+
+        synchronized (probeLock) {
+            if (pendingProbe != null) {
+                pendingProbe.cancel(false);
+            }
+            pendingProbe = domainProbeExecutor.schedule(() -> {
+                try {
+                    android.util.Log.i("JmcomicPlugin", "网络变化已检测到，重新探活域名...");
+                    client.reprobeDomains();
+                    android.util.Log.i("JmcomicPlugin", "域名重新探活完成");
+                } catch (Exception e) {
+                    android.util.Log.w("JmcomicPlugin", "域名重新探活失败", e);
+                }
+            }, PROBE_DEBOUNCE_MS, TimeUnit.MILLISECONDS);
         }
     }
 
@@ -702,5 +812,148 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         data.put("phase", phase);
         if (currentFile != null) data.put("currentFile", currentFile);
         notifyListeners("relocationProgress", data);
+    }
+
+    // ========== 用户认证 ==========
+
+    @PluginMethod
+    public void login(PluginCall call) {
+        try {
+            String username = call.getString("username");
+            String password = call.getString("password");
+            if (username == null || username.isEmpty() || password == null || password.isEmpty()) {
+                call.reject("username and password are required");
+                return;
+            }
+            call.setKeepAlive(true);
+            apiService.login(username, password, new ApiCallback() {
+                @Override
+                public void onSuccess(JSONObject userInfo) {
+                    try {
+                        // 持久化 cookies + username + userInfo
+                        SettingsStore settingsDb = SettingsStore.getInstance(getContext());
+                        List<Cookie> cookies = sharedClient.getCookies();
+                        settingsDb.putString("auth_cookies_json", cookiesToJson(cookies).toString());
+                        settingsDb.putString("auth_username", userInfo.getString("username"));
+                        settingsDb.putString("auth_user_info_json", userInfo.toString());
+                        call.resolve(JSObject.fromJSONObject(userInfo));
+                    } catch (Exception e) {
+                        call.reject(e.getMessage(), e);
+                    }
+                }
+
+                @Override
+                public void onError(String message, Exception e) {
+                    call.reject(message, e);
+                }
+            });
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void logout(PluginCall call) {
+        try {
+            call.setKeepAlive(true);
+            apiService.logout(new ApiCallback() {
+                @Override
+                public void onSuccess(JSONObject result) {
+                    try {
+                        SettingsStore settingsDb = SettingsStore.getInstance(getContext());
+                        settingsDb.putString("auth_cookies_json", null);
+                        settingsDb.putString("auth_username", null);
+                        settingsDb.putString("auth_user_info_json", null);
+                        call.resolve(JSObject.fromJSONObject(result));
+                    } catch (Exception e) {
+                        call.reject(e.getMessage(), e);
+                    }
+                }
+
+                @Override
+                public void onError(String message, Exception e) {
+                    call.reject(message, e);
+                }
+            });
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void checkLoginState(PluginCall call) {
+        SettingsStore settingsDb = SettingsStore.getInstance(getContext());
+        String username = settingsDb.getString("auth_username");
+        String userInfoJson = settingsDb.getString("auth_user_info_json");
+
+        JSObject ret = new JSObject();
+        if (username != null && !username.isEmpty() && userInfoJson != null && !userInfoJson.isEmpty()) {
+            try {
+                ret.put("userInfo", JSObject.fromJSONObject(new JSONObject(userInfoJson)));
+                ret.put("loggedIn", true);
+                ret.put("username", username);
+            } catch (JSONException e) {
+                // userInfo 损坏 → 清除全部 auth 数据，视为未登录
+                settingsDb.putString("auth_cookies_json", null);
+                settingsDb.putString("auth_username", null);
+                settingsDb.putString("auth_user_info_json", null);
+                ret.put("loggedIn", false);
+            }
+        } else {
+            ret.put("loggedIn", false);
+        }
+        call.resolve(ret);
+    }
+
+    // ---- Cookie 序列化 ----
+
+    private JSONArray cookiesToJson(List<Cookie> cookies) {
+        JSONArray arr = new JSONArray();
+        for (Cookie c : cookies) {
+            JSONObject obj = new JSONObject();
+            try {
+                obj.put("name", c.name());
+                obj.put("value", c.value());
+                obj.put("domain", c.domain());
+                obj.put("path", c.path());
+                obj.put("expiresAt", c.expiresAt());
+                obj.put("secure", c.secure());
+                obj.put("httpOnly", c.httpOnly());
+                obj.put("persistent", c.persistent());
+                arr.put(obj);
+            } catch (JSONException ignored) {
+            }
+        }
+        return arr;
+    }
+
+    private List<Cookie> parseCookiesFromJson(JSONArray arr) {
+        List<Cookie> cookies = new ArrayList<>();
+        long now = System.currentTimeMillis();
+        for (int i = 0; i < arr.length(); i++) {
+            try {
+                JSONObject obj = arr.getJSONObject(i);
+                long expiresAt = obj.optLong("expiresAt", 0);
+                // 跳过已过期的 cookie（expiresAt 为 0 表示会话 cookie，保留）
+                if (expiresAt > 0 && expiresAt < now) continue;
+
+                Cookie.Builder builder = new Cookie.Builder()
+                        .name(obj.getString("name"))
+                        .value(obj.getString("value"))
+                        .domain(obj.getString("domain"))
+                        .path(obj.optString("path", "/"))
+                        .expiresAt(expiresAt);
+                if (obj.optBoolean("secure", false)) builder.secure();
+                if (obj.optBoolean("httpOnly", false)) builder.httpOnly();
+                if (obj.optBoolean("persistent", false)) {
+                    cookies.add(builder.build());
+                } else {
+                    // non-persistent cookie: 用 hostOnly + 不设 expiresAt
+                    cookies.add(builder.hostOnlyDomain(obj.getString("domain")).build());
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        return cookies;
     }
 }

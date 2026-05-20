@@ -6,11 +6,12 @@
       type="overlay"
   >
     <IonHeader class="ion-no-border">
-      <div class="menu-hero">
-        <div class="hero-badge">JQ</div>
+      <div class="menu-hero" @click="goUser">
+        <img v-if="isLoggedIn && userInfo" :src="userInfo.avatarUrl" class="user-avatar" alt="头像" />
+        <IonIcon v-else :icon="personCircleOutline" class="user-avatar-placeholder" />
         <div class="hero-copy">
-          <div class="hero-title">JQ Viewer</div>
-          <div class="hero-subtitle">浏览、搜索与管理入口</div>
+          <div class="hero-title">{{ isLoggedIn && userInfo ? userInfo.username : '未登录' }}</div>
+          <div class="hero-subtitle">{{ isLoggedIn && userInfo ? 'Lv.' + userInfo.level + ' ' + userInfo.levelName : '点击查看账号信息' }}</div>
         </div>
       </div>
     </IonHeader>
@@ -77,8 +78,9 @@
 
 <script setup lang="ts">
 import {IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonMenu, IonMenuToggle} from "@ionic/vue"
-import {downloadSharp, heart, homeSharp, searchSharp, settingsSharp} from 'ionicons/icons'
-import {useRoute} from "vue-router"
+import {downloadSharp, heart, homeSharp, personCircleOutline, searchSharp, settingsSharp} from 'ionicons/icons'
+import {useRoute, useRouter} from "vue-router"
+import {useAuth} from "@/composables/useAuth"
 
 defineProps({
   contentId: String,
@@ -86,7 +88,13 @@ defineProps({
 })
 
 const route = useRoute()
+const router = useRouter()
+const { userInfo, isLoggedIn } = useAuth()
 const menuEdgeStart = Math.round(window.innerWidth * 0.55)
+
+function goUser() {
+  router.push('/user')
+}
 
 function isActive(path: string) {
   return getTopPath(route.path) === getTopPath(path)
@@ -106,24 +114,29 @@ function getTopPath(path: string) {
   background:
       radial-gradient(circle at top right, rgb(255 218 190 / 0.95), transparent 46%),
       linear-gradient(160deg, #fff5ee 0%, #ffeade 100%);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  cursor: pointer;
 }
 
-.hero-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+.user-avatar {
   width: 48px;
   height: 48px;
-  border-radius: 16px;
-  background: linear-gradient(145deg, #fa9c69, #f07e49);
-  color: #fff;
-  font-size: 18px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid #f5d0b8;
+  flex-shrink: 0;
+}
+
+.user-avatar-placeholder {
+  font-size: 48px;
+  color: #e0b694;
+  flex-shrink: 0;
 }
 
 .hero-copy {
-  margin-top: 14px;
+  min-width: 0;
 }
 
 .hero-title {

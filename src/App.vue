@@ -20,6 +20,7 @@ import {useRoute, useRouter} from 'vue-router'
 import MainMenu from "@/components/menu/MainMenu.vue";
 import {leftMenuOpen, rightMenuOpen} from '@/composables/sideMenuState'
 import {initSettings} from '@/services/SettingsService'
+import {useAuth} from '@/composables/useAuth'
 
 const route = useRoute()
 const router = useRouter()
@@ -65,8 +66,13 @@ const handleMenuDidClose = () => {
 }
 
 onMounted(async () => {
+  const { initAuth } = useAuth()
+
   // 加载设置到内存缓存（必须在任何页面渲染前完成）
   await initSettings()
+
+  // 恢复登录态（在设置加载后，不阻塞页面渲染）
+  initAuth()
 
   const contentEl = document.getElementById('main-content')
   const menuEl = document.querySelector('ion-menu')

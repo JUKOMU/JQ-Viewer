@@ -59,7 +59,15 @@ const routes: Array<RouteRecordRaw> = [
   {
     path: '/album/:albumId/read/:chapterId',
     component: () => import('@/views/ReaderPage.vue'),
-  }
+  },
+  {
+    path: '/login',
+    component: () => import('@/views/LoginPage.vue'),
+  },
+  {
+    path: '/user',
+    component: () => import('@/views/UserPage.vue'),
+  },
 ]
 
 const router = createRouter({

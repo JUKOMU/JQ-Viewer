@@ -97,10 +97,20 @@ io.github.jukomu/
    - 下载并发数/公开下载（含目录搬迁）
    - 版本号
 
+8. **用户认证模块**
+   - LoginPage（用户名+密码登录）
+   - UserPage（用户信息/等级/经验/收藏/金币 + 登出）
+   - useAuth 模块级单例（initAuth/login/logout/isLoggedIn）
+   - MainMenu 用户头像区（默认人像/头像+用户名，点击→UserPage）
+   - SettingPage 用户分组入口
+   - Android 侧 3 个 @PluginMethod：login/logout/checkLoginState
+   - Cookie 持久化：AVS cookie → SettingsStore SQLite（auth_cookies_json/auth_username/auth_user_info_json）
+   - 重启恢复：load() restoreAuthState() + checkLoginState()
+   - Cookie 过期过滤
+
 ### 待完成模块
 
 1. **首页 (HomePage)** — 仅有关键词搜索框，缺少真正首页内容（推荐/排行/最新）
-2. **用户认证** — 无登录页面，收藏/评论等需要登录态的功能缺少入口
 
 ### 功能缺口
 
@@ -111,7 +121,6 @@ io.github.jukomu/
 | 评论发表 | 无 | 只能查看评论，不能发表/回复 |
 | 本子级下载 | DownloadService.java | 仅支持章节级下载，不支持整个本子 |
 | 离线收藏夹管理 | FavoritePage.vue | 无创建/删除文件夹 UI |
-| 登录页面 | 无 | 需要登录态的功能无入口 |
 
 ## 模块依赖关系图
 
@@ -126,6 +135,8 @@ App.vue
 │   └── → PreviewAllPage → ReaderPage
 ├── DownloadPage → DownloadTaskCard
 ├── SettingPage
+├── LoginPage
+├── UserPage
 └── ReaderPage ← VerticalScrollView/HorizontalPageView/ReaderTopToolbar/BottomToolbar
 
 Services (TypeScript):
@@ -135,7 +146,8 @@ Services (TypeScript):
 └── OfflineFavoriteService.ts (localStorage 离线收藏夹)
 
 Composables:
-└── sideMenuState.ts (左右菜单互斥状态)
+├── sideMenuState.ts (左右菜单互斥状态)
+└── useAuth.ts (用户登录态模块级单例)
 
 Android (bridge/service/data):
 bridge/JmcomicPlugin.java
@@ -154,3 +166,4 @@ bridge/JmcomicPlugin.java
 | 2026-05-20 | **Android 侧架构重构**：JmcomicPlugin.java 1552→660行，拆分为 bridge/service/data 三层9服务+4数据类 |
 | 2026-05-21 | 架构审查：修复1个回归（clearPhotoCache意外暴露），移除18个未使用 import，改进 handleOnDestroy 优雅关闭、ApiService 异常传播、SettingsService 引用常量 |
 | 2026-05-21 | **阅读器修复**：顶部越界防护(overscroll-behavior) + 底部 END 指示器 + 进度条拖动实时跟踪(ion-input + 150ms节流) |
+| 2026-05-21 | **用户登录态功能**：LoginPage + UserPage + useAuth + 3 个 @PluginMethod + Cookie 序列化/持久化/过期过滤/恢复 + MainMenu 用户头像区 + SettingPage 用户入口 + FavoritePage 登录态检查 |

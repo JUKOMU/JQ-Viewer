@@ -149,6 +149,32 @@ public class ApiService {
         }
     }
 
+    // ---- 用户认证 ----
+
+    public void login(String username, String password, ApiCallback callback) {
+        try {
+            runAsync(() -> {
+                JmUserInfo userInfo = client.login(username, password);
+                return toUserInfoObject(userInfo);
+            }, callback);
+        } catch (Exception e) {
+            callback.onError(e.getMessage(), e);
+        }
+    }
+
+    public void logout(ApiCallback callback) {
+        try {
+            runAsync(() -> {
+                client.logout();
+                JSONObject ret = new JSONObject();
+                ret.put("success", true);
+                return ret;
+            }, callback);
+        } catch (Exception e) {
+            callback.onError(e.getMessage(), e);
+        }
+    }
+
     // ---- 查询构建 ----
 
     private SearchQuery buildQuery(String keyword, String category, String orderBy,
@@ -377,5 +403,19 @@ public class ApiService {
             arr.put(row);
         }
         return arr;
+    }
+
+    private JSONObject toUserInfoObject(JmUserInfo userInfo) throws JSONException {
+        JSONObject ret = new JSONObject();
+        ret.put("uid", userInfo.getUid());
+        ret.put("username", userInfo.getUsername());
+        ret.put("email", userInfo.getEmail() != null ? userInfo.getEmail() : "");
+        ret.put("avatarUrl", userInfo.getPhotoUrl() != null ? userInfo.getPhotoUrl() : "");
+        ret.put("level", userInfo.getLevel());
+        ret.put("levelName", userInfo.getLevelName() != null ? userInfo.getLevelName() : "");
+        ret.put("coin", userInfo.getCoin());
+        ret.put("albumFavorites", userInfo.getAlbumFavorites());
+        ret.put("expPercent", userInfo.getExpPercent());
+        return ret;
     }
 }

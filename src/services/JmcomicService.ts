@@ -17,6 +17,7 @@ import type {
     RelocationProgress,
     SearchQuery,
     SearchResult,
+    UserInfo,
 } from './JmcomicTypes'
 
 interface JmcomicPlugin {
@@ -55,6 +56,9 @@ interface JmcomicPlugin {
     addListener(event: 'imageReady', handler: (data: ImageReadyEvent) => void): Promise<PluginListenerHandle>
     addListener(event: 'downloadProgress', handler: (data: DownloadProgressEvent) => void): Promise<PluginListenerHandle>
     addListener(event: 'relocationProgress', handler: (data: RelocationProgress) => void): Promise<PluginListenerHandle>
+    login(options: { username: string; password: string }): Promise<UserInfo>
+    logout(): Promise<{ success: boolean }>
+    checkLoginState(): Promise<{ loggedIn: boolean; username?: string; userInfo?: UserInfo }>
 }
 
 interface ImageReadyEvent {
@@ -98,6 +102,21 @@ export const JmcomicService = {
     },
     toggleAlbumFavorite(id: string, folderId: string = '0') {
         return native.toggleAlbumFavorite({id, folderId})
+    },
+
+    /** 登录 */
+    login(username: string, password: string) {
+        return native.login({ username, password })
+    },
+
+    /** 登出 */
+    logout() {
+        return native.logout()
+    },
+
+    /** 检查本地登录态（不涉及网络） */
+    checkLoginState() {
+        return native.checkLoginState()
     },
 
     /**

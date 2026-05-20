@@ -133,6 +133,16 @@
           </div>
         </div>
 
+        <!-- 分组：用户 -->
+        <div class="section-label">用户</div>
+        <div class="card">
+          <div class="row action" @click="goUser">
+            <span class="row-title">用户</span>
+            <span class="row-value">{{ userInfo?.username ?? '未登录' }}</span>
+            <span class="arrow">›</span>
+          </div>
+        </div>
+
         <!-- 分组：关于 -->
         <div class="section-label">关于</div>
         <div class="card">
@@ -172,15 +182,23 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { IonContent, IonHeader, IonPage, IonToggle, IonToolbar, alertController } from '@ionic/vue'
 import { App } from '@capacitor/app'
 import type { PluginListenerHandle } from '@capacitor/core'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import { JmcomicService, showToast } from '@/services/JmcomicService'
 import { initSettings, SettingsStore } from '@/services/SettingsService'
+import { useAuth } from '@/composables/useAuth'
 import type { CacheCapacityInfo, RelocationProgress } from '@/services/JmcomicTypes'
 
+const router = useRouter()
+const { userInfo } = useAuth()
 const appVersion = ref('0.0.1')
+
+function goUser() {
+  router.push('/user')
+}
 
 const cacheInfo = ref<CacheCapacityInfo>({ capacityMb: 0, usedMb: 0 })
 const cacheInputMb = ref(SettingsStore.getCacheCapacityMb())

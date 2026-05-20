@@ -1887,3 +1887,93 @@ io.github.jukomu/
 ### 编译验证
 - `vue-tsc --noEmit` ✓ 通过
 - `vite build` ✓ built in 10.69s
+
+---
+
+## 2026-05-21 用户登录态功能实现
+
+### 概述
+实现完整的用户登录/登出功能链路：Android Bridge 层 3 个新 @PluginMethod（login/logout/checkLoginState）+ Cookie 持久化 + 前端 4 个新增/8 个修改文件。
+
+### 新增文件
+1. **`src/composables/useAuth.ts`** — 模块级单例用户状态管理（userInfo/isLoggedIn/initAuth/login/logout）
+2. **`src/views/LoginPage.vue`** — 登录页（用户名+密码+loading+错误提示，成功后 replace('/user')）
+3. **`src/views/UserPage.vue`** — 用户信息页（已登录：头像/等级/经验条/收藏/金币/登出；未登录：引导登录）
+
+### 修改文件
+
+**Android 侧**
+
+4. **`android/.../service/ApiService.java`** — 新增 `login(username, password, callback)` / `logout(callback)` 方法 + `toUserInfoObject(JmUserInfo)` 转换（uid/username/email/avatarUrl/level/levelName/coin/albumFavorites/expPercent）
+
+5. **`android/.../bridge/JmcomicPlugin.java`** — 新增 3 个 @PluginMethod：
+   - `login`: 调 apiService.login() → onSuccess dump cookies + 持久化（auth_cookies_json/auth_username/auth_user_info_json 三个 key）→ 返回 userInfo
+   - `logout`: 调 apiService.logout() → 清除 3 个 auth key
+   - `checkLoginState`: 纯本地读 SettingsStore，返回 { loggedIn, username, userInfo }
+   - Cookie 序列化 helper：`cookiesToJson(List<Cookie>)` / `parseCookiesFromJson(JSONArray)`（含 expiresAt 过期过滤）
+   - `load()` 末尾调用 `restoreAuthState()` 恢复持久化的 cookie
+
+**TypeScript 桥接层**
+
+6. **`src/services/JmcomicTypes.ts`** — 新增 `UserInfo` 接口
+7. **`src/services/JmcomicService.ts`** — 新增 `login()`/`logout()`/`checkLoginState()` 桥接方法
+
+**集成改造**
+
+8. **`src/components/menu/MainMenu.vue`** — hero 区域替换为用户头像区（未登录：personCircleOutline 图标+"未登录"；已登录：`<img>` 头像+用户名；点击→/user）
+9. **`src/views/SettingPage.vue`** — "关于"前新增"用户"分组，右侧显示用户名或"未登录"，点击→/user
+10. **`src/views/FavoritePage.vue`** — `initOnlineFolders()` 先检查 isLoggedIn，未登录直接走离线模式不发起 API 请求
+11. **`src/App.vue`** — `onMounted` 中调用 `initAuth()` 恢复登录态
+12. **`src/router/index.ts`** — 新增 `/login` 和 `/user` 两条懒加载路由
+
+### 设计决策
+- `AbstractJmClient.cacheUsername()` 为 protected 无法外部调用 → 改用 SettingsStore 持久化 username + userInfo，不依赖 client 内部状态
+- `checkLoginState()` 是纯本地检查（读 SQLite），不涉及网络
+- Cookie 过期处理：`parseCookiesFromJson` 过滤 `expiresAt < now` 的 cookie，全过期则清除 auth 记录
+- 密码不落盘：Plugin 层不 log password 参数
+- `useAuth` 采用模块级单例（模块顶层 ref），非 provide/inject
+- 登录页用 `router.replace('/user')` 而非 `router.back()`，避免无历史栈时跳转异常
+- 头像用普通 `<img>` 而非 `ion-img`（非滚动列表场景不需要 Ionic 懒加载）
+
+### 编译验证
+- `vue-tsc --noEmit` ✓ 通过
+- `./gradlew assembleDebug` ✓ BUILD SUCCESSFUL (214 actionable tasks)
+
+### 代码审查修复 (2026-05-21)
+
+1. **`checkLoginState` userInfo 解析失败状态不一致修复**
+   - 位置：`JmcomicPlugin.java` checkLoginState 方法
+   - 问题：userInfo JSON 损坏时静默吞异常，loggedIn=true 但无 userInfo → UI 显示未登录但 cookie 已恢复（实际可调 API）
+   - 修复：解析失败时清除全部 auth 数据 + loggedIn=false
+
+2. **FavoritePage keep-alive 不响应登录态变化修复**
+   - 位置：`FavoritePage.vue`
+   - 问题：登录成功后返回收藏夹页（keep-alive），onActivated 只恢复滚动不重载数据，仍显示离线文件夹
+   - 修复：新增 `watch(isLoggedIn, ...)` — 从 false→true 时自动切换到在线收藏夹并重新加载
+
+---
+
+## 2026-05-21 — 网络变化时主动触发域名探活
+
+### 概述
+用户网络环境频繁变化（直连↔代理切换），不同网络下可用的禁漫服务器域名不同。JMComic 库 1.1.1 新增了 `reprobeDomains()` 方法（并行 HEAD 探测所有域名可达性，不拉 CDN，耗时 ≤3s）。应用在检测到网络变化时主动调用此方法刷新域名状态。
+
+### 变更文件
+
+1. **`android/variables.gradle`** — jmcomicApiVersion `1.1.0` → `1.1.1`
+2. **`android/app/src/main/AndroidManifest.xml`** — 新增 `ACCESS_NETWORK_STATE` 权限（normal 权限）
+3. **`android/.../bridge/JmcomicPlugin.java`** — 核心实现：
+   - 新增字段：`connectivityManager`、`networkCallback`、`domainProbeExecutor`、`pendingProbe`、`probeLock`、`PROBE_DEBOUNCE_MS=3000`
+   - 新增 `registerNetworkCallback()`：`ConnectivityManager.registerDefaultNetworkCallback()` + `onAvailable` → `scheduleDomainProbe()`
+   - 新增 `scheduleDomainProbe()`：防抖 3s → `sharedClient.reprobeDomains()`
+   - `load()` 中调用 `registerNetworkCallback()`
+   - `handleOnDestroy()` 中清理：取消 pending、unregisterNetworkCallback、关闭 executor
+
+### 设计决策
+- 使用 `registerDefaultNetworkCallback()`（API 24+），项目 minSdkVersion=24 刚好满足
+- 防抖 3 秒避免网络切换瞬间多次触发
+- `reprobeDomains()` 内部 CompletableFuture 并行执行，线程安全
+- `sharedClient` 为 null 时跳过（首次启动 client 构造未完成，构造函数已做初始探活）
+
+### 编译验证
+- `./gradlew assembleDebug` ✓ BUILD SUCCESSFUL (214 actionable tasks)

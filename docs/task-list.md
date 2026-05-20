@@ -22,14 +22,14 @@
 ### 目录结构关键位置
 ```
 src/
-  views/          — 9个页面（Home/Search/Category/Favorite/Download/Setting/AlbumDetail/PreviewAll/ReaderPage）
+  views/          — 11个页面（Home/Search/Category/Favorite/Download/Setting/AlbumDetail/PreviewAll/ReaderPage/Login/User）
   components/     — 按功能分目录（album/reader/search/favorite/download/common/menu）
   services/       — JmcomicService.ts（插件桥接）、JmcomicTypes.ts（所有类型）、OfflineDownloadService.ts、OfflineFavoriteService.ts
-  composables/    — sideMenuState.ts（左右菜单互斥状态）
-  router/         — 9条路由
+  composables/    — sideMenuState.ts（左右菜单互斥状态）、useAuth.ts（用户登录态管理）
+  router/         — 11条路由
 
 android/.../bridge/               Capacitor 入口层
-  JmcomicPlugin.java          — 26个@PluginMethod 薄门面 + ServiceListener 事件转发
+  JmcomicPlugin.java          — 29个@PluginMethod 薄门面 + ServiceListener 事件转发
 android/.../service/              业务逻辑层 (零Capacitor依赖)
   ApiService.java             — 搜索/详情/评论/收藏 API + 数据转换
   DownloadService.java        — 下载编排 + 进度推送
@@ -93,28 +93,31 @@ JMComic-Api-Java/   — 库源码（jmcomic-api接口 + jmcomic-core实现 + jmc
 
 ---
 
-### 任务3：登录页
+### 任务3：登录页 ✅ 已完成 (2026-05-21)
 
 | 属性 | 内容 |
 |------|------|
-| **现状** | 无任何用户认证流程，部分需要登录态的功能入口缺失 |
-| **目标** | 添加登录页，实现用户名/密码登录 |
-| **工作量** | 中等（~200行 + 库客户端登录方法） |
-| **依赖** | 完成后可解锁评论发表等功能 |
-
-**现有基础设施：**
-- `JmApiClient` 构造时可传入 `JmConfiguration`（支持用户名/密码配置）
-- `bridge/JmcomicPlugin.java` — `getClient()` 使用空配置创建客户端（无认证）
+| **现状** | 已完成：用户登录/登出/状态持久化/Cookie 恢复 |
+| **完成内容** | LoginPage + UserPage + useAuth 状态管理 + Android 侧 3 个 @PluginMethod（login/logout/checkLoginState）+ Cookie 序列化/持久化/过期过滤 + MainMenu 用户头像区 + SettingPage 用户入口 + FavoritePage 登录态检查 |
 
 **关键文件：**
-- `android/.../bridge/JmcomicPlugin.java` — `getClient()` 需要支持登录态
-- `JMComic-Api-Java/jmcomic-core/.../config/JmConfiguration.java` — 查看配置选项
+- `src/views/LoginPage.vue` — 登录页
+- `src/views/UserPage.vue` — 用户信息/账号页
+- `src/composables/useAuth.ts` — 模块级单例用户状态管理
+- `android/.../bridge/JmcomicPlugin.java` — 3 个 @PluginMethod + cookie 序列化/持久化/恢复
+- `android/.../service/ApiService.java` — login/logout 方法 + toUserInfoObject 转换
+- `src/services/JmcomicService.ts` — 3 个桥接方法
+- `src/services/JmcomicTypes.ts` — UserInfo 接口
+- `src/components/menu/MainMenu.vue` — hero → 用户头像区
+- `src/views/SettingPage.vue` — 新增用户分组
 
-**建议实现：**
-- 登录页面 UI（用户名 + 密码）
-- Android侧新增 `login(username, password)` @PluginMethod
-- 登录成功后重建共享 client（带认证配置）
-- 登录状态持久化（SharedPreferences）
+**设计要点：**
+- 登录持久化：AVS cookie → SettingsStore SQLite（auth_cookies_json/auth_username/auth_user_info_json）
+- 重启恢复：load() 末尾 restoreAuthState() 恢复 cookie + checkLoginState() 返回 userInfo
+- Cookie 过期过滤：parseCookiesFromJson 跳过 expiresAt < now 的 cookie
+- 密码不落盘：Plugin 层不 log password
+- useAuth 模块级单例，initAuth() 启动恢复 / login() 登录 / logout() 登出
+- 登录成功 router.replace('/user')，避免无历史栈异常
 
 ---
 

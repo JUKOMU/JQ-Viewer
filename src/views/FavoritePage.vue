@@ -91,6 +91,7 @@ import type {
 } from '@/components/search/SearchResultContainer.vue'
 import {JmcomicService} from '@/services/JmcomicService'
 import {OfflineFavoriteService} from '@/services/OfflineFavoriteService'
+import {useAuth} from '@/composables/useAuth'
 import type {FavoriteQuery, FavoriteResult, SearchResult, SearchResultItem} from '@/services/JmcomicTypes'
 import {leftMenuOpen, rightMenuOpen} from '@/composables/sideMenuState'
 
@@ -399,7 +400,18 @@ const onSelectOfflineFolder = (folderId: string) => {
 }
 
 // --- 初始化 ---
+const { isLoggedIn } = useAuth()
+
 const initOnlineFolders = async () => {
+  if (!isLoggedIn.value) {
+    folderSource.value = 'offline'
+    const offlineFolders = OfflineFavoriteService.getFolders()
+    if (offlineFolders.length > 0) {
+      currentFolderId.value = offlineFolders[0].id
+      void resetWithPage(1)
+    }
+    return
+  }
   try {
     const result: FavoriteResult = await JmcomicService.favorites({ folderId: '0', page: 1 })
     if (result.folderList) {
@@ -501,6 +513,15 @@ watch(rightMenuOpen, (open) => {
     menuCloseGesture?.destroy()
     menuCloseGesture = undefined
     closeGestureRetry = 0
+  }
+})
+
+// 登录态从未登录变为已登录时自动切换到在线收藏夹
+watch(isLoggedIn, (loggedIn, wasLoggedIn) => {
+  if (loggedIn && !wasLoggedIn) {
+    folderSource.value = 'online'
+    currentFolderId.value = '0'
+    void resetWithPage(1)
   }
 })
 

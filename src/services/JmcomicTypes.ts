@@ -1,3 +1,19 @@
+// --- 用户相关 ---
+
+export interface UserInfo {
+    uid: string
+    username: string
+    email: string
+    avatarUrl: string
+    level: number
+    levelName: string
+    coin: number
+    albumFavorites: number
+    expPercent: number
+}
+
+// --- 搜索 ---
+
 export interface SearchQuery {
     keyword?: string
     category?: string

@@ -257,8 +257,11 @@ const loadPreview = async () => {
 
   if (!chapterId) return
 
-  // 注册图片就绪监听：每完成一张图就追加到列表
+  // 用 Set 去重：imageReady 事件可能在 preloadImages 返回前就触发
+  const addedSortOrders = new Set<number>()
   imageReadyListenerHandle = await JmcomicService.addImageReadyListener(chapterId, (sortOrder) => {
+    if (addedSortOrders.has(sortOrder)) return
+    addedSortOrders.add(sortOrder)
     previewImages.value.push({
       sortOrder,
       dataUrl: getImageUrl(chapterId, sortOrder, 'thumb'),
@@ -273,12 +276,16 @@ const loadPreview = async () => {
     const batch = photo.images.slice(0, PREVIEW_BATCH)
     const result: PreloadResult = await JmcomicService.preloadImages(chapterId, batch, 'thumb')
 
-    // 已缓存图片直接加入列表
-    const cachedItems = result.cached.map(so => ({
-      sortOrder: so,
-      dataUrl: getImageUrl(chapterId, so, 'thumb'),
-    }))
-    previewImages.value = cachedItems
+    // 追加快取命中项（避免直接赋值覆盖 imageReady 已推送的图片）
+    for (const so of result.cached) {
+      if (!addedSortOrders.has(so)) {
+        addedSortOrders.add(so)
+        previewImages.value.push({
+          sortOrder: so,
+          dataUrl: getImageUrl(chapterId, so, 'thumb'),
+        })
+      }
+    }
 
     previewLoadedChapterId.value = chapterId
   } catch { /* ignore */ } finally {

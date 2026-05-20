@@ -2,8 +2,7 @@ package io.github.jukomu.plugin;
 
 import android.content.Context;
 import android.content.Intent;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
+
 import android.net.Uri;
 import android.os.Environment;
 import android.provider.Settings;
@@ -26,7 +25,7 @@ import io.github.jukomu.storage.FileStorage;
 import io.github.jukomu.storage.SettingsDatabase;
 import org.json.JSONObject;
 
-import java.io.ByteArrayOutputStream;
+
 import java.io.File;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -66,8 +65,7 @@ public class JmcomicPlugin extends Plugin {
     private static final long API_TIMEOUT_MINUTES = 5;
     private int imageConcurrency = 6;
     private int downloadConcurrency = 6;
-    private static final int THUMBNAIL_MAX_WIDTH = 300;
-    private static final int THUMBNAIL_JPEG_QUALITY = 70;
+
 
     // ---- 下载相关 ----
     private DownloadDatabase downloadDb;
@@ -350,10 +348,27 @@ public class JmcomicPlugin extends Plugin {
                 if ("thumb".equals(type)) {
                     ImageRegistry.ImageEntry original = ImageRegistry.getInstance().get(photoId + "/" + sortOrder);
                     if (original != null) {
-                        byte[] thumbBytes = createThumbnail(original.data);
+                        byte[] thumbBytes = ImageRegistry.createThumbnail(original.data);
                         ImageRegistry.getInstance().put(cacheKey, thumbBytes, "image/jpeg");
                         cached.add(sortOrder);
                         pushImageReady(photoId, sortOrder, type);
+                        continue;
+                    }
+
+                    // 内存无原图 → 检查 FileStorage 是否有已下载的原图
+                    byte[] fromFile = FileStorage.getInstance()
+                            .getImageBytesByPhotoId(photoId, sortOrder);
+                    if (fromFile != null) {
+                        pending.add(sortOrder);
+                        imageExecutor.submit(() -> {
+                            try {
+                                byte[] thumbBytes = ImageRegistry.createThumbnail(fromFile);
+                                ImageRegistry.getInstance().put(cacheKey, thumbBytes, "image/jpeg");
+                                String mime = "image/" + ImageRegistry.guessFormatName(fromFile);
+                                ImageRegistry.getInstance().put(photoId + "/" + sortOrder, fromFile, mime);
+                                pushImageReady(photoId, sortOrder, type);
+                            } catch (Exception ignored) {}
+                        });
                         continue;
                     }
                 }
@@ -373,7 +388,7 @@ public class JmcomicPlugin extends Plugin {
                         String mimeType = "image/" + formatName;
 
                         if ("thumb".equals(type)) {
-                            byte[] thumbBytes = createThumbnail(decrypted);
+                            byte[] thumbBytes = ImageRegistry.createThumbnail(decrypted);
                             ImageRegistry.getInstance().put(cacheKey, thumbBytes, "image/jpeg");
                             // 原图一并缓存，后续阅读时无需重复下载
                             ImageRegistry.getInstance().put(photoId + "/" + sortOrder, decrypted, mimeType);
@@ -1170,30 +1185,6 @@ public class JmcomicPlugin extends Plugin {
         return total;
     }
 
-    // ---- 缩略图生成 ----
-    private byte[] createThumbnail(byte[] imageBytes) {
-        Bitmap bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.length);
-        if (bitmap == null) return imageBytes;
-
-        int width = bitmap.getWidth();
-        if (width <= THUMBNAIL_MAX_WIDTH) {
-            // 图本身已足够小，直接 JPEG 编码（统一格式+适当压缩）
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            bitmap.compress(Bitmap.CompressFormat.JPEG, THUMBNAIL_JPEG_QUALITY, baos);
-            bitmap.recycle();
-            return baos.toByteArray();
-        }
-
-        float ratio = (float) THUMBNAIL_MAX_WIDTH / width;
-        int targetHeight = Math.round(bitmap.getHeight() * ratio);
-        Bitmap scaled = Bitmap.createScaledBitmap(bitmap, THUMBNAIL_MAX_WIDTH, targetHeight, true);
-        bitmap.recycle();
-
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        scaled.compress(Bitmap.CompressFormat.JPEG, THUMBNAIL_JPEG_QUALITY, baos);
-        scaled.recycle();
-        return baos.toByteArray();
-    }
 
     private SearchQuery buildQuery(JSObject queryObject) {
         String keyword = queryObject.getString("keyword", "");

@@ -30,7 +30,7 @@
           <span v-if="ch.totalPages > 0" class="chapter-pages">{{ ch.totalPages }} 页</span>
           <img
             v-if="ch.firstImageSortOrder"
-            :src="getImageUrl(ch.chapterId, ch.firstImageSortOrder, 'image')"
+            :src="getImageUrl(ch.chapterId, ch.firstImageSortOrder, 'thumb')"
             class="chapter-thumb"
             alt=""
           />
@@ -126,7 +126,7 @@ const getDownloadedPages = (chapterId: string): number => {
 const getDownloadedImage = (chapterId: string): string | null => {
   const dt = downloadedMap.value.get(chapterId)
   if (!dt?.firstImageSortOrder) return null
-  return getImageUrl(dt.chapterId, dt.firstImageSortOrder, 'image')
+  return getImageUrl(dt.chapterId, dt.firstImageSortOrder, 'thumb')
 }
 
 const toggleMode = async () => {

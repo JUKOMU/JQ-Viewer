@@ -1,10 +1,13 @@
 package io.github.jukomu.plugin;
 
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.webkit.WebResourceResponse;
 import io.github.jukomu.storage.FileStorage;
 
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -20,6 +23,8 @@ public class ImageRegistry {
 
     static final String VIRTUAL_HOST = "jqviewer.local";
     static final long DEFAULT_CAPACITY = 640L * 1024 * 1024; // 640MB
+    private static final int THUMBNAIL_MAX_WIDTH = 300;
+    private static final int THUMBNAIL_JPEG_QUALITY = 70;
 
     private static volatile ImageRegistry instance;
 
@@ -209,9 +214,27 @@ public class ImageRegistry {
                 );
             }
 
-            // 2. 缓存 miss → 尝试从 FileStorage 加载（离线下载的图片）
-            //    仅 "image" 类型尝试（thumb 类型不存文件）
-            if (!"thumb".equals(type)) {
+            // 2. 缓存 miss → 依次：原图内存缓存 → FileStorage
+            if ("thumb".equals(type)) {
+                // 2a. 查原图内存缓存（从内存生成缩略图，最快）
+                ImageEntry original = getInstance().get(photoId + "/" + sortOrder);
+                if (original != null) {
+                    byte[] thumbData = createThumbnail(original.data);
+                    getInstance().put(cacheKey, thumbData, "image/jpeg");
+                    return new WebResourceResponse("image/jpeg", "UTF-8",
+                            new ByteArrayInputStream(thumbData));
+                }
+
+                // 2b. 查 FileStorage（从本地原图生成缩略图）
+                byte[] originalData = FileStorage.getInstance()
+                        .getImageBytesByPhotoId(photoId, sortOrder);
+                if (originalData != null) {
+                    byte[] thumbData = createThumbnail(originalData);
+                    getInstance().put(cacheKey, thumbData, "image/jpeg");
+                    return new WebResourceResponse("image/jpeg", "UTF-8",
+                            new ByteArrayInputStream(thumbData));
+                }
+            } else {
                 byte[] data = FileStorage.getInstance()
                         .getImageBytesByPhotoId(photoId, sortOrder);
                 if (data != null) {
@@ -222,7 +245,7 @@ public class ImageRegistry {
                 }
             }
 
-            // 3. 仍未找到 → 返回 null（在线场景等待 preloadImages 下载）
+            // 3. 仍未找到 → 返回 null（在线场景等待 preloadImages 下载/FileStorage 兜底）
             return null;
         } catch (Exception e) {
             return null;
@@ -230,7 +253,7 @@ public class ImageRegistry {
     }
 
     /** 通过文件头魔数判断图片格式 */
-    private static String guessFormatName(byte[] data) {
+    static String guessFormatName(byte[] data) {
         if (data == null || data.length < 3) return "jpeg";
         int b0 = data[0] & 0xFF;
         int b1 = data[1] & 0xFF;
@@ -240,6 +263,30 @@ public class ImageRegistry {
         if (b0 == 0x47 && b1 == 0x49 && b2 == 0x46) return "gif";
         if (b0 == 0x52 && b1 == 0x49 && b2 == 0x46) return "webp"; // RIFF....WEBP
         return "jpeg";
+    }
+
+    /** 从原图字节生成缩略图（JPEG，宽≤300px，质量70） */
+    public static byte[] createThumbnail(byte[] imageBytes) {
+        Bitmap bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.length);
+        if (bitmap == null) return imageBytes;
+
+        int width = bitmap.getWidth();
+        if (width <= THUMBNAIL_MAX_WIDTH) {
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            bitmap.compress(Bitmap.CompressFormat.JPEG, THUMBNAIL_JPEG_QUALITY, baos);
+            bitmap.recycle();
+            return baos.toByteArray();
+        }
+
+        float ratio = (float) THUMBNAIL_MAX_WIDTH / width;
+        int targetHeight = Math.round(bitmap.getHeight() * ratio);
+        Bitmap scaled = Bitmap.createScaledBitmap(bitmap, THUMBNAIL_MAX_WIDTH, targetHeight, true);
+        bitmap.recycle();
+
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        scaled.compress(Bitmap.CompressFormat.JPEG, THUMBNAIL_JPEG_QUALITY, baos);
+        scaled.recycle();
+        return baos.toByteArray();
     }
 
     public static class ImageEntry {

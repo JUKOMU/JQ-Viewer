@@ -1851,3 +1851,39 @@ io.github.jukomu/
 
 ### 编译验证
 - `./gradlew clean assembleDebug` ✓ BUILD SUCCESSFUL
+
+---
+
+## 2026-05-21 阅读页修复：顶部越界 + END 指示器 + 进度条实时跟踪
+
+### 问题
+1. 纵向模式滚动到顶部可继续越界划动（浏览器弹性效果）
+2. 底部无结束标识
+3. 拖动进度条时画面不实时跟随（`@ion-change` 仅松手触发）
+
+### 修改文件
+1. **VerticalScrollView.vue**
+   - `.vertical-container` 添加 `overscroll-behavior: none` 阻止顶部越界弹性效果
+   - 底部新增 `<div class="end-indicator">——E N D——</div>` 结束标识
+   - `bottomSpacerHeight` 从全屏高度改为半屏（`containerHeight / 2`），允许 END 后继续划动半屏
+   - 新增 `.end-indicator` CSS（灰色居中 14px，32px 纵向 padding）
+
+2. **ReaderBottomToolbar.vue**
+   - `<ion-range>` 新增 `@ion-input="onRangeInput"` 事件（拖拽中每像素触发）
+   - emit 声明新增 `'update:current-input': [page: number]`
+   - 新增 `onRangeInput` handler
+
+3. **HorizontalPageView.vue**
+   - 新增 `scrollToIndex(index)` 方法（瞬时跳转，无动画）
+   - `defineExpose({ scrollToIndex })` 暴露给父组件
+
+4. **ReaderPage.vue**
+   - HorizontalPageView 添加 `ref="horizontalViewRef"`
+   - ReaderBottomToolbar 添加 `@update:current-input="onProgressInput"`
+   - 新增 `horizontalViewRef` 引用
+   - 新增 `onProgressInput`：立即调 `scrollToIndex`（画面跟随）+ 150ms 节流调 `updateWindow`（图片加载）
+   - `onProgressDrag` 补齐横向 else 分支调用 `horizontalViewRef.value?.scrollToIndex(index)`
+
+### 编译验证
+- `vue-tsc --noEmit` ✓ 通过
+- `vite build` ✓ built in 10.69s

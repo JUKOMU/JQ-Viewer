@@ -51,7 +51,9 @@ io.github.jukomu/
    - 滑动窗口预加载（N=15 普通，N=50 快速划动）
    - 加权区域评分当前页检测
    - 离线阅读（source=download 模式）
-   - 工具栏自动隐藏 + 进度条拖动
+   - 工具栏自动隐藏 + 进度条拖动实时跟踪（150ms 节流加载）
+   - 纵向模式顶部越界防护（`overscroll-behavior: none`）
+   - 底部 "——E N D——" 结束标识 + 半屏留白
    - 预览页点击定位
    - 关联组件：ReaderTopToolbar, ReaderBottomToolbar, VerticalScrollView, HorizontalPageView
 
@@ -151,3 +153,4 @@ bridge/JmcomicPlugin.java
 |------|------|
 | 2026-05-20 | **Android 侧架构重构**：JmcomicPlugin.java 1552→660行，拆分为 bridge/service/data 三层9服务+4数据类 |
 | 2026-05-21 | 架构审查：修复1个回归（clearPhotoCache意外暴露），移除18个未使用 import，改进 handleOnDestroy 优雅关闭、ApiService 异常传播、SettingsService 引用常量 |
+| 2026-05-21 | **阅读器修复**：顶部越界防护(overscroll-behavior) + 底部 END 指示器 + 进度条拖动实时跟踪(ion-input + 150ms节流) |

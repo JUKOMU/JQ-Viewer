@@ -173,6 +173,15 @@ const snapBack = () => {
     isAnimating.value = false
   }, 320)
 }
+
+const scrollToIndex = (index: number) => {
+  if (index < 0 || index >= props.totalCount) return
+  isAnimating.value = false
+  displayIndex.value = index
+  offsetX.value = 0
+}
+
+defineExpose({ scrollToIndex })
 </script>
 
 <style scoped>

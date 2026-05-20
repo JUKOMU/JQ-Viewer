@@ -14,6 +14,7 @@
         <div class="skeleton-image" />
       </template>
     </div>
+    <div class="end-indicator">— — — —  E N D  — — — —</div>
     <div class="scroll-spacer" :style="{ height: bottomSpacerHeight + 'px' }" />
   </div>
 </template>
@@ -41,7 +42,7 @@ const imageEls = ref<HTMLElement[]>([])
 const scrollTop = ref(0)
 const imageTops = ref<number[]>([])
 
-const bottomSpacerHeight = computed(() => Math.max(0, containerHeight.value))
+const bottomSpacerHeight = computed(() => Math.max(0, containerHeight.value / 2))
 
 // All slots: totalCount 个，显示 dataUrl 或 null（骨架）
 const visibleSlots = computed<ImageSlot[]>(() => {
@@ -200,6 +201,7 @@ defineExpose({ scrollToIndex })
 .vertical-container {
   height: 100%;
   overflow-y: auto;
+  overscroll-behavior: none;
   overflow-x: hidden;
   background: #000;
   -webkit-overflow-scrolling: touch;
@@ -232,6 +234,16 @@ defineExpose({ scrollToIndex })
 @keyframes shimmer {
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
+}
+
+.end-indicator {
+  width: 100%;
+  padding: 32px 0;
+  text-align: center;
+  color: #666;
+  font-size: 14px;
+  letter-spacing: 2px;
+  user-select: none;
 }
 
 .scroll-spacer {

@@ -11,6 +11,7 @@
       :value="current"
       :disabled="total <= 1"
       @ion-change="onRangeChange"
+      @ion-input="onRangeInput"
       @ion-knob-move-start="$emit('progress-drag-start')"
       @ion-knob-move-end="$emit('progress-drag-end')"
     />
@@ -31,6 +32,7 @@ defineProps<{
 const emit = defineEmits<{
   'toggle-mode': []
   'update:current': [page: number]
+  'update:current-input': [page: number]
   'progress-drag-start': []
   'progress-drag-end': []
 }>()
@@ -38,6 +40,11 @@ const emit = defineEmits<{
 const onRangeChange = (ev: RangeCustomEvent) => {
   const page = Number(ev.detail.value)
   emit('update:current', page)
+}
+
+const onRangeInput = (ev: RangeCustomEvent) => {
+  const page = Number(ev.detail.value)
+  emit('update:current-input', page)
 }
 </script>
 

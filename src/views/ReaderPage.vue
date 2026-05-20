@@ -21,6 +21,7 @@
       />
       <HorizontalPageView
         v-else
+        ref="horizontalViewRef"
         :image-map="imageMap"
         :total-count="totalCount"
         :current-index="currentIndex"
@@ -37,6 +38,7 @@
           :is-vertical="isVertical"
           @toggle-mode="toggleMode"
           @update:current="onProgressDrag"
+          @update:current-input="onProgressInput"
           @progress-drag-start="onDragStart"
           @progress-drag-end="onDragEnd"
         />
@@ -95,6 +97,7 @@ let lastScrollTime = 0
 let lastScrollIndex = -1
 let revertTimer: ReturnType<typeof setTimeout> | null = null
 const verticalViewRef = ref<InstanceType<typeof VerticalScrollView> | null>(null)
+const horizontalViewRef = ref<InstanceType<typeof HorizontalPageView> | null>(null)
 
 // ---- 工具栏 ----
 const toggleToolbar = () => {
@@ -277,6 +280,32 @@ const onProgressDrag = (page1Based: number) => {
   updateWindow(index)
   if (isVertical.value) {
     verticalViewRef.value?.scrollToIndex(index)
+  } else {
+    horizontalViewRef.value?.scrollToIndex(index)
+  }
+}
+
+// 进度条拖拽中（ion-input 每像素触发）：立即滚动 + 节流加载
+let lastUpdateWindowTime = 0
+const UPDATE_WINDOW_THROTTLE_MS = 150
+
+const onProgressInput = (page1Based: number) => {
+  const index = page1Based - 1
+  if (index < 0 || index >= totalCount.value) return
+  currentIndex.value = index
+  if (isVertical.value) {
+    verticalViewRef.value?.scrollToIndex(index)
+  } else {
+    horizontalViewRef.value?.scrollToIndex(index)
+  }
+
+  const now = performance.now()
+  if (now - lastUpdateWindowTime > UPDATE_WINDOW_THROTTLE_MS) {
+    lastUpdateWindowTime = now
+    lastWindowCenter = index
+    expandDirection = null
+    if (revertTimer) { clearTimeout(revertTimer); revertTimer = null }
+    updateWindow(index)
   }
 }
 

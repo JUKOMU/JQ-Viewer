@@ -1,18 +1,13 @@
-package io.github.jukomu.storage;
+package io.github.jukomu.data;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.media.MediaScannerConnection;
 import android.os.Environment;
 import android.util.Log;
-
 import org.json.JSONObject;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
+import java.io.*;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -31,9 +26,9 @@ import java.util.Map;
  * - chapterIdToAlbumId: 快速通过 photoId 找到对应 albumId
  * - sortOrderToFilename: 快速通过 (albumId, chapterId, sortOrder) 找到文件名
  */
-public class FileStorage {
+public class FileStore {
 
-    private static final String TAG = "FileStorage";
+    private static final String TAG = "FileStore";
     private static final String META_FILE = "meta.json";
     private static final int BATCH_SIZE = 20;
     private static final int MEDIA_SCAN_BATCH = 100;
@@ -45,25 +40,26 @@ public class FileStorage {
         void onProgress(int current, int total, String phase, String currentFile);
     }
 
-    private static volatile FileStorage instance;
+    private static volatile FileStore instance;
 
     private File baseDir;
     private final Map<String, String> chapterIdToAlbumId = new HashMap<>();
     private final Map<String, String> sortOrderToFilename = new HashMap<>(); // key: "aid_cid_so"
     private long cachedTotalBytes = 0;
 
-    public static synchronized FileStorage getInstance() {
+    public static synchronized FileStore getInstance() {
         if (instance == null) {
-            instance = new FileStorage();
+            instance = new FileStore();
         }
         return instance;
     }
 
-    private FileStorage() {}
+    private FileStore() {
+    }
 
     // ---- 初始化 ----
 
-    public void init(Context context, DownloadDatabase db, boolean usePublicDir) {
+    public void init(Context context, DownloadStore db, boolean usePublicDir) {
         if (usePublicDir) {
             this.baseDir = new File(
                     Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
@@ -82,7 +78,7 @@ public class FileStorage {
         return baseDir;
     }
 
-    private void buildIndices(DownloadDatabase db) {
+    private void buildIndices(DownloadStore db) {
         chapterIdToAlbumId.clear();
         sortOrderToFilename.clear();
 
@@ -105,7 +101,8 @@ public class FileStorage {
                     String key = makeSortKey(albumId, chapterId, sortOrder);
                     sortOrderToFilename.put(key, filename);
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+            }
         }
         Log.i(TAG, "Indices built: " + chapterIdToAlbumId.size()
                 + " chapters, " + sortOrderToFilename.size() + " images");
@@ -125,6 +122,7 @@ public class FileStorage {
         return dir;
     }
 
+    @SuppressLint("NewApi")
     public void saveMeta(String albumId, String chapterId, JSONObject metaJson) {
         try {
             File dir = ensureChapterDir(albumId, chapterId);
@@ -135,6 +133,7 @@ public class FileStorage {
         }
     }
 
+    @SuppressLint("NewApi")
     JSONObject readMeta(String albumId, String chapterId) {
         try {
             File metaFile = new File(getChapterDir(albumId, chapterId), META_FILE);
@@ -147,6 +146,7 @@ public class FileStorage {
         }
     }
 
+    @SuppressLint("NewApi")
     byte[] getImageBytes(String albumId, String chapterId, int sortOrder) {
         String key = makeSortKey(albumId, chapterId, sortOrder);
         String filename = sortOrderToFilename.get(key);
@@ -179,7 +179,8 @@ public class FileStorage {
                     if (minSo == null || so < minSo) {
                         minSo = so;
                     }
-                } catch (NumberFormatException ignored) {}
+                } catch (NumberFormatException ignored) {
+                }
             }
         }
         return minSo;
@@ -215,7 +216,7 @@ public class FileStorage {
 
     // ---- 索引刷新 ----
 
-    public void refreshMappings(String albumId, String chapterId, DownloadDatabase db) {
+    public void refreshMappings(String albumId, String chapterId, DownloadStore db) {
         List<JSONObject> images = db.getImages(albumId + "_" + chapterId);
         chapterIdToAlbumId.put(chapterId, albumId);
         for (JSONObject img : images) {
@@ -224,7 +225,8 @@ public class FileStorage {
                 String filename = img.getString("filename");
                 String key = makeSortKey(albumId, chapterId, sortOrder);
                 sortOrderToFilename.put(key, filename);
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+            }
         }
     }
 
@@ -232,9 +234,10 @@ public class FileStorage {
 
     /**
      * 将所有已下载文件从当前目录搬迁到目标目录（分批复制→校验→删除）。
-     * @param context  Context
+     *
+     * @param context      Context
      * @param usePublicDir true=公开目录，false=私有目录
-     * @param listener  进度回调（每批次完成后触发）
+     * @param listener     进度回调（每批次完成后触发）
      * @return 搬迁的文件数，-1 表示无需搬迁，0 表示无文件可搬迁
      * @throws IOException 空间不足或文件操作失败时抛出
      */
@@ -276,7 +279,7 @@ public class FileStorage {
 
         // 检查 checkpoint（中断恢复）
         int startIndex = 0;
-        SettingsDatabase settingsDb = SettingsDatabase.getInstance(context);
+        SettingsStore settingsDb = SettingsStore.getInstance(context);
         String checkpoint = settingsDb.getString("relocation_checkpoint");
         if (checkpoint != null && !checkpoint.isEmpty()) {
             try {
@@ -355,7 +358,8 @@ public class FileStorage {
                 cp.put("total", totalFiles);
                 cp.put("startedAt", System.currentTimeMillis());
                 settingsDb.putString("relocation_checkpoint", cp.toString());
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+            }
         }
 
         // 全部完成
@@ -376,7 +380,9 @@ public class FileStorage {
 
     // ---- 搬迁辅助方法 ----
 
-    /** 递归收集目录下所有文件（含 meta.json） */
+    /**
+     * 递归收集目录下所有文件（含 meta.json）
+     */
     private void collectAllFiles(File dir, List<File> result) {
         File[] files = dir.listFiles();
         if (files == null) return;
@@ -389,12 +395,16 @@ public class FileStorage {
         }
     }
 
-    /** 将源文件路径映射到目标目录 */
+    /**
+     * 将源文件路径映射到目标目录
+     */
     private File mapToDest(File src, File newBaseDir, File oldBaseDir) {
         return new File(newBaseDir, relativePath(src, oldBaseDir));
     }
 
-    /** 获取文件相对于 base 的路径（不含前导 /） */
+    /**
+     * 获取文件相对于 base 的路径（不含前导 /）
+     */
     private String relativePath(File file, File base) {
         String absPath = file.getAbsolutePath();
         String basePath = base.getAbsolutePath();
@@ -405,7 +415,9 @@ public class FileStorage {
         return rel;
     }
 
-    /** 递归删除空目录 */
+    /**
+     * 递归删除空目录
+     */
     private void deleteEmptyDirs(File dir) {
         if (dir == null || !dir.isDirectory()) return;
         File[] children = dir.listFiles();
@@ -422,7 +434,9 @@ public class FileStorage {
         }
     }
 
-    /** MediaStore 分批扫描公开目录 */
+    /**
+     * MediaStore 分批扫描公开目录
+     */
     private void scanPublicDir(Context context, RelocationListener listener) {
         List<String> allPaths = new ArrayList<>();
         collectPaths(this.baseDir, allPaths);
@@ -437,7 +451,9 @@ public class FileStorage {
         listener.onProgress(total, total, "scanning", null);
     }
 
-    /** 递归收集目录下所有绝对路径字符串 */
+    /**
+     * 递归收集目录下所有绝对路径字符串
+     */
     private void collectPaths(File dir, List<String> result) {
         File[] files = dir.listFiles();
         if (files == null) return;
@@ -450,7 +466,9 @@ public class FileStorage {
         }
     }
 
-    /** 安全调用 listener（防御 null） */
+    /**
+     * 安全调用 listener（防御 null）
+     */
     private void notifyPhase(RelocationListener listener, int current, int total,
                              String phase, File file, File oldBaseDir) {
         if (listener != null) {

@@ -1,10 +1,9 @@
-package io.github.jukomu.plugin;
+package io.github.jukomu.data;
 
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.webkit.WebResourceResponse;
-import io.github.jukomu.storage.FileStorage;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -19,14 +18,14 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  * <p>
  * 默认容量 640MB，可通过 {@link #setCapacity(long)} 调整。
  */
-public class ImageRegistry {
+public class ImageCache {
 
     static final String VIRTUAL_HOST = "jqviewer.local";
     static final long DEFAULT_CAPACITY = 640L * 1024 * 1024; // 640MB
     private static final int THUMBNAIL_MAX_WIDTH = 300;
     private static final int THUMBNAIL_JPEG_QUALITY = 70;
 
-    private static volatile ImageRegistry instance;
+    private static volatile ImageCache instance;
 
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
     private final ReentrantReadWriteLock.ReadLock readLock = lock.readLock();
@@ -47,13 +46,14 @@ public class ImageRegistry {
     private long capacity = DEFAULT_CAPACITY;
     private long currentSize = 0;
 
-    private ImageRegistry() {}
+    private ImageCache() {
+    }
 
-    public static ImageRegistry getInstance() {
+    public static ImageCache getInstance() {
         if (instance == null) {
-            synchronized (ImageRegistry.class) {
+            synchronized (ImageCache.class) {
                 if (instance == null) {
-                    instance = new ImageRegistry();
+                    instance = new ImageCache();
                 }
             }
         }
@@ -62,7 +62,9 @@ public class ImageRegistry {
 
     // ---- 容量配置 ----
 
-    /** 获取当前容量（字节），供外部查询。 */
+    /**
+     * 获取当前容量（字节），供外部查询。
+     */
     public long getCapacity() {
         readLock.lock();
         try {
@@ -72,7 +74,9 @@ public class ImageRegistry {
         }
     }
 
-    /** 设置容量（字节），若当前占用超过新容量则触发淘汰。 */
+    /**
+     * 设置容量（字节），若当前占用超过新容量则触发淘汰。
+     */
     public void setCapacity(long newCapacity) {
         writeLock.lock();
         try {
@@ -83,7 +87,9 @@ public class ImageRegistry {
         }
     }
 
-    /** 获取当前已用字节。 */
+    /**
+     * 获取当前已用字节。
+     */
     public long getCurrentSize() {
         readLock.lock();
         try {
@@ -134,7 +140,9 @@ public class ImageRegistry {
         }
     }
 
-    /** 清空全部缓存。 */
+    /**
+     * 清空全部缓存。
+     */
     public void clear() {
         writeLock.lock();
         try {
@@ -145,7 +153,9 @@ public class ImageRegistry {
         }
     }
 
-    /** 按前缀清理（如清理某个 photoId 下的所有图片：photoId + "/"）。 */
+    /**
+     * 按前缀清理（如清理某个 photoId 下的所有图片：photoId + "/"）。
+     */
     public void clearByPrefix(String prefix) {
         writeLock.lock();
         try {
@@ -184,7 +194,7 @@ public class ImageRegistry {
      * 解析虚拟 URL 并返回 WebResourceResponse。
      * URL: https://jqviewer.local/{type}/{photoId}/{sortOrder}
      * <p>
-     * 查找顺序：内存缓存 → FileStorage（离线下载的图片）→ null（在线等待 preloadImages）
+     * 查找顺序：内存缓存 → FileStore（离线下载的图片）→ null（在线等待 preloadImages）
      */
     public static WebResourceResponse handleRequest(String url) {
         try {
@@ -208,13 +218,13 @@ public class ImageRegistry {
             ImageEntry entry = getInstance().get(cacheKey);
             if (entry != null) {
                 return new WebResourceResponse(
-                    entry.mimeType,
-                    "UTF-8",
-                    new ByteArrayInputStream(entry.data)
+                        entry.mimeType,
+                        "UTF-8",
+                        new ByteArrayInputStream(entry.data)
                 );
             }
 
-            // 2. 缓存 miss → 依次：原图内存缓存 → FileStorage
+            // 2. 缓存 miss → 依次：原图内存缓存 → FileStore
             if ("thumb".equals(type)) {
                 // 2a. 查原图内存缓存（从内存生成缩略图，最快）
                 ImageEntry original = getInstance().get(photoId + "/" + sortOrder);
@@ -225,8 +235,8 @@ public class ImageRegistry {
                             new ByteArrayInputStream(thumbData));
                 }
 
-                // 2b. 查 FileStorage（从本地原图生成缩略图）
-                byte[] originalData = FileStorage.getInstance()
+                // 2b. 查 FileStore（从本地原图生成缩略图）
+                byte[] originalData = FileStore.getInstance()
                         .getImageBytesByPhotoId(photoId, sortOrder);
                 if (originalData != null) {
                     byte[] thumbData = createThumbnail(originalData);
@@ -235,7 +245,7 @@ public class ImageRegistry {
                             new ByteArrayInputStream(thumbData));
                 }
             } else {
-                byte[] data = FileStorage.getInstance()
+                byte[] data = FileStore.getInstance()
                         .getImageBytesByPhotoId(photoId, sortOrder);
                 if (data != null) {
                     String mime = "image/" + guessFormatName(data);
@@ -245,15 +255,17 @@ public class ImageRegistry {
                 }
             }
 
-            // 3. 仍未找到 → 返回 null（在线场景等待 preloadImages 下载/FileStorage 兜底）
+            // 3. 仍未找到 → 返回 null（在线场景等待 preloadImages 下载/FileStore 兜底）
             return null;
         } catch (Exception e) {
             return null;
         }
     }
 
-    /** 通过文件头魔数判断图片格式 */
-    static String guessFormatName(byte[] data) {
+    /**
+     * 通过文件头魔数判断图片格式
+     */
+    public static String guessFormatName(byte[] data) {
         if (data == null || data.length < 3) return "jpeg";
         int b0 = data[0] & 0xFF;
         int b1 = data[1] & 0xFF;
@@ -265,7 +277,9 @@ public class ImageRegistry {
         return "jpeg";
     }
 
-    /** 从原图字节生成缩略图（JPEG，宽≤300px，质量70） */
+    /**
+     * 从原图字节生成缩略图（JPEG，宽≤300px，质量70）
+     */
     public static byte[] createThumbnail(byte[] imageBytes) {
         Bitmap bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.length);
         if (bitmap == null) return imageBytes;

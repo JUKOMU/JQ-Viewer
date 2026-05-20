@@ -1,4 +1,4 @@
-package io.github.jukomu.storage;
+package io.github.jukomu.data;
 
 import android.content.ContentValues;
 import android.content.Context;
@@ -20,9 +20,9 @@ import java.util.List;
  * - download_tasks: 任务元数据
  * - download_images: 图片信息（sortOrder→filename 映射等）
  */
-public class DownloadDatabase extends SQLiteOpenHelper {
+public class DownloadStore extends SQLiteOpenHelper {
 
-    private static final String TAG = "DownloadDatabase";
+    private static final String TAG = "DownloadStore";
     private static final String DB_NAME = "jq_download.db";
     private static final int DB_VERSION = 3;
 
@@ -57,16 +57,16 @@ public class DownloadDatabase extends SQLiteOpenHelper {
     static final String COL_SCRAMBLE_ID = "scramble_id";
     static final String COL_QUERY_PARAMS = "query_params";
 
-    private static DownloadDatabase instance;
+    private static DownloadStore instance;
 
-    public static synchronized DownloadDatabase getInstance(Context context) {
+    public static synchronized DownloadStore getInstance(Context context) {
         if (instance == null) {
-            instance = new DownloadDatabase(context.getApplicationContext());
+            instance = new DownloadStore(context.getApplicationContext());
         }
         return instance;
     }
 
-    private DownloadDatabase(Context context) {
+    private DownloadStore(Context context) {
         super(context, DB_NAME, null, DB_VERSION);
     }
 
@@ -284,7 +284,8 @@ public class DownloadDatabase extends SQLiteOpenHelper {
                         obj.put("scrambleId", c.getString(c.getColumnIndexOrThrow(COL_SCRAMBLE_ID)));
                         obj.put("queryParams", c.getString(c.getColumnIndexOrThrow(COL_QUERY_PARAMS)));
                         list.add(obj);
-                    } catch (Exception ignored) {}
+                    } catch (Exception ignored) {
+                    }
                 }
             } finally {
                 c.close();
@@ -406,7 +407,8 @@ public class DownloadDatabase extends SQLiteOpenHelper {
             if (sortIdx >= 0 && !c.isNull(sortIdx)) {
                 obj.put("chapterSortOrder", c.getInt(sortIdx));
             }
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
         return obj;
     }
 }

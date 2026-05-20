@@ -1779,3 +1779,75 @@ ChapterSelectPage 全面重构：
 
 ### 编译验证
 - `./gradlew assembleDebug` ✓ BUILD SUCCESSFUL
+
+---
+
+## 2026-05-20 Android 侧架构重构：三层拆分
+
+### 背景
+`JmcomicPlugin.java` 已达 1552 行，混合了 API、下载、图片、设置、权限、数据转换等 13 种职责。`plugin/` / `storage/` 目录结构为早期预留，不利于后续扩展（登录、本子级下载、评论发表等）。
+
+### 目标架构
+经典三层架构（bridge/service/data）+ 语义化命名：
+
+```
+io.github.jukomu/
+├── MainActivity.java
+├── bridge/                    Capacitor 入口层
+│   └── JmcomicPlugin.java    (664行, 原1552行)
+├── service/                   业务逻辑层 (零Capacitor依赖)
+│   ├── ApiService.java        搜索/详情/评论/收藏 API + 数据转换
+│   ├── DownloadService.java   下载编排 + 进度推送
+│   ├── DownloadObserver.java  库 TaskObserver 适配(原内部类)
+│   ├── PreloadService.java    图片预加载 + 缓存管理
+│   ├── SettingsService.java   设置读写 + 公开/私有搬迁
+│   ├── PermissionService.java 权限 API 版本适配
+│   ├── ServiceListener.java   统一事件回调接口
+│   ├── ApiCallback.java       异步API回调
+│   ├── DownloadProgressData.java 下载进度POJO
+│   └── PermissionState.java   权限状态POJO
+└── data/                      持久化层
+    ├── ImageCache.java        (原ImageRegistry)
+    ├── DownloadStore.java     (原DownloadDatabase)
+    ├── FileStore.java         (原FileStorage)
+    └── SettingsStore.java     (原SettingsDatabase)
+```
+
+### 关键设计决策
+- Service 层通过 `ServiceListener` 接口向上推送事件，Bridge 实现并转发 `notifyListeners()`
+- Service 返回 `org.json.JSONObject`（Android SDK），Bridge 包装为 Capacitor `JSObject`
+- 共享资源（JmApiClient、线程池）由 Bridge 创建，构造器注入各 Service
+- 同一个包(`io.github.jukomu.service`)内利用 package-private 控制访问权限
+
+### 实施阶段（6步，逐阶段编译验证）
+1. 创建 callback 接口 + POJO（纯新增）
+2. 提取 PermissionService（最小服务，验证模式）
+3. 提取 ApiService（8个API方法 + 10个数据转换器）
+4. 提取 SettingsService + PreloadService（设置 + 图片）
+5. 提取 DownloadService + DownloadObserver（下载 + 观察者）
+6. data 层改名 + 最终清理（语义化命名 + 旧文件删除 + bridge 包移动）
+
+### 编译验证
+- `./gradlew clean assembleDebug` ✓ BUILD SUCCESSFUL（每阶段均通过）
+
+---
+
+## 2026-05-21 架构审查 + 修复
+
+### 代码审查
+对重构后的 16 个 Java 文件进行全面审查，发现 10 个问题，分类如下：
+- **误判 2 项**：SettingsService 字符串常量（原始代码同样使用字面量）、僵尸清理顺序（有意为之）
+- **遗留行为 2 项**：setDownloadConcurrency 不重建 client、shutdownNow 无优雅关闭（原始代码同样行为）
+- **真正问题 3 项**：18个未使用 import、ImageCache 冗余 import、DownloadService 全限定名不一致
+- **可改进 3 项**：SettingsService 引用常量、handleOnDestroy 优雅关闭、ApiService 10处静默 catch
+
+### 修复内容
+1. **JmcomicPlugin.java** — 清理 18 个未使用 import（原代码引用的类型已移入各 Service）
+2. **ImageCache.java** — 删除冗余 `import io.github.jukomu.data.FileStore`（同包无需显式导入）
+3. **DownloadService.java** — `org.json.JSONObject`/`JSONArray` 全限定名统一为短名
+4. **SettingsService.java** — `validateSwitch()` 改用 `DownloadService.STATUS_COMPLETED`/`STATUS_FAILED` 常量
+5. **JmcomicPlugin.java** — `handleOnDestroy()` 改为先 `shutdown()` + `awaitTermination(2s)`，超时再 `shutdownNow()`
+6. **ApiService.java** — 移除 10 处 `catch (Exception ignored) {}`，让 JSONException 向上传播到 `runAsync` 的 catch 块，通过 `callback.onError()` 正确报告给 JS 侧
+
+### 编译验证
+- `./gradlew clean assembleDebug` ✓ BUILD SUCCESSFUL

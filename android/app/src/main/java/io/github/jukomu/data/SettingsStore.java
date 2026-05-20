@@ -1,4 +1,4 @@
-package io.github.jukomu.storage;
+package io.github.jukomu.data;
 
 import android.content.ContentValues;
 import android.content.Context;
@@ -11,7 +11,7 @@ import android.database.sqlite.SQLiteOpenHelper;
  * <p>
  * 表结构：单表 key-value，新增设置无需 migration。
  */
-public class SettingsDatabase extends SQLiteOpenHelper {
+public class SettingsStore extends SQLiteOpenHelper {
 
     private static final String DB_NAME = "jq_settings.db";
     private static final int DB_VERSION = 1;
@@ -21,16 +21,16 @@ public class SettingsDatabase extends SQLiteOpenHelper {
     private static final String COL_VALUE = "value";
     private static final String COL_UPDATED_AT = "updated_at";
 
-    private static SettingsDatabase instance;
+    private static SettingsStore instance;
 
-    public static synchronized SettingsDatabase getInstance(Context context) {
+    public static synchronized SettingsStore getInstance(Context context) {
         if (instance == null) {
-            instance = new SettingsDatabase(context.getApplicationContext());
+            instance = new SettingsStore(context.getApplicationContext());
         }
         return instance;
     }
 
-    private SettingsDatabase(Context context) {
+    private SettingsStore(Context context) {
         super(context, DB_NAME, null, DB_VERSION);
     }
 
@@ -73,7 +73,8 @@ public class SettingsDatabase extends SQLiteOpenHelper {
             if (c.moveToFirst()) {
                 return c.getString(0);
             }
-        } catch (Exception ignored) { }
+        } catch (Exception ignored) {
+        }
         return null;
     }
 

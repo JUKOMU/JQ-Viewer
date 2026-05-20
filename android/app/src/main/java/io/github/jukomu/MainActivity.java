@@ -4,14 +4,11 @@ import android.os.Bundle;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
-
 import androidx.annotation.NonNull;
-
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.BridgeWebViewClient;
-
-import io.github.jukomu.plugin.ImageRegistry;
-import io.github.jukomu.plugin.JmcomicPlugin;
+import io.github.jukomu.bridge.JmcomicPlugin;
+import io.github.jukomu.data.ImageCache;
 
 public class MainActivity extends BridgeActivity {
     @Override
@@ -24,8 +21,8 @@ public class MainActivity extends BridgeActivity {
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
                 String url = request.getUrl().toString();
-                if (ImageRegistry.isVirtualImageUrl(url)) {
-                    WebResourceResponse resp = ImageRegistry.handleRequest(url);
+                if (ImageCache.isVirtualImageUrl(url)) {
+                    WebResourceResponse resp = ImageCache.handleRequest(url);
                     if (resp != null) return resp;
                     return null;
                 }
@@ -36,7 +33,7 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onRequestPermissionsResult(int requestCode,
-            @NonNull String[] permissions, @NonNull int[] grantResults) {
+                                           @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         JmcomicPlugin plugin = JmcomicPlugin.getInstance();
         if (plugin != null) {

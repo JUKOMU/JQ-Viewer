@@ -38,6 +38,7 @@
 
     <!-- Permissions -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <!-- API 24-28: 公开下载用（运行时弹窗）。API 29+ scoped storage 下无效，限 maxSdkVersion -->
     <uses-permission

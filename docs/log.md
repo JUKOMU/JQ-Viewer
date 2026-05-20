@@ -1977,3 +1977,6 @@ io.github.jukomu/
 
 ### 编译验证
 - `./gradlew assembleDebug` ✓ BUILD SUCCESSFUL (214 actionable tasks)
+
+### 代码审查（2026-05-21）
+- 审查 `handleOnDestroy()` 与 `scheduleDomainProbe()` 竞态风险：分析确认实际不会发生——触发需三个条件同时满足（回调线程在 client 判空后阻塞 ≥2s + 销毁瞬间发生网络变化 + 主线程先拿到锁跑完清理），实际概率趋零。即使发生也仅在销毁中的回调线程上抛 `RejectedExecutionException`，用户已离开应用无感知。当前实现无 bug，不需要修复。

@@ -1,11 +1,17 @@
 package io.github.jukomu.plugin;
 
+import android.Manifest;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 
 import android.net.Uri;
+import android.os.Build;
 import android.os.Environment;
 import android.provider.Settings;
+
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 import com.getcapacitor.*;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import io.github.jukomu.jmcomic.api.download.DownloadProgress;
@@ -28,6 +34,7 @@ import org.json.JSONObject;
 
 import java.io.File;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -67,6 +74,11 @@ public class JmcomicPlugin extends Plugin {
     private int downloadConcurrency = 6;
 
 
+    // ---- 权限相关 ----
+    private static JmcomicPlugin instance;
+    private static final int REQUEST_WRITE_STORAGE = 1001;
+    private PluginCall pendingPermissionCall;
+
     // ---- 下载相关 ----
     private DownloadDatabase downloadDb;
     /** albumId_chapterId → library taskId */
@@ -78,19 +90,47 @@ public class JmcomicPlugin extends Plugin {
 
     @Override
     public void load() {
+        instance = this;
+
         Context ctx = getContext();
         SettingsDatabase settingsDb = SettingsDatabase.getInstance(ctx);
 
-        // 读取下载公开设置 → FileStorage
+        // 读取下载公开设置 → 权限检查 → FileStorage
         boolean downloadPublic = settingsDb.getBoolean("download_public", false);
         downloadDb = DownloadDatabase.getInstance(ctx);
-        FileStorage.getInstance().init(ctx, downloadDb, downloadPublic);
 
-        if (downloadPublic && !Environment.isExternalStorageManager()) {
-            android.util.Log.w("JmcomicPlugin",
-                    "公开下载模式已开启，但缺少 MANAGE_EXTERNAL_STORAGE 权限，"
-                    + "文件操作可能失败。请调用 requestManageStorage 申请权限。");
+        // API 感知的权限检查：决定实际使用的目录
+        boolean usePublicDir = downloadPublic;
+        if (downloadPublic) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                // API 30+
+                if (!Environment.isExternalStorageManager()) {
+                    android.util.Log.w("JmcomicPlugin",
+                            "公开下载已开启但缺少 MANAGE_EXTERNAL_STORAGE，" +
+                            "回退到私有目录。请调用 requestManageStorage 授权。");
+                    usePublicDir = false;
+                    settingsDb.putString("download_public", "false");
+                }
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                // API 29: 无可用权限，强制私有
+                android.util.Log.w("JmcomicPlugin",
+                        "Android 10 不支持公开下载（无可用存储权限），使用私有目录。");
+                usePublicDir = false;
+                settingsDb.putString("download_public", "false");
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                // API 24-28
+                if (ContextCompat.checkSelfPermission(ctx,
+                        Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                        != PackageManager.PERMISSION_GRANTED) {
+                    android.util.Log.w("JmcomicPlugin",
+                            "公开下载已开启但缺少 WRITE_EXTERNAL_STORAGE，" +
+                            "回退到私有目录。请调用 requestManageStorage 授权。");
+                    usePublicDir = false;
+                    settingsDb.putString("download_public", "false");
+                }
+            }
         }
+        FileStorage.getInstance().init(ctx, downloadDb, usePublicDir);
 
         // 清理僵尸任务的部分下载文件（validateOnStartup 标记前）
         List<org.json.JSONObject> zombieTasks = downloadDb.getAllTasks();
@@ -134,25 +174,82 @@ public class JmcomicPlugin extends Plugin {
     }
 
     /**
-     * 请求"所有文件访问权限"（公开下载需要）。
-     * 返回 { granted: boolean }，未授权时打开系统设置页。
+     * 请求存储权限（根据 API 版本选择最合适的权限）。
+     * 返回 { granted: boolean, permissionType: string, apiLevel: int }
      */
     @PluginMethod
     public void requestManageStorage(PluginCall call) {
-        boolean granted = Environment.isExternalStorageManager();
-        if (!granted) {
-            try {
-                Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
-                intent.setData(Uri.parse("package:" + getContext().getPackageName()));
-                getContext().startActivity(intent);
-            } catch (Exception e) {
-                call.reject("无法打开存储权限设置页: " + e.getMessage());
-                return;
-            }
-        }
         JSObject ret = new JSObject();
-        ret.put("granted", granted);
-        call.resolve(ret);
+        ret.put("apiLevel", Build.VERSION.SDK_INT);
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            // API 30+: MANAGE_EXTERNAL_STORAGE → 系统设置页
+            boolean granted = Environment.isExternalStorageManager();
+            ret.put("granted", granted);
+            ret.put("permissionType", "MANAGE_EXTERNAL_STORAGE");
+            if (!granted) {
+                try {
+                    Intent intent = new Intent(
+                            Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
+                    intent.setData(Uri.parse("package:" + getContext().getPackageName()));
+                    getContext().startActivity(intent);
+                } catch (Exception e) {
+                    call.reject("无法打开存储权限设置页: " + e.getMessage());
+                    return;
+                }
+            }
+            call.resolve(ret);
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // API 29: 无可用权限
+            ret.put("granted", false);
+            ret.put("permissionType", "not_supported");
+            call.resolve(ret);
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            // API 24-28: WRITE_EXTERNAL_STORAGE 运行时权限
+            int check = ContextCompat.checkSelfPermission(getContext(),
+                    Manifest.permission.WRITE_EXTERNAL_STORAGE);
+            boolean granted = (check == PackageManager.PERMISSION_GRANTED);
+            ret.put("granted", granted);
+            ret.put("permissionType", "WRITE_EXTERNAL_STORAGE");
+            if (!granted) {
+                if (pendingPermissionCall != null) {
+                    call.reject("权限请求正在进行中，请先完成上一个请求。");
+                    return;
+                }
+                pendingPermissionCall = call;
+                call.setKeepAlive(true);
+                ActivityCompat.requestPermissions(getActivity(),
+                        new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE},
+                        REQUEST_WRITE_STORAGE);
+                return; // 异步等回调
+            }
+            call.resolve(ret);
+        } else {
+            ret.put("granted", true);
+            ret.put("permissionType", "install_time");
+            call.resolve(ret);
+        }
+    }
+
+    /**
+     * 供 MainActivity.onRequestPermissionsResult 调用。
+     */
+    public void handlePermissionResult(int requestCode, String[] permissions,
+                                        int[] grantResults) {
+        if (requestCode == REQUEST_WRITE_STORAGE && pendingPermissionCall != null) {
+            PluginCall call = pendingPermissionCall;
+            pendingPermissionCall = null;
+            JSObject ret = new JSObject();
+            ret.put("apiLevel", Build.VERSION.SDK_INT);
+            ret.put("permissionType", "WRITE_EXTERNAL_STORAGE");
+            ret.put("granted", grantResults.length > 0
+                    && grantResults[0] == PackageManager.PERMISSION_GRANTED);
+            call.resolve(ret);
+        }
+    }
+
+    public static JmcomicPlugin getInstance() {
+        return instance;
     }
 
     @PluginMethod
@@ -496,6 +593,26 @@ public class JmcomicPlugin extends Plugin {
     public void setDownloadPublic(PluginCall call) {
         boolean open = call.getBoolean("open", false);
 
+        // 权限前置检查（仅 open=true 时）
+        if (open) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                if (!Environment.isExternalStorageManager()) {
+                    call.reject("需要\"所有文件访问权限\"。请先在系统设置中授权后重试。");
+                    return;
+                }
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                call.reject("Android 10 不支持公开下载。");
+                return;
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                if (ContextCompat.checkSelfPermission(getContext(),
+                        Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                        != PackageManager.PERMISSION_GRANTED) {
+                    call.reject("需要存储权限。请先调用 requestManageStorage 授权。");
+                    return;
+                }
+            }
+        }
+
         // 统一拦截非终态任务（只有 completed/failed 允许切换）
         List<org.json.JSONObject> tasks = downloadDb.getAllTasks();
         for (org.json.JSONObject t : tasks) {
@@ -661,8 +778,8 @@ public class JmcomicPlugin extends Plugin {
                     // 多章本子：库会对 path 追加 photoId(chapterId)，传 albumDir 抵消
                     // 单章本子：库保持路径不变，直接传 chapterDir
                     Path savePath = photo.isSingleAlbum()
-                            ? chapterDir.toPath()
-                            : chapterDir.getParentFile().toPath();
+                            ? Paths.get(chapterDir.getAbsolutePath())
+                            : Paths.get(chapterDir.getParentFile().getAbsolutePath());
                     AbstractJmClient abstractClient = (AbstractJmClient) client;
                     BaseDownloadTask task = abstractClient.createDownloadTask(photo, savePath);
 

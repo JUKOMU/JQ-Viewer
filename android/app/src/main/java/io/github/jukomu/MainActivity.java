@@ -5,6 +5,8 @@ import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
 
+import androidx.annotation.NonNull;
+
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.BridgeWebViewClient;
 
@@ -30,5 +32,15 @@ public class MainActivity extends BridgeActivity {
                 return super.shouldInterceptRequest(view, request);
             }
         });
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode,
+            @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        JmcomicPlugin plugin = JmcomicPlugin.getInstance();
+        if (plugin != null) {
+            plugin.handlePermissionResult(requestCode, permissions, grantResults);
+        }
     }
 }

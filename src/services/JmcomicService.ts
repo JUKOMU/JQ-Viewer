@@ -36,7 +36,7 @@ interface JmcomicPlugin {
     setPreloadConcurrency(options: { n: number }): Promise<{ success: boolean }>
     setDownloadPublic(options: { open: boolean }): Promise<{ success: boolean; downloadPublic: boolean; moved: number }>
     getDownloadPublic(): Promise<{ downloadPublic: boolean }>
-    requestManageStorage(): Promise<{ granted: boolean }>
+    requestManageStorage(): Promise<{ granted: boolean; permissionType: string; apiLevel: number }>
     getAllSettings(): Promise<AllSettings>
     setReaderPreloadPages(options: { n: number }): Promise<{ success: boolean }>
     downloadChapter(options: {

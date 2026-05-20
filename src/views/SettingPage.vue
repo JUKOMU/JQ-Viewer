@@ -334,13 +334,19 @@ async function onDownloadPublicChange(e: CustomEvent) {
   const open = e.detail.checked
   downloadPublic.value = open
 
-  // 开启时检查"所有文件访问权限"
+  // 开启时根据 API 版本申请合适的权限
   if (open) {
     try {
-      const { granted } = await JmcomicService.requestManageStorage()
-      if (!granted) {
+      const result = await JmcomicService.requestManageStorage()
+      if (!result.granted) {
         downloadPublic.value = false
-        await showToast('请在系统设置中授予"所有文件访问权限"后重新开启', 'danger')
+        if (result.permissionType === 'not_supported') {
+          await showToast('Android 10 不支持公开下载', 'danger')
+        } else if (result.permissionType === 'WRITE_EXTERNAL_STORAGE') {
+          await showToast('请在弹出对话框中授予存储权限后重新开启', 'danger')
+        } else {
+          await showToast('请在系统设置中授予"所有文件访问权限"后重新开启', 'danger')
+        }
         return
       }
     } catch (e: any) {

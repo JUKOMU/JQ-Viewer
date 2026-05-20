@@ -6,6 +6,7 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 
 import android.net.Uri;
+import android.annotation.SuppressLint;
 import android.os.Build;
 import android.os.Environment;
 import android.provider.Settings;
@@ -34,7 +35,6 @@ import org.json.JSONObject;
 
 import java.io.File;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -705,6 +705,7 @@ public class JmcomicPlugin extends Plugin {
 
     // ========== 下载相关 ==========
 
+    @SuppressLint("NewApi")
     @PluginMethod
     public void downloadChapter(PluginCall call) {
         try {
@@ -778,8 +779,8 @@ public class JmcomicPlugin extends Plugin {
                     // 多章本子：库会对 path 追加 photoId(chapterId)，传 albumDir 抵消
                     // 单章本子：库保持路径不变，直接传 chapterDir
                     Path savePath = photo.isSingleAlbum()
-                            ? Paths.get(chapterDir.getAbsolutePath())
-                            : Paths.get(chapterDir.getParentFile().getAbsolutePath());
+                            ? chapterDir.toPath()
+                            : chapterDir.getParentFile().toPath();
                     AbstractJmClient abstractClient = (AbstractJmClient) client;
                     BaseDownloadTask task = abstractClient.createDownloadTask(photo, savePath);
 

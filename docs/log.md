@@ -1768,10 +1768,14 @@ ChapterSelectPage 全面重构：
 
 ---
 
-## 2026-05-20 — 修复 File.toPath() API 26 兼容性问题
+## 2026-05-20 — 启用 coreLibraryDesugaring 解决 java.nio.file API 26 兼容性问题
 
 ### 概述
-`JmcomicPlugin.java:780` 使用 `File.toPath()` 需要 API 26，但项目 `minSdkVersion=24`，导致 IDE 标红。改用 `Paths.get()` 替代。
+`java.nio.file` 全家（`Path`、`Paths`、`Files` 等）都是 API 26 引入的，而项目 `minSdkVersion=24`。库 API `createDownloadTask(photo, Path)` 也直接使用了 `Path` 类型，因此这是系统性兼容问题。启用 AGP 内置的 core library desugaring 来 backport 这些 API 到 API 24。
 
 ### 变更文件
-- `android/.../plugin/JmcomicPlugin.java` — `chapterDir.toPath()` → `Paths.get(chapterDir.getAbsolutePath())`，`chapterDir.getParentFile().toPath()` → `Paths.get(chapterDir.getParentFile().getAbsolutePath())`，新增 `import java.nio.file.Paths`
+- `android/app/build.gradle` — `android` 块新增 `compileOptions { coreLibraryDesugaringEnabled true; sourceCompatibility VERSION_17; targetCompatibility VERSION_17 }`，`dependencies` 新增 `coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.5'`
+- `android/.../plugin/JmcomicPlugin.java` — `downloadChapter()` 方法加 `@SuppressLint("NewApi")` 消除 IDE lint 误报（desugaring 已处理兼容）
+
+### 编译验证
+- `./gradlew assembleDebug` ✓ BUILD SUCCESSFUL

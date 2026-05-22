@@ -24,12 +24,17 @@ import io.github.jukomu.jmcomic.core.config.JmConfiguration;
 import io.github.jukomu.service.*;
 import io.github.jukomu.service.PermissionState;
 import okhttp3.Cookie;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -58,7 +63,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
     private ScheduledExecutorService domainProbeExecutor;
     private ScheduledFuture<?> pendingProbe;
     private final Object probeLock = new Object();
-    private static final long PROBE_DEBOUNCE_MS = 3000;
+    private static final long PROBE_DEBOUNCE_MS = 2000;
 
     // ---- 权限相关 ----
     private static JmcomicPlugin instance;
@@ -219,7 +224,21 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         networkCallback = new ConnectivityManager.NetworkCallback() {
             @Override
             public void onAvailable(@NonNull Network network) {
+                JSObject event = new JSObject();
+                event.put("phase", "network_changed");
+                event.put("message", "网络已切换，即将重新探活");
+                event.put("timestamp", System.currentTimeMillis());
+                notifyListeners("networkProbe", event);
                 scheduleDomainProbe();
+            }
+
+            @Override
+            public void onLost(@NonNull Network network) {
+                JSObject event = new JSObject();
+                event.put("phase", "network_lost");
+                event.put("message", "网络已断开");
+                event.put("timestamp", System.currentTimeMillis());
+                notifyListeners("networkProbe", event);
             }
         };
 
@@ -232,6 +251,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
      * 若在去抖动窗口内多次调用，仅最后一次生效。
      */
     private void scheduleDomainProbe() {
+        if (domainProbeExecutor == null) return;
         final JmApiClient client = sharedClient;
         if (client == null) return;
 
@@ -241,13 +261,202 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
             }
             pendingProbe = domainProbeExecutor.schedule(() -> {
                 try {
-                    android.util.Log.i("JmcomicPlugin", "网络变化已检测到，重新探活域名...");
+                    JSObject startEvent = new JSObject();
+                    startEvent.put("phase", "probing");
+                    startEvent.put("message", "正在探测域名连通性...");
+                    startEvent.put("timestamp", System.currentTimeMillis());
+                    notifyListeners("networkProbe", startEvent);
+
+                    android.util.Log.i("JmcomicPlugin", "重新探活域名...");
                     client.reprobeDomains();
                     android.util.Log.i("JmcomicPlugin", "域名重新探活完成");
+
+                    try {
+                        java.lang.reflect.Field dmField = client.getClass().getSuperclass().getDeclaredField("domainManager");
+                        dmField.setAccessible(true);
+                        Object dm = dmField.get(client);
+                        @SuppressWarnings("unchecked")
+                        java.util.Map<String, Integer> states = (java.util.Map<String, Integer>)
+                                dm.getClass().getMethod("getDomainStates").invoke(dm);
+
+                        org.json.JSONObject result = new org.json.JSONObject();
+                        result.put("phase", "result");
+                        int alive = 0;
+                        org.json.JSONArray domains = new org.json.JSONArray();
+                        for (java.util.Map.Entry<String, Integer> e : states.entrySet()) {
+                            org.json.JSONObject d = new org.json.JSONObject();
+                            d.put("domain", e.getKey());
+                            d.put("reachable", e.getValue() < (Integer.MAX_VALUE / 2));
+                            if (d.getBoolean("reachable")) alive++;
+                            domains.put(d);
+                        }
+                        boolean allDeadFallback = false;
+                        try {
+                            allDeadFallback = (boolean) dm.getClass()
+                                    .getMethod("isAllDeadFallback").invoke(dm);
+                        } catch (Exception ignored) {}
+                        result.put("allDeadFallback", allDeadFallback);
+                        result.put("domains", domains);
+                        result.put("alive", alive);
+                        result.put("total", states.size());
+                        result.put("timestamp", System.currentTimeMillis());
+
+                        if (allDeadFallback) {
+                            result.put("message", "探活完成 · 全部不可达");
+                        } else {
+                            result.put("message", "探活完成 · " + alive + "/" + states.size() + " 可达");
+                        }
+
+                        notifyListeners("networkProbe", JSObject.fromJSONObject(result));
+                    } catch (Exception ignored) {
+                        JSObject errEvent = new JSObject();
+                        errEvent.put("phase", "result");
+                        errEvent.put("message", "探活完成");
+                        errEvent.put("timestamp", System.currentTimeMillis());
+                        notifyListeners("networkProbe", errEvent);
+                    }
                 } catch (Exception e) {
                     android.util.Log.w("JmcomicPlugin", "域名重新探活失败", e);
+                    JSObject errEvent = new JSObject();
+                    errEvent.put("phase", "error");
+                    String errMsg = e.getMessage();
+                    errEvent.put("message", "探活异常" + (errMsg != null ? " · " + errMsg : ""));
+                    errEvent.put("timestamp", System.currentTimeMillis());
+                    notifyListeners("networkProbe", errEvent);
                 }
             }, PROBE_DEBOUNCE_MS, TimeUnit.MILLISECONDS);
+        }
+    }
+
+    /**
+     * 读取 domainManager 中已有的域名状态（同步返回，不触发探活）。
+     * 用于前端初始化时展示 AbstractJmClient 构造时已完成的首轮探活结果。
+     */
+    @PluginMethod
+    public void getDomainStates(PluginCall call) {
+        try {
+            JmApiClient client = sharedClient;
+            if (client == null) {
+                call.reject("client 尚未初始化");
+                return;
+            }
+
+            java.lang.reflect.Field dmField = client.getClass().getSuperclass()
+                    .getDeclaredField("domainManager");
+            dmField.setAccessible(true);
+            Object dm = dmField.get(client);
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, Integer> states = (java.util.Map<String, Integer>)
+                    dm.getClass().getMethod("getDomainStates").invoke(dm);
+
+            JSObject result = new JSObject();
+            int alive = 0;
+            JSONArray domains = new JSONArray();
+            for (java.util.Map.Entry<String, Integer> e : states.entrySet()) {
+                JSONObject d = new JSONObject();
+                d.put("domain", e.getKey());
+                boolean reachable = e.getValue() < (Integer.MAX_VALUE / 2);
+                d.put("reachable", reachable);
+                if (reachable) alive++;
+                domains.put(d);
+            }
+
+            boolean allDeadFallback = false;
+            try {
+                allDeadFallback = (boolean) dm.getClass()
+                        .getMethod("isAllDeadFallback").invoke(dm);
+            } catch (Exception ignored) {}
+
+            result.put("domains", domains);
+            result.put("alive", alive);
+            result.put("total", states.size());
+            result.put("allDeadFallback", allDeadFallback);
+            call.resolve(result);
+        } catch (Exception e) {
+            call.reject("获取域名状态失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 手动触发域名重新探活（结果通过 networkProbe 事件推送）。
+     * 用于网络状态页的刷新按钮。
+     */
+    @PluginMethod
+    public void reprobeDomains(PluginCall call) {
+        scheduleDomainProbe();
+        call.resolve();
+    }
+
+    /**
+     * 对可达域名进行延迟测试（HEAD 请求计时）。
+     * 不可达域名直接跳过，前端自行填充固定值。
+     */
+    @PluginMethod
+    public void measureLatency(PluginCall call) {
+        try {
+            JmApiClient client = sharedClient;
+            if (client == null) {
+                call.reject("client 尚未初始化");
+                return;
+            }
+
+            java.lang.reflect.Field dmField = client.getClass().getSuperclass()
+                    .getDeclaredField("domainManager");
+            dmField.setAccessible(true);
+            Object dm = dmField.get(client);
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, Integer> states = (java.util.Map<String, Integer>)
+                    dm.getClass().getMethod("getDomainStates").invoke(dm);
+
+            OkHttpClient probeClient = new OkHttpClient.Builder()
+                    .connectTimeout(Duration.ofMillis(3000))
+                    .readTimeout(Duration.ofMillis(3000))
+                    .build();
+
+            JSONArray results = new JSONArray();
+            List<CompletableFuture<Void>> futures = new ArrayList<>();
+
+            for (java.util.Map.Entry<String, Integer> e : states.entrySet()) {
+                String domain = e.getKey();
+                boolean reachable = e.getValue() < (Integer.MAX_VALUE / 2);
+
+                if (!reachable) continue;
+
+                futures.add(CompletableFuture.runAsync(() -> {
+                    long start = System.currentTimeMillis();
+                    boolean timedOut = false;
+                    int latencyMs = 0;
+                    try {
+                        Request request = new Request.Builder()
+                                .url("https://" + domain + "/")
+                                .head()
+                                .build();
+                        try (Response ignored = probeClient.newCall(request).execute()) {
+                            latencyMs = (int) (System.currentTimeMillis() - start);
+                        }
+                    } catch (Exception ex) {
+                        timedOut = true;
+                    }
+
+                    JSONObject r = new JSONObject();
+                    synchronized (results) {
+                        try {
+                            r.put("domain", domain);
+                            r.put("latencyMs", timedOut ? 0 : latencyMs);
+                            r.put("timedOut", timedOut);
+                            results.put(r);
+                        } catch (JSONException ignored2) {}
+                    }
+                }));
+            }
+
+            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+
+            JSObject ret = new JSObject();
+            ret.put("results", results);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject("测速失败: " + e.getMessage());
         }
     }
 
@@ -866,6 +1075,35 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
                         settingsDb.putString("auth_user_info_json", null);
                         call.resolve(JSObject.fromJSONObject(result));
                     } catch (Exception e) {
+                        call.reject(e.getMessage(), e);
+                    }
+                }
+
+                @Override
+                public void onError(String message, Exception e) {
+                    call.reject(message, e);
+                }
+            });
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void getUserProfile(PluginCall call) {
+        try {
+            String uid = call.getString("uid");
+            if (uid == null || uid.isEmpty()) {
+                call.reject("uid is required");
+                return;
+            }
+            call.setKeepAlive(true);
+            apiService.getUserProfile(uid, new ApiCallback() {
+                @Override
+                public void onSuccess(JSONObject result) {
+                    try {
+                        call.resolve(JSObject.fromJSONObject(result));
+                    } catch (JSONException e) {
                         call.reject(e.getMessage(), e);
                     }
                 }

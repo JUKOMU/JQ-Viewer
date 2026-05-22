@@ -1,7 +1,7 @@
 # JQViewer 项目状态快照
 
 ## 记录时间
-2026-05-21
+2026-05-22
 
 ## 技术栈
 - 前端：Vue 3 + Ionic Vue 8 + Capacitor 8 + TypeScript ~5.9
@@ -17,7 +17,7 @@
 io.github.jukomu/
 ├── MainActivity.java              WebView拦截 + 权限回调
 ├── bridge/                         Capacitor 入口层
-│   └── JmcomicPlugin.java         (~660行) 薄门面：26个@PluginMethod + ServiceListener事件转发
+│   └── JmcomicPlugin.java         (~670行) 薄门面：27个@PluginMethod + ServiceListener事件转发
 ├── service/                        业务逻辑层（零Capacitor依赖）
 │   ├── ApiService.java            搜索/详情/评论/收藏 API + 数据转换
 │   ├── DownloadService.java       下载编排 + 进度推送 + 内部状态(taskIdMap等)
@@ -99,14 +99,22 @@ io.github.jukomu/
 
 8. **用户认证模块**
    - LoginPage（用户名+密码登录）
-   - UserPage（用户信息/等级/经验/收藏/金币 + 登出）
+   - UserPage（头像/用户名/等级/经验数值+进度条/签名/收藏容量/金币 + 个人资料卡片 + 登出）
    - useAuth 模块级单例（initAuth/login/logout/isLoggedIn）
    - MainMenu 用户头像区（默认人像/头像+用户名，点击→UserPage）
    - SettingPage 用户分组入口
-   - Android 侧 3 个 @PluginMethod：login/logout/checkLoginState
+   - Android 侧 4 个 @PluginMethod：login/logout/checkLoginState/getUserProfile
    - Cookie 持久化：AVS cookie → SettingsStore SQLite（auth_cookies_json/auth_username/auth_user_info_json）
    - 重启恢复：load() restoreAuthState() + checkLoginState()
    - Cookie 过期过滤
+
+9. **网络状态模块 (NetworkStatusPage)**
+   - 域名连通性列表（圆点指示 + 可达/不可达状态）
+   - 事件日志（网络变化/探活/结果事件时间线）
+   - networkProbeStore 模块级事件 store（启动时拉取已有状态 + 持续监听事件）
+   - 手动刷新域名探活（reprobeDomains）
+   - 手动域名延迟测速（OkHttp HEAD 并行计时，绿色ms/黄色等待/红色超时）
+   - Android 侧 3 个 @PluginMethod：getDomainStates / reprobeDomains / measureLatency
 
 ### 待完成模块
 
@@ -167,3 +175,5 @@ bridge/JmcomicPlugin.java
 | 2026-05-21 | 架构审查：修复1个回归（clearPhotoCache意外暴露），移除18个未使用 import，改进 handleOnDestroy 优雅关闭、ApiService 异常传播、SettingsService 引用常量 |
 | 2026-05-21 | **阅读器修复**：顶部越界防护(overscroll-behavior) + 底部 END 指示器 + 进度条拖动实时跟踪(ion-input + 150ms节流) |
 | 2026-05-21 | **用户登录态功能**：LoginPage + UserPage + useAuth + 3 个 @PluginMethod + Cookie 序列化/持久化/过期过滤/恢复 + MainMenu 用户头像区 + SettingPage 用户入口 + FavoritePage 登录态检查 |
+| 2026-05-22 | **用户页信息增强**：toUserInfoObject 补齐 7 字段（emailVerified/message/nextLevelExp/currentExp/maxAlbumFavorites 等）+ 新增 getUserProfile @PluginMethod + UserPage 重构（经验数值/收藏容量/签名/个人资料卡片）|
+| 2026-05-22 | **网络状态页 + 域名延迟测速**：NetworkStatusPage + networkProbeStore 事件 store + getDomainStates/reprobeDomains/measureLatency 三个 @PluginMethod + 域名连通性列表 + 事件日志 + 手动测速(OkHttp HEAD 并行计时) + 冷启动空内容修复 |

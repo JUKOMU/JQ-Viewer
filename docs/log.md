@@ -1980,3 +1980,80 @@ io.github.jukomu/
 
 ### 代码审查（2026-05-21）
 - 审查 `handleOnDestroy()` 与 `scheduleDomainProbe()` 竞态风险：分析确认实际不会发生——触发需三个条件同时满足（回调线程在 client 判空后阻塞 ≥2s + 销毁瞬间发生网络变化 + 主线程先拿到锁跑完清理），实际概率趋零。即使发生也仅在销毁中的回调线程上抛 `RejectedExecutionException`，用户已离开应用无感知。当前实现无 bug，不需要修复。
+
+---
+
+## 2026-05-21 21:50 | 修复 NetworkStatusPage 冷启动空内容 + 手动刷新按钮
+
+### 问题
+应用冷启动后全程无网络变化，进入网络状态页面时域名连通性列表和事件日志均为空。
+
+### 根因
+`AbstractJmClient` 构造函数中的初始探活已将域名状态写入 `domainManager`，但从未暴露给 JS 侧。JS 侧的 `networkProbe` 事件仅由 `ConnectivityManager.onAvailable()` → `scheduleDomainProbe()` 产生，无网络变化时该路径不触发。
+
+### 修改内容
+1. **`android/.../bridge/JmcomicPlugin.java`** — 新增 `@PluginMethod getDomainStates()`（反射读取已有域名状态）和 `@PluginMethod reprobeDomains()`（手动触发探活）
+2. **`src/services/JmcomicTypes.ts`** — 新增 `DomainStates` 接口
+3. **`src/services/JmcomicService.ts`** — 新增 `getDomainStates()` 和 `reprobeDomains()` 桥接方法
+4. **`src/composables/networkProbeStore.ts`** — `initNetworkProbeStore()` 注册监听器后立即调用 `getDomainStates()` 拉取已有状态
+5. **`src/views/NetworkStatusPage.vue`** — 域名连通性区域新增刷新按钮（IonIcon + spinning 动画）
+
+### 编译验证
+- `vue-tsc --noEmit` ✓
+- `vite build` ✓
+- `./gradlew assembleDebug` ✓ BUILD SUCCESSFUL
+
+---
+
+## 2026-05-21 — 用户页信息增强
+
+### 概述
+用户页信息量不足。补齐 `JmUserInfo` 未暴露的 7 个字段到前端，并新增 `getUserProfile` 接口获取个人详细资料，UserPage UI 重构展示经验数值、收藏容量、个性签名和资料卡片。
+
+### 修改内容
+
+**Android 侧：**
+1. `android/.../service/ApiService.java` — `toUserInfoObject()` 新增 7 字段（emailVerified/firstName/gender/message/nextLevelExp/currentExp/maxAlbumFavorites）；新增 `getUserProfile()` + `toUserProfileObject()`
+2. `android/.../bridge/JmcomicPlugin.java` — 新增 `@PluginMethod getUserProfile`
+
+**前端侧：**
+3. `src/services/JmcomicTypes.ts` — `UserInfo` 追加 7 字段；新增 `UserProfile` 接口
+4. `src/services/JmcomicService.ts` — 新增 `getUserProfile()` 桥接方法
+5. `src/views/UserPage.vue` — 经验区改为 `currentExp / nextLevelExp` 数值+进度条；收藏改为 `albumFavorites / maxAlbumFavorites` 带容量显示；新增个性签名显示；新增个人资料卡片（getUserProfile 异步加载）
+
+### 展示对比
+
+| 区域 | 改动前 | 改动后 |
+|------|--------|--------|
+| 经验 | 仅百分比进度条 | 具体数值 + 进度条 + 百分比 |
+| 收藏 | `albumFavorites` 纯数字 | `albumFavorites / maxAlbumFavorites` 带容量 |
+| 签名 | 无 | message 个性签名 |
+| 资料 | 无 | 昵称/生日/所在地/职业/关于我/网站 |
+
+### 编译验证
+- `vue-tsc --noEmit` ✓
+- `vite build` ✓
+- `./gradlew assembleDebug` ✓ BUILD SUCCESSFUL
+
+---
+
+## 2026-05-21 22:15 | 网络状态页新增域名延迟测速功能
+
+### 概述
+NetworkStatusPage 新增手动延迟测试：对可达域名发送 HTTP HEAD 请求测量响应耗时。
+
+### 设计要点
+- 手动触发，结果不持久化（local ref），离开页面清空
+- 只测可达域名，不可达域名直接显示 `999 ms`（红色）
+- 未测速显示 `/ ms`（黄色），测速成功显示实际 ms 数（绿色），超时显示 `超时`（红色）
+
+### 修改内容
+1. **`android/.../JmcomicPlugin.java`** — 新增 `@PluginMethod measureLatency()`：OkHttp HEAD 并行测速，3s 超时
+2. **`src/services/JmcomicTypes.ts`** — 新增 `LatencyResult` 接口
+3. **`src/services/JmcomicService.ts`** — 新增 `measureLatency()` 桥接方法
+4. **`src/views/NetworkStatusPage.vue`** — 新增测速按钮（speedometerOutline）+ 域名行延迟列 + latencyMap 本地状态
+
+### 编译验证
+- `vue-tsc --noEmit` ✓
+- `vite build` ✓
+- `./gradlew assembleDebug` ✓ BUILD SUCCESSFUL

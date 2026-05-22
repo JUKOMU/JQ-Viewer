@@ -6,18 +6,22 @@ import type {
     AllSettings,
     CacheCapacityInfo,
     CommentList,
+    DomainStates,
     DownloadProgressEvent,
     DownloadTasksResult,
     FavoriteQuery,
     FavoriteResult,
     ForumQuery,
     ImageInfo,
+    LatencyResult,
+    NetworkProbeEvent,
     PhotoDetail,
     PreloadResult,
     RelocationProgress,
     SearchQuery,
     SearchResult,
     UserInfo,
+    UserProfile,
 } from './JmcomicTypes'
 
 interface JmcomicPlugin {
@@ -56,9 +60,14 @@ interface JmcomicPlugin {
     addListener(event: 'imageReady', handler: (data: ImageReadyEvent) => void): Promise<PluginListenerHandle>
     addListener(event: 'downloadProgress', handler: (data: DownloadProgressEvent) => void): Promise<PluginListenerHandle>
     addListener(event: 'relocationProgress', handler: (data: RelocationProgress) => void): Promise<PluginListenerHandle>
+    addListener(event: 'networkProbe', handler: (data: NetworkProbeEvent) => void): Promise<PluginListenerHandle>
+    getDomainStates(): Promise<DomainStates>
+    reprobeDomains(): Promise<void>
+    measureLatency(): Promise<{ results: LatencyResult[] }>
     login(options: { username: string; password: string }): Promise<UserInfo>
     logout(): Promise<{ success: boolean }>
     checkLoginState(): Promise<{ loggedIn: boolean; username?: string; userInfo?: UserInfo }>
+    getUserProfile(options: { uid: string }): Promise<UserProfile>
 }
 
 interface ImageReadyEvent {
@@ -117,6 +126,11 @@ export const JmcomicService = {
     /** 检查本地登录态（不涉及网络） */
     checkLoginState() {
         return native.checkLoginState()
+    },
+
+    /** 获取用户个人资料 */
+    getUserProfile(uid: string) {
+        return native.getUserProfile({ uid })
     },
 
     /**
@@ -191,6 +205,28 @@ export const JmcomicService = {
                 handler(data.sortOrder)
             }
         })
+    },
+
+    /**
+     * 注册网络探活事件监听。
+     */
+    addNetworkProbeListener(handler: (data: NetworkProbeEvent) => void): Promise<PluginListenerHandle> {
+        return native.addListener('networkProbe', handler)
+    },
+
+    /** 读取 domainManager 中已有的域名连通性状态（同步返回，不触发探活） */
+    getDomainStates() {
+        return native.getDomainStates()
+    },
+
+    /** 手动触发域名重新探活（结果通过 networkProbe 事件推送） */
+    reprobeDomains() {
+        return native.reprobeDomains()
+    },
+
+    /** 对可达域名进行延迟测试（HEAD 请求计时，并行执行） */
+    measureLatency() {
+        return native.measureLatency()
     },
 
     // ---- 下载相关 ----

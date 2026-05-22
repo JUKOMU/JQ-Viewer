@@ -4,12 +4,32 @@ export interface UserInfo {
     uid: string
     username: string
     email: string
+    emailVerified: boolean
     avatarUrl: string
+    firstName: string
+    gender: string
+    message: string
     level: number
     levelName: string
+    nextLevelExp: number
+    currentExp: number
+    expPercent: number
     coin: number
     albumFavorites: number
-    expPercent: number
+    maxAlbumFavorites: number
+}
+
+/** 用户个人资料 */
+export interface UserProfile {
+    username: string
+    email: string
+    nickname: string
+    birthday: string
+    city: string
+    country: string
+    occupation: string
+    aboutMe: string
+    website: string
 }
 
 // --- 搜索 ---
@@ -234,4 +254,40 @@ export interface DownloadProgressEvent {
     error?: string
     speed: number
     totalSize?: number
+}
+
+// --- 网络探活事件 ---
+
+/**
+ * getDomainStates() 返回的当前域名状态快照。
+ */
+export interface DomainStates {
+    domains: { domain: string; reachable: boolean }[]
+    alive: number
+    total: number
+    allDeadFallback: boolean
+}
+
+/**
+ * 网络探活事件。由 Android 侧 notifyListeners("networkProbe") 推送。
+ * - phase=network_changed|network_lost|probing|error: 仅含 message + timestamp
+ * - phase=result: 额外含 domains (域名+可达性) + alive (可达数) + total (总数) + allDeadFallback (全死回退标记)
+ */
+export interface NetworkProbeEvent {
+    phase: 'network_changed' | 'network_lost' | 'probing' | 'result' | 'error'
+    message: string
+    timestamp: number
+    domains?: { domain: string; reachable: boolean }[]
+    alive?: number
+    total?: number
+    allDeadFallback?: boolean
+}
+
+// --- 网络测速 ---
+
+/** 单域名延迟测试结果 */
+export interface LatencyResult {
+    domain: string
+    latencyMs: number
+    timedOut: boolean
 }

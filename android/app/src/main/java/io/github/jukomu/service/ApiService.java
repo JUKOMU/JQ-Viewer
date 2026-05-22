@@ -410,12 +410,47 @@ public class ApiService {
         ret.put("uid", userInfo.getUid());
         ret.put("username", userInfo.getUsername());
         ret.put("email", userInfo.getEmail() != null ? userInfo.getEmail() : "");
+        ret.put("emailVerified", userInfo.isEmailVerified());
         ret.put("avatarUrl", userInfo.getPhotoUrl() != null ? userInfo.getPhotoUrl() : "");
+        ret.put("firstName", userInfo.getFirstName() != null ? userInfo.getFirstName() : "");
+        ret.put("gender", userInfo.getGender() != null ? userInfo.getGender() : "");
+        ret.put("message", userInfo.getMessage() != null ? userInfo.getMessage() : "");
         ret.put("level", userInfo.getLevel());
         ret.put("levelName", userInfo.getLevelName() != null ? userInfo.getLevelName() : "");
+        ret.put("nextLevelExp", userInfo.getNextLevelExp());
+        ret.put("currentExp", userInfo.getCurrentExp());
+        ret.put("expPercent", userInfo.getExpPercent());
         ret.put("coin", userInfo.getCoin());
         ret.put("albumFavorites", userInfo.getAlbumFavorites());
-        ret.put("expPercent", userInfo.getExpPercent());
+        ret.put("maxAlbumFavorites", userInfo.getMaxAlbumFavorites());
+        return ret;
+    }
+
+    /**
+     * 获取用户个人资料
+     */
+    public void getUserProfile(String uid, ApiCallback callback) {
+        try {
+            runAsync(() -> {
+                JmUserProfile profile = client.getUserProfile(uid);
+                return toUserProfileObject(profile);
+            }, callback);
+        } catch (Exception e) {
+            callback.onError(e.getMessage(), e);
+        }
+    }
+
+    private JSONObject toUserProfileObject(JmUserProfile profile) throws JSONException {
+        JSONObject ret = new JSONObject();
+        ret.put("username", profile.username() != null ? profile.username() : "");
+        ret.put("email", profile.email() != null ? profile.email() : "");
+        ret.put("nickname", profile.nickname() != null ? profile.nickname() : "");
+        ret.put("birthday", profile.birthday() != null ? profile.birthday() : "");
+        ret.put("city", profile.city() != null ? profile.city() : "");
+        ret.put("country", profile.country() != null ? profile.country() : "");
+        ret.put("occupation", profile.occupation() != null ? profile.occupation() : "");
+        ret.put("aboutMe", profile.aboutMe() != null ? profile.aboutMe() : "");
+        ret.put("website", profile.website() != null ? profile.website() : "");
         return ret;
     }
 }

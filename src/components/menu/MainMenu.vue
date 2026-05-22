@@ -68,10 +68,6 @@
           </IonItem>
         </IonMenuToggle>
       </IonList>
-      <div class="menu-footer">
-        <div class="footer-title">菜单方案</div>
-        <div class="footer-copy">暖色卡片式导航，统一顶部按钮样式，与搜索页配色保持一致。</div>
-      </div>
     </IonContent>
   </IonMenu>
 </template>
@@ -121,8 +117,8 @@ function getTopPath(path: string) {
 }
 
 .user-avatar {
-  width: 48px;
-  height: 48px;
+  width: 60px;
+  height: 60px;
   border-radius: 50%;
   object-fit: cover;
   border: 2px solid #f5d0b8;

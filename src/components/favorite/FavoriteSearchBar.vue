@@ -96,7 +96,7 @@ defineExpose({focusInput})
   box-sizing: border-box;
   overflow: hidden;
   border-radius: 18px;
-  background: #ffecd9;
+  background: #fffbf8;
   border: 1px solid rgb(85 85 85 / 0.1);
 }
 

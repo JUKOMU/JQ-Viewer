@@ -145,7 +145,7 @@ defineExpose({focusInput})
 .expanded-panel {
   padding: 8px;
   border-radius: 22px;
-  background: #fff3ea;
+  background: #fffbf8;
   box-shadow: 0 8px 22px rgb(76 42 24 / 0.12);
 }
 
@@ -155,7 +155,7 @@ defineExpose({focusInput})
   gap: 6px;
   padding: 2px 2px 2px 8px;
   border-radius: 18px;
-  background: #ffecd9;
+  background: #fffbf8;
   border: 1px solid rgb(85 85 85 / 0.1);
 }
 

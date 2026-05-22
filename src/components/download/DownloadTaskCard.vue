@@ -336,7 +336,7 @@ const onCardClick = () => {
 }
 
 .status-tag.queued {
-  background: #fff3ea;
+  background: #fffbf8;
   color: #fa9c69;
 }
 

@@ -351,7 +351,7 @@ defineExpose<SearchResultContainerExposed>({
   margin-bottom: 10px;
   padding: 9px 12px;
   border-radius: 18px;
-  background: #fff3ea;
+  background: #fffbf8;
   box-shadow: 0 10px 24px rgb(76 42 24 / 0.08);
 }
 

@@ -96,7 +96,7 @@ const resetQuery = () => {
   max-width: 1000px;
   margin: 0 auto;
   padding: 10px 16px;
-  background: #fff3ea;
+  background: #fffbf8;
   border-radius: 20px;
   box-shadow: 0 4px 6px 0 rgb(62 39 26 / 0.2);
 }

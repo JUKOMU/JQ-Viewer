@@ -181,7 +181,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 0;
   padding: 4px 4px 4px 10px;
-  background: rgb(255 242 233);
+  background: #fffbf8;
   border: 1px solid rgb(250 156 105 / 0.3);
   border-radius: 22px;
   box-shadow: 0 4px 6px 0 rgb(62 39 26 / 0.2);

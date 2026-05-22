@@ -145,6 +145,7 @@ App.vue
 ├── SettingPage
 ├── LoginPage
 ├── UserPage
+├── NetworkStatusPage → networkProbeStore
 └── ReaderPage ← VerticalScrollView/HorizontalPageView/ReaderTopToolbar/BottomToolbar
 
 Services (TypeScript):
@@ -155,7 +156,8 @@ Services (TypeScript):
 
 Composables:
 ├── sideMenuState.ts (左右菜单互斥状态)
-└── useAuth.ts (用户登录态模块级单例)
+├── useAuth.ts (用户登录态模块级单例)
+└── networkProbeStore.ts (网络探活事件 store + 初始状态拉取)
 
 Android (bridge/service/data):
 bridge/JmcomicPlugin.java

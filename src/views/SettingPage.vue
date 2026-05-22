@@ -133,6 +133,15 @@
           </div>
         </div>
 
+        <!-- 分组：网络状态 -->
+        <div class="section-label">网络状态</div>
+        <div class="card">
+          <div class="row action" @click="goNetworkStatus">
+            <span class="row-title">网络状态</span>
+            <span class="arrow">›</span>
+          </div>
+        </div>
+
         <!-- 分组：用户 -->
         <div class="section-label">用户</div>
         <div class="card">
@@ -195,6 +204,10 @@ import type { CacheCapacityInfo, RelocationProgress } from '@/services/JmcomicTy
 const router = useRouter()
 const { userInfo } = useAuth()
 const appVersion = ref('0.0.1')
+
+function goNetworkStatus() {
+  router.push('/network-status')
+}
 
 function goUser() {
   router.push('/user')

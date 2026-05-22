@@ -21,6 +21,7 @@ import MainMenu from "@/components/menu/MainMenu.vue";
 import {leftMenuOpen, rightMenuOpen} from '@/composables/sideMenuState'
 import {initSettings} from '@/services/SettingsService'
 import {useAuth} from '@/composables/useAuth'
+import {initNetworkProbeStore} from '@/composables/networkProbeStore'
 
 const route = useRoute()
 const router = useRouter()
@@ -70,6 +71,9 @@ onMounted(async () => {
 
   // 加载设置到内存缓存（必须在任何页面渲染前完成）
   await initSettings()
+
+  // 初始化网络探活事件 store（模块级，持续记录启动以来全部事件）
+  initNetworkProbeStore()
 
   // 恢复登录态（在设置加载后，不阻塞页面渲染）
   initAuth()

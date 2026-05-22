@@ -68,6 +68,11 @@ const routes: Array<RouteRecordRaw> = [
     path: '/user',
     component: () => import('@/views/UserPage.vue'),
   },
+  {
+    path: '/network-status',
+    name: 'NetworkStatusPage',
+    component: () => import('@/views/NetworkStatusPage.vue'),
+  },
 ]
 
 const router = createRouter({

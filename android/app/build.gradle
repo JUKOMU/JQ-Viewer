@@ -48,8 +48,7 @@ dependencies {
     implementation "io.github.jukomu:jmcomic-api:$jmcomicApiVersion"
     implementation "io.github.jukomu:jmcomic-core:$jmcomicApiVersion"
     implementation "io.github.jukomu:jmcomic-android-support:$jmcomicApiVersion"
-    implementation 'org.slf4j:slf4j-api:2.0.17'
-    implementation 'org.slf4j:slf4j-android:1.7.36'
+    implementation 'uk.uuid.slf4j:slf4j-android:2.0.17-0'
     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.5'
 }
 

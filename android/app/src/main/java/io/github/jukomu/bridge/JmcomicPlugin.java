@@ -24,17 +24,12 @@ import io.github.jukomu.jmcomic.core.config.JmConfiguration;
 import io.github.jukomu.service.*;
 import io.github.jukomu.service.PermissionState;
 import okhttp3.Cookie;
-import okhttp3.OkHttpClient;
-import okhttp3.Request;
-import okhttp3.Response;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -272,12 +267,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
                     android.util.Log.i("JmcomicPlugin", "域名重新探活完成");
 
                     try {
-                        java.lang.reflect.Field dmField = client.getClass().getSuperclass().getDeclaredField("domainManager");
-                        dmField.setAccessible(true);
-                        Object dm = dmField.get(client);
-                        @SuppressWarnings("unchecked")
-                        java.util.Map<String, Integer> states = (java.util.Map<String, Integer>)
-                                dm.getClass().getMethod("getDomainStates").invoke(dm);
+                        java.util.Map<String, Integer> states = client.getDomainStates();
 
                         org.json.JSONObject result = new org.json.JSONObject();
                         result.put("phase", "result");
@@ -290,11 +280,8 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
                             if (d.getBoolean("reachable")) alive++;
                             domains.put(d);
                         }
-                        boolean allDeadFallback = false;
-                        try {
-                            allDeadFallback = (boolean) dm.getClass()
-                                    .getMethod("isAllDeadFallback").invoke(dm);
-                        } catch (Exception ignored) {}
+                        boolean allDeadFallback = states.size() > 0
+                                && states.values().stream().allMatch(v -> v == -1);
                         result.put("allDeadFallback", allDeadFallback);
                         result.put("domains", domains);
                         result.put("alive", alive);
@@ -340,14 +327,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
                 call.reject("client 尚未初始化");
                 return;
             }
-
-            java.lang.reflect.Field dmField = client.getClass().getSuperclass()
-                    .getDeclaredField("domainManager");
-            dmField.setAccessible(true);
-            Object dm = dmField.get(client);
-            @SuppressWarnings("unchecked")
-            java.util.Map<String, Integer> states = (java.util.Map<String, Integer>)
-                    dm.getClass().getMethod("getDomainStates").invoke(dm);
+            java.util.Map<String, Integer> states = client.getDomainStates();
 
             JSObject result = new JSObject();
             int alive = 0;
@@ -360,12 +340,8 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
                 if (reachable) alive++;
                 domains.put(d);
             }
-
-            boolean allDeadFallback = false;
-            try {
-                allDeadFallback = (boolean) dm.getClass()
-                        .getMethod("isAllDeadFallback").invoke(dm);
-            } catch (Exception ignored) {}
+            boolean allDeadFallback = states.size() > 0
+                    && states.values().stream().allMatch(v -> v == -1);
 
             result.put("domains", domains);
             result.put("alive", alive);
@@ -399,60 +375,18 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
                 call.reject("client 尚未初始化");
                 return;
             }
-
-            java.lang.reflect.Field dmField = client.getClass().getSuperclass()
-                    .getDeclaredField("domainManager");
-            dmField.setAccessible(true);
-            Object dm = dmField.get(client);
-            @SuppressWarnings("unchecked")
-            java.util.Map<String, Integer> states = (java.util.Map<String, Integer>)
-                    dm.getClass().getMethod("getDomainStates").invoke(dm);
-
-            OkHttpClient probeClient = new OkHttpClient.Builder()
-                    .connectTimeout(Duration.ofMillis(3000))
-                    .readTimeout(Duration.ofMillis(3000))
-                    .build();
-
-            JSONArray results = new JSONArray();
-            List<CompletableFuture<Void>> futures = new ArrayList<>();
-
-            for (java.util.Map.Entry<String, Integer> e : states.entrySet()) {
-                String domain = e.getKey();
-                boolean reachable = e.getValue() < (Integer.MAX_VALUE / 2);
-
-                if (!reachable) continue;
-
-                futures.add(CompletableFuture.runAsync(() -> {
-                    long start = System.currentTimeMillis();
-                    boolean timedOut = false;
-                    int latencyMs = 0;
-                    try {
-                        Request request = new Request.Builder()
-                                .url("https://" + domain + "/")
-                                .head()
-                                .build();
-                        try (Response ignored = probeClient.newCall(request).execute()) {
-                            latencyMs = (int) (System.currentTimeMillis() - start);
-                        }
-                    } catch (Exception ex) {
-                        timedOut = true;
-                    }
-
-                    JSONObject r = new JSONObject();
-                    synchronized (results) {
-                        try {
-                            r.put("domain", domain);
-                            r.put("latencyMs", timedOut ? 0 : latencyMs);
-                            r.put("timedOut", timedOut);
-                            results.put(r);
-                        } catch (JSONException ignored2) {}
-                    }
-                }));
-            }
-
-            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+            java.util.Map<String, Integer> latency = client.getDomainLatency();
 
             JSObject ret = new JSObject();
+            JSONArray results = new JSONArray();
+            for (java.util.Map.Entry<String, Integer> e : latency.entrySet()) {
+                JSONObject r = new JSONObject();
+                r.put("domain", e.getKey());
+                int ms = e.getValue();
+                r.put("latencyMs", ms == -1 ? 0 : ms);
+                r.put("timedOut", ms == -1);
+                results.put(r);
+            }
             ret.put("results", results);
             call.resolve(ret);
         } catch (Exception e) {

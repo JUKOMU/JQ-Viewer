@@ -291,3 +291,22 @@ export interface LatencyResult {
     latencyMs: number
     timedOut: boolean
 }
+
+// --- 历史记录 ---
+
+/** 浏览历史条目 */
+export interface BrowseHistoryItem {
+  albumId: string
+  albumTitle: string
+  coverUrl: string
+  authors: string
+  chapterId: string
+  chapterTitle: string
+  timestamp: number
+}
+
+/** 解析历史条目 */
+export interface ParseHistoryItem {
+  text: string
+  timestamp: number
+}

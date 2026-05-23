@@ -35,7 +35,7 @@
         </button>
       </div>
     </div>
-    <div class="searchbar-wrap">
+    <div class="searchbar-wrap" style="position: relative;">
       <div class="searchbar-box">
         <IonSearchbar
             ref="searchbarRef"
@@ -50,6 +50,12 @@
       <button type="button" class="search-trigger-btn" @click="emitSearch">
         <IonIcon :icon="searchOutline"/>
       </button>
+      <SearchHistoryDropdown
+        :visible="showHistory"
+        :items="HistoryService.getSearchHistory('keyword-search')"
+        @select="onHistorySelect"
+        @clear="onHistoryClear"
+      />
     </div>
 
     <button type="button" class="more-toggle-btn" @click="expanded = !expanded">
@@ -120,6 +126,9 @@ import {IonIcon, IonSearchbar} from '@ionic/vue'
 import {addOutline, chevronDownOutline, helpCircleOutline, searchOutline} from 'ionicons/icons'
 import {ORDER_BY_OPTIONS, SEARCH_MAIN_TAG_OPTIONS, TIME_OPTIONS} from '@/constants/searchOptions'
 import type {SearchQuery} from '@/services/JmcomicTypes'
+import { HistoryService } from '@/services/HistoryService'
+import type { SearchHistoryItem } from '@/services/HistoryService'
+import SearchHistoryDropdown from '@/components/history/SearchHistoryDropdown.vue'
 
 const props = withDefaults(defineProps<{
   modeSelect?: boolean
@@ -128,6 +137,8 @@ const props = withDefaults(defineProps<{
 })
 
 const mode = ref('')
+const showHistory = ref(false)
+let blurTimer: ReturnType<typeof setTimeout> | null = null
 
 const emit = defineEmits<{
   search: [query: SearchQuery]
@@ -145,6 +156,16 @@ const query = reactive<SearchQuery>({
 })
 
 const emitSearch = () => {
+  const originalKeyword = (query.keyword ?? '').trim()
+
+  // 解析模式 → 记录解析历史（异步 fire-and-forget）
+  if (mode.value === 'single-mode' || mode.value === 'batch-mode') {
+    if (originalKeyword) HistoryService.addParseHistory(originalKeyword)
+  }
+
+  // 记录搜索历史（同步）
+  if (originalKeyword) HistoryService.addSearchHistory('keyword-search', originalKeyword)
+
   const parsed = { ...query }
   if (mode.value === 'single-mode') {
     parsed.keyword = (query.keyword ?? '').replace(/\D/g, '')
@@ -158,13 +179,47 @@ const handleNativeKeydown = (event: KeyboardEvent) => {
   }
 }
 
+// --- 搜索历史下拉 ---
+
+const handleNativeFocus = () => {
+  if (!query.keyword) showHistory.value = true
+}
+
+const handleNativeBlur = () => {
+  if (blurTimer) clearTimeout(blurTimer)
+  blurTimer = setTimeout(() => { showHistory.value = false }, 200)
+}
+
+const handleNativeInput = () => {
+  if (query.keyword) showHistory.value = false
+}
+
+const onHistorySelect = (item: SearchHistoryItem) => {
+  query.keyword = item.keyword
+  showHistory.value = false
+  if (blurTimer) { clearTimeout(blurTimer); blurTimer = null }
+  emitSearch()
+}
+
+const onHistoryClear = () => {
+  HistoryService.clearSearchHistory('keyword-search')
+  showHistory.value = false
+}
+
 onMounted(async () => {
   nativeInput = await searchbarRef.value?.$el?.getInputElement?.() ?? null
   nativeInput?.addEventListener('keydown', handleNativeKeydown)
+  nativeInput?.addEventListener('focus', handleNativeFocus)
+  nativeInput?.addEventListener('blur', handleNativeBlur)
+  nativeInput?.addEventListener('input', handleNativeInput)
 })
 
 onBeforeUnmount(() => {
   nativeInput?.removeEventListener('keydown', handleNativeKeydown)
+  nativeInput?.removeEventListener('focus', handleNativeFocus)
+  nativeInput?.removeEventListener('blur', handleNativeBlur)
+  nativeInput?.removeEventListener('input', handleNativeInput)
+  if (blurTimer) clearTimeout(blurTimer)
 })
 </script>
 

@@ -72,7 +72,7 @@
 </template>
 
 <script setup lang="ts">
-import {computed, onMounted, onUnmounted, reactive, ref} from 'vue'
+import {computed, onMounted, onUnmounted, reactive, ref, watch} from 'vue'
 import {useRoute, useRouter} from 'vue-router'
 import {IonContent, IonPage} from '@ionic/vue'
 import type {PluginListenerHandle} from '@capacitor/core'
@@ -80,6 +80,7 @@ import {getImageUrl, JmcomicService, showToast} from '@/services/JmcomicService'
 import type {AlbumDetail, AlbumMeta, CommentItem, PhotoDetail, PreloadResult} from '@/services/JmcomicTypes'
 import { makeTaskId } from '@/services/JmcomicTypes'
 import {OfflineDownloadService} from '@/services/OfflineDownloadService'
+import {HistoryService} from '@/services/HistoryService'
 import AlbumHeader from '@/components/album/AlbumHeader.vue'
 import AlbumInfoTab from '@/components/album/AlbumInfoTab.vue'
 import AlbumChaptersTab from '@/components/album/AlbumChaptersTab.vue'
@@ -181,6 +182,8 @@ onMounted(async () => {
 
     const matched = album.photoMetas.find((m) => m.id === albumId.value)
     selectedChapterId.value = matched?.id ?? album.photoMetas[0]?.id ?? ''
+
+    recordBrowseHistory()
 
     // 若用户已在加载期间切到预览 tab，补加载
     if (activeTab.value === 'preview') await loadPreview()
@@ -292,6 +295,28 @@ const loadPreview = async () => {
     previewLoading.value = false
   }
 }
+
+// ---- 浏览历史 ----
+
+const recordBrowseHistory = () => {
+  const id = albumId.value
+  const title = albumTitle.value
+  if (!id || !title) return
+
+  HistoryService.recordBrowse({
+    albumId: id,
+    albumTitle: title,
+    coverUrl: coverUrl.value,
+    authors: albumAuthors.value,
+    chapterId: '',
+    chapterTitle: '',
+  })
+}
+
+// 同组件导航（相关本子跳转）时记录浏览历史
+watch(albumId, (newId, oldId) => {
+  if (newId && newId !== oldId) recordBrowseHistory()
+})
 
 onUnmounted(() => {
   imageReadyListenerHandle?.remove()

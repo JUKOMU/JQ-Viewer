@@ -3,7 +3,7 @@
       :content-id="contentId"
       :disabled="disabled"
       :max-edge-start="menuEdgeStart"
-      :swipe-gesture="false"
+      :swipe-gesture="true"
       type="overlay"
   >
     <IonHeader class="ion-no-border">
@@ -59,6 +59,16 @@
           </IonItem>
         </IonMenuToggle>
         <IonMenuToggle>
+          <IonItem button expand="block" router-link="/history" router-direction="root"
+                   class="menu-item" :class="{ selected: isActive('/history') }">
+            <IonIcon slot="start" class="menu-icon" :icon="timeOutline"/>
+            <IonLabel>
+              <div class="item-title">历史</div>
+              <div class="item-subtitle">浏览与解析记录</div>
+            </IonLabel>
+          </IonItem>
+        </IonMenuToggle>
+        <IonMenuToggle>
           <IonItem button expand="block" router-link="/setting" router-direction="forward"
                    class="menu-item" :class="{ selected: isActive('/setting') }">
             <IonIcon slot="start" class="menu-icon" :icon="settingsSharp"/>
@@ -76,7 +86,7 @@
 <script setup lang="ts">
 import {computed, onMounted, onUnmounted, ref} from 'vue'
 import {IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonMenu, IonMenuToggle} from "@ionic/vue"
-import {downloadSharp, heart, homeSharp, personCircleOutline, searchSharp, settingsSharp} from 'ionicons/icons'
+import {downloadSharp, heart, homeSharp, personCircleOutline, searchSharp, settingsSharp, timeOutline} from 'ionicons/icons'
 import {useRoute, useRouter} from "vue-router"
 import {useAuth} from "@/composables/useAuth"
 
@@ -94,7 +104,6 @@ onMounted(() => window.addEventListener('resize', onResize))
 onUnmounted(() => window.removeEventListener('resize', onResize))
 
 const menuEdgeStart = computed(() => {
-  if (route.path === '/favorite') return Math.round(windowWidth.value * 0.5)
   return windowWidth.value
 })
 

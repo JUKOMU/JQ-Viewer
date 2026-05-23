@@ -13,6 +13,7 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import io.github.jukomu.data.CredentialStore;
 import io.github.jukomu.data.DownloadStore;
 import io.github.jukomu.data.FileStore;
+import io.github.jukomu.data.HistoryStore;
 import io.github.jukomu.data.ImageCache;
 import io.github.jukomu.data.SettingsStore;
 import io.github.jukomu.jmcomic.api.enums.Category;
@@ -101,6 +102,9 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
             }
         }
         FileStore.getInstance().init(ctx, downloadDb, usePublicDir);
+
+        // 初始化历史记录数据库
+        HistoryStore.getInstance(ctx);
 
         // 清理僵尸任务的部分下载文件（validateOnStartup 标记前）
         List<org.json.JSONObject> zombieTasks = downloadDb.getAllTasks();
@@ -903,6 +907,93 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
             call.resolve(JSObject.fromJSONObject(result));
         } catch (IllegalArgumentException | IllegalStateException e) {
             call.reject(e.getMessage());
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    // ========== 浏览历史 ==========
+
+    @PluginMethod
+    public void getBrowseHistory(PluginCall call) {
+        try {
+            int limit = call.getInt("limit", 0);
+            int offset = call.getInt("offset", 0);
+            JSObject ret = new JSObject();
+            ret.put("items", HistoryStore.getInstance(getContext()).getBrowseHistory(limit, offset));
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void recordBrowse(PluginCall call) {
+        try {
+            HistoryStore.getInstance(getContext()).recordBrowse(
+                    call.getString("albumId", ""),
+                    call.getString("albumTitle", ""),
+                    call.getString("coverUrl", ""),
+                    call.getString("authors", ""),
+                    call.getString("chapterId", ""),
+                    call.getString("chapterTitle", "")
+            );
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void clearBrowseHistory(PluginCall call) {
+        try {
+            HistoryStore.getInstance(getContext()).clearBrowseHistory();
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    // ========== 解析历史 ==========
+
+    @PluginMethod
+    public void getParseHistory(PluginCall call) {
+        try {
+            int limit = call.getInt("limit", 0);
+            int offset = call.getInt("offset", 0);
+            JSObject ret = new JSObject();
+            ret.put("items", HistoryStore.getInstance(getContext()).getParseHistory(limit, offset));
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void addParseHistory(PluginCall call) {
+        try {
+            HistoryStore.getInstance(getContext()).addParseHistory(
+                    call.getString("text", "")
+            );
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void clearParseHistory(PluginCall call) {
+        try {
+            HistoryStore.getInstance(getContext()).clearParseHistory();
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            call.resolve(ret);
         } catch (Exception e) {
             call.reject(e.getMessage(), e);
         }

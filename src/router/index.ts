@@ -45,6 +45,11 @@ const routes: Array<RouteRecordRaw> = [
     meta: { menu: true }
   },
   {
+    path: '/history',
+    component: () => import('@/views/HistoryPage.vue'),
+    meta: { menu: true }
+  },
+  {
     path: '/album/:id',
     component: () => import('@/views/AlbumDetailPage.vue'),
   },

@@ -7,12 +7,17 @@ Capacitor hybrid Android 漫画阅读器。Vue 3 + Ionic (TypeScript) 前端，J
 ```
 src/                         # Vue 3 + Ionic 前端 (WebView)
   ├── views/                 # 页面组件
+  │   └── HistoryPage.vue    # 浏览历史 + 解析历史
   ├── components/            # 可复用组件
+  │   └── history/
+  │       └── SearchHistoryDropdown.vue  # 搜索历史下拉
   ├── composables/           # 全局状态 (module-level ref 单例)
   │   ├── useAuth.ts         # 登录态
   │   └── sideMenuState.ts   # 侧边栏状态
   ├── services/
   │   ├── JmcomicService.ts  # Capacitor 桥接层 → 原生插件
+  │   ├── JmcomicTypes.ts    # TypeScript 类型定义
+  │   ├── HistoryService.ts  # 历史记录服务 (搜索/浏览/解析)
   │   └── SettingsService.ts # 设置缓存
   └── router/
 
@@ -21,6 +26,7 @@ android/app/src/main/java/io/github/jukomu/
   ├── data/
   │   ├── SettingsStore.java      # SQLite 键值存储
   │   ├── CredentialStore.java    # AES-256 加密凭据存储
+  │   ├── HistoryStore.java       # 历史记录 SQLite (浏览+解析)
   │   ├── FileStore.java          # 文件管理
   │   └── ImageCache.java         # 图片缓存
   └── service/
@@ -33,6 +39,14 @@ JMComic-Api-Java/             # JMComic API 客户端库
 
 - **SettingsStore**: SQLite `jq_settings.db`，key-value 表。存设置项和登录态（cookie, username, userInfo）
 - **CredentialStore**: `EncryptedSharedPreferences`，Android Keystore AES-256 加密。存用户名/密码用于重启自动登录
+- **HistoryStore**: SQLite `jq_history.db`，两张表——`browse_history`（浏览历史，条件去重，无上限）、`parse_history`（解析历史，文本去重，无上限）。通过 Capacitor 桥接供前端调用
+
+## 历史记录
+
+- **搜索历史**: localStorage，每搜索框独立（keyword-search/search-page/category/favorite），500 条/上下文，去重按最新排序。下拉组件 `SearchHistoryDropdown.vue` 被 KeywordSearchBar、SearchHeaderBar、FavoriteSearchBar 复用
+- **浏览历史**: 进入详情页/阅读页记录。条件去重——同 albumId+chapterId 只更新时间戳，否则新增。ReaderPage 通过 `getAlbum()` API 回退获取元数据确保不丢记录。展示在 HistoryPage 浏览 tab，滚动到底自动加载（50 条/批）
+- **解析历史**: 单个解析/批量解析模式搜索时记录文本，占位实现。展示在 HistoryPage 解析 tab
+- **入口**: 左侧侧边栏"历史"菜单项 → `/history`
 
 ## 登录流
 

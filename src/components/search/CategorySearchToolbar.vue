@@ -68,6 +68,7 @@ import {
   TIME_OPTIONS
 } from '@/constants/searchOptions'
 import type {SearchQuery} from '@/services/JmcomicTypes'
+import { HistoryService } from '@/services/HistoryService'
 
 const emit = defineEmits<{
   search: [query: SearchQuery]
@@ -83,6 +84,8 @@ const createDefaultQuery = (): SearchQuery => ({
 const query = reactive<SearchQuery>(createDefaultQuery())
 
 const emitSearch = () => {
+  const catLabel = CATEGORY_OPTIONS.find(o => o.value === query.category)?.label
+  if (catLabel) HistoryService.addSearchHistory('category', catLabel)
   emit('search', {...query})
 }
 

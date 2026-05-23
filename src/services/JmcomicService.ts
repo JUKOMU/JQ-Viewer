@@ -4,6 +4,7 @@ import { toastController } from '@ionic/vue'
 import type {
     AlbumDetail,
     AllSettings,
+    BrowseHistoryItem,
     CacheCapacityInfo,
     CommentList,
     DomainStates,
@@ -15,6 +16,7 @@ import type {
     ImageInfo,
     LatencyResult,
     NetworkProbeEvent,
+    ParseHistoryItem,
     PhotoDetail,
     PreloadResult,
     RelocationProgress,
@@ -69,6 +71,21 @@ interface JmcomicPlugin {
     checkLoginState(): Promise<{ loggedIn: boolean; username?: string; userInfo?: UserInfo }>
     autoLogin(): Promise<{ success: boolean; userInfo?: UserInfo; reason?: string }>
     getUserProfile(options: { uid: string }): Promise<UserProfile>
+    // 浏览历史
+    getBrowseHistory(options: { limit: number; offset: number }): Promise<{ items: BrowseHistoryItem[] }>
+    recordBrowse(options: {
+        albumId: string
+        albumTitle: string
+        coverUrl: string
+        authors: string
+        chapterId: string
+        chapterTitle: string
+    }): Promise<{ success: boolean }>
+    clearBrowseHistory(): Promise<{ success: boolean }>
+    // 解析历史
+    getParseHistory(options: { limit: number; offset: number }): Promise<{ items: ParseHistoryItem[] }>
+    addParseHistory(options: { text: string }): Promise<{ success: boolean }>
+    clearParseHistory(): Promise<{ success: boolean }>
 }
 
 interface ImageReadyEvent {
@@ -290,6 +307,30 @@ export const JmcomicService = {
      */
     addRelocationProgressListener(handler: (data: RelocationProgress) => void): Promise<PluginListenerHandle> {
         return native.addListener('relocationProgress', handler)
+    },
+
+    // ========== 浏览历史 ==========
+
+    getBrowseHistory(limit: number, offset: number = 0) {
+        return native.getBrowseHistory({ limit, offset })
+    },
+    recordBrowse(item: Omit<BrowseHistoryItem, 'timestamp'>) {
+        return native.recordBrowse(item)
+    },
+    clearBrowseHistory() {
+        return native.clearBrowseHistory()
+    },
+
+    // ========== 解析历史 ==========
+
+    getParseHistory(limit: number, offset: number = 0) {
+        return native.getParseHistory({ limit, offset })
+    },
+    addParseHistory(text: string) {
+        return native.addParseHistory({ text })
+    },
+    clearParseHistory() {
+        return native.clearParseHistory()
     },
 }
 

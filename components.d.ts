@@ -31,6 +31,7 @@ declare module 'vue' {
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     SearchHeaderBar: typeof import('./src/components/search/SearchHeaderBar.vue')['default']
+    SearchHistoryDropdown: typeof import('./src/components/history/SearchHistoryDropdown.vue')['default']
     SearchResultContainer: typeof import('./src/components/search/SearchResultContainer.vue')['default']
     VerticalScrollView: typeof import('./src/components/reader/VerticalScrollView.vue')['default']
   }

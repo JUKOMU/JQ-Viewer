@@ -55,6 +55,7 @@ import type { PluginListenerHandle } from '@capacitor/core'
 import {getImageUrl, JmcomicService, showToast} from '@/services/JmcomicService'
 import type { ImageInfo, PhotoDetail, PreloadResult } from '@/services/JmcomicTypes'
 import { SettingsStore } from '@/services/SettingsService'
+import { HistoryService } from '@/services/HistoryService'
 import ReaderTopToolbar from '@/components/reader/ReaderTopToolbar.vue'
 import ReaderBottomToolbar from '@/components/reader/ReaderBottomToolbar.vue'
 import VerticalScrollView from '@/components/reader/VerticalScrollView.vue'
@@ -318,6 +319,35 @@ const setupImageReadyListener = async () => {
   })
 }
 
+// ---- 浏览历史记录 ----
+
+const recordBrowseHistory = () => {
+  const aId = albumId.value
+  const cId = chapterId.value
+  if (!aId) return
+  const cTitle = chapterTitle.value
+
+  JmcomicService.getAlbum(aId).then(album => {
+    HistoryService.recordBrowse({
+      albumId: aId,
+      albumTitle: album.title,
+      coverUrl: album.image,
+      authors: (album.authors ?? []).join(' / '),
+      chapterId: cId,
+      chapterTitle: cTitle,
+    })
+  }).catch(() => {
+    HistoryService.recordBrowse({
+      albumId: aId,
+      albumTitle: cTitle || aId,
+      coverUrl: '',
+      authors: '',
+      chapterId: cId,
+      chapterTitle: cTitle,
+    })
+  })
+}
+
 // ---- 返回 ----
 const goBack = () => {
   if (window.history.length > 1) {
@@ -366,9 +396,11 @@ onMounted(() => {
           verticalViewRef.value?.scrollToIndex(currentIndex.value)
         }
       })
+      recordBrowseHistory()
     }).catch((e: any) => {
       // showToast('[ReaderPage] getDownloadedPhoto failed:', e?.message ?? e)
       totalCount.value = 0
+      recordBrowseHistory()
     })
   } else {
     // === 在线模式 ===
@@ -411,8 +443,10 @@ onMounted(() => {
           verticalViewRef.value?.scrollToIndex(currentIndex.value)
         }
       })
+      recordBrowseHistory()
     }).catch(() => {
       totalCount.value = 0
+      recordBrowseHistory()
     })
   }
 })

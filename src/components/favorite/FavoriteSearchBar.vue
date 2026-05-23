@@ -1,5 +1,5 @@
 <template>
-  <div ref="rootRef" class="favorite-search">
+  <div ref="rootRef" class="favorite-search" style="position: relative;">
     <div class="search-row">
       <IonSearchbar
           ref="searchbarRef"
@@ -15,6 +15,12 @@
         <IonIcon :icon="searchOutline"/>
       </button>
     </div>
+    <SearchHistoryDropdown
+      :visible="showHistory"
+      :items="HistoryService.getSearchHistory('favorite')"
+      @select="onHistorySelect"
+      @clear="onHistoryClear"
+    />
   </div>
 </template>
 
@@ -23,6 +29,9 @@ import {nextTick, onBeforeUnmount, onMounted, reactive, ref, watch} from 'vue'
 import {IonIcon, IonSearchbar} from '@ionic/vue'
 import {searchOutline} from 'ionicons/icons'
 import type {FavoriteQuery} from '@/services/JmcomicTypes'
+import { HistoryService } from '@/services/HistoryService'
+import type { SearchHistoryItem } from '@/services/HistoryService'
+import SearchHistoryDropdown from '@/components/history/SearchHistoryDropdown.vue'
 
 const props = defineProps<{
   query: FavoriteQuery
@@ -35,6 +44,9 @@ const emit = defineEmits<{
 
 const rootRef = ref<HTMLElement | null>(null)
 const searchbarRef = ref<InstanceType<typeof IonSearchbar> | null>(null)
+const showHistory = ref(false)
+let blurTimer: ReturnType<typeof setTimeout> | null = null
+let nativeInput: HTMLInputElement | null = null
 const draft = reactive<FavoriteQuery>({
   folderId: '0',
   page: 1,
@@ -50,6 +62,8 @@ const syncDraft = (query: FavoriteQuery) => {
 }
 
 const submit = () => {
+  const kw = (draft.keyword ?? '').trim()
+  if (kw) HistoryService.addSearchHistory('favorite', kw)
   emit('search', {...draft, page: 1})
 }
 
@@ -64,14 +78,49 @@ const handleDocumentClick = (event: MouseEvent) => {
   }
 }
 
+// --- 搜索历史下拉 ---
+
+const handleNativeFocus = () => {
+  if (!draft.keyword) showHistory.value = true
+}
+
+const handleNativeBlur = () => {
+  if (blurTimer) clearTimeout(blurTimer)
+  blurTimer = setTimeout(() => { showHistory.value = false }, 200)
+}
+
+const handleNativeInput = () => {
+  if (draft.keyword) showHistory.value = false
+}
+
+const onHistorySelect = (item: SearchHistoryItem) => {
+  draft.keyword = item.keyword
+  showHistory.value = false
+  if (blurTimer) { clearTimeout(blurTimer); blurTimer = null }
+  submit()
+}
+
+const onHistoryClear = () => {
+  HistoryService.clearSearchHistory('favorite')
+  showHistory.value = false
+}
+
 watch(() => props.query, syncDraft, {immediate: true, deep: true})
 
-onMounted(() => {
+onMounted(async () => {
   document.addEventListener('click', handleDocumentClick)
+  nativeInput = await searchbarRef.value?.$el?.getInputElement?.() ?? null
+  nativeInput?.addEventListener('focus', handleNativeFocus)
+  nativeInput?.addEventListener('blur', handleNativeBlur)
+  nativeInput?.addEventListener('input', handleNativeInput)
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', handleDocumentClick)
+  nativeInput?.removeEventListener('focus', handleNativeFocus)
+  nativeInput?.removeEventListener('blur', handleNativeBlur)
+  nativeInput?.removeEventListener('input', handleNativeInput)
+  if (blurTimer) clearTimeout(blurTimer)
 })
 
 defineExpose({focusInput})

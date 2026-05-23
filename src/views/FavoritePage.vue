@@ -436,55 +436,8 @@ const initOnlineFolders = async () => {
   }
 }
 
-// --- 手势 ---
-let menuOpenGesture: Gesture | undefined
+// --- 手势（仅关闭） ---
 let menuCloseGesture: Gesture | undefined
-
-const setupOpenGesture = () => {
-  const contentEl = document.getElementById('main-content')
-  if (!contentEl) return
-
-  menuOpenGesture?.destroy()
-  menuOpenGesture = createGesture({
-    el: contentEl,
-    gestureName: 'fav-menu-open',
-    gesturePriority: 29,
-    threshold: 0,
-    canStart: (detail) => {
-      if (leftMenuOpen.value) return false
-      if (rightMenuOpen.value) return false
-      if (detail.startX < window.innerWidth * 0.5) return false
-      if (detail.deltaX > 6) return false
-      return true
-    },
-    onStart: () => {
-      isDraggingRight.value = true
-      rightDragProgress.value = 0
-      rightMenuOpen.value = true
-      if (leftMenuOpen.value) void menuController.close()
-    },
-    onMove: (detail) => {
-      const pw = getPanelWidth()
-      const progress = Math.max(0, Math.min(1, -detail.deltaX / pw))
-      rightDragProgress.value = progress
-    },
-    onEnd: (detail) => {
-      isDraggingRight.value = false
-      const velocity = detail.velocityX
-      if (rightDragProgress.value >= 0.25 || velocity < -0.3) {
-        rightDragProgress.value = 1
-      } else {
-        isSnappingClosed.value = true
-        rightDragProgress.value = 0
-        setTimeout(() => {
-          rightMenuOpen.value = false
-          isSnappingClosed.value = false
-        }, 260)
-      }
-    },
-  })
-  menuOpenGesture.enable(true)
-}
 
 let closeStartProgress = 0
 
@@ -559,7 +512,6 @@ onMounted(() => {
   void initOnlineFolders()
   nextTick(() => {
     void resolveScrollElement()
-    setupOpenGesture()
   })
 })
 
@@ -568,8 +520,6 @@ const savedScrollTop = ref(0)
 
 onDeactivated(() => {
   savedScrollTop.value = scrollElementRef.value?.scrollTop ?? 0
-  menuOpenGesture?.destroy()
-  menuOpenGesture = undefined
   menuCloseGesture?.destroy()
   menuCloseGesture = undefined
   rightMenuOpen.value = false
@@ -584,9 +534,6 @@ onActivated(async () => {
   if (scrollEl && savedScrollTop.value > 0) {
     scrollEl.scrollTop = savedScrollTop.value
   }
-  nextTick(() => {
-    setupOpenGesture()
-  })
 })
 </script>
 

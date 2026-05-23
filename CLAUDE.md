@@ -44,9 +44,10 @@ JMComic-Api-Java/             # JMComic API 客户端库
 ## 历史记录
 
 - **搜索历史**: localStorage，每搜索框独立（keyword-search/search-page/category/favorite），500 条/上下文，去重按最新排序。下拉组件 `SearchHistoryDropdown.vue` 被 KeywordSearchBar、SearchHeaderBar、FavoriteSearchBar 复用
-- **浏览历史**: 进入详情页/阅读页记录。条件去重——同 albumId+chapterId 只更新时间戳，否则新增。ReaderPage 通过 `getAlbum()` API 回退获取元数据确保不丢记录。展示在 HistoryPage 浏览 tab，滚动到底自动加载（50 条/批）
-- **解析历史**: 单个解析/批量解析模式搜索时记录文本，占位实现。展示在 HistoryPage 解析 tab
+- **浏览历史**: 进入详情页/阅读页记录。条件去重——同 albumId+chapterId 只更新时间戳，否则新增。ReaderPage 通过 `getAlbum()` API 回退获取元数据确保不丢记录。展示在 HistoryPage 浏览 tab，按"今天/昨天/本周/更早"分组，卡片风格与收藏夹搜索结果一致（`#fffaf6` 暖色背景、强阴影、`height: 108px`、cover `object-fit: contain`），卡片信息依次为标题、ID、作者、相对时间、章节 badge。滚动到底自动加载（50 条/批）
+- **解析历史**: 单个解析/批量解析模式搜索时记录文本。展示在 HistoryPage 解析 tab，暖色圆角卡片列表
 - **入口**: 左侧侧边栏"历史"菜单项 → `/history`
+- **页面布局**: `page-shell` 容器（左右 margin 14px，底部 86px），tab 栏为圆角浮动卡片（`#fffbf8` 背景 + 阴影，匹配搜索结果工具栏），TransitionGroup 列表动画
 
 ## 登录流
 

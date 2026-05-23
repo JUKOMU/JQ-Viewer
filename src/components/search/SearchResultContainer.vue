@@ -525,7 +525,7 @@ defineExpose<SearchResultContainerExposed>({
   align-items: stretch;
   gap: 10px;
   height: 108px;
-  padding: 0 10px;
+  padding: 0 10px 0 0;
   border-radius: 12px;
   background: #fffaf6;
   box-shadow: 5px 12px 28px rgb(76 42 24 / 0.2);
@@ -533,7 +533,7 @@ defineExpose<SearchResultContainerExposed>({
 
 .result-grid {
   display: grid;
-  grid-template-columns: repeat(var(--grid-columns, 2), minmax(0, 1fr));
+  grid-template-columns: repeat(var(--grid-columns, 3), minmax(0, 1fr));
   gap: 4px;
 }
 
@@ -610,7 +610,7 @@ defineExpose<SearchResultContainerExposed>({
   font-weight: 700;
   line-height: 1.4;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
 }
 
 .grid-card .item-title {

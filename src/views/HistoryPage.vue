@@ -391,7 +391,6 @@ function formatRelativeTime(timestamp: number): string {
   gap: 4px;
   padding: 0 2px 0 10px;
   overflow: hidden;
-  border-left: 1px solid rgb(85 85 85 / 0.1);
 }
 
 .card-title {

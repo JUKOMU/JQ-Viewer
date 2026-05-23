@@ -594,7 +594,6 @@ defineExpose<SearchResultContainerExposed>({
   gap: 4px;
   overflow: hidden;
   padding: 0 2px 0 4px;
-  border-left: 1px solid rgb(85 85 85 / 0.1);
 }
 
 .grid-card .item-info {

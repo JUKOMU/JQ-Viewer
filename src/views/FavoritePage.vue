@@ -21,9 +21,6 @@
                 <IonIcon :icon="folderOpenOutline"/>
               </button>
             </div>
-            <div class="current-folder-label" v-if="currentFolderName">
-              {{ currentFolderName }}
-            </div>
           </div>
         </div>
       </div>
@@ -93,7 +90,7 @@ import {JmcomicService} from '@/services/JmcomicService'
 import {OfflineFavoriteService} from '@/services/OfflineFavoriteService'
 import {useAuth} from '@/composables/useAuth'
 import type {FavoriteQuery, FavoriteResult, SearchResult, SearchResultItem} from '@/services/JmcomicTypes'
-import {leftMenuOpen, rightMenuOpen} from '@/composables/sideMenuState'
+import {isDraggingRight, isSnappingClosed, leftMenuOpen, rightDragProgress, rightMenuOpen} from '@/composables/sideMenuState'
 
 const NEXT_PAGE_THRESHOLD = 220
 
@@ -377,12 +374,21 @@ const goBack = () => {
   void router.push('/home')
 }
 
-const openRightMenu = () => {
-  // 打开右侧前先关闭左侧
+const getPanelWidth = () => Math.min(window.innerWidth * 0.78, 320)
+
+const openRightMenu = async () => {
   if (leftMenuOpen.value) {
     void menuController.close()
   }
+  // 两阶段入场动画：先渲染在关闭位置，再 transition 到打开位置
+  rightDragProgress.value = 0
+  isDraggingRight.value = true
   rightMenuOpen.value = true
+  await nextTick()
+  const panelEl = sideMenuRef.value?.panelRef
+  if (panelEl) void panelEl.offsetHeight // 强制 reflow，确认初始位置已渲染
+  rightDragProgress.value = 1
+  isDraggingRight.value = false
 }
 
 const onSelectOnlineFolder = (folderId: string) => {
@@ -433,7 +439,6 @@ const initOnlineFolders = async () => {
 // --- 手势 ---
 let menuOpenGesture: Gesture | undefined
 let menuCloseGesture: Gesture | undefined
-let closeGestureRetry = 0
 
 const setupOpenGesture = () => {
   const contentEl = document.getElementById('main-content')
@@ -448,58 +453,84 @@ const setupOpenGesture = () => {
     canStart: (detail) => {
       if (leftMenuOpen.value) return false
       if (rightMenuOpen.value) return false
-      // 右侧 50% 屏幕区域触发（左侧 50% 留给左侧菜单手势）
       if (detail.startX < window.innerWidth * 0.5) return false
-      // 右划留给左侧菜单手势
       if (detail.deltaX > 6) return false
       return true
     },
-    onEnd: (detail) => {
-      if (rightMenuOpen.value) return
-
-      const isMostlyHorizontal = Math.abs(detail.deltaX) > Math.abs(detail.deltaY)
-      const shouldOpen = detail.deltaX < -24 || detail.velocityX < -0.25
-
-      if (!isMostlyHorizontal || !shouldOpen) return
-
-      // 打开右侧前先关闭左侧
-      if (leftMenuOpen.value) {
-        void menuController.close()
-      }
+    onStart: () => {
+      isDraggingRight.value = true
+      rightDragProgress.value = 0
       rightMenuOpen.value = true
+      if (leftMenuOpen.value) void menuController.close()
+    },
+    onMove: (detail) => {
+      const pw = getPanelWidth()
+      const progress = Math.max(0, Math.min(1, -detail.deltaX / pw))
+      rightDragProgress.value = progress
+    },
+    onEnd: (detail) => {
+      isDraggingRight.value = false
+      const velocity = detail.velocityX
+      if (rightDragProgress.value >= 0.25 || velocity < -0.3) {
+        rightDragProgress.value = 1
+      } else {
+        isSnappingClosed.value = true
+        rightDragProgress.value = 0
+        setTimeout(() => {
+          rightMenuOpen.value = false
+          isSnappingClosed.value = false
+        }, 260)
+      }
     },
   })
   menuOpenGesture.enable(true)
 }
+
+let closeStartProgress = 0
 
 const setupCloseGesture = () => {
   menuCloseGesture?.destroy()
   menuCloseGesture = undefined
 
   const panelEl = sideMenuRef.value?.panelRef as HTMLElement | undefined
-  if (!panelEl) {
-    if (closeGestureRetry < 10) {
-      closeGestureRetry++
-      setTimeout(setupCloseGesture, 80)
-    }
-    return
-  }
-  closeGestureRetry = 0
+  if (!panelEl) return
 
   menuCloseGesture = createGesture({
     el: panelEl,
     gestureName: 'fav-menu-close',
     gesturePriority: 31,
     threshold: 0,
-    canStart: () => rightMenuOpen.value,
+    canStart: () => rightMenuOpen.value && !isDraggingRight.value,
+    onStart: () => {
+      isDraggingRight.value = true
+      closeStartProgress = rightDragProgress.value || 1
+    },
+    onMove: (detail) => {
+      const pw = getPanelWidth()
+      const progress = Math.max(0, Math.min(1, closeStartProgress - detail.deltaX / pw))
+      rightDragProgress.value = progress
+    },
     onEnd: (detail) => {
-      if (!rightMenuOpen.value) return
-
-      const isMostlyHorizontal = Math.abs(detail.deltaX) > Math.abs(detail.deltaY)
-      const shouldClose = detail.deltaX > 14 || detail.velocityX > 0.18
-
-      if (!isMostlyHorizontal || !shouldClose) return
-      rightMenuOpen.value = false
+      isDraggingRight.value = false
+      const velocity = detail.velocityX
+      let snapOpen: boolean
+      if (velocity > 0.3) {
+        snapOpen = false // 向右快速划动 → 关闭
+      } else if (velocity < -0.3) {
+        snapOpen = true // 向左快速划动 → 保持打开
+      } else {
+        snapOpen = rightDragProgress.value >= 0.75 // 拖动超过 25% 则关闭
+      }
+      if (snapOpen) {
+        rightDragProgress.value = 1
+      } else {
+        isSnappingClosed.value = true
+        rightDragProgress.value = 0
+        setTimeout(() => {
+          rightMenuOpen.value = false
+          isSnappingClosed.value = false
+        }, 260)
+      }
     },
   })
   menuCloseGesture.enable(true)
@@ -512,7 +543,6 @@ watch(rightMenuOpen, (open) => {
   } else {
     menuCloseGesture?.destroy()
     menuCloseGesture = undefined
-    closeGestureRetry = 0
   }
 })
 
@@ -542,8 +572,10 @@ onDeactivated(() => {
   menuOpenGesture = undefined
   menuCloseGesture?.destroy()
   menuCloseGesture = undefined
-  closeGestureRetry = 0
   rightMenuOpen.value = false
+  isDraggingRight.value = false
+  isSnappingClosed.value = false
+  rightDragProgress.value = 0
 })
 
 onActivated(async () => {

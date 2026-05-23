@@ -14,7 +14,7 @@
 </template>
 
 <script setup lang="ts">
-import {createGesture, IonApp, menuController, type Gesture} from '@ionic/vue';
+import {IonApp} from '@ionic/vue';
 import {onBeforeUnmount, onMounted, computed, ref} from 'vue';
 import {useRoute, useRouter} from 'vue-router'
 import MainMenu from "@/components/menu/MainMenu.vue";
@@ -53,9 +53,6 @@ const keepAliveNames = computed(() =>
     .filter(Boolean)
 )
 
-let menuOpenGesture: Gesture | undefined
-let menuCloseGesture: Gesture | undefined
-
 const handleMenuDidOpen = () => {
   leftMenuOpen.value = true
   // 关闭右侧菜单
@@ -78,73 +75,17 @@ onMounted(async () => {
   // 恢复登录态（在设置加载后，不阻塞页面渲染）
   initAuth()
 
-  const contentEl = document.getElementById('main-content')
   const menuEl = document.querySelector('ion-menu')
-  if (!contentEl || !menuEl) return
+  if (!menuEl) return
 
   menuEl.addEventListener('ionDidOpen', handleMenuDidOpen)
   menuEl.addEventListener('ionDidClose', handleMenuDidClose)
-
-  menuOpenGesture = createGesture({
-    el: contentEl,
-    gestureName: 'main-content-menu-open',
-    gesturePriority: 29,
-    threshold: 0,
-    canStart: (detail) => {
-      if (route.meta.menu !== true) return false
-      // 右侧菜单打开时不允许打开左侧
-      if (rightMenuOpen.value) return false
-      return true
-    },
-    onEnd: (detail) => {
-      if (route.meta.menu !== true) return
-
-      const isMostlyHorizontal = Math.abs(detail.deltaX) > Math.abs(detail.deltaY)
-      const shouldOpen = detail.deltaX > 12 || detail.velocityX > 0.15
-
-      if (!isMostlyHorizontal || !shouldOpen) return
-
-      void menuController.isOpen().then((isOpen) => {
-        if (isOpen) return
-        void menuController.open()
-      })
-    },
-  })
-
-  menuOpenGesture.enable(true)
-
-  menuCloseGesture = createGesture({
-    el: menuEl,
-    gestureName: 'main-content-menu-close',
-    gesturePriority: 31,
-    threshold: 0,
-    canStart: () => {
-      if (route.meta.menu !== true) return false
-      return leftMenuOpen.value
-    },
-    onEnd: (detail) => {
-      if (!leftMenuOpen.value) return
-
-      const isMostlyHorizontal = Math.abs(detail.deltaX) > Math.abs(detail.deltaY)
-      const shouldClose = detail.deltaX < -14 || detail.velocityX < -0.18
-
-      if (!isMostlyHorizontal || !shouldClose) return
-      void menuController.close()
-    },
-  })
-
-  menuCloseGesture.enable(true)
 })
 
 onBeforeUnmount(() => {
   const menuEl = document.querySelector('ion-menu')
   menuEl?.removeEventListener('ionDidOpen', handleMenuDidOpen)
   menuEl?.removeEventListener('ionDidClose', handleMenuDidClose)
-
-  menuOpenGesture?.destroy()
-  menuOpenGesture = undefined
-  menuCloseGesture?.destroy()
-  menuCloseGesture = undefined
 })
 </script>
 

@@ -3,6 +3,7 @@
       :content-id="contentId"
       :disabled="disabled"
       :max-edge-start="menuEdgeStart"
+      :swipe-gesture="!rightMenuOpen"
       type="overlay"
   >
     <IonHeader class="ion-no-border">
@@ -73,10 +74,12 @@
 </template>
 
 <script setup lang="ts">
+import {computed, onMounted, onUnmounted, ref} from 'vue'
 import {IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonMenu, IonMenuToggle} from "@ionic/vue"
 import {downloadSharp, heart, homeSharp, personCircleOutline, searchSharp, settingsSharp} from 'ionicons/icons'
 import {useRoute, useRouter} from "vue-router"
 import {useAuth} from "@/composables/useAuth"
+import {rightMenuOpen} from '@/composables/sideMenuState'
 
 defineProps({
   contentId: String,
@@ -86,7 +89,15 @@ defineProps({
 const route = useRoute()
 const router = useRouter()
 const { userInfo, isLoggedIn } = useAuth()
-const menuEdgeStart = Math.round(window.innerWidth * 0.55)
+const windowWidth = ref(window.innerWidth)
+const onResize = () => { windowWidth.value = window.innerWidth }
+onMounted(() => window.addEventListener('resize', onResize))
+onUnmounted(() => window.removeEventListener('resize', onResize))
+
+const menuEdgeStart = computed(() => {
+  if (route.path === '/favorite') return Math.round(windowWidth.value * 0.5)
+  return windowWidth.value
+})
 
 function goUser() {
   router.push('/user')

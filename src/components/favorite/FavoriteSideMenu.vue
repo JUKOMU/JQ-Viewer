@@ -1,61 +1,60 @@
 <template>
-  <Transition name="fav-menu">
-    <div v-if="modelValue" class="fav-menu-backdrop" @click.self="closeMenu" @touchstart.stop>
-      <div ref="panelRef" class="fav-menu-panel">
-        <div class="menu-header">
-          <div class="menu-title">收藏夹</div>
-          <button type="button" class="menu-close-btn" @click="closeMenu">
-            <IonIcon :icon="closeOutline"/>
-          </button>
-        </div>
+  <div v-show="isVisible" class="fav-menu-backdrop" :style="backdropStyle" @click.self="closeMenu" @touchstart.stop>
+    <div ref="panelRef" class="fav-menu-panel" :style="panelStyle">
+      <div class="menu-header">
+        <div class="menu-title">收藏夹</div>
+        <button type="button" class="menu-close-btn" @click="closeMenu">
+          <IonIcon :icon="closeOutline"/>
+        </button>
+      </div>
 
-        <div class="menu-body">
-          <template v-if="onlineFolders.length > 0">
-            <div class="section-title">在线收藏夹</div>
-            <div class="folder-list">
-              <button
-                  v-for="folder in onlineFolders"
-                  :key="folder.id"
-                  type="button"
-                  class="folder-item"
-                  :class="{ selected: selectedOnlineId === folder.id }"
-                  @click="selectOnlineFolder(folder.id)"
-              >
-                <IonIcon :icon="folderOpenOutline" class="folder-icon"/>
-                <span class="folder-name">{{ folder.name }}</span>
-              </button>
-            </div>
-          </template>
-
-          <div v-if="onlineFolders.length === 0 && offlineFolders.length === 0" class="empty-state">
-            暂无收藏夹
-          </div>
-
-          <div class="section-title">离线收藏夹</div>
+      <div class="menu-body">
+        <template v-if="onlineFolders.length > 0">
+          <div class="section-title">在线收藏夹</div>
           <div class="folder-list">
             <button
-                v-for="folder in offlineFolders"
+                v-for="folder in onlineFolders"
                 :key="folder.id"
                 type="button"
                 class="folder-item"
-                :class="{ selected: selectedOfflineId === folder.id }"
-                @click="selectOfflineFolder(folder.id)"
+                :class="{ selected: selectedOnlineId === folder.id }"
+                @click="selectOnlineFolder(folder.id)"
             >
               <IonIcon :icon="folderOpenOutline" class="folder-icon"/>
               <span class="folder-name">{{ folder.name }}</span>
-              <span class="folder-count">{{ folder.count }}</span>
             </button>
           </div>
+        </template>
+
+        <div v-if="onlineFolders.length === 0 && offlineFolders.length === 0" class="empty-state">
+          暂无收藏夹
+        </div>
+
+        <div class="section-title">离线收藏夹</div>
+        <div class="folder-list">
+          <button
+              v-for="folder in offlineFolders"
+              :key="folder.id"
+              type="button"
+              class="folder-item"
+              :class="{ selected: selectedOfflineId === folder.id }"
+              @click="selectOfflineFolder(folder.id)"
+          >
+            <IonIcon :icon="folderOpenOutline" class="folder-icon"/>
+            <span class="folder-name">{{ folder.name }}</span>
+            <span class="folder-count">{{ folder.count }}</span>
+          </button>
         </div>
       </div>
     </div>
-  </Transition>
+  </div>
 </template>
 
 <script setup lang="ts">
-import {ref} from 'vue'
+import {computed, ref} from 'vue'
 import {IonIcon} from '@ionic/vue'
 import {closeOutline, folderOpenOutline} from 'ionicons/icons'
+import {isDraggingRight, isSnappingClosed, rightDragProgress} from '@/composables/sideMenuState'
 
 interface FolderEntry {
   id: string
@@ -79,18 +78,51 @@ const emit = defineEmits<{
 
 const panelRef = ref<HTMLElement | null>(null)
 
+const isVisible = computed(() =>
+  props.modelValue || isDraggingRight.value || isSnappingClosed.value
+)
+
+const currentProgress = computed(() => {
+  if (isDraggingRight.value) return rightDragProgress.value
+  if (isSnappingClosed.value) return 0
+  return props.modelValue ? 1 : 0
+})
+
+const useTransition = computed(() => !isDraggingRight.value)
+
+const panelStyle = computed(() => ({
+  transform: `translateX(${(1 - currentProgress.value) * 100}%)`,
+  transition: useTransition.value ? 'transform 0.24s cubic-bezier(0.22, 0.61, 0.36, 1)' : 'none',
+}))
+
+const backdropStyle = computed(() => ({
+  opacity: currentProgress.value > 0 ? currentProgress.value : 0,
+  transition: useTransition.value ? 'opacity 0.24s ease' : 'none',
+}))
+
+const animateClose = () => {
+  if (isDraggingRight.value) return
+  if (!props.modelValue) return
+  isSnappingClosed.value = true
+  rightDragProgress.value = 0
+  setTimeout(() => {
+    emit('update:modelValue', false)
+    isSnappingClosed.value = false
+  }, 260)
+}
+
 const closeMenu = () => {
-  emit('update:modelValue', false)
+  animateClose()
 }
 
 const selectOnlineFolder = (folderId: string) => {
   emit('select-online-folder', folderId)
-  emit('update:modelValue', false)
+  animateClose()
 }
 
 const selectOfflineFolder = (folderId: string) => {
   emit('select-offline-folder', folderId)
-  emit('update:modelValue', false)
+  animateClose()
 }
 
 defineExpose({ panelRef })
@@ -242,30 +274,4 @@ defineExpose({ panelRef })
   font-size: 13px;
 }
 
-/* 过渡动画：遮罩淡入淡出 + 面板从右滑入滑出，与左侧 IonMenu overlay 一致 */
-.fav-menu-enter-active {
-  transition: opacity 0.24s ease;
-}
-
-.fav-menu-enter-active .fav-menu-panel {
-  transition: transform 0.24s cubic-bezier(0.22, 0.61, 0.36, 1);
-}
-
-.fav-menu-leave-active {
-  transition: opacity 0.2s ease;
-}
-
-.fav-menu-leave-active .fav-menu-panel {
-  transition: transform 0.2s cubic-bezier(0.55, 0, 0.55, 0.2);
-}
-
-.fav-menu-enter-from,
-.fav-menu-leave-to {
-  opacity: 0;
-}
-
-.fav-menu-enter-from .fav-menu-panel,
-.fav-menu-leave-to .fav-menu-panel {
-  transform: translateX(100%);
-}
 </style>

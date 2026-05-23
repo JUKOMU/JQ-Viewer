@@ -67,6 +67,7 @@ interface JmcomicPlugin {
     login(options: { username: string; password: string }): Promise<UserInfo>
     logout(): Promise<{ success: boolean }>
     checkLoginState(): Promise<{ loggedIn: boolean; username?: string; userInfo?: UserInfo }>
+    autoLogin(): Promise<{ success: boolean; userInfo?: UserInfo; reason?: string }>
     getUserProfile(options: { uid: string }): Promise<UserProfile>
 }
 
@@ -126,6 +127,11 @@ export const JmcomicService = {
     /** 检查本地登录态（不涉及网络） */
     checkLoginState() {
         return native.checkLoginState()
+    },
+
+    /** 自动登录（使用保存的凭据，重启时调用） */
+    autoLogin() {
+        return native.autoLogin()
     },
 
     /** 获取用户个人资料 */

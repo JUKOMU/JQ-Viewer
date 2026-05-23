@@ -10,6 +10,7 @@ import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
 import com.getcapacitor.*;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import io.github.jukomu.data.CredentialStore;
 import io.github.jukomu.data.DownloadStore;
 import io.github.jukomu.data.FileStore;
 import io.github.jukomu.data.ImageCache;
@@ -20,6 +21,7 @@ import io.github.jukomu.jmcomic.api.enums.SearchMainTag;
 import io.github.jukomu.jmcomic.api.enums.TimeOption;
 import io.github.jukomu.jmcomic.core.JmComic;
 import io.github.jukomu.jmcomic.core.client.impl.JmApiClient;
+import io.github.jukomu.jmcomic.api.exception.ResponseException;
 import io.github.jukomu.jmcomic.core.config.JmConfiguration;
 import io.github.jukomu.service.*;
 import io.github.jukomu.service.PermissionState;
@@ -143,24 +145,9 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
     }
 
     private void restoreAuthState(SettingsStore settingsDb) {
-        String savedCookies = settingsDb.getString("auth_cookies_json");
-        if (savedCookies == null || savedCookies.isEmpty()) return;
-
-        try {
-            List<Cookie> cookies = parseCookiesFromJson(new JSONArray(savedCookies));
-            if (!cookies.isEmpty()) {
-                sharedClient.setCookies(cookies);
-            } else {
-                settingsDb.putString("auth_cookies_json", null);
-                settingsDb.putString("auth_username", null);
-                settingsDb.putString("auth_user_info_json", null);
-            }
-        } catch (Exception e) {
-            android.util.Log.w("JmcomicPlugin", "Failed to restore auth state", e);
-            settingsDb.putString("auth_cookies_json", null);
-            settingsDb.putString("auth_username", null);
-            settingsDb.putString("auth_user_info_json", null);
-        }
+        settingsDb.deleteKey("auth_cookies_json");
+        settingsDb.deleteKey("auth_username");
+        settingsDb.deleteKey("auth_user_info_json");
     }
 
     @Override
@@ -973,12 +960,13 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
                 @Override
                 public void onSuccess(JSONObject userInfo) {
                     try {
-                        // 持久化 cookies + username + userInfo
+                        // 持久化 cookies + username + userInfo + 凭据（用于重启自动登录）
                         SettingsStore settingsDb = SettingsStore.getInstance(getContext());
                         List<Cookie> cookies = sharedClient.getCookies();
                         settingsDb.putString("auth_cookies_json", cookiesToJson(cookies).toString());
                         settingsDb.putString("auth_username", userInfo.getString("username"));
                         settingsDb.putString("auth_user_info_json", userInfo.toString());
+                        CredentialStore.getInstance(getContext()).save(username, password);
                         call.resolve(JSObject.fromJSONObject(userInfo));
                     } catch (Exception e) {
                         call.reject(e.getMessage(), e);
@@ -1004,9 +992,10 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
                 public void onSuccess(JSONObject result) {
                     try {
                         SettingsStore settingsDb = SettingsStore.getInstance(getContext());
-                        settingsDb.putString("auth_cookies_json", null);
-                        settingsDb.putString("auth_username", null);
-                        settingsDb.putString("auth_user_info_json", null);
+                        settingsDb.deleteKey("auth_cookies_json");
+                        settingsDb.deleteKey("auth_username");
+                        settingsDb.deleteKey("auth_user_info_json");
+                        CredentialStore.getInstance(getContext()).clear();
                         call.resolve(JSObject.fromJSONObject(result));
                     } catch (Exception e) {
                         call.reject(e.getMessage(), e);
@@ -1066,15 +1055,62 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
                 ret.put("username", username);
             } catch (JSONException e) {
                 // userInfo 损坏 → 清除全部 auth 数据，视为未登录
-                settingsDb.putString("auth_cookies_json", null);
-                settingsDb.putString("auth_username", null);
-                settingsDb.putString("auth_user_info_json", null);
+                settingsDb.deleteKey("auth_cookies_json");
+                settingsDb.deleteKey("auth_username");
+                settingsDb.deleteKey("auth_user_info_json");
                 ret.put("loggedIn", false);
             }
         } else {
             ret.put("loggedIn", false);
         }
         call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void autoLogin(PluginCall call) {
+        CredentialStore credentialStore = CredentialStore.getInstance(getContext());
+        String username = credentialStore.getUsername();
+        String password = credentialStore.getPassword();
+
+        JSObject ret = new JSObject();
+        if (username == null || username.isEmpty() || password == null || password.isEmpty()) {
+            ret.put("success", false);
+            ret.put("reason", "no_saved_credentials");
+            call.resolve(ret);
+            return;
+        }
+
+        call.setKeepAlive(true);
+        apiService.login(username, password, new ApiCallback() {
+            @Override
+            public void onSuccess(JSONObject userInfo) {
+                try {
+                    SettingsStore db = SettingsStore.getInstance(getContext());
+                    List<Cookie> cookies = sharedClient.getCookies();
+                    db.putString("auth_cookies_json", cookiesToJson(cookies).toString());
+                    db.putString("auth_username", userInfo.getString("username"));
+                    db.putString("auth_user_info_json", userInfo.toString());
+                    JSObject r = new JSObject();
+                    r.put("success", true);
+                    r.put("userInfo", JSObject.fromJSONObject(userInfo));
+                    call.resolve(r);
+                } catch (Exception e) {
+                    call.reject(e.getMessage(), e);
+                }
+            }
+
+            @Override
+            public void onError(String message, Exception e) {
+                // 仅在认证失败（如密码错误）时清除凭据，网络错误保留供下次重试
+                if (e instanceof ResponseException) {
+                    credentialStore.clear();
+                }
+                JSObject r = new JSObject();
+                r.put("success", false);
+                r.put("reason", "login_failed");
+                call.resolve(r);
+            }
+        });
     }
 
     // ---- Cookie 序列化 ----

@@ -106,6 +106,14 @@ public class SettingsStore extends SQLiteOpenHelper {
         return Boolean.parseBoolean(raw);
     }
 
+    public boolean deleteKey(String key) {
+        try {
+            return getWritableDatabase().delete(TABLE, COL_KEY + "=?", new String[]{key}) > 0;
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
     public boolean putString(String key, String value) {
         try {
             ContentValues cv = new ContentValues();

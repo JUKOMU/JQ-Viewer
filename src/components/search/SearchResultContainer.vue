@@ -65,7 +65,10 @@
     </div>
 
     <Transition name="result-fade" mode="out-in">
-      <div v-if="showInitialLoadingState" key="loading" class="state-card">正在搜索...</div>
+      <div v-if="showInitialLoadingState" key="loading" class="state-card">
+        <IonSpinner name="dots" />
+        <span>正在搜索...</span>
+      </div>
       <div v-else-if="showErrorState" key="error" class="state-card error">
         <div>{{ errorMessage }}</div>
         <button type="button" class="retry-btn" @click="emit('retry')">重试</button>

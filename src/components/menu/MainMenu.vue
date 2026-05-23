@@ -3,7 +3,7 @@
       :content-id="contentId"
       :disabled="disabled"
       :max-edge-start="menuEdgeStart"
-      :swipe-gesture="!rightMenuOpen"
+      :swipe-gesture="false"
       type="overlay"
   >
     <IonHeader class="ion-no-border">
@@ -79,7 +79,6 @@ import {IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonMenu, Ion
 import {downloadSharp, heart, homeSharp, personCircleOutline, searchSharp, settingsSharp} from 'ionicons/icons'
 import {useRoute, useRouter} from "vue-router"
 import {useAuth} from "@/composables/useAuth"
-import {rightMenuOpen} from '@/composables/sideMenuState'
 
 defineProps({
   contentId: String,

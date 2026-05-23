@@ -455,27 +455,31 @@ const setupOpenGesture = () => {
     gestureName: 'fav-menu-open',
     gesturePriority: 29,
     threshold: 0,
+    disableScroll: false,
     canStart: (detail) => {
       if (leftMenuOpen.value) return false
       if (rightMenuOpen.value) return false
-      if (detail.startX < window.innerWidth * 0.5) return false
-      if (detail.deltaX > -8) return false // 非左划
-      if (Math.abs(detail.deltaX) < Math.abs(detail.deltaY)) return false // 垂直为主
+      if (detail.startX < window.innerWidth * 0.45) return false
+      if (detail.deltaX > 6) return false
       return true
     },
     onStart: () => {
       isDraggingRight.value = true
       rightDragProgress.value = 0
-      rightMenuOpen.value = true
       if (leftMenuOpen.value) void menuController.close()
     },
     onMove: (detail) => {
+      if (detail.deltaX > 0) return
       const pw = getPanelWidth()
       const progress = Math.max(0, Math.min(1, -detail.deltaX / pw))
       rightDragProgress.value = progress
+      if (progress >= 0.06 && !rightMenuOpen.value) {
+        rightMenuOpen.value = true
+      }
     },
     onEnd: (detail) => {
       isDraggingRight.value = false
+      if (!rightMenuOpen.value) return
       const velocity = detail.velocityX
       if (rightDragProgress.value >= 0.25 || velocity < -0.3) {
         rightDragProgress.value = 1

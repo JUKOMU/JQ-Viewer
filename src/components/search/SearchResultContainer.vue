@@ -67,7 +67,7 @@
     <Transition name="result-fade" mode="out-in">
       <div v-if="showInitialLoadingState" key="loading" class="state-card">
         <IonSpinner name="dots" />
-        <span>正在搜索...</span>
+        <span>正在加载...</span>
       </div>
       <div v-else-if="showErrorState" key="error" class="state-card error">
         <div>{{ errorMessage }}</div>
@@ -613,7 +613,7 @@ defineExpose<SearchResultContainerExposed>({
   font-weight: 700;
   line-height: 1.4;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
 }
 
 .grid-card .item-title {

@@ -418,6 +418,10 @@ const initOnlineFolders = async () => {
     }
     return
   }
+  initialLoading.value = true
+  errorMessage.value = ''
+  resultMeta.value = null
+  pageCache.value = {}
   try {
     const result: FavoriteResult = await JmcomicService.favorites({ folderId: '0', page: 1 })
     if (result.folderList) {
@@ -427,6 +431,7 @@ const initOnlineFolders = async () => {
     currentFolderId.value = '0'
     void resetWithPage(1)
   } catch {
+    initialLoading.value = false
     folderSource.value = 'offline'
     const offlineFolders = OfflineFavoriteService.getFolders()
     if (offlineFolders.length > 0) {
@@ -454,7 +459,8 @@ const setupOpenGesture = () => {
       if (leftMenuOpen.value) return false
       if (rightMenuOpen.value) return false
       if (detail.startX < window.innerWidth * 0.5) return false
-      if (detail.deltaX > 6) return false
+      if (detail.deltaX > -8) return false // 非左划
+      if (Math.abs(detail.deltaX) < Math.abs(detail.deltaY)) return false // 垂直为主
       return true
     },
     onStart: () => {

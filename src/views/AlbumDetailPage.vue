@@ -230,6 +230,7 @@ const selectChapter = async (chapterId: string) => {
   try {
     const photo = await JmcomicService.getPhoto(chapterId)
     photoDetail.value = photo
+    recordBrowseHistory()
   } catch { /* ignore */ } finally {
     chapterLoading.value = false
   }
@@ -308,8 +309,8 @@ const recordBrowseHistory = () => {
     albumTitle: title,
     coverUrl: coverUrl.value,
     authors: albumAuthors.value,
-    chapterId: '',
-    chapterTitle: '',
+    chapterId: selectedChapterId.value,
+    chapterTitle: photoDetail.value?.title || '',
   })
 }
 

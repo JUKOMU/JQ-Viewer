@@ -1,16 +1,20 @@
 <template>
   <IonPage>
-    <IonContent ref="contentRef" :scroll-events="true" @ionScroll="onScroll">
-      <div class="page-shell">
-        <MenuToggleButton />
-
+    <IonHeader class="ion-no-border">
+      <IonToolbar>
+        <div class="toolbar-start">
+          <MenuToggleButton />
+        </div>
         <div class="tab-bar">
           <button type="button" class="tab-btn" :class="{ active: activeTab === 'browse' }"
                   @click="switchTab('browse')">浏览历史</button>
           <button type="button" class="tab-btn" :class="{ active: activeTab === 'parse' }"
                   @click="switchTab('parse')">解析历史</button>
         </div>
-
+      </IonToolbar>
+    </IonHeader>
+    <IonContent ref="contentRef" :scroll-events="true" @ionScroll="onScroll">
+      <div class="page-shell">
         <div v-if="activeTab === 'browse'" class="tab-content">
           <div v-if="browseItems.length === 0" class="empty-state">
             <IonIcon :icon="timeOutline" class="empty-icon" />
@@ -241,9 +245,11 @@ function formatRelativeTime(timestamp: number): string {
 </script>
 
 <style scoped>
+.toolbar-start {
+  padding: 0 0 8px 14px;
+}
 /* 页面容器 */
 .page-shell {
-  padding-top: calc(var(--ion-safe-area-top) + 8px);
   margin: 0 14px 86px;
 }
 
@@ -255,7 +261,6 @@ function formatRelativeTime(timestamp: number): string {
   padding: 4px;
   border-radius: 18px;
   background: #fffbf8;
-  box-shadow: 0 10px 24px rgb(76 42 24 / 0.08);
 }
 
 .tab-btn {

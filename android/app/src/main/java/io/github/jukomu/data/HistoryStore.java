@@ -75,7 +75,7 @@ public class HistoryStore extends SQLiteOpenHelper {
 
     // ==================== 浏览历史 ====================
 
-    /** 条件去重写入：最新记录相同 albumId+chapterId → 更新时间戳，否则新增。 */
+    /** 条件去重写入：最新记录相同 albumId → 更新全部字段，否则新增。 */
     public boolean recordBrowse(String albumId, String albumTitle, String coverUrl,
                                 String authors, String chapterId, String chapterTitle) {
         SQLiteDatabase db = getWritableDatabase();
@@ -84,15 +84,18 @@ public class HistoryStore extends SQLiteOpenHelper {
         Cursor c = null;
         db.beginTransaction();
         try {
-            c = db.query(TABLE_BROWSE, new String[]{COL_ID, COL_ALBUM_ID, COL_CHAPTER_ID},
+            c = db.query(TABLE_BROWSE, new String[]{COL_ID, COL_ALBUM_ID},
                     null, null, null, null, COL_ID + " DESC", "1");
             boolean matched = false;
             if (c.moveToFirst()) {
                 String lastAlbumId = c.getString(1);
-                String lastChapterId = c.getString(2);
-                if (albumId.equals(lastAlbumId)
-                        && (chapterId != null ? chapterId : "").equals(lastChapterId != null ? lastChapterId : "")) {
+                if (albumId.equals(lastAlbumId)) {
                     ContentValues cv = new ContentValues();
+                    cv.put(COL_ALBUM_TITLE, albumTitle != null ? albumTitle : "");
+                    cv.put(COL_COVER_URL, coverUrl != null ? coverUrl : "");
+                    cv.put(COL_AUTHORS, authors != null ? authors : "");
+                    cv.put(COL_CHAPTER_ID, chapterId != null ? chapterId : "");
+                    cv.put(COL_CHAPTER_TITLE, chapterTitle != null ? chapterTitle : "");
                     cv.put(COL_TIMESTAMP, now);
                     db.update(TABLE_BROWSE, cv, COL_ID + "=?", new String[]{String.valueOf(c.getLong(0))});
                     matched = true;

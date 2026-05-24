@@ -14,3 +14,6 @@ export const isDraggingRight = ref(false)
 
 /** 是否正在执行关闭吸附动画（面板可见但 animate to 关闭位置） */
 export const isSnappingClosed = ref(false)
+
+/** 当前导航是否由侧边栏菜单触发 */
+export const isMenuNavigation = ref(false)

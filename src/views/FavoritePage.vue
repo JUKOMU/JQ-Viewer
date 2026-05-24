@@ -1,6 +1,14 @@
 <template>
   <IonPage>
     <IonContent ref="contentRef" :scroll-events="true" @ionScroll="handleContentScroll">
+      <IonRefresher
+        slot="fixed"
+        :disabled="canLoadPrevious && pageAtTop"
+        @ionRefresh="handleRefresh"
+      >
+        <IonRefresherContent />
+      </IonRefresher>
+
       <div class="favorite-page-top">
         <div class="favorite-page-toolbar" :class="{ pinned: pullHeaderPinned }">
           <MenuToggleButton/>
@@ -73,7 +81,7 @@ import {computed, nextTick, onActivated, onDeactivated, onMounted, ref, watch} f
 
 defineOptions({ name: 'FavoritePage' })
 import {useRouter} from 'vue-router'
-import {IonContent, IonIcon, IonPage, menuController} from '@ionic/vue'
+import {IonContent, IonIcon, IonPage, IonRefresher, IonRefresherContent, menuController} from '@ionic/vue'
 import {createGesture, type Gesture} from '@ionic/vue'
 import {folderOpenOutline} from 'ionicons/icons'
 import type {ScrollCustomEvent} from '@ionic/core'
@@ -261,6 +269,28 @@ const submitSearch = (query: FavoriteQuery) => {
 
 const retrySearch = () => {
   void resetWithPage(1)
+}
+
+const handleRefresh = async (event: CustomEvent) => {
+  const refresher = event.target as HTMLIonRefresherElement
+  try {
+    if (folderSource.value === 'online') {
+      errorMessage.value = ''
+      const result = await fetchOnlineFavorites(1)
+      resultMeta.value = result
+      pageCache.value = { 1: result.content }
+    } else {
+      const result = fetchOfflineFavorites(1)
+      resultMeta.value = result
+      pageCache.value = { 1: result.content }
+    }
+  } catch {
+    if (folderSource.value === 'online') {
+      errorMessage.value = '刷新失败'
+    }
+  } finally {
+    refresher.complete()
+  }
 }
 
 // --- 分页 ---

@@ -4,7 +4,7 @@
     <div id="main-content" class="ion-page-container">
       <router-view v-slot="{ Component }">
         <transition :name="transitionName" mode="out-in" @after-enter="onAfterEnter">
-          <keep-alive :include="keepAliveNames">
+          <keep-alive :include="keepAliveNames" :exclude="keepAliveExclude">
             <component :is="Component" />
           </keep-alive>
         </transition>
@@ -15,10 +15,10 @@
 
 <script setup lang="ts">
 import {IonApp} from '@ionic/vue';
-import {onBeforeUnmount, onMounted, computed, ref} from 'vue';
+import {onBeforeUnmount, onMounted, computed, nextTick, ref} from 'vue';
 import {useRoute, useRouter} from 'vue-router'
 import MainMenu from "@/components/menu/MainMenu.vue";
-import {leftMenuOpen, rightMenuOpen} from '@/composables/sideMenuState'
+import {isMenuNavigation, leftMenuOpen, rightMenuOpen} from '@/composables/sideMenuState'
 import {initSettings} from '@/services/SettingsService'
 import {useAuth} from '@/composables/useAuth'
 import {initNetworkProbeStore} from '@/composables/networkProbeStore'
@@ -28,15 +28,28 @@ const router = useRouter()
 
 const routeStack = ref<string[]>([])
 const isBack = ref(false)
+const keepAliveExclude = ref<string[]>([])
 
 router.beforeEach((to, from) => {
+  const fromMenu = isMenuNavigation.value
+  isMenuNavigation.value = false
+
   const idx = routeStack.value.lastIndexOf(to.fullPath)
-  if (idx >= 0) {
+  if (idx >= 0 && !fromMenu) {
     isBack.value = true
     routeStack.value = routeStack.value.slice(0, idx)
   } else {
     isBack.value = false
     if (from.fullPath) routeStack.value.push(from.fullPath)
+
+    // 前进导航：从 keepAlive 缓存排除，强制组件重建还原初始状态
+    const name = to.name
+    if (name && typeof name === 'string') {
+      keepAliveExclude.value.push(name)
+      nextTick(() => {
+        keepAliveExclude.value = keepAliveExclude.value.filter(n => n !== name)
+      })
+    }
   }
 })
 

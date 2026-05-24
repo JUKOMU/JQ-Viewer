@@ -31,11 +31,13 @@ const routes: Array<RouteRecordRaw> = [
   },
   {
     path: '/favorite',
+    name: 'FavoritePage',
     component: FavoritePage,
     meta: { menu: true, keepAlive: true }
   },
   {
     path: '/download',
+    name: 'DownloadPage',
     component: DownloadPage,
     meta: { menu: true }
   },
@@ -46,12 +48,14 @@ const routes: Array<RouteRecordRaw> = [
   },
   {
     path: '/history',
+    name: 'HistoryPage',
     component: () => import('@/views/HistoryPage.vue'),
     meta: { menu: true }
   },
   {
     path: '/album/:id',
     component: () => import('@/views/AlbumDetailPage.vue'),
+    meta: { menu: true },
   },
   {
     path: '/album/:albumId/preview/:chapterId',

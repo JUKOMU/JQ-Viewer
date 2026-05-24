@@ -20,7 +20,7 @@
       <IonList lines="none" class="menu-list">
         <IonMenuToggle>
           <IonItem button expand="block" router-link="/home" router-direction="forward"
-                   class="menu-item" :class="{ selected: isActive('/home') }">
+                   class="menu-item" :class="{ selected: isActive('/home') }" @click="handleMenuClick">
             <IonIcon slot="start" class="menu-icon" :icon="homeSharp"/>
             <IonLabel>
               <div class="item-title">首页</div>
@@ -30,7 +30,7 @@
         </IonMenuToggle>
         <IonMenuToggle>
           <IonItem button expand="block" router-link="/category" router-direction="root"
-                   class="menu-item" :class="{ selected: isActive('/category') }">
+                   class="menu-item" :class="{ selected: isActive('/category') }" @click="handleMenuClick">
             <IonIcon slot="start" class="menu-icon" :icon="searchSharp"/>
             <IonLabel>
               <div class="item-title">分类</div>
@@ -40,7 +40,7 @@
         </IonMenuToggle>
         <IonMenuToggle>
           <IonItem button expand="block" router-link="/favorite" router-direction="root"
-                   class="menu-item" :class="{ selected: isActive('/favorite') }">
+                   class="menu-item" :class="{ selected: isActive('/favorite') }" @click="handleMenuClick">
             <IonIcon slot="start" class="menu-icon" :icon="heart"/>
             <IonLabel>
               <div class="item-title">收藏夹</div>
@@ -50,7 +50,7 @@
         </IonMenuToggle>
         <IonMenuToggle>
           <IonItem button expand="block" router-link="/download" router-direction="root"
-                   class="menu-item" :class="{ selected: isActive('/download') }">
+                   class="menu-item" :class="{ selected: isActive('/download') }" @click="handleMenuClick">
             <IonIcon slot="start" class="menu-icon" :icon="downloadSharp"/>
             <IonLabel>
               <div class="item-title">下载</div>
@@ -60,7 +60,7 @@
         </IonMenuToggle>
         <IonMenuToggle>
           <IonItem button expand="block" router-link="/history" router-direction="root"
-                   class="menu-item" :class="{ selected: isActive('/history') }">
+                   class="menu-item" :class="{ selected: isActive('/history') }" @click="handleMenuClick">
             <IonIcon slot="start" class="menu-icon" :icon="timeOutline"/>
             <IonLabel>
               <div class="item-title">历史</div>
@@ -70,7 +70,7 @@
         </IonMenuToggle>
         <IonMenuToggle>
           <IonItem button expand="block" router-link="/setting" router-direction="forward"
-                   class="menu-item" :class="{ selected: isActive('/setting') }">
+                   class="menu-item" :class="{ selected: isActive('/setting') }" @click="handleMenuClick">
             <IonIcon slot="start" class="menu-icon" :icon="settingsSharp"/>
             <IonLabel>
               <div class="item-title">设置</div>
@@ -89,6 +89,7 @@ import {IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonMenu, Ion
 import {downloadSharp, heart, homeSharp, personCircleOutline, searchSharp, settingsSharp, timeOutline} from 'ionicons/icons'
 import {useRoute, useRouter} from "vue-router"
 import {useAuth} from "@/composables/useAuth"
+import {isMenuNavigation} from "@/composables/sideMenuState"
 
 defineProps({
   contentId: String,
@@ -120,6 +121,10 @@ function getTopPath(path: string) {
 
   const first = path.split("/").filter(Boolean)[0]
   return first ? first : "/"
+}
+
+function handleMenuClick() {
+  isMenuNavigation.value = true
 }
 </script>
 

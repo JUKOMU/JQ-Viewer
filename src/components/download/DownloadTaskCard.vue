@@ -17,7 +17,7 @@
       <div class="title-row">
         <div class="titles">
           <div class="album-title">{{ task.albumTitle }}</div>
-          <div class="chapter-title">{{ task.chapterTitle }}</div>
+          <div class="chapter-title">{{ task.chapterId }}</div>
           <div v-if="hasMultiChapters" class="chapter-bubbles">
             <span v-for="ch in downloadedChapters" :key="ch.chapterId" class="bubble">
               {{ ch.chapterSortOrder ?? parseSortOrder(ch.chapterTitle) }}

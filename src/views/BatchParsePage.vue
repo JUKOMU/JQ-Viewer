@@ -79,10 +79,11 @@
             :loading-next="false"
             :can-load-previous="false"
             :error-message="errorMessage"
-            :mode="'list'"
+            :mode="displayMode"
             idle-text=""
             empty-text="未找到对应本子"
             @item-click="handleItemClick"
+            @mode-change="displayMode = $event"
         />
       </div>
     </IonContent>
@@ -134,6 +135,7 @@ const loading = ref(true)
 const errorMessage = ref('')
 
 const failedIds = ref<Record<string, boolean>>({})
+const displayMode = ref<'list' | 'grid'>('list')
 
 // ---- 编辑模式 ----
 

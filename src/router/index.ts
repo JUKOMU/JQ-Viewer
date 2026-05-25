@@ -85,7 +85,7 @@ const routes: Array<RouteRecordRaw> = [
     path: '/batch-parse',
     name: 'BatchParsePage',
     component: () => import('@/views/BatchParsePage.vue'),
-    meta: { menu: false }
+    meta: { menu: true }
   },
 ]
 

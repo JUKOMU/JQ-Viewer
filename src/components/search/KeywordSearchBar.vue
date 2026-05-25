@@ -39,6 +39,7 @@
     <div class="searchbar-wrap" style="position: relative;">
       <div class="searchbar-box">
         <IonSearchbar
+            v-if="mode !== 'batch-mode'"
             ref="searchbarRef"
             v-model="query.keyword"
             :animated="true"
@@ -47,11 +48,21 @@
             placeholder="请输入关键词"
             enterkeyhint="search"
         />
+        <textarea
+            v-else
+            ref="batchTextareaRef"
+            v-model="query.keyword"
+            class="batch-textarea"
+            placeholder="输入或粘贴多行文本提取 ID"
+            rows="3"
+            spellcheck="false"
+        />
       </div>
       <button type="button" class="search-trigger-btn" @click="emitSearch">
         <IonIcon :icon="searchOutline"/>
       </button>
       <SearchHistoryDropdown
+        v-if="mode !== 'batch-mode'"
         :visible="showHistory"
         :items="HistoryService.getSearchHistory('keyword-search')"
         :filter-text="query.keyword"
@@ -269,7 +280,7 @@ onBeforeUnmount(() => {
 
 .searchbar-wrap {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0;
   padding: 4px 4px 4px 10px;
   background: #fffbf8;
@@ -281,6 +292,28 @@ onBeforeUnmount(() => {
 .searchbar-box {
   flex: 1;
   min-width: 0;
+  padding-top: 4px;
+}
+
+.batch-textarea {
+  display: block;
+  width: 100%;
+  min-height: 56px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #30201a;
+  font-size: 14px;
+  font-family: inherit;
+  line-height: 1.5;
+  resize: vertical;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.batch-textarea::placeholder {
+  color: #a0a0a0;
 }
 
 ion-searchbar.custom {

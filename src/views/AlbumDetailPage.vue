@@ -193,7 +193,7 @@ onMounted(async () => {
     loading.value = false
   }
 
-  // 获取当前专辑的章节下载状态
+  // 获取当前本子的章节下载状态
   await refreshDownloadStatuses()
   // 监听下载进度，实时更新状态
   downloadProgressHandle = await JmcomicService.addDownloadProgressListener((data) => {

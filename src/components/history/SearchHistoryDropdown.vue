@@ -1,9 +1,9 @@
 <template>
   <div
-    v-if="visible && items.length > 0"
+    v-if="visible && filteredItems.length > 0"
     class="history-dropdown"
     @mousedown.prevent
-    @touchstart.prevent
+    @touchstart.stop
   >
     <div class="dropdown-header">
       <span class="dropdown-title">搜索历史</span>
@@ -11,13 +11,13 @@
     </div>
     <div class="dropdown-list">
       <button
-        v-for="item in items"
+        v-for="(item, idx) in filteredItems"
         :key="item.timestamp"
         type="button"
         class="history-item"
+        :class="{ 'last-item': idx === filteredItems.length - 1 }"
         @click.stop="$emit('select', item)"
       >
-        <IonIcon :icon="timeOutline" class="item-icon" />
         <span class="item-keyword">{{ item.keyword }}</span>
       </button>
     </div>
@@ -25,19 +25,25 @@
 </template>
 
 <script setup lang="ts">
-import { IonIcon } from '@ionic/vue'
-import { timeOutline } from 'ionicons/icons'
+import { computed } from 'vue'
 import type { SearchHistoryItem } from '@/services/HistoryService'
 
-defineProps<{
+const props = defineProps<{
   visible: boolean
   items: SearchHistoryItem[]
+  filterText?: string
 }>()
 
 defineEmits<{
   select: [item: SearchHistoryItem]
   clear: []
 }>()
+
+const filteredItems = computed(() => {
+  const ft = (props.filterText ?? '').trim().toLowerCase()
+  if (!ft) return props.items
+  return props.items.filter(item => item.keyword.toLowerCase().includes(ft))
+})
 </script>
 
 <style scoped>
@@ -83,25 +89,23 @@ defineEmits<{
 .history-item {
   display: flex;
   align-items: center;
-  gap: 10px;
   width: 100%;
   height: 40px;
   padding: 0 14px;
   border: 0;
+  border-bottom: 1px solid rgb(245 210 188 / 0.4);
   background: transparent;
   font-size: 13px;
   color: #3a261d;
   cursor: pointer;
 }
 
-.history-item:active {
-  background: rgb(255 235 223 / 0.7);
+.history-item.last-item {
+  border-bottom: 0;
 }
 
-.item-icon {
-  font-size: 14px;
-  color: #c96d3a;
-  flex-shrink: 0;
+.history-item:active {
+  background: rgb(255 235 223 / 0.7);
 }
 
 .item-keyword {

@@ -18,6 +18,7 @@
     <SearchHistoryDropdown
       :visible="showHistory"
       :items="HistoryService.getSearchHistory('favorite')"
+      :filter-text="draft.keyword"
       @select="onHistorySelect"
       @clear="onHistoryClear"
     />
@@ -81,7 +82,7 @@ const handleDocumentClick = (event: MouseEvent) => {
 // --- 搜索历史下拉 ---
 
 const handleNativeFocus = () => {
-  if (!draft.keyword) showHistory.value = true
+  showHistory.value = true
 }
 
 const handleNativeBlur = () => {
@@ -90,14 +91,13 @@ const handleNativeBlur = () => {
 }
 
 const handleNativeInput = () => {
-  if (draft.keyword) showHistory.value = false
+  showHistory.value = true
 }
 
 const onHistorySelect = (item: SearchHistoryItem) => {
   draft.keyword = item.keyword
   showHistory.value = false
   if (blurTimer) { clearTimeout(blurTimer); blurTimer = null }
-  submit()
 }
 
 const onHistoryClear = () => {

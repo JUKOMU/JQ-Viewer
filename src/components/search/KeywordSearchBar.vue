@@ -53,6 +53,7 @@
       <SearchHistoryDropdown
         :visible="showHistory"
         :items="HistoryService.getSearchHistory('keyword-search')"
+        :filter-text="query.keyword"
         @select="onHistorySelect"
         @clear="onHistoryClear"
       />
@@ -182,7 +183,7 @@ const handleNativeKeydown = (event: KeyboardEvent) => {
 // --- 搜索历史下拉 ---
 
 const handleNativeFocus = () => {
-  if (!query.keyword) showHistory.value = true
+  showHistory.value = true
 }
 
 const handleNativeBlur = () => {
@@ -191,14 +192,13 @@ const handleNativeBlur = () => {
 }
 
 const handleNativeInput = () => {
-  if (query.keyword) showHistory.value = false
+  showHistory.value = true
 }
 
 const onHistorySelect = (item: SearchHistoryItem) => {
   query.keyword = item.keyword
   showHistory.value = false
   if (blurTimer) { clearTimeout(blurTimer); blurTimer = null }
-  emitSearch()
 }
 
 const onHistoryClear = () => {

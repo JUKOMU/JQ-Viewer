@@ -258,7 +258,7 @@ function formatRelativeTime(timestamp: number): string {
   display: flex;
   gap: 2px;
   margin-bottom: 10px;
-  padding: 4px;
+  padding: 4px 14px;
   border-radius: 18px;
   background: #fffbf8;
 }

@@ -4,9 +4,10 @@
       <div class="upload-slot">
         <Transition name="upload-slide">
           <button
-              v-if="mode === 'batch-mode'"
+              v-if="mode === 'batch-mode' && ocrEnabled"
               type="button"
               class="upload-btn"
+              @click="handleUpload"
           >
             <IonIcon :icon="addOutline"/>
           </button>
@@ -123,13 +124,18 @@
 
 <script setup lang="ts">
 import {onBeforeUnmount, onMounted, reactive, ref} from 'vue'
+import {useRouter} from 'vue-router'
 import {IonIcon, IonSearchbar} from '@ionic/vue'
 import {addOutline, chevronDownOutline, helpCircleOutline, searchOutline} from 'ionicons/icons'
 import {ORDER_BY_OPTIONS, SEARCH_MAIN_TAG_OPTIONS, TIME_OPTIONS} from '@/constants/searchOptions'
 import type {SearchQuery} from '@/services/JmcomicTypes'
+import { JmcomicService, showToast } from '@/services/JmcomicService'
 import { HistoryService } from '@/services/HistoryService'
 import type { SearchHistoryItem } from '@/services/HistoryService'
+import { SettingsStore } from '@/services/SettingsService'
 import SearchHistoryDropdown from '@/components/history/SearchHistoryDropdown.vue'
+
+const router = useRouter()
 
 const props = withDefaults(defineProps<{
   modeSelect?: boolean
@@ -164,14 +170,44 @@ const emitSearch = () => {
     if (originalKeyword) HistoryService.addParseHistory(originalKeyword)
   }
 
-  // 记录搜索历史（同步）
-  if (originalKeyword) HistoryService.addSearchHistory('keyword-search', originalKeyword)
+  // 记录搜索历史（仅普通搜索模式，解析模式不走搜索历史）
+  if (originalKeyword && mode.value !== 'single-mode' && mode.value !== 'batch-mode') {
+    HistoryService.addSearchHistory('keyword-search', originalKeyword)
+  }
+
+  if (mode.value === 'batch-mode') {
+    if (originalKeyword) {
+      sessionStorage.setItem('batch-parse-text', originalKeyword)
+      router.push({ path: '/batch-parse' })
+    }
+    return
+  }
 
   const parsed = { ...query }
   if (mode.value === 'single-mode') {
     parsed.keyword = (query.keyword ?? '').replace(/\D/g, '')
   }
   emit('search', parsed)
+}
+
+const ocrEnabled = ref(SettingsStore.getOcrEnabled())
+
+async function handleUpload() {
+  try {
+    const result = await JmcomicService.pickImageAndOcr()
+    await showToast('正在识别图片...', 'medium')
+    if (result.text) {
+      const current = (query.keyword ?? '').trim()
+      query.keyword = current ? current + '\n' + result.text : result.text
+      await showToast('识别完成', 'success')
+      emitSearch()
+    } else if (result.error) {
+      await showToast(result.error, 'danger')
+    }
+    // 用户取消选择图片（text 为空且无 error）→ 不提示
+  } catch (e: any) {
+    await showToast(e?.message || '识别失败', 'danger')
+  }
 }
 
 const handleNativeKeydown = (event: KeyboardEvent) => {

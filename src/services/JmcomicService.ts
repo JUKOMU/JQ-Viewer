@@ -41,6 +41,7 @@ interface JmcomicPlugin {
     clearImageCache(): Promise<{ success: boolean }>
     setDownloadConcurrency(options: { n: number }): Promise<{ success: boolean }>
     setPreloadConcurrency(options: { n: number }): Promise<{ success: boolean }>
+    setOcrEnabled(options: { enabled: boolean }): Promise<{ success: boolean }>
     setDownloadPublic(options: { open: boolean }): Promise<{ success: boolean; downloadPublic: boolean; moved: number }>
     getDownloadPublic(): Promise<{ downloadPublic: boolean }>
     requestManageStorage(): Promise<{ granted: boolean; permissionType: string; apiLevel: number }>
@@ -86,6 +87,8 @@ interface JmcomicPlugin {
     getParseHistory(options: { limit: number; offset: number }): Promise<{ items: ParseHistoryItem[] }>
     addParseHistory(options: { text: string }): Promise<{ success: boolean }>
     clearParseHistory(): Promise<{ success: boolean }>
+    // OCR
+    pickImageAndOcr(): Promise<{ text: string; error?: string }>
 }
 
 interface ImageReadyEvent {
@@ -212,6 +215,11 @@ export const JmcomicService = {
         return native.setReaderPreloadPages({ n })
     },
 
+    /** 持久化 OCR 开关 */
+    setOcrEnabled(enabled: boolean) {
+        return native.setOcrEnabled({ enabled })
+    },
+
     /** 持久化预加载并发数（下次启动生效） */
     setPreloadConcurrency(n: number) {
         return native.setPreloadConcurrency({ n })
@@ -331,6 +339,12 @@ export const JmcomicService = {
     },
     clearParseHistory() {
         return native.clearParseHistory()
+    },
+
+    // ========== OCR ==========
+
+    pickImageAndOcr() {
+        return native.pickImageAndOcr()
     },
 }
 

@@ -3,6 +3,7 @@ package io.github.jukomu.bridge;
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.content.Context;
+import android.content.Intent;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.os.Build;
@@ -22,6 +23,12 @@ import io.github.jukomu.jmcomic.api.enums.SearchMainTag;
 import io.github.jukomu.jmcomic.api.enums.TimeOption;
 import io.github.jukomu.jmcomic.core.JmComic;
 import io.github.jukomu.jmcomic.core.client.impl.JmApiClient;
+
+import com.google.mlkit.vision.common.InputImage;
+import com.google.mlkit.vision.text.Text;
+import com.google.mlkit.vision.text.TextRecognition;
+import com.google.mlkit.vision.text.TextRecognizer;
+import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions;
 import io.github.jukomu.jmcomic.api.exception.ResponseException;
 import io.github.jukomu.jmcomic.core.config.JmConfiguration;
 import io.github.jukomu.service.*;
@@ -67,6 +74,10 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
     private static JmcomicPlugin instance;
     private PluginCall pendingPermissionCall;
     private PermissionService permissionService;
+
+    // ---- OCR 相关 ----
+    private PluginCall pendingOcrCall;
+    private static final int REQUEST_PICK_IMAGE = 1001;
 
     // ---- 服务 ----
     private ApiService apiService;
@@ -452,8 +463,91 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         }
     }
 
+    /**
+     * 供 MainActivity.onActivityResult 调用，处理图片选择结果并执行 OCR。
+     */
+    public void handleActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode != REQUEST_PICK_IMAGE || pendingOcrCall == null) return;
+
+        PluginCall call = pendingOcrCall;
+        pendingOcrCall = null;
+
+        if (resultCode != android.app.Activity.RESULT_OK || data == null || data.getData() == null) {
+            JSObject ret = new JSObject();
+            ret.put("text", "");
+            ret.put("error", "");
+            call.resolve(ret);
+            return;
+        }
+
+        ExecutorService ocrExecutor = Executors.newSingleThreadExecutor();
+        ocrExecutor.execute(() -> {
+            try {
+                InputImage inputImage = InputImage.fromFilePath(
+                    getContext(), data.getData());
+
+                TextRecognizer recognizer = TextRecognition.getClient(
+                    new ChineseTextRecognizerOptions.Builder().build());
+
+                java.util.concurrent.CountDownLatch latch =
+                    new java.util.concurrent.CountDownLatch(1);
+                Text[] resultHolder = new Text[1];
+                Exception[] errorHolder = new Exception[1];
+
+                recognizer.process(inputImage)
+                    .addOnSuccessListener(text -> {
+                        resultHolder[0] = text;
+                        latch.countDown();
+                    })
+                    .addOnFailureListener(e -> {
+                        errorHolder[0] = e;
+                        latch.countDown();
+                    });
+
+                boolean completed = latch.await(30, java.util.concurrent.TimeUnit.SECONDS);
+                recognizer.close();
+
+                JSObject ret = new JSObject();
+                if (!completed) {
+                    ret.put("text", "");
+                    ret.put("error", "识别超时，请重试");
+                } else if (errorHolder[0] != null) {
+                    ret.put("text", "");
+                    ret.put("error", "识别失败：" + errorHolder[0].getMessage());
+                } else if (resultHolder[0] != null) {
+                    ret.put("text", resultHolder[0].getText());
+                    ret.put("error", "");
+                } else {
+                    ret.put("text", "");
+                    ret.put("error", "未识别到文字");
+                }
+                call.resolve(ret);
+            } catch (Exception e) {
+                JSObject ret = new JSObject();
+                ret.put("text", "");
+                ret.put("error", e.getMessage());
+                call.resolve(ret);
+            } finally {
+                ocrExecutor.shutdown();
+            }
+        });
+    }
+
     public static JmcomicPlugin getInstance() {
         return instance;
+    }
+
+    @PluginMethod
+    public void pickImageAndOcr(PluginCall call) {
+        Intent intent = new Intent(Intent.ACTION_PICK,
+            android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
+        pendingOcrCall = call;
+        try {
+            getActivity().startActivityForResult(intent, REQUEST_PICK_IMAGE);
+        } catch (Exception e) {
+            pendingOcrCall = null;
+            call.reject(e.getMessage(), e);
+        }
     }
 
     @PluginMethod
@@ -766,6 +860,23 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
                 return;
             }
             settingsService.setReaderPreloadPages(n);
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void setOcrEnabled(PluginCall call) {
+        try {
+            Boolean enabled = call.getBoolean("enabled");
+            if (enabled == null) {
+                call.reject("enabled is required");
+                return;
+            }
+            settingsService.setOcrEnabled(enabled);
             JSObject ret = new JSObject();
             ret.put("success", true);
             call.resolve(ret);

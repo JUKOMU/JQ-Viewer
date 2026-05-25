@@ -133,6 +133,24 @@
           </div>
         </div>
 
+        <!-- 分组：批量解析 -->
+        <div class="section-label">批量解析</div>
+        <div class="card">
+          <div class="row">
+            <div class="row-left">
+              <span class="row-title">图片 OCR 识别</span>
+              <span class="row-subtitle">开启后可在批量解析时通过图片上传识别 ID</span>
+            </div>
+            <div class="row-right">
+              <IonToggle
+                :checked="ocrEnabled"
+                @ion-change="onOcrEnabledChange"
+                color="warning"
+              />
+            </div>
+          </div>
+        </div>
+
         <!-- 分组：网络状态 -->
         <div class="section-label">网络状态</div>
         <div class="card">
@@ -219,6 +237,7 @@ const preloadPages = ref(SettingsStore.getReaderPreloadPages())
 const preloadConcurrency = ref(SettingsStore.getPreloadConcurrency())
 const downloadConcurrency = ref(SettingsStore.getDownloadConcurrency())
 const downloadPublic = ref(SettingsStore.getDownloadPublic())
+const ocrEnabled = ref(SettingsStore.getOcrEnabled())
 
 // ---- 搬迁弹窗状态 ----
 const showRelocationModal = ref(false)
@@ -270,6 +289,7 @@ onMounted(async () => {
   downloadConcurrency.value = SettingsStore.getDownloadConcurrency()
   downloadPublic.value = SettingsStore.getDownloadPublic()
   cacheInputMb.value = SettingsStore.getCacheCapacityMb()
+  ocrEnabled.value = SettingsStore.getOcrEnabled()
 })
 
 // ---- 缓存上限 ----
@@ -356,6 +376,20 @@ async function onConcurrencyChange(e: Event) {
     await JmcomicService.setDownloadConcurrency(n)
     await showToast('已保存，下次启动生效', 'success')
   } catch {
+    await showToast('保存失败', 'danger')
+  }
+}
+
+// ---- OCR 开关 ----
+async function onOcrEnabledChange(e: CustomEvent) {
+  const enabled = e.detail.checked
+  ocrEnabled.value = enabled
+  SettingsStore.setOcrEnabled(enabled)
+  try {
+    await JmcomicService.setOcrEnabled(enabled)
+  } catch {
+    ocrEnabled.value = !enabled
+    SettingsStore.setOcrEnabled(!enabled)
     await showToast('保存失败', 'danger')
   }
 }

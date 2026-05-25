@@ -13,6 +13,7 @@ let cachedPreloadConcurrency = 6
 let cachedDownloadConcurrency = 6
 let cachedDownloadPublic = false
 let cachedCacheCapacityMb = 640
+let cachedOcrEnabled = true
 
 /** App.vue onMounted 调用，从 DB 加载到缓存（幂等）。 */
 export async function initSettings(): Promise<void> {
@@ -24,6 +25,7 @@ export async function initSettings(): Promise<void> {
         cachedDownloadConcurrency = all.downloadConcurrency
         cachedDownloadPublic = all.downloadPublic
         cachedCacheCapacityMb = all.cacheCapacityMb
+        cachedOcrEnabled = all.ocrEnabled
         settingsLoaded = true
     } catch (e) {
         // 使用默认值（已在缓存变量中预设）
@@ -51,4 +53,8 @@ export const SettingsStore = {
     // ---- 缓存容量 ----
     getCacheCapacityMb(): number { return cachedCacheCapacityMb },
     setCacheCapacityMb(mb: number) { cachedCacheCapacityMb = mb },
+
+    // ---- OCR 图片解析 ----
+    getOcrEnabled(): boolean { return cachedOcrEnabled },
+    setOcrEnabled(enabled: boolean) { cachedOcrEnabled = enabled },
 }

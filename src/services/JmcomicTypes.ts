@@ -172,6 +172,7 @@ export interface AllSettings {
     downloadConcurrency: number
     downloadPublic: boolean
     cacheCapacityMb: number
+    ocrEnabled: boolean
 }
 
 // --- 设置页：文件搬迁 ---

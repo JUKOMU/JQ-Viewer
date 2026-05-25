@@ -1,5 +1,6 @@
 package io.github.jukomu;
 
+import android.content.Intent;
 import android.os.Bundle;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
@@ -38,6 +39,15 @@ public class MainActivity extends BridgeActivity {
         JmcomicPlugin plugin = JmcomicPlugin.getInstance();
         if (plugin != null) {
             plugin.handlePermissionResult(requestCode, permissions, grantResults);
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        JmcomicPlugin plugin = JmcomicPlugin.getInstance();
+        if (plugin != null) {
+            plugin.handleActivityResult(requestCode, resultCode, data);
         }
     }
 }

@@ -101,7 +101,8 @@
                   作者：{{ entry.item.authors.join(' / ') }}
                 </div>
                 <div v-if="entry.item.tags.length" class="item-tags">
-                  <span v-for="tag in entry.item.tags.slice(0, 6)" :key="tag" class="tag-chip">{{ tag }}</span>
+                  <span v-for="tag in entry.item.tags.slice(0, 10)" :key="tag" class="tag-chip">{{ tag }}</span>
+                  <span v-if="entry.item.tags.length > 10" class="tag-chip tag-more">…</span>
                 </div>
                 <div class="item-serial">{{ getItemSerial(entry.page, entry.indexInPage) }}</div>
               </template>
@@ -522,9 +523,9 @@ defineExpose<SearchResultContainerExposed>({
 
 .list-card {
   display: flex;
-  align-items: stretch;
+  align-items: start;
   gap: 10px;
-  height: 108px;
+  min-height: 108px;
   padding: 0 10px 0 0;
   border-radius: 12px;
   background: #fffaf6;
@@ -564,8 +565,9 @@ defineExpose<SearchResultContainerExposed>({
 }
 
 .list-card .cover-wrap {
-  height: 100%;
-  flex: 0 0 auto;
+  width: 80px;
+  flex-shrink: 0;
+  align-self: flex-start;
   aspect-ratio: 3 / 4;
 }
 
@@ -610,6 +612,7 @@ defineExpose<SearchResultContainerExposed>({
   line-height: 1.4;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
+  flex-shrink: 0;
 }
 
 .grid-card .item-title {
@@ -620,6 +623,7 @@ defineExpose<SearchResultContainerExposed>({
   color: #876653;
   font-size: 11px;
   line-height: 1.35;
+  flex-shrink: 0;
 }
 
 .item-tags {
@@ -646,6 +650,12 @@ defineExpose<SearchResultContainerExposed>({
   font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.tag-more {
+  background: transparent;
+  color: #b89a84;
+  font-weight: 600;
 }
 
 .grid-columns-fade-enter-active,

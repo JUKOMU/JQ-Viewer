@@ -62,6 +62,7 @@ public class SettingsService {
             ret.put("downloadConcurrency", settingsDb.getInt("download_concurrency", 6));
             ret.put("downloadPublic", settingsDb.getBoolean("download_public", false));
             ret.put("cacheCapacityMb", settingsDb.getLong("cache_capacity_mb", 640));
+            ret.put("ocrEnabled", settingsDb.getBoolean("ocr_enabled", true));
         } catch (Exception ignored) {
         }
         return ret;
@@ -72,6 +73,14 @@ public class SettingsService {
             throw new IllegalArgumentException("n must be between 5 and 50");
         }
         settingsDb.putString("reader_preload_pages", String.valueOf(n));
+    }
+
+    public boolean getOcrEnabled() {
+        return settingsDb.getBoolean("ocr_enabled", true);
+    }
+
+    public void setOcrEnabled(boolean enabled) {
+        settingsDb.putString("ocr_enabled", String.valueOf(enabled));
     }
 
     // ---- 下载公开/私有切换 ----

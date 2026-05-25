@@ -601,7 +601,6 @@ function handleItemClick(item: SearchResultItem) {
 /* ---- 结果区域 ---- */
 
 .page-shell {
-  padding: 0 14px 86px;
 }
 
 @media (min-width: 680px) {

@@ -103,7 +103,6 @@ import { JmcomicService } from '@/services/JmcomicService'
 import type { AlbumDetail, SearchResult, SearchResultItem } from '@/services/JmcomicTypes'
 import { parseIdsFromText } from '@/utils/batchParse'
 import type { InvalidIdItem, ParsedIdItem } from '@/utils/batchParse'
-import { runWithConcurrency } from '@/utils/concurrencyPool'
 
 defineOptions({ name: 'BatchParsePage' })
 
@@ -296,23 +295,36 @@ async function doParse() {
 
   loading.value = true
   errorMessage.value = ''
-  albumResults.value = new Array(parseResult.items.length).fill(null)
-
-  const results = await runWithConcurrency(
-    parseResult.items,
-    (item) => JmcomicService.getAlbum(item.id),
-    5,
-  )
-
+  const total = parseResult.items.length
+  const results = new Array<AlbumDetail | null>(total).fill(null)
   const failed: Record<string, boolean> = {}
-  const filled: (AlbumDetail | null)[] = results.map((r, i) => {
-    if (r && r.id && r.title) return r
-    failed[parseResult.items[i].id] = true
-    return null
-  })
+  albumResults.value = [...results]
 
-  albumResults.value = filled
-  failedIds.value = failed
+  const concurrency = 5
+  let cursor = 0
+
+  async function worker() {
+    while (cursor < total) {
+      const i = cursor++
+      try {
+        const r = await JmcomicService.getAlbum(parseResult.items[i].id)
+        if (r && r.id && r.title) {
+          results[i] = r
+        } else {
+          failed[parseResult.items[i].id] = true
+        }
+      } catch {
+        failed[parseResult.items[i].id] = true
+      }
+      // 每次完成一个就更新响应式数组，触发渐进渲染
+      albumResults.value = [...results]
+      failedIds.value = { ...failed }
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(concurrency, total) }, () => worker())
+  await Promise.all(workers)
+
   loading.value = false
 
   await nextTick()

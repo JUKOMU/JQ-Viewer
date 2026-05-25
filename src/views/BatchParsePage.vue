@@ -333,7 +333,6 @@ async function doParse() {
 
 onMounted(async () => {
   const text = sessionStorage.getItem(SESSION_KEY)
-  sessionStorage.removeItem(SESSION_KEY)
 
   if (!text || !text.trim()) {
     errorMessage.value = '未接收到解析文本'

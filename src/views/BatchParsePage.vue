@@ -91,7 +91,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { IonContent, IonHeader, IonIcon, IonPage, IonToolbar } from '@ionic/vue'
 import { chevronDownOutline, chevronUpOutline, createOutline } from 'ionicons/icons'
@@ -122,6 +122,8 @@ const router = useRouter()
 const contentRef = ref<InstanceType<typeof IonContent> | null>(null)
 const resultContainerRef = ref<InstanceType<typeof SearchResultContainer> | null>(null)
 const sourceScrollRef = ref<HTMLElement | null>(null)
+const scrollElementRef = ref<HTMLElement | null>(null)
+const savedScrollTop = ref(0)
 
 const originalText = ref('')
 const sourceExpanded = ref(true)
@@ -331,7 +333,28 @@ async function doParse() {
   updateHighlightFromScroll()
 }
 
+async function resolveScrollElement() {
+  if (scrollElementRef.value) return scrollElementRef.value
+  const contentEl = contentRef.value?.$el as { getScrollElement?: () => Promise<HTMLElement> } | undefined
+  if (!contentEl?.getScrollElement) return null
+  scrollElementRef.value = await contentEl.getScrollElement()
+  return scrollElementRef.value
+}
+
+onDeactivated(() => {
+  savedScrollTop.value = scrollElementRef.value?.scrollTop ?? 0
+})
+
+onActivated(async () => {
+  await nextTick()
+  const scrollEl = scrollElementRef.value ?? await resolveScrollElement()
+  if (scrollEl && savedScrollTop.value > 0) {
+    scrollEl.scrollTop = savedScrollTop.value
+  }
+})
+
 onMounted(async () => {
+  void resolveScrollElement()
   const text = sessionStorage.getItem(SESSION_KEY)
 
   if (!text || !text.trim()) {

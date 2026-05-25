@@ -39,18 +39,18 @@ const routes: Array<RouteRecordRaw> = [
     path: '/download',
     name: 'DownloadPage',
     component: DownloadPage,
-    meta: { menu: true }
+    meta: { menu: true, keepAlive: true }
   },
   {
     path: '/setting',
     component: SettingPage,
-    meta: { menu: true }
+    meta: { menu: true, keepAlive: true }
   },
   {
     path: '/history',
     name: 'HistoryPage',
     component: () => import('@/views/HistoryPage.vue'),
-    meta: { menu: true }
+    meta: { menu: true, keepAlive: true }
   },
   {
     path: '/album/:id',
@@ -85,7 +85,7 @@ const routes: Array<RouteRecordRaw> = [
     path: '/batch-parse',
     name: 'BatchParsePage',
     component: () => import('@/views/BatchParsePage.vue'),
-    meta: { menu: true }
+    meta: { menu: true, keepAlive: true }
   },
 ]
 

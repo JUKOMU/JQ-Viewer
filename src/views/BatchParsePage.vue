@@ -37,6 +37,7 @@
                 enterkeyhint="done"
               />
               <button type="button" class="edit-btn" @click="replaceAll">全部替换</button>
+              <button type="button" class="edit-btn" @click="removeSpaces">去除空格</button>
               <button type="button" class="edit-btn apply" @click="applyEdit">应用修改</button>
             </div>
             <textarea
@@ -158,6 +159,13 @@ function replaceAll() {
   if (!findText.value) return
   const escaped = findText.value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   editText.value = editText.value.replace(new RegExp(escaped, 'g'), replaceText.value)
+}
+
+function removeSpaces() {
+  editText.value = editText.value
+    .split('\n')
+    .map(line => line.replace(/[ \t]+/g, ''))
+    .join('\n')
 }
 
 async function applyEdit() {

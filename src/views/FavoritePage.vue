@@ -173,7 +173,6 @@ import {isDraggingRight, isSnappingClosed, leftMenuOpen, rightDragProgress, righ
 import {alertController} from '@ionic/vue'
 
 import {cachedState} from '@/composables/favoritePageCache'
-import type {FavoritePageCacheState} from '@/composables/favoritePageCache'
 
 const NEXT_PAGE_THRESHOLD = 220
 
@@ -210,15 +209,13 @@ const offlineFolderEntries = computed<FolderEntry[]>(() => {
     const allEntry: FolderEntry = { id: OFFLINE_ALL_FOLDER_ID, name: '全部', count: totalCount }
     return [allEntry, ...folders]
   })
-
-const currentFolderName = computed(() => {
+computed(() => {
   if (folderSource.value === 'online') {
     return onlineFolderMap.value[currentFolderId.value] ?? ''
   }
   if (currentFolderId.value === 'default') return ''
   return offlineFolderEntries.value.find(f => f.id === currentFolderId.value)?.name ?? ''
-})
-
+});
 // --- 搜索结果 ---
 const resultMeta = ref<SearchResult | null>(null)
 const initialLoading = ref(false)

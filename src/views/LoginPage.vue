@@ -54,6 +54,7 @@ import {
   IonInput, IonPage, IonSpinner, IonTitle, IonToolbar,
 } from '@ionic/vue'
 import { useAuth } from '@/composables/useAuth'
+import { sanitizeError } from '@/services/JmcomicService'
 
 const router = useRouter()
 const { login } = useAuth()
@@ -80,7 +81,7 @@ async function doLogin() {
     await login(username.value.trim(), password.value)
     router.replace('/user')
   } catch (e: any) {
-    errorMsg.value = e?.message ?? '登录失败，请检查用户名和密码'
+    errorMsg.value = sanitizeError(e, '登录失败，请检查用户名和密码')
   } finally {
     loading.value = false
   }

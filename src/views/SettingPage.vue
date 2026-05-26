@@ -256,7 +256,7 @@ import { IonContent, IonHeader, IonPage, IonToggle, IonToolbar, alertController 
 import { App } from '@capacitor/app'
 import type { PluginListenerHandle } from '@capacitor/core'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
-import { JmcomicService, showToast } from '@/services/JmcomicService'
+import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
 import { initSettings, SettingsStore } from '@/services/SettingsService'
 import { ExportFormatService } from '@/services/ExportFormatService'
 import { useAuth } from '@/composables/useAuth'
@@ -475,7 +475,7 @@ async function onDownloadPublicChange(e: CustomEvent) {
       }
     } catch (e: any) {
       downloadPublic.value = false
-      await showToast(String(e?.message ?? '权限检查失败'), 'danger')
+      await showToast(sanitizeError(e, '权限检查失败'), 'danger')
       return
     }
   }
@@ -510,7 +510,7 @@ async function onDownloadPublicChange(e: CustomEvent) {
   } catch (e: any) {
     downloadPublic.value = !open
     SettingsStore.setDownloadPublic(!open)
-    await showToast(String(e?.message ?? '切换失败'), 'danger')
+    await showToast(sanitizeError(e, '切换失败'), 'danger')
   } finally {
     handle?.remove()
     showRelocationModal.value = false

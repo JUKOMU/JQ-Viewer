@@ -85,7 +85,7 @@ import {computed, onMounted, onUnmounted, reactive, ref, watch} from 'vue'
 import {useRoute, useRouter} from 'vue-router'
 import {IonContent, IonPage} from '@ionic/vue'
 import type {PluginListenerHandle} from '@capacitor/core'
-import {getImageUrl, JmcomicService, showToast} from '@/services/JmcomicService'
+import {getImageUrl, JmcomicService, sanitizeError, showToast} from '@/services/JmcomicService'
 import type {AlbumDetail, AlbumMeta, CommentItem, FavoriteResult, PhotoDetail, PreloadResult, SearchResultItem} from '@/services/JmcomicTypes'
 import { makeTaskId } from '@/services/JmcomicTypes'
 import {OfflineDownloadService} from '@/services/OfflineDownloadService'
@@ -553,7 +553,7 @@ const handleDownload = async () => {
     await showToast('已加入下载队列', 'success')
     await refreshDownloadStatuses()
   } catch (e: any) {
-    await showToast(e?.message || '下载提交失败', 'danger')
+    await showToast(sanitizeError(e, '下载提交失败'), 'danger')
   }
 }
 

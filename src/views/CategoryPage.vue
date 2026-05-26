@@ -66,7 +66,7 @@ import type {
   SearchResultContainerExposed,
   SearchResultDisplayItem,
 } from '@/components/search/SearchResultContainer.vue'
-import {JmcomicService} from '@/services/JmcomicService'
+import {JmcomicService, sanitizeError} from '@/services/JmcomicService'
 import type {SearchQuery, SearchResult, SearchResultItem} from '@/services/JmcomicTypes'
 
 const router = useRouter()
@@ -175,7 +175,7 @@ const resetWithPage = async (query: SearchQuery) => {
   } catch (error) {
     resultMeta.value = null
     pageCache.value = {}
-    errorMessage.value = error instanceof Error ? error.message : '搜索失败'
+    errorMessage.value = sanitizeError(error, '搜索失败')
   } finally {
     initialLoading.value = false
   }
@@ -220,7 +220,7 @@ const appendPage = async (page: number) => {
     }
     await maybeLoadNextAfterRender()
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : '加载下一页失败'
+    errorMessage.value = sanitizeError(error, '加载下一页失败')
   } finally {
     loadingNext.value = false
   }
@@ -269,7 +269,7 @@ const prependPage = async (page: number) => {
       contentScrollElement.scrollTop += nextRootTop - previousRootTop
     }
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : '加载上一页失败'
+    errorMessage.value = sanitizeError(error, '加载上一页失败')
   } finally {
     loadingPrevious.value = false
   }

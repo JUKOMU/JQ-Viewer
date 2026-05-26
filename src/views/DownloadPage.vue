@@ -187,7 +187,7 @@ import {
 import type {PluginListenerHandle} from '@capacitor/core'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import DownloadTaskCard from '@/components/download/DownloadTaskCard.vue'
-import {JmcomicService, showToast} from '@/services/JmcomicService'
+import {JmcomicService, sanitizeError, showToast} from '@/services/JmcomicService'
 import {OfflineDownloadService} from '@/services/OfflineDownloadService'
 import type {CompletedGroup, DownloadTask} from '@/services/JmcomicTypes'
 
@@ -440,7 +440,7 @@ const onCancel = async (task: DownloadTask) => {
     OfflineDownloadService.removeTask(task.taskId)
     void syncDownloadState()
   } catch (e: any) {
-    await showToast(e?.message || '取消失败', 'danger')
+    await showToast(sanitizeError(e, '取消失败'), 'danger')
   }
 }
 
@@ -448,7 +448,7 @@ const onPause = async (task: DownloadTask) => {
   try {
     await JmcomicService.pauseDownload(task.taskId)
   } catch (e: any) {
-    await showToast(e?.message || '暂停失败', 'danger')
+    await showToast(sanitizeError(e, '暂停失败'), 'danger')
   }
 }
 
@@ -456,7 +456,7 @@ const onResume = async (task: DownloadTask) => {
   try {
     await JmcomicService.resumeDownload(task.taskId)
   } catch (e: any) {
-    await showToast(e?.message || '继续失败', 'danger')
+    await showToast(sanitizeError(e, '继续失败'), 'danger')
   }
 }
 
@@ -482,7 +482,7 @@ const onRetry = async (task: DownloadTask) => {
     OfflineDownloadService.addTask(newTask)
     void syncDownloadState()
   } catch (e: any) {
-    await showToast(e?.message || '重试失败', 'danger')
+    await showToast(sanitizeError(e, '重试失败'), 'danger')
   }
 }
 
@@ -520,7 +520,7 @@ const onDelete = async (task: DownloadTask) => {
     OfflineDownloadService.removeTask(task.taskId)
     void syncDownloadState()
   } catch (e: any) {
-    await showToast(e?.message || '删除失败', 'danger')
+    await showToast(sanitizeError(e, '删除失败'), 'danger')
   }
 }
 
@@ -537,7 +537,7 @@ const onDeleteGroup = async (group: CompletedGroup) => {
     }
     void syncDownloadState()
   } catch (e: any) {
-    await showToast(e?.message || '删除失败', 'danger')
+    await showToast(sanitizeError(e, '删除失败'), 'danger')
   }
 }
 

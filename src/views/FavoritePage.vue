@@ -138,7 +138,7 @@ import type {
   SearchResultContainerExposed,
   SearchResultDisplayItem,
 } from '@/components/search/SearchResultContainer.vue'
-import {JmcomicService, showToast} from '@/services/JmcomicService'
+import {JmcomicService, sanitizeError, showToast} from '@/services/JmcomicService'
 import {OfflineDownloadService} from '@/services/OfflineDownloadService'
 import {OfflineFavoriteService} from '@/services/OfflineFavoriteService'
 import {ExportFormatService} from '@/services/ExportFormatService'
@@ -146,6 +146,9 @@ import {useAuth} from '@/composables/useAuth'
 import type {FavoriteQuery, FavoriteResult, SearchResult, SearchResultItem} from '@/services/JmcomicTypes'
 import {isDraggingRight, isSnappingClosed, leftMenuOpen, rightDragProgress, rightMenuOpen} from '@/composables/sideMenuState'
 import {alertController} from '@ionic/vue'
+
+import {cachedState} from '@/composables/favoritePageCache'
+import type {FavoritePageCacheState} from '@/composables/favoritePageCache'
 
 const NEXT_PAGE_THRESHOLD = 220
 
@@ -211,6 +214,52 @@ const searchBarRef = ref<{ focusInput: () => Promise<void> } | null>(null)
 const sideMenuRef = ref<InstanceType<typeof FavoriteSideMenu> | null>(null)
 
 const pageCache = ref<Record<number, SearchResultItem[]>>({})
+
+const saveToCache = () => {
+  if (folderSource.value === 'online' && resultMeta.value) {
+    cachedState.value = {
+      onlineFolderMap: { ...onlineFolderMap.value },
+      onlineFolderCounts: { ...onlineFolderCounts.value },
+      resultMeta: resultMeta.value,
+      pageCache: { ...pageCache.value },
+      displayMode: displayMode.value,
+    }
+  }
+}
+
+const restoreFromCache = (): boolean => {
+  const c = cachedState.value
+  if (!c) return false
+  onlineFolderMap.value = c.onlineFolderMap
+  onlineFolderCounts.value = c.onlineFolderCounts
+  resultMeta.value = c.resultMeta
+  pageCache.value = c.pageCache
+  displayMode.value = c.displayMode
+  return true
+}
+
+const silentRefresh = async () => {
+  try {
+    const pageResult = await fetchPage(1)
+    const cached = pageCache.value[1] ?? []
+    const sameContent =
+      cached.length === pageResult.content.length &&
+      cached.every((item, i) => item.id === pageResult.content[i]?.id)
+    const sameTotal = resultMeta.value?.totalItems === pageResult.totalItems
+    if (!sameContent) {
+      resultMeta.value = pageResult
+      pageCache.value = { 1: pageResult.content }
+    } else if (!sameTotal) {
+      resultMeta.value = pageResult
+    }
+    saveToCache()
+    if (!sameContent) {
+      pageAtTop.value = true
+    }
+  } catch {
+    // 静默失败，缓存数据保持显示
+  }
+}
 
 const currentFavoriteQuery = computed<FavoriteQuery>(() => ({
   folderId: folderSource.value === 'online' ? currentFolderId.value : '0',
@@ -311,13 +360,14 @@ const resetWithPage = async (page: number = 1) => {
     const pageResult = await fetchPage(page)
     resultMeta.value = pageResult
     pageCache.value = { [page]: pageResult.content }
+    saveToCache()
     await nextTick()
     void contentRef.value?.$el?.scrollToTop?.(0)
     pageAtTop.value = true
   } catch (error) {
     resultMeta.value = null
     pageCache.value = {}
-    errorMessage.value = error instanceof Error ? error.message : '加载失败'
+    errorMessage.value = sanitizeError(error, '加载失败')
   } finally {
     initialLoading.value = false
   }
@@ -363,9 +413,10 @@ const appendPage = async (page: number) => {
     const pageResult = await fetchPage(page)
     resultMeta.value = pageResult
     pageCache.value = { ...pageCache.value, [page]: pageResult.content }
+    saveToCache()
     await maybeLoadNextAfterRender()
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : '加载下一页失败'
+    errorMessage.value = sanitizeError(error, '加载下一页失败')
   } finally {
     loadingNext.value = false
   }
@@ -393,6 +444,7 @@ const prependPage = async (page: number) => {
     const pageResult = await fetchPage(page)
     resultMeta.value = pageResult
     pageCache.value = { [page]: pageResult.content, ...pageCache.value }
+    saveToCache()
     await nextTick()
     if (anchorEntryKey && previousAnchorTop !== null) {
       const nextAnchorTop = resultContainerRef.value?.getEntryElement(anchorEntryKey)?.getBoundingClientRect().top ?? null
@@ -406,7 +458,7 @@ const prependPage = async (page: number) => {
       contentScrollElement.scrollTop += nextRootTop - previousRootTop
     }
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : '加载上一页失败'
+    errorMessage.value = sanitizeError(error, '加载上一页失败')
   } finally {
     loadingPrevious.value = false
   }
@@ -959,6 +1011,12 @@ const initOnlineFolders = async () => {
     }
     return
   }
+
+  const hasCached = restoreFromCache()
+  if (!hasCached) {
+    initialLoading.value = true
+  }
+
   try {
     const result: FavoriteResult = await JmcomicService.favorites({ folderId: '0', page: 1 })
     if (result.folderList) {
@@ -967,13 +1025,21 @@ const initOnlineFolders = async () => {
     void loadOnlineFolderCounts()
     folderSource.value = 'online'
     currentFolderId.value = '0'
-    void resetWithPage(1)
-  } catch {
-    folderSource.value = 'offline'
-    const offlineFolders = OfflineFavoriteService.getFolders()
-    if (offlineFolders.length > 0) {
-      currentFolderId.value = offlineFolders[0].id
+    if (hasCached) {
+      void silentRefresh()
+    } else {
       void resetWithPage(1)
+    }
+  } catch {
+    if (!hasCached) {
+      folderSource.value = 'offline'
+      const offlineFolders = OfflineFavoriteService.getFolders()
+      if (offlineFolders.length > 0) {
+        currentFolderId.value = offlineFolders[0].id
+        void resetWithPage(1)
+      } else {
+        initialLoading.value = false
+      }
     }
   }
 }
@@ -1047,6 +1113,7 @@ watch(rightMenuOpen, (open) => {
 // 登录态从未登录变为已登录时自动切换到在线收藏夹
 watch(isLoggedIn, (loggedIn, wasLoggedIn) => {
   if (loggedIn && !wasLoggedIn) {
+    initialLoading.value = true
     folderSource.value = 'online'
     currentFolderId.value = '0'
     void resetWithPage(1)

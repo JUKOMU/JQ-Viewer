@@ -140,7 +140,7 @@ import {IonIcon, IonSearchbar} from '@ionic/vue'
 import {addOutline, chevronDownOutline, helpCircleOutline, searchOutline} from 'ionicons/icons'
 import {ORDER_BY_OPTIONS, SEARCH_MAIN_TAG_OPTIONS, TIME_OPTIONS} from '@/constants/searchOptions'
 import type {SearchQuery} from '@/services/JmcomicTypes'
-import { JmcomicService, showToast } from '@/services/JmcomicService'
+import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
 import { HistoryService } from '@/services/HistoryService'
 import type { SearchHistoryItem } from '@/services/HistoryService'
 import { SettingsStore } from '@/services/SettingsService'
@@ -213,11 +213,11 @@ async function handleUpload() {
       await showToast('识别完成', 'success')
       emitSearch()
     } else if (result.error) {
-      await showToast(result.error, 'danger')
+      await showToast(sanitizeError(result.error, '识别失败'), 'danger')
     }
     // 用户取消选择图片（text 为空且无 error）→ 不提示
   } catch (e: any) {
-    await showToast(e?.message || '识别失败', 'danger')
+    await showToast(sanitizeError(e, '识别失败'), 'danger')
   }
 }
 

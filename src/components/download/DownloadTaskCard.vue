@@ -64,7 +64,7 @@
 
       <!-- 完全失败 -->
       <div v-else-if="task.status === 'failed'" class="status-row">
-        <span class="tag failed">{{ task.error || '下载失败' }}</span>
+        <span class="tag failed">{{ sanitizeError(task.error, '下载失败') }}</span>
       </div>
     </div>
 
@@ -78,7 +78,7 @@
 import { computed, ref } from 'vue'
 import { IonIcon } from '@ionic/vue'
 import { ellipsisVertical } from 'ionicons/icons'
-import { getImageUrl } from '@/services/JmcomicService'
+import { getImageUrl, sanitizeError } from '@/services/JmcomicService'
 import type { DownloadTask } from '@/services/JmcomicTypes'
 
 const props = defineProps<{

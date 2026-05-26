@@ -58,7 +58,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
     private volatile ExecutorService imageExecutor;
     private volatile ExecutorService apiExecutor;
     private volatile ScheduledExecutorService apiTimeoutExecutor;
-    private static final int API_EXECUTOR_SIZE = 6;
+    private static final int API_EXECUTOR_SIZE = 12;
     private int imageConcurrency = 6;
     private int downloadConcurrency = 6;
 
@@ -351,7 +351,8 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
             result.put("allDeadFallback", allDeadFallback);
             call.resolve(result);
         } catch (Exception e) {
-            call.reject("获取域名状态失败: " + e.getMessage());
+            android.util.Log.e("JmcomicPlugin", "获取域名状态失败", e);
+            call.reject("获取域名状态失败，请稍后重试");
         }
     }
 
@@ -392,7 +393,8 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
             ret.put("results", results);
             call.resolve(ret);
         } catch (Exception e) {
-            call.reject("测速失败: " + e.getMessage());
+            android.util.Log.e("JmcomicPlugin", "测速失败", e);
+            call.reject("测速失败，请稍后重试");
         }
     }
 
@@ -513,7 +515,8 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
                     ret.put("error", "识别超时，请重试");
                 } else if (errorHolder[0] != null) {
                     ret.put("text", "");
-                    ret.put("error", "识别失败：" + errorHolder[0].getMessage());
+                    android.util.Log.e("JmcomicPlugin", "OCR识别失败", errorHolder[0]);
+                    ret.put("error", "识别失败，请重试");
                 } else if (resultHolder[0] != null) {
                     ret.put("text", resultHolder[0].getText());
                     ret.put("error", "");
@@ -525,7 +528,8 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
             } catch (Exception e) {
                 JSObject ret = new JSObject();
                 ret.put("text", "");
-                ret.put("error", e.getMessage());
+                android.util.Log.e("JmcomicPlugin", "OCR调用失败", e);
+                ret.put("error", "识别失败，请重试");
                 call.resolve(ret);
             } finally {
                 ocrExecutor.shutdown();

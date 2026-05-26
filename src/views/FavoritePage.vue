@@ -75,6 +75,28 @@
       />
     </IonContent>
 
+    <!-- 操作进度遮罩（阻塞式，不可关闭） -->
+    <div v-if="showProgressModal" class="progress-overlay">
+      <div class="progress-dialog">
+        <div class="progress-title">{{ progressTitle }}</div>
+
+        <div class="progress-bar">
+          <div class="progress-fill" :style="{ width: progressPercent + '%' }" />
+        </div>
+        <div class="progress-percent">{{ progressPercent }}%</div>
+
+        <div class="progress-count">
+          已完成：{{ progressCurrent }} / {{ progressTotal }} 个本子
+        </div>
+
+        <div v-if="progressCurrentItem" class="progress-file">
+          {{ progressCurrentItem }}
+        </div>
+
+        <div class="progress-warning">请勿关闭应用</div>
+      </div>
+    </div>
+
     <FavoriteSideMenu
         ref="sideMenuRef"
         v-model="rightMenuOpen"
@@ -88,6 +110,7 @@
         @add-folder="onAddFolder"
         @rename-folder="onRenameFolder"
         @delete-folder="onDeleteFolder"
+        @move-folder="onMoveFolder"
         @copy-folder="onCopyFolder"
         @export-folder="onExportFolder"
     />
@@ -185,9 +208,12 @@ const onlineFolderEntries = computed<FolderEntry[]>(() =>
     Object.entries(onlineFolderMap.value).map(([id, name]) => ({ id, name, count: 0 }))
 )
 
-const offlineFolderEntries = computed<FolderEntry[]>(() =>
-    OfflineFavoriteService.getFolders()
-)
+const offlineFolderEntries = computed<FolderEntry[]>(() => {
+    const folders = OfflineFavoriteService.getFolders()
+    const totalCount = OfflineFavoriteService.getTotalCount()
+    const allEntry: FolderEntry = { id: 'offline_all', name: '全部', count: totalCount }
+    return [allEntry, ...folders]
+  })
 
 const currentFolderName = computed(() => {
   if (folderSource.value === 'online') {
@@ -330,11 +356,30 @@ const fetchOnlineFavorites = async (page: number): Promise<SearchResult> => {
 }
 
 const fetchOfflineFavorites = (page: number): SearchResult => {
+  const pageSize = 20
+  if (currentFolderId.value === 'offline_all') {
+    let items = OfflineFavoriteService.getAllItemsMerged()
+    const kw = currentKeyword.value || undefined
+    if (kw) {
+      const lower = kw.toLowerCase()
+      items = items.filter(i => i.title.toLowerCase().includes(lower))
+    }
+    const totalItems = items.length
+    const totalPages = Math.max(1, Math.ceil(totalItems / pageSize))
+    const currentPage = Math.min(Math.max(1, page), totalPages)
+    const start = (currentPage - 1) * pageSize
+    return {
+      currentPage,
+      totalItems,
+      totalPages,
+      content: items.slice(start, start + pageSize),
+    }
+  }
   const result = OfflineFavoriteService.getItems(
       currentFolderId.value,
       currentKeyword.value || undefined,
       page,
-      20,
+      pageSize,
   )
   return {
     currentPage: result.currentPage,
@@ -548,38 +593,20 @@ const onSelectOfflineFolder = (folderId: string) => {
   void resetWithPage(1)
 }
 
-// --- 限流批量添加（在线复制 + 未来批量解析复用） ---
-
-async function batchAddToOnlineFolder(albumIds: string[], targetFolderId: string): Promise<number> {
-  const concurrency = 3
-  const delayMs = 200
-  const total = albumIds.length
-  let cursor = 0
-  let successCount = 0
-
-  async function worker() {
-    while (cursor < total) {
-      const i = cursor++
-      try {
-        await JmcomicService.toggleAlbumFavorite(albumIds[i], targetFolderId)
-        successCount++
-      } catch {
-        // 跳过失败项
-      }
-      if (delayMs > 0 && cursor < total) {
-        await new Promise(resolve => setTimeout(resolve, delayMs))
-      }
-    }
-  }
-
-  const workerCount = Math.min(concurrency, total)
-  const workers = Array.from({ length: workerCount }, () => worker())
-  await Promise.all(workers)
-  return successCount
-}
-
 // --- 收藏夹管理事件 ---
 const busyManagement = ref(false)
+
+// --- 操作进度弹窗 ---
+const showProgressModal = ref(false)
+const progressTitle = ref('')
+const progressCurrent = ref(0)
+const progressTotal = ref(0)
+const progressCurrentItem = ref('')
+
+const progressPercent = computed(() => {
+  if (progressTotal.value <= 0) return 0
+  return Math.round((progressCurrent.value / progressTotal.value) * 100)
+})
 
 // --- 卡片操作菜单 ---
 interface CardMenuState {
@@ -647,6 +674,10 @@ async function handleCardRead(item: SearchResultItem) {
 // --- 卡片操作：移动 ---
 async function handleCardMove(item: SearchResultItem) {
   closeCardMenu()
+  if (currentFolderId.value === 'offline_all') {
+    await showToast('全部视图不支持移动，请进入具体文件夹操作', 'medium')
+    return
+  }
   const isOnline = folderSource.value === 'online'
   let folders: { id: string; name: string }[]
 
@@ -732,6 +763,10 @@ async function handleCardDownload(item: SearchResultItem) {
 // --- 卡片操作：取消收藏 ---
 async function handleCardRemove(item: SearchResultItem) {
   closeCardMenu()
+  if (currentFolderId.value === 'offline_all') {
+    await showToast('全部视图不支持移除，请进入具体文件夹操作', 'medium')
+    return
+  }
   const isOnline = folderSource.value === 'online'
   const alert = await alertController.create({
     header: '取消收藏',
@@ -868,73 +903,305 @@ const onCopyFolder = async (payload: { folderId: string; folderName: string; isO
     await showToast('操作进行中，请稍候', 'medium')
     return
   }
-  const alert = await alertController.create({
-    header: '复制收藏夹',
-    message: '将创建新文件夹并复制全部本子，确定吗？',
-    inputs: [{ name: 'name', type: 'text', placeholder: '新收藏夹名称', value: `${payload.folderName} (副本)` }],
-    buttons: [
-      { text: '取消', role: 'cancel' },
-      {
-        text: '确定',
-        handler: async (data) => {
-          const name = data?.name?.trim()
-          if (!name) return
 
-          busyManagement.value = true
-
-          if (payload.isOnline) {
+  if (payload.isOnline) {
+    // 在线 → 离线：读取在线源夹全部项，写入本地离线文件夹
+    const alert = await alertController.create({
+      header: '复制到离线收藏夹',
+      message: '将在线收藏夹内容复制到本地离线文件夹，确定吗？',
+      inputs: [{ name: 'name', type: 'text', placeholder: '新文件夹名称', value: `${payload.folderName} (副本)` }],
+      buttons: [
+        { text: '取消', role: 'cancel' },
+        {
+          text: '确定',
+          handler: async (data) => {
+            const name = data?.name?.trim()
+            if (!name) return
+            busyManagement.value = true
+            showProgressModal.value = true
+            progressTitle.value = '正在复制到离线'
+            progressCurrent.value = 0
+            progressTotal.value = 0
+            progressCurrentItem.value = ''
             try {
-              // 1. 创建新文件夹
-              const createResult = await JmcomicService.manageFavoriteFolder('add', '0', name, '')
-              if (createResult.status !== 'ok') {
-                await showToast('创建文件夹失败', 'danger')
-                return
-              }
-              // 获取新文件夹 ID（从刷新后的 folderList 中匹配）
-              await refreshOnlineFolderList()
-              const newFolderId = Object.entries(onlineFolderMap.value)
-                .find(([, fName]) => fName === name)?.[0]
-              if (!newFolderId) {
-                await showToast('创建成功但无法定位新文件夹', 'danger')
-                return
-              }
-              // 2. 读取源夹全部 ID
-              const albumIds: string[] = []
+              const items: SearchResultItem[] = []
               let page = 1
               let totalPages = 1
               while (page <= totalPages) {
                 const r = await JmcomicService.favorites({ folderId: payload.folderId, page })
-                r.content.forEach(item => albumIds.push(item.id))
+                r.content.forEach(item => items.push(item))
+                if (progressTotal.value === 0) progressTotal.value = r.totalItems
+                totalPages = r.totalPages
+                page++
+                progressCurrent.value = items.length
+                if (items.length > 0) progressCurrentItem.value = items[items.length - 1].title
+              }
+              const newId = OfflineFavoriteService.createFolder(name)
+              if (items.length > 0) {
+                OfflineFavoriteService.addItems(newId, items)
+              }
+              await showToast(`已复制 ${items.length} 个本子到离线`, 'success')
+            } catch {
+              await showToast('复制失败', 'danger')
+            }
+            showProgressModal.value = false
+            busyManagement.value = false
+          },
+        },
+      ],
+    })
+    await alert.present()
+  } else {
+    // 离线子夹：离线副本 或 同步到在线
+    const alert = await alertController.create({
+      header: '复制收藏夹',
+      inputs: [
+        { name: 'name', type: 'text', placeholder: '新文件夹名称', value: `${payload.folderName} (副本)` },
+        {
+          name: 'target',
+          type: 'radio',
+          label: '离线副本',
+          value: 'offline',
+          checked: true,
+        },
+        {
+          name: 'target',
+          type: 'radio',
+          label: '同步到在线',
+          value: 'online',
+        },
+      ],
+      buttons: [
+        { text: '取消', role: 'cancel' },
+        {
+          text: '确定',
+          handler: async (data: string | Record<string, string>) => {
+            const form = typeof data === 'string' ? { target: data } : (data || {})
+            const name = (form.name ?? '').trim()
+            if (!name) return
+            busyManagement.value = true
+
+            if (form.target === 'online') {
+              // 离线 → 在线
+              try {
+                const items = OfflineFavoriteService.getAllItems(payload.folderId)
+                if (items.length === 0) {
+                  await showToast('源文件夹为空', 'medium')
+                  busyManagement.value = false
+                  return
+                }
+                // 1. 创建在线文件夹
+                const createResult = await JmcomicService.manageFavoriteFolder('add', '0', name, '')
+                if (createResult.status !== 'ok') {
+                  await showToast('创建在线文件夹失败', 'danger')
+                  busyManagement.value = false
+                  return
+                }
+                await refreshOnlineFolderList()
+                const newFolderId = Object.entries(onlineFolderMap.value)
+                  .find(([, fName]) => fName === name)?.[0]
+                if (!newFolderId) {
+                  await showToast('创建成功但无法定位新文件夹', 'danger')
+                  busyManagement.value = false
+                  return
+                }
+                // 2. 获取在线已收藏 ID 集合（分页遍历"全部"）
+                const favoritedIds = new Set<string>()
+                let fp = 1
+                let ftp = 1
+                while (fp <= ftp) {
+                  const r = await JmcomicService.favorites({ folderId: '0', page: fp })
+                  r.content.forEach(item => favoritedIds.add(item.id))
+                  ftp = r.totalPages
+                  fp++
+                }
+                // 3. 逐项处理（收集失败项）
+                showProgressModal.value = true
+                progressTitle.value = '正在同步到在线'
+                progressTotal.value = items.length
+                progressCurrent.value = 0
+                progressCurrentItem.value = ''
+                let ok = 0
+                const failed: string[] = []
+                for (const item of items) {
+                  try {
+                    if (!favoritedIds.has(item.id)) {
+                      await JmcomicService.toggleAlbumFavorite(item.id, '0')
+                    }
+                    await JmcomicService.manageFavoriteFolder('move', newFolderId, '', item.id)
+                    ok++
+                  } catch { failed.push(item.title || item.id) }
+                  progressCurrent.value = ok + failed.length
+                  progressCurrentItem.value = item.title || item.id
+                }
+                showProgressModal.value = false
+                if (failed.length > 0) {
+                  await showToast(`已同步 ${ok}/${items.length} 个，失败 ${failed.length} 项：${failed.slice(0, 3).join('、')}${failed.length > 3 ? ' 等' : ''}`, 'medium')
+                } else {
+                  await showToast(`已同步 ${ok} 个本子到在线`, 'success')
+                }
+              } catch {
+                showProgressModal.value = false
+                await showToast('同步失败', 'danger')
+              }
+            } else {
+              // 离线 → 离线
+              const newId = OfflineFavoriteService.copyFolder(payload.folderId, name)
+              await showToast('已复制', 'success')
+              if (folderSource.value === 'offline' && currentFolderId.value === payload.folderId) {
+                currentFolderId.value = newId
+                void resetWithPage(1)
+              }
+            }
+            busyManagement.value = false
+          },
+        },
+      ],
+    })
+    await alert.present()
+  }
+}
+
+const onMoveFolder = async (payload: { folderId: string; folderName: string; isOnline: boolean }) => {
+  if (busyManagement.value) {
+    await showToast('操作进行中，请稍候', 'medium')
+    return
+  }
+
+  if (payload.isOnline) {
+    // 在线 → 在线：选择目标文件夹 → 备份 → 逐项移动 → 验证
+    const targets = Object.entries(onlineFolderMap.value)
+      .filter(([id]) => id !== payload.folderId && id !== '0')
+      .map(([id, name]) => ({ id, name }))
+
+    if (targets.length === 0) {
+      await showToast('没有其他在线收藏夹', 'medium')
+      return
+    }
+
+    const alert = await alertController.create({
+      header: '移动到',
+      message: `将「${payload.folderName}」的全部本子移动到：`,
+      inputs: targets.map(t => ({
+        type: 'radio' as const,
+        label: t.name,
+        value: t.id,
+      })),
+      buttons: [
+        { text: '取消', role: 'cancel' },
+        {
+          text: '确定',
+          handler: async (targetId: string) => {
+            if (!targetId) return
+            busyManagement.value = true
+
+            try {
+              // 1. 读取源夹全部项并本地备份
+              const fullItems: SearchResultItem[] = []
+              let page = 1
+              let totalPages = 1
+              while (page <= totalPages) {
+                const r = await JmcomicService.favorites({ folderId: payload.folderId, page })
+                r.content.forEach(item => fullItems.push(item))
                 totalPages = r.totalPages
                 page++
               }
-              // 3. 限流批量添加
-              if (albumIds.length > 0) {
-                const count = await batchAddToOnlineFolder(albumIds, newFolderId)
-                await showToast(`已复制 ${count}/${albumIds.length} 个本子`, 'success')
+
+              const backupKey = `move_${payload.folderId}_${Date.now()}`
+              OfflineFavoriteService.saveBackup(backupKey, fullItems)
+
+              // 2. 并发移动（concurrency=3, delay=200ms）
+              showProgressModal.value = true
+              progressTitle.value = '正在移动'
+              progressTotal.value = fullItems.length
+              progressCurrent.value = 0
+              progressCurrentItem.value = ''
+
+              const concurrency = 3
+              const delayMs = 200
+              let cursor = 0
+              let moved = 0
+
+              async function worker() {
+                while (cursor < fullItems.length) {
+                  const i = cursor++
+                  try {
+                    await JmcomicService.manageFavoriteFolder('move', targetId, '', fullItems[i].id)
+                    moved++
+                    progressCurrent.value = moved
+                    progressCurrentItem.value = fullItems[i].title || fullItems[i].id
+                  } catch { /* skip */
+                    progressCurrent.value++
+                  }
+                  if (delayMs > 0 && cursor < fullItems.length) {
+                    await new Promise(r => setTimeout(r, delayMs))
+                  }
+                }
+              }
+
+              const workerCount = Math.min(concurrency, fullItems.length)
+              await Promise.all(Array.from({ length: workerCount }, () => worker()))
+              showProgressModal.value = false
+
+              // 3. 验证
+              if (moved === fullItems.length) {
+                OfflineFavoriteService.deleteBackup(backupKey)
+                await refreshOnlineFolderList()
+                await showToast(`已移动 ${moved} 个本子`, 'success')
+                void resetWithPage(1)
               } else {
-                await showToast('源文件夹为空', 'medium')
+                await showToast(`已移动 ${moved}/${fullItems.length} 个本子（备份已保留）`, 'medium')
+                await refreshOnlineFolderList()
+                void resetWithPage(1)
               }
             } catch (e) {
-              await showToast('复制失败', 'danger')
+              showProgressModal.value = false
+              await showToast('移动失败，可通过备份恢复', 'danger')
             }
-          } else {
-            // 离线复制
-            const newId = OfflineFavoriteService.copyFolder(payload.folderId, name)
-            await showToast('已复制', 'success')
-            // 如果当前选中的是源文件夹，保持选中
+            busyManagement.value = false
+          },
+        },
+      ],
+    })
+    await alert.present()
+  } else {
+    // 离线 → 离线：选择目标文件夹 → 移动全部项
+    const targets = OfflineFavoriteService.getFolders()
+      .filter(f => f.id !== payload.folderId && f.id !== 'offline_all')
+
+    if (targets.length === 0) {
+      await showToast('没有其他离线收藏夹', 'medium')
+      return
+    }
+
+    const alert = await alertController.create({
+      header: '移动到',
+      message: `将「${payload.folderName}」的全部本子移动到：`,
+      inputs: targets.map(t => ({
+        type: 'radio' as const,
+        label: t.name,
+        value: t.id,
+      })),
+      buttons: [
+        { text: '取消', role: 'cancel' },
+        {
+          text: '确定',
+          handler: async (targetId: string) => {
+            if (!targetId) return
+            busyManagement.value = true
+            OfflineFavoriteService.moveAllItems(payload.folderId, targetId)
+            await showToast('已移动', 'success')
             if (folderSource.value === 'offline' && currentFolderId.value === payload.folderId) {
-              currentFolderId.value = newId
+              currentFolderId.value = targetId
               void resetWithPage(1)
             }
-          }
-
-          busyManagement.value = false
+            busyManagement.value = false
+          },
         },
-      },
-    ],
-  })
-  await alert.present()
+      ],
+    })
+    await alert.present()
+  }
 }
 
 const onExportFolder = async (payload: { folderId: string; folderName: string; isOnline: boolean }) => {
@@ -1008,6 +1275,8 @@ const initOnlineFolders = async () => {
     if (offlineFolders.length > 0) {
       currentFolderId.value = offlineFolders[0].id
       void resetWithPage(1)
+    } else {
+      currentFolderId.value = 'offline_all'
     }
     return
   }
@@ -1038,6 +1307,7 @@ const initOnlineFolders = async () => {
         currentFolderId.value = offlineFolders[0].id
         void resetWithPage(1)
       } else {
+        currentFolderId.value = 'offline_all'
         initialLoading.value = false
       }
     }
@@ -1284,5 +1554,74 @@ onActivated(async () => {
 .card-menu-icon {
   font-size: 16px;
   flex-shrink: 0;
+}
+
+/* --- 操作进度弹窗 --- */
+.progress-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.progress-dialog {
+  background: #fff;
+  border-radius: 16px;
+  padding: 32px 28px 24px;
+  width: 300px;
+  text-align: center;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18);
+}
+
+.progress-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #4c2a18;
+  margin-bottom: 20px;
+}
+
+.progress-bar {
+  height: 8px;
+  background: #f0e4db;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(135deg, #f0a060, #e8843c);
+  border-radius: 4px;
+  transition: width 0.25s ease;
+}
+
+.progress-percent {
+  font-size: 28px;
+  font-weight: 700;
+  color: #e8843c;
+  margin: 12px 0 8px;
+}
+
+.progress-count {
+  font-size: 13px;
+  color: #8c6b5a;
+  margin-bottom: 4px;
+}
+
+.progress-file {
+  font-size: 11px;
+  color: #c4a494;
+  margin-bottom: 16px;
+  word-break: break-all;
+  max-height: 32px;
+  overflow: hidden;
+}
+
+.progress-warning {
+  font-size: 12px;
+  color: #d4a08a;
+  margin-top: 8px;
 }
 </style>

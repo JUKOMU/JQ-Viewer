@@ -46,9 +46,11 @@
               <FavoriteFolderContextMenu
                   :visible="openMenuFolderId === folder.id"
                   :is-default-folder="folder.id === '0'"
+                  :is-online="true"
                   @rename="onContextMenuRename(folder.id, folder.name, true)"
-                  @delete="onContextMenuDelete(folder.id, folder.name, true)"
+                  @move="onContextMenuMove(folder.id, folder.name, true)"
                   @copy="onContextMenuCopy(folder.id, folder.name, true)"
+                  @delete="onContextMenuDelete(folder.id, folder.name, true)"
                   @export="onContextMenuExport(folder.id, folder.name, true)"
               />
             </div>
@@ -96,10 +98,12 @@
             </button>
             <FavoriteFolderContextMenu
                 :visible="openMenuFolderId === folder.id"
-                :is-default-folder="false"
+                :is-default-folder="folder.id === 'offline_all'"
+                :is-online="false"
                 @rename="onContextMenuRename(folder.id, folder.name, false)"
-                @delete="onContextMenuDelete(folder.id, folder.name, false)"
+                @move="onContextMenuMove(folder.id, folder.name, false)"
                 @copy="onContextMenuCopy(folder.id, folder.name, false)"
+                @delete="onContextMenuDelete(folder.id, folder.name, false)"
                 @export="onContextMenuExport(folder.id, folder.name, false)"
             />
           </div>
@@ -138,6 +142,7 @@ const emit = defineEmits<{
   'add-folder': [source: 'online' | 'offline']
   'rename-folder': [payload: { folderId: string; folderName: string; isOnline: boolean }]
   'delete-folder': [payload: { folderId: string; folderName: string; isOnline: boolean }]
+  'move-folder': [payload: { folderId: string; folderName: string; isOnline: boolean }]
   'copy-folder': [payload: { folderId: string; folderName: string; isOnline: boolean }]
   'export-folder': [payload: { folderId: string; folderName: string; isOnline: boolean }]
 }>()
@@ -161,6 +166,11 @@ const onContextMenuRename = (folderId: string, folderName: string, isOnline: boo
 const onContextMenuDelete = (folderId: string, folderName: string, isOnline: boolean) => {
   closeContextMenu()
   emit('delete-folder', { folderId, folderName, isOnline })
+}
+
+const onContextMenuMove = (folderId: string, folderName: string, isOnline: boolean) => {
+  closeContextMenu()
+  emit('move-folder', { folderId, folderName, isOnline })
 }
 
 const onContextMenuCopy = (folderId: string, folderName: string, isOnline: boolean) => {

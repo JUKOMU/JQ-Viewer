@@ -17,19 +17,29 @@
     <button
       v-if="!isDefaultFolder"
       type="button"
-      class="menu-item menu-item--danger"
-      @click.stop="$emit('delete')"
+      class="menu-item"
+      @click.stop="$emit('move')"
     >
-      <IonIcon :icon="trashOutline" class="menu-icon"/>
-      <span>删除</span>
+      <IonIcon :icon="swapHorizontalOutline" class="menu-icon"/>
+      <span>移动</span>
     </button>
     <button
+      v-if="!isDefaultFolder"
       type="button"
       class="menu-item"
       @click.stop="$emit('copy')"
     >
       <IonIcon :icon="copyOutline" class="menu-icon"/>
       <span>复制</span>
+    </button>
+    <button
+      v-if="!isDefaultFolder"
+      type="button"
+      class="menu-item menu-item--danger"
+      @click.stop="$emit('delete')"
+    >
+      <IonIcon :icon="trashOutline" class="menu-icon"/>
+      <span>删除</span>
     </button>
     <button
       type="button"
@@ -44,17 +54,19 @@
 
 <script setup lang="ts">
 import { IonIcon } from '@ionic/vue'
-import { copyOutline, downloadOutline, pencilOutline, trashOutline } from 'ionicons/icons'
+import { copyOutline, downloadOutline, pencilOutline, swapHorizontalOutline, trashOutline } from 'ionicons/icons'
 
 defineProps<{
   visible: boolean
   isDefaultFolder: boolean
+  isOnline: boolean
 }>()
 
 defineEmits<{
   rename: []
-  delete: []
+  move: []
   copy: []
+  delete: []
   export: []
 }>()
 </script>

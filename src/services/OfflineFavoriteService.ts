@@ -113,4 +113,92 @@ export const OfflineFavoriteService = {
     writeFolders(folders)
     return id
   },
+
+  /** 获取全部离线项总数（跨所有文件夹去重，直接计数不构建数组） */
+  getTotalCount(): number {
+    const folders = readFolders()
+    const seen = new Set<string>()
+    for (const f of folders) {
+      for (const item of f.items) {
+        seen.add(item.id)
+      }
+    }
+    return seen.size
+  },
+
+  /** 获取全部离线项（跨所有文件夹，按 id 去重） */
+  getAllItemsMerged(): SearchResultItem[] {
+    const folders = readFolders()
+    const seen = new Set<string>()
+    const merged: SearchResultItem[] = []
+    for (const f of folders) {
+      for (const item of f.items) {
+        if (!seen.has(item.id)) {
+          seen.add(item.id)
+          merged.push(item)
+        }
+      }
+    }
+    return merged
+  },
+
+  /** 移动全部项从源夹到目标夹 */
+  moveAllItems(sourceId: string, targetId: string): void {
+    const folders = readFolders()
+    const source = folders.find(f => f.id === sourceId)
+    const target = folders.find(f => f.id === targetId)
+    if (!source || !target) return
+    for (const item of source.items) {
+      if (!target.items.some(i => i.id === item.id)) {
+        target.items.push(item)
+      }
+    }
+    source.items = []
+    writeFolders(folders)
+  },
+
+  /** 批量添加项到文件夹 */
+  addItems(folderId: string, items: SearchResultItem[]): void {
+    const folders = readFolders()
+    const folder = folders.find(f => f.id === folderId)
+    if (!folder) return
+    for (const item of items) {
+      if (!folder.items.some(i => i.id === item.id)) {
+        folder.items.push(item)
+      }
+    }
+    writeFolders(folders)
+  },
+
+  // --- 容灾备份 ---
+
+  saveBackup(key: string, items: SearchResultItem[]): void {
+    localStorage.setItem(`jq-fav-backup-${key}`, JSON.stringify(items))
+  },
+
+  loadBackup(key: string): SearchResultItem[] | null {
+    try {
+      const raw = localStorage.getItem(`jq-fav-backup-${key}`)
+      return raw ? JSON.parse(raw) : null
+    } catch {
+      return null
+    }
+  },
+
+  deleteBackup(key: string): void {
+    localStorage.removeItem(`jq-fav-backup-${key}`)
+  },
+
+  /** 列出所有备份 key */
+  listBackupKeys(): string[] {
+    const keys: string[] = []
+    const prefix = 'jq-fav-backup-'
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i)
+      if (k && k.startsWith(prefix)) {
+        keys.push(k.slice(prefix.length))
+      }
+    }
+    return keys
+  },
 }

@@ -446,7 +446,10 @@ export function sanitizeError(error: unknown, fallback: string): string {
 /** 显示简短 toast 提示 */
 export async function showToast(message: string, color: 'success' | 'danger' | 'medium' = 'medium') {
     const toast = await toastController.create({
-        message, duration: 1500, position: 'middle', color,
+        message,
+        duration: 1500,
+        position: 'middle',
+        cssClass: `warm-toast toast-${color}`,
     })
     await toast.present()
 }

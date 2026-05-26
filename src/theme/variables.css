@@ -1,2 +1,103 @@
-/* For information on how to create your own theme, please refer to:
-http://ionicframework.com/docs/theming/ */
+/* Ionic 主题覆盖 — 暖色调设计语言 */
+
+:root {
+  /* 主色 → 项目橙色（替代 Ionic 蓝） */
+  --ion-color-primary: #e8843c;
+  --ion-color-primary-rgb: 232, 132, 60;
+  --ion-color-primary-contrast: #ffffff;
+  --ion-color-primary-contrast-rgb: 255, 255, 255;
+  --ion-color-primary-shade: #cc7435;
+  --ion-color-primary-tint: #eb904f;
+
+  /* 次要色 */
+  --ion-color-secondary: #f0a060;
+  --ion-color-secondary-rgb: 240, 160, 96;
+  --ion-color-secondary-contrast: #ffffff;
+  --ion-color-secondary-contrast-rgb: 255, 255, 255;
+  --ion-color-secondary-shade: #d38d55;
+  --ion-color-secondary-tint: #f2aa70;
+
+  /* 中灰色 → 暖棕色 */
+  --ion-color-medium: #8c6b5a;
+  --ion-color-medium-rgb: 140, 107, 90;
+  --ion-color-medium-contrast: #ffffff;
+  --ion-color-medium-contrast-rgb: 255, 255, 255;
+  --ion-color-medium-shade: #7b5e4f;
+  --ion-color-medium-tint: #987a6b;
+
+  /* 危险色 → 项目红 */
+  --ion-color-danger: #d4533e;
+  --ion-color-danger-rgb: 212, 83, 62;
+  --ion-color-danger-contrast: #ffffff;
+  --ion-color-danger-contrast-rgb: 255, 255, 255;
+  --ion-color-danger-shade: #bb4937;
+  --ion-color-danger-tint: #d86451;
+
+  /* 成功色 */
+  --ion-color-success: #5cb85c;
+  --ion-color-success-rgb: 92, 184, 92;
+  --ion-color-success-contrast: #ffffff;
+  --ion-color-success-contrast-rgb: 255, 255, 255;
+  --ion-color-success-shade: #51a251;
+  --ion-color-success-tint: #6cbf6c;
+
+  /* 文本颜色 */
+  --ion-text-color: #3a261d;
+  --ion-text-color-rgb: 58, 38, 29;
+
+  /* 页面背景 */
+  --ion-background-color: #fffaf6;
+  --ion-background-color-rgb: 255, 250, 246;
+
+  /* 全局圆角 */
+  --ion-border-radius: 14px;
+}
+
+/* Alert 弹窗 — 匹配进度弹窗风格 */
+ion-alert {
+  --background: #fffbf8;
+  --border-radius: 16px;
+  --backdrop-opacity: 0.55;
+  --max-width: 320px;
+}
+
+ion-alert .alert-title {
+  color: #4c2a18;
+  font-weight: 600;
+}
+
+/* Toast 提示 — 匹配上下文菜单风格 */
+ion-toast.warm-toast {
+  --background: #fffbf8;
+  --color: #3a261d;
+  --border-radius: 14px;
+  --box-shadow: 0 8px 22px rgb(76 42 24 / 0.14);
+  --border-style: solid;
+  --border-width: 1px;
+  --border-color: rgb(245 210 188 / 0.5);
+}
+
+/* Toast 颜色变体 */
+ion-toast.toast-danger {
+  --color: #d4533e;
+}
+
+ion-toast.toast-success {
+  --color: #5cb85c;
+}
+
+/* Popover 弹出菜单 — 匹配上下文菜单风格 */
+ion-popover {
+  --background: #fffbf8;
+  --border-radius: 14px;
+  --backdrop-opacity: 0.28;
+  --box-shadow: 0 8px 22px rgb(76 42 24 / 0.14);
+  --width: auto;
+  --max-width: 280px;
+}
+
+ion-popover .popover-content {
+  --background: #fffbf8;
+}
+
+/* Refresher 下拉刷新 — 由 --ion-color-primary 自动变为橙色，无需额外设置 */

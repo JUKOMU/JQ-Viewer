@@ -123,6 +123,13 @@ export const OfflineFavoriteService = {
     await refreshCache()
   },
 
+  /** 将全部离线项合并到目标文件夹（去重），其余文件夹清空 */
+  async mergeAllToFolder(targetId: string): Promise<boolean> {
+    const result = await JmcomicService.mergeOfflineAllToFolder(targetId)
+    if (result.success) await refreshCache()
+    return result.success
+  },
+
   // --- 容灾备份 ---
 
   async saveBackup(key: string, items: SearchResultItem[]): Promise<void> {

@@ -105,6 +105,7 @@ interface JmcomicPlugin {
     moveAllOfflineFavorites(options: { sourceId: string; targetId: string }): Promise<{ success: boolean }>
     copyOfflineFolder(options: { sourceId: string; name: string }): Promise<{ folderId: string }>
     addOfflineFavoritesBatch(options: { folderId: string; items: SearchResultItem[] }): Promise<{ count: number }>
+    mergeOfflineAllToFolder(options: { targetId: string }): Promise<{ success: boolean }>
     saveOfflineBackup(options: { key: string; items: SearchResultItem[] }): Promise<{ success: boolean }>
     loadOfflineBackup(options: { key: string }): Promise<{ items: SearchResultItem[] | null }>
     deleteOfflineBackup(options: { key: string }): Promise<{ success: boolean }>
@@ -407,6 +408,9 @@ export const JmcomicService = {
     },
     addOfflineFavoritesBatch(folderId: string, items: SearchResultItem[]) {
         return native.addOfflineFavoritesBatch({ folderId, items })
+    },
+    mergeOfflineAllToFolder(targetId: string) {
+        return native.mergeOfflineAllToFolder({ targetId })
     },
 
     saveOfflineBackup(key: string, items: SearchResultItem[]) {

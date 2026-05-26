@@ -983,7 +983,9 @@ const onCopyFolder = async (payload: { folderId: string; folderName: string; isO
             if (form.target === 'online') {
               // 离线 → 在线
               try {
-                const items = await OfflineFavoriteService.getAllItems(payload.folderId)
+                const items = payload.folderId === 'offline_all'
+                  ? await OfflineFavoriteService.getAllItemsMerged()
+                  : await OfflineFavoriteService.getAllItems(payload.folderId)
                 if (items.length === 0) {
                   await showToast('源文件夹为空', 'medium')
                   busyManagement.value = false
@@ -1045,7 +1047,16 @@ const onCopyFolder = async (payload: { folderId: string; folderName: string; isO
               }
             } else {
               // 离线 → 离线
-              const newId = await OfflineFavoriteService.copyFolder(payload.folderId, name)
+              let newId: string
+              if (payload.folderId === 'offline_all') {
+                const items = await OfflineFavoriteService.getAllItemsMerged()
+                newId = await OfflineFavoriteService.createFolder(name)
+                if (items.length > 0) {
+                  await OfflineFavoriteService.addItems(newId, items)
+                }
+              } else {
+                newId = await OfflineFavoriteService.copyFolder(payload.folderId, name)
+              }
               await showToast('已复制', 'success')
               if (folderSource.value === 'offline' && currentFolderId.value === payload.folderId) {
                 currentFolderId.value = newId
@@ -1188,7 +1199,11 @@ const onMoveFolder = async (payload: { folderId: string; folderName: string; isO
           handler: async (targetId: string) => {
             if (!targetId) return
             busyManagement.value = true
-            await OfflineFavoriteService.moveAllItems(payload.folderId, targetId)
+            if (payload.folderId === 'offline_all') {
+              await OfflineFavoriteService.mergeAllToFolder(targetId)
+            } else {
+              await OfflineFavoriteService.moveAllItems(payload.folderId, targetId)
+            }
             await showToast('已移动', 'success')
             if (folderSource.value === 'offline' && currentFolderId.value === payload.folderId) {
               currentFolderId.value = targetId
@@ -1223,6 +1238,8 @@ const onExportFolder = async (payload: { folderId: string; folderName: string; i
         totalPages = r.totalPages
         page++
       }
+    } else if (payload.folderId === 'offline_all') {
+      items = await OfflineFavoriteService.getAllItemsMerged()
     } else {
       items = await OfflineFavoriteService.getAllItems(payload.folderId)
     }

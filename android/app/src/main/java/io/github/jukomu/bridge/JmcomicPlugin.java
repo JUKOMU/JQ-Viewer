@@ -1312,6 +1312,19 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         }
     }
 
+    @PluginMethod
+    public void mergeOfflineAllToFolder(PluginCall call) {
+        try {
+            boolean ok = FavoriteStore.getInstance(getContext()).mergeAllToFolder(
+                    call.getString("targetId", ""));
+            JSObject ret = new JSObject();
+            ret.put("success", ok);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
     // ========== 离线收藏夹容灾备份 ==========
 
     @PluginMethod

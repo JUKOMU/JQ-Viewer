@@ -432,6 +432,49 @@ public class FavoriteStore extends SQLiteOpenHelper {
         return count;
     }
 
+    // ==================== 全部夹操作 ====================
+
+    /** 将全部离线项合并到目标文件夹（去重），其余文件夹清空，事务保证原子性 */
+    public boolean mergeAllToFolder(String targetId) {
+        SQLiteDatabase db = getWritableDatabase();
+        Cursor c = null;
+        db.beginTransaction();
+        try {
+            // 验证目标文件夹存在
+            c = db.query(TABLE_FOLDERS, new String[]{COL_FOLDER_ID},
+                    COL_FOLDER_ID + "=?", new String[]{targetId},
+                    null, null, null);
+            if (c.getCount() == 0) return false;
+            c.close();
+            c = null;
+
+            // 跨夹去重插入到目标夹
+            db.execSQL("INSERT OR IGNORE INTO " + TABLE_FAVORITES
+                    + " (" + COL_FOLDER_ID + ", " + COL_ALBUM_ID + ", "
+                    + COL_TITLE + ", " + COL_COVER_URL + ", "
+                    + COL_AUTHORS + ", " + COL_TAGS + ")"
+                    + " SELECT ?, " + COL_ALBUM_ID + ", "
+                    + COL_TITLE + ", " + COL_COVER_URL + ", "
+                    + COL_AUTHORS + ", " + COL_TAGS
+                    + " FROM " + TABLE_FAVORITES
+                    + " GROUP BY " + COL_ALBUM_ID,
+                    new Object[]{targetId});
+
+            // 删除非目标夹的全部项
+            db.delete(TABLE_FAVORITES,
+                    COL_FOLDER_ID + "!=?", new String[]{targetId});
+
+            db.setTransactionSuccessful();
+            return true;
+        } catch (Exception e) {
+            android.util.Log.w("FavoriteStore", "mergeAllToFolder failed", e);
+            return false;
+        } finally {
+            if (c != null) c.close();
+            db.endTransaction();
+        }
+    }
+
     // ==================== 容灾备份 ====================
 
     public void saveBackup(String key, JSONArray items) {

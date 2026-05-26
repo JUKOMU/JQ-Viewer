@@ -15,7 +15,6 @@
       <span>重命名</span>
     </button>
     <button
-      v-if="!isDefaultFolder"
       type="button"
       class="menu-item"
       @click.stop="$emit('move')"
@@ -24,7 +23,6 @@
       <span>移动</span>
     </button>
     <button
-      v-if="!isDefaultFolder"
       type="button"
       class="menu-item"
       @click.stop="$emit('copy')"

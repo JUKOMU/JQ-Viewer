@@ -218,6 +218,21 @@ export interface FavoriteFolderManageResult {
     msg: string
 }
 
+// --- 离线收藏夹 ---
+
+export interface OfflineFolderInfo {
+    folderId: string
+    name: string
+    count: number
+}
+
+export interface OfflineFavoritesResult {
+    totalItems: number
+    totalPages: number
+    currentPage: number
+    content: SearchResultItem[]
+}
+
 // --- 下载类型 ---
 
 /** 构建下载任务 ID */

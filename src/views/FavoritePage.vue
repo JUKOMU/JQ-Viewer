@@ -163,7 +163,7 @@ import type {
 } from '@/components/search/SearchResultContainer.vue'
 import {JmcomicService, sanitizeError, showToast} from '@/services/JmcomicService'
 import {OfflineDownloadService} from '@/services/OfflineDownloadService'
-import {OfflineFavoriteService} from '@/services/OfflineFavoriteService'
+import {OfflineFavoriteService, offlineFolderCache, offlineTotalCount} from '@/services/OfflineFavoriteService'
 import {ExportFormatService} from '@/services/ExportFormatService'
 import {useAuth} from '@/composables/useAuth'
 import type {FavoriteQuery, FavoriteResult, SearchResult, SearchResultItem} from '@/services/JmcomicTypes'
@@ -209,8 +209,8 @@ const onlineFolderEntries = computed<FolderEntry[]>(() =>
 )
 
 const offlineFolderEntries = computed<FolderEntry[]>(() => {
-    const folders = OfflineFavoriteService.getFolders()
-    const totalCount = OfflineFavoriteService.getTotalCount()
+    const folders = offlineFolderCache.value
+    const totalCount = offlineTotalCount.value
     const allEntry: FolderEntry = { id: 'offline_all', name: '全部', count: totalCount }
     return [allEntry, ...folders]
   })
@@ -355,16 +355,15 @@ const fetchOnlineFavorites = async (page: number): Promise<SearchResult> => {
   }
 }
 
-const fetchOfflineFavorites = (page: number): SearchResult => {
+const fetchOfflineFavorites = async (page: number): Promise<SearchResult> => {
   const pageSize = 20
   if (currentFolderId.value === 'offline_all') {
-    let items = OfflineFavoriteService.getAllItemsMerged()
+    const items = await OfflineFavoriteService.getAllItemsMerged()
     const kw = currentKeyword.value || undefined
-    if (kw) {
-      const lower = kw.toLowerCase()
-      items = items.filter(i => i.title.toLowerCase().includes(lower))
-    }
-    const totalItems = items.length
+    const filtered = kw
+      ? items.filter(i => i.title.toLowerCase().includes(kw.toLowerCase()))
+      : items
+    const totalItems = filtered.length
     const totalPages = Math.max(1, Math.ceil(totalItems / pageSize))
     const currentPage = Math.min(Math.max(1, page), totalPages)
     const start = (currentPage - 1) * pageSize
@@ -372,10 +371,10 @@ const fetchOfflineFavorites = (page: number): SearchResult => {
       currentPage,
       totalItems,
       totalPages,
-      content: items.slice(start, start + pageSize),
+      content: filtered.slice(start, start + pageSize),
     }
   }
-  const result = OfflineFavoriteService.getItems(
+  const result = await OfflineFavoriteService.getItems(
       currentFolderId.value,
       currentKeyword.value || undefined,
       page,
@@ -436,7 +435,7 @@ const handleRefresh = async (event: CustomEvent) => {
       resultMeta.value = result
       pageCache.value = { 1: result.content }
     } else {
-      const result = fetchOfflineFavorites(1)
+      const result = await fetchOfflineFavorites(1)
       resultMeta.value = result
       pageCache.value = { 1: result.content }
     }
@@ -718,8 +717,8 @@ async function handleCardMove(item: SearchResultItem) {
               await showToast('移动失败', 'danger')
             }
           } else {
-            OfflineFavoriteService.removeItem(currentFolderId.value, item.id)
-            OfflineFavoriteService.addItem(data, item)
+            await OfflineFavoriteService.removeItem(currentFolderId.value, item.id)
+            await OfflineFavoriteService.addItem(data, item)
             await showToast('已移动', 'success')
             void resetWithPage(1)
           }
@@ -787,7 +786,7 @@ async function handleCardRemove(item: SearchResultItem) {
               await showToast('操作失败', 'danger')
             }
           } else {
-            OfflineFavoriteService.removeItem(currentFolderId.value, item.id)
+            await OfflineFavoriteService.removeItem(currentFolderId.value, item.id)
             await showToast('已取消收藏', 'success')
             void resetWithPage(1)
           }
@@ -818,7 +817,7 @@ const onAddFolder = async (source: 'online' | 'offline') => {
               }
             } catch { /* ignore */ }
           } else {
-            OfflineFavoriteService.createFolder(name)
+            await OfflineFavoriteService.createFolder(name)
             await showToast('收藏夹已创建', 'success')
           }
         },
@@ -848,7 +847,7 @@ const onRenameFolder = async (payload: { folderId: string; folderName: string; i
               }
             } catch { /* ignore */ }
           } else {
-            OfflineFavoriteService.renameFolder(payload.folderId, name)
+            await OfflineFavoriteService.renameFolder(payload.folderId, name)
             await showToast('已重命名', 'success')
           }
         },
@@ -883,7 +882,7 @@ const onDeleteFolder = async (payload: { folderId: string; folderName: string; i
               }
             } catch { /* ignore */ }
           } else {
-            OfflineFavoriteService.deleteFolder(payload.folderId)
+            await OfflineFavoriteService.deleteFolder(payload.folderId)
             if (folderSource.value === 'offline' && currentFolderId.value === payload.folderId) {
               const folders = OfflineFavoriteService.getFolders()
               currentFolderId.value = folders[0]?.id ?? 'default'
@@ -936,9 +935,9 @@ const onCopyFolder = async (payload: { folderId: string; folderName: string; isO
                 progressCurrent.value = items.length
                 if (items.length > 0) progressCurrentItem.value = items[items.length - 1].title
               }
-              const newId = OfflineFavoriteService.createFolder(name)
+              const newId = await OfflineFavoriteService.createFolder(name)
               if (items.length > 0) {
-                OfflineFavoriteService.addItems(newId, items)
+                await OfflineFavoriteService.addItems(newId, items)
               }
               await showToast(`已复制 ${items.length} 个本子到离线`, 'success')
             } catch {
@@ -984,7 +983,7 @@ const onCopyFolder = async (payload: { folderId: string; folderName: string; isO
             if (form.target === 'online') {
               // 离线 → 在线
               try {
-                const items = OfflineFavoriteService.getAllItems(payload.folderId)
+                const items = await OfflineFavoriteService.getAllItems(payload.folderId)
                 if (items.length === 0) {
                   await showToast('源文件夹为空', 'medium')
                   busyManagement.value = false
@@ -1046,7 +1045,7 @@ const onCopyFolder = async (payload: { folderId: string; folderName: string; isO
               }
             } else {
               // 离线 → 离线
-              const newId = OfflineFavoriteService.copyFolder(payload.folderId, name)
+              const newId = await OfflineFavoriteService.copyFolder(payload.folderId, name)
               await showToast('已复制', 'success')
               if (folderSource.value === 'offline' && currentFolderId.value === payload.folderId) {
                 currentFolderId.value = newId
@@ -1108,7 +1107,7 @@ const onMoveFolder = async (payload: { folderId: string; folderName: string; isO
               }
 
               const backupKey = `move_${payload.folderId}_${Date.now()}`
-              OfflineFavoriteService.saveBackup(backupKey, fullItems)
+              await OfflineFavoriteService.saveBackup(backupKey, fullItems)
 
               // 2. 并发移动（concurrency=3, delay=200ms）
               showProgressModal.value = true
@@ -1145,7 +1144,7 @@ const onMoveFolder = async (payload: { folderId: string; folderName: string; isO
 
               // 3. 验证
               if (moved === fullItems.length) {
-                OfflineFavoriteService.deleteBackup(backupKey)
+                await OfflineFavoriteService.deleteBackup(backupKey)
                 await refreshOnlineFolderList()
                 await showToast(`已移动 ${moved} 个本子`, 'success')
                 void resetWithPage(1)
@@ -1189,7 +1188,7 @@ const onMoveFolder = async (payload: { folderId: string; folderName: string; isO
           handler: async (targetId: string) => {
             if (!targetId) return
             busyManagement.value = true
-            OfflineFavoriteService.moveAllItems(payload.folderId, targetId)
+            await OfflineFavoriteService.moveAllItems(payload.folderId, targetId)
             await showToast('已移动', 'success')
             if (folderSource.value === 'offline' && currentFolderId.value === payload.folderId) {
               currentFolderId.value = targetId
@@ -1225,7 +1224,7 @@ const onExportFolder = async (payload: { folderId: string; folderName: string; i
         page++
       }
     } else {
-      items = OfflineFavoriteService.getAllItems(payload.folderId)
+      items = await OfflineFavoriteService.getAllItems(payload.folderId)
     }
 
     if (items.length === 0) {
@@ -1269,6 +1268,7 @@ async function refreshOnlineFolderList() {
 const { isLoggedIn } = useAuth()
 
 const initOnlineFolders = async () => {
+  await OfflineFavoriteService.ensureInit()
   if (!isLoggedIn.value) {
     folderSource.value = 'offline'
     const offlineFolders = OfflineFavoriteService.getFolders()

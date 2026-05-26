@@ -16,12 +16,15 @@ import type {
     ImageInfo,
     LatencyResult,
     NetworkProbeEvent,
+    OfflineFolderInfo,
+    OfflineFavoritesResult,
     ParseHistoryItem,
     PhotoDetail,
     PreloadResult,
     RelocationProgress,
     SearchQuery,
     SearchResult,
+    SearchResultItem,
     UserInfo,
     UserProfile,
 } from './JmcomicTypes'
@@ -88,6 +91,24 @@ interface JmcomicPlugin {
     getParseHistory(options: { limit: number; offset: number }): Promise<{ items: ParseHistoryItem[] }>
     addParseHistory(options: { text: string }): Promise<{ success: boolean }>
     clearParseHistory(): Promise<{ success: boolean }>
+    // 离线收藏夹
+    getOfflineFolders(): Promise<{ folders: OfflineFolderInfo[] }>
+    createOfflineFolder(options: { name: string }): Promise<{ folderId: string }>
+    renameOfflineFolder(options: { folderId: string; name: string }): Promise<{ success: boolean }>
+    deleteOfflineFolder(options: { folderId: string }): Promise<{ success: boolean }>
+    addOfflineFavorite(options: { folderId: string; item: SearchResultItem }): Promise<{ success: boolean }>
+    removeOfflineFavorite(options: { folderId: string; albumId: string }): Promise<{ success: boolean }>
+    getOfflineFavorites(options: { folderId: string; keyword?: string; page: number; pageSize: number }): Promise<OfflineFavoritesResult>
+    getAllOfflineFavorites(options: { folderId: string }): Promise<{ items: SearchResultItem[] }>
+    getOfflineFavoritesTotalCount(): Promise<{ count: number }>
+    getAllOfflineFavoritesMerged(): Promise<{ items: SearchResultItem[] }>
+    moveAllOfflineFavorites(options: { sourceId: string; targetId: string }): Promise<{ success: boolean }>
+    copyOfflineFolder(options: { sourceId: string; name: string }): Promise<{ folderId: string }>
+    addOfflineFavoritesBatch(options: { folderId: string; items: SearchResultItem[] }): Promise<{ count: number }>
+    saveOfflineBackup(options: { key: string; items: SearchResultItem[] }): Promise<{ success: boolean }>
+    loadOfflineBackup(options: { key: string }): Promise<{ items: SearchResultItem[] | null }>
+    deleteOfflineBackup(options: { key: string }): Promise<{ success: boolean }>
+    listOfflineBackupKeys(): Promise<{ keys: string[] }>
     // OCR
     pickImageAndOcr(): Promise<{ text: string; error?: string }>
 }
@@ -344,6 +365,61 @@ export const JmcomicService = {
     },
     clearParseHistory() {
         return native.clearParseHistory()
+    },
+
+    // ========== 离线收藏夹 ==========
+
+    getOfflineFolders() {
+        return native.getOfflineFolders()
+    },
+    createOfflineFolder(name: string) {
+        return native.createOfflineFolder({ name })
+    },
+    renameOfflineFolder(folderId: string, name: string) {
+        return native.renameOfflineFolder({ folderId, name })
+    },
+    deleteOfflineFolder(folderId: string) {
+        return native.deleteOfflineFolder({ folderId })
+    },
+    addOfflineFavorite(folderId: string, item: SearchResultItem) {
+        return native.addOfflineFavorite({ folderId, item })
+    },
+    removeOfflineFavorite(folderId: string, albumId: string) {
+        return native.removeOfflineFavorite({ folderId, albumId })
+    },
+    getOfflineFavorites(folderId: string, keyword?: string, page: number = 1, pageSize: number = 20) {
+        return native.getOfflineFavorites({ folderId, keyword, page, pageSize })
+    },
+    getAllOfflineFavorites(folderId: string) {
+        return native.getAllOfflineFavorites({ folderId })
+    },
+    getOfflineFavoritesTotalCount() {
+        return native.getOfflineFavoritesTotalCount()
+    },
+    getAllOfflineFavoritesMerged() {
+        return native.getAllOfflineFavoritesMerged()
+    },
+    moveAllOfflineFavorites(sourceId: string, targetId: string) {
+        return native.moveAllOfflineFavorites({ sourceId, targetId })
+    },
+    copyOfflineFolder(sourceId: string, name: string) {
+        return native.copyOfflineFolder({ sourceId, name })
+    },
+    addOfflineFavoritesBatch(folderId: string, items: SearchResultItem[]) {
+        return native.addOfflineFavoritesBatch({ folderId, items })
+    },
+
+    saveOfflineBackup(key: string, items: SearchResultItem[]) {
+        return native.saveOfflineBackup({ key, items })
+    },
+    loadOfflineBackup(key: string) {
+        return native.loadOfflineBackup({ key })
+    },
+    deleteOfflineBackup(key: string) {
+        return native.deleteOfflineBackup({ key })
+    },
+    listOfflineBackupKeys() {
+        return native.listOfflineBackupKeys()
     },
 
     // ========== OCR ==========

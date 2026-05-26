@@ -14,6 +14,7 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import io.github.jukomu.data.CredentialStore;
 import io.github.jukomu.data.DownloadStore;
 import io.github.jukomu.data.FileStore;
+import io.github.jukomu.data.FavoriteStore;
 import io.github.jukomu.data.HistoryStore;
 import io.github.jukomu.data.ImageCache;
 import io.github.jukomu.data.SettingsStore;
@@ -116,6 +117,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
 
         // 初始化历史记录数据库
         HistoryStore.getInstance(ctx);
+        FavoriteStore.getInstance(ctx);
 
         // 清理僵尸任务的部分下载文件（validateOnStartup 标记前）
         List<org.json.JSONObject> zombieTasks = downloadDb.getAllTasks();
@@ -1128,6 +1130,235 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
             HistoryStore.getInstance(getContext()).clearParseHistory();
             JSObject ret = new JSObject();
             ret.put("success", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    // ========== 离线收藏夹 ==========
+
+    @PluginMethod
+    public void getOfflineFolders(PluginCall call) {
+        try {
+            JSObject ret = new JSObject();
+            ret.put("folders", FavoriteStore.getInstance(getContext()).getFolders());
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void createOfflineFolder(PluginCall call) {
+        try {
+            String name = call.getString("name", "");
+            String folderId = FavoriteStore.getInstance(getContext()).createFolder(name);
+            JSObject ret = new JSObject();
+            ret.put("folderId", folderId);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void renameOfflineFolder(PluginCall call) {
+        try {
+            boolean ok = FavoriteStore.getInstance(getContext()).renameFolder(
+                    call.getString("folderId", ""),
+                    call.getString("name", ""));
+            JSObject ret = new JSObject();
+            ret.put("success", ok);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void deleteOfflineFolder(PluginCall call) {
+        try {
+            boolean ok = FavoriteStore.getInstance(getContext()).deleteFolder(
+                    call.getString("folderId", ""));
+            JSObject ret = new JSObject();
+            ret.put("success", ok);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void addOfflineFavorite(PluginCall call) {
+        try {
+            String folderId = call.getString("folderId", "");
+            JSObject item = call.getObject("item");
+            boolean ok = FavoriteStore.getInstance(getContext()).addItem(folderId, item);
+            JSObject ret = new JSObject();
+            ret.put("success", ok);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void removeOfflineFavorite(PluginCall call) {
+        try {
+            boolean ok = FavoriteStore.getInstance(getContext()).removeItem(
+                    call.getString("folderId", ""),
+                    call.getString("albumId", ""));
+            JSObject ret = new JSObject();
+            ret.put("success", ok);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void getOfflineFavorites(PluginCall call) {
+        try {
+            JSONObject data = FavoriteStore.getInstance(getContext()).getItems(
+                    call.getString("folderId", ""),
+                    call.getString("keyword", null),
+                    call.getInt("page", 1),
+                    call.getInt("pageSize", 20));
+            JSObject ret = new JSObject();
+            ret.put("totalItems", data.optInt("totalItems", 0));
+            ret.put("totalPages", data.optInt("totalPages", 1));
+            ret.put("currentPage", data.optInt("currentPage", 1));
+            ret.put("content", data.optJSONArray("content"));
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void getAllOfflineFavorites(PluginCall call) {
+        try {
+            JSObject ret = new JSObject();
+            ret.put("items", FavoriteStore.getInstance(getContext()).getAllItems(
+                    call.getString("folderId", "")));
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void getOfflineFavoritesTotalCount(PluginCall call) {
+        try {
+            JSObject ret = new JSObject();
+            ret.put("count", FavoriteStore.getInstance(getContext()).getTotalCount());
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void getAllOfflineFavoritesMerged(PluginCall call) {
+        try {
+            JSObject ret = new JSObject();
+            ret.put("items", FavoriteStore.getInstance(getContext()).getAllItemsMerged());
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void moveAllOfflineFavorites(PluginCall call) {
+        try {
+            boolean ok = FavoriteStore.getInstance(getContext()).moveAllItems(
+                    call.getString("sourceId", ""),
+                    call.getString("targetId", ""));
+            JSObject ret = new JSObject();
+            ret.put("success", ok);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void copyOfflineFolder(PluginCall call) {
+        try {
+            String newId = FavoriteStore.getInstance(getContext()).copyFolder(
+                    call.getString("sourceId", ""),
+                    call.getString("name", ""));
+            JSObject ret = new JSObject();
+            ret.put("folderId", newId);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void addOfflineFavoritesBatch(PluginCall call) {
+        try {
+            int count = FavoriteStore.getInstance(getContext()).addItemsBatch(
+                    call.getString("folderId", ""),
+                    call.getArray("items"));
+            JSObject ret = new JSObject();
+            ret.put("count", count);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    // ========== 离线收藏夹容灾备份 ==========
+
+    @PluginMethod
+    public void saveOfflineBackup(PluginCall call) {
+        try {
+            FavoriteStore.getInstance(getContext()).saveBackup(
+                    call.getString("key", ""),
+                    call.getArray("items"));
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void loadOfflineBackup(PluginCall call) {
+        try {
+            JSONArray items = FavoriteStore.getInstance(getContext()).loadBackup(
+                    call.getString("key", ""));
+            JSObject ret = new JSObject();
+            ret.put("items", items != null ? items : JSONObject.NULL);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void deleteOfflineBackup(PluginCall call) {
+        try {
+            boolean ok = FavoriteStore.getInstance(getContext()).deleteBackup(
+                    call.getString("key", ""));
+            JSObject ret = new JSObject();
+            ret.put("success", ok);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void listOfflineBackupKeys(PluginCall call) {
+        try {
+            JSObject ret = new JSObject();
+            ret.put("keys", FavoriteStore.getInstance(getContext()).listBackupKeys());
             call.resolve(ret);
         } catch (Exception e) {
             call.reject(e.getMessage(), e);

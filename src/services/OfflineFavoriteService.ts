@@ -1,4 +1,6 @@
-import type {SearchResultItem} from './JmcomicTypes'
+import { ref } from 'vue'
+import type { SearchResultItem } from './JmcomicTypes'
+import { JmcomicService } from './JmcomicService'
 
 export interface OfflineFolder {
   id: string
@@ -6,199 +8,138 @@ export interface OfflineFolder {
   items: SearchResultItem[]
 }
 
-const STORAGE_KEY = 'jq-offline-favorites'
+/** 响应式缓存（供 FavoritePage computed 同步读取） */
+export const offlineFolderCache = ref<{ id: string; name: string; count: number }[]>([])
+export const offlineTotalCount = ref(0)
 
-const readFolders = (): OfflineFolder[] => {
+let initPromise: Promise<void> | null = null
+
+async function ensureInit() {
+  if (initPromise) return initPromise
+  initPromise = refreshCache()
+  return initPromise
+}
+
+export async function refreshOfflineCache() {
+  await refreshCache()
+}
+
+async function refreshCache() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    return raw ? JSON.parse(raw) : []
-  } catch {
-    return []
-  }
+    const result = await JmcomicService.getOfflineFolders()
+    offlineFolderCache.value = result.folders.map(f => ({
+      id: f.folderId,
+      name: f.name,
+      count: f.count,
+    }))
+    const tc = await JmcomicService.getOfflineFavoritesTotalCount()
+    offlineTotalCount.value = tc.count
+  } catch { /* offline db not available */ }
 }
-
-const writeFolders = (folders: OfflineFolder[]) => {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(folders))
-}
-
-let nextId = 1
 
 export const OfflineFavoriteService = {
-  /** 获取所有离线文件夹列表 */
+  ensureInit,
+  refreshCache,
+
+  /** 获取所有离线文件夹列表（从缓存同步读取） */
   getFolders(): { id: string; name: string; count: number }[] {
-    return readFolders().map(f => ({ id: f.id, name: f.name, count: f.items.length }))
+    return offlineFolderCache.value
+  },
+
+  /** 获取全部离线项总数（跨所有文件夹去重，从缓存同步读取） */
+  getTotalCount(): number {
+    return offlineTotalCount.value
   },
 
   /** 创建新文件夹 */
-  createFolder(name: string) {
-    const folders = readFolders()
-    const id = `offline_${Date.now()}_${nextId++}`
-    folders.push({ id, name, items: [] })
-    writeFolders(folders)
-    return id
+  async createFolder(name: string): Promise<string> {
+    const result = await JmcomicService.createOfflineFolder(name)
+    await refreshCache()
+    return result.folderId
   },
 
   /** 重命名文件夹 */
-  renameFolder(id: string, newName: string) {
-    const folders = readFolders()
-    const folder = folders.find(f => f.id === id)
-    if (!folder) return
-    folder.name = newName
-    writeFolders(folders)
+  async renameFolder(id: string, newName: string): Promise<void> {
+    await JmcomicService.renameOfflineFolder(id, newName)
+    await refreshCache()
   },
 
   /** 删除文件夹 */
-  deleteFolder(id: string) {
-    const folders = readFolders().filter(f => f.id !== id)
-    writeFolders(folders)
+  async deleteFolder(id: string): Promise<void> {
+    await JmcomicService.deleteOfflineFolder(id)
+    await refreshCache()
   },
 
   /** 添加项目到文件夹 */
-  addItem(folderId: string, item: SearchResultItem) {
-    const folders = readFolders()
-    const folder = folders.find(f => f.id === folderId)
-    if (!folder) return
-    if (folder.items.some(i => i.id === item.id)) return
-    folder.items.push(item)
-    writeFolders(folders)
+  async addItem(folderId: string, item: SearchResultItem): Promise<void> {
+    await JmcomicService.addOfflineFavorite(folderId, item)
+    await refreshCache()
   },
 
   /** 移除项目 */
-  removeItem(folderId: string, itemId: string) {
-    const folders = readFolders()
-    const folder = folders.find(f => f.id === folderId)
-    if (!folder) return
-    folder.items = folder.items.filter(i => i.id !== itemId)
-    writeFolders(folders)
+  async removeItem(folderId: string, itemId: string): Promise<void> {
+    await JmcomicService.removeOfflineFavorite(folderId, itemId)
+    await refreshCache()
   },
 
-  /** 获取文件夹内容（支持关键词搜索） */
-  getItems(
+  /** 获取文件夹内容（支持关键词搜索，分页） */
+  async getItems(
     folderId: string,
     keyword?: string,
     page: number = 1,
     pageSize: number = 20,
-  ): { totalItems: number; totalPages: number; currentPage: number; content: SearchResultItem[] } {
-    const folders = readFolders()
-    const folder = folders.find(f => f.id === folderId)
-    const items = folder?.items ?? []
-    const filtered = keyword
-      ? items.filter(i => i.title.toLowerCase().includes(keyword.toLowerCase()))
-      : items
-    const totalItems = filtered.length
-    const totalPages = Math.max(1, Math.ceil(totalItems / pageSize))
-    const currentPage = Math.min(Math.max(1, page), totalPages)
-    const start = (currentPage - 1) * pageSize
-    return {
-      totalItems,
-      totalPages,
-      currentPage,
-      content: filtered.slice(start, start + pageSize),
-    }
+  ): Promise<{ totalItems: number; totalPages: number; currentPage: number; content: SearchResultItem[] }> {
+    return JmcomicService.getOfflineFavorites(folderId, keyword, page, pageSize)
   },
 
   /** 获取文件夹全部项目（不分页） */
-  getAllItems(folderId: string): SearchResultItem[] {
-    const folders = readFolders()
-    const folder = folders.find(f => f.id === folderId)
-    return folder?.items ?? []
-  },
-
-  /** 复制文件夹：创建新文件夹并复制全部项目，返回新文件夹 ID */
-  copyFolder(sourceId: string, targetName: string): string {
-    const folders = readFolders()
-    const source = folders.find(f => f.id === sourceId)
-    const id = `offline_${Date.now()}_${nextId++}`
-    folders.push({ id, name: targetName, items: source ? [...source.items] : [] })
-    writeFolders(folders)
-    return id
-  },
-
-  /** 获取全部离线项总数（跨所有文件夹去重，直接计数不构建数组） */
-  getTotalCount(): number {
-    const folders = readFolders()
-    const seen = new Set<string>()
-    for (const f of folders) {
-      for (const item of f.items) {
-        seen.add(item.id)
-      }
-    }
-    return seen.size
+  async getAllItems(folderId: string): Promise<SearchResultItem[]> {
+    const result = await JmcomicService.getAllOfflineFavorites(folderId)
+    return result.items
   },
 
   /** 获取全部离线项（跨所有文件夹，按 id 去重） */
-  getAllItemsMerged(): SearchResultItem[] {
-    const folders = readFolders()
-    const seen = new Set<string>()
-    const merged: SearchResultItem[] = []
-    for (const f of folders) {
-      for (const item of f.items) {
-        if (!seen.has(item.id)) {
-          seen.add(item.id)
-          merged.push(item)
-        }
-      }
-    }
-    return merged
+  async getAllItemsMerged(): Promise<SearchResultItem[]> {
+    const result = await JmcomicService.getAllOfflineFavoritesMerged()
+    return result.items
+  },
+
+  /** 复制文件夹：创建新文件夹并复制全部项目，返回新文件夹 ID */
+  async copyFolder(sourceId: string, targetName: string): Promise<string> {
+    const result = await JmcomicService.copyOfflineFolder(sourceId, targetName)
+    await refreshCache()
+    return result.folderId
   },
 
   /** 移动全部项从源夹到目标夹 */
-  moveAllItems(sourceId: string, targetId: string): void {
-    const folders = readFolders()
-    const source = folders.find(f => f.id === sourceId)
-    const target = folders.find(f => f.id === targetId)
-    if (!source || !target) return
-    for (const item of source.items) {
-      if (!target.items.some(i => i.id === item.id)) {
-        target.items.push(item)
-      }
-    }
-    source.items = []
-    writeFolders(folders)
+  async moveAllItems(sourceId: string, targetId: string): Promise<void> {
+    await JmcomicService.moveAllOfflineFavorites(sourceId, targetId)
+    await refreshCache()
   },
 
   /** 批量添加项到文件夹 */
-  addItems(folderId: string, items: SearchResultItem[]): void {
-    const folders = readFolders()
-    const folder = folders.find(f => f.id === folderId)
-    if (!folder) return
-    for (const item of items) {
-      if (!folder.items.some(i => i.id === item.id)) {
-        folder.items.push(item)
-      }
-    }
-    writeFolders(folders)
+  async addItems(folderId: string, items: SearchResultItem[]): Promise<void> {
+    await JmcomicService.addOfflineFavoritesBatch(folderId, items)
+    await refreshCache()
   },
 
   // --- 容灾备份 ---
 
-  saveBackup(key: string, items: SearchResultItem[]): void {
-    localStorage.setItem(`jq-fav-backup-${key}`, JSON.stringify(items))
+  async saveBackup(key: string, items: SearchResultItem[]): Promise<void> {
+    await JmcomicService.saveOfflineBackup(key, items)
   },
 
-  loadBackup(key: string): SearchResultItem[] | null {
-    try {
-      const raw = localStorage.getItem(`jq-fav-backup-${key}`)
-      return raw ? JSON.parse(raw) : null
-    } catch {
-      return null
-    }
+  async loadBackup(key: string): Promise<SearchResultItem[] | null> {
+    const result = await JmcomicService.loadOfflineBackup(key)
+    return result.items
   },
 
-  deleteBackup(key: string): void {
-    localStorage.removeItem(`jq-fav-backup-${key}`)
+  async deleteBackup(key: string): Promise<void> {
+    await JmcomicService.deleteOfflineBackup(key)
   },
 
-  /** 列出所有备份 key */
-  listBackupKeys(): string[] {
-    const keys: string[] = []
-    const prefix = 'jq-fav-backup-'
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i)
-      if (k && k.startsWith(prefix)) {
-        keys.push(k.slice(prefix.length))
-      }
-    }
-    return keys
+  async listBackupKeys(): Promise<string[]> {
+    const result = await JmcomicService.listOfflineBackupKeys()
+    return result.keys
   },
 }

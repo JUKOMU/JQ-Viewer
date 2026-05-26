@@ -253,12 +253,18 @@ const updateRouteQuery = (query: SearchQuery) => {
 }
 
 const submitSearch = (query: SearchQuery) => {
-  updateRouteQuery({...query, page: 1})
+  const newQuery = { ...query, page: 1 }
+  lastSearchedQuery.value = { ...newQuery }
+  void resetWithPage(newQuery)
+  updateRouteQuery(newQuery)
 }
 
 const submitOverlaySearch = (query: SearchQuery) => {
   closeSearchOverlay()
-  updateRouteQuery({...query, page: 1})
+  const newQuery = { ...query, page: 1 }
+  lastSearchedQuery.value = { ...newQuery }
+  void resetWithPage(newQuery)
+  updateRouteQuery(newQuery)
 }
 
 const retrySearch = () => {

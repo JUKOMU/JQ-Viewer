@@ -98,7 +98,7 @@
             </button>
             <FavoriteFolderContextMenu
                 :visible="openMenuFolderId === folder.id"
-                :is-default-folder="folder.id === 'offline_all'"
+                :is-default-folder="folder.id === OFFLINE_ALL_FOLDER_ID"
                 :is-online="false"
                 @rename="onContextMenuRename(folder.id, folder.name, false)"
                 @move="onContextMenuMove(folder.id, folder.name, false)"
@@ -119,12 +119,8 @@ import {IonIcon} from '@ionic/vue'
 import {addCircleOutline, closeOutline, ellipsisVertical, folderOpenOutline} from 'ionicons/icons'
 import {isDraggingRight, isSnappingClosed, rightDragProgress} from '@/composables/sideMenuState'
 import FavoriteFolderContextMenu from '@/components/favorite/FavoriteFolderContextMenu.vue'
-
-interface FolderEntry {
-  id: string
-  name: string
-  count: number
-}
+import type {FolderEntry} from '@/services/JmcomicTypes'
+import {OFFLINE_ALL_FOLDER_ID} from '@/services/JmcomicTypes'
 
 const props = defineProps<{
   modelValue: boolean
@@ -189,13 +185,13 @@ const handleClickOutside = () => {
 }
 
 onMounted(() => {
-  document.addEventListener('mousedown', handleClickOutside, true)
-  document.addEventListener('touchstart', handleClickOutside, { capture: true })
+  document.addEventListener('mousedown', handleClickOutside)
+  document.addEventListener('touchstart', handleClickOutside)
 })
 
 onBeforeUnmount(() => {
-  document.removeEventListener('mousedown', handleClickOutside, true)
-  document.removeEventListener('touchstart', handleClickOutside, { capture: true })
+  document.removeEventListener('mousedown', handleClickOutside)
+  document.removeEventListener('touchstart', handleClickOutside)
 })
 
 const isVisible = computed(() =>

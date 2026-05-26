@@ -118,23 +118,21 @@ public class FavoriteStore extends SQLiteOpenHelper {
     public String createFolder(String name) {
         String folderId = generateFolderId();
         SQLiteDatabase db = getWritableDatabase();
-        try {
-            ContentValues cv = new ContentValues();
-            cv.put(COL_FOLDER_ID, folderId);
-            cv.put(COL_NAME, name != null ? name : "");
-            db.insertOrThrow(TABLE_FOLDERS, null, cv);
-            return folderId;
-        } catch (Exception e) {
-            android.util.Log.w("FavoriteStore", "createFolder failed", e);
-            return "";
-        }
+        ContentValues cv = new ContentValues();
+        cv.put(COL_FOLDER_ID, folderId);
+        cv.put(COL_NAME, name != null ? name : "");
+        db.insertOrThrow(TABLE_FOLDERS, null, cv);
+        return folderId;
     }
 
     public boolean renameFolder(String folderId, String newName) {
+        if (newName == null || newName.trim().isEmpty()) {
+            return false;
+        }
         SQLiteDatabase db = getWritableDatabase();
         try {
             ContentValues cv = new ContentValues();
-            cv.put(COL_NAME, newName != null ? newName : "");
+            cv.put(COL_NAME, newName.trim());
             int rows = db.update(TABLE_FOLDERS, cv,
                     COL_FOLDER_ID + "=?", new String[]{folderId});
             return rows > 0;
@@ -176,9 +174,9 @@ public class FavoriteStore extends SQLiteOpenHelper {
                     ? item.optJSONArray("authors").toString() : "[]");
             cv.put(COL_TAGS, item.optJSONArray("tags") != null
                     ? item.optJSONArray("tags").toString() : "[]");
-            db.insertWithOnConflict(TABLE_FAVORITES, null, cv,
+            long rowId = db.insertWithOnConflict(TABLE_FAVORITES, null, cv,
                     SQLiteDatabase.CONFLICT_IGNORE);
-            return true;
+            return rowId != -1;
         } catch (Exception e) {
             android.util.Log.w("FavoriteStore", "addItem failed", e);
             return false;
@@ -299,11 +297,14 @@ public class FavoriteStore extends SQLiteOpenHelper {
         Cursor c = null;
         try {
             c = getReadableDatabase().rawQuery(
-                    "SELECT DISTINCT " + COL_ALBUM_ID + ", " + COL_TITLE
+                    "SELECT " + COL_ALBUM_ID + ", " + COL_TITLE
                             + ", " + COL_COVER_URL + ", " + COL_AUTHORS
                             + ", " + COL_TAGS
                             + " FROM " + TABLE_FAVORITES
-                            + " GROUP BY " + COL_ALBUM_ID,
+                            + " WHERE " + COL_ID + " IN (SELECT MIN(" + COL_ID + ")"
+                            + " FROM " + TABLE_FAVORITES
+                            + " GROUP BY " + COL_ALBUM_ID + ")"
+                            + " ORDER BY " + COL_ID + " ASC",
                     null);
             while (c.moveToNext()) {
                 arr.put(cursorToItem(c));
@@ -448,16 +449,18 @@ public class FavoriteStore extends SQLiteOpenHelper {
             c.close();
             c = null;
 
-            // 跨夹去重插入到目标夹
+            // 跨夹去重插入到目标夹（每 album_id 取 MIN(id) 行，避免 GROUP BY 列值不确定）
             db.execSQL("INSERT OR IGNORE INTO " + TABLE_FAVORITES
                     + " (" + COL_FOLDER_ID + ", " + COL_ALBUM_ID + ", "
                     + COL_TITLE + ", " + COL_COVER_URL + ", "
                     + COL_AUTHORS + ", " + COL_TAGS + ")"
-                    + " SELECT ?, " + COL_ALBUM_ID + ", "
-                    + COL_TITLE + ", " + COL_COVER_URL + ", "
-                    + COL_AUTHORS + ", " + COL_TAGS
+                    + " SELECT ?, o." + COL_ALBUM_ID + ", "
+                    + "o." + COL_TITLE + ", o." + COL_COVER_URL + ", "
+                    + "o." + COL_AUTHORS + ", o." + COL_TAGS
+                    + " FROM " + TABLE_FAVORITES + " o"
+                    + " WHERE o." + COL_ID + " IN (SELECT MIN(" + COL_ID + ")"
                     + " FROM " + TABLE_FAVORITES
-                    + " GROUP BY " + COL_ALBUM_ID,
+                    + " GROUP BY " + COL_ALBUM_ID + ")",
                     new Object[]{targetId});
 
             // 删除非目标夹的全部项

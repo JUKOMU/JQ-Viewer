@@ -2,6 +2,8 @@ import { ref } from 'vue'
 import type { SearchResult, SearchResultItem } from '@/services/JmcomicTypes'
 
 export interface FavoritePageCacheState {
+  folderSource: 'online' | 'offline'
+  currentFolderId: string
   onlineFolderMap: Record<string, string>
   onlineFolderCounts: Record<string, number>
   resultMeta: SearchResult

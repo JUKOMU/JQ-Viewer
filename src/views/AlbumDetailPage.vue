@@ -86,7 +86,7 @@ import {useRoute, useRouter} from 'vue-router'
 import {IonContent, IonPage} from '@ionic/vue'
 import type {PluginListenerHandle} from '@capacitor/core'
 import {getImageUrl, JmcomicService, sanitizeError, showToast} from '@/services/JmcomicService'
-import type {AlbumDetail, AlbumMeta, CommentItem, FavoriteResult, PhotoDetail, PreloadResult, SearchResultItem} from '@/services/JmcomicTypes'
+import type {AlbumDetail, AlbumMeta, CommentItem, FavoriteResult, FolderEntry, PhotoDetail, PreloadResult, SearchResultItem} from '@/services/JmcomicTypes'
 import { makeTaskId } from '@/services/JmcomicTypes'
 import {OfflineDownloadService} from '@/services/OfflineDownloadService'
 import {OfflineFavoriteService} from '@/services/OfflineFavoriteService'
@@ -159,12 +159,6 @@ const actionBusy = reactive({ like: false, favorite: false })
 // ---- 收藏夹选择弹窗 ----
 const { isLoggedIn } = useAuth()
 const showFolderPicker = ref(false)
-
-interface FolderEntry {
-  id: string
-  name: string
-  count: number
-}
 
 const pickerOnlineFolders = ref<FolderEntry[]>([])
 const pickerOfflineFolders = ref<FolderEntry[]>([])

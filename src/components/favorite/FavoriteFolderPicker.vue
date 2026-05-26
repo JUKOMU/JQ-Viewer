@@ -59,12 +59,7 @@
 <script setup lang="ts">
 import { IonIcon } from '@ionic/vue'
 import { addOutline, closeOutline, folderOpenOutline } from 'ionicons/icons'
-
-interface FolderEntry {
-  id: string
-  name: string
-  count: number
-}
+import type { FolderEntry } from '@/services/JmcomicTypes'
 
 defineProps<{
   modelValue: boolean

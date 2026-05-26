@@ -34,7 +34,9 @@ async function refreshCache() {
     }))
     const tc = await JmcomicService.getOfflineFavoritesTotalCount()
     offlineTotalCount.value = tc.count
-  } catch { /* offline db not available */ }
+  } catch (e) {
+    console.warn('[OfflineFavoriteService] refreshCache failed:', e)
+  }
 }
 
 export const OfflineFavoriteService = {

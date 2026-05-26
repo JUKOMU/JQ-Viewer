@@ -683,13 +683,23 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         try {
             String type = call.getString("type");
             if (type == null || type.isEmpty()) {
-                call.reject("type is required (add/edit/del)");
+                call.reject("type is required (add/edit/move/del)");
                 return;
+            }
+            String folderId = call.getString("folderId", "");
+            // "add" 操作 folderId 可为空（默认 "0"）；edit/del 禁止 "0"（"全部"不可改名/删除）；move 允许 "0"（移到"全部"）
+            if ("edit".equals(type) || "del".equals(type)) {
+                if (folderId.isEmpty() || "0".equals(folderId)) {
+                    call.reject("folderId is required for edit/del operations");
+                    return;
+                }
+            } else if (folderId.isEmpty()) {
+                folderId = "0";
             }
             call.setKeepAlive(true);
             apiService.manageFavoriteFolder(
                     type,
-                    call.getString("folderId", "0"),
+                    folderId,
                     call.getString("folderName", ""),
                     call.getString("albumId", ""),
                     bridgeCallback(call));

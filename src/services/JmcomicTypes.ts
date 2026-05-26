@@ -194,13 +194,23 @@ export interface FavoriteQuery {
 
 export interface FavoriteResult {
     folderName: string
-    folderId: number
+    folderId: string
     currentPage: number
     totalItems: number
     totalPages: number
     content: SearchResultItem[]
     folderList: Record<string, string>  // id -> name
 }
+
+/** 收藏夹文件夹条目（在线/离线通用） */
+export interface FolderEntry {
+    id: string
+    name: string
+    count: number
+}
+
+/** 离线"全部"收藏夹虚拟 ID */
+export const OFFLINE_ALL_FOLDER_ID = 'offline_all'
 
 // --- 收藏夹管理 ---
 

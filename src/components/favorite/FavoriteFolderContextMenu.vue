@@ -2,7 +2,7 @@
   <div
     v-if="visible"
     class="context-menu"
-    @mousedown.prevent
+    @mousedown.stop
     @touchstart.stop
   >
     <button

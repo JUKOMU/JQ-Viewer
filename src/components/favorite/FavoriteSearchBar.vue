@@ -98,6 +98,7 @@ const onHistorySelect = (item: SearchHistoryItem) => {
   draft.keyword = item.keyword
   showHistory.value = false
   if (blurTimer) { clearTimeout(blurTimer); blurTimer = null }
+  submit()
 }
 
 const onHistoryClear = () => {

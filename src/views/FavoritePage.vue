@@ -1217,32 +1217,25 @@ onActivated(async () => {
 /* 卡片更多操作按钮 */
 .card-more-btn {
   position: absolute;
-  top: 8px;
-  right: 8px;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
   z-index: 2;
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   border: 0;
-  border-radius: 999px;
-  background: rgb(0 0 0 / 0.35);
-  color: #fff;
+  border-radius: 6px;
+  background: transparent;
+  color: #8a6048;
   font-size: 18px;
   cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.16s ease, background-color 0.14s ease;
-}
-
-:deep(.list-card):hover .card-more-btn,
-:deep(.grid-card):active .card-more-btn,
-.card-more-btn.active {
-  opacity: 1;
 }
 
 .card-more-btn:active {
-  background: rgb(0 0 0 / 0.55);
+  background: #f5d2bc;
 }
 
 /* 卡片上下文菜单 */

@@ -173,12 +173,9 @@ const onContextMenuExport = (folderId: string, folderName: string, isOnline: boo
   emit('export-folder', { folderId, folderName, isOnline })
 }
 
-const handleClickOutside = (e: Event) => {
-  const panel = panelRef.value
-  if (!panel || !openMenuFolderId.value) return
-  if (!panel.contains(e.target as Node)) {
-    closeContextMenu()
-  }
+const handleClickOutside = () => {
+  if (!openMenuFolderId.value) return
+  closeContextMenu()
 }
 
 onMounted(() => {
@@ -348,7 +345,7 @@ defineExpose({ panelRef })
   gap: 12px;
   width: 100%;
   min-height: 48px;
-  padding: 12px 14px;
+  padding: 12px 44px 12px 14px;
   border: 1px solid rgb(245 210 188 / 0.72);
   border-radius: 20px;
   background: #fff;
@@ -410,23 +407,21 @@ defineExpose({ panelRef })
   right: 8px;
   top: 50%;
   transform: translateY(-50%);
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-content: center;
   width: 28px;
   height: 28px;
   border: 0;
-  border-radius: 999px;
+  border-radius: 6px;
   background: transparent;
   color: #8a6048;
   font-size: 18px;
   cursor: pointer;
-  transition: background-color 0.14s ease;
 }
 
-.folder-more-btn:hover,
 .folder-more-btn:active {
-  background: rgb(115 67 38 / 0.08);
+  background: #f5d2bc;
 }
 
 .empty-state {

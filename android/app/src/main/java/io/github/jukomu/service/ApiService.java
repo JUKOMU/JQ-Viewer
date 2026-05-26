@@ -149,6 +149,24 @@ public class ApiService {
         }
     }
 
+    public void manageFavoriteFolder(String type, String folderId,
+                                      String folderName, String albumId,
+                                      ApiCallback callback) {
+        try {
+            FavoriteFolderType folderType = findFavoriteFolderType(type);
+            runAsync(() -> {
+                JmFavoriteFolderResult result = client.manageFavoriteFolder(
+                    folderType, folderId, folderName, albumId);
+                JSONObject ret = new JSONObject();
+                ret.put("status", result.getStatus());
+                ret.put("msg", result.getMsg());
+                return ret;
+            }, callback);
+        } catch (Exception e) {
+            callback.onError(e.getMessage(), e);
+        }
+    }
+
     // ---- 用户认证 ----
 
     public void login(String username, String password, ApiCallback callback) {
@@ -210,6 +228,13 @@ public class ApiService {
             if (t.getValue().equals(value)) return t;
         }
         return TimeOption.ALL;
+    }
+
+    private FavoriteFolderType findFavoriteFolderType(String value) {
+        for (FavoriteFolderType t : FavoriteFolderType.values()) {
+            if (t.getValue().equals(value)) return t;
+        }
+        throw new IllegalArgumentException("Unknown FavoriteFolderType: " + value);
     }
 
     private SearchMainTag findSearchMainTag(Integer value) {

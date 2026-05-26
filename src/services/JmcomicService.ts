@@ -35,6 +35,7 @@ interface JmcomicPlugin {
     getFavorites(options: { query: FavoriteQuery }): Promise<FavoriteResult>
     toggleAlbumLike(options: { id: string }): Promise<{ success: boolean }>
     toggleAlbumFavorite(options: { id: string; folderId: string }): Promise<{ success: boolean }>
+    manageFavoriteFolder(options: { type: string; folderId: string; folderName?: string; albumId?: string }): Promise<{ status: string; msg: string }>
     preloadImages(options: { photoId: string; images: ImageInfo[]; type: string }): Promise<PreloadResult>
     setCacheCapacity(options: { mb: number }): Promise<{ success: boolean; capacityMb: number }>
     getCacheCapacityInfo(): Promise<CacheCapacityInfo>
@@ -132,6 +133,10 @@ export const JmcomicService = {
     },
     toggleAlbumFavorite(id: string, folderId: string = '0') {
         return native.toggleAlbumFavorite({id, folderId})
+    },
+
+    manageFavoriteFolder(type: string, folderId: string = '0', folderName: string = '', albumId: string = '') {
+        return native.manageFavoriteFolder({ type, folderId, folderName, albumId })
     },
 
     /** 登录 */

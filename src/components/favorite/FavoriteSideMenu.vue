@@ -10,40 +10,99 @@
 
       <div class="menu-body">
         <template v-if="onlineFolders.length > 0">
-          <div class="section-title">在线收藏夹</div>
-          <div class="folder-list">
-            <button
-                v-for="folder in onlineFolders"
-                :key="folder.id"
-                type="button"
-                class="folder-item"
-                :class="{ selected: selectedOnlineId === folder.id }"
-                @click="selectOnlineFolder(folder.id)"
-            >
-              <IonIcon :icon="folderOpenOutline" class="folder-icon"/>
-              <span class="folder-name">{{ folder.name }}</span>
+          <div class="section-header">
+            <span class="section-title">在线收藏夹</span>
+            <button type="button" class="section-add-btn" aria-label="新建在线收藏夹" @click="emit('add-folder', 'online')">
+              <IonIcon :icon="addCircleOutline"/>
             </button>
           </div>
+          <div class="folder-list">
+            <div
+                v-for="folder in onlineFolders"
+                :key="folder.id"
+                class="folder-item-wrapper"
+                :style="{ position: 'relative' }"
+            >
+              <button
+                  type="button"
+                  class="folder-item"
+                  :class="{ selected: selectedOnlineId === folder.id }"
+                  @click="selectOnlineFolder(folder.id)"
+              >
+                <IonIcon :icon="folderOpenOutline" class="folder-icon"/>
+                <span class="folder-name">{{ folder.name }}</span>
+                <span v-if="onlineFolderCounts[folder.id] !== undefined" class="folder-count">
+                  {{ onlineFolderCounts[folder.id] }}
+                </span>
+              </button>
+              <button
+                  type="button"
+                  class="folder-more-btn"
+                  aria-label="更多操作"
+                  @click.stop="toggleContextMenu(folder.id)"
+              >
+                <IonIcon :icon="ellipsisVertical"/>
+              </button>
+              <FavoriteFolderContextMenu
+                  :visible="openMenuFolderId === folder.id"
+                  :is-default-folder="folder.id === '0'"
+                  @rename="onContextMenuRename(folder.id, folder.name, true)"
+                  @delete="onContextMenuDelete(folder.id, folder.name, true)"
+                  @copy="onContextMenuCopy(folder.id, folder.name, true)"
+                  @export="onContextMenuExport(folder.id, folder.name, true)"
+              />
+            </div>
+          </div>
+        </template>
+
+        <template v-if="onlineFolders.length > 0">
+          <div style="margin-top: 24px" />
         </template>
 
         <div v-if="onlineFolders.length === 0 && offlineFolders.length === 0" class="empty-state">
           暂无收藏夹
         </div>
 
-        <div class="section-title">离线收藏夹</div>
+        <div class="section-header">
+          <span class="section-title">离线收藏夹</span>
+          <button type="button" class="section-add-btn" aria-label="新建离线收藏夹" @click="emit('add-folder', 'offline')">
+            <IonIcon :icon="addCircleOutline"/>
+          </button>
+        </div>
         <div class="folder-list">
-          <button
+          <div
               v-for="folder in offlineFolders"
               :key="folder.id"
-              type="button"
-              class="folder-item"
-              :class="{ selected: selectedOfflineId === folder.id }"
-              @click="selectOfflineFolder(folder.id)"
+              class="folder-item-wrapper"
+              :style="{ position: 'relative' }"
           >
-            <IonIcon :icon="folderOpenOutline" class="folder-icon"/>
-            <span class="folder-name">{{ folder.name }}</span>
-            <span class="folder-count">{{ folder.count }}</span>
-          </button>
+            <button
+                type="button"
+                class="folder-item"
+                :class="{ selected: selectedOfflineId === folder.id }"
+                @click="selectOfflineFolder(folder.id)"
+            >
+              <IonIcon :icon="folderOpenOutline" class="folder-icon"/>
+              <span class="folder-name">{{ folder.name }}</span>
+              <span class="folder-count">{{ folder.count }}</span>
+            </button>
+            <button
+                type="button"
+                class="folder-more-btn"
+                aria-label="更多操作"
+                @click.stop="toggleContextMenu(folder.id)"
+            >
+              <IonIcon :icon="ellipsisVertical"/>
+            </button>
+            <FavoriteFolderContextMenu
+                :visible="openMenuFolderId === folder.id"
+                :is-default-folder="false"
+                @rename="onContextMenuRename(folder.id, folder.name, false)"
+                @delete="onContextMenuDelete(folder.id, folder.name, false)"
+                @copy="onContextMenuCopy(folder.id, folder.name, false)"
+                @export="onContextMenuExport(folder.id, folder.name, false)"
+            />
+          </div>
         </div>
       </div>
     </div>
@@ -51,10 +110,11 @@
 </template>
 
 <script setup lang="ts">
-import {computed, ref} from 'vue'
+import {computed, onBeforeUnmount, onMounted, ref} from 'vue'
 import {IonIcon} from '@ionic/vue'
-import {closeOutline, folderOpenOutline} from 'ionicons/icons'
+import {addCircleOutline, closeOutline, ellipsisVertical, folderOpenOutline} from 'ionicons/icons'
 import {isDraggingRight, isSnappingClosed, rightDragProgress} from '@/composables/sideMenuState'
+import FavoriteFolderContextMenu from '@/components/favorite/FavoriteFolderContextMenu.vue'
 
 interface FolderEntry {
   id: string
@@ -68,15 +128,68 @@ const props = defineProps<{
   offlineFolders: FolderEntry[]
   selectedOnlineId: string
   selectedOfflineId: string
+  onlineFolderCounts: Record<string, number>
 }>()
 
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
   'select-online-folder': [folderId: string]
   'select-offline-folder': [folderId: string]
+  'add-folder': [source: 'online' | 'offline']
+  'rename-folder': [payload: { folderId: string; folderName: string; isOnline: boolean }]
+  'delete-folder': [payload: { folderId: string; folderName: string; isOnline: boolean }]
+  'copy-folder': [payload: { folderId: string; folderName: string; isOnline: boolean }]
+  'export-folder': [payload: { folderId: string; folderName: string; isOnline: boolean }]
 }>()
 
 const panelRef = ref<HTMLElement | null>(null)
+const openMenuFolderId = ref<string | null>(null)
+
+const closeContextMenu = () => {
+  openMenuFolderId.value = null
+}
+
+const toggleContextMenu = (folderId: string) => {
+  openMenuFolderId.value = openMenuFolderId.value === folderId ? null : folderId
+}
+
+const onContextMenuRename = (folderId: string, folderName: string, isOnline: boolean) => {
+  closeContextMenu()
+  emit('rename-folder', { folderId, folderName, isOnline })
+}
+
+const onContextMenuDelete = (folderId: string, folderName: string, isOnline: boolean) => {
+  closeContextMenu()
+  emit('delete-folder', { folderId, folderName, isOnline })
+}
+
+const onContextMenuCopy = (folderId: string, folderName: string, isOnline: boolean) => {
+  closeContextMenu()
+  emit('copy-folder', { folderId, folderName, isOnline })
+}
+
+const onContextMenuExport = (folderId: string, folderName: string, isOnline: boolean) => {
+  closeContextMenu()
+  emit('export-folder', { folderId, folderName, isOnline })
+}
+
+const handleClickOutside = (e: Event) => {
+  const panel = panelRef.value
+  if (!panel || !openMenuFolderId.value) return
+  if (!panel.contains(e.target as Node)) {
+    closeContextMenu()
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('mousedown', handleClickOutside, true)
+  document.addEventListener('touchstart', handleClickOutside, { capture: true })
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('mousedown', handleClickOutside, true)
+  document.removeEventListener('touchstart', handleClickOutside, { capture: true })
+})
 
 const isVisible = computed(() =>
   props.modelValue || isDraggingRight.value || isSnappingClosed.value
@@ -183,8 +296,15 @@ defineExpose({ panelRef })
   padding: 14px 16px calc(18px + var(--ion-safe-area-bottom));
 }
 
-.section-title {
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   margin-bottom: 10px;
+  margin-top: 10px;
+}
+
+.section-title {
   color: #7a5743;
   font-size: 11px;
   font-weight: 700;
@@ -192,14 +312,34 @@ defineExpose({ panelRef })
   text-transform: uppercase;
 }
 
-.section-title + .section-title {
-  margin-top: 24px;
+.section-add-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 999px;
+  background: #fff;
+  color: #c96d3a;
+  font-size: 18px;
+  box-shadow: 0 2px 8px rgb(115 67 38 / 0.08);
+  cursor: pointer;
+  transition: transform 0.12s ease;
+}
+
+.section-add-btn:active {
+  transform: scale(0.9);
 }
 
 .folder-list {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.folder-item-wrapper {
+  position: relative;
 }
 
 .folder-item {
@@ -263,6 +403,30 @@ defineExpose({ panelRef })
 .folder-item.selected .folder-count {
   background: rgb(255 255 255 / 0.25);
   color: #fff;
+}
+
+.folder-more-btn {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #8a6048;
+  font-size: 18px;
+  cursor: pointer;
+  transition: background-color 0.14s ease;
+}
+
+.folder-more-btn:hover,
+.folder-more-btn:active {
+  background: rgb(115 67 38 / 0.08);
 }
 
 .empty-state {

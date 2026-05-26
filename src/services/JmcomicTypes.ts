@@ -202,6 +202,22 @@ export interface FavoriteResult {
     folderList: Record<string, string>  // id -> name
 }
 
+// --- 收藏夹管理 ---
+
+export type FavoriteFolderManageType = 'add' | 'edit' | 'move' | 'del'
+
+export interface FavoriteFolderManageOptions {
+    type: FavoriteFolderManageType
+    folderId: string
+    folderName?: string
+    albumId?: string
+}
+
+export interface FavoriteFolderManageResult {
+    status: string   // "ok" on success
+    msg: string
+}
+
 // --- 下载类型 ---
 
 /** 构建下载任务 ID */

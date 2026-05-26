@@ -38,6 +38,15 @@ export const OfflineFavoriteService = {
     return id
   },
 
+  /** 重命名文件夹 */
+  renameFolder(id: string, newName: string) {
+    const folders = readFolders()
+    const folder = folders.find(f => f.id === id)
+    if (!folder) return
+    folder.name = newName
+    writeFolders(folders)
+  },
+
   /** 删除文件夹 */
   deleteFolder(id: string) {
     const folders = readFolders().filter(f => f.id !== id)
@@ -86,5 +95,22 @@ export const OfflineFavoriteService = {
       currentPage,
       content: filtered.slice(start, start + pageSize),
     }
+  },
+
+  /** 获取文件夹全部项目（不分页） */
+  getAllItems(folderId: string): SearchResultItem[] {
+    const folders = readFolders()
+    const folder = folders.find(f => f.id === folderId)
+    return folder?.items ?? []
+  },
+
+  /** 复制文件夹：创建新文件夹并复制全部项目，返回新文件夹 ID */
+  copyFolder(sourceId: string, targetName: string): string {
+    const folders = readFolders()
+    const source = folders.find(f => f.id === sourceId)
+    const id = `offline_${Date.now()}_${nextId++}`
+    folders.push({ id, name: targetName, items: source ? [...source.items] : [] })
+    writeFolders(folders)
+    return id
   },
 }

@@ -52,7 +52,19 @@
           @load-previous="handleLoadPrevious"
           @pull-state-change="pullGestureActive = $event"
           @retry="retrySearch"
-      />
+      >
+        <template #item-actions="{ item }">
+          <button
+            type="button"
+            class="card-more-btn"
+            :class="{ active: cardMenu?.item.id === item.id }"
+            aria-label="更多操作"
+            @click.stop="openCardMenu(item, $event)"
+          >
+            <IonIcon :icon="ellipsisVertical"/>
+          </button>
+        </template>
+      </SearchResultContainer>
 
       <QuickActionFab
           slot="fixed"
@@ -70,20 +82,52 @@
         :offline-folders="offlineFolderEntries"
         :selected-online-id="folderSource === 'online' ? currentFolderId : ''"
         :selected-offline-id="folderSource === 'offline' ? currentFolderId : ''"
+        :online-folder-counts="onlineFolderCounts"
         @select-online-folder="onSelectOnlineFolder"
         @select-offline-folder="onSelectOfflineFolder"
+        @add-folder="onAddFolder"
+        @rename-folder="onRenameFolder"
+        @delete-folder="onDeleteFolder"
+        @copy-folder="onCopyFolder"
+        @export-folder="onExportFolder"
     />
+
+    <!-- 卡片操作上下文菜单 -->
+    <div
+      v-if="cardMenu"
+      class="card-context-menu"
+      :style="cardMenuStyle"
+      @mousedown.prevent
+      @touchstart.stop
+    >
+      <button type="button" class="card-menu-item" @click.stop="handleCardRead(cardMenu.item)">
+        <IonIcon :icon="bookOutline" class="card-menu-icon"/>
+        <span>阅读</span>
+      </button>
+      <button type="button" class="card-menu-item" @click.stop="handleCardMove(cardMenu.item)">
+        <IonIcon :icon="folderOpenOutline" class="card-menu-icon"/>
+        <span>移动</span>
+      </button>
+      <button type="button" class="card-menu-item" @click.stop="handleCardDownload(cardMenu.item)">
+        <IonIcon :icon="downloadOutline" class="card-menu-icon"/>
+        <span>下载</span>
+      </button>
+      <button type="button" class="card-menu-item card-menu-item--danger" @click.stop="handleCardRemove(cardMenu.item)">
+        <IonIcon :icon="trashOutline" class="card-menu-icon"/>
+        <span>取消收藏</span>
+      </button>
+    </div>
   </IonPage>
 </template>
 
 <script setup lang="ts">
-import {computed, nextTick, onActivated, onDeactivated, onMounted, ref, watch} from 'vue'
+import {computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch} from 'vue'
 
 defineOptions({ name: 'FavoritePage' })
 import {useRouter} from 'vue-router'
 import {IonContent, IonIcon, IonPage, IonRefresher, IonRefresherContent, menuController} from '@ionic/vue'
 import {createGesture, type Gesture} from '@ionic/vue'
-import {folderOpenOutline} from 'ionicons/icons'
+import {bookOutline, downloadOutline, ellipsisVertical, folderOpenOutline, trashOutline} from 'ionicons/icons'
 import type {ScrollCustomEvent} from '@ionic/core'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import QuickActionFab from '@/components/common/QuickActionFab.vue'
@@ -94,11 +138,14 @@ import type {
   SearchResultContainerExposed,
   SearchResultDisplayItem,
 } from '@/components/search/SearchResultContainer.vue'
-import {JmcomicService} from '@/services/JmcomicService'
+import {JmcomicService, showToast} from '@/services/JmcomicService'
+import {OfflineDownloadService} from '@/services/OfflineDownloadService'
 import {OfflineFavoriteService} from '@/services/OfflineFavoriteService'
+import {ExportFormatService} from '@/services/ExportFormatService'
 import {useAuth} from '@/composables/useAuth'
 import type {FavoriteQuery, FavoriteResult, SearchResult, SearchResultItem} from '@/services/JmcomicTypes'
 import {isDraggingRight, isSnappingClosed, leftMenuOpen, rightDragProgress, rightMenuOpen} from '@/composables/sideMenuState'
+import {alertController} from '@ionic/vue'
 
 const NEXT_PAGE_THRESHOLD = 220
 
@@ -109,7 +156,21 @@ type FolderSource = 'online' | 'offline'
 const folderSource = ref<FolderSource>('offline')
 const currentFolderId = ref('default')
 const onlineFolderMap = ref<Record<string, string>>({})
+const onlineFolderCounts = ref<Record<string, number>>({})
 const currentKeyword = ref('')
+
+const loadOnlineFolderCounts = async () => {
+  const ids = Object.keys(onlineFolderMap.value)
+  if (ids.length === 0) return
+  const counts: Record<string, number> = {}
+  const promises = ids.map(id =>
+    JmcomicService.favorites({ folderId: id, page: 1 })
+      .then(r => { counts[id] = r.totalItems })
+      .catch(() => { counts[id] = 0 })
+  )
+  await Promise.all(promises)
+  onlineFolderCounts.value = counts
+}
 
 interface FolderEntry {
   id: string
@@ -435,6 +496,456 @@ const onSelectOfflineFolder = (folderId: string) => {
   void resetWithPage(1)
 }
 
+// --- 限流批量添加（在线复制 + 未来批量解析复用） ---
+
+async function batchAddToOnlineFolder(albumIds: string[], targetFolderId: string): Promise<number> {
+  const concurrency = 3
+  const delayMs = 200
+  const total = albumIds.length
+  let cursor = 0
+  let successCount = 0
+
+  async function worker() {
+    while (cursor < total) {
+      const i = cursor++
+      try {
+        await JmcomicService.toggleAlbumFavorite(albumIds[i], targetFolderId)
+        successCount++
+      } catch {
+        // 跳过失败项
+      }
+      if (delayMs > 0 && cursor < total) {
+        await new Promise(resolve => setTimeout(resolve, delayMs))
+      }
+    }
+  }
+
+  const workerCount = Math.min(concurrency, total)
+  const workers = Array.from({ length: workerCount }, () => worker())
+  await Promise.all(workers)
+  return successCount
+}
+
+// --- 收藏夹管理事件 ---
+const busyManagement = ref(false)
+
+// --- 卡片操作菜单 ---
+interface CardMenuState {
+  item: SearchResultItem
+  x: number
+  y: number
+}
+
+const cardMenu = ref<CardMenuState | null>(null)
+
+const cardMenuStyle = computed(() => {
+  const m = cardMenu.value
+  if (!m) return {}
+  // 菜单估算高度 ~176px (4 × 44px)，超出视口底部则向上翻转
+  const menuH = 180
+  const top = m.y + menuH > window.innerHeight ? m.y - menuH - 8 : m.y
+  return {
+    position: 'fixed' as const,
+    top: `${top}px`,
+    left: `${Math.min(m.x, window.innerWidth - 160)}px`,
+  }
+})
+
+function openCardMenu(item: SearchResultItem, event: MouseEvent) {
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  cardMenu.value = { item, x: rect.left, y: rect.bottom + 4 }
+  // 延迟注册 click-outside，避免同一事件触发立即关闭
+  setTimeout(() => {
+    document.addEventListener('mousedown', handleCardMenuClickOutside, true)
+    document.addEventListener('touchstart', handleCardMenuClickOutside, { capture: true })
+  }, 0)
+}
+
+function closeCardMenu() {
+  cardMenu.value = null
+  document.removeEventListener('mousedown', handleCardMenuClickOutside, true)
+  document.removeEventListener('touchstart', handleCardMenuClickOutside, { capture: true })
+}
+
+function handleCardMenuClickOutside(e: Event) {
+  // 菜单本身有 @mousedown.prevent + @touchstart.stop，所以点击菜单不会触发此 handler
+  closeCardMenu()
+}
+
+// 组件卸载时清理
+onBeforeUnmount(() => {
+  document.removeEventListener('mousedown', handleCardMenuClickOutside, true)
+  document.removeEventListener('touchstart', handleCardMenuClickOutside, { capture: true })
+})
+
+// --- 卡片操作：阅读 ---
+async function handleCardRead(item: SearchResultItem) {
+  closeCardMenu()
+  try {
+    const photo = await JmcomicService.getPhoto(item.id)
+    await router.push({
+      path: `/album/${item.id}/read/${photo.id}`,
+      query: { title: item.title, total: String(photo.images.length) },
+    })
+  } catch {
+    await showToast('获取章节失败', 'danger')
+  }
+}
+
+// --- 卡片操作：移动 ---
+async function handleCardMove(item: SearchResultItem) {
+  closeCardMenu()
+  const isOnline = folderSource.value === 'online'
+  let folders: { id: string; name: string }[]
+
+  if (isOnline) {
+    // 排除当前文件夹
+    folders = Object.entries(onlineFolderMap.value)
+      .filter(([id]) => id !== currentFolderId.value)
+      .map(([id, name]) => ({ id, name }))
+  } else {
+    folders = OfflineFavoriteService.getFolders()
+      .filter(f => f.id !== currentFolderId.value)
+  }
+
+  if (folders.length === 0) {
+    await showToast('没有其他收藏夹', 'medium')
+    return
+  }
+
+  const alert = await alertController.create({
+    header: '移动到',
+    inputs: folders.map(f => ({
+      type: 'radio' as const,
+      label: f.name,
+      value: f.id,
+    })),
+    buttons: [
+      { text: '取消', role: 'cancel' as const },
+      {
+        text: '确定',
+        handler: async (data: string) => {
+          if (!data) return
+          if (isOnline) {
+            try {
+              await JmcomicService.manageFavoriteFolder('move', data, '', item.id)
+              await showToast('已移动', 'success')
+              void resetWithPage(1)
+            } catch {
+              await showToast('移动失败', 'danger')
+            }
+          } else {
+            OfflineFavoriteService.removeItem(currentFolderId.value, item.id)
+            OfflineFavoriteService.addItem(data, item)
+            await showToast('已移动', 'success')
+            void resetWithPage(1)
+          }
+        },
+      },
+    ],
+  })
+  await alert.present()
+}
+
+// --- 卡片操作：下载 ---
+async function handleCardDownload(item: SearchResultItem) {
+  closeCardMenu()
+  try {
+    const photo = await JmcomicService.getPhoto(item.id)
+    const taskId = `${item.id}_${photo.id}`
+    const existing = OfflineDownloadService.getAll().find(t => t.taskId === taskId && t.status !== 'failed')
+    if (existing) {
+      await showToast('该章节已在下载队列中', 'medium')
+      return
+    }
+    await JmcomicService.downloadChapter(item.id, photo.id, item.title, photo.title, item.coverUrl)
+    OfflineDownloadService.addTask({
+      taskId,
+      albumId: item.id,
+      chapterId: photo.id,
+      albumTitle: item.title,
+      chapterTitle: photo.title,
+      coverUrl: item.coverUrl,
+      totalPages: 0,
+      downloadedPages: 0,
+      status: 'queued',
+      createdAt: Date.now(),
+    })
+    await showToast('已加入下载队列', 'success')
+  } catch {
+    await showToast('获取章节失败', 'danger')
+  }
+}
+
+// --- 卡片操作：取消收藏 ---
+async function handleCardRemove(item: SearchResultItem) {
+  closeCardMenu()
+  const isOnline = folderSource.value === 'online'
+  const alert = await alertController.create({
+    header: '取消收藏',
+    message: `确定将「${item.title}」从收藏夹移除？`,
+    buttons: [
+      { text: '取消', role: 'cancel' as const },
+      {
+        text: '移除',
+        role: 'destructive' as const,
+        cssClass: 'danger-alert',
+        handler: async () => {
+          if (isOnline) {
+            try {
+              await JmcomicService.toggleAlbumFavorite(item.id, currentFolderId.value)
+              await showToast('已取消收藏', 'success')
+              void resetWithPage(1)
+            } catch {
+              await showToast('操作失败', 'danger')
+            }
+          } else {
+            OfflineFavoriteService.removeItem(currentFolderId.value, item.id)
+            await showToast('已取消收藏', 'success')
+            void resetWithPage(1)
+          }
+        },
+      },
+    ],
+  })
+  await alert.present()
+}
+
+const onAddFolder = async (source: 'online' | 'offline') => {
+  const alert = await alertController.create({
+    header: '新建收藏夹',
+    inputs: [{ name: 'name', type: 'text', placeholder: '收藏夹名称' }],
+    buttons: [
+      { text: '取消', role: 'cancel' },
+      {
+        text: '确定',
+        handler: async (data) => {
+          const name = data?.name?.trim()
+          if (!name) return
+          if (source === 'online') {
+            try {
+              const r = await JmcomicService.manageFavoriteFolder('add', '0', name, '')
+              if (r.status === 'ok') {
+                await refreshOnlineFolderList()
+                await showToast('收藏夹已创建', 'success')
+              }
+            } catch { /* ignore */ }
+          } else {
+            OfflineFavoriteService.createFolder(name)
+            await showToast('收藏夹已创建', 'success')
+          }
+        },
+      },
+    ],
+  })
+  await alert.present()
+}
+
+const onRenameFolder = async (payload: { folderId: string; folderName: string; isOnline: boolean }) => {
+  const alert = await alertController.create({
+    header: '重命名收藏夹',
+    inputs: [{ name: 'name', type: 'text', placeholder: '新名称', value: payload.folderName }],
+    buttons: [
+      { text: '取消', role: 'cancel' },
+      {
+        text: '确定',
+        handler: async (data) => {
+          const name = data?.name?.trim()
+          if (!name || name === payload.folderName) return
+          if (payload.isOnline) {
+            try {
+              const r = await JmcomicService.manageFavoriteFolder('edit', payload.folderId, name, '')
+              if (r.status === 'ok') {
+                await refreshOnlineFolderList()
+                await showToast('已重命名', 'success')
+              }
+            } catch { /* ignore */ }
+          } else {
+            OfflineFavoriteService.renameFolder(payload.folderId, name)
+            await showToast('已重命名', 'success')
+          }
+        },
+      },
+    ],
+  })
+  await alert.present()
+}
+
+const onDeleteFolder = async (payload: { folderId: string; folderName: string; isOnline: boolean }) => {
+  const alert = await alertController.create({
+    header: '删除收藏夹',
+    message: `确定删除「${payload.folderName}」吗？此操作不可撤销。`,
+    buttons: [
+      { text: '取消', role: 'cancel' },
+      {
+        text: '删除',
+        role: 'destructive',
+        cssClass: 'danger-alert',
+        handler: async () => {
+          if (payload.isOnline) {
+            try {
+              const r = await JmcomicService.manageFavoriteFolder('del', payload.folderId, '', '')
+              if (r.status === 'ok') {
+                // 若删除的是当前文件夹，切到第一个
+                if (folderSource.value === 'online' && currentFolderId.value === payload.folderId) {
+                  currentFolderId.value = '0'
+                    void resetWithPage(1)
+                  }
+                  await refreshOnlineFolderList()
+                  await showToast('已删除', 'success')
+              }
+            } catch { /* ignore */ }
+          } else {
+            OfflineFavoriteService.deleteFolder(payload.folderId)
+            if (folderSource.value === 'offline' && currentFolderId.value === payload.folderId) {
+              const folders = OfflineFavoriteService.getFolders()
+              currentFolderId.value = folders[0]?.id ?? 'default'
+            }
+            void resetWithPage(1)
+            await showToast('已删除', 'success')
+          }
+        },
+      },
+    ],
+  })
+  await alert.present()
+}
+
+const onCopyFolder = async (payload: { folderId: string; folderName: string; isOnline: boolean }) => {
+  if (busyManagement.value) {
+    await showToast('操作进行中，请稍候', 'medium')
+    return
+  }
+  const alert = await alertController.create({
+    header: '复制收藏夹',
+    message: '将创建新文件夹并复制全部本子，确定吗？',
+    inputs: [{ name: 'name', type: 'text', placeholder: '新收藏夹名称', value: `${payload.folderName} (副本)` }],
+    buttons: [
+      { text: '取消', role: 'cancel' },
+      {
+        text: '确定',
+        handler: async (data) => {
+          const name = data?.name?.trim()
+          if (!name) return
+
+          busyManagement.value = true
+
+          if (payload.isOnline) {
+            try {
+              // 1. 创建新文件夹
+              const createResult = await JmcomicService.manageFavoriteFolder('add', '0', name, '')
+              if (createResult.status !== 'ok') {
+                await showToast('创建文件夹失败', 'danger')
+                return
+              }
+              // 获取新文件夹 ID（从刷新后的 folderList 中匹配）
+              await refreshOnlineFolderList()
+              const newFolderId = Object.entries(onlineFolderMap.value)
+                .find(([, fName]) => fName === name)?.[0]
+              if (!newFolderId) {
+                await showToast('创建成功但无法定位新文件夹', 'danger')
+                return
+              }
+              // 2. 读取源夹全部 ID
+              const albumIds: string[] = []
+              let page = 1
+              let totalPages = 1
+              while (page <= totalPages) {
+                const r = await JmcomicService.favorites({ folderId: payload.folderId, page })
+                r.content.forEach(item => albumIds.push(item.id))
+                totalPages = r.totalPages
+                page++
+              }
+              // 3. 限流批量添加
+              if (albumIds.length > 0) {
+                const count = await batchAddToOnlineFolder(albumIds, newFolderId)
+                await showToast(`已复制 ${count}/${albumIds.length} 个本子`, 'success')
+              } else {
+                await showToast('源文件夹为空', 'medium')
+              }
+            } catch (e) {
+              await showToast('复制失败', 'danger')
+            }
+          } else {
+            // 离线复制
+            const newId = OfflineFavoriteService.copyFolder(payload.folderId, name)
+            await showToast('已复制', 'success')
+            // 如果当前选中的是源文件夹，保持选中
+            if (folderSource.value === 'offline' && currentFolderId.value === payload.folderId) {
+              currentFolderId.value = newId
+              void resetWithPage(1)
+            }
+          }
+
+          busyManagement.value = false
+        },
+      },
+    ],
+  })
+  await alert.present()
+}
+
+const onExportFolder = async (payload: { folderId: string; folderName: string; isOnline: boolean }) => {
+  if (busyManagement.value) {
+    await showToast('操作进行中，请稍候', 'medium')
+    return
+  }
+  busyManagement.value = true
+  const template = ExportFormatService.getExportFormat()
+
+  try {
+    let items: SearchResultItem[]
+    if (payload.isOnline) {
+      items = []
+      let page = 1
+      let totalPages = 1
+      while (page <= totalPages) {
+        const r = await JmcomicService.favorites({ folderId: payload.folderId, page })
+        items.push(...r.content)
+        totalPages = r.totalPages
+        page++
+      }
+    } else {
+      items = OfflineFavoriteService.getAllItems(payload.folderId)
+    }
+
+    if (items.length === 0) {
+      await showToast('该文件夹没有内容', 'medium')
+      return
+    }
+
+    const text = items.map(item => ExportFormatService.renderExportFormat(template, item)).join('\n')
+
+    try {
+      await navigator.clipboard.writeText(text)
+      await showToast(`已复制 ${items.length} 条到剪贴板`, 'success')
+    } catch {
+      // clipboard 不可用，用 alert 展示
+      const alert = await alertController.create({
+        header: '导出结果',
+        message: `共 ${items.length} 条，请手动复制：`,
+        inputs: [{ name: 'text', type: 'textarea', value: text }],
+        buttons: [{ text: '关闭', role: 'cancel' }],
+      })
+      await alert.present()
+    }
+  } catch (e) {
+    await showToast('导出失败', 'danger')
+  } finally {
+    busyManagement.value = false
+  }
+}
+
+async function refreshOnlineFolderList() {
+  try {
+    const result: FavoriteResult = await JmcomicService.favorites({ folderId: '0', page: 1 })
+    if (result.folderList) {
+      onlineFolderMap.value = result.folderList
+    }
+    await loadOnlineFolderCounts()
+  } catch { /* ignore */ }
+}
+
 // --- 初始化 ---
 const { isLoggedIn } = useAuth()
 
@@ -453,6 +964,7 @@ const initOnlineFolders = async () => {
     if (result.folderList) {
       onlineFolderMap.value = result.folderList
     }
+    void loadOnlineFolderCounts()
     folderSource.value = 'online'
     currentFolderId.value = '0'
     void resetWithPage(1)
@@ -519,10 +1031,13 @@ const setupCloseGesture = () => {
   menuCloseGesture.enable(true)
 }
 
-// 右侧菜单打开时建立关闭手势，关闭时销毁
+// 右侧菜单打开时建立关闭手势，关闭时销毁；同时刷新在线文件夹数量
 watch(rightMenuOpen, (open) => {
   if (open) {
     nextTick(() => setupCloseGesture())
+    if (isLoggedIn.value) {
+      void loadOnlineFolderCounts()
+    }
   } else {
     menuCloseGesture?.destroy()
     menuCloseGesture = undefined
@@ -630,5 +1145,84 @@ onActivated(async () => {
   background: #fff0e7;
   border-radius: 999px;
   display: inline-block;
+}
+
+/* 卡片更多操作按钮 */
+.card-more-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 0.35);
+  color: #fff;
+  font-size: 18px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.16s ease, background-color 0.14s ease;
+}
+
+:deep(.list-card):hover .card-more-btn,
+:deep(.grid-card):active .card-more-btn,
+.card-more-btn.active {
+  opacity: 1;
+}
+
+.card-more-btn:active {
+  background: rgb(0 0 0 / 0.55);
+}
+
+/* 卡片上下文菜单 */
+.card-context-menu {
+  position: fixed;
+  z-index: 200;
+  min-width: 150px;
+  background: #fffbf8;
+  border: 1px solid rgb(250 156 105 / 0.3);
+  border-radius: 14px;
+  box-shadow: 0 8px 22px rgb(76 42 24 / 0.16);
+  overflow: hidden;
+}
+
+.card-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 16px;
+  border: 0;
+  border-bottom: 1px solid rgb(245 210 188 / 0.4);
+  background: transparent;
+  color: #3a261d;
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.14s ease;
+}
+
+.card-menu-item:last-child {
+  border-bottom: 0;
+}
+
+.card-menu-item:hover,
+.card-menu-item:active {
+  background: #fff0e7;
+}
+
+.card-menu-item--danger {
+  color: #d4533e;
+}
+
+.card-menu-icon {
+  font-size: 16px;
+  flex-shrink: 0;
 }
 </style>

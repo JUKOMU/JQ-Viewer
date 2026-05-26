@@ -93,6 +93,7 @@
             <div class="cover-wrap">
               <img class="cover-img" :src="entry.item.coverUrl" :alt="entry.item.title" loading="lazy">
             </div>
+            <slot name="item-actions" :item="entry.item" :page="entry.page" :indexInPage="entry.indexInPage" />
             <div class="item-info">
               <h3 class="item-title">{{ entry.item.title }}</h3>
               <template v-if="!isGridMode">
@@ -522,6 +523,7 @@ defineExpose<SearchResultContainerExposed>({
 }
 
 .list-card {
+  position: relative;
   display: flex;
   align-items: start;
   gap: 10px;
@@ -552,6 +554,7 @@ defineExpose<SearchResultContainerExposed>({
 }
 
 .grid-card {
+  position: relative;
   overflow: hidden;
   border-radius: 12px;
   background: #fffaf6;

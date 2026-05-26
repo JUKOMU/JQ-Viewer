@@ -68,6 +68,15 @@
 
       <div class="bottom-spacer" />
     </IonContent>
+
+    <FavoriteFolderPicker
+      v-model="showFolderPicker"
+      :online-folders="pickerOnlineFolders"
+      :offline-folders="pickerOfflineFolders"
+      :online-folder-counts="onlineFolderCounts"
+      @select="onPickerSelect"
+      @add-folder="onPickerAddFolder"
+    />
   </IonPage>
 </template>
 
@@ -77,15 +86,18 @@ import {useRoute, useRouter} from 'vue-router'
 import {IonContent, IonPage} from '@ionic/vue'
 import type {PluginListenerHandle} from '@capacitor/core'
 import {getImageUrl, JmcomicService, showToast} from '@/services/JmcomicService'
-import type {AlbumDetail, AlbumMeta, CommentItem, PhotoDetail, PreloadResult} from '@/services/JmcomicTypes'
+import type {AlbumDetail, AlbumMeta, CommentItem, FavoriteResult, PhotoDetail, PreloadResult, SearchResultItem} from '@/services/JmcomicTypes'
 import { makeTaskId } from '@/services/JmcomicTypes'
 import {OfflineDownloadService} from '@/services/OfflineDownloadService'
+import {OfflineFavoriteService} from '@/services/OfflineFavoriteService'
 import {HistoryService} from '@/services/HistoryService'
+import {useAuth} from '@/composables/useAuth'
 import AlbumHeader from '@/components/album/AlbumHeader.vue'
 import AlbumInfoTab from '@/components/album/AlbumInfoTab.vue'
 import AlbumChaptersTab from '@/components/album/AlbumChaptersTab.vue'
 import AlbumPreviewTab from '@/components/album/AlbumPreviewTab.vue'
 import AlbumCommentsTab from '@/components/album/AlbumCommentsTab.vue'
+import FavoriteFolderPicker from '@/components/favorite/FavoriteFolderPicker.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -143,6 +155,126 @@ const refreshDownloadStatuses = async () => {
 
 // ---- 操作 ----
 const actionBusy = reactive({ like: false, favorite: false })
+
+// ---- 收藏夹选择弹窗 ----
+const { isLoggedIn } = useAuth()
+const showFolderPicker = ref(false)
+
+interface FolderEntry {
+  id: string
+  name: string
+  count: number
+}
+
+const pickerOnlineFolders = ref<FolderEntry[]>([])
+const pickerOfflineFolders = ref<FolderEntry[]>([])
+const onlineFolderCounts = ref<Record<string, number>>({})
+
+async function openFolderPicker() {
+  pickerOfflineFolders.value = OfflineFavoriteService.getFolders()
+
+  if (isLoggedIn.value) {
+    try {
+      const result: FavoriteResult = await JmcomicService.favorites({ folderId: '0', page: 1 })
+      if (result.folderList) {
+        const entries: FolderEntry[] = []
+        const counts: Record<string, number> = {}
+        const countPromises: Promise<void>[] = []
+        for (const [id, name] of Object.entries(result.folderList)) {
+          entries.push({ id, name, count: 0 })
+          countPromises.push(
+            JmcomicService.favorites({ folderId: id, page: 1 })
+              .then(r => { counts[id] = r.totalItems })
+              .catch(() => { counts[id] = 0 })
+          )
+        }
+        pickerOnlineFolders.value = entries
+        await Promise.all(countPromises)
+        onlineFolderCounts.value = counts
+      }
+    } catch {
+      pickerOnlineFolders.value = []
+    }
+  } else {
+    pickerOnlineFolders.value = []
+  }
+
+  showFolderPicker.value = true
+}
+
+async function onPickerSelect(payload: { folderId: string; source: 'online' | 'offline' }) {
+  showFolderPicker.value = false
+  if (!albumDetail.value) return
+
+  actionBusy.favorite = true
+  try {
+    if (payload.source === 'online') {
+      await JmcomicService.toggleAlbumFavorite(albumId.value, payload.folderId)
+    } else {
+      OfflineFavoriteService.addItem(payload.folderId, {
+        id: albumDetail.value.id,
+        title: albumDetail.value.title,
+        coverUrl: albumDetail.value.image,
+        authors: albumDetail.value.authors,
+        tags: albumDetail.value.tags,
+      })
+    }
+    albumDetail.value.isFavorite = true
+    await showToast('已收藏', 'success')
+  } catch { /* ignore */ } finally {
+    actionBusy.favorite = false
+  }
+}
+
+async function onPickerAddFolder() {
+  const { alertController } = await import('@ionic/vue')
+  const alert = await alertController.create({
+    header: '新建收藏夹',
+    inputs: [{ name: 'name', type: 'text', placeholder: '收藏夹名称' }],
+    buttons: [
+      { text: '取消', role: 'cancel' },
+      {
+        text: '确定',
+        handler: async (data) => {
+          const name = data?.name?.trim()
+          if (!name) return
+
+          if (isLoggedIn.value) {
+            try {
+              const r = await JmcomicService.manageFavoriteFolder('add', '0', name, '')
+              if (r.status === 'ok') {
+                await showToast('收藏夹已创建', 'success')
+                // 刷新在线列表 + 数量
+                const result: FavoriteResult = await JmcomicService.favorites({ folderId: '0', page: 1 })
+                if (result.folderList) {
+                  const entries: FolderEntry[] = []
+                  const counts: Record<string, number> = {}
+                  const countPromises: Promise<void>[] = []
+                  for (const [id, fName] of Object.entries(result.folderList)) {
+                    entries.push({ id, name: fName, count: 0 })
+                    countPromises.push(
+                      JmcomicService.favorites({ folderId: id, page: 1 })
+                        .then(r => { counts[id] = r.totalItems })
+                        .catch(() => { counts[id] = 0 })
+                    )
+                  }
+                  pickerOnlineFolders.value = entries
+                  await Promise.all(countPromises)
+                  onlineFolderCounts.value = counts
+                }
+              }
+            } catch { /* ignore */ }
+          } else {
+            OfflineFavoriteService.createFolder(name)
+            pickerOfflineFolders.value = OfflineFavoriteService.getFolders()
+            await showToast('收藏夹已创建', 'success')
+          }
+        },
+      },
+    ],
+  })
+  await alert.present()
+}
 
 // ---- 预览 ----
 const PREVIEW_BATCH = 20
@@ -314,6 +446,11 @@ const recordBrowseHistory = () => {
   })
 }
 
+// 弹窗关闭且未选择时重置 busy 状态
+watch(showFolderPicker, (open) => {
+  if (!open) actionBusy.favorite = false
+})
+
 // 同组件导航（相关本子跳转）时记录浏览历史
 watch(albumId, (newId, oldId) => {
   if (newId && newId !== oldId) recordBrowseHistory()
@@ -365,13 +502,20 @@ const handleToggleLike = async () => {
 
 const handleToggleFavorite = async () => {
   if (actionBusy.favorite || !albumDetail.value) return
-  actionBusy.favorite = true
-  try {
-    await JmcomicService.toggleAlbumFavorite(albumId.value)
-    albumDetail.value.isFavorite = !albumDetail.value.isFavorite
-  } catch { /* ignore */ } finally {
-    actionBusy.favorite = false
+  // 已收藏：直接取消
+  if (albumDetail.value.isFavorite) {
+    actionBusy.favorite = true
+    try {
+      await JmcomicService.toggleAlbumFavorite(albumId.value)
+      albumDetail.value.isFavorite = false
+    } catch { /* ignore */ } finally {
+      actionBusy.favorite = false
+    }
+    return
   }
+  // 未收藏：打开收藏夹选择弹窗
+  actionBusy.favorite = true
+  void openFolderPicker()
 }
 
 const handleDownload = async () => {

@@ -18,6 +18,8 @@ declare module 'vue' {
     AlbumPreviewTab: typeof import('./src/components/album/AlbumPreviewTab.vue')['default']
     CategorySearchToolbar: typeof import('./src/components/search/CategorySearchToolbar.vue')['default']
     DownloadTaskCard: typeof import('./src/components/download/DownloadTaskCard.vue')['default']
+    FavoriteFolderContextMenu: typeof import('./src/components/favorite/FavoriteFolderContextMenu.vue')['default']
+    FavoriteFolderPicker: typeof import('./src/components/favorite/FavoriteFolderPicker.vue')['default']
     FavoriteSearchBar: typeof import('./src/components/favorite/FavoriteSearchBar.vue')['default']
     FavoriteSideMenu: typeof import('./src/components/favorite/FavoriteSideMenu.vue')['default']
     HorizontalPageView: typeof import('./src/components/reader/HorizontalPageView.vue')['default']

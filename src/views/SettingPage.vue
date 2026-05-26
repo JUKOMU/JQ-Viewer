@@ -151,6 +151,48 @@
           </div>
         </div>
 
+        <!-- 分组：导出设置 -->
+        <div class="section-label">导出设置</div>
+        <div class="card">
+          <div class="row">
+            <div class="row-left">
+              <span class="row-title">导出格式模板</span>
+              <span class="row-subtitle">收藏夹导出时每行文本的格式</span>
+            </div>
+            <div class="row-right">
+              <input
+                class="text-input"
+                type="text"
+                :value="exportFormat"
+                @change="onExportFormatChange"
+              />
+            </div>
+          </div>
+          <!-- 预览 -->
+          <div class="row divider">
+            <div class="row-left">
+              <span class="row-title">可用变量</span>
+              <div class="var-tags">
+                <span class="var-tag">{id}</span>
+                <span class="var-tag">{title}</span>
+                <span class="var-tag">{author}</span>
+                <span class="var-tag">{authors}</span>
+                <span class="var-tag">{tags}</span>
+              </div>
+            </div>
+          </div>
+          <div class="row divider">
+            <div class="row-left">
+              <span class="row-title">预览</span>
+              <span class="row-subtitle preview-mono">{{ exportPreview }}</span>
+            </div>
+          </div>
+          <div class="row divider action" @click="resetExportFormat">
+            <span class="row-title">重置为默认</span>
+            <span class="row-subtitle" style="color: #b89a84; font-size: 12px;">JM{id}{title}</span>
+          </div>
+        </div>
+
         <!-- 分组：网络状态 -->
         <div class="section-label">网络状态</div>
         <div class="card">
@@ -216,6 +258,7 @@ import type { PluginListenerHandle } from '@capacitor/core'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import { JmcomicService, showToast } from '@/services/JmcomicService'
 import { initSettings, SettingsStore } from '@/services/SettingsService'
+import { ExportFormatService } from '@/services/ExportFormatService'
 import { useAuth } from '@/composables/useAuth'
 import type { CacheCapacityInfo, RelocationProgress } from '@/services/JmcomicTypes'
 
@@ -238,6 +281,9 @@ const preloadConcurrency = ref(SettingsStore.getPreloadConcurrency())
 const downloadConcurrency = ref(SettingsStore.getDownloadConcurrency())
 const downloadPublic = ref(SettingsStore.getDownloadPublic())
 const ocrEnabled = ref(SettingsStore.getOcrEnabled())
+const exportFormat = ref(ExportFormatService.getExportFormat())
+
+const exportPreview = computed(() => ExportFormatService.previewExportFormat(exportFormat.value))
 
 // ---- 搬迁弹窗状态 ----
 const showRelocationModal = ref(false)
@@ -392,6 +438,19 @@ async function onOcrEnabledChange(e: CustomEvent) {
     SettingsStore.setOcrEnabled(!enabled)
     await showToast('保存失败', 'danger')
   }
+}
+
+// ---- 导出格式 ----
+function onExportFormatChange(e: Event) {
+  const val = (e.target as HTMLInputElement).value.trim()
+  exportFormat.value = val || ExportFormatService.getExportFormat()
+  ExportFormatService.setExportFormat(val)
+}
+
+function resetExportFormat() {
+  ExportFormatService.resetExportFormat()
+  exportFormat.value = ExportFormatService.getExportFormat()
+  showToast('已重置为默认格式', 'success')
 }
 
 // ---- 公开下载 ----
@@ -602,6 +661,47 @@ async function onDownloadPublicChange(e: CustomEvent) {
   color: #b89a84;
   width: 30px;
   text-align: right;
+}
+
+/* 导出格式 */
+.text-input {
+  width: 160px;
+  height: 32px;
+  border: 1px solid #e0cfc4;
+  border-radius: 8px;
+  padding: 0 10px;
+  text-align: left;
+  font-size: 13px;
+  color: #4c2a18;
+  background: #fdfaf8;
+  outline: none;
+  font-family: monospace;
+}
+
+.text-input:focus {
+  border-color: #f0a060;
+}
+
+.var-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.var-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #fff0e7;
+  color: #9b5a35;
+  font-size: 11px;
+  font-family: monospace;
+}
+
+.preview-mono {
+  font-family: monospace;
+  word-break: break-all;
 }
 
 /* 搬迁进度遮罩 */

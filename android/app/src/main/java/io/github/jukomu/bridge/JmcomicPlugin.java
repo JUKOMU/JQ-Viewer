@@ -673,6 +673,26 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
     }
 
     @PluginMethod
+    public void manageFavoriteFolder(PluginCall call) {
+        try {
+            String type = call.getString("type");
+            if (type == null || type.isEmpty()) {
+                call.reject("type is required (add/edit/del)");
+                return;
+            }
+            call.setKeepAlive(true);
+            apiService.manageFavoriteFolder(
+                    type,
+                    call.getString("folderId", "0"),
+                    call.getString("folderName", ""),
+                    call.getString("albumId", ""),
+                    bridgeCallback(call));
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
     public void toggleAlbumFavorite(PluginCall call) {
         try {
             String id = call.getString("id");

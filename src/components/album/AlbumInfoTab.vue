@@ -39,11 +39,11 @@
       <div class="info-list">
         <div class="info-row">
           <span class="info-label">ID</span>
-          <span class="info-value">{{ album.id }}</span>
+          <span class="info-value clickable" @click="copyText(String(album.id))">{{ album.id }}</span>
         </div>
         <div class="info-row">
           <span class="info-label">标题</span>
-          <span class="info-value">{{ album.title }}</span>
+          <span class="info-value clickable" @click="copyText(album.title)">{{ album.title }}</span>
         </div>
         <div v-if="album.description" class="info-row">
           <span class="info-label">描述</span>
@@ -62,13 +62,13 @@
         <div v-if="album.authors.length" class="info-row">
           <span class="info-label">Authors</span>
           <div class="info-tags">
-            <span v-for="author in album.authors" :key="author" class="tag">{{ author }}</span>
+            <span v-for="author in album.authors" :key="author" class="tag tag-clickable" @click="searchByTag(author)">{{ author }}</span>
           </div>
         </div>
         <div v-if="album.tags.length" class="info-row">
           <span class="info-label">Tags</span>
           <div class="info-tags">
-            <span v-for="tag in album.tags" :key="tag" class="tag">{{ tag }}</span>
+            <span v-for="tag in album.tags" :key="tag" class="tag tag-clickable" @click="searchByTag(tag)">{{ tag }}</span>
           </div>
         </div>
         <div v-if="album.actors.length" class="info-row">
@@ -131,6 +131,7 @@ defineEmits<{
   'navigate-album': [related: AlbumMeta]
 }>()
 import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { IonIcon } from '@ionic/vue'
 import {
   bookmark,
@@ -142,6 +143,9 @@ import {
   timeOutline,
 } from 'ionicons/icons'
 import type { AlbumDetail, AlbumMeta } from '@/services/JmcomicTypes'
+import { showToast } from '@/services/JmcomicService'
+
+const router = useRouter()
 
 const props = defineProps<{
   album: AlbumDetail | null
@@ -150,6 +154,19 @@ const props = defineProps<{
 }>()
 
 const descExpanded = ref(false)
+
+const copyText = async (text: string) => {
+  try {
+    await navigator.clipboard.writeText(text)
+    await showToast('已复制', 'success')
+  } catch {
+    // clipboard 不可用，静默失败
+  }
+}
+
+const searchByTag = (keyword: string) => {
+  void router.push({ path: '/search', query: { keyword } })
+}
 
 const downloadClass = computed(() => {
   if (!props.downloadStatus) return {}
@@ -304,6 +321,15 @@ const downloadIcon = computed(() => {
   line-height: 1.45;
 }
 
+.info-value.clickable {
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.info-value.clickable:hover {
+  color: #fa9c69;
+}
+
 .desc-text {
   margin: 0;
   display: -webkit-box;
@@ -338,6 +364,15 @@ const downloadIcon = computed(() => {
   background: #fff0e7;
   color: #9b5a35;
   font-size: 10px;
+}
+
+.tag-clickable {
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.tag-clickable:hover {
+  background: #fadcc8;
 }
 
 /* 相关作品 */

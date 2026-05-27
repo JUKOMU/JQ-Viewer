@@ -4,12 +4,20 @@ import android.Manifest;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.Intent;
+
+import static android.app.Activity.RESULT_OK;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.os.Build;
+import android.provider.MediaStore;
+import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
-import com.getcapacitor.*;
+import com.getcapacitor.JSArray;
+import com.getcapacitor.JSObject;
+import com.getcapacitor.Plugin;
+import com.getcapacitor.PluginCall;
+import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import io.github.jukomu.data.CredentialStore;
 import io.github.jukomu.data.DownloadStore;
@@ -32,7 +40,14 @@ import com.google.mlkit.vision.text.TextRecognizer;
 import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions;
 import io.github.jukomu.jmcomic.api.exception.ResponseException;
 import io.github.jukomu.jmcomic.core.config.JmConfiguration;
-import io.github.jukomu.service.*;
+import io.github.jukomu.service.ApiCallback;
+import io.github.jukomu.service.ApiService;
+import io.github.jukomu.service.DownloadProgressData;
+import io.github.jukomu.service.DownloadService;
+import io.github.jukomu.service.PermissionService;
+import io.github.jukomu.service.PreloadService;
+import io.github.jukomu.service.ServiceListener;
+import io.github.jukomu.service.SettingsService;
 import io.github.jukomu.service.PermissionState;
 import okhttp3.Cookie;
 import org.json.JSONArray;
@@ -41,6 +56,8 @@ import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -55,10 +72,13 @@ import java.util.concurrent.TimeUnit;
  */
 @CapacitorPlugin(name = "Jmcomic")
 public class JmcomicPlugin extends Plugin implements ServiceListener {
+    private static final String TAG = "JmcomicPlugin";
+
     private volatile JmApiClient sharedClient;
     private volatile ExecutorService imageExecutor;
     private volatile ExecutorService apiExecutor;
     private volatile ScheduledExecutorService apiTimeoutExecutor;
+    private ExecutorService ocrExecutor;
     private static final int API_EXECUTOR_SIZE = 12;
     private int imageConcurrency = 6;
     private int downloadConcurrency = 6;
@@ -77,7 +97,8 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
     private PermissionService permissionService;
 
     // ---- OCR 相关 ----
-    private PluginCall pendingOcrCall;
+    private volatile PluginCall pendingOcrCall;
+    private final Object ocrLock = new Object();
     private static final int REQUEST_PICK_IMAGE = 1001;
 
     // ---- 服务 ----
@@ -106,7 +127,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         if (downloadPublic) {
             PermissionState state = permissionService.checkState(ctx);
             if (!state.granted) {
-                android.util.Log.w("JmcomicPlugin",
+                Log.w("JmcomicPlugin",
                         "公开下载已开启但缺少 " + state.permissionType + "，" +
                                 "回退到私有目录。请调用 requestManageStorage 授权。");
                 usePublicDir = false;
@@ -120,8 +141,8 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         FavoriteStore.getInstance(ctx);
 
         // 清理僵尸任务的部分下载文件（validateOnStartup 标记前）
-        List<org.json.JSONObject> zombieTasks = downloadDb.getAllTasks();
-        for (org.json.JSONObject t : zombieTasks) {
+        List<JSONObject> zombieTasks = downloadDb.getAllTasks();
+        for (JSONObject t : zombieTasks) {
             String s = t.optString("status");
             if ("queued".equals(s) || "downloading".equals(s) || "paused".equals(s)) {
                 FileStore.getInstance().deleteChapter(
@@ -141,6 +162,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         imageExecutor = Executors.newFixedThreadPool(imageConcurrency);
         apiExecutor = Executors.newFixedThreadPool(API_EXECUTOR_SIZE);
         apiTimeoutExecutor = Executors.newSingleThreadScheduledExecutor();
+        ocrExecutor = Executors.newSingleThreadExecutor();
 
         // 注册网络变化监听，网络切换时主动触发域名探活
         registerNetworkCallback();
@@ -157,11 +179,11 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         this.downloadService = new DownloadService(downloadDb,
                 FileStore.getInstance(), sharedClient, imageExecutor, this);
 
-        // 恢复登录态（Cookie + username + userInfo）
-        restoreAuthState(settingsDb);
+        // 清除登录态缓存，强制通过凭据重新登录
+        clearAuthState(settingsDb);
     }
 
-    private void restoreAuthState(SettingsStore settingsDb) {
+    private void clearAuthState(SettingsStore settingsDb) {
         settingsDb.deleteKey("auth_cookies_json");
         settingsDb.deleteKey("auth_username");
         settingsDb.deleteKey("auth_user_info_json");
@@ -180,21 +202,27 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         if (connectivityManager != null && networkCallback != null) {
             try {
                 connectivityManager.unregisterNetworkCallback(networkCallback);
-            } catch (IllegalArgumentException ignored) {
+            } catch (IllegalArgumentException e) {
+                Log.d(TAG, "取消注册网络回调失败", e);
             }
         }
         shutdownGracefully(domainProbeExecutor);
+        shutdownGracefully(ocrExecutor);
 
-        shutdownGracefully(apiExecutor);
         shutdownGracefully(apiTimeoutExecutor);
-        shutdownGracefully(imageExecutor);
+        shutdownGracefully(apiExecutor, 10);
+        shutdownGracefully(imageExecutor, 2);
     }
 
     private void shutdownGracefully(ExecutorService executor) {
+        shutdownGracefully(executor, 2);
+    }
+
+    private void shutdownGracefully(ExecutorService executor, int timeoutSeconds) {
         if (executor == null) return;
         executor.shutdown();
         try {
-            if (!executor.awaitTermination(2, TimeUnit.SECONDS)) {
+            if (!executor.awaitTermination(timeoutSeconds, TimeUnit.SECONDS)) {
                 executor.shutdownNow();
             }
         } catch (InterruptedException e) {
@@ -210,7 +238,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         Context ctx = getContext();
         connectivityManager = (ConnectivityManager) ctx.getSystemService(Context.CONNECTIVITY_SERVICE);
         if (connectivityManager == null) {
-            android.util.Log.w("JmcomicPlugin", "ConnectivityManager 不可用，跳过网络监听");
+            Log.w("JmcomicPlugin", "ConnectivityManager 不可用，跳过网络监听");
             return;
         }
 
@@ -242,7 +270,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         };
 
         connectivityManager.registerDefaultNetworkCallback(networkCallback);
-        android.util.Log.i("JmcomicPlugin", "网络变化监听已注册");
+        Log.i("JmcomicPlugin", "网络变化监听已注册");
     }
 
     /**
@@ -266,19 +294,19 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
                     startEvent.put("timestamp", System.currentTimeMillis());
                     notifyListeners("networkProbe", startEvent);
 
-                    android.util.Log.i("JmcomicPlugin", "重新探活域名...");
+                    Log.i("JmcomicPlugin", "重新探活域名...");
                     client.reprobeDomains();
-                    android.util.Log.i("JmcomicPlugin", "域名重新探活完成");
+                    Log.i("JmcomicPlugin", "域名重新探活完成");
 
                     try {
-                        java.util.Map<String, Integer> states = client.getDomainStates();
+                        Map<String, Integer> states = client.getDomainStates();
 
-                        org.json.JSONObject result = new org.json.JSONObject();
+                        JSONObject result = new JSONObject();
                         result.put("phase", "result");
                         int alive = 0;
-                        org.json.JSONArray domains = new org.json.JSONArray();
-                        for (java.util.Map.Entry<String, Integer> e : states.entrySet()) {
-                            org.json.JSONObject d = new org.json.JSONObject();
+                        JSONArray domains = new JSONArray();
+                        for (Map.Entry<String, Integer> e : states.entrySet()) {
+                            JSONObject d = new JSONObject();
                             d.put("domain", e.getKey());
                             d.put("reachable", e.getValue() < (Integer.MAX_VALUE / 2));
                             if (d.getBoolean("reachable")) alive++;
@@ -307,7 +335,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
                         notifyListeners("networkProbe", errEvent);
                     }
                 } catch (Exception e) {
-                    android.util.Log.w("JmcomicPlugin", "域名重新探活失败", e);
+                    Log.w("JmcomicPlugin", "域名重新探活失败", e);
                     JSObject errEvent = new JSObject();
                     errEvent.put("phase", "error");
                     String errMsg = e.getMessage();
@@ -331,12 +359,12 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
                 call.reject("client 尚未初始化");
                 return;
             }
-            java.util.Map<String, Integer> states = client.getDomainStates();
+            Map<String, Integer> states = client.getDomainStates();
 
             JSObject result = new JSObject();
             int alive = 0;
             JSONArray domains = new JSONArray();
-            for (java.util.Map.Entry<String, Integer> e : states.entrySet()) {
+            for (Map.Entry<String, Integer> e : states.entrySet()) {
                 JSONObject d = new JSONObject();
                 d.put("domain", e.getKey());
                 boolean reachable = e.getValue() < (Integer.MAX_VALUE / 2);
@@ -353,7 +381,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
             result.put("allDeadFallback", allDeadFallback);
             call.resolve(result);
         } catch (Exception e) {
-            android.util.Log.e("JmcomicPlugin", "获取域名状态失败", e);
+            Log.e("JmcomicPlugin", "获取域名状态失败", e);
             call.reject("获取域名状态失败，请稍后重试");
         }
     }
@@ -380,11 +408,11 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
                 call.reject("client 尚未初始化");
                 return;
             }
-            java.util.Map<String, Integer> latency = client.getDomainLatency();
+            Map<String, Integer> latency = client.getDomainLatency();
 
             JSObject ret = new JSObject();
             JSONArray results = new JSONArray();
-            for (java.util.Map.Entry<String, Integer> e : latency.entrySet()) {
+            for (Map.Entry<String, Integer> e : latency.entrySet()) {
                 JSONObject r = new JSONObject();
                 r.put("domain", e.getKey());
                 int ms = e.getValue();
@@ -395,7 +423,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
             ret.put("results", results);
             call.resolve(ret);
         } catch (Exception e) {
-            android.util.Log.e("JmcomicPlugin", "测速失败", e);
+            Log.e("JmcomicPlugin", "测速失败", e);
             call.reject("测速失败，请稍后重试");
         }
     }
@@ -471,12 +499,16 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
      * 供 MainActivity.onActivityResult 调用，处理图片选择结果并执行 OCR。
      */
     public void handleActivityResult(int requestCode, int resultCode, Intent data) {
-        if (requestCode != REQUEST_PICK_IMAGE || pendingOcrCall == null) return;
+        if (requestCode != REQUEST_PICK_IMAGE) return;
 
-        PluginCall call = pendingOcrCall;
-        pendingOcrCall = null;
+        PluginCall call;
+        synchronized (ocrLock) {
+            if (pendingOcrCall == null) return;
+            call = pendingOcrCall;
+            pendingOcrCall = null;
+        }
 
-        if (resultCode != android.app.Activity.RESULT_OK || data == null || data.getData() == null) {
+        if (resultCode != RESULT_OK || data == null || data.getData() == null) {
             JSObject ret = new JSObject();
             ret.put("text", "");
             ret.put("error", "");
@@ -484,7 +516,6 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
             return;
         }
 
-        ExecutorService ocrExecutor = Executors.newSingleThreadExecutor();
         ocrExecutor.execute(() -> {
             try {
                 InputImage inputImage = InputImage.fromFilePath(
@@ -493,8 +524,8 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
                 TextRecognizer recognizer = TextRecognition.getClient(
                     new ChineseTextRecognizerOptions.Builder().build());
 
-                java.util.concurrent.CountDownLatch latch =
-                    new java.util.concurrent.CountDownLatch(1);
+                CountDownLatch latch =
+                    new CountDownLatch(1);
                 Text[] resultHolder = new Text[1];
                 Exception[] errorHolder = new Exception[1];
 
@@ -508,7 +539,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
                         latch.countDown();
                     });
 
-                boolean completed = latch.await(30, java.util.concurrent.TimeUnit.SECONDS);
+                boolean completed = latch.await(30, TimeUnit.SECONDS);
                 recognizer.close();
 
                 JSObject ret = new JSObject();
@@ -517,7 +548,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
                     ret.put("error", "识别超时，请重试");
                 } else if (errorHolder[0] != null) {
                     ret.put("text", "");
-                    android.util.Log.e("JmcomicPlugin", "OCR识别失败", errorHolder[0]);
+                    Log.e("JmcomicPlugin", "OCR识别失败", errorHolder[0]);
                     ret.put("error", "识别失败，请重试");
                 } else if (resultHolder[0] != null) {
                     ret.put("text", resultHolder[0].getText());
@@ -530,11 +561,9 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
             } catch (Exception e) {
                 JSObject ret = new JSObject();
                 ret.put("text", "");
-                android.util.Log.e("JmcomicPlugin", "OCR调用失败", e);
+                Log.e("JmcomicPlugin", "OCR调用失败", e);
                 ret.put("error", "识别失败，请重试");
                 call.resolve(ret);
-            } finally {
-                ocrExecutor.shutdown();
             }
         });
     }
@@ -545,13 +574,21 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
 
     @PluginMethod
     public void pickImageAndOcr(PluginCall call) {
+        synchronized (ocrLock) {
+            if (pendingOcrCall != null) {
+                call.reject("另一个 OCR 请求正在进行中");
+                return;
+            }
+            pendingOcrCall = call;
+        }
         Intent intent = new Intent(Intent.ACTION_PICK,
-            android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
-        pendingOcrCall = call;
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
         try {
             getActivity().startActivityForResult(intent, REQUEST_PICK_IMAGE);
         } catch (Exception e) {
-            pendingOcrCall = null;
+            synchronized (ocrLock) {
+                pendingOcrCall = null;
+            }
             call.reject(e.getMessage(), e);
         }
     }
@@ -754,7 +791,8 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
                 for (int i = 0; i < imagesArray.length(); i++) {
                     try {
                         jsonImages.put(imagesArray.getJSONObject(i));
-                    } catch (Exception ignored) {
+                    } catch (Exception e) {
+                        Log.d(TAG, "跳过无效图片条目", e);
                     }
                 }
             }
@@ -955,7 +993,8 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
             for (int i = 0; i < tasks.length(); i++) {
                 try {
                     arr.put(JSObject.fromJSONObject(tasks.getJSONObject(i)));
-                } catch (Exception ignored) {
+                } catch (Exception e) {
+                    Log.d(TAG, "跳过无效下载任务条目", e);
                 }
             }
             JSObject ret = new JSObject();
@@ -1552,11 +1591,8 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         String username = credentialStore.getUsername();
         String password = credentialStore.getPassword();
 
-        JSObject ret = new JSObject();
         if (username == null || username.isEmpty() || password == null || password.isEmpty()) {
-            ret.put("success", false);
-            ret.put("reason", "no_saved_credentials");
-            call.resolve(ret);
+            call.reject("自动登录失败：无保存的凭据");
             return;
         }
 
@@ -1585,10 +1621,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
                 if (e instanceof ResponseException) {
                     credentialStore.clear();
                 }
-                JSObject r = new JSObject();
-                r.put("success", false);
-                r.put("reason", "login_failed");
-                call.resolve(r);
+                call.reject("自动登录失败：凭据无效或已过期");
             }
         });
     }
@@ -1609,7 +1642,8 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
                 obj.put("httpOnly", c.httpOnly());
                 obj.put("persistent", c.persistent());
                 arr.put(obj);
-            } catch (JSONException ignored) {
+            } catch (JSONException e) {
+                Log.d(TAG, "跳过无效cookie条目", e);
             }
         }
         return arr;
@@ -1639,7 +1673,8 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
                     // non-persistent cookie: 用 hostOnly + 不设 expiresAt
                     cookies.add(builder.hostOnlyDomain(obj.getString("domain")).build());
                 }
-            } catch (Exception ignored) {
+            } catch (Exception e) {
+                Log.d(TAG, "跳过损坏的cookie条目", e);
             }
         }
         return cookies;

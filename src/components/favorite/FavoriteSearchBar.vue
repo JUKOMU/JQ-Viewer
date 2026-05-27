@@ -1,18 +1,18 @@
 <template>
-  <div ref="rootRef" class="favorite-search" style="position: relative;">
+  <div ref="rootRef" class="favorite-search" style="position: relative">
     <div class="search-row">
       <IonSearchbar
-          ref="searchbarRef"
-          v-model="draft.keyword"
-          :animated="true"
-          class="compact-searchbar"
-          show-clear-button="always"
-          placeholder="搜索收藏夹..."
-          enterkeyhint="search"
-          @keydown.enter="submit"
+        ref="searchbarRef"
+        v-model="draft.keyword"
+        :animated="true"
+        class="compact-searchbar"
+        show-clear-button="always"
+        placeholder="搜索收藏夹..."
+        enterkeyhint="search"
+        @keydown.enter="submit"
       />
       <button type="button" class="submit-btn" :disabled="loading" @click="submit">
-        <IonIcon :icon="searchOutline"/>
+        <IonIcon :icon="searchOutline" />
       </button>
     </div>
     <SearchHistoryDropdown
@@ -26,22 +26,22 @@
 </template>
 
 <script setup lang="ts">
-import {nextTick, onBeforeUnmount, onMounted, reactive, ref, watch} from 'vue'
-import {IonIcon, IonSearchbar} from '@ionic/vue'
-import {searchOutline} from 'ionicons/icons'
-import type {FavoriteQuery} from '@/services/JmcomicTypes'
-import { HistoryService } from '@/services/HistoryService'
-import type { SearchHistoryItem } from '@/services/HistoryService'
-import SearchHistoryDropdown from '@/components/history/SearchHistoryDropdown.vue'
+defineOptions({ name: 'FavoriteSearchBar' })
 
 const props = defineProps<{
   query: FavoriteQuery
   loading: boolean
 }>()
-
 const emit = defineEmits<{
   search: [query: FavoriteQuery]
 }>()
+import { nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { IonIcon, IonSearchbar } from '@ionic/vue'
+import { searchOutline } from 'ionicons/icons'
+import type { FavoriteQuery } from '@/services/JmcomicTypes'
+import { HistoryService } from '@/services/HistoryService'
+import type { SearchHistoryItem } from '@/services/HistoryService'
+import SearchHistoryDropdown from '@/components/history/SearchHistoryDropdown.vue'
 
 const rootRef = ref<HTMLElement | null>(null)
 const searchbarRef = ref<InstanceType<typeof IonSearchbar> | null>(null)
@@ -65,7 +65,7 @@ const syncDraft = (query: FavoriteQuery) => {
 const submit = () => {
   const kw = (draft.keyword ?? '').trim()
   if (kw) HistoryService.addSearchHistory('favorite', kw)
-  emit('search', {...draft, page: 1})
+  emit('search', { ...draft, page: 1 })
 }
 
 const focusInput = async () => {
@@ -75,7 +75,10 @@ const focusInput = async () => {
 
 const handleDocumentClick = (event: MouseEvent) => {
   if (!rootRef.value?.contains(event.target as Node)) {
-    searchbarRef.value?.$el?.getInputElement?.().then((input: HTMLInputElement) => input.blur()).catch(() => undefined)
+    searchbarRef.value?.$el
+      ?.getInputElement?.()
+      .then((input: HTMLInputElement) => input.blur())
+      .catch(() => undefined)
   }
 }
 
@@ -87,7 +90,9 @@ const handleNativeFocus = () => {
 
 const handleNativeBlur = () => {
   if (blurTimer) clearTimeout(blurTimer)
-  blurTimer = setTimeout(() => { showHistory.value = false }, 200)
+  blurTimer = setTimeout(() => {
+    showHistory.value = false
+  }, 200)
 }
 
 const handleNativeInput = () => {
@@ -97,7 +102,10 @@ const handleNativeInput = () => {
 const onHistorySelect = (item: SearchHistoryItem) => {
   draft.keyword = item.keyword
   showHistory.value = false
-  if (blurTimer) { clearTimeout(blurTimer); blurTimer = null }
+  if (blurTimer) {
+    clearTimeout(blurTimer)
+    blurTimer = null
+  }
   submit()
 }
 
@@ -106,11 +114,11 @@ const onHistoryClear = () => {
   showHistory.value = false
 }
 
-watch(() => props.query, syncDraft, {immediate: true, deep: true})
+watch(() => props.query, syncDraft, { immediate: true, deep: true })
 
 onMounted(async () => {
   document.addEventListener('click', handleDocumentClick)
-  nativeInput = await searchbarRef.value?.$el?.getInputElement?.() ?? null
+  nativeInput = (await searchbarRef.value?.$el?.getInputElement?.()) ?? null
   nativeInput?.addEventListener('focus', handleNativeFocus)
   nativeInput?.addEventListener('blur', handleNativeBlur)
   nativeInput?.addEventListener('input', handleNativeInput)
@@ -124,7 +132,7 @@ onBeforeUnmount(() => {
   if (blurTimer) clearTimeout(blurTimer)
 })
 
-defineExpose({focusInput})
+defineExpose({ focusInput })
 </script>
 
 <style scoped>

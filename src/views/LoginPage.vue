@@ -30,14 +30,14 @@
             :disabled="loading"
             @keyup.enter="doLogin"
           />
-          <div class="error-msg" v-if="errorMsg">{{ errorMsg }}</div>
+          <div v-if="errorMsg" class="error-msg">{{ errorMsg }}</div>
           <IonButton
             expand="block"
             :disabled="!canSubmit || loading"
-            @click="doLogin"
             class="login-btn"
+            @click="doLogin"
           >
-            <IonSpinner v-if="loading" name="crescent" slot="start" />
+            <IonSpinner v-if="loading" slot="start" name="crescent" />
             {{ loading ? '登录中...' : '登录' }}
           </IonButton>
         </div>
@@ -47,11 +47,21 @@
 </template>
 
 <script setup lang="ts">
+defineOptions({ name: 'LoginPage' })
+
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  IonBackButton, IonButton, IonButtons, IonContent, IonHeader,
-  IonInput, IonPage, IonSpinner, IonTitle, IonToolbar,
+  IonBackButton,
+  IonButton,
+  IonButtons,
+  IonContent,
+  IonHeader,
+  IonInput,
+  IonPage,
+  IonSpinner,
+  IonTitle,
+  IonToolbar,
 } from '@ionic/vue'
 import { useAuth } from '@/composables/useAuth'
 import { sanitizeError } from '@/services/JmcomicService'
@@ -65,8 +75,8 @@ const loading = ref(false)
 const errorMsg = ref('')
 const passwordRef = ref<InstanceType<typeof IonInput> | null>(null)
 
-const canSubmit = computed(() =>
-  username.value.trim().length > 0 && password.value.length > 0 && !loading.value
+const canSubmit = computed(
+  () => username.value.trim().length > 0 && password.value.length > 0 && !loading.value,
 )
 
 function focusPassword() {

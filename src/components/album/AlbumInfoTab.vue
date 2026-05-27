@@ -108,7 +108,7 @@
 
     <!-- 骨架屏 -->
     <div v-else class="skeleton">
-      <div class="sk-row" v-for="n in 5" :key="n">
+      <div v-for="n in 5" :key="n" class="sk-row">
         <div class="sk-line sk-line--short" />
         <div class="sk-line" />
       </div>
@@ -117,22 +117,22 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
-import { IonIcon } from '@ionic/vue'
-import { bookmark, downloadOutline, heart } from 'ionicons/icons'
-import type { AlbumDetail, AlbumMeta } from '@/services/JmcomicTypes'
+defineOptions({ name: 'AlbumInfoTab' })
 
 defineProps<{
   album: AlbumDetail | null
   actionBusy: { like: boolean; favorite: boolean }
 }>()
-
 defineEmits<{
   'toggle-like': []
   'toggle-favorite': []
   download: []
   'navigate-album': [related: AlbumMeta]
 }>()
+import { ref } from 'vue'
+import { IonIcon } from '@ionic/vue'
+import { bookmark, downloadOutline, heart } from 'ionicons/icons'
+import type { AlbumDetail, AlbumMeta } from '@/services/JmcomicTypes'
 
 const descExpanded = ref(false)
 </script>
@@ -157,7 +157,10 @@ const descExpanded = ref(false)
   background: #fffaf6;
   color: #785947;
   font-size: 11px;
-  transition: background-color 0.18s ease, color 0.18s ease, border-color 0.18s ease;
+  transition:
+    background-color 0.18s ease,
+    color 0.18s ease,
+    border-color 0.18s ease;
 }
 
 .action-btn:disabled {
@@ -333,7 +336,11 @@ const descExpanded = ref(false)
 }
 
 @keyframes shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 </style>

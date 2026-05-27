@@ -52,7 +52,7 @@ JMComic-Api-Java/             # JMComic API 客户端库
 ## 登录流
 
 1. 首次登录 → cookie + userInfo 存 SettingsStore，凭据存 CredentialStore（加密）
-2. 重启 → `restoreAuthState()` 清除旧 cookie → `initAuth()` → `checkLoginState()` 返回未登录 → `autoLogin()` 用加密凭据重新获取 cookie
+2. 重启 → `clearAuthState()` 清除旧 cookie → `initAuth()` → `checkLoginState()` 返回未登录 → `autoLogin()` 用加密凭据重新获取 cookie
 3. 登出 → 清除全部
 
 ## 构建

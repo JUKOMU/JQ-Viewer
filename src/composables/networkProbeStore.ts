@@ -6,8 +6,15 @@ import { ref } from 'vue'
 import { JmcomicService } from '@/services/JmcomicService'
 import type { NetworkProbeEvent } from '@/services/JmcomicTypes'
 
-interface DomainState { domain: string; reachable: boolean }
-interface LogEntry { phase: string; message: string; timestamp: number }
+interface DomainState {
+  domain: string
+  reachable: boolean
+}
+interface LogEntry {
+  phase: string
+  message: string
+  timestamp: number
+}
 
 const domains = ref<DomainState[]>([])
 const allDeadFallback = ref(false)
@@ -35,12 +42,14 @@ export function initNetworkProbeStore() {
   })
 
   // 拉取已有域名状态（来自 AbstractJmClient 构造时的初始探活）
-  JmcomicService.getDomainStates().then(state => {
-    domains.value = state.domains
-    allDeadFallback.value = state.allDeadFallback
-  }).catch(() => {
-    // client 尚未就绪时静默忽略，等待后续网络变化事件
-  })
+  JmcomicService.getDomainStates()
+    .then((state) => {
+      domains.value = state.domains
+      allDeadFallback.value = state.allDeadFallback
+    })
+    .catch(() => {
+      // client 尚未就绪时静默忽略，等待后续网络变化事件
+    })
 }
 
 export function useNetworkProbeStore() {

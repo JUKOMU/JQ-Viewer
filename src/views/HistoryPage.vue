@@ -6,14 +6,26 @@
           <MenuToggleButton />
         </div>
         <div class="tab-bar">
-          <button type="button" class="tab-btn" :class="{ active: activeTab === 'browse' }"
-                  @click="switchTab('browse')">浏览历史</button>
-          <button type="button" class="tab-btn" :class="{ active: activeTab === 'parse' }"
-                  @click="switchTab('parse')">解析历史</button>
+          <button
+            type="button"
+            class="tab-btn"
+            :class="{ active: activeTab === 'browse' }"
+            @click="switchTab('browse')"
+          >
+            浏览历史
+          </button>
+          <button
+            type="button"
+            class="tab-btn"
+            :class="{ active: activeTab === 'parse' }"
+            @click="switchTab('parse')"
+          >
+            解析历史
+          </button>
         </div>
       </IonToolbar>
     </IonHeader>
-    <IonContent ref="contentRef" :scroll-events="true" @ionScroll="onScroll">
+    <IonContent ref="contentRef" :scroll-events="true" @ion-scroll="onScroll">
       <div class="page-shell">
         <div v-if="activeTab === 'browse'" class="tab-content">
           <div v-if="browseItems.length === 0" class="empty-state">
@@ -66,11 +78,7 @@
               <button class="clear-btn" @click="confirmClearParse">清空</button>
             </div>
             <TransitionGroup name="history-list" tag="div" class="card-list">
-              <div
-                v-for="item in parseItems"
-                :key="item.timestamp"
-                class="parse-card"
-              >
+              <div v-for="item in parseItems" :key="item.timestamp" class="parse-card">
                 <div class="parse-icon-wrap">
                   <IonIcon :icon="documentTextOutline" />
                 </div>
@@ -88,6 +96,8 @@
 </template>
 
 <script setup lang="ts">
+defineOptions({ name: 'HistoryPage' })
+
 import { computed, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { alertController, IonContent, IonIcon, IonPage } from '@ionic/vue'
@@ -120,10 +130,10 @@ const browseGroups = computed<BrowseGroup[]>(() => {
   const weekStart = todayStart - (dayOfWeek - 1) * 86_400_000
 
   const groups: Record<string, BrowseHistoryItem[]> = {
-    '今天': [],
-    '昨天': [],
-    '本周': [],
-    '更早': [],
+    今天: [],
+    昨天: [],
+    本周: [],
+    更早: [],
   }
 
   for (const item of browseItems.value) {
@@ -190,7 +200,7 @@ async function switchTab(tab: 'browse' | 'parse') {
 onMounted(async () => {
   const contentEl = contentRef.value?.$el
   if (contentEl && typeof (contentEl as any).getScrollElement === 'function') {
-    scrollEl.value = await (contentEl as any).getScrollElement() as HTMLElement
+    scrollEl.value = (await (contentEl as any).getScrollElement()) as HTMLElement
   }
   await loadBrowse()
 })
@@ -209,10 +219,14 @@ async function confirmClearBrowse() {
     message: '确定要清空所有浏览记录吗？此操作不可撤销。',
     buttons: [
       { text: '取消', role: 'cancel' },
-      { text: '清空', role: 'destructive', handler: async () => {
-        await HistoryService.clearBrowseHistory()
-        browseItems.value = []
-      }},
+      {
+        text: '清空',
+        role: 'destructive',
+        handler: async () => {
+          await HistoryService.clearBrowseHistory()
+          browseItems.value = []
+        },
+      },
     ],
   })
   await alert.present()
@@ -224,10 +238,14 @@ async function confirmClearParse() {
     message: '确定要清空所有解析记录吗？此操作不可撤销。',
     buttons: [
       { text: '取消', role: 'cancel' },
-      { text: '清空', role: 'destructive', handler: async () => {
-        await HistoryService.clearParseHistory()
-        parseItems.value = []
-      }},
+      {
+        text: '清空',
+        role: 'destructive',
+        handler: async () => {
+          await HistoryService.clearParseHistory()
+          parseItems.value = []
+        },
+      },
     ],
   })
   await alert.present()
@@ -272,7 +290,9 @@ function formatRelativeTime(timestamp: number): string {
   color: #8a6048;
   font-size: 12px;
   font-weight: 600;
-  transition: background-color 0.18s ease, color 0.18s ease;
+  transition:
+    background-color 0.18s ease,
+    color 0.18s ease;
 }
 
 .tab-btn.active {
@@ -494,7 +514,9 @@ function formatRelativeTime(timestamp: number): string {
 /* TransitionGroup */
 .history-list-enter-active,
 .history-list-leave-active {
-  transition: opacity 0.28s ease, transform 0.28s ease;
+  transition:
+    opacity 0.28s ease,
+    transform 0.28s ease;
 }
 
 .history-list-enter-from {

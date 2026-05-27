@@ -2,69 +2,61 @@
   <div class="quick-fab">
     <TransitionGroup name="fab-action" tag="div" class="action-stack">
       <button
-          v-if="expanded"
-          key="search"
-          type="button"
-          class="action-btn"
-          aria-label="搜索"
-          @click="trigger('search')"
+        v-if="expanded"
+        key="search"
+        type="button"
+        class="action-btn"
+        aria-label="搜索"
+        @click="trigger('search')"
       >
-        <IonIcon :icon="searchOutline"/>
+        <IonIcon :icon="searchOutline" />
       </button>
       <button
-          v-if="expanded"
-          key="jump"
-          type="button"
-          class="action-btn"
-          aria-label="跳页"
-          @click="trigger('jump')"
+        v-if="expanded"
+        key="jump"
+        type="button"
+        class="action-btn"
+        aria-label="跳页"
+        @click="trigger('jump')"
       >
-        <IonIcon :icon="albumsOutline"/>
+        <IonIcon :icon="albumsOutline" />
       </button>
       <button
-          v-if="expanded"
-          key="top"
-          type="button"
-          class="action-btn"
-          aria-label="回顶"
-          @click="trigger('top')"
+        v-if="expanded"
+        key="top"
+        type="button"
+        class="action-btn"
+        aria-label="回顶"
+        @click="trigger('top')"
       >
-        <IonIcon :icon="arrowUpOutline"/>
+        <IonIcon :icon="arrowUpOutline" />
       </button>
       <button
-          v-if="expanded"
-          key="back"
-          type="button"
-          class="action-btn"
-          aria-label="返回"
-          @click="trigger('back')"
+        v-if="expanded"
+        key="back"
+        type="button"
+        class="action-btn"
+        aria-label="返回"
+        @click="trigger('back')"
       >
-        <IonIcon :icon="returnDownBackOutline"/>
+        <IonIcon :icon="returnDownBackOutline" />
       </button>
     </TransitionGroup>
 
     <button
-        type="button"
-        class="main-btn"
-        :class="{ expanded }"
-        aria-label="快捷操作"
-        @click="expanded = !expanded"
+      type="button"
+      class="main-btn"
+      :class="{ expanded }"
+      aria-label="快捷操作"
+      @click="expanded = !expanded"
     >
-      <IonIcon :icon="ellipsisHorizontalOutline"/>
+      <IonIcon :icon="ellipsisHorizontalOutline" />
     </button>
   </div>
 </template>
 
 <script setup lang="ts">
-import {ref} from 'vue'
-import {IonIcon} from '@ionic/vue'
-import {
-  albumsOutline,
-  arrowUpOutline,
-  ellipsisHorizontalOutline,
-  returnDownBackOutline,
-  searchOutline
-} from 'ionicons/icons'
+defineOptions({ name: 'QuickActionFab' })
 
 const emit = defineEmits<{
   search: []
@@ -72,6 +64,15 @@ const emit = defineEmits<{
   top: []
   back: []
 }>()
+import { ref } from 'vue'
+import { IonIcon } from '@ionic/vue'
+import {
+  albumsOutline,
+  arrowUpOutline,
+  ellipsisHorizontalOutline,
+  returnDownBackOutline,
+  searchOutline,
+} from 'ionicons/icons'
 
 const expanded = ref(false)
 
@@ -126,7 +127,10 @@ const trigger = (action: 'search' | 'jump' | 'top' | 'back') => {
   height: 52px;
   font-size: 22px;
   opacity: 0.58;
-  transition: transform 0.2s ease, background-color 0.2s ease, opacity 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    background-color 0.2s ease,
+    opacity 0.2s ease;
 }
 
 .main-btn.expanded {
@@ -156,7 +160,9 @@ const trigger = (action: 'search' | 'jump' | 'top' | 'back') => {
 
 .fab-action-enter-active,
 .fab-action-leave-active {
-  transition: opacity 0.18s ease, transform 0.18s ease;
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease;
 }
 
 .fab-action-enter-from,

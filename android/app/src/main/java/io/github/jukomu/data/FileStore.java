@@ -40,7 +40,7 @@ public class FileStore {
         void onProgress(int current, int total, String phase, String currentFile);
     }
 
-    private static volatile FileStore instance;
+    private static FileStore instance;
 
     private File baseDir;
     private final Map<String, String> chapterIdToAlbumId = new HashMap<>();
@@ -101,7 +101,8 @@ public class FileStore {
                     String key = makeSortKey(albumId, chapterId, sortOrder);
                     sortOrderToFilename.put(key, filename);
                 }
-            } catch (Exception ignored) {
+            } catch (Exception e) {
+                Log.d(TAG, "跳过无效下载任务记录", e);
             }
         }
         Log.i(TAG, "Indices built: " + chapterIdToAlbumId.size()
@@ -179,7 +180,8 @@ public class FileStore {
                     if (minSo == null || so < minSo) {
                         minSo = so;
                     }
-                } catch (NumberFormatException ignored) {
+                } catch (NumberFormatException e) {
+                    Log.d(TAG, "解析排序序号失败", e);
                 }
             }
         }
@@ -225,7 +227,8 @@ public class FileStore {
                 String filename = img.getString("filename");
                 String key = makeSortKey(albumId, chapterId, sortOrder);
                 sortOrderToFilename.put(key, filename);
-            } catch (Exception ignored) {
+            } catch (Exception e) {
+                Log.d(TAG, "跳过无效图片映射记录", e);
             }
         }
     }
@@ -300,8 +303,8 @@ public class FileStore {
                         }
                     }
                 }
-            } catch (Exception ignored) {
-                // checkpoint 损坏，从头开始
+            } catch (Exception e) {
+                Log.w(TAG, "搬迁检查点损坏，从头开始", e);
             }
         }
 
@@ -358,7 +361,8 @@ public class FileStore {
                 cp.put("total", totalFiles);
                 cp.put("startedAt", System.currentTimeMillis());
                 settingsDb.putString("relocation_checkpoint", cp.toString());
-            } catch (Exception ignored) {
+            } catch (Exception e) {
+                Log.d(TAG, "保存搬迁检查点失败", e);
             }
         }
 

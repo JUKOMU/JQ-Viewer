@@ -1,6 +1,6 @@
 <template>
   <IonPage>
-    <IonContent :scroll-events="true" @ionScroll="handleScroll">
+    <IonContent :scroll-events="true" @ion-scroll="handleScroll">
       <!-- 区域 A：封面头部 -->
       <AlbumHeader
         ref="headerRef"
@@ -15,7 +15,7 @@
       />
 
       <!-- 区域 B：Tab 栏 -->
-      <div class="tab-bar" ref="tabBarRef" :class="{ sticky: tabBarSticky }">
+      <div ref="tabBarRef" class="tab-bar" :class="{ sticky: tabBarSticky }">
         <button
           v-for="tab in tabs"
           :key="tab.key"
@@ -81,17 +81,27 @@
 </template>
 
 <script setup lang="ts">
-import {computed, onMounted, onUnmounted, reactive, ref, watch} from 'vue'
-import {useRoute, useRouter} from 'vue-router'
-import {IonContent, IonPage} from '@ionic/vue'
-import type {PluginListenerHandle} from '@capacitor/core'
-import {getImageUrl, JmcomicService, sanitizeError, showToast} from '@/services/JmcomicService'
-import type {AlbumDetail, AlbumMeta, CommentItem, FavoriteResult, FolderEntry, PhotoDetail, PreloadResult, SearchResultItem} from '@/services/JmcomicTypes'
+defineOptions({ name: 'AlbumDetailPage' })
+
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { IonContent, IonPage } from '@ionic/vue'
+import type { PluginListenerHandle } from '@capacitor/core'
+import { getImageUrl, JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
+import type {
+  AlbumDetail,
+  AlbumMeta,
+  CommentItem,
+  FavoriteResult,
+  FolderEntry,
+  PhotoDetail,
+  PreloadResult,
+} from '@/services/JmcomicTypes'
 import { makeTaskId } from '@/services/JmcomicTypes'
-import {OfflineDownloadService} from '@/services/OfflineDownloadService'
-import {OfflineFavoriteService} from '@/services/OfflineFavoriteService'
-import {HistoryService} from '@/services/HistoryService'
-import {useAuth} from '@/composables/useAuth'
+import { OfflineDownloadService } from '@/services/OfflineDownloadService'
+import { OfflineFavoriteService } from '@/services/OfflineFavoriteService'
+import { HistoryService } from '@/services/HistoryService'
+import { useAuth } from '@/composables/useAuth'
 import AlbumHeader from '@/components/album/AlbumHeader.vue'
 import AlbumInfoTab from '@/components/album/AlbumInfoTab.vue'
 import AlbumChaptersTab from '@/components/album/AlbumChaptersTab.vue'
@@ -178,8 +188,12 @@ async function openFolderPicker() {
           entries.push({ id, name, count: 0 })
           countPromises.push(
             JmcomicService.favorites({ folderId: id, page: 1 })
-              .then(r => { counts[id] = r.totalItems })
-              .catch(() => { counts[id] = 0 })
+              .then((r) => {
+                counts[id] = r.totalItems
+              })
+              .catch(() => {
+                counts[id] = 0
+              }),
           )
         }
         pickerOnlineFolders.value = entries
@@ -215,7 +229,9 @@ async function onPickerSelect(payload: { folderId: string; source: 'online' | 'o
     }
     albumDetail.value.isFavorite = true
     await showToast('已收藏', 'success')
-  } catch { /* ignore */ } finally {
+  } catch (e: any) {
+    await showToast(sanitizeError(e, '收藏失败'), 'danger')
+  } finally {
     actionBusy.favorite = false
   }
 }
@@ -239,7 +255,10 @@ async function onPickerAddFolder() {
               if (r.status === 'ok') {
                 await showToast('收藏夹已创建', 'success')
                 // 刷新在线列表 + 数量
-                const result: FavoriteResult = await JmcomicService.favorites({ folderId: '0', page: 1 })
+                const result: FavoriteResult = await JmcomicService.favorites({
+                  folderId: '0',
+                  page: 1,
+                })
                 if (result.folderList) {
                   const entries: FolderEntry[] = []
                   const counts: Record<string, number> = {}
@@ -248,8 +267,12 @@ async function onPickerAddFolder() {
                     entries.push({ id, name: fName, count: 0 })
                     countPromises.push(
                       JmcomicService.favorites({ folderId: id, page: 1 })
-                        .then(r => { counts[id] = r.totalItems })
-                        .catch(() => { counts[id] = 0 })
+                        .then((r) => {
+                          counts[id] = r.totalItems
+                        })
+                        .catch(() => {
+                          counts[id] = 0
+                        }),
                     )
                   }
                   pickerOnlineFolders.value = entries
@@ -257,7 +280,9 @@ async function onPickerAddFolder() {
                   onlineFolderCounts.value = counts
                 }
               }
-            } catch { /* ignore */ }
+            } catch {
+              /* ignore */
+            }
           } else {
             OfflineFavoriteService.createFolder(name)
             pickerOfflineFolders.value = OfflineFavoriteService.getFolders()
@@ -272,7 +297,10 @@ async function onPickerAddFolder() {
 
 // ---- 预览 ----
 const PREVIEW_BATCH = 20
-interface PreviewImage { sortOrder: number; dataUrl: string }
+interface PreviewImage {
+  sortOrder: number
+  dataUrl: string
+}
 const previewImages = ref<PreviewImage[]>([])
 const previewImageTotal = ref(0)
 const previewLoading = ref(false)
@@ -357,7 +385,9 @@ const selectChapter = async (chapterId: string) => {
     const photo = await JmcomicService.getPhoto(chapterId)
     photoDetail.value = photo
     recordBrowseHistory()
-  } catch { /* ignore */ } finally {
+  } catch (e: any) {
+    await showToast(sanitizeError(e, '章节加载失败'), 'danger')
+  } finally {
     chapterLoading.value = false
   }
 
@@ -418,7 +448,9 @@ const loadPreview = async () => {
     }
 
     previewLoadedChapterId.value = chapterId
-  } catch { /* ignore */ } finally {
+  } catch (e: any) {
+    await showToast(sanitizeError(e, '预览加载失败'), 'danger')
+  } finally {
     previewLoading.value = false
   }
 }
@@ -466,7 +498,11 @@ const navigateToFullPreview = () => {
 const onOpenReader = (page: number) => {
   void router.push({
     path: `/album/${albumId.value}/read/${selectedChapterId.value}`,
-    query: { page: String(page), title: albumTitle.value, total: String(selectedChapterPageCount.value) },
+    query: {
+      page: String(page),
+      title: albumTitle.value,
+      total: String(selectedChapterPageCount.value),
+    },
   })
 }
 
@@ -477,7 +513,9 @@ const loadComments = async () => {
   try {
     const result = await JmcomicService.getComments({ albumId: albumId.value, page: 1 })
     comments.value = result.list
-  } catch { /* ignore */ } finally {
+  } catch (e: any) {
+    await showToast(sanitizeError(e, '评论加载失败'), 'danger')
+  } finally {
     commentsLoading.value = false
   }
 }
@@ -489,7 +527,9 @@ const handleToggleLike = async () => {
   try {
     await JmcomicService.toggleAlbumLike(albumId.value)
     albumDetail.value.isLiked = !albumDetail.value.isLiked
-  } catch { /* ignore */ } finally {
+  } catch (e: any) {
+    await showToast(sanitizeError(e, '点赞失败'), 'danger')
+  } finally {
     actionBusy.like = false
   }
 }
@@ -502,7 +542,9 @@ const handleToggleFavorite = async () => {
     try {
       await JmcomicService.toggleAlbumFavorite(albumId.value)
       albumDetail.value.isFavorite = false
-    } catch { /* ignore */ } finally {
+    } catch (e: any) {
+      await showToast(sanitizeError(e, '取消收藏失败'), 'danger')
+    } finally {
       actionBusy.favorite = false
     }
     return
@@ -518,7 +560,9 @@ const handleDownload = async () => {
 
   const taskId = makeTaskId(albumId.value, chapterId)
   // 避免重复提交
-  const existing = OfflineDownloadService.getAll().find(t => t.taskId === taskId && t.status !== 'failed')
+  const existing = OfflineDownloadService.getAll().find(
+    (t) => t.taskId === taskId && t.status !== 'failed',
+  )
   if (existing) {
     await showToast('该章节已在下载队列中', 'medium')
     return
@@ -527,10 +571,17 @@ const handleDownload = async () => {
   // 组装参数
   const albumTitle2 = albumDetail.value.title
   const coverUrl2 = albumDetail.value.image
-  const chapterTitle2 = albumDetail.value.photoMetas.find(m => m.id === chapterId)?.title || chapterId
+  const chapterTitle2 =
+    albumDetail.value.photoMetas.find((m) => m.id === chapterId)?.title || chapterId
 
   try {
-    await JmcomicService.downloadChapter(albumId.value, chapterId, albumTitle2, chapterTitle2, coverUrl2)
+    await JmcomicService.downloadChapter(
+      albumId.value,
+      chapterId,
+      albumTitle2,
+      chapterTitle2,
+      coverUrl2,
+    )
     // 乐观写入 localStorage
     OfflineDownloadService.addTask({
       taskId,
@@ -608,7 +659,9 @@ const handleScroll = async () => {
   color: #8a6048;
   font-size: 12px;
   font-weight: 600;
-  transition: background-color 0.18s ease, color 0.18s ease;
+  transition:
+    background-color 0.18s ease,
+    color 0.18s ease;
 }
 
 .tab-btn.active {

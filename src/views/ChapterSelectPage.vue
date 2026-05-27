@@ -3,13 +3,13 @@
     <IonHeader class="ion-no-border">
       <IonToolbar>
         <IonButtons slot="start">
-          <IonButton @click="$emit('back')" text="">
-            <IonIcon :icon="arrowBack"/>
+          <IonButton text="" @click="$emit('back')">
+            <IonIcon :icon="arrowBack" />
           </IonButton>
         </IonButtons>
         <IonTitle class="toolbar-title">{{ albumTitle || '章节选择' }}</IonTitle>
         <IonButtons slot="end">
-          <button class="mode-btn" @click="toggleMode" :disabled="loadingAll">
+          <button class="mode-btn" :disabled="loadingAll" @click="toggleMode">
             {{ showMode === 'downloaded' ? '显示全部章节' : '显示已下载' }}
           </button>
         </IonButtons>
@@ -57,7 +57,9 @@
         >
           <span class="chapter-num">第{{ meta.sortOrder }}话</span>
           <span class="chapter-title">{{ meta.title }}</span>
-          <span v-if="downloadedIds.has(meta.id)" class="chapter-pages">{{ getDownloadedPages(meta.id) }} 页</span>
+          <span v-if="downloadedIds.has(meta.id)" class="chapter-pages"
+            >{{ getDownloadedPages(meta.id) }} 页</span
+          >
           <img
             v-if="downloadedIds.has(meta.id) && getDownloadedImage(meta.id)"
             :src="getDownloadedImage(meta.id)!"
@@ -76,7 +78,6 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  IonBackButton,
   IonIcon,
   IonButtons,
   IonContent,
@@ -88,6 +89,12 @@ import {
 import { getImageUrl, JmcomicService } from '@/services/JmcomicService'
 import type { DownloadTask, PhotoMeta } from '@/services/JmcomicTypes'
 import { arrowBack } from 'ionicons/icons'
+
+defineOptions({ name: 'ChapterSelectPage' })
+
+defineEmits<{
+  back: []
+}>()
 
 const route = useRoute()
 const router = useRouter()
@@ -101,7 +108,7 @@ const loadingAll = ref(false)
 
 // 已下载章节
 const downloadedChapters = ref<DownloadTask[]>([])
-const downloadedIds = computed(() => new Set(downloadedChapters.value.map(ch => ch.chapterId)))
+const downloadedIds = computed(() => new Set(downloadedChapters.value.map((ch) => ch.chapterId)))
 const downloadedMap = computed(() => {
   const map = new Map<string, DownloadTask>()
   for (const ch of downloadedChapters.value) {
@@ -170,7 +177,7 @@ onMounted(async () => {
   try {
     const result = await JmcomicService.getDownloadTasks()
     downloadedChapters.value = result.tasks
-      .filter(t => t.status === 'completed' && t.albumId === albumId.value)
+      .filter((t) => t.status === 'completed' && t.albumId === albumId.value)
       .sort((a, b) => (a.chapterSortOrder ?? 0) - (b.chapterSortOrder ?? 0))
     if (downloadedChapters.value.length > 0) {
       albumTitle.value = downloadedChapters.value[0].albumTitle
@@ -224,7 +231,9 @@ onMounted(async () => {
   background: #fffaf6;
   color: #5a3d2e;
   text-align: center;
-  transition: background-color 0.18s ease, border-color 0.18s ease;
+  transition:
+    background-color 0.18s ease,
+    border-color 0.18s ease;
   cursor: pointer;
 }
 
@@ -294,8 +303,12 @@ onMounted(async () => {
 }
 
 @keyframes shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 .bottom-spacer {

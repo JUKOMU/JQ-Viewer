@@ -5,6 +5,7 @@ import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
+import android.util.Log;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -17,6 +18,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class FavoriteStore extends SQLiteOpenHelper {
 
+    private static final String TAG = "FavoriteStore";
     private static final String DB_NAME = "jq_offline_favorites.db";
     private static final int DB_VERSION = 1;
 
@@ -78,6 +80,7 @@ public class FavoriteStore extends SQLiteOpenHelper {
 
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
+        // 注意：未来迁移必须使用 ALTER TABLE ADD COLUMN，直接 DROP TABLE 会导致用户数据永久丢失
         db.execSQL("DROP TABLE IF EXISTS " + TABLE_BACKUPS);
         db.execSQL("DROP TABLE IF EXISTS " + TABLE_FAVORITES);
         db.execSQL("DROP TABLE IF EXISTS " + TABLE_FOLDERS);
@@ -247,7 +250,9 @@ public class FavoriteStore extends SQLiteOpenHelper {
                 result.put("totalPages", 1);
                 result.put("currentPage", 1);
                 result.put("content", new JSONArray());
-            } catch (Exception ignored) {}
+            } catch (Exception ex) {
+                Log.w(TAG, "构建默认返回值失败", ex);
+            }
         } finally {
             if (countCursor != null) countCursor.close();
             if (dataCursor != null) dataCursor.close();
@@ -554,7 +559,9 @@ public class FavoriteStore extends SQLiteOpenHelper {
             // authors 和 tags 存的是 JSON 字符串，直接解析为数组
             obj.put("authors", new JSONArray(c.getString(3)));
             obj.put("tags", new JSONArray(c.getString(4)));
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            Log.d(TAG, "转换收藏项记录失败", e);
+        }
         return obj;
     }
 }

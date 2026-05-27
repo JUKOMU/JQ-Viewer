@@ -1,27 +1,45 @@
 <template>
   <IonMenu
-      :content-id="contentId"
-      :disabled="disabled"
-      :max-edge-start="menuEdgeStart"
-      :swipe-gesture="true"
-      type="overlay"
+    :content-id="contentId"
+    :disabled="disabled"
+    :max-edge-start="menuEdgeStart"
+    :swipe-gesture="true"
+    type="overlay"
   >
     <IonHeader class="ion-no-border">
       <div class="menu-hero" @click="goUser">
-        <img v-if="isLoggedIn && userInfo" :src="userInfo.avatarUrl" class="user-avatar" alt="头像" />
+        <img
+          v-if="isLoggedIn && userInfo"
+          :src="userInfo.avatarUrl"
+          class="user-avatar"
+          alt="头像"
+        />
         <IonIcon v-else :icon="personCircleOutline" class="user-avatar-placeholder" />
         <div class="hero-copy">
           <div class="hero-title">{{ isLoggedIn && userInfo ? userInfo.username : '未登录' }}</div>
-          <div class="hero-subtitle">{{ isLoggedIn && userInfo ? 'Lv.' + userInfo.level + ' ' + userInfo.levelName : '点击查看账号信息' }}</div>
+          <div class="hero-subtitle">
+            {{
+              isLoggedIn && userInfo
+                ? 'Lv.' + userInfo.level + ' ' + userInfo.levelName
+                : '点击查看账号信息'
+            }}
+          </div>
         </div>
       </div>
     </IonHeader>
     <IonContent class="menu-content">
       <IonList lines="none" class="menu-list">
         <IonMenuToggle>
-          <IonItem button expand="block" router-link="/home" router-direction="forward"
-                   class="menu-item" :class="{ selected: isActive('/home') }" @click="handleMenuClick">
-            <IonIcon slot="start" class="menu-icon" :icon="homeSharp"/>
+          <IonItem
+            button
+            expand="block"
+            router-link="/home"
+            router-direction="forward"
+            class="menu-item"
+            :class="{ selected: isActive('/home') }"
+            @click="handleMenuClick"
+          >
+            <IonIcon slot="start" class="menu-icon" :icon="homeSharp" />
             <IonLabel>
               <div class="item-title">首页</div>
               <div class="item-subtitle">关键词搜索入口</div>
@@ -29,9 +47,16 @@
           </IonItem>
         </IonMenuToggle>
         <IonMenuToggle>
-          <IonItem button expand="block" router-link="/category" router-direction="root"
-                   class="menu-item" :class="{ selected: isActive('/category') }" @click="handleMenuClick">
-            <IonIcon slot="start" class="menu-icon" :icon="searchSharp"/>
+          <IonItem
+            button
+            expand="block"
+            router-link="/category"
+            router-direction="root"
+            class="menu-item"
+            :class="{ selected: isActive('/category') }"
+            @click="handleMenuClick"
+          >
+            <IonIcon slot="start" class="menu-icon" :icon="searchSharp" />
             <IonLabel>
               <div class="item-title">分类</div>
               <div class="item-subtitle">分类筛选与检索</div>
@@ -39,9 +64,16 @@
           </IonItem>
         </IonMenuToggle>
         <IonMenuToggle>
-          <IonItem button expand="block" router-link="/favorite" router-direction="root"
-                   class="menu-item" :class="{ selected: isActive('/favorite') }" @click="handleMenuClick">
-            <IonIcon slot="start" class="menu-icon" :icon="heart"/>
+          <IonItem
+            button
+            expand="block"
+            router-link="/favorite"
+            router-direction="root"
+            class="menu-item"
+            :class="{ selected: isActive('/favorite') }"
+            @click="handleMenuClick"
+          >
+            <IonIcon slot="start" class="menu-icon" :icon="heart" />
             <IonLabel>
               <div class="item-title">收藏夹</div>
               <div class="item-subtitle">保存喜欢的内容</div>
@@ -49,9 +81,16 @@
           </IonItem>
         </IonMenuToggle>
         <IonMenuToggle>
-          <IonItem button expand="block" router-link="/download" router-direction="root"
-                   class="menu-item" :class="{ selected: isActive('/download') }" @click="handleMenuClick">
-            <IonIcon slot="start" class="menu-icon" :icon="downloadSharp"/>
+          <IonItem
+            button
+            expand="block"
+            router-link="/download"
+            router-direction="root"
+            class="menu-item"
+            :class="{ selected: isActive('/download') }"
+            @click="handleMenuClick"
+          >
+            <IonIcon slot="start" class="menu-icon" :icon="downloadSharp" />
             <IonLabel>
               <div class="item-title">下载</div>
               <div class="item-subtitle">离线任务与管理</div>
@@ -59,9 +98,16 @@
           </IonItem>
         </IonMenuToggle>
         <IonMenuToggle>
-          <IonItem button expand="block" router-link="/history" router-direction="root"
-                   class="menu-item" :class="{ selected: isActive('/history') }" @click="handleMenuClick">
-            <IonIcon slot="start" class="menu-icon" :icon="timeOutline"/>
+          <IonItem
+            button
+            expand="block"
+            router-link="/history"
+            router-direction="root"
+            class="menu-item"
+            :class="{ selected: isActive('/history') }"
+            @click="handleMenuClick"
+          >
+            <IonIcon slot="start" class="menu-icon" :icon="timeOutline" />
             <IonLabel>
               <div class="item-title">历史</div>
               <div class="item-subtitle">浏览与解析记录</div>
@@ -69,9 +115,16 @@
           </IonItem>
         </IonMenuToggle>
         <IonMenuToggle>
-          <IonItem button expand="block" router-link="/setting" router-direction="forward"
-                   class="menu-item" :class="{ selected: isActive('/setting') }" @click="handleMenuClick">
-            <IonIcon slot="start" class="menu-icon" :icon="settingsSharp"/>
+          <IonItem
+            button
+            expand="block"
+            router-link="/setting"
+            router-direction="forward"
+            class="menu-item"
+            :class="{ selected: isActive('/setting') }"
+            @click="handleMenuClick"
+          >
+            <IonIcon slot="start" class="menu-icon" :icon="settingsSharp" />
             <IonLabel>
               <div class="item-title">设置</div>
               <div class="item-subtitle">偏好与通用配置</div>
@@ -84,23 +137,44 @@
 </template>
 
 <script setup lang="ts">
-import {computed, onMounted, onUnmounted, ref} from 'vue'
-import {IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonMenu, IonMenuToggle} from "@ionic/vue"
-import {downloadSharp, heart, homeSharp, personCircleOutline, searchSharp, settingsSharp, timeOutline} from 'ionicons/icons'
-import {useRoute, useRouter} from "vue-router"
-import {useAuth} from "@/composables/useAuth"
-import {isMenuNavigation} from "@/composables/sideMenuState"
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import {
+  IonContent,
+  IonHeader,
+  IonIcon,
+  IonItem,
+  IonLabel,
+  IonList,
+  IonMenu,
+  IonMenuToggle,
+} from '@ionic/vue'
+import {
+  downloadSharp,
+  heart,
+  homeSharp,
+  personCircleOutline,
+  searchSharp,
+  settingsSharp,
+  timeOutline,
+} from 'ionicons/icons'
+import { useRoute, useRouter } from 'vue-router'
+import { useAuth } from '@/composables/useAuth'
+import { isMenuNavigation } from '@/composables/useSideMenuState'
 
-defineProps({
-  contentId: String,
-  disabled: Boolean,
-})
+defineOptions({ name: 'MainMenu' })
+
+defineProps<{
+  contentId: string
+  disabled?: boolean
+}>()
 
 const route = useRoute()
 const router = useRouter()
 const { userInfo, isLoggedIn } = useAuth()
 const windowWidth = ref(window.innerWidth)
-const onResize = () => { windowWidth.value = window.innerWidth }
+const onResize = () => {
+  windowWidth.value = window.innerWidth
+}
 onMounted(() => window.addEventListener('resize', onResize))
 onUnmounted(() => window.removeEventListener('resize', onResize))
 
@@ -117,10 +191,10 @@ function isActive(path: string) {
 }
 
 function getTopPath(path: string) {
-  if (!path || path === "/") return "/"
+  if (!path || path === '/') return '/'
 
-  const first = path.split("/").filter(Boolean)[0]
-  return first ? first : "/"
+  const first = path.split('/').filter(Boolean)[0]
+  return first ? first : '/'
 }
 
 function handleMenuClick() {
@@ -132,8 +206,8 @@ function handleMenuClick() {
 .menu-hero {
   padding: calc(18px + var(--ion-safe-area-top)) 18px 14px;
   background:
-      radial-gradient(circle at top right, rgb(255 218 190 / 0.95), transparent 46%),
-      linear-gradient(160deg, #fff5ee 0%, #ffeade 100%);
+    radial-gradient(circle at top right, rgb(255 218 190 / 0.95), transparent 46%),
+    linear-gradient(160deg, #fff5ee 0%, #ffeade 100%);
   display: flex;
   align-items: center;
   gap: 14px;
@@ -196,7 +270,7 @@ function handleMenuClick() {
   --background: linear-gradient(145deg, #fa9c69, #f28752);
   border-color: transparent;
   box-shadow: 0 16px 34px rgb(240 126 73 / 0.26);
-  color: rgb(255,255,255);
+  color: rgb(255, 255, 255);
 }
 
 .menu-icon {

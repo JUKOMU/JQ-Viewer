@@ -13,3 +13,8 @@ export interface FavoritePageCacheState {
 
 /** 模块级缓存——组件销毁重建后仍保留 */
 export const cachedState = ref<FavoritePageCacheState | null>(null)
+
+/** 清除缓存（切换收藏夹、登出时调用） */
+export function clearFavoritePageCache() {
+  cachedState.value = null
+}

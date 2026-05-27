@@ -16,12 +16,7 @@
     <template v-else-if="comments.length">
       <div v-for="comment in comments" :key="comment.commentId" class="comment-card">
         <div class="comment-header">
-          <img
-            v-if="comment.photo"
-            :src="comment.photo"
-            class="comment-avatar"
-            alt=""
-          />
+          <img v-if="comment.photo" :src="comment.photo" class="comment-avatar" alt="" />
           <div class="comment-meta">
             <span class="comment-user">{{ comment.username }}</span>
             <span class="comment-time">{{ comment.postDate }}</span>
@@ -46,12 +41,14 @@
 </template>
 
 <script setup lang="ts">
-import type { CommentItem } from '@/services/JmcomicTypes'
+defineOptions({ name: 'AlbumCommentsTab' })
 
 defineProps<{
   comments: CommentItem[]
   loading: boolean
 }>()
+
+import type { CommentItem } from '@/services/JmcomicTypes'
 </script>
 
 <style scoped>
@@ -100,8 +97,12 @@ defineProps<{
 }
 
 @keyframes shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 .comments-empty {

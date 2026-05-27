@@ -14,18 +14,13 @@
         <div class="skeleton-image" />
       </template>
     </div>
-    <div class="end-indicator">— — — —  E N D  — — — —</div>
+    <div class="end-indicator">— — — — E N D — — — —</div>
     <div class="scroll-spacer" :style="{ height: bottomSpacerHeight + 'px' }" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-
-interface ImageSlot {
-  sortOrder: number
-  dataUrl: string | null
-}
+defineOptions({ name: 'VerticalScrollView' })
 
 const props = defineProps<{
   imageMap: Map<number, string>
@@ -36,6 +31,13 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:currentIndex': [index: number]
 }>()
+
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+
+interface ImageSlot {
+  sortOrder: number
+  dataUrl: string | null
+}
 
 const containerRef = ref<HTMLElement | null>(null)
 const imageEls = ref<HTMLElement[]>([])
@@ -94,9 +96,9 @@ const findCurrentIndex = (st: number): number => {
     if (height === 0) continue
 
     const midpoint = top + height / 2
-    if (midpoint < screenTop || midpoint > screenBottom) continue  // 不可见, score=0
+    if (midpoint < screenTop || midpoint > screenBottom) continue // 不可见, score=0
 
-    const score = (midpoint >= zoneA_top && midpoint <= zoneA_bottom) ? 3 : 1
+    const score = midpoint >= zoneA_top && midpoint <= zoneA_bottom ? 3 : 1
     // 平局时取靠近顶部的（更小的 index）
     if (score > bestScore) {
       bestScore = score
@@ -171,7 +173,10 @@ watch(
         const delta = newTop - trackedTop
         if (delta !== 0 && containerRef.value) {
           isAdjustingScroll = true
-          if (scrollRafId !== null) { cancelAnimationFrame(scrollRafId); scrollRafId = null }
+          if (scrollRafId !== null) {
+            cancelAnimationFrame(scrollRafId)
+            scrollRafId = null
+          }
           containerRef.value.scrollTop += delta
           scrollTop.value = containerRef.value.scrollTop
           trackedTop = newTop
@@ -232,8 +237,12 @@ defineExpose({ scrollToIndex })
 }
 
 @keyframes shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 .end-indicator {

@@ -1,16 +1,12 @@
 <template>
-  <div
-    class="card"
-    :class="{ clickable: task.status === 'completed' }"
-    @click="onCardClick"
-  >
+  <div class="card" :class="{ clickable: task.status === 'completed' }" @click="onCardClick">
     <div class="cover-wrap">
       <img
         :src="coverSrc"
         class="cover"
         referrerpolicy="no-referrer"
-        @error="onCoverError"
         alt=""
+        @error="onCoverError"
       />
     </div>
     <div class="info">
@@ -75,11 +71,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { IonIcon } from '@ionic/vue'
-import { ellipsisVertical } from 'ionicons/icons'
-import { getImageUrl, sanitizeError } from '@/services/JmcomicService'
-import type { DownloadTask } from '@/services/JmcomicTypes'
+defineOptions({ name: 'DownloadTaskCard' })
 
 const props = defineProps<{
   task: DownloadTask
@@ -87,15 +79,17 @@ const props = defineProps<{
   downloadedChapters?: DownloadTask[]
   totalSize?: number
 }>()
-
 const emit = defineEmits<{
   more: [event: Event]
   click: []
 }>()
+import { computed, ref } from 'vue'
+import { IonIcon } from '@ionic/vue'
+import { ellipsisVertical } from 'ionicons/icons'
+import { getImageUrl, sanitizeError } from '@/services/JmcomicService'
+import type { DownloadTask } from '@/services/JmcomicTypes'
 
-const hasMultiChapters = computed(() =>
-  (props.downloadedChapters?.length ?? 0) > 1
-)
+const hasMultiChapters = computed(() => (props.downloadedChapters?.length ?? 0) > 1)
 
 const displayTotalPages = computed(() => {
   if (hasMultiChapters.value && props.downloadedChapters) {
@@ -126,9 +120,7 @@ const progressPct = computed(() => {
   return Math.round((props.task.downloadedPages / props.task.totalPages) * 100)
 })
 
-const failedCount = computed(() =>
-  props.task.totalPages - props.task.downloadedPages
-)
+const failedCount = computed(() => props.task.totalPages - props.task.downloadedPages)
 
 const speedText = computed(() => {
   const s = props.task.speed
@@ -191,7 +183,7 @@ const onCardClick = () => {
   border-radius: 6px;
   overflow: hidden;
   background: #ece1d8;
-  box-shadow: 2px 0 2px rgba(0,0,0,0.2);
+  box-shadow: 2px 0 2px rgba(0, 0, 0, 0.2);
 }
 
 .cover {

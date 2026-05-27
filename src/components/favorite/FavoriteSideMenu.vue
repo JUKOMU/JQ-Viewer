@@ -1,10 +1,16 @@
 <template>
-  <div v-show="isVisible" class="fav-menu-backdrop" :style="backdropStyle" @click.self="closeMenu" @touchstart.stop>
+  <div
+    v-show="isVisible"
+    class="fav-menu-backdrop"
+    :style="backdropStyle"
+    @click.self="closeMenu"
+    @touchstart.stop
+  >
     <div ref="panelRef" class="fav-menu-panel" :style="panelStyle">
       <div class="menu-header">
         <div class="menu-title">收藏夹</div>
         <button type="button" class="menu-close-btn" @click="closeMenu">
-          <IonIcon :icon="closeOutline"/>
+          <IonIcon :icon="closeOutline" />
         </button>
       </div>
 
@@ -12,46 +18,51 @@
         <template v-if="onlineFolders.length > 0">
           <div class="section-header">
             <span class="section-title">在线收藏夹</span>
-            <button type="button" class="section-add-btn" aria-label="新建在线收藏夹" @click="emit('add-folder', 'online')">
-              <IonIcon :icon="addCircleOutline"/>
+            <button
+              type="button"
+              class="section-add-btn"
+              aria-label="新建在线收藏夹"
+              @click="emit('add-folder', 'online')"
+            >
+              <IonIcon :icon="addCircleOutline" />
             </button>
           </div>
           <div class="folder-list">
             <div
-                v-for="folder in onlineFolders"
-                :key="folder.id"
-                class="folder-item-wrapper"
-                :style="{ position: 'relative' }"
+              v-for="folder in onlineFolders"
+              :key="folder.id"
+              class="folder-item-wrapper"
+              :style="{ position: 'relative' }"
             >
               <button
-                  type="button"
-                  class="folder-item"
-                  :class="{ selected: selectedOnlineId === folder.id }"
-                  @click="selectOnlineFolder(folder.id)"
+                type="button"
+                class="folder-item"
+                :class="{ selected: selectedOnlineId === folder.id }"
+                @click="selectOnlineFolder(folder.id)"
               >
-                <IonIcon :icon="folderOpenOutline" class="folder-icon"/>
+                <IonIcon :icon="folderOpenOutline" class="folder-icon" />
                 <span class="folder-name">{{ folder.name }}</span>
                 <span v-if="onlineFolderCounts[folder.id] !== undefined" class="folder-count">
                   {{ onlineFolderCounts[folder.id] }}
                 </span>
               </button>
               <button
-                  type="button"
-                  class="folder-more-btn"
-                  aria-label="更多操作"
-                  @click.stop="toggleContextMenu(folder.id)"
+                type="button"
+                class="folder-more-btn"
+                aria-label="更多操作"
+                @click.stop="toggleContextMenu(folder.id)"
               >
-                <IonIcon :icon="ellipsisVertical"/>
+                <IonIcon :icon="ellipsisVertical" />
               </button>
               <FavoriteFolderContextMenu
-                  :visible="openMenuFolderId === folder.id"
-                  :is-default-folder="folder.id === '0'"
-                  :is-online="true"
-                  @rename="onContextMenuRename(folder.id, folder.name, true)"
-                  @move="onContextMenuMove(folder.id, folder.name, true)"
-                  @copy="onContextMenuCopy(folder.id, folder.name, true)"
-                  @delete="onContextMenuDelete(folder.id, folder.name, true)"
-                  @export="onContextMenuExport(folder.id, folder.name, true)"
+                :visible="openMenuFolderId === folder.id"
+                :is-default-folder="folder.id === '0'"
+                :is-online="true"
+                @rename="onContextMenuRename(folder.id, folder.name, true)"
+                @move="onContextMenuMove(folder.id, folder.name, true)"
+                @copy="onContextMenuCopy(folder.id, folder.name, true)"
+                @delete="onContextMenuDelete(folder.id, folder.name, true)"
+                @export="onContextMenuExport(folder.id, folder.name, true)"
               />
             </div>
           </div>
@@ -67,44 +78,49 @@
 
         <div class="section-header">
           <span class="section-title">离线收藏夹</span>
-          <button type="button" class="section-add-btn" aria-label="新建离线收藏夹" @click="emit('add-folder', 'offline')">
-            <IonIcon :icon="addCircleOutline"/>
+          <button
+            type="button"
+            class="section-add-btn"
+            aria-label="新建离线收藏夹"
+            @click="emit('add-folder', 'offline')"
+          >
+            <IonIcon :icon="addCircleOutline" />
           </button>
         </div>
         <div class="folder-list">
           <div
-              v-for="folder in offlineFolders"
-              :key="folder.id"
-              class="folder-item-wrapper"
-              :style="{ position: 'relative' }"
+            v-for="folder in offlineFolders"
+            :key="folder.id"
+            class="folder-item-wrapper"
+            :style="{ position: 'relative' }"
           >
             <button
-                type="button"
-                class="folder-item"
-                :class="{ selected: selectedOfflineId === folder.id }"
-                @click="selectOfflineFolder(folder.id)"
+              type="button"
+              class="folder-item"
+              :class="{ selected: selectedOfflineId === folder.id }"
+              @click="selectOfflineFolder(folder.id)"
             >
-              <IonIcon :icon="folderOpenOutline" class="folder-icon"/>
+              <IonIcon :icon="folderOpenOutline" class="folder-icon" />
               <span class="folder-name">{{ folder.name }}</span>
               <span class="folder-count">{{ folder.count }}</span>
             </button>
             <button
-                type="button"
-                class="folder-more-btn"
-                aria-label="更多操作"
-                @click.stop="toggleContextMenu(folder.id)"
+              type="button"
+              class="folder-more-btn"
+              aria-label="更多操作"
+              @click.stop="toggleContextMenu(folder.id)"
             >
-              <IonIcon :icon="ellipsisVertical"/>
+              <IonIcon :icon="ellipsisVertical" />
             </button>
             <FavoriteFolderContextMenu
-                :visible="openMenuFolderId === folder.id"
-                :is-default-folder="folder.id === OFFLINE_ALL_FOLDER_ID"
-                :is-online="false"
-                @rename="onContextMenuRename(folder.id, folder.name, false)"
-                @move="onContextMenuMove(folder.id, folder.name, false)"
-                @copy="onContextMenuCopy(folder.id, folder.name, false)"
-                @delete="onContextMenuDelete(folder.id, folder.name, false)"
-                @export="onContextMenuExport(folder.id, folder.name, false)"
+              :visible="openMenuFolderId === folder.id"
+              :is-default-folder="folder.id === OFFLINE_ALL_FOLDER_ID"
+              :is-online="false"
+              @rename="onContextMenuRename(folder.id, folder.name, false)"
+              @move="onContextMenuMove(folder.id, folder.name, false)"
+              @copy="onContextMenuCopy(folder.id, folder.name, false)"
+              @delete="onContextMenuDelete(folder.id, folder.name, false)"
+              @export="onContextMenuExport(folder.id, folder.name, false)"
             />
           </div>
         </div>
@@ -114,13 +130,15 @@
 </template>
 
 <script setup lang="ts">
-import {computed, onBeforeUnmount, onMounted, ref} from 'vue'
-import {IonIcon} from '@ionic/vue'
-import {addCircleOutline, closeOutline, ellipsisVertical, folderOpenOutline} from 'ionicons/icons'
-import {isDraggingRight, isSnappingClosed, rightDragProgress} from '@/composables/sideMenuState'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { IonIcon } from '@ionic/vue'
+import { addCircleOutline, closeOutline, ellipsisVertical, folderOpenOutline } from 'ionicons/icons'
+import { useSideMenuState } from '@/composables/useSideMenuState'
 import FavoriteFolderContextMenu from '@/components/favorite/FavoriteFolderContextMenu.vue'
-import type {FolderEntry} from '@/services/JmcomicTypes'
-import {OFFLINE_ALL_FOLDER_ID} from '@/services/JmcomicTypes'
+import type { FolderEntry } from '@/services/JmcomicTypes'
+import { OFFLINE_ALL_FOLDER_ID } from '@/services/JmcomicTypes'
+
+defineOptions({ name: 'FavoriteSideMenu' })
 
 const props = defineProps<{
   modelValue: boolean
@@ -130,7 +148,6 @@ const props = defineProps<{
   selectedOfflineId: string
   onlineFolderCounts: Record<string, number>
 }>()
-
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
   'select-online-folder': [folderId: string]
@@ -142,6 +159,8 @@ const emit = defineEmits<{
   'copy-folder': [payload: { folderId: string; folderName: string; isOnline: boolean }]
   'export-folder': [payload: { folderId: string; folderName: string; isOnline: boolean }]
 }>()
+
+const { isDraggingRight, isSnappingClosed, rightDragProgress } = useSideMenuState()
 
 const panelRef = ref<HTMLElement | null>(null)
 const openMenuFolderId = ref<string | null>(null)
@@ -194,8 +213,8 @@ onBeforeUnmount(() => {
   document.removeEventListener('touchstart', handleClickOutside)
 })
 
-const isVisible = computed(() =>
-  props.modelValue || isDraggingRight.value || isSnappingClosed.value
+const isVisible = computed(
+  () => props.modelValue || isDraggingRight.value || isSnappingClosed.value,
 )
 
 const currentProgress = computed(() => {
@@ -361,7 +380,9 @@ defineExpose({ panelRef })
   font-weight: 700;
   text-align: left;
   box-shadow: 0 12px 28px rgb(115 67 38 / 0.08);
-  transition: background-color 0.16s ease, border-color 0.16s ease;
+  transition:
+    background-color 0.16s ease,
+    border-color 0.16s ease;
 }
 
 .folder-item:hover,
@@ -438,5 +459,4 @@ defineExpose({ panelRef })
   color: #9e7d6a;
   font-size: 13px;
 }
-
 </style>

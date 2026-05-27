@@ -26,9 +26,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
-
-const SWIPE_THRESHOLD = 60
+defineOptions({ name: 'HorizontalPageView' })
 
 const props = defineProps<{
   imageMap: Map<number, string>
@@ -40,6 +38,10 @@ const emit = defineEmits<{
   'update:currentIndex': [index: number]
   'toggle-toolbar': []
 }>()
+
+import { computed, onMounted, ref, watch } from 'vue'
+
+const SWIPE_THRESHOLD = 60
 
 const containerRef = ref<HTMLElement | null>(null)
 const displayIndex = ref(0)
@@ -71,12 +73,15 @@ const stripStyle = computed(() => {
   }
 })
 
-watch(() => props.currentIndex, (val) => {
-  if (!isAnimating.value) {
-    displayIndex.value = val
-    offsetX.value = 0
-  }
-})
+watch(
+  () => props.currentIndex,
+  (val) => {
+    if (!isAnimating.value) {
+      displayIndex.value = val
+      offsetX.value = 0
+    }
+  },
+)
 
 onMounted(() => {
   displayIndex.value = props.currentIndex
@@ -230,7 +235,11 @@ defineExpose({ scrollToIndex })
 }
 
 @keyframes shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 </style>

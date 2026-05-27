@@ -25,24 +25,24 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
-import type { SearchHistoryItem } from '@/services/HistoryService'
+defineOptions({ name: 'SearchHistoryDropdown' })
 
 const props = defineProps<{
   visible: boolean
   items: SearchHistoryItem[]
   filterText?: string
 }>()
-
 defineEmits<{
   select: [item: SearchHistoryItem]
   clear: []
 }>()
+import { computed } from 'vue'
+import type { SearchHistoryItem } from '@/services/HistoryService'
 
 const filteredItems = computed(() => {
   const ft = (props.filterText ?? '').trim().toLowerCase()
   if (!ft) return props.items
-  return props.items.filter(item => item.keyword.toLowerCase().includes(ft))
+  return props.items.filter((item) => item.keyword.toLowerCase().includes(ft))
 })
 </script>
 

@@ -5,6 +5,7 @@ import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
+import android.util.Log;
 
 /**
  * 应用设置 SQLite 数据库（权威持久化源）。
@@ -13,6 +14,7 @@ import android.database.sqlite.SQLiteOpenHelper;
  */
 public class SettingsStore extends SQLiteOpenHelper {
 
+    private static final String TAG = "SettingsStore";
     private static final String DB_NAME = "jq_settings.db";
     private static final int DB_VERSION = 1;
 
@@ -60,6 +62,7 @@ public class SettingsStore extends SQLiteOpenHelper {
 
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
+        // 注意：未来迁移必须使用 ALTER TABLE ADD COLUMN，直接 DROP TABLE 会导致用户数据永久丢失
         db.execSQL("DROP TABLE IF EXISTS " + TABLE);
         onCreate(db);
     }
@@ -73,7 +76,8 @@ public class SettingsStore extends SQLiteOpenHelper {
             if (c.moveToFirst()) {
                 return c.getString(0);
             }
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            Log.w(TAG, "读取设置项失败", e);
         }
         return null;
     }
@@ -109,7 +113,8 @@ public class SettingsStore extends SQLiteOpenHelper {
     public boolean deleteKey(String key) {
         try {
             return getWritableDatabase().delete(TABLE, COL_KEY + "=?", new String[]{key}) > 0;
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            Log.w(TAG, "删除设置项失败", e);
             return false;
         }
     }
@@ -122,7 +127,8 @@ public class SettingsStore extends SQLiteOpenHelper {
             cv.put(COL_UPDATED_AT, System.currentTimeMillis());
             return getWritableDatabase().insertWithOnConflict(TABLE, null, cv,
                     SQLiteDatabase.CONFLICT_REPLACE) != -1;
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            Log.w(TAG, "写入设置项失败", e);
             return false;
         }
     }

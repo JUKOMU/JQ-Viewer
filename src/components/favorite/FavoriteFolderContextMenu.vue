@@ -1,33 +1,15 @@
 <template>
-  <div
-    v-if="visible"
-    class="context-menu"
-    @mousedown.stop
-    @touchstart.stop
-  >
-    <button
-      v-if="!isDefaultFolder"
-      type="button"
-      class="menu-item"
-      @click.stop="$emit('rename')"
-    >
-      <IonIcon :icon="pencilOutline" class="menu-icon"/>
+  <div v-if="visible" class="context-menu" @mousedown.stop @touchstart.stop>
+    <button v-if="!isDefaultFolder" type="button" class="menu-item" @click.stop="$emit('rename')">
+      <IonIcon :icon="pencilOutline" class="menu-icon" />
       <span>重命名</span>
     </button>
-    <button
-      type="button"
-      class="menu-item"
-      @click.stop="$emit('move')"
-    >
-      <IonIcon :icon="swapHorizontalOutline" class="menu-icon"/>
+    <button type="button" class="menu-item" @click.stop="$emit('move')">
+      <IonIcon :icon="swapHorizontalOutline" class="menu-icon" />
       <span>移动</span>
     </button>
-    <button
-      type="button"
-      class="menu-item"
-      @click.stop="$emit('copy')"
-    >
-      <IonIcon :icon="copyOutline" class="menu-icon"/>
+    <button type="button" class="menu-item" @click.stop="$emit('copy')">
+      <IonIcon :icon="copyOutline" class="menu-icon" />
       <span>复制</span>
     </button>
     <button
@@ -36,30 +18,24 @@
       class="menu-item menu-item--danger"
       @click.stop="$emit('delete')"
     >
-      <IonIcon :icon="trashOutline" class="menu-icon"/>
+      <IonIcon :icon="trashOutline" class="menu-icon" />
       <span>删除</span>
     </button>
-    <button
-      type="button"
-      class="menu-item"
-      @click.stop="$emit('export')"
-    >
-      <IonIcon :icon="downloadOutline" class="menu-icon"/>
+    <button type="button" class="menu-item" @click.stop="$emit('export')">
+      <IonIcon :icon="downloadOutline" class="menu-icon" />
       <span>导出</span>
     </button>
   </div>
 </template>
 
 <script setup lang="ts">
-import { IonIcon } from '@ionic/vue'
-import { copyOutline, downloadOutline, pencilOutline, swapHorizontalOutline, trashOutline } from 'ionicons/icons'
+defineOptions({ name: 'FavoriteFolderContextMenu' })
 
 defineProps<{
   visible: boolean
   isDefaultFolder: boolean
   isOnline: boolean
 }>()
-
 defineEmits<{
   rename: []
   move: []
@@ -67,6 +43,14 @@ defineEmits<{
   delete: []
   export: []
 }>()
+import { IonIcon } from '@ionic/vue'
+import {
+  copyOutline,
+  downloadOutline,
+  pencilOutline,
+  swapHorizontalOutline,
+  trashOutline,
+} from 'ionicons/icons'
 </script>
 
 <style scoped>

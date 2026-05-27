@@ -123,20 +123,20 @@ public class ImageCache {
     }
 
     public ImageEntry get(String key) {
-        readLock.lock();
+        writeLock.lock();
         try {
             return cache.get(key);
         } finally {
-            readLock.unlock();
+            writeLock.unlock();
         }
     }
 
     public boolean has(String key) {
-        readLock.lock();
+        writeLock.lock();
         try {
             return cache.containsKey(key);
         } finally {
-            readLock.unlock();
+            writeLock.unlock();
         }
     }
 

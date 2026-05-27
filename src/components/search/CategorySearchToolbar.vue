@@ -4,12 +4,12 @@
       <div class="option-title">分类</div>
       <div class="option-group">
         <button
-            v-for="option in CATEGORY_OPTIONS"
-            :key="option.value"
-            type="button"
-            class="option-chip"
-            :class="{ active: query.category === option.value }"
-            @click="query.category = option.value"
+          v-for="option in CATEGORY_OPTIONS"
+          :key="option.value"
+          type="button"
+          class="option-chip"
+          :class="{ active: query.category === option.value }"
+          @click="query.category = option.value"
         >
           {{ option.label }}
         </button>
@@ -20,12 +20,12 @@
       <div class="option-title">排序</div>
       <div class="option-group">
         <button
-            v-for="option in ORDER_BY_OPTIONS"
-            :key="option.value"
-            type="button"
-            class="option-chip"
-            :class="{ active: query.orderBy === option.value }"
-            @click="query.orderBy = option.value"
+          v-for="option in ORDER_BY_OPTIONS"
+          :key="option.value"
+          type="button"
+          class="option-chip"
+          :class="{ active: query.orderBy === option.value }"
+          @click="query.orderBy = option.value"
         >
           {{ option.label }}
         </button>
@@ -36,43 +36,46 @@
       <div class="option-title">时间范围</div>
       <div class="option-group">
         <button
-            v-for="option in TIME_OPTIONS"
-            :key="option.value"
-            type="button"
-            class="option-chip"
-            :class="{ active: query.time === option.value }"
-            @click="query.time = option.value"
+          v-for="option in TIME_OPTIONS"
+          :key="option.value"
+          type="button"
+          class="option-chip"
+          :class="{ active: query.time === option.value }"
+          @click="query.time = option.value"
         >
           {{ option.label }}
         </button>
       </div>
     </section>
     <div class="action-row">
-      <button type="button" class="action-btn primary" aria-label="搜索" title="搜索" @click="emitSearch">
-        <IonIcon :icon="checkmarkOutline"/>
+      <button
+        type="button"
+        class="action-btn primary"
+        aria-label="搜索"
+        title="搜索"
+        @click="emitSearch"
+      >
+        <IonIcon :icon="checkmarkOutline" />
       </button>
       <button type="button" class="action-btn" aria-label="重置" title="重置" @click="resetQuery">
-        <IonIcon :icon="refreshOutline"/>
+        <IonIcon :icon="refreshOutline" />
       </button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import {reactive} from 'vue'
-import {IonIcon} from '@ionic/vue'
-import {checkmarkOutline, refreshOutline} from 'ionicons/icons'
-import {
-  CATEGORY_OPTIONS,
-  ORDER_BY_OPTIONS,
-  TIME_OPTIONS
-} from '@/constants/searchOptions'
-import type {SearchQuery} from '@/services/JmcomicTypes'
-import { HistoryService } from '@/services/HistoryService'
+defineOptions({ name: 'CategorySearchToolbar' })
 
 const emit = defineEmits<{
   search: [query: SearchQuery]
 }>()
+import { reactive } from 'vue'
+import { IonIcon } from '@ionic/vue'
+import { checkmarkOutline, refreshOutline } from 'ionicons/icons'
+import { CATEGORY_OPTIONS, ORDER_BY_OPTIONS, TIME_OPTIONS } from '@/constants/searchOptions'
+import type { SearchQuery } from '@/services/JmcomicTypes'
+import { HistoryService } from '@/services/HistoryService'
 
 const createDefaultQuery = (): SearchQuery => ({
   category: 'doujin',
@@ -84,9 +87,9 @@ const createDefaultQuery = (): SearchQuery => ({
 const query = reactive<SearchQuery>(createDefaultQuery())
 
 const emitSearch = () => {
-  const catLabel = CATEGORY_OPTIONS.find(o => o.value === query.category)?.label
+  const catLabel = CATEGORY_OPTIONS.find((o) => o.value === query.category)?.label
   if (catLabel) HistoryService.addSearchHistory('category', catLabel)
-  emit('search', {...query})
+  emit('search', { ...query })
 }
 
 const resetQuery = () => {
@@ -133,7 +136,10 @@ const resetQuery = () => {
   color: #555;
   font-size: 12px;
   border: 1px solid rgb(250, 156, 105);
-  transition: transform 0.15s ease-out, background-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    transform 0.15s ease-out,
+    background-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .option-chip.active {

@@ -3,12 +3,12 @@
     <IonHeader class="ion-no-border">
       <IonToolbar>
         <div class="toolbar-start">
-          <MenuToggleButton/>
+          <MenuToggleButton />
         </div>
         <div class="toolbar-title">下载管理</div>
         <div class="toolbar-end">
           <button v-if="hasTasks" class="sort-btn" @click="toggleSort">
-            <IonIcon :icon="sortIcon"/>
+            <IonIcon :icon="sortIcon" />
           </button>
         </div>
       </IonToolbar>
@@ -16,115 +16,146 @@
     <IonContent>
       <!-- 下拉刷新 -->
       <IonRefresher slot="fixed" @ion-refresh="onRefresh($event)">
-        <IonRefresherContent/>
+        <IonRefresherContent />
       </IonRefresher>
 
       <!-- 空状态 -->
       <div v-if="!hasTasks" class="empty-state">
-        <IonIcon :icon="cloudDownloadOutline" class="empty-icon"/>
+        <IonIcon :icon="cloudDownloadOutline" class="empty-icon" />
         <p>暂无下载内容</p>
       </div>
 
       <template v-else>
         <!-- 存储信息 -->
         <div v-if="hasStorageInfo" class="storage-bar">
-          <IonIcon :icon="saveOutline" class="storage-icon"/>
+          <IonIcon :icon="saveOutline" class="storage-icon" />
           <span>已用 {{ spaceUsedMb }}MB / 可用 {{ spaceAvailMb }}MB</span>
         </div>
 
         <!-- 下载中 -->
-        <div class="section" v-if="sortedActiveTasks.length">
+        <div v-if="sortedActiveTasks.length" class="section">
           <div class="section-header">
             <span class="section-title">下载中 ({{ sortedActiveTasks.length }})</span>
           </div>
           <div v-for="task in sortedActiveTasks" :key="task.taskId" class="task-card">
             <DownloadTaskCard
-                :task="task"
-                :show-progress="true"
-                @more="openActions(task, $event)"
+              :task="task"
+              :show-progress="true"
+              @more="openActions(task, $event)"
             />
           </div>
         </div>
 
         <!-- 已完成 -->
-        <div class="section" v-if="completedGroups.length">
+        <div v-if="completedGroups.length" class="section">
           <div class="section-header">
             <span class="section-title">已完成 ({{ completedGroups.length }})</span>
             <button class="clear-btn" @click="requestClear('completed')">清空</button>
           </div>
           <div v-for="group in completedGroups" :key="group.albumId" class="task-card">
             <DownloadTaskCard
-                :task="group.chapters[0]"
-                :show-progress="false"
-                :total-size="group.totalSize"
-                :downloaded-chapters="group.type === 'multi' ? group.chapters : undefined"
-                @click="onReadGroup(group)"
-                @more="openGroupActions(group, $event)"
+              :task="group.chapters[0]"
+              :show-progress="false"
+              :total-size="group.totalSize"
+              :downloaded-chapters="group.type === 'multi' ? group.chapters : undefined"
+              @click="onReadGroup(group)"
+              @more="openGroupActions(group, $event)"
             />
           </div>
         </div>
 
         <!-- 下载失败 -->
-        <div class="section" v-if="sortedFailedTasks.length">
+        <div v-if="sortedFailedTasks.length" class="section">
           <div class="section-header">
             <span class="section-title">下载失败 ({{ sortedFailedTasks.length }})</span>
             <button class="clear-btn" @click="requestClear('failed')">清空</button>
           </div>
           <div v-for="task in sortedFailedTasks" :key="task.taskId" class="task-card">
             <DownloadTaskCard
-                :task="task"
-                :show-progress="false"
-                @more="openActions(task, $event)"
+              :task="task"
+              :show-progress="false"
+              @more="openActions(task, $event)"
             />
           </div>
         </div>
-        <div class="bottom-spacer"/>
+        <div class="bottom-spacer" />
       </template>
     </IonContent>
 
     <!-- 操作菜单（IonPopover） -->
     <IonPopover
-        :is-open="isPopoverOpen"
-        :event="popoverEvent"
-        @did-dismiss="(() => { isPopoverOpen = false; if (!isDeleteAlertOpen) { selectedTask = null; selectedGroup = null; popoverEvent = null } })()"
+      :is-open="isPopoverOpen"
+      :event="popoverEvent"
+      @did-dismiss="
+        (() => {
+          isPopoverOpen = false
+          if (!isDeleteAlertOpen) {
+            selectedTask = null
+            selectedGroup = null
+            popoverEvent = null
+          }
+        })()
+      "
     >
       <IonContent class="popover-content">
         <div class="popover-header">{{ popoverTitle }}</div>
 
-        <button v-if="selectedTask?.status === 'completed'" class="popover-btn" @click="popoverAction('read')">
-          <IonIcon :icon="bookOutline"/>
+        <button
+          v-if="selectedTask?.status === 'completed'"
+          class="popover-btn"
+          @click="popoverAction('read')"
+        >
+          <IonIcon :icon="bookOutline" />
           {{ selectedGroup?.type === 'multi' ? '选择章节' : '阅读' }}
         </button>
 
         <button class="popover-btn" @click="popoverAction('detail')">
-          <IonIcon :icon="informationCircleOutline"/>
+          <IonIcon :icon="informationCircleOutline" />
           进入详情页
         </button>
 
-        <button v-if="selectedTask?.status === 'failed'" class="popover-btn" @click="popoverAction('retry')">
-          <IonIcon :icon="refreshOutline"/>
+        <button
+          v-if="selectedTask?.status === 'failed'"
+          class="popover-btn"
+          @click="popoverAction('retry')"
+        >
+          <IonIcon :icon="refreshOutline" />
           {{ selectedTask?.error?.includes('张图片下载失败') ? '重新下载失败图片' : '重试' }}
         </button>
 
-        <button v-if="selectedTask?.status === 'paused'" class="popover-btn" @click="popoverAction('resume')">
-          <IonIcon :icon="playOutline"/>
+        <button
+          v-if="selectedTask?.status === 'paused'"
+          class="popover-btn"
+          @click="popoverAction('resume')"
+        >
+          <IonIcon :icon="playOutline" />
           继续
         </button>
 
-        <button v-if="selectedTask?.status === 'downloading'" class="popover-btn" @click="popoverAction('pause')">
-          <IonIcon :icon="pauseOutline"/>
+        <button
+          v-if="selectedTask?.status === 'downloading'"
+          class="popover-btn"
+          @click="popoverAction('pause')"
+        >
+          <IonIcon :icon="pauseOutline" />
           暂停
         </button>
 
-        <button v-if="cancelableStatuses.includes(selectedTask?.status ?? '')" class="popover-btn danger"
-                @click="popoverAction('cancel')">
-          <IonIcon :icon="closeCircleOutline"/>
+        <button
+          v-if="cancelableStatuses.includes(selectedTask?.status ?? '')"
+          class="popover-btn danger"
+          @click="popoverAction('cancel')"
+        >
+          <IonIcon :icon="closeCircleOutline" />
           取消
         </button>
 
-        <button v-if="deletableStatuses.includes(selectedTask?.status ?? '')" class="popover-btn danger"
-                @click="popoverAction('delete')">
-          <IonIcon :icon="trashOutline"/>
+        <button
+          v-if="deletableStatuses.includes(selectedTask?.status ?? '')"
+          class="popover-btn danger"
+          @click="popoverAction('delete')"
+        >
+          <IonIcon :icon="trashOutline" />
           删除
         </button>
       </IonContent>
@@ -132,33 +163,35 @@
 
     <!-- 删除确认对话框 -->
     <IonAlert
-        :is-open="isDeleteAlertOpen"
-        header="确认删除"
-        :message="deleteAlertMessage"
-        :buttons="[
+      :is-open="isDeleteAlertOpen"
+      header="确认删除"
+      :message="deleteAlertMessage"
+      :buttons="[
         { text: '取消', role: 'cancel' },
-        { text: '删除', role: 'destructive', handler: confirmDelete }
+        { text: '删除', role: 'destructive', handler: confirmDelete },
       ]"
-        @did-dismiss="isDeleteAlertOpen = false"
+      @did-dismiss="isDeleteAlertOpen = false"
     />
 
     <!-- 清空确认对话框 -->
     <IonAlert
-        :is-open="isClearAlertOpen"
-        header="确认清空"
-        :message="clearAlertMessage"
-        :buttons="[
+      :is-open="isClearAlertOpen"
+      header="确认清空"
+      :message="clearAlertMessage"
+      :buttons="[
         { text: '取消', role: 'cancel' },
-        { text: '确定清空', role: 'destructive', handler: executeClear }
+        { text: '确定清空', role: 'destructive', handler: executeClear },
       ]"
-        @did-dismiss="isClearAlertOpen = false"
+      @did-dismiss="isClearAlertOpen = false"
     />
   </IonPage>
 </template>
 
 <script setup lang="ts">
-import {computed, onMounted, onUnmounted, ref} from 'vue'
-import {useRouter} from 'vue-router'
+defineOptions({ name: 'DownloadPage' })
+
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   IonAlert,
   IonContent,
@@ -184,12 +217,12 @@ import {
   timeOutline,
   trashOutline,
 } from 'ionicons/icons'
-import type {PluginListenerHandle} from '@capacitor/core'
+import type { PluginListenerHandle } from '@capacitor/core'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import DownloadTaskCard from '@/components/download/DownloadTaskCard.vue'
-import {JmcomicService, sanitizeError, showToast} from '@/services/JmcomicService'
-import {OfflineDownloadService} from '@/services/OfflineDownloadService'
-import type {CompletedGroup, DownloadTask} from '@/services/JmcomicTypes'
+import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
+import { OfflineDownloadService } from '@/services/OfflineDownloadService'
+import type { CompletedGroup, DownloadTask } from '@/services/JmcomicTypes'
 
 const router = useRouter()
 const tasks = ref<DownloadTask[]>([])
@@ -202,7 +235,7 @@ let syncPromise: Promise<void> | null = null
 // 排序
 type SortMode = 'time' | 'title'
 const sortMode = ref<SortMode>('time')
-const sortIcon = computed(() => sortMode.value === 'time' ? timeOutline : textOutline)
+const sortIcon = computed(() => (sortMode.value === 'time' ? timeOutline : textOutline))
 
 const toggleSort = () => {
   sortMode.value = sortMode.value === 'time' ? 'title' : 'time'
@@ -259,22 +292,22 @@ const popoverAction = (action: string) => {
       }
       break
     case 'detail':
-      onGoToAlbumDetail(t);
+      onGoToAlbumDetail(t)
       break
     case 'retry':
-      onRetry(t);
+      onRetry(t)
       break
     case 'resume':
-      onResume(t);
+      onResume(t)
       break
     case 'pause':
-      onPause(t);
+      onPause(t)
       break
     case 'cancel':
-      onCancel(t);
+      onCancel(t)
       break
     case 'delete':
-      requestDeleteConfirm();
+      requestDeleteConfirm()
       break
   }
 }
@@ -311,16 +344,14 @@ const confirmDelete = () => {
 const hasTasks = computed(() => tasks.value.length > 0)
 
 const activeTasks = computed(() =>
-    tasks.value.filter(t => t.status === 'queued' || t.status === 'downloading' || t.status === 'paused')
+  tasks.value.filter(
+    (t) => t.status === 'queued' || t.status === 'downloading' || t.status === 'paused',
+  ),
 )
 
-const completedTasks = computed(() =>
-    tasks.value.filter(t => t.status === 'completed')
-)
+const completedTasks = computed(() => tasks.value.filter((t) => t.status === 'completed'))
 
-const failedTasks = computed(() =>
-    tasks.value.filter(t => t.status === 'failed')
-)
+const failedTasks = computed(() => tasks.value.filter((t) => t.status === 'failed'))
 
 const sortedActiveTasks = computed(() => sortTasks(activeTasks.value))
 const sortedFailedTasks = computed(() => sortTasks(failedTasks.value))
@@ -348,8 +379,12 @@ const completedGroups = computed<CompletedGroup[]>(() => {
     })
   }
   return sortMode.value === 'title'
-      ? groups.sort((a, b) => a.albumTitle.localeCompare(b.albumTitle, 'zh'))
-      : groups.sort((a, b) => Math.max(...b.chapters.map(c => c.createdAt)) - Math.max(...a.chapters.map(c => c.createdAt)))
+    ? groups.sort((a, b) => a.albumTitle.localeCompare(b.albumTitle, 'zh'))
+    : groups.sort(
+        (a, b) =>
+          Math.max(...b.chapters.map((c) => c.createdAt)) -
+          Math.max(...a.chapters.map((c) => c.createdAt)),
+      )
 })
 
 const syncDownloadState = async () => {
@@ -383,7 +418,7 @@ const onRefresh = async (event: CustomEvent) => {
 
 onMounted(async () => {
   JmcomicService.addDownloadProgressListener((data) => {
-    const task = tasks.value.find(t => t.taskId === data.taskId)
+    const task = tasks.value.find((t) => t.taskId === data.taskId)
     if (!task) {
       void syncDownloadState()
       return
@@ -400,14 +435,24 @@ onMounted(async () => {
     } else if (data.status === 'paused') {
       task.downloadedPages = data.downloadedPages
       task.status = 'paused'
-      OfflineDownloadService.updateStatus(data.taskId, 'paused', data.downloadedPages, task.totalPages)
+      OfflineDownloadService.updateStatus(
+        data.taskId,
+        'paused',
+        data.downloadedPages,
+        task.totalPages,
+      )
     } else if (data.status === 'completed') {
       task.status = 'completed'
       task.downloadedPages = data.downloadedPages
       task.totalPages = data.totalPages
       task.totalSize = data.totalSize
       task.completedAt = Date.now()
-      OfflineDownloadService.updateStatus(data.taskId, 'completed', data.downloadedPages, data.totalPages)
+      OfflineDownloadService.updateStatus(
+        data.taskId,
+        'completed',
+        data.downloadedPages,
+        data.totalPages,
+      )
       void syncDownloadState()
     } else if (data.status === 'failed') {
       task.status = 'failed'
@@ -415,12 +460,19 @@ onMounted(async () => {
       task.totalPages = data.totalPages
       task.error = data.error
       task.totalSize = data.totalSize
-      OfflineDownloadService.updateStatus(data.taskId, 'failed', data.downloadedPages, data.totalPages, data.error)
+      OfflineDownloadService.updateStatus(
+        data.taskId,
+        'failed',
+        data.downloadedPages,
+        data.totalPages,
+        data.error,
+      )
     }
-  }).then((handle) => {
-    downloadProgressHandle = handle
-  }).catch(() => {
   })
+    .then((handle) => {
+      downloadProgressHandle = handle
+    })
+    .catch(() => {})
 
   await syncDownloadState()
 })
@@ -436,7 +488,7 @@ onUnmounted(() => {
 const onCancel = async (task: DownloadTask) => {
   try {
     await JmcomicService.cancelDownload(task.taskId)
-    tasks.value = tasks.value.filter(t => t.taskId !== task.taskId)
+    tasks.value = tasks.value.filter((t) => t.taskId !== task.taskId)
     OfflineDownloadService.removeTask(task.taskId)
     void syncDownloadState()
   } catch (e: any) {
@@ -462,9 +514,12 @@ const onResume = async (task: DownloadTask) => {
 
 const onRetry = async (task: DownloadTask) => {
   try {
-    const {taskId} = await JmcomicService.downloadChapter(
-        task.albumId, task.chapterId,
-        task.albumTitle, task.chapterTitle, task.coverUrl,
+    const { taskId } = await JmcomicService.downloadChapter(
+      task.albumId,
+      task.chapterId,
+      task.albumTitle,
+      task.chapterTitle,
+      task.coverUrl,
     )
     const newTask: DownloadTask = {
       ...task,
@@ -477,7 +532,7 @@ const onRetry = async (task: DownloadTask) => {
       createdAt: Date.now(),
       completedAt: undefined,
     }
-    tasks.value = [newTask, ...tasks.value.filter(t => t.taskId !== task.taskId)]
+    tasks.value = [newTask, ...tasks.value.filter((t) => t.taskId !== task.taskId)]
     OfflineDownloadService.removeTask(task.taskId)
     OfflineDownloadService.addTask(newTask)
     void syncDownloadState()
@@ -516,7 +571,7 @@ const onGoToAlbumDetail = (task: DownloadTask) => {
 const onDelete = async (task: DownloadTask) => {
   try {
     await JmcomicService.deleteDownloaded(task.albumId, task.chapterId)
-    tasks.value = tasks.value.filter(t => t.taskId !== task.taskId)
+    tasks.value = tasks.value.filter((t) => t.taskId !== task.taskId)
     OfflineDownloadService.removeTask(task.taskId)
     void syncDownloadState()
   } catch (e: any) {
@@ -526,12 +581,13 @@ const onDelete = async (task: DownloadTask) => {
 
 const onDeleteGroup = async (group: CompletedGroup) => {
   try {
-    await Promise.all(group.chapters.map(ch =>
-        JmcomicService.deleteDownloaded(ch.albumId, ch.chapterId).catch(() => {
-        })
-    ))
-    const taskIds = new Set(group.chapters.map(ch => ch.taskId))
-    tasks.value = tasks.value.filter(t => !taskIds.has(t.taskId))
+    await Promise.all(
+      group.chapters.map((ch) =>
+        JmcomicService.deleteDownloaded(ch.albumId, ch.chapterId).catch(() => {}),
+      ),
+    )
+    const taskIds = new Set(group.chapters.map((ch) => ch.taskId))
+    tasks.value = tasks.value.filter((t) => !taskIds.has(t.taskId))
     for (const ch of group.chapters) {
       OfflineDownloadService.removeTask(ch.taskId)
     }
@@ -546,9 +602,9 @@ const isClearAlertOpen = ref(false)
 const clearTarget = ref<'completed' | 'failed'>('completed')
 
 const clearAlertMessage = computed(() =>
-    clearTarget.value === 'completed'
-        ? `将删除所有已完成任务的文件和记录（${completedTasks.value.length} 个），此操作不可恢复。`
-        : `将删除所有失败任务的文件和记录（${failedTasks.value.length} 个），此操作不可恢复。`
+  clearTarget.value === 'completed'
+    ? `将删除所有已完成任务的文件和记录（${completedTasks.value.length} 个），此操作不可恢复。`
+    : `将删除所有失败任务的文件和记录（${failedTasks.value.length} 个），此操作不可恢复。`,
 )
 
 const requestClear = (target: 'completed' | 'failed') => {
@@ -564,11 +620,12 @@ const executeClear = async () => {
 const clearCompleted = async () => {
   const list = completedTasks.value
   if (!list.length) return
-  await Promise.all(list.map(task =>
-      JmcomicService.deleteDownloaded(task.albumId, task.chapterId).catch(() => {
-      })
-  ))
-  tasks.value = tasks.value.filter(t => t.status !== 'completed')
+  await Promise.all(
+    list.map((task) =>
+      JmcomicService.deleteDownloaded(task.albumId, task.chapterId).catch(() => {}),
+    ),
+  )
+  tasks.value = tasks.value.filter((t) => t.status !== 'completed')
   OfflineDownloadService.setAll(tasks.value)
   await syncDownloadState()
 }
@@ -576,11 +633,12 @@ const clearCompleted = async () => {
 const clearFailed = async () => {
   const list = failedTasks.value
   if (!list.length) return
-  await Promise.all(list.map(task =>
-      JmcomicService.deleteDownloaded(task.albumId, task.chapterId).catch(() => {
-      })
-  ))
-  tasks.value = tasks.value.filter(t => t.status !== 'failed')
+  await Promise.all(
+    list.map((task) =>
+      JmcomicService.deleteDownloaded(task.albumId, task.chapterId).catch(() => {}),
+    ),
+  )
+  tasks.value = tasks.value.filter((t) => t.status !== 'failed')
   OfflineDownloadService.setAll(tasks.value)
   await syncDownloadState()
 }

@@ -1,6 +1,7 @@
 package io.github.jukomu.service;
 
 import android.content.Context;
+import android.util.Log;
 
 import io.github.jukomu.data.DownloadStore;
 import io.github.jukomu.data.FileStore;
@@ -15,6 +16,8 @@ import java.util.List;
  * 纯业务逻辑，不依赖 Capacitor API。
  */
 public class SettingsService {
+
+    private static final String TAG = "SettingsService";
 
     private final SettingsStore settingsDb;
     private final DownloadStore downloadDb;
@@ -63,7 +66,8 @@ public class SettingsService {
             ret.put("downloadPublic", settingsDb.getBoolean("download_public", false));
             ret.put("cacheCapacityMb", settingsDb.getLong("cache_capacity_mb", 640));
             ret.put("ocrEnabled", settingsDb.getBoolean("ocr_enabled", true));
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            Log.w(TAG, "构建全部设置信息失败", e);
         }
         return ret;
     }
@@ -118,7 +122,7 @@ public class SettingsService {
      * 执行文件搬迁（后台线程），通过 ServiceListener 回调进度。
      */
     public void relocate(boolean open, RelocateCallback callback) {
-        new Thread(() -> {
+        Thread t = new Thread(() -> {
             try {
                 int moved = fileStore.relocate(context, open,
                         (current, total, phase, currentFile) -> {
@@ -137,7 +141,9 @@ public class SettingsService {
             } catch (Exception e) {
                 callback.onError(e.getMessage(), e);
             }
-        }).start();
+        }, "relocation-worker");
+        t.setDaemon(true);
+        t.start();
     }
 
     /**

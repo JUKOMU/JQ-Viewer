@@ -3,14 +3,13 @@
     <IonHeader class="ion-no-border">
       <IonToolbar>
         <div class="toolbar-start">
-          <MenuToggleButton/>
+          <MenuToggleButton />
         </div>
         <div class="toolbar-title">设置</div>
       </IonToolbar>
     </IonHeader>
     <IonContent>
       <div class="settings-list">
-
         <!-- 分组：图片缓存 -->
         <div class="section-label">图片缓存</div>
         <div class="card">
@@ -18,7 +17,9 @@
           <div class="row">
             <div class="row-left">
               <span class="row-title">缓存用量</span>
-              <span class="row-subtitle">已用 {{ cacheInfo.usedMb }}MB / {{ cacheInfo.capacityMb }}MB</span>
+              <span class="row-subtitle"
+                >已用 {{ cacheInfo.usedMb }}MB / {{ cacheInfo.capacityMb }}MB</span
+              >
             </div>
             <div class="row-right">
               <div class="usage-bar">
@@ -38,10 +39,10 @@
                 class="num-input"
                 type="number"
                 :value="cacheInputMb"
-                @change="onCacheCapacityChange"
                 min="64"
                 max="2048"
                 step="64"
+                @change="onCacheCapacityChange"
               />
               <span class="unit">MB</span>
             </div>
@@ -67,10 +68,10 @@
                 class="num-input"
                 type="number"
                 :value="preloadPages"
-                @change="onPreloadPagesChange"
                 min="5"
                 max="50"
                 step="5"
+                @change="onPreloadPagesChange"
               />
               <span class="unit">页</span>
             </div>
@@ -86,9 +87,9 @@
                 class="num-input"
                 type="number"
                 :value="preloadConcurrency"
-                @change="onPreloadConcurrencyChange"
                 min="1"
                 max="12"
+                @change="onPreloadConcurrencyChange"
               />
               <span class="unit">线程</span>
             </div>
@@ -109,9 +110,9 @@
                 class="num-input"
                 type="number"
                 :value="downloadConcurrency"
-                @change="onConcurrencyChange"
                 min="1"
                 max="12"
+                @change="onConcurrencyChange"
               />
               <span class="unit">线程</span>
             </div>
@@ -126,8 +127,8 @@
             <div class="row-right">
               <IonToggle
                 :checked="downloadPublic"
-                @ion-change="onDownloadPublicChange"
                 color="warning"
+                @ion-change="onDownloadPublicChange"
               />
             </div>
           </div>
@@ -142,11 +143,7 @@
               <span class="row-subtitle">开启后可在批量解析时通过图片上传识别 ID</span>
             </div>
             <div class="row-right">
-              <IonToggle
-                :checked="ocrEnabled"
-                @ion-change="onOcrEnabledChange"
-                color="warning"
-              />
+              <IonToggle :checked="ocrEnabled" color="warning" @ion-change="onOcrEnabledChange" />
             </div>
           </div>
         </div>
@@ -189,7 +186,7 @@
           </div>
           <div class="row divider action" @click="resetExportFormat">
             <span class="row-title">重置为默认</span>
-            <span class="row-subtitle" style="color: #b89a84; font-size: 12px;">JM{id}{title}</span>
+            <span class="row-subtitle" style="color: #b89a84; font-size: 12px">JM{id}{title}</span>
           </div>
         </div>
 
@@ -220,7 +217,6 @@
             <span class="row-value">{{ appVersion }}</span>
           </div>
         </div>
-
       </div>
 
       <!-- 搬迁进度遮罩（阻塞式，不可关闭） -->
@@ -250,6 +246,8 @@
 </template>
 
 <script setup lang="ts">
+defineOptions({ name: 'SettingPage' })
+
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { IonContent, IonHeader, IonPage, IonToggle, IonToolbar, alertController } from '@ionic/vue'
@@ -299,11 +297,16 @@ const relocationPercent = computed(() => {
 
 const phaseLabel = computed(() => {
   switch (relocationPhase.value) {
-    case 'copying': return '正在复制...'
-    case 'verifying': return '正在校验...'
-    case 'deleting': return '正在清理...'
-    case 'scanning': return '正在通知系统相册...'
-    default: return ''
+    case 'copying':
+      return '正在复制...'
+    case 'verifying':
+      return '正在校验...'
+    case 'deleting':
+      return '正在清理...'
+    case 'scanning':
+      return '正在通知系统相册...'
+    default:
+      return ''
   }
 })
 
@@ -321,13 +324,17 @@ onMounted(async () => {
   try {
     const info = await App.getInfo()
     appVersion.value = info.version
-  } catch { /* keep default */ }
+  } catch {
+    /* keep default */
+  }
 
   // 加载缓存状态（从 ImageRegistry 运行时读取）
   try {
     const info = await JmcomicService.getCacheCapacityInfo()
     cacheInfo.value = info
-  } catch (e) { /* ignore */ }
+  } catch (e) {
+    /* ignore */
+  }
 
   // 从缓存刷新 UI（SettingsStore 已被 initSettings 填充）
   preloadPages.value = SettingsStore.getReaderPreloadPages()
@@ -498,14 +505,19 @@ async function onDownloadPublicChange(e: CustomEvent) {
         relocationCurrentFile.value = data.currentFile
       }
     })
-  } catch { /* 监听注册失败不影响搬迁 */ }
+  } catch {
+    /* 监听注册失败不影响搬迁 */
+  }
 
   try {
     const result = await JmcomicService.setDownloadPublic(open)
     SettingsStore.setDownloadPublic(open)
-    const msg = result.moved > 0
-      ? `已搬迁 ${result.moved} 个文件` + (open ? '，系统相册可查看' : '')
-      : (open ? '已设为公开，无文件需搬迁' : '已设为仅应用内可见')
+    const msg =
+      result.moved > 0
+        ? `已搬迁 ${result.moved} 个文件` + (open ? '，系统相册可查看' : '')
+        : open
+          ? '已设为公开，无文件需搬迁'
+          : '已设为仅应用内可见'
     await showToast(msg, 'success')
   } catch (e: any) {
     downloadPublic.value = !open

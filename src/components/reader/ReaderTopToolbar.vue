@@ -8,16 +8,16 @@
 </template>
 
 <script setup lang="ts">
-import { IonIcon } from '@ionic/vue'
-import { arrowBack } from 'ionicons/icons'
+defineOptions({ name: 'ReaderTopToolbar' })
 
 defineProps<{
   title: string
 }>()
-
 defineEmits<{
   back: []
 }>()
+import { IonIcon } from '@ionic/vue'
+import { arrowBack } from 'ionicons/icons'
 </script>
 
 <style scoped>

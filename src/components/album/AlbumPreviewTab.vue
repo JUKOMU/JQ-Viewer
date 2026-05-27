@@ -3,11 +3,7 @@
   <section class="preview-section">
     <template v-if="totalCount > 0 || loading">
       <div class="preview-grid">
-        <div
-          v-for="i in displayCount"
-          :key="'slot-' + i"
-          class="preview-item"
-        >
+        <div v-for="i in displayCount" :key="'slot-' + i" class="preview-item">
           <template v-if="slotMap[i - 1]">
             <img
               :src="slotMap[i - 1]!.dataUrl"
@@ -40,12 +36,7 @@
 </template>
 
 <script setup lang="ts">
-import {computed} from 'vue'
-
-interface PreviewImage {
-  sortOrder: number
-  dataUrl: string
-}
+defineOptions({ name: 'AlbumPreviewTab' })
 
 const props = defineProps<{
   images: PreviewImage[]
@@ -58,6 +49,13 @@ defineEmits<{
   loadMore: []
   openReader: [page: number]
 }>()
+
+import { computed } from 'vue'
+
+interface PreviewImage {
+  sortOrder: number
+  dataUrl: string
+}
 
 const DISPLAY_MAX = 20
 
@@ -132,8 +130,13 @@ const slotMap = computed(() => {
 }
 
 @keyframes skeleton-pulse {
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 0.8; }
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 0.8;
+  }
 }
 
 .preview-page-num {
@@ -164,7 +167,9 @@ const slotMap = computed(() => {
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: background-color 0.18s ease, color 0.18s ease;
+  transition:
+    background-color 0.18s ease,
+    color 0.18s ease;
 }
 
 .load-more-btn:active {

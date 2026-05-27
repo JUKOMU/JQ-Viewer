@@ -17,3 +17,14 @@ export const isSnappingClosed = ref(false)
 
 /** 当前导航是否由侧边栏菜单触发 */
 export const isMenuNavigation = ref(false)
+
+export function useSideMenuState() {
+  return {
+    leftMenuOpen,
+    rightMenuOpen,
+    rightDragProgress,
+    isDraggingRight,
+    isSnappingClosed,
+    isMenuNavigation,
+  }
+}

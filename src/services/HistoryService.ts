@@ -16,11 +16,17 @@ function readSearchAll(): Record<string, SearchHistoryItem[]> {
   try {
     const raw = localStorage.getItem(SEARCH_KEY)
     return raw ? JSON.parse(raw) : {}
-  } catch { return {} }
+  } catch {
+    return {}
+  }
 }
 
 function writeSearchAll(data: Record<string, SearchHistoryItem[]>): void {
-  try { localStorage.setItem(SEARCH_KEY, JSON.stringify(data)) } catch { /* 静默丢弃 */ }
+  try {
+    localStorage.setItem(SEARCH_KEY, JSON.stringify(data))
+  } catch {
+    /* 静默丢弃 */
+  }
 }
 
 export const HistoryService = {
@@ -36,7 +42,7 @@ export const HistoryService = {
     const all = readSearchAll()
     let items = all[context] ?? []
     const lower = kw.toLowerCase()
-    items = items.filter(i => i.keyword.toLowerCase() !== lower)
+    items = items.filter((i) => i.keyword.toLowerCase() !== lower)
     items.unshift({ keyword: kw, timestamp: Date.now() })
     if (items.length > 500) items = items.slice(0, 500)
     all[context] = items
@@ -55,18 +61,26 @@ export const HistoryService = {
     try {
       const result = await JmcomicService.getBrowseHistory(limit, offset)
       return result.items as BrowseHistoryItem[]
-    } catch { return [] }
+    } catch {
+      return []
+    }
   },
 
   async recordBrowse(item: Omit<BrowseHistoryItem, 'timestamp'>): Promise<void> {
     if (!item.albumTitle) return
     try {
       await JmcomicService.recordBrowse(item)
-    } catch { /* 静默丢弃 */ }
+    } catch {
+      /* 静默丢弃 */
+    }
   },
 
   async clearBrowseHistory(): Promise<void> {
-    try { await JmcomicService.clearBrowseHistory() } catch { /* ignore */ }
+    try {
+      await JmcomicService.clearBrowseHistory()
+    } catch {
+      /* ignore */
+    }
   },
 
   // ========== 解析历史 (原生 SQLite) ==========
@@ -75,16 +89,26 @@ export const HistoryService = {
     try {
       const result = await JmcomicService.getParseHistory(limit, offset)
       return result.items as ParseHistoryItem[]
-    } catch { return [] }
+    } catch {
+      return []
+    }
   },
 
   async addParseHistory(text: string): Promise<void> {
     const t = text.trim()
     if (!t) return
-    try { await JmcomicService.addParseHistory(t) } catch { /* 静默丢弃 */ }
+    try {
+      await JmcomicService.addParseHistory(t)
+    } catch {
+      /* 静默丢弃 */
+    }
   },
 
   async clearParseHistory(): Promise<void> {
-    try { await JmcomicService.clearParseHistory() } catch { /* ignore */ }
+    try {
+      await JmcomicService.clearParseHistory()
+    } catch {
+      /* ignore */
+    }
   },
 }

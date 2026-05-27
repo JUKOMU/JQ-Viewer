@@ -14,14 +14,18 @@
 </template>
 
 <script setup lang="ts">
-import {IonApp} from '@ionic/vue';
-import {onBeforeUnmount, onMounted, computed, nextTick, ref} from 'vue';
-import {useRoute, useRouter} from 'vue-router'
-import MainMenu from "@/components/menu/MainMenu.vue";
-import {isMenuNavigation, leftMenuOpen, rightMenuOpen} from '@/composables/sideMenuState'
-import {initSettings} from '@/services/SettingsService'
-import {useAuth} from '@/composables/useAuth'
-import {initNetworkProbeStore} from '@/composables/networkProbeStore'
+defineOptions({ name: 'App' })
+
+import { IonApp } from '@ionic/vue'
+import { onBeforeUnmount, onMounted, computed, nextTick, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import MainMenu from '@/components/menu/MainMenu.vue'
+import { useSideMenuState } from '@/composables/useSideMenuState'
+import { initSettings } from '@/services/SettingsService'
+import { useAuth } from '@/composables/useAuth'
+import { initNetworkProbeStore } from '@/composables/networkProbeStore'
+
+const { isMenuNavigation, leftMenuOpen, rightMenuOpen } = useSideMenuState()
 
 const route = useRoute()
 const router = useRouter()
@@ -47,23 +51,24 @@ router.beforeEach((to, from) => {
     if (name && typeof name === 'string') {
       keepAliveExclude.value.push(name)
       nextTick(() => {
-        keepAliveExclude.value = keepAliveExclude.value.filter(n => n !== name)
+        keepAliveExclude.value = keepAliveExclude.value.filter((n) => n !== name)
       })
     }
   }
 })
 
-const transitionName = computed(() => isBack.value ? 'page-slide-back' : 'page-slide-forward')
+const transitionName = computed(() => (isBack.value ? 'page-slide-back' : 'page-slide-forward'))
 
 const onAfterEnter = (el: Element) => {
-  (el as HTMLElement).style.transform = ''
+  ;(el as HTMLElement).style.transform = ''
 }
 
 const keepAliveNames = computed(() =>
-  router.getRoutes()
-    .filter(r => r.meta?.keepAlive)
-    .map(r => String(r.name ?? ''))
-    .filter(Boolean)
+  router
+    .getRoutes()
+    .filter((r) => r.meta?.keepAlive)
+    .map((r) => String(r.name ?? ''))
+    .filter(Boolean),
 )
 
 const handleMenuDidOpen = () => {
@@ -119,7 +124,9 @@ onBeforeUnmount(() => {
 .page-slide-forward-leave-active,
 .page-slide-back-enter-active,
 .page-slide-back-leave-active {
-  transition: transform 0.22s cubic-bezier(0.22, 0, 0, 1), opacity 0.22s cubic-bezier(0.22, 0, 0, 1);
+  transition:
+    transform 0.22s cubic-bezier(0.22, 0, 0, 1),
+    opacity 0.22s cubic-bezier(0.22, 0, 0, 1);
 }
 
 /* 前进：页面从右滑入，旧页向左退出 */

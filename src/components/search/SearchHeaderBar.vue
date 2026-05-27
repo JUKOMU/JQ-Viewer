@@ -1,19 +1,19 @@
 <template>
   <div ref="rootRef" class="header-search">
-    <div class="expanded-panel" style="position: relative;">
+    <div class="expanded-panel" style="position: relative">
       <div class="search-row">
         <IonSearchbar
-            ref="searchbarRef"
-            v-model="draft.keyword"
-            :animated="true"
-            class="compact-searchbar"
-            show-clear-button="always"
-            placeholder="请输入关键词"
-            enterkeyhint="search"
-            @keydown.enter="submit"
+          ref="searchbarRef"
+          v-model="draft.keyword"
+          :animated="true"
+          class="compact-searchbar"
+          show-clear-button="always"
+          placeholder="请输入关键词"
+          enterkeyhint="search"
+          @keydown.enter="submit"
         />
         <button type="button" class="submit-btn" :disabled="loading" @click="submit">
-          <IonIcon :icon="searchOutline"/>
+          <IonIcon :icon="searchOutline" />
         </button>
       </div>
       <SearchHistoryDropdown
@@ -28,12 +28,12 @@
           <div class="option-title">排序</div>
           <div class="option-group">
             <button
-                v-for="option in ORDER_BY_OPTIONS"
-                :key="option.value"
-                type="button"
-                class="option-chip"
-                :class="{ active: draft.orderBy === option.value }"
-                @click="draft.orderBy = option.value"
+              v-for="option in ORDER_BY_OPTIONS"
+              :key="option.value"
+              type="button"
+              class="option-chip"
+              :class="{ active: draft.orderBy === option.value }"
+              @click="draft.orderBy = option.value"
             >
               {{ option.label }}
             </button>
@@ -43,12 +43,12 @@
           <div class="option-title">时间范围</div>
           <div class="option-group">
             <button
-                v-for="option in TIME_OPTIONS"
-                :key="option.value"
-                type="button"
-                class="option-chip"
-                :class="{ active: draft.time === option.value }"
-                @click="draft.time = option.value"
+              v-for="option in TIME_OPTIONS"
+              :key="option.value"
+              type="button"
+              class="option-chip"
+              :class="{ active: draft.time === option.value }"
+              @click="draft.time = option.value"
             >
               {{ option.label }}
             </button>
@@ -58,12 +58,12 @@
           <div class="option-title">搜索方式</div>
           <div class="option-group">
             <button
-                v-for="option in SEARCH_MAIN_TAG_OPTIONS"
-                :key="option.value"
-                type="button"
-                class="option-chip"
-                :class="{ active: draft.searchMainTag === option.value }"
-                @click="draft.searchMainTag = option.value"
+              v-for="option in SEARCH_MAIN_TAG_OPTIONS"
+              :key="option.value"
+              type="button"
+              class="option-chip"
+              :class="{ active: draft.searchMainTag === option.value }"
+              @click="draft.searchMainTag = option.value"
             >
               {{ option.label }}
             </button>
@@ -75,23 +75,23 @@
 </template>
 
 <script setup lang="ts">
-import {nextTick, onBeforeUnmount, onMounted, reactive, ref, watch} from 'vue'
-import {IonIcon, IonSearchbar} from '@ionic/vue'
-import {searchOutline} from 'ionicons/icons'
-import {ORDER_BY_OPTIONS, SEARCH_MAIN_TAG_OPTIONS, TIME_OPTIONS} from '@/constants/searchOptions'
-import type {SearchQuery} from '@/services/JmcomicTypes'
-import { HistoryService } from '@/services/HistoryService'
-import type { SearchHistoryItem } from '@/services/HistoryService'
-import SearchHistoryDropdown from '@/components/history/SearchHistoryDropdown.vue'
+defineOptions({ name: 'SearchHeaderBar' })
 
 const props = defineProps<{
   query: SearchQuery
   loading: boolean
 }>()
-
 const emit = defineEmits<{
   search: [query: SearchQuery]
 }>()
+import { nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { IonIcon, IonSearchbar } from '@ionic/vue'
+import { searchOutline } from 'ionicons/icons'
+import { ORDER_BY_OPTIONS, SEARCH_MAIN_TAG_OPTIONS, TIME_OPTIONS } from '@/constants/searchOptions'
+import type { SearchQuery } from '@/services/JmcomicTypes'
+import { HistoryService } from '@/services/HistoryService'
+import type { SearchHistoryItem } from '@/services/HistoryService'
+import SearchHistoryDropdown from '@/components/history/SearchHistoryDropdown.vue'
 
 const rootRef = ref<HTMLElement | null>(null)
 const searchbarRef = ref<InstanceType<typeof IonSearchbar> | null>(null)
@@ -124,12 +124,15 @@ const focusInput = async () => {
 const submit = () => {
   const kw = (draft.keyword ?? '').trim()
   if (kw) HistoryService.addSearchHistory('search-page', kw)
-  emit('search', {...draft, page: 1})
+  emit('search', { ...draft, page: 1 })
 }
 
 const handleDocumentClick = (event: MouseEvent) => {
   if (!rootRef.value?.contains(event.target as Node)) {
-    searchbarRef.value?.$el?.getInputElement?.().then((input: HTMLInputElement) => input.blur()).catch(() => undefined)
+    searchbarRef.value?.$el
+      ?.getInputElement?.()
+      .then((input: HTMLInputElement) => input.blur())
+      .catch(() => undefined)
   }
 }
 
@@ -141,7 +144,9 @@ const handleNativeFocus = () => {
 
 const handleNativeBlur = () => {
   if (blurTimer) clearTimeout(blurTimer)
-  blurTimer = setTimeout(() => { showHistory.value = false }, 200)
+  blurTimer = setTimeout(() => {
+    showHistory.value = false
+  }, 200)
 }
 
 const handleNativeInput = () => {
@@ -151,7 +156,10 @@ const handleNativeInput = () => {
 const onHistorySelect = (item: SearchHistoryItem) => {
   draft.keyword = item.keyword
   showHistory.value = false
-  if (blurTimer) { clearTimeout(blurTimer); blurTimer = null }
+  if (blurTimer) {
+    clearTimeout(blurTimer)
+    blurTimer = null
+  }
 }
 
 const onHistoryClear = () => {
@@ -159,11 +167,11 @@ const onHistoryClear = () => {
   showHistory.value = false
 }
 
-watch(() => props.query, syncDraft, {immediate: true, deep: true})
+watch(() => props.query, syncDraft, { immediate: true, deep: true })
 
 onMounted(async () => {
   document.addEventListener('click', handleDocumentClick)
-  nativeInput = await searchbarRef.value?.$el?.getInputElement?.() ?? null
+  nativeInput = (await searchbarRef.value?.$el?.getInputElement?.()) ?? null
   nativeInput?.addEventListener('focus', handleNativeFocus)
   nativeInput?.addEventListener('blur', handleNativeBlur)
   nativeInput?.addEventListener('input', handleNativeInput)
@@ -177,7 +185,7 @@ onBeforeUnmount(() => {
   if (blurTimer) clearTimeout(blurTimer)
 })
 
-defineExpose({focusInput})
+defineExpose({ focusInput })
 </script>
 
 <style scoped>

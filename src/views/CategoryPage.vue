@@ -1,8 +1,12 @@
 <template>
   <IonPage>
-    <IonContent ref="contentRef" :scroll-events="true" @ionScroll="handleContentScroll">
+    <IonContent ref="contentRef" :scroll-events="true" @ion-scroll="handleContentScroll">
       <Transition name="category-overlay">
-        <div v-if="categoryOverlayVisible" class="category-overlay" @click.self="closeSearchOverlay">
+        <div
+          v-if="categoryOverlayVisible"
+          class="category-overlay"
+          @click.self="closeSearchOverlay"
+        >
           <div class="category-overlay-panel">
             <CategorySearchToolbar @search="submitOverlayCategory" />
           </div>
@@ -11,7 +15,7 @@
 
       <div class="category-page-top">
         <div class="category-page-toolbar" :class="{ pinned: pullHeaderPinned }">
-          <MenuToggleButton/>
+          <MenuToggleButton />
           <div class="toolbar-category">
             <CategorySearchToolbar @search="resetWithPage" />
           </div>
@@ -19,45 +23,45 @@
       </div>
 
       <SearchResultContainer
-          ref="resultContainerRef"
-          :result="resultMeta"
-          :items="displayItems"
-          :loading="initialLoading"
-          :loading-previous="loadingPrevious"
-          :loading-next="loadingNext"
-          :can-load-previous="canLoadPrevious"
-          :page-at-top="pageAtTop"
-          :error-message="errorMessage"
-          :mode="displayMode"
-          :loaded-page-start="loadedPageStart"
-          :loaded-page-end="loadedPageEnd"
-          idle-text="分类搜索结果将在这里显示"
-          @mode-change="displayMode = $event"
-          @item-click="handleItemClick"
-          @load-previous="handleLoadPrevious"
-          @pull-state-change="pullGestureActive = $event"
-          @retry="retrySearch"
+        ref="resultContainerRef"
+        :result="resultMeta"
+        :items="displayItems"
+        :loading="initialLoading"
+        :loading-previous="loadingPrevious"
+        :loading-next="loadingNext"
+        :can-load-previous="canLoadPrevious"
+        :page-at-top="pageAtTop"
+        :error-message="errorMessage"
+        :mode="displayMode"
+        :loaded-page-start="loadedPageStart"
+        :loaded-page-end="loadedPageEnd"
+        idle-text="分类搜索结果将在这里显示"
+        @mode-change="displayMode = $event"
+        @item-click="handleItemClick"
+        @load-previous="handleLoadPrevious"
+        @pull-state-change="pullGestureActive = $event"
+        @retry="retrySearch"
       />
 
       <QuickActionFab
-          v-if="resultMeta"
-          slot="fixed"
-          @search="openSearch"
-          @jump="jumpToPage"
-          @top="scrollToTop"
-          @back="clearResult"
+        v-if="resultMeta"
+        slot="fixed"
+        @search="openSearch"
+        @jump="jumpToPage"
+        @top="scrollToTop"
+        @back="clearResult"
       />
     </IonContent>
   </IonPage>
 </template>
 
 <script setup lang="ts">
-import {computed, nextTick, onActivated, onDeactivated, onMounted, ref} from 'vue'
+import { computed, nextTick, onActivated, onDeactivated, onMounted, ref } from 'vue'
 
 defineOptions({ name: 'CategoryPage' })
-import {useRouter} from 'vue-router'
-import {alertController, IonContent, IonPage} from '@ionic/vue'
-import type {ScrollCustomEvent} from '@ionic/core'
+import { useRouter } from 'vue-router'
+import { alertController, IonContent, IonPage } from '@ionic/vue'
+import type { ScrollCustomEvent } from '@ionic/core'
 import CategorySearchToolbar from '@/components/search/CategorySearchToolbar.vue'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import QuickActionFab from '@/components/common/QuickActionFab.vue'
@@ -66,8 +70,8 @@ import type {
   SearchResultContainerExposed,
   SearchResultDisplayItem,
 } from '@/components/search/SearchResultContainer.vue'
-import {JmcomicService, sanitizeError} from '@/services/JmcomicService'
-import type {SearchQuery, SearchResult, SearchResultItem} from '@/services/JmcomicTypes'
+import { JmcomicService, sanitizeError } from '@/services/JmcomicService'
+import type { SearchQuery, SearchResult, SearchResultItem } from '@/services/JmcomicTypes'
 
 const router = useRouter()
 
@@ -88,37 +92,40 @@ const pageCache = ref<Record<number, SearchResultItem[]>>({})
 const pageAtTop = ref(true)
 const pullGestureActive = ref(false)
 
-const loadedPages = computed(() => (
-    Object.keys(pageCache.value)
-        .map(Number)
-        .filter((page) => Number.isInteger(page))
-        .sort((a, b) => a - b)
-))
+const loadedPages = computed(() =>
+  Object.keys(pageCache.value)
+    .map(Number)
+    .filter((page) => Number.isInteger(page))
+    .sort((a, b) => a - b),
+)
 
 const loadedPageStart = computed(() => loadedPages.value[0] ?? null)
 const loadedPageEnd = computed(() => loadedPages.value.at(-1) ?? null)
 
-const displayItems = computed<SearchResultDisplayItem[]>(() => (
-    loadedPages.value.flatMap((page) => (
-        (pageCache.value[page] ?? []).map((item, indexInPage) => ({
-          item,
-          page,
-          indexInPage,
-        }))
-    ))
-))
+const displayItems = computed<SearchResultDisplayItem[]>(() =>
+  loadedPages.value.flatMap((page) =>
+    (pageCache.value[page] ?? []).map((item, indexInPage) => ({
+      item,
+      page,
+      indexInPage,
+    })),
+  ),
+)
 
-const canLoadPrevious = computed(() => (
-    !!resultMeta.value && loadedPageStart.value !== null && loadedPageStart.value > 1
-))
+const canLoadPrevious = computed(
+  () => !!resultMeta.value && loadedPageStart.value !== null && loadedPageStart.value > 1,
+)
 
-const canLoadNext = computed(() => (
-    !!resultMeta.value && loadedPageEnd.value !== null && loadedPageEnd.value < resultMeta.value.totalPages
-))
+const canLoadNext = computed(
+  () =>
+    !!resultMeta.value &&
+    loadedPageEnd.value !== null &&
+    loadedPageEnd.value < resultMeta.value.totalPages,
+)
 
-const pullHeaderPinned = computed(() => (
-    pageAtTop.value && (pullGestureActive.value || loadingPrevious.value)
-))
+const pullHeaderPinned = computed(
+  () => pageAtTop.value && (pullGestureActive.value || loadingPrevious.value),
+)
 
 const resolveScrollElement = async () => {
   if (scrollElementRef.value) {
@@ -153,11 +160,11 @@ const maybeLoadNextAfterRender = async () => {
 }
 
 const fetchPage = async (query: SearchQuery, page: number) => {
-  return await JmcomicService.categories({...query, page})
+  return await JmcomicService.categories({ ...query, page })
 }
 
 const resetWithPage = async (query: SearchQuery) => {
-  const targetQuery = {...query, page: query.page ?? 1}
+  const targetQuery = { ...query, page: query.page ?? 1 }
   lastQuery.value = targetQuery
   initialLoading.value = true
   errorMessage.value = ''
@@ -234,11 +241,12 @@ const prependPage = async (page: number) => {
   const contentScrollElement = await resolveScrollElement()
   const anchorEntry = displayItems.value[0]
   const anchorEntryKey = anchorEntry
-      ? `${anchorEntry.page}-${anchorEntry.indexInPage}-${anchorEntry.item.id}`
-      : null
+    ? `${anchorEntry.page}-${anchorEntry.indexInPage}-${anchorEntry.item.id}`
+    : null
   const previousAnchorTop = anchorEntryKey
-      ? resultContainerRef.value?.getEntryElement(anchorEntryKey)?.getBoundingClientRect().top ?? null
-      : null
+    ? (resultContainerRef.value?.getEntryElement(anchorEntryKey)?.getBoundingClientRect().top ??
+      null)
+    : null
   const resultRoot = resultContainerRef.value?.getRootElement()
   const previousRootTop = resultRoot?.getBoundingClientRect().top ?? null
 
@@ -257,7 +265,9 @@ const prependPage = async (page: number) => {
     }
     await nextTick()
     if (anchorEntryKey && previousAnchorTop !== null) {
-      const nextAnchorTop = resultContainerRef.value?.getEntryElement(anchorEntryKey)?.getBoundingClientRect().top ?? null
+      const nextAnchorTop =
+        resultContainerRef.value?.getEntryElement(anchorEntryKey)?.getBoundingClientRect().top ??
+        null
       if (nextAnchorTop !== null) {
         contentScrollElement.scrollTop += nextAnchorTop - previousAnchorTop
         return
@@ -288,7 +298,7 @@ const handleContentScroll = async (event: ScrollCustomEvent) => {
     return
   }
 
-  const scrollElement = scrollElementRef.value ?? await resolveScrollElement()
+  const scrollElement = scrollElementRef.value ?? (await resolveScrollElement())
   if (!scrollElement) {
     return
   }
@@ -325,16 +335,18 @@ const jumpToPage = async () => {
   const alert = await alertController.create({
     header: '跳转页码',
     message: `请输入 1 - ${resultMeta.value.totalPages} 的页码`,
-    inputs: [{
-      name: 'page',
-      type: 'number',
-      min: 1,
-      max: resultMeta.value.totalPages,
-      value: String(lastQuery.value.page ?? 1),
-      placeholder: '页码',
-    }],
+    inputs: [
+      {
+        name: 'page',
+        type: 'number',
+        min: 1,
+        max: resultMeta.value.totalPages,
+        value: String(lastQuery.value.page ?? 1),
+        placeholder: '页码',
+      },
+    ],
     buttons: [
-      {text: '取消', role: 'cancel'},
+      { text: '取消', role: 'cancel' },
       {
         text: '跳转',
         handler: (data: { page?: string }) => {
@@ -342,7 +354,7 @@ const jumpToPage = async () => {
           if (!Number.isInteger(page) || page < 1 || page > resultMeta.value!.totalPages) {
             return false
           }
-          void resetWithPage({...lastQuery.value!, page})
+          void resetWithPage({ ...lastQuery.value!, page })
           return true
         },
       },
@@ -360,7 +372,7 @@ onDeactivated(() => {
 
 onActivated(async () => {
   await nextTick()
-  const scrollEl = scrollElementRef.value ?? await resolveScrollElement()
+  const scrollEl = scrollElementRef.value ?? (await resolveScrollElement())
   if (scrollEl && savedScrollTop.value > 0) {
     scrollEl.scrollTop = savedScrollTop.value
   }
@@ -430,7 +442,9 @@ onMounted(() => {
 
 .category-overlay-enter-active .category-overlay-panel,
 .category-overlay-leave-active .category-overlay-panel {
-  transition: transform 0.22s ease, opacity 0.22s ease;
+  transition:
+    transform 0.22s ease,
+    opacity 0.22s ease;
 }
 
 .category-overlay-enter-from,

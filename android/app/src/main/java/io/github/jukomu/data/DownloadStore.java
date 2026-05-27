@@ -211,7 +211,12 @@ public class DownloadStore extends SQLiteOpenHelper {
         if (c != null) {
             try {
                 while (c.moveToNext()) {
-                    list.add(cursorToTaskJson(c));
+                    JSONObject task = cursorToTaskJson(c);
+                    if (task == null) {
+                        Log.w(TAG, "跳过损坏的任务记录");
+                        continue;
+                    }
+                    list.add(task);
                 }
             } finally {
                 c.close();
@@ -284,7 +289,8 @@ public class DownloadStore extends SQLiteOpenHelper {
                         obj.put("scrambleId", c.getString(c.getColumnIndexOrThrow(COL_SCRAMBLE_ID)));
                         obj.put("queryParams", c.getString(c.getColumnIndexOrThrow(COL_QUERY_PARAMS)));
                         list.add(obj);
-                    } catch (Exception ignored) {
+                    } catch (Exception e) {
+                        Log.d(TAG, "跳过无效图片记录", e);
                     }
                 }
             } finally {
@@ -407,7 +413,9 @@ public class DownloadStore extends SQLiteOpenHelper {
             if (sortIdx >= 0 && !c.isNull(sortIdx)) {
                 obj.put("chapterSortOrder", c.getInt(sortIdx));
             }
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            Log.w(TAG, "转换任务记录失败", e);
+            return null;
         }
         return obj;
     }

@@ -4,6 +4,7 @@ node_modules
 /dist
 /ios
 /android
+JMComic-Api-Java
 
 
 # local env files

@@ -1,5 +1,7 @@
 package io.github.jukomu.service;
 
+import android.util.Log;
+
 import io.github.jukomu.data.FileStore;
 import io.github.jukomu.data.ImageCache;
 import io.github.jukomu.data.SettingsStore;
@@ -18,6 +20,8 @@ import java.util.concurrent.ExecutorService;
  * 纯业务逻辑，不依赖 Capacitor API。
  */
 public class PreloadService {
+
+    private static final String TAG = "PreloadService";
 
     private final ImageCache imageCache;
     private final FileStore fileStore;
@@ -44,11 +48,13 @@ public class PreloadService {
         if (imagesArray == null || imagesArray.length() == 0) {
             try {
                 ret.put("cached", new JSONArray());
-            } catch (Exception ignored) {
+            } catch (Exception e) {
+                Log.d(TAG, "构建空缓存列表失败", e);
             }
             try {
                 ret.put("pending", new JSONArray());
-            } catch (Exception ignored) {
+            } catch (Exception e) {
+                Log.d(TAG, "构建空待处理列表失败", e);
             }
             return ret;
         }
@@ -93,7 +99,8 @@ public class PreloadService {
                             String mime = "image/" + ImageCache.guessFormatName(fromFile);
                             imageCache.put(photoId + "/" + sortOrder, fromFile, mime);
                             notifyImageReady(photoId, sortOrder, type);
-                        } catch (Exception ignored) {
+                        } catch (Exception e) {
+                            Log.d(TAG, "缩略图生成失败", e);
                         }
                     });
                     continue;
@@ -123,18 +130,21 @@ public class PreloadService {
                     }
 
                     notifyImageReady(photoId, sortOrder, type);
-                } catch (Exception ignored) {
+                } catch (Exception e) {
+                    Log.d(TAG, "图片下载或解密失败", e);
                 }
             });
         }
 
         try {
             ret.put("cached", new JSONArray(cached));
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            Log.d(TAG, "构建缓存列表失败", e);
         }
         try {
             ret.put("pending", new JSONArray(pending));
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            Log.d(TAG, "构建待处理列表失败", e);
         }
         return ret;
     }
@@ -156,7 +166,8 @@ public class PreloadService {
         try {
             ret.put("capacityMb", Math.round(imageCache.getCapacity() / (1024.0 * 1024.0)));
             ret.put("usedMb", Math.round(imageCache.getCurrentSize() / (1024.0 * 1024.0)));
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            Log.d(TAG, "构建缓存容量信息失败", e);
         }
         return ret;
     }

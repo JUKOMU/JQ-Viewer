@@ -1,6 +1,8 @@
 package io.github.jukomu.service;
 
 import android.annotation.SuppressLint;
+import android.util.Log;
+
 import io.github.jukomu.data.DownloadStore;
 import io.github.jukomu.data.FileStore;
 import io.github.jukomu.jmcomic.api.download.task.BaseDownloadTask;
@@ -26,6 +28,8 @@ import java.util.concurrent.ExecutorService;
  */
 public class DownloadService {
 
+    private static final String TAG = "DownloadService";
+
     static final String STATUS_QUEUED = "queued";
     static final String STATUS_DOWNLOADING = "downloading";
     static final String STATUS_PAUSED = "paused";
@@ -50,6 +54,7 @@ public class DownloadService {
      * 在 async 块映射 taskId 之前到达的取消请求
      */
     final Set<String> pendingCancel = ConcurrentHashMap.newKeySet();
+    private final Object mapLock = new Object();
 
     public DownloadService(DownloadStore downloadDb, FileStore fileStore,
                            JmApiClient client, ExecutorService imageExecutor,
@@ -90,7 +95,7 @@ public class DownloadService {
                         photo.getAuthor(), new JSONArray(photo.getTags()).toString(),
                         photo.getSortOrder());
 
-                java.io.File chapterDir = fileStore.ensureChapterDir(albumId, chapterId);
+                File chapterDir = fileStore.ensureChapterDir(albumId, chapterId);
                 fileStore.refreshMappings(albumId, chapterId, downloadDb);
 
                 JSONObject metaJson = new JSONObject();
@@ -100,7 +105,7 @@ public class DownloadService {
                 metaJson.put("author", photo.getAuthor());
                 metaJson.put("tags", new JSONArray(photo.getTags()));
                 metaJson.put("totalPages", images.size());
-                org.json.JSONArray metaImages = new JSONArray();
+                JSONArray metaImages = new JSONArray();
                 for (JmImage img : images) {
                     JSONObject im = new JSONObject();
                     im.put("sortOrder", img.getSortOrder());
@@ -118,8 +123,10 @@ public class DownloadService {
                 BaseDownloadTask task = abstractClient.createDownloadTask(photo, savePath);
 
                 String libTaskId = task.getTaskId();
-                taskIdMap.put(taskId, libTaskId);
-                reverseTaskIdMap.put(libTaskId, taskId);
+                synchronized (mapLock) {
+                    taskIdMap.put(taskId, libTaskId);
+                    reverseTaskIdMap.put(libTaskId, taskId);
+                }
 
                 task.addObserver(new DownloadObserver(taskId, albumId, chapterId,
                         images.size(), downloadDb, fileStore, listener, this));
@@ -157,7 +164,8 @@ public class DownloadService {
         for (JSONObject task : tasks) {
             try {
                 arr.put(task);
-            } catch (Exception ignored) {
+            } catch (Exception e) {
+                Log.d(TAG, "跳过无效下载任务条目", e);
             }
         }
         return arr;
@@ -301,7 +309,8 @@ public class DownloadService {
                 imageArray.put(imgObj);
             }
             ret.put("images", imageArray);
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            Log.w(TAG, "构建已下载章节信息失败", e);
         }
         return ret;
     }
@@ -309,9 +318,11 @@ public class DownloadService {
     // ---- 内部工具（DownloadObserver 通过 package-private 访问） ----
 
     void cleanupTaskMapping(String ourTaskId) {
-        String libTaskId = taskIdMap.remove(ourTaskId);
-        if (libTaskId != null) {
-            reverseTaskIdMap.remove(libTaskId);
+        synchronized (mapLock) {
+            String libTaskId = taskIdMap.remove(ourTaskId);
+            if (libTaskId != null) {
+                reverseTaskIdMap.remove(libTaskId);
+            }
         }
     }
 

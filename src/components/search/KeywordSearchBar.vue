@@ -4,62 +4,62 @@
       <div class="upload-slot">
         <Transition name="upload-slide">
           <button
-              v-if="mode === 'batch-mode' && ocrEnabled"
-              type="button"
-              class="upload-btn"
-              @click="handleUpload"
+            v-if="mode === 'batch-mode' && ocrEnabled"
+            type="button"
+            class="upload-btn"
+            @click="handleUpload"
           >
-            <IonIcon :icon="addOutline"/>
+            <IonIcon :icon="addOutline" />
           </button>
         </Transition>
       </div>
 
       <button class="help-btn">
-        <IonIcon :icon="helpCircleOutline"/>
+        <IonIcon :icon="helpCircleOutline" />
       </button>
       <div class="mode-switch">
         <button
-            type="button"
-            class="mode-btn"
-            :class="{ active: mode === 'single-mode' }"
-            @click="mode = mode === 'single-mode' ? '' : 'single-mode'"
+          type="button"
+          class="mode-btn"
+          :class="{ active: mode === 'single-mode' }"
+          @click="mode = mode === 'single-mode' ? '' : 'single-mode'"
         >
           单个解析
         </button>
         <button
-            type="button"
-            class="mode-btn"
-            :class="{ active: mode === 'batch-mode' }"
-            @click="mode = mode === 'batch-mode' ? '' : 'batch-mode'"
+          type="button"
+          class="mode-btn"
+          :class="{ active: mode === 'batch-mode' }"
+          @click="mode = mode === 'batch-mode' ? '' : 'batch-mode'"
         >
           批量解析
         </button>
       </div>
     </div>
-    <div class="searchbar-wrap" style="position: relative;">
+    <div class="searchbar-wrap" style="position: relative">
       <div class="searchbar-box">
         <IonSearchbar
-            v-if="mode !== 'batch-mode'"
-            ref="searchbarRef"
-            v-model="query.keyword"
-            :animated="true"
-            show-clear-button="always"
-            class="custom"
-            placeholder="请输入关键词"
-            enterkeyhint="search"
+          v-if="mode !== 'batch-mode'"
+          ref="searchbarRef"
+          v-model="query.keyword"
+          :animated="true"
+          show-clear-button="always"
+          class="custom"
+          placeholder="请输入关键词"
+          enterkeyhint="search"
         />
         <textarea
-            v-else
-            ref="batchTextareaRef"
-            v-model="query.keyword"
-            class="batch-textarea"
-            placeholder="输入或粘贴多行文本提取 ID"
-            rows="3"
-            spellcheck="false"
+          v-else
+          ref="batchTextareaRef"
+          v-model="query.keyword"
+          class="batch-textarea"
+          placeholder="输入或粘贴多行文本提取 ID"
+          rows="3"
+          spellcheck="false"
         />
       </div>
       <button type="button" class="search-trigger-btn" @click="emitSearch">
-        <IonIcon :icon="searchOutline"/>
+        <IonIcon :icon="searchOutline" />
       </button>
       <SearchHistoryDropdown
         v-if="mode !== 'batch-mode'"
@@ -73,11 +73,7 @@
 
     <button type="button" class="more-toggle-btn" @click="expanded = !expanded">
       <span>更多选项</span>
-      <IonIcon
-          :icon="chevronDownOutline"
-          class="expand-icon"
-          :class="{ expanded }"
-      />
+      <IonIcon :icon="chevronDownOutline" class="expand-icon" :class="{ expanded }" />
     </button>
 
     <div v-if="expanded" class="option-panel">
@@ -85,12 +81,12 @@
         <div class="option-title">排序</div>
         <div class="option-group">
           <button
-              v-for="option in ORDER_BY_OPTIONS"
-              :key="option.value"
-              type="button"
-              class="option-chip"
-              :class="{ active: query.orderBy === option.value }"
-              @click="query.orderBy = option.value"
+            v-for="option in ORDER_BY_OPTIONS"
+            :key="option.value"
+            type="button"
+            class="option-chip"
+            :class="{ active: query.orderBy === option.value }"
+            @click="query.orderBy = option.value"
           >
             {{ option.label }}
           </button>
@@ -101,12 +97,12 @@
         <div class="option-title">时间范围</div>
         <div class="option-group">
           <button
-              v-for="option in TIME_OPTIONS"
-              :key="option.value"
-              type="button"
-              class="option-chip"
-              :class="{ active: query.time === option.value }"
-              @click="query.time = option.value"
+            v-for="option in TIME_OPTIONS"
+            :key="option.value"
+            type="button"
+            class="option-chip"
+            :class="{ active: query.time === option.value }"
+            @click="query.time = option.value"
           >
             {{ option.label }}
           </button>
@@ -117,29 +113,41 @@
         <div class="option-title">搜索方式</div>
         <div class="option-group">
           <button
-              v-for="option in SEARCH_MAIN_TAG_OPTIONS"
-              :key="option.value"
-              type="button"
-              class="option-chip"
-              :class="{ active: query.searchMainTag === option.value }"
-              @click="query.searchMainTag = option.value"
+            v-for="option in SEARCH_MAIN_TAG_OPTIONS"
+            :key="option.value"
+            type="button"
+            class="option-chip"
+            :class="{ active: query.searchMainTag === option.value }"
+            @click="query.searchMainTag = option.value"
           >
             {{ option.label }}
           </button>
         </div>
       </section>
     </div>
-
   </div>
 </template>
 
 <script setup lang="ts">
-import {onBeforeUnmount, onMounted, reactive, ref} from 'vue'
-import {useRouter} from 'vue-router'
-import {IonIcon, IonSearchbar} from '@ionic/vue'
-import {addOutline, chevronDownOutline, helpCircleOutline, searchOutline} from 'ionicons/icons'
-import {ORDER_BY_OPTIONS, SEARCH_MAIN_TAG_OPTIONS, TIME_OPTIONS} from '@/constants/searchOptions'
-import type {SearchQuery} from '@/services/JmcomicTypes'
+defineOptions({ name: 'KeywordSearchBar' })
+
+const props = withDefaults(
+  defineProps<{
+    modeSelect?: boolean
+  }>(),
+  {
+    modeSelect: true,
+  },
+)
+const emit = defineEmits<{
+  search: [query: SearchQuery]
+}>()
+import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { IonIcon, IonSearchbar } from '@ionic/vue'
+import { addOutline, chevronDownOutline, helpCircleOutline, searchOutline } from 'ionicons/icons'
+import { ORDER_BY_OPTIONS, SEARCH_MAIN_TAG_OPTIONS, TIME_OPTIONS } from '@/constants/searchOptions'
+import type { SearchQuery } from '@/services/JmcomicTypes'
 import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
 import { HistoryService } from '@/services/HistoryService'
 import type { SearchHistoryItem } from '@/services/HistoryService'
@@ -148,19 +156,9 @@ import SearchHistoryDropdown from '@/components/history/SearchHistoryDropdown.vu
 
 const router = useRouter()
 
-const props = withDefaults(defineProps<{
-  modeSelect?: boolean
-}>(), {
-  modeSelect: true,
-})
-
 const mode = ref('')
 const showHistory = ref(false)
 let blurTimer: ReturnType<typeof setTimeout> | null = null
-
-const emit = defineEmits<{
-  search: [query: SearchQuery]
-}>()
 
 const expanded = ref(false)
 const searchbarRef = ref<InstanceType<typeof IonSearchbar> | null>(null)
@@ -235,7 +233,9 @@ const handleNativeFocus = () => {
 
 const handleNativeBlur = () => {
   if (blurTimer) clearTimeout(blurTimer)
-  blurTimer = setTimeout(() => { showHistory.value = false }, 200)
+  blurTimer = setTimeout(() => {
+    showHistory.value = false
+  }, 200)
 }
 
 const handleNativeInput = () => {
@@ -245,7 +245,10 @@ const handleNativeInput = () => {
 const onHistorySelect = (item: SearchHistoryItem) => {
   query.keyword = item.keyword
   showHistory.value = false
-  if (blurTimer) { clearTimeout(blurTimer); blurTimer = null }
+  if (blurTimer) {
+    clearTimeout(blurTimer)
+    blurTimer = null
+  }
 }
 
 const onHistoryClear = () => {
@@ -254,7 +257,7 @@ const onHistoryClear = () => {
 }
 
 onMounted(async () => {
-  nativeInput = await searchbarRef.value?.$el?.getInputElement?.() ?? null
+  nativeInput = (await searchbarRef.value?.$el?.getInputElement?.()) ?? null
   nativeInput?.addEventListener('keydown', handleNativeKeydown)
   nativeInput?.addEventListener('focus', handleNativeFocus)
   nativeInput?.addEventListener('blur', handleNativeBlur)
@@ -405,7 +408,10 @@ ion-searchbar.custom {
   color: #555;
   font-size: 10px;
   border: 1px solid rgb(250, 156, 105);
-  transition: transform 0.15s ease-out, background-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    transform 0.15s ease-out,
+    background-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .option-chip.active {
@@ -442,7 +448,10 @@ ion-searchbar.custom {
   border-radius: 999px;
   font-size: 18px;
   cursor: pointer;
-  transition: transform 0.15s ease-out, background-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    transform 0.15s ease-out,
+    background-color 0.15s ease,
+    box-shadow 0.15s ease;
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -458,7 +467,9 @@ ion-searchbar.custom {
 
 .upload-slide-enter-active,
 .upload-slide-leave-active {
-  transition: opacity 0.25s ease, transform 0.25s ease;
+  transition:
+    opacity 0.25s ease,
+    transform 0.25s ease;
 }
 
 .upload-slide-enter-from,

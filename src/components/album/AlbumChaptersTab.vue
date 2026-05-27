@@ -9,15 +9,19 @@
         class="chapter-card"
         :class="{
           selected: selectedChapterId === meta.id,
-          downloaded: chapterDownloadStatuses.get(meta.id) === 'completed'
+          downloaded: chapterDownloadStatuses.get(meta.id) === 'completed',
         }"
         @click="$emit('select-chapter', meta.id)"
       >
         <Transition name="action-swap" mode="out-in">
-          <span v-if="!(showActions && selectedChapterId === meta.id)" class="chapter-num" key="num">
+          <span
+            v-if="!(showActions && selectedChapterId === meta.id)"
+            key="num"
+            class="chapter-num"
+          >
             第{{ meta.sortOrder }}话
           </span>
-          <div v-else class="chapter-actions" key="actions">
+          <div v-else key="actions" class="chapter-actions">
             <button
               type="button"
               class="action-btn"
@@ -27,11 +31,7 @@
             >
               <ion-icon :icon="cloudDownloadOutline" />
             </button>
-            <button
-              type="button"
-              class="action-btn"
-              @click.stop="$emit('dismiss-actions')"
-            >
+            <button type="button" class="action-btn" @click.stop="$emit('dismiss-actions')">
               <ion-icon :icon="arrowBack" />
             </button>
           </div>
@@ -50,9 +50,7 @@
 </template>
 
 <script setup lang="ts">
-import { IonIcon } from '@ionic/vue'
-import { arrowBack, cloudDownloadOutline } from 'ionicons/icons'
-import type { PhotoMeta } from '@/services/JmcomicTypes'
+defineOptions({ name: 'AlbumChaptersTab' })
 
 const props = defineProps<{
   photoMetas: PhotoMeta[]
@@ -61,16 +59,20 @@ const props = defineProps<{
   showActions: boolean
   chapterDownloadStatuses: Map<string, string>
 }>()
-
 defineEmits<{
   'select-chapter': [chapterId: string]
   'download-chapter': [chapterId: string]
   'dismiss-actions': []
 }>()
+import { IonIcon } from '@ionic/vue'
+import { arrowBack, cloudDownloadOutline } from 'ionicons/icons'
+import type { PhotoMeta } from '@/services/JmcomicTypes'
 
 const isDownloadDisabled = (chapterId: string): boolean => {
   const status = props.chapterDownloadStatuses.get(chapterId)
-  return status === 'queued' || status === 'downloading' || status === 'paused' || status === 'completed'
+  return (
+    status === 'queued' || status === 'downloading' || status === 'paused' || status === 'completed'
+  )
 }
 </script>
 
@@ -93,7 +95,9 @@ const isDownloadDisabled = (chapterId: string): boolean => {
   background: #fffaf6;
   color: #5a3d2e;
   text-align: center;
-  transition: background-color 0.18s ease, border-color 0.18s ease;
+  transition:
+    background-color 0.18s ease,
+    border-color 0.18s ease;
 }
 
 .chapter-card.selected {
@@ -154,7 +158,10 @@ const isDownloadDisabled = (chapterId: string): boolean => {
   background: #ffe4d1;
   color: #e07030;
   font-size: 16px;
-  transition: background-color 0.18s ease, opacity 0.18s ease, transform 0.12s ease;
+  transition:
+    background-color 0.18s ease,
+    opacity 0.18s ease,
+    transform 0.12s ease;
   cursor: pointer;
 }
 
@@ -216,8 +223,12 @@ const isDownloadDisabled = (chapterId: string): boolean => {
 }
 
 @keyframes shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 @media (min-width: 680px) {

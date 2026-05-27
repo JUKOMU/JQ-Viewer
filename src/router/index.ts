@@ -1,56 +1,50 @@
-import { createRouter, createWebHistory } from '@ionic/vue-router';
-import { RouteRecordRaw } from 'vue-router';
-import HomePage from '../views/HomePage.vue'
-import CategoryPage from "@/views/CategoryPage.vue";
-import SearchPage from "@/views/SearchPage.vue";
-import FavoritePage from "@/views/FavoritePage.vue";
-import DownloadPage from "@/views/DownloadPage.vue";
-import SettingPage from "@/views/SettingPage.vue";
+import { createRouter, createWebHistory } from '@ionic/vue-router'
+import type { RouteRecordRaw } from 'vue-router'
 
 const routes: Array<RouteRecordRaw> = [
   {
     path: '/',
-    redirect: '/home'
+    redirect: '/home',
   },
   {
     path: '/home',
-    component: HomePage,
-    meta: { menu: true }
+    component: () => import('@/views/HomePage.vue'),
+    meta: { menu: true },
   },
   {
     path: '/category',
     name: 'CategoryPage',
-    component: CategoryPage,
-    meta: { menu: true, keepAlive: true }
+    component: () => import('@/views/CategoryPage.vue'),
+    meta: { menu: true, keepAlive: true },
   },
   {
     path: '/search',
     name: 'SearchPage',
-    component: SearchPage,
-    meta: { menu: true, keepAlive: true }
+    component: () => import('@/views/SearchPage.vue'),
+    meta: { menu: true, keepAlive: true },
   },
   {
     path: '/favorite',
     name: 'FavoritePage',
-    component: FavoritePage,
-    meta: { menu: true, keepAlive: true }
+    component: () => import('@/views/FavoritePage.vue'),
+    meta: { menu: true, keepAlive: true },
   },
   {
     path: '/download',
     name: 'DownloadPage',
-    component: DownloadPage,
-    meta: { menu: true, keepAlive: true }
+    component: () => import('@/views/DownloadPage.vue'),
+    meta: { menu: true, keepAlive: true },
   },
   {
     path: '/setting',
-    component: SettingPage,
-    meta: { menu: true, keepAlive: true }
+    component: () => import('@/views/SettingPage.vue'),
+    meta: { menu: true, keepAlive: true },
   },
   {
     path: '/history',
     name: 'HistoryPage',
     component: () => import('@/views/HistoryPage.vue'),
-    meta: { menu: true, keepAlive: true }
+    meta: { menu: true, keepAlive: true },
   },
   {
     path: '/album/:id',
@@ -85,13 +79,13 @@ const routes: Array<RouteRecordRaw> = [
     path: '/batch-parse',
     name: 'BatchParsePage',
     component: () => import('@/views/BatchParsePage.vue'),
-    meta: { menu: true, keepAlive: true }
+    meta: { menu: true, keepAlive: true },
   },
 ]
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
-  routes
+  routes,
 })
 
 export default router

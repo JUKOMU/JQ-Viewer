@@ -19,16 +19,13 @@
 </template>
 
 <script setup lang="ts">
-import { IonIcon, IonRange } from '@ionic/vue'
-import type { RangeCustomEvent } from '@ionic/vue'
-import { gridOutline, listOutline } from 'ionicons/icons'
+defineOptions({ name: 'ReaderBottomToolbar' })
 
 defineProps<{
   current: number
   total: number
   isVertical: boolean
 }>()
-
 const emit = defineEmits<{
   'toggle-mode': []
   'update:current': [page: number]
@@ -36,6 +33,9 @@ const emit = defineEmits<{
   'progress-drag-start': []
   'progress-drag-end': []
 }>()
+import { IonIcon, IonRange } from '@ionic/vue'
+import type { RangeCustomEvent } from '@ionic/vue'
+import { gridOutline, listOutline } from 'ionicons/icons'
 
 const onRangeChange = (ev: RangeCustomEvent) => {
   const page = Number(ev.detail.value)

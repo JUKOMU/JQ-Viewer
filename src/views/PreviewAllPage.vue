@@ -5,13 +5,13 @@
       <ion-toolbar>
         <ion-buttons slot="start">
           <ion-button @click="goBack">
-            <ion-icon :icon="arrowBack" slot="icon-only" />
+            <ion-icon slot="icon-only" :icon="arrowBack" />
           </ion-button>
         </ion-buttons>
         <ion-title>预览 · {{ chapterTitle }}</ion-title>
       </ion-toolbar>
     </IonHeader>
-    <IonContent ref="contentRef" :scroll-events="true" @ionScroll="onIonScroll">
+    <IonContent ref="contentRef" :scroll-events="true" @ion-scroll="onIonScroll">
       <div class="preview-container">
         <!-- 初始加载中：骨架占位 -->
         <div v-if="loading" class="preview-grid">
@@ -24,11 +24,7 @@
         <!-- 逐批显示槽位 -->
         <template v-else-if="totalCount > 0">
           <div class="preview-grid">
-            <div
-              v-for="i in displayCount"
-              :key="'slot-' + i"
-              class="preview-item"
-            >
+            <div v-for="i in displayCount" :key="'slot-' + i" class="preview-item">
               <template v-if="slots[i - 1]">
                 <img
                   :src="slots[i - 1]!.dataUrl"
@@ -61,17 +57,26 @@
 </template>
 
 <script setup lang="ts">
-import {computed, nextTick, onMounted, onUnmounted, ref} from 'vue'
-import {useRoute, useRouter} from 'vue-router'
-import type {ScrollCustomEvent} from '@ionic/vue'
-import type {PluginListenerHandle} from '@capacitor/core'
+defineOptions({ name: 'PreviewAllPage' })
+
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import type { ScrollCustomEvent } from '@ionic/vue'
+import type { PluginListenerHandle } from '@capacitor/core'
 import {
-  IonButtons, IonButton, IonContent, IonHeader, IonIcon, IonPage,
-  IonSpinner, IonTitle, IonToolbar,
+  IonButtons,
+  IonButton,
+  IonContent,
+  IonHeader,
+  IonIcon,
+  IonPage,
+  IonSpinner,
+  IonTitle,
+  IonToolbar,
 } from '@ionic/vue'
-import {arrowBack} from 'ionicons/icons'
-import {getImageUrl, JmcomicService} from '@/services/JmcomicService'
-import type {PhotoDetail, PreloadResult} from '@/services/JmcomicTypes'
+import { arrowBack } from 'ionicons/icons'
+import { getImageUrl, JmcomicService } from '@/services/JmcomicService'
+import type { PhotoDetail, PreloadResult } from '@/services/JmcomicTypes'
 
 const BATCH = 20
 const NEAR_BOTTOM_THRESHOLD = 200
@@ -84,16 +89,18 @@ const chapterId = computed(() => route.params.chapterId as string)
 const chapterTitle = computed(() => (route.query.title as string) || chapterId.value)
 const initialTotal = Number(route.query.total as string) || 0
 
-interface PreviewImage { sortOrder: number; dataUrl: string }
+interface PreviewImage {
+  sortOrder: number
+  dataUrl: string
+}
 const slots = ref<(PreviewImage | null)[]>([])
 const displayCount = ref(0)
 const totalCount = ref(initialTotal)
 const loading = ref(true)
 const loadingMore = ref(false)
-const cursor = ref(0)       // 已提交给 Native 的图片数
+const cursor = ref(0) // 已提交给 Native 的图片数
 
-const loadedCount = computed(() => slots.value.filter(s => s !== null).length)
-const allLoaded = computed(() => cursor.value >= totalCount.value)
+const loadedCount = computed(() => slots.value.filter((s) => s !== null).length)
 const allVisible = computed(() => displayCount.value >= totalCount.value)
 const skeletonCount = computed(() => Math.min(totalCount.value || initialTotal || BATCH, BATCH))
 
@@ -125,15 +132,18 @@ onMounted(async () => {
     return
   }
 
-  imageReadyListenerHandle = await JmcomicService.addImageReadyListener(chapterId.value, (sortOrder) => {
-    const idx = sortOrder - 1
-    if (idx >= 0 && idx < slots.value.length) {
-      slots.value[idx] = {
-        sortOrder,
-        dataUrl: getImageUrl(chapterId.value, sortOrder, 'thumb'),
+  imageReadyListenerHandle = await JmcomicService.addImageReadyListener(
+    chapterId.value,
+    (sortOrder) => {
+      const idx = sortOrder - 1
+      if (idx >= 0 && idx < slots.value.length) {
+        slots.value[idx] = {
+          sortOrder,
+          dataUrl: getImageUrl(chapterId.value, sortOrder, 'thumb'),
+        }
       }
-    }
-  })
+    },
+  )
 
   await resolveScrollElement()
 
@@ -159,7 +169,7 @@ onMounted(async () => {
   }
   cursor.value = firstCount
 
-  await new Promise(r => setTimeout(r, 300))
+  await new Promise((r) => setTimeout(r, 300))
   loadingMore.value = false
 
   await maybeLoadMoreAfterRender()
@@ -172,7 +182,7 @@ onUnmounted(() => {
 // ---- 滚动 ----
 const onIonScroll = async (ev: ScrollCustomEvent) => {
   if (loadingMore.value || allVisible.value) return
-  const se = scrollEl.value ?? await resolveScrollElement()
+  const se = scrollEl.value ?? (await resolveScrollElement())
   if (!se) return
   const remain = se.scrollHeight - se.clientHeight - ev.detail.scrollTop
   if (remain <= NEAR_BOTTOM_THRESHOLD) {
@@ -183,7 +193,7 @@ const onIonScroll = async (ev: ScrollCustomEvent) => {
 const maybeLoadMoreAfterRender = async () => {
   if (allVisible.value || loadingMore.value) return
   await nextTick()
-  const se = scrollEl.value ?? await resolveScrollElement()
+  const se = scrollEl.value ?? (await resolveScrollElement())
   if (!se) return
   const remain = se.scrollHeight - se.clientHeight - se.scrollTop
   if (remain <= NEAR_BOTTOM_THRESHOLD) {
@@ -198,7 +208,7 @@ const expandBatch = async () => {
   loadingMore.value = true
 
   // 先等一下，让加载动画可见
-  await new Promise(r => setTimeout(r, 400))
+  await new Promise((r) => setTimeout(r, 400))
 
   // 扩槽位
   const newDisplayCount = Math.min(displayCount.value + BATCH, totalCount.value)
@@ -211,17 +221,19 @@ const expandBatch = async () => {
   if (cursor.value < totalCount.value) {
     const nextCursor = Math.min(cursor.value + BATCH, totalCount.value)
     const batch = photoDetail.images.slice(cursor.value, nextCursor)
-    JmcomicService.preloadImages(chapterId.value, batch, 'thumb').then((result: PreloadResult) => {
-      for (const so of result.cached) {
-        const idx = so - 1
-        if (idx >= 0 && idx < slots.value.length) {
-          slots.value[idx] = {
-            sortOrder: so,
-            dataUrl: getImageUrl(chapterId.value, so, 'thumb'),
+    JmcomicService.preloadImages(chapterId.value, batch, 'thumb')
+      .then((result: PreloadResult) => {
+        for (const so of result.cached) {
+          const idx = so - 1
+          if (idx >= 0 && idx < slots.value.length) {
+            slots.value[idx] = {
+              sortOrder: so,
+              dataUrl: getImageUrl(chapterId.value, so, 'thumb'),
+            }
           }
         }
-      }
-    }).catch(() => {})
+      })
+      .catch(() => {})
     cursor.value = nextCursor
   }
 
@@ -275,8 +287,13 @@ const goBack = () => router.back()
 }
 
 @keyframes skeleton-pulse {
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 0.8; }
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 0.8;
+  }
 }
 
 .preview-page-num {

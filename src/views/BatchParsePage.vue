@@ -4,19 +4,14 @@
       <IonToolbar>
         <div class="header-row">
           <div class="toolbar-start">
-            <MenuToggleButton/>
+            <MenuToggleButton />
           </div>
           <button type="button" class="header-btn" @click="sourceExpanded = !sourceExpanded">
             <span class="header-btn-label">{{ sourceExpanded ? '收起原文' : '展开原文' }}</span>
-            <IonIcon :icon="sourceExpanded ? chevronUpOutline : chevronDownOutline"/>
+            <IonIcon :icon="sourceExpanded ? chevronUpOutline : chevronDownOutline" />
           </button>
-          <button
-            type="button"
-            class="header-btn"
-            :class="{ active: editing }"
-            @click="toggleEdit"
-          >
-            <IonIcon :icon="createOutline"/>
+          <button type="button" class="header-btn" :class="{ active: editing }" @click="toggleEdit">
+            <IonIcon :icon="createOutline" />
           </button>
         </div>
 
@@ -24,12 +19,7 @@
           <!-- 编辑模式 -->
           <template v-if="editing">
             <div class="edit-toolbar">
-              <input
-                v-model="findText"
-                class="edit-input"
-                placeholder="查找"
-                enterkeyhint="done"
-              />
+              <input v-model="findText" class="edit-input" placeholder="查找" enterkeyhint="done" />
               <input
                 v-model="replaceText"
                 class="edit-input"
@@ -40,16 +30,11 @@
               <button type="button" class="edit-btn" @click="removeSpaces">去除空格</button>
               <button type="button" class="edit-btn apply" @click="applyEdit">应用修改</button>
             </div>
-            <textarea
-              v-model="editText"
-              class="source-textarea"
-              rows="5"
-              spellcheck="false"
-            />
+            <textarea v-model="editText" class="source-textarea" rows="5" spellcheck="false" />
           </template>
 
           <!-- 查看模式 -->
-          <div ref="sourceScrollRef" v-else class="source-scroll">
+          <div v-else ref="sourceScrollRef" class="source-scroll">
             <pre
               v-for="(line, li) in sourceLines"
               :key="li"
@@ -69,22 +54,22 @@
       </IonToolbar>
     </IonHeader>
 
-    <IonContent ref="contentRef" :scroll-events="true" @ionScroll="onContentScroll">
+    <IonContent ref="contentRef" :scroll-events="true" @ion-scroll="onContentScroll">
       <div class="page-shell">
         <SearchResultContainer
-            ref="resultContainerRef"
-            :result="resultMeta"
-            :items="displayItems"
-            :loading="loading"
-            :loading-previous="false"
-            :loading-next="false"
-            :can-load-previous="false"
-            :error-message="errorMessage"
-            :mode="displayMode"
-            idle-text=""
-            empty-text="未找到对应本子"
-            @item-click="handleItemClick"
-            @mode-change="displayMode = $event"
+          ref="resultContainerRef"
+          :result="resultMeta"
+          :items="displayItems"
+          :loading="loading"
+          :loading-previous="false"
+          :loading-next="false"
+          :can-load-previous="false"
+          :error-message="errorMessage"
+          :mode="displayMode"
+          idle-text=""
+          empty-text="未找到对应本子"
+          @item-click="handleItemClick"
+          @mode-change="displayMode = $event"
         />
       </div>
     </IonContent>
@@ -92,7 +77,16 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
+import {
+  computed,
+  nextTick,
+  onActivated,
+  onBeforeUnmount,
+  onDeactivated,
+  onMounted,
+  ref,
+  watch,
+} from 'vue'
 import { useRouter } from 'vue-router'
 import { IonContent, IonHeader, IonIcon, IonPage, IonToolbar } from '@ionic/vue'
 import { chevronDownOutline, chevronUpOutline, createOutline } from 'ionicons/icons'
@@ -164,7 +158,7 @@ function replaceAll() {
 function removeSpaces() {
   editText.value = editText.value
     .split('\n')
-    .map(line => line.replace(/[ \t]+/g, ''))
+    .map((line) => line.replace(/[ \t]+/g, ''))
     .join('\n')
 }
 
@@ -178,7 +172,7 @@ async function applyEdit() {
 
 const sourceLines = computed<SourceLine[]>(() => {
   const lines = originalText.value.split('\n')
-  const result: SourceLine[] = lines.map(text => ({
+  const result: SourceLine[] = lines.map((text) => ({
     segments: [{ text, type: 'normal' as const }],
     hasOnlyFailed: false,
   }))
@@ -206,8 +200,8 @@ const sourceLines = computed<SourceLine[]>(() => {
   }
 
   for (const line of result) {
-    const hasValid = line.segments.some(s => s.type === 'valid-id')
-    const hasFailed = line.segments.some(s => s.type === 'failed-id' || s.type === 'invalid-id')
+    const hasValid = line.segments.some((s) => s.type === 'valid-id')
+    const hasFailed = line.segments.some((s) => s.type === 'failed-id' || s.type === 'invalid-id')
     line.hasOnlyFailed = hasFailed && !hasValid
   }
 
@@ -248,10 +242,14 @@ function splitSegments(
 
 function segClass(type: LineSegment['type']): string {
   switch (type) {
-    case 'valid-id': return 'hl-valid'
-    case 'invalid-id': return 'hl-invalid'
-    case 'failed-id': return 'hl-failed'
-    default: return ''
+    case 'valid-id':
+      return 'hl-valid'
+    case 'invalid-id':
+      return 'hl-invalid'
+    case 'failed-id':
+      return 'hl-failed'
+    default:
+      return ''
   }
 }
 
@@ -343,7 +341,9 @@ async function doParse() {
 
 async function resolveScrollElement() {
   if (scrollElementRef.value) return scrollElementRef.value
-  const contentEl = contentRef.value?.$el as { getScrollElement?: () => Promise<HTMLElement> } | undefined
+  const contentEl = contentRef.value?.$el as
+    | { getScrollElement?: () => Promise<HTMLElement> }
+    | undefined
   if (!contentEl?.getScrollElement) return null
   scrollElementRef.value = await contentEl.getScrollElement()
   return scrollElementRef.value
@@ -355,7 +355,7 @@ onDeactivated(() => {
 
 onActivated(async () => {
   await nextTick()
-  const scrollEl = scrollElementRef.value ?? await resolveScrollElement()
+  const scrollEl = scrollElementRef.value ?? (await resolveScrollElement())
   if (scrollEl && savedScrollTop.value > 0) {
     scrollEl.scrollTop = savedScrollTop.value
   }
@@ -430,7 +430,7 @@ function updateHighlightFromScroll() {
 }
 
 function onSourceLineClick(lineIndex: number) {
-  const idx = parsedItems.value.findIndex(p => p.lineIndex === lineIndex)
+  const idx = parsedItems.value.findIndex((p) => p.lineIndex === lineIndex)
   if (idx < 0) return
 
   const entryKey = `1-${idx}-${parsedItems.value[idx].id}`

@@ -33,7 +33,7 @@
             <div v-for="d in store.domains.value" :key="d.domain" class="domain-row">
               <span
                 class="domain-dot"
-                :class="store.allDeadFallback.value ? 'dead' : (d.reachable ? 'alive' : 'dead')"
+                :class="store.allDeadFallback.value ? 'dead' : d.reachable ? 'alive' : 'dead'"
               />
               <span class="domain-name">{{ d.domain }}</span>
               <span class="latency" :class="latencyClass(d.domain, d.reachable)">
@@ -41,13 +41,11 @@
               </span>
             </div>
           </div>
-          <div v-else class="empty-state">
-            等待首次探活...
-          </div>
+          <div v-else class="empty-state">等待首次探活...</div>
         </div>
 
         <!-- 事件日志 -->
-        <div class="section-label" style="margin: 8px 0 8px 6px;">事件日志</div>
+        <div class="section-label" style="margin: 8px 0 8px 6px">事件日志</div>
         <div class="card">
           <div v-if="store.events.value.length" class="log-list">
             <div v-for="(evt, i) in store.events.value" :key="i" class="log-row">
@@ -56,9 +54,7 @@
               <span class="log-msg">{{ evt.message }}</span>
             </div>
           </div>
-          <div v-else class="empty-state">
-            暂无事件
-          </div>
+          <div v-else class="empty-state">暂无事件</div>
         </div>
       </div>
     </IonContent>
@@ -66,10 +62,20 @@
 </template>
 
 <script setup lang="ts">
+defineOptions({ name: 'NetworkStatusPage' })
+
 import { ref } from 'vue'
-import { IonBackButton, IonButtons, IonContent, IonHeader, IonIcon, IonPage, IonTitle, IonToolbar } from '@ionic/vue'
+import {
+  IonBackButton,
+  IonButtons,
+  IonContent,
+  IonHeader,
+  IonIcon,
+  IonPage,
+  IonTitle,
+  IonToolbar,
+} from '@ionic/vue'
 import { refreshOutline, speedometerOutline } from 'ionicons/icons'
-import type { LatencyResult } from '@/services/JmcomicTypes'
 import { JmcomicService } from '@/services/JmcomicService'
 import { useNetworkProbeStore } from '@/composables/networkProbeStore'
 
@@ -92,17 +98,20 @@ function handleMeasureLatency() {
   if (measuring.value) return
   measuring.value = true
   latencyMap.value = {}
-  JmcomicService.measureLatency().then(ret => {
-    const map: Record<string, { latencyMs: number; timedOut: boolean }> = {}
-    for (const r of ret.results) {
-      map[r.domain] = { latencyMs: r.latencyMs, timedOut: r.timedOut }
-    }
-    latencyMap.value = map
-  }).catch(() => {
-    // 测速失败静默处理
-  }).finally(() => {
-    measuring.value = false
-  })
+  JmcomicService.measureLatency()
+    .then((ret) => {
+      const map: Record<string, { latencyMs: number; timedOut: boolean }> = {}
+      for (const r of ret.results) {
+        map[r.domain] = { latencyMs: r.latencyMs, timedOut: r.timedOut }
+      }
+      latencyMap.value = map
+    })
+    .catch(() => {
+      // 测速失败静默处理
+    })
+    .finally(() => {
+      measuring.value = false
+    })
 }
 
 function latencyText(domain: string, reachable: boolean): string {
@@ -130,12 +139,18 @@ JmcomicService.addNetworkProbeListener((data) => {
 
 function phaseClass(phase: string): string {
   switch (phase) {
-    case 'network_changed': return 'phase-warn'
-    case 'network_lost': return 'phase-err'
-    case 'probing': return 'phase-active'
-    case 'result': return 'phase-ok'
-    case 'error': return 'phase-err'
-    default: return ''
+    case 'network_changed':
+      return 'phase-warn'
+    case 'network_lost':
+      return 'phase-err'
+    case 'probing':
+      return 'phase-active'
+    case 'result':
+      return 'phase-ok'
+    case 'error':
+      return 'phase-err'
+    default:
+      return ''
   }
 }
 
@@ -192,8 +207,12 @@ function formatTime(ts: number): string {
   pointer-events: none;
 }
 @keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 .card {
   background: #fffbf8;
@@ -217,8 +236,12 @@ function formatTime(ts: number): string {
   border-radius: 50%;
   flex-shrink: 0;
 }
-.domain-dot.alive { background: #6dbf87; }
-.domain-dot.dead { background: #e05555; }
+.domain-dot.alive {
+  background: #6dbf87;
+}
+.domain-dot.dead {
+  background: #e05555;
+}
 .domain-name {
   font-size: 13px;
   color: #4c2a18;
@@ -231,9 +254,15 @@ function formatTime(ts: number): string {
   flex-shrink: 0;
   margin-left: 8px;
 }
-.latency.lat-green { color: #6dbf87; }
-.latency.lat-yellow { color: #e0b040; }
-.latency.lat-red { color: #e05555; }
+.latency.lat-green {
+  color: #6dbf87;
+}
+.latency.lat-yellow {
+  color: #e0b040;
+}
+.latency.lat-red {
+  color: #e05555;
+}
 /* 事件日志 */
 .log-row {
   display: flex;
@@ -256,10 +285,18 @@ function formatTime(ts: number): string {
   border-radius: 50%;
   flex-shrink: 0;
 }
-.log-dot.phase-warn { background: #f9e2af; }
-.log-dot.phase-active { background: #89b4fa; }
-.log-dot.phase-ok { background: #6dbf87; }
-.log-dot.phase-err { background: #e05555; }
+.log-dot.phase-warn {
+  background: #f9e2af;
+}
+.log-dot.phase-active {
+  background: #89b4fa;
+}
+.log-dot.phase-ok {
+  background: #6dbf87;
+}
+.log-dot.phase-err {
+  background: #e05555;
+}
 .log-msg {
   font-size: 12px;
   color: #4c2a18;

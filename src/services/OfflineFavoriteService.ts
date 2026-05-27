@@ -27,7 +27,7 @@ export async function refreshOfflineCache() {
 async function refreshCache() {
   try {
     const result = await JmcomicService.getOfflineFolders()
-    offlineFolderCache.value = result.folders.map(f => ({
+    offlineFolderCache.value = result.folders.map((f) => ({
       id: f.folderId,
       name: f.name,
       count: f.count,
@@ -90,7 +90,12 @@ export const OfflineFavoriteService = {
     keyword?: string,
     page: number = 1,
     pageSize: number = 20,
-  ): Promise<{ totalItems: number; totalPages: number; currentPage: number; content: SearchResultItem[] }> {
+  ): Promise<{
+    totalItems: number
+    totalPages: number
+    currentPage: number
+    content: SearchResultItem[]
+  }> {
     return JmcomicService.getOfflineFavorites(folderId, keyword, page, pageSize)
   },
 

@@ -1,6 +1,6 @@
 <!-- 区域 A：封面头部 -->
 <template>
-  <div class="header-area" ref="rootRef">
+  <div ref="rootRef" class="header-area">
     <div class="header-bg">
       <img v-if="coverUrl" :src="coverUrl" class="header-bg-img" alt="" />
       <div class="header-bg-mask" />
@@ -11,12 +11,7 @@
       </button>
       <div class="header-body">
         <div class="cover-col">
-          <img
-            v-if="coverUrl"
-            :src="coverUrl"
-            class="cover-img"
-            :alt="title"
-          />
+          <img v-if="coverUrl" :src="coverUrl" class="cover-img" :alt="title" />
           <div v-else class="cover-placeholder" />
         </div>
         <div class="info-col">
@@ -24,9 +19,7 @@
           <p v-if="authors" class="album-authors">{{ authors }}</p>
           <p v-if="!loading && !chapterLoading" class="album-pages">{{ pageCount }} 页</p>
           <div v-else class="pages-skeleton" />
-          <button type="button" class="read-btn" @click="$emit('start-reading')">
-            开始阅读
-          </button>
+          <button type="button" class="read-btn" @click="$emit('start-reading')">开始阅读</button>
         </div>
       </div>
     </div>
@@ -34,8 +27,7 @@
 </template>
 
 <script setup lang="ts">
-import { IonIcon } from '@ionic/vue'
-import { arrowBack } from 'ionicons/icons'
+defineOptions({ name: 'AlbumHeader' })
 
 defineProps<{
   coverUrl: string
@@ -45,15 +37,12 @@ defineProps<{
   loading: boolean
   chapterLoading?: boolean
 }>()
-
 defineEmits<{
   'start-reading': []
   back: []
 }>()
-
-defineExpose({
-  getRootElement: () => null as HTMLElement | null,
-})
+import { IonIcon } from '@ionic/vue'
+import { arrowBack } from 'ionicons/icons'
 </script>
 
 <style scoped>
@@ -170,14 +159,23 @@ defineExpose({
   width: 40%;
   height: 14px;
   border-radius: 6px;
-  background: linear-gradient(90deg, rgb(255 255 255 / 0.08) 25%, rgb(255 255 255 / 0.18) 50%, rgb(255 255 255 / 0.08) 75%);
+  background: linear-gradient(
+    90deg,
+    rgb(255 255 255 / 0.08) 25%,
+    rgb(255 255 255 / 0.18) 50%,
+    rgb(255 255 255 / 0.08) 75%
+  );
   background-size: 200% 100%;
   animation: shimmer 1.4s ease infinite;
 }
 
 @keyframes shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 .read-btn {
@@ -192,7 +190,9 @@ defineExpose({
   font-size: 13px;
   font-weight: 700;
   box-shadow: 0 4px 14px rgb(240 126 73 / 0.4);
-  transition: transform 0.16s ease, box-shadow 0.16s ease;
+  transition:
+    transform 0.16s ease,
+    box-shadow 0.16s ease;
 }
 
 .read-btn:active {

@@ -68,6 +68,7 @@ public class HistoryStore extends SQLiteOpenHelper {
 
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
+        // 注意：未来迁移必须使用 ALTER TABLE ADD COLUMN，直接 DROP TABLE 会导致用户数据永久丢失
         db.execSQL("DROP TABLE IF EXISTS " + TABLE_BROWSE);
         db.execSQL("DROP TABLE IF EXISTS " + TABLE_PARSE);
         onCreate(db);

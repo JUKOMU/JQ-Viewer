@@ -36,7 +36,10 @@
         <!-- 数值卡 -->
         <div class="stats-row">
           <div class="stat-item">
-            <div class="stat-value">{{ userInfo.albumFavorites }}<span class="stat-capacity"> / {{ userInfo.maxAlbumFavorites }}</span></div>
+            <div class="stat-value">
+              {{ userInfo.albumFavorites
+              }}<span class="stat-capacity"> / {{ userInfo.maxAlbumFavorites }}</span>
+            </div>
             <div class="stat-label">收藏</div>
           </div>
           <div class="stat-divider" />
@@ -93,24 +96,28 @@
           <div class="username">未登录</div>
           <div class="level hint">登录后同步在线收藏夹等数据</div>
         </div>
-        <IonButton
-          expand="block"
-          class="login-btn"
-          router-link="/login"
-        >
-          去登录
-        </IonButton>
+        <IonButton expand="block" class="login-btn" router-link="/login"> 去登录 </IonButton>
       </div>
     </IonContent>
   </IonPage>
 </template>
 
 <script setup lang="ts">
+defineOptions({ name: 'UserPage' })
+
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  IonBackButton, IonButton, IonButtons, IonContent, IonHeader,
-  IonIcon, IonPage, IonTitle, IonToolbar, alertController,
+  IonBackButton,
+  IonButton,
+  IonButtons,
+  IonContent,
+  IonHeader,
+  IonIcon,
+  IonPage,
+  IonTitle,
+  IonToolbar,
+  alertController,
 } from '@ionic/vue'
 import { personCircleOutline } from 'ionicons/icons'
 import { useAuth } from '@/composables/useAuth'

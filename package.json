@@ -9,7 +9,10 @@
     "preview": "vite preview",
     "test:e2e": "cypress run",
     "test:unit": "vitest",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "lint:fix": "eslint --fix .",
+    "format": "prettier --write \"src/**/*.{vue,ts,css}\"",
+    "format:check": "prettier --check \"src/**/*.{vue,ts,css}\""
   },
   "dependencies": {
     "@capacitor/android": "^8.3.1",
@@ -33,8 +36,10 @@
     "@vue/test-utils": "^2.3.0",
     "cypress": "^13.5.0",
     "eslint": "^8.35.0",
+    "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-vue": "^9.9.0",
     "jsdom": "^22.1.0",
+    "prettier": "^3.2.0",
     "terser": "^5.4.0",
     "typescript": "~5.9.0",
     "unplugin-vue-components": "^32.0.0",

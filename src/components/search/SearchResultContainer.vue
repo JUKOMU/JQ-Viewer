@@ -79,10 +79,7 @@
         class="result-content"
         :style="contentOffsetStyle"
       >
-        <div
-          :class="resultLayoutClass"
-          :style="resultLayoutStyle"
-        >
+        <div :class="resultLayoutClass" :style="resultLayoutStyle">
           <article
             v-for="entry in items"
             :key="getEntryKey(entry)"
@@ -91,9 +88,19 @@
             @click="emit('item-click', entry.item)"
           >
             <div class="cover-wrap">
-              <img class="cover-img" :src="entry.item.coverUrl" :alt="entry.item.title" loading="lazy">
+              <img
+                class="cover-img"
+                :src="entry.item.coverUrl"
+                :alt="entry.item.title"
+                loading="lazy"
+              />
             </div>
-            <slot name="item-actions" :item="entry.item" :page="entry.page" :indexInPage="entry.indexInPage" />
+            <slot
+              name="item-actions"
+              :item="entry.item"
+              :page="entry.page"
+              :index-in-page="entry.indexInPage"
+            />
             <div class="item-info">
               <h3 class="item-title">{{ entry.item.title }}</h3>
               <template v-if="!isGridMode">
@@ -102,7 +109,9 @@
                   作者：{{ entry.item.authors.join(' / ') }}
                 </div>
                 <div v-if="entry.item.tags.length" class="item-tags">
-                  <span v-for="tag in entry.item.tags.slice(0, 10)" :key="tag" class="tag-chip">{{ tag }}</span>
+                  <span v-for="tag in entry.item.tags.slice(0, 10)" :key="tag" class="tag-chip">{{
+                    tag
+                  }}</span>
                   <span v-if="entry.item.tags.length > 10" class="tag-chip tag-more">…</span>
                 </div>
                 <div class="item-serial">{{ getItemSerial(entry.page, entry.indexInPage) }}</div>
@@ -120,9 +129,46 @@
 </template>
 
 <script setup lang="ts">
-import {computed, ref, watch} from 'vue'
-import {IonSpinner} from '@ionic/vue'
-import type {SearchResult, SearchResultItem} from '@/services/JmcomicTypes'
+defineOptions({ name: 'SearchResultContainer' })
+
+const props = withDefaults(
+  defineProps<{
+    result: SearchResult | null
+    items: SearchResultDisplayItem[]
+    loading: boolean
+    loadingPrevious?: boolean
+    loadingNext?: boolean
+    canLoadPrevious?: boolean
+    pageAtTop?: boolean
+    errorMessage: string
+    mode: 'list' | 'grid'
+    loadedPageStart?: number | null
+    loadedPageEnd?: number | null
+    idleText?: string
+    emptyText?: string
+  }>(),
+  {
+    items: () => [],
+    loadingPrevious: false,
+    loadingNext: false,
+    canLoadPrevious: false,
+    pageAtTop: false,
+    loadedPageStart: null,
+    loadedPageEnd: null,
+    idleText: '搜索结果将在这里显示',
+    emptyText: '没有搜索结果',
+  },
+)
+const emit = defineEmits<{
+  'mode-change': [mode: 'list' | 'grid']
+  'item-click': [item: SearchResultItem]
+  'load-previous': []
+  'pull-state-change': [active: boolean]
+  retry: []
+}>()
+import { computed, ref, watch } from 'vue'
+import { IonSpinner } from '@ionic/vue'
+import type { SearchResult, SearchResultItem } from '@/services/JmcomicTypes'
 
 export interface SearchResultDisplayItem {
   item: SearchResultItem
@@ -167,40 +213,6 @@ const persistGridColumns = (count: GridColumnCount) => {
   }
 }
 
-const props = withDefaults(defineProps<{
-  result: SearchResult | null
-  items: SearchResultDisplayItem[]
-  loading: boolean
-  loadingPrevious?: boolean
-  loadingNext?: boolean
-  canLoadPrevious?: boolean
-  pageAtTop?: boolean
-  errorMessage: string
-  mode: 'list' | 'grid'
-  loadedPageStart?: number | null
-  loadedPageEnd?: number | null
-  idleText?: string
-  emptyText?: string
-}>(), {
-  items: () => [],
-  loadingPrevious: false,
-  loadingNext: false,
-  canLoadPrevious: false,
-  pageAtTop: false,
-  loadedPageStart: null,
-  loadedPageEnd: null,
-  idleText: '搜索结果将在这里显示',
-  emptyText: '没有搜索结果',
-})
-
-const emit = defineEmits<{
-  'mode-change': [mode: 'list' | 'grid']
-  'item-click': [item: SearchResultItem]
-  'load-previous': []
-  'pull-state-change': [active: boolean]
-  retry: []
-}>()
-
 const rootRef = ref<HTMLElement | null>(null)
 const gridColumns = ref<GridColumnCount>(readInitialGridColumns())
 const pullDistance = ref(0)
@@ -212,16 +224,18 @@ const showInitialLoadingState = computed(() => props.loading && !hasItems.value)
 const showErrorState = computed(() => Boolean(props.errorMessage) && !hasItems.value)
 const showEmptyState = computed(() => Boolean(props.result) && !hasItems.value)
 const showResultContent = computed(() => Boolean(props.result) && hasItems.value)
-const pullIndicatorActive = computed(() => props.pageAtTop || props.loadingPrevious || pullDistance.value > 0)
+const pullIndicatorActive = computed(
+  () => props.pageAtTop || props.loadingPrevious || pullDistance.value > 0,
+)
 
 const gridStyle = computed(() => ({
   '--grid-columns': String(gridColumns.value),
 }))
 
-const resultLayoutClass = computed(() => isGridMode.value ? 'result-grid' : 'result-list')
-const resultLayoutStyle = computed(() => isGridMode.value ? gridStyle.value : undefined)
-const itemCardClass = computed(() => isGridMode.value ? 'grid-card' : 'list-card')
-const resultLoaderClass = computed(() => isGridMode.value ? 'grid-loader' : 'list-loader')
+const resultLayoutClass = computed(() => (isGridMode.value ? 'result-grid' : 'result-list'))
+const resultLayoutStyle = computed(() => (isGridMode.value ? gridStyle.value : undefined))
+const itemCardClass = computed(() => (isGridMode.value ? 'grid-card' : 'list-card'))
+const resultLoaderClass = computed(() => (isGridMode.value ? 'grid-loader' : 'list-loader'))
 
 const summaryText = computed(() => {
   if (!props.result) {
@@ -243,7 +257,14 @@ const pullReady = computed(() => pullDistance.value >= PULL_TRIGGER_DISTANCE)
 const showPullIndicator = computed(() => props.canLoadPrevious)
 const pullIndicatorStyle = computed(() => ({
   transform: `translateY(${Math.max(pullDistance.value - PULL_HOLD_DISTANCE, 0)}px)`,
-  opacity: String(Math.min((props.pageAtTop ? 0.72 : 0.52) + pullDistance.value / PULL_TRIGGER_DISTANCE + (props.loadingPrevious ? 0.28 : 0), 1)),
+  opacity: String(
+    Math.min(
+      (props.pageAtTop ? 0.72 : 0.52) +
+        pullDistance.value / PULL_TRIGGER_DISTANCE +
+        (props.loadingPrevious ? 0.28 : 0),
+      1,
+    ),
+  ),
 }))
 const contentOffsetStyle = computed(() => ({
   transform: `translateY(${props.loadingPrevious ? Math.max(pullDistance.value, PULL_HOLD_DISTANCE) : pullDistance.value}px)`,
@@ -253,7 +274,8 @@ const getItemSerial = (page: number, index: number) => {
   return (page - 1) * RESULT_PAGE_SIZE + index + 1
 }
 
-const getEntryKey = (entry: SearchResultDisplayItem) => `${entry.page}-${entry.indexInPage}-${entry.item.id}`
+const getEntryKey = (entry: SearchResultDisplayItem) =>
+  `${entry.page}-${entry.indexInPage}-${entry.item.id}`
 
 const resetPullState = () => {
   pullDistance.value = 0
@@ -272,7 +294,12 @@ const handleTouchStart = (event: TouchEvent) => {
 
 const handleTouchMove = (event: TouchEvent) => {
   // 只有列表滚动到顶部时，才接管原生触摸滚动并进入“下拉加载上一页”流程。
-  if (!props.canLoadPrevious || props.loadingPrevious || !props.pageAtTop || touchStartY.value === null) {
+  if (
+    !props.canLoadPrevious ||
+    props.loadingPrevious ||
+    !props.pageAtTop ||
+    touchStartY.value === null
+  ) {
     return
   }
 
@@ -311,11 +338,14 @@ const handleTouchEnd = () => {
   resetPullState()
 }
 
-watch(() => props.loadingPrevious, (loadingPrevious) => {
-  if (!loadingPrevious) {
-    resetPullState()
-  }
-})
+watch(
+  () => props.loadingPrevious,
+  (loadingPrevious) => {
+    if (!loadingPrevious) {
+      resetPullState()
+    }
+  },
+)
 
 watch(
   () => props.pageAtTop,
@@ -331,12 +361,13 @@ watch(
   (active) => {
     emit('pull-state-change', active)
   },
-  {immediate: true},
+  { immediate: true },
 )
 
 defineExpose<SearchResultContainerExposed>({
   getRootElement: () => rootRef.value,
-  getEntryElement: (entryKey: string) => rootRef.value?.querySelector(`[data-entry-key="${entryKey}"]`) as HTMLElement | null,
+  getEntryElement: (entryKey: string) =>
+    rootRef.value?.querySelector(`[data-entry-key="${entryKey}"]`) as HTMLElement | null,
 })
 </script>
 
@@ -407,7 +438,10 @@ defineExpose<SearchResultContainerExposed>({
   background: transparent;
   color: #8a6048;
   font-size: 12px;
-  transition: background-color 0.2s ease, color 0.2s ease, transform 0.16s ease;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease,
+    transform 0.16s ease;
 }
 
 .grid-columns-btn {
@@ -419,7 +453,11 @@ defineExpose<SearchResultContainerExposed>({
   color: #8a6048;
   font-size: 12px;
   border: 1px solid rgb(250 156 105 / 0.42);
-  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, transform 0.16s ease;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.16s ease;
 }
 
 .mode-btn.active {
@@ -449,7 +487,9 @@ defineExpose<SearchResultContainerExposed>({
 .pull-indicator {
   color: #9b6e57;
   pointer-events: none;
-  transition: transform 0.18s ease, opacity 0.18s ease;
+  transition:
+    transform 0.18s ease,
+    opacity 0.18s ease;
 }
 
 .pull-hint {
@@ -469,7 +509,9 @@ defineExpose<SearchResultContainerExposed>({
 .pull-arrow {
   font-size: 22px;
   line-height: 1;
-  transition: transform 0.18s ease, color 0.18s ease;
+  transition:
+    transform 0.18s ease,
+    color 0.18s ease;
 }
 
 .pull-indicator-row.ready .pull-arrow {
@@ -663,7 +705,9 @@ defineExpose<SearchResultContainerExposed>({
 
 .grid-columns-fade-enter-active,
 .grid-columns-fade-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
 }
 
 .grid-columns-fade-enter-from,
@@ -674,7 +718,9 @@ defineExpose<SearchResultContainerExposed>({
 
 .result-fade-enter-active,
 .result-fade-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
 }
 
 .result-fade-enter-from,

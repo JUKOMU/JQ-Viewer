@@ -1,7 +1,7 @@
 <!-- 评论 Tab -->
 <template>
   <section class="comments-section">
-    <template v-if="loading">
+    <template v-if="loading && !comments.length">
       <div class="comments-skeleton">
         <div v-for="n in 4" :key="n" class="sk-card">
           <div class="sk-header">
@@ -35,6 +35,12 @@
           </div>
         </div>
       </div>
+
+      <div class="comments-footer">
+        <span v-if="loading" class="load-more-hint">加载中...</span>
+        <span v-else-if="hasMore" class="load-more-hint">下拉加载更多评论...</span>
+        <span v-else-if="total > 0" class="comments-feedback">已加载 {{ comments.length }}/{{ total }} 条评论</span>
+      </div>
     </template>
     <div v-else class="comments-empty">暂无评论</div>
   </section>
@@ -46,6 +52,8 @@ defineOptions({name: 'AlbumCommentsTab'})
 defineProps<{
   comments: CommentItem[]
   loading: boolean
+  hasMore: boolean
+  total: number
 }>()
 
 import type {CommentItem} from '@/services/JmcomicTypes'
@@ -196,5 +204,20 @@ import type {CommentItem} from '@/services/JmcomicTypes'
   color: #3a261d;
   font-size: 11px;
   line-height: 1.4;
+}
+
+.comments-footer {
+  padding: 14px 0 4px;
+  text-align: center;
+}
+
+.load-more-hint {
+  color: #a07858;
+  font-size: 11px;
+}
+
+.comments-feedback {
+  color: #8a6048;
+  font-size: 11px;
 }
 </style>

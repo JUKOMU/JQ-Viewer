@@ -94,12 +94,26 @@
             <template v-if="album.subCategory"> / {{ album.subCategory.title }}</template>
           </span>
         </div>
+        <div v-if="album.addTime" class="info-row">
+          <span class="info-label">发布日期</span>
+          <span class="info-value">{{ formatDate(album.addTime) }}</span>
+        </div>
+        <div v-if="album.views" class="info-row">
+          <span class="info-label">浏览</span>
+          <span class="info-value">{{ album.views }}</span>
+        </div>
       </div>
 
       <!-- 相关作品 -->
       <div v-if="album.relatedAlbums.length" class="related-section">
         <h3 class="section-title">相关作品</h3>
-        <div class="related-scroll">
+        <div
+          ref="relatedScrollRef"
+          class="related-scroll"
+          @touchstart.passive="onRelatedScrollTouchStart"
+          @touchmove="onRelatedScrollTouchMove"
+          @touchend="onRelatedScrollTouchEnd"
+        >
           <div
             v-for="related in album.relatedAlbums"
             :key="related.id"
@@ -136,7 +150,7 @@ defineEmits<{
 }>()
 import {computed, ref} from 'vue'
 import {useRouter} from 'vue-router'
-import {IonIcon} from '@ionic/vue'
+import {IonIcon, menuController} from '@ionic/vue'
 import {
   bookmark,
   checkmarkCircleOutline,
@@ -150,6 +164,14 @@ import type {AlbumDetail, AlbumMeta} from '@/services/JmcomicTypes'
 import {showToast} from '@/services/JmcomicService'
 
 const router = useRouter()
+
+function formatDate(raw: string): string {
+  const ts = parseInt(raw, 10)
+  if (!ts) return raw
+  const d = new Date(ts * 1000)
+  if (isNaN(d.getTime())) return raw
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 
 const props = defineProps<{
   album: AlbumDetail | null
@@ -170,6 +192,38 @@ const copyText = async (text: string) => {
 
 const searchByTag = (keyword: string) => {
   void router.push({path: '/search', query: {keyword}})
+}
+
+// ---- 相关作品横向滑动 vs 侧边栏手势 ----
+const relatedScrollRef = ref<HTMLElement | null>(null)
+let tsx = 0
+let tsy = 0
+let tsScrollLeft = 0
+
+function onRelatedScrollTouchStart(e: TouchEvent) {
+  const t = e.touches[0]
+  tsx = t.clientX
+  tsy = t.clientY
+  tsScrollLeft = relatedScrollRef.value?.scrollLeft ?? 0
+  void menuController.swipeGesture(false)
+}
+
+function onRelatedScrollTouchMove(e: TouchEvent) {
+  const t = e.touches[0]
+  const dx = t.clientX - tsx
+  const dy = t.clientY - tsy
+
+  if (Math.abs(dx) < Math.abs(dy)) return
+
+  if (dx > 60 && tsScrollLeft === 0) {
+    void menuController.swipeGesture(true)
+    void menuController.open()
+    void menuController.swipeGesture(false)
+  }
+}
+
+function onRelatedScrollTouchEnd() {
+  void menuController.swipeGesture(true)
 }
 
 const downloadClass = computed(() => {
@@ -397,6 +451,7 @@ const downloadIcon = computed(() => {
   padding-bottom: 6px;
   scroll-snap-type: x mandatory;
   -webkit-overflow-scrolling: touch;
+  touch-action: manipulation;
 }
 
 .related-card {

@@ -1,6 +1,6 @@
 <template>
   <IonPage>
-    <IonContent :scroll-events="true" @ion-scroll="handleScroll">
+    <IonContent ref="contentRef" :scroll-events="true" @ion-scroll="handleScroll">
       <!-- 区域 A：封面头部 -->
       <AlbumHeader
         ref="headerRef"
@@ -64,6 +64,8 @@
           v-else-if="activeTab === 'comments'"
           :comments="comments"
           :loading="commentsLoading"
+          :has-more="hasMoreComments"
+          :total="totalComments"
         />
       </div>
 
@@ -130,12 +132,16 @@ const loading = ref(true)
 
 // ---- Tab ----
 type TabKey = 'info' | 'chapters' | 'preview' | 'comments'
-const tabs = [
-  {key: 'info' as const, label: '本子信息'},
-  {key: 'chapters' as const, label: '章节'},
-  {key: 'preview' as const, label: '预览'},
-  {key: 'comments' as const, label: '评论'},
-]
+const tabs = computed(() => {
+  const chapterCount = albumDetail.value?.photoMetas?.length
+  const commentCount = albumDetail.value?.commentCount
+  return [
+    {key: 'info' as const, label: '本子信息'},
+    {key: 'chapters' as const, label: chapterCount ? `章节 (${chapterCount})` : '章节'},
+    {key: 'preview' as const, label: '预览'},
+    {key: 'comments' as const, label: commentCount ? `评论 (${commentCount})` : '评论'},
+  ]
+})
 const activeTab = ref<TabKey>('info')
 
 // ---- 章节 ----
@@ -316,11 +322,15 @@ let imageReadyListenerHandle: PluginListenerHandle | null = null
 // ---- 评论 ----
 const comments = ref<CommentItem[]>([])
 const commentsLoading = ref(false)
+const commentPage = ref(1)
+const totalComments = ref(0)
+const hasMoreComments = computed(() => comments.value.length < totalComments.value)
 
 // ---- Tab 栏粘性 ----
 const tabBarSticky = ref(false)
 const headerRef = ref<InstanceType<typeof AlbumHeader> | null>(null)
 const tabBarRef = ref<HTMLElement | null>(null)
+const contentRef = ref<InstanceType<typeof IonContent> | null>(null)
 
 // ---- 计算属性 ----
 const selectedChapterPageCount = computed(() => {
@@ -515,12 +525,26 @@ const onOpenReader = (page: number) => {
 }
 
 // ---- 评论 ----
-const loadComments = async () => {
-  if (comments.value.length) return
+const loadComments = async (append = false) => {
+  if (commentsLoading.value) return
+  if (!append) {
+    commentPage.value = 1
+    comments.value = []
+    totalComments.value = 0
+  }
   commentsLoading.value = true
   try {
-    const result = await JmcomicService.getComments({albumId: albumId.value, page: 1})
-    comments.value = result.list
+    const result = await JmcomicService.getComments({
+      albumId: albumId.value,
+      page: commentPage.value,
+    })
+    totalComments.value = result.total
+    if (append) {
+      comments.value.push(...result.list)
+    } else {
+      comments.value = result.list
+    }
+    commentPage.value++
   } catch (e: any) {
     await showToast(sanitizeError(e, '评论加载失败'), 'danger')
   } finally {
@@ -528,14 +552,41 @@ const loadComments = async () => {
   }
 }
 
+const loadMoreComments = async () => {
+  if (!hasMoreComments.value || commentsLoading.value) return
+  await loadComments(true)
+}
+
 // ---- 操作：点赞/收藏/下载 ----
+
+function adjustLikeCount(likes: string, delta: 1 | -1): string {
+  if (/^\d+$/.test(likes)) {
+    return String(parseInt(likes, 10) + delta)
+  }
+  return likes
+}
+
 const handleToggleLike = async () => {
+  if (!isLoggedIn.value) {
+    await showToast('请先登录', 'medium')
+    return
+  }
   if (actionBusy.like || !albumDetail.value) return
   actionBusy.like = true
+  const wasLiked = albumDetail.value.isLiked
+  albumDetail.value.isLiked = !wasLiked
+  albumDetail.value.likes = adjustLikeCount(
+    albumDetail.value.likes,
+    wasLiked ? -1 : 1,
+  )
   try {
     await JmcomicService.toggleAlbumLike(albumId.value)
-    albumDetail.value.isLiked = !albumDetail.value.isLiked
   } catch (e: any) {
+    albumDetail.value.isLiked = wasLiked
+    albumDetail.value.likes = adjustLikeCount(
+      albumDetail.value.likes,
+      wasLiked ? 1 : -1,
+    )
     await showToast(sanitizeError(e, '点赞失败'), 'danger')
   } finally {
     actionBusy.like = false
@@ -638,11 +689,21 @@ const goBack = () => {
   }
 }
 
-// ---- 滚动：Tab 栏吸顶 ----
+// ---- 滚动：Tab 栏吸顶 + 评论触底加载 ----
 const handleScroll = async () => {
   const headerEl = headerRef.value?.$el as HTMLElement | undefined
   if (!headerEl || !tabBarRef.value) return
   tabBarSticky.value = headerEl.getBoundingClientRect().bottom <= 0
+
+  if (activeTab.value !== 'comments') return
+  if (!hasMoreComments.value || commentsLoading.value) return
+  const ionContentEl = contentRef.value?.$el as any
+  if (!ionContentEl) return
+  const el = await ionContentEl.getScrollElement?.() as HTMLElement | undefined
+  if (!el) return
+  if (el.scrollHeight - el.scrollTop - el.clientHeight < 200) {
+    loadMoreComments()
+  }
 }
 </script>
 

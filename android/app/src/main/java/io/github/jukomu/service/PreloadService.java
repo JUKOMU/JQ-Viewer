@@ -61,6 +61,7 @@ public class PreloadService {
 
         List<Integer> cached = new ArrayList<>();
         List<Integer> pending = new ArrayList<>();
+        final boolean isThumb = "thumb".equals(type);
 
         for (int i = 0; i < imagesArray.length(); i++) {
             JSONObject imgObj;
@@ -71,15 +72,16 @@ public class PreloadService {
             }
 
             final int sortOrder = imgObj.optInt("sortOrder");
-            final String cacheKey = photoId + "/" + sortOrder
-                + ("thumb".equals(type) ? "/thumb" : "");
+            final String cacheKey = photoId + "/" + sortOrder + (isThumb ? "/thumb" : "");
 
+            // 目标缓存命中
             if (imageCache.has(cacheKey)) {
                 cached.add(sortOrder);
                 continue;
             }
 
-            if ("thumb".equals(type)) {
+            // 缩略图：优先从已缓存的原图生成
+            if (isThumb) {
                 ImageCache.ImageEntry original = imageCache.get(photoId + "/" + sortOrder);
                 if (original != null) {
                     byte[] thumbBytes = ImageCache.createThumbnail(original.data);
@@ -88,25 +90,36 @@ public class PreloadService {
                     notifyImageReady(photoId, sortOrder, type);
                     continue;
                 }
+            }
 
-                byte[] fromFile = fileStore.getImageBytesByPhotoId(photoId, sortOrder);
-                if (fromFile != null) {
+            // 本地文件命中（已下载图片）
+            byte[] localBytes = fileStore.getImageBytesByPhotoId(photoId, sortOrder);
+            if (localBytes != null) {
+                if (isThumb) {
+                    // 缩略图：提交到线程池生成
                     pending.add(sortOrder);
                     imageExecutor.submit(() -> {
                         try {
-                            byte[] thumbBytes = ImageCache.createThumbnail(fromFile);
+                            byte[] thumbBytes = ImageCache.createThumbnail(localBytes);
                             imageCache.put(cacheKey, thumbBytes, "image/jpeg");
-                            String mime = "image/" + ImageCache.guessFormatName(fromFile);
-                            imageCache.put(photoId + "/" + sortOrder, fromFile, mime);
+                            String mime = "image/" + ImageCache.guessFormatName(localBytes);
+                            imageCache.put(photoId + "/" + sortOrder, localBytes, mime);
                             notifyImageReady(photoId, sortOrder, type);
                         } catch (Exception e) {
                             Log.d(TAG, "缩略图生成失败", e);
                         }
                     });
-                    continue;
+                } else {
+                    // 原图：直接缓存，同步通知
+                    String mime = "image/" + ImageCache.guessFormatName(localBytes);
+                    imageCache.put(cacheKey, localBytes, mime);
+                    cached.add(sortOrder);
+                    notifyImageReady(photoId, sortOrder, type);
                 }
+                continue;
             }
 
+            // 本地未命中 → 网络下载
             pending.add(sortOrder);
 
             final String scrambleId = imgObj.optString("scrambleId");
@@ -121,7 +134,7 @@ public class PreloadService {
                     String formatName = JmImageTool.getFormatName(filename);
                     String mimeType = "image/" + formatName;
 
-                    if ("thumb".equals(type)) {
+                    if (isThumb) {
                         byte[] thumbBytes = ImageCache.createThumbnail(decrypted);
                         imageCache.put(cacheKey, thumbBytes, "image/jpeg");
                         imageCache.put(photoId + "/" + sortOrder, decrypted, mimeType);

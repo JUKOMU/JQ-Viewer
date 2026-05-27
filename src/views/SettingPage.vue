@@ -461,7 +461,12 @@ function resetExportFormat() {
 }
 
 // ---- 公开下载 ----
+const isSwitchingDownloadPublic = ref(false)
+
 async function onDownloadPublicChange(e: CustomEvent) {
+  if (isSwitchingDownloadPublic.value) return
+  isSwitchingDownloadPublic.value = true
+
   const open = e.detail.checked
   downloadPublic.value = open
 
@@ -526,6 +531,7 @@ async function onDownloadPublicChange(e: CustomEvent) {
   } finally {
     handle?.remove()
     showRelocationModal.value = false
+    isSwitchingDownloadPublic.value = false
   }
 }
 </script>

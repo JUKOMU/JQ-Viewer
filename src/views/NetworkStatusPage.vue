@@ -64,7 +64,7 @@
 <script setup lang="ts">
 defineOptions({ name: 'NetworkStatusPage' })
 
-import { ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import {
   IonBackButton,
   IonButtons,
@@ -77,19 +77,41 @@ import {
 } from '@ionic/vue'
 import { refreshOutline, speedometerOutline } from 'ionicons/icons'
 import { JmcomicService } from '@/services/JmcomicService'
+import type { PluginListenerHandle } from '@capacitor/core'
 import { useNetworkProbeStore } from '@/composables/networkProbeStore'
 
 const store = useNetworkProbeStore()
 const refreshing = ref(false)
 const measuring = ref(false)
 const latencyMap = ref<Record<string, { latencyMs: number; timedOut: boolean }>>({})
+let probeHandle: PluginListenerHandle | null = null
+let refreshTimer: ReturnType<typeof setTimeout> | null = null
+
+onMounted(() => {
+  JmcomicService.addNetworkProbeListener((data) => {
+    if (data.phase === 'result' || data.phase === 'error') {
+      refreshing.value = false
+    }
+  }).then((h) => {
+    probeHandle = h
+  })
+})
+
+onUnmounted(() => {
+  probeHandle?.remove()
+  probeHandle = null
+  if (refreshTimer) {
+    clearTimeout(refreshTimer)
+    refreshTimer = null
+  }
+})
 
 function handleRefresh() {
   if (refreshing.value) return
   refreshing.value = true
   JmcomicService.reprobeDomains()
   // result/error 事件到达时 store 自动更新，超时后恢复按钮状态
-  setTimeout(() => {
+  refreshTimer = setTimeout(() => {
     refreshing.value = false
   }, 5000)
 }
@@ -129,13 +151,6 @@ function latencyClass(domain: string, reachable: boolean): string {
   if (r.timedOut) return 'lat-red'
   return 'lat-green'
 }
-
-// 监听探活结果事件，自动解除 refreshing 状态
-JmcomicService.addNetworkProbeListener((data) => {
-  if (data.phase === 'result' || data.phase === 'error') {
-    refreshing.value = false
-  }
-})
 
 function phaseClass(phase: string): string {
   switch (phase) {

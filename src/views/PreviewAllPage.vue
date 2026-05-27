@@ -221,19 +221,20 @@ const expandBatch = async () => {
   if (cursor.value < totalCount.value) {
     const nextCursor = Math.min(cursor.value + BATCH, totalCount.value)
     const batch = photoDetail.images.slice(cursor.value, nextCursor)
-    JmcomicService.preloadImages(chapterId.value, batch, 'thumb')
-      .then((result: PreloadResult) => {
-        for (const so of result.cached) {
-          const idx = so - 1
-          if (idx >= 0 && idx < slots.value.length) {
-            slots.value[idx] = {
-              sortOrder: so,
-              dataUrl: getImageUrl(chapterId.value, so, 'thumb'),
-            }
+    try {
+      const result = await JmcomicService.preloadImages(chapterId.value, batch, 'thumb')
+      for (const so of result.cached) {
+        const idx = so - 1
+        if (idx >= 0 && idx < slots.value.length) {
+          slots.value[idx] = {
+            sortOrder: so,
+            dataUrl: getImageUrl(chapterId.value, so, 'thumb'),
           }
         }
-      })
-      .catch(() => {})
+      }
+    } catch {
+      /* ignore */
+    }
     cursor.value = nextCursor
   }
 

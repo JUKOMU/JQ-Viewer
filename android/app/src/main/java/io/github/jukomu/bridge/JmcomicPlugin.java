@@ -706,8 +706,9 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
                 return;
             }
             call.setKeepAlive(true);
+            int folderId = Integer.parseInt(q.getString("folderId", "0"));
             apiService.getFavorites(
-                    q.getInteger("folderId", 0),
+                    folderId,
                     q.getInteger("page", 1),
                     bridgeCallback(call));
         } catch (Exception e) {

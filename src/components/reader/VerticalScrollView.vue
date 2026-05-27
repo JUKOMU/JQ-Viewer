@@ -180,7 +180,9 @@ watch(
           containerRef.value.scrollTop += delta
           scrollTop.value = containerRef.value.scrollTop
           trackedTop = newTop
-          isAdjustingScroll = false
+          nextTick(() => {
+            isAdjustingScroll = false
+          })
         }
       }
     })

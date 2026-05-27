@@ -581,13 +581,25 @@ const handleToggleLike = async () => {
   )
   try {
     await JmcomicService.toggleAlbumLike(albumId.value)
+    await showToast(wasLiked ? '已取消点赞' : '已点赞', 'success')
   } catch (e: any) {
-    albumDetail.value.isLiked = wasLiked
-    albumDetail.value.likes = adjustLikeCount(
-      albumDetail.value.likes,
-      wasLiked ? 1 : -1,
-    )
-    await showToast(sanitizeError(e, '点赞失败'), 'danger')
+    const msg = sanitizeError(e, '')
+    if (/已经评价/.test(msg)) {
+      if (wasLiked) {
+        albumDetail.value.isLiked = true
+        albumDetail.value.likes = adjustLikeCount(albumDetail.value.likes, 1)
+        await showToast('暂不支持取消点赞', 'medium')
+      } else {
+        await showToast('已点赞', 'success')
+      }
+    } else {
+      albumDetail.value.isLiked = wasLiked
+      albumDetail.value.likes = adjustLikeCount(
+        albumDetail.value.likes,
+        wasLiked ? 1 : -1,
+      )
+      await showToast(sanitizeError(e, '点赞失败'), 'danger')
+    }
   } finally {
     actionBusy.like = false
   }
@@ -601,6 +613,7 @@ const handleToggleFavorite = async () => {
     try {
       await JmcomicService.toggleAlbumFavorite(albumId.value)
       albumDetail.value.isFavorite = false
+      await showToast('已取消收藏', 'success')
     } catch (e: any) {
       await showToast(sanitizeError(e, '取消收藏失败'), 'danger')
     } finally {

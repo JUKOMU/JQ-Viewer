@@ -129,6 +129,9 @@ interface JmcomicPlugin {
 
   measureLatency(): Promise<{ results: LatencyResult[] }>
 
+  /** 查询客户端预热是否完成 */
+  getInitStatus(): Promise<{ complete: boolean }>
+
   login(options: { username: string; password: string }): Promise<UserInfo>
 
   logout(): Promise<{ success: boolean }>
@@ -414,6 +417,11 @@ export const JmcomicService = {
     return native.measureLatency()
   },
 
+  /** 查询客户端预热是否完成 */
+  getInitStatus() {
+    return native.getInitStatus()
+  },
+
   // ---- 下载相关 ----
 
   /**
@@ -584,12 +592,15 @@ export function sanitizeError(error: unknown, fallback: string): string {
 export async function showToast(
   message: string,
   color: 'success' | 'danger' | 'medium' = 'medium',
+  duration: number = 1500,
+  position: "top" | "bottom" | "middle" = "bottom"
 ) {
   const toast = await toastController.create({
-    message,
-    duration: 1500,
-    position: 'bottom',
+    message: message,
+    duration: duration,
+    position: position,
     cssClass: `warm-toast toast-${color}`,
   })
   await toast.present()
+  return toast
 }

@@ -7,25 +7,26 @@ const isLoggedIn = computed(() => userInfo.value !== null)
 
 export function useAuth() {
   /** 启动时调用，先检查本地登录态，如无则尝试自动登录（仅 App.vue onMounted 调用） */
-  async function initAuth(): Promise<void> {
+  async function initAuth(): Promise<boolean> {
     try {
       const result = await JmcomicService.checkLoginState()
       if (result.loggedIn && result.userInfo) {
         userInfo.value = result.userInfo
-        return
+        return true
       }
-      // 本地无登录态，尝试用保存的凭据自动登录获取新 cookie
       try {
         const autoResult = await JmcomicService.autoLogin()
         if (autoResult.userInfo) {
           userInfo.value = autoResult.userInfo
+          return true
         }
       } catch {
-        // 自动登录失败（无凭据或凭据无效），保持 userInfo 为 null
+        // 自动登录失败（无凭据或凭据无效）
       }
     } catch {
-      // 检查失败视为未登录，保持 userInfo 为 null
+      // 检查失败视为未登录
     }
+    return false
   }
 
   /** 登录并更新本地状态 */

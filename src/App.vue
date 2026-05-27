@@ -24,6 +24,7 @@ import {useSideMenuState} from '@/composables/useSideMenuState'
 import {initSettings} from '@/services/SettingsService'
 import {useAuth} from '@/composables/useAuth'
 import {initNetworkProbeStore} from '@/composables/networkProbeStore'
+import {JmcomicService, showToast} from '@/services/JmcomicService'
 
 const {isMenuNavigation, leftMenuOpen, rightMenuOpen} = useSideMenuState()
 
@@ -81,6 +82,9 @@ const handleMenuDidClose = () => {
   leftMenuOpen.value = false
 }
 
+let pollTimer: ReturnType<typeof setInterval> | null = null
+let activeToast: Awaited<ReturnType<typeof showToast>> | null = null
+
 onMounted(async () => {
   const {initAuth} = useAuth()
 
@@ -90,8 +94,48 @@ onMounted(async () => {
   // 初始化网络探活事件 store（模块级，持续记录启动以来全部事件）
   initNetworkProbeStore()
 
-  // 恢复登录态（在设置加载后，不阻塞页面渲染）
-  initAuth()
+  // 启动初始化 toast 流程（不阻塞 onMounted 后续逻辑）
+  void (async () => {
+    // ---- Phase 1: 客户端初始化轮询 ----
+    const t0 = Date.now()
+    let warmupToast = await showToast('客户端初始化', 'medium', 0)
+    activeToast = warmupToast
+
+    await new Promise<void>((resolve) => {
+      pollTimer = setInterval(async () => {
+        let complete = false
+        try {
+          const status = await JmcomicService.getInitStatus()
+          complete = status.complete
+        } catch { /* 桥接失败，继续轮询 */ }
+
+        if (complete) {
+          clearInterval(pollTimer!)
+          pollTimer = null
+          await warmupToast.dismiss()
+          activeToast = null
+          showToast('初始化完成', 'success')
+          resolve()
+        } else {
+          const n = Math.floor((Date.now() - t0) / 1000)
+          await warmupToast.dismiss()
+          warmupToast = await showToast(`客户端初始化(${n}s)`, 'medium', 0)
+          activeToast = warmupToast
+        }
+      }, 1000)
+    })
+
+    // ---- Phase 2: 自动登录 ----
+    const loginToast = await showToast('正在自动登录...', 'medium', 0)
+    activeToast = loginToast
+
+    const loggedIn = await initAuth()
+    await loginToast.dismiss()
+    activeToast = null
+    if (loggedIn) {
+      showToast('登录成功', 'success')
+    }
+  })()
 
   const menuEl = document.querySelector('ion-menu')
   if (!menuEl) return
@@ -101,6 +145,13 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  if (pollTimer != null) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+  activeToast?.dismiss()
+  activeToast = null
+
   const menuEl = document.querySelector('ion-menu')
   menuEl?.removeEventListener('ionDidOpen', handleMenuDidOpen)
   menuEl?.removeEventListener('ionDidClose', handleMenuDidClose)

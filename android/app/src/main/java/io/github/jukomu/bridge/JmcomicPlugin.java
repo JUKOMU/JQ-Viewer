@@ -405,6 +405,13 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         }
     }
 
+    @PluginMethod
+    public void getInitStatus(PluginCall call) {
+        JSObject ret = new JSObject();
+        ret.put("complete", sharedClient != null);
+        call.resolve(ret);
+    }
+
     private synchronized JmApiClient getClient() {
         if (sharedClient == null) {
             sharedClient = JmComic.newApiClient(new JmConfiguration.Builder().downloadThreadPoolSize(downloadConcurrency).build());

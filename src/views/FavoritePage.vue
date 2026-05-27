@@ -252,6 +252,18 @@ const sideMenuRef = ref<InstanceType<typeof FavoriteSideMenu> | null>(null)
 
 const pageCache = ref<Record<number, SearchResultItem[]>>({})
 
+/** 在线关键字搜索时缓存全部过滤结果，翻页直接切片不重复拉取 */
+const onlineSearchCache = ref<SearchResultItem[] | null>(null)
+
+const matchesKeyword = (item: SearchResultItem, kw: string): boolean => {
+  const kwLower = kw.toLowerCase()
+  if (item.id === kw) return true
+  if (item.title.toLowerCase().includes(kwLower)) return true
+  if (item.authors.some((a) => a.toLowerCase().includes(kwLower))) return true
+  if (item.tags.some((t) => t.toLowerCase().includes(kwLower))) return true
+  return false
+}
+
 // ---- 下载状态 ----
 const downloadedAlbumIds = ref<Set<string>>(new Set())
 let downloadProgressHandle: PluginListenerHandle | null = null
@@ -375,10 +387,50 @@ const resolveScrollElement = async () => {
 
 // --- 数据获取 ---
 const fetchOnlineFavorites = async (page: number): Promise<SearchResult> => {
+  const kw = currentKeyword.value?.trim()
+  const pageSize = 20
+
+  if (kw) {
+    if (onlineSearchCache.value === null) {
+      const allItems: SearchResultItem[] = []
+      let p = 1
+      let tp = 1
+      while (p <= tp) {
+        const result: FavoriteResult = await JmcomicService.favorites({
+          folderId: currentFolderId.value,
+          page: p,
+        })
+        allItems.push(...result.content)
+        if (result.folderList) {
+          onlineFolderMap.value = result.folderList
+        }
+        tp = result.totalPages
+        p++
+        if (p <= tp) {
+          await new Promise((r) => setTimeout(r, 100))
+        }
+      }
+      onlineSearchCache.value = allItems.filter((item) => matchesKeyword(item, kw))
+    }
+
+    const filtered = onlineSearchCache.value
+    const totalItems = filtered.length
+    const totalPages = Math.max(1, Math.ceil(totalItems / pageSize))
+    const currentPage = Math.min(Math.max(1, page), totalPages)
+    const start = (currentPage - 1) * pageSize
+    return {
+      currentPage,
+      totalItems,
+      totalPages,
+      content: filtered.slice(start, start + pageSize),
+    }
+  }
+
+  // 无关键字：清缓存，走服务端分页
+  onlineSearchCache.value = null
   const result: FavoriteResult = await JmcomicService.favorites({
     folderId: currentFolderId.value,
     page,
-    keyword: currentKeyword.value,
   })
   if (result.folderList) {
     onlineFolderMap.value = result.folderList
@@ -396,9 +448,7 @@ const fetchOfflineFavorites = async (page: number): Promise<SearchResult> => {
   if (currentFolderId.value === OFFLINE_ALL_FOLDER_ID) {
     const items = await OfflineFavoriteService.getAllItemsMerged()
     const kw = currentKeyword.value || undefined
-    const filtered = kw
-      ? items.filter((i) => i.title.toLowerCase().includes(kw.toLowerCase()))
-      : items
+    const filtered = kw ? items.filter((i) => matchesKeyword(i, kw)) : items
     const totalItems = filtered.length
     const totalPages = Math.max(1, Math.ceil(totalItems / pageSize))
     const currentPage = Math.min(Math.max(1, page), totalPages)
@@ -432,6 +482,7 @@ const fetchPage = async (page: number): Promise<SearchResult> => {
 }
 
 const resetWithPage = async (page: number = 1) => {
+  onlineSearchCache.value = null
   initialLoading.value = true
   errorMessage.value = ''
   resultMeta.value = null
@@ -466,6 +517,7 @@ const handleRefresh = async (event: CustomEvent) => {
   const refresher = event.target as HTMLIonRefresherElement
   try {
     if (folderSource.value === 'online') {
+      onlineSearchCache.value = null
       errorMessage.value = ''
       const result = await fetchOnlineFavorites(1)
       resultMeta.value = result

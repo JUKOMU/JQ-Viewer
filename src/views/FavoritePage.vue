@@ -1361,6 +1361,7 @@ const onExportFolder = async (payload: {
       while (page <= totalPages) {
         const r = await JmcomicService.favorites({folderId: payload.folderId, page})
         items.push(...r.content)
+        await new Promise((r) => setTimeout(r, 100))
         totalPages = r.totalPages
         page++
       }

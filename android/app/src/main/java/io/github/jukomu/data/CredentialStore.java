@@ -31,11 +31,11 @@ public class CredentialStore {
         try {
             String masterKeyAlias = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC);
             p = EncryptedSharedPreferences.create(
-                    PREF_NAME,
-                    masterKeyAlias,
-                    context,
-                    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+                PREF_NAME,
+                masterKeyAlias,
+                context,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
             );
         } catch (GeneralSecurityException | IOException e) {
             Log.w("CredentialStore", "Encrypted storage unavailable, falling back to plaintext", e);
@@ -46,9 +46,9 @@ public class CredentialStore {
 
     public void save(String username, String password) {
         prefs.edit()
-                .putString("username", username)
-                .putString("password", password)
-                .apply();
+            .putString("username", username)
+            .putString("password", password)
+            .apply();
     }
 
     public String getUsername() {

@@ -1,4 +1,4 @@
-import type { SearchResultItem } from './JmcomicTypes'
+import type {SearchResultItem} from './JmcomicTypes'
 
 const STORAGE_KEY = 'jq-export-format'
 const DEFAULT_FORMAT = 'JM{id}{title}'

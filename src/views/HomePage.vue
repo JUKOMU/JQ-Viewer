@@ -3,26 +3,26 @@
     <IonHeader class="ion-no-border">
       <IonToolbar>
         <div class="toolbar-start">
-          <MenuToggleButton />
+          <MenuToggleButton/>
         </div>
       </IonToolbar>
     </IonHeader>
     <IonContent>
       <div class="home-content">
-        <KeywordSearchBar class="search-bar" @search="handleSearch" />
+        <KeywordSearchBar class="search-bar" @search="handleSearch"/>
       </div>
     </IonContent>
   </IonPage>
 </template>
 
 <script setup lang="ts">
-defineOptions({ name: 'HomePage' })
+defineOptions({name: 'HomePage'})
 
-import { IonContent, IonHeader, IonPage, IonToolbar } from '@ionic/vue'
-import { useRouter } from 'vue-router'
+import {IonContent, IonHeader, IonPage, IonToolbar} from '@ionic/vue'
+import {useRouter} from 'vue-router'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import KeywordSearchBar from '@/components/search/KeywordSearchBar.vue'
-import type { SearchQuery } from '@/services/JmcomicTypes'
+import type {SearchQuery} from '@/services/JmcomicTypes'
 
 const router = useRouter()
 

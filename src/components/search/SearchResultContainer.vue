@@ -55,11 +55,11 @@
       :class="{ ready: pullReady, loading: loadingPrevious, active: pullIndicatorActive }"
     >
       <div class="pull-indicator" :style="pullIndicatorStyle">
-        <IonSpinner v-if="loadingPrevious" name="dots" />
+        <IonSpinner v-if="loadingPrevious" name="dots"/>
         <div v-else class="pull-hint">
-          <span class="pull-line" />
+          <span class="pull-line"/>
           <span class="pull-arrow">↓</span>
-          <span class="pull-line" />
+          <span class="pull-line"/>
         </div>
       </div>
     </div>
@@ -110,8 +110,8 @@
                 </div>
                 <div v-if="entry.item.tags.length" class="item-tags">
                   <span v-for="tag in entry.item.tags.slice(0, 10)" :key="tag" class="tag-chip">{{
-                    tag
-                  }}</span>
+                      tag
+                    }}</span>
                   <span v-if="entry.item.tags.length > 10" class="tag-chip tag-more">…</span>
                 </div>
                 <div class="item-serial">{{ getItemSerial(entry.page, entry.indexInPage) }}</div>
@@ -120,7 +120,7 @@
           </article>
 
           <div v-if="loadingNext" :class="resultLoaderClass">
-            <IonSpinner name="dots" />
+            <IonSpinner name="dots"/>
           </div>
         </div>
       </div>
@@ -129,7 +129,7 @@
 </template>
 
 <script setup lang="ts">
-defineOptions({ name: 'SearchResultContainer' })
+defineOptions({name: 'SearchResultContainer'})
 
 const props = withDefaults(
   defineProps<{
@@ -168,9 +168,9 @@ const emit = defineEmits<{
   'pull-state-change': [active: boolean]
   retry: []
 }>()
-import { computed, ref, watch } from 'vue'
-import { IonSpinner } from '@ionic/vue'
-import type { SearchResult, SearchResultItem } from '@/services/JmcomicTypes'
+import {computed, ref, watch} from 'vue'
+import {IonSpinner} from '@ionic/vue'
+import type {SearchResult, SearchResultItem} from '@/services/JmcomicTypes'
 
 export interface SearchResultDisplayItem {
   item: SearchResultItem
@@ -262,8 +262,8 @@ const pullIndicatorStyle = computed(() => ({
   opacity: String(
     Math.min(
       (props.pageAtTop ? 0.72 : 0.52) +
-        pullDistance.value / PULL_TRIGGER_DISTANCE +
-        (props.loadingPrevious ? 0.28 : 0),
+      pullDistance.value / PULL_TRIGGER_DISTANCE +
+      (props.loadingPrevious ? 0.28 : 0),
       1,
     ),
   ),
@@ -363,7 +363,7 @@ watch(
   (active) => {
     emit('pull-state-change', active)
   },
-  { immediate: true },
+  {immediate: true},
 )
 
 defineExpose<SearchResultContainerExposed>({
@@ -440,10 +440,9 @@ defineExpose<SearchResultContainerExposed>({
   background: transparent;
   color: #8a6048;
   font-size: 12px;
-  transition:
-    background-color 0.2s ease,
-    color 0.2s ease,
-    transform 0.16s ease;
+  transition: background-color 0.2s ease,
+  color 0.2s ease,
+  transform 0.16s ease;
 }
 
 .grid-columns-btn {
@@ -455,11 +454,10 @@ defineExpose<SearchResultContainerExposed>({
   color: #8a6048;
   font-size: 12px;
   border: 1px solid rgb(250 156 105 / 0.42);
-  transition:
-    background-color 0.2s ease,
-    color 0.2s ease,
-    border-color 0.2s ease,
-    transform 0.16s ease;
+  transition: background-color 0.2s ease,
+  color 0.2s ease,
+  border-color 0.2s ease,
+  transform 0.16s ease;
 }
 
 .mode-btn.active {
@@ -489,9 +487,8 @@ defineExpose<SearchResultContainerExposed>({
 .pull-indicator {
   color: #9b6e57;
   pointer-events: none;
-  transition:
-    transform 0.18s ease,
-    opacity 0.18s ease;
+  transition: transform 0.18s ease,
+  opacity 0.18s ease;
 }
 
 .pull-hint {
@@ -511,9 +508,8 @@ defineExpose<SearchResultContainerExposed>({
 .pull-arrow {
   font-size: 22px;
   line-height: 1;
-  transition:
-    transform 0.18s ease,
-    color 0.18s ease;
+  transition: transform 0.18s ease,
+  color 0.18s ease;
 }
 
 .pull-indicator-row.ready .pull-arrow {
@@ -712,9 +708,8 @@ defineExpose<SearchResultContainerExposed>({
 
 .grid-columns-fade-enter-active,
 .grid-columns-fade-leave-active {
-  transition:
-    opacity 0.2s ease,
-    transform 0.2s ease;
+  transition: opacity 0.2s ease,
+  transform 0.2s ease;
 }
 
 .grid-columns-fade-enter-from,
@@ -725,9 +720,8 @@ defineExpose<SearchResultContainerExposed>({
 
 .result-fade-enter-active,
 .result-fade-leave-active {
-  transition:
-    opacity 0.2s ease,
-    transform 0.2s ease;
+  transition: opacity 0.2s ease,
+  transform 0.2s ease;
 }
 
 .result-fade-enter-from,

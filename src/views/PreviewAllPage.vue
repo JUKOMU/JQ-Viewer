@@ -5,7 +5,7 @@
       <ion-toolbar>
         <ion-buttons slot="start">
           <ion-button @click="goBack">
-            <ion-icon slot="icon-only" :icon="arrowBack" />
+            <ion-icon slot="icon-only" :icon="arrowBack"/>
           </ion-button>
         </ion-buttons>
         <ion-title>预览 · {{ chapterTitle }}</ion-title>
@@ -16,7 +16,7 @@
         <!-- 初始加载中：骨架占位 -->
         <div v-if="loading" class="preview-grid">
           <div v-for="i in skeletonCount" :key="'init-skel-' + i" class="preview-item">
-            <div class="skeleton-thumb" />
+            <div class="skeleton-thumb"/>
             <span class="preview-page-num">{{ i }}</span>
           </div>
         </div>
@@ -34,7 +34,7 @@
                 />
               </template>
               <template v-else>
-                <div class="skeleton-thumb" />
+                <div class="skeleton-thumb"/>
               </template>
               <span class="preview-page-num">{{ i }}</span>
             </div>
@@ -42,7 +42,7 @@
 
           <div class="preview-footer">
             <p v-if="loadingMore" class="footer-loading">
-              <ion-spinner name="dots" />
+              <ion-spinner name="dots"/>
               <span>加载中...（{{ loadedCount }} / {{ totalCount }}）</span>
             </p>
             <p v-else-if="allVisible" class="footer-text">已显示所有图片</p>
@@ -57,15 +57,14 @@
 </template>
 
 <script setup lang="ts">
-defineOptions({ name: 'PreviewAllPage' })
+defineOptions({name: 'PreviewAllPage'})
 
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import type { ScrollCustomEvent } from '@ionic/vue'
-import type { PluginListenerHandle } from '@capacitor/core'
+import {computed, nextTick, onMounted, onUnmounted, ref} from 'vue'
+import {useRoute, useRouter} from 'vue-router'
+import type {ScrollCustomEvent} from '@ionic/vue'
 import {
-  IonButtons,
   IonButton,
+  IonButtons,
   IonContent,
   IonHeader,
   IonIcon,
@@ -74,9 +73,10 @@ import {
   IonTitle,
   IonToolbar,
 } from '@ionic/vue'
-import { arrowBack } from 'ionicons/icons'
-import { getImageUrl, JmcomicService } from '@/services/JmcomicService'
-import type { PhotoDetail, PreloadResult } from '@/services/JmcomicTypes'
+import type {PluginListenerHandle} from '@capacitor/core'
+import {arrowBack} from 'ionicons/icons'
+import {getImageUrl, JmcomicService} from '@/services/JmcomicService'
+import type {PhotoDetail, PreloadResult} from '@/services/JmcomicTypes'
 
 const BATCH = 20
 const NEAR_BOTTOM_THRESHOLD = 200
@@ -93,6 +93,7 @@ interface PreviewImage {
   sortOrder: number
   dataUrl: string
 }
+
 const slots = ref<(PreviewImage | null)[]>([])
 const displayCount = ref(0)
 const totalCount = ref(initialTotal)
@@ -244,7 +245,7 @@ const expandBatch = async () => {
 const openReader = (page: number) => {
   void router.push({
     path: `/album/${albumId.value}/read/${chapterId.value}`,
-    query: { page: String(page), title: chapterTitle.value, total: String(totalCount.value) },
+    query: {page: String(page), title: chapterTitle.value, total: String(totalCount.value)},
   })
 }
 

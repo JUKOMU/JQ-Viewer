@@ -1,14 +1,14 @@
 <template>
   <button type="button" class="menu-toggle-btn" @click="openMenu">
-    <IonIcon :icon="menuOutline" />
+    <IonIcon :icon="menuOutline"/>
   </button>
 </template>
 
 <script setup lang="ts">
-defineOptions({ name: 'MenuToggleButton' })
+defineOptions({name: 'MenuToggleButton'})
 
-import { IonIcon, menuController } from '@ionic/vue'
-import { menuOutline } from 'ionicons/icons'
+import {IonIcon, menuController} from '@ionic/vue'
+import {menuOutline} from 'ionicons/icons'
 
 const openMenu = () => {
   void menuController.open()

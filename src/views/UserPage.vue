@@ -3,7 +3,7 @@
     <IonHeader class="ion-no-border">
       <IonToolbar>
         <IonButtons slot="start">
-          <IonBackButton default-href="/setting" />
+          <IonBackButton default-href="/setting"/>
         </IonButtons>
         <IonTitle class="toolbar-title">用户</IonTitle>
       </IonToolbar>
@@ -13,7 +13,7 @@
       <div v-if="isLoggedIn && userInfo" class="user-container">
         <!-- 头像信息卡 -->
         <div class="profile-card">
-          <img :src="userInfo.avatarUrl" class="avatar" alt="头像" />
+          <img :src="userInfo.avatarUrl" class="avatar" alt="头像"/>
           <div class="username">{{ userInfo.username }}</div>
           <div class="level">Lv.{{ userInfo.level }} {{ userInfo.levelName }}</div>
           <div v-if="userInfo.message" class="signature">{{ userInfo.message }}</div>
@@ -27,7 +27,7 @@
             </div>
             <div class="stat-label">经验值</div>
             <div class="exp-bar">
-              <div class="exp-fill" :style="{ width: Math.min(userInfo.expPercent, 100) + '%' }" />
+              <div class="exp-fill" :style="{ width: Math.min(userInfo.expPercent, 100) + '%' }"/>
             </div>
             <div class="exp-text">{{ Math.round(userInfo.expPercent) }}%</div>
           </div>
@@ -37,12 +37,13 @@
         <div class="stats-row">
           <div class="stat-item">
             <div class="stat-value">
-              {{ userInfo.albumFavorites
+              {{
+                userInfo.albumFavorites
               }}<span class="stat-capacity"> / {{ userInfo.maxAlbumFavorites }}</span>
             </div>
             <div class="stat-label">收藏</div>
           </div>
-          <div class="stat-divider" />
+          <div class="stat-divider"/>
           <div class="stat-item">
             <div class="stat-value">{{ userInfo.coin }}</div>
             <div class="stat-label">金币</div>
@@ -92,22 +93,23 @@
       <!-- 未登录 -->
       <div v-else class="user-container">
         <div class="profile-card">
-          <IonIcon :icon="personCircleOutline" class="avatar-placeholder" />
+          <IonIcon :icon="personCircleOutline" class="avatar-placeholder"/>
           <div class="username">未登录</div>
           <div class="level hint">登录后同步在线收藏夹等数据</div>
         </div>
-        <IonButton expand="block" class="login-btn" router-link="/login"> 去登录 </IonButton>
+        <IonButton expand="block" class="login-btn" router-link="/login"> 去登录</IonButton>
       </div>
     </IonContent>
   </IonPage>
 </template>
 
 <script setup lang="ts">
-defineOptions({ name: 'UserPage' })
+defineOptions({name: 'UserPage'})
 
-import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import {computed, onMounted, ref} from 'vue'
+import {useRouter} from 'vue-router'
 import {
+  alertController,
   IonBackButton,
   IonButton,
   IonButtons,
@@ -117,27 +119,26 @@ import {
   IonPage,
   IonTitle,
   IonToolbar,
-  alertController,
 } from '@ionic/vue'
-import { personCircleOutline } from 'ionicons/icons'
-import { useAuth } from '@/composables/useAuth'
-import { JmcomicService } from '@/services/JmcomicService'
-import type { UserProfile } from '@/services/JmcomicTypes'
+import {personCircleOutline} from 'ionicons/icons'
+import {useAuth} from '@/composables/useAuth'
+import {JmcomicService} from '@/services/JmcomicService'
+import type {UserProfile} from '@/services/JmcomicTypes'
 
 const router = useRouter()
-const { userInfo, isLoggedIn, logout } = useAuth()
+const {userInfo, isLoggedIn, logout} = useAuth()
 const profile = ref<UserProfile | null>(null)
 
 const locationText = computed(() => {
   if (!profile.value) return ''
-  const { city, country } = profile.value
+  const {city, country} = profile.value
   if (city && country) return `${country} ${city}`
   return city || country || ''
 })
 
 const hasProfileContent = computed(() => {
   if (!profile.value) return false
-  const { nickname, birthday, city, country, occupation, aboutMe, website } = profile.value
+  const {nickname, birthday, city, country, occupation, aboutMe, website} = profile.value
   return !!(nickname || birthday || city || country || occupation || aboutMe || website)
 })
 
@@ -161,7 +162,7 @@ async function confirmLogout() {
     header: '确认登出',
     message: '登出后将切换到离线收藏夹模式。',
     buttons: [
-      { text: '取消', role: 'cancel' },
+      {text: '取消', role: 'cancel'},
       {
         text: '登出',
         role: 'destructive',
@@ -184,11 +185,13 @@ async function confirmLogout() {
   flex-direction: column;
   align-items: center;
 }
+
 .toolbar-title {
   font-size: 16px;
   font-weight: 600;
   color: #4c2a18;
 }
+
 .profile-card {
   width: 100%;
   max-width: 400px;

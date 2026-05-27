@@ -15,10 +15,10 @@
         :style="{ left: idx * 100 + 'vw' }"
       >
         <template v-if="imageMap.get(idx + 1)">
-          <img :src="imageMap.get(idx + 1)!" class="page-image" alt="" />
+          <img :src="imageMap.get(idx + 1)!" class="page-image" alt=""/>
         </template>
         <template v-else>
-          <div class="skeleton-page" />
+          <div class="skeleton-page"/>
         </template>
       </div>
     </div>
@@ -26,7 +26,7 @@
 </template>
 
 <script setup lang="ts">
-defineOptions({ name: 'HorizontalPageView' })
+defineOptions({name: 'HorizontalPageView'})
 
 const props = defineProps<{
   imageMap: Map<number, string>
@@ -39,7 +39,7 @@ const emit = defineEmits<{
   'toggle-toolbar': []
 }>()
 
-import { computed, onMounted, ref, watch } from 'vue'
+import {computed, onMounted, ref, watch} from 'vue'
 
 const SWIPE_THRESHOLD = 60
 
@@ -186,7 +186,7 @@ const scrollToIndex = (index: number) => {
   offsetX.value = 0
 }
 
-defineExpose({ scrollToIndex })
+defineExpose({scrollToIndex})
 </script>
 
 <style scoped>

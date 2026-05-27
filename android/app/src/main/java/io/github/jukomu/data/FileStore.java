@@ -62,8 +62,8 @@ public class FileStore {
     public void init(Context context, DownloadStore db, boolean usePublicDir) {
         if (usePublicDir) {
             this.baseDir = new File(
-                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
-                    "JQViewer");
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+                "JQViewer");
         } else {
             this.baseDir = new File(context.getFilesDir(), "downloads");
         }
@@ -106,7 +106,7 @@ public class FileStore {
             }
         }
         Log.i(TAG, "Indices built: " + chapterIdToAlbumId.size()
-                + " chapters, " + sortOrderToFilename.size() + " images");
+            + " chapters, " + sortOrderToFilename.size() + " images");
     }
 
     // ---- 目录/文件操作 ----
@@ -249,8 +249,8 @@ public class FileStore {
         File newDir;
         if (usePublicDir) {
             newDir = new File(
-                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
-                    "JQViewer");
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+                "JQViewer");
         } else {
             newDir = new File(context.getFilesDir(), "downloads");
         }

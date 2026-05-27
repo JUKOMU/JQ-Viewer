@@ -3,7 +3,7 @@
     <IonHeader class="ion-no-border">
       <IonToolbar>
         <IonButtons slot="start">
-          <IonBackButton default-href="/user" />
+          <IonBackButton default-href="/user"/>
         </IonButtons>
         <IonTitle>登录</IonTitle>
       </IonToolbar>
@@ -37,7 +37,7 @@
             class="login-btn"
             @click="doLogin"
           >
-            <IonSpinner v-if="loading" slot="start" name="crescent" />
+            <IonSpinner v-if="loading" slot="start" name="crescent"/>
             {{ loading ? '登录中...' : '登录' }}
           </IonButton>
         </div>
@@ -47,10 +47,10 @@
 </template>
 
 <script setup lang="ts">
-defineOptions({ name: 'LoginPage' })
+defineOptions({name: 'LoginPage'})
 
-import { computed, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import {computed, ref} from 'vue'
+import {useRouter} from 'vue-router'
 import {
   IonBackButton,
   IonButton,
@@ -63,11 +63,11 @@ import {
   IonTitle,
   IonToolbar,
 } from '@ionic/vue'
-import { useAuth } from '@/composables/useAuth'
-import { sanitizeError } from '@/services/JmcomicService'
+import {useAuth} from '@/composables/useAuth'
+import {sanitizeError} from '@/services/JmcomicService'
 
 const router = useRouter()
-const { login } = useAuth()
+const {login} = useAuth()
 
 const username = ref('')
 const password = ref('')

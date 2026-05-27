@@ -67,7 +67,7 @@
         />
       </div>
 
-      <div class="bottom-spacer" />
+      <div class="bottom-spacer"/>
     </IonContent>
 
     <FavoriteFolderPicker
@@ -82,13 +82,13 @@
 </template>
 
 <script setup lang="ts">
-defineOptions({ name: 'AlbumDetailPage' })
+defineOptions({name: 'AlbumDetailPage'})
 
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { IonContent, IonPage } from '@ionic/vue'
-import type { PluginListenerHandle } from '@capacitor/core'
-import { getImageUrl, JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
+import {computed, onMounted, onUnmounted, reactive, ref, watch} from 'vue'
+import {useRoute, useRouter} from 'vue-router'
+import {IonContent, IonPage} from '@ionic/vue'
+import type {PluginListenerHandle} from '@capacitor/core'
+import {getImageUrl, JmcomicService, sanitizeError, showToast} from '@/services/JmcomicService'
 import type {
   AlbumDetail,
   AlbumMeta,
@@ -98,11 +98,11 @@ import type {
   PhotoDetail,
   PreloadResult,
 } from '@/services/JmcomicTypes'
-import { makeTaskId } from '@/services/JmcomicTypes'
-import { OfflineDownloadService } from '@/services/OfflineDownloadService'
-import { OfflineFavoriteService } from '@/services/OfflineFavoriteService'
-import { HistoryService } from '@/services/HistoryService'
-import { useAuth } from '@/composables/useAuth'
+import {makeTaskId} from '@/services/JmcomicTypes'
+import {OfflineDownloadService} from '@/services/OfflineDownloadService'
+import {OfflineFavoriteService} from '@/services/OfflineFavoriteService'
+import {HistoryService} from '@/services/HistoryService'
+import {useAuth} from '@/composables/useAuth'
 import AlbumHeader from '@/components/album/AlbumHeader.vue'
 import AlbumInfoTab from '@/components/album/AlbumInfoTab.vue'
 import AlbumChaptersTab from '@/components/album/AlbumChaptersTab.vue'
@@ -131,10 +131,10 @@ const loading = ref(true)
 // ---- Tab ----
 type TabKey = 'info' | 'chapters' | 'preview' | 'comments'
 const tabs = [
-  { key: 'info' as const, label: '本子信息' },
-  { key: 'chapters' as const, label: '章节' },
-  { key: 'preview' as const, label: '预览' },
-  { key: 'comments' as const, label: '评论' },
+  {key: 'info' as const, label: '本子信息'},
+  {key: 'chapters' as const, label: '章节'},
+  {key: 'preview' as const, label: '预览'},
+  {key: 'comments' as const, label: '评论'},
 ]
 const activeTab = ref<TabKey>('info')
 
@@ -168,10 +168,10 @@ const refreshDownloadStatuses = async () => {
 }
 
 // ---- 操作 ----
-const actionBusy = reactive({ like: false, favorite: false })
+const actionBusy = reactive({like: false, favorite: false})
 
 // ---- 收藏夹选择弹窗 ----
-const { isLoggedIn } = useAuth()
+const {isLoggedIn} = useAuth()
 const showFolderPicker = ref(false)
 
 const pickerOnlineFolders = ref<FolderEntry[]>([])
@@ -183,15 +183,15 @@ async function openFolderPicker() {
 
   if (isLoggedIn.value) {
     try {
-      const result: FavoriteResult = await JmcomicService.favorites({ folderId: '0', page: 1 })
+      const result: FavoriteResult = await JmcomicService.favorites({folderId: '0', page: 1})
       if (result.folderList) {
         const entries: FolderEntry[] = []
         const counts: Record<string, number> = {}
         const countPromises: Promise<void>[] = []
         for (const [id, name] of Object.entries(result.folderList)) {
-          entries.push({ id, name, count: 0 })
+          entries.push({id, name, count: 0})
           countPromises.push(
-            JmcomicService.favorites({ folderId: id, page: 1 })
+            JmcomicService.favorites({folderId: id, page: 1})
               .then((r) => {
                 counts[id] = r.totalItems
               })
@@ -241,12 +241,12 @@ async function onPickerSelect(payload: { folderId: string; source: 'online' | 'o
 }
 
 async function onPickerAddFolder() {
-  const { alertController } = await import('@ionic/vue')
+  const {alertController} = await import('@ionic/vue')
   const alert = await alertController.create({
     header: '新建收藏夹',
-    inputs: [{ name: 'name', type: 'text', placeholder: '收藏夹名称' }],
+    inputs: [{name: 'name', type: 'text', placeholder: '收藏夹名称'}],
     buttons: [
-      { text: '取消', role: 'cancel' },
+      {text: '取消', role: 'cancel'},
       {
         text: '确定',
         handler: async (data) => {
@@ -268,9 +268,9 @@ async function onPickerAddFolder() {
                   const counts: Record<string, number> = {}
                   const countPromises: Promise<void>[] = []
                   for (const [id, fName] of Object.entries(result.folderList)) {
-                    entries.push({ id, name: fName, count: 0 })
+                    entries.push({id, name: fName, count: 0})
                     countPromises.push(
-                      JmcomicService.favorites({ folderId: id, page: 1 })
+                      JmcomicService.favorites({folderId: id, page: 1})
                         .then((r) => {
                           counts[id] = r.totalItems
                         })
@@ -301,10 +301,12 @@ async function onPickerAddFolder() {
 
 // ---- 预览 ----
 const PREVIEW_BATCH = 20
+
 interface PreviewImage {
   sortOrder: number
   dataUrl: string
 }
+
 const previewImages = ref<PreviewImage[]>([])
 const previewImageTotal = ref(0)
 const previewLoading = ref(false)
@@ -495,7 +497,7 @@ onUnmounted(() => {
 const navigateToFullPreview = () => {
   void router.push({
     path: `/album/${albumId.value}/preview/${selectedChapterId.value}`,
-    query: { title: albumTitle.value, total: String(previewImageTotal.value) },
+    query: {title: albumTitle.value, total: String(previewImageTotal.value)},
   })
 }
 
@@ -507,7 +509,7 @@ const onOpenReader = (page: number) => {
       page: String(page),
       title: albumTitle.value,
       total: String(selectedChapterPageCount.value),
-      ...(isDownloaded ? { source: 'download' } : {}),
+      ...(isDownloaded ? {source: 'download'} : {}),
     },
   })
 }
@@ -517,7 +519,7 @@ const loadComments = async () => {
   if (comments.value.length) return
   commentsLoading.value = true
   try {
-    const result = await JmcomicService.getComments({ albumId: albumId.value, page: 1 })
+    const result = await JmcomicService.getComments({albumId: albumId.value, page: 1})
     comments.value = result.list
   } catch (e: any) {
     await showToast(sanitizeError(e, '评论加载失败'), 'danger')
@@ -615,7 +617,7 @@ const startReading = () => {
     query: {
       title: albumTitle.value,
       total: String(selectedChapterPageCount.value),
-      ...(isDownloaded ? { source: 'download' } : {}),
+      ...(isDownloaded ? {source: 'download'} : {}),
     },
   })
 }
@@ -624,7 +626,7 @@ const startReading = () => {
 const onNavigateAlbum = (related: AlbumMeta) => {
   void router.push({
     path: `/album/${related.id}`,
-    query: { title: related.title, coverUrl: related.coverUrl, authors: related.authors.join(',') },
+    query: {title: related.title, coverUrl: related.coverUrl, authors: related.authors.join(',')},
   })
 }
 
@@ -670,9 +672,8 @@ const handleScroll = async () => {
   color: #8a6048;
   font-size: 12px;
   font-weight: 600;
-  transition:
-    background-color 0.18s ease,
-    color 0.18s ease;
+  transition: background-color 0.18s ease,
+  color 0.18s ease;
 }
 
 .tab-btn.active {

@@ -11,7 +11,7 @@
           :disabled="actionBusy.like"
           @click="$emit('toggle-like')"
         >
-          <ion-icon :icon="heart" />
+          <ion-icon :icon="heart"/>
           <span class="action-label">点赞 {{ album.likes }}</span>
         </button>
         <button
@@ -21,7 +21,7 @@
           :disabled="actionBusy.favorite"
           @click="$emit('toggle-favorite')"
         >
-          <ion-icon :icon="bookmark" />
+          <ion-icon :icon="bookmark"/>
           <span class="action-label">收藏</span>
         </button>
         <button
@@ -30,7 +30,7 @@
           :class="downloadClass"
           @click="$emit('download')"
         >
-          <ion-icon :icon="downloadIcon" />
+          <ion-icon :icon="downloadIcon"/>
           <span class="action-label">{{ downloadLabel }}</span>
         </button>
       </div>
@@ -62,13 +62,17 @@
         <div v-if="album.authors.length" class="info-row">
           <span class="info-label">Authors</span>
           <div class="info-tags">
-            <span v-for="author in album.authors" :key="author" class="tag tag-clickable" @click="searchByTag(author)">{{ author }}</span>
+            <span v-for="author in album.authors" :key="author" class="tag tag-clickable" @click="searchByTag(author)">{{
+                author
+              }}</span>
           </div>
         </div>
         <div v-if="album.tags.length" class="info-row">
           <span class="info-label">Tags</span>
           <div class="info-tags">
-            <span v-for="tag in album.tags" :key="tag" class="tag tag-clickable" @click="searchByTag(tag)">{{ tag }}</span>
+            <span v-for="tag in album.tags" :key="tag" class="tag tag-clickable" @click="searchByTag(tag)">{{
+                tag
+              }}</span>
           </div>
         </div>
         <div v-if="album.actors.length" class="info-row">
@@ -103,7 +107,7 @@
             @click="$emit('navigate-album', related)"
           >
             <div class="related-cover-wrap">
-              <img :src="related.coverUrl" :alt="related.title" class="related-cover" />
+              <img :src="related.coverUrl" :alt="related.title" class="related-cover"/>
             </div>
             <p class="related-title">{{ related.title }}</p>
           </div>
@@ -114,15 +118,15 @@
     <!-- 骨架屏 -->
     <div v-else class="skeleton">
       <div v-for="n in 5" :key="n" class="sk-row">
-        <div class="sk-line sk-line--short" />
-        <div class="sk-line" />
+        <div class="sk-line sk-line--short"/>
+        <div class="sk-line"/>
       </div>
     </div>
   </section>
 </template>
 
 <script setup lang="ts">
-defineOptions({ name: 'AlbumInfoTab' })
+defineOptions({name: 'AlbumInfoTab'})
 
 defineEmits<{
   'toggle-like': []
@@ -130,9 +134,9 @@ defineEmits<{
   download: []
   'navigate-album': [related: AlbumMeta]
 }>()
-import { computed, ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { IonIcon } from '@ionic/vue'
+import {computed, ref} from 'vue'
+import {useRouter} from 'vue-router'
+import {IonIcon} from '@ionic/vue'
 import {
   bookmark,
   checkmarkCircleOutline,
@@ -142,8 +146,8 @@ import {
   refreshOutline,
   timeOutline,
 } from 'ionicons/icons'
-import type { AlbumDetail, AlbumMeta } from '@/services/JmcomicTypes'
-import { showToast } from '@/services/JmcomicService'
+import type {AlbumDetail, AlbumMeta} from '@/services/JmcomicTypes'
+import {showToast} from '@/services/JmcomicService'
 
 const router = useRouter()
 
@@ -165,12 +169,12 @@ const copyText = async (text: string) => {
 }
 
 const searchByTag = (keyword: string) => {
-  void router.push({ path: '/search', query: { keyword } })
+  void router.push({path: '/search', query: {keyword}})
 }
 
 const downloadClass = computed(() => {
   if (!props.downloadStatus) return {}
-  return { [`status-${props.downloadStatus}`]: true }
+  return {[`status-${props.downloadStatus}`]: true}
 })
 
 const downloadLabel = computed(() => {
@@ -228,10 +232,9 @@ const downloadIcon = computed(() => {
   background: #fffaf6;
   color: #785947;
   font-size: 11px;
-  transition:
-    background-color 0.18s ease,
-    color 0.18s ease,
-    border-color 0.18s ease;
+  transition: background-color 0.18s ease,
+  color 0.18s ease,
+  border-color 0.18s ease;
 }
 
 .action-btn:disabled {

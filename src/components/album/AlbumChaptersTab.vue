@@ -29,10 +29,10 @@
               :disabled="isDownloadDisabled(meta.id)"
               @click.stop="$emit('download-chapter', meta.id)"
             >
-              <ion-icon :icon="cloudDownloadOutline" />
+              <ion-icon :icon="cloudDownloadOutline"/>
             </button>
             <button type="button" class="action-btn" @click.stop="$emit('dismiss-actions')">
-              <ion-icon :icon="arrowBack" />
+              <ion-icon :icon="arrowBack"/>
             </button>
           </div>
         </Transition>
@@ -41,8 +41,8 @@
     </div>
     <div v-else-if="loading" class="chapter-grid">
       <div v-for="n in 6" :key="n" class="skeleton-card">
-        <div class="sk-line sk-line--short" />
-        <div class="sk-line" />
+        <div class="sk-line sk-line--short"/>
+        <div class="sk-line"/>
       </div>
     </div>
     <div v-else class="chapters-empty">暂无章节</div>
@@ -50,7 +50,7 @@
 </template>
 
 <script setup lang="ts">
-defineOptions({ name: 'AlbumChaptersTab' })
+defineOptions({name: 'AlbumChaptersTab'})
 
 const props = defineProps<{
   photoMetas: PhotoMeta[]
@@ -64,9 +64,9 @@ defineEmits<{
   'download-chapter': [chapterId: string]
   'dismiss-actions': []
 }>()
-import { IonIcon } from '@ionic/vue'
-import { arrowBack, cloudDownloadOutline } from 'ionicons/icons'
-import type { PhotoMeta } from '@/services/JmcomicTypes'
+import {IonIcon} from '@ionic/vue'
+import {arrowBack, cloudDownloadOutline} from 'ionicons/icons'
+import type {PhotoMeta} from '@/services/JmcomicTypes'
 
 const isDownloadDisabled = (chapterId: string): boolean => {
   const status = props.chapterDownloadStatuses.get(chapterId)
@@ -95,9 +95,8 @@ const isDownloadDisabled = (chapterId: string): boolean => {
   background: #fffaf6;
   color: #5a3d2e;
   text-align: center;
-  transition:
-    background-color 0.18s ease,
-    border-color 0.18s ease;
+  transition: background-color 0.18s ease,
+  border-color 0.18s ease;
 }
 
 .chapter-card.selected {
@@ -158,10 +157,9 @@ const isDownloadDisabled = (chapterId: string): boolean => {
   background: #ffe4d1;
   color: #e07030;
   font-size: 16px;
-  transition:
-    background-color 0.18s ease,
-    opacity 0.18s ease,
-    transform 0.12s ease;
+  transition: background-color 0.18s ease,
+  opacity 0.18s ease,
+  transform 0.12s ease;
   cursor: pointer;
 }
 

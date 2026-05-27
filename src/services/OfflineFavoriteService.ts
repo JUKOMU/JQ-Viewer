@@ -1,6 +1,6 @@
-import { ref } from 'vue'
-import type { SearchResultItem } from './JmcomicTypes'
-import { JmcomicService } from './JmcomicService'
+import {ref} from 'vue'
+import type {SearchResultItem} from './JmcomicTypes'
+import {JmcomicService} from './JmcomicService'
 
 export interface OfflineFolder {
   id: string

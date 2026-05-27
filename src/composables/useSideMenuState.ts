@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import {ref} from 'vue'
 
 /** 左侧主菜单是否打开 */
 export const leftMenuOpen = ref(false)

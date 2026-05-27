@@ -2,14 +2,15 @@
  * 模块级网络探活事件 store —— 应用启动时初始化一次，持续记录自启动以来的全部事件。
  * 页面切换不丢失，NetworkStatusPage 等组件只读。
  */
-import { ref } from 'vue'
-import { JmcomicService } from '@/services/JmcomicService'
-import type { NetworkProbeEvent } from '@/services/JmcomicTypes'
+import {ref} from 'vue'
+import {JmcomicService} from '@/services/JmcomicService'
+import type {NetworkProbeEvent} from '@/services/JmcomicTypes'
 
 interface DomainState {
   domain: string
   reachable: boolean
 }
+
 interface LogEntry {
   phase: string
   message: string
@@ -53,5 +54,5 @@ export function initNetworkProbeStore() {
 }
 
 export function useNetworkProbeStore() {
-  return { domains, allDeadFallback, events }
+  return {domains, allDeadFallback, events}
 }

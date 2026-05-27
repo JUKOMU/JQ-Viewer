@@ -9,13 +9,13 @@
             class="upload-btn"
             @click="handleUpload"
           >
-            <IonIcon :icon="addOutline" />
+            <IonIcon :icon="addOutline"/>
           </button>
         </Transition>
       </div>
 
       <button class="help-btn">
-        <IonIcon :icon="helpCircleOutline" />
+        <IonIcon :icon="helpCircleOutline"/>
       </button>
       <div class="mode-switch">
         <button
@@ -59,7 +59,7 @@
         />
       </div>
       <button type="button" class="search-trigger-btn" @click="emitSearch">
-        <IonIcon :icon="searchOutline" />
+        <IonIcon :icon="searchOutline"/>
       </button>
       <SearchHistoryDropdown
         v-if="mode !== 'batch-mode'"
@@ -73,7 +73,7 @@
 
     <button type="button" class="more-toggle-btn" @click="expanded = !expanded">
       <span>更多选项</span>
-      <IonIcon :icon="chevronDownOutline" class="expand-icon" :class="{ expanded }" />
+      <IonIcon :icon="chevronDownOutline" class="expand-icon" :class="{ expanded }"/>
     </button>
 
     <div v-if="expanded" class="option-panel">
@@ -129,7 +129,7 @@
 </template>
 
 <script setup lang="ts">
-defineOptions({ name: 'KeywordSearchBar' })
+defineOptions({name: 'KeywordSearchBar'})
 
 const props = withDefaults(
   defineProps<{
@@ -142,16 +142,16 @@ const props = withDefaults(
 const emit = defineEmits<{
   search: [query: SearchQuery]
 }>()
-import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { IonIcon, IonSearchbar } from '@ionic/vue'
-import { addOutline, chevronDownOutline, helpCircleOutline, searchOutline } from 'ionicons/icons'
-import { ORDER_BY_OPTIONS, SEARCH_MAIN_TAG_OPTIONS, TIME_OPTIONS } from '@/constants/searchOptions'
-import type { SearchQuery } from '@/services/JmcomicTypes'
-import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
-import { HistoryService } from '@/services/HistoryService'
-import type { SearchHistoryItem } from '@/services/HistoryService'
-import { SettingsStore } from '@/services/SettingsService'
+import {onBeforeUnmount, onMounted, reactive, ref} from 'vue'
+import {useRouter} from 'vue-router'
+import {IonIcon, IonSearchbar} from '@ionic/vue'
+import {addOutline, chevronDownOutline, helpCircleOutline, searchOutline} from 'ionicons/icons'
+import {ORDER_BY_OPTIONS, SEARCH_MAIN_TAG_OPTIONS, TIME_OPTIONS} from '@/constants/searchOptions'
+import type {SearchQuery} from '@/services/JmcomicTypes'
+import {JmcomicService, sanitizeError, showToast} from '@/services/JmcomicService'
+import type {SearchHistoryItem} from '@/services/HistoryService'
+import {HistoryService} from '@/services/HistoryService'
+import {SettingsStore} from '@/services/SettingsService'
 import SearchHistoryDropdown from '@/components/history/SearchHistoryDropdown.vue'
 
 const router = useRouter()
@@ -187,12 +187,12 @@ const emitSearch = () => {
   if (mode.value === 'batch-mode') {
     if (originalKeyword) {
       sessionStorage.setItem('batch-parse-text', originalKeyword)
-      router.push({ path: '/batch-parse' })
+      router.push({path: '/batch-parse'})
     }
     return
   }
 
-  const parsed = { ...query }
+  const parsed = {...query}
   if (mode.value === 'single-mode') {
     parsed.keyword = (query.keyword ?? '').replace(/\D/g, '')
   }
@@ -408,10 +408,9 @@ ion-searchbar.custom {
   color: #555;
   font-size: 10px;
   border: 1px solid rgb(250, 156, 105);
-  transition:
-    transform 0.15s ease-out,
-    background-color 0.15s ease,
-    box-shadow 0.15s ease;
+  transition: transform 0.15s ease-out,
+  background-color 0.15s ease,
+  box-shadow 0.15s ease;
 }
 
 .option-chip.active {
@@ -448,10 +447,9 @@ ion-searchbar.custom {
   border-radius: 999px;
   font-size: 18px;
   cursor: pointer;
-  transition:
-    transform 0.15s ease-out,
-    background-color 0.15s ease,
-    box-shadow 0.15s ease;
+  transition: transform 0.15s ease-out,
+  background-color 0.15s ease,
+  box-shadow 0.15s ease;
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -467,9 +465,8 @@ ion-searchbar.custom {
 
 .upload-slide-enter-active,
 .upload-slide-leave-active {
-  transition:
-    opacity 0.25s ease,
-    transform 0.25s ease;
+  transition: opacity 0.25s ease,
+  transform 0.25s ease;
 }
 
 .upload-slide-enter-from,

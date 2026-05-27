@@ -1,5 +1,5 @@
-import type { BrowseHistoryItem, ParseHistoryItem } from './JmcomicTypes'
-import { JmcomicService } from './JmcomicService'
+import type {BrowseHistoryItem, ParseHistoryItem} from './JmcomicTypes'
+import {JmcomicService} from './JmcomicService'
 
 // ---- localStorage 搜索历史（有界，500 条/上下文）----
 
@@ -43,7 +43,7 @@ export const HistoryService = {
     let items = all[context] ?? []
     const lower = kw.toLowerCase()
     items = items.filter((i) => i.keyword.toLowerCase() !== lower)
-    items.unshift({ keyword: kw, timestamp: Date.now() })
+    items.unshift({keyword: kw, timestamp: Date.now()})
     if (items.length > 500) items = items.slice(0, 500)
     all[context] = items
     writeSearchAll(all)

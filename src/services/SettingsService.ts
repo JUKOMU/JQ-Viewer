@@ -3,7 +3,7 @@
  * 启动时由 App.vue 调用 initSettings() 从 DB 加载到缓存，
  * 之后所有读写走同步缓存，持久化由 SettingPage handler 调用 JmcomicService 完成。
  */
-import { JmcomicService } from './JmcomicService'
+import {JmcomicService} from './JmcomicService'
 
 let settingsLoaded = false
 

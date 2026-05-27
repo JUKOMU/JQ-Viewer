@@ -125,11 +125,11 @@ public class SettingsService {
         Thread t = new Thread(() -> {
             try {
                 int moved = fileStore.relocate(context, open,
-                        (current, total, phase, currentFile) -> {
-                            if (listener != null) {
-                                listener.onRelocationProgress(current, total, phase, currentFile);
-                            }
-                        });
+                    (current, total, phase, currentFile) -> {
+                        if (listener != null) {
+                            listener.onRelocationProgress(current, total, phase, currentFile);
+                        }
+                    });
 
                 settingsDb.putString("download_public", String.valueOf(open));
 

@@ -13,7 +13,7 @@
             />
           </template>
           <template v-else>
-            <div class="skeleton-thumb" />
+            <div class="skeleton-thumb"/>
           </template>
           <span class="preview-page-num">{{ i }}</span>
         </div>
@@ -36,7 +36,7 @@
 </template>
 
 <script setup lang="ts">
-defineOptions({ name: 'AlbumPreviewTab' })
+defineOptions({name: 'AlbumPreviewTab'})
 
 const props = defineProps<{
   images: PreviewImage[]
@@ -50,7 +50,7 @@ defineEmits<{
   openReader: [page: number]
 }>()
 
-import { computed } from 'vue'
+import {computed} from 'vue'
 
 interface PreviewImage {
   sortOrder: number
@@ -167,9 +167,8 @@ const slotMap = computed(() => {
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition:
-    background-color 0.18s ease,
-    color 0.18s ease;
+  transition: background-color 0.18s ease,
+  color 0.18s ease;
 }
 
 .load-more-btn:active {

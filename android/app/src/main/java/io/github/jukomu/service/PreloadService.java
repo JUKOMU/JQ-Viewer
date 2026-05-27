@@ -72,7 +72,7 @@ public class PreloadService {
 
             final int sortOrder = imgObj.optInt("sortOrder");
             final String cacheKey = photoId + "/" + sortOrder
-                    + ("thumb".equals(type) ? "/thumb" : "");
+                + ("thumb".equals(type) ? "/thumb" : "");
 
             if (imageCache.has(cacheKey)) {
                 cached.add(sortOrder);

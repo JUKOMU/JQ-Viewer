@@ -3,7 +3,7 @@
     <div class="reader-root" @click="onRootClick">
       <!-- 顶部工具栏 -->
       <Transition name="toolbar-slide">
-        <ReaderTopToolbar v-if="toolbarVisible" :title="chapterTitle" @back="goBack" />
+        <ReaderTopToolbar v-if="toolbarVisible" :title="chapterTitle" @back="goBack"/>
       </Transition>
 
       <!-- 图片视图 -->
@@ -44,24 +44,25 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { IonPage } from '@ionic/vue'
-import type { PluginListenerHandle } from '@capacitor/core'
-import { getImageUrl, JmcomicService, showToast } from '@/services/JmcomicService'
-import type { ImageInfo, PhotoDetail, PreloadResult } from '@/services/JmcomicTypes'
-import { SettingsStore } from '@/services/SettingsService'
-import { HistoryService } from '@/services/HistoryService'
+import {computed, nextTick, onMounted, onUnmounted, ref} from 'vue'
+import {useRoute, useRouter} from 'vue-router'
+import {IonPage} from '@ionic/vue'
+import type {PluginListenerHandle} from '@capacitor/core'
+import {getImageUrl, JmcomicService, showToast} from '@/services/JmcomicService'
+import type {ImageInfo, PhotoDetail, PreloadResult} from '@/services/JmcomicTypes'
+import {SettingsStore} from '@/services/SettingsService'
+import {HistoryService} from '@/services/HistoryService'
 import ReaderTopToolbar from '@/components/reader/ReaderTopToolbar.vue'
 import ReaderBottomToolbar from '@/components/reader/ReaderBottomToolbar.vue'
 import VerticalScrollView from '@/components/reader/VerticalScrollView.vue'
 import HorizontalPageView from '@/components/reader/HorizontalPageView.vue'
 
-defineOptions({ name: 'ReaderPage' })
+defineOptions({name: 'ReaderPage'})
 
 function getN(): number {
   return SettingsStore.getReaderPreloadPages()
 }
+
 const N_FAST = 50 // 快速划动方向预加载半径
 const M = 50 // 最大缓存窗口
 const AUTO_HIDE_MS = 3000
@@ -216,7 +217,8 @@ const updateWindow = (center: number) => {
           }
           applyImageMap()
         })
-        .catch(() => {})
+        .catch(() => {
+        })
     }
   }
 
@@ -438,7 +440,8 @@ onMounted(() => {
         resetAutoHide()
 
         // 注册监听（fire-and-forget）
-        setupImageReadyListener().catch(() => {})
+        setupImageReadyListener().catch(() => {
+        })
 
         // 初始加载窗口（fire-and-forget，图片通过 listener 渐进填充）
         const initOrders = calcWindow(currentIndex.value)
@@ -455,7 +458,8 @@ onMounted(() => {
               }
               applyImageMap()
             })
-            .catch(() => {})
+            .catch(() => {
+            })
         }
 
         // 覆盖 totalCount 未变化（route.query.total == 实际总页数）导致 VerticalScrollView watch 不触发的情况
@@ -494,9 +498,8 @@ onUnmounted(() => {
 /* 工具栏过渡 */
 .toolbar-slide-enter-active,
 .toolbar-slide-leave-active {
-  transition:
-    opacity 0.22s ease,
-    transform 0.22s ease;
+  transition: opacity 0.22s ease,
+  transform 0.22s ease;
 }
 
 .toolbar-slide-enter-from,

@@ -1,4 +1,4 @@
-import type { DownloadTask } from './JmcomicTypes'
+import type {DownloadTask} from './JmcomicTypes'
 
 const STORAGE_KEY = 'jq-download-tasks'
 
@@ -35,7 +35,7 @@ export const OfflineDownloadService = {
     const tasks = readTasks()
     const idx = tasks.findIndex((t) => t.taskId === task.taskId)
     if (idx >= 0) {
-      tasks[idx] = { ...tasks[idx], ...task }
+      tasks[idx] = {...tasks[idx], ...task}
     } else {
       tasks.unshift(task)
     }

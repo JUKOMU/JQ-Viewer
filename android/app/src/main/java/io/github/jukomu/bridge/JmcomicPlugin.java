@@ -4,8 +4,6 @@ import android.Manifest;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.Intent;
-
-import static android.app.Activity.RESULT_OK;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.os.Build;
@@ -13,41 +11,23 @@ import android.provider.MediaStore;
 import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
-import com.getcapacitor.JSArray;
-import com.getcapacitor.JSObject;
-import com.getcapacitor.Plugin;
-import com.getcapacitor.PluginCall;
-import com.getcapacitor.PluginMethod;
+import com.getcapacitor.*;
 import com.getcapacitor.annotation.CapacitorPlugin;
-import io.github.jukomu.data.CredentialStore;
-import io.github.jukomu.data.DownloadStore;
-import io.github.jukomu.data.FileStore;
-import io.github.jukomu.data.FavoriteStore;
-import io.github.jukomu.data.HistoryStore;
-import io.github.jukomu.data.ImageCache;
-import io.github.jukomu.data.SettingsStore;
-import io.github.jukomu.jmcomic.api.enums.Category;
-import io.github.jukomu.jmcomic.api.enums.OrderBy;
-import io.github.jukomu.jmcomic.api.enums.SearchMainTag;
-import io.github.jukomu.jmcomic.api.enums.TimeOption;
-import io.github.jukomu.jmcomic.core.JmComic;
-import io.github.jukomu.jmcomic.core.client.impl.JmApiClient;
-
 import com.google.mlkit.vision.common.InputImage;
 import com.google.mlkit.vision.text.Text;
 import com.google.mlkit.vision.text.TextRecognition;
 import com.google.mlkit.vision.text.TextRecognizer;
 import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions;
+import io.github.jukomu.data.*;
+import io.github.jukomu.jmcomic.api.enums.Category;
+import io.github.jukomu.jmcomic.api.enums.OrderBy;
+import io.github.jukomu.jmcomic.api.enums.SearchMainTag;
+import io.github.jukomu.jmcomic.api.enums.TimeOption;
 import io.github.jukomu.jmcomic.api.exception.ResponseException;
+import io.github.jukomu.jmcomic.core.JmComic;
+import io.github.jukomu.jmcomic.core.client.impl.JmApiClient;
 import io.github.jukomu.jmcomic.core.config.JmConfiguration;
-import io.github.jukomu.service.ApiCallback;
-import io.github.jukomu.service.ApiService;
-import io.github.jukomu.service.DownloadProgressData;
-import io.github.jukomu.service.DownloadService;
-import io.github.jukomu.service.PermissionService;
-import io.github.jukomu.service.PreloadService;
-import io.github.jukomu.service.ServiceListener;
-import io.github.jukomu.service.SettingsService;
+import io.github.jukomu.service.*;
 import io.github.jukomu.service.PermissionState;
 import okhttp3.Cookie;
 import org.json.JSONArray;
@@ -57,12 +37,9 @@ import org.json.JSONObject;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
+
+import static android.app.Activity.RESULT_OK;
 
 /**
  * @author JUKOMU
@@ -128,8 +105,8 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
             PermissionState state = permissionService.checkState(ctx);
             if (!state.granted) {
                 Log.w("JmcomicPlugin",
-                        "公开下载已开启但缺少 " + state.permissionType + "，" +
-                                "回退到私有目录。请调用 requestManageStorage 授权。");
+                    "公开下载已开启但缺少 " + state.permissionType + "，" +
+                        "回退到私有目录。请调用 requestManageStorage 授权。");
                 usePublicDir = false;
                 settingsDb.putString("download_public", "false");
             }
@@ -146,7 +123,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
             String s = t.optString("status");
             if ("queued".equals(s) || "downloading".equals(s) || "paused".equals(s)) {
                 FileStore.getInstance().deleteChapter(
-                        t.optString("albumId"), t.optString("chapterId"));
+                    t.optString("albumId"), t.optString("chapterId"));
             }
         }
 
@@ -173,11 +150,11 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         // 初始化服务
         this.apiService = new ApiService(sharedClient, apiExecutor, apiTimeoutExecutor);
         this.settingsService = new SettingsService(settingsDb, downloadDb,
-                FileStore.getInstance(), permissionService, ctx, this);
+            FileStore.getInstance(), permissionService, ctx, this);
         this.preloadService = new PreloadService(ImageCache.getInstance(),
-                FileStore.getInstance(), settingsDb, sharedClient, imageExecutor, this);
+            FileStore.getInstance(), settingsDb, sharedClient, imageExecutor, this);
         this.downloadService = new DownloadService(downloadDb,
-                FileStore.getInstance(), sharedClient, imageExecutor, this);
+            FileStore.getInstance(), sharedClient, imageExecutor, this);
 
         // 清除登录态缓存，强制通过凭据重新登录
         clearAuthState(settingsDb);
@@ -313,7 +290,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
                             domains.put(d);
                         }
                         boolean allDeadFallback = states.size() > 0
-                                && states.values().stream().allMatch(v -> v == -1);
+                            && states.values().stream().allMatch(v -> v == -1);
                         result.put("allDeadFallback", allDeadFallback);
                         result.put("domains", domains);
                         result.put("alive", alive);
@@ -373,7 +350,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
                 domains.put(d);
             }
             boolean allDeadFallback = states.size() > 0
-                    && states.values().stream().allMatch(v -> v == -1);
+                && states.values().stream().allMatch(v -> v == -1);
 
             result.put("domains", domains);
             result.put("alive", alive);
@@ -468,8 +445,8 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
                 pendingPermissionCall = call;
                 call.setKeepAlive(true);
                 ActivityCompat.requestPermissions(getActivity(),
-                        new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE},
-                        PermissionService.REQUEST_WRITE_STORAGE);
+                    new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE},
+                    PermissionService.REQUEST_WRITE_STORAGE);
                 return;
             }
             call.resolve(ret);
@@ -603,13 +580,13 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
             }
             call.setKeepAlive(true);
             apiService.search(
-                    q.getString("keyword", ""),
-                    q.getString("category", Category.ALL.getValue()),
-                    q.getString("orderBy", OrderBy.LATEST.getValue()),
-                    q.getString("time", TimeOption.ALL.getValue()),
-                    q.getInteger("searchMainTag", SearchMainTag.SITE_SEARCH.getValue()),
-                    q.getInteger("page", 1),
-                    bridgeCallback(call));
+                q.getString("keyword", ""),
+                q.getString("category", Category.ALL.getValue()),
+                q.getString("orderBy", OrderBy.LATEST.getValue()),
+                q.getString("time", TimeOption.ALL.getValue()),
+                q.getInteger("searchMainTag", SearchMainTag.SITE_SEARCH.getValue()),
+                q.getInteger("page", 1),
+                bridgeCallback(call));
         } catch (Exception e) {
             call.reject(e.getMessage(), e);
         }
@@ -625,13 +602,13 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
             }
             call.setKeepAlive(true);
             apiService.categories(
-                    q.getString("keyword", ""),
-                    q.getString("category", Category.ALL.getValue()),
-                    q.getString("orderBy", OrderBy.LATEST.getValue()),
-                    q.getString("time", TimeOption.ALL.getValue()),
-                    q.getInteger("searchMainTag", SearchMainTag.SITE_SEARCH.getValue()),
-                    q.getInteger("page", 1),
-                    bridgeCallback(call));
+                q.getString("keyword", ""),
+                q.getString("category", Category.ALL.getValue()),
+                q.getString("orderBy", OrderBy.LATEST.getValue()),
+                q.getString("time", TimeOption.ALL.getValue()),
+                q.getInteger("searchMainTag", SearchMainTag.SITE_SEARCH.getValue()),
+                q.getInteger("page", 1),
+                bridgeCallback(call));
         } catch (Exception e) {
             call.reject(e.getMessage(), e);
         }
@@ -708,9 +685,9 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
             call.setKeepAlive(true);
             int folderId = Integer.parseInt(q.getString("folderId", "0"));
             apiService.getFavorites(
-                    folderId,
-                    q.getInteger("page", 1),
-                    bridgeCallback(call));
+                folderId,
+                q.getInteger("page", 1),
+                bridgeCallback(call));
         } catch (Exception e) {
             call.reject(e.getMessage(), e);
         }
@@ -736,11 +713,11 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
             }
             call.setKeepAlive(true);
             apiService.manageFavoriteFolder(
-                    type,
-                    folderId,
-                    call.getString("folderName", ""),
-                    call.getString("albumId", ""),
-                    bridgeCallback(call));
+                type,
+                folderId,
+                call.getString("folderName", ""),
+                call.getString("albumId", ""),
+                bridgeCallback(call));
         } catch (Exception e) {
             call.reject(e.getMessage(), e);
         }
@@ -756,7 +733,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
             }
             call.setKeepAlive(true);
             apiService.toggleAlbumFavorite(id, call.getString("folderId", "0"),
-                    bridgeCallback(call));
+                bridgeCallback(call));
         } catch (Exception e) {
             call.reject(e.getMessage(), e);
         }
@@ -973,9 +950,9 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
                 return;
             }
             String taskId = downloadService.downloadChapter(albumId, chapterId,
-                    call.getString("albumTitle", ""),
-                    call.getString("chapterTitle", ""),
-                    call.getString("coverUrl", ""));
+                call.getString("albumTitle", ""),
+                call.getString("chapterTitle", ""),
+                call.getString("coverUrl", ""));
             JSObject ret = new JSObject();
             ret.put("taskId", taskId);
             call.resolve(ret);
@@ -1118,12 +1095,12 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
     public void recordBrowse(PluginCall call) {
         try {
             HistoryStore.getInstance(getContext()).recordBrowse(
-                    call.getString("albumId", ""),
-                    call.getString("albumTitle", ""),
-                    call.getString("coverUrl", ""),
-                    call.getString("authors", ""),
-                    call.getString("chapterId", ""),
-                    call.getString("chapterTitle", "")
+                call.getString("albumId", ""),
+                call.getString("albumTitle", ""),
+                call.getString("coverUrl", ""),
+                call.getString("authors", ""),
+                call.getString("chapterId", ""),
+                call.getString("chapterTitle", "")
             );
             JSObject ret = new JSObject();
             ret.put("success", true);
@@ -1164,7 +1141,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
     public void addParseHistory(PluginCall call) {
         try {
             HistoryStore.getInstance(getContext()).addParseHistory(
-                    call.getString("text", "")
+                call.getString("text", "")
             );
             JSObject ret = new JSObject();
             ret.put("success", true);
@@ -1216,8 +1193,8 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
     public void renameOfflineFolder(PluginCall call) {
         try {
             boolean ok = FavoriteStore.getInstance(getContext()).renameFolder(
-                    call.getString("folderId", ""),
-                    call.getString("name", ""));
+                call.getString("folderId", ""),
+                call.getString("name", ""));
             JSObject ret = new JSObject();
             ret.put("success", ok);
             call.resolve(ret);
@@ -1230,7 +1207,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
     public void deleteOfflineFolder(PluginCall call) {
         try {
             boolean ok = FavoriteStore.getInstance(getContext()).deleteFolder(
-                    call.getString("folderId", ""));
+                call.getString("folderId", ""));
             JSObject ret = new JSObject();
             ret.put("success", ok);
             call.resolve(ret);
@@ -1257,8 +1234,8 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
     public void removeOfflineFavorite(PluginCall call) {
         try {
             boolean ok = FavoriteStore.getInstance(getContext()).removeItem(
-                    call.getString("folderId", ""),
-                    call.getString("albumId", ""));
+                call.getString("folderId", ""),
+                call.getString("albumId", ""));
             JSObject ret = new JSObject();
             ret.put("success", ok);
             call.resolve(ret);
@@ -1271,10 +1248,10 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
     public void getOfflineFavorites(PluginCall call) {
         try {
             JSONObject data = FavoriteStore.getInstance(getContext()).getItems(
-                    call.getString("folderId", ""),
-                    call.getString("keyword", null),
-                    call.getInt("page", 1),
-                    call.getInt("pageSize", 20));
+                call.getString("folderId", ""),
+                call.getString("keyword", null),
+                call.getInt("page", 1),
+                call.getInt("pageSize", 20));
             JSObject ret = new JSObject();
             ret.put("totalItems", data.optInt("totalItems", 0));
             ret.put("totalPages", data.optInt("totalPages", 1));
@@ -1291,7 +1268,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         try {
             JSObject ret = new JSObject();
             ret.put("items", FavoriteStore.getInstance(getContext()).getAllItems(
-                    call.getString("folderId", "")));
+                call.getString("folderId", "")));
             call.resolve(ret);
         } catch (Exception e) {
             call.reject(e.getMessage(), e);
@@ -1324,8 +1301,8 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
     public void moveAllOfflineFavorites(PluginCall call) {
         try {
             boolean ok = FavoriteStore.getInstance(getContext()).moveAllItems(
-                    call.getString("sourceId", ""),
-                    call.getString("targetId", ""));
+                call.getString("sourceId", ""),
+                call.getString("targetId", ""));
             JSObject ret = new JSObject();
             ret.put("success", ok);
             call.resolve(ret);
@@ -1338,8 +1315,8 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
     public void copyOfflineFolder(PluginCall call) {
         try {
             String newId = FavoriteStore.getInstance(getContext()).copyFolder(
-                    call.getString("sourceId", ""),
-                    call.getString("name", ""));
+                call.getString("sourceId", ""),
+                call.getString("name", ""));
             JSObject ret = new JSObject();
             ret.put("folderId", newId);
             call.resolve(ret);
@@ -1352,8 +1329,8 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
     public void addOfflineFavoritesBatch(PluginCall call) {
         try {
             int count = FavoriteStore.getInstance(getContext()).addItemsBatch(
-                    call.getString("folderId", ""),
-                    call.getArray("items"));
+                call.getString("folderId", ""),
+                call.getArray("items"));
             JSObject ret = new JSObject();
             ret.put("count", count);
             call.resolve(ret);
@@ -1366,7 +1343,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
     public void mergeOfflineAllToFolder(PluginCall call) {
         try {
             boolean ok = FavoriteStore.getInstance(getContext()).mergeAllToFolder(
-                    call.getString("targetId", ""));
+                call.getString("targetId", ""));
             JSObject ret = new JSObject();
             ret.put("success", ok);
             call.resolve(ret);
@@ -1381,8 +1358,8 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
     public void saveOfflineBackup(PluginCall call) {
         try {
             FavoriteStore.getInstance(getContext()).saveBackup(
-                    call.getString("key", ""),
-                    call.getArray("items"));
+                call.getString("key", ""),
+                call.getArray("items"));
             JSObject ret = new JSObject();
             ret.put("success", true);
             call.resolve(ret);
@@ -1395,7 +1372,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
     public void loadOfflineBackup(PluginCall call) {
         try {
             JSONArray items = FavoriteStore.getInstance(getContext()).loadBackup(
-                    call.getString("key", ""));
+                call.getString("key", ""));
             JSObject ret = new JSObject();
             ret.put("items", items != null ? items : JSONObject.NULL);
             call.resolve(ret);
@@ -1408,7 +1385,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
     public void deleteOfflineBackup(PluginCall call) {
         try {
             boolean ok = FavoriteStore.getInstance(getContext()).deleteBackup(
-                    call.getString("key", ""));
+                call.getString("key", ""));
             JSObject ret = new JSObject();
             ret.put("success", ok);
             call.resolve(ret);
@@ -1661,11 +1638,11 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
                 if (expiresAt > 0 && expiresAt < now) continue;
 
                 Cookie.Builder builder = new Cookie.Builder()
-                        .name(obj.getString("name"))
-                        .value(obj.getString("value"))
-                        .domain(obj.getString("domain"))
-                        .path(obj.optString("path", "/"))
-                        .expiresAt(expiresAt);
+                    .name(obj.getString("name"))
+                    .value(obj.getString("value"))
+                    .domain(obj.getString("domain"))
+                    .path(obj.optString("path", "/"))
+                    .expiresAt(expiresAt);
                 if (obj.optBoolean("secure", false)) builder.secure();
                 if (obj.optBoolean("httpOnly", false)) builder.httpOnly();
                 if (obj.optBoolean("persistent", false)) {

@@ -1,5 +1,5 @@
-import { ref } from 'vue'
-import type { SearchResult, SearchResultItem } from '@/services/JmcomicTypes'
+import {ref} from 'vue'
+import type {SearchResult, SearchResultItem} from '@/services/JmcomicTypes'
 
 export interface FavoritePageCacheState {
   folderSource: 'online' | 'offline'

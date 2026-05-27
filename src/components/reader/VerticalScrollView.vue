@@ -8,19 +8,19 @@
       class="image-wrapper"
     >
       <template v-if="item.dataUrl">
-        <img :src="item.dataUrl" class="reader-image" alt="" />
+        <img :src="item.dataUrl" class="reader-image" alt=""/>
       </template>
       <template v-else>
-        <div class="skeleton-image" />
+        <div class="skeleton-image"/>
       </template>
     </div>
     <div class="end-indicator">— — — — E N D — — — —</div>
-    <div class="scroll-spacer" :style="{ height: bottomSpacerHeight + 'px' }" />
+    <div class="scroll-spacer" :style="{ height: bottomSpacerHeight + 'px' }"/>
   </div>
 </template>
 
 <script setup lang="ts">
-defineOptions({ name: 'VerticalScrollView' })
+defineOptions({name: 'VerticalScrollView'})
 
 const props = defineProps<{
   imageMap: Map<number, string>
@@ -32,7 +32,7 @@ const emit = defineEmits<{
   'update:currentIndex': [index: number]
 }>()
 
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import {computed, nextTick, onMounted, onUnmounted, ref, watch} from 'vue'
 
 interface ImageSlot {
   sortOrder: number
@@ -151,7 +151,7 @@ watch(
       if (trackedIndex >= 0 && trackedIndex < imageEls.value.length) {
         const targetEl = imageEls.value[trackedIndex]
         if (targetEl && containerRef.value) {
-          targetEl.scrollIntoView({ block: 'start', behavior: 'instant' })
+          targetEl.scrollIntoView({block: 'start', behavior: 'instant'})
           trackedTop = containerRef.value.scrollTop
           scrollTop.value = trackedTop
           lastEmitIndex.value = trackedIndex
@@ -196,12 +196,12 @@ const scrollToIndex = (index: number) => {
   if (!targetEl || !containerRef.value) return
   trackedIndex = index
   lastEmitIndex.value = index // 先设防护：防止 scrollIntoView 触发的 onScroll 误 emit
-  targetEl.scrollIntoView({ block: 'start', behavior: 'instant' })
+  targetEl.scrollIntoView({block: 'start', behavior: 'instant'})
   trackedTop = containerRef.value.scrollTop
   scrollTop.value = trackedTop
 }
 
-defineExpose({ scrollToIndex })
+defineExpose({scrollToIndex})
 </script>
 
 <style scoped>

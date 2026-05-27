@@ -8,16 +8,16 @@
           @click.self="closeSearchOverlay"
         >
           <div class="category-overlay-panel">
-            <CategorySearchToolbar @search="submitOverlayCategory" />
+            <CategorySearchToolbar @search="submitOverlayCategory"/>
           </div>
         </div>
       </Transition>
 
       <div class="category-page-top">
         <div class="category-page-toolbar" :class="{ pinned: pullHeaderPinned }">
-          <MenuToggleButton />
+          <MenuToggleButton/>
           <div class="toolbar-category">
-            <CategorySearchToolbar @search="resetWithPage" />
+            <CategorySearchToolbar @search="resetWithPage"/>
           </div>
         </div>
       </div>
@@ -56,22 +56,22 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onActivated, onDeactivated, onMounted, ref } from 'vue'
-
-defineOptions({ name: 'CategoryPage' })
-import { useRouter } from 'vue-router'
-import { alertController, IonContent, IonPage } from '@ionic/vue'
-import type { ScrollCustomEvent } from '@ionic/core'
+import {computed, nextTick, onActivated, onDeactivated, onMounted, ref} from 'vue'
+import {useRouter} from 'vue-router'
+import {alertController, IonContent, IonPage} from '@ionic/vue'
+import type {ScrollCustomEvent} from '@ionic/core'
 import CategorySearchToolbar from '@/components/search/CategorySearchToolbar.vue'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import QuickActionFab from '@/components/common/QuickActionFab.vue'
-import SearchResultContainer from '@/components/search/SearchResultContainer.vue'
 import type {
   SearchResultContainerExposed,
   SearchResultDisplayItem,
 } from '@/components/search/SearchResultContainer.vue'
-import { JmcomicService, sanitizeError } from '@/services/JmcomicService'
-import type { SearchQuery, SearchResult, SearchResultItem } from '@/services/JmcomicTypes'
+import SearchResultContainer from '@/components/search/SearchResultContainer.vue'
+import {JmcomicService, sanitizeError} from '@/services/JmcomicService'
+import type {SearchQuery, SearchResult, SearchResultItem} from '@/services/JmcomicTypes'
+
+defineOptions({name: 'CategoryPage'})
 
 const router = useRouter()
 
@@ -160,11 +160,11 @@ const maybeLoadNextAfterRender = async () => {
 }
 
 const fetchPage = async (query: SearchQuery, page: number) => {
-  return await JmcomicService.categories({ ...query, page })
+  return await JmcomicService.categories({...query, page})
 }
 
 const resetWithPage = async (query: SearchQuery) => {
-  const targetQuery = { ...query, page: query.page ?? 1 }
+  const targetQuery = {...query, page: query.page ?? 1}
   lastQuery.value = targetQuery
   initialLoading.value = true
   errorMessage.value = ''
@@ -346,7 +346,7 @@ const jumpToPage = async () => {
       },
     ],
     buttons: [
-      { text: '取消', role: 'cancel' },
+      {text: '取消', role: 'cancel'},
       {
         text: '跳转',
         handler: (data: { page?: string }) => {
@@ -354,7 +354,7 @@ const jumpToPage = async () => {
           if (!Number.isInteger(page) || page < 1 || page > resultMeta.value!.totalPages) {
             return false
           }
-          void resetWithPage({ ...lastQuery.value!, page })
+          void resetWithPage({...lastQuery.value!, page})
           return true
         },
       },
@@ -442,9 +442,8 @@ onMounted(() => {
 
 .category-overlay-enter-active .category-overlay-panel,
 .category-overlay-leave-active .category-overlay-panel {
-  transition:
-    transform 0.22s ease,
-    opacity 0.22s ease;
+  transition: transform 0.22s ease,
+  opacity 0.22s ease;
 }
 
 .category-overlay-enter-from,

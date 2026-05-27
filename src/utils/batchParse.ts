@@ -51,7 +51,7 @@ export function parseIdsFromText(text: string): ParseResult {
       const endIndex = startIndex + value.length
 
       if (value.length < 3) {
-        invalidIds.push({ value, lineIndex: li, startIndex, endIndex })
+        invalidIds.push({value, lineIndex: li, startIndex, endIndex})
         continue
       }
 
@@ -68,5 +68,5 @@ export function parseIdsFromText(text: string): ParseResult {
     }
   }
 
-  return { items, invalidIds }
+  return {items, invalidIds}
 }

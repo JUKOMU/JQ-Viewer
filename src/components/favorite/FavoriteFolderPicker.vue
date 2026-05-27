@@ -10,10 +10,10 @@
             aria-label="新建收藏夹"
             @click="$emit('add-folder')"
           >
-            <IonIcon :icon="addOutline" />
+            <IonIcon :icon="addOutline"/>
           </button>
           <button type="button" class="picker-close-btn" @click="close">
-            <IonIcon :icon="closeOutline" />
+            <IonIcon :icon="closeOutline"/>
           </button>
         </div>
       </div>
@@ -29,7 +29,7 @@
               class="folder-item"
               @click="select(folder.id, 'online')"
             >
-              <IonIcon :icon="folderOpenOutline" class="folder-icon" />
+              <IonIcon :icon="folderOpenOutline" class="folder-icon"/>
               <span class="folder-name">{{ folder.name }}</span>
               <span v-if="onlineFolderCounts[folder.id] !== undefined" class="folder-count">
                 {{ onlineFolderCounts[folder.id] }}
@@ -47,7 +47,7 @@
             class="folder-item"
             @click="select(folder.id, 'offline')"
           >
-            <IonIcon :icon="folderOpenOutline" class="folder-icon" />
+            <IonIcon :icon="folderOpenOutline" class="folder-icon"/>
             <span class="folder-name">{{ folder.name }}</span>
             <span class="folder-count">{{ folder.count }}</span>
           </button>
@@ -62,7 +62,7 @@
 </template>
 
 <script setup lang="ts">
-defineOptions({ name: 'FavoriteFolderPicker' })
+defineOptions({name: 'FavoriteFolderPicker'})
 
 defineProps<{
   modelValue: boolean
@@ -75,16 +75,16 @@ const emit = defineEmits<{
   'add-folder': []
   select: [payload: { folderId: string; source: 'online' | 'offline' }]
 }>()
-import { IonIcon } from '@ionic/vue'
-import { addOutline, closeOutline, folderOpenOutline } from 'ionicons/icons'
-import type { FolderEntry } from '@/services/JmcomicTypes'
+import {IonIcon} from '@ionic/vue'
+import {addOutline, closeOutline, folderOpenOutline} from 'ionicons/icons'
+import type {FolderEntry} from '@/services/JmcomicTypes'
 
 const close = () => {
   emit('update:modelValue', false)
 }
 
 const select = (folderId: string, source: 'online' | 'offline') => {
-  emit('select', { folderId, source })
+  emit('select', {folderId, source})
 }
 </script>
 
@@ -197,9 +197,8 @@ const select = (folderId: string, source: 'online' | 'offline') => {
   text-align: left;
   box-shadow: 0 12px 28px rgb(115 67 38 / 0.08);
   cursor: pointer;
-  transition:
-    background-color 0.16s ease,
-    border-color 0.16s ease;
+  transition: background-color 0.16s ease,
+  border-color 0.16s ease;
 }
 
 .folder-item:hover,

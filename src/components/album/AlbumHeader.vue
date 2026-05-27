@@ -2,23 +2,23 @@
 <template>
   <div ref="rootRef" class="header-area">
     <div class="header-bg">
-      <img v-if="coverUrl" :src="coverUrl" class="header-bg-img" alt="" />
-      <div class="header-bg-mask" />
+      <img v-if="coverUrl" :src="coverUrl" class="header-bg-img" alt=""/>
+      <div class="header-bg-mask"/>
     </div>
     <div class="header-content">
       <button type="button" class="back-btn" @click="$emit('back')">
-        <ion-icon :icon="arrowBack" />
+        <ion-icon :icon="arrowBack"/>
       </button>
       <div class="header-body">
         <div class="cover-col">
-          <img v-if="coverUrl" :src="coverUrl" class="cover-img" :alt="title" />
-          <div v-else class="cover-placeholder" />
+          <img v-if="coverUrl" :src="coverUrl" class="cover-img" :alt="title"/>
+          <div v-else class="cover-placeholder"/>
         </div>
         <div class="info-col">
           <h1 class="album-title">{{ title || '加载中...' }}</h1>
           <p v-if="authors" class="album-authors">{{ authors }}</p>
           <p v-if="!loading && !chapterLoading" class="album-pages">{{ pageCount }} 页</p>
-          <div v-else class="pages-skeleton" />
+          <div v-else class="pages-skeleton"/>
           <button type="button" class="read-btn" @click="$emit('start-reading')">开始阅读</button>
         </div>
       </div>
@@ -27,7 +27,7 @@
 </template>
 
 <script setup lang="ts">
-defineOptions({ name: 'AlbumHeader' })
+defineOptions({name: 'AlbumHeader'})
 
 defineProps<{
   coverUrl: string
@@ -41,8 +41,8 @@ defineEmits<{
   'start-reading': []
   back: []
 }>()
-import { IonIcon } from '@ionic/vue'
-import { arrowBack } from 'ionicons/icons'
+import {IonIcon} from '@ionic/vue'
+import {arrowBack} from 'ionicons/icons'
 </script>
 
 <style scoped>
@@ -190,9 +190,8 @@ import { arrowBack } from 'ionicons/icons'
   font-size: 13px;
   font-weight: 700;
   box-shadow: 0 4px 14px rgb(240 126 73 / 0.4);
-  transition:
-    transform 0.16s ease,
-    box-shadow 0.16s ease;
+  transition: transform 0.16s ease,
+  box-shadow 0.16s ease;
 }
 
 .read-btn:active {
@@ -207,9 +206,11 @@ import { arrowBack } from 'ionicons/icons'
     padding-left: 0;
     padding-right: 0;
   }
+
   .cover-col {
     width: 150px;
   }
+
   .album-title {
     font-size: 20px;
   }

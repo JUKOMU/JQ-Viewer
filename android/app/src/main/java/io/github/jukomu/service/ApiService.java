@@ -127,9 +127,9 @@ public class ApiService {
     public void getFavorites(int folderId, int page, ApiCallback callback) {
         try {
             FavoriteQuery query = new FavoriteQuery.Builder()
-                    .folderId(folderId)
-                    .page(page)
-                    .build();
+                .folderId(folderId)
+                .page(page)
+                .build();
             runAsync(() -> toFavoritePage(client.getFavorites(query)), callback);
         } catch (Exception e) {
             callback.onError(e.getMessage(), e);
@@ -150,8 +150,8 @@ public class ApiService {
     }
 
     public void manageFavoriteFolder(String type, String folderId,
-                                      String folderName, String albumId,
-                                      ApiCallback callback) {
+                                     String folderName, String albumId,
+                                     ApiCallback callback) {
         try {
             FavoriteFolderType folderType = findFavoriteFolderType(type);
             runAsync(() -> {
@@ -198,13 +198,13 @@ public class ApiService {
     private SearchQuery buildQuery(String keyword, String category, String orderBy,
                                    String time, int searchMainTag, int page) {
         return new SearchQuery.Builder()
-                .text(keyword == null ? "" : keyword)
-                .category(findCategory(category))
-                .orderBy(findOrderBy(orderBy))
-                .time(findTimeOption(time))
-                .mainTag(findSearchMainTag(searchMainTag))
-                .page(page)
-                .build();
+            .text(keyword == null ? "" : keyword)
+            .category(findCategory(category))
+            .orderBy(findOrderBy(orderBy))
+            .time(findTimeOption(time))
+            .mainTag(findSearchMainTag(searchMainTag))
+            .page(page)
+            .build();
     }
 
     // ---- Enum 查找 ----

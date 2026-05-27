@@ -3,7 +3,7 @@
     <IonHeader class="ion-no-border">
       <IonToolbar>
         <IonButtons slot="start">
-          <IonBackButton default-href="/setting" />
+          <IonBackButton default-href="/setting"/>
         </IonButtons>
         <IonTitle class="toolbar-title">网络状态</IonTitle>
       </IonToolbar>
@@ -50,7 +50,7 @@
           <div v-if="store.events.value.length" class="log-list">
             <div v-for="(evt, i) in store.events.value" :key="i" class="log-row">
               <span class="log-time">{{ formatTime(evt.timestamp) }}</span>
-              <span class="log-dot" :class="phaseClass(evt.phase)" />
+              <span class="log-dot" :class="phaseClass(evt.phase)"/>
               <span class="log-msg">{{ evt.message }}</span>
             </div>
           </div>
@@ -62,23 +62,14 @@
 </template>
 
 <script setup lang="ts">
-defineOptions({ name: 'NetworkStatusPage' })
+defineOptions({name: 'NetworkStatusPage'})
 
-import { onMounted, onUnmounted, ref } from 'vue'
-import {
-  IonBackButton,
-  IonButtons,
-  IonContent,
-  IonHeader,
-  IonIcon,
-  IonPage,
-  IonTitle,
-  IonToolbar,
-} from '@ionic/vue'
-import { refreshOutline, speedometerOutline } from 'ionicons/icons'
-import { JmcomicService } from '@/services/JmcomicService'
-import type { PluginListenerHandle } from '@capacitor/core'
-import { useNetworkProbeStore } from '@/composables/networkProbeStore'
+import {onMounted, onUnmounted, ref} from 'vue'
+import {IonBackButton, IonButtons, IonContent, IonHeader, IonIcon, IonPage, IonTitle, IonToolbar,} from '@ionic/vue'
+import {refreshOutline, speedometerOutline} from 'ionicons/icons'
+import {JmcomicService} from '@/services/JmcomicService'
+import type {PluginListenerHandle} from '@capacitor/core'
+import {useNetworkProbeStore} from '@/composables/networkProbeStore'
 
 const store = useNetworkProbeStore()
 const refreshing = ref(false)
@@ -124,7 +115,7 @@ function handleMeasureLatency() {
     .then((ret) => {
       const map: Record<string, { latencyMs: number; timedOut: boolean }> = {}
       for (const r of ret.results) {
-        map[r.domain] = { latencyMs: r.latencyMs, timedOut: r.timedOut }
+        map[r.domain] = {latencyMs: r.latencyMs, timedOut: r.timedOut}
       }
       latencyMap.value = map
     })
@@ -170,7 +161,7 @@ function phaseClass(phase: string): string {
 }
 
 function formatTime(ts: number): string {
-  return new Date(ts).toLocaleTimeString('zh-CN', { hour12: false })
+  return new Date(ts).toLocaleTimeString('zh-CN', {hour12: false})
 }
 </script>
 
@@ -178,14 +169,17 @@ function formatTime(ts: number): string {
 :deep(ion-toolbar) {
   --min-height: auto;
 }
+
 .toolbar-title {
   font-size: 16px;
   font-weight: 600;
   color: #4c2a18;
 }
+
 .page-content {
   padding: 8px 16px 32px;
 }
+
 .section-label {
   font-size: 12px;
   font-weight: 600;
@@ -193,17 +187,20 @@ function formatTime(ts: number): string {
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
+
 .section-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin: 8px 0 8px 6px;
 }
+
 .header-actions {
   display: flex;
   align-items: center;
   gap: 10px;
 }
+
 .refresh-btn,
 .speed-btn {
   font-size: 16px;
@@ -211,16 +208,19 @@ function formatTime(ts: number): string {
   cursor: pointer;
   transition: color 0.2s;
 }
+
 .refresh-btn:active,
 .speed-btn:active {
   color: #4c2a18;
 }
+
 .refresh-btn.spinning,
 .speed-btn.spinning {
   animation: spin 0.8s linear infinite;
   color: #89b4fa;
   pointer-events: none;
 }
+
 @keyframes spin {
   from {
     transform: rotate(0deg);
@@ -229,12 +229,14 @@ function formatTime(ts: number): string {
     transform: rotate(360deg);
   }
 }
+
 .card {
   background: #fffbf8;
   border-radius: 14px;
   box-shadow: 0 2px 12px rgba(115, 67, 38, 0.06);
   overflow: hidden;
 }
+
 /* 域名列表 */
 .domain-row {
   display: flex;
@@ -242,42 +244,52 @@ function formatTime(ts: number): string {
   gap: 8px;
   padding: 10px 16px;
 }
+
 .domain-row + .domain-row {
   border-top: 1px solid #f5ebe4;
 }
+
 .domain-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
 }
+
 .domain-dot.alive {
   background: #6dbf87;
 }
+
 .domain-dot.dead {
   background: #e05555;
 }
+
 .domain-name {
   font-size: 13px;
   color: #4c2a18;
   word-break: break-all;
   flex: 1;
 }
+
 .latency {
   font-size: 12px;
   font-weight: 500;
   flex-shrink: 0;
   margin-left: 8px;
 }
+
 .latency.lat-green {
   color: #6dbf87;
 }
+
 .latency.lat-yellow {
   color: #e0b040;
 }
+
 .latency.lat-red {
   color: #e05555;
 }
+
 /* 事件日志 */
 .log-row {
   display: flex;
@@ -285,37 +297,46 @@ function formatTime(ts: number): string {
   gap: 6px;
   padding: 6px 16px;
 }
+
 .log-row + .log-row {
   border-top: 1px solid #f5ebe4;
 }
+
 .log-time {
   font-size: 11px;
   color: #b89a84;
   flex-shrink: 0;
   width: 52px;
 }
+
 .log-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
   flex-shrink: 0;
 }
+
 .log-dot.phase-warn {
   background: #f9e2af;
 }
+
 .log-dot.phase-active {
   background: #89b4fa;
 }
+
 .log-dot.phase-ok {
   background: #6dbf87;
 }
+
 .log-dot.phase-err {
   background: #e05555;
 }
+
 .log-msg {
   font-size: 12px;
   color: #4c2a18;
 }
+
 .empty-state {
   padding: 28px 16px;
   text-align: center;

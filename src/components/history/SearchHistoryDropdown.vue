@@ -25,7 +25,7 @@
 </template>
 
 <script setup lang="ts">
-defineOptions({ name: 'SearchHistoryDropdown' })
+defineOptions({name: 'SearchHistoryDropdown'})
 
 const props = defineProps<{
   visible: boolean
@@ -36,8 +36,8 @@ defineEmits<{
   select: [item: SearchHistoryItem]
   clear: []
 }>()
-import { computed } from 'vue'
-import type { SearchHistoryItem } from '@/services/HistoryService'
+import {computed} from 'vue'
+import type {SearchHistoryItem} from '@/services/HistoryService'
 
 const filteredItems = computed(() => {
   const ft = (props.filterText ?? '').trim().toLowerCase()

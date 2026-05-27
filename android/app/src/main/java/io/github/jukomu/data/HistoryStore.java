@@ -1,11 +1,10 @@
 package io.github.jukomu.data;
 
+import android.content.ContentValues;
 import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
-import android.content.ContentValues;
-
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -49,21 +48,21 @@ public class HistoryStore extends SQLiteOpenHelper {
     @Override
     public void onCreate(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE " + TABLE_BROWSE + " ("
-                + COL_ID + " INTEGER PRIMARY KEY AUTOINCREMENT,"
-                + COL_ALBUM_ID + " TEXT NOT NULL,"
-                + COL_ALBUM_TITLE + " TEXT NOT NULL,"
-                + COL_COVER_URL + " TEXT NOT NULL DEFAULT '',"
-                + COL_AUTHORS + " TEXT NOT NULL DEFAULT '',"
-                + COL_CHAPTER_ID + " TEXT NOT NULL DEFAULT '',"
-                + COL_CHAPTER_TITLE + " TEXT NOT NULL DEFAULT '',"
-                + COL_TIMESTAMP + " INTEGER NOT NULL"
-                + ")");
+            + COL_ID + " INTEGER PRIMARY KEY AUTOINCREMENT,"
+            + COL_ALBUM_ID + " TEXT NOT NULL,"
+            + COL_ALBUM_TITLE + " TEXT NOT NULL,"
+            + COL_COVER_URL + " TEXT NOT NULL DEFAULT '',"
+            + COL_AUTHORS + " TEXT NOT NULL DEFAULT '',"
+            + COL_CHAPTER_ID + " TEXT NOT NULL DEFAULT '',"
+            + COL_CHAPTER_TITLE + " TEXT NOT NULL DEFAULT '',"
+            + COL_TIMESTAMP + " INTEGER NOT NULL"
+            + ")");
 
         db.execSQL("CREATE TABLE " + TABLE_PARSE + " ("
-                + COL_ID + " INTEGER PRIMARY KEY AUTOINCREMENT,"
-                + COL_TEXT + " TEXT NOT NULL,"
-                + COL_TIMESTAMP + " INTEGER NOT NULL"
-                + ")");
+            + COL_ID + " INTEGER PRIMARY KEY AUTOINCREMENT,"
+            + COL_TEXT + " TEXT NOT NULL,"
+            + COL_TIMESTAMP + " INTEGER NOT NULL"
+            + ")");
     }
 
     @Override
@@ -76,7 +75,9 @@ public class HistoryStore extends SQLiteOpenHelper {
 
     // ==================== 浏览历史 ====================
 
-    /** 条件去重写入：最新记录相同 albumId → 更新全部字段，否则新增。 */
+    /**
+     * 条件去重写入：最新记录相同 albumId → 更新全部字段，否则新增。
+     */
     public boolean recordBrowse(String albumId, String albumTitle, String coverUrl,
                                 String authors, String chapterId, String chapterTitle) {
         SQLiteDatabase db = getWritableDatabase();
@@ -86,7 +87,7 @@ public class HistoryStore extends SQLiteOpenHelper {
         db.beginTransaction();
         try {
             c = db.query(TABLE_BROWSE, new String[]{COL_ID, COL_ALBUM_ID},
-                    null, null, null, null, COL_ID + " DESC", "1");
+                null, null, null, null, COL_ID + " DESC", "1");
             boolean matched = false;
             if (c.moveToFirst()) {
                 String lastAlbumId = c.getString(1);
@@ -125,20 +126,22 @@ public class HistoryStore extends SQLiteOpenHelper {
         }
     }
 
-    /** 获取浏览历史（按 timestamp DESC），支持 offset/limit 分页 */
+    /**
+     * 获取浏览历史（按 timestamp DESC），支持 offset/limit 分页
+     */
     public JSONArray getBrowseHistory(int limit, int offset) {
         JSONArray arr = new JSONArray();
         Cursor c = null;
         try {
             String limitClause = limit > 0
-                    ? (offset > 0 ? limit + " OFFSET " + offset : String.valueOf(limit))
-                    : null;
+                ? (offset > 0 ? limit + " OFFSET " + offset : String.valueOf(limit))
+                : null;
             c = getReadableDatabase().query(TABLE_BROWSE,
-                    new String[]{COL_ALBUM_ID, COL_ALBUM_TITLE, COL_COVER_URL, COL_AUTHORS,
-                            COL_CHAPTER_ID, COL_CHAPTER_TITLE, COL_TIMESTAMP},
-                    null, null, null, null,
-                    COL_TIMESTAMP + " DESC",
-                    limitClause);
+                new String[]{COL_ALBUM_ID, COL_ALBUM_TITLE, COL_COVER_URL, COL_AUTHORS,
+                    COL_CHAPTER_ID, COL_CHAPTER_TITLE, COL_TIMESTAMP},
+                null, null, null, null,
+                COL_TIMESTAMP + " DESC",
+                limitClause);
             while (c.moveToNext()) {
                 JSONObject obj = new JSONObject();
                 obj.put("albumId", c.getString(0));
@@ -158,7 +161,9 @@ public class HistoryStore extends SQLiteOpenHelper {
         return arr;
     }
 
-    /** 清除全部浏览历史 */
+    /**
+     * 清除全部浏览历史
+     */
     public void clearBrowseHistory() {
         try {
             getWritableDatabase().delete(TABLE_BROWSE, null, null);
@@ -169,7 +174,9 @@ public class HistoryStore extends SQLiteOpenHelper {
 
     // ==================== 解析历史 ====================
 
-    /** 去重追加：相同 text 存在则移除旧记录再插入新记录 */
+    /**
+     * 去重追加：相同 text 存在则移除旧记录再插入新记录
+     */
     public void addParseHistory(String text) {
         String t = text != null ? text.trim() : "";
         if (t.isEmpty()) return;
@@ -196,13 +203,13 @@ public class HistoryStore extends SQLiteOpenHelper {
         Cursor c = null;
         try {
             String limitClause = limit > 0
-                    ? (offset > 0 ? limit + " OFFSET " + offset : String.valueOf(limit))
-                    : null;
+                ? (offset > 0 ? limit + " OFFSET " + offset : String.valueOf(limit))
+                : null;
             c = getReadableDatabase().query(TABLE_PARSE,
-                    new String[]{COL_TEXT, COL_TIMESTAMP},
-                    null, null, null, null,
-                    COL_TIMESTAMP + " DESC",
-                    limitClause);
+                new String[]{COL_TEXT, COL_TIMESTAMP},
+                null, null, null, null,
+                COL_TIMESTAMP + " DESC",
+                limitClause);
             while (c.moveToNext()) {
                 JSONObject obj = new JSONObject();
                 obj.put("text", c.getString(0));

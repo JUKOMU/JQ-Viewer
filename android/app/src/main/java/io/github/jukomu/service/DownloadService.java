@@ -83,7 +83,7 @@ public class DownloadService {
         }
 
         downloadDb.insertTask(taskId, albumId, chapterId,
-                albumTitle, chapterTitle, coverUrl);
+            albumTitle, chapterTitle, coverUrl);
 
         imageExecutor.submit(() -> {
             try {
@@ -92,8 +92,8 @@ public class DownloadService {
 
                 downloadDb.insertImages(taskId, images);
                 downloadDb.updateTaskDetail(taskId, images.size(),
-                        photo.getAuthor(), new JSONArray(photo.getTags()).toString(),
-                        photo.getSortOrder());
+                    photo.getAuthor(), new JSONArray(photo.getTags()).toString(),
+                    photo.getSortOrder());
 
                 File chapterDir = fileStore.ensureChapterDir(albumId, chapterId);
                 fileStore.refreshMappings(albumId, chapterId, downloadDb);
@@ -117,8 +117,8 @@ public class DownloadService {
                 fileStore.saveMeta(albumId, chapterId, metaJson);
 
                 Path savePath = photo.isSingleAlbum()
-                        ? chapterDir.toPath()
-                        : chapterDir.getParentFile().toPath();
+                    ? chapterDir.toPath()
+                    : chapterDir.getParentFile().toPath();
                 AbstractJmClient abstractClient = (AbstractJmClient) client;
                 BaseDownloadTask task = abstractClient.createDownloadTask(photo, savePath);
 
@@ -129,11 +129,11 @@ public class DownloadService {
                 }
 
                 task.addObserver(new DownloadObserver(taskId, albumId, chapterId,
-                        images.size(), downloadDb, fileStore, listener, this));
+                    images.size(), downloadDb, fileStore, listener, this));
 
                 downloadDb.updateStatus(taskId, STATUS_DOWNLOADING);
                 notifyProgress(taskId, albumId, chapterId, 0, images.size(),
-                        STATUS_DOWNLOADING, null);
+                    STATUS_DOWNLOADING, null);
 
                 if (pendingCancel.remove(taskId)) {
                     fileStore.deleteChapter(albumId, chapterId);
@@ -150,7 +150,7 @@ public class DownloadService {
             } catch (Exception e) {
                 downloadDb.updateFailed(taskId, 0, e.getMessage());
                 notifyProgress(taskId, albumId, chapterId, 0, 0,
-                        STATUS_FAILED, e.getMessage());
+                    STATUS_FAILED, e.getMessage());
                 cleanupTaskMapping(taskId);
             }
         });
@@ -237,8 +237,8 @@ public class DownloadService {
         ac.downloadManager().pause(libTaskId);
         downloadDb.updateStatus(taskId, STATUS_PAUSED);
         notifyProgress(taskId, task.optString("albumId"), task.optString("chapterId"),
-                task.optInt("downloadedPages"), task.optInt("totalPages"),
-                STATUS_PAUSED, null);
+            task.optInt("downloadedPages"), task.optInt("totalPages"),
+            STATUS_PAUSED, null);
     }
 
     public void resumeDownload(String taskId) {
@@ -259,8 +259,8 @@ public class DownloadService {
         ac.downloadManager().resume(libTaskId);
         downloadDb.updateStatus(taskId, STATUS_DOWNLOADING);
         notifyProgress(taskId, task.optString("albumId"), task.optString("chapterId"),
-                task.optInt("downloadedPages"), task.optInt("totalPages"),
-                STATUS_DOWNLOADING, null);
+            task.optInt("downloadedPages"), task.optInt("totalPages"),
+            STATUS_DOWNLOADING, null);
     }
 
     public void deleteDownloaded(String albumId, String chapterId) {
@@ -330,7 +330,7 @@ public class DownloadService {
         File chapterDir = fileStore.getChapterDir(albumId, chapterId);
         if (chapterDir == null || !chapterDir.isDirectory()) return 0;
         File[] files = chapterDir.listFiles(
-                (dir, name) -> !name.equals("meta.json") && !name.endsWith(".tmp"));
+            (dir, name) -> !name.equals("meta.json") && !name.endsWith(".tmp"));
         if (files == null) return 0;
         long total = 0;
         for (File f : files) {
@@ -346,8 +346,8 @@ public class DownloadService {
                                 String status, String error) {
         if (listener != null) {
             listener.onDownloadProgress(new DownloadProgressData(
-                    taskId, albumId, chapterId, downloadedPages, totalPages,
-                    status, error, 0, 0));
+                taskId, albumId, chapterId, downloadedPages, totalPages,
+                status, error, 0, 0));
         }
     }
 
@@ -356,8 +356,8 @@ public class DownloadService {
                                 String status, String error, long speed, long totalSize) {
         if (listener != null) {
             listener.onDownloadProgress(new DownloadProgressData(
-                    taskId, albumId, chapterId, downloadedPages, totalPages,
-                    status, error, speed, totalSize));
+                taskId, albumId, chapterId, downloadedPages, totalPages,
+                status, error, speed, totalSize));
         }
     }
 }

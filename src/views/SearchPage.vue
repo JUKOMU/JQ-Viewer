@@ -16,7 +16,7 @@
 
       <div class="search-page-top">
         <div class="search-page-toolbar" :class="{ pinned: pullHeaderPinned }">
-          <MenuToggleButton />
+          <MenuToggleButton/>
           <div class="toolbar-search">
             <SearchHeaderBar
               ref="headerSearchRef"
@@ -61,22 +61,22 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onActivated, onDeactivated, onMounted, ref, watch } from 'vue'
-
-defineOptions({ name: 'SearchPage' })
-import { useRoute, useRouter } from 'vue-router'
-import { alertController, IonContent, IonPage } from '@ionic/vue'
-import type { ScrollCustomEvent } from '@ionic/core'
+import {computed, nextTick, onActivated, onDeactivated, onMounted, ref, watch} from 'vue'
+import {useRoute, useRouter} from 'vue-router'
+import {alertController, IonContent, IonPage} from '@ionic/vue'
+import type {ScrollCustomEvent} from '@ionic/core'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import QuickActionFab from '@/components/common/QuickActionFab.vue'
 import SearchHeaderBar from '@/components/search/SearchHeaderBar.vue'
-import SearchResultContainer from '@/components/search/SearchResultContainer.vue'
 import type {
   SearchResultContainerExposed,
   SearchResultDisplayItem,
 } from '@/components/search/SearchResultContainer.vue'
-import { JmcomicService, sanitizeError } from '@/services/JmcomicService'
-import type { SearchQuery, SearchResult, SearchResultItem } from '@/services/JmcomicTypes'
+import SearchResultContainer from '@/components/search/SearchResultContainer.vue'
+import {JmcomicService, sanitizeError} from '@/services/JmcomicService'
+import type {SearchQuery, SearchResult, SearchResultItem} from '@/services/JmcomicTypes'
+
+defineOptions({name: 'SearchPage'})
 
 const NEXT_PAGE_THRESHOLD = 220
 
@@ -190,7 +190,7 @@ const maybeLoadNextAfterRender = async () => {
 }
 
 const fetchPage = async (query: SearchQuery, page: number) => {
-  const nextQuery = { ...query, page }
+  const nextQuery = {...query, page}
   return nextQuery.keyword?.trim()
     ? await JmcomicService.search(nextQuery)
     : await JmcomicService.categories(nextQuery)
@@ -254,16 +254,16 @@ const updateRouteQuery = (query: SearchQuery) => {
 }
 
 const submitSearch = (query: SearchQuery) => {
-  const newQuery = { ...query, page: 1 }
-  lastSearchedQuery.value = { ...newQuery }
+  const newQuery = {...query, page: 1}
+  lastSearchedQuery.value = {...newQuery}
   void resetWithPage(newQuery)
   updateRouteQuery(newQuery)
 }
 
 const submitOverlaySearch = (query: SearchQuery) => {
   closeSearchOverlay()
-  const newQuery = { ...query, page: 1 }
-  lastSearchedQuery.value = { ...newQuery }
+  const newQuery = {...query, page: 1}
+  lastSearchedQuery.value = {...newQuery}
   void resetWithPage(newQuery)
   updateRouteQuery(newQuery)
 }
@@ -423,7 +423,7 @@ const jumpToPage = async () => {
       },
     ],
     buttons: [
-      { text: '取消', role: 'cancel' },
+      {text: '取消', role: 'cancel'},
       {
         text: '跳转',
         handler: (data: { page?: string }) => {
@@ -431,7 +431,7 @@ const jumpToPage = async () => {
           if (!Number.isInteger(page) || page < 1 || page > resultMeta.value!.totalPages) {
             return false
           }
-          updateRouteQuery({ ...currentQuery.value, page })
+          updateRouteQuery({...currentQuery.value, page})
           return true
         },
       },
@@ -458,10 +458,10 @@ watch(
   (query) => {
     if (route.name !== 'SearchPage') return
     if (lastSearchedQuery.value && queryEqual(query, lastSearchedQuery.value)) return
-    lastSearchedQuery.value = { ...query }
+    lastSearchedQuery.value = {...query}
     void resetWithPage(query)
   },
-  { immediate: true },
+  {immediate: true},
 )
 
 const savedScrollTop = ref(0)
@@ -529,9 +529,8 @@ onMounted(() => {
 
 .search-overlay-enter-active .search-overlay-panel,
 .search-overlay-leave-active .search-overlay-panel {
-  transition:
-    transform 0.22s ease,
-    opacity 0.22s ease;
+  transition: transform 0.22s ease,
+  opacity 0.22s ease;
 }
 
 .search-overlay-enter-from,

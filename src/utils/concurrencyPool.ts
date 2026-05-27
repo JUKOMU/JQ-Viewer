@@ -23,7 +23,7 @@ export async function runWithConcurrency<T, R>(
   }
 
   // 启动 concurrency 个 worker（不超过任务总数）
-  const workers = Array.from({ length: Math.min(concurrency, total) }, () => worker())
+  const workers = Array.from({length: Math.min(concurrency, total)}, () => worker())
   await Promise.all(workers)
 
   return results

@@ -1,7 +1,7 @@
 <template>
   <div class="bottom-toolbar">
     <button type="button" class="mode-btn" @click="$emit('toggle-mode')">
-      <ion-icon :icon="isVertical ? gridOutline : listOutline" />
+      <ion-icon :icon="isVertical ? gridOutline : listOutline"/>
     </button>
     <span class="page-indicator">{{ current }} / {{ total }}</span>
     <ion-range
@@ -19,7 +19,7 @@
 </template>
 
 <script setup lang="ts">
-defineOptions({ name: 'ReaderBottomToolbar' })
+defineOptions({name: 'ReaderBottomToolbar'})
 
 defineProps<{
   current: number
@@ -33,9 +33,9 @@ const emit = defineEmits<{
   'progress-drag-start': []
   'progress-drag-end': []
 }>()
-import { IonIcon, IonRange } from '@ionic/vue'
-import type { RangeCustomEvent } from '@ionic/vue'
-import { gridOutline, listOutline } from 'ionicons/icons'
+import type {RangeCustomEvent} from '@ionic/vue'
+import {IonIcon, IonRange} from '@ionic/vue'
+import {gridOutline, listOutline} from 'ionicons/icons'
 
 const onRangeChange = (ev: RangeCustomEvent) => {
   const page = Number(ev.detail.value)

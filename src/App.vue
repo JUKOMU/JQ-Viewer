@@ -5,7 +5,7 @@
       <router-view v-slot="{ Component }">
         <transition :name="transitionName" mode="out-in" @after-enter="onAfterEnter">
           <keep-alive :include="keepAliveNames" :exclude="keepAliveExclude">
-            <component :is="Component" />
+            <component :is="Component"/>
           </keep-alive>
         </transition>
       </router-view>
@@ -14,18 +14,18 @@
 </template>
 
 <script setup lang="ts">
-defineOptions({ name: 'App' })
+defineOptions({name: 'App'})
 
-import { IonApp } from '@ionic/vue'
-import { onBeforeUnmount, onMounted, computed, nextTick, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import {IonApp} from '@ionic/vue'
+import {computed, nextTick, onBeforeUnmount, onMounted, ref} from 'vue'
+import {useRoute, useRouter} from 'vue-router'
 import MainMenu from '@/components/menu/MainMenu.vue'
-import { useSideMenuState } from '@/composables/useSideMenuState'
-import { initSettings } from '@/services/SettingsService'
-import { useAuth } from '@/composables/useAuth'
-import { initNetworkProbeStore } from '@/composables/networkProbeStore'
+import {useSideMenuState} from '@/composables/useSideMenuState'
+import {initSettings} from '@/services/SettingsService'
+import {useAuth} from '@/composables/useAuth'
+import {initNetworkProbeStore} from '@/composables/networkProbeStore'
 
-const { isMenuNavigation, leftMenuOpen, rightMenuOpen } = useSideMenuState()
+const {isMenuNavigation, leftMenuOpen, rightMenuOpen} = useSideMenuState()
 
 const route = useRoute()
 const router = useRouter()
@@ -82,7 +82,7 @@ const handleMenuDidClose = () => {
 }
 
 onMounted(async () => {
-  const { initAuth } = useAuth()
+  const {initAuth} = useAuth()
 
   // 加载设置到内存缓存（必须在任何页面渲染前完成）
   await initSettings()
@@ -124,9 +124,8 @@ onBeforeUnmount(() => {
 .page-slide-forward-leave-active,
 .page-slide-back-enter-active,
 .page-slide-back-leave-active {
-  transition:
-    transform 0.22s cubic-bezier(0.22, 0, 0, 1),
-    opacity 0.22s cubic-bezier(0.22, 0, 0, 1);
+  transition: transform 0.22s cubic-bezier(0.22, 0, 0, 1),
+  opacity 0.22s cubic-bezier(0.22, 0, 0, 1);
 }
 
 /* 前进：页面从右滑入，旧页向左退出 */
@@ -134,6 +133,7 @@ onBeforeUnmount(() => {
   transform: translateX(36px);
   opacity: 0;
 }
+
 .page-slide-forward-leave-to {
   transform: translateX(-24px);
   opacity: 0;
@@ -144,6 +144,7 @@ onBeforeUnmount(() => {
   transform: translateX(-24px);
   opacity: 0;
 }
+
 .page-slide-back-leave-to {
   transform: translateX(36px);
   opacity: 0;

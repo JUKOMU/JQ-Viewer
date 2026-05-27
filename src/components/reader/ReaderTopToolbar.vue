@@ -1,14 +1,14 @@
 <template>
   <div class="top-toolbar">
     <button type="button" class="back-btn" @click="$emit('back')">
-      <ion-icon :icon="arrowBack" />
+      <ion-icon :icon="arrowBack"/>
     </button>
     <span class="chapter-title">{{ title }}</span>
   </div>
 </template>
 
 <script setup lang="ts">
-defineOptions({ name: 'ReaderTopToolbar' })
+defineOptions({name: 'ReaderTopToolbar'})
 
 defineProps<{
   title: string
@@ -16,8 +16,8 @@ defineProps<{
 defineEmits<{
   back: []
 }>()
-import { IonIcon } from '@ionic/vue'
-import { arrowBack } from 'ionicons/icons'
+import {IonIcon} from '@ionic/vue'
+import {arrowBack} from 'ionicons/icons'
 </script>
 
 <style scoped>

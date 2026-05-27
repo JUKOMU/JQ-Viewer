@@ -55,27 +55,27 @@
         title="搜索"
         @click="emitSearch"
       >
-        <IonIcon :icon="checkmarkOutline" />
+        <IonIcon :icon="checkmarkOutline"/>
       </button>
       <button type="button" class="action-btn" aria-label="重置" title="重置" @click="resetQuery">
-        <IonIcon :icon="refreshOutline" />
+        <IonIcon :icon="refreshOutline"/>
       </button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-defineOptions({ name: 'CategorySearchToolbar' })
+defineOptions({name: 'CategorySearchToolbar'})
 
 const emit = defineEmits<{
   search: [query: SearchQuery]
 }>()
-import { reactive } from 'vue'
-import { IonIcon } from '@ionic/vue'
-import { checkmarkOutline, refreshOutline } from 'ionicons/icons'
-import { CATEGORY_OPTIONS, ORDER_BY_OPTIONS, TIME_OPTIONS } from '@/constants/searchOptions'
-import type { SearchQuery } from '@/services/JmcomicTypes'
-import { HistoryService } from '@/services/HistoryService'
+import {reactive} from 'vue'
+import {IonIcon} from '@ionic/vue'
+import {checkmarkOutline, refreshOutline} from 'ionicons/icons'
+import {CATEGORY_OPTIONS, ORDER_BY_OPTIONS, TIME_OPTIONS} from '@/constants/searchOptions'
+import type {SearchQuery} from '@/services/JmcomicTypes'
+import {HistoryService} from '@/services/HistoryService'
 
 const createDefaultQuery = (): SearchQuery => ({
   category: 'doujin',
@@ -89,7 +89,7 @@ const query = reactive<SearchQuery>(createDefaultQuery())
 const emitSearch = () => {
   const catLabel = CATEGORY_OPTIONS.find((o) => o.value === query.category)?.label
   if (catLabel) HistoryService.addSearchHistory('category', catLabel)
-  emit('search', { ...query })
+  emit('search', {...query})
 }
 
 const resetQuery = () => {
@@ -136,10 +136,9 @@ const resetQuery = () => {
   color: #555;
   font-size: 12px;
   border: 1px solid rgb(250, 156, 105);
-  transition:
-    transform 0.15s ease-out,
-    background-color 0.15s ease,
-    box-shadow 0.15s ease;
+  transition: transform 0.15s ease-out,
+  background-color 0.15s ease,
+  box-shadow 0.15s ease;
 }
 
 .option-chip.active {

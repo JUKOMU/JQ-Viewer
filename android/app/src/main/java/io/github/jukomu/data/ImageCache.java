@@ -218,9 +218,9 @@ public class ImageCache {
             ImageEntry entry = getInstance().get(cacheKey);
             if (entry != null) {
                 return new WebResourceResponse(
-                        entry.mimeType,
-                        "UTF-8",
-                        new ByteArrayInputStream(entry.data)
+                    entry.mimeType,
+                    "UTF-8",
+                    new ByteArrayInputStream(entry.data)
                 );
             }
 
@@ -232,26 +232,26 @@ public class ImageCache {
                     byte[] thumbData = createThumbnail(original.data);
                     getInstance().put(cacheKey, thumbData, "image/jpeg");
                     return new WebResourceResponse("image/jpeg", "UTF-8",
-                            new ByteArrayInputStream(thumbData));
+                        new ByteArrayInputStream(thumbData));
                 }
 
                 // 2b. 查 FileStore（从本地原图生成缩略图）
                 byte[] originalData = FileStore.getInstance()
-                        .getImageBytesByPhotoId(photoId, sortOrder);
+                    .getImageBytesByPhotoId(photoId, sortOrder);
                 if (originalData != null) {
                     byte[] thumbData = createThumbnail(originalData);
                     getInstance().put(cacheKey, thumbData, "image/jpeg");
                     return new WebResourceResponse("image/jpeg", "UTF-8",
-                            new ByteArrayInputStream(thumbData));
+                        new ByteArrayInputStream(thumbData));
                 }
             } else {
                 byte[] data = FileStore.getInstance()
-                        .getImageBytesByPhotoId(photoId, sortOrder);
+                    .getImageBytesByPhotoId(photoId, sortOrder);
                 if (data != null) {
                     String mime = "image/" + guessFormatName(data);
                     getInstance().put(cacheKey, data, mime);
                     return new WebResourceResponse(mime, "UTF-8",
-                            new ByteArrayInputStream(data));
+                        new ByteArrayInputStream(data));
                 }
             }
 

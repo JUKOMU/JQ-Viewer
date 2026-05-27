@@ -10,7 +10,7 @@
       <div class="menu-header">
         <div class="menu-title">收藏夹</div>
         <button type="button" class="menu-close-btn" @click="closeMenu">
-          <IonIcon :icon="closeOutline" />
+          <IonIcon :icon="closeOutline"/>
         </button>
       </div>
 
@@ -24,7 +24,7 @@
               aria-label="新建在线收藏夹"
               @click="emit('add-folder', 'online')"
             >
-              <IonIcon :icon="addCircleOutline" />
+              <IonIcon :icon="addCircleOutline"/>
             </button>
           </div>
           <div class="folder-list">
@@ -40,7 +40,7 @@
                 :class="{ selected: selectedOnlineId === folder.id }"
                 @click="selectOnlineFolder(folder.id)"
               >
-                <IonIcon :icon="folderOpenOutline" class="folder-icon" />
+                <IonIcon :icon="folderOpenOutline" class="folder-icon"/>
                 <span class="folder-name">{{ folder.name }}</span>
                 <span v-if="onlineFolderCounts[folder.id] !== undefined" class="folder-count">
                   {{ onlineFolderCounts[folder.id] }}
@@ -52,7 +52,7 @@
                 aria-label="更多操作"
                 @click.stop="toggleContextMenu(folder.id)"
               >
-                <IonIcon :icon="ellipsisVertical" />
+                <IonIcon :icon="ellipsisVertical"/>
               </button>
               <FavoriteFolderContextMenu
                 :visible="openMenuFolderId === folder.id"
@@ -69,7 +69,7 @@
         </template>
 
         <template v-if="onlineFolders.length > 0">
-          <div style="margin-top: 24px" />
+          <div style="margin-top: 24px"/>
         </template>
 
         <div v-if="onlineFolders.length === 0 && offlineFolders.length === 0" class="empty-state">
@@ -84,7 +84,7 @@
             aria-label="新建离线收藏夹"
             @click="emit('add-folder', 'offline')"
           >
-            <IonIcon :icon="addCircleOutline" />
+            <IonIcon :icon="addCircleOutline"/>
           </button>
         </div>
         <div class="folder-list">
@@ -100,7 +100,7 @@
               :class="{ selected: selectedOfflineId === folder.id }"
               @click="selectOfflineFolder(folder.id)"
             >
-              <IonIcon :icon="folderOpenOutline" class="folder-icon" />
+              <IonIcon :icon="folderOpenOutline" class="folder-icon"/>
               <span class="folder-name">{{ folder.name }}</span>
               <span class="folder-count">{{ folder.count }}</span>
             </button>
@@ -110,7 +110,7 @@
               aria-label="更多操作"
               @click.stop="toggleContextMenu(folder.id)"
             >
-              <IonIcon :icon="ellipsisVertical" />
+              <IonIcon :icon="ellipsisVertical"/>
             </button>
             <FavoriteFolderContextMenu
               :visible="openMenuFolderId === folder.id"
@@ -130,15 +130,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { IonIcon } from '@ionic/vue'
-import { addCircleOutline, closeOutline, ellipsisVertical, folderOpenOutline } from 'ionicons/icons'
-import { useSideMenuState } from '@/composables/useSideMenuState'
+import {computed, onBeforeUnmount, onMounted, ref} from 'vue'
+import {IonIcon} from '@ionic/vue'
+import {addCircleOutline, closeOutline, ellipsisVertical, folderOpenOutline} from 'ionicons/icons'
+import {useSideMenuState} from '@/composables/useSideMenuState'
 import FavoriteFolderContextMenu from '@/components/favorite/FavoriteFolderContextMenu.vue'
-import type { FolderEntry } from '@/services/JmcomicTypes'
-import { OFFLINE_ALL_FOLDER_ID } from '@/services/JmcomicTypes'
+import type {FolderEntry} from '@/services/JmcomicTypes'
+import {OFFLINE_ALL_FOLDER_ID} from '@/services/JmcomicTypes'
 
-defineOptions({ name: 'FavoriteSideMenu' })
+defineOptions({name: 'FavoriteSideMenu'})
 
 const props = defineProps<{
   modelValue: boolean
@@ -160,7 +160,7 @@ const emit = defineEmits<{
   'export-folder': [payload: { folderId: string; folderName: string; isOnline: boolean }]
 }>()
 
-const { isDraggingRight, isSnappingClosed, rightDragProgress } = useSideMenuState()
+const {isDraggingRight, isSnappingClosed, rightDragProgress} = useSideMenuState()
 
 const panelRef = ref<HTMLElement | null>(null)
 const openMenuFolderId = ref<string | null>(null)
@@ -175,27 +175,27 @@ const toggleContextMenu = (folderId: string) => {
 
 const onContextMenuRename = (folderId: string, folderName: string, isOnline: boolean) => {
   closeContextMenu()
-  emit('rename-folder', { folderId, folderName, isOnline })
+  emit('rename-folder', {folderId, folderName, isOnline})
 }
 
 const onContextMenuDelete = (folderId: string, folderName: string, isOnline: boolean) => {
   closeContextMenu()
-  emit('delete-folder', { folderId, folderName, isOnline })
+  emit('delete-folder', {folderId, folderName, isOnline})
 }
 
 const onContextMenuMove = (folderId: string, folderName: string, isOnline: boolean) => {
   closeContextMenu()
-  emit('move-folder', { folderId, folderName, isOnline })
+  emit('move-folder', {folderId, folderName, isOnline})
 }
 
 const onContextMenuCopy = (folderId: string, folderName: string, isOnline: boolean) => {
   closeContextMenu()
-  emit('copy-folder', { folderId, folderName, isOnline })
+  emit('copy-folder', {folderId, folderName, isOnline})
 }
 
 const onContextMenuExport = (folderId: string, folderName: string, isOnline: boolean) => {
   closeContextMenu()
-  emit('export-folder', { folderId, folderName, isOnline })
+  emit('export-folder', {folderId, folderName, isOnline})
 }
 
 const handleClickOutside = () => {
@@ -260,7 +260,7 @@ const selectOfflineFolder = (folderId: string) => {
   animateClose()
 }
 
-defineExpose({ panelRef })
+defineExpose({panelRef})
 </script>
 
 <style scoped>
@@ -380,9 +380,8 @@ defineExpose({ panelRef })
   font-weight: 700;
   text-align: left;
   box-shadow: 0 12px 28px rgb(115 67 38 / 0.08);
-  transition:
-    background-color 0.16s ease,
-    border-color 0.16s ease;
+  transition: background-color 0.16s ease,
+  border-color 0.16s ease;
 }
 
 .folder-item:hover,

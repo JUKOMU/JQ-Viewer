@@ -3,12 +3,12 @@
     <IonHeader class="ion-no-border">
       <IonToolbar>
         <div class="toolbar-start">
-          <MenuToggleButton />
+          <MenuToggleButton/>
         </div>
         <div class="toolbar-title">下载管理</div>
         <div class="toolbar-end">
           <button v-if="hasTasks" class="sort-btn" @click="toggleSort">
-            <IonIcon :icon="sortIcon" />
+            <IonIcon :icon="sortIcon"/>
           </button>
         </div>
       </IonToolbar>
@@ -16,19 +16,19 @@
     <IonContent>
       <!-- 下拉刷新 -->
       <IonRefresher slot="fixed" @ion-refresh="onRefresh($event)">
-        <IonRefresherContent />
+        <IonRefresherContent/>
       </IonRefresher>
 
       <!-- 空状态 -->
       <div v-if="!hasTasks" class="empty-state">
-        <IonIcon :icon="cloudDownloadOutline" class="empty-icon" />
+        <IonIcon :icon="cloudDownloadOutline" class="empty-icon"/>
         <p>暂无下载内容</p>
       </div>
 
       <template v-else>
         <!-- 存储信息 -->
         <div v-if="hasStorageInfo" class="storage-bar">
-          <IonIcon :icon="saveOutline" class="storage-icon" />
+          <IonIcon :icon="saveOutline" class="storage-icon"/>
           <span>已用 {{ spaceUsedMb }}MB / 可用 {{ spaceAvailMb }}MB</span>
         </div>
 
@@ -78,7 +78,7 @@
             />
           </div>
         </div>
-        <div class="bottom-spacer" />
+        <div class="bottom-spacer"/>
       </template>
     </IonContent>
 
@@ -105,12 +105,12 @@
           class="popover-btn"
           @click="popoverAction('read')"
         >
-          <IonIcon :icon="bookOutline" />
+          <IonIcon :icon="bookOutline"/>
           {{ selectedGroup?.type === 'multi' ? '选择章节' : '阅读' }}
         </button>
 
         <button class="popover-btn" @click="popoverAction('detail')">
-          <IonIcon :icon="informationCircleOutline" />
+          <IonIcon :icon="informationCircleOutline"/>
           进入详情页
         </button>
 
@@ -119,7 +119,7 @@
           class="popover-btn"
           @click="popoverAction('retry')"
         >
-          <IonIcon :icon="refreshOutline" />
+          <IonIcon :icon="refreshOutline"/>
           {{ selectedTask?.error?.includes('张图片下载失败') ? '重新下载失败图片' : '重试' }}
         </button>
 
@@ -128,7 +128,7 @@
           class="popover-btn"
           @click="popoverAction('resume')"
         >
-          <IonIcon :icon="playOutline" />
+          <IonIcon :icon="playOutline"/>
           继续
         </button>
 
@@ -137,7 +137,7 @@
           class="popover-btn"
           @click="popoverAction('pause')"
         >
-          <IonIcon :icon="pauseOutline" />
+          <IonIcon :icon="pauseOutline"/>
           暂停
         </button>
 
@@ -146,7 +146,7 @@
           class="popover-btn danger"
           @click="popoverAction('cancel')"
         >
-          <IonIcon :icon="closeCircleOutline" />
+          <IonIcon :icon="closeCircleOutline"/>
           取消
         </button>
 
@@ -155,7 +155,7 @@
           class="popover-btn danger"
           @click="popoverAction('delete')"
         >
-          <IonIcon :icon="trashOutline" />
+          <IonIcon :icon="trashOutline"/>
           删除
         </button>
       </IonContent>
@@ -188,10 +188,10 @@
 </template>
 
 <script setup lang="ts">
-defineOptions({ name: 'DownloadPage' })
+defineOptions({name: 'DownloadPage'})
 
-import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import {computed, onMounted, onUnmounted, ref} from 'vue'
+import {useRouter} from 'vue-router'
 import {
   IonAlert,
   IonContent,
@@ -217,12 +217,12 @@ import {
   timeOutline,
   trashOutline,
 } from 'ionicons/icons'
-import type { PluginListenerHandle } from '@capacitor/core'
+import type {PluginListenerHandle} from '@capacitor/core'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import DownloadTaskCard from '@/components/download/DownloadTaskCard.vue'
-import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
-import { OfflineDownloadService } from '@/services/OfflineDownloadService'
-import type { CompletedGroup, DownloadTask } from '@/services/JmcomicTypes'
+import {JmcomicService, sanitizeError, showToast} from '@/services/JmcomicService'
+import {OfflineDownloadService} from '@/services/OfflineDownloadService'
+import type {CompletedGroup, DownloadTask} from '@/services/JmcomicTypes'
 
 const router = useRouter()
 const tasks = ref<DownloadTask[]>([])
@@ -381,10 +381,10 @@ const completedGroups = computed<CompletedGroup[]>(() => {
   return sortMode.value === 'title'
     ? groups.sort((a, b) => a.albumTitle.localeCompare(b.albumTitle, 'zh'))
     : groups.sort(
-        (a, b) =>
-          Math.max(...b.chapters.map((c) => c.createdAt)) -
-          Math.max(...a.chapters.map((c) => c.createdAt)),
-      )
+      (a, b) =>
+        Math.max(...b.chapters.map((c) => c.createdAt)) -
+        Math.max(...a.chapters.map((c) => c.createdAt)),
+    )
 })
 
 const syncDownloadState = async () => {
@@ -472,7 +472,8 @@ onMounted(async () => {
     .then((handle) => {
       downloadProgressHandle = handle
     })
-    .catch(() => {})
+    .catch(() => {
+    })
 
   await syncDownloadState()
 })
@@ -514,7 +515,7 @@ const onResume = async (task: DownloadTask) => {
 
 const onRetry = async (task: DownloadTask) => {
   try {
-    const { taskId } = await JmcomicService.downloadChapter(
+    const {taskId} = await JmcomicService.downloadChapter(
       task.albumId,
       task.chapterId,
       task.albumTitle,
@@ -583,7 +584,8 @@ const onDeleteGroup = async (group: CompletedGroup) => {
   try {
     await Promise.all(
       group.chapters.map((ch) =>
-        JmcomicService.deleteDownloaded(ch.albumId, ch.chapterId).catch(() => {}),
+        JmcomicService.deleteDownloaded(ch.albumId, ch.chapterId).catch(() => {
+        }),
       ),
     )
     const taskIds = new Set(group.chapters.map((ch) => ch.taskId))
@@ -622,7 +624,8 @@ const clearCompleted = async () => {
   if (!list.length) return
   await Promise.all(
     list.map((task) =>
-      JmcomicService.deleteDownloaded(task.albumId, task.chapterId).catch(() => {}),
+      JmcomicService.deleteDownloaded(task.albumId, task.chapterId).catch(() => {
+      }),
     ),
   )
   tasks.value = tasks.value.filter((t) => t.status !== 'completed')
@@ -635,7 +638,8 @@ const clearFailed = async () => {
   if (!list.length) return
   await Promise.all(
     list.map((task) =>
-      JmcomicService.deleteDownloaded(task.albumId, task.chapterId).catch(() => {}),
+      JmcomicService.deleteDownloaded(task.albumId, task.chapterId).catch(() => {
+      }),
     ),
   )
   tasks.value = tasks.value.filter((t) => t.status !== 'failed')

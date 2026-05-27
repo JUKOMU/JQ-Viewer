@@ -4,7 +4,7 @@
       <IonToolbar>
         <IonButtons slot="start">
           <IonButton text="" @click="$emit('back')">
-            <IonIcon :icon="arrowBack" />
+            <IonIcon :icon="arrowBack"/>
           </IonButton>
         </IonButtons>
         <IonTitle class="toolbar-title">{{ albumTitle || '章节选择' }}</IonTitle>
@@ -40,8 +40,8 @@
       <!-- 全部章节模式：加载中骨架屏 -->
       <div v-else-if="loadingAll" class="chapter-grid">
         <div v-for="n in skeletonCount" :key="n" class="skeleton-card">
-          <div class="sk-line sk-line--short" />
-          <div class="sk-line" />
+          <div class="sk-line sk-line--short"/>
+          <div class="sk-line"/>
         </div>
       </div>
 
@@ -58,7 +58,7 @@
           <span class="chapter-num">第{{ meta.sortOrder }}话</span>
           <span class="chapter-title">{{ meta.title }}</span>
           <span v-if="downloadedIds.has(meta.id)" class="chapter-pages"
-            >{{ getDownloadedPages(meta.id) }} 页</span
+          >{{ getDownloadedPages(meta.id) }} 页</span
           >
           <img
             v-if="downloadedIds.has(meta.id) && getDownloadedImage(meta.id)"
@@ -69,28 +69,20 @@
         </button>
       </div>
 
-      <div class="bottom-spacer" />
+      <div class="bottom-spacer"/>
     </IonContent>
   </IonPage>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import {
-  IonIcon,
-  IonButtons,
-  IonContent,
-  IonHeader,
-  IonPage,
-  IonTitle,
-  IonToolbar,
-} from '@ionic/vue'
-import { getImageUrl, JmcomicService } from '@/services/JmcomicService'
-import type { DownloadTask, PhotoMeta } from '@/services/JmcomicTypes'
-import { arrowBack } from 'ionicons/icons'
+import {computed, onMounted, ref} from 'vue'
+import {useRoute, useRouter} from 'vue-router'
+import {IonButtons, IonContent, IonHeader, IonIcon, IonPage, IonTitle, IonToolbar,} from '@ionic/vue'
+import {getImageUrl, JmcomicService} from '@/services/JmcomicService'
+import type {DownloadTask, PhotoMeta} from '@/services/JmcomicTypes'
+import {arrowBack} from 'ionicons/icons'
 
-defineOptions({ name: 'ChapterSelectPage' })
+defineOptions({name: 'ChapterSelectPage'})
 
 defineEmits<{
   back: []
@@ -231,9 +223,8 @@ onMounted(async () => {
   background: #fffaf6;
   color: #5a3d2e;
   text-align: center;
-  transition:
-    background-color 0.18s ease,
-    border-color 0.18s ease;
+  transition: background-color 0.18s ease,
+  border-color 0.18s ease;
   cursor: pointer;
 }
 

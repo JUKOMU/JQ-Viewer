@@ -25,7 +25,7 @@
       <!-- 下载中：进度条 + 速度 -->
       <template v-if="showProgress && task.status === 'downloading'">
         <div class="progress-bar">
-          <div class="progress-fill" :style="{ width: progressPct + '%' }" />
+          <div class="progress-fill" :style="{ width: progressPct + '%' }"/>
         </div>
         <div class="progress-text">
           {{ task.downloadedPages }}/{{ task.totalPages }}
@@ -49,7 +49,7 @@
       <!-- 部分失败 -->
       <template v-else-if="task.status === 'failed' && task.downloadedPages > 0">
         <div class="progress-bar">
-          <div class="progress-fill partial" :style="{ width: progressPct + '%' }" />
+          <div class="progress-fill partial" :style="{ width: progressPct + '%' }"/>
         </div>
         <div class="progress-text">
           已下载 {{ task.downloadedPages }}/{{ task.totalPages }}
@@ -65,13 +65,13 @@
     </div>
 
     <button class="more-btn" @click.stop="$emit('more', $event)">
-      <IonIcon :icon="ellipsisVertical" />
+      <IonIcon :icon="ellipsisVertical"/>
     </button>
   </div>
 </template>
 
 <script setup lang="ts">
-defineOptions({ name: 'DownloadTaskCard' })
+defineOptions({name: 'DownloadTaskCard'})
 
 const props = defineProps<{
   task: DownloadTask
@@ -83,11 +83,11 @@ const emit = defineEmits<{
   more: [event: Event]
   click: []
 }>()
-import { computed, ref } from 'vue'
-import { IonIcon } from '@ionic/vue'
-import { ellipsisVertical } from 'ionicons/icons'
-import { getImageUrl, sanitizeError } from '@/services/JmcomicService'
-import type { DownloadTask } from '@/services/JmcomicTypes'
+import {computed, ref} from 'vue'
+import {IonIcon} from '@ionic/vue'
+import {ellipsisVertical} from 'ionicons/icons'
+import {getImageUrl, sanitizeError} from '@/services/JmcomicService'
+import type {DownloadTask} from '@/services/JmcomicTypes'
 
 const hasMultiChapters = computed(() => (props.downloadedChapters?.length ?? 0) > 1)
 

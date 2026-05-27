@@ -9,7 +9,7 @@
         aria-label="搜索"
         @click="trigger('search')"
       >
-        <IonIcon :icon="searchOutline" />
+        <IonIcon :icon="searchOutline"/>
       </button>
       <button
         v-if="expanded"
@@ -19,7 +19,7 @@
         aria-label="跳页"
         @click="trigger('jump')"
       >
-        <IonIcon :icon="albumsOutline" />
+        <IonIcon :icon="albumsOutline"/>
       </button>
       <button
         v-if="expanded"
@@ -29,7 +29,7 @@
         aria-label="回顶"
         @click="trigger('top')"
       >
-        <IonIcon :icon="arrowUpOutline" />
+        <IonIcon :icon="arrowUpOutline"/>
       </button>
       <button
         v-if="expanded"
@@ -39,7 +39,7 @@
         aria-label="返回"
         @click="trigger('back')"
       >
-        <IonIcon :icon="returnDownBackOutline" />
+        <IonIcon :icon="returnDownBackOutline"/>
       </button>
     </TransitionGroup>
 
@@ -50,13 +50,13 @@
       aria-label="快捷操作"
       @click="expanded = !expanded"
     >
-      <IonIcon :icon="ellipsisHorizontalOutline" />
+      <IonIcon :icon="ellipsisHorizontalOutline"/>
     </button>
   </div>
 </template>
 
 <script setup lang="ts">
-defineOptions({ name: 'QuickActionFab' })
+defineOptions({name: 'QuickActionFab'})
 
 const emit = defineEmits<{
   search: []
@@ -64,8 +64,8 @@ const emit = defineEmits<{
   top: []
   back: []
 }>()
-import { ref } from 'vue'
-import { IonIcon } from '@ionic/vue'
+import {ref} from 'vue'
+import {IonIcon} from '@ionic/vue'
 import {
   albumsOutline,
   arrowUpOutline,
@@ -127,10 +127,9 @@ const trigger = (action: 'search' | 'jump' | 'top' | 'back') => {
   height: 52px;
   font-size: 22px;
   opacity: 0.58;
-  transition:
-    transform 0.2s ease,
-    background-color 0.2s ease,
-    opacity 0.2s ease;
+  transition: transform 0.2s ease,
+  background-color 0.2s ease,
+  opacity 0.2s ease;
 }
 
 .main-btn.expanded {
@@ -160,9 +159,8 @@ const trigger = (action: 'search' | 'jump' | 'top' | 'back') => {
 
 .fab-action-enter-active,
 .fab-action-leave-active {
-  transition:
-    opacity 0.18s ease,
-    transform 0.18s ease;
+  transition: opacity 0.18s ease,
+  transform 0.18s ease;
 }
 
 .fab-action-enter-from,

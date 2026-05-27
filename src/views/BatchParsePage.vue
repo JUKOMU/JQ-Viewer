@@ -4,14 +4,14 @@
       <IonToolbar>
         <div class="header-row">
           <div class="toolbar-start">
-            <MenuToggleButton />
+            <MenuToggleButton/>
           </div>
           <button type="button" class="header-btn" @click="sourceExpanded = !sourceExpanded">
             <span class="header-btn-label">{{ sourceExpanded ? '收起原文' : '展开原文' }}</span>
-            <IonIcon :icon="sourceExpanded ? chevronUpOutline : chevronDownOutline" />
+            <IonIcon :icon="sourceExpanded ? chevronUpOutline : chevronDownOutline"/>
           </button>
           <button type="button" class="header-btn" :class="{ active: editing }" @click="toggleEdit">
-            <IonIcon :icon="createOutline" />
+            <IonIcon :icon="createOutline"/>
           </button>
         </div>
 
@@ -19,7 +19,7 @@
           <!-- 编辑模式 -->
           <template v-if="editing">
             <div class="edit-toolbar">
-              <input v-model="findText" class="edit-input" placeholder="查找" enterkeyhint="done" />
+              <input v-model="findText" class="edit-input" placeholder="查找" enterkeyhint="done"/>
               <input
                 v-model="replaceText"
                 class="edit-input"
@@ -30,7 +30,7 @@
               <button type="button" class="edit-btn" @click="removeSpaces">去除空格</button>
               <button type="button" class="edit-btn apply" @click="applyEdit">应用修改</button>
             </div>
-            <textarea v-model="editText" class="source-textarea" rows="5" spellcheck="false" />
+            <textarea v-model="editText" class="source-textarea" rows="5" spellcheck="false"/>
           </template>
 
           <!-- 查看模式 -->
@@ -77,29 +77,20 @@
 </template>
 
 <script setup lang="ts">
-import {
-  computed,
-  nextTick,
-  onActivated,
-  onBeforeUnmount,
-  onDeactivated,
-  onMounted,
-  ref,
-  watch,
-} from 'vue'
-import { useRouter } from 'vue-router'
-import { IonContent, IonHeader, IonIcon, IonPage, IonToolbar } from '@ionic/vue'
-import { chevronDownOutline, chevronUpOutline, createOutline } from 'ionicons/icons'
-import type { ScrollCustomEvent } from '@ionic/core'
+import {computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch,} from 'vue'
+import {useRouter} from 'vue-router'
+import {IonContent, IonHeader, IonIcon, IonPage, IonToolbar} from '@ionic/vue'
+import {chevronDownOutline, chevronUpOutline, createOutline} from 'ionicons/icons'
+import type {ScrollCustomEvent} from '@ionic/core'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
+import type {SearchResultDisplayItem} from '@/components/search/SearchResultContainer.vue'
 import SearchResultContainer from '@/components/search/SearchResultContainer.vue'
-import type { SearchResultDisplayItem } from '@/components/search/SearchResultContainer.vue'
-import { JmcomicService } from '@/services/JmcomicService'
-import type { AlbumDetail, SearchResult, SearchResultItem } from '@/services/JmcomicTypes'
-import { parseIdsFromText } from '@/utils/batchParse'
-import type { InvalidIdItem, ParsedIdItem } from '@/utils/batchParse'
+import {JmcomicService} from '@/services/JmcomicService'
+import type {AlbumDetail, SearchResult, SearchResultItem} from '@/services/JmcomicTypes'
+import type {InvalidIdItem, ParsedIdItem} from '@/utils/batchParse'
+import {parseIdsFromText} from '@/utils/batchParse'
 
-defineOptions({ name: 'BatchParsePage' })
+defineOptions({name: 'BatchParsePage'})
 
 const SESSION_KEY = 'batch-parse-text'
 
@@ -173,7 +164,7 @@ async function applyEdit() {
 const sourceLines = computed<SourceLine[]>(() => {
   const lines = originalText.value.split('\n')
   const result: SourceLine[] = lines.map((text) => ({
-    segments: [{ text, type: 'normal' as const }],
+    segments: [{text, type: 'normal' as const}],
     hasOnlyFailed: false,
   }))
 
@@ -223,15 +214,15 @@ function splitSegments(
       out.push(seg)
     } else {
       if (cursor < targetStart) {
-        out.push({ text: seg.text.slice(0, targetStart - cursor), type: seg.type })
+        out.push({text: seg.text.slice(0, targetStart - cursor), type: seg.type})
       }
       const overlapStart = Math.max(cursor, targetStart)
       const overlapEnd = Math.min(segEnd, targetEnd)
       if (overlapEnd > overlapStart) {
-        out.push({ text: seg.text.slice(overlapStart - cursor, overlapEnd - cursor), type })
+        out.push({text: seg.text.slice(overlapStart - cursor, overlapEnd - cursor), type})
       }
       if (segEnd > targetEnd) {
-        out.push({ text: seg.text.slice(targetEnd - cursor), type: seg.type })
+        out.push({text: seg.text.slice(targetEnd - cursor), type: seg.type})
       }
     }
     cursor = segEnd
@@ -277,7 +268,7 @@ function albumToSearchItem(a: AlbumDetail): SearchResultItem {
 
 const displayItems = computed<SearchResultDisplayItem[]>(() => {
   return albumResults.value
-    .map((a, i) => (a ? { item: albumToSearchItem(a), page: 1, indexInPage: i } : null))
+    .map((a, i) => (a ? {item: albumToSearchItem(a), page: 1, indexInPage: i} : null))
     .filter((x): x is SearchResultDisplayItem => x !== null)
 })
 
@@ -326,11 +317,11 @@ async function doParse() {
       }
       // 每次完成一个就更新响应式数组，触发渐进渲染
       albumResults.value = [...results]
-      failedIds.value = { ...failed }
+      failedIds.value = {...failed}
     }
   }
 
-  const workers = Array.from({ length: Math.min(concurrency, total) }, () => worker())
+  const workers = Array.from({length: Math.min(concurrency, total)}, () => worker())
   await Promise.all(workers)
 
   loading.value = false
@@ -436,7 +427,7 @@ function onSourceLineClick(lineIndex: number) {
   const entryKey = `1-${idx}-${parsedItems.value[idx].id}`
   const el = resultContainerRef.value?.getEntryElement(entryKey)
   if (el) {
-    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    el.scrollIntoView({behavior: 'smooth', block: 'center'})
     currentHighlightLine.value = lineIndex
   }
 }
@@ -447,7 +438,7 @@ watch(currentHighlightLine, async (lineIndex) => {
   await nextTick()
   const el = sourceScrollRef.value.querySelector(`.source-line:nth-child(${lineIndex + 1})`)
   if (el) {
-    el.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    el.scrollIntoView({block: 'nearest', behavior: 'smooth'})
   }
 })
 

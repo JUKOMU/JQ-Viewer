@@ -39,10 +39,10 @@ public class SettingsStore extends SQLiteOpenHelper {
     @Override
     public void onCreate(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE " + TABLE + " ("
-                + COL_KEY + " TEXT PRIMARY KEY NOT NULL,"
-                + COL_VALUE + " TEXT NOT NULL,"
-                + COL_UPDATED_AT + " INTEGER NOT NULL"
-                + ")");
+            + COL_KEY + " TEXT PRIMARY KEY NOT NULL,"
+            + COL_VALUE + " TEXT NOT NULL,"
+            + COL_UPDATED_AT + " INTEGER NOT NULL"
+            + ")");
 
         long now = System.currentTimeMillis();
         insertDefault(db, "reader_preload_pages", "15", now);
@@ -71,8 +71,8 @@ public class SettingsStore extends SQLiteOpenHelper {
 
     public String getString(String key) {
         try (Cursor c = getReadableDatabase().query(TABLE,
-                new String[]{COL_VALUE}, COL_KEY + "=?", new String[]{key},
-                null, null, null)) {
+            new String[]{COL_VALUE}, COL_KEY + "=?", new String[]{key},
+            null, null, null)) {
             if (c.moveToFirst()) {
                 return c.getString(0);
             }
@@ -126,7 +126,7 @@ public class SettingsStore extends SQLiteOpenHelper {
             cv.put(COL_VALUE, value);
             cv.put(COL_UPDATED_AT, System.currentTimeMillis());
             return getWritableDatabase().insertWithOnConflict(TABLE, null, cv,
-                    SQLiteDatabase.CONFLICT_REPLACE) != -1;
+                SQLiteDatabase.CONFLICT_REPLACE) != -1;
         } catch (Exception e) {
             Log.w(TAG, "写入设置项失败", e);
             return false;

@@ -73,36 +73,36 @@ public class DownloadStore extends SQLiteOpenHelper {
     @Override
     public void onCreate(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE " + TABLE_TASKS + " ("
-                + COL_TASK_ID + " TEXT PRIMARY KEY,"
-                + COL_ALBUM_ID + " TEXT NOT NULL,"
-                + COL_CHAPTER_ID + " TEXT NOT NULL,"
-                + COL_ALBUM_TITLE + " TEXT NOT NULL,"
-                + COL_CHAPTER_TITLE + " TEXT NOT NULL,"
-                + COL_COVER_URL + " TEXT NOT NULL,"
-                + COL_AUTHOR + " TEXT DEFAULT '',"
-                + COL_TAGS + " TEXT DEFAULT '[]',"
-                + COL_TOTAL_PAGES + " INTEGER NOT NULL,"
-                + COL_DOWNLOADED_PAGES + " INTEGER DEFAULT 0,"
-                + COL_FIRST_IMAGE_SORT_ORDER + " INTEGER,"
-                + COL_STATUS + " TEXT NOT NULL DEFAULT 'queued',"
-                + COL_ERROR + " TEXT,"
-                + COL_TOTAL_SIZE + " INTEGER DEFAULT 0,"
-                + COL_CHAPTER_SORT_ORDER + " INTEGER DEFAULT 0,"
-                + COL_CREATED_AT + " INTEGER NOT NULL,"
-                + COL_COMPLETED_AT + " INTEGER"
-                + ")");
+            + COL_TASK_ID + " TEXT PRIMARY KEY,"
+            + COL_ALBUM_ID + " TEXT NOT NULL,"
+            + COL_CHAPTER_ID + " TEXT NOT NULL,"
+            + COL_ALBUM_TITLE + " TEXT NOT NULL,"
+            + COL_CHAPTER_TITLE + " TEXT NOT NULL,"
+            + COL_COVER_URL + " TEXT NOT NULL,"
+            + COL_AUTHOR + " TEXT DEFAULT '',"
+            + COL_TAGS + " TEXT DEFAULT '[]',"
+            + COL_TOTAL_PAGES + " INTEGER NOT NULL,"
+            + COL_DOWNLOADED_PAGES + " INTEGER DEFAULT 0,"
+            + COL_FIRST_IMAGE_SORT_ORDER + " INTEGER,"
+            + COL_STATUS + " TEXT NOT NULL DEFAULT 'queued',"
+            + COL_ERROR + " TEXT,"
+            + COL_TOTAL_SIZE + " INTEGER DEFAULT 0,"
+            + COL_CHAPTER_SORT_ORDER + " INTEGER DEFAULT 0,"
+            + COL_CREATED_AT + " INTEGER NOT NULL,"
+            + COL_COMPLETED_AT + " INTEGER"
+            + ")");
 
         db.execSQL("CREATE TABLE " + TABLE_IMAGES + " ("
-                + COL_TASK_ID + " TEXT NOT NULL,"
-                + COL_SORT_ORDER + " INTEGER NOT NULL,"
-                + COL_PHOTO_ID + " TEXT NOT NULL,"
-                + COL_FILENAME + " TEXT NOT NULL,"
-                + COL_URL + " TEXT NOT NULL,"
-                + COL_SCRAMBLE_ID + " TEXT NOT NULL,"
-                + COL_QUERY_PARAMS + " TEXT,"
-                + "PRIMARY KEY (" + COL_TASK_ID + ", " + COL_SORT_ORDER + "),"
-                + "FOREIGN KEY (" + COL_TASK_ID + ") REFERENCES " + TABLE_TASKS + "(" + COL_TASK_ID + ")"
-                + ")");
+            + COL_TASK_ID + " TEXT NOT NULL,"
+            + COL_SORT_ORDER + " INTEGER NOT NULL,"
+            + COL_PHOTO_ID + " TEXT NOT NULL,"
+            + COL_FILENAME + " TEXT NOT NULL,"
+            + COL_URL + " TEXT NOT NULL,"
+            + COL_SCRAMBLE_ID + " TEXT NOT NULL,"
+            + COL_QUERY_PARAMS + " TEXT,"
+            + "PRIMARY KEY (" + COL_TASK_ID + ", " + COL_SORT_ORDER + "),"
+            + "FOREIGN KEY (" + COL_TASK_ID + ") REFERENCES " + TABLE_TASKS + "(" + COL_TASK_ID + ")"
+            + ")");
     }
 
     @Override
@@ -130,7 +130,7 @@ public class DownloadStore extends SQLiteOpenHelper {
         cv.put(COL_STATUS, "queued");
         cv.put(COL_CREATED_AT, System.currentTimeMillis());
         getWritableDatabase().insertWithOnConflict(TABLE_TASKS, null, cv,
-                SQLiteDatabase.CONFLICT_IGNORE);
+            SQLiteDatabase.CONFLICT_IGNORE);
     }
 
     public void updateTaskDetail(String taskId, int totalPages, String author, String tags, int sortOrder) {
@@ -140,7 +140,7 @@ public class DownloadStore extends SQLiteOpenHelper {
         cv.put(COL_TAGS, tags);
         cv.put(COL_CHAPTER_SORT_ORDER, sortOrder);
         getWritableDatabase().update(TABLE_TASKS, cv,
-                COL_TASK_ID + " = ?", new String[]{taskId});
+            COL_TASK_ID + " = ?", new String[]{taskId});
     }
 
     public void updateStatus(String taskId, String status) {
@@ -150,14 +150,14 @@ public class DownloadStore extends SQLiteOpenHelper {
             cv.putNull(COL_ERROR);
         }
         getWritableDatabase().update(TABLE_TASKS, cv,
-                COL_TASK_ID + " = ?", new String[]{taskId});
+            COL_TASK_ID + " = ?", new String[]{taskId});
     }
 
     public void updateProgress(String taskId, int downloadedPages) {
         ContentValues cv = new ContentValues();
         cv.put(COL_DOWNLOADED_PAGES, downloadedPages);
         getWritableDatabase().update(TABLE_TASKS, cv,
-                COL_TASK_ID + " = ?", new String[]{taskId});
+            COL_TASK_ID + " = ?", new String[]{taskId});
     }
 
     public void updateCompleted(String taskId, int downloadedPages, int firstSortOrder) {
@@ -167,7 +167,7 @@ public class DownloadStore extends SQLiteOpenHelper {
         cv.put(COL_STATUS, "completed");
         cv.put(COL_COMPLETED_AT, System.currentTimeMillis());
         getWritableDatabase().update(TABLE_TASKS, cv,
-                COL_TASK_ID + " = ?", new String[]{taskId});
+            COL_TASK_ID + " = ?", new String[]{taskId});
     }
 
     public void updateFailed(String taskId, int downloadedPages, String error) {
@@ -176,26 +176,26 @@ public class DownloadStore extends SQLiteOpenHelper {
         cv.put(COL_STATUS, "failed");
         cv.put(COL_ERROR, error);
         getWritableDatabase().update(TABLE_TASKS, cv,
-                COL_TASK_ID + " = ?", new String[]{taskId});
+            COL_TASK_ID + " = ?", new String[]{taskId});
     }
 
     public void updateSize(String taskId, long totalSize) {
         ContentValues cv = new ContentValues();
         cv.put(COL_TOTAL_SIZE, totalSize);
         getWritableDatabase().update(TABLE_TASKS, cv,
-                COL_TASK_ID + " = ?", new String[]{taskId});
+            COL_TASK_ID + " = ?", new String[]{taskId});
     }
 
     public boolean hasActiveOrCompleted(String taskId) {
         Cursor c = getReadableDatabase().query(TABLE_TASKS,
-                new String[]{COL_STATUS}, COL_TASK_ID + " = ?",
-                new String[]{taskId}, null, null, null);
+            new String[]{COL_STATUS}, COL_TASK_ID + " = ?",
+            new String[]{taskId}, null, null, null);
         if (c != null) {
             try {
                 if (c.moveToFirst()) {
                     String status = c.getString(0);
                     return "queued".equals(status) || "downloading".equals(status)
-                            || "paused".equals(status) || "completed".equals(status);
+                        || "paused".equals(status) || "completed".equals(status);
                 }
             } finally {
                 c.close();
@@ -207,7 +207,7 @@ public class DownloadStore extends SQLiteOpenHelper {
     public List<JSONObject> getAllTasks() {
         List<JSONObject> list = new ArrayList<>();
         Cursor c = getReadableDatabase().query(TABLE_TASKS, null, null,
-                null, null, null, COL_CREATED_AT + " DESC", "500");
+            null, null, null, COL_CREATED_AT + " DESC", "500");
         if (c != null) {
             try {
                 while (c.moveToNext()) {
@@ -227,8 +227,8 @@ public class DownloadStore extends SQLiteOpenHelper {
 
     public JSONObject getTask(String taskId) {
         Cursor c = getReadableDatabase().query(TABLE_TASKS, null,
-                COL_TASK_ID + " = ?", new String[]{taskId},
-                null, null, null);
+            COL_TASK_ID + " = ?", new String[]{taskId},
+            null, null, null);
         if (c != null) {
             try {
                 if (c.moveToFirst()) {
@@ -243,7 +243,7 @@ public class DownloadStore extends SQLiteOpenHelper {
 
     public void deleteTask(String taskId) {
         getWritableDatabase().delete(TABLE_TASKS,
-                COL_TASK_ID + " = ?", new String[]{taskId});
+            COL_TASK_ID + " = ?", new String[]{taskId});
     }
 
     // ========== 图片操作 ==========
@@ -263,7 +263,7 @@ public class DownloadStore extends SQLiteOpenHelper {
                 cv.put(COL_SCRAMBLE_ID, img.getScrambleId());
                 cv.put(COL_QUERY_PARAMS, img.getQueryParams());
                 db.insertWithOnConflict(TABLE_IMAGES, null, cv,
-                        SQLiteDatabase.CONFLICT_REPLACE);
+                    SQLiteDatabase.CONFLICT_REPLACE);
             }
             db.setTransactionSuccessful();
         } finally {
@@ -274,8 +274,8 @@ public class DownloadStore extends SQLiteOpenHelper {
     public List<JSONObject> getImages(String taskId) {
         List<JSONObject> list = new ArrayList<>();
         Cursor c = getReadableDatabase().query(TABLE_IMAGES, null,
-                COL_TASK_ID + " = ?", new String[]{taskId},
-                null, null, COL_SORT_ORDER + " ASC");
+            COL_TASK_ID + " = ?", new String[]{taskId},
+            null, null, COL_SORT_ORDER + " ASC");
         if (c != null) {
             try {
                 while (c.moveToNext()) {
@@ -302,7 +302,7 @@ public class DownloadStore extends SQLiteOpenHelper {
 
     public void deleteImages(String taskId) {
         getWritableDatabase().delete(TABLE_IMAGES,
-                COL_TASK_ID + " = ?", new String[]{taskId});
+            COL_TASK_ID + " = ?", new String[]{taskId});
     }
 
     // ========== 启动校验 ==========
@@ -316,13 +316,13 @@ public class DownloadStore extends SQLiteOpenHelper {
             cvZombie.put(COL_STATUS, "failed");
             cvZombie.put(COL_ERROR, "App restart, task interrupted");
             db.update(TABLE_TASKS, cvZombie,
-                    COL_STATUS + " IN ('queued', 'downloading', 'paused')", null);
+                COL_STATUS + " IN ('queued', 'downloading', 'paused')", null);
 
             // 2. 校验 completed 任务的文件完整性
             Cursor c = db.query(TABLE_TASKS,
-                    new String[]{COL_TASK_ID, COL_ALBUM_ID, COL_CHAPTER_ID, COL_TOTAL_PAGES},
-                    COL_STATUS + " = ?", new String[]{"completed"},
-                    null, null, null);
+                new String[]{COL_TASK_ID, COL_ALBUM_ID, COL_CHAPTER_ID, COL_TOTAL_PAGES},
+                COL_STATUS + " = ?", new String[]{"completed"},
+                null, null, null);
             if (c != null) {
                 try {
                     while (c.moveToNext()) {
@@ -332,13 +332,13 @@ public class DownloadStore extends SQLiteOpenHelper {
                         int total = c.getInt(3);
 
                         File chapterDir = new File(baseDir,
-                                aid + File.separator + cid);
+                            aid + File.separator + cid);
                         if (!chapterDir.isDirectory()) {
                             ContentValues cv = new ContentValues();
                             cv.put(COL_STATUS, "failed");
                             cv.put(COL_ERROR, "Download file directory missing");
                             db.update(TABLE_TASKS, cv,
-                                    COL_TASK_ID + " = ?", new String[]{taskId});
+                                COL_TASK_ID + " = ?", new String[]{taskId});
                             Log.w(TAG, "Startup check: mark " + taskId + " failed (dir missing)");
                             continue;
                         }
@@ -350,22 +350,22 @@ public class DownloadStore extends SQLiteOpenHelper {
                             cv.put(COL_STATUS, "failed");
                             cv.put(COL_ERROR, "meta.json missing");
                             db.update(TABLE_TASKS, cv,
-                                    COL_TASK_ID + " = ?", new String[]{taskId});
+                                COL_TASK_ID + " = ?", new String[]{taskId});
                             Log.w(TAG, "Startup check: mark " + taskId + " failed (meta missing)");
                         }
 
                         // 检查图片文件数量
                         File[] imageFiles = chapterDir.listFiles(
-                                (dir, name) -> !name.equals("meta.json") && !name.endsWith(".tmp"));
+                            (dir, name) -> !name.equals("meta.json") && !name.endsWith(".tmp"));
                         int fileCount = imageFiles != null ? imageFiles.length : 0;
                         if (fileCount < total) {
                             ContentValues cv = new ContentValues();
                             cv.put(COL_STATUS, "failed");
                             cv.put(COL_ERROR, "Missing images: " + fileCount + "/" + total);
                             db.update(TABLE_TASKS, cv,
-                                    COL_TASK_ID + " = ?", new String[]{taskId});
+                                COL_TASK_ID + " = ?", new String[]{taskId});
                             Log.w(TAG, "Startup check: mark " + taskId
-                                    + " failed (images " + fileCount + "/" + total + ")");
+                                + " failed (images " + fileCount + "/" + total + ")");
                         }
                     }
                 } finally {

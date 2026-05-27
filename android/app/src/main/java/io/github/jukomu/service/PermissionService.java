@@ -30,7 +30,7 @@ public class PermissionService {
             return new PermissionState(false, "not_supported", apiLevel);
         } else if (apiLevel >= Build.VERSION_CODES.M) {
             int check = ContextCompat.checkSelfPermission(ctx,
-                    android.Manifest.permission.WRITE_EXTERNAL_STORAGE);
+                android.Manifest.permission.WRITE_EXTERNAL_STORAGE);
             boolean granted = (check == PackageManager.PERMISSION_GRANTED);
             return new PermissionState(granted, "WRITE_EXTERNAL_STORAGE", apiLevel);
         } else {
@@ -54,7 +54,7 @@ public class PermissionService {
      */
     public PermissionState interpretResult(int[] grantResults) {
         boolean granted = grantResults.length > 0
-                && grantResults[0] == PackageManager.PERMISSION_GRANTED;
+            && grantResults[0] == PackageManager.PERMISSION_GRANTED;
         return new PermissionState(granted, "WRITE_EXTERNAL_STORAGE", Build.VERSION.SDK_INT);
     }
 }

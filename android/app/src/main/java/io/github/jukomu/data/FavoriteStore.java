@@ -55,27 +55,27 @@ public class FavoriteStore extends SQLiteOpenHelper {
     @Override
     public void onCreate(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE " + TABLE_FOLDERS + " ("
-                + COL_FOLDER_ID + " TEXT PRIMARY KEY,"
-                + COL_NAME + " TEXT NOT NULL"
-                + ")");
+            + COL_FOLDER_ID + " TEXT PRIMARY KEY,"
+            + COL_NAME + " TEXT NOT NULL"
+            + ")");
 
         db.execSQL("CREATE TABLE " + TABLE_FAVORITES + " ("
-                + COL_ID + " INTEGER PRIMARY KEY AUTOINCREMENT,"
-                + COL_FOLDER_ID + " TEXT NOT NULL,"
-                + COL_ALBUM_ID + " TEXT NOT NULL,"
-                + COL_TITLE + " TEXT NOT NULL DEFAULT '',"
-                + COL_COVER_URL + " TEXT NOT NULL DEFAULT '',"
-                + COL_AUTHORS + " TEXT NOT NULL DEFAULT '',"
-                + COL_TAGS + " TEXT NOT NULL DEFAULT '',"
-                + "UNIQUE(" + COL_FOLDER_ID + ", " + COL_ALBUM_ID + ")"
-                + ")");
+            + COL_ID + " INTEGER PRIMARY KEY AUTOINCREMENT,"
+            + COL_FOLDER_ID + " TEXT NOT NULL,"
+            + COL_ALBUM_ID + " TEXT NOT NULL,"
+            + COL_TITLE + " TEXT NOT NULL DEFAULT '',"
+            + COL_COVER_URL + " TEXT NOT NULL DEFAULT '',"
+            + COL_AUTHORS + " TEXT NOT NULL DEFAULT '',"
+            + COL_TAGS + " TEXT NOT NULL DEFAULT '',"
+            + "UNIQUE(" + COL_FOLDER_ID + ", " + COL_ALBUM_ID + ")"
+            + ")");
 
         db.execSQL("CREATE TABLE " + TABLE_BACKUPS + " ("
-                + COL_ID + " INTEGER PRIMARY KEY AUTOINCREMENT,"
-                + COL_BACKUP_KEY + " TEXT NOT NULL UNIQUE,"
-                + COL_ITEMS_JSON + " TEXT NOT NULL,"
-                + COL_CREATED_AT + " INTEGER NOT NULL"
-                + ")");
+            + COL_ID + " INTEGER PRIMARY KEY AUTOINCREMENT,"
+            + COL_BACKUP_KEY + " TEXT NOT NULL UNIQUE,"
+            + COL_ITEMS_JSON + " TEXT NOT NULL,"
+            + COL_CREATED_AT + " INTEGER NOT NULL"
+            + ")");
     }
 
     @Override
@@ -98,11 +98,11 @@ public class FavoriteStore extends SQLiteOpenHelper {
         Cursor c = null;
         try {
             c = getReadableDatabase().rawQuery(
-                    "SELECT f." + COL_FOLDER_ID + ", f." + COL_NAME + ","
-                            + " (SELECT COUNT(*) FROM " + TABLE_FAVORITES
-                            + " WHERE " + COL_FOLDER_ID + " = f." + COL_FOLDER_ID + ") AS cnt"
-                            + " FROM " + TABLE_FOLDERS + " f",
-                    null);
+                "SELECT f." + COL_FOLDER_ID + ", f." + COL_NAME + ","
+                    + " (SELECT COUNT(*) FROM " + TABLE_FAVORITES
+                    + " WHERE " + COL_FOLDER_ID + " = f." + COL_FOLDER_ID + ") AS cnt"
+                    + " FROM " + TABLE_FOLDERS + " f",
+                null);
             while (c.moveToNext()) {
                 JSONObject obj = new JSONObject();
                 obj.put("folderId", c.getString(0));
@@ -137,7 +137,7 @@ public class FavoriteStore extends SQLiteOpenHelper {
             ContentValues cv = new ContentValues();
             cv.put(COL_NAME, newName.trim());
             int rows = db.update(TABLE_FOLDERS, cv,
-                    COL_FOLDER_ID + "=?", new String[]{folderId});
+                COL_FOLDER_ID + "=?", new String[]{folderId});
             return rows > 0;
         } catch (Exception e) {
             android.util.Log.w("FavoriteStore", "renameFolder failed", e);
@@ -150,9 +150,9 @@ public class FavoriteStore extends SQLiteOpenHelper {
         db.beginTransaction();
         try {
             db.delete(TABLE_FAVORITES, COL_FOLDER_ID + "=?",
-                    new String[]{folderId});
+                new String[]{folderId});
             db.delete(TABLE_FOLDERS, COL_FOLDER_ID + "=?",
-                    new String[]{folderId});
+                new String[]{folderId});
             db.setTransactionSuccessful();
             return true;
         } catch (Exception e) {
@@ -174,11 +174,11 @@ public class FavoriteStore extends SQLiteOpenHelper {
             cv.put(COL_TITLE, item.optString("title", ""));
             cv.put(COL_COVER_URL, item.optString("coverUrl", ""));
             cv.put(COL_AUTHORS, item.optJSONArray("authors") != null
-                    ? item.optJSONArray("authors").toString() : "[]");
+                ? item.optJSONArray("authors").toString() : "[]");
             cv.put(COL_TAGS, item.optJSONArray("tags") != null
-                    ? item.optJSONArray("tags").toString() : "[]");
+                ? item.optJSONArray("tags").toString() : "[]");
             long rowId = db.insertWithOnConflict(TABLE_FAVORITES, null, cv,
-                    SQLiteDatabase.CONFLICT_IGNORE);
+                SQLiteDatabase.CONFLICT_IGNORE);
             return rowId != -1;
         } catch (Exception e) {
             android.util.Log.w("FavoriteStore", "addItem failed", e);
@@ -190,8 +190,8 @@ public class FavoriteStore extends SQLiteOpenHelper {
         SQLiteDatabase db = getWritableDatabase();
         try {
             int rows = db.delete(TABLE_FAVORITES,
-                    COL_FOLDER_ID + "=? AND " + COL_ALBUM_ID + "=?",
-                    new String[]{folderId, albumId});
+                COL_FOLDER_ID + "=? AND " + COL_ALBUM_ID + "=?",
+                new String[]{folderId, albumId});
             return rows > 0;
         } catch (Exception e) {
             android.util.Log.w("FavoriteStore", "removeItem failed", e);
@@ -200,7 +200,7 @@ public class FavoriteStore extends SQLiteOpenHelper {
     }
 
     public JSONObject getItems(String folderId, String keyword,
-                                int page, int pageSize) {
+                               int page, int pageSize) {
         JSONObject result = new JSONObject();
         Cursor countCursor = null;
         Cursor dataCursor = null;
@@ -217,22 +217,22 @@ public class FavoriteStore extends SQLiteOpenHelper {
 
             // count
             countCursor = db.query(TABLE_FAVORITES,
-                    new String[]{"COUNT(*)"}, where, whereArgs,
-                    null, null, null);
+                new String[]{"COUNT(*)"}, where, whereArgs,
+                null, null, null);
             int totalItems = countCursor.moveToFirst()
-                    ? countCursor.getInt(0) : 0;
+                ? countCursor.getInt(0) : 0;
             int totalPages = Math.max(1,
-                    (int) Math.ceil((double) totalItems / pageSize));
+                (int) Math.ceil((double) totalItems / pageSize));
             int currentPage = Math.min(Math.max(1, page), totalPages);
             int offset = (currentPage - 1) * pageSize;
 
             // data
             dataCursor = db.query(TABLE_FAVORITES,
-                    new String[]{COL_ALBUM_ID, COL_TITLE, COL_COVER_URL,
-                            COL_AUTHORS, COL_TAGS},
-                    where, whereArgs, null, null,
-                    COL_ID + " ASC",
-                    pageSize + " OFFSET " + offset);
+                new String[]{COL_ALBUM_ID, COL_TITLE, COL_COVER_URL,
+                    COL_AUTHORS, COL_TAGS},
+                where, whereArgs, null, null,
+                COL_ID + " ASC",
+                pageSize + " OFFSET " + offset);
 
             JSONArray content = new JSONArray();
             while (dataCursor.moveToNext()) {
@@ -265,10 +265,10 @@ public class FavoriteStore extends SQLiteOpenHelper {
         Cursor c = null;
         try {
             c = getReadableDatabase().query(TABLE_FAVORITES,
-                    new String[]{COL_ALBUM_ID, COL_TITLE, COL_COVER_URL,
-                            COL_AUTHORS, COL_TAGS},
-                    COL_FOLDER_ID + "=?", new String[]{folderId},
-                    null, null, COL_ID + " ASC");
+                new String[]{COL_ALBUM_ID, COL_TITLE, COL_COVER_URL,
+                    COL_AUTHORS, COL_TAGS},
+                COL_FOLDER_ID + "=?", new String[]{folderId},
+                null, null, COL_ID + " ASC");
             while (c.moveToNext()) {
                 arr.put(cursorToItem(c));
             }
@@ -286,8 +286,8 @@ public class FavoriteStore extends SQLiteOpenHelper {
         Cursor c = null;
         try {
             c = getReadableDatabase().rawQuery(
-                    "SELECT COUNT(DISTINCT " + COL_ALBUM_ID + ") FROM "
-                            + TABLE_FAVORITES, null);
+                "SELECT COUNT(DISTINCT " + COL_ALBUM_ID + ") FROM "
+                    + TABLE_FAVORITES, null);
             return c.moveToFirst() ? c.getInt(0) : 0;
         } catch (Exception e) {
             android.util.Log.w("FavoriteStore", "getTotalCount failed", e);
@@ -302,15 +302,15 @@ public class FavoriteStore extends SQLiteOpenHelper {
         Cursor c = null;
         try {
             c = getReadableDatabase().rawQuery(
-                    "SELECT " + COL_ALBUM_ID + ", " + COL_TITLE
-                            + ", " + COL_COVER_URL + ", " + COL_AUTHORS
-                            + ", " + COL_TAGS
-                            + " FROM " + TABLE_FAVORITES
-                            + " WHERE " + COL_ID + " IN (SELECT MIN(" + COL_ID + ")"
-                            + " FROM " + TABLE_FAVORITES
-                            + " GROUP BY " + COL_ALBUM_ID + ")"
-                            + " ORDER BY " + COL_ID + " ASC",
-                    null);
+                "SELECT " + COL_ALBUM_ID + ", " + COL_TITLE
+                    + ", " + COL_COVER_URL + ", " + COL_AUTHORS
+                    + ", " + COL_TAGS
+                    + " FROM " + TABLE_FAVORITES
+                    + " WHERE " + COL_ID + " IN (SELECT MIN(" + COL_ID + ")"
+                    + " FROM " + TABLE_FAVORITES
+                    + " GROUP BY " + COL_ALBUM_ID + ")"
+                    + " ORDER BY " + COL_ID + " ASC",
+                null);
             while (c.moveToNext()) {
                 arr.put(cursorToItem(c));
             }
@@ -329,19 +329,19 @@ public class FavoriteStore extends SQLiteOpenHelper {
         try {
             // 验证两个夹都存在
             c = db.query(TABLE_FOLDERS, new String[]{COL_FOLDER_ID},
-                    COL_FOLDER_ID + "=? OR " + COL_FOLDER_ID + "=?",
-                    new String[]{sourceId, targetId},
-                    null, null, null);
+                COL_FOLDER_ID + "=? OR " + COL_FOLDER_ID + "=?",
+                new String[]{sourceId, targetId},
+                null, null, null);
             if (c.getCount() < 2) return false;
             c.close();
             c = null;
 
             // 游标遍历源夹，逐行 insert or ignore 到目标夹
             c = db.query(TABLE_FAVORITES,
-                    new String[]{COL_ALBUM_ID, COL_TITLE, COL_COVER_URL,
-                            COL_AUTHORS, COL_TAGS},
-                    COL_FOLDER_ID + "=?", new String[]{sourceId},
-                    null, null, null);
+                new String[]{COL_ALBUM_ID, COL_TITLE, COL_COVER_URL,
+                    COL_AUTHORS, COL_TAGS},
+                COL_FOLDER_ID + "=?", new String[]{sourceId},
+                null, null, null);
 
             while (c.moveToNext()) {
                 ContentValues cv = new ContentValues();
@@ -352,11 +352,11 @@ public class FavoriteStore extends SQLiteOpenHelper {
                 cv.put(COL_AUTHORS, c.getString(3));
                 cv.put(COL_TAGS, c.getString(4));
                 db.insertWithOnConflict(TABLE_FAVORITES, null, cv,
-                        SQLiteDatabase.CONFLICT_IGNORE);
+                    SQLiteDatabase.CONFLICT_IGNORE);
             }
             // 删除源夹所有项
             db.delete(TABLE_FAVORITES, COL_FOLDER_ID + "=?",
-                    new String[]{sourceId});
+                new String[]{sourceId});
             db.setTransactionSuccessful();
             return true;
         } catch (Exception e) {
@@ -382,10 +382,10 @@ public class FavoriteStore extends SQLiteOpenHelper {
 
             // 复制源夹全部项
             c = db.query(TABLE_FAVORITES,
-                    new String[]{COL_ALBUM_ID, COL_TITLE, COL_COVER_URL,
-                            COL_AUTHORS, COL_TAGS},
-                    COL_FOLDER_ID + "=?", new String[]{sourceId},
-                    null, null, null);
+                new String[]{COL_ALBUM_ID, COL_TITLE, COL_COVER_URL,
+                    COL_AUTHORS, COL_TAGS},
+                COL_FOLDER_ID + "=?", new String[]{sourceId},
+                null, null, null);
             while (c.moveToNext()) {
                 ContentValues cv = new ContentValues();
                 cv.put(COL_FOLDER_ID, newFolderId);
@@ -395,7 +395,7 @@ public class FavoriteStore extends SQLiteOpenHelper {
                 cv.put(COL_AUTHORS, c.getString(3));
                 cv.put(COL_TAGS, c.getString(4));
                 db.insertWithOnConflict(TABLE_FAVORITES, null, cv,
-                        SQLiteDatabase.CONFLICT_IGNORE);
+                    SQLiteDatabase.CONFLICT_IGNORE);
             }
             db.setTransactionSuccessful();
             return newFolderId;
@@ -422,11 +422,11 @@ public class FavoriteStore extends SQLiteOpenHelper {
                 cv.put(COL_TITLE, item.optString("title", ""));
                 cv.put(COL_COVER_URL, item.optString("coverUrl", ""));
                 cv.put(COL_AUTHORS, item.optJSONArray("authors") != null
-                        ? item.optJSONArray("authors").toString() : "[]");
+                    ? item.optJSONArray("authors").toString() : "[]");
                 cv.put(COL_TAGS, item.optJSONArray("tags") != null
-                        ? item.optJSONArray("tags").toString() : "[]");
+                    ? item.optJSONArray("tags").toString() : "[]");
                 long rowId = db.insertWithOnConflict(TABLE_FAVORITES, null,
-                        cv, SQLiteDatabase.CONFLICT_IGNORE);
+                    cv, SQLiteDatabase.CONFLICT_IGNORE);
                 if (rowId != -1) count++;
             }
             db.setTransactionSuccessful();
@@ -440,7 +440,9 @@ public class FavoriteStore extends SQLiteOpenHelper {
 
     // ==================== 全部夹操作 ====================
 
-    /** 将全部离线项合并到目标文件夹（去重），其余文件夹清空，事务保证原子性 */
+    /**
+     * 将全部离线项合并到目标文件夹（去重），其余文件夹清空，事务保证原子性
+     */
     public boolean mergeAllToFolder(String targetId) {
         SQLiteDatabase db = getWritableDatabase();
         Cursor c = null;
@@ -448,8 +450,8 @@ public class FavoriteStore extends SQLiteOpenHelper {
         try {
             // 验证目标文件夹存在
             c = db.query(TABLE_FOLDERS, new String[]{COL_FOLDER_ID},
-                    COL_FOLDER_ID + "=?", new String[]{targetId},
-                    null, null, null);
+                COL_FOLDER_ID + "=?", new String[]{targetId},
+                null, null, null);
             if (c.getCount() == 0) return false;
             c.close();
             c = null;
@@ -466,11 +468,11 @@ public class FavoriteStore extends SQLiteOpenHelper {
                     + " WHERE o." + COL_ID + " IN (SELECT MIN(" + COL_ID + ")"
                     + " FROM " + TABLE_FAVORITES
                     + " GROUP BY " + COL_ALBUM_ID + ")",
-                    new Object[]{targetId});
+                new Object[]{targetId});
 
             // 删除非目标夹的全部项
             db.delete(TABLE_FAVORITES,
-                    COL_FOLDER_ID + "!=?", new String[]{targetId});
+                COL_FOLDER_ID + "!=?", new String[]{targetId});
 
             db.setTransactionSuccessful();
             return true;
@@ -493,7 +495,7 @@ public class FavoriteStore extends SQLiteOpenHelper {
             cv.put(COL_ITEMS_JSON, items.toString());
             cv.put(COL_CREATED_AT, System.currentTimeMillis());
             db.insertWithOnConflict(TABLE_BACKUPS, null, cv,
-                    SQLiteDatabase.CONFLICT_REPLACE);
+                SQLiteDatabase.CONFLICT_REPLACE);
         } catch (Exception e) {
             android.util.Log.w("FavoriteStore", "saveBackup failed", e);
         }
@@ -503,9 +505,9 @@ public class FavoriteStore extends SQLiteOpenHelper {
         Cursor c = null;
         try {
             c = getReadableDatabase().query(TABLE_BACKUPS,
-                    new String[]{COL_ITEMS_JSON},
-                    COL_BACKUP_KEY + "=?", new String[]{key},
-                    null, null, null);
+                new String[]{COL_ITEMS_JSON},
+                COL_BACKUP_KEY + "=?", new String[]{key},
+                null, null, null);
             if (c.moveToFirst()) {
                 return new JSONArray(c.getString(0));
             }
@@ -521,7 +523,7 @@ public class FavoriteStore extends SQLiteOpenHelper {
         SQLiteDatabase db = getWritableDatabase();
         try {
             int rows = db.delete(TABLE_BACKUPS,
-                    COL_BACKUP_KEY + "=?", new String[]{key});
+                COL_BACKUP_KEY + "=?", new String[]{key});
             return rows > 0;
         } catch (Exception e) {
             android.util.Log.w("FavoriteStore", "deleteBackup failed", e);
@@ -534,9 +536,9 @@ public class FavoriteStore extends SQLiteOpenHelper {
         Cursor c = null;
         try {
             c = getReadableDatabase().query(TABLE_BACKUPS,
-                    new String[]{COL_BACKUP_KEY},
-                    null, null, null, null,
-                    COL_CREATED_AT + " DESC");
+                new String[]{COL_BACKUP_KEY},
+                null, null, null, null,
+                COL_CREATED_AT + " DESC");
             while (c.moveToNext()) {
                 arr.put(c.getString(0));
             }

@@ -3,7 +3,7 @@
     <IonHeader class="ion-no-border">
       <IonToolbar>
         <div class="toolbar-start">
-          <MenuToggleButton />
+          <MenuToggleButton/>
         </div>
         <div class="toolbar-title">设置</div>
       </IonToolbar>
@@ -18,12 +18,12 @@
             <div class="row-left">
               <span class="row-title">缓存用量</span>
               <span class="row-subtitle"
-                >已用 {{ cacheInfo.usedMb }}MB / {{ cacheInfo.capacityMb }}MB</span
+              >已用 {{ cacheInfo.usedMb }}MB / {{ cacheInfo.capacityMb }}MB</span
               >
             </div>
             <div class="row-right">
               <div class="usage-bar">
-                <div class="usage-fill" :style="{ width: usagePercent + '%' }" />
+                <div class="usage-fill" :style="{ width: usagePercent + '%' }"/>
               </div>
               <span class="usage-text">{{ usagePercent }}%</span>
             </div>
@@ -143,7 +143,7 @@
               <span class="row-subtitle">开启后可在批量解析时通过图片上传识别 ID</span>
             </div>
             <div class="row-right">
-              <IonToggle :checked="ocrEnabled" color="warning" @ion-change="onOcrEnabledChange" />
+              <IonToggle :checked="ocrEnabled" color="warning" @ion-change="onOcrEnabledChange"/>
             </div>
           </div>
         </div>
@@ -225,7 +225,7 @@
           <div class="relocation-title">正在搬迁文件...</div>
 
           <div class="relocation-progress-bar">
-            <div class="relocation-progress-fill" :style="{ width: relocationPercent + '%' }" />
+            <div class="relocation-progress-fill" :style="{ width: relocationPercent + '%' }"/>
           </div>
           <div class="relocation-percent">{{ relocationPercent }}%</div>
 
@@ -246,22 +246,22 @@
 </template>
 
 <script setup lang="ts">
-defineOptions({ name: 'SettingPage' })
+defineOptions({name: 'SettingPage'})
 
-import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { IonContent, IonHeader, IonPage, IonToggle, IonToolbar, alertController } from '@ionic/vue'
-import { App } from '@capacitor/app'
-import type { PluginListenerHandle } from '@capacitor/core'
+import {computed, onMounted, ref} from 'vue'
+import {useRouter} from 'vue-router'
+import {alertController, IonContent, IonHeader, IonPage, IonToggle, IonToolbar} from '@ionic/vue'
+import {App} from '@capacitor/app'
+import type {PluginListenerHandle} from '@capacitor/core'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
-import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
-import { initSettings, SettingsStore } from '@/services/SettingsService'
-import { ExportFormatService } from '@/services/ExportFormatService'
-import { useAuth } from '@/composables/useAuth'
-import type { CacheCapacityInfo, RelocationProgress } from '@/services/JmcomicTypes'
+import {JmcomicService, sanitizeError, showToast} from '@/services/JmcomicService'
+import {initSettings, SettingsStore} from '@/services/SettingsService'
+import {ExportFormatService} from '@/services/ExportFormatService'
+import {useAuth} from '@/composables/useAuth'
+import type {CacheCapacityInfo, RelocationProgress} from '@/services/JmcomicTypes'
 
 const router = useRouter()
-const { userInfo } = useAuth()
+const {userInfo} = useAuth()
 const appVersion = ref('0.0.1')
 
 function goNetworkStatus() {
@@ -272,7 +272,7 @@ function goUser() {
   router.push('/user')
 }
 
-const cacheInfo = ref<CacheCapacityInfo>({ capacityMb: 0, usedMb: 0 })
+const cacheInfo = ref<CacheCapacityInfo>({capacityMb: 0, usedMb: 0})
 const cacheInputMb = ref(SettingsStore.getCacheCapacityMb())
 const preloadPages = ref(SettingsStore.getReaderPreloadPages())
 const preloadConcurrency = ref(SettingsStore.getPreloadConcurrency())
@@ -368,7 +368,7 @@ async function onClearCache() {
     header: '清空缓存',
     message: '确定清空全部图片缓存吗？',
     buttons: [
-      { text: '取消', role: 'cancel' },
+      {text: '取消', role: 'cancel'},
       {
         text: '清空',
         role: 'destructive',
@@ -376,7 +376,7 @@ async function onClearCache() {
         handler: async () => {
           try {
             await JmcomicService.clearImageCache()
-            cacheInfo.value = { ...cacheInfo.value, usedMb: 0 }
+            cacheInfo.value = {...cacheInfo.value, usedMb: 0}
             await showToast('缓存已清空', 'success')
           } catch (e) {
             await showToast('清空失败', 'danger')

@@ -14,7 +14,7 @@
           class="user-avatar"
           alt="头像"
         />
-        <IonIcon v-else :icon="personCircleOutline" class="user-avatar-placeholder" />
+        <IonIcon v-else :icon="personCircleOutline" class="user-avatar-placeholder"/>
         <div class="hero-copy">
           <div class="hero-title">{{ isLoggedIn && userInfo ? userInfo.username : '未登录' }}</div>
           <div class="hero-subtitle">
@@ -39,7 +39,7 @@
             :class="{ selected: isActive('/home') }"
             @click="handleMenuClick"
           >
-            <IonIcon slot="start" class="menu-icon" :icon="homeSharp" />
+            <IonIcon slot="start" class="menu-icon" :icon="homeSharp"/>
             <IonLabel>
               <div class="item-title">首页</div>
               <div class="item-subtitle">关键词搜索入口</div>
@@ -56,7 +56,7 @@
             :class="{ selected: isActive('/category') }"
             @click="handleMenuClick"
           >
-            <IonIcon slot="start" class="menu-icon" :icon="searchSharp" />
+            <IonIcon slot="start" class="menu-icon" :icon="searchSharp"/>
             <IonLabel>
               <div class="item-title">分类</div>
               <div class="item-subtitle">分类筛选与检索</div>
@@ -73,7 +73,7 @@
             :class="{ selected: isActive('/favorite') }"
             @click="handleMenuClick"
           >
-            <IonIcon slot="start" class="menu-icon" :icon="heart" />
+            <IonIcon slot="start" class="menu-icon" :icon="heart"/>
             <IonLabel>
               <div class="item-title">收藏夹</div>
               <div class="item-subtitle">保存喜欢的内容</div>
@@ -90,7 +90,7 @@
             :class="{ selected: isActive('/download') }"
             @click="handleMenuClick"
           >
-            <IonIcon slot="start" class="menu-icon" :icon="downloadSharp" />
+            <IonIcon slot="start" class="menu-icon" :icon="downloadSharp"/>
             <IonLabel>
               <div class="item-title">下载</div>
               <div class="item-subtitle">离线任务与管理</div>
@@ -107,7 +107,7 @@
             :class="{ selected: isActive('/history') }"
             @click="handleMenuClick"
           >
-            <IonIcon slot="start" class="menu-icon" :icon="timeOutline" />
+            <IonIcon slot="start" class="menu-icon" :icon="timeOutline"/>
             <IonLabel>
               <div class="item-title">历史</div>
               <div class="item-subtitle">浏览与解析记录</div>
@@ -124,7 +124,7 @@
             :class="{ selected: isActive('/setting') }"
             @click="handleMenuClick"
           >
-            <IonIcon slot="start" class="menu-icon" :icon="settingsSharp" />
+            <IonIcon slot="start" class="menu-icon" :icon="settingsSharp"/>
             <IonLabel>
               <div class="item-title">设置</div>
               <div class="item-subtitle">偏好与通用配置</div>
@@ -137,17 +137,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
-import {
-  IonContent,
-  IonHeader,
-  IonIcon,
-  IonItem,
-  IonLabel,
-  IonList,
-  IonMenu,
-  IonMenuToggle,
-} from '@ionic/vue'
+import {computed, onMounted, onUnmounted, ref} from 'vue'
+import {IonContent, IonHeader, IonIcon, IonItem, IonLabel, IonList, IonMenu, IonMenuToggle,} from '@ionic/vue'
 import {
   downloadSharp,
   heart,
@@ -157,11 +148,11 @@ import {
   settingsSharp,
   timeOutline,
 } from 'ionicons/icons'
-import { useRoute, useRouter } from 'vue-router'
-import { useAuth } from '@/composables/useAuth'
-import { isMenuNavigation } from '@/composables/useSideMenuState'
+import {useRoute, useRouter} from 'vue-router'
+import {useAuth} from '@/composables/useAuth'
+import {isMenuNavigation} from '@/composables/useSideMenuState'
 
-defineOptions({ name: 'MainMenu' })
+defineOptions({name: 'MainMenu'})
 
 defineProps<{
   contentId: string
@@ -170,7 +161,7 @@ defineProps<{
 
 const route = useRoute()
 const router = useRouter()
-const { userInfo, isLoggedIn } = useAuth()
+const {userInfo, isLoggedIn} = useAuth()
 const windowWidth = ref(window.innerWidth)
 const onResize = () => {
   windowWidth.value = window.innerWidth
@@ -205,9 +196,8 @@ function handleMenuClick() {
 <style scoped>
 .menu-hero {
   padding: calc(18px + var(--ion-safe-area-top)) 18px 14px;
-  background:
-    radial-gradient(circle at top right, rgb(255 218 190 / 0.95), transparent 46%),
-    linear-gradient(160deg, #fff5ee 0%, #ffeade 100%);
+  background: radial-gradient(circle at top right, rgb(255 218 190 / 0.95), transparent 46%),
+  linear-gradient(160deg, #fff5ee 0%, #ffeade 100%);
   display: flex;
   align-items: center;
   gap: 14px;

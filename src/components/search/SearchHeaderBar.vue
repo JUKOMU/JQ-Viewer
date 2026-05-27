@@ -13,7 +13,7 @@
           @keydown.enter="submit"
         />
         <button type="button" class="submit-btn" :disabled="loading" @click="submit">
-          <IonIcon :icon="searchOutline" />
+          <IonIcon :icon="searchOutline"/>
         </button>
       </div>
       <SearchHistoryDropdown
@@ -75,7 +75,7 @@
 </template>
 
 <script setup lang="ts">
-defineOptions({ name: 'SearchHeaderBar' })
+defineOptions({name: 'SearchHeaderBar'})
 
 const props = defineProps<{
   query: SearchQuery
@@ -84,13 +84,13 @@ const props = defineProps<{
 const emit = defineEmits<{
   search: [query: SearchQuery]
 }>()
-import { nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { IonIcon, IonSearchbar } from '@ionic/vue'
-import { searchOutline } from 'ionicons/icons'
-import { ORDER_BY_OPTIONS, SEARCH_MAIN_TAG_OPTIONS, TIME_OPTIONS } from '@/constants/searchOptions'
-import type { SearchQuery } from '@/services/JmcomicTypes'
-import { HistoryService } from '@/services/HistoryService'
-import type { SearchHistoryItem } from '@/services/HistoryService'
+import {nextTick, onBeforeUnmount, onMounted, reactive, ref, watch} from 'vue'
+import {IonIcon, IonSearchbar} from '@ionic/vue'
+import {searchOutline} from 'ionicons/icons'
+import {ORDER_BY_OPTIONS, SEARCH_MAIN_TAG_OPTIONS, TIME_OPTIONS} from '@/constants/searchOptions'
+import type {SearchQuery} from '@/services/JmcomicTypes'
+import type {SearchHistoryItem} from '@/services/HistoryService'
+import {HistoryService} from '@/services/HistoryService'
 import SearchHistoryDropdown from '@/components/history/SearchHistoryDropdown.vue'
 
 const rootRef = ref<HTMLElement | null>(null)
@@ -124,7 +124,7 @@ const focusInput = async () => {
 const submit = () => {
   const kw = (draft.keyword ?? '').trim()
   if (kw) HistoryService.addSearchHistory('search-page', kw)
-  emit('search', { ...draft, page: 1 })
+  emit('search', {...draft, page: 1})
 }
 
 const handleDocumentClick = (event: MouseEvent) => {
@@ -167,7 +167,7 @@ const onHistoryClear = () => {
   showHistory.value = false
 }
 
-watch(() => props.query, syncDraft, { immediate: true, deep: true })
+watch(() => props.query, syncDraft, {immediate: true, deep: true})
 
 onMounted(async () => {
   document.addEventListener('click', handleDocumentClick)
@@ -185,7 +185,7 @@ onBeforeUnmount(() => {
   if (blurTimer) clearTimeout(blurTimer)
 })
 
-defineExpose({ focusInput })
+defineExpose({focusInput})
 </script>
 
 <style scoped>

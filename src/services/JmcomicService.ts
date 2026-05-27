@@ -1,6 +1,6 @@
-import { registerPlugin } from '@capacitor/core'
-import type { PluginListenerHandle } from '@capacitor/core'
-import { toastController } from '@ionic/vue'
+import type {PluginListenerHandle} from '@capacitor/core'
+import {registerPlugin} from '@capacitor/core'
+import {toastController} from '@ionic/vue'
 import type {
   AlbumDetail,
   AllSettings,
@@ -16,8 +16,8 @@ import type {
   ImageInfo,
   LatencyResult,
   NetworkProbeEvent,
-  OfflineFolderInfo,
   OfflineFavoritesResult,
+  OfflineFolderInfo,
   ParseHistoryItem,
   PhotoDetail,
   PreloadResult,
@@ -31,37 +31,58 @@ import type {
 
 interface JmcomicPlugin {
   search(options: { query: SearchQuery }): Promise<SearchResult>
+
   categories(options: { query: SearchQuery }): Promise<SearchResult>
+
   getAlbum(options: { id: string }): Promise<AlbumDetail>
+
   getPhoto(options: { id: string }): Promise<PhotoDetail>
+
   getComments(options: ForumQuery): Promise<CommentList>
+
   getFavorites(options: { query: FavoriteQuery }): Promise<FavoriteResult>
+
   toggleAlbumLike(options: { id: string }): Promise<{ success: boolean }>
+
   toggleAlbumFavorite(options: { id: string; folderId: string }): Promise<{ success: boolean }>
+
   manageFavoriteFolder(options: {
     type: string
     folderId: string
     folderName?: string
     albumId?: string
   }): Promise<{ status: string; msg: string }>
+
   preloadImages(options: {
     photoId: string
     images: ImageInfo[]
     type: string
   }): Promise<PreloadResult>
+
   setCacheCapacity(options: { mb: number }): Promise<{ success: boolean; capacityMb: number }>
+
   getCacheCapacityInfo(): Promise<CacheCapacityInfo>
+
   clearImageCache(): Promise<{ success: boolean }>
+
   setDownloadConcurrency(options: { n: number }): Promise<{ success: boolean }>
+
   setPreloadConcurrency(options: { n: number }): Promise<{ success: boolean }>
+
   setOcrEnabled(options: { enabled: boolean }): Promise<{ success: boolean }>
+
   setDownloadPublic(options: {
     open: boolean
   }): Promise<{ success: boolean; downloadPublic: boolean; moved: number }>
+
   getDownloadPublic(): Promise<{ downloadPublic: boolean }>
+
   requestManageStorage(): Promise<{ granted: boolean; permissionType: string; apiLevel: number }>
+
   getAllSettings(): Promise<AllSettings>
+
   setReaderPreloadPages(options: { n: number }): Promise<{ success: boolean }>
+
   downloadChapter(options: {
     albumId: string
     chapterId: string
@@ -69,41 +90,61 @@ interface JmcomicPlugin {
     chapterTitle: string
     coverUrl: string
   }): Promise<{ taskId: string }>
+
   getDownloadTasks(): Promise<DownloadTasksResult>
+
   cancelDownload(options: { taskId: string }): Promise<{ success: boolean }>
+
   pauseDownload(options: { taskId: string }): Promise<{ success: boolean }>
+
   resumeDownload(options: { taskId: string }): Promise<{ success: boolean }>
+
   deleteDownloaded(options: { albumId: string; chapterId: string }): Promise<{ success: boolean }>
+
   getDownloadedPhoto(options: { albumId: string; chapterId: string }): Promise<PhotoDetail>
+
   addListener(
     event: 'imageReady',
     handler: (data: ImageReadyEvent) => void,
   ): Promise<PluginListenerHandle>
+
   addListener(
     event: 'downloadProgress',
     handler: (data: DownloadProgressEvent) => void,
   ): Promise<PluginListenerHandle>
+
   addListener(
     event: 'relocationProgress',
     handler: (data: RelocationProgress) => void,
   ): Promise<PluginListenerHandle>
+
   addListener(
     event: 'networkProbe',
     handler: (data: NetworkProbeEvent) => void,
   ): Promise<PluginListenerHandle>
+
   getDomainStates(): Promise<DomainStates>
+
   reprobeDomains(): Promise<void>
+
   measureLatency(): Promise<{ results: LatencyResult[] }>
+
   login(options: { username: string; password: string }): Promise<UserInfo>
+
   logout(): Promise<{ success: boolean }>
+
   checkLoginState(): Promise<{ loggedIn: boolean; username?: string; userInfo?: UserInfo }>
+
   autoLogin(): Promise<{ success: boolean; userInfo?: UserInfo }>
+
   getUserProfile(options: { uid: string }): Promise<UserProfile>
+
   // 浏览历史
   getBrowseHistory(options: {
     limit: number
     offset: number
   }): Promise<{ items: BrowseHistoryItem[] }>
+
   recordBrowse(options: {
     albumId: string
     albumTitle: string
@@ -112,53 +153,76 @@ interface JmcomicPlugin {
     chapterId: string
     chapterTitle: string
   }): Promise<{ success: boolean }>
+
   clearBrowseHistory(): Promise<{ success: boolean }>
+
   // 解析历史
   getParseHistory(options: {
     limit: number
     offset: number
   }): Promise<{ items: ParseHistoryItem[] }>
+
   addParseHistory(options: { text: string }): Promise<{ success: boolean }>
+
   clearParseHistory(): Promise<{ success: boolean }>
+
   // 离线收藏夹
   getOfflineFolders(): Promise<{ folders: OfflineFolderInfo[] }>
+
   createOfflineFolder(options: { name: string }): Promise<{ folderId: string }>
+
   renameOfflineFolder(options: { folderId: string; name: string }): Promise<{ success: boolean }>
+
   deleteOfflineFolder(options: { folderId: string }): Promise<{ success: boolean }>
+
   addOfflineFavorite(options: {
     folderId: string
     item: SearchResultItem
   }): Promise<{ success: boolean }>
+
   removeOfflineFavorite(options: {
     folderId: string
     albumId: string
   }): Promise<{ success: boolean }>
+
   getOfflineFavorites(options: {
     folderId: string
     keyword?: string
     page: number
     pageSize: number
   }): Promise<OfflineFavoritesResult>
+
   getAllOfflineFavorites(options: { folderId: string }): Promise<{ items: SearchResultItem[] }>
+
   getOfflineFavoritesTotalCount(): Promise<{ count: number }>
+
   getAllOfflineFavoritesMerged(): Promise<{ items: SearchResultItem[] }>
+
   moveAllOfflineFavorites(options: {
     sourceId: string
     targetId: string
   }): Promise<{ success: boolean }>
+
   copyOfflineFolder(options: { sourceId: string; name: string }): Promise<{ folderId: string }>
+
   addOfflineFavoritesBatch(options: {
     folderId: string
     items: SearchResultItem[]
   }): Promise<{ count: number }>
+
   mergeOfflineAllToFolder(options: { targetId: string }): Promise<{ success: boolean }>
+
   saveOfflineBackup(options: {
     key: string
     items: SearchResultItem[]
   }): Promise<{ success: boolean }>
+
   loadOfflineBackup(options: { key: string }): Promise<{ items: SearchResultItem[] | null }>
+
   deleteOfflineBackup(options: { key: string }): Promise<{ success: boolean }>
+
   listOfflineBackupKeys(): Promise<{ keys: string[] }>
+
   // OCR
   pickImageAndOcr(): Promise<{ text: string; error?: string }>
 }
@@ -186,28 +250,28 @@ export function getImageUrl(
 export const JmcomicService = {
   native,
   search(query: SearchQuery) {
-    return native.search({ query })
+    return native.search({query})
   },
   categories(query: SearchQuery) {
-    return native.categories({ query })
+    return native.categories({query})
   },
   getAlbum(id: string) {
-    return native.getAlbum({ id })
+    return native.getAlbum({id})
   },
   getPhoto(id: string) {
-    return native.getPhoto({ id })
+    return native.getPhoto({id})
   },
   getComments(query: ForumQuery) {
     return native.getComments(query)
   },
   toggleAlbumLike(id: string) {
-    return native.toggleAlbumLike({ id })
+    return native.toggleAlbumLike({id})
   },
   favorites(query: FavoriteQuery) {
-    return native.getFavorites({ query })
+    return native.getFavorites({query})
   },
   toggleAlbumFavorite(id: string, folderId: string = '0') {
-    return native.toggleAlbumFavorite({ id, folderId })
+    return native.toggleAlbumFavorite({id, folderId})
   },
 
   manageFavoriteFolder(
@@ -216,12 +280,12 @@ export const JmcomicService = {
     folderName: string = '',
     albumId: string = '',
   ) {
-    return native.manageFavoriteFolder({ type, folderId, folderName, albumId })
+    return native.manageFavoriteFolder({type, folderId, folderName, albumId})
   },
 
   /** 登录 */
   login(username: string, password: string) {
-    return native.login({ username, password })
+    return native.login({username, password})
   },
 
   /** 登出 */
@@ -241,7 +305,7 @@ export const JmcomicService = {
 
   /** 获取用户个人资料 */
   getUserProfile(uid: string) {
-    return native.getUserProfile({ uid })
+    return native.getUserProfile({uid})
   },
 
   /**
@@ -252,12 +316,12 @@ export const JmcomicService = {
    * @returns {cached: 已在缓存中的 sortOrder[], pending: 正在下载中的 sortOrder[]}
    */
   preloadImages(photoId: string, images: ImageInfo[], type: 'image' | 'thumb' = 'image') {
-    return native.preloadImages({ photoId, images, type })
+    return native.preloadImages({photoId, images, type})
   },
 
   /** 设置图片缓存容量（MB），供设置页调用 */
   setCacheCapacity(mb: number) {
-    return native.setCacheCapacity({ mb })
+    return native.setCacheCapacity({mb})
   },
 
   /** 查询缓存容量状态，供设置页展示 */
@@ -272,12 +336,12 @@ export const JmcomicService = {
 
   /** 设置下载并发数（1-12） */
   setDownloadConcurrency(n: number) {
-    return native.setDownloadConcurrency({ n })
+    return native.setDownloadConcurrency({n})
   },
 
   /** 设置下载内容是否公开（系统相册可见） */
   setDownloadPublic(open: boolean) {
-    return native.setDownloadPublic({ open })
+    return native.setDownloadPublic({open})
   },
 
   /** 查询下载内容是否公开 */
@@ -297,17 +361,17 @@ export const JmcomicService = {
 
   /** 持久化阅读器预加载页数 */
   setReaderPreloadPages(n: number) {
-    return native.setReaderPreloadPages({ n })
+    return native.setReaderPreloadPages({n})
   },
 
   /** 持久化 OCR 开关 */
   setOcrEnabled(enabled: boolean) {
-    return native.setOcrEnabled({ enabled })
+    return native.setOcrEnabled({enabled})
   },
 
   /** 持久化预加载并发数（下次启动生效） */
   setPreloadConcurrency(n: number) {
-    return native.setPreloadConcurrency({ n })
+    return native.setPreloadConcurrency({n})
   },
 
   /**
@@ -363,7 +427,7 @@ export const JmcomicService = {
     chapterTitle: string,
     coverUrl: string,
   ) {
-    return native.downloadChapter({ albumId, chapterId, albumTitle, chapterTitle, coverUrl })
+    return native.downloadChapter({albumId, chapterId, albumTitle, chapterTitle, coverUrl})
   },
 
   /** 获取全部下载任务列表 */
@@ -373,27 +437,27 @@ export const JmcomicService = {
 
   /** 取消/删除下载任务 */
   cancelDownload(taskId: string) {
-    return native.cancelDownload({ taskId })
+    return native.cancelDownload({taskId})
   },
 
   /** 暂停下载任务 */
   pauseDownload(taskId: string) {
-    return native.pauseDownload({ taskId })
+    return native.pauseDownload({taskId})
   },
 
   /** 恢复已暂停的下载任务 */
   resumeDownload(taskId: string) {
-    return native.resumeDownload({ taskId })
+    return native.resumeDownload({taskId})
   },
 
   /** 删除已下载的章节（文件 + 记录） */
   deleteDownloaded(albumId: string, chapterId: string) {
-    return native.deleteDownloaded({ albumId, chapterId })
+    return native.deleteDownloaded({albumId, chapterId})
   },
 
   /** 获取离线下载的章节详情（用于离线阅读） */
   getDownloadedPhoto(albumId: string, chapterId: string) {
-    return native.getDownloadedPhoto({ albumId, chapterId })
+    return native.getDownloadedPhoto({albumId, chapterId})
   },
 
   /**
@@ -419,7 +483,7 @@ export const JmcomicService = {
   // ========== 浏览历史 ==========
 
   getBrowseHistory(limit: number, offset: number = 0) {
-    return native.getBrowseHistory({ limit, offset })
+    return native.getBrowseHistory({limit, offset})
   },
   recordBrowse(item: Omit<BrowseHistoryItem, 'timestamp'>) {
     return native.recordBrowse(item)
@@ -431,10 +495,10 @@ export const JmcomicService = {
   // ========== 解析历史 ==========
 
   getParseHistory(limit: number, offset: number = 0) {
-    return native.getParseHistory({ limit, offset })
+    return native.getParseHistory({limit, offset})
   },
   addParseHistory(text: string) {
-    return native.addParseHistory({ text })
+    return native.addParseHistory({text})
   },
   clearParseHistory() {
     return native.clearParseHistory()
@@ -446,25 +510,25 @@ export const JmcomicService = {
     return native.getOfflineFolders()
   },
   createOfflineFolder(name: string) {
-    return native.createOfflineFolder({ name })
+    return native.createOfflineFolder({name})
   },
   renameOfflineFolder(folderId: string, name: string) {
-    return native.renameOfflineFolder({ folderId, name })
+    return native.renameOfflineFolder({folderId, name})
   },
   deleteOfflineFolder(folderId: string) {
-    return native.deleteOfflineFolder({ folderId })
+    return native.deleteOfflineFolder({folderId})
   },
   addOfflineFavorite(folderId: string, item: SearchResultItem) {
-    return native.addOfflineFavorite({ folderId, item })
+    return native.addOfflineFavorite({folderId, item})
   },
   removeOfflineFavorite(folderId: string, albumId: string) {
-    return native.removeOfflineFavorite({ folderId, albumId })
+    return native.removeOfflineFavorite({folderId, albumId})
   },
   getOfflineFavorites(folderId: string, keyword?: string, page: number = 1, pageSize: number = 20) {
-    return native.getOfflineFavorites({ folderId, keyword, page, pageSize })
+    return native.getOfflineFavorites({folderId, keyword, page, pageSize})
   },
   getAllOfflineFavorites(folderId: string) {
-    return native.getAllOfflineFavorites({ folderId })
+    return native.getAllOfflineFavorites({folderId})
   },
   getOfflineFavoritesTotalCount() {
     return native.getOfflineFavoritesTotalCount()
@@ -473,26 +537,26 @@ export const JmcomicService = {
     return native.getAllOfflineFavoritesMerged()
   },
   moveAllOfflineFavorites(sourceId: string, targetId: string) {
-    return native.moveAllOfflineFavorites({ sourceId, targetId })
+    return native.moveAllOfflineFavorites({sourceId, targetId})
   },
   copyOfflineFolder(sourceId: string, name: string) {
-    return native.copyOfflineFolder({ sourceId, name })
+    return native.copyOfflineFolder({sourceId, name})
   },
   addOfflineFavoritesBatch(folderId: string, items: SearchResultItem[]) {
-    return native.addOfflineFavoritesBatch({ folderId, items })
+    return native.addOfflineFavoritesBatch({folderId, items})
   },
   mergeOfflineAllToFolder(targetId: string) {
-    return native.mergeOfflineAllToFolder({ targetId })
+    return native.mergeOfflineAllToFolder({targetId})
   },
 
   saveOfflineBackup(key: string, items: SearchResultItem[]) {
-    return native.saveOfflineBackup({ key, items })
+    return native.saveOfflineBackup({key, items})
   },
   loadOfflineBackup(key: string) {
-    return native.loadOfflineBackup({ key })
+    return native.loadOfflineBackup({key})
   },
   deleteOfflineBackup(key: string) {
-    return native.deleteOfflineBackup({ key })
+    return native.deleteOfflineBackup({key})
   },
   listOfflineBackupKeys() {
     return native.listOfflineBackupKeys()
@@ -524,7 +588,7 @@ export async function showToast(
   const toast = await toastController.create({
     message,
     duration: 1500,
-    position: 'middle',
+    position: 'bottom',
     cssClass: `warm-toast toast-${color}`,
   })
   await toast.present()

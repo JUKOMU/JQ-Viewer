@@ -84,7 +84,7 @@
             v-for="entry in items"
             :key="getEntryKey(entry)"
             :data-entry-key="getEntryKey(entry)"
-            :class="itemCardClass"
+            :class="[itemCardClass, { downloaded: downloadedAlbumIds?.has(entry.item.id) }]"
             @click="emit('item-click', entry.item)"
           >
             <div class="cover-wrap">
@@ -144,6 +144,7 @@ const props = withDefaults(
     mode: 'list' | 'grid'
     loadedPageStart?: number | null
     loadedPageEnd?: number | null
+    downloadedAlbumIds?: Set<string>
     idleText?: string
     emptyText?: string
   }>(),
@@ -155,6 +156,7 @@ const props = withDefaults(
     pageAtTop: false,
     loadedPageStart: null,
     loadedPageEnd: null,
+    downloadedAlbumIds: () => new Set(),
     idleText: '搜索结果将在这里显示',
     emptyText: '没有搜索结果',
   },
@@ -601,6 +603,11 @@ defineExpose<SearchResultContainerExposed>({
   border-radius: 12px;
   background: #fffaf6;
   box-shadow: 5px 12px 28px rgb(76 42 24 / 0.2);
+}
+
+.list-card.downloaded,
+.grid-card.downloaded {
+  background: #f0faf3;
 }
 
 .cover-wrap {

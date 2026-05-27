@@ -24,9 +24,14 @@
           <ion-icon :icon="bookmark" />
           <span class="action-label">收藏</span>
         </button>
-        <button type="button" class="action-btn" @click="$emit('download')">
-          <ion-icon :icon="downloadOutline" />
-          <span class="action-label">下载</span>
+        <button
+          type="button"
+          class="action-btn"
+          :class="downloadClass"
+          @click="$emit('download')"
+        >
+          <ion-icon :icon="downloadIcon" />
+          <span class="action-label">{{ downloadLabel }}</span>
         </button>
       </div>
 
@@ -119,22 +124,71 @@
 <script setup lang="ts">
 defineOptions({ name: 'AlbumInfoTab' })
 
-defineProps<{
-  album: AlbumDetail | null
-  actionBusy: { like: boolean; favorite: boolean }
-}>()
 defineEmits<{
   'toggle-like': []
   'toggle-favorite': []
   download: []
   'navigate-album': [related: AlbumMeta]
 }>()
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { IonIcon } from '@ionic/vue'
-import { bookmark, downloadOutline, heart } from 'ionicons/icons'
+import {
+  bookmark,
+  checkmarkCircleOutline,
+  cloudDownloadOutline,
+  downloadOutline,
+  heart,
+  refreshOutline,
+  timeOutline,
+} from 'ionicons/icons'
 import type { AlbumDetail, AlbumMeta } from '@/services/JmcomicTypes'
 
+const props = defineProps<{
+  album: AlbumDetail | null
+  actionBusy: { like: boolean; favorite: boolean }
+  downloadStatus?: string
+}>()
+
 const descExpanded = ref(false)
+
+const downloadClass = computed(() => {
+  if (!props.downloadStatus) return {}
+  return { [`status-${props.downloadStatus}`]: true }
+})
+
+const downloadLabel = computed(() => {
+  switch (props.downloadStatus) {
+    case 'queued':
+      return '队列中'
+    case 'downloading':
+      return '下载中'
+    case 'paused':
+      return '已暂停'
+    case 'completed':
+      return '已下载'
+    case 'failed':
+      return '重试'
+    default:
+      return '下载'
+  }
+})
+
+const downloadIcon = computed(() => {
+  switch (props.downloadStatus) {
+    case 'queued':
+      return timeOutline
+    case 'downloading':
+      return cloudDownloadOutline
+    case 'paused':
+      return timeOutline
+    case 'completed':
+      return checkmarkCircleOutline
+    case 'failed':
+      return refreshOutline
+    default:
+      return downloadOutline
+  }
+})
 </script>
 
 <style scoped>
@@ -171,6 +225,37 @@ const descExpanded = ref(false)
   background: #fff0e7;
   border-color: #fa9c69;
   color: #e07030;
+}
+
+/* 下载状态 */
+.action-btn.status-queued {
+  background: #f2faf5;
+  border-color: #8cc9a0;
+  color: #4a8c5e;
+}
+
+.action-btn.status-downloading {
+  background: #e8f7ed;
+  border-color: #5bbf7a;
+  color: #3a7a4e;
+}
+
+.action-btn.status-paused {
+  background: #fefaf2;
+  border-color: #d4b870;
+  color: #8a7030;
+}
+
+.action-btn.status-completed {
+  background: #eaf7ef;
+  border-color: #6dbf87;
+  color: #3a8c52;
+}
+
+.action-btn.status-failed {
+  background: #fff7f7;
+  border-color: #e8a8a8;
+  color: #b04040;
 }
 
 .action-btn ion-icon {

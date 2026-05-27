@@ -46,8 +46,8 @@
   --ion-text-color-rgb: 58, 38, 29;
 
   /* 页面背景 */
-  --ion-background-color: #fffaf6;
-  --ion-background-color-rgb: 255, 250, 246;
+  --ion-background-color: #ffffff;
+  --ion-background-color-rgb: 255, 255, 255;
 
   /* 全局圆角 */
   --ion-border-radius: 14px;

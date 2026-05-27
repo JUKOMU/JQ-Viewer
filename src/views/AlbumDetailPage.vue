@@ -34,6 +34,7 @@
           v-if="activeTab === 'info'"
           :album="albumDetail"
           :action-busy="actionBusy"
+          :download-status="selectedChapterDownloadStatus"
           @toggle-like="handleToggleLike"
           @toggle-favorite="handleToggleFavorite"
           @download="handleDownload"
@@ -139,6 +140,9 @@ const activeTab = ref<TabKey>('info')
 
 // ---- 章节 ----
 const selectedChapterId = ref('')
+const selectedChapterDownloadStatus = computed(() =>
+  chapterDownloadStatuses.value.get(selectedChapterId.value),
+)
 const chapterLoading = ref(false)
 
 // ---- 章节操作栏 ----
@@ -496,12 +500,14 @@ const navigateToFullPreview = () => {
 }
 
 const onOpenReader = (page: number) => {
+  const isDownloaded = chapterDownloadStatuses.value.get(selectedChapterId.value) === 'completed'
   void router.push({
     path: `/album/${albumId.value}/read/${selectedChapterId.value}`,
     query: {
       page: String(page),
       title: albumTitle.value,
       total: String(selectedChapterPageCount.value),
+      ...(isDownloaded ? { source: 'download' } : {}),
     },
   })
 }
@@ -603,9 +609,14 @@ const handleDownload = async () => {
 }
 
 const startReading = () => {
+  const isDownloaded = chapterDownloadStatuses.value.get(selectedChapterId.value) === 'completed'
   void router.push({
     path: `/album/${albumId.value}/read/${selectedChapterId.value}`,
-    query: { title: albumTitle.value, total: String(selectedChapterPageCount.value) },
+    query: {
+      title: albumTitle.value,
+      total: String(selectedChapterPageCount.value),
+      ...(isDownloaded ? { source: 'download' } : {}),
+    },
   })
 }
 

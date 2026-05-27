@@ -46,6 +46,7 @@
         :mode="displayMode"
         :loaded-page-start="loadedPageStart"
         :loaded-page-end="loadedPageEnd"
+        :downloaded-album-ids="downloadedAlbumIds"
         idle-text="请在右侧收藏夹菜单中选择文件夹"
         @mode-change="displayMode = $event"
         @item-click="handleItemClick"
@@ -167,6 +168,7 @@ import {
   menuController,
 } from '@ionic/vue'
 import { createGesture, type Gesture } from '@ionic/vue'
+import type { PluginListenerHandle } from '@capacitor/core'
 import {
   bookOutline,
   downloadOutline,
@@ -273,6 +275,27 @@ const searchBarRef = ref<{ focusInput: () => Promise<void> } | null>(null)
 const sideMenuRef = ref<InstanceType<typeof FavoriteSideMenu> | null>(null)
 
 const pageCache = ref<Record<number, SearchResultItem[]>>({})
+
+// ---- 下载状态 ----
+const downloadedAlbumIds = ref<Set<string>>(new Set())
+let downloadProgressHandle: PluginListenerHandle | null = null
+
+const refreshDownloadStatuses = async () => {
+  try {
+    const result = await JmcomicService.getDownloadTasks()
+    if (result?.tasks) {
+      const set = new Set<string>()
+      for (const task of result.tasks) {
+        if (task.status === 'completed') {
+          set.add(task.albumId)
+        }
+      }
+      downloadedAlbumIds.value = set
+    }
+  } catch {
+    // ignore
+  }
+}
 
 const saveToCache = () => {
   if (!resultMeta.value) return
@@ -696,6 +719,7 @@ function handleCardMenuClickOutside(e: Event) {
 onBeforeUnmount(() => {
   document.removeEventListener('mousedown', handleCardMenuClickOutside)
   document.removeEventListener('touchstart', handleCardMenuClickOutside)
+  downloadProgressHandle?.remove()
 })
 
 // --- 卡片操作：阅读 ---
@@ -1537,10 +1561,20 @@ watch(isLoggedIn, (loggedIn, wasLoggedIn) => {
   }
 })
 
-onMounted(() => {
+onMounted(async () => {
   void initOnlineFolders()
   nextTick(() => {
     void resolveScrollElement()
+  })
+  await refreshDownloadStatuses()
+  downloadProgressHandle = await JmcomicService.addDownloadProgressListener((data) => {
+    const set = new Set(downloadedAlbumIds.value)
+    if (data.status === 'completed') {
+      set.add(data.albumId)
+    } else if (data.status !== 'downloading' && data.status !== 'queued') {
+      set.delete(data.albumId)
+    }
+    downloadedAlbumIds.value = set
   })
 })
 

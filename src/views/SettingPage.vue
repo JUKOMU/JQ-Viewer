@@ -376,9 +376,9 @@
         <!-- 分组：关于 -->
         <div class="section-label">关于</div>
         <div class="card">
-          <div class="row">
-            <span class="row-title">版本</span>
-            <span class="row-value">{{ appVersion }}</span>
+          <div class="row action" @click="goAbout">
+            <span class="row-title">关于</span>
+            <span class="arrow">›</span>
           </div>
         </div>
       </div>
@@ -427,7 +427,7 @@ import type {CacheCapacityInfo, RelocationProgress} from '@/services/JmcomicType
 
 const router = useRouter()
 const {userInfo} = useAuth()
-const appVersion = ref('0.0.1')
+const appVersion = ref('1.0.0')
 
 function goNetworkStatus() {
   router.push('/network-status')
@@ -435,6 +435,10 @@ function goNetworkStatus() {
 
 function goUser() {
   router.push('/user')
+}
+
+function goAbout() {
+  router.push('/about')
 }
 
 const cacheInfo = ref<CacheCapacityInfo>({capacityMb: 0, usedMb: 0})

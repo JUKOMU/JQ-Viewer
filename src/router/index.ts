@@ -76,6 +76,10 @@ const routes: Array<RouteRecordRaw> = [
     component: () => import('@/views/NetworkStatusPage.vue'),
   },
   {
+    path: '/about',
+    component: () => import('@/views/AboutPage.vue'),
+  },
+  {
     path: '/batch-parse',
     name: 'BatchParsePage',
     component: () => import('@/views/BatchParsePage.vue'),

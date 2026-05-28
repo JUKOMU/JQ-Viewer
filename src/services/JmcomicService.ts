@@ -19,6 +19,7 @@ import type {
   OfflineFavoritesResult,
   OfflineFolderInfo,
   ParseHistoryItem,
+  PdfExportTask,
   PhotoDetail,
   PreloadResult,
   RelocationProgress,
@@ -229,11 +230,19 @@ interface JmcomicPlugin {
   // OCR
   pickImageAndOcr(): Promise<{ text: string; error?: string }>
 
+  // PDF 导出
+  exportPdfBatch(options: { tasks: PdfExportTask[] }): Promise<{ accepted: boolean }>
+  pickFolder(): Promise<{ path: string; cancelled: boolean }>
+  getExternalStoragePath(): Promise<{ path: string }>
+  checkNotificationPermission(): Promise<{ granted: boolean }>
+  requestNotificationPermission(): Promise<{ granted: boolean }>
+
   // 阅读器设置
   setReaderDisplayMode(options: { mode: string }): Promise<{ success: boolean }>
   setReaderScreenOrientation(options: { orientation: string }): Promise<{ success: boolean }>
   setReaderBrightness(options: { brightness: number }): Promise<{ success: boolean }>
   setReaderKeepScreenOn(options: { enabled: boolean }): Promise<{ success: boolean }>
+  setReaderFullscreen(options: { enabled: boolean }): Promise<{ success: boolean }>
   setReaderVolumeNavigation(options: { enabled: boolean }): Promise<{ success: boolean }>
 
   // 阅读器状态（供音量键拦截判断）
@@ -589,6 +598,28 @@ export const JmcomicService = {
 
   pickImageAndOcr() {
     return native.pickImageAndOcr()
+  },
+
+  // ========== PDF 导出 ==========
+
+  exportPdfBatch(tasks: PdfExportTask[]) {
+    return native.exportPdfBatch({ tasks })
+  },
+
+  pickFolder() {
+    return native.pickFolder()
+  },
+
+  getExternalStoragePath() {
+    return native.getExternalStoragePath()
+  },
+
+  checkNotificationPermission() {
+    return native.checkNotificationPermission()
+  },
+
+  requestNotificationPermission() {
+    return native.requestNotificationPermission()
   },
 
   // ========== 阅读器设置 ==========

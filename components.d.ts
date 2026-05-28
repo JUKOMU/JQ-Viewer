@@ -29,6 +29,7 @@ declare module 'vue' {
     KeywordSearchBar: typeof import('./src/components/search/KeywordSearchBar.vue')['default']
     MainMenu: typeof import('./src/components/menu/MainMenu.vue')['default']
     MenuToggleButton: typeof import('./src/components/common/MenuToggleButton.vue')['default']
+    PdfExportBottomSheet: typeof import('./src/components/download/PdfExportBottomSheet.vue')['default']
     QuickActionFab: typeof import('./src/components/common/QuickActionFab.vue')['default']
     ReaderBottomToolbar: typeof import('./src/components/reader/ReaderBottomToolbar.vue')['default']
     ReaderSettingsPanel: typeof import('./src/components/reader/ReaderSettingsPanel.vue')['default']

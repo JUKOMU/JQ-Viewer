@@ -77,7 +77,13 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
     // ---- OCR 相关 ----
     private volatile PluginCall pendingOcrCall;
     private final Object ocrLock = new Object();
+
+    // ---- 文件夹选择 ----
+    private volatile PluginCall pendingFolderCall;
+    private final Object folderLock = new Object();
+
     private static final int REQUEST_PICK_IMAGE = 1001;
+    private static final int REQUEST_PICK_FOLDER = 1002;
 
     // ---- 服务 ----
     private ApiService apiService;
@@ -488,6 +494,10 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
      * 供 MainActivity.onActivityResult 调用，处理图片选择结果并执行 OCR。
      */
     public void handleActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == REQUEST_PICK_FOLDER) {
+            handleFolderResult(resultCode, data);
+            return;
+        }
         if (requestCode != REQUEST_PICK_IMAGE) return;
 
         PluginCall call;
@@ -580,6 +590,137 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
             }
             call.reject(e.getMessage(), e);
         }
+    }
+
+    @PluginMethod
+    public void pickFolder(PluginCall call) {
+        synchronized (folderLock) {
+            if (pendingFolderCall != null) {
+                call.reject("另一个文件夹选择请求正在进行中");
+                return;
+            }
+            pendingFolderCall = call;
+        }
+        try {
+            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+                | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+            getActivity().startActivityForResult(intent, REQUEST_PICK_FOLDER);
+        } catch (Exception e) {
+            synchronized (folderLock) {
+                pendingFolderCall = null;
+            }
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    private void handleFolderResult(int resultCode, Intent data) {
+        PluginCall call;
+        synchronized (folderLock) {
+            if (pendingFolderCall == null) return;
+            call = pendingFolderCall;
+            pendingFolderCall = null;
+        }
+
+        JSObject ret = new JSObject();
+        if (resultCode != RESULT_OK || data == null || data.getData() == null) {
+            ret.put("path", "");
+            ret.put("cancelled", true);
+            call.resolve(ret);
+            return;
+        }
+
+        android.net.Uri treeUri = data.getData();
+        // 持久化权限，以便后续写入
+        try {
+            getContext().getContentResolver().takePersistableUriPermission(
+                treeUri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        } catch (Exception e) {
+            Log.w(TAG, "takePersistableUriPermission failed", e);
+        }
+
+        String path = treeUriToPath(treeUri);
+        ret.put("path", path != null ? path : "");
+        ret.put("cancelled", false);
+        call.resolve(ret);
+    }
+
+    /**
+     * 将 content:// 树 URI 转为可读的文件系统路径。
+     * 例如: content://com.android.externalstorage.documents/tree/primary%3ADownload
+     *    → /storage/emulated/0/Download
+     */
+    private String treeUriToPath(android.net.Uri treeUri) {
+        if (treeUri == null) return null;
+        String docId;
+        try {
+            docId = android.provider.DocumentsContract.getTreeDocumentId(treeUri);
+        } catch (Exception e) {
+            // 尝试从 URI path 中提取
+            String uriPath = treeUri.getPath();
+            if (uriPath == null) return null;
+            String[] parts = uriPath.split("/tree/", 2);
+            if (parts.length < 2) return null;
+            docId = parts[1];
+        }
+        if (docId == null) return null;
+
+        // docId 格式: "primary:Download/JQ-Viewer" 或 "home:Download"
+        String[] split = docId.split(":", 2);
+        if (split.length < 2) return null;
+        String volume = split[0];
+        String subPath = split[1];
+
+        // 去掉开头的 / 如果存在
+        if (subPath.startsWith("/")) {
+            subPath = subPath.substring(1);
+        }
+
+        if ("primary".equals(volume)) {
+            java.io.File external = android.os.Environment.getExternalStorageDirectory();
+            return external.getAbsolutePath() + "/" + subPath;
+        }
+        // 非 primary 卷: /storage/{volume}/{subPath}
+        return "/storage/" + volume + "/" + subPath;
+    }
+
+    @PluginMethod
+    public void checkNotificationPermission(PluginCall call) {
+        android.app.NotificationManager nm = (android.app.NotificationManager)
+            getContext().getSystemService(Context.NOTIFICATION_SERVICE);
+        JSObject ret = new JSObject();
+        ret.put("granted", nm != null && nm.areNotificationsEnabled());
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void requestNotificationPermission(PluginCall call) {
+        try {
+            Intent intent = new Intent();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                intent.setAction(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS);
+                intent.putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, getContext().getPackageName());
+            } else {
+                intent.setAction(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                intent.setData(android.net.Uri.parse("package:" + getContext().getPackageName()));
+            }
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(intent);
+            JSObject ret = new JSObject();
+            ret.put("granted", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void getExternalStoragePath(PluginCall call) {
+        JSObject ret = new JSObject();
+        ret.put("path", android.os.Environment.getExternalStorageDirectory().getAbsolutePath());
+        call.resolve(ret);
     }
 
     @PluginMethod
@@ -1883,5 +2024,41 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
             }
         }
         return cookies;
+    }
+
+    // ========== PDF 导出 ==========
+
+    @PluginMethod
+    public void exportPdfBatch(PluginCall call) {
+        try {
+            JSArray tasksJson = call.getArray("tasks");
+            if (tasksJson == null || tasksJson.length() == 0) {
+                call.reject("tasks is required and must not be empty");
+                return;
+            }
+
+            List<PdfExportService.ExportJob> jobs = new ArrayList<>();
+            for (int i = 0; i < tasksJson.length(); i++) {
+                JSONObject t = tasksJson.getJSONObject(i);
+                PdfExportService.ExportJob job = new PdfExportService.ExportJob();
+                job.albumId = t.getString("albumId");
+                job.chapterId = t.getString("chapterId");
+                job.chapterTitle = t.optString("chapterTitle", job.chapterId);
+                job.savePath = t.getString("savePath");
+                job.useOriginal = t.optBoolean("useOriginal", true);
+                double cr = t.optDouble("compressionRatio", 1.0);
+                job.compressionRatio = (float) Math.max(0.1, Math.min(1.0, cr));
+                jobs.add(job);
+            }
+
+            PdfExportService pdfService = PdfExportService.getInstance(getContext());
+            pdfService.submitExport(jobs);
+
+            JSObject ret = new JSObject();
+            ret.put("accepted", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
     }
 }

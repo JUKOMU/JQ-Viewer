@@ -357,3 +357,14 @@ export interface ParseHistoryItem {
   text: string
   timestamp: number
 }
+
+// --- PDF 导出 ---
+
+export interface PdfExportTask {
+  albumId: string
+  chapterId: string
+  chapterTitle: string       // 用于通知显示
+  savePath: string           // 完整路径（含文件名.pdf）
+  useOriginal: boolean
+  compressionRatio: number   // 0.1~1.0
+}

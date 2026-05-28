@@ -188,7 +188,7 @@ public class FileStore {
         return minSo;
     }
 
-    File[] listImageFiles(String albumId, String chapterId) {
+    public File[] listImageFiles(String albumId, String chapterId) {
         File dir = getChapterDir(albumId, chapterId);
         if (!dir.isDirectory()) return new File[0];
         return dir.listFiles((d, name) -> !name.equals(META_FILE) && !name.endsWith(".tmp"));

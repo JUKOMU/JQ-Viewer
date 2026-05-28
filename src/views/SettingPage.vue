@@ -247,7 +247,7 @@
         </div>
 
         <!-- 分组：导出设置 -->
-        <div class="section-label">导出设置</div>
+        <div class="section-label">收藏夹导出设置</div>
         <div class="card">
           <div class="row">
             <div class="row-left">
@@ -285,6 +285,72 @@
           <div class="row divider action" @click="resetExportFormat">
             <span class="row-title">重置为默认</span>
             <span class="row-subtitle" style="color: #b89a84; font-size: 12px">JM{id}{title}</span>
+          </div>
+        </div>
+
+        <!-- 分组：PDF 导出设置 -->
+        <div class="section-label">PDF 导出设置</div>
+        <div class="card">
+          <!-- PDF导出位置 -->
+          <div class="row">
+            <div class="row-left">
+              <span class="row-title">PDF 导出位置</span>
+              <span class="row-subtitle">PDF 文件的基础存储路径</span>
+            </div>
+          </div>
+          <div class="row path-row">
+            <span class="path-display">{{ pdfExportPath }}</span>
+            <button class="browse-btn" @click="onBrowseFolder">浏览</button>
+            <button class="reset-mini-btn" @click="resetPdfExportPath">重置</button>
+          </div>
+
+          <!-- 保存目录模板 -->
+          <div class="row divider">
+            <div class="row-left">
+              <span class="row-title">保存目录模板</span>
+              <span class="row-subtitle">PDF 存储子目录，"/" 表示子目录层级</span>
+              <div class="var-tags">
+                <span class="var-tag">{id}</span>
+                <span class="var-tag">{title}</span>
+                <span class="var-tag">{chapterId}</span>
+                <span class="var-tag">{chapterName}</span>
+                <span class="var-tag">{pageCount}</span>
+              </div>
+            </div>
+          </div>
+          <div class="row template-row">
+            <input
+              class="text-input full-width"
+              type="text"
+              :value="pdfDirTemplate"
+              @change="onPdfDirTemplateChange"
+            />
+            <button class="reset-mini-btn" @click="resetPdfDirTemplate">重置</button>
+          </div>
+
+          <!-- 保存名称模板 -->
+          <div class="row divider">
+            <div class="row-left">
+              <span class="row-title">保存名称模板</span>
+              <span class="row-subtitle">PDF 文件名（不含扩展名）</span>
+            </div>
+          </div>
+          <div class="row template-row">
+            <input
+              class="text-input full-width"
+              type="text"
+              :value="pdfNameTemplate"
+              @change="onPdfNameTemplateChange"
+            />
+            <button class="reset-mini-btn" @click="resetPdfNameTemplate">重置</button>
+          </div>
+
+          <!-- 预览 -->
+          <div class="row divider">
+            <div class="row-left">
+              <span class="row-title">预览</span>
+              <span class="row-subtitle preview-mono">{{ pdfPathPreview }}</span>
+            </div>
           </div>
         </div>
 
@@ -355,6 +421,7 @@ import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import {JmcomicService, sanitizeError, showToast} from '@/services/JmcomicService'
 import {initSettings, SettingsStore} from '@/services/SettingsService'
 import {ExportFormatService} from '@/services/ExportFormatService'
+import {PdfExportService} from '@/services/PdfExportService'
 import {useAuth} from '@/composables/useAuth'
 import type {CacheCapacityInfo, RelocationProgress} from '@/services/JmcomicTypes'
 
@@ -386,6 +453,13 @@ const keepScreenOn = ref(SettingsStore.getReaderKeepScreenOn())
 const volumeNavigation = ref(SettingsStore.getReaderVolumeNavigation())
 
 const exportPreview = computed(() => ExportFormatService.previewExportFormat(exportFormat.value))
+
+// PDF导出设置
+const pdfExportPath = ref(PdfExportService.getExportPath())
+const pdfDirTemplate = ref(PdfExportService.getDirTemplate())
+const pdfNameTemplate = ref(PdfExportService.getNameTemplate())
+
+const pdfPathPreview = computed(() => PdfExportService.previewPath())
 
 // ---- 搬迁弹窗状态 ----
 const showRelocationModal = ref(false)
@@ -453,6 +527,15 @@ onMounted(async () => {
   brightnessValue.value = brightnessFollowSystem.value ? 0.5 : SettingsStore.getReaderBrightness()
   keepScreenOn.value = SettingsStore.getReaderKeepScreenOn()
   volumeNavigation.value = SettingsStore.getReaderVolumeNavigation()
+
+  // 将 PDF 导出默认相对路径解析为绝对路径（与文件夹选择器返回的绝对路径保持一致）
+  try {
+    const result = await JmcomicService.getExternalStoragePath()
+    PdfExportService.ensureAbsolutePath(result.path)
+    pdfExportPath.value = PdfExportService.getExportPath()
+  } catch {
+    /* keep default */
+  }
 })
 
 // ---- 缓存上限 ----
@@ -568,6 +651,48 @@ function resetExportFormat() {
   ExportFormatService.resetExportFormat()
   exportFormat.value = ExportFormatService.getExportFormat()
   showToast('已重置为默认格式', 'success')
+}
+
+// ---- PDF 导出设置 ----
+async function onBrowseFolder() {
+  try {
+    const result = await JmcomicService.pickFolder()
+    if (!result.cancelled && result.path) {
+      // 确保路径以 / 结尾
+      const path = result.path.endsWith('/') ? result.path : result.path + '/'
+      pdfExportPath.value = path
+      PdfExportService.setExportPath(path)
+    }
+  } catch (e: any) {
+    await showToast(sanitizeError(e, '选择文件夹失败'), 'danger')
+  }
+}
+
+function onPdfDirTemplateChange(e: Event) {
+  const val = (e.target as HTMLInputElement).value.trim()
+  pdfDirTemplate.value = val
+  PdfExportService.setDirTemplate(val)
+}
+
+function onPdfNameTemplateChange(e: Event) {
+  const val = (e.target as HTMLInputElement).value.trim()
+  pdfNameTemplate.value = val
+  PdfExportService.setNameTemplate(val)
+}
+
+function resetPdfExportPath() {
+  PdfExportService.resetExportPath()
+  pdfExportPath.value = PdfExportService.getExportPath()
+}
+
+function resetPdfDirTemplate() {
+  PdfExportService.resetDirTemplate()
+  pdfDirTemplate.value = PdfExportService.getDirTemplate()
+}
+
+function resetPdfNameTemplate() {
+  PdfExportService.resetNameTemplate()
+  pdfNameTemplate.value = PdfExportService.getNameTemplate()
 }
 
 // ---- 公开下载 ----
@@ -984,6 +1109,77 @@ function onVolumeNavigationChange(e: CustomEvent) {
 .seg-btn.active {
   background: #f0a060;
   color: #fff;
+}
+
+/* PDF 导出设置 */
+.path-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px 12px;
+}
+
+.path-display {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  background: #fdf5ef;
+  border: 1px solid #f0d8c8;
+  border-radius: 8px;
+  font-size: 12px;
+  font-family: monospace;
+  color: #4c2a18;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.browse-btn {
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid #f0a060;
+  border-radius: 8px;
+  background: #fff0e7;
+  color: #e8843c;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.browse-btn:active {
+  background: #fde0c8;
+}
+
+.reset-mini-btn {
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid #e0cfc4;
+  border-radius: 8px;
+  background: #fdfaf8;
+  color: #b89a84;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.reset-mini-btn:active {
+  background: #f0e4db;
+}
+
+.template-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px 12px;
+}
+
+.text-input.full-width {
+  flex: 1;
+  width: auto;
+  min-width: 0;
 }
 
 /* 亮度滑块 */

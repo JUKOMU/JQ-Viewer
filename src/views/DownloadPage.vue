@@ -115,6 +115,15 @@
         </button>
 
         <button
+          v-if="selectedTask?.status === 'completed'"
+          class="popover-btn"
+          @click="popoverAction('pdf')"
+        >
+          <IonIcon :icon="documentLockOutline"/>
+          导出为PDF
+        </button>
+
+        <button
           v-if="selectedTask?.status === 'failed'"
           class="popover-btn"
           @click="popoverAction('retry')"
@@ -184,6 +193,13 @@
       ]"
       @did-dismiss="isClearAlertOpen = false"
     />
+
+    <!-- PDF导出底部面板 -->
+    <PdfExportBottomSheet
+      v-model="showPdfSheet"
+      :chapters="chaptersForPdf"
+      @confirm="onPdfExportConfirm"
+    />
   </IonPage>
 </template>
 
@@ -208,6 +224,7 @@ import {
   bookOutline,
   closeCircleOutline,
   cloudDownloadOutline,
+  documentLockOutline,
   informationCircleOutline,
   pauseOutline,
   playOutline,
@@ -220,9 +237,12 @@ import {
 import type {PluginListenerHandle} from '@capacitor/core'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import DownloadTaskCard from '@/components/download/DownloadTaskCard.vue'
+import PdfExportBottomSheet from '@/components/download/PdfExportBottomSheet.vue'
 import {JmcomicService, sanitizeError, showToast} from '@/services/JmcomicService'
+import {alertController} from '@ionic/vue'
 import {OfflineDownloadService} from '@/services/OfflineDownloadService'
-import type {CompletedGroup, DownloadTask} from '@/services/JmcomicTypes'
+import {PdfExportService} from '@/services/PdfExportService'
+import type {CompletedGroup, DownloadTask, PdfExportTask} from '@/services/JmcomicTypes'
 
 const router = useRouter()
 const tasks = ref<DownloadTask[]>([])
@@ -256,6 +276,10 @@ const popoverEvent = ref<Event | null>(null)
 
 const cancelableStatuses = ['queued', 'downloading', 'paused']
 const deletableStatuses = ['completed', 'failed']
+
+// PDF导出
+const showPdfSheet = ref(false)
+const chaptersForPdf = ref<DownloadTask[]>([])
 
 const popoverTitle = computed(() => {
   if (selectedGroup.value?.type === 'multi') {
@@ -305,6 +329,9 @@ const popoverAction = (action: string) => {
       break
     case 'cancel':
       onCancel(t)
+      break
+    case 'pdf':
+      onOpenPdfSheet()
       break
     case 'delete':
       requestDeleteConfirm()
@@ -485,6 +512,84 @@ onIonViewWillEnter(() => {
 onUnmounted(() => {
   downloadProgressHandle?.remove()
 })
+
+// ---- PDF 导出 ----
+const onOpenPdfSheet = () => {
+  const g = selectedGroup.value
+  if (g?.type === 'multi') {
+    chaptersForPdf.value = g.chapters
+  } else if (selectedTask.value) {
+    chaptersForPdf.value = [selectedTask.value]
+  }
+  showPdfSheet.value = true
+}
+
+const onPdfExportConfirm = async (payload: {
+  selectedChapters: DownloadTask[]
+  useOriginal: boolean
+  compressionRatio: number
+  editedPath: string
+}) => {
+  showPdfSheet.value = false
+
+  // 非阻塞检查：通知关了仅 toast 提醒，不阻止导出
+  void ensureNotificationPermission()
+
+  const tasks: PdfExportTask[] = payload.selectedChapters.map((ch) => {
+    // 单章节用用户编辑的路径，多章节用模板（每个章节路径不同）
+    const savePath =
+      payload.selectedChapters.length === 1
+        ? payload.editedPath
+        : PdfExportService.buildFullPath({
+            id: ch.albumId,
+            title: ch.albumTitle,
+            chapterId: ch.chapterId,
+            chapterName: ch.chapterTitle,
+            pageCount: ch.totalPages,
+          })
+
+    return {
+      albumId: ch.albumId,
+      chapterId: ch.chapterId,
+      chapterTitle: ch.chapterTitle,
+      savePath,
+      useOriginal: payload.useOriginal,
+      compressionRatio: payload.compressionRatio,
+    }
+  })
+
+  try {
+    await JmcomicService.exportPdfBatch(tasks)
+    await showToast('PDF导出已开始，请查看通知', 'success')
+  } catch (e: any) {
+    await showToast(sanitizeError(e, '导出启动失败'), 'danger')
+  }
+}
+
+async function ensureNotificationPermission(): Promise<boolean> {
+  try {
+    const check = await JmcomicService.checkNotificationPermission()
+    if (check.granted) return true
+
+    const alert = await alertController.create({
+      header: '需要通知权限',
+      message: 'PDF导出将在后台进行，需要通过通知查看进度。\n点击"去设置"后，在系统设置中开启通知权限，再返回重新导出。',
+      buttons: [
+        { text: '取消', role: 'cancel' },
+        {
+          text: '去设置',
+          handler: () => {
+            void JmcomicService.requestNotificationPermission()
+          },
+        },
+      ],
+    })
+    await alert.present()
+    return false
+  } catch {
+    return true
+  }
+}
 
 const onCancel = async (task: DownloadTask) => {
   try {

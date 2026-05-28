@@ -1,0 +1,40 @@
+name: Release
+
+on:
+    push:
+        tags:
+            - "v*.*.*"
+            - "v*.*.*-*"
+
+    workflow_dispatch:
+        inputs:
+            tag:
+                description: "Tag name to release (e.g. v0.0.4)"
+                required: false
+            prerelease:
+                description: "Mark as pre-release?"
+                required: false
+                type: boolean
+                default: false
+
+permissions:
+    contents: write
+
+concurrency:
+    group: ${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    release:
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Create GitHub Release
+              uses: softprops/action-gh-release@v2
+              with:
+                  tag_name: ${{ inputs.tag || github.ref_name }}
+                  draft: false
+                  prerelease: ${{ inputs.prerelease || contains(github.ref, '-') }}
+                  generate_release_notes: true
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

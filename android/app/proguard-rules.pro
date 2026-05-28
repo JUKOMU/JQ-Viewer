@@ -1,21 +1,49 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# Capacitor framework
+-keep class com.getcapacitor.** { *; }
+-keepclassmembers class * {
+    @com.getcapacitor.annotation.CapacitorPlugin public *;
+    @com.getcapacitor.annotation.PluginMethod public *;
+}
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# App plugin classes (Capacitor bridge)
+-keep class io.github.jukomu.bridge.** { *; }
+-keep class io.github.jukomu.data.** { *; }
+-keep class io.github.jukomu.service.** { *; }
+-keep class io.github.jukomu.MainActivity { *; }
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# EncryptedSharedPreferences (androidx.security)
+-keep class androidx.security.crypto.** { *; }
+-keepclassmembers class * {
+    @androidx.security.crypto.EncryptedSharedPreferences <fields>;
+}
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Gson serialization (used by OkHttp / JMComic API)
+-keepattributes Signature
+-keepattributes *Annotation*
+-keep class com.google.gson.** { *; }
+-keep class * extends com.google.gson.TypeAdapter
+-keep class * implements com.google.gson.TypeAdapterFactory
+-keep class * implements com.google.gson.JsonSerializer
+-keep class * implements com.google.gson.JsonDeserializer
+
+# OkHttp
+-keep class okhttp3.** { *; }
+-keep class okio.** { *; }
+-dontwarn okhttp3.**
+-dontwarn okio.**
+
+# ML Kit text recognition
+-keep class com.google.mlkit.** { *; }
+-dontwarn com.google.mlkit.**
+
+# JMComic library uses java.awt.* only in non-Android (desktop) AwtImageProcessor
+-dontwarn java.awt.**
+-dontwarn javax.imageio.**
+
+# SLF4J (Android binding)
+-keep class uk.uuid.slf4j.** { *; }
+-dontwarn org.slf4j.**
+
+# Keep source file names for crash logs
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile

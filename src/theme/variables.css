@@ -66,6 +66,11 @@ ion-alert .alert-title {
   font-weight: 600;
 }
 
+ion-alert .alert-message {
+  white-space: pre-line;
+  color: #6b4e3e;
+}
+
 /* Toast 提示 — 匹配上下文菜单风格 */
 ion-toast.warm-toast {
   --background: #fffbf8;

@@ -10,3 +10,7 @@
 /docs/
 /JMComic-Api-Java/
 /.run/
+.env
+*.jks
+*.keystore
+keystore.properties

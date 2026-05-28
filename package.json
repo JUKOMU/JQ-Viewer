@@ -1,7 +1,7 @@
 {
   "name": "jq-viewer",
   "private": true,
-  "version": "0.0.1",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,7 +12,9 @@
     "lint": "eslint .",
     "lint:fix": "eslint --fix .",
     "format": "prettier --write \"src/**/*.{vue,ts,css}\"",
-    "format:check": "prettier --check \"src/**/*.{vue,ts,css}\""
+    "format:check": "prettier --check \"src/**/*.{vue,ts,css}\"",
+    "build:android": "npm run build && npx cap copy android && cd android && gradlew :app:assembleDebug",
+    "build:android:release": "npm run build && ionic capacitor sync android && cd android && gradlew :app:clean && gradlew :app:assembleRelease"
   },
   "dependencies": {
     "@capacitor/android": "^8.3.1",
@@ -47,5 +49,5 @@
     "vitest": "^0.34.6",
     "vue-tsc": "^2.1.10"
   },
-  "description": "An Ionic project"
+  "description": "JQViewer - Android 漫画阅读器"
 }

@@ -343,6 +343,7 @@ export interface LatencyResult {
 
 /** 浏览历史条目 */
 export interface BrowseHistoryItem {
+  id: number
   albumId: string
   albumTitle: string
   coverUrl: string
@@ -354,8 +355,10 @@ export interface BrowseHistoryItem {
 
 /** 解析历史条目 */
 export interface ParseHistoryItem {
+  id: number
   text: string
   timestamp: number
+  mode: 'single-mode' | 'batch-mode'
 }
 
 // --- PDF 导出 ---

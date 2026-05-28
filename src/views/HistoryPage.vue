@@ -60,6 +60,15 @@
                       <span>{{ item.chapterTitle }}</span>
                     </div>
                   </div>
+                  <button
+                    type="button"
+                    class="card-more-btn"
+                    :class="{ active: contextMenu?.item.id === item.id }"
+                    aria-label="更多操作"
+                    @click.stop="openContextMenu(item, $event)"
+                  >
+                    <IonIcon :icon="ellipsisVertical"/>
+                  </button>
                 </div>
               </template>
             </TransitionGroup>
@@ -78,30 +87,82 @@
               <button class="clear-btn" @click="confirmClearParse">清空</button>
             </div>
             <TransitionGroup name="history-list" tag="div" class="card-list">
-              <div v-for="item in parseItems" :key="item.timestamp" class="parse-card">
+              <div v-for="item in parseItems" :key="item.timestamp" class="parse-card" @click="openParseItem(item)">
                 <div class="parse-icon-wrap">
                   <IonIcon :icon="documentTextOutline"/>
                 </div>
                 <div class="parse-body">
                   <div class="parse-text">{{ item.text }}</div>
-                  <div class="parse-time">{{ formatRelativeTime(item.timestamp) }}</div>
+                  <div class="parse-meta">
+                    <span class="parse-mode-badge" :class="item.mode === 'batch-mode' ? 'mode-batch' : 'mode-single'">
+                      {{ item.mode === 'batch-mode' ? '批量解析' : '单个解析' }}
+                    </span>
+                    <span class="parse-time">{{ formatRelativeTime(item.timestamp) }}</span>
+                  </div>
                 </div>
+                <button
+                  type="button"
+                  class="card-more-btn"
+                  :class="{ active: contextMenu?.item.id === item.id }"
+                  aria-label="更多操作"
+                  @click.stop="openContextMenu(item, $event)"
+                >
+                  <IonIcon :icon="ellipsisVertical"/>
+                </button>
               </div>
             </TransitionGroup>
           </template>
         </div>
       </div>
     </IonContent>
+    <!-- 上下文菜单 -->
+    <div
+      v-if="contextMenu"
+      ref="contextMenuRef"
+      class="context-menu"
+      :style="contextMenuStyle"
+      @mousedown.prevent.stop
+      @touchstart.stop
+    >
+      <template v-if="contextMenu.type === 'browse'">
+        <button type="button" class="context-menu-item" @click.stop="handleMenuDetail">
+          <IonIcon :icon="bookOutline" class="context-menu-icon"/>
+          <span>进入详情页</span>
+        </button>
+        <button
+          type="button"
+          class="context-menu-item context-menu-item--danger"
+          @click.stop="handleMenuDelete"
+        >
+          <IonIcon :icon="trashOutline" class="context-menu-icon"/>
+          <span>删除此记录</span>
+        </button>
+      </template>
+      <template v-else>
+        <button type="button" class="context-menu-item" @click.stop="handleMenuCopy">
+          <IonIcon :icon="copyOutline" class="context-menu-icon"/>
+          <span>复制文本</span>
+        </button>
+        <button
+          type="button"
+          class="context-menu-item context-menu-item--danger"
+          @click.stop="handleMenuDelete"
+        >
+          <IonIcon :icon="trashOutline" class="context-menu-icon"/>
+          <span>删除此记录</span>
+        </button>
+      </template>
+    </div>
   </IonPage>
 </template>
 
 <script setup lang="ts">
 defineOptions({name: 'HistoryPage'})
 
-import {computed, onMounted, ref} from 'vue'
+import {computed, onBeforeUnmount, onMounted, ref} from 'vue'
 import {useRouter} from 'vue-router'
 import {alertController, IonContent, IonIcon, IonPage} from '@ionic/vue'
-import {bookOutline, documentTextOutline, timeOutline} from 'ionicons/icons'
+import {bookOutline, copyOutline, documentTextOutline, ellipsisVertical, trashOutline, timeOutline} from 'ionicons/icons'
 import {HistoryService} from '@/services/HistoryService'
 import type {BrowseHistoryItem, ParseHistoryItem} from '@/services/JmcomicTypes'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
@@ -212,6 +273,114 @@ function openAlbum(item: BrowseHistoryItem) {
     query: {title: item.albumTitle, coverUrl: item.coverUrl, authors: authorsParam},
   })
 }
+
+function openParseItem(item: ParseHistoryItem) {
+  if (item.mode === 'batch-mode') {
+    sessionStorage.setItem('batch-parse-text', item.text)
+    void router.push({path: '/batch-parse'})
+  } else {
+    const digits = item.text.replace(/\D/g, '')
+    void router.push({path: '/search', query: {keyword: digits}})
+  }
+}
+
+// ---- 上下文菜单 ----
+
+interface ContextMenuState {
+  type: 'browse' | 'parse'
+  item: BrowseHistoryItem | ParseHistoryItem
+  x: number
+  y: number
+}
+
+const contextMenu = ref<ContextMenuState | null>(null)
+const contextMenuRef = ref<HTMLElement | null>(null)
+
+const contextMenuStyle = computed(() => {
+  const m = contextMenu.value
+  if (!m) return {}
+  const menuH = m.type === 'browse' ? 90 : 90
+  const top = m.y + menuH > window.innerHeight ? m.y - menuH - 8 : m.y
+  return {
+    position: 'fixed' as const,
+    top: `${top}px`,
+    left: `${Math.min(m.x, window.innerWidth - 160)}px`,
+  }
+})
+
+function openContextMenu(item: BrowseHistoryItem | ParseHistoryItem, event: MouseEvent) {
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  const type = 'albumId' in item ? 'browse' : 'parse'
+  contextMenu.value = {type, item, x: rect.left, y: rect.bottom + 4}
+  setTimeout(() => {
+    document.addEventListener('mousedown', handleContextMenuClickOutside)
+    document.addEventListener('touchstart', handleContextMenuClickOutside)
+  }, 0)
+}
+
+function closeContextMenu() {
+  contextMenu.value = null
+  document.removeEventListener('mousedown', handleContextMenuClickOutside)
+  document.removeEventListener('touchstart', handleContextMenuClickOutside)
+}
+
+function handleContextMenuClickOutside(e: Event) {
+  if (contextMenuRef.value?.contains(e.target as Node)) return
+  closeContextMenu()
+}
+
+function handleMenuDetail() {
+  const item = contextMenu.value?.item as BrowseHistoryItem
+  closeContextMenu()
+  if (item) openAlbum(item)
+}
+
+async function handleMenuCopy() {
+  const item = contextMenu.value?.item as ParseHistoryItem
+  const text = item?.text
+  closeContextMenu()
+  if (text) {
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+async function handleMenuDelete() {
+  const m = contextMenu.value
+  if (!m) return
+  closeContextMenu()
+
+  const isBrowse = m.type === 'browse'
+  const alert = await alertController.create({
+    header: '确认删除',
+    message: isBrowse ? '确定要删除这条浏览记录吗？' : '确定要删除这条解析记录吗？',
+    buttons: [
+      {text: '取消', role: 'cancel'},
+      {
+        text: '删除',
+        role: 'destructive',
+        handler: async () => {
+          if (isBrowse) {
+            await HistoryService.deleteBrowseItem(m.item.id)
+            browseItems.value = browseItems.value.filter(i => i.id !== m.item.id)
+          } else {
+            await HistoryService.deleteParseItem(m.item.id)
+            parseItems.value = parseItems.value.filter(i => i.id !== m.item.id)
+          }
+        },
+      },
+    ],
+  })
+  await alert.present()
+}
+
+onBeforeUnmount(() => {
+  document.removeEventListener('mousedown', handleContextMenuClickOutside)
+  document.removeEventListener('touchstart', handleContextMenuClickOutside)
+})
 
 async function confirmClearBrowse() {
   const alert = await alertController.create({
@@ -375,6 +544,7 @@ function formatRelativeTime(timestamp: number): string {
 
 /* Browse card */
 .browse-card {
+  position: relative;
   display: flex;
   align-items: stretch;
   gap: 0;
@@ -468,6 +638,7 @@ function formatRelativeTime(timestamp: number): string {
 
 /* Parse card */
 .parse-card {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -475,6 +646,12 @@ function formatRelativeTime(timestamp: number): string {
   background: #fffaf6;
   border-radius: 12px;
   box-shadow: 5px 12px 28px rgb(76 42 24 / 0.2);
+  cursor: pointer;
+  transition: transform 0.16s ease;
+}
+
+.parse-card:active {
+  transform: scale(0.98);
 }
 
 .parse-icon-wrap {
@@ -506,9 +683,99 @@ function formatRelativeTime(timestamp: number): string {
   white-space: nowrap;
 }
 
+.parse-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.parse-mode-badge {
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  line-height: 1.6;
+}
+
+.mode-single {
+  background: #e8f0fe;
+  color: #4a7fbd;
+}
+
+.mode-batch {
+  background: #fef3e0;
+  color: #c9822e;
+}
+
 .parse-time {
   font-size: 10px;
   color: #b8a090;
+}
+
+/* More button */
+.card-more-btn {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  border: 0;
+  background: transparent;
+  color: #8a6048;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.card-more-btn:active,
+.card-more-btn.active {
+  background: #f5d2bc;
+}
+
+/* Context menu */
+.context-menu {
+  min-width: 148px;
+  background: #fffbf8;
+  border: 1px solid rgb(250 156 105 / 0.3);
+  border-radius: 14px;
+  box-shadow: 0 8px 22px rgb(76 42 24 / 0.14);
+  padding: 6px 0;
+  z-index: 999;
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 0;
+  background: transparent;
+  color: #30201a;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+}
+
+.context-menu-item:active {
+  background: #fff0e7;
+}
+
+.context-menu-item--danger {
+  color: #d4533e;
+}
+
+.context-menu-icon {
+  font-size: 16px;
+  flex-shrink: 0;
+  color: inherit;
 }
 
 /* TransitionGroup */

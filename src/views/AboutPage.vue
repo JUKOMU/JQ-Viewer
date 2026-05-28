@@ -58,8 +58,14 @@
             <p></p>
             <p>还有一个原因是本项目依赖的 JMComic API 库, 这是我的另一个开源项目, 我想用来做点有用的东西。</p>
             <p></p>
-            <p>如果你觉得好用，欢迎分享给朋友。遇到问题或有什么建议，可以在 GitHub 提交 Issue。</p>
-            <p></p>
+            <p>如果你觉得好用，欢迎分享给朋友。遇到问题或有什么建议，可以在 GitHub 提交<a
+              href="https://github.com/JUKOMU/JQ-Viewer/issues/new">Issue</a>。</p>
+            <div style="height: 1000px"></div>
+            <p>没有了, 别看了</p>
+            <div style="height: 2000px"></div>
+            <p>还看?</p>
+            <div style="height: 3000px"></div>
+            <p><img src="../../public/000.jpg"></p>
           </div>
         </div>
       </div>
@@ -68,20 +74,12 @@
 </template>
 
 <script setup lang="ts">
-defineOptions({ name: 'AboutPage' })
+defineOptions({name: 'AboutPage'})
 
-import {nextTick, onMounted, ref } from 'vue'
-import { App } from '@capacitor/app'
-import {
-  IonBackButton,
-  IonButtons,
-  IonContent,
-  IonHeader,
-  IonPage,
-  IonTitle,
-  IonToolbar,
-} from '@ionic/vue'
-import { showToast } from '@/services/JmcomicService'
+import {nextTick, onMounted, ref} from 'vue'
+import {App} from '@capacitor/app'
+import {IonBackButton, IonButtons, IonContent, IonHeader, IonPage, IonTitle, IonToolbar,} from '@ionic/vue'
+import {showToast} from '@/services/JmcomicService'
 
 const appVersion = ref('1.0.0')
 const updateChecking = ref(false)
@@ -143,7 +141,7 @@ async function checkUpdate() {
 
   try {
     const resp = await fetch(RELEASES_API, {
-      headers: { Accept: 'application/vnd.github.v3+json' },
+      headers: {Accept: 'application/vnd.github.v3+json'},
     })
     if (!resp.ok) throw new Error('API error')
     const data = await resp.json()
@@ -333,7 +331,11 @@ const reDisplay = async () => {
 }
 
 @keyframes cursor-blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
 }
 </style>

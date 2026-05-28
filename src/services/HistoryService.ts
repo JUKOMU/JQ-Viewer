@@ -66,7 +66,7 @@ export const HistoryService = {
     }
   },
 
-  async recordBrowse(item: Omit<BrowseHistoryItem, 'timestamp'>): Promise<void> {
+  async recordBrowse(item: Omit<BrowseHistoryItem, 'id' | 'timestamp'>): Promise<void> {
     if (!item.albumTitle) return
     try {
       await JmcomicService.recordBrowse(item)
@@ -83,6 +83,14 @@ export const HistoryService = {
     }
   },
 
+  async deleteBrowseItem(id: number): Promise<void> {
+    try {
+      await JmcomicService.deleteBrowseItem(id)
+    } catch {
+      /* 静默丢弃 */
+    }
+  },
+
   // ========== 解析历史 (原生 SQLite) ==========
 
   async getParseHistory(limit: number = 50, offset: number = 0): Promise<ParseHistoryItem[]> {
@@ -94,11 +102,11 @@ export const HistoryService = {
     }
   },
 
-  async addParseHistory(text: string): Promise<void> {
+  async addParseHistory(text: string, mode: string): Promise<void> {
     const t = text.trim()
     if (!t) return
     try {
-      await JmcomicService.addParseHistory(t)
+      await JmcomicService.addParseHistory(t, mode)
     } catch {
       /* 静默丢弃 */
     }
@@ -109,6 +117,14 @@ export const HistoryService = {
       await JmcomicService.clearParseHistory()
     } catch {
       /* ignore */
+    }
+  },
+
+  async deleteParseItem(id: number): Promise<void> {
+    try {
+      await JmcomicService.deleteParseItem(id)
+    } catch {
+      /* 静默丢弃 */
     }
   },
 }

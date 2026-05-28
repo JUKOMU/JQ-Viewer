@@ -17,7 +17,7 @@ import org.json.JSONObject;
 public class HistoryStore extends SQLiteOpenHelper {
 
     private static final String DB_NAME = "jq_history.db";
-    private static final int DB_VERSION = 1;
+    private static final int DB_VERSION = 2;
 
     private static final String TABLE_BROWSE = "browse_history";
     private static final String COL_ID = "id";
@@ -31,6 +31,7 @@ public class HistoryStore extends SQLiteOpenHelper {
 
     private static final String TABLE_PARSE = "parse_history";
     private static final String COL_TEXT = "text";
+    private static final String COL_MODE = "mode";
 
     private static HistoryStore instance;
 
@@ -61,16 +62,16 @@ public class HistoryStore extends SQLiteOpenHelper {
         db.execSQL("CREATE TABLE " + TABLE_PARSE + " ("
             + COL_ID + " INTEGER PRIMARY KEY AUTOINCREMENT,"
             + COL_TEXT + " TEXT NOT NULL,"
-            + COL_TIMESTAMP + " INTEGER NOT NULL"
+            + COL_TIMESTAMP + " INTEGER NOT NULL,"
+            + COL_MODE + " TEXT NOT NULL DEFAULT 'single-mode'"
             + ")");
     }
 
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        // 注意：未来迁移必须使用 ALTER TABLE ADD COLUMN，直接 DROP TABLE 会导致用户数据永久丢失
-        db.execSQL("DROP TABLE IF EXISTS " + TABLE_BROWSE);
-        db.execSQL("DROP TABLE IF EXISTS " + TABLE_PARSE);
-        onCreate(db);
+        if (oldVersion < 2) {
+            db.execSQL("ALTER TABLE " + TABLE_PARSE + " ADD COLUMN " + COL_MODE + " TEXT NOT NULL DEFAULT 'single-mode'");
+        }
     }
 
     // ==================== 浏览历史 ====================
@@ -137,20 +138,21 @@ public class HistoryStore extends SQLiteOpenHelper {
                 ? (offset > 0 ? limit + " OFFSET " + offset : String.valueOf(limit))
                 : null;
             c = getReadableDatabase().query(TABLE_BROWSE,
-                new String[]{COL_ALBUM_ID, COL_ALBUM_TITLE, COL_COVER_URL, COL_AUTHORS,
+                new String[]{COL_ID, COL_ALBUM_ID, COL_ALBUM_TITLE, COL_COVER_URL, COL_AUTHORS,
                     COL_CHAPTER_ID, COL_CHAPTER_TITLE, COL_TIMESTAMP},
                 null, null, null, null,
                 COL_TIMESTAMP + " DESC",
                 limitClause);
             while (c.moveToNext()) {
                 JSONObject obj = new JSONObject();
-                obj.put("albumId", c.getString(0));
-                obj.put("albumTitle", c.getString(1));
-                obj.put("coverUrl", c.getString(2));
-                obj.put("authors", c.getString(3));
-                obj.put("chapterId", c.getString(4));
-                obj.put("chapterTitle", c.getString(5));
-                obj.put("timestamp", c.getLong(6));
+                obj.put("id", c.getLong(0));
+                obj.put("albumId", c.getString(1));
+                obj.put("albumTitle", c.getString(2));
+                obj.put("coverUrl", c.getString(3));
+                obj.put("authors", c.getString(4));
+                obj.put("chapterId", c.getString(5));
+                obj.put("chapterTitle", c.getString(6));
+                obj.put("timestamp", c.getLong(7));
                 arr.put(obj);
             }
         } catch (Exception e) {
@@ -172,12 +174,20 @@ public class HistoryStore extends SQLiteOpenHelper {
         }
     }
 
+    public void deleteBrowseItem(int id) {
+        try {
+            getWritableDatabase().delete(TABLE_BROWSE, COL_ID + "=?", new String[]{String.valueOf(id)});
+        } catch (Exception e) {
+            android.util.Log.w("HistoryStore", "deleteBrowseItem failed", e);
+        }
+    }
+
     // ==================== 解析历史 ====================
 
     /**
      * 去重追加：相同 text 存在则移除旧记录再插入新记录
      */
-    public void addParseHistory(String text) {
+    public void addParseHistory(String text, String mode) {
         String t = text != null ? text.trim() : "";
         if (t.isEmpty()) return;
         SQLiteDatabase db = getWritableDatabase();
@@ -189,6 +199,7 @@ public class HistoryStore extends SQLiteOpenHelper {
             ContentValues cv = new ContentValues();
             cv.put(COL_TEXT, t);
             cv.put(COL_TIMESTAMP, now);
+            cv.put(COL_MODE, mode != null ? mode : "single-mode");
             db.insert(TABLE_PARSE, null, cv);
             db.setTransactionSuccessful();
         } catch (Exception e) {
@@ -206,14 +217,16 @@ public class HistoryStore extends SQLiteOpenHelper {
                 ? (offset > 0 ? limit + " OFFSET " + offset : String.valueOf(limit))
                 : null;
             c = getReadableDatabase().query(TABLE_PARSE,
-                new String[]{COL_TEXT, COL_TIMESTAMP},
+                new String[]{COL_ID, COL_TEXT, COL_TIMESTAMP, COL_MODE},
                 null, null, null, null,
                 COL_TIMESTAMP + " DESC",
                 limitClause);
             while (c.moveToNext()) {
                 JSONObject obj = new JSONObject();
-                obj.put("text", c.getString(0));
-                obj.put("timestamp", c.getLong(1));
+                obj.put("id", c.getLong(0));
+                obj.put("text", c.getString(1));
+                obj.put("timestamp", c.getLong(2));
+                obj.put("mode", c.getString(3));
                 arr.put(obj);
             }
         } catch (Exception e) {
@@ -229,6 +242,14 @@ public class HistoryStore extends SQLiteOpenHelper {
             getWritableDatabase().delete(TABLE_PARSE, null, null);
         } catch (Exception e) {
             android.util.Log.w("HistoryStore", "clearParseHistory failed", e);
+        }
+    }
+
+    public void deleteParseItem(int id) {
+        try {
+            getWritableDatabase().delete(TABLE_PARSE, COL_ID + "=?", new String[]{String.valueOf(id)});
+        } catch (Exception e) {
+            android.util.Log.w("HistoryStore", "deleteParseItem failed", e);
         }
     }
 }

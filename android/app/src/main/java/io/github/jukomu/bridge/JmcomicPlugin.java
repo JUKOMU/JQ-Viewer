@@ -1521,6 +1521,20 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         }
     }
 
+    @PluginMethod
+    public void deleteBrowseItem(PluginCall call) {
+        try {
+            HistoryStore.getInstance(getContext()).deleteBrowseItem(
+                call.getInt("id", 0)
+            );
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
     // ========== 解析历史 ==========
 
     @PluginMethod
@@ -1540,7 +1554,8 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
     public void addParseHistory(PluginCall call) {
         try {
             HistoryStore.getInstance(getContext()).addParseHistory(
-                call.getString("text", "")
+                call.getString("text", ""),
+                call.getString("mode", "single-mode")
             );
             JSObject ret = new JSObject();
             ret.put("success", true);
@@ -1554,6 +1569,20 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
     public void clearParseHistory(PluginCall call) {
         try {
             HistoryStore.getInstance(getContext()).clearParseHistory();
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void deleteParseItem(PluginCall call) {
+        try {
+            HistoryStore.getInstance(getContext()).deleteParseItem(
+                call.getInt("id", 0)
+            );
             JSObject ret = new JSObject();
             ret.put("success", true);
             call.resolve(ret);

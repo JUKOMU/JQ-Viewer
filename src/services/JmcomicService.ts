@@ -160,15 +160,19 @@ interface JmcomicPlugin {
 
   clearBrowseHistory(): Promise<{ success: boolean }>
 
+  deleteBrowseItem(options: { id: number }): Promise<{ success: boolean }>
+
   // 解析历史
   getParseHistory(options: {
     limit: number
     offset: number
   }): Promise<{ items: ParseHistoryItem[] }>
 
-  addParseHistory(options: { text: string }): Promise<{ success: boolean }>
+  addParseHistory(options: { text: string; mode: string }): Promise<{ success: boolean }>
 
   clearParseHistory(): Promise<{ success: boolean }>
+
+  deleteParseItem(options: { id: number }): Promise<{ success: boolean }>
 
   // 离线收藏夹
   getOfflineFolders(): Promise<{ folders: OfflineFolderInfo[] }>
@@ -518,11 +522,15 @@ export const JmcomicService = {
   getBrowseHistory(limit: number, offset: number = 0) {
     return native.getBrowseHistory({limit, offset})
   },
-  recordBrowse(item: Omit<BrowseHistoryItem, 'timestamp'>) {
+  recordBrowse(item: Omit<BrowseHistoryItem, 'id' | 'timestamp'>) {
     return native.recordBrowse(item)
   },
   clearBrowseHistory() {
     return native.clearBrowseHistory()
+  },
+
+  deleteBrowseItem(id: number) {
+    return native.deleteBrowseItem({id})
   },
 
   // ========== 解析历史 ==========
@@ -530,11 +538,15 @@ export const JmcomicService = {
   getParseHistory(limit: number, offset: number = 0) {
     return native.getParseHistory({limit, offset})
   },
-  addParseHistory(text: string) {
-    return native.addParseHistory({text})
+  addParseHistory(text: string, mode: string) {
+    return native.addParseHistory({text, mode})
   },
   clearParseHistory() {
     return native.clearParseHistory()
+  },
+
+  deleteParseItem(id: number) {
+    return native.deleteParseItem({id})
   },
 
   // ========== 离线收藏夹 ==========

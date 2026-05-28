@@ -176,7 +176,7 @@ const emitSearch = () => {
 
   // 解析模式 → 记录解析历史（异步 fire-and-forget）
   if (mode.value === 'single-mode' || mode.value === 'batch-mode') {
-    if (originalKeyword) HistoryService.addParseHistory(originalKeyword)
+    if (originalKeyword) HistoryService.addParseHistory(originalKeyword, mode.value)
   }
 
   // 记录搜索历史（仅普通搜索模式，解析模式不走搜索历史）

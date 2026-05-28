@@ -529,6 +529,7 @@ const onPdfExportConfirm = async (payload: {
   useOriginal: boolean
   compressionRatio: number
   editedPath: string
+  splitPages: number
 }) => {
   showPdfSheet.value = false
 
@@ -555,6 +556,7 @@ const onPdfExportConfirm = async (payload: {
       savePath,
       useOriginal: payload.useOriginal,
       compressionRatio: payload.compressionRatio,
+      splitPages: payload.splitPages,
     }
   })
 

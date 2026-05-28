@@ -367,4 +367,5 @@ export interface PdfExportTask {
   savePath: string           // 完整路径（含文件名.pdf）
   useOriginal: boolean
   compressionRatio: number   // 0.1~1.0
+  splitPages: number         // 0=不分卷, >0=每卷页数
 }

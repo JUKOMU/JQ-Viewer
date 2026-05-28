@@ -97,6 +97,31 @@
             </div>
           </div>
 
+          <!-- 分卷导出 -->
+          <div class="section">
+            <div class="section-header">
+              <span class="section-label">分卷导出</span>
+              <IonToggle
+                :checked="splitEnabled"
+                color="warning"
+                @ion-change="splitEnabled = $event.detail.checked"
+              />
+            </div>
+            <div v-if="splitEnabled" class="split-row">
+              <span class="split-hint">每卷最多</span>
+              <input
+                class="num-input-sm"
+                type="number"
+                :value="splitPages"
+                min="10"
+                max="999"
+                step="10"
+                @change="onSplitPagesChange"
+              />
+              <span class="split-hint">页</span>
+            </div>
+          </div>
+
           <!-- 图片质量 -->
           <div class="section">
             <span class="section-label">图片质量</span>
@@ -158,7 +183,7 @@
 defineOptions({ name: 'PdfExportBottomSheet' })
 
 import { computed, ref, watch } from 'vue'
-import { IonRange, useBackButton } from '@ionic/vue'
+import { IonRange, IonToggle, useBackButton } from '@ionic/vue'
 import type { DownloadTask } from '@/services/JmcomicTypes'
 import { PdfExportService } from '@/services/PdfExportService'
 import { JmcomicService, showToast } from '@/services/JmcomicService'
@@ -176,6 +201,7 @@ const emit = defineEmits<{
       useOriginal: boolean
       compressionRatio: number
       editedPath: string
+      splitPages: number
     },
   ]
 }>()
@@ -211,6 +237,8 @@ const selectedIds = ref(new Set<string>())
 const useOriginal = ref(true)
 const compressionRatio = ref(0.5)
 const editedPath = ref('')
+const splitEnabled = ref(false)
+const splitPages = ref(100)
 
 // ---- 根据模板 + 当前设置生成路径 ----
 const templatePath = computed(() => {
@@ -266,6 +294,8 @@ watch(
       selectedIds.value = new Set(props.chapters.map((c) => c.taskId))
       useOriginal.value = true
       compressionRatio.value = 0.5
+      splitEnabled.value = false
+      splitPages.value = 100
       showSettings.value = false
       exportPath.value = PdfExportService.getExportPath()
       dirTemplate.value = PdfExportService.getDirTemplate()
@@ -340,6 +370,14 @@ function toggleAll() {
   }
 }
 
+// ---- 分卷 ----
+function onSplitPagesChange(e: Event) {
+  const val = parseInt((e.target as HTMLInputElement).value, 10)
+  if (Number.isFinite(val)) {
+    splitPages.value = Math.max(10, Math.min(999, val))
+  }
+}
+
 // ---- 压缩比 ----
 function onRatioChange(e: CustomEvent) {
   compressionRatio.value = Number(e.detail.value)
@@ -361,6 +399,7 @@ async function onConfirm() {
     useOriginal: useOriginal.value,
     compressionRatio: compressionRatio.value,
     editedPath: editedPath.value,
+    splitPages: splitEnabled.value ? splitPages.value : 0,
   })
 }
 </script>
@@ -664,8 +703,37 @@ async function onConfirm() {
   background: #fff0e7;
 }
 
+/* 分卷 */
+.split-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.split-hint {
+  font-size: 13px;
+  color: #8a6048;
+}
+
+.num-input-sm {
+  width: 56px;
+  height: 28px;
+  border: 1px solid #e0cfc4;
+  border-radius: 6px;
+  text-align: center;
+  font-size: 13px;
+  color: #4c2a18;
+  background: #fdfaf8;
+  outline: none;
+}
+
+.num-input-sm:focus {
+  border-color: #f0a060;
+}
+
 /* 质量选择 */
 .quality-row {
+  margin-top: 5px;
   display: flex;
   gap: 10px;
 }

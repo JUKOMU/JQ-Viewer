@@ -26,6 +26,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class PdfExportService {
 
     private static final String TAG = "PdfExportService";
+    private static final int NOTIFY_ID_BASE = 2000;
 
     private static PdfExportService instance;
 
@@ -59,6 +60,7 @@ public class PdfExportService {
         public String savePath;
         public boolean useOriginal;
         public float compressionRatio; // 0.1~1.0
+        public int splitPages;         // 0=不分卷, >0=每卷页数
     }
 
     // ---- 提交任务 ----
@@ -76,7 +78,7 @@ public class PdfExportService {
 
         for (int i = 0; i < jobs.size(); i++) {
             ExportJob job = jobs.get(i);
-            int notificationId = batchId * 1000 + i;
+            int notificationId = NOTIFY_ID_BASE + batchId * 1000 + i;
             notificationHelper.assignNotificationId(notificationId);
 
             notificationHelper.showPreparing(job.chapterTitle);
@@ -104,8 +106,12 @@ public class PdfExportService {
     private void exportSingle(ExportJob job) throws IOException {
         FileStore fileStore = FileStore.getInstance();
 
-        File pdfFile = resolveAbsolutePath(job.savePath);
+        // 解析基础路径
+        String basePath = job.savePath;
+        String baseWithoutExt = basePath.endsWith(".pdf")
+            ? basePath.substring(0, basePath.length() - 4) : basePath;
 
+        File pdfFile = resolveAbsolutePath(basePath);
         File parentDir = pdfFile.getParentFile();
         if (parentDir != null && !parentDir.exists()) {
             if (!parentDir.mkdirs()) {
@@ -123,10 +129,48 @@ public class PdfExportService {
         int total = imageFiles.length;
         Log.i(TAG, "Exporting PDF: " + job.chapterTitle + " (" + total + " pages)");
 
+        int pagesPerVolume = job.splitPages > 0 ? job.splitPages : Integer.MAX_VALUE;
+        int volumeCount = (total + pagesPerVolume - 1) / pagesPerVolume;
+        if (pagesPerVolume > total) volumeCount = 1;
+        String volumeTitle = volumeCount > 1
+            ? job.chapterTitle + " (卷" + volumeCount + "/" + volumeCount + ")"
+            : job.chapterTitle;
+
+        for (int vol = 0; vol < volumeCount; vol++) {
+            int volStart = vol * pagesPerVolume;
+            int volEnd = Math.min(volStart + pagesPerVolume, total);
+            int volPages = volEnd - volStart;
+
+            File volFile;
+            if (volumeCount > 1) {
+                String volName = String.format("%s_%03d-%03d.pdf",
+                    baseWithoutExt, volStart + 1, volEnd);
+                volFile = resolveAbsolutePath(volName);
+            } else {
+                volFile = pdfFile;
+            }
+
+            String volTitle = volumeCount > 1
+                ? job.chapterTitle + " (" + (volStart + 1) + "-" + volEnd + ")"
+                : job.chapterTitle;
+
+            Log.i(TAG, "Volume " + (vol + 1) + "/" + volumeCount + ": " + volFile.getName());
+
+            // 每卷用独立 notificationId，避免覆盖，用户可独立点击打开各卷 PDF
+            int volNotifyId = notificationHelper.getBaseNotificationId() + vol;
+            notificationHelper.assignNotificationId(volNotifyId);
+
+            writeSingleVolume(job, imageFiles, volStart, volEnd, volTitle, volFile, total);
+        }
+    }
+
+    private void writeSingleVolume(ExportJob job, File[] imageFiles,
+            int start, int end, String volTitle, File volFile, int chapterTotal) throws IOException {
+
         PdfDocument document = new PdfDocument();
         try {
-            for (int i = 0; i < total; i++) {
-                notificationHelper.showProgress(job.chapterTitle, i + 1, total);
+            for (int i = start; i < end; i++) {
+                notificationHelper.showProgress(job.chapterTitle, i + 1, chapterTotal);
 
                 byte[] imageBytes = readFileBytes(imageFiles[i]);
                 if (imageBytes == null || imageBytes.length == 0) {
@@ -154,7 +198,7 @@ public class PdfExportService {
                     }
 
                     PdfDocument.PageInfo pageInfo = new PdfDocument.PageInfo.Builder(
-                        drawBitmap.getWidth(), drawBitmap.getHeight(), i + 1).create();
+                        drawBitmap.getWidth(), drawBitmap.getHeight(), (i - start) + 1).create();
                     PdfDocument.Page page = document.startPage(pageInfo);
                     Canvas canvas = page.getCanvas();
                     canvas.drawBitmap(drawBitmap, 0, 0, null);
@@ -169,15 +213,17 @@ public class PdfExportService {
                 }
             }
 
-            FileOutputStream fos = new FileOutputStream(pdfFile);
+            notificationHelper.showWriting(volTitle);
+
+            FileOutputStream fos = new FileOutputStream(volFile);
             try {
                 document.writeTo(fos);
             } finally {
                 fos.close();
             }
-            Log.i(TAG, "PDF saved: " + pdfFile.getAbsolutePath() + " (" + pdfFile.length() + " bytes)");
+            Log.i(TAG, "PDF saved: " + volFile.getAbsolutePath() + " (" + volFile.length() + " bytes)");
 
-            notificationHelper.showComplete(job.chapterTitle, pdfFile.getName(), pdfFile.getAbsolutePath());
+            notificationHelper.showComplete(volTitle, volFile.getName(), volFile.getAbsolutePath());
 
         } finally {
             document.close();

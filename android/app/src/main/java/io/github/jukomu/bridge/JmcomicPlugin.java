@@ -2048,6 +2048,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
                 job.useOriginal = t.optBoolean("useOriginal", true);
                 double cr = t.optDouble("compressionRatio", 1.0);
                 job.compressionRatio = (float) Math.max(0.1, Math.min(1.0, cr));
+                job.splitPages = t.optInt("splitPages", 0);
                 jobs.add(job);
             }
 

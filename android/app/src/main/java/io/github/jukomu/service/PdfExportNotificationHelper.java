@@ -21,7 +21,6 @@ public class PdfExportNotificationHelper {
     private static final String CHANNEL_ID = "pdf_export";
     private static final String CHANNEL_NAME = "PDF导出";
     private static final int ICON = R.mipmap.ic_launcher;
-    private static final int PROGRESS_NOTIFICATION_ID_BASE = 2000;
 
     private final Context context;
     private final NotificationManager manager;
@@ -46,9 +45,9 @@ public class PdfExportNotificationHelper {
         }
     }
 
-    /** 分配一个通知 ID（每次批量导出调用一次） */
-    public void assignNotificationId(int batchIndex) {
-        this.notificationId = PROGRESS_NOTIFICATION_ID_BASE + (batchIndex % 1000);
+    /** 直接设置通知 ID */
+    public void assignNotificationId(int id) {
+        this.notificationId = id;
     }
 
     /** 导出开始时显示"准备中"通知，确保用户知道后台任务已启动 */
@@ -57,6 +56,19 @@ public class PdfExportNotificationHelper {
             .setSmallIcon(ICON)
             .setContentTitle("准备导出 PDF...")
             .setContentText(chapterTitle)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .build();
+        manager.notify(notificationId, notification);
+    }
+
+    /** 所有页面已处理完，正在序列化写入磁盘 */
+    public void showWriting(String chapterTitle) {
+        Notification notification = new NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(ICON)
+            .setContentTitle("正在写入 PDF 文件...")
+            .setContentText(chapterTitle)
+            .setProgress(0, 0, true)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .build();
@@ -124,6 +136,11 @@ public class PdfExportNotificationHelper {
     /** 取消通知 */
     public void cancel() {
         manager.cancel(notificationId);
+    }
+
+    /** 获取基础通知 ID（分卷时在此基础 + vol 偏移） */
+    public int getBaseNotificationId() {
+        return notificationId;
     }
 
     /** 获取当前通知 ID */

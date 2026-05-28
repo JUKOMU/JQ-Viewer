@@ -3,7 +3,7 @@
 /tests/
 /.vscode/
 /.idea/
-/android/gradle/
+/android/.gradle/
 /.claude/
 /docs/search-result-refactor-plan.md
 /connectMumu.bat

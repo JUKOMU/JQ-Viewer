@@ -233,6 +233,7 @@ interface JmcomicPlugin {
   // PDF 导出
   exportPdfBatch(options: { tasks: PdfExportTask[] }): Promise<{ accepted: boolean }>
   pickFolder(): Promise<{ path: string; cancelled: boolean }>
+  checkFilesExist(options: { paths: string[] }): Promise<{ existing: string[] }>
   getExternalStoragePath(): Promise<{ path: string }>
   checkNotificationPermission(): Promise<{ granted: boolean }>
   requestNotificationPermission(): Promise<{ granted: boolean }>
@@ -608,6 +609,10 @@ export const JmcomicService = {
 
   pickFolder() {
     return native.pickFolder()
+  },
+
+  checkFilesExist(paths: string[]) {
+    return native.checkFilesExist({ paths })
   },
 
   getExternalStoragePath() {

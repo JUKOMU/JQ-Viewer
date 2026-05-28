@@ -717,6 +717,37 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
     }
 
     @PluginMethod
+    public void checkFilesExist(PluginCall call) {
+        try {
+            JSArray pathsJson = call.getArray("paths");
+            if (pathsJson == null) {
+                call.reject("paths is required");
+                return;
+            }
+            java.io.File externalRoot = android.os.Environment.getExternalStorageDirectory();
+            JSArray existing = new JSArray();
+            for (int i = 0; i < pathsJson.length(); i++) {
+                String p = pathsJson.getString(i);
+                if (p == null) continue;
+                java.io.File f;
+                if (p.startsWith("/")) {
+                    f = new java.io.File(p);
+                } else {
+                    f = new java.io.File(externalRoot, p);
+                }
+                if (f.exists()) {
+                    existing.put(p);
+                }
+            }
+            JSObject ret = new JSObject();
+            ret.put("existing", existing);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
     public void getExternalStoragePath(PluginCall call) {
         JSObject ret = new JSObject();
         ret.put("path", android.os.Environment.getExternalStorageDirectory().getAbsolutePath());

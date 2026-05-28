@@ -12,7 +12,9 @@ import io.github.jukomu.data.FileStore;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -22,6 +24,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * <p>
  * 使用 Android 内置 {@link PdfDocument} API 生成 PDF。
  * 后台线程串行执行，通过系统通知报告进度。
+ * notificationId 全程显式传递，无共享可变状态，线程安全。
  */
 public class PdfExportService {
 
@@ -37,11 +40,12 @@ public class PdfExportService {
     });
 
     private final AtomicInteger batchCounter = new AtomicInteger(0);
+    private final ConcurrentHashMap<String, Boolean> activeChapterIds = new ConcurrentHashMap<>();
 
-    private PdfExportNotificationHelper notificationHelper;
+    private PdfExportNotificationHelper notif;
 
     private PdfExportService(Context context) {
-        this.notificationHelper = new PdfExportNotificationHelper(context.getApplicationContext());
+        this.notif = new PdfExportNotificationHelper(context.getApplicationContext());
     }
 
     public static synchronized PdfExportService getInstance(Context context) {
@@ -65,9 +69,27 @@ public class PdfExportService {
 
     // ---- 提交任务 ----
 
+    /**
+     * 提交批量导出任务。对每个 job 立即显示排队通知。已存在的 chapterId 自动跳过（防重入）。
+     */
     public void submitExport(List<ExportJob> jobs) {
         final int batchId = batchCounter.incrementAndGet();
-        executor.submit(() -> executeBatch(batchId, jobs));
+        List<ExportJob> accepted = new ArrayList<>();
+
+        for (int i = 0; i < jobs.size(); i++) {
+            ExportJob job = jobs.get(i);
+            if (activeChapterIds.putIfAbsent(job.chapterId, Boolean.TRUE) != null) {
+                continue;
+            }
+            accepted.add(job);
+
+            int nid = NOTIFY_ID_BASE + batchId * 1000 + accepted.size() - 1;
+            notif.showQueued(nid, job.chapterTitle);
+        }
+
+        if (!accepted.isEmpty()) {
+            executor.submit(() -> executeBatch(batchId, accepted));
+        }
     }
 
     // ---- 批量执行 ----
@@ -78,24 +100,25 @@ public class PdfExportService {
 
         for (int i = 0; i < jobs.size(); i++) {
             ExportJob job = jobs.get(i);
-            int notificationId = NOTIFY_ID_BASE + batchId * 1000 + i;
-            notificationHelper.assignNotificationId(notificationId);
+            int nid = NOTIFY_ID_BASE + batchId * 1000 + i;
 
-            notificationHelper.showPreparing(job.chapterTitle);
+            notif.showPreparing(nid, job.chapterTitle);
 
             try {
-                exportSingle(job);
+                exportSingle(job, nid);
                 success++;
             } catch (Exception e) {
                 fail++;
                 Log.e(TAG, "PDF export failed: " + job.chapterTitle, e);
-                notificationHelper.showError(job.chapterTitle,
+                notif.showError(nid, job.chapterTitle,
                     e.getMessage() != null ? e.getMessage() : "未知错误");
             } catch (Throwable t) {
                 fail++;
                 Log.e(TAG, "PDF export crashed: " + job.chapterTitle, t);
-                notificationHelper.showError(job.chapterTitle, "内部错误: " + t.getClass().getSimpleName());
+                notif.showError(nid, job.chapterTitle, "内部错误: " + t.getClass().getSimpleName());
             }
+
+            activeChapterIds.remove(job.chapterId);
         }
 
         Log.i(TAG, "Batch " + batchId + " done: " + success + " success, " + fail + " fail");
@@ -103,10 +126,9 @@ public class PdfExportService {
 
     // ---- 单章节导出 ----
 
-    private void exportSingle(ExportJob job) throws IOException {
+    private void exportSingle(ExportJob job, int baseNid) throws IOException {
         FileStore fileStore = FileStore.getInstance();
 
-        // 解析基础路径
         String basePath = job.savePath;
         String baseWithoutExt = basePath.endsWith(".pdf")
             ? basePath.substring(0, basePath.length() - 4) : basePath;
@@ -132,14 +154,10 @@ public class PdfExportService {
         int pagesPerVolume = job.splitPages > 0 ? job.splitPages : Integer.MAX_VALUE;
         int volumeCount = (total + pagesPerVolume - 1) / pagesPerVolume;
         if (pagesPerVolume > total) volumeCount = 1;
-        String volumeTitle = volumeCount > 1
-            ? job.chapterTitle + " (卷" + volumeCount + "/" + volumeCount + ")"
-            : job.chapterTitle;
 
         for (int vol = 0; vol < volumeCount; vol++) {
             int volStart = vol * pagesPerVolume;
             int volEnd = Math.min(volStart + pagesPerVolume, total);
-            int volPages = volEnd - volStart;
 
             File volFile;
             if (volumeCount > 1) {
@@ -156,23 +174,21 @@ public class PdfExportService {
 
             Log.i(TAG, "Volume " + (vol + 1) + "/" + volumeCount + ": " + volFile.getName());
 
-            // 每卷用独立 notificationId，避免覆盖，用户可独立点击打开各卷 PDF
-            int volNotifyId = notificationHelper.getBaseNotificationId() + vol;
-            notificationHelper.assignNotificationId(volNotifyId);
+            // 每卷独立 notificationId，互不覆盖
+            int volNid = baseNid + vol;
 
-            writeSingleVolume(job, imageFiles, volStart, volEnd, volTitle, volFile, total);
+            writeSingleVolume(job, imageFiles, volStart, volEnd, volTitle, volFile, total, volNid);
         }
     }
 
     private void writeSingleVolume(ExportJob job, File[] imageFiles,
-            int start, int end, String volTitle, File volFile, int chapterTotal) throws IOException {
+            int start, int end, String volTitle, File volFile, int chapterTotal, int nid) throws IOException {
 
         PdfDocument document = new PdfDocument();
         try {
             for (int i = start; i < end; i++) {
-                // 每 10 页刷新一次进度文字，避免高频 notify 被限流
                 if (i == start || i == end - 1 || (i - start) % 10 == 0) {
-                    notificationHelper.showProgress(job.chapterTitle, i + 1, chapterTotal);
+                    notif.showProgress(nid, job.chapterTitle, i + 1, chapterTotal);
                 }
 
                 byte[] imageBytes = readFileBytes(imageFiles[i]);
@@ -207,17 +223,12 @@ public class PdfExportService {
                     canvas.drawBitmap(drawBitmap, 0, 0, null);
                     document.finishPage(page);
                 } finally {
-                    if (drawBitmap != null) {
-                        drawBitmap.recycle();
-                    }
-                    if (bitmap != null && bitmap != drawBitmap && !bitmap.isRecycled()) {
-                        bitmap.recycle();
-                    }
+                    if (drawBitmap != null) drawBitmap.recycle();
+                    if (bitmap != null && bitmap != drawBitmap && !bitmap.isRecycled()) bitmap.recycle();
                 }
             }
 
-            notificationHelper.showWriting(volTitle);
-            // 确保"正在写入"通知已被系统接收，不被后续写盘操作阻塞
+            notif.showWriting(nid, volTitle);
             try { Thread.sleep(100); } catch (InterruptedException ignored) {}
 
             FileOutputStream fos = new FileOutputStream(volFile);
@@ -228,7 +239,7 @@ public class PdfExportService {
             }
             Log.i(TAG, "PDF saved: " + volFile.getAbsolutePath() + " (" + volFile.length() + " bytes)");
 
-            notificationHelper.showComplete(volTitle, volFile.getName(), volFile.getAbsolutePath());
+            notif.showComplete(nid, volTitle, volFile.getName(), volFile.getAbsolutePath());
 
         } finally {
             document.close();
@@ -238,11 +249,8 @@ public class PdfExportService {
     // ---- 工具方法 ----
 
     private File resolveAbsolutePath(String path) {
-        if (path.startsWith("/")) {
-            return new File(path);
-        }
-        File externalRoot = Environment.getExternalStorageDirectory();
-        return new File(externalRoot, path);
+        if (path.startsWith("/")) return new File(path);
+        return new File(Environment.getExternalStorageDirectory(), path);
     }
 
     private static byte[] readFileBytes(File file) throws IOException {

@@ -533,11 +533,7 @@ const onPdfExportConfirm = async (payload: {
 }) => {
   showPdfSheet.value = false
 
-  // 非阻塞检查：通知关了仅 toast 提醒，不阻止导出
-  void ensureNotificationPermission()
-
   const tasks: PdfExportTask[] = payload.selectedChapters.map((ch) => {
-    // 单章节用用户编辑的路径，多章节用模板（每个章节路径不同）
     const savePath =
       payload.selectedChapters.length === 1
         ? payload.editedPath
@@ -560,12 +556,42 @@ const onPdfExportConfirm = async (payload: {
     }
   })
 
+  // 检查文件是否已存在
+  try {
+    const paths = tasks.map(t => t.savePath)
+    const result = await JmcomicService.checkFilesExist(paths)
+    if (result.existing.length > 0) {
+      const confirmed = await confirmOverwrite(result.existing)
+      if (!confirmed) return
+    }
+  } catch {
+    /* 检查失败时直接放行 */
+  }
+
+  // 非阻塞检查通知权限
+  void ensureNotificationPermission()
+
   try {
     await JmcomicService.exportPdfBatch(tasks)
     await showToast('PDF导出已开始，请查看通知', 'success')
   } catch (e: any) {
     await showToast(sanitizeError(e, '导出启动失败'), 'danger')
   }
+}
+
+async function confirmOverwrite(existingFiles: string[]): Promise<boolean> {
+  return new Promise((resolve) => {
+    const fileList = existingFiles.slice(0, 3).join('\n')
+      + (existingFiles.length > 3 ? `\n... 等 ${existingFiles.length} 个文件` : '')
+    alertController.create({
+      header: '文件已存在',
+      message: `以下文件已存在，是否覆盖？\n${fileList}`,
+      buttons: [
+        { text: '取消', role: 'cancel', handler: () => resolve(false) },
+        { text: '覆盖', role: 'destructive', handler: () => resolve(true) },
+      ],
+    }).then(alert => alert.present())
+  })
 }
 
 async function ensureNotificationPermission(): Promise<boolean> {

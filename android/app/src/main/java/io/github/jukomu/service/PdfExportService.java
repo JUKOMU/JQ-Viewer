@@ -170,7 +170,10 @@ public class PdfExportService {
         PdfDocument document = new PdfDocument();
         try {
             for (int i = start; i < end; i++) {
-                notificationHelper.showProgress(job.chapterTitle, i + 1, chapterTotal);
+                // 每 10 页刷新一次进度文字，避免高频 notify 被限流
+                if (i == start || i == end - 1 || (i - start) % 10 == 0) {
+                    notificationHelper.showProgress(job.chapterTitle, i + 1, chapterTotal);
+                }
 
                 byte[] imageBytes = readFileBytes(imageFiles[i]);
                 if (imageBytes == null || imageBytes.length == 0) {
@@ -214,6 +217,8 @@ public class PdfExportService {
             }
 
             notificationHelper.showWriting(volTitle);
+            // 确保"正在写入"通知已被系统接收，不被后续写盘操作阻塞
+            try { Thread.sleep(100); } catch (InterruptedException ignored) {}
 
             FileOutputStream fos = new FileOutputStream(volFile);
             try {

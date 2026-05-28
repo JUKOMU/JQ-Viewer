@@ -75,13 +75,13 @@ public class PdfExportNotificationHelper {
         manager.notify(notificationId, notification);
     }
 
-    /** 显示进度通知 */
+    /** 显示进度通知（不定进度条，仅更新文字避免系统限流） */
     public void showProgress(String chapterTitle, int currentPage, int totalPages) {
         Notification notification = new NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(ICON)
             .setContentTitle("正在导出 PDF")
             .setContentText(chapterTitle + " (" + currentPage + "/" + totalPages + ")")
-            .setProgress(totalPages, currentPage, false)
+            .setProgress(0, 0, true)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .build();
@@ -106,10 +106,14 @@ public class PdfExportNotificationHelper {
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
 
+        NotificationCompat.BigTextStyle textStyle = new NotificationCompat.BigTextStyle();
+        textStyle.bigText(chapterTitle + "\n" + fileName);
+
         Notification notification = new NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(ICON)
             .setContentTitle("导出完成: " + chapterTitle)
             .setContentText(fileName)
+            .setStyle(textStyle)
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
             .setOngoing(false)

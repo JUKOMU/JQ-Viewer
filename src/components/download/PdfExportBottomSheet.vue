@@ -280,9 +280,11 @@ watch(
 )
 
 // ---- 系统返回键关闭面板（优先级 10 > 默认 0，拦截路由返回） ----
-useBackButton(10, () => {
+useBackButton(10, (processNextHandler) => {
   if (props.modelValue) {
     emit('update:modelValue', false)
+  } else {
+    processNextHandler()
   }
 })
 

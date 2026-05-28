@@ -14,7 +14,7 @@
         </Transition>
       </div>
 
-      <button class="help-btn">
+      <button class="help-btn" @click="showHelp">
         <IonIcon :icon="helpCircleOutline"/>
       </button>
       <div class="mode-switch">
@@ -144,7 +144,7 @@ const emit = defineEmits<{
 }>()
 import {onBeforeUnmount, onMounted, reactive, ref} from 'vue'
 import {useRouter} from 'vue-router'
-import {IonIcon, IonSearchbar} from '@ionic/vue'
+import {alertController, IonIcon, IonSearchbar} from '@ionic/vue'
 import {addOutline, chevronDownOutline, helpCircleOutline, searchOutline} from 'ionicons/icons'
 import {ORDER_BY_OPTIONS, SEARCH_MAIN_TAG_OPTIONS, TIME_OPTIONS} from '@/constants/searchOptions'
 import type {SearchQuery} from '@/services/JmcomicTypes'
@@ -217,6 +217,29 @@ async function handleUpload() {
   } catch (e: any) {
     await showToast(sanitizeError(e, '识别失败'), 'danger')
   }
+}
+
+async function showHelp() {
+  const alert = await alertController.create({
+    header: '使用帮助',
+    message: [
+      '【单个解析】',
+      '输入数字 ID 或包含数字的文本，自动提取纯数字部分搜索对应漫画。',
+      '',
+      '【批量解析】',
+      '粘贴多行文本，自动从每行提取 ID，跳转到批量处理页面。',
+      '点击左侧 + 按钮可选择图片进行 OCR 识别。',
+      '',
+      '【搜索选项】',
+      '排序：最新 / 最多观看 / 图片最多 / 最多喜欢',
+      '时间范围：今日 / 本周 / 本月 / 全部时间',
+      '搜索方式：站内搜索 / 作品 / 作者 / 标签 / 登场人物',
+    ].join('\n'),
+    buttons: [
+      { text: '知道了', role: 'cancel' },
+    ],
+  })
+  await alert.present()
 }
 
 const handleNativeKeydown = (event: KeyboardEvent) => {

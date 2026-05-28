@@ -27,4 +27,5 @@ jobs:
 
       - run: npm ci
       - run: npm run build
-      - run: cd android && ./gradlew :app:assembleDebug
+      - run: npx cap copy android
+      - run: chmod +x android/gradlew && cd android && ./gradlew :app:assembleDebug

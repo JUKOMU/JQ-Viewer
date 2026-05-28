@@ -2,6 +2,7 @@ package io.github.jukomu;
 
 import android.content.Intent;
 import android.os.Bundle;
+import android.view.KeyEvent;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
@@ -49,5 +50,20 @@ public class MainActivity extends BridgeActivity {
         if (plugin != null) {
             plugin.handleActivityResult(requestCode, resultCode, data);
         }
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        if (event.getAction() == KeyEvent.ACTION_DOWN) {
+            int code = event.getKeyCode();
+            if (code == KeyEvent.KEYCODE_VOLUME_UP || code == KeyEvent.KEYCODE_VOLUME_DOWN) {
+                JmcomicPlugin plugin = JmcomicPlugin.getInstance();
+                if (plugin != null && plugin.isReaderActive() && plugin.isVolumeNavigationEnabled()) {
+                    plugin.notifyVolumeKey(code == KeyEvent.KEYCODE_VOLUME_UP ? "up" : "down");
+                    return true;
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event);
     }
 }

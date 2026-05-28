@@ -228,6 +228,21 @@ interface JmcomicPlugin {
 
   // OCR
   pickImageAndOcr(): Promise<{ text: string; error?: string }>
+
+  // 阅读器设置
+  setReaderDisplayMode(options: { mode: string }): Promise<{ success: boolean }>
+  setReaderScreenOrientation(options: { orientation: string }): Promise<{ success: boolean }>
+  setReaderBrightness(options: { brightness: number }): Promise<{ success: boolean }>
+  setReaderKeepScreenOn(options: { enabled: boolean }): Promise<{ success: boolean }>
+  setReaderVolumeNavigation(options: { enabled: boolean }): Promise<{ success: boolean }>
+
+  // 阅读器状态（供音量键拦截判断）
+  setReaderState(options: { isActive: boolean; isVertical: boolean }): Promise<{ success: boolean }>
+
+  addListener(
+    event: 'volumeKey',
+    handler: (data: { direction: 'up' | 'down' }) => void,
+  ): Promise<PluginListenerHandle>
 }
 
 interface ImageReadyEvent {
@@ -574,6 +589,41 @@ export const JmcomicService = {
 
   pickImageAndOcr() {
     return native.pickImageAndOcr()
+  },
+
+  // ========== 阅读器设置 ==========
+
+  setReaderDisplayMode(mode: string) {
+    return native.setReaderDisplayMode({mode})
+  },
+  setReaderScreenOrientation(orientation: string) {
+    return native.setReaderScreenOrientation({orientation})
+  },
+  setReaderBrightness(brightness: number) {
+    return native.setReaderBrightness({brightness})
+  },
+  setReaderKeepScreenOn(enabled: boolean) {
+    return native.setReaderKeepScreenOn({enabled})
+  },
+  setReaderFullscreen(enabled: boolean) {
+    return native.setReaderFullscreen({enabled})
+  },
+  setReaderVolumeNavigation(enabled: boolean) {
+    return native.setReaderVolumeNavigation({enabled})
+  },
+
+  // ========== 阅读器状态 ==========
+
+  setReaderState(isActive: boolean, isVertical: boolean) {
+    return native.setReaderState({isActive, isVertical})
+  },
+
+  addVolumeKeyListener(
+    handler: (direction: 'up' | 'down') => void,
+  ): Promise<PluginListenerHandle> {
+    return native.addListener('volumeKey', (data: { direction: 'up' | 'down' }) => {
+      handler(data.direction)
+    })
   },
 }
 

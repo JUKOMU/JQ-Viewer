@@ -173,6 +173,11 @@ export interface AllSettings {
   downloadPublic: boolean
   cacheCapacityMb: number
   ocrEnabled: boolean
+  readerDisplayMode: string
+  readerScreenOrientation: string
+  readerBrightness: number
+  readerKeepScreenOn: boolean
+  readerVolumeNavigation: boolean
 }
 
 // --- 设置页：文件搬迁 ---

@@ -66,6 +66,11 @@ public class SettingsService {
             ret.put("downloadPublic", settingsDb.getBoolean("download_public", false));
             ret.put("cacheCapacityMb", settingsDb.getLong("cache_capacity_mb", 640));
             ret.put("ocrEnabled", settingsDb.getBoolean("ocr_enabled", true));
+            ret.put("readerDisplayMode", getReaderDisplayMode());
+            ret.put("readerScreenOrientation", getReaderScreenOrientation());
+            ret.put("readerBrightness", getReaderBrightness());
+            ret.put("readerKeepScreenOn", getReaderKeepScreenOn());
+            ret.put("readerVolumeNavigation", getReaderVolumeNavigation());
         } catch (Exception e) {
             Log.w(TAG, "构建全部设置信息失败", e);
         }
@@ -85,6 +90,65 @@ public class SettingsService {
 
     public void setOcrEnabled(boolean enabled) {
         settingsDb.putString("ocr_enabled", String.valueOf(enabled));
+    }
+
+    // ---- 阅读器设置 ----
+
+    public String getReaderDisplayMode() {
+        String raw = settingsDb.getString("reader_display_mode");
+        return (raw != null && !raw.isEmpty()) ? raw : "vertical";
+    }
+
+    public void setReaderDisplayMode(String mode) {
+        if (!"vertical".equals(mode) && !"horizontal".equals(mode)) {
+            throw new IllegalArgumentException("mode must be vertical or horizontal");
+        }
+        settingsDb.putString("reader_display_mode", mode);
+    }
+
+    public String getReaderScreenOrientation() {
+        String raw = settingsDb.getString("reader_screen_orientation");
+        return (raw != null && !raw.isEmpty()) ? raw : "auto";
+    }
+
+    public void setReaderScreenOrientation(String orientation) {
+        if (!"auto".equals(orientation) && !"portrait".equals(orientation) && !"landscape".equals(orientation)) {
+            throw new IllegalArgumentException("orientation must be auto, portrait, or landscape");
+        }
+        settingsDb.putString("reader_screen_orientation", orientation);
+    }
+
+    public float getReaderBrightness() {
+        String raw = settingsDb.getString("reader_brightness");
+        if (raw == null) return -1f;
+        try {
+            return Float.parseFloat(raw);
+        } catch (NumberFormatException e) {
+            return -1f;
+        }
+    }
+
+    public void setReaderBrightness(float brightness) {
+        if (brightness < -1f || brightness > 1f) {
+            throw new IllegalArgumentException("brightness must be between -1 and 1");
+        }
+        settingsDb.putString("reader_brightness", String.valueOf(brightness));
+    }
+
+    public boolean getReaderKeepScreenOn() {
+        return settingsDb.getBoolean("reader_keep_screen_on", true);
+    }
+
+    public void setReaderKeepScreenOn(boolean enabled) {
+        settingsDb.putString("reader_keep_screen_on", String.valueOf(enabled));
+    }
+
+    public boolean getReaderVolumeNavigation() {
+        return settingsDb.getBoolean("reader_volume_navigation", false);
+    }
+
+    public void setReaderVolumeNavigation(boolean enabled) {
+        settingsDb.putString("reader_volume_navigation", String.valueOf(enabled));
     }
 
     // ---- 下载公开/私有切换 ----

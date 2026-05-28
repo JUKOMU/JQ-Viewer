@@ -94,6 +94,104 @@
               <span class="unit">线程</span>
             </div>
           </div>
+
+        <!-- 显示模式 -->
+        <div class="row divider">
+          <div class="row-left">
+            <span class="row-title">显示模式</span>
+          </div>
+          <div class="row-right">
+            <div class="segmented">
+              <button
+                :class="['seg-btn', {active: displayMode === 'vertical'}]"
+                @click="onDisplayModeChange('vertical')"
+              >纵向</button>
+              <button
+                :class="['seg-btn', {active: displayMode === 'horizontal'}]"
+                @click="onDisplayModeChange('horizontal')"
+              >横向</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 屏幕方向 -->
+        <div class="row divider">
+          <div class="row-left">
+            <span class="row-title">屏幕方向</span>
+          </div>
+          <div class="row-right">
+            <div class="segmented">
+              <button
+                :class="['seg-btn', {active: screenOrientation === 'auto'}]"
+                @click="onScreenOrientationChange('auto')"
+              >自动</button>
+              <button
+                :class="['seg-btn', {active: screenOrientation === 'portrait'}]"
+                @click="onScreenOrientationChange('portrait')"
+              >竖屏</button>
+              <button
+                :class="['seg-btn', {active: screenOrientation === 'landscape'}]"
+                @click="onScreenOrientationChange('landscape')"
+              >横屏</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 亮度 -->
+        <div class="row divider">
+          <div class="row-left">
+            <span class="row-title">跟随系统亮度</span>
+            <span class="row-subtitle">关闭后可手动调节阅读亮度</span>
+          </div>
+          <div class="row-right">
+            <IonToggle
+              :checked="brightnessFollowSystem"
+              color="warning"
+              @ion-change="onBrightnessFollowSystemChange"
+            />
+          </div>
+        </div>
+        <div v-if="!brightnessFollowSystem" class="row">
+          <IonRange
+            class="brightness-slider"
+            :min="0"
+            :max="1"
+            :step="0.05"
+            :value="brightnessValue"
+            color="warning"
+            @ion-change="onBrightnessChange"
+          />
+        </div>
+
+        <!-- 防止熄屏 -->
+        <div class="row divider">
+          <div class="row-left">
+            <span class="row-title">防止熄屏</span>
+            <span class="row-subtitle">阅读时保持屏幕常亮</span>
+          </div>
+          <div class="row-right">
+            <IonToggle
+              :checked="keepScreenOn"
+              color="warning"
+              @ion-change="onKeepScreenOnChange"
+            />
+          </div>
+        </div>
+
+        <!-- 音量键翻页 -->
+        <div class="row divider">
+          <div class="row-left">
+            <span class="row-title">音量键翻页</span>
+            <span class="row-subtitle">横向模式翻页，纵向模式滚动</span>
+          </div>
+          <div class="row-right">
+            <IonToggle
+              :checked="volumeNavigation"
+              color="warning"
+              @ion-change="onVolumeNavigationChange"
+            />
+          </div>
+        </div>
         </div>
 
         <!-- 分组：下载设置 -->
@@ -250,7 +348,7 @@ defineOptions({name: 'SettingPage'})
 
 import {computed, onMounted, ref} from 'vue'
 import {useRouter} from 'vue-router'
-import {alertController, IonContent, IonHeader, IonPage, IonToggle, IonToolbar} from '@ionic/vue'
+import {alertController, IonContent, IonHeader, IonPage, IonRange, IonToggle, IonToolbar} from '@ionic/vue'
 import {App} from '@capacitor/app'
 import type {PluginListenerHandle} from '@capacitor/core'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
@@ -280,6 +378,12 @@ const downloadConcurrency = ref(SettingsStore.getDownloadConcurrency())
 const downloadPublic = ref(SettingsStore.getDownloadPublic())
 const ocrEnabled = ref(SettingsStore.getOcrEnabled())
 const exportFormat = ref(ExportFormatService.getExportFormat())
+const displayMode = ref(SettingsStore.getReaderDisplayMode())
+const screenOrientation = ref(SettingsStore.getReaderScreenOrientation())
+const brightnessFollowSystem = ref(SettingsStore.getReaderBrightness() < 0)
+const brightnessValue = ref(brightnessFollowSystem.value ? 0.5 : SettingsStore.getReaderBrightness())
+const keepScreenOn = ref(SettingsStore.getReaderKeepScreenOn())
+const volumeNavigation = ref(SettingsStore.getReaderVolumeNavigation())
 
 const exportPreview = computed(() => ExportFormatService.previewExportFormat(exportFormat.value))
 
@@ -343,6 +447,12 @@ onMounted(async () => {
   downloadPublic.value = SettingsStore.getDownloadPublic()
   cacheInputMb.value = SettingsStore.getCacheCapacityMb()
   ocrEnabled.value = SettingsStore.getOcrEnabled()
+  displayMode.value = SettingsStore.getReaderDisplayMode()
+  screenOrientation.value = SettingsStore.getReaderScreenOrientation()
+  brightnessFollowSystem.value = SettingsStore.getReaderBrightness() < 0
+  brightnessValue.value = brightnessFollowSystem.value ? 0.5 : SettingsStore.getReaderBrightness()
+  keepScreenOn.value = SettingsStore.getReaderKeepScreenOn()
+  volumeNavigation.value = SettingsStore.getReaderVolumeNavigation()
 })
 
 // ---- 缓存上限 ----
@@ -533,6 +643,57 @@ async function onDownloadPublicChange(e: CustomEvent) {
     showRelocationModal.value = false
     isSwitchingDownloadPublic.value = false
   }
+}
+
+// ---- 显示模式 ----
+function onDisplayModeChange(mode: string) {
+  displayMode.value = mode
+  SettingsStore.setReaderDisplayMode(mode)
+  JmcomicService.setReaderDisplayMode(mode).catch(() => {})
+}
+
+// ---- 屏幕方向 ----
+function onScreenOrientationChange(orientation: string) {
+  screenOrientation.value = orientation
+  SettingsStore.setReaderScreenOrientation(orientation)
+  JmcomicService.setReaderScreenOrientation(orientation).catch(() => {})
+}
+
+// ---- 亮度跟随系统 ----
+async function onBrightnessFollowSystemChange(e: CustomEvent) {
+  const follow = e.detail.checked
+  brightnessFollowSystem.value = follow
+  if (follow) {
+    SettingsStore.setReaderBrightness(-1)
+    try { await JmcomicService.setReaderBrightness(-1) } catch { /* ignore */ }
+  } else {
+    SettingsStore.setReaderBrightness(brightnessValue.value)
+    try { await JmcomicService.setReaderBrightness(brightnessValue.value) } catch { /* ignore */ }
+  }
+}
+
+// ---- 亮度滑块 ----
+function onBrightnessChange(e: CustomEvent) {
+  const val = Number(e.detail.value)
+  brightnessValue.value = val
+  SettingsStore.setReaderBrightness(val)
+  JmcomicService.setReaderBrightness(val).catch(() => {})
+}
+
+// ---- 防止熄屏 ----
+async function onKeepScreenOnChange(e: CustomEvent) {
+  const enabled = e.detail.checked
+  keepScreenOn.value = enabled
+  SettingsStore.setReaderKeepScreenOn(enabled)
+  try { await JmcomicService.setReaderKeepScreenOn(enabled) } catch { /* ignore */ }
+}
+
+// ---- 音量键翻页 ----
+function onVolumeNavigationChange(e: CustomEvent) {
+  const enabled = e.detail.checked
+  volumeNavigation.value = enabled
+  SettingsStore.setReaderVolumeNavigation(enabled)
+  JmcomicService.setReaderVolumeNavigation(enabled).catch(() => {})
 }
 </script>
 
@@ -795,5 +956,43 @@ async function onDownloadPublicChange(e: CustomEvent) {
   font-size: 12px;
   color: #d4a08a;
   margin-top: 8px;
+}
+
+/* 分段按钮 */
+.segmented {
+  display: flex;
+  border: 1px solid #e0cfc4;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.seg-btn {
+  padding: 6px 14px;
+  border: 0;
+  background: #fdfaf8;
+  color: #8c6b5a;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.seg-btn:not(:last-child) {
+  border-right: 1px solid #e0cfc4;
+}
+
+.seg-btn.active {
+  background: #f0a060;
+  color: #fff;
+}
+
+/* 亮度滑块 */
+.brightness-slider {
+  flex: 1;
+  --bar-background: #f0e4db;
+  --bar-background-active: #f0a060;
+  --knob-background: #f0a060;
+  --knob-size: 18px;
+  --height: 4px;
 }
 </style>

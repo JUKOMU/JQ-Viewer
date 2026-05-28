@@ -50,6 +50,11 @@ public class SettingsStore extends SQLiteOpenHelper {
         insertDefault(db, "download_concurrency", "6", now);
         insertDefault(db, "download_public", "false", now);
         insertDefault(db, "cache_capacity_mb", "640", now);
+        insertDefault(db, "reader_display_mode", "vertical", now);
+        insertDefault(db, "reader_screen_orientation", "auto", now);
+        insertDefault(db, "reader_brightness", "-1", now);
+        insertDefault(db, "reader_keep_screen_on", "true", now);
+        insertDefault(db, "reader_volume_navigation", "false", now);
     }
 
     private void insertDefault(SQLiteDatabase db, String key, String value, long now) {

@@ -31,6 +31,7 @@ declare module 'vue' {
     MenuToggleButton: typeof import('./src/components/common/MenuToggleButton.vue')['default']
     QuickActionFab: typeof import('./src/components/common/QuickActionFab.vue')['default']
     ReaderBottomToolbar: typeof import('./src/components/reader/ReaderBottomToolbar.vue')['default']
+    ReaderSettingsPanel: typeof import('./src/components/reader/ReaderSettingsPanel.vue')['default']
     ReaderTopToolbar: typeof import('./src/components/reader/ReaderTopToolbar.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']

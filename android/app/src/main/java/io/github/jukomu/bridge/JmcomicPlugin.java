@@ -4,6 +4,7 @@ import android.Manifest;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ActivityInfo;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.os.Build;
@@ -86,6 +87,10 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
 
     // ---- 下载相关 ----
     private DownloadStore downloadDb;
+
+    // ---- 阅读器状态（供 MainActivity 音量键拦截查询） ----
+    private volatile boolean readerActive = false;
+    private volatile boolean readerVertical = true;
 
     @Override
     public void load() {
@@ -942,6 +947,221 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         } catch (Exception e) {
             call.reject(e.getMessage(), e);
         }
+    }
+
+    // ========== 阅读器设置 ==========
+
+    @PluginMethod
+    public void setReaderDisplayMode(PluginCall call) {
+        try {
+            String mode = call.getString("mode");
+            if (mode == null || (!"vertical".equals(mode) && !"horizontal".equals(mode))) {
+                call.reject("mode must be vertical or horizontal");
+                return;
+            }
+            settingsService.setReaderDisplayMode(mode);
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void setReaderScreenOrientation(PluginCall call) {
+        try {
+            String orientation = call.getString("orientation");
+            if (orientation == null) {
+                call.reject("orientation is required");
+                return;
+            }
+            settingsService.setReaderScreenOrientation(orientation);
+            applyScreenOrientation(orientation);
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void setReaderBrightness(PluginCall call) {
+        try {
+            Float brightness = call.getFloat("brightness");
+            if (brightness == null) {
+                call.reject("brightness is required");
+                return;
+            }
+            settingsService.setReaderBrightness(brightness);
+            applyBrightness(brightness);
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void setReaderKeepScreenOn(PluginCall call) {
+        try {
+            Boolean enabled = call.getBoolean("enabled");
+            if (enabled == null) {
+                call.reject("enabled is required");
+                return;
+            }
+            settingsService.setReaderKeepScreenOn(enabled);
+            applyKeepScreenOn(enabled);
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void setReaderVolumeNavigation(PluginCall call) {
+        try {
+            Boolean enabled = call.getBoolean("enabled");
+            if (enabled == null) {
+                call.reject("enabled is required");
+                return;
+            }
+            settingsService.setReaderVolumeNavigation(enabled);
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void setReaderFullscreen(PluginCall call) {
+        try {
+            Boolean enabled = call.getBoolean("enabled");
+            if (enabled == null) {
+                call.reject("enabled is required");
+                return;
+            }
+            applyFullscreen(enabled);
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void setReaderState(PluginCall call) {
+        Boolean isActive = call.getBoolean("isActive");
+        Boolean isVertical = call.getBoolean("isVertical");
+        if (isActive == null || isVertical == null) {
+            call.reject("isActive and isVertical are required");
+            return;
+        }
+        readerActive = isActive;
+        readerVertical = isVertical;
+        JSObject ret = new JSObject();
+        ret.put("success", true);
+        call.resolve(ret);
+    }
+
+    // ---- 应用设置到 Activity（需在主线程调用） ----
+
+    private void applyBrightness(float brightness) {
+        if (getActivity() == null) return;
+        getActivity().runOnUiThread(() -> {
+            android.view.WindowManager.LayoutParams lp = getActivity().getWindow().getAttributes();
+            lp.screenBrightness = brightness;
+            getActivity().getWindow().setAttributes(lp);
+        });
+    }
+
+    private void applyKeepScreenOn(boolean enabled) {
+        if (getActivity() == null) return;
+        getActivity().runOnUiThread(() -> {
+            if (enabled) {
+                getActivity().getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            } else {
+                getActivity().getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            }
+        });
+    }
+
+    private void applyFullscreen(boolean enabled) {
+        if (getActivity() == null) return;
+        getActivity().runOnUiThread(() -> {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                android.view.Window window = getActivity().getWindow();
+                android.view.WindowInsetsController controller = window.getInsetsController();
+                if (controller != null) {
+                    if (enabled) {
+                        controller.hide(android.view.WindowInsets.Type.statusBars()
+                            | android.view.WindowInsets.Type.navigationBars());
+                        controller.setSystemBarsBehavior(
+                            android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                    } else {
+                        controller.show(android.view.WindowInsets.Type.statusBars()
+                            | android.view.WindowInsets.Type.navigationBars());
+                    }
+                }
+            } else {
+                android.view.View decorView = getActivity().getWindow().getDecorView();
+                if (enabled) {
+                    decorView.setSystemUiVisibility(
+                        android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                        | android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                        | android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                        | android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                        | android.view.View.SYSTEM_UI_FLAG_FULLSCREEN
+                        | android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+                } else {
+                    decorView.setSystemUiVisibility(0);
+                }
+            }
+        });
+    }
+
+    private void applyScreenOrientation(String orientation) {
+        if (getActivity() == null) return;
+        getActivity().runOnUiThread(() -> {
+            switch (orientation) {
+                case "portrait":
+                    getActivity().setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+                    break;
+                case "landscape":
+                    getActivity().setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+                    break;
+                default:
+                    getActivity().setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
+                    break;
+            }
+        });
+    }
+
+    // ---- 音量键通知（供 MainActivity 调用） ----
+
+    public boolean isReaderActive() {
+        return readerActive;
+    }
+
+    public boolean isVolumeNavigationEnabled() {
+        return settingsService.getReaderVolumeNavigation();
+    }
+
+    public boolean isReaderVertical() {
+        return readerVertical;
+    }
+
+    public void notifyVolumeKey(String direction) {
+        JSObject data = new JSObject();
+        data.put("direction", direction);
+        notifyListeners("volumeKey", data);
     }
 
     // ========== 下载相关 ==========

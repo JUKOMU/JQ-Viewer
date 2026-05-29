@@ -78,8 +78,9 @@ defineOptions({name: 'AboutPage'})
 
 import {nextTick, onMounted, ref} from 'vue'
 import {App} from '@capacitor/app'
-import {IonBackButton, IonButtons, IonContent, IonHeader, IonPage, IonTitle, IonToolbar,} from '@ionic/vue'
+import {alertController, IonBackButton, IonButtons, IonContent, IonHeader, IonPage, IonTitle, IonToolbar,} from '@ionic/vue'
 import {showToast} from '@/services/JmcomicService'
+import {compareVersion, RELEASES_API, sanitizeReleaseBody} from '@/utils/version'
 
 const appVersion = ref('1.0.0')
 const updateChecking = ref(false)
@@ -88,7 +89,6 @@ const hasUpdate = ref(false)
 const latestVersion = ref('')
 
 const REPO_URL = 'https://github.com/jukomu/jq-viewer'
-const RELEASES_API = 'https://api.github.com/repos/jukomu/jq-viewer/releases/latest'
 
 const TITLE = 'JQ Viewer'
 const displayText = ref('')
@@ -121,18 +121,6 @@ onMounted(async () => {
   cursorVisible.value = false
 })
 
-function compareVersion(a: string, b: string): number {
-  const pa = a.split('.').map(Number)
-  const pb = b.split('.').map(Number)
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const va = pa[i] || 0
-    const vb = pb[i] || 0
-    if (va > vb) return 1
-    if (va < vb) return -1
-  }
-  return 0
-}
-
 async function checkUpdate() {
   updateChecking.value = true
   updateError.value = false
@@ -149,12 +137,47 @@ async function checkUpdate() {
     if (remote && compareVersion(remote, appVersion.value) > 0) {
       hasUpdate.value = true
       latestVersion.value = remote
+      await showUpdateAlert(remote, data.body || '', data.html_url || '')
     }
   } catch {
     updateError.value = true
   } finally {
     updateChecking.value = false
   }
+}
+
+async function showUpdateAlert(version: string, body: string, htmlUrl: string) {
+  const cleaned = sanitizeReleaseBody(body || '')
+
+  const alert1 = await alertController.create({
+    header: `发现新版本 v${version}`,
+    message: cleaned || '（无更新说明）',
+    cssClass: 'update-alert',
+    buttons: [
+      { text: '忽略', role: 'cancel' },
+      {
+        text: '好',
+        handler: async () => {
+          const alert2 = await alertController.create({
+            header: '前往下载',
+            message: htmlUrl,
+            cssClass: 'update-alert',
+            buttons: [
+              { text: '取消', role: 'cancel' },
+              {
+                text: '打开',
+                handler: () => {
+                  window.open(htmlUrl, '_blank')
+                },
+              },
+            ],
+          })
+          await alert2.present()
+        },
+      },
+    ],
+  })
+  await alert1.present()
 }
 
 async function openRepo() {

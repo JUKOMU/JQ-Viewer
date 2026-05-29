@@ -29,12 +29,50 @@ jobs:
         runs-on: ubuntu-latest
 
         steps:
-            - name: Create GitHub Release
+            - uses: actions/checkout@v4
+              with:
+                  submodules: true
+
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 22
+                  cache: npm
+
+            - uses: actions/setup-java@v4
+              with:
+                  distribution: temurin
+                  java-version: 21
+
+            - run: npm ci
+            - run: npm run build
+            - run: npx cap sync android
+
+            - name: Setup keystore
+              if: env.KEYSTORE_BASE64
+              env:
+                  KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+                  KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+                  KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+                  KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+              run: |
+                  echo "$KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
+                  cat > android/keystore.properties <<PROPS
+                  storeFile=app/release.keystore
+                  storePassword=${KEYSTORE_PASSWORD}
+                  keyAlias=${KEY_ALIAS}
+                  keyPassword=${KEY_PASSWORD}
+                  PROPS
+
+            - name: Build release APK
+              run: cd android && chmod +x gradlew && ./gradlew :app:assembleRelease
+
+            - name: Attach APK to GitHub Release
               uses: softprops/action-gh-release@v2
               with:
                   tag_name: ${{ inputs.tag || github.ref_name }}
                   draft: false
                   prerelease: ${{ inputs.prerelease || contains(github.ref, '-') }}
                   generate_release_notes: true
+                  files: android/app/build/outputs/apk/release/app-release.apk
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

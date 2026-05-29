@@ -1,6 +1,6 @@
 # JQViewer
 
-基于 JMComic-Api-Java 的 Android 漫画阅读器。
+基于 JMComic-Api-Java 的禁漫天堂第三方 Android 客户端，提供离线阅读、PDF 导出、OCR 文字识别、批量解析、下载队列、收藏管理、搜索历史与沉浸式阅读等功能。
 
 ![Vue](https://img.shields.io/badge/Vue-3-4FC08D?logo=vuedotjs)
 ![Ionic](https://img.shields.io/badge/Ionic-8-3880FF?logo=ionic)

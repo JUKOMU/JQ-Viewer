@@ -5,7 +5,9 @@
 ![Vue](https://img.shields.io/badge/Vue-3-4FC08D?logo=vuedotjs)
 ![Ionic](https://img.shields.io/badge/Ionic-8-3880FF?logo=ionic)
 ![Java](https://img.shields.io/badge/Java-11+-007396?logo=java)
-![License](https://img.shields.io/badge/License-MIT-blue)
+![Android](https://img.shields.io/badge/Android-24+-007396?logo=java)
+![License](https://img.shields.io/badge/License-MIT-yellow.svg)
+![Version](https://img.shields.io/badge/Version-1.0.1-brightgreen.svg)
 <div></div>
 
 [![JUKOMU/JMComic-Api-Java - GitHub](https://gh-card.dev/repos/JUKOMU/JMComic-Api-Java.svg?fullname=)](https://github.com/JUKOMU/JMComic-Api-Java)
@@ -15,55 +17,55 @@
 ### 首页、搜索、分类
 
 <div style="overflow: auto;">
-  <img style="float: left; width: 30%; margin-right: 5%;" alt="image" src="https://github.com/user-attachments/assets/b3979725-d2e7-4721-92c1-5181aa160ca9" />
-  <img style="float: left; width: 30%; margin-right: 5%;" alt="image" src="https://github.com/user-attachments/assets/158b13ed-396d-4add-be2e-d7d415648c44" />
-  <img style="float: left; width: 30%;" alt="image" src="https://github.com/user-attachments/assets/b12c77fe-1231-4485-bad5-5b45a275d308" />
+  <img style="float: left; width: 25%; margin-right: 5%;" alt="image" src="https://github.com/user-attachments/assets/b3979725-d2e7-4721-92c1-5181aa160ca9" />
+  <img style="float: left; width: 25%; margin-right: 5%;" alt="image" src="https://github.com/user-attachments/assets/158b13ed-396d-4add-be2e-d7d415648c44" />
+  <img style="float: left; width: 25%;" alt="image" src="https://github.com/user-attachments/assets/b12c77fe-1231-4485-bad5-5b45a275d308" />
 </div>
 
 ### 收藏夹
 
 <div style="overflow: auto;">
-<img style="float: left; width: 30%; margin-right: 5%;" alt="image" src="https://github.com/user-attachments/assets/9890ecad-ad3b-48a7-a2f1-f6497cd3ec5b" />
-<img style="float: left; width: 30%;" alt="image" src="https://github.com/user-attachments/assets/c669cf81-e5a2-43e5-91ad-fd468fdb9b75" />
+<img style="float: left; width: 25%; margin-right: 5%;" alt="image" src="https://github.com/user-attachments/assets/9890ecad-ad3b-48a7-a2f1-f6497cd3ec5b" />
+<img style="float: left; width: 25%;" alt="image" src="https://github.com/user-attachments/assets/c669cf81-e5a2-43e5-91ad-fd468fdb9b75" />
 </div>
 
 ### 下载、导出
 
 <div style="overflow: auto;">
-  <img style="float: left; width: 30%; margin-right: 5%;" src="https://github.com/user-attachments/assets/41abc94a-f3dc-45f2-8b3f-e4826bd4dc2c" />
-  <img style="float: left; width: 30%; margin-right: 5%;" alt="image" src="https://github.com/user-attachments/assets/1b38a095-c02b-4742-95bd-0e18cef1d8f2" />
-  <img style="float: left; width: 30%;" alt="image" src="https://github.com/user-attachments/assets/8c1a4178-ee19-4ba5-9e1e-60c47e2a5950" />
+  <img style="float: left; width: 25%; margin-right: 5%;" src="https://github.com/user-attachments/assets/41abc94a-f3dc-45f2-8b3f-e4826bd4dc2c" />
+  <img style="float: left; width: 25%; margin-right: 5%;" alt="image" src="https://github.com/user-attachments/assets/1b38a095-c02b-4742-95bd-0e18cef1d8f2" />
+  <img style="float: left; width: 25%;" alt="image" src="https://github.com/user-attachments/assets/8c1a4178-ee19-4ba5-9e1e-60c47e2a5950" />
 </div>
 
 ### 历史
 
 <div style="overflow: auto;">
-<img style="float: left; width: 30%; margin-right: 5%;" alt="image" src="https://github.com/user-attachments/assets/986400a7-3081-4f04-bc9e-afc80e7ae1f2" />
-<img style="float: left; width: 30%;" alt="image" src="https://github.com/user-attachments/assets/da2b69b0-1d09-489c-8f54-c31757926f8a" />
+<img style="float: left; width: 25%; margin-right: 5%;" alt="image" src="https://github.com/user-attachments/assets/986400a7-3081-4f04-bc9e-afc80e7ae1f2" />
+<img style="float: left; width: 25%;" alt="image" src="https://github.com/user-attachments/assets/da2b69b0-1d09-489c-8f54-c31757926f8a" />
 </div>
 
 ### 设置
 
 <div style="overflow: auto;">
-<img style="float: left; width: 30%;" alt="image" src="https://github.com/user-attachments/assets/2730911b-1cf1-4282-9b13-4bca4a57b652" />
+<img style="float: left; width: 25%;" alt="image" src="https://github.com/user-attachments/assets/2730911b-1cf1-4282-9b13-4bca4a57b652" />
 </div>
 
 ### 详情页
 
 <div style="overflow: auto;">
-<img style="float: left; width: 30%;" alt="image" src="https://github.com/user-attachments/assets/29ffd516-2ea3-4eb5-b67b-bfc46b45bda1" />
+<img style="float: left; width: 25%;" alt="image" src="https://github.com/user-attachments/assets/29ffd516-2ea3-4eb5-b67b-bfc46b45bda1" />
 </div>
 
 ### 阅读
 
 <div style="overflow: auto;">
-<img style="float: left; width: 30%;" alt="image" src="https://github.com/user-attachments/assets/7750db4c-6342-41b8-b537-e03ba8a236ea" />
+<img style="float: left; width: 25%;" alt="image" src="https://github.com/user-attachments/assets/7750db4c-6342-41b8-b537-e03ba8a236ea" />
 </div>
 
 ### 批量解析
 
 <div style="overflow: auto;">
-<img style="float: left; width: 30%;" alt="image" src="https://github.com/user-attachments/assets/a89f8c24-0f9d-4707-87b4-73882f7844e4" />
+<img style="float: left; width: 25%;" alt="image" src="https://github.com/user-attachments/assets/a89f8c24-0f9d-4707-87b4-73882f7844e4" />
 </div>
 
 

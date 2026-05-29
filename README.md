@@ -7,13 +7,8 @@
 ![Java](https://img.shields.io/badge/Java-11+-007396?logo=java)
 ![License](https://img.shields.io/badge/License-MIT-blue)
 <div></div>
-<a href="https://github.com/JUKOMU/JMComic-Api-Java">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://github-readme-stats.vercel.app/api/pin/?username=JUKOMU&repo=JMComic-Api-Java&theme=radical" />
-    <source media="(prefers-color-scheme: light)" srcset="https://github-readme-stats.vercel.app/api/pin/?username=JUKOMU&repo=JMComic-Api-Java" />
-    <img alt="Repo Card" src="https://github-readme-stats.vercel.app/api/pin/?username=JUKOMU&repo=JMComic-Api-Java" />
-  </picture>
-</a>
+
+[![JUKOMU/JMComic-Api-Java - GitHub](https://gh-card.dev/repos/JUKOMU/JMComic-Api-Java.svg?fullname=)](https://github.com/JUKOMU/JMComic-Api-Java)
 
 ## 应用截图
 

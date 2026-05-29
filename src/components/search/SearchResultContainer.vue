@@ -84,7 +84,7 @@
             v-for="entry in items"
             :key="getEntryKey(entry)"
             :data-entry-key="getEntryKey(entry)"
-            :class="[itemCardClass, { downloaded: downloadedAlbumIds?.has(entry.item.id) }]"
+            :class="[itemCardClass, { downloaded: downloadedAlbumIds?.has(entry.item.id) }, favBorderClassMap?.[entry.item.id]]"
             @click="emit('item-click', entry.item)"
           >
             <div class="cover-wrap">
@@ -114,9 +114,9 @@
                     }}</span>
                   <span v-if="entry.item.tags.length > 10" class="tag-chip tag-more">…</span>
                 </div>
-                <div class="item-serial">{{ getItemSerial(entry.page, entry.indexInPage) }}</div>
               </template>
             </div>
+            <div class="item-serial">{{ getItemSerial(entry.page, entry.indexInPage) }}</div>
           </article>
 
           <div v-if="loadingNext" :class="resultLoaderClass">
@@ -145,6 +145,7 @@ const props = withDefaults(
     loadedPageStart?: number | null
     loadedPageEnd?: number | null
     downloadedAlbumIds?: Set<string>
+    favBorderClassMap?: Record<string, string>
     idleText?: string
     emptyText?: string
   }>(),
@@ -157,6 +158,7 @@ const props = withDefaults(
     loadedPageStart: null,
     loadedPageEnd: null,
     downloadedAlbumIds: () => new Set(),
+    favBorderClassMap: () => ({}),
     idleText: '搜索结果将在这里显示',
     emptyText: '没有搜索结果',
   },
@@ -680,11 +682,20 @@ defineExpose<SearchResultContainerExposed>({
   gap: 5px;
 }
 
-.item-serial {
-  margin-top: auto;
+.list-card .item-serial {
+  position: absolute;
+  right: 8px;
+  bottom: 4px;
   color: rgb(154 122 103 / 0.6);
   font-size: 9px;
   line-height: 1.3;
+}
+
+.grid-card .item-serial {
+  color: rgb(154 122 103 / 0.6);
+  font-size: 9px;
+  line-height: 1.3;
+  padding: 0 9px 8px;
   text-align: right;
 }
 

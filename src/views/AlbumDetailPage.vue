@@ -341,7 +341,27 @@ const selectedChapterPageCount = computed(() => {
 })
 
 // ---- 数据加载 ----
-onMounted(async () => {
+const resetAlbumState = () => {
+  albumDetail.value = null
+  photoDetail.value = null
+  selectedChapterId.value = ''
+  previewImages.value = []
+  previewImageTotal.value = 0
+  previewLoadedChapterId.value = ''
+  comments.value = []
+  commentPage.value = 1
+  totalComments.value = 0
+  activeTab.value = 'info'
+  showChapterActions.value = false
+  chapterDownloadStatuses.value = new Map()
+  loading.value = true
+  imageReadyListenerHandle?.remove()
+  imageReadyListenerHandle = null
+}
+
+const loadAlbumData = async () => {
+  resetAlbumState()
+
   try {
     const [album, photo] = await Promise.all([
       JmcomicService.getAlbum(albumId.value),
@@ -354,24 +374,24 @@ onMounted(async () => {
     selectedChapterId.value = matched?.id ?? album.photoMetas[0]?.id ?? ''
 
     recordBrowseHistory()
-
-    // 若用户已在加载期间切到预览 tab，补加载
-    if (activeTab.value === 'preview') await loadPreview()
   } catch {
     // 保留 query 数据展示
   } finally {
     loading.value = false
   }
 
-  // 获取当前本子的章节下载状态
   await refreshDownloadStatuses()
-  // 监听下载进度，实时更新状态
+  downloadProgressHandle?.remove()
   downloadProgressHandle = await JmcomicService.addDownloadProgressListener((data) => {
     if (data.albumId !== albumId.value) return
     const map = new Map(chapterDownloadStatuses.value)
     map.set(data.chapterId, data.status)
     chapterDownloadStatuses.value = map
   })
+}
+
+onMounted(() => {
+  loadAlbumData()
 })
 
 // ---- Tab 切换 ----
@@ -493,9 +513,9 @@ watch(showFolderPicker, (open) => {
   if (!open) actionBusy.favorite = false
 })
 
-// 同组件导航（相关本子跳转）时记录浏览历史
+// 同组件导航（相关本子跳转）时重新加载数据
 watch(albumId, (newId, oldId) => {
-  if (newId && newId !== oldId) recordBrowseHistory()
+  if (newId && newId !== oldId) loadAlbumData()
 })
 
 onUnmounted(() => {

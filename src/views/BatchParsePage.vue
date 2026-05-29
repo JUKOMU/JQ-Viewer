@@ -16,7 +16,6 @@
         </div>
 
         <div v-show="sourceExpanded" class="source-area">
-          <!-- 编辑模式 -->
           <template v-if="editing">
             <div class="edit-toolbar">
               <input v-model="findText" class="edit-input" placeholder="查找" enterkeyhint="done"/>
@@ -33,7 +32,6 @@
             <textarea v-model="editText" class="source-textarea" rows="5" spellcheck="false"/>
           </template>
 
-          <!-- 查看模式 -->
           <div v-else ref="sourceScrollRef" class="source-scroll">
             <pre
               v-for="(line, li) in sourceLines"
@@ -51,6 +49,33 @@
             >{{ seg.text }}</span></pre>
           </div>
         </div>
+
+        <div v-show="sourceExpanded && !editing" class="source-actions-row">
+          <label class="fav-toggle-label">
+            <span class="fav-toggle-text">显示已收藏</span>
+            <button
+              type="button"
+              class="fav-toggle"
+              :class="{ on: showFavStatus }"
+              :disabled="loadingFavStatus"
+              role="switch"
+              :aria-checked="showFavStatus"
+              @click="toggleFavStatus"
+            >
+              <IonSpinner v-if="loadingFavStatus" name="dots" class="fav-toggle-spinner"/>
+              <span v-else class="fav-toggle-knob"/>
+            </button>
+          </label>
+          <button
+            type="button"
+            class="save-list-btn"
+            :disabled="loading || albumResults.every(a => a === null)"
+            @click="openBatchSave"
+          >
+            <IonIcon :icon="bookmarkOutline" class="save-list-icon"/>
+            <span>保存当前列表到收藏夹</span>
+          </button>
+        </div>
       </IonToolbar>
     </IonHeader>
 
@@ -66,27 +91,115 @@
           :can-load-previous="false"
           :error-message="errorMessage"
           :mode="displayMode"
+          :fav-border-class-map="favBorderClassMap"
           idle-text=""
           empty-text="未找到对应本子"
           @item-click="handleItemClick"
           @mode-change="displayMode = $event"
-        />
+        >
+          <template v-if="displayMode === 'list'" #item-actions="{ item }">
+            <button
+              type="button"
+              class="card-more-btn"
+              :class="{ active: cardMenu?.item.id === item.id }"
+              aria-label="更多操作"
+              @click.stop="openCardMenu(item, $event)"
+            >
+              <IonIcon :icon="ellipsisVertical"/>
+            </button>
+          </template>
+        </SearchResultContainer>
       </div>
     </IonContent>
+
+    <!-- 卡片操作上下文菜单 -->
+    <div
+      v-if="cardMenu"
+      ref="cardMenuRef"
+      class="card-context-menu"
+      :style="cardMenuStyle"
+      @mousedown.prevent.stop
+      @touchstart.stop
+    >
+      <button type="button" class="card-menu-item" @click.stop="handleCardDetail(cardMenu.item)">
+        <IonIcon :icon="informationCircleOutline" class="card-menu-icon"/>
+        <span>详情</span>
+      </button>
+      <button type="button" class="card-menu-item" @click.stop="handleCardRead(cardMenu.item)">
+        <IonIcon :icon="bookOutline" class="card-menu-icon"/>
+        <span>阅读</span>
+      </button>
+      <button type="button" class="card-menu-item" @click.stop="handleCardDownload(cardMenu.item)">
+        <IonIcon :icon="downloadOutline" class="card-menu-icon"/>
+        <span>下载</span>
+      </button>
+      <button type="button" class="card-menu-item" @click.stop="handleCardFavorite(cardMenu.item)">
+        <IonIcon :icon="heartOutline" class="card-menu-icon"/>
+        <span>收藏</span>
+      </button>
+      <button
+        type="button"
+        class="card-menu-item card-menu-item--danger"
+        @click.stop="handleCardRemove(cardMenu.item)"
+      >
+        <IonIcon :icon="trashOutline" class="card-menu-icon"/>
+        <span>从列表移除</span>
+      </button>
+    </div>
+
+    <!-- 收藏夹选择弹窗 -->
+    <FavoriteFolderPicker
+      v-model="showFolderPicker"
+      :online-folders="pickerOnlineFolders"
+      :offline-folders="pickerOfflineFolders"
+      :online-folder-counts="pickerOnlineFolderCounts"
+      @select="onPickerSelect"
+      @add-folder="onPickerAddFolder"
+    />
+
+    <!-- 操作进度遮罩 -->
+    <div v-if="showProgressModal" class="progress-overlay">
+      <div class="progress-dialog">
+        <div class="progress-title">{{ progressTitle }}</div>
+        <div class="progress-bar">
+          <div class="progress-fill" :style="{ width: progressPercent + '%' }"/>
+        </div>
+        <div class="progress-percent">{{ progressPercent }}%</div>
+        <div class="progress-count">已完成：{{ progressCurrent }} / {{ progressTotal }} 个本子</div>
+        <div v-if="progressCurrentItem" class="progress-file">{{ progressCurrentItem }}</div>
+        <div class="progress-warning">请勿关闭应用</div>
+      </div>
+    </div>
   </IonPage>
 </template>
 
 <script setup lang="ts">
 import {computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch,} from 'vue'
 import {useRouter} from 'vue-router'
-import {IonContent, IonHeader, IonIcon, IonPage, IonToolbar} from '@ionic/vue'
-import {chevronDownOutline, chevronUpOutline, createOutline} from 'ionicons/icons'
+import {alertController, IonContent, IonHeader, IonIcon, IonPage, IonSpinner, IonToolbar,} from '@ionic/vue'
+import {
+  bookmarkOutline,
+  bookOutline,
+  chevronDownOutline,
+  chevronUpOutline,
+  createOutline,
+  downloadOutline,
+  ellipsisVertical,
+  heartOutline,
+  informationCircleOutline,
+  trashOutline,
+} from 'ionicons/icons'
 import type {ScrollCustomEvent} from '@ionic/core'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
+import FavoriteFolderPicker from '@/components/favorite/FavoriteFolderPicker.vue'
 import type {SearchResultDisplayItem} from '@/components/search/SearchResultContainer.vue'
 import SearchResultContainer from '@/components/search/SearchResultContainer.vue'
-import {JmcomicService} from '@/services/JmcomicService'
-import type {AlbumDetail, SearchResult, SearchResultItem} from '@/services/JmcomicTypes'
+import {JmcomicService, sanitizeError, showToast} from '@/services/JmcomicService'
+import {OfflineDownloadService} from '@/services/OfflineDownloadService'
+import {OfflineFavoriteService} from '@/services/OfflineFavoriteService'
+import {useAuth} from '@/composables/useAuth'
+import type {AlbumDetail, FavoriteResult, FolderEntry, SearchResult, SearchResultItem,} from '@/services/JmcomicTypes'
+
 import type {InvalidIdItem, ParsedIdItem} from '@/utils/batchParse'
 import {parseIdsFromText} from '@/utils/batchParse'
 
@@ -105,6 +218,7 @@ interface SourceLine {
 }
 
 const router = useRouter()
+const {isLoggedIn} = useAuth()
 const contentRef = ref<InstanceType<typeof IonContent> | null>(null)
 const resultContainerRef = ref<InstanceType<typeof SearchResultContainer> | null>(null)
 const sourceScrollRef = ref<HTMLElement | null>(null)
@@ -315,7 +429,6 @@ async function doParse() {
       } catch {
         failed[parseResult.items[i].id] = true
       }
-      // 每次完成一个就更新响应式数组，触发渐进渲染
       albumResults.value = [...results]
       failedIds.value = {...failed}
     }
@@ -325,6 +438,8 @@ async function doParse() {
   await Promise.all(workers)
 
   loading.value = false
+  // 清除已收藏状态（解析结果变了）
+  clearFavStatus()
 
   await nextTick()
   updateHighlightFromScroll()
@@ -390,7 +505,6 @@ function updateHighlightFromScroll() {
   }
 
   let bestIdx = -1
-  // 从下往上找，优先选择靠近视口底部的可见卡片
   for (let i = cards.length - 1; i >= 0; i--) {
     const rect = cards[i].getBoundingClientRect()
     if (rect.top < window.innerHeight && rect.bottom > 0) {
@@ -398,7 +512,6 @@ function updateHighlightFromScroll() {
       break
     }
   }
-  // 回退：所有卡片都在视口下方时选最后一个已滚过的
   if (bestIdx < 0) {
     for (let i = cards.length - 1; i >= 0; i--) {
       if (cards[i].getBoundingClientRect().top < 0) {
@@ -432,7 +545,6 @@ function onSourceLineClick(lineIndex: number) {
   }
 }
 
-// 源文本滚动同步：结果滚动时源文本自动滚动到对应行
 watch(currentHighlightLine, async (lineIndex) => {
   if (lineIndex < 0 || !sourceScrollRef.value) return
   await nextTick()
@@ -446,11 +558,432 @@ watch(currentHighlightLine, async (lineIndex) => {
 
 onBeforeUnmount(() => {
   if (scrollTimer) clearTimeout(scrollTimer)
+  document.removeEventListener('mousedown', handleCardMenuClickOutside)
+  document.removeEventListener('touchstart', handleCardMenuClickOutside)
 })
 
 function handleItemClick(item: SearchResultItem) {
   router.push(`/album/${item.id}`)
 }
+
+// ========== 显示已收藏状态 ==========
+
+const showFavStatus = ref(false)
+const loadingFavStatus = ref(false)
+const onlineFavIds = ref<Set<string>>(new Set())
+const offlineFavIds = ref<Set<string>>(new Set())
+const bothFavIds = ref<Set<string>>(new Set())
+
+const favBorderClassMap = computed<Record<string, string>>(() => {
+  if (!showFavStatus.value) return {}
+  const map: Record<string, string> = {}
+  for (const id of bothFavIds.value) {
+    map[id] = 'fav-both'
+  }
+  for (const id of onlineFavIds.value) {
+    map[id] = 'fav-online'
+  }
+  for (const id of offlineFavIds.value) {
+    map[id] = 'fav-offline'
+  }
+  return map
+})
+
+function clearFavStatus() {
+  showFavStatus.value = false
+  onlineFavIds.value = new Set()
+  offlineFavIds.value = new Set()
+  bothFavIds.value = new Set()
+}
+
+async function fetchAllOnlineFavIds(): Promise<Set<string>> {
+  const ids = new Set<string>()
+  try {
+    let page = 1
+    let totalPages = 1
+    while (page <= totalPages) {
+      const result: FavoriteResult = await JmcomicService.favorites({folderId: '0', page})
+      result.content.forEach((item) => ids.add(item.id))
+      totalPages = result.totalPages
+      page++
+      if (page <= totalPages) {
+        await new Promise((r) => setTimeout(r, 100))
+      }
+    }
+  } catch {
+    // 获取失败返回空集合
+  }
+  return ids
+}
+
+async function fetchAllOfflineFavIds(): Promise<Set<string>> {
+  const ids = new Set<string>()
+  try {
+    const items = await OfflineFavoriteService.getAllItemsMerged()
+    items.forEach((item) => ids.add(item.id))
+  } catch {
+    // ignore
+  }
+  return ids
+}
+
+async function toggleFavStatus() {
+  if (loadingFavStatus.value) return
+
+  if (showFavStatus.value) {
+    clearFavStatus()
+    return
+  }
+
+  loadingFavStatus.value = true
+  try {
+    const [onlineIds, offlineIds] = await Promise.all([
+      fetchAllOnlineFavIds(),
+      fetchAllOfflineFavIds(),
+    ])
+
+    const both = new Set<string>()
+    for (const id of onlineIds) {
+      if (offlineIds.has(id)) both.add(id)
+    }
+    for (const id of both) {
+      onlineIds.delete(id)
+      offlineIds.delete(id)
+    }
+
+    onlineFavIds.value = onlineIds
+    offlineFavIds.value = offlineIds
+    bothFavIds.value = both
+    showFavStatus.value = true
+  } catch {
+    await showToast('获取收藏状态失败', 'danger')
+  } finally {
+    loadingFavStatus.value = false
+  }
+}
+
+// ========== 卡片操作菜单 ==========
+
+interface CardMenuState {
+  item: SearchResultItem
+  x: number
+  y: number
+}
+
+const cardMenu = ref<CardMenuState | null>(null)
+const cardMenuRef = ref<HTMLElement | null>(null)
+
+const cardMenuStyle = computed(() => {
+  const m = cardMenu.value
+  if (!m) return {}
+  const menuH = 224
+  const top = m.y + menuH > window.innerHeight ? m.y - menuH - 8 : m.y
+  return {
+    position: 'fixed' as const,
+    top: `${top}px`,
+    left: `${Math.min(m.x, window.innerWidth - 160)}px`,
+  }
+})
+
+function openCardMenu(item: SearchResultItem, event: MouseEvent) {
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  cardMenu.value = {item, x: rect.left, y: rect.bottom + 4}
+  setTimeout(() => {
+    document.addEventListener('mousedown', handleCardMenuClickOutside)
+    document.addEventListener('touchstart', handleCardMenuClickOutside)
+  }, 0)
+}
+
+function closeCardMenu() {
+  cardMenu.value = null
+  document.removeEventListener('mousedown', handleCardMenuClickOutside)
+  document.removeEventListener('touchstart', handleCardMenuClickOutside)
+}
+
+function handleCardMenuClickOutside(e: Event) {
+  if (cardMenuRef.value?.contains(e.target as Node)) return
+  closeCardMenu()
+}
+
+function handleCardDetail(item: SearchResultItem) {
+  closeCardMenu()
+  router.push(`/album/${item.id}`)
+}
+
+async function handleCardRead(item: SearchResultItem) {
+  closeCardMenu()
+  try {
+    const photo = await JmcomicService.getPhoto(item.id)
+    await router.push({
+      path: `/album/${item.id}/read/${photo.id}`,
+      query: {title: item.title, total: String(photo.images.length)},
+    })
+  } catch {
+    await showToast('获取章节失败', 'danger')
+  }
+}
+
+async function handleCardDownload(item: SearchResultItem) {
+  closeCardMenu()
+  try {
+    const photo = await JmcomicService.getPhoto(item.id)
+    const taskId = `${item.id}_${photo.id}`
+    const existing = OfflineDownloadService.getAll().find(
+      (t) => t.taskId === taskId && t.status !== 'failed',
+    )
+    if (existing) {
+      await showToast('该章节已在下载队列中', 'medium')
+      return
+    }
+    await JmcomicService.downloadChapter(item.id, photo.id, item.title, photo.title, item.coverUrl)
+    OfflineDownloadService.addTask({
+      taskId,
+      albumId: item.id,
+      chapterId: photo.id,
+      albumTitle: item.title,
+      chapterTitle: photo.title,
+      coverUrl: item.coverUrl,
+      totalPages: 0,
+      downloadedPages: 0,
+      status: 'queued',
+      createdAt: Date.now(),
+    })
+    await showToast('已加入下载队列', 'success')
+  } catch {
+    await showToast('获取章节失败', 'danger')
+  }
+}
+
+function handleCardFavorite(item: SearchResultItem) {
+  closeCardMenu()
+  pickerMode.value = 'single'
+  pickerTargetItem.value = item
+  openFolderPickerForMode()
+}
+
+function handleCardRemove(item: SearchResultItem) {
+  closeCardMenu()
+  const idx = albumResults.value.findIndex((a) => a?.id === item.id)
+  if (idx >= 0) {
+    const updated = [...albumResults.value]
+    updated[idx] = null
+    albumResults.value = updated
+  }
+}
+
+// ========== 收藏夹选择弹窗 ==========
+
+type PickerMode = 'batch' | 'single'
+
+const showFolderPicker = ref(false)
+const pickerMode = ref<PickerMode>('batch')
+const pickerTargetItem = ref<SearchResultItem | null>(null)
+const pickerOnlineFolders = ref<FolderEntry[]>([])
+const pickerOfflineFolders = ref<FolderEntry[]>([])
+const pickerOnlineFolderCounts = ref<Record<string, number>>({})
+
+async function loadOnlineFolderData() {
+  if (!isLoggedIn.value) {
+    pickerOnlineFolders.value = []
+    return
+  }
+  try {
+    const result: FavoriteResult = await JmcomicService.favorites({folderId: '0', page: 1})
+    if (result.folderList) {
+      const entries: FolderEntry[] = []
+      const countPromises: Promise<void>[] = []
+      const counts: Record<string, number> = {}
+      for (const [id, name] of Object.entries(result.folderList)) {
+        entries.push({id, name, count: 0})
+        countPromises.push(
+          JmcomicService.favorites({folderId: id, page: 1})
+            .then((r) => {
+              counts[id] = r.totalItems
+            })
+            .catch(() => {
+              counts[id] = 0
+            }),
+        )
+      }
+      pickerOnlineFolders.value = entries
+      await Promise.all(countPromises)
+      pickerOnlineFolderCounts.value = counts
+    }
+  } catch {
+    pickerOnlineFolders.value = []
+  }
+}
+
+async function openFolderPickerForMode() {
+  await OfflineFavoriteService.ensureInit()
+  pickerOfflineFolders.value = OfflineFavoriteService.getFolders()
+  void loadOnlineFolderData()
+  showFolderPicker.value = true
+}
+
+function openBatchSave() {
+  const hasResults = albumResults.value.some((a) => a !== null)
+  if (!hasResults) return
+  pickerMode.value = 'batch'
+  pickerTargetItem.value = null
+  openFolderPickerForMode()
+}
+
+async function executeSingleFavorite(
+  item: SearchResultItem,
+  payload: { folderId: string; source: 'online' | 'offline' },
+) {
+  try {
+    if (payload.source === 'online') {
+      const album = await JmcomicService.getAlbum(item.id)
+      if (album?.isFavorite) {
+        showToast('该本子已在收藏夹中', 'medium')
+        return
+      }
+      await JmcomicService.toggleAlbumFavorite(item.id, payload.folderId)
+      showToast('已收藏到在线收藏夹', 'success')
+    } else {
+      if (offlineFavIds.value.has(item.id) || bothFavIds.value.has(item.id)) {
+        showToast('该本子已在离线收藏夹中', 'medium')
+        return
+      }
+      await OfflineFavoriteService.addItem(payload.folderId, item)
+      offlineFavIds.value = new Set([...offlineFavIds.value, item.id])
+      showToast('已收藏到离线收藏夹', 'success')
+    }
+  } catch (e: any) {
+    showToast(sanitizeError(e, '收藏失败'), 'danger')
+  }
+}
+
+async function onPickerSelect(payload: { folderId: string; source: 'online' | 'offline' }) {
+  showFolderPicker.value = false
+
+  if (pickerMode.value === 'single' && pickerTargetItem.value) {
+    const item = pickerTargetItem.value
+    pickerTargetItem.value = null
+    void executeSingleFavorite(item, payload)
+    return
+  }
+
+  // 批量保存
+  const validResults = albumResults.value.filter((a): a is AlbumDetail => a !== null)
+
+  // 去重
+  let alreadyFavIds: Set<string>
+  if (payload.source === 'online') {
+    if (showFavStatus.value) {
+      alreadyFavIds = new Set([...onlineFavIds.value, ...bothFavIds.value])
+    } else {
+      alreadyFavIds = await fetchAllOnlineFavIds()
+    }
+  } else {
+    if (showFavStatus.value) {
+      alreadyFavIds = new Set([...offlineFavIds.value, ...bothFavIds.value])
+    } else {
+      alreadyFavIds = await fetchAllOfflineFavIds()
+    }
+  }
+
+  const toAdd = validResults
+    .map((a) => albumToSearchItem(a))
+    .filter((item) => !alreadyFavIds.has(item.id))
+
+  if (toAdd.length === 0) {
+    await showToast('所有本子已收藏', 'medium')
+    return
+  }
+
+  showProgressModal.value = true
+  progressCurrent.value = 0
+  progressCurrentItem.value = ''
+
+  try {
+    if (payload.source === 'offline') {
+      progressTitle.value = '正在保存到离线收藏夹'
+      progressTotal.value = 1
+      await OfflineFavoriteService.addItems(payload.folderId, toAdd)
+      progressCurrent.value = 1
+      await showToast(`已保存 ${toAdd.length} 个本子到离线`, 'success')
+    } else {
+      progressTitle.value = '正在保存到在线收藏夹'
+      progressTotal.value = toAdd.length
+      let ok = 0
+      const failed: string[] = []
+      for (const item of toAdd) {
+        try {
+          await JmcomicService.toggleAlbumFavorite(item.id, payload.folderId)
+          ok++
+        } catch {
+          failed.push(item.title || item.id)
+        }
+        progressCurrent.value = ok + failed.length
+        progressCurrentItem.value = item.title || item.id
+      }
+      if (failed.length > 0) {
+        await showToast(
+          `已保存 ${ok}/${toAdd.length} 个，失败 ${failed.length} 项：${failed.slice(0, 3).join('、')}${failed.length > 3 ? ' 等' : ''}`,
+          'medium',
+        )
+      } else {
+        await showToast(`已保存 ${ok} 个本子到在线`, 'success')
+      }
+    }
+  } catch (e: any) {
+    await showToast(sanitizeError(e, '保存失败'), 'danger')
+  } finally {
+    showProgressModal.value = false
+  }
+}
+
+async function onPickerAddFolder() {
+  const alert = await alertController.create({
+    header: '新建收藏夹',
+    inputs: [{name: 'name', type: 'text', placeholder: '收藏夹名称'}],
+    buttons: [
+      {text: '取消', role: 'cancel'},
+      {
+        text: '确定',
+        handler: async (data) => {
+          const name = data?.name?.trim()
+          if (!name) return
+
+          if (isLoggedIn.value) {
+            try {
+              const r = await JmcomicService.manageFavoriteFolder('add', '0', name, '')
+              if (r.status === 'ok') {
+                await showToast('收藏夹已创建', 'success')
+                await loadOnlineFolderData()
+              } else {
+                await showToast(r.msg || '创建失败', 'danger')
+              }
+            } catch {
+              await showToast('创建失败', 'danger')
+            }
+          } else {
+            await OfflineFavoriteService.createFolder(name)
+            pickerOfflineFolders.value = OfflineFavoriteService.getFolders()
+            await showToast('收藏夹已创建', 'success')
+          }
+        },
+      },
+    ],
+  })
+  await alert.present()
+}
+
+// ========== 进度弹窗 ==========
+
+const showProgressModal = ref(false)
+const progressTitle = ref('')
+const progressCurrent = ref(0)
+const progressTotal = ref(0)
+const progressCurrentItem = ref('')
+
+const progressPercent = computed(() => {
+  if (progressTotal.value <= 0) return 0
+  return Math.round((progressCurrent.value / progressTotal.value) * 100)
+})
 </script>
 
 <style scoped>
@@ -499,8 +1032,114 @@ function handleItemClick(item: SearchResultItem) {
   border-color: rgb(250 156 105);
 }
 
+.header-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .header-btn-label {
   font-size: 12px;
+}
+
+/* ---- 源文本下方操作行 ---- */
+
+.source-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px 8px;
+  flex-wrap: wrap;
+}
+
+.fav-toggle-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.fav-toggle-text {
+  font-size: 12px;
+  color: #8a6048;
+  font-weight: 600;
+}
+
+.fav-toggle {
+  position: relative;
+  width: 42px;
+  height: 24px;
+  border: 0;
+  border-radius: 999px;
+  background: #e0cfc4;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  flex-shrink: 0;
+}
+
+.fav-toggle:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.fav-toggle.on {
+  background: #6dbf87;
+}
+
+.fav-toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.15);
+  transition: transform 0.2s ease;
+}
+
+.fav-toggle.on .fav-toggle-knob {
+  transform: translateX(18px);
+}
+
+.fav-toggle-spinner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  --color: #8a6048;
+  width: 14px;
+  height: 14px;
+}
+
+.save-list-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid rgb(250 156 105 / 0.5);
+  border-radius: 999px;
+  background: #fffaf6;
+  color: #8a6048;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.save-list-btn:active {
+  background: #fff0e7;
+}
+
+.save-list-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.save-list-icon {
+  font-size: 16px;
+  flex-shrink: 0;
 }
 
 /* ---- 源文本区域 ---- */
@@ -512,7 +1151,6 @@ function handleItemClick(item: SearchResultItem) {
   overflow: hidden;
 }
 
-/* 编辑工具栏 */
 .edit-toolbar {
   display: flex;
   gap: 6px;
@@ -559,7 +1197,6 @@ function handleItemClick(item: SearchResultItem) {
   border-color: rgb(250 156 105);
 }
 
-/* 编辑 textarea */
 .source-textarea {
   display: block;
   width: 100%;
@@ -575,7 +1212,6 @@ function handleItemClick(item: SearchResultItem) {
   box-sizing: border-box;
 }
 
-/* 查看模式滚动区 */
 .source-scroll {
   max-height: 200px;
   overflow-y: auto;
@@ -642,5 +1278,169 @@ function handleItemClick(item: SearchResultItem) {
     margin-right: auto;
     margin-left: auto;
   }
+}
+
+/* ---- 收藏状态边框（:deep 穿透到 SearchResultContainer 内部） ---- */
+
+:deep(.fav-online) {
+  border: 2px solid #6dbf87;
+}
+
+:deep(.fav-offline) {
+  border: 2px solid #d4b870;
+}
+
+:deep(.fav-both) {
+  border: 2px solid #5b9bd5;
+}
+
+/* ---- 卡片更多操作按钮 ---- */
+
+:deep(.card-more-btn) {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #8a6048;
+  font-size: 18px;
+  cursor: pointer;
+  z-index: 2;
+}
+
+:deep(.card-more-btn.active) {
+  background: rgb(250 156 105 / 0.15);
+  color: #c96d3a;
+}
+
+/* ---- 上下文菜单 ---- */
+
+.card-context-menu {
+  display: flex;
+  flex-direction: column;
+  min-width: 140px;
+  padding: 6px;
+  border-radius: 14px;
+  background: #fffaf6;
+  box-shadow: 0 12px 36px rgb(76 42 24 / 0.22);
+  z-index: 50;
+  overflow: hidden;
+}
+
+.card-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 42px;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #3a261d;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+}
+
+.card-menu-item:active {
+  background: #fff0e7;
+}
+
+.card-menu-item--danger {
+  color: #d4533e;
+}
+
+.card-menu-item--danger:active {
+  background: #ffe8e8;
+}
+
+.card-menu-icon {
+  flex-shrink: 0;
+  font-size: 17px;
+  color: #8a6048;
+}
+
+.card-menu-item--danger .card-menu-icon {
+  color: #d4533e;
+}
+
+/* ---- 进度弹窗 ---- */
+
+.progress-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(16 12 10 / 0.32);
+  backdrop-filter: blur(2px);
+}
+
+.progress-dialog {
+  width: min(320px, 80vw);
+  padding: 24px 22px 20px;
+  border-radius: 20px;
+  background: #fffaf6;
+  box-shadow: 0 16px 40px rgb(76 42 24 / 0.24);
+  text-align: center;
+}
+
+.progress-title {
+  margin-bottom: 16px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #3a261d;
+}
+
+.progress-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: #f0ddd2;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #fa9c69, #f0a060);
+  transition: width 0.25s ease;
+}
+
+.progress-percent {
+  margin-bottom: 8px;
+  font-size: 22px;
+  font-weight: 700;
+  color: #fa9c69;
+}
+
+.progress-count {
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: #785947;
+}
+
+.progress-file {
+  margin-bottom: 10px;
+  font-size: 11px;
+  color: #9e7d6a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progress-warning {
+  font-size: 11px;
+  color: #c9886a;
+  font-weight: 600;
 }
 </style>

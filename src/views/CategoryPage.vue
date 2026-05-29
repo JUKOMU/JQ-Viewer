@@ -41,6 +41,55 @@
         @load-previous="handleLoadPrevious"
         @pull-state-change="pullGestureActive = $event"
         @retry="retrySearch"
+      >
+        <template v-if="displayMode === 'list'" #item-actions="{ item }">
+          <button
+            type="button"
+            class="card-more-btn"
+            :class="{ active: cardMenu?.item.id === item.id }"
+            aria-label="更多操作"
+            @click.stop="openCardMenu(item, $event)"
+          >
+            <IonIcon :icon="ellipsisVertical"/>
+          </button>
+        </template>
+      </SearchResultContainer>
+
+      <!-- 卡片操作上下文菜单 -->
+      <div
+        v-if="cardMenu"
+        ref="cardMenuRef"
+        class="card-context-menu"
+        :style="cardMenuStyle"
+        @mousedown.prevent.stop
+        @touchstart.stop
+      >
+        <button type="button" class="card-menu-item" @click.stop="handleCardDetail(cardMenu.item)">
+          <IonIcon :icon="informationCircleOutline" class="card-menu-icon"/>
+          <span>详情</span>
+        </button>
+        <button type="button" class="card-menu-item" @click.stop="handleCardRead(cardMenu.item)">
+          <IonIcon :icon="bookOutline" class="card-menu-icon"/>
+          <span>阅读</span>
+        </button>
+        <button type="button" class="card-menu-item" @click.stop="handleCardDownload(cardMenu.item)">
+          <IonIcon :icon="downloadOutline" class="card-menu-icon"/>
+          <span>下载</span>
+        </button>
+        <button type="button" class="card-menu-item" @click.stop="handleCardFavorite(cardMenu.item)">
+          <IonIcon :icon="heartOutline" class="card-menu-icon"/>
+          <span>收藏</span>
+        </button>
+      </div>
+
+      <!-- 收藏夹选择弹窗 -->
+      <FavoriteFolderPicker
+        v-model="showFolderPicker"
+        :online-folders="pickerOnlineFolders"
+        :offline-folders="pickerOfflineFolders"
+        :online-folder-counts="pickerOnlineFolderCounts"
+        @select="onPickerSelect"
+        @add-folder="onPickerAddFolder"
       />
 
       <QuickActionFab
@@ -56,20 +105,31 @@
 </template>
 
 <script setup lang="ts">
-import {computed, nextTick, onActivated, onDeactivated, onMounted, ref} from 'vue'
+import {computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref} from 'vue'
 import {useRouter} from 'vue-router'
-import {alertController, IonContent, IonPage} from '@ionic/vue'
+import {alertController, IonContent, IonIcon, IonPage} from '@ionic/vue'
+import {
+  bookOutline,
+  downloadOutline,
+  ellipsisVertical,
+  heartOutline,
+  informationCircleOutline,
+} from 'ionicons/icons'
 import type {ScrollCustomEvent} from '@ionic/core'
 import CategorySearchToolbar from '@/components/search/CategorySearchToolbar.vue'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import QuickActionFab from '@/components/common/QuickActionFab.vue'
+import FavoriteFolderPicker from '@/components/favorite/FavoriteFolderPicker.vue'
 import type {
   SearchResultContainerExposed,
   SearchResultDisplayItem,
 } from '@/components/search/SearchResultContainer.vue'
 import SearchResultContainer from '@/components/search/SearchResultContainer.vue'
-import {JmcomicService, sanitizeError} from '@/services/JmcomicService'
-import type {SearchQuery, SearchResult, SearchResultItem} from '@/services/JmcomicTypes'
+import {JmcomicService, sanitizeError, showToast} from '@/services/JmcomicService'
+import {OfflineDownloadService} from '@/services/OfflineDownloadService'
+import {OfflineFavoriteService} from '@/services/OfflineFavoriteService'
+import {useAuth} from '@/composables/useAuth'
+import type {FavoriteResult, FolderEntry, SearchQuery, SearchResult, SearchResultItem} from '@/services/JmcomicTypes'
 
 defineOptions({name: 'CategoryPage'})
 
@@ -320,6 +380,227 @@ const handleItemClick = (item: SearchResultItem) => {
   })
 }
 
+// ========== 卡片操作菜单 ==========
+
+const {isLoggedIn} = useAuth()
+
+interface CardMenuState {
+  item: SearchResultItem
+  x: number
+  y: number
+}
+
+const cardMenu = ref<CardMenuState | null>(null)
+const cardMenuRef = ref<HTMLElement | null>(null)
+
+const cardMenuStyle = computed(() => {
+  const m = cardMenu.value
+  if (!m) return {}
+  const menuH = 180
+  const top = m.y + menuH > window.innerHeight ? m.y - menuH - 8 : m.y
+  return {
+    position: 'fixed' as const,
+    top: `${top}px`,
+    left: `${Math.min(m.x, window.innerWidth - 160)}px`,
+  }
+})
+
+function openCardMenu(item: SearchResultItem, event: MouseEvent) {
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  cardMenu.value = {item, x: rect.left, y: rect.bottom + 4}
+  setTimeout(() => {
+    document.addEventListener('mousedown', handleCardMenuClickOutside)
+    document.addEventListener('touchstart', handleCardMenuClickOutside)
+  }, 0)
+}
+
+function closeCardMenu() {
+  cardMenu.value = null
+  document.removeEventListener('mousedown', handleCardMenuClickOutside)
+  document.removeEventListener('touchstart', handleCardMenuClickOutside)
+}
+
+function handleCardMenuClickOutside(e: Event) {
+  if (cardMenuRef.value?.contains(e.target as Node)) return
+  closeCardMenu()
+}
+
+function handleCardDetail(item: SearchResultItem) {
+  closeCardMenu()
+  void router.push({
+    path: `/album/${item.id}`,
+    query: {title: item.title, coverUrl: item.coverUrl, authors: item.authors.join(',')},
+  })
+}
+
+async function handleCardRead(item: SearchResultItem) {
+  closeCardMenu()
+  try {
+    const photo = await JmcomicService.getPhoto(item.id)
+    await router.push({
+      path: `/album/${item.id}/read/${photo.id}`,
+      query: {title: item.title, total: String(photo.images.length)},
+    })
+  } catch {
+    await showToast('获取章节失败', 'danger')
+  }
+}
+
+async function handleCardDownload(item: SearchResultItem) {
+  closeCardMenu()
+  try {
+    const photo = await JmcomicService.getPhoto(item.id)
+    const taskId = `${item.id}_${photo.id}`
+    const existing = OfflineDownloadService.getAll().find(
+      (t) => t.taskId === taskId && t.status !== 'failed',
+    )
+    if (existing) {
+      await showToast('该章节已在下载队列中', 'medium')
+      return
+    }
+    await JmcomicService.downloadChapter(item.id, photo.id, item.title, photo.title, item.coverUrl)
+    OfflineDownloadService.addTask({
+      taskId,
+      albumId: item.id,
+      chapterId: photo.id,
+      albumTitle: item.title,
+      chapterTitle: photo.title,
+      coverUrl: item.coverUrl,
+      totalPages: 0,
+      downloadedPages: 0,
+      status: 'queued',
+      createdAt: Date.now(),
+    })
+    await showToast('已加入下载队列', 'success')
+  } catch {
+    await showToast('获取章节失败', 'danger')
+  }
+}
+
+function handleCardFavorite(item: SearchResultItem) {
+  closeCardMenu()
+  pickerTargetItem.value = item
+  void openFolderPicker()
+}
+
+// ========== 收藏夹选择弹窗 ==========
+
+const showFolderPicker = ref(false)
+const pickerTargetItem = ref<SearchResultItem | null>(null)
+const pickerOnlineFolders = ref<FolderEntry[]>([])
+const pickerOfflineFolders = ref<FolderEntry[]>([])
+const pickerOnlineFolderCounts = ref<Record<string, number>>({})
+
+async function loadOnlineFolderData() {
+  if (!isLoggedIn.value) {
+    pickerOnlineFolders.value = []
+    return
+  }
+  try {
+    const result: FavoriteResult = await JmcomicService.favorites({folderId: '0', page: 1})
+    if (result.folderList) {
+      const entries: FolderEntry[] = []
+      const countPromises: Promise<void>[] = []
+      const counts: Record<string, number> = {}
+      for (const [id, name] of Object.entries(result.folderList)) {
+        entries.push({id, name, count: 0})
+        countPromises.push(
+          JmcomicService.favorites({folderId: id, page: 1})
+            .then((r) => {
+              counts[id] = r.totalItems
+            })
+            .catch(() => {
+              counts[id] = 0
+            }),
+        )
+      }
+      pickerOnlineFolders.value = entries
+      await Promise.all(countPromises)
+      pickerOnlineFolderCounts.value = counts
+    }
+  } catch {
+    pickerOnlineFolders.value = []
+  }
+}
+
+async function openFolderPicker() {
+  await OfflineFavoriteService.ensureInit()
+  pickerOfflineFolders.value = OfflineFavoriteService.getFolders()
+  void loadOnlineFolderData()
+  showFolderPicker.value = true
+}
+
+async function onPickerSelect(payload: { folderId: string; source: 'online' | 'offline' }) {
+  showFolderPicker.value = false
+  const item = pickerTargetItem.value
+  pickerTargetItem.value = null
+  if (!item) return
+  void executeFavorite(item, payload)
+}
+
+async function executeFavorite(
+  item: SearchResultItem,
+  payload: { folderId: string; source: 'online' | 'offline' },
+) {
+  try {
+    if (payload.source === 'online') {
+      const album = await JmcomicService.getAlbum(item.id)
+      if (album.isFavorite) {
+        showToast('该本子已在收藏夹中', 'medium')
+        return
+      }
+      await JmcomicService.toggleAlbumFavorite(item.id, payload.folderId)
+      showToast('已收藏到在线收藏夹', 'success')
+    } else {
+      await OfflineFavoriteService.addItem(payload.folderId, item)
+      showToast('已收藏到离线收藏夹', 'success')
+    }
+  } catch (e: any) {
+    showToast(sanitizeError(e, '收藏失败'), 'danger')
+  }
+}
+
+async function onPickerAddFolder() {
+  const alert = await alertController.create({
+    header: '新建收藏夹',
+    inputs: [{name: 'name', type: 'text', placeholder: '收藏夹名称'}],
+    buttons: [
+      {text: '取消', role: 'cancel'},
+      {
+        text: '确定',
+        handler: async (data) => {
+          const name = data?.name?.trim()
+          if (!name) return
+
+          if (isLoggedIn.value) {
+            try {
+              const r = await JmcomicService.manageFavoriteFolder('add', '0', name, '')
+              if (r.status === 'ok') {
+                await showToast('收藏夹已创建', 'success')
+                await loadOnlineFolderData()
+              } else {
+                await showToast(r.msg || '创建失败', 'danger')
+              }
+            } catch {
+              await showToast('创建失败', 'danger')
+            }
+          } else {
+            await OfflineFavoriteService.createFolder(name)
+            pickerOfflineFolders.value = OfflineFavoriteService.getFolders()
+            await showToast('收藏夹已创建', 'success')
+          }
+        },
+      },
+    ],
+  })
+  await alert.present()
+}
+
+onBeforeUnmount(() => {
+  document.removeEventListener('mousedown', handleCardMenuClickOutside)
+  document.removeEventListener('touchstart', handleCardMenuClickOutside)
+})
+
 const clearResult = () => {
   resultMeta.value = null
   pageCache.value = {}
@@ -455,5 +736,71 @@ onMounted(() => {
 .category-overlay-leave-to .category-overlay-panel {
   opacity: 0;
   transform: translateY(-14px);
+}
+
+/* ---- 卡片更多操作按钮 ---- */
+
+:deep(.card-more-btn) {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #8a6048;
+  font-size: 18px;
+  cursor: pointer;
+  z-index: 2;
+}
+
+:deep(.card-more-btn.active) {
+  background: rgb(250 156 105 / 0.15);
+  color: #c96d3a;
+}
+
+/* ---- 上下文菜单 ---- */
+
+.card-context-menu {
+  display: flex;
+  flex-direction: column;
+  min-width: 140px;
+  padding: 6px;
+  border-radius: 14px;
+  background: #fffaf6;
+  box-shadow: 0 12px 36px rgb(76 42 24 / 0.22);
+  z-index: 50;
+  overflow: hidden;
+}
+
+.card-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 42px;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #3a261d;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+}
+
+.card-menu-item:active {
+  background: #fff0e7;
+}
+
+.card-menu-icon {
+  flex-shrink: 0;
+  font-size: 17px;
+  color: #8a6048;
 }
 </style>

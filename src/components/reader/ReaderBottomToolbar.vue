@@ -41,7 +41,12 @@ const onRangeChange = (ev: RangeCustomEvent) => {
   emit('update:current', page)
 }
 
+let lastInputTime = 0
+
 const onRangeInput = (ev: RangeCustomEvent) => {
+  const now = performance.now()
+  if (now - lastInputTime < 100) return
+  lastInputTime = now
   const page = Number(ev.detail.value)
   emit('update:current-input', page)
 }

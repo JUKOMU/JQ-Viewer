@@ -63,7 +63,9 @@ router.beforeEach((to, from) => {
 const transitionName = computed(() => (isBack.value ? 'page-slide-back' : 'page-slide-forward'))
 
 const onAfterEnter = (el: Element) => {
-  ;(el as HTMLElement).style.transform = ''
+  const ht = el as HTMLElement
+  ht.style.removeProperty('transform')
+  ht.style.removeProperty('opacity')
 }
 
 const keepAliveNames = computed(() =>

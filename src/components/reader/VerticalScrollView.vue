@@ -194,7 +194,15 @@ function onTM(ev: TouchEvent) {
 }
 
 function onTE(ev: TouchEvent) {
-  if (ev.touches.length > 0) return
+  if (ev.touches.length > 0) {
+    if (fingers0 >= 2 && zoomScale.value > 1) {
+      startX = ev.touches[0].clientX
+      startY = ev.touches[0].clientY
+      startTx = zoomTx.value
+      startTy = zoomTy.value
+    }
+    return
+  }
 
   if (fingers0 >= 2) {
     if (zoomScale.value < 1.05) resetZoom()
@@ -283,13 +291,19 @@ function findCurrentIndex(st: number): number {
 let scrollRafId: number | null = null
 function onScroll() {
   if (!containerRef.value || isAdjusting || zoomScale.value > 1) return
-  scrollTop.value = containerRef.value.scrollTop
   if (scrollRafId !== null) return
   scrollRafId = requestAnimationFrame(() => {
     scrollRafId = null
+    const st = containerRef.value?.scrollTop ?? 0
+    scrollTop.value = st
     recalcImagePositions()
-    const idx = findCurrentIndex(scrollTop.value)
-    if (idx !== lastEmitIndex.value) { lastEmitIndex.value = idx; emit('update:currentIndex', idx) }
+    const idx = findCurrentIndex(st)
+    if (idx !== lastEmitIndex.value) {
+      lastEmitIndex.value = idx
+      trackedIdx = idx
+      trackedTop = imageTops.value[idx] ?? trackedTop
+      emit('update:currentIndex', idx)
+    }
   })
 }
 
@@ -335,6 +349,7 @@ function scrollToIndex(index: number) {
   if (index < 0 || index >= imageEls.value.length) return
   const el = imageEls.value[index]
   if (!el || !containerRef.value) return
+  resetZoom()
   trackedIdx = index; lastEmitIndex.value = index
   el.scrollIntoView({block: 'start', behavior: 'instant'})
   trackedTop = containerRef.value.scrollTop

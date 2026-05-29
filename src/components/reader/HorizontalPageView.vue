@@ -221,7 +221,15 @@ function onTouchMove(ev: TouchEvent) {
 }
 
 function onTouchEnd(ev: TouchEvent) {
-  if (ev.touches.length > 0) return
+  if (ev.touches.length > 0) {
+    if (fingers >= 2 && zoomScale.value > 1) {
+      startX = ev.touches[0].clientX
+      startY = ev.touches[0].clientY
+      startTx = zoomTx.value
+      startTy = zoomTy.value
+    }
+    return
+  }
 
   if (fingers >= 2) {
     if (zoomScale.value < 1.05) resetZoom()

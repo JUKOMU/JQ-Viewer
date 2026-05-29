@@ -334,6 +334,7 @@ const onPageChange = (index: number) => {
 }
 
 const onProgressDrag = (page1Based: number) => {
+  if (!isDragProgress.value) return
   const index = page1Based - 1
   if (index < 0 || index >= totalCount.value) return
   currentIndex.value = index
@@ -355,6 +356,7 @@ let lastUpdateWindowTime = 0
 const UPDATE_WINDOW_THROTTLE_MS = 150
 
 const onProgressInput = (page1Based: number) => {
+  if (!isDragProgress.value) return
   const index = page1Based - 1
   if (index < 0 || index >= totalCount.value) return
   currentIndex.value = index

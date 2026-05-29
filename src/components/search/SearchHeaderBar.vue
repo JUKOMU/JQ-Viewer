@@ -18,7 +18,7 @@
       </div>
       <SearchHistoryDropdown
         :visible="showHistory"
-        :items="HistoryService.getSearchHistory('search-page')"
+        :items="HistoryService.getSearchHistory('keyword-search')"
         :filter-text="draft.keyword"
         @select="onHistorySelect"
         @clear="onHistoryClear"
@@ -123,7 +123,7 @@ const focusInput = async () => {
 
 const submit = () => {
   const kw = (draft.keyword ?? '').trim()
-  if (kw) HistoryService.addSearchHistory('search-page', kw)
+  if (kw) HistoryService.addSearchHistory('keyword-search', kw)
   emit('search', {...draft, page: 1})
 }
 
@@ -163,7 +163,7 @@ const onHistorySelect = (item: SearchHistoryItem) => {
 }
 
 const onHistoryClear = () => {
-  HistoryService.clearSearchHistory('search-page')
+  HistoryService.clearSearchHistory('keyword-search')
   showHistory.value = false
 }
 

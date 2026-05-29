@@ -59,6 +59,18 @@ ion-alert {
   --border-radius: 16px;
   --backdrop-opacity: 0.55;
   --max-width: 320px;
+  --border-width: 0;
+  --border-style: none;
+  --border-color: transparent;
+}
+
+ion-alert .alert-wrapper {
+  border: none;
+  box-shadow: 0 8px 28px rgba(76, 42, 24, 0.18);
+}
+
+ion-alert .alert-head {
+  border-bottom: 1px solid #f0e4da;
 }
 
 ion-alert .alert-title {
@@ -69,6 +81,19 @@ ion-alert .alert-title {
 ion-alert .alert-message {
   white-space: pre-line;
   color: #6b4e3e;
+}
+
+ion-alert .alert-button-group {
+  border-top: 1px solid #f0e4da;
+}
+
+ion-alert .alert-button {
+  color: #e8843c;
+  font-weight: 500;
+}
+
+ion-alert .alert-button.alert-button-role-cancel {
+  color: #8c6b5a;
 }
 
 /* Toast 提示 — 匹配上下文菜单风格 */

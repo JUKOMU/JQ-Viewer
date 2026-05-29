@@ -1,11 +1,19 @@
 # JQViewer
 
-基于 Capacitor 的混合应用漫画阅读器。Vue 3 + Ionic 前端与 Java 原生后端相结合，提供流畅的本地漫画管理和阅读体验。
+基于 JMComic-Api-Java 的 Android 漫画阅读器。
 
 ![Vue](https://img.shields.io/badge/Vue-3-4FC08D?logo=vuedotjs)
 ![Ionic](https://img.shields.io/badge/Ionic-8-3880FF?logo=ionic)
 ![Java](https://img.shields.io/badge/Java-11+-007396?logo=java)
 ![License](https://img.shields.io/badge/License-MIT-blue)
+<div></div>
+<a href="https://github.com/JUKOMU/JMComic-Api-Java">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://github-readme-stats.vercel.app/api/pin/?username=JUKOMU&repo=JMComic-Api-Java&theme=radical" />
+    <source media="(prefers-color-scheme: light)" srcset="https://github-readme-stats.vercel.app/api/pin/?username=JUKOMU&repo=JMComic-Api-Java" />
+    <img alt="Repo Card" src="https://github-readme-stats.vercel.app/api/pin/?username=JUKOMU&repo=JMComic-Api-Java" />
+  </picture>
+</a>
 
 ## 应用截图
 

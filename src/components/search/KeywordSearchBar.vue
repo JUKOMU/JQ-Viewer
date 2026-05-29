@@ -186,8 +186,9 @@ const emitSearch = () => {
 
   if (mode.value === 'batch-mode') {
     if (originalKeyword) {
-      sessionStorage.setItem('batch-parse-text', originalKeyword)
-      router.push({path: '/batch-parse'})
+      const bpKey = `bp-${Date.now()}`
+      sessionStorage.setItem(`batch-parse-text:${bpKey}`, originalKeyword)
+      router.push({path: '/batch-parse', query: {key: bpKey}})
     }
     return
   }

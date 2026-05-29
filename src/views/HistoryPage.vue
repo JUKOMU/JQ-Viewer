@@ -276,8 +276,9 @@ function openAlbum(item: BrowseHistoryItem) {
 
 function openParseItem(item: ParseHistoryItem) {
   if (item.mode === 'batch-mode') {
-    sessionStorage.setItem('batch-parse-text', item.text)
-    void router.push({path: '/batch-parse'})
+    const key = `bp-${Date.now()}`
+    sessionStorage.setItem(`batch-parse-text:${key}`, item.text)
+    void router.push({path: '/batch-parse', query: {key}})
   } else {
     const digits = item.text.replace(/\D/g, '')
     void router.push({path: '/search', query: {keyword: digits}})

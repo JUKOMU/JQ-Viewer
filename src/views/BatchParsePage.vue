@@ -175,7 +175,7 @@
 
 <script setup lang="ts">
 import {computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch,} from 'vue'
-import {useRouter} from 'vue-router'
+import {useRoute, useRouter} from 'vue-router'
 import {alertController, IonContent, IonHeader, IonIcon, IonPage, IonSpinner, IonToolbar,} from '@ionic/vue'
 import {
   bookmarkOutline,
@@ -205,7 +205,7 @@ import {parseIdsFromText} from '@/utils/batchParse'
 
 defineOptions({name: 'BatchParsePage'})
 
-const SESSION_KEY = 'batch-parse-text'
+const STORAGE_PREFIX = 'batch-parse-text:'
 
 interface LineSegment {
   text: string
@@ -218,12 +218,15 @@ interface SourceLine {
 }
 
 const router = useRouter()
+const route = useRoute()
+const routeKey = computed(() => route.query.key as string)
 const {isLoggedIn} = useAuth()
 const contentRef = ref<InstanceType<typeof IonContent> | null>(null)
 const resultContainerRef = ref<InstanceType<typeof SearchResultContainer> | null>(null)
 const sourceScrollRef = ref<HTMLElement | null>(null)
 const scrollElementRef = ref<HTMLElement | null>(null)
 const savedScrollTop = ref(0)
+const savedKey = ref<string>('')
 
 const originalText = ref('')
 const sourceExpanded = ref(true)
@@ -270,6 +273,10 @@ function removeSpaces() {
 async function applyEdit() {
   originalText.value = editText.value
   editing.value = false
+  const key = routeKey.value
+  if (key) {
+    sessionStorage.setItem(STORAGE_PREFIX + key, editText.value)
+  }
   await doParse()
 }
 
@@ -457,28 +464,48 @@ async function resolveScrollElement() {
 
 onDeactivated(() => {
   savedScrollTop.value = scrollElementRef.value?.scrollTop ?? 0
-})
-
-onActivated(async () => {
-  await nextTick()
-  const scrollEl = scrollElementRef.value ?? (await resolveScrollElement())
-  if (scrollEl && savedScrollTop.value > 0) {
-    scrollEl.scrollTop = savedScrollTop.value
-  }
+  scrollElementRef.value = null
 })
 
 onMounted(async () => {
   void resolveScrollElement()
-  const text = sessionStorage.getItem(SESSION_KEY)
+  const key = routeKey.value
+  const text = key ? sessionStorage.getItem(STORAGE_PREFIX + key) : null
+  const fallback = text || sessionStorage.getItem('batch-parse-text')
 
-  if (!text || !text.trim()) {
+  if (!fallback || !fallback.trim()) {
     errorMessage.value = '未接收到解析文本'
     loading.value = false
     return
   }
 
-  originalText.value = text
+  savedKey.value = key || ''
+  originalText.value = fallback
   await doParse()
+})
+
+onActivated(async () => {
+  await nextTick()
+
+  const currentKey = routeKey.value
+  if (currentKey && currentKey !== savedKey.value) {
+    const text = sessionStorage.getItem(STORAGE_PREFIX + currentKey)
+    if (text && text.trim()) {
+      savedKey.value = currentKey
+      savedScrollTop.value = 0
+      originalText.value = text
+      editing.value = false
+      await doParse()
+      const scrollEl = scrollElementRef.value ?? (await resolveScrollElement())
+      if (scrollEl) scrollEl.scrollTop = 0
+      return
+    }
+  }
+
+  const scrollEl = scrollElementRef.value ?? (await resolveScrollElement())
+  if (scrollEl && savedScrollTop.value > 0) {
+    scrollEl.scrollTop = savedScrollTop.value
+  }
 })
 
 // ---- 双向联动 ----

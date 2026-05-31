@@ -7,6 +7,7 @@ import type {
   BrowseHistoryItem,
   CacheCapacityInfo,
   CommentList,
+  CompletedEntry,
   DomainStates,
   DownloadProgressEvent,
   DownloadTasksResult,
@@ -14,12 +15,17 @@ import type {
   FavoriteResult,
   ForumQuery,
   ImageInfo,
+  ImportedPdf,
+  ImportedPdfsResult,
+  ImportPdfItem,
+  ImportPdfsResult,
   LatencyResult,
   NetworkProbeEvent,
   OfflineFavoritesResult,
   OfflineFolderInfo,
   ParseHistoryItem,
   PdfExportTask,
+  PdfScanItem,
   PhotoDetail,
   PreloadResult,
   RelocationProgress,
@@ -241,6 +247,13 @@ interface JmcomicPlugin {
   getExternalStoragePath(): Promise<{ path: string }>
   checkNotificationPermission(): Promise<{ granted: boolean }>
   requestNotificationPermission(): Promise<{ granted: boolean }>
+
+  // PDF 导入
+  scanPdfFiles(options: { path: string }): Promise<{ files: PdfScanItem[] }>
+  importPdfs(options: { items: ImportPdfItem[] }): Promise<ImportPdfsResult>
+  getImportedPdfs(): Promise<ImportedPdfsResult>
+  deleteImportedPdf(options: { id: number }): Promise<{ success: boolean }>
+  openPdf(options: { filePath: string }): Promise<{ success: boolean }>
 
   // 阅读器设置
   setReaderDisplayMode(options: { mode: string }): Promise<{ success: boolean }>
@@ -621,6 +634,28 @@ export const JmcomicService = {
 
   pickFolder() {
     return native.pickFolder()
+  },
+
+  // ========== PDF 导入 ==========
+
+  scanPdfFiles(path: string) {
+    return native.scanPdfFiles({ path })
+  },
+
+  importPdfs(items: ImportPdfItem[]) {
+    return native.importPdfs({ items })
+  },
+
+  getImportedPdfs() {
+    return native.getImportedPdfs()
+  },
+
+  deleteImportedPdf(id: number) {
+    return native.deleteImportedPdf({ id })
+  },
+
+  openPdf(filePath: string) {
+    return native.openPdf({ filePath })
   },
 
   checkFilesExist(paths: string[]) {

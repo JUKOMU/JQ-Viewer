@@ -85,6 +85,12 @@ const routes: Array<RouteRecordRaw> = [
     component: () => import('@/views/BatchParsePage.vue'),
     meta: {menu: true, keepAlive: true},
   },
+  {
+    path: '/import-review',
+    name: 'ImportReviewPage',
+    component: () => import('@/views/ImportReviewPage.vue'),
+    meta: {menu: false, keepAlive: false},
+  },
 ]
 
 const router = createRouter({

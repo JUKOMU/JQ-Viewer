@@ -7,11 +7,13 @@ import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.net.ConnectivityManager;
 import android.net.Network;
+import android.net.Uri;
 import android.os.Build;
 import android.provider.MediaStore;
 import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
+import androidx.core.content.FileProvider;
 import com.getcapacitor.*;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.google.mlkit.vision.common.InputImage;
@@ -35,6 +37,7 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -127,6 +130,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         // 初始化历史记录数据库
         HistoryStore.getInstance(ctx);
         FavoriteStore.getInstance(ctx);
+        PdfImportStore.getInstance(ctx);
 
         // 清理僵尸任务的部分下载文件（validateOnStartup 标记前）
         List<JSONObject> zombieTasks = downloadDb.getAllTasks();
@@ -2087,6 +2091,125 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
     }
 
     // ========== PDF 导出 ==========
+
+    // ========== PDF 导入 ==========
+
+    @PluginMethod
+    public void scanPdfFiles(PluginCall call) {
+        String path = call.getString("path");
+        if (path == null || path.isEmpty()) {
+            call.reject("path is required");
+            return;
+        }
+        File dir = new File(path);
+        if (!dir.isDirectory()) {
+            call.reject("Not a directory: " + path);
+            return;
+        }
+        File[] pdfFiles = dir.listFiles((d, name) ->
+            name.toLowerCase().endsWith(".pdf"));
+        JSArray arr = new JSArray();
+        if (pdfFiles != null) {
+            for (File f : pdfFiles) {
+                JSObject obj = new JSObject();
+                obj.put("fileName", f.getName());
+                obj.put("filePath", f.getAbsolutePath());
+                arr.put(obj);
+            }
+        }
+        JSObject ret = new JSObject();
+        ret.put("files", arr);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void importPdfs(PluginCall call) {
+        JSArray items = call.getArray("items");
+        if (items == null || items.length() == 0) {
+            call.reject("items is required and must not be empty");
+            return;
+        }
+        PdfImportStore store = PdfImportStore.getInstance(getContext());
+        int imported = 0;
+        int skipped = 0;
+        for (int i = 0; i < items.length(); i++) {
+            try {
+                JSONObject item = items.getJSONObject(i);
+                long id = store.insertPdf(
+                    item.getString("filePath"),
+                    item.getString("fileName"),
+                    item.getString("albumId"),
+                    item.optString("albumTitle", ""),
+                    item.optString("coverUrl", ""),
+                    item.optString("authors", ""),
+                    item.optInt("chapterSortOrder", 0),
+                    System.currentTimeMillis(),
+                    item.optString("folderId", null)
+                );
+                if (id != -1) imported++;
+                else skipped++;
+            } catch (Exception e) {
+                skipped++;
+                Log.w(TAG, "跳过无效的 PDF 导入项", e);
+            }
+        }
+        JSObject ret = new JSObject();
+        ret.put("imported", imported);
+        ret.put("skipped", skipped);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void getImportedPdfs(PluginCall call) {
+        PdfImportStore store = PdfImportStore.getInstance(getContext());
+        JSONArray pdfs = store.getAllPdfs();
+        JSObject ret = new JSObject();
+        ret.put("pdfs", pdfs);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void deleteImportedPdf(PluginCall call) {
+        int id = call.getInt("id", -1);
+        if (id < 0) {
+            call.reject("id is required");
+            return;
+        }
+        boolean ok = PdfImportStore.getInstance(getContext()).deletePdf(id);
+        JSObject ret = new JSObject();
+        ret.put("success", ok);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void openPdf(PluginCall call) {
+        String filePath = call.getString("filePath");
+        if (filePath == null || filePath.isEmpty()) {
+            call.reject("filePath is required");
+            return;
+        }
+        File file = new File(filePath);
+        if (!file.exists()) {
+            call.reject("File not found: " + filePath);
+            return;
+        }
+        try {
+            Uri uri = FileProvider.getUriForFile(
+                getContext(),
+                getContext().getPackageName() + ".fileprovider",
+                file);
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            intent.setDataAndType(uri, "application/pdf");
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(intent);
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject("无法打开 PDF: " + e.getMessage());
+        }
+    }
 
     @PluginMethod
     public void exportPdfBatch(PluginCall call) {

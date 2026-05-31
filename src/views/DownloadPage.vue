@@ -7,6 +7,9 @@
         </div>
         <div class="toolbar-title">下载管理</div>
         <div class="toolbar-end">
+          <button class="import-btn" @click="onImportPdf">
+            <IonIcon :icon="cloudUploadOutline"/>
+          </button>
           <button v-if="hasTasks" class="sort-btn" @click="toggleSort">
             <IonIcon :icon="sortIcon"/>
           </button>
@@ -101,7 +104,7 @@
         <div class="popover-header">{{ popoverTitle }}</div>
 
         <button
-          v-if="selectedTask?.status === 'completed'"
+          v-if="selectedStatus === 'completed'"
           class="popover-btn"
           @click="popoverAction('read')"
         >
@@ -115,7 +118,7 @@
         </button>
 
         <button
-          v-if="selectedTask?.status === 'completed'"
+          v-if="selectedStatus === 'completed' && !isSelectedPdf"
           class="popover-btn"
           @click="popoverAction('pdf')"
         >
@@ -124,16 +127,16 @@
         </button>
 
         <button
-          v-if="selectedTask?.status === 'failed'"
+          v-if="selectedStatus === 'failed'"
           class="popover-btn"
           @click="popoverAction('retry')"
         >
           <IonIcon :icon="refreshOutline"/>
-          {{ selectedTask?.error?.includes('张图片下载失败') ? '重新下载失败图片' : '重试' }}
+          {{ selectedError?.includes('张图片下载失败') ? '重新下载失败图片' : '重试' }}
         </button>
 
         <button
-          v-if="selectedTask?.status === 'paused'"
+          v-if="selectedStatus === 'paused'"
           class="popover-btn"
           @click="popoverAction('resume')"
         >
@@ -142,7 +145,7 @@
         </button>
 
         <button
-          v-if="selectedTask?.status === 'downloading'"
+          v-if="selectedStatus === 'downloading'"
           class="popover-btn"
           @click="popoverAction('pause')"
         >
@@ -151,7 +154,7 @@
         </button>
 
         <button
-          v-if="cancelableStatuses.includes(selectedTask?.status ?? '')"
+          v-if="cancelableStatuses.includes(selectedStatus ?? '')"
           class="popover-btn danger"
           @click="popoverAction('cancel')"
         >
@@ -160,7 +163,7 @@
         </button>
 
         <button
-          v-if="deletableStatuses.includes(selectedTask?.status ?? '')"
+          v-if="deletableStatuses.includes(selectedStatus ?? '') || isSelectedPdf"
           class="popover-btn danger"
           @click="popoverAction('delete')"
         >
@@ -224,6 +227,7 @@ import {
   bookOutline,
   closeCircleOutline,
   cloudDownloadOutline,
+  cloudUploadOutline,
   documentLockOutline,
   informationCircleOutline,
   pauseOutline,
@@ -242,15 +246,26 @@ import {JmcomicService, sanitizeError, showToast} from '@/services/JmcomicServic
 import {alertController} from '@ionic/vue'
 import {OfflineDownloadService} from '@/services/OfflineDownloadService'
 import {PdfExportService} from '@/services/PdfExportService'
-import type {CompletedGroup, DownloadTask, PdfExportTask} from '@/services/JmcomicTypes'
+import type {CompletedEntry, CompletedGroup, DownloadTask, ImportedPdf, PdfExportTask} from '@/services/JmcomicTypes'
+import {PdfImportService} from '@/services/PdfImportService'
 
 const router = useRouter()
 const tasks = ref<DownloadTask[]>([])
+const importedPdfs = ref<ImportedPdf[]>([])
 const spaceUsedMb = ref(0)
 const spaceAvailMb = ref(0)
 const hasStorageInfo = ref(false)
 let downloadProgressHandle: PluginListenerHandle | null = null
 let syncPromise: Promise<void> | null = null
+
+const loadImportedPdfs = async () => {
+  try {
+    const result = await JmcomicService.getImportedPdfs()
+    importedPdfs.value = result.pdfs
+  } catch {
+    // 离线时保留缓存数据
+  }
+}
 
 // 排序
 type SortMode = 'time' | 'title'
@@ -269,13 +284,32 @@ const sortTasks = (list: DownloadTask[]) => {
 }
 
 // 操作菜单
-const selectedTask = ref<DownloadTask | null>(null)
+const selectedTask = ref<DownloadTask | CompletedEntry | null>(null)
 const selectedGroup = ref<CompletedGroup | null>(null)
 const isPopoverOpen = ref(false)
 const popoverEvent = ref<Event | null>(null)
 
 const cancelableStatuses = ['queued', 'downloading', 'paused']
 const deletableStatuses = ['completed', 'failed']
+
+const isSelectedPdf = computed(() => {
+  const t = selectedTask.value
+  if (!t) return false
+  return ('source' in t) && t.source === 'pdf-import'
+})
+
+const selectedStatus = computed(() => {
+  const t = selectedTask.value
+  if (!t) return null
+  if ('source' in t) return 'completed'
+  return t.status
+})
+
+const selectedError = computed(() => {
+  const t = selectedTask.value
+  if (!t || 'source' in t) return undefined
+  return t.error
+})
 
 // PDF导出
 const showPdfSheet = ref(false)
@@ -309,7 +343,9 @@ const popoverAction = (action: string) => {
 
   switch (action) {
     case 'read':
-      if (selectedGroup.value?.type === 'multi') {
+      if (isSelectedPdf.value) {
+        onRead(t)
+      } else if (selectedGroup.value?.type === 'multi') {
         onOpenChapterSelect(selectedGroup.value)
       } else {
         onRead(t)
@@ -319,22 +355,26 @@ const popoverAction = (action: string) => {
       onGoToAlbumDetail(t)
       break
     case 'retry':
-      onRetry(t)
+      onRetry(t as DownloadTask)
       break
     case 'resume':
-      onResume(t)
+      onResume(t as DownloadTask)
       break
     case 'pause':
-      onPause(t)
+      onPause(t as DownloadTask)
       break
     case 'cancel':
-      onCancel(t)
+      onCancel(t as DownloadTask)
       break
     case 'pdf':
       onOpenPdfSheet()
       break
     case 'delete':
-      requestDeleteConfirm()
+      if (isSelectedPdf.value) {
+        requestDeletePdfConfirm()
+      } else {
+        requestDeleteConfirm()
+      }
       break
   }
 }
@@ -349,6 +389,9 @@ const deleteAlertMessage = computed(() => {
   }
   const t = selectedTask.value
   if (!t) return ''
+  if ('source' in t && t.source === 'pdf-import') {
+    return `将删除「${t.chapterTitle}」的导入记录（不会删除原 PDF 文件），此操作不可恢复。`
+  }
   return `将删除「${t.chapterTitle}」的下载文件和记录，此操作不可恢复。`
 })
 
@@ -356,19 +399,44 @@ const requestDeleteConfirm = () => {
   isDeleteAlertOpen.value = true
 }
 
+const requestDeletePdfConfirm = () => {
+  isDeleteAlertOpen.value = true
+}
+
 const confirmDelete = () => {
+  if (isSelectedPdf.value) {
+    void confirmDeletePdf()
+    return
+  }
   const g = selectedGroup.value
   if (g?.type === 'multi') {
     onDeleteGroup(g)
   } else if (selectedTask.value) {
-    onDelete(selectedTask.value)
+    onDelete(selectedTask.value as DownloadTask)
   }
   selectedTask.value = null
   selectedGroup.value = null
   popoverEvent.value = null
 }
 
-const hasTasks = computed(() => tasks.value.length > 0)
+const confirmDeletePdf = async () => {
+  const t = selectedTask.value
+  if (!t || !('source' in t) || !t.pdfData) return
+  try {
+    await JmcomicService.deleteImportedPdf(t.pdfData.id)
+    importedPdfs.value = importedPdfs.value.filter(
+      (p) => p.id !== t.pdfData!.id,
+    )
+    selectedTask.value = null
+    selectedGroup.value = null
+    popoverEvent.value = null
+    await showToast('已删除导入记录', 'success')
+  } catch (e: any) {
+    await showToast(sanitizeError(e, '删除失败'), 'danger')
+  }
+}
+
+const hasTasks = computed(() => tasks.value.length > 0 || importedPdfs.value.length > 0)
 
 const activeTasks = computed(() =>
   tasks.value.filter(
@@ -383,9 +451,45 @@ const failedTasks = computed(() => tasks.value.filter((t) => t.status === 'faile
 const sortedActiveTasks = computed(() => sortTasks(activeTasks.value))
 const sortedFailedTasks = computed(() => sortTasks(failedTasks.value))
 
+// 将下载任务和导入 PDF 映射为统一的 CompletedEntry
+const mapDownloadTaskToEntry = (t: DownloadTask): CompletedEntry => ({
+  albumId: t.albumId,
+  albumTitle: t.albumTitle,
+  coverUrl: t.coverUrl,
+  chapterId: t.chapterId,
+  chapterTitle: t.chapterTitle,
+  chapterSortOrder: t.chapterSortOrder ?? 0,
+  authors: '',
+  createdAt: t.createdAt,
+  completedAt: t.completedAt ?? t.createdAt,
+  totalSize: t.totalSize ?? 0,
+  source: 'download',
+  downloadTask: t,
+})
+
+const mapImportedPdfToEntry = (pdf: ImportedPdf): CompletedEntry => ({
+  albumId: pdf.albumId,
+  albumTitle: pdf.albumTitle,
+  coverUrl: pdf.coverUrl,
+  chapterId: `import_pdf_${pdf.id}`,
+  chapterTitle: pdf.fileName,
+  chapterSortOrder: pdf.chapterSortOrder,
+  authors: pdf.authors,
+  createdAt: pdf.createdAt,
+  completedAt: pdf.createdAt,
+  totalSize: 0,
+  source: 'pdf-import',
+  pdfData: pdf,
+})
+
+const completedEntries = computed<CompletedEntry[]>(() => [
+  ...completedTasks.value.map(mapDownloadTaskToEntry),
+  ...importedPdfs.value.map(mapImportedPdfToEntry),
+])
+
 const completedGroups = computed<CompletedGroup[]>(() => {
-  const byAlbum = new Map<string, DownloadTask[]>()
-  for (const t of completedTasks.value) {
+  const byAlbum = new Map<string, CompletedEntry[]>()
+  for (const t of completedEntries.value) {
     const list = byAlbum.get(t.albumId)
     if (list) {
       list.push(t)
@@ -444,6 +548,8 @@ const onRefresh = async (event: CustomEvent) => {
 }
 
 onMounted(async () => {
+  void loadImportedPdfs()
+
   JmcomicService.addDownloadProgressListener((data) => {
     const task = tasks.value.find((t) => t.taskId === data.taskId)
     if (!task) {
@@ -507,6 +613,7 @@ onMounted(async () => {
 
 onIonViewWillEnter(() => {
   void syncDownloadState()
+  void loadImportedPdfs()
 })
 
 onUnmounted(() => {
@@ -518,8 +625,10 @@ const onOpenPdfSheet = () => {
   const g = selectedGroup.value
   if (g?.type === 'multi') {
     chaptersForPdf.value = g.chapters
-  } else if (selectedTask.value) {
-    chaptersForPdf.value = [selectedTask.value]
+      .filter((c) => c.source === 'download')
+      .map((c) => c.downloadTask!)
+  } else if (selectedTask.value && !('source' in selectedTask.value)) {
+    chaptersForPdf.value = [selectedTask.value as DownloadTask]
   }
   showPdfSheet.value = true
 }
@@ -675,18 +784,36 @@ const onRetry = async (task: DownloadTask) => {
   }
 }
 
-const onRead = (task: DownloadTask) => {
+const onRead = (entry: CompletedEntry | DownloadTask) => {
+  if ('source' in entry && entry.source === 'pdf-import') {
+    const pdf = entry.pdfData || (entry as CompletedEntry).pdfData
+    if (pdf?.filePath) {
+      void JmcomicService.openPdf(pdf.filePath).catch((e: any) => {
+        void showToast(sanitizeError(e, '无法打开 PDF'), 'danger')
+      })
+    }
+    return
+  }
+  const dt = 'downloadTask' in entry && entry.downloadTask
+    ? entry.downloadTask
+    : entry as DownloadTask
   void router.push({
-    path: `/album/${task.albumId}/read/${task.chapterId}`,
+    path: `/album/${dt.albumId}/read/${dt.chapterId}`,
     query: {
-      title: task.chapterTitle,
-      total: String(task.totalPages),
+      title: dt.chapterTitle,
+      total: String(dt.totalPages),
       source: 'download',
     },
   })
 }
 
 const onReadGroup = (group: CompletedGroup) => {
+  const firstChapter = group.chapters[0]
+  if (firstChapter.source === 'pdf-import' && group.type === 'multi') {
+    // PDF 多章节：打开第一个（后续可改为章节选择）
+    onRead(firstChapter)
+    return
+  }
   if (group.type === 'multi') {
     onOpenChapterSelect(group)
   } else {
@@ -698,8 +825,21 @@ const onOpenChapterSelect = (group: CompletedGroup) => {
   void router.push(`/album/${group.albumId}/download-chapters`)
 }
 
-const onGoToAlbumDetail = (task: DownloadTask) => {
-  void router.push(`/album/${task.albumId}`)
+const onGoToAlbumDetail = (entry: CompletedEntry | DownloadTask) => {
+  void router.push(`/album/${entry.albumId}`)
+}
+
+// ========== PDF 导入入口 ==========
+
+const onImportPdf = async () => {
+  try {
+    const result = await JmcomicService.pickFolder()
+    if (result.cancelled || !result.path) return
+    await PdfImportService.scanAndParse(result.path)
+    router.push('/import-review')
+  } catch (e: any) {
+    await showToast(sanitizeError(e, '无法打开文件夹选择器'), 'danger')
+  }
 }
 
 const onDelete = async (task: DownloadTask) => {
@@ -715,17 +855,32 @@ const onDelete = async (task: DownloadTask) => {
 
 const onDeleteGroup = async (group: CompletedGroup) => {
   try {
+    const downloadChapters = group.chapters.filter((ch) => ch.source === 'download')
+    const pdfChapters = group.chapters.filter((ch) => ch.source === 'pdf-import')
+
+    // 删除下载章节
     await Promise.all(
-      group.chapters.map((ch) =>
+      downloadChapters.map((ch) =>
         JmcomicService.deleteDownloaded(ch.albumId, ch.chapterId).catch(() => {
         }),
       ),
     )
-    const taskIds = new Set(group.chapters.map((ch) => ch.taskId))
+    const taskIds = new Set(downloadChapters.map((ch) => ch.downloadTask!.taskId))
     tasks.value = tasks.value.filter((t) => !taskIds.has(t.taskId))
-    for (const ch of group.chapters) {
-      OfflineDownloadService.removeTask(ch.taskId)
+    for (const ch of downloadChapters) {
+      OfflineDownloadService.removeTask(ch.downloadTask!.taskId)
     }
+
+    // 删除导入 PDF 记录
+    for (const ch of pdfChapters) {
+      if (ch.pdfData) {
+        await JmcomicService.deleteImportedPdf(ch.pdfData.id).catch(() => {})
+      }
+    }
+    importedPdfs.value = importedPdfs.value.filter(
+      (p) => !pdfChapters.some((ch) => ch.pdfData?.id === p.id),
+    )
+
     void syncDownloadState()
   } catch (e: any) {
     await showToast(sanitizeError(e, '删除失败'), 'danger')
@@ -799,6 +954,21 @@ const clearFailed = async () => {
   position: absolute;
   right: 12px;
   bottom: 6px;
+}
+
+.import-btn {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  background: transparent;
+  color: #8a6048;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  cursor: pointer;
+  margin-right: 2px;
 }
 
 .sort-btn {

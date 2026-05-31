@@ -19,7 +19,7 @@
       </div>
 
       <div class="picker-body">
-        <template v-if="onlineFolders.length > 0">
+        <template v-if="!hideOnline && onlineFolders.length > 0">
           <div class="section-title">在线收藏夹</div>
           <div class="folder-list">
             <button
@@ -69,6 +69,7 @@ defineProps<{
   onlineFolders: FolderEntry[]
   offlineFolders: FolderEntry[]
   onlineFolderCounts: Record<string, number>
+  hideOnline?: boolean
 }>()
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]

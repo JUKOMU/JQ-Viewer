@@ -5,6 +5,7 @@ import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
+import android.content.pm.PackageManager;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.Uri;
@@ -118,14 +119,26 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         if (downloadPublic) {
             PermissionState state = permissionService.checkState(ctx);
             if (!state.granted) {
-                Log.w("JmcomicPlugin",
-                    "公开下载已开启但缺少 " + state.permissionType + "，" +
-                        "回退到私有目录。请调用 requestManageStorage 授权。");
+                if (state.apiLevel >= Build.VERSION_CODES.M && state.apiLevel < Build.VERSION_CODES.Q) {
+                    // API 23-28：启动时主动请求 WRITE_EXTERNAL_STORAGE
+                    Log.w("JmcomicPlugin",
+                        "公开下载已开启但缺少 " + state.permissionType + "，启动时请求权限");
+                    ActivityCompat.requestPermissions(getActivity(),
+                        new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE},
+                        PermissionService.REQUEST_WRITE_STORAGE);
+                } else {
+                    // API 30+：不自动跳转系统设置，静默回退
+                    Log.w("JmcomicPlugin",
+                        "公开下载已开启但缺少 " + state.permissionType + "，回退到私有目录");
+                }
                 usePublicDir = false;
                 settingsDb.putString("download_public", "false");
             }
         }
         FileStore.getInstance().init(ctx, downloadDb, usePublicDir);
+
+        // 启动时检查通知权限（API 33+ 弹出系统标准对话框）
+        requestNotificationAtStartup(ctx);
 
         // 初始化历史记录数据库
         HistoryStore.getInstance(ctx);
@@ -482,15 +495,36 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
      */
     public void handlePermissionResult(int requestCode, String[] permissions,
                                        int[] grantResults) {
-        if (requestCode == PermissionService.REQUEST_WRITE_STORAGE && pendingPermissionCall != null) {
-            PluginCall call = pendingPermissionCall;
-            pendingPermissionCall = null;
-            PermissionState state = permissionService.interpretResult(grantResults);
-            JSObject ret = new JSObject();
-            ret.put("apiLevel", state.apiLevel);
-            ret.put("permissionType", state.permissionType);
-            ret.put("granted", state.granted);
-            call.resolve(ret);
+        if (requestCode == PermissionService.REQUEST_WRITE_STORAGE) {
+            if (pendingPermissionCall != null) {
+                PluginCall call = pendingPermissionCall;
+                pendingPermissionCall = null;
+                PermissionState state = permissionService.interpretResult(grantResults);
+                JSObject ret = new JSObject();
+                ret.put("apiLevel", state.apiLevel);
+                ret.put("permissionType", state.permissionType);
+                ret.put("granted", state.granted);
+                call.resolve(ret);
+            } else {
+                boolean granted = grantResults.length > 0
+                    && grantResults[0] == PackageManager.PERMISSION_GRANTED;
+                Log.i("JmcomicPlugin", "启动时存储权限请求结果: granted=" + granted);
+            }
+        } else if (requestCode == PermissionService.REQUEST_POST_NOTIFICATIONS) {
+            boolean granted = permissionService.interpretNotificationResult(grantResults);
+            Log.i("JmcomicPlugin", "启动时通知权限请求结果: granted=" + granted);
+        }
+    }
+
+    /**
+     * 启动时检查通知权限（API 33+），未授权则弹出系统标准对话框。
+     */
+    private void requestNotificationAtStartup(Context ctx) {
+        if (!permissionService.checkNotificationPermission(ctx)) {
+            Log.i("JmcomicPlugin", "通知权限未开启，启动时请求");
+            ActivityCompat.requestPermissions(getActivity(),
+                new String[]{Manifest.permission.POST_NOTIFICATIONS},
+                PermissionService.REQUEST_POST_NOTIFICATIONS);
         }
     }
 
@@ -2132,6 +2166,8 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         PdfImportStore store = PdfImportStore.getInstance(getContext());
         int imported = 0;
         int skipped = 0;
+        int duplicateCount = 0;
+        int errorCount = 0;
         for (int i = 0; i < items.length(); i++) {
             try {
                 JSONObject item = items.getJSONObject(i);
@@ -2147,15 +2183,18 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
                     item.optString("folderId", null)
                 );
                 if (id != -1) imported++;
-                else skipped++;
+                else { skipped++; duplicateCount++; }
             } catch (Exception e) {
                 skipped++;
+                errorCount++;
                 Log.w(TAG, "跳过无效的 PDF 导入项", e);
             }
         }
         JSObject ret = new JSObject();
         ret.put("imported", imported);
         ret.put("skipped", skipped);
+        ret.put("duplicateCount", duplicateCount);
+        ret.put("errorCount", errorCount);
         call.resolve(ret);
     }
 

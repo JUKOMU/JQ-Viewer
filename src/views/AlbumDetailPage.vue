@@ -533,9 +533,10 @@ const navigateToFullPreview = () => {
 }
 
 const onOpenReader = (page: number) => {
-  const isDownloaded = chapterDownloadStatuses.value.get(selectedChapterId.value) === 'completed'
+  const chapterId = selectedChapterId.value || albumId.value
+  const isDownloaded = chapterDownloadStatuses.value.get(chapterId) === 'completed'
   void router.push({
-    path: `/album/${albumId.value}/read/${selectedChapterId.value}`,
+    path: `/album/${albumId.value}/read/${chapterId}`,
     query: {
       page: String(page),
       title: albumTitle.value,
@@ -696,9 +697,10 @@ const handleDownload = async () => {
 }
 
 const startReading = () => {
-  const isDownloaded = chapterDownloadStatuses.value.get(selectedChapterId.value) === 'completed'
+  const chapterId = selectedChapterId.value || albumId.value
+  const isDownloaded = chapterDownloadStatuses.value.get(chapterId) === 'completed'
   void router.push({
-    path: `/album/${albumId.value}/read/${selectedChapterId.value}`,
+    path: `/album/${albumId.value}/read/${chapterId}`,
     query: {
       title: albumTitle.value,
       total: String(selectedChapterPageCount.value),

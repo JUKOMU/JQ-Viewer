@@ -185,6 +185,7 @@ const pickerOfflineFolders = ref<FolderEntry[]>([])
 const onlineFolderCounts = ref<Record<string, number>>({})
 
 async function openFolderPicker() {
+  await OfflineFavoriteService.ensureInit()
   pickerOfflineFolders.value = OfflineFavoriteService.getFolders()
 
   if (isLoggedIn.value) {

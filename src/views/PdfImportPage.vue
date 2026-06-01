@@ -2,13 +2,11 @@
   <IonPage>
     <IonHeader class="ion-no-border">
       <IonToolbar>
-        <div class="toolbar-start">
-          <button class="back-btn" @click="onBack">
-            <IonIcon :icon="arrowBack"/>
-          </button>
-        </div>
-        <div class="toolbar-title">导入 PDF 审核</div>
-        <div class="toolbar-end">
+        <IonButtons slot="start">
+          <IonBackButton default-href="/download"/>
+        </IonButtons>
+        <IonTitle class="toolbar-title">导入PDF</IonTitle>
+        <IonButtons slot="end">
           <button
             class="confirm-btn"
             :disabled="loading || !hasAnyResolved"
@@ -16,11 +14,12 @@
           >
             确认导入
           </button>
-        </div>
+        </IonButtons>
       </IonToolbar>
     </IonHeader>
 
     <IonContent>
+    <div class="page-container">
       <!-- 空状态 -->
       <div v-if="files.length === 0 && !loading" class="empty-state">
         <IonIcon :icon="documentTextOutline" class="empty-icon"/>
@@ -28,7 +27,7 @@
       </div>
 
       <!-- 统计栏 -->
-      <div v-if="files.length > 0" class="stats-bar">
+      <div v-if="files.length > 0" class="stats-card">
         <span class="stat resolved">已解析 {{ resolvedCount }}</span>
         <span class="stat ambiguous">多ID {{ ambiguousCount }}</span>
         <span class="stat missing">无ID {{ missingCount }}</span>
@@ -102,8 +101,7 @@
           </div>
         </div>
       </TransitionGroup>
-
-      <div class="bottom-spacer"/>
+    </div>
     </IonContent>
 
     <!-- 收藏夹选择器 -->
@@ -120,25 +118,21 @@
 </template>
 
 <script setup lang="ts">
-defineOptions({ name: 'ImportReviewPage' })
+defineOptions({ name: 'PdfImportPage' })
 
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
-import { IonPage, IonHeader, IonToolbar, IonContent, IonIcon } from '@ionic/vue'
+import { IonBackButton, IonButtons, IonPage, IonHeader, IonTitle, IonToolbar, IonContent, IonIcon } from '@ionic/vue'
 import { alertController } from '@ionic/vue'
 import { useRouter } from 'vue-router'
-import { arrowBack, documentTextOutline, createOutline, checkmarkOutline } from 'ionicons/icons'
+import { documentTextOutline, createOutline, checkmarkOutline } from 'ionicons/icons'
 import { PdfImportService } from '@/services/PdfImportService'
 import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
 import { OfflineFavoriteService } from '@/services/OfflineFavoriteService'
 import FavoriteFolderPicker from '@/components/favorite/FavoriteFolderPicker.vue'
 import type { PdfFileParseItem } from '@/utils/importPdfParse'
-import type { FolderEntry } from '@/services/JmcomicTypes'
+import type { FolderEntry, SearchResultItem } from '@/services/JmcomicTypes'
 
 const router = useRouter()
-
-function onBack() {
-  router.replace('/download')
-}
 
 // ---- 状态 ----
 const files = ref<PdfFileParseItem[]>([])
@@ -187,7 +181,8 @@ onMounted(async () => {
 
   // 加载离线收藏夹列表（备用）
   try {
-    offlineFolders.value = await OfflineFavoriteService.getFolders()
+    await OfflineFavoriteService.ensureInit()
+    offlineFolders.value = OfflineFavoriteService.getFolders()
   } catch {
     // 离线收藏夹加载失败不影响导入
   }
@@ -319,7 +314,8 @@ async function proceedToImport(resolvedFiles: PdfFileParseItem[]) {
 
   // 询问是否添加到离线收藏夹
   try {
-    offlineFolders.value = await OfflineFavoriteService.getFolders()
+    await OfflineFavoriteService.ensureInit()
+    offlineFolders.value = OfflineFavoriteService.getFolders()
   } catch {
     // 忽略
   }
@@ -361,13 +357,8 @@ async function onAddFolder() {
         handler: async (data) => {
           if (data.name) {
             try {
-              const folderId = await OfflineFavoriteService.createFolder(data.name)
-              selectedFolderId.value = folderId
-              // 刷新列表
+              await OfflineFavoriteService.createFolder(data.name)
               offlineFolders.value = await OfflineFavoriteService.getFolders()
-              // 创建后直接使用该收藏夹
-              showFolderPicker.value = false
-              await doImport(pendingResolvedFiles.value, selectedFolderId.value)
             } catch {
               await showToast('创建收藏夹失败', 'danger')
             }
@@ -383,6 +374,19 @@ async function doImport(resolvedFiles: PdfFileParseItem[], folderId?: string) {
   loading.value = true
   try {
     const result = await PdfImportService.confirmImport(resolvedFiles, folderId)
+    // 同步写入离线收藏夹
+    if (folderId) {
+      const favItems: SearchResultItem[] = resolvedFiles
+        .filter((f) => (f.editedIds ?? f.extractedIds).length === 1)
+        .map((f) => ({
+          id: (f.editedIds ?? f.extractedIds)[0],
+          title: f.albumDetail?.title || f.fileName,
+          coverUrl: f.albumDetail?.image || '',
+          authors: f.albumDetail?.authors || [],
+          tags: [],
+        }))
+      await OfflineFavoriteService.addItems(folderId, favItems)
+    }
     const parts = [`已导入 ${result.imported} 个 PDF`]
     if (result.duplicateCount > 0) parts.push(`${result.duplicateCount} 个已存在`)
     if (result.errorCount > 0) parts.push(`${result.errorCount} 个错误`)
@@ -405,46 +409,22 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-/* ---- 通用布局 ---- */
 IonHeader {
   --ion-background-color: var(--ion-background-color, #fff);
 }
 
-.toolbar-start {
-  padding: 0 0 8px 14px;
-  display: flex;
-  align-items: center;
-}
-
-.back-btn {
-  background: none;
-  border: none;
-  padding: 4px;
-  cursor: pointer;
-  color: var(--ion-text-color, #222);
-  font-size: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
 .toolbar-title {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
   font-size: 16px;
   font-weight: 600;
-  white-space: nowrap;
-  color: var(--ion-text-color, #222);
+  color: #4c2a18;
 }
 
-.toolbar-end {
-  padding: 0 14px 8px 0;
-  display: flex;
-  align-items: center;
+/* ---- 页面容器 ---- */
+.page-container {
+  padding: 12px 14px 86px;
 }
 
+/* ---- 确认按钮 ---- */
 .confirm-btn {
   background: var(--ion-color-primary, #3880ff);
   color: #fff;
@@ -476,15 +456,15 @@ IonHeader {
 }
 
 /* ---- 统计栏 ---- */
-.stats-bar {
+.stats-card {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   padding: 12px 16px;
-  margin: 0 14px;
-  background: var(--ion-card-background, #fff);
-  border-radius: 10px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 2px 12px rgba(115, 67, 38, 0.06);
+  margin-bottom: 14px;
 }
 
 .stat {
@@ -516,7 +496,6 @@ IonHeader {
 
 /* ---- 文件列表 ---- */
 .file-list {
-  padding: 12px 14px;
 }
 
 /* TransitionGroup 动画 */
@@ -539,19 +518,18 @@ IonHeader {
   transition: transform 0.3s ease;
 }
 
-/* ---- 文件卡片（SearchResultContainer 风格）---- */
+/* ---- 文件卡片 ---- */
 .file-card {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  background: #fffaf6;
+  background: #fff;
   border-radius: 12px;
-  box-shadow: 5px 12px 28px rgb(76 42 24 / 0.2);
+  box-shadow: 0 2px 12px rgba(115, 67, 38, 0.08);
   margin-bottom: 10px;
   padding: 0 10px 0 0;
   overflow: hidden;
   border-left: 4px solid transparent;
-  transition: border-color 0.2s;
   position: relative;
   min-height: 108px;
 }
@@ -701,7 +679,7 @@ IonHeader {
   color: #1565c0;
 }
 
-/* ---- 编辑按钮（右上角，仿 SearchResultContainer 的 ⋮ 按钮位置）---- */
+/* ---- 编辑按钮 ---- */
 .edit-btn {
   position: absolute;
   right: 2px;
@@ -720,7 +698,7 @@ IonHeader {
 .edit-overlay {
   position: absolute;
   inset: 0;
-  background: #fffaf6;
+  background: #fff;
   border-radius: 12px;
   padding: 10px 12px;
   display: flex;
@@ -771,10 +749,5 @@ IonHeader {
   font-size: 12px;
   cursor: pointer;
   flex-shrink: 0;
-}
-
-/* ---- 底部间距 ---- */
-.bottom-spacer {
-  height: 80px;
 }
 </style>

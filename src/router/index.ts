@@ -87,8 +87,8 @@ const routes: Array<RouteRecordRaw> = [
   },
   {
     path: '/import-review',
-    name: 'ImportReviewPage',
-    component: () => import('@/views/ImportReviewPage.vue'),
+    name: 'PdfImportPage',
+    component: () => import('@/views/PdfImportPage.vue'),
     meta: {menu: false, keepAlive: false},
   },
 ]

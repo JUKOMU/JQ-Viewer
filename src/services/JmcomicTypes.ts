@@ -393,6 +393,8 @@ export interface ImportedPdf {
   chapterSortOrder: number
   createdAt: number
   folderId?: string
+  fileSize?: number
+  pageCount?: number
 }
 
 /** importPdfs 调用的导入项 */

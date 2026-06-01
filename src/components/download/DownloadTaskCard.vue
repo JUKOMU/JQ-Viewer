@@ -13,10 +13,7 @@
       <div class="title-row">
         <div class="titles">
           <div class="album-title">{{ task.albumTitle }}</div>
-          <div class="chapter-title">
-            <IonIcon v-if="isPdfEntry" :icon="documentOutline" class="pdf-icon"/>
-            {{ isPdfEntry ? task.chapterTitle : task.chapterId }}
-          </div>
+          <div class="chapter-title">{{ task.chapterId }}</div>
           <div v-if="hasMultiChapters" class="chapter-bubbles">
             <span v-for="ch in downloadedChapters" :key="ch.chapterId" class="bubble">
               {{ ch.chapterSortOrder }}
@@ -46,7 +43,8 @@
       <!-- 已完成 -->
       <div v-else-if="cardStatus === 'completed'" class="status-row">
         <span v-if="!isPdfEntry" class="tag completed">共 {{ displayTotalPages }} 页</span>
-        <span v-if="isPdfEntry" class="tag completed">PDF</span>
+        <span v-if="isPdfEntry && displayPdfPageCount > 0" class="tag completed">共 {{ displayPdfPageCount }} 页</span>
+        <IonIcon v-if="isPdfEntry" :icon="documentOutline" class="tag-icon pdf-tag-icon"/>
         <span v-if="sizeText" class="size-text">{{ sizeText }}</span>
       </div>
 
@@ -112,6 +110,16 @@ const displayTotalPages = computed(() => {
       .reduce((s, c) => s + (c.downloadTask?.totalPages ?? 0), 0)
   }
   return (props.task as CompletedEntry).downloadTask?.totalPages ?? 0
+})
+
+const displayPdfPageCount = computed(() => {
+  if (!isPdfEntry.value) return 0
+  if (hasMultiChapters.value && props.downloadedChapters) {
+    return props.downloadedChapters
+      .filter((c) => c.source === 'pdf-import')
+      .reduce((s, c) => s + (c.pdfData?.pageCount ?? 0), 0)
+  }
+  return (props.task as CompletedEntry).pdfData?.pageCount ?? 0
 })
 
 const coverError = ref(false)
@@ -263,6 +271,11 @@ const onCardClick = () => {
   font-size: 11px;
   color: #d9534f;
   flex-shrink: 0;
+}
+
+.pdf-tag-icon {
+  font-size: 15px;
+  color: #e03030;
 }
 
 .chapter-bubbles {

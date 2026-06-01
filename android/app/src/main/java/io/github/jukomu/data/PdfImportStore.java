@@ -5,10 +5,14 @@ import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
+import android.graphics.pdf.PdfRenderer;
+import android.os.ParcelFileDescriptor;
 import android.util.Log;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
+
+import java.io.File;
 
 /**
  * 导入 PDF 的 SQLite 数据库（引用模式——仅存路径，不复制文件）。
@@ -129,7 +133,8 @@ public class PdfImportStore extends SQLiteOpenHelper {
         JSONObject obj = new JSONObject();
         try {
             obj.put("id", c.getLong(c.getColumnIndexOrThrow(COL_ID)));
-            obj.put("filePath", c.getString(c.getColumnIndexOrThrow(COL_FILE_PATH)));
+            String path = c.getString(c.getColumnIndexOrThrow(COL_FILE_PATH));
+            obj.put("filePath", path);
             obj.put("fileName", c.getString(c.getColumnIndexOrThrow(COL_FILE_NAME)));
             obj.put("albumId", c.getString(c.getColumnIndexOrThrow(COL_ALBUM_ID)));
             obj.put("albumTitle", c.getString(c.getColumnIndexOrThrow(COL_ALBUM_TITLE)));
@@ -142,6 +147,18 @@ public class PdfImportStore extends SQLiteOpenHelper {
             int folderIdx = c.getColumnIndex(COL_FOLDER_ID);
             if (!c.isNull(folderIdx)) {
                 obj.put("folderId", c.getString(folderIdx));
+            }
+            // 文件大小
+            File f = new File(path);
+            obj.put("fileSize", f.length());
+            // PDF 页数
+            try {
+                PdfRenderer renderer = new PdfRenderer(
+                    ParcelFileDescriptor.open(f, ParcelFileDescriptor.MODE_READ_ONLY));
+                obj.put("pageCount", renderer.getPageCount());
+                renderer.close();
+            } catch (Exception ignored) {
+                // 非 PDF 或损坏文件
             }
         } catch (Exception e) {
             Log.e(TAG, "cursorToPdfJson failed", e);

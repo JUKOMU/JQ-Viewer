@@ -91,6 +91,12 @@ const routes: Array<RouteRecordRaw> = [
     component: () => import('@/views/PdfImportPage.vue'),
     meta: {menu: false, keepAlive: false},
   },
+  {
+    path: '/pdf-reader',
+    name: 'PdfReaderPage',
+    component: () => import('@/views/PdfReaderPage.vue'),
+    meta: {menu: false, keepAlive: false},
+  },
 ]
 
 const router = createRouter({

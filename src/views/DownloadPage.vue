@@ -202,6 +202,14 @@
       :chapters="chaptersForPdf"
       @confirm="onPdfExportConfirm"
     />
+
+    <!-- PDF章节选择底部面板 -->
+    <PdfChapterSheet
+      v-model="showPdfChapterSheet"
+      :album-title="pdfChapterGroup?.albumTitle ?? ''"
+      :chapters="pdfChapterGroup?.chapters ?? []"
+      @select="onPdfChapterSelect"
+    />
   </IonPage>
 </template>
 
@@ -241,6 +249,7 @@ import type {PluginListenerHandle} from '@capacitor/core'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import DownloadTaskCard from '@/components/download/DownloadTaskCard.vue'
 import PdfExportBottomSheet from '@/components/download/PdfExportBottomSheet.vue'
+import PdfChapterSheet from '@/components/download/PdfChapterSheet.vue'
 import {JmcomicService, sanitizeError, showToast} from '@/services/JmcomicService'
 import {alertController} from '@ionic/vue'
 import {OfflineDownloadService} from '@/services/OfflineDownloadService'
@@ -791,10 +800,21 @@ const onRetry = async (task: DownloadTask) => {
 
 const onRead = (entry: CompletedEntry | DownloadTask) => {
   if ('source' in entry && entry.source === 'pdf-import') {
-    const pdf = entry.pdfData || (entry as CompletedEntry).pdfData
+    const ce = entry as CompletedEntry
+    const pdf = ce.pdfData
     if (pdf?.filePath) {
-      void JmcomicService.openPdf(pdf.filePath).catch((e: any) => {
-        void showToast(sanitizeError(e, '无法打开 PDF'), 'danger')
+      void router.push({
+        path: '/pdf-reader',
+        query: {
+          path: pdf.filePath,
+          title: pdf.fileName,
+          albumId: ce.albumId,
+          albumTitle: ce.albumTitle,
+          authors: ce.authors,
+          coverUrl: ce.coverUrl,
+          chapterId: ce.chapterId,
+          chapterTitle: ce.chapterTitle,
+        },
       })
     }
     return
@@ -812,11 +832,14 @@ const onRead = (entry: CompletedEntry | DownloadTask) => {
   })
 }
 
+const showPdfChapterSheet = ref(false)
+const pdfChapterGroup = ref<CompletedGroup | null>(null)
+
 const onReadGroup = (group: CompletedGroup) => {
   const firstChapter = group.chapters[0]
   if (firstChapter.source === 'pdf-import' && group.type === 'multi') {
-    // PDF 多章节：打开第一个（后续可改为章节选择）
-    onRead(firstChapter)
+    pdfChapterGroup.value = group
+    showPdfChapterSheet.value = true
     return
   }
   if (group.type === 'multi') {
@@ -824,6 +847,11 @@ const onReadGroup = (group: CompletedGroup) => {
   } else {
     onRead(group.chapters[0])
   }
+}
+
+const onPdfChapterSelect = (chapter: CompletedEntry) => {
+  showPdfChapterSheet.value = false
+  onRead(chapter)
 }
 
 const onOpenChapterSelect = (group: CompletedGroup) => {

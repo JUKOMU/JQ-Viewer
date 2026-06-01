@@ -11,6 +11,7 @@ import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.BridgeWebViewClient;
 import io.github.jukomu.bridge.JmcomicPlugin;
 import io.github.jukomu.data.ImageCache;
+import io.github.jukomu.data.PdfServer;
 
 public class MainActivity extends BridgeActivity {
     @Override
@@ -23,6 +24,12 @@ public class MainActivity extends BridgeActivity {
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
                 String url = request.getUrl().toString();
+                if (PdfServer.isPdfUrl(url)) {
+                    WebResourceResponse resp = PdfServer.handleRequest(url, getApplicationContext());
+                    if (resp != null) return resp;
+                    return new WebResourceResponse("text/plain", "UTF-8",
+                        new java.io.ByteArrayInputStream(new byte[0]));
+                }
                 if (ImageCache.isVirtualImageUrl(url)) {
                     WebResourceResponse resp = ImageCache.handleRequest(url);
                     if (resp != null) return resp;

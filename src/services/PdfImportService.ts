@@ -22,7 +22,8 @@ export function clearCachedParseResult(): void {
 async function scanAndParse(folderPath: string): Promise<ImportPdfParseResult> {
   const result = await JmcomicService.scanPdfFiles(folderPath)
   const filePaths = result.files.map((f) => f.filePath)
-  const parseResult = parseFilenamesForImport(filePaths)
+  const fileNames = result.files.map((f) => f.fileName)
+  const parseResult = parseFilenamesForImport(filePaths, fileNames)
   cachedParseResult = parseResult
   return parseResult
 }
@@ -75,10 +76,35 @@ async function confirmImport(
     }))
 
   if (items.length === 0) {
-    return { imported: 0, skipped: resolvedFiles.length }
+    return { imported: 0, skipped: resolvedFiles.length, duplicateCount: 0, errorCount: 0 }
   }
 
-  return JmcomicService.importPdfs(items)
+  // 检查文件是否仍存在
+  let validItems = items
+  let missingCount = 0
+  try {
+    const paths = items.map((f) => f.filePath)
+    const { existing } = await JmcomicService.checkFilesExist(paths)
+    const existingSet = new Set(existing)
+    missingCount = items.filter((f) => !existingSet.has(f.filePath)).length
+    if (missingCount > 0) {
+      validItems = items.filter((f) => existingSet.has(f.filePath))
+    }
+  } catch {
+    // 检查失败则直接放行
+  }
+
+  if (validItems.length === 0) {
+    return { imported: 0, skipped: items.length, duplicateCount: 0, errorCount: items.length }
+  }
+
+  const result = await JmcomicService.importPdfs(validItems)
+  if (missingCount > 0) {
+    result.errorCount += missingCount
+    result.skipped += missingCount
+  }
+
+  return result
 }
 
 export const PdfImportService = {

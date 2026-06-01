@@ -54,7 +54,7 @@
             <span class="section-title">已完成 ({{ completedGroups.length }})</span>
             <button class="clear-btn" @click="requestClear('completed')">清空</button>
           </div>
-          <div v-for="group in completedGroups" :key="group.albumId" class="task-card">
+          <div v-for="group in completedGroups" :key="group.albumId + '|' + group.chapters[0].source" class="task-card">
             <DownloadTaskCard
               :task="group.chapters[0]"
               :show-progress="false"
@@ -489,11 +489,12 @@ const completedEntries = computed<CompletedEntry[]>(() => [
 const completedGroups = computed<CompletedGroup[]>(() => {
   const byAlbum = new Map<string, CompletedEntry[]>()
   for (const t of completedEntries.value) {
-    const list = byAlbum.get(t.albumId)
+    const key = t.albumId + '|' + t.source
+    const list = byAlbum.get(key)
     if (list) {
       list.push(t)
     } else {
-      byAlbum.set(t.albumId, [t])
+      byAlbum.set(key, [t])
     }
   }
   const groups: CompletedGroup[] = []
@@ -626,8 +627,13 @@ const onOpenPdfSheet = () => {
     chaptersForPdf.value = g.chapters
       .filter((c) => c.source === 'download')
       .map((c) => c.downloadTask!)
-  } else if (selectedTask.value && !('source' in selectedTask.value)) {
-    chaptersForPdf.value = [selectedTask.value as DownloadTask]
+  } else if (selectedTask.value) {
+    const t = selectedTask.value
+    if (!('source' in t)) {
+      chaptersForPdf.value = [t as DownloadTask]
+    } else if (t.source === 'download' && t.downloadTask) {
+      chaptersForPdf.value = [t.downloadTask]
+    }
   }
   showPdfSheet.value = true
 }
@@ -890,11 +896,13 @@ const onDeleteGroup = async (group: CompletedGroup) => {
 const isClearAlertOpen = ref(false)
 const clearTarget = ref<'completed' | 'failed'>('completed')
 
-const clearAlertMessage = computed(() =>
-  clearTarget.value === 'completed'
-    ? `将删除所有已完成任务的文件和记录（${completedTasks.value.length} 个），此操作不可恢复。`
-    : `将删除所有失败任务的文件和记录（${failedTasks.value.length} 个），此操作不可恢复。`,
-)
+const clearAlertMessage = computed(() => {
+  if (clearTarget.value === 'completed') {
+    const totalCount = completedTasks.value.length + importedPdfs.value.length
+    return `将删除所有已完成任务的文件和记录（${totalCount} 个），此操作不可恢复。`
+  }
+  return `将删除所有失败任务的文件和记录（${failedTasks.value.length} 个），此操作不可恢复。`
+})
 
 const requestClear = (target: 'completed' | 'failed') => {
   clearTarget.value = target
@@ -908,14 +916,17 @@ const executeClear = async () => {
 
 const clearCompleted = async () => {
   const list = completedTasks.value
-  if (!list.length) return
-  await Promise.all(
-    list.map((task) =>
-      JmcomicService.deleteDownloaded(task.albumId, task.chapterId).catch(() => {
-      }),
+  if (!list.length && !importedPdfs.value.length) return
+  await Promise.all([
+    ...list.map((task) =>
+      JmcomicService.deleteDownloaded(task.albumId, task.chapterId).catch(() => {}),
     ),
-  )
+    ...importedPdfs.value.map((pdf) =>
+      JmcomicService.deleteImportedPdf(pdf.id).catch(() => {}),
+    ),
+  ])
   tasks.value = tasks.value.filter((t) => t.status !== 'completed')
+  importedPdfs.value = []
   OfflineDownloadService.setAll(tasks.value)
   await syncDownloadState()
 }

@@ -410,6 +410,8 @@ export interface ImportPdfItem {
 export interface ImportPdfsResult {
   imported: number
   skipped: number
+  duplicateCount: number
+  errorCount: number
 }
 
 export interface ImportedPdfsResult {

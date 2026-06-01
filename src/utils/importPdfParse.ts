@@ -36,12 +36,13 @@ export interface ImportPdfParseResult {
  * 从文件名列表中提取 ID。
  * 每个文件独立解析，不跨文件合并数字串。
  */
-export function parseFilenamesForImport(filePaths: string[]): ImportPdfParseResult {
+export function parseFilenamesForImport(filePaths: string[], fileNames?: string[]): ImportPdfParseResult {
   const files: PdfFileParseItem[] = []
   const idToFileIndices = new Map<string, number[]>()
 
-  for (const filePath of filePaths) {
-    const fileName = extractFileName(filePath)
+  for (let i = 0; i < filePaths.length; i++) {
+    const filePath = filePaths[i]
+    const fileName = fileNames?.[i] ?? extractFileName(filePath)
     const { ids, idPositions } = extractValidIds(fileName)
 
     let status: 'resolved' | 'ambiguous' | 'missing'

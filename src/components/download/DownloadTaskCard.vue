@@ -106,20 +106,22 @@ const hasMultiChapters = computed(() => (props.downloadedChapters?.length ?? 0) 
 
 const displayTotalPages = computed(() => {
   if (isPdfEntry.value) return 0
-  const t = props.task as DownloadTask
   if (hasMultiChapters.value && props.downloadedChapters) {
     return props.downloadedChapters
       .filter((c) => c.source === 'download')
       .reduce((s, c) => s + (c.downloadTask?.totalPages ?? 0), 0)
   }
-  return t.totalPages
+  return (props.task as CompletedEntry).downloadTask?.totalPages ?? 0
 })
 
 const coverError = ref(false)
 const coverSrc = computed(() => {
   const t = props.task
-  if (coverError.value && 'firstImageSortOrder' in t && t.firstImageSortOrder) {
-    return getImageUrl(t.chapterId, t.firstImageSortOrder, 'image')
+  if (coverError.value) {
+    const firstSort = ('firstImageSortOrder' in t)
+      ? (t as DownloadTask).firstImageSortOrder
+      : (t as CompletedEntry).downloadTask?.firstImageSortOrder
+    if (firstSort) return getImageUrl(t.chapterId, firstSort, 'image')
   }
   return t.coverUrl
 })

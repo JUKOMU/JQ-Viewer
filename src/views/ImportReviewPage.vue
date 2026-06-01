@@ -3,7 +3,9 @@
     <IonHeader class="ion-no-border">
       <IonToolbar>
         <div class="toolbar-start">
-          <IonBackButton :default-href="'/download'"/>
+          <button class="back-btn" @click="onBack">
+            <IonIcon :icon="arrowBack"/>
+          </button>
         </div>
         <div class="toolbar-title">导入 PDF 审核</div>
         <div class="toolbar-end">
@@ -103,28 +105,28 @@
 
       <div class="bottom-spacer"/>
     </IonContent>
-  </IonPage>
 
-  <!-- 收藏夹选择器 -->
-  <FavoriteFolderPicker
-    v-model="showFolderPicker"
-    :online-folders="[]"
-    :offline-folders="offlineFolders"
-    :online-folder-counts="{}"
-    :hide-online="true"
-    @select="onFavFolderSelect"
-    @add-folder="onAddFolder"
-  />
+    <!-- 收藏夹选择器 -->
+    <FavoriteFolderPicker
+      v-model="showFolderPicker"
+      :online-folders="[]"
+      :offline-folders="offlineFolders"
+      :online-folder-counts="{}"
+      :hide-online="true"
+      @select="onFavFolderSelect"
+      @add-folder="onAddFolder"
+    />
+  </IonPage>
 </template>
 
 <script setup lang="ts">
 defineOptions({ name: 'ImportReviewPage' })
 
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
-import { IonPage, IonHeader, IonToolbar, IonBackButton, IonContent, IonIcon } from '@ionic/vue'
+import { IonPage, IonHeader, IonToolbar, IonContent, IonIcon } from '@ionic/vue'
 import { alertController } from '@ionic/vue'
 import { useRouter } from 'vue-router'
-import { documentTextOutline, createOutline, checkmarkOutline } from 'ionicons/icons'
+import { arrowBack, documentTextOutline, createOutline, checkmarkOutline } from 'ionicons/icons'
 import { PdfImportService } from '@/services/PdfImportService'
 import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
 import { OfflineFavoriteService } from '@/services/OfflineFavoriteService'
@@ -133,6 +135,10 @@ import type { PdfFileParseItem } from '@/utils/importPdfParse'
 import type { FolderEntry } from '@/services/JmcomicTypes'
 
 const router = useRouter()
+
+function onBack() {
+  router.replace('/download')
+}
 
 // ---- 状态 ----
 const files = ref<PdfFileParseItem[]>([])
@@ -148,7 +154,9 @@ const selectedFolderId = ref<string | undefined>(undefined)
 
 // ---- 统计 ----
 const resolvedCount = computed(() =>
-  files.value.filter((f) => f.status === 'resolved' && f.extractedIds.length === 1).length,
+  files.value.filter((f) =>
+    f.status === 'resolved' && (f.editedIds?.length === 1 || f.extractedIds.length === 1),
+  ).length,
 )
 const ambiguousCount = computed(() =>
   files.value.filter((f) => f.status === 'ambiguous').length,
@@ -160,7 +168,10 @@ const duplicateCount = computed(() =>
   files.value.filter((f) => f.duplicateIds.length > 0).length,
 )
 const hasAnyResolved = computed(() =>
-  files.value.some((f) => f.editedIds?.length === 1),
+  files.value.some((f) =>
+    f.editedIds?.length === 1 ||
+    (f.status === 'resolved' && f.extractedIds.length === 1),
+  ),
 )
 
 // ---- 初始化 ----
@@ -239,8 +250,9 @@ async function applyEdit(idx: number) {
 
 // ---- 卡片样式 ----
 function cardClass(file: PdfFileParseItem) {
+  const effectiveLen = file.editedIds?.length ?? file.extractedIds.length
   return {
-    'card-resolved': file.status === 'resolved' && file.extractedIds.length === 1 && file.duplicateIds.length === 0,
+    'card-resolved': file.status === 'resolved' && effectiveLen === 1 && file.duplicateIds.length === 0,
     'card-ambiguous': file.status === 'ambiguous',
     'card-missing': file.status === 'missing',
     'card-duplicate': file.duplicateIds.length > 0,
@@ -371,10 +383,10 @@ async function doImport(resolvedFiles: PdfFileParseItem[], folderId?: string) {
   loading.value = true
   try {
     const result = await PdfImportService.confirmImport(resolvedFiles, folderId)
-    await showToast(
-      `已导入 ${result.imported} 个 PDF` + (result.skipped > 0 ? `，${result.skipped} 个跳过` : ''),
-      'success',
-    )
+    const parts = [`已导入 ${result.imported} 个 PDF`]
+    if (result.duplicateCount > 0) parts.push(`${result.duplicateCount} 个已存在`)
+    if (result.errorCount > 0) parts.push(`${result.errorCount} 个错误`)
+    await showToast(parts.join('，'), 'success')
     PdfImportService.clearCachedParseResult()
     router.replace('/download')
   } catch (e: any) {
@@ -402,6 +414,18 @@ IonHeader {
   padding: 0 0 8px 14px;
   display: flex;
   align-items: center;
+}
+
+.back-btn {
+  background: none;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+  color: var(--ion-text-color, #222);
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .toolbar-title {

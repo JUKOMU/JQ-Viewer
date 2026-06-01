@@ -10,7 +10,9 @@ import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.Uri;
 import android.os.Build;
+import android.provider.DocumentsContract;
 import android.provider.MediaStore;
+import androidx.documentfile.provider.DocumentFile;
 import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
@@ -630,6 +632,8 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         }
     }
 
+    private Uri lastPickedTreeUri;
+
     @PluginMethod
     public void pickFolder(PluginCall call) {
         synchronized (folderLock) {
@@ -670,6 +674,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         }
 
         android.net.Uri treeUri = data.getData();
+        lastPickedTreeUri = treeUri;
         // 持久化权限，以便后续写入
         try {
             getContext().getContentResolver().takePersistableUriPermission(
@@ -762,18 +767,21 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
                 call.reject("paths is required");
                 return;
             }
+            android.content.ContentResolver resolver = getContext().getContentResolver();
             java.io.File externalRoot = android.os.Environment.getExternalStorageDirectory();
             JSArray existing = new JSArray();
             for (int i = 0; i < pathsJson.length(); i++) {
                 String p = pathsJson.getString(i);
                 if (p == null) continue;
-                java.io.File f;
-                if (p.startsWith("/")) {
-                    f = new java.io.File(p);
+                boolean exists;
+                if (p.startsWith("content://")) {
+                    exists = checkContentUriExists(resolver, p);
+                } else if (p.startsWith("/")) {
+                    exists = new java.io.File(p).exists();
                 } else {
-                    f = new java.io.File(externalRoot, p);
+                    exists = new java.io.File(externalRoot, p).exists();
                 }
-                if (f.exists()) {
+                if (exists) {
                     existing.put(p);
                 }
             }
@@ -782,6 +790,21 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
             call.resolve(ret);
         } catch (Exception e) {
             call.reject(e.getMessage(), e);
+        }
+    }
+
+    private boolean checkContentUriExists(android.content.ContentResolver resolver, String uriStr) {
+        Uri uri = Uri.parse(uriStr);
+        android.database.Cursor cursor = null;
+        try {
+            cursor = resolver.query(uri, null, null, null, null);
+            return cursor != null;
+        } catch (Exception e) {
+            return false;
+        } finally {
+            if (cursor != null) {
+                cursor.close();
+            }
         }
     }
 
@@ -2130,6 +2153,40 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
 
     @PluginMethod
     public void scanPdfFiles(PluginCall call) {
+        Uri treeUri = lastPickedTreeUri;
+        if (treeUri != null) {
+            scanPdfFilesViaSaf(call, treeUri);
+        } else {
+            scanPdfFilesViaFile(call);
+        }
+    }
+
+    private void scanPdfFilesViaSaf(PluginCall call, Uri treeUri) {
+        DocumentFile root = DocumentFile.fromTreeUri(getContext(), treeUri);
+        if (root == null || !root.isDirectory()) {
+            // SAF 失败时回退到 java.io.File
+            scanPdfFilesViaFile(call);
+            return;
+        }
+        DocumentFile[] children = root.listFiles();
+        JSArray arr = new JSArray();
+        if (children != null) {
+            for (DocumentFile child : children) {
+                if (child.isFile() && child.getName() != null
+                    && child.getName().toLowerCase().endsWith(".pdf")) {
+                    JSObject obj = new JSObject();
+                    obj.put("fileName", child.getName());
+                    obj.put("filePath", child.getUri().toString());
+                    arr.put(obj);
+                }
+            }
+        }
+        JSObject ret = new JSObject();
+        ret.put("files", arr);
+        call.resolve(ret);
+    }
+
+    private void scanPdfFilesViaFile(PluginCall call) {
         String path = call.getString("path");
         if (path == null || path.isEmpty()) {
             call.reject("path is required");
@@ -2227,16 +2284,21 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
             call.reject("filePath is required");
             return;
         }
-        File file = new File(filePath);
-        if (!file.exists()) {
-            call.reject("File not found: " + filePath);
-            return;
-        }
         try {
-            Uri uri = FileProvider.getUriForFile(
-                getContext(),
-                getContext().getPackageName() + ".fileprovider",
-                file);
+            Uri uri;
+            if (filePath.startsWith("content://")) {
+                uri = Uri.parse(filePath);
+            } else {
+                File file = new File(filePath);
+                if (!file.exists()) {
+                    call.reject("File not found: " + filePath);
+                    return;
+                }
+                uri = FileProvider.getUriForFile(
+                    getContext(),
+                    getContext().getPackageName() + ".fileprovider",
+                    file);
+            }
             Intent intent = new Intent(Intent.ACTION_VIEW);
             intent.setDataAndType(uri, "application/pdf");
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);

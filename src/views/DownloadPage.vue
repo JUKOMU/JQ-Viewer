@@ -553,6 +553,7 @@ const syncDownloadState = async () => {
 
 const onRefresh = async (event: CustomEvent) => {
   await syncDownloadState()
+  await loadImportedPdfs()
   ;(event.target as HTMLIonRefresherElement).complete()
 }
 

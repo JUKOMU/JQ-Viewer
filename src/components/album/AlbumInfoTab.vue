@@ -39,11 +39,17 @@
       <div class="info-list">
         <div class="info-row">
           <span class="info-label">ID</span>
-          <span class="info-value clickable" @click="copyText(String(album.id))">{{ album.id }}</span>
+          <span class="info-value clickable" @click="copyText(String(album.id))">
+            {{ album.id }}
+            <ion-icon class="copy-icon" :icon="copyOutline"/>
+          </span>
         </div>
         <div class="info-row">
           <span class="info-label">标题</span>
-          <span class="info-value clickable" @click="copyText(album.title)">{{ album.title }}</span>
+          <span class="info-value clickable" @click="copyText(album.title)">
+            {{ album.title }}
+            <ion-icon class="copy-icon" :icon="copyOutline"/>
+          </span>
         </div>
         <div v-if="album.description" class="info-row">
           <span class="info-label">描述</span>
@@ -147,6 +153,7 @@ import {
   bookmark,
   checkmarkCircleOutline,
   cloudDownloadOutline,
+  copyOutline,
   downloadOutline,
   heart,
   refreshOutline,
@@ -381,11 +388,21 @@ const downloadIcon = computed(() => {
 
 .info-value.clickable {
   cursor: pointer;
+  position: relative;
+  padding-right: 18px;
   transition: color 0.15s ease;
 }
 
 .info-value.clickable:hover {
   color: #fa9c69;
+}
+
+.copy-icon {
+  position: absolute;
+  top: 0;
+  right: 0;
+  font-size: 12px;
+  color: #c4a48c;
 }
 
 .desc-text {

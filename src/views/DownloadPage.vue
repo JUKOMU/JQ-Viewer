@@ -502,7 +502,7 @@ const completedGroups = computed<CompletedGroup[]>(() => {
     chapters.sort((a, b) => (a.chapterSortOrder ?? 0) - (b.chapterSortOrder ?? 0))
     groups.push({
       type: chapters.length > 1 ? 'multi' : 'single',
-      albumId,
+      albumId: chapters[0].albumId,
       albumTitle: chapters[0].albumTitle,
       coverUrl: chapters[0].coverUrl,
       chapters,
@@ -840,7 +840,7 @@ const onImportPdf = async () => {
   try {
     const result = await JmcomicService.pickFolder()
     if (result.cancelled || !result.path) return
-    await PdfImportService.scanAndParse(result.path)
+    await PdfImportService.scanAndParse(result.path, result.treeUri)
     router.push('/import-review')
   } catch (e: any) {
     await showToast(sanitizeError(e, '无法打开文件夹选择器'), 'danger')

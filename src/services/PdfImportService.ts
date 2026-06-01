@@ -19,8 +19,8 @@ export function clearCachedParseResult(): void {
 // ========== 导入流程 ==========
 
 /** 步骤 1：扫描文件夹并解析文件名 */
-async function scanAndParse(folderPath: string): Promise<ImportPdfParseResult> {
-  const result = await JmcomicService.scanPdfFiles(folderPath)
+async function scanAndParse(folderPath: string, treeUri?: string): Promise<ImportPdfParseResult> {
+  const result = await JmcomicService.scanPdfFiles(folderPath, treeUri)
   const filePaths = result.files.map((f) => f.filePath)
   const fileNames = result.files.map((f) => f.fileName)
   const parseResult = parseFilenamesForImport(filePaths, fileNames)

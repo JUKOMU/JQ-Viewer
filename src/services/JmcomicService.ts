@@ -242,14 +242,14 @@ interface JmcomicPlugin {
 
   // PDF 导出
   exportPdfBatch(options: { tasks: PdfExportTask[] }): Promise<{ accepted: boolean }>
-  pickFolder(): Promise<{ path: string; cancelled: boolean }>
+  pickFolder(): Promise<{ path: string; treeUri?: string; cancelled: boolean }>
   checkFilesExist(options: { paths: string[] }): Promise<{ existing: string[] }>
   getExternalStoragePath(): Promise<{ path: string }>
   checkNotificationPermission(): Promise<{ granted: boolean }>
   requestNotificationPermission(): Promise<{ granted: boolean }>
 
   // PDF 导入
-  scanPdfFiles(options: { path: string }): Promise<{ files: PdfScanItem[] }>
+  scanPdfFiles(options: { path: string; treeUri?: string }): Promise<{ files: PdfScanItem[] }>
   importPdfs(options: { items: ImportPdfItem[] }): Promise<ImportPdfsResult>
   getImportedPdfs(): Promise<ImportedPdfsResult>
   deleteImportedPdf(options: { id: number }): Promise<{ success: boolean }>
@@ -638,8 +638,8 @@ export const JmcomicService = {
 
   // ========== PDF 导入 ==========
 
-  scanPdfFiles(path: string) {
-    return native.scanPdfFiles({ path })
+  scanPdfFiles(path: string, treeUri?: string) {
+    return native.scanPdfFiles({ path, treeUri })
   },
 
   importPdfs(items: ImportPdfItem[]) {

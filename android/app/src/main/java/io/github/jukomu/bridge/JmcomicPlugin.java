@@ -632,8 +632,6 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         }
     }
 
-    private Uri lastPickedTreeUri;
-
     @PluginMethod
     public void pickFolder(PluginCall call) {
         synchronized (folderLock) {
@@ -674,7 +672,6 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         }
 
         android.net.Uri treeUri = data.getData();
-        lastPickedTreeUri = treeUri;
         // 持久化权限，以便后续写入
         try {
             getContext().getContentResolver().takePersistableUriPermission(
@@ -686,6 +683,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
 
         String path = treeUriToPath(treeUri);
         ret.put("path", path != null ? path : "");
+        ret.put("treeUri", treeUri.toString());
         ret.put("cancelled", false);
         call.resolve(ret);
     }
@@ -798,7 +796,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         android.database.Cursor cursor = null;
         try {
             cursor = resolver.query(uri, null, null, null, null);
-            return cursor != null;
+            return cursor != null && cursor.getCount() > 0;
         } catch (Exception e) {
             return false;
         } finally {
@@ -2153,9 +2151,9 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
 
     @PluginMethod
     public void scanPdfFiles(PluginCall call) {
-        Uri treeUri = lastPickedTreeUri;
-        if (treeUri != null) {
-            scanPdfFilesViaSaf(call, treeUri);
+        String treeUriStr = call.getString("treeUri");
+        if (treeUriStr != null && !treeUriStr.isEmpty()) {
+            scanPdfFilesViaSaf(call, Uri.parse(treeUriStr));
         } else {
             scanPdfFilesViaFile(call);
         }

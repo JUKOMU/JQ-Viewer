@@ -1,11 +1,13 @@
 package io.github.jukomu.data;
 
+import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
 import android.graphics.pdf.PdfRenderer;
+import android.net.Uri;
 import android.os.ParcelFileDescriptor;
 import android.util.Log;
 
@@ -35,10 +37,13 @@ public class PdfImportStore extends SQLiteOpenHelper {
     static final String COL_COVER_URL = "cover_url";
     static final String COL_AUTHORS = "authors";
     static final String COL_CHAPTER_SORT_ORDER = "chapter_sort_order";
+    static final String COL_FILE_SIZE = "file_size";
+    static final String COL_PAGE_COUNT = "page_count";
     static final String COL_CREATED_AT = "created_at";
     static final String COL_FOLDER_ID = "folder_id";
 
     private static PdfImportStore instance;
+    private final Context appContext;
 
     public static synchronized PdfImportStore getInstance(Context context) {
         if (instance == null) {
@@ -49,6 +54,7 @@ public class PdfImportStore extends SQLiteOpenHelper {
 
     private PdfImportStore(Context context) {
         super(context, DB_NAME, null, DB_VERSION);
+        this.appContext = context.getApplicationContext();
     }
 
     @Override
@@ -62,6 +68,8 @@ public class PdfImportStore extends SQLiteOpenHelper {
             + COL_COVER_URL + " TEXT NOT NULL DEFAULT '',"
             + COL_AUTHORS + " TEXT NOT NULL DEFAULT '',"
             + COL_CHAPTER_SORT_ORDER + " INTEGER DEFAULT 0,"
+            + COL_FILE_SIZE + " INTEGER NOT NULL DEFAULT 0,"
+            + COL_PAGE_COUNT + " INTEGER NOT NULL DEFAULT 0,"
             + COL_CREATED_AT + " INTEGER NOT NULL,"
             + COL_FOLDER_ID + " TEXT DEFAULT NULL"
             + ")");
@@ -88,8 +96,49 @@ public class PdfImportStore extends SQLiteOpenHelper {
         if (folderId != null) {
             cv.put(COL_FOLDER_ID, folderId);
         }
+        // 在插入时计算 fileSize 和 pageCount，避免每次查询都重新解析
+        int[] fileInfo = computeFileInfo(filePath);
+        cv.put(COL_FILE_SIZE, fileInfo[0]);
+        cv.put(COL_PAGE_COUNT, fileInfo[1]);
         return getWritableDatabase().insertWithOnConflict(
             TABLE_PDFS, null, cv, SQLiteDatabase.CONFLICT_IGNORE);
+    }
+
+    private int[] computeFileInfo(String filePath) {
+        int fileSize = 0;
+        int pageCount = 0;
+        if (filePath == null) return new int[]{0, 0};
+
+        if (filePath.startsWith("content://")) {
+            // SAF content URI：通过 ContentResolver 打开
+            ParcelFileDescriptor pfd = null;
+            try {
+                Uri uri = Uri.parse(filePath);
+                pfd = appContext.getContentResolver().openFileDescriptor(uri, "r");
+                if (pfd != null) {
+                    fileSize = (int) pfd.getStatSize();
+                    PdfRenderer renderer = new PdfRenderer(pfd);
+                    pageCount = renderer.getPageCount();
+                    renderer.close();
+                }
+            } catch (Exception ignored) {
+            } finally {
+                if (pfd != null) {
+                    try { pfd.close(); } catch (Exception ignored) {}
+                }
+            }
+        } else {
+            File f = new File(filePath);
+            fileSize = (int) f.length();
+            try {
+                PdfRenderer renderer = new PdfRenderer(
+                    ParcelFileDescriptor.open(f, ParcelFileDescriptor.MODE_READ_ONLY));
+                pageCount = renderer.getPageCount();
+                renderer.close();
+            } catch (Exception ignored) {
+            }
+        }
+        return new int[]{fileSize, pageCount};
     }
 
     public JSONArray getAllPdfs() {
@@ -133,8 +182,7 @@ public class PdfImportStore extends SQLiteOpenHelper {
         JSONObject obj = new JSONObject();
         try {
             obj.put("id", c.getLong(c.getColumnIndexOrThrow(COL_ID)));
-            String path = c.getString(c.getColumnIndexOrThrow(COL_FILE_PATH));
-            obj.put("filePath", path);
+            obj.put("filePath", c.getString(c.getColumnIndexOrThrow(COL_FILE_PATH)));
             obj.put("fileName", c.getString(c.getColumnIndexOrThrow(COL_FILE_NAME)));
             obj.put("albumId", c.getString(c.getColumnIndexOrThrow(COL_ALBUM_ID)));
             obj.put("albumTitle", c.getString(c.getColumnIndexOrThrow(COL_ALBUM_TITLE)));
@@ -148,18 +196,10 @@ public class PdfImportStore extends SQLiteOpenHelper {
             if (!c.isNull(folderIdx)) {
                 obj.put("folderId", c.getString(folderIdx));
             }
-            // 文件大小
-            File f = new File(path);
-            obj.put("fileSize", f.length());
-            // PDF 页数
-            try {
-                PdfRenderer renderer = new PdfRenderer(
-                    ParcelFileDescriptor.open(f, ParcelFileDescriptor.MODE_READ_ONLY));
-                obj.put("pageCount", renderer.getPageCount());
-                renderer.close();
-            } catch (Exception ignored) {
-                // 非 PDF 或损坏文件
-            }
+            int sizeIdx = c.getColumnIndex(COL_FILE_SIZE);
+            obj.put("fileSize", !c.isNull(sizeIdx) ? c.getInt(sizeIdx) : 0);
+            int pagesIdx = c.getColumnIndex(COL_PAGE_COUNT);
+            obj.put("pageCount", !c.isNull(pagesIdx) ? c.getInt(pagesIdx) : 0);
         } catch (Exception e) {
             Log.e(TAG, "cursorToPdfJson failed", e);
         }

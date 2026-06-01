@@ -5,7 +5,6 @@
         <div class="toolbar-start">
           <MenuToggleButton/>
         </div>
-        <div class="toolbar-title">下载管理</div>
         <div class="toolbar-end">
           <button class="import-btn" @click="onImportPdf">
             <IonIcon :icon="cloudUploadOutline"/>
@@ -954,6 +953,9 @@ const clearFailed = async () => {
   position: absolute;
   right: 12px;
   bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .import-btn {

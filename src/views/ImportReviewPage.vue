@@ -3,7 +3,7 @@
     <IonHeader class="ion-no-border">
       <IonToolbar>
         <div class="toolbar-start">
-          <IonBackButton :default-href="'/download'" @click.stop.prevent="onBack"/>
+          <IonBackButton :default-href="'/download'"/>
         </div>
         <div class="toolbar-title">导入 PDF 审核</div>
         <div class="toolbar-end">
@@ -43,72 +43,60 @@
           class="file-card"
           :class="cardClass(file)"
         >
-          <div class="card-header">
-            <IonIcon
-              :icon="statusIcon(file)"
-              class="status-icon"
-              :class="statusIconClass(file)"
+          <!-- 封面区 -->
+          <div class="cover-wrap">
+            <img
+              v-if="file.albumDetail?.image"
+              :src="file.albumDetail.image"
+              class="cover-img"
             />
-            <span class="file-name" :title="file.fileName">{{ file.fileName }}</span>
-            <button class="edit-toggle" @click="toggleEdit(idx)">
-              <IonIcon :icon="editingIdx === idx ? checkmarkOutline : createOutline"/>
-            </button>
+            <div v-else class="cover-placeholder">
+              <IonIcon :icon="documentTextOutline"/>
+            </div>
           </div>
 
-          <!-- 只读展示 -->
-          <div v-if="editingIdx !== idx" class="card-body">
-            <div class="id-tags">
-              <template v-if="file.status === 'resolved' && file.extractedIds.length === 1">
-                <span class="tag tag-resolved">{{ file.extractedIds[0] }}</span>
-                <span v-if="file.chapterSortOrder != null" class="tag tag-chapter">
-                  第{{ file.chapterSortOrder }}话
-                </span>
-              </template>
-              <template v-else-if="file.status === 'ambiguous'">
-                <span class="tag tag-ambiguous">多个候选ID</span>
-                <span v-for="id in file.extractedIds" :key="id" class="tag tag-candidate">{{ id }}</span>
-              </template>
-              <template v-else>
-                <span class="tag tag-missing">未识别 ID</span>
-              </template>
-              <span v-if="file.duplicateIds.length > 0" class="tag tag-duplicate">
-                与其他文件 ID 重复
+          <!-- 信息区 -->
+          <div class="info" @click="editingIdx !== idx ? undefined : undefined">
+            <h3 class="item-title">
+              {{ file.albumDetail?.title || '未识别本子' }}
+            </h3>
+            <div class="item-meta file-name-line">{{ file.fileName }}</div>
+            <div v-if="file.albumDetail?.authors?.length" class="item-meta">
+              作者：{{ file.albumDetail.authors.join(' / ') }}
+            </div>
+            <div v-if="file.albumDetail?.tags?.length" class="item-tags">
+              <span
+                v-for="t in file.albumDetail.tags.slice(0, 10)"
+                :key="t"
+                class="tag-chip"
+              >{{ t }}</span>
+              <span v-if="file.albumDetail.tags.length > 10" class="tag-chip tag-more">...</span>
+            </div>
+            <div class="status-row">
+              <span class="status-tag" :class="statusTagClass(file)">{{ statusTagText(file) }}</span>
+              <span v-if="file.chapterSortOrder != null" class="status-tag chapter-tag">
+                第{{ file.chapterSortOrder }}话
               </span>
             </div>
-
-            <!-- 相册详情预览 -->
-            <div v-if="file.albumDetail" class="album-preview">
-              <img
-                v-if="file.albumDetail.image"
-                :src="file.albumDetail.image"
-                class="album-cover"
-              />
-              <div class="album-info">
-                <span class="album-title">{{ file.albumDetail.title }}</span>
-                <span class="album-authors">{{ file.albumDetail.authors?.join('，') }}</span>
-              </div>
-            </div>
-            <div v-else-if="file.status === 'resolved' && file.extractedIds.length === 1 && file.albumDetail === null" class="album-preview no-detail">
-              <span class="no-detail-text">无法获取本子信息（ID: {{ file.extractedIds[0] }}）</span>
-            </div>
-
-            <div v-if="file.chapterSortOrder != null" class="chapter-order-display">
-              章节序号: {{ file.chapterSortOrder }}
-            </div>
           </div>
 
-          <!-- 编辑模式 -->
-          <div v-if="editingIdx === idx" class="edit-area">
+          <!-- 编辑按钮 -->
+          <button class="edit-btn" @click.stop="toggleEdit(idx)">
+            <IonIcon :icon="editingIdx === idx ? checkmarkOutline : createOutline"/>
+          </button>
+
+          <!-- 编辑模式遮罩 -->
+          <div v-show="editingIdx === idx" class="edit-overlay">
             <textarea
               v-model="editText"
               class="edit-textarea"
-              rows="1"
+              rows="2"
               @keydown.enter.prevent="applyEdit(idx)"
             />
-            <div class="edit-hints">
-              <span class="hint">删除多余 ID 或添加章节序号（末尾空格+数字，如 <code>123456 3</code>）</span>
+            <div class="edit-actions">
+              <span class="edit-hint">末尾空格+数字=章节序号，如 <code>123456 3</code></span>
+              <button class="apply-btn" @click="applyEdit(idx)">应用</button>
             </div>
-            <button class="apply-btn" @click="applyEdit(idx)">应用</button>
           </div>
         </div>
       </TransitionGroup>
@@ -132,11 +120,11 @@
 <script setup lang="ts">
 defineOptions({ name: 'ImportReviewPage' })
 
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { IonPage, IonHeader, IonToolbar, IonBackButton, IonContent, IonIcon } from '@ionic/vue'
 import { alertController } from '@ionic/vue'
 import { useRouter } from 'vue-router'
-import { documentTextOutline, createOutline, checkmarkOutline, checkmarkCircle, helpCircle, closeCircle, warning } from 'ionicons/icons'
+import { documentTextOutline, createOutline, checkmarkOutline } from 'ionicons/icons'
 import { PdfImportService } from '@/services/PdfImportService'
 import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
 import { OfflineFavoriteService } from '@/services/OfflineFavoriteService'
@@ -259,20 +247,21 @@ function cardClass(file: PdfFileParseItem) {
   }
 }
 
-function statusIcon(file: PdfFileParseItem) {
-  if (file.status === 'resolved' && file.extractedIds.length === 1) return checkmarkCircle
-  if (file.status === 'ambiguous') return helpCircle
-  if (file.status === 'missing') return closeCircle
-  if (file.duplicateIds.length > 0) return warning
-  return warning
+function statusTagText(file: PdfFileParseItem): string {
+  const id = file.editedIds?.[0] || file.extractedIds[0]
+  if (file.status === 'missing') return '未识别ID'
+  if (file.status === 'ambiguous') {
+    return `候选: ${file.extractedIds.slice(0, 3).join(', ')}${file.extractedIds.length > 3 ? '...' : ''}`
+  }
+  if (file.duplicateIds.length > 0) return `ID重复 #${id}`
+  return `已解析 #${id}`
 }
 
-function statusIconClass(file: PdfFileParseItem) {
-  return {
-    'icon-resolved': file.status === 'resolved' && file.extractedIds.length === 1 && file.duplicateIds.length === 0,
-    'icon-warning': file.status === 'ambiguous' || file.duplicateIds.length > 0,
-    'icon-danger': file.status === 'missing',
-  }
+function statusTagClass(file: PdfFileParseItem): string {
+  if (file.status === 'missing') return 'tag-missing'
+  if (file.status === 'ambiguous') return 'tag-ambiguous'
+  if (file.duplicateIds.length > 0) return 'tag-duplicate'
+  return 'tag-resolved'
 }
 
 // ---- 确认流程 ----
@@ -398,10 +387,9 @@ async function doImport(resolvedFiles: PdfFileParseItem[], folderId?: string) {
   }
 }
 
-function onBack() {
+onBeforeUnmount(() => {
   PdfImportService.clearCachedParseResult()
-  router.replace('/download')
-}
+})
 </script>
 
 <style scoped>
@@ -527,15 +515,21 @@ IonHeader {
   transition: transform 0.3s ease;
 }
 
-/* ---- 文件卡片 ---- */
+/* ---- 文件卡片（SearchResultContainer 风格）---- */
 .file-card {
-  background: var(--ion-card-background, #fff);
-  border-radius: 10px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: #fffaf6;
+  border-radius: 12px;
+  box-shadow: 5px 12px 28px rgb(76 42 24 / 0.2);
   margin-bottom: 10px;
+  padding: 0 10px 0 0;
   overflow: hidden;
   border-left: 4px solid transparent;
   transition: border-color 0.2s;
+  position: relative;
+  min-height: 108px;
 }
 
 .file-card.card-resolved {
@@ -554,199 +548,205 @@ IonHeader {
   border-left-color: #7c4dff;
 }
 
-/* ---- 卡片头部 ---- */
-.card-header {
+/* ---- 封面 ---- */
+.cover-wrap {
+  width: 80px;
+  aspect-ratio: 3 / 4;
+  flex-shrink: 0;
+  border-radius: 6px;
+  overflow: hidden;
+  background: linear-gradient(145deg, #f3ded0, #ffece0);
+}
+
+.cover-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.cover-placeholder {
+  width: 100%;
+  height: 100%;
   display: flex;
   align-items: center;
-  padding: 10px 12px;
-  gap: 8px;
+  justify-content: center;
+  color: #c4a48d;
+  font-size: 28px;
 }
 
-.status-icon {
-  font-size: 20px;
-  flex-shrink: 0;
-}
-
-.icon-resolved {
-  color: #4caf50;
-}
-
-.icon-warning {
-  color: #ff9800;
-}
-
-.icon-danger {
-  color: #f44336;
-}
-
-.file-name {
+/* ---- 信息区 ---- */
+.info {
   flex: 1;
-  font-size: 13px;
-  font-weight: 500;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 2px 8px 4px;
+}
+
+.item-title {
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: #30201a;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin: 0;
+}
+
+.item-meta {
+  font-size: 11px;
+  line-height: 1.35;
+  color: #876653;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--ion-text-color, #222);
 }
 
-.edit-toggle {
-  background: none;
-  border: none;
-  padding: 4px;
-  cursor: pointer;
-  color: #666;
-  font-size: 18px;
+.file-name-line {
+  word-break: break-all;
+  white-space: normal;
 }
 
-/* ---- ID 标签 ---- */
-.card-body {
-  padding: 0 12px 10px 40px;
-}
-
-.id-tags {
+/* ---- 标签 chips ---- */
+.item-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 8px;
+  gap: 4px;
 }
 
-.tag {
-  font-size: 12px;
-  padding: 3px 8px;
-  border-radius: 10px;
+.tag-chip {
+  max-width: 120px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #fff0e7;
+  color: #9b5a35;
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tag-chip.tag-more {
+  background: transparent;
+  color: #9b5a35;
+  padding: 3px 4px;
+}
+
+/* ---- 状态标签行 ---- */
+.status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.status-tag {
+  font-size: 10px;
+  padding: 3px 7px;
+  border-radius: 999px;
   font-weight: 500;
+  white-space: nowrap;
 }
 
-.tag-resolved {
+.status-tag.tag-resolved {
   background: #e8f5e9;
   color: #2e7d32;
 }
 
-.tag-ambiguous {
+.status-tag.tag-ambiguous {
   background: #fff8e1;
   color: #e65100;
 }
 
-.tag-candidate {
-  background: #f5f5f5;
-  color: #666;
-}
-
-.tag-missing {
+.status-tag.tag-missing {
   background: #ffebee;
   color: #c62828;
 }
 
-.tag-duplicate {
+.status-tag.tag-duplicate {
   background: #ede7f6;
   color: #4527a0;
 }
 
-.tag-chapter {
+.status-tag.chapter-tag {
   background: #e3f2fd;
   color: #1565c0;
 }
 
-/* ---- 相册预览 ---- */
-.album-preview {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px;
-  background: #f9f9f9;
-  border-radius: 8px;
+/* ---- 编辑按钮（右上角，仿 SearchResultContainer 的 ⋮ 按钮位置）---- */
+.edit-btn {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  padding: 6px;
+  cursor: pointer;
+  color: #b0886a;
+  font-size: 16px;
+  z-index: 1;
 }
 
-.album-preview.no-detail {
-  background: #fff8e1;
-}
-
-.album-cover {
-  width: 48px;
-  height: 64px;
-  object-fit: contain;
-  border-radius: 4px;
-  flex-shrink: 0;
-}
-
-.album-info {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  overflow: hidden;
-}
-
-.album-title {
-  font-size: 14px;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.album-authors {
-  font-size: 12px;
-  color: #888;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.no-detail-text {
-  font-size: 13px;
-  color: #e65100;
-}
-
-/* ---- 章节序号 ---- */
-.chapter-order-display {
-  margin-top: 6px;
-  font-size: 12px;
-  color: #1565c0;
-  font-weight: 500;
-}
-
-/* ---- 编辑区 ---- */
-.edit-area {
-  padding: 8px 12px 10px 40px;
+/* ---- 编辑遮罩 ---- */
+.edit-overlay {
+  position: absolute;
+  inset: 0;
+  background: #fffaf6;
+  border-radius: 12px;
+  padding: 10px 12px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
+  z-index: 2;
 }
 
 .edit-textarea {
+  flex: 1;
   width: 100%;
-  border: 1px solid #ddd;
+  border: 1px solid #e0c8b0;
   border-radius: 6px;
   padding: 8px;
-  font-size: 14px;
+  font-size: 13px;
   font-family: monospace;
   resize: none;
-  min-height: 36px;
-  background: var(--ion-background-color, #fff);
-  color: var(--ion-text-color, #222);
+  min-height: 40px;
+  background: #fff;
+  color: #4c2a18;
 }
 
-.edit-hints {
-  font-size: 12px;
-  color: #999;
+.edit-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
-.edit-hints code {
-  background: #f0f0f0;
+.edit-hint {
+  font-size: 11px;
+  color: #b09880;
+}
+
+.edit-hint code {
+  background: #f0ede8;
   padding: 1px 4px;
   border-radius: 3px;
-  font-size: 11px;
+  font-size: 10px;
 }
 
 .apply-btn {
-  align-self: flex-end;
   background: var(--ion-color-primary, #3880ff);
   color: #fff;
   border: none;
   border-radius: 6px;
-  padding: 6px 14px;
-  font-size: 13px;
+  padding: 5px 12px;
+  font-size: 12px;
   cursor: pointer;
+  flex-shrink: 0;
 }
 
 /* ---- 底部间距 ---- */

@@ -48,6 +48,7 @@
               :class="segClass(seg.type)"
             >{{ seg.text }}</span></pre>
           </div>
+
         </div>
 
         <div v-show="sourceExpanded && !editing" class="source-actions-row">
@@ -81,6 +82,11 @@
 
     <IonContent ref="contentRef" :scroll-events="true" @ion-scroll="onContentScroll">
       <div class="page-shell">
+        <div class="fav-legend">
+          <span class="fav-legend-item"><span class="fav-legend-dot online"/> 在线收藏</span>
+          <span class="fav-legend-item"><span class="fav-legend-dot offline"/> 离线收藏</span>
+          <span class="fav-legend-item"><span class="fav-legend-dot both"/> 双端收藏</span>
+        </div>
         <SearchResultContainer
           ref="resultContainerRef"
           :result="resultMeta"
@@ -1292,6 +1298,41 @@ const progressPercent = computed(() => {
   color: #d9534f;
   font-weight: 600;
   border-radius: 2px;
+}
+
+/* ---- 收藏状态图例 ---- */
+.fav-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 8px 14px;
+  font-size: 11px;
+}
+
+.fav-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #876653;
+}
+
+.fav-legend-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.fav-legend-dot.online {
+  background: #6dbf87;
+}
+
+.fav-legend-dot.offline {
+  background: #d4b870;
+}
+
+.fav-legend-dot.both {
+  background: #5b9bd5;
 }
 
 /* ---- 结果区域 ---- */

@@ -47,8 +47,25 @@ jobs:
             - run: npm run build
             - run: npx cap sync android
 
+            - name: Validate release signing secrets
+              env:
+                  KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+                  KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+                  KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+                  KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+              run: |
+                  missing=0
+                  for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+                    if [ -z "${!name}" ]; then
+                      echo "::error::Missing required release signing secret: ${name}"
+                      missing=1
+                    fi
+                  done
+                  if [ "$missing" -ne 0 ]; then
+                    exit 1
+                  fi
+
             - name: Setup keystore
-              if: env.KEYSTORE_BASE64
               env:
                   KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
                   KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}

@@ -6,6 +6,35 @@ if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
 }
 
+def validateReleaseSigning = {
+    if (!keystorePropertiesFile.exists()) {
+        throw new GradleException("Release signing requires android/keystore.properties. Debug signing fallback is not allowed.")
+    }
+
+    def missingProperties = ['storeFile', 'storePassword', 'keyAlias', 'keyPassword'].findAll {
+        !keystoreProperties[it]?.toString()?.trim()
+    }
+    if (!missingProperties.isEmpty()) {
+        throw new GradleException("Release signing is missing required keystore properties: ${missingProperties.join(', ')}")
+    }
+
+    def releaseStoreFile = rootProject.file(keystoreProperties['storeFile'])
+    if (!releaseStoreFile.exists()) {
+        throw new GradleException("Release signing keystore file does not exist: ${releaseStoreFile}")
+    }
+}
+
+def hasReleaseSigningProperties = keystorePropertiesFile.exists() &&
+    ['storeFile', 'storePassword', 'keyAlias', 'keyPassword'].every {
+        keystoreProperties[it]?.toString()?.trim()
+    }
+
+gradle.taskGraph.whenReady { taskGraph ->
+    if (taskGraph.allTasks.any { it.name.toLowerCase().contains('release') }) {
+        validateReleaseSigning()
+    }
+}
+
 android {
     namespace = "io.github.jukomu"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -22,7 +51,7 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
-    if (keystorePropertiesFile.exists()) {
+    if (hasReleaseSigningProperties) {
         signingConfigs {
             release {
                 storeFile rootProject.file(keystoreProperties['storeFile'])
@@ -36,7 +65,9 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-            signingConfig keystorePropertiesFile.exists() ? signingConfigs.release : signingConfigs.debug
+            if (hasReleaseSigningProperties) {
+                signingConfig signingConfigs.release
+            }
         }
     }
     compileOptions {

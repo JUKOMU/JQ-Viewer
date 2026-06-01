@@ -78,6 +78,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
     // ---- 权限相关 ----
     private static JmcomicPlugin instance;
     private PluginCall pendingPermissionCall;
+    private PluginCall pendingNotificationPermissionCall;
     private PermissionService permissionService;
 
     // ---- OCR 相关 ----
@@ -138,9 +139,6 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
             }
         }
         FileStore.getInstance().init(ctx, downloadDb, usePublicDir);
-
-        // 启动时检查通知权限（API 33+ 弹出系统标准对话框）
-        requestNotificationAtStartup(ctx);
 
         // 初始化历史记录数据库
         HistoryStore.getInstance(ctx);
@@ -514,19 +512,15 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
             }
         } else if (requestCode == PermissionService.REQUEST_POST_NOTIFICATIONS) {
             boolean granted = permissionService.interpretNotificationResult(grantResults);
-            Log.i("JmcomicPlugin", "启动时通知权限请求结果: granted=" + granted);
-        }
-    }
-
-    /**
-     * 启动时检查通知权限（API 33+），未授权则弹出系统标准对话框。
-     */
-    private void requestNotificationAtStartup(Context ctx) {
-        if (!permissionService.checkNotificationPermission(ctx)) {
-            Log.i("JmcomicPlugin", "通知权限未开启，启动时请求");
-            ActivityCompat.requestPermissions(getActivity(),
-                new String[]{Manifest.permission.POST_NOTIFICATIONS},
-                PermissionService.REQUEST_POST_NOTIFICATIONS);
+            if (pendingNotificationPermissionCall != null) {
+                PluginCall call = pendingNotificationPermissionCall;
+                pendingNotificationPermissionCall = null;
+                JSObject ret = new JSObject();
+                ret.put("granted", granted);
+                call.resolve(ret);
+            } else {
+                Log.i("JmcomicPlugin", "通知权限请求结果: granted=" + granted);
+            }
         }
     }
 
@@ -729,32 +723,37 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
 
     @PluginMethod
     public void checkNotificationPermission(PluginCall call) {
-        android.app.NotificationManager nm = (android.app.NotificationManager)
-            getContext().getSystemService(Context.NOTIFICATION_SERVICE);
         JSObject ret = new JSObject();
-        ret.put("granted", nm != null && nm.areNotificationsEnabled());
+        ret.put("granted", permissionService.checkNotificationPermission(getContext()));
         call.resolve(ret);
     }
 
     @PluginMethod
     public void requestNotificationPermission(PluginCall call) {
-        try {
-            Intent intent = new Intent();
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                intent.setAction(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS);
-                intent.putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, getContext().getPackageName());
-            } else {
-                intent.setAction(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
-                intent.setData(android.net.Uri.parse("package:" + getContext().getPackageName()));
-            }
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            getContext().startActivity(intent);
+        if (permissionService.checkNotificationPermission(getContext())) {
             JSObject ret = new JSObject();
             ret.put("granted", true);
             call.resolve(ret);
-        } catch (Exception e) {
-            call.reject(e.getMessage(), e);
+            return;
         }
+
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            JSObject ret = new JSObject();
+            ret.put("granted", false);
+            call.resolve(ret);
+            return;
+        }
+
+        if (pendingNotificationPermissionCall != null) {
+            call.reject("通知权限请求正在进行中，请先完成上一个请求。");
+            return;
+        }
+
+        pendingNotificationPermissionCall = call;
+        call.setKeepAlive(true);
+        ActivityCompat.requestPermissions(getActivity(),
+            new String[]{Manifest.permission.POST_NOTIFICATIONS},
+            PermissionService.REQUEST_POST_NOTIFICATIONS);
     }
 
     @PluginMethod

@@ -77,6 +77,10 @@ public class PdfImportStore extends SQLiteOpenHelper {
 
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
+        if (oldVersion < 2) {
+            // DB_VERSION 仍为 1；未来升到 2 时必须在这里追加 ALTER TABLE 等显式迁移。
+            // imported_pdfs 存文件引用和缓存信息，不能静默跳过结构变更。
+        }
     }
 
     // ========== CRUD ==========

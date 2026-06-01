@@ -80,11 +80,10 @@ public class FavoriteStore extends SQLiteOpenHelper {
 
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        // 注意：未来迁移必须使用 ALTER TABLE ADD COLUMN，直接 DROP TABLE 会导致用户数据永久丢失
-        db.execSQL("DROP TABLE IF EXISTS " + TABLE_BACKUPS);
-        db.execSQL("DROP TABLE IF EXISTS " + TABLE_FAVORITES);
-        db.execSQL("DROP TABLE IF EXISTS " + TABLE_FOLDERS);
-        onCreate(db);
+        if (oldVersion < 2) {
+            // DB_VERSION 仍为 1；未来升到 2 时只能在这里追加非破坏性迁移。
+            // 离线收藏是用户核心数据，禁止 DROP TABLE 后重建。
+        }
     }
 
     private String generateFolderId() {

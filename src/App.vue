@@ -36,6 +36,58 @@ const router = useRouter()
 const routeStack = ref<string[]>([])
 const isBack = ref(false)
 const keepAliveExclude = ref<string[]>([])
+let initialReaderRestorePending = true
+
+const READER_ROUTE_RESTORE_KEY = 'jq_reader_route_restore'
+const READER_ROUTE_RESTORE_TTL_MS = 24 * 60 * 60 * 1000
+
+type ReaderRouteSnapshot = {
+  fullPath: string
+  savedAt: number
+}
+
+const isReaderRoutePath = (path: string) =>
+  path === '/pdf-reader' || /^\/album\/[^/]+\/read\/[^/]+$/.test(path)
+
+const saveReaderRoute = (fullPath: string) => {
+  const snapshot: ReaderRouteSnapshot = {
+    fullPath,
+    savedAt: Date.now(),
+  }
+  localStorage.setItem(READER_ROUTE_RESTORE_KEY, JSON.stringify(snapshot))
+}
+
+const clearReaderRoute = () => {
+  localStorage.removeItem(READER_ROUTE_RESTORE_KEY)
+}
+
+const readReaderRoute = () => {
+  try {
+    const raw = localStorage.getItem(READER_ROUTE_RESTORE_KEY)
+    if (!raw) return null
+    const snapshot = JSON.parse(raw) as Partial<ReaderRouteSnapshot>
+    if (!snapshot.fullPath || !snapshot.savedAt) {
+      clearReaderRoute()
+      return null
+    }
+    if (Date.now() - snapshot.savedAt > READER_ROUTE_RESTORE_TTL_MS) {
+      clearReaderRoute()
+      return null
+    }
+    return snapshot.fullPath
+  } catch {
+    clearReaderRoute()
+    return null
+  }
+}
+
+const syncReaderRouteSnapshot = (path: string, fullPath: string) => {
+  if (isReaderRoutePath(path)) {
+    saveReaderRoute(fullPath)
+    return
+  }
+  clearReaderRoute()
+}
 
 router.beforeEach((to, from) => {
   const fromMenu = isMenuNavigation.value
@@ -58,6 +110,11 @@ router.beforeEach((to, from) => {
       })
     }
   }
+})
+
+router.afterEach((to) => {
+  if (initialReaderRestorePending && (to.path === '/' || to.path === '/home')) return
+  syncReaderRouteSnapshot(to.path, to.fullPath)
 })
 
 const transitionName = computed(() => (isBack.value ? 'page-slide-back' : 'page-slide-forward'))
@@ -90,6 +147,17 @@ let pollTimer: ReturnType<typeof setInterval> | null = null
 let activeToast: Awaited<ReturnType<typeof showToast>> | null = null
 
 onMounted(async () => {
+  if (route.path === '/' || route.path === '/home') {
+    const readerRoute = readReaderRoute()
+    if (readerRoute) {
+      await router.replace(readerRoute).catch(() => {
+        clearReaderRoute()
+      })
+    }
+  }
+  initialReaderRestorePending = false
+  syncReaderRouteSnapshot(route.path, route.fullPath)
+
   const {initAuth} = useAuth()
 
   // 加载设置到内存缓存（必须在任何页面渲染前完成）

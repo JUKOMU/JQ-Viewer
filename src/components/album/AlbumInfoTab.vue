@@ -140,14 +140,6 @@
 </template>
 
 <script setup lang="ts">
-defineOptions({name: 'AlbumInfoTab'})
-
-defineEmits<{
-  'toggle-like': []
-  'toggle-favorite': []
-  download: []
-  'navigate-album': [related: AlbumMeta]
-}>()
 import {computed, ref} from 'vue'
 import {useRouter} from 'vue-router'
 import {IonIcon, menuController} from '@ionic/vue'
@@ -163,6 +155,21 @@ import {
 import type {AlbumDetail, AlbumMeta} from '@/services/JmcomicTypes'
 import {showToast} from '@/services/JmcomicService'
 
+defineOptions({name: 'AlbumInfoTab'})
+
+const props = defineProps<{
+  album: AlbumDetail | null
+  actionBusy: { like: boolean; favorite: boolean }
+  downloadStatus?: string
+}>()
+
+defineEmits<{
+  'toggle-like': []
+  'toggle-favorite': []
+  download: []
+  'navigate-album': [related: AlbumMeta]
+}>()
+
 const router = useRouter()
 
 function formatDate(raw: string): string {
@@ -172,12 +179,6 @@ function formatDate(raw: string): string {
   if (isNaN(d.getTime())) return raw
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
-
-const props = defineProps<{
-  album: AlbumDetail | null
-  actionBusy: { like: boolean; favorite: boolean }
-  downloadStatus?: string
-}>()
 
 const descExpanded = ref(false)
 

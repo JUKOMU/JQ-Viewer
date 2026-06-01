@@ -180,13 +180,13 @@
 </template>
 
 <script setup lang="ts">
-defineOptions({ name: 'PdfExportBottomSheet' })
-
 import { computed, ref, watch } from 'vue'
 import { IonRange, IonToggle, useBackButton } from '@ionic/vue'
 import type { DownloadTask } from '@/services/JmcomicTypes'
 import { PdfExportService } from '@/services/PdfExportService'
 import { JmcomicService, showToast } from '@/services/JmcomicService'
+
+defineOptions({ name: 'PdfExportBottomSheet' })
 
 const props = defineProps<{
   modelValue: boolean

@@ -61,7 +61,9 @@ const routes: Array<RouteRecordRaw> = [
   },
   {
     path: '/album/:albumId/read/:chapterId',
+    name: 'ReaderPage',
     component: () => import('@/views/ReaderPage.vue'),
+    meta: {menu: false, keepAlive: true},
   },
   {
     path: '/login',
@@ -95,7 +97,7 @@ const routes: Array<RouteRecordRaw> = [
     path: '/pdf-reader',
     name: 'PdfReaderPage',
     component: () => import('@/views/PdfReaderPage.vue'),
-    meta: {menu: false, keepAlive: false},
+    meta: {menu: false, keepAlive: true},
   },
 ]
 

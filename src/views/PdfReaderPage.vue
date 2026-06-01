@@ -47,7 +47,7 @@
 </template>
 
 <script setup lang="ts">
-import {computed, nextTick, onMounted, onUnmounted, ref} from 'vue'
+import {computed, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref} from 'vue'
 import {useRoute, useRouter} from 'vue-router'
 import {IonPage} from '@ionic/vue'
 import type {PluginListenerHandle} from '@capacitor/core'
@@ -62,12 +62,12 @@ import VerticalScrollView from '@/components/reader/VerticalScrollView.vue'
 import HorizontalPageView from '@/components/reader/HorizontalPageView.vue'
 import ReaderSettingsPanel from '@/components/reader/ReaderSettingsPanel.vue'
 
+defineOptions({name: 'PdfReaderPage'})
+
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
   import.meta.url,
 ).href
-
-defineOptions({name: 'PdfReaderPage'})
 
 function getN(): number {
   return SettingsStore.getReaderPreloadPages()
@@ -77,7 +77,6 @@ const N_FAST = 50
 const M = 50
 const SPEED_THRESHOLD = 10
 const EXPAND_EXPIRE_MS = 2000
-const OVERSCALE_RERENDER = 1.3
 
 const route = useRoute()
 const router = useRouter()
@@ -101,8 +100,9 @@ const isDragProgress = ref(false)
 const settingsPanelVisible = ref(false)
 
 let volumeKeyListenerHandle: PluginListenerHandle | null = null
+let readerRuntimeActive = false
 let pdfDoc: pdfjsLib.PDFDocumentProxy | null = null
-let renderedPages = new Map<number, string>()
+const renderedPages = new Map<number, string>()
 let lastWindowCenter = -1
 let expandDirection: 'forward' | 'backward' | null = null
 let lastScrollTime = 0
@@ -179,6 +179,7 @@ const restoreSystemState = () => {
 
 // ---- 音量键 ----
 const setupVolumeKeyListener = async () => {
+  if (volumeKeyListenerHandle) return
   volumeKeyListenerHandle = await JmcomicService.addVolumeKeyListener((direction) => {
     if (isVertical.value) {
       const scrollAmount = window.innerHeight / 3
@@ -202,6 +203,22 @@ const setupVolumeKeyListener = async () => {
       }
     }
   })
+}
+
+const activateReaderRuntime = () => {
+  if (readerRuntimeActive) return
+  readerRuntimeActive = true
+  applyReaderSettings()
+  JmcomicService.setReaderState(true, isVertical.value).catch(() => {})
+  setupVolumeKeyListener().catch(() => {})
+}
+
+const deactivateReaderRuntime = () => {
+  if (!readerRuntimeActive) return
+  readerRuntimeActive = false
+  volumeKeyListenerHandle?.remove()
+  volumeKeyListenerHandle = null
+  restoreSystemState()
 }
 
 // ---- 渲染分辨率 ----
@@ -458,8 +475,7 @@ onMounted(async () => {
     return
   }
 
-  applyReaderSettings()
-  JmcomicService.setReaderState(true, isVertical.value).catch(() => {})
+  activateReaderRuntime()
 
   try {
     const url = getPdfVirtualUrl(filePath)
@@ -493,12 +509,25 @@ onMounted(async () => {
     }
     router.back()
   }
+})
 
-  setupVolumeKeyListener().catch(() => {})
+onActivated(() => {
+  activateReaderRuntime()
+  nextTick(() => {
+    if (isVertical.value) {
+      verticalViewRef.value?.scrollToIndex(currentIndex.value)
+    } else {
+      horizontalViewRef.value?.scrollToIndex(currentIndex.value)
+    }
+  })
+})
+
+onDeactivated(() => {
+  deactivateReaderRuntime()
 })
 
 onUnmounted(() => {
-  volumeKeyListenerHandle?.remove()
+  deactivateReaderRuntime()
   if (revertTimer) clearTimeout(revertTimer)
   if (pendingRender) {
     pendingRender.cancel()
@@ -514,8 +543,6 @@ onUnmounted(() => {
     pdfDoc.destroy()
     pdfDoc = null
   }
-
-  restoreSystemState()
 })
 </script>
 

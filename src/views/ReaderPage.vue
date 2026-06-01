@@ -51,7 +51,7 @@
 </template>
 
 <script setup lang="ts">
-import {computed, nextTick, onMounted, onUnmounted, ref} from 'vue'
+import {computed, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref} from 'vue'
 import {useRoute, useRouter} from 'vue-router'
 import {IonPage} from '@ionic/vue'
 import type {PluginListenerHandle} from '@capacitor/core'
@@ -97,6 +97,7 @@ const settingsPanelVisible = ref(false)
 let photoDetail: PhotoDetail | null = null
 let imageReadyListenerHandle: PluginListenerHandle | null = null
 let volumeKeyListenerHandle: PluginListenerHandle | null = null
+let readerRuntimeActive = false
 let loadedSortOrders = new Set<number>()
 let requestedSortOrders = new Set<number>()
 let sortOrderToImage = new Map<number, ImageInfo>()
@@ -131,12 +132,6 @@ const onRootClick = (ev: MouseEvent) => {
   if (x > sw * 0.3 && x < sw * 0.6) {
     toggleToolbar()
   }
-}
-
-// ---- 显示模式切换 ----
-const toggleMode = () => {
-  isVertical.value = !isVertical.value
-  syncReaderState()
 }
 
 const onDisplayModeChange = (vertical: boolean) => {
@@ -182,6 +177,7 @@ const restoreSystemState = () => {
 
 // ---- 音量键 ----
 const setupVolumeKeyListener = async () => {
+  if (volumeKeyListenerHandle) return
   volumeKeyListenerHandle = await JmcomicService.addVolumeKeyListener((direction) => {
     if (isVertical.value) {
       const scrollAmount = window.innerHeight / 3
@@ -381,6 +377,7 @@ const onProgressInput = (page1Based: number) => {
 
 // ---- 图片就绪监听 ----
 const setupImageReadyListener = async () => {
+  if (imageReadyListenerHandle) return
   imageReadyListenerHandle = await JmcomicService.addImageReadyListener(
     chapterId.value,
     (sortOrder) => {
@@ -389,6 +386,27 @@ const setupImageReadyListener = async () => {
       applyImageMap()
     },
   )
+}
+
+const activateReaderRuntime = () => {
+  if (readerRuntimeActive) return
+  readerRuntimeActive = true
+  applyReaderSettings()
+  JmcomicService.setReaderState(true, isVertical.value).catch(() => {})
+  setupVolumeKeyListener().catch(() => {})
+  if (!isOffline.value && photoDetail) {
+    setupImageReadyListener().catch(() => {})
+  }
+}
+
+const deactivateReaderRuntime = () => {
+  if (!readerRuntimeActive) return
+  readerRuntimeActive = false
+  imageReadyListenerHandle?.remove()
+  imageReadyListenerHandle = null
+  volumeKeyListenerHandle?.remove()
+  volumeKeyListenerHandle = null
+  restoreSystemState()
 }
 
 // ---- 浏览历史记录 ----
@@ -444,10 +462,7 @@ onMounted(() => {
     revertTimer = null
   }
 
-  // 应用阅读器设置
-  applyReaderSettings()
-  // 通知 native 进入阅读状态
-  JmcomicService.setReaderState(true, isVertical.value).catch(() => {})
+  activateReaderRuntime()
 
   if (isOffline.value) {
     JmcomicService.getDownloadedPhoto(albumId.value, chapterId.value)
@@ -495,8 +510,10 @@ onMounted(() => {
 
         toolbarVisible.value = true
 
-        setupImageReadyListener().catch(() => {
-        })
+        if (readerRuntimeActive) {
+          setupImageReadyListener().catch(() => {
+          })
+        }
 
         const initOrders = calcWindow(currentIndex.value)
         const initImages = pd.images.filter((i) => initOrders.includes(i.sortOrder))
@@ -530,17 +547,27 @@ onMounted(() => {
       })
   }
 
-  // 注册音量键监听
-  setupVolumeKeyListener().catch(() => {})
+})
+
+onActivated(() => {
+  activateReaderRuntime()
+  nextTick(() => {
+    if (isVertical.value) {
+      verticalViewRef.value?.scrollToIndex(currentIndex.value)
+    } else {
+      horizontalViewRef.value?.scrollToIndex(currentIndex.value)
+    }
+  })
+})
+
+onDeactivated(() => {
+  deactivateReaderRuntime()
 })
 
 onUnmounted(() => {
-  imageReadyListenerHandle?.remove()
-  volumeKeyListenerHandle?.remove()
+  deactivateReaderRuntime()
   if (triggerRafId) cancelAnimationFrame(triggerRafId)
   if (revertTimer) clearTimeout(revertTimer)
-
-  restoreSystemState()
 })
 </script>
 

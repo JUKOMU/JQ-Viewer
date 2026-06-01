@@ -479,7 +479,7 @@ const mapImportedPdfToEntry = (pdf: ImportedPdf): CompletedEntry => ({
   albumId: pdf.albumId,
   albumTitle: pdf.albumTitle,
   coverUrl: pdf.coverUrl,
-  chapterId: pdf.albumId,
+  chapterId: `import_pdf_${pdf.id}`,
   chapterTitle: pdf.fileName,
   chapterSortOrder: pdf.chapterSortOrder,
   authors: pdf.authors,
@@ -507,7 +507,7 @@ const completedGroups = computed<CompletedGroup[]>(() => {
     }
   }
   const groups: CompletedGroup[] = []
-  for (const [albumId, chapters] of byAlbum) {
+  for (const chapters of byAlbum.values()) {
     chapters.sort((a, b) => (a.chapterSortOrder ?? 0) - (b.chapterSortOrder ?? 0))
     groups.push({
       type: chapters.length > 1 ? 'multi' : 'single',
@@ -867,8 +867,8 @@ const onGoToAlbumDetail = (entry: CompletedEntry | DownloadTask) => {
 const onImportPdf = async () => {
   try {
     const result = await JmcomicService.pickFolder()
-    if (result.cancelled || !result.path) return
-    await PdfImportService.scanAndParse(result.path, result.treeUri)
+    if (result.cancelled || (!result.path && !result.treeUri)) return
+    await PdfImportService.scanAndParse(result.path || '', result.treeUri)
     router.push('/import-review')
   } catch (e: any) {
     await showToast(sanitizeError(e, '无法打开文件夹选择器'), 'danger')

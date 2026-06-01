@@ -25,10 +25,14 @@ public class MainActivity extends BridgeActivity {
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
                 String url = request.getUrl().toString();
                 if (PdfServer.isPdfUrl(url)) {
+                    if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
+                        return PdfServer.withCorsHeaders(new WebResourceResponse("text/plain", "UTF-8",
+                            new java.io.ByteArrayInputStream(new byte[0])));
+                    }
                     WebResourceResponse resp = PdfServer.handleRequest(url, getApplicationContext());
                     if (resp != null) return resp;
-                    return new WebResourceResponse("text/plain", "UTF-8",
-                        new java.io.ByteArrayInputStream(new byte[0]));
+                    return PdfServer.withCorsHeaders(new WebResourceResponse("text/plain", "UTF-8",
+                        new java.io.ByteArrayInputStream(new byte[0])));
                 }
                 if (ImageCache.isVirtualImageUrl(url)) {
                     WebResourceResponse resp = ImageCache.handleRequest(url);

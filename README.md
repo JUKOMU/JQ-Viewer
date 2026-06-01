@@ -4,10 +4,10 @@
 
 ![Vue](https://img.shields.io/badge/Vue-3-4FC08D?logo=vuedotjs)
 ![Ionic](https://img.shields.io/badge/Ionic-8-3880FF?logo=ionic)
-![Java](https://img.shields.io/badge/Java-11+-007396?logo=java)
+![Java](https://img.shields.io/badge/Java-JDK_21_for_build-007396?logo=java)
 ![Android](https://img.shields.io/badge/Android-24+-007396?logo=java)
 ![License](https://img.shields.io/badge/License-MIT-yellow.svg)
-![Version](https://img.shields.io/badge/Version-1.0.1-brightgreen.svg)
+![Version](https://img.shields.io/badge/Version-1.1.0-brightgreen.svg)
 <div></div>
 
 [![JUKOMU/JMComic-Api-Java - GitHub](https://gh-card.dev/repos/JUKOMU/JMComic-Api-Java.svg?fullname=)](https://github.com/JUKOMU/JMComic-Api-Java)

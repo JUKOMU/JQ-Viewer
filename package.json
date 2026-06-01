@@ -1,18 +1,20 @@
 {
   "name": "jq-viewer",
   "private": true,
-  "version": "1.0.1",
+  "version": "1.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc && vite build",
     "preview": "vite preview",
     "test:e2e": "cypress run",
-    "test:unit": "vitest",
+    "test:unit": "vitest run",
+    "test:unit:watch": "vitest",
     "lint": "eslint .",
     "lint:fix": "eslint --fix .",
     "format": "prettier --write \"src/**/*.{vue,ts,css}\"",
     "format:check": "prettier --check \"src/**/*.{vue,ts,css}\"",
+    "check:version": "node scripts/check-version.mjs",
     "build:android": "npm run build && npx cap copy android && cd android && gradlew :app:assembleDebug",
     "build:android:release": "npm run build && ionic capacitor sync android && cd android && gradlew :app:clean && gradlew :app:assembleRelease"
   },

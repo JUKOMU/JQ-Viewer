@@ -691,8 +691,7 @@ const onPdfExportConfirm = async (payload: {
     /* 检查失败时直接放行 */
   }
 
-  // 非阻塞检查通知权限
-  void ensureNotificationPermission()
+  await ensureNotificationPermission()
 
   try {
     await JmcomicService.exportPdfBatch(tasks)
@@ -724,19 +723,22 @@ async function ensureNotificationPermission(): Promise<boolean> {
 
     const alert = await alertController.create({
       header: '需要通知权限',
-      message: 'PDF导出将在后台进行，需要通过通知查看进度。\n点击"去设置"后，在系统设置中开启通知权限，再返回重新导出。',
+      message: 'PDF导出将在后台进行，需要通过通知查看进度。拒绝后仍会继续导出，但不会显示系统通知。',
       buttons: [
-        { text: '取消', role: 'cancel' },
+        { text: '暂不授权', role: 'cancel' },
         {
-          text: '去设置',
-          handler: () => {
-            void JmcomicService.requestNotificationPermission()
-          },
+          text: '允许通知',
+          role: 'confirm',
         },
       ],
     })
     await alert.present()
-    return false
+    const dismissed = await alert.onDidDismiss()
+    if (dismissed.role === 'confirm') {
+      await JmcomicService.requestNotificationPermission()
+    }
+    const result = await JmcomicService.checkNotificationPermission()
+    return result.granted
   } catch {
     return true
   }

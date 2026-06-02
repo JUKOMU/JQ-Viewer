@@ -6,7 +6,7 @@
           <IonBackButton default-href="/download"/>
         </IonButtons>
         <IonTitle class="toolbar-title">导入PDF</IonTitle>
-        <IonButtons slot="end">
+        <IonButtons slot="end" class="toolbar-end-actions">
           <button
             class="confirm-btn"
             :disabled="loading || !hasAnyResolved"
@@ -186,11 +186,34 @@
             <button
               type="button"
               class="drawer-detail-btn"
+              :class="{ active: drawerDetailVisible && selectedCandidate?.id === item.id }"
               aria-label="查看详情"
               @click.stop="openCandidateDetail(item)"
             >
               <IonIcon :icon="informationCircleOutline"/>
             </button>
+          </template>
+          <template #item-info-extra="{ item }">
+            <Transition name="drawer-detail-panel">
+              <section
+                v-if="drawerDetailVisible && selectedCandidate?.id === item.id"
+                class="drawer-info-expanded"
+              >
+                <div v-if="candidateDetailLoading" class="drawer-detail-loading">正在加载详情...</div>
+                <div v-else>
+                  <div v-if="drawerDetailTags.length" class="drawer-detail-tags">
+                    <span v-for="tag in drawerDetailTags" :key="tag" class="drawer-detail-tag">{{ tag }}</span>
+                  </div>
+                  <div v-if="candidateChapters.length > 0" class="drawer-detail-meta-row">
+                    <span>章节：{{ candidateChapters.length }}</span>
+                  </div>
+                  <p v-if="selectedCandidateDetail?.description" class="drawer-detail-desc">
+                    {{ selectedCandidateDetail.description }}
+                  </p>
+                  <p v-else class="drawer-detail-desc muted">暂无描述</p>
+                </div>
+              </section>
+            </Transition>
           </template>
         </SearchResultContainer>
       </div>
@@ -255,6 +278,7 @@ const selectedCandidate = ref<SearchResultItem | null>(null)
 const selectedCandidateDetail = ref<AlbumDetail | null>(null)
 const candidateDetailLoading = ref(false)
 const selectedChapterSortOrder = ref<number | null>(null)
+const drawerDetailVisible = ref(false)
 const resolvingCandidate = ref(false)
 
 let drawerDragStartY = 0
@@ -288,6 +312,10 @@ const resolveChapter = (detail?: AlbumDetail | null, sortOrder?: number): PhotoM
 
 const selectedCandidateChapter = computed(() =>
   resolveChapter(selectedCandidateDetail.value, selectedChapterSortOrder.value ?? undefined),
+)
+
+const drawerDetailTags = computed(() =>
+  selectedCandidateDetail.value?.tags ?? selectedCandidate.value?.tags ?? [],
 )
 
 const confirmButtonLabel = computed(() => {
@@ -471,6 +499,7 @@ async function openSearchDrawer(idx: number) {
   selectedCandidate.value = null
   selectedCandidateDetail.value = null
   selectedChapterSortOrder.value = null
+  drawerDetailVisible.value = false
   drawerQuery.value = {
     keyword: stripPdfExtension(file.fileName),
     orderBy: 'mr',
@@ -499,6 +528,7 @@ async function performDrawerSearch(query: SearchQuery) {
   selectedCandidate.value = null
   selectedCandidateDetail.value = null
   selectedChapterSortOrder.value = null
+  drawerDetailVisible.value = false
   drawerError.value = ''
   drawerResult.value = null
 
@@ -558,15 +588,16 @@ async function selectCandidate(item: SearchResultItem) {
   }
 }
 
-function openCandidateDetail(item: SearchResultItem) {
-  void router.push({
-    path: `/album/${item.id}`,
-    query: {
-      title: item.title,
-      coverUrl: item.coverUrl,
-      authors: item.authors.join(','),
-    },
-  })
+async function openCandidateDetail(item: SearchResultItem) {
+  if (drawerDetailVisible.value && selectedCandidate.value?.id === item.id) {
+    drawerDetailVisible.value = false
+    return
+  }
+
+  drawerDetailVisible.value = true
+  if (selectedCandidate.value?.id !== item.id || !selectedCandidateDetail.value) {
+    await selectCandidate(item)
+  }
 }
 
 async function confirmCandidate() {
@@ -583,6 +614,8 @@ async function confirmCandidate() {
     selectedCandidate.value = null
     selectedCandidateDetail.value = null
     selectedChapterSortOrder.value = null
+    drawerDetailVisible.value = false
+    drawerState.value = 'closed'
     await showToast('已回填 ID', 'success')
   } catch (error) {
     await showToast(sanitizeError(error, '回填失败'), 'danger')
@@ -801,6 +834,10 @@ IonHeader {
   font-size: 16px;
   font-weight: 600;
   color: #4c2a18;
+}
+
+.toolbar-end-actions {
+  margin-right: 8px;
 }
 
 /* ---- 页面容器 ---- */
@@ -1283,6 +1320,77 @@ IonHeader {
   color: #9b5a35;
   box-shadow: 0 4px 12px rgb(76 42 24 / 0.14);
   font-size: 17px;
+}
+
+.drawer-detail-btn.active {
+  background: #fa9c69;
+  color: #fff;
+  box-shadow: 0 5px 14px rgb(250 156 105 / 0.35);
+}
+
+.drawer-info-expanded {
+  margin-top: -2px;
+  padding-top: 0;
+}
+
+.drawer-detail-loading {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  color: #9b735a;
+  font-size: 11px;
+}
+
+.drawer-detail-desc {
+  margin: 5px 0 0;
+  color: #6f5141;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.drawer-detail-desc.muted {
+  color: #b09880;
+}
+
+.drawer-detail-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 0;
+}
+
+.drawer-detail-tag {
+  max-width: 120px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #fff0e7;
+  color: #9b5a35;
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drawer-detail-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+  color: #876653;
+  font-size: 11px;
+}
+
+.drawer-detail-panel-enter-active,
+.drawer-detail-panel-leave-active {
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.drawer-detail-panel-enter-from,
+.drawer-detail-panel-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
 }
 
 .chapter-select-panel {

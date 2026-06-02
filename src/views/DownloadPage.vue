@@ -6,12 +6,18 @@
           <MenuToggleButton/>
         </div>
         <div class="toolbar-end">
-          <button class="import-btn" @click="onImportPdf">
-            <IonIcon :icon="cloudUploadOutline"/>
-          </button>
-          <button v-if="hasTasks" class="sort-btn" @click="toggleSort">
-            <IonIcon :icon="sortIcon"/>
-          </button>
+          <div class="toolbar-action">
+            <span class="toolbar-action-label">导入PDF</span>
+            <button class="import-btn" @click="onImportPdf">
+              <IonIcon :icon="cloudUploadOutline"/>
+            </button>
+          </div>
+          <div v-if="hasTasks" class="toolbar-action">
+            <span class="toolbar-action-label">{{ sortLabel }}</span>
+            <button class="sort-btn" @click="toggleSort">
+              <IonIcon :icon="sortIcon"/>
+            </button>
+          </div>
         </div>
       </IonToolbar>
     </IonHeader>
@@ -279,6 +285,7 @@ const loadImportedPdfs = async () => {
 type SortMode = 'time' | 'title'
 const sortMode = ref<SortMode>('time')
 const sortIcon = computed(() => (sortMode.value === 'time' ? timeOutline : textOutline))
+const sortLabel = computed(() => (sortMode.value === 'time' ? '时间排序' : '标题排序'))
 
 const toggleSort = () => {
   sortMode.value = sortMode.value === 'time' ? 'title' : 'time'
@@ -950,7 +957,7 @@ const clearTarget = ref<'completed' | 'failed'>('completed')
 const clearAlertMessage = computed(() => {
   if (clearTarget.value === 'completed') {
     const totalCount = completedTasks.value.length + importedPdfs.value.length
-    return `将删除所有已完成任务的文件和记录（${totalCount} 个），此操作不可恢复。`
+    return `将删除所有已完成任务的文件(导入的除外)和记录（${totalCount} 个），此操作不可恢复。`
   }
   return `将删除所有失败任务的文件和记录（${failedTasks.value.length} 个），此操作不可恢复。`
 })
@@ -1017,7 +1024,20 @@ const clearFailed = async () => {
   bottom: 6px;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
+}
+
+.toolbar-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.toolbar-action-label {
+  color: #8a6048;
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .import-btn {

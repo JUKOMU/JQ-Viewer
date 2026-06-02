@@ -115,8 +115,20 @@
                   <span v-if="entry.item.tags.length > 10" class="tag-chip tag-more">…</span>
                 </div>
               </template>
+              <slot
+                name="item-info-extra"
+                :item="entry.item"
+                :page="entry.page"
+                :index-in-page="entry.indexInPage"
+              />
             </div>
             <div class="item-serial">{{ getItemSerial(entry.page, entry.indexInPage) }}</div>
+            <slot
+              name="item-extra"
+              :item="entry.item"
+              :page="entry.page"
+              :index-in-page="entry.indexInPage"
+            />
           </article>
 
           <div v-if="loadingNext" :class="resultLoaderClass">

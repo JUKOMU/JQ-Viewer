@@ -390,6 +390,8 @@ export interface ImportedPdf {
   albumTitle: string
   coverUrl: string
   authors: string
+  chapterId: string
+  chapterTitle: string
   chapterSortOrder: number
   createdAt: number
   folderId?: string
@@ -405,6 +407,8 @@ export interface ImportPdfItem {
   albumTitle: string
   coverUrl: string
   authors: string
+  chapterId: string
+  chapterTitle: string
   chapterSortOrder: number
   folderId?: string
 }

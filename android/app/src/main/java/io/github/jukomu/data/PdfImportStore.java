@@ -25,7 +25,7 @@ public class PdfImportStore extends SQLiteOpenHelper {
 
     private static final String TAG = "PdfImportStore";
     private static final String DB_NAME = "jq_pdf_import.db";
-    private static final int DB_VERSION = 1;
+    private static final int DB_VERSION = 2;
 
     static final String TABLE_PDFS = "imported_pdfs";
 
@@ -36,6 +36,8 @@ public class PdfImportStore extends SQLiteOpenHelper {
     static final String COL_ALBUM_TITLE = "album_title";
     static final String COL_COVER_URL = "cover_url";
     static final String COL_AUTHORS = "authors";
+    static final String COL_CHAPTER_ID = "chapter_id";
+    static final String COL_CHAPTER_TITLE = "chapter_title";
     static final String COL_CHAPTER_SORT_ORDER = "chapter_sort_order";
     static final String COL_FILE_SIZE = "file_size";
     static final String COL_PAGE_COUNT = "page_count";
@@ -67,6 +69,8 @@ public class PdfImportStore extends SQLiteOpenHelper {
             + COL_ALBUM_TITLE + " TEXT NOT NULL DEFAULT '',"
             + COL_COVER_URL + " TEXT NOT NULL DEFAULT '',"
             + COL_AUTHORS + " TEXT NOT NULL DEFAULT '',"
+            + COL_CHAPTER_ID + " TEXT NOT NULL DEFAULT '',"
+            + COL_CHAPTER_TITLE + " TEXT NOT NULL DEFAULT '',"
             + COL_CHAPTER_SORT_ORDER + " INTEGER DEFAULT 0,"
             + COL_FILE_SIZE + " INTEGER NOT NULL DEFAULT 0,"
             + COL_PAGE_COUNT + " INTEGER NOT NULL DEFAULT 0,"
@@ -78,8 +82,10 @@ public class PdfImportStore extends SQLiteOpenHelper {
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
         if (oldVersion < 2) {
-            // DB_VERSION 仍为 1；未来升到 2 时必须在这里追加 ALTER TABLE 等显式迁移。
-            // imported_pdfs 存文件引用和缓存信息，不能静默跳过结构变更。
+            db.execSQL("ALTER TABLE " + TABLE_PDFS + " ADD COLUMN "
+                + COL_CHAPTER_ID + " TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE " + TABLE_PDFS + " ADD COLUMN "
+                + COL_CHAPTER_TITLE + " TEXT NOT NULL DEFAULT ''");
         }
     }
 
@@ -87,7 +93,8 @@ public class PdfImportStore extends SQLiteOpenHelper {
 
     public long insertPdf(String filePath, String fileName, String albumId,
                           String albumTitle, String coverUrl, String authors,
-                          int chapterSortOrder, long createdAt, String folderId) {
+                          String chapterId, String chapterTitle, int chapterSortOrder,
+                          long createdAt, String folderId) {
         ContentValues cv = new ContentValues();
         cv.put(COL_FILE_PATH, filePath);
         cv.put(COL_FILE_NAME, fileName);
@@ -95,6 +102,8 @@ public class PdfImportStore extends SQLiteOpenHelper {
         cv.put(COL_ALBUM_TITLE, albumTitle);
         cv.put(COL_COVER_URL, coverUrl);
         cv.put(COL_AUTHORS, authors);
+        cv.put(COL_CHAPTER_ID, chapterId);
+        cv.put(COL_CHAPTER_TITLE, chapterTitle);
         cv.put(COL_CHAPTER_SORT_ORDER, chapterSortOrder);
         cv.put(COL_CREATED_AT, createdAt);
         if (folderId != null) {
@@ -192,6 +201,8 @@ public class PdfImportStore extends SQLiteOpenHelper {
             obj.put("albumTitle", c.getString(c.getColumnIndexOrThrow(COL_ALBUM_TITLE)));
             obj.put("coverUrl", c.getString(c.getColumnIndexOrThrow(COL_COVER_URL)));
             obj.put("authors", c.getString(c.getColumnIndexOrThrow(COL_AUTHORS)));
+            obj.put("chapterId", c.getString(c.getColumnIndexOrThrow(COL_CHAPTER_ID)));
+            obj.put("chapterTitle", c.getString(c.getColumnIndexOrThrow(COL_CHAPTER_TITLE)));
             int orderIdx = c.getColumnIndex(COL_CHAPTER_SORT_ORDER);
             obj.put("chapterSortOrder",
                 !c.isNull(orderIdx) ? c.getInt(orderIdx) : 0);

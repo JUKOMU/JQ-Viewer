@@ -64,16 +64,21 @@ async function confirmImport(
 ): Promise<ImportPdfsResult> {
   const items: ImportPdfItem[] = resolvedFiles
     .filter((f) => f.editedIds && f.editedIds.length === 1)
-    .map((f) => ({
-      filePath: f.filePath,
-      fileName: f.fileName,
-      albumId: f.editedIds![0],
-      albumTitle: f.albumDetail?.title || '',
-      coverUrl: f.albumDetail?.image || '',
-      authors: f.albumDetail?.authors?.join(',') || '',
-      chapterSortOrder: f.chapterSortOrder ?? 0,
-      ...(folderId ? { folderId } : {}),
-    }))
+    .map((f) => {
+      const chapter = resolveImportedChapter(f)
+      return {
+        filePath: f.filePath,
+        fileName: f.fileName,
+        albumId: f.editedIds![0],
+        albumTitle: f.albumDetail?.title || '',
+        coverUrl: f.albumDetail?.image || '',
+        authors: f.albumDetail?.authors?.join(',') || '',
+        chapterId: f.chapterId || chapter?.id || f.editedIds![0],
+        chapterTitle: f.chapterTitle || chapter?.title || '',
+        chapterSortOrder: f.chapterSortOrder ?? chapter?.sortOrder ?? 0,
+        ...(folderId ? { folderId } : {}),
+      }
+    })
 
   if (items.length === 0) {
     return { imported: 0, skipped: resolvedFiles.length, duplicateCount: 0, errorCount: 0 }
@@ -105,6 +110,14 @@ async function confirmImport(
   }
 
   return result
+}
+
+function resolveImportedChapter(file: PdfFileParseItem) {
+  const chapters = file.albumDetail?.photoMetas ?? []
+  if (file.chapterSortOrder !== undefined) {
+    return chapters.find((chapter) => chapter.sortOrder === file.chapterSortOrder) ?? null
+  }
+  return chapters.length === 1 ? chapters[0] : null
 }
 
 export const PdfImportService = {

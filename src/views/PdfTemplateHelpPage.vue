@@ -59,7 +59,7 @@
         <div class="section-label">模板示例</div>
         <div class="card">
           <div class="example-list">
-            <div class="example-item" v-for="ex in templateExamples" :key="ex.template">
+            <div v-for="ex in templateExamples" :key="ex.template" class="example-item">
               <div class="example-usage">{{ ex.usage }}</div>
               <div class="example-template">
                 <span class="tpl-text">{{ ex.template }}</span>
@@ -77,7 +77,6 @@
 <script setup lang="ts">
 defineOptions({ name: 'PdfTemplateHelpPage' })
 
-import { computed } from 'vue'
 import { IonBackButton, IonButtons, IonContent, IonHeader, IonPage, IonTitle, IonToolbar } from '@ionic/vue'
 import { PdfExportService, PDF_SAMPLE_DATA } from '@/services/PdfExportService'
 

@@ -26,6 +26,10 @@ export interface PdfFileParseItem {
   editedIds?: string[]
   /** 章节序号（行末尾 ` 数字`） */
   chapterSortOrder?: number
+  /** 匹配到的实际章节 ID */
+  chapterId?: string
+  /** 匹配到的章节标题 */
+  chapterTitle?: string
 }
 
 export interface ImportPdfParseResult {

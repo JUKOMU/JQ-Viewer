@@ -278,6 +278,18 @@ const candidateChapters = computed<PhotoMeta[]>(() =>
   [...(selectedCandidateDetail.value?.photoMetas ?? [])].sort((a, b) => a.sortOrder - b.sortOrder),
 )
 
+const resolveChapter = (detail?: AlbumDetail | null, sortOrder?: number): PhotoMeta | null => {
+  const chapters = detail?.photoMetas ?? []
+  if (sortOrder !== undefined) {
+    return chapters.find((chapter) => chapter.sortOrder === sortOrder) ?? null
+  }
+  return chapters.length === 1 ? chapters[0] : null
+}
+
+const selectedCandidateChapter = computed(() =>
+  resolveChapter(selectedCandidateDetail.value, selectedChapterSortOrder.value ?? undefined),
+)
+
 const confirmButtonLabel = computed(() => {
   if (!selectedCandidate.value) return ''
   if (candidateChapters.value.length > 1) {
@@ -400,8 +412,8 @@ async function applyEdit(idx: number) {
     updated.status = 'ambiguous'
   }
 
-  // 如果用户编辑后只剩一个 ID 且之前没有 albumDetail，尝试获取
-  if (ids.length === 1 && !updated.albumDetail) {
+  // 如果用户编辑后只剩一个 ID，且详情缺失或与当前 ID 不一致，则重新获取。
+  if (ids.length === 1 && updated.albumDetail?.id !== ids[0]) {
     try {
       const detail = await JmcomicService.getAlbum(ids[0])
       updated.albumDetail = detail && detail.id ? detail : null
@@ -410,6 +422,10 @@ async function applyEdit(idx: number) {
     }
   }
 
+  const chapter = resolveChapter(updated.albumDetail, chapterSortOrder)
+  updated.chapterId = chapter?.id
+  updated.chapterTitle = chapter?.title
+
   files.value[idx] = updated as PdfFileParseItem
   editingIdx.value = null
 }
@@ -417,14 +433,17 @@ async function applyEdit(idx: number) {
 async function applyResolvedId(
   idx: number,
   id: string,
-  chapterSortOrder?: number,
+  chapter?: PhotoMeta | null,
   albumDetail?: AlbumDetail | null,
 ) {
   const file = files.value[idx]
+  const chapterSortOrder = chapter?.sortOrder
   const updated = {
     ...file,
     editedLine: chapterSortOrder ? `${id} ${chapterSortOrder}` : id,
     editedIds: [id],
+    chapterId: chapter?.id,
+    chapterTitle: chapter?.title,
     chapterSortOrder,
     status: 'resolved' as const,
   }
@@ -558,7 +577,7 @@ async function confirmCandidate() {
     await applyResolvedId(
       searchTargetIdx.value,
       selectedCandidate.value.id,
-      selectedChapterSortOrder.value ?? undefined,
+      selectedCandidateChapter.value,
       selectedCandidateDetail.value,
     )
     selectedCandidate.value = null

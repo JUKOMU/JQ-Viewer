@@ -2286,6 +2286,8 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
                     item.optString("albumTitle", ""),
                     item.optString("coverUrl", ""),
                     item.optString("authors", ""),
+                    item.optString("chapterId", ""),
+                    item.optString("chapterTitle", ""),
                     item.optInt("chapterSortOrder", 0),
                     System.currentTimeMillis(),
                     item.optString("folderId", null)

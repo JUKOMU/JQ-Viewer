@@ -128,10 +128,10 @@
             v-if="selectedCandidate"
             type="button"
             class="drawer-confirm-btn"
-            :disabled="drawerSearchLoading || resolvingCandidate"
+            :disabled="!canConfirmCandidate"
             @click.stop="confirmCandidate"
           >
-            确定 #{{ selectedCandidate.id }}
+            {{ confirmButtonLabel }}
           </button>
         </Transition>
         <div class="drawer-grip"/>
@@ -148,6 +148,27 @@
           :loading="drawerSearchLoading"
           @search="submitDrawerSearch"
         />
+        <Transition name="chapter-panel">
+          <section v-if="selectedCandidate && candidateChapters.length > 1" class="chapter-select-panel">
+            <div class="chapter-select-head">
+              <span class="chapter-select-title">选择章节</span>
+              <span v-if="candidateDetailLoading" class="chapter-select-loading">加载中...</span>
+            </div>
+            <div class="chapter-list">
+              <button
+                v-for="chapter in candidateChapters"
+                :key="chapter.id"
+                type="button"
+                class="chapter-option"
+                :class="{ active: selectedChapterSortOrder === chapter.sortOrder }"
+                @click="selectedChapterSortOrder = chapter.sortOrder"
+              >
+                <span class="chapter-order">order {{ chapter.sortOrder }}</span>
+                <span class="chapter-name">{{ chapter.title }}</span>
+              </button>
+            </div>
+          </section>
+        </Transition>
         <SearchResultContainer
           :result="drawerResult"
           :items="drawerDisplayItems"
@@ -160,7 +181,18 @@
           @mode-change="drawerMode = $event"
           @item-click="selectCandidate"
           @retry="retryDrawerSearch"
-        />
+        >
+          <template #item-actions="{ item }">
+            <button
+              type="button"
+              class="drawer-detail-btn"
+              aria-label="查看详情"
+              @click.stop="openCandidateDetail(item)"
+            >
+              <IonIcon :icon="informationCircleOutline"/>
+            </button>
+          </template>
+        </SearchResultContainer>
       </div>
     </section>
   </IonPage>
@@ -173,7 +205,7 @@ import { ref, computed, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { IonBackButton, IonButtons, IonPage, IonHeader, IonTitle, IonToolbar, IonContent, IonIcon } from '@ionic/vue'
 import { alertController } from '@ionic/vue'
 import { useRouter } from 'vue-router'
-import { documentTextOutline, createOutline, checkmarkOutline, searchOutline } from 'ionicons/icons'
+import { documentTextOutline, createOutline, checkmarkOutline, informationCircleOutline, searchOutline } from 'ionicons/icons'
 import { PdfImportService } from '@/services/PdfImportService'
 import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
 import { OfflineFavoriteService } from '@/services/OfflineFavoriteService'
@@ -181,7 +213,7 @@ import FavoriteFolderPicker from '@/components/favorite/FavoriteFolderPicker.vue
 import SearchHeaderBar from '@/components/search/SearchHeaderBar.vue'
 import SearchResultContainer from '@/components/search/SearchResultContainer.vue'
 import type { PdfFileParseItem } from '@/utils/importPdfParse'
-import type { FolderEntry, SearchQuery, SearchResult, SearchResultItem } from '@/services/JmcomicTypes'
+import type { AlbumDetail, FolderEntry, PhotoMeta, SearchQuery, SearchResult, SearchResultItem } from '@/services/JmcomicTypes'
 import type { SearchResultDisplayItem } from '@/components/search/SearchResultContainer.vue'
 
 const router = useRouter()
@@ -220,10 +252,14 @@ const drawerSearchLoading = ref(false)
 const drawerError = ref('')
 const drawerMode = ref<'list' | 'grid'>('list')
 const selectedCandidate = ref<SearchResultItem | null>(null)
+const selectedCandidateDetail = ref<AlbumDetail | null>(null)
+const candidateDetailLoading = ref(false)
+const selectedChapterSortOrder = ref<number | null>(null)
 const resolvingCandidate = ref(false)
 
 let drawerDragStartY = 0
 let drawerDragStartOffset = 0
+let candidateDetailRequestSeq = 0
 
 const drawerDisplayItems = computed<SearchResultDisplayItem[]>(() =>
   (drawerResult.value?.content ?? []).map((item, indexInPage) => ({
@@ -237,6 +273,28 @@ const drawerTargetText = computed(() => {
   if (searchTargetIdx.value === null) return '先点击需要补 ID 的文件卡片'
   return files.value[searchTargetIdx.value]?.fileName ?? '当前文件'
 })
+
+const candidateChapters = computed<PhotoMeta[]>(() =>
+  [...(selectedCandidateDetail.value?.photoMetas ?? [])].sort((a, b) => a.sortOrder - b.sortOrder),
+)
+
+const confirmButtonLabel = computed(() => {
+  if (!selectedCandidate.value) return ''
+  if (candidateChapters.value.length > 1) {
+    return selectedChapterSortOrder.value
+      ? `确定 #${selectedCandidate.value.id} order ${selectedChapterSortOrder.value}`
+      : '选择章节后确认'
+  }
+  return `确定 #${selectedCandidate.value.id}`
+})
+
+const canConfirmCandidate = computed(() =>
+  !!selectedCandidate.value &&
+  !drawerSearchLoading.value &&
+  !candidateDetailLoading.value &&
+  !resolvingCandidate.value &&
+  (candidateChapters.value.length <= 1 || selectedChapterSortOrder.value !== null),
+)
 
 const drawerMaxHeight = () => Math.round(window.innerHeight * DRAWER_MAX_RATIO)
 
@@ -356,20 +414,30 @@ async function applyEdit(idx: number) {
   editingIdx.value = null
 }
 
-async function applyResolvedId(idx: number, id: string) {
+async function applyResolvedId(
+  idx: number,
+  id: string,
+  chapterSortOrder?: number,
+  albumDetail?: AlbumDetail | null,
+) {
   const file = files.value[idx]
   const updated = {
     ...file,
-    editedLine: id,
+    editedLine: chapterSortOrder ? `${id} ${chapterSortOrder}` : id,
     editedIds: [id],
+    chapterSortOrder,
     status: 'resolved' as const,
   }
 
-  try {
-    const detail = await JmcomicService.getAlbum(id)
-    updated.albumDetail = detail && detail.id ? detail : null
-  } catch {
-    updated.albumDetail = null
+  if (albumDetail !== undefined) {
+    updated.albumDetail = albumDetail
+  } else {
+    try {
+      const detail = await JmcomicService.getAlbum(id)
+      updated.albumDetail = detail && detail.id ? detail : null
+    } catch {
+      updated.albumDetail = null
+    }
   }
 
   files.value[idx] = updated as PdfFileParseItem
@@ -382,6 +450,8 @@ async function openSearchDrawer(idx: number) {
 
   searchTargetIdx.value = idx
   selectedCandidate.value = null
+  selectedCandidateDetail.value = null
+  selectedChapterSortOrder.value = null
   drawerQuery.value = {
     keyword: stripPdfExtension(file.fileName),
     orderBy: 'mr',
@@ -408,6 +478,8 @@ async function retryDrawerSearch() {
 async function performDrawerSearch(query: SearchQuery) {
   const keyword = (query.keyword ?? '').trim()
   selectedCandidate.value = null
+  selectedCandidateDetail.value = null
+  selectedChapterSortOrder.value = null
   drawerError.value = ''
   drawerResult.value = null
 
@@ -433,8 +505,11 @@ async function performDrawerSearch(query: SearchQuery) {
       drawerResult.value = await JmcomicService.search({...query, keyword, page: 1})
     }
 
-    if (drawerResult.value.content.length === 1) {
-      selectedCandidate.value = drawerResult.value.content[0]
+    const onlyResult = drawerResult.value.content.length === 1
+      ? drawerResult.value.content[0]
+      : null
+    if (onlyResult) {
+      await selectCandidate(onlyResult)
     }
   } catch (error) {
     drawerResult.value = null
@@ -444,17 +519,51 @@ async function performDrawerSearch(query: SearchQuery) {
   }
 }
 
-function selectCandidate(item: SearchResultItem) {
+async function selectCandidate(item: SearchResultItem) {
   selectedCandidate.value = item
+  selectedCandidateDetail.value = null
+  selectedChapterSortOrder.value = null
+  candidateDetailLoading.value = true
+  const requestSeq = ++candidateDetailRequestSeq
+  try {
+    const detail = await JmcomicService.getAlbum(item.id)
+    if (requestSeq !== candidateDetailRequestSeq) return
+    selectedCandidateDetail.value = detail && detail.id ? detail : null
+  } catch {
+    if (requestSeq !== candidateDetailRequestSeq) return
+    selectedCandidateDetail.value = null
+  } finally {
+    if (requestSeq === candidateDetailRequestSeq) {
+      candidateDetailLoading.value = false
+    }
+  }
+}
+
+function openCandidateDetail(item: SearchResultItem) {
+  void router.push({
+    path: `/album/${item.id}`,
+    query: {
+      title: item.title,
+      coverUrl: item.coverUrl,
+      authors: item.authors.join(','),
+    },
+  })
 }
 
 async function confirmCandidate() {
-  if (searchTargetIdx.value === null || !selectedCandidate.value) return
+  if (searchTargetIdx.value === null || !selectedCandidate.value || !canConfirmCandidate.value) return
 
   resolvingCandidate.value = true
   try {
-    await applyResolvedId(searchTargetIdx.value, selectedCandidate.value.id)
+    await applyResolvedId(
+      searchTargetIdx.value,
+      selectedCandidate.value.id,
+      selectedChapterSortOrder.value ?? undefined,
+      selectedCandidateDetail.value,
+    )
     selectedCandidate.value = null
+    selectedCandidateDetail.value = null
+    selectedChapterSortOrder.value = null
     await showToast('已回填 ID', 'success')
   } catch (error) {
     await showToast(sanitizeError(error, '回填失败'), 'danger')
@@ -1097,7 +1206,7 @@ IonHeader {
 .drawer-body {
   height: calc(100% - 54px);
   overflow-y: auto;
-  padding: 0 14px 18px;
+  padding: 0 8px 18px;
 }
 
 .drawer-target {
@@ -1106,6 +1215,7 @@ IonHeader {
   justify-content: space-between;
   gap: 10px;
   margin-bottom: 10px;
+  padding: 0 6px;
 }
 
 .drawer-title {
@@ -1125,7 +1235,8 @@ IonHeader {
 }
 
 .drawer-body :deep(.result-shell) {
-  padding-top: 12px;
+  margin: 10px 0 86px;
+  padding-top: 0;
 }
 
 .drawer-body :deep(.result-toolbar) {
@@ -1135,6 +1246,109 @@ IonHeader {
 .drawer-body :deep(.result-list),
 .drawer-body :deep(.result-grid) {
   padding-bottom: 24px;
+}
+
+.drawer-detail-btn {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 999px;
+  background: rgb(255 250 246 / 0.92);
+  color: #9b5a35;
+  box-shadow: 0 4px 12px rgb(76 42 24 / 0.14);
+  font-size: 17px;
+}
+
+.chapter-select-panel {
+  margin: 10px 0 0;
+  padding: 10px;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 8px 22px rgb(76 42 24 / 0.12);
+}
+
+.chapter-select-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.chapter-select-title {
+  color: #4c2a18;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.chapter-select-loading {
+  color: #9b735a;
+  font-size: 11px;
+}
+
+.chapter-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 190px;
+  overflow-y: auto;
+}
+
+.chapter-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 7px 9px;
+  border: 1px solid rgb(245 210 188 / 0.72);
+  border-radius: 10px;
+  background: #fffaf6;
+  color: #5b3a28;
+  text-align: left;
+}
+
+.chapter-option.active {
+  border-color: #fa9c69;
+  background: #fff0e7;
+  box-shadow: inset 0 0 0 1px rgb(250 156 105 / 0.32);
+}
+
+.chapter-order {
+  flex-shrink: 0;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #fa9c69;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.chapter-name {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chapter-panel-enter-active,
+.chapter-panel-leave-active {
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.chapter-panel-enter-from,
+.chapter-panel-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
 }
 
 @media (min-width: 680px) {

@@ -1,5 +1,6 @@
 package io.github.jukomu;
 
+import android.content.ComponentCallbacks2;
 import android.content.Intent;
 import android.os.Bundle;
 import android.view.KeyEvent;
@@ -42,6 +43,20 @@ public class MainActivity extends BridgeActivity {
                 return super.shouldInterceptRequest(view, request);
             }
         });
+    }
+
+    @Override
+    public void onTrimMemory(int level) {
+        super.onTrimMemory(level);
+        JmcomicPlugin plugin = JmcomicPlugin.getInstance();
+        if (plugin != null) plugin.onMemoryPressure(level);
+    }
+
+    @Override
+    public void onLowMemory() {
+        super.onLowMemory();
+        JmcomicPlugin plugin = JmcomicPlugin.getInstance();
+        if (plugin != null) plugin.onMemoryPressure(ComponentCallbacks2.TRIM_MEMORY_COMPLETE);
     }
 
     @Override

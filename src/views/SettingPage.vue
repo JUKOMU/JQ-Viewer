@@ -40,7 +40,7 @@
                 type="number"
                 :value="cacheInputMb"
                 min="64"
-                max="2048"
+                max="1024"
                 step="64"
                 @change="onCacheCapacityChange"
               />
@@ -580,7 +580,7 @@ onMounted(async () => {
 async function onCacheCapacityChange(e: Event) {
   const val = parseInt((e.target as HTMLInputElement).value, 10)
   if (!Number.isFinite(val)) return
-  const mb = Math.max(64, Math.min(2048, val))
+  const mb = Math.max(64, Math.min(1024, val))
   const prev = cacheInputMb.value
   cacheInputMb.value = mb
   SettingsStore.setCacheCapacityMb(mb)

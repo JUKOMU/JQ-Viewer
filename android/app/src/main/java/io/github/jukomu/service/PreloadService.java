@@ -1,5 +1,7 @@
 package io.github.jukomu.service;
 
+import android.app.ActivityManager;
+import android.content.Context;
 import android.util.Log;
 
 import io.github.jukomu.data.FileStore;
@@ -29,16 +31,19 @@ public class PreloadService {
     private final JmApiClient client;
     private final ExecutorService imageExecutor;
     private final ServiceListener listener;
+    private final Context context;
 
     public PreloadService(ImageCache imageCache, FileStore fileStore,
                           SettingsStore settingsDb, JmApiClient client,
-                          ExecutorService imageExecutor, ServiceListener listener) {
+                          ExecutorService imageExecutor, ServiceListener listener,
+                          Context context) {
         this.imageCache = imageCache;
         this.fileStore = fileStore;
         this.settingsDb = settingsDb;
         this.client = client;
         this.imageExecutor = imageExecutor;
         this.listener = listener;
+        this.context = context;
     }
 
     // ---- 图片预加载 ----
@@ -168,10 +173,42 @@ public class PreloadService {
         imageCache.clearByPrefix(photoId + "/");
     }
 
-    public void setCacheCapacity(long mb) {
-        long bytes = mb * 1024 * 1024;
+    public void setCacheCapacity(long userMb) {
+        if (userMb < 16) userMb = 16;
+        if (userMb > 1024) userMb = 1024;
+
+        // 持久化用户原始偏好
+        settingsDb.putString("cache_capacity_mb", String.valueOf(userMb));
+
+        // 自适应计算 → 实际生效值
+        long effectiveMb = computeAdaptiveCapacity(userMb);
+        long bytes = effectiveMb * 1024 * 1024;
         imageCache.setCapacity(bytes);
-        settingsDb.putString("cache_capacity_mb", String.valueOf(mb));
+    }
+
+    private long computeAdaptiveCapacity(long userMb) {
+        if (context == null) return userMb;
+        ActivityManager am = (ActivityManager) context
+            .getSystemService(Context.ACTIVITY_SERVICE);
+        if (am == null) return userMb;
+
+        int heapLimitMb = Math.max(am.getMemoryClass(), am.getLargeMemoryClass());
+
+        ActivityManager.MemoryInfo memInfo = new ActivityManager.MemoryInfo();
+        am.getMemoryInfo(memInfo);
+        long availMemMb = memInfo.availMem / (1024 * 1024);
+
+        long systemLimit = (long)(availMemMb * 0.25);
+        long heapLimit = (long)(heapLimitMb * 0.50);
+
+        long effective = userMb;
+        if (systemLimit < effective) effective = systemLimit;
+        if (heapLimit < effective) effective = heapLimit;
+        if (effective < 16) effective = 16;
+
+        Log.d(TAG, "自适应缓存: 用户=" + userMb + "MB, 可用内存限制="
+            + systemLimit + "MB, 堆限制=" + heapLimit + "MB, 生效=" + effective + "MB");
+        return effective;
     }
 
     public JSONObject getCacheCapacityInfo() {

@@ -49,7 +49,7 @@ public class SettingsStore extends SQLiteOpenHelper {
         insertDefault(db, "preload_concurrency", "6", now);
         insertDefault(db, "download_concurrency", "6", now);
         insertDefault(db, "download_public", "false", now);
-        insertDefault(db, "cache_capacity_mb", "640", now);
+        insertDefault(db, "cache_capacity_mb", "256", now);
         insertDefault(db, "reader_display_mode", "vertical", now);
         insertDefault(db, "reader_screen_orientation", "auto", now);
         insertDefault(db, "reader_brightness", "-1", now);

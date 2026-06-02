@@ -2,6 +2,8 @@ package io.github.jukomu.bridge;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
+import android.app.ActivityManager;
+import android.content.ComponentCallbacks2;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
@@ -157,9 +159,10 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
 
         downloadDb.validateOnStartup(FileStore.getInstance().getBaseDir());
 
-        // 读取缓存容量 → 初始化 ImageCache
-        long cacheCapacityMb = settingsDb.getLong("cache_capacity_mb", 640);
-        ImageCache.getInstance().setCapacity(cacheCapacityMb * 1024 * 1024);
+        // 读取缓存容量 → 计算自适应上限 → 初始化 ImageCache
+        long userCacheMb = settingsDb.getLong("cache_capacity_mb", 256);
+        long effectiveCacheMb = computeAdaptiveCacheCapacity(userCacheMb);
+        ImageCache.getInstance().setCapacity(effectiveCacheMb * 1024 * 1024);
 
         // 读取并发数设置 → 初始化 imageExecutor 和 downloadConcurrency
         imageConcurrency = settingsDb.getInt("preload_concurrency", 6);
@@ -180,7 +183,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         this.settingsService = new SettingsService(settingsDb, downloadDb,
             FileStore.getInstance(), permissionService, ctx, this);
         this.preloadService = new PreloadService(ImageCache.getInstance(),
-            FileStore.getInstance(), settingsDb, sharedClient, imageExecutor, this);
+            FileStore.getInstance(), settingsDb, sharedClient, imageExecutor, this, ctx);
         this.downloadService = new DownloadService(downloadDb,
             FileStore.getInstance(), sharedClient, imageExecutor, this);
 
@@ -603,6 +606,52 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
 
     public static JmcomicPlugin getInstance() {
         return instance;
+    }
+
+    // ---- 自适应缓存容量 ----
+
+    private long computeAdaptiveCacheCapacity(long userMb) {
+        ActivityManager am = (ActivityManager) getContext()
+            .getSystemService(Context.ACTIVITY_SERVICE);
+        if (am == null) return userMb;
+
+        int heapLimitMb = Math.max(am.getMemoryClass(), am.getLargeMemoryClass());
+
+        ActivityManager.MemoryInfo memInfo = new ActivityManager.MemoryInfo();
+        am.getMemoryInfo(memInfo);
+        long availMemMb = memInfo.availMem / (1024 * 1024);
+
+        long systemLimit = (long)(availMemMb * 0.25);
+        long heapLimit = (long)(heapLimitMb * 0.50);
+
+        long effective = userMb;
+        if (systemLimit < effective) effective = systemLimit;
+        if (heapLimit < effective) effective = heapLimit;
+        if (effective < 16) effective = 16;
+
+        Log.i(TAG, "自适应缓存: 用户=" + userMb + "MB, 可用内存限制="
+            + systemLimit + "MB, 堆限制=" + heapLimit + "MB, 生效=" + effective + "MB");
+        return effective;
+    }
+
+    /**
+     * 由 MainActivity.onTrimMemory/onLowMemory 调用，根据系统内存压力缩减缓存。
+     */
+    public void onMemoryPressure(int level) {
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_COMPLETE) {
+            ImageCache.getInstance().clear();
+        } else if (level >= ComponentCallbacks2.TRIM_MEMORY_MODERATE) {
+            ImageCache.getInstance().trimToFraction(0.2);
+        } else if (level >= ComponentCallbacks2.TRIM_MEMORY_BACKGROUND) {
+            ImageCache.getInstance().trimToFraction(0.3);
+        } else if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) {
+            ImageCache.getInstance().trimToFraction(0.5);
+        } else if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL) {
+            ImageCache.getInstance().trimToFraction(0.25);
+        } else if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
+            ImageCache.getInstance().trimToFraction(0.5);
+        }
+        // RUNNING_MODERATE (5): 不干预，信任自适应淘汰
     }
 
     @PluginMethod
@@ -1038,16 +1087,20 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
 
     @PluginMethod
     public void setCacheCapacity(PluginCall call) {
-        Long mb = call.getLong("mb");
-        if (mb == null || mb <= 0) {
-            call.reject("mb must be a positive number");
-            return;
+        try {
+            Integer mb = call.getInt("mb");
+            if (mb == null || mb <= 0) {
+                call.reject("mb must be a positive number");
+                return;
+            }
+            preloadService.setCacheCapacity(mb);
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            ret.put("capacityMb", mb);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
         }
-        preloadService.setCacheCapacity(mb);
-        JSObject ret = new JSObject();
-        ret.put("success", true);
-        ret.put("capacityMb", mb);
-        call.resolve(ret);
     }
 
     @PluginMethod

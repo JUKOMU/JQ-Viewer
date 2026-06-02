@@ -87,7 +87,7 @@ const updateReaderCurrentPage = inject<(page: number) => void>('updateReaderCurr
 const albumId = computed(() => route.params.albumId as string)
 const chapterId = computed(() => route.params.chapterId as string)
 const chapterTitle = computed(() => (route.query.title as string) || chapterId.value)
-const isOffline = computed(() => route.query.source === 'download')
+const isOffline = ref(route.query.source === 'download')
 
 // ---- 核心状态 ----
 const isVertical = ref(SettingsStore.getReaderDisplayMode() === 'vertical')
@@ -536,6 +536,104 @@ const recordBrowseHistory = () => {
     })
 }
 
+const applyPhotoBaseState = (pd: PhotoDetail) => {
+  photoDetail = pd
+
+  const total = pd.images.length
+  const pageParam = Number(route.query.page)
+  currentIndex.value = Math.min(
+    Math.max((pageParam > 0 ? pageParam : 1) - 1, 0),
+    Math.max(0, total - 1),
+  )
+  totalCount.value = total
+  updateReaderCurrentPage(currentIndex.value + 1)
+  toolbarVisible.value = true
+}
+
+const scrollToInitialIndex = () => {
+  nextTick(() => {
+    if (isVertical.value) {
+      verticalViewRef.value?.scrollToIndex(currentIndex.value)
+    }
+  })
+}
+
+const loadDownloadedChapter = async (): Promise<boolean> => {
+  try {
+    const pd = await JmcomicService.getDownloadedPhoto(albumId.value, chapterId.value)
+    isOffline.value = true
+    applyPhotoBaseState(pd)
+
+    const initOrders = calcWindow(currentIndex.value)
+    const priorityInitOrders = prioritizeSortOrders(initOrders, currentIndex.value)
+    for (const so of priorityInitOrders) {
+      if (!loadedSortOrders.has(so)) {
+        imageMap.value.set(so, getImageUrl(pd.id, so, 'image'))
+        loadedSortOrders.add(so)
+      }
+    }
+    applyImageMap()
+    scrollToInitialIndex()
+    recordBrowseHistory()
+    return true
+  } catch {
+    isOffline.value = false
+    return false
+  }
+}
+
+const loadOnlineChapter = async () => {
+  try {
+    const pd = await JmcomicService.getPhoto(chapterId.value)
+    isOffline.value = false
+    applyPhotoBaseState(pd)
+    sortOrderToImage = new Map(pd.images.map((i) => [i.sortOrder, i]))
+
+    if (readerRuntimeActive) {
+      setupImageReadyListener().catch(() => {
+      })
+    }
+
+    const initOrders = prioritizeSortOrders(calcWindow(currentIndex.value), currentIndex.value)
+    const initOrderSet = new Set(initOrders)
+    const initImages = initOrders
+      .map((so) => sortOrderToImage.get(so))
+      .filter((i): i is ImageInfo => Boolean(i))
+    for (const so of initOrderSet) {
+      requestedSortOrders.add(so)
+    }
+    if (initImages.length > 0) {
+      JmcomicService.preloadImages(pd.id, initImages, 'image')
+        .then((result) => {
+          for (const so of result.cached) {
+            imageMap.value.set(so, getImageUrl(pd.id, so, 'image'))
+            loadedSortOrders.add(so)
+          }
+          applyImageMap()
+        })
+        .catch(() => {
+        })
+    }
+
+    scrollToInitialIndex()
+    recordBrowseHistory()
+  } catch {
+    showToast('章节加载失败', 'danger')
+    totalCount.value = 0
+    recordBrowseHistory()
+  }
+}
+
+const loadChapter = async () => {
+  const loadedFromDownload = await loadDownloadedChapter()
+  if (loadedFromDownload) return
+
+  if (route.query.source === 'download') {
+    showToast('离线章节加载失败', 'danger')
+  }
+  await loadOnlineChapter()
+}
+
 // ---- 返回 ----
 const goBack = () => {
   if (window.history.length > 1) {
@@ -566,101 +664,7 @@ onMounted(() => {
   }
 
   activateReaderRuntime()
-
-  if (isOffline.value) {
-    JmcomicService.getDownloadedPhoto(albumId.value, chapterId.value)
-      .then((pd) => {
-        photoDetail = pd
-
-        const total = pd.images.length
-        const pageParam = Number(route.query.page)
-        currentIndex.value = Math.min(
-          Math.max((pageParam > 0 ? pageParam : 1) - 1, 0),
-          Math.max(0, total - 1),
-        )
-        totalCount.value = total
-        updateReaderCurrentPage(currentIndex.value + 1)
-
-        toolbarVisible.value = true
-
-        const initOrders = calcWindow(currentIndex.value)
-        const priorityInitOrders = prioritizeSortOrders(initOrders, currentIndex.value)
-        for (const so of priorityInitOrders) {
-          if (!loadedSortOrders.has(so)) {
-            imageMap.value.set(so, getImageUrl(pd.id, so, 'image'))
-            loadedSortOrders.add(so)
-          }
-        }
-        applyImageMap()
-
-        nextTick(() => {
-          if (isVertical.value) {
-            verticalViewRef.value?.scrollToIndex(currentIndex.value)
-          }
-        })
-        recordBrowseHistory()
-      })
-      .catch((_e: any) => {
-        showToast('离线章节加载失败', 'danger')
-        totalCount.value = 0
-        recordBrowseHistory()
-      })
-  } else {
-    JmcomicService.getPhoto(chapterId.value)
-      .then((pd) => {
-        photoDetail = pd
-        sortOrderToImage = new Map(pd.images.map((i) => [i.sortOrder, i]))
-
-        const total = pd.images.length
-        const pageParam = Number(route.query.page)
-        currentIndex.value = Math.min(
-          Math.max((pageParam > 0 ? pageParam : 1) - 1, 0),
-          Math.max(0, total - 1),
-        )
-        totalCount.value = total
-        updateReaderCurrentPage(currentIndex.value + 1)
-
-        toolbarVisible.value = true
-
-        if (readerRuntimeActive) {
-          setupImageReadyListener().catch(() => {
-          })
-        }
-
-        const initOrders = prioritizeSortOrders(calcWindow(currentIndex.value), currentIndex.value)
-        const initOrderSet = new Set(initOrders)
-        const initImages = initOrders
-          .map((so) => sortOrderToImage.get(so))
-          .filter((i): i is ImageInfo => Boolean(i))
-        for (const so of initOrderSet) {
-          requestedSortOrders.add(so)
-        }
-        if (initImages.length > 0) {
-          JmcomicService.preloadImages(pd.id, initImages, 'image')
-            .then((result) => {
-              for (const so of result.cached) {
-                imageMap.value.set(so, getImageUrl(pd.id, so, 'image'))
-                loadedSortOrders.add(so)
-              }
-              applyImageMap()
-            })
-            .catch(() => {
-            })
-        }
-
-        nextTick(() => {
-          if (isVertical.value) {
-            verticalViewRef.value?.scrollToIndex(currentIndex.value)
-          }
-        })
-        recordBrowseHistory()
-      })
-      .catch(() => {
-        showToast('章节加载失败', 'danger')
-        totalCount.value = 0
-        recordBrowseHistory()
-      })
-  }
+  void loadChapter()
 
 })
 

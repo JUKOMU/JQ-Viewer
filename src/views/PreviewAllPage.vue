@@ -77,6 +77,13 @@ import type {PluginListenerHandle} from '@capacitor/core'
 import {arrowBack} from 'ionicons/icons'
 import {getImageUrl, JmcomicService} from '@/services/JmcomicService'
 import type {PhotoDetail, PreloadResult} from '@/services/JmcomicTypes'
+import {getPdfVirtualUrl} from '@/services/PdfReaderService'
+import * as pdfjsLib from 'pdfjs-dist'
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  'pdfjs-dist/build/pdf.worker.min.mjs',
+  import.meta.url,
+).href
 
 const BATCH = 20
 const NEAR_BOTTOM_THRESHOLD = 200
@@ -88,6 +95,10 @@ const albumId = computed(() => route.params.albumId as string)
 const chapterId = computed(() => route.params.chapterId as string)
 const chapterTitle = computed(() => (route.query.title as string) || chapterId.value)
 const initialTotal = Number(route.query.total as string) || 0
+const source = computed(() => (route.query.source as string) || 'network')
+const isPdfSource = computed(() => source.value === 'pdf')
+const isDownloadSource = computed(() => source.value === 'download')
+const pdfPath = computed(() => (route.query.pdfPath as string) || '')
 
 interface PreviewImage {
   sortOrder: number
@@ -106,7 +117,9 @@ const allVisible = computed(() => displayCount.value >= totalCount.value)
 const skeletonCount = computed(() => Math.min(totalCount.value || initialTotal || BATCH, BATCH))
 
 let photoDetail: PhotoDetail | null = null
+let pdfDoc: pdfjsLib.PDFDocumentProxy | null = null
 let imageReadyListenerHandle: PluginListenerHandle | null = null
+const pdfObjectUrls = new Set<string>()
 
 // ---- 滚动容器 ----
 const contentRef = ref<InstanceType<typeof IonContent> | null>(null)
@@ -122,29 +135,105 @@ const resolveScrollElement = async (): Promise<HTMLElement | null> => {
   return null
 }
 
+const setImageSlot = (sortOrder: number, dataUrl: string) => {
+  const idx = sortOrder - 1
+  if (idx >= 0 && idx < slots.value.length) {
+    slots.value[idx] = {sortOrder, dataUrl}
+  }
+}
+
+const renderPdfPage = async (pageNum: number): Promise<string | null> => {
+  if (!pdfDoc) return null
+  let page: pdfjsLib.PDFPageProxy | null = null
+  try {
+    page = await pdfDoc.getPage(pageNum)
+    const rawViewport = page.getViewport({scale: 1})
+    const columns = window.innerWidth >= 680 ? 4 : 3
+    const gap = 6
+    const sidePadding = 24
+    const targetWidth = (window.innerWidth - sidePadding - gap * (columns - 1)) / columns
+    const scale = Math.max(0.4, (targetWidth * Math.min(window.devicePixelRatio || 1, 2)) / rawViewport.width)
+    const viewport = page.getViewport({scale})
+
+    const canvas = document.createElement('canvas')
+    canvas.width = viewport.width
+    canvas.height = viewport.height
+    const task = page.render({canvas, viewport})
+    await task.promise
+
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.82),
+    )
+    if (!blob) return null
+    const url = URL.createObjectURL(blob)
+    pdfObjectUrls.add(url)
+    return url
+  } catch {
+    return null
+  } finally {
+    page?.cleanup()
+  }
+}
+
+const renderPdfBatch = async (start: number, end: number) => {
+  const rendered = await Promise.all(
+    Array.from({length: end - start}, (_, i) => {
+      const pageNum = start + i + 1
+      return renderPdfPage(pageNum).then((url) => ({pageNum, url}))
+    }),
+  )
+  for (const item of rendered) {
+    if (item.url) setImageSlot(item.pageNum, item.url)
+  }
+}
+
+const preloadImageBatch = async (start: number, end: number) => {
+  if (!photoDetail) return
+  if (isDownloadSource.value) {
+    for (const image of photoDetail.images.slice(start, end)) {
+      setImageSlot(image.sortOrder, getImageUrl(photoDetail.id, image.sortOrder, 'thumb'))
+    }
+    return
+  }
+
+  const batch = photoDetail.images.slice(start, end)
+  const result: PreloadResult = await JmcomicService.preloadImages(chapterId.value, batch, 'thumb')
+  for (const so of result.cached) {
+    setImageSlot(so, getImageUrl(chapterId.value, so, 'thumb'))
+  }
+}
+
 // ---- 生命周期 ----
 onMounted(async () => {
   try {
-    photoDetail = await JmcomicService.getPhoto(chapterId.value)
-    totalCount.value = photoDetail.images.length
+    if (isPdfSource.value) {
+      if (!pdfPath.value) throw new Error('缺少 PDF 路径')
+      const response = await fetch(getPdfVirtualUrl(pdfPath.value))
+      if (!response.ok) throw new Error('PDF 加载失败')
+      const arrayBuffer = await response.arrayBuffer()
+      pdfDoc = await pdfjsLib.getDocument({data: arrayBuffer}).promise
+      totalCount.value = pdfDoc.numPages
+    } else if (isDownloadSource.value) {
+      photoDetail = await JmcomicService.getDownloadedPhoto(albumId.value, chapterId.value)
+      totalCount.value = photoDetail.images.length
+    } else {
+      photoDetail = await JmcomicService.getPhoto(chapterId.value)
+      totalCount.value = photoDetail.images.length
+    }
   } catch {
     totalCount.value = 0
     loading.value = false
     return
   }
 
-  imageReadyListenerHandle = await JmcomicService.addImageReadyListener(
-    chapterId.value,
-    (sortOrder) => {
-      const idx = sortOrder - 1
-      if (idx >= 0 && idx < slots.value.length) {
-        slots.value[idx] = {
-          sortOrder,
-          dataUrl: getImageUrl(chapterId.value, sortOrder, 'thumb'),
-        }
-      }
-    },
-  )
+  if (!isPdfSource.value && !isDownloadSource.value) {
+    imageReadyListenerHandle = await JmcomicService.addImageReadyListener(
+      chapterId.value,
+      (sortOrder) => {
+        setImageSlot(sortOrder, getImageUrl(chapterId.value, sortOrder, 'thumb'))
+      },
+    )
+  }
 
   await resolveScrollElement()
 
@@ -156,17 +245,14 @@ onMounted(async () => {
 
   // 提交预加载首批缩略图
   loadingMore.value = true
-  const batch = photoDetail.images.slice(0, firstCount)
-  const result: PreloadResult = await JmcomicService.preloadImages(chapterId.value, batch, 'thumb')
-  // 已缓存的图片直接填入槽位
-  for (const so of result.cached) {
-    const idx = so - 1
-    if (idx >= 0 && idx < slots.value.length) {
-      slots.value[idx] = {
-        sortOrder: so,
-        dataUrl: getImageUrl(chapterId.value, so, 'thumb'),
-      }
+  try {
+    if (isPdfSource.value) {
+      await renderPdfBatch(0, firstCount)
+    } else {
+      await preloadImageBatch(0, firstCount)
     }
+  } catch {
+    // ignore
   }
   cursor.value = firstCount
 
@@ -178,6 +264,12 @@ onMounted(async () => {
 
 onUnmounted(() => {
   imageReadyListenerHandle?.remove()
+  pdfDoc?.destroy()
+  pdfDoc = null
+  for (const url of pdfObjectUrls) {
+    URL.revokeObjectURL(url)
+  }
+  pdfObjectUrls.clear()
 })
 
 // ---- 滚动 ----
@@ -205,7 +297,8 @@ const maybeLoadMoreAfterRender = async () => {
 
 // ---- 展开一批：加载动画 → 0.3s → 扩槽位 → 提交下载 ----
 const expandBatch = async () => {
-  if (!photoDetail || allVisible.value) return
+  if (allVisible.value) return
+  if (!isPdfSource.value && !photoDetail) return
   loadingMore.value = true
 
   // 先等一下，让加载动画可见
@@ -221,17 +314,11 @@ const expandBatch = async () => {
   // 提交预加载（扩槽后才提交，保证事件能正确填充）
   if (cursor.value < totalCount.value) {
     const nextCursor = Math.min(cursor.value + BATCH, totalCount.value)
-    const batch = photoDetail.images.slice(cursor.value, nextCursor)
     try {
-      const result = await JmcomicService.preloadImages(chapterId.value, batch, 'thumb')
-      for (const so of result.cached) {
-        const idx = so - 1
-        if (idx >= 0 && idx < slots.value.length) {
-          slots.value[idx] = {
-            sortOrder: so,
-            dataUrl: getImageUrl(chapterId.value, so, 'thumb'),
-          }
-        }
+      if (isPdfSource.value) {
+        await renderPdfBatch(cursor.value, nextCursor)
+      } else {
+        await preloadImageBatch(cursor.value, nextCursor)
       }
     } catch {
       /* ignore */
@@ -243,9 +330,32 @@ const expandBatch = async () => {
 }
 
 const openReader = (page: number) => {
+  if (isPdfSource.value && pdfPath.value) {
+    void router.push({
+      path: '/pdf-reader',
+      query: {
+        path: pdfPath.value,
+        title: (route.query.pdfTitle as string) || chapterTitle.value,
+        albumId: albumId.value,
+        albumTitle: (route.query.albumTitle as string) || chapterTitle.value,
+        authors: (route.query.authors as string) || '',
+        coverUrl: (route.query.coverUrl as string) || '',
+        chapterId: chapterId.value,
+        chapterTitle: chapterTitle.value,
+        page: String(page),
+      },
+    })
+    return
+  }
+
   void router.push({
     path: `/album/${albumId.value}/read/${chapterId.value}`,
-    query: {page: String(page), title: chapterTitle.value, total: String(totalCount.value)},
+    query: {
+      page: String(page),
+      title: chapterTitle.value,
+      total: String(totalCount.value),
+      ...(isDownloadSource.value ? {source: 'download'} : {}),
+    },
   })
 }
 

@@ -24,15 +24,25 @@
           <ion-icon :icon="bookmark"/>
           <span class="action-label">收藏</span>
         </button>
-        <button
-          type="button"
-          class="action-btn"
-          :class="downloadClass"
-          @click="$emit('download')"
-        >
-          <ion-icon :icon="downloadIcon"/>
-          <span class="action-label">{{ downloadLabel }}</span>
-        </button>
+        <div class="action-btn-wrap">
+          <button
+            type="button"
+            class="action-btn"
+            :class="downloadClass"
+            @click="$emit('download')"
+          >
+            <ion-icon :icon="downloadIcon"/>
+            <span class="action-label">{{ downloadLabel }}</span>
+          </button>
+          <span class="source-state-row">
+            <span class="source-state-chip source-chip-image" :class="{ active: imageAvailable }">
+              <ion-icon :icon="imageOutline"/>
+            </span>
+            <span class="source-state-chip source-chip-pdf" :class="{ active: pdfAvailable }">
+              <ion-icon :icon="readerOutline"/>
+            </span>
+          </span>
+        </div>
       </div>
 
       <!-- 信息列表 -->
@@ -156,6 +166,8 @@ import {
   copyOutline,
   downloadOutline,
   heart,
+  imageOutline,
+  readerOutline,
   refreshOutline,
   timeOutline,
 } from 'ionicons/icons'
@@ -168,6 +180,8 @@ const props = defineProps<{
   album: AlbumDetail | null
   actionBusy: { like: boolean; favorite: boolean }
   downloadStatus?: string
+  imageAvailable: boolean
+  pdfAvailable: boolean
 }>()
 
 defineEmits<{
@@ -346,6 +360,54 @@ const downloadIcon = computed(() => {
 
 .action-label {
   font-size: 11px;
+}
+
+.action-btn-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+}
+
+.action-btn-wrap .action-btn {
+  width: 100%;
+}
+
+.source-state-row {
+  display: flex;
+  justify-content: center;
+  gap: 5px;
+  min-height: 20px;
+}
+
+.source-state-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid #d0c7c0;
+  border-radius: 6px;
+  background: #f2f0ee;
+  color: #9a9088;
+  font-size: 12px;
+}
+
+.source-state-chip.active {
+  opacity: 1;
+}
+
+.source-chip-image.active {
+  border-color: #4a9fd8;
+  background: #e8f4fc;
+  color: #2d7ab5;
+}
+
+.source-chip-pdf.active {
+  border-color: #e05555;
+  background: #fdf0f0;
+  color: #c03939;
 }
 
 /* 信息列表 */

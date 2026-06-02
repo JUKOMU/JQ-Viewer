@@ -281,7 +281,7 @@ export interface CompletedGroup {
   albumId: string
   albumTitle: string
   coverUrl: string
-  chapters: DownloadTask[] // 按 chapterSortOrder 升序
+  chapters: CompletedEntry[] // 按 chapterSortOrder 升序
   totalSize: number
 }
 
@@ -371,4 +371,78 @@ export interface PdfExportTask {
   useOriginal: boolean
   compressionRatio: number   // 0.1~1.0
   splitPages: number         // 0=不分卷, >0=每卷页数
+}
+
+// --- PDF 导入 ---
+
+/** scanPdfFiles 返回的单个 PDF 文件条目 */
+export interface PdfScanItem {
+  fileName: string
+  filePath: string
+}
+
+/** 已导入的 PDF 记录（从数据库返回） */
+export interface ImportedPdf {
+  id: number
+  filePath: string
+  fileName: string
+  albumId: string
+  albumTitle: string
+  coverUrl: string
+  authors: string
+  chapterId: string
+  chapterTitle: string
+  chapterSortOrder: number
+  createdAt: number
+  folderId?: string
+  fileSize?: number
+  pageCount?: number
+}
+
+/** importPdfs 调用的导入项 */
+export interface ImportPdfItem {
+  filePath: string
+  fileName: string
+  albumId: string
+  albumTitle: string
+  coverUrl: string
+  authors: string
+  chapterId: string
+  chapterTitle: string
+  chapterSortOrder: number
+  folderId?: string
+}
+
+export interface ImportPdfsResult {
+  imported: number
+  skipped: number
+  duplicateCount: number
+  errorCount: number
+}
+
+export interface ImportedPdfsResult {
+  pdfs: ImportedPdf[]
+}
+
+// --- 已完成区统一展示类型 ---
+
+/**
+ * 下载页面"已完成"区域的统一展示类型。
+ * 图片下载（DownloadTask）和 PDF 导入各自映射为此类型，下游组件只接触 CompletedEntry。
+ */
+export interface CompletedEntry {
+  albumId: string
+  albumTitle: string
+  coverUrl: string
+  chapterId: string        // download: chapterId; pdf: 内部唯一 key
+  displayId?: string       // chapterId 不是用户可见 ID 时的展示兜底
+  chapterTitle: string     // download: chapterTitle; pdf: fileName
+  chapterSortOrder: number
+  authors: string
+  createdAt: number
+  completedAt: number
+  totalSize: number        // download: totalSize; pdf: 0
+  source: 'download' | 'pdf-import'
+  downloadTask?: DownloadTask   // source='download' 时的原始数据
+  pdfData?: ImportedPdf         // source='pdf-import' 时的原始数据
 }

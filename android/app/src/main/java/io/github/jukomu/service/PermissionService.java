@@ -1,5 +1,6 @@
 package io.github.jukomu.service;
 
+import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -17,6 +18,7 @@ import androidx.core.content.ContextCompat;
 public class PermissionService {
 
     public static final int REQUEST_WRITE_STORAGE = 1001;
+    public static final int REQUEST_POST_NOTIFICATIONS = 1003;
 
     /**
      * 检查当前存储权限状态（无副作用）。
@@ -56,5 +58,24 @@ public class PermissionService {
         boolean granted = grantResults.length > 0
             && grantResults[0] == PackageManager.PERMISSION_GRANTED;
         return new PermissionState(granted, "WRITE_EXTERNAL_STORAGE", Build.VERSION.SDK_INT);
+    }
+
+    /**
+     * 检查通知权限状态（API 33+ 使用 POST_NOTIFICATIONS，低版本默认开启）。
+     */
+    public boolean checkNotificationPermission(Context ctx) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            return true;
+        }
+        NotificationManager nm = (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
+        return nm != null && nm.areNotificationsEnabled();
+    }
+
+    /**
+     * 解读 POST_NOTIFICATIONS 的 requestPermissions 回调结果。
+     */
+    public boolean interpretNotificationResult(int[] grantResults) {
+        return grantResults.length > 0
+            && grantResults[0] == PackageManager.PERMISSION_GRANTED;
     }
 }

@@ -1,5 +1,7 @@
 package io.github.jukomu.service;
 
+import android.app.ActivityManager;
+import android.content.Context;
 import android.util.Log;
 
 import io.github.jukomu.data.FileStore;
@@ -14,6 +16,8 @@ import org.json.JSONObject;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 图片预加载与缓存管理——预加载、缩略图生成、缓存容量/清理。
@@ -29,21 +33,31 @@ public class PreloadService {
     private final JmApiClient client;
     private final ExecutorService imageExecutor;
     private final ServiceListener listener;
+    private final Context context;
+    private final ConcurrentHashMap<String, Long> pendingKeys = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Long> activeGenerations = new ConcurrentHashMap<>();
+    private final AtomicLong generationCounter = new AtomicLong();
 
     public PreloadService(ImageCache imageCache, FileStore fileStore,
                           SettingsStore settingsDb, JmApiClient client,
-                          ExecutorService imageExecutor, ServiceListener listener) {
+                          ExecutorService imageExecutor, ServiceListener listener,
+                          Context context) {
         this.imageCache = imageCache;
         this.fileStore = fileStore;
         this.settingsDb = settingsDb;
         this.client = client;
         this.imageExecutor = imageExecutor;
         this.listener = listener;
+        this.context = context;
     }
 
     // ---- 图片预加载 ----
 
     public JSONObject preloadImages(String photoId, String type, JSONArray imagesArray) {
+        return preloadImages(photoId, type, imagesArray, false);
+    }
+
+    public JSONObject preloadImages(String photoId, String type, JSONArray imagesArray, boolean replacePending) {
         JSONObject ret = new JSONObject();
         if (imagesArray == null || imagesArray.length() == 0) {
             try {
@@ -62,6 +76,13 @@ public class PreloadService {
         List<Integer> cached = new ArrayList<>();
         List<Integer> pending = new ArrayList<>();
         final boolean isThumb = "thumb".equals(type);
+        final String scopeKey = photoId + "/" + type;
+        final long generation = replacePending
+            ? generationCounter.incrementAndGet()
+            : activeGenerations.getOrDefault(scopeKey, 0L);
+        if (replacePending) {
+            activeGenerations.put(scopeKey, generation);
+        }
 
         for (int i = 0; i < imagesArray.length(); i++) {
             JSONObject imgObj;
@@ -98,15 +119,22 @@ public class PreloadService {
                 if (isThumb) {
                     // 缩略图：提交到线程池生成
                     pending.add(sortOrder);
+                    if (!markPending(cacheKey, generation, replacePending)) {
+                        continue;
+                    }
                     imageExecutor.submit(() -> {
                         try {
+                            if (isStale(scopeKey, generation)) return;
                             byte[] thumbBytes = ImageCache.createThumbnail(localBytes);
+                            if (isStale(scopeKey, generation)) return;
                             imageCache.put(cacheKey, thumbBytes, "image/jpeg");
                             String mime = "image/" + ImageCache.guessFormatName(localBytes);
                             imageCache.put(photoId + "/" + sortOrder, localBytes, mime);
                             notifyImageReady(photoId, sortOrder, type);
                         } catch (Exception e) {
                             Log.d(TAG, "缩略图生成失败", e);
+                        } finally {
+                            pendingKeys.remove(cacheKey, generation);
                         }
                     });
                 } else {
@@ -121,6 +149,9 @@ public class PreloadService {
 
             // 本地未命中 → 网络下载
             pending.add(sortOrder);
+            if (!markPending(cacheKey, generation, replacePending)) {
+                continue;
+            }
 
             final String scrambleId = imgObj.optString("scrambleId");
             final String filename = imgObj.optString("filename");
@@ -129,8 +160,10 @@ public class PreloadService {
 
             imageExecutor.submit(() -> {
                 try {
+                    if (isStale(scopeKey, generation)) return;
                     JmImage jmImage = new JmImage(photoId, scrambleId, filename, url, queryParams, sortOrder);
                     byte[] decrypted = client.fetchImageBytes(jmImage);
+                    if (isStale(scopeKey, generation)) return;
                     String formatName = JmImageTool.getFormatName(filename);
                     String mimeType = "image/" + formatName;
 
@@ -145,6 +178,8 @@ public class PreloadService {
                     notifyImageReady(photoId, sortOrder, type);
                 } catch (Exception e) {
                     Log.d(TAG, "图片下载或解密失败", e);
+                } finally {
+                    pendingKeys.remove(cacheKey, generation);
                 }
             });
         }
@@ -162,16 +197,60 @@ public class PreloadService {
         return ret;
     }
 
+    private boolean isStale(String scopeKey, long generation) {
+        return activeGenerations.getOrDefault(scopeKey, 0L) != generation;
+    }
+
+    private boolean markPending(String cacheKey, long generation, boolean replacePending) {
+        if (replacePending) {
+            pendingKeys.put(cacheKey, generation);
+            return true;
+        }
+        return pendingKeys.putIfAbsent(cacheKey, generation) == null;
+    }
+
     // ---- 缓存管理 ----
 
     public void clearPhotoCache(String photoId) {
         imageCache.clearByPrefix(photoId + "/");
     }
 
-    public void setCacheCapacity(long mb) {
-        long bytes = mb * 1024 * 1024;
+    public void setCacheCapacity(long userMb) {
+        if (userMb < 16) userMb = 16;
+        if (userMb > 1024) userMb = 1024;
+
+        // 持久化用户原始偏好
+        settingsDb.putString("cache_capacity_mb", String.valueOf(userMb));
+
+        // 自适应计算 → 实际生效值
+        long effectiveMb = computeAdaptiveCapacity(userMb);
+        long bytes = effectiveMb * 1024 * 1024;
         imageCache.setCapacity(bytes);
-        settingsDb.putString("cache_capacity_mb", String.valueOf(mb));
+    }
+
+    private long computeAdaptiveCapacity(long userMb) {
+        if (context == null) return userMb;
+        ActivityManager am = (ActivityManager) context
+            .getSystemService(Context.ACTIVITY_SERVICE);
+        if (am == null) return userMb;
+
+        int heapLimitMb = Math.max(am.getMemoryClass(), am.getLargeMemoryClass());
+
+        ActivityManager.MemoryInfo memInfo = new ActivityManager.MemoryInfo();
+        am.getMemoryInfo(memInfo);
+        long availMemMb = memInfo.availMem / (1024 * 1024);
+
+        long systemLimit = (long)(availMemMb * 0.25);
+        long heapLimit = (long)(heapLimitMb * 0.50);
+
+        long effective = userMb;
+        if (systemLimit < effective) effective = systemLimit;
+        if (heapLimit < effective) effective = heapLimit;
+        if (effective < 16) effective = 16;
+
+        Log.d(TAG, "自适应缓存: 用户=" + userMb + "MB, 可用内存限制="
+            + systemLimit + "MB, 堆限制=" + heapLimit + "MB, 生效=" + effective + "MB");
+        return effective;
     }
 
     public JSONObject getCacheCapacityInfo() {

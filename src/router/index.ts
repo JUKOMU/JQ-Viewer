@@ -61,7 +61,9 @@ const routes: Array<RouteRecordRaw> = [
   },
   {
     path: '/album/:albumId/read/:chapterId',
+    name: 'ReaderPage',
     component: () => import('@/views/ReaderPage.vue'),
+    meta: {menu: false, keepAlive: true},
   },
   {
     path: '/login',
@@ -80,10 +82,26 @@ const routes: Array<RouteRecordRaw> = [
     component: () => import('@/views/AboutPage.vue'),
   },
   {
+    path: '/pdf-template-help',
+    component: () => import('@/views/PdfTemplateHelpPage.vue'),
+  },
+  {
     path: '/batch-parse',
     name: 'BatchParsePage',
     component: () => import('@/views/BatchParsePage.vue'),
     meta: {menu: true, keepAlive: true},
+  },
+  {
+    path: '/import-review',
+    name: 'PdfImportPage',
+    component: () => import('@/views/PdfImportPage.vue'),
+    meta: {menu: false, keepAlive: false},
+  },
+  {
+    path: '/pdf-reader',
+    name: 'PdfReaderPage',
+    component: () => import('@/views/PdfReaderPage.vue'),
+    meta: {menu: false, keepAlive: true},
   },
 ]
 

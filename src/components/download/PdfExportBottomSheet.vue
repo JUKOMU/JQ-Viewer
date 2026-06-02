@@ -70,8 +70,8 @@
                   @change="toggleChapter(ch.taskId)"
                 />
                 <span class="chapter-info">
-                  <span class="chapter-name">{{ ch.chapterTitle }}</span>
-                  <span class="chapter-meta">{{ ch.chapterId }} · {{ ch.totalPages }}页</span>
+                  <span class="chapter-name">{{ ch.chapterId }}</span>
+                  <span class="chapter-meta">{{ chapterOrderLabel(ch) }} · {{ ch.totalPages }}页</span>
                 </span>
               </label>
             </div>
@@ -93,6 +93,15 @@
                 :key="v"
                 class="tag-btn"
                 @click="copyTag(v)"
+              >{{ v }}</button>
+            </div>
+            <div class="template-tags" style="margin-top: 2px">
+              <span class="tag-hint">条件语法（点击复制）：</span>
+              <button
+                v-for="v in tagConditionVars"
+                :key="v"
+                class="tag-btn tag-cond"
+                @click="copyTagSyntax(v)"
               >{{ v }}</button>
             </div>
           </div>
@@ -180,13 +189,13 @@
 </template>
 
 <script setup lang="ts">
-defineOptions({ name: 'PdfExportBottomSheet' })
-
 import { computed, ref, watch } from 'vue'
 import { IonRange, IonToggle, useBackButton } from '@ionic/vue'
-import type { DownloadTask } from '@/services/JmcomicTypes'
+import type { AlbumDetail, DownloadTask } from '@/services/JmcomicTypes'
 import { PdfExportService } from '@/services/PdfExportService'
 import { JmcomicService, showToast } from '@/services/JmcomicService'
+
+defineOptions({ name: 'PdfExportBottomSheet' })
 
 const props = defineProps<{
   modelValue: boolean
@@ -207,12 +216,28 @@ const emit = defineEmits<{
 }>()
 
 // ---- 模板变量 ----
-const templateVars = ['{id}', '{title}', '{chapterId}', '{chapterName}', '{pageCount}']
+const templateVars = ['{id}', '{title}', '{chapterName}', '{chapterTitle}', '{chapterId}', '{pageCount}', '{author}', '{authors}', '{tags}']
+const tagConditionVars = ['{tag=标签名}', '{tag=标签A|标签B}', '{tag=标签A&标签B}']
 
 // 当前选中章节的实际值（用于复制）
 const firstSelectedChapter = computed(() =>
   props.chapters.find((c) => selectedIds.value.has(c.taskId)) ?? props.chapters[0],
 )
+
+const albumDetail = ref<AlbumDetail | null>(null)
+
+function resolveChapterName(ch: DownloadTask, album: AlbumDetail | null): string {
+  if (album?.seriesId === '0') return album.title || ch.albumTitle
+  const order = ch.chapterSortOrder
+  if (order && order > 0) return `第${order}話`
+  return ch.chapterTitle || ''
+}
+
+function chapterOrderLabel(ch: DownloadTask): string {
+  const order = ch.chapterSortOrder
+  if (order && order > 0) return `第${order}話`
+  return ch.chapterTitle || ''
+}
 
 const templateValueMap = computed(() => {
   const ch = firstSelectedChapter.value
@@ -221,8 +246,12 @@ const templateValueMap = computed(() => {
     '{id}': ch.albumId,
     '{title}': ch.albumTitle,
     '{chapterId}': ch.chapterId,
-    '{chapterName}': ch.chapterTitle,
+    '{chapterName}': resolveChapterName(ch, albumDetail.value),
+    '{chapterTitle}': ch.chapterTitle || '',
     '{pageCount}': String(ch.totalPages),
+    '{author}': albumDetail.value?.authors?.[0] ?? '',
+    '{authors}': albumDetail.value?.authors?.join('、') ?? '',
+    '{tags}': albumDetail.value?.tags?.join('、') ?? '',
   } as Record<string, string>
 })
 
@@ -254,8 +283,12 @@ const templatePath = computed(() => {
     id: ch.albumId,
     title: ch.albumTitle,
     chapterId: ch.chapterId,
-    chapterName: ch.chapterTitle,
+    chapterName: resolveChapterName(ch, albumDetail.value),
+    chapterTitle: ch.chapterTitle || '',
     pageCount: ch.totalPages,
+    author: albumDetail.value?.authors?.[0] ?? '',
+    authors: albumDetail.value?.authors?.join('、') ?? '',
+    tags: albumDetail.value?.tags ?? [],
   }
   const dirRendered = PdfExportService.renderTemplate(dirTpl, data)
   const nameRendered = PdfExportService.renderTemplate(nameTpl, data)
@@ -302,6 +335,18 @@ watch(
       exportPath.value = PdfExportService.getExportPath()
       dirTemplate.value = PdfExportService.getDirTemplate()
       nameTemplate.value = PdfExportService.getNameTemplate()
+      // 获取本子详情以支持 author/authors/tag 模板变量
+      const albumId = props.chapters[0]?.albumId
+      if (albumId) {
+        albumDetail.value = null
+        JmcomicService.getAlbum(albumId).then(album => {
+          albumDetail.value = album
+        }).catch(() => {
+          albumDetail.value = null
+        })
+      } else {
+        albumDetail.value = null
+      }
     }
   },
 )
@@ -348,6 +393,15 @@ async function copyTag(tag: string) {
   try {
     await navigator.clipboard.writeText(value)
     await showToast(`已复制 ${tag} → ${value}`, 'success', 1500)
+  } catch {
+    /* fallback */
+  }
+}
+
+async function copyTagSyntax(syntax: string) {
+  try {
+    await navigator.clipboard.writeText(syntax)
+    await showToast(`已复制语法: ${syntax}`, 'success', 1500)
   } catch {
     /* fallback */
   }
@@ -635,6 +689,16 @@ async function onConfirm() {
 
 .tag-btn:active {
   background: #fde0c8;
+}
+
+.tag-btn.tag-cond {
+  background: #fdf0f0;
+  color: #b06060;
+  font-style: italic;
+}
+
+.tag-btn.tag-cond:active {
+  background: #f8d8d8;
 }
 
 /* 章节列表 */

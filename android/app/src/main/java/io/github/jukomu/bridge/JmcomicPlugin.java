@@ -2,16 +2,23 @@ package io.github.jukomu.bridge;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
+import android.app.ActivityManager;
+import android.content.ComponentCallbacks2;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
+import android.content.pm.PackageManager;
 import android.net.ConnectivityManager;
 import android.net.Network;
+import android.net.Uri;
 import android.os.Build;
+import android.provider.DocumentsContract;
 import android.provider.MediaStore;
+import androidx.documentfile.provider.DocumentFile;
 import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
+import androidx.core.content.FileProvider;
 import com.getcapacitor.*;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.google.mlkit.vision.common.InputImage;
@@ -35,6 +42,7 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -72,6 +80,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
     // ---- 权限相关 ----
     private static JmcomicPlugin instance;
     private PluginCall pendingPermissionCall;
+    private PluginCall pendingNotificationPermissionCall;
     private PermissionService permissionService;
 
     // ---- OCR 相关 ----
@@ -115,9 +124,18 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         if (downloadPublic) {
             PermissionState state = permissionService.checkState(ctx);
             if (!state.granted) {
-                Log.w("JmcomicPlugin",
-                    "公开下载已开启但缺少 " + state.permissionType + "，" +
-                        "回退到私有目录。请调用 requestManageStorage 授权。");
+                if (state.apiLevel >= Build.VERSION_CODES.M && state.apiLevel < Build.VERSION_CODES.Q) {
+                    // API 23-28：启动时主动请求 WRITE_EXTERNAL_STORAGE
+                    Log.w("JmcomicPlugin",
+                        "公开下载已开启但缺少 " + state.permissionType + "，启动时请求权限");
+                    ActivityCompat.requestPermissions(getActivity(),
+                        new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE},
+                        PermissionService.REQUEST_WRITE_STORAGE);
+                } else {
+                    // API 30+：不自动跳转系统设置，静默回退
+                    Log.w("JmcomicPlugin",
+                        "公开下载已开启但缺少 " + state.permissionType + "，回退到私有目录");
+                }
                 usePublicDir = false;
                 settingsDb.putString("download_public", "false");
             }
@@ -127,6 +145,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         // 初始化历史记录数据库
         HistoryStore.getInstance(ctx);
         FavoriteStore.getInstance(ctx);
+        PdfImportStore.getInstance(ctx);
 
         // 清理僵尸任务的部分下载文件（validateOnStartup 标记前）
         List<JSONObject> zombieTasks = downloadDb.getAllTasks();
@@ -140,9 +159,10 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
 
         downloadDb.validateOnStartup(FileStore.getInstance().getBaseDir());
 
-        // 读取缓存容量 → 初始化 ImageCache
-        long cacheCapacityMb = settingsDb.getLong("cache_capacity_mb", 640);
-        ImageCache.getInstance().setCapacity(cacheCapacityMb * 1024 * 1024);
+        // 读取缓存容量 → 计算自适应上限 → 初始化 ImageCache
+        long userCacheMb = settingsDb.getLong("cache_capacity_mb", 256);
+        long effectiveCacheMb = computeAdaptiveCacheCapacity(userCacheMb);
+        ImageCache.getInstance().setCapacity(effectiveCacheMb * 1024 * 1024);
 
         // 读取并发数设置 → 初始化 imageExecutor 和 downloadConcurrency
         imageConcurrency = settingsDb.getInt("preload_concurrency", 6);
@@ -163,7 +183,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         this.settingsService = new SettingsService(settingsDb, downloadDb,
             FileStore.getInstance(), permissionService, ctx, this);
         this.preloadService = new PreloadService(ImageCache.getInstance(),
-            FileStore.getInstance(), settingsDb, sharedClient, imageExecutor, this);
+            FileStore.getInstance(), settingsDb, sharedClient, imageExecutor, this, ctx);
         this.downloadService = new DownloadService(downloadDb,
             FileStore.getInstance(), sharedClient, imageExecutor, this);
 
@@ -478,15 +498,32 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
      */
     public void handlePermissionResult(int requestCode, String[] permissions,
                                        int[] grantResults) {
-        if (requestCode == PermissionService.REQUEST_WRITE_STORAGE && pendingPermissionCall != null) {
-            PluginCall call = pendingPermissionCall;
-            pendingPermissionCall = null;
-            PermissionState state = permissionService.interpretResult(grantResults);
-            JSObject ret = new JSObject();
-            ret.put("apiLevel", state.apiLevel);
-            ret.put("permissionType", state.permissionType);
-            ret.put("granted", state.granted);
-            call.resolve(ret);
+        if (requestCode == PermissionService.REQUEST_WRITE_STORAGE) {
+            if (pendingPermissionCall != null) {
+                PluginCall call = pendingPermissionCall;
+                pendingPermissionCall = null;
+                PermissionState state = permissionService.interpretResult(grantResults);
+                JSObject ret = new JSObject();
+                ret.put("apiLevel", state.apiLevel);
+                ret.put("permissionType", state.permissionType);
+                ret.put("granted", state.granted);
+                call.resolve(ret);
+            } else {
+                boolean granted = grantResults.length > 0
+                    && grantResults[0] == PackageManager.PERMISSION_GRANTED;
+                Log.i("JmcomicPlugin", "启动时存储权限请求结果: granted=" + granted);
+            }
+        } else if (requestCode == PermissionService.REQUEST_POST_NOTIFICATIONS) {
+            boolean granted = permissionService.interpretNotificationResult(grantResults);
+            if (pendingNotificationPermissionCall != null) {
+                PluginCall call = pendingNotificationPermissionCall;
+                pendingNotificationPermissionCall = null;
+                JSObject ret = new JSObject();
+                ret.put("granted", granted);
+                call.resolve(ret);
+            } else {
+                Log.i("JmcomicPlugin", "通知权限请求结果: granted=" + granted);
+            }
         }
     }
 
@@ -571,6 +608,52 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         return instance;
     }
 
+    // ---- 自适应缓存容量 ----
+
+    private long computeAdaptiveCacheCapacity(long userMb) {
+        ActivityManager am = (ActivityManager) getContext()
+            .getSystemService(Context.ACTIVITY_SERVICE);
+        if (am == null) return userMb;
+
+        int heapLimitMb = Math.max(am.getMemoryClass(), am.getLargeMemoryClass());
+
+        ActivityManager.MemoryInfo memInfo = new ActivityManager.MemoryInfo();
+        am.getMemoryInfo(memInfo);
+        long availMemMb = memInfo.availMem / (1024 * 1024);
+
+        long systemLimit = (long)(availMemMb * 0.25);
+        long heapLimit = (long)(heapLimitMb * 0.50);
+
+        long effective = userMb;
+        if (systemLimit < effective) effective = systemLimit;
+        if (heapLimit < effective) effective = heapLimit;
+        if (effective < 16) effective = 16;
+
+        Log.i(TAG, "自适应缓存: 用户=" + userMb + "MB, 可用内存限制="
+            + systemLimit + "MB, 堆限制=" + heapLimit + "MB, 生效=" + effective + "MB");
+        return effective;
+    }
+
+    /**
+     * 由 MainActivity.onTrimMemory/onLowMemory 调用，根据系统内存压力缩减缓存。
+     */
+    public void onMemoryPressure(int level) {
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_COMPLETE) {
+            ImageCache.getInstance().clear();
+        } else if (level >= ComponentCallbacks2.TRIM_MEMORY_MODERATE) {
+            ImageCache.getInstance().trimToFraction(0.2);
+        } else if (level >= ComponentCallbacks2.TRIM_MEMORY_BACKGROUND) {
+            ImageCache.getInstance().trimToFraction(0.3);
+        } else if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) {
+            ImageCache.getInstance().trimToFraction(0.5);
+        } else if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL) {
+            ImageCache.getInstance().trimToFraction(0.25);
+        } else if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
+            ImageCache.getInstance().trimToFraction(0.5);
+        }
+        // RUNNING_MODERATE (5): 不干预，信任自适应淘汰
+    }
+
     @PluginMethod
     public void pickImageAndOcr(PluginCall call) {
         synchronized (ocrLock) {
@@ -643,6 +726,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
 
         String path = treeUriToPath(treeUri);
         ret.put("path", path != null ? path : "");
+        ret.put("treeUri", treeUri.toString());
         ret.put("cancelled", false);
         call.resolve(ret);
     }
@@ -688,32 +772,37 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
 
     @PluginMethod
     public void checkNotificationPermission(PluginCall call) {
-        android.app.NotificationManager nm = (android.app.NotificationManager)
-            getContext().getSystemService(Context.NOTIFICATION_SERVICE);
         JSObject ret = new JSObject();
-        ret.put("granted", nm != null && nm.areNotificationsEnabled());
+        ret.put("granted", permissionService.checkNotificationPermission(getContext()));
         call.resolve(ret);
     }
 
     @PluginMethod
     public void requestNotificationPermission(PluginCall call) {
-        try {
-            Intent intent = new Intent();
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                intent.setAction(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS);
-                intent.putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, getContext().getPackageName());
-            } else {
-                intent.setAction(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
-                intent.setData(android.net.Uri.parse("package:" + getContext().getPackageName()));
-            }
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            getContext().startActivity(intent);
+        if (permissionService.checkNotificationPermission(getContext())) {
             JSObject ret = new JSObject();
             ret.put("granted", true);
             call.resolve(ret);
-        } catch (Exception e) {
-            call.reject(e.getMessage(), e);
+            return;
         }
+
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            JSObject ret = new JSObject();
+            ret.put("granted", false);
+            call.resolve(ret);
+            return;
+        }
+
+        if (pendingNotificationPermissionCall != null) {
+            call.reject("通知权限请求正在进行中，请先完成上一个请求。");
+            return;
+        }
+
+        pendingNotificationPermissionCall = call;
+        call.setKeepAlive(true);
+        ActivityCompat.requestPermissions(getActivity(),
+            new String[]{Manifest.permission.POST_NOTIFICATIONS},
+            PermissionService.REQUEST_POST_NOTIFICATIONS);
     }
 
     @PluginMethod
@@ -724,18 +813,21 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
                 call.reject("paths is required");
                 return;
             }
+            android.content.ContentResolver resolver = getContext().getContentResolver();
             java.io.File externalRoot = android.os.Environment.getExternalStorageDirectory();
             JSArray existing = new JSArray();
             for (int i = 0; i < pathsJson.length(); i++) {
                 String p = pathsJson.getString(i);
                 if (p == null) continue;
-                java.io.File f;
-                if (p.startsWith("/")) {
-                    f = new java.io.File(p);
+                boolean exists;
+                if (p.startsWith("content://")) {
+                    exists = checkContentUriExists(resolver, p);
+                } else if (p.startsWith("/")) {
+                    exists = new java.io.File(p).exists();
                 } else {
-                    f = new java.io.File(externalRoot, p);
+                    exists = new java.io.File(externalRoot, p).exists();
                 }
-                if (f.exists()) {
+                if (exists) {
                     existing.put(p);
                 }
             }
@@ -744,6 +836,21 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
             call.resolve(ret);
         } catch (Exception e) {
             call.reject(e.getMessage(), e);
+        }
+    }
+
+    private boolean checkContentUriExists(android.content.ContentResolver resolver, String uriStr) {
+        Uri uri = Uri.parse(uriStr);
+        android.database.Cursor cursor = null;
+        try {
+            cursor = resolver.query(uri, null, null, null, null);
+            return cursor != null && cursor.getCount() > 0;
+        } catch (Exception e) {
+            return false;
+        } finally {
+            if (cursor != null) {
+                cursor.close();
+            }
         }
     }
 
@@ -947,6 +1054,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         try {
             String photoId = call.getString("photoId");
             String type = call.getString("type", "image");
+            boolean replacePending = call.getBoolean("replacePending", false);
             JSArray imagesArray = call.getArray("images");
             JSONArray jsonImages = new JSONArray();
             if (imagesArray != null) {
@@ -958,7 +1066,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
                     }
                 }
             }
-            JSONObject result = preloadService.preloadImages(photoId, type, jsonImages);
+            JSONObject result = preloadService.preloadImages(photoId, type, jsonImages, replacePending);
             call.resolve(JSObject.fromJSONObject(result));
         } catch (Exception e) {
             call.reject(e.getMessage(), e);
@@ -980,16 +1088,20 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
 
     @PluginMethod
     public void setCacheCapacity(PluginCall call) {
-        Long mb = call.getLong("mb");
-        if (mb == null || mb <= 0) {
-            call.reject("mb must be a positive number");
-            return;
+        try {
+            Integer mb = call.getInt("mb");
+            if (mb == null || mb <= 0) {
+                call.reject("mb must be a positive number");
+                return;
+            }
+            preloadService.setCacheCapacity(mb);
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            ret.put("capacityMb", mb);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
         }
-        preloadService.setCacheCapacity(mb);
-        JSObject ret = new JSObject();
-        ret.put("success", true);
-        ret.put("capacityMb", mb);
-        call.resolve(ret);
     }
 
     @PluginMethod
@@ -2087,6 +2199,171 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
     }
 
     // ========== PDF 导出 ==========
+
+    // ========== PDF 导入 ==========
+
+    @PluginMethod
+    public void scanPdfFiles(PluginCall call) {
+        String treeUriStr = call.getString("treeUri");
+        if (treeUriStr != null && !treeUriStr.isEmpty()) {
+            scanPdfFilesViaSaf(call, Uri.parse(treeUriStr));
+        } else {
+            scanPdfFilesViaFile(call);
+        }
+    }
+
+    private void scanPdfFilesViaSaf(PluginCall call, Uri treeUri) {
+        DocumentFile root = DocumentFile.fromTreeUri(getContext(), treeUri);
+        if (root == null || !root.isDirectory()) {
+            // SAF 失败时回退到 java.io.File
+            scanPdfFilesViaFile(call);
+            return;
+        }
+        DocumentFile[] children = root.listFiles();
+        JSArray arr = new JSArray();
+        if (children != null) {
+            for (DocumentFile child : children) {
+                if (child.isFile() && child.getName() != null
+                    && child.getName().toLowerCase().endsWith(".pdf")) {
+                    JSObject obj = new JSObject();
+                    obj.put("fileName", child.getName());
+                    obj.put("filePath", child.getUri().toString());
+                    arr.put(obj);
+                }
+            }
+        }
+        JSObject ret = new JSObject();
+        ret.put("files", arr);
+        call.resolve(ret);
+    }
+
+    private void scanPdfFilesViaFile(PluginCall call) {
+        String path = call.getString("path");
+        if (path == null || path.isEmpty()) {
+            call.reject("path is required");
+            return;
+        }
+        File dir = new File(path);
+        if (!dir.isDirectory()) {
+            call.reject("Not a directory: " + path);
+            return;
+        }
+        File[] pdfFiles = dir.listFiles((d, name) ->
+            name.toLowerCase().endsWith(".pdf"));
+        JSArray arr = new JSArray();
+        if (pdfFiles != null) {
+            for (File f : pdfFiles) {
+                JSObject obj = new JSObject();
+                obj.put("fileName", f.getName());
+                obj.put("filePath", f.getAbsolutePath());
+                arr.put(obj);
+            }
+        }
+        JSObject ret = new JSObject();
+        ret.put("files", arr);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void importPdfs(PluginCall call) {
+        JSArray items = call.getArray("items");
+        if (items == null || items.length() == 0) {
+            call.reject("items is required and must not be empty");
+            return;
+        }
+        PdfImportStore store = PdfImportStore.getInstance(getContext());
+        int imported = 0;
+        int skipped = 0;
+        int duplicateCount = 0;
+        int errorCount = 0;
+        for (int i = 0; i < items.length(); i++) {
+            try {
+                JSONObject item = items.getJSONObject(i);
+                long id = store.insertPdf(
+                    item.getString("filePath"),
+                    item.getString("fileName"),
+                    item.getString("albumId"),
+                    item.optString("albumTitle", ""),
+                    item.optString("coverUrl", ""),
+                    item.optString("authors", ""),
+                    item.optString("chapterId", ""),
+                    item.optString("chapterTitle", ""),
+                    item.optInt("chapterSortOrder", 0),
+                    System.currentTimeMillis(),
+                    item.optString("folderId", null)
+                );
+                if (id != -1) imported++;
+                else { skipped++; duplicateCount++; }
+            } catch (Exception e) {
+                skipped++;
+                errorCount++;
+                Log.w(TAG, "跳过无效的 PDF 导入项", e);
+            }
+        }
+        JSObject ret = new JSObject();
+        ret.put("imported", imported);
+        ret.put("skipped", skipped);
+        ret.put("duplicateCount", duplicateCount);
+        ret.put("errorCount", errorCount);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void getImportedPdfs(PluginCall call) {
+        PdfImportStore store = PdfImportStore.getInstance(getContext());
+        JSONArray pdfs = store.getAllPdfs();
+        JSObject ret = new JSObject();
+        ret.put("pdfs", pdfs);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void deleteImportedPdf(PluginCall call) {
+        int id = call.getInt("id", -1);
+        if (id < 0) {
+            call.reject("id is required");
+            return;
+        }
+        boolean ok = PdfImportStore.getInstance(getContext()).deletePdf(id);
+        JSObject ret = new JSObject();
+        ret.put("success", ok);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void openPdf(PluginCall call) {
+        String filePath = call.getString("filePath");
+        if (filePath == null || filePath.isEmpty()) {
+            call.reject("filePath is required");
+            return;
+        }
+        try {
+            Uri uri;
+            if (filePath.startsWith("content://")) {
+                uri = Uri.parse(filePath);
+            } else {
+                File file = new File(filePath);
+                if (!file.exists()) {
+                    call.reject("File not found: " + filePath);
+                    return;
+                }
+                uri = FileProvider.getUriForFile(
+                    getContext(),
+                    getContext().getPackageName() + ".fileprovider",
+                    file);
+            }
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            intent.setDataAndType(uri, "application/pdf");
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(intent);
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject("无法打开 PDF: " + e.getMessage());
+        }
+    }
 
     @PluginMethod
     public void exportPdfBatch(PluginCall call) {

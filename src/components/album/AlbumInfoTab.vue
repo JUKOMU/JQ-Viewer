@@ -39,11 +39,17 @@
       <div class="info-list">
         <div class="info-row">
           <span class="info-label">ID</span>
-          <span class="info-value clickable" @click="copyText(String(album.id))">{{ album.id }}</span>
+          <span class="info-value clickable" @click="copyText(String(album.id))">
+            {{ album.id }}
+            <ion-icon class="copy-icon" :icon="copyOutline"/>
+          </span>
         </div>
         <div class="info-row">
           <span class="info-label">标题</span>
-          <span class="info-value clickable" @click="copyText(album.title)">{{ album.title }}</span>
+          <span class="info-value clickable" @click="copyText(album.title)">
+            {{ album.title }}
+            <ion-icon class="copy-icon" :icon="copyOutline"/>
+          </span>
         </div>
         <div v-if="album.description" class="info-row">
           <span class="info-label">描述</span>
@@ -140,14 +146,6 @@
 </template>
 
 <script setup lang="ts">
-defineOptions({name: 'AlbumInfoTab'})
-
-defineEmits<{
-  'toggle-like': []
-  'toggle-favorite': []
-  download: []
-  'navigate-album': [related: AlbumMeta]
-}>()
 import {computed, ref} from 'vue'
 import {useRouter} from 'vue-router'
 import {IonIcon, menuController} from '@ionic/vue'
@@ -155,6 +153,7 @@ import {
   bookmark,
   checkmarkCircleOutline,
   cloudDownloadOutline,
+  copyOutline,
   downloadOutline,
   heart,
   refreshOutline,
@@ -162,6 +161,21 @@ import {
 } from 'ionicons/icons'
 import type {AlbumDetail, AlbumMeta} from '@/services/JmcomicTypes'
 import {showToast} from '@/services/JmcomicService'
+
+defineOptions({name: 'AlbumInfoTab'})
+
+const props = defineProps<{
+  album: AlbumDetail | null
+  actionBusy: { like: boolean; favorite: boolean }
+  downloadStatus?: string
+}>()
+
+defineEmits<{
+  'toggle-like': []
+  'toggle-favorite': []
+  download: []
+  'navigate-album': [related: AlbumMeta]
+}>()
 
 const router = useRouter()
 
@@ -172,12 +186,6 @@ function formatDate(raw: string): string {
   if (isNaN(d.getTime())) return raw
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
-
-const props = defineProps<{
-  album: AlbumDetail | null
-  actionBusy: { like: boolean; favorite: boolean }
-  downloadStatus?: string
-}>()
 
 const descExpanded = ref(false)
 
@@ -380,11 +388,21 @@ const downloadIcon = computed(() => {
 
 .info-value.clickable {
   cursor: pointer;
+  position: relative;
+  padding-right: 18px;
   transition: color 0.15s ease;
 }
 
 .info-value.clickable:hover {
   color: #fa9c69;
+}
+
+.copy-icon {
+  position: absolute;
+  top: 0;
+  right: 0;
+  font-size: 12px;
+  color: #c4a48c;
 }
 
 .desc-text {

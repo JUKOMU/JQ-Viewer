@@ -40,7 +40,7 @@
                 type="number"
                 :value="cacheInputMb"
                 min="64"
-                max="2048"
+                max="1024"
                 step="64"
                 @change="onCacheCapacityChange"
               />
@@ -314,7 +314,16 @@
                 <span class="var-tag">{title}</span>
                 <span class="var-tag">{chapterId}</span>
                 <span class="var-tag">{chapterName}</span>
+                <span class="var-tag">{chapterTitle}</span>
                 <span class="var-tag">{pageCount}</span>
+                <span class="var-tag">{author}</span>
+                <span class="var-tag">{authors}</span>
+                <span class="var-tag">{tags}</span>
+              </div>
+              <div class="var-tags" style="margin-top: 4px">
+                <span class="var-tag tag-cond">{tag=标签名}</span>
+                <span class="var-tag tag-cond">{tag=标签A|标签B}</span>
+                <span class="var-tag tag-cond">{tag=标签A&标签B}</span>
               </div>
             </div>
           </div>
@@ -326,6 +335,10 @@
               @change="onPdfDirTemplateChange"
             />
             <button class="reset-mini-btn" @click="resetPdfDirTemplate">重置</button>
+          </div>
+          <div class="render-row">
+            <span class="render-label">→</span>
+            <span class="render-value">{{ pdfDirRender }}</span>
           </div>
 
           <!-- 保存名称模板 -->
@@ -344,6 +357,10 @@
             />
             <button class="reset-mini-btn" @click="resetPdfNameTemplate">重置</button>
           </div>
+          <div class="render-row">
+            <span class="render-label">→</span>
+            <span class="render-value">{{ pdfNameRender }}</span>
+          </div>
 
           <!-- 预览 -->
           <div class="row divider">
@@ -351,6 +368,12 @@
               <span class="row-title">预览</span>
               <span class="row-subtitle preview-mono">{{ pdfPathPreview }}</span>
             </div>
+          </div>
+
+          <!-- 食用方法 -->
+          <div class="row divider action" @click="goPdfTemplateHelp">
+            <span class="row-title">食用方法</span>
+            <span class="arrow">›</span>
           </div>
         </div>
 
@@ -421,7 +444,7 @@ import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import {JmcomicService, sanitizeError, showToast} from '@/services/JmcomicService'
 import {initSettings, SettingsStore} from '@/services/SettingsService'
 import {ExportFormatService} from '@/services/ExportFormatService'
-import {PdfExportService} from '@/services/PdfExportService'
+import {PdfExportService, PDF_SAMPLE_DATA} from '@/services/PdfExportService'
 import {useAuth} from '@/composables/useAuth'
 import type {CacheCapacityInfo, RelocationProgress} from '@/services/JmcomicTypes'
 
@@ -439,6 +462,10 @@ function goUser() {
 
 function goAbout() {
   router.push('/about')
+}
+
+function goPdfTemplateHelp() {
+  router.push('/pdf-template-help')
 }
 
 const cacheInfo = ref<CacheCapacityInfo>({capacityMb: 0, usedMb: 0})
@@ -464,6 +491,13 @@ const pdfDirTemplate = ref(PdfExportService.getDirTemplate())
 const pdfNameTemplate = ref(PdfExportService.getNameTemplate())
 
 const pdfPathPreview = computed(() => PdfExportService.previewPath())
+
+const pdfDirRender = computed(() =>
+  PdfExportService.renderTemplate(pdfDirTemplate.value, PDF_SAMPLE_DATA),
+)
+const pdfNameRender = computed(() =>
+  PdfExportService.renderTemplate(pdfNameTemplate.value, PDF_SAMPLE_DATA),
+)
 
 // ---- 搬迁弹窗状态 ----
 const showRelocationModal = ref(false)
@@ -546,7 +580,7 @@ onMounted(async () => {
 async function onCacheCapacityChange(e: Event) {
   const val = parseInt((e.target as HTMLInputElement).value, 10)
   if (!Number.isFinite(val)) return
-  const mb = Math.max(64, Math.min(2048, val))
+  const mb = Math.max(64, Math.min(1024, val))
   const prev = cacheInputMb.value
   cacheInputMb.value = mb
   SettingsStore.setCacheCapacityMb(mb)
@@ -1007,6 +1041,12 @@ function onVolumeNavigationChange(e: CustomEvent) {
   font-family: monospace;
 }
 
+.var-tag.tag-cond {
+  background: #fdf0f0;
+  color: #b06060;
+  font-style: italic;
+}
+
 .preview-mono {
   font-family: monospace;
   word-break: break-all;
@@ -1177,7 +1217,29 @@ function onVolumeNavigationChange(e: CustomEvent) {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 16px 12px;
+  padding: 0 16px 8px;
+}
+
+.render-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 0 16px 10px;
+}
+
+.render-label {
+  font-size: 11px;
+  color: #c4a494;
+  font-family: monospace;
+  flex-shrink: 0;
+  padding-top: 1px;
+}
+
+.render-value {
+  font-size: 12px;
+  font-family: monospace;
+  color: #8a6048;
+  word-break: break-all;
 }
 
 .text-input.full-width {

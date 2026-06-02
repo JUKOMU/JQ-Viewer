@@ -1,66 +1,72 @@
 <template>
-  <div class="card" :class="{ clickable: task.status === 'completed' }" @click="onCardClick">
+  <div class="card" :class="{ clickable: cardStatus === 'completed' }" @click="onCardClick">
     <div class="cover-wrap">
       <img
+        v-if="coverSrc"
         :src="coverSrc"
         class="cover"
         referrerpolicy="no-referrer"
         alt=""
         @error="onCoverError"
       />
+      <div v-else class="cover-placeholder">
+        <IonIcon :icon="documentOutline"/>
+      </div>
     </div>
     <div class="info">
       <div class="title-row">
         <div class="titles">
-          <div class="album-title">{{ task.albumTitle }}</div>
-          <div class="chapter-title">{{ task.chapterId }}</div>
+          <div class="album-title">{{ displayTitle }}</div>
+          <div class="chapter-title">{{ displayId }}</div>
           <div v-if="hasMultiChapters" class="chapter-bubbles">
             <span v-for="ch in downloadedChapters" :key="ch.chapterId" class="bubble">
-              {{ ch.chapterSortOrder ?? parseSortOrder(ch.chapterTitle) }}
+              {{ ch.chapterSortOrder }}
             </span>
           </div>
         </div>
       </div>
 
       <!-- 下载中：进度条 + 速度 -->
-      <template v-if="showProgress && task.status === 'downloading'">
+      <template v-if="showProgress && cardStatus === 'downloading'">
         <div class="progress-bar">
           <div class="progress-fill" :style="{ width: progressPct + '%' }"/>
         </div>
         <div class="progress-text">
-          {{ task.downloadedPages }}/{{ task.totalPages }}
+          {{ (task as DownloadTask).downloadedPages }}/{{ (task as DownloadTask).totalPages }}
           <span class="progress-pct">{{ progressPct }}%</span>
         </div>
         <div v-if="speedText" class="speed-text">{{ speedText }}</div>
       </template>
 
       <!-- 排队中 -->
-      <div v-else-if="task.status === 'queued'" class="status-tag queued">排队中</div>
+      <div v-else-if="cardStatus === 'queued'" class="status-tag queued">排队中</div>
 
       <!-- 已暂停 -->
-      <div v-else-if="task.status === 'paused'" class="status-tag paused">已暂停</div>
+      <div v-else-if="cardStatus === 'paused'" class="status-tag paused">已暂停</div>
 
       <!-- 已完成 -->
-      <div v-else-if="task.status === 'completed'" class="status-row">
-        <span class="tag completed">共 {{ displayTotalPages }} 页</span>
+      <div v-else-if="cardStatus === 'completed'" class="status-row">
+        <span v-if="!isPdfEntry" class="tag completed">共 {{ displayTotalPages }} 页</span>
+        <span v-if="isPdfEntry && displayPdfPageCount > 0" class="tag completed">共 {{ displayPdfPageCount }} 页</span>
+        <IonIcon v-if="isPdfEntry" :icon="documentOutline" class="tag-icon pdf-tag-icon"/>
         <span v-if="sizeText" class="size-text">{{ sizeText }}</span>
       </div>
 
       <!-- 部分失败 -->
-      <template v-else-if="task.status === 'failed' && task.downloadedPages > 0">
+      <template v-else-if="cardStatus === 'failed' && (task as DownloadTask).downloadedPages > 0">
         <div class="progress-bar">
           <div class="progress-fill partial" :style="{ width: progressPct + '%' }"/>
         </div>
         <div class="progress-text">
-          已下载 {{ task.downloadedPages }}/{{ task.totalPages }}
+          已下载 {{ (task as DownloadTask).downloadedPages }}/{{ (task as DownloadTask).totalPages }}
           <span class="failed-count">失败 {{ failedCount }}</span>
         </div>
         <div v-if="sizeText" class="size-text size-standalone">{{ sizeText }}</div>
       </template>
 
       <!-- 完全失败 -->
-      <div v-else-if="task.status === 'failed'" class="status-row">
-        <span class="tag failed">{{ sanitizeError(task.error, '下载失败') }}</span>
+      <div v-else-if="cardStatus === 'failed'" class="status-row">
+        <span class="tag failed">{{ sanitizeError((task as DownloadTask).error, '下载失败') }}</span>
       </div>
     </div>
 
@@ -74,9 +80,9 @@
 defineOptions({name: 'DownloadTaskCard'})
 
 const props = defineProps<{
-  task: DownloadTask
+  task: DownloadTask | CompletedEntry
   showProgress: boolean
-  downloadedChapters?: DownloadTask[]
+  downloadedChapters?: CompletedEntry[]
   totalSize?: number
 }>()
 const emit = defineEmits<{
@@ -85,30 +91,61 @@ const emit = defineEmits<{
 }>()
 import {computed, ref} from 'vue'
 import {IonIcon} from '@ionic/vue'
-import {ellipsisVertical} from 'ionicons/icons'
+import {documentOutline, ellipsisVertical} from 'ionicons/icons'
 import {getImageUrl, sanitizeError} from '@/services/JmcomicService'
-import type {DownloadTask} from '@/services/JmcomicTypes'
+import type {CompletedEntry, DownloadTask} from '@/services/JmcomicTypes'
+
+const isPdfEntry = computed(() =>
+  ('source' in props.task) && props.task.source === 'pdf-import',
+)
+
+const cardStatus = computed(() => {
+  if ('source' in props.task) return 'completed'
+  return props.task.status
+})
 
 const hasMultiChapters = computed(() => (props.downloadedChapters?.length ?? 0) > 1)
 
-const displayTotalPages = computed(() => {
-  if (hasMultiChapters.value && props.downloadedChapters) {
-    return props.downloadedChapters.reduce((s, c) => s + c.totalPages, 0)
+const displayId = computed(() => {
+  if ('source' in props.task) {
+    return props.task.displayId ?? props.task.chapterId
   }
-  return props.task.totalPages
+  return props.task.chapterId
 })
 
-const parseSortOrder = (title: string): number => {
-  const m = title.match(/^第(\d+)/)
-  return m ? parseInt(m[1], 10) : 0
-}
+const displayTitle = computed(() => props.task.albumTitle || displayId.value)
+
+const displayTotalPages = computed(() => {
+  if (isPdfEntry.value) return 0
+  if (hasMultiChapters.value && props.downloadedChapters) {
+    return props.downloadedChapters
+      .filter((c) => c.source === 'download')
+      .reduce((s, c) => s + (c.downloadTask?.totalPages ?? 0), 0)
+  }
+  return (props.task as CompletedEntry).downloadTask?.totalPages ?? 0
+})
+
+const displayPdfPageCount = computed(() => {
+  if (!isPdfEntry.value) return 0
+  if (hasMultiChapters.value && props.downloadedChapters) {
+    return props.downloadedChapters
+      .filter((c) => c.source === 'pdf-import')
+      .reduce((s, c) => s + (c.pdfData?.pageCount ?? 0), 0)
+  }
+  return (props.task as CompletedEntry).pdfData?.pageCount ?? 0
+})
 
 const coverError = ref(false)
 const coverSrc = computed(() => {
-  if (coverError.value && props.task.firstImageSortOrder) {
-    return getImageUrl(props.task.chapterId, props.task.firstImageSortOrder, 'image')
+  const t = props.task
+  if (coverError.value) {
+    const firstSort = ('firstImageSortOrder' in t)
+      ? (t as DownloadTask).firstImageSortOrder
+      : (t as CompletedEntry).downloadTask?.firstImageSortOrder
+    if (firstSort) return getImageUrl(t.chapterId, firstSort, 'image')
+    return ''
   }
-  return props.task.coverUrl
+  return t.coverUrl
 })
 
 const onCoverError = () => {
@@ -116,14 +153,21 @@ const onCoverError = () => {
 }
 
 const progressPct = computed(() => {
-  if (props.task.totalPages <= 0) return 0
-  return Math.round((props.task.downloadedPages / props.task.totalPages) * 100)
+  if (isPdfEntry.value) return 0
+  const t = props.task as DownloadTask
+  if (t.totalPages <= 0) return 0
+  return Math.round((t.downloadedPages / t.totalPages) * 100)
 })
 
-const failedCount = computed(() => props.task.totalPages - props.task.downloadedPages)
+const failedCount = computed(() => {
+  if (isPdfEntry.value) return 0
+  const t = props.task as DownloadTask
+  return t.totalPages - t.downloadedPages
+})
 
 const speedText = computed(() => {
-  const s = props.task.speed
+  if (isPdfEntry.value) return ''
+  const s = (props.task as DownloadTask).speed
   if (!s || s <= 0) return ''
   if (s >= 1024 * 1024) {
     return (s / (1024 * 1024)).toFixed(1) + ' MB/s'
@@ -135,7 +179,7 @@ const speedText = computed(() => {
 })
 
 const sizeText = computed(() => {
-  const s = props.totalSize ?? props.task.totalSize
+  const s = props.totalSize ?? (isPdfEntry.value ? 0 : (props.task as DownloadTask).totalSize)
   if (!s || s <= 0) return ''
   if (s >= 1024 * 1024 * 1024) {
     return (s / (1024 * 1024 * 1024)).toFixed(1) + ' GB'
@@ -150,7 +194,7 @@ const sizeText = computed(() => {
 })
 
 const onCardClick = () => {
-  if (props.task.status === 'completed') {
+  if (cardStatus.value === 'completed') {
     emit('click')
   }
 }
@@ -192,6 +236,17 @@ const onCardClick = () => {
   object-fit: cover;
 }
 
+.cover-placeholder {
+  width: 100%;
+  height: 100%;
+  background: #ece1d8;
+  color: #b89a84;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+}
+
 .info {
   flex: 1;
   min-width: 0;
@@ -221,7 +276,9 @@ const onCardClick = () => {
 }
 
 .chapter-title {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   font-size: 10px;
   color: #8a6048;
   background: #f0ede8;
@@ -233,6 +290,17 @@ const onCardClick = () => {
   overflow: hidden;
   text-overflow: ellipsis;
   font-family: monospace;
+}
+
+.pdf-icon {
+  font-size: 11px;
+  color: #d9534f;
+  flex-shrink: 0;
+}
+
+.pdf-tag-icon {
+  font-size: 15px;
+  color: #e03030;
 }
 
 .chapter-bubbles {

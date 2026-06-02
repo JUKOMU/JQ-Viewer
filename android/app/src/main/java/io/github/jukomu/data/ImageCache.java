@@ -21,7 +21,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 public class ImageCache {
 
     static final String VIRTUAL_HOST = "jqviewer.local";
-    static final long DEFAULT_CAPACITY = 640L * 1024 * 1024; // 640MB
+    static final long DEFAULT_CAPACITY = 256L * 1024 * 1024; // 256MB
     private static final int THUMBNAIL_MAX_WIDTH = 300;
     private static final int THUMBNAIL_JPEG_QUALITY = 70;
 
@@ -108,6 +108,8 @@ public class ImageCache {
 
         writeLock.lock();
         try {
+            // 淘汰旧条目腾出堆空间
+            evictForHeapMargin(size);
             // 若 key 已存在，先移除旧的
             ImageEntry old = cache.remove(key);
             if (old != null) {
@@ -181,6 +183,49 @@ public class ImageCache {
             var entry = it.next();
             currentSize -= entry.getValue().data.length;
             it.remove();
+        }
+    }
+
+    /**
+     * 淘汰最久未访问的条目直到堆余量充足（不超过最大堆的 85%）。
+     * 在插入新数据前调用，优先保留用户当前正在浏览的图片。
+     */
+    private void evictForHeapMargin(int neededBytes) {
+        Runtime rt = Runtime.getRuntime();
+        long maxHeap = rt.maxMemory();
+        long usedHeap = rt.totalMemory() - rt.freeMemory();
+        long safeThreshold = (long)(maxHeap * 0.85);
+        long needToFree = (usedHeap + neededBytes) - safeThreshold;
+        if (needToFree <= 0) return;
+
+        long freed = 0;
+        var it = cache.entrySet().iterator();
+        while (it.hasNext() && freed < needToFree) {
+            var entry = it.next();
+            int len = entry.getValue().data.length;
+            currentSize -= len;
+            freed += len;
+            it.remove();
+        }
+    }
+
+    /**
+     * 将缓存缩减至容量的 fraction 比例（0.0 = 清空, 0.5 = 减半, 1.0 = 无操作）。
+     * 供内存压力回调使用，不改变持久化的 capacity 值。
+     */
+    public void trimToFraction(double fraction) {
+        writeLock.lock();
+        try {
+            long target = (long)(capacity * fraction);
+            if (currentSize <= target) return;
+            var it = cache.entrySet().iterator();
+            while (it.hasNext() && currentSize > target) {
+                var entry = it.next();
+                currentSize -= entry.getValue().data.length;
+                it.remove();
+            }
+        } finally {
+            writeLock.unlock();
         }
     }
 

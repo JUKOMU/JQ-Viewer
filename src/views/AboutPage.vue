@@ -41,7 +41,7 @@
         <div class="info-card" @click="openRepo">
           <div class="info-row">
             <span class="info-label">仓库地址</span>
-            <span class="info-value repo-url"><a href="https://github.com/JUKOMU/JQ-Viewer">JQ Viewer</a></span>
+            <span class="info-value repo-url"><a :href="REPO_URL">JQ Viewer</a></span>
           </div>
           <div class="info-row">
             <span class="info-label"></span>
@@ -59,7 +59,7 @@
             <p>还有一个原因是本项目依赖的 JMComic API 库, 这是我的另一个开源项目, 我想用来做点有用的东西。</p>
             <p></p>
             <p>如果你觉得好用，欢迎分享给朋友。遇到问题或有什么建议，可以在 GitHub 提交<a
-              href="https://github.com/JUKOMU/JQ-Viewer/issues/new">Issue</a>。</p>
+              :href="`${REPO_URL}/issues/new`">Issue</a>。</p>
             <div style="height: 1000px"></div>
             <p>没有了, 别看了</p>
             <div style="height: 2000px"></div>

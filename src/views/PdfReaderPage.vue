@@ -1,12 +1,10 @@
 <template>
   <IonPage>
     <div class="reader-root" @click="onRootClick">
-      <!-- 顶部工具栏 -->
       <Transition name="toolbar-slide">
-        <ReaderTopToolbar v-if="toolbarVisible" :title="chapterTitle" @back="goBack"/>
+        <ReaderTopToolbar v-if="toolbarVisible" :title="displayTitle" @back="goBack"/>
       </Transition>
 
-      <!-- 图片视图 -->
       <VerticalScrollView
         v-if="isVertical"
         ref="verticalViewRef"
@@ -26,7 +24,6 @@
         @toggle-toolbar="toggleToolbar"
       />
 
-      <!-- 底部工具栏 -->
       <Transition name="toolbar-slide">
         <ReaderBottomToolbar
           v-if="toolbarVisible"
@@ -40,7 +37,6 @@
         />
       </Transition>
 
-      <!-- 阅读页设置面板 -->
       <ReaderSettingsPanel
         v-if="settingsPanelVisible"
         :is-vertical="isVertical"
@@ -52,21 +48,27 @@
 </template>
 
 <script setup lang="ts">
-import {computed, inject, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref, shallowRef} from 'vue'
+import {computed, inject, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref} from 'vue'
 import {useRoute, useRouter} from 'vue-router'
 import {IonPage} from '@ionic/vue'
 import type {PluginListenerHandle} from '@capacitor/core'
-import {getImageUrl, JmcomicService, showToast} from '@/services/JmcomicService'
-import type {ImageInfo, PhotoDetail, PreloadResult} from '@/services/JmcomicTypes'
+import {JmcomicService, showToast} from '@/services/JmcomicService'
 import {SettingsStore} from '@/services/SettingsService'
 import {HistoryService} from '@/services/HistoryService'
+import * as pdfjsLib from 'pdfjs-dist'
+import {getPdfVirtualUrl} from '@/services/PdfReaderService'
 import ReaderTopToolbar from '@/components/reader/ReaderTopToolbar.vue'
 import ReaderBottomToolbar from '@/components/reader/ReaderBottomToolbar.vue'
 import VerticalScrollView from '@/components/reader/VerticalScrollView.vue'
 import HorizontalPageView from '@/components/reader/HorizontalPageView.vue'
 import ReaderSettingsPanel from '@/components/reader/ReaderSettingsPanel.vue'
 
-defineOptions({name: 'ReaderPage'})
+defineOptions({name: 'PdfReaderPage'})
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  'pdfjs-dist/build/pdf.worker.min.mjs',
+  import.meta.url,
+).href
 
 function getN(): number {
   return SettingsStore.getReaderPreloadPages()
@@ -84,35 +86,37 @@ const router = useRouter()
 const updateReaderCurrentPage = inject<(page: number) => void>('updateReaderCurrentPage', () => {})
 
 // ---- 路由参数 ----
-const albumId = computed(() => route.params.albumId as string)
-const chapterId = computed(() => route.params.chapterId as string)
-const chapterTitle = computed(() => (route.query.title as string) || chapterId.value)
-const isOffline = computed(() => route.query.source === 'download')
+const filePath = route.query.path as string
+const displayTitle = computed(() => (route.query.title as string) || 'PDF')
+const albumId = computed(() => (route.query.albumId as string) || '')
+const chapterId = computed(() => (route.query.chapterId as string) || albumId.value)
+const albumTitle = computed(() => (route.query.albumTitle as string) || '')
+const authors = computed(() => (route.query.authors as string) || '')
+const coverUrl = computed(() => (route.query.coverUrl as string) || '')
 
 // ---- 核心状态 ----
 const isVertical = ref(SettingsStore.getReaderDisplayMode() === 'vertical')
 const currentIndex = ref(0)
 const totalCount = ref(0)
-const imageMap = shallowRef<Map<number, string>>(new Map())
-const toolbarVisible = ref(true)
+const imageMap = ref<Map<number, string>>(new Map())
+const toolbarVisible = ref(false)
 const isDragProgress = ref(false)
 const settingsPanelVisible = ref(false)
-let photoDetail: PhotoDetail | null = null
-let imageReadyListenerHandle: PluginListenerHandle | null = null
+
 let volumeKeyListenerHandle: PluginListenerHandle | null = null
 let readerRuntimeActive = false
-let loadedSortOrders = new Set<number>()
-let requestedSortOrders = new Set<number>()
-let sortOrderToImage = new Map<number, ImageInfo>()
+let pdfDoc: pdfjsLib.PDFDocumentProxy | null = null
+const renderedPages = new Map<number, string>()
 let lastWindowCenter = -1
-const triggerRafId = 0
 let expandDirection: 'forward' | 'backward' | null = null
 let lastScrollTime = 0
 let lastScrollIndex = -1
 let revertTimer: ReturnType<typeof setTimeout> | null = null
+let pendingRender: pdfjsLib.RenderTask | null = null
 let activeRenderRange: {start: number; end: number; center: number} | null = null
 let pendingSeekIndex: number | null = null
 let dragPreviewTimer: ReturnType<typeof setTimeout> | null = null
+
 const verticalViewRef = ref<InstanceType<typeof VerticalScrollView> | null>(null)
 const horizontalViewRef = ref<InstanceType<typeof HorizontalPageView> | null>(null)
 
@@ -136,7 +140,6 @@ const onDragEnd = () => {
   }
 }
 
-// 点击中间 1/3 呼出/收起工具栏（纵向滚动模式下由 root 层处理）
 const onRootClick = (ev: MouseEvent) => {
   if (!isVertical.value) return
   if (settingsPanelVisible.value) return
@@ -147,6 +150,7 @@ const onRootClick = (ev: MouseEvent) => {
   }
 }
 
+// ---- 显示模式切换 ----
 const onDisplayModeChange = (vertical: boolean) => {
   const targetIndex = currentIndex.value
   isVertical.value = vertical
@@ -162,8 +166,7 @@ const syncReaderState = () => {
   JmcomicService.setReaderState(true, isVertical.value).catch(() => {})
 }
 
-// ---- 阅读器设置应用 / 恢复 ----
-
+// ---- 阅读器设置 ----
 const applyReaderSettings = () => {
   const orientation = SettingsStore.getReaderScreenOrientation()
   if (orientation !== 'auto') {
@@ -213,7 +216,59 @@ const setupVolumeKeyListener = async () => {
   })
 }
 
-// ---- 滑动窗口预加载 ----
+const activateReaderRuntime = () => {
+  if (readerRuntimeActive) return
+  readerRuntimeActive = true
+  applyReaderSettings()
+  JmcomicService.setReaderState(true, isVertical.value).catch(() => {})
+  setupVolumeKeyListener().catch(() => {})
+}
+
+const deactivateReaderRuntime = () => {
+  if (!readerRuntimeActive) return
+  readerRuntimeActive = false
+  volumeKeyListenerHandle?.remove()
+  volumeKeyListenerHandle = null
+  restoreSystemState()
+}
+
+// ---- 渲染分辨率 ----
+const calcBaseScale = (viewport: pdfjsLib.PageViewport): number => {
+  const containerWidth = window.innerWidth
+  let scale = (containerWidth / viewport.width) * 2.0
+  const maxScale = (containerWidth * 2.5) / viewport.width
+  if (scale > maxScale) scale = maxScale
+  return scale
+}
+
+// ---- PDF 页面渲染 ----
+const renderPageToBlob = async (pageNum: number): Promise<string | null> => {
+  if (!pdfDoc) return null
+  try {
+    const page = await pdfDoc.getPage(pageNum)
+    const scale = calcBaseScale(page.getViewport({ scale: 1 }))
+    const viewport = page.getViewport({ scale })
+
+    const canvas = document.createElement('canvas')
+    canvas.width = viewport.width
+    canvas.height = viewport.height
+
+    pendingRender = page.render({ canvas, viewport })
+    await pendingRender.promise
+    pendingRender = null
+    page.cleanup()
+
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob((b) => resolve(b), 'image/png'),
+    )
+    if (!blob) return null
+    return URL.createObjectURL(blob)
+  } catch {
+    return null
+  }
+}
+
+// ---- 窗口管理 ----
 const calcWindow = (center: number): number[] => {
   const result: number[] = []
   let start: number, end: number
@@ -231,23 +286,6 @@ const calcWindow = (center: number): number[] => {
     result.push(i + 1)
   }
   return result
-}
-
-const prioritizeSortOrders = (orders: number[], center: number): number[] => {
-  const centerSortOrder = center + 1
-  return [...new Set(orders)]
-    .filter((so) => so >= 1 && so <= totalCount.value)
-    .sort((a, b) => Math.abs(a - centerSortOrder) - Math.abs(b - centerSortOrder) || a - b)
-}
-
-const calcPriorityWindow = (center: number): number[] => {
-  const orders = [center + 1, ...calcWindow(center)]
-  if (activeRenderRange) {
-    for (let i = activeRenderRange.start; i < activeRenderRange.end; i++) {
-      orders.push(i + 1)
-    }
-  }
-  return prioritizeSortOrders(orders, center)
 }
 
 const applyImageMap = () => {
@@ -269,49 +307,41 @@ const hasPendingInRange = (center: number, dir: 'forward' | 'backward'): boolean
     checkEnd = center - getN()
   }
   for (let i = checkStart; i < checkEnd; i++) {
-    const so = i + 1
-    if (requestedSortOrders.has(so) && !loadedSortOrders.has(so)) return true
+    if (!renderedPages.has(i + 1)) return true
   }
   return false
 }
 
-const updateWindow = (center: number, replacePending = false) => {
-  if (!photoDetail) return
-  const windowOrders = calcPriorityWindow(center)
-
-  if (isOffline.value) {
-    for (const so of windowOrders) {
-      if (!loadedSortOrders.has(so)) {
-        imageMap.value.set(so, getImageUrl(photoDetail.id, so, 'image'))
-        loadedSortOrders.add(so)
-      }
-    }
-  } else {
-    const toLoad: ImageInfo[] = []
-    for (const so of windowOrders) {
-      if (loadedSortOrders.has(so)) continue
-      const img = sortOrderToImage.get(so)
-      if (!img) continue
-      toLoad.push(img)
-      if (!requestedSortOrders.has(so)) {
-        requestedSortOrders.add(so)
-      }
-    }
-
-    if (toLoad.length > 0) {
-      JmcomicService.preloadImages(photoDetail.id, toLoad, 'image', {replacePending})
-        .then((result: PreloadResult) => {
-          for (const so of result.cached) {
-            imageMap.value.set(so, getImageUrl(photoDetail!.id, so, 'image'))
-            loadedSortOrders.add(so)
-          }
-          applyImageMap()
-        })
-        .catch(() => {
-        })
+const updateWindow = (center: number) => {
+  if (!pdfDoc) return
+  const windowOrders = new Set(calcWindow(center))
+  if (activeRenderRange) {
+    for (let i = activeRenderRange.start; i < activeRenderRange.end; i++) {
+      if (i >= 0 && i < totalCount.value) windowOrders.add(i + 1)
     }
   }
 
+  const toRender: number[] = []
+  for (const so of windowOrders) {
+    if (!renderedPages.has(so)) {
+      toRender.push(so)
+      renderedPages.set(so, '') // 占位防重复请求
+    }
+  }
+
+  // 异步渲染窗口内页面
+  toRender.sort((a, b) => Math.abs(a - (center + 1)) - Math.abs(b - (center + 1)))
+  for (const pageNum of toRender) {
+    renderPageToBlob(pageNum).then((url) => {
+      if (url) {
+        renderedPages.set(pageNum, url)
+        imageMap.value.set(pageNum, url)
+        applyImageMap()
+      }
+    })
+  }
+
+  // 清理窗口外页面
   const cleanBackward = expandDirection === 'backward' ? N_FAST : Math.floor(M / 2)
   const cleanForward = expandDirection === 'forward' ? N_FAST : Math.floor(M / 2)
   const cacheMin = Math.max(0, center - cleanBackward)
@@ -325,52 +355,37 @@ const updateWindow = (center: number, replacePending = false) => {
   }
   for (const so of calcWindow(currentIndex.value)) cacheSet.add(so)
 
-  for (const so of loadedSortOrders) {
+  for (const [so, url] of renderedPages) {
     if (!cacheSet.has(so)) {
+      if (url) URL.revokeObjectURL(url)
+      renderedPages.delete(so)
       imageMap.value.delete(so)
-      loadedSortOrders.delete(so)
     }
   }
   applyImageMap()
 }
 
-const loadDragPreviewImage = (center: number) => {
-  if (!photoDetail) return
-  const so = center + 1
-  if (so < 1 || so > totalCount.value || loadedSortOrders.has(so) || requestedSortOrders.has(so)) return
-
-  if (isOffline.value) {
-    imageMap.value.set(so, getImageUrl(photoDetail.id, so, 'image'))
-    loadedSortOrders.add(so)
-    applyImageMap()
-    return
-  }
-
-  const img = sortOrderToImage.get(so)
-  if (!img) return
-  requestedSortOrders.add(so)
-  JmcomicService.preloadImages(photoDetail.id, [img], 'image', {replacePending: true})
-    .then((result: PreloadResult) => {
-      for (const cachedSo of result.cached) {
-        imageMap.value.set(cachedSo, getImageUrl(photoDetail!.id, cachedSo, 'image'))
-        loadedSortOrders.add(cachedSo)
-      }
+const renderDragPreviewPage = (center: number) => {
+  if (!pdfDoc) return
+  const pageNum = center + 1
+  if (pageNum < 1 || pageNum > totalCount.value || renderedPages.has(pageNum)) return
+  renderedPages.set(pageNum, '')
+  renderPageToBlob(pageNum).then((url) => {
+    if (url) {
+      renderedPages.set(pageNum, url)
+      imageMap.value.set(pageNum, url)
       applyImageMap()
-    })
-    .catch(() => {
-    })
+    }
+  })
 }
 
-const scheduleDragPreviewLoad = (index: number) => {
+const scheduleDragPreviewRender = (index: number) => {
   pendingSeekIndex = clampIndex(index)
   if (dragPreviewTimer) return
   dragPreviewTimer = setTimeout(() => {
     dragPreviewTimer = null
     if (!isDragProgress.value || pendingSeekIndex === null) return
-    loadDragPreviewImage(pendingSeekIndex)
-    if (pendingSeekIndex !== currentIndex.value) {
-      scheduleDragPreviewLoad(pendingSeekIndex)
-    }
+    renderDragPreviewPage(pendingSeekIndex)
   }, DRAG_PREVIEW_DELAY_MS)
 }
 
@@ -389,7 +404,6 @@ const onVerticalRequestRange = (range: {start: number; end: number; center: numb
 type PageChangeSource = 'scroll' | 'slider' | 'slider-input' | 'mode' | 'volume' | 'route'
 
 const updateScrollVelocity = (index: number) => {
-  // 划动速度检测
   const now = performance.now()
   if (lastScrollIndex >= 0) {
     const deltaSec = (now - lastScrollTime) / 1000
@@ -403,6 +417,7 @@ const updateScrollVelocity = (index: number) => {
         if (revertTimer) clearTimeout(revertTimer)
         revertTimer = setTimeout(() => {
           expandDirection = null
+          updateWindow(index)
         }, EXPAND_EXPIRE_MS)
       }
     }
@@ -426,7 +441,7 @@ const goToIndex = (index: number, source: PageChangeSource) => {
   updateReaderCurrentPage(next + 1)
 
   if (source === 'slider-input') {
-    scheduleDragPreviewLoad(next)
+    scheduleDragPreviewRender(next)
     moveReaderViewToIndex(next)
     return
   }
@@ -454,7 +469,11 @@ const goToIndex = (index: number, source: PageChangeSource) => {
   expandDirection = null
 
   lastWindowCenter = next
-  updateWindow(next, source === 'slider' || source === 'route')
+  if (pendingRender && source === 'slider') {
+    pendingRender.cancel()
+    pendingRender = null
+  }
+  updateWindow(next)
 
   moveReaderViewToIndex(next)
 }
@@ -472,54 +491,23 @@ const onProgressInput = (page1Based: number) => {
   goToIndex(page1Based - 1, 'slider-input')
 }
 
-// ---- 图片就绪监听 ----
-const setupImageReadyListener = async () => {
-  if (imageReadyListenerHandle) return
-  imageReadyListenerHandle = await JmcomicService.addImageReadyListener(
-    chapterId.value,
-    (sortOrder) => {
-      imageMap.value.set(sortOrder, getImageUrl(chapterId.value, sortOrder, 'image'))
-      loadedSortOrders.add(sortOrder)
-      applyImageMap()
-    },
-  )
-}
-
-const activateReaderRuntime = () => {
-  if (readerRuntimeActive) return
-  readerRuntimeActive = true
-  applyReaderSettings()
-  JmcomicService.setReaderState(true, isVertical.value).catch(() => {})
-  setupVolumeKeyListener().catch(() => {})
-  if (!isOffline.value && photoDetail) {
-    setupImageReadyListener().catch(() => {})
-  }
-}
-
-const deactivateReaderRuntime = () => {
-  if (!readerRuntimeActive) return
-  readerRuntimeActive = false
-  imageReadyListenerHandle?.remove()
-  imageReadyListenerHandle = null
-  volumeKeyListenerHandle?.remove()
-  volumeKeyListenerHandle = null
-  restoreSystemState()
-}
-
-// ---- 浏览历史记录 ----
+// ---- 浏览历史 ----
 const recordBrowseHistory = () => {
   const aId = albumId.value
-  const cId = chapterId.value
   if (!aId) return
-  const cTitle = chapterTitle.value
+  const cId = chapterId.value
+  const aTitle = albumTitle.value
+  const aCover = coverUrl.value
+  const aAuthors = authors.value
+  const cTitle = displayTitle.value
 
   JmcomicService.getAlbum(aId)
     .then((album) => {
       HistoryService.recordBrowse({
         albumId: aId,
-        albumTitle: album.title,
-        coverUrl: album.image,
-        authors: (album.authors ?? []).join(' / '),
+        albumTitle: album.title || aTitle,
+        coverUrl: album.image || aCover,
+        authors: (album.authors ?? []).join(' / ') || aAuthors,
         chapterId: cId,
         chapterTitle: cTitle,
       })
@@ -527,9 +515,9 @@ const recordBrowseHistory = () => {
     .catch(() => {
       HistoryService.recordBrowse({
         albumId: aId,
-        albumTitle: cTitle || aId,
-        coverUrl: '',
-        authors: '',
+        albumTitle: aTitle || cTitle,
+        coverUrl: aCover,
+        authors: aAuthors,
         chapterId: cId,
         chapterTitle: cTitle,
       })
@@ -546,122 +534,61 @@ const goBack = () => {
 }
 
 // ---- 生命周期 ----
-onMounted(() => {
-  // 重置章节级状态
-  loadedSortOrders = new Set()
-  requestedSortOrders = new Set()
-  sortOrderToImage = new Map()
+onMounted(async () => {
+  if (!filePath) {
+    await showToast('缺少文件路径', 'danger')
+    router.back()
+    return
+  }
+
+  activateReaderRuntime()
   activeRenderRange = null
   pendingSeekIndex = null
   if (dragPreviewTimer) {
     clearTimeout(dragPreviewTimer)
     dragPreviewTimer = null
   }
-  expandDirection = null
-  lastScrollTime = 0
-  lastScrollIndex = -1
-  if (revertTimer) {
-    clearTimeout(revertTimer)
-    revertTimer = null
+
+  try {
+    const url = getPdfVirtualUrl(filePath)
+    const response = await fetch(url)
+    if (!response.ok) throw new Error('文件加载失败')
+    const arrayBuffer = await response.arrayBuffer()
+    if (arrayBuffer.byteLength === 0) throw new Error('文件不存在或已失效')
+    pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+    const total = pdfDoc.numPages
+    const pageParam = Number(route.query.page)
+    const initIndex = Math.min(
+      Math.max((pageParam > 0 ? pageParam : 1) - 1, 0),
+      Math.max(0, total - 1),
+    )
+    currentIndex.value = initIndex
+    totalCount.value = total
+    updateReaderCurrentPage(initIndex + 1)
+    toolbarVisible.value = true
+
+    updateWindow(initIndex)
+
+    nextTick(() => {
+      if (isVertical.value) {
+        verticalViewRef.value?.scrollToIndex(initIndex)
+      }
+    })
+
+    recordBrowseHistory()
+  } catch (e: any) {
+    if (e instanceof TypeError && e.message === 'Failed to fetch') {
+      await showToast('文件不存在或已失效', 'danger')
+    } else {
+      const msg = e?.message || ''
+      if (/password/i.test(msg)) {
+        await showToast('此 PDF 已加密，无法打开', 'danger')
+      } else {
+        await showToast('PDF 文件无法打开，可能已损坏', 'danger')
+      }
+    }
+    router.back()
   }
-
-  activateReaderRuntime()
-
-  if (isOffline.value) {
-    JmcomicService.getDownloadedPhoto(albumId.value, chapterId.value)
-      .then((pd) => {
-        photoDetail = pd
-
-        const total = pd.images.length
-        const pageParam = Number(route.query.page)
-        currentIndex.value = Math.min(
-          Math.max((pageParam > 0 ? pageParam : 1) - 1, 0),
-          Math.max(0, total - 1),
-        )
-        totalCount.value = total
-        updateReaderCurrentPage(currentIndex.value + 1)
-
-        toolbarVisible.value = true
-
-        const initOrders = calcWindow(currentIndex.value)
-        const priorityInitOrders = prioritizeSortOrders(initOrders, currentIndex.value)
-        for (const so of priorityInitOrders) {
-          if (!loadedSortOrders.has(so)) {
-            imageMap.value.set(so, getImageUrl(pd.id, so, 'image'))
-            loadedSortOrders.add(so)
-          }
-        }
-        applyImageMap()
-
-        nextTick(() => {
-          if (isVertical.value) {
-            verticalViewRef.value?.scrollToIndex(currentIndex.value)
-          }
-        })
-        recordBrowseHistory()
-      })
-      .catch((_e: any) => {
-        showToast('离线章节加载失败', 'danger')
-        totalCount.value = 0
-        recordBrowseHistory()
-      })
-  } else {
-    JmcomicService.getPhoto(chapterId.value)
-      .then((pd) => {
-        photoDetail = pd
-        sortOrderToImage = new Map(pd.images.map((i) => [i.sortOrder, i]))
-
-        const total = pd.images.length
-        const pageParam = Number(route.query.page)
-        currentIndex.value = Math.min(
-          Math.max((pageParam > 0 ? pageParam : 1) - 1, 0),
-          Math.max(0, total - 1),
-        )
-        totalCount.value = total
-        updateReaderCurrentPage(currentIndex.value + 1)
-
-        toolbarVisible.value = true
-
-        if (readerRuntimeActive) {
-          setupImageReadyListener().catch(() => {
-          })
-        }
-
-        const initOrders = prioritizeSortOrders(calcWindow(currentIndex.value), currentIndex.value)
-        const initOrderSet = new Set(initOrders)
-        const initImages = initOrders
-          .map((so) => sortOrderToImage.get(so))
-          .filter((i): i is ImageInfo => Boolean(i))
-        for (const so of initOrderSet) {
-          requestedSortOrders.add(so)
-        }
-        if (initImages.length > 0) {
-          JmcomicService.preloadImages(pd.id, initImages, 'image')
-            .then((result) => {
-              for (const so of result.cached) {
-                imageMap.value.set(so, getImageUrl(pd.id, so, 'image'))
-                loadedSortOrders.add(so)
-              }
-              applyImageMap()
-            })
-            .catch(() => {
-            })
-        }
-
-        nextTick(() => {
-          if (isVertical.value) {
-            verticalViewRef.value?.scrollToIndex(currentIndex.value)
-          }
-        })
-        recordBrowseHistory()
-      })
-      .catch(() => {
-        showToast('章节加载失败', 'danger')
-        totalCount.value = 0
-        recordBrowseHistory()
-      })
-  }
-
 })
 
 onActivated(() => {
@@ -677,9 +604,22 @@ onDeactivated(() => {
 
 onUnmounted(() => {
   deactivateReaderRuntime()
-  if (triggerRafId) cancelAnimationFrame(triggerRafId)
   if (revertTimer) clearTimeout(revertTimer)
   if (dragPreviewTimer) clearTimeout(dragPreviewTimer)
+  if (pendingRender) {
+    pendingRender.cancel()
+    pendingRender = null
+  }
+
+  for (const url of renderedPages.values()) {
+    if (url) URL.revokeObjectURL(url)
+  }
+  renderedPages.clear()
+
+  if (pdfDoc) {
+    pdfDoc.destroy()
+    pdfDoc = null
+  }
 })
 </script>
 

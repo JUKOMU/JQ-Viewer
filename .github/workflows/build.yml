@@ -26,6 +26,9 @@ jobs:
           java-version: 21
 
       - run: npm ci
+      - run: npm run lint
+      - run: npm run test:unit
       - run: npm run build
+      - run: npm run check:version
       - run: npx cap sync android
       - run: chmod +x android/gradlew && cd android && ./gradlew :app:assembleDebug

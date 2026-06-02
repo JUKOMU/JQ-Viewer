@@ -1,18 +1,20 @@
 {
   "name": "jq-viewer",
   "private": true,
-  "version": "1.0.1",
+  "version": "1.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc && vite build",
     "preview": "vite preview",
     "test:e2e": "cypress run",
-    "test:unit": "vitest",
+    "test:unit": "vitest run",
+    "test:unit:watch": "vitest",
     "lint": "eslint .",
     "lint:fix": "eslint --fix .",
     "format": "prettier --write \"src/**/*.{vue,ts,css}\"",
     "format:check": "prettier --check \"src/**/*.{vue,ts,css}\"",
+    "check:version": "node scripts/check-version.mjs",
     "build:android": "npm run build && npx cap copy android && cd android && gradlew :app:assembleDebug",
     "build:android:release": "npm run build && ionic capacitor sync android && cd android && gradlew :app:clean && gradlew :app:assembleRelease"
   },
@@ -27,6 +29,7 @@
     "@ionic/vue": "^8.0.0",
     "@ionic/vue-router": "^8.0.0",
     "ionicons": "^7.0.0",
+    "pdfjs-dist": "^5.6.205",
     "vue": "^3.3.0",
     "vue-router": "^4.2.0"
   },

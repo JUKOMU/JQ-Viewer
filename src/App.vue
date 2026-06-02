@@ -17,7 +17,7 @@
 defineOptions({name: 'App'})
 
 import {alertController, IonApp} from '@ionic/vue'
-import {computed, nextTick, onBeforeUnmount, onMounted, ref} from 'vue'
+import {computed, nextTick, onBeforeUnmount, onMounted, provide, ref} from 'vue'
 import {useRoute, useRouter} from 'vue-router'
 import {App} from '@capacitor/app'
 import MainMenu from '@/components/menu/MainMenu.vue'
@@ -36,6 +36,105 @@ const router = useRouter()
 const routeStack = ref<string[]>([])
 const isBack = ref(false)
 const keepAliveExclude = ref<string[]>([])
+let initialReaderRestorePending = true
+
+const READER_ROUTE_RESTORE_KEY = 'jq_reader_route_restore'
+const READER_ROUTE_RESTORE_TTL_MS = 2 * 60 * 1000
+
+type ReaderRouteSnapshot = {
+  fullPath: string
+  fromPath: string
+  currentPage: number
+  savedAt: number
+}
+
+let pendingReaderFromPath = ''
+
+const isReaderRoutePath = (path: string) =>
+  path === '/pdf-reader' || /^\/album\/[^/]+\/read\/[^/]+$/.test(path)
+
+const clearReaderRoute = () => {
+  localStorage.removeItem(READER_ROUTE_RESTORE_KEY)
+}
+
+const readReaderSnapshotRaw = (): Partial<ReaderRouteSnapshot> | null => {
+  try {
+    const raw = localStorage.getItem(READER_ROUTE_RESTORE_KEY)
+    if (!raw) return null
+    return JSON.parse(raw) as Partial<ReaderRouteSnapshot>
+  } catch {
+    return null
+  }
+}
+
+const readReaderSnapshot = (): ReaderRouteSnapshot | null => {
+  const snapshot = readReaderSnapshotRaw()
+  if (!snapshot?.fullPath || !snapshot.savedAt) {
+    clearReaderRoute()
+    return null
+  }
+  if (Date.now() - snapshot.savedAt > READER_ROUTE_RESTORE_TTL_MS) {
+    clearReaderRoute()
+    return null
+  }
+  return snapshot as ReaderRouteSnapshot
+}
+
+const saveReaderRoute = (fullPath: string, fromPath?: string, currentPage?: number) => {
+  const existing = readReaderSnapshotRaw()
+  const snapshot: ReaderRouteSnapshot = {
+    fullPath,
+    fromPath: fromPath ?? existing?.fromPath ?? '',
+    currentPage: currentPage ?? existing?.currentPage ?? 0,
+    savedAt: Date.now(),
+  }
+  localStorage.setItem(READER_ROUTE_RESTORE_KEY, JSON.stringify(snapshot))
+}
+
+const refreshReaderSavedAt = () => {
+  try {
+    const raw = localStorage.getItem(READER_ROUTE_RESTORE_KEY)
+    if (!raw) return
+    const snapshot = JSON.parse(raw)
+    snapshot.savedAt = Date.now()
+    localStorage.setItem(READER_ROUTE_RESTORE_KEY, JSON.stringify(snapshot))
+  } catch { /* 忽略 */ }
+}
+
+document.addEventListener('pagehide', refreshReaderSavedAt)
+
+const HEARTBEAT_MS = 60_000
+const heartbeatTimer = setInterval(refreshReaderSavedAt, HEARTBEAT_MS)
+
+const buildReaderPathWithPage = (fullPath: string, currentPage: number): string => {
+  if (currentPage <= 0) return fullPath
+  const [path, queryString] = fullPath.split('?')
+  const params = new URLSearchParams(queryString || '')
+  params.set('page', String(currentPage))
+  return `${path}?${params.toString()}`
+}
+
+const updateReaderCurrentPage = (page: number) => {
+  try {
+    const raw = localStorage.getItem(READER_ROUTE_RESTORE_KEY)
+    if (!raw) return
+    const snapshot = JSON.parse(raw) as ReaderRouteSnapshot
+    if (!snapshot.fullPath) return
+    snapshot.currentPage = page
+    localStorage.setItem(READER_ROUTE_RESTORE_KEY, JSON.stringify(snapshot))
+  } catch { /* 忽略解析错误 */ }
+}
+
+provide('updateReaderCurrentPage', updateReaderCurrentPage)
+
+const syncReaderRouteSnapshot = (path: string, fullPath: string) => {
+  if (isReaderRoutePath(path)) {
+    saveReaderRoute(fullPath, pendingReaderFromPath || undefined)
+    pendingReaderFromPath = ''
+    return
+  }
+  clearReaderRoute()
+}
 
 router.beforeEach((to, from) => {
   const fromMenu = isMenuNavigation.value
@@ -58,6 +157,18 @@ router.beforeEach((to, from) => {
       })
     }
   }
+
+  // 记录进入阅读器前的来源页面（仅当从非阅读器页面进入时，避免章节间切换覆盖）
+  if (isReaderRoutePath(to.path) && from.fullPath && !isReaderRoutePath(from.path)) {
+    pendingReaderFromPath = from.fullPath
+  } else if (!isReaderRoutePath(to.path)) {
+    pendingReaderFromPath = ''
+  }
+})
+
+router.afterEach((to) => {
+  if (initialReaderRestorePending) return
+  syncReaderRouteSnapshot(to.path, to.fullPath)
 })
 
 const transitionName = computed(() => (isBack.value ? 'page-slide-back' : 'page-slide-forward'))
@@ -90,6 +201,26 @@ let pollTimer: ReturnType<typeof setInterval> | null = null
 let activeToast: Awaited<ReturnType<typeof showToast>> | null = null
 
 onMounted(async () => {
+  if (route.path === '/' || route.path === '/home') {
+    const snapshot = readReaderSnapshot()
+    if (snapshot) {
+      const targetPath = buildReaderPathWithPage(snapshot.fullPath, snapshot.currentPage)
+      try {
+        if (snapshot.fromPath) {
+          await router.replace(snapshot.fromPath)
+          await router.push(targetPath)
+        } else {
+          await router.replace(targetPath)
+        }
+      } catch {
+        clearReaderRoute()
+        await router.replace('/home')
+      }
+    }
+  }
+  initialReaderRestorePending = false
+  syncReaderRouteSnapshot(route.path, route.fullPath)
+
   const {initAuth} = useAuth()
 
   // 加载设置到内存缓存（必须在任何页面渲染前完成）
@@ -200,6 +331,7 @@ onBeforeUnmount(() => {
     clearInterval(pollTimer)
     pollTimer = null
   }
+  clearInterval(heartbeatTimer)
   activeToast?.dismiss()
   activeToast = null
 

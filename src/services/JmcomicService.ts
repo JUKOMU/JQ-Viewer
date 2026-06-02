@@ -14,12 +14,16 @@ import type {
   FavoriteResult,
   ForumQuery,
   ImageInfo,
+  ImportedPdfsResult,
+  ImportPdfItem,
+  ImportPdfsResult,
   LatencyResult,
   NetworkProbeEvent,
   OfflineFavoritesResult,
   OfflineFolderInfo,
   ParseHistoryItem,
   PdfExportTask,
+  PdfScanItem,
   PhotoDetail,
   PreloadResult,
   RelocationProgress,
@@ -58,6 +62,7 @@ interface JmcomicPlugin {
     photoId: string
     images: ImageInfo[]
     type: string
+    replacePending?: boolean
   }): Promise<PreloadResult>
 
   setCacheCapacity(options: { mb: number }): Promise<{ success: boolean; capacityMb: number }>
@@ -236,11 +241,18 @@ interface JmcomicPlugin {
 
   // PDF 导出
   exportPdfBatch(options: { tasks: PdfExportTask[] }): Promise<{ accepted: boolean }>
-  pickFolder(): Promise<{ path: string; cancelled: boolean }>
+  pickFolder(): Promise<{ path: string; treeUri?: string; cancelled: boolean }>
   checkFilesExist(options: { paths: string[] }): Promise<{ existing: string[] }>
   getExternalStoragePath(): Promise<{ path: string }>
   checkNotificationPermission(): Promise<{ granted: boolean }>
   requestNotificationPermission(): Promise<{ granted: boolean }>
+
+  // PDF 导入
+  scanPdfFiles(options: { path: string; treeUri?: string }): Promise<{ files: PdfScanItem[] }>
+  importPdfs(options: { items: ImportPdfItem[] }): Promise<ImportPdfsResult>
+  getImportedPdfs(): Promise<ImportedPdfsResult>
+  deleteImportedPdf(options: { id: number }): Promise<{ success: boolean }>
+  openPdf(options: { filePath: string }): Promise<{ success: boolean }>
 
   // 阅读器设置
   setReaderDisplayMode(options: { mode: string }): Promise<{ success: boolean }>
@@ -347,8 +359,13 @@ export const JmcomicService = {
    * @param type "image" 加载原图，"thumb" 加载缩略图
    * @returns {cached: 已在缓存中的 sortOrder[], pending: 正在下载中的 sortOrder[]}
    */
-  preloadImages(photoId: string, images: ImageInfo[], type: 'image' | 'thumb' = 'image') {
-    return native.preloadImages({photoId, images, type})
+  preloadImages(
+    photoId: string,
+    images: ImageInfo[],
+    type: 'image' | 'thumb' = 'image',
+    options: { replacePending?: boolean } = {},
+  ) {
+    return native.preloadImages({photoId, images, type, replacePending: options.replacePending})
   },
 
   /** 设置图片缓存容量（MB），供设置页调用 */
@@ -621,6 +638,28 @@ export const JmcomicService = {
 
   pickFolder() {
     return native.pickFolder()
+  },
+
+  // ========== PDF 导入 ==========
+
+  scanPdfFiles(path: string, treeUri?: string) {
+    return native.scanPdfFiles({ path, treeUri })
+  },
+
+  importPdfs(items: ImportPdfItem[]) {
+    return native.importPdfs({ items })
+  },
+
+  getImportedPdfs() {
+    return native.getImportedPdfs()
+  },
+
+  deleteImportedPdf(id: number) {
+    return native.deleteImportedPdf({ id })
+  },
+
+  openPdf(filePath: string) {
+    return native.openPdf({ filePath })
   },
 
   checkFilesExist(paths: string[]) {

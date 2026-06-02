@@ -49,7 +49,7 @@
             <ion-icon :icon="imageOutline"/>
           </span>
           <span v-if="chapterPdfStatuses.get(meta.id)" class="chapter-source-chip source-chip-pdf">
-            <ion-icon :icon="readerOutline"/>
+            <ion-icon :icon="documentOutline"/>
           </span>
         </span>
       </div>
@@ -81,7 +81,7 @@ defineEmits<{
   'dismiss-actions': []
 }>()
 import {IonIcon} from '@ionic/vue'
-import {arrowBack, cloudDownloadOutline, imageOutline, readerOutline} from 'ionicons/icons'
+import {arrowBack, cloudDownloadOutline, documentOutline, imageOutline} from 'ionicons/icons'
 import type {PhotoMeta} from '@/services/JmcomicTypes'
 
 const isDownloadDisabled = (chapterId: string): boolean => {

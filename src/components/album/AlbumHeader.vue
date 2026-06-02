@@ -62,7 +62,7 @@
                   aria-label="PDF 阅读"
                   @click="$emit('select-source', 'pdf')"
                 >
-                  <ion-icon :icon="readerOutline"/>
+                  <ion-icon :icon="documentOutline"/>
                 </button>
               </div>
             </Transition>
@@ -99,8 +99,8 @@ import {
   arrowBack,
   ellipsisVertical,
   globeOutline,
+  documentOutline,
   imageOutline,
-  readerOutline,
 } from 'ionicons/icons'
 </script>
 
@@ -309,7 +309,7 @@ import {
   align-items: center;
   gap: 8px;
   margin-top: 6px;
-  z-index: 10;
+  z-index: 20;
   background: rgb(0 0 0 / 0.4);
   padding: 8px;
   border-radius: 24px;

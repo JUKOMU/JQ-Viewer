@@ -39,7 +39,7 @@
               <ion-icon :icon="imageOutline"/>
             </span>
             <span class="source-state-chip source-chip-pdf" :class="{ active: pdfAvailable }">
-              <ion-icon :icon="readerOutline"/>
+              <ion-icon :icon="documentOutline"/>
             </span>
           </span>
         </div>
@@ -166,8 +166,8 @@ import {
   copyOutline,
   downloadOutline,
   heart,
+  documentOutline,
   imageOutline,
-  readerOutline,
   refreshOutline,
   timeOutline,
 } from 'ionicons/icons'
@@ -294,6 +294,7 @@ const downloadIcon = computed(() => {
   display: flex;
   gap: 12px;
   margin-bottom: 16px;
+  padding-bottom: 28px;
 }
 
 .action-btn {
@@ -363,10 +364,7 @@ const downloadIcon = computed(() => {
 }
 
 .action-btn-wrap {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
+  position: relative;
   flex: 1;
 }
 
@@ -375,10 +373,13 @@ const downloadIcon = computed(() => {
 }
 
 .source-state-row {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
   display: flex;
   justify-content: center;
   gap: 5px;
-  min-height: 20px;
 }
 
 .source-state-chip {

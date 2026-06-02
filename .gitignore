@@ -1,6 +1,8 @@
 /dist/
 /node_modules/
-/tests/
+/tests/*
+!/tests/unit/
+!/tests/unit/**
 /.vscode/
 /.idea/
 /android/.gradle/

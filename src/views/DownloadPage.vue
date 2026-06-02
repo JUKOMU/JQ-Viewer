@@ -477,9 +477,10 @@ const mapDownloadTaskToEntry = (t: DownloadTask): CompletedEntry => ({
 
 const mapImportedPdfToEntry = (pdf: ImportedPdf): CompletedEntry => ({
   albumId: pdf.albumId,
-  albumTitle: pdf.albumTitle,
+  albumTitle: pdf.albumTitle || pdf.fileName || pdf.albumId,
   coverUrl: pdf.coverUrl,
   chapterId: `import_pdf_${pdf.id}`,
+  displayId: pdf.albumId,
   chapterTitle: pdf.fileName,
   chapterSortOrder: pdf.chapterSortOrder,
   authors: pdf.authors,
@@ -834,7 +835,7 @@ const onRead = (entry: CompletedEntry | DownloadTask) => {
           albumTitle: ce.albumTitle,
           authors: ce.authors,
           coverUrl: ce.coverUrl,
-          chapterId: ce.chapterId,
+          chapterId: ce.displayId ?? ce.albumId,
           chapterTitle: ce.chapterTitle,
         },
       })

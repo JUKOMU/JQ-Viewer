@@ -430,7 +430,8 @@ export interface CompletedEntry {
   albumId: string
   albumTitle: string
   coverUrl: string
-  chapterId: string        // download: chapterId; pdf: "import_pdf_${id}"
+  chapterId: string        // download: chapterId; pdf: 内部唯一 key
+  displayId?: string       // chapterId 不是用户可见 ID 时的展示兜底
   chapterTitle: string     // download: chapterTitle; pdf: fileName
   chapterSortOrder: number
   authors: string

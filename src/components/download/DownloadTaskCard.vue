@@ -2,18 +2,22 @@
   <div class="card" :class="{ clickable: cardStatus === 'completed' }" @click="onCardClick">
     <div class="cover-wrap">
       <img
+        v-if="coverSrc"
         :src="coverSrc"
         class="cover"
         referrerpolicy="no-referrer"
         alt=""
         @error="onCoverError"
       />
+      <div v-else class="cover-placeholder">
+        <IonIcon :icon="documentOutline"/>
+      </div>
     </div>
     <div class="info">
       <div class="title-row">
         <div class="titles">
-          <div class="album-title">{{ task.albumTitle }}</div>
-          <div class="chapter-title">{{ task.chapterId }}</div>
+          <div class="album-title">{{ displayTitle }}</div>
+          <div class="chapter-title">{{ displayId }}</div>
           <div v-if="hasMultiChapters" class="chapter-bubbles">
             <span v-for="ch in downloadedChapters" :key="ch.chapterId" class="bubble">
               {{ ch.chapterSortOrder }}
@@ -102,6 +106,15 @@ const cardStatus = computed(() => {
 
 const hasMultiChapters = computed(() => (props.downloadedChapters?.length ?? 0) > 1)
 
+const displayId = computed(() => {
+  if ('source' in props.task) {
+    return props.task.displayId ?? props.task.chapterId
+  }
+  return props.task.chapterId
+})
+
+const displayTitle = computed(() => props.task.albumTitle || displayId.value)
+
 const displayTotalPages = computed(() => {
   if (isPdfEntry.value) return 0
   if (hasMultiChapters.value && props.downloadedChapters) {
@@ -130,6 +143,7 @@ const coverSrc = computed(() => {
       ? (t as DownloadTask).firstImageSortOrder
       : (t as CompletedEntry).downloadTask?.firstImageSortOrder
     if (firstSort) return getImageUrl(t.chapterId, firstSort, 'image')
+    return ''
   }
   return t.coverUrl
 })
@@ -220,6 +234,17 @@ const onCardClick = () => {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.cover-placeholder {
+  width: 100%;
+  height: 100%;
+  background: #ece1d8;
+  color: #b89a84;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
 }
 
 .info {

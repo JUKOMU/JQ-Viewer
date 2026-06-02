@@ -42,7 +42,8 @@
           v-for="(file, idx) in files"
           :key="file.filePath"
           class="file-card"
-          :class="cardClass(file)"
+          :class="[cardClass(file), { searchable: canSearchFile(file), selected: searchTargetIdx === idx }]"
+          @click="openSearchDrawer(idx)"
         >
           <!-- 封面区 -->
           <div class="cover-wrap">
@@ -52,7 +53,7 @@
               class="cover-img"
             />
             <div v-else class="cover-placeholder">
-              <IonIcon :icon="documentTextOutline"/>
+              <IonIcon :icon="canSearchFile(file) ? searchOutline : documentTextOutline"/>
             </div>
           </div>
 
@@ -114,23 +115,74 @@
       @select="onFavFolderSelect"
       @add-folder="onAddFolder"
     />
+
+    <section
+      v-if="files.length > 0"
+      class="search-drawer"
+      :class="{ active: drawerState !== 'closed' }"
+      :style="drawerStyle"
+    >
+      <div class="drawer-grip-zone" @pointerdown="startDrawerDrag">
+        <Transition name="drawer-confirm">
+          <button
+            v-if="selectedCandidate"
+            type="button"
+            class="drawer-confirm-btn"
+            :disabled="drawerSearchLoading || resolvingCandidate"
+            @click.stop="confirmCandidate"
+          >
+            确定 #{{ selectedCandidate.id }}
+          </button>
+        </Transition>
+        <div class="drawer-grip"/>
+      </div>
+
+      <div class="drawer-body">
+        <div class="drawer-target">
+          <span class="drawer-title">搜索匹配</span>
+          <span class="drawer-subtitle">{{ drawerTargetText }}</span>
+        </div>
+        <SearchHeaderBar
+          ref="drawerSearchRef"
+          :query="drawerQuery"
+          :loading="drawerSearchLoading"
+          @search="submitDrawerSearch"
+        />
+        <SearchResultContainer
+          :result="drawerResult"
+          :items="drawerDisplayItems"
+          :loading="drawerSearchLoading"
+          :loading-next="false"
+          :error-message="drawerError"
+          :mode="drawerMode"
+          idle-text="点击未解析卡片后自动搜索"
+          empty-text="没有匹配结果"
+          @mode-change="drawerMode = $event"
+          @item-click="selectCandidate"
+          @retry="retryDrawerSearch"
+        />
+      </div>
+    </section>
   </IonPage>
 </template>
 
 <script setup lang="ts">
 defineOptions({ name: 'PdfImportPage' })
 
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { IonBackButton, IonButtons, IonPage, IonHeader, IonTitle, IonToolbar, IonContent, IonIcon } from '@ionic/vue'
 import { alertController } from '@ionic/vue'
 import { useRouter } from 'vue-router'
-import { documentTextOutline, createOutline, checkmarkOutline } from 'ionicons/icons'
+import { documentTextOutline, createOutline, checkmarkOutline, searchOutline } from 'ionicons/icons'
 import { PdfImportService } from '@/services/PdfImportService'
 import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
 import { OfflineFavoriteService } from '@/services/OfflineFavoriteService'
 import FavoriteFolderPicker from '@/components/favorite/FavoriteFolderPicker.vue'
+import SearchHeaderBar from '@/components/search/SearchHeaderBar.vue'
+import SearchResultContainer from '@/components/search/SearchResultContainer.vue'
 import type { PdfFileParseItem } from '@/utils/importPdfParse'
-import type { FolderEntry, SearchResultItem } from '@/services/JmcomicTypes'
+import type { FolderEntry, SearchQuery, SearchResult, SearchResultItem } from '@/services/JmcomicTypes'
+import type { SearchResultDisplayItem } from '@/components/search/SearchResultContainer.vue'
 
 const router = useRouter()
 
@@ -145,6 +197,67 @@ const showFolderPicker = ref(false)
 const offlineFolders = ref<FolderEntry[]>([])
 const pendingResolvedFiles = ref<PdfFileParseItem[]>([])
 const selectedFolderId = ref<string | undefined>(undefined)
+
+// ---- 抽屉搜索 ----
+type DrawerState = 'closed' | 'half' | 'full'
+
+const DRAWER_MAX_RATIO = 0.86
+const DRAWER_HANDLE_HEIGHT = 54
+
+const drawerState = ref<DrawerState>('closed')
+const drawerDragOffset = ref<number | null>(null)
+const drawerSearchRef = ref<{ focusInput: () => Promise<void> } | null>(null)
+const searchTargetIdx = ref<number | null>(null)
+const drawerQuery = ref<SearchQuery>({
+  keyword: '',
+  orderBy: 'mr',
+  time: 'a',
+  searchMainTag: 0,
+  page: 1,
+})
+const drawerResult = ref<SearchResult | null>(null)
+const drawerSearchLoading = ref(false)
+const drawerError = ref('')
+const drawerMode = ref<'list' | 'grid'>('list')
+const selectedCandidate = ref<SearchResultItem | null>(null)
+const resolvingCandidate = ref(false)
+
+let drawerDragStartY = 0
+let drawerDragStartOffset = 0
+
+const drawerDisplayItems = computed<SearchResultDisplayItem[]>(() =>
+  (drawerResult.value?.content ?? []).map((item, indexInPage) => ({
+    item,
+    page: drawerResult.value?.currentPage ?? 1,
+    indexInPage,
+  })),
+)
+
+const drawerTargetText = computed(() => {
+  if (searchTargetIdx.value === null) return '先点击需要补 ID 的文件卡片'
+  return files.value[searchTargetIdx.value]?.fileName ?? '当前文件'
+})
+
+const drawerMaxHeight = () => Math.round(window.innerHeight * DRAWER_MAX_RATIO)
+
+const drawerClosedOffset = () => Math.max(0, drawerMaxHeight() - DRAWER_HANDLE_HEIGHT)
+
+const drawerHalfOffset = () => Math.round(drawerMaxHeight() * 0.42)
+
+const drawerBaseOffset = () => {
+  if (drawerState.value === 'full') return 0
+  if (drawerState.value === 'half') return drawerHalfOffset()
+  return drawerClosedOffset()
+}
+
+const drawerStyle = computed(() => ({
+  transform: `translateY(${drawerDragOffset.value ?? drawerBaseOffset()}px)`,
+}))
+
+const canSearchFile = (file: PdfFileParseItem) =>
+  file.status !== 'resolved' || file.duplicateIds.length > 0 || (file.editedIds?.length ?? file.extractedIds.length) !== 1
+
+const stripPdfExtension = (fileName: string) => fileName.replace(/\.pdf$/i, '').trim()
 
 // ---- 统计 ----
 const resolvedCount = computed(() =>
@@ -241,6 +354,146 @@ async function applyEdit(idx: number) {
 
   files.value[idx] = updated as PdfFileParseItem
   editingIdx.value = null
+}
+
+async function applyResolvedId(idx: number, id: string) {
+  const file = files.value[idx]
+  const updated = {
+    ...file,
+    editedLine: id,
+    editedIds: [id],
+    status: 'resolved' as const,
+  }
+
+  try {
+    const detail = await JmcomicService.getAlbum(id)
+    updated.albumDetail = detail && detail.id ? detail : null
+  } catch {
+    updated.albumDetail = null
+  }
+
+  files.value[idx] = updated as PdfFileParseItem
+}
+
+// ---- 抽屉搜索行为 ----
+async function openSearchDrawer(idx: number) {
+  const file = files.value[idx]
+  if (!file || !canSearchFile(file) || editingIdx.value === idx) return
+
+  searchTargetIdx.value = idx
+  selectedCandidate.value = null
+  drawerQuery.value = {
+    keyword: stripPdfExtension(file.fileName),
+    orderBy: 'mr',
+    time: 'a',
+    searchMainTag: 0,
+    page: 1,
+  }
+  drawerState.value = 'half'
+  await nextTick()
+  void drawerSearchRef.value?.focusInput?.()
+  await performDrawerSearch(drawerQuery.value)
+}
+
+async function submitDrawerSearch(query: SearchQuery) {
+  const nextQuery = {...query, page: 1}
+  drawerQuery.value = nextQuery
+  await performDrawerSearch(nextQuery)
+}
+
+async function retryDrawerSearch() {
+  await performDrawerSearch(drawerQuery.value)
+}
+
+async function performDrawerSearch(query: SearchQuery) {
+  const keyword = (query.keyword ?? '').trim()
+  selectedCandidate.value = null
+  drawerError.value = ''
+  drawerResult.value = null
+
+  if (!keyword) return
+
+  drawerSearchLoading.value = true
+  try {
+    if (/^\d+$/.test(keyword)) {
+      const album = await JmcomicService.getAlbum(keyword)
+      drawerResult.value = {
+        currentPage: 1,
+        totalItems: 1,
+        totalPages: 1,
+        content: [{
+          id: album.id,
+          title: album.title,
+          coverUrl: album.image,
+          authors: album.authors,
+          tags: album.tags,
+        }],
+      }
+    } else {
+      drawerResult.value = await JmcomicService.search({...query, keyword, page: 1})
+    }
+
+    if (drawerResult.value.content.length === 1) {
+      selectedCandidate.value = drawerResult.value.content[0]
+    }
+  } catch (error) {
+    drawerResult.value = null
+    drawerError.value = sanitizeError(error, '搜索失败')
+  } finally {
+    drawerSearchLoading.value = false
+  }
+}
+
+function selectCandidate(item: SearchResultItem) {
+  selectedCandidate.value = item
+}
+
+async function confirmCandidate() {
+  if (searchTargetIdx.value === null || !selectedCandidate.value) return
+
+  resolvingCandidate.value = true
+  try {
+    await applyResolvedId(searchTargetIdx.value, selectedCandidate.value.id)
+    selectedCandidate.value = null
+    await showToast('已回填 ID', 'success')
+  } catch (error) {
+    await showToast(sanitizeError(error, '回填失败'), 'danger')
+  } finally {
+    resolvingCandidate.value = false
+  }
+}
+
+function startDrawerDrag(event: PointerEvent) {
+  drawerDragStartY = event.clientY
+  drawerDragStartOffset = drawerDragOffset.value ?? drawerBaseOffset()
+  drawerDragOffset.value = drawerDragStartOffset
+  window.addEventListener('pointermove', handleDrawerDrag)
+  window.addEventListener('pointerup', endDrawerDrag)
+  window.addEventListener('pointercancel', endDrawerDrag)
+}
+
+function handleDrawerDrag(event: PointerEvent) {
+  const nextOffset = drawerDragStartOffset + event.clientY - drawerDragStartY
+  drawerDragOffset.value = Math.min(drawerClosedOffset(), Math.max(0, nextOffset))
+}
+
+function endDrawerDrag() {
+  const offset = drawerDragOffset.value ?? drawerBaseOffset()
+  const half = drawerHalfOffset()
+  const closed = drawerClosedOffset()
+
+  if (offset < half * 0.55) {
+    drawerState.value = 'full'
+  } else if (offset > (half + closed) / 2) {
+    drawerState.value = 'closed'
+  } else {
+    drawerState.value = 'half'
+  }
+
+  drawerDragOffset.value = null
+  window.removeEventListener('pointermove', handleDrawerDrag)
+  window.removeEventListener('pointerup', endDrawerDrag)
+  window.removeEventListener('pointercancel', endDrawerDrag)
 }
 
 // ---- 卡片样式 ----
@@ -404,6 +657,9 @@ async function doImport(resolvedFiles: PdfFileParseItem[], folderId?: string) {
 }
 
 onBeforeUnmount(() => {
+  window.removeEventListener('pointermove', handleDrawerDrag)
+  window.removeEventListener('pointerup', endDrawerDrag)
+  window.removeEventListener('pointercancel', endDrawerDrag)
   PdfImportService.clearCachedParseResult()
 })
 </script>
@@ -421,7 +677,7 @@ IonHeader {
 
 /* ---- 页面容器 ---- */
 .page-container {
-  padding: 12px 14px 86px;
+  padding: 12px 14px 132px;
 }
 
 /* ---- 确认按钮 ---- */
@@ -534,6 +790,18 @@ IonHeader {
   min-height: 108px;
 }
 
+.file-card.searchable {
+  cursor: pointer;
+}
+
+.file-card.searchable:active {
+  transform: scale(0.99);
+}
+
+.file-card.selected {
+  box-shadow: 0 4px 18px rgb(250 156 105 / 0.22);
+}
+
 .file-card.card-resolved {
   border-left-color: #4caf50;
 }
@@ -575,6 +843,11 @@ IonHeader {
   justify-content: center;
   color: #c4a48d;
   font-size: 28px;
+}
+
+.file-card.searchable .cover-placeholder {
+  color: #fa9c69;
+  background: linear-gradient(145deg, #fff6ef, #ffe2d0);
 }
 
 /* ---- 信息区 ---- */
@@ -749,5 +1022,125 @@ IonHeader {
   font-size: 12px;
   cursor: pointer;
   flex-shrink: 0;
+}
+
+/* ---- 底部搜索抽屉 ---- */
+.search-drawer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  height: 86vh;
+  padding-bottom: var(--ion-safe-area-bottom);
+  border-radius: 18px 18px 0 0;
+  background: #fffaf6;
+  box-shadow: 0 -10px 28px rgb(76 42 24 / 0.16);
+  transition: transform 0.24s ease;
+  will-change: transform;
+}
+
+.search-drawer.active {
+  box-shadow: 0 -12px 34px rgb(76 42 24 / 0.22);
+}
+
+.drawer-grip-zone {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 54px;
+  touch-action: none;
+  user-select: none;
+}
+
+.drawer-grip {
+  width: 48px;
+  height: 5px;
+  border-radius: 999px;
+  background: #d2aa91;
+}
+
+.drawer-confirm-btn {
+  position: absolute;
+  left: 50%;
+  bottom: 42px;
+  transform: translateX(-50%);
+  height: 34px;
+  max-width: calc(100vw - 32px);
+  padding: 0 16px;
+  border: 0;
+  border-radius: 999px;
+  background: #fa9c69;
+  color: #fff;
+  box-shadow: 0 6px 16px rgb(250 156 105 / 0.35);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.drawer-confirm-btn:disabled {
+  opacity: 0.6;
+}
+
+.drawer-confirm-enter-active,
+.drawer-confirm-leave-active {
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.drawer-confirm-enter-from,
+.drawer-confirm-leave-to {
+  opacity: 0;
+  transform: translate(-50%, 8px);
+}
+
+.drawer-body {
+  height: calc(100% - 54px);
+  overflow-y: auto;
+  padding: 0 14px 18px;
+}
+
+.drawer-target {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.drawer-title {
+  flex-shrink: 0;
+  color: #4c2a18;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.drawer-subtitle {
+  min-width: 0;
+  overflow: hidden;
+  color: #9b735a;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drawer-body :deep(.result-shell) {
+  padding-top: 12px;
+}
+
+.drawer-body :deep(.result-toolbar) {
+  position: static;
+}
+
+.drawer-body :deep(.result-list),
+.drawer-body :deep(.result-grid) {
+  padding-bottom: 24px;
+}
+
+@media (min-width: 680px) {
+  .search-drawer {
+    left: max(0px, calc((100vw - 720px) / 2));
+    right: max(0px, calc((100vw - 720px) / 2));
+  }
 }
 </style>

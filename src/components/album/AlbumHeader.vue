@@ -107,7 +107,6 @@ import {
 <style scoped>
 .header-area {
   position: relative;
-  overflow: hidden;
 }
 
 .header-bg {

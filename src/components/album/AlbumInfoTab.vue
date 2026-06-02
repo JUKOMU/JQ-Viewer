@@ -24,7 +24,7 @@
           <ion-icon :icon="bookmark"/>
           <span class="action-label">收藏</span>
         </button>
-        <div class="action-btn-wrap">
+        <div class="download-col">
           <button
             type="button"
             class="action-btn"
@@ -291,7 +291,8 @@ const downloadIcon = computed(() => {
 <style scoped>
 /* 交互栏 */
 .action-bar {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 12px;
   margin-bottom: 16px;
   padding-bottom: 28px;
@@ -302,7 +303,6 @@ const downloadIcon = computed(() => {
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  flex: 1;
   padding: 10px 8px;
   border: 1px solid rgb(245 210 188 / 0.7);
   border-radius: 12px;
@@ -312,6 +312,24 @@ const downloadIcon = computed(() => {
   transition: background-color 0.18s ease,
   color 0.18s ease,
   border-color 0.18s ease;
+}
+
+.download-col {
+  position: relative;
+}
+
+.download-col .action-btn {
+  width: 100%;
+}
+
+.source-state-row {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  gap: 5px;
 }
 
 .action-btn:disabled {
@@ -363,18 +381,9 @@ const downloadIcon = computed(() => {
   font-size: 11px;
 }
 
-.action-btn-wrap {
-  position: relative;
-  flex: 1;
-}
-
-.action-btn-wrap .action-btn {
-  width: 100%;
-}
-
 .source-state-row {
   position: absolute;
-  top: calc(100% + 4px);
+  bottom: 4px;
   left: 0;
   right: 0;
   display: flex;

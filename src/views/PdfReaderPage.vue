@@ -107,12 +107,13 @@ let volumeKeyListenerHandle: PluginListenerHandle | null = null
 let readerRuntimeActive = false
 let pdfDoc: pdfjsLib.PDFDocumentProxy | null = null
 const renderedPages = new Map<number, string>()
+const renderTasks = new Map<number, pdfjsLib.RenderTask>()
 let lastWindowCenter = -1
 let expandDirection: 'forward' | 'backward' | null = null
 let lastScrollTime = 0
 let lastScrollIndex = -1
 let revertTimer: ReturnType<typeof setTimeout> | null = null
-let pendingRender: pdfjsLib.RenderTask | null = null
+let renderGeneration = 0
 let activeRenderRange: {start: number; end: number; center: number} | null = null
 let pendingSeekIndex: number | null = null
 let dragPreviewTimer: ReturnType<typeof setTimeout> | null = null
@@ -244,8 +245,9 @@ const calcBaseScale = (viewport: pdfjsLib.PageViewport): number => {
 // ---- PDF 页面渲染 ----
 const renderPageToBlob = async (pageNum: number): Promise<string | null> => {
   if (!pdfDoc) return null
+  let page: pdfjsLib.PDFPageProxy | null = null
   try {
-    const page = await pdfDoc.getPage(pageNum)
+    page = await pdfDoc.getPage(pageNum)
     const scale = calcBaseScale(page.getViewport({ scale: 1 }))
     const viewport = page.getViewport({ scale })
 
@@ -253,10 +255,12 @@ const renderPageToBlob = async (pageNum: number): Promise<string | null> => {
     canvas.width = viewport.width
     canvas.height = viewport.height
 
-    pendingRender = page.render({ canvas, viewport })
-    await pendingRender.promise
-    pendingRender = null
-    page.cleanup()
+    const task = page.render({ canvas, viewport })
+    renderTasks.set(pageNum, task)
+    await task.promise
+    if (renderTasks.get(pageNum) === task) {
+      renderTasks.delete(pageNum)
+    }
 
     const blob = await new Promise<Blob | null>((resolve) =>
       canvas.toBlob((b) => resolve(b), 'image/png'),
@@ -265,7 +269,54 @@ const renderPageToBlob = async (pageNum: number): Promise<string | null> => {
     return URL.createObjectURL(blob)
   } catch {
     return null
+  } finally {
+    renderTasks.delete(pageNum)
+    page?.cleanup()
   }
+}
+
+const cancelRenderTasksOutside = (keepSet: Set<number>) => {
+  for (const [pageNum, task] of renderTasks) {
+    if (keepSet.has(pageNum)) continue
+    task.cancel()
+    renderTasks.delete(pageNum)
+    if (renderedPages.get(pageNum) === '') {
+      renderedPages.delete(pageNum)
+      imageMap.value.delete(pageNum)
+    }
+  }
+}
+
+const cancelAllRenderTasks = () => {
+  for (const [pageNum, task] of renderTasks) {
+    task.cancel()
+    if (renderedPages.get(pageNum) === '') {
+      renderedPages.delete(pageNum)
+      imageMap.value.delete(pageNum)
+    }
+  }
+  renderTasks.clear()
+}
+
+const startRenderPage = (pageNum: number, generation: number) => {
+  renderPageToBlob(pageNum).then((url) => {
+    if (generation !== renderGeneration) {
+      if (url) URL.revokeObjectURL(url)
+      if (renderedPages.get(pageNum) === '') renderedPages.delete(pageNum)
+      return
+    }
+    if (url) {
+      renderedPages.set(pageNum, url)
+      imageMap.value.set(pageNum, url)
+      applyImageMap()
+      return
+    }
+    if (renderedPages.get(pageNum) === '') {
+      renderedPages.delete(pageNum)
+      imageMap.value.delete(pageNum)
+      applyImageMap()
+    }
+  })
 }
 
 // ---- 窗口管理 ----
@@ -314,31 +365,12 @@ const hasPendingInRange = (center: number, dir: 'forward' | 'backward'): boolean
 
 const updateWindow = (center: number) => {
   if (!pdfDoc) return
+  const generation = ++renderGeneration
   const windowOrders = new Set(calcWindow(center))
   if (activeRenderRange) {
     for (let i = activeRenderRange.start; i < activeRenderRange.end; i++) {
       if (i >= 0 && i < totalCount.value) windowOrders.add(i + 1)
     }
-  }
-
-  const toRender: number[] = []
-  for (const so of windowOrders) {
-    if (!renderedPages.has(so)) {
-      toRender.push(so)
-      renderedPages.set(so, '') // 占位防重复请求
-    }
-  }
-
-  // 异步渲染窗口内页面
-  toRender.sort((a, b) => Math.abs(a - (center + 1)) - Math.abs(b - (center + 1)))
-  for (const pageNum of toRender) {
-    renderPageToBlob(pageNum).then((url) => {
-      if (url) {
-        renderedPages.set(pageNum, url)
-        imageMap.value.set(pageNum, url)
-        applyImageMap()
-      }
-    })
   }
 
   // 清理窗口外页面
@@ -354,6 +386,23 @@ const updateWindow = (center: number) => {
     }
   }
   for (const so of calcWindow(currentIndex.value)) cacheSet.add(so)
+  for (const so of windowOrders) cacheSet.add(so)
+
+  cancelRenderTasksOutside(cacheSet)
+
+  const toRender: number[] = []
+  for (const so of windowOrders) {
+    if (!renderedPages.has(so)) {
+      toRender.push(so)
+      renderedPages.set(so, '') // 占位防重复请求
+    }
+  }
+
+  // 异步渲染窗口内页面
+  toRender.sort((a, b) => Math.abs(a - (center + 1)) - Math.abs(b - (center + 1)))
+  for (const pageNum of toRender) {
+    startRenderPage(pageNum, generation)
+  }
 
   for (const [so, url] of renderedPages) {
     if (!cacheSet.has(so)) {
@@ -370,13 +419,7 @@ const renderDragPreviewPage = (center: number) => {
   const pageNum = center + 1
   if (pageNum < 1 || pageNum > totalCount.value || renderedPages.has(pageNum)) return
   renderedPages.set(pageNum, '')
-  renderPageToBlob(pageNum).then((url) => {
-    if (url) {
-      renderedPages.set(pageNum, url)
-      imageMap.value.set(pageNum, url)
-      applyImageMap()
-    }
-  })
+  startRenderPage(pageNum, renderGeneration)
 }
 
 const scheduleDragPreviewRender = (index: number) => {
@@ -469,9 +512,8 @@ const goToIndex = (index: number, source: PageChangeSource) => {
   expandDirection = null
 
   lastWindowCenter = next
-  if (pendingRender && source === 'slider') {
-    pendingRender.cancel()
-    pendingRender = null
+  if (source === 'slider') {
+    cancelAllRenderTasks()
   }
   updateWindow(next)
 
@@ -606,10 +648,7 @@ onUnmounted(() => {
   deactivateReaderRuntime()
   if (revertTimer) clearTimeout(revertTimer)
   if (dragPreviewTimer) clearTimeout(dragPreviewTimer)
-  if (pendingRender) {
-    pendingRender.cancel()
-    pendingRender = null
-  }
+  cancelAllRenderTasks()
 
   for (const url of renderedPages.values()) {
     if (url) URL.revokeObjectURL(url)

@@ -2,42 +2,57 @@
 <template>
   <section class="chapters-section">
     <div v-if="photoMetas.length" class="chapter-grid">
-      <button
+      <div
         v-for="meta in photoMetas"
         :key="meta.id"
-        type="button"
-        class="chapter-card"
-        :class="{
-          selected: selectedChapterId === meta.id,
-          downloaded: chapterDownloadStatuses.get(meta.id) === 'completed',
-        }"
-        @click="$emit('select-chapter', meta.id)"
+        class="chapter-item"
       >
-        <Transition name="action-swap" mode="out-in">
-          <span
-            v-if="!(showActions && selectedChapterId === meta.id)"
-            key="num"
-            class="chapter-num"
-          >
-            第{{ meta.sortOrder }}话
-          </span>
-          <div v-else key="actions" class="chapter-actions">
-            <button
-              type="button"
-              class="action-btn"
-              :class="{ disabled: isDownloadDisabled(meta.id) }"
-              :disabled="isDownloadDisabled(meta.id)"
-              @click.stop="$emit('download-chapter', meta.id)"
+        <button
+          type="button"
+          class="chapter-card"
+          :class="{
+            selected: selectedChapterId === meta.id,
+            downloaded: chapterDownloadStatuses.get(meta.id) === 'completed',
+          }"
+          @click="$emit('select-chapter', meta.id)"
+        >
+          <Transition name="action-swap" mode="out-in">
+            <span
+              v-if="!(showActions && selectedChapterId === meta.id)"
+              key="num"
+              class="chapter-num"
             >
-              <ion-icon :icon="cloudDownloadOutline"/>
-            </button>
-            <button type="button" class="action-btn" @click.stop="$emit('dismiss-actions')">
-              <ion-icon :icon="arrowBack"/>
-            </button>
-          </div>
-        </Transition>
-        <span class="chapter-title">{{ meta.title }}</span>
-      </button>
+              第{{ meta.sortOrder }}话
+            </span>
+            <div v-else key="actions" class="chapter-actions">
+              <button
+                type="button"
+                class="action-btn"
+                :class="{ disabled: isDownloadDisabled(meta.id) }"
+                :disabled="isDownloadDisabled(meta.id)"
+                @click.stop="$emit('download-chapter', meta.id)"
+              >
+                <ion-icon :icon="cloudDownloadOutline"/>
+              </button>
+              <button type="button" class="action-btn" @click.stop="$emit('dismiss-actions')">
+                <ion-icon :icon="arrowBack"/>
+              </button>
+            </div>
+          </Transition>
+          <span class="chapter-title">{{ meta.title }}</span>
+        </button>
+        <span
+          v-if="chapterDownloadStatuses.get(meta.id) === 'completed' || chapterPdfStatuses.get(meta.id)"
+          class="chapter-source-row"
+        >
+          <span v-if="chapterDownloadStatuses.get(meta.id) === 'completed'" class="chapter-source-chip source-chip-image">
+            <ion-icon :icon="imageOutline"/>
+          </span>
+          <span v-if="chapterPdfStatuses.get(meta.id)" class="chapter-source-chip source-chip-pdf">
+            <ion-icon :icon="readerOutline"/>
+          </span>
+        </span>
+      </div>
     </div>
     <div v-else-if="loading" class="chapter-grid">
       <div v-for="n in 6" :key="n" class="skeleton-card">
@@ -58,6 +73,7 @@ const props = defineProps<{
   loading?: boolean
   showActions: boolean
   chapterDownloadStatuses: Map<string, string>
+  chapterPdfStatuses: Map<string, boolean>
 }>()
 defineEmits<{
   'select-chapter': [chapterId: string]
@@ -65,7 +81,7 @@ defineEmits<{
   'dismiss-actions': []
 }>()
 import {IonIcon} from '@ionic/vue'
-import {arrowBack, cloudDownloadOutline} from 'ionicons/icons'
+import {arrowBack, cloudDownloadOutline, imageOutline, readerOutline} from 'ionicons/icons'
 import type {PhotoMeta} from '@/services/JmcomicTypes'
 
 const isDownloadDisabled = (chapterId: string): boolean => {
@@ -136,6 +152,45 @@ const isDownloadDisabled = (chapterId: string): boolean => {
 .chapter-title {
   font-size: 11px;
   line-height: 1.3;
+}
+
+.chapter-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+
+.chapter-source-row {
+  display: flex;
+  justify-content: center;
+  gap: 5px;
+  min-height: 18px;
+}
+
+.chapter-source-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid #d0c7c0;
+  border-radius: 6px;
+  background: #f2f0ee;
+  color: #9a9088;
+  font-size: 11px;
+}
+
+.source-chip-image {
+  border-color: #4a9fd8;
+  background: #e8f4fc;
+  color: #2d7ab5;
+}
+
+.source-chip-pdf {
+  border-color: #e05555;
+  background: #fdf0f0;
+  color: #c03939;
 }
 
 /* ---- 操作按钮 ---- */

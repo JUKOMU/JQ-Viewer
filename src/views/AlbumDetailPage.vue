@@ -10,8 +10,14 @@
         :page-count="selectedChapterPageCount"
         :loading="loading"
         :chapter-loading="chapterLoading"
+        :source-menu-open="sourceMenuOpen"
+        :network-available="networkAvailable"
+        :image-available="selectedChapterHasDownload"
+        :pdf-available="Boolean(selectedChapterPdf)"
         @back="goBack"
         @start-reading="startReading"
+        @toggle-source-menu="toggleSourceMenu"
+        @select-source="openReaderBySource"
       />
 
       <!-- 区域 B：Tab 栏 -->
@@ -35,6 +41,8 @@
           :album="albumDetail"
           :action-busy="actionBusy"
           :download-status="selectedChapterDownloadStatus"
+          :image-available="selectedChapterHasDownload"
+          :pdf-available="Boolean(selectedChapterPdf)"
           @toggle-like="handleToggleLike"
           @toggle-favorite="handleToggleFavorite"
           @download="handleDownload"
@@ -47,6 +55,7 @@
           :loading="loading"
           :show-actions="showChapterActions"
           :chapter-download-statuses="chapterDownloadStatuses"
+          :chapter-pdf-statuses="chapterPdfStatuses"
           @select-chapter="selectChapter"
           @download-chapter="onDownloadChapter"
           @dismiss-actions="showChapterActions = false"
@@ -91,12 +100,15 @@ import {useRoute, useRouter} from 'vue-router'
 import {IonContent, IonPage} from '@ionic/vue'
 import type {PluginListenerHandle} from '@capacitor/core'
 import {getImageUrl, JmcomicService, sanitizeError, showToast} from '@/services/JmcomicService'
+import {getPdfVirtualUrl} from '@/services/PdfReaderService'
+import * as pdfjsLib from 'pdfjs-dist'
 import type {
   AlbumDetail,
   AlbumMeta,
   CommentItem,
   FavoriteResult,
   FolderEntry,
+  ImportedPdf,
   PhotoDetail,
   PreloadResult,
 } from '@/services/JmcomicTypes'
@@ -111,6 +123,11 @@ import AlbumChaptersTab from '@/components/album/AlbumChaptersTab.vue'
 import AlbumPreviewTab from '@/components/album/AlbumPreviewTab.vue'
 import AlbumCommentsTab from '@/components/album/AlbumCommentsTab.vue'
 import FavoriteFolderPicker from '@/components/favorite/FavoriteFolderPicker.vue'
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  'pdfjs-dist/build/pdf.worker.min.mjs',
+  import.meta.url,
+).href
 
 const route = useRoute()
 const router = useRouter()
@@ -149,12 +166,39 @@ const selectedChapterId = ref('')
 const selectedChapterDownloadStatus = computed(() =>
   chapterDownloadStatuses.value.get(selectedChapterId.value),
 )
+const selectedChapterHasDownload = computed(() =>
+  selectedChapterDownloadStatus.value === 'completed',
+)
 const chapterLoading = ref(false)
 
 // ---- 章节操作栏 ----
 const showChapterActions = ref(false)
 const chapterDownloadStatuses = ref<Map<string, string>>(new Map())
+const chapterPdfMap = ref<Map<string, ImportedPdf>>(new Map())
+const chapterPdfStatuses = computed(() => {
+  const map = new Map<string, boolean>()
+  for (const key of chapterPdfMap.value.keys()) {
+    map.set(key, true)
+  }
+  return map
+})
+const selectedChapterPdf = computed(() =>
+  chapterPdfMap.value.get(selectedChapterId.value) ?? null,
+)
 let downloadProgressHandle: PluginListenerHandle | null = null
+
+type ReaderSource = 'network' | 'download' | 'pdf'
+type PreviewSource = 'network' | 'download' | 'pdf'
+
+const sourceMenuOpen = ref(false)
+const networkAvailable = ref(typeof navigator === 'undefined' ? true : navigator.onLine)
+const previewLoadedKey = ref('')
+let previewPdfDoc: pdfjsLib.PDFDocumentProxy | null = null
+const previewObjectUrls = new Set<string>()
+
+const updateNetworkAvailable = () => {
+  networkAvailable.value = typeof navigator === 'undefined' ? true : navigator.onLine
+}
 
 const refreshDownloadStatuses = async () => {
   try {
@@ -170,6 +214,37 @@ const refreshDownloadStatuses = async () => {
     }
   } catch {
     // ignore
+  }
+}
+
+const chooseRecentPdf = (current: ImportedPdf | undefined, next: ImportedPdf) => {
+  if (!current) return next
+  return next.createdAt >= current.createdAt ? next : current
+}
+
+const resolvePdfChapterKey = (pdf: ImportedPdf): string => {
+  const metas = albumDetail.value?.photoMetas ?? []
+  const exact = metas.find((meta) => meta.id === pdf.chapterId)
+  if (exact) return exact.id
+
+  const byOrder = metas.find((meta) => meta.sortOrder === pdf.chapterSortOrder)
+  if (byOrder) return byOrder.id
+
+  return pdf.chapterId || pdf.albumId
+}
+
+const refreshImportedPdfStatuses = async () => {
+  try {
+    const result = await JmcomicService.getImportedPdfs()
+    const map = new Map<string, ImportedPdf>()
+    for (const pdf of result.pdfs ?? []) {
+      if (pdf.albumId !== albumId.value) continue
+      const key = resolvePdfChapterKey(pdf)
+      map.set(key, chooseRecentPdf(map.get(key), pdf))
+    }
+    chapterPdfMap.value = map
+  } catch {
+    chapterPdfMap.value = new Map()
   }
 }
 
@@ -317,8 +392,16 @@ interface PreviewImage {
 const previewImages = ref<PreviewImage[]>([])
 const previewImageTotal = ref(0)
 const previewLoading = ref(false)
-const previewLoadedChapterId = ref('')
 let imageReadyListenerHandle: PluginListenerHandle | null = null
+
+const clearPreviewPdf = () => {
+  for (const url of previewObjectUrls) {
+    URL.revokeObjectURL(url)
+  }
+  previewObjectUrls.clear()
+  previewPdfDoc?.destroy()
+  previewPdfDoc = null
+}
 
 // ---- 评论 ----
 const comments = ref<CommentItem[]>([])
@@ -348,16 +431,19 @@ const resetAlbumState = () => {
   selectedChapterId.value = ''
   previewImages.value = []
   previewImageTotal.value = 0
-  previewLoadedChapterId.value = ''
+  previewLoadedKey.value = ''
   comments.value = []
   commentPage.value = 1
   totalComments.value = 0
   activeTab.value = 'info'
   showChapterActions.value = false
+  sourceMenuOpen.value = false
   chapterDownloadStatuses.value = new Map()
+  chapterPdfMap.value = new Map()
   loading.value = true
   imageReadyListenerHandle?.remove()
   imageReadyListenerHandle = null
+  clearPreviewPdf()
 }
 
 const loadAlbumData = async () => {
@@ -382,6 +468,7 @@ const loadAlbumData = async () => {
   }
 
   await refreshDownloadStatuses()
+  await refreshImportedPdfStatuses()
   downloadProgressHandle?.remove()
   downloadProgressHandle = await JmcomicService.addDownloadProgressListener((data) => {
     if (data.albumId !== albumId.value) return
@@ -392,6 +479,9 @@ const loadAlbumData = async () => {
 }
 
 onMounted(() => {
+  updateNetworkAvailable()
+  window.addEventListener('online', updateNetworkAvailable)
+  window.addEventListener('offline', updateNetworkAvailable)
   loadAlbumData()
 })
 
@@ -415,6 +505,8 @@ const selectChapter = async (chapterId: string) => {
   }
   // 不同章节：隐藏操作栏，加载新章节
   showChapterActions.value = false
+  sourceMenuOpen.value = false
+  previewLoadedKey.value = ''
   selectedChapterId.value = chapterId
   chapterLoading.value = true
 
@@ -441,19 +533,119 @@ const onDownloadChapter = async (chapterId: string) => {
   await refreshDownloadStatuses()
 }
 
+const getPreferredSource = (): PreviewSource => {
+  if (selectedChapterHasDownload.value) return 'download'
+  if (selectedChapterPdf.value) return 'pdf'
+  return 'network'
+}
+
+const buildPdfReaderQuery = (pdf: ImportedPdf, page?: number) => ({
+  path: pdf.filePath,
+  title: pdf.fileName,
+  albumId: pdf.albumId,
+  albumTitle: pdf.albumTitle || albumTitle.value,
+  authors: pdf.authors || albumAuthors.value,
+  coverUrl: pdf.coverUrl || coverUrl.value,
+  chapterId: pdf.chapterId || selectedChapterId.value || albumId.value,
+  chapterTitle: pdf.chapterTitle || pdf.fileName,
+  ...(page ? {page: String(page)} : {}),
+})
+
+const openReaderBySource = (source: ReaderSource, page?: number) => {
+  const chapterId = selectedChapterId.value || albumId.value
+  sourceMenuOpen.value = false
+
+  if (source === 'pdf') {
+    const pdf = selectedChapterPdf.value
+    if (!pdf?.filePath) return
+    void router.push({
+      path: '/pdf-reader',
+      query: buildPdfReaderQuery(pdf, page),
+    })
+    return
+  }
+
+  if (source === 'download' && !selectedChapterHasDownload.value) return
+  if (source === 'network' && !networkAvailable.value) {
+    void showToast('当前网络不可用', 'medium')
+    return
+  }
+
+  void router.push({
+    path: `/album/${albumId.value}/read/${chapterId}`,
+    query: {
+      ...(page ? {page: String(page)} : {}),
+      title: albumTitle.value,
+      total: String(selectedChapterPageCount.value),
+      ...(source === 'download' ? {source: 'download'} : {}),
+    },
+  })
+}
+
+const toggleSourceMenu = () => {
+  sourceMenuOpen.value = !sourceMenuOpen.value
+}
+
 // ---- 预览 ----
-const loadPreview = async () => {
-  const chapterId = selectedChapterId.value
-  if (previewLoadedChapterId.value === chapterId && previewImages.value.length) return
+const loadDownloadedPreview = async (chapterId: string) => {
+  const photo = await JmcomicService.getDownloadedPhoto(albumId.value, chapterId)
+  photoDetail.value = photo
+  previewImageTotal.value = photo.images.length
+  previewImages.value = photo.images.slice(0, PREVIEW_BATCH).map((img) => ({
+    sortOrder: img.sortOrder,
+    dataUrl: getImageUrl(photo.id, img.sortOrder, 'thumb'),
+  }))
+}
 
-  imageReadyListenerHandle?.remove()
-  imageReadyListenerHandle = null
+const renderPdfPreviewPage = async (pageNum: number): Promise<string | null> => {
+  if (!previewPdfDoc) return null
+  let page: pdfjsLib.PDFPageProxy | null = null
+  try {
+    page = await previewPdfDoc.getPage(pageNum)
+    const rawViewport = page.getViewport({scale: 1})
+    const columns = window.innerWidth >= 680 ? 4 : 3
+    const gap = 6
+    const sidePadding = 24
+    const targetWidth = (window.innerWidth - sidePadding - gap * (columns - 1)) / columns
+    const scale = Math.max(0.4, (targetWidth * Math.min(window.devicePixelRatio || 1, 2)) / rawViewport.width)
+    const viewport = page.getViewport({scale})
+    const canvas = document.createElement('canvas')
+    canvas.width = viewport.width
+    canvas.height = viewport.height
+    const task = page.render({canvas, viewport})
+    await task.promise
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.82),
+    )
+    if (!blob) return null
+    const url = URL.createObjectURL(blob)
+    previewObjectUrls.add(url)
+    return url
+  } catch {
+    return null
+  } finally {
+    page?.cleanup()
+  }
+}
 
-  previewLoading.value = true
-  previewImages.value = []
+const loadPdfPreview = async (pdf: ImportedPdf) => {
+  clearPreviewPdf()
+  const response = await fetch(getPdfVirtualUrl(pdf.filePath))
+  if (!response.ok) throw new Error('PDF 加载失败')
+  const arrayBuffer = await response.arrayBuffer()
+  previewPdfDoc = await pdfjsLib.getDocument({data: arrayBuffer}).promise
+  previewImageTotal.value = previewPdfDoc.numPages
 
-  if (!chapterId) return
+  const firstCount = Math.min(PREVIEW_BATCH, previewPdfDoc.numPages)
+  const rendered = await Promise.all(
+    Array.from({length: firstCount}, (_, i) => renderPdfPreviewPage(i + 1)),
+  )
+  previewImages.value = rendered
+    .map((url, index) => url ? {sortOrder: index + 1, dataUrl: url} : null)
+    .filter((item): item is PreviewImage => Boolean(item))
+}
 
+const loadNetworkPreview = async (chapterId: string) => {
   // 用 Set 去重：imageReady 事件可能在 preloadImages 返回前就触发
   const addedSortOrders = new Set<number>()
   imageReadyListenerHandle = await JmcomicService.addImageReadyListener(chapterId, (sortOrder) => {
@@ -465,27 +657,64 @@ const loadPreview = async () => {
     })
   })
 
+  const photo = await JmcomicService.getPhoto(chapterId)
+  photoDetail.value = photo
+  previewImageTotal.value = photo.images.length
+
+  const batch = photo.images.slice(0, PREVIEW_BATCH)
+  const result: PreloadResult = await JmcomicService.preloadImages(chapterId, batch, 'thumb')
+
+  // 追加快取命中项（避免直接赋值覆盖 imageReady 已推送的图片）
+  for (const so of result.cached) {
+    if (!addedSortOrders.has(so)) {
+      addedSortOrders.add(so)
+      previewImages.value.push({
+        sortOrder: so,
+        dataUrl: getImageUrl(chapterId, so, 'thumb'),
+      })
+    }
+  }
+}
+
+const loadPreview = async () => {
+  const chapterId = selectedChapterId.value
+  const source = getPreferredSource()
+  const pdf = selectedChapterPdf.value
+  const cacheKey = `${source}:${chapterId}:${pdf?.id ?? ''}`
+  if (previewLoadedKey.value === cacheKey && previewImages.value.length) return
+
+  imageReadyListenerHandle?.remove()
+  imageReadyListenerHandle = null
+
+  previewLoading.value = true
+  previewImages.value = []
+  previewImageTotal.value = 0
+
+  if (!chapterId) {
+    previewLoading.value = false
+    return
+  }
+
   try {
-    const photo = await JmcomicService.getPhoto(chapterId)
-    photoDetail.value = photo
-    previewImageTotal.value = photo.images.length
-
-    const batch = photo.images.slice(0, PREVIEW_BATCH)
-    const result: PreloadResult = await JmcomicService.preloadImages(chapterId, batch, 'thumb')
-
-    // 追加快取命中项（避免直接赋值覆盖 imageReady 已推送的图片）
-    for (const so of result.cached) {
-      if (!addedSortOrders.has(so)) {
-        addedSortOrders.add(so)
-        previewImages.value.push({
-          sortOrder: so,
-          dataUrl: getImageUrl(chapterId, so, 'thumb'),
-        })
+    if (source !== 'pdf') clearPreviewPdf()
+    if (source === 'download') {
+      await loadDownloadedPreview(chapterId)
+    } else if (source === 'pdf' && pdf) {
+      await loadPdfPreview(pdf)
+    } else {
+      await loadNetworkPreview(chapterId)
+    }
+    previewLoadedKey.value = cacheKey
+  } catch (e: any) {
+    if (source === 'download' && pdf) {
+      try {
+        await loadPdfPreview(pdf)
+        previewLoadedKey.value = `pdf:${chapterId}:${pdf.id}`
+        return
+      } catch {
+        // 继续走统一错误提示
       }
     }
-
-    previewLoadedChapterId.value = chapterId
-  } catch (e: any) {
     await showToast(sanitizeError(e, '预览加载失败'), 'danger')
   } finally {
     previewLoading.value = false
@@ -522,28 +751,47 @@ watch(albumId, (newId, oldId) => {
 onUnmounted(() => {
   imageReadyListenerHandle?.remove()
   downloadProgressHandle?.remove()
+  window.removeEventListener('online', updateNetworkAvailable)
+  window.removeEventListener('offline', updateNetworkAvailable)
+  clearPreviewPdf()
 })
 
 // 跳转全量预览页
 const navigateToFullPreview = () => {
+  const source = getPreferredSource()
+  const pdf = selectedChapterPdf.value
+  const commonQuery = {
+    title: albumTitle.value,
+    total: String(previewImageTotal.value || selectedChapterPageCount.value),
+  }
+
+  if (source === 'pdf' && pdf?.filePath) {
+    void router.push({
+      path: `/album/${albumId.value}/preview/${selectedChapterId.value}`,
+      query: {
+        ...commonQuery,
+        source: 'pdf',
+        pdfPath: pdf.filePath,
+        pdfTitle: pdf.fileName,
+        albumTitle: pdf.albumTitle || albumTitle.value,
+        authors: pdf.authors || albumAuthors.value,
+        coverUrl: pdf.coverUrl || coverUrl.value,
+      },
+    })
+    return
+  }
+
   void router.push({
     path: `/album/${albumId.value}/preview/${selectedChapterId.value}`,
-    query: {title: albumTitle.value, total: String(previewImageTotal.value)},
+    query: {
+      ...commonQuery,
+      ...(source === 'download' ? {source: 'download'} : {}),
+    },
   })
 }
 
 const onOpenReader = (page: number) => {
-  const chapterId = selectedChapterId.value || albumId.value
-  const isDownloaded = chapterDownloadStatuses.value.get(chapterId) === 'completed'
-  void router.push({
-    path: `/album/${albumId.value}/read/${chapterId}`,
-    query: {
-      page: String(page),
-      title: albumTitle.value,
-      total: String(selectedChapterPageCount.value),
-      ...(isDownloaded ? {source: 'download'} : {}),
-    },
-  })
+  openReaderBySource(getPreferredSource(), page)
 }
 
 // ---- 评论 ----
@@ -697,16 +945,15 @@ const handleDownload = async () => {
 }
 
 const startReading = () => {
-  const chapterId = selectedChapterId.value || albumId.value
-  const isDownloaded = chapterDownloadStatuses.value.get(chapterId) === 'completed'
-  void router.push({
-    path: `/album/${albumId.value}/read/${chapterId}`,
-    query: {
-      title: albumTitle.value,
-      total: String(selectedChapterPageCount.value),
-      ...(isDownloaded ? {source: 'download'} : {}),
-    },
-  })
+  if (selectedChapterHasDownload.value) {
+    openReaderBySource('download')
+    return
+  }
+  if (selectedChapterPdf.value) {
+    sourceMenuOpen.value = true
+    return
+  }
+  openReaderBySource('network')
 }
 
 // ---- 导航 ----

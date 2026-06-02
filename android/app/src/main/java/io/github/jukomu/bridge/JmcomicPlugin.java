@@ -1054,6 +1054,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         try {
             String photoId = call.getString("photoId");
             String type = call.getString("type", "image");
+            boolean replacePending = call.getBoolean("replacePending", false);
             JSArray imagesArray = call.getArray("images");
             JSONArray jsonImages = new JSONArray();
             if (imagesArray != null) {
@@ -1065,7 +1066,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
                     }
                 }
             }
-            JSONObject result = preloadService.preloadImages(photoId, type, jsonImages);
+            JSONObject result = preloadService.preloadImages(photoId, type, jsonImages, replacePending);
             call.resolve(JSObject.fromJSONObject(result));
         } catch (Exception e) {
             call.reject(e.getMessage(), e);

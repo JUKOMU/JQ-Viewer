@@ -10,8 +10,9 @@
         ref="verticalViewRef"
         :image-map="imageMap"
         :total-count="totalCount"
-        :initial-index="currentIndex"
+        :current-index="currentIndex"
         @update:current-index="onPageChange"
+        @request-range="onVerticalRequestRange"
       />
       <HorizontalPageView
         v-else
@@ -47,7 +48,7 @@
 </template>
 
 <script setup lang="ts">
-import {computed, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref} from 'vue'
+import {computed, inject, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref} from 'vue'
 import {useRoute, useRouter} from 'vue-router'
 import {IonPage} from '@ionic/vue'
 import type {PluginListenerHandle} from '@capacitor/core'
@@ -77,9 +78,12 @@ const N_FAST = 50
 const M = 50
 const SPEED_THRESHOLD = 10
 const EXPAND_EXPIRE_MS = 2000
+const DRAG_PREVIEW_DELAY_MS = 500
 
 const route = useRoute()
 const router = useRouter()
+
+const updateReaderCurrentPage = inject<(page: number) => void>('updateReaderCurrentPage', () => {})
 
 // ---- 路由参数 ----
 const filePath = route.query.path as string
@@ -109,6 +113,9 @@ let lastScrollTime = 0
 let lastScrollIndex = -1
 let revertTimer: ReturnType<typeof setTimeout> | null = null
 let pendingRender: pdfjsLib.RenderTask | null = null
+let activeRenderRange: {start: number; end: number; center: number} | null = null
+let pendingSeekIndex: number | null = null
+let dragPreviewTimer: ReturnType<typeof setTimeout> | null = null
 
 const verticalViewRef = ref<InstanceType<typeof VerticalScrollView> | null>(null)
 const horizontalViewRef = ref<InstanceType<typeof HorizontalPageView> | null>(null)
@@ -124,6 +131,13 @@ const onDragStart = () => {
 
 const onDragEnd = () => {
   isDragProgress.value = false
+  if (dragPreviewTimer) {
+    clearTimeout(dragPreviewTimer)
+    dragPreviewTimer = null
+  }
+  if (pendingSeekIndex !== null) {
+    goToIndex(pendingSeekIndex, 'slider')
+  }
 }
 
 const onRootClick = (ev: MouseEvent) => {
@@ -138,14 +152,13 @@ const onRootClick = (ev: MouseEvent) => {
 
 // ---- 显示模式切换 ----
 const onDisplayModeChange = (vertical: boolean) => {
+  const targetIndex = currentIndex.value
   isVertical.value = vertical
   syncReaderState()
   nextTick(() => {
-    if (vertical) {
-      verticalViewRef.value?.scrollToIndex(currentIndex.value)
-    } else {
-      horizontalViewRef.value?.scrollToIndex(currentIndex.value)
-    }
+    requestAnimationFrame(() => {
+      goToIndex(targetIndex, 'mode')
+    })
   })
 }
 
@@ -195,11 +208,9 @@ const setupVolumeKeyListener = async () => {
       }
     } else {
       if (direction === 'up' && currentIndex.value > 0) {
-        horizontalViewRef.value?.scrollToIndex(currentIndex.value - 1)
-        onPageChange(currentIndex.value - 1)
+        goToIndex(currentIndex.value - 1, 'volume')
       } else if (direction === 'down' && currentIndex.value < totalCount.value - 1) {
-        horizontalViewRef.value?.scrollToIndex(currentIndex.value + 1)
-        onPageChange(currentIndex.value + 1)
+        goToIndex(currentIndex.value + 1, 'volume')
       }
     }
   })
@@ -281,6 +292,11 @@ const applyImageMap = () => {
   imageMap.value = new Map(imageMap.value)
 }
 
+const clampIndex = (index: number) => {
+  if (totalCount.value <= 0) return 0
+  return Math.min(totalCount.value - 1, Math.max(0, index))
+}
+
 const hasPendingInRange = (center: number, dir: 'forward' | 'backward'): boolean => {
   let checkStart: number, checkEnd: number
   if (dir === 'forward') {
@@ -298,7 +314,12 @@ const hasPendingInRange = (center: number, dir: 'forward' | 'backward'): boolean
 
 const updateWindow = (center: number) => {
   if (!pdfDoc) return
-  const windowOrders = calcWindow(center)
+  const windowOrders = new Set(calcWindow(center))
+  if (activeRenderRange) {
+    for (let i = activeRenderRange.start; i < activeRenderRange.end; i++) {
+      if (i >= 0 && i < totalCount.value) windowOrders.add(i + 1)
+    }
+  }
 
   const toRender: number[] = []
   for (const so of windowOrders) {
@@ -309,6 +330,7 @@ const updateWindow = (center: number) => {
   }
 
   // 异步渲染窗口内页面
+  toRender.sort((a, b) => Math.abs(a - (center + 1)) - Math.abs(b - (center + 1)))
   for (const pageNum of toRender) {
     renderPageToBlob(pageNum).then((url) => {
       if (url) {
@@ -326,6 +348,12 @@ const updateWindow = (center: number) => {
   const cacheMax = Math.min(totalCount.value, center + cleanForward + 1)
   const cacheSet = new Set<number>()
   for (let i = cacheMin; i < cacheMax; i++) cacheSet.add(i + 1)
+  if (activeRenderRange) {
+    for (let i = activeRenderRange.start; i < activeRenderRange.end; i++) {
+      if (i >= 0 && i < totalCount.value) cacheSet.add(i + 1)
+    }
+  }
+  for (const so of calcWindow(currentIndex.value)) cacheSet.add(so)
 
   for (const [so, url] of renderedPages) {
     if (!cacheSet.has(so)) {
@@ -337,11 +365,45 @@ const updateWindow = (center: number) => {
   applyImageMap()
 }
 
-// ---- 页码变更 ----
-const onPageChange = (index: number) => {
-  if (index < 0 || index >= totalCount.value) return
-  currentIndex.value = index
+const renderDragPreviewPage = (center: number) => {
+  if (!pdfDoc) return
+  const pageNum = center + 1
+  if (pageNum < 1 || pageNum > totalCount.value || renderedPages.has(pageNum)) return
+  renderedPages.set(pageNum, '')
+  renderPageToBlob(pageNum).then((url) => {
+    if (url) {
+      renderedPages.set(pageNum, url)
+      imageMap.value.set(pageNum, url)
+      applyImageMap()
+    }
+  })
+}
 
+const scheduleDragPreviewRender = (index: number) => {
+  pendingSeekIndex = clampIndex(index)
+  if (dragPreviewTimer) return
+  dragPreviewTimer = setTimeout(() => {
+    dragPreviewTimer = null
+    if (!isDragProgress.value || pendingSeekIndex === null) return
+    renderDragPreviewPage(pendingSeekIndex)
+  }, DRAG_PREVIEW_DELAY_MS)
+}
+
+const onVerticalRequestRange = (range: {start: number; end: number; center: number}) => {
+  activeRenderRange = {
+    start: Math.max(0, range.start),
+    end: Math.min(totalCount.value, range.end),
+    center: clampIndex(range.center),
+  }
+  if (isDragProgress.value) return
+  lastWindowCenter = activeRenderRange.center
+  updateWindow(activeRenderRange.center)
+}
+
+// ---- 页码变更 ----
+type PageChangeSource = 'scroll' | 'slider' | 'slider-input' | 'mode' | 'volume' | 'route'
+
+const updateScrollVelocity = (index: number) => {
   const now = performance.now()
   if (lastScrollIndex >= 0) {
     const deltaSec = (now - lastScrollTime) / 1000
@@ -362,67 +424,71 @@ const onPageChange = (index: number) => {
   }
   lastScrollTime = now
   lastScrollIndex = index
+}
 
-  const threshold = isVertical.value ? 3 : 1
-  if (Math.abs(index - lastWindowCenter) >= threshold) {
-    lastWindowCenter = index
-    updateWindow(index)
+const moveReaderViewToIndex = (index: number) => {
+  if (isVertical.value) {
+    verticalViewRef.value?.scrollToIndex(index)
+  } else {
+    horizontalViewRef.value?.scrollToIndex(index)
   }
 }
 
-const onProgressDrag = (page1Based: number) => {
-  if (!isDragProgress.value) return
-  const index = page1Based - 1
+const goToIndex = (index: number, source: PageChangeSource) => {
   if (index < 0 || index >= totalCount.value) return
-  currentIndex.value = index
-  lastWindowCenter = index
-  expandDirection = null
+  const next = clampIndex(index)
+  currentIndex.value = next
+  updateReaderCurrentPage(next + 1)
+
+  if (source === 'slider-input') {
+    scheduleDragPreviewRender(next)
+    moveReaderViewToIndex(next)
+    return
+  }
+
+  pendingSeekIndex = null
+  if (dragPreviewTimer) {
+    clearTimeout(dragPreviewTimer)
+    dragPreviewTimer = null
+  }
+
+  if (source === 'scroll') {
+    updateScrollVelocity(next)
+    const threshold = isVertical.value ? 3 : 1
+    if (Math.abs(next - lastWindowCenter) >= threshold) {
+      lastWindowCenter = next
+      updateWindow(next)
+    }
+    return
+  }
+
   if (revertTimer) {
     clearTimeout(revertTimer)
     revertTimer = null
   }
-  // 取消当前渲染，优先落点页
-  if (pendingRender) {
+  expandDirection = null
+
+  lastWindowCenter = next
+  if (pendingRender && source === 'slider') {
     pendingRender.cancel()
     pendingRender = null
   }
-  updateWindow(index)
-  if (isVertical.value) {
-    verticalViewRef.value?.scrollToIndex(index)
-  } else {
-    horizontalViewRef.value?.scrollToIndex(index)
-  }
+  updateWindow(next)
+
+  moveReaderViewToIndex(next)
 }
 
-let lastUpdateWindowTime = 0
-const UPDATE_WINDOW_THROTTLE_MS = 150
+const onPageChange = (index: number) => {
+  goToIndex(index, 'scroll')
+}
+
+const onProgressDrag = (page1Based: number) => {
+  goToIndex(page1Based - 1, 'slider')
+}
 
 const onProgressInput = (page1Based: number) => {
   if (!isDragProgress.value) return
-  const index = page1Based - 1
-  if (index < 0 || index >= totalCount.value) return
-  currentIndex.value = index
-  if (isVertical.value) {
-    verticalViewRef.value?.scrollToIndex(index)
-  } else {
-    horizontalViewRef.value?.scrollToIndex(index)
-  }
-
-  const now = performance.now()
-  if (now - lastUpdateWindowTime > UPDATE_WINDOW_THROTTLE_MS) {
-    lastUpdateWindowTime = now
-    lastWindowCenter = index
-    expandDirection = null
-    if (revertTimer) {
-      clearTimeout(revertTimer)
-      revertTimer = null
-    }
-    if (pendingRender) {
-      pendingRender.cancel()
-      pendingRender = null
-    }
-    updateWindow(index)
-  }
+  goToIndex(page1Based - 1, 'slider-input')
 }
 
 // ---- 浏览历史 ----
@@ -476,6 +542,12 @@ onMounted(async () => {
   }
 
   activateReaderRuntime()
+  activeRenderRange = null
+  pendingSeekIndex = null
+  if (dragPreviewTimer) {
+    clearTimeout(dragPreviewTimer)
+    dragPreviewTimer = null
+  }
 
   try {
     const url = getPdfVirtualUrl(filePath)
@@ -484,14 +556,22 @@ onMounted(async () => {
     const arrayBuffer = await response.arrayBuffer()
     if (arrayBuffer.byteLength === 0) throw new Error('文件不存在或已失效')
     pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
-    totalCount.value = pdfDoc.numPages
+    const total = pdfDoc.numPages
+    const pageParam = Number(route.query.page)
+    const initIndex = Math.min(
+      Math.max((pageParam > 0 ? pageParam : 1) - 1, 0),
+      Math.max(0, total - 1),
+    )
+    currentIndex.value = initIndex
+    totalCount.value = total
+    updateReaderCurrentPage(initIndex + 1)
     toolbarVisible.value = true
 
-    updateWindow(0)
+    updateWindow(initIndex)
 
     nextTick(() => {
       if (isVertical.value) {
-        verticalViewRef.value?.scrollToIndex(0)
+        verticalViewRef.value?.scrollToIndex(initIndex)
       }
     })
 
@@ -514,11 +594,7 @@ onMounted(async () => {
 onActivated(() => {
   activateReaderRuntime()
   nextTick(() => {
-    if (isVertical.value) {
-      verticalViewRef.value?.scrollToIndex(currentIndex.value)
-    } else {
-      horizontalViewRef.value?.scrollToIndex(currentIndex.value)
-    }
+    goToIndex(currentIndex.value, 'route')
   })
 })
 
@@ -529,6 +605,7 @@ onDeactivated(() => {
 onUnmounted(() => {
   deactivateReaderRuntime()
   if (revertTimer) clearTimeout(revertTimer)
+  if (dragPreviewTimer) clearTimeout(dragPreviewTimer)
   if (pendingRender) {
     pendingRender.cancel()
     pendingRender = null

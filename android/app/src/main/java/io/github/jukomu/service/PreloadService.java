@@ -16,6 +16,8 @@ import org.json.JSONObject;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 图片预加载与缓存管理——预加载、缩略图生成、缓存容量/清理。
@@ -32,6 +34,9 @@ public class PreloadService {
     private final ExecutorService imageExecutor;
     private final ServiceListener listener;
     private final Context context;
+    private final ConcurrentHashMap<String, Long> pendingKeys = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Long> activeGenerations = new ConcurrentHashMap<>();
+    private final AtomicLong generationCounter = new AtomicLong();
 
     public PreloadService(ImageCache imageCache, FileStore fileStore,
                           SettingsStore settingsDb, JmApiClient client,
@@ -49,6 +54,10 @@ public class PreloadService {
     // ---- 图片预加载 ----
 
     public JSONObject preloadImages(String photoId, String type, JSONArray imagesArray) {
+        return preloadImages(photoId, type, imagesArray, false);
+    }
+
+    public JSONObject preloadImages(String photoId, String type, JSONArray imagesArray, boolean replacePending) {
         JSONObject ret = new JSONObject();
         if (imagesArray == null || imagesArray.length() == 0) {
             try {
@@ -67,6 +76,13 @@ public class PreloadService {
         List<Integer> cached = new ArrayList<>();
         List<Integer> pending = new ArrayList<>();
         final boolean isThumb = "thumb".equals(type);
+        final String scopeKey = photoId + "/" + type;
+        final long generation = replacePending
+            ? generationCounter.incrementAndGet()
+            : activeGenerations.getOrDefault(scopeKey, 0L);
+        if (replacePending) {
+            activeGenerations.put(scopeKey, generation);
+        }
 
         for (int i = 0; i < imagesArray.length(); i++) {
             JSONObject imgObj;
@@ -103,15 +119,22 @@ public class PreloadService {
                 if (isThumb) {
                     // 缩略图：提交到线程池生成
                     pending.add(sortOrder);
+                    if (!markPending(cacheKey, generation, replacePending)) {
+                        continue;
+                    }
                     imageExecutor.submit(() -> {
                         try {
+                            if (isStale(scopeKey, generation)) return;
                             byte[] thumbBytes = ImageCache.createThumbnail(localBytes);
+                            if (isStale(scopeKey, generation)) return;
                             imageCache.put(cacheKey, thumbBytes, "image/jpeg");
                             String mime = "image/" + ImageCache.guessFormatName(localBytes);
                             imageCache.put(photoId + "/" + sortOrder, localBytes, mime);
                             notifyImageReady(photoId, sortOrder, type);
                         } catch (Exception e) {
                             Log.d(TAG, "缩略图生成失败", e);
+                        } finally {
+                            pendingKeys.remove(cacheKey, generation);
                         }
                     });
                 } else {
@@ -126,6 +149,9 @@ public class PreloadService {
 
             // 本地未命中 → 网络下载
             pending.add(sortOrder);
+            if (!markPending(cacheKey, generation, replacePending)) {
+                continue;
+            }
 
             final String scrambleId = imgObj.optString("scrambleId");
             final String filename = imgObj.optString("filename");
@@ -134,8 +160,10 @@ public class PreloadService {
 
             imageExecutor.submit(() -> {
                 try {
+                    if (isStale(scopeKey, generation)) return;
                     JmImage jmImage = new JmImage(photoId, scrambleId, filename, url, queryParams, sortOrder);
                     byte[] decrypted = client.fetchImageBytes(jmImage);
+                    if (isStale(scopeKey, generation)) return;
                     String formatName = JmImageTool.getFormatName(filename);
                     String mimeType = "image/" + formatName;
 
@@ -150,6 +178,8 @@ public class PreloadService {
                     notifyImageReady(photoId, sortOrder, type);
                 } catch (Exception e) {
                     Log.d(TAG, "图片下载或解密失败", e);
+                } finally {
+                    pendingKeys.remove(cacheKey, generation);
                 }
             });
         }
@@ -165,6 +195,18 @@ public class PreloadService {
             Log.d(TAG, "构建待处理列表失败", e);
         }
         return ret;
+    }
+
+    private boolean isStale(String scopeKey, long generation) {
+        return activeGenerations.getOrDefault(scopeKey, 0L) != generation;
+    }
+
+    private boolean markPending(String cacheKey, long generation, boolean replacePending) {
+        if (replacePending) {
+            pendingKeys.put(cacheKey, generation);
+            return true;
+        }
+        return pendingKeys.putIfAbsent(cacheKey, generation) == null;
     }
 
     // ---- 缓存管理 ----

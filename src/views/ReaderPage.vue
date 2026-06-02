@@ -12,8 +12,9 @@
         ref="verticalViewRef"
         :image-map="imageMap"
         :total-count="totalCount"
-        :initial-index="currentIndex"
+        :current-index="currentIndex"
         @update:current-index="onPageChange"
+        @request-range="onVerticalRequestRange"
       />
       <HorizontalPageView
         v-else
@@ -51,7 +52,7 @@
 </template>
 
 <script setup lang="ts">
-import {computed, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref} from 'vue'
+import {computed, inject, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref, shallowRef} from 'vue'
 import {useRoute, useRouter} from 'vue-router'
 import {IonPage} from '@ionic/vue'
 import type {PluginListenerHandle} from '@capacitor/core'
@@ -75,9 +76,12 @@ const N_FAST = 50
 const M = 50
 const SPEED_THRESHOLD = 10
 const EXPAND_EXPIRE_MS = 2000
+const DRAG_PREVIEW_DELAY_MS = 500
 
 const route = useRoute()
 const router = useRouter()
+
+const updateReaderCurrentPage = inject<(page: number) => void>('updateReaderCurrentPage', () => {})
 
 // ---- 路由参数 ----
 const albumId = computed(() => route.params.albumId as string)
@@ -87,11 +91,10 @@ const isOffline = computed(() => route.query.source === 'download')
 
 // ---- 核心状态 ----
 const isVertical = ref(SettingsStore.getReaderDisplayMode() === 'vertical')
-const initialTotal = Number(route.query.total) || 0
 const currentIndex = ref(0)
-const totalCount = ref(initialTotal)
-const imageMap = ref<Map<number, string>>(new Map())
-const toolbarVisible = ref(initialTotal > 0)
+const totalCount = ref(0)
+const imageMap = shallowRef<Map<number, string>>(new Map())
+const toolbarVisible = ref(true)
 const isDragProgress = ref(false)
 const settingsPanelVisible = ref(false)
 let photoDetail: PhotoDetail | null = null
@@ -107,6 +110,9 @@ let expandDirection: 'forward' | 'backward' | null = null
 let lastScrollTime = 0
 let lastScrollIndex = -1
 let revertTimer: ReturnType<typeof setTimeout> | null = null
+let activeRenderRange: {start: number; end: number; center: number} | null = null
+let pendingSeekIndex: number | null = null
+let dragPreviewTimer: ReturnType<typeof setTimeout> | null = null
 const verticalViewRef = ref<InstanceType<typeof VerticalScrollView> | null>(null)
 const horizontalViewRef = ref<InstanceType<typeof HorizontalPageView> | null>(null)
 
@@ -121,6 +127,13 @@ const onDragStart = () => {
 
 const onDragEnd = () => {
   isDragProgress.value = false
+  if (dragPreviewTimer) {
+    clearTimeout(dragPreviewTimer)
+    dragPreviewTimer = null
+  }
+  if (pendingSeekIndex !== null) {
+    goToIndex(pendingSeekIndex, 'slider')
+  }
 }
 
 // 点击中间 1/3 呼出/收起工具栏（纵向滚动模式下由 root 层处理）
@@ -135,14 +148,13 @@ const onRootClick = (ev: MouseEvent) => {
 }
 
 const onDisplayModeChange = (vertical: boolean) => {
+  const targetIndex = currentIndex.value
   isVertical.value = vertical
   syncReaderState()
   nextTick(() => {
-    if (vertical) {
-      verticalViewRef.value?.scrollToIndex(currentIndex.value)
-    } else {
-      horizontalViewRef.value?.scrollToIndex(currentIndex.value)
-    }
+    requestAnimationFrame(() => {
+      goToIndex(targetIndex, 'mode')
+    })
   })
 }
 
@@ -193,11 +205,9 @@ const setupVolumeKeyListener = async () => {
       }
     } else {
       if (direction === 'up' && currentIndex.value > 0) {
-        horizontalViewRef.value?.scrollToIndex(currentIndex.value - 1)
-        onPageChange(currentIndex.value - 1)
+        goToIndex(currentIndex.value - 1, 'volume')
       } else if (direction === 'down' && currentIndex.value < totalCount.value - 1) {
-        horizontalViewRef.value?.scrollToIndex(currentIndex.value + 1)
-        onPageChange(currentIndex.value + 1)
+        goToIndex(currentIndex.value + 1, 'volume')
       }
     }
   })
@@ -223,8 +233,30 @@ const calcWindow = (center: number): number[] => {
   return result
 }
 
+const prioritizeSortOrders = (orders: number[], center: number): number[] => {
+  const centerSortOrder = center + 1
+  return [...new Set(orders)]
+    .filter((so) => so >= 1 && so <= totalCount.value)
+    .sort((a, b) => Math.abs(a - centerSortOrder) - Math.abs(b - centerSortOrder) || a - b)
+}
+
+const calcPriorityWindow = (center: number): number[] => {
+  const orders = [center + 1, ...calcWindow(center)]
+  if (activeRenderRange) {
+    for (let i = activeRenderRange.start; i < activeRenderRange.end; i++) {
+      orders.push(i + 1)
+    }
+  }
+  return prioritizeSortOrders(orders, center)
+}
+
 const applyImageMap = () => {
   imageMap.value = new Map(imageMap.value)
+}
+
+const clampIndex = (index: number) => {
+  if (totalCount.value <= 0) return 0
+  return Math.min(totalCount.value - 1, Math.max(0, index))
 }
 
 const hasPendingInRange = (center: number, dir: 'forward' | 'backward'): boolean => {
@@ -243,9 +275,9 @@ const hasPendingInRange = (center: number, dir: 'forward' | 'backward'): boolean
   return false
 }
 
-const updateWindow = (center: number) => {
+const updateWindow = (center: number, replacePending = false) => {
   if (!photoDetail) return
-  const windowOrders = new Set(calcWindow(center))
+  const windowOrders = calcPriorityWindow(center)
 
   if (isOffline.value) {
     for (const so of windowOrders) {
@@ -267,7 +299,7 @@ const updateWindow = (center: number) => {
     }
 
     if (toLoad.length > 0) {
-      JmcomicService.preloadImages(photoDetail.id, toLoad, 'image')
+      JmcomicService.preloadImages(photoDetail.id, toLoad, 'image', {replacePending})
         .then((result: PreloadResult) => {
           for (const so of result.cached) {
             imageMap.value.set(so, getImageUrl(photoDetail!.id, so, 'image'))
@@ -286,6 +318,12 @@ const updateWindow = (center: number) => {
   const cacheMax = Math.min(totalCount.value, center + cleanForward + 1)
   const cacheSet = new Set<number>()
   for (let i = cacheMin; i < cacheMax; i++) cacheSet.add(i + 1)
+  if (activeRenderRange) {
+    for (let i = activeRenderRange.start; i < activeRenderRange.end; i++) {
+      if (i >= 0 && i < totalCount.value) cacheSet.add(i + 1)
+    }
+  }
+  for (const so of calcWindow(currentIndex.value)) cacheSet.add(so)
 
   for (const so of loadedSortOrders) {
     if (!cacheSet.has(so)) {
@@ -296,11 +334,61 @@ const updateWindow = (center: number) => {
   applyImageMap()
 }
 
-// ---- 页码变更 ----
-const onPageChange = (index: number) => {
-  if (index < 0 || index >= totalCount.value) return
-  currentIndex.value = index
+const loadDragPreviewImage = (center: number) => {
+  if (!photoDetail) return
+  const so = center + 1
+  if (so < 1 || so > totalCount.value || loadedSortOrders.has(so) || requestedSortOrders.has(so)) return
 
+  if (isOffline.value) {
+    imageMap.value.set(so, getImageUrl(photoDetail.id, so, 'image'))
+    loadedSortOrders.add(so)
+    applyImageMap()
+    return
+  }
+
+  const img = sortOrderToImage.get(so)
+  if (!img) return
+  requestedSortOrders.add(so)
+  JmcomicService.preloadImages(photoDetail.id, [img], 'image', {replacePending: true})
+    .then((result: PreloadResult) => {
+      for (const cachedSo of result.cached) {
+        imageMap.value.set(cachedSo, getImageUrl(photoDetail!.id, cachedSo, 'image'))
+        loadedSortOrders.add(cachedSo)
+      }
+      applyImageMap()
+    })
+    .catch(() => {
+    })
+}
+
+const scheduleDragPreviewLoad = (index: number) => {
+  pendingSeekIndex = clampIndex(index)
+  if (dragPreviewTimer) return
+  dragPreviewTimer = setTimeout(() => {
+    dragPreviewTimer = null
+    if (!isDragProgress.value || pendingSeekIndex === null) return
+    loadDragPreviewImage(pendingSeekIndex)
+    if (pendingSeekIndex !== currentIndex.value) {
+      scheduleDragPreviewLoad(pendingSeekIndex)
+    }
+  }, DRAG_PREVIEW_DELAY_MS)
+}
+
+const onVerticalRequestRange = (range: {start: number; end: number; center: number}) => {
+  activeRenderRange = {
+    start: Math.max(0, range.start),
+    end: Math.min(totalCount.value, range.end),
+    center: clampIndex(range.center),
+  }
+  if (isDragProgress.value) return
+  lastWindowCenter = activeRenderRange.center
+  updateWindow(activeRenderRange.center)
+}
+
+// ---- 页码变更 ----
+type PageChangeSource = 'scroll' | 'slider' | 'slider-input' | 'mode' | 'volume' | 'route'
+
+const updateScrollVelocity = (index: number) => {
   // 划动速度检测
   const now = performance.now()
   if (lastScrollIndex >= 0) {
@@ -321,58 +409,67 @@ const onPageChange = (index: number) => {
   }
   lastScrollTime = now
   lastScrollIndex = index
+}
 
-  const threshold = isVertical.value ? 3 : 1
-  if (Math.abs(index - lastWindowCenter) >= threshold) {
-    lastWindowCenter = index
-    updateWindow(index)
+const moveReaderViewToIndex = (index: number) => {
+  if (isVertical.value) {
+    verticalViewRef.value?.scrollToIndex(index)
+  } else {
+    horizontalViewRef.value?.scrollToIndex(index)
   }
 }
 
-const onProgressDrag = (page1Based: number) => {
-  if (!isDragProgress.value) return
-  const index = page1Based - 1
+const goToIndex = (index: number, source: PageChangeSource) => {
   if (index < 0 || index >= totalCount.value) return
-  currentIndex.value = index
-  lastWindowCenter = index
-  expandDirection = null
+  const next = clampIndex(index)
+  currentIndex.value = next
+  updateReaderCurrentPage(next + 1)
+
+  if (source === 'slider-input') {
+    scheduleDragPreviewLoad(next)
+    moveReaderViewToIndex(next)
+    return
+  }
+
+  pendingSeekIndex = null
+  if (dragPreviewTimer) {
+    clearTimeout(dragPreviewTimer)
+    dragPreviewTimer = null
+  }
+
+  if (source === 'scroll') {
+    updateScrollVelocity(next)
+    const threshold = isVertical.value ? 3 : 1
+    if (Math.abs(next - lastWindowCenter) >= threshold) {
+      lastWindowCenter = next
+      updateWindow(next)
+    }
+    return
+  }
+
   if (revertTimer) {
     clearTimeout(revertTimer)
     revertTimer = null
   }
-  updateWindow(index)
-  if (isVertical.value) {
-    verticalViewRef.value?.scrollToIndex(index)
-  } else {
-    horizontalViewRef.value?.scrollToIndex(index)
-  }
+  expandDirection = null
+
+  lastWindowCenter = next
+  updateWindow(next, source === 'slider' || source === 'route')
+
+  moveReaderViewToIndex(next)
 }
 
-let lastUpdateWindowTime = 0
-const UPDATE_WINDOW_THROTTLE_MS = 150
+const onPageChange = (index: number) => {
+  goToIndex(index, 'scroll')
+}
+
+const onProgressDrag = (page1Based: number) => {
+  goToIndex(page1Based - 1, 'slider')
+}
 
 const onProgressInput = (page1Based: number) => {
   if (!isDragProgress.value) return
-  const index = page1Based - 1
-  if (index < 0 || index >= totalCount.value) return
-  currentIndex.value = index
-  if (isVertical.value) {
-    verticalViewRef.value?.scrollToIndex(index)
-  } else {
-    horizontalViewRef.value?.scrollToIndex(index)
-  }
-
-  const now = performance.now()
-  if (now - lastUpdateWindowTime > UPDATE_WINDOW_THROTTLE_MS) {
-    lastUpdateWindowTime = now
-    lastWindowCenter = index
-    expandDirection = null
-    if (revertTimer) {
-      clearTimeout(revertTimer)
-      revertTimer = null
-    }
-    updateWindow(index)
-  }
+  goToIndex(page1Based - 1, 'slider-input')
 }
 
 // ---- 图片就绪监听 ----
@@ -454,6 +551,12 @@ onMounted(() => {
   loadedSortOrders = new Set()
   requestedSortOrders = new Set()
   sortOrderToImage = new Map()
+  activeRenderRange = null
+  pendingSeekIndex = null
+  if (dragPreviewTimer) {
+    clearTimeout(dragPreviewTimer)
+    dragPreviewTimer = null
+  }
   expandDirection = null
   lastScrollTime = 0
   lastScrollIndex = -1
@@ -469,15 +572,20 @@ onMounted(() => {
       .then((pd) => {
         photoDetail = pd
 
+        const total = pd.images.length
         const pageParam = Number(route.query.page)
-        currentIndex.value = (pageParam > 0 ? pageParam : 1) - 1
-
-        totalCount.value = pd.images.length
+        currentIndex.value = Math.min(
+          Math.max((pageParam > 0 ? pageParam : 1) - 1, 0),
+          Math.max(0, total - 1),
+        )
+        totalCount.value = total
+        updateReaderCurrentPage(currentIndex.value + 1)
 
         toolbarVisible.value = true
 
         const initOrders = calcWindow(currentIndex.value)
-        for (const so of initOrders) {
+        const priorityInitOrders = prioritizeSortOrders(initOrders, currentIndex.value)
+        for (const so of priorityInitOrders) {
           if (!loadedSortOrders.has(so)) {
             imageMap.value.set(so, getImageUrl(pd.id, so, 'image'))
             loadedSortOrders.add(so)
@@ -503,10 +611,14 @@ onMounted(() => {
         photoDetail = pd
         sortOrderToImage = new Map(pd.images.map((i) => [i.sortOrder, i]))
 
+        const total = pd.images.length
         const pageParam = Number(route.query.page)
-        currentIndex.value = (pageParam > 0 ? pageParam : 1) - 1
-
-        totalCount.value = pd.images.length
+        currentIndex.value = Math.min(
+          Math.max((pageParam > 0 ? pageParam : 1) - 1, 0),
+          Math.max(0, total - 1),
+        )
+        totalCount.value = total
+        updateReaderCurrentPage(currentIndex.value + 1)
 
         toolbarVisible.value = true
 
@@ -515,9 +627,12 @@ onMounted(() => {
           })
         }
 
-        const initOrders = calcWindow(currentIndex.value)
-        const initImages = pd.images.filter((i) => initOrders.includes(i.sortOrder))
-        for (const so of initOrders) {
+        const initOrders = prioritizeSortOrders(calcWindow(currentIndex.value), currentIndex.value)
+        const initOrderSet = new Set(initOrders)
+        const initImages = initOrders
+          .map((so) => sortOrderToImage.get(so))
+          .filter((i): i is ImageInfo => Boolean(i))
+        for (const so of initOrderSet) {
           requestedSortOrders.add(so)
         }
         if (initImages.length > 0) {
@@ -552,11 +667,7 @@ onMounted(() => {
 onActivated(() => {
   activateReaderRuntime()
   nextTick(() => {
-    if (isVertical.value) {
-      verticalViewRef.value?.scrollToIndex(currentIndex.value)
-    } else {
-      horizontalViewRef.value?.scrollToIndex(currentIndex.value)
-    }
+    goToIndex(currentIndex.value, 'route')
   })
 })
 
@@ -568,6 +679,7 @@ onUnmounted(() => {
   deactivateReaderRuntime()
   if (triggerRafId) cancelAnimationFrame(triggerRafId)
   if (revertTimer) clearTimeout(revertTimer)
+  if (dragPreviewTimer) clearTimeout(dragPreviewTimer)
 })
 </script>
 

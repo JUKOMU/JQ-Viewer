@@ -62,6 +62,7 @@ interface JmcomicPlugin {
     photoId: string
     images: ImageInfo[]
     type: string
+    replacePending?: boolean
   }): Promise<PreloadResult>
 
   setCacheCapacity(options: { mb: number }): Promise<{ success: boolean; capacityMb: number }>
@@ -358,8 +359,13 @@ export const JmcomicService = {
    * @param type "image" 加载原图，"thumb" 加载缩略图
    * @returns {cached: 已在缓存中的 sortOrder[], pending: 正在下载中的 sortOrder[]}
    */
-  preloadImages(photoId: string, images: ImageInfo[], type: 'image' | 'thumb' = 'image') {
-    return native.preloadImages({photoId, images, type})
+  preloadImages(
+    photoId: string,
+    images: ImageInfo[],
+    type: 'image' | 'thumb' = 'image',
+    options: { replacePending?: boolean } = {},
+  ) {
+    return native.preloadImages({photoId, images, type, replacePending: options.replacePending})
   },
 
   /** 设置图片缓存容量（MB），供设置页调用 */

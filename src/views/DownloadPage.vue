@@ -254,7 +254,7 @@ import {JmcomicService, sanitizeError, showToast} from '@/services/JmcomicServic
 import {alertController} from '@ionic/vue'
 import {OfflineDownloadService} from '@/services/OfflineDownloadService'
 import {PdfExportService} from '@/services/PdfExportService'
-import type {CompletedEntry, CompletedGroup, DownloadTask, ImportedPdf, PdfExportTask} from '@/services/JmcomicTypes'
+import type {AlbumDetail, CompletedEntry, CompletedGroup, DownloadTask, ImportedPdf, PdfExportTask} from '@/services/JmcomicTypes'
 import {PdfImportService} from '@/services/PdfImportService'
 
 const router = useRouter()
@@ -657,6 +657,21 @@ const onPdfExportConfirm = async (payload: {
 }) => {
   showPdfSheet.value = false
 
+  // 多章节时获取本子详情以支持 author/authors/tag 模板变量
+  let albumDetail: AlbumDetail | null = null
+  if (payload.selectedChapters.length !== 1) {
+    try {
+      albumDetail = await JmcomicService.getAlbum(payload.selectedChapters[0].albumId)
+    } catch { /* 获取失败则变量渲染为空 */ }
+  }
+
+  function resolveChapterName(ch: DownloadTask, album: AlbumDetail | null): string {
+    if (album?.seriesId === '0') return album.title || ch.albumTitle
+    const order = ch.chapterSortOrder
+    if (order && order > 0) return `第${order}話`
+    return ch.chapterTitle || ''
+  }
+
   const tasks: PdfExportTask[] = payload.selectedChapters.map((ch) => {
     const savePath =
       payload.selectedChapters.length === 1
@@ -665,8 +680,12 @@ const onPdfExportConfirm = async (payload: {
             id: ch.albumId,
             title: ch.albumTitle,
             chapterId: ch.chapterId,
-            chapterName: ch.chapterTitle,
+            chapterName: resolveChapterName(ch, albumDetail),
+            chapterTitle: ch.chapterTitle || '',
             pageCount: ch.totalPages,
+            author: albumDetail?.authors?.[0] ?? '',
+            authors: albumDetail?.authors?.join('、') ?? '',
+            tags: albumDetail?.tags ?? [],
           })
 
     return {

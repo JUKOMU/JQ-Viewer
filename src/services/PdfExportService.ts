@@ -3,15 +3,32 @@ const KEY_DIR_TEMPLATE = 'jq-pdf-dir-template'
 const KEY_NAME_TEMPLATE = 'jq-pdf-name-template'
 
 const DEFAULT_EXPORT_PATH = 'Download/JQ-Viewer/'
-const DEFAULT_DIR_TEMPLATE = '{id}{title}'
-const DEFAULT_NAME_TEMPLATE = '{chapterId}_{chapterName}'
+const DEFAULT_DIR_TEMPLATE = '{id}'
+const DEFAULT_NAME_TEMPLATE = '【{author}】{title}_{id} {chapterName}'
 
 export interface PdfTemplateData {
   id: string
   title: string
   chapterId: string
   chapterName: string
+  chapterTitle: string
   pageCount: number
+  author: string
+  authors: string
+  tags: string[]
+}
+
+/** 内置示例数据，供预览和设置页渲染值展示复用 */
+export const PDF_SAMPLE_DATA: PdfTemplateData = {
+  id: '295852',
+  title: '青梅竹馬絕對不會輸的戀愛喜劇～鄰家四姐妹的溫馨日常～ [綠茶漢化][葵季むつみ/二丸修一/しぐれうい]  幼なじみが絕對に負けないラブコメ お鄰の四姉妹が絕對にほのぼのする日常',
+  chapterId: '295852',
+  chapterName: '第1話',
+  chapterTitle: '',
+  pageCount: 38,
+  author: '葵季むつみ',
+  authors: '葵季むつみ、二丸修一、しぐれうい',
+  tags: ['非H', '劇情向', '蘿莉', '純愛', '中文'],
 }
 
 export const PdfExportService = {
@@ -82,12 +99,45 @@ export const PdfExportService = {
   // ---- 模板渲染 ----
 
   renderTemplate(template: string, data: PdfTemplateData): string {
-    return template
+    let result = template
       .replace(/\{id\}/g, data.id)
       .replace(/\{title\}/g, data.title)
       .replace(/\{chapterId\}/g, data.chapterId)
       .replace(/\{chapterName\}/g, data.chapterName)
+      .replace(/\{chapterTitle\}/g, data.chapterTitle)
       .replace(/\{pageCount\}/g, String(data.pageCount))
+      .replace(/\{author\}/g, data.author)
+      .replace(/\{authors\}/g, data.authors)
+      .replace(/\{tags\}/g, data.tags.join('、'))
+    result = PdfExportService.renderTagConditions(result, data.tags)
+    return result
+  },
+
+  /** 处理 {tag=xxx} 内联条件：匹配到则渲染标签名，否则为空 */
+  renderTagConditions(template: string, tags: string[]): string {
+    return template.replace(/\{tag=([^}]+)\}/g, (_match, expr: string) => {
+      const trimmed = expr.trim()
+      if (!trimmed) return ''
+
+      const hasOr = trimmed.includes('|')
+      const hasAnd = trimmed.includes('&')
+
+      if (hasOr && hasAnd) return ''
+
+      if (hasOr) {
+        const orTags = trimmed.split('|').map(s => s.trim()).filter(Boolean)
+        const matched = orTags.filter(t => tags.includes(t))
+        return matched.join('、')
+      }
+
+      if (hasAnd) {
+        const andTags = trimmed.split('&').map(s => s.trim()).filter(Boolean)
+        const allMatch = andTags.every(t => tags.includes(t))
+        return allMatch ? andTags.join('、') : ''
+      }
+
+      return tags.includes(trimmed) ? trimmed : ''
+    })
   },
 
   /**
@@ -120,13 +170,6 @@ export const PdfExportService = {
 
   /** 用示例数据生成预览 */
   previewPath(): string {
-    const sample: PdfTemplateData = {
-      id: '123456',
-      title: 'サンプル漫画タイトル',
-      chapterId: '789012',
-      chapterName: '第1話',
-      pageCount: 42,
-    }
-    return PdfExportService.buildFullPath(sample)
+    return PdfExportService.buildFullPath(PDF_SAMPLE_DATA)
   },
 }

@@ -82,6 +82,10 @@ const routes: Array<RouteRecordRaw> = [
     component: () => import('@/views/AboutPage.vue'),
   },
   {
+    path: '/pdf-template-help',
+    component: () => import('@/views/PdfTemplateHelpPage.vue'),
+  },
+  {
     path: '/batch-parse',
     name: 'BatchParsePage',
     component: () => import('@/views/BatchParsePage.vue'),

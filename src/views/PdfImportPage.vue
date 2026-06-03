@@ -76,9 +76,24 @@
             </div>
             <div class="status-row">
               <span class="status-tag" :class="statusTagClass(file)">{{ statusTagText(file) }}</span>
-              <span v-if="file.chapterSortOrder != null" class="status-tag chapter-tag">
+              <span v-if="shouldShowChapterTag(file)" class="status-tag chapter-tag">
                 第{{ file.chapterSortOrder }}话
               </span>
+              <span v-else-if="needsChapterSelection(file)" class="status-tag chapter-tag pending">
+                {{ chapterSelectionText(file) }}
+              </span>
+            </div>
+            <div v-if="file.status === 'ambiguous' && candidateIds(file).length > 1" class="candidate-row">
+              <button
+                v-for="id in candidateIds(file)"
+                :key="id"
+                type="button"
+                class="candidate-id-btn"
+                :disabled="resolvingCandidate"
+                @click.stop="selectParsedCandidate(idx, id)"
+              >
+                #{{ id }}
+              </button>
             </div>
           </div>
 
@@ -163,7 +178,7 @@
                 :class="{ active: selectedChapterSortOrder === chapter.sortOrder }"
                 @click="selectedChapterSortOrder = chapter.sortOrder"
               >
-                <span class="chapter-order">order {{ chapter.sortOrder }}</span>
+                <span class="chapter-order">第{{ chapter.sortOrder }}话</span>
                 <span class="chapter-name">{{ chapter.title }}</span>
               </button>
             </div>
@@ -201,9 +216,6 @@
               >
                 <div v-if="candidateDetailLoading" class="drawer-detail-loading">正在加载详情...</div>
                 <div v-else>
-                  <div v-if="drawerDetailTags.length" class="drawer-detail-tags">
-                    <span v-for="tag in drawerDetailTags" :key="tag" class="drawer-detail-tag">{{ tag }}</span>
-                  </div>
                   <div v-if="candidateChapters.length > 0" class="drawer-detail-meta-row">
                     <span>章节：{{ candidateChapters.length }}</span>
                   </div>
@@ -310,19 +322,62 @@ const resolveChapter = (detail?: AlbumDetail | null, sortOrder?: number): PhotoM
   return chapters.length === 1 ? chapters[0] : null
 }
 
+const candidateIds = (file: PdfFileParseItem): string[] =>
+  Array.from(new Set(file.editedIds?.length ? file.editedIds : file.extractedIds))
+
+const resolvedId = (file: PdfFileParseItem): string | null => {
+  const ids = candidateIds(file)
+  return ids.length === 1 ? ids[0] : null
+}
+
+const resolveFileChapter = (
+  detail: AlbumDetail | null | undefined,
+  file: PdfFileParseItem,
+  explicitSortOrder?: number,
+): PhotoMeta | null =>
+  resolveChapter(detail, explicitSortOrder ?? file.chapterSortOrder ?? file.chapterSortOrderHint)
+
+const applyChapterFields = (file: PdfFileParseItem, chapter: PhotoMeta | null) => {
+  file.chapterId = chapter?.id
+  file.chapterTitle = chapter?.title
+  file.chapterSortOrder = chapter?.sortOrder
+}
+
+const needsChapterSelection = (file: PdfFileParseItem): boolean =>
+  !!resolvedId(file) &&
+  !!file.albumDetail &&
+  (file.albumDetail.photoMetas?.length ?? 0) > 1 &&
+  !file.chapterId
+
+const isImportReady = (file: PdfFileParseItem): boolean =>
+  !!resolvedId(file) && !needsChapterSelection(file)
+
+const shouldShowChapterTag = (file: PdfFileParseItem): boolean =>
+  file.chapterSortOrder != null &&
+  (file.albumDetail?.photoMetas?.length ?? 0) > 1
+
+const chapterSelectionText = (file: PdfFileParseItem): string =>
+  file.chapterSortOrderHint != null
+    ? `未找到第${file.chapterSortOrderHint}话`
+    : '待选章节'
+
+const buildCandidateItem = (detail: AlbumDetail, id: string): SearchResultItem => ({
+  id,
+  title: detail.title,
+  coverUrl: detail.image,
+  authors: detail.authors,
+  tags: detail.tags,
+})
+
 const selectedCandidateChapter = computed(() =>
   resolveChapter(selectedCandidateDetail.value, selectedChapterSortOrder.value ?? undefined),
-)
-
-const drawerDetailTags = computed(() =>
-  selectedCandidateDetail.value?.tags ?? selectedCandidate.value?.tags ?? [],
 )
 
 const confirmButtonLabel = computed(() => {
   if (!selectedCandidate.value) return ''
   if (candidateChapters.value.length > 1) {
     return selectedChapterSortOrder.value
-      ? `确定 #${selectedCandidate.value.id} order ${selectedChapterSortOrder.value}`
+      ? `确定 #${selectedCandidate.value.id} 第${selectedChapterSortOrder.value}话`
       : '选择章节后确认'
   }
   return `确定 #${selectedCandidate.value.id}`
@@ -353,15 +408,16 @@ const drawerStyle = computed(() => ({
 }))
 
 const canSearchFile = (file: PdfFileParseItem) =>
-  file.status !== 'resolved' || file.duplicateIds.length > 0 || (file.editedIds?.length ?? file.extractedIds.length) !== 1
+  file.status !== 'resolved' ||
+  file.duplicateIds.length > 0 ||
+  candidateIds(file).length !== 1 ||
+  needsChapterSelection(file)
 
 const stripPdfExtension = (fileName: string) => fileName.replace(/\.pdf$/i, '').trim()
 
 // ---- 统计 ----
 const resolvedCount = computed(() =>
-  files.value.filter((f) =>
-    f.status === 'resolved' && (f.editedIds?.length === 1 || f.extractedIds.length === 1),
-  ).length,
+  files.value.filter(isImportReady).length,
 )
 const ambiguousCount = computed(() =>
   files.value.filter((f) => f.status === 'ambiguous').length,
@@ -373,10 +429,7 @@ const duplicateCount = computed(() =>
   files.value.filter((f) => f.duplicateIds.length > 0).length,
 )
 const hasAnyResolved = computed(() =>
-  files.value.some((f) =>
-    f.editedIds?.length === 1 ||
-    (f.status === 'resolved' && f.extractedIds.length === 1),
-  ),
+  files.value.some(isImportReady),
 )
 
 // ---- 初始化 ----
@@ -415,8 +468,9 @@ function toggleEdit(idx: number) {
     editText.value = file.editedLine
   } else if (file.extractedIds.length > 0) {
     editText.value = file.extractedIds.join(' ')
-    if (file.chapterSortOrder != null) {
-      editText.value += ` ${file.chapterSortOrder}`
+    const chapterSortOrder = file.chapterSortOrder ?? file.chapterSortOrderHint
+    if (chapterSortOrder != null) {
+      editText.value += ` ${chapterSortOrder}`
     }
   } else {
     editText.value = ''
@@ -427,9 +481,17 @@ function toggleEdit(idx: number) {
 async function applyEdit(idx: number) {
   const { parseEditedLine } = await import('@/utils/importPdfParse')
   const file = files.value[idx]
-  const { ids, chapterSortOrder } = parseEditedLine(editText.value.trim())
+  const { ids, chapterSortOrderHint } = parseEditedLine(editText.value.trim())
 
-  const updated = { ...file, editedLine: editText.value.trim(), editedIds: ids, chapterSortOrder }
+  const updated: PdfFileParseItem = {
+    ...file,
+    editedLine: editText.value.trim(),
+    editedIds: ids,
+    chapterSortOrderHint,
+    chapterId: undefined,
+    chapterTitle: undefined,
+    chapterSortOrder: undefined,
+  }
 
   // 编辑后重新判断状态
   if (ids.length === 0) {
@@ -450,11 +512,9 @@ async function applyEdit(idx: number) {
     }
   }
 
-  const chapter = resolveChapter(updated.albumDetail, chapterSortOrder)
-  updated.chapterId = chapter?.id
-  updated.chapterTitle = chapter?.title
+  applyChapterFields(updated, resolveFileChapter(updated.albumDetail, updated))
 
-  files.value[idx] = updated as PdfFileParseItem
+  files.value[idx] = updated
   editingIdx.value = null
 }
 
@@ -463,16 +523,15 @@ async function applyResolvedId(
   id: string,
   chapter?: PhotoMeta | null,
   albumDetail?: AlbumDetail | null,
-) {
+): Promise<PdfFileParseItem> {
   const file = files.value[idx]
-  const chapterSortOrder = chapter?.sortOrder
-  const updated = {
+  const updated: PdfFileParseItem = {
     ...file,
-    editedLine: chapterSortOrder ? `${id} ${chapterSortOrder}` : id,
+    editedLine: chapter?.sortOrder ? `${id} ${chapter.sortOrder}` : id,
     editedIds: [id],
-    chapterId: chapter?.id,
-    chapterTitle: chapter?.title,
-    chapterSortOrder,
+    chapterId: undefined,
+    chapterTitle: undefined,
+    chapterSortOrder: undefined,
     status: 'resolved' as const,
   }
 
@@ -487,13 +546,71 @@ async function applyResolvedId(
     }
   }
 
-  files.value[idx] = updated as PdfFileParseItem
+  applyChapterFields(updated, chapter ?? resolveFileChapter(updated.albumDetail, updated))
+  if (updated.chapterSortOrder != null) {
+    updated.editedLine = `${id} ${updated.chapterSortOrder}`
+  } else if (updated.chapterSortOrderHint != null) {
+    updated.editedLine = `${id} ${updated.chapterSortOrderHint}`
+  }
+
+  files.value[idx] = updated
+  return updated
+}
+
+async function selectParsedCandidate(idx: number, id: string) {
+  resolvingCandidate.value = true
+  try {
+    const updated = await applyResolvedId(idx, id)
+    if (needsChapterSelection(updated)) {
+      openChapterPickerForResolvedFile(idx)
+      return
+    }
+    await showToast('已选择候选 ID', 'success')
+  } catch (error) {
+    await showToast(sanitizeError(error, '候选 ID 回填失败'), 'danger')
+  } finally {
+    resolvingCandidate.value = false
+  }
+}
+
+function openChapterPickerForResolvedFile(idx: number) {
+  const file = files.value[idx]
+  const id = resolvedId(file)
+  if (!id || !file.albumDetail) return
+
+  const item = buildCandidateItem(file.albumDetail, id)
+  searchTargetIdx.value = idx
+  selectedCandidate.value = item
+  selectedCandidateDetail.value = file.albumDetail
+  selectedChapterSortOrder.value = resolveFileChapter(file.albumDetail, file)?.sortOrder ?? null
+  drawerDetailVisible.value = false
+  drawerError.value = ''
+  drawerSearchLoading.value = false
+  drawerResult.value = {
+    currentPage: 1,
+    totalItems: 1,
+    totalPages: 1,
+    content: [item],
+  }
+  drawerQuery.value = {
+    keyword: id,
+    orderBy: 'mr',
+    time: 'a',
+    searchMainTag: 0,
+    page: 1,
+  }
+  drawerState.value = 'half'
 }
 
 // ---- 抽屉搜索行为 ----
 async function openSearchDrawer(idx: number) {
   const file = files.value[idx]
   if (!file || !canSearchFile(file) || editingIdx.value === idx) return
+
+  if (needsChapterSelection(file)) {
+    openChapterPickerForResolvedFile(idx)
+    return
+  }
 
   searchTargetIdx.value = idx
   selectedCandidate.value = null
@@ -578,6 +695,11 @@ async function selectCandidate(item: SearchResultItem) {
     const detail = await JmcomicService.getAlbum(item.id)
     if (requestSeq !== candidateDetailRequestSeq) return
     selectedCandidateDetail.value = detail && detail.id ? detail : null
+    const targetFile = searchTargetIdx.value !== null ? files.value[searchTargetIdx.value] : null
+    selectedChapterSortOrder.value =
+      targetFile && selectedCandidateDetail.value
+        ? resolveFileChapter(selectedCandidateDetail.value, targetFile)?.sortOrder ?? null
+        : null
   } catch {
     if (requestSeq !== candidateDetailRequestSeq) return
     selectedCandidateDetail.value = null
@@ -669,11 +791,13 @@ function cardClass(file: PdfFileParseItem) {
 }
 
 function statusTagText(file: PdfFileParseItem): string {
-  const id = file.editedIds?.[0] || file.extractedIds[0]
+  const id = resolvedId(file) || candidateIds(file)[0]
   if (file.status === 'missing') return '未识别ID'
   if (file.status === 'ambiguous') {
-    return `候选: ${file.extractedIds.slice(0, 3).join(', ')}${file.extractedIds.length > 3 ? '...' : ''}`
+    const ids = candidateIds(file)
+    return `候选: ${ids.slice(0, 3).join(', ')}${ids.length > 3 ? '...' : ''}`
   }
+  if (needsChapterSelection(file)) return `已解析 #${id}`
   if (file.duplicateIds.length > 0) return `ID重复 #${id}`
   return `已解析 #${id}`
 }
@@ -687,18 +811,17 @@ function statusTagClass(file: PdfFileParseItem): string {
 
 // ---- 确认流程 ----
 async function onConfirm() {
-  const resolved = files.value.filter((f) => f.editedIds?.length === 1 || (f.status === 'resolved' && f.extractedIds.length === 1))
+  const resolved = files.value.filter(isImportReady)
 
   // 确保 resolved 文件有 editedIds
   for (const f of resolved) {
     if (!f.editedIds || f.editedIds.length !== 1) {
-      f.editedIds = [...f.extractedIds]
+      const id = resolvedId(f)
+      if (id) f.editedIds = [id]
     }
   }
 
-  const unresolved = files.value.filter((f) =>
-    !(f.editedIds?.length === 1) && !(f.status === 'resolved' && f.extractedIds.length === 1),
-  )
+  const unresolved = files.value.filter((f) => !isImportReady(f))
 
   if (resolved.length === 0) {
     await showToast('没有可导入的文件，请补充 ID 后重试', 'danger')
@@ -708,7 +831,7 @@ async function onConfirm() {
   if (unresolved.length > 0) {
     const alert = await alertController.create({
       header: '未解决的文件',
-      message: `${unresolved.length} 个文件缺少有效 ID，将被忽略。仅导入 ${resolved.length} 个已解析的文件。`,
+      message: `${unresolved.length} 个文件缺少有效 ID 或章节，将被忽略。仅导入 ${resolved.length} 个已解析的文件。`,
       buttons: [
         { text: '取消', role: 'cancel' },
         {
@@ -791,9 +914,9 @@ async function doImport(resolvedFiles: PdfFileParseItem[], folderId?: string) {
     // 同步写入离线收藏夹
     if (folderId) {
       const favItems: SearchResultItem[] = resolvedFiles
-        .filter((f) => (f.editedIds ?? f.extractedIds).length === 1)
+        .filter((f) => resolvedId(f))
         .map((f) => ({
-          id: (f.editedIds ?? f.extractedIds)[0],
+          id: resolvedId(f)!,
           title: f.albumDetail?.title || f.fileName,
           coverUrl: f.albumDetail?.image || '',
           authors: f.albumDetail?.authors || [],
@@ -1117,19 +1240,53 @@ IonHeader {
   color: #1565c0;
 }
 
+.status-tag.chapter-tag.pending {
+  background: #fff4df;
+  color: #b45f06;
+}
+
+.candidate-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 2px;
+  padding-right: 28px;
+}
+
+.candidate-id-btn {
+  max-width: 112px;
+  padding: 3px 8px;
+  border: 1px solid rgb(250 156 105 / 0.45);
+  border-radius: 999px;
+  background: #fff7f0;
+  color: #9b5a35;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.candidate-id-btn:disabled {
+  opacity: 0.55;
+}
+
 /* ---- 编辑按钮 ---- */
 .edit-btn {
   position: absolute;
   right: 2px;
   top: 50%;
   transform: translateY(-50%);
-  background: none;
-  border: none;
+  background: rgb(255 250 246 / 0.96);
+  border: 1px solid rgb(245 210 188 / 0.86);
+  border-radius: 999px;
   padding: 6px;
   cursor: pointer;
   color: #b0886a;
   font-size: 16px;
   z-index: 1;
+  box-shadow: 0 3px 10px rgb(76 42 24 / 0.12);
 }
 
 /* ---- 编辑遮罩 ---- */
@@ -1352,25 +1509,6 @@ IonHeader {
 
 .drawer-detail-desc.muted {
   color: #b09880;
-}
-
-.drawer-detail-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin-top: 0;
-}
-
-.drawer-detail-tag {
-  max-width: 120px;
-  padding: 3px 7px;
-  border-radius: 999px;
-  background: #fff0e7;
-  color: #9b5a35;
-  font-size: 10px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .drawer-detail-meta-row {

@@ -24,7 +24,9 @@ export interface PdfFileParseItem {
   editedLine?: string
   /** 用户编辑后重新解析出的 ID 列表 */
   editedIds?: string[]
-  /** 章节序号（行末尾 ` 数字`） */
+  /** 文件名或编辑文本中解析出的章节序号线索 */
+  chapterSortOrderHint?: number
+  /** 已匹配或用户选择的章节序号 */
   chapterSortOrder?: number
   /** 匹配到的实际章节 ID */
   chapterId?: string
@@ -47,7 +49,8 @@ export function parseFilenamesForImport(filePaths: string[], fileNames?: string[
   for (let i = 0; i < filePaths.length; i++) {
     const filePath = filePaths[i]
     const fileName = fileNames?.[i] ?? extractFileName(filePath)
-    const { ids, idPositions } = extractValidIds(fileName)
+    const { text, chapterSortOrderHint } = extractChapterHint(fileName)
+    const { ids, idPositions } = extractValidIds(text)
 
     let status: 'resolved' | 'ambiguous' | 'missing'
     if (ids.length === 0) {
@@ -58,7 +61,7 @@ export function parseFilenamesForImport(filePaths: string[], fileNames?: string[
       status = 'ambiguous'
     }
 
-    for (const id of ids) {
+    for (const id of new Set(ids)) {
       const indices = idToFileIndices.get(id) || []
       indices.push(files.length)
       idToFileIndices.set(id, indices)
@@ -71,6 +74,7 @@ export function parseFilenamesForImport(filePaths: string[], fileNames?: string[
       idPositions,
       status,
       duplicateIds: [],
+      chapterSortOrderHint,
     })
   }
 
@@ -93,22 +97,23 @@ export function parseFilenamesForImport(filePaths: string[], fileNames?: string[
  */
 export function parseEditedLine(
   lineText: string,
-): { ids: string[]; chapterSortOrder?: number } {
+): { ids: string[]; chapterSortOrderHint?: number } {
   // 尝试从末尾提取章节序号
   const match = lineText.match(/^(.+?)\s+(\d{1,4})$/)
   let idText: string
-  let chapterSortOrder: number | undefined
+  let chapterSortOrderHint: number | undefined
 
   if (match) {
     idText = match[1]
-    chapterSortOrder = parseInt(match[2], 10)
+    chapterSortOrderHint = parseInt(match[2], 10)
   } else {
-    idText = lineText
-    chapterSortOrder = undefined
+    const extracted = extractChapterHint(lineText)
+    idText = extracted.text
+    chapterSortOrderHint = extracted.chapterSortOrderHint
   }
 
   const { ids } = extractValidIds(idText)
-  return { ids, chapterSortOrder }
+  return { ids, chapterSortOrderHint }
 }
 
 // ---- 内部辅助 ----
@@ -133,13 +138,42 @@ function extractValidIds(text: string): {
     if (numStr.startsWith('0')) continue
     // 过滤长度 < 3 的数字串
     if (numStr.length < 3) continue
-    ids.push(numStr)
-    idPositions.push({
-      id: numStr,
-      start: match.index,
-      end: match.index + numStr.length,
-    })
+    if (!ids.includes(numStr)) {
+      ids.push(numStr)
+      idPositions.push({
+        id: numStr,
+        start: match.index,
+        end: match.index + numStr.length,
+      })
+    }
   }
 
   return { ids, idPositions }
+}
+
+function extractChapterHint(text: string): {
+  text: string
+  chapterSortOrderHint?: number
+} {
+  const match = text.match(/第\s*([0-9０-９]{1,4})\s*[话話]/)
+  if (!match || match.index === undefined) {
+    return { text }
+  }
+
+  const normalized = normalizeDigits(match[1])
+  const value = parseInt(normalized, 10)
+  if (!Number.isFinite(value) || value <= 0) {
+    return { text }
+  }
+
+  return {
+    text: text.slice(0, match.index) + text.slice(match.index + match[0].length),
+    chapterSortOrderHint: value,
+  }
+}
+
+function normalizeDigits(text: string): string {
+  return text.replace(/[０-９]/g, (char) =>
+    String.fromCharCode(char.charCodeAt(0) - 0xfee0),
+  )
 }

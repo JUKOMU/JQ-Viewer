@@ -44,6 +44,7 @@ async function fetchAlbumDetails(files: PdfFileParseItem[]): Promise<void> {
       try {
         const detail = await JmcomicService.getAlbum(id)
         file.albumDetail = detail && detail.id ? detail : null
+        applyResolvedChapter(file)
       } catch {
         // 网络失败静默跳过，保留 albumId，封面/标题留空
         file.albumDetail = null
@@ -114,10 +115,18 @@ async function confirmImport(
 
 function resolveImportedChapter(file: PdfFileParseItem) {
   const chapters = file.albumDetail?.photoMetas ?? []
-  if (file.chapterSortOrder !== undefined) {
-    return chapters.find((chapter) => chapter.sortOrder === file.chapterSortOrder) ?? null
+  const targetSortOrder = file.chapterSortOrder ?? file.chapterSortOrderHint
+  if (targetSortOrder !== undefined) {
+    return chapters.find((chapter) => chapter.sortOrder === targetSortOrder) ?? null
   }
   return chapters.length === 1 ? chapters[0] : null
+}
+
+function applyResolvedChapter(file: PdfFileParseItem): void {
+  const chapter = resolveImportedChapter(file)
+  file.chapterId = chapter?.id
+  file.chapterTitle = chapter?.title
+  file.chapterSortOrder = chapter?.sortOrder
 }
 
 export const PdfImportService = {

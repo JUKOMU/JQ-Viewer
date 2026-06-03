@@ -271,6 +271,17 @@ const spaceAvailMb = ref(0)
 const hasStorageInfo = ref(false)
 let downloadProgressHandle: PluginListenerHandle | null = null
 let syncPromise: Promise<void> | null = null
+let speedTimer: ReturnType<typeof setInterval> | null = null
+let isUnmounted = false
+
+interface SpeedSample {
+  latestBytes: number
+  sampledBytes: number
+  sampledAt: number
+  lastSpeed: number
+}
+
+const speedSamples = new Map<string, SpeedSample>()
 
 const loadImportedPdfs = async () => {
   try {
@@ -559,6 +570,87 @@ const syncDownloadState = async () => {
   }
 }
 
+const stopSpeedTimer = () => {
+  if (speedTimer) {
+    clearInterval(speedTimer)
+    speedTimer = null
+  }
+}
+
+const sampleDownloadSpeeds = () => {
+  const now = Date.now()
+  const activeTaskIds = new Set<string>()
+
+  for (const task of tasks.value) {
+    if (task.status !== 'downloading') {
+      if (task.speed) task.speed = 0
+      speedSamples.delete(task.taskId)
+      continue
+    }
+
+    activeTaskIds.add(task.taskId)
+    const sample = speedSamples.get(task.taskId)
+    if (!sample) {
+      continue
+    }
+
+    if (sample.latestBytes > sample.sampledBytes && now > sample.sampledAt) {
+      sample.lastSpeed = Math.max(
+        0,
+        Math.round((sample.latestBytes - sample.sampledBytes) * 1000 / (now - sample.sampledAt)),
+      )
+      task.speed = sample.lastSpeed
+      sample.sampledBytes = sample.latestBytes
+      sample.sampledAt = now
+    } else if (sample.lastSpeed > 0) {
+      sample.lastSpeed = Math.floor(sample.lastSpeed / 2)
+      task.speed = sample.lastSpeed
+    }
+  }
+
+  for (const taskId of speedSamples.keys()) {
+    if (!activeTaskIds.has(taskId)) speedSamples.delete(taskId)
+  }
+
+  if (!tasks.value.some((task) => task.status === 'downloading')) {
+    stopSpeedTimer()
+  }
+}
+
+const startSpeedTimer = () => {
+  if (speedTimer) return
+  speedTimer = setInterval(sampleDownloadSpeeds, 1000)
+}
+
+const updateSpeedSample = (task: DownloadTask, downloadedBytes?: number, fallbackSpeed?: number) => {
+  if (downloadedBytes !== undefined && downloadedBytes >= 0) {
+    const now = Date.now()
+    task.downloadedBytes = downloadedBytes
+
+    const sample = speedSamples.get(task.taskId)
+    if (sample) {
+      sample.latestBytes = downloadedBytes
+    } else {
+      speedSamples.set(task.taskId, {
+        latestBytes: downloadedBytes,
+        sampledBytes: downloadedBytes,
+        sampledAt: now,
+        lastSpeed: task.speed ?? 0,
+      })
+    }
+    startSpeedTimer()
+  } else if (fallbackSpeed && fallbackSpeed > 0 && !speedSamples.has(task.taskId)) {
+    task.speed = fallbackSpeed
+    speedSamples.set(task.taskId, {
+      latestBytes: task.downloadedBytes ?? 0,
+      sampledBytes: task.downloadedBytes ?? 0,
+      sampledAt: Date.now(),
+      lastSpeed: fallbackSpeed,
+    })
+    startSpeedTimer()
+  }
+}
+
 const onRefresh = async (event: CustomEvent) => {
   await syncDownloadState()
   await loadImportedPdfs()
@@ -566,6 +658,7 @@ const onRefresh = async (event: CustomEvent) => {
 }
 
 onMounted(async () => {
+  isUnmounted = false
   void loadImportedPdfs()
 
   JmcomicService.addDownloadProgressListener((data) => {
@@ -579,13 +672,13 @@ onMounted(async () => {
       task.downloadedPages = data.downloadedPages
       task.totalPages = data.totalPages
       task.status = 'downloading'
-      if (data.speed > 0) {
-        task.speed = data.speed
-      }
+      updateSpeedSample(task, data.downloadedBytes, data.speed)
       OfflineDownloadService.updateProgress(data.taskId, data.downloadedPages, data.totalPages)
     } else if (data.status === 'paused') {
       task.downloadedPages = data.downloadedPages
       task.status = 'paused'
+      task.speed = 0
+      speedSamples.delete(data.taskId)
       OfflineDownloadService.updateStatus(
         data.taskId,
         'paused',
@@ -598,6 +691,8 @@ onMounted(async () => {
       task.totalPages = data.totalPages
       task.totalSize = data.totalSize
       task.completedAt = Date.now()
+      task.speed = 0
+      speedSamples.delete(data.taskId)
       OfflineDownloadService.updateStatus(
         data.taskId,
         'completed',
@@ -611,6 +706,8 @@ onMounted(async () => {
       task.totalPages = data.totalPages
       task.error = data.error
       task.totalSize = data.totalSize
+      task.speed = 0
+      speedSamples.delete(data.taskId)
       OfflineDownloadService.updateStatus(
         data.taskId,
         'failed',
@@ -621,6 +718,10 @@ onMounted(async () => {
     }
   })
     .then((handle) => {
+      if (isUnmounted) {
+        void handle.remove()
+        return
+      }
       downloadProgressHandle = handle
     })
     .catch(() => {
@@ -635,7 +736,11 @@ onIonViewWillEnter(() => {
 })
 
 onUnmounted(() => {
+  isUnmounted = true
   downloadProgressHandle?.remove()
+  downloadProgressHandle = null
+  stopSpeedTimer()
+  speedSamples.clear()
 })
 
 // ---- PDF 导出 ----

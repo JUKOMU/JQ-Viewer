@@ -1,6 +1,7 @@
 package io.github.jukomu.service;
 
 import android.annotation.SuppressLint;
+import android.content.Context;
 import android.util.Log;
 
 import io.github.jukomu.data.DownloadStore;
@@ -41,6 +42,8 @@ public class DownloadService {
     private final JmApiClient client;
     private final ExecutorService imageExecutor;
     private final ServiceListener listener;
+    private final DownloadNotificationHelper notificationHelper;
+    private final Context context;
 
     /**
      * albumId_chapterId → library taskId
@@ -54,16 +57,20 @@ public class DownloadService {
      * 在 async 块映射 taskId 之前到达的取消请求
      */
     final Set<String> pendingCancel = ConcurrentHashMap.newKeySet();
+    private final Set<String> foregroundTaskIds = ConcurrentHashMap.newKeySet();
     private final Object mapLock = new Object();
+    private final Map<String, Long> lastNotificationAt = new ConcurrentHashMap<>();
 
     public DownloadService(DownloadStore downloadDb, FileStore fileStore,
                            JmApiClient client, ExecutorService imageExecutor,
-                           ServiceListener listener) {
+                           ServiceListener listener, Context context) {
         this.downloadDb = downloadDb;
         this.fileStore = fileStore;
         this.client = client;
         this.imageExecutor = imageExecutor;
         this.listener = listener;
+        this.context = context.getApplicationContext();
+        this.notificationHelper = new DownloadNotificationHelper(context.getApplicationContext());
     }
 
     // ---- 下载任务操作 ----
@@ -84,9 +91,16 @@ public class DownloadService {
 
         downloadDb.insertTask(taskId, albumId, chapterId,
             albumTitle, chapterTitle, coverUrl);
+        startForegroundTask(taskId);
+        showQueuedNotification(taskId, chapterTitle);
 
         imageExecutor.submit(() -> {
             try {
+                if (downloadDb.getTask(taskId) == null) {
+                    removeQueuedNotification(taskId);
+                    return;
+                }
+                showPreparingNotification(taskId, chapterTitle, coverUrl);
                 JmPhoto photo = client.getPhoto(chapterId);
                 List<JmImage> images = photo.getImages();
 
@@ -132,6 +146,7 @@ public class DownloadService {
                     images.size(), downloadDb, fileStore, listener, this));
 
                 downloadDb.updateStatus(taskId, STATUS_DOWNLOADING);
+                showDownloadNotification(taskId, chapterTitle, coverUrl, 0, images.size(), true);
                 notifyProgress(taskId, albumId, chapterId, 0, images.size(),
                     STATUS_DOWNLOADING, null);
 
@@ -140,6 +155,8 @@ public class DownloadService {
                     downloadDb.deleteImages(taskId);
                     downloadDb.deleteTask(taskId);
                     cleanupTaskMapping(taskId);
+                    cancelNotification(taskId);
+                    removeQueuedNotification(taskId);
                     return;
                 }
 
@@ -149,6 +166,7 @@ public class DownloadService {
                 }
             } catch (Exception e) {
                 downloadDb.updateFailed(taskId, 0, e.getMessage());
+                showFailedNotification(taskId, chapterTitle, coverUrl, e.getMessage());
                 notifyProgress(taskId, albumId, chapterId, 0, 0,
                     STATUS_FAILED, e.getMessage());
                 cleanupTaskMapping(taskId);
@@ -190,6 +208,8 @@ public class DownloadService {
             downloadDb.deleteImages(taskId);
             downloadDb.deleteTask(taskId);
             cleanupTaskMapping(taskId);
+            cancelNotification(taskId);
+            removeQueuedNotification(taskId);
         } else if (STATUS_PAUSED.equals(status)) {
             String libTaskId = taskIdMap.get(taskId);
             if (libTaskId != null) {
@@ -201,6 +221,8 @@ public class DownloadService {
                 downloadDb.deleteImages(taskId);
                 downloadDb.deleteTask(taskId);
                 cleanupTaskMapping(taskId);
+                cancelNotification(taskId);
+                removeQueuedNotification(taskId);
             }
         } else if (STATUS_DOWNLOADING.equals(status)) {
             String libTaskId = taskIdMap.get(taskId);
@@ -216,6 +238,8 @@ public class DownloadService {
             downloadDb.deleteImages(taskId);
             downloadDb.deleteTask(taskId);
             cleanupTaskMapping(taskId);
+            cancelNotification(taskId);
+            removeQueuedNotification(taskId);
         }
     }
 
@@ -236,6 +260,10 @@ public class DownloadService {
 
         ac.downloadManager().pause(libTaskId);
         downloadDb.updateStatus(taskId, STATUS_PAUSED);
+        stopForegroundTask(taskId);
+        showPausedNotification(taskId, task.optString("chapterTitle"),
+            task.optString("coverUrl"),
+            task.optInt("downloadedPages"), task.optInt("totalPages"));
         notifyProgress(taskId, task.optString("albumId"), task.optString("chapterId"),
             task.optInt("downloadedPages"), task.optInt("totalPages"),
             STATUS_PAUSED, null);
@@ -258,6 +286,10 @@ public class DownloadService {
 
         ac.downloadManager().resume(libTaskId);
         downloadDb.updateStatus(taskId, STATUS_DOWNLOADING);
+        startForegroundTask(taskId);
+        showDownloadNotification(taskId, task.optString("chapterTitle"),
+            task.optString("coverUrl"),
+            task.optInt("downloadedPages"), task.optInt("totalPages"), true);
         notifyProgress(taskId, task.optString("albumId"), task.optString("chapterId"),
             task.optInt("downloadedPages"), task.optInt("totalPages"),
             STATUS_DOWNLOADING, null);
@@ -276,6 +308,8 @@ public class DownloadService {
         downloadDb.deleteImages(taskId);
         downloadDb.deleteTask(taskId);
         cleanupTaskMapping(taskId);
+        cancelNotification(taskId);
+        removeQueuedNotification(taskId);
     }
 
     public JSONObject getDownloadedPhoto(String albumId, String chapterId) {
@@ -324,6 +358,33 @@ public class DownloadService {
                 reverseTaskIdMap.remove(libTaskId);
             }
         }
+        lastNotificationAt.remove(ourTaskId);
+        stopForegroundTask(ourTaskId);
+    }
+
+    void updateDownloadNotification(String taskId, int downloadedPages, int totalPages,
+                                    String status, String error) {
+        JSONObject task = downloadDb.getTask(taskId);
+        String chapterTitle = task != null ? task.optString("chapterTitle", taskId) : taskId;
+        String coverUrl = task != null ? task.optString("coverUrl", "") : "";
+
+        if (STATUS_DOWNLOADING.equals(status)) {
+            startForegroundTask(taskId);
+            showDownloadNotification(taskId, chapterTitle, coverUrl,
+                downloadedPages, totalPages, false);
+        } else if (STATUS_PAUSED.equals(status)) {
+            stopForegroundTask(taskId);
+            showPausedNotification(taskId, chapterTitle, coverUrl, downloadedPages, totalPages);
+        } else if (STATUS_COMPLETED.equals(status)) {
+            showCompletedNotification(taskId, chapterTitle, coverUrl);
+        } else if (STATUS_FAILED.equals(status)) {
+            if ("已取消".equals(error)) {
+                cancelNotification(taskId);
+                removeQueuedNotification(taskId);
+            } else {
+                showFailedNotification(taskId, chapterTitle, coverUrl, error);
+            }
+        }
     }
 
     long calcChapterFileSize(String albumId, String chapterId) {
@@ -359,5 +420,72 @@ public class DownloadService {
                 taskId, albumId, chapterId, downloadedPages, totalPages,
                 status, error, speed, totalSize));
         }
+    }
+
+    private int notificationId(String taskId) {
+        return 3000 + ((taskId.hashCode() & 0x7fffffff) % 100000);
+    }
+
+    private void showQueuedNotification(String taskId, String chapterTitle) {
+        notificationHelper.showQueued(taskId, chapterTitle);
+    }
+
+    private void showPreparingNotification(String taskId, String chapterTitle, String coverUrl) {
+        removeQueuedNotification(taskId);
+        notificationHelper.showPreparing(notificationId(taskId), chapterTitle, coverUrl);
+    }
+
+    private void showDownloadNotification(String taskId, String chapterTitle, String coverUrl,
+                                          int downloadedPages, int totalPages, boolean force) {
+        removeQueuedNotification(taskId);
+        long now = System.currentTimeMillis();
+        Long last = lastNotificationAt.get(taskId);
+        if (!force && last != null && now - last < 1000) return;
+        lastNotificationAt.put(taskId, now);
+        notificationHelper.showProgress(notificationId(taskId), chapterTitle, coverUrl,
+            downloadedPages, totalPages);
+    }
+
+    private void showPausedNotification(String taskId, String chapterTitle,
+                                        String coverUrl,
+                                        int downloadedPages, int totalPages) {
+        removeQueuedNotification(taskId);
+        notificationHelper.showPaused(notificationId(taskId), chapterTitle, coverUrl,
+            downloadedPages, totalPages);
+    }
+
+    private void showCompletedNotification(String taskId, String chapterTitle, String coverUrl) {
+        removeQueuedNotification(taskId);
+        notificationHelper.showComplete(notificationId(taskId), chapterTitle, coverUrl);
+    }
+
+    private void showFailedNotification(String taskId, String chapterTitle, String coverUrl, String error) {
+        removeQueuedNotification(taskId);
+        notificationHelper.showError(notificationId(taskId), chapterTitle, coverUrl, error);
+    }
+
+    private void cancelNotification(String taskId) {
+        lastNotificationAt.remove(taskId);
+        notificationHelper.cancel(notificationId(taskId));
+    }
+
+    private void removeQueuedNotification(String taskId) {
+        notificationHelper.removeQueued(taskId);
+    }
+
+    private void startForegroundTask(String taskId) {
+        if (foregroundTaskIds.add(taskId)) {
+            updateForegroundService();
+        }
+    }
+
+    private void stopForegroundTask(String taskId) {
+        if (foregroundTaskIds.remove(taskId)) {
+            updateForegroundService();
+        }
+    }
+
+    private void updateForegroundService() {
+        DownloadForegroundService.update(context, foregroundTaskIds.size());
     }
 }

@@ -12,11 +12,20 @@ public class DownloadProgressData {
     public final String status;
     public final String error;
     public final long speed;
+    public final long downloadedBytes;
     public final long totalSize;
 
     public DownloadProgressData(String taskId, String albumId, String chapterId,
                                 int downloadedPages, int totalPages, String status,
                                 String error, long speed, long totalSize) {
+        this(taskId, albumId, chapterId, downloadedPages, totalPages, status,
+            error, speed, totalSize, 0);
+    }
+
+    public DownloadProgressData(String taskId, String albumId, String chapterId,
+                                int downloadedPages, int totalPages, String status,
+                                String error, long speed, long totalSize,
+                                long downloadedBytes) {
         this.taskId = taskId;
         this.albumId = albumId;
         this.chapterId = chapterId;
@@ -26,5 +35,6 @@ public class DownloadProgressData {
         this.error = error;
         this.speed = speed;
         this.totalSize = totalSize;
+        this.downloadedBytes = downloadedBytes;
     }
 }

@@ -165,6 +165,7 @@ public class DownloadStore extends SQLiteOpenHelper {
         cv.put(COL_DOWNLOADED_PAGES, downloadedPages);
         cv.put(COL_FIRST_IMAGE_SORT_ORDER, firstSortOrder);
         cv.put(COL_STATUS, "completed");
+        cv.putNull(COL_ERROR);
         cv.put(COL_COMPLETED_AT, System.currentTimeMillis());
         getWritableDatabase().update(TABLE_TASKS, cv,
             COL_TASK_ID + " = ?", new String[]{taskId});

@@ -1,126 +1,100 @@
-# JQViewer
+# JQ Viewer
 
-基于 JMComic-Api-Java 的禁漫天堂第三方 Android 客户端，提供离线阅读、PDF 导出、OCR 文字识别、批量解析、下载队列、收藏管理、搜索历史与沉浸式阅读等功能。
+JMComic 第三方 Android 漫画阅读器。它把搜索、收藏、下载、本地阅读、PDF 导入导出和批量解析放在一个移动端界面里，适合想在手机上更顺手地整理和阅读漫画的人。
 
-![Vue](https://img.shields.io/badge/Vue-3-4FC08D?logo=vuedotjs)
-![Ionic](https://img.shields.io/badge/Ionic-8-3880FF?logo=ionic)
-![Java](https://img.shields.io/badge/Java-JDK_21_for_build-007396?logo=java)
-![Android](https://img.shields.io/badge/Android-24+-007396?logo=java)
-![License](https://img.shields.io/badge/License-MIT-yellow.svg)
-![Version](https://img.shields.io/badge/Version-1.1.3-brightgreen.svg)
-<div></div>
+[![Version](https://img.shields.io/badge/Version-1.1.3-brightgreen.svg)](https://github.com/JUKOMU/JQ-Viewer/releases)
+[![Android](https://img.shields.io/badge/Android-7.0%2B-3DDC84?logo=android&logoColor=white)](https://github.com/JUKOMU/JQ-Viewer/releases)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Releases](https://img.shields.io/badge/Download-Releases-blue.svg)](https://github.com/JUKOMU/JQ-Viewer/releases)
 
-[![JUKOMU/JMComic-Api-Java - GitHub](https://gh-card.dev/repos/JUKOMU/JMComic-Api-Java.svg?fullname=)](https://github.com/JUKOMU/JMComic-Api-Java)
+> JQ Viewer 是个人项目，与 JMComic 官方无关。项目本身不包含漫画资源，请遵守所在地法律法规和目标站点规则。
 
 ## 应用截图
 
 ### 首页、搜索、分类
 
-<div style="overflow: auto;">
-  <img style="float: left; width: 25%; margin-right: 5%;" alt="image" src="https://github.com/user-attachments/assets/b3979725-d2e7-4721-92c1-5181aa160ca9" />
-  <img style="float: left; width: 25%; margin-right: 5%;" alt="image" src="https://github.com/user-attachments/assets/158b13ed-396d-4add-be2e-d7d415648c44" />
-  <img style="float: left; width: 25%;" alt="image" src="https://github.com/user-attachments/assets/b12c77fe-1231-4485-bad5-5b45a275d308" />
-</div>
+| 首页 | 搜索 | 分类 |
+| --- | --- | --- |
+| <img width="220" alt="首页" src="https://github.com/user-attachments/assets/b3979725-d2e7-4721-92c1-5181aa160ca9" /> | <img width="220" alt="搜索" src="https://github.com/user-attachments/assets/158b13ed-396d-4add-be2e-d7d415648c44" /> | <img width="220" alt="分类" src="https://github.com/user-attachments/assets/b12c77fe-1231-4485-bad5-5b45a275d308" /> |
 
-### 收藏夹
+### 详情与阅读
 
-<div style="overflow: auto;">
-<img style="float: left; width: 25%; margin-right: 5%;" alt="image" src="https://github.com/user-attachments/assets/9890ecad-ad3b-48a7-a2f1-f6497cd3ec5b" />
-<img style="float: left; width: 25%;" alt="image" src="https://github.com/user-attachments/assets/c669cf81-e5a2-43e5-91ad-fd468fdb9b75" />
-</div>
+| 详情页 | 阅读器 |
+| --- | --- |
+| <img width="220" alt="详情页" src="https://github.com/user-attachments/assets/9d340dcd-0541-4219-a555-f51f9e69c109" /> | <img width="220" alt="图片阅读器" src="https://github.com/user-attachments/assets/7750db4c-6342-41b8-b537-e03ba8a236ea" /> |
 
-### 下载、导出
+### 收藏与历史
 
-<div style="overflow: auto;">
-  <img style="float: left; width: 25%; margin-right: 5%;" src="https://github.com/user-attachments/assets/41abc94a-f3dc-45f2-8b3f-e4826bd4dc2c" />
-  <img style="float: left; width: 25%; margin-right: 5%;" alt="image" src="https://github.com/user-attachments/assets/1b38a095-c02b-4742-95bd-0e18cef1d8f2" />
-  <img style="float: left; width: 25%;" alt="image" src="https://github.com/user-attachments/assets/8c1a4178-ee19-4ba5-9e1e-60c47e2a5950" />
-</div>
+| 收藏夹 | 收藏夹搜索 | 浏览历史 |
+| --- | --- | --- |
+| <img width="220" alt="收藏夹" src="https://github.com/user-attachments/assets/9890ecad-ad3b-48a7-a2f1-f6497cd3ec5b" /> | <img width="220" alt="收藏夹搜索" src="https://github.com/user-attachments/assets/c669cf81-e5a2-43e5-91ad-fd468fdb9b75" /> | <img width="220" alt="浏览历史" src="https://github.com/user-attachments/assets/986400a7-3081-4f04-bc9e-afc80e7ae1f2" /> |
 
-### 历史
+| 解析历史 | 批量解析 | 设置 |
+| --- | --- | --- |
+| <img width="220" alt="解析历史" src="https://github.com/user-attachments/assets/da2b69b0-1d09-489c-8f54-c31757926f8a" /> | <img width="220" alt="批量解析" src="https://github.com/user-attachments/assets/a89f8c24-0f9d-4707-87b4-73882f7844e4" /> | <img width="220" alt="设置" src="https://github.com/user-attachments/assets/2730911b-1cf1-4282-9b13-4bca4a57b652" /> |
 
-<div style="overflow: auto;">
-<img style="float: left; width: 25%; margin-right: 5%;" alt="image" src="https://github.com/user-attachments/assets/986400a7-3081-4f04-bc9e-afc80e7ae1f2" />
-<img style="float: left; width: 25%;" alt="image" src="https://github.com/user-attachments/assets/da2b69b0-1d09-489c-8f54-c31757926f8a" />
-</div>
+### 下载与 PDF
 
-### 设置
+| 下载队列 | 下载管理 | 后台进度                                                                                                                 |
+| --- | --- |----------------------------------------------------------------------------------------------------------------------|
+| <img width="220" alt="下载队列" src="https://github.com/user-attachments/assets/41abc94a-f3dc-45f2-8b3f-e4826bd4dc2c" /> | <img width="220" alt="下载管理" src="https://github.com/user-attachments/assets/6f227a1c-efa5-4788-ae1f-b96c83e0cbae" /> | <img width="220" alt="下载通知" src="https://github.com/user-attachments/assets/083a4bb5-c8a7-43e2-b1ea-80dc7bb6b4b8" /> |
 
-<div style="overflow: auto;">
-<img style="float: left; width: 25%;" alt="image" src="https://github.com/user-attachments/assets/2730911b-1cf1-4282-9b13-4bca4a57b652" />
-</div>
+| PDF 导出 | PDF 导入匹配 | 阅读来源                                                                                                                   |
+| --- | --- |------------------------------------------------------------------------------------------------------------------------|
+| <img width="220" alt="PDF 导出" src="https://github.com/user-attachments/assets/8c1a4178-ee19-4ba5-9e1e-60c47e2a5950" /> | <img width="220" alt="PDF 导出" src="https://github.com/user-attachments/assets/37bb4848-c376-4c0b-ade6-9e004d5d93fd" /> | <img width="220" alt="阅读来源选择" src="https://github.com/user-attachments/assets/9d340dcd-0541-4219-a555-f51f9e69c109" /> |
 
-### 详情页
+## 主要功能
 
-<div style="overflow: auto;">
-<img style="float: left; width: 25%;" alt="image" src="https://github.com/user-attachments/assets/29ffd516-2ea3-4eb5-b67b-bfc46b45bda1" />
-</div>
+### 内容检索
 
-### 阅读
+- 关键词、ID、作者、标签、登场人物等搜索方式。
+- 分类浏览、排序筛选和时间范围筛选。
+- 搜索历史按场景保存，便于重复检索。
 
-<div style="overflow: auto;">
-<img style="float: left; width: 25%;" alt="image" src="https://github.com/user-attachments/assets/7750db4c-6342-41b8-b537-e03ba8a236ea" />
-</div>
+### 阅读体验
+
+- 支持横向翻页和纵向滚动两种阅读方式。
+- 可调亮度、防息屏、音量键翻页、屏幕方向等阅读设置。
+- 已下载图片和已导入 PDF 可以直接从详情页或下载页打开。
+
+### 收藏与记录
+
+- 支持在线收藏夹，也支持不登录时使用离线收藏夹。
+- 收藏夹内搜索、移动、复制、批量下载和文本导出。
+- 浏览历史、解析历史自动记录，方便回到之前看过或处理过的内容。
+
+### 离线与导出
+
+- 章节下载队列支持暂停、恢复、重试和删除。
+- 下载完成后可离线阅读，也可以按需公开到系统相册。
+- PDF 导出支持自定义目录、文件名模板、分卷和后台进度通知。
+- 本地 PDF 可以导入应用，并尽量匹配到对应作品和章节。
 
 ### 批量解析
 
-<div style="overflow: auto;">
-<img style="float: left; width: 25%;" alt="image" src="https://github.com/user-attachments/assets/a89f8c24-0f9d-4707-87b4-73882f7844e4" />
-</div>
+- 从多行文本里批量提取 ID，再统一搜索、收藏或下载。
+- 可选 OCR 识别图片中的文字，用来辅助处理截图里的编号。
 
+## 安装
 
+前往 [Releases](https://github.com/JUKOMU/JQ-Viewer/releases) 下载 APK 安装。应用内也可以在“设置 > 关于 > 检查更新”查看最新版本。
 
-## ✨ 核心功能
+最低支持 Android 7.0。
 
-### 📖 漫画浏览
-- 支持横向和竖向显示模式和阅读设置
-- 音量键导航支持
-- 屏幕亮度调节和防息屏功能
-- 全屏沉浸式阅读体验
+## 开发构建
 
-### 🔍 搜索与发现
-- 关键词搜索
-- 分类筛选浏览
-- 搜索历史管理
-- 收藏夹内搜索
+项目主体是 Vue 3 + Ionic + Capacitor，Android 原生侧负责下载、缓存、PDF、OCR 等能力；接口调用依赖 [JMComic-Api-Java](https://github.com/JUKOMU/JMComic-Api-Java)。
 
-### ❤️ 收藏管理
-- 创建多个收藏夹
-- 在线/离线收藏独立管理
-- 收藏夹之间的条目移动和复制
-- 收藏夹导出功能
+构建环境需要 Node.js、JDK 21 和 Android SDK：
 
-### 💾 智能缓存与离线
-- 图片智能预加载与缓存管理
-- 离线收藏夹支持
-- 可配置缓存容量限制
-- 文件搬迁和重新定位
-
-### 📊 数据导出
-- **PDF 导出** - 支持单章或批量导出为 PDF
-  - 原图或压缩图片选择
-  - 灵活的文件夹和文件名模板
-  - 后台异步处理，通知栏进度显示
-  - PDF 分卷支持
-  
-- **格式导出** - 可自定义导出格式模板
-  - 支持 ID、标题、作者、标签等占位符
-  - 用于数据迁移和备份
-
-### 📚 历史记录
-- **浏览历史** - 自动记录阅读进度和时间
-- **搜索历史** - 多个搜索上下文独立管理
-- **解析历史** - 批量解析查询记录
-
-### 👤 账户系统
-- 用户登录/登出
-- 自动登录功能
-
-### 🧠 高级功能
-- **OCR 识别** - 图片文字识别（可选）
-- **批量解析** - 从文本批量提取 ID 并搜索
-- **下载管理** - 后台下载队列管理
+```bash
+npm install
+npm run build
+npx cap sync android
+cd android
+./gradlew :app:assembleDebug
+```
 
 ## 许可证
 
-MIT License. 详见 [LICENSE](LICENSE)。
+[MIT License](LICENSE)

@@ -45,6 +45,10 @@
             android:name=".service.PdfExportForegroundService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <receiver
+            android:name=".service.DownloadNotificationActionReceiver"
+            android:exported="false" />
     </application>
 
     <!-- Permissions -->

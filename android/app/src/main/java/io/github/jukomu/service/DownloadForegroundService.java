@@ -12,6 +12,7 @@ import android.os.IBinder;
 import android.util.Log;
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
+import io.github.jukomu.MainActivity;
 import io.github.jukomu.R;
 
 /**
@@ -100,10 +101,9 @@ public class DownloadForegroundService extends Service {
     }
 
     private PendingIntent createLaunchIntent() {
-        Intent intent = getPackageManager().getLaunchIntentForPackage(getPackageName());
-        if (intent == null) {
-            intent = new Intent();
-        }
+        Intent intent = new Intent(this, MainActivity.class);
+        intent.setAction(MainActivity.ACTION_OPEN_ROUTE);
+        intent.putExtra(MainActivity.EXTRA_ROUTE, MainActivity.ROUTE_DOWNLOAD);
         intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         return PendingIntent.getActivity(
             this,

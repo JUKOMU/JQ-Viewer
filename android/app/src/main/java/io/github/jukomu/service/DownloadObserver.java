@@ -48,6 +48,7 @@ class DownloadObserver implements TaskObserver {
 
     @Override
     public void onStateChanged(BaseDownloadTask task, TaskState newState) {
+        if (service.isCancelled(ourTaskId)) return;
         if (newState.isTerminal() && !markFinalized()) return;
 
         if (newState == TaskState.COMPLETED) {
@@ -126,6 +127,7 @@ class DownloadObserver implements TaskObserver {
     @Override
     @SuppressLint("NewApi")
     public void onProgressUpdate(BaseDownloadTask task, DownloadProgress progress) {
+        if (service.isCancelled(ourTaskId)) return;
         int completed = progress.completedImages();
         if (completed > 0) {
             long now = System.currentTimeMillis();
@@ -152,6 +154,7 @@ class DownloadObserver implements TaskObserver {
 
     @Override
     public void onError(BaseDownloadTask task, Exception e) {
+        if (service.isCancelled(ourTaskId)) return;
         if (!markFinalized()) return;
         downloadDb.updateFailed(ourTaskId, 0, e.getMessage());
         notifyProgress(0, totalImages, DownloadService.STATUS_FAILED, e.getMessage());

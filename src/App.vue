@@ -17,6 +17,7 @@
 defineOptions({name: 'App'})
 
 import {alertController, IonApp} from '@ionic/vue'
+import type {PluginListenerHandle} from '@capacitor/core'
 import {computed, nextTick, onBeforeUnmount, onMounted, provide, ref} from 'vue'
 import {useRoute, useRouter} from 'vue-router'
 import {App} from '@capacitor/app'
@@ -199,9 +200,46 @@ const handleMenuDidClose = () => {
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let activeToast: Awaited<ReturnType<typeof showToast>> | null = null
+let launchRouteHandle: PluginListenerHandle | null = null
+
+const isSafeLaunchRoute = (value?: string): value is string =>
+  !!value && value.startsWith('/') && !value.startsWith('//')
+
+const navigateToLaunchRoute = async (target?: string, replace = false) => {
+  if (!isSafeLaunchRoute(target)) return false
+  if (router.currentRoute.value.fullPath === target) return true
+  try {
+    if (replace) {
+      await router.replace(target)
+    } else {
+      await router.push(target)
+    }
+    return true
+  } catch {
+    return false
+  }
+}
 
 onMounted(async () => {
-  if (route.path === '/' || route.path === '/home') {
+  let launchRouteHandled = false
+  try {
+    const launch = await JmcomicService.consumeLaunchRoute()
+    launchRouteHandled = await navigateToLaunchRoute(launch.route, true)
+  } catch { /* Web 调试时忽略 */ }
+
+  try {
+    launchRouteHandle = await JmcomicService.addLaunchRouteListener((data) => {
+      void (async () => {
+        if (await navigateToLaunchRoute(data.route)) {
+          try {
+            await JmcomicService.consumeLaunchRoute()
+          } catch { /* 忽略 */ }
+        }
+      })()
+    })
+  } catch { /* Web 调试时忽略 */ }
+
+  if (!launchRouteHandled && (route.path === '/' || route.path === '/home')) {
     const snapshot = readReaderSnapshot()
     if (snapshot) {
       const targetPath = buildReaderPathWithPage(snapshot.fullPath, snapshot.currentPage)
@@ -334,6 +372,8 @@ onBeforeUnmount(() => {
   clearInterval(heartbeatTimer)
   activeToast?.dismiss()
   activeToast = null
+  launchRouteHandle?.remove()
+  launchRouteHandle = null
 
   const menuEl = document.querySelector('ion-menu')
   menuEl?.removeEventListener('ionDidOpen', handleMenuDidOpen)

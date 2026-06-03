@@ -473,7 +473,11 @@ const loadAlbumData = async () => {
   downloadProgressHandle = await JmcomicService.addDownloadProgressListener((data) => {
     if (data.albumId !== albumId.value) return
     const map = new Map(chapterDownloadStatuses.value)
-    map.set(data.chapterId, data.status)
+    if (data.status === 'cancelled') {
+      map.delete(data.chapterId)
+    } else {
+      map.set(data.chapterId, data.status)
+    }
     chapterDownloadStatuses.value = map
   })
 }

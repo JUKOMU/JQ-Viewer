@@ -7,7 +7,7 @@
 ![Java](https://img.shields.io/badge/Java-JDK_21_for_build-007396?logo=java)
 ![Android](https://img.shields.io/badge/Android-24+-007396?logo=java)
 ![License](https://img.shields.io/badge/License-MIT-yellow.svg)
-![Version](https://img.shields.io/badge/Version-1.1.2-brightgreen.svg)
+![Version](https://img.shields.io/badge/Version-1.1.3-brightgreen.svg)
 <div></div>
 
 [![JUKOMU/JMComic-Api-Java - GitHub](https://gh-card.dev/repos/JUKOMU/JMComic-Api-Java.svg?fullname=)](https://github.com/JUKOMU/JMComic-Api-Java)

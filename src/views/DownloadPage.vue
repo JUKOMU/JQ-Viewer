@@ -676,6 +676,7 @@ onMounted(async () => {
       OfflineDownloadService.updateProgress(data.taskId, data.downloadedPages, data.totalPages)
     } else if (data.status === 'paused') {
       task.downloadedPages = data.downloadedPages
+      task.totalPages = data.totalPages || task.totalPages
       task.status = 'paused'
       task.speed = 0
       speedSamples.delete(data.taskId)
@@ -685,6 +686,12 @@ onMounted(async () => {
         data.downloadedPages,
         task.totalPages,
       )
+      void syncDownloadState()
+    } else if (data.status === 'cancelled') {
+      tasks.value = tasks.value.filter((t) => t.taskId !== data.taskId)
+      speedSamples.delete(data.taskId)
+      OfflineDownloadService.removeTask(data.taskId)
+      void syncDownloadState()
     } else if (data.status === 'completed') {
       task.status = 'completed'
       task.downloadedPages = data.downloadedPages

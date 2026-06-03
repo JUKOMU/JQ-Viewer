@@ -79,6 +79,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
 
     // ---- 权限相关 ----
     private static JmcomicPlugin instance;
+    private static volatile String pendingLaunchRoute;
     private PluginCall pendingPermissionCall;
     private PluginCall pendingNotificationPermissionCall;
     private PermissionService permissionService;
@@ -606,6 +607,33 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
 
     public static JmcomicPlugin getInstance() {
         return instance;
+    }
+
+    public static void setPendingLaunchRoute(String route) {
+        pendingLaunchRoute = route;
+        JmcomicPlugin plugin = instance;
+        if (plugin != null) {
+            plugin.notifyLaunchRoute(route);
+        }
+    }
+
+    public static void handleDownloadNotificationAction(String action, String taskId) {
+        JmcomicPlugin plugin = instance;
+        if (plugin == null || plugin.downloadService == null) {
+            Log.w(TAG, "下载通知操作到达时服务未就绪: " + action + ", " + taskId);
+            return;
+        }
+        try {
+            if (DownloadNotificationActionReceiver.ACTION_PAUSE.equals(action)) {
+                plugin.downloadService.pauseDownload(taskId);
+            } else if (DownloadNotificationActionReceiver.ACTION_RESUME.equals(action)) {
+                plugin.downloadService.resumeDownload(taskId);
+            } else if (DownloadNotificationActionReceiver.ACTION_CANCEL.equals(action)) {
+                plugin.downloadService.cancelDownload(taskId);
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "处理下载通知操作失败: " + action + ", " + taskId, e);
+        }
     }
 
     // ---- 自适应缓存容量 ----
@@ -1446,6 +1474,23 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         JSObject data = new JSObject();
         data.put("direction", direction);
         notifyListeners("volumeKey", data);
+    }
+
+    public void notifyLaunchRoute(String route) {
+        JSObject data = new JSObject();
+        data.put("route", route);
+        notifyListeners("launchRoute", data);
+    }
+
+    @PluginMethod
+    public void consumeLaunchRoute(PluginCall call) {
+        JSObject ret = new JSObject();
+        String route = pendingLaunchRoute;
+        pendingLaunchRoute = null;
+        if (route != null && !route.isEmpty()) {
+            ret.put("route", route);
+        }
+        call.resolve(ret);
     }
 
     // ========== 下载相关 ==========

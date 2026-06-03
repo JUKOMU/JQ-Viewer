@@ -56,6 +56,7 @@ const DOUBLE_TAP_MS = 280
 const DOUBLE_TAP_DIST = 30
 const MAX_DOM_ITEMS = 100
 const END_INDICATOR_HEIGHT = 80
+const SCROLL_SYNC_RETRY_MAX = 30
 
 const containerRef = ref<HTMLElement | null>(null)
 const wrapperRef = ref<HTMLElement | null>(null)
@@ -279,6 +280,8 @@ function onImageLoad(index: number, ev: Event) {
 }
 
 let scrollRafId: number | null = null
+let scrollSyncRafId: number | null = null
+let scrollSyncToken = 0
 let isAdjusting = false
 
 function onScroll() {
@@ -295,25 +298,50 @@ function onScroll() {
   })
 }
 
-function scrollToIndex(index: number) {
-  if (!containerRef.value || props.totalCount <= 0) return
+function applyScrollToIndex(index: number) {
+  if (!containerRef.value || props.totalCount <= 0) return true
   resetZoom(false)
   updateContainerSize()
   const next = clampIndex(index)
   const targetTop = prefixSums.value[next] ?? 0
   isAdjusting = true
   containerRef.value.scrollTop = targetTop
-  updateVisibleRange(targetTop)
+  const actualTop = containerRef.value.scrollTop
+  updateVisibleRange(actualTop)
   emitCurrentIndex(next)
   window.requestAnimationFrame(() => {
     isAdjusting = false
   })
+  return next === 0 || Math.abs(actualTop - targetTop) < 2 || getCurrentIndex(actualTop) === next
+}
+
+function scheduleScrollToIndex(index: number, retries = SCROLL_SYNC_RETRY_MAX) {
+  const token = ++scrollSyncToken
+  nextTick(() => {
+    scrollSyncRafId = window.requestAnimationFrame(() => {
+      scrollSyncRafId = null
+      if (token !== scrollSyncToken) return
+      const done = applyScrollToIndex(index)
+      if (!done && retries > 0) {
+        scheduleScrollToIndex(index, retries - 1)
+      }
+    })
+  })
+}
+
+function scrollToIndex(index: number) {
+  scheduleScrollToIndex(index)
 }
 
 function refreshAfterResize() {
   const oldWidth = containerWidth.value
   if (!updateContainerSize()) return
-  if (oldWidth <= 0 || oldWidth === containerWidth.value) {
+  if (oldWidth <= 0) {
+    updateVisibleRange(containerRef.value?.scrollTop ?? 0)
+    scheduleScrollToIndex(props.currentIndex)
+    return
+  }
+  if (oldWidth === containerWidth.value) {
     updateVisibleRange(containerRef.value?.scrollTop ?? 0)
     return
   }
@@ -501,21 +529,21 @@ watch(() => props.totalCount, () => {
   nextTick(() => {
     updateContainerSize()
     resetHeightModel()
-    scrollToIndex(props.currentIndex)
+    scheduleScrollToIndex(props.currentIndex)
   })
 }, {immediate: true})
 
 watch(() => props.currentIndex, (index) => {
   if (index < 0 || index >= props.totalCount) return
   if (index === lastEmitIndex.value) return
-  updateVisibleRange(containerRef.value?.scrollTop ?? 0)
+  scheduleScrollToIndex(index)
 })
 
 onMounted(() => {
   nextTick(() => {
     updateContainerSize()
     resetHeightModel()
-    scrollToIndex(props.currentIndex)
+    scheduleScrollToIndex(props.currentIndex)
   })
 
   const el = containerRef.value
@@ -531,6 +559,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   if (scrollRafId !== null) cancelAnimationFrame(scrollRafId)
+  if (scrollSyncRafId !== null) cancelAnimationFrame(scrollSyncRafId)
   resizeObserver?.disconnect()
   resizeObserver = null
   const el = containerRef.value

@@ -3,7 +3,7 @@
     <IonHeader class="ion-no-border">
       <IonToolbar>
         <IonButtons slot="start">
-          <IonButton text="" @click="$emit('back')">
+          <IonButton text="" @click="goBack">
             <IonIcon :icon="arrowBack"/>
           </IonButton>
         </IonButtons>
@@ -77,16 +77,12 @@
 <script setup lang="ts">
 import {computed, onMounted, ref} from 'vue'
 import {useRoute, useRouter} from 'vue-router'
-import {IonButtons, IonContent, IonHeader, IonIcon, IonPage, IonTitle, IonToolbar,} from '@ionic/vue'
+import {IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonPage, IonTitle, IonToolbar,} from '@ionic/vue'
 import {getImageUrl, JmcomicService} from '@/services/JmcomicService'
 import type {DownloadTask, PhotoMeta} from '@/services/JmcomicTypes'
 import {arrowBack} from 'ionicons/icons'
 
 defineOptions({name: 'ChapterSelectPage'})
-
-defineEmits<{
-  back: []
-}>()
 
 const route = useRoute()
 const router = useRouter()
@@ -163,6 +159,10 @@ const onOpenChapter = (ch: PhotoMeta | DownloadTask, isDownloaded: boolean) => {
     path: `/album/${albumId.value}/read/${chapterId}`,
     query,
   })
+}
+
+const goBack = () => {
+  router.back()
 }
 
 onMounted(async () => {

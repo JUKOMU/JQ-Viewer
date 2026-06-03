@@ -259,6 +259,12 @@ interface JmcomicPlugin {
   getImportedPdfs(): Promise<ImportedPdfsResult>
   deleteImportedPdf(options: { id: number }): Promise<{ success: boolean }>
   openPdf(options: { filePath: string }): Promise<{ success: boolean }>
+  getPdfInfo(options: { filePath: string }): Promise<{ pageCount: number }>
+  renderPdfPage(options: {
+    filePath: string
+    page: number
+    targetWidth: number
+  }): Promise<{ imageUrl: string }>
 
   // 阅读器设置
   setReaderDisplayMode(options: { mode: string }): Promise<{ success: boolean }>
@@ -712,6 +718,14 @@ export const JmcomicService = {
 
   openPdf(filePath: string) {
     return native.openPdf({ filePath })
+  },
+
+  getPdfInfo(filePath: string) {
+    return native.getPdfInfo({ filePath })
+  },
+
+  renderPdfPage(filePath: string, page: number, targetWidth: number) {
+    return native.renderPdfPage({ filePath, page, targetWidth })
   },
 
   checkFilesExist(paths: string[]) {

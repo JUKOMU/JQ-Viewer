@@ -77,7 +77,7 @@ import type {PluginListenerHandle} from '@capacitor/core'
 import {arrowBack} from 'ionicons/icons'
 import {getImageUrl, JmcomicService} from '@/services/JmcomicService'
 import type {PhotoDetail, PreloadResult} from '@/services/JmcomicTypes'
-import {getPdfVirtualUrl} from '@/services/PdfReaderService'
+import {buildPdfDocumentParams, fetchPdfArrayBuffer} from '@/services/PdfReaderService'
 import * as pdfjsLib from 'pdfjs-dist'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -208,10 +208,8 @@ onMounted(async () => {
   try {
     if (isPdfSource.value) {
       if (!pdfPath.value) throw new Error('缺少 PDF 路径')
-      const response = await fetch(getPdfVirtualUrl(pdfPath.value))
-      if (!response.ok) throw new Error('PDF 加载失败')
-      const arrayBuffer = await response.arrayBuffer()
-      pdfDoc = await pdfjsLib.getDocument({data: arrayBuffer}).promise
+      const arrayBuffer = await fetchPdfArrayBuffer(pdfPath.value)
+      pdfDoc = await pdfjsLib.getDocument(buildPdfDocumentParams(arrayBuffer)).promise
       totalCount.value = pdfDoc.numPages
     } else if (isDownloadSource.value) {
       photoDetail = await JmcomicService.getDownloadedPhoto(albumId.value, chapterId.value)

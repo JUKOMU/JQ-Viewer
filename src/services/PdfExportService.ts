@@ -23,7 +23,7 @@ export const PDF_SAMPLE_DATA: PdfTemplateData = {
   id: '295852',
   title: '青梅竹馬絕對不會輸的戀愛喜劇～鄰家四姐妹的溫馨日常～ [綠茶漢化][葵季むつみ/二丸修一/しぐれうい]  幼なじみが絕對に負けないラブコメ お鄰の四姉妹が絕對にほのぼのする日常',
   chapterId: '295852',
-  chapterName: '第1話',
+  chapterName: '第1话',
   chapterTitle: '',
   pageCount: 38,
   author: '葵季むつみ',

@@ -206,6 +206,8 @@ public class DownloadStore extends SQLiteOpenHelper {
     }
 
     public List<JSONObject> getAllTasks() {
+        normalizeFullyDownloadedFailures();
+
         List<JSONObject> list = new ArrayList<>();
         Cursor c = getReadableDatabase().query(TABLE_TASKS, null, null,
             null, null, null, COL_CREATED_AT + " DESC", "500");
@@ -227,6 +229,8 @@ public class DownloadStore extends SQLiteOpenHelper {
     }
 
     public JSONObject getTask(String taskId) {
+        normalizeFullyDownloadedFailures();
+
         Cursor c = getReadableDatabase().query(TABLE_TASKS, null,
             COL_TASK_ID + " = ?", new String[]{taskId},
             null, null, null);
@@ -380,6 +384,53 @@ public class DownloadStore extends SQLiteOpenHelper {
     }
 
     // ========== 辅助 ==========
+
+    private void normalizeFullyDownloadedFailures() {
+        SQLiteDatabase db = getWritableDatabase();
+        Cursor c = db.query(TABLE_TASKS,
+            new String[]{COL_TASK_ID, COL_FIRST_IMAGE_SORT_ORDER},
+            COL_STATUS + " = ? AND " + COL_TOTAL_PAGES + " > 0 AND "
+                + COL_DOWNLOADED_PAGES + " >= " + COL_TOTAL_PAGES,
+            new String[]{"failed"}, null, null, null);
+        if (c != null) {
+            try {
+                while (c.moveToNext()) {
+                    String taskId = c.getString(0);
+                    ContentValues cv = new ContentValues();
+                    cv.put(COL_STATUS, "completed");
+                    cv.putNull(COL_ERROR);
+                    cv.put(COL_COMPLETED_AT, System.currentTimeMillis());
+                    if (c.isNull(1)) {
+                        Integer firstSortOrder = findFirstImageSortOrder(db, taskId);
+                        if (firstSortOrder != null) {
+                            cv.put(COL_FIRST_IMAGE_SORT_ORDER, firstSortOrder);
+                        }
+                    }
+                    db.update(TABLE_TASKS, cv,
+                        COL_TASK_ID + " = ?", new String[]{taskId});
+                }
+            } finally {
+                c.close();
+            }
+        }
+    }
+
+    private Integer findFirstImageSortOrder(SQLiteDatabase db, String taskId) {
+        Cursor c = db.query(TABLE_IMAGES,
+            new String[]{"MIN(" + COL_SORT_ORDER + ")"},
+            COL_TASK_ID + " = ?", new String[]{taskId},
+            null, null, null);
+        if (c != null) {
+            try {
+                if (c.moveToFirst() && !c.isNull(0)) {
+                    return c.getInt(0);
+                }
+            } finally {
+                c.close();
+            }
+        }
+        return null;
+    }
 
     private JSONObject cursorToTaskJson(Cursor c) {
         JSONObject obj = new JSONObject();

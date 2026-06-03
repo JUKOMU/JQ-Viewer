@@ -8,12 +8,18 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.pdf.PdfRenderer;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.Uri;
+import android.os.ParcelFileDescriptor;
 import android.os.Build;
 import android.provider.DocumentsContract;
 import android.provider.MediaStore;
+import android.util.Base64;
 import androidx.documentfile.provider.DocumentFile;
 import android.util.Log;
 import androidx.annotation.NonNull;
@@ -43,6 +49,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.File;
+import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -2409,6 +2416,104 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         } catch (Exception e) {
             call.reject("无法打开 PDF: " + e.getMessage());
         }
+    }
+
+    @PluginMethod
+    public void getPdfInfo(PluginCall call) {
+        String filePath = call.getString("filePath");
+        if (filePath == null || filePath.isEmpty()) {
+            call.reject("filePath is required");
+            return;
+        }
+
+        ParcelFileDescriptor pfd = null;
+        PdfRenderer renderer = null;
+        try {
+            pfd = openPdfDescriptor(filePath);
+            renderer = new PdfRenderer(pfd);
+            JSObject ret = new JSObject();
+            ret.put("pageCount", renderer.getPageCount());
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject("PDF 信息读取失败: " + e.getMessage(), e);
+        } finally {
+            if (renderer != null) {
+                try { renderer.close(); } catch (Exception ignored) {}
+            }
+            if (pfd != null) {
+                try { pfd.close(); } catch (Exception ignored) {}
+            }
+        }
+    }
+
+    @PluginMethod
+    public void renderPdfPage(PluginCall call) {
+        String filePath = call.getString("filePath");
+        int pageNumber = call.getInt("page", 1);
+        int targetWidth = call.getInt("targetWidth", 1080);
+        if (filePath == null || filePath.isEmpty()) {
+            call.reject("filePath is required");
+            return;
+        }
+
+        ParcelFileDescriptor pfd = null;
+        PdfRenderer renderer = null;
+        PdfRenderer.Page page = null;
+        try {
+            pfd = openPdfDescriptor(filePath);
+            renderer = new PdfRenderer(pfd);
+            int pageCount = renderer.getPageCount();
+            if (pageNumber < 1 || pageNumber > pageCount) {
+                call.reject("page out of range");
+                return;
+            }
+
+            page = renderer.openPage(pageNumber - 1);
+            int width = Math.max(360, Math.min(targetWidth, 2400));
+            int height = Math.max(1, Math.round(width * (page.getHeight() / (float) page.getWidth())));
+            Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+            Canvas canvas = new Canvas(bitmap);
+            canvas.drawColor(Color.WHITE);
+            page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY);
+
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out);
+            bitmap.recycle();
+
+            String encoded = Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP);
+            JSObject ret = new JSObject();
+            ret.put("imageUrl", "data:image/png;base64," + encoded);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject("PDF 页面渲染失败: " + e.getMessage(), e);
+        } finally {
+            if (page != null) {
+                try { page.close(); } catch (Exception ignored) {}
+            }
+            if (renderer != null) {
+                try { renderer.close(); } catch (Exception ignored) {}
+            }
+            if (pfd != null) {
+                try { pfd.close(); } catch (Exception ignored) {}
+            }
+        }
+    }
+
+    private ParcelFileDescriptor openPdfDescriptor(String filePath) throws Exception {
+        if (filePath.startsWith("content://")) {
+            ParcelFileDescriptor pfd = getContext().getContentResolver()
+                .openFileDescriptor(Uri.parse(filePath), "r");
+            if (pfd == null) {
+                throw new java.io.FileNotFoundException("content uri not readable");
+            }
+            return pfd;
+        }
+
+        File file = new File(filePath);
+        if (!file.exists() || !file.isFile()) {
+            throw new java.io.FileNotFoundException(filePath);
+        }
+        return ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY);
     }
 
     @PluginMethod

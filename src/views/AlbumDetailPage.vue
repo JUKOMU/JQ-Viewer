@@ -100,7 +100,7 @@ import {useRoute, useRouter} from 'vue-router'
 import {IonContent, IonPage} from '@ionic/vue'
 import type {PluginListenerHandle} from '@capacitor/core'
 import {getImageUrl, JmcomicService, sanitizeError, showToast} from '@/services/JmcomicService'
-import {getPdfVirtualUrl} from '@/services/PdfReaderService'
+import {buildPdfDocumentParams, fetchPdfArrayBuffer} from '@/services/PdfReaderService'
 import * as pdfjsLib from 'pdfjs-dist'
 import type {
   AlbumDetail,
@@ -634,10 +634,8 @@ const renderPdfPreviewPage = async (pageNum: number): Promise<string | null> => 
 
 const loadPdfPreview = async (pdf: ImportedPdf) => {
   clearPreviewPdf()
-  const response = await fetch(getPdfVirtualUrl(pdf.filePath))
-  if (!response.ok) throw new Error('PDF 加载失败')
-  const arrayBuffer = await response.arrayBuffer()
-  previewPdfDoc = await pdfjsLib.getDocument({data: arrayBuffer}).promise
+  const arrayBuffer = await fetchPdfArrayBuffer(pdf.filePath)
+  previewPdfDoc = await pdfjsLib.getDocument(buildPdfDocumentParams(arrayBuffer)).promise
   previewImageTotal.value = previewPdfDoc.numPages
 
   const firstCount = Math.min(PREVIEW_BATCH, previewPdfDoc.numPages)

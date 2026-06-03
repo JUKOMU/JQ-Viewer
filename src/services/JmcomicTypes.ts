@@ -363,6 +363,15 @@ export interface ParseHistoryItem {
   mode: 'single-mode' | 'batch-mode'
 }
 
+/** 章节阅读进度：独立于浏览历史和 App 路由恢复。 */
+export interface ReadingProgressItem {
+  albumId: string
+  chapterId: string
+  page: number
+  totalPages: number
+  updatedAt: number
+}
+
 // --- PDF 导出 ---
 
 export interface PdfExportTask {

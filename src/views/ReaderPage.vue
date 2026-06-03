@@ -60,6 +60,7 @@ import {getImageUrl, JmcomicService, showToast} from '@/services/JmcomicService'
 import type {ImageInfo, PhotoDetail, PreloadResult} from '@/services/JmcomicTypes'
 import {SettingsStore} from '@/services/SettingsService'
 import {HistoryService} from '@/services/HistoryService'
+import {ReadingProgressService} from '@/services/ReadingProgressService'
 import ReaderTopToolbar from '@/components/reader/ReaderTopToolbar.vue'
 import ReaderBottomToolbar from '@/components/reader/ReaderBottomToolbar.vue'
 import VerticalScrollView from '@/components/reader/VerticalScrollView.vue'
@@ -424,6 +425,7 @@ const goToIndex = (index: number, source: PageChangeSource) => {
   const next = clampIndex(index)
   currentIndex.value = next
   updateReaderCurrentPage(next + 1)
+  ReadingProgressService.record(albumId.value, chapterId.value, next + 1, totalCount.value)
 
   if (source === 'slider-input') {
     scheduleDragPreviewLoad(next)
@@ -540,13 +542,19 @@ const applyPhotoBaseState = (pd: PhotoDetail) => {
   photoDetail = pd
 
   const total = pd.images.length
-  const pageParam = Number(route.query.page)
+  const initialPage = ReadingProgressService.getInitialPage(
+    route.query.page,
+    albumId.value,
+    chapterId.value,
+    total,
+  )
   currentIndex.value = Math.min(
-    Math.max((pageParam > 0 ? pageParam : 1) - 1, 0),
+    Math.max(initialPage - 1, 0),
     Math.max(0, total - 1),
   )
   totalCount.value = total
   updateReaderCurrentPage(currentIndex.value + 1)
+  ReadingProgressService.record(albumId.value, chapterId.value, currentIndex.value + 1, total)
   toolbarVisible.value = true
 }
 

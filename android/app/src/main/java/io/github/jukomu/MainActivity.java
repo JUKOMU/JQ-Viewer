@@ -32,13 +32,9 @@ public class MainActivity extends BridgeActivity {
                 String url = request.getUrl().toString();
                 if (PdfServer.isPdfUrl(url)) {
                     if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
-                        return PdfServer.withCorsHeaders(new WebResourceResponse("text/plain", "UTF-8",
-                            new java.io.ByteArrayInputStream(new byte[0])));
+                        return PdfServer.optionsResponse();
                     }
-                    WebResourceResponse resp = PdfServer.handleRequest(url, getApplicationContext());
-                    if (resp != null) return resp;
-                    return PdfServer.withCorsHeaders(new WebResourceResponse("text/plain", "UTF-8",
-                        new java.io.ByteArrayInputStream(new byte[0])));
+                    return PdfServer.handleRequest(url, getApplicationContext());
                 }
                 if (ImageCache.isVirtualImageUrl(url)) {
                     WebResourceResponse resp = ImageCache.handleRequest(url);

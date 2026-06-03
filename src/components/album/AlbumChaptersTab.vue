@@ -105,6 +105,9 @@ const isDownloadDisabled = (chapterId: string): boolean => {
   align-items: center;
   justify-content: center;
   gap: 4px;
+  width: 100%;
+  min-height: 76px;
+  box-sizing: border-box;
   padding: 14px 10px;
   border: 1px solid rgb(245 210 188 / 0.7);
   border-radius: 12px;
@@ -152,6 +155,11 @@ const isDownloadDisabled = (chapterId: string): boolean => {
 .chapter-title {
   font-size: 11px;
   line-height: 1.3;
+  min-height: 29px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 .chapter-item {

@@ -229,13 +229,13 @@ const albumDetail = ref<AlbumDetail | null>(null)
 function resolveChapterName(ch: DownloadTask, album: AlbumDetail | null): string {
   if (album?.seriesId === '0') return album.title || ch.albumTitle
   const order = ch.chapterSortOrder
-  if (order && order > 0) return `第${order}話`
+  if (order && order > 0) return `第${order}话`
   return ch.chapterTitle || ''
 }
 
 function chapterOrderLabel(ch: DownloadTask): string {
   const order = ch.chapterSortOrder
-  if (order && order > 0) return `第${order}話`
+  if (order && order > 0) return `第${order}话`
   return ch.chapterTitle || ''
 }
 

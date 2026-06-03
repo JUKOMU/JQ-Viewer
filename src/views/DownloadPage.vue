@@ -470,9 +470,18 @@ const activeTasks = computed(() =>
   ),
 )
 
-const completedTasks = computed(() => tasks.value.filter((t) => t.status === 'completed'))
+const isFullyDownloadedFailure = (task: DownloadTask) =>
+  task.status === 'failed' &&
+  task.totalPages > 0 &&
+  task.downloadedPages >= task.totalPages
 
-const failedTasks = computed(() => tasks.value.filter((t) => t.status === 'failed'))
+const completedTasks = computed(() =>
+  tasks.value.filter((t) => t.status === 'completed' || isFullyDownloadedFailure(t)),
+)
+
+const failedTasks = computed(() =>
+  tasks.value.filter((t) => t.status === 'failed' && !isFullyDownloadedFailure(t)),
+)
 
 const sortedActiveTasks = computed(() => sortTasks(activeTasks.value))
 const sortedFailedTasks = computed(() => sortTasks(failedTasks.value))
@@ -708,13 +717,26 @@ onMounted(async () => {
       )
       void syncDownloadState()
     } else if (data.status === 'failed') {
-      task.status = 'failed'
       task.downloadedPages = data.downloadedPages
       task.totalPages = data.totalPages
-      task.error = data.error
       task.totalSize = data.totalSize
       task.speed = 0
       speedSamples.delete(data.taskId)
+      if (isFullyDownloadedFailure({...task, status: 'failed'})) {
+        task.status = 'completed'
+        task.error = undefined
+        task.completedAt = Date.now()
+        OfflineDownloadService.updateStatus(
+          data.taskId,
+          'completed',
+          data.downloadedPages,
+          data.totalPages,
+        )
+        void syncDownloadState()
+        return
+      }
+      task.status = 'failed'
+      task.error = data.error
       OfflineDownloadService.updateStatus(
         data.taskId,
         'failed',
@@ -788,7 +810,7 @@ const onPdfExportConfirm = async (payload: {
   function resolveChapterName(ch: DownloadTask, album: AlbumDetail | null): string {
     if (album?.seriesId === '0') return album.title || ch.albumTitle
     const order = ch.chapterSortOrder
-    if (order && order > 0) return `第${order}話`
+    if (order && order > 0) return `第${order}话`
     return ch.chapterTitle || ''
   }
 
@@ -954,7 +976,7 @@ const onRead = (entry: CompletedEntry | DownloadTask) => {
           albumTitle: ce.albumTitle,
           authors: ce.authors,
           coverUrl: ce.coverUrl,
-          chapterId: ce.displayId ?? ce.albumId,
+          chapterId: ce.chapterId || ce.displayId || ce.albumId,
           chapterTitle: ce.chapterTitle,
         },
       })

@@ -55,8 +55,9 @@ import type {PluginListenerHandle} from '@capacitor/core'
 import {JmcomicService, showToast} from '@/services/JmcomicService'
 import {SettingsStore} from '@/services/SettingsService'
 import {HistoryService} from '@/services/HistoryService'
+import {ReadingProgressService} from '@/services/ReadingProgressService'
 import * as pdfjsLib from 'pdfjs-dist'
-import {getPdfVirtualUrl} from '@/services/PdfReaderService'
+import {buildPdfDocumentParams, fetchPdfArrayBuffer, PdfLoadError} from '@/services/PdfReaderService'
 import ReaderTopToolbar from '@/components/reader/ReaderTopToolbar.vue'
 import ReaderBottomToolbar from '@/components/reader/ReaderBottomToolbar.vue'
 import VerticalScrollView from '@/components/reader/VerticalScrollView.vue'
@@ -79,6 +80,9 @@ const M = 50
 const SPEED_THRESHOLD = 10
 const EXPAND_EXPIRE_MS = 2000
 const DRAG_PREVIEW_DELAY_MS = 500
+const PDF_RENDER_CONCURRENCY = 2
+const NATIVE_PDF_MIN_RENDER_WIDTH = 1440
+const NATIVE_PDF_MAX_RENDER_WIDTH = 2400
 
 const route = useRoute()
 const router = useRouter()
@@ -106,8 +110,13 @@ const settingsPanelVisible = ref(false)
 let volumeKeyListenerHandle: PluginListenerHandle | null = null
 let readerRuntimeActive = false
 let pdfDoc: pdfjsLib.PDFDocumentProxy | null = null
+let nativePdfMode = false
 const renderedPages = new Map<number, string>()
 const renderTasks = new Map<number, pdfjsLib.RenderTask>()
+const pendingRenderQueue = new Set<number>()
+const pageRenderGenerations = new Map<number, number>()
+const pendingRenderPriorities = new Map<number, number>()
+const activeRenderingPages = new Set<number>()
 let lastWindowCenter = -1
 let expandDirection: 'forward' | 'backward' | null = null
 let lastScrollTime = 0
@@ -117,6 +126,7 @@ let renderGeneration = 0
 let activeRenderRange: {start: number; end: number; center: number} | null = null
 let pendingSeekIndex: number | null = null
 let dragPreviewTimer: ReturnType<typeof setTimeout> | null = null
+let activeRenderCount = 0
 
 const verticalViewRef = ref<InstanceType<typeof VerticalScrollView> | null>(null)
 const horizontalViewRef = ref<InstanceType<typeof HorizontalPageView> | null>(null)
@@ -244,6 +254,16 @@ const calcBaseScale = (viewport: pdfjsLib.PageViewport): number => {
 
 // ---- PDF 页面渲染 ----
 const renderPageToBlob = async (pageNum: number): Promise<string | null> => {
+  if (nativePdfMode) {
+    const pixelRatio = Math.max(window.devicePixelRatio || 1, 3)
+    const targetWidth = Math.min(
+      NATIVE_PDF_MAX_RENDER_WIDTH,
+      Math.max(NATIVE_PDF_MIN_RENDER_WIDTH, Math.ceil((window.innerWidth || 360) * pixelRatio)),
+    )
+    const result = await JmcomicService.renderPdfPage(filePath, pageNum, targetWidth)
+    return result.imageUrl
+  }
+
   if (!pdfDoc) return null
   let page: pdfjsLib.PDFPageProxy | null = null
   try {
@@ -275,11 +295,37 @@ const renderPageToBlob = async (pageNum: number): Promise<string | null> => {
   }
 }
 
+const releaseRenderedUrl = (url: string) => {
+  if (url.startsWith('blob:')) URL.revokeObjectURL(url)
+}
+
 const cancelRenderTasksOutside = (keepSet: Set<number>) => {
+  for (const pageNum of activeRenderingPages) {
+    if (keepSet.has(pageNum)) continue
+    pageRenderGenerations.delete(pageNum)
+    pendingRenderPriorities.delete(pageNum)
+    if (renderedPages.get(pageNum) === '') {
+      renderedPages.delete(pageNum)
+      imageMap.value.delete(pageNum)
+    }
+  }
+
+  for (const pageNum of pendingRenderQueue) {
+    if (keepSet.has(pageNum)) continue
+    pendingRenderQueue.delete(pageNum)
+    pageRenderGenerations.delete(pageNum)
+    pendingRenderPriorities.delete(pageNum)
+    if (renderedPages.get(pageNum) === '') {
+      renderedPages.delete(pageNum)
+      imageMap.value.delete(pageNum)
+    }
+  }
+
   for (const [pageNum, task] of renderTasks) {
     if (keepSet.has(pageNum)) continue
     task.cancel()
     renderTasks.delete(pageNum)
+    pageRenderGenerations.delete(pageNum)
     if (renderedPages.get(pageNum) === '') {
       renderedPages.delete(pageNum)
       imageMap.value.delete(pageNum)
@@ -288,6 +334,9 @@ const cancelRenderTasksOutside = (keepSet: Set<number>) => {
 }
 
 const cancelAllRenderTasks = () => {
+  pendingRenderQueue.clear()
+  pageRenderGenerations.clear()
+  pendingRenderPriorities.clear()
   for (const [pageNum, task] of renderTasks) {
     task.cancel()
     if (renderedPages.get(pageNum) === '') {
@@ -298,25 +347,89 @@ const cancelAllRenderTasks = () => {
   renderTasks.clear()
 }
 
-const startRenderPage = (pageNum: number, generation: number) => {
-  renderPageToBlob(pageNum).then((url) => {
-    if (generation !== renderGeneration) {
-      if (url) URL.revokeObjectURL(url)
-      if (renderedPages.get(pageNum) === '') renderedPages.delete(pageNum)
-      return
+const calcRenderPriority = (pageNum: number, center: number): number => {
+  const currentPage = center + 1
+  if (pageNum === currentPage) return 0
+  const distance = Math.abs(pageNum - currentPage)
+  if (pageNum > currentPage && distance <= 2) return distance
+  if (pageNum < currentPage && distance === 1) return 3
+  return distance * 10 + (pageNum > currentPage ? 0 : 1)
+}
+
+const takeNextPendingRenderPage = (): number | undefined => {
+  let nextPage: number | undefined
+  let nextPriority = Number.POSITIVE_INFINITY
+  for (const pageNum of pendingRenderQueue) {
+    const priority = pendingRenderPriorities.get(pageNum) ?? Number.POSITIVE_INFINITY
+    if (priority < nextPriority) {
+      nextPage = pageNum
+      nextPriority = priority
     }
-    if (url) {
-      renderedPages.set(pageNum, url)
-      imageMap.value.set(pageNum, url)
-      applyImageMap()
-      return
+  }
+  if (nextPage !== undefined) {
+    pendingRenderQueue.delete(nextPage)
+    pendingRenderPriorities.delete(nextPage)
+  }
+  return nextPage
+}
+
+const startRenderPage = (pageNum: number, generation: number, priority = Number.POSITIVE_INFINITY) => {
+  if (activeRenderingPages.has(pageNum)) {
+    if (!pageRenderGenerations.has(pageNum)) {
+      pageRenderGenerations.set(pageNum, generation)
+      pendingRenderPriorities.set(pageNum, priority)
     }
-    if (renderedPages.get(pageNum) === '') {
-      renderedPages.delete(pageNum)
-      imageMap.value.delete(pageNum)
-      applyImageMap()
-    }
-  })
+    return
+  }
+  pageRenderGenerations.set(pageNum, generation)
+  if (renderTasks.has(pageNum)) return
+  const currentPriority = pendingRenderPriorities.get(pageNum)
+  if (currentPriority === undefined || priority < currentPriority) {
+    pendingRenderPriorities.set(pageNum, priority)
+  }
+  pendingRenderQueue.add(pageNum)
+  scheduleRenderQueue()
+}
+
+const scheduleRenderQueue = () => {
+  while (activeRenderCount < PDF_RENDER_CONCURRENCY && pendingRenderQueue.size > 0) {
+    const pageNum = takeNextPendingRenderPage()
+    if (pageNum === undefined) break
+    const generation = pageRenderGenerations.get(pageNum)
+    if (generation === undefined || renderedPages.get(pageNum) !== '') continue
+
+    activeRenderCount++
+    activeRenderingPages.add(pageNum)
+    renderPageToBlob(pageNum).then((url) => {
+      if (generation !== pageRenderGenerations.get(pageNum)) {
+        if (url) releaseRenderedUrl(url)
+        if (renderedPages.get(pageNum) === '' && pageRenderGenerations.has(pageNum)) {
+          pendingRenderQueue.add(pageNum)
+          if (!pendingRenderPriorities.has(pageNum)) {
+            pendingRenderPriorities.set(pageNum, Number.POSITIVE_INFINITY)
+          }
+        }
+        return
+      }
+
+      pageRenderGenerations.delete(pageNum)
+      if (url) {
+        renderedPages.set(pageNum, url)
+        imageMap.value.set(pageNum, url)
+        applyImageMap()
+        return
+      }
+      if (renderedPages.get(pageNum) === '') {
+        renderedPages.delete(pageNum)
+        imageMap.value.delete(pageNum)
+        applyImageMap()
+      }
+    }).finally(() => {
+      activeRenderingPages.delete(pageNum)
+      activeRenderCount = Math.max(0, activeRenderCount - 1)
+      scheduleRenderQueue()
+    })
+  }
 }
 
 // ---- 窗口管理 ----
@@ -364,7 +477,7 @@ const hasPendingInRange = (center: number, dir: 'forward' | 'backward'): boolean
 }
 
 const updateWindow = (center: number) => {
-  if (!pdfDoc) return
+  if (!pdfDoc && !nativePdfMode) return
   const generation = ++renderGeneration
   const windowOrders = new Set(calcWindow(center))
   if (activeRenderRange) {
@@ -395,18 +508,20 @@ const updateWindow = (center: number) => {
     if (!renderedPages.has(so)) {
       toRender.push(so)
       renderedPages.set(so, '') // 占位防重复请求
+    } else if (renderedPages.get(so) === '') {
+      startRenderPage(so, generation, calcRenderPriority(so, center))
     }
   }
 
   // 异步渲染窗口内页面
-  toRender.sort((a, b) => Math.abs(a - (center + 1)) - Math.abs(b - (center + 1)))
+  toRender.sort((a, b) => calcRenderPriority(a, center) - calcRenderPriority(b, center))
   for (const pageNum of toRender) {
-    startRenderPage(pageNum, generation)
+    startRenderPage(pageNum, generation, calcRenderPriority(pageNum, center))
   }
 
   for (const [so, url] of renderedPages) {
     if (!cacheSet.has(so)) {
-      if (url) URL.revokeObjectURL(url)
+      if (url) releaseRenderedUrl(url)
       renderedPages.delete(so)
       imageMap.value.delete(so)
     }
@@ -415,11 +530,11 @@ const updateWindow = (center: number) => {
 }
 
 const renderDragPreviewPage = (center: number) => {
-  if (!pdfDoc) return
+  if (!pdfDoc && !nativePdfMode) return
   const pageNum = center + 1
   if (pageNum < 1 || pageNum > totalCount.value || renderedPages.has(pageNum)) return
   renderedPages.set(pageNum, '')
-  startRenderPage(pageNum, renderGeneration)
+  startRenderPage(pageNum, renderGeneration, 0)
 }
 
 const scheduleDragPreviewRender = (index: number) => {
@@ -482,6 +597,7 @@ const goToIndex = (index: number, source: PageChangeSource) => {
   const next = clampIndex(index)
   currentIndex.value = next
   updateReaderCurrentPage(next + 1)
+  ReadingProgressService.record(albumId.value, chapterId.value, next + 1, totalCount.value)
 
   if (source === 'slider-input') {
     scheduleDragPreviewRender(next)
@@ -566,6 +682,24 @@ const recordBrowseHistory = () => {
     })
 }
 
+const loadPdfDocument = async () => {
+  const arrayBuffer = await fetchPdfArrayBuffer(filePath)
+  try {
+    pdfDoc = await pdfjsLib.getDocument(buildPdfDocumentParams(arrayBuffer)).promise
+    nativePdfMode = false
+    return pdfDoc.numPages
+  } catch (e) {
+    console.warn('[PdfReaderPage] pdf.js failed, using native renderer fallback', e)
+    if (pdfDoc) {
+      pdfDoc.destroy()
+      pdfDoc = null
+    }
+    const info = await JmcomicService.getPdfInfo(filePath)
+    nativePdfMode = true
+    return info.pageCount
+  }
+}
+
 // ---- 返回 ----
 const goBack = () => {
   if (window.history.length > 1) {
@@ -592,21 +726,22 @@ onMounted(async () => {
   }
 
   try {
-    const url = getPdfVirtualUrl(filePath)
-    const response = await fetch(url)
-    if (!response.ok) throw new Error('文件加载失败')
-    const arrayBuffer = await response.arrayBuffer()
-    if (arrayBuffer.byteLength === 0) throw new Error('文件不存在或已失效')
-    pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
-    const total = pdfDoc.numPages
-    const pageParam = Number(route.query.page)
+    const total = await loadPdfDocument()
+    if (total <= 0) throw new Error('PDF 页数异常')
+    const initialPage = ReadingProgressService.getInitialPage(
+      route.query.page,
+      albumId.value,
+      chapterId.value,
+      total,
+    )
     const initIndex = Math.min(
-      Math.max((pageParam > 0 ? pageParam : 1) - 1, 0),
+      Math.max(initialPage - 1, 0),
       Math.max(0, total - 1),
     )
     currentIndex.value = initIndex
     totalCount.value = total
     updateReaderCurrentPage(initIndex + 1)
+    ReadingProgressService.record(albumId.value, chapterId.value, initIndex + 1, total)
     toolbarVisible.value = true
 
     updateWindow(initIndex)
@@ -619,8 +754,10 @@ onMounted(async () => {
 
     recordBrowseHistory()
   } catch (e: any) {
-    if (e instanceof TypeError && e.message === 'Failed to fetch') {
-      await showToast('文件不存在或已失效', 'danger')
+    if (e instanceof PdfLoadError) {
+      await showToast(e.message, 'danger')
+    } else if (e instanceof TypeError && e.message === 'Failed to fetch') {
+      await showToast('PDF 文件读取失败，请重新导入', 'danger')
     } else {
       const msg = e?.message || ''
       if (/password/i.test(msg)) {
@@ -651,7 +788,7 @@ onUnmounted(() => {
   cancelAllRenderTasks()
 
   for (const url of renderedPages.values()) {
-    if (url) URL.revokeObjectURL(url)
+    if (url) releaseRenderedUrl(url)
   }
   renderedPages.clear()
 

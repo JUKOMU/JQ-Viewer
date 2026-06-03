@@ -87,7 +87,7 @@ const variables = [
   { name: '{authors}', desc: '全部作者，用顿号连接', sample: '葵季むつみ、二丸修一、しぐれうい' },
   { name: '{tags}', desc: '全部标签，用顿号连接', sample: '非H、劇情向、蘿莉、純愛、中文' },
   { name: '{chapterId}', desc: '章节ID', sample: '295852' },
-  { name: '{chapterName}', desc: '章节序号（单行本则为标题）', sample: '第1話' },
+  { name: '{chapterName}', desc: '章节序号（单行本则为标题）', sample: '第1话' },
   { name: '{chapterTitle}', desc: '章节原始标题', sample: '' },
   { name: '{pageCount}', desc: '章节页数', sample: '38' },
 ]

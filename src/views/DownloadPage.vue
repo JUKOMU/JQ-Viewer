@@ -209,12 +209,12 @@
       @confirm="onPdfExportConfirm"
     />
 
-    <!-- PDF章节选择底部面板 -->
-    <PdfChapterSheet
-      v-model="showPdfChapterSheet"
-      :album-title="pdfChapterGroup?.albumTitle ?? ''"
-      :chapters="pdfChapterGroup?.chapters ?? []"
-      @select="onPdfChapterSelect"
+    <!-- 多章节删除底部面板 -->
+    <DeleteChaptersBottomSheet
+      v-model="showDeleteSheet"
+      :album-title="deleteGroup?.albumTitle ?? ''"
+      :chapters="deleteGroup?.chapters ?? []"
+      @confirm="onDeleteSheetConfirm"
     />
   </IonPage>
 </template>
@@ -255,7 +255,7 @@ import type {PluginListenerHandle} from '@capacitor/core'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import DownloadTaskCard from '@/components/download/DownloadTaskCard.vue'
 import PdfExportBottomSheet from '@/components/download/PdfExportBottomSheet.vue'
-import PdfChapterSheet from '@/components/download/PdfChapterSheet.vue'
+import DeleteChaptersBottomSheet from '@/components/download/DeleteChaptersBottomSheet.vue'
 import {JmcomicService, sanitizeError, showToast} from '@/services/JmcomicService'
 import {alertController} from '@ionic/vue'
 import {OfflineDownloadService} from '@/services/OfflineDownloadService'
@@ -369,10 +369,10 @@ const popoverAction = (action: string) => {
 
   switch (action) {
     case 'read':
-      if (isSelectedPdf.value) {
-        onRead(t)
-      } else if (selectedGroup.value?.type === 'multi') {
+      if (selectedGroup.value?.type === 'multi') {
         onOpenChapterSelect(selectedGroup.value)
+      } else if (isSelectedPdf.value) {
+        onRead(t)
       } else {
         onRead(t)
       }
@@ -396,7 +396,9 @@ const popoverAction = (action: string) => {
       onOpenPdfSheet()
       break
     case 'delete':
-      if (isSelectedPdf.value) {
+      if (selectedGroup.value?.type === 'multi') {
+        requestDeleteGroupConfirm(selectedGroup.value)
+      } else if (isSelectedPdf.value) {
         requestDeletePdfConfirm()
       } else {
         requestDeleteConfirm()
@@ -429,6 +431,14 @@ const requestDeletePdfConfirm = () => {
   isDeleteAlertOpen.value = true
 }
 
+const showDeleteSheet = ref(false)
+const deleteGroup = ref<CompletedGroup | null>(null)
+
+const requestDeleteGroupConfirm = (group: CompletedGroup) => {
+  deleteGroup.value = group
+  showDeleteSheet.value = true
+}
+
 const confirmDelete = () => {
   if (isSelectedPdf.value) {
     void confirmDeletePdf()
@@ -436,7 +446,7 @@ const confirmDelete = () => {
   }
   const g = selectedGroup.value
   if (g?.type === 'multi') {
-    onDeleteGroup(g)
+    void deleteChapters(g.chapters)
   } else if (selectedTask.value) {
     onDelete(selectedTask.value as DownloadTask)
   }
@@ -996,26 +1006,12 @@ const onRead = (entry: CompletedEntry | DownloadTask) => {
   })
 }
 
-const showPdfChapterSheet = ref(false)
-const pdfChapterGroup = ref<CompletedGroup | null>(null)
-
 const onReadGroup = (group: CompletedGroup) => {
-  const firstChapter = group.chapters[0]
-  if (firstChapter.source === 'pdf-import' && group.type === 'multi') {
-    pdfChapterGroup.value = group
-    showPdfChapterSheet.value = true
-    return
-  }
   if (group.type === 'multi') {
     onOpenChapterSelect(group)
   } else {
     onRead(group.chapters[0])
   }
-}
-
-const onPdfChapterSelect = (chapter: CompletedEntry) => {
-  showPdfChapterSheet.value = false
-  onRead(chapter)
 }
 
 const onOpenChapterSelect = (group: CompletedGroup) => {
@@ -1050,35 +1046,73 @@ const onDelete = async (task: DownloadTask) => {
   }
 }
 
-const onDeleteGroup = async (group: CompletedGroup) => {
+const onDeleteSheetConfirm = async (chapters: CompletedEntry[]) => {
+  showDeleteSheet.value = false
+  await deleteChapters(chapters)
+  deleteGroup.value = null
+  selectedTask.value = null
+  selectedGroup.value = null
+  popoverEvent.value = null
+}
+
+const deleteChapters = async (chapters: CompletedEntry[]) => {
   try {
-    const downloadChapters = group.chapters.filter((ch) => ch.source === 'download')
-    const pdfChapters = group.chapters.filter((ch) => ch.source === 'pdf-import')
+    const downloadChapters = chapters.filter((ch) => ch.source === 'download')
+    const pdfChapters = chapters.filter((ch) => ch.source === 'pdf-import')
 
-    // 删除下载章节
-    await Promise.all(
-      downloadChapters.map((ch) =>
-        JmcomicService.deleteDownloaded(ch.albumId, ch.chapterId).catch(() => {
-        }),
-      ),
+    const downloadResults = await Promise.all(
+      downloadChapters.map(async (ch) => {
+        try {
+          const result = await JmcomicService.deleteDownloaded(ch.albumId, ch.chapterId)
+          return { ch, ok: result.success !== false }
+        } catch {
+          return { ch, ok: false }
+        }
+      }),
     )
-    const taskIds = new Set(downloadChapters.map((ch) => ch.downloadTask!.taskId))
+    const deletedDownloadChapters = downloadResults
+      .filter((result) => result.ok)
+      .map((result) => result.ch)
+    const taskIds = new Set(
+      deletedDownloadChapters
+        .map((ch) => ch.downloadTask?.taskId)
+        .filter((taskId): taskId is string => !!taskId),
+    )
     tasks.value = tasks.value.filter((t) => !taskIds.has(t.taskId))
-    for (const ch of downloadChapters) {
-      OfflineDownloadService.removeTask(ch.downloadTask!.taskId)
+    for (const taskId of taskIds) {
+      OfflineDownloadService.removeTask(taskId)
     }
 
-    // 删除导入 PDF 记录
-    for (const ch of pdfChapters) {
-      if (ch.pdfData) {
-        await JmcomicService.deleteImportedPdf(ch.pdfData.id).catch(() => {})
-      }
-    }
+    const pdfResults = await Promise.all(
+      pdfChapters.map(async (ch) => {
+        if (!ch.pdfData) return { ch, ok: false }
+        try {
+          const result = await JmcomicService.deleteImportedPdf(ch.pdfData.id)
+          return { ch, ok: result.success !== false }
+        } catch {
+          return { ch, ok: false }
+        }
+      }),
+    )
+    const deletedPdfIds = new Set(
+      pdfResults
+        .filter((result) => result.ok && result.ch.pdfData)
+        .map((result) => result.ch.pdfData!.id),
+    )
     importedPdfs.value = importedPdfs.value.filter(
-      (p) => !pdfChapters.some((ch) => ch.pdfData?.id === p.id),
+      (p) => !deletedPdfIds.has(p.id),
     )
 
     void syncDownloadState()
+    const deletedCount = deletedDownloadChapters.length + deletedPdfIds.size
+    const failedCount = chapters.length - deletedCount
+    if (failedCount > 0 && deletedCount > 0) {
+      await showToast(`已删除 ${deletedCount} 个，${failedCount} 个删除失败`, 'medium')
+    } else if (failedCount > 0) {
+      await showToast('删除失败', 'danger')
+    } else {
+      await showToast('已删除选中章节', 'success')
+    }
   } catch (e: any) {
     await showToast(sanitizeError(e, '删除失败'), 'danger')
   }

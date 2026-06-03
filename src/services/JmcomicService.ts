@@ -1,6 +1,6 @@
 import type {PluginListenerHandle} from '@capacitor/core'
 import {registerPlugin} from '@capacitor/core'
-import {toastController} from '@ionic/vue'
+import {alertController, toastController} from '@ionic/vue'
 import type {
   AlbumDetail,
   AllSettings,
@@ -279,6 +279,45 @@ interface ImageReadyEvent {
 
 const native = registerPlugin<JmcomicPlugin>('Jmcomic')
 
+let downloadNotificationPrompted = false
+let downloadNotificationPromptPromise: Promise<void> | null = null
+
+async function ensureDownloadNotificationPermission(): Promise<void> {
+  if (downloadNotificationPrompted) return
+  if (downloadNotificationPromptPromise) return downloadNotificationPromptPromise
+
+  downloadNotificationPromptPromise = (async () => {
+    try {
+      const check = await native.checkNotificationPermission()
+      if (check.granted) {
+        downloadNotificationPrompted = true
+        return
+      }
+
+      const alert = await alertController.create({
+        header: '需要通知权限',
+        message: '章节下载将在后台进行，需要通过通知查看进度。拒绝后仍会继续下载，但不会显示系统通知。',
+        buttons: [
+          {text: '暂不授权', role: 'cancel'},
+          {text: '允许通知', role: 'confirm'},
+        ],
+      })
+      await alert.present()
+      const dismissed = await alert.onDidDismiss()
+      if (dismissed.role === 'confirm') {
+        await native.requestNotificationPermission()
+      }
+    } catch {
+      // Web 调试或旧系统异常时不阻塞下载提交。
+    } finally {
+      downloadNotificationPrompted = true
+      downloadNotificationPromptPromise = null
+    }
+  })()
+
+  return downloadNotificationPromptPromise
+}
+
 /** 虚拟 URL 基地址，与 Android 侧 ImageRegistry.VIRTUAL_HOST 一致 */
 const VIRTUAL_BASE = 'https://jqviewer.local'
 
@@ -474,13 +513,14 @@ export const JmcomicService = {
    * 提交章节下载任务。
    * @returns 返回 taskId（albumId_chapterId）
    */
-  downloadChapter(
+  async downloadChapter(
     albumId: string,
     chapterId: string,
     albumTitle: string,
     chapterTitle: string,
     coverUrl: string,
   ) {
+    await ensureDownloadNotificationPermission()
     return native.downloadChapter({albumId, chapterId, albumTitle, chapterTitle, coverUrl})
   },
 

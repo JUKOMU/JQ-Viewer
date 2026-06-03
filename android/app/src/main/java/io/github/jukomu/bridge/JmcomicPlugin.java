@@ -185,7 +185,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         this.preloadService = new PreloadService(ImageCache.getInstance(),
             FileStore.getInstance(), settingsDb, sharedClient, imageExecutor, this, ctx);
         this.downloadService = new DownloadService(downloadDb,
-            FileStore.getInstance(), sharedClient, imageExecutor, this);
+            FileStore.getInstance(), sharedClient, imageExecutor, this, ctx);
 
         // 清除登录态缓存，强制通过凭据重新登录
         clearAuthState(settingsDb);
@@ -621,8 +621,8 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         am.getMemoryInfo(memInfo);
         long availMemMb = memInfo.availMem / (1024 * 1024);
 
-        long systemLimit = (long)(availMemMb * 0.25);
-        long heapLimit = (long)(heapLimitMb * 0.50);
+        long systemLimit = (long)(availMemMb * 0.35);
+        long heapLimit = (long)(heapLimitMb * 0.80);
 
         long effective = userMb;
         if (systemLimit < effective) effective = systemLimit;
@@ -1958,6 +1958,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         data.put("status", d.status);
         if (d.error != null) data.put("error", d.error);
         data.put("speed", d.speed);
+        if (d.downloadedBytes > 0) data.put("downloadedBytes", d.downloadedBytes);
         if (d.totalSize > 0) data.put("totalSize", d.totalSize);
         notifyListeners("downloadProgress", data);
     }

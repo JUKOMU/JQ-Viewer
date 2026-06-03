@@ -32,6 +32,7 @@ public class PdfExportService {
     private static final int NOTIFY_ID_BASE = 2000;
 
     private static PdfExportService instance;
+    private final Context context;
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "pdf-export");
@@ -45,7 +46,8 @@ public class PdfExportService {
     private PdfExportNotificationHelper notif;
 
     private PdfExportService(Context context) {
-        this.notif = new PdfExportNotificationHelper(context.getApplicationContext());
+        this.context = context.getApplicationContext();
+        this.notif = new PdfExportNotificationHelper(this.context);
     }
 
     public static synchronized PdfExportService getInstance(Context context) {
@@ -88,6 +90,7 @@ public class PdfExportService {
         }
 
         if (!accepted.isEmpty()) {
+            updateForegroundService();
             executor.submit(() -> executeBatch(batchId, accepted));
         }
     }
@@ -119,6 +122,7 @@ public class PdfExportService {
             }
 
             activeChapterIds.remove(job.chapterId);
+            updateForegroundService();
         }
 
         Log.i(TAG, "Batch " + batchId + " done: " + success + " success, " + fail + " fail");
@@ -251,6 +255,10 @@ public class PdfExportService {
     private File resolveAbsolutePath(String path) {
         if (path.startsWith("/")) return new File(path);
         return new File(Environment.getExternalStorageDirectory(), path);
+    }
+
+    private void updateForegroundService() {
+        PdfExportForegroundService.update(context, activeChapterIds.size());
     }
 
     private static byte[] readFileBytes(File file) throws IOException {

@@ -273,6 +273,7 @@ export interface DownloadTask {
   completedAt?: number
   error?: string
   speed?: number
+  downloadedBytes?: number
   totalSize?: number
 }
 
@@ -300,6 +301,7 @@ export interface DownloadProgressEvent {
   status: DownloadStatus
   error?: string
   speed: number
+  downloadedBytes?: number
   totalSize?: number
 }
 

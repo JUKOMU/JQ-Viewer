@@ -129,6 +129,11 @@ interface JmcomicPlugin {
     handler: (data: NetworkProbeEvent) => void,
   ): Promise<PluginListenerHandle>
 
+  addListener(
+    event: 'launchRoute',
+    handler: (data: { route: string }) => void,
+  ): Promise<PluginListenerHandle>
+
   getDomainStates(): Promise<DomainStates>
 
   reprobeDomains(): Promise<void>
@@ -246,6 +251,7 @@ interface JmcomicPlugin {
   getExternalStoragePath(): Promise<{ path: string }>
   checkNotificationPermission(): Promise<{ granted: boolean }>
   requestNotificationPermission(): Promise<{ granted: boolean }>
+  consumeLaunchRoute(): Promise<{ route?: string }>
 
   // PDF 导入
   scanPdfFiles(options: { path: string; treeUri?: string }): Promise<{ files: PdfScanItem[] }>
@@ -564,6 +570,12 @@ export const JmcomicService = {
     return native.addListener('downloadProgress', handler)
   },
 
+  addLaunchRouteListener(
+    handler: (data: { route: string }) => void,
+  ): Promise<PluginListenerHandle> {
+    return native.addListener('launchRoute', handler)
+  },
+
   /**
    * 注册文件搬迁进度监听。
    * @param handler 进度更新回调
@@ -716,6 +728,10 @@ export const JmcomicService = {
 
   requestNotificationPermission() {
     return native.requestNotificationPermission()
+  },
+
+  consumeLaunchRoute() {
+    return native.consumeLaunchRoute()
   },
 
   // ========== 阅读器设置 ==========

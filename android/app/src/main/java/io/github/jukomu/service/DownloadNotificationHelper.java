@@ -10,7 +10,9 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.os.Build;
 import android.util.Log;
+import android.widget.RemoteViews;
 import androidx.core.app.NotificationCompat;
+import io.github.jukomu.MainActivity;
 import io.github.jukomu.R;
 
 import java.io.ByteArrayOutputStream;
@@ -97,58 +99,49 @@ public class DownloadNotificationHelper {
             .build());
     }
 
-    public void showPreparing(int notificationId, String chapterTitle, String coverUrl) {
-        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(ICON)
-            .setContentTitle("准备下载...")
-            .setContentText(chapterTitle)
-            .setOngoing(true)
-            .setOnlyAlertOnce(true);
-        applyCover(builder, coverUrl);
+    public void showPreparing(int notificationId, String taskId, String albumTitle,
+                              String chapterId, String chapterTitle, String coverUrl) {
+        NotificationCompat.Builder builder = buildTaskNotification(
+            taskId, albumTitle, chapterId, chapterTitle, coverUrl,
+            0, 0, "准备下载", true);
+        builder.addAction(ICON, "取消", createActionIntent(
+            DownloadNotificationActionReceiver.ACTION_CANCEL, taskId));
         notify(notificationId, builder.build());
     }
 
-    public void showProgress(int notificationId, String chapterTitle, String coverUrl,
+    public void showProgress(int notificationId, String taskId, String albumTitle,
+                             String chapterId, String chapterTitle, String coverUrl,
                              int downloadedPages, int totalPages) {
-        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(ICON)
-            .setContentTitle("正在下载")
-            .setContentText(buildProgressText(chapterTitle, downloadedPages, totalPages))
-            .setOngoing(true)
-            .setOnlyAlertOnce(true);
-        applyCover(builder, coverUrl);
-
-        if (totalPages > 0) {
-            builder.setProgress(totalPages, Math.min(downloadedPages, totalPages), false);
-        } else {
-            builder.setProgress(0, 0, true);
-        }
-
+        NotificationCompat.Builder builder = buildTaskNotification(
+            taskId, albumTitle, chapterId, chapterTitle, coverUrl,
+            downloadedPages, totalPages, "正在下载", true);
+        builder.addAction(ICON, "暂停", createActionIntent(
+            DownloadNotificationActionReceiver.ACTION_PAUSE, taskId));
+        builder.addAction(ICON, "取消", createActionIntent(
+            DownloadNotificationActionReceiver.ACTION_CANCEL, taskId));
         notify(notificationId, builder.build());
     }
 
-    public void showPaused(int notificationId, String chapterTitle, String coverUrl,
+    public void showPaused(int notificationId, String taskId, String albumTitle,
+                           String chapterId, String chapterTitle, String coverUrl,
                            int downloadedPages, int totalPages) {
-        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(ICON)
-            .setContentTitle("下载已暂停")
-            .setContentText(buildProgressText(chapterTitle, downloadedPages, totalPages))
-            .setOngoing(false)
-            .setOnlyAlertOnce(true);
-        applyCover(builder, coverUrl);
-
-        if (totalPages > 0) {
-            builder.setProgress(totalPages, Math.min(downloadedPages, totalPages), false);
-        }
-
+        NotificationCompat.Builder builder = buildTaskNotification(
+            taskId, albumTitle, chapterId, chapterTitle, coverUrl,
+            downloadedPages, totalPages, "下载已暂停", false);
+        builder.addAction(ICON, "继续", createActionIntent(
+            DownloadNotificationActionReceiver.ACTION_RESUME, taskId));
+        builder.addAction(ICON, "取消", createActionIntent(
+            DownloadNotificationActionReceiver.ACTION_CANCEL, taskId));
         notify(notificationId, builder.build());
     }
 
-    public void showComplete(int notificationId, String chapterTitle, String coverUrl) {
+    public void showComplete(int notificationId, String albumTitle, String chapterId,
+                             String chapterTitle, String coverUrl) {
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(ICON)
             .setContentTitle("下载完成")
-            .setContentText(chapterTitle)
+            .setContentText(buildTitle(albumTitle, chapterTitle))
+            .setSubText(buildIdText(chapterId))
             .setContentIntent(createLaunchIntent(notificationId))
             .setAutoCancel(true)
             .setOngoing(false);
@@ -156,12 +149,14 @@ public class DownloadNotificationHelper {
         notify(notificationId, builder.build());
     }
 
-    public void showError(int notificationId, String chapterTitle, String coverUrl, String error) {
+    public void showError(int notificationId, String albumTitle, String chapterId,
+                          String chapterTitle, String coverUrl, String error) {
         String message = error != null && !error.isEmpty() ? error : "下载失败";
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(ICON)
-            .setContentTitle("下载失败: " + chapterTitle)
+            .setContentTitle("下载失败: " + buildTitle(albumTitle, chapterTitle))
             .setContentText(message)
+            .setSubText(buildIdText(chapterId))
             .setContentIntent(createLaunchIntent(notificationId))
             .setAutoCancel(true)
             .setOngoing(false);
@@ -176,14 +171,25 @@ public class DownloadNotificationHelper {
     }
 
     private PendingIntent createLaunchIntent(int notificationId) {
-        Intent intent = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
-        if (intent == null) {
-            intent = new Intent();
-        }
+        Intent intent = new Intent(context, MainActivity.class);
+        intent.setAction(MainActivity.ACTION_OPEN_ROUTE);
+        intent.putExtra(MainActivity.EXTRA_ROUTE, MainActivity.ROUTE_DOWNLOAD);
         intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         return PendingIntent.getActivity(
             context,
             notificationId,
+            intent,
+            PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
+        );
+    }
+
+    private PendingIntent createActionIntent(String action, String taskId) {
+        Intent intent = new Intent(context, DownloadNotificationActionReceiver.class);
+        intent.setAction(action);
+        intent.putExtra(DownloadNotificationActionReceiver.EXTRA_TASK_ID, taskId);
+        return PendingIntent.getBroadcast(
+            context,
+            (taskId + action).hashCode(),
             intent,
             PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
         );
@@ -205,13 +211,90 @@ public class DownloadNotificationHelper {
         }
     }
 
-    private String buildProgressText(String chapterTitle, int downloadedPages, int totalPages) {
+    private NotificationCompat.Builder buildTaskNotification(
+        String taskId, String albumTitle, String chapterId, String chapterTitle,
+        String coverUrl, int downloadedPages, int totalPages, String stateText,
+        boolean ongoing) {
+        String title = buildTitle(albumTitle, chapterTitle);
+        String statusText = buildProgressText(stateText, downloadedPages, totalPages);
+
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(ICON)
+            .setContentTitle(title)
+            .setContentText(statusText)
+            .setSubText(buildIdText(chapterId))
+            .setStyle(new NotificationCompat.DecoratedCustomViewStyle())
+            .setCustomContentView(buildTaskRemoteViews(
+                R.layout.notification_download_compact, false, albumTitle, chapterId,
+                chapterTitle, coverUrl, downloadedPages, totalPages, stateText))
+            .setCustomBigContentView(buildTaskRemoteViews(
+                R.layout.notification_download_expanded, true, albumTitle, chapterId,
+                chapterTitle, coverUrl, downloadedPages, totalPages, stateText))
+            .setContentIntent(createLaunchIntent(notificationIdFromTask(taskId)))
+            .setOngoing(ongoing)
+            .setOnlyAlertOnce(true);
+
+        applyCover(builder, coverUrl);
+        return builder;
+    }
+
+    private RemoteViews buildTaskRemoteViews(int layoutId, boolean expanded,
+                                             String albumTitle, String chapterId,
+                                             String chapterTitle, String coverUrl,
+                                             int downloadedPages, int totalPages,
+                                             String stateText) {
+        RemoteViews views = new RemoteViews(context.getPackageName(), layoutId);
+        views.setTextViewText(R.id.notification_download_title, buildTitle(albumTitle, chapterTitle));
+        views.setTextViewText(R.id.notification_download_id, buildIdText(chapterId));
+        views.setTextViewText(R.id.notification_download_status,
+            buildProgressText(stateText, downloadedPages, totalPages));
+        if (expanded) {
+            views.setTextViewText(R.id.notification_download_chapter, safeText(chapterTitle, "章节"));
+        }
+
+        Bitmap cover = loadCover(coverUrl);
+        if (cover != null) {
+            views.setImageViewBitmap(R.id.notification_download_cover, cover);
+        } else {
+            views.setImageViewResource(R.id.notification_download_cover, ICON);
+        }
+
+        if (totalPages > 0) {
+            views.setProgressBar(
+                R.id.notification_download_progress,
+                totalPages,
+                Math.max(0, Math.min(downloadedPages, totalPages)),
+                false);
+        } else {
+            views.setProgressBar(R.id.notification_download_progress, 100, 0, true);
+        }
+        return views;
+    }
+
+    private String buildProgressText(String stateText, int downloadedPages, int totalPages) {
         if (totalPages <= 0) {
-            return chapterTitle;
+            return stateText;
         }
         int safeDownloaded = Math.max(0, Math.min(downloadedPages, totalPages));
         int percent = Math.round(safeDownloaded * 100f / totalPages);
-        return chapterTitle + " (" + safeDownloaded + "/" + totalPages + " · " + percent + "%)";
+        return stateText + " · " + safeDownloaded + "/" + totalPages + " · " + percent + "%";
+    }
+
+    private String buildTitle(String albumTitle, String chapterTitle) {
+        if (albumTitle != null && !albumTitle.isEmpty()) return albumTitle;
+        return safeText(chapterTitle, "章节下载");
+    }
+
+    private String buildIdText(String chapterId) {
+        return "ID " + safeText(chapterId, "-");
+    }
+
+    private String safeText(String value, String fallback) {
+        return value != null && !value.isEmpty() ? value : fallback;
+    }
+
+    private int notificationIdFromTask(String taskId) {
+        return 3000 + ((taskId.hashCode() & 0x7fffffff) % 100000);
     }
 
     private Bitmap loadCover(String coverUrl) {
@@ -239,7 +322,7 @@ public class DownloadNotificationHelper {
             Bitmap decoded = BitmapFactory.decodeByteArray(data, 0, data.length, opts);
             if (decoded == null) return null;
 
-            Bitmap cover = createTopCropCover(decoded);
+            Bitmap cover = createBoundedCover(decoded);
             if (decoded != cover) decoded.recycle();
             coverCache.put(coverUrl, cover);
             return cover;
@@ -275,12 +358,14 @@ public class DownloadNotificationHelper {
         return sample;
     }
 
-    private Bitmap createTopCropCover(Bitmap source) {
-        int cropSize = Math.min(source.getWidth(), source.getHeight());
-        int left = Math.max(0, (source.getWidth() - cropSize) / 2);
-        Bitmap cropped = Bitmap.createBitmap(source, left, 0, cropSize, cropSize);
-        Bitmap scaled = Bitmap.createScaledBitmap(cropped, COVER_TARGET_SIZE, COVER_TARGET_SIZE, true);
-        if (cropped != scaled) cropped.recycle();
-        return scaled;
+    private Bitmap createBoundedCover(Bitmap source) {
+        int width = source.getWidth();
+        int height = source.getHeight();
+        int maxSide = Math.max(width, height);
+        if (maxSide <= COVER_TARGET_SIZE) return source;
+        float scale = COVER_TARGET_SIZE / (float) maxSide;
+        int targetWidth = Math.max(1, Math.round(width * scale));
+        int targetHeight = Math.max(1, Math.round(height * scale));
+        return Bitmap.createScaledBitmap(source, targetWidth, targetHeight, true);
     }
 }

@@ -57,6 +57,7 @@ public class DownloadService {
      * 在 async 块映射 taskId 之前到达的取消请求
      */
     final Set<String> pendingCancel = ConcurrentHashMap.newKeySet();
+    private final Set<String> cancelledTaskIds = ConcurrentHashMap.newKeySet();
     private final Set<String> foregroundTaskIds = ConcurrentHashMap.newKeySet();
     private final Object mapLock = new Object();
     private final Map<String, Long> lastNotificationAt = new ConcurrentHashMap<>();
@@ -89,6 +90,7 @@ public class DownloadService {
             }
         }
 
+        cancelledTaskIds.remove(taskId);
         downloadDb.insertTask(taskId, albumId, chapterId,
             albumTitle, chapterTitle, coverUrl);
         startForegroundTask(taskId);
@@ -100,7 +102,7 @@ public class DownloadService {
                     removeQueuedNotification(taskId);
                     return;
                 }
-                showPreparingNotification(taskId, chapterTitle, coverUrl);
+                showPreparingNotification(taskId, albumTitle, chapterId, chapterTitle, coverUrl);
                 JmPhoto photo = client.getPhoto(chapterId);
                 List<JmImage> images = photo.getImages();
 
@@ -146,7 +148,8 @@ public class DownloadService {
                     images.size(), downloadDb, fileStore, listener, this));
 
                 downloadDb.updateStatus(taskId, STATUS_DOWNLOADING);
-                showDownloadNotification(taskId, chapterTitle, coverUrl, 0, images.size(), true);
+                showDownloadNotification(taskId, albumTitle, chapterId, chapterTitle,
+                    coverUrl, 0, images.size(), true);
                 notifyProgress(taskId, albumId, chapterId, 0, images.size(),
                     STATUS_DOWNLOADING, null);
 
@@ -166,7 +169,8 @@ public class DownloadService {
                 }
             } catch (Exception e) {
                 downloadDb.updateFailed(taskId, 0, e.getMessage());
-                showFailedNotification(taskId, chapterTitle, coverUrl, e.getMessage());
+                showFailedNotification(taskId, albumTitle, chapterId, chapterTitle,
+                    coverUrl, e.getMessage());
                 notifyProgress(taskId, albumId, chapterId, 0, 0,
                     STATUS_FAILED, e.getMessage());
                 cleanupTaskMapping(taskId);
@@ -205,42 +209,35 @@ public class DownloadService {
 
         if (STATUS_QUEUED.equals(status)) {
             pendingCancel.remove(taskId);
-            downloadDb.deleteImages(taskId);
-            downloadDb.deleteTask(taskId);
-            cleanupTaskMapping(taskId);
-            cancelNotification(taskId);
-            removeQueuedNotification(taskId);
+            completeCancel(taskId, task);
         } else if (STATUS_PAUSED.equals(status)) {
             String libTaskId = taskIdMap.get(taskId);
             if (libTaskId != null) {
-                ((AbstractJmClient) client).downloadManager().cancel(libTaskId);
-            } else {
-                String albumId = task.optString("albumId");
-                String chapterId = task.optString("chapterId");
-                fileStore.deleteChapter(albumId, chapterId);
-                downloadDb.deleteImages(taskId);
-                downloadDb.deleteTask(taskId);
-                cleanupTaskMapping(taskId);
-                cancelNotification(taskId);
-                removeQueuedNotification(taskId);
+                try {
+                    ((AbstractJmClient) client).downloadManager().cancel(libTaskId);
+                } catch (Exception e) {
+                    Log.d(TAG, "取消已暂停任务的底层下载失败，继续清理本地任务", e);
+                }
             }
+            completeCancel(taskId, task);
         } else if (STATUS_DOWNLOADING.equals(status)) {
+            pendingCancel.add(taskId);
             String libTaskId = taskIdMap.get(taskId);
             if (libTaskId != null) {
-                ((AbstractJmClient) client).downloadManager().cancel(libTaskId);
-            } else {
-                pendingCancel.add(taskId);
+                try {
+                    ((AbstractJmClient) client).downloadManager().cancel(libTaskId);
+                } catch (Exception e) {
+                    Log.d(TAG, "取消下载中的底层任务失败，继续清理本地任务", e);
+                }
             }
+            completeCancel(taskId, task);
         } else {
-            String albumId = task.optString("albumId");
-            String chapterId = task.optString("chapterId");
-            fileStore.deleteChapter(albumId, chapterId);
-            downloadDb.deleteImages(taskId);
-            downloadDb.deleteTask(taskId);
-            cleanupTaskMapping(taskId);
-            cancelNotification(taskId);
-            removeQueuedNotification(taskId);
+            completeCancel(taskId, task);
         }
+    }
+
+    boolean isCancelled(String taskId) {
+        return cancelledTaskIds.contains(taskId) || downloadDb.getTask(taskId) == null;
     }
 
     public void pauseDownload(String taskId) {
@@ -261,7 +258,8 @@ public class DownloadService {
         ac.downloadManager().pause(libTaskId);
         downloadDb.updateStatus(taskId, STATUS_PAUSED);
         stopForegroundTask(taskId);
-        showPausedNotification(taskId, task.optString("chapterTitle"),
+        showPausedNotification(taskId, task.optString("albumTitle"),
+            task.optString("chapterId"), task.optString("chapterTitle"),
             task.optString("coverUrl"),
             task.optInt("downloadedPages"), task.optInt("totalPages"));
         notifyProgress(taskId, task.optString("albumId"), task.optString("chapterId"),
@@ -287,7 +285,8 @@ public class DownloadService {
         ac.downloadManager().resume(libTaskId);
         downloadDb.updateStatus(taskId, STATUS_DOWNLOADING);
         startForegroundTask(taskId);
-        showDownloadNotification(taskId, task.optString("chapterTitle"),
+        showDownloadNotification(taskId, task.optString("albumTitle"),
+            task.optString("chapterId"), task.optString("chapterTitle"),
             task.optString("coverUrl"),
             task.optInt("downloadedPages"), task.optInt("totalPages"), true);
         notifyProgress(taskId, task.optString("albumId"), task.optString("chapterId"),
@@ -366,23 +365,27 @@ public class DownloadService {
                                     String status, String error) {
         JSONObject task = downloadDb.getTask(taskId);
         String chapterTitle = task != null ? task.optString("chapterTitle", taskId) : taskId;
+        String albumTitle = task != null ? task.optString("albumTitle", chapterTitle) : chapterTitle;
+        String chapterId = task != null ? task.optString("chapterId", taskId) : taskId;
         String coverUrl = task != null ? task.optString("coverUrl", "") : "";
 
         if (STATUS_DOWNLOADING.equals(status)) {
             startForegroundTask(taskId);
-            showDownloadNotification(taskId, chapterTitle, coverUrl,
+            showDownloadNotification(taskId, albumTitle, chapterId, chapterTitle, coverUrl,
                 downloadedPages, totalPages, false);
         } else if (STATUS_PAUSED.equals(status)) {
             stopForegroundTask(taskId);
-            showPausedNotification(taskId, chapterTitle, coverUrl, downloadedPages, totalPages);
+            showPausedNotification(taskId, albumTitle, chapterId, chapterTitle, coverUrl,
+                downloadedPages, totalPages);
         } else if (STATUS_COMPLETED.equals(status)) {
-            showCompletedNotification(taskId, chapterTitle, coverUrl);
+            showCompletedNotification(taskId, albumTitle, chapterId, chapterTitle, coverUrl);
         } else if (STATUS_FAILED.equals(status)) {
             if ("已取消".equals(error)) {
                 cancelNotification(taskId);
                 removeQueuedNotification(taskId);
             } else {
-                showFailedNotification(taskId, chapterTitle, coverUrl, error);
+                showFailedNotification(taskId, albumTitle, chapterId, chapterTitle,
+                    coverUrl, error);
             }
         }
     }
@@ -412,6 +415,21 @@ public class DownloadService {
         }
     }
 
+    private void completeCancel(String taskId, JSONObject task) {
+        cancelledTaskIds.add(taskId);
+        pendingCancel.remove(taskId);
+        String albumId = task.optString("albumId");
+        String chapterId = task.optString("chapterId");
+        fileStore.deleteChapter(albumId, chapterId);
+        downloadDb.deleteImages(taskId);
+        downloadDb.deleteTask(taskId);
+        cancelNotification(taskId);
+        removeQueuedNotification(taskId);
+        notifyProgress(taskId, albumId, chapterId, 0,
+            task.optInt("totalPages"), "cancelled", "已取消");
+        cleanupTaskMapping(taskId);
+    }
+
     private void notifyProgress(String taskId, String albumId, String chapterId,
                                 int downloadedPages, int totalPages,
                                 String status, String error, long speed, long totalSize) {
@@ -430,38 +448,50 @@ public class DownloadService {
         notificationHelper.showQueued(taskId, chapterTitle);
     }
 
-    private void showPreparingNotification(String taskId, String chapterTitle, String coverUrl) {
+    private void showPreparingNotification(String taskId, String albumTitle,
+                                           String chapterId, String chapterTitle,
+                                           String coverUrl) {
         removeQueuedNotification(taskId);
-        notificationHelper.showPreparing(notificationId(taskId), chapterTitle, coverUrl);
+        notificationHelper.showPreparing(notificationId(taskId), taskId, albumTitle,
+            chapterId, chapterTitle, coverUrl);
     }
 
-    private void showDownloadNotification(String taskId, String chapterTitle, String coverUrl,
+    private void showDownloadNotification(String taskId, String albumTitle,
+                                          String chapterId, String chapterTitle,
+                                          String coverUrl,
                                           int downloadedPages, int totalPages, boolean force) {
         removeQueuedNotification(taskId);
         long now = System.currentTimeMillis();
         Long last = lastNotificationAt.get(taskId);
         if (!force && last != null && now - last < 1000) return;
         lastNotificationAt.put(taskId, now);
-        notificationHelper.showProgress(notificationId(taskId), chapterTitle, coverUrl,
-            downloadedPages, totalPages);
+        notificationHelper.showProgress(notificationId(taskId), taskId, albumTitle,
+            chapterId, chapterTitle, coverUrl, downloadedPages, totalPages);
     }
 
-    private void showPausedNotification(String taskId, String chapterTitle,
+    private void showPausedNotification(String taskId, String albumTitle,
+                                        String chapterId, String chapterTitle,
                                         String coverUrl,
                                         int downloadedPages, int totalPages) {
         removeQueuedNotification(taskId);
-        notificationHelper.showPaused(notificationId(taskId), chapterTitle, coverUrl,
-            downloadedPages, totalPages);
+        notificationHelper.showPaused(notificationId(taskId), taskId, albumTitle,
+            chapterId, chapterTitle, coverUrl, downloadedPages, totalPages);
     }
 
-    private void showCompletedNotification(String taskId, String chapterTitle, String coverUrl) {
+    private void showCompletedNotification(String taskId, String albumTitle,
+                                           String chapterId, String chapterTitle,
+                                           String coverUrl) {
         removeQueuedNotification(taskId);
-        notificationHelper.showComplete(notificationId(taskId), chapterTitle, coverUrl);
+        notificationHelper.showComplete(notificationId(taskId), albumTitle,
+            chapterId, chapterTitle, coverUrl);
     }
 
-    private void showFailedNotification(String taskId, String chapterTitle, String coverUrl, String error) {
+    private void showFailedNotification(String taskId, String albumTitle,
+                                        String chapterId, String chapterTitle,
+                                        String coverUrl, String error) {
         removeQueuedNotification(taskId);
-        notificationHelper.showError(notificationId(taskId), chapterTitle, coverUrl, error);
+        notificationHelper.showError(notificationId(taskId), albumTitle,
+            chapterId, chapterTitle, coverUrl, error);
     }
 
     private void cancelNotification(String taskId) {

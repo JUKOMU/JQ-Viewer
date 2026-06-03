@@ -15,9 +15,14 @@ import io.github.jukomu.data.ImageCache;
 import io.github.jukomu.data.PdfServer;
 
 public class MainActivity extends BridgeActivity {
+    public static final String ACTION_OPEN_ROUTE = "io.github.jukomu.OPEN_ROUTE";
+    public static final String EXTRA_ROUTE = "io.github.jukomu.extra.ROUTE";
+    public static final String ROUTE_DOWNLOAD = "/download";
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(JmcomicPlugin.class);
+        captureLaunchRoute(getIntent());
         super.onCreate(savedInstanceState);
 
         WebView webView = this.getBridge().getWebView();
@@ -43,6 +48,20 @@ public class MainActivity extends BridgeActivity {
                 return super.shouldInterceptRequest(view, request);
             }
         });
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        captureLaunchRoute(intent);
+    }
+
+    private void captureLaunchRoute(Intent intent) {
+        if (intent == null) return;
+        String route = intent.getStringExtra(EXTRA_ROUTE);
+        if (route == null || route.isEmpty()) return;
+        JmcomicPlugin.setPendingLaunchRoute(route);
     }
 
     @Override

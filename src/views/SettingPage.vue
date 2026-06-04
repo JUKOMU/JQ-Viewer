@@ -439,7 +439,6 @@ import {computed, onMounted, ref} from 'vue'
 import {useRouter} from 'vue-router'
 import {alertController, IonContent, IonHeader, IonPage, IonRange, IonToggle, IonToolbar} from '@ionic/vue'
 import {App} from '@capacitor/app'
-import type {PluginListenerHandle} from '@capacitor/core'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import {JmcomicService, sanitizeError, showToast} from '@/services/JmcomicService'
 import {initSettings, SettingsStore} from '@/services/SettingsService'
@@ -447,6 +446,7 @@ import {ExportFormatService} from '@/services/ExportFormatService'
 import {PdfExportService, PDF_SAMPLE_DATA} from '@/services/PdfExportService'
 import {useAuth} from '@/composables/useAuth'
 import type {CacheCapacityInfo, RelocationProgress} from '@/services/JmcomicTypes'
+import type {PlatformListenerHandle} from '@/services/platform/EventPort'
 
 const router = useRouter()
 const {userInfo} = useAuth()
@@ -773,7 +773,7 @@ async function onDownloadPublicChange(e: CustomEvent) {
   relocationCurrentFile.value = ''
 
   // 注册进度监听
-  let handle: PluginListenerHandle | null = null
+  let handle: PlatformListenerHandle | null = null
   try {
     handle = await JmcomicService.addRelocationProgressListener((data: RelocationProgress) => {
       relocationCurrent.value = data.current

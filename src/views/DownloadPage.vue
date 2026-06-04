@@ -251,7 +251,6 @@ import {
   timeOutline,
   trashOutline,
 } from 'ionicons/icons'
-import type {PluginListenerHandle} from '@capacitor/core'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import DownloadTaskCard from '@/components/download/DownloadTaskCard.vue'
 import PdfExportBottomSheet from '@/components/download/PdfExportBottomSheet.vue'
@@ -262,6 +261,7 @@ import {OfflineDownloadService} from '@/services/OfflineDownloadService'
 import {PdfExportService} from '@/services/PdfExportService'
 import type {AlbumDetail, CompletedEntry, CompletedGroup, DownloadTask, ImportedPdf, PdfExportTask} from '@/services/JmcomicTypes'
 import {PdfImportService} from '@/services/PdfImportService'
+import type {PlatformListenerHandle} from '@/services/platform/EventPort'
 
 const router = useRouter()
 const tasks = ref<DownloadTask[]>([])
@@ -269,7 +269,7 @@ const importedPdfs = ref<ImportedPdf[]>([])
 const spaceUsedMb = ref(0)
 const spaceAvailMb = ref(0)
 const hasStorageInfo = ref(false)
-let downloadProgressHandle: PluginListenerHandle | null = null
+let downloadProgressHandle: PlatformListenerHandle | null = null
 let syncPromise: Promise<void> | null = null
 let speedTimer: ReturnType<typeof setInterval> | null = null
 let isUnmounted = false

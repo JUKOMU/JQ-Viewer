@@ -27,4 +27,19 @@ module.exports = {
     }],
     'vue/multi-word-component-names': 'off',
   },
+  overrides: [
+    {
+      files: ['src/**/*.vue'],
+      rules: {
+        'no-restricted-imports': ['error', {
+          paths: [
+            {
+              name: '@capacitor/core',
+              message: 'Use platform/service listener handle types instead of Capacitor core types in Vue files.',
+            },
+          ],
+        }],
+      },
+    },
+  ],
 }

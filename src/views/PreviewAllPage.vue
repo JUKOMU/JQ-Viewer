@@ -73,11 +73,11 @@ import {
   IonTitle,
   IonToolbar,
 } from '@ionic/vue'
-import type {PluginListenerHandle} from '@capacitor/core'
 import {arrowBack} from 'ionicons/icons'
 import {getImageUrl, JmcomicService} from '@/services/JmcomicService'
 import type {PhotoDetail, PreloadResult} from '@/services/JmcomicTypes'
 import {buildPdfDocumentParams, fetchPdfArrayBuffer} from '@/services/PdfReaderService'
+import type {PlatformListenerHandle} from '@/services/platform/EventPort'
 import * as pdfjsLib from 'pdfjs-dist'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -118,7 +118,7 @@ const skeletonCount = computed(() => Math.min(totalCount.value || initialTotal |
 
 let photoDetail: PhotoDetail | null = null
 let pdfDoc: pdfjsLib.PDFDocumentProxy | null = null
-let imageReadyListenerHandle: PluginListenerHandle | null = null
+let imageReadyListenerHandle: PlatformListenerHandle | null = null
 const pdfObjectUrls = new Set<string>()
 
 // ---- 滚动容器 ----

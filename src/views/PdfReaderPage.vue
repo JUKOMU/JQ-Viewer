@@ -51,7 +51,6 @@
 import {computed, inject, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref} from 'vue'
 import {useRoute, useRouter} from 'vue-router'
 import {IonPage} from '@ionic/vue'
-import type {PluginListenerHandle} from '@capacitor/core'
 import {JmcomicService, showToast} from '@/services/JmcomicService'
 import {SettingsStore} from '@/services/SettingsService'
 import {HistoryService} from '@/services/HistoryService'
@@ -63,6 +62,7 @@ import ReaderBottomToolbar from '@/components/reader/ReaderBottomToolbar.vue'
 import VerticalScrollView from '@/components/reader/VerticalScrollView.vue'
 import HorizontalPageView from '@/components/reader/HorizontalPageView.vue'
 import ReaderSettingsPanel from '@/components/reader/ReaderSettingsPanel.vue'
+import type {PlatformListenerHandle} from '@/services/platform/EventPort'
 
 defineOptions({name: 'PdfReaderPage'})
 
@@ -107,7 +107,7 @@ const toolbarVisible = ref(false)
 const isDragProgress = ref(false)
 const settingsPanelVisible = ref(false)
 
-let volumeKeyListenerHandle: PluginListenerHandle | null = null
+let volumeKeyListenerHandle: PlatformListenerHandle | null = null
 let readerRuntimeActive = false
 let pdfDoc: pdfjsLib.PDFDocumentProxy | null = null
 let nativePdfMode = false

@@ -98,10 +98,10 @@ defineOptions({name: 'AlbumDetailPage'})
 import {computed, onMounted, onUnmounted, reactive, ref, watch} from 'vue'
 import {useRoute, useRouter} from 'vue-router'
 import {IonContent, IonPage} from '@ionic/vue'
-import type {PluginListenerHandle} from '@capacitor/core'
 import {getImageUrl, JmcomicService, sanitizeError, showToast} from '@/services/JmcomicService'
 import {buildPdfDocumentParams, fetchPdfArrayBuffer} from '@/services/PdfReaderService'
 import * as pdfjsLib from 'pdfjs-dist'
+import type {PlatformListenerHandle} from '@/services/platform/EventPort'
 import type {
   AlbumDetail,
   AlbumMeta,
@@ -185,7 +185,7 @@ const chapterPdfStatuses = computed(() => {
 const selectedChapterPdf = computed(() =>
   chapterPdfMap.value.get(selectedChapterId.value) ?? null,
 )
-let downloadProgressHandle: PluginListenerHandle | null = null
+let downloadProgressHandle: PlatformListenerHandle | null = null
 
 type ReaderSource = 'network' | 'download' | 'pdf'
 type PreviewSource = 'network' | 'download' | 'pdf'
@@ -392,7 +392,7 @@ interface PreviewImage {
 const previewImages = ref<PreviewImage[]>([])
 const previewImageTotal = ref(0)
 const previewLoading = ref(false)
-let imageReadyListenerHandle: PluginListenerHandle | null = null
+let imageReadyListenerHandle: PlatformListenerHandle | null = null
 
 const clearPreviewPdf = () => {
   for (const url of previewObjectUrls) {

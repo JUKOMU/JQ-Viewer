@@ -161,7 +161,6 @@ import {
   IonRefresherContent,
   menuController,
 } from '@ionic/vue'
-import type {PluginListenerHandle} from '@capacitor/core'
 import {bookOutline, downloadOutline, ellipsisVertical, folderOpenOutline, trashOutline,} from 'ionicons/icons'
 import type {ScrollCustomEvent} from '@ionic/core'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
@@ -182,6 +181,7 @@ import type {FavoriteQuery, FavoriteResult, FolderEntry, SearchResult, SearchRes
 import {OFFLINE_ALL_FOLDER_ID} from '@/services/JmcomicTypes'
 import {useSideMenuState} from '@/composables/useSideMenuState'
 import {cachedState} from '@/composables/favoritePageCache'
+import type {PlatformListenerHandle} from '@/services/platform/EventPort'
 
 defineOptions({name: 'FavoritePage'})
 
@@ -266,7 +266,7 @@ const matchesKeyword = (item: SearchResultItem, kw: string): boolean => {
 
 // ---- 下载状态 ----
 const downloadedAlbumIds = ref<Set<string>>(new Set())
-let downloadProgressHandle: PluginListenerHandle | null = null
+let downloadProgressHandle: PlatformListenerHandle | null = null
 
 const refreshDownloadStatuses = async () => {
   try {

@@ -55,7 +55,6 @@
 import {computed, inject, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref, shallowRef} from 'vue'
 import {useRoute, useRouter} from 'vue-router'
 import {IonPage} from '@ionic/vue'
-import type {PluginListenerHandle} from '@capacitor/core'
 import {getImageUrl, JmcomicService, showToast} from '@/services/JmcomicService'
 import type {ImageInfo, PhotoDetail, PreloadResult} from '@/services/JmcomicTypes'
 import {SettingsStore} from '@/services/SettingsService'
@@ -66,6 +65,7 @@ import ReaderBottomToolbar from '@/components/reader/ReaderBottomToolbar.vue'
 import VerticalScrollView from '@/components/reader/VerticalScrollView.vue'
 import HorizontalPageView from '@/components/reader/HorizontalPageView.vue'
 import ReaderSettingsPanel from '@/components/reader/ReaderSettingsPanel.vue'
+import type {PlatformListenerHandle} from '@/services/platform/EventPort'
 
 defineOptions({name: 'ReaderPage'})
 
@@ -99,8 +99,8 @@ const toolbarVisible = ref(true)
 const isDragProgress = ref(false)
 const settingsPanelVisible = ref(false)
 let photoDetail: PhotoDetail | null = null
-let imageReadyListenerHandle: PluginListenerHandle | null = null
-let volumeKeyListenerHandle: PluginListenerHandle | null = null
+let imageReadyListenerHandle: PlatformListenerHandle | null = null
+let volumeKeyListenerHandle: PlatformListenerHandle | null = null
 let readerRuntimeActive = false
 let loadedSortOrders = new Set<number>()
 let requestedSortOrders = new Set<number>()

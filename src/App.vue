@@ -17,7 +17,6 @@
 defineOptions({name: 'App'})
 
 import {alertController, IonApp} from '@ionic/vue'
-import type {PluginListenerHandle} from '@capacitor/core'
 import {computed, nextTick, onBeforeUnmount, onMounted, provide, ref} from 'vue'
 import {useRoute, useRouter} from 'vue-router'
 import {App} from '@capacitor/app'
@@ -27,6 +26,7 @@ import {initSettings} from '@/services/SettingsService'
 import {useAuth} from '@/composables/useAuth'
 import {initNetworkProbeStore} from '@/composables/networkProbeStore'
 import {JmcomicService, showToast} from '@/services/JmcomicService'
+import type {PlatformListenerHandle} from '@/services/platform/EventPort'
 import {compareVersion, RELEASES_API, sanitizeReleaseBody} from '@/utils/version'
 
 const {isMenuNavigation, leftMenuOpen, rightMenuOpen} = useSideMenuState()
@@ -200,7 +200,7 @@ const handleMenuDidClose = () => {
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let activeToast: Awaited<ReturnType<typeof showToast>> | null = null
-let launchRouteHandle: PluginListenerHandle | null = null
+let launchRouteHandle: PlatformListenerHandle | null = null
 
 const isSafeLaunchRoute = (value?: string): value is string =>
   !!value && value.startsWith('/') && !value.startsWith('//')

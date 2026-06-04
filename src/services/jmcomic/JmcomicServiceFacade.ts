@@ -1,4 +1,4 @@
-import {alertController} from '@ionic/vue'
+import {platformCapabilities} from '../../platform/activeCapabilities'
 import type {
   BrowseHistoryItem,
   DownloadProgressEvent,
@@ -12,49 +12,10 @@ import type {
   SearchQuery,
   SearchResultItem,
 } from '../JmcomicTypes'
-import type {ImageReadyEvent, JmcomicClient, JmcomicListenerHandle} from './JmcomicClient'
+import type {JmcomicClient, JmcomicListenerHandle} from './JmcomicClient'
 import {jmcomicNativeClient} from './JmcomicNativeClient'
 
 const native: JmcomicClient = jmcomicNativeClient
-
-let downloadNotificationPrompted = false
-let downloadNotificationPromptPromise: Promise<void> | null = null
-
-async function ensureDownloadNotificationPermission(): Promise<void> {
-  if (downloadNotificationPrompted) return
-  if (downloadNotificationPromptPromise) return downloadNotificationPromptPromise
-
-  downloadNotificationPromptPromise = (async () => {
-    try {
-      const check = await native.checkNotificationPermission()
-      if (check.granted) {
-        downloadNotificationPrompted = true
-        return
-      }
-
-      const alert = await alertController.create({
-        header: '需要通知权限',
-        message: '章节下载将在后台进行，需要通过通知查看进度。拒绝后仍会继续下载，但不会显示系统通知。',
-        buttons: [
-          {text: '暂不授权', role: 'cancel'},
-          {text: '允许通知', role: 'confirm'},
-        ],
-      })
-      await alert.present()
-      const dismissed = await alert.onDidDismiss()
-      if (dismissed.role === 'confirm') {
-        await native.requestNotificationPermission()
-      }
-    } catch {
-      // Web 调试或旧系统异常时不阻塞下载提交。
-    } finally {
-      downloadNotificationPrompted = true
-      downloadNotificationPromptPromise = null
-    }
-  })()
-
-  return downloadNotificationPromptPromise
-}
 
 export const JmcomicService = {
   search(query: SearchQuery) {
@@ -164,7 +125,7 @@ export const JmcomicService = {
 
   /** 请求"所有文件访问权限"（公开下载需要） */
   requestManageStorage() {
-    return native.requestManageStorage()
+    return platformCapabilities.filePicker.requestManageStorage()
   },
 
   /** 获取全部设置（启动时一次性加载） */
@@ -196,11 +157,7 @@ export const JmcomicService = {
     photoId: string,
     handler: (sortOrder: number) => void,
   ): Promise<JmcomicListenerHandle> {
-    return native.addListener('imageReady', (data: ImageReadyEvent) => {
-      if (data.photoId === photoId) {
-        handler(data.sortOrder)
-      }
-    })
+    return platformCapabilities.events.addImageReadyListener(photoId, handler)
   },
 
   /**
@@ -209,7 +166,7 @@ export const JmcomicService = {
   addNetworkProbeListener(
     handler: (data: NetworkProbeEvent) => void,
   ): Promise<JmcomicListenerHandle> {
-    return native.addListener('networkProbe', handler)
+    return platformCapabilities.events.addNetworkProbeListener(handler)
   },
 
   /** 读取 domainManager 中已有的域名连通性状态（同步返回，不触发探活） */
@@ -245,7 +202,7 @@ export const JmcomicService = {
     chapterTitle: string,
     coverUrl: string,
   ) {
-    await ensureDownloadNotificationPermission()
+    await platformCapabilities.notification.ensureDownloadPermission()
     return native.downloadChapter({albumId, chapterId, albumTitle, chapterTitle, coverUrl})
   },
 
@@ -286,13 +243,13 @@ export const JmcomicService = {
   addDownloadProgressListener(
     handler: (data: DownloadProgressEvent) => void,
   ): Promise<JmcomicListenerHandle> {
-    return native.addListener('downloadProgress', handler)
+    return platformCapabilities.events.addDownloadProgressListener(handler)
   },
 
   addLaunchRouteListener(
     handler: (data: { route: string }) => void,
   ): Promise<JmcomicListenerHandle> {
-    return native.addListener('launchRoute', handler)
+    return platformCapabilities.events.addLaunchRouteListener(handler)
   },
 
   /**
@@ -302,7 +259,7 @@ export const JmcomicService = {
   addRelocationProgressListener(
     handler: (data: RelocationProgress) => void,
   ): Promise<JmcomicListenerHandle> {
-    return native.addListener('relocationProgress', handler)
+    return platformCapabilities.events.addRelocationProgressListener(handler)
   },
 
   // ========== 浏览历史 ==========
@@ -408,7 +365,7 @@ export const JmcomicService = {
   },
 
   pickFolder() {
-    return native.pickFolder()
+    return platformCapabilities.filePicker.pickFolder()
   },
 
   // ========== PDF 导入 ==========
@@ -446,58 +403,56 @@ export const JmcomicService = {
   },
 
   checkFilesExist(paths: string[]) {
-    return native.checkFilesExist({ paths })
+    return platformCapabilities.filePicker.checkFilesExist(paths)
   },
 
   getExternalStoragePath() {
-    return native.getExternalStoragePath()
+    return platformCapabilities.filePicker.getExternalStoragePath()
   },
 
   checkNotificationPermission() {
-    return native.checkNotificationPermission()
+    return platformCapabilities.notification.checkPermission()
   },
 
   requestNotificationPermission() {
-    return native.requestNotificationPermission()
+    return platformCapabilities.notification.requestPermission()
   },
 
   consumeLaunchRoute() {
-    return native.consumeLaunchRoute()
+    return platformCapabilities.events.consumeLaunchRoute()
   },
 
   // ========== 阅读器设置 ==========
 
   setReaderDisplayMode(mode: string) {
-    return native.setReaderDisplayMode({mode})
+    return platformCapabilities.readerRuntime.setDisplayMode(mode)
   },
   setReaderScreenOrientation(orientation: string) {
-    return native.setReaderScreenOrientation({orientation})
+    return platformCapabilities.readerRuntime.setScreenOrientation(orientation)
   },
   setReaderBrightness(brightness: number) {
-    return native.setReaderBrightness({brightness})
+    return platformCapabilities.readerRuntime.setBrightness(brightness)
   },
   setReaderKeepScreenOn(enabled: boolean) {
-    return native.setReaderKeepScreenOn({enabled})
+    return platformCapabilities.readerRuntime.setKeepScreenOn(enabled)
   },
   setReaderFullscreen(enabled: boolean) {
-    return native.setReaderFullscreen({enabled})
+    return platformCapabilities.readerRuntime.setFullscreen(enabled)
   },
   setReaderVolumeNavigation(enabled: boolean) {
-    return native.setReaderVolumeNavigation({enabled})
+    return platformCapabilities.readerRuntime.setVolumeNavigation(enabled)
   },
 
   // ========== 阅读器状态 ==========
 
   setReaderState(isActive: boolean, isVertical: boolean) {
-    return native.setReaderState({isActive, isVertical})
+    return platformCapabilities.readerRuntime.setState(isActive, isVertical)
   },
 
   addVolumeKeyListener(
     handler: (direction: 'up' | 'down') => void,
   ): Promise<JmcomicListenerHandle> {
-    return native.addListener('volumeKey', (data: { direction: 'up' | 'down' }) => {
-      handler(data.direction)
-    })
+    return platformCapabilities.events.addVolumeNavigationListener(handler)
   },
 }
 

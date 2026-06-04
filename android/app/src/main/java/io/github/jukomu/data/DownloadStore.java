@@ -24,7 +24,7 @@ public class DownloadStore extends SQLiteOpenHelper {
 
     private static final String TAG = "DownloadStore";
     private static final String DB_NAME = "jq_download.db";
-    private static final int DB_VERSION = 3;
+    private static final int DB_VERSION = 4;
 
     // ---- 表名 ----
     static final String TABLE_TASKS = "download_tasks";
@@ -48,6 +48,7 @@ public class DownloadStore extends SQLiteOpenHelper {
     static final String COL_COMPLETED_AT = "completed_at";
     static final String COL_TOTAL_SIZE = "total_size";
     static final String COL_CHAPTER_SORT_ORDER = "chapter_sort_order";
+    static final String COL_IS_SINGLE_EPISODE = "is_single_episode";
 
     // ---- images 列 ----
     static final String COL_SORT_ORDER = "sort_order";
@@ -88,6 +89,7 @@ public class DownloadStore extends SQLiteOpenHelper {
             + COL_ERROR + " TEXT,"
             + COL_TOTAL_SIZE + " INTEGER DEFAULT 0,"
             + COL_CHAPTER_SORT_ORDER + " INTEGER DEFAULT 0,"
+            + COL_IS_SINGLE_EPISODE + " INTEGER DEFAULT -1,"
             + COL_CREATED_AT + " INTEGER NOT NULL,"
             + COL_COMPLETED_AT + " INTEGER"
             + ")");
@@ -113,6 +115,9 @@ public class DownloadStore extends SQLiteOpenHelper {
         if (oldVersion < 3) {
             db.execSQL("ALTER TABLE " + TABLE_TASKS + " ADD COLUMN " + COL_CHAPTER_SORT_ORDER + " INTEGER DEFAULT 0");
         }
+        if (oldVersion < 4) {
+            db.execSQL("ALTER TABLE " + TABLE_TASKS + " ADD COLUMN " + COL_IS_SINGLE_EPISODE + " INTEGER DEFAULT -1");
+        }
     }
 
     // ========== 任务操作 ==========
@@ -133,12 +138,14 @@ public class DownloadStore extends SQLiteOpenHelper {
             SQLiteDatabase.CONFLICT_IGNORE);
     }
 
-    public void updateTaskDetail(String taskId, int totalPages, String author, String tags, int sortOrder) {
+    public void updateTaskDetail(String taskId, int totalPages, String author, String tags,
+                                 int sortOrder, boolean isSingleEpisode) {
         ContentValues cv = new ContentValues();
         cv.put(COL_TOTAL_PAGES, totalPages);
         cv.put(COL_AUTHOR, author);
         cv.put(COL_TAGS, tags);
         cv.put(COL_CHAPTER_SORT_ORDER, sortOrder);
+        cv.put(COL_IS_SINGLE_EPISODE, isSingleEpisode ? 1 : 0);
         getWritableDatabase().update(TABLE_TASKS, cv,
             COL_TASK_ID + " = ?", new String[]{taskId});
     }
@@ -185,6 +192,13 @@ public class DownloadStore extends SQLiteOpenHelper {
         cv.put(COL_TOTAL_SIZE, totalSize);
         getWritableDatabase().update(TABLE_TASKS, cv,
             COL_TASK_ID + " = ?", new String[]{taskId});
+    }
+
+    public int updateAlbumEpisodeType(String albumId, boolean isSingleEpisode) {
+        ContentValues cv = new ContentValues();
+        cv.put(COL_IS_SINGLE_EPISODE, isSingleEpisode ? 1 : 0);
+        return getWritableDatabase().update(TABLE_TASKS, cv,
+            COL_ALBUM_ID + " = ?", new String[]{albumId});
     }
 
     public boolean hasActiveOrCompleted(String taskId) {
@@ -464,6 +478,13 @@ public class DownloadStore extends SQLiteOpenHelper {
             int sortIdx = c.getColumnIndex(COL_CHAPTER_SORT_ORDER);
             if (sortIdx >= 0 && !c.isNull(sortIdx)) {
                 obj.put("chapterSortOrder", c.getInt(sortIdx));
+            }
+            int singleIdx = c.getColumnIndex(COL_IS_SINGLE_EPISODE);
+            if (singleIdx >= 0 && !c.isNull(singleIdx)) {
+                int value = c.getInt(singleIdx);
+                if (value >= 0) {
+                    obj.put("isSingleEpisode", value == 1);
+                }
             }
         } catch (Exception e) {
             Log.w(TAG, "转换任务记录失败", e);

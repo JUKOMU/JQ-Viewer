@@ -77,6 +77,9 @@ async function confirmImport(
         chapterId: f.chapterId || chapter?.id || f.editedIds![0],
         chapterTitle: f.chapterTitle || chapter?.title || '',
         chapterSortOrder: f.chapterSortOrder ?? chapter?.sortOrder ?? 0,
+        ...(f.albumDetail?.isSingleEpisode !== undefined
+          ? { isSingleEpisode: f.albumDetail.isSingleEpisode }
+          : {}),
         ...(folderId ? { folderId } : {}),
       }
     })

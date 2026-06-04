@@ -25,7 +25,7 @@ public class PdfImportStore extends SQLiteOpenHelper {
 
     private static final String TAG = "PdfImportStore";
     private static final String DB_NAME = "jq_pdf_import.db";
-    private static final int DB_VERSION = 2;
+    private static final int DB_VERSION = 3;
 
     static final String TABLE_PDFS = "imported_pdfs";
 
@@ -39,6 +39,7 @@ public class PdfImportStore extends SQLiteOpenHelper {
     static final String COL_CHAPTER_ID = "chapter_id";
     static final String COL_CHAPTER_TITLE = "chapter_title";
     static final String COL_CHAPTER_SORT_ORDER = "chapter_sort_order";
+    static final String COL_IS_SINGLE_EPISODE = "is_single_episode";
     static final String COL_FILE_SIZE = "file_size";
     static final String COL_PAGE_COUNT = "page_count";
     static final String COL_CREATED_AT = "created_at";
@@ -72,6 +73,7 @@ public class PdfImportStore extends SQLiteOpenHelper {
             + COL_CHAPTER_ID + " TEXT NOT NULL DEFAULT '',"
             + COL_CHAPTER_TITLE + " TEXT NOT NULL DEFAULT '',"
             + COL_CHAPTER_SORT_ORDER + " INTEGER DEFAULT 0,"
+            + COL_IS_SINGLE_EPISODE + " INTEGER DEFAULT -1,"
             + COL_FILE_SIZE + " INTEGER NOT NULL DEFAULT 0,"
             + COL_PAGE_COUNT + " INTEGER NOT NULL DEFAULT 0,"
             + COL_CREATED_AT + " INTEGER NOT NULL,"
@@ -87,6 +89,10 @@ public class PdfImportStore extends SQLiteOpenHelper {
             db.execSQL("ALTER TABLE " + TABLE_PDFS + " ADD COLUMN "
                 + COL_CHAPTER_TITLE + " TEXT NOT NULL DEFAULT ''");
         }
+        if (oldVersion < 3) {
+            db.execSQL("ALTER TABLE " + TABLE_PDFS + " ADD COLUMN "
+                + COL_IS_SINGLE_EPISODE + " INTEGER DEFAULT -1");
+        }
     }
 
     // ========== CRUD ==========
@@ -94,7 +100,7 @@ public class PdfImportStore extends SQLiteOpenHelper {
     public long insertPdf(String filePath, String fileName, String albumId,
                           String albumTitle, String coverUrl, String authors,
                           String chapterId, String chapterTitle, int chapterSortOrder,
-                          long createdAt, String folderId) {
+                          int isSingleEpisode, long createdAt, String folderId) {
         ContentValues cv = new ContentValues();
         cv.put(COL_FILE_PATH, filePath);
         cv.put(COL_FILE_NAME, fileName);
@@ -105,6 +111,7 @@ public class PdfImportStore extends SQLiteOpenHelper {
         cv.put(COL_CHAPTER_ID, chapterId);
         cv.put(COL_CHAPTER_TITLE, chapterTitle);
         cv.put(COL_CHAPTER_SORT_ORDER, chapterSortOrder);
+        cv.put(COL_IS_SINGLE_EPISODE, isSingleEpisode);
         cv.put(COL_CREATED_AT, createdAt);
         if (folderId != null) {
             cv.put(COL_FOLDER_ID, folderId);
@@ -177,6 +184,13 @@ public class PdfImportStore extends SQLiteOpenHelper {
             COL_ID + " = ?", new String[]{String.valueOf(id)}) > 0;
     }
 
+    public int updateAlbumEpisodeType(String albumId, boolean isSingleEpisode) {
+        ContentValues cv = new ContentValues();
+        cv.put(COL_IS_SINGLE_EPISODE, isSingleEpisode ? 1 : 0);
+        return getWritableDatabase().update(TABLE_PDFS, cv,
+            COL_ALBUM_ID + " = ?", new String[]{albumId});
+    }
+
     public long getCount() {
         Cursor c = null;
         try {
@@ -206,6 +220,13 @@ public class PdfImportStore extends SQLiteOpenHelper {
             int orderIdx = c.getColumnIndex(COL_CHAPTER_SORT_ORDER);
             obj.put("chapterSortOrder",
                 !c.isNull(orderIdx) ? c.getInt(orderIdx) : 0);
+            int singleIdx = c.getColumnIndex(COL_IS_SINGLE_EPISODE);
+            if (singleIdx >= 0 && !c.isNull(singleIdx)) {
+                int value = c.getInt(singleIdx);
+                if (value >= 0) {
+                    obj.put("isSingleEpisode", value == 1);
+                }
+            }
             obj.put("createdAt", c.getLong(c.getColumnIndexOrThrow(COL_CREATED_AT)));
             int folderIdx = c.getColumnIndex(COL_FOLDER_ID);
             if (!c.isNull(folderIdx)) {

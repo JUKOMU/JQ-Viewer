@@ -109,7 +109,7 @@ public class DownloadService {
                 downloadDb.insertImages(taskId, images);
                 downloadDb.updateTaskDetail(taskId, images.size(),
                     photo.getAuthor(), new JSONArray(photo.getTags()).toString(),
-                    photo.getSortOrder());
+                    photo.getSortOrder(), photo.isSingleAlbum());
 
                 File chapterDir = fileStore.ensureChapterDir(albumId, chapterId);
                 fileStore.refreshMappings(albumId, chapterId, downloadDb);

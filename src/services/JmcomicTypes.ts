@@ -88,6 +88,7 @@ export interface PhotoDetail {
   author: string
   tags: string[]
   images: ImageInfo[]
+  isSingleEpisode?: boolean
 }
 
 export interface AlbumDetail {
@@ -109,6 +110,7 @@ export interface AlbumDetail {
   relatedAlbums: AlbumMeta[]
   photoMetas: PhotoMeta[]
   seriesId: string
+  isSingleEpisode?: boolean
   isFavorite: boolean
   isLiked: boolean
   price: string
@@ -266,6 +268,7 @@ export interface DownloadTask {
   coverUrl: string
   firstImageSortOrder?: number
   chapterSortOrder?: number
+  isSingleEpisode?: boolean
   totalPages: number
   downloadedPages: number
   status: DownloadStatus
@@ -404,6 +407,7 @@ export interface ImportedPdf {
   chapterId: string
   chapterTitle: string
   chapterSortOrder: number
+  isSingleEpisode?: boolean
   createdAt: number
   folderId?: string
   fileSize?: number
@@ -421,6 +425,7 @@ export interface ImportPdfItem {
   chapterId: string
   chapterTitle: string
   chapterSortOrder: number
+  isSingleEpisode?: boolean
   folderId?: string
 }
 
@@ -449,6 +454,7 @@ export interface CompletedEntry {
   displayId?: string       // chapterId 不是用户可见 ID 时的展示兜底
   chapterTitle: string     // download: chapterTitle; pdf: fileName
   chapterSortOrder: number
+  isSingleEpisode?: boolean
   authors: string
   createdAt: number
   completedAt: number

@@ -2342,6 +2342,9 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
                     item.optString("chapterId", ""),
                     item.optString("chapterTitle", ""),
                     item.optInt("chapterSortOrder", 0),
+                    item.has("isSingleEpisode")
+                        ? (item.optBoolean("isSingleEpisode", false) ? 1 : 0)
+                        : -1,
                     System.currentTimeMillis(),
                     item.optString("folderId", null)
                 );
@@ -2367,6 +2370,24 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         JSONArray pdfs = store.getAllPdfs();
         JSObject ret = new JSObject();
         ret.put("pdfs", pdfs);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void updateLocalEpisodeType(PluginCall call) {
+        String albumId = call.getString("albumId");
+        Boolean isSingleEpisode = call.getBoolean("isSingleEpisode");
+        if (albumId == null || albumId.isEmpty() || isSingleEpisode == null) {
+            call.reject("albumId and isSingleEpisode are required");
+            return;
+        }
+        int updatedDownloads = downloadDb.updateAlbumEpisodeType(albumId, isSingleEpisode);
+        int updatedPdfs = PdfImportStore.getInstance(getContext())
+            .updateAlbumEpisodeType(albumId, isSingleEpisode);
+        JSObject ret = new JSObject();
+        ret.put("success", true);
+        ret.put("updatedDownloads", updatedDownloads);
+        ret.put("updatedPdfs", updatedPdfs);
         call.resolve(ret);
     }
 

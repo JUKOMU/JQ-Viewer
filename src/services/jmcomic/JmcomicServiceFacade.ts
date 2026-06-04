@@ -425,6 +425,10 @@ export const JmcomicService = {
     return native.getImportedPdfs()
   },
 
+  updateLocalEpisodeType(albumId: string, isSingleEpisode: boolean) {
+    return native.updateLocalEpisodeType({ albumId, isSingleEpisode })
+  },
+
   deleteImportedPdf(id: number) {
     return native.deleteImportedPdf({ id })
   },

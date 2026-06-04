@@ -257,6 +257,10 @@ export interface JmcomicClient {
   scanPdfFiles(options: { path: string; treeUri?: string }): Promise<{ files: PdfScanItem[] }>
   importPdfs(options: { items: ImportPdfItem[] }): Promise<ImportPdfsResult>
   getImportedPdfs(): Promise<ImportedPdfsResult>
+  updateLocalEpisodeType(options: {
+    albumId: string
+    isSingleEpisode: boolean
+  }): Promise<{ success: boolean; updatedDownloads: number; updatedPdfs: number }>
   deleteImportedPdf(options: { id: number }): Promise<{ success: boolean }>
   openPdf(options: { filePath: string }): Promise<{ success: boolean }>
   getPdfInfo(options: { filePath: string }): Promise<{ pageCount: number }>

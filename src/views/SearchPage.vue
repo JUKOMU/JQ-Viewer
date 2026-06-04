@@ -542,6 +542,7 @@ async function handleCardDownload(item: SearchResultItem) {
       albumTitle: item.title,
       chapterTitle: photo.title,
       coverUrl: item.coverUrl,
+      isSingleEpisode: photo.isSingleEpisode,
       totalPages: 0,
       downloadedPages: 0,
       status: 'queued',

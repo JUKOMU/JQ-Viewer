@@ -106,13 +106,17 @@ const cardStatus = computed(() => {
 
 const hasGroupedChapters = computed(() => (props.downloadedChapters?.length ?? 0) > 1)
 
-const isChapteredEntry = (entry: CompletedEntry) => (entry.chapterSortOrder ?? 0) > 0
+const shouldShowChapterBubble = (entry: CompletedEntry) =>
+  entry.isSingleEpisode === false && (entry.chapterSortOrder ?? 0) > 0
 
 const chapterBubbleItems = computed(() => {
   if (props.downloadedChapters?.length) {
-    return props.downloadedChapters.filter(isChapteredEntry)
+    if (props.downloadedChapters.length > 1) {
+      return props.downloadedChapters.filter((entry) => (entry.chapterSortOrder ?? 0) > 0)
+    }
+    return props.downloadedChapters.filter(shouldShowChapterBubble)
   }
-  if ('source' in props.task && isChapteredEntry(props.task)) {
+  if ('source' in props.task && shouldShowChapterBubble(props.task)) {
     return [props.task]
   }
   return []

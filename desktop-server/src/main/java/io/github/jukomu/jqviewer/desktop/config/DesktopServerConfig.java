@@ -1,6 +1,7 @@
 package io.github.jukomu.jqviewer.desktop.config;
 
 import java.net.InetAddress;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.SecureRandom;
 import java.util.Base64;
@@ -15,20 +16,28 @@ public final class DesktopServerConfig {
     private final int port;
     private final String token;
     private final Path dataDir;
+    private final Path cacheDir;
+    private final Path logDir;
+    private final Path staticDir;
     private final Set<String> allowedOrigins;
 
     private DesktopServerConfig(InetAddress bindAddress, int port, String token,
-                                Path dataDir, Set<String> allowedOrigins) {
+                                Path dataDir, Path cacheDir, Path logDir, Path staticDir,
+                                Set<String> allowedOrigins) {
         this.bindAddress = bindAddress;
         this.port = port;
         this.token = token;
         this.dataDir = dataDir;
+        this.cacheDir = cacheDir;
+        this.logDir = logDir;
+        this.staticDir = staticDir;
         this.allowedOrigins = allowedOrigins;
     }
 
     public static DesktopServerConfig from(String[] args, Map<String, String> env) throws Exception {
         String token = value(env, "JQ_DESKTOP_TOKEN", "");
         String dataDirRaw = value(env, "JQ_DESKTOP_DATA_DIR", "");
+        String staticDirRaw = value(env, "JQ_DESKTOP_STATIC_DIR", "");
         String originsRaw = value(env, "JQ_DESKTOP_DEV_ORIGINS",
             "http://localhost:5173,http://127.0.0.1:5173");
         int port = parseInt(value(env, "JQ_DESKTOP_PORT", ""), DEFAULT_PORT);
@@ -47,6 +56,10 @@ public final class DesktopServerConfig {
                 dataDirRaw = arg.substring("--data-dir=".length()).trim();
             } else if ("--data-dir".equals(arg) && i + 1 < args.length) {
                 dataDirRaw = args[++i].trim();
+            } else if (arg.startsWith("--static-dir=")) {
+                staticDirRaw = arg.substring("--static-dir=".length()).trim();
+            } else if ("--static-dir".equals(arg) && i + 1 < args.length) {
+                staticDirRaw = args[++i].trim();
             }
         }
 
@@ -54,11 +67,15 @@ public final class DesktopServerConfig {
             token = generateToken();
         }
 
+        Path dataDir = resolveDataDir(dataDirRaw, env);
         return new DesktopServerConfig(
             InetAddress.getByName("127.0.0.1"),
             port,
             token,
-            resolveDataDir(dataDirRaw, env),
+            dataDir,
+            dataDir.resolve("cache").toAbsolutePath().normalize(),
+            dataDir.resolve("logs").toAbsolutePath().normalize(),
+            resolveStaticDir(staticDirRaw),
             parseOrigins(originsRaw)
         );
     }
@@ -79,8 +96,33 @@ public final class DesktopServerConfig {
         return dataDir;
     }
 
+    public Path cacheDir() {
+        return cacheDir;
+    }
+
+    public Path logDir() {
+        return logDir;
+    }
+
+    public Path staticDir() {
+        return staticDir;
+    }
+
     public Set<String> allowedOrigins() {
         return allowedOrigins;
+    }
+
+    public DesktopServerConfig withPort(int port) {
+        return new DesktopServerConfig(
+            bindAddress,
+            port,
+            token,
+            dataDir,
+            cacheDir,
+            logDir,
+            staticDir,
+            allowedOrigins
+        );
     }
 
     private static String value(Map<String, String> env, String key, String fallback) {
@@ -111,16 +153,37 @@ public final class DesktopServerConfig {
             .normalize();
     }
 
+    private static Path resolveStaticDir(String explicit) {
+        if (explicit != null && !explicit.trim().isEmpty()) {
+            return Path.of(explicit.trim()).toAbsolutePath().normalize();
+        }
+        Path cwdDist = existingDir(Path.of("dist"));
+        if (cwdDist != null) return cwdDist;
+        return existingDir(Path.of("..", "dist"));
+    }
+
+    private static Path existingDir(Path path) {
+        Path normalized = path.toAbsolutePath().normalize();
+        return Files.isDirectory(normalized) ? normalized : null;
+    }
+
     private static Set<String> parseOrigins(String raw) {
         Set<String> origins = new LinkedHashSet<>();
         if (raw == null || raw.trim().isEmpty()) return origins;
         for (String part : raw.split(",")) {
             String origin = part.trim();
-            if (!origin.isEmpty()) {
+            if (!origin.isEmpty() && isLocalDevOrigin(origin)) {
                 origins.add(origin);
             }
         }
         return origins;
+    }
+
+    private static boolean isLocalDevOrigin(String origin) {
+        return origin.startsWith("http://localhost:")
+            || origin.startsWith("http://127.0.0.1:")
+            || origin.startsWith("https://localhost:")
+            || origin.startsWith("https://127.0.0.1:");
     }
 
     private static String generateToken() {

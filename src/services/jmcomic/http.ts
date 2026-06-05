@@ -1,8 +1,44 @@
 const DEFAULT_DESKTOP_API_BASE = '/api'
+const DESKTOP_TOKEN_STORAGE_KEY = 'jq-desktop-token'
+const DESKTOP_LAUNCH_TOKEN_PARAM = 'jqDesktopToken'
 
 const desktopApiBase = import.meta.env.VITE_JQ_DESKTOP_API_BASE || DEFAULT_DESKTOP_API_BASE
-const desktopToken =
-  import.meta.env.VITE_JQ_DESKTOP_TOKEN || localStorage.getItem('jq-desktop-token') || ''
+const desktopToken = resolveDesktopToken()
+
+function resolveDesktopToken(): string {
+  const envToken = import.meta.env.VITE_JQ_DESKTOP_TOKEN
+  if (envToken) return envToken
+
+  const launchToken = consumeLaunchToken()
+  if (launchToken) return launchToken
+
+  return readStoredToken()
+}
+
+function consumeLaunchToken(): string {
+  if (typeof window === 'undefined') return ''
+
+  const params = new URLSearchParams(window.location.search)
+  const token = params.get(DESKTOP_LAUNCH_TOKEN_PARAM) || ''
+  if (!token) return ''
+
+  try {
+    localStorage.setItem(DESKTOP_TOKEN_STORAGE_KEY, token)
+  } catch {
+    // The in-memory token still works for this page load if storage is blocked.
+  }
+
+  params.delete(DESKTOP_LAUNCH_TOKEN_PARAM)
+  const search = params.toString()
+  const cleanUrl = `${window.location.pathname}${search ? `?${search}` : ''}${window.location.hash}`
+  window.history.replaceState(window.history.state, document.title, cleanUrl)
+  return token
+}
+
+function readStoredToken(): string {
+  if (typeof localStorage === 'undefined') return ''
+  return localStorage.getItem(DESKTOP_TOKEN_STORAGE_KEY) || ''
+}
 
 export function desktopResourceUrl(path: string): string {
   if (!desktopToken) {

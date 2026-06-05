@@ -18,7 +18,10 @@ import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -35,6 +38,9 @@ public final class DesktopServer {
 
     public DesktopServer(DesktopServerConfig config) throws IOException {
         this.config = config;
+        Files.createDirectories(config.dataDir());
+        Files.createDirectories(config.cacheDir());
+        Files.createDirectories(config.logDir());
         this.settingsStore = new DesktopSettingsStore(config.dataDir());
         this.historyStore = new DesktopHistoryStore(config.dataDir());
         this.imageCache = new DesktopImageCache(jmcomicService, intValue(settingsStore.getAll(), "cacheCapacityMb", 256));
@@ -44,6 +50,7 @@ public final class DesktopServer {
         this.server.createContext("/api", this::handleApi);
         this.server.createContext("/image", this::handleImageResource);
         this.server.createContext("/thumb", this::handleImageResource);
+        this.server.createContext("/", this::handleStaticFrontend);
     }
 
     public void start() {
@@ -57,6 +64,36 @@ public final class DesktopServer {
 
     public int port() {
         return server.getAddress().getPort();
+    }
+
+    private void handleStaticFrontend(HttpExchange exchange) throws IOException {
+        try {
+            String method = exchange.getRequestMethod().toUpperCase(Locale.ROOT);
+            if (!method.equals("GET") && !method.equals("HEAD")) {
+                sendError(exchange, 405, "Method not allowed");
+                return;
+            }
+
+            Path staticDir = config.staticDir();
+            if (staticDir == null) {
+                sendError(exchange, 404, "Desktop frontend static directory is not configured");
+                return;
+            }
+
+            Path resource = resolveStaticResource(staticDir, exchange.getRequestURI().getPath());
+            if (resource == null) {
+                sendError(exchange, 404, "Static resource not found");
+                return;
+            }
+
+            sendFile(exchange, resource, method.equals("HEAD"));
+        } catch (IllegalArgumentException e) {
+            sendError(exchange, 400, e.getMessage());
+        } catch (Exception e) {
+            sendError(exchange, 500, e.getMessage() == null ? "Internal server error" : e.getMessage());
+        } finally {
+            exchange.close();
+        }
     }
 
     private void handleApi(HttpExchange exchange) throws IOException {
@@ -238,6 +275,21 @@ public final class DesktopServer {
         }
     }
 
+    private void sendFile(HttpExchange exchange, Path file, boolean headOnly) throws IOException {
+        String mimeType = mimeType(file);
+        exchange.getResponseHeaders().set("Content-Type", mimeType);
+        if (file.getFileName().toString().equals("index.html")) {
+            exchange.getResponseHeaders().set("Cache-Control", "no-store");
+        }
+        long length = Files.size(file);
+        exchange.sendResponseHeaders(200, headOnly ? -1 : length);
+        if (!headOnly) {
+            try (OutputStream output = exchange.getResponseBody()) {
+                Files.copy(file, output);
+            }
+        }
+    }
+
     private void sendEmpty(HttpExchange exchange, int status) throws IOException {
         exchange.sendResponseHeaders(status, -1);
     }
@@ -255,12 +307,15 @@ public final class DesktopServer {
 
     private boolean isOriginAllowed(HttpExchange exchange) {
         String origin = exchange.getRequestHeaders().getFirst("Origin");
-        return origin == null || origin.isEmpty() || config.allowedOrigins().contains(origin);
+        return origin == null
+            || origin.isEmpty()
+            || isSameLocalServerOrigin(origin)
+            || config.allowedOrigins().contains(origin);
     }
 
     private void addCorsHeaders(HttpExchange exchange) {
         String origin = exchange.getRequestHeaders().getFirst("Origin");
-        if (origin != null && config.allowedOrigins().contains(origin)) {
+        if (origin != null && (isSameLocalServerOrigin(origin) || config.allowedOrigins().contains(origin))) {
             exchange.getResponseHeaders().set("Access-Control-Allow-Origin", origin);
             exchange.getResponseHeaders().set("Vary", "Origin");
         }
@@ -306,6 +361,12 @@ public final class DesktopServer {
         }
     }
 
+    private boolean isSameLocalServerOrigin(String origin) {
+        int port = port();
+        return origin.equals("http://127.0.0.1:" + port)
+            || origin.equals("http://localhost:" + port);
+    }
+
     private static String[] imagePathParts(String path, String prefix) {
         if (!path.startsWith(prefix)) {
             throw new IllegalArgumentException("Invalid image path");
@@ -319,5 +380,49 @@ public final class DesktopServer {
             URLDecoder.decode(raw[0], StandardCharsets.UTF_8),
             URLDecoder.decode(raw[1], StandardCharsets.UTF_8)
         };
+    }
+
+    private static Path resolveStaticResource(Path staticDir, String rawPath) {
+        Path index = staticDir.resolve("index.html").normalize();
+        String path = rawPath == null || rawPath.isBlank() ? "/" : rawPath;
+        if (path.equals("/")) {
+            return Files.isRegularFile(index) ? index : null;
+        }
+
+        String decoded = URLDecoder.decode(path, StandardCharsets.UTF_8);
+        String relative = decoded.startsWith("/") ? decoded.substring(1) : decoded;
+        Path candidate = staticDir.resolve(relative).normalize();
+        if (!candidate.startsWith(staticDir)) {
+            throw new IllegalArgumentException("Invalid static resource path");
+        }
+        if (Files.isDirectory(candidate)) {
+            candidate = candidate.resolve("index.html").normalize();
+        }
+        if (Files.isRegularFile(candidate)) {
+            return candidate;
+        }
+        return hasFileExtension(relative) || !Files.isRegularFile(index) ? null : index;
+    }
+
+    private static boolean hasFileExtension(String path) {
+        int slash = path.lastIndexOf('/');
+        int dot = path.lastIndexOf('.');
+        return dot > slash;
+    }
+
+    private static String mimeType(Path file) throws IOException {
+        String detected = Files.probeContentType(file);
+        if (detected != null && !detected.isBlank()) return detected;
+
+        String name = file.getFileName().toString().toLowerCase(Locale.ROOT);
+        if (name.endsWith(".html")) return "text/html; charset=utf-8";
+        if (name.endsWith(".js")) return "application/javascript; charset=utf-8";
+        if (name.endsWith(".css")) return "text/css; charset=utf-8";
+        if (name.endsWith(".json")) return "application/json; charset=utf-8";
+        if (name.endsWith(".svg")) return "image/svg+xml";
+        if (name.endsWith(".png")) return "image/png";
+        if (name.endsWith(".jpg") || name.endsWith(".jpeg")) return "image/jpeg";
+        if (name.endsWith(".webp")) return "image/webp";
+        return "application/octet-stream";
     }
 }

@@ -35,6 +35,14 @@ export default defineConfig({
         target: 'http://127.0.0.1:18080',
         changeOrigin: false,
       },
+      '/image': {
+        target: 'http://127.0.0.1:18080',
+        changeOrigin: false,
+      },
+      '/thumb': {
+        target: 'http://127.0.0.1:18080',
+        changeOrigin: false,
+      },
     },
   },
   test: {

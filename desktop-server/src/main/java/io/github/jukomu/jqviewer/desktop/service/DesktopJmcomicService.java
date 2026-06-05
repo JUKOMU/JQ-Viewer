@@ -25,14 +25,18 @@ import io.github.jukomu.jmcomic.api.model.SearchQuery;
 import io.github.jukomu.jmcomic.core.JmComic;
 import io.github.jukomu.jmcomic.core.client.impl.JmApiClient;
 import io.github.jukomu.jmcomic.core.config.JmConfiguration;
+import io.github.jukomu.jmcomic.core.crypto.JmImageTool;
 
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class DesktopJmcomicService {
     private static final String SEARCH_COVER_SIZE = "_3x4";
 
     private final Gson gson = new Gson();
     private final JmApiClient client;
+    private final Map<String, JmImage> imageIndex = new ConcurrentHashMap<>();
     private JsonObject currentUserInfo;
 
     public DesktopJmcomicService() {
@@ -60,7 +64,9 @@ public final class DesktopJmcomicService {
     }
 
     public JsonObject getPhoto(String id) {
-        return toPhotoObject(client.getPhoto(id));
+        JmPhoto photo = client.getPhoto(id);
+        rememberImages(photo.getImages());
+        return toPhotoObject(photo);
     }
 
     public JsonObject getComments(String albumId, int page) {
@@ -100,6 +106,12 @@ public final class DesktopJmcomicService {
 
     public JsonObject getUserProfile(String uid) {
         return toUserProfileObject(client.getUserProfile(uid));
+    }
+
+    public ImageBytes fetchImageBytes(String photoId, int sortOrder) {
+        JmImage image = resolveImage(photoId, sortOrder);
+        byte[] data = client.fetchImageBytes(image);
+        return new ImageBytes(data, mimeType(image));
     }
 
     private SearchQuery buildQuery(JsonObject query) {
@@ -162,6 +174,7 @@ public final class DesktopJmcomicService {
     }
 
     private JsonObject toPhotoObject(JmPhoto photo) {
+        rememberImages(photo.getImages());
         JsonObject result = new JsonObject();
         result.addProperty("id", photo.getId());
         result.addProperty("title", photo.getTitle());
@@ -252,6 +265,7 @@ public final class DesktopJmcomicService {
     }
 
     private JsonArray toImageArray(List<JmImage> images) {
+        rememberImages(images);
         JsonArray arr = new JsonArray();
         if (images == null) return arr;
         for (JmImage image : images) {
@@ -366,5 +380,42 @@ public final class DesktopJmcomicService {
 
     private static String nullToEmpty(String value) {
         return value == null ? "" : value;
+    }
+
+    private void rememberImages(List<JmImage> images) {
+        if (images == null) return;
+        for (JmImage image : images) {
+            imageIndex.put(imageKey(image.getPhotoId(), image.getSortOrder()), image);
+        }
+    }
+
+    private JmImage resolveImage(String photoId, int sortOrder) {
+        if (photoId == null || photoId.isBlank() || sortOrder <= 0) {
+            throw new IllegalArgumentException("photoId and sortOrder are required");
+        }
+
+        JmImage cached = imageIndex.get(imageKey(photoId, sortOrder));
+        if (cached != null) return cached;
+
+        JmPhoto photo = client.getPhoto(photoId);
+        rememberImages(photo.getImages());
+        JmImage resolved = imageIndex.get(imageKey(photoId, sortOrder));
+        if (resolved == null) {
+            throw new IllegalArgumentException("image not found: " + photoId + "/" + sortOrder);
+        }
+        return resolved;
+    }
+
+    private static String imageKey(String photoId, int sortOrder) {
+        return photoId + "/" + sortOrder;
+    }
+
+    private static String mimeType(JmImage image) {
+        String format = JmImageTool.getFormatName(image.getFilename());
+        if ("jpg".equals(format) || "jpeg".equals(format)) return "image/jpeg";
+        return "image/" + format;
+    }
+
+    public record ImageBytes(byte[] data, String mimeType) {
     }
 }

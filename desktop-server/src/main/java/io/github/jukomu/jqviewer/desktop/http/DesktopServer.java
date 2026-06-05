@@ -6,6 +6,7 @@ import com.google.gson.JsonParser;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import io.github.jukomu.jqviewer.desktop.config.DesktopServerConfig;
+import io.github.jukomu.jqviewer.desktop.service.DesktopImageCache;
 import io.github.jukomu.jqviewer.desktop.service.DesktopJmcomicService;
 import io.github.jukomu.jqviewer.desktop.store.DesktopHistoryStore;
 import io.github.jukomu.jqviewer.desktop.store.DesktopSettingsStore;
@@ -28,6 +29,7 @@ public final class DesktopServer {
     private final DesktopJmcomicService jmcomicService = new DesktopJmcomicService();
     private final DesktopSettingsStore settingsStore;
     private final DesktopHistoryStore historyStore;
+    private final DesktopImageCache imageCache;
     private final HttpServer server;
     private final ExecutorService executor;
 
@@ -35,10 +37,13 @@ public final class DesktopServer {
         this.config = config;
         this.settingsStore = new DesktopSettingsStore(config.dataDir());
         this.historyStore = new DesktopHistoryStore(config.dataDir());
+        this.imageCache = new DesktopImageCache(jmcomicService, intValue(settingsStore.getAll(), "cacheCapacityMb", 256));
         this.server = HttpServer.create(new InetSocketAddress(config.bindAddress(), config.port()), 0);
         this.executor = Executors.newFixedThreadPool(Math.max(4, Runtime.getRuntime().availableProcessors()));
         this.server.setExecutor(executor);
         this.server.createContext("/api", this::handleApi);
+        this.server.createContext("/image", this::handleImageResource);
+        this.server.createContext("/thumb", this::handleImageResource);
     }
 
     public void start() {
@@ -67,12 +72,60 @@ public final class DesktopServer {
                 return;
             }
 
-            if (!hasValidToken(exchange)) {
+            if (!hasValidApiToken(exchange)) {
                 sendError(exchange, 401, "Missing or invalid desktop token");
                 return;
             }
 
             route(exchange);
+        } catch (IllegalArgumentException e) {
+            sendError(exchange, 400, e.getMessage());
+        } catch (Exception e) {
+            sendError(exchange, 500, e.getMessage() == null ? "Internal server error" : e.getMessage());
+        } finally {
+            exchange.close();
+        }
+    }
+
+    private void handleImageResource(HttpExchange exchange) throws IOException {
+        try {
+            if (!isOriginAllowed(exchange)) {
+                sendError(exchange, 403, "Origin is not allowed");
+                return;
+            }
+            addCorsHeaders(exchange);
+
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendEmpty(exchange, 204);
+                return;
+            }
+
+            if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendError(exchange, 405, "Method not allowed");
+                return;
+            }
+
+            if (!hasValidResourceToken(exchange)) {
+                sendError(exchange, 401, "Missing or invalid desktop token");
+                return;
+            }
+
+            String path = exchange.getRequestURI().getPath();
+            String type;
+            String prefix;
+            if (path.startsWith("/thumb/")) {
+                type = "thumb";
+                prefix = "/thumb/";
+            } else if (path.startsWith("/image/")) {
+                type = "image";
+                prefix = "/image/";
+            } else {
+                throw new IllegalArgumentException("Invalid image path");
+            }
+            String[] parts = imagePathParts(path, prefix);
+            int sortOrder = Integer.parseInt(parts[1]);
+            DesktopImageCache.ImageResource resource = imageCache.get(type, parts[0], sortOrder);
+            sendBytes(exchange, 200, resource.mimeType(), resource.data());
         } catch (IllegalArgumentException e) {
             sendError(exchange, 400, e.getMessage());
         } catch (Exception e) {
@@ -126,6 +179,26 @@ public final class DesktopServer {
             sendJson(exchange, 200, settingsStore.getAll());
         } else if (method.equals("POST") && path.equals("/api/settings")) {
             sendJson(exchange, 200, settingsStore.update(readJson(exchange)));
+        } else if (method.equals("POST") && path.equals("/api/preload-images")) {
+            sendJson(exchange, 200, imageCache.preload(readJson(exchange)));
+        } else if (method.equals("GET") && path.equals("/api/cache/capacity")) {
+            sendJson(exchange, 200, imageCache.capacityInfo());
+        } else if (method.equals("POST") && path.equals("/api/cache/capacity")) {
+            int mb = intValue(readJson(exchange), "mb", 256);
+            imageCache.setCapacityMb(mb);
+            int capacityMb = intValue(imageCache.capacityInfo(), "capacityMb", mb);
+            JsonObject patch = new JsonObject();
+            patch.addProperty("cacheCapacityMb", capacityMb);
+            settingsStore.update(patch);
+            JsonObject result = new JsonObject();
+            result.addProperty("success", true);
+            result.addProperty("capacityMb", capacityMb);
+            sendJson(exchange, 200, result);
+        } else if (method.equals("POST") && path.equals("/api/cache/clear")) {
+            imageCache.clear();
+            JsonObject result = new JsonObject();
+            result.addProperty("success", true);
+            sendJson(exchange, 200, result);
         } else {
             sendError(exchange, 404, "Route not found");
         }
@@ -157,13 +230,27 @@ public final class DesktopServer {
         sendJson(exchange, status, body);
     }
 
+    private void sendBytes(HttpExchange exchange, int status, String mimeType, byte[] bytes) throws IOException {
+        exchange.getResponseHeaders().set("Content-Type", mimeType);
+        exchange.sendResponseHeaders(status, bytes.length);
+        try (OutputStream output = exchange.getResponseBody()) {
+            output.write(bytes);
+        }
+    }
+
     private void sendEmpty(HttpExchange exchange, int status) throws IOException {
         exchange.sendResponseHeaders(status, -1);
     }
 
-    private boolean hasValidToken(HttpExchange exchange) {
+    private boolean hasValidApiToken(HttpExchange exchange) {
         String token = exchange.getRequestHeaders().getFirst("X-JQ-Desktop-Token");
         return config.token().equals(token);
+    }
+
+    private boolean hasValidResourceToken(HttpExchange exchange) {
+        String headerToken = exchange.getRequestHeaders().getFirst("X-JQ-Desktop-Token");
+        if (config.token().equals(headerToken)) return true;
+        return config.token().equals(queryParams(exchange.getRequestURI()).get("token"));
     }
 
     private boolean isOriginAllowed(HttpExchange exchange) {
@@ -208,5 +295,29 @@ public final class DesktopServer {
         } catch (NumberFormatException e) {
             return fallback;
         }
+    }
+
+    private static int intValue(JsonObject obj, String key, int fallback) {
+        if (obj == null || !obj.has(key) || obj.get(key).isJsonNull()) return fallback;
+        try {
+            return obj.get(key).getAsInt();
+        } catch (RuntimeException e) {
+            return fallback;
+        }
+    }
+
+    private static String[] imagePathParts(String path, String prefix) {
+        if (!path.startsWith(prefix)) {
+            throw new IllegalArgumentException("Invalid image path");
+        }
+        String rest = path.substring(prefix.length());
+        String[] raw = rest.split("/", -1);
+        if (raw.length != 2 || raw[0].isEmpty() || raw[1].isEmpty()) {
+            throw new IllegalArgumentException("Invalid image path");
+        }
+        return new String[] {
+            URLDecoder.decode(raw[0], StandardCharsets.UTF_8),
+            URLDecoder.decode(raw[1], StandardCharsets.UTF_8)
+        };
     }
 }

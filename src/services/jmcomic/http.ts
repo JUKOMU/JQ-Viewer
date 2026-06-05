@@ -4,6 +4,21 @@ const desktopApiBase = import.meta.env.VITE_JQ_DESKTOP_API_BASE || DEFAULT_DESKT
 const desktopToken =
   import.meta.env.VITE_JQ_DESKTOP_TOKEN || localStorage.getItem('jq-desktop-token') || ''
 
+export function desktopResourceUrl(path: string): string {
+  if (!desktopToken) {
+    throw new Error('Missing desktop token. Set VITE_JQ_DESKTOP_TOKEN or jq-desktop-token.')
+  }
+
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`
+  const base = desktopApiBase === '/api'
+    ? ''
+    : desktopApiBase.endsWith('/api')
+      ? desktopApiBase.slice(0, -'/api'.length)
+      : desktopApiBase
+  const separator = normalizedPath.includes('?') ? '&' : '?'
+  return `${base}${normalizedPath}${separator}token=${encodeURIComponent(desktopToken)}`
+}
+
 export async function desktopRequest<T>(
   path: string,
   options: RequestInit = {},

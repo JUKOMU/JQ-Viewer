@@ -29,7 +29,6 @@ import type {
 } from '../JmcomicTypes'
 import type {ImageReadyEvent, JmcomicClient, JmcomicListenerHandle} from './JmcomicClient'
 import {desktopRequest, jsonBody} from './http'
-import {rememberDesktopImageUrls} from './desktopImageUrls'
 
 const noopListenerHandle: JmcomicListenerHandle = {
   remove: () => Promise.resolve(),
@@ -95,24 +94,27 @@ export const jmcomicDesktopClient: JmcomicClient = {
     return unsupported()
   },
 
-  async preloadImages({photoId, images, type}): Promise<PreloadResult> {
+  preloadImages({photoId, images, type}): Promise<PreloadResult> {
     const imageType = type === 'thumb' ? 'thumb' : 'image'
-    rememberDesktopImageUrls(photoId, images, imageType)
-    return {cached: images.map((image) => image.sortOrder), pending: []}
+    return desktopRequest<PreloadResult>('/preload-images', {
+      method: 'POST',
+      body: jsonBody({photoId, images, type: imageType}),
+    })
   },
 
   async setCacheCapacity({mb}) {
-    await updateSettings<AllSettings>({cacheCapacityMb: mb})
-    return {success: true, capacityMb: mb}
+    return desktopRequest<{success: boolean; capacityMb: number}>('/cache/capacity', {
+      method: 'POST',
+      body: jsonBody({mb}),
+    })
   },
 
-  async getCacheCapacityInfo(): Promise<CacheCapacityInfo> {
-    const settings = await this.getAllSettings()
-    return {capacityMb: settings.cacheCapacityMb, usedMb: 0}
+  getCacheCapacityInfo(): Promise<CacheCapacityInfo> {
+    return desktopRequest<CacheCapacityInfo>('/cache/capacity')
   },
 
   clearImageCache() {
-    return Promise.resolve({success: true})
+    return desktopRequest<{success: boolean}>('/cache/clear', {method: 'POST'})
   },
 
   async setDownloadConcurrency({n}) {

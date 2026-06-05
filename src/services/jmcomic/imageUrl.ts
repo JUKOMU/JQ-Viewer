@@ -1,4 +1,5 @@
-import {getRememberedDesktopImageUrl} from './desktopImageUrls'
+import {isDesktopRuntime} from '../../platform/runtime'
+import {desktopResourceUrl} from './http'
 
 /** 虚拟 URL 基地址，与 Android 侧 ImageRegistry.VIRTUAL_HOST 一致 */
 const VIRTUAL_BASE = 'https://jqviewer.local'
@@ -9,7 +10,8 @@ export function getImageUrl(
   sortOrder: number,
   type: 'image' | 'thumb' = 'image',
 ): string {
-  const desktopUrl = getRememberedDesktopImageUrl(photoId, sortOrder, type)
-  if (desktopUrl) return desktopUrl
+  if (isDesktopRuntime) {
+    return desktopResourceUrl(`/${type}/${encodeURIComponent(photoId)}/${sortOrder}`)
+  }
   return `${VIRTUAL_BASE}/${type}/${photoId}/${sortOrder}`
 }

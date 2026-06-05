@@ -29,6 +29,14 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:18080',
+        changeOrigin: false,
+      },
+    },
+  },
   test: {
     globals: true,
     environment: 'jsdom'

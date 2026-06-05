@@ -13,9 +13,11 @@ import type {
   SearchResultItem,
 } from '../JmcomicTypes'
 import type {JmcomicClient, JmcomicListenerHandle} from './JmcomicClient'
+import {isDesktopRuntime} from '../../platform/runtime'
+import {jmcomicDesktopClient} from './JmcomicDesktopClient'
 import {jmcomicNativeClient} from './JmcomicNativeClient'
 
-const native: JmcomicClient = jmcomicNativeClient
+const native: JmcomicClient = isDesktopRuntime ? jmcomicDesktopClient : jmcomicNativeClient
 
 export const JmcomicService = {
   search(query: SearchQuery) {

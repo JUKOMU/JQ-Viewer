@@ -1,7 +1,7 @@
 import type {PlatformCapabilities} from './PlatformCapabilities'
 import type {JmcomicListenerHandle} from '../services/jmcomic/JmcomicClient'
-import type {AllSettings} from '../services/JmcomicTypes'
-import {desktopRequest, jsonBody} from '../services/jmcomic/http'
+import type {AllSettings, DownloadProgressEvent} from '../services/JmcomicTypes'
+import {desktopEventUrl, desktopRequest, jsonBody} from '../services/jmcomic/http'
 
 const noopListenerHandle: JmcomicListenerHandle = {
   remove: () => Promise.resolve(),
@@ -118,8 +118,22 @@ export const desktopCapabilities: PlatformCapabilities = {
     addImageReadyListener() {
       return Promise.resolve(noopListenerHandle)
     },
-    addDownloadProgressListener() {
-      return Promise.resolve(noopListenerHandle)
+    async addDownloadProgressListener(handler) {
+      const source = new EventSource(desktopEventUrl('/events'))
+      const onMessage = (event: MessageEvent) => {
+        try {
+          handler(JSON.parse(event.data) as DownloadProgressEvent)
+        } catch {
+          // Ignore malformed local event payloads.
+        }
+      }
+      source.addEventListener('downloadProgress', onMessage)
+      return {
+        remove: async () => {
+          source.removeEventListener('downloadProgress', onMessage)
+          source.close()
+        },
+      }
     },
     addRelocationProgressListener() {
       return Promise.resolve(noopListenerHandle)

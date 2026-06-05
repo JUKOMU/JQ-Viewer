@@ -1,6 +1,7 @@
 <template>
   <ion-app>
     <MainMenu content-id="main-content" :disabled="route.meta.menu !== true"></MainMenu>
+    <InAppNotificationCenter/>
     <div id="main-content" class="ion-page-container">
       <router-view v-slot="{ Component }">
         <transition :name="transitionName" mode="out-in" @after-enter="onAfterEnter">
@@ -21,6 +22,7 @@ import {computed, nextTick, onBeforeUnmount, onMounted, provide, ref} from 'vue'
 import {useRoute, useRouter} from 'vue-router'
 import {App} from '@capacitor/app'
 import MainMenu from '@/components/menu/MainMenu.vue'
+import InAppNotificationCenter from '@/components/platform/InAppNotificationCenter.vue'
 import {useSideMenuState} from '@/composables/useSideMenuState'
 import {initSettings} from '@/services/SettingsService'
 import {useAuth} from '@/composables/useAuth'

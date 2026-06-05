@@ -155,32 +155,40 @@ export const jmcomicDesktopClient: JmcomicClient = {
     return {success: true}
   },
 
-  downloadChapter(): Promise<{taskId: string}> {
-    return unsupported()
+  downloadChapter({albumId, chapterId, albumTitle, chapterTitle, coverUrl}): Promise<{taskId: string}> {
+    return desktopRequest<{taskId: string}>('/downloads', {
+      method: 'POST',
+      body: jsonBody({albumId, chapterId, albumTitle, chapterTitle, coverUrl}),
+    })
   },
 
   getDownloadTasks(): Promise<DownloadTasksResult> {
-    return Promise.resolve({tasks: [], usedBytes: 0, availableBytes: 0})
+    return desktopRequest<DownloadTasksResult>('/downloads')
   },
 
-  cancelDownload() {
-    return unsupported()
+  cancelDownload({taskId}) {
+    return desktopRequest<{success: boolean}>(`/downloads/${encodeURIComponent(taskId)}/cancel`, {method: 'POST'})
   },
 
-  pauseDownload() {
-    return unsupported()
+  pauseDownload({taskId}) {
+    return desktopRequest<{success: boolean}>(`/downloads/${encodeURIComponent(taskId)}/pause`, {method: 'POST'})
   },
 
-  resumeDownload() {
-    return unsupported()
+  resumeDownload({taskId}) {
+    return desktopRequest<{success: boolean}>(`/downloads/${encodeURIComponent(taskId)}/resume`, {method: 'POST'})
   },
 
-  deleteDownloaded() {
-    return unsupported()
+  deleteDownloaded({albumId, chapterId}) {
+    return desktopRequest<{success: boolean}>(
+      `/downloads/${encodeURIComponent(albumId)}/${encodeURIComponent(chapterId)}`,
+      {method: 'DELETE'},
+    )
   },
 
-  getDownloadedPhoto(): Promise<PhotoDetail> {
-    return unsupported()
+  getDownloadedPhoto({albumId, chapterId}): Promise<PhotoDetail> {
+    return desktopRequest<PhotoDetail>(
+      `/downloaded/${encodeURIComponent(albumId)}/${encodeURIComponent(chapterId)}`,
+    )
   },
 
   addListener(

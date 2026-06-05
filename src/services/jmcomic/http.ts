@@ -55,6 +55,10 @@ export function desktopResourceUrl(path: string): string {
   return `${base}${normalizedPath}${separator}token=${encodeURIComponent(desktopToken)}`
 }
 
+export function desktopEventUrl(path: string): string {
+  return desktopResourceUrl(path)
+}
+
 export async function desktopRequest<T>(
   path: string,
   options: RequestInit = {},

@@ -18,11 +18,12 @@ public final class DesktopServerConfig {
     private final Path dataDir;
     private final Path cacheDir;
     private final Path logDir;
+    private final Path downloadDir;
     private final Path staticDir;
     private final Set<String> allowedOrigins;
 
     private DesktopServerConfig(InetAddress bindAddress, int port, String token,
-                                Path dataDir, Path cacheDir, Path logDir, Path staticDir,
+                                Path dataDir, Path cacheDir, Path logDir, Path downloadDir, Path staticDir,
                                 Set<String> allowedOrigins) {
         this.bindAddress = bindAddress;
         this.port = port;
@@ -30,6 +31,7 @@ public final class DesktopServerConfig {
         this.dataDir = dataDir;
         this.cacheDir = cacheDir;
         this.logDir = logDir;
+        this.downloadDir = downloadDir;
         this.staticDir = staticDir;
         this.allowedOrigins = allowedOrigins;
     }
@@ -37,6 +39,7 @@ public final class DesktopServerConfig {
     public static DesktopServerConfig from(String[] args, Map<String, String> env) throws Exception {
         String token = value(env, "JQ_DESKTOP_TOKEN", "");
         String dataDirRaw = value(env, "JQ_DESKTOP_DATA_DIR", "");
+        String downloadDirRaw = value(env, "JQ_DESKTOP_DOWNLOAD_DIR", "");
         String staticDirRaw = value(env, "JQ_DESKTOP_STATIC_DIR", "");
         String originsRaw = value(env, "JQ_DESKTOP_DEV_ORIGINS",
             "http://localhost:5173,http://127.0.0.1:5173");
@@ -56,6 +59,10 @@ public final class DesktopServerConfig {
                 dataDirRaw = arg.substring("--data-dir=".length()).trim();
             } else if ("--data-dir".equals(arg) && i + 1 < args.length) {
                 dataDirRaw = args[++i].trim();
+            } else if (arg.startsWith("--download-dir=")) {
+                downloadDirRaw = arg.substring("--download-dir=".length()).trim();
+            } else if ("--download-dir".equals(arg) && i + 1 < args.length) {
+                downloadDirRaw = args[++i].trim();
             } else if (arg.startsWith("--static-dir=")) {
                 staticDirRaw = arg.substring("--static-dir=".length()).trim();
             } else if ("--static-dir".equals(arg) && i + 1 < args.length) {
@@ -75,6 +82,7 @@ public final class DesktopServerConfig {
             dataDir,
             dataDir.resolve("cache").toAbsolutePath().normalize(),
             dataDir.resolve("logs").toAbsolutePath().normalize(),
+            resolveDownloadDir(downloadDirRaw, dataDir),
             resolveStaticDir(staticDirRaw),
             parseOrigins(originsRaw)
         );
@@ -104,6 +112,10 @@ public final class DesktopServerConfig {
         return logDir;
     }
 
+    public Path downloadDir() {
+        return downloadDir;
+    }
+
     public Path staticDir() {
         return staticDir;
     }
@@ -120,6 +132,7 @@ public final class DesktopServerConfig {
             dataDir,
             cacheDir,
             logDir,
+            downloadDir,
             staticDir,
             allowedOrigins
         );
@@ -151,6 +164,13 @@ public final class DesktopServerConfig {
         return Path.of(System.getProperty("user.home"), ".jqviewer", "desktop")
             .toAbsolutePath()
             .normalize();
+    }
+
+    private static Path resolveDownloadDir(String explicit, Path dataDir) {
+        if (explicit != null && !explicit.trim().isEmpty()) {
+            return Path.of(explicit.trim()).toAbsolutePath().normalize();
+        }
+        return dataDir.resolve("downloads").toAbsolutePath().normalize();
     }
 
     private static Path resolveStaticDir(String explicit) {

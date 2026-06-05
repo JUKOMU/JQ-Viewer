@@ -6,8 +6,11 @@ import com.google.gson.JsonParser;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import io.github.jukomu.jqviewer.desktop.config.DesktopServerConfig;
+import io.github.jukomu.jqviewer.desktop.service.DesktopDownloadService;
+import io.github.jukomu.jqviewer.desktop.service.DesktopEventBroker;
 import io.github.jukomu.jqviewer.desktop.service.DesktopImageCache;
 import io.github.jukomu.jqviewer.desktop.service.DesktopJmcomicService;
+import io.github.jukomu.jqviewer.desktop.store.DesktopDownloadStore;
 import io.github.jukomu.jqviewer.desktop.store.DesktopHistoryStore;
 import io.github.jukomu.jqviewer.desktop.store.DesktopSettingsStore;
 
@@ -33,6 +36,9 @@ public final class DesktopServer {
     private final DesktopSettingsStore settingsStore;
     private final DesktopHistoryStore historyStore;
     private final DesktopImageCache imageCache;
+    private final DesktopDownloadStore downloadStore;
+    private final DesktopEventBroker eventBroker;
+    private final DesktopDownloadService downloadService;
     private final HttpServer server;
     private final ExecutorService executor;
 
@@ -41,13 +47,23 @@ public final class DesktopServer {
         Files.createDirectories(config.dataDir());
         Files.createDirectories(config.cacheDir());
         Files.createDirectories(config.logDir());
+        Files.createDirectories(config.downloadDir());
         this.settingsStore = new DesktopSettingsStore(config.dataDir());
         this.historyStore = new DesktopHistoryStore(config.dataDir());
         this.imageCache = new DesktopImageCache(jmcomicService, intValue(settingsStore.getAll(), "cacheCapacityMb", 256));
+        this.downloadStore = new DesktopDownloadStore(config.dataDir(), config.downloadDir());
+        this.eventBroker = new DesktopEventBroker();
+        this.downloadService = new DesktopDownloadService(
+            jmcomicService,
+            downloadStore,
+            eventBroker,
+            intValue(settingsStore.getAll(), "downloadConcurrency", 6)
+        );
         this.server = HttpServer.create(new InetSocketAddress(config.bindAddress(), config.port()), 0);
         this.executor = Executors.newFixedThreadPool(Math.max(4, Runtime.getRuntime().availableProcessors()));
         this.server.setExecutor(executor);
         this.server.createContext("/api", this::handleApi);
+        this.server.createContext("/events", this::handleEvents);
         this.server.createContext("/image", this::handleImageResource);
         this.server.createContext("/thumb", this::handleImageResource);
         this.server.createContext("/", this::handleStaticFrontend);
@@ -58,6 +74,8 @@ public final class DesktopServer {
     }
 
     public void stop() {
+        downloadService.stop();
+        eventBroker.close();
         server.stop(0);
         executor.shutdownNow();
     }
@@ -161,6 +179,11 @@ public final class DesktopServer {
             }
             String[] parts = imagePathParts(path, prefix);
             int sortOrder = Integer.parseInt(parts[1]);
+            DesktopImageCache.ImageResource downloaded = downloadService.getDownloadedImage(parts[0], sortOrder);
+            if (downloaded != null) {
+                sendBytes(exchange, 200, downloaded.mimeType(), downloaded.data());
+                return;
+            }
             DesktopImageCache.ImageResource resource = imageCache.get(type, parts[0], sortOrder);
             sendBytes(exchange, 200, resource.mimeType(), resource.data());
         } catch (IllegalArgumentException e) {
@@ -168,6 +191,43 @@ public final class DesktopServer {
         } catch (Exception e) {
             sendError(exchange, 500, e.getMessage() == null ? "Internal server error" : e.getMessage());
         } finally {
+            exchange.close();
+        }
+    }
+
+    private void handleEvents(HttpExchange exchange) throws IOException {
+        try {
+            if (!isOriginAllowed(exchange)) {
+                sendError(exchange, 403, "Origin is not allowed");
+                exchange.close();
+                return;
+            }
+            addCorsHeaders(exchange);
+
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendEmpty(exchange, 204);
+                exchange.close();
+                return;
+            }
+
+            if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendError(exchange, 405, "Method not allowed");
+                exchange.close();
+                return;
+            }
+
+            if (!hasValidResourceToken(exchange)) {
+                sendError(exchange, 401, "Missing or invalid desktop token");
+                exchange.close();
+                return;
+            }
+
+            eventBroker.open(exchange);
+        } catch (IllegalArgumentException e) {
+            sendError(exchange, 400, e.getMessage());
+            exchange.close();
+        } catch (Exception e) {
+            sendError(exchange, 500, e.getMessage() == null ? "Internal server error" : e.getMessage());
             exchange.close();
         }
     }
@@ -236,6 +296,22 @@ public final class DesktopServer {
             JsonObject result = new JsonObject();
             result.addProperty("success", true);
             sendJson(exchange, 200, result);
+        } else if (method.equals("POST") && path.equals("/api/downloads")) {
+            sendJson(exchange, 200, downloadService.startDownload(readJson(exchange)));
+        } else if (method.equals("GET") && path.equals("/api/downloads")) {
+            sendJson(exchange, 200, downloadService.getTasks());
+        } else if (method.equals("POST") && path.startsWith("/api/downloads/") && path.endsWith("/pause")) {
+            sendJson(exchange, 200, downloadService.pause(actionTaskId(path, "/pause")));
+        } else if (method.equals("POST") && path.startsWith("/api/downloads/") && path.endsWith("/resume")) {
+            sendJson(exchange, 200, downloadService.resume(actionTaskId(path, "/resume")));
+        } else if (method.equals("POST") && path.startsWith("/api/downloads/") && path.endsWith("/cancel")) {
+            sendJson(exchange, 200, downloadService.cancel(actionTaskId(path, "/cancel")));
+        } else if (method.equals("DELETE") && path.startsWith("/api/downloads/")) {
+            String[] parts = twoPathParts(path, "/api/downloads/");
+            sendJson(exchange, 200, downloadService.deleteDownloaded(parts[0], parts[1]));
+        } else if (method.equals("GET") && path.startsWith("/api/downloaded/")) {
+            String[] parts = twoPathParts(path, "/api/downloaded/");
+            sendJson(exchange, 200, downloadService.getDownloadedPhoto(parts[0], parts[1]));
         } else {
             sendError(exchange, 404, "Route not found");
         }
@@ -326,6 +402,26 @@ public final class DesktopServer {
     private static String pathPart(String path, String prefix) {
         String raw = path.substring(prefix.length());
         return URLDecoder.decode(raw, StandardCharsets.UTF_8);
+    }
+
+    private static String actionTaskId(String path, String suffix) {
+        String raw = path.substring("/api/downloads/".length(), path.length() - suffix.length());
+        return URLDecoder.decode(raw, StandardCharsets.UTF_8);
+    }
+
+    private static String[] twoPathParts(String path, String prefix) {
+        if (!path.startsWith(prefix)) {
+            throw new IllegalArgumentException("Invalid path");
+        }
+        String rest = path.substring(prefix.length());
+        String[] raw = rest.split("/", -1);
+        if (raw.length != 2 || raw[0].isEmpty() || raw[1].isEmpty()) {
+            throw new IllegalArgumentException("Invalid path");
+        }
+        return new String[] {
+            URLDecoder.decode(raw[0], StandardCharsets.UTF_8),
+            URLDecoder.decode(raw[1], StandardCharsets.UTF_8)
+        };
     }
 
     private static Map<String, String> queryParams(URI uri) {

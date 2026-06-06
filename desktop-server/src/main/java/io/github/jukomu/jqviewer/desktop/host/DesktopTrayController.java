@@ -18,23 +18,32 @@ final class DesktopTrayController implements AutoCloseable {
         this.icon = icon;
     }
 
-    static DesktopTrayController install(Runnable openPage, Runnable exitApp) {
+    static DesktopTrayController install(Runnable openHome, Runnable openDownload, Runnable openDataDir,
+                                         Runnable openLogDir, Runnable restartService, Runnable exitApp) {
         if (GraphicsEnvironment.isHeadless() || !SystemTray.isSupported()) {
             return null;
         }
 
         PopupMenu menu = new PopupMenu();
-        MenuItem open = new MenuItem("Open JQViewer");
-        open.addActionListener(event -> safeRun(openPage));
-        MenuItem exit = new MenuItem("Exit");
-        exit.addActionListener(event -> safeRun(exitApp));
-        menu.add(open);
+        MenuItem openHomeItem = menuItem("Open Home", openHome);
+        MenuItem openDownloadItem = menuItem("Open Downloads", openDownload);
+        MenuItem openDataDirItem = menuItem("Open Data Directory", openDataDir);
+        MenuItem openLogDirItem = menuItem("Open Log Directory", openLogDir);
+        MenuItem restartItem = menuItem("Restart Service", restartService);
+        MenuItem exit = menuItem("Exit", exitApp);
+        menu.add(openHomeItem);
+        menu.add(openDownloadItem);
+        menu.addSeparator();
+        menu.add(openDataDirItem);
+        menu.add(openLogDirItem);
+        menu.addSeparator();
+        menu.add(restartItem);
         menu.addSeparator();
         menu.add(exit);
 
         TrayIcon icon = new TrayIcon(iconImage(), "JQViewer", menu);
         icon.setImageAutoSize(true);
-        icon.addActionListener(event -> safeRun(openPage));
+        icon.addActionListener(event -> safeRun(openHome));
 
         try {
             SystemTray tray = SystemTray.getSystemTray();
@@ -64,6 +73,12 @@ final class DesktopTrayController implements AutoCloseable {
             graphics.dispose();
         }
         return image;
+    }
+
+    private static MenuItem menuItem(String label, Runnable action) {
+        MenuItem item = new MenuItem(label);
+        item.addActionListener(event -> safeRun(action));
+        return item;
     }
 
     private static void safeRun(Runnable runnable) {

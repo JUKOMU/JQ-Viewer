@@ -217,9 +217,26 @@ public final class DesktopServerConfig {
         if (explicit != null && !explicit.trim().isEmpty()) {
             return Path.of(explicit.trim()).toAbsolutePath().normalize();
         }
+        Path installedDist = installedStaticDir();
+        if (installedDist != null) return installedDist;
         Path cwdDist = existingDir(Path.of("dist"));
         if (cwdDist != null) return cwdDist;
         return existingDir(Path.of("..", "dist"));
+    }
+
+    private static Path installedStaticDir() {
+        try {
+            Path codeLocation = Path.of(DesktopServerConfig.class.getProtectionDomain()
+                .getCodeSource()
+                .getLocation()
+                .toURI()).toAbsolutePath().normalize();
+            Path baseDir = Files.isRegularFile(codeLocation) ? codeLocation.getParent() : codeLocation;
+            Path siblingDist = existingDir(baseDir.resolve("dist"));
+            if (siblingDist != null) return siblingDist;
+            return existingDir(baseDir.resolve("..").resolve("dist"));
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private static Path existingDir(Path path) {

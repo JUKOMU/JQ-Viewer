@@ -29,7 +29,9 @@ final class DesktopHostRuntime {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final int PORT_ATTEMPTS = 20;
 
-    private final DesktopServer server;
+    private DesktopServer server;
+    private DesktopServerConfig config;
+    private URI homeUri;
     private final FileChannel lockChannel;
     private final FileLock lock;
     private final Path stateFile;
@@ -38,9 +40,11 @@ final class DesktopHostRuntime {
     private final AtomicBoolean stopped = new AtomicBoolean(false);
     private DesktopTrayController tray;
 
-    private DesktopHostRuntime(DesktopServer server, FileChannel lockChannel, FileLock lock,
+    private DesktopHostRuntime(ServerLaunch launch, FileChannel lockChannel, FileLock lock,
                                Path stateFile, Path logFile) {
-        this.server = server;
+        this.server = launch.server();
+        this.config = launch.config();
+        this.homeUri = pageUri(config.port(), config.token(), "/");
         this.lockChannel = lockChannel;
         this.lock = lock;
         this.stateFile = stateFile;
@@ -68,12 +72,16 @@ final class DesktopHostRuntime {
         ServerLaunch launch = null;
         try {
             launch = startServer(config, logFile);
-            URI pageUri = pageUri(launch.server().port(), launch.config().token());
+            URI pageUri = pageUri(launch.server().port(), launch.config().token(), "/");
             writeState(stateFile, launch.config(), pageUri);
 
-            DesktopHostRuntime runtime = new DesktopHostRuntime(launch.server(), lockChannel, lock, stateFile, logFile);
+            DesktopHostRuntime runtime = new DesktopHostRuntime(launch, lockChannel, lock, stateFile, logFile);
             runtime.tray = DesktopTrayController.install(
-                () -> openBrowser(pageUri),
+                runtime::openHomePage,
+                runtime::openDownloadPage,
+                runtime::openDataDir,
+                runtime::openLogDir,
+                runtime::restartService,
                 () -> {
                     runtime.shutdown();
                     System.exit(0);
@@ -106,7 +114,7 @@ final class DesktopHostRuntime {
         stoppedLatch.await();
     }
 
-    private void shutdown() {
+    private synchronized void shutdown() {
         if (!stopped.compareAndSet(false, true)) {
             return;
         }
@@ -120,6 +128,44 @@ final class DesktopHostRuntime {
         releaseQuietly(lock);
         closeQuietly(lockChannel);
         stoppedLatch.countDown();
+    }
+
+    private synchronized void openHomePage() {
+        openBrowser(homeUri);
+    }
+
+    private synchronized void openDownloadPage() {
+        openBrowser(pageUri(config.port(), config.token(), "/download"));
+    }
+
+    private synchronized void openDataDir() {
+        openDirectory(config.dataDir(), logFile);
+    }
+
+    private synchronized void openLogDir() {
+        openDirectory(config.logDir(), logFile);
+    }
+
+    private synchronized void restartService() {
+        if (stopped.get()) {
+            return;
+        }
+
+        logLine(logFile, "Restarting desktop server");
+        DesktopServer oldServer = server;
+        try {
+            oldServer.stop();
+            ServerLaunch launch = startServer(config, logFile);
+            server = launch.server();
+            config = launch.config();
+            homeUri = pageUri(config.port(), config.token(), "/");
+            writeState(stateFile, config, homeUri);
+            openBrowser(homeUri);
+            logLine(logFile, "Restarted desktop server on " + homeUri);
+        } catch (Exception e) {
+            logLine(logFile, "Failed to restart desktop server: " + e.getMessage());
+            System.out.println("Failed to restart JQViewer desktop service: " + e.getMessage());
+        }
     }
 
     private static ServerLaunch startServer(DesktopServerConfig config, Path logFile) throws Exception {
@@ -189,9 +235,13 @@ final class DesktopHostRuntime {
         );
     }
 
-    private static URI pageUri(int port, String token) {
+    private static URI pageUri(int port, String token, String path) {
         String encodedToken = URLEncoder.encode(token, StandardCharsets.UTF_8);
-        return URI.create("http://127.0.0.1:" + port + "/?jqDesktopToken=" + encodedToken);
+        String normalizedPath = path == null || path.isBlank() ? "/" : path;
+        if (!normalizedPath.startsWith("/")) {
+            normalizedPath = "/" + normalizedPath;
+        }
+        return URI.create("http://127.0.0.1:" + port + normalizedPath + "?jqDesktopToken=" + encodedToken);
     }
 
     private static void openBrowser(URI uri) {
@@ -206,6 +256,21 @@ final class DesktopHostRuntime {
             }
         }
         System.out.println("Open JQViewer desktop page: " + uri);
+    }
+
+    private static void openDirectory(Path path, Path logFile) {
+        if (!GraphicsEnvironment.isHeadless()
+            && Desktop.isDesktopSupported()
+            && Desktop.getDesktop().isSupported(Desktop.Action.OPEN)) {
+            try {
+                Files.createDirectories(path);
+                Desktop.getDesktop().open(path.toFile());
+                return;
+            } catch (IOException e) {
+                logLine(logFile, "Failed to open directory " + path + ": " + e.getMessage());
+            }
+        }
+        System.out.println("Open JQViewer desktop directory: " + path);
     }
 
     private static void logLine(Path logFile, String message) {

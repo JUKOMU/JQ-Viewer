@@ -5,11 +5,9 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import io.github.jukomu.jqviewer.desktop.util.JsonFiles;
 
 import java.io.IOException;
-import java.io.Reader;
-import java.io.Writer;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -108,17 +106,11 @@ public final class DesktopPdfStore {
             save();
             return pdfs;
         }
-        try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
-            JsonArray loaded = GSON.fromJson(reader, JsonArray.class);
-            return loaded == null ? new JsonArray() : loaded;
-        }
+        return JsonFiles.readJson(file, GSON, JsonArray.class, new JsonArray());
     }
 
     private void save() throws IOException {
-        Files.createDirectories(file.getParent());
-        try (Writer writer = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
-            GSON.toJson(pdfs, writer);
-        }
+        JsonFiles.writeJson(file, GSON, pdfs);
     }
 
     private long nextId() {

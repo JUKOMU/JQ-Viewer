@@ -5,12 +5,10 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.reflect.TypeToken;
+import io.github.jukomu.jqviewer.desktop.util.JsonFiles;
 
 import java.io.IOException;
-import java.io.Reader;
-import java.io.Writer;
 import java.lang.reflect.Type;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -99,17 +97,11 @@ public final class DesktopHistoryStore {
 
     private List<Entry> load() throws IOException {
         if (!Files.exists(file)) return new ArrayList<>();
-        try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
-            List<Entry> loaded = GSON.fromJson(reader, ENTRY_LIST_TYPE);
-            return loaded != null ? loaded : new ArrayList<>();
-        }
+        return JsonFiles.readJson(file, GSON, ENTRY_LIST_TYPE, new ArrayList<>());
     }
 
     private void save() throws IOException {
-        Files.createDirectories(file.getParent());
-        try (Writer writer = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
-            GSON.toJson(items, writer);
-        }
+        JsonFiles.writeJson(file, GSON, items);
     }
 
     private long nextId() {

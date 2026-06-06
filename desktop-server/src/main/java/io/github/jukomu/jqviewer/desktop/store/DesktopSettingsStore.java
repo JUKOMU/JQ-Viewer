@@ -4,11 +4,9 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import io.github.jukomu.jqviewer.desktop.util.JsonFiles;
 
 import java.io.IOException;
-import java.io.Reader;
-import java.io.Writer;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -51,13 +49,9 @@ public final class DesktopSettingsStore {
             return base;
         }
 
-        try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
-            JsonObject loaded = GSON.fromJson(reader, JsonObject.class);
-            if (loaded != null) {
-                for (String key : loaded.keySet()) {
-                    base.add(key, loaded.get(key));
-                }
-            }
+        JsonObject loaded = JsonFiles.readJson(file, GSON, JsonObject.class, new JsonObject());
+        for (String key : loaded.keySet()) {
+            base.add(key, loaded.get(key));
         }
         settings = base;
         save();
@@ -65,10 +59,7 @@ public final class DesktopSettingsStore {
     }
 
     private void save() throws IOException {
-        Files.createDirectories(file.getParent());
-        try (Writer writer = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
-            GSON.toJson(settings, writer);
-        }
+        JsonFiles.writeJson(file, GSON, settings);
     }
 
     private static JsonObject defaults() {

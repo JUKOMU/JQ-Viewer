@@ -6,6 +6,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import io.github.jukomu.jqviewer.desktop.config.DesktopServerConfig;
 import io.github.jukomu.jqviewer.desktop.http.DesktopServer;
+import io.github.jukomu.jqviewer.desktop.util.JsonFiles;
 
 import java.awt.Desktop;
 import java.awt.GraphicsEnvironment;
@@ -21,6 +22,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -36,12 +38,13 @@ final class DesktopHostRuntime {
     private final FileLock lock;
     private final Path stateFile;
     private final Path logFile;
+    private final boolean printSensitiveUrls;
     private final CountDownLatch stoppedLatch = new CountDownLatch(1);
     private final AtomicBoolean stopped = new AtomicBoolean(false);
     private DesktopTrayController tray;
 
     private DesktopHostRuntime(ServerLaunch launch, FileChannel lockChannel, FileLock lock,
-                               Path stateFile, Path logFile) {
+                               Path stateFile, Path logFile, boolean printSensitiveUrls) {
         this.server = launch.server();
         this.config = launch.config();
         this.homeUri = pageUri(config.port(), config.token(), "/");
@@ -49,10 +52,12 @@ final class DesktopHostRuntime {
         this.lock = lock;
         this.stateFile = stateFile;
         this.logFile = logFile;
+        this.printSensitiveUrls = printSensitiveUrls;
     }
 
     static DesktopHostRuntime start(String[] args, Map<String, String> env) throws Exception {
         DesktopServerConfig config = DesktopServerConfig.from(args, env);
+        boolean printSensitiveUrls = shouldPrintSensitiveUrls(args, env);
         Files.createDirectories(config.dataDir());
         Files.createDirectories(config.cacheDir());
         Files.createDirectories(config.logDir());
@@ -65,7 +70,7 @@ final class DesktopHostRuntime {
         FileLock lock = tryLock(lockChannel);
         if (lock == null) {
             closeQuietly(lockChannel);
-            openExistingInstance(stateFile, logFile);
+            openExistingInstance(stateFile, logFile, printSensitiveUrls);
             return null;
         }
 
@@ -75,7 +80,7 @@ final class DesktopHostRuntime {
             URI pageUri = pageUri(launch.server().port(), launch.config().token(), "/");
             writeState(stateFile, launch.config(), pageUri);
 
-            DesktopHostRuntime runtime = new DesktopHostRuntime(launch, lockChannel, lock, stateFile, logFile);
+            DesktopHostRuntime runtime = new DesktopHostRuntime(launch, lockChannel, lock, stateFile, logFile, printSensitiveUrls);
             runtime.tray = DesktopTrayController.install(
                 runtime::openHomePage,
                 runtime::openDownloadPage,
@@ -89,10 +94,13 @@ final class DesktopHostRuntime {
             );
             Runtime.getRuntime().addShutdownHook(new Thread(runtime::shutdown, "desktop-host-shutdown"));
 
-            openBrowser(pageUri);
-            logLine(logFile, "Started desktop host on " + pageUri);
+            openBrowser(pageUri, printSensitiveUrls);
+            logLine(logFile, "Started desktop host on " + displayUri(pageUri, false));
             System.out.println("JQViewer desktop host listening on http://127.0.0.1:" + launch.server().port());
-            System.out.println("JQViewer desktop page: " + pageUri);
+            System.out.println("JQViewer desktop page: " + displayUri(pageUri, printSensitiveUrls));
+            if (!printSensitiveUrls) {
+                System.out.println("Set JQ_DESKTOP_PRINT_TOKEN=true or pass --print-token to print token-bearing URLs for debugging.");
+            }
             System.out.println("JQViewer desktop data dir: " + launch.config().dataDir());
             System.out.println("JQViewer desktop cache dir: " + launch.config().cacheDir());
             System.out.println("JQViewer desktop download dir: " + launch.config().downloadDir());
@@ -131,11 +139,11 @@ final class DesktopHostRuntime {
     }
 
     private synchronized void openHomePage() {
-        openBrowser(homeUri);
+        openBrowser(homeUri, printSensitiveUrls);
     }
 
     private synchronized void openDownloadPage() {
-        openBrowser(pageUri(config.port(), config.token(), "/download"));
+        openBrowser(pageUri(config.port(), config.token(), "/download"), printSensitiveUrls);
     }
 
     private synchronized void openDataDir() {
@@ -153,16 +161,20 @@ final class DesktopHostRuntime {
 
         logLine(logFile, "Restarting desktop server");
         DesktopServer oldServer = server;
+        ServerLaunch launch = null;
         try {
+            launch = startServer(config, logFile);
             oldServer.stop();
-            ServerLaunch launch = startServer(config, logFile);
             server = launch.server();
             config = launch.config();
             homeUri = pageUri(config.port(), config.token(), "/");
             writeState(stateFile, config, homeUri);
-            openBrowser(homeUri);
-            logLine(logFile, "Restarted desktop server on " + homeUri);
+            openBrowser(homeUri, printSensitiveUrls);
+            logLine(logFile, "Restarted desktop server on " + displayUri(homeUri, false));
         } catch (Exception e) {
+            if (launch != null) {
+                launch.server().stop();
+            }
             logLine(logFile, "Failed to restart desktop server: " + e.getMessage());
             System.out.println("Failed to restart JQViewer desktop service: " + e.getMessage());
         }
@@ -185,15 +197,15 @@ final class DesktopHostRuntime {
         throw new BindException("No available desktop server port from " + firstPort);
     }
 
-    private static void openExistingInstance(Path stateFile, Path logFile) throws IOException {
+    private static void openExistingInstance(Path stateFile, Path logFile, boolean printSensitiveUrls) throws IOException {
         URI uri = readStateUri(stateFile);
         if (uri == null) {
             System.out.println("JQViewer desktop host is already running, but no readable state file was found.");
             return;
         }
-        openBrowser(uri);
-        logLine(logFile, "Opened existing desktop host " + uri);
-        System.out.println("Opened existing JQViewer desktop page: " + uri);
+        openBrowser(uri, printSensitiveUrls);
+        logLine(logFile, "Opened existing desktop host " + displayUri(uri, false));
+        System.out.println("Opened existing JQViewer desktop page: " + displayUri(uri, printSensitiveUrls));
     }
 
     private static FileLock tryLock(FileChannel channel) throws IOException {
@@ -226,13 +238,7 @@ final class DesktopHostRuntime {
         state.addProperty("pdfExportDir", config.pdfExportDir().toString());
         state.addProperty("logDir", config.logDir().toString());
         state.addProperty("startedAt", Instant.now().toString());
-        Files.writeString(
-            stateFile,
-            GSON.toJson(state),
-            StandardCharsets.UTF_8,
-            StandardOpenOption.CREATE,
-            StandardOpenOption.TRUNCATE_EXISTING
-        );
+        JsonFiles.writeJson(stateFile, GSON, state);
     }
 
     private static URI pageUri(int port, String token, String path) {
@@ -244,7 +250,7 @@ final class DesktopHostRuntime {
         return URI.create("http://127.0.0.1:" + port + normalizedPath + "?jqDesktopToken=" + encodedToken);
     }
 
-    private static void openBrowser(URI uri) {
+    private static void openBrowser(URI uri, boolean printSensitiveUrls) {
         if (!GraphicsEnvironment.isHeadless()
             && Desktop.isDesktopSupported()
             && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
@@ -255,7 +261,7 @@ final class DesktopHostRuntime {
                 // Fall through to console output for headless or restricted desktops.
             }
         }
-        System.out.println("Open JQViewer desktop page: " + uri);
+        System.out.println("Open JQViewer desktop page: " + displayUri(uri, printSensitiveUrls));
     }
 
     private static void openDirectory(Path path, Path logFile) {
@@ -285,6 +291,16 @@ final class DesktopHostRuntime {
             );
         } catch (IOException ignored) {
         }
+    }
+
+    private static String displayUri(URI uri, boolean includeToken) {
+        if (includeToken) return uri.toString();
+        return uri.toString().replaceAll("([?&]jqDesktopToken=)[^&#]*", "$1<redacted>");
+    }
+
+    private static boolean shouldPrintSensitiveUrls(String[] args, Map<String, String> env) {
+        String value = env.get("JQ_DESKTOP_PRINT_TOKEN");
+        return "true".equalsIgnoreCase(value) || Arrays.asList(args).contains("--print-token");
     }
 
     private static void deleteQuietly(Path path) {

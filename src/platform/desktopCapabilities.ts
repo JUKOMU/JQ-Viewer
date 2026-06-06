@@ -39,6 +39,16 @@ function applyBrightnessOverlay(brightness: number) {
 }
 
 export const desktopCapabilities: PlatformCapabilities = {
+  support: {
+    onlineFavorites: false,
+    offlineFavorites: false,
+    parseHistory: false,
+    networkProbe: false,
+    ocr: false,
+    publicDownloads: false,
+    notificationPermissionPrompt: false,
+    nativeFolderPicker: false,
+  },
   notification: {
     checkPermission() {
       return Promise.resolve({granted: true})

@@ -95,7 +95,7 @@
         <div class="profile-card">
           <IonIcon :icon="personCircleOutline" class="avatar-placeholder"/>
           <div class="username">未登录</div>
-          <div class="level hint">登录后同步在线收藏夹等数据</div>
+          <div class="level hint">{{ loginHint }}</div>
         </div>
         <IonButton expand="block" class="login-btn" router-link="/login"> 去登录</IonButton>
       </div>
@@ -124,10 +124,14 @@ import {personCircleOutline} from 'ionicons/icons'
 import {useAuth} from '@/composables/useAuth'
 import {JmcomicService} from '@/services/JmcomicService'
 import type {UserProfile} from '@/services/JmcomicTypes'
+import {platformCapabilities} from '@/platform/activeCapabilities'
 
 const router = useRouter()
 const {userInfo, isLoggedIn, logout} = useAuth()
 const profile = ref<UserProfile | null>(null)
+const loginHint = platformCapabilities.support.onlineFavorites
+  ? '登录后同步在线收藏夹等数据'
+  : '登录后可使用在线搜索、详情和阅读；桌面版收藏夹后续补齐'
 
 const locationText = computed(() => {
   if (!profile.value) return ''
@@ -158,9 +162,12 @@ onMounted(async () => {
 })
 
 async function confirmLogout() {
+  const message = platformCapabilities.support.offlineFavorites
+    ? '登出后将切换到离线收藏夹模式。'
+    : '登出后将清除当前在线登录状态。'
   const alert = await alertController.create({
     header: '确认登出',
-    message: '登出后将切换到离线收藏夹模式。',
+    message,
     buttons: [
       {text: '取消', role: 'cancel'},
       {

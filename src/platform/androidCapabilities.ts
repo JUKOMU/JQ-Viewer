@@ -45,6 +45,16 @@ async function ensureDownloadNotificationPermission(): Promise<void> {
 }
 
 export const androidCapabilities: PlatformCapabilities = {
+  support: {
+    onlineFavorites: true,
+    offlineFavorites: true,
+    parseHistory: true,
+    networkProbe: true,
+    ocr: true,
+    publicDownloads: true,
+    notificationPermissionPrompt: true,
+    nativeFolderPicker: true,
+  },
   notification: {
     checkPermission() {
       return native.checkNotificationPermission()

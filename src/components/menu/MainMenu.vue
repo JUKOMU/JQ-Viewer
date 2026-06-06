@@ -76,7 +76,7 @@
             <IonIcon slot="start" class="menu-icon" :icon="heart"/>
             <IonLabel>
               <div class="item-title">收藏夹</div>
-              <div class="item-subtitle">保存喜欢的内容</div>
+              <div class="item-subtitle">{{ favoriteSubtitle }}</div>
             </IonLabel>
           </IonItem>
         </IonMenuToggle>
@@ -151,6 +151,7 @@ import {
 import {useRoute, useRouter} from 'vue-router'
 import {useAuth} from '@/composables/useAuth'
 import {isMenuNavigation} from '@/composables/useSideMenuState'
+import {platformCapabilities} from '@/platform/activeCapabilities'
 
 defineOptions({name: 'MainMenu'})
 
@@ -163,6 +164,10 @@ const route = useRoute()
 const router = useRouter()
 const {userInfo, isLoggedIn} = useAuth()
 const windowWidth = ref(window.innerWidth)
+const favoriteSubtitle =
+  platformCapabilities.support.onlineFavorites || platformCapabilities.support.offlineFavorites
+    ? '保存喜欢的内容'
+    : '桌面版暂未开放'
 const onResize = () => {
   windowWidth.value = window.innerWidth
 }

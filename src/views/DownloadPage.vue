@@ -262,6 +262,7 @@ import {PdfExportService} from '@/services/PdfExportService'
 import type {AlbumDetail, CompletedEntry, CompletedGroup, DownloadTask, ImportedPdf, PdfExportTask} from '@/services/JmcomicTypes'
 import {PdfImportService} from '@/services/PdfImportService'
 import type {PlatformListenerHandle} from '@/services/platform/EventPort'
+import {platformCapabilities} from '@/platform/activeCapabilities'
 
 const router = useRouter()
 const tasks = ref<DownloadTask[]>([])
@@ -933,7 +934,12 @@ const onPdfExportConfirm = async (payload: {
 
   try {
     await JmcomicService.exportPdfBatch(tasks)
-    await showToast('PDF导出已开始，请查看通知', 'success')
+    await showToast(
+      platformCapabilities.support.notificationPermissionPrompt
+        ? 'PDF导出已开始，请查看通知'
+        : 'PDF导出已开始，请查看网页内通知',
+      'success',
+    )
   } catch (e: any) {
     await showToast(sanitizeError(e, '导出启动失败'), 'danger')
   }
@@ -955,6 +961,9 @@ async function confirmOverwrite(existingFiles: string[]): Promise<boolean> {
 }
 
 async function ensureNotificationPermission(): Promise<boolean> {
+  if (!platformCapabilities.support.notificationPermissionPrompt) {
+    return true
+  }
   try {
     const check = await JmcomicService.checkNotificationPermission()
     if (check.granted) return true

@@ -13,7 +13,7 @@
         <!-- 域名连通性 -->
         <div class="section-header">
           <span class="section-label">域名连通性</span>
-          <div class="header-actions">
+          <div v-if="platformCapabilities.support.networkProbe" class="header-actions">
             <IonIcon
               :icon="speedometerOutline"
               class="speed-btn"
@@ -41,7 +41,7 @@
               </span>
             </div>
           </div>
-          <div v-else class="empty-state">等待首次探活...</div>
+          <div v-else class="empty-state">{{ emptyDomainText }}</div>
         </div>
 
         <!-- 事件日志 -->
@@ -70,6 +70,7 @@ import {refreshOutline, speedometerOutline} from 'ionicons/icons'
 import {JmcomicService} from '@/services/JmcomicService'
 import type {PlatformListenerHandle} from '@/services/platform/EventPort'
 import {useNetworkProbeStore} from '@/composables/networkProbeStore'
+import {platformCapabilities} from '@/platform/activeCapabilities'
 
 const store = useNetworkProbeStore()
 const refreshing = ref(false)
@@ -77,8 +78,12 @@ const measuring = ref(false)
 const latencyMap = ref<Record<string, { latencyMs: number; timedOut: boolean }>>({})
 let probeHandle: PlatformListenerHandle | null = null
 let refreshTimer: ReturnType<typeof setTimeout> | null = null
+const emptyDomainText = platformCapabilities.support.networkProbe
+  ? '等待首次探活...'
+  : '桌面版网络探测暂未接入，后续阶段补齐。'
 
 onMounted(() => {
+  if (!platformCapabilities.support.networkProbe) return
   JmcomicService.addNetworkProbeListener((data) => {
     if (data.phase === 'result' || data.phase === 'error') {
       refreshing.value = false
@@ -98,6 +103,7 @@ onUnmounted(() => {
 })
 
 function handleRefresh() {
+  if (!platformCapabilities.support.networkProbe) return
   if (refreshing.value) return
   refreshing.value = true
   JmcomicService.reprobeDomains()
@@ -108,6 +114,7 @@ function handleRefresh() {
 }
 
 function handleMeasureLatency() {
+  if (!platformCapabilities.support.networkProbe) return
   if (measuring.value) return
   measuring.value = true
   latencyMap.value = {}

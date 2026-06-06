@@ -76,7 +76,12 @@
           <IonIcon :icon="downloadOutline" class="card-menu-icon"/>
           <span>下载</span>
         </button>
-        <button type="button" class="card-menu-item" @click.stop="handleCardFavorite(cardMenu.item)">
+        <button
+          v-if="canUseFavorites"
+          type="button"
+          class="card-menu-item"
+          @click.stop="handleCardFavorite(cardMenu.item)"
+        >
           <IonIcon :icon="heartOutline" class="card-menu-icon"/>
           <span>收藏</span>
         </button>
@@ -84,6 +89,7 @@
 
       <!-- 收藏夹选择弹窗 -->
       <FavoriteFolderPicker
+        v-if="canUseFavorites"
         v-model="showFolderPicker"
         :online-folders="pickerOnlineFolders"
         :offline-folders="pickerOfflineFolders"
@@ -130,10 +136,13 @@ import {OfflineDownloadService} from '@/services/OfflineDownloadService'
 import {OfflineFavoriteService} from '@/services/OfflineFavoriteService'
 import {useAuth} from '@/composables/useAuth'
 import type {FavoriteResult, FolderEntry, SearchQuery, SearchResult, SearchResultItem} from '@/services/JmcomicTypes'
+import {platformCapabilities} from '@/platform/activeCapabilities'
 
 defineOptions({name: 'CategoryPage'})
 
 const router = useRouter()
+const canUseFavorites =
+  platformCapabilities.support.onlineFavorites || platformCapabilities.support.offlineFavorites
 
 const NEXT_PAGE_THRESHOLD = 220
 
@@ -480,6 +489,10 @@ async function handleCardDownload(item: SearchResultItem) {
 
 function handleCardFavorite(item: SearchResultItem) {
   closeCardMenu()
+  if (!canUseFavorites) {
+    void showToast('桌面版收藏夹功能暂未开放', 'medium')
+    return
+  }
   pickerTargetItem.value = item
   void openFolderPicker()
 }
@@ -525,9 +538,18 @@ async function loadOnlineFolderData() {
 }
 
 async function openFolderPicker() {
-  await OfflineFavoriteService.ensureInit()
-  pickerOfflineFolders.value = OfflineFavoriteService.getFolders()
-  void loadOnlineFolderData()
+  if (!canUseFavorites) return
+  if (platformCapabilities.support.offlineFavorites) {
+    await OfflineFavoriteService.ensureInit()
+    pickerOfflineFolders.value = OfflineFavoriteService.getFolders()
+  } else {
+    pickerOfflineFolders.value = []
+  }
+  if (platformCapabilities.support.onlineFavorites) {
+    void loadOnlineFolderData()
+  } else {
+    pickerOnlineFolders.value = []
+  }
   showFolderPicker.value = true
 }
 

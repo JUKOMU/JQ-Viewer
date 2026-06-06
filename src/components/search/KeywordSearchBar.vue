@@ -4,7 +4,7 @@
       <div class="upload-slot">
         <Transition name="upload-slide">
           <button
-            v-if="mode === 'batch-mode' && ocrEnabled"
+            v-if="mode === 'batch-mode' && canUseOcr"
             type="button"
             class="upload-btn"
             @click="handleUpload"
@@ -142,7 +142,7 @@ const props = withDefaults(
 const emit = defineEmits<{
   search: [query: SearchQuery]
 }>()
-import {onBeforeUnmount, onMounted, reactive, ref} from 'vue'
+import {computed, onBeforeUnmount, onMounted, reactive, ref} from 'vue'
 import {useRouter} from 'vue-router'
 import {alertController, IonIcon, IonSearchbar} from '@ionic/vue'
 import {addOutline, chevronDownOutline, helpCircleOutline, searchOutline} from 'ionicons/icons'
@@ -153,6 +153,7 @@ import type {SearchHistoryItem} from '@/services/HistoryService'
 import {HistoryService} from '@/services/HistoryService'
 import {SettingsStore} from '@/services/SettingsService'
 import SearchHistoryDropdown from '@/components/history/SearchHistoryDropdown.vue'
+import {platformCapabilities} from '@/platform/activeCapabilities'
 
 const router = useRouter()
 
@@ -201,6 +202,7 @@ const emitSearch = () => {
 }
 
 const ocrEnabled = ref(SettingsStore.getOcrEnabled())
+const canUseOcr = computed(() => ocrEnabled.value && platformCapabilities.support.ocr)
 
 async function handleUpload() {
   try {
@@ -229,7 +231,9 @@ async function showHelp() {
       '',
       '【批量解析】',
       '粘贴多行文本，自动从每行提取 ID，跳转到批量处理页面。',
-      '点击左侧 + 按钮可选择图片进行 OCR 识别。',
+      platformCapabilities.support.ocr
+        ? '点击左侧 + 按钮可选择图片进行 OCR 识别。'
+        : '桌面版暂不支持图片 OCR，请直接输入或粘贴文本。',
       '',
       '【搜索选项】',
       '排序：最新 / 最多观看 / 图片最多 / 最多喜欢',

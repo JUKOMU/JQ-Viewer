@@ -18,6 +18,7 @@
             type="button"
             class="tab-btn"
             :class="{ active: activeTab === 'parse' }"
+            :disabled="!platformCapabilities.support.parseHistory"
             @click="switchTab('parse')"
           >
             解析历史
@@ -79,7 +80,7 @@
           <div v-if="parseItems.length === 0" class="empty-state">
             <IonIcon :icon="documentTextOutline" class="empty-icon"/>
             <p>暂无解析记录</p>
-            <p class="empty-hint">解析搜索关键词后，记录会显示在这里</p>
+            <p class="empty-hint">{{ parseEmptyHint }}</p>
           </div>
           <template v-else>
             <div class="section-header">
@@ -166,6 +167,7 @@ import {bookOutline, copyOutline, documentTextOutline, ellipsisVertical, trashOu
 import {HistoryService} from '@/services/HistoryService'
 import type {BrowseHistoryItem, ParseHistoryItem} from '@/services/JmcomicTypes'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
+import {platformCapabilities} from '@/platform/activeCapabilities'
 
 const PAGE_SIZE = 50
 const router = useRouter()
@@ -177,6 +179,9 @@ const parseItems = ref<ParseHistoryItem[]>([])
 const browseHasMore = ref(true)
 const parseHasMore = ref(true)
 const isLoadingMore = ref(false)
+const parseEmptyHint = platformCapabilities.support.parseHistory
+  ? '解析搜索关键词后，记录会显示在这里'
+  : '桌面版解析历史暂未持久化，后续阶段补齐'
 
 interface BrowseGroup {
   label: string
@@ -253,6 +258,7 @@ const onScroll = () => {
 }
 
 async function switchTab(tab: 'browse' | 'parse') {
+  if (tab === 'parse' && !platformCapabilities.support.parseHistory) return
   activeTab.value = tab
   if (tab === 'browse') await loadBrowse()
   else await loadParse()
@@ -468,6 +474,11 @@ function formatRelativeTime(timestamp: number): string {
 .tab-btn.active {
   background: linear-gradient(145deg, #fa9c69, #f28752);
   color: #fff;
+}
+
+.tab-btn:disabled {
+  color: #c8b0a0;
+  cursor: not-allowed;
 }
 
 /* Empty state */

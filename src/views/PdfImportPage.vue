@@ -122,6 +122,7 @@
 
     <!-- 收藏夹选择器 -->
     <FavoriteFolderPicker
+      v-if="platformCapabilities.support.offlineFavorites"
       v-model="showFolderPicker"
       :online-folders="[]"
       :offline-folders="offlineFolders"
@@ -250,6 +251,7 @@ import SearchResultContainer from '@/components/search/SearchResultContainer.vue
 import type { PdfFileParseItem } from '@/utils/importPdfParse'
 import type { AlbumDetail, FolderEntry, PhotoMeta, SearchQuery, SearchResult, SearchResultItem } from '@/services/JmcomicTypes'
 import type { SearchResultDisplayItem } from '@/components/search/SearchResultContainer.vue'
+import { platformCapabilities } from '@/platform/activeCapabilities'
 
 const router = useRouter()
 
@@ -444,11 +446,13 @@ onMounted(async () => {
   loading.value = true
 
   // 加载离线收藏夹列表（备用）
-  try {
-    await OfflineFavoriteService.ensureInit()
-    offlineFolders.value = OfflineFavoriteService.getFolders()
-  } catch {
-    // 离线收藏夹加载失败不影响导入
+  if (platformCapabilities.support.offlineFavorites) {
+    try {
+      await OfflineFavoriteService.ensureInit()
+      offlineFolders.value = OfflineFavoriteService.getFolders()
+    } catch {
+      // 离线收藏夹加载失败不影响导入
+    }
   }
 
   // 并发获取相册详情（网络失败不阻塞）
@@ -848,6 +852,10 @@ async function onConfirm() {
 
 async function proceedToImport(resolvedFiles: PdfFileParseItem[]) {
   pendingResolvedFiles.value = resolvedFiles
+  if (!platformCapabilities.support.offlineFavorites) {
+    await doImport(resolvedFiles, undefined)
+    return
+  }
 
   // 询问是否添加到离线收藏夹
   try {

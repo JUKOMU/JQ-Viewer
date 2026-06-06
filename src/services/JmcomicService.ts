@@ -8,6 +8,11 @@ export function sanitizeError(error: unknown, fallback: string): string {
   const msg =
     error instanceof Error ? error.message : typeof error === 'string' && error ? error : null
   if (msg) {
+    if (/Missing desktop token/i.test(msg)) return '本机服务凭据缺失，请从桌面应用入口重新打开页面'
+    if (/Desktop API failed:\s*401/i.test(msg)) return '本机服务凭据无效，请从桌面应用入口重新打开页面'
+    if (/Origin is not allowed/i.test(msg)) return '当前页面来源未被本机服务允许，请从桌面应用入口打开'
+    if (/Failed to fetch|NetworkError|Load failed/i.test(msg)) return '本机服务未连接，请确认桌面应用仍在运行'
+    if (/not available in desktop/i.test(msg)) return '此功能暂未在桌面版开放'
     if (/mysql|database|syntax|sql|jdbc|JsonSyntax/i.test(msg)) return '服务器繁忙，请稍后重试'
     return msg
   }

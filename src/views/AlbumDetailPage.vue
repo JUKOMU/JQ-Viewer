@@ -43,6 +43,7 @@
           :download-status="selectedChapterDownloadStatus"
           :image-available="selectedChapterHasDownload"
           :pdf-available="Boolean(selectedChapterPdf)"
+          :show-favorite-actions="canUseFavorites"
           @toggle-like="handleToggleLike"
           @toggle-favorite="handleToggleFavorite"
           @download="handleDownload"
@@ -82,6 +83,7 @@
     </IonContent>
 
     <FavoriteFolderPicker
+      v-if="canUseFavorites"
       v-model="showFolderPicker"
       :online-folders="pickerOnlineFolders"
       :offline-folders="pickerOfflineFolders"
@@ -123,6 +125,7 @@ import AlbumChaptersTab from '@/components/album/AlbumChaptersTab.vue'
 import AlbumPreviewTab from '@/components/album/AlbumPreviewTab.vue'
 import AlbumCommentsTab from '@/components/album/AlbumCommentsTab.vue'
 import FavoriteFolderPicker from '@/components/favorite/FavoriteFolderPicker.vue'
+import {platformCapabilities} from '@/platform/activeCapabilities'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
@@ -131,6 +134,8 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
 
 const route = useRoute()
 const router = useRouter()
+const canUseFavorites =
+  platformCapabilities.support.onlineFavorites || platformCapabilities.support.offlineFavorites
 
 // ---- 路由数据 ----
 const albumId = computed(() => route.params.id as string)
@@ -260,10 +265,15 @@ const pickerOfflineFolders = ref<FolderEntry[]>([])
 const onlineFolderCounts = ref<Record<string, number>>({})
 
 async function openFolderPicker() {
-  await OfflineFavoriteService.ensureInit()
-  pickerOfflineFolders.value = OfflineFavoriteService.getFolders()
+  if (!canUseFavorites) return
+  if (platformCapabilities.support.offlineFavorites) {
+    await OfflineFavoriteService.ensureInit()
+    pickerOfflineFolders.value = OfflineFavoriteService.getFolders()
+  } else {
+    pickerOfflineFolders.value = []
+  }
 
-  if (isLoggedIn.value) {
+  if (isLoggedIn.value && platformCapabilities.support.onlineFavorites) {
     try {
       const result: FavoriteResult = await JmcomicService.favorites({folderId: '0', page: 1})
       if (result.folderList) {
@@ -839,6 +849,10 @@ function adjustLikeCount(likes: string, delta: 1 | -1): string {
 }
 
 const handleToggleLike = async () => {
+  if (!platformCapabilities.support.onlineFavorites) {
+    await showToast('桌面版点赞功能暂未开放', 'medium')
+    return
+  }
   if (!isLoggedIn.value) {
     await showToast('请先登录', 'medium')
     return
@@ -878,6 +892,10 @@ const handleToggleLike = async () => {
 }
 
 const handleToggleFavorite = async () => {
+  if (!canUseFavorites) {
+    await showToast('桌面版收藏夹功能暂未开放', 'medium')
+    return
+  }
   if (actionBusy.favorite || !albumDetail.value) return
   // 已收藏：直接取消
   if (albumDetail.value.isFavorite) {

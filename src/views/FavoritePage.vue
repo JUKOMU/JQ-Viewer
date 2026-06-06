@@ -15,12 +15,15 @@
           <div class="toolbar-favorite">
             <div class="toolbar-row">
               <FavoriteSearchBar
+                v-if="canUseFavorites"
                 ref="searchBarRef"
                 :query="currentFavoriteQuery"
                 :loading="busy"
                 @search="submitSearch"
               />
+              <div v-else class="favorite-unavailable-title">收藏夹</div>
               <button
+                v-if="canUseFavorites"
                 type="button"
                 class="folders-toggle-btn"
                 aria-label="收藏夹列表"
@@ -33,7 +36,14 @@
         </div>
       </div>
 
+      <div v-if="!canUseFavorites" class="desktop-unsupported-state">
+        <IonIcon :icon="folderOpenOutline" class="unsupported-icon"/>
+        <p>桌面版收藏夹暂未开放</p>
+        <p class="unsupported-hint">搜索、详情、阅读、下载和 PDF 功能可继续使用；收藏夹能力后续单独补齐。</p>
+      </div>
+
       <SearchResultContainer
+        v-else
         ref="resultContainerRef"
         :result="resultMeta"
         :items="displayItems"
@@ -68,6 +78,7 @@
       </SearchResultContainer>
 
       <QuickActionFab
+        v-if="canUseFavorites"
         slot="fixed"
         @search="openRightMenu"
         @jump="scrollToTop"
@@ -97,6 +108,7 @@
     </div>
 
     <FavoriteSideMenu
+      v-if="canUseFavorites"
       ref="sideMenuRef"
       v-model="rightMenuOpen"
       :online-folders="onlineFolderEntries"
@@ -182,6 +194,7 @@ import {OFFLINE_ALL_FOLDER_ID} from '@/services/JmcomicTypes'
 import {useSideMenuState} from '@/composables/useSideMenuState'
 import {cachedState} from '@/composables/favoritePageCache'
 import type {PlatformListenerHandle} from '@/services/platform/EventPort'
+import {platformCapabilities} from '@/platform/activeCapabilities'
 
 defineOptions({name: 'FavoritePage'})
 
@@ -191,6 +204,8 @@ const {isDraggingRight, isSnappingClosed, leftMenuOpen, rightDragProgress, right
 const NEXT_PAGE_THRESHOLD = 220
 
 const router = useRouter()
+const canUseFavorites =
+  platformCapabilities.support.onlineFavorites || platformCapabilities.support.offlineFavorites
 
 // --- 收藏夹源 ---
 type FolderSource = 'online' | 'offline'
@@ -201,6 +216,7 @@ const onlineFolderCounts = ref<Record<string, number>>({})
 const currentKeyword = ref('')
 
 const loadOnlineFolderCounts = async () => {
+  if (!platformCapabilities.support.onlineFavorites) return
   const ids = Object.keys(onlineFolderMap.value)
   if (ids.length === 0) return
   const counts: Record<string, number> = {}
@@ -1477,10 +1493,15 @@ async function refreshOnlineFolderList() {
 const {isLoggedIn} = useAuth()
 
 const initOnlineFolders = async () => {
-  await OfflineFavoriteService.ensureInit()
+  if (!canUseFavorites) return
+  if (platformCapabilities.support.offlineFavorites) {
+    await OfflineFavoriteService.ensureInit()
+  }
   if (!isLoggedIn.value) {
     folderSource.value = 'offline'
-    const offlineFolders = OfflineFavoriteService.getFolders()
+    const offlineFolders = platformCapabilities.support.offlineFavorites
+      ? OfflineFavoriteService.getFolders()
+      : []
     if (offlineFolders.length > 0) {
       currentFolderId.value = offlineFolders[0].id
       void resetWithPage(1)
@@ -1511,7 +1532,9 @@ const initOnlineFolders = async () => {
   } catch {
     if (!hasCached) {
       folderSource.value = 'offline'
-      const offlineFolders = OfflineFavoriteService.getFolders()
+      const offlineFolders = platformCapabilities.support.offlineFavorites
+        ? OfflineFavoriteService.getFolders()
+        : []
       if (offlineFolders.length > 0) {
         currentFolderId.value = offlineFolders[0].id
         void resetWithPage(1)
@@ -1580,7 +1603,7 @@ const setupCloseGesture = () => {
 watch(rightMenuOpen, (open) => {
   if (open) {
     nextTick(() => setupCloseGesture())
-    if (isLoggedIn.value) {
+    if (isLoggedIn.value && platformCapabilities.support.onlineFavorites) {
       void loadOnlineFolderCounts()
     }
   } else {
@@ -1591,7 +1614,7 @@ watch(rightMenuOpen, (open) => {
 
 // 登录态从未登录变为已登录时自动切换到在线收藏夹
 watch(isLoggedIn, (loggedIn, wasLoggedIn) => {
-  if (loggedIn && !wasLoggedIn) {
+  if (canUseFavorites && loggedIn && !wasLoggedIn && platformCapabilities.support.onlineFavorites) {
     initialLoading.value = true
     folderSource.value = 'online'
     currentFolderId.value = '0'
@@ -1660,6 +1683,42 @@ onActivated(async () => {
 
 .toolbar-favorite {
   min-width: 0;
+}
+
+.favorite-unavailable-title {
+  flex: 1;
+  padding: 10px 4px 0;
+  color: #8a6048;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.desktop-unsupported-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 36vh 24px 0;
+  color: #b89a84;
+  text-align: center;
+}
+
+.unsupported-icon {
+  font-size: 56px;
+  margin-bottom: 12px;
+}
+
+.desktop-unsupported-state p {
+  margin: 0;
+  font-size: 14px;
+}
+
+.unsupported-hint {
+  margin-top: 6px !important;
+  max-width: 360px;
+  color: #c4a494;
+  font-size: 12px !important;
+  line-height: 1.5;
 }
 
 .toolbar-row {

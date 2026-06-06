@@ -35,7 +35,7 @@ const noopListenerHandle: JmcomicListenerHandle = {
 }
 
 function unsupported(): Promise<never> {
-  return Promise.reject(new Error('This feature is not available in desktop stage 3.'))
+  return Promise.reject(new Error('This feature is not available in desktop.'))
 }
 
 async function updateSettings<T>(patch: Partial<AllSettings>): Promise<T> {

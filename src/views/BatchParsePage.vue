@@ -52,7 +52,7 @@
         </div>
 
         <div v-show="sourceExpanded && !editing" class="source-actions-row">
-          <label class="fav-toggle-label">
+          <label v-if="canUseFavorites" class="fav-toggle-label">
             <span class="fav-toggle-text">显示已收藏</span>
             <button
               type="button"
@@ -68,6 +68,7 @@
             </button>
           </label>
           <button
+            v-if="canUseFavorites"
             type="button"
             class="save-list-btn"
             :disabled="loading || albumResults.every(a => a === null)"
@@ -82,7 +83,7 @@
 
     <IonContent ref="contentRef" :scroll-events="true" @ion-scroll="onContentScroll">
       <div class="page-shell">
-        <div class="fav-legend">
+        <div v-if="canUseFavorites" class="fav-legend">
           <span class="fav-legend-item"><span class="fav-legend-dot online"/> 在线收藏</span>
           <span class="fav-legend-item"><span class="fav-legend-dot offline"/> 离线收藏</span>
           <span class="fav-legend-item"><span class="fav-legend-dot both"/> 双端收藏</span>
@@ -139,7 +140,12 @@
         <IonIcon :icon="downloadOutline" class="card-menu-icon"/>
         <span>下载</span>
       </button>
-      <button type="button" class="card-menu-item" @click.stop="handleCardFavorite(cardMenu.item)">
+      <button
+        v-if="canUseFavorites"
+        type="button"
+        class="card-menu-item"
+        @click.stop="handleCardFavorite(cardMenu.item)"
+      >
         <IonIcon :icon="heartOutline" class="card-menu-icon"/>
         <span>收藏</span>
       </button>
@@ -155,6 +161,7 @@
 
     <!-- 收藏夹选择弹窗 -->
     <FavoriteFolderPicker
+      v-if="canUseFavorites"
       v-model="showFolderPicker"
       :online-folders="pickerOnlineFolders"
       :offline-folders="pickerOfflineFolders"
@@ -205,6 +212,7 @@ import {OfflineDownloadService} from '@/services/OfflineDownloadService'
 import {OfflineFavoriteService} from '@/services/OfflineFavoriteService'
 import {useAuth} from '@/composables/useAuth'
 import type {AlbumDetail, FavoriteResult, FolderEntry, SearchResult, SearchResultItem,} from '@/services/JmcomicTypes'
+import {platformCapabilities} from '@/platform/activeCapabilities'
 
 import type {InvalidIdItem, ParsedIdItem} from '@/utils/batchParse'
 import {parseIdsFromText} from '@/utils/batchParse'
@@ -227,6 +235,8 @@ const router = useRouter()
 const route = useRoute()
 const routeKey = computed(() => route.query.key as string)
 const {isLoggedIn} = useAuth()
+const canUseFavorites =
+  platformCapabilities.support.onlineFavorites || platformCapabilities.support.offlineFavorites
 const contentRef = ref<InstanceType<typeof IonContent> | null>(null)
 const resultContainerRef = ref<InstanceType<typeof SearchResultContainer> | null>(null)
 const sourceScrollRef = ref<HTMLElement | null>(null)
@@ -790,6 +800,10 @@ async function handleCardDownload(item: SearchResultItem) {
 
 function handleCardFavorite(item: SearchResultItem) {
   closeCardMenu()
+  if (!canUseFavorites) {
+    void showToast('桌面版收藏夹功能暂未开放', 'medium')
+    return
+  }
   pickerMode.value = 'single'
   pickerTargetItem.value = item
   openFolderPickerForMode()
@@ -849,13 +863,26 @@ async function loadOnlineFolderData() {
 }
 
 async function openFolderPickerForMode() {
-  await OfflineFavoriteService.ensureInit()
-  pickerOfflineFolders.value = OfflineFavoriteService.getFolders()
-  void loadOnlineFolderData()
+  if (!canUseFavorites) return
+  if (platformCapabilities.support.offlineFavorites) {
+    await OfflineFavoriteService.ensureInit()
+    pickerOfflineFolders.value = OfflineFavoriteService.getFolders()
+  } else {
+    pickerOfflineFolders.value = []
+  }
+  if (platformCapabilities.support.onlineFavorites) {
+    void loadOnlineFolderData()
+  } else {
+    pickerOnlineFolders.value = []
+  }
   showFolderPicker.value = true
 }
 
 function openBatchSave() {
+  if (!canUseFavorites) {
+    void showToast('桌面版收藏夹功能暂未开放', 'medium')
+    return
+  }
   const hasResults = albumResults.value.some((a) => a !== null)
   if (!hasResults) return
   pickerMode.value = 'batch'

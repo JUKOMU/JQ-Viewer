@@ -220,11 +220,18 @@
           <div class="row divider">
             <div class="row-left">
               <span class="row-title">公开下载内容</span>
-              <span class="row-subtitle">开启后新下载的图片可在系统相册中查看</span>
+              <span class="row-subtitle">
+                {{
+                  platformCapabilities.support.publicDownloads
+                    ? '开启后新下载的图片可在系统相册中查看'
+                    : '桌面版下载内容保存在本机下载目录，暂不提供相册公开搬迁'
+                }}
+              </span>
             </div>
             <div class="row-right">
               <IonToggle
                 :checked="downloadPublic"
+                :disabled="!platformCapabilities.support.publicDownloads"
                 color="warning"
                 @ion-change="onDownloadPublicChange"
               />
@@ -238,10 +245,21 @@
           <div class="row">
             <div class="row-left">
               <span class="row-title">图片 OCR 识别</span>
-              <span class="row-subtitle">开启后可在批量解析时通过图片上传识别 ID</span>
+              <span class="row-subtitle">
+                {{
+                  platformCapabilities.support.ocr
+                    ? '开启后可在批量解析时通过图片上传识别 ID'
+                    : '桌面版暂不支持图片 OCR，请在批量解析中直接粘贴文本'
+                }}
+              </span>
             </div>
             <div class="row-right">
-              <IonToggle :checked="ocrEnabled" color="warning" @ion-change="onOcrEnabledChange"/>
+              <IonToggle
+                :checked="ocrEnabled"
+                :disabled="!platformCapabilities.support.ocr"
+                color="warning"
+                @ion-change="onOcrEnabledChange"
+              />
             </div>
           </div>
         </div>
@@ -380,8 +398,13 @@
         <!-- 分组：网络状态 -->
         <div class="section-label">网络状态</div>
         <div class="card">
-          <div class="row action" @click="goNetworkStatus">
-            <span class="row-title">网络状态</span>
+          <div class="row" :class="{ action: platformCapabilities.support.networkProbe }" @click="goNetworkStatus">
+            <div class="row-left">
+              <span class="row-title">网络状态</span>
+              <span v-if="!platformCapabilities.support.networkProbe" class="row-subtitle">
+                桌面版网络探测暂未接入，后续在独立阶段补齐
+              </span>
+            </div>
             <span class="arrow">›</span>
           </div>
         </div>
@@ -447,12 +470,14 @@ import {PdfExportService, PDF_SAMPLE_DATA} from '@/services/PdfExportService'
 import {useAuth} from '@/composables/useAuth'
 import type {CacheCapacityInfo, RelocationProgress} from '@/services/JmcomicTypes'
 import type {PlatformListenerHandle} from '@/services/platform/EventPort'
+import {platformCapabilities} from '@/platform/activeCapabilities'
 
 const router = useRouter()
 const {userInfo} = useAuth()
 const appVersion = ref('1.0.0')
 
 function goNetworkStatus() {
+  if (!platformCapabilities.support.networkProbe) return
   router.push('/network-status')
 }
 
@@ -666,6 +691,12 @@ async function onConcurrencyChange(e: Event) {
 
 // ---- OCR 开关 ----
 async function onOcrEnabledChange(e: CustomEvent) {
+  if (!platformCapabilities.support.ocr) {
+    ocrEnabled.value = false
+    SettingsStore.setOcrEnabled(false)
+    await showToast('桌面版暂不支持图片 OCR', 'medium')
+    return
+  }
   const enabled = e.detail.checked
   ocrEnabled.value = enabled
   SettingsStore.setOcrEnabled(enabled)
@@ -738,6 +769,12 @@ const isSwitchingDownloadPublic = ref(false)
 
 async function onDownloadPublicChange(e: CustomEvent) {
   if (isSwitchingDownloadPublic.value) return
+  if (!platformCapabilities.support.publicDownloads) {
+    downloadPublic.value = false
+    SettingsStore.setDownloadPublic(false)
+    await showToast('桌面版暂不支持公开下载搬迁', 'medium')
+    return
+  }
   isSwitchingDownloadPublic.value = true
 
   const open = e.detail.checked

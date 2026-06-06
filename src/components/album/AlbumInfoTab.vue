@@ -3,8 +3,9 @@
   <section class="info-section">
     <template v-if="album">
       <!-- 交互栏 -->
-      <div class="action-bar">
+      <div class="action-bar" :class="{ 'download-only': !showFavoriteActions }">
         <button
+          v-if="showFavoriteActions"
           type="button"
           class="action-btn"
           :class="{ active: album.isLiked }"
@@ -15,6 +16,7 @@
           <span class="action-label">点赞 {{ album.likes }}</span>
         </button>
         <button
+          v-if="showFavoriteActions"
           type="button"
           class="action-btn"
           :class="{ active: album.isFavorite }"
@@ -182,6 +184,7 @@ const props = defineProps<{
   downloadStatus?: string
   imageAvailable: boolean
   pdfAvailable: boolean
+  showFavoriteActions?: boolean
 }>()
 
 defineEmits<{
@@ -192,6 +195,7 @@ defineEmits<{
 }>()
 
 const router = useRouter()
+const showFavoriteActions = computed(() => props.showFavoriteActions !== false)
 
 function formatDate(raw: string): string {
   const ts = parseInt(raw, 10)
@@ -296,6 +300,10 @@ const downloadIcon = computed(() => {
   gap: 12px;
   margin-bottom: 16px;
   padding-bottom: 28px;
+}
+
+.action-bar.download-only {
+  grid-template-columns: minmax(120px, 1fr);
 }
 
 .action-btn {

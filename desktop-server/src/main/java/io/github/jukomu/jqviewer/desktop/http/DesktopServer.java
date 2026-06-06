@@ -10,8 +10,10 @@ import io.github.jukomu.jqviewer.desktop.service.DesktopDownloadService;
 import io.github.jukomu.jqviewer.desktop.service.DesktopEventBroker;
 import io.github.jukomu.jqviewer.desktop.service.DesktopImageCache;
 import io.github.jukomu.jqviewer.desktop.service.DesktopJmcomicService;
+import io.github.jukomu.jqviewer.desktop.service.DesktopPdfService;
 import io.github.jukomu.jqviewer.desktop.store.DesktopDownloadStore;
 import io.github.jukomu.jqviewer.desktop.store.DesktopHistoryStore;
+import io.github.jukomu.jqviewer.desktop.store.DesktopPdfStore;
 import io.github.jukomu.jqviewer.desktop.store.DesktopSettingsStore;
 
 import java.io.IOException;
@@ -39,6 +41,8 @@ public final class DesktopServer {
     private final DesktopDownloadStore downloadStore;
     private final DesktopEventBroker eventBroker;
     private final DesktopDownloadService downloadService;
+    private final DesktopPdfStore pdfStore;
+    private final DesktopPdfService pdfService;
     private final HttpServer server;
     private final ExecutorService executor;
 
@@ -48,6 +52,8 @@ public final class DesktopServer {
         Files.createDirectories(config.cacheDir());
         Files.createDirectories(config.logDir());
         Files.createDirectories(config.downloadDir());
+        Files.createDirectories(config.pdfRootDir());
+        Files.createDirectories(config.pdfExportDir());
         this.settingsStore = new DesktopSettingsStore(config.dataDir());
         this.historyStore = new DesktopHistoryStore(config.dataDir());
         this.imageCache = new DesktopImageCache(jmcomicService, intValue(settingsStore.getAll(), "cacheCapacityMb", 256));
@@ -58,6 +64,14 @@ public final class DesktopServer {
             downloadStore,
             eventBroker,
             intValue(settingsStore.getAll(), "downloadConcurrency", 6)
+        );
+        this.pdfStore = new DesktopPdfStore(config.dataDir());
+        this.pdfService = new DesktopPdfService(
+            pdfStore,
+            downloadService,
+            eventBroker,
+            config.pdfRootDir(),
+            config.pdfExportDir()
         );
         this.server = HttpServer.create(new InetSocketAddress(config.bindAddress(), config.port()), 0);
         this.executor = Executors.newFixedThreadPool(Math.max(4, Runtime.getRuntime().availableProcessors()));
@@ -74,6 +88,7 @@ public final class DesktopServer {
     }
 
     public void stop() {
+        pdfService.stop();
         downloadService.stop();
         eventBroker.close();
         server.stop(0);
@@ -127,7 +142,7 @@ public final class DesktopServer {
                 return;
             }
 
-            if (!hasValidApiToken(exchange)) {
+            if (!hasValidApiToken(exchange) && !canUseResourceTokenForApi(exchange)) {
                 sendError(exchange, 401, "Missing or invalid desktop token");
                 return;
             }
@@ -312,6 +327,42 @@ public final class DesktopServer {
         } else if (method.equals("GET") && path.startsWith("/api/downloaded/")) {
             String[] parts = twoPathParts(path, "/api/downloaded/");
             sendJson(exchange, 200, downloadService.getDownloadedPhoto(parts[0], parts[1]));
+        } else if (method.equals("GET") && path.equals("/api/files/roots")) {
+            sendJson(exchange, 200, pdfService.roots());
+        } else if (method.equals("POST") && path.equals("/api/files/check")) {
+            sendJson(exchange, 200, pdfService.checkFiles(readJson(exchange)));
+        } else if (method.equals("POST") && path.equals("/api/pdf/scan")) {
+            sendJson(exchange, 200, pdfService.scan(readJson(exchange)));
+        } else if (method.equals("POST") && path.equals("/api/pdf/import")) {
+            sendJson(exchange, 200, pdfService.importPdfs(readJson(exchange)));
+        } else if (method.equals("GET") && path.equals("/api/pdf/imports")) {
+            sendJson(exchange, 200, pdfService.importedPdfs());
+        } else if (method.equals("DELETE") && path.startsWith("/api/pdf/imports/")) {
+            long id = Long.parseLong(pathPart(path, "/api/pdf/imports/"));
+            sendJson(exchange, 200, pdfService.deleteImportedPdf(id));
+        } else if (method.equals("GET") && path.equals("/api/pdf/info")) {
+            sendJson(exchange, 200, pdfService.info(queryParams(exchange.getRequestURI()).getOrDefault("path", "")));
+        } else if (method.equals("GET") && path.equals("/api/pdf/file")) {
+            sendBytes(exchange, 200, "application/pdf",
+                pdfService.readPdf(queryParams(exchange.getRequestURI()).getOrDefault("path", "")));
+        } else if (method.equals("GET") && path.equals("/api/pdf/page")) {
+            Map<String, String> query = queryParams(exchange.getRequestURI());
+            DesktopPdfService.ImageResource page = pdfService.renderPage(
+                query.getOrDefault("path", ""),
+                intParam(query, "page", 1),
+                intParam(query, "targetWidth", 1440)
+            );
+            sendBytes(exchange, 200, page.mimeType(), page.data());
+        } else if (method.equals("POST") && path.equals("/api/pdf/export")) {
+            sendJson(exchange, 200, pdfService.exportPdfBatch(readJson(exchange)));
+        } else if (method.equals("POST") && path.equals("/api/local-episode-type")) {
+            JsonObject body = readJson(exchange);
+            JsonObject result = pdfService.updateAlbumEpisodeType(
+                stringValue(body, "albumId", ""),
+                boolValue(body, "isSingleEpisode", false)
+            );
+            result.addProperty("updatedDownloads", 0);
+            sendJson(exchange, 200, result);
         } else {
             sendError(exchange, 404, "Route not found");
         }
@@ -379,6 +430,13 @@ public final class DesktopServer {
         String headerToken = exchange.getRequestHeaders().getFirst("X-JQ-Desktop-Token");
         if (config.token().equals(headerToken)) return true;
         return config.token().equals(queryParams(exchange.getRequestURI()).get("token"));
+    }
+
+    private boolean canUseResourceTokenForApi(HttpExchange exchange) {
+        if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) return false;
+        String path = exchange.getRequestURI().getPath();
+        return (path.equals("/api/pdf/file") || path.equals("/api/pdf/page"))
+            && hasValidResourceToken(exchange);
     }
 
     private boolean isOriginAllowed(HttpExchange exchange) {
@@ -452,6 +510,24 @@ public final class DesktopServer {
         if (obj == null || !obj.has(key) || obj.get(key).isJsonNull()) return fallback;
         try {
             return obj.get(key).getAsInt();
+        } catch (RuntimeException e) {
+            return fallback;
+        }
+    }
+
+    private static String stringValue(JsonObject obj, String key, String fallback) {
+        if (obj == null || !obj.has(key) || obj.get(key).isJsonNull()) return fallback;
+        try {
+            return obj.get(key).getAsString();
+        } catch (RuntimeException e) {
+            return fallback;
+        }
+    }
+
+    private static boolean boolValue(JsonObject obj, String key, boolean fallback) {
+        if (obj == null || !obj.has(key) || obj.get(key).isJsonNull()) return fallback;
+        try {
+            return obj.get(key).getAsBoolean();
         } catch (RuntimeException e) {
             return fallback;
         }

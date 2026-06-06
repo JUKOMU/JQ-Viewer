@@ -28,7 +28,7 @@ import type {
   UserProfile,
 } from '../JmcomicTypes'
 import type {ImageReadyEvent, JmcomicClient, JmcomicListenerHandle} from './JmcomicClient'
-import {desktopRequest, jsonBody} from './http'
+import {desktopRequest, desktopResourceUrl, jsonBody} from './http'
 
 const noopListenerHandle: JmcomicListenerHandle = {
   remove: () => Promise.resolve(),
@@ -356,19 +356,27 @@ export const jmcomicDesktopClient: JmcomicClient = {
   },
 
   exportPdfBatch(_options: {tasks: PdfExportTask[]}) {
-    return unsupported()
+    return desktopRequest<{accepted: boolean}>('/pdf/export', {
+      method: 'POST',
+      body: jsonBody(_options),
+    })
   },
 
   pickFolder() {
-    return Promise.resolve({path: '', cancelled: true})
+    return desktopRequest<{pdfRootDir: string}>('/files/roots')
+      .then((roots) => ({path: roots.pdfRootDir, cancelled: false}))
   },
 
-  checkFilesExist(_options: {paths: string[]}) {
-    return Promise.resolve({existing: []})
+  checkFilesExist(options: {paths: string[]}) {
+    return desktopRequest<{existing: string[]}>('/files/check', {
+      method: 'POST',
+      body: jsonBody(options),
+    })
   },
 
   getExternalStoragePath() {
-    return Promise.resolve({path: ''})
+    return desktopRequest<{pdfExportDir: string}>('/files/roots')
+      .then((roots) => ({path: roots.pdfExportDir}))
   },
 
   checkNotificationPermission() {
@@ -383,36 +391,56 @@ export const jmcomicDesktopClient: JmcomicClient = {
     return Promise.resolve({})
   },
 
-  scanPdfFiles(_options: {path: string; treeUri?: string}): Promise<{files: PdfScanItem[]}> {
-    return unsupported()
+  scanPdfFiles(options: {path: string; treeUri?: string}): Promise<{files: PdfScanItem[]}> {
+    return desktopRequest<{files: PdfScanItem[]}>('/pdf/scan', {
+      method: 'POST',
+      body: jsonBody(options),
+    })
   },
 
-  importPdfs(_options: {items: ImportPdfItem[]}): Promise<ImportPdfsResult> {
-    return unsupported()
+  importPdfs(options: {items: ImportPdfItem[]}): Promise<ImportPdfsResult> {
+    return desktopRequest<ImportPdfsResult>('/pdf/import', {
+      method: 'POST',
+      body: jsonBody(options),
+    })
   },
 
   getImportedPdfs(): Promise<ImportedPdfsResult> {
-    return Promise.resolve({pdfs: []})
+    return desktopRequest<ImportedPdfsResult>('/pdf/imports')
   },
 
-  updateLocalEpisodeType() {
-    return Promise.resolve({success: true, updatedDownloads: 0, updatedPdfs: 0})
+  updateLocalEpisodeType(options: {albumId: string; isSingleEpisode: boolean}) {
+    return desktopRequest<{success: boolean; updatedDownloads: number; updatedPdfs: number}>(
+      '/local-episode-type',
+      {
+        method: 'POST',
+        body: jsonBody(options),
+      },
+    )
   },
 
-  deleteImportedPdf() {
-    return unsupported()
+  deleteImportedPdf({id}) {
+    return desktopRequest<{success: boolean}>(`/pdf/imports/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    })
   },
 
   openPdf() {
-    return unsupported()
+    return Promise.resolve({success: true})
   },
 
-  getPdfInfo() {
-    return unsupported()
+  getPdfInfo({filePath}) {
+    const params = new URLSearchParams({path: filePath})
+    return desktopRequest<{pageCount: number}>(`/pdf/info?${params}`)
   },
 
-  renderPdfPage() {
-    return unsupported()
+  renderPdfPage({filePath, page, targetWidth}) {
+    const params = new URLSearchParams({
+      path: filePath,
+      page: String(page),
+      targetWidth: String(targetWidth),
+    })
+    return Promise.resolve({imageUrl: desktopResourceUrl(`/api/pdf/page?${params}`)})
   },
 
   async setReaderDisplayMode({mode}) {

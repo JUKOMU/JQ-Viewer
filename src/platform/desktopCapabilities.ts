@@ -51,17 +51,22 @@ export const desktopCapabilities: PlatformCapabilities = {
     },
   },
   filePicker: {
-    pickFolder() {
-      return Promise.resolve({path: '', cancelled: true})
+    async pickFolder() {
+      const roots = await desktopRequest<{pdfRootDir: string}>('/files/roots')
+      return {path: roots.pdfRootDir, cancelled: false}
     },
     requestManageStorage() {
       return Promise.resolve({granted: false, permissionType: 'not_supported', apiLevel: 0})
     },
-    getExternalStoragePath() {
-      return Promise.resolve({path: ''})
+    async getExternalStoragePath() {
+      const roots = await desktopRequest<{pdfExportDir: string}>('/files/roots')
+      return {path: roots.pdfExportDir}
     },
-    checkFilesExist() {
-      return Promise.resolve({existing: []})
+    checkFilesExist(paths) {
+      return desktopRequest<{existing: string[]}>('/files/check', {
+        method: 'POST',
+        body: jsonBody({paths}),
+      })
     },
   },
   readerRuntime: {

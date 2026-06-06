@@ -1,4 +1,6 @@
 import type {DocumentInitParameters} from 'pdfjs-dist/types/src/display/api'
+import {isDesktopRuntime} from '@/platform/runtime'
+import {desktopResourceUrl} from '@/services/jmcomic/http'
 
 const VIRTUAL_BASE = 'https://jqviewer.local'
 
@@ -20,6 +22,10 @@ export class PdfLoadError extends Error {
 }
 
 export function getPdfVirtualUrl(filePath: string): string {
+  if (isDesktopRuntime) {
+    return desktopResourceUrl(`/api/pdf/file?path=${encodeURIComponent(filePath)}`)
+  }
+
   const encoded = btoa(unescape(encodeURIComponent(filePath)))
     .replace(/\+/g, '-')
     .replace(/\//g, '_')

@@ -22,6 +22,8 @@ public final class DesktopServerMain {
         System.out.println("JQViewer desktop data dir: " + config.dataDir());
         System.out.println("JQViewer desktop cache dir: " + config.cacheDir());
         System.out.println("JQViewer desktop download dir: " + config.downloadDir());
+        System.out.println("JQViewer desktop PDF import root: " + config.pdfRootDir());
+        System.out.println("JQViewer desktop PDF export dir: " + config.pdfExportDir());
         System.out.println("JQViewer desktop log dir: " + config.logDir());
         if (config.staticDir() != null) {
             System.out.println("JQViewer desktop static dir: " + config.staticDir());

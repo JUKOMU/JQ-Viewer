@@ -19,12 +19,14 @@ public final class DesktopServerConfig {
     private final Path cacheDir;
     private final Path logDir;
     private final Path downloadDir;
+    private final Path pdfRootDir;
+    private final Path pdfExportDir;
     private final Path staticDir;
     private final Set<String> allowedOrigins;
 
     private DesktopServerConfig(InetAddress bindAddress, int port, String token,
                                 Path dataDir, Path cacheDir, Path logDir, Path downloadDir, Path staticDir,
-                                Set<String> allowedOrigins) {
+                                Path pdfRootDir, Path pdfExportDir, Set<String> allowedOrigins) {
         this.bindAddress = bindAddress;
         this.port = port;
         this.token = token;
@@ -32,6 +34,8 @@ public final class DesktopServerConfig {
         this.cacheDir = cacheDir;
         this.logDir = logDir;
         this.downloadDir = downloadDir;
+        this.pdfRootDir = pdfRootDir;
+        this.pdfExportDir = pdfExportDir;
         this.staticDir = staticDir;
         this.allowedOrigins = allowedOrigins;
     }
@@ -40,6 +44,8 @@ public final class DesktopServerConfig {
         String token = value(env, "JQ_DESKTOP_TOKEN", "");
         String dataDirRaw = value(env, "JQ_DESKTOP_DATA_DIR", "");
         String downloadDirRaw = value(env, "JQ_DESKTOP_DOWNLOAD_DIR", "");
+        String pdfRootDirRaw = value(env, "JQ_DESKTOP_PDF_ROOT_DIR", "");
+        String pdfExportDirRaw = value(env, "JQ_DESKTOP_PDF_EXPORT_DIR", "");
         String staticDirRaw = value(env, "JQ_DESKTOP_STATIC_DIR", "");
         String originsRaw = value(env, "JQ_DESKTOP_DEV_ORIGINS",
             "http://localhost:5173,http://127.0.0.1:5173");
@@ -63,6 +69,14 @@ public final class DesktopServerConfig {
                 downloadDirRaw = arg.substring("--download-dir=".length()).trim();
             } else if ("--download-dir".equals(arg) && i + 1 < args.length) {
                 downloadDirRaw = args[++i].trim();
+            } else if (arg.startsWith("--pdf-root-dir=")) {
+                pdfRootDirRaw = arg.substring("--pdf-root-dir=".length()).trim();
+            } else if ("--pdf-root-dir".equals(arg) && i + 1 < args.length) {
+                pdfRootDirRaw = args[++i].trim();
+            } else if (arg.startsWith("--pdf-export-dir=")) {
+                pdfExportDirRaw = arg.substring("--pdf-export-dir=".length()).trim();
+            } else if ("--pdf-export-dir".equals(arg) && i + 1 < args.length) {
+                pdfExportDirRaw = args[++i].trim();
             } else if (arg.startsWith("--static-dir=")) {
                 staticDirRaw = arg.substring("--static-dir=".length()).trim();
             } else if ("--static-dir".equals(arg) && i + 1 < args.length) {
@@ -84,6 +98,8 @@ public final class DesktopServerConfig {
             dataDir.resolve("logs").toAbsolutePath().normalize(),
             resolveDownloadDir(downloadDirRaw, dataDir),
             resolveStaticDir(staticDirRaw),
+            resolvePdfRootDir(pdfRootDirRaw, dataDir),
+            resolvePdfExportDir(pdfExportDirRaw, dataDir),
             parseOrigins(originsRaw)
         );
     }
@@ -116,6 +132,14 @@ public final class DesktopServerConfig {
         return downloadDir;
     }
 
+    public Path pdfRootDir() {
+        return pdfRootDir;
+    }
+
+    public Path pdfExportDir() {
+        return pdfExportDir;
+    }
+
     public Path staticDir() {
         return staticDir;
     }
@@ -134,6 +158,8 @@ public final class DesktopServerConfig {
             logDir,
             downloadDir,
             staticDir,
+            pdfRootDir,
+            pdfExportDir,
             allowedOrigins
         );
     }
@@ -171,6 +197,20 @@ public final class DesktopServerConfig {
             return Path.of(explicit.trim()).toAbsolutePath().normalize();
         }
         return dataDir.resolve("downloads").toAbsolutePath().normalize();
+    }
+
+    private static Path resolvePdfRootDir(String explicit, Path dataDir) {
+        if (explicit != null && !explicit.trim().isEmpty()) {
+            return Path.of(explicit.trim()).toAbsolutePath().normalize();
+        }
+        return dataDir.resolve("pdf-imports").toAbsolutePath().normalize();
+    }
+
+    private static Path resolvePdfExportDir(String explicit, Path dataDir) {
+        if (explicit != null && !explicit.trim().isEmpty()) {
+            return Path.of(explicit.trim()).toAbsolutePath().normalize();
+        }
+        return dataDir.resolve("pdf-exports").toAbsolutePath().normalize();
     }
 
     private static Path resolveStaticDir(String explicit) {

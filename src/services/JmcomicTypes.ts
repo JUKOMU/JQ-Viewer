@@ -299,6 +299,8 @@ export interface DownloadProgressEvent {
   taskId: string
   albumId: string
   chapterId: string
+  albumTitle?: string
+  chapterTitle?: string
   downloadedPages: number
   totalPages: number
   status: DownloadStatus

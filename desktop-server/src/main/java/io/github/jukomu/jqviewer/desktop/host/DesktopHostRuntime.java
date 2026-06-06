@@ -88,6 +88,8 @@ final class DesktopHostRuntime {
             System.out.println("JQViewer desktop data dir: " + launch.config().dataDir());
             System.out.println("JQViewer desktop cache dir: " + launch.config().cacheDir());
             System.out.println("JQViewer desktop download dir: " + launch.config().downloadDir());
+            System.out.println("JQViewer desktop PDF import root: " + launch.config().pdfRootDir());
+            System.out.println("JQViewer desktop PDF export dir: " + launch.config().pdfExportDir());
             System.out.println("JQViewer desktop log dir: " + launch.config().logDir());
             return runtime;
         } catch (Exception e) {
@@ -174,6 +176,8 @@ final class DesktopHostRuntime {
         state.addProperty("dataDir", config.dataDir().toString());
         state.addProperty("cacheDir", config.cacheDir().toString());
         state.addProperty("downloadDir", config.downloadDir().toString());
+        state.addProperty("pdfRootDir", config.pdfRootDir().toString());
+        state.addProperty("pdfExportDir", config.pdfExportDir().toString());
         state.addProperty("logDir", config.logDir().toString());
         state.addProperty("startedAt", Instant.now().toString());
         Files.writeString(

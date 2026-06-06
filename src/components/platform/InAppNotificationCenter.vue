@@ -91,8 +91,8 @@ function applyProgress(event: DownloadProgressEvent) {
   const existing = cards.value.find((card) => card.taskId === event.taskId)
   const next: Card = {
     taskId: event.taskId,
-    albumTitle: existing?.albumTitle ?? event.albumId,
-    chapterTitle: existing?.chapterTitle ?? event.chapterId,
+    albumTitle: event.albumTitle ?? existing?.albumTitle ?? event.albumId,
+    chapterTitle: event.chapterTitle ?? existing?.chapterTitle ?? event.chapterId,
     downloadedPages: event.downloadedPages,
     totalPages: event.totalPages,
     status: event.status,

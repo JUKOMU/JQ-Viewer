@@ -9,6 +9,14 @@ JMComic 第三方 Android 漫画阅读器。它把搜索、收藏、下载、本
 
 > JQ Viewer 是个人项目，与 JMComic 官方无关。项目本身不包含漫画资源，请遵守所在地法律法规和目标站点规则。
 
+## ⚠️ 项目状态：开发阶段 ⚠️
+
+**请注意**: 本项目目前正处于积极的开发和测试阶段。欢迎任何想法和反馈。
+
+**Please note**: This project is currently in an active development and testing phase. Welcome any ideas and feedback.
+
+---
+
 ## 应用截图
 
 ### 首页、搜索、分类
@@ -43,6 +51,8 @@ JMComic 第三方 Android 漫画阅读器。它把搜索、收藏、下载、本
 | --- | --- |------------------------------------------------------------------------------------------------------------------------|
 | <img width="220" alt="PDF 导出" src="https://github.com/user-attachments/assets/8c1a4178-ee19-4ba5-9e1e-60c47e2a5950" /> | <img width="220" alt="PDF 导出" src="https://github.com/user-attachments/assets/37bb4848-c376-4c0b-ade6-9e004d5d93fd" /> | <img width="220" alt="阅读来源选择" src="https://github.com/user-attachments/assets/9d340dcd-0541-4219-a555-f51f9e69c109" /> |
 
+---
+
 ## 主要功能
 
 ### 内容检索
@@ -75,11 +85,15 @@ JMComic 第三方 Android 漫画阅读器。它把搜索、收藏、下载、本
 - 从多行文本里批量提取 ID，再统一搜索、收藏或下载。
 - 可选 OCR 识别图片中的文字，用来辅助处理截图里的编号。
 
+---
+
 ## 安装
 
 前往 [Releases](https://github.com/JUKOMU/JQ-Viewer/releases) 下载 APK 安装。应用内也可以在“设置 > 关于 > 检查更新”查看最新版本。
 
 最低支持 Android 7.0。
+
+---
 
 ## 开发构建
 

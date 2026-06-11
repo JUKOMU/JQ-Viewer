@@ -1,5 +1,5 @@
 <template>
-  <div ref="containerRef" class="horizontal-container">
+  <div ref="containerRef" class="horizontal-container" @click="onMouseClick" @wheel="onWheel">
     <div class="strip" :style="stripStyle">
       <div
         v-for="idx in visibleIndices"
@@ -81,6 +81,9 @@ let fingers = 0
 let moved = false
 let lastTapT = 0, lastTapX = 0, lastTapY = 0
 let tapTimer: ReturnType<typeof setTimeout> | null = null
+let lastTouchEndAt = 0
+let lastWheelAt = 0
+let resizeObserver: ResizeObserver | null = null
 
 // ---- 可见槽位 ----
 const visibleIndices = computed(() => {
@@ -116,10 +119,16 @@ onMounted(() => {
   containerRef.value?.addEventListener('touchmove', onTouchMove, {passive: false})
   containerRef.value?.addEventListener('touchend', onTouchEnd)
   containerRef.value?.addEventListener('touchcancel', onTouchEnd)
+  if (containerRef.value) {
+    resizeObserver = new ResizeObserver(() => updateSlotWidth())
+    resizeObserver.observe(containerRef.value)
+  }
 })
 
 onUnmounted(() => {
   if (tapTimer) { clearTimeout(tapTimer); tapTimer = null }
+  resizeObserver?.disconnect()
+  resizeObserver = null
   containerRef.value?.removeEventListener('touchstart', onTouchStart)
   containerRef.value?.removeEventListener('touchmove', onTouchMove)
   containerRef.value?.removeEventListener('touchend', onTouchEnd)
@@ -132,11 +141,52 @@ function updateSlotWidth() {
 
 function slotStyle(idx: number) {
   const zoomed = idx === displayIndex.value && zoomScale.value > 1
+  const width = slotWidth.value || window.innerWidth
   return {
-    left: idx * 100 + 'vw',
+    left: idx * width + 'px',
+    width: width + 'px',
     zIndex: zoomed ? 1 : 0,
     overflow: zoomed ? 'visible' : 'hidden',
   }
+}
+
+function goToAdjacent(direction: 'prev' | 'next') {
+  if (direction === 'prev' && displayIndex.value > 0) {
+    resetZoom()
+    displayIndex.value--
+    offsetX.value = 0
+    emit('update:currentIndex', displayIndex.value)
+  } else if (direction === 'next' && displayIndex.value < props.totalCount - 1) {
+    resetZoom()
+    displayIndex.value++
+    offsetX.value = 0
+    emit('update:currentIndex', displayIndex.value)
+  }
+}
+
+function onMouseClick(ev: MouseEvent) {
+  if (Date.now() - lastTouchEndAt < 400 || zoomScale.value > 1) return
+  const rect = containerRef.value?.getBoundingClientRect()
+  const x = rect ? ev.clientX - rect.left : ev.clientX
+  const width = slotWidth.value || rect?.width || window.innerWidth
+  if (x < width * 0.3) {
+    goToAdjacent('prev')
+  } else if (x > width * 0.6) {
+    goToAdjacent('next')
+  } else {
+    emit('toggle-toolbar')
+  }
+}
+
+function onWheel(ev: WheelEvent) {
+  if (zoomScale.value > 1) return
+  const delta = Math.abs(ev.deltaX) > Math.abs(ev.deltaY) ? ev.deltaX : ev.deltaY
+  if (Math.abs(delta) < 20) return
+  ev.preventDefault()
+  const now = Date.now()
+  if (now - lastWheelAt < 240) return
+  lastWheelAt = now
+  goToAdjacent(delta > 0 ? 'next' : 'prev')
 }
 
 function dist(t: TouchList) {
@@ -235,6 +285,7 @@ function onTouchEnd(ev: TouchEvent) {
     if (zoomScale.value < 1.05) resetZoom()
     return
   }
+  lastTouchEndAt = Date.now()
 
   // ---- 缩放后的操作 ----
   if (zoomScale.value > 1) {
@@ -377,7 +428,7 @@ defineExpose({scrollToIndex})
 .page-slot {
   position: absolute;
   top: 0;
-  width: 100vw;
+  width: 100%;
   height: 100%;
   overflow: hidden;
 }

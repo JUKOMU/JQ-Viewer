@@ -83,7 +83,10 @@
 
             <!-- 音量键翻页 -->
             <div class="setting-row divider">
-              <span class="setting-label">音量键翻页</span>
+              <div class="setting-left">
+                <span class="setting-label">{{ platformCapabilities.readerText.volumeNavigationLabel }}</span>
+                <span class="setting-sub">{{ platformCapabilities.readerText.volumeNavigationHint }}</span>
+              </div>
               <div class="setting-right">
                 <IonToggle
                   :checked="localVolumeNavigation"
@@ -143,6 +146,7 @@ import {closeOutline} from 'ionicons/icons'
 import type {RangeCustomEvent} from '@ionic/vue'
 import {JmcomicService, showToast} from '@/services/JmcomicService'
 import {SettingsStore} from '@/services/SettingsService'
+import {platformCapabilities} from '@/platform/activeCapabilities'
 
 defineOptions({name: 'ReaderSettingsPanel'})
 

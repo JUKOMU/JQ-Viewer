@@ -49,6 +49,10 @@ export const desktopCapabilities: PlatformCapabilities = {
     notificationPermissionPrompt: false,
     nativeFolderPicker: false,
   },
+  readerText: {
+    volumeNavigationLabel: '键盘翻页',
+    volumeNavigationHint: '方向键、PageUp/PageDown、空格',
+  },
   notification: {
     checkPermission() {
       return Promise.resolve({granted: true})

@@ -14,8 +14,14 @@ export interface PlatformFeatureSupport {
   nativeFolderPicker: boolean
 }
 
+export interface PlatformReaderText {
+  volumeNavigationLabel: string
+  volumeNavigationHint: string
+}
+
 export interface PlatformCapabilities {
   support: PlatformFeatureSupport
+  readerText: PlatformReaderText
   notification: NotificationPort
   filePicker: FilePickerPort
   readerRuntime: ReaderRuntimePort

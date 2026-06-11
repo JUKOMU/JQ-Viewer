@@ -55,6 +55,10 @@ export const androidCapabilities: PlatformCapabilities = {
     notificationPermissionPrompt: true,
     nativeFolderPicker: true,
   },
+  readerText: {
+    volumeNavigationLabel: '音量键翻页',
+    volumeNavigationHint: '使用音量键上/下翻页',
+  },
   notification: {
     checkPermission() {
       return native.checkNotificationPermission()

@@ -239,7 +239,7 @@ function updateContainerSize() {
   const el = containerRef.value
   if (!el) return false
   const nextHeight = el.clientHeight
-  const nextWidth = el.clientWidth
+  const nextWidth = wrapperRef.value?.clientWidth || el.clientWidth
   const changed = nextHeight !== containerHeight.value || nextWidth !== containerWidth.value
   containerHeight.value = nextHeight
   containerWidth.value = nextWidth
@@ -642,5 +642,12 @@ defineExpose({scrollToIndex, containerRef})
 .vertical-container.noscroll {
   overflow-y: hidden;
   touch-action: none;
+}
+
+@media (min-width: 900px) {
+  .virtual-inner {
+    width: min(100%, 980px);
+    margin: 0 auto;
+  }
 }
 </style>

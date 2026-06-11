@@ -247,7 +247,7 @@ export interface JmcomicClient {
   pickImageAndOcr(): Promise<{ text: string; error?: string }>
 
   exportPdfBatch(options: { tasks: PdfExportTask[] }): Promise<{ accepted: boolean }>
-  pickFolder(): Promise<{ path: string; treeUri?: string; cancelled: boolean }>
+  pickFolder(options?: { purpose?: 'pdfRoot' | 'pdfExport' }): Promise<{ path: string; treeUri?: string; cancelled: boolean }>
   checkFilesExist(options: { paths: string[] }): Promise<{ existing: string[] }>
   getExternalStoragePath(): Promise<{ path: string }>
   checkNotificationPermission(): Promise<{ granted: boolean }>

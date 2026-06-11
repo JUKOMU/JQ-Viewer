@@ -34,8 +34,32 @@ const noopListenerHandle: JmcomicListenerHandle = {
   remove: () => Promise.resolve(),
 }
 
+type DesktopRoots = {
+  pdfRootDir: string
+  pdfExportDir: string
+}
+
 function unsupported(): Promise<never> {
   return Promise.reject(new Error('This feature is not available in desktop.'))
+}
+
+async function pickDesktopFolder(purpose: 'pdfRoot' | 'pdfExport' = 'pdfRoot') {
+  const picked = await desktopRequest<{path?: string; cancelled: boolean}>('/files/pick-directory', {
+    method: 'POST',
+    body: jsonBody({purpose}),
+  })
+  if (picked.cancelled || !picked.path) {
+    return {path: '', cancelled: true}
+  }
+
+  const roots = await desktopRequest<DesktopRoots>('/files/roots', {
+    method: 'POST',
+    body: jsonBody(purpose === 'pdfExport' ? {pdfExportDir: picked.path} : {pdfRootDir: picked.path}),
+  })
+  return {
+    path: purpose === 'pdfExport' ? roots.pdfExportDir : roots.pdfRootDir,
+    cancelled: false,
+  }
 }
 
 async function updateSettings<T>(patch: Partial<AllSettings>): Promise<T> {
@@ -362,9 +386,8 @@ export const jmcomicDesktopClient: JmcomicClient = {
     })
   },
 
-  pickFolder() {
-    return desktopRequest<{pdfRootDir: string}>('/files/roots')
-      .then((roots) => ({path: roots.pdfRootDir, cancelled: false}))
+  pickFolder(options?: {purpose?: 'pdfRoot' | 'pdfExport'}) {
+    return pickDesktopFolder(options?.purpose)
   },
 
   checkFilesExist(options: {paths: string[]}) {
@@ -375,7 +398,7 @@ export const jmcomicDesktopClient: JmcomicClient = {
   },
 
   getExternalStoragePath() {
-    return desktopRequest<{pdfExportDir: string}>('/files/roots')
+    return desktopRequest<DesktopRoots>('/files/roots')
       .then((roots) => ({path: roots.pdfExportDir}))
   },
 

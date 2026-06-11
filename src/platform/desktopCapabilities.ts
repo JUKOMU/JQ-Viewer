@@ -2,6 +2,7 @@ import type {PlatformCapabilities} from './PlatformCapabilities'
 import type {JmcomicListenerHandle} from '../services/jmcomic/JmcomicClient'
 import type {AllSettings, DownloadProgressEvent} from '../services/JmcomicTypes'
 import {desktopEventUrl, desktopRequest, jsonBody} from '../services/jmcomic/http'
+import type {FolderPickPurpose} from '../services/platform/FilePickerPort'
 
 const noopListenerHandle: JmcomicListenerHandle = {
   remove: () => Promise.resolve(),
@@ -10,6 +11,33 @@ const noopListenerHandle: JmcomicListenerHandle = {
 let brightnessOverlay: HTMLDivElement | null = null
 let wakeLock: {release: () => Promise<void>} | null = null
 let volumeNavigationEnabled = false
+
+type DesktopRoots = {
+  pdfRootDir: string
+  pdfExportDir: string
+}
+
+async function pickDesktopFolder(purpose: FolderPickPurpose = 'pdfRoot') {
+  const picked = await desktopRequest<{path?: string; cancelled: boolean}>('/files/pick-directory', {
+    method: 'POST',
+    body: jsonBody({purpose}),
+  })
+  if (picked.cancelled || !picked.path) {
+    return {path: '', cancelled: true}
+  }
+
+  const patch = purpose === 'pdfExport'
+    ? {pdfExportDir: picked.path}
+    : {pdfRootDir: picked.path}
+  const roots = await desktopRequest<DesktopRoots>('/files/roots', {
+    method: 'POST',
+    body: jsonBody(patch),
+  })
+  return {
+    path: purpose === 'pdfExport' ? roots.pdfExportDir : roots.pdfRootDir,
+    cancelled: false,
+  }
+}
 
 async function updateSettings(patch: Partial<AllSettings>) {
   await desktopRequest<AllSettings>('/settings', {
@@ -47,7 +75,7 @@ export const desktopCapabilities: PlatformCapabilities = {
     ocr: false,
     publicDownloads: false,
     notificationPermissionPrompt: false,
-    nativeFolderPicker: false,
+    nativeFolderPicker: true,
   },
   readerText: {
     volumeNavigationLabel: '键盘翻页',
@@ -65,15 +93,14 @@ export const desktopCapabilities: PlatformCapabilities = {
     },
   },
   filePicker: {
-    async pickFolder() {
-      const roots = await desktopRequest<{pdfRootDir: string}>('/files/roots')
-      return {path: roots.pdfRootDir, cancelled: false}
+    pickFolder(purpose) {
+      return pickDesktopFolder(purpose)
     },
     requestManageStorage() {
       return Promise.resolve({granted: false, permissionType: 'not_supported', apiLevel: 0})
     },
     async getExternalStoragePath() {
-      const roots = await desktopRequest<{pdfExportDir: string}>('/files/roots')
+      const roots = await desktopRequest<DesktopRoots>('/files/roots')
       return {path: roots.pdfExportDir}
     },
     checkFilesExist(paths) {

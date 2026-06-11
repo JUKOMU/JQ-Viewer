@@ -725,7 +725,7 @@ function resetExportFormat() {
 // ---- PDF 导出设置 ----
 async function onBrowseFolder() {
   try {
-    const result = await JmcomicService.pickFolder()
+    const result = await JmcomicService.pickFolder('pdfExport')
     if (!result.cancelled && result.path) {
       // 确保路径以 / 结尾
       const path = result.path.endsWith('/') ? result.path : result.path + '/'

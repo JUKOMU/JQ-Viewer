@@ -8,6 +8,7 @@ import com.sun.net.httpserver.HttpServer;
 import io.github.jukomu.jqviewer.desktop.config.DesktopServerConfig;
 import io.github.jukomu.jqviewer.desktop.service.DesktopDownloadService;
 import io.github.jukomu.jqviewer.desktop.service.DesktopEventBroker;
+import io.github.jukomu.jqviewer.desktop.service.DesktopFileDialogService;
 import io.github.jukomu.jqviewer.desktop.service.DesktopImageCache;
 import io.github.jukomu.jqviewer.desktop.service.DesktopJmcomicService;
 import io.github.jukomu.jqviewer.desktop.service.DesktopPdfService;
@@ -41,6 +42,7 @@ public final class DesktopServer {
     private final DesktopDownloadStore downloadStore;
     private final DesktopEventBroker eventBroker;
     private final DesktopDownloadService downloadService;
+    private final DesktopFileDialogService fileDialogService = new DesktopFileDialogService();
     private final DesktopPdfStore pdfStore;
     private final DesktopPdfService pdfService;
     private final HttpServer server;
@@ -329,6 +331,18 @@ public final class DesktopServer {
             sendJson(exchange, 200, downloadService.getDownloadedPhoto(parts[0], parts[1]));
         } else if (method.equals("GET") && path.equals("/api/files/roots")) {
             sendJson(exchange, 200, pdfService.roots());
+        } else if (method.equals("POST") && path.equals("/api/files/roots")) {
+            sendJson(exchange, 200, pdfService.updateRoots(readJson(exchange)));
+        } else if (method.equals("POST") && path.equals("/api/files/pick-directory")) {
+            JsonObject body = readJson(exchange);
+            JsonObject roots = pdfService.roots();
+            String purpose = directoryPurpose(stringValue(body, "purpose", "pdfRoot"));
+            String initialPath = stringValue(body, "initialPath",
+                "pdfExport".equals(purpose)
+                    ? stringValue(roots, "pdfExportDir", "")
+                    : stringValue(roots, "pdfRootDir", ""));
+            Path initialDir = initialPath.isBlank() ? null : Path.of(initialPath).toAbsolutePath().normalize();
+            sendJson(exchange, 200, fileDialogService.pickDirectory(initialDir));
         } else if (method.equals("POST") && path.equals("/api/files/check")) {
             sendJson(exchange, 200, pdfService.checkFiles(readJson(exchange)));
         } else if (method.equals("POST") && path.equals("/api/pdf/scan")) {
@@ -531,6 +545,13 @@ public final class DesktopServer {
         } catch (RuntimeException e) {
             return fallback;
         }
+    }
+
+    private static String directoryPurpose(String raw) {
+        if ("pdfRoot".equals(raw) || "pdfExport".equals(raw)) {
+            return raw;
+        }
+        throw new IllegalArgumentException("Unsupported directory purpose");
     }
 
     private boolean isSameLocalServerOrigin(String origin) {

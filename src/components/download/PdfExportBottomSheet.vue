@@ -372,7 +372,7 @@ function onNameTemplateChange(e: Event) {
 
 async function onBrowseFolder() {
   try {
-    const result = await JmcomicService.pickFolder()
+    const result = await JmcomicService.pickFolder('pdfExport')
     if (!result.cancelled && result.path) {
       const path = result.path.endsWith('/') ? result.path : result.path + '/'
       exportPath.value = path

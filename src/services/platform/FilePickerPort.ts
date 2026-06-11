@@ -4,6 +4,8 @@ export interface FolderPickResult {
   cancelled: boolean
 }
 
+export type FolderPickPurpose = 'pdfRoot' | 'pdfExport'
+
 export interface StoragePermissionResult {
   granted: boolean
   permissionType: string
@@ -11,7 +13,7 @@ export interface StoragePermissionResult {
 }
 
 export interface FilePickerPort {
-  pickFolder(): Promise<FolderPickResult>
+  pickFolder(purpose?: FolderPickPurpose): Promise<FolderPickResult>
   requestManageStorage(): Promise<StoragePermissionResult>
   getExternalStoragePath(): Promise<{ path: string }>
   checkFilesExist(paths: string[]): Promise<{ existing: string[] }>

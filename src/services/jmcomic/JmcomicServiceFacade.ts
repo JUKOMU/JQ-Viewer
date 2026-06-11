@@ -13,6 +13,7 @@ import type {
   SearchResultItem,
 } from '../JmcomicTypes'
 import type {JmcomicClient, JmcomicListenerHandle} from './JmcomicClient'
+import type {FolderPickPurpose} from '../platform/FilePickerPort'
 import {isDesktopRuntime} from '../../platform/runtime'
 import {jmcomicDesktopClient} from './JmcomicDesktopClient'
 import {jmcomicNativeClient} from './JmcomicNativeClient'
@@ -366,8 +367,8 @@ export const JmcomicService = {
     return native.exportPdfBatch({ tasks })
   },
 
-  pickFolder() {
-    return platformCapabilities.filePicker.pickFolder()
+  pickFolder(purpose?: FolderPickPurpose) {
+    return platformCapabilities.filePicker.pickFolder(purpose)
   },
 
   // ========== PDF 导入 ==========

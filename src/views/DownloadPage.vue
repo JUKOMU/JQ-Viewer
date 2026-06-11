@@ -1101,7 +1101,7 @@ const onGoToAlbumDetail = (entry: CompletedEntry | DownloadTask) => {
 
 const onImportPdf = async () => {
   try {
-    const result = await JmcomicService.pickFolder()
+    const result = await JmcomicService.pickFolder('pdfRoot')
     if (result.cancelled || (!result.path && !result.treeUri)) return
     await PdfImportService.scanAndParse(result.path || '', result.treeUri)
     router.push('/import-review')

@@ -33,8 +33,8 @@ public final class DesktopPdfService {
     private final DesktopPdfStore store;
     private final DesktopDownloadService downloadService;
     private final DesktopEventBroker events;
-    private final Path pdfRootDir;
-    private final Path pdfExportDir;
+    private volatile Path pdfRootDir;
+    private volatile Path pdfExportDir;
     private final ExecutorService executor = Executors.newFixedThreadPool(2);
 
     public DesktopPdfService(DesktopPdfStore store, DesktopDownloadService downloadService,
@@ -53,6 +53,20 @@ public final class DesktopPdfService {
         result.addProperty("pdfRootDir", pdfRootDir.toString());
         result.addProperty("pdfExportDir", pdfExportDir.toString());
         return result;
+    }
+
+    public JsonObject updateRoots(JsonObject body) throws IOException {
+        if (body != null && body.has("pdfRootDir") && !body.get("pdfRootDir").isJsonNull()) {
+            Path nextRoot = normalizePath(body.get("pdfRootDir").getAsString());
+            Files.createDirectories(nextRoot);
+            pdfRootDir = nextRoot;
+        }
+        if (body != null && body.has("pdfExportDir") && !body.get("pdfExportDir").isJsonNull()) {
+            Path nextExport = normalizePath(body.get("pdfExportDir").getAsString());
+            Files.createDirectories(nextExport);
+            pdfExportDir = nextExport;
+        }
+        return roots();
     }
 
     public JsonObject scan(JsonObject body) throws IOException {

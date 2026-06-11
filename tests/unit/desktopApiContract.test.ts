@@ -40,6 +40,7 @@ describe('desktop API contract', () => {
     {client: '`/downloaded/${encodeURIComponent(albumId)}/${encodeURIComponent(chapterId)}`', server: 'path.startsWith("/api/downloaded/")'},
     {client: "'/events'", server: 'createContext("/events"'},
     {client: "'/files/roots'", server: 'path.equals("/api/files/roots")'},
+    {client: "'/files/pick-directory'", server: 'path.equals("/api/files/pick-directory")'},
     {client: "'/files/check'", server: 'path.equals("/api/files/check")'},
     {client: "'/pdf/scan'", server: 'path.equals("/api/pdf/scan")'},
     {client: "'/pdf/import'", server: 'path.equals("/api/pdf/import")'},

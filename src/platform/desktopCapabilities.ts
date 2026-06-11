@@ -11,6 +11,7 @@ const noopListenerHandle: JmcomicListenerHandle = {
 let brightnessOverlay: HTMLDivElement | null = null
 let wakeLock: {release: () => Promise<void>} | null = null
 let volumeNavigationEnabled = false
+const EVENT_RECONNECT_DELAY_MS = 3000
 
 type DesktopRoots = {
   pdfRootDir: string
@@ -173,7 +174,9 @@ export const desktopCapabilities: PlatformCapabilities = {
       return Promise.resolve(noopListenerHandle)
     },
     async addDownloadProgressListener(handler) {
-      const source = new EventSource(desktopEventUrl('/events'))
+      let source: EventSource | null = null
+      let reconnectTimer: number | null = null
+      let closed = false
       const onMessage = (event: MessageEvent) => {
         try {
           handler(JSON.parse(event.data) as DownloadProgressEvent)
@@ -181,11 +184,36 @@ export const desktopCapabilities: PlatformCapabilities = {
           // Ignore malformed local event payloads.
         }
       }
-      source.addEventListener('downloadProgress', onMessage)
+      const clearReconnect = () => {
+        if (reconnectTimer != null) {
+          window.clearTimeout(reconnectTimer)
+          reconnectTimer = null
+        }
+      }
+      const connect = () => {
+        if (closed) return
+        source?.removeEventListener('downloadProgress', onMessage)
+        source?.close()
+        source = new EventSource(desktopEventUrl('/events'))
+        source.addEventListener('downloadProgress', onMessage)
+        source.onerror = () => {
+          if (closed || reconnectTimer != null) return
+          source?.removeEventListener('downloadProgress', onMessage)
+          source?.close()
+          reconnectTimer = window.setTimeout(() => {
+            reconnectTimer = null
+            connect()
+          }, EVENT_RECONNECT_DELAY_MS)
+        }
+      }
+      connect()
       return {
         remove: async () => {
-          source.removeEventListener('downloadProgress', onMessage)
-          source.close()
+          closed = true
+          clearReconnect()
+          source?.removeEventListener('downloadProgress', onMessage)
+          source?.close()
+          source = null
         },
       }
     },

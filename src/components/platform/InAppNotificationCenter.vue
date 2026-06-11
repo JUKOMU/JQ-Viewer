@@ -57,7 +57,9 @@ const isActive = isDesktopRuntime
 const cards = ref<Card[]>([])
 let listenerHandle: PlatformListenerHandle | null = null
 let refreshTimer: number | null = null
+let fallbackRefreshTimer: number | null = null
 const dismissTimers = new Map<string, number>()
+const FALLBACK_REFRESH_MS = 5000
 
 const visibleCards = computed(() =>
   [...cards.value]
@@ -68,6 +70,9 @@ const visibleCards = computed(() =>
 onMounted(async () => {
   if (!isActive) return
   await refreshTasks()
+  fallbackRefreshTimer = window.setInterval(() => {
+    void refreshTasks()
+  }, FALLBACK_REFRESH_MS)
   listenerHandle = await JmcomicService.addDownloadProgressListener((event) => {
     applyProgress(event)
     scheduleRefresh()
@@ -80,6 +85,10 @@ onUnmounted(() => {
   if (refreshTimer != null) {
     window.clearTimeout(refreshTimer)
     refreshTimer = null
+  }
+  if (fallbackRefreshTimer != null) {
+    window.clearInterval(fallbackRefreshTimer)
+    fallbackRefreshTimer = null
   }
   for (const timer of dismissTimers.values()) {
     window.clearTimeout(timer)
@@ -100,7 +109,7 @@ function applyProgress(event: DownloadProgressEvent) {
     updatedAt: Date.now(),
   }
   cards.value = [next, ...cards.value.filter((card) => card.taskId !== event.taskId)]
-  if (event.status === 'completed' || event.status === 'failed' || event.status === 'cancelled') {
+  if (isTerminalStatus(event.status)) {
     scheduleDismiss(event.taskId)
   }
 }
@@ -119,6 +128,11 @@ async function refreshTasks() {
     for (const task of activeTasks) {
       if (!cards.value.some((card) => card.taskId === task.taskId)) {
         cards.value.push(fromTask(task))
+      }
+    }
+    for (const card of cards.value) {
+      if (isTerminalStatus(card.status)) {
+        scheduleDismiss(card.taskId)
       }
     }
   } catch {
@@ -148,11 +162,12 @@ function scheduleRefresh() {
 }
 
 function scheduleDismiss(taskId: string) {
-  const oldTimer = dismissTimers.get(taskId)
-  if (oldTimer != null) {
-    window.clearTimeout(oldTimer)
-  }
+  if (dismissTimers.has(taskId)) return
   dismissTimers.set(taskId, window.setTimeout(() => dismiss(taskId), 6000))
+}
+
+function isTerminalStatus(status: DownloadStatus) {
+  return status === 'completed' || status === 'failed' || status === 'cancelled'
 }
 
 function dismiss(taskId: string) {
@@ -168,22 +183,30 @@ function openDownloadPage() {
   void router.push('/download')
 }
 
+function isPdfExportCard(card: Card) {
+  return card.taskId.startsWith('pdf_')
+}
+
 function progressPercent(card: Card) {
   if (card.totalPages <= 0) return 0
   return Math.max(0, Math.min(100, Math.round(card.downloadedPages * 100 / card.totalPages)))
 }
 
 function cardTitle(card: Card) {
+  if (isPdfExportCard(card)) {
+    return card.chapterTitle ? `PDF 导出：${card.chapterTitle}` : 'PDF 导出'
+  }
   return card.chapterTitle || card.albumTitle || card.taskId
 }
 
 function cardMeta(card: Card) {
   const count = card.totalPages > 0 ? `${card.downloadedPages}/${card.totalPages}` : '准备中'
+  const action = isPdfExportCard(card) ? '导出' : '下载'
   switch (card.status) {
     case 'queued':
       return `排队中 · ${count}`
     case 'downloading':
-      return `正在下载 · ${count}`
+      return `正在${action} · ${count}`
     case 'paused':
       return `已暂停 · ${count}`
     case 'completed':

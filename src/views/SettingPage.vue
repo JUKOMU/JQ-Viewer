@@ -216,6 +216,17 @@
             </div>
           </div>
 
+          <div v-if="showDesktopDownloadPath" class="row divider">
+            <div class="row-left">
+              <span class="row-title">下载目录</span>
+              <span class="row-subtitle">新下载的章节会保存到此目录</span>
+            </div>
+          </div>
+          <div v-if="showDesktopDownloadPath" class="row path-row">
+            <span class="path-display">{{ downloadPath }}</span>
+            <button class="browse-btn" @click="onBrowseDownloadFolder">浏览</button>
+          </div>
+
           <!-- 公开下载 -->
           <div class="row divider">
             <div class="row-left">
@@ -499,6 +510,7 @@ const preloadPages = ref(SettingsStore.getReaderPreloadPages())
 const preloadConcurrency = ref(SettingsStore.getPreloadConcurrency())
 const downloadConcurrency = ref(SettingsStore.getDownloadConcurrency())
 const downloadPublic = ref(SettingsStore.getDownloadPublic())
+const downloadPath = ref('')
 const ocrEnabled = ref(SettingsStore.getOcrEnabled())
 const exportFormat = ref(ExportFormatService.getExportFormat())
 const displayMode = ref(SettingsStore.getReaderDisplayMode())
@@ -509,6 +521,9 @@ const keepScreenOn = ref(SettingsStore.getReaderKeepScreenOn())
 const volumeNavigation = ref(SettingsStore.getReaderVolumeNavigation())
 
 const exportPreview = computed(() => ExportFormatService.previewExportFormat(exportFormat.value))
+const showDesktopDownloadPath = computed(() =>
+  platformCapabilities.support.nativeFolderPicker && !platformCapabilities.support.publicDownloads,
+)
 
 // PDF导出设置
 const pdfExportPath = ref(PdfExportService.getExportPath())
@@ -599,6 +614,15 @@ onMounted(async () => {
   } catch {
     /* keep default */
   }
+
+  if (showDesktopDownloadPath.value) {
+    try {
+      const result = await JmcomicService.getDownloadTasks()
+      downloadPath.value = result.downloadDir ?? ''
+    } catch {
+      /* keep default */
+    }
+  }
 })
 
 // ---- 缓存上限 ----
@@ -686,6 +710,18 @@ async function onConcurrencyChange(e: Event) {
     await showToast('已保存，下次启动生效', 'success')
   } catch {
     await showToast('保存失败', 'danger')
+  }
+}
+
+async function onBrowseDownloadFolder() {
+  try {
+    const result = await JmcomicService.pickFolder('download')
+    if (!result.cancelled && result.path) {
+      downloadPath.value = result.path
+      await showToast('下载目录已更新，新下载任务将使用该目录', 'success')
+    }
+  } catch (e: any) {
+    await showToast(sanitizeError(e, '选择下载目录失败'), 'danger')
   }
 }
 

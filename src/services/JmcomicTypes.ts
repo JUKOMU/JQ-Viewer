@@ -293,6 +293,7 @@ export interface DownloadTasksResult {
   tasks: DownloadTask[]
   usedBytes: number
   availableBytes: number
+  downloadDir?: string
 }
 
 export interface DownloadProgressEvent {

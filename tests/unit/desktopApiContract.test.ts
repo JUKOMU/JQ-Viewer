@@ -66,4 +66,12 @@ describe('desktop API contract', () => {
     expect(serverSource).toContain('canUseResourceTokenForApi(exchange)')
     expect(serverSource).toContain('X-JQ-Desktop-Token')
   })
+
+  test('keeps desktop mutable directory roots aligned', () => {
+    expect(clientSources).toContain('downloadDir')
+    expect(clientSources).toContain("purpose === 'download'")
+    expect(serverSource).toContain('downloadDir')
+    expect(serverSource).toContain('"download".equals(raw)')
+    expect(serverSource).toContain('updateFileRoots')
+  })
 })

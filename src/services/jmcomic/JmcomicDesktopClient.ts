@@ -29,6 +29,7 @@ import type {
 } from '../JmcomicTypes'
 import type {ImageReadyEvent, JmcomicClient, JmcomicListenerHandle} from './JmcomicClient'
 import {desktopRequest, desktopResourceUrl, jsonBody} from './http'
+import type {FolderPickPurpose} from '../platform/FilePickerPort'
 
 const noopListenerHandle: JmcomicListenerHandle = {
   remove: () => Promise.resolve(),
@@ -37,13 +38,14 @@ const noopListenerHandle: JmcomicListenerHandle = {
 type DesktopRoots = {
   pdfRootDir: string
   pdfExportDir: string
+  downloadDir: string
 }
 
 function unsupported(): Promise<never> {
   return Promise.reject(new Error('This feature is not available in desktop.'))
 }
 
-async function pickDesktopFolder(purpose: 'pdfRoot' | 'pdfExport' = 'pdfRoot') {
+async function pickDesktopFolder(purpose: FolderPickPurpose = 'pdfRoot') {
   const picked = await desktopRequest<{path?: string; cancelled: boolean}>('/files/pick-directory', {
     method: 'POST',
     body: jsonBody({purpose}),
@@ -52,12 +54,22 @@ async function pickDesktopFolder(purpose: 'pdfRoot' | 'pdfExport' = 'pdfRoot') {
     return {path: '', cancelled: true}
   }
 
+  const patch = purpose === 'pdfExport'
+    ? {pdfExportDir: picked.path}
+    : purpose === 'download'
+      ? {downloadDir: picked.path}
+      : {pdfRootDir: picked.path}
   const roots = await desktopRequest<DesktopRoots>('/files/roots', {
     method: 'POST',
-    body: jsonBody(purpose === 'pdfExport' ? {pdfExportDir: picked.path} : {pdfRootDir: picked.path}),
+    body: jsonBody(patch),
   })
+  const path = purpose === 'pdfExport'
+    ? roots.pdfExportDir
+    : purpose === 'download'
+      ? roots.downloadDir
+      : roots.pdfRootDir
   return {
-    path: purpose === 'pdfExport' ? roots.pdfExportDir : roots.pdfRootDir,
+    path,
     cancelled: false,
   }
 }
@@ -386,7 +398,7 @@ export const jmcomicDesktopClient: JmcomicClient = {
     })
   },
 
-  pickFolder(options?: {purpose?: 'pdfRoot' | 'pdfExport'}) {
+  pickFolder(options?: {purpose?: FolderPickPurpose}) {
     return pickDesktopFolder(options?.purpose)
   },
 

@@ -30,6 +30,7 @@ import type {
   UserInfo,
   UserProfile,
 } from '../JmcomicTypes'
+import type {FolderPickPurpose} from '../platform/FilePickerPort'
 
 export interface ImageReadyEvent {
   photoId: string
@@ -247,7 +248,7 @@ export interface JmcomicClient {
   pickImageAndOcr(): Promise<{ text: string; error?: string }>
 
   exportPdfBatch(options: { tasks: PdfExportTask[] }): Promise<{ accepted: boolean }>
-  pickFolder(options?: { purpose?: 'pdfRoot' | 'pdfExport' }): Promise<{ path: string; treeUri?: string; cancelled: boolean }>
+  pickFolder(options?: { purpose?: FolderPickPurpose }): Promise<{ path: string; treeUri?: string; cancelled: boolean }>
   checkFilesExist(options: { paths: string[] }): Promise<{ existing: string[] }>
   getExternalStoragePath(): Promise<{ path: string }>
   checkNotificationPermission(): Promise<{ granted: boolean }>

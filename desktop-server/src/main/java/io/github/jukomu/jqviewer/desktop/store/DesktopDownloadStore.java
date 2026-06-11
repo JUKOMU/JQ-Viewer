@@ -17,7 +17,7 @@ public final class DesktopDownloadStore {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
     private final Path file;
-    private final Path downloadDir;
+    private Path downloadDir;
     private JsonArray tasks;
 
     public DesktopDownloadStore(Path dataDir, Path downloadDir) throws IOException {
@@ -31,6 +31,15 @@ public final class DesktopDownloadStore {
 
     public Path downloadDir() {
         return downloadDir;
+    }
+
+    public synchronized JsonObject updateDownloadDir(Path nextDownloadDir) throws IOException {
+        Path normalized = nextDownloadDir.toAbsolutePath().normalize();
+        Files.createDirectories(normalized);
+        downloadDir = normalized;
+        JsonObject result = new JsonObject();
+        result.addProperty("downloadDir", downloadDir.toString());
+        return result;
     }
 
     public synchronized List<JsonObject> allTasks() {

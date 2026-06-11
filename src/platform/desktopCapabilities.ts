@@ -15,6 +15,7 @@ let volumeNavigationEnabled = false
 type DesktopRoots = {
   pdfRootDir: string
   pdfExportDir: string
+  downloadDir: string
 }
 
 async function pickDesktopFolder(purpose: FolderPickPurpose = 'pdfRoot') {
@@ -28,13 +29,20 @@ async function pickDesktopFolder(purpose: FolderPickPurpose = 'pdfRoot') {
 
   const patch = purpose === 'pdfExport'
     ? {pdfExportDir: picked.path}
-    : {pdfRootDir: picked.path}
+    : purpose === 'download'
+      ? {downloadDir: picked.path}
+      : {pdfRootDir: picked.path}
   const roots = await desktopRequest<DesktopRoots>('/files/roots', {
     method: 'POST',
     body: jsonBody(patch),
   })
+  const path = purpose === 'pdfExport'
+    ? roots.pdfExportDir
+    : purpose === 'download'
+      ? roots.downloadDir
+      : roots.pdfRootDir
   return {
-    path: purpose === 'pdfExport' ? roots.pdfExportDir : roots.pdfRootDir,
+    path,
     cancelled: false,
   }
 }

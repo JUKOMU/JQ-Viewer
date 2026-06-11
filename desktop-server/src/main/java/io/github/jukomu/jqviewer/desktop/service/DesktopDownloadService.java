@@ -84,7 +84,28 @@ public final class DesktopDownloadService {
         result.add("tasks", tasks);
         result.addProperty("usedBytes", usedBytes);
         result.addProperty("availableBytes", store.downloadDir().toFile().getUsableSpace());
+        result.addProperty("downloadDir", store.downloadDir().toString());
         return result;
+    }
+
+    public JsonObject roots() {
+        JsonObject result = new JsonObject();
+        result.addProperty("downloadDir", store.downloadDir().toString());
+        return result;
+    }
+
+    public JsonObject updateRoots(JsonObject body) throws IOException {
+        if (body != null && body.has("downloadDir") && !body.get("downloadDir").isJsonNull()) {
+            String raw = body.get("downloadDir").getAsString();
+            if (raw == null || raw.isBlank()) {
+                throw new IllegalArgumentException("downloadDir is required");
+            }
+            if (!controls.isEmpty()) {
+                throw new IllegalStateException("Cannot change download directory while downloads are running");
+            }
+            store.updateDownloadDir(Path.of(raw));
+        }
+        return roots();
     }
 
     public JsonObject pause(String taskId) throws IOException {

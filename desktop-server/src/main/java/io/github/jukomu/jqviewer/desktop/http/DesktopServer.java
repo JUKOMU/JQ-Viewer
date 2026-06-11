@@ -330,17 +330,15 @@ public final class DesktopServer {
             String[] parts = twoPathParts(path, "/api/downloaded/");
             sendJson(exchange, 200, downloadService.getDownloadedPhoto(parts[0], parts[1]));
         } else if (method.equals("GET") && path.equals("/api/files/roots")) {
-            sendJson(exchange, 200, pdfService.roots());
+            sendJson(exchange, 200, fileRoots());
         } else if (method.equals("POST") && path.equals("/api/files/roots")) {
-            sendJson(exchange, 200, pdfService.updateRoots(readJson(exchange)));
+            sendJson(exchange, 200, updateFileRoots(readJson(exchange)));
         } else if (method.equals("POST") && path.equals("/api/files/pick-directory")) {
             JsonObject body = readJson(exchange);
-            JsonObject roots = pdfService.roots();
+            JsonObject roots = fileRoots();
             String purpose = directoryPurpose(stringValue(body, "purpose", "pdfRoot"));
             String initialPath = stringValue(body, "initialPath",
-                "pdfExport".equals(purpose)
-                    ? stringValue(roots, "pdfExportDir", "")
-                    : stringValue(roots, "pdfRootDir", ""));
+                directoryInitialPath(roots, purpose));
             Path initialDir = initialPath.isBlank() ? null : Path.of(initialPath).toAbsolutePath().normalize();
             sendJson(exchange, 200, fileDialogService.pickDirectory(initialDir));
         } else if (method.equals("POST") && path.equals("/api/files/check")) {
@@ -548,10 +546,30 @@ public final class DesktopServer {
     }
 
     private static String directoryPurpose(String raw) {
-        if ("pdfRoot".equals(raw) || "pdfExport".equals(raw)) {
+        if ("pdfRoot".equals(raw) || "pdfExport".equals(raw) || "download".equals(raw)) {
             return raw;
         }
         throw new IllegalArgumentException("Unsupported directory purpose");
+    }
+
+    private JsonObject fileRoots() {
+        JsonObject result = pdfService.roots();
+        result.addProperty("downloadDir", stringValue(downloadService.roots(), "downloadDir", ""));
+        return result;
+    }
+
+    private JsonObject updateFileRoots(JsonObject body) throws IOException {
+        pdfService.updateRoots(body);
+        downloadService.updateRoots(body);
+        return fileRoots();
+    }
+
+    private static String directoryInitialPath(JsonObject roots, String purpose) {
+        return switch (purpose) {
+            case "pdfExport" -> stringValue(roots, "pdfExportDir", "");
+            case "download" -> stringValue(roots, "downloadDir", "");
+            default -> stringValue(roots, "pdfRootDir", "");
+        };
     }
 
     private boolean isSameLocalServerOrigin(String origin) {

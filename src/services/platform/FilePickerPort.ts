@@ -4,7 +4,7 @@ export interface FolderPickResult {
   cancelled: boolean
 }
 
-export type FolderPickPurpose = 'pdfRoot' | 'pdfExport'
+export type FolderPickPurpose = 'pdfRoot' | 'pdfExport' | 'download'
 
 export interface StoragePermissionResult {
   granted: boolean

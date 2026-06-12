@@ -109,25 +109,37 @@ export const jmcomicDesktopClient: JmcomicClient = {
     return desktopRequest<CommentList>(`/comments?${params}`)
   },
 
-  getFavorites(_options: {query: FavoriteQuery}): Promise<FavoriteResult> {
-    return unsupported()
+  getFavorites({query}: {query: FavoriteQuery}): Promise<FavoriteResult> {
+    return desktopRequest<FavoriteResult>('/favorites', {
+      method: 'POST',
+      body: jsonBody({query}),
+    })
   },
 
-  toggleAlbumLike(_options: {id: string}) {
-    return unsupported()
+  toggleAlbumLike({id}: {id: string}) {
+    return desktopRequest<{success: boolean}>('/favorites/toggle-like', {
+      method: 'POST',
+      body: jsonBody({id}),
+    })
   },
 
-  toggleAlbumFavorite(_options: {id: string; folderId: string}) {
-    return unsupported()
+  toggleAlbumFavorite({id, folderId}: {id: string; folderId: string}) {
+    return desktopRequest<{success: boolean}>('/favorites/toggle', {
+      method: 'POST',
+      body: jsonBody({id, folderId}),
+    })
   },
 
-  manageFavoriteFolder(_options: {
+  manageFavoriteFolder(options: {
     type: string
     folderId: string
     folderName?: string
     albumId?: string
   }) {
-    return unsupported()
+    return desktopRequest<{status: string; msg: string}>('/favorites/folders/manage', {
+      method: 'POST',
+      body: jsonBody(options),
+    })
   },
 
   preloadImages({photoId, images, type}): Promise<PreloadResult> {

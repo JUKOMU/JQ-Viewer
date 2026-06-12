@@ -5,16 +5,20 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import io.github.jukomu.jmcomic.api.enums.Category;
+import io.github.jukomu.jmcomic.api.enums.FavoriteFolderType;
 import io.github.jukomu.jmcomic.api.enums.ForumMode;
 import io.github.jukomu.jmcomic.api.enums.OrderBy;
 import io.github.jukomu.jmcomic.api.enums.SearchMainTag;
 import io.github.jukomu.jmcomic.api.enums.TimeOption;
+import io.github.jukomu.jmcomic.api.model.FavoriteQuery;
 import io.github.jukomu.jmcomic.api.model.ForumQuery;
 import io.github.jukomu.jmcomic.api.model.JmAlbum;
 import io.github.jukomu.jmcomic.api.model.JmAlbumMeta;
 import io.github.jukomu.jmcomic.api.model.JmCategoryMeta;
 import io.github.jukomu.jmcomic.api.model.JmComment;
 import io.github.jukomu.jmcomic.api.model.JmCommentList;
+import io.github.jukomu.jmcomic.api.model.JmFavoriteFolderResult;
+import io.github.jukomu.jmcomic.api.model.JmFavoritePage;
 import io.github.jukomu.jmcomic.api.model.JmImage;
 import io.github.jukomu.jmcomic.api.model.JmPhoto;
 import io.github.jukomu.jmcomic.api.model.JmPhotoMeta;
@@ -72,6 +76,61 @@ public final class DesktopJmcomicService {
     public JsonObject getComments(String albumId, int page) {
         ForumQuery query = ForumQuery.album(albumId).mode(ForumMode.ALL).page(page).build();
         return toCommentListObject(client.getComments(query));
+    }
+
+    public JsonObject getFavorites(JsonObject body) {
+        JsonObject query = queryBody(body);
+        FavoriteQuery favoriteQuery = new FavoriteQuery.Builder()
+            .folderId(intValue(query, "folderId", 0))
+            .page(intValue(query, "page", 1))
+            .build();
+        return toFavoritePage(client.getFavorites(favoriteQuery));
+    }
+
+    public JsonObject toggleAlbumLike(JsonObject body) {
+        String id = stringValue(body, "id", "");
+        if (id.isBlank()) {
+            throw new IllegalArgumentException("id is required");
+        }
+        client.toggleAlbumLike(id);
+        JsonObject result = new JsonObject();
+        result.addProperty("success", true);
+        return result;
+    }
+
+    public JsonObject toggleAlbumFavorite(JsonObject body) {
+        String id = stringValue(body, "id", "");
+        if (id.isBlank()) {
+            throw new IllegalArgumentException("id is required");
+        }
+        client.toggleAlbumFavorite(id, stringValue(body, "folderId", "0"));
+        JsonObject result = new JsonObject();
+        result.addProperty("success", true);
+        return result;
+    }
+
+    public JsonObject manageFavoriteFolder(JsonObject body) {
+        String type = stringValue(body, "type", "");
+        if (type.isBlank()) {
+            throw new IllegalArgumentException("type is required");
+        }
+        String folderId = stringValue(body, "folderId", "");
+        if (("edit".equals(type) || "del".equals(type)) && (folderId.isBlank() || "0".equals(folderId))) {
+            throw new IllegalArgumentException("folderId is required for edit/del operations");
+        }
+        if (folderId.isBlank()) {
+            folderId = "0";
+        }
+        JmFavoriteFolderResult folderResult = client.manageFavoriteFolder(
+            findFavoriteFolderType(type),
+            folderId,
+            stringValue(body, "folderName", ""),
+            stringValue(body, "albumId", "")
+        );
+        JsonObject result = new JsonObject();
+        result.addProperty("status", folderResult.getStatus());
+        result.addProperty("msg", folderResult.getMsg());
+        return result;
     }
 
     public JsonObject login(JsonObject body) {
@@ -195,6 +254,40 @@ public final class DesktopJmcomicService {
             list.add(toCommentObject(comment));
         }
         result.add("list", list);
+        return result;
+    }
+
+    private JsonObject toFavoritePage(JmFavoritePage page) {
+        JsonObject result = new JsonObject();
+        result.addProperty("folderName", page.getFolderName());
+        result.addProperty("folderId", String.valueOf(page.getFolderId()));
+        result.addProperty("currentPage", page.getCurrentPage());
+        result.addProperty("totalItems", page.getTotalItems());
+        result.addProperty("totalPages", page.getTotalPages());
+
+        JsonArray content = new JsonArray();
+        List<JmAlbumMeta> items = page.getContent();
+        if (items != null) {
+            for (JmAlbumMeta item : items) {
+                JsonObject row = new JsonObject();
+                row.addProperty("id", item.getId());
+                row.addProperty("title", item.getTitle());
+                row.addProperty("coverUrl", client.getAlbumCoverUrl(item.getId(), SEARCH_COVER_SIZE));
+                row.add("authors", stringArray(item.getAuthors()));
+                row.add("tags", stringArray(item.getTags()));
+                content.add(row);
+            }
+        }
+        result.add("content", content);
+
+        JsonObject folderList = new JsonObject();
+        Map<String, String> folders = page.getFolderList();
+        if (folders != null) {
+            for (Map.Entry<String, String> entry : folders.entrySet()) {
+                folderList.addProperty(entry.getKey(), entry.getValue());
+            }
+        }
+        result.add("folderList", folderList);
         return result;
     }
 
@@ -358,6 +451,13 @@ public final class DesktopJmcomicService {
             if (tag.getValue() == value) return tag;
         }
         return SearchMainTag.SITE_SEARCH;
+    }
+
+    private FavoriteFolderType findFavoriteFolderType(String value) {
+        for (FavoriteFolderType type : FavoriteFolderType.values()) {
+            if (type.getValue().equals(value)) return type;
+        }
+        throw new IllegalArgumentException("Unknown FavoriteFolderType: " + value);
     }
 
     private int intValue(JsonObject obj, String key, int fallback) {

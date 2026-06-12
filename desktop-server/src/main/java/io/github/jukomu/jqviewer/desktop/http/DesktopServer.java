@@ -268,6 +268,14 @@ public final class DesktopServer {
             String albumId = query.getOrDefault("albumId", "");
             int page = intParam(query, "page", 1);
             sendJson(exchange, 200, jmcomicService.getComments(albumId, page));
+        } else if (method.equals("POST") && path.equals("/api/favorites")) {
+            sendJson(exchange, 200, jmcomicService.getFavorites(readJson(exchange)));
+        } else if (method.equals("POST") && path.equals("/api/favorites/toggle-like")) {
+            sendJson(exchange, 200, jmcomicService.toggleAlbumLike(readJson(exchange)));
+        } else if (method.equals("POST") && path.equals("/api/favorites/toggle")) {
+            sendJson(exchange, 200, jmcomicService.toggleAlbumFavorite(readJson(exchange)));
+        } else if (method.equals("POST") && path.equals("/api/favorites/folders/manage")) {
+            sendJson(exchange, 200, jmcomicService.manageFavoriteFolder(readJson(exchange)));
         } else if (method.equals("POST") && path.equals("/api/auth/login")) {
             sendJson(exchange, 200, jmcomicService.login(readJson(exchange)));
         } else if (method.equals("POST") && path.equals("/api/auth/logout")) {

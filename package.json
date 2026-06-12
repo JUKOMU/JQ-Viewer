@@ -15,6 +15,7 @@
     "format": "prettier --write \"src/**/*.{vue,ts,css}\"",
     "format:check": "prettier --check \"src/**/*.{vue,ts,css}\"",
     "check:version": "node scripts/check-version.mjs",
+    "smoke:desktop": "node scripts/smoke-desktop.mjs",
     "build:desktop": "node scripts/build-desktop.mjs",
     "build:android": "npm run build && npx cap copy android && cd android && gradlew :app:assembleDebug",
     "build:android:release": "npm run build && ionic capacitor sync android && cd android && gradlew :app:clean && gradlew :app:assembleRelease"

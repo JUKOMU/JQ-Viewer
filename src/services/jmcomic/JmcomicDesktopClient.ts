@@ -332,75 +332,119 @@ export const jmcomicDesktopClient: JmcomicClient = {
   },
 
   getOfflineFolders(): Promise<{folders: OfflineFolderInfo[]}> {
-    return Promise.resolve({folders: []})
+    return desktopRequest<{folders: OfflineFolderInfo[]}>('/offline-favorites/folders')
   },
 
-  createOfflineFolder() {
-    return unsupported()
+  createOfflineFolder({name}: {name: string}) {
+    return desktopRequest<{folderId: string}>('/offline-favorites/folders', {
+      method: 'POST',
+      body: jsonBody({name}),
+    })
   },
 
-  renameOfflineFolder() {
-    return unsupported()
+  renameOfflineFolder({folderId, name}: {folderId: string; name: string}) {
+    return desktopRequest<{success: boolean}>('/offline-favorites/folders/rename', {
+      method: 'POST',
+      body: jsonBody({folderId, name}),
+    })
   },
 
-  deleteOfflineFolder() {
-    return unsupported()
+  deleteOfflineFolder({folderId}: {folderId: string}) {
+    return desktopRequest<{success: boolean}>('/offline-favorites/folders/delete', {
+      method: 'POST',
+      body: jsonBody({folderId}),
+    })
   },
 
-  addOfflineFavorite(_options: {folderId: string; item: SearchResultItem}) {
-    return unsupported()
+  addOfflineFavorite({folderId, item}: {folderId: string; item: SearchResultItem}) {
+    return desktopRequest<{success: boolean}>('/offline-favorites/items', {
+      method: 'POST',
+      body: jsonBody({folderId, item}),
+    })
   },
 
-  removeOfflineFavorite() {
-    return unsupported()
+  removeOfflineFavorite({folderId, albumId}: {folderId: string; albumId: string}) {
+    return desktopRequest<{success: boolean}>('/offline-favorites/items/remove', {
+      method: 'POST',
+      body: jsonBody({folderId, albumId}),
+    })
   },
 
-  getOfflineFavorites(): Promise<OfflineFavoritesResult> {
-    return Promise.resolve({totalItems: 0, totalPages: 0, currentPage: 1, content: []})
+  getOfflineFavorites(
+    {folderId, keyword, page, pageSize}: {folderId: string; keyword?: string; page: number; pageSize: number},
+  ): Promise<OfflineFavoritesResult> {
+    return desktopRequest<OfflineFavoritesResult>('/offline-favorites/items/query', {
+      method: 'POST',
+      body: jsonBody({folderId, keyword, page, pageSize}),
+    })
   },
 
-  getAllOfflineFavorites(): Promise<{items: SearchResultItem[]}> {
-    return Promise.resolve({items: []})
+  getAllOfflineFavorites({folderId}: {folderId: string}): Promise<{items: SearchResultItem[]}> {
+    return desktopRequest<{items: SearchResultItem[]}>('/offline-favorites/items/all', {
+      method: 'POST',
+      body: jsonBody({folderId}),
+    })
   },
 
   getOfflineFavoritesTotalCount() {
-    return Promise.resolve({count: 0})
+    return desktopRequest<{count: number}>('/offline-favorites/count')
   },
 
   getAllOfflineFavoritesMerged(): Promise<{items: SearchResultItem[]}> {
-    return Promise.resolve({items: []})
+    return desktopRequest<{items: SearchResultItem[]}>('/offline-favorites/items/merged')
   },
 
-  moveAllOfflineFavorites() {
-    return unsupported()
+  moveAllOfflineFavorites({sourceId, targetId}: {sourceId: string; targetId: string}) {
+    return desktopRequest<{success: boolean}>('/offline-favorites/items/move-all', {
+      method: 'POST',
+      body: jsonBody({sourceId, targetId}),
+    })
   },
 
-  copyOfflineFolder() {
-    return unsupported()
+  copyOfflineFolder({sourceId, name}: {sourceId: string; name: string}) {
+    return desktopRequest<{folderId: string}>('/offline-favorites/folders/copy', {
+      method: 'POST',
+      body: jsonBody({sourceId, name}),
+    })
   },
 
-  addOfflineFavoritesBatch() {
-    return unsupported()
+  addOfflineFavoritesBatch({folderId, items}: {folderId: string; items: SearchResultItem[]}) {
+    return desktopRequest<{count: number}>('/offline-favorites/items/batch', {
+      method: 'POST',
+      body: jsonBody({folderId, items}),
+    })
   },
 
-  mergeOfflineAllToFolder() {
-    return unsupported()
+  mergeOfflineAllToFolder({targetId}: {targetId: string}) {
+    return desktopRequest<{success: boolean}>('/offline-favorites/items/merge-all', {
+      method: 'POST',
+      body: jsonBody({targetId}),
+    })
   },
 
-  saveOfflineBackup() {
-    return unsupported()
+  saveOfflineBackup({key, items}: {key: string; items: SearchResultItem[]}) {
+    return desktopRequest<{success: boolean}>('/offline-favorites/backups', {
+      method: 'POST',
+      body: jsonBody({key, items}),
+    })
   },
 
-  loadOfflineBackup(): Promise<{items: SearchResultItem[] | null}> {
-    return Promise.resolve({items: null})
+  loadOfflineBackup({key}: {key: string}): Promise<{items: SearchResultItem[] | null}> {
+    return desktopRequest<{items: SearchResultItem[] | null}>('/offline-favorites/backups/load', {
+      method: 'POST',
+      body: jsonBody({key}),
+    })
   },
 
-  deleteOfflineBackup() {
-    return unsupported()
+  deleteOfflineBackup({key}: {key: string}) {
+    return desktopRequest<{success: boolean}>('/offline-favorites/backups/delete', {
+      method: 'POST',
+      body: jsonBody({key}),
+    })
   },
 
   listOfflineBackupKeys() {
-    return Promise.resolve({keys: []})
+    return desktopRequest<{keys: string[]}>('/offline-favorites/backups')
   },
 
   pickImageAndOcr() {

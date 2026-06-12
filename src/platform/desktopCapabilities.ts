@@ -79,7 +79,7 @@ function applyBrightnessOverlay(brightness: number) {
 export const desktopCapabilities: PlatformCapabilities = {
   support: {
     onlineFavorites: true,
-    offlineFavorites: false,
+    offlineFavorites: true,
     parseHistory: true,
     networkProbe: false,
     ocr: false,

@@ -14,6 +14,7 @@ import io.github.jukomu.jqviewer.desktop.service.DesktopJmcomicService;
 import io.github.jukomu.jqviewer.desktop.service.DesktopPdfService;
 import io.github.jukomu.jqviewer.desktop.store.DesktopDownloadStore;
 import io.github.jukomu.jqviewer.desktop.store.DesktopHistoryStore;
+import io.github.jukomu.jqviewer.desktop.store.DesktopOfflineFavoriteStore;
 import io.github.jukomu.jqviewer.desktop.store.DesktopPdfStore;
 import io.github.jukomu.jqviewer.desktop.store.DesktopSettingsStore;
 
@@ -38,6 +39,7 @@ public final class DesktopServer {
     private final DesktopJmcomicService jmcomicService = new DesktopJmcomicService();
     private final DesktopSettingsStore settingsStore;
     private final DesktopHistoryStore historyStore;
+    private final DesktopOfflineFavoriteStore offlineFavoriteStore;
     private final DesktopImageCache imageCache;
     private final DesktopDownloadStore downloadStore;
     private final DesktopEventBroker eventBroker;
@@ -58,6 +60,7 @@ public final class DesktopServer {
         Files.createDirectories(config.pdfExportDir());
         this.settingsStore = new DesktopSettingsStore(config.dataDir());
         this.historyStore = new DesktopHistoryStore(config.dataDir());
+        this.offlineFavoriteStore = new DesktopOfflineFavoriteStore(config.dataDir());
         this.imageCache = new DesktopImageCache(jmcomicService, intValue(settingsStore.getAll(), "cacheCapacityMb", 256));
         this.downloadStore = new DesktopDownloadStore(config.dataDir(), config.downloadDir());
         this.eventBroker = new DesktopEventBroker();
@@ -310,6 +313,42 @@ public final class DesktopServer {
         } else if (method.equals("DELETE") && path.startsWith("/api/history/parse/")) {
             int id = Integer.parseInt(pathPart(path, "/api/history/parse/"));
             sendJson(exchange, 200, historyStore.deleteParseItem(id));
+        } else if (method.equals("GET") && path.equals("/api/offline-favorites/folders")) {
+            sendJson(exchange, 200, offlineFavoriteStore.getFolders());
+        } else if (method.equals("POST") && path.equals("/api/offline-favorites/folders")) {
+            sendJson(exchange, 200, offlineFavoriteStore.createFolder(readJson(exchange)));
+        } else if (method.equals("POST") && path.equals("/api/offline-favorites/folders/rename")) {
+            sendJson(exchange, 200, offlineFavoriteStore.renameFolder(readJson(exchange)));
+        } else if (method.equals("POST") && path.equals("/api/offline-favorites/folders/delete")) {
+            sendJson(exchange, 200, offlineFavoriteStore.deleteFolder(readJson(exchange)));
+        } else if (method.equals("POST") && path.equals("/api/offline-favorites/items")) {
+            sendJson(exchange, 200, offlineFavoriteStore.addFavorite(readJson(exchange)));
+        } else if (method.equals("POST") && path.equals("/api/offline-favorites/items/remove")) {
+            sendJson(exchange, 200, offlineFavoriteStore.removeFavorite(readJson(exchange)));
+        } else if (method.equals("POST") && path.equals("/api/offline-favorites/items/query")) {
+            sendJson(exchange, 200, offlineFavoriteStore.getFavorites(readJson(exchange)));
+        } else if (method.equals("POST") && path.equals("/api/offline-favorites/items/all")) {
+            sendJson(exchange, 200, offlineFavoriteStore.getAllFavorites(readJson(exchange)));
+        } else if (method.equals("GET") && path.equals("/api/offline-favorites/count")) {
+            sendJson(exchange, 200, offlineFavoriteStore.getTotalCount());
+        } else if (method.equals("GET") && path.equals("/api/offline-favorites/items/merged")) {
+            sendJson(exchange, 200, offlineFavoriteStore.getAllFavoritesMerged());
+        } else if (method.equals("POST") && path.equals("/api/offline-favorites/items/move-all")) {
+            sendJson(exchange, 200, offlineFavoriteStore.moveAll(readJson(exchange)));
+        } else if (method.equals("POST") && path.equals("/api/offline-favorites/folders/copy")) {
+            sendJson(exchange, 200, offlineFavoriteStore.copyFolder(readJson(exchange)));
+        } else if (method.equals("POST") && path.equals("/api/offline-favorites/items/batch")) {
+            sendJson(exchange, 200, offlineFavoriteStore.addFavoritesBatch(readJson(exchange)));
+        } else if (method.equals("POST") && path.equals("/api/offline-favorites/items/merge-all")) {
+            sendJson(exchange, 200, offlineFavoriteStore.mergeAllToFolder(readJson(exchange)));
+        } else if (method.equals("POST") && path.equals("/api/offline-favorites/backups")) {
+            sendJson(exchange, 200, offlineFavoriteStore.saveBackup(readJson(exchange)));
+        } else if (method.equals("POST") && path.equals("/api/offline-favorites/backups/load")) {
+            sendJson(exchange, 200, offlineFavoriteStore.loadBackup(readJson(exchange)));
+        } else if (method.equals("POST") && path.equals("/api/offline-favorites/backups/delete")) {
+            sendJson(exchange, 200, offlineFavoriteStore.deleteBackup(readJson(exchange)));
+        } else if (method.equals("GET") && path.equals("/api/offline-favorites/backups")) {
+            sendJson(exchange, 200, offlineFavoriteStore.listBackupKeys());
         } else if (method.equals("GET") && path.equals("/api/settings")) {
             sendJson(exchange, 200, settingsStore.getAll());
         } else if (method.equals("POST") && path.equals("/api/settings")) {

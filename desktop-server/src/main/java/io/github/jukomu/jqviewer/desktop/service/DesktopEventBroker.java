@@ -44,6 +44,10 @@ public final class DesktopEventBroker {
         publish("downloadProgress", event);
     }
 
+    public void publishNetworkProbe(JsonObject event) {
+        publish("networkProbe", event);
+    }
+
     public void close() {
         heartbeat.shutdownNow();
         for (OutputStream client : clients) {

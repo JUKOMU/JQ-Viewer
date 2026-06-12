@@ -1,6 +1,6 @@
 import type {PlatformCapabilities} from './PlatformCapabilities'
 import type {JmcomicListenerHandle} from '../services/jmcomic/JmcomicClient'
-import type {AllSettings, DownloadProgressEvent} from '../services/JmcomicTypes'
+import type {AllSettings, DownloadProgressEvent, NetworkProbeEvent} from '../services/JmcomicTypes'
 import {desktopEventUrl, desktopRequest, jsonBody} from '../services/jmcomic/http'
 import type {FolderPickPurpose} from '../services/platform/FilePickerPort'
 import type {DesktopDiagnosticDirectoryKey, DesktopDiagnosticsStatus} from '../services/platform/MaintenancePort'
@@ -76,12 +76,57 @@ function applyBrightnessOverlay(brightness: number) {
   brightnessOverlay.style.opacity = String(Math.max(0, Math.min(0.75, (1 - brightness) * 0.75)))
 }
 
+function addDesktopEventListener<T>(eventName: string, handler: (data: T) => void): Promise<JmcomicListenerHandle> {
+  let source: EventSource | null = null
+  let reconnectTimer: number | null = null
+  let closed = false
+  const onMessage = (event: MessageEvent) => {
+    try {
+      handler(JSON.parse(event.data) as T)
+    } catch {
+      // Ignore malformed local event payloads.
+    }
+  }
+  const clearReconnect = () => {
+    if (reconnectTimer != null) {
+      window.clearTimeout(reconnectTimer)
+      reconnectTimer = null
+    }
+  }
+  const connect = () => {
+    if (closed) return
+    source?.removeEventListener(eventName, onMessage)
+    source?.close()
+    source = new EventSource(desktopEventUrl('/events'))
+    source.addEventListener(eventName, onMessage)
+    source.onerror = () => {
+      if (closed || reconnectTimer != null) return
+      source?.removeEventListener(eventName, onMessage)
+      source?.close()
+      reconnectTimer = window.setTimeout(() => {
+        reconnectTimer = null
+        connect()
+      }, EVENT_RECONNECT_DELAY_MS)
+    }
+  }
+  connect()
+  return Promise.resolve({
+    remove: async () => {
+      closed = true
+      clearReconnect()
+      source?.removeEventListener(eventName, onMessage)
+      source?.close()
+      source = null
+    },
+  })
+}
+
 export const desktopCapabilities: PlatformCapabilities = {
   support: {
     onlineFavorites: true,
     offlineFavorites: true,
     parseHistory: true,
-    networkProbe: false,
+    networkProbe: true,
     ocr: false,
     publicDownloads: false,
     notificationPermissionPrompt: false,
@@ -186,54 +231,13 @@ export const desktopCapabilities: PlatformCapabilities = {
       return Promise.resolve(noopListenerHandle)
     },
     async addDownloadProgressListener(handler) {
-      let source: EventSource | null = null
-      let reconnectTimer: number | null = null
-      let closed = false
-      const onMessage = (event: MessageEvent) => {
-        try {
-          handler(JSON.parse(event.data) as DownloadProgressEvent)
-        } catch {
-          // Ignore malformed local event payloads.
-        }
-      }
-      const clearReconnect = () => {
-        if (reconnectTimer != null) {
-          window.clearTimeout(reconnectTimer)
-          reconnectTimer = null
-        }
-      }
-      const connect = () => {
-        if (closed) return
-        source?.removeEventListener('downloadProgress', onMessage)
-        source?.close()
-        source = new EventSource(desktopEventUrl('/events'))
-        source.addEventListener('downloadProgress', onMessage)
-        source.onerror = () => {
-          if (closed || reconnectTimer != null) return
-          source?.removeEventListener('downloadProgress', onMessage)
-          source?.close()
-          reconnectTimer = window.setTimeout(() => {
-            reconnectTimer = null
-            connect()
-          }, EVENT_RECONNECT_DELAY_MS)
-        }
-      }
-      connect()
-      return {
-        remove: async () => {
-          closed = true
-          clearReconnect()
-          source?.removeEventListener('downloadProgress', onMessage)
-          source?.close()
-          source = null
-        },
-      }
+      return addDesktopEventListener<DownloadProgressEvent>('downloadProgress', handler)
     },
     addRelocationProgressListener() {
       return Promise.resolve(noopListenerHandle)
     },
-    addNetworkProbeListener() {
-      return Promise.resolve(noopListenerHandle)
+    addNetworkProbeListener(handler) {
+      return addDesktopEventListener<NetworkProbeEvent>('networkProbe', handler)
     },
     addLaunchRouteListener() {
       return Promise.resolve(noopListenerHandle)

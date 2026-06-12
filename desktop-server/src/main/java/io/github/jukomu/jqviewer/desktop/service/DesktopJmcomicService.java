@@ -78,6 +78,29 @@ public final class DesktopJmcomicService {
         return toCommentListObject(client.getComments(query));
     }
 
+    public JsonObject getDomainStates() {
+        return toDomainStates(client.getDomainStates());
+    }
+
+    public void reprobeDomains() {
+        client.reprobeDomains();
+    }
+
+    public JsonObject measureLatency() {
+        JsonObject result = new JsonObject();
+        JsonArray results = new JsonArray();
+        for (Map.Entry<String, Integer> entry : client.getDomainLatency().entrySet()) {
+            JsonObject row = new JsonObject();
+            int latencyMs = entry.getValue();
+            row.addProperty("domain", entry.getKey());
+            row.addProperty("latencyMs", latencyMs == -1 ? 0 : latencyMs);
+            row.addProperty("timedOut", latencyMs == -1);
+            results.add(row);
+        }
+        result.add("results", results);
+        return result;
+    }
+
     public JsonObject getFavorites(JsonObject body) {
         JsonObject query = queryBody(body);
         FavoriteQuery favoriteQuery = new FavoriteQuery.Builder()
@@ -288,6 +311,28 @@ public final class DesktopJmcomicService {
             }
         }
         result.add("folderList", folderList);
+        return result;
+    }
+
+    private JsonObject toDomainStates(Map<String, Integer> states) {
+        JsonObject result = new JsonObject();
+        JsonArray domains = new JsonArray();
+        int alive = 0;
+        boolean allDeadFallback = !states.isEmpty() && states.values().stream().allMatch(value -> value == -1);
+        for (Map.Entry<String, Integer> entry : states.entrySet()) {
+            boolean reachable = !allDeadFallback && entry.getValue() < (Integer.MAX_VALUE / 2);
+            JsonObject row = new JsonObject();
+            row.addProperty("domain", entry.getKey());
+            row.addProperty("reachable", reachable);
+            if (reachable) {
+                alive++;
+            }
+            domains.add(row);
+        }
+        result.add("domains", domains);
+        result.addProperty("alive", alive);
+        result.addProperty("total", states.size());
+        result.addProperty("allDeadFallback", allDeadFallback);
         return result;
     }
 

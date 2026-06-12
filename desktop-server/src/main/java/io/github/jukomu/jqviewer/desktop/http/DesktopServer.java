@@ -271,6 +271,12 @@ public final class DesktopServer {
             String albumId = query.getOrDefault("albumId", "");
             int page = intParam(query, "page", 1);
             sendJson(exchange, 200, jmcomicService.getComments(albumId, page));
+        } else if (method.equals("GET") && path.equals("/api/network/domains")) {
+            sendJson(exchange, 200, jmcomicService.getDomainStates());
+        } else if (method.equals("POST") && path.equals("/api/network/reprobe")) {
+            sendJson(exchange, 200, reprobeDomains());
+        } else if (method.equals("GET") && path.equals("/api/network/latency")) {
+            sendJson(exchange, 200, jmcomicService.measureLatency());
         } else if (method.equals("POST") && path.equals("/api/favorites")) {
             sendJson(exchange, 200, jmcomicService.getFavorites(readJson(exchange)));
         } else if (method.equals("POST") && path.equals("/api/favorites/toggle-like")) {
@@ -641,6 +647,38 @@ public final class DesktopServer {
         result.addProperty("pdfRootDir", stringValue(pdfService.roots(), "pdfRootDir", config.pdfRootDir().toString()));
         result.addProperty("pdfExportDir", stringValue(pdfService.roots(), "pdfExportDir", config.pdfExportDir().toString()));
         return result;
+    }
+
+    private JsonObject reprobeDomains() {
+        eventBroker.publishNetworkProbe(networkProbeEvent("probing", "正在探测域名连通性..."));
+        try {
+            jmcomicService.reprobeDomains();
+            JsonObject result = jmcomicService.getDomainStates();
+            result.addProperty("phase", "result");
+            result.addProperty("timestamp", System.currentTimeMillis());
+            int alive = intValue(result, "alive", 0);
+            int total = intValue(result, "total", 0);
+            boolean allDeadFallback = boolValue(result, "allDeadFallback", false);
+            result.addProperty("message", allDeadFallback
+                ? "探活完成 · 全部不可达"
+                : "探活完成 · " + alive + "/" + total + " 可达");
+            eventBroker.publishNetworkProbe(result);
+            JsonObject response = new JsonObject();
+            response.addProperty("success", true);
+            return response;
+        } catch (RuntimeException e) {
+            String detail = e.getMessage() == null || e.getMessage().isBlank() ? "" : " · " + e.getMessage();
+            eventBroker.publishNetworkProbe(networkProbeEvent("error", "探活异常" + detail));
+            throw e;
+        }
+    }
+
+    private static JsonObject networkProbeEvent(String phase, String message) {
+        JsonObject event = new JsonObject();
+        event.addProperty("phase", phase);
+        event.addProperty("message", message);
+        event.addProperty("timestamp", System.currentTimeMillis());
+        return event;
     }
 
     private Path diagnosticDirectory(String key) {

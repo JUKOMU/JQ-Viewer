@@ -26,6 +26,9 @@ describe('desktop API contract', () => {
     {client: '`/albums/${encodeURIComponent(id)}`', server: 'path.startsWith("/api/albums/")'},
     {client: '`/photos/${encodeURIComponent(id)}`', server: 'path.startsWith("/api/photos/")'},
     {client: '`/comments?${params}`', server: 'path.equals("/api/comments")'},
+    {client: "'/network/domains'", server: 'path.equals("/api/network/domains")'},
+    {client: "'/network/reprobe'", server: 'path.equals("/api/network/reprobe")'},
+    {client: "'/network/latency'", server: 'path.equals("/api/network/latency")'},
     {client: "'/favorites'", server: 'path.equals("/api/favorites")'},
     {client: "'/favorites/toggle-like'", server: 'path.equals("/api/favorites/toggle-like")'},
     {client: "'/favorites/toggle'", server: 'path.equals("/api/favorites/toggle")'},
@@ -108,5 +111,13 @@ describe('desktop API contract', () => {
     expect(serverSource).not.toContain('addProperty("token"')
     expect(serverSource).not.toContain('addProperty("cookie"')
     expect(serverSource).not.toContain('addProperty("password"')
+  })
+
+  test('keeps desktop network probe enabled through client and SSE', () => {
+    expect(clientSources).toContain('networkProbe: true')
+    expect(clientSources).toContain("addDesktopEventListener<NetworkProbeEvent>('networkProbe'")
+    expect(serverSource).toContain('publishNetworkProbe')
+    expect(serverSource).toContain('jmcomicService.getDomainStates()')
+    expect(serverSource).toContain('jmcomicService.measureLatency()')
   })
 })

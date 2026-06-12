@@ -253,15 +253,16 @@ export const jmcomicDesktopClient: JmcomicClient = {
   },
 
   getDomainStates(): Promise<DomainStates> {
-    return Promise.resolve({domains: [], alive: 0, total: 0, allDeadFallback: false})
+    return desktopRequest<DomainStates>('/network/domains')
   },
 
   reprobeDomains() {
-    return Promise.resolve()
+    return desktopRequest<{success: boolean}>('/network/reprobe', {method: 'POST'})
+      .then(() => undefined)
   },
 
   measureLatency(): Promise<{results: LatencyResult[]}> {
-    return Promise.resolve({results: []})
+    return desktopRequest<{results: LatencyResult[]}>('/network/latency')
   },
 
   getInitStatus() {

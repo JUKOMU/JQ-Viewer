@@ -99,4 +99,35 @@ describe('desktop event capabilities', () => {
     await vi.advanceTimersByTimeAsync(3000)
     expect(FakeEventSource.instances).toHaveLength(2)
   })
+
+  test('subscribes to desktop network probe events', async () => {
+    const {desktopCapabilities} = await import('@/platform/desktopCapabilities')
+    const handler = vi.fn()
+
+    const handle = await desktopCapabilities.events.addNetworkProbeListener(handler)
+
+    expect(FakeEventSource.instances).toHaveLength(1)
+    expect(FakeEventSource.instances[0].url).toBe('/events?token=event-token')
+
+    FakeEventSource.instances[0].emit('networkProbe', {
+      phase: 'result',
+      message: '探活完成 · 1/2 可达',
+      timestamp: 1710000000000,
+      domains: [
+        {domain: 'example.test', reachable: true},
+        {domain: 'dead.test', reachable: false},
+      ],
+      alive: 1,
+      total: 2,
+      allDeadFallback: false,
+    })
+    expect(handler).toHaveBeenCalledWith(expect.objectContaining({
+      phase: 'result',
+      alive: 1,
+      total: 2,
+    }))
+
+    await handle.remove()
+    expect(FakeEventSource.instances[0].closed).toBe(true)
+  })
 })

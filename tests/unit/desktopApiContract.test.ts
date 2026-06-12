@@ -32,6 +32,8 @@ describe('desktop API contract', () => {
     {client: '`/users/${encodeURIComponent(uid)}`', server: 'path.startsWith("/api/users/")'},
     {client: "'/history/browse'", server: 'path.equals("/api/history/browse")'},
     {client: '`/history/browse/${id}`', server: 'path.startsWith("/api/history/browse/")'},
+    {client: '`/history/parse?${params}`', server: 'path.equals("/api/history/parse")'},
+    {client: '`/history/parse/${id}`', server: 'path.startsWith("/api/history/parse/")'},
     {client: "'/settings'", server: 'path.equals("/api/settings")'},
     {client: "'/preload-images'", server: 'path.equals("/api/preload-images")'},
     {client: "'/cache/capacity'", server: 'path.equals("/api/cache/capacity")'},

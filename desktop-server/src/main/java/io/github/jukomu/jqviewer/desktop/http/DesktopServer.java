@@ -289,6 +289,19 @@ public final class DesktopServer {
         } else if (method.equals("DELETE") && path.startsWith("/api/history/browse/")) {
             int id = Integer.parseInt(pathPart(path, "/api/history/browse/"));
             sendJson(exchange, 200, historyStore.deleteBrowseItem(id));
+        } else if (method.equals("GET") && path.equals("/api/history/parse")) {
+            Map<String, String> query = queryParams(exchange.getRequestURI());
+            sendJson(exchange, 200, historyStore.getParseHistory(
+                intParam(query, "limit", 50),
+                intParam(query, "offset", 0)
+            ));
+        } else if (method.equals("POST") && path.equals("/api/history/parse")) {
+            sendJson(exchange, 200, historyStore.recordParse(readJson(exchange)));
+        } else if (method.equals("DELETE") && path.equals("/api/history/parse")) {
+            sendJson(exchange, 200, historyStore.clearParseHistory());
+        } else if (method.equals("DELETE") && path.startsWith("/api/history/parse/")) {
+            int id = Integer.parseInt(pathPart(path, "/api/history/parse/"));
+            sendJson(exchange, 200, historyStore.deleteParseItem(id));
         } else if (method.equals("GET") && path.equals("/api/settings")) {
             sendJson(exchange, 200, settingsStore.getAll());
         } else if (method.equals("POST") && path.equals("/api/settings")) {

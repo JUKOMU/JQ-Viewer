@@ -299,20 +299,24 @@ export const jmcomicDesktopClient: JmcomicClient = {
     return desktopRequest<{success: boolean}>(`/history/browse/${id}`, {method: 'DELETE'})
   },
 
-  getParseHistory(): Promise<{items: ParseHistoryItem[]}> {
-    return Promise.resolve({items: []})
+  getParseHistory({limit, offset}: {limit: number; offset: number}): Promise<{items: ParseHistoryItem[]}> {
+    const params = new URLSearchParams({limit: String(limit), offset: String(offset)})
+    return desktopRequest<{items: ParseHistoryItem[]}>(`/history/parse?${params}`)
   },
 
-  addParseHistory() {
-    return Promise.resolve({success: true})
+  addParseHistory({text, mode}: {text: string; mode: string}) {
+    return desktopRequest<{success: boolean}>('/history/parse', {
+      method: 'POST',
+      body: jsonBody({text, mode}),
+    })
   },
 
   clearParseHistory() {
-    return Promise.resolve({success: true})
+    return desktopRequest<{success: boolean}>('/history/parse', {method: 'DELETE'})
   },
 
-  deleteParseItem() {
-    return Promise.resolve({success: true})
+  deleteParseItem({id}: {id: number}) {
+    return desktopRequest<{success: boolean}>(`/history/parse/${id}`, {method: 'DELETE'})
   },
 
   getOfflineFolders(): Promise<{folders: OfflineFolderInfo[]}> {

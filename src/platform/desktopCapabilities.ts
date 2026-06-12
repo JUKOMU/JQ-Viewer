@@ -80,7 +80,7 @@ export const desktopCapabilities: PlatformCapabilities = {
   support: {
     onlineFavorites: false,
     offlineFavorites: false,
-    parseHistory: false,
+    parseHistory: true,
     networkProbe: false,
     ocr: false,
     publicDownloads: false,

@@ -37,6 +37,7 @@ public final class DesktopSettingsStore {
                 settings.add(key, value);
             }
         }
+        normalizeDesktopUnsupportedSettings(settings);
         save();
         return getAll();
     }
@@ -53,6 +54,7 @@ public final class DesktopSettingsStore {
         for (String key : loaded.keySet()) {
             base.add(key, loaded.get(key));
         }
+        normalizeDesktopUnsupportedSettings(base);
         settings = base;
         save();
         return base;
@@ -69,12 +71,16 @@ public final class DesktopSettingsStore {
         defaults.addProperty("downloadConcurrency", 6);
         defaults.addProperty("downloadPublic", false);
         defaults.addProperty("cacheCapacityMb", 256);
-        defaults.addProperty("ocrEnabled", true);
+        defaults.addProperty("ocrEnabled", false);
         defaults.addProperty("readerDisplayMode", "vertical");
         defaults.addProperty("readerScreenOrientation", "auto");
         defaults.addProperty("readerBrightness", -1);
         defaults.addProperty("readerKeepScreenOn", true);
         defaults.addProperty("readerVolumeNavigation", false);
         return defaults;
+    }
+
+    private static void normalizeDesktopUnsupportedSettings(JsonObject target) {
+        target.addProperty("ocrEnabled", false);
     }
 }

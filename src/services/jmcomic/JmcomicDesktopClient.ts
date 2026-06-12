@@ -41,10 +41,6 @@ type DesktopRoots = {
   downloadDir: string
 }
 
-function unsupported(): Promise<never> {
-  return Promise.reject(new Error('This feature is not available in desktop.'))
-}
-
 async function pickDesktopFolder(purpose: FolderPickPurpose = 'pdfRoot') {
   const picked = await desktopRequest<{path?: string; cancelled: boolean}>('/files/pick-directory', {
     method: 'POST',
@@ -449,7 +445,10 @@ export const jmcomicDesktopClient: JmcomicClient = {
   },
 
   pickImageAndOcr() {
-    return unsupported()
+    return Promise.resolve({
+      text: '',
+      error: '桌面版暂不支持图片 OCR，请直接输入或粘贴文本。',
+    })
   },
 
   exportPdfBatch(_options: {tasks: PdfExportTask[]}) {

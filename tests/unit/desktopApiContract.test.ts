@@ -18,6 +18,9 @@ describe('desktop API contract', () => {
   const serverSource = readWorkspaceFile(
     'desktop-server/src/main/java/io/github/jukomu/jqviewer/desktop/http/DesktopServer.java',
   )
+  const settingsStoreSource = readWorkspaceFile(
+    'desktop-server/src/main/java/io/github/jukomu/jqviewer/desktop/store/DesktopSettingsStore.java',
+  )
 
   const apiRoutes = [
     {client: "'/init-status'", server: 'path.equals("/api/init-status")'},
@@ -119,5 +122,12 @@ describe('desktop API contract', () => {
     expect(serverSource).toContain('publishNetworkProbe')
     expect(serverSource).toContain('jmcomicService.getDomainStates()')
     expect(serverSource).toContain('jmcomicService.measureLatency()')
+  })
+
+  test('keeps desktop OCR explicitly unsupported', () => {
+    expect(clientSources).toContain('ocr: false')
+    expect(clientSources).toContain('桌面版暂不支持图片 OCR')
+    expect(settingsStoreSource).toContain('defaults.addProperty("ocrEnabled", false)')
+    expect(settingsStoreSource).toContain('normalizeDesktopUnsupportedSettings')
   })
 })

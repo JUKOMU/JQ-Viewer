@@ -30,7 +30,18 @@ runStep('desktop server package', !skipMaven, () => {
     mavenArgs.push(`-Djmcomic.version=${jmcomicVersion}`)
   }
   mavenArgs.push('package')
-  run(mvnCmd(), mavenArgs, { cwd: rootDir })
+  try {
+    run(mvnCmd(), mavenArgs, { cwd: rootDir })
+  } catch (error) {
+    const effectiveVersion = jmcomicVersion || desktopDependencyVersion()
+    console.error(
+      `Desktop Maven package failed with jmcomic.version=${effectiveVersion}. ` +
+      'Check Maven network access, local cache, and published dependency metadata. ' +
+      'If the jmcomic dependency metadata is incomplete, retry with a validated override, for example: ' +
+      'npm run build:desktop -- --jmcomic-version=1.1.5'
+    )
+    throw error
+  }
 })
 
 const jpackage = findJpackage()
@@ -116,6 +127,13 @@ function desktopVersion() {
   const pom = readFileSync(join(desktopDir, 'pom.xml'), 'utf8')
   const match = pom.match(/<artifactId>jqviewer-desktop-server<\/artifactId>[\s\S]*?<version>([^<]+)<\/version>/)
   if (!match) throw new Error('Unable to read desktop-server version from pom.xml')
+  return match[1]
+}
+
+function desktopDependencyVersion() {
+  const pom = readFileSync(join(desktopDir, 'pom.xml'), 'utf8')
+  const match = pom.match(/<jmcomic\.version>([^<]+)<\/jmcomic\.version>/)
+  if (!match) throw new Error('Unable to read jmcomic.version from pom.xml')
   return match[1]
 }
 

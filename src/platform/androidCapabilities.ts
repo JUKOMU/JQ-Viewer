@@ -84,6 +84,14 @@ export const androidCapabilities: PlatformCapabilities = {
       return native.checkFilesExist({paths})
     },
   },
+  maintenance: {
+    getDiagnosticsStatus() {
+      return Promise.resolve(null)
+    },
+    openDirectory() {
+      return Promise.resolve({success: false})
+    },
+  },
   readerRuntime: {
     setDisplayMode(mode: string) {
       return native.setReaderDisplayMode({mode})

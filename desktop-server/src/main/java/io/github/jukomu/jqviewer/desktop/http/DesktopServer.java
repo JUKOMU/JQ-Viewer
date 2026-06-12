@@ -343,6 +343,11 @@ public final class DesktopServer {
             sendJson(exchange, 200, fileDialogService.pickDirectory(initialDir));
         } else if (method.equals("POST") && path.equals("/api/files/check")) {
             sendJson(exchange, 200, pdfService.checkFiles(readJson(exchange)));
+        } else if (method.equals("GET") && path.equals("/api/diagnostics/status")) {
+            sendJson(exchange, 200, diagnosticsStatus());
+        } else if (method.equals("POST") && path.equals("/api/diagnostics/open-directory")) {
+            String key = stringValue(readJson(exchange), "key", "");
+            sendJson(exchange, 200, fileDialogService.openDirectory(diagnosticDirectory(key)));
         } else if (method.equals("POST") && path.equals("/api/pdf/scan")) {
             sendJson(exchange, 200, pdfService.scan(readJson(exchange)));
         } else if (method.equals("POST") && path.equals("/api/pdf/import")) {
@@ -562,6 +567,37 @@ public final class DesktopServer {
         pdfService.updateRoots(body);
         downloadService.updateRoots(body);
         return fileRoots();
+    }
+
+    private JsonObject diagnosticsStatus() {
+        JsonObject result = new JsonObject();
+        result.addProperty("bindAddress", config.bindAddress().getHostAddress());
+        result.addProperty("port", port());
+        result.addProperty("serverVersion", desktopServerVersion());
+        result.addProperty("dataDir", config.dataDir().toString());
+        result.addProperty("cacheDir", config.cacheDir().toString());
+        result.addProperty("logDir", config.logDir().toString());
+        result.addProperty("downloadDir", stringValue(downloadService.roots(), "downloadDir", config.downloadDir().toString()));
+        result.addProperty("pdfRootDir", stringValue(pdfService.roots(), "pdfRootDir", config.pdfRootDir().toString()));
+        result.addProperty("pdfExportDir", stringValue(pdfService.roots(), "pdfExportDir", config.pdfExportDir().toString()));
+        return result;
+    }
+
+    private Path diagnosticDirectory(String key) {
+        return switch (key) {
+            case "data" -> config.dataDir();
+            case "cache" -> config.cacheDir();
+            case "logs" -> config.logDir();
+            case "download" -> Path.of(stringValue(downloadService.roots(), "downloadDir", config.downloadDir().toString()));
+            case "pdfRoot" -> Path.of(stringValue(pdfService.roots(), "pdfRootDir", config.pdfRootDir().toString()));
+            case "pdfExport" -> Path.of(stringValue(pdfService.roots(), "pdfExportDir", config.pdfExportDir().toString()));
+            default -> throw new IllegalArgumentException("Unsupported diagnostic directory");
+        };
+    }
+
+    private static String desktopServerVersion() {
+        String version = DesktopServer.class.getPackage().getImplementationVersion();
+        return version == null || version.isBlank() ? "unknown" : version;
     }
 
     private static String directoryInitialPath(JsonObject roots, String purpose) {

@@ -420,6 +420,36 @@
           </div>
         </div>
 
+        <!-- 分组：桌面诊断 -->
+        <div v-if="showDesktopMaintenance" class="section-label">桌面诊断</div>
+        <div v-if="showDesktopMaintenance" class="card">
+          <div class="row">
+            <div class="row-left">
+              <span class="row-title">本机服务</span>
+              <span class="row-subtitle">
+                {{
+                  desktopDiagnostics
+                    ? `${desktopDiagnostics.bindAddress}:${desktopDiagnostics.port} / ${desktopDiagnostics.serverVersion}`
+                    : '正在读取本机服务状态'
+                }}
+              </span>
+            </div>
+            <button class="browse-btn" :disabled="diagnosticsLoading" @click="refreshDiagnostics">刷新</button>
+          </div>
+          <div
+            v-for="item in diagnosticDirectories"
+            :key="item.key"
+            class="row path-row divider"
+          >
+            <div class="diagnostic-path-main">
+              <span class="row-title">{{ item.label }}</span>
+              <span class="path-display">{{ item.path || '未读取' }}</span>
+            </div>
+            <button class="reset-mini-btn" :disabled="!item.path" @click="copyDiagnosticPath(item.path)">复制</button>
+            <button class="browse-btn" :disabled="!item.path" @click="openDiagnosticDirectory(item.key)">打开</button>
+          </div>
+        </div>
+
         <!-- 分组：用户 -->
         <div class="section-label">用户</div>
         <div class="card">
@@ -481,6 +511,10 @@ import {PdfExportService, PDF_SAMPLE_DATA} from '@/services/PdfExportService'
 import {useAuth} from '@/composables/useAuth'
 import type {CacheCapacityInfo, RelocationProgress} from '@/services/JmcomicTypes'
 import type {PlatformListenerHandle} from '@/services/platform/EventPort'
+import type {
+  DesktopDiagnosticDirectoryKey,
+  DesktopDiagnosticsStatus,
+} from '@/services/platform/MaintenancePort'
 import {platformCapabilities} from '@/platform/activeCapabilities'
 
 const router = useRouter()
@@ -511,6 +545,8 @@ const preloadConcurrency = ref(SettingsStore.getPreloadConcurrency())
 const downloadConcurrency = ref(SettingsStore.getDownloadConcurrency())
 const downloadPublic = ref(SettingsStore.getDownloadPublic())
 const downloadPath = ref('')
+const desktopDiagnostics = ref<DesktopDiagnosticsStatus | null>(null)
+const diagnosticsLoading = ref(false)
 const ocrEnabled = ref(SettingsStore.getOcrEnabled())
 const exportFormat = ref(ExportFormatService.getExportFormat())
 const displayMode = ref(SettingsStore.getReaderDisplayMode())
@@ -524,6 +560,22 @@ const exportPreview = computed(() => ExportFormatService.previewExportFormat(exp
 const showDesktopDownloadPath = computed(() =>
   platformCapabilities.support.nativeFolderPicker && !platformCapabilities.support.publicDownloads,
 )
+const showDesktopMaintenance = computed(() => !platformCapabilities.support.publicDownloads)
+const diagnosticDirectories = computed<Array<{
+  key: DesktopDiagnosticDirectoryKey
+  label: string
+  path: string
+}>>(() => {
+  const status = desktopDiagnostics.value
+  return [
+    {key: 'data', label: '数据目录', path: status?.dataDir ?? ''},
+    {key: 'cache', label: '缓存目录', path: status?.cacheDir ?? ''},
+    {key: 'logs', label: '日志目录', path: status?.logDir ?? ''},
+    {key: 'download', label: '下载目录', path: status?.downloadDir ?? ''},
+    {key: 'pdfRoot', label: 'PDF 导入目录', path: status?.pdfRootDir ?? ''},
+    {key: 'pdfExport', label: 'PDF 导出目录', path: status?.pdfExportDir ?? ''},
+  ]
+})
 
 // PDF导出设置
 const pdfExportPath = ref(PdfExportService.getExportPath())
@@ -623,7 +675,41 @@ onMounted(async () => {
       /* keep default */
     }
   }
+
+  if (showDesktopMaintenance.value) {
+    await refreshDiagnostics()
+  }
 })
+
+async function refreshDiagnostics() {
+  diagnosticsLoading.value = true
+  try {
+    desktopDiagnostics.value = await platformCapabilities.maintenance.getDiagnosticsStatus()
+  } catch (e: any) {
+    desktopDiagnostics.value = null
+    await showToast(sanitizeError(e, '读取桌面诊断状态失败'), 'danger')
+  } finally {
+    diagnosticsLoading.value = false
+  }
+}
+
+async function copyDiagnosticPath(path: string) {
+  if (!path) return
+  try {
+    await navigator.clipboard.writeText(path)
+    await showToast('路径已复制', 'success')
+  } catch {
+    await showToast('复制失败', 'danger')
+  }
+}
+
+async function openDiagnosticDirectory(key: DesktopDiagnosticDirectoryKey) {
+  try {
+    await platformCapabilities.maintenance.openDirectory(key)
+  } catch (e: any) {
+    await showToast(sanitizeError(e, '打开目录失败'), 'danger')
+  }
+}
 
 // ---- 缓存上限 ----
 async function onCacheCapacityChange(e: Event) {
@@ -718,6 +804,7 @@ async function onBrowseDownloadFolder() {
     const result = await JmcomicService.pickFolder('download')
     if (!result.cancelled && result.path) {
       downloadPath.value = result.path
+      await refreshDiagnostics()
       await showToast('下载目录已更新，新下载任务将使用该目录', 'success')
     }
   } catch (e: any) {
@@ -767,6 +854,7 @@ async function onBrowseFolder() {
       const path = result.path.endsWith('/') ? result.path : result.path + '/'
       pdfExportPath.value = path
       PdfExportService.setExportPath(path)
+      await refreshDiagnostics()
     }
   } catch (e: any) {
     await showToast(sanitizeError(e, '选择文件夹失败'), 'danger')
@@ -1236,6 +1324,18 @@ function onVolumeNavigationChange(e: CustomEvent) {
   padding: 0 16px 12px;
 }
 
+.path-row.divider {
+  padding-top: 12px;
+}
+
+.diagnostic-path-main {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .path-display {
   flex: 1;
   min-width: 0;
@@ -1267,6 +1367,12 @@ function onVolumeNavigationChange(e: CustomEvent) {
 
 .browse-btn:active {
   background: #fde0c8;
+}
+
+.browse-btn:disabled,
+.reset-mini-btn:disabled {
+  cursor: default;
+  opacity: 0.45;
 }
 
 .reset-mini-btn {

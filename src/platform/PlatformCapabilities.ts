@@ -1,5 +1,6 @@
 import type {EventPort} from '../services/platform/EventPort'
 import type {FilePickerPort} from '../services/platform/FilePickerPort'
+import type {MaintenancePort} from '../services/platform/MaintenancePort'
 import type {NotificationPort} from '../services/platform/NotificationPort'
 import type {ReaderRuntimePort} from '../services/platform/ReaderRuntimePort'
 
@@ -24,6 +25,7 @@ export interface PlatformCapabilities {
   readerText: PlatformReaderText
   notification: NotificationPort
   filePicker: FilePickerPort
+  maintenance: MaintenancePort
   readerRuntime: ReaderRuntimePort
   events: EventPort
 }

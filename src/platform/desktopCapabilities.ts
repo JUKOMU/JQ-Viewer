@@ -3,6 +3,7 @@ import type {JmcomicListenerHandle} from '../services/jmcomic/JmcomicClient'
 import type {AllSettings, DownloadProgressEvent} from '../services/JmcomicTypes'
 import {desktopEventUrl, desktopRequest, jsonBody} from '../services/jmcomic/http'
 import type {FolderPickPurpose} from '../services/platform/FilePickerPort'
+import type {DesktopDiagnosticDirectoryKey, DesktopDiagnosticsStatus} from '../services/platform/MaintenancePort'
 
 const noopListenerHandle: JmcomicListenerHandle = {
   remove: () => Promise.resolve(),
@@ -116,6 +117,17 @@ export const desktopCapabilities: PlatformCapabilities = {
       return desktopRequest<{existing: string[]}>('/files/check', {
         method: 'POST',
         body: jsonBody({paths}),
+      })
+    },
+  },
+  maintenance: {
+    getDiagnosticsStatus() {
+      return desktopRequest<DesktopDiagnosticsStatus>('/diagnostics/status')
+    },
+    openDirectory(key: DesktopDiagnosticDirectoryKey) {
+      return desktopRequest<{success: boolean; path?: string}>('/diagnostics/open-directory', {
+        method: 'POST',
+        body: jsonBody({key}),
       })
     },
   },

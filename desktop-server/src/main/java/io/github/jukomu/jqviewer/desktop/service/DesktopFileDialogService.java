@@ -3,7 +3,10 @@ package io.github.jukomu.jqviewer.desktop.service;
 import com.google.gson.JsonObject;
 
 import javax.swing.JFileChooser;
+import java.awt.Desktop;
 import java.awt.GraphicsEnvironment;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 public final class DesktopFileDialogService {
@@ -29,6 +32,20 @@ public final class DesktopFileDialogService {
 
         result.addProperty("cancelled", false);
         result.addProperty("path", chooser.getSelectedFile().toPath().toAbsolutePath().normalize().toString());
+        return result;
+    }
+
+    public JsonObject openDirectory(Path directory) throws IOException {
+        if (GraphicsEnvironment.isHeadless() || !Desktop.isDesktopSupported()) {
+            throw new IllegalStateException("Desktop directory opener is not available in this environment");
+        }
+        Path normalized = directory.toAbsolutePath().normalize();
+        Files.createDirectories(normalized);
+        Desktop.getDesktop().open(normalized.toFile());
+
+        JsonObject result = new JsonObject();
+        result.addProperty("success", true);
+        result.addProperty("path", normalized.toString());
         return result;
     }
 }

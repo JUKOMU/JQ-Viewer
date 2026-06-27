@@ -934,6 +934,7 @@ const handleDownload = async () => {
       albumTitle: albumTitle2,
       chapterTitle: chapterTitle2,
       coverUrl: coverUrl2,
+      isSingleEpisode: albumDetail.value.isSingleEpisode,
       totalPages: 0,
       downloadedPages: 0,
       status: 'queued',

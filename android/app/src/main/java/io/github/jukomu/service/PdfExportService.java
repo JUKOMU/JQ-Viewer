@@ -14,6 +14,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -112,9 +113,9 @@ public class PdfExportService {
                 success++;
             } catch (Exception e) {
                 fail++;
-                Log.e(TAG, "PDF export failed: " + job.chapterTitle, e);
-                notif.showError(nid, job.chapterTitle,
-                    e.getMessage() != null ? e.getMessage() : "未知错误");
+                ExportFailure failure = describeExportFailure(e, job);
+                Log.e(TAG, failure.debugMessage, e);
+                notif.showError(nid, job.chapterTitle, failure.userMessage);
             } catch (Throwable t) {
                 fail++;
                 Log.e(TAG, "PDF export crashed: " + job.chapterTitle, t);
@@ -259,6 +260,68 @@ public class PdfExportService {
 
     private void updateForegroundService() {
         PdfExportForegroundService.update(context, activeChapterIds.size());
+    }
+
+    private static ExportFailure describeExportFailure(Throwable error, ExportJob job) {
+        String rawMessage = findErrorMessage(error);
+        String normalized = rawMessage.toLowerCase(Locale.ROOT);
+        String userMessage;
+
+        if (containsAny(normalized, "enametoolong", "file name too long", "filename too long")) {
+            userMessage = "文件名或路径过长，请缩短导出模板中的标题、作者或标签后重试";
+        } else if (containsAny(normalized, "enospc", "no space left")) {
+            userMessage = "存储空间不足，请清理空间后重试";
+        } else if (containsAny(normalized, "eacces", "permission denied", "operation not permitted")) {
+            userMessage = "没有写入权限，请更换导出目录或重新授权";
+        } else if (containsAny(normalized, "erofs", "read-only file system", "read only file system")) {
+            userMessage = "目标目录不可写，请更换导出目录";
+        } else if (containsAny(normalized, "enotdir", "not a directory")) {
+            userMessage = "目标路径中有一段不是目录，请检查导出路径";
+        } else if (containsAny(normalized, "eisdir", "is a directory")) {
+            userMessage = "目标路径指向文件夹，请检查导出文件名";
+        } else if (containsAny(normalized, "enoent", "no such file", "无法创建目录")) {
+            userMessage = "目标路径不可用，请重新选择导出目录";
+        } else if (!rawMessage.isEmpty()) {
+            userMessage = "导出失败：" + rawMessage;
+        } else {
+            userMessage = "导出失败：未知错误";
+        }
+
+        String path = job != null && job.savePath != null ? job.savePath : "";
+        String title = job != null && job.chapterTitle != null ? job.chapterTitle : "";
+        String debugMessage = "PDF export failed: " + title
+            + (path.isEmpty() ? "" : ", path=" + path)
+            + (rawMessage.isEmpty() ? "" : ", error=" + rawMessage);
+        return new ExportFailure(userMessage, debugMessage);
+    }
+
+    private static String findErrorMessage(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            String message = current.getMessage();
+            if (message != null && !message.trim().isEmpty()) {
+                return message.trim();
+            }
+            current = current.getCause();
+        }
+        return "";
+    }
+
+    private static boolean containsAny(String value, String... needles) {
+        for (String needle : needles) {
+            if (value.contains(needle)) return true;
+        }
+        return false;
+    }
+
+    private static final class ExportFailure {
+        final String userMessage;
+        final String debugMessage;
+
+        ExportFailure(String userMessage, String debugMessage) {
+            this.userMessage = userMessage;
+            this.debugMessage = debugMessage;
+        }
     }
 
     private static byte[] readFileBytes(File file) throws IOException {

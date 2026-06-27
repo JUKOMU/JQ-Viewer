@@ -319,6 +319,7 @@ public class ApiService {
         ret.put("relatedAlbums", toAlbumMetaArray(album.getRelatedAlbums()));
         ret.put("photoMetas", toPhotoMetaArray(album.getPhotoMetas()));
         ret.put("seriesId", album.getSeriesId());
+        ret.put("isSingleEpisode", album.isSingleAlbum());
         ret.put("isFavorite", album.isFavorite());
         ret.put("isLiked", album.isLiked());
         ret.put("price", album.getPrice());
@@ -335,6 +336,7 @@ public class ApiService {
         ret.put("author", photo.getAuthor());
         ret.put("tags", new JSONArray(photo.getTags()));
         ret.put("images", toImageArray(photo.getImages()));
+        ret.put("isSingleEpisode", photo.isSingleAlbum());
         return ret;
     }
 

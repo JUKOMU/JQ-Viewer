@@ -273,6 +273,9 @@ let downloadProgressHandle: PluginListenerHandle | null = null
 let syncPromise: Promise<void> | null = null
 let speedTimer: ReturnType<typeof setInterval> | null = null
 let isUnmounted = false
+let episodeTypeBackfillPromise: Promise<void> | null = null
+const backfilledAlbumIds = new Set<string>()
+const EPISODE_TYPE_BACKFILL_DELAY_MS = 500
 
 interface SpeedSample {
   latestBytes: number
@@ -287,6 +290,7 @@ const loadImportedPdfs = async () => {
   try {
     const result = await JmcomicService.getImportedPdfs()
     importedPdfs.value = result.pdfs
+    void backfillMissingEpisodeTypes()
   } catch {
     // 离线时保留缓存数据
   }
@@ -504,6 +508,7 @@ const mapDownloadTaskToEntry = (t: DownloadTask): CompletedEntry => ({
   chapterId: t.chapterId,
   chapterTitle: t.chapterTitle,
   chapterSortOrder: t.chapterSortOrder ?? 0,
+  isSingleEpisode: t.isSingleEpisode,
   authors: '',
   createdAt: t.createdAt,
   completedAt: t.completedAt ?? t.createdAt,
@@ -520,6 +525,7 @@ const mapImportedPdfToEntry = (pdf: ImportedPdf): CompletedEntry => ({
   displayId: pdf.chapterId || pdf.albumId,
   chapterTitle: pdf.chapterTitle || pdf.fileName,
   chapterSortOrder: pdf.chapterSortOrder,
+  isSingleEpisode: pdf.isSingleEpisode,
   authors: pdf.authors,
   createdAt: pdf.createdAt,
   completedAt: pdf.createdAt,
@@ -561,9 +567,68 @@ const completedGroups = computed<CompletedGroup[]>(() => {
     : groups.sort(
       (a, b) =>
         Math.max(...b.chapters.map((c) => c.createdAt)) -
-        Math.max(...a.chapters.map((c) => c.createdAt)),
+      Math.max(...a.chapters.map((c) => c.createdAt)),
     )
 })
+
+const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms))
+
+const resolveAlbumSingleEpisode = (album: AlbumDetail): boolean =>
+  album.isSingleEpisode ?? (album.seriesId === '0' || (album.photoMetas?.length ?? 0) <= 1)
+
+const collectEpisodeTypeBackfillAlbumIds = () => {
+  const ids = new Set<string>()
+  for (const task of tasks.value) {
+    if (task.albumId && task.isSingleEpisode === undefined && !backfilledAlbumIds.has(task.albumId)) {
+      ids.add(task.albumId)
+    }
+  }
+  for (const pdf of importedPdfs.value) {
+    if (pdf.albumId && pdf.isSingleEpisode === undefined && !backfilledAlbumIds.has(pdf.albumId)) {
+      ids.add(pdf.albumId)
+    }
+  }
+  return [...ids]
+}
+
+const applyEpisodeTypeToLocalState = (albumId: string, isSingleEpisode: boolean) => {
+  tasks.value = tasks.value.map((task) =>
+    task.albumId === albumId ? {...task, isSingleEpisode} : task,
+  )
+  importedPdfs.value = importedPdfs.value.map((pdf) =>
+    pdf.albumId === albumId ? {...pdf, isSingleEpisode} : pdf,
+  )
+}
+
+const backfillMissingEpisodeTypes = async () => {
+  if (episodeTypeBackfillPromise) return episodeTypeBackfillPromise
+  episodeTypeBackfillPromise = (async () => {
+    while (!isUnmounted) {
+      const albumIds = collectEpisodeTypeBackfillAlbumIds()
+      if (albumIds.length === 0) return
+      for (const albumId of albumIds) {
+        if (isUnmounted) return
+        try {
+          const album = await JmcomicService.getAlbum(albumId)
+          const isSingleEpisode = resolveAlbumSingleEpisode(album)
+          await JmcomicService.updateLocalEpisodeType(albumId, isSingleEpisode)
+          backfilledAlbumIds.add(albumId)
+          applyEpisodeTypeToLocalState(albumId, isSingleEpisode)
+        } catch {
+          // 回填失败不影响下载页显示，后续进入页面会再尝试。
+        }
+        if (!isUnmounted) {
+          await sleep(EPISODE_TYPE_BACKFILL_DELAY_MS)
+        }
+      }
+    }
+  })()
+  try {
+    await episodeTypeBackfillPromise
+  } finally {
+    episodeTypeBackfillPromise = null
+  }
+}
 
 const syncDownloadState = async () => {
   if (syncPromise) return syncPromise
@@ -576,6 +641,7 @@ const syncDownloadState = async () => {
       spaceAvailMb.value = Math.round(result.availableBytes / (1024 * 1024))
       hasStorageInfo.value = true
       OfflineDownloadService.setAll(result.tasks)
+      void backfillMissingEpisodeTypes()
     } catch {
       tasks.value = OfflineDownloadService.getAll()
       hasStorageInfo.value = false

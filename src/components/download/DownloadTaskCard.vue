@@ -18,8 +18,8 @@
         <div class="titles">
           <div class="album-title">{{ displayTitle }}</div>
           <div class="chapter-title">{{ displayId }}</div>
-          <div v-if="hasMultiChapters" class="chapter-bubbles">
-            <span v-for="ch in downloadedChapters" :key="ch.chapterId" class="bubble">
+          <div v-if="chapterBubbleItems.length > 0" class="chapter-bubbles">
+            <span v-for="ch in chapterBubbleItems" :key="ch.chapterId" class="bubble">
               {{ ch.chapterSortOrder }}
             </span>
           </div>
@@ -104,7 +104,23 @@ const cardStatus = computed(() => {
   return props.task.status
 })
 
-const hasMultiChapters = computed(() => (props.downloadedChapters?.length ?? 0) > 1)
+const hasGroupedChapters = computed(() => (props.downloadedChapters?.length ?? 0) > 1)
+
+const shouldShowChapterBubble = (entry: CompletedEntry) =>
+  entry.isSingleEpisode === false && (entry.chapterSortOrder ?? 0) > 0
+
+const chapterBubbleItems = computed(() => {
+  if (props.downloadedChapters?.length) {
+    if (props.downloadedChapters.length > 1) {
+      return props.downloadedChapters.filter((entry) => (entry.chapterSortOrder ?? 0) > 0)
+    }
+    return props.downloadedChapters.filter(shouldShowChapterBubble)
+  }
+  if ('source' in props.task && shouldShowChapterBubble(props.task)) {
+    return [props.task]
+  }
+  return []
+})
 
 const displayId = computed(() => {
   if ('source' in props.task) {
@@ -117,7 +133,7 @@ const displayTitle = computed(() => props.task.albumTitle || displayId.value)
 
 const displayTotalPages = computed(() => {
   if (isPdfEntry.value) return 0
-  if (hasMultiChapters.value && props.downloadedChapters) {
+  if (hasGroupedChapters.value && props.downloadedChapters) {
     return props.downloadedChapters
       .filter((c) => c.source === 'download')
       .reduce((s, c) => s + (c.downloadTask?.totalPages ?? 0), 0)
@@ -127,7 +143,7 @@ const displayTotalPages = computed(() => {
 
 const displayPdfPageCount = computed(() => {
   if (!isPdfEntry.value) return 0
-  if (hasMultiChapters.value && props.downloadedChapters) {
+  if (hasGroupedChapters.value && props.downloadedChapters) {
     return props.downloadedChapters
       .filter((c) => c.source === 'pdf-import')
       .reduce((s, c) => s + (c.pdfData?.pageCount ?? 0), 0)

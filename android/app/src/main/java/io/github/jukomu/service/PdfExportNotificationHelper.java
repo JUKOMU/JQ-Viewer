@@ -120,10 +120,14 @@ public class PdfExportNotificationHelper {
 
     public void showError(int notificationId, String chapterTitle, String error) {
         String message = error != null && !error.isEmpty() ? error : "导出失败";
+        NotificationCompat.BigTextStyle textStyle = new NotificationCompat.BigTextStyle();
+        textStyle.bigText(message);
+
         manager.notify(notificationId, new NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(ICON)
             .setContentTitle("导出失败: " + chapterTitle)
             .setContentText(message)
+            .setStyle(textStyle)
             .setAutoCancel(true)
             .setOngoing(false)
             .build());

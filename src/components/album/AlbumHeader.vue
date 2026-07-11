@@ -11,7 +11,7 @@
       </button>
       <div class="header-body">
         <div class="cover-col">
-          <img v-if="coverUrl" :src="coverUrl" class="cover-img" :alt="title"/>
+          <img v-if="coverUrl" :src="coverUrl" class="cover-img" :alt="title" @click="showPreview = true"/>
           <div v-else class="cover-placeholder"/>
         </div>
         <div class="info-col">
@@ -70,10 +70,20 @@
         </div>
       </div>
     </div>
+    <!-- 封面预览遮罩 -->
+    <Teleport to="body">
+      <div v-if="showPreview" class="cover-preview-overlay" @click="showPreview = false">
+        <img :src="coverUrl" class="cover-preview-img" :alt="title"/>
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
+import {ref} from 'vue'
+import {IonIcon} from '@ionic/vue'
+import {arrowBack, documentOutline, ellipsisVertical, globeOutline, imageOutline,} from 'ionicons/icons'
+
 defineOptions({name: 'AlbumHeader'})
 
 defineProps<{
@@ -94,8 +104,8 @@ defineEmits<{
   'select-source': [source: 'network' | 'download' | 'pdf']
   back: []
 }>()
-import {IonIcon} from '@ionic/vue'
-import {arrowBack, documentOutline, ellipsisVertical, globeOutline, imageOutline,} from 'ionicons/icons'
+
+const showPreview = ref(false)
 </script>
 
 <style scoped>
@@ -147,7 +157,7 @@ import {arrowBack, documentOutline, ellipsisVertical, globeOutline, imageOutline
 .header-body {
   display: flex;
   gap: 14px;
-  align-items: flex-end;
+  align-items: flex-start;
 }
 
 .cover-col {
@@ -163,6 +173,7 @@ import {arrowBack, documentOutline, ellipsisVertical, globeOutline, imageOutline
   width: 100%;
   aspect-ratio: 3 / 4;
   object-fit: cover;
+  cursor: pointer;
 }
 
 .cover-placeholder {
@@ -190,7 +201,6 @@ import {arrowBack, documentOutline, ellipsisVertical, globeOutline, imageOutline
   line-height: 1.35;
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
   overflow: hidden;
 }
 
@@ -367,5 +377,25 @@ import {arrowBack, documentOutline, ellipsisVertical, globeOutline, imageOutline
   .album-title {
     font-size: 20px;
   }
+}
+
+/* 封面预览遮罩 */
+.cover-preview-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(0 0 0 / 0.85);
+  backdrop-filter: blur(12px);
+}
+
+.cover-preview-img {
+  max-width: 98vw;
+  max-height: 98vh;
+  border-radius: 0px;
+  box-shadow: 0 8px 40px rgb(0 0 0 / 0.5);
+  object-fit: contain;
 }
 </style>

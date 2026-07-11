@@ -64,9 +64,9 @@
         <div v-if="album.description" class="info-row">
           <span class="info-label">描述</span>
           <div class="info-value">
-            <p class="desc-text" :class="{ expanded: descExpanded }">{{ album.description }}</p>
+            <p ref="descTextRef" class="desc-text" :class="{ expanded: descExpanded }">{{ album.description }}</p>
             <button
-              v-if="album.description.length > 200"
+              v-if="descOverflows"
               type="button"
               class="desc-toggle"
               @click="descExpanded = !descExpanded"
@@ -156,7 +156,7 @@
 </template>
 
 <script setup lang="ts">
-import {computed, ref} from 'vue'
+import {computed, nextTick, ref, watch} from 'vue'
 import {useRouter} from 'vue-router'
 import {IonIcon, menuController} from '@ionic/vue'
 import {
@@ -202,6 +202,23 @@ function formatDate(raw: string): string {
 }
 
 const descExpanded = ref(false)
+const descTextRef = ref<HTMLElement | null>(null)
+const descOverflows = ref(false)
+
+function checkDescOverflow() {
+  const el = descTextRef.value
+  if (!el) return
+  if (descExpanded.value) {
+    descOverflows.value = true
+    return
+  }
+  descOverflows.value = el.scrollHeight > el.clientHeight
+}
+
+watch(() => props.album?.description, () => {
+  descExpanded.value = false
+  nextTick(() => checkDescOverflow())
+}, { immediate: true })
 
 const copyText = async (text: string) => {
   try {

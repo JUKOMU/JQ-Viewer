@@ -59,6 +59,7 @@
           @select-chapter="selectChapter"
           @download-chapter="onDownloadChapter"
           @dismiss-actions="showChapterActions = false"
+          @batch-download="onBatchDownload"
         />
         <AlbumPreviewTab
           v-else-if="activeTab === 'preview'"
@@ -515,8 +516,7 @@ const selectChapter = async (chapterId: string) => {
   chapterLoading.value = true
 
   try {
-    const photo = await JmcomicService.getPhoto(chapterId)
-    photoDetail.value = photo
+    photoDetail.value = await JmcomicService.getPhoto(chapterId)
     recordBrowseHistory()
   } catch (e: any) {
     await showToast(sanitizeError(e, '章节加载失败'), 'danger')
@@ -898,12 +898,50 @@ const handleToggleFavorite = async () => {
   void openFolderPicker()
 }
 
+const downloadSingleChapter = async (chapterId: string): Promise<boolean> => {
+  if (!albumDetail.value) return false
+
+  const taskId = makeTaskId(albumId.value, chapterId)
+  const existing = OfflineDownloadService.getAll().find(
+    (t) => t.taskId === taskId && t.status !== 'failed',
+  )
+  if (existing) return false
+
+  const chapterTitle =
+    albumDetail.value.photoMetas.find((m) => m.id === chapterId)?.title || chapterId
+
+  try {
+    await JmcomicService.downloadChapter(
+      albumId.value,
+      chapterId,
+      albumDetail.value.title,
+      chapterTitle,
+      albumDetail.value.image,
+    )
+    OfflineDownloadService.addTask({
+      taskId,
+      albumId: albumId.value,
+      chapterId,
+      albumTitle: albumDetail.value.title,
+      chapterTitle,
+      coverUrl: albumDetail.value.image,
+      isSingleEpisode: albumDetail.value.isSingleEpisode,
+      totalPages: 0,
+      downloadedPages: 0,
+      status: 'queued',
+      createdAt: Date.now(),
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
 const handleDownload = async () => {
   const chapterId = selectedChapterId.value
   if (!chapterId || !albumDetail.value) return
 
   const taskId = makeTaskId(albumId.value, chapterId)
-  // 避免重复提交
   const existing = OfflineDownloadService.getAll().find(
     (t) => t.taskId === taskId && t.status !== 'failed',
   )
@@ -912,38 +950,26 @@ const handleDownload = async () => {
     return
   }
 
-  // 组装参数
-  const albumTitle2 = albumDetail.value.title
-  const coverUrl2 = albumDetail.value.image
-  const chapterTitle2 =
-    albumDetail.value.photoMetas.find((m) => m.id === chapterId)?.title || chapterId
-
-  try {
-    await JmcomicService.downloadChapter(
-      albumId.value,
-      chapterId,
-      albumTitle2,
-      chapterTitle2,
-      coverUrl2,
-    )
-    // 乐观写入 localStorage
-    OfflineDownloadService.addTask({
-      taskId,
-      albumId: albumId.value,
-      chapterId,
-      albumTitle: albumTitle2,
-      chapterTitle: chapterTitle2,
-      coverUrl: coverUrl2,
-      isSingleEpisode: albumDetail.value.isSingleEpisode,
-      totalPages: 0,
-      downloadedPages: 0,
-      status: 'queued',
-      createdAt: Date.now(),
-    })
+  const success = await downloadSingleChapter(chapterId)
+  if (success) {
     await showToast('已加入下载队列', 'success')
     await refreshDownloadStatuses()
-  } catch (e: any) {
-    await showToast(sanitizeError(e, '下载提交失败'), 'danger')
+  } else {
+    await showToast('下载提交失败', 'danger')
+  }
+}
+
+const onBatchDownload = async (chapterIds: string[]) => {
+  if (!chapterIds.length) return
+  let successCount = 0
+  for (const id of chapterIds) {
+    if (await downloadSingleChapter(id)) {
+      successCount++
+    }
+  }
+  if (successCount > 0) {
+    await showToast(`已加入 ${successCount} 个下载任务`, 'success')
+    await refreshDownloadStatuses()
   }
 }
 

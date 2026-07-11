@@ -1006,7 +1006,7 @@ const handleScroll = async () => {
 
 .tab-bar.sticky {
   position: sticky;
-  top: 0;
+  top: var(--ion-safe-area-top);
   box-shadow: 0 2px 10px rgb(76 42 24 / 0.08);
 }
 

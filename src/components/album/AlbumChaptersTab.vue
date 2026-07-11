@@ -104,11 +104,11 @@ const isDownloadDisabled = (chapterId: string): boolean => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  width: 100%;
+  gap: 10px;
+  width: 85%;
   min-height: 76px;
   box-sizing: border-box;
-  padding: 14px 10px;
+  padding: 10px 8px;
   border: 1px solid rgb(245 210 188 / 0.7);
   border-radius: 12px;
   background: #fffaf6;

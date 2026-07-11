@@ -76,7 +76,7 @@
           </div>
         </div>
         <div v-if="album.authors.length" class="info-row">
-          <span class="info-label">Authors</span>
+          <span class="info-label">作者</span>
           <div class="info-tags">
             <span v-for="author in album.authors" :key="author" class="tag tag-clickable" @click="searchByTag(author)">{{
                 author
@@ -84,7 +84,7 @@
           </div>
         </div>
         <div v-if="album.tags.length" class="info-row">
-          <span class="info-label">Tags</span>
+          <span class="info-label">标签</span>
           <div class="info-tags">
             <span v-for="tag in album.tags" :key="tag" class="tag tag-clickable" @click="searchByTag(tag)">{{
                 tag
@@ -92,13 +92,13 @@
           </div>
         </div>
         <div v-if="album.actors.length" class="info-row">
-          <span class="info-label">Actors</span>
+          <span class="info-label">登场人物</span>
           <div class="info-tags">
             <span v-for="actor in album.actors" :key="actor" class="tag">{{ actor }}</span>
           </div>
         </div>
         <div v-if="album.works.length" class="info-row">
-          <span class="info-label">Works</span>
+          <span class="info-label">作品</span>
           <div class="info-tags">
             <span v-for="work in album.works" :key="work" class="tag">{{ work }}</span>
           </div>

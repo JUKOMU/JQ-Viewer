@@ -94,6 +94,7 @@
               selected: selectedChapterId === meta.id && !batchMode,
               downloaded: chapterDownloadStatuses.get(meta.id) === 'completed',
               'batch-selected': batchMode && selectedIds.has(meta.id),
+              'batch-disabled': batchMode && isDownloadDisabled(meta.id),
             }"
             @click="onCardClick(meta.id)"
           >
@@ -501,6 +502,10 @@ const toggleDisplayMode = () => {
 
 .chapter-card.batch-selected .chapter-num {
   color: #e07030;
+}
+
+.chapter-card.batch-disabled {
+  opacity: 0.45;
 }
 
 .chapter-title {

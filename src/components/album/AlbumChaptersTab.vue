@@ -141,7 +141,7 @@ const isDownloadDisabled = (chapterId: string): boolean => {
 }
 
 .chapter-card.selected .chapter-num {
-  color: #e07030;
+  color: #5e8afd;
 }
 
 .chapter-card.downloaded .chapter-num {
@@ -158,7 +158,6 @@ const isDownloadDisabled = (chapterId: string): boolean => {
   min-height: 29px;
   overflow: hidden;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
 }
 

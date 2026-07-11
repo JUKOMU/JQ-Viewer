@@ -95,13 +95,7 @@ defineEmits<{
   back: []
 }>()
 import {IonIcon} from '@ionic/vue'
-import {
-  arrowBack,
-  ellipsisVertical,
-  globeOutline,
-  documentOutline,
-  imageOutline,
-} from 'ionicons/icons'
+import {arrowBack, documentOutline, ellipsisVertical, globeOutline, imageOutline,} from 'ionicons/icons'
 </script>
 
 <style scoped>

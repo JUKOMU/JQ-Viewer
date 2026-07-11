@@ -1030,9 +1030,11 @@ const handleScroll = async () => {
 }
 
 .tab-bar.sticky {
+  padding-top: calc(var(--ion-safe-area-top) + 8px);
   position: sticky;
-  top: var(--ion-safe-area-top);
+  top: 0;
   box-shadow: 0 2px 10px rgb(76 42 24 / 0.08);
+  transition: padding-top 0.1s ease;
 }
 
 .tab-btn {

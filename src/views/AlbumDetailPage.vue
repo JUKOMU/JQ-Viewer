@@ -932,7 +932,8 @@ const downloadSingleChapter = async (chapterId: string): Promise<boolean> => {
       createdAt: Date.now(),
     })
     return true
-  } catch {
+  } catch (e: any) {
+    await showToast(sanitizeError(e, '下载提交失败'), 'danger')
     return false
   }
 }
@@ -954,8 +955,6 @@ const handleDownload = async () => {
   if (success) {
     await showToast('已加入下载队列', 'success')
     await refreshDownloadStatuses()
-  } else {
-    await showToast('下载提交失败', 'danger')
   }
 }
 

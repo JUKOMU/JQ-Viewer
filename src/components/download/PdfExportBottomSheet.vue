@@ -216,7 +216,7 @@ const emit = defineEmits<{
 }>()
 
 // ---- 模板变量 ----
-const templateVars = ['{id}', '{title}', '{chapterName}', '{chapterTitle}', '{chapterId}', '{pageCount}', '{author}', '{authors}', '{tags}']
+const templateVars = PdfExportService.TEMPLATE_VAR_KEYS
 const tagConditionVars = ['{tag=标签名}', '{tag=标签A|标签B}', '{tag=标签A&标签B}']
 
 // 当前选中章节的实际值（用于复制）
@@ -225,13 +225,6 @@ const firstSelectedChapter = computed(() =>
 )
 
 const albumDetail = ref<AlbumDetail | null>(null)
-
-function resolveChapterName(ch: DownloadTask, album: AlbumDetail | null): string {
-  if (album?.seriesId === '0') return album.title || ch.albumTitle
-  const order = ch.chapterSortOrder
-  if (order && order > 0) return `第${order}话`
-  return ch.chapterTitle || ''
-}
 
 function chapterOrderLabel(ch: DownloadTask): string {
   const order = ch.chapterSortOrder
@@ -242,17 +235,12 @@ function chapterOrderLabel(ch: DownloadTask): string {
 const templateValueMap = computed(() => {
   const ch = firstSelectedChapter.value
   if (!ch) return {} as Record<string, string>
-  return {
-    '{id}': ch.albumId,
-    '{title}': ch.albumTitle,
-    '{chapterId}': ch.chapterId,
-    '{chapterName}': resolveChapterName(ch, albumDetail.value),
-    '{chapterTitle}': ch.chapterTitle || '',
-    '{pageCount}': String(ch.totalPages),
-    '{author}': albumDetail.value?.authors?.[0] ?? '',
-    '{authors}': albumDetail.value?.authors?.join('、') ?? '',
-    '{tags}': albumDetail.value?.tags?.join('、') ?? '',
-  } as Record<string, string>
+  const data = PdfExportService.buildTemplateData(ch, albumDetail.value)
+  const map: Record<string, string> = {}
+  for (const v of PdfExportService.TEMPLATE_VAR_DEFS) {
+    map[v.key] = v.render(data)
+  }
+  return map
 })
 
 // ---- 设置（双向绑定到 PdfExportService） ----
@@ -279,17 +267,7 @@ const templatePath = computed(() => {
   const ch = firstSelectedChapter.value
   if (!ch) return PdfExportService.previewPath()
 
-  const data = {
-    id: ch.albumId,
-    title: ch.albumTitle,
-    chapterId: ch.chapterId,
-    chapterName: resolveChapterName(ch, albumDetail.value),
-    chapterTitle: ch.chapterTitle || '',
-    pageCount: ch.totalPages,
-    author: albumDetail.value?.authors?.[0] ?? '',
-    authors: albumDetail.value?.authors?.join('、') ?? '',
-    tags: albumDetail.value?.tags ?? [],
-  }
+  const data = PdfExportService.buildTemplateData(ch, albumDetail.value)
   const dirRendered = PdfExportService.renderTemplate(dirTpl, data)
   const nameRendered = PdfExportService.renderTemplate(nameTpl, data)
   const baseTrimmed = base.replace(/\/+$/, '')

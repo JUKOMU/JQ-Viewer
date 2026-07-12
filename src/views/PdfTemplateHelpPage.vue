@@ -80,17 +80,11 @@ defineOptions({ name: 'PdfTemplateHelpPage' })
 import { IonBackButton, IonButtons, IonContent, IonHeader, IonPage, IonTitle, IonToolbar } from '@ionic/vue'
 import { PdfExportService, PDF_SAMPLE_DATA } from '@/services/PdfExportService'
 
-const variables = [
-  { name: '{id}', desc: '本子ID', sample: '295852' },
-  { name: '{title}', desc: '本子标题', sample: '青梅竹馬絕對不會輸的戀愛喜劇～鄰家四姐妹的溫馨日常～' },
-  { name: '{author}', desc: '首位作者', sample: '葵季むつみ' },
-  { name: '{authors}', desc: '全部作者，用顿号连接', sample: '葵季むつみ、二丸修一、しぐれうい' },
-  { name: '{tags}', desc: '全部标签，用顿号连接', sample: '非H、劇情向、蘿莉、純愛、中文' },
-  { name: '{chapterId}', desc: '章节ID', sample: '295852' },
-  { name: '{chapterName}', desc: '章节序号（单行本则为标题）', sample: '第1话' },
-  { name: '{chapterTitle}', desc: '章节原始标题', sample: '' },
-  { name: '{pageCount}', desc: '章节页数', sample: '38' },
-]
+const variables = PdfExportService.TEMPLATE_VAR_DEFS.map(v => ({
+  name: v.key,
+  desc: v.desc,
+  sample: v.sample,
+}))
 
 const render = (tpl: string) => PdfExportService.renderTemplate(tpl, PDF_SAMPLE_DATA)
 

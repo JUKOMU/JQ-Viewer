@@ -1,3 +1,11 @@
+/**
+ * 增加模板
+ * PdfTemplateData 加字段
+ * PDF_SAMPLE_DATA 加示例值
+ * TEMPLATE_VARS 加 def(...) 条目
+ * buildTemplateData 加字段映射
+ */
+
 import type { AlbumDetail, DownloadTask } from './JmcomicTypes'
 
 const KEY_EXPORT_PATH = 'jq-pdf-export-path'

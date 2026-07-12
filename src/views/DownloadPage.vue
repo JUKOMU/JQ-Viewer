@@ -883,28 +883,11 @@ const onPdfExportConfirm = async (payload: {
     } catch { /* 获取失败则变量渲染为空 */ }
   }
 
-  function resolveChapterName(ch: DownloadTask, album: AlbumDetail | null): string {
-    if (album?.seriesId === '0') return album.title || ch.albumTitle
-    const order = ch.chapterSortOrder
-    if (order && order > 0) return `第${order}话`
-    return ch.chapterTitle || ''
-  }
-
   const tasks: PdfExportTask[] = payload.selectedChapters.map((ch) => {
     const savePath =
       payload.selectedChapters.length === 1
         ? payload.editedPath
-        : PdfExportService.buildFullPath({
-            id: ch.albumId,
-            title: ch.albumTitle,
-            chapterId: ch.chapterId,
-            chapterName: resolveChapterName(ch, albumDetail),
-            chapterTitle: ch.chapterTitle || '',
-            pageCount: ch.totalPages,
-            author: albumDetail?.authors?.[0] ?? '',
-            authors: albumDetail?.authors?.join('、') ?? '',
-            tags: albumDetail?.tags ?? [],
-          })
+        : PdfExportService.buildFullPath(PdfExportService.buildTemplateData(ch, albumDetail))
 
     return {
       albumId: ch.albumId,

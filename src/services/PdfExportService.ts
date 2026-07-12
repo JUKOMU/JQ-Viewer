@@ -26,7 +26,7 @@ export interface PdfTemplateData {
   author: string
   authors: string
   tags: string[]
-  index: number
+  index: number | string
 }
 
 /** 内置示例数据，供预览和设置页渲染值展示复用 */
@@ -168,7 +168,7 @@ export const PdfExportService = {
       author: album?.authors?.[0] ?? '',
       authors: album?.authors?.join('、') ?? '',
       tags: album?.tags ?? [],
-      index: ch.chapterSortOrder || 0,
+      index: ch.chapterSortOrder || '',
     }
   },
 

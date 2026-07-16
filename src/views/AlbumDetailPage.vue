@@ -1291,6 +1291,10 @@ const handleScroll = async () => {
   transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+.tab-bar.sticky .tab-active-indicator {
+  top: calc(var(--ion-safe-area-top) + 8px);
+}
+
 .tab-bar.swiping .tab-active-indicator {
   transition: none;
 }

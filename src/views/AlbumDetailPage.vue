@@ -481,6 +481,10 @@ const loadAlbumData = async () => {
     }
     chapterDownloadStatuses.value = map
   })
+
+  if (activeTab.value === 'preview') {
+    await loadPreview()
+  }
 }
 
 onMounted(() => {

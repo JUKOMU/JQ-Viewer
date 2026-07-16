@@ -20,63 +20,86 @@
         @select-source="openReaderBySource"
       />
 
-      <!-- 区域 B：Tab 栏 -->
-      <div ref="tabBarRef" class="tab-bar" :class="{ sticky: tabBarSticky }">
-        <button
-          v-for="tab in tabs"
-          :key="tab.key"
-          type="button"
-          class="tab-btn"
-          :class="{ active: activeTab === tab.key }"
-          @click="switchTab(tab.key)"
+      <div ref="tabGestureRef" class="tab-gesture-area">
+        <!-- 区域 B：Tab 栏 -->
+        <div
+          ref="tabBarRef"
+          class="tab-bar"
+          :class="{ sticky: tabBarSticky, swiping: tabSwipeActive, settling: tabSwipeSettling }"
+          :style="tabBarStyle"
         >
-          {{ tab.label }}
-        </button>
-      </div>
+          <div class="tab-active-indicator"/>
+          <button
+            v-for="(tab, index) in tabs"
+            :key="tab.key"
+            type="button"
+            class="tab-btn"
+            :class="{ active: activeTab === tab.key }"
+            :style="getTabButtonStyle(index)"
+            @click="switchTab(tab.key)"
+          >
+            {{ tab.label }}
+          </button>
+        </div>
 
-      <!-- 区域 C：Tab 内容 -->
-      <div class="tab-content">
-        <AlbumInfoTab
-          v-if="activeTab === 'info'"
-          :album="albumDetail"
-          :action-busy="actionBusy"
-          :download-status="selectedChapterDownloadStatus"
-          :image-available="selectedChapterHasDownload"
-          :pdf-available="Boolean(selectedChapterPdf)"
-          @toggle-like="handleToggleLike"
-          @toggle-favorite="handleToggleFavorite"
-          @download="handleDownload"
-          @navigate-album="onNavigateAlbum"
-        />
-        <AlbumChaptersTab
-          v-else-if="activeTab === 'chapters'"
-          :photo-metas="albumDetail?.photoMetas ?? []"
-          :selected-chapter-id="selectedChapterId"
-          :loading="loading"
-          :show-actions="showChapterActions"
-          :chapter-download-statuses="chapterDownloadStatuses"
-          :chapter-pdf-statuses="chapterPdfStatuses"
-          @select-chapter="selectChapter"
-          @download-chapter="onDownloadChapter"
-          @dismiss-actions="showChapterActions = false"
-          @batch-download="onBatchDownload"
-        />
-        <AlbumPreviewTab
-          v-else-if="activeTab === 'preview'"
-          :images="previewImages"
-          :total-count="previewImageTotal"
-          :loading="previewLoading"
-          empty-text="请先选择章节"
-          @load-more="navigateToFullPreview"
-          @open-reader="onOpenReader"
-        />
-        <AlbumCommentsTab
-          v-else-if="activeTab === 'comments'"
-          :comments="comments"
-          :loading="commentsLoading"
-          :has-more="hasMoreComments"
-          :total="totalComments"
-        />
+        <!-- 区域 C：Tab 内容 -->
+        <div
+          ref="tabContentRef"
+          class="tab-content"
+          :class="{ swiping: tabSwipeActive, settling: tabSwipeSettling }"
+          :style="tabContentStyle"
+        >
+          <div
+            v-for="(tab, index) in tabs"
+            :key="tab.key"
+            :ref="(el) => setTabPanelRef(tab.key, el)"
+            class="tab-panel"
+            :class="{ current: activeTab === tab.key }"
+            :style="getTabPanelStyle(index)"
+          >
+            <AlbumInfoTab
+              v-if="tab.key === 'info'"
+              :album="albumDetail"
+              :action-busy="actionBusy"
+              :download-status="selectedChapterDownloadStatus"
+              :image-available="selectedChapterHasDownload"
+              :pdf-available="Boolean(selectedChapterPdf)"
+              @toggle-like="handleToggleLike"
+              @toggle-favorite="handleToggleFavorite"
+              @download="handleDownload"
+              @navigate-album="onNavigateAlbum"
+            />
+            <AlbumChaptersTab
+              v-else-if="tab.key === 'chapters'"
+              :photo-metas="albumDetail?.photoMetas ?? []"
+              :selected-chapter-id="selectedChapterId"
+              :loading="loading"
+              :show-actions="showChapterActions"
+              :chapter-download-statuses="chapterDownloadStatuses"
+              :chapter-pdf-statuses="chapterPdfStatuses"
+              @select-chapter="selectChapter"
+              @download-chapter="onDownloadChapter"
+              @dismiss-actions="showChapterActions = false"
+              @batch-download="onBatchDownload"
+            />
+            <AlbumPreviewTab
+              v-else-if="tab.key === 'preview'"
+              :images="previewImages"
+              :total-count="previewImageTotal"
+              :loading="previewLoading"
+              empty-text="请先选择章节"
+              @load-more="navigateToFullPreview"
+              @open-reader="onOpenReader"
+            />
+            <AlbumCommentsTab
+              v-else-if="tab.key === 'comments'"
+              :comments="comments"
+              :loading="commentsLoading"
+              :has-more="hasMoreComments"
+              :total="totalComments"
+            />
+          </div>
+        </div>
       </div>
 
       <div class="bottom-spacer"/>
@@ -96,9 +119,9 @@
 <script setup lang="ts">
 defineOptions({name: 'AlbumDetailPage'})
 
-import {computed, onMounted, onUnmounted, reactive, ref, watch} from 'vue'
+import {computed, nextTick, onMounted, onUnmounted, reactive, ref, watch, type ComponentPublicInstance} from 'vue'
 import {useRoute, useRouter} from 'vue-router'
-import {IonContent, IonPage} from '@ionic/vue'
+import {createGesture, IonContent, IonPage, menuController, type Gesture} from '@ionic/vue'
 import type {PluginListenerHandle} from '@capacitor/core'
 import {getImageUrl, JmcomicService, sanitizeError, showToast} from '@/services/JmcomicService'
 import {buildPdfDocumentParams, fetchPdfArrayBuffer} from '@/services/PdfReaderService'
@@ -415,7 +438,32 @@ const hasMoreComments = computed(() => comments.value.length < totalComments.val
 const tabBarSticky = ref(false)
 const headerRef = ref<InstanceType<typeof AlbumHeader> | null>(null)
 const tabBarRef = ref<HTMLElement | null>(null)
+const tabGestureRef = ref<HTMLElement | null>(null)
+const tabContentRef = ref<HTMLElement | null>(null)
 const contentRef = ref<InstanceType<typeof IonContent> | null>(null)
+const tabPanelRefs = new Map<TabKey, HTMLElement>()
+let tabSwipeGesture: Gesture | undefined
+let tabResizeObserver: ResizeObserver | undefined
+const tabSwipeActive = ref(false)
+const tabSwipeSettling = ref(false)
+const tabSwipeBaseIndex = ref(0)
+const tabSwipeOffset = ref(0)
+const tabSwipeHeight = ref(0)
+const TAB_SWIPE_SETTLE_MS = 280
+const TAB_SWIPE_GAP = 18
+const activeTabIndex = computed(() => tabs.value.findIndex((tab) => tab.key === activeTab.value))
+const tabContentStyle = computed(() =>
+  tabSwipeActive.value ? {minHeight: `${Math.max(tabSwipeHeight.value + 24, 144)}px`} : {},
+)
+const visualTabProgress = computed(() => {
+  if (!tabSwipeActive.value) return Math.max(activeTabIndex.value, 0)
+  const progress = tabSwipeBaseIndex.value - tabSwipeOffset.value / getTabSwipeStride()
+  return Math.max(0, Math.min(tabs.value.length - 1, progress))
+})
+const tabBarStyle = computed(() => ({
+  '--tab-count': String(tabs.value.length),
+  '--tab-progress': String(visualTabProgress.value),
+}))
 
 // ---- 计算属性 ----
 const selectedChapterPageCount = computed(() => {
@@ -489,9 +537,15 @@ const loadAlbumData = async () => {
 
 onMounted(() => {
   updateNetworkAvailable()
+  void menuController.swipeGesture(false)
+  document.querySelector('ion-menu')?.addEventListener('ionDidClose', handleDetailMenuDidClose)
   window.addEventListener('online', updateNetworkAvailable)
   window.addEventListener('offline', updateNetworkAvailable)
   loadAlbumData()
+  nextTick(() => {
+    setupTabSwipeGesture()
+    observeActiveTabPanel()
+  })
 })
 
 // ---- Tab 切换 ----
@@ -504,6 +558,166 @@ const switchTab = async (key: TabKey) => {
     await loadComments()
   }
 }
+
+const setTabPanelRef = (key: TabKey, el: Element | ComponentPublicInstance | null) => {
+  if (el instanceof HTMLElement) {
+    tabPanelRefs.set(key, el)
+  } else {
+    tabPanelRefs.delete(key)
+  }
+}
+
+const measureActiveTabPanel = () => {
+  const panel = tabPanelRefs.get(activeTab.value)
+  if (!panel) return
+  tabSwipeHeight.value = panel.offsetHeight
+}
+
+const observeActiveTabPanel = () => {
+  tabResizeObserver?.disconnect()
+  const panel = tabPanelRefs.get(activeTab.value)
+  if (!panel) return
+  measureActiveTabPanel()
+  tabResizeObserver = new ResizeObserver(measureActiveTabPanel)
+  tabResizeObserver.observe(panel)
+}
+
+const getTabPanelStyle = (index: number) => {
+  if (!tabSwipeActive.value) return {}
+  const offset = (index - tabSwipeBaseIndex.value) * getTabSwipeStride() + tabSwipeOffset.value
+  return {transform: `translate3d(${offset}px, 0, 0)`}
+}
+
+const getTabPanelWidth = () => {
+  const panel = tabPanelRefs.get(activeTab.value)
+  if (panel?.offsetWidth) return panel.offsetWidth
+
+  const contentEl = tabContentRef.value
+  const contentWidth = contentEl?.clientWidth || window.innerWidth || 1
+  if (!contentEl) return Math.max(1, contentWidth - 28)
+
+  const style = getComputedStyle(contentEl)
+  const paddingX = parseFloat(style.paddingLeft || '0') + parseFloat(style.paddingRight || '0')
+  return Math.max(1, contentWidth - paddingX)
+}
+
+const getTabSwipeStride = () => getTabPanelWidth() + TAB_SWIPE_GAP
+
+const getTabButtonStyle = (index: number) => {
+  const distance = Math.abs(index - visualTabProgress.value)
+  return {color: distance < 0.5 ? '#fff' : '#8a6048'}
+}
+
+const getClampedTabSwipeOffset = (deltaX: number) => {
+  const baseIndex = tabSwipeBaseIndex.value
+  const atFirst = baseIndex <= 0
+  const atLast = baseIndex >= tabs.value.length - 1
+  if ((atFirst && deltaX > 0) || (atLast && deltaX < 0)) {
+    return 0
+  }
+  const stride = getTabSwipeStride()
+  return Math.max(-stride, Math.min(stride, deltaX))
+}
+
+const shouldLetRelatedScrollHandle = (detail: { deltaX: number; event: UIEvent }) => {
+  const target = detail.event.target
+  if (!(target instanceof Element)) return false
+  const scrollEl = target.closest('.related-scroll') as HTMLElement | null
+  if (!scrollEl) return false
+  if (detail.deltaX === 0) {
+    return scrollEl.scrollWidth > scrollEl.clientWidth + 1
+  }
+
+  if (detail.deltaX < 0) {
+    return scrollEl.scrollLeft + scrollEl.clientWidth < scrollEl.scrollWidth - 1
+  }
+  if (detail.deltaX > 0) {
+    return scrollEl.scrollLeft > 0
+  }
+  return false
+}
+
+const resetTabSwipeState = () => {
+  tabSwipeActive.value = false
+  tabSwipeSettling.value = false
+  tabSwipeOffset.value = 0
+  nextTick(() => observeActiveTabPanel())
+}
+
+const handleDetailMenuDidClose = () => {
+  void menuController.swipeGesture(false)
+}
+
+const openSideMenuFromDetail = async () => {
+  await menuController.swipeGesture(true)
+  await menuController.open()
+}
+
+const finishTabSwipe = (targetIndex: number | null, endOffset: number) => {
+  tabSwipeSettling.value = true
+  tabSwipeOffset.value = endOffset
+  window.setTimeout(() => {
+    const target = targetIndex === null ? null : tabs.value[targetIndex]
+    if (target) {
+      void switchTab(target.key)
+    }
+    resetTabSwipeState()
+    void menuController.swipeGesture(false)
+  }, TAB_SWIPE_SETTLE_MS)
+}
+
+const setupTabSwipeGesture = () => {
+  tabSwipeGesture?.destroy()
+  tabSwipeGesture = undefined
+  const el = tabGestureRef.value
+  if (!el) return
+
+  tabSwipeGesture = createGesture({
+    el,
+    gestureName: 'album-detail-tab-swipe',
+    gesturePriority: 35,
+    threshold: 12,
+    direction: 'x',
+    canStart: (detail) => !tabSwipeSettling.value && !shouldLetRelatedScrollHandle(detail),
+    onStart: () => {
+      tabSwipeBaseIndex.value = activeTabIndex.value
+      tabSwipeActive.value = true
+      tabSwipeSettling.value = false
+      tabSwipeOffset.value = 0
+      measureActiveTabPanel()
+      void menuController.swipeGesture(false)
+    },
+    onMove: (detail) => {
+      tabSwipeOffset.value = getClampedTabSwipeOffset(detail.deltaX)
+    },
+    onEnd: (detail) => {
+      const baseIndex = tabSwipeBaseIndex.value
+      const stride = getTabSwipeStride()
+      const threshold = Math.min(90, getTabPanelWidth() * 0.22)
+      const shouldMove = Math.abs(detail.deltaX) > threshold || Math.abs(detail.velocityX) > 0.35
+      const nextIndex = detail.deltaX < 0 ? baseIndex + 1 : baseIndex - 1
+
+      if (shouldMove && detail.deltaX > 0 && baseIndex === 0) {
+        resetTabSwipeState()
+        void openSideMenuFromDetail()
+        return
+      }
+
+      if (shouldMove && nextIndex >= 0 && nextIndex < tabs.value.length) {
+        finishTabSwipe(nextIndex, nextIndex > baseIndex ? -stride : stride)
+        return
+      }
+
+      finishTabSwipe(null, 0)
+    },
+  })
+  tabSwipeGesture.enable(true)
+}
+
+watch(activeTab, () => {
+  void menuController.swipeGesture(false)
+  nextTick(() => observeActiveTabPanel())
+})
 
 // ---- 章节选择 ----
 const selectChapter = async (chapterId: string) => {
@@ -755,6 +969,10 @@ watch(albumId, (newId, oldId) => {
 })
 
 onUnmounted(() => {
+  tabSwipeGesture?.destroy()
+  tabResizeObserver?.disconnect()
+  document.querySelector('ion-menu')?.removeEventListener('ionDidClose', handleDetailMenuDidClose)
+  void menuController.swipeGesture(true)
   imageReadyListenerHandle?.remove()
   downloadProgressHandle?.remove()
   window.removeEventListener('online', updateNetworkAvailable)
@@ -1030,6 +1248,7 @@ const handleScroll = async () => {
   padding: 8px 12px;
   background: #fffaf6;
   border-bottom: 1px solid rgb(245 210 188 / 0.5);
+  position: relative;
   z-index: 10;
 }
 
@@ -1050,18 +1269,62 @@ const handleScroll = async () => {
   color: #8a6048;
   font-size: 12px;
   font-weight: 600;
-  transition: background-color 0.18s ease,
-  color 0.18s ease;
+  position: relative;
+  z-index: 1;
+  transition: color 0.18s ease;
 }
 
 .tab-btn.active {
-  background: linear-gradient(145deg, #fa9c69, #f28752);
   color: #fff;
+}
+
+.tab-active-indicator {
+  position: absolute;
+  left: 12px;
+  top: 8px;
+  width: calc((100% - 24px - (var(--tab-count) - 1) * 2px) / var(--tab-count));
+  height: 34px;
+  border-radius: 8px;
+  background: linear-gradient(145deg, #fa9c69, #f28752);
+  box-shadow: 0 4px 10px rgb(242 135 82 / 0.22);
+  transform: translate3d(calc(var(--tab-progress) * (100% + 2px)), 0, 0);
+  transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.tab-bar.swiping .tab-active-indicator {
+  transition: none;
+}
+
+.tab-bar.settling .tab-active-indicator {
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /* Tab 内容 */
 .tab-content {
   padding: 12px 14px;
+  overflow: hidden;
+  position: relative;
+  touch-action: pan-y;
+}
+
+.tab-panel {
+  display: none;
+}
+
+.tab-panel.current {
+  display: block;
+}
+
+.tab-content.swiping .tab-panel {
+  display: block;
+  position: absolute;
+  inset: 12px 14px auto;
+  width: calc(100% - 28px);
+  will-change: transform;
+}
+
+.tab-content.settling .tab-panel {
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .bottom-spacer {
@@ -1072,6 +1335,10 @@ const handleScroll = async () => {
   .tab-content {
     max-width: 720px;
     margin: 0 auto;
+  }
+
+  .tab-content.swiping .tab-panel {
+    width: calc(100% - 28px);
   }
 }
 </style>

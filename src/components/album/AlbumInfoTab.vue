@@ -124,11 +124,7 @@
       <div v-if="album.relatedAlbums.length" class="related-section">
         <h3 class="section-title">相关作品</h3>
         <div
-          ref="relatedScrollRef"
           class="related-scroll"
-          @touchstart.passive="onRelatedScrollTouchStart"
-          @touchmove="onRelatedScrollTouchMove"
-          @touchend="onRelatedScrollTouchEnd"
         >
           <div
             v-for="related in album.relatedAlbums"
@@ -158,7 +154,7 @@
 <script setup lang="ts">
 import {computed, nextTick, ref, watch} from 'vue'
 import {useRouter} from 'vue-router'
-import {IonIcon, menuController} from '@ionic/vue'
+import {IonIcon} from '@ionic/vue'
 import {
   bookmark,
   checkmarkCircleOutline,
@@ -231,38 +227,6 @@ const copyText = async (text: string) => {
 
 const searchByTag = (keyword: string) => {
   void router.push({path: '/search', query: {keyword}})
-}
-
-// ---- 相关作品横向滑动 vs 侧边栏手势 ----
-const relatedScrollRef = ref<HTMLElement | null>(null)
-let tsx = 0
-let tsy = 0
-let tsScrollLeft = 0
-
-function onRelatedScrollTouchStart(e: TouchEvent) {
-  const t = e.touches[0]
-  tsx = t.clientX
-  tsy = t.clientY
-  tsScrollLeft = relatedScrollRef.value?.scrollLeft ?? 0
-  void menuController.swipeGesture(false)
-}
-
-function onRelatedScrollTouchMove(e: TouchEvent) {
-  const t = e.touches[0]
-  const dx = t.clientX - tsx
-  const dy = t.clientY - tsy
-
-  if (Math.abs(dx) < Math.abs(dy)) return
-
-  if (dx > 60 && tsScrollLeft === 0) {
-    void menuController.swipeGesture(true)
-    void menuController.open()
-    void menuController.swipeGesture(false)
-  }
-}
-
-function onRelatedScrollTouchEnd() {
-  void menuController.swipeGesture(true)
 }
 
 const downloadClass = computed(() => {
@@ -558,7 +522,7 @@ const downloadIcon = computed(() => {
   padding-bottom: 6px;
   scroll-snap-type: x mandatory;
   -webkit-overflow-scrolling: touch;
-  touch-action: manipulation;
+  touch-action: pan-x pan-y;
 }
 
 .related-card {

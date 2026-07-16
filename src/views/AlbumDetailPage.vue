@@ -461,6 +461,10 @@ const loadAlbumData = async () => {
     const matched = album.photoMetas.find((m) => m.id === albumId.value)
     selectedChapterId.value = matched?.id ?? album.photoMetas[0]?.id ?? ''
 
+    if (activeTab.value === 'preview') {
+      await loadPreview()
+    }
+
     recordBrowseHistory()
   } catch {
     // 保留 query 数据展示

@@ -83,6 +83,13 @@ jobs:
             - name: Build release APK
               run: cd android && chmod +x gradlew && ./gradlew :app:assembleRelease
 
+            - name: Rename release APK
+              run: |
+                  tag_name="${{ inputs.tag || github.ref_name }}"
+                  version="${tag_name#v}"
+                  version="${version//./_}"
+                  cp android/app/build/outputs/apk/release/app-release.apk "JQ-Viewer-${version}.apk"
+
             - name: Attach APK to GitHub Release
               uses: softprops/action-gh-release@v2
               with:
@@ -90,6 +97,6 @@ jobs:
                   draft: false
                   prerelease: ${{ inputs.prerelease || contains(github.ref, '-') }}
                   generate_release_notes: true
-                  files: android/app/build/outputs/apk/release/app-release.apk
+                  files: JQ-Viewer-*.apk
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

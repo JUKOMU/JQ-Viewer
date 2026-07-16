@@ -452,7 +452,6 @@ const tabSwipeHeight = ref(0)
 const TAB_SWIPE_SETTLE_MS = 280
 const TAB_SWIPE_GAP = 18
 const activeTabIndex = computed(() => tabs.value.findIndex((tab) => tab.key === activeTab.value))
-const isFirstTab = computed(() => activeTabIndex.value <= 0)
 const tabContentStyle = computed(() =>
   tabSwipeActive.value ? {minHeight: `${Math.max(tabSwipeHeight.value + 24, 144)}px`} : {},
 )

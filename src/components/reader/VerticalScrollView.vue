@@ -2,6 +2,9 @@
   <div ref="containerRef" class="vertical-container" :class="{noscroll: zoomScale > 1}" @scroll="onScroll">
     <div class="virtual-inner" :style="{ height: innerHeight + 'px' }">
       <div ref="wrapperRef" class="zoom-wrapper" :style="wrapperStyle">
+        <div v-if="totalCount > 0" class="edge-indicator">
+          - - - - S T A R T - - - -
+        </div>
         <div
           v-for="item in visibleItems"
           :key="item.index"
@@ -17,7 +20,11 @@
             <div class="skeleton-image"/>
           </template>
         </div>
-        <div v-if="totalCount > 0" class="end-indicator" :style="{ transform: `translateY(${totalHeight}px)` }">
+        <div
+          v-if="totalCount > 0"
+          class="edge-indicator end-indicator"
+          :style="{ transform: `translateY(${contentOffset + totalHeight}px)` }"
+        >
           - - - - E N D - - - -
         </div>
       </div>
@@ -55,7 +62,8 @@ const ZOOM_MIN = 1
 const DOUBLE_TAP_MS = 280
 const DOUBLE_TAP_DIST = 30
 const MAX_DOM_ITEMS = 100
-const END_INDICATOR_HEIGHT = 80
+// 与 .edge-indicator 高度保持一致，首尾提示区不参与图片高度缩放。
+const EDGE_INDICATOR_HEIGHT = 80
 const SCROLL_SYNC_RETRY_MAX = 30
 
 const containerRef = ref<HTMLElement | null>(null)
@@ -82,8 +90,18 @@ const wrapperStyle = computed(() => {
   }
 })
 
+const contentOffset = computed(() => props.totalCount > 0 ? EDGE_INDICATOR_HEIGHT : 0)
 const totalHeight = computed(() => prefixSums.value[props.totalCount] ?? 0)
-const innerHeight = computed(() => totalHeight.value + (props.totalCount > 0 ? END_INDICATOR_HEIGHT : 0))
+const innerHeight = computed(() => contentOffset.value + totalHeight.value
+  + (props.totalCount > 0 ? EDGE_INDICATOR_HEIGHT : 0))
+
+function getPageTop(index: number) {
+  return contentOffset.value + (prefixSums.value[index] ?? 0)
+}
+
+function getScrollTarget(index: number) {
+  return index === 0 ? 0 : getPageTop(index)
+}
 
 const visibleItems = computed<VisibleItem[]>(() => {
   const items: VisibleItem[] = []
@@ -94,7 +112,7 @@ const visibleItems = computed<VisibleItem[]>(() => {
       dataUrl: props.imageMap.get(index + 1) ?? null,
       style: {
         height: `${heights.value[index] ?? getEstimatedHeight()}px`,
-        transform: `translateY(${prefixSums.value[index] ?? 0}px)`,
+        transform: `translateY(${getPageTop(index)}px)`,
       },
     })
   }
@@ -140,7 +158,8 @@ function upperBound(values: number[], target: number) {
 
 function findIndexByOffset(offset: number) {
   if (props.totalCount <= 0) return 0
-  const idx = upperBound(prefixSums.value, Math.max(0, offset)) - 1
+  const contentY = Math.max(0, offset - contentOffset.value)
+  const idx = upperBound(prefixSums.value, contentY) - 1
   return clampIndex(idx)
 }
 
@@ -254,7 +273,7 @@ function updateMeasuredHeight(index: number, nextHeight: number) {
   const el = containerRef.value
   const anchorScrollTop = el?.scrollTop ?? 0
   const anchorIndex = getCurrentIndex(anchorScrollTop)
-  const anchorOffset = anchorScrollTop - (prefixSums.value[anchorIndex] ?? 0)
+  const anchorOffset = anchorScrollTop - getPageTop(anchorIndex)
 
   const nextHeights = heights.value.slice()
   nextHeights[index] = nextHeight
@@ -263,7 +282,7 @@ function updateMeasuredHeight(index: number, nextHeight: number) {
 
   if (el) {
     isAdjusting = true
-    el.scrollTop = Math.max(0, (prefixSums.value[anchorIndex] ?? 0) + anchorOffset)
+    el.scrollTop = Math.max(0, getPageTop(anchorIndex) + anchorOffset)
     window.requestAnimationFrame(() => {
       isAdjusting = false
       updateVisibleRange(el.scrollTop)
@@ -303,7 +322,7 @@ function applyScrollToIndex(index: number) {
   resetZoom(false)
   updateContainerSize()
   const next = clampIndex(index)
-  const targetTop = prefixSums.value[next] ?? 0
+  const targetTop = getScrollTarget(next)
   isAdjusting = true
   containerRef.value.scrollTop = targetTop
   const actualTop = containerRef.value.scrollTop
@@ -349,12 +368,15 @@ function refreshAfterResize() {
   const ratio = containerWidth.value / oldWidth
   const anchorScrollTop = containerRef.value?.scrollTop ?? 0
   const anchorIndex = getCurrentIndex(anchorScrollTop)
-  const anchorOffset = anchorScrollTop - (prefixSums.value[anchorIndex] ?? 0)
+  const anchorOffset = anchorScrollTop - getPageTop(anchorIndex)
+  const isInsideStartIndicator = anchorScrollTop < contentOffset.value
   const nextHeights = heights.value.map((h) => h * ratio)
   heights.value = nextHeights
   rebuildPrefixSums(nextHeights)
   if (containerRef.value) {
-    containerRef.value.scrollTop = (prefixSums.value[anchorIndex] ?? 0) + anchorOffset * ratio
+    containerRef.value.scrollTop = isInsideStartIndicator
+      ? anchorScrollTop
+      : getPageTop(anchorIndex) + anchorOffset * ratio
     updateVisibleRange(containerRef.value.scrollTop)
   }
 }
@@ -469,7 +491,7 @@ function onTM(ev: TouchEvent) {
     const cw = containerRef.value?.clientWidth ?? 0
     const ch = containerRef.value?.clientHeight ?? 0
     const st = containerRef.value?.scrollTop ?? 0
-    const contentHeight = Math.max(totalHeight.value, ch)
+    const contentHeight = Math.max(innerHeight.value, ch)
     const minTx = cw - cw * zoomScale.value
     const minTy = st + ch - contentHeight * zoomScale.value
     const maxTy = st
@@ -626,7 +648,7 @@ defineExpose({scrollToIndex, containerRef})
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
-.end-indicator {
+.edge-indicator {
   position: absolute;
   top: 0;
   left: 0;

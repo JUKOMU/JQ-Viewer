@@ -135,7 +135,7 @@ const showPreview = ref(false)
 
 .header-content {
   position: relative;
-  z-index: 1;
+  z-index: 15;
   padding: calc(var(--ion-safe-area-top) + 8px) 16px 18px;
 }
 

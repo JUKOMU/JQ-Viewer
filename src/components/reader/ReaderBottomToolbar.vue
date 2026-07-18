@@ -62,9 +62,8 @@ const onRangeInput = (ev: RangeCustomEvent) => {
   display: flex;
   align-items: center;
   gap: 10px;
-  height: 56px;
-  padding: 0 14px;
-  padding-bottom: var(--ion-safe-area-bottom, 0px);
+  min-height: calc(56px + var(--jq-reader-safe-area-bottom, var(--ion-safe-area-bottom, 0px)));
+  padding: 0 14px var(--jq-reader-safe-area-bottom, var(--ion-safe-area-bottom, 0px));
   background: rgba(0, 0, 0, 0.6);
   backdrop-filter: blur(8px);
 }

@@ -30,9 +30,9 @@ import {arrowBack} from 'ionicons/icons'
   display: flex;
   align-items: center;
   gap: 12px;
-  min-height: calc(50px + var(--ion-safe-area-top, 0px));
+  min-height: calc(50px + var(--jq-reader-safe-area-top, var(--ion-safe-area-top, 0px)));
   padding: 8px 14px;
-  padding-top: calc(8px + var(--ion-safe-area-top, 0px));
+  padding-top: calc(8px + var(--jq-reader-safe-area-top, var(--ion-safe-area-top, 0px)));
   background: rgba(0, 0, 0, 0.6);
   backdrop-filter: blur(8px);
 }

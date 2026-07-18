@@ -114,6 +114,11 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
     // ---- 阅读器状态（供 MainActivity 音量键拦截查询） ----
     private volatile boolean readerActive = false;
     private volatile boolean readerVertical = true;
+    private android.view.View readerInsetsContainer;
+    private android.view.ViewTreeObserver.OnPreDrawListener readerInsetsPreDrawListener;
+    private int readerSafeTop = -1;
+    private int readerSafeBottom = -1;
+    private Integer readerOriginalCutoutMode;
 
     @Override
     public void load() {
@@ -207,6 +212,9 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
 
     @Override
     protected void handleOnDestroy() {
+        readerActive = false;
+        applyReaderEdgeToEdge(false);
+
         // 取消待处理的域名探活
         synchronized (probeLock) {
             if (pendingProbe != null) {
@@ -1385,6 +1393,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         }
         readerActive = isActive;
         readerVertical = isVertical;
+        applyReaderEdgeToEdge(isActive);
         JSObject ret = new JSObject();
         ret.put("success", true);
         call.resolve(ret);
@@ -1440,10 +1449,123 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
                         | android.view.View.SYSTEM_UI_FLAG_FULLSCREEN
                         | android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
                 } else {
-                    decorView.setSystemUiVisibility(0);
+                    int layoutFlags = android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                        | android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                        | android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN;
+                    decorView.setSystemUiVisibility(readerActive ? layoutFlags : 0);
                 }
             }
+            refreshReaderContainerInsets();
         });
+    }
+
+    private void applyReaderEdgeToEdge(boolean enabled) {
+        if (getActivity() == null) return;
+        getActivity().runOnUiThread(() -> {
+            android.view.Window window = getActivity().getWindow();
+            // 隐藏状态栏时 DEFAULT 会在挖孔区域产生黑色 letterbox，阅读页必须允许短边绘制。
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                android.view.WindowManager.LayoutParams attributes = window.getAttributes();
+                if (enabled) {
+                    if (readerOriginalCutoutMode == null) {
+                        readerOriginalCutoutMode = attributes.layoutInDisplayCutoutMode;
+                    }
+                    if (attributes.layoutInDisplayCutoutMode
+                        != android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES) {
+                        attributes.layoutInDisplayCutoutMode =
+                            android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+                        window.setAttributes(attributes);
+                    }
+                } else if (readerOriginalCutoutMode != null) {
+                    attributes.layoutInDisplayCutoutMode = readerOriginalCutoutMode;
+                    window.setAttributes(attributes);
+                    readerOriginalCutoutMode = null;
+                }
+            }
+            androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, !enabled);
+
+            if (enabled) attachReaderInsetsOverride();
+            else detachReaderInsetsOverride();
+        });
+    }
+
+    private void attachReaderInsetsOverride() {
+        if (getBridge() == null || getBridge().getWebView() == null) return;
+        android.view.View container = (android.view.View) getBridge().getWebView().getParent();
+        if (container == null) return;
+        if (readerInsetsContainer != container) {
+            detachReaderInsetsOverride();
+            readerInsetsContainer = container;
+            // Capacitor SystemBars 会在系统栏显隐后重新写入父容器 padding；绘制前清零可避免内容被顶动。
+            readerInsetsPreDrawListener = () -> !updateReaderContainerInsets(container);
+            container.getViewTreeObserver().addOnPreDrawListener(readerInsetsPreDrawListener);
+        }
+        androidx.core.view.ViewCompat.requestApplyInsets(container);
+        updateReaderContainerInsets(container);
+    }
+
+    private void refreshReaderContainerInsets() {
+        android.view.View container = readerInsetsContainer;
+        if (!readerActive || container == null) return;
+        androidx.core.view.ViewCompat.requestApplyInsets(container);
+    }
+
+    private boolean updateReaderContainerInsets(android.view.View container) {
+        if (!readerActive || container == null) return false;
+        androidx.core.view.WindowInsetsCompat insets = androidx.core.view.ViewCompat.getRootWindowInsets(container);
+        int imeBottom = 0;
+        int safeTop = 0;
+        int safeBottom = 0;
+        if (insets != null) {
+            androidx.core.graphics.Insets bars = insets.getInsetsIgnoringVisibility(
+                androidx.core.view.WindowInsetsCompat.Type.systemBars());
+            androidx.core.graphics.Insets cutout = insets.getInsets(
+                androidx.core.view.WindowInsetsCompat.Type.displayCutout());
+            safeTop = Math.max(bars.top, cutout.top);
+            safeBottom = Math.max(bars.bottom, cutout.bottom);
+            if (insets.isVisible(androidx.core.view.WindowInsetsCompat.Type.ime())) {
+                imeBottom = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.ime()).bottom;
+            }
+        }
+        boolean paddingChanged = container.getPaddingLeft() != 0 || container.getPaddingTop() != 0
+            || container.getPaddingRight() != 0 || container.getPaddingBottom() != imeBottom;
+        if (paddingChanged) {
+            container.setPadding(0, 0, 0, imeBottom);
+        }
+        updateReaderSafeAreaCss(safeTop, safeBottom);
+        return paddingChanged;
+    }
+
+    private void updateReaderSafeAreaCss(int top, int bottom) {
+        if (top == readerSafeTop && bottom == readerSafeBottom) return;
+        readerSafeTop = top;
+        readerSafeBottom = bottom;
+        if (getBridge() == null || getBridge().getWebView() == null) return;
+        float density = getActivity().getResources().getDisplayMetrics().density;
+        // WindowInsets 使用物理像素，注入 WebView 前必须换算成 CSS px。
+        String script = "document.documentElement.style.setProperty('--jq-reader-safe-area-top','"
+            + (top / density) + "px');"
+            + "document.documentElement.style.setProperty('--jq-reader-safe-area-bottom','"
+            + (bottom / density) + "px');";
+        getBridge().getWebView().evaluateJavascript(script, null);
+    }
+
+    private void detachReaderInsetsOverride() {
+        android.view.View container = readerInsetsContainer;
+        if (container != null && readerInsetsPreDrawListener != null) {
+            android.view.ViewTreeObserver observer = container.getViewTreeObserver();
+            if (observer.isAlive()) observer.removeOnPreDrawListener(readerInsetsPreDrawListener);
+        }
+        readerInsetsContainer = null;
+        readerInsetsPreDrawListener = null;
+        readerSafeTop = -1;
+        readerSafeBottom = -1;
+        if (getBridge() != null && getBridge().getWebView() != null) {
+            getBridge().getWebView().evaluateJavascript(
+                "document.documentElement.style.removeProperty('--jq-reader-safe-area-top');"
+                    + "document.documentElement.style.removeProperty('--jq-reader-safe-area-bottom');", null);
+        }
+        if (container != null) androidx.core.view.ViewCompat.requestApplyInsets(container);
     }
 
     private void applyScreenOrientation(String orientation) {

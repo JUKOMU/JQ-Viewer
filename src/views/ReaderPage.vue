@@ -125,8 +125,19 @@ const verticalViewRef = ref<InstanceType<typeof VerticalScrollView> | null>(null
 const horizontalViewRef = ref<InstanceType<typeof HorizontalPageView> | null>(null)
 
 // ---- 工具栏 ----
+// 工具栏显示时仅恢复系统栏；阅读内容始终保持 edge-to-edge，不随系统栏改变尺寸。
+const syncReaderFullscreen = () => {
+  if (!readerRuntimeActive) return
+  JmcomicService.setReaderFullscreen(!toolbarVisible.value).catch(() => {})
+}
+
+const setToolbarVisible = (visible: boolean) => {
+  toolbarVisible.value = visible
+  syncReaderFullscreen()
+}
+
 const toggleToolbar = () => {
-  toolbarVisible.value = !toolbarVisible.value
+  setToolbarVisible(!toolbarVisible.value)
 }
 
 const onDragStart = () => {
@@ -208,7 +219,7 @@ const applyReaderSettings = () => {
   if (SettingsStore.getReaderKeepScreenOn()) {
     JmcomicService.setReaderKeepScreenOn(true).catch(() => {})
   }
-  JmcomicService.setReaderFullscreen(true).catch(() => {})
+  syncReaderFullscreen()
 }
 
 const restoreSystemState = () => {
@@ -587,7 +598,7 @@ const applyPhotoBaseState = (pd: PhotoDetail) => {
   totalCount.value = total
   updateReaderCurrentPage(currentIndex.value + 1)
   ReadingProgressService.record(albumId.value, chapterId.value, currentIndex.value + 1, total)
-  toolbarVisible.value = true
+  setToolbarVisible(true)
 }
 
 const scrollToInitialIndex = () => {

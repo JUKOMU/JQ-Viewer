@@ -369,11 +369,14 @@ function refreshAfterResize() {
   const anchorScrollTop = containerRef.value?.scrollTop ?? 0
   const anchorIndex = getCurrentIndex(anchorScrollTop)
   const anchorOffset = anchorScrollTop - getPageTop(anchorIndex)
+  const isInsideStartIndicator = anchorScrollTop < contentOffset.value
   const nextHeights = heights.value.map((h) => h * ratio)
   heights.value = nextHeights
   rebuildPrefixSums(nextHeights)
   if (containerRef.value) {
-    containerRef.value.scrollTop = getPageTop(anchorIndex) + anchorOffset * ratio
+    containerRef.value.scrollTop = isInsideStartIndicator
+      ? anchorScrollTop
+      : getPageTop(anchorIndex) + anchorOffset * ratio
     updateVisibleRange(containerRef.value.scrollTop)
   }
 }

@@ -249,6 +249,7 @@ function onTouchEnd(ev: TouchEvent) {
 
     // 双击 → 恢复
     if (!moved && elapsed < DOUBLE_TAP_MS && tapDist < DOUBLE_TAP_DIST) {
+      if (tapTimer) { clearTimeout(tapTimer); tapTimer = null }
       resetZoom()
       return
     }
@@ -271,7 +272,8 @@ function onTouchEnd(ev: TouchEvent) {
           offsetX.value = 0
         }
       } else {
-        emit('toggle-toolbar')
+        if (tapTimer) clearTimeout(tapTimer)
+        tapTimer = setTimeout(() => { emit('toggle-toolbar'); tapTimer = null }, DOUBLE_TAP_MS)
       }
     }
     return

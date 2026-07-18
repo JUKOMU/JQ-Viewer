@@ -3,7 +3,7 @@
     <div class="reader-root" @click="onRootClick">
       <!-- 顶部工具栏 -->
       <Transition name="toolbar-slide">
-        <ReaderTopToolbar v-if="toolbarVisible" :title="chapterTitle" @back="goBack"/>
+        <ReaderTopToolbar v-if="toolbarVisible" :title="chapterTitle" @click.stop @back="goBack"/>
       </Transition>
 
       <!-- 图片视图 -->
@@ -32,6 +32,7 @@
           v-if="toolbarVisible"
           :current="currentIndex + 1"
           :total="totalCount"
+          @click.stop
           @open-settings="settingsPanelVisible = true"
           @update:current="onProgressDrag"
           @update:current-input="onProgressInput"
@@ -98,6 +99,12 @@ const imageMap = shallowRef<Map<number, string>>(new Map())
 const toolbarVisible = ref(true)
 const isDragProgress = ref(false)
 const settingsPanelVisible = ref(false)
+const TOOLBAR_TAP_DELAY_MS = 280
+const TOOLBAR_DOUBLE_TAP_DIST = 30
+let toolbarTapTimer: ReturnType<typeof setTimeout> | null = null
+let lastToolbarTapTime = 0
+let lastToolbarTapX = 0
+let lastToolbarTapY = 0
 let photoDetail: PhotoDetail | null = null
 let imageReadyListenerHandle: PluginListenerHandle | null = null
 let volumeKeyListenerHandle: PluginListenerHandle | null = null
@@ -137,15 +144,39 @@ const onDragEnd = () => {
   }
 }
 
-// 点击中间 1/3 呼出/收起工具栏（纵向滚动模式下由 root 层处理）
+const clearToolbarTapTimer = () => {
+  if (!toolbarTapTimer) return
+  clearTimeout(toolbarTapTimer)
+  toolbarTapTimer = null
+}
+
+// 纵向模式由页面根层区分单击与双击；横向模式由 HorizontalPageView 自行处理
 const onRootClick = (ev: MouseEvent) => {
   if (!isVertical.value) return
   if (settingsPanelVisible.value) return
-  const x = ev.clientX
-  const sw = window.innerWidth
-  if (x > sw * 0.3 && x < sw * 0.6) {
-    toggleToolbar()
+
+  const now = Date.now()
+  const tapDist = Math.abs(ev.clientX - lastToolbarTapX) + Math.abs(ev.clientY - lastToolbarTapY)
+  const isDoubleTap = toolbarTapTimer
+    && now - lastToolbarTapTime < TOOLBAR_TAP_DELAY_MS
+    && tapDist < TOOLBAR_DOUBLE_TAP_DIST
+
+  if (isDoubleTap) {
+    clearToolbarTapTimer()
+  } else {
+    if (toolbarTapTimer) {
+      clearToolbarTapTimer()
+      toggleToolbar()
+    }
+    toolbarTapTimer = setTimeout(() => {
+      toolbarTapTimer = null
+      if (isVertical.value && !settingsPanelVisible.value) toggleToolbar()
+    }, TOOLBAR_TAP_DELAY_MS)
   }
+
+  lastToolbarTapTime = now
+  lastToolbarTapX = ev.clientX
+  lastToolbarTapY = ev.clientY
 }
 
 const onDisplayModeChange = (vertical: boolean) => {
@@ -501,6 +532,7 @@ const activateReaderRuntime = () => {
 const deactivateReaderRuntime = () => {
   if (!readerRuntimeActive) return
   readerRuntimeActive = false
+  clearToolbarTapTimer()
   imageReadyListenerHandle?.remove()
   imageReadyListenerHandle = null
   volumeKeyListenerHandle?.remove()
@@ -688,6 +720,7 @@ onDeactivated(() => {
 })
 
 onUnmounted(() => {
+  clearToolbarTapTimer()
   deactivateReaderRuntime()
   if (triggerRafId) cancelAnimationFrame(triggerRafId)
   if (revertTimer) clearTimeout(revertTimer)

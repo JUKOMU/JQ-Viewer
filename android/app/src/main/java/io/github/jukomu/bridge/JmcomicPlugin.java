@@ -1367,6 +1367,23 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
     }
 
     @PluginMethod
+    public void setReaderAutoShowToolbarAtEnd(PluginCall call) {
+        try {
+            Boolean enabled = call.getBoolean("enabled");
+            if (enabled == null) {
+                call.reject("enabled is required");
+                return;
+            }
+            settingsService.setReaderAutoShowToolbarAtEnd(enabled);
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
     public void setReaderFullscreen(PluginCall call) {
         try {
             Boolean enabled = call.getBoolean("enabled");

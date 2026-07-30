@@ -276,6 +276,7 @@ export interface JmcomicClient {
   setReaderKeepScreenOn(options: { enabled: boolean }): Promise<{ success: boolean }>
   setReaderFullscreen(options: { enabled: boolean }): Promise<{ success: boolean }>
   setReaderVolumeNavigation(options: { enabled: boolean }): Promise<{ success: boolean }>
+  setReaderAutoShowToolbarAtEnd(options: { enabled: boolean }): Promise<{ success: boolean }>
 
   setReaderState(options: { isActive: boolean; isVertical: boolean }): Promise<{ success: boolean }>
 

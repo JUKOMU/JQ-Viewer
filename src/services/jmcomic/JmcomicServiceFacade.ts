@@ -485,6 +485,9 @@ export const JmcomicService = {
   setReaderVolumeNavigation(enabled: boolean) {
     return native.setReaderVolumeNavigation({enabled})
   },
+  setReaderAutoShowToolbarAtEnd(enabled: boolean) {
+    return native.setReaderAutoShowToolbarAtEnd({enabled})
+  },
 
   // ========== 阅读器状态 ==========
 

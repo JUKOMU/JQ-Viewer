@@ -10,13 +10,13 @@ import android.util.Log;
 /**
  * 应用设置 SQLite 数据库（权威持久化源）。
  * <p>
- * 表结构：单表 key-value，新增设置无需 migration。
+ * 表结构：单表 key-value，新增设置通过数据迁移补齐默认行。
  */
 public class SettingsStore extends SQLiteOpenHelper {
 
     private static final String TAG = "SettingsStore";
     private static final String DB_NAME = "jq_settings.db";
-    private static final int DB_VERSION = 1;
+    private static final int DB_VERSION = 2;
 
     private static final String TABLE = "settings";
     private static final String COL_KEY = "key";
@@ -55,6 +55,7 @@ public class SettingsStore extends SQLiteOpenHelper {
         insertDefault(db, "reader_brightness", "-1", now);
         insertDefault(db, "reader_keep_screen_on", "true", now);
         insertDefault(db, "reader_volume_navigation", "false", now);
+        insertDefault(db, "reader_auto_show_toolbar_at_end", "true", now);
     }
 
     private void insertDefault(SQLiteDatabase db, String key, String value, long now) {
@@ -62,14 +63,13 @@ public class SettingsStore extends SQLiteOpenHelper {
         cv.put(COL_KEY, key);
         cv.put(COL_VALUE, value);
         cv.put(COL_UPDATED_AT, now);
-        db.insert(TABLE, null, cv);
+        db.insertWithOnConflict(TABLE, null, cv, SQLiteDatabase.CONFLICT_IGNORE);
     }
 
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
         if (oldVersion < 2) {
-            // DB_VERSION 仍为 1；未来升到 2 时只能在这里追加非破坏性迁移。
-            // key-value 表新增设置项不需要升版本，读取侧使用默认值即可。
+            insertDefault(db, "reader_auto_show_toolbar_at_end", "true", System.currentTimeMillis());
         }
     }
 

@@ -93,6 +93,22 @@
               </div>
             </div>
 
+            <!-- 阅读结束时展开工具栏 -->
+            <div class="setting-row divider">
+              <div class="setting-left">
+                <span class="setting-label">阅读结束时展开工具栏</span>
+                <span class="setting-sub">纵向到底或横向进入最后一页时自动展开</span>
+              </div>
+              <div class="setting-right">
+                <IonToggle
+                  :checked="localAutoShowToolbarAtEnd"
+                  aria-label="阅读结束时展开工具栏"
+                  color="warning"
+                  @ion-change="onAutoShowToolbarAtEndChange"
+                />
+              </div>
+            </div>
+
             <!-- 预加载页数 -->
             <div class="setting-row divider">
               <div class="setting-left">
@@ -162,6 +178,7 @@ const localOrientation = ref(SettingsStore.getReaderScreenOrientation())
 const localBrightness = ref(SettingsStore.getReaderBrightness())
 const localKeepScreenOn = ref(SettingsStore.getReaderKeepScreenOn())
 const localVolumeNavigation = ref(SettingsStore.getReaderVolumeNavigation())
+const localAutoShowToolbarAtEnd = ref(SettingsStore.getReaderAutoShowToolbarAtEnd())
 const localPreloadPages = ref(SettingsStore.getReaderPreloadPages())
 const localPreloadConcurrency = ref(SettingsStore.getPreloadConcurrency())
 
@@ -223,6 +240,14 @@ function onVolumeNavigationChange(e: CustomEvent) {
   localVolumeNavigation.value = enabled
   SettingsStore.setReaderVolumeNavigation(enabled)
   JmcomicService.setReaderVolumeNavigation(enabled).catch(() => {})
+}
+
+// ---- 阅读结束时展开工具栏 ----
+function onAutoShowToolbarAtEndChange(e: CustomEvent) {
+  const enabled = e.detail.checked
+  localAutoShowToolbarAtEnd.value = enabled
+  SettingsStore.setReaderAutoShowToolbarAtEnd(enabled)
+  JmcomicService.setReaderAutoShowToolbarAtEnd(enabled).catch(() => {})
 }
 
 // ---- 预加载页数 ----
@@ -317,6 +342,9 @@ function onPreloadConcurrencyChange(e: Event) {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  flex: 1;
+  min-width: 0;
+  margin-right: 12px;
 }
 
 .setting-label {

@@ -192,6 +192,22 @@
             />
           </div>
         </div>
+
+        <!-- 阅读结束时展开工具栏 -->
+        <div class="row divider">
+          <div class="row-left">
+            <span class="row-title">阅读结束时展开工具栏</span>
+            <span class="row-subtitle">纵向到底或横向进入最后一页时自动展开</span>
+          </div>
+          <div class="row-right">
+            <IonToggle
+              :checked="autoShowToolbarAtEnd"
+              aria-label="阅读结束时展开工具栏"
+              color="warning"
+              @ion-change="onAutoShowToolbarAtEndChange"
+            />
+          </div>
+        </div>
         </div>
 
         <!-- 分组：下载设置 -->
@@ -483,6 +499,7 @@ const brightnessFollowSystem = ref(SettingsStore.getReaderBrightness() < 0)
 const brightnessValue = ref(brightnessFollowSystem.value ? 0.5 : SettingsStore.getReaderBrightness())
 const keepScreenOn = ref(SettingsStore.getReaderKeepScreenOn())
 const volumeNavigation = ref(SettingsStore.getReaderVolumeNavigation())
+const autoShowToolbarAtEnd = ref(SettingsStore.getReaderAutoShowToolbarAtEnd())
 
 const exportPreview = computed(() => ExportFormatService.previewExportFormat(exportFormat.value))
 
@@ -566,6 +583,7 @@ onMounted(async () => {
   brightnessValue.value = brightnessFollowSystem.value ? 0.5 : SettingsStore.getReaderBrightness()
   keepScreenOn.value = SettingsStore.getReaderKeepScreenOn()
   volumeNavigation.value = SettingsStore.getReaderVolumeNavigation()
+  autoShowToolbarAtEnd.value = SettingsStore.getReaderAutoShowToolbarAtEnd()
 
   // 将 PDF 导出默认相对路径解析为绝对路径（与文件夹选择器返回的绝对路径保持一致）
   try {
@@ -858,6 +876,14 @@ function onVolumeNavigationChange(e: CustomEvent) {
   volumeNavigation.value = enabled
   SettingsStore.setReaderVolumeNavigation(enabled)
   JmcomicService.setReaderVolumeNavigation(enabled).catch(() => {})
+}
+
+// ---- 阅读结束时展开工具栏 ----
+function onAutoShowToolbarAtEndChange(e: CustomEvent) {
+  const enabled = e.detail.checked
+  autoShowToolbarAtEnd.value = enabled
+  SettingsStore.setReaderAutoShowToolbarAtEnd(enabled)
+  JmcomicService.setReaderAutoShowToolbarAtEnd(enabled).catch(() => {})
 }
 </script>
 

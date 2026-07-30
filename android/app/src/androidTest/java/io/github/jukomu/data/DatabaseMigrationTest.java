@@ -20,6 +20,7 @@ public class DatabaseMigrationTest {
         try {
             SettingsStore store = newStore(SettingsStore.class);
             store.onCreate(db);
+            db.delete("settings", "key = ?", new String[]{"reader_auto_show_toolbar_at_end"});
 
             db.execSQL(
                 "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)",
@@ -31,7 +32,22 @@ public class DatabaseMigrationTest {
                 db,
                 "SELECT value FROM settings WHERE key = ?",
                 new String[]{"reader_preload_pages"}));
-            assertEquals(10, queryInt(db, "SELECT COUNT(*) FROM settings", null));
+            assertEquals("true", queryString(
+                db,
+                "SELECT value FROM settings WHERE key = ?",
+                new String[]{"reader_auto_show_toolbar_at_end"}));
+            assertEquals(11, queryInt(db, "SELECT COUNT(*) FROM settings", null));
+
+            db.execSQL(
+                "UPDATE settings SET value = ? WHERE key = ?",
+                new Object[]{"false", "reader_auto_show_toolbar_at_end"});
+            store.onUpgrade(db, 1, 2);
+
+            assertEquals("false", queryString(
+                db,
+                "SELECT value FROM settings WHERE key = ?",
+                new String[]{"reader_auto_show_toolbar_at_end"}));
+            assertEquals(11, queryInt(db, "SELECT COUNT(*) FROM settings", null));
         } finally {
             db.close();
         }

@@ -15,6 +15,7 @@
         :current-index="currentIndex"
         @update:current-index="onPageChange"
         @request-range="onVerticalRequestRange"
+        @reached-bottom="scheduleToolbarAtReaderEnd"
       />
       <HorizontalPageView
         v-else
@@ -101,7 +102,9 @@ const isDragProgress = ref(false)
 const settingsPanelVisible = ref(false)
 const TOOLBAR_TAP_DELAY_MS = 280
 const TOOLBAR_DOUBLE_TAP_DIST = 30
+const AUTO_SHOW_TOOLBAR_DELAY_MS = 1000
 let toolbarTapTimer: ReturnType<typeof setTimeout> | null = null
+let autoShowToolbarTimer: ReturnType<typeof setTimeout> | null = null
 let lastToolbarTapTime = 0
 let lastToolbarTapX = 0
 let lastToolbarTapY = 0
@@ -136,8 +139,35 @@ const setToolbarVisible = (visible: boolean) => {
   syncReaderFullscreen()
 }
 
+const clearAutoShowToolbarTimer = () => {
+  if (!autoShowToolbarTimer) return
+  clearTimeout(autoShowToolbarTimer)
+  autoShowToolbarTimer = null
+}
+
+const isAtReaderEnd = () => {
+  if (totalCount.value <= 0) return false
+  if (isVertical.value) return verticalViewRef.value?.isAtBottom() === true
+  return currentIndex.value === totalCount.value - 1
+}
+
 const toggleToolbar = () => {
+  clearAutoShowToolbarTimer()
   setToolbarVisible(!toolbarVisible.value)
+}
+
+const scheduleToolbarAtReaderEnd = () => {
+  clearAutoShowToolbarTimer()
+  if (toolbarVisible.value || !SettingsStore.getReaderAutoShowToolbarAtEnd()) return
+  autoShowToolbarTimer = setTimeout(() => {
+    autoShowToolbarTimer = null
+    if (
+      toolbarVisible.value ||
+      !SettingsStore.getReaderAutoShowToolbarAtEnd() ||
+      !isAtReaderEnd()
+    ) return
+    setToolbarVisible(true)
+  }, AUTO_SHOW_TOOLBAR_DELAY_MS)
 }
 
 const onDragStart = () => {
@@ -191,6 +221,7 @@ const onRootClick = (ev: MouseEvent) => {
 }
 
 const onDisplayModeChange = (vertical: boolean) => {
+  clearAutoShowToolbarTimer()
   const targetIndex = currentIndex.value
   isVertical.value = vertical
   syncReaderState()
@@ -465,8 +496,12 @@ const moveReaderViewToIndex = (index: number) => {
 const goToIndex = (index: number, source: PageChangeSource) => {
   if (index < 0 || index >= totalCount.value) return
   const next = clampIndex(index)
+  const previous = currentIndex.value
   currentIndex.value = next
   updateReaderCurrentPage(next + 1)
+  if (!isVertical.value && previous !== next && next === totalCount.value - 1) {
+    scheduleToolbarAtReaderEnd()
+  }
   ReadingProgressService.record(albumId.value, chapterId.value, next + 1, totalCount.value)
 
   if (source === 'slider-input') {
@@ -727,11 +762,13 @@ onActivated(() => {
 })
 
 onDeactivated(() => {
+  clearAutoShowToolbarTimer()
   deactivateReaderRuntime()
 })
 
 onUnmounted(() => {
   clearToolbarTapTimer()
+  clearAutoShowToolbarTimer()
   deactivateReaderRuntime()
   if (triggerRafId) cancelAnimationFrame(triggerRafId)
   if (revertTimer) clearTimeout(revertTimer)

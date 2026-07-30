@@ -71,6 +71,7 @@ public class SettingsService {
             ret.put("readerBrightness", getReaderBrightness());
             ret.put("readerKeepScreenOn", getReaderKeepScreenOn());
             ret.put("readerVolumeNavigation", getReaderVolumeNavigation());
+            ret.put("readerAutoShowToolbarAtEnd", getReaderAutoShowToolbarAtEnd());
         } catch (Exception e) {
             Log.w(TAG, "构建全部设置信息失败", e);
         }
@@ -149,6 +150,14 @@ public class SettingsService {
 
     public void setReaderVolumeNavigation(boolean enabled) {
         settingsDb.putString("reader_volume_navigation", String.valueOf(enabled));
+    }
+
+    public boolean getReaderAutoShowToolbarAtEnd() {
+        return settingsDb.getBoolean("reader_auto_show_toolbar_at_end", true);
+    }
+
+    public void setReaderAutoShowToolbarAtEnd(boolean enabled) {
+        settingsDb.putString("reader_auto_show_toolbar_at_end", String.valueOf(enabled));
     }
 
     // ---- 下载公开/私有切换 ----

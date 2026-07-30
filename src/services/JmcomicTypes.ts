@@ -180,6 +180,7 @@ export interface AllSettings {
   readerBrightness: number
   readerKeepScreenOn: boolean
   readerVolumeNavigation: boolean
+  readerAutoShowToolbarAtEnd?: boolean
 }
 
 // --- 设置页：文件搬迁 ---

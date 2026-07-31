@@ -68,7 +68,10 @@ function resetZoom() {
   zoomScale.value = 1
   zoomTx.value = 0
   zoomTy.value = 0
-  if (tapTimer) { clearTimeout(tapTimer); tapTimer = null }
+  if (tapTimer) {
+    clearTimeout(tapTimer);
+    tapTimer = null
+  }
 }
 
 // ---- 手势临时变量 ----
@@ -119,7 +122,10 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  if (tapTimer) { clearTimeout(tapTimer); tapTimer = null }
+  if (tapTimer) {
+    clearTimeout(tapTimer);
+    tapTimer = null
+  }
   containerRef.value?.removeEventListener('touchstart', onTouchStart)
   containerRef.value?.removeEventListener('touchmove', onTouchMove)
   containerRef.value?.removeEventListener('touchend', onTouchEnd)
@@ -163,7 +169,9 @@ function onTouchStart(ev: TouchEvent) {
   if (ev.touches.length >= 2) {
     ev.preventDefault()
     // 取消滑动偏移
-    if (offsetX.value !== 0) { offsetX.value = 0 }
+    if (offsetX.value !== 0) {
+      offsetX.value = 0
+    }
 
     pinchDist0 = dist(ev.touches)
     startScale = zoomScale.value
@@ -249,7 +257,10 @@ function onTouchEnd(ev: TouchEvent) {
 
     // 双击 → 恢复
     if (!moved && elapsed < DOUBLE_TAP_MS && tapDist < DOUBLE_TAP_DIST) {
-      if (tapTimer) { clearTimeout(tapTimer); tapTimer = null }
+      if (tapTimer) {
+        clearTimeout(tapTimer);
+        tapTimer = null
+      }
       resetZoom()
       return
     }
@@ -273,7 +284,10 @@ function onTouchEnd(ev: TouchEvent) {
         }
       } else {
         if (tapTimer) clearTimeout(tapTimer)
-        tapTimer = setTimeout(() => { emit('toggle-toolbar'); tapTimer = null }, DOUBLE_TAP_MS)
+        tapTimer = setTimeout(() => {
+          emit('toggle-toolbar');
+          tapTimer = null
+        }, DOUBLE_TAP_MS)
       }
     }
     return
@@ -291,7 +305,10 @@ function onTouchEnd(ev: TouchEvent) {
     else snapBack()
     return
   }
-  if (moved) { snapBack(); return }
+  if (moved) {
+    snapBack();
+    return
+  }
 
   if (elapsed < 300) {
     const sw = slotWidth.value || window.innerWidth
@@ -313,7 +330,10 @@ function onTouchEnd(ev: TouchEvent) {
       const tapDist = Math.abs(ex - lastTapX) + Math.abs(ey - lastTapY)
       const le = Date.now() - lastTapT
       if (le < DOUBLE_TAP_MS && tapDist < DOUBLE_TAP_DIST) {
-        if (tapTimer) { clearTimeout(tapTimer); tapTimer = null }
+        if (tapTimer) {
+          clearTimeout(tapTimer);
+          tapTimer = null
+        }
         const relX = ex - offsetX.value
         const relY = ey
         const os = zoomScale.value || 1
@@ -323,7 +343,10 @@ function onTouchEnd(ev: TouchEvent) {
         zoomTy.value = relY * (1 - ratio) + zoomTy.value * ratio
       } else {
         if (tapTimer) clearTimeout(tapTimer)
-        tapTimer = setTimeout(() => { emit('toggle-toolbar'); tapTimer = null }, DOUBLE_TAP_MS)
+        tapTimer = setTimeout(() => {
+          emit('toggle-toolbar');
+          tapTimer = null
+        }, DOUBLE_TAP_MS)
       }
       lastTapT = Date.now()
       lastTapX = ex
@@ -333,7 +356,10 @@ function onTouchEnd(ev: TouchEvent) {
 }
 
 function snapTo(target: number) {
-  if (target === displayIndex.value) { snapBack(); return }
+  if (target === displayIndex.value) {
+    snapBack();
+    return
+  }
   resetZoom()
   isAnimating.value = true
   offsetX.value = -(target - displayIndex.value) * slotWidth.value
@@ -348,7 +374,9 @@ function snapTo(target: number) {
 function snapBack() {
   isAnimating.value = true
   offsetX.value = 0
-  setTimeout(() => { isAnimating.value = false }, 320)
+  setTimeout(() => {
+    isAnimating.value = false
+  }, 320)
 }
 
 function scrollToIndex(index: number) {
@@ -371,11 +399,13 @@ defineExpose({scrollToIndex})
   display: flex;
   align-items: center;
 }
+
 .strip {
   position: relative;
   height: 100%;
   will-change: transform;
 }
+
 .page-slot {
   position: absolute;
   top: 0;
@@ -383,6 +413,7 @@ defineExpose({scrollToIndex})
   height: 100%;
   overflow: hidden;
 }
+
 .page-content {
   width: 100%;
   height: 100%;
@@ -391,6 +422,7 @@ defineExpose({scrollToIndex})
   justify-content: center;
   will-change: transform;
 }
+
 .page-image {
   max-width: 100%;
   max-height: 100%;
@@ -400,6 +432,7 @@ defineExpose({scrollToIndex})
   user-select: none;
   -webkit-user-drag: none;
 }
+
 .skeleton-page {
   width: 80%;
   height: 60%;
@@ -408,8 +441,13 @@ defineExpose({scrollToIndex})
   background-size: 200% 100%;
   animation: shimmer 1.5s ease-in-out infinite;
 }
+
 @keyframes shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 </style>

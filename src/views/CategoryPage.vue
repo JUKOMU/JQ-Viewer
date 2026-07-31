@@ -108,13 +108,7 @@
 import {computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref} from 'vue'
 import {useRouter} from 'vue-router'
 import {alertController, IonContent, IonIcon, IonPage} from '@ionic/vue'
-import {
-  bookOutline,
-  downloadOutline,
-  ellipsisVertical,
-  heartOutline,
-  informationCircleOutline,
-} from 'ionicons/icons'
+import {bookOutline, downloadOutline, ellipsisVertical, heartOutline, informationCircleOutline,} from 'ionicons/icons'
 import type {ScrollCustomEvent} from '@ionic/core'
 import CategorySearchToolbar from '@/components/search/CategorySearchToolbar.vue'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'

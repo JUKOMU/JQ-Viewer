@@ -247,23 +247,36 @@ export interface JmcomicClient {
   pickImageAndOcr(): Promise<{ text: string; error?: string }>
 
   exportPdfBatch(options: { tasks: PdfExportTask[] }): Promise<{ accepted: boolean }>
+
   pickFolder(): Promise<{ path: string; treeUri?: string; cancelled: boolean }>
+
   checkFilesExist(options: { paths: string[] }): Promise<{ existing: string[] }>
+
   getExternalStoragePath(): Promise<{ path: string }>
+
   checkNotificationPermission(): Promise<{ granted: boolean }>
+
   requestNotificationPermission(): Promise<{ granted: boolean }>
+
   consumeLaunchRoute(): Promise<{ route?: string }>
 
   scanPdfFiles(options: { path: string; treeUri?: string }): Promise<{ files: PdfScanItem[] }>
+
   importPdfs(options: { items: ImportPdfItem[] }): Promise<ImportPdfsResult>
+
   getImportedPdfs(): Promise<ImportedPdfsResult>
+
   updateLocalEpisodeType(options: {
     albumId: string
     isSingleEpisode: boolean
   }): Promise<{ success: boolean; updatedDownloads: number; updatedPdfs: number }>
+
   deleteImportedPdf(options: { id: number }): Promise<{ success: boolean }>
+
   openPdf(options: { filePath: string }): Promise<{ success: boolean }>
+
   getPdfInfo(options: { filePath: string }): Promise<{ pageCount: number }>
+
   renderPdfPage(options: {
     filePath: string
     page: number
@@ -271,11 +284,17 @@ export interface JmcomicClient {
   }): Promise<{ imageUrl: string }>
 
   setReaderDisplayMode(options: { mode: string }): Promise<{ success: boolean }>
+
   setReaderScreenOrientation(options: { orientation: string }): Promise<{ success: boolean }>
+
   setReaderBrightness(options: { brightness: number }): Promise<{ success: boolean }>
+
   setReaderKeepScreenOn(options: { enabled: boolean }): Promise<{ success: boolean }>
+
   setReaderFullscreen(options: { enabled: boolean }): Promise<{ success: boolean }>
+
   setReaderVolumeNavigation(options: { enabled: boolean }): Promise<{ success: boolean }>
+
   setReaderAutoShowToolbarAtEnd(options: { enabled: boolean }): Promise<{ success: boolean }>
 
   setReaderState(options: { isActive: boolean; isVertical: boolean }): Promise<{ success: boolean }>

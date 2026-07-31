@@ -623,10 +623,12 @@ defineExpose({scrollToIndex, containerRef, isAtBottom})
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
 }
+
 .virtual-inner {
   position: relative;
   width: 100%;
 }
+
 .zoom-wrapper {
   position: absolute;
   inset: 0;
@@ -634,6 +636,7 @@ defineExpose({scrollToIndex, containerRef, isAtBottom})
   height: 100%;
   will-change: transform;
 }
+
 .image-wrapper {
   position: absolute;
   top: 0;
@@ -645,6 +648,7 @@ defineExpose({scrollToIndex, containerRef, isAtBottom})
   will-change: transform;
   overflow: hidden;
 }
+
 .reader-image {
   display: block;
   width: 100%;
@@ -654,6 +658,7 @@ defineExpose({scrollToIndex, containerRef, isAtBottom})
   user-select: none;
   -webkit-user-drag: none;
 }
+
 .skeleton-image {
   width: 100%;
   height: 100%;
@@ -662,10 +667,16 @@ defineExpose({scrollToIndex, containerRef, isAtBottom})
   background-size: 200% 100%;
   animation: shimmer 1.5s ease-in-out infinite;
 }
+
 @keyframes shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
+
 .edge-indicator {
   position: absolute;
   top: 0;
@@ -679,6 +690,7 @@ defineExpose({scrollToIndex, containerRef, isAtBottom})
   letter-spacing: 2px;
   user-select: none;
 }
+
 .vertical-container.noscroll {
   overflow-y: hidden;
   touch-action: none;

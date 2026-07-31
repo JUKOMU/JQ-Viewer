@@ -95,119 +95,124 @@
             </div>
           </div>
 
-        <!-- 显示模式 -->
-        <div class="row divider">
-          <div class="row-left">
-            <span class="row-title">显示模式</span>
-          </div>
-          <div class="row-right">
-            <div class="segmented">
-              <button
-                :class="['seg-btn', {active: displayMode === 'vertical'}]"
-                @click="onDisplayModeChange('vertical')"
-              >纵向</button>
-              <button
-                :class="['seg-btn', {active: displayMode === 'horizontal'}]"
-                @click="onDisplayModeChange('horizontal')"
-              >横向</button>
+          <!-- 显示模式 -->
+          <div class="row divider">
+            <div class="row-left">
+              <span class="row-title">显示模式</span>
+            </div>
+            <div class="row-right">
+              <div class="segmented">
+                <button
+                  :class="['seg-btn', {active: displayMode === 'vertical'}]"
+                  @click="onDisplayModeChange('vertical')"
+                >纵向
+                </button>
+                <button
+                  :class="['seg-btn', {active: displayMode === 'horizontal'}]"
+                  @click="onDisplayModeChange('horizontal')"
+                >横向
+                </button>
+              </div>
             </div>
           </div>
-        </div>
 
-        <!-- 屏幕方向 -->
-        <div class="row divider">
-          <div class="row-left">
-            <span class="row-title">屏幕方向</span>
-          </div>
-          <div class="row-right">
-            <div class="segmented">
-              <button
-                :class="['seg-btn', {active: screenOrientation === 'auto'}]"
-                @click="onScreenOrientationChange('auto')"
-              >自动</button>
-              <button
-                :class="['seg-btn', {active: screenOrientation === 'portrait'}]"
-                @click="onScreenOrientationChange('portrait')"
-              >竖屏</button>
-              <button
-                :class="['seg-btn', {active: screenOrientation === 'landscape'}]"
-                @click="onScreenOrientationChange('landscape')"
-              >横屏</button>
+          <!-- 屏幕方向 -->
+          <div class="row divider">
+            <div class="row-left">
+              <span class="row-title">屏幕方向</span>
+            </div>
+            <div class="row-right">
+              <div class="segmented">
+                <button
+                  :class="['seg-btn', {active: screenOrientation === 'auto'}]"
+                  @click="onScreenOrientationChange('auto')"
+                >自动
+                </button>
+                <button
+                  :class="['seg-btn', {active: screenOrientation === 'portrait'}]"
+                  @click="onScreenOrientationChange('portrait')"
+                >竖屏
+                </button>
+                <button
+                  :class="['seg-btn', {active: screenOrientation === 'landscape'}]"
+                  @click="onScreenOrientationChange('landscape')"
+                >横屏
+                </button>
+              </div>
             </div>
           </div>
-        </div>
 
-        <!-- 亮度 -->
-        <div class="row divider">
-          <div class="row-left">
-            <span class="row-title">跟随系统亮度</span>
-            <span class="row-subtitle">关闭后可手动调节阅读亮度</span>
+          <!-- 亮度 -->
+          <div class="row divider">
+            <div class="row-left">
+              <span class="row-title">跟随系统亮度</span>
+              <span class="row-subtitle">关闭后可手动调节阅读亮度</span>
+            </div>
+            <div class="row-right">
+              <IonToggle
+                :checked="brightnessFollowSystem"
+                color="warning"
+                @ion-change="onBrightnessFollowSystemChange"
+              />
+            </div>
           </div>
-          <div class="row-right">
-            <IonToggle
-              :checked="brightnessFollowSystem"
+          <div v-if="!brightnessFollowSystem" class="row">
+            <IonRange
+              class="brightness-slider"
+              :min="0"
+              :max="1"
+              :step="0.05"
+              :value="brightnessValue"
               color="warning"
-              @ion-change="onBrightnessFollowSystemChange"
+              @ion-change="onBrightnessChange"
             />
           </div>
-        </div>
-        <div v-if="!brightnessFollowSystem" class="row">
-          <IonRange
-            class="brightness-slider"
-            :min="0"
-            :max="1"
-            :step="0.05"
-            :value="brightnessValue"
-            color="warning"
-            @ion-change="onBrightnessChange"
-          />
-        </div>
 
-        <!-- 防止熄屏 -->
-        <div class="row divider">
-          <div class="row-left">
-            <span class="row-title">防止熄屏</span>
-            <span class="row-subtitle">阅读时保持屏幕常亮</span>
+          <!-- 防止熄屏 -->
+          <div class="row divider">
+            <div class="row-left">
+              <span class="row-title">防止熄屏</span>
+              <span class="row-subtitle">阅读时保持屏幕常亮</span>
+            </div>
+            <div class="row-right">
+              <IonToggle
+                :checked="keepScreenOn"
+                color="warning"
+                @ion-change="onKeepScreenOnChange"
+              />
+            </div>
           </div>
-          <div class="row-right">
-            <IonToggle
-              :checked="keepScreenOn"
-              color="warning"
-              @ion-change="onKeepScreenOnChange"
-            />
-          </div>
-        </div>
 
-        <!-- 音量键翻页 -->
-        <div class="row divider">
-          <div class="row-left">
-            <span class="row-title">音量键翻页</span>
-            <span class="row-subtitle">横向模式翻页，纵向模式滚动</span>
+          <!-- 音量键翻页 -->
+          <div class="row divider">
+            <div class="row-left">
+              <span class="row-title">音量键翻页</span>
+              <span class="row-subtitle">横向模式翻页，纵向模式滚动</span>
+            </div>
+            <div class="row-right">
+              <IonToggle
+                :checked="volumeNavigation"
+                color="warning"
+                @ion-change="onVolumeNavigationChange"
+              />
+            </div>
           </div>
-          <div class="row-right">
-            <IonToggle
-              :checked="volumeNavigation"
-              color="warning"
-              @ion-change="onVolumeNavigationChange"
-            />
-          </div>
-        </div>
 
-        <!-- 阅读结束时展开工具栏 -->
-        <div class="row divider">
-          <div class="row-left">
-            <span class="row-title">阅读结束时展开工具栏</span>
-            <span class="row-subtitle">纵向到底或横向进入最后一页时自动展开</span>
+          <!-- 阅读结束时展开工具栏 -->
+          <div class="row divider">
+            <div class="row-left">
+              <span class="row-title">阅读结束时展开工具栏</span>
+              <span class="row-subtitle">纵向到底或横向进入最后一页时自动展开</span>
+            </div>
+            <div class="row-right">
+              <IonToggle
+                :checked="autoShowToolbarAtEnd"
+                aria-label="阅读结束时展开工具栏"
+                color="warning"
+                @ion-change="onAutoShowToolbarAtEndChange"
+              />
+            </div>
           </div>
-          <div class="row-right">
-            <IonToggle
-              :checked="autoShowToolbarAtEnd"
-              aria-label="阅读结束时展开工具栏"
-              color="warning"
-              @ion-change="onAutoShowToolbarAtEndChange"
-            />
-          </div>
-        </div>
         </div>
 
         <!-- 分组：下载设置 -->
@@ -461,7 +466,7 @@ import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import {JmcomicService, sanitizeError, showToast} from '@/services/JmcomicService'
 import {initSettings, SettingsStore} from '@/services/SettingsService'
 import {ExportFormatService} from '@/services/ExportFormatService'
-import {PdfExportService, PDF_SAMPLE_DATA} from '@/services/PdfExportService'
+import {PDF_SAMPLE_DATA, PdfExportService} from '@/services/PdfExportService'
 import {useAuth} from '@/composables/useAuth'
 import type {CacheCapacityInfo, RelocationProgress} from '@/services/JmcomicTypes'
 
@@ -831,14 +836,16 @@ async function onDownloadPublicChange(e: CustomEvent) {
 function onDisplayModeChange(mode: string) {
   displayMode.value = mode
   SettingsStore.setReaderDisplayMode(mode)
-  JmcomicService.setReaderDisplayMode(mode).catch(() => {})
+  JmcomicService.setReaderDisplayMode(mode).catch(() => {
+  })
 }
 
 // ---- 屏幕方向 ----
 function onScreenOrientationChange(orientation: string) {
   screenOrientation.value = orientation
   SettingsStore.setReaderScreenOrientation(orientation)
-  JmcomicService.setReaderScreenOrientation(orientation).catch(() => {})
+  JmcomicService.setReaderScreenOrientation(orientation).catch(() => {
+  })
 }
 
 // ---- 亮度跟随系统 ----
@@ -847,10 +854,16 @@ async function onBrightnessFollowSystemChange(e: CustomEvent) {
   brightnessFollowSystem.value = follow
   if (follow) {
     SettingsStore.setReaderBrightness(-1)
-    try { await JmcomicService.setReaderBrightness(-1) } catch { /* ignore */ }
+    try {
+      await JmcomicService.setReaderBrightness(-1)
+    } catch { /* ignore */
+    }
   } else {
     SettingsStore.setReaderBrightness(brightnessValue.value)
-    try { await JmcomicService.setReaderBrightness(brightnessValue.value) } catch { /* ignore */ }
+    try {
+      await JmcomicService.setReaderBrightness(brightnessValue.value)
+    } catch { /* ignore */
+    }
   }
 }
 
@@ -859,7 +872,8 @@ function onBrightnessChange(e: CustomEvent) {
   const val = Number(e.detail.value)
   brightnessValue.value = val
   SettingsStore.setReaderBrightness(val)
-  JmcomicService.setReaderBrightness(val).catch(() => {})
+  JmcomicService.setReaderBrightness(val).catch(() => {
+  })
 }
 
 // ---- 防止熄屏 ----
@@ -867,7 +881,10 @@ async function onKeepScreenOnChange(e: CustomEvent) {
   const enabled = e.detail.checked
   keepScreenOn.value = enabled
   SettingsStore.setReaderKeepScreenOn(enabled)
-  try { await JmcomicService.setReaderKeepScreenOn(enabled) } catch { /* ignore */ }
+  try {
+    await JmcomicService.setReaderKeepScreenOn(enabled)
+  } catch { /* ignore */
+  }
 }
 
 // ---- 音量键翻页 ----
@@ -875,7 +892,8 @@ function onVolumeNavigationChange(e: CustomEvent) {
   const enabled = e.detail.checked
   volumeNavigation.value = enabled
   SettingsStore.setReaderVolumeNavigation(enabled)
-  JmcomicService.setReaderVolumeNavigation(enabled).catch(() => {})
+  JmcomicService.setReaderVolumeNavigation(enabled).catch(() => {
+  })
 }
 
 // ---- 阅读结束时展开工具栏 ----
@@ -883,7 +901,8 @@ function onAutoShowToolbarAtEndChange(e: CustomEvent) {
   const enabled = e.detail.checked
   autoShowToolbarAtEnd.value = enabled
   SettingsStore.setReaderAutoShowToolbarAtEnd(enabled)
-  JmcomicService.setReaderAutoShowToolbarAtEnd(enabled).catch(() => {})
+  JmcomicService.setReaderAutoShowToolbarAtEnd(enabled).catch(() => {
+  })
 }
 </script>
 

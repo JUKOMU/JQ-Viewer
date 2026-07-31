@@ -273,7 +273,7 @@ onMounted(async () => {
     const downloadResult = await JmcomicService.getDownloadTasks()
     for (const t of downloadResult.tasks
       .filter((t) => t.status === 'completed' && t.albumId === albumId.value)
-    ) {
+      ) {
       const meta = findAlbumMeta(t.chapterId, t.chapterSortOrder)
       localChapters.set(t.chapterId, {
         albumId: t.albumId,
@@ -296,7 +296,7 @@ onMounted(async () => {
     const pdfResult = await JmcomicService.getImportedPdfs()
     for (const p of pdfResult.pdfs
       .filter((p) => p.albumId === albumId.value)
-    ) {
+      ) {
       const chapterId = resolvePdfLocalKey(p)
       const current = localChapters.get(chapterId)
       if (current) {

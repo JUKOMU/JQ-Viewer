@@ -225,6 +225,7 @@ defineOptions({name: 'DownloadPage'})
 import {computed, onMounted, onUnmounted, ref} from 'vue'
 import {useRouter} from 'vue-router'
 import {
+  alertController,
   IonAlert,
   IonContent,
   IonHeader,
@@ -257,10 +258,16 @@ import DownloadTaskCard from '@/components/download/DownloadTaskCard.vue'
 import PdfExportBottomSheet from '@/components/download/PdfExportBottomSheet.vue'
 import DeleteChaptersBottomSheet from '@/components/download/DeleteChaptersBottomSheet.vue'
 import {JmcomicService, sanitizeError, showToast} from '@/services/JmcomicService'
-import {alertController} from '@ionic/vue'
 import {OfflineDownloadService} from '@/services/OfflineDownloadService'
 import {PdfExportService} from '@/services/PdfExportService'
-import type {AlbumDetail, CompletedEntry, CompletedGroup, DownloadTask, ImportedPdf, PdfExportTask} from '@/services/JmcomicTypes'
+import type {
+  AlbumDetail,
+  CompletedEntry,
+  CompletedGroup,
+  DownloadTask,
+  ImportedPdf,
+  PdfExportTask
+} from '@/services/JmcomicTypes'
 import {PdfImportService} from '@/services/PdfImportService'
 
 const router = useRouter()
@@ -567,7 +574,7 @@ const completedGroups = computed<CompletedGroup[]>(() => {
     : groups.sort(
       (a, b) =>
         Math.max(...b.chapters.map((c) => c.createdAt)) -
-      Math.max(...a.chapters.map((c) => c.createdAt)),
+        Math.max(...a.chapters.map((c) => c.createdAt)),
     )
 })
 
@@ -880,7 +887,8 @@ const onPdfExportConfirm = async (payload: {
   if (payload.selectedChapters.length !== 1) {
     try {
       albumDetail = await JmcomicService.getAlbum(payload.selectedChapters[0].albumId)
-    } catch { /* 获取失败则变量渲染为空 */ }
+    } catch { /* 获取失败则变量渲染为空 */
+    }
   }
 
   const tasks: PdfExportTask[] = payload.selectedChapters.map((ch) => {
@@ -930,8 +938,8 @@ async function confirmOverwrite(existingFiles: string[]): Promise<boolean> {
       header: '文件已存在',
       message: `以下文件已存在，是否覆盖？\n${fileList}`,
       buttons: [
-        { text: '取消', role: 'cancel', handler: () => resolve(false) },
-        { text: '覆盖', role: 'destructive', handler: () => resolve(true) },
+        {text: '取消', role: 'cancel', handler: () => resolve(false)},
+        {text: '覆盖', role: 'destructive', handler: () => resolve(true)},
       ],
     }).then(alert => alert.present())
   })
@@ -946,7 +954,7 @@ async function ensureNotificationPermission(): Promise<boolean> {
       header: '需要通知权限',
       message: 'PDF导出将在后台进行，需要通过通知查看进度。拒绝后仍会继续导出，但不会显示系统通知。',
       buttons: [
-        { text: '暂不授权', role: 'cancel' },
+        {text: '暂不授权', role: 'cancel'},
         {
           text: '允许通知',
           role: 'confirm',
@@ -1113,9 +1121,9 @@ const deleteChapters = async (chapters: CompletedEntry[]) => {
       downloadChapters.map(async (ch) => {
         try {
           const result = await JmcomicService.deleteDownloaded(ch.albumId, ch.chapterId)
-          return { ch, ok: result.success !== false }
+          return {ch, ok: result.success !== false}
         } catch {
-          return { ch, ok: false }
+          return {ch, ok: false}
         }
       }),
     )
@@ -1134,12 +1142,12 @@ const deleteChapters = async (chapters: CompletedEntry[]) => {
 
     const pdfResults = await Promise.all(
       pdfChapters.map(async (ch) => {
-        if (!ch.pdfData) return { ch, ok: false }
+        if (!ch.pdfData) return {ch, ok: false}
         try {
           const result = await JmcomicService.deleteImportedPdf(ch.pdfData.id)
-          return { ch, ok: result.success !== false }
+          return {ch, ok: result.success !== false}
         } catch {
-          return { ch, ok: false }
+          return {ch, ok: false}
         }
       }),
     )
@@ -1194,10 +1202,12 @@ const clearCompleted = async () => {
   if (!list.length && !importedPdfs.value.length) return
   await Promise.all([
     ...list.map((task) =>
-      JmcomicService.deleteDownloaded(task.albumId, task.chapterId).catch(() => {}),
+      JmcomicService.deleteDownloaded(task.albumId, task.chapterId).catch(() => {
+      }),
     ),
     ...importedPdfs.value.map((pdf) =>
-      JmcomicService.deleteImportedPdf(pdf.id).catch(() => {}),
+      JmcomicService.deleteImportedPdf(pdf.id).catch(() => {
+      }),
     ),
   ])
   tasks.value = tasks.value.filter((t) => t.status !== 'completed')

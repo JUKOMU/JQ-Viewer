@@ -93,7 +93,8 @@
                 :key="v"
                 class="tag-btn"
                 @click="copyTag(v)"
-              >{{ v }}</button>
+              >{{ v }}
+              </button>
             </div>
             <div class="template-tags" style="margin-top: 2px">
               <span class="tag-hint">条件语法（点击复制）：</span>
@@ -102,7 +103,8 @@
                 :key="v"
                 class="tag-btn tag-cond"
                 @click="copyTagSyntax(v)"
-              >{{ v }}</button>
+              >{{ v }}
+              </button>
             </div>
           </div>
 
@@ -189,13 +191,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { IonRange, IonToggle, useBackButton } from '@ionic/vue'
-import type { AlbumDetail, DownloadTask } from '@/services/JmcomicTypes'
-import { PdfExportService } from '@/services/PdfExportService'
-import { JmcomicService, showToast } from '@/services/JmcomicService'
+import {computed, ref, watch} from 'vue'
+import {IonRange, IonToggle, useBackButton} from '@ionic/vue'
+import type {AlbumDetail, DownloadTask} from '@/services/JmcomicTypes'
+import {PdfExportService} from '@/services/PdfExportService'
+import {JmcomicService, showToast} from '@/services/JmcomicService'
 
-defineOptions({ name: 'PdfExportBottomSheet' })
+defineOptions({name: 'PdfExportBottomSheet'})
 
 const props = defineProps<{
   modelValue: boolean
@@ -464,8 +466,12 @@ async function onConfirm() {
 }
 
 @keyframes slideUp {
-  from { transform: translateY(100%); }
-  to { transform: translateY(0); }
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
 }
 
 /* 头部 */

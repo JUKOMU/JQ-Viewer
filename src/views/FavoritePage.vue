@@ -285,7 +285,8 @@ const refreshDownloadStatuses = async () => {
             if (pdf.albumId) set.add(pdf.albumId)
           }
         }
-      } catch { /* ignore */ }
+      } catch { /* ignore */
+      }
       downloadedAlbumIds.value = set
     }
   } catch {

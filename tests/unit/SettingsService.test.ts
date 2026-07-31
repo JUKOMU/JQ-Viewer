@@ -1,10 +1,10 @@
-import { describe, expect, test, vi } from 'vitest'
-import type { AllSettings } from '@/services/JmcomicTypes'
+import {describe, expect, test, vi} from 'vitest'
+import type {AllSettings} from '@/services/JmcomicTypes'
 
 const getAllSettings = vi.hoisted(() => vi.fn())
 
 vi.mock('@/services/JmcomicService', () => ({
-  JmcomicService: { getAllSettings },
+  JmcomicService: {getAllSettings},
 }))
 
 const legacySettings: AllSettings = {
@@ -25,7 +25,7 @@ describe('SettingsService', () => {
   test('旧版设置缺少阅读结束工具栏字段时默认开启', async () => {
     getAllSettings.mockResolvedValue(legacySettings)
 
-    const { initSettings, SettingsStore } = await import('@/services/SettingsService')
+    const {initSettings, SettingsStore} = await import('@/services/SettingsService')
     await initSettings()
 
     expect(SettingsStore.getReaderAutoShowToolbarAtEnd()).toBe(true)

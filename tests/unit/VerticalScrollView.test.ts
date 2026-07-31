@@ -1,10 +1,13 @@
-import { mount } from '@vue/test-utils'
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import {mount} from '@vue/test-utils'
+import {afterEach, beforeEach, describe, expect, test, vi} from 'vitest'
 import VerticalScrollView from '@/components/reader/VerticalScrollView.vue'
 
 class ResizeObserverMock {
-  observe() {}
-  disconnect() {}
+  observe() {
+  }
+
+  disconnect() {
+  }
 }
 
 let frameId = 0
@@ -17,7 +20,8 @@ beforeEach(() => {
     Promise.resolve().then(() => callback(performance.now()))
     return id
   })
-  vi.stubGlobal('cancelAnimationFrame', () => {})
+  vi.stubGlobal('cancelAnimationFrame', () => {
+  })
 })
 
 afterEach(() => {
@@ -43,10 +47,10 @@ describe('VerticalScrollView', () => {
 
     const container = wrapper.get('.vertical-container')
     Object.defineProperties(container.element, {
-      scrollHeight: { configurable: true, value: 1000 },
-      clientHeight: { configurable: true, value: 400 },
-      clientWidth: { configurable: true, value: 300 },
-      scrollTop: { configurable: true, value: 500, writable: true },
+      scrollHeight: {configurable: true, value: 1000},
+      clientHeight: {configurable: true, value: 400},
+      clientWidth: {configurable: true, value: 300},
+      scrollTop: {configurable: true, value: 500, writable: true},
     })
 
     await container.trigger('scroll')

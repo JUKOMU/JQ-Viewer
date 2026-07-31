@@ -237,7 +237,7 @@ async function showHelp() {
       '搜索方式：站内搜索 / 作品 / 作者 / 标签 / 登场人物',
     ].join('\n'),
     buttons: [
-      { text: '知道了', role: 'cancel' },
+      {text: '知道了', role: 'cancel'},
     ],
   })
   await alert.present()

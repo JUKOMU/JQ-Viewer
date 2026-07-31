@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'vitest'
-import { useSideMenuState } from '@/composables/useSideMenuState'
+import {describe, expect, test} from 'vitest'
+import {useSideMenuState} from '@/composables/useSideMenuState'
 
 describe('useSideMenuState', () => {
   test('所有菜单状态初始为关闭', () => {
@@ -12,7 +12,7 @@ describe('useSideMenuState', () => {
   })
 
   test('rightDragProgress 初始为 0', () => {
-    const { rightDragProgress } = useSideMenuState()
+    const {rightDragProgress} = useSideMenuState()
     expect(rightDragProgress.value).toBe(0)
   })
 
@@ -28,7 +28,7 @@ describe('useSideMenuState', () => {
   })
 
   test('isMenuNavigation 可独立设置', () => {
-    const { isMenuNavigation } = useSideMenuState()
+    const {isMenuNavigation} = useSideMenuState()
     isMenuNavigation.value = true
     expect(isMenuNavigation.value).toBe(true)
     isMenuNavigation.value = false

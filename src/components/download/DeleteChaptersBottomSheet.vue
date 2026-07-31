@@ -58,11 +58,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
-import { useBackButton } from '@ionic/vue'
-import type { CompletedEntry } from '@/services/JmcomicTypes'
+import {ref, watch} from 'vue'
+import {useBackButton} from '@ionic/vue'
+import type {CompletedEntry} from '@/services/JmcomicTypes'
 
-defineOptions({ name: 'DeleteChaptersBottomSheet' })
+defineOptions({name: 'DeleteChaptersBottomSheet'})
 
 const props = defineProps<{
   modelValue: boolean
@@ -172,8 +172,12 @@ useBackButton(10, (processNextHandler) => {
 }
 
 @keyframes slideUp {
-  from { transform: translateY(100%); }
-  to { transform: translateY(0); }
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
 }
 
 .sheet-header {

@@ -20,3 +20,4 @@ RELEASE_CHECKLIST.md
 AGENTS.md
 DEV_REVIEW_FIX_PLAN.md
 /.vs/
+/desktop-server/target/

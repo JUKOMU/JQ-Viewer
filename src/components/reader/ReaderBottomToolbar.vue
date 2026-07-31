@@ -110,13 +110,7 @@
 import {computed, nextTick, onBeforeUnmount, onMounted, ref} from 'vue'
 import type {RangeCustomEvent} from '@ionic/vue'
 import {IonIcon, IonRange} from '@ionic/vue'
-import {
-  chevronBack,
-  chevronDown,
-  chevronForward,
-  chevronUp,
-  settingsOutline,
-} from 'ionicons/icons'
+import {chevronBack, chevronDown, chevronForward, chevronUp, settingsOutline,} from 'ionicons/icons'
 import type {PhotoMeta} from '@/services/JmcomicTypes'
 
 defineOptions({name: 'ReaderBottomToolbar'})
@@ -451,9 +445,8 @@ const onRangeInput = (ev: RangeCustomEvent) => {
 
 .chapter-picker-enter-active,
 .chapter-picker-leave-active {
-  transition:
-    opacity 0.18s ease,
-    transform 0.18s ease;
+  transition: opacity 0.18s ease,
+  transform 0.18s ease;
 }
 
 .chapter-picker-enter-from,

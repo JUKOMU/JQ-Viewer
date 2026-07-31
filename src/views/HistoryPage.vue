@@ -162,7 +162,14 @@ defineOptions({name: 'HistoryPage'})
 import {computed, onBeforeUnmount, onMounted, ref} from 'vue'
 import {useRouter} from 'vue-router'
 import {alertController, IonContent, IonIcon, IonPage} from '@ionic/vue'
-import {bookOutline, copyOutline, documentTextOutline, ellipsisVertical, trashOutline, timeOutline} from 'ionicons/icons'
+import {
+  bookOutline,
+  copyOutline,
+  documentTextOutline,
+  ellipsisVertical,
+  timeOutline,
+  trashOutline
+} from 'ionicons/icons'
 import {HistoryService} from '@/services/HistoryService'
 import type {BrowseHistoryItem, ParseHistoryItem} from '@/services/JmcomicTypes'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'

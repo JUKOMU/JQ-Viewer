@@ -73,12 +73,7 @@ import {useRoute, useRouter} from 'vue-router'
 import {IonPage} from '@ionic/vue'
 import type {PluginListenerHandle} from '@capacitor/core'
 import {getImageUrl, JmcomicService, showToast} from '@/services/JmcomicService'
-import type {
-  ImageInfo,
-  PhotoDetail,
-  PhotoMeta,
-  PreloadResult,
-} from '@/services/JmcomicTypes'
+import type {ImageInfo, PhotoDetail, PhotoMeta, PreloadResult,} from '@/services/JmcomicTypes'
 import {SettingsStore} from '@/services/SettingsService'
 import {HistoryService} from '@/services/HistoryService'
 import {ReadingProgressService} from '@/services/ReadingProgressService'
@@ -103,7 +98,8 @@ const DRAG_PREVIEW_DELAY_MS = 500
 const route = useRoute()
 const router = useRouter()
 
-const updateReaderCurrentPage = inject<(page: number) => void>('updateReaderCurrentPage', () => {})
+const updateReaderCurrentPage = inject<(page: number) => void>('updateReaderCurrentPage', () => {
+})
 
 // ---- 路由参数 ----
 const albumId = computed(() => route.params.albumId as string)
@@ -145,7 +141,7 @@ let expandDirection: 'forward' | 'backward' | null = null
 let lastScrollTime = 0
 let lastScrollIndex = -1
 let revertTimer: ReturnType<typeof setTimeout> | null = null
-let activeRenderRange: {start: number; end: number; center: number} | null = null
+let activeRenderRange: { start: number; end: number; center: number } | null = null
 let pendingSeekIndex: number | null = null
 let dragPreviewTimer: ReturnType<typeof setTimeout> | null = null
 const verticalViewRef = ref<InstanceType<typeof VerticalScrollView> | null>(null)
@@ -192,7 +188,8 @@ const switchChapter = (targetChapterId: string) => {
 // 工具栏显示时仅恢复系统栏；阅读内容始终保持 edge-to-edge，不随系统栏改变尺寸。
 const syncReaderFullscreen = () => {
   if (!readerRuntimeActive) return
-  JmcomicService.setReaderFullscreen(!toolbarVisible.value).catch(() => {})
+  JmcomicService.setReaderFullscreen(!toolbarVisible.value).catch(() => {
+  })
 }
 
 const setToolbarVisible = (visible: boolean) => {
@@ -294,7 +291,8 @@ const onDisplayModeChange = (vertical: boolean) => {
 }
 
 const syncReaderState = () => {
-  JmcomicService.setReaderState(true, isVertical.value).catch(() => {})
+  JmcomicService.setReaderState(true, isVertical.value).catch(() => {
+  })
 }
 
 // ---- 阅读器设置应用 / 恢复 ----
@@ -302,24 +300,32 @@ const syncReaderState = () => {
 const applyReaderSettings = () => {
   const orientation = SettingsStore.getReaderScreenOrientation()
   if (orientation !== 'auto') {
-    JmcomicService.setReaderScreenOrientation(orientation).catch(() => {})
+    JmcomicService.setReaderScreenOrientation(orientation).catch(() => {
+    })
   }
   const brightness = SettingsStore.getReaderBrightness()
   if (brightness >= 0) {
-    JmcomicService.setReaderBrightness(brightness).catch(() => {})
+    JmcomicService.setReaderBrightness(brightness).catch(() => {
+    })
   }
   if (SettingsStore.getReaderKeepScreenOn()) {
-    JmcomicService.setReaderKeepScreenOn(true).catch(() => {})
+    JmcomicService.setReaderKeepScreenOn(true).catch(() => {
+    })
   }
   syncReaderFullscreen()
 }
 
 const restoreSystemState = () => {
-  JmcomicService.setReaderBrightness(-1).catch(() => {})
-  JmcomicService.setReaderScreenOrientation('auto').catch(() => {})
-  JmcomicService.setReaderKeepScreenOn(false).catch(() => {})
-  JmcomicService.setReaderFullscreen(false).catch(() => {})
-  JmcomicService.setReaderState(false, false).catch(() => {})
+  JmcomicService.setReaderBrightness(-1).catch(() => {
+  })
+  JmcomicService.setReaderScreenOrientation('auto').catch(() => {
+  })
+  JmcomicService.setReaderKeepScreenOn(false).catch(() => {
+  })
+  JmcomicService.setReaderFullscreen(false).catch(() => {
+  })
+  JmcomicService.setReaderState(false, false).catch(() => {
+  })
 }
 
 // ---- 音量键 ----
@@ -513,7 +519,7 @@ const scheduleDragPreviewLoad = (index: number) => {
   }, DRAG_PREVIEW_DELAY_MS)
 }
 
-const onVerticalRequestRange = (range: {start: number; end: number; center: number}) => {
+const onVerticalRequestRange = (range: { start: number; end: number; center: number }) => {
   activeRenderRange = {
     start: Math.max(0, range.start),
     end: Math.min(totalCount.value, range.end),
@@ -645,10 +651,13 @@ const activateReaderRuntime = () => {
   if (readerRuntimeActive) return
   readerRuntimeActive = true
   applyReaderSettings()
-  JmcomicService.setReaderState(true, isVertical.value).catch(() => {})
-  setupVolumeKeyListener().catch(() => {})
+  JmcomicService.setReaderState(true, isVertical.value).catch(() => {
+  })
+  setupVolumeKeyListener().catch(() => {
+  })
   if (!isOffline.value && photoDetail) {
-    setupImageReadyListener().catch(() => {})
+    setupImageReadyListener().catch(() => {
+    })
   }
 }
 

@@ -73,4 +73,32 @@ describe('AlbumPreviewTab', () => {
 
     wrapper.unmount()
   })
+
+  test('手动模式缺图提示使用可见数量并通过 live region 播报', async () => {
+    const wrapper = mount(AlbumPreviewTab, {
+      props: {
+        slots: new Array(20).fill(null),
+        totalCount: 40,
+        visibleCount: 20,
+        allVisible: false,
+        autoLoad: false,
+        loading: false,
+        loadingMore: false,
+        loadedCount: 19,
+      },
+    })
+
+    expect(wrapper.text()).toContain('重新加载缺失图片（19 / 20）')
+    expect(wrapper.text()).not.toContain('19 / 40')
+
+    const statusText = wrapper.get('[role="status"]').text()
+    expect(statusText).toContain('19 / 20')
+    expect(statusText).toContain('缺失图片')
+    expect(statusText).toContain('重新加载')
+
+    await wrapper.get('button').trigger('click')
+    expect(wrapper.emitted('loadMore')).toHaveLength(1)
+
+    wrapper.unmount()
+  })
 })

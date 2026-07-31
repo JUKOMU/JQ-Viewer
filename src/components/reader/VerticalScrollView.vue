@@ -683,7 +683,11 @@ defineExpose({scrollToIndex, containerRef, isAtBottom})
   left: 0;
   width: 100%;
   height: 120px;
-  padding: 50px 0;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
   text-align: center;
   color: #666;
   font-size: 14px;

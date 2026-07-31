@@ -36,7 +36,7 @@
           </span>
           <span v-else-if="autoLoad">上滑加载更多...</span>
           <span v-else-if="loadedCount < visibleCount">
-            重新加载缺失图片（{{ loadedCount }} / {{ totalCount }}）
+            重新加载缺失图片（{{ loadedCount }} / {{ visibleCount }}）
           </span>
           <span v-else>查看更多图片（共 {{ totalCount }} 张）</span>
         </button>
@@ -89,6 +89,9 @@ const statusMessage = computed(() => {
     return `已启用上滑重新加载缺失图片，已加载 ${props.loadedCount} / ${props.visibleCount}`
   }
   if (props.autoLoad) return '已启用上滑加载更多图片'
+  if (props.loadedCount < props.visibleCount) {
+    return `存在缺失图片，可重新加载，已加载 ${props.loadedCount} / ${props.visibleCount}`
+  }
   return ''
 })
 

@@ -44,8 +44,31 @@ jobs:
                   java-version: 21
 
             - run: npm ci
-            - run: npm run build
+
+            - name: Lint frontend
+              run: npm run lint
+
+            - name: Run frontend unit tests
+              run: npm run test:unit
+
+            - name: Build frontend
+              run: npm run build
+
+            - name: Check version consistency
+              run: npm run check:version
+
             - run: npx cap sync android
+
+            - name: Run Android local unit tests
+              run: cd android && chmod +x gradlew && ./gradlew :app:testDebugUnitTest
+
+            - name: Run Android instrumentation tests
+              uses: reactivecircus/android-emulator-runner@v2
+              with:
+                  api-level: 35
+                  arch: x86_64
+                  disable-animations: true
+                  script: cd android && ./gradlew :app:connectedDebugAndroidTest
 
             - name: Validate release signing secrets
               env:

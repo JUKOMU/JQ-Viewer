@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { parseFilenamesForImport } from '@/utils/importPdfParse'
+import {describe, expect, it} from 'vitest'
+import {parseFilenamesForImport} from '@/utils/importPdfParse'
 
 describe('parseFilenamesForImport', () => {
   it('does not mark one file as duplicate when the same id appears twice in its name', () => {

@@ -88,7 +88,8 @@ const NATIVE_PDF_MAX_RENDER_WIDTH = 2400
 const route = useRoute()
 const router = useRouter()
 
-const updateReaderCurrentPage = inject<(page: number) => void>('updateReaderCurrentPage', () => {})
+const updateReaderCurrentPage = inject<(page: number) => void>('updateReaderCurrentPage', () => {
+})
 
 // ---- 路由参数 ----
 const filePath = route.query.path as string
@@ -130,7 +131,7 @@ let lastScrollTime = 0
 let lastScrollIndex = -1
 let revertTimer: ReturnType<typeof setTimeout> | null = null
 let renderGeneration = 0
-let activeRenderRange: {start: number; end: number; center: number} | null = null
+let activeRenderRange: { start: number; end: number; center: number } | null = null
 let pendingSeekIndex: number | null = null
 let dragPreviewTimer: ReturnType<typeof setTimeout> | null = null
 let activeRenderCount = 0
@@ -142,7 +143,8 @@ const horizontalViewRef = ref<InstanceType<typeof HorizontalPageView> | null>(nu
 // 工具栏显示时仅恢复系统栏；阅读内容始终保持 edge-to-edge，不随系统栏改变尺寸。
 const syncReaderFullscreen = () => {
   if (!readerRuntimeActive) return
-  JmcomicService.setReaderFullscreen(!toolbarVisible.value).catch(() => {})
+  JmcomicService.setReaderFullscreen(!toolbarVisible.value).catch(() => {
+  })
 }
 
 const setToolbarVisible = (visible: boolean) => {
@@ -217,31 +219,40 @@ const onDisplayModeChange = (vertical: boolean) => {
 }
 
 const syncReaderState = () => {
-  JmcomicService.setReaderState(true, isVertical.value).catch(() => {})
+  JmcomicService.setReaderState(true, isVertical.value).catch(() => {
+  })
 }
 
 // ---- 阅读器设置 ----
 const applyReaderSettings = () => {
   const orientation = SettingsStore.getReaderScreenOrientation()
   if (orientation !== 'auto') {
-    JmcomicService.setReaderScreenOrientation(orientation).catch(() => {})
+    JmcomicService.setReaderScreenOrientation(orientation).catch(() => {
+    })
   }
   const brightness = SettingsStore.getReaderBrightness()
   if (brightness >= 0) {
-    JmcomicService.setReaderBrightness(brightness).catch(() => {})
+    JmcomicService.setReaderBrightness(brightness).catch(() => {
+    })
   }
   if (SettingsStore.getReaderKeepScreenOn()) {
-    JmcomicService.setReaderKeepScreenOn(true).catch(() => {})
+    JmcomicService.setReaderKeepScreenOn(true).catch(() => {
+    })
   }
   syncReaderFullscreen()
 }
 
 const restoreSystemState = () => {
-  JmcomicService.setReaderBrightness(-1).catch(() => {})
-  JmcomicService.setReaderScreenOrientation('auto').catch(() => {})
-  JmcomicService.setReaderKeepScreenOn(false).catch(() => {})
-  JmcomicService.setReaderFullscreen(false).catch(() => {})
-  JmcomicService.setReaderState(false, false).catch(() => {})
+  JmcomicService.setReaderBrightness(-1).catch(() => {
+  })
+  JmcomicService.setReaderScreenOrientation('auto').catch(() => {
+  })
+  JmcomicService.setReaderKeepScreenOn(false).catch(() => {
+  })
+  JmcomicService.setReaderFullscreen(false).catch(() => {
+  })
+  JmcomicService.setReaderState(false, false).catch(() => {
+  })
 }
 
 // ---- 音量键 ----
@@ -274,8 +285,10 @@ const activateReaderRuntime = () => {
   if (readerRuntimeActive) return
   readerRuntimeActive = true
   applyReaderSettings()
-  JmcomicService.setReaderState(true, isVertical.value).catch(() => {})
-  setupVolumeKeyListener().catch(() => {})
+  JmcomicService.setReaderState(true, isVertical.value).catch(() => {
+  })
+  setupVolumeKeyListener().catch(() => {
+  })
 }
 
 const deactivateReaderRuntime = () => {
@@ -312,14 +325,14 @@ const renderPageToBlob = async (pageNum: number): Promise<string | null> => {
   let page: pdfjsLib.PDFPageProxy | null = null
   try {
     page = await pdfDoc.getPage(pageNum)
-    const scale = calcBaseScale(page.getViewport({ scale: 1 }))
-    const viewport = page.getViewport({ scale })
+    const scale = calcBaseScale(page.getViewport({scale: 1}))
+    const viewport = page.getViewport({scale})
 
     const canvas = document.createElement('canvas')
     canvas.width = viewport.width
     canvas.height = viewport.height
 
-    const task = page.render({ canvas, viewport })
+    const task = page.render({canvas, viewport})
     renderTasks.set(pageNum, task)
     await task.promise
     if (renderTasks.get(pageNum) === task) {
@@ -591,7 +604,7 @@ const scheduleDragPreviewRender = (index: number) => {
   }, DRAG_PREVIEW_DELAY_MS)
 }
 
-const onVerticalRequestRange = (range: {start: number; end: number; center: number}) => {
+const onVerticalRequestRange = (range: { start: number; end: number; center: number }) => {
   activeRenderRange = {
     start: Math.max(0, range.start),
     end: Math.min(totalCount.value, range.end),

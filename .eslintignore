@@ -4,6 +4,7 @@ node_modules
 /dist
 /ios
 /android
+/desktop-server/target
 JMComic-Api-Java
 
 

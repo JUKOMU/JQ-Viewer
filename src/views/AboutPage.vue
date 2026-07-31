@@ -78,7 +78,16 @@ defineOptions({name: 'AboutPage'})
 
 import {nextTick, onMounted, ref} from 'vue'
 import {App} from '@capacitor/app'
-import {alertController, IonBackButton, IonButtons, IonContent, IonHeader, IonPage, IonTitle, IonToolbar,} from '@ionic/vue'
+import {
+  alertController,
+  IonBackButton,
+  IonButtons,
+  IonContent,
+  IonHeader,
+  IonPage,
+  IonTitle,
+  IonToolbar,
+} from '@ionic/vue'
 import {showToast} from '@/services/JmcomicService'
 import {compareVersion, RELEASES_API, sanitizeReleaseBody} from '@/utils/version'
 
@@ -154,7 +163,7 @@ async function showUpdateAlert(version: string, body: string, htmlUrl: string) {
     message: cleaned || '（无更新说明）',
     cssClass: 'update-alert',
     buttons: [
-      { text: '忽略', role: 'cancel' },
+      {text: '忽略', role: 'cancel'},
       {
         text: '好',
         handler: async () => {
@@ -163,7 +172,7 @@ async function showUpdateAlert(version: string, body: string, htmlUrl: string) {
             message: htmlUrl,
             cssClass: 'update-alert',
             buttons: [
-              { text: '取消', role: 'cancel' },
+              {text: '取消', role: 'cancel'},
               {
                 text: '打开',
                 handler: () => {

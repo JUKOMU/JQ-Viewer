@@ -40,12 +40,15 @@
             </div>
           </div>
 
-          <div class="preview-footer">
+          <div class="preview-footer" role="status" aria-live="polite" aria-atomic="true">
             <p v-if="loadingMore" class="footer-loading">
-              <ion-spinner name="dots"/>
+              <ion-spinner name="dots" aria-hidden="true"/>
               <span>加载中...（{{ loadedCount }} / {{ totalCount }}）</span>
             </p>
             <p v-else-if="allVisible" class="footer-text">已显示所有图片</p>
+            <p v-else-if="loadedCount < displayCount" class="footer-text">
+              上滑重新加载缺失图片...（{{ loadedCount }} / {{ displayCount }}）
+            </p>
             <p v-else class="footer-text">上滑加载更多...</p>
           </div>
         </template>
@@ -59,7 +62,7 @@
 <script setup lang="ts">
 defineOptions({name: 'PreviewAllPage'})
 
-import {computed, nextTick, onMounted, onUnmounted, ref} from 'vue'
+import {computed, nextTick, onMounted, onUnmounted, ref, watch} from 'vue'
 import {useRoute, useRouter} from 'vue-router'
 import type {ScrollCustomEvent} from '@ionic/vue'
 import {
@@ -77,6 +80,7 @@ import type {PluginListenerHandle} from '@capacitor/core'
 import {arrowBack} from 'ionicons/icons'
 import {getImageUrl, JmcomicService} from '@/services/JmcomicService'
 import type {PhotoDetail, PreloadResult} from '@/services/JmcomicTypes'
+import {PREVIEW_BATCH, type PreviewImageSlotSetter, usePreviewBatches,} from '@/composables/usePreviewBatches'
 import {buildPdfDocumentParams, fetchPdfArrayBuffer} from '@/services/PdfReaderService'
 import * as pdfjsLib from 'pdfjs-dist'
 
@@ -85,7 +89,6 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   import.meta.url,
 ).href
 
-const BATCH = 20
 const NEAR_BOTTOM_THRESHOLD = 200
 
 const route = useRoute()
@@ -100,25 +103,14 @@ const isPdfSource = computed(() => source.value === 'pdf')
 const isDownloadSource = computed(() => source.value === 'download')
 const pdfPath = computed(() => (route.query.pdfPath as string) || '')
 
-interface PreviewImage {
-  sortOrder: number
-  dataUrl: string
-}
-
-const slots = ref<(PreviewImage | null)[]>([])
-const displayCount = ref(0)
 const totalCount = ref(initialTotal)
 const loading = ref(true)
-const loadingMore = ref(false)
-const cursor = ref(0) // 已提交给 Native 的图片数
-
-const loadedCount = computed(() => slots.value.filter((s) => s !== null).length)
-const allVisible = computed(() => displayCount.value >= totalCount.value)
-const skeletonCount = computed(() => Math.min(totalCount.value || initialTotal || BATCH, BATCH))
+const skeletonCount = computed(() => Math.min(totalCount.value || initialTotal || PREVIEW_BATCH, PREVIEW_BATCH))
 
 let photoDetail: PhotoDetail | null = null
 let pdfDoc: pdfjsLib.PDFDocumentProxy | null = null
 let imageReadyListenerHandle: PluginListenerHandle | null = null
+let disposed = false
 const pdfObjectUrls = new Set<string>()
 
 // ---- 滚动容器 ----
@@ -135,18 +127,12 @@ const resolveScrollElement = async (): Promise<HTMLElement | null> => {
   return null
 }
 
-const setImageSlot = (sortOrder: number, dataUrl: string) => {
-  const idx = sortOrder - 1
-  if (idx >= 0 && idx < slots.value.length) {
-    slots.value[idx] = {sortOrder, dataUrl}
-  }
-}
-
 const renderPdfPage = async (pageNum: number): Promise<string | null> => {
-  if (!pdfDoc) return null
+  if (!pdfDoc || disposed) return null
   let page: pdfjsLib.PDFPageProxy | null = null
   try {
     page = await pdfDoc.getPage(pageNum)
+    if (disposed) return null
     const rawViewport = page.getViewport({scale: 1})
     const columns = window.innerWidth >= 680 ? 4 : 3
     const gap = 6
@@ -160,12 +146,17 @@ const renderPdfPage = async (pageNum: number): Promise<string | null> => {
     canvas.height = viewport.height
     const task = page.render({canvas, viewport})
     await task.promise
+    if (disposed) return null
 
     const blob = await new Promise<Blob | null>((resolve) =>
       canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.82),
     )
-    if (!blob) return null
+    if (!blob || disposed) return null
     const url = URL.createObjectURL(blob)
+    if (disposed) {
+      URL.revokeObjectURL(url)
+      return null
+    }
     pdfObjectUrls.add(url)
     return url
   } catch {
@@ -175,10 +166,15 @@ const renderPdfPage = async (pageNum: number): Promise<string | null> => {
   }
 }
 
-const renderPdfBatch = async (start: number, end: number) => {
+const renderPdfBatch = async (
+  start: number,
+  end: number,
+  setImageSlot: PreviewImageSlotSetter,
+) => {
+  const missingPages = Array.from({length: end - start}, (_, i) => start + i + 1)
+    .filter((pageNum) => !slots.value[pageNum - 1])
   const rendered = await Promise.all(
-    Array.from({length: end - start}, (_, i) => {
-      const pageNum = start + i + 1
+    missingPages.map((pageNum) => {
       return renderPdfPage(pageNum).then((url) => ({pageNum, url}))
     }),
   )
@@ -187,7 +183,16 @@ const renderPdfBatch = async (start: number, end: number) => {
   }
 }
 
-const preloadImageBatch = async (start: number, end: number) => {
+const preloadImageBatch = async (
+  start: number,
+  end: number,
+  setImageSlot: PreviewImageSlotSetter,
+) => {
+  if (disposed) return
+  if (isPdfSource.value) {
+    await renderPdfBatch(start, end, setImageSlot)
+    return
+  }
   if (!photoDetail) return
   if (isDownloadSource.value) {
     for (const image of photoDetail.images.slice(start, end)) {
@@ -198,10 +203,14 @@ const preloadImageBatch = async (start: number, end: number) => {
 
   const batch = photoDetail.images.slice(start, end)
   const result: PreloadResult = await JmcomicService.preloadImages(chapterId.value, batch, 'thumb')
+  if (disposed) return
   for (const so of result.cached) {
     setImageSlot(so, getImageUrl(chapterId.value, so, 'thumb'))
   }
 }
+
+const previewBatches = usePreviewBatches(totalCount, preloadImageBatch)
+const {slots, displayCount, loadingMore, loadedCount, allVisible} = previewBatches
 
 // ---- 生命周期 ----
 onMounted(async () => {
@@ -209,8 +218,13 @@ onMounted(async () => {
     if (isPdfSource.value) {
       if (!pdfPath.value) throw new Error('缺少 PDF 路径')
       const arrayBuffer = await fetchPdfArrayBuffer(pdfPath.value)
-      pdfDoc = await pdfjsLib.getDocument(buildPdfDocumentParams(arrayBuffer)).promise
-      totalCount.value = pdfDoc.numPages
+      const loadedPdfDoc = await pdfjsLib.getDocument(buildPdfDocumentParams(arrayBuffer)).promise
+      if (disposed) {
+        void loadedPdfDoc.destroy()
+        return
+      }
+      pdfDoc = loadedPdfDoc
+      totalCount.value = loadedPdfDoc.numPages
     } else if (isDownloadSource.value) {
       photoDetail = await JmcomicService.getDownloadedPhoto(albumId.value, chapterId.value)
       totalCount.value = photoDetail.images.length
@@ -219,48 +233,41 @@ onMounted(async () => {
       totalCount.value = photoDetail.images.length
     }
   } catch {
+    if (disposed) return
     totalCount.value = 0
     loading.value = false
     return
   }
 
+  if (disposed) return
+
   if (!isPdfSource.value && !isDownloadSource.value) {
-    imageReadyListenerHandle = await JmcomicService.addImageReadyListener(
+    const setImageSlot = previewBatches.createImageSlotSetter()
+    const listenerHandle = await JmcomicService.addImageReadyListener(
       chapterId.value,
       (sortOrder) => {
         setImageSlot(sortOrder, getImageUrl(chapterId.value, sortOrder, 'thumb'))
       },
     )
+    if (disposed) {
+      void listenerHandle.remove()
+      return
+    }
+    imageReadyListenerHandle = listenerHandle
   }
 
   await resolveScrollElement()
+  if (disposed) return
 
-  // 展开首批槽位
-  const firstCount = Math.min(BATCH, totalCount.value)
-  slots.value = new Array(firstCount).fill(null)
-  displayCount.value = firstCount
   loading.value = false
-
-  // 提交预加载首批缩略图
-  loadingMore.value = true
-  try {
-    if (isPdfSource.value) {
-      await renderPdfBatch(0, firstCount)
-    } else {
-      await preloadImageBatch(0, firstCount)
-    }
-  } catch {
-    // ignore
-  }
-  cursor.value = firstCount
-
-  await new Promise((r) => setTimeout(r, 300))
-  loadingMore.value = false
-
+  await previewBatches.initialize()
+  if (disposed) return
   await maybeLoadMoreAfterRender()
 })
 
 onUnmounted(() => {
+  disposed = true
+  previewBatches.reset()
   imageReadyListenerHandle?.remove()
   pdfDoc?.destroy()
   pdfDoc = null
@@ -272,60 +279,33 @@ onUnmounted(() => {
 
 // ---- 滚动 ----
 const onIonScroll = async (ev: ScrollCustomEvent) => {
-  if (loadingMore.value || allVisible.value) return
+  if (disposed || loadingMore.value || allVisible.value) return
   const se = scrollEl.value ?? (await resolveScrollElement())
   if (!se) return
   const remain = se.scrollHeight - se.clientHeight - ev.detail.scrollTop
   if (remain <= NEAR_BOTTOM_THRESHOLD) {
-    await expandBatch()
+    await previewBatches.expandBatch()
   }
 }
 
 const maybeLoadMoreAfterRender = async () => {
-  if (allVisible.value || loadingMore.value) return
+  if (disposed || allVisible.value || loadingMore.value) return
   await nextTick()
   const se = scrollEl.value ?? (await resolveScrollElement())
   if (!se) return
   const remain = se.scrollHeight - se.clientHeight - se.scrollTop
   if (remain <= NEAR_BOTTOM_THRESHOLD) {
-    await expandBatch()
-    await maybeLoadMoreAfterRender()
-  }
-}
-
-// ---- 展开一批：加载动画 → 0.3s → 扩槽位 → 提交下载 ----
-const expandBatch = async () => {
-  if (allVisible.value) return
-  if (!isPdfSource.value && !photoDetail) return
-  loadingMore.value = true
-
-  // 先等一下，让加载动画可见
-  await new Promise((r) => setTimeout(r, 400))
-
-  // 扩槽位
-  const newDisplayCount = Math.min(displayCount.value + BATCH, totalCount.value)
-  while (slots.value.length < newDisplayCount) {
-    slots.value.push(null)
-  }
-  displayCount.value = newDisplayCount
-
-  // 提交预加载（扩槽后才提交，保证事件能正确填充）
-  if (cursor.value < totalCount.value) {
-    const nextCursor = Math.min(cursor.value + BATCH, totalCount.value)
-    try {
-      if (isPdfSource.value) {
-        await renderPdfBatch(cursor.value, nextCursor)
-      } else {
-        await preloadImageBatch(cursor.value, nextCursor)
-      }
-    } catch {
-      /* ignore */
+    const batchFilled = await previewBatches.expandBatch()
+    if (batchFilled) {
+      await maybeLoadMoreAfterRender()
     }
-    cursor.value = nextCursor
   }
-
-  loadingMore.value = false
 }
+
+watch(loadedCount, (count) => {
+  if (disposed || loading.value || loadingMore.value || allVisible.value) return
+  if (count === displayCount.value) void maybeLoadMoreAfterRender()
+})
 
 const openReader = (page: number) => {
   if (isPdfSource.value && pdfPath.value) {

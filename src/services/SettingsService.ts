@@ -19,6 +19,7 @@ let cachedReaderScreenOrientation = 'auto'
 let cachedReaderBrightness = -1
 let cachedReaderKeepScreenOn = true
 let cachedReaderVolumeNavigation = false
+let cachedReaderAutoShowToolbarAtEnd = true
 
 /** App.vue onMounted 调用，从 DB 加载到缓存（幂等）。 */
 export async function initSettings(): Promise<void> {
@@ -36,6 +37,7 @@ export async function initSettings(): Promise<void> {
     cachedReaderBrightness = all.readerBrightness ?? -1
     cachedReaderKeepScreenOn = all.readerKeepScreenOn ?? true
     cachedReaderVolumeNavigation = all.readerVolumeNavigation ?? false
+    cachedReaderAutoShowToolbarAtEnd = all.readerAutoShowToolbarAtEnd ?? true
     settingsLoaded = true
   } catch (e) {
     // 使用默认值（已在缓存变量中预设）
@@ -130,5 +132,13 @@ export const SettingsStore = {
   },
   setReaderVolumeNavigation(enabled: boolean) {
     cachedReaderVolumeNavigation = enabled
+  },
+
+  // ---- 阅读器：阅读结束时展开工具栏 ----
+  getReaderAutoShowToolbarAtEnd(): boolean {
+    return cachedReaderAutoShowToolbarAtEnd
+  },
+  setReaderAutoShowToolbarAtEnd(enabled: boolean) {
+    cachedReaderAutoShowToolbarAtEnd = enabled
   },
 }

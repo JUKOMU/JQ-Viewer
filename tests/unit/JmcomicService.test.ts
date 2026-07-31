@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'vitest'
-import { sanitizeError } from '@/services/JmcomicService'
+import {describe, expect, test} from 'vitest'
+import {sanitizeError} from '@/services/JmcomicService'
 
 describe('sanitizeError', () => {
   test('从 Error 对象提取 message', () => {
@@ -12,7 +12,7 @@ describe('sanitizeError', () => {
   })
 
   test('无法从普通对象提取（非 Error 实例）', () => {
-    const err = { message: '权限不足' }
+    const err = {message: '权限不足'}
     expect(sanitizeError(err, '默认消息')).toBe('默认消息')
   })
 

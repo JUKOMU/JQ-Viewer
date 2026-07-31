@@ -404,7 +404,7 @@ export const JmcomicService = {
   // ========== PDF 导出 ==========
 
   exportPdfBatch(tasks: PdfExportTask[]) {
-    return native.exportPdfBatch({ tasks })
+    return native.exportPdfBatch({tasks})
   },
 
   pickFolder() {
@@ -414,11 +414,11 @@ export const JmcomicService = {
   // ========== PDF 导入 ==========
 
   scanPdfFiles(path: string, treeUri?: string) {
-    return native.scanPdfFiles({ path, treeUri })
+    return native.scanPdfFiles({path, treeUri})
   },
 
   importPdfs(items: ImportPdfItem[]) {
-    return native.importPdfs({ items })
+    return native.importPdfs({items})
   },
 
   getImportedPdfs() {
@@ -426,27 +426,27 @@ export const JmcomicService = {
   },
 
   updateLocalEpisodeType(albumId: string, isSingleEpisode: boolean) {
-    return native.updateLocalEpisodeType({ albumId, isSingleEpisode })
+    return native.updateLocalEpisodeType({albumId, isSingleEpisode})
   },
 
   deleteImportedPdf(id: number) {
-    return native.deleteImportedPdf({ id })
+    return native.deleteImportedPdf({id})
   },
 
   openPdf(filePath: string) {
-    return native.openPdf({ filePath })
+    return native.openPdf({filePath})
   },
 
   getPdfInfo(filePath: string) {
-    return native.getPdfInfo({ filePath })
+    return native.getPdfInfo({filePath})
   },
 
   renderPdfPage(filePath: string, page: number, targetWidth: number) {
-    return native.renderPdfPage({ filePath, page, targetWidth })
+    return native.renderPdfPage({filePath, page, targetWidth})
   },
 
   checkFilesExist(paths: string[]) {
-    return native.checkFilesExist({ paths })
+    return native.checkFilesExist({paths})
   },
 
   getExternalStoragePath() {
@@ -484,6 +484,9 @@ export const JmcomicService = {
   },
   setReaderVolumeNavigation(enabled: boolean) {
     return native.setReaderVolumeNavigation({enabled})
+  },
+  setReaderAutoShowToolbarAtEnd(enabled: boolean) {
+    return native.setReaderAutoShowToolbarAtEnd({enabled})
   },
 
   // ========== 阅读器状态 ==========

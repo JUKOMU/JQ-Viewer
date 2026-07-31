@@ -15,18 +15,18 @@
         <div class="card">
           <table class="var-table">
             <thead>
-              <tr>
-                <th>变量</th>
-                <th>说明</th>
-                <th>示例值</th>
-              </tr>
+            <tr>
+              <th>变量</th>
+              <th>说明</th>
+              <th>示例值</th>
+            </tr>
             </thead>
             <tbody>
-              <tr v-for="v in variables" :key="v.name">
-                <td class="var-col"><span class="var-tag">{{ v.name }}</span></td>
-                <td class="desc-col">{{ v.desc }}</td>
-                <td class="sample-col monospace">{{ v.sample }}</td>
-              </tr>
+            <tr v-for="v in variables" :key="v.name">
+              <td class="var-col"><span class="var-tag">{{ v.name }}</span></td>
+              <td class="desc-col">{{ v.desc }}</td>
+              <td class="sample-col monospace">{{ v.sample }}</td>
+            </tr>
             </tbody>
           </table>
         </div>
@@ -75,10 +75,10 @@
 </template>
 
 <script setup lang="ts">
-defineOptions({ name: 'PdfTemplateHelpPage' })
+defineOptions({name: 'PdfTemplateHelpPage'})
 
-import { IonBackButton, IonButtons, IonContent, IonHeader, IonPage, IonTitle, IonToolbar } from '@ionic/vue'
-import { PdfExportService, PDF_SAMPLE_DATA } from '@/services/PdfExportService'
+import {IonBackButton, IonButtons, IonContent, IonHeader, IonPage, IonTitle, IonToolbar} from '@ionic/vue'
+import {PDF_SAMPLE_DATA, PdfExportService} from '@/services/PdfExportService'
 
 const variables = PdfExportService.TEMPLATE_VAR_DEFS.map(v => ({
   name: v.key,
@@ -89,12 +89,16 @@ const variables = PdfExportService.TEMPLATE_VAR_DEFS.map(v => ({
 const render = (tpl: string) => PdfExportService.renderTemplate(tpl, PDF_SAMPLE_DATA)
 
 const templateExamples = [
-  { usage: '作者分类', template: '【{author}】{title}', result: render('【{author}】{title}') },
-  { usage: '完整命名', template: '{author}《{title}》_{chapterName}', result: render('{author}《{title}》_{chapterName}') },
-  { usage: '条件前缀', template: '[{tag=中文}]【{author}】{title}', result: render('[{tag=中文}]【{author}】{title}') },
-  { usage: '条件属性', template: '{title} [{tag=非H|純愛}] {chapterName}', result: render('{title} [{tag=非H|純愛}] {chapterName}') },
-  { usage: '标签后缀', template: '{author}《{title}》({tags})', result: render('{author}《{title}》({tags})') },
-  { usage: '不匹配对比', template: '[{tag=單行本}] {title}', result: render('[{tag=單行本}] {title}') },
+  {usage: '作者分类', template: '【{author}】{title}', result: render('【{author}】{title}')},
+  {usage: '完整命名', template: '{author}《{title}》_{chapterName}', result: render('{author}《{title}》_{chapterName}')},
+  {usage: '条件前缀', template: '[{tag=中文}]【{author}】{title}', result: render('[{tag=中文}]【{author}】{title}')},
+  {
+    usage: '条件属性',
+    template: '{title} [{tag=非H|純愛}] {chapterName}',
+    result: render('{title} [{tag=非H|純愛}] {chapterName}')
+  },
+  {usage: '标签后缀', template: '{author}《{title}》({tags})', result: render('{author}《{title}》({tags})')},
+  {usage: '不匹配对比', template: '[{tag=單行本}] {title}', result: render('[{tag=單行本}] {title}')},
 ]
 </script>
 

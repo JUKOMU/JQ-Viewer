@@ -19,105 +19,105 @@
     </IonHeader>
 
     <IonContent>
-    <div class="page-container">
-      <!-- 空状态 -->
-      <div v-if="files.length === 0 && !loading" class="empty-state">
-        <IonIcon :icon="documentTextOutline" class="empty-icon"/>
-        <p>所选文件夹中未找到 PDF 文件</p>
-      </div>
+      <div class="page-container">
+        <!-- 空状态 -->
+        <div v-if="files.length === 0 && !loading" class="empty-state">
+          <IonIcon :icon="documentTextOutline" class="empty-icon"/>
+          <p>所选文件夹中未找到 PDF 文件</p>
+        </div>
 
-      <!-- 统计栏 -->
-      <div v-if="files.length > 0" class="stats-card">
-        <span class="stat resolved">已解析 {{ resolvedCount }}</span>
-        <span class="stat ambiguous">多ID {{ ambiguousCount }}</span>
-        <span class="stat missing">无ID {{ missingCount }}</span>
-        <span v-if="duplicateCount > 0" class="stat duplicate">
+        <!-- 统计栏 -->
+        <div v-if="files.length > 0" class="stats-card">
+          <span class="stat resolved">已解析 {{ resolvedCount }}</span>
+          <span class="stat ambiguous">多ID {{ ambiguousCount }}</span>
+          <span class="stat missing">无ID {{ missingCount }}</span>
+          <span v-if="duplicateCount > 0" class="stat duplicate">
           ID重复 {{ duplicateCount }}
         </span>
-      </div>
+        </div>
 
-      <!-- 文件卡片列表 -->
-      <TransitionGroup v-if="files.length > 0" name="card-list" tag="div" class="file-list">
-        <div
-          v-for="(file, idx) in files"
-          :key="file.filePath"
-          class="file-card"
-          :class="[cardClass(file), { searchable: canSearchFile(file), selected: searchTargetIdx === idx }]"
-          @click="openSearchDrawer(idx)"
-        >
-          <!-- 封面区 -->
-          <div class="cover-wrap">
-            <img
-              v-if="file.albumDetail?.image"
-              :src="file.albumDetail.image"
-              class="cover-img"
-            />
-            <div v-else class="cover-placeholder">
-              <IonIcon :icon="canSearchFile(file) ? searchOutline : documentTextOutline"/>
+        <!-- 文件卡片列表 -->
+        <TransitionGroup v-if="files.length > 0" name="card-list" tag="div" class="file-list">
+          <div
+            v-for="(file, idx) in files"
+            :key="file.filePath"
+            class="file-card"
+            :class="[cardClass(file), { searchable: canSearchFile(file), selected: searchTargetIdx === idx }]"
+            @click="openSearchDrawer(idx)"
+          >
+            <!-- 封面区 -->
+            <div class="cover-wrap">
+              <img
+                v-if="file.albumDetail?.image"
+                :src="file.albumDetail.image"
+                class="cover-img"
+              />
+              <div v-else class="cover-placeholder">
+                <IonIcon :icon="canSearchFile(file) ? searchOutline : documentTextOutline"/>
+              </div>
             </div>
-          </div>
 
-          <!-- 信息区 -->
-          <div class="info" @click="editingIdx !== idx ? undefined : undefined">
-            <h3 class="item-title">
-              {{ file.albumDetail?.title || '未识别本子' }}
-            </h3>
-            <div class="item-meta file-name-line">{{ file.fileName }}</div>
-            <div v-if="file.albumDetail?.authors?.length" class="item-meta">
-              作者：{{ file.albumDetail.authors.join(' / ') }}
-            </div>
-            <div v-if="file.albumDetail?.tags?.length" class="item-tags">
+            <!-- 信息区 -->
+            <div class="info" @click="editingIdx !== idx ? undefined : undefined">
+              <h3 class="item-title">
+                {{ file.albumDetail?.title || '未识别本子' }}
+              </h3>
+              <div class="item-meta file-name-line">{{ file.fileName }}</div>
+              <div v-if="file.albumDetail?.authors?.length" class="item-meta">
+                作者：{{ file.albumDetail.authors.join(' / ') }}
+              </div>
+              <div v-if="file.albumDetail?.tags?.length" class="item-tags">
               <span
                 v-for="t in file.albumDetail.tags.slice(0, 10)"
                 :key="t"
                 class="tag-chip"
               >{{ t }}</span>
-              <span v-if="file.albumDetail.tags.length > 10" class="tag-chip tag-more">...</span>
-            </div>
-            <div class="status-row">
-              <span class="status-tag" :class="statusTagClass(file)">{{ statusTagText(file) }}</span>
-              <span v-if="shouldShowChapterTag(file)" class="status-tag chapter-tag">
+                <span v-if="file.albumDetail.tags.length > 10" class="tag-chip tag-more">...</span>
+              </div>
+              <div class="status-row">
+                <span class="status-tag" :class="statusTagClass(file)">{{ statusTagText(file) }}</span>
+                <span v-if="shouldShowChapterTag(file)" class="status-tag chapter-tag">
                 第{{ file.chapterSortOrder }}话
               </span>
-              <span v-else-if="needsChapterSelection(file)" class="status-tag chapter-tag pending">
+                <span v-else-if="needsChapterSelection(file)" class="status-tag chapter-tag pending">
                 {{ chapterSelectionText(file) }}
               </span>
+              </div>
+              <div v-if="file.status === 'ambiguous' && candidateIds(file).length > 1" class="candidate-row">
+                <button
+                  v-for="id in candidateIds(file)"
+                  :key="id"
+                  type="button"
+                  class="candidate-id-btn"
+                  :disabled="resolvingCandidate"
+                  @click.stop="selectParsedCandidate(idx, id)"
+                >
+                  #{{ id }}
+                </button>
+              </div>
             </div>
-            <div v-if="file.status === 'ambiguous' && candidateIds(file).length > 1" class="candidate-row">
-              <button
-                v-for="id in candidateIds(file)"
-                :key="id"
-                type="button"
-                class="candidate-id-btn"
-                :disabled="resolvingCandidate"
-                @click.stop="selectParsedCandidate(idx, id)"
-              >
-                #{{ id }}
-              </button>
-            </div>
-          </div>
 
-          <!-- 编辑按钮 -->
-          <button class="edit-btn" @click.stop="toggleEdit(idx)">
-            <IonIcon :icon="editingIdx === idx ? checkmarkOutline : createOutline"/>
-          </button>
+            <!-- 编辑按钮 -->
+            <button class="edit-btn" @click.stop="toggleEdit(idx)">
+              <IonIcon :icon="editingIdx === idx ? checkmarkOutline : createOutline"/>
+            </button>
 
-          <!-- 编辑模式遮罩 -->
-          <div v-show="editingIdx === idx" class="edit-overlay">
+            <!-- 编辑模式遮罩 -->
+            <div v-show="editingIdx === idx" class="edit-overlay">
             <textarea
               v-model="editText"
               class="edit-textarea"
               rows="2"
               @keydown.enter.prevent="applyEdit(idx)"
             />
-            <div class="edit-actions">
-              <span class="edit-hint">末尾空格+数字=章节序号，如 <code>123456 3</code></span>
-              <button class="apply-btn" @click="applyEdit(idx)">应用</button>
+              <div class="edit-actions">
+                <span class="edit-hint">末尾空格+数字=章节序号，如 <code>123456 3</code></span>
+                <button class="apply-btn" @click="applyEdit(idx)">应用</button>
+              </div>
             </div>
           </div>
-        </div>
-      </TransitionGroup>
-    </div>
+        </TransitionGroup>
+      </div>
     </IonContent>
 
     <!-- 收藏夹选择器 -->
@@ -234,22 +234,44 @@
 </template>
 
 <script setup lang="ts">
-defineOptions({ name: 'PdfImportPage' })
+defineOptions({name: 'PdfImportPage'})
 
-import { ref, computed, nextTick, onMounted, onBeforeUnmount } from 'vue'
-import { IonBackButton, IonButtons, IonPage, IonHeader, IonTitle, IonToolbar, IonContent, IonIcon } from '@ionic/vue'
-import { alertController } from '@ionic/vue'
-import { useRouter } from 'vue-router'
-import { documentTextOutline, createOutline, checkmarkOutline, informationCircleOutline, searchOutline } from 'ionicons/icons'
-import { PdfImportService } from '@/services/PdfImportService'
-import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
-import { OfflineFavoriteService } from '@/services/OfflineFavoriteService'
+import {computed, nextTick, onBeforeUnmount, onMounted, ref} from 'vue'
+import {
+  alertController,
+  IonBackButton,
+  IonButtons,
+  IonContent,
+  IonHeader,
+  IonIcon,
+  IonPage,
+  IonTitle,
+  IonToolbar
+} from '@ionic/vue'
+import {useRouter} from 'vue-router'
+import {
+  checkmarkOutline,
+  createOutline,
+  documentTextOutline,
+  informationCircleOutline,
+  searchOutline
+} from 'ionicons/icons'
+import {PdfImportService} from '@/services/PdfImportService'
+import {JmcomicService, sanitizeError, showToast} from '@/services/JmcomicService'
+import {OfflineFavoriteService} from '@/services/OfflineFavoriteService'
 import FavoriteFolderPicker from '@/components/favorite/FavoriteFolderPicker.vue'
 import SearchHeaderBar from '@/components/search/SearchHeaderBar.vue'
+import type {SearchResultDisplayItem} from '@/components/search/SearchResultContainer.vue'
 import SearchResultContainer from '@/components/search/SearchResultContainer.vue'
-import type { PdfFileParseItem } from '@/utils/importPdfParse'
-import type { AlbumDetail, FolderEntry, PhotoMeta, SearchQuery, SearchResult, SearchResultItem } from '@/services/JmcomicTypes'
-import type { SearchResultDisplayItem } from '@/components/search/SearchResultContainer.vue'
+import type {PdfFileParseItem} from '@/utils/importPdfParse'
+import type {
+  AlbumDetail,
+  FolderEntry,
+  PhotoMeta,
+  SearchQuery,
+  SearchResult,
+  SearchResultItem
+} from '@/services/JmcomicTypes'
 
 const router = useRouter()
 
@@ -479,9 +501,9 @@ function toggleEdit(idx: number) {
 }
 
 async function applyEdit(idx: number) {
-  const { parseEditedLine } = await import('@/utils/importPdfParse')
+  const {parseEditedLine} = await import('@/utils/importPdfParse')
   const file = files.value[idx]
-  const { ids, chapterSortOrderHint } = parseEditedLine(editText.value.trim())
+  const {ids, chapterSortOrderHint} = parseEditedLine(editText.value.trim())
 
   const updated: PdfFileParseItem = {
     ...file,
@@ -833,7 +855,7 @@ async function onConfirm() {
       header: '未解决的文件',
       message: `${unresolved.length} 个文件缺少有效 ID 或章节，将被忽略。仅导入 ${resolved.length} 个已解析的文件。`,
       buttons: [
-        { text: '取消', role: 'cancel' },
+        {text: '取消', role: 'cancel'},
         {
           text: '继续导入',
           handler: () => proceedToImport(resolved),
@@ -886,9 +908,9 @@ async function onAddFolder() {
   // 创建新离线收藏夹
   const alert = await alertController.create({
     header: '新建收藏夹',
-    inputs: [{ name: 'name', placeholder: '收藏夹名称' }],
+    inputs: [{name: 'name', placeholder: '收藏夹名称'}],
     buttons: [
-      { text: '取消', role: 'cancel' },
+      {text: '取消', role: 'cancel'},
       {
         text: '创建',
         handler: async (data) => {

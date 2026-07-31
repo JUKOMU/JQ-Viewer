@@ -99,7 +99,8 @@ const refreshReaderSavedAt = () => {
     const snapshot = JSON.parse(raw)
     snapshot.savedAt = Date.now()
     localStorage.setItem(READER_ROUTE_RESTORE_KEY, JSON.stringify(snapshot))
-  } catch { /* 忽略 */ }
+  } catch { /* 忽略 */
+  }
 }
 
 document.addEventListener('pagehide', refreshReaderSavedAt)
@@ -123,7 +124,8 @@ const updateReaderCurrentPage = (page: number) => {
     if (!snapshot.fullPath) return
     snapshot.currentPage = page
     localStorage.setItem(READER_ROUTE_RESTORE_KEY, JSON.stringify(snapshot))
-  } catch { /* 忽略解析错误 */ }
+  } catch { /* 忽略解析错误 */
+  }
 }
 
 provide('updateReaderCurrentPage', updateReaderCurrentPage)
@@ -225,7 +227,8 @@ onMounted(async () => {
   try {
     const launch = await JmcomicService.consumeLaunchRoute()
     launchRouteHandled = await navigateToLaunchRoute(launch.route, true)
-  } catch { /* Web 调试时忽略 */ }
+  } catch { /* Web 调试时忽略 */
+  }
 
   try {
     launchRouteHandle = await JmcomicService.addLaunchRouteListener((data) => {
@@ -233,11 +236,13 @@ onMounted(async () => {
         if (await navigateToLaunchRoute(data.route)) {
           try {
             await JmcomicService.consumeLaunchRoute()
-          } catch { /* 忽略 */ }
+          } catch { /* 忽略 */
+          }
         }
       })()
     })
-  } catch { /* Web 调试时忽略 */ }
+  } catch { /* Web 调试时忽略 */
+  }
 
   if (!launchRouteHandled && (route.path === '/' || route.path === '/home')) {
     const snapshot = readReaderSnapshot()
@@ -280,7 +285,8 @@ onMounted(async () => {
         try {
           const status = await JmcomicService.getInitStatus()
           complete = status.complete
-        } catch { /* 桥接失败，继续轮询 */ }
+        } catch { /* 桥接失败，继续轮询 */
+        }
 
         if (complete) {
           clearInterval(pollTimer!)
@@ -314,7 +320,7 @@ onMounted(async () => {
       try {
         const info = await App.getInfo()
         const resp = await fetch(RELEASES_API, {
-          headers: { Accept: 'application/vnd.github.v3+json' },
+          headers: {Accept: 'application/vnd.github.v3+json'},
         })
         if (!resp.ok) return
         const data = await resp.json()
@@ -326,7 +332,7 @@ onMounted(async () => {
             message: cleaned || '（无更新说明）',
             cssClass: 'update-alert',
             buttons: [
-              { text: '忽略', role: 'cancel' },
+              {text: '忽略', role: 'cancel'},
               {
                 text: '好',
                 handler: async () => {
@@ -335,7 +341,7 @@ onMounted(async () => {
                     message: data.html_url || '',
                     cssClass: 'update-alert',
                     buttons: [
-                      { text: '取消', role: 'cancel' },
+                      {text: '取消', role: 'cancel'},
                       {
                         text: '打开',
                         handler: () => {

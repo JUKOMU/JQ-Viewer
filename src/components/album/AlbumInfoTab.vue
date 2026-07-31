@@ -160,9 +160,9 @@ import {
   checkmarkCircleOutline,
   cloudDownloadOutline,
   copyOutline,
+  documentOutline,
   downloadOutline,
   heart,
-  documentOutline,
   imageOutline,
   refreshOutline,
   timeOutline,
@@ -214,7 +214,7 @@ function checkDescOverflow() {
 watch(() => props.album?.description, () => {
   descExpanded.value = false
   nextTick(() => checkDescOverflow())
-}, { immediate: true })
+}, {immediate: true})
 
 const copyText = async (text: string) => {
   try {

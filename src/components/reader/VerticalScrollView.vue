@@ -46,6 +46,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:currentIndex': [index: number]
   'requestRange': [range: { start: number; end: number; center: number }]
+  'reached-bottom': []
 }>()
 
 interface VisibleItem {
@@ -63,8 +64,9 @@ const DOUBLE_TAP_MS = 280
 const DOUBLE_TAP_DIST = 30
 const MAX_DOM_ITEMS = 100
 // 与 .edge-indicator 高度保持一致，首尾提示区不参与图片高度缩放。
-const EDGE_INDICATOR_HEIGHT = 80
+const EDGE_INDICATOR_HEIGHT = 120
 const SCROLL_SYNC_RETRY_MAX = 30
+const BOTTOM_TOLERANCE_PX = 2
 
 const containerRef = ref<HTMLElement | null>(null)
 const wrapperRef = ref<HTMLElement | null>(null)
@@ -302,6 +304,21 @@ let scrollRafId: number | null = null
 let scrollSyncRafId: number | null = null
 let scrollSyncToken = 0
 let isAdjusting = false
+let wasAtBottom = false
+
+function isAtBottom() {
+  const el = containerRef.value
+  if (!el) return false
+  return el.scrollHeight - el.scrollTop - el.clientHeight <= BOTTOM_TOLERANCE_PX
+}
+
+function updateBottomState() {
+  const reachedBottom = isAtBottom()
+  if (reachedBottom && !wasAtBottom) {
+    emit('reached-bottom')
+  }
+  wasAtBottom = reachedBottom
+}
 
 function onScroll() {
   if (!containerRef.value || isAdjusting || zoomScale.value > 1) return
@@ -314,6 +331,7 @@ function onScroll() {
     const st = el.scrollTop
     updateVisibleRange(st)
     emitCurrentIndex(getCurrentIndex(st))
+    updateBottomState()
   })
 }
 
@@ -592,7 +610,7 @@ onUnmounted(() => {
   el.removeEventListener('touchcancel', onTouch)
 })
 
-defineExpose({scrollToIndex, containerRef})
+defineExpose({scrollToIndex, containerRef, isAtBottom})
 </script>
 
 <style scoped>
@@ -605,10 +623,12 @@ defineExpose({scrollToIndex, containerRef})
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
 }
+
 .virtual-inner {
   position: relative;
   width: 100%;
 }
+
 .zoom-wrapper {
   position: absolute;
   inset: 0;
@@ -616,6 +636,7 @@ defineExpose({scrollToIndex, containerRef})
   height: 100%;
   will-change: transform;
 }
+
 .image-wrapper {
   position: absolute;
   top: 0;
@@ -627,6 +648,7 @@ defineExpose({scrollToIndex, containerRef})
   will-change: transform;
   overflow: hidden;
 }
+
 .reader-image {
   display: block;
   width: 100%;
@@ -636,6 +658,7 @@ defineExpose({scrollToIndex, containerRef})
   user-select: none;
   -webkit-user-drag: none;
 }
+
 .skeleton-image {
   width: 100%;
   height: 100%;
@@ -644,23 +667,34 @@ defineExpose({scrollToIndex, containerRef})
   background-size: 200% 100%;
   animation: shimmer 1.5s ease-in-out infinite;
 }
+
 @keyframes shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
+
 .edge-indicator {
   position: absolute;
   top: 0;
   left: 0;
   width: 100%;
-  height: 80px;
-  padding: 32px 0;
+  height: 120px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
   text-align: center;
   color: #666;
   font-size: 14px;
   letter-spacing: 2px;
   user-select: none;
 }
+
 .vertical-container.noscroll {
   overflow-y: hidden;
   touch-action: none;

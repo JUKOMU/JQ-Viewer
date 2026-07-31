@@ -113,13 +113,7 @@
 import {computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch} from 'vue'
 import {useRoute, useRouter} from 'vue-router'
 import {alertController, IonContent, IonIcon, IonPage} from '@ionic/vue'
-import {
-  bookOutline,
-  downloadOutline,
-  ellipsisVertical,
-  heartOutline,
-  informationCircleOutline,
-} from 'ionicons/icons'
+import {bookOutline, downloadOutline, ellipsisVertical, heartOutline, informationCircleOutline,} from 'ionicons/icons'
 import type {ScrollCustomEvent} from '@ionic/core'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import QuickActionFab from '@/components/common/QuickActionFab.vue'

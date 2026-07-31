@@ -84,11 +84,16 @@
             />
             <AlbumPreviewTab
               v-else-if="tab.key === 'preview'"
-              :images="previewImages"
+              :slots="previewSlots"
               :total-count="previewImageTotal"
+              :visible-count="previewDisplayCount"
+              :all-visible="previewAllVisible"
+              :auto-load="previewAutoLoad"
               :loading="previewLoading"
+              :loading-more="previewLoadingMore"
+              :loaded-count="previewLoadedCount"
               empty-text="请先选择章节"
-              @load-more="navigateToFullPreview"
+              @load-more="loadMorePreview"
               @open-reader="onOpenReader"
             />
             <AlbumCommentsTab
@@ -119,9 +124,20 @@
 <script setup lang="ts">
 defineOptions({name: 'AlbumDetailPage'})
 
-import {computed, nextTick, onMounted, onUnmounted, reactive, ref, watch, type ComponentPublicInstance} from 'vue'
+import {
+  type ComponentPublicInstance,
+  computed,
+  nextTick,
+  onActivated,
+  onDeactivated,
+  onMounted,
+  onUnmounted,
+  reactive,
+  ref,
+  watch,
+} from 'vue'
 import {useRoute, useRouter} from 'vue-router'
-import {createGesture, IonContent, IonPage, menuController, type Gesture} from '@ionic/vue'
+import {createGesture, type Gesture, IonContent, IonPage, menuController} from '@ionic/vue'
 import type {PluginListenerHandle} from '@capacitor/core'
 import {getImageUrl, JmcomicService, sanitizeError, showToast} from '@/services/JmcomicService'
 import {buildPdfDocumentParams, fetchPdfArrayBuffer} from '@/services/PdfReaderService'
@@ -141,6 +157,7 @@ import {OfflineDownloadService} from '@/services/OfflineDownloadService'
 import {OfflineFavoriteService} from '@/services/OfflineFavoriteService'
 import {HistoryService} from '@/services/HistoryService'
 import {useAuth} from '@/composables/useAuth'
+import {type PreviewImageSlotSetter, usePreviewBatches} from '@/composables/usePreviewBatches'
 import AlbumHeader from '@/components/album/AlbumHeader.vue'
 import AlbumInfoTab from '@/components/album/AlbumInfoTab.vue'
 import AlbumChaptersTab from '@/components/album/AlbumChaptersTab.vue'
@@ -158,6 +175,7 @@ const router = useRouter()
 
 // ---- 路由数据 ----
 const albumId = computed(() => route.params.id as string)
+let detailStateAlbumId = albumId.value
 const coverUrl = computed(() => albumDetail.value?.image || (route.query.coverUrl as string) || '')
 const albumTitle = computed(() => albumDetail.value?.title || (route.query.title as string) || '')
 const albumAuthors = computed(() => {
@@ -184,6 +202,12 @@ const tabs = computed(() => {
   ]
 })
 const activeTab = ref<TabKey>('info')
+const tabScrollPositions = reactive<Record<TabKey, number>>({
+  info: 0,
+  chapters: 0,
+  preview: 0,
+  comments: 0,
+})
 
 // ---- 章节 ----
 const selectedChapterId = ref('')
@@ -406,17 +430,23 @@ async function onPickerAddFolder() {
 }
 
 // ---- 预览 ----
-const PREVIEW_BATCH = 20
-
-interface PreviewImage {
-  sortOrder: number
-  dataUrl: string
-}
-
-const previewImages = ref<PreviewImage[]>([])
 const previewImageTotal = ref(0)
 const previewLoading = ref(false)
+const previewSourceOverride = ref<PreviewSource | null>(null)
+const previewAutoLoad = ref(false)
 let imageReadyListenerHandle: PluginListenerHandle | null = null
+
+interface PreviewLoadContext {
+  requestGeneration: number
+  albumId: string
+  chapterId: string
+  source: PreviewSource
+  photo: PhotoDetail | null
+  pdfDoc: pdfjsLib.PDFDocumentProxy | null
+}
+
+let previewRequestGeneration = 0
+let previewLoadContext: PreviewLoadContext | null = null
 
 const clearPreviewPdf = () => {
   for (const url of previewObjectUrls) {
@@ -425,6 +455,23 @@ const clearPreviewPdf = () => {
   previewObjectUrls.clear()
   previewPdfDoc?.destroy()
   previewPdfDoc = null
+}
+
+const isCurrentPreviewRequest = (requestGeneration: number) =>
+  requestGeneration === previewRequestGeneration
+
+const invalidatePreviewRequest = () => {
+  previewRequestGeneration += 1
+  previewLoadContext = null
+  previewBatches.reset()
+  previewSourceOverride.value = null
+  previewAutoLoad.value = false
+  previewImageTotal.value = 0
+  previewLoadedKey.value = ''
+  previewLoading.value = false
+  imageReadyListenerHandle?.remove()
+  imageReadyListenerHandle = null
+  clearPreviewPdf()
 }
 
 // ---- 评论 ----
@@ -441,6 +488,7 @@ const tabBarRef = ref<HTMLElement | null>(null)
 const tabGestureRef = ref<HTMLElement | null>(null)
 const tabContentRef = ref<HTMLElement | null>(null)
 const contentRef = ref<InstanceType<typeof IonContent> | null>(null)
+const PREVIEW_NEAR_BOTTOM_THRESHOLD = 200
 const tabPanelRefs = new Map<TabKey, HTMLElement>()
 let tabSwipeGesture: Gesture | undefined
 let tabResizeObserver: ResizeObserver | undefined
@@ -465,6 +513,27 @@ const tabBarStyle = computed(() => ({
   '--tab-progress': String(visualTabProgress.value),
 }))
 
+const resolveDetailScrollElement = async (): Promise<HTMLElement | null> => {
+  const ionContentEl = contentRef.value?.$el as any
+  if (!ionContentEl) return null
+  return await ionContentEl.getScrollElement?.() ?? null
+}
+
+const saveActiveTabScrollPosition = async () => {
+  const key = activeTab.value
+  const el = await resolveDetailScrollElement()
+  if (el && activeTab.value === key) tabScrollPositions[key] = el.scrollTop
+}
+
+const restoreTabScrollPosition = async (key: TabKey, scrollTop = tabScrollPositions[key]) => {
+  await nextTick()
+  if (activeTab.value !== key) return
+
+  const el = await resolveDetailScrollElement()
+  if (!el || activeTab.value !== key) return
+  el.scrollTop = Math.max(0, scrollTop)
+}
+
 // ---- 计算属性 ----
 const selectedChapterPageCount = computed(() => {
   if (photoDetail.value && photoDetail.value?.id === selectedChapterId.value) {
@@ -475,27 +544,27 @@ const selectedChapterPageCount = computed(() => {
 
 // ---- 数据加载 ----
 const resetAlbumState = () => {
+  invalidatePreviewRequest()
   albumDetail.value = null
   photoDetail.value = null
   selectedChapterId.value = ''
-  previewImages.value = []
-  previewImageTotal.value = 0
-  previewLoadedKey.value = ''
   comments.value = []
   commentPage.value = 1
   totalComments.value = 0
   activeTab.value = 'info'
+  tabScrollPositions.info = 0
+  tabScrollPositions.chapters = 0
+  tabScrollPositions.preview = 0
+  tabScrollPositions.comments = 0
   showChapterActions.value = false
   sourceMenuOpen.value = false
   chapterDownloadStatuses.value = new Map()
   chapterPdfMap.value = new Map()
   loading.value = true
-  imageReadyListenerHandle?.remove()
-  imageReadyListenerHandle = null
-  clearPreviewPdf()
 }
 
 const loadAlbumData = async () => {
+  detailStateAlbumId = albumId.value
   resetAlbumState()
 
   try {
@@ -551,12 +620,15 @@ onMounted(() => {
 // ---- Tab 切换 ----
 const switchTab = async (key: TabKey) => {
   showChapterActions.value = false
+  await saveActiveTabScrollPosition()
+  const targetScrollTop = tabScrollPositions[key]
   activeTab.value = key
   if (key === 'preview') {
     await loadPreview()
   } else if (key === 'comments') {
     await loadComments()
   }
+  await restoreTabScrollPosition(key, targetScrollTop)
 }
 
 const setTabPanelRef = (key: TabKey, el: Element | ComponentPublicInstance | null) => {
@@ -729,7 +801,7 @@ const selectChapter = async (chapterId: string) => {
   // 不同章节：隐藏操作栏，加载新章节
   showChapterActions.value = false
   sourceMenuOpen.value = false
-  previewLoadedKey.value = ''
+  invalidatePreviewRequest()
   selectedChapterId.value = chapterId
   chapterLoading.value = true
 
@@ -749,6 +821,7 @@ const selectChapter = async (chapterId: string) => {
 
 const onDownloadChapter = async (chapterId: string) => {
   if (chapterId !== selectedChapterId.value) {
+    invalidatePreviewRequest()
     selectedChapterId.value = chapterId
   }
   await handleDownload()
@@ -809,21 +882,19 @@ const toggleSourceMenu = () => {
 }
 
 // ---- 预览 ----
-const loadDownloadedPreview = async (chapterId: string) => {
-  const photo = await JmcomicService.getDownloadedPhoto(albumId.value, chapterId)
-  photoDetail.value = photo
-  previewImageTotal.value = photo.images.length
-  previewImages.value = photo.images.slice(0, PREVIEW_BATCH).map((img) => ({
-    sortOrder: img.sortOrder,
-    dataUrl: getImageUrl(photo.id, img.sortOrder, 'thumb'),
-  }))
-}
+const loadDownloadedPreview = (targetAlbumId: string, chapterId: string) =>
+  JmcomicService.getDownloadedPhoto(targetAlbumId, chapterId)
 
-const renderPdfPreviewPage = async (pageNum: number): Promise<string | null> => {
-  if (!previewPdfDoc) return null
+const renderPdfPreviewPage = async (
+  pdfDoc: pdfjsLib.PDFDocumentProxy,
+  pageNum: number,
+  requestGeneration: number,
+): Promise<string | null> => {
+  if (!isCurrentPreviewRequest(requestGeneration)) return null
   let page: pdfjsLib.PDFPageProxy | null = null
   try {
-    page = await previewPdfDoc.getPage(pageNum)
+    page = await pdfDoc.getPage(pageNum)
+    if (!isCurrentPreviewRequest(requestGeneration)) return null
     const rawViewport = page.getViewport({scale: 1})
     const columns = window.innerWidth >= 680 ? 4 : 3
     const gap = 6
@@ -836,11 +907,16 @@ const renderPdfPreviewPage = async (pageNum: number): Promise<string | null> => 
     canvas.height = viewport.height
     const task = page.render({canvas, viewport})
     await task.promise
+    if (!isCurrentPreviewRequest(requestGeneration)) return null
     const blob = await new Promise<Blob | null>((resolve) =>
       canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.82),
     )
-    if (!blob) return null
+    if (!blob || !isCurrentPreviewRequest(requestGeneration)) return null
     const url = URL.createObjectURL(blob)
+    if (!isCurrentPreviewRequest(requestGeneration)) {
+      URL.revokeObjectURL(url)
+      return null
+    }
     previewObjectUrls.add(url)
     return url
   } catch {
@@ -850,50 +926,123 @@ const renderPdfPreviewPage = async (pageNum: number): Promise<string | null> => 
   }
 }
 
-const loadPdfPreview = async (pdf: ImportedPdf) => {
-  clearPreviewPdf()
-  const arrayBuffer = await fetchPdfArrayBuffer(pdf.filePath)
-  previewPdfDoc = await pdfjsLib.getDocument(buildPdfDocumentParams(arrayBuffer)).promise
-  previewImageTotal.value = previewPdfDoc.numPages
-
-  const firstCount = Math.min(PREVIEW_BATCH, previewPdfDoc.numPages)
+const renderPdfPreviewBatch = async (
+  start: number,
+  end: number,
+  setImageSlot: PreviewImageSlotSetter,
+  context: PreviewLoadContext,
+) => {
+  const pdfDoc = context.pdfDoc
+  if (!pdfDoc || !isCurrentPreviewRequest(context.requestGeneration)) return
+  const missingPages = Array.from({length: end - start}, (_, i) => start + i + 1)
+    .filter((pageNum) => !previewBatches.slots.value[pageNum - 1])
   const rendered = await Promise.all(
-    Array.from({length: firstCount}, (_, i) => renderPdfPreviewPage(i + 1)),
+    missingPages.map((pageNum) => {
+      return renderPdfPreviewPage(pdfDoc, pageNum, context.requestGeneration)
+        .then((url) => ({pageNum, url}))
+    }),
   )
-  previewImages.value = rendered
-    .map((url, index) => url ? {sortOrder: index + 1, dataUrl: url} : null)
-    .filter((item): item is PreviewImage => Boolean(item))
+  if (!isCurrentPreviewRequest(context.requestGeneration)) return
+  for (const item of rendered) {
+    if (item.url) setImageSlot(item.pageNum, item.url)
+  }
 }
 
-const loadNetworkPreview = async (chapterId: string) => {
-  // 用 Set 去重：imageReady 事件可能在 preloadImages 返回前就触发
-  const addedSortOrders = new Set<number>()
-  imageReadyListenerHandle = await JmcomicService.addImageReadyListener(chapterId, (sortOrder) => {
-    if (addedSortOrders.has(sortOrder)) return
-    addedSortOrders.add(sortOrder)
-    previewImages.value.push({
-      sortOrder,
-      dataUrl: getImageUrl(chapterId, sortOrder, 'thumb'),
-    })
-  })
-
-  const photo = await JmcomicService.getPhoto(chapterId)
-  photoDetail.value = photo
-  previewImageTotal.value = photo.images.length
-
-  const batch = photo.images.slice(0, PREVIEW_BATCH)
-  const result: PreloadResult = await JmcomicService.preloadImages(chapterId, batch, 'thumb')
-
-  // 追加快取命中项（避免直接赋值覆盖 imageReady 已推送的图片）
-  for (const so of result.cached) {
-    if (!addedSortOrders.has(so)) {
-      addedSortOrders.add(so)
-      previewImages.value.push({
-        sortOrder: so,
-        dataUrl: getImageUrl(chapterId, so, 'thumb'),
-      })
-    }
+const loadPdfPreview = async (
+  pdf: ImportedPdf,
+  requestGeneration: number,
+): Promise<pdfjsLib.PDFDocumentProxy | null> => {
+  const arrayBuffer = await fetchPdfArrayBuffer(pdf.filePath)
+  if (!isCurrentPreviewRequest(requestGeneration)) return null
+  const pdfDoc = await pdfjsLib.getDocument(buildPdfDocumentParams(arrayBuffer)).promise
+  if (!isCurrentPreviewRequest(requestGeneration)) {
+    void pdfDoc.destroy()
+    return null
   }
+  return pdfDoc
+}
+
+const loadNetworkPreview = async (
+  chapterId: string,
+  requestGeneration: number,
+  setImageSlot: PreviewImageSlotSetter,
+): Promise<PhotoDetail | null> => {
+  const listenerHandle = await JmcomicService.addImageReadyListener(chapterId, (sortOrder) => {
+    setImageSlot(sortOrder, getImageUrl(chapterId, sortOrder, 'thumb'))
+  })
+  if (!isCurrentPreviewRequest(requestGeneration)) {
+    void listenerHandle.remove()
+    return null
+  }
+  imageReadyListenerHandle = listenerHandle
+  const photo = await JmcomicService.getPhoto(chapterId)
+  if (!isCurrentPreviewRequest(requestGeneration)) {
+    void listenerHandle.remove()
+    return null
+  }
+  return photo
+}
+
+const loadPreviewBatch = async (
+  start: number,
+  end: number,
+  setImageSlot: PreviewImageSlotSetter,
+) => {
+  const context = previewLoadContext
+  if (!context || !isCurrentPreviewRequest(context.requestGeneration)) return
+
+  if (context.source === 'pdf') {
+    await renderPdfPreviewBatch(start, end, setImageSlot, context)
+    return
+  }
+
+  const photo = context.photo
+  if (!photo) return
+
+  if (context.source === 'download') {
+    for (const image of photo.images.slice(start, end)) {
+      setImageSlot(image.sortOrder, getImageUrl(photo.id, image.sortOrder, 'thumb'))
+    }
+    return
+  }
+
+  const batch = photo.images.slice(start, end)
+  const result: PreloadResult = await JmcomicService.preloadImages(
+    context.chapterId,
+    batch,
+    'thumb',
+  )
+  if (!isCurrentPreviewRequest(context.requestGeneration)) return
+  for (const sortOrder of result.cached) {
+    setImageSlot(sortOrder, getImageUrl(context.chapterId, sortOrder, 'thumb'))
+  }
+}
+
+const previewBatches = usePreviewBatches(previewImageTotal, loadPreviewBatch)
+const previewSlots = previewBatches.slots
+const previewDisplayCount = previewBatches.displayCount
+const previewLoadingMore = previewBatches.loadingMore
+const previewLoadedCount = previewBatches.loadedCount
+const previewAllVisible = previewBatches.allVisible
+
+const maybeLoadMorePreviewAfterRender = async (
+  requestGeneration = previewRequestGeneration,
+): Promise<void> => {
+  if (!isCurrentPreviewRequest(requestGeneration)) return
+  if (!previewAutoLoad.value || activeTab.value !== 'preview') return
+  if (previewBatches.allVisible.value || previewBatches.loadingMore.value) return
+
+  await nextTick()
+  if (!isCurrentPreviewRequest(requestGeneration)) return
+  const el = await resolveDetailScrollElement()
+  if (!isCurrentPreviewRequest(requestGeneration)) return
+  if (!el) return
+  const remaining = el.scrollHeight - el.scrollTop - el.clientHeight
+  if (remaining >= PREVIEW_NEAR_BOTTOM_THRESHOLD) return
+
+  const batchFilled = await previewBatches.expandBatch()
+  if (!isCurrentPreviewRequest(requestGeneration)) return
+  if (batchFilled) await maybeLoadMorePreviewAfterRender(requestGeneration)
 }
 
 const loadPreview = async () => {
@@ -901,43 +1050,104 @@ const loadPreview = async () => {
   const source = getPreferredSource()
   const pdf = selectedChapterPdf.value
   const cacheKey = `${source}:${chapterId}:${pdf?.id ?? ''}`
-  if (previewLoadedKey.value === cacheKey && previewImages.value.length) return
-
-  imageReadyListenerHandle?.remove()
-  imageReadyListenerHandle = null
-
-  previewLoading.value = true
-  previewImages.value = []
-  previewImageTotal.value = 0
+  if (previewLoadedKey.value === cacheKey && previewBatches.loadedCount.value > 0) return
 
   if (!chapterId) {
-    previewLoading.value = false
+    invalidatePreviewRequest()
     return
   }
 
+  const targetAlbumId = albumId.value
+  invalidatePreviewRequest()
+  const requestGeneration = previewRequestGeneration
+  previewLoading.value = true
+
   try {
-    if (source !== 'pdf') clearPreviewPdf()
+    let context: PreviewLoadContext | null = null
     if (source === 'download') {
-      await loadDownloadedPreview(chapterId)
+      const photo = await loadDownloadedPreview(targetAlbumId, chapterId)
+      if (!isCurrentPreviewRequest(requestGeneration)) return
+      photoDetail.value = photo
+      previewImageTotal.value = photo.images.length
+      context = {
+        requestGeneration,
+        albumId: targetAlbumId,
+        chapterId,
+        source,
+        photo,
+        pdfDoc: null,
+      }
     } else if (source === 'pdf' && pdf) {
-      await loadPdfPreview(pdf)
+      const pdfDoc = await loadPdfPreview(pdf, requestGeneration)
+      if (!pdfDoc || !isCurrentPreviewRequest(requestGeneration)) return
+      previewPdfDoc = pdfDoc
+      previewImageTotal.value = pdfDoc.numPages
+      context = {
+        requestGeneration,
+        albumId: targetAlbumId,
+        chapterId,
+        source,
+        photo: null,
+        pdfDoc,
+      }
     } else {
-      await loadNetworkPreview(chapterId)
+      const setImageSlot = previewBatches.createImageSlotSetter()
+      const photo = await loadNetworkPreview(chapterId, requestGeneration, setImageSlot)
+      if (!photo || !isCurrentPreviewRequest(requestGeneration)) return
+      photoDetail.value = photo
+      previewImageTotal.value = photo.images.length
+      context = {
+        requestGeneration,
+        albumId: targetAlbumId,
+        chapterId,
+        source: 'network',
+        photo,
+        pdfDoc: null,
+      }
     }
+
+    if (!context || !isCurrentPreviewRequest(requestGeneration)) return
+    previewLoadContext = context
+    previewSourceOverride.value = context.source
+    await previewBatches.initialize()
+    if (!isCurrentPreviewRequest(requestGeneration)) return
     previewLoadedKey.value = cacheKey
   } catch (e: any) {
+    if (!isCurrentPreviewRequest(requestGeneration)) return
     if (source === 'download' && pdf) {
       try {
-        await loadPdfPreview(pdf)
+        previewBatches.reset()
+        previewLoadContext = null
+        previewSourceOverride.value = null
+        previewAutoLoad.value = false
+        previewImageTotal.value = 0
+        clearPreviewPdf()
+        const pdfDoc = await loadPdfPreview(pdf, requestGeneration)
+        if (!pdfDoc || !isCurrentPreviewRequest(requestGeneration)) return
+        previewPdfDoc = pdfDoc
+        previewImageTotal.value = pdfDoc.numPages
+        previewLoadContext = {
+          requestGeneration,
+          albumId: targetAlbumId,
+          chapterId,
+          source: 'pdf',
+          photo: null,
+          pdfDoc,
+        }
+        previewSourceOverride.value = 'pdf'
+        await previewBatches.initialize()
+        if (!isCurrentPreviewRequest(requestGeneration)) return
         previewLoadedKey.value = `pdf:${chapterId}:${pdf.id}`
         return
       } catch {
         // 继续走统一错误提示
       }
     }
+    imageReadyListenerHandle?.remove()
+    imageReadyListenerHandle = null
     await showToast(sanitizeError(e, '预览加载失败'), 'danger')
   } finally {
-    previewLoading.value = false
+    if (isCurrentPreviewRequest(requestGeneration)) previewLoading.value = false
   }
 }
 
@@ -964,8 +1174,21 @@ watch(showFolderPicker, (open) => {
 })
 
 // 同组件导航（相关本子跳转）时重新加载数据
-watch(albumId, (newId, oldId) => {
-  if (newId && newId !== oldId) loadAlbumData()
+watch(albumId, (newId) => {
+  if (newId && newId !== detailStateAlbumId) {
+    loadAlbumData()
+    void restoreTabScrollPosition('info', 0)
+  }
+})
+
+onActivated(() => {
+  void menuController.swipeGesture(false)
+  void restoreTabScrollPosition(activeTab.value)
+})
+
+onDeactivated(() => {
+  void saveActiveTabScrollPosition()
+  void menuController.swipeGesture(true)
 })
 
 onUnmounted(() => {
@@ -973,49 +1196,30 @@ onUnmounted(() => {
   tabResizeObserver?.disconnect()
   document.querySelector('ion-menu')?.removeEventListener('ionDidClose', handleDetailMenuDidClose)
   void menuController.swipeGesture(true)
-  imageReadyListenerHandle?.remove()
+  invalidatePreviewRequest()
   downloadProgressHandle?.remove()
   window.removeEventListener('online', updateNetworkAvailable)
   window.removeEventListener('offline', updateNetworkAvailable)
-  clearPreviewPdf()
 })
 
-// 跳转全量预览页
-const navigateToFullPreview = () => {
-  const source = getPreferredSource()
-  const pdf = selectedChapterPdf.value
-  const commonQuery = {
-    title: albumTitle.value,
-    total: String(previewImageTotal.value || selectedChapterPageCount.value),
-  }
-
-  if (source === 'pdf' && pdf?.filePath) {
-    void router.push({
-      path: `/album/${albumId.value}/preview/${selectedChapterId.value}`,
-      query: {
-        ...commonQuery,
-        source: 'pdf',
-        pdfPath: pdf.filePath,
-        pdfTitle: pdf.fileName,
-        albumTitle: pdf.albumTitle || albumTitle.value,
-        authors: pdf.authors || albumAuthors.value,
-        coverUrl: pdf.coverUrl || coverUrl.value,
-      },
-    })
-    return
-  }
-
-  void router.push({
-    path: `/album/${albumId.value}/preview/${selectedChapterId.value}`,
-    query: {
-      ...commonQuery,
-      ...(source === 'download' ? {source: 'download'} : {}),
-    },
-  })
+const loadMorePreview = async () => {
+  const requestGeneration = previewRequestGeneration
+  previewAutoLoad.value = true
+  const batchFilled = await previewBatches.expandBatch()
+  if (!isCurrentPreviewRequest(requestGeneration)) return
+  if (batchFilled) await maybeLoadMorePreviewAfterRender(requestGeneration)
 }
 
+watch(previewLoadedCount, (count) => {
+  if (!previewAutoLoad.value || activeTab.value !== 'preview') return
+  if (previewBatches.loadingMore.value || previewBatches.allVisible.value) return
+  if (count === previewDisplayCount.value) {
+    void maybeLoadMorePreviewAfterRender()
+  }
+})
+
 const onOpenReader = (page: number) => {
-  openReaderBySource(getPreferredSource(), page)
+  openReaderBySource(previewSourceOverride.value ?? getPreferredSource(), page)
 }
 
 // ---- 评论 ----
@@ -1222,17 +1426,34 @@ const goBack = () => {
   }
 }
 
-// ---- 滚动：Tab 栏吸顶 + 评论触底加载 ----
-const handleScroll = async () => {
+// ---- 滚动：Tab 栏吸顶 + 预览/评论触底加载 ----
+const handleScroll = async (event: CustomEvent<{scrollTop?: number}>) => {
+  const scrollTop = event.detail?.scrollTop
+  if (typeof scrollTop === 'number') {
+    tabScrollPositions[activeTab.value] = scrollTop
+  }
+
   const headerEl = headerRef.value?.$el as HTMLElement | undefined
   if (!headerEl || !tabBarRef.value) return
   tabBarSticky.value = headerEl.getBoundingClientRect().bottom <= 0
 
+  if (activeTab.value === 'preview') {
+    if (!previewAutoLoad.value || previewBatches.allVisible.value || previewBatches.loadingMore.value) return
+    const requestGeneration = previewRequestGeneration
+    const el = await resolveDetailScrollElement()
+    if (!isCurrentPreviewRequest(requestGeneration)) return
+    if (!el) return
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < PREVIEW_NEAR_BOTTOM_THRESHOLD) {
+      const batchFilled = await previewBatches.expandBatch()
+      if (!isCurrentPreviewRequest(requestGeneration)) return
+      if (batchFilled) await maybeLoadMorePreviewAfterRender(requestGeneration)
+    }
+    return
+  }
+
   if (activeTab.value !== 'comments') return
   if (!hasMoreComments.value || commentsLoading.value) return
-  const ionContentEl = contentRef.value?.$el as any
-  if (!ionContentEl) return
-  const el = await ionContentEl.getScrollElement?.() as HTMLElement | undefined
+  const el = await resolveDetailScrollElement()
   if (!el) return
   if (el.scrollHeight - el.scrollTop - el.clientHeight < 200) {
     loadMoreComments()

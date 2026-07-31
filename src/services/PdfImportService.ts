@@ -1,7 +1,7 @@
-import { JmcomicService } from './JmcomicService'
-import { parseFilenamesForImport } from '@/utils/importPdfParse'
-import type { PdfFileParseItem, ImportPdfParseResult } from '@/utils/importPdfParse'
-import type { ImportPdfItem, ImportPdfsResult } from './JmcomicTypes'
+import {JmcomicService} from './JmcomicService'
+import type {ImportPdfParseResult, PdfFileParseItem} from '@/utils/importPdfParse'
+import {parseFilenamesForImport} from '@/utils/importPdfParse'
+import type {ImportPdfItem, ImportPdfsResult} from './JmcomicTypes'
 
 // ========== 跨页面数据传递 ==========
 // 扫描结果暂存在此模块级变量，避免通过路由 query 传递路径（路径含特殊字符不可靠）
@@ -52,7 +52,7 @@ async function fetchAlbumDetails(files: PdfFileParseItem[]): Promise<void> {
     }
   }
 
-  const workers = Array.from({ length: Math.min(concurrency, resolvedFiles.length) }, () =>
+  const workers = Array.from({length: Math.min(concurrency, resolvedFiles.length)}, () =>
     worker(),
   )
   await Promise.all(workers)
@@ -78,14 +78,14 @@ async function confirmImport(
         chapterTitle: f.chapterTitle || chapter?.title || '',
         chapterSortOrder: f.chapterSortOrder ?? chapter?.sortOrder ?? 0,
         ...(f.albumDetail?.isSingleEpisode !== undefined
-          ? { isSingleEpisode: f.albumDetail.isSingleEpisode }
+          ? {isSingleEpisode: f.albumDetail.isSingleEpisode}
           : {}),
-        ...(folderId ? { folderId } : {}),
+        ...(folderId ? {folderId} : {}),
       }
     })
 
   if (items.length === 0) {
-    return { imported: 0, skipped: resolvedFiles.length, duplicateCount: 0, errorCount: 0 }
+    return {imported: 0, skipped: resolvedFiles.length, duplicateCount: 0, errorCount: 0}
   }
 
   // 检查文件是否仍存在
@@ -93,7 +93,7 @@ async function confirmImport(
   let missingCount = 0
   try {
     const paths = items.map((f) => f.filePath)
-    const { existing } = await JmcomicService.checkFilesExist(paths)
+    const {existing} = await JmcomicService.checkFilesExist(paths)
     const existingSet = new Set(existing)
     missingCount = items.filter((f) => !existingSet.has(f.filePath)).length
     if (missingCount > 0) {
@@ -104,7 +104,7 @@ async function confirmImport(
   }
 
   if (validItems.length === 0) {
-    return { imported: 0, skipped: items.length, duplicateCount: 0, errorCount: items.length }
+    return {imported: 0, skipped: items.length, duplicateCount: 0, errorCount: items.length}
   }
 
   const result = await JmcomicService.importPdfs(validItems)

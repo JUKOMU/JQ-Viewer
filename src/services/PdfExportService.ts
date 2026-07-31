@@ -6,7 +6,7 @@
  * buildTemplateData 加字段映射
  */
 
-import type { AlbumDetail, DownloadTask } from './JmcomicTypes'
+import type {AlbumDetail, DownloadTask} from './JmcomicTypes'
 
 const KEY_EXPORT_PATH = 'jq-pdf-export-path'
 const KEY_DIR_TEMPLATE = 'jq-pdf-dir-template'
@@ -57,20 +57,20 @@ export interface TemplateVarDef {
 }
 
 function def(key: string, desc: string, render: (d: PdfTemplateData) => string): TemplateVarDef {
-  return { key, desc, sample: render(PDF_SAMPLE_DATA), render }
+  return {key, desc, sample: render(PDF_SAMPLE_DATA), render}
 }
 
 const TEMPLATE_VARS: TemplateVarDef[] = [
-  def('{id}',           '本子ID',                        d => d.id),
-  def('{title}',        '本子标题',                       d => d.title),
-  def('{chapterId}',    '章节ID',                        d => d.chapterId),
-  def('{chapterName}',  '章节序号（单行本则为标题）',       d => d.chapterName),
-  def('{index}',        '章节原始序号（纯数字）',           d => String(d.index)),
-  def('{chapterTitle}', '章节原始标题',                    d => d.chapterTitle),
-  def('{pageCount}',    '章节页数',                       d => String(d.pageCount)),
-  def('{author}',       '首位作者',                       d => d.author),
-  def('{authors}',      '全部作者，用顿号连接',             d => d.authors),
-  def('{tags}',         '全部标签，用顿号连接',             d => d.tags.join('、')),
+  def('{id}', '本子ID', d => d.id),
+  def('{title}', '本子标题', d => d.title),
+  def('{chapterId}', '章节ID', d => d.chapterId),
+  def('{chapterName}', '章节序号（单行本则为标题）', d => d.chapterName),
+  def('{index}', '章节原始序号（纯数字）', d => String(d.index)),
+  def('{chapterTitle}', '章节原始标题', d => d.chapterTitle),
+  def('{pageCount}', '章节页数', d => String(d.pageCount)),
+  def('{author}', '首位作者', d => d.author),
+  def('{authors}', '全部作者，用顿号连接', d => d.authors),
+  def('{tags}', '全部标签，用顿号连接', d => d.tags.join('、')),
 ]
 
 export const TEMPLATE_VAR_KEYS = TEMPLATE_VARS.map(v => v.key)

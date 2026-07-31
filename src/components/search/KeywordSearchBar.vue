@@ -171,7 +171,7 @@ const query = reactive<SearchQuery>({
   searchMainTag: 0,
 })
 
-const emitSearch = () => {
+const emitSearch = async () => {
   const originalKeyword = (query.keyword ?? '').trim()
 
   // 解析模式 → 记录解析历史（异步 fire-and-forget）
@@ -197,6 +197,28 @@ const emitSearch = () => {
   if (mode.value === 'single-mode') {
     parsed.keyword = (query.keyword ?? '').replace(/\D/g, '')
   }
+
+  const albumId = (parsed.keyword ?? '').trim()
+  if (/^\d+$/.test(albumId)) {
+    try {
+      const album = await JmcomicService.getAlbum(albumId)
+      if (!album || String(album.id ?? '').trim() !== albumId || !album.title?.trim()) {
+        throw new Error('invalid album detail')
+      }
+      await router.push({
+        path: `/album/${albumId}`,
+        query: {
+          title: album.title,
+          coverUrl: album.image,
+          authors: album.authors.join(','),
+        },
+      })
+    } catch {
+      await showToast('本子不存在', 'danger')
+    }
+    return
+  }
+
   emit('search', parsed)
 }
 

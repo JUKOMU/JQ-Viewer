@@ -252,17 +252,17 @@ const fetchPage = async (query: SearchQuery, page: number) => {
 
 const resetWithPage = async (query: SearchQuery) => {
   const targetPage = query.page ?? 1
-  initialLoading.value = true
-  errorMessage.value = ''
-  resultMeta.value = null
-  pageCache.value = {}
-
   const trimmedKeyword = (query.keyword ?? '').trim()
   if (/^\d+$/.test(trimmedKeyword)) {
+    initialLoading.value = true
+    errorMessage.value = ''
     try {
       const album = await JmcomicService.getAlbum(trimmedKeyword)
+      if (!album || String(album.id ?? '').trim() !== trimmedKeyword || !album.title?.trim()) {
+        throw new Error('invalid album detail')
+      }
       initialLoading.value = false
-      void router.push({
+      await router.replace({
         path: `/album/${trimmedKeyword}`,
         query: {
           title: album.title,
@@ -272,9 +272,16 @@ const resetWithPage = async (query: SearchQuery) => {
       })
       return
     } catch {
-      // ID 对应本子不存在，继续走正常搜索
+      initialLoading.value = false
+      await showToast('本子不存在', 'danger')
+      return
     }
   }
+
+  initialLoading.value = true
+  errorMessage.value = ''
+  resultMeta.value = null
+  pageCache.value = {}
 
   try {
     const pageResult = await fetchPage(query, targetPage)
@@ -309,6 +316,11 @@ const updateRouteQuery = (query: SearchQuery) => {
 
 const submitSearch = (query: SearchQuery) => {
   const newQuery = {...query, page: 1}
+  if (/^\d+$/.test((newQuery.keyword ?? '').trim())) {
+    lastSearchedQuery.value = {...newQuery}
+    void resetWithPage(newQuery)
+    return
+  }
   lastSearchedQuery.value = {...newQuery}
   void resetWithPage(newQuery)
   updateRouteQuery(newQuery)
@@ -317,6 +329,11 @@ const submitSearch = (query: SearchQuery) => {
 const submitOverlaySearch = (query: SearchQuery) => {
   closeSearchOverlay()
   const newQuery = {...query, page: 1}
+  if (/^\d+$/.test((newQuery.keyword ?? '').trim())) {
+    lastSearchedQuery.value = {...newQuery}
+    void resetWithPage(newQuery)
+    return
+  }
   lastSearchedQuery.value = {...newQuery}
   void resetWithPage(newQuery)
   updateRouteQuery(newQuery)

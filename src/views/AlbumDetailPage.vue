@@ -124,7 +124,18 @@
 <script setup lang="ts">
 defineOptions({name: 'AlbumDetailPage'})
 
-import {type ComponentPublicInstance, computed, nextTick, onMounted, onUnmounted, reactive, ref, watch} from 'vue'
+import {
+  type ComponentPublicInstance,
+  computed,
+  nextTick,
+  onActivated,
+  onDeactivated,
+  onMounted,
+  onUnmounted,
+  reactive,
+  ref,
+  watch,
+} from 'vue'
 import {useRoute, useRouter} from 'vue-router'
 import {createGesture, type Gesture, IonContent, IonPage, menuController} from '@ionic/vue'
 import type {PluginListenerHandle} from '@capacitor/core'
@@ -164,6 +175,7 @@ const router = useRouter()
 
 // ---- 路由数据 ----
 const albumId = computed(() => route.params.id as string)
+let detailStateAlbumId = albumId.value
 const coverUrl = computed(() => albumDetail.value?.image || (route.query.coverUrl as string) || '')
 const albumTitle = computed(() => albumDetail.value?.title || (route.query.title as string) || '')
 const albumAuthors = computed(() => {
@@ -190,6 +202,12 @@ const tabs = computed(() => {
   ]
 })
 const activeTab = ref<TabKey>('info')
+const tabScrollPositions = reactive<Record<TabKey, number>>({
+  info: 0,
+  chapters: 0,
+  preview: 0,
+  comments: 0,
+})
 
 // ---- 章节 ----
 const selectedChapterId = ref('')
@@ -495,6 +513,27 @@ const tabBarStyle = computed(() => ({
   '--tab-progress': String(visualTabProgress.value),
 }))
 
+const resolveDetailScrollElement = async (): Promise<HTMLElement | null> => {
+  const ionContentEl = contentRef.value?.$el as any
+  if (!ionContentEl) return null
+  return await ionContentEl.getScrollElement?.() ?? null
+}
+
+const saveActiveTabScrollPosition = async () => {
+  const key = activeTab.value
+  const el = await resolveDetailScrollElement()
+  if (el && activeTab.value === key) tabScrollPositions[key] = el.scrollTop
+}
+
+const restoreTabScrollPosition = async (key: TabKey, scrollTop = tabScrollPositions[key]) => {
+  await nextTick()
+  if (activeTab.value !== key) return
+
+  const el = await resolveDetailScrollElement()
+  if (!el || activeTab.value !== key) return
+  el.scrollTop = Math.max(0, scrollTop)
+}
+
 // ---- 计算属性 ----
 const selectedChapterPageCount = computed(() => {
   if (photoDetail.value && photoDetail.value?.id === selectedChapterId.value) {
@@ -513,6 +552,10 @@ const resetAlbumState = () => {
   commentPage.value = 1
   totalComments.value = 0
   activeTab.value = 'info'
+  tabScrollPositions.info = 0
+  tabScrollPositions.chapters = 0
+  tabScrollPositions.preview = 0
+  tabScrollPositions.comments = 0
   showChapterActions.value = false
   sourceMenuOpen.value = false
   chapterDownloadStatuses.value = new Map()
@@ -521,6 +564,7 @@ const resetAlbumState = () => {
 }
 
 const loadAlbumData = async () => {
+  detailStateAlbumId = albumId.value
   resetAlbumState()
 
   try {
@@ -576,12 +620,15 @@ onMounted(() => {
 // ---- Tab 切换 ----
 const switchTab = async (key: TabKey) => {
   showChapterActions.value = false
+  await saveActiveTabScrollPosition()
+  const targetScrollTop = tabScrollPositions[key]
   activeTab.value = key
   if (key === 'preview') {
     await loadPreview()
   } else if (key === 'comments') {
     await loadComments()
   }
+  await restoreTabScrollPosition(key, targetScrollTop)
 }
 
 const setTabPanelRef = (key: TabKey, el: Element | ComponentPublicInstance | null) => {
@@ -978,12 +1025,6 @@ const previewLoadingMore = previewBatches.loadingMore
 const previewLoadedCount = previewBatches.loadedCount
 const previewAllVisible = previewBatches.allVisible
 
-const resolveDetailScrollElement = async (): Promise<HTMLElement | null> => {
-  const ionContentEl = contentRef.value?.$el as any
-  if (!ionContentEl) return null
-  return await ionContentEl.getScrollElement?.() ?? null
-}
-
 const maybeLoadMorePreviewAfterRender = async (
   requestGeneration = previewRequestGeneration,
 ): Promise<void> => {
@@ -1133,8 +1174,21 @@ watch(showFolderPicker, (open) => {
 })
 
 // 同组件导航（相关本子跳转）时重新加载数据
-watch(albumId, (newId, oldId) => {
-  if (newId && newId !== oldId) loadAlbumData()
+watch(albumId, (newId) => {
+  if (newId && newId !== detailStateAlbumId) {
+    loadAlbumData()
+    void restoreTabScrollPosition('info', 0)
+  }
+})
+
+onActivated(() => {
+  void menuController.swipeGesture(false)
+  void restoreTabScrollPosition(activeTab.value)
+})
+
+onDeactivated(() => {
+  void saveActiveTabScrollPosition()
+  void menuController.swipeGesture(true)
 })
 
 onUnmounted(() => {
@@ -1373,7 +1427,12 @@ const goBack = () => {
 }
 
 // ---- 滚动：Tab 栏吸顶 + 预览/评论触底加载 ----
-const handleScroll = async () => {
+const handleScroll = async (event: CustomEvent<{scrollTop?: number}>) => {
+  const scrollTop = event.detail?.scrollTop
+  if (typeof scrollTop === 'number') {
+    tabScrollPositions[activeTab.value] = scrollTop
+  }
+
   const headerEl = headerRef.value?.$el as HTMLElement | undefined
   if (!headerEl || !tabBarRef.value) return
   tabBarSticky.value = headerEl.getBoundingClientRect().bottom <= 0

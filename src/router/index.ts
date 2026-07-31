@@ -48,8 +48,9 @@ const routes: Array<RouteRecordRaw> = [
   },
   {
     path: '/album/:id',
+    name: 'AlbumDetailPage',
     component: () => import('@/views/AlbumDetailPage.vue'),
-    meta: {menu: true},
+    meta: {menu: true, keepAlive: true},
   },
   {
     path: '/album/:albumId/preview/:chapterId',

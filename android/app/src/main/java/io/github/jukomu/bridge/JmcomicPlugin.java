@@ -2687,17 +2687,42 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
 
             List<PdfExportService.ExportJob> jobs = new ArrayList<>();
             for (int i = 0; i < tasksJson.length(); i++) {
-                JSONObject t = tasksJson.getJSONObject(i);
-                PdfExportService.ExportJob job = new PdfExportService.ExportJob();
-                job.albumId = t.getString("albumId");
-                job.chapterId = t.getString("chapterId");
-                job.chapterTitle = t.optString("chapterTitle", job.chapterId);
-                job.savePath = t.getString("savePath");
-                job.useOriginal = t.optBoolean("useOriginal", true);
-                double cr = t.optDouble("compressionRatio", 1.0);
-                job.compressionRatio = (float) Math.max(0.1, Math.min(1.0, cr));
-                job.splitPages = t.optInt("splitPages", 0);
-                jobs.add(job);
+                try {
+                    JSONObject t = tasksJson.getJSONObject(i);
+                    PdfExportService.ExportJob job = new PdfExportService.ExportJob();
+                    job.mode = t.optString("mode", "chapter").trim();
+                    job.albumId = t.optString("albumId", "");
+                    job.chapterId = t.optString("chapterId", "");
+                    job.chapterTitle = t.optString("chapterTitle",
+                        "merged".equals(job.mode) ? "合并导出" : job.chapterId);
+                    job.savePath = t.optString("savePath", "");
+                    job.useOriginal = t.optBoolean("useOriginal", true);
+                    double cr = t.optDouble("compressionRatio", 1.0);
+                    job.compressionRatio = (float) Math.max(0.1, Math.min(1.0, cr));
+                    job.splitPages = Math.max(0, t.optInt("splitPages", 0));
+
+                    if ("merged".equals(job.mode)) {
+                        JSONArray chaptersJson = t.optJSONArray("chapters");
+                        if (chaptersJson != null) {
+                            job.chapters = new ArrayList<>();
+                            for (int j = 0; j < chaptersJson.length(); j++) {
+                                JSONObject c = chaptersJson.getJSONObject(j);
+                                PdfExportService.ExportChapter chapter =
+                                    new PdfExportService.ExportChapter();
+                                chapter.albumId = c.optString("albumId", "");
+                                chapter.chapterId = c.optString("chapterId", "");
+                                chapter.chapterTitle = c.optString("chapterTitle", chapter.chapterId);
+                                chapter.sortOrder = c.optInt("sortOrder", 0);
+                                job.chapters.add(chapter);
+                            }
+                        }
+                    }
+
+                    PdfExportJobValidator.validate(job);
+                    jobs.add(job);
+                } catch (Exception e) {
+                    throw new IllegalArgumentException("tasks[" + i + "] 无效: " + e.getMessage(), e);
+                }
             }
 
             PdfExportService pdfService = PdfExportService.getInstance(getContext());

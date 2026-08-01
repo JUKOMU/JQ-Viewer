@@ -13,9 +13,11 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -31,6 +33,7 @@ public class PdfExportService {
 
     private static final String TAG = "PdfExportService";
     private static final int NOTIFY_ID_BASE = 2000;
+    private static final long FREE_SPACE_MARGIN_BYTES = 16L * 1024L * 1024L;
 
     private static PdfExportService instance;
     private final Context context;
@@ -42,7 +45,9 @@ public class PdfExportService {
     });
 
     private final AtomicInteger batchCounter = new AtomicInteger(0);
-    private final ConcurrentHashMap<String, Boolean> activeChapterIds = new ConcurrentHashMap<>();
+    private final Object activeJobsLock = new Object();
+    private final Set<String> activeTaskKeys = new HashSet<>();
+    private final Set<String> activeChapterKeys = new HashSet<>();
 
     private PdfExportNotificationHelper notif;
 
@@ -61,27 +66,35 @@ public class PdfExportService {
     // ---- 导出任务数据结构 ----
 
     public static class ExportJob {
+        public String mode;
         public String albumId;
         public String chapterId;
         public String chapterTitle;
+        public List<ExportChapter> chapters;
         public String savePath;
         public boolean useOriginal;
         public float compressionRatio; // 0.1~1.0
         public int splitPages;         // 0=不分卷, >0=每卷页数
     }
 
+    public static class ExportChapter {
+        public String albumId;
+        public String chapterId;
+        public String chapterTitle;
+        public int sortOrder;
+    }
+
     // ---- 提交任务 ----
 
-    /**
-     * 提交批量导出任务。对每个 job 立即显示排队通知。已存在的 chapterId 自动跳过（防重入）。
-     */
+    /** 提交批量导出任务。对每个 job 立即显示排队通知，冲突任务自动跳过。 */
     public void submitExport(List<ExportJob> jobs) {
         final int batchId = batchCounter.incrementAndGet();
         List<ExportJob> accepted = new ArrayList<>();
 
         for (int i = 0; i < jobs.size(); i++) {
             ExportJob job = jobs.get(i);
-            if (activeChapterIds.putIfAbsent(job.chapterId, Boolean.TRUE) != null) {
+            PdfExportJobValidator.validate(job);
+            if (!acquireJobLocks(job)) {
                 continue;
             }
             accepted.add(job);
@@ -106,24 +119,29 @@ public class PdfExportService {
             ExportJob job = jobs.get(i);
             int nid = NOTIFY_ID_BASE + batchId * 1000 + i;
 
-            notif.showPreparing(nid, job.chapterTitle);
-
             try {
-                exportSingle(job, nid);
-                success++;
-            } catch (Exception e) {
-                fail++;
-                ExportFailure failure = describeExportFailure(e, job);
-                Log.e(TAG, failure.debugMessage, e);
-                notif.showError(nid, job.chapterTitle, failure.userMessage);
-            } catch (Throwable t) {
-                fail++;
-                Log.e(TAG, "PDF export crashed: " + job.chapterTitle, t);
-                notif.showError(nid, job.chapterTitle, "内部错误: " + t.getClass().getSimpleName());
+                try {
+                    notif.showPreparing(nid, job.chapterTitle);
+                    ExportPreflight preflight = preflight(job);
+                    if ("merged".equals(job.mode)) {
+                        throw new IOException("当前版本暂不支持合并 PDF 写入");
+                    }
+                    exportSingle(job, preflight, nid);
+                    success++;
+                } catch (Exception e) {
+                    fail++;
+                    ExportFailure failure = describeExportFailure(e, job);
+                    Log.e(TAG, failure.debugMessage, e);
+                    notif.showError(nid, job.chapterTitle, failure.userMessage);
+                } catch (Throwable t) {
+                    fail++;
+                    Log.e(TAG, "PDF export crashed: " + job.chapterTitle, t);
+                    notif.showError(nid, job.chapterTitle, "内部错误: " + t.getClass().getSimpleName());
+                }
+            } finally {
+                releaseJobLocks(job);
+                updateForegroundService();
             }
-
-            activeChapterIds.remove(job.chapterId);
-            updateForegroundService();
         }
 
         Log.i(TAG, "Batch " + batchId + " done: " + success + " success, " + fail + " fail");
@@ -131,27 +149,13 @@ public class PdfExportService {
 
     // ---- 单章节导出 ----
 
-    private void exportSingle(ExportJob job, int baseNid) throws IOException {
-        FileStore fileStore = FileStore.getInstance();
-
+    private void exportSingle(ExportJob job, ExportPreflight preflight, int baseNid) throws IOException {
         String basePath = job.savePath;
         String baseWithoutExt = basePath.endsWith(".pdf")
             ? basePath.substring(0, basePath.length() - 4) : basePath;
 
-        File pdfFile = resolveAbsolutePath(basePath);
-        File parentDir = pdfFile.getParentFile();
-        if (parentDir != null && !parentDir.exists()) {
-            if (!parentDir.mkdirs()) {
-                throw new IOException("无法创建目录: " + parentDir.getAbsolutePath());
-            }
-        }
-
-        File[] imageFiles = fileStore.listImageFiles(job.albumId, job.chapterId);
-        if (imageFiles == null || imageFiles.length == 0) {
-            throw new IOException("未找到章节图片文件");
-        }
-
-        java.util.Arrays.sort(imageFiles, (a, b) -> a.getName().compareTo(b.getName()));
+        File pdfFile = preflight.pdfFile;
+        File[] imageFiles = preflight.chapters.get(0).imageFiles;
 
         int total = imageFiles.length;
         Log.i(TAG, "Exporting PDF: " + job.chapterTitle + " (" + total + " pages)");
@@ -198,16 +202,14 @@ public class PdfExportService {
 
                 byte[] imageBytes = readFileBytes(imageFiles[i]);
                 if (imageBytes == null || imageBytes.length == 0) {
-                    Log.w(TAG, "跳过空文件: " + imageFiles[i].getName());
-                    continue;
+                    throw new IOException("图片文件为空: " + imageFiles[i].getName());
                 }
 
                 Bitmap bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.length);
                 imageBytes = null;
 
                 if (bitmap == null) {
-                    Log.w(TAG, "无法解码图片: " + imageFiles[i].getName());
-                    continue;
+                    throw new IOException("无法解码图片: " + imageFiles[i].getName());
                 }
 
                 Bitmap drawBitmap = bitmap;
@@ -251,6 +253,126 @@ public class PdfExportService {
         }
     }
 
+    // ---- 任务锁与预检 ----
+
+    private boolean acquireJobLocks(ExportJob job) {
+        String taskKey = PdfExportJobValidator.taskKey(job);
+        List<String> chapterKeys = PdfExportJobValidator.chapterResourceKeys(job);
+        synchronized (activeJobsLock) {
+            if (activeTaskKeys.contains(taskKey)) return false;
+            for (String chapterKey : chapterKeys) {
+                if (activeChapterKeys.contains(chapterKey)) return false;
+            }
+            activeTaskKeys.add(taskKey);
+            activeChapterKeys.addAll(chapterKeys);
+            return true;
+        }
+    }
+
+    private void releaseJobLocks(ExportJob job) {
+        synchronized (activeJobsLock) {
+            activeTaskKeys.remove(PdfExportJobValidator.taskKey(job));
+            activeChapterKeys.removeAll(PdfExportJobValidator.chapterResourceKeys(job));
+        }
+    }
+
+    private ExportPreflight preflight(ExportJob job) throws IOException {
+        FileStore fileStore = FileStore.getInstance();
+        List<ExportChapter> exportChapters = new ArrayList<>();
+        if ("merged".equals(job.mode)) {
+            exportChapters.addAll(job.chapters);
+        } else {
+            ExportChapter chapter = new ExportChapter();
+            chapter.albumId = job.albumId;
+            chapter.chapterId = job.chapterId;
+            chapter.chapterTitle = job.chapterTitle;
+            exportChapters.add(chapter);
+        }
+
+        List<ChapterPreflight> chapterResults = new ArrayList<>();
+        long totalImageBytes = 0L;
+        long totalPages = 0L;
+        for (ExportChapter chapter : exportChapters) {
+            File chapterDir = fileStore.getChapterDir(chapter.albumId, chapter.chapterId);
+            String label = chapter.chapterTitle == null || chapter.chapterTitle.trim().isEmpty()
+                ? chapter.chapterId : chapter.chapterTitle;
+            if (!chapterDir.isDirectory()) {
+                throw new IOException("章节“" + label + "”的下载目录不存在");
+            }
+
+            File[] imageFiles = fileStore.listImageFiles(chapter.albumId, chapter.chapterId);
+            if (imageFiles == null || imageFiles.length == 0) {
+                throw new IOException("章节“" + label + "”没有可导出的图片");
+            }
+            Arrays.sort(imageFiles, (a, b) -> a.getName().compareTo(b.getName()));
+            for (File imageFile : imageFiles) {
+                if (!imageFile.isFile()) {
+                    throw new IOException("章节“" + label + "”包含无效图片项: " + imageFile.getName());
+                }
+                if (!imageFile.canRead()) {
+                    throw new IOException("章节“" + label + "”的图片不可读: " + imageFile.getName());
+                }
+                long fileSize = imageFile.length();
+                if (fileSize <= 0L) {
+                    throw new IOException("章节“" + label + "”包含空图片: " + imageFile.getName());
+                }
+                BitmapFactory.Options bounds = new BitmapFactory.Options();
+                bounds.inJustDecodeBounds = true;
+                BitmapFactory.decodeFile(imageFile.getAbsolutePath(), bounds);
+                if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+                    throw new IOException("章节“" + label + "”包含无法解码的图片: "
+                        + imageFile.getName());
+                }
+                totalImageBytes = saturatingAdd(totalImageBytes, fileSize);
+            }
+            totalPages = saturatingAdd(totalPages, imageFiles.length);
+            chapterResults.add(new ChapterPreflight(imageFiles));
+        }
+
+        File pdfFile = resolveAbsolutePath(job.savePath);
+        File parentDir = pdfFile.getParentFile();
+        if (parentDir == null) {
+            throw new IOException("目标路径不可用: " + job.savePath);
+        }
+        if (!parentDir.exists() && !parentDir.mkdirs()) {
+            throw new IOException("无法创建目录: " + parentDir.getAbsolutePath());
+        }
+        if (!parentDir.isDirectory()) {
+            throw new IOException("目标路径中有一段不是目录: " + parentDir.getAbsolutePath());
+        }
+        if (!parentDir.canWrite()) {
+            throw new IOException("目标目录不可写: " + parentDir.getAbsolutePath());
+        }
+        if (pdfFile.exists() && !pdfFile.isFile()) {
+            throw new IOException("目标路径指向文件夹: " + pdfFile.getAbsolutePath());
+        }
+        if (pdfFile.isFile() && !pdfFile.canWrite()) {
+            throw new IOException("目标文件不可写: " + pdfFile.getAbsolutePath());
+        }
+
+        File tempFile = new File(pdfFile.getAbsolutePath() + ".tmp");
+        if (tempFile.exists() && !tempFile.isFile()) {
+            throw new IOException("临时文件路径不可用: " + tempFile.getAbsolutePath());
+        }
+        if (tempFile.isFile() && !tempFile.canWrite()) {
+            throw new IOException("临时文件不可写: " + tempFile.getAbsolutePath());
+        }
+
+        long requiredBytes = saturatingAdd(totalImageBytes, FREE_SPACE_MARGIN_BYTES);
+        long reusableBytes = pdfFile.isFile() ? pdfFile.length() : 0L;
+        long availableBytes = saturatingAdd(parentDir.getUsableSpace(), reusableBytes);
+        if (parentDir.getUsableSpace() > 0L && availableBytes < requiredBytes) {
+            throw new IOException("存储空间不足，预计至少需要 " + formatMegabytes(requiredBytes) + " MB 可用空间");
+        }
+
+        Log.i(TAG, "PDF preflight passed: mode=" + job.mode
+            + ", chapters=" + chapterResults.size()
+            + ", pages=" + totalPages
+            + ", imageBytes=" + totalImageBytes
+            + ", usableBytes=" + parentDir.getUsableSpace());
+        return new ExportPreflight(pdfFile, chapterResults);
+    }
+
     // ---- 工具方法 ----
 
     private File resolveAbsolutePath(String path) {
@@ -259,7 +381,21 @@ public class PdfExportService {
     }
 
     private void updateForegroundService() {
-        PdfExportForegroundService.update(context, activeChapterIds.size());
+        int activeCount;
+        synchronized (activeJobsLock) {
+            activeCount = activeTaskKeys.size();
+        }
+        PdfExportForegroundService.update(context, activeCount);
+    }
+
+    private static long saturatingAdd(long left, long right) {
+        if (right > 0L && left > Long.MAX_VALUE - right) return Long.MAX_VALUE;
+        return left + right;
+    }
+
+    private static long formatMegabytes(long bytes) {
+        long megabyte = 1024L * 1024L;
+        return Math.max(1L, ((bytes - 1L) / megabyte) + 1L);
     }
 
     private static ExportFailure describeExportFailure(Throwable error, ExportJob job) {
@@ -321,6 +457,24 @@ public class PdfExportService {
         ExportFailure(String userMessage, String debugMessage) {
             this.userMessage = userMessage;
             this.debugMessage = debugMessage;
+        }
+    }
+
+    private static final class ChapterPreflight {
+        final File[] imageFiles;
+
+        ChapterPreflight(File[] imageFiles) {
+            this.imageFiles = imageFiles;
+        }
+    }
+
+    private static final class ExportPreflight {
+        final File pdfFile;
+        final List<ChapterPreflight> chapters;
+
+        ExportPreflight(File pdfFile, List<ChapterPreflight> chapters) {
+            this.pdfFile = pdfFile;
+            this.chapters = chapters;
         }
     }
 

@@ -1,16 +1,12 @@
 package io.github.jukomu.service;
 
 import android.content.Context;
-import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
-import android.graphics.Canvas;
-import android.graphics.pdf.PdfDocument;
 import android.os.Environment;
 import android.util.Log;
 import io.github.jukomu.data.FileStore;
 
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -25,7 +21,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * PDF 导出服务（单例）。
  * <p>
- * 使用 Android 内置 {@link PdfDocument} API 生成 PDF。
+ * 使用 PdfBox-Android 分块生成 PDF。
  * 后台线程串行执行，通过系统通知报告进度。
  * notificationId 全程显式传递，无共享可变状态，线程安全。
  */
@@ -45,15 +41,18 @@ public class PdfExportService {
     });
 
     private final AtomicInteger batchCounter = new AtomicInteger(0);
+    private final AtomicInteger notificationCounter = new AtomicInteger(NOTIFY_ID_BASE);
     private final Object activeJobsLock = new Object();
     private final Set<String> activeTaskKeys = new HashSet<>();
     private final Set<String> activeChapterKeys = new HashSet<>();
+    private final PdfBoxExportWriter writer;
 
-    private PdfExportNotificationHelper notif;
+    private final PdfExportNotificationHelper notif;
 
     private PdfExportService(Context context) {
         this.context = context.getApplicationContext();
         this.notif = new PdfExportNotificationHelper(this.context);
+        this.writer = new PdfBoxExportWriter(this.context);
     }
 
     public static synchronized PdfExportService getInstance(Context context) {
@@ -89,18 +88,17 @@ public class PdfExportService {
     /** 提交批量导出任务。对每个 job 立即显示排队通知，冲突任务自动跳过。 */
     public void submitExport(List<ExportJob> jobs) {
         final int batchId = batchCounter.incrementAndGet();
-        List<ExportJob> accepted = new ArrayList<>();
+        List<QueuedExportJob> accepted = new ArrayList<>();
 
-        for (int i = 0; i < jobs.size(); i++) {
-            ExportJob job = jobs.get(i);
+        for (ExportJob job : jobs) {
             PdfExportJobValidator.validate(job);
             if (!acquireJobLocks(job)) {
                 continue;
             }
-            accepted.add(job);
 
-            int nid = NOTIFY_ID_BASE + batchId * 1000 + accepted.size() - 1;
-            notif.showQueued(nid, job.chapterTitle);
+            int notificationId = notificationCounter.getAndIncrement();
+            accepted.add(new QueuedExportJob(job, notificationId));
+            notif.showQueued(notificationId, job.chapterTitle);
         }
 
         if (!accepted.isEmpty()) {
@@ -111,32 +109,30 @@ public class PdfExportService {
 
     // ---- 批量执行 ----
 
-    private void executeBatch(int batchId, List<ExportJob> jobs) {
+    private void executeBatch(int batchId, List<QueuedExportJob> queuedJobs) {
         int success = 0;
         int fail = 0;
 
-        for (int i = 0; i < jobs.size(); i++) {
-            ExportJob job = jobs.get(i);
-            int nid = NOTIFY_ID_BASE + batchId * 1000 + i;
+        for (QueuedExportJob queuedJob : queuedJobs) {
+            ExportJob job = queuedJob.job;
+            int notificationId = queuedJob.notificationId;
 
             try {
                 try {
-                    notif.showPreparing(nid, job.chapterTitle);
+                    notif.showPreparing(notificationId, job.chapterTitle);
                     ExportPreflight preflight = preflight(job);
-                    if ("merged".equals(job.mode)) {
-                        throw new IOException("当前版本暂不支持合并 PDF 写入");
-                    }
-                    exportSingle(job, preflight, nid);
+                    exportJob(job, preflight, notificationId);
                     success++;
                 } catch (Exception e) {
                     fail++;
                     ExportFailure failure = describeExportFailure(e, job);
                     Log.e(TAG, failure.debugMessage, e);
-                    notif.showError(nid, job.chapterTitle, failure.userMessage);
+                    notif.showError(notificationId, job.chapterTitle, failure.userMessage);
                 } catch (Throwable t) {
                     fail++;
                     Log.e(TAG, "PDF export crashed: " + job.chapterTitle, t);
-                    notif.showError(nid, job.chapterTitle, "内部错误: " + t.getClass().getSimpleName());
+                    notif.showError(notificationId, job.chapterTitle,
+                        "内部错误: " + t.getClass().getSimpleName());
                 }
             } finally {
                 releaseJobLocks(job);
@@ -147,109 +143,64 @@ public class PdfExportService {
         Log.i(TAG, "Batch " + batchId + " done: " + success + " success, " + fail + " fail");
     }
 
-    // ---- 单章节导出 ----
+    // ---- PDF 导出 ----
 
-    private void exportSingle(ExportJob job, ExportPreflight preflight, int baseNid) throws IOException {
-        String basePath = job.savePath;
-        String baseWithoutExt = basePath.endsWith(".pdf")
-            ? basePath.substring(0, basePath.length() - 4) : basePath;
-
-        File pdfFile = preflight.pdfFile;
-        File[] imageFiles = preflight.chapters.get(0).imageFiles;
-
-        int total = imageFiles.length;
+    private void exportJob(ExportJob job, ExportPreflight preflight, int baseNotificationId)
+            throws IOException {
+        List<File> imageFiles = flattenImageFiles(preflight.chapters, preflight.totalPages);
+        int total = imageFiles.size();
         Log.i(TAG, "Exporting PDF: " + job.chapterTitle + " (" + total + " pages)");
 
-        int pagesPerVolume = job.splitPages > 0 ? job.splitPages : Integer.MAX_VALUE;
-        int volumeCount = (total + pagesPerVolume - 1) / pagesPerVolume;
-        if (pagesPerVolume > total) volumeCount = 1;
-
-        for (int vol = 0; vol < volumeCount; vol++) {
-            int volStart = vol * pagesPerVolume;
-            int volEnd = Math.min(volStart + pagesPerVolume, total);
-
-            File volFile;
-            if (volumeCount > 1) {
-                String volName = String.format("%s_%03d-%03d.pdf",
-                    baseWithoutExt, volStart + 1, volEnd);
-                volFile = resolveAbsolutePath(volName);
-            } else {
-                volFile = pdfFile;
-            }
-
-            String volTitle = volumeCount > 1
-                ? job.chapterTitle + " (" + (volStart + 1) + "-" + volEnd + ")"
-                : job.chapterTitle;
-
-            Log.i(TAG, "Volume " + (vol + 1) + "/" + volumeCount + ": " + volFile.getName());
-
-            // 每卷独立 notificationId，互不覆盖
-            int volNid = baseNid + vol;
-
-            writeSingleVolume(job, imageFiles, volStart, volEnd, volTitle, volFile, total, volNid);
+        List<ExportVolume> volumes = buildVolumes(preflight.pdfFile, total, job.splitPages);
+        PdfBoxExportWriter.cleanStaleArtifacts(preflight.pdfFile);
+        for (ExportVolume volume : volumes) {
+            validateOutputFile(volume.file);
+            PdfBoxExportWriter.cleanStaleArtifacts(volume.file);
         }
-    }
 
-    private void writeSingleVolume(ExportJob job, File[] imageFiles,
-            int start, int end, String volTitle, File volFile, int chapterTotal, int nid) throws IOException {
+        for (int volumeIndex = 0; volumeIndex < volumes.size(); volumeIndex++) {
+            ExportVolume volume = volumes.get(volumeIndex);
+            String volumeTitle = volumes.size() > 1
+                ? job.chapterTitle + " (" + (volume.start + 1) + "-" + volume.end + ")"
+                : job.chapterTitle;
+            int notificationId = baseNotificationId;
+            Log.i(TAG, "Volume " + (volumeIndex + 1) + "/" + volumes.size()
+                + ": " + volume.file.getName());
 
-        PdfDocument document = new PdfDocument();
-        try {
-            for (int i = start; i < end; i++) {
-                if (i == start || i == end - 1 || (i - start) % 10 == 0) {
-                    notif.showProgress(nid, job.chapterTitle, i + 1, chapterTotal);
-                }
-
-                byte[] imageBytes = readFileBytes(imageFiles[i]);
-                if (imageBytes == null || imageBytes.length == 0) {
-                    throw new IOException("图片文件为空: " + imageFiles[i].getName());
-                }
-
-                Bitmap bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.length);
-                imageBytes = null;
-
-                if (bitmap == null) {
-                    throw new IOException("无法解码图片: " + imageFiles[i].getName());
-                }
-
-                Bitmap drawBitmap = bitmap;
-                try {
-                    if (!job.useOriginal && job.compressionRatio > 0f && job.compressionRatio < 1f) {
-                        int newW = Math.max(1, Math.round(bitmap.getWidth() * job.compressionRatio));
-                        int newH = Math.max(1, Math.round(bitmap.getHeight() * job.compressionRatio));
-                        drawBitmap = Bitmap.createScaledBitmap(bitmap, newW, newH, true);
-                        if (drawBitmap != bitmap) {
-                            bitmap.recycle();
+            List<File> volumeImages = imageFiles.subList(volume.start, volume.end);
+            writer.writeVolume(
+                volumeImages,
+                volume.file,
+                job.useOriginal,
+                job.compressionRatio,
+                new PdfBoxExportWriter.ProgressListener() {
+                    @Override
+                    public void onPageWritten(int currentPage) {
+                        int taskPage = volume.start + currentPage;
+                        if (taskPage == 1 || taskPage == total || (taskPage - 1) % 10 == 0) {
+                            notif.showProgress(
+                                notificationId,
+                                job.chapterTitle,
+                                taskPage,
+                                total
+                            );
                         }
                     }
 
-                    PdfDocument.PageInfo pageInfo = new PdfDocument.PageInfo.Builder(
-                        drawBitmap.getWidth(), drawBitmap.getHeight(), (i - start) + 1).create();
-                    PdfDocument.Page page = document.startPage(pageInfo);
-                    Canvas canvas = page.getCanvas();
-                    canvas.drawBitmap(drawBitmap, 0, 0, null);
-                    document.finishPage(page);
-                } finally {
-                    if (drawBitmap != null) drawBitmap.recycle();
-                    if (bitmap != null && bitmap != drawBitmap && !bitmap.isRecycled()) bitmap.recycle();
+                    @Override
+                    public void onFinalizing() {
+                        notif.showWriting(notificationId, volumeTitle);
+                    }
                 }
-            }
-
-            notif.showWriting(nid, volTitle);
-            try { Thread.sleep(100); } catch (InterruptedException ignored) {}
-
-            FileOutputStream fos = new FileOutputStream(volFile);
-            try {
-                document.writeTo(fos);
-            } finally {
-                fos.close();
-            }
-            Log.i(TAG, "PDF saved: " + volFile.getAbsolutePath() + " (" + volFile.length() + " bytes)");
-
-            notif.showComplete(nid, volTitle, volFile.getName(), volFile.getAbsolutePath());
-
-        } finally {
-            document.close();
+            );
+            Log.i(TAG, "PDF saved: " + volume.file.getAbsolutePath()
+                + " (" + volume.file.length() + " bytes)");
+            notif.showComplete(
+                notificationId,
+                volumeTitle,
+                volume.file.getName(),
+                volume.file.getAbsolutePath()
+            );
         }
     }
 
@@ -350,17 +301,11 @@ public class PdfExportService {
             throw new IOException("目标文件不可写: " + pdfFile.getAbsolutePath());
         }
 
-        File tempFile = new File(pdfFile.getAbsolutePath() + ".tmp");
-        if (tempFile.exists() && !tempFile.isFile()) {
-            throw new IOException("临时文件路径不可用: " + tempFile.getAbsolutePath());
-        }
-        if (tempFile.isFile() && !tempFile.canWrite()) {
-            throw new IOException("临时文件不可写: " + tempFile.getAbsolutePath());
-        }
-
-        long requiredBytes = saturatingAdd(totalImageBytes, FREE_SPACE_MARGIN_BYTES);
-        long reusableBytes = pdfFile.isFile() ? pdfFile.length() : 0L;
-        long availableBytes = saturatingAdd(parentDir.getUsableSpace(), reusableBytes);
+        long requiredBytes = saturatingAdd(
+            saturatingAdd(totalImageBytes, totalImageBytes),
+            FREE_SPACE_MARGIN_BYTES
+        );
+        long availableBytes = parentDir.getUsableSpace();
         if (parentDir.getUsableSpace() > 0L && availableBytes < requiredBytes) {
             throw new IOException("存储空间不足，预计至少需要 " + formatMegabytes(requiredBytes) + " MB 可用空间");
         }
@@ -370,13 +315,60 @@ public class PdfExportService {
             + ", pages=" + totalPages
             + ", imageBytes=" + totalImageBytes
             + ", usableBytes=" + parentDir.getUsableSpace());
-        return new ExportPreflight(pdfFile, chapterResults);
+        if (totalPages > Integer.MAX_VALUE) {
+            throw new IOException("导出页数过多，超出当前 PDF 引擎支持范围");
+        }
+        return new ExportPreflight(pdfFile, chapterResults, (int) totalPages);
     }
 
     // ---- 工具方法 ----
 
+    static List<ExportVolume> buildVolumes(File pdfFile, int totalPages, int splitPages) {
+        int pagesPerVolume = splitPages > 0 ? splitPages : totalPages;
+        int volumeCount = (totalPages + pagesPerVolume - 1) / pagesPerVolume;
+        List<ExportVolume> volumes = new ArrayList<>(volumeCount);
+        String basePath = pdfFile.getAbsolutePath();
+        String baseWithoutExtension = basePath.endsWith(".pdf")
+            ? basePath.substring(0, basePath.length() - 4) : basePath;
+
+        for (int index = 0; index < volumeCount; index++) {
+            int start = index * pagesPerVolume;
+            int end = Math.min(start + pagesPerVolume, totalPages);
+            File volumeFile = volumeCount > 1
+                ? new File(String.format(
+                    Locale.ROOT,
+                    "%s_%03d-%03d.pdf",
+                    baseWithoutExtension,
+                    start + 1,
+                    end
+                ))
+                : pdfFile;
+            volumes.add(new ExportVolume(start, end, volumeFile));
+        }
+        return volumes;
+    }
+
+    private static List<File> flattenImageFiles(List<ChapterPreflight> chapters, int totalPages) {
+        List<File> imageFiles = new ArrayList<>(totalPages);
+        for (ChapterPreflight chapter : chapters) {
+            imageFiles.addAll(Arrays.asList(chapter.imageFiles));
+        }
+        return imageFiles;
+    }
+
+    private static void validateOutputFile(File outputFile) throws IOException {
+        if (outputFile.exists() && !outputFile.isFile()) {
+            throw new IOException("目标路径指向文件夹: " + outputFile.getAbsolutePath());
+        }
+        if (outputFile.isFile() && !outputFile.canWrite()) {
+            throw new IOException("目标文件不可写: " + outputFile.getAbsolutePath());
+        }
+    }
+
     private File resolveAbsolutePath(String path) {
-        if (path.startsWith("/")) return new File(path);
+        if (path.startsWith("/")) {
+            return new File(path);
+        }
         return new File(Environment.getExternalStorageDirectory(), path);
     }
 
@@ -389,7 +381,9 @@ public class PdfExportService {
     }
 
     private static long saturatingAdd(long left, long right) {
-        if (right > 0L && left > Long.MAX_VALUE - right) return Long.MAX_VALUE;
+        if (right > 0L && left > Long.MAX_VALUE - right) {
+            return Long.MAX_VALUE;
+        }
         return left + right;
     }
 
@@ -445,9 +439,33 @@ public class PdfExportService {
 
     private static boolean containsAny(String value, String... needles) {
         for (String needle : needles) {
-            if (value.contains(needle)) return true;
+            if (value.contains(needle)) {
+                return true;
+            }
         }
         return false;
+    }
+
+    static final class ExportVolume {
+        final int start;
+        final int end;
+        final File file;
+
+        ExportVolume(int start, int end, File file) {
+            this.start = start;
+            this.end = end;
+            this.file = file;
+        }
+    }
+
+    private static final class QueuedExportJob {
+        final ExportJob job;
+        final int notificationId;
+
+        QueuedExportJob(ExportJob job, int notificationId) {
+            this.job = job;
+            this.notificationId = notificationId;
+        }
     }
 
     private static final class ExportFailure {
@@ -471,25 +489,12 @@ public class PdfExportService {
     private static final class ExportPreflight {
         final File pdfFile;
         final List<ChapterPreflight> chapters;
+        final int totalPages;
 
-        ExportPreflight(File pdfFile, List<ChapterPreflight> chapters) {
+        ExportPreflight(File pdfFile, List<ChapterPreflight> chapters, int totalPages) {
             this.pdfFile = pdfFile;
             this.chapters = chapters;
-        }
-    }
-
-    private static byte[] readFileBytes(File file) throws IOException {
-        java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
-        java.io.FileInputStream fis = new java.io.FileInputStream(file);
-        try {
-            byte[] buf = new byte[8192];
-            int len;
-            while ((len = fis.read(buf)) > 0) {
-                bos.write(buf, 0, len);
-            }
-            return bos.toByteArray();
-        } finally {
-            fis.close();
+            this.totalPages = totalPages;
         }
     }
 }

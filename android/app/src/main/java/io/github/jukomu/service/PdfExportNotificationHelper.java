@@ -66,11 +66,13 @@ public class PdfExportNotificationHelper {
     }
 
     public void showProgress(int notificationId, String chapterTitle, int currentPage, int totalPages) {
+        int safeTotal = Math.max(1, totalPages);
+        int safeCurrent = Math.max(0, Math.min(currentPage, safeTotal));
         manager.notify(notificationId, new NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(ICON)
             .setContentTitle("正在导出 PDF")
             .setContentText(chapterTitle + " (" + currentPage + "/" + totalPages + ")")
-            .setProgress(0, 0, true)
+            .setProgress(safeTotal, safeCurrent, false)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .build());

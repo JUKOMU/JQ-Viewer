@@ -8,12 +8,7 @@ import io.github.jukomu.data.FileStore;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -85,7 +80,9 @@ public class PdfExportService {
 
     // ---- 提交任务 ----
 
-    /** 提交批量导出任务。对每个 job 立即显示排队通知，冲突任务自动跳过。 */
+    /**
+     * 提交批量导出任务。对每个 job 立即显示排队通知，冲突任务自动跳过。
+     */
     public void submitExport(List<ExportJob> jobs) {
         final int batchId = batchCounter.incrementAndGet();
         List<QueuedExportJob> accepted = new ArrayList<>();
@@ -146,7 +143,7 @@ public class PdfExportService {
     // ---- PDF 导出 ----
 
     private void exportJob(ExportJob job, ExportPreflight preflight, int baseNotificationId)
-            throws IOException {
+        throws IOException {
         List<File> imageFiles = flattenImageFiles(preflight.chapters, preflight.totalPages);
         int total = imageFiles.size();
         Log.i(TAG, "Exporting PDF: " + job.chapterTitle + " (" + total + " pages)");
@@ -336,12 +333,12 @@ public class PdfExportService {
             int end = Math.min(start + pagesPerVolume, totalPages);
             File volumeFile = volumeCount > 1
                 ? new File(String.format(
-                    Locale.ROOT,
-                    "%s_%03d-%03d.pdf",
-                    baseWithoutExtension,
-                    start + 1,
-                    end
-                ))
+                Locale.ROOT,
+                "%s_%03d-%03d.pdf",
+                baseWithoutExtension,
+                start + 1,
+                end
+            ))
                 : pdfFile;
             volumes.add(new ExportVolume(start, end, volumeFile));
         }

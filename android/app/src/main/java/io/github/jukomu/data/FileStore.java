@@ -149,25 +149,51 @@ public class FileStore {
 
     @SuppressLint("NewApi")
     byte[] getImageBytes(String albumId, String chapterId, int sortOrder) {
-        String key = makeSortKey(albumId, chapterId, sortOrder);
-        String filename = sortOrderToFilename.get(key);
-        if (filename == null) return null;
-
-        File imageFile = new File(getChapterDir(albumId, chapterId), filename);
-        if (!imageFile.exists()) return null;
+        File imageFile = getImageFile(albumId, chapterId, sortOrder);
+        if (imageFile == null) return null;
 
         try {
-            return Files.readAllBytes(imageFile.toPath());
+            return readImageBytes(imageFile);
         } catch (IOException e) {
             Log.e(TAG, "Failed to read image: " + imageFile.getPath(), e);
             return null;
         }
     }
 
+    private File getImageFile(String albumId, String chapterId, int sortOrder) {
+        String key = makeSortKey(albumId, chapterId, sortOrder);
+        String filename = sortOrderToFilename.get(key);
+        if (filename == null) return null;
+
+        File imageFile = new File(getChapterDir(albumId, chapterId), filename);
+        return imageFile.isFile() ? imageFile : null;
+    }
+
     public byte[] getImageBytesByPhotoId(String photoId, int sortOrder) {
         String albumId = chapterIdToAlbumId.get(photoId);
         if (albumId == null) return null;
         return getImageBytes(albumId, photoId, sortOrder);
+    }
+
+    /**
+     * 返回已下载图片文件，供调用方在分配 byte[] 前按文件长度执行内存准入。
+     */
+    public File getImageFileByPhotoId(String photoId, int sortOrder) {
+        String albumId = chapterIdToAlbumId.get(photoId);
+        if (albumId == null) return null;
+        return getImageFile(albumId, photoId, sortOrder);
+    }
+
+    public byte[] readImageBytes(File imageFile) throws IOException {
+        try (FileInputStream input = new FileInputStream(imageFile);
+             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[8192];
+            int count;
+            while ((count = input.read(buffer)) != -1) {
+                output.write(buffer, 0, count);
+            }
+            return output.toByteArray();
+        }
     }
 
     public Integer getFirstImageSortOrder(String albumId, String chapterId) {

@@ -72,7 +72,7 @@ export interface JmcomicClient {
     replacePending?: boolean
   }): Promise<PreloadResult>
 
-  setCacheCapacity(options: { mb: number }): Promise<{ success: boolean; capacityMb: number }>
+  setCacheCapacity(options: { mb: number }): Promise<CacheCapacityInfo & { success: boolean }>
 
   getCacheCapacityInfo(): Promise<CacheCapacityInfo>
 

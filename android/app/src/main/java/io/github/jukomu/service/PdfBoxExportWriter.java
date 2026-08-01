@@ -25,7 +25,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
-/** 使用 PdfBox-Android 按固定页数分块生成单个 PDF 卷。 */
+/**
+ * 使用 PdfBox-Android 按固定页数分块生成单个 PDF 卷。
+ */
 final class PdfBoxExportWriter {
 
     private static final String TAG = "PdfBoxExportWriter";
@@ -43,7 +45,7 @@ final class PdfBoxExportWriter {
     }
 
     void writeVolume(List<File> imageFiles, File finalFile, boolean useOriginal,
-            float compressionRatio, ProgressListener listener) throws IOException {
+                     float compressionRatio, ProgressListener listener) throws IOException {
         if (imageFiles.isEmpty()) {
             throw new IOException("没有可写入 PDF 的图片");
         }
@@ -144,7 +146,7 @@ final class PdfBoxExportWriter {
     }
 
     private List<File> writeChunks(List<File> imageFiles, File workDir, boolean useOriginal,
-            float compressionRatio, ProgressListener listener) throws IOException {
+                                   float compressionRatio, ProgressListener listener) throws IOException {
         List<File> chunks = new ArrayList<>((imageFiles.size() + CHUNK_PAGES - 1) / CHUNK_PAGES);
         for (int start = 0; start < imageFiles.size(); start += CHUNK_PAGES) {
             int end = Math.min(start + CHUNK_PAGES, imageFiles.size());
@@ -186,7 +188,7 @@ final class PdfBoxExportWriter {
     }
 
     private void addPage(PDDocument document, File source, File workDir, int pageIndex,
-            boolean useOriginal, float compressionRatio) throws IOException {
+                         boolean useOriginal, float compressionRatio) throws IOException {
         MaterializedImage materialized = materializeImage(
             source,
             workDir,
@@ -225,7 +227,7 @@ final class PdfBoxExportWriter {
     }
 
     private MaterializedImage materializeImage(File source, File workDir, int pageIndex,
-            boolean useOriginal, float compressionRatio) throws IOException {
+                                               boolean useOriginal, float compressionRatio) throws IOException {
         if (useOriginal) {
             return new MaterializedImage(source, false);
         }
@@ -258,7 +260,7 @@ final class PdfBoxExportWriter {
     }
 
     private MaterializedImage materializeUnsupportedOriginal(File source, File workDir,
-            int pageIndex) throws IOException {
+                                                             int pageIndex) throws IOException {
         Bitmap bitmap = BitmapFactory.decodeFile(source.getAbsolutePath());
         if (bitmap == null) {
             throw new IOException("当前 PDF 引擎不支持图片格式: " + source.getName());

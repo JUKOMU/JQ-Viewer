@@ -18,7 +18,7 @@
             <div class="row-left">
               <span class="row-title">缓存用量</span>
               <span class="row-subtitle"
-              >已用 {{ cacheInfo.usedMb }}MB / {{ cacheInfo.capacityMb }}MB</span
+                >已用 {{ cacheInfo.usedMb }}MB / 实际 {{ cacheEffectiveMb }}MB</span
               >
             </div>
             <div class="row-right">
@@ -32,10 +32,12 @@
           <!-- 缓存上限 -->
           <div class="row divider">
             <div class="row-left">
-              <span class="row-title">缓存上限</span>
+              <label class="row-title" for="cache-capacity-input">用户设置上限</label>
+              <span v-if="cacheDiagnosticText" class="row-subtitle">{{ cacheDiagnosticText }}</span>
             </div>
             <div class="row-right">
               <input
+                id="cache-capacity-input"
                 class="num-input"
                 type="number"
                 :value="cacheInputMb"
@@ -80,7 +82,7 @@
           <div class="row divider">
             <div class="row-left">
               <span class="row-title">预加载并发数</span>
-              <span class="row-subtitle">阅读时同时加载图片的线程数，下次启动生效</span>
+              <span class="row-subtitle">阅读时同时加载图片的线程数，应用进程重启后生效</span>
             </div>
             <div class="row-right">
               <input
@@ -222,7 +224,7 @@
           <div class="row">
             <div class="row-left">
               <span class="row-title">下载并发数</span>
-              <span class="row-subtitle">章节下载同时进行的图片线程数，下次启动生效</span>
+              <span class="row-subtitle">章节下载同时进行的图片线程数，应用进程重启后生效</span>
             </div>
             <div class="row-right">
               <input
@@ -464,7 +466,12 @@ import {App} from '@capacitor/app'
 import type {PluginListenerHandle} from '@capacitor/core'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import {JmcomicService, sanitizeError, showToast} from '@/services/JmcomicService'
-import {initSettings, SettingsStore} from '@/services/SettingsService'
+import {
+  initSettings,
+  persistDownloadConcurrency,
+  persistPreloadConcurrency,
+  SettingsStore,
+} from '@/services/SettingsService'
 import {ExportFormatService} from '@/services/ExportFormatService'
 import {PDF_SAMPLE_DATA, PdfExportService} from '@/services/PdfExportService'
 import {useAuth} from '@/composables/useAuth'
@@ -550,9 +557,28 @@ const phaseLabel = computed(() => {
 })
 
 const usagePercent = computed(() => {
-  if (cacheInfo.value.capacityMb <= 0) return 0
-  const pct = Math.round((cacheInfo.value.usedMb / cacheInfo.value.capacityMb) * 100)
+  if (cacheEffectiveMb.value <= 0) return 0
+  const pct = Math.round((cacheInfo.value.usedMb / cacheEffectiveMb.value) * 100)
   return Math.min(pct, 100)
+})
+
+const cacheEffectiveMb = computed(() => cacheInfo.value.effectiveMb ?? cacheInfo.value.capacityMb)
+
+const cacheDiagnosticText = computed(() => {
+  const maxHeapMb = cacheInfo.value.maxHeapMb
+  if (!maxHeapMb) return ''
+  const reasonLabels: Record<string, string> = {
+    'requested-limit': '按用户设置生效',
+    'heap-budget': '受进程 Heap 安全预算限制',
+    'low-ram-heap-budget': '低内存设备安全预算',
+    'memory-pressure': '系统内存压力临时收缩',
+    'minimum-safe-capacity': '使用最低安全容量',
+    'invalid-heap-fallback': '无法读取 Heap 上限，使用安全容量',
+  }
+  const reason = cacheInfo.value.limitReason
+    ? reasonLabels[cacheInfo.value.limitReason] || cacheInfo.value.limitReason
+    : ''
+  return `当前实际 ${cacheEffectiveMb.value} MB · Heap ${maxHeapMb} MB${reason ? ` · ${reason}` : ''}`
 })
 
 onMounted(async () => {
@@ -609,7 +635,8 @@ async function onCacheCapacityChange(e: Event) {
   cacheInputMb.value = mb
   SettingsStore.setCacheCapacityMb(mb)
   try {
-    await JmcomicService.setCacheCapacity(mb)
+    const info = await JmcomicService.setCacheCapacity(mb)
+    cacheInfo.value = info
   } catch {
     cacheInputMb.value = prev
     SettingsStore.setCacheCapacityMb(prev)
@@ -664,11 +691,13 @@ async function onPreloadConcurrencyChange(e: Event) {
   if (!Number.isFinite(val)) return
   const n = Math.max(1, Math.min(12, val))
   preloadConcurrency.value = n
-  SettingsStore.setPreloadConcurrency(n)
   try {
-    await JmcomicService.setPreloadConcurrency(n)
-    await showToast('已保存，下次启动生效', 'success')
+    await persistPreloadConcurrency(n)
+    await showToast('已保存，应用进程重启后生效', 'success')
   } catch {
+    if (preloadConcurrency.value === n) {
+      preloadConcurrency.value = SettingsStore.getPreloadConcurrency()
+    }
     await showToast('保存失败', 'danger')
   }
 }
@@ -679,11 +708,13 @@ async function onConcurrencyChange(e: Event) {
   if (!Number.isFinite(val)) return
   const n = Math.max(1, Math.min(12, val))
   downloadConcurrency.value = n
-  SettingsStore.setDownloadConcurrency(n)
   try {
-    await JmcomicService.setDownloadConcurrency(n)
-    await showToast('已保存，下次启动生效', 'success')
+    await persistDownloadConcurrency(n)
+    await showToast('已保存，应用进程重启后生效', 'success')
   } catch {
+    if (downloadConcurrency.value === n) {
+      downloadConcurrency.value = SettingsStore.getDownloadConcurrency()
+    }
     await showToast('保存失败', 'danger')
   }
 }

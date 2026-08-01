@@ -7,6 +7,7 @@ import android.webkit.WebResourceResponse;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -16,12 +17,11 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  * 线程安全 LRU 内存缓存（基于字节容量淘汰）。
  * 线程安全策略参考库内 CachePool 的 ReentrantReadWriteLock 设计。
  * <p>
- * 默认容量 640MB，可通过 {@link #setCapacity(long)} 调整。
+ * 容量由 {@link CacheCapacityPolicy} 统一计算，并支持读取前的在途字节预留。
  */
 public class ImageCache {
 
     static final String VIRTUAL_HOST = "jqviewer.local";
-    static final long DEFAULT_CAPACITY = 256L * 1024 * 1024; // 256MB
     private static final int THUMBNAIL_MAX_WIDTH = 300;
     private static final int THUMBNAIL_JPEG_QUALITY = 70;
 
@@ -43,10 +43,18 @@ public class ImageCache {
         }
     };
 
-    private long capacity = DEFAULT_CAPACITY;
+    private long capacity;
     private long currentSize = 0;
+    private long reservedSize = 0;
+    private CacheCapacityPolicy.Result policyResult;
 
     private ImageCache() {
+        policyResult = new CacheCapacityPolicy().calculate(
+            CacheCapacityPolicy.DEFAULT_REQUESTED_MB,
+            Runtime.getRuntime().maxMemory(),
+            false,
+            CacheCapacityPolicy.PressureLevel.NORMAL);
+        capacity = policyResult.effectiveMb * CacheCapacityPolicy.MIB;
     }
 
     public static ImageCache getInstance() {
@@ -77,10 +85,12 @@ public class ImageCache {
     /**
      * 设置容量（字节），若当前占用超过新容量则触发淘汰。
      */
-    public void setCapacity(long newCapacity) {
+    public void applyPolicy(CacheCapacityPolicy.Result result) {
+        if (result == null) return;
         writeLock.lock();
         try {
-            this.capacity = newCapacity;
+            policyResult = result;
+            capacity = result.effectiveMb * CacheCapacityPolicy.MIB;
             evictIfNeeded();
         } finally {
             writeLock.unlock();
@@ -99,26 +109,81 @@ public class ImageCache {
         }
     }
 
+    public CacheStats getStats() {
+        readLock.lock();
+        try {
+            return new CacheStats(policyResult, currentSize, reservedSize);
+        } finally {
+            readLock.unlock();
+        }
+    }
+
+    public boolean canAccept(long size) {
+        readLock.lock();
+        try {
+            return size > 0L && size <= capacity;
+        } finally {
+            readLock.unlock();
+        }
+    }
+
+    /**
+     * 在读取大对象前预留容量，并提前淘汰最久未访问的缓存条目。
+     */
+    public IncomingReservation prepareForIncomingBytes(long size) {
+        if (size <= 0L) return null;
+        writeLock.lock();
+        try {
+            if (size > capacity || reservedSize + size > capacity) return null;
+            evictToTarget(capacity - reservedSize - size);
+            if (!evictForHeapMargin(reservedSize + size)) return null;
+            reservedSize += size;
+            return new IncomingReservation(this, size);
+        } finally {
+            writeLock.unlock();
+        }
+    }
+
     // ---- 缓存操作 ----
 
-    public void put(String key, byte[] data, String mimeType) {
-        if (data == null || data.length == 0) return;
+    public boolean put(String key, byte[] data, String mimeType) {
+        return put(key, data, mimeType, null);
+    }
+
+    public boolean put(String key, byte[] data, String mimeType,
+                       IncomingReservation reservation) {
+        if (data == null || data.length == 0) {
+            if (reservation != null) reservation.close();
+            return false;
+        }
         int size = data.length;
-        if (size > capacity) return; // 单个对象超过容量，不缓存
 
         writeLock.lock();
         try {
-            // 淘汰旧条目腾出堆空间
-            evictForHeapMargin(size);
+            boolean hadReservation = consumeReservation(reservation);
+            if (size > capacity || reservedSize + size > capacity) return false;
+
             // 若 key 已存在，先移除旧的
             ImageEntry old = cache.remove(key);
             if (old != null) {
                 currentSize -= old.data.length;
             }
+
+            evictToTarget(capacity - reservedSize - size);
+            long unaccountedBytes = hadReservation ? reservedSize : reservedSize + size;
+            if (!evictForHeapMargin(unaccountedBytes)) {
+                if (old != null) {
+                    cache.put(key, old);
+                    currentSize += old.data.length;
+                }
+                return false;
+            }
+
             ImageEntry entry = new ImageEntry(data, mimeType);
             cache.put(key, entry);
             currentSize += size;
             evictIfNeeded();
+            return cache.containsKey(key);
         } finally {
             writeLock.unlock();
         }
@@ -177,9 +242,13 @@ public class ImageCache {
     // ---- 淘汰 ----
 
     private void evictIfNeeded() {
-        if (currentSize <= capacity) return;
+        evictToTarget(Math.max(0L, capacity - reservedSize));
+    }
+
+    private void evictToTarget(long target) {
+        if (currentSize <= target) return;
         var it = cache.entrySet().iterator();
-        while (it.hasNext() && currentSize > capacity) {
+        while (it.hasNext() && currentSize > target) {
             var entry = it.next();
             currentSize -= entry.getValue().data.length;
             it.remove();
@@ -190,13 +259,13 @@ public class ImageCache {
      * 淘汰最久未访问的条目直到堆余量充足（不超过最大堆的 85%）。
      * 在插入新数据前调用，优先保留用户当前正在浏览的图片。
      */
-    private void evictForHeapMargin(int neededBytes) {
+    private boolean evictForHeapMargin(long projectedBytes) {
         Runtime rt = Runtime.getRuntime();
         long maxHeap = rt.maxMemory();
         long usedHeap = rt.totalMemory() - rt.freeMemory();
-        long safeThreshold = (long)(maxHeap * 0.85);
-        long needToFree = (usedHeap + neededBytes) - safeThreshold;
-        if (needToFree <= 0) return;
+        long safeThreshold = (long) (maxHeap * 0.85);
+        long needToFree = (usedHeap + projectedBytes) - safeThreshold;
+        if (needToFree <= 0) return true;
 
         long freed = 0;
         var it = cache.entrySet().iterator();
@@ -207,6 +276,23 @@ public class ImageCache {
             freed += len;
             it.remove();
         }
+        return freed >= needToFree;
+    }
+
+    private boolean consumeReservation(IncomingReservation reservation) {
+        if (reservation == null || reservation.owner != this || !reservation.open) return false;
+        reservedSize -= reservation.size;
+        reservation.open = false;
+        return true;
+    }
+
+    private void releaseReservation(IncomingReservation reservation) {
+        writeLock.lock();
+        try {
+            consumeReservation(reservation);
+        } finally {
+            writeLock.unlock();
+        }
     }
 
     /**
@@ -216,7 +302,7 @@ public class ImageCache {
     public void trimToFraction(double fraction) {
         writeLock.lock();
         try {
-            long target = (long)(capacity * fraction);
+            long target = (long) (capacity * fraction);
             if (currentSize <= target) return;
             var it = cache.entrySet().iterator();
             while (it.hasNext() && currentSize > target) {
@@ -281,22 +367,31 @@ public class ImageCache {
                 }
 
                 // 2b. 查 FileStore（从本地原图生成缩略图）
-                byte[] originalData = FileStore.getInstance()
-                    .getImageBytesByPhotoId(photoId, sortOrder);
-                if (originalData != null) {
-                    byte[] thumbData = createThumbnail(originalData);
-                    getInstance().put(cacheKey, thumbData, "image/jpeg");
-                    return new WebResourceResponse("image/jpeg", "UTF-8",
-                        new ByteArrayInputStream(thumbData));
+                File imageFile = FileStore.getInstance().getImageFileByPhotoId(photoId, sortOrder);
+                if (imageFile != null) {
+                    try (IncomingReservation reservation = getInstance()
+                        .prepareForIncomingBytes(imageFile.length())) {
+                        if (reservation == null) return null;
+                        byte[] originalData = FileStore.getInstance().readImageBytes(imageFile);
+                        byte[] thumbData = createThumbnail(originalData);
+                        reservation.close();
+                        getInstance().put(cacheKey, thumbData, "image/jpeg");
+                        return new WebResourceResponse("image/jpeg", "UTF-8",
+                            new ByteArrayInputStream(thumbData));
+                    }
                 }
             } else {
-                byte[] data = FileStore.getInstance()
-                    .getImageBytesByPhotoId(photoId, sortOrder);
-                if (data != null) {
-                    String mime = "image/" + guessFormatName(data);
-                    getInstance().put(cacheKey, data, mime);
-                    return new WebResourceResponse(mime, "UTF-8",
-                        new ByteArrayInputStream(data));
+                File imageFile = FileStore.getInstance().getImageFileByPhotoId(photoId, sortOrder);
+                if (imageFile != null) {
+                    try (IncomingReservation reservation = getInstance()
+                        .prepareForIncomingBytes(imageFile.length())) {
+                        if (reservation == null) return null;
+                        byte[] data = FileStore.getInstance().readImageBytes(imageFile);
+                        String mime = "image/" + guessFormatName(data);
+                        getInstance().put(cacheKey, data, mime, reservation);
+                        return new WebResourceResponse(mime, "UTF-8",
+                            new ByteArrayInputStream(data));
+                    }
                 }
             }
 
@@ -355,6 +450,46 @@ public class ImageCache {
         ImageEntry(byte[] data, String mimeType) {
             this.data = data;
             this.mimeType = mimeType;
+        }
+    }
+
+    public static final class IncomingReservation implements AutoCloseable {
+        private final ImageCache owner;
+        private final long size;
+        private boolean open = true;
+
+        IncomingReservation(ImageCache owner, long size) {
+            this.owner = owner;
+            this.size = size;
+        }
+
+        @Override
+        public void close() {
+            owner.releaseReservation(this);
+        }
+    }
+
+    public static final class CacheStats {
+        public final long requestedMb;
+        public final long effectiveMb;
+        public final long currentBytes;
+        public final long reservedBytes;
+        public final long maxHeapMb;
+        public final double safeRatio;
+        public final String pressureLevel;
+        public final boolean temporaryClamp;
+        public final String reason;
+
+        CacheStats(CacheCapacityPolicy.Result result, long currentBytes, long reservedBytes) {
+            this.requestedMb = result.requestedMb;
+            this.effectiveMb = result.effectiveMb;
+            this.currentBytes = currentBytes;
+            this.reservedBytes = reservedBytes;
+            this.maxHeapMb = result.maxHeapMb;
+            this.safeRatio = result.safeRatio;
+            this.pressureLevel = result.pressureLevel.getValue();
+            this.temporaryClamp = result.temporaryClamp;
+            this.reason = result.reason;
         }
     }
 }

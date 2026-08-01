@@ -166,6 +166,13 @@ export interface PreloadResult {
 export interface CacheCapacityInfo {
   capacityMb: number
   usedMb: number
+  requestedMb?: number
+  effectiveMb?: number
+  maxHeapMb?: number
+  safeRatio?: number
+  pressureLevel?: string
+  temporaryClamp?: boolean
+  limitReason?: string
 }
 
 export interface AllSettings {
@@ -174,6 +181,11 @@ export interface AllSettings {
   downloadConcurrency: number
   downloadPublic: boolean
   cacheCapacityMb: number
+  cacheRequestedMb?: number
+  cacheEffectiveMb?: number
+  cacheMaxHeapMb?: number
+  cacheTemporaryClamp?: boolean
+  cacheLimitReason?: string
   ocrEnabled: boolean
   readerDisplayMode: string
   readerScreenOrientation: string

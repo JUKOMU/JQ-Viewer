@@ -5,10 +5,13 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-/** Validates and identifies PDF export jobs before they enter the worker queue. */
+/**
+ * Validates and identifies PDF export jobs before they enter the worker queue.
+ */
 public final class PdfExportJobValidator {
 
-    private PdfExportJobValidator() {}
+    private PdfExportJobValidator() {
+    }
 
     public static void validate(PdfExportService.ExportJob job) {
         if (job == null) {

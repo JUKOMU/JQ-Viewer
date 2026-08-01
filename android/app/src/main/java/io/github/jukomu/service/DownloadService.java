@@ -40,8 +40,8 @@ public class DownloadService {
     private final DownloadStore downloadDb;
     private final FileStore fileStore;
     private final JmApiClient client;
-    private final ExecutorService imageExecutor;
-    private final ServiceListener listener;
+    private final ExecutorService prepareExecutor;
+    private volatile ServiceListener listener;
     private final DownloadNotificationHelper notificationHelper;
     private final Context context;
 
@@ -63,15 +63,19 @@ public class DownloadService {
     private final Map<String, Long> lastNotificationAt = new ConcurrentHashMap<>();
 
     public DownloadService(DownloadStore downloadDb, FileStore fileStore,
-                           JmApiClient client, ExecutorService imageExecutor,
+                           JmApiClient client, ExecutorService prepareExecutor,
                            ServiceListener listener, Context context) {
         this.downloadDb = downloadDb;
         this.fileStore = fileStore;
         this.client = client;
-        this.imageExecutor = imageExecutor;
+        this.prepareExecutor = prepareExecutor;
         this.listener = listener;
         this.context = context.getApplicationContext();
         this.notificationHelper = new DownloadNotificationHelper(context.getApplicationContext());
+    }
+
+    public void setListener(ServiceListener listener) {
+        this.listener = listener;
     }
 
     // ---- 下载任务操作 ----
@@ -96,7 +100,7 @@ public class DownloadService {
         startForegroundTask(taskId);
         showQueuedNotification(taskId, chapterTitle);
 
-        imageExecutor.submit(() -> {
+        prepareExecutor.submit(() -> {
             try {
                 if (downloadDb.getTask(taskId) == null) {
                     removeQueuedNotification(taskId);
@@ -145,7 +149,7 @@ public class DownloadService {
                 }
 
                 task.addObserver(new DownloadObserver(taskId, albumId, chapterId,
-                    images.size(), downloadDb, fileStore, listener, this));
+                    images.size(), downloadDb, fileStore, this));
 
                 downloadDb.updateStatus(taskId, STATUS_DOWNLOADING);
                 showDownloadNotification(taskId, albumTitle, chapterId, chapterTitle,
@@ -408,10 +412,19 @@ public class DownloadService {
     private void notifyProgress(String taskId, String albumId, String chapterId,
                                 int downloadedPages, int totalPages,
                                 String status, String error) {
-        if (listener != null) {
-            listener.onDownloadProgress(new DownloadProgressData(
+        notifyDownloadProgress(taskId, albumId, chapterId, downloadedPages, totalPages,
+            status, error, 0, 0, 0);
+    }
+
+    void notifyDownloadProgress(String taskId, String albumId, String chapterId,
+                                int downloadedPages, int totalPages, String status,
+                                String error, long speed, long totalSize,
+                                long downloadedBytes) {
+        ServiceListener current = listener;
+        if (current != null) {
+            current.onDownloadProgress(new DownloadProgressData(
                 taskId, albumId, chapterId, downloadedPages, totalPages,
-                status, error, 0, 0));
+                status, error, speed, totalSize, downloadedBytes));
         }
     }
 
@@ -433,11 +446,8 @@ public class DownloadService {
     private void notifyProgress(String taskId, String albumId, String chapterId,
                                 int downloadedPages, int totalPages,
                                 String status, String error, long speed, long totalSize) {
-        if (listener != null) {
-            listener.onDownloadProgress(new DownloadProgressData(
-                taskId, albumId, chapterId, downloadedPages, totalPages,
-                status, error, speed, totalSize));
-        }
+        notifyDownloadProgress(taskId, albumId, chapterId, downloadedPages, totalPages,
+            status, error, speed, totalSize, 0);
     }
 
     private int notificationId(String taskId) {

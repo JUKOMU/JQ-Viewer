@@ -138,7 +138,7 @@
         <div class="setting-row divider">
           <div class="setting-left">
             <span class="setting-label">预加载并发数</span>
-            <span class="setting-sub">同时加载图片的线程数，下次启动生效</span>
+            <span class="setting-sub">同时加载图片的线程数，应用进程重启后生效</span>
           </div>
           <div class="setting-right">
             <input
@@ -163,7 +163,7 @@ import type {RangeCustomEvent} from '@ionic/vue'
 import {IonIcon, IonRange, IonToggle} from '@ionic/vue'
 import {closeOutline} from 'ionicons/icons'
 import {JmcomicService, showToast} from '@/services/JmcomicService'
-import {SettingsStore} from '@/services/SettingsService'
+import {persistPreloadConcurrency, SettingsStore} from '@/services/SettingsService'
 
 defineOptions({name: 'ReaderSettingsPanel'})
 
@@ -281,10 +281,14 @@ function onPreloadConcurrencyChange(e: Event) {
   if (!Number.isFinite(val)) return
   const n = Math.max(1, Math.min(12, val))
   localPreloadConcurrency.value = n
-  SettingsStore.setPreloadConcurrency(n)
-  JmcomicService.setPreloadConcurrency(n)
-    .then(() => showToast('已保存，下次启动生效', 'success'))
-    .catch(() => showToast('保存失败', 'danger'))
+  persistPreloadConcurrency(n)
+    .then(() => showToast('已保存，应用进程重启后生效', 'success'))
+    .catch(() => {
+      if (localPreloadConcurrency.value === n) {
+        localPreloadConcurrency.value = SettingsStore.getPreloadConcurrency()
+      }
+      return showToast('保存失败', 'danger')
+    })
 }
 </script>
 

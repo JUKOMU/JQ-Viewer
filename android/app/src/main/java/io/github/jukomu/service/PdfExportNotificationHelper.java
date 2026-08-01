@@ -1,6 +1,5 @@
 package io.github.jukomu.service;
 
-import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
@@ -11,6 +10,7 @@ import android.os.Build;
 import androidx.core.app.NotificationCompat;
 import androidx.core.content.FileProvider;
 import io.github.jukomu.R;
+
 import java.io.File;
 
 /**

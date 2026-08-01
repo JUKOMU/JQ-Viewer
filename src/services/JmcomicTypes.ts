@@ -388,9 +388,11 @@ export interface PdfExportChapter {
 }
 
 export interface PdfExportTask {
+  mode: PdfExportMode
   albumId: string
-  chapterId: string
+  chapterId?: string
   chapterTitle: string       // 用于通知显示
+  chapters?: PdfExportChapter[]
   savePath: string           // 完整路径（含文件名.pdf）
   useOriginal: boolean
   compressionRatio: number   // 0.1~1.0

@@ -266,7 +266,7 @@ import type {
   CompletedGroup,
   DownloadTask,
   ImportedPdf,
-  PdfExportTask
+  PdfExportMode,
 } from '@/services/JmcomicTypes'
 import {PdfImportService} from '@/services/PdfImportService'
 
@@ -875,6 +875,7 @@ const onOpenPdfSheet = () => {
 
 const onPdfExportConfirm = async (payload: {
   selectedChapters: DownloadTask[]
+  mode: PdfExportMode
   useOriginal: boolean
   compressionRatio: number
   editedPath: string
@@ -891,27 +892,17 @@ const onPdfExportConfirm = async (payload: {
     }
   }
 
-  const tasks: PdfExportTask[] = payload.selectedChapters.map((ch) => {
-    const savePath =
-      payload.selectedChapters.length === 1
-        ? payload.editedPath
-        : PdfExportService.buildFullPath(PdfExportService.buildTemplateData(ch, albumDetail))
-
-    return {
-      albumId: ch.albumId,
-      chapterId: ch.chapterId,
-      chapterTitle: ch.chapterTitle,
-      savePath,
-      useOriginal: payload.useOriginal,
-      compressionRatio: payload.compressionRatio,
-      splitPages: payload.splitPages,
-    }
-  })
+  let exportPlan
+  try {
+    exportPlan = PdfExportService.buildExportPlan({...payload, albumDetail})
+  } catch (e: any) {
+    await showToast(sanitizeError(e, '无法创建导出任务'), 'danger')
+    return
+  }
 
   // 检查文件是否已存在
   try {
-    const paths = tasks.map(t => t.savePath)
-    const result = await JmcomicService.checkFilesExist(paths)
+    const result = await JmcomicService.checkFilesExist(exportPlan.outputPaths)
     if (result.existing.length > 0) {
       const confirmed = await confirmOverwrite(result.existing)
       if (!confirmed) return
@@ -923,7 +914,7 @@ const onPdfExportConfirm = async (payload: {
   await ensureNotificationPermission()
 
   try {
-    await JmcomicService.exportPdfBatch(tasks)
+    await JmcomicService.exportPdfBatch(exportPlan.tasks)
     await showToast('PDF导出已开始，请查看通知', 'success')
   } catch (e: any) {
     await showToast(sanitizeError(e, '导出启动失败'), 'danger')

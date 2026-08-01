@@ -6,7 +6,13 @@
  * buildTemplateData 加字段映射
  */
 
-import type {AlbumDetail, DownloadTask, PdfExportChapter} from './JmcomicTypes'
+import type {
+  AlbumDetail,
+  DownloadTask,
+  PdfExportChapter,
+  PdfExportMode,
+  PdfExportTask,
+} from './JmcomicTypes'
 
 const KEY_EXPORT_PATH = 'jq-pdf-export-path'
 const KEY_DIR_TEMPLATE = 'jq-pdf-dir-template'
@@ -14,7 +20,7 @@ const KEY_NAME_TEMPLATE = 'jq-pdf-name-template'
 
 const DEFAULT_EXPORT_PATH = 'Download/JQ-Viewer/'
 const DEFAULT_DIR_TEMPLATE = '{id}'
-const DEFAULT_NAME_TEMPLATE = '【{author}】{title}_{id} {chapterName}'
+const DEFAULT_NAME_TEMPLATE = '【{author}】{title}_{id} {chapterRange}'
 
 export interface PdfTemplateData {
   id: string
@@ -28,6 +34,21 @@ export interface PdfTemplateData {
   authors: string
   tags: string[]
   index: number | string
+}
+
+export interface PdfExportPlanOptions {
+  mode: PdfExportMode
+  selectedChapters: readonly DownloadTask[]
+  albumDetail: AlbumDetail | null
+  useOriginal: boolean
+  compressionRatio: number
+  editedPath: string
+  splitPages: number
+}
+
+export interface PdfExportPlan {
+  tasks: PdfExportTask[]
+  outputPaths: string[]
 }
 
 /** 内置示例数据，供预览和设置页渲染值展示复用 */
@@ -86,8 +107,8 @@ function resolveChapterName(ch: DownloadTask, album: AlbumDetail | null): string
   return ch.chapterTitle || ''
 }
 
-function isRangeOrder(sortOrder: number): boolean {
-  return Number.isInteger(sortOrder) && sortOrder > 0
+function isRangeOrder(sortOrder: number | undefined): sortOrder is number {
+  return typeof sortOrder === 'number' && Number.isInteger(sortOrder) && sortOrder > 0
 }
 
 function formatNumericRange(start: number, end: number): string {
@@ -153,10 +174,56 @@ export function buildChapterRange(chapters: readonly PdfExportChapter[]): string
   return sanitizeSegmentValue(segments.join('+').replace(/\//g, '_'))
 }
 
+/** 只重排有效数字章节，无效序号章节保留原位置。 */
+export function normalizePdfChapters(chapters: readonly DownloadTask[]): DownloadTask[] {
+  const sortedNumericChapters = chapters
+    .map((chapter, index) => ({chapter, index}))
+    .filter(({chapter}) => isRangeOrder(chapter.chapterSortOrder))
+    .sort((a, b) => {
+      const orderDiff = a.chapter.chapterSortOrder! - b.chapter.chapterSortOrder!
+      return orderDiff || a.index - b.index
+    })
+
+  let numericIndex = 0
+  return chapters.map((chapter) => {
+    if (!isRangeOrder(chapter.chapterSortOrder)) return chapter
+    return sortedNumericChapters[numericIndex++].chapter
+  })
+}
+
+export function toPdfExportChapter(chapter: DownloadTask): PdfExportChapter {
+  return {
+    albumId: chapter.albumId,
+    chapterId: chapter.chapterId,
+    chapterTitle: chapter.chapterTitle,
+    sortOrder: chapter.chapterSortOrder ?? 0,
+  }
+}
+
+/** 按当前原生卷名规则列出任务可能写入的最终 PDF 路径。 */
+export function buildPdfOutputPaths(
+  savePath: string,
+  totalPages: number,
+  splitPages: number,
+): string[] {
+  if (splitPages <= 0 || totalPages <= splitPages) return [savePath]
+
+  const baseWithoutExt = savePath.endsWith('.pdf') ? savePath.slice(0, -4) : savePath
+  const volumeCount = Math.ceil(totalPages / splitPages)
+  return Array.from({length: volumeCount}, (_, index) => {
+    const start = index * splitPages + 1
+    const end = Math.min(start + splitPages - 1, totalPages)
+    return `${baseWithoutExt}_${String(start).padStart(3, '0')}-${String(end).padStart(3, '0')}.pdf`
+  })
+}
+
 export const PdfExportService = {
   TEMPLATE_VAR_KEYS,
   TEMPLATE_VAR_DEFS,
   buildChapterRange,
+  buildPdfOutputPaths,
+  normalizePdfChapters,
+  toPdfExportChapter,
 
   // ---- 设置读写 ----
 
@@ -245,6 +312,22 @@ export const PdfExportService = {
     }
   },
 
+  buildMergedTemplateData(
+    chapters: readonly DownloadTask[],
+    album: AlbumDetail | null,
+  ): PdfTemplateData {
+    const orderedChapters = normalizePdfChapters(chapters)
+    const firstChapter = orderedChapters[0]
+    if (!firstChapter) throw new Error('未选择导出章节')
+
+    const exportChapters = orderedChapters.map(toPdfExportChapter)
+    return {
+      ...PdfExportService.buildTemplateData(firstChapter, album),
+      chapterRange: buildChapterRange(exportChapters),
+      pageCount: orderedChapters.reduce((total, chapter) => total + chapter.totalPages, 0),
+    }
+  },
+
   renderTemplate(template: string, data: PdfTemplateData): string {
     let result = template
     for (const v of TEMPLATE_VARS) {
@@ -302,6 +385,74 @@ export const PdfExportService = {
       return `${baseTrimmed}/${dirClean}/${nameClean}.pdf`
     }
     return `${baseTrimmed}/${nameClean}.pdf`
+  },
+
+  buildMergedFullPath(chapters: readonly DownloadTask[], album: AlbumDetail | null): string {
+    return PdfExportService.buildFullPath(
+      PdfExportService.buildMergedTemplateData(chapters, album),
+    )
+  },
+
+  buildExportPlan(options: PdfExportPlanOptions): PdfExportPlan {
+    const selectedChapters = normalizePdfChapters(options.selectedChapters)
+    if (selectedChapters.length === 0) throw new Error('未选择导出章节')
+
+    if (options.mode === 'merged') {
+      if (selectedChapters.length < 2) throw new Error('合并导出至少需要选择两个章节')
+
+      const albumId = selectedChapters[0].albumId
+      if (selectedChapters.some((chapter) => chapter.albumId !== albumId)) {
+        throw new Error('合并导出只能选择同一本漫画的章节')
+      }
+
+      const templateData = PdfExportService.buildMergedTemplateData(
+        selectedChapters,
+        options.albumDetail,
+      )
+      const savePath = options.editedPath
+      const task: PdfExportTask = {
+        mode: 'merged',
+        albumId,
+        chapterTitle: templateData.chapterRange,
+        chapters: selectedChapters.map(toPdfExportChapter),
+        savePath,
+        useOriginal: options.useOriginal,
+        compressionRatio: options.compressionRatio,
+        splitPages: options.splitPages,
+      }
+
+      return {
+        tasks: [task],
+        outputPaths: buildPdfOutputPaths(savePath, templateData.pageCount, options.splitPages),
+      }
+    }
+
+    const tasks = selectedChapters.map<PdfExportTask>((chapter) => ({
+      mode: 'chapter',
+      albumId: chapter.albumId,
+      chapterId: chapter.chapterId,
+      chapterTitle: chapter.chapterTitle,
+      savePath:
+        selectedChapters.length === 1
+          ? options.editedPath
+          : PdfExportService.buildFullPath(
+              PdfExportService.buildTemplateData(chapter, options.albumDetail),
+            ),
+      useOriginal: options.useOriginal,
+      compressionRatio: options.compressionRatio,
+      splitPages: options.splitPages,
+    }))
+
+    return {
+      tasks,
+      outputPaths: tasks.flatMap((task, index) =>
+        buildPdfOutputPaths(
+          task.savePath,
+          selectedChapters[index].totalPages,
+          options.splitPages,
+        ),
+      ),
+    }
   },
 
   /** 用示例数据生成预览 */

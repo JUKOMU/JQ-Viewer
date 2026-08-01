@@ -1,5 +1,11 @@
-import { describe, expect, it } from 'vitest'
-import { PDF_SAMPLE_DATA, PdfExportService, buildChapterRange } from '@/services/PdfExportService'
+import { afterEach, describe, expect, it } from 'vitest'
+import {
+  PDF_SAMPLE_DATA,
+  PdfExportService,
+  buildChapterRange,
+  buildPdfOutputPaths,
+  normalizePdfChapters,
+} from '@/services/PdfExportService'
 import type { DownloadTask, PdfExportChapter } from '@/services/JmcomicTypes'
 
 function chapter(
@@ -14,6 +20,26 @@ function chapter(
     sortOrder,
   }
 }
+
+function downloadTask(sortOrder: number | undefined, id = String(sortOrder)): DownloadTask {
+  return {
+    taskId: `album-1_${id}`,
+    albumId: 'album-1',
+    chapterId: id,
+    albumTitle: '测试漫画',
+    chapterTitle: `章节 ${id}`,
+    coverUrl: '',
+    chapterSortOrder: sortOrder,
+    totalPages: 20,
+    downloadedPages: 20,
+    status: 'completed',
+    createdAt: 1,
+  }
+}
+
+afterEach(() => {
+  localStorage.clear()
+})
 
 describe('buildChapterRange', () => {
   it('combines adjacent numeric chapters into one range', () => {
@@ -84,5 +110,105 @@ describe('chapterRange template variable', () => {
 
     expect(data.chapterRange).toBe('第2话')
     expect(PdfExportService.renderTemplate('{chapterRange}', data)).toBe('第2话')
+  })
+})
+
+describe('PDF export plan', () => {
+  it('sorts numeric chapters while preserving invalid chapter positions and duplicate order', () => {
+    const normalized = normalizePdfChapters([
+      downloadTask(3, 'chapter-3'),
+      downloadTask(undefined, 'extra'),
+      downloadTask(2, 'chapter-2-a'),
+      downloadTask(2, 'chapter-2-b'),
+    ])
+
+    expect(normalized.map((item) => item.chapterId)).toEqual([
+      'chapter-2-a',
+      'extra',
+      'chapter-2-b',
+      'chapter-3',
+    ])
+  })
+
+  it('builds merged template data and a default path with chapterRange', () => {
+    const chapters = [downloadTask(3, 'chapter-3'), downloadTask(2, 'chapter-2')]
+    const data = PdfExportService.buildMergedTemplateData(chapters, null)
+
+    expect(data.chapterRange).toBe('第2-3话')
+    expect(data.pageCount).toBe(40)
+    expect(PdfExportService.buildMergedFullPath(chapters, null)).toContain('第2-3话.pdf')
+  })
+
+  it('builds one normalized merged task and predicts all split output paths', () => {
+    const chapter3 = downloadTask(3, 'chapter-3')
+    chapter3.totalPages = 30
+    const plan = PdfExportService.buildExportPlan({
+      mode: 'merged',
+      selectedChapters: [chapter3, downloadTask(2, 'chapter-2')],
+      albumDetail: null,
+      useOriginal: true,
+      compressionRatio: 0.5,
+      editedPath: '/exports/merged.pdf',
+      splitPages: 25,
+    })
+
+    expect(plan.tasks).toEqual([
+      expect.objectContaining({
+        mode: 'merged',
+        albumId: 'album-1',
+        chapterTitle: '第2-3话',
+        savePath: '/exports/merged.pdf',
+      }),
+    ])
+    expect(plan.tasks[0]).not.toHaveProperty('chapterId')
+    expect(plan.tasks[0].chapters?.map((item) => item.chapterId)).toEqual([
+      'chapter-2',
+      'chapter-3',
+    ])
+    expect(plan.outputPaths).toEqual(['/exports/merged_001-025.pdf', '/exports/merged_026-050.pdf'])
+  })
+
+  it('keeps chapter mode as one task per selected chapter', () => {
+    const plan = PdfExportService.buildExportPlan({
+      mode: 'chapter',
+      selectedChapters: [downloadTask(2, 'chapter-2'), downloadTask(3, 'chapter-3')],
+      albumDetail: null,
+      useOriginal: false,
+      compressionRatio: 0.4,
+      editedPath: '/exports/preview.pdf',
+      splitPages: 0,
+    })
+
+    expect(plan.tasks).toHaveLength(2)
+    expect(plan.tasks.map((task) => task.mode)).toEqual(['chapter', 'chapter'])
+    expect(plan.tasks.map((task) => task.chapterId)).toEqual(['chapter-2', 'chapter-3'])
+    expect(plan.outputPaths).toEqual(plan.tasks.map((task) => task.savePath))
+  })
+
+  it('rejects merged mode with fewer than two chapters', () => {
+    expect(() =>
+      PdfExportService.buildExportPlan({
+        mode: 'merged',
+        selectedChapters: [downloadTask(2, 'chapter-2')],
+        albumDetail: null,
+        useOriginal: true,
+        compressionRatio: 0.5,
+        editedPath: '/exports/merged.pdf',
+        splitPages: 0,
+      }),
+    ).toThrow('合并导出至少需要选择两个章节')
+  })
+})
+
+describe('buildPdfOutputPaths', () => {
+  it('keeps the base path when splitting produces only one volume', () => {
+    expect(buildPdfOutputPaths('/exports/chapter.pdf', 100, 100)).toEqual(['/exports/chapter.pdf'])
+  })
+
+  it('matches the native range suffix for multiple volumes', () => {
+    expect(buildPdfOutputPaths('/exports/chapter.pdf', 101, 100)).toEqual([
+      '/exports/chapter_001-100.pdf',
+      '/exports/chapter_101-101.pdf',
+    ])
   })
 })

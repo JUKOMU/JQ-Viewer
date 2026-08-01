@@ -6,7 +6,7 @@
  * buildTemplateData 加字段映射
  */
 
-import type {AlbumDetail, DownloadTask} from './JmcomicTypes'
+import type {AlbumDetail, DownloadTask, PdfExportChapter} from './JmcomicTypes'
 
 const KEY_EXPORT_PATH = 'jq-pdf-export-path'
 const KEY_DIR_TEMPLATE = 'jq-pdf-dir-template'
@@ -22,6 +22,7 @@ export interface PdfTemplateData {
   chapterId: string
   chapterName: string
   chapterTitle: string
+  chapterRange: string
   pageCount: number
   author: string
   authors: string
@@ -36,6 +37,7 @@ export const PDF_SAMPLE_DATA: PdfTemplateData = {
   chapterId: '295852',
   chapterName: '第1话',
   chapterTitle: '',
+  chapterRange: '第1话',
   pageCount: 38,
   author: '葵季むつみ',
   authors: '葵季むつみ、二丸修一、しぐれうい',
@@ -65,6 +67,7 @@ const TEMPLATE_VARS: TemplateVarDef[] = [
   def('{title}', '本子标题', d => d.title),
   def('{chapterId}', '章节ID', d => d.chapterId),
   def('{chapterName}', '章节序号（单行本则为标题）', d => d.chapterName),
+  def('{chapterRange}', '选择的章节范围', d => d.chapterRange),
   def('{index}', '章节原始序号（纯数字）', d => String(d.index)),
   def('{chapterTitle}', '章节原始标题', d => d.chapterTitle),
   def('{pageCount}', '章节页数', d => String(d.pageCount)),
@@ -83,9 +86,77 @@ function resolveChapterName(ch: DownloadTask, album: AlbumDetail | null): string
   return ch.chapterTitle || ''
 }
 
+function isRangeOrder(sortOrder: number): boolean {
+  return Number.isInteger(sortOrder) && sortOrder > 0
+}
+
+function formatNumericRange(start: number, end: number): string {
+  return start === end ? `第${start}话` : `第${start}-${end}话`
+}
+
+function sanitizeSegmentValue(segment: string): string {
+  return segment
+    .replace(/[\\:*?"<>|]/g, '_') // 非法字符 → _
+    .replace(/_+/g, '_') // 合并连续 _
+    .replace(/^[_.\s]+|[_.\s]+$/g, '') // 去头尾 _ . 空格
+    .substring(0, 255) // 截断超长
+}
+
+function sanitizeChapterLabel(chapter: PdfExportChapter): string {
+  const title = sanitizeSegmentValue(chapter.chapterTitle.replace(/\//g, '_'))
+  if (title) return title
+
+  const chapterId = sanitizeSegmentValue(chapter.chapterId.replace(/\//g, '_'))
+  return chapterId || '章节'
+}
+
+/** 按已规范化的输出顺序生成安全的章节范围文件名段。 */
+export function buildChapterRange(chapters: readonly PdfExportChapter[]): string {
+  const orderCounts = new Map<number, number>()
+  for (const chapter of chapters) {
+    if (!isRangeOrder(chapter.sortOrder)) continue
+    orderCounts.set(chapter.sortOrder, (orderCounts.get(chapter.sortOrder) ?? 0) + 1)
+  }
+
+  const segments: string[] = []
+  let rangeStart: number | undefined
+  let rangeEnd: number | undefined
+
+  const flushRange = () => {
+    if (rangeStart === undefined || rangeEnd === undefined) return
+    segments.push(formatNumericRange(rangeStart, rangeEnd))
+    rangeStart = undefined
+    rangeEnd = undefined
+  }
+
+  for (const chapter of chapters) {
+    const order = chapter.sortOrder
+    const isUniqueNumericOrder = isRangeOrder(order) && orderCounts.get(order) === 1
+
+    if (!isUniqueNumericOrder) {
+      flushRange()
+      segments.push(sanitizeChapterLabel(chapter))
+      continue
+    }
+
+    if (rangeEnd !== undefined && order === rangeEnd + 1) {
+      rangeEnd = order
+      continue
+    }
+
+    flushRange()
+    rangeStart = order
+    rangeEnd = order
+  }
+
+  flushRange()
+  return sanitizeSegmentValue(segments.join('+').replace(/\//g, '_'))
+}
+
 export const PdfExportService = {
   TEMPLATE_VAR_KEYS,
   TEMPLATE_VAR_DEFS,
+  buildChapterRange,
 
   // ---- 设置读写 ----
 
@@ -158,12 +229,14 @@ export const PdfExportService = {
    * 唯一的模板数据工厂函数，所有调用方统一使用。
    */
   buildTemplateData(ch: DownloadTask, album: AlbumDetail | null): PdfTemplateData {
+    const chapterName = resolveChapterName(ch, album)
     return {
       id: ch.albumId,
       title: ch.albumTitle,
       chapterId: ch.chapterId,
-      chapterName: resolveChapterName(ch, album),
+      chapterName,
       chapterTitle: ch.chapterTitle || '',
+      chapterRange: chapterName,
       pageCount: ch.totalPages,
       author: album?.authors?.[0] ?? '',
       authors: album?.authors?.join('、') ?? '',
@@ -212,11 +285,7 @@ export const PdfExportService = {
    * 保留 / 作为目录分隔符（仅用于目录模板）。
    */
   sanitizeSegment(segment: string): string {
-    return segment
-      .replace(/[\\:*?"<>|]/g, '_')  // 非法字符 → _
-      .replace(/_+/g, '_')             // 合并连续 _
-      .replace(/^[_.\s]+|[_.\s]+$/g, '') // 去头尾 _ . 空格
-      .substring(0, 255)               // 截断超长
+    return sanitizeSegmentValue(segment)
   },
 
   /** 构建完整保存路径: {exportPath}/{renderedDir}/{renderedName}.pdf */

@@ -378,6 +378,15 @@ export interface ReadingProgressItem {
 
 // --- PDF 导出 ---
 
+export type PdfExportMode = 'chapter' | 'merged'
+
+export interface PdfExportChapter {
+  albumId: string
+  chapterId: string
+  chapterTitle: string
+  sortOrder: number
+}
+
 export interface PdfExportTask {
   albumId: string
   chapterId: string

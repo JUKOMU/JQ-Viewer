@@ -79,7 +79,7 @@
               </label>
             </div>
             <p v-if="mode === 'merged'" class="mode-hint">
-              按章节序号合并，文件名会显示选择范围
+              按章节序号合并，使用模板 {chapterRange} 文件名会显示选择范围
             </p>
             <p v-else-if="!canMerge" class="mode-hint">合并导出至少需要选择两个章节</p>
           </fieldset>
@@ -779,7 +779,7 @@ async function onConfirm() {
 }
 
 .chapter-check {
-  accent-color: #f0a060;
+  accent-color: #bf8350;
   width: 18px;
   height: 18px;
   flex-shrink: 0;
@@ -881,7 +881,7 @@ async function onConfirm() {
 }
 
 .radio-label input {
-  accent-color: #f0a060;
+  accent-color: #bf8350;
 }
 
 /* 压缩比滑块 */

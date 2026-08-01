@@ -337,6 +337,7 @@
                 <span class="var-tag">{title}</span>
                 <span class="var-tag">{chapterId}</span>
                 <span class="var-tag">{chapterName}</span>
+                <span class="var-tag">{chapterRange}</span>
                 <span class="var-tag">{index}</span>
                 <span class="var-tag">{chapterTitle}</span>
                 <span class="var-tag">{pageCount}</span>

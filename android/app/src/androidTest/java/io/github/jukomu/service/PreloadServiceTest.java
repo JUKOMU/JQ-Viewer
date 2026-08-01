@@ -60,7 +60,7 @@ public class PreloadServiceTest {
                 fetched.countDown();
                 return new byte[]{1, 2, 3, 4};
             });
-        service.setMemoryPressureLevel(CacheCapacityPolicy.PressureLevel.COMPLETE);
+        service.setMemoryPressureLevel(CacheCapacityPolicy.PressureLevel.RUNNING_CRITICAL);
 
         JSONArray images = new JSONArray().put(new JSONObject()
             .put("sortOrder", 1)

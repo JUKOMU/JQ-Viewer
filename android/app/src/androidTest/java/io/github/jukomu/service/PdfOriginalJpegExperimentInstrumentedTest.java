@@ -24,6 +24,7 @@ import com.tom_roush.pdfbox.pdmodel.common.PDRectangle;
 import com.tom_roush.pdfbox.pdmodel.graphics.image.JPEGFactory;
 import com.tom_roush.pdfbox.pdmodel.graphics.image.PDImageXObject;
 
+import org.junit.Assume;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
@@ -45,19 +46,24 @@ import static org.junit.Assert.assertTrue;
 public class PdfOriginalJpegExperimentInstrumentedTest {
 
     private static final String TAG = "PdfOriginalJpeg0B";
-    private static final String DEFAULT_SOURCE_ROOT =
-        "/data/data/io.github.jukomu/files/downloads/1064000";
+    private static final String RUN_MANUAL_ARGUMENT = "runManualPdfExperiment";
     private static final int CHUNK_PAGES = 100;
     private static final int ORIGINAL_JPEG_QUALITY = 100;
 
     @Test
     public void measuresOriginalImagesAsJpegQuality100() throws Exception {
+        Assume.assumeTrue(
+            "Manual PDF experiment; pass runManualPdfExperiment=true and sourceRoot",
+            Boolean.parseBoolean(instrumentationArgument(RUN_MANUAL_ARGUMENT))
+        );
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         PDFBoxResourceLoader.init(context);
 
-        String sourceRootArg = InstrumentationRegistry.getArguments().getString("sourceRoot");
-        File sourceRoot = new File(sourceRootArg == null || sourceRootArg.trim().isEmpty()
-            ? DEFAULT_SOURCE_ROOT : sourceRootArg.trim());
+        String sourceRootArg = instrumentationArgument("sourceRoot");
+        if (sourceRootArg.isEmpty()) {
+            throw new IllegalArgumentException("sourceRoot is required for the manual PDF experiment");
+        }
+        File sourceRoot = new File(sourceRootArg);
         List<File> images = collectImages(sourceRoot);
         if (images.isEmpty()) {
             throw new IOException("No experiment images found: " + sourceRoot.getAbsolutePath());
@@ -94,8 +100,12 @@ public class PdfOriginalJpegExperimentInstrumentedTest {
             completed = true;
         } finally {
             metrics.finish(completed);
-            writeJson(json, metrics, finalPdf);
-            Log.i(TAG, "phase0b result json=" + json.getAbsolutePath());
+            try {
+                writeJson(json, metrics, finalPdf);
+                Log.i(TAG, "phase0b result json=" + json.getAbsolutePath());
+            } catch (IOException e) {
+                Log.w(TAG, "Unable to write phase0b result JSON", e);
+            }
             Log.i(TAG, metrics.toLogMessage(finalPdf));
             deleteRecursively(workDir);
             if (!completed) {
@@ -103,6 +113,11 @@ public class PdfOriginalJpegExperimentInstrumentedTest {
                 deleteRecursively(finalPdf);
             }
         }
+    }
+
+    private static String instrumentationArgument(String name) {
+        String value = InstrumentationRegistry.getArguments().getString(name);
+        return value == null ? "" : value.trim();
     }
 
     private static List<File> writeChunks(List<File> images, File workDir, ExperimentMetrics metrics)

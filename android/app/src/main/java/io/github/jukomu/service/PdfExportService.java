@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -32,27 +33,41 @@ public class PdfExportService {
     private static PdfExportService instance;
     private final Context context;
 
-    private final ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
-        Thread t = new Thread(r, "pdf-export");
-        t.setPriority(Thread.NORM_PRIORITY);
-        return t;
-    });
+    private final ExecutorService executor;
 
     private final AtomicInteger batchCounter = new AtomicInteger(0);
     private final AtomicInteger notificationCounter = new AtomicInteger(0);
     private final AtomicInteger foregroundSessionCounter = new AtomicInteger(0);
-    private final AtomicInteger foregroundRevision = new AtomicInteger(0);
+    private int foregroundRevision;
     private final Object activeJobsLock = new Object();
     private final Set<String> activeTaskKeys = new HashSet<>();
     private final Set<String> activeChapterKeys = new HashSet<>();
     private final PdfBoxExportWriter writer;
+    private final ForegroundPublisher foregroundPublisher;
+    private final WakeLockFactory wakeLockFactory;
 
     private final PdfExportNotificationHelper notif;
 
     private PdfExportService(Context context) {
+        this(context, createExecutor(), PdfExportForegroundService::update, null);
+    }
+
+    PdfExportService(Context context, ExecutorService executor,
+                     ForegroundPublisher foregroundPublisher, WakeLockFactory wakeLockFactory) {
         this.context = context.getApplicationContext();
+        this.executor = executor;
+        this.foregroundPublisher = foregroundPublisher;
+        this.wakeLockFactory = wakeLockFactory == null ? this::createAndroidWakeLock : wakeLockFactory;
         this.notif = new PdfExportNotificationHelper(this.context);
         this.writer = new PdfBoxExportWriter(this.context);
+    }
+
+    private static ExecutorService createExecutor() {
+        return Executors.newSingleThreadExecutor(r -> {
+            Thread thread = new Thread(r, "pdf-export");
+            thread.setPriority(Thread.NORM_PRIORITY);
+            return thread;
+        });
     }
 
     public static synchronized PdfExportService getInstance(Context context) {
@@ -91,20 +106,31 @@ public class PdfExportService {
     public void submitExport(List<ExportJob> jobs) {
         final int batchId = batchCounter.incrementAndGet();
         List<QueuedExportJob> accepted = new ArrayList<>();
+        AtomicBoolean workerStarted = new AtomicBoolean(false);
 
-        for (ExportJob job : jobs) {
-            PdfExportJobValidator.validate(job);
-            if (!acquireJobLocks(job)) {
-                continue;
+        try {
+            for (ExportJob job : jobs) {
+                PdfExportJobValidator.validate(job);
+                if (!acquireJobLocks(job)) {
+                    continue;
+                }
+
+                int notificationId = NotificationIds.pdfTask(notificationCounter.getAndIncrement());
+                accepted.add(new QueuedExportJob(job, notificationId));
             }
 
-            int notificationId = NotificationIds.pdfTask(notificationCounter.getAndIncrement());
-            accepted.add(new QueuedExportJob(job, notificationId));
-        }
-
-        if (!accepted.isEmpty()) {
-            updateForegroundQueued(accepted);
-            executor.submit(() -> executeBatch(batchId, accepted));
+            if (!accepted.isEmpty()) {
+                updateForegroundQueued(accepted);
+                executor.submit(() -> {
+                    workerStarted.set(true);
+                    executeBatch(batchId, accepted);
+                });
+            }
+        } catch (RuntimeException | Error failure) {
+            if (!workerStarted.get()) {
+                rollbackAcceptedJobs(accepted, failure);
+            }
+            throw failure;
         }
     }
 
@@ -113,9 +139,11 @@ public class PdfExportService {
     private void executeBatch(int batchId, List<QueuedExportJob> queuedJobs) {
         int success = 0;
         int fail = 0;
-        PowerManager.WakeLock wakeLock = acquirePdfWakeLock(batchId, queuedJobs.size());
+        WakeLockHandle wakeLock = null;
+        int releasedJobs = 0;
 
         try {
+            wakeLock = acquirePdfWakeLock(batchId, queuedJobs.size());
             for (QueuedExportJob queuedJob : queuedJobs) {
                 ExportJob job = queuedJob.job;
                 int notificationId = queuedJob.notificationId;
@@ -139,12 +167,18 @@ public class PdfExportService {
                     notif.showError(notificationId, job.chapterTitle,
                         "内部错误: " + t.getClass().getSimpleName());
                 } finally {
-                    releaseJobLocks(job);
-                    updateForegroundService();
+                    releaseJobLocksAndUpdate(job);
+                    releasedJobs++;
                 }
             }
         } finally {
-            releasePdfWakeLock(wakeLock, batchId);
+            try {
+                if (releasedJobs < queuedJobs.size()) {
+                    releaseQueuedJobLocksAndUpdate(queuedJobs.subList(releasedJobs, queuedJobs.size()));
+                }
+            } finally {
+                releasePdfWakeLock(wakeLock, batchId);
+            }
         }
 
         Log.i(TAG, "Batch " + batchId + " done: " + success + " success, " + fail + " fail");
@@ -250,10 +284,10 @@ public class PdfExportService {
         }
     }
 
-    private void releaseJobLocks(ExportJob job) {
+    private void releaseJobLocksAndUpdate(ExportJob job) {
         synchronized (activeJobsLock) {
-            activeTaskKeys.remove(PdfExportJobValidator.taskKey(job));
-            activeChapterKeys.removeAll(PdfExportJobValidator.chapterResourceKeys(job));
+            releaseJobLocksLocked(job);
+            publishForegroundSummaryLocked();
         }
     }
 
@@ -422,36 +456,12 @@ public class PdfExportService {
         return new File(Environment.getExternalStorageDirectory(), path);
     }
 
-    private void updateForegroundService() {
-        int activeCount;
-        synchronized (activeJobsLock) {
-            activeCount = activeTaskKeys.size();
-        }
-        PdfExportForegroundService.update(
-            context,
-            new PdfExportForegroundService.Snapshot(
-                0,
-                foregroundRevision.incrementAndGet(),
-                activeCount,
-                activeCount,
-                "PDF 导出",
-                activeCount > 0 ? "排队中" : "已结束",
-                0,
-                0,
-                0,
-                0
-            )
-        );
-    }
-
     private void updateForegroundQueued(List<QueuedExportJob> queuedJobs) {
-        int activeCount = getActiveJobCount();
-        ExportJob firstJob = queuedJobs.get(0).job;
-        PdfExportForegroundService.update(
-            context,
-            new PdfExportForegroundService.Snapshot(
+        synchronized (activeJobsLock) {
+            int activeCount = activeTaskKeys.size();
+            ExportJob firstJob = queuedJobs.get(0).job;
+            publishForegroundLocked(
                 0,
-                foregroundRevision.incrementAndGet(),
                 activeCount,
                 Math.max(0, activeCount - 1),
                 firstJob.chapterTitle,
@@ -460,18 +470,16 @@ public class PdfExportService {
                 0,
                 0,
                 0
-            )
-        );
+            );
+        }
     }
 
     private void publishPdfForeground(int sessionId, ExportJob job, String phase, int currentPage,
                                       int totalPages, int volumeIndex, int totalVolumes) {
-        int activeCount = getActiveJobCount();
-        PdfExportForegroundService.update(
-            context,
-            new PdfExportForegroundService.Snapshot(
+        synchronized (activeJobsLock) {
+            int activeCount = activeTaskKeys.size();
+            publishForegroundLocked(
                 sessionId,
-                foregroundRevision.incrementAndGet(),
                 activeCount,
                 Math.max(0, activeCount - 1),
                 job.chapterTitle,
@@ -480,38 +488,36 @@ public class PdfExportService {
                 totalPages,
                 volumeIndex,
                 totalVolumes
-            )
-        );
+            );
+        }
     }
 
-    private int getActiveJobCount() {
+    int getActiveJobCount() {
         synchronized (activeJobsLock) {
             return activeTaskKeys.size();
         }
     }
 
-    private PowerManager.WakeLock acquirePdfWakeLock(int batchId, int jobCount) {
-        Object service = context.getSystemService(Context.POWER_SERVICE);
-        if (!(service instanceof PowerManager)) {
-            Log.w(TAG, "PDF wake lock unavailable: PowerManager service missing");
-            return null;
-        }
-        PowerManager.WakeLock wakeLock = ((PowerManager) service).newWakeLock(
-            PowerManager.PARTIAL_WAKE_LOCK,
-            context.getPackageName() + ":pdf-export"
-        );
-        wakeLock.setReferenceCounted(false);
+    WakeLockHandle acquirePdfWakeLock(int batchId, int jobCount) {
+        WakeLockHandle wakeLock = null;
         try {
+            wakeLock = wakeLockFactory.create();
+            if (wakeLock == null) {
+                Log.w(TAG, "PDF wake lock unavailable: PowerManager service missing");
+                return null;
+            }
+            wakeLock.setReferenceCounted(false);
             wakeLock.acquire();
             Log.i(TAG, "PDF wake lock acquired: batch=" + batchId + ", jobs=" + jobCount);
             return wakeLock;
         } catch (RuntimeException e) {
+            releasePdfWakeLock(wakeLock, batchId);
             Log.w(TAG, "PDF wake lock acquire failed; export continues without wake lock", e);
             return null;
         }
     }
 
-    private void releasePdfWakeLock(PowerManager.WakeLock wakeLock, int batchId) {
+    private void releasePdfWakeLock(WakeLockHandle wakeLock, int batchId) {
         if (wakeLock == null) {
             return;
         }
@@ -523,6 +529,80 @@ public class PdfExportService {
         } catch (RuntimeException e) {
             Log.w(TAG, "PDF wake lock release failed", e);
         }
+    }
+
+    private WakeLockHandle createAndroidWakeLock() {
+        Object service = context.getSystemService(Context.POWER_SERVICE);
+        if (!(service instanceof PowerManager)) {
+            return null;
+        }
+        PowerManager.WakeLock wakeLock = ((PowerManager) service).newWakeLock(
+            PowerManager.PARTIAL_WAKE_LOCK,
+            context.getPackageName() + ":pdf-export"
+        );
+        return new AndroidWakeLockHandle(wakeLock);
+    }
+
+    private void rollbackAcceptedJobs(List<QueuedExportJob> accepted, Throwable failure) {
+        if (accepted.isEmpty()) {
+            return;
+        }
+        try {
+            releaseQueuedJobLocksAndUpdate(accepted);
+        } catch (RuntimeException | Error rollbackFailure) {
+            if (rollbackFailure != failure) {
+                failure.addSuppressed(rollbackFailure);
+            }
+        }
+    }
+
+    private void releaseQueuedJobLocksAndUpdate(List<QueuedExportJob> queuedJobs) {
+        synchronized (activeJobsLock) {
+            for (QueuedExportJob queuedJob : queuedJobs) {
+                releaseJobLocksLocked(queuedJob.job);
+            }
+            publishForegroundSummaryLocked();
+        }
+    }
+
+    private void releaseJobLocksLocked(ExportJob job) {
+        activeTaskKeys.remove(PdfExportJobValidator.taskKey(job));
+        activeChapterKeys.removeAll(PdfExportJobValidator.chapterResourceKeys(job));
+    }
+
+    private void publishForegroundSummaryLocked() {
+        int activeCount = activeTaskKeys.size();
+        publishForegroundLocked(
+            0,
+            activeCount,
+            activeCount,
+            "PDF 导出",
+            activeCount > 0 ? "排队中" : "已结束",
+            0,
+            0,
+            0,
+            0
+        );
+    }
+
+    private void publishForegroundLocked(int sessionId, int activeCount, int queueRemaining,
+                                         String title, String phase, int currentPage,
+                                         int totalPages, int volumeIndex, int totalVolumes) {
+        foregroundPublisher.publish(
+            context,
+            new PdfExportForegroundService.Snapshot(
+                sessionId,
+                ++foregroundRevision,
+                activeCount,
+                queueRemaining,
+                title,
+                phase,
+                currentPage,
+                totalPages,
+                volumeIndex,
+                totalVolumes
+            )
+        );
     }
 
     private static void logPdfHeartbeat(ExportJob job, int sessionId, int currentPage,
@@ -716,6 +796,52 @@ public class PdfExportService {
             }
         }
         return false;
+    }
+
+    interface ForegroundPublisher {
+        void publish(Context context, PdfExportForegroundService.Snapshot snapshot);
+    }
+
+    interface WakeLockFactory {
+        WakeLockHandle create();
+    }
+
+    interface WakeLockHandle {
+        void setReferenceCounted(boolean value);
+
+        void acquire();
+
+        boolean isHeld();
+
+        void release();
+    }
+
+    private static final class AndroidWakeLockHandle implements WakeLockHandle {
+        private final PowerManager.WakeLock wakeLock;
+
+        AndroidWakeLockHandle(PowerManager.WakeLock wakeLock) {
+            this.wakeLock = wakeLock;
+        }
+
+        @Override
+        public void setReferenceCounted(boolean value) {
+            wakeLock.setReferenceCounted(value);
+        }
+
+        @Override
+        public void acquire() {
+            wakeLock.acquire();
+        }
+
+        @Override
+        public boolean isHeld() {
+            return wakeLock.isHeld();
+        }
+
+        @Override
+        public void release() {
+            wakeLock.release();
+        }
     }
 
     static final class ExportVolume {

@@ -9,6 +9,7 @@ import android.util.Log;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
 
+import org.junit.Assume;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
@@ -29,11 +30,14 @@ import static org.junit.Assert.assertTrue;
 public class PdfWriteStrategyExperimentInstrumentedTest {
 
     private static final String TAG = "PdfWriteStrategyPhase2";
-    private static final String DEFAULT_SOURCE_ROOT =
-        "/data/data/io.github.jukomu/files/downloads/1064000";
+    private static final String RUN_MANUAL_ARGUMENT = "runManualPdfExperiment";
 
     @Test
     public void measuresWriterStrategiesOnRealImages() throws Exception {
+        Assume.assumeTrue(
+            "Manual PDF experiment; pass runManualPdfExperiment=true and sourceRoot",
+            Boolean.parseBoolean(argument(RUN_MANUAL_ARGUMENT, "false"))
+        );
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         File sourceRoot = resolveSourceRoot();
         boolean keepOutputs = Boolean.parseBoolean(argument("keepOutputs", "false"));
@@ -89,11 +93,11 @@ public class PdfWriteStrategyExperimentInstrumentedTest {
                     firstFailure = t;
                 }
             } finally {
-                writeJson(json, sourceRoot, images, inspectNanos, keepOutputs, results);
+                writeJsonSafely(json, sourceRoot, images, inspectNanos, keepOutputs, results);
             }
         }
 
-        writeJson(json, sourceRoot, images, inspectNanos, keepOutputs, results);
+        writeJsonSafely(json, sourceRoot, images, inspectNanos, keepOutputs, results);
         Log.i(TAG, "phase2 result json=" + json.getAbsolutePath());
         if (firstFailure != null) {
             throw new AssertionError("At least one phase 2 strategy failed", firstFailure);
@@ -152,8 +156,22 @@ public class PdfWriteStrategyExperimentInstrumentedTest {
     }
 
     private static File resolveSourceRoot() {
-        String sourceRootArg = argument("sourceRoot", DEFAULT_SOURCE_ROOT);
+        String sourceRootArg = argument("sourceRoot", "");
+        if (sourceRootArg.isEmpty()) {
+            throw new IllegalArgumentException("sourceRoot is required for the manual PDF experiment");
+        }
         return new File(sourceRootArg.trim());
+    }
+
+    private static void writeJsonSafely(File json, File sourceRoot,
+                                        List<PdfBoxExportWriter.ExportImageDescriptor> images,
+                                        long inspectNanos, boolean keepOutputs,
+                                        List<ScenarioResult> results) {
+        try {
+            writeJson(json, sourceRoot, images, inspectNanos, keepOutputs, results);
+        } catch (IOException e) {
+            Log.w(TAG, "Unable to write phase 2 result JSON", e);
+        }
     }
 
     private static String argument(String name, String defaultValue) {

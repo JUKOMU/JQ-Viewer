@@ -98,7 +98,8 @@ public class PdfExportForegroundService extends Service {
             flushScheduled = false;
             latestSnapshot = null;
             stopForegroundSafely();
-            stopSelf();
+            startedForeground = false;
+            stopSelf(startId);
             return START_NOT_STICKY;
         }
 

@@ -59,7 +59,7 @@ public class DownloadForegroundService extends Service {
 
         if (ACTION_STOP.equals(action)) {
             stopForegroundSafely();
-            stopSelf();
+            stopSelf(startId);
             return START_NOT_STICKY;
         }
 

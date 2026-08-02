@@ -45,6 +45,23 @@ public class CacheCapacityPolicyTest {
     }
 
     @Test
+    public void pressureLevelsMatchTrimPersistenceSemantics() {
+        assertFalse(CacheCapacityPolicy.PressureLevel.NORMAL.clampsCapacity());
+        assertFalse(CacheCapacityPolicy.PressureLevel.RUNNING_MODERATE.clampsCapacity());
+        assertTrue(CacheCapacityPolicy.PressureLevel.RUNNING_LOW.clampsCapacity());
+        assertTrue(CacheCapacityPolicy.PressureLevel.RUNNING_CRITICAL.clampsCapacity());
+        assertFalse(CacheCapacityPolicy.PressureLevel.UI_HIDDEN.clampsCapacity());
+        assertTrue(CacheCapacityPolicy.PressureLevel.BACKGROUND.clampsCapacity());
+        assertTrue(CacheCapacityPolicy.PressureLevel.MODERATE.clampsCapacity());
+        assertTrue(CacheCapacityPolicy.PressureLevel.COMPLETE.clampsCapacity());
+
+        assertTrue(calculate(1024, 512, false,
+            CacheCapacityPolicy.PressureLevel.BACKGROUND).temporaryClamp);
+        assertTrue(calculate(1024, 512, false,
+            CacheCapacityPolicy.PressureLevel.MODERATE).temporaryClamp);
+    }
+
+    @Test
     public void keepsRequestedValueWhenItFitsHeapBudget() {
         CacheCapacityPolicy.Result result = calculate(100, 512, false,
             CacheCapacityPolicy.PressureLevel.NORMAL);

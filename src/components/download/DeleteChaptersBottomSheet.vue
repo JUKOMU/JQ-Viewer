@@ -10,7 +10,9 @@
         <div class="sheet-body">
           <div class="section">
             <div class="section-header">
-              <span class="section-label">选择章节（{{ selectedKeys.size }}/{{ chapters.length }}）</span>
+              <span class="section-label"
+                >选择章节（{{ selectedKeys.size }}/{{ chapters.length }}）</span
+              >
               <div class="quick-actions">
                 <button class="toggle-btn" @click="selectAll">全选</button>
                 <button class="toggle-btn" @click="invertSelection">反选</button>
@@ -18,11 +20,7 @@
               </div>
             </div>
             <div class="chapter-list">
-              <label
-                v-for="ch in chapters"
-                :key="chapterKey(ch)"
-                class="chapter-row"
-              >
+              <label v-for="ch in chapters" :key="chapterKey(ch)" class="chapter-row">
                 <input
                   type="checkbox"
                   class="chapter-check"
@@ -44,11 +42,7 @@
 
         <div class="sheet-footer">
           <button class="btn-cancel" @click="close">取消</button>
-          <button
-            class="btn-confirm"
-            :disabled="selectedKeys.size === 0"
-            @click="onConfirm"
-          >
+          <button class="btn-confirm" :disabled="selectedKeys.size === 0" @click="onConfirm">
             删除{{ selectedKeys.size > 0 ? ` (${selectedKeys.size})` : '' }}
           </button>
         </div>
@@ -58,11 +52,11 @@
 </template>
 
 <script setup lang="ts">
-import {ref, watch} from 'vue'
-import {useBackButton} from '@ionic/vue'
-import type {CompletedEntry} from '@/services/JmcomicTypes'
+import { ref, watch } from 'vue'
+import { useBackButton } from '@ionic/vue'
+import type { CompletedEntry } from '@/services/JmcomicTypes'
 
-defineOptions({name: 'DeleteChaptersBottomSheet'})
+defineOptions({ name: 'DeleteChaptersBottomSheet' })
 
 const props = defineProps<{
   modelValue: boolean

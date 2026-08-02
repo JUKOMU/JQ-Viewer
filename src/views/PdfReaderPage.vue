@@ -2,7 +2,7 @@
   <IonPage>
     <div class="reader-root" @click="onRootClick">
       <Transition name="toolbar-slide">
-        <ReaderTopToolbar v-if="toolbarVisible" :title="displayTitle" @click.stop @back="goBack"/>
+        <ReaderTopToolbar v-if="toolbarVisible" :title="displayTitle" @click.stop @back="goBack" />
       </Transition>
 
       <VerticalScrollView
@@ -49,23 +49,36 @@
 </template>
 
 <script setup lang="ts">
-import {computed, inject, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref} from 'vue'
-import {useRoute, useRouter} from 'vue-router'
-import {IonPage} from '@ionic/vue'
-import type {PluginListenerHandle} from '@capacitor/core'
-import {JmcomicService, showToast} from '@/services/JmcomicService'
-import {SettingsStore} from '@/services/SettingsService'
-import {HistoryService} from '@/services/HistoryService'
-import {ReadingProgressService} from '@/services/ReadingProgressService'
+import {
+  computed,
+  inject,
+  nextTick,
+  onActivated,
+  onDeactivated,
+  onMounted,
+  onUnmounted,
+  ref,
+} from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { IonPage } from '@ionic/vue'
+import type { PluginListenerHandle } from '@capacitor/core'
+import { JmcomicService, showToast } from '@/services/JmcomicService'
+import { SettingsStore } from '@/services/SettingsService'
+import { HistoryService } from '@/services/HistoryService'
+import { ReadingProgressService } from '@/services/ReadingProgressService'
 import * as pdfjsLib from 'pdfjs-dist'
-import {buildPdfDocumentParams, fetchPdfArrayBuffer, PdfLoadError} from '@/services/PdfReaderService'
+import {
+  buildPdfDocumentParams,
+  fetchPdfArrayBuffer,
+  PdfLoadError,
+} from '@/services/PdfReaderService'
 import ReaderTopToolbar from '@/components/reader/ReaderTopToolbar.vue'
 import ReaderBottomToolbar from '@/components/reader/ReaderBottomToolbar.vue'
 import VerticalScrollView from '@/components/reader/VerticalScrollView.vue'
 import HorizontalPageView from '@/components/reader/HorizontalPageView.vue'
 import ReaderSettingsPanel from '@/components/reader/ReaderSettingsPanel.vue'
 
-defineOptions({name: 'PdfReaderPage'})
+defineOptions({ name: 'PdfReaderPage' })
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
@@ -88,8 +101,7 @@ const NATIVE_PDF_MAX_RENDER_WIDTH = 2400
 const route = useRoute()
 const router = useRouter()
 
-const updateReaderCurrentPage = inject<(page: number) => void>('updateReaderCurrentPage', () => {
-})
+const updateReaderCurrentPage = inject<(page: number) => void>('updateReaderCurrentPage', () => {})
 
 // ---- 路由参数 ----
 const filePath = route.query.path as string
@@ -143,8 +155,7 @@ const horizontalViewRef = ref<InstanceType<typeof HorizontalPageView> | null>(nu
 // 工具栏显示时仅恢复系统栏；阅读内容始终保持 edge-to-edge，不随系统栏改变尺寸。
 const syncReaderFullscreen = () => {
   if (!readerRuntimeActive) return
-  JmcomicService.setReaderFullscreen(!toolbarVisible.value).catch(() => {
-  })
+  JmcomicService.setReaderFullscreen(!toolbarVisible.value).catch(() => {})
 }
 
 const setToolbarVisible = (visible: boolean) => {
@@ -184,9 +195,10 @@ const onRootClick = (ev: MouseEvent) => {
 
   const now = Date.now()
   const tapDist = Math.abs(ev.clientX - lastToolbarTapX) + Math.abs(ev.clientY - lastToolbarTapY)
-  const isDoubleTap = toolbarTapTimer
-    && now - lastToolbarTapTime < TOOLBAR_TAP_DELAY_MS
-    && tapDist < TOOLBAR_DOUBLE_TAP_DIST
+  const isDoubleTap =
+    toolbarTapTimer &&
+    now - lastToolbarTapTime < TOOLBAR_TAP_DELAY_MS &&
+    tapDist < TOOLBAR_DOUBLE_TAP_DIST
 
   if (isDoubleTap) {
     clearToolbarTapTimer()
@@ -219,40 +231,31 @@ const onDisplayModeChange = (vertical: boolean) => {
 }
 
 const syncReaderState = () => {
-  JmcomicService.setReaderState(true, isVertical.value).catch(() => {
-  })
+  JmcomicService.setReaderState(true, isVertical.value).catch(() => {})
 }
 
 // ---- 阅读器设置 ----
 const applyReaderSettings = () => {
   const orientation = SettingsStore.getReaderScreenOrientation()
   if (orientation !== 'auto') {
-    JmcomicService.setReaderScreenOrientation(orientation).catch(() => {
-    })
+    JmcomicService.setReaderScreenOrientation(orientation).catch(() => {})
   }
   const brightness = SettingsStore.getReaderBrightness()
   if (brightness >= 0) {
-    JmcomicService.setReaderBrightness(brightness).catch(() => {
-    })
+    JmcomicService.setReaderBrightness(brightness).catch(() => {})
   }
   if (SettingsStore.getReaderKeepScreenOn()) {
-    JmcomicService.setReaderKeepScreenOn(true).catch(() => {
-    })
+    JmcomicService.setReaderKeepScreenOn(true).catch(() => {})
   }
   syncReaderFullscreen()
 }
 
 const restoreSystemState = () => {
-  JmcomicService.setReaderBrightness(-1).catch(() => {
-  })
-  JmcomicService.setReaderScreenOrientation('auto').catch(() => {
-  })
-  JmcomicService.setReaderKeepScreenOn(false).catch(() => {
-  })
-  JmcomicService.setReaderFullscreen(false).catch(() => {
-  })
-  JmcomicService.setReaderState(false, false).catch(() => {
-  })
+  JmcomicService.setReaderBrightness(-1).catch(() => {})
+  JmcomicService.setReaderScreenOrientation('auto').catch(() => {})
+  JmcomicService.setReaderKeepScreenOn(false).catch(() => {})
+  JmcomicService.setReaderFullscreen(false).catch(() => {})
+  JmcomicService.setReaderState(false, false).catch(() => {})
 }
 
 // ---- 音量键 ----
@@ -285,10 +288,8 @@ const activateReaderRuntime = () => {
   if (readerRuntimeActive) return
   readerRuntimeActive = true
   applyReaderSettings()
-  JmcomicService.setReaderState(true, isVertical.value).catch(() => {
-  })
-  setupVolumeKeyListener().catch(() => {
-  })
+  JmcomicService.setReaderState(true, isVertical.value).catch(() => {})
+  setupVolumeKeyListener().catch(() => {})
 }
 
 const deactivateReaderRuntime = () => {
@@ -325,14 +326,14 @@ const renderPageToBlob = async (pageNum: number): Promise<string | null> => {
   let page: pdfjsLib.PDFPageProxy | null = null
   try {
     page = await pdfDoc.getPage(pageNum)
-    const scale = calcBaseScale(page.getViewport({scale: 1}))
-    const viewport = page.getViewport({scale})
+    const scale = calcBaseScale(page.getViewport({ scale: 1 }))
+    const viewport = page.getViewport({ scale })
 
     const canvas = document.createElement('canvas')
     canvas.width = viewport.width
     canvas.height = viewport.height
 
-    const task = page.render({canvas, viewport})
+    const task = page.render({ canvas, viewport })
     renderTasks.set(pageNum, task)
     await task.promise
     if (renderTasks.get(pageNum) === task) {
@@ -430,7 +431,11 @@ const takeNextPendingRenderPage = (): number | undefined => {
   return nextPage
 }
 
-const startRenderPage = (pageNum: number, generation: number, priority = Number.POSITIVE_INFINITY) => {
+const startRenderPage = (
+  pageNum: number,
+  generation: number,
+  priority = Number.POSITIVE_INFINITY,
+) => {
   if (activeRenderingPages.has(pageNum)) {
     if (!pageRenderGenerations.has(pageNum)) {
       pageRenderGenerations.set(pageNum, generation)
@@ -457,35 +462,37 @@ const scheduleRenderQueue = () => {
 
     activeRenderCount++
     activeRenderingPages.add(pageNum)
-    renderPageToBlob(pageNum).then((url) => {
-      if (generation !== pageRenderGenerations.get(pageNum)) {
-        if (url) releaseRenderedUrl(url)
-        if (renderedPages.get(pageNum) === '' && pageRenderGenerations.has(pageNum)) {
-          pendingRenderQueue.add(pageNum)
-          if (!pendingRenderPriorities.has(pageNum)) {
-            pendingRenderPriorities.set(pageNum, Number.POSITIVE_INFINITY)
+    renderPageToBlob(pageNum)
+      .then((url) => {
+        if (generation !== pageRenderGenerations.get(pageNum)) {
+          if (url) releaseRenderedUrl(url)
+          if (renderedPages.get(pageNum) === '' && pageRenderGenerations.has(pageNum)) {
+            pendingRenderQueue.add(pageNum)
+            if (!pendingRenderPriorities.has(pageNum)) {
+              pendingRenderPriorities.set(pageNum, Number.POSITIVE_INFINITY)
+            }
           }
+          return
         }
-        return
-      }
 
-      pageRenderGenerations.delete(pageNum)
-      if (url) {
-        renderedPages.set(pageNum, url)
-        imageMap.value.set(pageNum, url)
-        applyImageMap()
-        return
-      }
-      if (renderedPages.get(pageNum) === '') {
-        renderedPages.delete(pageNum)
-        imageMap.value.delete(pageNum)
-        applyImageMap()
-      }
-    }).finally(() => {
-      activeRenderingPages.delete(pageNum)
-      activeRenderCount = Math.max(0, activeRenderCount - 1)
-      scheduleRenderQueue()
-    })
+        pageRenderGenerations.delete(pageNum)
+        if (url) {
+          renderedPages.set(pageNum, url)
+          imageMap.value.set(pageNum, url)
+          applyImageMap()
+          return
+        }
+        if (renderedPages.get(pageNum) === '') {
+          renderedPages.delete(pageNum)
+          imageMap.value.delete(pageNum)
+          applyImageMap()
+        }
+      })
+      .finally(() => {
+        activeRenderingPages.delete(pageNum)
+        activeRenderCount = Math.max(0, activeRenderCount - 1)
+        scheduleRenderQueue()
+      })
   }
 }
 
@@ -791,10 +798,7 @@ onMounted(async () => {
       chapterId.value,
       total,
     )
-    const initIndex = Math.min(
-      Math.max(initialPage - 1, 0),
-      Math.max(0, total - 1),
-    )
+    const initIndex = Math.min(Math.max(initialPage - 1, 0), Math.max(0, total - 1))
     currentIndex.value = initIndex
     totalCount.value = total
     updateReaderCurrentPage(initIndex + 1)
@@ -868,8 +872,9 @@ onUnmounted(() => {
 
 .toolbar-slide-enter-active,
 .toolbar-slide-leave-active {
-  transition: opacity 0.22s ease,
-  transform 0.22s ease;
+  transition:
+    opacity 0.22s ease,
+    transform 0.22s ease;
 }
 
 .toolbar-slide-enter-from,

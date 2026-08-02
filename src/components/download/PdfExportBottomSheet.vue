@@ -87,17 +87,15 @@
           <!-- 章节选择（多章节时显示） -->
           <div v-if="chapters.length > 1" class="section">
             <div class="section-header">
-              <span class="section-label">选择章节（{{ selectedIds.size }}/{{ chapters.length }}）</span>
+              <span class="section-label"
+                >选择章节（{{ selectedIds.size }}/{{ chapters.length }}）</span
+              >
               <button class="toggle-all-btn" @click="toggleAll">
                 {{ selectedIds.size === chapters.length ? '取消全选' : '全选' }}
               </button>
             </div>
             <div class="chapter-list">
-              <label
-                v-for="ch in orderedChapters"
-                :key="ch.taskId"
-                class="chapter-row"
-              >
+              <label v-for="ch in orderedChapters" :key="ch.taskId" class="chapter-row">
                 <input
                   type="checkbox"
                   class="chapter-check"
@@ -106,7 +104,9 @@
                 />
                 <span class="chapter-info">
                   <span class="chapter-name">{{ ch.chapterId }}</span>
-                  <span class="chapter-meta">{{ chapterOrderLabel(ch) }} · {{ ch.totalPages }}页</span>
+                  <span class="chapter-meta"
+                    >{{ chapterOrderLabel(ch) }} · {{ ch.totalPages }}页</span
+                  >
                 </span>
               </label>
             </div>
@@ -115,20 +115,11 @@
           <!-- 保存路径（可编辑） -->
           <div class="section">
             <span class="section-label">保存路径</span>
-            <textarea
-              class="path-input"
-              :value="editedPath"
-              rows="4"
-              @input="onPathInput"
-            />
+            <textarea class="path-input" :value="editedPath" rows="4" @input="onPathInput" />
             <div class="template-tags">
               <span class="tag-hint">点击复制变量值：</span>
-              <button
-                v-for="v in templateVars"
-                :key="v"
-                class="tag-btn"
-                @click="copyTag(v)"
-              >{{ v }}
+              <button v-for="v in templateVars" :key="v" class="tag-btn" @click="copyTag(v)">
+                {{ v }}
               </button>
             </div>
             <div class="template-tags" style="margin-top: 2px">
@@ -138,7 +129,8 @@
                 :key="v"
                 class="tag-btn tag-cond"
                 @click="copyTagSyntax(v)"
-              >{{ v }}
+              >
+                {{ v }}
               </button>
             </div>
           </div>
@@ -205,19 +197,18 @@
               color="warning"
               @ion-change="onRatioChange"
             />
-            <div class="ratio-hint">图片长宽缩放至原始的 {{ (compressionRatio * 100).toFixed(0) }}%</div>
+            <div class="ratio-hint">
+              图片长宽缩放至原始的 {{ (compressionRatio * 100).toFixed(0) }}%
+            </div>
           </div>
         </div>
 
         <!-- 底部按钮 -->
         <div class="sheet-footer">
           <button class="btn-cancel" @click="close">取消</button>
-          <button
-            class="btn-confirm"
-            :disabled="selectedIds.size === 0"
-            @click="onConfirm"
-          >
-            {{ mode === 'merged' ? '合并导出' : '导出' }}{{ selectedIds.size > 0 ? ` (${selectedIds.size})` : '' }}
+          <button class="btn-confirm" :disabled="selectedIds.size === 0" @click="onConfirm">
+            {{ mode === 'merged' ? '合并导出' : '导出'
+            }}{{ selectedIds.size > 0 ? ` (${selectedIds.size})` : '' }}
           </button>
         </div>
       </div>
@@ -226,13 +217,13 @@
 </template>
 
 <script setup lang="ts">
-import {computed, ref, watch} from 'vue'
-import {IonRange, IonToggle, useBackButton} from '@ionic/vue'
-import type {AlbumDetail, DownloadTask, PdfExportMode} from '@/services/JmcomicTypes'
-import {PdfExportService} from '@/services/PdfExportService'
-import {JmcomicService, showToast} from '@/services/JmcomicService'
+import { computed, ref, watch } from 'vue'
+import { IonRange, IonToggle, useBackButton } from '@ionic/vue'
+import type { AlbumDetail, DownloadTask, PdfExportMode } from '@/services/JmcomicTypes'
+import { PdfExportService } from '@/services/PdfExportService'
+import { JmcomicService, showToast } from '@/services/JmcomicService'
 
-defineOptions({name: 'PdfExportBottomSheet'})
+defineOptions({ name: 'PdfExportBottomSheet' })
 
 const props = defineProps<{
   modelValue: boolean
@@ -320,7 +311,10 @@ const templatePath = computed(() => {
   const dirRendered = PdfExportService.renderTemplate(dirTpl, data)
   const nameRendered = PdfExportService.renderTemplate(nameTpl, data)
   const baseTrimmed = base.replace(/\/+$/, '')
-  const dirSegments = dirRendered.split('/').map(s => PdfExportService.sanitizeSegment(s)).filter(s => s.length > 0)
+  const dirSegments = dirRendered
+    .split('/')
+    .map((s) => PdfExportService.sanitizeSegment(s))
+    .filter((s) => s.length > 0)
   const dirClean = dirSegments.join('/')
   const nameClean = PdfExportService.sanitizeSegment(nameRendered)
   if (dirClean) {
@@ -330,14 +324,11 @@ const templatePath = computed(() => {
 })
 
 // ---- 同步路径预览 ----
-watch(
-  [templatePath, () => props.modelValue],
-  ([tp, open]) => {
-    if (open) {
-      editedPath.value = tp
-    }
-  },
-)
+watch([templatePath, () => props.modelValue], ([tp, open]) => {
+  if (open) {
+    editedPath.value = tp
+  }
+})
 
 // ---- 系统返回键关闭面板（优先级 10 > 默认 0，拦截路由返回） ----
 useBackButton(10, (processNextHandler) => {
@@ -367,11 +358,13 @@ watch(
       const albumId = props.chapters[0]?.albumId
       if (albumId) {
         albumDetail.value = null
-        JmcomicService.getAlbum(albumId).then(album => {
-          albumDetail.value = album
-        }).catch(() => {
-          albumDetail.value = null
-        })
+        JmcomicService.getAlbum(albumId)
+          .then((album) => {
+            albumDetail.value = album
+          })
+          .catch(() => {
+            albumDetail.value = null
+          })
       } else {
         albumDetail.value = null
       }
@@ -867,7 +860,9 @@ async function onConfirm() {
   color: #4c2a18;
   cursor: pointer;
   background: #fefcf9;
-  transition: border-color 0.15s, background 0.15s;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
 }
 
 .radio-label.active {

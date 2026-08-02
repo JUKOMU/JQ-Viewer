@@ -1,21 +1,13 @@
 <template>
   <div ref="containerRef" class="horizontal-container">
     <div class="strip" :style="stripStyle">
-      <div
-        v-for="idx in visibleIndices"
-        :key="idx"
-        class="page-slot"
-        :style="slotStyle(idx)"
-      >
-        <div
-          class="page-content"
-          :style="idx === displayIndex ? contentStyle : undefined"
-        >
+      <div v-for="idx in visibleIndices" :key="idx" class="page-slot" :style="slotStyle(idx)">
+        <div class="page-content" :style="idx === displayIndex ? contentStyle : undefined">
           <template v-if="imageMap.get(idx + 1)">
-            <img :src="imageMap.get(idx + 1)!" class="page-image" alt=""/>
+            <img :src="imageMap.get(idx + 1)!" class="page-image" alt="" />
           </template>
           <template v-else>
-            <div class="skeleton-page"/>
+            <div class="skeleton-page" />
           </template>
         </div>
       </div>
@@ -24,7 +16,7 @@
 </template>
 
 <script setup lang="ts">
-defineOptions({name: 'HorizontalPageView'})
+defineOptions({ name: 'HorizontalPageView' })
 
 const props = defineProps<{
   imageMap: Map<number, string>
@@ -37,7 +29,7 @@ const emit = defineEmits<{
   'toggle-toolbar': []
 }>()
 
-import {computed, onMounted, onUnmounted, ref, watch} from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 
 const SWIPE_THRESHOLD = 60
 const ZOOM_MAX = 4
@@ -69,20 +61,26 @@ function resetZoom() {
   zoomTx.value = 0
   zoomTy.value = 0
   if (tapTimer) {
-    clearTimeout(tapTimer);
+    clearTimeout(tapTimer)
     tapTimer = null
   }
 }
 
 // ---- 手势临时变量 ----
-let startX = 0, startY = 0, startTime = 0
-let startTx = 0, startTy = 0
+let startX = 0,
+  startY = 0,
+  startTime = 0
+let startTx = 0,
+  startTy = 0
 let startScale = 1
 let pinchDist0 = 0
-let pinchRelX = 0, pinchRelY = 0
+let pinchRelX = 0,
+  pinchRelY = 0
 let fingers = 0
 let moved = false
-let lastTapT = 0, lastTapX = 0, lastTapY = 0
+let lastTapT = 0,
+  lastTapX = 0,
+  lastTapY = 0
 let tapTimer: ReturnType<typeof setTimeout> | null = null
 
 // ---- 可见槽位 ----
@@ -104,26 +102,29 @@ const stripStyle = computed(() => {
   }
 })
 
-watch(() => props.currentIndex, (val) => {
-  if (!isAnimating.value) {
-    if (displayIndex.value !== val) resetZoom()
-    displayIndex.value = val
-    offsetX.value = 0
-  }
-})
+watch(
+  () => props.currentIndex,
+  (val) => {
+    if (!isAnimating.value) {
+      if (displayIndex.value !== val) resetZoom()
+      displayIndex.value = val
+      offsetX.value = 0
+    }
+  },
+)
 
 onMounted(() => {
   displayIndex.value = props.currentIndex
   updateSlotWidth()
-  containerRef.value?.addEventListener('touchstart', onTouchStart, {passive: false})
-  containerRef.value?.addEventListener('touchmove', onTouchMove, {passive: false})
+  containerRef.value?.addEventListener('touchstart', onTouchStart, { passive: false })
+  containerRef.value?.addEventListener('touchmove', onTouchMove, { passive: false })
   containerRef.value?.addEventListener('touchend', onTouchEnd)
   containerRef.value?.addEventListener('touchcancel', onTouchEnd)
 })
 
 onUnmounted(() => {
   if (tapTimer) {
-    clearTimeout(tapTimer);
+    clearTimeout(tapTimer)
     tapTimer = null
   }
   containerRef.value?.removeEventListener('touchstart', onTouchStart)
@@ -258,7 +259,7 @@ function onTouchEnd(ev: TouchEvent) {
     // 双击 → 恢复
     if (!moved && elapsed < DOUBLE_TAP_MS && tapDist < DOUBLE_TAP_DIST) {
       if (tapTimer) {
-        clearTimeout(tapTimer);
+        clearTimeout(tapTimer)
         tapTimer = null
       }
       resetZoom()
@@ -285,7 +286,7 @@ function onTouchEnd(ev: TouchEvent) {
       } else {
         if (tapTimer) clearTimeout(tapTimer)
         tapTimer = setTimeout(() => {
-          emit('toggle-toolbar');
+          emit('toggle-toolbar')
           tapTimer = null
         }, DOUBLE_TAP_MS)
       }
@@ -306,7 +307,7 @@ function onTouchEnd(ev: TouchEvent) {
     return
   }
   if (moved) {
-    snapBack();
+    snapBack()
     return
   }
 
@@ -331,7 +332,7 @@ function onTouchEnd(ev: TouchEvent) {
       const le = Date.now() - lastTapT
       if (le < DOUBLE_TAP_MS && tapDist < DOUBLE_TAP_DIST) {
         if (tapTimer) {
-          clearTimeout(tapTimer);
+          clearTimeout(tapTimer)
           tapTimer = null
         }
         const relX = ex - offsetX.value
@@ -344,7 +345,7 @@ function onTouchEnd(ev: TouchEvent) {
       } else {
         if (tapTimer) clearTimeout(tapTimer)
         tapTimer = setTimeout(() => {
-          emit('toggle-toolbar');
+          emit('toggle-toolbar')
           tapTimer = null
         }, DOUBLE_TAP_MS)
       }
@@ -357,7 +358,7 @@ function onTouchEnd(ev: TouchEvent) {
 
 function snapTo(target: number) {
   if (target === displayIndex.value) {
-    snapBack();
+    snapBack()
     return
   }
   resetZoom()
@@ -387,7 +388,7 @@ function scrollToIndex(index: number) {
   offsetX.value = 0
 }
 
-defineExpose({scrollToIndex})
+defineExpose({ scrollToIndex })
 </script>
 
 <style scoped>

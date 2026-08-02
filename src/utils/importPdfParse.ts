@@ -1,4 +1,4 @@
-import type {AlbumDetail} from '@/services/JmcomicTypes'
+import type { AlbumDetail } from '@/services/JmcomicTypes'
 
 /**
  * 从文件名提取 ID 的解析结果。
@@ -42,15 +42,18 @@ export interface ImportPdfParseResult {
  * 从文件名列表中提取 ID。
  * 每个文件独立解析，不跨文件合并数字串。
  */
-export function parseFilenamesForImport(filePaths: string[], fileNames?: string[]): ImportPdfParseResult {
+export function parseFilenamesForImport(
+  filePaths: string[],
+  fileNames?: string[],
+): ImportPdfParseResult {
   const files: PdfFileParseItem[] = []
   const idToFileIndices = new Map<string, number[]>()
 
   for (let i = 0; i < filePaths.length; i++) {
     const filePath = filePaths[i]
     const fileName = fileNames?.[i] ?? extractFileName(filePath)
-    const {text, chapterSortOrderHint} = extractChapterHint(fileName)
-    const {ids, idPositions} = extractValidIds(text)
+    const { text, chapterSortOrderHint } = extractChapterHint(fileName)
+    const { ids, idPositions } = extractValidIds(text)
 
     let status: 'resolved' | 'ambiguous' | 'missing'
     if (ids.length === 0) {
@@ -87,7 +90,7 @@ export function parseFilenamesForImport(filePaths: string[], fileNames?: string[
     }
   }
 
-  return {files}
+  return { files }
 }
 
 /**
@@ -95,9 +98,10 @@ export function parseFilenamesForImport(filePaths: string[], fileNames?: string[
  * 格式: `id文本 [chapterSortOrder]`
  * 章节序号为行末尾空格后的数字。
  */
-export function parseEditedLine(
-  lineText: string,
-): { ids: string[]; chapterSortOrderHint?: number } {
+export function parseEditedLine(lineText: string): {
+  ids: string[]
+  chapterSortOrderHint?: number
+} {
   // 尝试从末尾提取章节序号
   const match = lineText.match(/^(.+?)\s+(\d{1,4})$/)
   let idText: string
@@ -112,8 +116,8 @@ export function parseEditedLine(
     chapterSortOrderHint = extracted.chapterSortOrderHint
   }
 
-  const {ids} = extractValidIds(idText)
-  return {ids, chapterSortOrderHint}
+  const { ids } = extractValidIds(idText)
+  return { ids, chapterSortOrderHint }
 }
 
 // ---- 内部辅助 ----
@@ -148,7 +152,7 @@ function extractValidIds(text: string): {
     }
   }
 
-  return {ids, idPositions}
+  return { ids, idPositions }
 }
 
 function extractChapterHint(text: string): {
@@ -157,13 +161,13 @@ function extractChapterHint(text: string): {
 } {
   const match = text.match(/第\s*([0-9０-９]{1,4})\s*[话話]/)
   if (!match || match.index === undefined) {
-    return {text}
+    return { text }
   }
 
   const normalized = normalizeDigits(match[1])
   const value = parseInt(normalized, 10)
   if (!Number.isFinite(value) || value <= 0) {
-    return {text}
+    return { text }
   }
 
   return {
@@ -173,7 +177,5 @@ function extractChapterHint(text: string): {
 }
 
 function normalizeDigits(text: string): string {
-  return text.replace(/[０-９]/g, (char) =>
-    String.fromCharCode(char.charCodeAt(0) - 0xfee0),
-  )
+  return text.replace(/[０-９]/g, (char) => String.fromCharCode(char.charCodeAt(0) - 0xfee0))
 }

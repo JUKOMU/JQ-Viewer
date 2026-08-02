@@ -1,4 +1,4 @@
-import type {DocumentInitParameters} from 'pdfjs-dist/types/src/display/api'
+import type { DocumentInitParameters } from 'pdfjs-dist/types/src/display/api'
 
 const VIRTUAL_BASE = 'https://jqviewer.local'
 
@@ -48,7 +48,9 @@ export async function fetchPdfArrayBuffer(filePath: string): Promise<ArrayBuffer
     throw new PdfLoadError('file-missing', 'PDF 文件不存在或已移动')
   }
 
-  const header = new TextDecoder('ascii').decode(arrayBuffer.slice(0, Math.min(1024, arrayBuffer.byteLength)))
+  const header = new TextDecoder('ascii').decode(
+    arrayBuffer.slice(0, Math.min(1024, arrayBuffer.byteLength)),
+  )
   if (!header.includes('%PDF-')) {
     throw new PdfLoadError('invalid-content', 'PDF 文件内容无效')
   }

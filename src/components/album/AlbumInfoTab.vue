@@ -11,7 +11,7 @@
           :disabled="actionBusy.like"
           @click="$emit('toggle-like')"
         >
-          <ion-icon :icon="heart"/>
+          <ion-icon :icon="heart" />
           <span class="action-label">点赞 {{ album.likes }}</span>
         </button>
         <button
@@ -21,7 +21,7 @@
           :disabled="actionBusy.favorite"
           @click="$emit('toggle-favorite')"
         >
-          <ion-icon :icon="bookmark"/>
+          <ion-icon :icon="bookmark" />
           <span class="action-label">收藏</span>
         </button>
         <div class="download-col">
@@ -31,15 +31,15 @@
             :class="downloadClass"
             @click="$emit('download')"
           >
-            <ion-icon :icon="downloadIcon"/>
+            <ion-icon :icon="downloadIcon" />
             <span class="action-label">{{ downloadLabel }}</span>
           </button>
           <span class="source-state-row">
             <span class="source-state-chip source-chip-image" :class="{ active: imageAvailable }">
-              <ion-icon :icon="imageOutline"/>
+              <ion-icon :icon="imageOutline" />
             </span>
             <span class="source-state-chip source-chip-pdf" :class="{ active: pdfAvailable }">
-              <ion-icon :icon="documentOutline"/>
+              <ion-icon :icon="documentOutline" />
             </span>
           </span>
         </div>
@@ -51,20 +51,22 @@
           <span class="info-label">ID</span>
           <span class="info-value clickable" @click="copyText(String(album.id))">
             {{ album.id }}
-            <ion-icon class="copy-icon" :icon="copyOutline"/>
+            <ion-icon class="copy-icon" :icon="copyOutline" />
           </span>
         </div>
         <div class="info-row">
           <span class="info-label">标题</span>
           <span class="info-value clickable" @click="copyText(album.title)">
             {{ album.title }}
-            <ion-icon class="copy-icon" :icon="copyOutline"/>
+            <ion-icon class="copy-icon" :icon="copyOutline" />
           </span>
         </div>
         <div v-if="album.description" class="info-row">
           <span class="info-label">描述</span>
           <div class="info-value">
-            <p ref="descTextRef" class="desc-text" :class="{ expanded: descExpanded }">{{ album.description }}</p>
+            <p ref="descTextRef" class="desc-text" :class="{ expanded: descExpanded }">
+              {{ album.description }}
+            </p>
             <button
               v-if="descOverflows"
               type="button"
@@ -78,17 +80,25 @@
         <div v-if="album.authors.length" class="info-row">
           <span class="info-label">作者</span>
           <div class="info-tags">
-            <span v-for="author in album.authors" :key="author" class="tag tag-clickable" @click="searchByTag(author)">{{
-                author
-              }}</span>
+            <span
+              v-for="author in album.authors"
+              :key="author"
+              class="tag tag-clickable"
+              @click="searchByTag(author)"
+              >{{ author }}</span
+            >
           </div>
         </div>
         <div v-if="album.tags.length" class="info-row">
           <span class="info-label">标签</span>
           <div class="info-tags">
-            <span v-for="tag in album.tags" :key="tag" class="tag tag-clickable" @click="searchByTag(tag)">{{
-                tag
-              }}</span>
+            <span
+              v-for="tag in album.tags"
+              :key="tag"
+              class="tag tag-clickable"
+              @click="searchByTag(tag)"
+              >{{ tag }}</span
+            >
           </div>
         </div>
         <div v-if="album.actors.length" class="info-row">
@@ -123,9 +133,7 @@
       <!-- 相关作品 -->
       <div v-if="album.relatedAlbums.length" class="related-section">
         <h3 class="section-title">相关作品</h3>
-        <div
-          class="related-scroll"
-        >
+        <div class="related-scroll">
           <div
             v-for="related in album.relatedAlbums"
             :key="related.id"
@@ -133,7 +141,7 @@
             @click="$emit('navigate-album', related)"
           >
             <div class="related-cover-wrap">
-              <img :src="related.coverUrl" :alt="related.title" class="related-cover"/>
+              <img :src="related.coverUrl" :alt="related.title" class="related-cover" />
             </div>
             <p class="related-title">{{ related.title }}</p>
           </div>
@@ -144,17 +152,17 @@
     <!-- 骨架屏 -->
     <div v-else class="skeleton">
       <div v-for="n in 5" :key="n" class="sk-row">
-        <div class="sk-line sk-line--short"/>
-        <div class="sk-line"/>
+        <div class="sk-line sk-line--short" />
+        <div class="sk-line" />
       </div>
     </div>
   </section>
 </template>
 
 <script setup lang="ts">
-import {computed, nextTick, ref, watch} from 'vue'
-import {useRouter} from 'vue-router'
-import {IonIcon} from '@ionic/vue'
+import { computed, nextTick, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
+import { IonIcon } from '@ionic/vue'
 import {
   bookmark,
   checkmarkCircleOutline,
@@ -167,10 +175,10 @@ import {
   refreshOutline,
   timeOutline,
 } from 'ionicons/icons'
-import type {AlbumDetail, AlbumMeta} from '@/services/JmcomicTypes'
-import {showToast} from '@/services/JmcomicService'
+import type { AlbumDetail, AlbumMeta } from '@/services/JmcomicTypes'
+import { showToast } from '@/services/JmcomicService'
 
-defineOptions({name: 'AlbumInfoTab'})
+defineOptions({ name: 'AlbumInfoTab' })
 
 const props = defineProps<{
   album: AlbumDetail | null
@@ -211,10 +219,14 @@ function checkDescOverflow() {
   descOverflows.value = el.scrollHeight > el.clientHeight
 }
 
-watch(() => props.album?.description, () => {
-  descExpanded.value = false
-  nextTick(() => checkDescOverflow())
-}, {immediate: true})
+watch(
+  () => props.album?.description,
+  () => {
+    descExpanded.value = false
+    nextTick(() => checkDescOverflow())
+  },
+  { immediate: true },
+)
 
 const copyText = async (text: string) => {
   try {
@@ -226,12 +238,12 @@ const copyText = async (text: string) => {
 }
 
 const searchByTag = (keyword: string) => {
-  void router.push({path: '/search', query: {keyword}})
+  void router.push({ path: '/search', query: { keyword } })
 }
 
 const downloadClass = computed(() => {
   if (!props.downloadStatus) return {}
-  return {[`status-${props.downloadStatus}`]: true}
+  return { [`status-${props.downloadStatus}`]: true }
 })
 
 const downloadLabel = computed(() => {
@@ -290,9 +302,10 @@ const downloadIcon = computed(() => {
   background: #fffaf6;
   color: #785947;
   font-size: 11px;
-  transition: background-color 0.18s ease,
-  color 0.18s ease,
-  border-color 0.18s ease;
+  transition:
+    background-color 0.18s ease,
+    color 0.18s ease,
+    border-color 0.18s ease;
 }
 
 .download-col {

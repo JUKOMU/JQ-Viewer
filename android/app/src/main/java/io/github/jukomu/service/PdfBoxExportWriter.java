@@ -10,7 +10,6 @@ import android.os.SystemClock;
 import android.system.ErrnoException;
 import android.system.Os;
 import android.util.Log;
-
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader;
 import com.tom_roush.pdfbox.io.MemoryUsageSetting;
 import com.tom_roush.pdfbox.multipdf.PDFMergerUtility;
@@ -21,12 +20,7 @@ import com.tom_roush.pdfbox.pdmodel.common.PDRectangle;
 import com.tom_roush.pdfbox.pdmodel.graphics.image.JPEGFactory;
 import com.tom_roush.pdfbox.pdmodel.graphics.image.PDImageXObject;
 
-import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.RandomAccessFile;
+import java.io.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -267,7 +261,7 @@ final class PdfBoxExportWriter {
     }
 
     private void mergeChunks(List<File> chunks, File tempFile, File workDir, MergeMode mergeMode)
-            throws IOException {
+        throws IOException {
         if (chunks.size() == 1) {
             replaceAtomically(chunks.get(0), tempFile);
             return;
@@ -300,7 +294,7 @@ final class PdfBoxExportWriter {
     }
 
     private PdfPageImage createOriginalPageImage(PDDocument document, ExportImageDescriptor descriptor,
-                                                BaselineMetrics metrics) throws IOException {
+                                                 BaselineMetrics metrics) throws IOException {
         File source = descriptor.file;
         if (descriptor.directJpeg) {
             long createStartedAt = SystemClock.elapsedRealtimeNanos();
@@ -335,10 +329,10 @@ final class PdfBoxExportWriter {
             );
             long encodeStartedAt = SystemClock.elapsedRealtimeNanos();
             if (!jpegBitmap.compress(
-                    Bitmap.CompressFormat.JPEG,
-                    ORIGINAL_JPEG_QUALITY,
-                    jpegBytes
-                )) {
+                Bitmap.CompressFormat.JPEG,
+                ORIGINAL_JPEG_QUALITY,
+                jpegBytes
+            )) {
                 throw new IOException("无法转换图片格式: " + source.getName());
             }
             metrics.originalJpegEncodeNanos += SystemClock.elapsedRealtimeNanos() - encodeStartedAt;
@@ -367,7 +361,7 @@ final class PdfBoxExportWriter {
                                                    ExportImageDescriptor descriptor,
                                                    File workDir, int pageIndex,
                                                    float compressionRatio, BaselineMetrics metrics)
-            throws IOException {
+        throws IOException {
         File source = descriptor.file;
         long materializeStartedAt = SystemClock.elapsedRealtimeNanos();
         MaterializedImage materialized = materializeCompressedImage(
@@ -402,7 +396,7 @@ final class PdfBoxExportWriter {
     }
 
     private MaterializedImage materializeCompressedImage(File source, File workDir, int pageIndex,
-                                                        float compressionRatio) throws IOException {
+                                                         float compressionRatio) throws IOException {
         Bitmap bitmap = BitmapFactory.decodeFile(source.getAbsolutePath());
         if (bitmap == null) {
             throw new IOException("无法解码图片: " + source.getName());

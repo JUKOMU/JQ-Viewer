@@ -270,7 +270,13 @@ export function makeTaskId(albumId: string, chapterId: string): string {
   return albumId + '_' + chapterId
 }
 
-export type DownloadStatus = 'queued' | 'downloading' | 'paused' | 'completed' | 'failed' | 'cancelled'
+export type DownloadStatus =
+  | 'queued'
+  | 'downloading'
+  | 'paused'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
 
 export interface DownloadTask {
   taskId: string // "albumId_chapterId"
@@ -403,12 +409,12 @@ export interface PdfExportTask {
   mode: PdfExportMode
   albumId: string
   chapterId?: string
-  chapterTitle: string       // 用于通知显示
+  chapterTitle: string // 用于通知显示
   chapters?: PdfExportChapter[]
-  savePath: string           // 完整路径（含文件名.pdf）
+  savePath: string // 完整路径（含文件名.pdf）
   useOriginal: boolean
-  compressionRatio: number   // 0.1~1.0
-  splitPages: number         // 0=不分卷, >0=每卷页数
+  compressionRatio: number // 0.1~1.0
+  splitPages: number // 0=不分卷, >0=每卷页数
 }
 
 // --- PDF 导入 ---
@@ -474,16 +480,16 @@ export interface CompletedEntry {
   albumId: string
   albumTitle: string
   coverUrl: string
-  chapterId: string        // download: chapterId; pdf: 内部唯一 key
-  displayId?: string       // chapterId 不是用户可见 ID 时的展示兜底
-  chapterTitle: string     // download: chapterTitle; pdf: fileName
+  chapterId: string // download: chapterId; pdf: 内部唯一 key
+  displayId?: string // chapterId 不是用户可见 ID 时的展示兜底
+  chapterTitle: string // download: chapterTitle; pdf: fileName
   chapterSortOrder: number
   isSingleEpisode?: boolean
   authors: string
   createdAt: number
   completedAt: number
-  totalSize: number        // download: totalSize; pdf: 0
+  totalSize: number // download: totalSize; pdf: 0
   source: 'download' | 'pdf-import'
-  downloadTask?: DownloadTask   // source='download' 时的原始数据
-  pdfData?: ImportedPdf         // source='pdf-import' 时的原始数据
+  downloadTask?: DownloadTask // source='download' 时的原始数据
+  pdfData?: ImportedPdf // source='pdf-import' 时的原始数据
 }

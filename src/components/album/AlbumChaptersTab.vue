@@ -17,14 +17,10 @@
           class="toolbar-btn toolbar-btn-icon"
           @click="exitBatchMode"
         >
-          <ion-icon :icon="closeOutline"/>
+          <ion-icon :icon="closeOutline" />
         </button>
-        <button
-          type="button"
-          class="toolbar-btn toolbar-btn-icon"
-          @click="toggleDisplayMode"
-        >
-          <ion-icon :icon="displayMode === 'grid' ? listOutline : gridOutline"/>
+        <button type="button" class="toolbar-btn toolbar-btn-icon" @click="toggleDisplayMode">
+          <ion-icon :icon="displayMode === 'grid' ? listOutline : gridOutline" />
         </button>
         <button
           type="button"
@@ -54,17 +50,21 @@
         }"
         @click="onCardClick(meta.id)"
       >
-        <span class="list-item-text">第{{ meta.sortOrder }}话  {{ meta.title }}</span>
+        <span class="list-item-text">第{{ meta.sortOrder }}话 {{ meta.title }}</span>
         <span
-          v-if="chapterDownloadStatuses.get(meta.id) === 'completed' || chapterPdfStatuses.get(meta.id)"
+          v-if="
+            chapterDownloadStatuses.get(meta.id) === 'completed' || chapterPdfStatuses.get(meta.id)
+          "
           class="list-item-chips"
         >
-          <span v-if="chapterDownloadStatuses.get(meta.id) === 'completed'"
-                class="chapter-source-chip source-chip-image">
-            <ion-icon :icon="imageOutline"/>
+          <span
+            v-if="chapterDownloadStatuses.get(meta.id) === 'completed'"
+            class="chapter-source-chip source-chip-image"
+          >
+            <ion-icon :icon="imageOutline" />
           </span>
           <span v-if="chapterPdfStatuses.get(meta.id)" class="chapter-source-chip source-chip-pdf">
-            <ion-icon :icon="documentOutline"/>
+            <ion-icon :icon="documentOutline" />
           </span>
         </span>
         <span
@@ -73,19 +73,15 @@
           :class="{ checked: selectedIds.has(meta.id), disabled: isDownloadDisabled(meta.id) }"
           @click.stop="toggleSelect(meta.id)"
         >
-          <ion-icon v-if="selectedIds.has(meta.id)" :icon="checkmark"/>
-          <span v-else class="check-empty"/>
+          <ion-icon v-if="selectedIds.has(meta.id)" :icon="checkmark" />
+          <span v-else class="check-empty" />
         </span>
       </div>
     </div>
 
     <!-- 网格模式 -->
     <div v-else-if="photoMetas.length" class="chapter-grid">
-      <div
-        v-for="meta in photoMetas"
-        :key="meta.id"
-        class="chapter-item"
-      >
+      <div v-for="meta in photoMetas" :key="meta.id" class="chapter-item">
         <div class="card-wrapper">
           <button
             type="button"
@@ -114,10 +110,10 @@
                   :disabled="isDownloadDisabled(meta.id)"
                   @click.stop="$emit('download-chapter', meta.id)"
                 >
-                  <ion-icon :icon="cloudDownloadOutline"/>
+                  <ion-icon :icon="cloudDownloadOutline" />
                 </button>
                 <button type="button" class="action-btn" @click.stop="$emit('dismiss-actions')">
-                  <ion-icon :icon="arrowBack"/>
+                  <ion-icon :icon="arrowBack" />
                 </button>
               </div>
             </Transition>
@@ -129,28 +125,32 @@
             :class="{ checked: selectedIds.has(meta.id), disabled: isDownloadDisabled(meta.id) }"
             @click.stop="toggleSelect(meta.id)"
           >
-            <ion-icon v-if="selectedIds.has(meta.id)" :icon="checkmark"/>
-            <span v-else class="check-empty"/>
+            <ion-icon v-if="selectedIds.has(meta.id)" :icon="checkmark" />
+            <span v-else class="check-empty" />
           </span>
         </div>
         <span
-          v-if="chapterDownloadStatuses.get(meta.id) === 'completed' || chapterPdfStatuses.get(meta.id)"
+          v-if="
+            chapterDownloadStatuses.get(meta.id) === 'completed' || chapterPdfStatuses.get(meta.id)
+          "
           class="chapter-source-row"
         >
-          <span v-if="chapterDownloadStatuses.get(meta.id) === 'completed'"
-                class="chapter-source-chip source-chip-image">
-            <ion-icon :icon="imageOutline"/>
+          <span
+            v-if="chapterDownloadStatuses.get(meta.id) === 'completed'"
+            class="chapter-source-chip source-chip-image"
+          >
+            <ion-icon :icon="imageOutline" />
           </span>
           <span v-if="chapterPdfStatuses.get(meta.id)" class="chapter-source-chip source-chip-pdf">
-            <ion-icon :icon="documentOutline"/>
+            <ion-icon :icon="documentOutline" />
           </span>
         </span>
       </div>
     </div>
     <div v-else-if="loading" class="chapter-grid">
       <div v-for="n in 6" :key="n" class="skeleton-card">
-        <div class="sk-line sk-line--short"/>
-        <div class="sk-line"/>
+        <div class="sk-line sk-line--short" />
+        <div class="sk-line" />
       </div>
     </div>
     <div v-else class="chapters-empty">暂无章节</div>
@@ -158,8 +158,8 @@
 </template>
 
 <script setup lang="ts">
-import {computed, ref} from 'vue'
-import {IonIcon} from '@ionic/vue'
+import { computed, ref } from 'vue'
+import { IonIcon } from '@ionic/vue'
 import {
   arrowBack,
   checkmark,
@@ -170,9 +170,9 @@ import {
   imageOutline,
   listOutline,
 } from 'ionicons/icons'
-import type {PhotoMeta} from '@/services/JmcomicTypes'
+import type { PhotoMeta } from '@/services/JmcomicTypes'
 
-defineOptions({name: 'AlbumChaptersTab'})
+defineOptions({ name: 'AlbumChaptersTab' })
 const props = defineProps<{
   photoMetas: PhotoMeta[]
   selectedChapterId: string
@@ -300,7 +300,9 @@ const toggleDisplayMode = () => {
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;
-  transition: background-color 0.18s ease, opacity 0.18s ease;
+  transition:
+    background-color 0.18s ease,
+    opacity 0.18s ease;
   white-space: nowrap;
 }
 
@@ -351,7 +353,9 @@ const toggleDisplayMode = () => {
   border-radius: 8px;
   background: #fffaf6;
   cursor: pointer;
-  transition: background-color 0.18s ease, border-color 0.18s ease;
+  transition:
+    background-color 0.18s ease,
+    border-color 0.18s ease;
 }
 
 .list-item:active {
@@ -456,8 +460,9 @@ const toggleDisplayMode = () => {
   background: #fffaf6;
   color: #5a3d2e;
   text-align: center;
-  transition: background-color 0.18s ease,
-  border-color 0.18s ease;
+  transition:
+    background-color 0.18s ease,
+    border-color 0.18s ease;
 }
 
 .chapter-card.selected {
@@ -609,9 +614,10 @@ const toggleDisplayMode = () => {
   background: #ffe4d1;
   color: #e07030;
   font-size: 16px;
-  transition: background-color 0.18s ease,
-  opacity 0.18s ease,
-  transform 0.12s ease;
+  transition:
+    background-color 0.18s ease,
+    opacity 0.18s ease,
+    transform 0.12s ease;
   cursor: pointer;
 }
 

@@ -54,7 +54,8 @@ export interface PdfExportPlan {
 /** 内置示例数据，供预览和设置页渲染值展示复用 */
 export const PDF_SAMPLE_DATA: PdfTemplateData = {
   id: '295852',
-  title: '青梅竹馬絕對不會輸的戀愛喜劇～鄰家四姐妹的溫馨日常～ [綠茶漢化][葵季むつみ/二丸修一/しぐれうい]  幼なじみが絕對に負けないラブコメ お鄰の四姉妹が絕對にほのぼのする日常',
+  title:
+    '青梅竹馬絕對不會輸的戀愛喜劇～鄰家四姐妹的溫馨日常～ [綠茶漢化][葵季むつみ/二丸修一/しぐれうい]  幼なじみが絕對に負けないラブコメ お鄰の四姉妹が絕對にほのぼのする日常',
   chapterId: '295852',
   chapterName: '第1话',
   chapterTitle: '',
@@ -80,24 +81,24 @@ export interface TemplateVarDef {
 }
 
 function def(key: string, desc: string, render: (d: PdfTemplateData) => string): TemplateVarDef {
-  return {key, desc, sample: render(PDF_SAMPLE_DATA), render}
+  return { key, desc, sample: render(PDF_SAMPLE_DATA), render }
 }
 
 const TEMPLATE_VARS: TemplateVarDef[] = [
-  def('{id}', '本子ID', d => d.id),
-  def('{title}', '本子标题', d => d.title),
-  def('{chapterId}', '章节ID', d => d.chapterId),
-  def('{chapterName}', '章节序号（单行本则为标题）', d => d.chapterName),
-  def('{chapterRange}', '选择的章节范围', d => d.chapterRange),
-  def('{index}', '章节原始序号（纯数字）', d => String(d.index)),
-  def('{chapterTitle}', '章节原始标题', d => d.chapterTitle),
-  def('{pageCount}', '章节页数', d => String(d.pageCount)),
-  def('{author}', '首位作者', d => d.author),
-  def('{authors}', '全部作者，用顿号连接', d => d.authors),
-  def('{tags}', '全部标签，用顿号连接', d => d.tags.join('、')),
+  def('{id}', '本子ID', (d) => d.id),
+  def('{title}', '本子标题', (d) => d.title),
+  def('{chapterId}', '章节ID', (d) => d.chapterId),
+  def('{chapterName}', '章节序号（单行本则为标题）', (d) => d.chapterName),
+  def('{chapterRange}', '选择的章节范围', (d) => d.chapterRange),
+  def('{index}', '章节原始序号（纯数字）', (d) => String(d.index)),
+  def('{chapterTitle}', '章节原始标题', (d) => d.chapterTitle),
+  def('{pageCount}', '章节页数', (d) => String(d.pageCount)),
+  def('{author}', '首位作者', (d) => d.author),
+  def('{authors}', '全部作者，用顿号连接', (d) => d.authors),
+  def('{tags}', '全部标签，用顿号连接', (d) => d.tags.join('、')),
 ]
 
-export const TEMPLATE_VAR_KEYS = TEMPLATE_VARS.map(v => v.key)
+export const TEMPLATE_VAR_KEYS = TEMPLATE_VARS.map((v) => v.key)
 export const TEMPLATE_VAR_DEFS = TEMPLATE_VARS
 
 function resolveChapterName(ch: DownloadTask, album: AlbumDetail | null): string {
@@ -177,8 +178,8 @@ export function buildChapterRange(chapters: readonly PdfExportChapter[]): string
 /** 只重排有效数字章节，无效序号章节保留原位置。 */
 export function normalizePdfChapters(chapters: readonly DownloadTask[]): DownloadTask[] {
   const sortedNumericChapters = chapters
-    .map((chapter, index) => ({chapter, index}))
-    .filter(({chapter}) => isRangeOrder(chapter.chapterSortOrder))
+    .map((chapter, index) => ({ chapter, index }))
+    .filter(({ chapter }) => isRangeOrder(chapter.chapterSortOrder))
     .sort((a, b) => {
       const orderDiff = a.chapter.chapterSortOrder! - b.chapter.chapterSortOrder!
       return orderDiff || a.index - b.index
@@ -210,7 +211,7 @@ export function buildPdfOutputPaths(
 
   const baseWithoutExt = savePath.endsWith('.pdf') ? savePath.slice(0, -4) : savePath
   const volumeCount = Math.ceil(totalPages / splitPages)
-  return Array.from({length: volumeCount}, (_, index) => {
+  return Array.from({ length: volumeCount }, (_, index) => {
     const start = index * splitPages + 1
     const end = Math.min(start + splitPages - 1, totalPages)
     return `${baseWithoutExt}_${String(start).padStart(3, '0')}-${String(end).padStart(3, '0')}.pdf`
@@ -348,14 +349,20 @@ export const PdfExportService = {
       if (hasOr && hasAnd) return ''
 
       if (hasOr) {
-        const orTags = trimmed.split('|').map(s => s.trim()).filter(Boolean)
-        const matched = orTags.filter(t => tags.includes(t))
+        const orTags = trimmed
+          .split('|')
+          .map((s) => s.trim())
+          .filter(Boolean)
+        const matched = orTags.filter((t) => tags.includes(t))
         return matched.join('、')
       }
 
       if (hasAnd) {
-        const andTags = trimmed.split('&').map(s => s.trim()).filter(Boolean)
-        const allMatch = andTags.every(t => tags.includes(t))
+        const andTags = trimmed
+          .split('&')
+          .map((s) => s.trim())
+          .filter(Boolean)
+        const allMatch = andTags.every((t) => tags.includes(t))
         return allMatch ? andTags.join('、') : ''
       }
 
@@ -378,7 +385,10 @@ export const PdfExportService = {
     const name = PdfExportService.renderTemplate(PdfExportService.getNameTemplate(), data)
     const baseTrimmed = base.replace(/\/+$/, '')
     // 对目录模板的每一段进行净化
-    const dirSegments = dir.split('/').map(s => PdfExportService.sanitizeSegment(s)).filter(s => s.length > 0)
+    const dirSegments = dir
+      .split('/')
+      .map((s) => PdfExportService.sanitizeSegment(s))
+      .filter((s) => s.length > 0)
     const dirClean = dirSegments.join('/')
     const nameClean = PdfExportService.sanitizeSegment(name)
     if (dirClean) {
@@ -388,9 +398,7 @@ export const PdfExportService = {
   },
 
   buildMergedFullPath(chapters: readonly DownloadTask[], album: AlbumDetail | null): string {
-    return PdfExportService.buildFullPath(
-      PdfExportService.buildMergedTemplateData(chapters, album),
-    )
+    return PdfExportService.buildFullPath(PdfExportService.buildMergedTemplateData(chapters, album))
   },
 
   buildExportPlan(options: PdfExportPlanOptions): PdfExportPlan {
@@ -446,11 +454,7 @@ export const PdfExportService = {
     return {
       tasks,
       outputPaths: tasks.flatMap((task, index) =>
-        buildPdfOutputPaths(
-          task.savePath,
-          selectedChapters[index].totalPages,
-          options.splitPages,
-        ),
+        buildPdfOutputPaths(task.savePath, selectedChapters[index].totalPages, options.splitPages),
       ),
     }
   },

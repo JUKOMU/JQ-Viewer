@@ -170,7 +170,7 @@ public class DownloadNotificationHelper {
             } catch (SecurityException e) {
                 Log.d(TAG, "通知权限未授予，跳过取消下载通知", e);
             } catch (RuntimeException e) {
-                Log.d(TAG, "取消下载通知失败", e);
+                Log.w(TAG, "取消下载通知失败", e);
             }
         }
     }
@@ -207,7 +207,7 @@ public class DownloadNotificationHelper {
         } catch (SecurityException e) {
             Log.d(TAG, "通知权限未授予，跳过下载通知", e);
         } catch (RuntimeException e) {
-            Log.d(TAG, "发布下载通知失败", e);
+            Log.w(TAG, "发布下载通知失败", e);
         }
     }
 

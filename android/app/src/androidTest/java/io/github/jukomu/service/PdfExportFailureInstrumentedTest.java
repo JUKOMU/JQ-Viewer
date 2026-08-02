@@ -178,7 +178,7 @@ public class PdfExportFailureInstrumentedTest {
     private static PdfExportService.ExportJob chapterJob(String chapterId) {
         PdfExportService.ExportJob job = new PdfExportService.ExportJob();
         job.mode = "chapter";
-        job.albumId = "album";
+        job.albumId = "100";
         job.chapterId = chapterId;
         job.chapterTitle = "chapter-" + chapterId;
         job.savePath = "/path/that/does/not/exist/chapter-" + chapterId + ".pdf";

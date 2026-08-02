@@ -2,7 +2,7 @@
   <div
     ref="toolbarRef"
     class="bottom-toolbar"
-    :class="{'with-chapters': chapters.length > 0}"
+    :class="{ 'with-chapters': chapters.length > 0 }"
     @keydown.esc="closeChapterPicker(true)"
   >
     <Transition name="chapter-picker">
@@ -17,7 +17,7 @@
           <button
             type="button"
             class="chapter-option"
-            :class="{current: chapter.id === currentChapterId}"
+            :class="{ current: chapter.id === currentChapterId }"
             :aria-current="chapter.id === currentChapterId ? 'true' : undefined"
             @click="selectChapter(chapter.id)"
           >
@@ -37,8 +37,8 @@
         @click="selectAdjacentChapter(previousChapter)"
       >
         <span class="chapter-step-icons" aria-hidden="true">
-          <ion-icon :icon="chevronBack"/>
-          <ion-icon :icon="chevronBack"/>
+          <ion-icon :icon="chevronBack" />
+          <ion-icon :icon="chevronBack" />
         </span>
         <span>上一章</span>
       </button>
@@ -47,7 +47,7 @@
         ref="chapterTriggerRef"
         type="button"
         class="current-chapter-btn"
-        :class="{'is-open': chapterPickerOpen}"
+        :class="{ 'is-open': chapterPickerOpen }"
         aria-controls="reader-chapter-picker"
         :aria-expanded="chapterPickerOpen"
         :disabled="chapters.length === 0"
@@ -55,8 +55,8 @@
       >
         <span class="current-chapter-text">
           <span class="chapter-picker-indicator" aria-hidden="true">
-            <ion-icon class="chapter-picker-icon chapter-picker-icon-up" :icon="chevronUp"/>
-            <ion-icon class="chapter-picker-icon chapter-picker-icon-down" :icon="chevronDown"/>
+            <ion-icon class="chapter-picker-icon chapter-picker-icon-up" :icon="chevronUp" />
+            <ion-icon class="chapter-picker-icon chapter-picker-icon-down" :icon="chevronDown" />
           </span>
           <span class="chapter-order">{{ currentChapterOrder }}</span>
           <span v-if="currentChapterTitle" class="chapter-title">{{ currentChapterTitle }}</span>
@@ -72,8 +72,8 @@
       >
         <span>下一章</span>
         <span class="chapter-step-icons" aria-hidden="true">
-          <ion-icon :icon="chevronForward"/>
-          <ion-icon :icon="chevronForward"/>
+          <ion-icon :icon="chevronForward" />
+          <ion-icon :icon="chevronForward" />
         </span>
       </button>
     </div>
@@ -86,7 +86,7 @@
         title="阅读设置"
         @click="openSettings"
       >
-        <ion-icon :icon="settingsOutline" aria-hidden="true"/>
+        <ion-icon :icon="settingsOutline" aria-hidden="true" />
       </button>
       <span class="page-number current-page">{{ current }}</span>
       <ion-range
@@ -107,23 +107,32 @@
 </template>
 
 <script setup lang="ts">
-import {computed, nextTick, onBeforeUnmount, onMounted, ref} from 'vue'
-import type {RangeCustomEvent} from '@ionic/vue'
-import {IonIcon, IonRange} from '@ionic/vue'
-import {chevronBack, chevronDown, chevronForward, chevronUp, settingsOutline,} from 'ionicons/icons'
-import type {PhotoMeta} from '@/services/JmcomicTypes'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import type { RangeCustomEvent } from '@ionic/vue'
+import { IonIcon, IonRange } from '@ionic/vue'
+import {
+  chevronBack,
+  chevronDown,
+  chevronForward,
+  chevronUp,
+  settingsOutline,
+} from 'ionicons/icons'
+import type { PhotoMeta } from '@/services/JmcomicTypes'
 
-defineOptions({name: 'ReaderBottomToolbar'})
+defineOptions({ name: 'ReaderBottomToolbar' })
 
-const props = withDefaults(defineProps<{
-  current: number
-  total: number
-  chapters?: PhotoMeta[]
-  currentChapterId?: string
-}>(), {
-  chapters: () => [],
-  currentChapterId: '',
-})
+const props = withDefaults(
+  defineProps<{
+    current: number
+    total: number
+    chapters?: PhotoMeta[]
+    currentChapterId?: string
+  }>(),
+  {
+    chapters: () => [],
+    currentChapterId: '',
+  },
+)
 
 const emit = defineEmits<{
   'open-settings': []
@@ -445,8 +454,9 @@ const onRangeInput = (ev: RangeCustomEvent) => {
 
 .chapter-picker-enter-active,
 .chapter-picker-leave-active {
-  transition: opacity 0.18s ease,
-  transform 0.18s ease;
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease;
 }
 
 .chapter-picker-enter-from,

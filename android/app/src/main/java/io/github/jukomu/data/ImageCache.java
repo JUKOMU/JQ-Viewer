@@ -5,9 +5,7 @@ import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.webkit.WebResourceResponse;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.File;
+import java.io.*;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -66,6 +64,10 @@ public class ImageCache {
             }
         }
         return instance;
+    }
+
+    static ImageCache createIsolated() {
+        return new ImageCache();
     }
 
     // ---- 容量配置 ----
@@ -135,8 +137,8 @@ public class ImageCache {
         writeLock.lock();
         try {
             if (size > capacity || reservedSize + size > capacity) return null;
-            evictToTarget(capacity - reservedSize - size);
             if (!evictForHeapMargin(reservedSize + size)) return null;
+            evictToTarget(capacity - reservedSize - size);
             reservedSize += size;
             return new IncomingReservation(this, size);
         } finally {
@@ -163,6 +165,9 @@ public class ImageCache {
             boolean hadReservation = consumeReservation(reservation);
             if (size > capacity || reservedSize + size > capacity) return false;
 
+            long unaccountedBytes = hadReservation ? reservedSize : reservedSize + size;
+            if (!evictForHeapMargin(unaccountedBytes)) return false;
+
             // 若 key 已存在，先移除旧的
             ImageEntry old = cache.remove(key);
             if (old != null) {
@@ -170,14 +175,6 @@ public class ImageCache {
             }
 
             evictToTarget(capacity - reservedSize - size);
-            long unaccountedBytes = hadReservation ? reservedSize : reservedSize + size;
-            if (!evictForHeapMargin(unaccountedBytes)) {
-                if (old != null) {
-                    cache.put(key, old);
-                    currentSize += old.data.length;
-                }
-                return false;
-            }
 
             ImageEntry entry = new ImageEntry(data, mimeType);
             cache.put(key, entry);
@@ -263,9 +260,20 @@ public class ImageCache {
         Runtime rt = Runtime.getRuntime();
         long maxHeap = rt.maxMemory();
         long usedHeap = rt.totalMemory() - rt.freeMemory();
+        return evictForHeapMargin(projectedBytes, maxHeap, usedHeap);
+    }
+
+    boolean evictForHeapMargin(long projectedBytes, long maxHeap, long usedHeap) {
         long safeThreshold = (long) (maxHeap * 0.85);
         long needToFree = (usedHeap + projectedBytes) - safeThreshold;
         if (needToFree <= 0) return true;
+
+        long evictableBytes = 0;
+        for (ImageEntry entry : cache.values()) {
+            evictableBytes += entry.data.length;
+            if (evictableBytes >= needToFree) break;
+        }
+        if (evictableBytes < needToFree) return false;
 
         long freed = 0;
         var it = cache.entrySet().iterator();
@@ -276,7 +284,7 @@ public class ImageCache {
             freed += len;
             it.remove();
         }
-        return freed >= needToFree;
+        return true;
     }
 
     private boolean consumeReservation(IncomingReservation reservation) {
@@ -385,7 +393,7 @@ public class ImageCache {
                 if (imageFile != null) {
                     try (IncomingReservation reservation = getInstance()
                         .prepareForIncomingBytes(imageFile.length())) {
-                        if (reservation == null) return null;
+                        if (reservation == null) return createFileResponse(imageFile);
                         byte[] data = FileStore.getInstance().readImageBytes(imageFile);
                         String mime = "image/" + guessFormatName(data);
                         getInstance().put(cacheKey, data, mime, reservation);
@@ -399,6 +407,35 @@ public class ImageCache {
             return null;
         } catch (Exception e) {
             return null;
+        }
+    }
+
+    static WebResourceResponse createFileResponse(File imageFile) throws IOException {
+        if (!imageFile.isFile() || imageFile.length() <= 0L) {
+            throw new IOException("图片文件不可用");
+        }
+        FileInputStream input = new FileInputStream(imageFile);
+        try {
+            byte[] header = new byte[12];
+            int offset = 0;
+            while (offset < header.length) {
+                int count = input.read(header, offset, header.length - offset);
+                if (count < 0) break;
+                offset += count;
+            }
+            input.getChannel().position(0L);
+            return new WebResourceResponse(
+                "image/" + guessFormatName(header),
+                null,
+                input
+            );
+        } catch (IOException | RuntimeException e) {
+            try {
+                input.close();
+            } catch (IOException ignored) {
+                // 保留创建响应时的原始异常。
+            }
+            throw e;
         }
     }
 

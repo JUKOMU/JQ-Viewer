@@ -1,4 +1,4 @@
-import {alertController} from '@ionic/vue'
+import { alertController } from '@ionic/vue'
 import type {
   BrowseHistoryItem,
   DownloadProgressEvent,
@@ -12,8 +12,8 @@ import type {
   SearchQuery,
   SearchResultItem,
 } from '../JmcomicTypes'
-import type {ImageReadyEvent, JmcomicClient, JmcomicListenerHandle} from './JmcomicClient'
-import {jmcomicNativeClient} from './JmcomicNativeClient'
+import type { ImageReadyEvent, JmcomicClient, JmcomicListenerHandle } from './JmcomicClient'
+import { jmcomicNativeClient } from './JmcomicNativeClient'
 
 const native: JmcomicClient = jmcomicNativeClient
 
@@ -34,10 +34,11 @@ async function ensureDownloadNotificationPermission(): Promise<void> {
 
       const alert = await alertController.create({
         header: '需要通知权限',
-        message: '章节下载将在后台进行，需要通过通知查看进度。拒绝后仍会继续下载，但不会显示系统通知。',
+        message:
+          '章节下载将在后台进行，需要通过通知查看进度。拒绝后仍会继续下载，但不会显示系统通知。',
         buttons: [
-          {text: '暂不授权', role: 'cancel'},
-          {text: '允许通知', role: 'confirm'},
+          { text: '暂不授权', role: 'cancel' },
+          { text: '允许通知', role: 'confirm' },
         ],
       })
       await alert.present()
@@ -58,28 +59,28 @@ async function ensureDownloadNotificationPermission(): Promise<void> {
 
 export const JmcomicService = {
   search(query: SearchQuery) {
-    return native.search({query})
+    return native.search({ query })
   },
   categories(query: SearchQuery) {
-    return native.categories({query})
+    return native.categories({ query })
   },
   getAlbum(id: string) {
-    return native.getAlbum({id})
+    return native.getAlbum({ id })
   },
   getPhoto(id: string) {
-    return native.getPhoto({id})
+    return native.getPhoto({ id })
   },
   getComments(query: ForumQuery) {
     return native.getComments(query)
   },
   toggleAlbumLike(id: string) {
-    return native.toggleAlbumLike({id})
+    return native.toggleAlbumLike({ id })
   },
   favorites(query: FavoriteQuery) {
-    return native.getFavorites({query})
+    return native.getFavorites({ query })
   },
   toggleAlbumFavorite(id: string, folderId: string = '0') {
-    return native.toggleAlbumFavorite({id, folderId})
+    return native.toggleAlbumFavorite({ id, folderId })
   },
 
   manageFavoriteFolder(
@@ -88,12 +89,12 @@ export const JmcomicService = {
     folderName: string = '',
     albumId: string = '',
   ) {
-    return native.manageFavoriteFolder({type, folderId, folderName, albumId})
+    return native.manageFavoriteFolder({ type, folderId, folderName, albumId })
   },
 
   /** 登录 */
   login(username: string, password: string) {
-    return native.login({username, password})
+    return native.login({ username, password })
   },
 
   /** 登出 */
@@ -113,7 +114,7 @@ export const JmcomicService = {
 
   /** 获取用户个人资料 */
   getUserProfile(uid: string) {
-    return native.getUserProfile({uid})
+    return native.getUserProfile({ uid })
   },
 
   /**
@@ -129,12 +130,12 @@ export const JmcomicService = {
     type: 'image' | 'thumb' = 'image',
     options: { replacePending?: boolean } = {},
   ) {
-    return native.preloadImages({photoId, images, type, replacePending: options.replacePending})
+    return native.preloadImages({ photoId, images, type, replacePending: options.replacePending })
   },
 
   /** 设置图片缓存容量（MB），供设置页调用 */
   setCacheCapacity(mb: number) {
-    return native.setCacheCapacity({mb})
+    return native.setCacheCapacity({ mb })
   },
 
   /** 查询缓存容量状态，供设置页展示 */
@@ -149,12 +150,12 @@ export const JmcomicService = {
 
   /** 设置下载并发数（1-12） */
   setDownloadConcurrency(n: number) {
-    return native.setDownloadConcurrency({n})
+    return native.setDownloadConcurrency({ n })
   },
 
   /** 设置下载内容是否公开（系统相册可见） */
   setDownloadPublic(open: boolean) {
-    return native.setDownloadPublic({open})
+    return native.setDownloadPublic({ open })
   },
 
   /** 查询下载内容是否公开 */
@@ -174,17 +175,17 @@ export const JmcomicService = {
 
   /** 持久化阅读器预加载页数 */
   setReaderPreloadPages(n: number) {
-    return native.setReaderPreloadPages({n})
+    return native.setReaderPreloadPages({ n })
   },
 
   /** 持久化 OCR 开关 */
   setOcrEnabled(enabled: boolean) {
-    return native.setOcrEnabled({enabled})
+    return native.setOcrEnabled({ enabled })
   },
 
   /** 持久化预加载并发数（下次启动生效） */
   setPreloadConcurrency(n: number) {
-    return native.setPreloadConcurrency({n})
+    return native.setPreloadConcurrency({ n })
   },
 
   /**
@@ -246,7 +247,7 @@ export const JmcomicService = {
     coverUrl: string,
   ) {
     await ensureDownloadNotificationPermission()
-    return native.downloadChapter({albumId, chapterId, albumTitle, chapterTitle, coverUrl})
+    return native.downloadChapter({ albumId, chapterId, albumTitle, chapterTitle, coverUrl })
   },
 
   /** 获取全部下载任务列表 */
@@ -256,27 +257,27 @@ export const JmcomicService = {
 
   /** 取消/删除下载任务 */
   cancelDownload(taskId: string) {
-    return native.cancelDownload({taskId})
+    return native.cancelDownload({ taskId })
   },
 
   /** 暂停下载任务 */
   pauseDownload(taskId: string) {
-    return native.pauseDownload({taskId})
+    return native.pauseDownload({ taskId })
   },
 
   /** 恢复已暂停的下载任务 */
   resumeDownload(taskId: string) {
-    return native.resumeDownload({taskId})
+    return native.resumeDownload({ taskId })
   },
 
   /** 删除已下载的章节（文件 + 记录） */
   deleteDownloaded(albumId: string, chapterId: string) {
-    return native.deleteDownloaded({albumId, chapterId})
+    return native.deleteDownloaded({ albumId, chapterId })
   },
 
   /** 获取离线下载的章节详情（用于离线阅读） */
   getDownloadedPhoto(albumId: string, chapterId: string) {
-    return native.getDownloadedPhoto({albumId, chapterId})
+    return native.getDownloadedPhoto({ albumId, chapterId })
   },
 
   /**
@@ -308,7 +309,7 @@ export const JmcomicService = {
   // ========== 浏览历史 ==========
 
   getBrowseHistory(limit: number, offset: number = 0) {
-    return native.getBrowseHistory({limit, offset})
+    return native.getBrowseHistory({ limit, offset })
   },
   recordBrowse(item: Omit<BrowseHistoryItem, 'id' | 'timestamp'>) {
     return native.recordBrowse(item)
@@ -318,23 +319,23 @@ export const JmcomicService = {
   },
 
   deleteBrowseItem(id: number) {
-    return native.deleteBrowseItem({id})
+    return native.deleteBrowseItem({ id })
   },
 
   // ========== 解析历史 ==========
 
   getParseHistory(limit: number, offset: number = 0) {
-    return native.getParseHistory({limit, offset})
+    return native.getParseHistory({ limit, offset })
   },
   addParseHistory(text: string, mode: string) {
-    return native.addParseHistory({text, mode})
+    return native.addParseHistory({ text, mode })
   },
   clearParseHistory() {
     return native.clearParseHistory()
   },
 
   deleteParseItem(id: number) {
-    return native.deleteParseItem({id})
+    return native.deleteParseItem({ id })
   },
 
   // ========== 离线收藏夹 ==========
@@ -343,25 +344,25 @@ export const JmcomicService = {
     return native.getOfflineFolders()
   },
   createOfflineFolder(name: string) {
-    return native.createOfflineFolder({name})
+    return native.createOfflineFolder({ name })
   },
   renameOfflineFolder(folderId: string, name: string) {
-    return native.renameOfflineFolder({folderId, name})
+    return native.renameOfflineFolder({ folderId, name })
   },
   deleteOfflineFolder(folderId: string) {
-    return native.deleteOfflineFolder({folderId})
+    return native.deleteOfflineFolder({ folderId })
   },
   addOfflineFavorite(folderId: string, item: SearchResultItem) {
-    return native.addOfflineFavorite({folderId, item})
+    return native.addOfflineFavorite({ folderId, item })
   },
   removeOfflineFavorite(folderId: string, albumId: string) {
-    return native.removeOfflineFavorite({folderId, albumId})
+    return native.removeOfflineFavorite({ folderId, albumId })
   },
   getOfflineFavorites(folderId: string, keyword?: string, page: number = 1, pageSize: number = 20) {
-    return native.getOfflineFavorites({folderId, keyword, page, pageSize})
+    return native.getOfflineFavorites({ folderId, keyword, page, pageSize })
   },
   getAllOfflineFavorites(folderId: string) {
-    return native.getAllOfflineFavorites({folderId})
+    return native.getAllOfflineFavorites({ folderId })
   },
   getOfflineFavoritesTotalCount() {
     return native.getOfflineFavoritesTotalCount()
@@ -370,26 +371,26 @@ export const JmcomicService = {
     return native.getAllOfflineFavoritesMerged()
   },
   moveAllOfflineFavorites(sourceId: string, targetId: string) {
-    return native.moveAllOfflineFavorites({sourceId, targetId})
+    return native.moveAllOfflineFavorites({ sourceId, targetId })
   },
   copyOfflineFolder(sourceId: string, name: string) {
-    return native.copyOfflineFolder({sourceId, name})
+    return native.copyOfflineFolder({ sourceId, name })
   },
   addOfflineFavoritesBatch(folderId: string, items: SearchResultItem[]) {
-    return native.addOfflineFavoritesBatch({folderId, items})
+    return native.addOfflineFavoritesBatch({ folderId, items })
   },
   mergeOfflineAllToFolder(targetId: string) {
-    return native.mergeOfflineAllToFolder({targetId})
+    return native.mergeOfflineAllToFolder({ targetId })
   },
 
   saveOfflineBackup(key: string, items: SearchResultItem[]) {
-    return native.saveOfflineBackup({key, items})
+    return native.saveOfflineBackup({ key, items })
   },
   loadOfflineBackup(key: string) {
-    return native.loadOfflineBackup({key})
+    return native.loadOfflineBackup({ key })
   },
   deleteOfflineBackup(key: string) {
-    return native.deleteOfflineBackup({key})
+    return native.deleteOfflineBackup({ key })
   },
   listOfflineBackupKeys() {
     return native.listOfflineBackupKeys()
@@ -404,7 +405,7 @@ export const JmcomicService = {
   // ========== PDF 导出 ==========
 
   exportPdfBatch(tasks: PdfExportTask[]) {
-    return native.exportPdfBatch({tasks})
+    return native.exportPdfBatch({ tasks })
   },
 
   pickFolder() {
@@ -414,11 +415,11 @@ export const JmcomicService = {
   // ========== PDF 导入 ==========
 
   scanPdfFiles(path: string, treeUri?: string) {
-    return native.scanPdfFiles({path, treeUri})
+    return native.scanPdfFiles({ path, treeUri })
   },
 
   importPdfs(items: ImportPdfItem[]) {
-    return native.importPdfs({items})
+    return native.importPdfs({ items })
   },
 
   getImportedPdfs() {
@@ -426,27 +427,27 @@ export const JmcomicService = {
   },
 
   updateLocalEpisodeType(albumId: string, isSingleEpisode: boolean) {
-    return native.updateLocalEpisodeType({albumId, isSingleEpisode})
+    return native.updateLocalEpisodeType({ albumId, isSingleEpisode })
   },
 
   deleteImportedPdf(id: number) {
-    return native.deleteImportedPdf({id})
+    return native.deleteImportedPdf({ id })
   },
 
   openPdf(filePath: string) {
-    return native.openPdf({filePath})
+    return native.openPdf({ filePath })
   },
 
   getPdfInfo(filePath: string) {
-    return native.getPdfInfo({filePath})
+    return native.getPdfInfo({ filePath })
   },
 
   renderPdfPage(filePath: string, page: number, targetWidth: number) {
-    return native.renderPdfPage({filePath, page, targetWidth})
+    return native.renderPdfPage({ filePath, page, targetWidth })
   },
 
   checkFilesExist(paths: string[]) {
-    return native.checkFilesExist({paths})
+    return native.checkFilesExist({ paths })
   },
 
   getExternalStoragePath() {
@@ -468,31 +469,31 @@ export const JmcomicService = {
   // ========== 阅读器设置 ==========
 
   setReaderDisplayMode(mode: string) {
-    return native.setReaderDisplayMode({mode})
+    return native.setReaderDisplayMode({ mode })
   },
   setReaderScreenOrientation(orientation: string) {
-    return native.setReaderScreenOrientation({orientation})
+    return native.setReaderScreenOrientation({ orientation })
   },
   setReaderBrightness(brightness: number) {
-    return native.setReaderBrightness({brightness})
+    return native.setReaderBrightness({ brightness })
   },
   setReaderKeepScreenOn(enabled: boolean) {
-    return native.setReaderKeepScreenOn({enabled})
+    return native.setReaderKeepScreenOn({ enabled })
   },
   setReaderFullscreen(enabled: boolean) {
-    return native.setReaderFullscreen({enabled})
+    return native.setReaderFullscreen({ enabled })
   },
   setReaderVolumeNavigation(enabled: boolean) {
-    return native.setReaderVolumeNavigation({enabled})
+    return native.setReaderVolumeNavigation({ enabled })
   },
   setReaderAutoShowToolbarAtEnd(enabled: boolean) {
-    return native.setReaderAutoShowToolbarAtEnd({enabled})
+    return native.setReaderAutoShowToolbarAtEnd({ enabled })
   },
 
   // ========== 阅读器状态 ==========
 
   setReaderState(isActive: boolean, isVertical: boolean) {
-    return native.setReaderState({isActive, isVertical})
+    return native.setReaderState({ isActive, isVertical })
   },
 
   addVolumeKeyListener(
@@ -503,4 +504,3 @@ export const JmcomicService = {
     })
   },
 }
-

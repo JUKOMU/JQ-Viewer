@@ -1,4 +1,4 @@
-import {computed, ref, type Ref} from 'vue'
+import { computed, ref, type Ref } from 'vue'
 
 export const PREVIEW_BATCH = 20
 
@@ -38,7 +38,7 @@ export function usePreviewBatches(totalCount: Ref<number>, loadBatch: PreviewBat
     const index = sortOrder - 1
     if (index < 0) return
 
-    const image = {sortOrder, dataUrl}
+    const image = { sortOrder, dataUrl }
     if (index >= slots.value.length) {
       pendingSlots.set(index, image)
       return
@@ -48,8 +48,8 @@ export function usePreviewBatches(totalCount: Ref<number>, loadBatch: PreviewBat
 
   const createImageSlotSetterFor =
     (targetGeneration: number): PreviewImageSlotSetter =>
-      (sortOrder, dataUrl) =>
-        setImageSlot(targetGeneration, sortOrder, dataUrl)
+    (sortOrder, dataUrl) =>
+      setImageSlot(targetGeneration, sortOrder, dataUrl)
 
   const createImageSlotSetter = (): PreviewImageSlotSetter => createImageSlotSetterFor(generation)
 
@@ -100,7 +100,7 @@ export function usePreviewBatches(totalCount: Ref<number>, loadBatch: PreviewBat
     for (let start = 0; start < visibleEnd; start += PREVIEW_BATCH) {
       const end = Math.min(start + PREVIEW_BATCH, visibleEnd)
       if (slots.value.slice(start, end).some((slot) => slot === null)) {
-        return {start, end}
+        return { start, end }
       }
     }
     return null

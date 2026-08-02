@@ -5,18 +5,18 @@
       <div class="comments-skeleton">
         <div v-for="n in 4" :key="n" class="sk-card">
           <div class="sk-header">
-            <div class="sk-avatar"/>
-            <div class="sk-line sk-line--short"/>
+            <div class="sk-avatar" />
+            <div class="sk-line sk-line--short" />
           </div>
-          <div class="sk-line"/>
-          <div class="sk-line sk-line--short"/>
+          <div class="sk-line" />
+          <div class="sk-line sk-line--short" />
         </div>
       </div>
     </template>
     <template v-else-if="comments.length">
       <div v-for="comment in comments" :key="comment.commentId" class="comment-card">
         <div class="comment-header">
-          <img v-if="comment.photo" :src="comment.photo" class="comment-avatar" alt=""/>
+          <img v-if="comment.photo" :src="comment.photo" class="comment-avatar" alt="" />
           <div class="comment-meta">
             <span class="comment-user">{{ comment.username }}</span>
             <span class="comment-time">{{ comment.postDate }}</span>
@@ -39,7 +39,9 @@
       <div class="comments-footer">
         <span v-if="loading" class="load-more-hint">加载中...</span>
         <span v-else-if="hasMore" class="load-more-hint">下拉加载更多评论...</span>
-        <span v-else-if="total > 0" class="comments-feedback">已加载 {{ comments.length }}/{{ total }} 条评论</span>
+        <span v-else-if="total > 0" class="comments-feedback"
+          >已加载 {{ comments.length }}/{{ total }} 条评论</span
+        >
       </div>
     </template>
     <div v-else class="comments-empty">暂无评论</div>
@@ -47,7 +49,7 @@
 </template>
 
 <script setup lang="ts">
-defineOptions({name: 'AlbumCommentsTab'})
+defineOptions({ name: 'AlbumCommentsTab' })
 
 defineProps<{
   comments: CommentItem[]
@@ -56,7 +58,7 @@ defineProps<{
   total: number
 }>()
 
-import type {CommentItem} from '@/services/JmcomicTypes'
+import type { CommentItem } from '@/services/JmcomicTypes'
 </script>
 
 <style scoped>

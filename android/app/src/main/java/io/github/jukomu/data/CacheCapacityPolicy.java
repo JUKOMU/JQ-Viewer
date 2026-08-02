@@ -50,8 +50,8 @@ public final class CacheCapacityPolicy {
         RUNNING_LOW("running-low", true),
         RUNNING_CRITICAL("running-critical", true),
         UI_HIDDEN("ui-hidden", false),
-        BACKGROUND("background", false),
-        MODERATE("moderate", false),
+        BACKGROUND("background", true),
+        MODERATE("moderate", true),
         COMPLETE("complete", true);
 
         private final String value;

@@ -33,7 +33,7 @@ import java.util.Locale;
 @RunWith(AndroidJUnit4.class)
 public class PdfExportServiceInstrumentedTest {
 
-    private static final String ALBUM_ID = "phase6-album";
+    private static final String ALBUM_ID = "900000001";
     private static final long EXPORT_TIMEOUT_MS = 10_000L;
     private static final long LARGE_EXPORT_TIMEOUT_MS = 90_000L;
 
@@ -62,9 +62,9 @@ public class PdfExportServiceInstrumentedTest {
 
     @Test
     public void exportsMergedChaptersInOrderAndSplitsByTotalPages() throws Exception {
-        File chapterTwo = fileStore.ensureChapterDir(ALBUM_ID, "chapter-2");
-        File chapterFive = fileStore.ensureChapterDir(ALBUM_ID, "chapter-5");
-        File unselectedChapter = fileStore.ensureChapterDir(ALBUM_ID, "chapter-9");
+        File chapterTwo = fileStore.ensureChapterDir(ALBUM_ID, "900000002");
+        File chapterFive = fileStore.ensureChapterDir(ALBUM_ID, "900000005");
+        File unselectedChapter = fileStore.ensureChapterDir(ALBUM_ID, "900000009");
         createImage(chapterTwo, "page-001.jpg", 10, 20, Color.RED);
         createImage(chapterTwo, "page-002.jpg", 20, 30, Color.GREEN);
         createImage(chapterFive, "page-001.jpg", 30, 40, Color.BLUE);
@@ -77,8 +77,8 @@ public class PdfExportServiceInstrumentedTest {
         job.albumId = ALBUM_ID;
         job.chapterTitle = "第2话+第5话";
         job.chapters = Arrays.asList(
-            chapter("chapter-2", "第2话", 2),
-            chapter("chapter-5", "第5话", 5)
+            chapter("900000002", "第2话", 2),
+            chapter("900000005", "第5话", 5)
         );
         job.savePath = output.getAbsolutePath();
         job.useOriginal = true;
@@ -101,8 +101,8 @@ public class PdfExportServiceInstrumentedTest {
 
     @Test
     public void exportsOneThousandPagesWithoutLeavingArtifacts() throws Exception {
-        File firstChapter = fileStore.ensureChapterDir(ALBUM_ID, "large-1");
-        File secondChapter = fileStore.ensureChapterDir(ALBUM_ID, "large-2");
+        File firstChapter = fileStore.ensureChapterDir(ALBUM_ID, "900001001");
+        File secondChapter = fileStore.ensureChapterDir(ALBUM_ID, "900001002");
         createRepeatedImages(firstChapter, 500, Color.RED);
         createRepeatedImages(secondChapter, 500, Color.BLUE);
 
@@ -112,8 +112,8 @@ public class PdfExportServiceInstrumentedTest {
         job.albumId = ALBUM_ID;
         job.chapterTitle = "第1-2话";
         job.chapters = Arrays.asList(
-            chapter("large-1", "第1话", 1),
-            chapter("large-2", "第2话", 2)
+            chapter("900001001", "第1话", 1),
+            chapter("900001002", "第2话", 2)
         );
         job.savePath = output.getAbsolutePath();
         job.useOriginal = true;

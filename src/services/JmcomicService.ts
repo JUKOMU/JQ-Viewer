@@ -1,7 +1,7 @@
-import {toastController} from '@ionic/vue'
+import { toastController } from '@ionic/vue'
 
-export {JmcomicService} from './jmcomic/JmcomicServiceFacade'
-export {getImageUrl} from './jmcomic/imageUrl'
+export { JmcomicService } from './jmcomic/JmcomicServiceFacade'
+export { getImageUrl } from './jmcomic/imageUrl'
 
 /** 清洗错误消息，将技术性错误替换为用户友好提示 */
 export function sanitizeError(error: unknown, fallback: string): string {

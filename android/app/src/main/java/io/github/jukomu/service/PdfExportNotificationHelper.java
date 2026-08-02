@@ -119,7 +119,7 @@ public class PdfExportNotificationHelper {
         } catch (SecurityException e) {
             Log.d(TAG, "通知权限未授予，跳过取消 PDF 通知", e);
         } catch (RuntimeException e) {
-            Log.d(TAG, "取消 PDF 通知失败", e);
+            Log.w(TAG, "取消 PDF 通知失败", e);
         }
     }
 
@@ -130,7 +130,7 @@ public class PdfExportNotificationHelper {
         } catch (SecurityException e) {
             Log.d(TAG, "通知权限未授予，跳过 PDF 通知", e);
         } catch (RuntimeException e) {
-            Log.d(TAG, "发布 PDF 通知失败", e);
+            Log.w(TAG, "发布 PDF 通知失败", e);
         }
     }
 }

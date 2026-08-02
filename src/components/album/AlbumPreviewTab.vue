@@ -13,7 +13,7 @@
             />
           </template>
           <template v-else>
-            <div class="skeleton-thumb"/>
+            <div class="skeleton-thumb" />
           </template>
           <span class="preview-page-num">{{ i }}</span>
         </div>
@@ -22,12 +22,12 @@
       <div v-if="totalCount > 0" class="preview-footer">
         <button
           class="load-more-btn"
-          :class="{'load-more-status': loadingMore || autoLoad || allVisible}"
+          :class="{ 'load-more-status': loadingMore || autoLoad || allVisible }"
           :aria-disabled="loadingMore || autoLoad || allVisible"
           @click="onLoadMore"
         >
           <template v-if="loadingMore">
-            <ion-spinner name="dots" aria-hidden="true"/>
+            <ion-spinner name="dots" aria-hidden="true" />
             <span>加载中...（{{ loadedCount }} / {{ totalCount }}）</span>
           </template>
           <span v-else-if="allVisible">已显示所有图片</span>
@@ -51,11 +51,11 @@
 </template>
 
 <script setup lang="ts">
-import {computed} from 'vue'
-import {IonSpinner} from '@ionic/vue'
-import type {PreviewImage} from '@/composables/usePreviewBatches'
+import { computed } from 'vue'
+import { IonSpinner } from '@ionic/vue'
+import type { PreviewImage } from '@/composables/usePreviewBatches'
 
-defineOptions({name: 'AlbumPreviewTab'})
+defineOptions({ name: 'AlbumPreviewTab' })
 
 const props = defineProps<{
   slots: (PreviewImage | null)[]
@@ -183,8 +183,9 @@ const onLoadMore = () => {
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: background-color 0.18s ease,
-  color 0.18s ease;
+  transition:
+    background-color 0.18s ease,
+    color 0.18s ease;
 }
 
 .load-more-btn.load-more-status {

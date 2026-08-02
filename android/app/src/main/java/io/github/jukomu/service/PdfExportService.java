@@ -432,7 +432,7 @@ public class PdfExportService {
     }
 
     private static List<PdfBoxExportWriter.ExportImageDescriptor> flattenImageDescriptors(
-            List<ChapterPreflight> chapters, int totalPages) {
+        List<ChapterPreflight> chapters, int totalPages) {
         List<PdfBoxExportWriter.ExportImageDescriptor> imageFiles = new ArrayList<>(totalPages);
         for (ChapterPreflight chapter : chapters) {
             imageFiles.addAll(chapter.images);
@@ -624,9 +624,9 @@ public class PdfExportService {
     }
 
     static long estimateRequiredBytesForExport(
-            List<ExportVolume> volumes,
-            List<PdfBoxExportWriter.ExportImageDescriptor> images,
-            boolean useOriginal) {
+        List<ExportVolume> volumes,
+        List<PdfBoxExportWriter.ExportImageDescriptor> images,
+        boolean useOriginal) {
         long requiredBytes = 0L;
         long retainedDeltaBefore = 0L;
         for (ExportVolume volume : volumes) {
@@ -649,8 +649,8 @@ public class PdfExportService {
     }
 
     static long estimateRequiredBytesForVolume(
-            List<PdfBoxExportWriter.ExportImageDescriptor> images,
-            boolean useOriginal) {
+        List<PdfBoxExportWriter.ExportImageDescriptor> images,
+        boolean useOriginal) {
         return saturatingAdd(
             estimatePeakWorkingBytes(estimateFinalPdfBytes(sumImageBytes(images), useOriginal)),
             FREE_SPACE_MARGIN_BYTES

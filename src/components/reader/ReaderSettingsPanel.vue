@@ -1,10 +1,10 @@
 <template>
-  <div class="panel-overlay" :class="{show: visible}" @click.self="$emit('close')">
-    <div class="panel-card" :class="{show: visible}">
+  <div class="panel-overlay" :class="{ show: visible }" @click.self="$emit('close')">
+    <div class="panel-card" :class="{ show: visible }">
       <div class="panel-header">
         <span class="panel-title">阅读设置</span>
         <button type="button" class="close-btn" @click="$emit('close')">
-          <ion-icon :icon="closeOutline"/>
+          <ion-icon :icon="closeOutline" />
         </button>
       </div>
 
@@ -13,15 +13,14 @@
         <div class="setting-row">
           <span class="setting-label">显示模式</span>
           <div class="segmented">
-            <button
-              :class="['seg-btn', {active: isVertical}]"
-              @click="onDisplayModeChange(true)"
-            >纵向
+            <button :class="['seg-btn', { active: isVertical }]" @click="onDisplayModeChange(true)">
+              纵向
             </button>
             <button
-              :class="['seg-btn', {active: !isVertical}]"
+              :class="['seg-btn', { active: !isVertical }]"
               @click="onDisplayModeChange(false)"
-            >横向
+            >
+              横向
             </button>
           </div>
         </div>
@@ -31,19 +30,22 @@
           <span class="setting-label">屏幕方向</span>
           <div class="segmented">
             <button
-              :class="['seg-btn', {active: localOrientation === 'auto'}]"
+              :class="['seg-btn', { active: localOrientation === 'auto' }]"
               @click="onOrientationChange('auto')"
-            >自动
+            >
+              自动
             </button>
             <button
-              :class="['seg-btn', {active: localOrientation === 'portrait'}]"
+              :class="['seg-btn', { active: localOrientation === 'portrait' }]"
               @click="onOrientationChange('portrait')"
-            >竖屏
+            >
+              竖屏
             </button>
             <button
-              :class="['seg-btn', {active: localOrientation === 'landscape'}]"
+              :class="['seg-btn', { active: localOrientation === 'landscape' }]"
               @click="onOrientationChange('landscape')"
-            >横屏
+            >
+              横屏
             </button>
           </div>
         </div>
@@ -158,14 +160,14 @@
 </template>
 
 <script setup lang="ts">
-import {nextTick, onMounted, ref} from 'vue'
-import type {RangeCustomEvent} from '@ionic/vue'
-import {IonIcon, IonRange, IonToggle} from '@ionic/vue'
-import {closeOutline} from 'ionicons/icons'
-import {JmcomicService, showToast} from '@/services/JmcomicService'
-import {persistPreloadConcurrency, SettingsStore} from '@/services/SettingsService'
+import { nextTick, onMounted, ref } from 'vue'
+import type { RangeCustomEvent } from '@ionic/vue'
+import { IonIcon, IonRange, IonToggle } from '@ionic/vue'
+import { closeOutline } from 'ionicons/icons'
+import { JmcomicService, showToast } from '@/services/JmcomicService'
+import { persistPreloadConcurrency, SettingsStore } from '@/services/SettingsService'
 
-defineOptions({name: 'ReaderSettingsPanel'})
+defineOptions({ name: 'ReaderSettingsPanel' })
 
 defineProps<{
   isVertical: boolean
@@ -198,8 +200,7 @@ onMounted(() => {
 // ---- 显示模式 ----
 function onDisplayModeChange(vertical: boolean) {
   SettingsStore.setReaderDisplayMode(vertical ? 'vertical' : 'horizontal')
-  JmcomicService.setReaderDisplayMode(vertical ? 'vertical' : 'horizontal').catch(() => {
-  })
+  JmcomicService.setReaderDisplayMode(vertical ? 'vertical' : 'horizontal').catch(() => {})
   emit('update:display-mode', vertical)
 }
 
@@ -207,8 +208,7 @@ function onDisplayModeChange(vertical: boolean) {
 function onOrientationChange(orientation: string) {
   localOrientation.value = orientation
   SettingsStore.setReaderScreenOrientation(orientation)
-  JmcomicService.setReaderScreenOrientation(orientation).catch(() => {
-  })
+  JmcomicService.setReaderScreenOrientation(orientation).catch(() => {})
 }
 
 // ---- 亮度 ----
@@ -218,13 +218,11 @@ function onFollowSystemChange(e: CustomEvent) {
   if (follow) {
     localBrightness.value = -1
     SettingsStore.setReaderBrightness(-1)
-    JmcomicService.setReaderBrightness(-1).catch(() => {
-    })
+    JmcomicService.setReaderBrightness(-1).catch(() => {})
   } else {
     localBrightness.value = 0.5
     SettingsStore.setReaderBrightness(0.5)
-    JmcomicService.setReaderBrightness(0.5).catch(() => {
-    })
+    JmcomicService.setReaderBrightness(0.5).catch(() => {})
   }
 }
 
@@ -232,8 +230,7 @@ function onBrightnessChange(e: RangeCustomEvent) {
   const val = Number(e.detail.value)
   localBrightness.value = val
   SettingsStore.setReaderBrightness(val)
-  JmcomicService.setReaderBrightness(val).catch(() => {
-  })
+  JmcomicService.setReaderBrightness(val).catch(() => {})
 }
 
 // ---- 防止熄屏 ----
@@ -241,8 +238,7 @@ function onKeepScreenOnChange(e: CustomEvent) {
   const enabled = e.detail.checked
   localKeepScreenOn.value = enabled
   SettingsStore.setReaderKeepScreenOn(enabled)
-  JmcomicService.setReaderKeepScreenOn(enabled).catch(() => {
-  })
+  JmcomicService.setReaderKeepScreenOn(enabled).catch(() => {})
 }
 
 // ---- 音量键翻页 ----
@@ -250,8 +246,7 @@ function onVolumeNavigationChange(e: CustomEvent) {
   const enabled = e.detail.checked
   localVolumeNavigation.value = enabled
   SettingsStore.setReaderVolumeNavigation(enabled)
-  JmcomicService.setReaderVolumeNavigation(enabled).catch(() => {
-  })
+  JmcomicService.setReaderVolumeNavigation(enabled).catch(() => {})
 }
 
 // ---- 阅读结束时展开工具栏 ----
@@ -259,8 +254,7 @@ function onAutoShowToolbarAtEndChange(e: CustomEvent) {
   const enabled = e.detail.checked
   localAutoShowToolbarAtEnd.value = enabled
   SettingsStore.setReaderAutoShowToolbarAtEnd(enabled)
-  JmcomicService.setReaderAutoShowToolbarAtEnd(enabled).catch(() => {
-  })
+  JmcomicService.setReaderAutoShowToolbarAtEnd(enabled).catch(() => {})
 }
 
 // ---- 预加载页数 ----
@@ -398,7 +392,9 @@ function onPreloadConcurrencyChange(e: Event) {
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s;
 }
 
 .seg-btn:not(:last-child) {

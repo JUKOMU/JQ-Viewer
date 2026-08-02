@@ -69,7 +69,8 @@ const album = {
 
 describe('KeywordSearchBar 数字 ID 导航', () => {
   beforeEach(() => {
-    mocks.router.push.mockClear()
+    mocks.router.push.mockReset()
+    mocks.router.push.mockResolvedValue(undefined)
     mocks.getAlbum.mockReset()
     mocks.showToast.mockClear()
   })
@@ -127,6 +128,34 @@ describe('KeywordSearchBar 数字 ID 导航', () => {
     expect(mocks.showToast).toHaveBeenCalledWith('本子不存在', 'danger')
     expect(mocks.router.push).not.toHaveBeenCalled()
     expect(wrapper.emitted('search')).toBeUndefined()
+  })
+
+  test('详情缺少作者字段时仍然导航', async () => {
+    mocks.getAlbum.mockResolvedValue({...album, authors: undefined})
+    const wrapper = mount(KeywordSearchBar)
+
+    await wrapper.find('input').setValue('123')
+    await wrapper.get('.search-trigger-btn').trigger('click')
+    await flushPromises()
+
+    expect(mocks.router.push).toHaveBeenCalledWith({
+      path: '/album/123',
+      query: {title: '测试本子', coverUrl: 'cover.jpg', authors: ''},
+    })
+    expect(mocks.showToast).not.toHaveBeenCalled()
+  })
+
+  test('导航失败不会误报本子不存在', async () => {
+    mocks.getAlbum.mockResolvedValue(album)
+    mocks.router.push.mockRejectedValue(new Error('navigation failed'))
+    const wrapper = mount(KeywordSearchBar)
+
+    await wrapper.find('input').setValue('123')
+    await wrapper.get('.search-trigger-btn').trigger('click')
+    await flushPromises()
+
+    expect(mocks.showToast).toHaveBeenCalledWith('Error: navigation failed', 'danger')
+    expect(mocks.showToast).not.toHaveBeenCalledWith('本子不存在', 'danger')
   })
 
   test('普通关键词仍发出搜索事件', async () => {

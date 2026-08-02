@@ -16,7 +16,7 @@
 
       <div class="search-page-top">
         <div class="search-page-toolbar" :class="{ pinned: pullHeaderPinned }">
-          <MenuToggleButton/>
+          <MenuToggleButton />
           <div class="toolbar-search">
             <SearchHeaderBar
               ref="headerSearchRef"
@@ -56,7 +56,7 @@
             aria-label="更多操作"
             @click.stop="openCardMenu(item, $event)"
           >
-            <IonIcon :icon="ellipsisVertical"/>
+            <IonIcon :icon="ellipsisVertical" />
           </button>
         </template>
       </SearchResultContainer>
@@ -71,19 +71,27 @@
         @touchstart.stop
       >
         <button type="button" class="card-menu-item" @click.stop="handleCardDetail(cardMenu.item)">
-          <IonIcon :icon="informationCircleOutline" class="card-menu-icon"/>
+          <IonIcon :icon="informationCircleOutline" class="card-menu-icon" />
           <span>详情</span>
         </button>
         <button type="button" class="card-menu-item" @click.stop="handleCardRead(cardMenu.item)">
-          <IonIcon :icon="bookOutline" class="card-menu-icon"/>
+          <IonIcon :icon="bookOutline" class="card-menu-icon" />
           <span>阅读</span>
         </button>
-        <button type="button" class="card-menu-item" @click.stop="handleCardDownload(cardMenu.item)">
-          <IonIcon :icon="downloadOutline" class="card-menu-icon"/>
+        <button
+          type="button"
+          class="card-menu-item"
+          @click.stop="handleCardDownload(cardMenu.item)"
+        >
+          <IonIcon :icon="downloadOutline" class="card-menu-icon" />
           <span>下载</span>
         </button>
-        <button type="button" class="card-menu-item" @click.stop="handleCardFavorite(cardMenu.item)">
-          <IonIcon :icon="heartOutline" class="card-menu-icon"/>
+        <button
+          type="button"
+          class="card-menu-item"
+          @click.stop="handleCardFavorite(cardMenu.item)"
+        >
+          <IonIcon :icon="heartOutline" class="card-menu-icon" />
           <span>收藏</span>
         </button>
       </div>
@@ -110,11 +118,26 @@
 </template>
 
 <script setup lang="ts">
-import {computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch} from 'vue'
-import {useRoute, useRouter} from 'vue-router'
-import {alertController, IonContent, IonIcon, IonPage} from '@ionic/vue'
-import {bookOutline, downloadOutline, ellipsisVertical, heartOutline, informationCircleOutline,} from 'ionicons/icons'
-import type {ScrollCustomEvent} from '@ionic/core'
+import {
+  computed,
+  nextTick,
+  onActivated,
+  onBeforeUnmount,
+  onDeactivated,
+  onMounted,
+  ref,
+  watch,
+} from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { alertController, IonContent, IonIcon, IonPage } from '@ionic/vue'
+import {
+  bookOutline,
+  downloadOutline,
+  ellipsisVertical,
+  heartOutline,
+  informationCircleOutline,
+} from 'ionicons/icons'
+import type { ScrollCustomEvent } from '@ionic/core'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import QuickActionFab from '@/components/common/QuickActionFab.vue'
 import SearchHeaderBar from '@/components/search/SearchHeaderBar.vue'
@@ -124,13 +147,20 @@ import type {
   SearchResultDisplayItem,
 } from '@/components/search/SearchResultContainer.vue'
 import SearchResultContainer from '@/components/search/SearchResultContainer.vue'
-import {JmcomicService, sanitizeError, showToast} from '@/services/JmcomicService'
-import {OfflineDownloadService} from '@/services/OfflineDownloadService'
-import {OfflineFavoriteService} from '@/services/OfflineFavoriteService'
-import {useAuth} from '@/composables/useAuth'
-import type {FavoriteResult, FolderEntry, SearchQuery, SearchResult, SearchResultItem} from '@/services/JmcomicTypes'
+import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
+import { OfflineDownloadService } from '@/services/OfflineDownloadService'
+import { OfflineFavoriteService } from '@/services/OfflineFavoriteService'
+import { useAuth } from '@/composables/useAuth'
+import type {
+  AlbumDetail,
+  FavoriteResult,
+  FolderEntry,
+  SearchQuery,
+  SearchResult,
+  SearchResultItem,
+} from '@/services/JmcomicTypes'
 
-defineOptions({name: 'SearchPage'})
+defineOptions({ name: 'SearchPage' })
 
 const NEXT_PAGE_THRESHOLD = 220
 
@@ -244,7 +274,7 @@ const maybeLoadNextAfterRender = async () => {
 }
 
 const fetchPage = async (query: SearchQuery, page: number) => {
-  const nextQuery = {...query, page}
+  const nextQuery = { ...query, page }
   return nextQuery.keyword?.trim()
     ? await JmcomicService.search(nextQuery)
     : await JmcomicService.categories(nextQuery)
@@ -256,26 +286,33 @@ const resetWithPage = async (query: SearchQuery) => {
   if (/^\d+$/.test(trimmedKeyword)) {
     initialLoading.value = true
     errorMessage.value = ''
+    resultMeta.value = null
+    pageCache.value = {}
+    let album: AlbumDetail
     try {
-      const album = await JmcomicService.getAlbum(trimmedKeyword)
+      album = await JmcomicService.getAlbum(trimmedKeyword)
       if (!album || String(album.id ?? '').trim() !== trimmedKeyword || !album.title?.trim()) {
         throw new Error('invalid album detail')
       }
+    } catch {
+      await showToast('本子不存在', 'danger')
+      return
+    } finally {
       initialLoading.value = false
+    }
+    try {
       await router.replace({
         path: `/album/${trimmedKeyword}`,
         query: {
           title: album.title,
           coverUrl: album.image,
-          authors: album.authors.join(','),
+          authors: album.authors?.join(',') ?? '',
         },
       })
-      return
-    } catch {
-      initialLoading.value = false
-      await showToast('本子不存在', 'danger')
-      return
+    } catch (error) {
+      await showToast(sanitizeError(error, '打开详情失败'), 'danger')
     }
+    return
   }
 
   initialLoading.value = true
@@ -315,26 +352,26 @@ const updateRouteQuery = (query: SearchQuery) => {
 }
 
 const submitSearch = (query: SearchQuery) => {
-  const newQuery = {...query, page: 1}
+  const newQuery = { ...query, page: 1 }
   if (/^\d+$/.test((newQuery.keyword ?? '').trim())) {
-    lastSearchedQuery.value = {...newQuery}
+    lastSearchedQuery.value = { ...newQuery }
     void resetWithPage(newQuery)
     return
   }
-  lastSearchedQuery.value = {...newQuery}
+  lastSearchedQuery.value = { ...newQuery }
   void resetWithPage(newQuery)
   updateRouteQuery(newQuery)
 }
 
 const submitOverlaySearch = (query: SearchQuery) => {
   closeSearchOverlay()
-  const newQuery = {...query, page: 1}
+  const newQuery = { ...query, page: 1 }
   if (/^\d+$/.test((newQuery.keyword ?? '').trim())) {
-    lastSearchedQuery.value = {...newQuery}
+    lastSearchedQuery.value = { ...newQuery }
     void resetWithPage(newQuery)
     return
   }
-  lastSearchedQuery.value = {...newQuery}
+  lastSearchedQuery.value = { ...newQuery }
   void resetWithPage(newQuery)
   updateRouteQuery(newQuery)
 }
@@ -469,7 +506,7 @@ const handleItemClick = (item: SearchResultItem) => {
 
 // ========== 卡片操作菜单 ==========
 
-const {isLoggedIn} = useAuth()
+const { isLoggedIn } = useAuth()
 
 interface CardMenuState {
   item: SearchResultItem
@@ -494,7 +531,7 @@ const cardMenuStyle = computed(() => {
 
 function openCardMenu(item: SearchResultItem, event: MouseEvent) {
   const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-  cardMenu.value = {item, x: rect.left, y: rect.bottom + 4}
+  cardMenu.value = { item, x: rect.left, y: rect.bottom + 4 }
   setTimeout(() => {
     document.addEventListener('mousedown', handleCardMenuClickOutside)
     document.addEventListener('touchstart', handleCardMenuClickOutside)
@@ -516,7 +553,7 @@ function handleCardDetail(item: SearchResultItem) {
   closeCardMenu()
   void router.push({
     path: `/album/${item.id}`,
-    query: {title: item.title, coverUrl: item.coverUrl, authors: item.authors.join(',')},
+    query: { title: item.title, coverUrl: item.coverUrl, authors: item.authors.join(',') },
   })
 }
 
@@ -526,7 +563,7 @@ async function handleCardRead(item: SearchResultItem) {
     const photo = await JmcomicService.getPhoto(item.id)
     await router.push({
       path: `/album/${item.id}/read/${photo.id}`,
-      query: {title: item.title, total: String(photo.images.length)},
+      query: { title: item.title, total: String(photo.images.length) },
     })
   } catch {
     await showToast('获取章节失败', 'danger')
@@ -585,15 +622,15 @@ async function loadOnlineFolderData() {
     return
   }
   try {
-    const result: FavoriteResult = await JmcomicService.favorites({folderId: '0', page: 1})
+    const result: FavoriteResult = await JmcomicService.favorites({ folderId: '0', page: 1 })
     if (result.folderList) {
       const entries: FolderEntry[] = []
       const countPromises: Promise<void>[] = []
       const counts: Record<string, number> = {}
       for (const [id, name] of Object.entries(result.folderList)) {
-        entries.push({id, name, count: 0})
+        entries.push({ id, name, count: 0 })
         countPromises.push(
-          JmcomicService.favorites({folderId: id, page: 1})
+          JmcomicService.favorites({ folderId: id, page: 1 })
             .then((r) => {
               counts[id] = r.totalItems
             })
@@ -651,9 +688,9 @@ async function executeFavorite(
 async function onPickerAddFolder() {
   const alert = await alertController.create({
     header: '新建收藏夹',
-    inputs: [{name: 'name', type: 'text', placeholder: '收藏夹名称'}],
+    inputs: [{ name: 'name', type: 'text', placeholder: '收藏夹名称' }],
     buttons: [
-      {text: '取消', role: 'cancel'},
+      { text: '取消', role: 'cancel' },
       {
         text: '确定',
         handler: async (data) => {
@@ -716,7 +753,7 @@ const jumpToPage = async () => {
       },
     ],
     buttons: [
-      {text: '取消', role: 'cancel'},
+      { text: '取消', role: 'cancel' },
       {
         text: '跳转',
         handler: (data: { page?: string }) => {
@@ -724,7 +761,7 @@ const jumpToPage = async () => {
           if (!Number.isInteger(page) || page < 1 || page > resultMeta.value!.totalPages) {
             return false
           }
-          updateRouteQuery({...currentQuery.value, page})
+          updateRouteQuery({ ...currentQuery.value, page })
           return true
         },
       },
@@ -751,10 +788,10 @@ watch(
   (query) => {
     if (route.name !== 'SearchPage') return
     if (lastSearchedQuery.value && queryEqual(query, lastSearchedQuery.value)) return
-    lastSearchedQuery.value = {...query}
+    lastSearchedQuery.value = { ...query }
     void resetWithPage(query)
   },
-  {immediate: true},
+  { immediate: true },
 )
 
 const savedScrollTop = ref(0)
@@ -822,8 +859,9 @@ onMounted(() => {
 
 .search-overlay-enter-active .search-overlay-panel,
 .search-overlay-leave-active .search-overlay-panel {
-  transition: transform 0.22s ease,
-  opacity 0.22s ease;
+  transition:
+    transform 0.22s ease,
+    opacity 0.22s ease;
 }
 
 .search-overlay-enter-from,

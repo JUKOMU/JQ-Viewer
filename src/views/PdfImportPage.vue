@@ -3,15 +3,11 @@
     <IonHeader class="ion-no-border">
       <IonToolbar>
         <IonButtons slot="start">
-          <IonBackButton default-href="/download"/>
+          <IonBackButton default-href="/download" />
         </IonButtons>
         <IonTitle class="toolbar-title">导入PDF</IonTitle>
         <IonButtons slot="end" class="toolbar-end-actions">
-          <button
-            class="confirm-btn"
-            :disabled="loading || !hasAnyResolved"
-            @click="onConfirm"
-          >
+          <button class="confirm-btn" :disabled="loading || !hasAnyResolved" @click="onConfirm">
             确认导入
           </button>
         </IonButtons>
@@ -22,7 +18,7 @@
       <div class="page-container">
         <!-- 空状态 -->
         <div v-if="files.length === 0 && !loading" class="empty-state">
-          <IonIcon :icon="documentTextOutline" class="empty-icon"/>
+          <IonIcon :icon="documentTextOutline" class="empty-icon" />
           <p>所选文件夹中未找到 PDF 文件</p>
         </div>
 
@@ -32,8 +28,8 @@
           <span class="stat ambiguous">多ID {{ ambiguousCount }}</span>
           <span class="stat missing">无ID {{ missingCount }}</span>
           <span v-if="duplicateCount > 0" class="stat duplicate">
-          ID重复 {{ duplicateCount }}
-        </span>
+            ID重复 {{ duplicateCount }}
+          </span>
         </div>
 
         <!-- 文件卡片列表 -->
@@ -42,18 +38,17 @@
             v-for="(file, idx) in files"
             :key="file.filePath"
             class="file-card"
-            :class="[cardClass(file), { searchable: canSearchFile(file), selected: searchTargetIdx === idx }]"
+            :class="[
+              cardClass(file),
+              { searchable: canSearchFile(file), selected: searchTargetIdx === idx },
+            ]"
             @click="openSearchDrawer(idx)"
           >
             <!-- 封面区 -->
             <div class="cover-wrap">
-              <img
-                v-if="file.albumDetail?.image"
-                :src="file.albumDetail.image"
-                class="cover-img"
-              />
+              <img v-if="file.albumDetail?.image" :src="file.albumDetail.image" class="cover-img" />
               <div v-else class="cover-placeholder">
-                <IonIcon :icon="canSearchFile(file) ? searchOutline : documentTextOutline"/>
+                <IonIcon :icon="canSearchFile(file) ? searchOutline : documentTextOutline" />
               </div>
             </div>
 
@@ -67,23 +62,29 @@
                 作者：{{ file.albumDetail.authors.join(' / ') }}
               </div>
               <div v-if="file.albumDetail?.tags?.length" class="item-tags">
-              <span
-                v-for="t in file.albumDetail.tags.slice(0, 10)"
-                :key="t"
-                class="tag-chip"
-              >{{ t }}</span>
+                <span v-for="t in file.albumDetail.tags.slice(0, 10)" :key="t" class="tag-chip">{{
+                  t
+                }}</span>
                 <span v-if="file.albumDetail.tags.length > 10" class="tag-chip tag-more">...</span>
               </div>
               <div class="status-row">
-                <span class="status-tag" :class="statusTagClass(file)">{{ statusTagText(file) }}</span>
+                <span class="status-tag" :class="statusTagClass(file)">{{
+                  statusTagText(file)
+                }}</span>
                 <span v-if="shouldShowChapterTag(file)" class="status-tag chapter-tag">
-                第{{ file.chapterSortOrder }}话
-              </span>
-                <span v-else-if="needsChapterSelection(file)" class="status-tag chapter-tag pending">
-                {{ chapterSelectionText(file) }}
-              </span>
+                  第{{ file.chapterSortOrder }}话
+                </span>
+                <span
+                  v-else-if="needsChapterSelection(file)"
+                  class="status-tag chapter-tag pending"
+                >
+                  {{ chapterSelectionText(file) }}
+                </span>
               </div>
-              <div v-if="file.status === 'ambiguous' && candidateIds(file).length > 1" class="candidate-row">
+              <div
+                v-if="file.status === 'ambiguous' && candidateIds(file).length > 1"
+                class="candidate-row"
+              >
                 <button
                   v-for="id in candidateIds(file)"
                   :key="id"
@@ -99,17 +100,17 @@
 
             <!-- 编辑按钮 -->
             <button class="edit-btn" @click.stop="toggleEdit(idx)">
-              <IonIcon :icon="editingIdx === idx ? checkmarkOutline : createOutline"/>
+              <IonIcon :icon="editingIdx === idx ? checkmarkOutline : createOutline" />
             </button>
 
             <!-- 编辑模式遮罩 -->
             <div v-show="editingIdx === idx" class="edit-overlay">
-            <textarea
-              v-model="editText"
-              class="edit-textarea"
-              rows="2"
-              @keydown.enter.prevent="applyEdit(idx)"
-            />
+              <textarea
+                v-model="editText"
+                class="edit-textarea"
+                rows="2"
+                @keydown.enter.prevent="applyEdit(idx)"
+              />
               <div class="edit-actions">
                 <span class="edit-hint">末尾空格+数字=章节序号，如 <code>123456 3</code></span>
                 <button class="apply-btn" @click="applyEdit(idx)">应用</button>
@@ -149,7 +150,7 @@
             {{ confirmButtonLabel }}
           </button>
         </Transition>
-        <div class="drawer-grip"/>
+        <div class="drawer-grip" />
       </div>
 
       <div class="drawer-body">
@@ -164,7 +165,10 @@
           @search="submitDrawerSearch"
         />
         <Transition name="chapter-panel">
-          <section v-if="selectedCandidate && candidateChapters.length > 1" class="chapter-select-panel">
+          <section
+            v-if="selectedCandidate && candidateChapters.length > 1"
+            class="chapter-select-panel"
+          >
             <div class="chapter-select-head">
               <span class="chapter-select-title">选择章节</span>
               <span v-if="candidateDetailLoading" class="chapter-select-loading">加载中...</span>
@@ -205,7 +209,7 @@
               aria-label="查看详情"
               @click.stop="openCandidateDetail(item)"
             >
-              <IonIcon :icon="informationCircleOutline"/>
+              <IonIcon :icon="informationCircleOutline" />
             </button>
           </template>
           <template #item-info-extra="{ item }">
@@ -214,7 +218,9 @@
                 v-if="drawerDetailVisible && selectedCandidate?.id === item.id"
                 class="drawer-info-expanded"
               >
-                <div v-if="candidateDetailLoading" class="drawer-detail-loading">正在加载详情...</div>
+                <div v-if="candidateDetailLoading" class="drawer-detail-loading">
+                  正在加载详情...
+                </div>
                 <div v-else>
                   <div v-if="candidateChapters.length > 0" class="drawer-detail-meta-row">
                     <span>章节：{{ candidateChapters.length }}</span>
@@ -234,9 +240,9 @@
 </template>
 
 <script setup lang="ts">
-defineOptions({name: 'PdfImportPage'})
+defineOptions({ name: 'PdfImportPage' })
 
-import {computed, nextTick, onBeforeUnmount, onMounted, ref} from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
   alertController,
   IonBackButton,
@@ -246,31 +252,31 @@ import {
   IonIcon,
   IonPage,
   IonTitle,
-  IonToolbar
+  IonToolbar,
 } from '@ionic/vue'
-import {useRouter} from 'vue-router'
+import { useRouter } from 'vue-router'
 import {
   checkmarkOutline,
   createOutline,
   documentTextOutline,
   informationCircleOutline,
-  searchOutline
+  searchOutline,
 } from 'ionicons/icons'
-import {PdfImportService} from '@/services/PdfImportService'
-import {JmcomicService, sanitizeError, showToast} from '@/services/JmcomicService'
-import {OfflineFavoriteService} from '@/services/OfflineFavoriteService'
+import { PdfImportService } from '@/services/PdfImportService'
+import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
+import { OfflineFavoriteService } from '@/services/OfflineFavoriteService'
 import FavoriteFolderPicker from '@/components/favorite/FavoriteFolderPicker.vue'
 import SearchHeaderBar from '@/components/search/SearchHeaderBar.vue'
-import type {SearchResultDisplayItem} from '@/components/search/SearchResultContainer.vue'
+import type { SearchResultDisplayItem } from '@/components/search/SearchResultContainer.vue'
 import SearchResultContainer from '@/components/search/SearchResultContainer.vue'
-import type {PdfFileParseItem} from '@/utils/importPdfParse'
+import type { PdfFileParseItem } from '@/utils/importPdfParse'
 import type {
   AlbumDetail,
   FolderEntry,
   PhotoMeta,
   SearchQuery,
   SearchResult,
-  SearchResultItem
+  SearchResultItem,
 } from '@/services/JmcomicTypes'
 
 const router = useRouter()
@@ -375,13 +381,10 @@ const isImportReady = (file: PdfFileParseItem): boolean =>
   !!resolvedId(file) && !needsChapterSelection(file)
 
 const shouldShowChapterTag = (file: PdfFileParseItem): boolean =>
-  file.chapterSortOrder != null &&
-  (file.albumDetail?.photoMetas?.length ?? 0) > 1
+  file.chapterSortOrder != null && (file.albumDetail?.photoMetas?.length ?? 0) > 1
 
 const chapterSelectionText = (file: PdfFileParseItem): string =>
-  file.chapterSortOrderHint != null
-    ? `未找到第${file.chapterSortOrderHint}话`
-    : '待选章节'
+  file.chapterSortOrderHint != null ? `未找到第${file.chapterSortOrderHint}话` : '待选章节'
 
 const buildCandidateItem = (detail: AlbumDetail, id: string): SearchResultItem => ({
   id,
@@ -405,12 +408,13 @@ const confirmButtonLabel = computed(() => {
   return `确定 #${selectedCandidate.value.id}`
 })
 
-const canConfirmCandidate = computed(() =>
-  !!selectedCandidate.value &&
-  !drawerSearchLoading.value &&
-  !candidateDetailLoading.value &&
-  !resolvingCandidate.value &&
-  (candidateChapters.value.length <= 1 || selectedChapterSortOrder.value !== null),
+const canConfirmCandidate = computed(
+  () =>
+    !!selectedCandidate.value &&
+    !drawerSearchLoading.value &&
+    !candidateDetailLoading.value &&
+    !resolvingCandidate.value &&
+    (candidateChapters.value.length <= 1 || selectedChapterSortOrder.value !== null),
 )
 
 const drawerMaxHeight = () => Math.round(window.innerHeight * DRAWER_MAX_RATIO)
@@ -438,21 +442,11 @@ const canSearchFile = (file: PdfFileParseItem) =>
 const stripPdfExtension = (fileName: string) => fileName.replace(/\.pdf$/i, '').trim()
 
 // ---- 统计 ----
-const resolvedCount = computed(() =>
-  files.value.filter(isImportReady).length,
-)
-const ambiguousCount = computed(() =>
-  files.value.filter((f) => f.status === 'ambiguous').length,
-)
-const missingCount = computed(() =>
-  files.value.filter((f) => f.status === 'missing').length,
-)
-const duplicateCount = computed(() =>
-  files.value.filter((f) => f.duplicateIds.length > 0).length,
-)
-const hasAnyResolved = computed(() =>
-  files.value.some(isImportReady),
-)
+const resolvedCount = computed(() => files.value.filter(isImportReady).length)
+const ambiguousCount = computed(() => files.value.filter((f) => f.status === 'ambiguous').length)
+const missingCount = computed(() => files.value.filter((f) => f.status === 'missing').length)
+const duplicateCount = computed(() => files.value.filter((f) => f.duplicateIds.length > 0).length)
+const hasAnyResolved = computed(() => files.value.some(isImportReady))
 
 // ---- 初始化 ----
 onMounted(async () => {
@@ -501,9 +495,9 @@ function toggleEdit(idx: number) {
 }
 
 async function applyEdit(idx: number) {
-  const {parseEditedLine} = await import('@/utils/importPdfParse')
+  const { parseEditedLine } = await import('@/utils/importPdfParse')
   const file = files.value[idx]
-  const {ids, chapterSortOrderHint} = parseEditedLine(editText.value.trim())
+  const { ids, chapterSortOrderHint } = parseEditedLine(editText.value.trim())
 
   const updated: PdfFileParseItem = {
     ...file,
@@ -653,7 +647,7 @@ async function openSearchDrawer(idx: number) {
 }
 
 async function submitDrawerSearch(query: SearchQuery) {
-  const nextQuery = {...query, page: 1}
+  const nextQuery = { ...query, page: 1 }
   drawerQuery.value = nextQuery
   await performDrawerSearch(nextQuery)
 }
@@ -681,21 +675,22 @@ async function performDrawerSearch(query: SearchQuery) {
         currentPage: 1,
         totalItems: 1,
         totalPages: 1,
-        content: [{
-          id: album.id,
-          title: album.title,
-          coverUrl: album.image,
-          authors: album.authors,
-          tags: album.tags,
-        }],
+        content: [
+          {
+            id: album.id,
+            title: album.title,
+            coverUrl: album.image,
+            authors: album.authors,
+            tags: album.tags,
+          },
+        ],
       }
     } else {
-      drawerResult.value = await JmcomicService.search({...query, keyword, page: 1})
+      drawerResult.value = await JmcomicService.search({ ...query, keyword, page: 1 })
     }
 
-    const onlyResult = drawerResult.value.content.length === 1
-      ? drawerResult.value.content[0]
-      : null
+    const onlyResult =
+      drawerResult.value.content.length === 1 ? drawerResult.value.content[0] : null
     if (onlyResult) {
       await selectCandidate(onlyResult)
     }
@@ -720,7 +715,7 @@ async function selectCandidate(item: SearchResultItem) {
     const targetFile = searchTargetIdx.value !== null ? files.value[searchTargetIdx.value] : null
     selectedChapterSortOrder.value =
       targetFile && selectedCandidateDetail.value
-        ? resolveFileChapter(selectedCandidateDetail.value, targetFile)?.sortOrder ?? null
+        ? (resolveFileChapter(selectedCandidateDetail.value, targetFile)?.sortOrder ?? null)
         : null
   } catch {
     if (requestSeq !== candidateDetailRequestSeq) return
@@ -745,7 +740,8 @@ async function openCandidateDetail(item: SearchResultItem) {
 }
 
 async function confirmCandidate() {
-  if (searchTargetIdx.value === null || !selectedCandidate.value || !canConfirmCandidate.value) return
+  if (searchTargetIdx.value === null || !selectedCandidate.value || !canConfirmCandidate.value)
+    return
 
   resolvingCandidate.value = true
   try {
@@ -805,7 +801,8 @@ function endDrawerDrag() {
 function cardClass(file: PdfFileParseItem) {
   const effectiveLen = file.editedIds?.length ?? file.extractedIds.length
   return {
-    'card-resolved': file.status === 'resolved' && effectiveLen === 1 && file.duplicateIds.length === 0,
+    'card-resolved':
+      file.status === 'resolved' && effectiveLen === 1 && file.duplicateIds.length === 0,
     'card-ambiguous': file.status === 'ambiguous',
     'card-missing': file.status === 'missing',
     'card-duplicate': file.duplicateIds.length > 0,
@@ -855,7 +852,7 @@ async function onConfirm() {
       header: '未解决的文件',
       message: `${unresolved.length} 个文件缺少有效 ID 或章节，将被忽略。仅导入 ${resolved.length} 个已解析的文件。`,
       buttons: [
-        {text: '取消', role: 'cancel'},
+        { text: '取消', role: 'cancel' },
         {
           text: '继续导入',
           handler: () => proceedToImport(resolved),
@@ -908,9 +905,9 @@ async function onAddFolder() {
   // 创建新离线收藏夹
   const alert = await alertController.create({
     header: '新建收藏夹',
-    inputs: [{name: 'name', placeholder: '收藏夹名称'}],
+    inputs: [{ name: 'name', placeholder: '收藏夹名称' }],
     buttons: [
-      {text: '取消', role: 'cancel'},
+      { text: '取消', role: 'cancel' },
       {
         text: '创建',
         handler: async (data) => {
@@ -953,10 +950,7 @@ async function doImport(resolvedFiles: PdfFileParseItem[], folderId?: string) {
     PdfImportService.clearCachedParseResult()
     router.replace('/download')
   } catch (e: any) {
-    await showToast(
-      sanitizeError(e, '导入失败'),
-      'danger',
-    )
+    await showToast(sanitizeError(e, '导入失败'), 'danger')
   } finally {
     loading.value = false
   }
@@ -1429,7 +1423,9 @@ IonHeader {
 
 .drawer-confirm-enter-active,
 .drawer-confirm-leave-active {
-  transition: opacity 0.18s ease, transform 0.18s ease;
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease;
 }
 
 .drawer-confirm-enter-from,
@@ -1544,7 +1540,9 @@ IonHeader {
 
 .drawer-detail-panel-enter-active,
 .drawer-detail-panel-leave-active {
-  transition: opacity 0.18s ease, transform 0.18s ease;
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease;
 }
 
 .drawer-detail-panel-enter-from,
@@ -1629,7 +1627,9 @@ IonHeader {
 
 .chapter-panel-enter-active,
 .chapter-panel-leave-active {
-  transition: opacity 0.18s ease, transform 0.18s ease;
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease;
 }
 
 .chapter-panel-enter-from,

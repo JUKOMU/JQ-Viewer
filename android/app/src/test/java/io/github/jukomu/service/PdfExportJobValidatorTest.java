@@ -11,35 +11,35 @@ public class PdfExportJobValidatorTest {
 
     @Test
     public void validatesChapterJob() {
-        PdfExportService.ExportJob job = chapterJob("chapter-1");
+        PdfExportService.ExportJob job = chapterJob("101");
 
         PdfExportJobValidator.validate(job);
 
-        assertEquals("chapter:album-1:chapter-1", PdfExportJobValidator.taskKey(job));
-        assertEquals(Arrays.asList("album-1:chapter-1"),
+        assertEquals("chapter:100:101", PdfExportJobValidator.taskKey(job));
+        assertEquals(Arrays.asList("100:101"),
             PdfExportJobValidator.chapterResourceKeys(job));
     }
 
     @Test
     public void validatesMergedJobAndBuildsOrderedKeys() {
         PdfExportService.ExportJob job = mergedJob(
-            chapter("album-1", "chapter-2", 2),
-            chapter("album-1", "extra", 0),
-            chapter("album-1", "chapter-3", 3));
+            chapter("100", "102", 2),
+            chapter("100", "109", 0),
+            chapter("100", "103", 3));
 
         PdfExportJobValidator.validate(job);
 
-        assertEquals("merged:album-1:chapter-2,extra,chapter-3",
+        assertEquals("merged:100:102,109,103",
             PdfExportJobValidator.taskKey(job));
-        assertEquals(Arrays.asList("album-1:chapter-2", "album-1:extra", "album-1:chapter-3"),
+        assertEquals(Arrays.asList("100:102", "100:109", "100:103"),
             PdfExportJobValidator.chapterResourceKeys(job));
     }
 
     @Test
     public void rejectsMergedJobFromDifferentAlbums() {
         PdfExportService.ExportJob job = mergedJob(
-            chapter("album-1", "chapter-1", 1),
-            chapter("album-2", "chapter-2", 2));
+            chapter("100", "101", 1),
+            chapter("200", "102", 2));
 
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
             () -> PdfExportJobValidator.validate(job));
@@ -50,21 +50,21 @@ public class PdfExportJobValidatorTest {
     @Test
     public void rejectsDuplicateMergedChapter() {
         PdfExportService.ExportJob job = mergedJob(
-            chapter("album-1", "chapter-1", 1),
-            chapter("album-1", "chapter-1", 1));
+            chapter("100", "101", 1),
+            chapter("100", "101", 1));
 
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
             () -> PdfExportJobValidator.validate(job));
 
-        assertEquals("合并导出包含重复章节: chapter-1", error.getMessage());
+        assertEquals("合并导出包含重复章节: 101", error.getMessage());
     }
 
     @Test
     public void rejectsOutOfOrderPositiveSortValues() {
         PdfExportService.ExportJob job = mergedJob(
-            chapter("album-1", "chapter-3", 3),
-            chapter("album-1", "extra", 0),
-            chapter("album-1", "chapter-2", 2));
+            chapter("100", "103", 3),
+            chapter("100", "109", 0),
+            chapter("100", "102", 2));
 
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
             () -> PdfExportJobValidator.validate(job));
@@ -74,7 +74,7 @@ public class PdfExportJobValidatorTest {
 
     @Test
     public void rejectsMergedJobWithOnlyOneChapter() {
-        PdfExportService.ExportJob job = mergedJob(chapter("album-1", "chapter-1", 1));
+        PdfExportService.ExportJob job = mergedJob(chapter("100", "101", 1));
 
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
             () -> PdfExportJobValidator.validate(job));
@@ -82,10 +82,32 @@ public class PdfExportJobValidatorTest {
         assertEquals("合并导出至少需要两个章节", error.getMessage());
     }
 
+    @Test
+    public void rejectsUnsafeResourceIds() {
+        String[] invalidIds = {"../1", "1/2", "1\\2", "/1", " 1", "1 ", "album-1"};
+
+        for (String invalidId : invalidIds) {
+            PdfExportService.ExportJob job = chapterJob("101");
+            job.albumId = invalidId;
+            assertThrows(IllegalArgumentException.class,
+                () -> PdfExportJobValidator.validate(job));
+        }
+    }
+
+    @Test
+    public void rejectsUnsafeMergedChapterId() {
+        PdfExportService.ExportJob job = mergedJob(
+            chapter("100", "101", 1),
+            chapter("100", "../102", 2));
+
+        assertThrows(IllegalArgumentException.class,
+            () -> PdfExportJobValidator.validate(job));
+    }
+
     private static PdfExportService.ExportJob chapterJob(String chapterId) {
         PdfExportService.ExportJob job = new PdfExportService.ExportJob();
         job.mode = "chapter";
-        job.albumId = "album-1";
+        job.albumId = "100";
         job.chapterId = chapterId;
         job.chapterTitle = chapterId;
         job.savePath = "/exports/chapter.pdf";
@@ -95,7 +117,7 @@ public class PdfExportJobValidatorTest {
     private static PdfExportService.ExportJob mergedJob(PdfExportService.ExportChapter... chapters) {
         PdfExportService.ExportJob job = new PdfExportService.ExportJob();
         job.mode = "merged";
-        job.albumId = "album-1";
+        job.albumId = "100";
         job.chapterTitle = "merged";
         job.chapters = Arrays.asList(chapters);
         job.savePath = "/exports/merged.pdf";

@@ -15,7 +15,7 @@ public class ImageCacheTest {
 
     private static final int MIB = 1024 * 1024;
 
-    private final ImageCache cache = ImageCache.getInstance();
+    private final ImageCache cache = ImageCache.createIsolated();
 
     @Before
     public void setUp() {
@@ -48,6 +48,17 @@ public class ImageCacheTest {
         }
 
         assertTrue(cache.getStats().reservedBytes == 0L);
+    }
+
+    @Test
+    public void failedHeapMarginCheckDoesNotEvictExistingEntries() {
+        cache.put("old", new byte[]{1, 2, 3, 4}, "image/jpeg");
+        long sizeBefore = cache.getCurrentSize();
+
+        assertFalse(cache.evictForHeapMargin(100L, 100L, 100L));
+
+        assertTrue(cache.has("old"));
+        assertTrue(cache.getCurrentSize() == sizeBefore);
     }
 
     @Test

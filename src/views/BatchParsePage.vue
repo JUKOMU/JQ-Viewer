@@ -4,21 +4,21 @@
       <IonToolbar>
         <div class="header-row">
           <div class="toolbar-start">
-            <MenuToggleButton/>
+            <MenuToggleButton />
           </div>
           <button type="button" class="header-btn" @click="sourceExpanded = !sourceExpanded">
             <span class="header-btn-label">{{ sourceExpanded ? '收起原文' : '展开原文' }}</span>
-            <IonIcon :icon="sourceExpanded ? chevronUpOutline : chevronDownOutline"/>
+            <IonIcon :icon="sourceExpanded ? chevronUpOutline : chevronDownOutline" />
           </button>
           <button type="button" class="header-btn" :class="{ active: editing }" @click="toggleEdit">
-            <IonIcon :icon="createOutline"/>
+            <IonIcon :icon="createOutline" />
           </button>
         </div>
 
         <div v-show="sourceExpanded" class="source-area">
           <template v-if="editing">
             <div class="edit-toolbar">
-              <input v-model="findText" class="edit-input" placeholder="查找" enterkeyhint="done"/>
+              <input v-model="findText" class="edit-input" placeholder="查找" enterkeyhint="done" />
               <input
                 v-model="replaceText"
                 class="edit-input"
@@ -29,7 +29,7 @@
               <button type="button" class="edit-btn" @click="removeSpaces">去除空格</button>
               <button type="button" class="edit-btn apply" @click="applyEdit">应用修改</button>
             </div>
-            <textarea v-model="editText" class="source-textarea" rows="5" spellcheck="false"/>
+            <textarea v-model="editText" class="source-textarea" rows="5" spellcheck="false" />
           </template>
 
           <div v-else ref="sourceScrollRef" class="source-scroll">
@@ -48,7 +48,6 @@
               :class="segClass(seg.type)"
             >{{ seg.text }}</span></pre>
           </div>
-
         </div>
 
         <div v-show="sourceExpanded && !editing" class="source-actions-row">
@@ -63,17 +62,17 @@
               :aria-checked="showFavStatus"
               @click="toggleFavStatus"
             >
-              <IonSpinner v-if="loadingFavStatus" name="dots" class="fav-toggle-spinner"/>
-              <span v-else class="fav-toggle-knob"/>
+              <IonSpinner v-if="loadingFavStatus" name="dots" class="fav-toggle-spinner" />
+              <span v-else class="fav-toggle-knob" />
             </button>
           </label>
           <button
             type="button"
             class="save-list-btn"
-            :disabled="loading || albumResults.every(a => a === null)"
+            :disabled="loading || albumResults.every((a) => a === null)"
             @click="openBatchSave"
           >
-            <IonIcon :icon="bookmarkOutline" class="save-list-icon"/>
+            <IonIcon :icon="bookmarkOutline" class="save-list-icon" />
             <span>保存当前列表到收藏夹</span>
           </button>
         </div>
@@ -83,9 +82,9 @@
     <IonContent ref="contentRef" :scroll-events="true" @ion-scroll="onContentScroll">
       <div class="page-shell">
         <div class="fav-legend">
-          <span class="fav-legend-item"><span class="fav-legend-dot online"/> 在线收藏</span>
-          <span class="fav-legend-item"><span class="fav-legend-dot offline"/> 离线收藏</span>
-          <span class="fav-legend-item"><span class="fav-legend-dot both"/> 双端收藏</span>
+          <span class="fav-legend-item"><span class="fav-legend-dot online" /> 在线收藏</span>
+          <span class="fav-legend-item"><span class="fav-legend-dot offline" /> 离线收藏</span>
+          <span class="fav-legend-item"><span class="fav-legend-dot both" /> 双端收藏</span>
         </div>
         <SearchResultContainer
           ref="resultContainerRef"
@@ -111,7 +110,7 @@
               aria-label="更多操作"
               @click.stop="openCardMenu(item, $event)"
             >
-              <IonIcon :icon="ellipsisVertical"/>
+              <IonIcon :icon="ellipsisVertical" />
             </button>
           </template>
         </SearchResultContainer>
@@ -128,19 +127,19 @@
       @touchstart.stop
     >
       <button type="button" class="card-menu-item" @click.stop="handleCardDetail(cardMenu.item)">
-        <IonIcon :icon="informationCircleOutline" class="card-menu-icon"/>
+        <IonIcon :icon="informationCircleOutline" class="card-menu-icon" />
         <span>详情</span>
       </button>
       <button type="button" class="card-menu-item" @click.stop="handleCardRead(cardMenu.item)">
-        <IonIcon :icon="bookOutline" class="card-menu-icon"/>
+        <IonIcon :icon="bookOutline" class="card-menu-icon" />
         <span>阅读</span>
       </button>
       <button type="button" class="card-menu-item" @click.stop="handleCardDownload(cardMenu.item)">
-        <IonIcon :icon="downloadOutline" class="card-menu-icon"/>
+        <IonIcon :icon="downloadOutline" class="card-menu-icon" />
         <span>下载</span>
       </button>
       <button type="button" class="card-menu-item" @click.stop="handleCardFavorite(cardMenu.item)">
-        <IonIcon :icon="heartOutline" class="card-menu-icon"/>
+        <IonIcon :icon="heartOutline" class="card-menu-icon" />
         <span>收藏</span>
       </button>
       <button
@@ -148,7 +147,7 @@
         class="card-menu-item card-menu-item--danger"
         @click.stop="handleCardRemove(cardMenu.item)"
       >
-        <IonIcon :icon="trashOutline" class="card-menu-icon"/>
+        <IonIcon :icon="trashOutline" class="card-menu-icon" />
         <span>从列表移除</span>
       </button>
     </div>
@@ -168,7 +167,7 @@
       <div class="progress-dialog">
         <div class="progress-title">{{ progressTitle }}</div>
         <div class="progress-bar">
-          <div class="progress-fill" :style="{ width: progressPercent + '%' }"/>
+          <div class="progress-fill" :style="{ width: progressPercent + '%' }" />
         </div>
         <div class="progress-percent">{{ progressPercent }}%</div>
         <div class="progress-count">已完成：{{ progressCurrent }} / {{ progressTotal }} 个本子</div>
@@ -180,9 +179,26 @@
 </template>
 
 <script setup lang="ts">
-import {computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch,} from 'vue'
-import {useRoute, useRouter} from 'vue-router'
-import {alertController, IonContent, IonHeader, IonIcon, IonPage, IonSpinner, IonToolbar,} from '@ionic/vue'
+import {
+  computed,
+  nextTick,
+  onActivated,
+  onBeforeUnmount,
+  onDeactivated,
+  onMounted,
+  ref,
+  watch,
+} from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import {
+  alertController,
+  IonContent,
+  IonHeader,
+  IonIcon,
+  IonPage,
+  IonSpinner,
+  IonToolbar,
+} from '@ionic/vue'
 import {
   bookmarkOutline,
   bookOutline,
@@ -195,21 +211,27 @@ import {
   informationCircleOutline,
   trashOutline,
 } from 'ionicons/icons'
-import type {ScrollCustomEvent} from '@ionic/core'
+import type { ScrollCustomEvent } from '@ionic/core'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import FavoriteFolderPicker from '@/components/favorite/FavoriteFolderPicker.vue'
-import type {SearchResultDisplayItem} from '@/components/search/SearchResultContainer.vue'
+import type { SearchResultDisplayItem } from '@/components/search/SearchResultContainer.vue'
 import SearchResultContainer from '@/components/search/SearchResultContainer.vue'
-import {JmcomicService, sanitizeError, showToast} from '@/services/JmcomicService'
-import {OfflineDownloadService} from '@/services/OfflineDownloadService'
-import {OfflineFavoriteService} from '@/services/OfflineFavoriteService'
-import {useAuth} from '@/composables/useAuth'
-import type {AlbumDetail, FavoriteResult, FolderEntry, SearchResult, SearchResultItem,} from '@/services/JmcomicTypes'
+import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
+import { OfflineDownloadService } from '@/services/OfflineDownloadService'
+import { OfflineFavoriteService } from '@/services/OfflineFavoriteService'
+import { useAuth } from '@/composables/useAuth'
+import type {
+  AlbumDetail,
+  FavoriteResult,
+  FolderEntry,
+  SearchResult,
+  SearchResultItem,
+} from '@/services/JmcomicTypes'
 
-import type {InvalidIdItem, ParsedIdItem} from '@/utils/batchParse'
-import {parseIdsFromText} from '@/utils/batchParse'
+import type { InvalidIdItem, ParsedIdItem } from '@/utils/batchParse'
+import { parseIdsFromText } from '@/utils/batchParse'
 
-defineOptions({name: 'BatchParsePage'})
+defineOptions({ name: 'BatchParsePage' })
 
 const STORAGE_PREFIX = 'batch-parse-text:'
 
@@ -226,7 +248,7 @@ interface SourceLine {
 const router = useRouter()
 const route = useRoute()
 const routeKey = computed(() => route.query.key as string)
-const {isLoggedIn} = useAuth()
+const { isLoggedIn } = useAuth()
 const contentRef = ref<InstanceType<typeof IonContent> | null>(null)
 const resultContainerRef = ref<InstanceType<typeof SearchResultContainer> | null>(null)
 const sourceScrollRef = ref<HTMLElement | null>(null)
@@ -291,7 +313,7 @@ async function applyEdit() {
 const sourceLines = computed<SourceLine[]>(() => {
   const lines = originalText.value.split('\n')
   const result: SourceLine[] = lines.map((text) => ({
-    segments: [{text, type: 'normal' as const}],
+    segments: [{ text, type: 'normal' as const }],
     hasOnlyFailed: false,
   }))
 
@@ -341,15 +363,15 @@ function splitSegments(
       out.push(seg)
     } else {
       if (cursor < targetStart) {
-        out.push({text: seg.text.slice(0, targetStart - cursor), type: seg.type})
+        out.push({ text: seg.text.slice(0, targetStart - cursor), type: seg.type })
       }
       const overlapStart = Math.max(cursor, targetStart)
       const overlapEnd = Math.min(segEnd, targetEnd)
       if (overlapEnd > overlapStart) {
-        out.push({text: seg.text.slice(overlapStart - cursor, overlapEnd - cursor), type})
+        out.push({ text: seg.text.slice(overlapStart - cursor, overlapEnd - cursor), type })
       }
       if (segEnd > targetEnd) {
-        out.push({text: seg.text.slice(targetEnd - cursor), type: seg.type})
+        out.push({ text: seg.text.slice(targetEnd - cursor), type: seg.type })
       }
     }
     cursor = segEnd
@@ -395,7 +417,7 @@ function albumToSearchItem(a: AlbumDetail): SearchResultItem {
 
 const displayItems = computed<SearchResultDisplayItem[]>(() => {
   return albumResults.value
-    .map((a, i) => (a ? {item: albumToSearchItem(a), page: 1, indexInPage: i} : null))
+    .map((a, i) => (a ? { item: albumToSearchItem(a), page: 1, indexInPage: i } : null))
     .filter((x): x is SearchResultDisplayItem => x !== null)
 })
 
@@ -443,11 +465,11 @@ async function doParse() {
         failed[parseResult.items[i].id] = true
       }
       albumResults.value = [...results]
-      failedIds.value = {...failed}
+      failedIds.value = { ...failed }
     }
   }
 
-  const workers = Array.from({length: Math.min(concurrency, total)}, () => worker())
+  const workers = Array.from({ length: Math.min(concurrency, total) }, () => worker())
   await Promise.all(workers)
 
   loading.value = false
@@ -573,7 +595,7 @@ function onSourceLineClick(lineIndex: number) {
   const entryKey = `1-${idx}-${parsedItems.value[idx].id}`
   const el = resultContainerRef.value?.getEntryElement(entryKey)
   if (el) {
-    el.scrollIntoView({behavior: 'smooth', block: 'center'})
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
     currentHighlightLine.value = lineIndex
   }
 }
@@ -583,7 +605,7 @@ watch(currentHighlightLine, async (lineIndex) => {
   await nextTick()
   const el = sourceScrollRef.value.querySelector(`.source-line:nth-child(${lineIndex + 1})`)
   if (el) {
-    el.scrollIntoView({block: 'nearest', behavior: 'smooth'})
+    el.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
   }
 })
 
@@ -635,7 +657,7 @@ async function fetchAllOnlineFavIds(): Promise<Set<string>> {
     let page = 1
     let totalPages = 1
     while (page <= totalPages) {
-      const result: FavoriteResult = await JmcomicService.favorites({folderId: '0', page})
+      const result: FavoriteResult = await JmcomicService.favorites({ folderId: '0', page })
       result.content.forEach((item) => ids.add(item.id))
       totalPages = result.totalPages
       page++
@@ -720,7 +742,7 @@ const cardMenuStyle = computed(() => {
 
 function openCardMenu(item: SearchResultItem, event: MouseEvent) {
   const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-  cardMenu.value = {item, x: rect.left, y: rect.bottom + 4}
+  cardMenu.value = { item, x: rect.left, y: rect.bottom + 4 }
   setTimeout(() => {
     document.addEventListener('mousedown', handleCardMenuClickOutside)
     document.addEventListener('touchstart', handleCardMenuClickOutside)
@@ -749,7 +771,7 @@ async function handleCardRead(item: SearchResultItem) {
     const photo = await JmcomicService.getPhoto(item.id)
     await router.push({
       path: `/album/${item.id}/read/${photo.id}`,
-      query: {title: item.title, total: String(photo.images.length)},
+      query: { title: item.title, total: String(photo.images.length) },
     })
   } catch {
     await showToast('获取章节失败', 'danger')
@@ -822,15 +844,15 @@ async function loadOnlineFolderData() {
     return
   }
   try {
-    const result: FavoriteResult = await JmcomicService.favorites({folderId: '0', page: 1})
+    const result: FavoriteResult = await JmcomicService.favorites({ folderId: '0', page: 1 })
     if (result.folderList) {
       const entries: FolderEntry[] = []
       const countPromises: Promise<void>[] = []
       const counts: Record<string, number> = {}
       for (const [id, name] of Object.entries(result.folderList)) {
-        entries.push({id, name, count: 0})
+        entries.push({ id, name, count: 0 })
         countPromises.push(
-          JmcomicService.favorites({folderId: id, page: 1})
+          JmcomicService.favorites({ folderId: id, page: 1 })
             .then((r) => {
               counts[id] = r.totalItems
             })
@@ -973,9 +995,9 @@ async function onPickerSelect(payload: { folderId: string; source: 'online' | 'o
 async function onPickerAddFolder() {
   const alert = await alertController.create({
     header: '新建收藏夹',
-    inputs: [{name: 'name', type: 'text', placeholder: '收藏夹名称'}],
+    inputs: [{ name: 'name', type: 'text', placeholder: '收藏夹名称' }],
     buttons: [
-      {text: '取消', role: 'cancel'},
+      { text: '取消', role: 'cancel' },
       {
         text: '确定',
         handler: async (data) => {

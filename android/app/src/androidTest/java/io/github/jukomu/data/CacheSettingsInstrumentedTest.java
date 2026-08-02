@@ -1,4 +1,4 @@
-package io.github.jukomu.service;
+package io.github.jukomu.data;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -7,9 +7,8 @@ import android.content.Context;
 
 import androidx.test.platform.app.InstrumentationRegistry;
 
-import io.github.jukomu.data.CacheCapacityPolicy;
-import io.github.jukomu.data.ImageCache;
-import io.github.jukomu.data.SettingsStore;
+import io.github.jukomu.service.PreloadService;
+import io.github.jukomu.service.SettingsService;
 
 import org.json.JSONObject;
 import org.junit.Test;
@@ -27,7 +26,7 @@ public class CacheSettingsInstrumentedTest {
         CacheCapacityPolicy.Result result = policy.calculate(
             requestedMb, 512L * CacheCapacityPolicy.MIB, false,
             CacheCapacityPolicy.PressureLevel.NORMAL);
-        ImageCache imageCache = ImageCache.getInstance();
+        ImageCache imageCache = ImageCache.createIsolated();
         imageCache.applyPolicy(result);
 
         SettingsService settingsService = new SettingsService(

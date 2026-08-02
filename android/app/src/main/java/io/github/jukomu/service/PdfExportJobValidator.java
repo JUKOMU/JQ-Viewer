@@ -4,11 +4,14 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * Validates and identifies PDF export jobs before they enter the worker queue.
  */
 public final class PdfExportJobValidator {
+
+    private static final Pattern RESOURCE_ID_PATTERN = Pattern.compile("\\d+");
 
     private PdfExportJobValidator() {
     }
@@ -17,11 +20,11 @@ public final class PdfExportJobValidator {
         if (job == null) {
             throw new IllegalArgumentException("导出任务不能为空");
         }
-        requireText(job.albumId, "albumId");
+        requireResourceId(job.albumId, "albumId");
         requireText(job.savePath, "savePath");
 
         if ("chapter".equals(job.mode)) {
-            requireText(job.chapterId, "chapterId");
+            requireResourceId(job.chapterId, "chapterId");
             return;
         }
         if (!"merged".equals(job.mode)) {
@@ -38,8 +41,8 @@ public final class PdfExportJobValidator {
             if (chapter == null) {
                 throw new IllegalArgumentException("chapters[" + i + "] 不能为空");
             }
-            requireText(chapter.albumId, "chapters[" + i + "].albumId");
-            requireText(chapter.chapterId, "chapters[" + i + "].chapterId");
+            requireResourceId(chapter.albumId, "chapters[" + i + "].albumId");
+            requireResourceId(chapter.chapterId, "chapters[" + i + "].chapterId");
             if (!job.albumId.equals(chapter.albumId)) {
                 throw new IllegalArgumentException("合并导出的章节必须属于同一本漫画");
             }
@@ -82,6 +85,13 @@ public final class PdfExportJobValidator {
     private static void requireText(String value, String field) {
         if (value == null || value.trim().isEmpty()) {
             throw new IllegalArgumentException(field + " is required");
+        }
+    }
+
+    private static void requireResourceId(String value, String field) {
+        requireText(value, field);
+        if (!RESOURCE_ID_PATTERN.matcher(value).matches()) {
+            throw new IllegalArgumentException(field + " 必须是纯数字 ID");
         }
     }
 }

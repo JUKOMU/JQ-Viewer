@@ -191,7 +191,7 @@ public class PdfExportServiceInstrumentedTest {
         while (SystemClock.elapsedRealtime() < deadline) {
             boolean complete = true;
             for (PdfExportService.ExportVolume volume : volumes) {
-                if (!volume.file.isFile() || volume.file.length() == 0L) {
+                if (!isExportComplete(volume.file)) {
                     complete = false;
                     break;
                 }
@@ -201,18 +201,43 @@ public class PdfExportServiceInstrumentedTest {
             }
             SystemClock.sleep(50L);
         }
-        throw new IOException("Timed out waiting for merged PDF volumes");
+        StringBuilder states = new StringBuilder();
+        for (PdfExportService.ExportVolume volume : volumes) {
+            if (!isExportComplete(volume.file)) {
+                if (states.length() > 0) {
+                    states.append("; ");
+                }
+                states.append(describeExportState(volume.file));
+            }
+        }
+        throw new IOException("Timed out waiting for merged PDF volumes: " + states);
     }
 
     private static void waitForFile(File file, long timeoutMs) throws IOException {
         long deadline = SystemClock.elapsedRealtime() + timeoutMs;
         while (SystemClock.elapsedRealtime() < deadline) {
-            if (file.isFile() && file.length() > 0L) {
+            if (isExportComplete(file)) {
                 return;
             }
             SystemClock.sleep(50L);
         }
-        throw new IOException("Timed out waiting for PDF output: " + file);
+        throw new IOException("Timed out waiting for PDF output: " + describeExportState(file));
+    }
+
+    private static boolean isExportComplete(File file) {
+        return file.isFile()
+            && file.length() > 0L
+            && !PdfBoxExportWriter.getTempFile(file).exists()
+            && !PdfBoxExportWriter.getWorkDirectory(file).exists();
+    }
+
+    private static String describeExportState(File file) {
+        File tempFile = PdfBoxExportWriter.getTempFile(file);
+        File workDirectory = PdfBoxExportWriter.getWorkDirectory(file);
+        return "output=" + file
+            + " (exists=" + file.isFile() + ", size=" + file.length() + ")"
+            + ", temp=" + tempFile + " (exists=" + tempFile.exists() + ")"
+            + ", work=" + workDirectory + " (exists=" + workDirectory.exists() + ")";
     }
 
     private static void assertPdf(File file, int[][] expectedPageSizes) throws IOException {

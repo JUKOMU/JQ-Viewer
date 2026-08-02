@@ -2,7 +2,16 @@ import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import PdfExportBottomSheet from '@/components/download/PdfExportBottomSheet.vue'
 import { JmcomicService } from '@/services/JmcomicService'
-import type { DownloadTask } from '@/services/JmcomicTypes'
+import type { DownloadTask, PdfExportMode } from '@/services/JmcomicTypes'
+
+type ConfirmPayload = {
+  selectedChapters: DownloadTask[]
+  mode: PdfExportMode
+  useOriginal: boolean
+  compressionRatio: number
+  editedPath: string
+  splitPages: number
+}
 
 vi.mock('@ionic/vue', async () => {
   const actual = await vi.importActual<Record<string, unknown>>('@ionic/vue')
@@ -57,7 +66,7 @@ describe('PdfExportBottomSheet', () => {
   test('默认使用单章模式并按章节序号显示选择列表', async () => {
     const wrapper = await mountSheet()
 
-    expect(wrapper.get('input[value="chapter"]').attributes('checked')).toBeDefined()
+    expect(wrapper.get<HTMLInputElement>('input[value="chapter"]').element.checked).toBe(true)
     expect(wrapper.findAll('.chapter-name').map((item) => item.text())).toEqual([
       'chapter-2',
       'chapter-3',
@@ -70,17 +79,19 @@ describe('PdfExportBottomSheet', () => {
 
     await wrapper.get('input[value="merged"]').trigger('change')
 
-    expect(wrapper.get('.path-input').element.value).toContain('第2-3话+第5话.pdf')
+    expect(wrapper.get<HTMLInputElement>('.path-input').element.value).toContain(
+      '第2-3话+第5话.pdf',
+    )
     await wrapper.get('.btn-confirm').trigger('click')
 
-    const payload = wrapper.emitted('confirm')?.[0]?.[0]
+    const payload = wrapper.emitted('confirm')?.[0]?.[0] as ConfirmPayload | undefined
     expect(payload).toEqual(
       expect.objectContaining({
         mode: 'merged',
         selectedChapters: expect.any(Array),
       }),
     )
-    expect(payload.selectedChapters.map((item: DownloadTask) => item.chapterId)).toEqual([
+    expect(payload?.selectedChapters.map((item) => item.chapterId)).toEqual([
       'chapter-2',
       'chapter-3',
       'chapter-5',
@@ -95,8 +106,8 @@ describe('PdfExportBottomSheet', () => {
     await checkboxes[0].trigger('change')
     await checkboxes[1].trigger('change')
 
-    expect(wrapper.get('input[value="chapter"]').attributes('checked')).toBeDefined()
-    expect(wrapper.get('input[value="merged"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get<HTMLInputElement>('input[value="chapter"]').element.checked).toBe(true)
+    expect(wrapper.get<HTMLInputElement>('input[value="merged"]').element.disabled).toBe(true)
     await wrapper.get('.btn-confirm').trigger('click')
     expect(wrapper.emitted('confirm')?.[0]?.[0]).toEqual(
       expect.objectContaining({ mode: 'chapter' }),

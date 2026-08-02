@@ -6,8 +6,10 @@ import org.junit.Test;
 
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
@@ -81,10 +83,40 @@ public class NetworkLoadGateTest {
     }
 
     @Test
-    public void staleQueuedLoadCanBeReleasedWithoutAName() throws Exception {
+    public void cancelledQueuedLoadReturnsNullWithoutLeakingPermit() throws Exception {
         NetworkLoadGate gate = new NetworkLoadGate(1);
-        gate.setPressureLevel(CacheCapacityPolicy.PressureLevel.COMPLETE);
-        assertNull(gate.acquire(() -> true));
+        NetworkLoadGate.Permit active = gate.acquire(() -> false);
+        assertNotNull(active);
+
+        AtomicBoolean cancelled = new AtomicBoolean();
+        AtomicReference<NetworkLoadGate.Permit> blocked = new AtomicReference<>();
+        CountDownLatch finished = new CountDownLatch(1);
+        Thread waiter = new Thread(() -> {
+            try {
+                blocked.set(gate.acquire(cancelled::get));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } finally {
+                finished.countDown();
+            }
+        });
+        waiter.start();
+
+        try {
+            assertFalse(finished.await(100, TimeUnit.MILLISECONDS));
+            cancelled.set(true);
+            assertTrue(finished.await(1, TimeUnit.SECONDS));
+            assertNull(blocked.get());
+            assertEquals(1, gate.getActiveLoads());
+
+            active.close();
+            assertEquals(0, gate.getActiveLoads());
+        } finally {
+            cancelled.set(true);
+            gate.close();
+            active.close();
+            waiter.join(1_000L);
+        }
     }
 
     @Test

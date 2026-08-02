@@ -1244,7 +1244,10 @@ function onAutoShowToolbarAtEndChange(e: CustomEvent) {
 .path-display {
   flex: 1;
   min-width: 0;
-  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 10px;
   background: #fdf5ef;
   border: 1px solid #f0d8c8;
   border-radius: 8px;

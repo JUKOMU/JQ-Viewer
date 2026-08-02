@@ -5,6 +5,8 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
 import java.io.File;
+import java.nio.file.Files;
+import java.util.Arrays;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
@@ -63,10 +65,56 @@ public class PdfExportServiceTest {
         assertTrue(other.exists());
     }
 
+    @Test
+    public void estimatesOriginalExportSpaceFromWorstVolumeAndExistingFinalDelta()
+            throws Exception {
+        File output = new File(temporaryFolder.getRoot(), "merged.pdf");
+        List<PdfExportService.ExportVolume> volumes =
+            PdfExportService.buildVolumes(output, 4, 2);
+        Files.write(volumes.get(0).file.toPath(), new byte[1_000]);
+        List<PdfBoxExportWriter.ExportImageDescriptor> images = Arrays.asList(
+            descriptor(100),
+            descriptor(100),
+            descriptor(100),
+            descriptor(100)
+        );
+
+        long requiredBytes = PdfExportService.estimateRequiredBytesForExport(
+            volumes,
+            images,
+            true
+        );
+
+        assertEquals((16L * 1024L * 1024L) + 440L, requiredBytes);
+    }
+
+    @Test
+    public void estimatesCompressedVolumeSpaceWithLegacyInputByteBaseline() {
+        List<PdfBoxExportWriter.ExportImageDescriptor> images = Arrays.asList(
+            descriptor(120),
+            descriptor(80)
+        );
+
+        long requiredBytes = PdfExportService.estimateRequiredBytesForVolume(images, false);
+
+        assertEquals((16L * 1024L * 1024L) + 400L, requiredBytes);
+    }
+
     private static void assertVolume(PdfExportService.ExportVolume volume, int start, int end,
             String fileName) {
         assertEquals(start, volume.start);
         assertEquals(end, volume.end);
         assertEquals(fileName, volume.file.getName());
+    }
+
+    private static PdfBoxExportWriter.ExportImageDescriptor descriptor(long fileBytes) {
+        return new PdfBoxExportWriter.ExportImageDescriptor(
+            new File("image.jpg"),
+            "image/jpeg",
+            10,
+            10,
+            fileBytes,
+            true
+        );
     }
 }

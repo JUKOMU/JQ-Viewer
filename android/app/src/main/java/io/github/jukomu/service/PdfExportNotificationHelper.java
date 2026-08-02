@@ -7,6 +7,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
+import android.util.Log;
 import androidx.core.app.NotificationCompat;
 import androidx.core.content.FileProvider;
 import io.github.jukomu.R;
@@ -15,10 +16,11 @@ import java.io.File;
 
 /**
  * PDF 导出系统通知辅助类。
- * 所有方法显式传入 notificationId，无内部可变状态，线程安全。
+ * 每任务 notificationId 只用于完成或失败终态。
  */
 public class PdfExportNotificationHelper {
 
+    private static final String TAG = "PdfExportNotification";
     private static final String CHANNEL_ID = "pdf_export";
     private static final String CHANNEL_NAME = "PDF导出";
     private static final int ICON = R.mipmap.ic_launcher;
@@ -33,7 +35,7 @@ public class PdfExportNotificationHelper {
     }
 
     private void createChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && manager != null) {
             NotificationChannel channel = new NotificationChannel(
                 CHANNEL_ID,
                 CHANNEL_NAME,
@@ -45,79 +47,54 @@ public class PdfExportNotificationHelper {
         }
     }
 
-    public void showQueued(int notificationId, String chapterTitle) {
-        manager.notify(notificationId, new NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(ICON)
-            .setContentTitle("排队中")
-            .setContentText(chapterTitle)
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .build());
-    }
-
-    public void showPreparing(int notificationId, String chapterTitle) {
-        manager.notify(notificationId, new NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(ICON)
-            .setContentTitle("准备导出 PDF...")
-            .setContentText(chapterTitle)
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .build());
-    }
-
-    public void showProgress(int notificationId, String chapterTitle, int currentPage, int totalPages) {
-        int safeTotal = Math.max(1, totalPages);
-        int safeCurrent = Math.max(0, Math.min(currentPage, safeTotal));
-        manager.notify(notificationId, new NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(ICON)
-            .setContentTitle("正在导出 PDF")
-            .setContentText(chapterTitle + " (" + currentPage + "/" + totalPages + ")")
-            .setProgress(safeTotal, safeCurrent, false)
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .build());
-    }
-
-    public void showWriting(int notificationId, String chapterTitle) {
-        manager.notify(notificationId, new NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(ICON)
-            .setContentTitle("正在写入 PDF 文件...")
-            .setContentText(chapterTitle)
-            .setProgress(0, 0, true)
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .build());
-    }
-
     public void showComplete(int notificationId, String chapterTitle, String fileName, String filePath) {
-        Intent openIntent = new Intent(Intent.ACTION_VIEW);
-        Uri uri = FileProvider.getUriForFile(
-            context,
-            context.getPackageName() + ".fileprovider",
-            new File(filePath)
-        );
-        openIntent.setDataAndType(uri, "application/pdf");
-        openIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        showComplete(notificationId, chapterTitle, fileName, filePath, null);
+    }
 
-        PendingIntent pendingIntent = PendingIntent.getActivity(
-            context,
-            notificationId,
-            openIntent,
-            PendingIntent.FLAG_IMMUTABLE
-        );
+    public void showComplete(int notificationId, String chapterTitle, String fileName, String filePath,
+                             String detail) {
+        PendingIntent pendingIntent = createPdfOpenIntent(notificationId, filePath);
 
+        String message = fileName;
+        if (detail != null && !detail.isEmpty()) {
+            message = fileName + "\n" + detail;
+        }
         NotificationCompat.BigTextStyle textStyle = new NotificationCompat.BigTextStyle();
-        textStyle.bigText(chapterTitle + "\n" + fileName);
+        textStyle.bigText(chapterTitle + "\n" + message);
 
-        manager.notify(notificationId, new NotificationCompat.Builder(context, CHANNEL_ID)
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(ICON)
             .setContentTitle("导出完成: " + chapterTitle)
             .setContentText(fileName)
             .setStyle(textStyle)
-            .setContentIntent(pendingIntent)
             .setAutoCancel(true)
-            .setOngoing(false)
-            .build());
+            .setOngoing(false);
+        if (pendingIntent != null) {
+            builder.setContentIntent(pendingIntent);
+        }
+        notify(notificationId, builder.build());
+    }
+
+    private PendingIntent createPdfOpenIntent(int notificationId, String filePath) {
+        Intent openIntent = new Intent(Intent.ACTION_VIEW);
+        try {
+            Uri uri = FileProvider.getUriForFile(
+                context,
+                context.getPackageName() + ".fileprovider",
+                new File(filePath)
+            );
+            openIntent.setDataAndType(uri, "application/pdf");
+            openIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            return PendingIntent.getActivity(
+                context,
+                notificationId,
+                openIntent,
+                PendingIntent.FLAG_IMMUTABLE
+            );
+        } catch (RuntimeException e) {
+            Log.d(TAG, "PDF 完成通知打开入口创建失败", e);
+            return null;
+        }
     }
 
     public void showError(int notificationId, String chapterTitle, String error) {
@@ -125,7 +102,7 @@ public class PdfExportNotificationHelper {
         NotificationCompat.BigTextStyle textStyle = new NotificationCompat.BigTextStyle();
         textStyle.bigText(message);
 
-        manager.notify(notificationId, new NotificationCompat.Builder(context, CHANNEL_ID)
+        notify(notificationId, new NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(ICON)
             .setContentTitle("导出失败: " + chapterTitle)
             .setContentText(message)
@@ -136,6 +113,24 @@ public class PdfExportNotificationHelper {
     }
 
     public void cancel(int notificationId) {
-        manager.cancel(notificationId);
+        if (manager == null) return;
+        try {
+            manager.cancel(notificationId);
+        } catch (SecurityException e) {
+            Log.d(TAG, "通知权限未授予，跳过取消 PDF 通知", e);
+        } catch (RuntimeException e) {
+            Log.d(TAG, "取消 PDF 通知失败", e);
+        }
+    }
+
+    private void notify(int notificationId, android.app.Notification notification) {
+        if (manager == null) return;
+        try {
+            manager.notify(notificationId, notification);
+        } catch (SecurityException e) {
+            Log.d(TAG, "通知权限未授予，跳过 PDF 通知", e);
+        } catch (RuntimeException e) {
+            Log.d(TAG, "发布 PDF 通知失败", e);
+        }
     }
 }

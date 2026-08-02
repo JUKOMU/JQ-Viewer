@@ -21,6 +21,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * 下载服务——任务创建、取消、暂停、恢复、删除、查询。
@@ -61,6 +62,7 @@ public class DownloadService {
     private final Set<String> foregroundTaskIds = ConcurrentHashMap.newKeySet();
     private final Object mapLock = new Object();
     private final Map<String, Long> lastNotificationAt = new ConcurrentHashMap<>();
+    private final AtomicInteger foregroundRevision = new AtomicInteger(0);
 
     public DownloadService(DownloadStore downloadDb, FileStore fileStore,
                            JmApiClient client, ExecutorService prepareExecutor,
@@ -104,6 +106,8 @@ public class DownloadService {
             try {
                 if (downloadDb.getTask(taskId) == null) {
                     removeQueuedNotification(taskId);
+                    cleanupTaskMapping(taskId);
+                    cancelNotification(taskId);
                     return;
                 }
                 showPreparingNotification(taskId, albumTitle, chapterId, chapterTitle, coverUrl);
@@ -451,7 +455,7 @@ public class DownloadService {
     }
 
     private int notificationId(String taskId) {
-        return 3000 + ((taskId.hashCode() & 0x7fffffff) % 100000);
+        return NotificationIds.downloadTask(taskId);
     }
 
     private void showQueuedNotification(String taskId, String chapterTitle) {
@@ -526,6 +530,10 @@ public class DownloadService {
     }
 
     private void updateForegroundService() {
-        DownloadForegroundService.update(context, foregroundTaskIds.size());
+        DownloadForegroundService.update(
+            context,
+            foregroundTaskIds.size(),
+            foregroundRevision.incrementAndGet()
+        );
     }
 }

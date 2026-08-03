@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc && vite build",
+    "typecheck": "vue-tsc --noEmit",
     "preview": "vite preview",
     "test:e2e": "cypress run",
     "test:unit": "vitest run",

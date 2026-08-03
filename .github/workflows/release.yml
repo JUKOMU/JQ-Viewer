@@ -1,125 +1,118 @@
 name: Release
 
 on:
-    push:
-        tags:
-            - "v*.*.*"
-            - "v*.*.*-*"
+  push:
+    tags:
+      - 'v*.*.*'
+      - 'v*.*.*-*'
 
-    workflow_dispatch:
-        inputs:
-            tag:
-                description: "Tag name to release (e.g. v0.0.4)"
-                required: false
-            prerelease:
-                description: "Mark as pre-release?"
-                required: false
-                type: boolean
-                default: false
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag name to release (e.g. v0.0.4)'
+        required: false
+      prerelease:
+        description: 'Mark as pre-release?'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
-    contents: write
+  contents: write
 
 concurrency:
-    group: ${{ github.workflow }}-${{ github.ref }}
-    cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-    release:
-        runs-on: ubuntu-latest
+  frontend:
+    uses: ./.github/workflows/ci-frontend.yml
 
-        steps:
-            - uses: actions/checkout@v4
-              with:
-                  submodules: true
+  android-jvm:
+    uses: ./.github/workflows/ci-android-jvm.yml
 
-            - uses: actions/setup-node@v4
-              with:
-                  node-version: 22
-                  cache: npm
+  instrumentation:
+    uses: ./.github/workflows/ci-android-instrumentation.yml
 
-            - uses: actions/setup-java@v4
-              with:
-                  distribution: temurin
-                  java-version: 21
+  release:
+    needs: [frontend, android-jvm, instrumentation]
+    runs-on: ubuntu-latest
 
-            - run: npm ci
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
 
-            - name: Lint frontend
-              run: npm run lint
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
 
-            - name: Run frontend unit tests
-              run: npm run test:unit
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
 
-            - name: Build frontend
-              run: npm run build
+      - run: npm ci
 
-            - name: Check version consistency
-              run: npm run check:version
+      - name: Build frontend
+        run: npm run build
 
-            - run: npx cap sync android
+      - name: Check version consistency
+        run: npm run check:version
 
-            - name: Run Android local unit tests
-              run: cd android && chmod +x gradlew && ./gradlew :app:testDebugUnitTest
+      - run: npx cap sync android
 
-            - name: Run Android instrumentation tests
-              uses: reactivecircus/android-emulator-runner@v2
-              with:
-                  api-level: 35
-                  arch: x86_64
-                  disable-animations: true
-                  script: cd android && ./gradlew :app:connectedDebugAndroidTest
+      - name: Validate release signing secrets
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          missing=0
+          for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing required release signing secret: ${name}"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
 
-            - name: Validate release signing secrets
-              env:
-                  KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-                  KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-                  KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-                  KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-              run: |
-                  missing=0
-                  for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
-                    if [ -z "${!name}" ]; then
-                      echo "::error::Missing required release signing secret: ${name}"
-                      missing=1
-                    fi
-                  done
-                  if [ "$missing" -ne 0 ]; then
-                    exit 1
-                  fi
+      - name: Setup keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
+          cat > android/keystore.properties <<PROPS
+          storeFile=app/release.keystore
+          storePassword=${KEYSTORE_PASSWORD}
+          keyAlias=${KEY_ALIAS}
+          keyPassword=${KEY_PASSWORD}
+          PROPS
 
-            - name: Setup keystore
-              env:
-                  KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-                  KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-                  KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-                  KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-              run: |
-                  echo "$KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
-                  cat > android/keystore.properties <<PROPS
-                  storeFile=app/release.keystore
-                  storePassword=${KEYSTORE_PASSWORD}
-                  keyAlias=${KEY_ALIAS}
-                  keyPassword=${KEY_PASSWORD}
-                  PROPS
+      - name: Build release APK
+        run: cd android && chmod +x gradlew && ./gradlew :app:assembleRelease
 
-            - name: Build release APK
-              run: cd android && chmod +x gradlew && ./gradlew :app:assembleRelease
+      - name: Rename release APK
+        run: |
+          tag_name="${{ inputs.tag || github.ref_name }}"
+          version="${tag_name#v}"
+          version="${version//./_}"
+          cp android/app/build/outputs/apk/release/app-release.apk "JQ-Viewer-${version}.apk"
 
-            - name: Rename release APK
-              run: |
-                  tag_name="${{ inputs.tag || github.ref_name }}"
-                  version="${tag_name#v}"
-                  version="${version//./_}"
-                  cp android/app/build/outputs/apk/release/app-release.apk "JQ-Viewer-${version}.apk"
-
-            - name: Attach APK to GitHub Release
-              uses: softprops/action-gh-release@v2
-              with:
-                  tag_name: ${{ inputs.tag || github.ref_name }}
-                  draft: false
-                  prerelease: ${{ inputs.prerelease || contains(github.ref, '-') }}
-                  generate_release_notes: true
-                  files: JQ-Viewer-*.apk
-              env:
-                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Attach APK to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          draft: false
+          prerelease: ${{ inputs.prerelease || contains(github.ref, '-') }}
+          generate_release_notes: true
+          files: JQ-Viewer-*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

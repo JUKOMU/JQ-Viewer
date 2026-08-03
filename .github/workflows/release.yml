@@ -18,7 +18,7 @@ on:
         default: false
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -29,6 +29,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
@@ -57,11 +59,14 @@ jobs:
   release:
     needs: [validate-release-input, frontend, android-jvm, instrumentation]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: true
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
@@ -117,8 +122,10 @@ jobs:
         run: cd android && chmod +x gradlew && ./gradlew :app:assembleRelease
 
       - name: Rename release APK
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          tag_name="${{ inputs.tag || github.ref_name }}"
+          tag_name="$RELEASE_TAG"
           version="${tag_name#v}"
           version="${version//./_}"
           cp android/app/build/outputs/apk/release/app-release.apk "JQ-Viewer-${version}.apk"
@@ -217,7 +224,7 @@ jobs:
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
           draft: false
-          prerelease: ${{ inputs.prerelease || contains(github.ref, '-') }}
+          prerelease: ${{ inputs.prerelease || contains(inputs.tag || github.ref_name, '-') }}
           generate_release_notes: true
           files: JQ-Viewer-*.apk
         env:

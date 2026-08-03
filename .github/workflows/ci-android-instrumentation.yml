@@ -18,12 +18,13 @@ jobs:
     timeout-minutes: 60
     strategy:
       fail-fast: false
-      max-parallel: 4
       matrix:
         api-level: [24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36]
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
@@ -67,17 +68,15 @@ jobs:
           arch: x86_64
           target: default
           disable-animations: true
-          script: |
-            diagnostics_dir="android/app/build/ci-diagnostics"
-            adb logcat -c || true
-            set +e
-            (
-              cd android
-              ./gradlew :app:connectedDebugAndroidTest --console=plain
-            )
-            test_status=$?
-            adb logcat -d -v threadtime > "$diagnostics_dir/logcat.txt" || true
-            adb shell getprop > "$diagnostics_dir/device-properties.txt" || true
+          script: >
+            diagnostics_dir="android/app/build/ci-diagnostics";
+            adb logcat -c || true;
+            chmod +x android/gradlew || exit 1;
+            set +e;
+            ./android/gradlew -p android :app:connectedDebugAndroidTest --console=plain;
+            test_status=$?;
+            adb logcat -d -v threadtime > "$diagnostics_dir/logcat.txt" || true;
+            adb shell getprop > "$diagnostics_dir/device-properties.txt" || true;
             exit "$test_status"
 
       - name: Upload API ${{ matrix.api-level }} reports

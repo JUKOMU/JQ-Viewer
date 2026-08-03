@@ -6,12 +6,12 @@
         :disabled="canLoadPrevious && pageAtTop"
         @ion-refresh="handleRefresh"
       >
-        <IonRefresherContent/>
+        <IonRefresherContent />
       </IonRefresher>
 
       <div class="favorite-page-top">
         <div class="favorite-page-toolbar" :class="{ pinned: pullHeaderPinned }">
-          <MenuToggleButton/>
+          <MenuToggleButton />
           <div class="toolbar-favorite">
             <div class="toolbar-row">
               <FavoriteSearchBar
@@ -26,7 +26,7 @@
                 aria-label="收藏夹列表"
                 @click="openRightMenu"
               >
-                <IonIcon :icon="folderOpenOutline"/>
+                <IonIcon :icon="folderOpenOutline" />
               </button>
             </div>
           </div>
@@ -62,7 +62,7 @@
             aria-label="更多操作"
             @click.stop="openCardMenu(item, $event)"
           >
-            <IonIcon :icon="ellipsisVertical"/>
+            <IonIcon :icon="ellipsisVertical" />
           </button>
         </template>
       </SearchResultContainer>
@@ -82,7 +82,7 @@
         <div class="progress-title">{{ progressTitle }}</div>
 
         <div class="progress-bar">
-          <div class="progress-fill" :style="{ width: progressPercent + '%' }"/>
+          <div class="progress-fill" :style="{ width: progressPercent + '%' }" />
         </div>
         <div class="progress-percent">{{ progressPercent }}%</div>
 
@@ -124,15 +124,15 @@
       @touchstart.stop
     >
       <button type="button" class="card-menu-item" @click.stop="handleCardRead(cardMenu.item)">
-        <IonIcon :icon="bookOutline" class="card-menu-icon"/>
+        <IonIcon :icon="bookOutline" class="card-menu-icon" />
         <span>阅读</span>
       </button>
       <button type="button" class="card-menu-item" @click.stop="handleCardMove(cardMenu.item)">
-        <IonIcon :icon="folderOpenOutline" class="card-menu-icon"/>
+        <IonIcon :icon="folderOpenOutline" class="card-menu-icon" />
         <span>移动</span>
       </button>
       <button type="button" class="card-menu-item" @click.stop="handleCardDownload(cardMenu.item)">
-        <IonIcon :icon="downloadOutline" class="card-menu-icon"/>
+        <IonIcon :icon="downloadOutline" class="card-menu-icon" />
         <span>下载</span>
       </button>
       <button
@@ -140,7 +140,7 @@
         class="card-menu-item card-menu-item--danger"
         @click.stop="handleCardRemove(cardMenu.item)"
       >
-        <IonIcon :icon="trashOutline" class="card-menu-icon"/>
+        <IonIcon :icon="trashOutline" class="card-menu-icon" />
         <span>取消收藏</span>
       </button>
     </div>
@@ -148,8 +148,17 @@
 </template>
 
 <script setup lang="ts">
-import {computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch,} from 'vue'
-import {useRouter} from 'vue-router'
+import {
+  computed,
+  nextTick,
+  onActivated,
+  onBeforeUnmount,
+  onDeactivated,
+  onMounted,
+  ref,
+  watch,
+} from 'vue'
+import { useRouter } from 'vue-router'
 import {
   alertController,
   createGesture,
@@ -161,9 +170,15 @@ import {
   IonRefresherContent,
   menuController,
 } from '@ionic/vue'
-import type {PluginListenerHandle} from '@capacitor/core'
-import {bookOutline, downloadOutline, ellipsisVertical, folderOpenOutline, trashOutline,} from 'ionicons/icons'
-import type {ScrollCustomEvent} from '@ionic/core'
+import type { PluginListenerHandle } from '@capacitor/core'
+import {
+  bookOutline,
+  downloadOutline,
+  ellipsisVertical,
+  folderOpenOutline,
+  trashOutline,
+} from 'ionicons/icons'
+import type { ScrollCustomEvent } from '@ionic/core'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import QuickActionFab from '@/components/common/QuickActionFab.vue'
 import FavoriteSearchBar from '@/components/favorite/FavoriteSearchBar.vue'
@@ -173,19 +188,29 @@ import type {
   SearchResultDisplayItem,
 } from '@/components/search/SearchResultContainer.vue'
 import SearchResultContainer from '@/components/search/SearchResultContainer.vue'
-import {JmcomicService, sanitizeError, showToast} from '@/services/JmcomicService'
-import {OfflineDownloadService} from '@/services/OfflineDownloadService'
-import {OfflineFavoriteService, offlineFolderCache, offlineTotalCount,} from '@/services/OfflineFavoriteService'
-import {ExportFormatService} from '@/services/ExportFormatService'
-import {useAuth} from '@/composables/useAuth'
-import type {FavoriteQuery, FavoriteResult, FolderEntry, SearchResult, SearchResultItem,} from '@/services/JmcomicTypes'
-import {OFFLINE_ALL_FOLDER_ID} from '@/services/JmcomicTypes'
-import {useSideMenuState} from '@/composables/useSideMenuState'
-import {cachedState} from '@/composables/favoritePageCache'
+import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
+import { OfflineDownloadService } from '@/services/OfflineDownloadService'
+import {
+  OfflineFavoriteService,
+  offlineFolderCache,
+  offlineTotalCount,
+} from '@/services/OfflineFavoriteService'
+import { ExportFormatService } from '@/services/ExportFormatService'
+import { useAuth } from '@/composables/useAuth'
+import type {
+  FavoriteQuery,
+  FavoriteResult,
+  FolderEntry,
+  SearchResult,
+  SearchResultItem,
+} from '@/services/JmcomicTypes'
+import { OFFLINE_ALL_FOLDER_ID } from '@/services/JmcomicTypes'
+import { useSideMenuState } from '@/composables/useSideMenuState'
+import { cachedState } from '@/composables/favoritePageCache'
 
-defineOptions({name: 'FavoritePage'})
+defineOptions({ name: 'FavoritePage' })
 
-const {isDraggingRight, isSnappingClosed, leftMenuOpen, rightDragProgress, rightMenuOpen} =
+const { isDraggingRight, isSnappingClosed, leftMenuOpen, rightDragProgress, rightMenuOpen } =
   useSideMenuState()
 
 const NEXT_PAGE_THRESHOLD = 220
@@ -205,7 +230,7 @@ const loadOnlineFolderCounts = async () => {
   if (ids.length === 0) return
   const counts: Record<string, number> = {}
   const promises = ids.map((id) =>
-    JmcomicService.favorites({folderId: id, page: 1})
+    JmcomicService.favorites({ folderId: id, page: 1 })
       .then((r) => {
         counts[id] = r.totalItems
       })
@@ -218,13 +243,13 @@ const loadOnlineFolderCounts = async () => {
 }
 
 const onlineFolderEntries = computed<FolderEntry[]>(() =>
-  Object.entries(onlineFolderMap.value).map(([id, name]) => ({id, name, count: 0})),
+  Object.entries(onlineFolderMap.value).map(([id, name]) => ({ id, name, count: 0 })),
 )
 
 const offlineFolderEntries = computed<FolderEntry[]>(() => {
   const folders = offlineFolderCache.value
   const totalCount = offlineTotalCount.value
-  const allEntry: FolderEntry = {id: OFFLINE_ALL_FOLDER_ID, name: '全部', count: totalCount}
+  const allEntry: FolderEntry = { id: OFFLINE_ALL_FOLDER_ID, name: '全部', count: totalCount }
   return [allEntry, ...folders]
 })
 computed(() => {
@@ -285,7 +310,8 @@ const refreshDownloadStatuses = async () => {
             if (pdf.albumId) set.add(pdf.albumId)
           }
         }
-      } catch { /* ignore */
+      } catch {
+        /* ignore */
       }
       downloadedAlbumIds.value = set
     }
@@ -299,10 +325,10 @@ const saveToCache = () => {
   cachedState.value = {
     folderSource: folderSource.value,
     currentFolderId: currentFolderId.value,
-    onlineFolderMap: {...onlineFolderMap.value},
-    onlineFolderCounts: {...onlineFolderCounts.value},
+    onlineFolderMap: { ...onlineFolderMap.value },
+    onlineFolderCounts: { ...onlineFolderCounts.value },
     resultMeta: resultMeta.value,
-    pageCache: {...pageCache.value},
+    pageCache: { ...pageCache.value },
     displayMode: displayMode.value,
   }
 }
@@ -330,7 +356,7 @@ const silentRefresh = async () => {
     const sameTotal = resultMeta.value?.totalItems === pageResult.totalItems
     if (!sameContent) {
       resultMeta.value = pageResult
-      pageCache.value = {1: pageResult.content}
+      pageCache.value = { 1: pageResult.content }
     } else if (!sameTotal) {
       resultMeta.value = pageResult
     }
@@ -499,7 +525,7 @@ const resetWithPage = async (page: number = 1) => {
   try {
     const pageResult = await fetchPage(page)
     resultMeta.value = pageResult
-    pageCache.value = {[page]: pageResult.content}
+    pageCache.value = { [page]: pageResult.content }
     saveToCache()
     await nextTick()
     void contentRef.value?.$el?.scrollToTop?.(0)
@@ -530,11 +556,11 @@ const handleRefresh = async (event: CustomEvent) => {
       errorMessage.value = ''
       const result = await fetchOnlineFavorites(1)
       resultMeta.value = result
-      pageCache.value = {1: result.content}
+      pageCache.value = { 1: result.content }
     } else {
       const result = await fetchOfflineFavorites(1)
       resultMeta.value = result
-      pageCache.value = {1: result.content}
+      pageCache.value = { 1: result.content }
     }
   } catch {
     if (folderSource.value === 'online') {
@@ -553,7 +579,7 @@ const appendPage = async (page: number) => {
     errorMessage.value = ''
     const pageResult = await fetchPage(page)
     resultMeta.value = pageResult
-    pageCache.value = {...pageCache.value, [page]: pageResult.content}
+    pageCache.value = { ...pageCache.value, [page]: pageResult.content }
     saveToCache()
     await maybeLoadNextAfterRender()
   } catch (error) {
@@ -585,7 +611,7 @@ const prependPage = async (page: number) => {
     errorMessage.value = ''
     const pageResult = await fetchPage(page)
     resultMeta.value = pageResult
-    pageCache.value = {[page]: pageResult.content, ...pageCache.value}
+    pageCache.value = { [page]: pageResult.content, ...pageCache.value }
     saveToCache()
     await nextTick()
     if (anchorEntryKey && previousAnchorTop !== null) {
@@ -732,7 +758,7 @@ const cardMenuStyle = computed(() => {
 
 function openCardMenu(item: SearchResultItem, event: MouseEvent) {
   const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-  cardMenu.value = {item, x: rect.left, y: rect.bottom + 4}
+  cardMenu.value = { item, x: rect.left, y: rect.bottom + 4 }
   // 延迟注册 click-outside，避免同一事件触发立即关闭
   setTimeout(() => {
     document.addEventListener('mousedown', handleCardMenuClickOutside)
@@ -766,7 +792,7 @@ async function handleCardRead(item: SearchResultItem) {
     const photo = await JmcomicService.getPhoto(item.id)
     await router.push({
       path: `/album/${item.id}/read/${photo.id}`,
-      query: {title: item.title, total: String(photo.images.length)},
+      query: { title: item.title, total: String(photo.images.length) },
     })
   } catch {
     await showToast('获取章节失败', 'danger')
@@ -786,7 +812,7 @@ async function handleCardMove(item: SearchResultItem) {
   if (isOnline) {
     folders = Object.entries(onlineFolderMap.value)
       .filter(([id]) => id !== currentFolderId.value)
-      .map(([id, name]) => ({id, name}))
+      .map(([id, name]) => ({ id, name }))
   } else {
     folders = OfflineFavoriteService.getFolders().filter((f) => f.id !== currentFolderId.value)
   }
@@ -804,7 +830,7 @@ async function handleCardMove(item: SearchResultItem) {
       value: f.id,
     })),
     buttons: [
-      {text: '取消', role: 'cancel' as const},
+      { text: '取消', role: 'cancel' as const },
       {
         text: '确定',
         handler: async (data: string) => {
@@ -880,7 +906,7 @@ async function handleCardRemove(item: SearchResultItem) {
     header: '取消收藏',
     message: `确定将「${item.title}」从收藏夹移除？`,
     buttons: [
-      {text: '取消', role: 'cancel' as const},
+      { text: '取消', role: 'cancel' as const },
       {
         text: '移除',
         role: 'destructive' as const,
@@ -909,9 +935,9 @@ async function handleCardRemove(item: SearchResultItem) {
 const onAddFolder = async (source: 'online' | 'offline') => {
   const alert = await alertController.create({
     header: '新建收藏夹',
-    inputs: [{name: 'name', type: 'text', placeholder: '收藏夹名称'}],
+    inputs: [{ name: 'name', type: 'text', placeholder: '收藏夹名称' }],
     buttons: [
-      {text: '取消', role: 'cancel'},
+      { text: '取消', role: 'cancel' },
       {
         text: '确定',
         handler: async (data) => {
@@ -948,9 +974,9 @@ const onRenameFolder = async (payload: {
 }) => {
   const alert = await alertController.create({
     header: '重命名收藏夹',
-    inputs: [{name: 'name', type: 'text', placeholder: '新名称', value: payload.folderName}],
+    inputs: [{ name: 'name', type: 'text', placeholder: '新名称', value: payload.folderName }],
     buttons: [
-      {text: '取消', role: 'cancel'},
+      { text: '取消', role: 'cancel' },
       {
         text: '确定',
         handler: async (data) => {
@@ -994,7 +1020,7 @@ const onDeleteFolder = async (payload: {
     header: '删除收藏夹',
     message: `确定删除「${payload.folderName}」吗？此操作不可撤销。`,
     buttons: [
-      {text: '取消', role: 'cancel'},
+      { text: '取消', role: 'cancel' },
       {
         text: '删除',
         role: 'destructive',
@@ -1057,7 +1083,7 @@ const onCopyFolder = async (payload: {
         },
       ],
       buttons: [
-        {text: '取消', role: 'cancel'},
+        { text: '取消', role: 'cancel' },
         {
           text: '确定',
           handler: async (data) => {
@@ -1075,7 +1101,7 @@ const onCopyFolder = async (payload: {
               let page = 1
               let totalPages = 1
               while (page <= totalPages) {
-                const r = await JmcomicService.favorites({folderId: payload.folderId, page})
+                const r = await JmcomicService.favorites({ folderId: payload.folderId, page })
                 r.content.forEach((item) => items.push(item))
                 if (progressTotal.value === 0) progressTotal.value = r.totalItems
                 totalPages = r.totalPages
@@ -1124,11 +1150,11 @@ const onCopyFolder = async (payload: {
         },
       ],
       buttons: [
-        {text: '取消', role: 'cancel'},
+        { text: '取消', role: 'cancel' },
         {
           text: '确定',
           handler: async (data: string | Record<string, string>) => {
-            const form = typeof data === 'string' ? {target: data} : data || {}
+            const form = typeof data === 'string' ? { target: data } : data || {}
             const name = (form.name ?? '').trim()
             if (!name) return
             await alert.dismiss()
@@ -1167,7 +1193,7 @@ const onCopyFolder = async (payload: {
                 let fp = 1
                 let ftp = 1
                 while (fp <= ftp) {
-                  const r = await JmcomicService.favorites({folderId: '0', page: fp})
+                  const r = await JmcomicService.favorites({ folderId: '0', page: fp })
                   r.content.forEach((item) => favoritedIds.add(item.id))
                   ftp = r.totalPages
                   fp++
@@ -1247,7 +1273,7 @@ const onMoveFolder = async (payload: {
     // 在线 → 在线：选择目标文件夹 → 备份 → 逐项移动 → 验证
     const targets = Object.entries(onlineFolderMap.value)
       .filter(([id]) => id !== payload.folderId)
-      .map(([id, name]) => ({id, name}))
+      .map(([id, name]) => ({ id, name }))
 
     if (targets.length === 0) {
       await showToast('没有其他在线收藏夹', 'medium')
@@ -1263,7 +1289,7 @@ const onMoveFolder = async (payload: {
         value: t.id,
       })),
       buttons: [
-        {text: '取消', role: 'cancel'},
+        { text: '取消', role: 'cancel' },
         {
           text: '确定',
           handler: async (targetId: string) => {
@@ -1277,7 +1303,7 @@ const onMoveFolder = async (payload: {
               let page = 1
               let totalPages = 1
               while (page <= totalPages) {
-                const r = await JmcomicService.favorites({folderId: payload.folderId, page})
+                const r = await JmcomicService.favorites({ folderId: payload.folderId, page })
                 r.content.forEach((item) => fullItems.push(item))
                 totalPages = r.totalPages
                 page++
@@ -1329,7 +1355,7 @@ const onMoveFolder = async (payload: {
               }
 
               const workerCount = Math.min(concurrency, fullItems.length)
-              await Promise.all(Array.from({length: workerCount}, () => worker()))
+              await Promise.all(Array.from({ length: workerCount }, () => worker()))
               showProgressModal.value = false
 
               // 3. 验证
@@ -1376,7 +1402,7 @@ const onMoveFolder = async (payload: {
         value: t.id,
       })),
       buttons: [
-        {text: '取消', role: 'cancel'},
+        { text: '取消', role: 'cancel' },
         {
           text: '确定',
           handler: async (targetId: string) => {
@@ -1421,7 +1447,7 @@ const onExportFolder = async (payload: {
       let page = 1
       let totalPages = 1
       while (page <= totalPages) {
-        const r = await JmcomicService.favorites({folderId: payload.folderId, page})
+        const r = await JmcomicService.favorites({ folderId: payload.folderId, page })
         items.push(...r.content)
         await new Promise((r) => setTimeout(r, 100))
         totalPages = r.totalPages
@@ -1450,8 +1476,8 @@ const onExportFolder = async (payload: {
       const alert = await alertController.create({
         header: '导出结果',
         message: `共 ${items.length} 条，请手动复制：`,
-        inputs: [{name: 'text', type: 'textarea', value: text}],
-        buttons: [{text: '关闭', role: 'cancel'}],
+        inputs: [{ name: 'text', type: 'textarea', value: text }],
+        buttons: [{ text: '关闭', role: 'cancel' }],
       })
       await alert.present()
     }
@@ -1464,7 +1490,7 @@ const onExportFolder = async (payload: {
 
 async function refreshOnlineFolderList() {
   try {
-    const result: FavoriteResult = await JmcomicService.favorites({folderId: '0', page: 1})
+    const result: FavoriteResult = await JmcomicService.favorites({ folderId: '0', page: 1 })
     if (result.folderList) {
       onlineFolderMap.value = result.folderList
     }
@@ -1475,7 +1501,7 @@ async function refreshOnlineFolderList() {
 }
 
 // --- 初始化 ---
-const {isLoggedIn} = useAuth()
+const { isLoggedIn } = useAuth()
 
 const initOnlineFolders = async () => {
   await OfflineFavoriteService.ensureInit()
@@ -1497,7 +1523,7 @@ const initOnlineFolders = async () => {
   }
 
   try {
-    const result: FavoriteResult = await JmcomicService.favorites({folderId: '0', page: 1})
+    const result: FavoriteResult = await JmcomicService.favorites({ folderId: '0', page: 1 })
     if (result.folderList) {
       onlineFolderMap.value = result.folderList
     }

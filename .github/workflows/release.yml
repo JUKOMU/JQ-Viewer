@@ -1,125 +1,248 @@
 name: Release
 
 on:
-    push:
-        tags:
-            - "v*.*.*"
-            - "v*.*.*-*"
+  push:
+    tags:
+      - 'v*.*.*'
+      - 'v*.*.*-*'
 
-    workflow_dispatch:
-        inputs:
-            tag:
-                description: "Tag name to release (e.g. v0.0.4)"
-                required: false
-            prerelease:
-                description: "Mark as pre-release?"
-                required: false
-                type: boolean
-                default: false
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag name to release (e.g. v0.0.4)'
+        required: false
+      prerelease:
+        description: 'Mark as pre-release?'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
-    contents: write
+  contents: read
 
 concurrency:
-    group: ${{ github.workflow }}-${{ github.ref }}
-    cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-    release:
-        runs-on: ubuntu-latest
+  validate-release-input:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
-        steps:
-            - uses: actions/checkout@v4
-              with:
-                  submodules: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
 
-            - uses: actions/setup-node@v4
-              with:
-                  node-version: 22
-                  cache: npm
+      - name: Check version consistency
+        run: npm run check:version
 
-            - uses: actions/setup-java@v4
-              with:
-                  distribution: temurin
-                  java-version: 21
+      - name: Validate release tag
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: node scripts/check-release-tag.mjs "$RELEASE_TAG"
 
-            - run: npm ci
+  frontend:
+    needs: validate-release-input
+    uses: ./.github/workflows/ci-frontend.yml
 
-            - name: Lint frontend
-              run: npm run lint
+  android-jvm:
+    needs: validate-release-input
+    uses: ./.github/workflows/ci-android-jvm.yml
 
-            - name: Run frontend unit tests
-              run: npm run test:unit
+  instrumentation:
+    needs: validate-release-input
+    uses: ./.github/workflows/ci-android-instrumentation.yml
 
-            - name: Build frontend
-              run: npm run build
+  release:
+    needs: [validate-release-input, frontend, android-jvm, instrumentation]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
-            - name: Check version consistency
-              run: npm run check:version
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+          persist-credentials: false
+          fetch-depth: 0
 
-            - run: npx cap sync android
+      - name: Verify release commit
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
 
-            - name: Run Android local unit tests
-              run: cd android && chmod +x gradlew && ./gradlew :app:testDebugUnitTest
+          tag_ref="refs/tags/$RELEASE_TAG"
+          if git show-ref --verify --quiet "$tag_ref"; then
+            tag_commit="$(git rev-parse "$tag_ref^{commit}")"
+            if [ "$tag_commit" != "$GITHUB_SHA" ]; then
+              echo "::error::Release tag $RELEASE_TAG points to $tag_commit, but this workflow built $GITHUB_SHA"
+              exit 1
+            fi
+          fi
 
-            - name: Run Android instrumentation tests
-              uses: reactivecircus/android-emulator-runner@v2
-              with:
-                  api-level: 35
-                  arch: x86_64
-                  disable-animations: true
-                  script: cd android && ./gradlew :app:connectedDebugAndroidTest
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
 
-            - name: Validate release signing secrets
-              env:
-                  KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-                  KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-                  KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-                  KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-              run: |
-                  missing=0
-                  for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
-                    if [ -z "${!name}" ]; then
-                      echo "::error::Missing required release signing secret: ${name}"
-                      missing=1
-                    fi
-                  done
-                  if [ "$missing" -ne 0 ]; then
-                    exit 1
-                  fi
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
 
-            - name: Setup keystore
-              env:
-                  KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-                  KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-                  KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-                  KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-              run: |
-                  echo "$KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
-                  cat > android/keystore.properties <<PROPS
-                  storeFile=app/release.keystore
-                  storePassword=${KEYSTORE_PASSWORD}
-                  keyAlias=${KEY_ALIAS}
-                  keyPassword=${KEY_PASSWORD}
-                  PROPS
+      - run: npm ci
 
-            - name: Build release APK
-              run: cd android && chmod +x gradlew && ./gradlew :app:assembleRelease
+      - name: Build frontend
+        run: npm run build
 
-            - name: Rename release APK
-              run: |
-                  tag_name="${{ inputs.tag || github.ref_name }}"
-                  version="${tag_name#v}"
-                  version="${version//./_}"
-                  cp android/app/build/outputs/apk/release/app-release.apk "JQ-Viewer-${version}.apk"
+      - run: npx cap sync android
 
-            - name: Attach APK to GitHub Release
-              uses: softprops/action-gh-release@v2
-              with:
-                  tag_name: ${{ inputs.tag || github.ref_name }}
-                  draft: false
-                  prerelease: ${{ inputs.prerelease || contains(github.ref, '-') }}
-                  generate_release_notes: true
-                  files: JQ-Viewer-*.apk
-              env:
-                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Validate release signing secrets
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          missing=0
+          for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing required release signing secret: ${name}"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Setup keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
+          cat > android/keystore.properties <<PROPS
+          storeFile=app/release.keystore
+          storePassword=${KEYSTORE_PASSWORD}
+          keyAlias=${KEY_ALIAS}
+          keyPassword=${KEY_PASSWORD}
+          PROPS
+
+      - name: Build release APK
+        run: cd android && chmod +x gradlew && ./gradlew :app:assembleRelease
+
+      - name: Rename release APK
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          tag_name="$RELEASE_TAG"
+          version="${tag_name#v}"
+          version="${version//./_}"
+          cp android/app/build/outputs/apk/release/app-release.apk "JQ-Viewer-${version}.apk"
+
+      - name: Validate release APK
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+          EXPECTED_RELEASE_CERT_SHA256: '6667B73DA7322E56626D82CA0EFCF03386E0B5560E14DF48C6025142FF4197EA'
+        run: |
+          set -euo pipefail
+
+          version="${RELEASE_TAG#v}"
+          artifact_version="${version//./_}"
+          apk_path="JQ-Viewer-${artifact_version}.apk"
+
+          if [ ! -s "$apk_path" ]; then
+            echo "::error::Release APK is missing or empty: $apk_path"
+            exit 1
+          fi
+
+          sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          if [ -z "$sdk_root" ]; then
+            echo "::error::Android SDK root is not configured"
+            exit 1
+          fi
+
+          apkanalyzer_path="$(command -v apkanalyzer || true)"
+          if [ -z "$apkanalyzer_path" ]; then
+            apkanalyzer_path="$(find "$sdk_root/cmdline-tools" -type f -path '*/bin/apkanalyzer' | sort | tail -n 1)"
+          fi
+          apksigner_path="$(find "$sdk_root/build-tools" -maxdepth 2 -type f -name apksigner | sort -V | tail -n 1)"
+
+          if [ ! -x "$apkanalyzer_path" ] || [ ! -x "$apksigner_path" ]; then
+            echo "::error::Required Android APK inspection tools were not found"
+            exit 1
+          fi
+
+          expected_application_id="$(awk '$1 == "applicationId" { gsub(/"/, "", $2); print $2; exit }' android/app/build.gradle)"
+          expected_version_code="$(awk '$1 == "versionCode" { print $2; exit }' android/app/build.gradle)"
+          expected_version_name="$(awk '$1 == "versionName" { gsub(/"/, "", $2); print $2; exit }' android/app/build.gradle)"
+          expected_min_sdk="$(awk -F= '$1 ~ /minSdkVersion/ { gsub(/[[:space:]]/, "", $2); print $2; exit }' android/variables.gradle)"
+          expected_target_sdk="$(awk -F= '$1 ~ /targetSdkVersion/ { gsub(/[[:space:]]/, "", $2); print $2; exit }' android/variables.gradle)"
+
+          if [ -z "$expected_application_id" ] || [ -z "$expected_version_code" ] || \
+             [ -z "$expected_version_name" ] || [ -z "$expected_min_sdk" ] || \
+             [ -z "$expected_target_sdk" ]; then
+            echo "::error::Expected Android release metadata could not be read from source"
+            exit 1
+          fi
+
+          actual_application_id="$("$apkanalyzer_path" manifest application-id "$apk_path")"
+          actual_version_code="$("$apkanalyzer_path" manifest version-code "$apk_path")"
+          actual_version_name="$("$apkanalyzer_path" manifest version-name "$apk_path")"
+          actual_min_sdk="$("$apkanalyzer_path" manifest min-sdk "$apk_path")"
+          actual_target_sdk="$("$apkanalyzer_path" manifest target-sdk "$apk_path")"
+
+          assert_equal() {
+            label="$1"
+            expected="$2"
+            actual="$3"
+            if [ "$actual" != "$expected" ]; then
+              echo "::error::$label mismatch: expected $expected, got $actual"
+              exit 1
+            fi
+            echo "$label verified: $actual"
+          }
+
+          assert_equal "Application ID" "$expected_application_id" "$actual_application_id"
+          assert_equal "Version code" "$expected_version_code" "$actual_version_code"
+          assert_equal "Version name" "$expected_version_name" "$actual_version_name"
+          assert_equal "Minimum SDK" "$expected_min_sdk" "$actual_min_sdk"
+          assert_equal "Target SDK" "$expected_target_sdk" "$actual_target_sdk"
+
+          certificate_output="$("$apksigner_path" verify \
+            --min-sdk-version "$actual_min_sdk" \
+            --print-certs \
+            "$apk_path")"
+          mapfile -t certificate_digests < <(
+            printf '%s\n' "$certificate_output" \
+              | sed -n 's/^.*certificate SHA-256 digest: //p' \
+              | tr '[:lower:]' '[:upper:]' \
+              | sort -u
+          )
+          unset certificate_output
+
+          if [ "${#certificate_digests[@]}" -ne 1 ] || \
+             [ "${certificate_digests[0]}" != "$EXPECTED_RELEASE_CERT_SHA256" ]; then
+            echo "::error::Release APK signing certificate does not match the pinned certificate"
+            exit 1
+          fi
+          unset certificate_digests
+          echo "Release APK signature and signing certificate verified"
+
+      - name: Attach APK to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          target_commitish: ${{ github.sha }}
+          draft: false
+          prerelease: ${{ inputs.prerelease || contains(inputs.tag || github.ref_name, '-') }}
+          generate_release_notes: true
+          files: JQ-Viewer-*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

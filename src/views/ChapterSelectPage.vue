@@ -4,7 +4,7 @@
       <IonToolbar>
         <IonButtons slot="start">
           <IonButton text="" @click="goBack">
-            <IonIcon :icon="arrowBack"/>
+            <IonIcon :icon="arrowBack" />
           </IonButton>
         </IonButtons>
         <IonTitle class="toolbar-title">{{ albumTitle || '章节选择' }}</IonTitle>
@@ -32,20 +32,15 @@
             <span v-if="ch.downloadTask" class="source-chip image">图片</span>
             <span v-if="ch.pdfData" class="source-chip pdf">PDF</span>
           </span>
-          <img
-            v-if="chapterCover(ch)"
-            :src="chapterCover(ch)!"
-            class="chapter-thumb"
-            alt=""
-          />
+          <img v-if="chapterCover(ch)" :src="chapterCover(ch)!" class="chapter-thumb" alt="" />
         </button>
       </div>
 
       <!-- 全部章节模式：加载中骨架屏 -->
       <div v-else-if="loadingAll" class="chapter-grid">
         <div v-for="n in skeletonCount" :key="n" class="skeleton-card">
-          <div class="sk-line sk-line--short"/>
-          <div class="sk-line"/>
+          <div class="sk-line sk-line--short" />
+          <div class="sk-line" />
         </div>
       </div>
 
@@ -62,10 +57,12 @@
           <span class="chapter-num">第{{ meta.sortOrder }}话</span>
           <span class="chapter-title">{{ meta.title }}</span>
           <span v-if="downloadedIds.has(meta.id)" class="chapter-pages"
-          >{{ getDownloadedPages(meta.id) }} 页</span
+            >{{ getDownloadedPages(meta.id) }} 页</span
           >
           <span v-if="downloadedIds.has(meta.id)" class="source-row">
-            <span v-if="downloadedMap.get(meta.id)?.downloadTask" class="source-chip image">图片</span>
+            <span v-if="downloadedMap.get(meta.id)?.downloadTask" class="source-chip image"
+              >图片</span
+            >
             <span v-if="downloadedMap.get(meta.id)?.pdfData" class="source-chip pdf">PDF</span>
           </span>
           <img
@@ -77,20 +74,29 @@
         </button>
       </div>
 
-      <div class="bottom-spacer"/>
+      <div class="bottom-spacer" />
     </IonContent>
   </IonPage>
 </template>
 
 <script setup lang="ts">
-import {computed, onMounted, ref} from 'vue'
-import {useRoute, useRouter} from 'vue-router'
-import {IonButton, IonButtons, IonContent, IonHeader, IonIcon, IonPage, IonTitle, IonToolbar,} from '@ionic/vue'
-import {getImageUrl, JmcomicService} from '@/services/JmcomicService'
-import type {ImportedPdf, PhotoMeta} from '@/services/JmcomicTypes'
-import {arrowBack} from 'ionicons/icons'
+import { computed, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import {
+  IonButton,
+  IonButtons,
+  IonContent,
+  IonHeader,
+  IonIcon,
+  IonPage,
+  IonTitle,
+  IonToolbar,
+} from '@ionic/vue'
+import { getImageUrl, JmcomicService } from '@/services/JmcomicService'
+import type { ImportedPdf, PhotoMeta } from '@/services/JmcomicTypes'
+import { arrowBack } from 'ionicons/icons'
 
-defineOptions({name: 'ChapterSelectPage'})
+defineOptions({ name: 'ChapterSelectPage' })
 
 const route = useRoute()
 const router = useRouter()
@@ -271,9 +277,9 @@ onMounted(async () => {
 
   try {
     const downloadResult = await JmcomicService.getDownloadTasks()
-    for (const t of downloadResult.tasks
-      .filter((t) => t.status === 'completed' && t.albumId === albumId.value)
-      ) {
+    for (const t of downloadResult.tasks.filter(
+      (t) => t.status === 'completed' && t.albumId === albumId.value,
+    )) {
       const meta = findAlbumMeta(t.chapterId, t.chapterSortOrder)
       localChapters.set(t.chapterId, {
         albumId: t.albumId,
@@ -294,9 +300,7 @@ onMounted(async () => {
 
   try {
     const pdfResult = await JmcomicService.getImportedPdfs()
-    for (const p of pdfResult.pdfs
-      .filter((p) => p.albumId === albumId.value)
-      ) {
+    for (const p of pdfResult.pdfs.filter((p) => p.albumId === albumId.value)) {
       const chapterId = resolvePdfLocalKey(p)
       const current = localChapters.get(chapterId)
       if (current) {
@@ -329,8 +333,9 @@ onMounted(async () => {
     // 导入 PDF 列表读取失败不影响图片下载章节
   }
 
-  downloadedChapters.value = [...localChapters.values()]
-    .sort((a, b) => (a.chapterSortOrder ?? 0) - (b.chapterSortOrder ?? 0))
+  downloadedChapters.value = [...localChapters.values()].sort(
+    (a, b) => (a.chapterSortOrder ?? 0) - (b.chapterSortOrder ?? 0),
+  )
   if (downloadedChapters.value.length > 0) {
     albumTitle.value = downloadedChapters.value[0].albumTitle
   }
@@ -380,8 +385,9 @@ onMounted(async () => {
   background: #fffaf6;
   color: #5a3d2e;
   text-align: center;
-  transition: background-color 0.18s ease,
-  border-color 0.18s ease;
+  transition:
+    background-color 0.18s ease,
+    border-color 0.18s ease;
   cursor: pointer;
 }
 

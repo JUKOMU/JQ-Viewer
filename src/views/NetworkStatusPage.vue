@@ -3,7 +3,7 @@
     <IonHeader class="ion-no-border">
       <IonToolbar>
         <IonButtons slot="start">
-          <IonBackButton default-href="/setting"/>
+          <IonBackButton default-href="/setting" />
         </IonButtons>
         <IonTitle class="toolbar-title">网络状态</IonTitle>
       </IonToolbar>
@@ -50,7 +50,7 @@
           <div v-if="store.events.value.length" class="log-list">
             <div v-for="(evt, i) in store.events.value" :key="i" class="log-row">
               <span class="log-time">{{ formatTime(evt.timestamp) }}</span>
-              <span class="log-dot" :class="phaseClass(evt.phase)"/>
+              <span class="log-dot" :class="phaseClass(evt.phase)" />
               <span class="log-msg">{{ evt.message }}</span>
             </div>
           </div>
@@ -62,14 +62,23 @@
 </template>
 
 <script setup lang="ts">
-defineOptions({name: 'NetworkStatusPage'})
+defineOptions({ name: 'NetworkStatusPage' })
 
-import {onMounted, onUnmounted, ref} from 'vue'
-import {IonBackButton, IonButtons, IonContent, IonHeader, IonIcon, IonPage, IonTitle, IonToolbar,} from '@ionic/vue'
-import {refreshOutline, speedometerOutline} from 'ionicons/icons'
-import {JmcomicService} from '@/services/JmcomicService'
-import type {PluginListenerHandle} from '@capacitor/core'
-import {useNetworkProbeStore} from '@/composables/networkProbeStore'
+import { onMounted, onUnmounted, ref } from 'vue'
+import {
+  IonBackButton,
+  IonButtons,
+  IonContent,
+  IonHeader,
+  IonIcon,
+  IonPage,
+  IonTitle,
+  IonToolbar,
+} from '@ionic/vue'
+import { refreshOutline, speedometerOutline } from 'ionicons/icons'
+import { JmcomicService } from '@/services/JmcomicService'
+import type { PluginListenerHandle } from '@capacitor/core'
+import { useNetworkProbeStore } from '@/composables/networkProbeStore'
 
 const store = useNetworkProbeStore()
 const refreshing = ref(false)
@@ -115,7 +124,7 @@ function handleMeasureLatency() {
     .then((ret) => {
       const map: Record<string, { latencyMs: number; timedOut: boolean }> = {}
       for (const r of ret.results) {
-        map[r.domain] = {latencyMs: r.latencyMs, timedOut: r.timedOut}
+        map[r.domain] = { latencyMs: r.latencyMs, timedOut: r.timedOut }
       }
       latencyMap.value = map
     })
@@ -161,7 +170,7 @@ function phaseClass(phase: string): string {
 }
 
 function formatTime(ts: number): string {
-  return new Date(ts).toLocaleTimeString('zh-CN', {hour12: false})
+  return new Date(ts).toLocaleTimeString('zh-CN', { hour12: false })
 }
 </script>
 

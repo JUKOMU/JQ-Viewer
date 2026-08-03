@@ -1,10 +1,6 @@
 package io.github.jukomu.service;
 
-import android.app.Notification;
-import android.app.NotificationChannel;
-import android.app.NotificationManager;
-import android.app.PendingIntent;
-import android.app.Service;
+import android.app.*;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
@@ -26,13 +22,15 @@ public class DownloadForegroundService extends Service {
     private static final String ACTION_UPDATE = "io.github.jukomu.DOWNLOAD_FOREGROUND_UPDATE";
     private static final String ACTION_STOP = "io.github.jukomu.DOWNLOAD_FOREGROUND_STOP";
     private static final String EXTRA_ACTIVE_COUNT = "active_count";
-    private static final int NOTIFICATION_ID = 203001;
+    private static final String EXTRA_REVISION = "revision";
     private static final int ICON = R.mipmap.ic_launcher;
+    private int lastRevision = 0;
 
-    public static void update(Context context, int activeCount) {
+    public static void update(Context context, int activeCount, int revision) {
         Intent intent = new Intent(context, DownloadForegroundService.class);
         intent.setAction(activeCount > 0 ? ACTION_UPDATE : ACTION_STOP);
         intent.putExtra(EXTRA_ACTIVE_COUNT, activeCount);
+        intent.putExtra(EXTRA_REVISION, revision);
         try {
             if (activeCount > 0 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent);
@@ -53,15 +51,30 @@ public class DownloadForegroundService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         String action = intent != null ? intent.getAction() : null;
+        int revision = intent != null ? intent.getIntExtra(EXTRA_REVISION, 0) : 0;
+        if (isStaleRevision(revision, lastRevision)) {
+            return START_NOT_STICKY;
+        }
+        lastRevision = revision;
+
         if (ACTION_STOP.equals(action)) {
-            stopForeground(Service.STOP_FOREGROUND_REMOVE);
-            stopSelf();
+            stopForegroundSafely();
+            stopSelf(startId);
             return START_NOT_STICKY;
         }
 
         int activeCount = intent != null ? intent.getIntExtra(EXTRA_ACTIVE_COUNT, 1) : 1;
-        startForeground(NOTIFICATION_ID, buildNotification(Math.max(1, activeCount)));
+        try {
+            startForeground(NotificationIds.DOWNLOAD_FOREGROUND, buildNotification(Math.max(1, activeCount)));
+        } catch (Exception e) {
+            Log.w(TAG, "启动下载前台通知失败，任务继续由下载服务推进", e);
+            stopSelf(startId);
+        }
         return START_NOT_STICKY;
+    }
+
+    static boolean isStaleRevision(int revision, int lastRevision) {
+        return revision < lastRevision;
     }
 
     @Nullable
@@ -107,9 +120,17 @@ public class DownloadForegroundService extends Service {
         intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         return PendingIntent.getActivity(
             this,
-            NOTIFICATION_ID,
+            NotificationIds.DOWNLOAD_FOREGROUND,
             intent,
             PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
         );
+    }
+
+    private void stopForegroundSafely() {
+        try {
+            stopForeground(Service.STOP_FOREGROUND_REMOVE);
+        } catch (Exception e) {
+            Log.d(TAG, "停止下载前台通知失败", e);
+        }
     }
 }

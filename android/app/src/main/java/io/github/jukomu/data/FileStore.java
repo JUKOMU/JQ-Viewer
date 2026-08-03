@@ -149,25 +149,77 @@ public class FileStore {
 
     @SuppressLint("NewApi")
     byte[] getImageBytes(String albumId, String chapterId, int sortOrder) {
-        String key = makeSortKey(albumId, chapterId, sortOrder);
-        String filename = sortOrderToFilename.get(key);
-        if (filename == null) return null;
-
-        File imageFile = new File(getChapterDir(albumId, chapterId), filename);
-        if (!imageFile.exists()) return null;
+        File imageFile = getImageFile(albumId, chapterId, sortOrder);
+        if (imageFile == null) return null;
 
         try {
-            return Files.readAllBytes(imageFile.toPath());
+            return readImageBytes(imageFile);
         } catch (IOException e) {
             Log.e(TAG, "Failed to read image: " + imageFile.getPath(), e);
             return null;
         }
     }
 
+    private File getImageFile(String albumId, String chapterId, int sortOrder) {
+        String key = makeSortKey(albumId, chapterId, sortOrder);
+        String filename = sortOrderToFilename.get(key);
+        if (filename == null) return null;
+
+        try {
+            return resolveImageFile(getChapterDir(albumId, chapterId), filename);
+        } catch (IOException e) {
+            Log.w(TAG, "图片路径校验失败", e);
+            return null;
+        }
+    }
+
+    static File resolveImageFile(File chapterDir, String filename) throws IOException {
+        if (new File(filename).isAbsolute()) return null;
+        File canonicalChapterDir = chapterDir.getCanonicalFile();
+        File canonicalImageFile = new File(canonicalChapterDir, filename).getCanonicalFile();
+        String chapterPrefix = canonicalChapterDir.getPath() + File.separator;
+        if (!canonicalImageFile.getPath().startsWith(chapterPrefix)) return null;
+        return canonicalImageFile.isFile() ? canonicalImageFile : null;
+    }
+
     public byte[] getImageBytesByPhotoId(String photoId, int sortOrder) {
         String albumId = chapterIdToAlbumId.get(photoId);
         if (albumId == null) return null;
         return getImageBytes(albumId, photoId, sortOrder);
+    }
+
+    /**
+     * 返回已下载图片文件，供调用方在分配 byte[] 前按文件长度执行内存准入。
+     */
+    public File getImageFileByPhotoId(String photoId, int sortOrder) {
+        String albumId = chapterIdToAlbumId.get(photoId);
+        if (albumId == null) return null;
+        return getImageFile(albumId, photoId, sortOrder);
+    }
+
+    public byte[] readImageBytes(File imageFile) throws IOException {
+        try (FileInputStream input = new FileInputStream(imageFile)) {
+            int length = checkedImageLength(input.getChannel().size());
+            byte[] data = new byte[length];
+            int offset = 0;
+            while (offset < length) {
+                int count = input.read(data, offset, length - offset);
+                if (count < 0) {
+                    throw new EOFException("图片文件在读取期间被截断: " + imageFile.getPath());
+                }
+                offset += count;
+            }
+            if (input.read() != -1) {
+                throw new IOException("图片文件在读取期间增长: " + imageFile.getPath());
+            }
+            return data;
+        }
+    }
+
+    static int checkedImageLength(long length) throws IOException {
+        if (length <= 0L) throw new IOException("图片文件为空");
+        if (length > Integer.MAX_VALUE) throw new IOException("图片文件过大");
+        return (int) length;
     }
 
     public Integer getFirstImageSortOrder(String albumId, String chapterId) {

@@ -1,4 +1,4 @@
-import type {ReadingProgressItem} from './JmcomicTypes'
+import type { ReadingProgressItem } from './JmcomicTypes'
 
 const STORAGE_KEY = 'jq-reading-progress-v1'
 const MAX_ITEMS = 1000
@@ -34,9 +34,7 @@ function prune(data: Record<string, ReadingProgressItem>): Record<string, Readin
   const entries = Object.entries(data)
   if (entries.length <= MAX_ITEMS) return data
   return Object.fromEntries(
-    entries
-      .sort(([, a], [, b]) => b.updatedAt - a.updatedAt)
-      .slice(0, MAX_ITEMS),
+    entries.sort(([, a], [, b]) => b.updatedAt - a.updatedAt).slice(0, MAX_ITEMS),
   )
 }
 
@@ -62,7 +60,12 @@ export const ReadingProgressService = {
     writeAll(prune(data))
   },
 
-  getInitialPage(routePage: unknown, albumId: string, chapterId: string, totalPages: number): number {
+  getInitialPage(
+    routePage: unknown,
+    albumId: string,
+    chapterId: string,
+    totalPages: number,
+  ): number {
     const explicitPage = Number(routePage)
     if (explicitPage > 0) return normalizePage(explicitPage, totalPages)
     return this.get(albumId, chapterId)?.page ?? 1

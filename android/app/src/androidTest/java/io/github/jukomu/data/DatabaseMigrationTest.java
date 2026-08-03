@@ -20,6 +20,10 @@ public class DatabaseMigrationTest {
         try {
             SettingsStore store = newStore(SettingsStore.class);
             store.onCreate(db);
+            assertEquals("256", queryString(
+                db,
+                "SELECT value FROM settings WHERE key = ?",
+                new String[]{"cache_capacity_mb"}));
             db.delete("settings", "key = ?", new String[]{"reader_auto_show_toolbar_at_end"});
 
             db.execSQL(

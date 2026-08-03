@@ -1,6 +1,6 @@
-import {computed, ref} from 'vue'
-import type {UserInfo} from '@/services/JmcomicTypes'
-import {JmcomicService} from '@/services/JmcomicService'
+import { computed, ref } from 'vue'
+import type { UserInfo } from '@/services/JmcomicTypes'
+import { JmcomicService } from '@/services/JmcomicService'
 
 const userInfo = ref<UserInfo | null>(null)
 const isLoggedIn = computed(() => userInfo.value !== null)
@@ -42,5 +42,5 @@ export function useAuth() {
     userInfo.value = null
   }
 
-  return {userInfo, isLoggedIn, initAuth, login, logout}
+  return { userInfo, isLoggedIn, initAuth, login, logout }
 }

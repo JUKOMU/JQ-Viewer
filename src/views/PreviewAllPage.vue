@@ -5,7 +5,7 @@
       <ion-toolbar>
         <ion-buttons slot="start">
           <ion-button @click="goBack">
-            <ion-icon slot="icon-only" :icon="arrowBack"/>
+            <ion-icon slot="icon-only" :icon="arrowBack" />
           </ion-button>
         </ion-buttons>
         <ion-title>预览 · {{ chapterTitle }}</ion-title>
@@ -16,7 +16,7 @@
         <!-- 初始加载中：骨架占位 -->
         <div v-if="loading" class="preview-grid">
           <div v-for="i in skeletonCount" :key="'init-skel-' + i" class="preview-item">
-            <div class="skeleton-thumb"/>
+            <div class="skeleton-thumb" />
             <span class="preview-page-num">{{ i }}</span>
           </div>
         </div>
@@ -34,7 +34,7 @@
                 />
               </template>
               <template v-else>
-                <div class="skeleton-thumb"/>
+                <div class="skeleton-thumb" />
               </template>
               <span class="preview-page-num">{{ i }}</span>
             </div>
@@ -42,7 +42,7 @@
 
           <div class="preview-footer" role="status" aria-live="polite" aria-atomic="true">
             <p v-if="loadingMore" class="footer-loading">
-              <ion-spinner name="dots" aria-hidden="true"/>
+              <ion-spinner name="dots" aria-hidden="true" />
               <span>加载中...（{{ loadedCount }} / {{ totalCount }}）</span>
             </p>
             <p v-else-if="allVisible" class="footer-text">已显示所有图片</p>
@@ -60,11 +60,11 @@
 </template>
 
 <script setup lang="ts">
-defineOptions({name: 'PreviewAllPage'})
+defineOptions({ name: 'PreviewAllPage' })
 
-import {computed, nextTick, onMounted, onUnmounted, ref, watch} from 'vue'
-import {useRoute, useRouter} from 'vue-router'
-import type {ScrollCustomEvent} from '@ionic/vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import type { ScrollCustomEvent } from '@ionic/vue'
 import {
   IonButton,
   IonButtons,
@@ -76,12 +76,16 @@ import {
   IonTitle,
   IonToolbar,
 } from '@ionic/vue'
-import type {PluginListenerHandle} from '@capacitor/core'
-import {arrowBack} from 'ionicons/icons'
-import {getImageUrl, JmcomicService} from '@/services/JmcomicService'
-import type {PhotoDetail, PreloadResult} from '@/services/JmcomicTypes'
-import {PREVIEW_BATCH, type PreviewImageSlotSetter, usePreviewBatches,} from '@/composables/usePreviewBatches'
-import {buildPdfDocumentParams, fetchPdfArrayBuffer} from '@/services/PdfReaderService'
+import type { PluginListenerHandle } from '@capacitor/core'
+import { arrowBack } from 'ionicons/icons'
+import { getImageUrl, JmcomicService } from '@/services/JmcomicService'
+import type { PhotoDetail, PreloadResult } from '@/services/JmcomicTypes'
+import {
+  PREVIEW_BATCH,
+  type PreviewImageSlotSetter,
+  usePreviewBatches,
+} from '@/composables/usePreviewBatches'
+import { buildPdfDocumentParams, fetchPdfArrayBuffer } from '@/services/PdfReaderService'
 import * as pdfjsLib from 'pdfjs-dist'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -105,7 +109,9 @@ const pdfPath = computed(() => (route.query.pdfPath as string) || '')
 
 const totalCount = ref(initialTotal)
 const loading = ref(true)
-const skeletonCount = computed(() => Math.min(totalCount.value || initialTotal || PREVIEW_BATCH, PREVIEW_BATCH))
+const skeletonCount = computed(() =>
+  Math.min(totalCount.value || initialTotal || PREVIEW_BATCH, PREVIEW_BATCH),
+)
 
 let photoDetail: PhotoDetail | null = null
 let pdfDoc: pdfjsLib.PDFDocumentProxy | null = null
@@ -133,18 +139,21 @@ const renderPdfPage = async (pageNum: number): Promise<string | null> => {
   try {
     page = await pdfDoc.getPage(pageNum)
     if (disposed) return null
-    const rawViewport = page.getViewport({scale: 1})
+    const rawViewport = page.getViewport({ scale: 1 })
     const columns = window.innerWidth >= 680 ? 4 : 3
     const gap = 6
     const sidePadding = 24
     const targetWidth = (window.innerWidth - sidePadding - gap * (columns - 1)) / columns
-    const scale = Math.max(0.4, (targetWidth * Math.min(window.devicePixelRatio || 1, 2)) / rawViewport.width)
-    const viewport = page.getViewport({scale})
+    const scale = Math.max(
+      0.4,
+      (targetWidth * Math.min(window.devicePixelRatio || 1, 2)) / rawViewport.width,
+    )
+    const viewport = page.getViewport({ scale })
 
     const canvas = document.createElement('canvas')
     canvas.width = viewport.width
     canvas.height = viewport.height
-    const task = page.render({canvas, viewport})
+    const task = page.render({ canvas, viewport })
     await task.promise
     if (disposed) return null
 
@@ -166,16 +175,13 @@ const renderPdfPage = async (pageNum: number): Promise<string | null> => {
   }
 }
 
-const renderPdfBatch = async (
-  start: number,
-  end: number,
-  setImageSlot: PreviewImageSlotSetter,
-) => {
-  const missingPages = Array.from({length: end - start}, (_, i) => start + i + 1)
-    .filter((pageNum) => !slots.value[pageNum - 1])
+const renderPdfBatch = async (start: number, end: number, setImageSlot: PreviewImageSlotSetter) => {
+  const missingPages = Array.from({ length: end - start }, (_, i) => start + i + 1).filter(
+    (pageNum) => !slots.value[pageNum - 1],
+  )
   const rendered = await Promise.all(
     missingPages.map((pageNum) => {
-      return renderPdfPage(pageNum).then((url) => ({pageNum, url}))
+      return renderPdfPage(pageNum).then((url) => ({ pageNum, url }))
     }),
   )
   for (const item of rendered) {
@@ -210,7 +216,7 @@ const preloadImageBatch = async (
 }
 
 const previewBatches = usePreviewBatches(totalCount, preloadImageBatch)
-const {slots, displayCount, loadingMore, loadedCount, allVisible} = previewBatches
+const { slots, displayCount, loadingMore, loadedCount, allVisible } = previewBatches
 
 // ---- 生命周期 ----
 onMounted(async () => {
@@ -332,7 +338,7 @@ const openReader = (page: number) => {
       page: String(page),
       title: chapterTitle.value,
       total: String(totalCount.value),
-      ...(isDownloadSource.value ? {source: 'download'} : {}),
+      ...(isDownloadSource.value ? { source: 'download' } : {}),
     },
   })
 }

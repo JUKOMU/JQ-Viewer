@@ -30,7 +30,6 @@ public class DownloadNotificationHelper {
     private static final String TAG = "DownloadNotification";
     private static final String CHANNEL_ID = "chapter_download";
     private static final String CHANNEL_NAME = "章节下载";
-    private static final int QUEUED_SUMMARY_ID = 203000;
     private static final int ICON = R.mipmap.ic_launcher;
     private static final int MAX_COVER_BYTES = 3 * 1024 * 1024;
     private static final int COVER_TARGET_SIZE = 256;
@@ -71,7 +70,7 @@ public class DownloadNotificationHelper {
 
     private void updateQueuedSummary() {
         if (queuedTasks.isEmpty()) {
-            cancel(QUEUED_SUMMARY_ID);
+            cancel(NotificationIds.DOWNLOAD_QUEUE_SUMMARY);
             return;
         }
 
@@ -87,12 +86,12 @@ public class DownloadNotificationHelper {
             style.setSummaryText("还有 " + (queuedTasks.size() - count) + " 个任务");
         }
 
-        notify(QUEUED_SUMMARY_ID, new NotificationCompat.Builder(context, CHANNEL_ID)
+        notify(NotificationIds.DOWNLOAD_QUEUE_SUMMARY, new NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(ICON)
             .setContentTitle("下载队列")
             .setContentText("已排队 " + queuedTasks.size() + " 个章节")
             .setStyle(style)
-            .setContentIntent(createLaunchIntent(QUEUED_SUMMARY_ID))
+            .setContentIntent(createLaunchIntent(NotificationIds.DOWNLOAD_QUEUE_SUMMARY))
             .setAutoCancel(false)
             .setOngoing(false)
             .setOnlyAlertOnce(true)
@@ -166,7 +165,13 @@ public class DownloadNotificationHelper {
 
     public void cancel(int notificationId) {
         if (manager != null) {
-            manager.cancel(notificationId);
+            try {
+                manager.cancel(notificationId);
+            } catch (SecurityException e) {
+                Log.d(TAG, "通知权限未授予，跳过取消下载通知", e);
+            } catch (RuntimeException e) {
+                Log.w(TAG, "取消下载通知失败", e);
+            }
         }
     }
 
@@ -201,6 +206,8 @@ public class DownloadNotificationHelper {
             manager.notify(notificationId, notification);
         } catch (SecurityException e) {
             Log.d(TAG, "通知权限未授予，跳过下载通知", e);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "发布下载通知失败", e);
         }
     }
 
@@ -230,7 +237,7 @@ public class DownloadNotificationHelper {
             .setCustomBigContentView(buildTaskRemoteViews(
                 R.layout.notification_download_expanded, true, albumTitle, chapterId,
                 chapterTitle, coverUrl, downloadedPages, totalPages, stateText))
-            .setContentIntent(createLaunchIntent(notificationIdFromTask(taskId)))
+            .setContentIntent(createLaunchIntent(NotificationIds.downloadTask(taskId)))
             .setOngoing(ongoing)
             .setOnlyAlertOnce(true);
 
@@ -291,10 +298,6 @@ public class DownloadNotificationHelper {
 
     private String safeText(String value, String fallback) {
         return value != null && !value.isEmpty() ? value : fallback;
-    }
-
-    private int notificationIdFromTask(String taskId) {
-        return 3000 + ((taskId.hashCode() & 0x7fffffff) % 100000);
     }
 
     private Bitmap loadCover(String coverUrl) {

@@ -3,7 +3,7 @@
     <IonHeader class="ion-no-border">
       <IonToolbar>
         <IonButtons slot="start">
-          <IonBackButton default-href="/setting"/>
+          <IonBackButton default-href="/setting" />
         </IonButtons>
         <IonTitle class="toolbar-title">关于</IonTitle>
       </IonToolbar>
@@ -30,9 +30,15 @@
         <div class="info-card">
           <div class="info-row" @click="checkUpdate">
             <span class="info-label">检查更新</span>
-            <span v-if="updateChecking" class="info-value">检查中...<span class="arrow">&#8250;</span></span>
-            <span v-else-if="updateError" class="info-value error">检查失败<span class="arrow">&#8250;</span></span>
-            <span v-else-if="hasUpdate" class="info-value update">发现新版本 {{ latestVersion }}<span class="arrow">&#8250;</span></span>
+            <span v-if="updateChecking" class="info-value"
+              >检查中...<span class="arrow">&#8250;</span></span
+            >
+            <span v-else-if="updateError" class="info-value error"
+              >检查失败<span class="arrow">&#8250;</span></span
+            >
+            <span v-else-if="hasUpdate" class="info-value update"
+              >发现新版本 {{ latestVersion }}<span class="arrow">&#8250;</span></span
+            >
             <span v-else class="info-value">已是最新<span class="arrow">&#8250;</span></span>
           </div>
         </div>
@@ -45,7 +51,9 @@
           </div>
           <div class="info-row">
             <span class="info-label"></span>
-            <span class="info-value repo-url"><a href="https://github.com/JUKOMU/JMComic-Api-Java">JMComic-Api-Java</a></span>
+            <span class="info-value repo-url"
+              ><a href="https://github.com/JUKOMU/JMComic-Api-Java">JMComic-Api-Java</a></span
+            >
           </div>
         </div>
 
@@ -56,16 +64,23 @@
             <p></p>
             <p>本来是因为批量解析的功能才开始的整个项目, 下次遇到发一串车牌号的可以方便点查看。</p>
             <p></p>
-            <p>还有一个原因是本项目依赖的 JMComic API 库, 这是我的另一个开源项目, 我想用来做点有用的东西。</p>
+            <p>
+              还有一个原因是本项目依赖的 JMComic API 库, 这是我的另一个开源项目,
+              我想用来做点有用的东西。
+            </p>
             <p></p>
-            <p>如果你觉得好用，欢迎分享给朋友。遇到问题或有什么建议，可以在 GitHub 提交<a
-              :href="`${REPO_URL}/issues/new`">Issue</a>。</p>
+            <p>
+              如果你觉得好用，欢迎分享给朋友。遇到问题或有什么建议，可以在 GitHub 提交<a
+                :href="`${REPO_URL}/issues/new`"
+                >Issue</a
+              >。
+            </p>
             <div style="height: 1000px"></div>
             <p>没有了, 别看了</p>
             <div style="height: 2000px"></div>
             <p>还看?</p>
             <div style="height: 3000px"></div>
-            <p><img src="../../public/000.jpg"></p>
+            <p><img src="../../public/000.jpg" /></p>
           </div>
         </div>
       </div>
@@ -74,10 +89,10 @@
 </template>
 
 <script setup lang="ts">
-defineOptions({name: 'AboutPage'})
+defineOptions({ name: 'AboutPage' })
 
-import {nextTick, onMounted, ref} from 'vue'
-import {App} from '@capacitor/app'
+import { nextTick, onMounted, ref } from 'vue'
+import { App } from '@capacitor/app'
 import {
   alertController,
   IonBackButton,
@@ -88,8 +103,8 @@ import {
   IonTitle,
   IonToolbar,
 } from '@ionic/vue'
-import {showToast} from '@/services/JmcomicService'
-import {compareVersion, RELEASES_API, sanitizeReleaseBody} from '@/utils/version'
+import { showToast } from '@/services/JmcomicService'
+import { compareVersion, RELEASES_API, sanitizeReleaseBody } from '@/utils/version'
 
 const appVersion = ref('1.0.0')
 const updateChecking = ref(false)
@@ -117,15 +132,15 @@ onMounted(async () => {
   for (let i = 0; i <= TITLE.length; i++) {
     displayText.value = TITLE.slice(0, i)
     if (i < TITLE.length) {
-      await new Promise(r => setTimeout(r, 100 + Math.random() * 150))
+      await new Promise((r) => setTimeout(r, 100 + Math.random() * 150))
     }
   }
 
   for (let i = 0; i < 1; i++) {
     cursorVisible.value = false
-    await new Promise(r => setTimeout(r, 300))
+    await new Promise((r) => setTimeout(r, 300))
     cursorVisible.value = true
-    await new Promise(r => setTimeout(r, 300))
+    await new Promise((r) => setTimeout(r, 300))
   }
   cursorVisible.value = false
 })
@@ -138,7 +153,7 @@ async function checkUpdate() {
 
   try {
     const resp = await fetch(RELEASES_API, {
-      headers: {Accept: 'application/vnd.github.v3+json'},
+      headers: { Accept: 'application/vnd.github.v3+json' },
     })
     if (!resp.ok) throw new Error('API error')
     const data = await resp.json()
@@ -163,7 +178,7 @@ async function showUpdateAlert(version: string, body: string, htmlUrl: string) {
     message: cleaned || '（无更新说明）',
     cssClass: 'update-alert',
     buttons: [
-      {text: '忽略', role: 'cancel'},
+      { text: '忽略', role: 'cancel' },
       {
         text: '好',
         handler: async () => {
@@ -172,7 +187,7 @@ async function showUpdateAlert(version: string, body: string, htmlUrl: string) {
             message: htmlUrl,
             cssClass: 'update-alert',
             buttons: [
-              {text: '取消', role: 'cancel'},
+              { text: '取消', role: 'cancel' },
               {
                 text: '打开',
                 handler: () => {
@@ -206,12 +221,12 @@ const reDisplay = async () => {
   for (let i = 0; i <= TITLE.length; i++) {
     displayText.value = TITLE.slice(0, i)
     if (i < TITLE.length) {
-      await new Promise(r => setTimeout(r, 100 + Math.random() * 150))
+      await new Promise((r) => setTimeout(r, 100 + Math.random() * 150))
     }
   }
 
   cursorVisible.value = true
-  await new Promise(r => setTimeout(r, 200))
+  await new Promise((r) => setTimeout(r, 200))
   cursorVisible.value = false
 }
 </script>
@@ -363,7 +378,8 @@ const reDisplay = async () => {
 }
 
 @keyframes cursor-blink {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 1;
   }
   50% {

@@ -3,7 +3,7 @@
     <IonHeader class="ion-no-border">
       <IonToolbar>
         <div class="toolbar-start">
-          <MenuToggleButton/>
+          <MenuToggleButton />
         </div>
         <div class="tab-bar">
           <button
@@ -29,7 +29,7 @@
       <div class="page-shell">
         <div v-if="activeTab === 'browse'" class="tab-content">
           <div v-if="browseItems.length === 0" class="empty-state">
-            <IonIcon :icon="timeOutline" class="empty-icon"/>
+            <IonIcon :icon="timeOutline" class="empty-icon" />
             <p>暂无浏览记录</p>
             <p class="empty-hint">开始浏览本子，记录将自动出现在这里</p>
           </div>
@@ -48,7 +48,7 @@
                   @click="openAlbum(item)"
                 >
                   <div class="card-cover-wrap">
-                    <img :src="item.coverUrl" class="card-cover" alt="" loading="lazy"/>
+                    <img :src="item.coverUrl" class="card-cover" alt="" loading="lazy" />
                   </div>
                   <div class="card-body">
                     <h3 class="card-title">{{ item.albumTitle }}</h3>
@@ -56,7 +56,7 @@
                     <div class="card-meta">作者：{{ item.authors }}</div>
                     <div class="card-meta">{{ formatRelativeTime(item.timestamp) }}</div>
                     <div v-if="item.chapterTitle" class="card-chapter">
-                      <IonIcon :icon="bookOutline" class="chapter-icon"/>
+                      <IonIcon :icon="bookOutline" class="chapter-icon" />
                       <span>{{ item.chapterTitle }}</span>
                     </div>
                   </div>
@@ -67,7 +67,7 @@
                     aria-label="更多操作"
                     @click.stop="openContextMenu(item, $event)"
                   >
-                    <IonIcon :icon="ellipsisVertical"/>
+                    <IonIcon :icon="ellipsisVertical" />
                   </button>
                 </div>
               </template>
@@ -77,7 +77,7 @@
 
         <div v-else class="tab-content">
           <div v-if="parseItems.length === 0" class="empty-state">
-            <IonIcon :icon="documentTextOutline" class="empty-icon"/>
+            <IonIcon :icon="documentTextOutline" class="empty-icon" />
             <p>暂无解析记录</p>
             <p class="empty-hint">解析搜索关键词后，记录会显示在这里</p>
           </div>
@@ -87,14 +87,22 @@
               <button class="clear-btn" @click="confirmClearParse">清空</button>
             </div>
             <TransitionGroup name="history-list" tag="div" class="card-list">
-              <div v-for="item in parseItems" :key="item.timestamp" class="parse-card" @click="openParseItem(item)">
+              <div
+                v-for="item in parseItems"
+                :key="item.timestamp"
+                class="parse-card"
+                @click="openParseItem(item)"
+              >
                 <div class="parse-icon-wrap">
-                  <IonIcon :icon="documentTextOutline"/>
+                  <IonIcon :icon="documentTextOutline" />
                 </div>
                 <div class="parse-body">
                   <div class="parse-text">{{ item.text }}</div>
                   <div class="parse-meta">
-                    <span class="parse-mode-badge" :class="item.mode === 'batch-mode' ? 'mode-batch' : 'mode-single'">
+                    <span
+                      class="parse-mode-badge"
+                      :class="item.mode === 'batch-mode' ? 'mode-batch' : 'mode-single'"
+                    >
                       {{ item.mode === 'batch-mode' ? '批量解析' : '单个解析' }}
                     </span>
                     <span class="parse-time">{{ formatRelativeTime(item.timestamp) }}</span>
@@ -107,7 +115,7 @@
                   aria-label="更多操作"
                   @click.stop="openContextMenu(item, $event)"
                 >
-                  <IonIcon :icon="ellipsisVertical"/>
+                  <IonIcon :icon="ellipsisVertical" />
                 </button>
               </div>
             </TransitionGroup>
@@ -126,7 +134,7 @@
     >
       <template v-if="contextMenu.type === 'browse'">
         <button type="button" class="context-menu-item" @click.stop="handleMenuDetail">
-          <IonIcon :icon="bookOutline" class="context-menu-icon"/>
+          <IonIcon :icon="bookOutline" class="context-menu-icon" />
           <span>进入详情页</span>
         </button>
         <button
@@ -134,13 +142,13 @@
           class="context-menu-item context-menu-item--danger"
           @click.stop="handleMenuDelete"
         >
-          <IonIcon :icon="trashOutline" class="context-menu-icon"/>
+          <IonIcon :icon="trashOutline" class="context-menu-icon" />
           <span>删除此记录</span>
         </button>
       </template>
       <template v-else>
         <button type="button" class="context-menu-item" @click.stop="handleMenuCopy">
-          <IonIcon :icon="copyOutline" class="context-menu-icon"/>
+          <IonIcon :icon="copyOutline" class="context-menu-icon" />
           <span>复制文本</span>
         </button>
         <button
@@ -148,7 +156,7 @@
           class="context-menu-item context-menu-item--danger"
           @click.stop="handleMenuDelete"
         >
-          <IonIcon :icon="trashOutline" class="context-menu-icon"/>
+          <IonIcon :icon="trashOutline" class="context-menu-icon" />
           <span>删除此记录</span>
         </button>
       </template>
@@ -157,21 +165,21 @@
 </template>
 
 <script setup lang="ts">
-defineOptions({name: 'HistoryPage'})
+defineOptions({ name: 'HistoryPage' })
 
-import {computed, onBeforeUnmount, onMounted, ref} from 'vue'
-import {useRouter} from 'vue-router'
-import {alertController, IonContent, IonIcon, IonPage} from '@ionic/vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { alertController, IonContent, IonIcon, IonPage } from '@ionic/vue'
 import {
   bookOutline,
   copyOutline,
   documentTextOutline,
   ellipsisVertical,
   timeOutline,
-  trashOutline
+  trashOutline,
 } from 'ionicons/icons'
-import {HistoryService} from '@/services/HistoryService'
-import type {BrowseHistoryItem, ParseHistoryItem} from '@/services/JmcomicTypes'
+import { HistoryService } from '@/services/HistoryService'
+import type { BrowseHistoryItem, ParseHistoryItem } from '@/services/JmcomicTypes'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 
 const PAGE_SIZE = 50
@@ -218,7 +226,7 @@ const browseGroups = computed<BrowseGroup[]>(() => {
 
   return (Object.entries(groups) as [string, BrowseHistoryItem[]][])
     .filter(([, items]) => items.length > 0)
-    .map(([label, items]) => ({label, items}))
+    .map(([label, items]) => ({ label, items }))
 })
 
 async function loadBrowse() {
@@ -277,7 +285,7 @@ function openAlbum(item: BrowseHistoryItem) {
   const authorsParam = item.authors.replace(/\s*\/\s*/g, ',')
   void router.push({
     path: `/album/${item.albumId}`,
-    query: {title: item.albumTitle, coverUrl: item.coverUrl, authors: authorsParam},
+    query: { title: item.albumTitle, coverUrl: item.coverUrl, authors: authorsParam },
   })
 }
 
@@ -285,10 +293,10 @@ function openParseItem(item: ParseHistoryItem) {
   if (item.mode === 'batch-mode') {
     const key = `bp-${Date.now()}`
     sessionStorage.setItem(`batch-parse-text:${key}`, item.text)
-    void router.push({path: '/batch-parse', query: {key}})
+    void router.push({ path: '/batch-parse', query: { key } })
   } else {
     const digits = item.text.replace(/\D/g, '')
-    void router.push({path: '/search', query: {keyword: digits}})
+    void router.push({ path: '/search', query: { keyword: digits } })
   }
 }
 
@@ -319,7 +327,7 @@ const contextMenuStyle = computed(() => {
 function openContextMenu(item: BrowseHistoryItem | ParseHistoryItem, event: MouseEvent) {
   const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
   const type = 'albumId' in item ? 'browse' : 'parse'
-  contextMenu.value = {type, item, x: rect.left, y: rect.bottom + 4}
+  contextMenu.value = { type, item, x: rect.left, y: rect.bottom + 4 }
   setTimeout(() => {
     document.addEventListener('mousedown', handleContextMenuClickOutside)
     document.addEventListener('touchstart', handleContextMenuClickOutside)
@@ -366,17 +374,17 @@ async function handleMenuDelete() {
     header: '确认删除',
     message: isBrowse ? '确定要删除这条浏览记录吗？' : '确定要删除这条解析记录吗？',
     buttons: [
-      {text: '取消', role: 'cancel'},
+      { text: '取消', role: 'cancel' },
       {
         text: '删除',
         role: 'destructive',
         handler: async () => {
           if (isBrowse) {
             await HistoryService.deleteBrowseItem(m.item.id)
-            browseItems.value = browseItems.value.filter(i => i.id !== m.item.id)
+            browseItems.value = browseItems.value.filter((i) => i.id !== m.item.id)
           } else {
             await HistoryService.deleteParseItem(m.item.id)
-            parseItems.value = parseItems.value.filter(i => i.id !== m.item.id)
+            parseItems.value = parseItems.value.filter((i) => i.id !== m.item.id)
           }
         },
       },
@@ -395,7 +403,7 @@ async function confirmClearBrowse() {
     header: '确认清空',
     message: '确定要清空所有浏览记录吗？此操作不可撤销。',
     buttons: [
-      {text: '取消', role: 'cancel'},
+      { text: '取消', role: 'cancel' },
       {
         text: '清空',
         role: 'destructive',
@@ -414,7 +422,7 @@ async function confirmClearParse() {
     header: '确认清空',
     message: '确定要清空所有解析记录吗？此操作不可撤销。',
     buttons: [
-      {text: '取消', role: 'cancel'},
+      { text: '取消', role: 'cancel' },
       {
         text: '清空',
         role: 'destructive',
@@ -468,8 +476,9 @@ function formatRelativeTime(timestamp: number): string {
   color: #8a6048;
   font-size: 12px;
   font-weight: 600;
-  transition: background-color 0.18s ease,
-  color 0.18s ease;
+  transition:
+    background-color 0.18s ease,
+    color 0.18s ease;
 }
 
 .tab-btn.active {
@@ -789,8 +798,9 @@ function formatRelativeTime(timestamp: number): string {
 /* TransitionGroup */
 .history-list-enter-active,
 .history-list-leave-active {
-  transition: opacity 0.28s ease,
-  transform 0.28s ease;
+  transition:
+    opacity 0.28s ease,
+    transform 0.28s ease;
 }
 
 .history-list-enter-from {

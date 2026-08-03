@@ -22,7 +22,6 @@ class DownloadObserver implements TaskObserver {
     private final int totalImages;
     private final DownloadStore downloadDb;
     private final FileStore fileStore;
-    private final ServiceListener listener;
     private final DownloadService service;
     private final AtomicBoolean finalized = new AtomicBoolean(false);
     private long lastBytes = 0;
@@ -30,14 +29,13 @@ class DownloadObserver implements TaskObserver {
 
     DownloadObserver(String ourTaskId, String albumId, String chapterId, int totalImages,
                      DownloadStore downloadDb, FileStore fileStore,
-                     ServiceListener listener, DownloadService service) {
+                     DownloadService service) {
         this.ourTaskId = ourTaskId;
         this.albumId = albumId;
         this.chapterId = chapterId;
         this.totalImages = totalImages;
         this.downloadDb = downloadDb;
         this.fileStore = fileStore;
-        this.listener = listener;
         this.service = service;
         this.lastTimestamp = System.currentTimeMillis();
     }
@@ -181,10 +179,7 @@ class DownloadObserver implements TaskObserver {
     private void notifyProgress(int downloadedPages, int totalPages,
                                 String status, String error, long speed, long totalSize,
                                 long downloadedBytes) {
-        if (listener != null) {
-            listener.onDownloadProgress(new DownloadProgressData(
-                ourTaskId, albumId, chapterId, downloadedPages, totalPages,
-                status, error, speed, totalSize, downloadedBytes));
-        }
+        service.notifyDownloadProgress(ourTaskId, albumId, chapterId, downloadedPages,
+            totalPages, status, error, speed, totalSize, downloadedBytes);
     }
 }

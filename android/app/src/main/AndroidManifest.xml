@@ -66,6 +66,7 @@
     <!-- 后台章节下载需要前台服务，避免应用退到后台后被系统降权 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <!-- API 33+: 后台任务通知。minSdk<33 的系统自动忽略 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />

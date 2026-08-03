@@ -1,6 +1,5 @@
 package io.github.jukomu.data;
 
-import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Context;
 import android.database.Cursor;
@@ -10,7 +9,6 @@ import android.graphics.pdf.PdfRenderer;
 import android.net.Uri;
 import android.os.ParcelFileDescriptor;
 import android.util.Log;
-
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -144,7 +142,10 @@ public class PdfImportStore extends SQLiteOpenHelper {
             } catch (Exception ignored) {
             } finally {
                 if (pfd != null) {
-                    try { pfd.close(); } catch (Exception ignored) {}
+                    try {
+                        pfd.close();
+                    } catch (Exception ignored) {
+                    }
                 }
             }
         } else {

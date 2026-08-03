@@ -1,0 +1,45 @@
+name: CI · Android JVM
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  android-jvm:
+    name: Android JVM
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - run: npm ci
+      - name: Build frontend for Android sync
+        run: npm run build
+      - name: Sync Capacitor Android project
+        run: npx cap sync android
+      - run: chmod +x android/gradlew
+      - name: Run Android JVM tests
+        run: ./gradlew :app:testDebugUnitTest --console=plain
+        working-directory: android
+      - name: Run Android lint
+        run: ./gradlew :app:lintDebug --console=plain
+        working-directory: android

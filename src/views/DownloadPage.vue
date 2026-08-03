@@ -3,19 +3,19 @@
     <IonHeader class="ion-no-border">
       <IonToolbar>
         <div class="toolbar-start">
-          <MenuToggleButton/>
+          <MenuToggleButton />
         </div>
         <div class="toolbar-end">
           <div class="toolbar-action">
             <span class="toolbar-action-label">导入PDF</span>
             <button class="import-btn" @click="onImportPdf">
-              <IonIcon :icon="cloudUploadOutline"/>
+              <IonIcon :icon="cloudUploadOutline" />
             </button>
           </div>
           <div v-if="hasTasks" class="toolbar-action">
             <span class="toolbar-action-label">{{ sortLabel }}</span>
             <button class="sort-btn" @click="toggleSort">
-              <IonIcon :icon="sortIcon"/>
+              <IonIcon :icon="sortIcon" />
             </button>
           </div>
         </div>
@@ -24,19 +24,19 @@
     <IonContent>
       <!-- 下拉刷新 -->
       <IonRefresher slot="fixed" @ion-refresh="onRefresh($event)">
-        <IonRefresherContent/>
+        <IonRefresherContent />
       </IonRefresher>
 
       <!-- 空状态 -->
       <div v-if="!hasTasks" class="empty-state">
-        <IonIcon :icon="cloudDownloadOutline" class="empty-icon"/>
+        <IonIcon :icon="cloudDownloadOutline" class="empty-icon" />
         <p>暂无下载内容</p>
       </div>
 
       <template v-else>
         <!-- 存储信息 -->
         <div v-if="hasStorageInfo" class="storage-bar">
-          <IonIcon :icon="saveOutline" class="storage-icon"/>
+          <IonIcon :icon="saveOutline" class="storage-icon" />
           <span>已用 {{ spaceUsedMb }}MB / 可用 {{ spaceAvailMb }}MB</span>
         </div>
 
@@ -60,7 +60,11 @@
             <span class="section-title">已完成 ({{ completedGroups.length }})</span>
             <button class="clear-btn" @click="requestClear('completed')">清空</button>
           </div>
-          <div v-for="group in completedGroups" :key="group.albumId + '|' + group.chapters[0].source" class="task-card">
+          <div
+            v-for="group in completedGroups"
+            :key="group.albumId + '|' + group.chapters[0].source"
+            class="task-card"
+          >
             <DownloadTaskCard
               :task="group.chapters[0]"
               :show-progress="false"
@@ -86,7 +90,7 @@
             />
           </div>
         </div>
-        <div class="bottom-spacer"/>
+        <div class="bottom-spacer" />
       </template>
     </IonContent>
 
@@ -113,12 +117,12 @@
           class="popover-btn"
           @click="popoverAction('read')"
         >
-          <IonIcon :icon="bookOutline"/>
+          <IonIcon :icon="bookOutline" />
           {{ selectedGroup?.type === 'multi' ? '选择章节' : '阅读' }}
         </button>
 
         <button class="popover-btn" @click="popoverAction('detail')">
-          <IonIcon :icon="informationCircleOutline"/>
+          <IonIcon :icon="informationCircleOutline" />
           进入详情页
         </button>
 
@@ -127,7 +131,7 @@
           class="popover-btn"
           @click="popoverAction('pdf')"
         >
-          <IonIcon :icon="documentLockOutline"/>
+          <IonIcon :icon="documentLockOutline" />
           导出为PDF
         </button>
 
@@ -136,7 +140,7 @@
           class="popover-btn"
           @click="popoverAction('retry')"
         >
-          <IonIcon :icon="refreshOutline"/>
+          <IonIcon :icon="refreshOutline" />
           {{ selectedError?.includes('张图片下载失败') ? '重新下载失败图片' : '重试' }}
         </button>
 
@@ -145,7 +149,7 @@
           class="popover-btn"
           @click="popoverAction('resume')"
         >
-          <IonIcon :icon="playOutline"/>
+          <IonIcon :icon="playOutline" />
           继续
         </button>
 
@@ -154,7 +158,7 @@
           class="popover-btn"
           @click="popoverAction('pause')"
         >
-          <IonIcon :icon="pauseOutline"/>
+          <IonIcon :icon="pauseOutline" />
           暂停
         </button>
 
@@ -163,7 +167,7 @@
           class="popover-btn danger"
           @click="popoverAction('cancel')"
         >
-          <IonIcon :icon="closeCircleOutline"/>
+          <IonIcon :icon="closeCircleOutline" />
           取消
         </button>
 
@@ -172,7 +176,7 @@
           class="popover-btn danger"
           @click="popoverAction('delete')"
         >
-          <IonIcon :icon="trashOutline"/>
+          <IonIcon :icon="trashOutline" />
           删除
         </button>
       </IonContent>
@@ -220,10 +224,10 @@
 </template>
 
 <script setup lang="ts">
-defineOptions({name: 'DownloadPage'})
+defineOptions({ name: 'DownloadPage' })
 
-import {computed, onMounted, onUnmounted, ref} from 'vue'
-import {useRouter} from 'vue-router'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   alertController,
   IonAlert,
@@ -252,23 +256,23 @@ import {
   timeOutline,
   trashOutline,
 } from 'ionicons/icons'
-import type {PluginListenerHandle} from '@capacitor/core'
+import type { PluginListenerHandle } from '@capacitor/core'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import DownloadTaskCard from '@/components/download/DownloadTaskCard.vue'
 import PdfExportBottomSheet from '@/components/download/PdfExportBottomSheet.vue'
 import DeleteChaptersBottomSheet from '@/components/download/DeleteChaptersBottomSheet.vue'
-import {JmcomicService, sanitizeError, showToast} from '@/services/JmcomicService'
-import {OfflineDownloadService} from '@/services/OfflineDownloadService'
-import {PdfExportService} from '@/services/PdfExportService'
+import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
+import { OfflineDownloadService } from '@/services/OfflineDownloadService'
+import { PdfExportService } from '@/services/PdfExportService'
 import type {
   AlbumDetail,
   CompletedEntry,
   CompletedGroup,
   DownloadTask,
   ImportedPdf,
-  PdfExportTask
+  PdfExportMode,
 } from '@/services/JmcomicTypes'
-import {PdfImportService} from '@/services/PdfImportService'
+import { PdfImportService } from '@/services/PdfImportService'
 
 const router = useRouter()
 const tasks = ref<DownloadTask[]>([])
@@ -332,7 +336,7 @@ const deletableStatuses = ['completed', 'failed']
 const isSelectedPdf = computed(() => {
   const t = selectedTask.value
   if (!t) return false
-  return ('source' in t) && t.source === 'pdf-import'
+  return 'source' in t && t.source === 'pdf-import'
 })
 
 const selectedStatus = computed(() => {
@@ -471,9 +475,7 @@ const confirmDeletePdf = async () => {
   if (!t || !('source' in t) || !t.pdfData) return
   try {
     await JmcomicService.deleteImportedPdf(t.pdfData.id)
-    importedPdfs.value = importedPdfs.value.filter(
-      (p) => p.id !== t.pdfData!.id,
-    )
+    importedPdfs.value = importedPdfs.value.filter((p) => p.id !== t.pdfData!.id)
     selectedTask.value = null
     selectedGroup.value = null
     popoverEvent.value = null
@@ -492,9 +494,7 @@ const activeTasks = computed(() =>
 )
 
 const isFullyDownloadedFailure = (task: DownloadTask) =>
-  task.status === 'failed' &&
-  task.totalPages > 0 &&
-  task.downloadedPages >= task.totalPages
+  task.status === 'failed' && task.totalPages > 0 && task.downloadedPages >= task.totalPages
 
 const completedTasks = computed(() =>
   tasks.value.filter((t) => t.status === 'completed' || isFullyDownloadedFailure(t)),
@@ -572,10 +572,10 @@ const completedGroups = computed<CompletedGroup[]>(() => {
   return sortMode.value === 'title'
     ? groups.sort((a, b) => a.albumTitle.localeCompare(b.albumTitle, 'zh'))
     : groups.sort(
-      (a, b) =>
-        Math.max(...b.chapters.map((c) => c.createdAt)) -
-        Math.max(...a.chapters.map((c) => c.createdAt)),
-    )
+        (a, b) =>
+          Math.max(...b.chapters.map((c) => c.createdAt)) -
+          Math.max(...a.chapters.map((c) => c.createdAt)),
+      )
 })
 
 const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms))
@@ -586,7 +586,11 @@ const resolveAlbumSingleEpisode = (album: AlbumDetail): boolean =>
 const collectEpisodeTypeBackfillAlbumIds = () => {
   const ids = new Set<string>()
   for (const task of tasks.value) {
-    if (task.albumId && task.isSingleEpisode === undefined && !backfilledAlbumIds.has(task.albumId)) {
+    if (
+      task.albumId &&
+      task.isSingleEpisode === undefined &&
+      !backfilledAlbumIds.has(task.albumId)
+    ) {
       ids.add(task.albumId)
     }
   }
@@ -600,10 +604,10 @@ const collectEpisodeTypeBackfillAlbumIds = () => {
 
 const applyEpisodeTypeToLocalState = (albumId: string, isSingleEpisode: boolean) => {
   tasks.value = tasks.value.map((task) =>
-    task.albumId === albumId ? {...task, isSingleEpisode} : task,
+    task.albumId === albumId ? { ...task, isSingleEpisode } : task,
   )
   importedPdfs.value = importedPdfs.value.map((pdf) =>
-    pdf.albumId === albumId ? {...pdf, isSingleEpisode} : pdf,
+    pdf.albumId === albumId ? { ...pdf, isSingleEpisode } : pdf,
   )
 }
 
@@ -689,7 +693,7 @@ const sampleDownloadSpeeds = () => {
     if (sample.latestBytes > sample.sampledBytes && now > sample.sampledAt) {
       sample.lastSpeed = Math.max(
         0,
-        Math.round((sample.latestBytes - sample.sampledBytes) * 1000 / (now - sample.sampledAt)),
+        Math.round(((sample.latestBytes - sample.sampledBytes) * 1000) / (now - sample.sampledAt)),
       )
       task.speed = sample.lastSpeed
       sample.sampledBytes = sample.latestBytes
@@ -714,7 +718,11 @@ const startSpeedTimer = () => {
   speedTimer = setInterval(sampleDownloadSpeeds, 1000)
 }
 
-const updateSpeedSample = (task: DownloadTask, downloadedBytes?: number, fallbackSpeed?: number) => {
+const updateSpeedSample = (
+  task: DownloadTask,
+  downloadedBytes?: number,
+  fallbackSpeed?: number,
+) => {
   if (downloadedBytes !== undefined && downloadedBytes >= 0) {
     const now = Date.now()
     task.downloadedBytes = downloadedBytes
@@ -805,7 +813,7 @@ onMounted(async () => {
       task.totalSize = data.totalSize
       task.speed = 0
       speedSamples.delete(data.taskId)
-      if (isFullyDownloadedFailure({...task, status: 'failed'})) {
+      if (isFullyDownloadedFailure({ ...task, status: 'failed' })) {
         task.status = 'completed'
         task.error = undefined
         task.completedAt = Date.now()
@@ -836,8 +844,7 @@ onMounted(async () => {
       }
       downloadProgressHandle = handle
     })
-    .catch(() => {
-    })
+    .catch(() => {})
 
   await syncDownloadState()
 })
@@ -875,6 +882,7 @@ const onOpenPdfSheet = () => {
 
 const onPdfExportConfirm = async (payload: {
   selectedChapters: DownloadTask[]
+  mode: PdfExportMode
   useOriginal: boolean
   compressionRatio: number
   editedPath: string
@@ -887,31 +895,22 @@ const onPdfExportConfirm = async (payload: {
   if (payload.selectedChapters.length !== 1) {
     try {
       albumDetail = await JmcomicService.getAlbum(payload.selectedChapters[0].albumId)
-    } catch { /* 获取失败则变量渲染为空 */
+    } catch {
+      /* 获取失败则变量渲染为空 */
     }
   }
 
-  const tasks: PdfExportTask[] = payload.selectedChapters.map((ch) => {
-    const savePath =
-      payload.selectedChapters.length === 1
-        ? payload.editedPath
-        : PdfExportService.buildFullPath(PdfExportService.buildTemplateData(ch, albumDetail))
-
-    return {
-      albumId: ch.albumId,
-      chapterId: ch.chapterId,
-      chapterTitle: ch.chapterTitle,
-      savePath,
-      useOriginal: payload.useOriginal,
-      compressionRatio: payload.compressionRatio,
-      splitPages: payload.splitPages,
-    }
-  })
+  let exportPlan
+  try {
+    exportPlan = PdfExportService.buildExportPlan({ ...payload, albumDetail })
+  } catch (e: any) {
+    await showToast(sanitizeError(e, '无法创建导出任务'), 'danger')
+    return
+  }
 
   // 检查文件是否已存在
   try {
-    const paths = tasks.map(t => t.savePath)
-    const result = await JmcomicService.checkFilesExist(paths)
+    const result = await JmcomicService.checkFilesExist(exportPlan.outputPaths)
     if (result.existing.length > 0) {
       const confirmed = await confirmOverwrite(result.existing)
       if (!confirmed) return
@@ -923,7 +922,7 @@ const onPdfExportConfirm = async (payload: {
   await ensureNotificationPermission()
 
   try {
-    await JmcomicService.exportPdfBatch(tasks)
+    await JmcomicService.exportPdfBatch(exportPlan.tasks)
     await showToast('PDF导出已开始，请查看通知', 'success')
   } catch (e: any) {
     await showToast(sanitizeError(e, '导出启动失败'), 'danger')
@@ -932,16 +931,19 @@ const onPdfExportConfirm = async (payload: {
 
 async function confirmOverwrite(existingFiles: string[]): Promise<boolean> {
   return new Promise((resolve) => {
-    const fileList = existingFiles.slice(0, 3).join('\n')
-      + (existingFiles.length > 3 ? `\n... 等 ${existingFiles.length} 个文件` : '')
-    alertController.create({
-      header: '文件已存在',
-      message: `以下文件已存在，是否覆盖？\n${fileList}`,
-      buttons: [
-        {text: '取消', role: 'cancel', handler: () => resolve(false)},
-        {text: '覆盖', role: 'destructive', handler: () => resolve(true)},
-      ],
-    }).then(alert => alert.present())
+    const fileList =
+      existingFiles.slice(0, 3).join('\n') +
+      (existingFiles.length > 3 ? `\n... 等 ${existingFiles.length} 个文件` : '')
+    alertController
+      .create({
+        header: '文件已存在',
+        message: `以下文件已存在，是否覆盖？\n${fileList}`,
+        buttons: [
+          { text: '取消', role: 'cancel', handler: () => resolve(false) },
+          { text: '覆盖', role: 'destructive', handler: () => resolve(true) },
+        ],
+      })
+      .then((alert) => alert.present())
   })
 }
 
@@ -952,9 +954,10 @@ async function ensureNotificationPermission(): Promise<boolean> {
 
     const alert = await alertController.create({
       header: '需要通知权限',
-      message: 'PDF导出将在后台进行，需要通过通知查看进度。拒绝后仍会继续导出，但不会显示系统通知。',
+      message:
+        'PDF导出将在后台进行，需要通过通知查看进度。拒绝后仍会继续导出，但不会显示系统通知。',
       buttons: [
-        {text: '暂不授权', role: 'cancel'},
+        { text: '暂不授权', role: 'cancel' },
         {
           text: '允许通知',
           role: 'confirm',
@@ -1002,7 +1005,7 @@ const onResume = async (task: DownloadTask) => {
 
 const onRetry = async (task: DownloadTask) => {
   try {
-    const {taskId} = await JmcomicService.downloadChapter(
+    const { taskId } = await JmcomicService.downloadChapter(
       task.albumId,
       task.chapterId,
       task.albumTitle,
@@ -1050,9 +1053,8 @@ const onRead = (entry: CompletedEntry | DownloadTask) => {
     }
     return
   }
-  const dt = 'downloadTask' in entry && entry.downloadTask
-    ? entry.downloadTask
-    : entry as DownloadTask
+  const dt =
+    'downloadTask' in entry && entry.downloadTask ? entry.downloadTask : (entry as DownloadTask)
   void router.push({
     path: `/album/${dt.albumId}/read/${dt.chapterId}`,
     query: {
@@ -1121,9 +1123,9 @@ const deleteChapters = async (chapters: CompletedEntry[]) => {
       downloadChapters.map(async (ch) => {
         try {
           const result = await JmcomicService.deleteDownloaded(ch.albumId, ch.chapterId)
-          return {ch, ok: result.success !== false}
+          return { ch, ok: result.success !== false }
         } catch {
-          return {ch, ok: false}
+          return { ch, ok: false }
         }
       }),
     )
@@ -1142,12 +1144,12 @@ const deleteChapters = async (chapters: CompletedEntry[]) => {
 
     const pdfResults = await Promise.all(
       pdfChapters.map(async (ch) => {
-        if (!ch.pdfData) return {ch, ok: false}
+        if (!ch.pdfData) return { ch, ok: false }
         try {
           const result = await JmcomicService.deleteImportedPdf(ch.pdfData.id)
-          return {ch, ok: result.success !== false}
+          return { ch, ok: result.success !== false }
         } catch {
-          return {ch, ok: false}
+          return { ch, ok: false }
         }
       }),
     )
@@ -1156,9 +1158,7 @@ const deleteChapters = async (chapters: CompletedEntry[]) => {
         .filter((result) => result.ok && result.ch.pdfData)
         .map((result) => result.ch.pdfData!.id),
     )
-    importedPdfs.value = importedPdfs.value.filter(
-      (p) => !deletedPdfIds.has(p.id),
-    )
+    importedPdfs.value = importedPdfs.value.filter((p) => !deletedPdfIds.has(p.id))
 
     void syncDownloadState()
     const deletedCount = deletedDownloadChapters.length + deletedPdfIds.size
@@ -1202,13 +1202,9 @@ const clearCompleted = async () => {
   if (!list.length && !importedPdfs.value.length) return
   await Promise.all([
     ...list.map((task) =>
-      JmcomicService.deleteDownloaded(task.albumId, task.chapterId).catch(() => {
-      }),
+      JmcomicService.deleteDownloaded(task.albumId, task.chapterId).catch(() => {}),
     ),
-    ...importedPdfs.value.map((pdf) =>
-      JmcomicService.deleteImportedPdf(pdf.id).catch(() => {
-      }),
-    ),
+    ...importedPdfs.value.map((pdf) => JmcomicService.deleteImportedPdf(pdf.id).catch(() => {})),
   ])
   tasks.value = tasks.value.filter((t) => t.status !== 'completed')
   importedPdfs.value = []
@@ -1221,8 +1217,7 @@ const clearFailed = async () => {
   if (!list.length) return
   await Promise.all(
     list.map((task) =>
-      JmcomicService.deleteDownloaded(task.albumId, task.chapterId).catch(() => {
-      }),
+      JmcomicService.deleteDownloaded(task.albumId, task.chapterId).catch(() => {}),
     ),
   )
   tasks.value = tasks.value.filter((t) => t.status !== 'failed')

@@ -5,7 +5,7 @@
         <!-- 头部 -->
         <div class="sheet-header">
           <span class="sheet-title">导出为PDF</span>
-          <button class="sheet-close" @click="close">&times;</button>
+          <button class="sheet-close" aria-label="关闭" @click="close">&times;</button>
         </div>
 
         <div class="sheet-body">
@@ -49,20 +49,53 @@
             </div>
           </div>
 
+          <!-- 导出模式（多章节时显示） -->
+          <fieldset v-if="chapters.length > 1" class="section mode-section">
+            <legend class="section-label">导出模式</legend>
+            <div class="quality-row">
+              <label class="radio-label" :class="{ active: mode === 'chapter' }">
+                <input
+                  type="radio"
+                  name="pdf-export-mode"
+                  value="chapter"
+                  :checked="mode === 'chapter'"
+                  @change="mode = 'chapter'"
+                />
+                <span>每章一个 PDF</span>
+              </label>
+              <label
+                class="radio-label"
+                :class="{ active: mode === 'merged', disabled: !canMerge }"
+              >
+                <input
+                  type="radio"
+                  name="pdf-export-mode"
+                  value="merged"
+                  :checked="mode === 'merged'"
+                  :disabled="!canMerge"
+                  @change="mode = 'merged'"
+                />
+                <span>合并为一个 PDF</span>
+              </label>
+            </div>
+            <p v-if="mode === 'merged'" class="mode-hint">
+              按章节序号合并，使用模板 {chapterRange} 文件名会显示选择范围
+            </p>
+            <p v-else-if="!canMerge" class="mode-hint">合并导出至少需要选择两个章节</p>
+          </fieldset>
+
           <!-- 章节选择（多章节时显示） -->
           <div v-if="chapters.length > 1" class="section">
             <div class="section-header">
-              <span class="section-label">选择章节（{{ selectedIds.size }}/{{ chapters.length }}）</span>
+              <span class="section-label"
+                >选择章节（{{ selectedIds.size }}/{{ chapters.length }}）</span
+              >
               <button class="toggle-all-btn" @click="toggleAll">
                 {{ selectedIds.size === chapters.length ? '取消全选' : '全选' }}
               </button>
             </div>
             <div class="chapter-list">
-              <label
-                v-for="ch in chapters"
-                :key="ch.taskId"
-                class="chapter-row"
-              >
+              <label v-for="ch in orderedChapters" :key="ch.taskId" class="chapter-row">
                 <input
                   type="checkbox"
                   class="chapter-check"
@@ -71,7 +104,9 @@
                 />
                 <span class="chapter-info">
                   <span class="chapter-name">{{ ch.chapterId }}</span>
-                  <span class="chapter-meta">{{ chapterOrderLabel(ch) }} · {{ ch.totalPages }}页</span>
+                  <span class="chapter-meta"
+                    >{{ chapterOrderLabel(ch) }} · {{ ch.totalPages }}页</span
+                  >
                 </span>
               </label>
             </div>
@@ -80,20 +115,11 @@
           <!-- 保存路径（可编辑） -->
           <div class="section">
             <span class="section-label">保存路径</span>
-            <textarea
-              class="path-input"
-              :value="editedPath"
-              rows="4"
-              @input="onPathInput"
-            />
+            <textarea class="path-input" :value="editedPath" rows="4" @input="onPathInput" />
             <div class="template-tags">
               <span class="tag-hint">点击复制变量值：</span>
-              <button
-                v-for="v in templateVars"
-                :key="v"
-                class="tag-btn"
-                @click="copyTag(v)"
-              >{{ v }}
+              <button v-for="v in templateVars" :key="v" class="tag-btn" @click="copyTag(v)">
+                {{ v }}
               </button>
             </div>
             <div class="template-tags" style="margin-top: 2px">
@@ -103,7 +129,8 @@
                 :key="v"
                 class="tag-btn tag-cond"
                 @click="copyTagSyntax(v)"
-              >{{ v }}
+              >
+                {{ v }}
               </button>
             </div>
           </div>
@@ -170,19 +197,18 @@
               color="warning"
               @ion-change="onRatioChange"
             />
-            <div class="ratio-hint">图片长宽缩放至原始的 {{ (compressionRatio * 100).toFixed(0) }}%</div>
+            <div class="ratio-hint">
+              图片长宽缩放至原始的 {{ (compressionRatio * 100).toFixed(0) }}%
+            </div>
           </div>
         </div>
 
         <!-- 底部按钮 -->
         <div class="sheet-footer">
           <button class="btn-cancel" @click="close">取消</button>
-          <button
-            class="btn-confirm"
-            :disabled="selectedIds.size === 0"
-            @click="onConfirm"
-          >
-            导出{{ selectedIds.size > 0 ? ` (${selectedIds.size})` : '' }}
+          <button class="btn-confirm" :disabled="selectedIds.size === 0" @click="onConfirm">
+            {{ mode === 'merged' ? '合并导出' : '导出'
+            }}{{ selectedIds.size > 0 ? ` (${selectedIds.size})` : '' }}
           </button>
         </div>
       </div>
@@ -191,13 +217,13 @@
 </template>
 
 <script setup lang="ts">
-import {computed, ref, watch} from 'vue'
-import {IonRange, IonToggle, useBackButton} from '@ionic/vue'
-import type {AlbumDetail, DownloadTask} from '@/services/JmcomicTypes'
-import {PdfExportService} from '@/services/PdfExportService'
-import {JmcomicService, showToast} from '@/services/JmcomicService'
+import { computed, ref, watch } from 'vue'
+import { IonRange, IonToggle, useBackButton } from '@ionic/vue'
+import type { AlbumDetail, DownloadTask, PdfExportMode } from '@/services/JmcomicTypes'
+import { PdfExportService } from '@/services/PdfExportService'
+import { JmcomicService, showToast } from '@/services/JmcomicService'
 
-defineOptions({name: 'PdfExportBottomSheet'})
+defineOptions({ name: 'PdfExportBottomSheet' })
 
 const props = defineProps<{
   modelValue: boolean
@@ -209,6 +235,7 @@ const emit = defineEmits<{
   confirm: [
     payload: {
       selectedChapters: DownloadTask[]
+      mode: PdfExportMode
       useOriginal: boolean
       compressionRatio: number
       editedPath: string
@@ -222,11 +249,22 @@ const templateVars = PdfExportService.TEMPLATE_VAR_KEYS
 const tagConditionVars = ['{tag=标签名}', '{tag=标签A|标签B}', '{tag=标签A&标签B}']
 
 // 当前选中章节的实际值（用于复制）
-const firstSelectedChapter = computed(() =>
-  props.chapters.find((c) => selectedIds.value.has(c.taskId)) ?? props.chapters[0],
+const orderedChapters = computed(() => PdfExportService.normalizePdfChapters(props.chapters))
+const selectedChapters = computed(() =>
+  orderedChapters.value.filter((chapter) => selectedIds.value.has(chapter.taskId)),
 )
+const firstSelectedChapter = computed(() => selectedChapters.value[0] ?? orderedChapters.value[0])
 
 const albumDetail = ref<AlbumDetail | null>(null)
+
+const currentTemplateData = computed(() => {
+  const chapter = firstSelectedChapter.value
+  if (!chapter) return null
+  if (mode.value === 'merged' && selectedChapters.value.length >= 2) {
+    return PdfExportService.buildMergedTemplateData(selectedChapters.value, albumDetail.value)
+  }
+  return PdfExportService.buildTemplateData(chapter, albumDetail.value)
+})
 
 function chapterOrderLabel(ch: DownloadTask): string {
   const order = ch.chapterSortOrder
@@ -235,9 +273,8 @@ function chapterOrderLabel(ch: DownloadTask): string {
 }
 
 const templateValueMap = computed(() => {
-  const ch = firstSelectedChapter.value
-  if (!ch) return {} as Record<string, string>
-  const data = PdfExportService.buildTemplateData(ch, albumDetail.value)
+  const data = currentTemplateData.value
+  if (!data) return {} as Record<string, string>
   const map: Record<string, string> = {}
   for (const v of PdfExportService.TEMPLATE_VAR_DEFS) {
     map[v.key] = v.render(data)
@@ -253,6 +290,8 @@ const nameTemplate = ref(PdfExportService.getNameTemplate())
 
 // ---- 导出选项 ----
 const selectedIds = ref(new Set<string>())
+const mode = ref<PdfExportMode>('chapter')
+const canMerge = computed(() => selectedIds.value.size >= 2)
 const useOriginal = ref(true)
 const compressionRatio = ref(0.5)
 const editedPath = ref('')
@@ -266,14 +305,16 @@ const templatePath = computed(() => {
   const dirTpl = dirTemplate.value
   const nameTpl = nameTemplate.value
 
-  const ch = firstSelectedChapter.value
-  if (!ch) return PdfExportService.previewPath()
+  const data = currentTemplateData.value
+  if (!data) return PdfExportService.previewPath()
 
-  const data = PdfExportService.buildTemplateData(ch, albumDetail.value)
   const dirRendered = PdfExportService.renderTemplate(dirTpl, data)
   const nameRendered = PdfExportService.renderTemplate(nameTpl, data)
   const baseTrimmed = base.replace(/\/+$/, '')
-  const dirSegments = dirRendered.split('/').map(s => PdfExportService.sanitizeSegment(s)).filter(s => s.length > 0)
+  const dirSegments = dirRendered
+    .split('/')
+    .map((s) => PdfExportService.sanitizeSegment(s))
+    .filter((s) => s.length > 0)
   const dirClean = dirSegments.join('/')
   const nameClean = PdfExportService.sanitizeSegment(nameRendered)
   if (dirClean) {
@@ -283,14 +324,11 @@ const templatePath = computed(() => {
 })
 
 // ---- 同步路径预览 ----
-watch(
-  [templatePath, () => props.modelValue],
-  ([tp, open]) => {
-    if (open) {
-      editedPath.value = tp
-    }
-  },
-)
+watch([templatePath, () => props.modelValue], ([tp, open]) => {
+  if (open) {
+    editedPath.value = tp
+  }
+})
 
 // ---- 系统返回键关闭面板（优先级 10 > 默认 0，拦截路由返回） ----
 useBackButton(10, (processNextHandler) => {
@@ -307,6 +345,7 @@ watch(
   (open) => {
     if (open) {
       selectedIds.value = new Set(props.chapters.map((c) => c.taskId))
+      mode.value = 'chapter'
       useOriginal.value = true
       compressionRatio.value = 0.5
       splitEnabled.value = false
@@ -319,11 +358,13 @@ watch(
       const albumId = props.chapters[0]?.albumId
       if (albumId) {
         albumDetail.value = null
-        JmcomicService.getAlbum(albumId).then(album => {
-          albumDetail.value = album
-        }).catch(() => {
-          albumDetail.value = null
-        })
+        JmcomicService.getAlbum(albumId)
+          .then((album) => {
+            albumDetail.value = album
+          })
+          .catch(() => {
+            albumDetail.value = null
+          })
       } else {
         albumDetail.value = null
       }
@@ -396,11 +437,13 @@ function toggleChapter(taskId: string) {
     next.add(taskId)
   }
   selectedIds.value = next
+  if (next.size < 2) mode.value = 'chapter'
 }
 
 function toggleAll() {
   if (selectedIds.value.size === props.chapters.length) {
     selectedIds.value = new Set()
+    mode.value = 'chapter'
   } else {
     selectedIds.value = new Set(props.chapters.map((c) => c.taskId))
   }
@@ -425,13 +468,13 @@ function close() {
 }
 
 async function onConfirm() {
-  const selected = props.chapters.filter((c) =>
-    selectedIds.value.has(c.taskId),
-  )
+  const selected = selectedChapters.value
   if (selected.length === 0) return
+  if (mode.value === 'merged' && selected.length < 2) return
 
   emit('confirm', {
     selectedChapters: selected,
+    mode: mode.value,
     useOriginal: useOriginal.value,
     compressionRatio: compressionRatio.value,
     editedPath: editedPath.value,
@@ -531,6 +574,23 @@ async function onConfirm() {
   color: #b89a84;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+}
+
+.mode-section {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+}
+
+.mode-section .section-label {
+  padding: 0;
+}
+
+.mode-hint {
+  margin: 6px 2px 0;
+  color: #8a6048;
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 /* 可展开设置 */
@@ -712,7 +772,7 @@ async function onConfirm() {
 }
 
 .chapter-check {
-  accent-color: #f0a060;
+  accent-color: #bf8350;
   width: 18px;
   height: 18px;
   flex-shrink: 0;
@@ -800,7 +860,9 @@ async function onConfirm() {
   color: #4c2a18;
   cursor: pointer;
   background: #fefcf9;
-  transition: border-color 0.15s, background 0.15s;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
 }
 
 .radio-label.active {
@@ -808,8 +870,13 @@ async function onConfirm() {
   background: #fff0e7;
 }
 
+.radio-label.disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
 .radio-label input {
-  accent-color: #f0a060;
+  accent-color: #bf8350;
 }
 
 /* 压缩比滑块 */

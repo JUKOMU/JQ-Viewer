@@ -6,7 +6,6 @@ import android.app.ActivityManager;
 import android.content.ComponentCallbacks2;
 import android.content.Context;
 import android.content.Intent;
-import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
@@ -15,16 +14,15 @@ import android.graphics.pdf.PdfRenderer;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.Uri;
-import android.os.ParcelFileDescriptor;
 import android.os.Build;
-import android.provider.DocumentsContract;
+import android.os.ParcelFileDescriptor;
 import android.provider.MediaStore;
 import android.util.Base64;
-import androidx.documentfile.provider.DocumentFile;
 import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.FileProvider;
+import androidx.documentfile.provider.DocumentFile;
 import com.getcapacitor.*;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.google.mlkit.vision.common.InputImage;
@@ -38,9 +36,7 @@ import io.github.jukomu.jmcomic.api.enums.OrderBy;
 import io.github.jukomu.jmcomic.api.enums.SearchMainTag;
 import io.github.jukomu.jmcomic.api.enums.TimeOption;
 import io.github.jukomu.jmcomic.api.exception.ResponseException;
-import io.github.jukomu.jmcomic.core.JmComic;
 import io.github.jukomu.jmcomic.core.client.impl.JmApiClient;
-import io.github.jukomu.jmcomic.core.config.JmConfiguration;
 import io.github.jukomu.service.*;
 import io.github.jukomu.service.PermissionState;
 import okhttp3.Cookie;
@@ -48,8 +44,8 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.io.File;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -68,13 +64,14 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
     private static final String TAG = "JmcomicPlugin";
 
     private volatile JmApiClient sharedClient;
-    private volatile ExecutorService imageExecutor;
     private volatile ExecutorService apiExecutor;
     private volatile ScheduledExecutorService apiTimeoutExecutor;
     private ExecutorService ocrExecutor;
     private static final int API_EXECUTOR_SIZE = 12;
     private int imageConcurrency = 6;
     private int downloadConcurrency = 6;
+    private final CacheCapacityPolicy cacheCapacityPolicy = new CacheCapacityPolicy();
+    private JmcomicRuntime runtime;
 
     // ---- 网络变化监听 ----
     private ConnectivityManager connectivityManager;
@@ -160,45 +157,52 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         FavoriteStore.getInstance(ctx);
         PdfImportStore.getInstance(ctx);
 
-        // 清理僵尸任务的部分下载文件（validateOnStartup 标记前）
-        List<JSONObject> zombieTasks = downloadDb.getAllTasks();
-        for (JSONObject t : zombieTasks) {
-            String s = t.optString("status");
-            if ("queued".equals(s) || "downloading".equals(s) || "paused".equals(s)) {
-                FileStore.getInstance().deleteChapter(
-                    t.optString("albumId"), t.optString("chapterId"));
+        boolean runtimeExists = JmcomicRuntime.exists();
+        if (!runtimeExists) {
+            // 仅进程首次初始化时清理上次进程遗留的下载任务。
+            List<JSONObject> zombieTasks = downloadDb.getAllTasks();
+            for (JSONObject t : zombieTasks) {
+                String s = t.optString("status");
+                if ("queued".equals(s) || "downloading".equals(s) || "paused".equals(s)) {
+                    FileStore.getInstance().deleteChapter(
+                        t.optString("albumId"), t.optString("chapterId"));
+                }
             }
+
+            downloadDb.validateOnStartup(FileStore.getInstance().getBaseDir());
         }
 
-        downloadDb.validateOnStartup(FileStore.getInstance().getBaseDir());
+        // 读取用户期望容量，通过统一策略初始化实际缓存上限
+        long userCacheMb = settingsDb.getLong("cache_capacity_mb",
+            CacheCapacityPolicy.DEFAULT_REQUESTED_MB);
+        applyCachePolicy(userCacheMb, CacheCapacityPolicy.PressureLevel.NORMAL);
+        logCachePolicy("initialize");
 
-        // 读取缓存容量 → 计算自适应上限 → 初始化 ImageCache
-        long userCacheMb = settingsDb.getLong("cache_capacity_mb", 256);
-        long effectiveCacheMb = computeAdaptiveCacheCapacity(userCacheMb);
-        ImageCache.getInstance().setCapacity(effectiveCacheMb * 1024 * 1024);
-
-        // 读取并发数设置 → 初始化 imageExecutor 和 downloadConcurrency
-        imageConcurrency = settingsDb.getInt("preload_concurrency", 6);
-        downloadConcurrency = settingsDb.getInt("download_concurrency", 6);
-        imageExecutor = Executors.newFixedThreadPool(imageConcurrency);
+        // 读取并发数设置 → 初始化 API executor 和进程级运行时
+        imageConcurrency = SettingsService.normalizeConcurrency(
+            settingsDb.getInt("preload_concurrency", SettingsService.DEFAULT_CONCURRENCY));
+        downloadConcurrency = SettingsService.normalizeConcurrency(
+            settingsDb.getInt("download_concurrency", SettingsService.DEFAULT_CONCURRENCY));
         apiExecutor = Executors.newFixedThreadPool(API_EXECUTOR_SIZE);
         apiTimeoutExecutor = Executors.newSingleThreadScheduledExecutor();
         ocrExecutor = Executors.newSingleThreadExecutor();
 
+        runtime = JmcomicRuntime.getOrCreate(ctx, settingsDb, downloadDb,
+            FileStore.getInstance(), ImageCache.getInstance(), cacheCapacityPolicy,
+            imageConcurrency, downloadConcurrency);
+        runtime.attachListener(this);
+        sharedClient = runtime.getClient();
+
         // 注册网络变化监听，网络切换时主动触发域名探活
         registerNetworkCallback();
-
-        // 预热 client，避免首次 API 调用时的冷启动延迟
-        getClient();
 
         // 初始化服务
         this.apiService = new ApiService(sharedClient, apiExecutor, apiTimeoutExecutor);
         this.settingsService = new SettingsService(settingsDb, downloadDb,
-            FileStore.getInstance(), permissionService, ctx, this);
-        this.preloadService = new PreloadService(ImageCache.getInstance(),
-            FileStore.getInstance(), settingsDb, sharedClient, imageExecutor, this, ctx);
-        this.downloadService = new DownloadService(downloadDb,
-            FileStore.getInstance(), sharedClient, imageExecutor, this, ctx);
+            FileStore.getInstance(), permissionService, ctx, this, ImageCache.getInstance());
+        this.preloadService = runtime.getPreloadService();
+        this.downloadService = runtime.getDownloadService();
+        this.preloadService.setMemoryPressureLevel(CacheCapacityPolicy.PressureLevel.NORMAL);
 
         // 清除登录态缓存，强制通过凭据重新登录
         clearAuthState(settingsDb);
@@ -208,6 +212,16 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         settingsDb.deleteKey("auth_cookies_json");
         settingsDb.deleteKey("auth_username");
         settingsDb.deleteKey("auth_user_info_json");
+    }
+
+    @Override
+    protected void handleOnResume() {
+        super.handleOnResume();
+        if (preloadService == null) return;
+        long requestedMb = SettingsStore.getInstance(getContext()).getLong(
+            "cache_capacity_mb", CacheCapacityPolicy.DEFAULT_REQUESTED_MB);
+        applyCachePolicy(requestedMb, CacheCapacityPolicy.PressureLevel.NORMAL);
+        logCachePolicy("foreground-resume");
     }
 
     @Override
@@ -230,12 +244,19 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
                 Log.d(TAG, "取消注册网络回调失败", e);
             }
         }
+        if (runtime != null) {
+            runtime.detachListener(this);
+        }
+        if (instance == this) {
+            instance = null;
+        }
+
         shutdownGracefully(domainProbeExecutor);
         shutdownGracefully(ocrExecutor);
 
         shutdownGracefully(apiTimeoutExecutor);
         shutdownGracefully(apiExecutor, 10);
-        shutdownGracefully(imageExecutor, 2);
+        // image/network/download-preparation executors are owned by JmcomicRuntime.
     }
 
     private void shutdownGracefully(ExecutorService executor) {
@@ -460,9 +481,6 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
     }
 
     private synchronized JmApiClient getClient() {
-        if (sharedClient == null) {
-            sharedClient = JmComic.newApiClient(new JmConfiguration.Builder().downloadThreadPoolSize(downloadConcurrency).build());
-        }
         return sharedClient;
     }
 
@@ -653,48 +671,74 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
 
     // ---- 自适应缓存容量 ----
 
-    private long computeAdaptiveCacheCapacity(long userMb) {
+    private CacheCapacityPolicy.Result calculateCacheCapacity(long requestedMb,
+                                                              CacheCapacityPolicy.PressureLevel pressureLevel) {
         ActivityManager am = (ActivityManager) getContext()
             .getSystemService(Context.ACTIVITY_SERVICE);
-        if (am == null) return userMb;
+        boolean lowRam = am != null && am.isLowRamDevice();
+        return cacheCapacityPolicy.calculate(requestedMb, Runtime.getRuntime().maxMemory(),
+            lowRam, pressureLevel);
+    }
 
-        int heapLimitMb = Math.max(am.getMemoryClass(), am.getLargeMemoryClass());
+    private void applyCachePolicy(long requestedMb,
+                                  CacheCapacityPolicy.PressureLevel pressureLevel) {
+        ImageCache.getInstance().applyPolicy(calculateCacheCapacity(requestedMb, pressureLevel));
+        if (preloadService != null) preloadService.setMemoryPressureLevel(pressureLevel);
+    }
 
-        ActivityManager.MemoryInfo memInfo = new ActivityManager.MemoryInfo();
-        am.getMemoryInfo(memInfo);
-        long availMemMb = memInfo.availMem / (1024 * 1024);
-
-        long systemLimit = (long)(availMemMb * 0.35);
-        long heapLimit = (long)(heapLimitMb * 0.80);
-
-        long effective = userMb;
-        if (systemLimit < effective) effective = systemLimit;
-        if (heapLimit < effective) effective = heapLimit;
-        if (effective < 16) effective = 16;
-
-        Log.i(TAG, "自适应缓存: 用户=" + userMb + "MB, 可用内存限制="
-            + systemLimit + "MB, 堆限制=" + heapLimit + "MB, 生效=" + effective + "MB");
-        return effective;
+    private void logCachePolicy(String event) {
+        ImageCache.CacheStats stats = ImageCache.getInstance().getStats();
+        Log.i(TAG, "缓存策略: requestedMb=" + stats.requestedMb
+            + ", effectiveMb=" + stats.effectiveMb
+            + ", currentMb=" + Math.round(stats.currentBytes / (1024.0 * 1024.0))
+            + ", maxHeapMb=" + stats.maxHeapMb
+            + ", safeRatio=" + stats.safeRatio
+            + ", pressureLevel=" + stats.pressureLevel
+            + ", temporaryClamp=" + stats.temporaryClamp
+            + ", reason=" + stats.reason + ", event=" + event);
     }
 
     /**
      * 由 MainActivity.onTrimMemory/onLowMemory 调用，根据系统内存压力缩减缓存。
      */
     public void onMemoryPressure(int level) {
+        CacheCapacityPolicy.PressureLevel pressureLevel;
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_COMPLETE) {
+            pressureLevel = CacheCapacityPolicy.PressureLevel.COMPLETE;
+        } else if (level >= ComponentCallbacks2.TRIM_MEMORY_MODERATE) {
+            pressureLevel = CacheCapacityPolicy.PressureLevel.MODERATE;
+        } else if (level >= ComponentCallbacks2.TRIM_MEMORY_BACKGROUND) {
+            pressureLevel = CacheCapacityPolicy.PressureLevel.BACKGROUND;
+        } else if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) {
+            pressureLevel = CacheCapacityPolicy.PressureLevel.UI_HIDDEN;
+        } else if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL) {
+            pressureLevel = CacheCapacityPolicy.PressureLevel.RUNNING_CRITICAL;
+        } else if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
+            pressureLevel = CacheCapacityPolicy.PressureLevel.RUNNING_LOW;
+        } else if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_MODERATE) {
+            pressureLevel = CacheCapacityPolicy.PressureLevel.RUNNING_MODERATE;
+        } else {
+            pressureLevel = CacheCapacityPolicy.PressureLevel.NORMAL;
+        }
+
+        long requestedMb = SettingsStore.getInstance(getContext()).getLong(
+            "cache_capacity_mb", CacheCapacityPolicy.DEFAULT_REQUESTED_MB);
+        applyCachePolicy(requestedMb, pressureLevel);
+
         if (level >= ComponentCallbacks2.TRIM_MEMORY_COMPLETE) {
             ImageCache.getInstance().clear();
         } else if (level >= ComponentCallbacks2.TRIM_MEMORY_MODERATE) {
             ImageCache.getInstance().trimToFraction(0.2);
         } else if (level >= ComponentCallbacks2.TRIM_MEMORY_BACKGROUND) {
-            ImageCache.getInstance().trimToFraction(0.3);
+            ImageCache.getInstance().trimToFraction(0.2);
         } else if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) {
             ImageCache.getInstance().trimToFraction(0.5);
         } else if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL) {
-            ImageCache.getInstance().trimToFraction(0.25);
+            ImageCache.getInstance().trimToFraction(0.2);
         } else if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
             ImageCache.getInstance().trimToFraction(0.5);
         }
-        // RUNNING_MODERATE (5): 不干预，信任自适应淘汰
+        logCachePolicy("trim-memory-" + level);
     }
 
     @PluginMethod
@@ -777,7 +821,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
     /**
      * 将 content:// 树 URI 转为可读的文件系统路径。
      * 例如: content://com.android.externalstorage.documents/tree/primary%3ADownload
-     *    → /storage/emulated/0/Download
+     * → /storage/emulated/0/Download
      */
     private String treeUriToPath(android.net.Uri treeUri) {
         if (treeUri == null) return null;
@@ -1133,14 +1177,13 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
     public void setCacheCapacity(PluginCall call) {
         try {
             Integer mb = call.getInt("mb");
-            if (mb == null || mb <= 0) {
-                call.reject("mb must be a positive number");
+            if (mb == null || mb < 64 || mb > 1024) {
+                call.reject("mb must be between 64 and 1024");
                 return;
             }
             preloadService.setCacheCapacity(mb);
-            JSObject ret = new JSObject();
+            JSObject ret = JSObject.fromJSONObject(preloadService.getCacheCapacityInfo());
             ret.put("success", true);
-            ret.put("capacityMb", mb);
             call.resolve(ret);
         } catch (Exception e) {
             call.reject(e.getMessage(), e);
@@ -1460,11 +1503,11 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
                 if (enabled) {
                     decorView.setSystemUiVisibility(
                         android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                        | android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                        | android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                        | android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                        | android.view.View.SYSTEM_UI_FLAG_FULLSCREEN
-                        | android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+                            | android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                            | android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                            | android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                            | android.view.View.SYSTEM_UI_FLAG_FULLSCREEN
+                            | android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
                 } else {
                     int layoutFlags = android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
                         | android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
@@ -2488,7 +2531,10 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
                     item.optString("folderId", null)
                 );
                 if (id != -1) imported++;
-                else { skipped++; duplicateCount++; }
+                else {
+                    skipped++;
+                    duplicateCount++;
+                }
             } catch (Exception e) {
                 skipped++;
                 errorCount++;
@@ -2598,10 +2644,16 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
             call.reject("PDF 信息读取失败: " + e.getMessage(), e);
         } finally {
             if (renderer != null) {
-                try { renderer.close(); } catch (Exception ignored) {}
+                try {
+                    renderer.close();
+                } catch (Exception ignored) {
+                }
             }
             if (pfd != null) {
-                try { pfd.close(); } catch (Exception ignored) {}
+                try {
+                    pfd.close();
+                } catch (Exception ignored) {
+                }
             }
         }
     }
@@ -2648,13 +2700,22 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
             call.reject("PDF 页面渲染失败: " + e.getMessage(), e);
         } finally {
             if (page != null) {
-                try { page.close(); } catch (Exception ignored) {}
+                try {
+                    page.close();
+                } catch (Exception ignored) {
+                }
             }
             if (renderer != null) {
-                try { renderer.close(); } catch (Exception ignored) {}
+                try {
+                    renderer.close();
+                } catch (Exception ignored) {
+                }
             }
             if (pfd != null) {
-                try { pfd.close(); } catch (Exception ignored) {}
+                try {
+                    pfd.close();
+                } catch (Exception ignored) {
+                }
             }
         }
     }
@@ -2687,17 +2748,42 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
 
             List<PdfExportService.ExportJob> jobs = new ArrayList<>();
             for (int i = 0; i < tasksJson.length(); i++) {
-                JSONObject t = tasksJson.getJSONObject(i);
-                PdfExportService.ExportJob job = new PdfExportService.ExportJob();
-                job.albumId = t.getString("albumId");
-                job.chapterId = t.getString("chapterId");
-                job.chapterTitle = t.optString("chapterTitle", job.chapterId);
-                job.savePath = t.getString("savePath");
-                job.useOriginal = t.optBoolean("useOriginal", true);
-                double cr = t.optDouble("compressionRatio", 1.0);
-                job.compressionRatio = (float) Math.max(0.1, Math.min(1.0, cr));
-                job.splitPages = t.optInt("splitPages", 0);
-                jobs.add(job);
+                try {
+                    JSONObject t = tasksJson.getJSONObject(i);
+                    PdfExportService.ExportJob job = new PdfExportService.ExportJob();
+                    job.mode = t.optString("mode", "chapter").trim();
+                    job.albumId = t.optString("albumId", "");
+                    job.chapterId = t.optString("chapterId", "");
+                    job.chapterTitle = t.optString("chapterTitle",
+                        "merged".equals(job.mode) ? "合并导出" : job.chapterId);
+                    job.savePath = t.optString("savePath", "");
+                    job.useOriginal = t.optBoolean("useOriginal", true);
+                    double cr = t.optDouble("compressionRatio", 1.0);
+                    job.compressionRatio = (float) Math.max(0.1, Math.min(1.0, cr));
+                    job.splitPages = Math.max(0, t.optInt("splitPages", 0));
+
+                    if ("merged".equals(job.mode)) {
+                        JSONArray chaptersJson = t.optJSONArray("chapters");
+                        if (chaptersJson != null) {
+                            job.chapters = new ArrayList<>();
+                            for (int j = 0; j < chaptersJson.length(); j++) {
+                                JSONObject c = chaptersJson.getJSONObject(j);
+                                PdfExportService.ExportChapter chapter =
+                                    new PdfExportService.ExportChapter();
+                                chapter.albumId = c.optString("albumId", "");
+                                chapter.chapterId = c.optString("chapterId", "");
+                                chapter.chapterTitle = c.optString("chapterTitle", chapter.chapterId);
+                                chapter.sortOrder = c.optInt("sortOrder", 0);
+                                job.chapters.add(chapter);
+                            }
+                        }
+                    }
+
+                    PdfExportJobValidator.validate(job);
+                    jobs.add(job);
+                } catch (Exception e) {
+                    throw new IllegalArgumentException("tasks[" + i + "] 无效: " + e.getMessage(), e);
+                }
             }
 
             PdfExportService pdfService = PdfExportService.getInstance(getContext());

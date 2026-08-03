@@ -3,7 +3,7 @@
     <div class="reader-root" @click="onRootClick">
       <!-- 顶部工具栏 -->
       <Transition name="toolbar-slide">
-        <ReaderTopToolbar v-if="toolbarVisible" :title="chapterTitle" @click.stop @back="goBack"/>
+        <ReaderTopToolbar v-if="toolbarVisible" :title="chapterTitle" @click.stop @back="goBack" />
       </Transition>
 
       <!-- 图片视图 -->
@@ -69,21 +69,21 @@ import {
   shallowRef,
   watch,
 } from 'vue'
-import {useRoute, useRouter} from 'vue-router'
-import {IonPage} from '@ionic/vue'
-import type {PluginListenerHandle} from '@capacitor/core'
-import {getImageUrl, JmcomicService, showToast} from '@/services/JmcomicService'
-import type {ImageInfo, PhotoDetail, PhotoMeta, PreloadResult,} from '@/services/JmcomicTypes'
-import {SettingsStore} from '@/services/SettingsService'
-import {HistoryService} from '@/services/HistoryService'
-import {ReadingProgressService} from '@/services/ReadingProgressService'
+import { useRoute, useRouter } from 'vue-router'
+import { IonPage } from '@ionic/vue'
+import type { PluginListenerHandle } from '@capacitor/core'
+import { getImageUrl, JmcomicService, showToast } from '@/services/JmcomicService'
+import type { ImageInfo, PhotoDetail, PhotoMeta, PreloadResult } from '@/services/JmcomicTypes'
+import { SettingsStore } from '@/services/SettingsService'
+import { HistoryService } from '@/services/HistoryService'
+import { ReadingProgressService } from '@/services/ReadingProgressService'
 import ReaderTopToolbar from '@/components/reader/ReaderTopToolbar.vue'
 import ReaderBottomToolbar from '@/components/reader/ReaderBottomToolbar.vue'
 import VerticalScrollView from '@/components/reader/VerticalScrollView.vue'
 import HorizontalPageView from '@/components/reader/HorizontalPageView.vue'
 import ReaderSettingsPanel from '@/components/reader/ReaderSettingsPanel.vue'
 
-defineOptions({name: 'ReaderPage'})
+defineOptions({ name: 'ReaderPage' })
 
 function getN(): number {
   return SettingsStore.getReaderPreloadPages()
@@ -98,8 +98,7 @@ const DRAG_PREVIEW_DELAY_MS = 500
 const route = useRoute()
 const router = useRouter()
 
-const updateReaderCurrentPage = inject<(page: number) => void>('updateReaderCurrentPage', () => {
-})
+const updateReaderCurrentPage = inject<(page: number) => void>('updateReaderCurrentPage', () => {})
 
 // ---- 路由参数 ----
 const albumId = computed(() => route.params.albumId as string)
@@ -147,11 +146,10 @@ let dragPreviewTimer: ReturnType<typeof setTimeout> | null = null
 const verticalViewRef = ref<InstanceType<typeof VerticalScrollView> | null>(null)
 const horizontalViewRef = ref<InstanceType<typeof HorizontalPageView> | null>(null)
 
-const sortChapters = (items: PhotoMeta[]) =>
-  [...items].sort((a, b) => a.sortOrder - b.sortOrder)
+const sortChapters = (items: PhotoMeta[]) => [...items].sort((a, b) => a.sortOrder - b.sortOrder)
 
-const currentChapterMeta = computed(() =>
-  chapters.value.find((chapter) => chapter.id === chapterId.value) ?? null,
+const currentChapterMeta = computed(
+  () => chapters.value.find((chapter) => chapter.id === chapterId.value) ?? null,
 )
 
 const ensureCurrentChapterMeta = (pd: PhotoDetail) => {
@@ -170,16 +168,17 @@ const switchChapter = (targetChapterId: string) => {
   if (
     targetChapterId === chapterId.value ||
     !chapters.value.some((chapter) => chapter.id === targetChapterId)
-  ) return
+  )
+    return
 
   settingsPanelVisible.value = false
-  const query = {...route.query}
+  const query = { ...route.query }
   delete query.page
   delete query.source
   delete query.total
   void router.replace({
     name: 'ReaderPage',
-    params: {albumId: albumId.value, chapterId: targetChapterId},
+    params: { albumId: albumId.value, chapterId: targetChapterId },
     query,
   })
 }
@@ -188,8 +187,7 @@ const switchChapter = (targetChapterId: string) => {
 // 工具栏显示时仅恢复系统栏；阅读内容始终保持 edge-to-edge，不随系统栏改变尺寸。
 const syncReaderFullscreen = () => {
   if (!readerRuntimeActive) return
-  JmcomicService.setReaderFullscreen(!toolbarVisible.value).catch(() => {
-  })
+  JmcomicService.setReaderFullscreen(!toolbarVisible.value).catch(() => {})
 }
 
 const setToolbarVisible = (visible: boolean) => {
@@ -219,11 +217,8 @@ const scheduleToolbarAtReaderEnd = () => {
   if (toolbarVisible.value || !SettingsStore.getReaderAutoShowToolbarAtEnd()) return
   autoShowToolbarTimer = setTimeout(() => {
     autoShowToolbarTimer = null
-    if (
-      toolbarVisible.value ||
-      !SettingsStore.getReaderAutoShowToolbarAtEnd() ||
-      !isAtReaderEnd()
-    ) return
+    if (toolbarVisible.value || !SettingsStore.getReaderAutoShowToolbarAtEnd() || !isAtReaderEnd())
+      return
     setToolbarVisible(true)
   }, AUTO_SHOW_TOOLBAR_DELAY_MS)
 }
@@ -256,9 +251,10 @@ const onRootClick = (ev: MouseEvent) => {
 
   const now = Date.now()
   const tapDist = Math.abs(ev.clientX - lastToolbarTapX) + Math.abs(ev.clientY - lastToolbarTapY)
-  const isDoubleTap = toolbarTapTimer
-    && now - lastToolbarTapTime < TOOLBAR_TAP_DELAY_MS
-    && tapDist < TOOLBAR_DOUBLE_TAP_DIST
+  const isDoubleTap =
+    toolbarTapTimer &&
+    now - lastToolbarTapTime < TOOLBAR_TAP_DELAY_MS &&
+    tapDist < TOOLBAR_DOUBLE_TAP_DIST
 
   if (isDoubleTap) {
     clearToolbarTapTimer()
@@ -291,8 +287,7 @@ const onDisplayModeChange = (vertical: boolean) => {
 }
 
 const syncReaderState = () => {
-  JmcomicService.setReaderState(true, isVertical.value).catch(() => {
-  })
+  JmcomicService.setReaderState(true, isVertical.value).catch(() => {})
 }
 
 // ---- 阅读器设置应用 / 恢复 ----
@@ -300,32 +295,24 @@ const syncReaderState = () => {
 const applyReaderSettings = () => {
   const orientation = SettingsStore.getReaderScreenOrientation()
   if (orientation !== 'auto') {
-    JmcomicService.setReaderScreenOrientation(orientation).catch(() => {
-    })
+    JmcomicService.setReaderScreenOrientation(orientation).catch(() => {})
   }
   const brightness = SettingsStore.getReaderBrightness()
   if (brightness >= 0) {
-    JmcomicService.setReaderBrightness(brightness).catch(() => {
-    })
+    JmcomicService.setReaderBrightness(brightness).catch(() => {})
   }
   if (SettingsStore.getReaderKeepScreenOn()) {
-    JmcomicService.setReaderKeepScreenOn(true).catch(() => {
-    })
+    JmcomicService.setReaderKeepScreenOn(true).catch(() => {})
   }
   syncReaderFullscreen()
 }
 
 const restoreSystemState = () => {
-  JmcomicService.setReaderBrightness(-1).catch(() => {
-  })
-  JmcomicService.setReaderScreenOrientation('auto').catch(() => {
-  })
-  JmcomicService.setReaderKeepScreenOn(false).catch(() => {
-  })
-  JmcomicService.setReaderFullscreen(false).catch(() => {
-  })
-  JmcomicService.setReaderState(false, false).catch(() => {
-  })
+  JmcomicService.setReaderBrightness(-1).catch(() => {})
+  JmcomicService.setReaderScreenOrientation('auto').catch(() => {})
+  JmcomicService.setReaderKeepScreenOn(false).catch(() => {})
+  JmcomicService.setReaderFullscreen(false).catch(() => {})
+  JmcomicService.setReaderState(false, false).catch(() => {})
 }
 
 // ---- 音量键 ----
@@ -441,7 +428,7 @@ const updateWindow = (center: number, replacePending = false) => {
     }
 
     if (toLoad.length > 0) {
-      JmcomicService.preloadImages(requestedPhotoId, toLoad, 'image', {replacePending})
+      JmcomicService.preloadImages(requestedPhotoId, toLoad, 'image', { replacePending })
         .then((result: PreloadResult) => {
           if (photoDetail?.id !== requestedPhotoId) return
           for (const so of result.cached) {
@@ -450,8 +437,7 @@ const updateWindow = (center: number, replacePending = false) => {
           }
           applyImageMap()
         })
-        .catch(() => {
-        })
+        .catch(() => {})
     }
   }
 
@@ -481,7 +467,8 @@ const loadDragPreviewImage = (center: number) => {
   if (!photoDetail) return
   const requestedPhotoId = photoDetail.id
   const so = center + 1
-  if (so < 1 || so > totalCount.value || loadedSortOrders.has(so) || requestedSortOrders.has(so)) return
+  if (so < 1 || so > totalCount.value || loadedSortOrders.has(so) || requestedSortOrders.has(so))
+    return
 
   if (isOffline.value) {
     imageMap.value.set(so, getImageUrl(photoDetail.id, so, 'image'))
@@ -493,7 +480,7 @@ const loadDragPreviewImage = (center: number) => {
   const img = sortOrderToImage.get(so)
   if (!img) return
   requestedSortOrders.add(so)
-  JmcomicService.preloadImages(requestedPhotoId, [img], 'image', {replacePending: true})
+  JmcomicService.preloadImages(requestedPhotoId, [img], 'image', { replacePending: true })
     .then((result: PreloadResult) => {
       if (photoDetail?.id !== requestedPhotoId) return
       for (const cachedSo of result.cached) {
@@ -502,8 +489,7 @@ const loadDragPreviewImage = (center: number) => {
       }
       applyImageMap()
     })
-    .catch(() => {
-    })
+    .catch(() => {})
 }
 
 const scheduleDragPreviewLoad = (index: number) => {
@@ -627,15 +613,12 @@ const setupImageReadyListener = async () => {
   if (imageReadyListenerHandle) return
   const setupId = ++imageReadyListenerSetupId
   const targetChapterId = chapterId.value
-  const handle = await JmcomicService.addImageReadyListener(
-    targetChapterId,
-    (sortOrder) => {
-      if (chapterId.value !== targetChapterId) return
-      imageMap.value.set(sortOrder, getImageUrl(targetChapterId, sortOrder, 'image'))
-      loadedSortOrders.add(sortOrder)
-      applyImageMap()
-    },
-  )
+  const handle = await JmcomicService.addImageReadyListener(targetChapterId, (sortOrder) => {
+    if (chapterId.value !== targetChapterId) return
+    imageMap.value.set(sortOrder, getImageUrl(targetChapterId, sortOrder, 'image'))
+    loadedSortOrders.add(sortOrder)
+    applyImageMap()
+  })
   if (
     setupId !== imageReadyListenerSetupId ||
     !readerRuntimeActive ||
@@ -651,13 +634,10 @@ const activateReaderRuntime = () => {
   if (readerRuntimeActive) return
   readerRuntimeActive = true
   applyReaderSettings()
-  JmcomicService.setReaderState(true, isVertical.value).catch(() => {
-  })
-  setupVolumeKeyListener().catch(() => {
-  })
+  JmcomicService.setReaderState(true, isVertical.value).catch(() => {})
+  setupVolumeKeyListener().catch(() => {})
   if (!isOffline.value && photoDetail) {
-    setupImageReadyListener().catch(() => {
-    })
+    setupImageReadyListener().catch(() => {})
   }
 }
 
@@ -718,10 +698,7 @@ const applyPhotoBaseState = (pd: PhotoDetail) => {
     chapterId.value,
     total,
   )
-  currentIndex.value = Math.min(
-    Math.max(initialPage - 1, 0),
-    Math.max(0, total - 1),
-  )
+  currentIndex.value = Math.min(Math.max(initialPage - 1, 0), Math.max(0, total - 1))
   totalCount.value = total
   updateReaderCurrentPage(currentIndex.value + 1)
   ReadingProgressService.record(albumId.value, chapterId.value, currentIndex.value + 1, total)
@@ -736,15 +713,10 @@ const scrollToInitialIndex = () => {
   })
 }
 
-const isCurrentChapterLoad = (
-  version: number,
-  targetAlbumId: string,
-  targetChapterId: string,
-) => (
+const isCurrentChapterLoad = (version: number, targetAlbumId: string, targetChapterId: string) =>
   version === chapterLoadVersion &&
   albumId.value === targetAlbumId &&
   chapterId.value === targetChapterId
-)
 
 const loadDownloadedChapter = async (
   targetAlbumId: string,
@@ -789,8 +761,7 @@ const loadOnlineChapter = async (
     sortOrderToImage = new Map(pd.images.map((i) => [i.sortOrder, i]))
 
     if (readerRuntimeActive) {
-      setupImageReadyListener().catch(() => {
-      })
+      setupImageReadyListener().catch(() => {})
     }
 
     const initOrders = prioritizeSortOrders(calcWindow(currentIndex.value), currentIndex.value)
@@ -807,15 +778,15 @@ const loadOnlineChapter = async (
           if (
             !isCurrentChapterLoad(version, targetAlbumId, targetChapterId) ||
             photoDetail?.id !== pd.id
-          ) return
+          )
+            return
           for (const so of result.cached) {
             imageMap.value.set(so, getImageUrl(pd.id, so, 'image'))
             loadedSortOrders.add(so)
           }
           applyImageMap()
         })
-        .catch(() => {
-        })
+        .catch(() => {})
     }
 
     scrollToInitialIndex()
@@ -833,11 +804,7 @@ const loadChapter = async () => {
   const targetChapterId = chapterId.value
   const requestedDownload = route.query.source === 'download'
   const version = chapterLoadVersion
-  const downloadResult = await loadDownloadedChapter(
-    targetAlbumId,
-    targetChapterId,
-    version,
-  )
+  const downloadResult = await loadDownloadedChapter(targetAlbumId, targetChapterId, version)
   if (downloadResult !== 'missing') return
 
   if (requestedDownload) {
@@ -947,8 +914,9 @@ onUnmounted(() => {
 
 .toolbar-slide-enter-active,
 .toolbar-slide-leave-active {
-  transition: opacity 0.22s ease,
-  transform 0.22s ease;
+  transition:
+    opacity 0.22s ease,
+    transform 0.22s ease;
 }
 
 .toolbar-slide-enter-from,

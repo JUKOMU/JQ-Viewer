@@ -5,6 +5,7 @@ import android.util.Log;
 
 import io.github.jukomu.data.DownloadStore;
 import io.github.jukomu.data.FileStore;
+import io.github.jukomu.data.ImageCache;
 import io.github.jukomu.data.SettingsStore;
 
 import org.json.JSONObject;
@@ -18,6 +19,9 @@ import java.util.List;
 public class SettingsService {
 
     private static final String TAG = "SettingsService";
+    public static final int DEFAULT_CONCURRENCY = 6;
+    private static final int MIN_CONCURRENCY = 1;
+    private static final int MAX_CONCURRENCY = 12;
 
     private final SettingsStore settingsDb;
     private final DownloadStore downloadDb;
@@ -25,32 +29,38 @@ public class SettingsService {
     private final PermissionService permissionService;
     private final Context context;
     private final ServiceListener listener;
+    private final ImageCache imageCache;
 
     public SettingsService(SettingsStore settingsDb, DownloadStore downloadDb,
                            FileStore fileStore, PermissionService permissionService,
-                           Context context, ServiceListener listener) {
+                           Context context, ServiceListener listener, ImageCache imageCache) {
         this.settingsDb = settingsDb;
         this.downloadDb = downloadDb;
         this.fileStore = fileStore;
         this.permissionService = permissionService;
         this.context = context;
         this.listener = listener;
+        this.imageCache = imageCache;
     }
 
     // ---- 设置读写 ----
 
     public void setDownloadConcurrency(int n) {
-        if (n < 1 || n > 12) {
+        if (n < MIN_CONCURRENCY || n > MAX_CONCURRENCY) {
             throw new IllegalArgumentException("n must be between 1 and 12");
         }
-        settingsDb.putString("download_concurrency", String.valueOf(n));
+        if (!settingsDb.putString("download_concurrency", String.valueOf(n))) {
+            throw new IllegalStateException("保存下载并发设置失败");
+        }
     }
 
     public void setPreloadConcurrency(int n) {
-        if (n < 1 || n > 12) {
+        if (n < MIN_CONCURRENCY || n > MAX_CONCURRENCY) {
             throw new IllegalArgumentException("n must be between 1 and 12");
         }
-        settingsDb.putString("preload_concurrency", String.valueOf(n));
+        if (!settingsDb.putString("preload_concurrency", String.valueOf(n))) {
+            throw new IllegalStateException("保存预载并发设置失败");
+        }
     }
 
     public boolean getDownloadPublic() {
@@ -61,10 +71,19 @@ public class SettingsService {
         JSONObject ret = new JSONObject();
         try {
             ret.put("readerPreloadPages", settingsDb.getInt("reader_preload_pages", 15));
-            ret.put("preloadConcurrency", settingsDb.getInt("preload_concurrency", 6));
-            ret.put("downloadConcurrency", settingsDb.getInt("download_concurrency", 6));
+            ret.put("preloadConcurrency", normalizeConcurrency(
+                settingsDb.getInt("preload_concurrency", DEFAULT_CONCURRENCY)));
+            ret.put("downloadConcurrency", normalizeConcurrency(
+                settingsDb.getInt("download_concurrency", DEFAULT_CONCURRENCY)));
             ret.put("downloadPublic", settingsDb.getBoolean("download_public", false));
-            ret.put("cacheCapacityMb", settingsDb.getLong("cache_capacity_mb", 640));
+            ImageCache.CacheStats cacheStats = imageCache.getStats();
+            // 旧字段继续表示实际容量；新前端通过显式字段区分用户设置和当前上限。
+            ret.put("cacheCapacityMb", cacheStats.effectiveMb);
+            ret.put("cacheRequestedMb", cacheStats.requestedMb);
+            ret.put("cacheEffectiveMb", cacheStats.effectiveMb);
+            ret.put("cacheMaxHeapMb", cacheStats.maxHeapMb);
+            ret.put("cacheTemporaryClamp", cacheStats.temporaryClamp);
+            ret.put("cacheLimitReason", cacheStats.reason);
             ret.put("ocrEnabled", settingsDb.getBoolean("ocr_enabled", true));
             ret.put("readerDisplayMode", getReaderDisplayMode());
             ret.put("readerScreenOrientation", getReaderScreenOrientation());
@@ -76,6 +95,11 @@ public class SettingsService {
             Log.w(TAG, "构建全部设置信息失败", e);
         }
         return ret;
+    }
+
+    public static int normalizeConcurrency(int value) {
+        return value < MIN_CONCURRENCY || value > MAX_CONCURRENCY
+            ? DEFAULT_CONCURRENCY : value;
     }
 
     public void setReaderPreloadPages(int n) {

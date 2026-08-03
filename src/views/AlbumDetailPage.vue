@@ -28,7 +28,7 @@
           :class="{ sticky: tabBarSticky, swiping: tabSwipeActive, settling: tabSwipeSettling }"
           :style="tabBarStyle"
         >
-          <div class="tab-active-indicator"/>
+          <div class="tab-active-indicator" />
           <button
             v-for="(tab, index) in tabs"
             :key="tab.key"
@@ -107,7 +107,7 @@
         </div>
       </div>
 
-      <div class="bottom-spacer"/>
+      <div class="bottom-spacer" />
     </IonContent>
 
     <FavoriteFolderPicker
@@ -122,7 +122,7 @@
 </template>
 
 <script setup lang="ts">
-defineOptions({name: 'AlbumDetailPage'})
+defineOptions({ name: 'AlbumDetailPage' })
 
 import {
   type ComponentPublicInstance,
@@ -136,11 +136,11 @@ import {
   ref,
   watch,
 } from 'vue'
-import {useRoute, useRouter} from 'vue-router'
-import {createGesture, type Gesture, IonContent, IonPage, menuController} from '@ionic/vue'
-import type {PluginListenerHandle} from '@capacitor/core'
-import {getImageUrl, JmcomicService, sanitizeError, showToast} from '@/services/JmcomicService'
-import {buildPdfDocumentParams, fetchPdfArrayBuffer} from '@/services/PdfReaderService'
+import { useRoute, useRouter } from 'vue-router'
+import { createGesture, type Gesture, IonContent, IonPage, menuController } from '@ionic/vue'
+import type { PluginListenerHandle } from '@capacitor/core'
+import { getImageUrl, JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
+import { buildPdfDocumentParams, fetchPdfArrayBuffer } from '@/services/PdfReaderService'
 import * as pdfjsLib from 'pdfjs-dist'
 import type {
   AlbumDetail,
@@ -152,12 +152,12 @@ import type {
   PhotoDetail,
   PreloadResult,
 } from '@/services/JmcomicTypes'
-import {makeTaskId} from '@/services/JmcomicTypes'
-import {OfflineDownloadService} from '@/services/OfflineDownloadService'
-import {OfflineFavoriteService} from '@/services/OfflineFavoriteService'
-import {HistoryService} from '@/services/HistoryService'
-import {useAuth} from '@/composables/useAuth'
-import {type PreviewImageSlotSetter, usePreviewBatches} from '@/composables/usePreviewBatches'
+import { makeTaskId } from '@/services/JmcomicTypes'
+import { OfflineDownloadService } from '@/services/OfflineDownloadService'
+import { OfflineFavoriteService } from '@/services/OfflineFavoriteService'
+import { HistoryService } from '@/services/HistoryService'
+import { useAuth } from '@/composables/useAuth'
+import { type PreviewImageSlotSetter, usePreviewBatches } from '@/composables/usePreviewBatches'
 import AlbumHeader from '@/components/album/AlbumHeader.vue'
 import AlbumInfoTab from '@/components/album/AlbumInfoTab.vue'
 import AlbumChaptersTab from '@/components/album/AlbumChaptersTab.vue'
@@ -195,10 +195,10 @@ const tabs = computed(() => {
   const chapterCount = albumDetail.value?.photoMetas?.length
   const commentCount = albumDetail.value?.commentCount
   return [
-    {key: 'info' as const, label: '本子信息'},
-    {key: 'chapters' as const, label: chapterCount ? `章节 (${chapterCount})` : '章节'},
-    {key: 'preview' as const, label: '预览'},
-    {key: 'comments' as const, label: commentCount ? `评论 (${commentCount})` : '评论'},
+    { key: 'info' as const, label: '本子信息' },
+    { key: 'chapters' as const, label: chapterCount ? `章节 (${chapterCount})` : '章节' },
+    { key: 'preview' as const, label: '预览' },
+    { key: 'comments' as const, label: commentCount ? `评论 (${commentCount})` : '评论' },
   ]
 })
 const activeTab = ref<TabKey>('info')
@@ -214,8 +214,8 @@ const selectedChapterId = ref('')
 const selectedChapterDownloadStatus = computed(() =>
   chapterDownloadStatuses.value.get(selectedChapterId.value),
 )
-const selectedChapterHasDownload = computed(() =>
-  selectedChapterDownloadStatus.value === 'completed',
+const selectedChapterHasDownload = computed(
+  () => selectedChapterDownloadStatus.value === 'completed',
 )
 const chapterLoading = ref(false)
 
@@ -230,9 +230,7 @@ const chapterPdfStatuses = computed(() => {
   }
   return map
 })
-const selectedChapterPdf = computed(() =>
-  chapterPdfMap.value.get(selectedChapterId.value) ?? null,
-)
+const selectedChapterPdf = computed(() => chapterPdfMap.value.get(selectedChapterId.value) ?? null)
 let downloadProgressHandle: PluginListenerHandle | null = null
 
 type ReaderSource = 'network' | 'download' | 'pdf'
@@ -297,10 +295,10 @@ const refreshImportedPdfStatuses = async () => {
 }
 
 // ---- 操作 ----
-const actionBusy = reactive({like: false, favorite: false})
+const actionBusy = reactive({ like: false, favorite: false })
 
 // ---- 收藏夹选择弹窗 ----
-const {isLoggedIn} = useAuth()
+const { isLoggedIn } = useAuth()
 const showFolderPicker = ref(false)
 
 const pickerOnlineFolders = ref<FolderEntry[]>([])
@@ -313,15 +311,15 @@ async function openFolderPicker() {
 
   if (isLoggedIn.value) {
     try {
-      const result: FavoriteResult = await JmcomicService.favorites({folderId: '0', page: 1})
+      const result: FavoriteResult = await JmcomicService.favorites({ folderId: '0', page: 1 })
       if (result.folderList) {
         const entries: FolderEntry[] = []
         const counts: Record<string, number> = {}
         const countPromises: Promise<void>[] = []
         for (const [id, name] of Object.entries(result.folderList)) {
-          entries.push({id, name, count: 0})
+          entries.push({ id, name, count: 0 })
           countPromises.push(
-            JmcomicService.favorites({folderId: id, page: 1})
+            JmcomicService.favorites({ folderId: id, page: 1 })
               .then((r) => {
                 counts[id] = r.totalItems
               })
@@ -371,12 +369,12 @@ async function onPickerSelect(payload: { folderId: string; source: 'online' | 'o
 }
 
 async function onPickerAddFolder() {
-  const {alertController} = await import('@ionic/vue')
+  const { alertController } = await import('@ionic/vue')
   const alert = await alertController.create({
     header: '新建收藏夹',
-    inputs: [{name: 'name', type: 'text', placeholder: '收藏夹名称'}],
+    inputs: [{ name: 'name', type: 'text', placeholder: '收藏夹名称' }],
     buttons: [
-      {text: '取消', role: 'cancel'},
+      { text: '取消', role: 'cancel' },
       {
         text: '确定',
         handler: async (data) => {
@@ -398,9 +396,9 @@ async function onPickerAddFolder() {
                   const counts: Record<string, number> = {}
                   const countPromises: Promise<void>[] = []
                   for (const [id, fName] of Object.entries(result.folderList)) {
-                    entries.push({id, name: fName, count: 0})
+                    entries.push({ id, name: fName, count: 0 })
                     countPromises.push(
-                      JmcomicService.favorites({folderId: id, page: 1})
+                      JmcomicService.favorites({ folderId: id, page: 1 })
                         .then((r) => {
                           counts[id] = r.totalItems
                         })
@@ -501,7 +499,7 @@ const TAB_SWIPE_SETTLE_MS = 280
 const TAB_SWIPE_GAP = 18
 const activeTabIndex = computed(() => tabs.value.findIndex((tab) => tab.key === activeTab.value))
 const tabContentStyle = computed(() =>
-  tabSwipeActive.value ? {minHeight: `${Math.max(tabSwipeHeight.value + 24, 144)}px`} : {},
+  tabSwipeActive.value ? { minHeight: `${Math.max(tabSwipeHeight.value + 24, 144)}px` } : {},
 )
 const visualTabProgress = computed(() => {
   if (!tabSwipeActive.value) return Math.max(activeTabIndex.value, 0)
@@ -516,7 +514,7 @@ const tabBarStyle = computed(() => ({
 const resolveDetailScrollElement = async (): Promise<HTMLElement | null> => {
   const ionContentEl = contentRef.value?.$el as any
   if (!ionContentEl) return null
-  return await ionContentEl.getScrollElement?.() ?? null
+  return (await ionContentEl.getScrollElement?.()) ?? null
 }
 
 const saveActiveTabScrollPosition = async () => {
@@ -657,7 +655,7 @@ const observeActiveTabPanel = () => {
 const getTabPanelStyle = (index: number) => {
   if (!tabSwipeActive.value) return {}
   const offset = (index - tabSwipeBaseIndex.value) * getTabSwipeStride() + tabSwipeOffset.value
-  return {transform: `translate3d(${offset}px, 0, 0)`}
+  return { transform: `translate3d(${offset}px, 0, 0)` }
 }
 
 const getTabPanelWidth = () => {
@@ -677,7 +675,7 @@ const getTabSwipeStride = () => getTabPanelWidth() + TAB_SWIPE_GAP
 
 const getTabButtonStyle = (index: number) => {
   const distance = Math.abs(index - visualTabProgress.value)
-  return {color: distance < 0.5 ? '#fff' : '#8a6048'}
+  return { color: distance < 0.5 ? '#fff' : '#8a6048' }
 }
 
 const getClampedTabSwipeOffset = (deltaX: number) => {
@@ -843,7 +841,7 @@ const buildPdfReaderQuery = (pdf: ImportedPdf, page?: number) => ({
   coverUrl: pdf.coverUrl || coverUrl.value,
   chapterId: pdf.chapterId || selectedChapterId.value || albumId.value,
   chapterTitle: pdf.chapterTitle || pdf.fileName,
-  ...(page ? {page: String(page)} : {}),
+  ...(page ? { page: String(page) } : {}),
 })
 
 const openReaderBySource = (source: ReaderSource, page?: number) => {
@@ -869,10 +867,10 @@ const openReaderBySource = (source: ReaderSource, page?: number) => {
   void router.push({
     path: `/album/${albumId.value}/read/${chapterId}`,
     query: {
-      ...(page ? {page: String(page)} : {}),
+      ...(page ? { page: String(page) } : {}),
       title: albumTitle.value,
       total: String(selectedChapterPageCount.value),
-      ...(source === 'download' ? {source: 'download'} : {}),
+      ...(source === 'download' ? { source: 'download' } : {}),
     },
   })
 }
@@ -895,17 +893,20 @@ const renderPdfPreviewPage = async (
   try {
     page = await pdfDoc.getPage(pageNum)
     if (!isCurrentPreviewRequest(requestGeneration)) return null
-    const rawViewport = page.getViewport({scale: 1})
+    const rawViewport = page.getViewport({ scale: 1 })
     const columns = window.innerWidth >= 680 ? 4 : 3
     const gap = 6
     const sidePadding = 24
     const targetWidth = (window.innerWidth - sidePadding - gap * (columns - 1)) / columns
-    const scale = Math.max(0.4, (targetWidth * Math.min(window.devicePixelRatio || 1, 2)) / rawViewport.width)
-    const viewport = page.getViewport({scale})
+    const scale = Math.max(
+      0.4,
+      (targetWidth * Math.min(window.devicePixelRatio || 1, 2)) / rawViewport.width,
+    )
+    const viewport = page.getViewport({ scale })
     const canvas = document.createElement('canvas')
     canvas.width = viewport.width
     canvas.height = viewport.height
-    const task = page.render({canvas, viewport})
+    const task = page.render({ canvas, viewport })
     await task.promise
     if (!isCurrentPreviewRequest(requestGeneration)) return null
     const blob = await new Promise<Blob | null>((resolve) =>
@@ -934,12 +935,15 @@ const renderPdfPreviewBatch = async (
 ) => {
   const pdfDoc = context.pdfDoc
   if (!pdfDoc || !isCurrentPreviewRequest(context.requestGeneration)) return
-  const missingPages = Array.from({length: end - start}, (_, i) => start + i + 1)
-    .filter((pageNum) => !previewBatches.slots.value[pageNum - 1])
+  const missingPages = Array.from({ length: end - start }, (_, i) => start + i + 1).filter(
+    (pageNum) => !previewBatches.slots.value[pageNum - 1],
+  )
   const rendered = await Promise.all(
     missingPages.map((pageNum) => {
-      return renderPdfPreviewPage(pdfDoc, pageNum, context.requestGeneration)
-        .then((url) => ({pageNum, url}))
+      return renderPdfPreviewPage(pdfDoc, pageNum, context.requestGeneration).then((url) => ({
+        pageNum,
+        url,
+      }))
     }),
   )
   if (!isCurrentPreviewRequest(context.requestGeneration)) return
@@ -1273,10 +1277,7 @@ const handleToggleLike = async () => {
   actionBusy.like = true
   const wasLiked = albumDetail.value.isLiked
   albumDetail.value.isLiked = !wasLiked
-  albumDetail.value.likes = adjustLikeCount(
-    albumDetail.value.likes,
-    wasLiked ? -1 : 1,
-  )
+  albumDetail.value.likes = adjustLikeCount(albumDetail.value.likes, wasLiked ? -1 : 1)
   try {
     await JmcomicService.toggleAlbumLike(albumId.value)
     await showToast(wasLiked ? '已取消点赞' : '已点赞', 'success')
@@ -1292,10 +1293,7 @@ const handleToggleLike = async () => {
       }
     } else {
       albumDetail.value.isLiked = wasLiked
-      albumDetail.value.likes = adjustLikeCount(
-        albumDetail.value.likes,
-        wasLiked ? 1 : -1,
-      )
+      albumDetail.value.likes = adjustLikeCount(albumDetail.value.likes, wasLiked ? 1 : -1)
       await showToast(sanitizeError(e, '点赞失败'), 'danger')
     }
   } finally {
@@ -1414,7 +1412,7 @@ const startReading = () => {
 const onNavigateAlbum = (related: AlbumMeta) => {
   void router.push({
     path: `/album/${related.id}`,
-    query: {title: related.title, coverUrl: related.coverUrl, authors: related.authors.join(',')},
+    query: { title: related.title, coverUrl: related.coverUrl, authors: related.authors.join(',') },
   })
 }
 
@@ -1427,7 +1425,7 @@ const goBack = () => {
 }
 
 // ---- 滚动：Tab 栏吸顶 + 预览/评论触底加载 ----
-const handleScroll = async (event: CustomEvent<{scrollTop?: number}>) => {
+const handleScroll = async (event: CustomEvent<{ scrollTop?: number }>) => {
   const scrollTop = event.detail?.scrollTop
   if (typeof scrollTop === 'number') {
     tabScrollPositions[activeTab.value] = scrollTop
@@ -1438,7 +1436,12 @@ const handleScroll = async (event: CustomEvent<{scrollTop?: number}>) => {
   tabBarSticky.value = headerEl.getBoundingClientRect().bottom <= 0
 
   if (activeTab.value === 'preview') {
-    if (!previewAutoLoad.value || previewBatches.allVisible.value || previewBatches.loadingMore.value) return
+    if (
+      !previewAutoLoad.value ||
+      previewBatches.allVisible.value ||
+      previewBatches.loadingMore.value
+    )
+      return
     const requestGeneration = previewRequestGeneration
     const el = await resolveDetailScrollElement()
     if (!isCurrentPreviewRequest(requestGeneration)) return

@@ -2,26 +2,34 @@
 <template>
   <div ref="rootRef" class="header-area">
     <div class="header-bg">
-      <img v-if="coverUrl" :src="coverUrl" class="header-bg-img" alt=""/>
-      <div class="header-bg-mask"/>
+      <img v-if="coverUrl" :src="coverUrl" class="header-bg-img" alt="" />
+      <div class="header-bg-mask" />
     </div>
     <div class="header-content">
       <button type="button" class="back-btn" @click="$emit('back')">
-        <ion-icon :icon="arrowBack"/>
+        <ion-icon :icon="arrowBack" />
       </button>
       <div class="header-body">
         <div class="cover-col">
-          <img v-if="coverUrl" :src="coverUrl" class="cover-img" :alt="title" @click="showPreview = true"/>
-          <div v-else class="cover-placeholder"/>
+          <img
+            v-if="coverUrl"
+            :src="coverUrl"
+            class="cover-img"
+            :alt="title"
+            @click="showPreview = true"
+          />
+          <div v-else class="cover-placeholder" />
         </div>
         <div class="info-col">
           <h1 class="album-title">{{ title || '加载中...' }}</h1>
           <p v-if="authors" class="album-authors">{{ authors }}</p>
           <p v-if="!loading && !chapterLoading" class="album-pages">{{ pageCount }} 页</p>
-          <div v-else class="pages-skeleton"/>
+          <div v-else class="pages-skeleton" />
           <div class="read-actions">
             <div class="read-main-row">
-              <button type="button" class="read-btn" @click="$emit('start-reading')">开始阅读</button>
+              <button type="button" class="read-btn" @click="$emit('start-reading')">
+                开始阅读
+              </button>
               <button
                 type="button"
                 class="source-toggle-btn"
@@ -29,7 +37,7 @@
                 aria-label="选择阅读来源"
                 @click="$emit('toggle-source-menu')"
               >
-                <ion-icon :icon="ellipsisVertical"/>
+                <ion-icon :icon="ellipsisVertical" />
               </button>
             </div>
             <Transition name="source-menu">
@@ -42,7 +50,7 @@
                   aria-label="网络图片阅读"
                   @click="$emit('select-source', 'network')"
                 >
-                  <ion-icon :icon="globeOutline"/>
+                  <ion-icon :icon="globeOutline" />
                 </button>
                 <button
                   type="button"
@@ -52,7 +60,7 @@
                   aria-label="本地图片阅读"
                   @click="$emit('select-source', 'download')"
                 >
-                  <ion-icon :icon="imageOutline"/>
+                  <ion-icon :icon="imageOutline" />
                 </button>
                 <button
                   type="button"
@@ -62,7 +70,7 @@
                   aria-label="PDF 阅读"
                   @click="$emit('select-source', 'pdf')"
                 >
-                  <ion-icon :icon="documentOutline"/>
+                  <ion-icon :icon="documentOutline" />
                 </button>
               </div>
             </Transition>
@@ -73,18 +81,24 @@
     <!-- 封面预览遮罩 -->
     <Teleport to="body">
       <div v-if="showPreview" class="cover-preview-overlay" @click="showPreview = false">
-        <img :src="coverUrl" class="cover-preview-img" :alt="title"/>
+        <img :src="coverUrl" class="cover-preview-img" :alt="title" />
       </div>
     </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
-import {ref} from 'vue'
-import {IonIcon} from '@ionic/vue'
-import {arrowBack, documentOutline, ellipsisVertical, globeOutline, imageOutline,} from 'ionicons/icons'
+import { ref } from 'vue'
+import { IonIcon } from '@ionic/vue'
+import {
+  arrowBack,
+  documentOutline,
+  ellipsisVertical,
+  globeOutline,
+  imageOutline,
+} from 'ionicons/icons'
 
-defineOptions({name: 'AlbumHeader'})
+defineOptions({ name: 'AlbumHeader' })
 
 defineProps<{
   coverUrl: string
@@ -265,8 +279,9 @@ const showPreview = ref(false)
   font-size: 13px;
   font-weight: 700;
   box-shadow: 0 4px 14px rgb(240 126 73 / 0.4);
-  transition: transform 0.16s ease,
-  box-shadow 0.16s ease;
+  transition:
+    transform 0.16s ease,
+    box-shadow 0.16s ease;
 }
 
 .read-btn:active {
@@ -287,11 +302,12 @@ const showPreview = ref(false)
   color: rgb(255 255 255 / 0.72);
   font-size: 18px;
   backdrop-filter: blur(6px);
-  transition: background-color 0.18s ease,
-  border-color 0.18s ease,
-  color 0.18s ease,
-  transform 0.12s ease,
-  opacity 0.18s ease;
+  transition:
+    background-color 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease,
+    transform 0.12s ease,
+    opacity 0.18s ease;
 }
 
 .source-toggle-btn.active {
@@ -352,8 +368,9 @@ const showPreview = ref(false)
 
 .source-menu-enter-active,
 .source-menu-leave-active {
-  transition: opacity 0.18s ease,
-  transform 0.18s ease;
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease;
 }
 
 .source-menu-enter-from,

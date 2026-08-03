@@ -10,7 +10,7 @@
         @error="onCoverError"
       />
       <div v-else class="cover-placeholder">
-        <IonIcon :icon="documentOutline"/>
+        <IonIcon :icon="documentOutline" />
       </div>
     </div>
     <div class="info">
@@ -29,7 +29,7 @@
       <!-- 下载中：进度条 + 速度 -->
       <template v-if="showProgress && cardStatus === 'downloading'">
         <div class="progress-bar">
-          <div class="progress-fill" :style="{ width: progressPct + '%' }"/>
+          <div class="progress-fill" :style="{ width: progressPct + '%' }" />
         </div>
         <div class="progress-text">
           {{ (task as DownloadTask).downloadedPages }}/{{ (task as DownloadTask).totalPages }}
@@ -47,18 +47,22 @@
       <!-- 已完成 -->
       <div v-else-if="cardStatus === 'completed'" class="status-row">
         <span v-if="!isPdfEntry" class="tag completed">共 {{ displayTotalPages }} 页</span>
-        <span v-if="isPdfEntry && displayPdfPageCount > 0" class="tag completed">共 {{ displayPdfPageCount }} 页</span>
-        <IonIcon v-if="isPdfEntry" :icon="documentOutline" class="tag-icon pdf-tag-icon"/>
+        <span v-if="isPdfEntry && displayPdfPageCount > 0" class="tag completed"
+          >共 {{ displayPdfPageCount }} 页</span
+        >
+        <IonIcon v-if="isPdfEntry" :icon="documentOutline" class="tag-icon pdf-tag-icon" />
         <span v-if="sizeText" class="size-text">{{ sizeText }}</span>
       </div>
 
       <!-- 部分失败 -->
       <template v-else-if="cardStatus === 'failed' && (task as DownloadTask).downloadedPages > 0">
         <div class="progress-bar">
-          <div class="progress-fill partial" :style="{ width: progressPct + '%' }"/>
+          <div class="progress-fill partial" :style="{ width: progressPct + '%' }" />
         </div>
         <div class="progress-text">
-          已下载 {{ (task as DownloadTask).downloadedPages }}/{{ (task as DownloadTask).totalPages }}
+          已下载 {{ (task as DownloadTask).downloadedPages }}/{{
+            (task as DownloadTask).totalPages
+          }}
           <span class="failed-count">失败 {{ failedCount }}</span>
         </div>
         <div v-if="sizeText" class="size-text size-standalone">{{ sizeText }}</div>
@@ -66,18 +70,20 @@
 
       <!-- 完全失败 -->
       <div v-else-if="cardStatus === 'failed'" class="status-row">
-        <span class="tag failed">{{ sanitizeError((task as DownloadTask).error, '下载失败') }}</span>
+        <span class="tag failed">{{
+          sanitizeError((task as DownloadTask).error, '下载失败')
+        }}</span>
       </div>
     </div>
 
     <button class="more-btn" @click.stop="$emit('more', $event)">
-      <IonIcon :icon="ellipsisVertical"/>
+      <IonIcon :icon="ellipsisVertical" />
     </button>
   </div>
 </template>
 
 <script setup lang="ts">
-defineOptions({name: 'DownloadTaskCard'})
+defineOptions({ name: 'DownloadTaskCard' })
 
 const props = defineProps<{
   task: DownloadTask | CompletedEntry
@@ -89,15 +95,13 @@ const emit = defineEmits<{
   more: [event: Event]
   click: []
 }>()
-import {computed, ref} from 'vue'
-import {IonIcon} from '@ionic/vue'
-import {documentOutline, ellipsisVertical} from 'ionicons/icons'
-import {getImageUrl, sanitizeError} from '@/services/JmcomicService'
-import type {CompletedEntry, DownloadTask} from '@/services/JmcomicTypes'
+import { computed, ref } from 'vue'
+import { IonIcon } from '@ionic/vue'
+import { documentOutline, ellipsisVertical } from 'ionicons/icons'
+import { getImageUrl, sanitizeError } from '@/services/JmcomicService'
+import type { CompletedEntry, DownloadTask } from '@/services/JmcomicTypes'
 
-const isPdfEntry = computed(() =>
-  ('source' in props.task) && props.task.source === 'pdf-import',
-)
+const isPdfEntry = computed(() => 'source' in props.task && props.task.source === 'pdf-import')
 
 const cardStatus = computed(() => {
   if ('source' in props.task) return 'completed'
@@ -155,9 +159,10 @@ const coverError = ref(false)
 const coverSrc = computed(() => {
   const t = props.task
   if (coverError.value) {
-    const firstSort = ('firstImageSortOrder' in t)
-      ? (t as DownloadTask).firstImageSortOrder
-      : (t as CompletedEntry).downloadTask?.firstImageSortOrder
+    const firstSort =
+      'firstImageSortOrder' in t
+        ? (t as DownloadTask).firstImageSortOrder
+        : (t as CompletedEntry).downloadTask?.firstImageSortOrder
     if (firstSort) return getImageUrl(t.chapterId, firstSort, 'image')
     return ''
   }

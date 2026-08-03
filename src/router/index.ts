@@ -1,5 +1,5 @@
-import {createRouter, createWebHistory} from '@ionic/vue-router'
-import type {RouteRecordRaw} from 'vue-router'
+import { createRouter, createWebHistory } from '@ionic/vue-router'
+import type { RouteRecordRaw } from 'vue-router'
 
 const routes: Array<RouteRecordRaw> = [
   {
@@ -9,48 +9,48 @@ const routes: Array<RouteRecordRaw> = [
   {
     path: '/home',
     component: () => import('@/views/HomePage.vue'),
-    meta: {menu: true},
+    meta: { menu: true },
   },
   {
     path: '/category',
     name: 'CategoryPage',
     component: () => import('@/views/CategoryPage.vue'),
-    meta: {menu: true, keepAlive: true},
+    meta: { menu: true, keepAlive: true },
   },
   {
     path: '/search',
     name: 'SearchPage',
     component: () => import('@/views/SearchPage.vue'),
-    meta: {menu: true, keepAlive: true},
+    meta: { menu: true, keepAlive: true },
   },
   {
     path: '/favorite',
     name: 'FavoritePage',
     component: () => import('@/views/FavoritePage.vue'),
-    meta: {menu: true, keepAlive: true},
+    meta: { menu: true, keepAlive: true },
   },
   {
     path: '/download',
     name: 'DownloadPage',
     component: () => import('@/views/DownloadPage.vue'),
-    meta: {menu: true, keepAlive: true},
+    meta: { menu: true, keepAlive: true },
   },
   {
     path: '/setting',
     component: () => import('@/views/SettingPage.vue'),
-    meta: {menu: true, keepAlive: true},
+    meta: { menu: true, keepAlive: true },
   },
   {
     path: '/history',
     name: 'HistoryPage',
     component: () => import('@/views/HistoryPage.vue'),
-    meta: {menu: true, keepAlive: true},
+    meta: { menu: true, keepAlive: true },
   },
   {
     path: '/album/:id',
     name: 'AlbumDetailPage',
     component: () => import('@/views/AlbumDetailPage.vue'),
-    meta: {menu: true, keepAlive: true},
+    meta: { menu: true, keepAlive: true },
   },
   {
     path: '/album/:albumId/preview/:chapterId',
@@ -64,7 +64,7 @@ const routes: Array<RouteRecordRaw> = [
     path: '/album/:albumId/read/:chapterId',
     name: 'ReaderPage',
     component: () => import('@/views/ReaderPage.vue'),
-    meta: {menu: false, keepAlive: true},
+    meta: { menu: false, keepAlive: true },
   },
   {
     path: '/login',
@@ -90,19 +90,19 @@ const routes: Array<RouteRecordRaw> = [
     path: '/batch-parse',
     name: 'BatchParsePage',
     component: () => import('@/views/BatchParsePage.vue'),
-    meta: {menu: true, keepAlive: true},
+    meta: { menu: true, keepAlive: true },
   },
   {
     path: '/import-review',
     name: 'PdfImportPage',
     component: () => import('@/views/PdfImportPage.vue'),
-    meta: {menu: false, keepAlive: false},
+    meta: { menu: false, keepAlive: false },
   },
   {
     path: '/pdf-reader',
     name: 'PdfReaderPage',
     component: () => import('@/views/PdfReaderPage.vue'),
-    meta: {menu: false, keepAlive: true},
+    meta: { menu: false, keepAlive: true },
   },
 ]
 

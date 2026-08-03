@@ -8,16 +8,16 @@
           @click.self="closeSearchOverlay"
         >
           <div class="category-overlay-panel">
-            <CategorySearchToolbar @search="submitOverlayCategory"/>
+            <CategorySearchToolbar @search="submitOverlayCategory" />
           </div>
         </div>
       </Transition>
 
       <div class="category-page-top">
         <div class="category-page-toolbar" :class="{ pinned: pullHeaderPinned }">
-          <MenuToggleButton/>
+          <MenuToggleButton />
           <div class="toolbar-category">
-            <CategorySearchToolbar @search="resetWithPage"/>
+            <CategorySearchToolbar @search="resetWithPage" />
           </div>
         </div>
       </div>
@@ -50,7 +50,7 @@
             aria-label="更多操作"
             @click.stop="openCardMenu(item, $event)"
           >
-            <IonIcon :icon="ellipsisVertical"/>
+            <IonIcon :icon="ellipsisVertical" />
           </button>
         </template>
       </SearchResultContainer>
@@ -65,19 +65,27 @@
         @touchstart.stop
       >
         <button type="button" class="card-menu-item" @click.stop="handleCardDetail(cardMenu.item)">
-          <IonIcon :icon="informationCircleOutline" class="card-menu-icon"/>
+          <IonIcon :icon="informationCircleOutline" class="card-menu-icon" />
           <span>详情</span>
         </button>
         <button type="button" class="card-menu-item" @click.stop="handleCardRead(cardMenu.item)">
-          <IonIcon :icon="bookOutline" class="card-menu-icon"/>
+          <IonIcon :icon="bookOutline" class="card-menu-icon" />
           <span>阅读</span>
         </button>
-        <button type="button" class="card-menu-item" @click.stop="handleCardDownload(cardMenu.item)">
-          <IonIcon :icon="downloadOutline" class="card-menu-icon"/>
+        <button
+          type="button"
+          class="card-menu-item"
+          @click.stop="handleCardDownload(cardMenu.item)"
+        >
+          <IonIcon :icon="downloadOutline" class="card-menu-icon" />
           <span>下载</span>
         </button>
-        <button type="button" class="card-menu-item" @click.stop="handleCardFavorite(cardMenu.item)">
-          <IonIcon :icon="heartOutline" class="card-menu-icon"/>
+        <button
+          type="button"
+          class="card-menu-item"
+          @click.stop="handleCardFavorite(cardMenu.item)"
+        >
+          <IonIcon :icon="heartOutline" class="card-menu-icon" />
           <span>收藏</span>
         </button>
       </div>
@@ -105,11 +113,25 @@
 </template>
 
 <script setup lang="ts">
-import {computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref} from 'vue'
-import {useRouter} from 'vue-router'
-import {alertController, IonContent, IonIcon, IonPage} from '@ionic/vue'
-import {bookOutline, downloadOutline, ellipsisVertical, heartOutline, informationCircleOutline,} from 'ionicons/icons'
-import type {ScrollCustomEvent} from '@ionic/core'
+import {
+  computed,
+  nextTick,
+  onActivated,
+  onBeforeUnmount,
+  onDeactivated,
+  onMounted,
+  ref,
+} from 'vue'
+import { useRouter } from 'vue-router'
+import { alertController, IonContent, IonIcon, IonPage } from '@ionic/vue'
+import {
+  bookOutline,
+  downloadOutline,
+  ellipsisVertical,
+  heartOutline,
+  informationCircleOutline,
+} from 'ionicons/icons'
+import type { ScrollCustomEvent } from '@ionic/core'
 import CategorySearchToolbar from '@/components/search/CategorySearchToolbar.vue'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import QuickActionFab from '@/components/common/QuickActionFab.vue'
@@ -119,13 +141,19 @@ import type {
   SearchResultDisplayItem,
 } from '@/components/search/SearchResultContainer.vue'
 import SearchResultContainer from '@/components/search/SearchResultContainer.vue'
-import {JmcomicService, sanitizeError, showToast} from '@/services/JmcomicService'
-import {OfflineDownloadService} from '@/services/OfflineDownloadService'
-import {OfflineFavoriteService} from '@/services/OfflineFavoriteService'
-import {useAuth} from '@/composables/useAuth'
-import type {FavoriteResult, FolderEntry, SearchQuery, SearchResult, SearchResultItem} from '@/services/JmcomicTypes'
+import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
+import { OfflineDownloadService } from '@/services/OfflineDownloadService'
+import { OfflineFavoriteService } from '@/services/OfflineFavoriteService'
+import { useAuth } from '@/composables/useAuth'
+import type {
+  FavoriteResult,
+  FolderEntry,
+  SearchQuery,
+  SearchResult,
+  SearchResultItem,
+} from '@/services/JmcomicTypes'
 
-defineOptions({name: 'CategoryPage'})
+defineOptions({ name: 'CategoryPage' })
 
 const router = useRouter()
 
@@ -214,11 +242,11 @@ const maybeLoadNextAfterRender = async () => {
 }
 
 const fetchPage = async (query: SearchQuery, page: number) => {
-  return await JmcomicService.categories({...query, page})
+  return await JmcomicService.categories({ ...query, page })
 }
 
 const resetWithPage = async (query: SearchQuery) => {
-  const targetQuery = {...query, page: query.page ?? 1}
+  const targetQuery = { ...query, page: query.page ?? 1 }
   lastQuery.value = targetQuery
   initialLoading.value = true
   errorMessage.value = ''
@@ -376,7 +404,7 @@ const handleItemClick = (item: SearchResultItem) => {
 
 // ========== 卡片操作菜单 ==========
 
-const {isLoggedIn} = useAuth()
+const { isLoggedIn } = useAuth()
 
 interface CardMenuState {
   item: SearchResultItem
@@ -401,7 +429,7 @@ const cardMenuStyle = computed(() => {
 
 function openCardMenu(item: SearchResultItem, event: MouseEvent) {
   const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-  cardMenu.value = {item, x: rect.left, y: rect.bottom + 4}
+  cardMenu.value = { item, x: rect.left, y: rect.bottom + 4 }
   setTimeout(() => {
     document.addEventListener('mousedown', handleCardMenuClickOutside)
     document.addEventListener('touchstart', handleCardMenuClickOutside)
@@ -423,7 +451,7 @@ function handleCardDetail(item: SearchResultItem) {
   closeCardMenu()
   void router.push({
     path: `/album/${item.id}`,
-    query: {title: item.title, coverUrl: item.coverUrl, authors: item.authors.join(',')},
+    query: { title: item.title, coverUrl: item.coverUrl, authors: item.authors.join(',') },
   })
 }
 
@@ -433,7 +461,7 @@ async function handleCardRead(item: SearchResultItem) {
     const photo = await JmcomicService.getPhoto(item.id)
     await router.push({
       path: `/album/${item.id}/read/${photo.id}`,
-      query: {title: item.title, total: String(photo.images.length)},
+      query: { title: item.title, total: String(photo.images.length) },
     })
   } catch {
     await showToast('获取章节失败', 'danger')
@@ -492,15 +520,15 @@ async function loadOnlineFolderData() {
     return
   }
   try {
-    const result: FavoriteResult = await JmcomicService.favorites({folderId: '0', page: 1})
+    const result: FavoriteResult = await JmcomicService.favorites({ folderId: '0', page: 1 })
     if (result.folderList) {
       const entries: FolderEntry[] = []
       const countPromises: Promise<void>[] = []
       const counts: Record<string, number> = {}
       for (const [id, name] of Object.entries(result.folderList)) {
-        entries.push({id, name, count: 0})
+        entries.push({ id, name, count: 0 })
         countPromises.push(
-          JmcomicService.favorites({folderId: id, page: 1})
+          JmcomicService.favorites({ folderId: id, page: 1 })
             .then((r) => {
               counts[id] = r.totalItems
             })
@@ -558,9 +586,9 @@ async function executeFavorite(
 async function onPickerAddFolder() {
   const alert = await alertController.create({
     header: '新建收藏夹',
-    inputs: [{name: 'name', type: 'text', placeholder: '收藏夹名称'}],
+    inputs: [{ name: 'name', type: 'text', placeholder: '收藏夹名称' }],
     buttons: [
-      {text: '取消', role: 'cancel'},
+      { text: '取消', role: 'cancel' },
       {
         text: '确定',
         handler: async (data) => {
@@ -622,7 +650,7 @@ const jumpToPage = async () => {
       },
     ],
     buttons: [
-      {text: '取消', role: 'cancel'},
+      { text: '取消', role: 'cancel' },
       {
         text: '跳转',
         handler: (data: { page?: string }) => {
@@ -630,7 +658,7 @@ const jumpToPage = async () => {
           if (!Number.isInteger(page) || page < 1 || page > resultMeta.value!.totalPages) {
             return false
           }
-          void resetWithPage({...lastQuery.value!, page})
+          void resetWithPage({ ...lastQuery.value!, page })
           return true
         },
       },
@@ -718,8 +746,9 @@ onMounted(() => {
 
 .category-overlay-enter-active .category-overlay-panel,
 .category-overlay-leave-active .category-overlay-panel {
-  transition: transform 0.22s ease,
-  opacity 0.22s ease;
+  transition:
+    transform 0.22s ease,
+    opacity 0.22s ease;
 }
 
 .category-overlay-enter-from,

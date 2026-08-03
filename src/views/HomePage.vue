@@ -3,7 +3,7 @@
     <IonHeader class="ion-no-border">
       <IonToolbar>
         <div class="toolbar-start">
-          <MenuToggleButton/>
+          <MenuToggleButton />
         </div>
       </IonToolbar>
     </IonHeader>
@@ -13,21 +13,21 @@
           <span class="title-text">{{ displayText }}</span>
           <span v-if="cursorVisible" class="title-cursor">|</span>
         </div>
-        <KeywordSearchBar class="search-bar" @search="handleSearch"/>
+        <KeywordSearchBar class="search-bar" @search="handleSearch" />
       </div>
     </IonContent>
   </IonPage>
 </template>
 
 <script setup lang="ts">
-defineOptions({name: 'HomePage'})
+defineOptions({ name: 'HomePage' })
 
-import {IonContent, IonHeader, IonPage, IonToolbar} from '@ionic/vue'
-import {nextTick, onMounted, ref} from 'vue'
-import {useRouter} from 'vue-router'
+import { IonContent, IonHeader, IonPage, IonToolbar } from '@ionic/vue'
+import { nextTick, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import KeywordSearchBar from '@/components/search/KeywordSearchBar.vue'
-import type {SearchQuery} from '@/services/JmcomicTypes'
+import type { SearchQuery } from '@/services/JmcomicTypes'
 
 const router = useRouter()
 
@@ -43,15 +43,15 @@ onMounted(async () => {
   for (let i = 0; i <= TITLE.length; i++) {
     displayText.value = TITLE.slice(0, i)
     if (i < TITLE.length) {
-      await new Promise(r => setTimeout(r, 100 + Math.random() * 150))
+      await new Promise((r) => setTimeout(r, 100 + Math.random() * 150))
     }
   }
 
   for (let i = 0; i < 1; i++) {
     cursorVisible.value = false
-    await new Promise(r => setTimeout(r, 300))
+    await new Promise((r) => setTimeout(r, 300))
     cursorVisible.value = true
-    await new Promise(r => setTimeout(r, 300))
+    await new Promise((r) => setTimeout(r, 300))
   }
   cursorVisible.value = false
 })
@@ -77,12 +77,12 @@ const reDisplay = async () => {
   for (let i = 0; i <= TITLE.length; i++) {
     displayText.value = TITLE.slice(0, i)
     if (i < TITLE.length) {
-      await new Promise(r => setTimeout(r, 100 + Math.random() * 150))
+      await new Promise((r) => setTimeout(r, 100 + Math.random() * 150))
     }
   }
 
   cursorVisible.value = true
-  await new Promise(r => setTimeout(r, 200))
+  await new Promise((r) => setTimeout(r, 200))
   cursorVisible.value = false
 }
 </script>
@@ -119,7 +119,8 @@ const reDisplay = async () => {
 }
 
 @keyframes cursor-blink {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 1;
   }
   50% {

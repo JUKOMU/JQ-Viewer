@@ -1,10 +1,13 @@
 <template>
-  <div ref="containerRef" class="vertical-container" :class="{noscroll: zoomScale > 1}" @scroll="onScroll">
+  <div
+    ref="containerRef"
+    class="vertical-container"
+    :class="{ noscroll: zoomScale > 1 }"
+    @scroll="onScroll"
+  >
     <div class="virtual-inner" :style="{ height: innerHeight + 'px' }">
       <div ref="wrapperRef" class="zoom-wrapper" :style="wrapperStyle">
-        <div v-if="totalCount > 0" class="edge-indicator">
-          - - - - S T A R T - - - -
-        </div>
+        <div v-if="totalCount > 0" class="edge-indicator">- - - - S T A R T - - - -</div>
         <div
           v-for="item in visibleItems"
           :key="item.index"
@@ -14,10 +17,15 @@
           :data-index="item.index"
         >
           <template v-if="item.dataUrl">
-            <img :src="item.dataUrl" class="reader-image" alt="" @load="onImageLoad(item.index, $event)"/>
+            <img
+              :src="item.dataUrl"
+              class="reader-image"
+              alt=""
+              @load="onImageLoad(item.index, $event)"
+            />
           </template>
           <template v-else>
-            <div class="skeleton-image"/>
+            <div class="skeleton-image" />
           </template>
         </div>
         <div
@@ -33,9 +41,9 @@
 </template>
 
 <script setup lang="ts">
-import {computed, nextTick, onMounted, onUnmounted, ref, watch} from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 
-defineOptions({name: 'VerticalScrollView'})
+defineOptions({ name: 'VerticalScrollView' })
 
 const props = defineProps<{
   imageMap: Map<number, string>
@@ -45,7 +53,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update:currentIndex': [index: number]
-  'requestRange': [range: { start: number; end: number; center: number }]
+  requestRange: [range: { start: number; end: number; center: number }]
   'reached-bottom': []
 }>()
 
@@ -92,10 +100,12 @@ const wrapperStyle = computed(() => {
   }
 })
 
-const contentOffset = computed(() => props.totalCount > 0 ? EDGE_INDICATOR_HEIGHT : 0)
+const contentOffset = computed(() => (props.totalCount > 0 ? EDGE_INDICATOR_HEIGHT : 0))
 const totalHeight = computed(() => prefixSums.value[props.totalCount] ?? 0)
-const innerHeight = computed(() => contentOffset.value + totalHeight.value
-  + (props.totalCount > 0 ? EDGE_INDICATOR_HEIGHT : 0))
+const innerHeight = computed(
+  () =>
+    contentOffset.value + totalHeight.value + (props.totalCount > 0 ? EDGE_INDICATOR_HEIGHT : 0),
+)
 
 function getPageTop(index: number) {
   return contentOffset.value + (prefixSums.value[index] ?? 0)
@@ -123,7 +133,7 @@ const visibleItems = computed<VisibleItem[]>(() => {
 
 function getEstimatedHeight() {
   const width = containerWidth.value || window.innerWidth || 360
-  return Math.max(320, width * 4 / 3)
+  return Math.max(320, (width * 4) / 3)
 }
 
 function clampIndex(index: number) {
@@ -142,7 +152,7 @@ function rebuildPrefixSums(nextHeights = heights.value) {
 
 function resetHeightModel() {
   const estimate = getEstimatedHeight()
-  heights.value = Array.from({length: props.totalCount}, () => estimate)
+  heights.value = Array.from({ length: props.totalCount }, () => estimate)
   rebuildPrefixSums(heights.value)
   updateVisibleRange(containerRef.value?.scrollTop ?? 0)
 }
@@ -184,7 +194,7 @@ function getRenderRange(scrollTop: number) {
     start = Math.max(0, end - MAX_DOM_ITEMS)
   }
 
-  return {start, end}
+  return { start, end }
 }
 
 function updateVisibleRange(scrollTop: number) {
@@ -199,17 +209,13 @@ let lastRequestedEnd = -1
 let lastRequestedCenter = -1
 
 function requestRange(start: number, end: number, center: number) {
-  if (
-    start === lastRequestedStart &&
-    end === lastRequestedEnd &&
-    center === lastRequestedCenter
-  ) {
+  if (start === lastRequestedStart && end === lastRequestedEnd && center === lastRequestedCenter) {
     return
   }
   lastRequestedStart = start
   lastRequestedEnd = end
   lastRequestedCenter = center
-  emit('requestRange', {start, end, center})
+  emit('requestRange', { start, end, center })
 }
 
 function emitCurrentIndex(index: number) {
@@ -297,7 +303,7 @@ function onImageLoad(index: number, ev: Event) {
   if (!img || img.naturalWidth <= 0 || img.naturalHeight <= 0) return
   const width = containerWidth.value || containerRef.value?.clientWidth || img.clientWidth
   if (width <= 0) return
-  updateMeasuredHeight(index, width * img.naturalHeight / img.naturalWidth)
+  updateMeasuredHeight(index, (width * img.naturalHeight) / img.naturalWidth)
 }
 
 let scrollRafId: number | null = null
@@ -441,7 +447,13 @@ function getViewportContentPoint(relX: number, relY: number, scale = zoomScale.v
   }
 }
 
-function applyZoomAtContentPoint(scale: number, relX: number, relY: number, contentX: number, contentY: number) {
+function applyZoomAtContentPoint(
+  scale: number,
+  relX: number,
+  relY: number,
+  contentX: number,
+  contentY: number,
+) {
   const scrollTop = containerRef.value?.scrollTop ?? 0
   zoomScale.value = scale
   zoomTx.value = relX - contentX * scale
@@ -565,19 +577,26 @@ function onTE(ev: TouchEvent) {
   lastTapY = ey
 }
 
-watch(() => props.totalCount, () => {
-  nextTick(() => {
-    updateContainerSize()
-    resetHeightModel()
-    scheduleScrollToIndex(props.currentIndex)
-  })
-}, {immediate: true})
+watch(
+  () => props.totalCount,
+  () => {
+    nextTick(() => {
+      updateContainerSize()
+      resetHeightModel()
+      scheduleScrollToIndex(props.currentIndex)
+    })
+  },
+  { immediate: true },
+)
 
-watch(() => props.currentIndex, (index) => {
-  if (index < 0 || index >= props.totalCount) return
-  if (index === lastEmitIndex.value) return
-  scheduleScrollToIndex(index)
-})
+watch(
+  () => props.currentIndex,
+  (index) => {
+    if (index < 0 || index >= props.totalCount) return
+    if (index === lastEmitIndex.value) return
+    scheduleScrollToIndex(index)
+  },
+)
 
 onMounted(() => {
   nextTick(() => {
@@ -588,8 +607,8 @@ onMounted(() => {
 
   const el = containerRef.value
   if (!el) return
-  el.addEventListener('touchstart', onTouch, {passive: false})
-  el.addEventListener('touchmove', onTouch, {passive: false})
+  el.addEventListener('touchstart', onTouch, { passive: false })
+  el.addEventListener('touchmove', onTouch, { passive: false })
   el.addEventListener('touchend', onTouch)
   el.addEventListener('touchcancel', onTouch)
 
@@ -610,7 +629,7 @@ onUnmounted(() => {
   el.removeEventListener('touchcancel', onTouch)
 })
 
-defineExpose({scrollToIndex, containerRef, isAtBottom})
+defineExpose({ scrollToIndex, containerRef, isAtBottom })
 </script>
 
 <style scoped>

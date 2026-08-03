@@ -3,7 +3,7 @@
  * 启动时由 App.vue 调用 initSettings() 从 DB 加载到缓存，
  * 之后所有读写走同步缓存，持久化由 SettingPage handler 调用 JmcomicService 完成。
  */
-import {JmcomicService} from './JmcomicService'
+import { JmcomicService } from './JmcomicService'
 
 let settingsLoaded = false
 
@@ -20,6 +20,12 @@ let cachedReaderBrightness = -1
 let cachedReaderKeepScreenOn = true
 let cachedReaderVolumeNavigation = false
 let cachedReaderAutoShowToolbarAtEnd = true
+let confirmedPreloadConcurrency = 6
+let confirmedDownloadConcurrency = 6
+let preloadConcurrencySaveVersion = 0
+let downloadConcurrencySaveVersion = 0
+let preloadConcurrencySaveQueue: Promise<void> = Promise.resolve()
+let downloadConcurrencySaveQueue: Promise<void> = Promise.resolve()
 
 /** App.vue onMounted 调用，从 DB 加载到缓存（幂等）。 */
 export async function initSettings(): Promise<void> {
@@ -29,8 +35,10 @@ export async function initSettings(): Promise<void> {
     cachedReaderPreloadPages = all.readerPreloadPages
     cachedPreloadConcurrency = all.preloadConcurrency
     cachedDownloadConcurrency = all.downloadConcurrency
+    confirmedPreloadConcurrency = all.preloadConcurrency
+    confirmedDownloadConcurrency = all.downloadConcurrency
     cachedDownloadPublic = all.downloadPublic
-    cachedCacheCapacityMb = all.cacheCapacityMb
+    cachedCacheCapacityMb = all.cacheRequestedMb ?? all.cacheCapacityMb
     cachedOcrEnabled = all.ocrEnabled
     cachedReaderDisplayMode = all.readerDisplayMode || 'vertical'
     cachedReaderScreenOrientation = all.readerScreenOrientation || 'auto'
@@ -141,4 +149,44 @@ export const SettingsStore = {
   setReaderAutoShowToolbarAtEnd(enabled: boolean) {
     cachedReaderAutoShowToolbarAtEnd = enabled
   },
+}
+
+export function persistPreloadConcurrency(n: number): Promise<void> {
+  const version = ++preloadConcurrencySaveVersion
+  cachedPreloadConcurrency = n
+  const operation = preloadConcurrencySaveQueue
+    .then(async () => {
+      const result = await JmcomicService.setPreloadConcurrency(n)
+      if (!result.success) throw new Error('保存失败')
+      confirmedPreloadConcurrency = n
+      if (version === preloadConcurrencySaveVersion) cachedPreloadConcurrency = n
+    })
+    .catch((error) => {
+      if (version === preloadConcurrencySaveVersion) {
+        cachedPreloadConcurrency = confirmedPreloadConcurrency
+      }
+      throw error
+    })
+  preloadConcurrencySaveQueue = operation.catch(() => undefined)
+  return operation
+}
+
+export function persistDownloadConcurrency(n: number): Promise<void> {
+  const version = ++downloadConcurrencySaveVersion
+  cachedDownloadConcurrency = n
+  const operation = downloadConcurrencySaveQueue
+    .then(async () => {
+      const result = await JmcomicService.setDownloadConcurrency(n)
+      if (!result.success) throw new Error('保存失败')
+      confirmedDownloadConcurrency = n
+      if (version === downloadConcurrencySaveVersion) cachedDownloadConcurrency = n
+    })
+    .catch((error) => {
+      if (version === downloadConcurrencySaveVersion) {
+        cachedDownloadConcurrency = confirmedDownloadConcurrency
+      }
+      throw error
+    })
+  downloadConcurrencySaveQueue = operation.catch(() => undefined)
+  return operation
 }

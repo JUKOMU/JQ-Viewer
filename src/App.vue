@@ -5,7 +5,7 @@
       <router-view v-slot="{ Component }">
         <transition :name="transitionName" mode="out-in" @after-enter="onAfterEnter">
           <keep-alive :include="keepAliveNames" :exclude="keepAliveExclude">
-            <component :is="Component"/>
+            <component :is="Component" />
           </keep-alive>
         </transition>
       </router-view>
@@ -14,22 +14,22 @@
 </template>
 
 <script setup lang="ts">
-defineOptions({name: 'App'})
+defineOptions({ name: 'App' })
 
-import {alertController, IonApp} from '@ionic/vue'
-import type {PluginListenerHandle} from '@capacitor/core'
-import {computed, nextTick, onBeforeUnmount, onMounted, provide, ref} from 'vue'
-import {useRoute, useRouter} from 'vue-router'
-import {App} from '@capacitor/app'
+import { alertController, IonApp } from '@ionic/vue'
+import type { PluginListenerHandle } from '@capacitor/core'
+import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { App } from '@capacitor/app'
 import MainMenu from '@/components/menu/MainMenu.vue'
-import {useSideMenuState} from '@/composables/useSideMenuState'
-import {initSettings} from '@/services/SettingsService'
-import {useAuth} from '@/composables/useAuth'
-import {initNetworkProbeStore} from '@/composables/networkProbeStore'
-import {JmcomicService, showToast} from '@/services/JmcomicService'
-import {compareVersion, RELEASES_API, sanitizeReleaseBody} from '@/utils/version'
+import { useSideMenuState } from '@/composables/useSideMenuState'
+import { initSettings } from '@/services/SettingsService'
+import { useAuth } from '@/composables/useAuth'
+import { initNetworkProbeStore } from '@/composables/networkProbeStore'
+import { JmcomicService, showToast } from '@/services/JmcomicService'
+import { compareVersion, RELEASES_API, sanitizeReleaseBody } from '@/utils/version'
 
-const {isMenuNavigation, leftMenuOpen, rightMenuOpen} = useSideMenuState()
+const { isMenuNavigation, leftMenuOpen, rightMenuOpen } = useSideMenuState()
 
 const route = useRoute()
 const router = useRouter()
@@ -99,7 +99,8 @@ const refreshReaderSavedAt = () => {
     const snapshot = JSON.parse(raw)
     snapshot.savedAt = Date.now()
     localStorage.setItem(READER_ROUTE_RESTORE_KEY, JSON.stringify(snapshot))
-  } catch { /* 忽略 */
+  } catch {
+    /* 忽略 */
   }
 }
 
@@ -124,7 +125,8 @@ const updateReaderCurrentPage = (page: number) => {
     if (!snapshot.fullPath) return
     snapshot.currentPage = page
     localStorage.setItem(READER_ROUTE_RESTORE_KEY, JSON.stringify(snapshot))
-  } catch { /* 忽略解析错误 */
+  } catch {
+    /* 忽略解析错误 */
   }
 }
 
@@ -227,7 +229,8 @@ onMounted(async () => {
   try {
     const launch = await JmcomicService.consumeLaunchRoute()
     launchRouteHandled = await navigateToLaunchRoute(launch.route, true)
-  } catch { /* Web 调试时忽略 */
+  } catch {
+    /* Web 调试时忽略 */
   }
 
   try {
@@ -236,12 +239,14 @@ onMounted(async () => {
         if (await navigateToLaunchRoute(data.route)) {
           try {
             await JmcomicService.consumeLaunchRoute()
-          } catch { /* 忽略 */
+          } catch {
+            /* 忽略 */
           }
         }
       })()
     })
-  } catch { /* Web 调试时忽略 */
+  } catch {
+    /* Web 调试时忽略 */
   }
 
   if (!launchRouteHandled && (route.path === '/' || route.path === '/home')) {
@@ -264,7 +269,7 @@ onMounted(async () => {
   initialReaderRestorePending = false
   syncReaderRouteSnapshot(route.path, route.fullPath)
 
-  const {initAuth} = useAuth()
+  const { initAuth } = useAuth()
 
   // 加载设置到内存缓存（必须在任何页面渲染前完成）
   await initSettings()
@@ -285,7 +290,8 @@ onMounted(async () => {
         try {
           const status = await JmcomicService.getInitStatus()
           complete = status.complete
-        } catch { /* 桥接失败，继续轮询 */
+        } catch {
+          /* 桥接失败，继续轮询 */
         }
 
         if (complete) {
@@ -320,7 +326,7 @@ onMounted(async () => {
       try {
         const info = await App.getInfo()
         const resp = await fetch(RELEASES_API, {
-          headers: {Accept: 'application/vnd.github.v3+json'},
+          headers: { Accept: 'application/vnd.github.v3+json' },
         })
         if (!resp.ok) return
         const data = await resp.json()
@@ -332,7 +338,7 @@ onMounted(async () => {
             message: cleaned || '（无更新说明）',
             cssClass: 'update-alert',
             buttons: [
-              {text: '忽略', role: 'cancel'},
+              { text: '忽略', role: 'cancel' },
               {
                 text: '好',
                 handler: async () => {
@@ -341,7 +347,7 @@ onMounted(async () => {
                     message: data.html_url || '',
                     cssClass: 'update-alert',
                     buttons: [
-                      {text: '取消', role: 'cancel'},
+                      { text: '取消', role: 'cancel' },
                       {
                         text: '打开',
                         handler: () => {
@@ -404,8 +410,9 @@ onBeforeUnmount(() => {
 .page-slide-forward-leave-active,
 .page-slide-back-enter-active,
 .page-slide-back-leave-active {
-  transition: transform 0.22s cubic-bezier(0.22, 0, 0, 1),
-  opacity 0.22s cubic-bezier(0.22, 0, 0, 1);
+  transition:
+    transform 0.22s cubic-bezier(0.22, 0, 0, 1),
+    opacity 0.22s cubic-bezier(0.22, 0, 0, 1);
 }
 
 /* 前进：页面从右滑入，旧页向左退出 */

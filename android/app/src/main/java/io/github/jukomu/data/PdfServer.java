@@ -5,11 +5,7 @@ import android.content.Context;
 import android.net.Uri;
 import android.webkit.WebResourceResponse;
 
-import java.io.ByteArrayInputStream;
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.FileInputStream;
-import java.io.InputStream;
+import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.HashMap;

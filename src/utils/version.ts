@@ -24,7 +24,5 @@ export const RELEASES_API = 'https://api.github.com/repos/jukomu/jq-viewer/relea
  * - 保留 - 列表和空行
  */
 export function sanitizeReleaseBody(body: string): string {
-  return body
-    .replace(/^### /gm, '')
-    .replace(/\*\*/g, '')
+  return body.replace(/^### /gm, '').replace(/\*\*/g, '')
 }

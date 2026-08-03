@@ -574,7 +574,7 @@ const toggleDisplayMode = () => {
   cursor: pointer;
   color: #d0c7c0;
   font-size: 20px;
-  z-index: 999;
+  z-index: 1;
   transition: color 0.18s ease;
   border-radius: 50%;
 }

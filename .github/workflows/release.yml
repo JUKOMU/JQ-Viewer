@@ -67,6 +67,22 @@ jobs:
         with:
           submodules: true
           persist-credentials: false
+          fetch-depth: 0
+
+      - name: Verify release commit
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          tag_ref="refs/tags/$RELEASE_TAG"
+          if git show-ref --verify --quiet "$tag_ref"; then
+            tag_commit="$(git rev-parse "$tag_ref^{commit}")"
+            if [ "$tag_commit" != "$GITHUB_SHA" ]; then
+              echo "::error::Release tag $RELEASE_TAG points to $tag_commit, but this workflow built $GITHUB_SHA"
+              exit 1
+            fi
+          fi
 
       - uses: actions/setup-node@v4
         with:
@@ -223,6 +239,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
+          target_commitish: ${{ github.sha }}
           draft: false
           prerelease: ${{ inputs.prerelease || contains(inputs.tag || github.ref_name, '-') }}
           generate_release_notes: true

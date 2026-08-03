@@ -10,12 +10,15 @@ function fail(message) {
 
 const packageJson = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
 const projectVersion = packageJson.version
-const releaseTag = process.argv[2]?.trim()
+const rawReleaseTag = process.argv[2]
+const releaseTag = rawReleaseTag?.trim()
 
 if (!projectVersionPattern.test(projectVersion)) {
   fail(`project version ${projectVersion} must use X.Y.Z format`)
 } else if (!releaseTag) {
   fail('release tag is required')
+} else if (rawReleaseTag !== releaseTag) {
+  fail('release tag must not contain surrounding whitespace')
 } else {
   const match = releaseTag.match(releaseTagPattern)
 

@@ -46,6 +46,13 @@ describe('check-release-tag', () => {
     expect(result.stderr).toContain('release tag is required')
   })
 
+  it('rejects surrounding whitespace', () => {
+    const result = runTagCheck(` v${projectVersion} `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('surrounding whitespace')
+  })
+
   it('rejects a tag without the v prefix', () => {
     const result = runTagCheck(projectVersion)
 

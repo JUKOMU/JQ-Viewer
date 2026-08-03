@@ -1,0 +1,107 @@
+name: CI · Android Instrumentation
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  instrumentation:
+    name: API ${{ matrix.api-level }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        api-level: [24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - run: npm ci
+
+      - name: Build frontend for Android sync
+        run: npm run build
+
+      - name: Sync Capacitor Android project
+        run: npx cap sync android
+
+      - run: chmod +x android/gradlew
+
+      - name: Enable KVM group permissions
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Prepare API diagnostics
+        run: |
+          mkdir -p android/app/build/ci-diagnostics
+          echo "api-level=${{ matrix.api-level }}" > android/app/build/ci-diagnostics/matrix.txt
+          echo "arch=x86_64" >> android/app/build/ci-diagnostics/matrix.txt
+          echo "target=default" >> android/app/build/ci-diagnostics/matrix.txt
+
+      - name: Run instrumentation tests on API ${{ matrix.api-level }}
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          arch: x86_64
+          target: default
+          disable-animations: true
+          script: |
+            diagnostics_dir="android/app/build/ci-diagnostics"
+            adb logcat -c || true
+            set +e
+            (
+              cd android
+              ./gradlew :app:connectedDebugAndroidTest --console=plain
+            )
+            test_status=$?
+            adb logcat -d -v threadtime > "$diagnostics_dir/logcat.txt" || true
+            adb shell getprop > "$diagnostics_dir/device-properties.txt" || true
+            exit "$test_status"
+
+      - name: Upload API ${{ matrix.api-level }} reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-instrumentation-api-${{ matrix.api-level }}
+          path: |
+            android/app/build/outputs/androidTest-results/connected/**
+            android/app/build/reports/androidTests/connected/**
+            android/app/build/ci-diagnostics/**
+          if-no-files-found: warn
+
+  instrumentation-gate:
+    name: Instrumentation Gate
+    runs-on: ubuntu-latest
+    if: ${{ always() }}
+    needs: instrumentation
+    steps:
+      - name: Verify API matrix result
+        env:
+          MATRIX_RESULT: ${{ needs.instrumentation.result }}
+        run: |
+          if [ "$MATRIX_RESULT" != "success" ]; then
+            echo "::error::Android instrumentation matrix result: $MATRIX_RESULT"
+            exit 1
+          fi

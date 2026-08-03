@@ -20,6 +20,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 public class ImageCache {
 
     static final String VIRTUAL_HOST = "jqviewer.local";
+    private static final int VALIDATION_MAX_DIMENSION = 256;
     private static final int THUMBNAIL_MAX_WIDTH = 300;
     private static final int THUMBNAIL_JPEG_QUALITY = 70;
 
@@ -190,6 +191,19 @@ public class ImageCache {
         writeLock.lock();
         try {
             return cache.get(key);
+        } finally {
+            writeLock.unlock();
+        }
+    }
+
+    public void remove(String key) {
+        if (key == null) return;
+        writeLock.lock();
+        try {
+            ImageEntry removed = cache.remove(key);
+            if (removed != null) {
+                currentSize -= removed.data.length;
+            }
         } finally {
             writeLock.unlock();
         }
@@ -452,6 +466,49 @@ public class ImageCache {
         if (b0 == 0x47 && b1 == 0x49 && b2 == 0x46) return "gif";
         if (b0 == 0x52 && b1 == 0x49 && b2 == 0x46) return "webp"; // RIFF....WEBP
         return "jpeg";
+    }
+
+    /** 使用低分辨率实际解码，避免仅有合法头部的截断图片通过校验。 */
+    public static boolean isDecodableImage(byte[] data) {
+        if (data == null || data.length == 0) return false;
+        try {
+            if (!hasCompleteWebpContainer(data)) return false;
+
+            BitmapFactory.Options bounds = new BitmapFactory.Options();
+            bounds.inJustDecodeBounds = true;
+            BitmapFactory.decodeByteArray(data, 0, data.length, bounds);
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return false;
+
+            int sampleSize = 1;
+            int maxDimension = Math.max(bounds.outWidth, bounds.outHeight);
+            while (maxDimension / sampleSize > VALIDATION_MAX_DIMENSION
+                && sampleSize <= Integer.MAX_VALUE / 2) {
+                sampleSize *= 2;
+            }
+
+            BitmapFactory.Options decode = new BitmapFactory.Options();
+            decode.inSampleSize = sampleSize;
+            decode.inPreferredConfig = Bitmap.Config.RGB_565;
+            Bitmap bitmap = BitmapFactory.decodeByteArray(data, 0, data.length, decode);
+            if (bitmap == null) return false;
+            bitmap.recycle();
+            return true;
+        } catch (RuntimeException | OutOfMemoryError e) {
+            return false;
+        }
+    }
+
+    private static boolean hasCompleteWebpContainer(byte[] data) {
+        if (data.length < 12
+            || data[0] != 'R' || data[1] != 'I' || data[2] != 'F' || data[3] != 'F'
+            || data[8] != 'W' || data[9] != 'E' || data[10] != 'B' || data[11] != 'P') {
+            return true;
+        }
+        long riffSize = (data[4] & 0xffL)
+            | ((data[5] & 0xffL) << 8)
+            | ((data[6] & 0xffL) << 16)
+            | ((data[7] & 0xffL) << 24);
+        return riffSize + 8L == data.length;
     }
 
     /**

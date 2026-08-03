@@ -2,6 +2,8 @@ package io.github.jukomu.service;
 
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 
+import android.graphics.Bitmap;
+
 import io.github.jukomu.data.CacheCapacityPolicy;
 import io.github.jukomu.data.FileStore;
 import io.github.jukomu.data.ImageCache;
@@ -18,9 +20,15 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 @RunWith(AndroidJUnit4.class)
@@ -134,5 +142,63 @@ public class PreloadServiceTest {
         networkExecutor.submit(() -> {}).get(1, TimeUnit.SECONDS);
 
         assertFalse(imageCache.has("in-flight-complete-photo/1"));
+    }
+
+    @Test
+    public void repairImageBypassesCorruptMemoryCache() throws Exception {
+        byte[] repairedBytes = createPng();
+        imageCache.put("repair-photo/1",
+            "not-an-image".getBytes(StandardCharsets.UTF_8), "image/jpeg");
+
+        CountDownLatch completed = new CountDownLatch(1);
+        AtomicInteger fetchCount = new AtomicInteger();
+        AtomicReference<Exception> error = new AtomicReference<>();
+        PreloadService service = new PreloadService(
+            imageCache, FileStore.getInstance(), null, null,
+            imageExecutor, networkExecutor, null, null,
+            new CacheCapacityPolicy(), 2,
+            image -> {
+                fetchCount.incrementAndGet();
+                return repairedBytes;
+            });
+
+        JSONObject image = new JSONObject()
+            .put("sortOrder", 1)
+            .put("scrambleId", "scramble")
+            .put("filename", "page.png")
+            .put("url", "https://example.invalid/page.png");
+        service.repairImage("repair-photo", image, new PreloadService.ImageRepairCallback() {
+            @Override
+            public void onSuccess(boolean persisted) {
+                completed.countDown();
+            }
+
+            @Override
+            public void onError(Exception repairError) {
+                error.set(repairError);
+                completed.countDown();
+            }
+        });
+
+        assertTrue(completed.await(1, TimeUnit.SECONDS));
+        assertNull(error.get());
+        assertEquals(1, fetchCount.get());
+        ImageCache.ImageEntry entry = imageCache.get("repair-photo/1");
+        assertNotNull(entry);
+        assertArrayEquals(repairedBytes, entry.data);
+        assertTrue(ImageCache.isDecodableImage(entry.data));
+    }
+
+    private static byte[] createPng() {
+        Bitmap bitmap = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888);
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        try {
+            if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) {
+                throw new IllegalStateException("Failed to create PNG fixture");
+            }
+            return output.toByteArray();
+        } finally {
+            bitmap.recycle();
+        }
     }
 }

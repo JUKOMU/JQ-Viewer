@@ -1160,6 +1160,36 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         }
     }
 
+    @PluginMethod
+    public void repairImage(PluginCall call) {
+        String photoId = call.getString("photoId");
+        JSObject image = call.getObject("image");
+        if (photoId == null || photoId.isEmpty()) {
+            call.reject("photoId is required");
+            return;
+        }
+        if (image == null) {
+            call.reject("image is required");
+            return;
+        }
+
+        preloadService.repairImage(photoId, image, new PreloadService.ImageRepairCallback() {
+            @Override
+            public void onSuccess(boolean persisted) {
+                JSObject result = new JSObject();
+                result.put("success", true);
+                result.put("persisted", persisted);
+                call.resolve(result);
+            }
+
+            @Override
+            public void onError(Exception error) {
+                Log.w(TAG, "图片恢复失败", error);
+                call.reject("图片恢复失败", error);
+            }
+        });
+    }
+
     // @PluginMethod  // 暂不暴露给 Vue，后续需要时取消注释
     public void clearPhotoCache(PluginCall call) {
         String photoId = call.getString("photoId");

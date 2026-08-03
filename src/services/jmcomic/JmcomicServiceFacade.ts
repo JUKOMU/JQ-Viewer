@@ -133,6 +133,11 @@ export const JmcomicService = {
     return native.preloadImages({ photoId, images, type, replacePending: options.replacePending })
   },
 
+  /** 绕过缓存重新获取单页，并尽量修复对应的已下载文件。 */
+  repairImage(photoId: string, image: ImageInfo) {
+    return native.repairImage({ photoId, image })
+  },
+
   /** 设置图片缓存容量（MB），供设置页调用 */
   setCacheCapacity(mb: number) {
     return native.setCacheCapacity({ mb })

@@ -11,20 +11,28 @@
         v-if="isVertical"
         ref="verticalViewRef"
         :image-map="imageMap"
+        :failed-sort-orders="failedSortOrders"
+        :repairing-sort-orders="repairingSortOrders"
         :total-count="totalCount"
         :current-index="currentIndex"
         @update:current-index="onPageChange"
         @request-range="onVerticalRequestRange"
         @reached-bottom="scheduleToolbarAtReaderEnd"
+        @image-error="onImageError"
+        @retry-image="retryImage"
       />
       <HorizontalPageView
         v-else
         ref="horizontalViewRef"
         :image-map="imageMap"
+        :failed-sort-orders="failedSortOrders"
+        :repairing-sort-orders="repairingSortOrders"
         :total-count="totalCount"
         :current-index="currentIndex"
         @update:current-index="onPageChange"
         @toggle-toolbar="toggleToolbar"
+        @image-error="onImageError"
+        @retry-image="retryImage"
       />
 
       <!-- 底部工具栏 -->
@@ -111,6 +119,8 @@ const isVertical = ref(SettingsStore.getReaderDisplayMode() === 'vertical')
 const currentIndex = ref(0)
 const totalCount = ref(0)
 const imageMap = shallowRef<Map<number, string>>(new Map())
+const failedSortOrders = shallowRef<Set<number>>(new Set())
+const repairingSortOrders = shallowRef<Set<number>>(new Set())
 const chapters = ref<PhotoMeta[]>([])
 const toolbarVisible = ref(true)
 const isDragProgress = ref(false)
@@ -134,6 +144,8 @@ let readerRuntimeActive = false
 let loadedSortOrders = new Set<number>()
 let requestedSortOrders = new Set<number>()
 let sortOrderToImage = new Map<number, ImageInfo>()
+let autoRepairAttempts = new Set<number>()
+let repairUrlRevision = 0
 let lastWindowCenter = -1
 const triggerRafId = 0
 let expandDirection: 'forward' | 'backward' | null = null
@@ -382,6 +394,80 @@ const applyImageMap = () => {
   imageMap.value = new Map(imageMap.value)
 }
 
+const setFailedSortOrder = (sortOrder: number, failed: boolean) => {
+  const next = new Set(failedSortOrders.value)
+  if (failed) next.add(sortOrder)
+  else next.delete(sortOrder)
+  failedSortOrders.value = next
+}
+
+const setRepairingSortOrder = (sortOrder: number, repairing: boolean) => {
+  const next = new Set(repairingSortOrders.value)
+  if (repairing) next.add(sortOrder)
+  else next.delete(sortOrder)
+  repairingSortOrders.value = next
+}
+
+const isCurrentRepair = (version: number, photoId: string) =>
+  version === chapterLoadVersion && photoDetail?.id === photoId
+
+const repairImage = async (sortOrder: number) => {
+  const pd = photoDetail
+  const image = sortOrderToImage.get(sortOrder)
+  if (!pd || !image || repairingSortOrders.value.has(sortOrder)) return
+
+  const version = chapterLoadVersion
+  const targetPhotoId = pd.id
+  setFailedSortOrder(sortOrder, true)
+  setRepairingSortOrder(sortOrder, true)
+  imageMap.value.delete(sortOrder)
+  loadedSortOrders.delete(sortOrder)
+  applyImageMap()
+
+  try {
+    const result = await JmcomicService.repairImage(targetPhotoId, image)
+    if (!isCurrentRepair(version, targetPhotoId)) return
+
+    repairUrlRevision++
+    imageMap.value.set(
+      sortOrder,
+      `${getImageUrl(targetPhotoId, sortOrder, 'image')}?repair=${repairUrlRevision}`,
+    )
+    loadedSortOrders.add(sortOrder)
+    setFailedSortOrder(sortOrder, false)
+    applyImageMap()
+    if (isOffline.value && !result.persisted) {
+      showToast('图片已临时恢复，但无法写回下载文件', 'medium')
+    }
+  } catch {
+    if (!isCurrentRepair(version, targetPhotoId)) return
+    setFailedSortOrder(sortOrder, true)
+    showToast('图片修复失败，请检查网络后重试', 'danger')
+  } finally {
+    if (isCurrentRepair(version, targetPhotoId)) {
+      setRepairingSortOrder(sortOrder, false)
+    }
+  }
+}
+
+const onImageError = (sortOrder: number) => {
+  if (!photoDetail || sortOrder < 1 || sortOrder > totalCount.value) return
+
+  imageMap.value.delete(sortOrder)
+  loadedSortOrders.delete(sortOrder)
+  setFailedSortOrder(sortOrder, true)
+  applyImageMap()
+
+  if (repairingSortOrders.value.has(sortOrder) || autoRepairAttempts.has(sortOrder)) return
+  autoRepairAttempts.add(sortOrder)
+  void repairImage(sortOrder)
+}
+
+const retryImage = (sortOrder: number) => {
+  if (repairingSortOrders.value.has(sortOrder)) return
+  void repairImage(sortOrder)
+}
+
 const clampIndex = (index: number) => {
   if (totalCount.value <= 0) return 0
   return Math.min(totalCount.value - 1, Math.max(0, index))
@@ -410,7 +496,11 @@ const updateWindow = (center: number, replacePending = false) => {
 
   if (isOffline.value) {
     for (const so of windowOrders) {
-      if (!loadedSortOrders.has(so)) {
+      if (
+        !loadedSortOrders.has(so) &&
+        !failedSortOrders.value.has(so) &&
+        !repairingSortOrders.value.has(so)
+      ) {
         imageMap.value.set(so, getImageUrl(photoDetail.id, so, 'image'))
         loadedSortOrders.add(so)
       }
@@ -418,7 +508,12 @@ const updateWindow = (center: number, replacePending = false) => {
   } else {
     const toLoad: ImageInfo[] = []
     for (const so of windowOrders) {
-      if (loadedSortOrders.has(so)) continue
+      if (
+        loadedSortOrders.has(so) ||
+        failedSortOrders.value.has(so) ||
+        repairingSortOrders.value.has(so)
+      )
+        continue
       const img = sortOrderToImage.get(so)
       if (!img) continue
       toLoad.push(img)
@@ -432,6 +527,12 @@ const updateWindow = (center: number, replacePending = false) => {
         .then((result: PreloadResult) => {
           if (photoDetail?.id !== requestedPhotoId) return
           for (const so of result.cached) {
+            if (
+              loadedSortOrders.has(so) ||
+              failedSortOrders.value.has(so) ||
+              repairingSortOrders.value.has(so)
+            )
+              continue
             imageMap.value.set(so, getImageUrl(requestedPhotoId, so, 'image'))
             loadedSortOrders.add(so)
           }
@@ -467,7 +568,14 @@ const loadDragPreviewImage = (center: number) => {
   if (!photoDetail) return
   const requestedPhotoId = photoDetail.id
   const so = center + 1
-  if (so < 1 || so > totalCount.value || loadedSortOrders.has(so) || requestedSortOrders.has(so))
+  if (
+    so < 1 ||
+    so > totalCount.value ||
+    loadedSortOrders.has(so) ||
+    requestedSortOrders.has(so) ||
+    failedSortOrders.value.has(so) ||
+    repairingSortOrders.value.has(so)
+  )
     return
 
   if (isOffline.value) {
@@ -484,6 +592,12 @@ const loadDragPreviewImage = (center: number) => {
     .then((result: PreloadResult) => {
       if (photoDetail?.id !== requestedPhotoId) return
       for (const cachedSo of result.cached) {
+        if (
+          loadedSortOrders.has(cachedSo) ||
+          failedSortOrders.value.has(cachedSo) ||
+          repairingSortOrders.value.has(cachedSo)
+        )
+          continue
         imageMap.value.set(cachedSo, getImageUrl(requestedPhotoId, cachedSo, 'image'))
         loadedSortOrders.add(cachedSo)
       }
@@ -615,6 +729,12 @@ const setupImageReadyListener = async () => {
   const targetChapterId = chapterId.value
   const handle = await JmcomicService.addImageReadyListener(targetChapterId, (sortOrder) => {
     if (chapterId.value !== targetChapterId) return
+    if (
+      loadedSortOrders.has(sortOrder) ||
+      failedSortOrders.value.has(sortOrder) ||
+      repairingSortOrders.value.has(sortOrder)
+    )
+      return
     imageMap.value.set(sortOrder, getImageUrl(targetChapterId, sortOrder, 'image'))
     loadedSortOrders.add(sortOrder)
     applyImageMap()
@@ -728,6 +848,7 @@ const loadDownloadedChapter = async (
     if (!isCurrentChapterLoad(version, targetAlbumId, targetChapterId)) return 'stale'
     isOffline.value = true
     applyPhotoBaseState(pd)
+    sortOrderToImage = new Map(pd.images.map((image) => [image.sortOrder, image]))
 
     const initOrders = calcWindow(currentIndex.value)
     const priorityInitOrders = prioritizeSortOrders(initOrders, currentIndex.value)
@@ -823,12 +944,16 @@ const resetChapterState = () => {
   currentIndex.value = 0
   totalCount.value = 0
   imageMap.value = new Map()
+  failedSortOrders.value = new Set()
+  repairingSortOrders.value = new Set()
   isOffline.value = route.query.source === 'download'
   isDragProgress.value = false
   settingsPanelVisible.value = false
   loadedSortOrders = new Set()
   requestedSortOrders = new Set()
   sortOrderToImage = new Map()
+  autoRepairAttempts = new Set()
+  repairUrlRevision = 0
   lastWindowCenter = -1
   activeRenderRange = null
   pendingSeekIndex = null

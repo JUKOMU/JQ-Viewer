@@ -14,6 +14,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
@@ -29,6 +30,12 @@ public class PreloadService {
     @FunctionalInterface
     interface ImageFetcher {
         byte[] fetch(JmImage image) throws Exception;
+    }
+
+    public interface ImageRepairCallback {
+        void onSuccess(boolean persisted);
+
+        void onError(Exception error);
     }
 
     private static final String TAG = "PreloadService";
@@ -256,6 +263,67 @@ public class PreloadService {
             Log.d(TAG, "构建待处理列表失败", e);
         }
         return ret;
+    }
+
+    /**
+     * 绕过内存缓存和已下载文件重新获取单页。返回前会确认新字节可解码，并尽量
+     * 原子覆盖已下载文件；即使持久化失败，仍会刷新内存缓存供当前阅读会话使用。
+     */
+    public void repairImage(String photoId, JSONObject imageObject, ImageRepairCallback callback) {
+        if (callback == null) throw new IllegalArgumentException("callback is required");
+        try {
+            networkExecutor.submit(() -> {
+                try {
+                    if (photoId == null || photoId.isEmpty()) {
+                        throw new IllegalArgumentException("photoId is required");
+                    }
+                    if (imageObject == null) {
+                        throw new IllegalArgumentException("image is required");
+                    }
+
+                    int sortOrder = imageObject.optInt("sortOrder");
+                    if (sortOrder <= 0) {
+                        throw new IllegalArgumentException("sortOrder must be positive");
+                    }
+                    if (imageFetcher == null) {
+                        throw new IllegalStateException("图片获取器未初始化");
+                    }
+
+                    String scrambleId = imageObject.optString("scrambleId");
+                    String filename = imageObject.optString("filename");
+                    String url = imageObject.optString("url");
+                    String queryParams = imageObject.optString("queryParams", "");
+                    JmImage jmImage = new JmImage(
+                        photoId, scrambleId, filename, url, queryParams, sortOrder);
+                    byte[] repairedBytes = imageFetcher.fetch(jmImage);
+                    if (!ImageCache.isDecodableImage(repairedBytes)) {
+                        throw new IOException("重新获取的图片无法解码");
+                    }
+
+                    boolean persisted = false;
+                    try {
+                        persisted = fileStore.replaceImageBytesByPhotoId(
+                            photoId, sortOrder, repairedBytes);
+                    } catch (IOException e) {
+                        Log.w(TAG, "恢复图片已获取，但无法写回下载文件", e);
+                    }
+
+                    String formatName = JmImageTool.getFormatName(filename);
+                    String cacheKey = photoId + "/" + sortOrder;
+                    imageCache.remove(cacheKey);
+                    boolean cached = imageCache.put(cacheKey, repairedBytes,
+                        "image/" + formatName);
+                    if (!persisted && !cached) {
+                        throw new IOException("恢复图片无法写入下载文件或内存缓存");
+                    }
+                    callback.onSuccess(persisted);
+                } catch (Exception e) {
+                    callback.onError(e);
+                }
+            });
+        } catch (RuntimeException e) {
+            callback.onError(e);
+        }
     }
 
     private boolean isStale(String scopeKey, long generation) {

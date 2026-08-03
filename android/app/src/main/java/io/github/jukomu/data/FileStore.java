@@ -4,6 +4,7 @@ import android.annotation.SuppressLint;
 import android.content.Context;
 import android.media.MediaScannerConnection;
 import android.os.Environment;
+import android.system.Os;
 import android.util.Log;
 import org.json.JSONObject;
 
@@ -160,26 +161,36 @@ public class FileStore {
         }
     }
 
-    private File getImageFile(String albumId, String chapterId, int sortOrder) {
+    private File getImagePath(String albumId, String chapterId, int sortOrder) {
         String key = makeSortKey(albumId, chapterId, sortOrder);
         String filename = sortOrderToFilename.get(key);
         if (filename == null) return null;
 
         try {
-            return resolveImageFile(getChapterDir(albumId, chapterId), filename);
+            return resolveImagePath(getChapterDir(albumId, chapterId), filename);
         } catch (IOException e) {
             Log.w(TAG, "图片路径校验失败", e);
             return null;
         }
     }
 
+    private File getImageFile(String albumId, String chapterId, int sortOrder) {
+        File imagePath = getImagePath(albumId, chapterId, sortOrder);
+        return imagePath != null && imagePath.isFile() ? imagePath : null;
+    }
+
     static File resolveImageFile(File chapterDir, String filename) throws IOException {
+        File imagePath = resolveImagePath(chapterDir, filename);
+        return imagePath != null && imagePath.isFile() ? imagePath : null;
+    }
+
+    private static File resolveImagePath(File chapterDir, String filename) throws IOException {
         if (new File(filename).isAbsolute()) return null;
         File canonicalChapterDir = chapterDir.getCanonicalFile();
         File canonicalImageFile = new File(canonicalChapterDir, filename).getCanonicalFile();
         String chapterPrefix = canonicalChapterDir.getPath() + File.separator;
         if (!canonicalImageFile.getPath().startsWith(chapterPrefix)) return null;
-        return canonicalImageFile.isFile() ? canonicalImageFile : null;
+        return canonicalImageFile;
     }
 
     public byte[] getImageBytesByPhotoId(String photoId, int sortOrder) {
@@ -195,6 +206,47 @@ public class FileStore {
         String albumId = chapterIdToAlbumId.get(photoId);
         if (albumId == null) return null;
         return getImageFile(albumId, photoId, sortOrder);
+    }
+
+    /**
+     * 将已恢复的图片写入同目录临时文件，再通过 POSIX rename 原子替换目标文件。
+     *
+     * @return false 表示当前下载索引中没有该图片映射
+     */
+    public boolean replaceImageBytesByPhotoId(String photoId, int sortOrder, byte[] data)
+        throws IOException {
+        if (data == null || data.length == 0) {
+            throw new IOException("替换图片数据为空");
+        }
+        String albumId = chapterIdToAlbumId.get(photoId);
+        if (albumId == null) return false;
+        File target = getImagePath(albumId, photoId, sortOrder);
+        if (target == null) return false;
+
+        File parent = target.getParentFile();
+        if (parent == null || (!parent.isDirectory() && !parent.mkdirs())) {
+            throw new IOException("无法创建图片目录: " + target.getPath());
+        }
+
+        File temporary = new File(parent,
+            target.getName() + ".repair." + Thread.currentThread().getId() + ".tmp");
+        try {
+            try (FileOutputStream output = new FileOutputStream(temporary)) {
+                output.write(data);
+                output.flush();
+                output.getFD().sync();
+            }
+            try {
+                Os.rename(temporary.getAbsolutePath(), target.getAbsolutePath());
+            } catch (Exception e) {
+                throw new IOException("原子替换图片失败: " + target.getPath(), e);
+            }
+            return true;
+        } finally {
+            if (temporary.exists() && !temporary.delete()) {
+                Log.w(TAG, "Failed to delete repair temp file: " + temporary.getPath());
+            }
+        }
     }
 
     public byte[] readImageBytes(File imageFile) throws IOException {

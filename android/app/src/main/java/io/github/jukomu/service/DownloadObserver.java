@@ -8,7 +8,10 @@ import io.github.jukomu.jmcomic.api.download.DownloadResult;
 import io.github.jukomu.jmcomic.api.download.enums.TaskState;
 import io.github.jukomu.jmcomic.api.download.task.BaseDownloadTask;
 import io.github.jukomu.jmcomic.api.download.task.TaskObserver;
+import io.github.jukomu.jmcomic.api.model.JmImage;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -19,6 +22,7 @@ class DownloadObserver implements TaskObserver {
     private final String ourTaskId;
     private final String albumId;
     private final String chapterId;
+    private final List<JmImage> images;
     private final int totalImages;
     private final DownloadStore downloadDb;
     private final FileStore fileStore;
@@ -27,13 +31,15 @@ class DownloadObserver implements TaskObserver {
     private long lastBytes = 0;
     private long lastTimestamp = 0;
 
-    DownloadObserver(String ourTaskId, String albumId, String chapterId, int totalImages,
+    DownloadObserver(String ourTaskId, String albumId, String chapterId,
+                     List<JmImage> images,
                      DownloadStore downloadDb, FileStore fileStore,
                      DownloadService service) {
         this.ourTaskId = ourTaskId;
         this.albumId = albumId;
         this.chapterId = chapterId;
-        this.totalImages = totalImages;
+        this.images = images == null ? new ArrayList<>() : new ArrayList<>(images);
+        this.totalImages = this.images.size();
         this.downloadDb = downloadDb;
         this.fileStore = fileStore;
         this.service = service;
@@ -50,22 +56,10 @@ class DownloadObserver implements TaskObserver {
         if (newState.isTerminal() && !markFinalized()) return;
 
         if (newState == TaskState.COMPLETED) {
-            Integer firstSO = fileStore.getFirstImageSortOrder(albumId, chapterId);
-            downloadDb.updateCompleted(ourTaskId, totalImages,
-                firstSO != null ? firstSO : 1);
-            long totalSize = service.calcChapterFileSize(albumId, chapterId);
-            downloadDb.updateSize(ourTaskId, totalSize);
-            notifyProgress(totalImages, totalImages, DownloadService.STATUS_COMPLETED,
-                null, 0, totalSize);
-            service.updateDownloadNotification(ourTaskId, totalImages, totalImages,
-                DownloadService.STATUS_COMPLETED, null);
-            service.cleanupTaskMapping(ourTaskId);
+            completeDownloadIfValid();
         } else if (newState == TaskState.FAILED) {
-            downloadDb.updateFailed(ourTaskId, 0, "下载失败");
-            notifyProgress(0, totalImages, DownloadService.STATUS_FAILED, "下载失败");
-            service.updateDownloadNotification(ourTaskId, 0, totalImages,
-                DownloadService.STATUS_FAILED, "下载失败");
-            service.cleanupTaskMapping(ourTaskId);
+            FileStore.DownloadValidationResult validation = validateDownloadedImages();
+            failDownload(validation.getValidCount(), "下载失败");
         } else if (newState == TaskState.CANCELLED) {
             if (downloadDb.getTask(ourTaskId) == null) return;
             fileStore.deleteChapter(albumId, chapterId);
@@ -86,39 +80,20 @@ class DownloadObserver implements TaskObserver {
             DownloadResult result = task.getCurrentDownloadResult();
             int failed = result.getFailedTasks().size();
             if (failed == 0) {
-                Integer firstSO = fileStore.getFirstImageSortOrder(albumId, chapterId);
-                downloadDb.updateCompleted(ourTaskId, totalImages,
-                    firstSO != null ? firstSO : 1);
-                long totalSize = service.calcChapterFileSize(albumId, chapterId);
-                downloadDb.updateSize(ourTaskId, totalSize);
-                notifyProgress(totalImages, totalImages, DownloadService.STATUS_COMPLETED,
-                    null, 0, totalSize);
-                service.updateDownloadNotification(ourTaskId, totalImages, totalImages,
-                    DownloadService.STATUS_COMPLETED, null);
-                service.cleanupTaskMapping(ourTaskId);
+                completeDownloadIfValid();
                 return;
             }
-            int succeeded = totalImages - failed;
-            String error = failed + "/" + totalImages + " 张图片下载失败";
-            downloadDb.updateFailed(ourTaskId, succeeded, error);
-            long totalSize = service.calcChapterFileSize(albumId, chapterId);
-            downloadDb.updateSize(ourTaskId, totalSize);
-            notifyProgress(succeeded, totalImages, DownloadService.STATUS_FAILED,
-                error, 0, totalSize);
-            service.updateDownloadNotification(ourTaskId, succeeded, totalImages,
-                DownloadService.STATUS_FAILED, error);
-            service.cleanupTaskMapping(ourTaskId);
+            FileStore.DownloadValidationResult validation = validateDownloadedImages();
+            int succeeded = Math.min(totalImages - failed, validation.getValidCount());
+            int effectiveFailed = totalImages - succeeded;
+            String error = effectiveFailed + "/" + totalImages + " 张图片下载失败";
+            if (validation.getInvalidContentCount() > 0) {
+                error += "（含 " + validation.getInvalidContentCount()
+                    + " 张文件校验失败）";
+            }
+            failDownload(succeeded, error);
         } else if (newState == TaskState.SKIPPED) {
-            Integer firstSO = fileStore.getFirstImageSortOrder(albumId, chapterId);
-            downloadDb.updateCompleted(ourTaskId, totalImages,
-                firstSO != null ? firstSO : 1);
-            long totalSize = service.calcChapterFileSize(albumId, chapterId);
-            downloadDb.updateSize(ourTaskId, totalSize);
-            notifyProgress(totalImages, totalImages, DownloadService.STATUS_COMPLETED,
-                null, 0, totalSize);
-            service.updateDownloadNotification(ourTaskId, totalImages, totalImages,
-                DownloadService.STATUS_COMPLETED, null);
-            service.cleanupTaskMapping(ourTaskId);
+            completeDownloadIfValid();
         }
     }
 
@@ -154,10 +129,43 @@ class DownloadObserver implements TaskObserver {
     public void onError(BaseDownloadTask task, Exception e) {
         if (service.isCancelled(ourTaskId)) return;
         if (!markFinalized()) return;
-        downloadDb.updateFailed(ourTaskId, 0, e.getMessage());
-        notifyProgress(0, totalImages, DownloadService.STATUS_FAILED, e.getMessage());
-        service.updateDownloadNotification(ourTaskId, 0, totalImages,
-            DownloadService.STATUS_FAILED, e.getMessage());
+        FileStore.DownloadValidationResult validation = validateDownloadedImages();
+        failDownload(validation.getValidCount(), e.getMessage());
+    }
+
+    private FileStore.DownloadValidationResult validateDownloadedImages() {
+        return fileStore.validateDownloadedImages(albumId, chapterId, images);
+    }
+
+    private void completeDownloadIfValid() {
+        FileStore.DownloadValidationResult validation = validateDownloadedImages();
+        if (!validation.isComplete()) {
+            failDownload(validation.getValidCount(), validation.getFailureMessage());
+            return;
+        }
+
+        Integer firstSO = fileStore.getFirstImageSortOrder(albumId, chapterId);
+        downloadDb.updateCompleted(ourTaskId, totalImages,
+            firstSO != null ? firstSO : 1);
+        long totalSize = service.calcChapterFileSize(albumId, chapterId);
+        downloadDb.updateSize(ourTaskId, totalSize);
+        notifyProgress(totalImages, totalImages, DownloadService.STATUS_COMPLETED,
+            null, 0, totalSize);
+        service.updateDownloadNotification(ourTaskId, totalImages, totalImages,
+            DownloadService.STATUS_COMPLETED, null);
+        service.cleanupTaskMapping(ourTaskId);
+    }
+
+    private void failDownload(int succeeded, String error) {
+        int safeSucceeded = Math.max(0, Math.min(succeeded, totalImages));
+        String safeError = error == null || error.isEmpty() ? "下载失败" : error;
+        downloadDb.updateFailed(ourTaskId, safeSucceeded, safeError);
+        long totalSize = service.calcChapterFileSize(albumId, chapterId);
+        downloadDb.updateSize(ourTaskId, totalSize);
+        notifyProgress(safeSucceeded, totalImages, DownloadService.STATUS_FAILED,
+            safeError, 0, totalSize);
+        service.updateDownloadNotification(ourTaskId, safeSucceeded, totalImages,
+            DownloadService.STATUS_FAILED, safeError);
         service.cleanupTaskMapping(ourTaskId);
     }
 

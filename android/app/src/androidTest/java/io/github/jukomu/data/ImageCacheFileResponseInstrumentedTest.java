@@ -3,6 +3,7 @@ package io.github.jukomu.data;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
@@ -44,8 +45,36 @@ public class ImageCacheFileResponseInstrumentedTest {
             byte[] webp = output.toByteArray();
             assertTrue(ImageCache.isDecodableImage(webp));
             assertFalse(ImageCache.isDecodableImage(Arrays.copyOf(webp, webp.length - 1)));
+
+            output.reset();
+            assertTrue(bitmap.compress(Bitmap.CompressFormat.JPEG, 100, output));
+            byte[] jpeg = output.toByteArray();
+            assertTrue(ImageCache.isDecodableImage(jpeg));
+            assertFalse(ImageCache.isDecodableImage(Arrays.copyOf(jpeg, jpeg.length - 1)));
         } finally {
             bitmap.recycle();
+        }
+    }
+
+    @Test
+    public void interceptedImageResponseDisablesWebViewCaching() throws Exception {
+        ImageCache cache = ImageCache.getInstance();
+        cache.applyPolicy(new CacheCapacityPolicy().calculate(
+            16L, 64L * CacheCapacityPolicy.MIB, false,
+            CacheCapacityPolicy.PressureLevel.NORMAL));
+        cache.clear();
+        try {
+            assertTrue(cache.put("cache-header-photo/1", new byte[]{1, 2, 3}, "image/jpeg"));
+
+            WebResourceResponse response = ImageCache.handleRequest(
+                "https://jqviewer.local/image/cache-header-photo/1?repair=1");
+
+            assertNotNull(response);
+            assertNull(response.getEncoding());
+            assertNoCache(response);
+            response.getData().close();
+        } finally {
+            cache.clear();
         }
     }
 
@@ -67,6 +96,7 @@ public class ImageCacheFileResponseInstrumentedTest {
 
             WebResourceResponse response = ImageCache.createFileResponse(image);
             assertEquals("image/jpeg", response.getMimeType());
+            assertNoCache(response);
             try (InputStream input = response.getData()) {
                 byte[] header = new byte[3];
                 assertEquals(3, input.read(header));
@@ -78,5 +108,13 @@ public class ImageCacheFileResponseInstrumentedTest {
         } finally {
             image.delete();
         }
+    }
+
+    private static void assertNoCache(WebResourceResponse response) {
+        assertNotNull(response.getResponseHeaders());
+        assertEquals("no-store, no-cache, must-revalidate, max-age=0",
+            response.getResponseHeaders().get("Cache-Control"));
+        assertEquals("no-cache", response.getResponseHeaders().get("Pragma"));
+        assertEquals("0", response.getResponseHeaders().get("Expires"));
     }
 }

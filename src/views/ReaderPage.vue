@@ -414,7 +414,11 @@ const isCurrentRepair = (version: number, photoId: string) =>
 const repairImage = async (sortOrder: number) => {
   const pd = photoDetail
   const image = sortOrderToImage.get(sortOrder)
-  if (!pd || !image || repairingSortOrders.value.has(sortOrder)) return
+  if (!pd || repairingSortOrders.value.has(sortOrder)) return
+  if (!image) {
+    showToast('缺少图片信息，无法修复', 'danger')
+    return
+  }
 
   const version = chapterLoadVersion
   const targetPhotoId = pd.id

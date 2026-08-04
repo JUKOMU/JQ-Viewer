@@ -15,6 +15,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.File;
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -119,6 +120,15 @@ public class DownloadService {
 
                 File chapterDir = fileStore.ensureChapterDir(albumId, chapterId);
                 fileStore.refreshMappings(albumId, chapterId, downloadDb);
+                FileStore.DownloadValidationResult existingFiles =
+                    fileStore.validateDownloadedImages(albumId, chapterId, images);
+                if (existingFiles.getInvalidContentCount() > 0) {
+                    Log.w(TAG, "Discarded " + existingFiles.getInvalidContentCount()
+                        + " invalid existing images before retrying " + taskId);
+                }
+                if (existingFiles.getCleanupFailureCount() > 0) {
+                    throw new IOException("无法清理损坏的已下载图片");
+                }
 
                 JSONObject metaJson = new JSONObject();
                 metaJson.put("albumId", albumId);
@@ -151,7 +161,7 @@ public class DownloadService {
                 }
 
                 task.addObserver(new DownloadObserver(taskId, albumId, chapterId,
-                    images.size(), downloadDb, fileStore, this));
+                    images, downloadDb, fileStore, this));
 
                 downloadDb.updateStatus(taskId, STATUS_DOWNLOADING);
                 showDownloadNotification(taskId, albumTitle, chapterId, chapterTitle,

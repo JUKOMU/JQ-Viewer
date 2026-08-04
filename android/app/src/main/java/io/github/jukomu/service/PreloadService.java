@@ -273,6 +273,7 @@ public class PreloadService {
         if (callback == null) throw new IllegalArgumentException("callback is required");
         try {
             networkExecutor.submit(() -> {
+                NetworkLoadGate.Permit permit = null;
                 try {
                     if (photoId == null || photoId.isEmpty()) {
                         throw new IllegalArgumentException("photoId is required");
@@ -289,6 +290,11 @@ public class PreloadService {
                         throw new IllegalStateException("图片获取器未初始化");
                     }
 
+                    permit = networkLoadGate.acquire(null);
+                    if (permit == null) {
+                        throw new IOException("当前内存压力过高，暂时无法修复图片");
+                    }
+
                     String scrambleId = imageObject.optString("scrambleId");
                     String filename = imageObject.optString("filename");
                     String url = imageObject.optString("url");
@@ -299,6 +305,9 @@ public class PreloadService {
                     if (!ImageCache.isDecodableImage(repairedBytes)) {
                         throw new IOException("重新获取的图片无法解码");
                     }
+                    if (networkLoadGate.isCompletePressure()) {
+                        throw new IOException("当前内存压力过高，已丢弃修复结果");
+                    }
 
                     boolean persisted = false;
                     try {
@@ -306,6 +315,10 @@ public class PreloadService {
                             photoId, sortOrder, repairedBytes);
                     } catch (IOException e) {
                         Log.w(TAG, "恢复图片已获取，但无法写回下载文件", e);
+                    }
+
+                    if (networkLoadGate.isCompletePressure()) {
+                        throw new IOException("当前内存压力过高，已跳过图片缓存写入");
                     }
 
                     String formatName = JmImageTool.getFormatName(filename);
@@ -318,7 +331,10 @@ public class PreloadService {
                     }
                     callback.onSuccess(persisted);
                 } catch (Exception e) {
+                    if (e instanceof InterruptedException) Thread.currentThread().interrupt();
                     callback.onError(e);
+                } finally {
+                    if (permit != null) permit.close();
                 }
             });
         } catch (RuntimeException e) {

@@ -6,6 +6,7 @@ import android.media.MediaScannerConnection;
 import android.os.Environment;
 import android.system.Os;
 import android.util.Log;
+import io.github.jukomu.jmcomic.api.model.JmImage;
 import org.json.JSONObject;
 
 import java.io.*;
@@ -39,6 +40,69 @@ public class FileStore {
      */
     public interface RelocationListener {
         void onProgress(int current, int total, String phase, String currentFile);
+    }
+
+    public static final class DownloadValidationResult {
+        private final int expectedCount;
+        private final int validCount;
+        private final int invalidContentCount;
+        private final int missingCount;
+        private final int cleanupFailureCount;
+
+        DownloadValidationResult(int expectedCount, int validCount,
+                                 int invalidContentCount, int missingCount,
+                                 int cleanupFailureCount) {
+            this.expectedCount = expectedCount;
+            this.validCount = validCount;
+            this.invalidContentCount = invalidContentCount;
+            this.missingCount = missingCount;
+            this.cleanupFailureCount = cleanupFailureCount;
+        }
+
+        public int getExpectedCount() {
+            return expectedCount;
+        }
+
+        public int getValidCount() {
+            return validCount;
+        }
+
+        public int getInvalidContentCount() {
+            return invalidContentCount;
+        }
+
+        public int getMissingCount() {
+            return missingCount;
+        }
+
+        public int getCleanupFailureCount() {
+            return cleanupFailureCount;
+        }
+
+        public boolean isComplete() {
+            return validCount == expectedCount
+                && invalidContentCount == 0
+                && missingCount == 0
+                && cleanupFailureCount == 0;
+        }
+
+        public String getFailureMessage() {
+            int failedCount = Math.max(0, expectedCount - validCount);
+            StringBuilder detail = new StringBuilder();
+            if (invalidContentCount > 0) {
+                detail.append("损坏 ").append(invalidContentCount).append(" 张");
+            }
+            if (missingCount > 0) {
+                if (detail.length() > 0) detail.append("，");
+                detail.append("缺失 ").append(missingCount).append(" 张");
+            }
+            if (cleanupFailureCount > 0) {
+                if (detail.length() > 0) detail.append("，");
+                detail.append("无法清理 ").append(cleanupFailureCount).append(" 张");
+            }
+            return failedCount + "/" + expectedCount
+                + " 张图片下载失败（文件校验未通过：" + detail + "）";
+        }
     }
 
     private static FileStore instance;
@@ -247,6 +311,56 @@ public class FileStore {
                 Log.w(TAG, "Failed to delete repair temp file: " + temporary.getPath());
             }
         }
+    }
+
+    /**
+     * 校验下载任务预期的所有图片，并删除会被底层下载器误判为可跳过的损坏文件。
+     */
+    public DownloadValidationResult validateDownloadedImages(
+        String albumId, String chapterId, List<JmImage> images) {
+        return validateDownloadedImages(getChapterDir(albumId, chapterId), images);
+    }
+
+    static DownloadValidationResult validateDownloadedImages(
+        File chapterDir, List<JmImage> images) {
+        int expectedCount = images == null ? 0 : images.size();
+        int validCount = 0;
+        int invalidContentCount = 0;
+        int missingCount = 0;
+        int cleanupFailureCount = 0;
+
+        if (images == null) {
+            return new DownloadValidationResult(0, 0, 0, 0, 0);
+        }
+
+        for (JmImage image : images) {
+            File imageFile;
+            try {
+                imageFile = image == null
+                    ? null : resolveImagePath(chapterDir, image.getFilename());
+            } catch (IOException | RuntimeException e) {
+                imageFile = null;
+            }
+
+            if (imageFile == null || !imageFile.isFile()) {
+                missingCount++;
+                continue;
+            }
+            if (ImageCache.isDecodableImage(imageFile)) {
+                validCount++;
+                continue;
+            }
+
+            invalidContentCount++;
+            if (!imageFile.delete()) {
+                cleanupFailureCount++;
+                Log.w(TAG, "Failed to delete invalid downloaded image: "
+                    + imageFile.getPath());
+            }
+        }
+
+        return new DownloadValidationResult(expectedCount, validCount,
+            invalidContentCount, missingCount, cleanupFailureCount);
     }
 
     public byte[] readImageBytes(File imageFile) throws IOException {

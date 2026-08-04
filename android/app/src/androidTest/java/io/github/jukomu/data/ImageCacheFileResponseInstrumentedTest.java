@@ -19,6 +19,7 @@ import org.junit.runner.RunWith;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
@@ -75,6 +76,32 @@ public class ImageCacheFileResponseInstrumentedTest {
             response.getData().close();
         } finally {
             cache.clear();
+        }
+    }
+
+    @Test
+    public void storedImageValidationRejectsAndDeletesCorruptFile() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        File validImage = File.createTempFile("image-cache-valid-", ".png", context.getCacheDir());
+        File corruptImage = File.createTempFile(
+            "image-cache-corrupt-", ".jpg", context.getCacheDir());
+        Bitmap bitmap = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888);
+        try {
+            try (FileOutputStream output = new FileOutputStream(validImage)) {
+                assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output));
+            }
+            try (FileOutputStream output = new FileOutputStream(corruptImage)) {
+                output.write(new byte[]{(byte) 0xff, (byte) 0xd8, 1, 2, 3});
+            }
+
+            assertEquals(validImage, ImageCache.validatedStoredImageFile(validImage));
+            assertTrue(validImage.exists());
+            assertNull(ImageCache.validatedStoredImageFile(corruptImage));
+            assertFalse(corruptImage.exists());
+        } finally {
+            bitmap.recycle();
+            validImage.delete();
+            corruptImage.delete();
         }
     }
 

@@ -3,6 +3,7 @@ package io.github.jukomu.data;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.net.Uri;
+import android.util.Log;
 import android.webkit.WebResourceResponse;
 
 import java.io.*;
@@ -20,6 +21,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  */
 public class ImageCache {
 
+    private static final String TAG = "ImageCache";
     static final String VIRTUAL_HOST = "jqviewer.local";
     private static final int VALIDATION_MAX_DIMENSION = 256;
     private static final int THUMBNAIL_MAX_WIDTH = 300;
@@ -396,7 +398,7 @@ public class ImageCache {
                 }
 
                 // 2b. 查 FileStore（从本地原图生成缩略图）
-                File imageFile = FileStore.getInstance().getImageFileByPhotoId(photoId, sortOrder);
+                File imageFile = getValidatedStoredImageFile(photoId, sortOrder);
                 if (imageFile != null) {
                     try (IncomingReservation reservation = getInstance()
                         .prepareForIncomingBytes(imageFile.length())) {
@@ -410,7 +412,7 @@ public class ImageCache {
                     }
                 }
             } else {
-                File imageFile = FileStore.getInstance().getImageFileByPhotoId(photoId, sortOrder);
+                File imageFile = getValidatedStoredImageFile(photoId, sortOrder);
                 if (imageFile != null) {
                     try (IncomingReservation reservation = getInstance()
                         .prepareForIncomingBytes(imageFile.length())) {
@@ -428,6 +430,19 @@ public class ImageCache {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    private static File getValidatedStoredImageFile(String photoId, int sortOrder) {
+        return validatedStoredImageFile(
+            FileStore.getInstance().getImageFileByPhotoId(photoId, sortOrder));
+    }
+
+    static File validatedStoredImageFile(File imageFile) {
+        if (imageFile == null || isDecodableImage(imageFile)) return imageFile;
+        if (imageFile.exists() && !imageFile.delete()) {
+            Log.w(TAG, "Failed to delete invalid stored image: " + imageFile.getPath());
+        }
+        return null;
     }
 
     static WebResourceResponse createFileResponse(File imageFile) throws IOException {

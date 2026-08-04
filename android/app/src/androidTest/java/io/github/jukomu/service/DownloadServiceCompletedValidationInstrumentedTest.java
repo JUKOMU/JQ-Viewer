@@ -1,7 +1,6 @@
 package io.github.jukomu.service;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
@@ -76,24 +75,40 @@ public class DownloadServiceCompletedValidationInstrumentedTest {
     }
 
     @Test
-    public void corruptCompletedDownloadIsDowngradedAndPreparedForRedownload()
+    public void openingCompletedDownloadDoesNotDecodeEveryImage()
         throws Exception {
         File imageFile = createCompletedTask();
         try (FileOutputStream output = new FileOutputStream(imageFile)) {
             output.write(new byte[]{(byte) 0xff, (byte) 0xd8, 1, 2, 3});
         }
 
+        JSONObject photo = createService().getDownloadedPhoto(albumId, chapterId);
+
+        assertEquals(chapterId, photo.getString("id"));
+        assertEquals(1, photo.getJSONArray("images").length());
+        assertEquals("completed", downloadStore.getTask(taskId).getString("status"));
+        assertTrue(imageFile.exists());
+        assertNotNull(fileStore.getImageFileByPhotoId(chapterId, 1));
+    }
+
+    @Test
+    public void inconsistentPageMappingIsRejectedWithoutDecodingFiles()
+        throws Exception {
+        File imageFile = createCompletedTask();
+        writeBitmap(imageFile);
+        downloadStore.deleteImages(taskId);
+
         DownloadService.InvalidDownloadedContentException error = assertThrows(
             DownloadService.InvalidDownloadedContentException.class,
             () -> createService().getDownloadedPhoto(albumId, chapterId));
 
-        assertTrue(error.getMessage().contains("1/1 张图片下载失败"));
+        assertTrue(error.getMessage().contains("页映射 0/1"));
         JSONObject task = downloadStore.getTask(taskId);
         assertNotNull(task);
         assertEquals("failed", task.getString("status"));
         assertEquals(0, task.getInt("downloadedPages"));
-        assertTrue(task.getString("error").contains("文件校验未通过"));
-        assertFalse(imageFile.exists());
+        assertTrue(task.getString("error").contains("页映射 0/1"));
+        assertTrue(imageFile.exists());
         assertNull(fileStore.getImageFileByPhotoId(chapterId, 1));
     }
 

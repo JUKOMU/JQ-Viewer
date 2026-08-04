@@ -18,6 +18,7 @@ import org.junit.runner.RunWith;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -217,6 +218,26 @@ public class PreloadServiceTest {
     }
 
     @Test
+    public void retryImageKeepsExistingCacheWhenReplacementCannotFit() throws Exception {
+        byte[] originalBytes = "old-cache".getBytes(StandardCharsets.UTF_8);
+        byte[] retriedBytes = createPng();
+        imageCache.put("oversized-retry-photo/1", originalBytes, "image/jpeg");
+        setCacheCapacity(retriedBytes.length - 1L);
+        PreloadService service = new PreloadService(
+            imageCache, FileStore.getInstance(), null, null,
+            imageExecutor, networkExecutor, null, null,
+            new CacheCapacityPolicy(), 1,
+            image -> retriedBytes);
+
+        RetryOutcome outcome = retry(service, "oversized-retry-photo", retryImage());
+
+        assertNotNull(outcome.error);
+        assertFalse(outcome.success);
+        assertTrue(outcome.error.getMessage().contains("无法写入内存缓存"));
+        assertArrayEquals(originalBytes, imageCache.get("oversized-retry-photo/1").data);
+    }
+
+    @Test
     public void retryImageDoesNotFetchOrWriteDuringCompletePressure() throws Exception {
         byte[] originalBytes = "old-cache".getBytes(StandardCharsets.UTF_8);
         imageCache.put("complete-retry-photo/1", originalBytes, "image/jpeg");
@@ -324,6 +345,12 @@ public class PreloadServiceTest {
         } finally {
             bitmap.recycle();
         }
+    }
+
+    private void setCacheCapacity(long capacity) throws Exception {
+        Field field = ImageCache.class.getDeclaredField("capacity");
+        field.setAccessible(true);
+        field.setLong(imageCache, capacity);
     }
 
     private static final class RetryOutcome {

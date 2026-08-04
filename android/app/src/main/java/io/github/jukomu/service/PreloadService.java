@@ -309,7 +309,6 @@ public class PreloadService {
 
                     String formatName = JmImageTool.getFormatName(filename);
                     String cacheKey = photoId + "/" + sortOrder;
-                    imageCache.remove(cacheKey);
                     boolean cached = imageCache.put(cacheKey, fetchedBytes,
                         "image/" + formatName);
                     if (!cached) {

@@ -349,13 +349,12 @@ public class DownloadService {
             throw new IllegalStateException("Task is not completed");
 
         List<JSONObject> images = downloadDb.getImages(taskId);
-        ImageValidator.DownloadValidationResult validation =
-            validateDownloadedImages(albumId, chapterId,
-                task.optInt("totalPages", images.size()), filenamesFromRecords(images));
-        if (!validation.isComplete()) {
-            int cleanupFailures = cleanupInvalidDownloadedImages(validation);
-            String error = validation.getFailureMessage(cleanupFailures);
-            downloadDb.updateFailed(taskId, validation.getFailedProgressCount(), error);
+        int totalPages = task.optInt("totalPages", images.size());
+        if (images.size() != totalPages) {
+            int failedProgress = Math.min(images.size(), Math.max(0, totalPages - 1));
+            String error = "下载图片校验失败（页映射 "
+                + images.size() + "/" + totalPages + "）";
+            downloadDb.updateFailed(taskId, failedProgress, error);
             downloadDb.updateSize(taskId, calcChapterFileSize(albumId, chapterId));
             fileStore.removeMappings(albumId, chapterId);
             throw new InvalidDownloadedContentException(error);
@@ -396,7 +395,8 @@ public class DownloadService {
                 filenames.add(image == null ? null : image.getFilename());
             }
         }
-        return validateDownloadedImages(albumId, chapterId,
+        return ImageValidator.validateDownloadedImages(
+            fileStore.getChapterDir(albumId, chapterId),
             images == null ? 0 : images.size(), filenames);
     }
 
@@ -411,20 +411,6 @@ public class DownloadService {
             }
         }
         return cleanupFailures;
-    }
-
-    private ImageValidator.DownloadValidationResult validateDownloadedImages(
-        String albumId, String chapterId, int expectedCount, List<String> filenames) {
-        return ImageValidator.validateDownloadedImages(
-            fileStore.getChapterDir(albumId, chapterId), expectedCount, filenames);
-    }
-
-    private static List<String> filenamesFromRecords(List<JSONObject> images) {
-        List<String> filenames = new ArrayList<>();
-        for (JSONObject image : images) {
-            filenames.add(image == null ? null : image.optString("filename", null));
-        }
-        return filenames;
     }
 
     // ---- 内部工具（DownloadObserver 通过 package-private 访问） ----

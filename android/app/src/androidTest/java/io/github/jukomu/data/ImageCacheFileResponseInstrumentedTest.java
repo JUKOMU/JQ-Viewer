@@ -42,7 +42,7 @@ public class ImageCacheFileResponseInstrumentedTest {
             assertFalse(ImageCache.isDecodableImage(Arrays.copyOf(png, 33)));
 
             output.reset();
-            assertTrue(bitmap.compress(Bitmap.CompressFormat.WEBP_LOSSLESS, 100, output));
+            assertTrue(bitmap.compress(Bitmap.CompressFormat.WEBP, 100, output));
             byte[] webp = output.toByteArray();
             assertTrue(ImageCache.isDecodableImage(webp));
             assertFalse(ImageCache.isDecodableImage(Arrays.copyOf(webp, webp.length - 1)));

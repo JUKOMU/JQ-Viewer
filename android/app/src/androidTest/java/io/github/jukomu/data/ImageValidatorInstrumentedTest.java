@@ -10,18 +10,15 @@ import android.graphics.Bitmap;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
 
-import io.github.jukomu.jmcomic.api.model.JmImage;
-
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
 import java.io.File;
 import java.io.FileOutputStream;
 import java.util.Arrays;
-import java.util.List;
 
 @RunWith(AndroidJUnit4.class)
-public class FileStoreDownloadValidationInstrumentedTest {
+public class ImageValidatorInstrumentedTest {
 
     @Test
     public void acceptsCompleteDecodableDownloadSet() throws Exception {
@@ -30,22 +27,47 @@ public class FileStoreDownloadValidationInstrumentedTest {
             writeBitmap(new File(chapterDir, "page-1.png"), Bitmap.CompressFormat.PNG);
             writeBitmap(new File(chapterDir, "page-2.jpg"), Bitmap.CompressFormat.JPEG);
 
-            FileStore.DownloadValidationResult result = FileStore.validateDownloadedImages(
-                chapterDir,
-                Arrays.asList(image(1, "page-1.png"), image(2, "page-2.jpg")));
+            ImageValidator.DownloadValidationResult result =
+                ImageValidator.validateDownloadedImages(chapterDir, 2,
+                    Arrays.asList("page-1.png", "page-2.jpg"));
 
             assertTrue(result.isComplete());
             assertEquals(2, result.getExpectedCount());
+            assertEquals(2, result.getMappedCount());
             assertEquals(2, result.getValidCount());
             assertEquals(0, result.getInvalidContentCount());
             assertEquals(0, result.getMissingCount());
+            assertTrue(result.getInvalidFiles().isEmpty());
         } finally {
             deleteRecursively(chapterDir);
         }
     }
 
     @Test
-    public void rejectsAndDeletesInvalidDownloadedContent() throws Exception {
+    public void rejectsUnexpectedPageMappingsWithoutReportingCompletedProgress()
+        throws Exception {
+        File chapterDir = createChapterDir("extra-mapping");
+        try {
+            writeBitmap(new File(chapterDir, "page-1.png"), Bitmap.CompressFormat.PNG);
+            writeBitmap(new File(chapterDir, "page-2.png"), Bitmap.CompressFormat.PNG);
+
+            ImageValidator.DownloadValidationResult result =
+                ImageValidator.validateDownloadedImages(chapterDir, 1,
+                    Arrays.asList("page-1.png", "page-2.png"));
+
+            assertFalse(result.isComplete());
+            assertEquals(1, result.getExpectedCount());
+            assertEquals(2, result.getMappedCount());
+            assertEquals(2, result.getValidCount());
+            assertEquals(0, result.getFailedProgressCount());
+            assertTrue(result.getFailureMessage(0).contains("页映射 2/1"));
+        } finally {
+            deleteRecursively(chapterDir);
+        }
+    }
+
+    @Test
+    public void reportsInvalidAndMissingFilesWithoutDeletingThem() throws Exception {
         File chapterDir = createChapterDir("invalid");
         File corruptImage = new File(chapterDir, "page-2.jpg");
         try {
@@ -54,21 +76,42 @@ public class FileStoreDownloadValidationInstrumentedTest {
                 output.write(new byte[]{(byte) 0xff, (byte) 0xd8, 1, 2, 3});
             }
 
-            List<JmImage> images = Arrays.asList(
-                image(1, "page-1.png"),
-                image(2, "page-2.jpg"),
-                image(3, "page-3.png"));
-            FileStore.DownloadValidationResult result =
-                FileStore.validateDownloadedImages(chapterDir, images);
+            ImageValidator.DownloadValidationResult result =
+                ImageValidator.validateDownloadedImages(chapterDir, 3,
+                    Arrays.asList("page-1.png", "page-2.jpg", "page-3.png"));
 
             assertFalse(result.isComplete());
             assertEquals(3, result.getExpectedCount());
             assertEquals(1, result.getValidCount());
             assertEquals(1, result.getInvalidContentCount());
             assertEquals(1, result.getMissingCount());
-            assertEquals(0, result.getCleanupFailureCount());
-            assertFalse(corruptImage.exists());
-            assertTrue(result.getFailureMessage().contains("2/3 张图片下载失败"));
+            assertEquals(Arrays.asList(corruptImage.getCanonicalFile()),
+                result.getInvalidFiles());
+            assertTrue(corruptImage.exists());
+            assertTrue(result.getFailureMessage(0).contains("2/3 张图片下载失败"));
+        } finally {
+            deleteRecursively(chapterDir);
+        }
+    }
+
+    @Test
+    public void distinguishesMissingEmptyIncompleteAndUndecodableInput() throws Exception {
+        File chapterDir = createChapterDir("status");
+        File empty = new File(chapterDir, "empty.jpg");
+        File incomplete = new File(chapterDir, "incomplete.jpg");
+        try {
+            assertTrue(empty.createNewFile());
+            try (FileOutputStream output = new FileOutputStream(incomplete)) {
+                output.write(new byte[]{(byte) 0xff, (byte) 0xd8, 1, 2, 3});
+            }
+
+            assertEquals(ImageValidator.Status.MISSING,
+                ImageValidator.validate(new File(chapterDir, "missing.jpg")));
+            assertEquals(ImageValidator.Status.EMPTY, ImageValidator.validate(empty));
+            assertEquals(ImageValidator.Status.INCOMPLETE,
+                ImageValidator.validate(incomplete));
+            assertEquals(ImageValidator.Status.UNDECODABLE,
+                ImageValidator.validate(new byte[]{1, 2, 3, 4}));
         } finally {
             deleteRecursively(chapterDir);
         }
@@ -77,7 +120,7 @@ public class FileStoreDownloadValidationInstrumentedTest {
     private static File createChapterDir(String suffix) {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         File directory = new File(context.getCacheDir(),
-            "download-validation-" + suffix + "-" + System.nanoTime());
+            "image-validation-" + suffix + "-" + System.nanoTime());
         if (!directory.mkdirs()) {
             throw new IllegalStateException("Failed to create test directory");
         }
@@ -93,11 +136,6 @@ public class FileStoreDownloadValidationInstrumentedTest {
         } finally {
             bitmap.recycle();
         }
-    }
-
-    private static JmImage image(int sortOrder, String filename) {
-        return new JmImage("photo", "scramble", filename,
-            "https://example.invalid/" + filename, "", sortOrder);
     }
 
     private static void deleteRecursively(File file) {

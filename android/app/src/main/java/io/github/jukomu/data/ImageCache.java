@@ -3,7 +3,6 @@ package io.github.jukomu.data;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.net.Uri;
-import android.util.Log;
 import android.webkit.WebResourceResponse;
 
 import java.io.*;
@@ -21,9 +20,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  */
 public class ImageCache {
 
-    private static final String TAG = "ImageCache";
     static final String VIRTUAL_HOST = "jqviewer.local";
-    private static final int VALIDATION_MAX_DIMENSION = 256;
     private static final int THUMBNAIL_MAX_WIDTH = 300;
     private static final int THUMBNAIL_JPEG_QUALITY = 70;
     private static final Map<String, String> NO_CACHE_RESPONSE_HEADERS;
@@ -438,10 +435,8 @@ public class ImageCache {
     }
 
     static File validatedStoredImageFile(File imageFile) {
-        if (imageFile == null || isDecodableImage(imageFile)) return imageFile;
-        if (imageFile.exists() && !imageFile.delete()) {
-            Log.w(TAG, "Failed to delete invalid stored image: " + imageFile.getPath());
-        }
+        if (imageFile == null || ImageValidator.validate(imageFile).isValid()) return imageFile;
+        imageFile.delete();
         return null;
     }
 
@@ -483,159 +478,6 @@ public class ImageCache {
         if (b0 == 0x47 && b1 == 0x49 && b2 == 0x46) return "gif";
         if (b0 == 0x52 && b1 == 0x49 && b2 == 0x46) return "webp"; // RIFF....WEBP
         return "jpeg";
-    }
-
-    /** 使用低分辨率实际解码，避免仅有合法头部的截断图片通过校验。 */
-    public static boolean isDecodableImage(byte[] data) {
-        if (data == null || data.length == 0) return false;
-        try {
-            if (!hasCompleteImageContainer(data)) return false;
-
-            BitmapFactory.Options bounds = new BitmapFactory.Options();
-            bounds.inJustDecodeBounds = true;
-            BitmapFactory.decodeByteArray(data, 0, data.length, bounds);
-            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return false;
-
-            int sampleSize = 1;
-            int maxDimension = Math.max(bounds.outWidth, bounds.outHeight);
-            while (maxDimension / sampleSize > VALIDATION_MAX_DIMENSION
-                && sampleSize <= Integer.MAX_VALUE / 2) {
-                sampleSize *= 2;
-            }
-
-            BitmapFactory.Options decode = new BitmapFactory.Options();
-            decode.inSampleSize = sampleSize;
-            decode.inPreferredConfig = Bitmap.Config.RGB_565;
-            Bitmap bitmap = BitmapFactory.decodeByteArray(data, 0, data.length, decode);
-            if (bitmap == null) return false;
-            bitmap.recycle();
-            return true;
-        } catch (RuntimeException | OutOfMemoryError e) {
-            return false;
-        }
-    }
-
-    /** 文件版校验避免为了下载完成检查而把整张图片再次读入 Java 堆。 */
-    public static boolean isDecodableImage(File imageFile) {
-        if (imageFile == null || !imageFile.isFile() || imageFile.length() <= 0L) return false;
-        try {
-            if (!hasCompleteImageContainer(imageFile)) return false;
-
-            BitmapFactory.Options bounds = new BitmapFactory.Options();
-            bounds.inJustDecodeBounds = true;
-            BitmapFactory.decodeFile(imageFile.getAbsolutePath(), bounds);
-            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return false;
-
-            BitmapFactory.Options decode = new BitmapFactory.Options();
-            decode.inSampleSize = calculateValidationSampleSize(bounds.outWidth, bounds.outHeight);
-            decode.inPreferredConfig = Bitmap.Config.RGB_565;
-            Bitmap bitmap = BitmapFactory.decodeFile(imageFile.getAbsolutePath(), decode);
-            if (bitmap == null) return false;
-            bitmap.recycle();
-            return true;
-        } catch (IOException | RuntimeException | OutOfMemoryError e) {
-            return false;
-        }
-    }
-
-    private static int calculateValidationSampleSize(int width, int height) {
-        int sampleSize = 1;
-        int maxDimension = Math.max(width, height);
-        while (maxDimension / sampleSize > VALIDATION_MAX_DIMENSION
-            && sampleSize <= Integer.MAX_VALUE / 2) {
-            sampleSize *= 2;
-        }
-        return sampleSize;
-    }
-
-    private static boolean hasCompleteImageContainer(byte[] data) {
-        if (isJpeg(data)) {
-            return data.length >= 4
-                && data[data.length - 2] == (byte) 0xff
-                && data[data.length - 1] == (byte) 0xd9;
-        }
-        if (isPng(data)) {
-            return hasPngEndMarker(data, data.length - 12);
-        }
-        if (isGif(data)) {
-            return data.length >= 7 && data[data.length - 1] == 0x3b;
-        }
-        if (!isWebp(data)) return true;
-
-        long riffSize = (data[4] & 0xffL)
-            | ((data[5] & 0xffL) << 8)
-            | ((data[6] & 0xffL) << 16)
-            | ((data[7] & 0xffL) << 24);
-        return riffSize + 8L == data.length;
-    }
-
-    private static boolean hasCompleteImageContainer(File imageFile) throws IOException {
-        try (RandomAccessFile input = new RandomAccessFile(imageFile, "r")) {
-            long length = input.length();
-            if (length <= 0L) return false;
-
-            byte[] header = new byte[(int) Math.min(12L, length)];
-            input.readFully(header);
-            if (isJpeg(header)) {
-                if (length < 4L) return false;
-                input.seek(length - 2L);
-                return input.readUnsignedByte() == 0xff && input.readUnsignedByte() == 0xd9;
-            }
-            if (isPng(header)) {
-                if (length < 12L) return false;
-                byte[] footer = new byte[12];
-                input.seek(length - footer.length);
-                input.readFully(footer);
-                return hasPngEndMarker(footer, 0);
-            }
-            if (isGif(header)) {
-                if (length < 7L) return false;
-                input.seek(length - 1L);
-                return input.readUnsignedByte() == 0x3b;
-            }
-            if (!isWebp(header)) return true;
-
-            long riffSize = (header[4] & 0xffL)
-                | ((header[5] & 0xffL) << 8)
-                | ((header[6] & 0xffL) << 16)
-                | ((header[7] & 0xffL) << 24);
-            return riffSize + 8L == length;
-        }
-    }
-
-    private static boolean isJpeg(byte[] data) {
-        return data.length >= 2
-            && data[0] == (byte) 0xff && data[1] == (byte) 0xd8;
-    }
-
-    private static boolean isPng(byte[] data) {
-        return data.length >= 8
-            && data[0] == (byte) 0x89 && data[1] == 0x50
-            && data[2] == 0x4e && data[3] == 0x47
-            && data[4] == 0x0d && data[5] == 0x0a
-            && data[6] == 0x1a && data[7] == 0x0a;
-    }
-
-    private static boolean isGif(byte[] data) {
-        return data.length >= 6
-            && data[0] == 'G' && data[1] == 'I' && data[2] == 'F'
-            && data[3] == '8' && (data[4] == '7' || data[4] == '9') && data[5] == 'a';
-    }
-
-    private static boolean isWebp(byte[] data) {
-        return data.length >= 12
-            && data[0] == 'R' && data[1] == 'I' && data[2] == 'F' && data[3] == 'F'
-            && data[8] == 'W' && data[9] == 'E' && data[10] == 'B' && data[11] == 'P';
-    }
-
-    private static boolean hasPngEndMarker(byte[] data, int offset) {
-        return offset >= 0 && data.length - offset >= 12
-            && data[offset] == 0 && data[offset + 1] == 0
-            && data[offset + 2] == 0 && data[offset + 3] == 0
-            && data[offset + 4] == 'I' && data[offset + 5] == 'E'
-            && data[offset + 6] == 'N' && data[offset + 7] == 'D'
-            && data[offset + 8] == (byte) 0xae && data[offset + 9] == 0x42
-            && data[offset + 10] == 0x60 && data[offset + 11] == (byte) 0x82;
     }
 
     private static WebResourceResponse createImageResponse(String mimeType, InputStream data) {

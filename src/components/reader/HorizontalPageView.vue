@@ -9,16 +9,16 @@
               <button
                 type="button"
                 class="image-retry-button"
-                :disabled="repairingSortOrders.has(idx + 1)"
+                :disabled="retryingSortOrders.has(idx + 1)"
                 @touchstart.stop
                 @touchend.stop
                 @click.stop="emit('retry-image', idx + 1)"
               >
                 <IonIcon
                   :icon="refreshOutline"
-                  :class="{ spinning: repairingSortOrders.has(idx + 1) }"
+                  :class="{ spinning: retryingSortOrders.has(idx + 1) }"
                 />
-                <span>{{ repairingSortOrders.has(idx + 1) ? '修复中' : '重试' }}</span>
+                <span>{{ retryingSortOrders.has(idx + 1) ? '重试中' : '重试' }}</span>
               </button>
             </div>
           </template>
@@ -50,13 +50,13 @@ const props = withDefaults(
   defineProps<{
     imageMap: Map<number, string>
     failedSortOrders?: Set<number>
-    repairingSortOrders?: Set<number>
+    retryingSortOrders?: Set<number>
     totalCount: number
     currentIndex: number
   }>(),
   {
     failedSortOrders: () => new Set<number>(),
-    repairingSortOrders: () => new Set<number>(),
+    retryingSortOrders: () => new Set<number>(),
   },
 )
 

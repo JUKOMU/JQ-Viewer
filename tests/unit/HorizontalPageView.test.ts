@@ -8,7 +8,7 @@ describe('HorizontalPageView', () => {
       props: {
         imageMap: new Map<number, string>([[1, 'https://jqviewer.local/image/photo/1']]),
         failedSortOrders: new Set<number>(),
-        repairingSortOrders: new Set<number>(),
+        retryingSortOrders: new Set<number>(),
         totalCount: 1,
         currentIndex: 0,
       },
@@ -23,9 +23,9 @@ describe('HorizontalPageView', () => {
     await retry.trigger('click')
     expect(wrapper.emitted('retry-image')).toEqual([[1]])
 
-    await wrapper.setProps({ repairingSortOrders: new Set([1]) })
+    await wrapper.setProps({ retryingSortOrders: new Set([1]) })
     expect(wrapper.get('.image-retry-button').attributes('disabled')).toBeDefined()
-    expect(wrapper.get('.image-retry-button').text()).toContain('修复中')
+    expect(wrapper.get('.image-retry-button').text()).toContain('重试中')
     wrapper.unmount()
   })
 })

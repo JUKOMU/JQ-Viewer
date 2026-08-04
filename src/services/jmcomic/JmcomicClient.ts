@@ -72,10 +72,10 @@ export interface JmcomicClient {
     replacePending?: boolean
   }): Promise<PreloadResult>
 
-  repairImage(options: {
+  retryImage(options: {
     photoId: string
     image: ImageInfo
-  }): Promise<{ success: boolean; persisted: boolean }>
+  }): Promise<{ success: boolean }>
 
   setCacheCapacity(options: { mb: number }): Promise<CacheCapacityInfo & { success: boolean }>
 

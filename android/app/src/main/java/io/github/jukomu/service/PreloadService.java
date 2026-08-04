@@ -6,6 +6,7 @@ import android.util.Log;
 import io.github.jukomu.data.CacheCapacityPolicy;
 import io.github.jukomu.data.FileStore;
 import io.github.jukomu.data.ImageCache;
+import io.github.jukomu.data.ImageValidator;
 import io.github.jukomu.data.SettingsStore;
 import io.github.jukomu.jmcomic.api.model.JmImage;
 import io.github.jukomu.jmcomic.core.client.impl.JmApiClient;
@@ -32,8 +33,8 @@ public class PreloadService {
         byte[] fetch(JmImage image) throws Exception;
     }
 
-    public interface ImageRepairCallback {
-        void onSuccess(boolean persisted);
+    public interface ImageRetryCallback {
+        void onSuccess();
 
         void onError(Exception error);
     }
@@ -265,11 +266,8 @@ public class PreloadService {
         return ret;
     }
 
-    /**
-     * 绕过内存缓存和已下载文件重新获取单页。返回前会确认新字节可解码，并尽量
-     * 原子覆盖已下载文件；即使持久化失败，仍会刷新内存缓存供当前阅读会话使用。
-     */
-    public void repairImage(String photoId, JSONObject imageObject, ImageRepairCallback callback) {
+    /** 绕过现有缓存重新获取单页，验证后仅刷新当前阅读会话的内存缓存。 */
+    public void retryImage(String photoId, JSONObject imageObject, ImageRetryCallback callback) {
         if (callback == null) throw new IllegalArgumentException("callback is required");
         try {
             networkExecutor.submit(() -> {
@@ -292,7 +290,7 @@ public class PreloadService {
 
                     permit = networkLoadGate.acquire(null);
                     if (permit == null) {
-                        throw new IOException("当前内存压力过高，暂时无法修复图片");
+                        throw new IOException("当前内存压力过高，暂时无法重试图片");
                     }
 
                     String scrambleId = imageObject.optString("scrambleId");
@@ -301,35 +299,23 @@ public class PreloadService {
                     String queryParams = imageObject.optString("queryParams", "");
                     JmImage jmImage = new JmImage(
                         photoId, scrambleId, filename, url, queryParams, sortOrder);
-                    byte[] repairedBytes = imageFetcher.fetch(jmImage);
-                    if (!ImageCache.isDecodableImage(repairedBytes)) {
+                    byte[] fetchedBytes = imageFetcher.fetch(jmImage);
+                    if (!ImageValidator.validate(fetchedBytes).isValid()) {
                         throw new IOException("重新获取的图片无法解码");
                     }
                     if (networkLoadGate.isCompletePressure()) {
-                        throw new IOException("当前内存压力过高，已丢弃修复结果");
-                    }
-
-                    boolean persisted = false;
-                    try {
-                        persisted = fileStore.replaceImageBytesByPhotoId(
-                            photoId, sortOrder, repairedBytes);
-                    } catch (IOException e) {
-                        Log.w(TAG, "恢复图片已获取，但无法写回下载文件", e);
-                    }
-
-                    if (networkLoadGate.isCompletePressure()) {
-                        throw new IOException("当前内存压力过高，已跳过图片缓存写入");
+                        throw new IOException("当前内存压力过高，已丢弃重试结果");
                     }
 
                     String formatName = JmImageTool.getFormatName(filename);
                     String cacheKey = photoId + "/" + sortOrder;
                     imageCache.remove(cacheKey);
-                    boolean cached = imageCache.put(cacheKey, repairedBytes,
+                    boolean cached = imageCache.put(cacheKey, fetchedBytes,
                         "image/" + formatName);
-                    if (!persisted && !cached) {
-                        throw new IOException("恢复图片无法写入下载文件或内存缓存");
+                    if (!cached) {
+                        throw new IOException("重试图片无法写入内存缓存");
                     }
-                    callback.onSuccess(persisted);
+                    callback.onSuccess();
                 } catch (Exception e) {
                     if (e instanceof InterruptedException) Thread.currentThread().interrupt();
                     callback.onError(e);

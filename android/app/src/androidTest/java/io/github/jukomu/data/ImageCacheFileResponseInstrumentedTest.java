@@ -30,7 +30,7 @@ public class ImageCacheFileResponseInstrumentedTest {
 
     @Test
     public void decodeValidationRejectsGarbageAndAcceptsPng() {
-        assertFalse(ImageCache.isDecodableImage(
+        assertEquals(ImageValidator.Status.UNDECODABLE, ImageValidator.validate(
             "not-an-image".getBytes(StandardCharsets.UTF_8)));
 
         Bitmap bitmap = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888);
@@ -38,20 +38,23 @@ public class ImageCacheFileResponseInstrumentedTest {
         try {
             assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output));
             byte[] png = output.toByteArray();
-            assertTrue(ImageCache.isDecodableImage(png));
-            assertFalse(ImageCache.isDecodableImage(Arrays.copyOf(png, 33)));
+            assertEquals(ImageValidator.Status.VALID, ImageValidator.validate(png));
+            assertEquals(ImageValidator.Status.INCOMPLETE,
+                ImageValidator.validate(Arrays.copyOf(png, 33)));
 
             output.reset();
             assertTrue(bitmap.compress(Bitmap.CompressFormat.WEBP, 100, output));
             byte[] webp = output.toByteArray();
-            assertTrue(ImageCache.isDecodableImage(webp));
-            assertFalse(ImageCache.isDecodableImage(Arrays.copyOf(webp, webp.length - 1)));
+            assertEquals(ImageValidator.Status.VALID, ImageValidator.validate(webp));
+            assertEquals(ImageValidator.Status.INCOMPLETE,
+                ImageValidator.validate(Arrays.copyOf(webp, webp.length - 1)));
 
             output.reset();
             assertTrue(bitmap.compress(Bitmap.CompressFormat.JPEG, 100, output));
             byte[] jpeg = output.toByteArray();
-            assertTrue(ImageCache.isDecodableImage(jpeg));
-            assertFalse(ImageCache.isDecodableImage(Arrays.copyOf(jpeg, jpeg.length - 1)));
+            assertEquals(ImageValidator.Status.VALID, ImageValidator.validate(jpeg));
+            assertEquals(ImageValidator.Status.INCOMPLETE,
+                ImageValidator.validate(Arrays.copyOf(jpeg, jpeg.length - 1)));
         } finally {
             bitmap.recycle();
         }
@@ -68,7 +71,7 @@ public class ImageCacheFileResponseInstrumentedTest {
             assertTrue(cache.put("cache-header-photo/1", new byte[]{1, 2, 3}, "image/jpeg"));
 
             WebResourceResponse response = ImageCache.handleRequest(
-                "https://jqviewer.local/image/cache-header-photo/1?repair=1");
+                "https://jqviewer.local/image/cache-header-photo/1?retry=1");
 
             assertNotNull(response);
             assertNull(response.getEncoding());
@@ -96,6 +99,9 @@ public class ImageCacheFileResponseInstrumentedTest {
 
             assertEquals(validImage, ImageCache.validatedStoredImageFile(validImage));
             assertTrue(validImage.exists());
+            assertEquals(ImageValidator.Status.INCOMPLETE,
+                ImageValidator.validate(corruptImage));
+            assertTrue(corruptImage.exists());
             assertNull(ImageCache.validatedStoredImageFile(corruptImage));
             assertFalse(corruptImage.exists());
         } finally {

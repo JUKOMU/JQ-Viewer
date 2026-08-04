@@ -6,6 +6,7 @@ import android.util.Log;
 
 import io.github.jukomu.data.DownloadStore;
 import io.github.jukomu.data.FileStore;
+import io.github.jukomu.data.ImageValidator;
 import io.github.jukomu.jmcomic.api.download.task.BaseDownloadTask;
 import io.github.jukomu.jmcomic.api.model.JmImage;
 import io.github.jukomu.jmcomic.api.model.JmPhoto;
@@ -17,6 +18,7 @@ import org.json.JSONObject;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -37,6 +39,14 @@ public class DownloadService {
     static final String STATUS_PAUSED = "paused";
     static final String STATUS_COMPLETED = "completed";
     static final String STATUS_FAILED = "failed";
+    public static final String INVALID_DOWNLOAD_CODE = "DOWNLOAD_FILES_INVALID";
+
+    public static final class InvalidDownloadedContentException
+        extends IllegalStateException {
+        InvalidDownloadedContentException(String message) {
+            super(message);
+        }
+    }
 
     private final DownloadStore downloadDb;
     private final FileStore fileStore;
@@ -120,13 +130,14 @@ public class DownloadService {
 
                 File chapterDir = fileStore.ensureChapterDir(albumId, chapterId);
                 fileStore.refreshMappings(albumId, chapterId, downloadDb);
-                FileStore.DownloadValidationResult existingFiles =
-                    fileStore.validateDownloadedImages(albumId, chapterId, images);
+                ImageValidator.DownloadValidationResult existingFiles =
+                    validateDownloadedImages(albumId, chapterId, images);
+                int cleanupFailures = cleanupInvalidDownloadedImages(existingFiles);
                 if (existingFiles.getInvalidContentCount() > 0) {
                     Log.w(TAG, "Discarded " + existingFiles.getInvalidContentCount()
                         + " invalid existing images before retrying " + taskId);
                 }
-                if (existingFiles.getCleanupFailureCount() > 0) {
+                if (cleanupFailures > 0) {
                     throw new IOException("无法清理损坏的已下载图片");
                 }
 
@@ -185,6 +196,7 @@ public class DownloadService {
                 }
             } catch (Exception e) {
                 downloadDb.updateFailed(taskId, 0, e.getMessage());
+                fileStore.removeMappings(albumId, chapterId);
                 showFailedNotification(taskId, albumTitle, chapterId, chapterTitle,
                     coverUrl, e.getMessage());
                 notifyProgress(taskId, albumId, chapterId, 0, 0,
@@ -337,6 +349,18 @@ public class DownloadService {
             throw new IllegalStateException("Task is not completed");
 
         List<JSONObject> images = downloadDb.getImages(taskId);
+        ImageValidator.DownloadValidationResult validation =
+            validateDownloadedImages(albumId, chapterId,
+                task.optInt("totalPages", images.size()), filenamesFromRecords(images));
+        if (!validation.isComplete()) {
+            int cleanupFailures = cleanupInvalidDownloadedImages(validation);
+            String error = validation.getFailureMessage(cleanupFailures);
+            downloadDb.updateFailed(taskId, validation.getFailedProgressCount(), error);
+            downloadDb.updateSize(taskId, calcChapterFileSize(albumId, chapterId));
+            fileStore.removeMappings(albumId, chapterId);
+            throw new InvalidDownloadedContentException(error);
+        }
+
         JSONObject ret = new JSONObject();
         try {
             ret.put("id", chapterId);
@@ -362,6 +386,45 @@ public class DownloadService {
             Log.w(TAG, "构建已下载章节信息失败", e);
         }
         return ret;
+    }
+
+    ImageValidator.DownloadValidationResult validateDownloadedImages(
+        String albumId, String chapterId, List<JmImage> images) {
+        List<String> filenames = new ArrayList<>();
+        if (images != null) {
+            for (JmImage image : images) {
+                filenames.add(image == null ? null : image.getFilename());
+            }
+        }
+        return validateDownloadedImages(albumId, chapterId,
+            images == null ? 0 : images.size(), filenames);
+    }
+
+    int cleanupInvalidDownloadedImages(
+        ImageValidator.DownloadValidationResult validation) {
+        int cleanupFailures = 0;
+        for (File invalidFile : validation.getInvalidFiles()) {
+            if (invalidFile.exists() && !invalidFile.delete()) {
+                cleanupFailures++;
+                Log.w(TAG, "Failed to delete invalid downloaded image: "
+                    + invalidFile.getPath());
+            }
+        }
+        return cleanupFailures;
+    }
+
+    private ImageValidator.DownloadValidationResult validateDownloadedImages(
+        String albumId, String chapterId, int expectedCount, List<String> filenames) {
+        return ImageValidator.validateDownloadedImages(
+            fileStore.getChapterDir(albumId, chapterId), expectedCount, filenames);
+    }
+
+    private static List<String> filenamesFromRecords(List<JSONObject> images) {
+        List<String> filenames = new ArrayList<>();
+        for (JSONObject image : images) {
+            filenames.add(image == null ? null : image.optString("filename", null));
+        }
+        return filenames;
     }
 
     // ---- 内部工具（DownloadObserver 通过 package-private 访问） ----

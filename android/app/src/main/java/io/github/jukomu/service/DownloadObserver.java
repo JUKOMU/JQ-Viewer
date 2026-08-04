@@ -3,6 +3,7 @@ package io.github.jukomu.service;
 import android.annotation.SuppressLint;
 import io.github.jukomu.data.DownloadStore;
 import io.github.jukomu.data.FileStore;
+import io.github.jukomu.data.ImageValidator;
 import io.github.jukomu.jmcomic.api.download.DownloadProgress;
 import io.github.jukomu.jmcomic.api.download.DownloadResult;
 import io.github.jukomu.jmcomic.api.download.enums.TaskState;
@@ -58,8 +59,9 @@ class DownloadObserver implements TaskObserver {
         if (newState == TaskState.COMPLETED) {
             completeDownloadIfValid();
         } else if (newState == TaskState.FAILED) {
-            FileStore.DownloadValidationResult validation = validateDownloadedImages();
-            failDownload(validation.getValidCount(), "下载失败");
+            ImageValidator.DownloadValidationResult validation = validateDownloadedImages();
+            service.cleanupInvalidDownloadedImages(validation);
+            failDownload(progressForFailure(validation), "下载失败");
         } else if (newState == TaskState.CANCELLED) {
             if (downloadDb.getTask(ourTaskId) == null) return;
             fileStore.deleteChapter(albumId, chapterId);
@@ -83,7 +85,8 @@ class DownloadObserver implements TaskObserver {
                 completeDownloadIfValid();
                 return;
             }
-            FileStore.DownloadValidationResult validation = validateDownloadedImages();
+            ImageValidator.DownloadValidationResult validation = validateDownloadedImages();
+            service.cleanupInvalidDownloadedImages(validation);
             int succeeded = Math.min(totalImages - failed, validation.getValidCount());
             int effectiveFailed = totalImages - succeeded;
             String error = effectiveFailed + "/" + totalImages + " 张图片下载失败";
@@ -129,18 +132,21 @@ class DownloadObserver implements TaskObserver {
     public void onError(BaseDownloadTask task, Exception e) {
         if (service.isCancelled(ourTaskId)) return;
         if (!markFinalized()) return;
-        FileStore.DownloadValidationResult validation = validateDownloadedImages();
-        failDownload(validation.getValidCount(), e.getMessage());
+        ImageValidator.DownloadValidationResult validation = validateDownloadedImages();
+        service.cleanupInvalidDownloadedImages(validation);
+        failDownload(progressForFailure(validation), e.getMessage());
     }
 
-    private FileStore.DownloadValidationResult validateDownloadedImages() {
-        return fileStore.validateDownloadedImages(albumId, chapterId, images);
+    private ImageValidator.DownloadValidationResult validateDownloadedImages() {
+        return service.validateDownloadedImages(albumId, chapterId, images);
     }
 
     private void completeDownloadIfValid() {
-        FileStore.DownloadValidationResult validation = validateDownloadedImages();
+        ImageValidator.DownloadValidationResult validation = validateDownloadedImages();
         if (!validation.isComplete()) {
-            failDownload(validation.getValidCount(), validation.getFailureMessage());
+            int cleanupFailures = service.cleanupInvalidDownloadedImages(validation);
+            failDownload(validation.getFailedProgressCount(),
+                validation.getFailureMessage(cleanupFailures));
             return;
         }
 
@@ -160,6 +166,9 @@ class DownloadObserver implements TaskObserver {
         int safeSucceeded = Math.max(0, Math.min(succeeded, totalImages));
         String safeError = error == null || error.isEmpty() ? "下载失败" : error;
         downloadDb.updateFailed(ourTaskId, safeSucceeded, safeError);
+        if (totalImages == 0 || safeSucceeded < totalImages) {
+            fileStore.removeMappings(albumId, chapterId);
+        }
         long totalSize = service.calcChapterFileSize(albumId, chapterId);
         downloadDb.updateSize(ourTaskId, totalSize);
         notifyProgress(safeSucceeded, totalImages, DownloadService.STATUS_FAILED,
@@ -167,6 +176,11 @@ class DownloadObserver implements TaskObserver {
         service.updateDownloadNotification(ourTaskId, safeSucceeded, totalImages,
             DownloadService.STATUS_FAILED, safeError);
         service.cleanupTaskMapping(ourTaskId);
+    }
+
+    private int progressForFailure(ImageValidator.DownloadValidationResult validation) {
+        return validation.isComplete()
+            ? validation.getValidCount() : validation.getFailedProgressCount();
     }
 
     private void notifyProgress(int downloadedPages, int totalPages,

@@ -12,7 +12,7 @@
         ref="verticalViewRef"
         :image-map="imageMap"
         :failed-sort-orders="failedSortOrders"
-        :repairing-sort-orders="repairingSortOrders"
+        :retrying-sort-orders="retryingSortOrders"
         :total-count="totalCount"
         :current-index="currentIndex"
         @update:current-index="onPageChange"
@@ -26,7 +26,7 @@
         ref="horizontalViewRef"
         :image-map="imageMap"
         :failed-sort-orders="failedSortOrders"
-        :repairing-sort-orders="repairingSortOrders"
+        :retrying-sort-orders="retryingSortOrders"
         :total-count="totalCount"
         :current-index="currentIndex"
         @update:current-index="onPageChange"
@@ -120,7 +120,7 @@ const currentIndex = ref(0)
 const totalCount = ref(0)
 const imageMap = shallowRef<Map<number, string>>(new Map())
 const failedSortOrders = shallowRef<Set<number>>(new Set())
-const repairingSortOrders = shallowRef<Set<number>>(new Set())
+const retryingSortOrders = shallowRef<Set<number>>(new Set())
 const chapters = ref<PhotoMeta[]>([])
 const toolbarVisible = ref(true)
 const isDragProgress = ref(false)
@@ -144,8 +144,7 @@ let readerRuntimeActive = false
 let loadedSortOrders = new Set<number>()
 let requestedSortOrders = new Set<number>()
 let sortOrderToImage = new Map<number, ImageInfo>()
-let autoRepairAttempts = new Set<number>()
-let repairUrlRevision = 0
+let retryUrlRevision = 0
 let lastWindowCenter = -1
 const triggerRafId = 0
 let expandDirection: 'forward' | 'backward' | null = null
@@ -401,55 +400,52 @@ const setFailedSortOrder = (sortOrder: number, failed: boolean) => {
   failedSortOrders.value = next
 }
 
-const setRepairingSortOrder = (sortOrder: number, repairing: boolean) => {
-  const next = new Set(repairingSortOrders.value)
-  if (repairing) next.add(sortOrder)
+const setRetryingSortOrder = (sortOrder: number, retrying: boolean) => {
+  const next = new Set(retryingSortOrders.value)
+  if (retrying) next.add(sortOrder)
   else next.delete(sortOrder)
-  repairingSortOrders.value = next
+  retryingSortOrders.value = next
 }
 
-const isCurrentRepair = (version: number, photoId: string) =>
+const isCurrentRetry = (version: number, photoId: string) =>
   version === chapterLoadVersion && photoDetail?.id === photoId
 
-const repairImage = async (sortOrder: number) => {
+const retryImage = async (sortOrder: number) => {
   const pd = photoDetail
   const image = sortOrderToImage.get(sortOrder)
-  if (!pd || repairingSortOrders.value.has(sortOrder)) return
+  if (!pd || retryingSortOrders.value.has(sortOrder)) return
   if (!image) {
-    showToast('缺少图片信息，无法修复', 'danger')
+    showToast('缺少图片信息，无法重试', 'danger')
     return
   }
 
   const version = chapterLoadVersion
   const targetPhotoId = pd.id
   setFailedSortOrder(sortOrder, true)
-  setRepairingSortOrder(sortOrder, true)
+  setRetryingSortOrder(sortOrder, true)
   imageMap.value.delete(sortOrder)
   loadedSortOrders.delete(sortOrder)
   applyImageMap()
 
   try {
-    const result = await JmcomicService.repairImage(targetPhotoId, image)
-    if (!isCurrentRepair(version, targetPhotoId)) return
+    await JmcomicService.retryImage(targetPhotoId, image)
+    if (!isCurrentRetry(version, targetPhotoId)) return
 
-    repairUrlRevision++
+    retryUrlRevision++
     imageMap.value.set(
       sortOrder,
-      `${getImageUrl(targetPhotoId, sortOrder, 'image')}?repair=${repairUrlRevision}`,
+      `${getImageUrl(targetPhotoId, sortOrder, 'image')}?retry=${retryUrlRevision}`,
     )
     loadedSortOrders.add(sortOrder)
     setFailedSortOrder(sortOrder, false)
     applyImageMap()
-    if (isOffline.value && !result.persisted) {
-      showToast('图片已临时恢复，但无法写回下载文件', 'medium')
-    }
   } catch {
-    if (!isCurrentRepair(version, targetPhotoId)) return
+    if (!isCurrentRetry(version, targetPhotoId)) return
     setFailedSortOrder(sortOrder, true)
-    showToast('图片修复失败，请检查网络后重试', 'danger')
+    showToast('图片重试失败，请检查网络后重试', 'danger')
   } finally {
-    if (isCurrentRepair(version, targetPhotoId)) {
-      setRepairingSortOrder(sortOrder, false)
+    if (isCurrentRetry(version, targetPhotoId)) {
+      setRetryingSortOrder(sortOrder, false)
     }
   }
 }
@@ -461,15 +457,6 @@ const onImageError = (sortOrder: number) => {
   loadedSortOrders.delete(sortOrder)
   setFailedSortOrder(sortOrder, true)
   applyImageMap()
-
-  if (repairingSortOrders.value.has(sortOrder) || autoRepairAttempts.has(sortOrder)) return
-  autoRepairAttempts.add(sortOrder)
-  void repairImage(sortOrder)
-}
-
-const retryImage = (sortOrder: number) => {
-  if (repairingSortOrders.value.has(sortOrder)) return
-  void repairImage(sortOrder)
 }
 
 const clampIndex = (index: number) => {
@@ -503,7 +490,7 @@ const updateWindow = (center: number, replacePending = false) => {
       if (
         !loadedSortOrders.has(so) &&
         !failedSortOrders.value.has(so) &&
-        !repairingSortOrders.value.has(so)
+        !retryingSortOrders.value.has(so)
       ) {
         imageMap.value.set(so, getImageUrl(photoDetail.id, so, 'image'))
         loadedSortOrders.add(so)
@@ -515,7 +502,7 @@ const updateWindow = (center: number, replacePending = false) => {
       if (
         loadedSortOrders.has(so) ||
         failedSortOrders.value.has(so) ||
-        repairingSortOrders.value.has(so)
+        retryingSortOrders.value.has(so)
       )
         continue
       const img = sortOrderToImage.get(so)
@@ -534,7 +521,7 @@ const updateWindow = (center: number, replacePending = false) => {
             if (
               loadedSortOrders.has(so) ||
               failedSortOrders.value.has(so) ||
-              repairingSortOrders.value.has(so)
+              retryingSortOrders.value.has(so)
             )
               continue
             imageMap.value.set(so, getImageUrl(requestedPhotoId, so, 'image'))
@@ -578,7 +565,7 @@ const loadDragPreviewImage = (center: number) => {
     loadedSortOrders.has(so) ||
     requestedSortOrders.has(so) ||
     failedSortOrders.value.has(so) ||
-    repairingSortOrders.value.has(so)
+    retryingSortOrders.value.has(so)
   )
     return
 
@@ -599,7 +586,7 @@ const loadDragPreviewImage = (center: number) => {
         if (
           loadedSortOrders.has(cachedSo) ||
           failedSortOrders.value.has(cachedSo) ||
-          repairingSortOrders.value.has(cachedSo)
+          retryingSortOrders.value.has(cachedSo)
         )
           continue
         imageMap.value.set(cachedSo, getImageUrl(requestedPhotoId, cachedSo, 'image'))
@@ -736,7 +723,7 @@ const setupImageReadyListener = async () => {
     if (
       loadedSortOrders.has(sortOrder) ||
       failedSortOrders.value.has(sortOrder) ||
-      repairingSortOrders.value.has(sortOrder)
+      retryingSortOrders.value.has(sortOrder)
     )
       return
     imageMap.value.set(sortOrder, getImageUrl(targetChapterId, sortOrder, 'image'))
@@ -846,7 +833,7 @@ const loadDownloadedChapter = async (
   targetAlbumId: string,
   targetChapterId: string,
   version: number,
-): Promise<'loaded' | 'missing' | 'stale'> => {
+): Promise<'loaded' | 'missing' | 'invalid' | 'stale'> => {
   try {
     const pd = await JmcomicService.getDownloadedPhoto(targetAlbumId, targetChapterId)
     if (!isCurrentChapterLoad(version, targetAlbumId, targetChapterId)) return 'stale'
@@ -866,9 +853,12 @@ const loadDownloadedChapter = async (
     scrollToInitialIndex()
     recordBrowseHistory()
     return 'loaded'
-  } catch {
+  } catch (error) {
     if (!isCurrentChapterLoad(version, targetAlbumId, targetChapterId)) return 'stale'
     isOffline.value = false
+    if ((error as { code?: unknown })?.code === 'DOWNLOAD_FILES_INVALID') {
+      return 'invalid'
+    }
     return 'missing'
   }
 }
@@ -930,9 +920,11 @@ const loadChapter = async () => {
   const requestedDownload = route.query.source === 'download'
   const version = chapterLoadVersion
   const downloadResult = await loadDownloadedChapter(targetAlbumId, targetChapterId, version)
-  if (downloadResult !== 'missing') return
+  if (downloadResult === 'loaded' || downloadResult === 'stale') return
 
-  if (requestedDownload) {
+  if (downloadResult === 'invalid') {
+    showToast('下载文件异常，请在下载管理中重新下载', 'danger')
+  } else if (requestedDownload) {
     showToast('离线章节加载失败', 'danger')
   }
   await loadOnlineChapter(targetAlbumId, targetChapterId, version)
@@ -949,15 +941,14 @@ const resetChapterState = () => {
   totalCount.value = 0
   imageMap.value = new Map()
   failedSortOrders.value = new Set()
-  repairingSortOrders.value = new Set()
+  retryingSortOrders.value = new Set()
   isOffline.value = route.query.source === 'download'
   isDragProgress.value = false
   settingsPanelVisible.value = false
   loadedSortOrders = new Set()
   requestedSortOrders = new Set()
   sortOrderToImage = new Map()
-  autoRepairAttempts = new Set()
-  repairUrlRevision = 0
+  retryUrlRevision = 0
   lastWindowCenter = -1
   activeRenderRange = null
   pendingSeekIndex = null

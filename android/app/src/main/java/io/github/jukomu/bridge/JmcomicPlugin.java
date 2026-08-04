@@ -170,6 +170,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
             }
 
             downloadDb.validateOnStartup(FileStore.getInstance().getBaseDir());
+            FileStore.getInstance().init(ctx, downloadDb, usePublicDir);
         }
 
         // 读取用户期望容量，通过统一策略初始化实际缓存上限
@@ -1161,7 +1162,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
     }
 
     @PluginMethod
-    public void repairImage(PluginCall call) {
+    public void retryImage(PluginCall call) {
         String photoId = call.getString("photoId");
         JSObject image = call.getObject("image");
         if (photoId == null || photoId.isEmpty()) {
@@ -1173,19 +1174,18 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
             return;
         }
 
-        preloadService.repairImage(photoId, image, new PreloadService.ImageRepairCallback() {
+        preloadService.retryImage(photoId, image, new PreloadService.ImageRetryCallback() {
             @Override
-            public void onSuccess(boolean persisted) {
+            public void onSuccess() {
                 JSObject result = new JSObject();
                 result.put("success", true);
-                result.put("persisted", persisted);
                 call.resolve(result);
             }
 
             @Override
             public void onError(Exception error) {
-                Log.w(TAG, "图片恢复失败", error);
-                call.reject("图片恢复失败", error);
+                Log.w(TAG, "图片重试失败", error);
+                call.reject("图片重试失败", error);
             }
         });
     }
@@ -1844,6 +1844,8 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
             }
             JSONObject result = downloadService.getDownloadedPhoto(albumId, chapterId);
             call.resolve(JSObject.fromJSONObject(result));
+        } catch (DownloadService.InvalidDownloadedContentException e) {
+            call.reject(e.getMessage(), DownloadService.INVALID_DOWNLOAD_CODE);
         } catch (IllegalArgumentException | IllegalStateException e) {
             call.reject(e.getMessage());
         } catch (Exception e) {

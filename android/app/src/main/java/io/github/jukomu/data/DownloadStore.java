@@ -271,6 +271,7 @@ public class DownloadStore extends SQLiteOpenHelper {
         SQLiteDatabase db = getWritableDatabase();
         db.beginTransaction();
         try {
+            db.delete(TABLE_IMAGES, COL_TASK_ID + " = ?", new String[]{taskId});
             ContentValues cv = new ContentValues();
             for (io.github.jukomu.jmcomic.api.model.JmImage img : images) {
                 cv.clear();
@@ -337,7 +338,7 @@ public class DownloadStore extends SQLiteOpenHelper {
             db.update(TABLE_TASKS, cvZombie,
                 COL_STATUS + " IN ('queued', 'downloading', 'paused')", null);
 
-            // 2. 校验 completed 任务的文件完整性
+            // 2. 按持久化页映射校验 completed 任务的图片内容
             Cursor c = db.query(TABLE_TASKS,
                 new String[]{COL_TASK_ID, COL_ALBUM_ID, COL_CHAPTER_ID, COL_TOTAL_PAGES},
                 COL_STATUS + " = ?", new String[]{"completed"},
@@ -352,39 +353,20 @@ public class DownloadStore extends SQLiteOpenHelper {
 
                         File chapterDir = new File(baseDir,
                             aid + File.separator + cid);
-                        if (!chapterDir.isDirectory()) {
+                        ImageValidator.DownloadValidationResult validation =
+                            ImageValidator.validateDownloadedImages(chapterDir, total,
+                                getImageFilenames(db, taskId));
+                        if (!validation.isComplete()) {
                             ContentValues cv = new ContentValues();
                             cv.put(COL_STATUS, "failed");
-                            cv.put(COL_ERROR, "Download file directory missing");
-                            db.update(TABLE_TASKS, cv,
-                                COL_TASK_ID + " = ?", new String[]{taskId});
-                            Log.w(TAG, "Startup check: mark " + taskId + " failed (dir missing)");
-                            continue;
-                        }
-
-                        // 检查 meta.json 是否存在作为快速校验
-                        File metaFile = new File(chapterDir, "meta.json");
-                        if (!metaFile.exists()) {
-                            ContentValues cv = new ContentValues();
-                            cv.put(COL_STATUS, "failed");
-                            cv.put(COL_ERROR, "meta.json missing");
-                            db.update(TABLE_TASKS, cv,
-                                COL_TASK_ID + " = ?", new String[]{taskId});
-                            Log.w(TAG, "Startup check: mark " + taskId + " failed (meta missing)");
-                        }
-
-                        // 检查图片文件数量
-                        File[] imageFiles = chapterDir.listFiles(
-                            (dir, name) -> !name.equals("meta.json") && !name.endsWith(".tmp"));
-                        int fileCount = imageFiles != null ? imageFiles.length : 0;
-                        if (fileCount < total) {
-                            ContentValues cv = new ContentValues();
-                            cv.put(COL_STATUS, "failed");
-                            cv.put(COL_ERROR, "Missing images: " + fileCount + "/" + total);
+                            cv.put(COL_DOWNLOADED_PAGES,
+                                validation.getFailedProgressCount());
+                            cv.put(COL_ERROR, validation.getFailureMessage(0));
                             db.update(TABLE_TASKS, cv,
                                 COL_TASK_ID + " = ?", new String[]{taskId});
                             Log.w(TAG, "Startup check: mark " + taskId
-                                + " failed (images " + fileCount + "/" + total + ")");
+                                + " failed (valid images " + validation.getValidCount()
+                                + "/" + validation.getExpectedCount() + ")");
                         }
                     }
                 } finally {
@@ -398,6 +380,23 @@ public class DownloadStore extends SQLiteOpenHelper {
     }
 
     // ========== 辅助 ==========
+
+    private static List<String> getImageFilenames(SQLiteDatabase db, String taskId) {
+        List<String> filenames = new ArrayList<>();
+        Cursor cursor = db.query(TABLE_IMAGES, new String[]{COL_FILENAME},
+            COL_TASK_ID + " = ?", new String[]{taskId}, null, null,
+            COL_SORT_ORDER + " ASC");
+        if (cursor != null) {
+            try {
+                while (cursor.moveToNext()) {
+                    filenames.add(cursor.getString(0));
+                }
+            } finally {
+                cursor.close();
+            }
+        }
+        return filenames;
+    }
 
     private void normalizeFullyDownloadedFailures() {
         SQLiteDatabase db = getWritableDatabase();

@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
   showToast: vi.fn(() => Promise.resolve()),
   getDownloadedPhoto: vi.fn(),
   getPhoto: vi.fn(),
-  repairImage: vi.fn(),
+  retryImage: vi.fn(),
   router: {
     back: vi.fn(),
     push: vi.fn(() => Promise.resolve()),
@@ -31,7 +31,7 @@ vi.mock('@/services/JmcomicService', () => ({
     getPhoto: mocks.getPhoto,
     getAlbum: vi.fn(() => new Promise(() => {})),
     preloadImages: vi.fn(() => Promise.resolve({ cached: [], pending: [] })),
-    repairImage: mocks.repairImage,
+    retryImage: mocks.retryImage,
     setReaderFullscreen: vi.fn(() => Promise.resolve()),
     setReaderState: vi.fn(() => Promise.resolve()),
     setReaderScreenOrientation: vi.fn(() => Promise.resolve()),
@@ -66,7 +66,7 @@ vi.mock('@/services/ReadingProgressService', () => ({
 
 import ReaderPage from '@/views/ReaderPage.vue'
 
-describe('ReaderPage 图片修复', () => {
+describe('ReaderPage 图片重试', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.getDownloadedPhoto.mockRejectedValue(new Error('not downloaded'))
@@ -106,8 +106,70 @@ describe('ReaderPage 图片修复', () => {
     horizontalView.vm.$emit('retry-image', 1)
     await nextTick()
 
-    expect(mocks.showToast).toHaveBeenCalledWith('缺少图片信息，无法修复', 'danger')
-    expect(mocks.repairImage).not.toHaveBeenCalled()
+    expect(mocks.showToast).toHaveBeenCalledWith('缺少图片信息，无法重试', 'danger')
+    expect(mocks.retryImage).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  test('图片加载失败不会自动发起网络重试', async () => {
+    mocks.getPhoto.mockResolvedValue({
+      id: 'chapter',
+      title: 'Chapter',
+      albumId: 'album',
+      sortOrder: 1,
+      author: '',
+      tags: [],
+      images: [
+        {
+          photoId: 'chapter',
+          scrambleId: 'scramble',
+          filename: 'page-1.png',
+          url: 'https://example.invalid/page-1.png',
+          queryParams: '',
+          sortOrder: 1,
+        },
+      ],
+    })
+    mocks.retryImage.mockResolvedValue({ success: true })
+    const wrapper = shallowMount(ReaderPage, {
+      global: {
+        stubs: {
+          IonPage: { template: '<div><slot /></div>' },
+        },
+      },
+    })
+    await flushPromises()
+
+    const horizontalView = wrapper.findComponent({ name: 'HorizontalPageView' })
+    horizontalView.vm.$emit('image-error', 1)
+    await nextTick()
+    expect(mocks.retryImage).not.toHaveBeenCalled()
+
+    horizontalView.vm.$emit('retry-image', 1)
+    await flushPromises()
+    expect(mocks.retryImage).toHaveBeenCalledWith(
+      'chapter',
+      expect.objectContaining({ sortOrder: 1 }),
+    )
+    wrapper.unmount()
+  })
+
+  test('原生确认下载文件异常时提示重新下载并回退在线加载', async () => {
+    mocks.getDownloadedPhoto.mockRejectedValue({ code: 'DOWNLOAD_FILES_INVALID' })
+    const wrapper = shallowMount(ReaderPage, {
+      global: {
+        stubs: {
+          IonPage: { template: '<div><slot /></div>' },
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(mocks.showToast).toHaveBeenCalledWith(
+      '下载文件异常，请在下载管理中重新下载',
+      'danger',
+    )
+    expect(mocks.getPhoto).toHaveBeenCalledWith('chapter')
     wrapper.unmount()
   })
 })

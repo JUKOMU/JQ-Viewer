@@ -7,6 +7,7 @@ import android.graphics.Bitmap;
 import io.github.jukomu.data.CacheCapacityPolicy;
 import io.github.jukomu.data.FileStore;
 import io.github.jukomu.data.ImageCache;
+import io.github.jukomu.data.ImageValidator;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -146,9 +147,9 @@ public class PreloadServiceTest {
     }
 
     @Test
-    public void repairImageBypassesCorruptMemoryCache() throws Exception {
-        byte[] repairedBytes = createPng();
-        imageCache.put("repair-photo/1",
+    public void retryImageBypassesCorruptMemoryCache() throws Exception {
+        byte[] retriedBytes = createPng();
+        imageCache.put("retry-photo/1",
             "not-an-image".getBytes(StandardCharsets.UTF_8), "image/jpeg");
 
         AtomicInteger fetchCount = new AtomicInteger();
@@ -158,23 +159,23 @@ public class PreloadServiceTest {
             new CacheCapacityPolicy(), 2,
             image -> {
                 fetchCount.incrementAndGet();
-                return repairedBytes;
+                return retriedBytes;
             });
 
-        RepairOutcome outcome = repair(service, "repair-photo", repairImage());
+        RetryOutcome outcome = retry(service, "retry-photo", retryImage());
 
         assertNull(outcome.error);
-        assertEquals(Boolean.FALSE, outcome.persisted);
+        assertTrue(outcome.success);
         assertEquals(1, fetchCount.get());
-        ImageCache.ImageEntry entry = imageCache.get("repair-photo/1");
+        ImageCache.ImageEntry entry = imageCache.get("retry-photo/1");
         assertNotNull(entry);
-        assertArrayEquals(repairedBytes, entry.data);
-        assertTrue(ImageCache.isDecodableImage(entry.data));
+        assertArrayEquals(retriedBytes, entry.data);
+        assertEquals(ImageValidator.Status.VALID, ImageValidator.validate(entry.data));
     }
 
     @Test
-    public void repairImageReportsFetchFailureAndReleasesPermit() throws Exception {
-        byte[] repairedBytes = createPng();
+    public void retryImageReportsFetchFailureAndReleasesPermit() throws Exception {
+        byte[] retriedBytes = createPng();
         AtomicInteger fetchCount = new AtomicInteger();
         PreloadService service = new PreloadService(
             imageCache, FileStore.getInstance(), null, null,
@@ -184,41 +185,41 @@ public class PreloadServiceTest {
                 if (fetchCount.incrementAndGet() == 1) {
                     throw new IOException("fetch failed");
                 }
-                return repairedBytes;
+                return retriedBytes;
             });
 
-        RepairOutcome failed = repair(service, "fetch-failure-photo", repairImage());
-        RepairOutcome retried = repair(service, "fetch-failure-photo", repairImage());
+        RetryOutcome failed = retry(service, "fetch-failure-photo", retryImage());
+        RetryOutcome retried = retry(service, "fetch-failure-photo", retryImage());
 
         assertNotNull(failed.error);
-        assertNull(failed.persisted);
+        assertFalse(failed.success);
         assertNull(retried.error);
-        assertEquals(Boolean.FALSE, retried.persisted);
+        assertTrue(retried.success);
         assertEquals(2, fetchCount.get());
     }
 
     @Test
-    public void repairImageRejectsUndecodableBytesWithoutReplacingCache() throws Exception {
+    public void retryImageRejectsUndecodableBytesWithoutReplacingCache() throws Exception {
         byte[] originalBytes = "old-corrupt-cache".getBytes(StandardCharsets.UTF_8);
-        imageCache.put("invalid-repair-photo/1", originalBytes, "image/jpeg");
+        imageCache.put("invalid-retry-photo/1", originalBytes, "image/jpeg");
         PreloadService service = new PreloadService(
             imageCache, FileStore.getInstance(), null, null,
             imageExecutor, networkExecutor, null, null,
             new CacheCapacityPolicy(), 1,
             image -> "not-an-image".getBytes(StandardCharsets.UTF_8));
 
-        RepairOutcome outcome = repair(service, "invalid-repair-photo", repairImage());
+        RetryOutcome outcome = retry(service, "invalid-retry-photo", retryImage());
 
         assertNotNull(outcome.error);
-        assertNull(outcome.persisted);
+        assertFalse(outcome.success);
         assertTrue(outcome.error.getMessage().contains("无法解码"));
-        assertArrayEquals(originalBytes, imageCache.get("invalid-repair-photo/1").data);
+        assertArrayEquals(originalBytes, imageCache.get("invalid-retry-photo/1").data);
     }
 
     @Test
-    public void repairImageDoesNotFetchOrWriteDuringCompletePressure() throws Exception {
+    public void retryImageDoesNotFetchOrWriteDuringCompletePressure() throws Exception {
         byte[] originalBytes = "old-cache".getBytes(StandardCharsets.UTF_8);
-        imageCache.put("complete-repair-photo/1", originalBytes, "image/jpeg");
+        imageCache.put("complete-retry-photo/1", originalBytes, "image/jpeg");
         AtomicInteger fetchCount = new AtomicInteger();
         PreloadService service = new PreloadService(
             imageCache, FileStore.getInstance(), null, null,
@@ -230,22 +231,22 @@ public class PreloadServiceTest {
             });
         service.setMemoryPressureLevel(CacheCapacityPolicy.PressureLevel.COMPLETE);
 
-        RepairOutcome outcome = repair(service, "complete-repair-photo", repairImage());
+        RetryOutcome outcome = retry(service, "complete-retry-photo", retryImage());
 
         assertNotNull(outcome.error);
-        assertNull(outcome.persisted);
+        assertFalse(outcome.success);
         assertEquals(0, fetchCount.get());
-        assertArrayEquals(originalBytes, imageCache.get("complete-repair-photo/1").data);
+        assertArrayEquals(originalBytes, imageCache.get("complete-retry-photo/1").data);
     }
 
     @Test
-    public void repairImageDiscardsInFlightResultDuringCompletePressure() throws Exception {
+    public void retryImageDiscardsInFlightResultDuringCompletePressure() throws Exception {
         byte[] originalBytes = "old-cache".getBytes(StandardCharsets.UTF_8);
-        imageCache.put("in-flight-repair-photo/1", originalBytes, "image/jpeg");
+        imageCache.put("in-flight-retry-photo/1", originalBytes, "image/jpeg");
         CountDownLatch fetchStarted = new CountDownLatch(1);
         CountDownLatch allowFetchFinish = new CountDownLatch(1);
         CountDownLatch completed = new CountDownLatch(1);
-        AtomicReference<Boolean> persisted = new AtomicReference<>();
+        AtomicReference<Boolean> success = new AtomicReference<>(false);
         AtomicReference<Exception> error = new AtomicReference<>();
         PreloadService service = new PreloadService(
             imageCache, FileStore.getInstance(), null, null,
@@ -257,17 +258,17 @@ public class PreloadServiceTest {
                 return createPng();
             });
 
-        service.repairImage("in-flight-repair-photo", repairImage(),
-            new PreloadService.ImageRepairCallback() {
+        service.retryImage("in-flight-retry-photo", retryImage(),
+            new PreloadService.ImageRetryCallback() {
                 @Override
-                public void onSuccess(boolean wasPersisted) {
-                    persisted.set(wasPersisted);
+                public void onSuccess() {
+                    success.set(true);
                     completed.countDown();
                 }
 
                 @Override
-                public void onError(Exception repairError) {
-                    error.set(repairError);
+                public void onError(Exception retryError) {
+                    error.set(retryError);
                     completed.countDown();
                 }
             });
@@ -278,33 +279,33 @@ public class PreloadServiceTest {
 
         assertTrue(completed.await(2, TimeUnit.SECONDS));
         assertNotNull(error.get());
-        assertNull(persisted.get());
-        assertArrayEquals(originalBytes, imageCache.get("in-flight-repair-photo/1").data);
+        assertFalse(success.get());
+        assertArrayEquals(originalBytes, imageCache.get("in-flight-retry-photo/1").data);
     }
 
-    private RepairOutcome repair(PreloadService service, String photoId, JSONObject image)
+    private RetryOutcome retry(PreloadService service, String photoId, JSONObject image)
         throws Exception {
         CountDownLatch completed = new CountDownLatch(1);
-        AtomicReference<Boolean> persisted = new AtomicReference<>();
+        AtomicReference<Boolean> success = new AtomicReference<>(false);
         AtomicReference<Exception> error = new AtomicReference<>();
-        service.repairImage(photoId, image, new PreloadService.ImageRepairCallback() {
+        service.retryImage(photoId, image, new PreloadService.ImageRetryCallback() {
             @Override
-            public void onSuccess(boolean wasPersisted) {
-                persisted.set(wasPersisted);
+            public void onSuccess() {
+                success.set(true);
                 completed.countDown();
             }
 
             @Override
-            public void onError(Exception repairError) {
-                error.set(repairError);
+            public void onError(Exception retryError) {
+                error.set(retryError);
                 completed.countDown();
             }
         });
         assertTrue(completed.await(2, TimeUnit.SECONDS));
-        return new RepairOutcome(persisted.get(), error.get());
+        return new RetryOutcome(success.get(), error.get());
     }
 
-    private static JSONObject repairImage() throws Exception {
+    private static JSONObject retryImage() throws Exception {
         return new JSONObject()
             .put("sortOrder", 1)
             .put("scrambleId", "scramble")
@@ -325,12 +326,12 @@ public class PreloadServiceTest {
         }
     }
 
-    private static final class RepairOutcome {
-        final Boolean persisted;
+    private static final class RetryOutcome {
+        final boolean success;
         final Exception error;
 
-        RepairOutcome(Boolean persisted, Exception error) {
-            this.persisted = persisted;
+        RetryOutcome(boolean success, Exception error) {
+            this.success = success;
             this.error = error;
         }
     }

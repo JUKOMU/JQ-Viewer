@@ -282,6 +282,85 @@ describe('ReaderPage 在线/离线统一图片加载', () => {
     wrapper.unmount()
   })
 
+  test('预加载调用拒绝后可在同一窗口重新提交', async () => {
+    mocks.preloadImages
+      .mockRejectedValueOnce(new Error('bridge failure'))
+      .mockResolvedValue({ cached: [], pending: [1, 2] } satisfies PreloadResult)
+
+    const wrapper = mountReader()
+    await settle()
+
+    expect(mocks.preloadImages).toHaveBeenCalledTimes(1)
+    const initialSortOrders = (mocks.preloadImages.mock.calls[0][1] as ImageInfo[]).map(
+      (image) => image.sortOrder,
+    )
+
+    wrapper.findComponent(VerticalScrollViewStub).vm.$emit('request-range', {
+      start: 0,
+      end: 2,
+      center: 0,
+    })
+    await settle()
+
+    expect(mocks.preloadImages).toHaveBeenCalledTimes(2)
+    expect(mocks.preloadImages.mock.calls[1][3]).toEqual({ replacePending: false })
+    expect(
+      (mocks.preloadImages.mock.calls[1][1] as ImageInfo[]).map((image) => image.sortOrder),
+    ).toEqual(initialSortOrders)
+
+    wrapper.unmount()
+  })
+
+  test('旧批次晚到拒绝不会清除新批次请求标记', async () => {
+    const initialPreload = deferred<PreloadResult>()
+    mocks.preloadImages
+      .mockImplementationOnce(() => initialPreload.promise)
+      .mockResolvedValue({ cached: [], pending: [1, 2] } satisfies PreloadResult)
+
+    const wrapper = mountReader()
+    await settle()
+    expect(mocks.preloadImages).toHaveBeenCalledTimes(1)
+
+    wrapper.findComponent(ReaderBottomToolbarStub).vm.$emit('update:current', 1)
+    await settle()
+    expect(mocks.preloadImages).toHaveBeenCalledTimes(2)
+    expect(mocks.preloadImages.mock.calls[1][3]).toEqual({ replacePending: true })
+
+    initialPreload.reject(new Error('stale batch failure'))
+    await settle()
+
+    wrapper.findComponent(VerticalScrollViewStub).vm.$emit('request-range', {
+      start: 0,
+      end: 2,
+      center: 0,
+    })
+    await settle()
+
+    expect(mocks.preloadImages).toHaveBeenCalledTimes(2)
+
+    wrapper.unmount()
+  })
+
+  test('监听注册晚到时安全处理 remove 拒绝', async () => {
+    const listener = deferred<{ remove: () => Promise<void> }>()
+    const remove = vi.fn(() => Promise.reject(new Error('remove failed')))
+    mocks.addImageReadyListener.mockImplementationOnce(
+      (_photoId: string, handler: (sortOrder: number) => void) => {
+        mocks.imageReadyHandler = handler
+        return listener.promise
+      },
+    )
+
+    const wrapper = mountReader()
+    await vi.waitFor(() => expect(mocks.addImageReadyListener).toHaveBeenCalledTimes(1))
+    wrapper.unmount()
+
+    listener.resolve({ remove })
+    await settle()
+
+    expect(remove).toHaveBeenCalledTimes(1)
+  })
+
   test('窗口外晚到结果不写入，返回窗口后可重新探测 native cache', async () => {
     const initialPreload = deferred<PreloadResult>()
     mocks.preloadImages

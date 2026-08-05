@@ -133,7 +133,8 @@ let imageReadyListenerSetupId = 0
 let volumeKeyListenerHandle: PluginListenerHandle | null = null
 let readerRuntimeActive = false
 let loadedSortOrders = new Set<number>()
-let requestedSortOrders = new Set<number>()
+let requestedSortOrders = new Map<number, number>()
+let preloadRequestSequence = 0
 let sortOrderToImage = new Map<number, ImageInfo>()
 let activeAllowedSortOrders = new Set<number>()
 let activeDragPreviewSortOrder: number | null = null
@@ -446,7 +447,7 @@ const setActiveAllowedSortOrders = (
 }
 
 const cleanupRequestedSortOrdersOutsideAllowed = () => {
-  for (const sortOrder of requestedSortOrders) {
+  for (const sortOrder of requestedSortOrders.keys()) {
     if (!activeAllowedSortOrders.has(sortOrder) && !loadedSortOrders.has(sortOrder)) {
       requestedSortOrders.delete(sortOrder)
     }
@@ -465,14 +466,33 @@ const preloadSortOrders = (sortOrders: number[], replacePending = false) => {
     const image = sortOrderToImage.get(sortOrder)
     if (!image) continue
     images.push(image)
-    requestedSortOrders.add(sortOrder)
   }
 
   if (images.length === 0) return
-  JmcomicService.preloadImages(context.photoId, images, 'image', { replacePending })
-    .then((result: PreloadResult) => {
-      exposeImagesIfAllowed(context, result.cached, 'image')
-    })
+  const requestRegistry = requestedSortOrders
+  const requestBatchId = ++preloadRequestSequence
+  const submittedSortOrders = images.map((image) => image.sortOrder)
+  for (const sortOrder of submittedSortOrders) {
+    requestRegistry.set(sortOrder, requestBatchId)
+  }
+
+  void JmcomicService.preloadImages(context.photoId, images, 'image', { replacePending })
+    .then(
+      (result: PreloadResult) => {
+        exposeImagesIfAllowed(context, result.cached, 'image')
+      },
+      () => {
+        if (!isCurrentImageExposureContext(context)) return
+        for (const sortOrder of submittedSortOrders) {
+          if (
+            !loadedSortOrders.has(sortOrder) &&
+            requestRegistry.get(sortOrder) === requestBatchId
+          ) {
+            requestRegistry.delete(sortOrder)
+          }
+        }
+      },
+    )
     .catch(() => {})
 }
 
@@ -656,6 +676,11 @@ const onProgressInput = (page1Based: number) => {
 }
 
 // ---- 图片就绪监听 ----
+const removeListenerSafely = (handle: PluginListenerHandle | null) => {
+  if (!handle) return
+  void handle.remove().catch(() => {})
+}
+
 const setupImageReadyListener = async () => {
   if (imageReadyListenerHandle) return
   if (imageReadyListenerSetupPromise) return imageReadyListenerSetupPromise
@@ -674,7 +699,7 @@ const setupImageReadyListener = async () => {
       !readerRuntimeActive ||
       !isCurrentImageExposureContext(context)
     ) {
-      handle.remove()
+      removeListenerSafely(handle)
       return
     }
     imageReadyListenerHandle = handle
@@ -706,9 +731,9 @@ const deactivateReaderRuntime = () => {
   imageReadyListenerSetupId++
   imageReadyListenerSetupPromise = null
   clearToolbarTapTimer()
-  imageReadyListenerHandle?.remove()
+  removeListenerSafely(imageReadyListenerHandle)
   imageReadyListenerHandle = null
-  volumeKeyListenerHandle?.remove()
+  removeListenerSafely(volumeKeyListenerHandle)
   volumeKeyListenerHandle = null
   restoreSystemState()
 }
@@ -863,7 +888,7 @@ const resetChapterState = () => {
   imageReadyListenerSetupId++
   imageReadyListenerSetupPromise = null
   clearAutoShowToolbarTimer()
-  imageReadyListenerHandle?.remove()
+  removeListenerSafely(imageReadyListenerHandle)
   imageReadyListenerHandle = null
   photoDetail = null
   currentIndex.value = 0
@@ -873,7 +898,7 @@ const resetChapterState = () => {
   isDragProgress.value = false
   settingsPanelVisible.value = false
   loadedSortOrders = new Set()
-  requestedSortOrders = new Set()
+  requestedSortOrders = new Map()
   sortOrderToImage = new Map()
   activeAllowedSortOrders = new Set()
   activeDragPreviewSortOrder = null

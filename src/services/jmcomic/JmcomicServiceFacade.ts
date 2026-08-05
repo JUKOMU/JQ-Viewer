@@ -192,13 +192,15 @@ export const JmcomicService = {
    * 注册图片就绪监听。
    * @param photoId 当前章节 ID，仅接收此章节的事件
    * @param handler 每张图片下载完成时调用
+   * @param options 可选图片类型过滤；不传时保持兼容，接收该章节的全部图片事件
    */
   addImageReadyListener(
     photoId: string,
     handler: (sortOrder: number) => void,
+    options: { type?: 'image' | 'thumb' } = {},
   ): Promise<JmcomicListenerHandle> {
     return native.addListener('imageReady', (data: ImageReadyEvent) => {
-      if (data.photoId === photoId) {
+      if (data.photoId === photoId && (!options.type || data.type === options.type)) {
         handler(data.sortOrder)
       }
     })

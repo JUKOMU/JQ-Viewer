@@ -128,12 +128,16 @@ let chapterLoadVersion = 0
 let chapterStateKey = ''
 let chapterStateAlbumId = ''
 let imageReadyListenerHandle: PluginListenerHandle | null = null
+let imageReadyListenerSetupPromise: Promise<void> | null = null
 let imageReadyListenerSetupId = 0
 let volumeKeyListenerHandle: PluginListenerHandle | null = null
 let readerRuntimeActive = false
 let loadedSortOrders = new Set<number>()
-let requestedSortOrders = new Set<number>()
+let requestedSortOrders = new Map<number, number>()
+let preloadRequestSequence = 0
 let sortOrderToImage = new Map<number, ImageInfo>()
+let activeAllowedSortOrders = new Set<number>()
+let activeDragPreviewSortOrder: number | null = null
 let lastWindowCenter = -1
 const triggerRafId = 0
 let expandDirection: 'forward' | 'backward' | null = null
@@ -382,6 +386,116 @@ const applyImageMap = () => {
   imageMap.value = new Map(imageMap.value)
 }
 
+interface ImageExposureContext {
+  version: number
+  albumId: string
+  chapterId: string
+  photoId: string
+}
+
+const createImageExposureContext = (): ImageExposureContext | null => {
+  if (!photoDetail) return null
+  return {
+    version: chapterLoadVersion,
+    albumId: albumId.value,
+    chapterId: chapterId.value,
+    photoId: photoDetail.id,
+  }
+}
+
+const isCurrentImageExposureContext = (context: ImageExposureContext) =>
+  context.version === chapterLoadVersion &&
+  context.albumId === albumId.value &&
+  context.chapterId === chapterId.value &&
+  context.photoId === photoDetail?.id
+
+const exposeImageIfAllowed = (
+  context: ImageExposureContext,
+  sortOrder: number,
+  type: 'image' | 'thumb',
+) => {
+  if (
+    type !== 'image' ||
+    !isCurrentImageExposureContext(context) ||
+    !activeAllowedSortOrders.has(sortOrder)
+  )
+    return false
+
+  imageMap.value.set(sortOrder, getImageUrl(context.photoId, sortOrder, 'image'))
+  loadedSortOrders.add(sortOrder)
+  return true
+}
+
+const exposeImagesIfAllowed = (
+  context: ImageExposureContext,
+  sortOrders: number[],
+  type: 'image' | 'thumb',
+) => {
+  let changed = false
+  for (const sortOrder of sortOrders) {
+    changed = exposeImageIfAllowed(context, sortOrder, type) || changed
+  }
+  if (changed) applyImageMap()
+}
+
+const setActiveAllowedSortOrders = (
+  sortOrders: Iterable<number>,
+  dragPreviewSortOrder: number | null,
+) => {
+  activeAllowedSortOrders = new Set(sortOrders)
+  if (dragPreviewSortOrder !== null) activeAllowedSortOrders.add(dragPreviewSortOrder)
+}
+
+const cleanupRequestedSortOrdersOutsideAllowed = () => {
+  for (const sortOrder of requestedSortOrders.keys()) {
+    if (!activeAllowedSortOrders.has(sortOrder) && !loadedSortOrders.has(sortOrder)) {
+      requestedSortOrders.delete(sortOrder)
+    }
+  }
+}
+
+const preloadSortOrders = (sortOrders: number[], replacePending = false) => {
+  const context = createImageExposureContext()
+  if (!context || !readerRuntimeActive || !imageReadyListenerHandle) return
+
+  const images: ImageInfo[] = []
+  for (const sortOrder of new Set(sortOrders)) {
+    if (!activeAllowedSortOrders.has(sortOrder) || loadedSortOrders.has(sortOrder)) continue
+    if (!replacePending && requestedSortOrders.has(sortOrder)) continue
+
+    const image = sortOrderToImage.get(sortOrder)
+    if (!image) continue
+    images.push(image)
+  }
+
+  if (images.length === 0) return
+  const requestRegistry = requestedSortOrders
+  const requestBatchId = ++preloadRequestSequence
+  const submittedSortOrders = images.map((image) => image.sortOrder)
+  for (const sortOrder of submittedSortOrders) {
+    requestRegistry.set(sortOrder, requestBatchId)
+  }
+
+  void JmcomicService.preloadImages(context.photoId, images, 'image', { replacePending })
+    .then(
+      (result: PreloadResult) => {
+        exposeImagesIfAllowed(context, result.cached, 'image')
+      },
+      () => {
+        if (!isCurrentImageExposureContext(context)) return
+        for (const sortOrder of submittedSortOrders) {
+          if (
+            !loadedSortOrders.has(sortOrder) &&
+            requestRegistry.get(sortOrder) === requestBatchId
+          ) {
+            requestRegistry.delete(sortOrder)
+          }
+        }
+      },
+    )
+    .catch(() => {})
+}
+
 const clampIndex = (index: number) => {
   if (totalCount.value <= 0) return 0
   return Math.min(totalCount.value - 1, Math.max(0, index))
@@ -405,42 +519,7 @@ const hasPendingInRange = (center: number, dir: 'forward' | 'backward'): boolean
 
 const updateWindow = (center: number, replacePending = false) => {
   if (!photoDetail) return
-  const requestedPhotoId = photoDetail.id
   const windowOrders = calcPriorityWindow(center)
-
-  if (isOffline.value) {
-    for (const so of windowOrders) {
-      if (!loadedSortOrders.has(so)) {
-        imageMap.value.set(so, getImageUrl(photoDetail.id, so, 'image'))
-        loadedSortOrders.add(so)
-      }
-    }
-  } else {
-    const toLoad: ImageInfo[] = []
-    for (const so of windowOrders) {
-      if (loadedSortOrders.has(so)) continue
-      const img = sortOrderToImage.get(so)
-      if (!img) continue
-      toLoad.push(img)
-      if (!requestedSortOrders.has(so)) {
-        requestedSortOrders.add(so)
-      }
-    }
-
-    if (toLoad.length > 0) {
-      JmcomicService.preloadImages(requestedPhotoId, toLoad, 'image', { replacePending })
-        .then((result: PreloadResult) => {
-          if (photoDetail?.id !== requestedPhotoId) return
-          for (const so of result.cached) {
-            imageMap.value.set(so, getImageUrl(requestedPhotoId, so, 'image'))
-            loadedSortOrders.add(so)
-          }
-          applyImageMap()
-        })
-        .catch(() => {})
-    }
-  }
-
   const cleanBackward = expandDirection === 'backward' ? N_FAST : Math.floor(M / 2)
   const cleanForward = expandDirection === 'forward' ? N_FAST : Math.floor(M / 2)
   const cacheMin = Math.max(0, center - cleanBackward)
@@ -454,42 +533,29 @@ const updateWindow = (center: number, replacePending = false) => {
   }
   for (const so of calcWindow(currentIndex.value)) cacheSet.add(so)
 
+  setActiveAllowedSortOrders(cacheSet, activeDragPreviewSortOrder)
+
   for (const so of loadedSortOrders) {
-    if (!cacheSet.has(so)) {
+    if (!activeAllowedSortOrders.has(so)) {
       imageMap.value.delete(so)
       loadedSortOrders.delete(so)
     }
   }
+  cleanupRequestedSortOrdersOutsideAllowed()
   applyImageMap()
+  preloadSortOrders(windowOrders, replacePending)
 }
 
 const loadDragPreviewImage = (center: number) => {
   if (!photoDetail) return
-  const requestedPhotoId = photoDetail.id
   const so = center + 1
-  if (so < 1 || so > totalCount.value || loadedSortOrders.has(so) || requestedSortOrders.has(so))
-    return
+  if (so < 1 || so > totalCount.value) return
 
-  if (isOffline.value) {
-    imageMap.value.set(so, getImageUrl(photoDetail.id, so, 'image'))
-    loadedSortOrders.add(so)
-    applyImageMap()
-    return
-  }
-
-  const img = sortOrderToImage.get(so)
-  if (!img) return
-  requestedSortOrders.add(so)
-  JmcomicService.preloadImages(requestedPhotoId, [img], 'image', { replacePending: true })
-    .then((result: PreloadResult) => {
-      if (photoDetail?.id !== requestedPhotoId) return
-      for (const cachedSo of result.cached) {
-        imageMap.value.set(cachedSo, getImageUrl(requestedPhotoId, cachedSo, 'image'))
-        loadedSortOrders.add(cachedSo)
-      }
-      applyImageMap()
-    })
-    .catch(() => {})
+  activeDragPreviewSortOrder = so
+  setActiveAllowedSortOrders(calcPriorityWindow(currentIndex.value), activeDragPreviewSortOrder)
+  cleanupRequestedSortOrdersOutsideAllowed()
+  if (loadedSortOrders.has(so)) return
+  preloadSortOrders([so], true)
 }
 
 const scheduleDragPreviewLoad = (index: number) => {
@@ -567,6 +633,7 @@ const goToIndex = (index: number, source: PageChangeSource) => {
     return
   }
 
+  activeDragPreviewSortOrder = null
   pendingSeekIndex = null
   if (dragPreviewTimer) {
     clearTimeout(dragPreviewTimer)
@@ -609,46 +676,64 @@ const onProgressInput = (page1Based: number) => {
 }
 
 // ---- 图片就绪监听 ----
-const setupImageReadyListener = async () => {
-  if (imageReadyListenerHandle) return
-  const setupId = ++imageReadyListenerSetupId
-  const targetChapterId = chapterId.value
-  const handle = await JmcomicService.addImageReadyListener(targetChapterId, (sortOrder) => {
-    if (chapterId.value !== targetChapterId) return
-    imageMap.value.set(sortOrder, getImageUrl(targetChapterId, sortOrder, 'image'))
-    loadedSortOrders.add(sortOrder)
-    applyImageMap()
-  })
-  if (
-    setupId !== imageReadyListenerSetupId ||
-    !readerRuntimeActive ||
-    chapterId.value !== targetChapterId
-  ) {
-    handle.remove()
-    return
-  }
-  imageReadyListenerHandle = handle
+const removeListenerSafely = (handle: PluginListenerHandle | null) => {
+  if (!handle) return
+  void handle.remove().catch(() => {})
 }
 
-const activateReaderRuntime = () => {
-  if (readerRuntimeActive) return
-  readerRuntimeActive = true
-  applyReaderSettings()
-  JmcomicService.setReaderState(true, isVertical.value).catch(() => {})
-  setupVolumeKeyListener().catch(() => {})
-  if (!isOffline.value && photoDetail) {
-    setupImageReadyListener().catch(() => {})
+const setupImageReadyListener = async () => {
+  if (imageReadyListenerHandle) return
+  if (imageReadyListenerSetupPromise) return imageReadyListenerSetupPromise
+  const context = createImageExposureContext()
+  if (!readerRuntimeActive || !context) return
+
+  const setupId = ++imageReadyListenerSetupId
+  const setupPromise = (async () => {
+    const handle = await JmcomicService.addImageReadyListener(
+      context.photoId,
+      (sortOrder) => exposeImagesIfAllowed(context, [sortOrder], 'image'),
+      { type: 'image' },
+    )
+    if (
+      setupId !== imageReadyListenerSetupId ||
+      !readerRuntimeActive ||
+      !isCurrentImageExposureContext(context)
+    ) {
+      removeListenerSafely(handle)
+      return
+    }
+    imageReadyListenerHandle = handle
+  })()
+  imageReadyListenerSetupPromise = setupPromise
+  try {
+    await setupPromise
+  } finally {
+    if (imageReadyListenerSetupPromise === setupPromise) {
+      imageReadyListenerSetupPromise = null
+    }
   }
+}
+
+const activateReaderRuntime = (): Promise<void> => {
+  if (!readerRuntimeActive) {
+    readerRuntimeActive = true
+    applyReaderSettings()
+    JmcomicService.setReaderState(true, isVertical.value).catch(() => {})
+    setupVolumeKeyListener().catch(() => {})
+  }
+  if (!photoDetail) return Promise.resolve()
+  return setupImageReadyListener().catch(() => {})
 }
 
 const deactivateReaderRuntime = () => {
   if (!readerRuntimeActive) return
   readerRuntimeActive = false
   imageReadyListenerSetupId++
+  imageReadyListenerSetupPromise = null
   clearToolbarTapTimer()
-  imageReadyListenerHandle?.remove()
+  removeListenerSafely(imageReadyListenerHandle)
   imageReadyListenerHandle = null
-  volumeKeyListenerHandle?.remove()
+  removeListenerSafely(volumeKeyListenerHandle)
   volumeKeyListenerHandle = null
   restoreSystemState()
 }
@@ -728,16 +813,20 @@ const loadDownloadedChapter = async (
     if (!isCurrentChapterLoad(version, targetAlbumId, targetChapterId)) return 'stale'
     isOffline.value = true
     applyPhotoBaseState(pd)
+    sortOrderToImage = new Map(pd.images.map((i) => [i.sortOrder, i]))
 
-    const initOrders = calcWindow(currentIndex.value)
-    const priorityInitOrders = prioritizeSortOrders(initOrders, currentIndex.value)
-    for (const so of priorityInitOrders) {
-      if (!loadedSortOrders.has(so)) {
-        imageMap.value.set(so, getImageUrl(pd.id, so, 'image'))
-        loadedSortOrders.add(so)
-      }
+    if (readerRuntimeActive) {
+      await setupImageReadyListener().catch(() => {})
     }
-    applyImageMap()
+    if (!isCurrentChapterLoad(version, targetAlbumId, targetChapterId) || photoDetail?.id !== pd.id)
+      return 'stale'
+
+    const priorityInitOrders = prioritizeSortOrders(
+      calcWindow(currentIndex.value),
+      currentIndex.value,
+    )
+    setActiveAllowedSortOrders(priorityInitOrders, null)
+    preloadSortOrders(priorityInitOrders)
     scrollToInitialIndex()
     recordBrowseHistory()
     return 'loaded'
@@ -761,33 +850,14 @@ const loadOnlineChapter = async (
     sortOrderToImage = new Map(pd.images.map((i) => [i.sortOrder, i]))
 
     if (readerRuntimeActive) {
-      setupImageReadyListener().catch(() => {})
+      await setupImageReadyListener().catch(() => {})
     }
+    if (!isCurrentChapterLoad(version, targetAlbumId, targetChapterId) || photoDetail?.id !== pd.id)
+      return
 
     const initOrders = prioritizeSortOrders(calcWindow(currentIndex.value), currentIndex.value)
-    const initOrderSet = new Set(initOrders)
-    const initImages = initOrders
-      .map((so) => sortOrderToImage.get(so))
-      .filter((i): i is ImageInfo => Boolean(i))
-    for (const so of initOrderSet) {
-      requestedSortOrders.add(so)
-    }
-    if (initImages.length > 0) {
-      JmcomicService.preloadImages(pd.id, initImages, 'image')
-        .then((result) => {
-          if (
-            !isCurrentChapterLoad(version, targetAlbumId, targetChapterId) ||
-            photoDetail?.id !== pd.id
-          )
-            return
-          for (const so of result.cached) {
-            imageMap.value.set(so, getImageUrl(pd.id, so, 'image'))
-            loadedSortOrders.add(so)
-          }
-          applyImageMap()
-        })
-        .catch(() => {})
-    }
+    setActiveAllowedSortOrders(initOrders, null)
+    preloadSortOrders(initOrders)
 
     scrollToInitialIndex()
     recordBrowseHistory()
@@ -816,8 +886,9 @@ const loadChapter = async () => {
 const resetChapterState = () => {
   chapterLoadVersion++
   imageReadyListenerSetupId++
+  imageReadyListenerSetupPromise = null
   clearAutoShowToolbarTimer()
-  imageReadyListenerHandle?.remove()
+  removeListenerSafely(imageReadyListenerHandle)
   imageReadyListenerHandle = null
   photoDetail = null
   currentIndex.value = 0
@@ -827,8 +898,10 @@ const resetChapterState = () => {
   isDragProgress.value = false
   settingsPanelVisible.value = false
   loadedSortOrders = new Set()
-  requestedSortOrders = new Set()
+  requestedSortOrders = new Map()
   sortOrderToImage = new Map()
+  activeAllowedSortOrders = new Set()
+  activeDragPreviewSortOrder = null
   lastWindowCenter = -1
   activeRenderRange = null
   pendingSeekIndex = null
@@ -860,7 +933,7 @@ onMounted(() => {
   chapterStateKey = `${albumId.value}:${chapterId.value}`
   chapterStateAlbumId = albumId.value
   resetChapterState()
-  activateReaderRuntime()
+  void activateReaderRuntime()
   void loadChapter()
 })
 
@@ -881,9 +954,10 @@ watch([albumId, chapterId], ([newAlbumId, newChapterId]) => {
 })
 
 onActivated(() => {
-  activateReaderRuntime()
-  nextTick(() => {
-    goToIndex(currentIndex.value, 'route')
+  void activateReaderRuntime().then(() => {
+    nextTick(() => {
+      goToIndex(currentIndex.value, 'route')
+    })
   })
 })
 

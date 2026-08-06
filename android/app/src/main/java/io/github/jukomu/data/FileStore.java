@@ -115,7 +115,13 @@ public class FileStore {
 
     // ---- 目录/文件操作 ----
 
+    public static void validateChapterIds(String albumId, String chapterId) {
+        validatePathSegment("albumId", albumId);
+        validatePathSegment("chapterId", chapterId);
+    }
+
     public File getChapterDir(String albumId, String chapterId) {
+        validateChapterIds(albumId, chapterId);
         return new File(baseDir, albumId + File.separator + chapterId);
     }
 
@@ -612,5 +618,14 @@ public class FileStore {
             }
         }
         dir.delete();
+    }
+
+    private static void validatePathSegment(String fieldName, String value) {
+        if (value == null || value.trim().isEmpty()
+            || ".".equals(value) || "..".equals(value)
+            || value.indexOf('/') >= 0 || value.indexOf('\\') >= 0
+            || new File(value).isAbsolute()) {
+            throw new IllegalArgumentException(fieldName + " 必须是非空的单个路径段");
+        }
     }
 }

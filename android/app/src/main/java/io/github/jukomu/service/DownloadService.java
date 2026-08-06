@@ -83,6 +83,7 @@ public class DownloadService {
     @SuppressLint("NewApi")
     public String downloadChapter(String albumId, String chapterId,
                                   String albumTitle, String chapterTitle, String coverUrl) {
+        FileStore.validateChapterIds(albumId, chapterId);
         String taskId = albumId + "_" + chapterId;
 
         if (downloadDb.hasActiveOrCompleted(taskId)) {
@@ -431,10 +432,12 @@ public class DownloadService {
                                       String chapterId, int totalImages) {
         if (isCancelled(taskId)) return;
 
+        downloadDb.updateProgress(taskId, totalImages);
         downloadDb.updateStatus(taskId, STATUS_VERIFYING);
-        notifyProgress(taskId, albumId, chapterId, 0, totalImages,
+        notifyProgress(taskId, albumId, chapterId, totalImages, totalImages,
             STATUS_VERIFYING, null);
-        updateDownloadNotification(taskId, 0, totalImages, STATUS_VERIFYING, null);
+        updateDownloadNotification(taskId, totalImages, totalImages,
+            STATUS_VERIFYING, null);
 
         ChapterValidation result = validateCompletedDownload(
             taskId, albumId, chapterId, totalImages);

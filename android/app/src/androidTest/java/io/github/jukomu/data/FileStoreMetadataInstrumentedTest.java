@@ -22,6 +22,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
+import static org.junit.Assert.assertTrue;
 
 @RunWith(AndroidJUnit4.class)
 public class FileStoreMetadataInstrumentedTest {
@@ -96,6 +97,25 @@ public class FileStoreMetadataInstrumentedTest {
 
         assertThrows(IOException.class,
             () -> fileStore.saveMeta("album", "chapter", new JSONObject()));
+    }
+
+    @Test
+    public void unsafeChapterIdsCannotDeleteOutsideBaseDirectory() throws Exception {
+        File outsideDir = new File(testBaseDir.getParentFile(),
+            testBaseDir.getName() + "-outside");
+        File marker = new File(outsideDir, "marker.txt");
+        try {
+            assertTrue(outsideDir.mkdirs());
+            Files.write(marker.toPath(), new byte[]{1});
+
+            assertThrows(IllegalArgumentException.class,
+                () -> fileStore.deleteChapter("..", outsideDir.getName()));
+            assertThrows(IllegalArgumentException.class,
+                () -> fileStore.deleteChapter("", ""));
+            assertTrue(marker.isFile());
+        } finally {
+            deleteRecursive(outsideDir);
+        }
     }
 
     private static void deleteRecursive(File file) {

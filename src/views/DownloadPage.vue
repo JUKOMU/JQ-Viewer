@@ -489,20 +489,17 @@ const hasTasks = computed(() => tasks.value.length > 0 || importedPdfs.value.len
 
 const activeTasks = computed(() =>
   tasks.value.filter(
-    (t) => t.status === 'queued' || t.status === 'downloading' || t.status === 'paused',
+    (t) =>
+      t.status === 'queued' ||
+      t.status === 'downloading' ||
+      t.status === 'paused' ||
+      t.status === 'verifying',
   ),
 )
 
-const isFullyDownloadedFailure = (task: DownloadTask) =>
-  task.status === 'failed' && task.totalPages > 0 && task.downloadedPages >= task.totalPages
+const completedTasks = computed(() => tasks.value.filter((t) => t.status === 'completed'))
 
-const completedTasks = computed(() =>
-  tasks.value.filter((t) => t.status === 'completed' || isFullyDownloadedFailure(t)),
-)
-
-const failedTasks = computed(() =>
-  tasks.value.filter((t) => t.status === 'failed' && !isFullyDownloadedFailure(t)),
-)
+const failedTasks = computed(() => tasks.value.filter((t) => t.status === 'failed'))
 
 const sortedActiveTasks = computed(() => sortTasks(activeTasks.value))
 const sortedFailedTasks = computed(() => sortTasks(failedTasks.value))
@@ -774,6 +771,18 @@ onMounted(async () => {
       task.status = 'downloading'
       updateSpeedSample(task, data.downloadedBytes, data.speed)
       OfflineDownloadService.updateProgress(data.taskId, data.downloadedPages, data.totalPages)
+    } else if (data.status === 'verifying') {
+      task.downloadedPages = data.downloadedPages
+      task.totalPages = data.totalPages || task.totalPages
+      task.status = 'verifying'
+      task.speed = 0
+      speedSamples.delete(data.taskId)
+      OfflineDownloadService.updateStatus(
+        data.taskId,
+        'verifying',
+        data.downloadedPages,
+        task.totalPages,
+      )
     } else if (data.status === 'paused') {
       task.downloadedPages = data.downloadedPages
       task.totalPages = data.totalPages || task.totalPages
@@ -813,19 +822,6 @@ onMounted(async () => {
       task.totalSize = data.totalSize
       task.speed = 0
       speedSamples.delete(data.taskId)
-      if (isFullyDownloadedFailure({ ...task, status: 'failed' })) {
-        task.status = 'completed'
-        task.error = undefined
-        task.completedAt = Date.now()
-        OfflineDownloadService.updateStatus(
-          data.taskId,
-          'completed',
-          data.downloadedPages,
-          data.totalPages,
-        )
-        void syncDownloadState()
-        return
-      }
       task.status = 'failed'
       task.error = data.error
       OfflineDownloadService.updateStatus(

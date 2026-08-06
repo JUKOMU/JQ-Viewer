@@ -3,9 +3,9 @@ package io.github.jukomu.service;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.util.Log;
-
 import io.github.jukomu.data.DownloadStore;
 import io.github.jukomu.data.FileStore;
+import io.github.jukomu.data.ImageFileValidator;
 import io.github.jukomu.jmcomic.api.download.task.BaseDownloadTask;
 import io.github.jukomu.jmcomic.api.model.JmImage;
 import io.github.jukomu.jmcomic.api.model.JmPhoto;
@@ -15,10 +15,9 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.nio.file.Path;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 
@@ -34,6 +33,7 @@ public class DownloadService {
     static final String STATUS_QUEUED = "queued";
     static final String STATUS_DOWNLOADING = "downloading";
     static final String STATUS_PAUSED = "paused";
+    static final String STATUS_VERIFYING = "verifying";
     static final String STATUS_COMPLETED = "completed";
     static final String STATUS_FAILED = "failed";
 
@@ -83,6 +83,7 @@ public class DownloadService {
     @SuppressLint("NewApi")
     public String downloadChapter(String albumId, String chapterId,
                                   String albumTitle, String chapterTitle, String coverUrl) {
+        FileStore.validateChapterIds(albumId, chapterId);
         String taskId = albumId + "_" + chapterId;
 
         if (downloadDb.hasActiveOrCompleted(taskId)) {
@@ -97,18 +98,16 @@ public class DownloadService {
         cancelledTaskIds.remove(taskId);
         downloadDb.insertTask(taskId, albumId, chapterId,
             albumTitle, chapterTitle, coverUrl);
+        notificationHelper.registerTask(taskId);
         startForegroundTask(taskId);
-        showQueuedNotification(taskId, chapterTitle);
 
         prepareExecutor.submit(() -> {
             try {
                 if (downloadDb.getTask(taskId) == null) {
-                    removeQueuedNotification(taskId);
                     cleanupTaskMapping(taskId);
                     cancelNotification(taskId);
                     return;
                 }
-                showPreparingNotification(taskId, albumTitle, chapterId, chapterTitle, coverUrl);
                 JmPhoto photo = client.getPhoto(chapterId);
                 List<JmImage> images = photo.getImages();
 
@@ -154,8 +153,6 @@ public class DownloadService {
                     images.size(), downloadDb, fileStore, this));
 
                 downloadDb.updateStatus(taskId, STATUS_DOWNLOADING);
-                showDownloadNotification(taskId, albumTitle, chapterId, chapterTitle,
-                    coverUrl, 0, images.size(), true);
                 notifyProgress(taskId, albumId, chapterId, 0, images.size(),
                     STATUS_DOWNLOADING, null);
 
@@ -165,7 +162,6 @@ public class DownloadService {
                     downloadDb.deleteTask(taskId);
                     cleanupTaskMapping(taskId);
                     cancelNotification(taskId);
-                    removeQueuedNotification(taskId);
                     return;
                 }
 
@@ -175,8 +171,8 @@ public class DownloadService {
                 }
             } catch (Exception e) {
                 downloadDb.updateFailed(taskId, 0, e.getMessage());
-                showFailedNotification(taskId, albumTitle, chapterId, chapterTitle,
-                    coverUrl, e.getMessage());
+                showFailedNotification(taskId, albumTitle, chapterId,
+                    chapterTitle, e.getMessage());
                 notifyProgress(taskId, albumId, chapterId, 0, 0,
                     STATUS_FAILED, e.getMessage());
                 cleanupTaskMapping(taskId);
@@ -237,6 +233,8 @@ public class DownloadService {
                 }
             }
             completeCancel(taskId, task);
+        } else if (STATUS_VERIFYING.equals(status)) {
+            throw new IllegalStateException("校验中的任务不能取消");
         } else {
             completeCancel(taskId, task);
         }
@@ -314,7 +312,6 @@ public class DownloadService {
         downloadDb.deleteTask(taskId);
         cleanupTaskMapping(taskId);
         cancelNotification(taskId);
-        removeQueuedNotification(taskId);
     }
 
     public JSONObject getDownloadedPhoto(String albumId, String chapterId) {
@@ -383,15 +380,16 @@ public class DownloadService {
             stopForegroundTask(taskId);
             showPausedNotification(taskId, albumTitle, chapterId, chapterTitle, coverUrl,
                 downloadedPages, totalPages);
+        } else if (STATUS_VERIFYING.equals(status)) {
+            notificationHelper.showVerifying(notificationId(taskId), taskId, albumTitle,
+                chapterId, chapterTitle, coverUrl);
         } else if (STATUS_COMPLETED.equals(status)) {
-            showCompletedNotification(taskId, albumTitle, chapterId, chapterTitle, coverUrl);
+            showCompletedNotification(taskId, albumTitle, chapterId, chapterTitle);
         } else if (STATUS_FAILED.equals(status)) {
             if ("已取消".equals(error)) {
                 cancelNotification(taskId);
-                removeQueuedNotification(taskId);
             } else {
-                showFailedNotification(taskId, albumTitle, chapterId, chapterTitle,
-                    coverUrl, error);
+                showFailedNotification(taskId, albumTitle, chapterId, chapterTitle, error);
             }
         }
     }
@@ -430,6 +428,179 @@ public class DownloadService {
         }
     }
 
+    void finishDownloadWithValidation(String taskId, String albumId,
+                                      String chapterId, int totalImages) {
+        if (isCancelled(taskId)) return;
+
+        downloadDb.updateProgress(taskId, totalImages);
+        downloadDb.updateStatus(taskId, STATUS_VERIFYING);
+        notifyProgress(taskId, albumId, chapterId, totalImages, totalImages,
+            STATUS_VERIFYING, null);
+        updateDownloadNotification(taskId, totalImages, totalImages,
+            STATUS_VERIFYING, null);
+
+        ChapterValidation result = validateCompletedDownload(
+            taskId, albumId, chapterId, totalImages);
+
+        if (isCancelled(taskId)) return;
+
+        long totalSize = calcChapterFileSize(albumId, chapterId);
+        downloadDb.updateSize(taskId, totalSize);
+        if (!result.valid) {
+            downloadDb.updateFailed(taskId, result.verifiedPages, result.error);
+            updateDownloadNotification(taskId, result.verifiedPages,
+                totalImages, STATUS_FAILED, result.error);
+            notifyProgress(taskId, albumId, chapterId, result.verifiedPages,
+                totalImages, STATUS_FAILED, result.error, 0, totalSize);
+            cleanupTaskMapping(taskId);
+            return;
+        }
+
+        Integer firstSortOrder = fileStore.getFirstImageSortOrder(albumId, chapterId);
+        downloadDb.updateCompleted(taskId, totalImages,
+            firstSortOrder != null ? firstSortOrder : 1);
+        updateDownloadNotification(taskId, totalImages,
+            totalImages, STATUS_COMPLETED, null);
+        notifyProgress(taskId, albumId, chapterId, totalImages,
+            totalImages, STATUS_COMPLETED, null, 0, totalSize);
+        cleanupTaskMapping(taskId);
+    }
+
+    private ChapterValidation validateCompletedDownload(String taskId,
+                                                        String albumId,
+                                                        String chapterId,
+                                                        int totalImages) {
+        JSONObject meta;
+        try {
+            meta = fileStore.readMeta(albumId, chapterId);
+        } catch (FileNotFoundException error) {
+            return ChapterValidation.failure(0, "meta.json 缺失");
+        } catch (org.json.JSONException error) {
+            return ChapterValidation.failure(0, "meta.json 内容无效");
+        } catch (java.io.IOException error) {
+            Log.e(TAG, "meta.json 读取失败: " + taskId, error);
+            return ChapterValidation.failure(0, "meta.json 读取失败");
+        }
+
+        JSONObject databaseTask = downloadDb.getTask(taskId);
+        if (databaseTask == null
+            || !albumId.equals(requiredString(databaseTask, "albumId"))
+            || !chapterId.equals(requiredString(databaseTask, "chapterId"))
+            || databaseTask.optInt("totalPages", -1) != totalImages) {
+            return ChapterValidation.failure(0, "DB 与 meta.json 记录不一致");
+        }
+
+        List<JSONObject> databaseImages = downloadDb.getImages(taskId);
+        JSONArray metaImages = meta.optJSONArray("images");
+        if (!sameImageManifest(albumId, chapterId, totalImages,
+            databaseImages, meta, metaImages)) {
+            return ChapterValidation.failure(0, "DB 与 meta.json 记录不一致");
+        }
+
+        int verifiedPages = 0;
+        boolean allValid = true;
+        for (JSONObject image : databaseImages) {
+            String filename = image.optString("filename", "");
+            File imageFile = fileStore.getExpectedImageFile(
+                albumId, chapterId, filename);
+
+            try {
+                if (ImageFileValidator.validateFull(imageFile)) {
+                    verifiedPages++;
+                    continue;
+                }
+
+                allValid = false;
+                if (imageFile != null && imageFile.isFile() && !imageFile.delete()) {
+                    Log.w(TAG, "校验失败图片删除失败: " + imageFile.getPath());
+                }
+            } catch (OutOfMemoryError error) {
+                Log.e(TAG, "图片完整校验资源不足: " + filename, error);
+                return ChapterValidation.failure(verifiedPages, "图片校验资源不足");
+            }
+        }
+
+        return allValid
+            ? ChapterValidation.success(verifiedPages)
+            : ChapterValidation.failure(verifiedPages, "至少一张图片不可用");
+    }
+
+    private boolean sameImageManifest(String albumId, String chapterId,
+                                      int totalImages, List<JSONObject> databaseImages,
+                                      JSONObject meta, JSONArray metaImages) {
+        if (databaseImages == null || metaImages == null
+            || databaseImages.size() != totalImages
+            || metaImages.length() != totalImages
+            || metaImages.length() != databaseImages.size()
+            || !albumId.equals(requiredString(meta, "albumId"))
+            || !chapterId.equals(requiredString(meta, "chapterId"))
+            || meta.optInt("totalPages", -1) != totalImages) {
+            return false;
+        }
+
+        Map<Integer, JSONObject> databaseBySortOrder = new HashMap<>();
+        for (JSONObject image : databaseImages) {
+            String filename = requiredString(image, "filename");
+            String photoId = requiredString(image, "photoId");
+            if (filename == null || photoId == null) return false;
+
+            int sortOrder = image.optInt("sortOrder", Integer.MIN_VALUE);
+            if (sortOrder == Integer.MIN_VALUE
+                || databaseBySortOrder.put(sortOrder, image) != null) {
+                return false;
+            }
+        }
+
+        Set<Integer> seenSortOrders = new HashSet<>();
+        for (int index = 0; index < metaImages.length(); index++) {
+            JSONObject image = metaImages.optJSONObject(index);
+            if (image == null) return false;
+
+            String filename = requiredString(image, "filename");
+            String photoId = requiredString(image, "photoId");
+            int sortOrder = image.optInt("sortOrder", Integer.MIN_VALUE);
+            if (filename == null || photoId == null
+                || sortOrder == Integer.MIN_VALUE
+                || !seenSortOrders.add(sortOrder)) {
+                return false;
+            }
+
+            JSONObject databaseImage = databaseBySortOrder.get(sortOrder);
+            if (databaseImage == null
+                || !filename.equals(requiredString(databaseImage, "filename"))
+                || !photoId.equals(requiredString(databaseImage, "photoId"))) {
+                return false;
+            }
+        }
+        return seenSortOrders.size() == databaseBySortOrder.size();
+    }
+
+    private String requiredString(JSONObject object, String key) {
+        if (object == null || !object.has(key) || object.isNull(key)) return null;
+        String value = object.optString(key, null);
+        return value == null || value.trim().isEmpty() ? null : value;
+    }
+
+    private static final class ChapterValidation {
+        private final boolean valid;
+        private final int verifiedPages;
+        private final String error;
+
+        private ChapterValidation(boolean valid, int verifiedPages, String error) {
+            this.valid = valid;
+            this.verifiedPages = verifiedPages;
+            this.error = error;
+        }
+
+        private static ChapterValidation success(int pages) {
+            return new ChapterValidation(true, pages, null);
+        }
+
+        private static ChapterValidation failure(int pages, String error) {
+            return new ChapterValidation(false, pages, error);
+        }
+    }
+
     private void completeCancel(String taskId, JSONObject task) {
         cancelledTaskIds.add(taskId);
         pendingCancel.remove(taskId);
@@ -439,7 +610,6 @@ public class DownloadService {
         downloadDb.deleteImages(taskId);
         downloadDb.deleteTask(taskId);
         cancelNotification(taskId);
-        removeQueuedNotification(taskId);
         notifyProgress(taskId, albumId, chapterId, 0,
             task.optInt("totalPages"), "cancelled", "已取消");
         cleanupTaskMapping(taskId);
@@ -456,23 +626,10 @@ public class DownloadService {
         return NotificationIds.downloadTask(taskId);
     }
 
-    private void showQueuedNotification(String taskId, String chapterTitle) {
-        notificationHelper.showQueued(taskId, chapterTitle);
-    }
-
-    private void showPreparingNotification(String taskId, String albumTitle,
-                                           String chapterId, String chapterTitle,
-                                           String coverUrl) {
-        removeQueuedNotification(taskId);
-        notificationHelper.showPreparing(notificationId(taskId), taskId, albumTitle,
-            chapterId, chapterTitle, coverUrl);
-    }
-
     private void showDownloadNotification(String taskId, String albumTitle,
                                           String chapterId, String chapterTitle,
                                           String coverUrl,
                                           int downloadedPages, int totalPages, boolean force) {
-        removeQueuedNotification(taskId);
         long now = System.currentTimeMillis();
         Long last = lastNotificationAt.get(taskId);
         if (!force && last != null && now - last < 1000) return;
@@ -485,34 +642,28 @@ public class DownloadService {
                                         String chapterId, String chapterTitle,
                                         String coverUrl,
                                         int downloadedPages, int totalPages) {
-        removeQueuedNotification(taskId);
         notificationHelper.showPaused(notificationId(taskId), taskId, albumTitle,
             chapterId, chapterTitle, coverUrl, downloadedPages, totalPages);
     }
 
     private void showCompletedNotification(String taskId, String albumTitle,
-                                           String chapterId, String chapterTitle,
-                                           String coverUrl) {
-        removeQueuedNotification(taskId);
-        notificationHelper.showComplete(notificationId(taskId), albumTitle,
-            chapterId, chapterTitle, coverUrl);
+                                           String chapterId, String chapterTitle) {
+        lastNotificationAt.remove(taskId);
+        notificationHelper.showComplete(notificationId(taskId), taskId,
+            albumTitle, chapterId, chapterTitle);
     }
 
     private void showFailedNotification(String taskId, String albumTitle,
                                         String chapterId, String chapterTitle,
-                                        String coverUrl, String error) {
-        removeQueuedNotification(taskId);
-        notificationHelper.showError(notificationId(taskId), albumTitle,
-            chapterId, chapterTitle, coverUrl, error);
+                                        String error) {
+        lastNotificationAt.remove(taskId);
+        notificationHelper.showError(notificationId(taskId), taskId,
+            albumTitle, chapterId, chapterTitle, error);
     }
 
     private void cancelNotification(String taskId) {
         lastNotificationAt.remove(taskId);
-        notificationHelper.cancel(notificationId(taskId));
-    }
-
-    private void removeQueuedNotification(String taskId) {
-        notificationHelper.removeQueued(taskId);
+        notificationHelper.cancelTask(notificationId(taskId), taskId);
     }
 
     private void startForegroundTask(String taskId) {

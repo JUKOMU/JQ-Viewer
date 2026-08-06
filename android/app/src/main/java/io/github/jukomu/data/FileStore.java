@@ -5,10 +5,14 @@ import android.content.Context;
 import android.media.MediaScannerConnection;
 import android.os.Environment;
 import android.util.Log;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -111,7 +115,13 @@ public class FileStore {
 
     // ---- 目录/文件操作 ----
 
+    public static void validateChapterIds(String albumId, String chapterId) {
+        validatePathSegment("albumId", albumId);
+        validatePathSegment("chapterId", chapterId);
+    }
+
     public File getChapterDir(String albumId, String chapterId) {
+        validateChapterIds(albumId, chapterId);
         return new File(baseDir, albumId + File.separator + chapterId);
     }
 
@@ -124,25 +134,62 @@ public class FileStore {
     }
 
     @SuppressLint("NewApi")
-    public void saveMeta(String albumId, String chapterId, JSONObject metaJson) {
+    public void saveMeta(String albumId, String chapterId, JSONObject metaJson)
+            throws IOException {
+        File dir = ensureChapterDir(albumId, chapterId);
+        File target = new File(dir, META_FILE);
+        File temp = new File(dir, META_FILE + ".tmp");
+        final byte[] bytes;
         try {
-            File dir = ensureChapterDir(albumId, chapterId);
-            File metaFile = new File(dir, META_FILE);
-            Files.write(metaFile.toPath(), metaJson.toString(2).getBytes("UTF-8"));
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to save meta.json", e);
+            bytes = metaJson.toString(2).getBytes(StandardCharsets.UTF_8);
+        } catch (JSONException error) {
+            throw new IOException("meta.json 序列化失败", error);
+        }
+
+        try {
+            Files.write(temp.toPath(), bytes);
+            try {
+                Files.move(temp.toPath(), target.toPath(),
+                    StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING);
+            } catch (AtomicMoveNotSupportedException error) {
+                Files.move(temp.toPath(), target.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (IOException error) {
+            try {
+                Files.deleteIfExists(temp.toPath());
+            } catch (IOException cleanupError) {
+                error.addSuppressed(cleanupError);
+            }
+            throw error;
         }
     }
 
     @SuppressLint("NewApi")
-    JSONObject readMeta(String albumId, String chapterId) {
+    public JSONObject readMeta(String albumId, String chapterId)
+            throws IOException, JSONException {
+        File metaFile = new File(getChapterDir(albumId, chapterId), META_FILE);
+        if (!metaFile.isFile()) {
+            throw new FileNotFoundException(metaFile.getPath());
+        }
+
+        byte[] bytes = Files.readAllBytes(metaFile.toPath());
+        return new JSONObject(new String(bytes, StandardCharsets.UTF_8));
+    }
+
+    public File getExpectedImageFile(String albumId, String chapterId,
+                                     String expectedFilename) {
+        if (expectedFilename == null || expectedFilename.trim().isEmpty()) {
+            return null;
+        }
+
         try {
-            File metaFile = new File(getChapterDir(albumId, chapterId), META_FILE);
-            if (!metaFile.exists()) return null;
-            byte[] bytes = Files.readAllBytes(metaFile.toPath());
-            return new JSONObject(new String(bytes, "UTF-8"));
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to read meta.json", e);
+            return resolveImageFile(
+                getChapterDir(albumId, chapterId),
+                expectedFilename);
+        } catch (IOException error) {
+            Log.w(TAG, "预期图片文件查询失败", error);
             return null;
         }
     }
@@ -571,5 +618,14 @@ public class FileStore {
             }
         }
         dir.delete();
+    }
+
+    private static void validatePathSegment(String fieldName, String value) {
+        if (value == null || value.trim().isEmpty()
+            || ".".equals(value) || "..".equals(value)
+            || value.indexOf('/') >= 0 || value.indexOf('\\') >= 0
+            || new File(value).isAbsolute()) {
+            throw new IllegalArgumentException(fieldName + " 必须是非空的单个路径段");
+        }
     }
 }

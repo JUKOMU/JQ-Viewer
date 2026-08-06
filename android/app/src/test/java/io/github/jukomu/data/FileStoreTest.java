@@ -47,4 +47,22 @@ public class FileStoreTest {
         assertNull(FileStore.resolveImageFile(chapterDir, "../../outside.jpg"));
         assertNull(FileStore.resolveImageFile(chapterDir, outside.getAbsolutePath()));
     }
+
+    @Test
+    public void validatesChapterIdsAsSinglePathSegments() {
+        FileStore.validateChapterIds("album", "chapter");
+
+        assertThrows(IllegalArgumentException.class,
+            () -> FileStore.validateChapterIds(null, "chapter"));
+        assertThrows(IllegalArgumentException.class,
+            () -> FileStore.validateChapterIds("", "chapter"));
+        assertThrows(IllegalArgumentException.class,
+            () -> FileStore.validateChapterIds("album", " "));
+        assertThrows(IllegalArgumentException.class,
+            () -> FileStore.validateChapterIds("..", "chapter"));
+        assertThrows(IllegalArgumentException.class,
+            () -> FileStore.validateChapterIds("album/child", "chapter"));
+        assertThrows(IllegalArgumentException.class,
+            () -> FileStore.validateChapterIds("album", "parent\\child"));
+    }
 }

@@ -69,6 +69,7 @@ export const OfflineDownloadService = {
       if (downloadedPages !== undefined) task.downloadedPages = downloadedPages
       if (totalPages !== undefined) task.totalPages = totalPages
       if (error !== undefined) task.error = error
+      if (status === 'verifying') task.error = undefined
       if (status === 'completed') task.completedAt = Date.now()
       writeTasks(tasks)
     }

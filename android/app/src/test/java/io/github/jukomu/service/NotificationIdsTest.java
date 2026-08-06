@@ -18,6 +18,8 @@ public class NotificationIdsTest {
         assertTrue(fixedIds.add(NotificationIds.PDF_FOREGROUND));
         assertTrue(fixedIds.add(NotificationIds.DOWNLOAD_QUEUE_SUMMARY));
         assertTrue(fixedIds.add(NotificationIds.DOWNLOAD_FOREGROUND));
+        assertTrue(fixedIds.add(NotificationIds.DOWNLOAD_COMPLETED_SUMMARY));
+        assertTrue(fixedIds.add(NotificationIds.DOWNLOAD_FAILED_SUMMARY));
 
         for (int fixedId : fixedIds) {
             assertFalse(NotificationIds.containsPdfTask(fixedId));

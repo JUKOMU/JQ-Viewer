@@ -9,6 +9,7 @@ import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.os.Build;
+import android.service.notification.StatusBarNotification;
 import android.util.Log;
 import android.widget.RemoteViews;
 import androidx.core.app.NotificationCompat;
@@ -19,7 +20,13 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.ArrayDeque;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -33,16 +40,30 @@ public class DownloadNotificationHelper {
     private static final int ICON = R.mipmap.ic_launcher;
     private static final int MAX_COVER_BYTES = 3 * 1024 * 1024;
     private static final int COVER_TARGET_SIZE = 256;
+    private static final int MAX_VISIBLE_TASK_NOTIFICATIONS = 12;
+    private static final int MAX_RECENT_RESULTS = 5;
+    private static final long INVALID_NOTIFICATION_VERSION = -1L;
 
     private final Context context;
     private final NotificationManager manager;
-    private final Map<String, String> queuedTasks = new ConcurrentHashMap<>();
     private final Map<String, Bitmap> coverCache = new ConcurrentHashMap<>();
+    private final Object notificationStateLock = new Object();
+    private final Set<String> pendingTaskIds = new HashSet<>();
+    private final Set<String> visibleTaskIds = new HashSet<>();
+    private final Set<String> pausedTaskIds = new LinkedHashSet<>();
+    private final Map<String, Long> taskNotificationVersions = new HashMap<>();
+    private final ArrayDeque<String> recentCompleted = new ArrayDeque<>();
+    private final ArrayDeque<String> recentFailed = new ArrayDeque<>();
+    private long nextNotificationVersion;
+    private int completedCount;
+    private int failedCount;
+    private int cancelledCount;
 
     public DownloadNotificationHelper(Context context) {
         this.context = context.getApplicationContext();
         this.manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
         createChannel();
+        clearStaleDownloadNotifications();
     }
 
     private void createChannel() {
@@ -58,59 +79,32 @@ public class DownloadNotificationHelper {
         }
     }
 
-    public void showQueued(String taskId, String chapterTitle) {
-        queuedTasks.put(taskId, chapterTitle);
-        updateQueuedSummary();
-    }
-
-    public void removeQueued(String taskId) {
-        queuedTasks.remove(taskId);
-        updateQueuedSummary();
-    }
-
-    private void updateQueuedSummary() {
-        if (queuedTasks.isEmpty()) {
-            cancel(NotificationIds.DOWNLOAD_QUEUE_SUMMARY);
-            return;
+    public void registerTask(String taskId) {
+        synchronized (notificationStateLock) {
+            if (pendingTaskIds.isEmpty()) {
+                for (String visibleTaskId : visibleTaskIds) {
+                    cancel(NotificationIds.downloadTask(visibleTaskId));
+                }
+                visibleTaskIds.clear();
+                pausedTaskIds.clear();
+                taskNotificationVersions.clear();
+                completedCount = 0;
+                failedCount = 0;
+                cancelledCount = 0;
+                recentCompleted.clear();
+                recentFailed.clear();
+                cancel(NotificationIds.DOWNLOAD_COMPLETED_SUMMARY);
+                cancel(NotificationIds.DOWNLOAD_FAILED_SUMMARY);
+            }
+            pendingTaskIds.add(taskId);
         }
-
-        NotificationCompat.InboxStyle style = new NotificationCompat.InboxStyle()
-            .setBigContentTitle("下载队列 (" + queuedTasks.size() + ")");
-        int count = 0;
-        for (String title : queuedTasks.values()) {
-            if (count >= 5) break;
-            style.addLine(title);
-            count++;
-        }
-        if (queuedTasks.size() > count) {
-            style.setSummaryText("还有 " + (queuedTasks.size() - count) + " 个任务");
-        }
-
-        notify(NotificationIds.DOWNLOAD_QUEUE_SUMMARY, new NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(ICON)
-            .setContentTitle("下载队列")
-            .setContentText("已排队 " + queuedTasks.size() + " 个章节")
-            .setStyle(style)
-            .setContentIntent(createLaunchIntent(NotificationIds.DOWNLOAD_QUEUE_SUMMARY))
-            .setAutoCancel(false)
-            .setOngoing(false)
-            .setOnlyAlertOnce(true)
-            .build());
-    }
-
-    public void showPreparing(int notificationId, String taskId, String albumTitle,
-                              String chapterId, String chapterTitle, String coverUrl) {
-        NotificationCompat.Builder builder = buildTaskNotification(
-            taskId, albumTitle, chapterId, chapterTitle, coverUrl,
-            0, 0, "准备下载", true);
-        builder.addAction(ICON, "取消", createActionIntent(
-            DownloadNotificationActionReceiver.ACTION_CANCEL, taskId));
-        notify(notificationId, builder.build());
     }
 
     public void showProgress(int notificationId, String taskId, String albumTitle,
                              String chapterId, String chapterTitle, String coverUrl,
                              int downloadedPages, int totalPages) {
+        long version = beginTaskNotificationUpdate(taskId, true);
+        if (version == INVALID_NOTIFICATION_VERSION) return;
         NotificationCompat.Builder builder = buildTaskNotification(
             taskId, albumTitle, chapterId, chapterTitle, coverUrl,
             downloadedPages, totalPages, "正在下载", true);
@@ -118,12 +112,24 @@ public class DownloadNotificationHelper {
             DownloadNotificationActionReceiver.ACTION_PAUSE, taskId));
         builder.addAction(ICON, "取消", createActionIntent(
             DownloadNotificationActionReceiver.ACTION_CANCEL, taskId));
-        notify(notificationId, builder.build());
+        publishTaskNotification(notificationId, taskId, version, builder.build());
+    }
+
+    public void showVerifying(int notificationId, String taskId, String albumTitle,
+                              String chapterId, String chapterTitle, String coverUrl) {
+        long version = beginTaskNotificationUpdate(taskId, true);
+        if (version == INVALID_NOTIFICATION_VERSION) return;
+        NotificationCompat.Builder builder = buildTaskNotification(
+            taskId, albumTitle, chapterId, chapterTitle, coverUrl,
+            0, 0, "正在校验", true);
+        publishTaskNotification(notificationId, taskId, version, builder.build());
     }
 
     public void showPaused(int notificationId, String taskId, String albumTitle,
                            String chapterId, String chapterTitle, String coverUrl,
                            int downloadedPages, int totalPages) {
+        long version = beginTaskNotificationUpdate(taskId, false);
+        if (version == INVALID_NOTIFICATION_VERSION) return;
         NotificationCompat.Builder builder = buildTaskNotification(
             taskId, albumTitle, chapterId, chapterTitle, coverUrl,
             downloadedPages, totalPages, "下载已暂停", false);
@@ -131,36 +137,43 @@ public class DownloadNotificationHelper {
             DownloadNotificationActionReceiver.ACTION_RESUME, taskId));
         builder.addAction(ICON, "取消", createActionIntent(
             DownloadNotificationActionReceiver.ACTION_CANCEL, taskId));
-        notify(notificationId, builder.build());
+        publishTaskNotification(notificationId, taskId, version, builder.build());
     }
 
-    public void showComplete(int notificationId, String albumTitle, String chapterId,
-                             String chapterTitle, String coverUrl) {
-        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(ICON)
-            .setContentTitle("下载完成")
-            .setContentText(buildTitle(albumTitle, chapterTitle))
-            .setSubText(buildIdText(chapterId))
-            .setContentIntent(createLaunchIntent(notificationId))
-            .setAutoCancel(true)
-            .setOngoing(false);
-        applyCover(builder, coverUrl);
-        notify(notificationId, builder.build());
+    public void showComplete(int notificationId, String taskId, String albumTitle,
+                             String chapterId, String chapterTitle) {
+        synchronized (notificationStateLock) {
+            releaseTaskNotificationLocked(notificationId, taskId);
+            if (!pendingTaskIds.remove(taskId)) return;
+            completedCount++;
+            addRecentResult(recentCompleted,
+                buildResultTitle(albumTitle, chapterId, chapterTitle));
+            notify(NotificationIds.DOWNLOAD_COMPLETED_SUMMARY,
+                buildCompletedSummaryLocked());
+        }
     }
 
-    public void showError(int notificationId, String albumTitle, String chapterId,
-                          String chapterTitle, String coverUrl, String error) {
+    public void showError(int notificationId, String taskId, String albumTitle,
+                          String chapterId, String chapterTitle, String error) {
         String message = error != null && !error.isEmpty() ? error : "下载失败";
-        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(ICON)
-            .setContentTitle("下载失败: " + buildTitle(albumTitle, chapterTitle))
-            .setContentText(message)
-            .setSubText(buildIdText(chapterId))
-            .setContentIntent(createLaunchIntent(notificationId))
-            .setAutoCancel(true)
-            .setOngoing(false);
-        applyCover(builder, coverUrl);
-        notify(notificationId, builder.build());
+        synchronized (notificationStateLock) {
+            releaseTaskNotificationLocked(notificationId, taskId);
+            if (!pendingTaskIds.remove(taskId)) return;
+            failedCount++;
+            addRecentResult(recentFailed,
+                buildResultTitle(albumTitle, chapterId, chapterTitle) + ": " + message);
+            notify(NotificationIds.DOWNLOAD_FAILED_SUMMARY,
+                buildFailedSummaryLocked());
+        }
+    }
+
+    public void cancelTask(int notificationId, String taskId) {
+        synchronized (notificationStateLock) {
+            releaseTaskNotificationLocked(notificationId, taskId);
+            if (pendingTaskIds.remove(taskId)) {
+                cancelledCount++;
+            }
+        }
     }
 
     public void cancel(int notificationId) {
@@ -172,6 +185,127 @@ public class DownloadNotificationHelper {
             } catch (RuntimeException e) {
                 Log.w(TAG, "取消下载通知失败", e);
             }
+        }
+    }
+
+    private long beginTaskNotificationUpdate(String taskId, boolean active) {
+        synchronized (notificationStateLock) {
+            if (!pendingTaskIds.contains(taskId)) return INVALID_NOTIFICATION_VERSION;
+
+            if (!visibleTaskIds.contains(taskId)) {
+                if (visibleTaskIds.size() >= MAX_VISIBLE_TASK_NOTIFICATIONS) {
+                    if (!active || pausedTaskIds.isEmpty()) {
+                        return INVALID_NOTIFICATION_VERSION;
+                    }
+                    Iterator<String> pausedTasks = pausedTaskIds.iterator();
+                    String evictedTaskId = pausedTasks.next();
+                    pausedTasks.remove();
+                    visibleTaskIds.remove(evictedTaskId);
+                    taskNotificationVersions.remove(evictedTaskId);
+                    cancel(NotificationIds.downloadTask(evictedTaskId));
+                }
+                visibleTaskIds.add(taskId);
+            }
+
+            if (active) {
+                pausedTaskIds.remove(taskId);
+            } else {
+                pausedTaskIds.add(taskId);
+            }
+
+            long version = ++nextNotificationVersion;
+            taskNotificationVersions.put(taskId, version);
+            return version;
+        }
+    }
+
+    private void publishTaskNotification(int notificationId, String taskId,
+                                         long version, Notification notification) {
+        synchronized (notificationStateLock) {
+            Long currentVersion = taskNotificationVersions.get(taskId);
+            if (!pendingTaskIds.contains(taskId)
+                || !visibleTaskIds.contains(taskId)
+                || currentVersion == null
+                || currentVersion != version) {
+                return;
+            }
+            notify(notificationId, notification);
+        }
+    }
+
+    private void releaseTaskNotificationLocked(int notificationId, String taskId) {
+        visibleTaskIds.remove(taskId);
+        pausedTaskIds.remove(taskId);
+        taskNotificationVersions.remove(taskId);
+        cancel(notificationId);
+    }
+
+    private Notification buildCompletedSummaryLocked() {
+        boolean allCompleted = pendingTaskIds.isEmpty()
+            && failedCount == 0
+            && cancelledCount == 0;
+        NotificationCompat.InboxStyle style = new NotificationCompat.InboxStyle()
+            .setBigContentTitle(allCompleted ? "全部下载完成" : "下载完成");
+        for (String result : recentCompleted) {
+            style.addLine(result);
+        }
+        style.setSummaryText("已完成 " + completedCount + " 个章节");
+
+        return new NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(ICON)
+            .setContentTitle(allCompleted ? "全部下载完成" : "下载完成")
+            .setContentText("已完成 " + completedCount + " 个章节")
+            .setStyle(style)
+            .setContentIntent(createLaunchIntent(NotificationIds.DOWNLOAD_COMPLETED_SUMMARY))
+            .setOnlyAlertOnce(true)
+            .setAutoCancel(true)
+            .setOngoing(false)
+            .build();
+    }
+
+    private Notification buildFailedSummaryLocked() {
+        NotificationCompat.InboxStyle style = new NotificationCompat.InboxStyle()
+            .setBigContentTitle("下载失败");
+        for (String result : recentFailed) {
+            style.addLine(result);
+        }
+        style.setSummaryText("失败 " + failedCount + " 个章节");
+
+        return new NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(ICON)
+            .setContentTitle("下载失败")
+            .setContentText("失败 " + failedCount + " 个章节")
+            .setStyle(style)
+            .setContentIntent(createLaunchIntent(NotificationIds.DOWNLOAD_FAILED_SUMMARY))
+            .setOnlyAlertOnce(true)
+            .setAutoCancel(true)
+            .setOngoing(false)
+            .build();
+    }
+
+    private void addRecentResult(ArrayDeque<String> results, String result) {
+        results.addFirst(result);
+        while (results.size() > MAX_RECENT_RESULTS) {
+            results.removeLast();
+        }
+    }
+
+    private void clearStaleDownloadNotifications() {
+        cancel(NotificationIds.DOWNLOAD_QUEUE_SUMMARY);
+        cancel(NotificationIds.DOWNLOAD_COMPLETED_SUMMARY);
+        cancel(NotificationIds.DOWNLOAD_FAILED_SUMMARY);
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M || manager == null) return;
+
+        try {
+            for (StatusBarNotification notification : manager.getActiveNotifications()) {
+                if (NotificationIds.containsDownloadTask(notification.getId())) {
+                    manager.cancel(notification.getId());
+                }
+            }
+        } catch (SecurityException e) {
+            Log.d(TAG, "通知权限未授予，跳过清理旧下载通知", e);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "清理旧下载通知失败", e);
         }
     }
 
@@ -290,6 +424,17 @@ public class DownloadNotificationHelper {
     private String buildTitle(String albumTitle, String chapterTitle) {
         if (albumTitle != null && !albumTitle.isEmpty()) return albumTitle;
         return safeText(chapterTitle, "章节下载");
+    }
+
+    private String buildResultTitle(String albumTitle, String chapterId,
+                                    String chapterTitle) {
+        String safeChapterTitle = chapterTitle != null && !chapterTitle.trim().isEmpty()
+            ? chapterTitle
+            : safeText(chapterId, "章节");
+        if (albumTitle == null || albumTitle.trim().isEmpty()) {
+            return safeChapterTitle;
+        }
+        return albumTitle + " · " + safeChapterTitle;
     }
 
     private String buildIdText(String chapterId) {

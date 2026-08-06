@@ -274,6 +274,7 @@ export type DownloadStatus =
   | 'queued'
   | 'downloading'
   | 'paused'
+  | 'verifying'
   | 'completed'
   | 'failed'
   | 'cancelled'

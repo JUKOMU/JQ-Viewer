@@ -44,6 +44,9 @@
       <!-- 已暂停 -->
       <div v-else-if="cardStatus === 'paused'" class="status-tag paused">已暂停</div>
 
+      <!-- 校验中 -->
+      <div v-else-if="cardStatus === 'verifying'" class="status-tag verifying">校验中</div>
+
       <!-- 已完成 -->
       <div v-else-if="cardStatus === 'completed'" class="status-row">
         <span v-if="!isPdfEntry" class="tag completed">共 {{ displayTotalPages }} 页</span>
@@ -424,6 +427,11 @@ const onCardClick = () => {
 .status-tag.paused {
   background: #fff8e1;
   color: #f0a030;
+}
+
+.status-tag.verifying {
+  background: #eef3ff;
+  color: #5a78c8;
 }
 
 .status-row {

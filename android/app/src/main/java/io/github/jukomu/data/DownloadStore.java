@@ -9,7 +9,6 @@ import android.util.Log;
 
 import org.json.JSONObject;
 
-import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -210,7 +209,8 @@ public class DownloadStore extends SQLiteOpenHelper {
                 if (c.moveToFirst()) {
                     String status = c.getString(0);
                     return "queued".equals(status) || "downloading".equals(status)
-                        || "paused".equals(status) || "completed".equals(status);
+                        || "paused".equals(status) || "verifying".equals(status)
+                        || "completed".equals(status);
                 }
             } finally {
                 c.close();
@@ -220,8 +220,6 @@ public class DownloadStore extends SQLiteOpenHelper {
     }
 
     public List<JSONObject> getAllTasks() {
-        normalizeFullyDownloadedFailures();
-
         List<JSONObject> list = new ArrayList<>();
         Cursor c = getReadableDatabase().query(TABLE_TASKS, null, null,
             null, null, null, COL_CREATED_AT + " DESC", "500");
@@ -243,8 +241,6 @@ public class DownloadStore extends SQLiteOpenHelper {
     }
 
     public JSONObject getTask(String taskId) {
-        normalizeFullyDownloadedFailures();
-
         Cursor c = getReadableDatabase().query(TABLE_TASKS, null,
             COL_TASK_ID + " = ?", new String[]{taskId},
             null, null, null);
@@ -326,124 +322,14 @@ public class DownloadStore extends SQLiteOpenHelper {
 
     // ========== 启动校验 ==========
 
-    public void validateOnStartup(File baseDir) {
+    public void validateOnStartup() {
         SQLiteDatabase db = getWritableDatabase();
-        db.beginTransaction();
-        try {
-            // 1. 僵尸恢复：queued/downloading → failed
-            ContentValues cvZombie = new ContentValues();
-            cvZombie.put(COL_STATUS, "failed");
-            cvZombie.put(COL_ERROR, "App restart, task interrupted");
-            db.update(TABLE_TASKS, cvZombie,
-                COL_STATUS + " IN ('queued', 'downloading', 'paused')", null);
-
-            // 2. 校验 completed 任务的文件完整性
-            Cursor c = db.query(TABLE_TASKS,
-                new String[]{COL_TASK_ID, COL_ALBUM_ID, COL_CHAPTER_ID, COL_TOTAL_PAGES},
-                COL_STATUS + " = ?", new String[]{"completed"},
-                null, null, null);
-            if (c != null) {
-                try {
-                    while (c.moveToNext()) {
-                        String taskId = c.getString(0);
-                        String aid = c.getString(1);
-                        String cid = c.getString(2);
-                        int total = c.getInt(3);
-
-                        File chapterDir = new File(baseDir,
-                            aid + File.separator + cid);
-                        if (!chapterDir.isDirectory()) {
-                            ContentValues cv = new ContentValues();
-                            cv.put(COL_STATUS, "failed");
-                            cv.put(COL_ERROR, "Download file directory missing");
-                            db.update(TABLE_TASKS, cv,
-                                COL_TASK_ID + " = ?", new String[]{taskId});
-                            Log.w(TAG, "Startup check: mark " + taskId + " failed (dir missing)");
-                            continue;
-                        }
-
-                        // 检查 meta.json 是否存在作为快速校验
-                        File metaFile = new File(chapterDir, "meta.json");
-                        if (!metaFile.exists()) {
-                            ContentValues cv = new ContentValues();
-                            cv.put(COL_STATUS, "failed");
-                            cv.put(COL_ERROR, "meta.json missing");
-                            db.update(TABLE_TASKS, cv,
-                                COL_TASK_ID + " = ?", new String[]{taskId});
-                            Log.w(TAG, "Startup check: mark " + taskId + " failed (meta missing)");
-                        }
-
-                        // 检查图片文件数量
-                        File[] imageFiles = chapterDir.listFiles(
-                            (dir, name) -> !name.equals("meta.json") && !name.endsWith(".tmp"));
-                        int fileCount = imageFiles != null ? imageFiles.length : 0;
-                        if (fileCount < total) {
-                            ContentValues cv = new ContentValues();
-                            cv.put(COL_STATUS, "failed");
-                            cv.put(COL_ERROR, "Missing images: " + fileCount + "/" + total);
-                            db.update(TABLE_TASKS, cv,
-                                COL_TASK_ID + " = ?", new String[]{taskId});
-                            Log.w(TAG, "Startup check: mark " + taskId
-                                + " failed (images " + fileCount + "/" + total + ")");
-                        }
-                    }
-                } finally {
-                    c.close();
-                }
-            }
-            db.setTransactionSuccessful();
-        } finally {
-            db.endTransaction();
-        }
-    }
-
-    // ========== 辅助 ==========
-
-    private void normalizeFullyDownloadedFailures() {
-        SQLiteDatabase db = getWritableDatabase();
-        Cursor c = db.query(TABLE_TASKS,
-            new String[]{COL_TASK_ID, COL_FIRST_IMAGE_SORT_ORDER},
-            COL_STATUS + " = ? AND " + COL_TOTAL_PAGES + " > 0 AND "
-                + COL_DOWNLOADED_PAGES + " >= " + COL_TOTAL_PAGES,
-            new String[]{"failed"}, null, null, null);
-        if (c != null) {
-            try {
-                while (c.moveToNext()) {
-                    String taskId = c.getString(0);
-                    ContentValues cv = new ContentValues();
-                    cv.put(COL_STATUS, "completed");
-                    cv.putNull(COL_ERROR);
-                    cv.put(COL_COMPLETED_AT, System.currentTimeMillis());
-                    if (c.isNull(1)) {
-                        Integer firstSortOrder = findFirstImageSortOrder(db, taskId);
-                        if (firstSortOrder != null) {
-                            cv.put(COL_FIRST_IMAGE_SORT_ORDER, firstSortOrder);
-                        }
-                    }
-                    db.update(TABLE_TASKS, cv,
-                        COL_TASK_ID + " = ?", new String[]{taskId});
-                }
-            } finally {
-                c.close();
-            }
-        }
-    }
-
-    private Integer findFirstImageSortOrder(SQLiteDatabase db, String taskId) {
-        Cursor c = db.query(TABLE_IMAGES,
-            new String[]{"MIN(" + COL_SORT_ORDER + ")"},
-            COL_TASK_ID + " = ?", new String[]{taskId},
-            null, null, null);
-        if (c != null) {
-            try {
-                if (c.moveToFirst() && !c.isNull(0)) {
-                    return c.getInt(0);
-                }
-            } finally {
-                c.close();
-            }
-        }
-        return null;
+        ContentValues values = new ContentValues();
+        values.put(COL_STATUS, "failed");
+        values.put(COL_ERROR, "应用重启，下载或校验中断");
+        db.update(TABLE_TASKS, values,
+            COL_STATUS + " IN (?, ?, ?, ?)",
+            new String[]{"queued", "downloading", "paused", "verifying"});
     }
 
     private JSONObject cursorToTaskJson(Cursor c) {

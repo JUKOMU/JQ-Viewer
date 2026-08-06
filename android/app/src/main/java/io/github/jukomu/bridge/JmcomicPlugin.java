@@ -163,13 +163,14 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
             List<JSONObject> zombieTasks = downloadDb.getAllTasks();
             for (JSONObject t : zombieTasks) {
                 String s = t.optString("status");
-                if ("queued".equals(s) || "downloading".equals(s) || "paused".equals(s)) {
+                if ("queued".equals(s) || "downloading".equals(s)
+                    || "paused".equals(s) || "verifying".equals(s)) {
                     FileStore.getInstance().deleteChapter(
                         t.optString("albumId"), t.optString("chapterId"));
                 }
             }
 
-            downloadDb.validateOnStartup(FileStore.getInstance().getBaseDir());
+            downloadDb.validateOnStartup();
         }
 
         // 读取用户期望容量，通过统一策略初始化实际缓存上限

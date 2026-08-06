@@ -5,6 +5,8 @@ final class NotificationIds {
     static final int PDF_FOREGROUND = 202001;
     static final int DOWNLOAD_QUEUE_SUMMARY = 203000;
     static final int DOWNLOAD_FOREGROUND = 203001;
+    static final int DOWNLOAD_COMPLETED_SUMMARY = 203002;
+    static final int DOWNLOAD_FAILED_SUMMARY = 203003;
 
     static final int PDF_TASK_BASE = 210000;
     static final int PDF_TASK_LIMIT = 219999;

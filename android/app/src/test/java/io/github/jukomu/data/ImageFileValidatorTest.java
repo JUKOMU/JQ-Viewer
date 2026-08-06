@@ -20,13 +20,13 @@ public class ImageFileValidatorTest {
     }
 
     @Test
-    public void fullAndQuickUseStaticSynchronizedMethods() throws Exception {
+    public void fullIsSynchronizedWhileQuickIsNot() throws Exception {
         Method full = ImageFileValidator.class.getMethod("validateFull", File.class);
         Method quick = ImageFileValidator.class.getMethod("validateQuick", File.class);
 
         assertTrue(Modifier.isStatic(full.getModifiers()));
         assertTrue(Modifier.isSynchronized(full.getModifiers()));
         assertTrue(Modifier.isStatic(quick.getModifiers()));
-        assertTrue(Modifier.isSynchronized(quick.getModifiers()));
+        assertFalse(Modifier.isSynchronized(quick.getModifiers()));
     }
 }

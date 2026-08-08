@@ -175,6 +175,9 @@ const router = useRouter()
 
 // ---- 路由数据 ----
 const albumId = computed(() => route.params.id as string)
+const requestedChapterId = computed(() =>
+  typeof route.query.chapterId === 'string' ? route.query.chapterId.trim() : '',
+)
 let detailStateAlbumId = albumId.value
 const coverUrl = computed(() => albumDetail.value?.image || (route.query.coverUrl as string) || '')
 const albumTitle = computed(() => albumDetail.value?.title || (route.query.title as string) || '')
@@ -566,20 +569,41 @@ const resetAlbumState = () => {
   loading.value = true
 }
 
+const resolveDetailChapterId = (album: AlbumDetail, requestedId: string): string => {
+  const requested = album.photoMetas.find((meta) => meta.id === requestedId)
+  if (requested) return requested.id
+
+  const matchedAlbumId = album.photoMetas.find((meta) => meta.id === albumId.value)
+  return matchedAlbumId?.id ?? album.photoMetas[0]?.id ?? ''
+}
+
 const loadAlbumData = async () => {
   detailStateAlbumId = albumId.value
   resetAlbumState()
 
   try {
-    const [album, photo] = await Promise.all([
-      JmcomicService.getAlbum(albumId.value),
-      JmcomicService.getPhoto(albumId.value),
-    ])
-    albumDetail.value = album
-    photoDetail.value = photo
+    const requestedId = requestedChapterId.value
+    let album: AlbumDetail
+    let initialPhoto: PhotoDetail | null = null
+    if (requestedId) {
+      album = await JmcomicService.getAlbum(albumId.value)
+    } else {
+      const [loadedAlbum, loadedPhoto] = await Promise.all([
+        JmcomicService.getAlbum(albumId.value),
+        JmcomicService.getPhoto(albumId.value),
+      ])
+      album = loadedAlbum
+      initialPhoto = loadedPhoto
+    }
 
-    const matched = album.photoMetas.find((m) => m.id === albumId.value)
-    selectedChapterId.value = matched?.id ?? album.photoMetas[0]?.id ?? ''
+    albumDetail.value = album
+    selectedChapterId.value = resolveDetailChapterId(album, requestedId)
+    if (selectedChapterId.value) {
+      photoDetail.value =
+        initialPhoto?.id === selectedChapterId.value
+          ? initialPhoto
+          : await JmcomicService.getPhoto(selectedChapterId.value)
+    }
 
     recordBrowseHistory()
   } catch {
@@ -1206,6 +1230,15 @@ watch(albumId, (newId) => {
     loadAlbumData()
     void restoreTabScrollPosition('info', 0)
   }
+})
+
+watch(requestedChapterId, (chapterId) => {
+  const album = albumDetail.value
+  if (!album || albumId.value !== detailStateAlbumId) return
+
+  const targetChapterId = resolveDetailChapterId(album, chapterId)
+  if (!targetChapterId || targetChapterId === selectedChapterId.value) return
+  void selectChapter(targetChapterId)
 })
 
 onActivated(() => {

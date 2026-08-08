@@ -51,35 +51,58 @@
 
         <template v-else>
           <section v-for="group in groups" :key="group.photoId" class="cache-group">
-            <div class="group-header">
+            <button
+              class="group-header"
+              type="button"
+              :aria-expanded="!isGroupCollapsed(group.photoId)"
+              :aria-controls="`cache-grid-${group.photoId}`"
+              :aria-label="`${isGroupCollapsed(group.photoId) ? '展开' : '收起'}章节 ${group.photoId} 图片缓存`"
+              @click="toggleGroup(group.photoId)"
+            >
               <span class="id-tag">{{ group.photoId }}</span>
-              <span class="group-summary"
-                >{{ group.pages.length }} 页 · {{ formatBytes(group.sizeBytes) }}</span
-              >
-            </div>
+              <span class="group-header-meta">
+                <span class="group-summary"
+                  >{{ group.pages.length }} 页 · {{ formatBytes(group.sizeBytes) }}</span
+                >
+                <IonIcon
+                  class="group-toggle-icon"
+                  :class="{ collapsed: isGroupCollapsed(group.photoId) }"
+                  :icon="chevronDownOutline"
+                  aria-hidden="true"
+                />
+              </span>
+            </button>
 
-            <div class="cache-grid">
-              <template v-for="item in group.items" :key="item.key">
-                <div v-if="item.gap" class="gap-slot" aria-hidden="true" />
-                <article v-else-if="item.page" class="cache-card">
-                  <div class="image-frame">
-                    <img
-                      :src="previewUrl(item.page)"
-                      :alt="`${group.photoId} 第 ${item.page.sortOrder} 页`"
-                      loading="lazy"
-                      decoding="async"
-                    />
-                  </div>
-                  <div class="cache-card-footer">
-                    <span class="page-number">第 {{ item.page.sortOrder }} 页</span>
-                    <span class="type-badges">
-                      <span v-if="item.page.full" class="type-badge full">原图</span>
-                      <span v-if="item.page.small" class="type-badge small">缩略图</span>
-                    </span>
-                  </div>
-                </article>
-              </template>
-            </div>
+            <Transition name="cache-drawer">
+              <div
+                v-if="!isGroupCollapsed(group.photoId)"
+                :id="`cache-grid-${group.photoId}`"
+                class="cache-grid-wrap"
+              >
+                <div class="cache-grid">
+                  <template v-for="item in group.items" :key="item.key">
+                    <div v-if="item.gap" class="gap-slot" aria-hidden="true" />
+                    <article v-else-if="item.page" class="cache-card">
+                      <div class="image-frame">
+                        <img
+                          :src="previewUrl(item.page)"
+                          :alt="`${group.photoId} 第 ${item.page.sortOrder} 页`"
+                          loading="lazy"
+                          decoding="async"
+                        />
+                      </div>
+                      <div class="cache-card-footer">
+                        <span class="page-number">第 {{ item.page.sortOrder }} 页</span>
+                        <span class="type-badges">
+                          <span v-if="item.page.full" class="type-badge full">原图</span>
+                          <span v-if="item.page.small" class="type-badge small">缩略图</span>
+                        </span>
+                      </div>
+                    </article>
+                  </template>
+                </div>
+              </div>
+            </Transition>
           </section>
         </template>
       </div>
@@ -102,7 +125,7 @@ import {
   IonTitle,
   IonToolbar,
 } from '@ionic/vue'
-import { refreshOutline } from 'ionicons/icons'
+import { chevronDownOutline, refreshOutline } from 'ionicons/icons'
 import { getImageUrl, JmcomicService } from '@/services/JmcomicService'
 import type { CacheCapacityInfo, ImageCacheEntry } from '@/services/JmcomicTypes'
 import type { CachePageView } from '@/utils/imageCacheView'
@@ -112,6 +135,7 @@ const loading = ref(true)
 const error = ref('')
 const entries = ref<ImageCacheEntry[]>([])
 const cacheInfo = ref<CacheCapacityInfo>({ capacityMb: 0, usedMb: 0 })
+const collapsedGroupIds = ref<Set<string>>(new Set())
 
 const groups = computed(() => buildImageCacheGroups(entries.value))
 const cachedPageCount = computed(() =>
@@ -149,6 +173,20 @@ async function loadCache() {
 
 function previewUrl(page: CachePageView): string {
   return getImageUrl(page.photoId, page.sortOrder, page.small ? 'thumb' : 'image')
+}
+
+function isGroupCollapsed(photoId: string): boolean {
+  return collapsedGroupIds.value.has(photoId)
+}
+
+function toggleGroup(photoId: string) {
+  const next = new Set(collapsedGroupIds.value)
+  if (next.has(photoId)) {
+    next.delete(photoId)
+  } else {
+    next.add(photoId)
+  }
+  collapsedGroupIds.value = next
 }
 
 function formatBytes(bytes: number): string {
@@ -229,12 +267,54 @@ function formatBytes(bytes: number): string {
 }
 
 .cache-group + .cache-group {
-  margin-top: 24px;
+  margin-top: 14px;
+}
+
+.cache-group {
+  overflow: hidden;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 2px 10px rgba(115, 67, 38, 0.08);
 }
 
 .group-header {
+  width: 100%;
+  min-height: 44px;
   justify-content: space-between;
-  margin: 0 0 9px 2px;
+  gap: 10px;
+  margin: 0;
+  padding: 9px 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.group-header:focus-visible {
+  outline: 2px solid #e8843c;
+  outline-offset: -2px;
+}
+
+.group-header-meta {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.group-toggle-icon {
+  flex-shrink: 0;
+  color: #9b5a35;
+  font-size: 16px;
+  transition: transform 0.24s ease;
+}
+
+.group-toggle-icon.collapsed {
+  transform: rotate(-90deg);
 }
 
 .id-tag,
@@ -248,11 +328,11 @@ function formatBytes(bytes: number): string {
 }
 
 .id-tag {
-  min-height: 24px;
-  padding: 2px 9px;
-  background: #fff0e7;
+  padding: 3px 8px;
+  background: #fff7f2;
   color: #9b5a35;
   font-size: 12px;
+  font-weight: 500;
 }
 
 .cache-grid {
@@ -260,6 +340,29 @@ function formatBytes(bytes: number): string {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
   align-items: start;
+}
+
+.cache-grid-wrap {
+  display: grid;
+  grid-template-rows: 1fr;
+  overflow: hidden;
+}
+
+.cache-grid-wrap > .cache-grid {
+  min-height: 0;
+}
+
+.cache-drawer-enter-active,
+.cache-drawer-leave-active {
+  transition:
+    grid-template-rows 0.24s ease,
+    opacity 0.18s ease;
+}
+
+.cache-drawer-enter-from,
+.cache-drawer-leave-to {
+  grid-template-rows: 0fr;
+  opacity: 0;
 }
 
 .gap-slot {
@@ -373,6 +476,14 @@ function formatBytes(bytes: number): string {
 @media (min-width: 900px) {
   .cache-grid {
     grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .group-toggle-icon,
+  .cache-drawer-enter-active,
+  .cache-drawer-leave-active {
+    transition-duration: 0.01ms;
   }
 }
 </style>

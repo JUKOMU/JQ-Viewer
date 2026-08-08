@@ -59,11 +59,11 @@
         </div>
 
         <!-- 仓库地址 -->
-        <div class="info-card" @click="openRepo">
+        <div class="info-card" @click="openRepo(REPO_URL)">
           <div class="info-row">
             <span class="info-label">仓库地址</span>
             <span class="info-value repo-url"
-              ><a :href="REPO_URL"
+              ><a :href="REPO_URL" @click.prevent.stop="openRepo(REPO_URL)"
                 ><IonIcon :icon="logoGithub" class="repo-icon" aria-hidden="true" />
                 <span>JQ Viewer</span></a
               ></span
@@ -72,7 +72,9 @@
           <div class="info-row">
             <span class="info-label"></span>
             <span class="info-value repo-url"
-              ><a href="https://github.com/JUKOMU/JMComic-Api-Java"
+              ><a
+                :href="JMCOMIC_API_REPO_URL"
+                @click.prevent.stop="openRepo(JMCOMIC_API_REPO_URL)"
                 ><IonIcon :icon="logoGithub" class="repo-icon" aria-hidden="true" />
                 <span>JMComic-Api-Java</span></a
               ></span
@@ -139,6 +141,7 @@ const hasUpdate = ref(false)
 const latestVersion = ref('')
 
 const REPO_URL = 'https://github.com/jukomu/jq-viewer'
+const JMCOMIC_API_REPO_URL = 'https://github.com/JUKOMU/JMComic-Api-Java'
 
 const TITLE = 'JQ Viewer'
 const displayText = ref('')
@@ -231,12 +234,12 @@ async function showUpdateAlert(version: string, body: string, htmlUrl: string) {
   await alert1.present()
 }
 
-async function openRepo() {
+async function openRepo(url: string) {
   try {
-    await navigator.clipboard.writeText(REPO_URL)
+    await navigator.clipboard.writeText(url)
     await showToast('仓库地址已复制', 'success')
   } catch {
-    window.open(REPO_URL, '_blank')
+    window.open(url, '_blank')
   }
 }
 

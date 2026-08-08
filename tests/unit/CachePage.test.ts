@@ -320,6 +320,45 @@ describe('CachePage 章节标题', () => {
     wrapper.unmount()
   })
 
+  test('预览平移边界按 contain 后的实际图片区域计算', async () => {
+    mocks.getPhoto.mockRejectedValue(new Error('offline'))
+
+    const wrapper = mount(CachePage)
+    await flushPromises()
+    await wrapper.find('.image-frame').trigger('click')
+
+    const stage = wrapper.find('.preview-stage')
+    const image = stage.find('img')
+    Object.defineProperties(stage.element, {
+      clientWidth: { value: 300 },
+      clientHeight: { value: 400 },
+    })
+    Object.defineProperties(image.element, {
+      naturalWidth: { configurable: true, value: 1_000 },
+      naturalHeight: { configurable: true, value: 2_000 },
+    })
+
+    await stage.trigger('touchstart', {
+      touches: [
+        { clientX: 100, clientY: 100 },
+        { clientX: 200, clientY: 100 },
+      ],
+    })
+    await stage.trigger('touchmove', {
+      touches: [
+        { clientX: -200, clientY: 100 },
+        { clientX: 500, clientY: 100 },
+      ],
+    })
+    await stage.trigger('touchend', { touches: [], changedTouches: [] })
+
+    await stage.trigger('touchstart', { touches: [{ clientX: 150, clientY: 100 }] })
+    await stage.trigger('touchmove', { touches: [{ clientX: -1_000, clientY: 100 }] })
+
+    expect(image.attributes('style')).toContain('translate3d(-950px, -400px, 0) scale(5)')
+    wrapper.unmount()
+  })
+
   test('双击按 1 倍、2 倍、3 倍、5 倍循环缩放', async () => {
     mocks.getPhoto.mockRejectedValue(new Error('offline'))
     let now = 1_000

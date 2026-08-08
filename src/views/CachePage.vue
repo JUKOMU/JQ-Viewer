@@ -400,14 +400,59 @@ function previewTouchMidpoint(touches: TouchList) {
   }
 }
 
+function getPreviewImageMetrics(stage: HTMLElement) {
+  const width = stage.clientWidth
+  const height = stage.clientHeight
+  const image = stage.querySelector('img')
+  const naturalWidth = image?.naturalWidth ?? 0
+  const naturalHeight = image?.naturalHeight ?? 0
+  if (!width || !height || !naturalWidth || !naturalHeight) {
+    return { offsetX: 0, offsetY: 0, width, height }
+  }
+
+  const containScale = Math.min(width / naturalWidth, height / naturalHeight)
+  return {
+    offsetX: (width - naturalWidth * containScale) / 2,
+    offsetY: (height - naturalHeight * containScale) / 2,
+    width: naturalWidth * containScale,
+    height: naturalHeight * containScale,
+  }
+}
+
+function clampPreviewAxis(
+  stageSize: number,
+  offset: number,
+  renderedSize: number,
+  scale: number,
+  translation: number,
+) {
+  const scaledOffset = offset * scale
+  const scaledSize = renderedSize * scale
+  if (scaledSize <= stageSize) return (stageSize - scaledSize) / 2 - scaledOffset
+
+  const minTranslation = stageSize - scaledOffset - scaledSize
+  const maxTranslation = -scaledOffset
+  return Math.max(minTranslation, Math.min(maxTranslation, translation))
+}
+
 function clampPreviewTranslation(target: EventTarget | null) {
   const stage = target as HTMLElement | null
-  const width = stage?.clientWidth ?? 0
-  const height = stage?.clientHeight ?? 0
-  const minX = width - width * previewScale.value
-  const minY = height - height * previewScale.value
-  previewTranslateX.value = Math.max(minX, Math.min(0, previewTranslateX.value))
-  previewTranslateY.value = Math.max(minY, Math.min(0, previewTranslateY.value))
+  if (!stage) return
+  const metrics = getPreviewImageMetrics(stage)
+  previewTranslateX.value = clampPreviewAxis(
+    stage.clientWidth,
+    metrics.offsetX,
+    metrics.width,
+    previewScale.value,
+    previewTranslateX.value,
+  )
+  previewTranslateY.value = clampPreviewAxis(
+    stage.clientHeight,
+    metrics.offsetY,
+    metrics.height,
+    previewScale.value,
+    previewTranslateY.value,
+  )
 }
 
 function nextPreviewDoubleTapScale(): number {

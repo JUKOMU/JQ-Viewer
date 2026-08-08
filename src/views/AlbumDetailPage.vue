@@ -179,6 +179,9 @@ const requestedChapterId = computed(() =>
   typeof route.query.chapterId === 'string' ? route.query.chapterId.trim() : '',
 )
 let detailStateAlbumId = albumId.value
+let albumLoadGeneration = 0
+let activeAlbumLoadKey = ''
+let chapterLoadGeneration = 0
 const coverUrl = computed(() => albumDetail.value?.image || (route.query.coverUrl as string) || '')
 const albumTitle = computed(() => albumDetail.value?.title || (route.query.title as string) || '')
 const albumAuthors = computed(() => {
@@ -550,10 +553,12 @@ const selectedChapterPageCount = computed(() => {
 
 // ---- 数据加载 ----
 const resetAlbumState = () => {
+  chapterLoadGeneration += 1
   invalidatePreviewRequest()
   albumDetail.value = null
   photoDetail.value = null
   selectedChapterId.value = ''
+  chapterLoading.value = false
   comments.value = []
   commentPage.value = 1
   totalComments.value = 0
@@ -569,54 +574,76 @@ const resetAlbumState = () => {
   loading.value = true
 }
 
-const resolveDetailChapterId = (album: AlbumDetail, requestedId: string): string => {
+const resolveDetailChapterId = (
+  album: AlbumDetail,
+  requestedId: string,
+  targetAlbumId = albumId.value,
+): string => {
   const requested = album.photoMetas.find((meta) => meta.id === requestedId)
   if (requested) return requested.id
 
-  const matchedAlbumId = album.photoMetas.find((meta) => meta.id === albumId.value)
+  const matchedAlbumId = album.photoMetas.find((meta) => meta.id === targetAlbumId)
   return matchedAlbumId?.id ?? album.photoMetas[0]?.id ?? ''
 }
 
 const loadAlbumData = async () => {
-  detailStateAlbumId = albumId.value
+  const targetAlbumId = albumId.value
+  const requestedId = requestedChapterId.value
+  const loadKey = `${targetAlbumId}:${requestedId}`
+  if (loadKey === activeAlbumLoadKey && loading.value) return
+
+  const loadGeneration = ++albumLoadGeneration
+  activeAlbumLoadKey = loadKey
+  detailStateAlbumId = targetAlbumId
   resetAlbumState()
+  const isCurrentLoad = () =>
+    loadGeneration === albumLoadGeneration &&
+    albumId.value === targetAlbumId &&
+    requestedChapterId.value === requestedId
 
   try {
-    const requestedId = requestedChapterId.value
     let album: AlbumDetail
     let initialPhoto: PhotoDetail | null = null
     if (requestedId) {
-      album = await JmcomicService.getAlbum(albumId.value)
+      album = await JmcomicService.getAlbum(targetAlbumId)
     } else {
       const [loadedAlbum, loadedPhoto] = await Promise.all([
-        JmcomicService.getAlbum(albumId.value),
-        JmcomicService.getPhoto(albumId.value),
+        JmcomicService.getAlbum(targetAlbumId),
+        JmcomicService.getPhoto(targetAlbumId),
       ])
       album = loadedAlbum
       initialPhoto = loadedPhoto
     }
+    if (!isCurrentLoad()) return
 
     albumDetail.value = album
-    selectedChapterId.value = resolveDetailChapterId(album, requestedId)
-    if (selectedChapterId.value) {
-      photoDetail.value =
-        initialPhoto?.id === selectedChapterId.value
+    const targetChapterId = resolveDetailChapterId(album, requestedId, targetAlbumId)
+    selectedChapterId.value = targetChapterId
+    if (targetChapterId) {
+      const loadedPhoto =
+        initialPhoto?.id === targetChapterId
           ? initialPhoto
-          : await JmcomicService.getPhoto(selectedChapterId.value)
+          : await JmcomicService.getPhoto(targetChapterId)
+      if (!isCurrentLoad()) return
+      photoDetail.value = loadedPhoto
     }
+    if (!isCurrentLoad()) return
 
     recordBrowseHistory()
   } catch {
     // 保留 query 数据展示
   } finally {
-    loading.value = false
+    if (isCurrentLoad()) loading.value = false
   }
 
+  if (!isCurrentLoad()) return
   await refreshDownloadStatuses()
+  if (!isCurrentLoad()) return
   await refreshImportedPdfStatuses()
+  if (!isCurrentLoad()) return
   downloadProgressHandle?.remove()
   downloadProgressHandle = await JmcomicService.addDownloadProgressListener((data) => {
-    if (data.albumId !== albumId.value) return
+    if (data.albumId !== targetAlbumId || !isCurrentLoad()) return
     const map = new Map(chapterDownloadStatuses.value)
     if (data.status === 'cancelled') {
       map.delete(data.chapterId)
@@ -626,7 +653,7 @@ const loadAlbumData = async () => {
     chapterDownloadStatuses.value = map
   })
 
-  if (activeTab.value === 'preview') {
+  if (isCurrentLoad() && activeTab.value === 'preview') {
     await loadPreview()
   }
 }
@@ -829,19 +856,27 @@ const selectChapter = async (chapterId: string) => {
   showChapterActions.value = false
   sourceMenuOpen.value = false
   invalidatePreviewRequest()
+  const targetAlbumId = albumId.value
+  const chapterGeneration = ++chapterLoadGeneration
   selectedChapterId.value = chapterId
   chapterLoading.value = true
+  const isCurrentChapterLoad = () =>
+    chapterGeneration === chapterLoadGeneration &&
+    albumId.value === targetAlbumId &&
+    selectedChapterId.value === chapterId
 
   try {
-    photoDetail.value = await JmcomicService.getPhoto(chapterId)
+    const photo = await JmcomicService.getPhoto(chapterId)
+    if (!isCurrentChapterLoad()) return
+    photoDetail.value = photo
     recordBrowseHistory()
   } catch (e: any) {
-    await showToast(sanitizeError(e, '章节加载失败'), 'danger')
+    if (isCurrentChapterLoad()) await showToast(sanitizeError(e, '章节加载失败'), 'danger')
   } finally {
-    chapterLoading.value = false
+    if (isCurrentChapterLoad()) chapterLoading.value = false
   }
 
-  if (activeTab.value === 'preview') {
+  if (isCurrentChapterLoad() && activeTab.value === 'preview') {
     await loadPreview()
   }
 }
@@ -1234,7 +1269,10 @@ watch(albumId, (newId) => {
 
 watch(requestedChapterId, (chapterId) => {
   const album = albumDetail.value
-  if (!album || albumId.value !== detailStateAlbumId) return
+  if (!album || albumId.value !== detailStateAlbumId) {
+    void loadAlbumData()
+    return
+  }
 
   const targetChapterId = resolveDetailChapterId(album, chapterId)
   if (!targetChapterId || targetChapterId === selectedChapterId.value) return

@@ -3,7 +3,7 @@
     <IonHeader class="ion-no-border">
       <IonToolbar>
         <IonButtons slot="start">
-          <IonBackButton default-href="/setting"/>
+          <IonBackButton default-href="/setting" />
         </IonButtons>
         <IonTitle class="toolbar-title">关于</IonTitle>
       </IonToolbar>
@@ -39,7 +39,7 @@
               <span v-if="updateChecking" class="info-value">检查中...</span>
               <span v-else-if="updateError" class="info-value error">检查失败</span>
               <span v-else-if="hasUpdate" class="info-value update"
-              >发现新版本 {{ latestVersion }}</span
+                >发现新版本 {{ latestVersion }}</span
               >
               <span v-else class="info-value">已是最新</span>
               <IonSpinner
@@ -62,12 +62,20 @@
         <div class="info-card" @click="openRepo">
           <div class="info-row">
             <span class="info-label">仓库地址</span>
-            <span class="info-value repo-url"><a :href="REPO_URL">JQ Viewer</a></span>
+            <span class="info-value repo-url"
+              ><a :href="REPO_URL"
+                ><IonIcon :icon="logoGithub" class="repo-icon" aria-hidden="true" />
+                <span>JQ Viewer</span></a
+              ></span
+            >
           </div>
           <div class="info-row">
             <span class="info-label"></span>
             <span class="info-value repo-url"
-            ><a href="https://github.com/JUKOMU/JMComic-Api-Java">JMComic-Api-Java</a></span
+              ><a href="https://github.com/JUKOMU/JMComic-Api-Java"
+                ><IonIcon :icon="logoGithub" class="repo-icon" aria-hidden="true" />
+                <span>JMComic-Api-Java</span></a
+              ></span
             >
           </div>
         </div>
@@ -86,16 +94,16 @@
             <p></p>
             <p>
               如果你觉得好用，欢迎分享给朋友。遇到问题或有什么建议，可以在 GitHub 提交<a
-              :href="`${REPO_URL}/issues/new`"
-            >Issue</a
-            >。
+                :href="`${REPO_URL}/issues/new`"
+                >Issue</a
+              >。
             </p>
             <div style="height: 1000px"></div>
             <p>没有了, 别看了</p>
             <div style="height: 2000px"></div>
             <p>还看?</p>
             <div style="height: 3000px"></div>
-            <p><img src="../../public/000.jpg"/></p>
+            <p><img src="../../public/000.jpg" /></p>
           </div>
         </div>
       </div>
@@ -104,10 +112,10 @@
 </template>
 
 <script setup lang="ts">
-defineOptions({name: 'AboutPage'})
+defineOptions({ name: 'AboutPage' })
 
-import {nextTick, onMounted, ref} from 'vue'
-import {App} from '@capacitor/app'
+import { nextTick, onMounted, ref } from 'vue'
+import { App } from '@capacitor/app'
 import {
   alertController,
   IonBackButton,
@@ -120,9 +128,9 @@ import {
   IonTitle,
   IonToolbar,
 } from '@ionic/vue'
-import {chevronForwardOutline} from 'ionicons/icons'
-import {showToast} from '@/services/JmcomicService'
-import {compareVersion, RELEASES_API, sanitizeReleaseBody} from '@/utils/version'
+import { chevronForwardOutline, logoGithub } from 'ionicons/icons'
+import { showToast } from '@/services/JmcomicService'
+import { compareVersion, RELEASES_API, sanitizeReleaseBody } from '@/utils/version'
 
 const appVersion = ref('1.0.0')
 const updateChecking = ref(false)
@@ -171,7 +179,7 @@ async function checkUpdate() {
 
   try {
     const resp = await fetch(RELEASES_API, {
-      headers: {Accept: 'application/vnd.github.v3+json'},
+      headers: { Accept: 'application/vnd.github.v3+json' },
     })
     if (!resp.ok) throw new Error('API error')
     const data = await resp.json()
@@ -197,7 +205,7 @@ async function showUpdateAlert(version: string, body: string, htmlUrl: string) {
     message: cleaned || '（无更新说明）',
     cssClass: 'update-alert',
     buttons: [
-      {text: '忽略', role: 'cancel'},
+      { text: '忽略', role: 'cancel' },
       {
         text: '好',
         handler: async () => {
@@ -206,7 +214,7 @@ async function showUpdateAlert(version: string, body: string, htmlUrl: string) {
             message: htmlUrl,
             cssClass: 'update-alert',
             buttons: [
-              {text: '取消', role: 'cancel'},
+              { text: '取消', role: 'cancel' },
               {
                 text: '打开',
                 handler: () => {
@@ -353,6 +361,30 @@ const reDisplay = async () => {
   word-break: break-all;
   text-align: right;
   max-width: 60%;
+}
+
+.repo-url a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #8c6b5a;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition:
+    color 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.repo-url a:hover,
+.repo-url a:focus-visible,
+.repo-url a:active {
+  color: #e8843c;
+  border-bottom-color: rgba(232, 132, 60, 0.45);
+}
+
+.repo-icon {
+  flex: 0 0 auto;
+  font-size: 16px;
 }
 
 .card-action {

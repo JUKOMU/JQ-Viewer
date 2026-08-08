@@ -3,7 +3,7 @@
     <IonHeader class="ion-no-border">
       <IonToolbar>
         <div class="toolbar-start">
-          <MenuToggleButton/>
+          <MenuToggleButton />
         </div>
         <div class="toolbar-title">设置</div>
       </IonToolbar>
@@ -18,16 +18,16 @@
             <div class="row-left">
               <span class="row-title">缓存用量</span>
               <span class="row-subtitle"
-              >已用 {{ cacheInfo.usedMb }}MB / 实际 {{ cacheEffectiveMb }}MB</span
+                >已用 {{ cacheInfo.usedMb }}MB / 实际 {{ cacheEffectiveMb }}MB</span
               >
             </div>
             <div class="row-right">
               <div class="usage-bar">
-                <div class="usage-fill" :style="{ width: usagePercent + '%' }"/>
+                <div class="usage-fill" :style="{ width: usagePercent + '%' }" />
               </div>
               <span class="usage-text">{{ usagePercent }}%</span>
             </div>
-            <IonIcon :icon="chevronForwardOutline" class="entry-arrow" aria-hidden="true"/>
+            <IonIcon :icon="chevronForwardOutline" class="entry-arrow" aria-hidden="true" />
           </button>
 
           <!-- 缓存上限 -->
@@ -54,7 +54,7 @@
           <!-- 清空缓存 -->
           <button class="row divider action row-action" type="button" @click="onClearCache">
             <span class="row-title">清空缓存</span>
-            <IonIcon :icon="chevronForwardOutline" class="entry-arrow" aria-hidden="true"/>
+            <IonIcon :icon="chevronForwardOutline" class="entry-arrow" aria-hidden="true" />
           </button>
         </div>
 
@@ -270,7 +270,7 @@
               <span class="row-subtitle">开启后可在批量解析时通过图片上传识别 ID</span>
             </div>
             <div class="row-right">
-              <IonToggle :checked="ocrEnabled" color="warning" @ion-change="onOcrEnabledChange"/>
+              <IonToggle :checked="ocrEnabled" color="warning" @ion-change="onOcrEnabledChange" />
             </div>
           </div>
         </div>
@@ -404,7 +404,7 @@
           <!-- 食用方法 -->
           <button class="row divider action row-action" type="button" @click="goPdfTemplateHelp">
             <span class="row-title">食用方法</span>
-            <IonIcon :icon="chevronForwardOutline" class="entry-arrow" aria-hidden="true"/>
+            <IonIcon :icon="chevronForwardOutline" class="entry-arrow" aria-hidden="true" />
           </button>
         </div>
 
@@ -413,7 +413,7 @@
         <div class="card">
           <button class="row action row-action" type="button" @click="goNetworkStatus">
             <span class="row-title">网络状态</span>
-            <IonIcon :icon="chevronForwardOutline" class="entry-arrow" aria-hidden="true"/>
+            <IonIcon :icon="chevronForwardOutline" class="entry-arrow" aria-hidden="true" />
           </button>
         </div>
 
@@ -423,7 +423,7 @@
           <button class="row action row-action" type="button" @click="goUser">
             <span class="row-title">用户</span>
             <span class="row-value">{{ userInfo?.username ?? '未登录' }}</span>
-            <IonIcon :icon="chevronForwardOutline" class="entry-arrow" aria-hidden="true"/>
+            <IonIcon :icon="chevronForwardOutline" class="entry-arrow" aria-hidden="true" />
           </button>
         </div>
 
@@ -432,7 +432,7 @@
         <div class="card">
           <button class="row action row-action" type="button" @click="goAbout">
             <span class="row-title">关于</span>
-            <IonIcon :icon="chevronForwardOutline" class="entry-arrow" aria-hidden="true"/>
+            <IonIcon :icon="chevronForwardOutline" class="entry-arrow" aria-hidden="true" />
           </button>
         </div>
       </div>
@@ -443,7 +443,7 @@
           <div class="relocation-title">正在搬迁文件...</div>
 
           <div class="relocation-progress-bar">
-            <div class="relocation-progress-fill" :style="{ width: relocationPercent + '%' }"/>
+            <div class="relocation-progress-fill" :style="{ width: relocationPercent + '%' }" />
           </div>
           <div class="relocation-percent">{{ relocationPercent }}%</div>
 
@@ -464,29 +464,38 @@
 </template>
 
 <script setup lang="ts">
-defineOptions({name: 'SettingPage'})
+defineOptions({ name: 'SettingPage' })
 
-import {computed, nextTick, onActivated, onDeactivated, onMounted, ref} from 'vue'
-import {useRouter} from 'vue-router'
-import {alertController, IonContent, IonHeader, IonIcon, IonPage, IonRange, IonToggle, IonToolbar,} from '@ionic/vue'
-import {chevronForwardOutline} from 'ionicons/icons'
-import {App} from '@capacitor/app'
-import type {PluginListenerHandle} from '@capacitor/core'
+import { computed, nextTick, onActivated, onDeactivated, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import {
+  alertController,
+  IonContent,
+  IonHeader,
+  IonIcon,
+  IonPage,
+  IonRange,
+  IonToggle,
+  IonToolbar,
+} from '@ionic/vue'
+import { chevronForwardOutline } from 'ionicons/icons'
+import { App } from '@capacitor/app'
+import type { PluginListenerHandle } from '@capacitor/core'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
-import {JmcomicService, sanitizeError, showToast} from '@/services/JmcomicService'
+import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
 import {
   initSettings,
   persistDownloadConcurrency,
   persistPreloadConcurrency,
   SettingsStore,
 } from '@/services/SettingsService'
-import {ExportFormatService} from '@/services/ExportFormatService'
-import {PDF_SAMPLE_DATA, PdfExportService} from '@/services/PdfExportService'
-import {useAuth} from '@/composables/useAuth'
-import type {CacheCapacityInfo, RelocationProgress} from '@/services/JmcomicTypes'
+import { ExportFormatService } from '@/services/ExportFormatService'
+import { PDF_SAMPLE_DATA, PdfExportService } from '@/services/PdfExportService'
+import { useAuth } from '@/composables/useAuth'
+import type { CacheCapacityInfo, RelocationProgress } from '@/services/JmcomicTypes'
 
 const router = useRouter()
-const {userInfo} = useAuth()
+const { userInfo } = useAuth()
 const appVersion = ref('1.0.0')
 const contentRef = ref<InstanceType<typeof IonContent> | null>(null)
 let settingScrollTop = 0
@@ -545,7 +554,7 @@ function goCache() {
   router.push('/cache')
 }
 
-const cacheInfo = ref<CacheCapacityInfo>({capacityMb: 0, usedMb: 0})
+const cacheInfo = ref<CacheCapacityInfo>({ capacityMb: 0, usedMb: 0 })
 const cacheInputMb = ref(SettingsStore.getCacheCapacityMb())
 const preloadPages = ref(SettingsStore.getReaderPreloadPages())
 const preloadConcurrency = ref(SettingsStore.getPreloadConcurrency())
@@ -700,7 +709,7 @@ async function onClearCache() {
     header: '清空缓存',
     message: '确定清空全部图片缓存吗？',
     buttons: [
-      {text: '取消', role: 'cancel'},
+      { text: '取消', role: 'cancel' },
       {
         text: '清空',
         role: 'destructive',
@@ -708,7 +717,7 @@ async function onClearCache() {
         handler: async () => {
           try {
             await JmcomicService.clearImageCache()
-            cacheInfo.value = {...cacheInfo.value, usedMb: 0}
+            cacheInfo.value = { ...cacheInfo.value, usedMb: 0 }
             await showToast('缓存已清空', 'success')
           } catch (e) {
             await showToast('清空失败', 'danger')
@@ -917,16 +926,14 @@ async function onDownloadPublicChange(e: CustomEvent) {
 function onDisplayModeChange(mode: string) {
   displayMode.value = mode
   SettingsStore.setReaderDisplayMode(mode)
-  JmcomicService.setReaderDisplayMode(mode).catch(() => {
-  })
+  JmcomicService.setReaderDisplayMode(mode).catch(() => {})
 }
 
 // ---- 屏幕方向 ----
 function onScreenOrientationChange(orientation: string) {
   screenOrientation.value = orientation
   SettingsStore.setReaderScreenOrientation(orientation)
-  JmcomicService.setReaderScreenOrientation(orientation).catch(() => {
-  })
+  JmcomicService.setReaderScreenOrientation(orientation).catch(() => {})
 }
 
 // ---- 亮度跟随系统 ----
@@ -955,8 +962,7 @@ function onBrightnessChange(e: CustomEvent) {
   const val = Number(e.detail.value)
   brightnessValue.value = val
   SettingsStore.setReaderBrightness(val)
-  JmcomicService.setReaderBrightness(val).catch(() => {
-  })
+  JmcomicService.setReaderBrightness(val).catch(() => {})
 }
 
 // ---- 防止熄屏 ----
@@ -976,8 +982,7 @@ function onVolumeNavigationChange(e: CustomEvent) {
   const enabled = e.detail.checked
   volumeNavigation.value = enabled
   SettingsStore.setReaderVolumeNavigation(enabled)
-  JmcomicService.setReaderVolumeNavigation(enabled).catch(() => {
-  })
+  JmcomicService.setReaderVolumeNavigation(enabled).catch(() => {})
 }
 
 // ---- 阅读结束时展开工具栏 ----
@@ -985,8 +990,7 @@ function onAutoShowToolbarAtEndChange(e: CustomEvent) {
   const enabled = e.detail.checked
   autoShowToolbarAtEnd.value = enabled
   SettingsStore.setReaderAutoShowToolbarAtEnd(enabled)
-  JmcomicService.setReaderAutoShowToolbarAtEnd(enabled).catch(() => {
-  })
+  JmcomicService.setReaderAutoShowToolbarAtEnd(enabled).catch(() => {})
 }
 </script>
 
@@ -1291,8 +1295,9 @@ function onAutoShowToolbarAtEndChange(e: CustomEvent) {
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.15s,
-  color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s;
 }
 
 .seg-btn:not(:last-child) {

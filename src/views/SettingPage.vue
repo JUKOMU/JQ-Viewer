@@ -8,7 +8,7 @@
         <div class="toolbar-title">设置</div>
       </IonToolbar>
     </IonHeader>
-    <IonContent>
+    <IonContent ref="contentRef" :scroll-events="true" @ion-scroll="handleScroll">
       <div class="settings-list">
         <!-- 分组：图片缓存 -->
         <div class="section-label">图片缓存</div>
@@ -465,7 +465,7 @@
 <script setup lang="ts">
 defineOptions({ name: 'SettingPage' })
 
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onActivated, onDeactivated, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   alertController,
@@ -494,6 +494,42 @@ import type { CacheCapacityInfo, RelocationProgress } from '@/services/JmcomicTy
 const router = useRouter()
 const { userInfo } = useAuth()
 const appVersion = ref('1.0.0')
+const contentRef = ref<InstanceType<typeof IonContent> | null>(null)
+let settingScrollTop = 0
+
+type IonContentElement = HTMLElement & {
+  getScrollElement?: () => Promise<HTMLElement | null>
+}
+
+const resolveSettingScrollElement = async (): Promise<HTMLElement | null> => {
+  const ionContentEl = contentRef.value?.$el as IonContentElement | undefined
+  if (!ionContentEl) return null
+  return (await ionContentEl.getScrollElement?.()) ?? null
+}
+
+const saveScrollPosition = async () => {
+  const el = await resolveSettingScrollElement()
+  if (el) settingScrollTop = el.scrollTop
+}
+
+const restoreScrollPosition = async () => {
+  await nextTick()
+  const el = await resolveSettingScrollElement()
+  if (el) el.scrollTop = Math.max(0, settingScrollTop)
+}
+
+const handleScroll = (event: CustomEvent<{ scrollTop?: number }>) => {
+  const scrollTop = event.detail?.scrollTop
+  if (typeof scrollTop === 'number') settingScrollTop = scrollTop
+}
+
+onActivated(() => {
+  void restoreScrollPosition()
+})
+
+onDeactivated(() => {
+  void saveScrollPosition()
+})
 
 function goNetworkStatus() {
   router.push('/network-status')

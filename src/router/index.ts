@@ -37,6 +37,7 @@ const routes: Array<RouteRecordRaw> = [
   },
   {
     path: '/setting',
+    name: 'SettingPage',
     component: () => import('@/views/SettingPage.vue'),
     meta: { menu: true, keepAlive: true },
   },

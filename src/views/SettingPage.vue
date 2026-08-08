@@ -619,16 +619,16 @@ const cacheDiagnosticText = computed(() => {
   if (!maxHeapMb) return ''
   const reasonLabels: Record<string, string> = {
     'requested-limit': '按用户设置生效',
-    'heap-budget': '受进程 Heap 安全预算限制',
+    'heap-budget': '受应用内存安全上限限制',
     'low-ram-heap-budget': '低内存设备安全预算',
     'memory-pressure': '系统内存压力临时收缩',
     'minimum-safe-capacity': '使用最低安全容量',
-    'invalid-heap-fallback': '无法读取 Heap 上限，使用安全容量',
+    'invalid-heap-fallback': '无法读取应用内存上限，使用安全容量',
   }
   const reason = cacheInfo.value.limitReason
     ? reasonLabels[cacheInfo.value.limitReason] || cacheInfo.value.limitReason
     : ''
-  return `当前实际 ${cacheEffectiveMb.value} MB · Heap ${maxHeapMb} MB${reason ? ` · ${reason}` : ''}`
+  return `当前实际 ${cacheEffectiveMb.value} MB · 应用内存上限 ${maxHeapMb} MB${reason ? ` · ${reason}` : ''}`
 })
 
 onMounted(async () => {

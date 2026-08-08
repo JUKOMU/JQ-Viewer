@@ -1,7 +1,7 @@
 /* eslint-disable vue/one-component-per-file -- test-only Ionic fixtures */
 import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
-import { beforeEach, describe, expect, test, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   getCacheCapacityInfo: vi.fn(),
@@ -25,6 +25,16 @@ vi.mock('@ionic/vue', () => {
     IonContent: withSlot('IonContent', 'main'),
     IonHeader: withSlot('IonHeader', 'header'),
     IonIcon: withSlot('IonIcon', 'span'),
+    IonModal: defineComponent({
+      name: 'IonModal',
+      props: {
+        isOpen: Boolean,
+      },
+      emits: ['didDismiss'],
+      setup(_, { slots }) {
+        return () => h('div', { class: 'ion-modal-stub' }, slots.default?.())
+      },
+    }),
     IonPage: withSlot('IonPage'),
     IonTitle: withSlot('IonTitle'),
     IonToolbar: withSlot('IonToolbar'),
@@ -49,6 +59,11 @@ vi.mock('@/services/JmcomicService', () => ({
 import CachePage from '@/views/CachePage.vue'
 
 describe('CachePage 章节标题', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
   beforeEach(() => {
     mocks.getCacheCapacityInfo.mockReset()
     mocks.getCacheCapacityInfo.mockResolvedValue({ capacityMb: 100, usedMb: 1 })
@@ -116,6 +131,168 @@ describe('CachePage 章节标题', () => {
       true,
     )
     expect(wrapper.findAll('.cache-card')).toHaveLength(2)
+    wrapper.unmount()
+  })
+
+  test('点击图片打开无标题栏预览，优先使用原图并可点击预览层关闭', async () => {
+    mocks.getImageCacheContents.mockResolvedValue({
+      entries: [
+        { photoId: '10', sortOrder: 1, type: 'thumb', sizeBytes: 20, mimeType: 'image/jpeg' },
+        { photoId: '10', sortOrder: 1, type: 'image', sizeBytes: 100, mimeType: 'image/jpeg' },
+      ],
+    })
+    mocks.getPhoto.mockResolvedValue({
+      id: '10',
+      title: '标题',
+      albumId: '10',
+      sortOrder: 1,
+      author: '',
+      tags: [],
+      images: [],
+      isSingleEpisode: true,
+    })
+
+    const wrapper = mount(CachePage)
+    await flushPromises()
+
+    await wrapper.find('.image-frame').trigger('click')
+
+    expect(wrapper.findComponent({ name: 'IonModal' }).props('isOpen')).toBe(true)
+    expect(wrapper.find('.preview-stage img').attributes('src')).toBe(
+      'https://cache.test/image/10/1',
+    )
+    expect(wrapper.find('.preview-title').exists()).toBe(false)
+
+    await wrapper.find('.preview-stage').trigger('click')
+
+    expect(wrapper.findComponent({ name: 'IonModal' }).props('isOpen')).toBe(false)
+    wrapper.unmount()
+  })
+
+  test('没有原图时预览缩略图', async () => {
+    mocks.getPhoto.mockRejectedValue(new Error('offline'))
+
+    const wrapper = mount(CachePage)
+    await flushPromises()
+
+    await wrapper.findAll('.image-frame')[1].trigger('click')
+
+    expect(wrapper.find('.preview-stage img').attributes('src')).toBe(
+      'https://cache.test/thumb/20/1',
+    )
+    wrapper.unmount()
+  })
+
+  test('支持最大 5 倍双指缩放和单指平移，手势结束后不会误关闭并在重新打开时复位', async () => {
+    mocks.getPhoto.mockRejectedValue(new Error('offline'))
+
+    const wrapper = mount(CachePage)
+    await flushPromises()
+    await wrapper.find('.image-frame').trigger('click')
+
+    const stage = wrapper.find('.preview-stage')
+    Object.defineProperties(stage.element, {
+      clientWidth: { value: 300 },
+      clientHeight: { value: 400 },
+    })
+
+    await stage.trigger('touchstart', {
+      touches: [
+        { clientX: 100, clientY: 100 },
+        { clientX: 200, clientY: 100 },
+      ],
+    })
+    await stage.trigger('touchmove', {
+      touches: [
+        { clientX: -200, clientY: 100 },
+        { clientX: 500, clientY: 100 },
+      ],
+    })
+    await stage.trigger('touchend', { touches: [], changedTouches: [] })
+
+    expect(stage.find('img').attributes('style')).toContain(
+      'translate3d(-600px, -400px, 0) scale(5)',
+    )
+    expect(wrapper.findComponent({ name: 'IonModal' }).props('isOpen')).toBe(true)
+
+    await stage.trigger('touchstart', { touches: [{ clientX: 150, clientY: 100 }] })
+    await stage.trigger('touchmove', { touches: [{ clientX: 100, clientY: 50 }] })
+    await stage.trigger('touchend', { touches: [], changedTouches: [] })
+    await stage.trigger('click')
+
+    expect(stage.find('img').attributes('style')).toContain(
+      'translate3d(-650px, -450px, 0) scale(5)',
+    )
+    expect(wrapper.findComponent({ name: 'IonModal' }).props('isOpen')).toBe(true)
+
+    wrapper.findComponent({ name: 'IonModal' }).vm.$emit('didDismiss')
+    await wrapper.find('.image-frame').trigger('click')
+
+    expect(wrapper.find('.preview-stage img').attributes('style')).toContain(
+      'translate3d(0px, 0px, 0) scale(1)',
+    )
+    wrapper.unmount()
+  })
+
+  test('双击按 1 倍、2 倍、3 倍、5 倍循环缩放', async () => {
+    mocks.getPhoto.mockRejectedValue(new Error('offline'))
+    let now = 1_000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+
+    const wrapper = mount(CachePage)
+    await flushPromises()
+    await wrapper.find('.image-frame').trigger('click')
+
+    const stage = wrapper.find('.preview-stage')
+    Object.defineProperties(stage.element, {
+      clientWidth: { value: 300 },
+      clientHeight: { value: 400 },
+    })
+    const tap = async () => {
+      await stage.trigger('touchstart', { touches: [{ clientX: 150, clientY: 200 }] })
+      await stage.trigger('touchend', {
+        touches: [],
+        changedTouches: [{ clientX: 150, clientY: 200 }],
+      })
+    }
+    const doubleTap = async () => {
+      await tap()
+      now += 100
+      await tap()
+      now += 400
+    }
+
+    await doubleTap()
+    expect(stage.find('img').attributes('style')).toContain('scale(2)')
+    await doubleTap()
+    expect(stage.find('img').attributes('style')).toContain('scale(3)')
+    await doubleTap()
+    expect(stage.find('img').attributes('style')).toContain('scale(5)')
+    await doubleTap()
+    expect(stage.find('img').attributes('style')).toContain('translate3d(0px, 0px, 0) scale(1)')
+    expect(wrapper.findComponent({ name: 'IonModal' }).props('isOpen')).toBe(true)
+    wrapper.unmount()
+  })
+
+  test('触摸单击等待双击判定后关闭预览', async () => {
+    mocks.getPhoto.mockRejectedValue(new Error('offline'))
+
+    const wrapper = mount(CachePage)
+    await flushPromises()
+    await wrapper.find('.image-frame').trigger('click')
+    vi.useFakeTimers()
+
+    const stage = wrapper.find('.preview-stage')
+    await stage.trigger('touchstart', { touches: [{ clientX: 100, clientY: 100 }] })
+    await stage.trigger('touchend', {
+      touches: [],
+      changedTouches: [{ clientX: 100, clientY: 100 }],
+    })
+
+    expect(wrapper.findComponent({ name: 'IonModal' }).props('isOpen')).toBe(true)
+    vi.advanceTimersByTime(280)
+    await flushPromises()
+    expect(wrapper.findComponent({ name: 'IonModal' }).props('isOpen')).toBe(false)
     wrapper.unmount()
   })
 })

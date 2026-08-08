@@ -45,7 +45,6 @@
         </div>
 
         <div v-else-if="groups.length === 0" class="state-message empty-state">
-          <span class="empty-icon" aria-hidden="true">□</span>
           <span>暂无图片缓存</span>
         </div>
 
@@ -87,14 +86,19 @@
                     <template v-for="item in group.items" :key="item.key">
                       <div v-if="item.gap" class="gap-slot" aria-hidden="true" />
                       <article v-else-if="item.page" class="cache-card">
-                        <div class="image-frame">
+                        <button
+                          class="image-frame"
+                          type="button"
+                          :aria-label="`查看 ${group.photoId} 第 ${item.page.sortOrder} 页缓存图片`"
+                          @click="openPreview(item.page)"
+                        >
                           <img
                             :src="previewUrl(item.page)"
                             :alt="`${group.photoId} 第 ${item.page.sortOrder} 页`"
                             loading="lazy"
                             decoding="async"
                           />
-                        </div>
+                        </button>
                         <div class="cache-card-footer">
                           <span class="page-number">第 {{ item.page.sortOrder }} 页</span>
                           <span class="type-badges">
@@ -112,6 +116,31 @@
         </template>
       </div>
     </IonContent>
+
+    <IonModal
+      class="cache-preview-modal"
+      :is-open="previewOpen"
+      @did-dismiss="handlePreviewDismiss"
+    >
+      <button
+        class="preview-stage"
+        type="button"
+        aria-label="关闭图片预览"
+        @click="handlePreviewClick"
+        @touchstart="handlePreviewTouchStart"
+        @touchmove="handlePreviewTouchMove"
+        @touchend="handlePreviewTouchEnd"
+        @touchcancel="handlePreviewTouchEnd"
+      >
+        <img
+          v-if="selectedPreview"
+          :src="fullPreviewUrl(selectedPreview)"
+          :alt="`${selectedPreview.photoId} 第 ${selectedPreview.sortOrder} 页缓存图片预览`"
+          :style="previewImageStyle"
+          draggable="false"
+        />
+      </button>
+    </IonModal>
   </IonPage>
 </template>
 
@@ -126,6 +155,7 @@ import {
   IonContent,
   IonHeader,
   IonIcon,
+  IonModal,
   IonPage,
   IonTitle,
   IonToolbar,
@@ -142,7 +172,19 @@ const entries = ref<ImageCacheEntry[]>([])
 const cacheInfo = ref<CacheCapacityInfo>({ capacityMb: 0, usedMb: 0 })
 const collapsedGroupIds = ref<Set<string>>(new Set())
 const groupTitles = ref<Record<string, string>>({})
+const selectedPreview = ref<CachePageView | null>(null)
+const previewOpen = ref(false)
+const previewScale = ref(1)
+const previewTranslateX = ref(0)
+const previewTranslateY = ref(0)
 let titleLoadVersion = 0
+
+const PREVIEW_ZOOM_MIN = 1
+const PREVIEW_ZOOM_MAX = 5
+const PREVIEW_MOVE_THRESHOLD = 6
+const PREVIEW_DOUBLE_TAP_MS = 280
+const PREVIEW_DOUBLE_TAP_DISTANCE = 30
+const TOUCH_CLICK_DELAY_MS = 500
 
 const groups = computed(() => buildImageCacheGroups(entries.value))
 const cachedPageCount = computed(() =>
@@ -156,6 +198,26 @@ const usagePercent = computed(() => {
   if (cacheEffectiveMb.value <= 0) return 0
   return Math.min(100, Math.round((cacheInfo.value.usedMb / cacheEffectiveMb.value) * 100))
 })
+const previewImageStyle = computed(() => ({
+  transform: `translate3d(${previewTranslateX.value}px, ${previewTranslateY.value}px, 0) scale(${previewScale.value})`,
+  transformOrigin: '0 0',
+}))
+
+let previewTouchStartX = 0
+let previewTouchStartY = 0
+let previewStartTranslateX = 0
+let previewStartTranslateY = 0
+let previewStartScale = 1
+let previewPinchDistance = 0
+let previewPinchOriginX = 0
+let previewPinchOriginY = 0
+let previewGestureMoved = false
+let previewGestureUsedMultipleTouches = false
+let lastPreviewTouchEndAt = 0
+let previewLastTapAt = 0
+let previewLastTapX = 0
+let previewLastTapY = 0
+let previewTapTimer: ReturnType<typeof setTimeout> | null = null
 
 onMounted(() => {
   void loadCache()
@@ -163,6 +225,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   titleLoadVersion += 1
+  clearPreviewTapState()
 })
 
 async function loadCache() {
@@ -217,6 +280,229 @@ function formatGroupTitle(photo: PhotoDetail): string {
 
 function previewUrl(page: CachePageView): string {
   return getImageUrl(page.photoId, page.sortOrder, page.small ? 'thumb' : 'image')
+}
+
+function fullPreviewUrl(page: CachePageView): string {
+  return getImageUrl(page.photoId, page.sortOrder, page.full ? 'image' : 'thumb')
+}
+
+function openPreview(page: CachePageView) {
+  clearPreviewTapState()
+  resetPreviewTransform()
+  selectedPreview.value = page
+  previewOpen.value = true
+}
+
+function closePreview() {
+  clearPreviewTapState()
+  previewOpen.value = false
+}
+
+function handlePreviewDismiss() {
+  previewOpen.value = false
+  selectedPreview.value = null
+  clearPreviewTapState()
+  resetPreviewTransform()
+}
+
+function resetPreviewTransform() {
+  previewScale.value = PREVIEW_ZOOM_MIN
+  previewTranslateX.value = 0
+  previewTranslateY.value = 0
+}
+
+function clearPreviewTapState() {
+  cancelPreviewTapTimer()
+  previewLastTapAt = 0
+  previewLastTapX = 0
+  previewLastTapY = 0
+}
+
+function cancelPreviewTapTimer() {
+  if (previewTapTimer) {
+    clearTimeout(previewTapTimer)
+    previewTapTimer = null
+  }
+}
+
+function previewTouchDistance(touches: TouchList): number {
+  if (touches.length < 2) return 0
+  return Math.hypot(
+    touches[0].clientX - touches[1].clientX,
+    touches[0].clientY - touches[1].clientY,
+  )
+}
+
+function previewTouchMidpoint(touches: TouchList) {
+  return {
+    x: (touches[0].clientX + touches[1].clientX) / 2,
+    y: (touches[0].clientY + touches[1].clientY) / 2,
+  }
+}
+
+function clampPreviewTranslation(target: EventTarget | null) {
+  const stage = target as HTMLElement | null
+  const width = stage?.clientWidth ?? 0
+  const height = stage?.clientHeight ?? 0
+  const minX = width - width * previewScale.value
+  const minY = height - height * previewScale.value
+  previewTranslateX.value = Math.max(minX, Math.min(0, previewTranslateX.value))
+  previewTranslateY.value = Math.max(minY, Math.min(0, previewTranslateY.value))
+}
+
+function nextPreviewDoubleTapScale(): number {
+  if (previewScale.value < 2) return 2
+  if (previewScale.value < 3) return 3
+  if (previewScale.value < PREVIEW_ZOOM_MAX) return PREVIEW_ZOOM_MAX
+  return PREVIEW_ZOOM_MIN
+}
+
+function zoomPreviewAtPoint(target: EventTarget | null, clientX: number, clientY: number) {
+  const nextScale = nextPreviewDoubleTapScale()
+  if (nextScale === PREVIEW_ZOOM_MIN) {
+    resetPreviewTransform()
+    return
+  }
+
+  const stage = target as HTMLElement | null
+  const rect = stage?.getBoundingClientRect()
+  const relativeX = clientX - (rect?.left ?? 0)
+  const relativeY = clientY - (rect?.top ?? 0)
+  const ratio = nextScale / previewScale.value
+  previewTranslateX.value = relativeX * (1 - ratio) + previewTranslateX.value * ratio
+  previewTranslateY.value = relativeY * (1 - ratio) + previewTranslateY.value * ratio
+  previewScale.value = nextScale
+  clampPreviewTranslation(target)
+}
+
+function handlePreviewTap(event: TouchEvent) {
+  const touch = event.changedTouches[0]
+  if (!touch) return
+  const now = Date.now()
+  const tapDistance =
+    Math.abs(touch.clientX - previewLastTapX) + Math.abs(touch.clientY - previewLastTapY)
+  if (
+    previewLastTapAt > 0 &&
+    now - previewLastTapAt < PREVIEW_DOUBLE_TAP_MS &&
+    tapDistance < PREVIEW_DOUBLE_TAP_DISTANCE
+  ) {
+    clearPreviewTapState()
+    zoomPreviewAtPoint(event.currentTarget, touch.clientX, touch.clientY)
+    return
+  }
+
+  clearPreviewTapState()
+  previewLastTapAt = now
+  previewLastTapX = touch.clientX
+  previewLastTapY = touch.clientY
+  previewTapTimer = setTimeout(() => {
+    previewTapTimer = null
+    previewLastTapAt = 0
+    closePreview()
+  }, PREVIEW_DOUBLE_TAP_MS)
+}
+
+function handlePreviewTouchStart(event: TouchEvent) {
+  if (event.touches.length === 1) {
+    const touch = event.touches[0]
+    const tapDistance =
+      Math.abs(touch.clientX - previewLastTapX) + Math.abs(touch.clientY - previewLastTapY)
+    if (
+      previewLastTapAt > 0 &&
+      Date.now() - previewLastTapAt < PREVIEW_DOUBLE_TAP_MS &&
+      tapDistance < PREVIEW_DOUBLE_TAP_DISTANCE
+    ) {
+      cancelPreviewTapTimer()
+    }
+    previewGestureMoved = false
+    previewGestureUsedMultipleTouches = false
+    previewTouchStartX = touch.clientX
+    previewTouchStartY = touch.clientY
+    previewStartTranslateX = previewTranslateX.value
+    previewStartTranslateY = previewTranslateY.value
+    return
+  }
+
+  if (event.touches.length < 2) return
+  event.preventDefault()
+  clearPreviewTapState()
+  previewGestureUsedMultipleTouches = true
+  previewPinchDistance = previewTouchDistance(event.touches)
+  previewStartScale = previewScale.value
+  previewStartTranslateX = previewTranslateX.value
+  previewStartTranslateY = previewTranslateY.value
+  const midpoint = previewTouchMidpoint(event.touches)
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  previewPinchOriginX = midpoint.x - rect.left
+  previewPinchOriginY = midpoint.y - rect.top
+}
+
+function handlePreviewTouchMove(event: TouchEvent) {
+  if (event.touches.length >= 2) {
+    event.preventDefault()
+    const distance = previewTouchDistance(event.touches)
+    if (previewPinchDistance <= 0) return
+    const nextScale = Math.max(
+      PREVIEW_ZOOM_MIN,
+      Math.min(PREVIEW_ZOOM_MAX, previewStartScale * (distance / previewPinchDistance)),
+    )
+    const ratio = nextScale / previewStartScale
+    previewScale.value = nextScale
+    previewTranslateX.value = previewPinchOriginX * (1 - ratio) + previewStartTranslateX * ratio
+    previewTranslateY.value = previewPinchOriginY * (1 - ratio) + previewStartTranslateY * ratio
+    clampPreviewTranslation(event.currentTarget)
+    previewGestureMoved = true
+    return
+  }
+
+  if (event.touches.length !== 1) return
+  const deltaX = event.touches[0].clientX - previewTouchStartX
+  const deltaY = event.touches[0].clientY - previewTouchStartY
+  if (Math.abs(deltaX) > PREVIEW_MOVE_THRESHOLD || Math.abs(deltaY) > PREVIEW_MOVE_THRESHOLD) {
+    previewGestureMoved = true
+    clearPreviewTapState()
+  }
+  if (previewScale.value <= PREVIEW_ZOOM_MIN) return
+  event.preventDefault()
+  previewTranslateX.value = previewStartTranslateX + deltaX
+  previewTranslateY.value = previewStartTranslateY + deltaY
+  clampPreviewTranslation(event.currentTarget)
+}
+
+function handlePreviewTouchEnd(event: TouchEvent) {
+  if (event.touches.length > 0) {
+    if (previewGestureUsedMultipleTouches && event.touches.length === 1) {
+      previewTouchStartX = event.touches[0].clientX
+      previewTouchStartY = event.touches[0].clientY
+      previewStartTranslateX = previewTranslateX.value
+      previewStartTranslateY = previewTranslateY.value
+    }
+    return
+  }
+
+  lastPreviewTouchEndAt = Date.now()
+  if (event.type === 'touchcancel') {
+    clampPreviewTranslation(event.currentTarget)
+    return
+  }
+  if (previewGestureUsedMultipleTouches) {
+    if (previewScale.value < 1.05) {
+      resetPreviewTransform()
+    } else {
+      clampPreviewTranslation(event.currentTarget)
+    }
+    return
+  }
+  if (previewGestureMoved) {
+    clampPreviewTranslation(event.currentTarget)
+    return
+  }
+  handlePreviewTap(event)
+}
+
+function handlePreviewClick() {
+  if (Date.now() - lastPreviewTouchEndAt < TOUCH_CLICK_DELAY_MS) return
+  closePreview()
 }
 
 function isGroupCollapsed(photoId: string): boolean {
@@ -435,10 +721,20 @@ function formatBytes(bytes: number): string {
 }
 
 .image-frame {
+  display: block;
   width: 100%;
   aspect-ratio: 3 / 4;
+  padding: 0;
   overflow: hidden;
+  border: 0;
   background: #f8f1ed;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.image-frame:focus-visible {
+  outline: 2px solid #e8843c;
+  outline-offset: -2px;
 }
 
 .image-frame img {
@@ -516,9 +812,44 @@ function formatBytes(bytes: number): string {
   font: inherit;
 }
 
-.empty-icon {
-  color: #d4bcae;
-  font-size: 26px;
+.cache-preview-modal {
+  --width: 100%;
+  --height: 100%;
+  --border-radius: 0;
+  --background: transparent;
+  --backdrop-opacity: 1;
+}
+
+.cache-preview-modal::part(backdrop) {
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.preview-stage {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.preview-stage img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+  will-change: transform;
+  -webkit-user-drag: none;
 }
 
 @media (min-width: 600px) {

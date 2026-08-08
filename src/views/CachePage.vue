@@ -77,29 +77,34 @@
               <div
                 v-if="!isGroupCollapsed(group.photoId)"
                 :id="`cache-grid-${group.photoId}`"
-                class="cache-grid-wrap"
+                class="cache-drawer-content"
               >
-                <div class="cache-grid">
-                  <template v-for="item in group.items" :key="item.key">
-                    <div v-if="item.gap" class="gap-slot" aria-hidden="true" />
-                    <article v-else-if="item.page" class="cache-card">
-                      <div class="image-frame">
-                        <img
-                          :src="previewUrl(item.page)"
-                          :alt="`${group.photoId} 第 ${item.page.sortOrder} 页`"
-                          loading="lazy"
-                          decoding="async"
-                        />
-                      </div>
-                      <div class="cache-card-footer">
-                        <span class="page-number">第 {{ item.page.sortOrder }} 页</span>
-                        <span class="type-badges">
-                          <span v-if="item.page.full" class="type-badge full">原图</span>
-                          <span v-if="item.page.small" class="type-badge small">缩略图</span>
-                        </span>
-                      </div>
-                    </article>
-                  </template>
+                <div class="cache-drawer-inner">
+                  <div class="group-title" :title="groupTitles[group.photoId]">
+                    {{ groupTitles[group.photoId] ?? '正在获取标题...' }}
+                  </div>
+                  <div class="cache-grid">
+                    <template v-for="item in group.items" :key="item.key">
+                      <div v-if="item.gap" class="gap-slot" aria-hidden="true" />
+                      <article v-else-if="item.page" class="cache-card">
+                        <div class="image-frame">
+                          <img
+                            :src="previewUrl(item.page)"
+                            :alt="`${group.photoId} 第 ${item.page.sortOrder} 页`"
+                            loading="lazy"
+                            decoding="async"
+                          />
+                        </div>
+                        <div class="cache-card-footer">
+                          <span class="page-number">第 {{ item.page.sortOrder }} 页</span>
+                          <span class="type-badges">
+                            <span v-if="item.page.full" class="type-badge full">原图</span>
+                            <span v-if="item.page.small" class="type-badge small">缩略图</span>
+                          </span>
+                        </div>
+                      </article>
+                    </template>
+                  </div>
                 </div>
               </div>
             </Transition>
@@ -113,7 +118,7 @@
 <script setup lang="ts">
 defineOptions({ name: 'CachePage' })
 
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import {
   IonBackButton,
   IonButton,
@@ -127,7 +132,7 @@ import {
 } from '@ionic/vue'
 import { chevronDownOutline, refreshOutline } from 'ionicons/icons'
 import { getImageUrl, JmcomicService } from '@/services/JmcomicService'
-import type { CacheCapacityInfo, ImageCacheEntry } from '@/services/JmcomicTypes'
+import type { CacheCapacityInfo, ImageCacheEntry, PhotoDetail } from '@/services/JmcomicTypes'
 import type { CachePageView } from '@/utils/imageCacheView'
 import { buildImageCacheGroups } from '@/utils/imageCacheView'
 
@@ -136,6 +141,8 @@ const error = ref('')
 const entries = ref<ImageCacheEntry[]>([])
 const cacheInfo = ref<CacheCapacityInfo>({ capacityMb: 0, usedMb: 0 })
 const collapsedGroupIds = ref<Set<string>>(new Set())
+const groupTitles = ref<Record<string, string>>({})
+let titleLoadVersion = 0
 
 const groups = computed(() => buildImageCacheGroups(entries.value))
 const cachedPageCount = computed(() =>
@@ -154,9 +161,15 @@ onMounted(() => {
   void loadCache()
 })
 
+onUnmounted(() => {
+  titleLoadVersion += 1
+})
+
 async function loadCache() {
+  const loadVersion = ++titleLoadVersion
   loading.value = true
   error.value = ''
+  groupTitles.value = {}
   try {
     const [info, result] = await Promise.all([
       JmcomicService.getCacheCapacityInfo(),
@@ -164,11 +177,42 @@ async function loadCache() {
     ])
     cacheInfo.value = info
     entries.value = result.entries ?? []
+    void loadGroupTitles(
+      buildImageCacheGroups(entries.value).map((group) => group.photoId),
+      loadVersion,
+    )
   } catch {
     error.value = '缓存读取失败'
   } finally {
     loading.value = false
   }
+}
+
+async function loadGroupTitles(photoIds: string[], loadVersion: number) {
+  for (let start = 0; start < photoIds.length; start += 4) {
+    const batch = photoIds.slice(start, start + 4)
+    const results = await Promise.all(
+      batch.map(async (photoId) => {
+        try {
+          const photo = await JmcomicService.getPhoto(photoId)
+          return [photoId, formatGroupTitle(photo)] as const
+        } catch {
+          return [photoId, '标题获取失败'] as const
+        }
+      }),
+    )
+    if (loadVersion !== titleLoadVersion) return
+    groupTitles.value = { ...groupTitles.value, ...Object.fromEntries(results) }
+  }
+}
+
+function formatGroupTitle(photo: PhotoDetail): string {
+  const title = photo.title.trim() || '未命名章节'
+  const isMultiEpisode =
+    photo.isSingleEpisode === false ||
+    (photo.isSingleEpisode === undefined && photo.albumId !== photo.id)
+  if (!isMultiEpisode || photo.sortOrder <= 0) return title
+  return `${title} · 第${photo.sortOrder}话`
 }
 
 function previewUrl(page: CachePageView): string {
@@ -335,6 +379,15 @@ function formatBytes(bytes: number): string {
   font-weight: 500;
 }
 
+.group-title {
+  padding: 0 10px 9px;
+  color: #9a7a68;
+  font-size: 10px;
+  line-height: 16px;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+
 .cache-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -342,14 +395,15 @@ function formatBytes(bytes: number): string {
   align-items: start;
 }
 
-.cache-grid-wrap {
+.cache-drawer-content {
   display: grid;
   grid-template-rows: 1fr;
   overflow: hidden;
 }
 
-.cache-grid-wrap > .cache-grid {
+.cache-drawer-inner {
   min-height: 0;
+  overflow: hidden;
 }
 
 .cache-drawer-enter-active,

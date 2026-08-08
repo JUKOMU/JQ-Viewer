@@ -311,10 +311,10 @@
               <span class="row-subtitle preview-mono">{{ exportPreview }}</span>
             </div>
           </div>
-          <div class="row divider action" @click="resetExportFormat">
+          <button class="row divider action row-action" type="button" @click="resetExportFormat">
             <span class="row-title">重置为默认</span>
             <span class="row-subtitle" style="color: #b89a84; font-size: 12px">JM{id}{title}</span>
-          </div>
+          </button>
         </div>
 
         <!-- 分组：PDF 导出设置 -->

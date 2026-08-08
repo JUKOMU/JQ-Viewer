@@ -619,17 +619,22 @@ const loadAlbumData = async () => {
     albumDetail.value = album
     const targetChapterId = resolveDetailChapterId(album, requestedId, targetAlbumId)
     selectedChapterId.value = targetChapterId
+    const initialChapterGeneration = chapterLoadGeneration
+    let initialChapterResultCurrent = true
     if (targetChapterId) {
       const loadedPhoto =
         initialPhoto?.id === targetChapterId
           ? initialPhoto
           : await JmcomicService.getPhoto(targetChapterId)
-      if (!isCurrentLoad()) return
-      photoDetail.value = loadedPhoto
+      initialChapterResultCurrent =
+        isCurrentLoad() &&
+        chapterLoadGeneration === initialChapterGeneration &&
+        selectedChapterId.value === targetChapterId
+      if (initialChapterResultCurrent) photoDetail.value = loadedPhoto
     }
     if (!isCurrentLoad()) return
 
-    recordBrowseHistory()
+    if (initialChapterResultCurrent) recordBrowseHistory()
   } catch {
     // 保留 query 数据展示
   } finally {

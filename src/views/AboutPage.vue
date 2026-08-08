@@ -41,7 +41,8 @@
               <span v-else-if="hasUpdate" class="info-value update"
                 >发现新版本 {{ latestVersion }}</span
               >
-              <span v-else class="info-value">已是最新</span>
+              <span v-else-if="updateChecked" class="info-value">已是最新</span>
+              <span v-else class="info-value">点击检查</span>
               <IonSpinner
                 v-if="updateChecking"
                 name="circular"
@@ -139,6 +140,7 @@ const updateChecking = ref(false)
 const updateError = ref(false)
 const hasUpdate = ref(false)
 const latestVersion = ref('')
+const updateChecked = ref(false)
 
 const REPO_URL = 'https://github.com/jukomu/jq-viewer'
 const JMCOMIC_API_REPO_URL = 'https://github.com/JUKOMU/JMComic-Api-Java'
@@ -179,6 +181,7 @@ async function checkUpdate() {
   updateError.value = false
   hasUpdate.value = false
   latestVersion.value = ''
+  updateChecked.value = false
 
   try {
     const resp = await fetch(RELEASES_API, {
@@ -197,6 +200,7 @@ async function checkUpdate() {
   } finally {
     await new Promise((resolve) => setTimeout(resolve, 1000))
     updateChecking.value = false
+    updateChecked.value = true
   }
 }
 

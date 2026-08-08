@@ -25,6 +25,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
 
@@ -35,6 +36,83 @@ async function flushAnimationFrames() {
 }
 
 describe('VerticalScrollView', () => {
+  test('双指缩放上限为 5 倍', async () => {
+    const wrapper = mount(VerticalScrollView, {
+      props: {
+        imageMap: new Map([[1, 'image-1']]),
+        totalCount: 1,
+        currentIndex: 0,
+      },
+    })
+    await flushAnimationFrames()
+
+    const container = wrapper.get('.vertical-container')
+    Object.defineProperties(container.element, {
+      clientHeight: {configurable: true, value: 400},
+      clientWidth: {configurable: true, value: 300},
+      scrollTop: {configurable: true, value: 0, writable: true},
+    })
+    await container.trigger('touchstart', {
+      touches: [
+        {clientX: 100, clientY: 100},
+        {clientX: 200, clientY: 100},
+      ],
+    })
+    await container.trigger('touchmove', {
+      touches: [
+        {clientX: -200, clientY: 100},
+        {clientX: 500, clientY: 100},
+      ],
+    })
+
+    expect(wrapper.get('.zoom-wrapper').attributes('style')).toContain('scale(5)')
+    wrapper.unmount()
+  })
+
+  test('双击按 1 倍、2 倍、3 倍、5 倍循环缩放', async () => {
+    let now = 1000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    const wrapper = mount(VerticalScrollView, {
+      props: {
+        imageMap: new Map([[1, 'image-1']]),
+        totalCount: 1,
+        currentIndex: 0,
+      },
+    })
+    await flushAnimationFrames()
+
+    const container = wrapper.get('.vertical-container')
+    Object.defineProperties(container.element, {
+      clientHeight: {configurable: true, value: 400},
+      clientWidth: {configurable: true, value: 300},
+      scrollTop: {configurable: true, value: 0, writable: true},
+    })
+    const tap = async () => {
+      await container.trigger('touchstart', {touches: [{clientX: 150, clientY: 200}]})
+      await container.trigger('touchend', {
+        touches: [],
+        changedTouches: [{clientX: 150, clientY: 200}],
+      })
+    }
+    const doubleTap = async () => {
+      await tap()
+      now += 100
+      await tap()
+      now += 400
+    }
+
+    await doubleTap()
+    expect(wrapper.get('.zoom-wrapper').attributes('style')).toContain('scale(2)')
+    await doubleTap()
+    expect(wrapper.get('.zoom-wrapper').attributes('style')).toContain('scale(3)')
+    await doubleTap()
+    expect(wrapper.get('.zoom-wrapper').attributes('style')).toContain('scale(5)')
+    await doubleTap()
+    expect(wrapper.get('.zoom-wrapper').attributes('style') ?? '').not.toContain('scale(')
+
+    wrapper.unmount()
+  })
+
   test('每次进入章节底部时只触发一次 reached-bottom', async () => {
     const wrapper = mount(VerticalScrollView, {
       props: {

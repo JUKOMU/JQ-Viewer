@@ -32,7 +32,7 @@ const emit = defineEmits<{
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 
 const SWIPE_THRESHOLD = 60
-const ZOOM_MAX = 4
+const ZOOM_MAX = 5
 const ZOOM_MIN = 1
 const DOUBLE_TAP_MS = 280
 const DOUBLE_TAP_DIST = 30
@@ -64,6 +64,25 @@ function resetZoom() {
     clearTimeout(tapTimer)
     tapTimer = null
   }
+}
+
+function nextDoubleTapScale() {
+  if (zoomScale.value < 2) return 2
+  if (zoomScale.value < 3) return 3
+  if (zoomScale.value < ZOOM_MAX) return ZOOM_MAX
+  return ZOOM_MIN
+}
+
+function cycleDoubleTapZoom(relX: number, relY: number) {
+  const nextScale = nextDoubleTapScale()
+  if (nextScale === ZOOM_MIN) {
+    resetZoom()
+    return
+  }
+  const ratio = nextScale / zoomScale.value
+  zoomScale.value = nextScale
+  zoomTx.value = relX * (1 - ratio) + zoomTx.value * ratio
+  zoomTy.value = relY * (1 - ratio) + zoomTy.value * ratio
 }
 
 // ---- 手势临时变量 ----
@@ -256,13 +275,14 @@ function onTouchEnd(ev: TouchEvent) {
     lastTapX = ex
     lastTapY = ey
 
-    // 双击 → 恢复
+    // 双击 → 切换倍率
     if (!moved && elapsed < DOUBLE_TAP_MS && tapDist < DOUBLE_TAP_DIST) {
       if (tapTimer) {
         clearTimeout(tapTimer)
         tapTimer = null
       }
-      resetZoom()
+      cycleDoubleTapZoom(ex - offsetX.value, ey)
+      lastTapT = 0
       return
     }
 
@@ -335,23 +355,18 @@ function onTouchEnd(ev: TouchEvent) {
           clearTimeout(tapTimer)
           tapTimer = null
         }
-        const relX = ex - offsetX.value
-        const relY = ey
-        const os = zoomScale.value || 1
-        const ratio = 2 / os
-        zoomScale.value = 2
-        zoomTx.value = relX * (1 - ratio) + zoomTx.value * ratio
-        zoomTy.value = relY * (1 - ratio) + zoomTy.value * ratio
+        cycleDoubleTapZoom(ex - offsetX.value, ey)
+        lastTapT = 0
       } else {
         if (tapTimer) clearTimeout(tapTimer)
         tapTimer = setTimeout(() => {
           emit('toggle-toolbar')
           tapTimer = null
         }, DOUBLE_TAP_MS)
+        lastTapT = Date.now()
+        lastTapX = ex
+        lastTapY = ey
       }
-      lastTapT = Date.now()
-      lastTapX = ex
-      lastTapY = ey
     }
   }
 }

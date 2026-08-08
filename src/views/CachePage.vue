@@ -20,7 +20,7 @@
       </IonToolbar>
     </IonHeader>
 
-    <IonContent>
+    <IonContent ref="contentRef" :scroll-events="true" @ion-scroll="handleScroll">
       <div class="cache-content">
         <div v-if="!loading && !error" class="cache-summary">
           <div class="summary-main">
@@ -50,16 +50,23 @@
 
         <template v-else>
           <section v-for="group in groups" :key="group.photoId" class="cache-group">
-            <button
-              class="group-header"
-              type="button"
-              :aria-expanded="!isGroupCollapsed(group.photoId)"
-              :aria-controls="`cache-grid-${group.photoId}`"
-              :aria-label="`${isGroupCollapsed(group.photoId) ? '展开' : '收起'}章节 ${group.photoId} 图片缓存`"
-              @click="toggleGroup(group.photoId)"
-            >
-              <span class="id-tag">{{ group.photoId }}</span>
-              <span class="group-header-meta">
+            <div class="group-header">
+              <button
+                class="id-tag"
+                type="button"
+                :aria-label="`查看章节 ${group.photoId} 所属本子详情`"
+                @click="openAlbum(group.photoId)"
+              >
+                {{ group.photoId }}
+              </button>
+              <button
+                class="group-header-meta"
+                type="button"
+                :aria-expanded="!isGroupCollapsed(group.photoId)"
+                :aria-controls="`cache-grid-${group.photoId}`"
+                :aria-label="`${isGroupCollapsed(group.photoId) ? '展开' : '收起'}章节 ${group.photoId} 图片缓存`"
+                @click="toggleGroup(group.photoId)"
+              >
                 <span class="group-summary"
                   >{{ group.pages.length }} 页 · {{ formatBytes(group.sizeBytes) }}</span
                 >
@@ -69,8 +76,8 @@
                   :icon="chevronDownOutline"
                   aria-hidden="true"
                 />
-              </span>
-            </button>
+              </button>
+            </div>
 
             <Transition name="cache-drawer">
               <div
@@ -147,7 +154,8 @@
 <script setup lang="ts">
 defineOptions({ name: 'CachePage' })
 
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   IonBackButton,
   IonButton,
@@ -161,7 +169,7 @@ import {
   IonToolbar,
 } from '@ionic/vue'
 import { chevronDownOutline, refreshOutline } from 'ionicons/icons'
-import { getImageUrl, JmcomicService } from '@/services/JmcomicService'
+import { getImageUrl, JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
 import type { CacheCapacityInfo, ImageCacheEntry, PhotoDetail } from '@/services/JmcomicTypes'
 import type { CachePageView } from '@/utils/imageCacheView'
 import { buildImageCacheGroups } from '@/utils/imageCacheView'
@@ -172,12 +180,16 @@ const entries = ref<ImageCacheEntry[]>([])
 const cacheInfo = ref<CacheCapacityInfo>({ capacityMb: 0, usedMb: 0 })
 const collapsedGroupIds = ref<Set<string>>(new Set())
 const groupTitles = ref<Record<string, string>>({})
+const contentRef = ref<InstanceType<typeof IonContent> | null>(null)
 const selectedPreview = ref<CachePageView | null>(null)
 const previewOpen = ref(false)
 const previewScale = ref(1)
 const previewTranslateX = ref(0)
 const previewTranslateY = ref(0)
 let titleLoadVersion = 0
+let cacheScrollTop = 0
+
+const router = useRouter()
 
 const PREVIEW_ZOOM_MIN = 1
 const PREVIEW_ZOOM_MAX = 5
@@ -219,8 +231,42 @@ let previewLastTapX = 0
 let previewLastTapY = 0
 let previewTapTimer: ReturnType<typeof setTimeout> | null = null
 
+type IonContentElement = HTMLElement & {
+  getScrollElement?: () => Promise<HTMLElement | null>
+}
+
+const resolveCacheScrollElement = async (): Promise<HTMLElement | null> => {
+  const ionContentEl = contentRef.value?.$el as IonContentElement | undefined
+  if (!ionContentEl) return null
+  return (await ionContentEl.getScrollElement?.()) ?? null
+}
+
+const saveScrollPosition = async () => {
+  const el = await resolveCacheScrollElement()
+  if (el) cacheScrollTop = el.scrollTop
+}
+
+const restoreScrollPosition = async () => {
+  await nextTick()
+  const el = await resolveCacheScrollElement()
+  if (el) el.scrollTop = Math.max(0, cacheScrollTop)
+}
+
+const handleScroll = (event: CustomEvent<{ scrollTop?: number }>) => {
+  const scrollTop = event.detail?.scrollTop
+  if (typeof scrollTop === 'number') cacheScrollTop = scrollTop
+}
+
 onMounted(() => {
   void loadCache()
+})
+
+onActivated(() => {
+  void restoreScrollPosition()
+})
+
+onDeactivated(() => {
+  void saveScrollPosition()
 })
 
 onUnmounted(() => {
@@ -276,6 +322,20 @@ function formatGroupTitle(photo: PhotoDetail): string {
     (photo.isSingleEpisode === undefined && photo.albumId !== photo.id)
   if (!isMultiEpisode || photo.sortOrder <= 0) return title
   return `${title} · 第${photo.sortOrder}话`
+}
+
+async function openAlbum(photoId: string) {
+  try {
+    const photo = await JmcomicService.getPhoto(photoId)
+    const targetAlbumId = photo.albumId.trim()
+    if (!targetAlbumId) throw new Error('未找到所属本子')
+    await router.push({
+      path: `/album/${targetAlbumId}`,
+      query: { chapterId: photoId },
+    })
+  } catch (cause) {
+    await showToast(sanitizeError(cause, '打开详情失败'), 'danger')
+  }
 }
 
 function previewUrl(page: CachePageView): string {
@@ -614,26 +674,31 @@ function formatBytes(bytes: number): string {
   gap: 10px;
   margin: 0;
   padding: 9px 10px;
-  border: 0;
-  background: transparent;
   color: inherit;
-  font: inherit;
   text-align: left;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
 }
 
-.group-header:focus-visible {
+.id-tag:focus-visible,
+.group-header-meta:focus-visible {
   outline: 2px solid #e8843c;
-  outline-offset: -2px;
+  outline-offset: 1px;
 }
 
 .group-header-meta {
   display: inline-flex;
+  flex: 1;
   min-width: 0;
+  align-self: stretch;
   align-items: center;
   justify-content: flex-end;
   gap: 5px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .group-toggle-icon {
@@ -658,11 +723,16 @@ function formatBytes(bytes: number): string {
 }
 
 .id-tag {
+  flex-shrink: 0;
   padding: 3px 8px;
+  border: 0;
   background: #fff7f2;
   color: #9b5a35;
   font-size: 12px;
   font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .group-title {

@@ -1,12 +1,18 @@
 /* eslint-disable vue/one-component-per-file -- test-only Ionic fixtures */
 import { flushPromises, mount } from '@vue/test-utils'
-import { defineComponent, h } from 'vue'
+import { KeepAlive, defineComponent, h, nextTick, onMounted, ref } from 'vue'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   getCacheCapacityInfo: vi.fn(),
   getImageCacheContents: vi.fn(),
   getPhoto: vi.fn(),
+  routerPush: vi.fn(),
+  showToast: vi.fn(),
+}))
+
+vi.mock('vue-router', () => ({
+  useRouter: () => ({ push: mocks.routerPush }),
 }))
 
 vi.mock('@ionic/vue', () => {
@@ -22,7 +28,19 @@ vi.mock('@ionic/vue', () => {
     IonBackButton: withSlot('IonBackButton', 'button'),
     IonButton: withSlot('IonButton', 'button'),
     IonButtons: withSlot('IonButtons'),
-    IonContent: withSlot('IonContent', 'main'),
+    IonContent: defineComponent({
+      name: 'IonContent',
+      setup(_, { slots }) {
+        const elementRef = ref<HTMLElement | null>(null)
+        onMounted(() => {
+          const element = elementRef.value as HTMLElement & {
+            getScrollElement: () => Promise<HTMLElement | null>
+          }
+          element.getScrollElement = async () => element
+        })
+        return () => h('main', { ref: elementRef, class: 'ion-content-stub' }, slots.default?.())
+      },
+    }),
     IonHeader: withSlot('IonHeader', 'header'),
     IonIcon: withSlot('IonIcon', 'span'),
     IonModal: defineComponent({
@@ -49,6 +67,8 @@ vi.mock('ionicons/icons', () => ({
 vi.mock('@/services/JmcomicService', () => ({
   getImageUrl: (photoId: string, sortOrder: number, type: string) =>
     `https://cache.test/${type}/${photoId}/${sortOrder}`,
+  sanitizeError: (_cause: unknown, fallback: string) => fallback,
+  showToast: mocks.showToast,
   JmcomicService: {
     getCacheCapacityInfo: mocks.getCacheCapacityInfo,
     getImageCacheContents: mocks.getImageCacheContents,
@@ -75,6 +95,10 @@ describe('CachePage 章节标题', () => {
       ],
     })
     mocks.getPhoto.mockReset()
+    mocks.routerPush.mockReset()
+    mocks.routerPush.mockResolvedValue(undefined)
+    mocks.showToast.mockReset()
+    mocks.showToast.mockResolvedValue(undefined)
   })
 
   test('单章节显示标题，多章节追加话数，并随图片一起收起', async () => {
@@ -112,12 +136,74 @@ describe('CachePage 章节标题', () => {
       '多章节标题 · 第3话',
     ])
 
-    await wrapper.findAll('.group-header')[0].trigger('click')
+    await wrapper.findAll('.group-header-meta')[0].trigger('click')
     await flushPromises()
 
     expect(wrapper.findAll('.cache-group')[0].find('.group-title').exists()).toBe(false)
     expect(wrapper.findAll('.cache-group')[0].find('.cache-card').exists()).toBe(false)
     expect(wrapper.findAll('.cache-group')[0].find('.group-header').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  test('点击 ID 气泡进入所属本子的实际章节，不触发收起', async () => {
+    mocks.getPhoto.mockImplementation((photoId: string) =>
+      Promise.resolve({
+        id: photoId,
+        title: '章节标题',
+        albumId: photoId === '20' ? '2' : photoId,
+        sortOrder: photoId === '20' ? 3 : 1,
+        author: '',
+        tags: [],
+        images: [],
+        isSingleEpisode: photoId !== '20',
+      }),
+    )
+
+    const wrapper = mount(CachePage)
+    await flushPromises()
+    mocks.getPhoto.mockClear()
+
+    await wrapper.findAll('.id-tag')[1].trigger('click')
+    await flushPromises()
+
+    expect(mocks.getPhoto).toHaveBeenCalledOnce()
+    expect(mocks.getPhoto).toHaveBeenCalledWith('20')
+    expect(mocks.routerPush).toHaveBeenCalledWith({
+      path: '/album/2',
+      query: { chapterId: '20' },
+    })
+    expect(wrapper.findAll('.cache-group')[1].find('.group-title').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  test('从详情页返回时恢复缓存页滚动位置且不重新加载', async () => {
+    mocks.getPhoto.mockRejectedValue(new Error('offline'))
+    const showCache = ref(true)
+    const Host = defineComponent({
+      setup() {
+        return () =>
+          h(KeepAlive, null, [
+            showCache.value ? h(CachePage, { key: 'cache' }) : h('div', { class: 'detail-stub' }),
+          ])
+      },
+    })
+    const wrapper = mount(Host)
+    await flushPromises()
+
+    const cacheWrapper = wrapper.findComponent(CachePage)
+    const scrollElement = cacheWrapper.get('.ion-content-stub').element as HTMLElement
+    scrollElement.scrollTop = 420
+    showCache.value = false
+    await nextTick()
+    await flushPromises()
+
+    scrollElement.scrollTop = 0
+    showCache.value = true
+    await nextTick()
+    await flushPromises()
+
+    expect((wrapper.get('.ion-content-stub').element as HTMLElement).scrollTop).toBe(420)
+    expect(mocks.getImageCacheContents).toHaveBeenCalledTimes(1)
     wrapper.unmount()
   })
 

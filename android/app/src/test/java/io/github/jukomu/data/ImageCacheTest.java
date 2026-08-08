@@ -8,6 +8,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
@@ -89,6 +90,20 @@ public class ImageCacheTest {
 
         assertTrue(cache.getCurrentSize() <= 8L * MIB);
         assertTrue(cache.getCapacity() == 16L * MIB);
+    }
+
+    @Test
+    public void entriesSnapshotReturnsKeysAndMetadataWithoutChangingEntries() {
+        cache.put("20/2", new byte[]{1, 2}, "image/jpeg");
+        cache.put("20/2/thumb", new byte[]{3}, "image/png");
+
+        java.util.List<ImageCache.CacheEntryInfo> entries = cache.getEntriesSnapshot();
+
+        assertEquals(2, entries.size());
+        assertEquals("20/2", entries.get(0).key);
+        assertEquals(2L, entries.get(0).sizeBytes);
+        assertEquals("image/jpeg", entries.get(0).mimeType);
+        assertEquals("20/2/thumb", entries.get(1).key);
     }
 
     private Thread writer(String key, CountDownLatch start, AtomicReference<Throwable> failure) {

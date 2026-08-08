@@ -6,6 +6,7 @@ import android.net.Uri;
 import android.webkit.WebResourceResponse;
 
 import java.io.*;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -201,6 +202,23 @@ public class ImageCache {
             return cache.containsKey(key);
         } finally {
             writeLock.unlock();
+        }
+    }
+
+    /**
+     * 返回当前缓存条目的只读元数据快照，不触碰 LRU 访问顺序。
+     */
+    public List<CacheEntryInfo> getEntriesSnapshot() {
+        readLock.lock();
+        try {
+            List<CacheEntryInfo> entries = new ArrayList<>(cache.size());
+            for (Map.Entry<String, ImageEntry> entry : cache.entrySet()) {
+                ImageEntry value = entry.getValue();
+                entries.add(new CacheEntryInfo(entry.getKey(), value.data.length, value.mimeType));
+            }
+            return entries;
+        } finally {
+            readLock.unlock();
         }
     }
 
@@ -486,6 +504,18 @@ public class ImageCache {
 
         ImageEntry(byte[] data, String mimeType) {
             this.data = data;
+            this.mimeType = mimeType;
+        }
+    }
+
+    public static class CacheEntryInfo {
+        public final String key;
+        public final long sizeBytes;
+        public final String mimeType;
+
+        CacheEntryInfo(String key, long sizeBytes, String mimeType) {
+            this.key = key;
+            this.sizeBytes = sizeBytes;
             this.mimeType = mimeType;
         }
     }

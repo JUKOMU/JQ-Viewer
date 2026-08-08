@@ -14,7 +14,7 @@
         <div class="section-label">图片缓存</div>
         <div class="card">
           <!-- 缓存用量 -->
-          <div class="row">
+          <button class="row action cache-usage-row" type="button" @click="goCache">
             <div class="row-left">
               <span class="row-title">缓存用量</span>
               <span class="row-subtitle"
@@ -27,7 +27,8 @@
               </div>
               <span class="usage-text">{{ usagePercent }}%</span>
             </div>
-          </div>
+            <span class="arrow">›</span>
+          </button>
 
           <!-- 缓存上限 -->
           <div class="row divider">
@@ -547,6 +548,10 @@ function goPdfTemplateHelp() {
   router.push('/pdf-template-help')
 }
 
+function goCache() {
+  router.push('/cache')
+}
+
 const cacheInfo = ref<CacheCapacityInfo>({ capacityMb: 0, usedMb: 0 })
 const cacheInputMb = ref(SettingsStore.getCacheCapacityMb())
 const preloadPages = ref(SettingsStore.getReaderPreloadPages())
@@ -1045,6 +1050,14 @@ function onAutoShowToolbarAtEndChange(e: CustomEvent) {
 .row.action {
   cursor: pointer;
   user-select: none;
+}
+
+.cache-usage-row {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  text-align: left;
 }
 
 .row.action:active {

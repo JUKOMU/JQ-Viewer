@@ -175,6 +175,14 @@ export interface CacheCapacityInfo {
   limitReason?: string
 }
 
+export interface ImageCacheEntry {
+  photoId: string
+  sortOrder: number
+  type: 'image' | 'thumb'
+  sizeBytes: number
+  mimeType: string
+}
+
 export interface AllSettings {
   readerPreloadPages: number
   preloadConcurrency: number

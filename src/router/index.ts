@@ -42,6 +42,12 @@ const routes: Array<RouteRecordRaw> = [
     meta: { menu: true, keepAlive: true },
   },
   {
+    path: '/cache',
+    name: 'CachePage',
+    component: () => import('@/views/CachePage.vue'),
+    meta: { menu: false, keepAlive: false },
+  },
+  {
     path: '/history',
     name: 'HistoryPage',
     component: () => import('@/views/HistoryPage.vue'),

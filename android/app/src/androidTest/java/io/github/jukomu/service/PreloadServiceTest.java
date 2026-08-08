@@ -135,4 +135,24 @@ public class PreloadServiceTest {
 
         assertFalse(imageCache.has("in-flight-complete-photo/1"));
     }
+
+    @Test
+    public void imageCacheContentsReturnsStructuredEntries() throws Exception {
+        PreloadService service = new PreloadService(
+            imageCache, FileStore.getInstance(), null, null,
+            imageExecutor, networkExecutor, null, null,
+            new CacheCapacityPolicy(), 2,
+            image -> new byte[]{1, 2, 3});
+        imageCache.put("20/49", new byte[]{1, 2}, "image/jpeg");
+        imageCache.put("20/50/thumb", new byte[]{3}, "image/jpeg");
+
+        JSONArray entries = service.getImageCacheContents().getJSONArray("entries");
+
+        assertEquals(2, entries.length());
+        assertEquals("20", entries.getJSONObject(0).getString("photoId"));
+        assertEquals(49, entries.getJSONObject(0).getInt("sortOrder"));
+        assertEquals("image", entries.getJSONObject(0).getString("type"));
+        assertEquals(50, entries.getJSONObject(1).getInt("sortOrder"));
+        assertEquals("thumb", entries.getJSONObject(1).getString("type"));
+    }
 }

@@ -8,13 +8,13 @@
         <div class="toolbar-title">设置</div>
       </IonToolbar>
     </IonHeader>
-    <IonContent>
+    <IonContent ref="contentRef" :scroll-events="true" @ion-scroll="handleScroll">
       <div class="settings-list">
         <!-- 分组：图片缓存 -->
         <div class="section-label">图片缓存</div>
         <div class="card">
           <!-- 缓存用量 -->
-          <div class="row">
+          <button class="row action row-action" type="button" @click="goCache">
             <div class="row-left">
               <span class="row-title">缓存用量</span>
               <span class="row-subtitle"
@@ -27,7 +27,8 @@
               </div>
               <span class="usage-text">{{ usagePercent }}%</span>
             </div>
-          </div>
+            <IonIcon :icon="chevronForwardOutline" class="entry-arrow" aria-hidden="true" />
+          </button>
 
           <!-- 缓存上限 -->
           <div class="row divider">
@@ -51,10 +52,10 @@
           </div>
 
           <!-- 清空缓存 -->
-          <div class="row divider action" @click="onClearCache">
+          <button class="row divider action row-action" type="button" @click="onClearCache">
             <span class="row-title">清空缓存</span>
-            <span class="arrow">›</span>
-          </div>
+            <IonIcon :icon="chevronForwardOutline" class="entry-arrow" aria-hidden="true" />
+          </button>
         </div>
 
         <!-- 分组：阅读设置 -->
@@ -310,10 +311,10 @@
               <span class="row-subtitle preview-mono">{{ exportPreview }}</span>
             </div>
           </div>
-          <div class="row divider action" @click="resetExportFormat">
+          <button class="row divider action row-action" type="button" @click="resetExportFormat">
             <span class="row-title">重置为默认</span>
             <span class="row-subtitle" style="color: #b89a84; font-size: 12px">JM{id}{title}</span>
-          </div>
+          </button>
         </div>
 
         <!-- 分组：PDF 导出设置 -->
@@ -401,38 +402,38 @@
           </div>
 
           <!-- 食用方法 -->
-          <div class="row divider action" @click="goPdfTemplateHelp">
+          <button class="row divider action row-action" type="button" @click="goPdfTemplateHelp">
             <span class="row-title">食用方法</span>
-            <span class="arrow">›</span>
-          </div>
+            <IonIcon :icon="chevronForwardOutline" class="entry-arrow" aria-hidden="true" />
+          </button>
         </div>
 
         <!-- 分组：网络状态 -->
         <div class="section-label">网络状态</div>
         <div class="card">
-          <div class="row action" @click="goNetworkStatus">
+          <button class="row action row-action" type="button" @click="goNetworkStatus">
             <span class="row-title">网络状态</span>
-            <span class="arrow">›</span>
-          </div>
+            <IonIcon :icon="chevronForwardOutline" class="entry-arrow" aria-hidden="true" />
+          </button>
         </div>
 
         <!-- 分组：用户 -->
         <div class="section-label">用户</div>
         <div class="card">
-          <div class="row action" @click="goUser">
+          <button class="row action row-action" type="button" @click="goUser">
             <span class="row-title">用户</span>
             <span class="row-value">{{ userInfo?.username ?? '未登录' }}</span>
-            <span class="arrow">›</span>
-          </div>
+            <IonIcon :icon="chevronForwardOutline" class="entry-arrow" aria-hidden="true" />
+          </button>
         </div>
 
         <!-- 分组：关于 -->
         <div class="section-label">关于</div>
         <div class="card">
-          <div class="row action" @click="goAbout">
+          <button class="row action row-action" type="button" @click="goAbout">
             <span class="row-title">关于</span>
-            <span class="arrow">›</span>
-          </div>
+            <IonIcon :icon="chevronForwardOutline" class="entry-arrow" aria-hidden="true" />
+          </button>
         </div>
       </div>
 
@@ -465,17 +466,19 @@
 <script setup lang="ts">
 defineOptions({ name: 'SettingPage' })
 
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onActivated, onDeactivated, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   alertController,
   IonContent,
   IonHeader,
+  IonIcon,
   IonPage,
   IonRange,
   IonToggle,
   IonToolbar,
 } from '@ionic/vue'
+import { chevronForwardOutline } from 'ionicons/icons'
 import { App } from '@capacitor/app'
 import type { PluginListenerHandle } from '@capacitor/core'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
@@ -494,6 +497,42 @@ import type { CacheCapacityInfo, RelocationProgress } from '@/services/JmcomicTy
 const router = useRouter()
 const { userInfo } = useAuth()
 const appVersion = ref('1.0.0')
+const contentRef = ref<InstanceType<typeof IonContent> | null>(null)
+let settingScrollTop = 0
+
+type IonContentElement = HTMLElement & {
+  getScrollElement?: () => Promise<HTMLElement | null>
+}
+
+const resolveSettingScrollElement = async (): Promise<HTMLElement | null> => {
+  const ionContentEl = contentRef.value?.$el as IonContentElement | undefined
+  if (!ionContentEl) return null
+  return (await ionContentEl.getScrollElement?.()) ?? null
+}
+
+const saveScrollPosition = async () => {
+  const el = await resolveSettingScrollElement()
+  if (el) settingScrollTop = el.scrollTop
+}
+
+const restoreScrollPosition = async () => {
+  await nextTick()
+  const el = await resolveSettingScrollElement()
+  if (el) el.scrollTop = Math.max(0, settingScrollTop)
+}
+
+const handleScroll = (event: CustomEvent<{ scrollTop?: number }>) => {
+  const scrollTop = event.detail?.scrollTop
+  if (typeof scrollTop === 'number') settingScrollTop = scrollTop
+}
+
+onActivated(() => {
+  void restoreScrollPosition()
+})
+
+onDeactivated(() => {
+  void saveScrollPosition()
+})
 
 function goNetworkStatus() {
   router.push('/network-status')
@@ -509,6 +548,10 @@ function goAbout() {
 
 function goPdfTemplateHelp() {
   router.push('/pdf-template-help')
+}
+
+function goCache() {
+  router.push('/cache')
 }
 
 const cacheInfo = ref<CacheCapacityInfo>({ capacityMb: 0, usedMb: 0 })
@@ -585,16 +628,16 @@ const cacheDiagnosticText = computed(() => {
   if (!maxHeapMb) return ''
   const reasonLabels: Record<string, string> = {
     'requested-limit': '按用户设置生效',
-    'heap-budget': '受进程 Heap 安全预算限制',
+    'heap-budget': '受应用内存安全上限限制',
     'low-ram-heap-budget': '低内存设备安全预算',
     'memory-pressure': '系统内存压力临时收缩',
     'minimum-safe-capacity': '使用最低安全容量',
-    'invalid-heap-fallback': '无法读取 Heap 上限，使用安全容量',
+    'invalid-heap-fallback': '无法读取应用内存上限，使用安全容量',
   }
   const reason = cacheInfo.value.limitReason
     ? reasonLabels[cacheInfo.value.limitReason] || cacheInfo.value.limitReason
     : ''
-  return `当前实际 ${cacheEffectiveMb.value} MB · Heap ${maxHeapMb} MB${reason ? ` · ${reason}` : ''}`
+  return `当前实际 ${cacheEffectiveMb.value} MB · 应用内存上限 ${maxHeapMb} MB${reason ? ` · ${reason}` : ''}`
 })
 
 onMounted(async () => {
@@ -1011,6 +1054,21 @@ function onAutoShowToolbarAtEndChange(e: CustomEvent) {
   user-select: none;
 }
 
+.row-action {
+  width: 100%;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.row-action:focus-visible {
+  outline: 2px solid #e8843c;
+  outline-offset: -2px;
+}
+
 .row.action:active {
   background: #faf4ef;
 }
@@ -1046,10 +1104,13 @@ function onAutoShowToolbarAtEndChange(e: CustomEvent) {
   flex-shrink: 0;
 }
 
-.arrow {
+.entry-arrow {
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+  margin-left: 8px;
   font-size: 20px;
   color: #c4a494;
-  font-weight: 300;
 }
 
 .num-input {

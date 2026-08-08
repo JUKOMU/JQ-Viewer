@@ -283,9 +283,15 @@ onMounted(async () => {
 
 function openAlbum(item: BrowseHistoryItem) {
   const authorsParam = item.authors.replace(/\s*\/\s*/g, ',')
+  const chapterId = item.chapterId.trim()
   void router.push({
     path: `/album/${item.albumId}`,
-    query: { title: item.albumTitle, coverUrl: item.coverUrl, authors: authorsParam },
+    query: {
+      title: item.albumTitle,
+      coverUrl: item.coverUrl,
+      authors: authorsParam,
+      ...(chapterId ? { chapterId } : {}),
+    },
   })
 }
 

@@ -28,31 +28,57 @@
 
         <!-- 检查更新 -->
         <div class="info-card">
-          <div class="info-row" @click="checkUpdate">
+          <button
+            class="info-row info-row-action"
+            type="button"
+            :disabled="updateChecking"
+            @click="checkUpdate"
+          >
             <span class="info-label">检查更新</span>
-            <span v-if="updateChecking" class="info-value"
-              >检查中...<span class="arrow">&#8250;</span></span
-            >
-            <span v-else-if="updateError" class="info-value error"
-              >检查失败<span class="arrow">&#8250;</span></span
-            >
-            <span v-else-if="hasUpdate" class="info-value update"
-              >发现新版本 {{ latestVersion }}<span class="arrow">&#8250;</span></span
-            >
-            <span v-else class="info-value">已是最新<span class="arrow">&#8250;</span></span>
-          </div>
+            <span class="info-action-value">
+              <span v-if="updateChecking" class="info-value">检查中...</span>
+              <span v-else-if="updateError" class="info-value error">检查失败</span>
+              <span v-else-if="hasUpdate" class="info-value update"
+                >发现新版本 {{ latestVersion }}</span
+              >
+              <span v-else-if="updateChecked" class="info-value">已是最新</span>
+              <span v-else class="info-value">点击检查</span>
+              <IonSpinner
+                v-if="updateChecking"
+                name="circular"
+                class="entry-spinner"
+                aria-hidden="true"
+              />
+              <IonIcon
+                v-else
+                :icon="chevronForwardOutline"
+                class="entry-arrow"
+                aria-hidden="true"
+              />
+            </span>
+          </button>
         </div>
 
         <!-- 仓库地址 -->
-        <div class="info-card" @click="openRepo">
+        <div class="info-card" @click="openRepo(REPO_URL)">
           <div class="info-row">
             <span class="info-label">仓库地址</span>
-            <span class="info-value repo-url"><a :href="REPO_URL">JQ Viewer</a></span>
+            <span class="info-value repo-url"
+              ><a :href="REPO_URL" @click.prevent.stop="openRepo(REPO_URL)"
+                ><IonIcon :icon="logoGithub" class="repo-icon" aria-hidden="true" />
+                <span>JQ Viewer</span></a
+              ></span
+            >
           </div>
           <div class="info-row">
             <span class="info-label"></span>
             <span class="info-value repo-url"
-              ><a href="https://github.com/JUKOMU/JMComic-Api-Java">JMComic-Api-Java</a></span
+              ><a
+                :href="JMCOMIC_API_REPO_URL"
+                @click.prevent.stop="openRepo(JMCOMIC_API_REPO_URL)"
+                ><IonIcon :icon="logoGithub" class="repo-icon" aria-hidden="true" />
+                <span>JMComic-Api-Java</span></a
+              ></span
             >
           </div>
         </div>
@@ -99,10 +125,13 @@ import {
   IonButtons,
   IonContent,
   IonHeader,
+  IonIcon,
   IonPage,
+  IonSpinner,
   IonTitle,
   IonToolbar,
 } from '@ionic/vue'
+import { chevronForwardOutline, logoGithub } from 'ionicons/icons'
 import { showToast } from '@/services/JmcomicService'
 import { compareVersion, RELEASES_API, sanitizeReleaseBody } from '@/utils/version'
 
@@ -111,8 +140,10 @@ const updateChecking = ref(false)
 const updateError = ref(false)
 const hasUpdate = ref(false)
 const latestVersion = ref('')
+const updateChecked = ref(false)
 
 const REPO_URL = 'https://github.com/jukomu/jq-viewer'
+const JMCOMIC_API_REPO_URL = 'https://github.com/JUKOMU/JMComic-Api-Java'
 
 const TITLE = 'JQ Viewer'
 const displayText = ref('')
@@ -150,6 +181,7 @@ async function checkUpdate() {
   updateError.value = false
   hasUpdate.value = false
   latestVersion.value = ''
+  updateChecked.value = false
 
   try {
     const resp = await fetch(RELEASES_API, {
@@ -166,7 +198,9 @@ async function checkUpdate() {
   } catch {
     updateError.value = true
   } finally {
+    await new Promise((resolve) => setTimeout(resolve, 1000))
     updateChecking.value = false
+    updateChecked.value = true
   }
 }
 
@@ -204,12 +238,12 @@ async function showUpdateAlert(version: string, body: string, htmlUrl: string) {
   await alert1.present()
 }
 
-async function openRepo() {
+async function openRepo(url: string) {
   try {
-    await navigator.clipboard.writeText(REPO_URL)
+    await navigator.clipboard.writeText(url)
     await showToast('仓库地址已复制', 'success')
   } catch {
-    window.open(REPO_URL, '_blank')
+    window.open(url, '_blank')
   }
 }
 
@@ -275,6 +309,26 @@ const reDisplay = async () => {
   min-height: 48px;
 }
 
+.info-row-action {
+  width: 100%;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.info-row-action:active {
+  background: #faf4ef;
+}
+
+.info-row-action:focus-visible {
+  outline: 2px solid #e8843c;
+  outline-offset: -2px;
+}
+
 .info-row + .info-row {
   border-top: 1px solid #f5ebe4;
 }
@@ -299,12 +353,45 @@ const reDisplay = async () => {
   color: #d44;
 }
 
+.info-action-value {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
+  margin-left: 12px;
+  text-align: right;
+}
+
 .repo-url {
   font-family: monospace;
   font-size: 13px;
   word-break: break-all;
   text-align: right;
   max-width: 60%;
+}
+
+.repo-url a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #8c6b5a;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition:
+    color 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.repo-url a:hover,
+.repo-url a:focus-visible,
+.repo-url a:active {
+  color: #e8843c;
+  border-bottom-color: rgba(232, 132, 60, 0.45);
+}
+
+.repo-icon {
+  flex: 0 0 auto;
+  font-size: 16px;
 }
 
 .card-action {
@@ -323,10 +410,21 @@ const reDisplay = async () => {
   background: #faf4ef;
 }
 
-.arrow {
+.entry-arrow {
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+  margin-left: 8px;
   font-size: 20px;
   color: #c4a494;
-  font-weight: 300;
+}
+
+.entry-spinner {
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+  margin-left: 8px;
+  color: #e8843c;
 }
 
 .author-note {

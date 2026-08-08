@@ -326,6 +326,45 @@ public class PreloadService {
         return ret;
     }
 
+    public JSONObject getImageCacheContents() {
+        JSONObject ret = new JSONObject();
+        JSONArray entries = new JSONArray();
+        try {
+            for (ImageCache.CacheEntryInfo entry : imageCache.getEntriesSnapshot()) {
+                String[] parts = entry.key.split("/", -1);
+                if (parts.length < 2 || parts.length > 3 || parts[0].isEmpty()) continue;
+
+                int sortOrder;
+                try {
+                    sortOrder = Integer.parseInt(parts[1]);
+                } catch (NumberFormatException ignored) {
+                    continue;
+                }
+
+                String type;
+                if (parts.length == 2) {
+                    type = "image";
+                } else if ("thumb".equals(parts[2])) {
+                    type = "thumb";
+                } else {
+                    continue;
+                }
+
+                JSONObject item = new JSONObject();
+                item.put("photoId", parts[0]);
+                item.put("sortOrder", sortOrder);
+                item.put("type", type);
+                item.put("sizeBytes", entry.sizeBytes);
+                item.put("mimeType", entry.mimeType == null ? "" : entry.mimeType);
+                entries.put(item);
+            }
+            ret.put("entries", entries);
+        } catch (Exception e) {
+            Log.d(TAG, "构建图片缓存内容失败", e);
+        }
+        return ret;
+    }
+
     public void clearImageCache() {
         imageCache.clear();
     }

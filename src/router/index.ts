@@ -37,8 +37,15 @@ const routes: Array<RouteRecordRaw> = [
   },
   {
     path: '/setting',
+    name: 'SettingPage',
     component: () => import('@/views/SettingPage.vue'),
     meta: { menu: true, keepAlive: true },
+  },
+  {
+    path: '/cache',
+    name: 'CachePage',
+    component: () => import('@/views/CachePage.vue'),
+    meta: { menu: false, keepAlive: true },
   },
   {
     path: '/history',

@@ -1209,6 +1209,15 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
     }
 
     @PluginMethod
+    public void getImageCacheContents(PluginCall call) {
+        try {
+            call.resolve(JSObject.fromJSONObject(preloadService.getImageCacheContents()));
+        } catch (Exception e) {
+            call.reject(e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
     public void clearImageCache(PluginCall call) {
         preloadService.clearImageCache();
         JSObject ret = new JSObject();

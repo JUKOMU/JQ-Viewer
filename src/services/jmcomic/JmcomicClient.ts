@@ -11,6 +11,7 @@ import type {
   FavoriteResult,
   ForumQuery,
   ImageInfo,
+  ImageCacheEntry,
   ImportedPdfsResult,
   ImportPdfItem,
   ImportPdfsResult,
@@ -75,6 +76,8 @@ export interface JmcomicClient {
   setCacheCapacity(options: { mb: number }): Promise<CacheCapacityInfo & { success: boolean }>
 
   getCacheCapacityInfo(): Promise<CacheCapacityInfo>
+
+  getImageCacheContents(): Promise<{ entries: ImageCacheEntry[] }>
 
   clearImageCache(): Promise<{ success: boolean }>
 

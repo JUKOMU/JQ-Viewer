@@ -143,6 +143,11 @@ export const JmcomicService = {
     return native.getCacheCapacityInfo()
   },
 
+  /** 查询当前进程内图片缓存条目 */
+  getImageCacheContents() {
+    return native.getImageCacheContents()
+  },
+
   /** 清空全部图片缓存 */
   clearImageCache() {
     return native.clearImageCache()

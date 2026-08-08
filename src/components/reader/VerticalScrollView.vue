@@ -66,7 +66,7 @@ interface VisibleItem {
   }
 }
 
-const ZOOM_MAX = 4
+const ZOOM_MAX = 5
 const ZOOM_MIN = 1
 const DOUBLE_TAP_MS = 280
 const DOUBLE_TAP_DIST = 30
@@ -465,6 +465,25 @@ function zoomAtViewportPoint(relX: number, relY: number, scale: number) {
   applyZoomAtContentPoint(scale, relX, relY, contentPoint.x, contentPoint.y)
 }
 
+function nextDoubleTapScale() {
+  if (zoomScale.value < 2) return 2
+  if (zoomScale.value < 3) return 3
+  if (zoomScale.value < ZOOM_MAX) return ZOOM_MAX
+  return ZOOM_MIN
+}
+
+function cycleDoubleTapZoom(clientX: number, clientY: number) {
+  const nextScale = nextDoubleTapScale()
+  if (nextScale === ZOOM_MIN) {
+    resetZoom(true)
+    return
+  }
+  const rect = containerRef.value?.getBoundingClientRect()
+  const relX = clientX - (rect?.left ?? 0)
+  const relY = clientY - (rect?.top ?? 0)
+  zoomAtViewportPoint(relX, relY, nextScale)
+}
+
 function onTouch(ev: TouchEvent) {
   if (ev.type === 'touchstart') onTS(ev)
   else if (ev.type === 'touchmove') onTM(ev)
@@ -558,23 +577,25 @@ function onTE(ev: TouchEvent) {
   const tapDist = Math.abs(ex - lastTapX) + Math.abs(ey - lastTapY)
 
   if (zoomScale.value > 1) {
-    lastTapT = Date.now()
-    lastTapX = ex
-    lastTapY = ey
-    if (!moved && elapsed < DOUBLE_TAP_MS && tapDist < DOUBLE_TAP_DIST) resetZoom(true)
+    if (!moved && elapsed < DOUBLE_TAP_MS && tapDist < DOUBLE_TAP_DIST) {
+      cycleDoubleTapZoom(ex, ey)
+      lastTapT = 0
+    } else {
+      lastTapT = Date.now()
+      lastTapX = ex
+      lastTapY = ey
+    }
     return
   }
 
   if (!moved && elapsed < DOUBLE_TAP_MS && tapDist < DOUBLE_TAP_DIST) {
-    const rect = containerRef.value?.getBoundingClientRect()
-    const relX = ex - (rect?.left ?? 0)
-    const relY = ey - (rect?.top ?? 0)
-    zoomAtViewportPoint(relX, relY, 2)
+    cycleDoubleTapZoom(ex, ey)
+    lastTapT = 0
+  } else {
+    lastTapT = Date.now()
+    lastTapX = ex
+    lastTapY = ey
   }
-
-  lastTapT = Date.now()
-  lastTapX = ex
-  lastTapY = ey
 }
 
 watch(

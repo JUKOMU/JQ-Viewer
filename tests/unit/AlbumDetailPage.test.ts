@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
     query: {},
   },
   setRouteId: undefined as undefined | ((id: string | undefined) => void),
+  setRouteChapterId: undefined as undefined | ((id: string | undefined) => void),
   router: {
     back: vi.fn(),
     push: vi.fn(),
@@ -37,6 +38,10 @@ vi.mock('vue-router', async () => {
   const route = reactive<{params: {id?: string}; query: Record<string, string>}>(mocks.route)
   mocks.setRouteId = (id) => {
     route.params.id = id
+  }
+  mocks.setRouteChapterId = (id) => {
+    if (id) route.query.chapterId = id
+    else delete route.query.chapterId
   }
   return {
     useRoute: () => route,
@@ -122,14 +127,35 @@ vi.mock('@/composables/useAuth', async () => {
 })
 
 vi.mock('@/components/album/AlbumHeader.vue', () => ({
-  default: {name: 'AlbumHeader', render: () => null},
+  default: {
+    name: 'AlbumHeader',
+    props: {pageCount: {type: Number, default: 0}},
+    render: () => null,
+  },
 }))
 vi.mock('@/components/album/AlbumInfoTab.vue', () => ({
   default: {name: 'AlbumInfoTab', render: () => null},
 }))
-vi.mock('@/components/album/AlbumChaptersTab.vue', () => ({
-  default: {name: 'AlbumChaptersTab', render: () => null},
-}))
+vi.mock('@/components/album/AlbumChaptersTab.vue', async () => {
+  const {defineComponent, h} = await import('vue')
+  return {
+    default: defineComponent({
+      name: 'AlbumChaptersTab',
+      inheritAttrs: false,
+      props: {
+        selectedChapterId: {type: String, default: ''},
+      },
+      emits: ['select-chapter'],
+      setup(props) {
+        return () =>
+          h('div', {
+            class: 'album-chapters-tab-stub',
+            'data-selected-chapter-id': props.selectedChapterId,
+          })
+      },
+    }),
+  }
+})
 vi.mock('@/components/album/AlbumPreviewTab.vue', async () => {
   const {defineComponent, h} = await import('vue')
   return {
@@ -185,6 +211,22 @@ const makePhoto = (): PhotoDetail => ({
   ],
 })
 
+const makeSecondPhoto = (): PhotoDetail => ({
+  ...makePhoto(),
+  id: 'chapter-2',
+  title: '第二章',
+  sortOrder: 2,
+  images: makePhoto().images.map((image) => ({...image, photoId: 'chapter-2'})),
+})
+
+const makeLongSecondPhoto = (): PhotoDetail => {
+  const photo = makeSecondPhoto()
+  return {
+    ...photo,
+    images: [...photo.images, {...photo.images[0], sortOrder: 3, filename: '3.webp'}],
+  }
+}
+
 const makeAlbum = (): AlbumDetail => ({
   id: '123',
   title: '测试本子',
@@ -208,6 +250,14 @@ const makeAlbum = (): AlbumDetail => ({
   isLiked: false,
   price: '',
   purchased: '',
+})
+
+const makeMultiChapterAlbum = (): AlbumDetail => ({
+  ...makeAlbum(),
+  photoMetas: [
+    {id: 'chapter-1', title: '第一章', sortOrder: 1},
+    {id: 'chapter-2', title: '第二章', sortOrder: 2},
+  ],
 })
 
 const makeDownloadTask = (): DownloadTask => ({
@@ -247,6 +297,14 @@ const settle = async () => {
   await nextTick()
   await flushPromises()
   await nextTick()
+}
+
+const deferred = <T,>() => {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((res) => {
+    resolve = res
+  })
+  return {promise, resolve}
 }
 
 const clickTab = async (wrapper: VueWrapper, label: string) => {
@@ -289,6 +347,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   vi.stubGlobal('ResizeObserver', ResizeObserverStub)
   mocks.setRouteId?.('123')
+  mocks.setRouteChapterId?.(undefined)
   mocks.getAlbum.mockImplementation(() => new Promise(() => {}))
   mocks.getPhoto.mockImplementation(() => new Promise(() => {}))
   mocks.getDownloadedPhoto.mockResolvedValue(makePhoto())
@@ -318,6 +377,151 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers()
   vi.unstubAllGlobals()
+})
+
+describe('AlbumDetailPage 章节路由定位', () => {
+  test('初始进入时选中 chapterId 对应的章节', async () => {
+    mocks.setRouteChapterId?.('chapter-2')
+    mocks.getAlbum.mockResolvedValue(makeMultiChapterAlbum())
+    mocks.getPhoto.mockResolvedValue(makeSecondPhoto())
+
+    const wrapper = mount(AlbumDetailPage)
+    await settle()
+
+    expect(mocks.getPhoto).toHaveBeenCalledWith('chapter-2')
+    expect(wrapper.findComponent({name: 'AlbumChaptersTab'}).props('selectedChapterId')).toBe(
+      'chapter-2',
+    )
+    wrapper.unmount()
+  })
+
+  test('同一详情页变更 chapterId 时同步切换章节', async () => {
+    mocks.getAlbum.mockResolvedValue(makeMultiChapterAlbum())
+    mocks.getPhoto.mockImplementation((chapterId: string) =>
+      Promise.resolve(chapterId === 'chapter-2' ? makeSecondPhoto() : makePhoto()),
+    )
+
+    const wrapper = mount(AlbumDetailPage)
+    await settle()
+    mocks.getPhoto.mockClear()
+
+    mocks.setRouteChapterId?.('chapter-2')
+    await settle()
+
+    expect(mocks.getPhoto).toHaveBeenCalledWith('chapter-2')
+    expect(wrapper.findComponent({name: 'AlbumChaptersTab'}).props('selectedChapterId')).toBe(
+      'chapter-2',
+    )
+    wrapper.unmount()
+  })
+
+  test('无效 chapterId 回退到第一章', async () => {
+    mocks.setRouteChapterId?.('missing-chapter')
+    mocks.getAlbum.mockResolvedValue(makeMultiChapterAlbum())
+    mocks.getPhoto.mockResolvedValue(makePhoto())
+
+    const wrapper = mount(AlbumDetailPage)
+    await settle()
+
+    expect(mocks.getPhoto).toHaveBeenCalledWith('chapter-1')
+    expect(mocks.getPhoto).not.toHaveBeenCalledWith('missing-chapter')
+    expect(wrapper.findComponent({name: 'AlbumChaptersTab'}).props('selectedChapterId')).toBe(
+      'chapter-1',
+    )
+    wrapper.unmount()
+  })
+
+  test('初始加载期间切换 chapterId 时忽略旧请求结果', async () => {
+    const firstAlbum = deferred<AlbumDetail>()
+    const firstPhoto = deferred<PhotoDetail>()
+    const latestAlbum = deferred<AlbumDetail>()
+    const latestPhoto = deferred<PhotoDetail>()
+    mocks.getAlbum.mockReturnValueOnce(firstAlbum.promise).mockReturnValueOnce(latestAlbum.promise)
+    mocks.getPhoto.mockReturnValueOnce(firstPhoto.promise).mockReturnValueOnce(latestPhoto.promise)
+
+    const wrapper = mount(AlbumDetailPage)
+    await nextTick()
+
+    mocks.setRouteChapterId?.('chapter-2')
+    await nextTick()
+    latestAlbum.resolve(makeMultiChapterAlbum())
+    await settle()
+    latestPhoto.resolve(makeSecondPhoto())
+    await settle()
+
+    expect(wrapper.findComponent({name: 'AlbumChaptersTab'}).props('selectedChapterId')).toBe(
+      'chapter-2',
+    )
+
+    firstAlbum.resolve(makeAlbum())
+    firstPhoto.resolve(makePhoto())
+    await settle()
+
+    expect(wrapper.findComponent({name: 'AlbumChaptersTab'}).props('selectedChapterId')).toBe(
+      'chapter-2',
+    )
+    wrapper.unmount()
+  })
+
+  test('快速切换章节时旧章节图片不会覆盖当前章节', async () => {
+    const chapterTwo = deferred<PhotoDetail>()
+    const chapterOne = deferred<PhotoDetail>()
+    mocks.getAlbum.mockResolvedValue(makeMultiChapterAlbum())
+    mocks.getPhoto.mockImplementation((id: string) => {
+      if (id === 'chapter-2') return chapterTwo.promise
+      if (id === 'chapter-1') return chapterOne.promise
+      return Promise.resolve(makePhoto())
+    })
+
+    const wrapper = mount(AlbumDetailPage)
+    await settle()
+
+    mocks.setRouteChapterId?.('chapter-2')
+    await nextTick()
+    mocks.setRouteChapterId?.('chapter-1')
+    await nextTick()
+
+    chapterOne.resolve(makePhoto())
+    await settle()
+    chapterTwo.resolve(makeLongSecondPhoto())
+    await settle()
+
+    expect(wrapper.findComponent({name: 'AlbumChaptersTab'}).props('selectedChapterId')).toBe(
+      'chapter-1',
+    )
+    expect(wrapper.findComponent({name: 'AlbumHeader'}).props('pageCount')).toBe(2)
+    wrapper.unmount()
+  })
+
+  test('初始章节图片请求期间选择其他章节时忽略旧响应', async () => {
+    const initialPhoto = deferred<PhotoDetail>()
+    const selectedPhoto = deferred<PhotoDetail>()
+    mocks.setRouteChapterId?.('chapter-1')
+    mocks.getAlbum.mockResolvedValue(makeMultiChapterAlbum())
+    mocks.getPhoto.mockImplementation((chapterId: string) =>
+      chapterId === 'chapter-1' ? initialPhoto.promise : selectedPhoto.promise,
+    )
+
+    const wrapper = mount(AlbumDetailPage)
+    await settle()
+    await clickTab(wrapper, '章节')
+
+    wrapper.findComponent({name: 'AlbumChaptersTab'}).vm.$emit('select-chapter', 'chapter-2')
+    await nextTick()
+
+    selectedPhoto.resolve(makeLongSecondPhoto())
+    await settle()
+    expect(wrapper.findComponent({name: 'AlbumHeader'}).props('pageCount')).toBe(3)
+
+    initialPhoto.resolve(makePhoto())
+    await settle()
+
+    expect(wrapper.findComponent({name: 'AlbumChaptersTab'}).props('selectedChapterId')).toBe(
+      'chapter-2',
+    )
+    expect(wrapper.findComponent({name: 'AlbumHeader'}).props('pageCount')).toBe(3)
+    wrapper.unmount()
+  })
 })
 
 describe('AlbumDetailPage tab 状态', () => {

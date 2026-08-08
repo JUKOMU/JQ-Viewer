@@ -3,7 +3,7 @@
     <IonHeader class="ion-no-border">
       <IonToolbar>
         <IonButtons slot="start">
-          <IonBackButton default-href="/setting" />
+          <IonBackButton default-href="/setting"/>
         </IonButtons>
         <IonTitle class="toolbar-title">关于</IonTitle>
       </IonToolbar>
@@ -28,19 +28,34 @@
 
         <!-- 检查更新 -->
         <div class="info-card">
-          <div class="info-row" @click="checkUpdate">
+          <button
+            class="info-row info-row-action"
+            type="button"
+            :disabled="updateChecking"
+            @click="checkUpdate"
+          >
             <span class="info-label">检查更新</span>
-            <span v-if="updateChecking" class="info-value"
-              >检查中...<span class="arrow">&#8250;</span></span
-            >
-            <span v-else-if="updateError" class="info-value error"
-              >检查失败<span class="arrow">&#8250;</span></span
-            >
-            <span v-else-if="hasUpdate" class="info-value update"
-              >发现新版本 {{ latestVersion }}<span class="arrow">&#8250;</span></span
-            >
-            <span v-else class="info-value">已是最新<span class="arrow">&#8250;</span></span>
-          </div>
+            <span class="info-action-value">
+              <span v-if="updateChecking" class="info-value">检查中...</span>
+              <span v-else-if="updateError" class="info-value error">检查失败</span>
+              <span v-else-if="hasUpdate" class="info-value update"
+              >发现新版本 {{ latestVersion }}</span
+              >
+              <span v-else class="info-value">已是最新</span>
+              <IonSpinner
+                v-if="updateChecking"
+                name="circular"
+                class="entry-spinner"
+                aria-hidden="true"
+              />
+              <IonIcon
+                v-else
+                :icon="chevronForwardOutline"
+                class="entry-arrow"
+                aria-hidden="true"
+              />
+            </span>
+          </button>
         </div>
 
         <!-- 仓库地址 -->
@@ -52,7 +67,7 @@
           <div class="info-row">
             <span class="info-label"></span>
             <span class="info-value repo-url"
-              ><a href="https://github.com/JUKOMU/JMComic-Api-Java">JMComic-Api-Java</a></span
+            ><a href="https://github.com/JUKOMU/JMComic-Api-Java">JMComic-Api-Java</a></span
             >
           </div>
         </div>
@@ -71,16 +86,16 @@
             <p></p>
             <p>
               如果你觉得好用，欢迎分享给朋友。遇到问题或有什么建议，可以在 GitHub 提交<a
-                :href="`${REPO_URL}/issues/new`"
-                >Issue</a
-              >。
+              :href="`${REPO_URL}/issues/new`"
+            >Issue</a
+            >。
             </p>
             <div style="height: 1000px"></div>
             <p>没有了, 别看了</p>
             <div style="height: 2000px"></div>
             <p>还看?</p>
             <div style="height: 3000px"></div>
-            <p><img src="../../public/000.jpg" /></p>
+            <p><img src="../../public/000.jpg"/></p>
           </div>
         </div>
       </div>
@@ -89,22 +104,25 @@
 </template>
 
 <script setup lang="ts">
-defineOptions({ name: 'AboutPage' })
+defineOptions({name: 'AboutPage'})
 
-import { nextTick, onMounted, ref } from 'vue'
-import { App } from '@capacitor/app'
+import {nextTick, onMounted, ref} from 'vue'
+import {App} from '@capacitor/app'
 import {
   alertController,
   IonBackButton,
   IonButtons,
   IonContent,
   IonHeader,
+  IonIcon,
   IonPage,
+  IonSpinner,
   IonTitle,
   IonToolbar,
 } from '@ionic/vue'
-import { showToast } from '@/services/JmcomicService'
-import { compareVersion, RELEASES_API, sanitizeReleaseBody } from '@/utils/version'
+import {chevronForwardOutline} from 'ionicons/icons'
+import {showToast} from '@/services/JmcomicService'
+import {compareVersion, RELEASES_API, sanitizeReleaseBody} from '@/utils/version'
 
 const appVersion = ref('1.0.0')
 const updateChecking = ref(false)
@@ -153,7 +171,7 @@ async function checkUpdate() {
 
   try {
     const resp = await fetch(RELEASES_API, {
-      headers: { Accept: 'application/vnd.github.v3+json' },
+      headers: {Accept: 'application/vnd.github.v3+json'},
     })
     if (!resp.ok) throw new Error('API error')
     const data = await resp.json()
@@ -166,6 +184,7 @@ async function checkUpdate() {
   } catch {
     updateError.value = true
   } finally {
+    await new Promise((resolve) => setTimeout(resolve, 1000))
     updateChecking.value = false
   }
 }
@@ -178,7 +197,7 @@ async function showUpdateAlert(version: string, body: string, htmlUrl: string) {
     message: cleaned || '（无更新说明）',
     cssClass: 'update-alert',
     buttons: [
-      { text: '忽略', role: 'cancel' },
+      {text: '忽略', role: 'cancel'},
       {
         text: '好',
         handler: async () => {
@@ -187,7 +206,7 @@ async function showUpdateAlert(version: string, body: string, htmlUrl: string) {
             message: htmlUrl,
             cssClass: 'update-alert',
             buttons: [
-              { text: '取消', role: 'cancel' },
+              {text: '取消', role: 'cancel'},
               {
                 text: '打开',
                 handler: () => {
@@ -275,6 +294,26 @@ const reDisplay = async () => {
   min-height: 48px;
 }
 
+.info-row-action {
+  width: 100%;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.info-row-action:active {
+  background: #faf4ef;
+}
+
+.info-row-action:focus-visible {
+  outline: 2px solid #e8843c;
+  outline-offset: -2px;
+}
+
 .info-row + .info-row {
   border-top: 1px solid #f5ebe4;
 }
@@ -297,6 +336,15 @@ const reDisplay = async () => {
 
 .info-value.error {
   color: #d44;
+}
+
+.info-action-value {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
+  margin-left: 12px;
+  text-align: right;
 }
 
 .repo-url {
@@ -323,10 +371,21 @@ const reDisplay = async () => {
   background: #faf4ef;
 }
 
-.arrow {
+.entry-arrow {
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+  margin-left: 8px;
   font-size: 20px;
   color: #c4a494;
-  font-weight: 300;
+}
+
+.entry-spinner {
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+  margin-left: 8px;
+  color: #e8843c;
 }
 
 .author-note {

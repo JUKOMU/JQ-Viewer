@@ -1421,34 +1421,62 @@ const handleToggleFavorite = async () => {
   void openFolderPicker()
 }
 
-const downloadSingleChapter = async (chapterId: string): Promise<boolean> => {
-  if (!albumDetail.value) return false
+type ChapterDownloadContext = {
+  albumId: string
+  albumTitle: string
+  coverUrl: string
+  isSingleEpisode?: boolean
+  chapterTitles: Map<string, string>
+}
 
-  const taskId = makeTaskId(albumId.value, chapterId)
+const createChapterDownloadContext = (): ChapterDownloadContext | null => {
+  const targetAlbumId = typeof albumId.value === 'string' ? albumId.value.trim() : ''
+  const album = albumDetail.value
+  if (!targetAlbumId || !album) return null
+
+  return {
+    albumId: targetAlbumId,
+    albumTitle: album.title,
+    coverUrl: album.image,
+    isSingleEpisode: album.isSingleEpisode,
+    chapterTitles: new Map(
+      album.photoMetas
+        .filter((meta) => typeof meta.id === 'string' && meta.id.trim().length > 0)
+        .map((meta) => [meta.id, meta.title] as const),
+    ),
+  }
+}
+
+const downloadSingleChapter = async (
+  chapterId: unknown,
+  context: ChapterDownloadContext,
+): Promise<boolean> => {
+  if (typeof chapterId !== 'string' || !chapterId.trim()) return false
+  const targetChapterId = chapterId.trim()
+  const taskId = makeTaskId(context.albumId, targetChapterId)
   const existing = OfflineDownloadService.getAll().find(
     (t) => t.taskId === taskId && t.status !== 'failed',
   )
   if (existing) return false
 
-  const chapterTitle =
-    albumDetail.value.photoMetas.find((m) => m.id === chapterId)?.title || chapterId
+  const chapterTitle = context.chapterTitles.get(targetChapterId) || targetChapterId
 
   try {
     await JmcomicService.downloadChapter(
-      albumId.value,
-      chapterId,
-      albumDetail.value.title,
+      context.albumId,
+      targetChapterId,
+      context.albumTitle,
       chapterTitle,
-      albumDetail.value.image,
+      context.coverUrl,
     )
     OfflineDownloadService.addTask({
       taskId,
-      albumId: albumId.value,
-      chapterId,
-      albumTitle: albumDetail.value.title,
+      albumId: context.albumId,
+      chapterId: targetChapterId,
+      albumTitle: context.albumTitle,
       chapterTitle,
-      coverUrl: albumDetail.value.image,
-      isSingleEpisode: albumDetail.value.isSingleEpisode,
+      coverUrl: context.coverUrl,
+      isSingleEpisode: context.isSingleEpisode,
       totalPages: 0,
       downloadedPages: 0,
       status: 'queued',
@@ -1463,9 +1491,10 @@ const downloadSingleChapter = async (chapterId: string): Promise<boolean> => {
 
 const handleDownload = async () => {
   const chapterId = selectedChapterId.value
-  if (!chapterId || !albumDetail.value) return
+  const context = createChapterDownloadContext()
+  if (!chapterId || !context) return
 
-  const taskId = makeTaskId(albumId.value, chapterId)
+  const taskId = makeTaskId(context.albumId, chapterId)
   const existing = OfflineDownloadService.getAll().find(
     (t) => t.taskId === taskId && t.status !== 'failed',
   )
@@ -1474,7 +1503,7 @@ const handleDownload = async () => {
     return
   }
 
-  const success = await downloadSingleChapter(chapterId)
+  const success = await downloadSingleChapter(chapterId, context)
   if (success) {
     await showToast('已加入下载队列', 'success')
     await refreshDownloadStatuses()
@@ -1483,9 +1512,15 @@ const handleDownload = async () => {
 
 const onBatchDownload = async (chapterIds: string[]) => {
   if (!chapterIds.length) return
+  const context = createChapterDownloadContext()
+  if (!context) {
+    await showToast('下载信息已失效，请重新进入详情页', 'danger')
+    return
+  }
+
   let successCount = 0
   for (const id of chapterIds) {
-    if (await downloadSingleChapter(id)) {
+    if (await downloadSingleChapter(id, context)) {
       successCount++
     }
   }

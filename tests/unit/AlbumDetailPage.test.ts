@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   },
   getAlbum: vi.fn(() => new Promise(() => {})),
   getPhoto: vi.fn(() => new Promise(() => {})),
+  downloadChapter: vi.fn(),
   getDownloadedPhoto: vi.fn(),
   getDownloadTasks: vi.fn(),
   getImportedPdfs: vi.fn(),
@@ -95,6 +96,7 @@ vi.mock('@/services/JmcomicService', () => ({
   JmcomicService: {
     getAlbum: mocks.getAlbum,
     getPhoto: mocks.getPhoto,
+    downloadChapter: mocks.downloadChapter,
     getDownloadedPhoto: mocks.getDownloadedPhoto,
     getDownloadTasks: mocks.getDownloadTasks,
     getImportedPdfs: mocks.getImportedPdfs,
@@ -110,7 +112,10 @@ vi.mock('@/services/PdfReaderService', () => ({
 }))
 
 vi.mock('@/services/OfflineDownloadService', () => ({
-  OfflineDownloadService: {},
+  OfflineDownloadService: {
+    getAll: vi.fn(() => []),
+    addTask: vi.fn(),
+  },
 }))
 
 vi.mock('@/services/OfflineFavoriteService', () => ({
@@ -145,7 +150,7 @@ vi.mock('@/components/album/AlbumChaptersTab.vue', async () => {
       props: {
         selectedChapterId: {type: String, default: ''},
       },
-      emits: ['select-chapter'],
+      emits: ['select-chapter', 'batch-download'],
       setup(props) {
         return () =>
           h('div', {
@@ -314,8 +319,8 @@ const clickTab = async (wrapper: VueWrapper, label: string) => {
   await settle()
 }
 
-const mountLoadedPage = async ({downloaded = false, pdf = false} = {}) => {
-  mocks.getAlbum.mockResolvedValue(makeAlbum())
+const mountLoadedPage = async ({downloaded = false, pdf = false, album = makeAlbum()} = {}) => {
+  mocks.getAlbum.mockResolvedValue(album)
   mocks.getPhoto.mockResolvedValue(makePhoto())
   mocks.getDownloadTasks.mockResolvedValue({
     tasks: downloaded ? [makeDownloadTask()] : [],
@@ -328,6 +333,7 @@ const mountLoadedPage = async ({downloaded = false, pdf = false} = {}) => {
   await settle()
 
   mocks.getPhoto.mockClear()
+  mocks.downloadChapter.mockClear()
   mocks.getDownloadedPhoto.mockClear()
   mocks.addImageReadyListener.mockClear()
   mocks.preloadImages.mockClear()
@@ -350,6 +356,7 @@ beforeEach(() => {
   mocks.setRouteChapterId?.(undefined)
   mocks.getAlbum.mockImplementation(() => new Promise(() => {}))
   mocks.getPhoto.mockImplementation(() => new Promise(() => {}))
+  mocks.downloadChapter.mockResolvedValue({taskId: '123_chapter-1'})
   mocks.getDownloadedPhoto.mockResolvedValue(makePhoto())
   mocks.getDownloadTasks.mockResolvedValue({tasks: [], usedBytes: 0, availableBytes: 0})
   mocks.getImportedPdfs.mockResolvedValue({pdfs: []})
@@ -520,6 +527,47 @@ describe('AlbumDetailPage 章节路由定位', () => {
       'chapter-2',
     )
     expect(wrapper.findComponent({name: 'AlbumHeader'}).props('pageCount')).toBe(3)
+    wrapper.unmount()
+  })
+})
+
+describe('AlbumDetailPage 批量下载', () => {
+  test('离开详情页后继续使用提交时的专辑上下文', async () => {
+    const firstSubmit = deferred<{taskId: string}>()
+    mocks.downloadChapter
+      .mockReturnValueOnce(firstSubmit.promise)
+      .mockResolvedValueOnce({taskId: '123_chapter-2'})
+    const wrapper = await mountLoadedPage({album: makeMultiChapterAlbum()})
+
+    wrapper
+      .findComponent({name: 'AlbumChaptersTab'})
+      .vm.$emit('batch-download', ['chapter-1', 'chapter-2'])
+    await nextTick()
+
+    expect(mocks.downloadChapter).toHaveBeenNthCalledWith(
+      1,
+      '123',
+      'chapter-1',
+      '测试本子',
+      '第一章',
+      '',
+    )
+
+    mocks.setRouteId?.(undefined)
+    await nextTick()
+    firstSubmit.resolve({taskId: '123_chapter-1'})
+    await settle()
+
+    expect(mocks.downloadChapter).toHaveBeenNthCalledWith(
+      2,
+      '123',
+      'chapter-2',
+      '测试本子',
+      '第二章',
+      '',
+    )
+    expect(mocks.showToast).toHaveBeenCalledWith('已加入 2 个下载任务', 'success')
+
     wrapper.unmount()
   })
 })

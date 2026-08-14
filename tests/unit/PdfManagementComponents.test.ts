@@ -329,4 +329,79 @@ describe('PdfManagementView', () => {
     )
     wrapper.unmount()
   })
+
+  test('较早的文件筛选响应不会覆盖较新的结果', async () => {
+    let finishInitial: ((value: { files: ImportedPdf[]; nextCursor: null }) => void) | undefined
+    const newerFile = { ...file, id: 2, fileName: 'newer.pdf', albumTitle: '新筛选结果' }
+    mocks.getPdfFiles
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishInitial = resolve
+          }),
+      )
+      .mockResolvedValueOnce({ files: [newerFile], nextCursor: null })
+    mocks.refreshPdfFileAvailability.mockResolvedValue({ files: [] })
+
+    const wrapper = mount(PdfManagementView)
+    await flushPromises()
+    await wrapper.findAll('.filter-buttons button')[1].trigger('click')
+    await flushPromises()
+    finishInitial?.({ files: [file], nextCursor: null })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('新筛选结果')
+    expect(wrapper.text()).not.toContain('测试漫画')
+    wrapper.unmount()
+  })
+
+  test('较早的任务筛选响应不会覆盖较新的结果', async () => {
+    let finishInitial:
+      | ((value: { tasks: PdfExportTaskRecord[]; nextCursor: null }) => void)
+      | undefined
+    const oldTask = { ...task('completed'), displayTitle: '旧任务' }
+    const newerTask = {
+      ...task('failed'),
+      exportId: 'export-2',
+      displayTitle: '新筛选任务',
+    }
+    mocks.getPdfExportTasks
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishInitial = resolve
+          }),
+      )
+      .mockResolvedValueOnce({ tasks: [newerTask], nextCursor: null })
+
+    const wrapper = mount(PdfManagementView, { props: { initialView: 'tasks' } })
+    await flushPromises()
+    await wrapper.findAll('.task-filter-buttons button')[5].trigger('click')
+    await flushPromises()
+    finishInitial?.({ tasks: [oldTask], nextCursor: null })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('新筛选任务')
+    expect(wrapper.text()).not.toContain('旧任务')
+    wrapper.unmount()
+  })
+
+  test('卸载后才完成注册的进度监听会立即移除', async () => {
+    let finishRegistration: ((value: { remove: () => Promise<void> }) => void) | undefined
+    const remove = vi.fn().mockResolvedValue(undefined)
+    mocks.addPdfExportProgressListener.mockReturnValue(
+      new Promise((resolve) => {
+        finishRegistration = resolve
+      }),
+    )
+
+    const wrapper = mount(PdfManagementView)
+    await flushPromises()
+    expect(mocks.addPdfExportProgressListener).toHaveBeenCalledOnce()
+    wrapper.unmount()
+    finishRegistration?.({ remove })
+    await flushPromises()
+
+    expect(remove).toHaveBeenCalledOnce()
+  })
 })

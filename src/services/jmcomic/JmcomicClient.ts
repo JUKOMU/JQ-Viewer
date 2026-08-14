@@ -22,6 +22,7 @@ import type {
   OfflineFolderInfo,
   ParseHistoryItem,
   PdfExportTask,
+  PdfExportBatchResult,
   PdfExportProgressEvent,
   PdfExportStatus,
   PdfExportTaskRecord,
@@ -255,7 +256,7 @@ export interface JmcomicClient {
 
   pickImageAndOcr(): Promise<{ text: string; error?: string }>
 
-  exportPdfBatch(options: { tasks: PdfExportTask[] }): Promise<{ tasks: PdfExportTaskRecord[] }>
+  exportPdfBatch(options: { tasks: PdfExportTask[] }): Promise<PdfExportBatchResult>
 
   pickFolder(): Promise<{ path: string; treeUri?: string; cancelled: boolean }>
 

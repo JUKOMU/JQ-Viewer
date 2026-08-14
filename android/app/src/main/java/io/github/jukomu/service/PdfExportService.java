@@ -117,9 +117,12 @@ public class PdfExportService {
     public synchronized JSONObject retryExport(String exportId, boolean allowOverwrite) throws Exception {
         JSONObject task = pdfStore.getExportTask(exportId);
         if (task == null) throw new IllegalArgumentException("PDF 导出任务不存在");
-        ExportJob job = jobFromSnapshot(task, pdfStore.getExportChapters(exportId));
+        JSONArray persistedChapters = pdfStore.getExportChapters(exportId);
+        JSONArray persistedVolumes = pdfStore.getExportVolumes(exportId);
+        ExportJob job = jobFromSnapshot(task, persistedChapters);
         job.allowOverwrite = allowOverwrite;
         ExportPreflight preflight = preflight(job);
+        ensureRetryLayoutUnchanged(persistedChapters, persistedVolumes, preflight);
         job.exportId = exportId;
         if (!acquireJobLocks(job)) throw new IllegalStateException("相同章节已有任务正在运行");
         if (!pdfStore.prepareExportRetry(exportId, allowOverwrite)) {
@@ -271,6 +274,17 @@ public class PdfExportService {
         return snapshot;
     }
 
+    private void updateTerminalProgress(ExportJob job, ExportPreflight preflight, String status,
+            int completedVolumes, String errorCode, String errorMessage) {
+        JSONObject current = pdfStore.getExportTask(job.exportId);
+        int currentPage = current == null ? 0 : current.optInt("currentPage");
+        int totalPages = current == null
+            ? preflight.totalPages
+            : current.optInt("totalPages", preflight.totalPages);
+        updateProgress(job.exportId, status, status, currentPage, totalPages, completedVolumes,
+            preflight.volumes.size(), errorCode, errorMessage);
+    }
+
     private static List<ExportChapter> requestedChapters(ExportJob job) {
         if ("merged".equals(job.mode)) return job.chapters;
         ExportChapter chapter = new ExportChapter();
@@ -412,8 +426,8 @@ public class PdfExportService {
                     int completed = pdfStore.countCompletedVolumes(job.exportId);
                     String status = completed > 0 ? "partial" : "cancelled";
                     cleanupKnownArtifactsQuietly(job.exportId);
-                    updateProgress(job.exportId, status, status, 0, 0, completed,
-                        queuedJob.preflight.volumes.size(), "CANCELLED", "PDF 导出已取消");
+                    updateTerminalProgress(job, queuedJob.preflight, status, completed,
+                        "CANCELLED", "PDF 导出已取消");
                 } catch (Exception e) {
                     fail++;
                     ExportFailure failure = describeExportFailure(e, job);
@@ -421,15 +435,16 @@ public class PdfExportService {
                     int completed = pdfStore.countCompletedVolumes(job.exportId);
                     String status = completed > 0 ? "partial" : "failed";
                     cleanupKnownArtifactsQuietly(job.exportId);
-                    updateProgress(job.exportId, status, status, 0, 0, completed,
-                        queuedJob.preflight.volumes.size(), errorCode(e), failure.userMessage);
+                    updateTerminalProgress(job, queuedJob.preflight, status, completed,
+                        errorCode(e), failure.userMessage);
                     notif.showError(notificationId, job.chapterTitle, failure.userMessage);
                 } catch (Throwable t) {
                     fail++;
                     Log.e(TAG, "PDF export crashed: " + job.chapterTitle, t);
+                    int completed = pdfStore.countCompletedVolumes(job.exportId);
                     cleanupKnownArtifactsQuietly(job.exportId);
-                    updateProgress(job.exportId, "failed", "failed", 0, 0, 0,
-                        queuedJob.preflight.volumes.size(), "INTERNAL_ERROR",
+                    updateTerminalProgress(job, queuedJob.preflight, "failed", completed,
+                        "INTERNAL_ERROR",
                         "内部错误: " + t.getClass().getSimpleName());
                     notif.showError(notificationId, job.chapterTitle,
                         "内部错误: " + t.getClass().getSimpleName());
@@ -653,6 +668,7 @@ public class PdfExportService {
         List<PdfBoxExportWriter.ExportImageDescriptor> imageDescriptors =
             flattenImageDescriptors(chapterResults, totalPageCount);
         List<ExportVolume> volumes = buildVolumes(pdfFile, totalPageCount, job.splitPages);
+        ensureOverwriteAllowed(volumes, job.allowOverwrite);
         long requiredBytes = estimateRequiredBytesForExport(
             volumes,
             imageDescriptors,
@@ -704,6 +720,77 @@ public class PdfExportService {
             volumes.add(new ExportVolume(start, end, volumeFile));
         }
         return volumes;
+    }
+
+    static void ensureOverwriteAllowed(List<ExportVolume> volumes, boolean allowOverwrite)
+            throws IOException {
+        if (allowOverwrite) return;
+        for (ExportVolume volume : volumes) {
+            if (volume.file.exists()) {
+                throw new IOException("PDF_OUTPUT_EXISTS: 目标文件已存在，请确认覆盖后重试: "
+                    + volume.file.getAbsolutePath());
+            }
+        }
+    }
+
+    private static void ensureRetryLayoutUnchanged(JSONArray persistedChapters,
+            JSONArray persistedVolumes, ExportPreflight preflight) throws IOException {
+        List<Integer> persistedChapterPageCounts = new ArrayList<>(persistedChapters.length());
+        for (int index = 0; index < persistedChapters.length(); index++) {
+            JSONObject chapter = persistedChapters.optJSONObject(index);
+            if (chapter == null || chapter.optInt("expectedPageCount", -1) < 0) {
+                throw retryLayoutChanged();
+            }
+            persistedChapterPageCounts.add(chapter.optInt("expectedPageCount"));
+        }
+        List<ExportVolume> persistedVolumeLayouts = new ArrayList<>(persistedVolumes.length());
+        for (int index = 0; index < persistedVolumes.length(); index++) {
+            JSONObject volume = persistedVolumes.optJSONObject(index);
+            if (volume == null || volume.optInt("volumeIndex", -1) != index + 1
+                    || volume.optString("finalPath").isEmpty()) {
+                throw retryLayoutChanged();
+            }
+            int startPage = volume.optInt("startPage", -1);
+            int endPage = volume.optInt("endPage", -1);
+            if (startPage < 0 || endPage < startPage
+                    || volume.optInt("expectedPageCount", -1) != endPage - startPage) {
+                throw retryLayoutChanged();
+            }
+            persistedVolumeLayouts.add(new ExportVolume(
+                startPage,
+                endPage,
+                new File(volume.optString("finalPath"))));
+        }
+        List<Integer> chapterPageCounts = new ArrayList<>(preflight.chapters.size());
+        for (ChapterPreflight chapter : preflight.chapters) {
+            chapterPageCounts.add(chapter.images.size());
+        }
+        ensureRetryLayoutUnchanged(persistedChapterPageCounts, persistedVolumeLayouts,
+            chapterPageCounts, preflight.volumes);
+    }
+
+    static void ensureRetryLayoutUnchanged(List<Integer> persistedChapterPageCounts,
+            List<ExportVolume> persistedVolumes, List<Integer> currentChapterPageCounts,
+            List<ExportVolume> currentVolumes) throws IOException {
+        if (!persistedChapterPageCounts.equals(currentChapterPageCounts)
+                || persistedVolumes.size() != currentVolumes.size()) {
+            throw retryLayoutChanged();
+        }
+        for (int index = 0; index < persistedVolumes.size(); index++) {
+            ExportVolume persisted = persistedVolumes.get(index);
+            ExportVolume current = currentVolumes.get(index);
+            if (persisted.start != current.start
+                    || persisted.end != current.end
+                    || !PdfStore.normalizeLocator(persisted.file.getAbsolutePath())
+                    .equals(PdfStore.normalizeLocator(current.file.getAbsolutePath()))) {
+                throw retryLayoutChanged();
+            }
+        }
+    }
+
+    private static IOException retryLayoutChanged() {
+        return new IOException("PDF_RETRY_LAYOUT_CHANGED: 章节页数或分卷布局已变化，"
+            + "请重新创建导出任务");
     }
 
     private static List<PdfBoxExportWriter.ExportImageDescriptor> flattenImageDescriptors(

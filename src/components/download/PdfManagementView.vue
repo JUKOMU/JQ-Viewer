@@ -232,6 +232,9 @@ const highlightedExportId = ref<string | null>(null)
 const imageResourceKeys = ref<Set<string>>(new Set())
 const verifyingIds = ref<Set<number>>(new Set())
 let progressHandle: { remove: () => Promise<void> } | null = null
+let fileRequestSequence = 0
+let taskRequestSequence = 0
+let isUnmounted = false
 
 const fileFilters = [
   { key: 'all' as const, label: '全部' },
@@ -292,20 +295,24 @@ const refreshFilesInBackground = async (pageFiles: ImportedPdf[]) => {
 }
 
 const loadFiles = async (reset: boolean) => {
+  const requestSequence = ++fileRequestSequence
   const page = await PdfManagementService.getFiles(
     currentFileFilters(),
     reset ? undefined : fileCursor.value || undefined,
   )
+  if (isUnmounted || requestSequence !== fileRequestSequence) return
   files.value = reset ? page.items : mergePdfFiles(files.value, page.items)
   fileCursor.value = page.nextCursor
   void refreshFilesInBackground(page.items)
 }
 
 const loadTasks = async (reset: boolean) => {
+  const requestSequence = ++taskRequestSequence
   const page = await PdfManagementService.getTasks(
     currentTaskFilters(),
     reset ? undefined : taskCursor.value || undefined,
   )
+  if (isUnmounted || requestSequence !== taskRequestSequence) return
   tasks.value = reset ? page.items : mergePdfTasks(tasks.value, page.items)
   taskCursor.value = page.nextCursor
 }
@@ -588,13 +595,29 @@ const importPdf = async () => {
   }
 }
 
+const reloadFilesWithFeedback = async () => {
+  try {
+    await loadFiles(true)
+  } catch (error) {
+    await showToast(sanitizeError(error, 'PDF 文件加载失败'), 'danger')
+  }
+}
+
+const reloadTasksWithFeedback = async () => {
+  try {
+    await loadTasks(true)
+  } catch (error) {
+    await showToast(sanitizeError(error, 'PDF 导出任务加载失败'), 'danger')
+  }
+}
+
 let searchTimer: ReturnType<typeof setTimeout> | null = null
-watch(fileFilter, () => void loadFiles(true))
+watch(fileFilter, () => void reloadFilesWithFeedback())
 watch(searchText, () => {
   if (searchTimer) clearTimeout(searchTimer)
-  searchTimer = setTimeout(() => void loadFiles(true), 300)
+  searchTimer = setTimeout(() => void reloadFilesWithFeedback(), 300)
 })
-watch(taskFilter, () => void loadTasks(true))
+watch(taskFilter, () => void reloadTasksWithFeedback())
 watch(
   () => props.initialView,
   (view) => {
@@ -610,14 +633,29 @@ watch(
 
 onMounted(async () => {
   await load()
-  progressHandle = await PdfManagementService.addProgressListener((event) => {
-    const merged = applyPdfProgressEvent(tasks.value, event)
-    if (merged === null) void loadTasks(true)
-    else tasks.value = merged
-    if (['completed', 'partial'].includes(event.status)) void loadFiles(true)
-  })
+  if (isUnmounted) return
+  try {
+    const handle = await PdfManagementService.addProgressListener((event) => {
+      const merged = applyPdfProgressEvent(tasks.value, event)
+      if (merged === null) void reloadTasksWithFeedback()
+      else tasks.value = merged
+      if (['completed', 'partial'].includes(event.status)) void reloadFilesWithFeedback()
+    })
+    if (isUnmounted) {
+      void handle.remove()
+      return
+    }
+    progressHandle = handle
+  } catch (error) {
+    if (!isUnmounted) {
+      await showToast(sanitizeError(error, 'PDF 导出进度监听失败'), 'danger')
+    }
+  }
 })
 onUnmounted(() => {
+  isUnmounted = true
+  fileRequestSequence++
+  taskRequestSequence++
   if (searchTimer) clearTimeout(searchTimer)
   void progressHandle?.remove()
 })

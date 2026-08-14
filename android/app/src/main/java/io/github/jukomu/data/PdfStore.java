@@ -280,7 +280,19 @@ public class PdfStore extends SQLiteOpenHelper {
     }
 
     public JSONArray getAllFiles() {
-        return getFilesPage(null, null, null, null, null, 500).optJSONArray("files");
+        JSONArray files = new JSONArray();
+        String cursor = null;
+        do {
+            JSONObject page = getFilesPage(null, null, null, null, cursor, 100);
+            JSONArray pageFiles = page.optJSONArray("files");
+            if (pageFiles != null) {
+                for (int index = 0; index < pageFiles.length(); index++) {
+                    files.put(pageFiles.optJSONObject(index));
+                }
+            }
+            cursor = page.isNull("nextCursor") ? null : page.optString("nextCursor", null);
+        } while (cursor != null);
+        return files;
     }
 
     public JSONObject getFilesPage(String sourceType, String availability,

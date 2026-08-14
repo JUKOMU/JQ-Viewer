@@ -35,17 +35,6 @@ public final class PdfArtifactCleaner {
         deleteTreeWithoutFollowingLinks(workDirectory.toPath());
     }
 
-    public static void cleanupLegacyCandidate(File candidate) throws IOException {
-        ensureNotSymbolicLink(candidate.toPath());
-        String name = candidate.getName();
-        if (!((candidate.isFile() && name.endsWith(".pdf.tmp"))
-                || (candidate.isDirectory() && name.startsWith(".")
-                && name.endsWith(".pdf.jqpdf-work")))) {
-            throw new IOException("CLEANUP_PATH_UNSAFE: 未知 PDF 残留命名");
-        }
-        deleteTreeWithoutFollowingLinks(candidate.toPath());
-    }
-
     private static void deleteTreeWithoutFollowingLinks(Path path) throws IOException {
         if (!Files.exists(path, java.nio.file.LinkOption.NOFOLLOW_LINKS)) return;
         ensureNotSymbolicLink(path);

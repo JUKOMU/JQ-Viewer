@@ -5,6 +5,7 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
 import java.io.File;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.util.Arrays;
 import java.util.List;
@@ -12,6 +13,7 @@ import java.util.List;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 public class PdfExportServiceTest {
@@ -98,6 +100,53 @@ public class PdfExportServiceTest {
         long requiredBytes = PdfExportService.estimateRequiredBytesForVolume(images, false);
 
         assertEquals((16L * 1024L * 1024L) + 400L, requiredBytes);
+    }
+
+    @Test
+    public void rejectsExistingOutputWithoutOverwritePermission() throws Exception {
+        File output = temporaryFolder.newFile("existing.pdf");
+        List<PdfExportService.ExportVolume> volumes =
+            PdfExportService.buildVolumes(output, 10, 0);
+
+        IOException error = assertThrows(IOException.class,
+            () -> PdfExportService.ensureOverwriteAllowed(volumes, false));
+
+        assertTrue(error.getMessage().startsWith("PDF_OUTPUT_EXISTS:"));
+        PdfExportService.ensureOverwriteAllowed(volumes, true);
+    }
+
+    @Test
+    public void retryRequiresThePersistedChapterAndVolumeLayout() throws Exception {
+        File output = new File(temporaryFolder.getRoot(), "retry.pdf");
+        List<PdfExportService.ExportVolume> volumes =
+            PdfExportService.buildVolumes(output, 205, 100);
+        PdfExportService.ensureRetryLayoutUnchanged(
+            Arrays.asList(100, 105), volumes, Arrays.asList(100, 105), volumes);
+
+        IOException pageError = assertThrows(IOException.class,
+            () -> PdfExportService.ensureRetryLayoutUnchanged(
+                Arrays.asList(100, 104), volumes, Arrays.asList(100, 105), volumes));
+        assertTrue(pageError.getMessage().startsWith("PDF_RETRY_LAYOUT_CHANGED:"));
+    }
+
+    @Test
+    public void retryRejectsChangedVolumePath() throws Exception {
+        File output = new File(temporaryFolder.getRoot(), "retry.pdf");
+        List<PdfExportService.ExportVolume> volumes =
+            PdfExportService.buildVolumes(output, 205, 100);
+        List<PdfExportService.ExportVolume> persistedVolumes = Arrays.asList(
+            volumes.get(0),
+            new PdfExportService.ExportVolume(
+                volumes.get(1).start,
+                volumes.get(1).end,
+                new File(temporaryFolder.getRoot(), "other.pdf")),
+            volumes.get(2));
+
+        IOException error = assertThrows(IOException.class,
+            () -> PdfExportService.ensureRetryLayoutUnchanged(
+                Arrays.asList(205), persistedVolumes, Arrays.asList(205), volumes));
+
+        assertTrue(error.getMessage().startsWith("PDF_RETRY_LAYOUT_CHANGED:"));
     }
 
     private static void assertVolume(PdfExportService.ExportVolume volume, int start, int end,

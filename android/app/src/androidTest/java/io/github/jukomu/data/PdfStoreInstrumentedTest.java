@@ -206,6 +206,21 @@ public class PdfStoreInstrumentedTest {
     }
 
     @Test
+    public void getAllFilesReturnsMoreThanOnePage() throws Exception {
+        PdfStore store = PdfStore.getInstance(context);
+        for (int index = 0; index < 105; index++) {
+            String name = "library-" + index + ".pdf";
+            long id = store.insertImportedPdf(
+                new File(context.getCacheDir(), name).getCanonicalPath(),
+                name, "album-1", "漫画", "", "", name, name, 0, -1,
+                index, null, 0L, 1);
+            assertTrue(id > 0L);
+        }
+
+        assertEquals(105, store.getAllFiles().length());
+    }
+
+    @Test
     public void onlyTerminalTasksCanBeDeleted() throws Exception {
         PdfStore store = PdfStore.getInstance(context);
         reserveTask(store, "queued", "queued", 1L, false);

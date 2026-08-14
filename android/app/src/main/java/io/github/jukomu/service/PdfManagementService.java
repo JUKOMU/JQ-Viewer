@@ -1,9 +1,9 @@
 package io.github.jukomu.service;
 
 import android.content.Context;
+import android.database.Cursor;
 import android.net.Uri;
-
-import androidx.documentfile.provider.DocumentFile;
+import android.provider.OpenableColumns;
 
 import io.github.jukomu.data.PdfStore;
 
@@ -139,17 +139,18 @@ public final class PdfManagementService {
     private DeleteOutcome deleteLocator(String locator) throws IOException {
         if (locator.startsWith("content://")) {
             Uri uri = Uri.parse(locator);
-            DocumentFile before = DocumentFile.fromSingleUri(context, uri);
-            if (before == null || !before.exists()) return DeleteOutcome.ALREADY_MISSING;
             try {
                 if (context.getContentResolver().delete(uri, null, null) > 0) {
                     return DeleteOutcome.DELETED;
                 }
-                DocumentFile after = DocumentFile.fromSingleUri(context, uri);
-                if (after == null || !after.exists()) return DeleteOutcome.DELETED;
+                if (!contentUriExists(uri)) return DeleteOutcome.ALREADY_MISSING;
                 throw new IOException("PDF_DELETE_FAILED: 文件提供方拒绝删除 PDF");
             } catch (SecurityException error) {
                 throw new IOException("PDF_INACCESSIBLE: 没有权限删除 PDF", error);
+            } catch (IOException error) {
+                throw error;
+            } catch (Exception error) {
+                throw new IOException("PDF_DELETE_FAILED: 无法删除 PDF", error);
             }
         }
         File file = new File(locator);
@@ -158,6 +159,18 @@ public final class PdfManagementService {
             throw new IOException("PDF_DELETE_FAILED: PDF 文件删除失败");
         }
         return DeleteOutcome.DELETED;
+    }
+
+    private boolean contentUriExists(Uri uri) throws IOException {
+        try (Cursor cursor = context.getContentResolver().query(
+                uri, new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+            if (cursor == null) {
+                throw new IOException("PDF_INACCESSIBLE: 无法确认 PDF 是否存在");
+            }
+            return cursor.moveToFirst();
+        } catch (SecurityException error) {
+            throw new IOException("PDF_INACCESSIBLE: 没有权限读取 PDF", error);
+        }
     }
 
     private static JSONObject outcome(String kind, JSONObject record, String message)

@@ -16,7 +16,10 @@ import androidx.test.platform.app.InstrumentationRegistry;
 
 import io.github.jukomu.data.DownloadStore;
 import io.github.jukomu.data.FileStore;
+import io.github.jukomu.data.PdfStore;
 import io.github.jukomu.jmcomic.api.model.JmImage;
+
+import com.tom_roush.pdfbox.pdmodel.PDDocument;
 
 import org.junit.After;
 import org.junit.Before;
@@ -131,18 +134,19 @@ public class PdfExportServiceInstrumentedTest {
         job.compressionRatio = 1F;
         job.splitPages = 0;
 
-        PdfExportService.getInstance(context).submitExport(Arrays.asList(job));
-        waitForFile(output, LARGE_EXPORT_TIMEOUT_MS);
+        JSONObject submission = PdfExportService.getInstance(context)
+            .submitExport(Arrays.asList(job));
+        String exportId = submission.getJSONArray("tasks").getJSONObject(0)
+            .getString("exportId");
+        JSONObject completed = waitForTaskTerminal(exportId, LARGE_EXPORT_TIMEOUT_MS);
 
-        try (ParcelFileDescriptor descriptor = ParcelFileDescriptor.open(
-                output,
-                ParcelFileDescriptor.MODE_READ_ONLY
-            ); PdfRenderer renderer = new PdfRenderer(descriptor)) {
-            assertEquals(1000, renderer.getPageCount());
-            assertPageSize(renderer, 0, 480, 720);
-            assertPageSize(renderer, 499, 480, 720);
-            assertPageSize(renderer, 500, 480, 720);
-            assertPageSize(renderer, 999, 480, 720);
+        assertEquals("completed", completed.optString("status"));
+        try (PDDocument document = PDDocument.load(output)) {
+            assertEquals(1000, document.getNumberOfPages());
+            assertPdfBoxPageSize(document, 0, 480, 720);
+            assertPdfBoxPageSize(document, 499, 480, 720);
+            assertPdfBoxPageSize(document, 500, 480, 720);
+            assertPdfBoxPageSize(document, 999, 480, 720);
         }
         assertFalse(PdfBoxExportWriter.getTempFile(output).exists());
         assertFalse(PdfBoxExportWriter.getWorkDirectory(output).exists());
@@ -248,15 +252,17 @@ public class PdfExportServiceInstrumentedTest {
         throw new IOException("Timed out waiting for merged PDF volumes: " + states);
     }
 
-    private static void waitForFile(File file, long timeoutMs) throws IOException {
+    private JSONObject waitForTaskTerminal(String exportId, long timeoutMs) throws IOException {
         long deadline = SystemClock.elapsedRealtime() + timeoutMs;
+        PdfStore store = PdfStore.getInstance(context);
         while (SystemClock.elapsedRealtime() < deadline) {
-            if (isExportComplete(file)) {
-                return;
+            JSONObject task = store.getExportTask(exportId);
+            if (task != null && PdfStore.isTerminalExportStatus(task.optString("status"))) {
+                return task;
             }
             SystemClock.sleep(50L);
         }
-        throw new IOException("Timed out waiting for PDF output: " + describeExportState(file));
+        throw new IOException("Timed out waiting for PDF task: " + exportId);
     }
 
     private static boolean isExportComplete(File file) {
@@ -290,11 +296,10 @@ public class PdfExportServiceInstrumentedTest {
         }
     }
 
-    private static void assertPageSize(PdfRenderer renderer, int index, int width, int height) {
-        try (PdfRenderer.Page page = renderer.openPage(index)) {
-            assertEquals(width, page.getWidth());
-            assertEquals(height, page.getHeight());
-        }
+    private static void assertPdfBoxPageSize(PDDocument document, int index, int width,
+            int height) {
+        assertEquals(width, document.getPage(index).getMediaBox().getWidth(), 0F);
+        assertEquals(height, document.getPage(index).getMediaBox().getHeight(), 0F);
     }
 
     private static void deleteRecursively(File target) throws IOException {

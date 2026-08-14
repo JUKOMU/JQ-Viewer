@@ -29,7 +29,7 @@
         </div>
       </IonToolbar>
     </IonHeader>
-    <IonContent v-if="activeMainView === 'downloads'">
+    <IonContent v-show="activeMainView === 'downloads'">
       <!-- 下拉刷新 -->
       <IonRefresher slot="fixed" @ion-refresh="onRefresh($event)">
         <IonRefresherContent />
@@ -107,7 +107,7 @@
         <div class="bottom-spacer" />
       </template>
     </IonContent>
-    <IonContent v-else>
+    <IonContent v-show="activeMainView === 'pdf'">
       <PdfManagementView
         ref="pdfManagementRef"
         :initial-view="pdfInitialView"
@@ -148,7 +148,7 @@
         </button>
 
         <button
-          v-if="selectedStatus === 'completed' && !isSelectedPdf"
+          v-if="selectedStatus === 'completed'"
           class="popover-btn"
           @click="popoverAction('pdf')"
         >
@@ -193,7 +193,7 @@
         </button>
 
         <button
-          v-if="deletableStatuses.includes(selectedStatus ?? '') || isSelectedPdf"
+          v-if="deletableStatuses.includes(selectedStatus ?? '')"
           class="popover-btn danger"
           @click="popoverAction('delete')"
         >
@@ -356,12 +356,6 @@ const popoverEvent = ref<Event | null>(null)
 const cancelableStatuses = ['queued', 'downloading', 'paused']
 const deletableStatuses = ['completed', 'failed']
 
-const isSelectedPdf = computed(() => {
-  const t = selectedTask.value
-  if (!t) return false
-  return 'source' in t && t.source === 'pdf-import'
-})
-
 const selectedStatus = computed(() => {
   const t = selectedTask.value
   if (!t) return null
@@ -409,8 +403,6 @@ const popoverAction = (action: string) => {
     case 'read':
       if (selectedGroup.value?.type === 'multi') {
         onOpenChapterSelect(selectedGroup.value)
-      } else if (isSelectedPdf.value) {
-        onRead(t)
       } else {
         onRead(t)
       }
@@ -436,8 +428,6 @@ const popoverAction = (action: string) => {
     case 'delete':
       if (selectedGroup.value?.type === 'multi') {
         requestDeleteGroupConfirm(selectedGroup.value)
-      } else if (isSelectedPdf.value) {
-        requestDeletePdfConfirm()
       } else {
         requestDeleteConfirm()
       }
@@ -455,17 +445,10 @@ const deleteAlertMessage = computed(() => {
   }
   const t = selectedTask.value
   if (!t) return ''
-  if ('source' in t && t.source === 'pdf-import') {
-    return `将删除「${t.chapterTitle}」的导入记录（不会删除原 PDF 文件），此操作不可恢复。`
-  }
   return `将删除「${t.chapterTitle}」的下载文件和记录，此操作不可恢复。`
 })
 
 const requestDeleteConfirm = () => {
-  isDeleteAlertOpen.value = true
-}
-
-const requestDeletePdfConfirm = () => {
   isDeleteAlertOpen.value = true
 }
 
@@ -900,10 +883,18 @@ const onPdfExportConfirm = async (payload: {
   await ensureNotificationPermission()
 
   try {
-    await JmcomicService.exportPdfBatch(
+    const result = await JmcomicService.exportPdfBatch(
       exportPlan.tasks.map((task) => ({ ...task, allowOverwrite })),
     )
-    await showToast('PDF导出已开始，请查看通知', 'success')
+    const accepted = result.tasks.filter((task) => task.accepted).length
+    const rejected = result.tasks.length - accepted
+    if (accepted === 0) {
+      await showToast('PDF 导出未开始，请查看任务失败原因', 'danger')
+    } else if (rejected > 0) {
+      await showToast(`已开始 ${accepted} 个，${rejected} 个未进入队列，请查看导出任务`, 'medium')
+    } else {
+      await showToast('PDF导出已开始，请查看通知', 'success')
+    }
   } catch (e: any) {
     await showToast(sanitizeError(e, '导出启动失败'), 'danger')
   }
@@ -1013,26 +1004,6 @@ const onRetry = async (task: DownloadTask) => {
 }
 
 const onRead = (entry: CompletedEntry | DownloadTask) => {
-  if ('source' in entry && entry.source === 'pdf-import') {
-    const ce = entry as CompletedEntry
-    const pdf = ce.pdfData
-    if (pdf?.filePath) {
-      void router.push({
-        path: '/pdf-reader',
-        query: {
-          path: pdf.filePath,
-          title: pdf.fileName,
-          albumId: ce.albumId,
-          albumTitle: ce.albumTitle,
-          authors: ce.authors,
-          coverUrl: ce.coverUrl,
-          chapterId: ce.chapterId || ce.displayId || ce.albumId,
-          chapterTitle: ce.chapterTitle,
-        },
-      })
-    }
-    return
-  }
   const dt =
     'downloadTask' in entry && entry.downloadTask ? entry.downloadTask : (entry as DownloadTask)
   void router.push({

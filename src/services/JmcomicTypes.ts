@@ -476,6 +476,16 @@ export interface PdfExportTaskRecord extends PdfExportProgressEvent {
   completedAt?: number
 }
 
+export type PdfExportSubmissionTaskResult = Partial<PdfExportTaskRecord> & {
+  accepted: boolean
+  errorCode?: string
+  errorMessage?: string
+}
+
+export interface PdfExportBatchResult {
+  tasks: PdfExportSubmissionTaskResult[]
+}
+
 export interface PdfManagementState {
   recoveryState: 'ready'
   databaseResetInfo?: {

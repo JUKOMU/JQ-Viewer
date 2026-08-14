@@ -8,6 +8,7 @@ import type {
   ImportPdfItem,
   NetworkProbeEvent,
   PdfExportTask,
+  PdfExportProgressEvent,
   RelocationProgress,
   SearchQuery,
   SearchResultItem,
@@ -433,6 +434,62 @@ export const JmcomicService = {
     return native.getImportedPdfs()
   },
 
+  getPdfFiles(options: Parameters<JmcomicClient['getPdfFiles']>[0]) {
+    return native.getPdfFiles(options)
+  },
+
+  refreshPdfFileAvailability(ids: number[]) {
+    return native.refreshPdfFileAvailability({ ids })
+  },
+
+  inspectPdfFileForDeletion(id: number) {
+    return native.inspectPdfFileForDeletion({ id })
+  },
+
+  verifyPdfFile(id: number) {
+    return native.verifyPdfFile({ id })
+  },
+
+  removePdfFromLibrary(id: number) {
+    return native.removePdfFromLibrary({ id })
+  },
+
+  deletePdfFile(id: number) {
+    return native.deletePdfFile({ id })
+  },
+
+  getPdfManagementState() {
+    return native.getPdfManagementState()
+  },
+
+  acknowledgePdfDatabaseReset() {
+    return native.acknowledgePdfDatabaseReset()
+  },
+
+  getPdfExportTasks(options: Parameters<JmcomicClient['getPdfExportTasks']>[0]) {
+    return native.getPdfExportTasks(options)
+  },
+
+  getPdfExportTask(exportId: string) {
+    return native.getPdfExportTask({ exportId })
+  },
+
+  cancelPdfExport(exportId: string) {
+    return native.cancelPdfExport({ exportId })
+  },
+
+  retryPdfExport(exportId: string, allowOverwrite = false) {
+    return native.retryPdfExport({ exportId, allowOverwrite })
+  },
+
+  deletePdfExportTask(exportId: string) {
+    return native.deletePdfExportTask({ exportId })
+  },
+
+  addPdfExportProgressListener(handler: (event: PdfExportProgressEvent) => void) {
+    return native.addListener('pdfExportProgress', handler)
+  },
+
   updateLocalEpisodeType(albumId: string, isSingleEpisode: boolean) {
     return native.updateLocalEpisodeType({ albumId, isSingleEpisode })
   },
@@ -443,6 +500,10 @@ export const JmcomicService = {
 
   openPdf(filePath: string) {
     return native.openPdf({ filePath })
+  },
+
+  openPdfFolder(filePath: string) {
+    return native.openPdfFolder({ filePath })
   },
 
   getPdfInfo(filePath: string) {

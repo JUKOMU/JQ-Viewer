@@ -421,6 +421,10 @@ export const PdfExportService = {
       const task: PdfExportTask = {
         mode: 'merged',
         albumId,
+        albumTitle: selectedChapters[0].albumTitle,
+        coverUrl: selectedChapters[0].coverUrl,
+        authors: templateData.authors,
+        isSingleEpisode: selectedChapters[0].isSingleEpisode,
         chapterTitle: templateData.chapterRange,
         chapters: selectedChapters.map(toPdfExportChapter),
         savePath,
@@ -438,6 +442,10 @@ export const PdfExportService = {
     const tasks = selectedChapters.map<PdfExportTask>((chapter) => ({
       mode: 'chapter',
       albumId: chapter.albumId,
+      albumTitle: chapter.albumTitle,
+      coverUrl: chapter.coverUrl,
+      authors: options.albumDetail?.authors?.join('、') ?? '',
+      isSingleEpisode: chapter.isSingleEpisode,
       chapterId: chapter.chapterId,
       chapterTitle: chapter.chapterTitle,
       savePath:

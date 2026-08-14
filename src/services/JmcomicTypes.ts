@@ -417,6 +417,10 @@ export interface PdfExportChapter {
 export interface PdfExportTask {
   mode: PdfExportMode
   albumId: string
+  albumTitle?: string
+  coverUrl?: string
+  authors?: string
+  isSingleEpisode?: boolean
   chapterId?: string
   chapterTitle: string // 用于通知显示
   chapters?: PdfExportChapter[]
@@ -424,6 +428,72 @@ export interface PdfExportTask {
   useOriginal: boolean
   compressionRatio: number // 0.1~1.0
   splitPages: number // 0=不分卷, >0=每卷页数
+  allowOverwrite?: boolean
+}
+
+export type PdfExportStatus =
+  | 'queued'
+  | 'running'
+  | 'cancelling'
+  | 'cancelled'
+  | 'completed'
+  | 'partial'
+  | 'failed'
+  | 'interrupted'
+
+export interface PdfExportProgressEvent {
+  exportId: string
+  batchId: string
+  status: PdfExportStatus
+  phase: string
+  currentPage: number
+  totalPages: number
+  currentVolume: number
+  totalVolumes: number
+  snapshotRevision: number
+  errorCode?: string
+  errorMessage?: string
+}
+
+export interface PdfExportTaskRecord extends PdfExportProgressEvent {
+  mode: PdfExportMode
+  albumId: string
+  albumTitle: string
+  coverUrl: string
+  authors: string
+  isSingleEpisode?: boolean
+  chapterId?: string
+  displayTitle: string
+  savePath: string
+  allowOverwrite: boolean
+  useOriginal: boolean
+  compressionRatio: number
+  splitPages: number
+  cancelRequested: boolean
+  createdAt: number
+  startedAt?: number
+  updatedAt: number
+  completedAt?: number
+}
+
+export type PdfExportSubmissionTaskResult = Partial<PdfExportTaskRecord> & {
+  accepted: boolean
+  errorCode?: string
+  errorMessage?: string
+}
+
+export interface PdfExportBatchResult {
+  tasks: PdfExportSubmissionTaskResult[]
+}
+
+export interface PdfManagementState {
+  recoveryState: 'ready'
+  databaseResetInfo?: {
+    pending: boolean
+    resetAt?: number
+    fromVersion?: number
+    reason?: string
+  }
 }
 
 // --- PDF 导入 ---
@@ -439,18 +509,35 @@ export interface ImportedPdf {
   id: number
   filePath: string
   fileName: string
+  sourceType: 'imported' | 'exported'
+  ownership: 'external_reference' | 'app_created'
+  chapterLinkStatus: 'resolved' | 'unresolved' | 'multi_chapter'
   albumId: string
   albumTitle: string
   coverUrl: string
   authors: string
-  chapterId: string
+  chapterId?: string
   chapterTitle: string
   chapterSortOrder: number
   isSingleEpisode?: boolean
   createdAt: number
   folderId?: string
-  fileSize?: number
-  pageCount?: number
+  fileSize: number
+  pageCount: number
+  availability: 'unknown' | 'available' | 'missing' | 'inaccessible' | 'invalid'
+  verificationStatus: 'unverified' | 'valid' | 'corrupt' | 'page_mismatch'
+  verificationError?: string
+  updatedAt: number
+  verifiedAt?: number
+}
+
+export interface PdfStorageDeleteResult {
+  result: 'deleted' | 'already_missing'
+  id: number
+  sourceType: ImportedPdf['sourceType']
+  ownership: ImportedPdf['ownership']
+  filePath: string
+  fileName: string
 }
 
 /** importPdfs 调用的导入项 */

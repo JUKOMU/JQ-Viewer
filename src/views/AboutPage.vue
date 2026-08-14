@@ -73,9 +73,7 @@
           <div class="info-row">
             <span class="info-label"></span>
             <span class="info-value repo-url"
-              ><a
-                :href="JMCOMIC_API_REPO_URL"
-                @click.prevent.stop="openRepo(JMCOMIC_API_REPO_URL)"
+              ><a :href="JMCOMIC_API_REPO_URL" @click.prevent.stop="openRepo(JMCOMIC_API_REPO_URL)"
                 ><IonIcon :icon="logoGithub" class="repo-icon" aria-hidden="true" />
                 <span>JMComic-Api-Java</span></a
               ></span

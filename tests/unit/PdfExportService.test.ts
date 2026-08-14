@@ -28,7 +28,8 @@ function downloadTask(sortOrder: number | undefined, id = String(sortOrder)): Do
     chapterId: id,
     albumTitle: '测试漫画',
     chapterTitle: `章节 ${id}`,
-    coverUrl: '',
+    coverUrl: 'https://example.test/cover.jpg',
+    isSingleEpisode: false,
     chapterSortOrder: sortOrder,
     totalPages: 20,
     downloadedPages: 20,
@@ -156,6 +157,9 @@ describe('PDF export plan', () => {
       expect.objectContaining({
         mode: 'merged',
         albumId: 'album-1',
+        albumTitle: '测试漫画',
+        coverUrl: 'https://example.test/cover.jpg',
+        isSingleEpisode: false,
         chapterTitle: '第2-3话',
         savePath: '/exports/merged.pdf',
       }),
@@ -182,6 +186,9 @@ describe('PDF export plan', () => {
     expect(plan.tasks).toHaveLength(2)
     expect(plan.tasks.map((task) => task.mode)).toEqual(['chapter', 'chapter'])
     expect(plan.tasks.map((task) => task.chapterId)).toEqual(['chapter-2', 'chapter-3'])
+    expect(plan.tasks.every((task) => task.albumTitle === '测试漫画')).toBe(true)
+    expect(plan.tasks.every((task) => task.coverUrl === 'https://example.test/cover.jpg')).toBe(true)
+    expect(plan.tasks.every((task) => task.isSingleEpisode === false)).toBe(true)
     expect(plan.outputPaths).toEqual(plan.tasks.map((task) => task.savePath))
   })
 

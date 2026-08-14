@@ -13,6 +13,7 @@ import type {
   ImageInfo,
   ImageCacheEntry,
   ImportedPdfsResult,
+  ImportedPdf,
   ImportPdfItem,
   ImportPdfsResult,
   LatencyResult,
@@ -21,6 +22,11 @@ import type {
   OfflineFolderInfo,
   ParseHistoryItem,
   PdfExportTask,
+  PdfExportProgressEvent,
+  PdfExportStatus,
+  PdfExportTaskRecord,
+  PdfManagementState,
+  PdfStorageDeleteResult,
   PdfScanItem,
   PhotoDetail,
   PreloadResult,
@@ -249,7 +255,7 @@ export interface JmcomicClient {
 
   pickImageAndOcr(): Promise<{ text: string; error?: string }>
 
-  exportPdfBatch(options: { tasks: PdfExportTask[] }): Promise<{ accepted: boolean }>
+  exportPdfBatch(options: { tasks: PdfExportTask[] }): Promise<{ tasks: PdfExportTaskRecord[] }>
 
   pickFolder(): Promise<{ path: string; treeUri?: string; cancelled: boolean }>
 
@@ -269,6 +275,46 @@ export interface JmcomicClient {
 
   getImportedPdfs(): Promise<ImportedPdfsResult>
 
+  getPdfFiles(options: {
+    sourceType?: 'imported' | 'exported'
+    availability?: ImportedPdf['availability'] | 'problem'
+    folderId?: string
+    query?: string
+    cursor?: string
+    limit: number
+  }): Promise<{ files: ImportedPdf[]; nextCursor?: string }>
+
+  refreshPdfFileAvailability(options: { ids: number[] }): Promise<{ files: ImportedPdf[] }>
+
+  inspectPdfFileForDeletion(options: { id: number }): Promise<ImportedPdf>
+
+  verifyPdfFile(options: { id: number }): Promise<ImportedPdf>
+
+  removePdfFromLibrary(options: { id: number }): Promise<{ success: boolean }>
+
+  deletePdfFile(options: { id: number }): Promise<PdfStorageDeleteResult>
+
+  getPdfManagementState(): Promise<PdfManagementState>
+
+  acknowledgePdfDatabaseReset(): Promise<{ acknowledged: boolean }>
+
+  getPdfExportTasks(options: {
+    status?: PdfExportStatus
+    cursor?: string
+    limit: number
+  }): Promise<{ tasks: PdfExportTaskRecord[]; nextCursor?: string }>
+
+  getPdfExportTask(options: { exportId: string }): Promise<PdfExportTaskRecord>
+
+  cancelPdfExport(options: { exportId: string }): Promise<PdfExportTaskRecord>
+
+  retryPdfExport(options: {
+    exportId: string
+    allowOverwrite?: boolean
+  }): Promise<PdfExportTaskRecord>
+
+  deletePdfExportTask(options: { exportId: string }): Promise<{ success: boolean }>
+
   updateLocalEpisodeType(options: {
     albumId: string
     isSingleEpisode: boolean
@@ -277,6 +323,8 @@ export interface JmcomicClient {
   deleteImportedPdf(options: { id: number }): Promise<{ success: boolean }>
 
   openPdf(options: { filePath: string }): Promise<{ success: boolean }>
+
+  openPdfFolder(options: { filePath: string }): Promise<{ success: boolean }>
 
   getPdfInfo(options: { filePath: string }): Promise<{ pageCount: number }>
 
@@ -301,6 +349,11 @@ export interface JmcomicClient {
   setReaderAutoShowToolbarAtEnd(options: { enabled: boolean }): Promise<{ success: boolean }>
 
   setReaderState(options: { isActive: boolean; isVertical: boolean }): Promise<{ success: boolean }>
+
+  addListener(
+    event: 'pdfExportProgress',
+    handler: (data: PdfExportProgressEvent) => void,
+  ): Promise<JmcomicListenerHandle>
 
   addListener(
     event: 'volumeKey',

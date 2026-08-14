@@ -74,7 +74,7 @@ async function confirmImport(
         albumTitle: f.albumDetail?.title || '',
         coverUrl: f.albumDetail?.image || '',
         authors: f.albumDetail?.authors?.join(',') || '',
-        chapterId: f.chapterId || chapter?.id || f.editedIds![0],
+        chapterId: f.chapterId || chapter?.id || '',
         chapterTitle: f.chapterTitle || chapter?.title || '',
         chapterSortOrder: f.chapterSortOrder ?? chapter?.sortOrder ?? 0,
         ...(f.albumDetail?.isSingleEpisode !== undefined

@@ -16,6 +16,7 @@ import android.net.Network;
 import android.net.Uri;
 import android.os.Build;
 import android.os.ParcelFileDescriptor;
+import android.provider.DocumentsContract;
 import android.provider.MediaStore;
 import android.util.Base64;
 import android.util.Log;
@@ -62,11 +63,14 @@ import static android.app.Activity.RESULT_OK;
 @CapacitorPlugin(name = "Jmcomic")
 public class JmcomicPlugin extends Plugin implements ServiceListener {
     private static final String TAG = "JmcomicPlugin";
+    private static final String EXTERNAL_STORAGE_DOCUMENTS_AUTHORITY =
+        "com.android.externalstorage.documents";
 
     private volatile JmApiClient sharedClient;
     private volatile ExecutorService apiExecutor;
     private volatile ScheduledExecutorService apiTimeoutExecutor;
     private ExecutorService ocrExecutor;
+    private ExecutorService pdfCommandExecutor;
     private static final int API_EXECUTOR_SIZE = 12;
     private int imageConcurrency = 6;
     private int downloadConcurrency = 6;
@@ -155,7 +159,8 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         // 初始化历史记录数据库
         HistoryStore.getInstance(ctx);
         FavoriteStore.getInstance(ctx);
-        PdfImportStore.getInstance(ctx);
+        PdfStore.getInstance(ctx);
+        PdfExportService.getInstance(ctx).reconcileOnStartup();
 
         boolean runtimeExists = JmcomicRuntime.exists();
         if (!runtimeExists) {
@@ -195,6 +200,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         apiExecutor = Executors.newFixedThreadPool(API_EXECUTOR_SIZE);
         apiTimeoutExecutor = Executors.newSingleThreadScheduledExecutor();
         ocrExecutor = Executors.newSingleThreadExecutor();
+        pdfCommandExecutor = createPdfCommandExecutor();
 
         runtime = JmcomicRuntime.getOrCreate(ctx, settingsDb, downloadDb,
             FileStore.getInstance(), ImageCache.getInstance(), cacheCapacityPolicy,
@@ -262,6 +268,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
 
         shutdownGracefully(domainProbeExecutor);
         shutdownGracefully(ocrExecutor);
+        shutdownGracefully(pdfCommandExecutor);
 
         shutdownGracefully(apiTimeoutExecutor);
         shutdownGracefully(apiExecutor, 10);
@@ -675,6 +682,31 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
             }
         } catch (Exception e) {
             Log.w(TAG, "处理下载通知操作失败: " + action + ", " + taskId, e);
+        }
+    }
+
+    public static void handlePdfExportNotificationAction(String exportId) {
+        if (exportId == null || exportId.isEmpty()) return;
+        JmcomicPlugin plugin = instance;
+        if (plugin == null) {
+            Log.w(TAG, "PDF 通知取消到达时插件未就绪: " + exportId);
+            return;
+        }
+        try {
+            PdfExportService.getInstance(plugin.getContext()).cancelExport(exportId);
+        } catch (Exception error) {
+            Log.w(TAG, "处理 PDF 通知取消失败: " + exportId, error);
+        }
+    }
+
+    public static void emitPdfExportProgress(JSONObject snapshot) {
+        JmcomicPlugin plugin = instance;
+        if (plugin != null && snapshot != null) {
+            try {
+                plugin.notifyListeners("pdfExportProgress", JSObject.fromJSONObject(snapshot));
+            } catch (Exception error) {
+                Log.w(TAG, "发布 PDF 导出进度失败", error);
+            }
         }
     }
 
@@ -2524,53 +2556,38 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
             call.reject("items is required and must not be empty");
             return;
         }
-        PdfImportStore store = PdfImportStore.getInstance(getContext());
-        int imported = 0;
-        int skipped = 0;
-        int duplicateCount = 0;
-        int errorCount = 0;
-        for (int i = 0; i < items.length(); i++) {
-            try {
-                JSONObject item = items.getJSONObject(i);
-                long id = store.insertPdf(
-                    item.getString("filePath"),
-                    item.getString("fileName"),
-                    item.getString("albumId"),
-                    item.optString("albumTitle", ""),
-                    item.optString("coverUrl", ""),
-                    item.optString("authors", ""),
-                    item.optString("chapterId", ""),
-                    item.optString("chapterTitle", ""),
-                    item.optInt("chapterSortOrder", 0),
-                    item.has("isSingleEpisode")
-                        ? (item.optBoolean("isSingleEpisode", false) ? 1 : 0)
-                        : -1,
-                    System.currentTimeMillis(),
-                    item.optString("folderId", null)
-                );
-                if (id != -1) imported++;
-                else {
+        dispatchPdfCommand(pdfCommandExecutor, () -> {
+            int imported = 0;
+            int skipped = 0;
+            int duplicateCount = 0;
+            int errorCount = 0;
+            PdfManagementService service = PdfManagementService.getInstance(getContext());
+            for (int i = 0; i < items.length(); i++) {
+                try {
+                    JSONObject result = service.importPdf(items.getJSONObject(i));
+                    if ("imported".equals(result.optString("result"))) imported++;
+                    else {
+                        skipped++;
+                        duplicateCount++;
+                    }
+                } catch (Exception error) {
                     skipped++;
-                    duplicateCount++;
+                    errorCount++;
+                    Log.w(TAG, "跳过无效的 PDF 导入项", error);
                 }
-            } catch (Exception e) {
-                skipped++;
-                errorCount++;
-                Log.w(TAG, "跳过无效的 PDF 导入项", e);
             }
-        }
-        JSObject ret = new JSObject();
-        ret.put("imported", imported);
-        ret.put("skipped", skipped);
-        ret.put("duplicateCount", duplicateCount);
-        ret.put("errorCount", errorCount);
-        call.resolve(ret);
+            JSObject ret = new JSObject();
+            ret.put("imported", imported);
+            ret.put("skipped", skipped);
+            ret.put("duplicateCount", duplicateCount);
+            ret.put("errorCount", errorCount);
+            call.resolve(ret);
+        });
     }
 
     @PluginMethod
     public void getImportedPdfs(PluginCall call) {
-        PdfImportStore store = PdfImportStore.getInstance(getContext());
-        JSONArray pdfs = store.getAllPdfs();
+        JSONArray pdfs = PdfStore.getInstance(getContext()).getAllFiles();
         JSObject ret = new JSObject();
         ret.put("pdfs", pdfs);
         call.resolve(ret);
@@ -2585,7 +2602,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
             return;
         }
         int updatedDownloads = downloadDb.updateAlbumEpisodeType(albumId, isSingleEpisode);
-        int updatedPdfs = PdfImportStore.getInstance(getContext())
+        int updatedPdfs = PdfStore.getInstance(getContext())
             .updateAlbumEpisodeType(albumId, isSingleEpisode);
         JSObject ret = new JSObject();
         ret.put("success", true);
@@ -2601,10 +2618,118 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
             call.reject("id is required");
             return;
         }
-        boolean ok = PdfImportStore.getInstance(getContext()).deletePdf(id);
+        boolean ok = PdfStore.getInstance(getContext()).removeFileFromLibrary(id);
         JSObject ret = new JSObject();
         ret.put("success", ok);
         call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void getPdfFiles(PluginCall call) {
+        try {
+            JSONObject result = PdfManagementService.getInstance(getContext()).getFiles(
+                call.getString("sourceType"), call.getString("availability"),
+                call.getString("folderId"), call.getString("query"), call.getString("cursor"),
+                call.getInt("limit", 50));
+            call.resolve(JSObject.fromJSONObject(result));
+        } catch (Exception error) {
+            call.reject(error.getMessage(), error);
+        }
+    }
+
+    @PluginMethod
+    public void refreshPdfFileAvailability(PluginCall call) {
+        JSArray ids = call.getArray("ids");
+        if (ids == null) {
+            call.reject("ids is required");
+            return;
+        }
+        dispatchPdfFileOperation(pdfCommandExecutor, () -> {
+            JSObject result = new JSObject();
+            result.put("files", PdfManagementService.getInstance(getContext())
+                .refreshFileAvailability(ids));
+            call.resolve(result);
+        });
+    }
+
+    @PluginMethod
+    public void inspectPdfFileForDeletion(PluginCall call) {
+        int id = call.getInt("id", -1);
+        if (id < 0) {
+            call.reject("id is required");
+            return;
+        }
+        dispatchPdfFileOperation(pdfCommandExecutor, () -> {
+            try {
+                call.resolve(JSObject.fromJSONObject(PdfManagementService.getInstance(getContext())
+                    .inspectFileForDeletion(id)));
+            } catch (Exception error) {
+                call.reject(error.getMessage(), error);
+            }
+        });
+    }
+
+    @PluginMethod
+    public void verifyPdfFile(PluginCall call) {
+        int id = call.getInt("id", -1);
+        if (id < 0) {
+            call.reject("id is required");
+            return;
+        }
+        dispatchPdfFileOperation(pdfCommandExecutor, () -> {
+            try {
+                call.resolve(JSObject.fromJSONObject(
+                    PdfManagementService.getInstance(getContext()).verifyFile(id)));
+            } catch (Exception error) {
+                call.reject(error.getMessage(), error);
+            }
+        });
+    }
+
+    @PluginMethod
+    public void removePdfFromLibrary(PluginCall call) {
+        int id = call.getInt("id", -1);
+        if (id < 0) {
+            call.reject("id is required");
+            return;
+        }
+        JSObject result = new JSObject();
+        result.put("success", PdfStore.getInstance(getContext()).removeFileFromLibrary(id));
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void deletePdfFile(PluginCall call) {
+        int id = call.getInt("id", -1);
+        if (id < 0) {
+            call.reject("id is required");
+            return;
+        }
+        dispatchPdfFileOperation(pdfCommandExecutor, () -> {
+            try {
+                call.resolve(JSObject.fromJSONObject(
+                    PdfManagementService.getInstance(getContext()).deleteFile(id)));
+            } catch (Exception error) {
+                call.reject(error.getMessage(), error);
+            }
+        });
+    }
+
+    @PluginMethod
+    public void getPdfManagementState(PluginCall call) {
+        try {
+            call.resolve(JSObject.fromJSONObject(
+                PdfExportService.getInstance(getContext()).getManagementState()));
+        } catch (Exception error) {
+            call.reject(error.getMessage(), error);
+        }
+    }
+
+    @PluginMethod
+    public void acknowledgePdfDatabaseReset(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put("acknowledged", PdfStore.getInstance(getContext()).acknowledgeDatabaseReset());
+        call.resolve(result);
     }
 
     @PluginMethod
@@ -2640,6 +2765,84 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
         } catch (Exception e) {
             call.reject("无法打开 PDF: " + e.getMessage());
         }
+    }
+
+    @PluginMethod
+    public void openPdfFolder(PluginCall call) {
+        String filePath = call.getString("filePath");
+        if (filePath == null || filePath.isEmpty()) {
+            call.reject("filePath is required");
+            return;
+        }
+        try {
+            Uri folderUri = resolvePdfFolderUri(filePath);
+            boolean canGrantUri = filePath.startsWith("content://")
+                || (getContext().getPackageName() + ".fileprovider")
+                    .equals(folderUri.getAuthority());
+            getContext().startActivity(createPdfFolderIntent(folderUri, canGrantUri));
+
+            JSObject result = new JSObject();
+            result.put("success", true);
+            call.resolve(result);
+        } catch (Exception error) {
+            Log.e(TAG, "打开 PDF 所在文件夹失败", error);
+            call.reject("系统文件管理器无法打开该目录");
+        }
+    }
+
+    private Intent createPdfFolderIntent(Uri folderUri, boolean canGrantUri) {
+        Intent intent = new Intent(Intent.ACTION_VIEW);
+        intent.setDataAndType(folderUri, DocumentsContract.Document.MIME_TYPE_DIR);
+        intent.addFlags(pdfFolderGrantFlags(canGrantUri));
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        return intent;
+    }
+
+    static int pdfFolderGrantFlags(boolean canGrantUri) {
+        return canGrantUri
+            ? Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION
+            : 0;
+    }
+
+    private Uri resolvePdfFolderUri(String filePath) throws Exception {
+        if (filePath.startsWith("content://")) {
+            Uri fileUri = Uri.parse(filePath);
+            String documentId = DocumentsContract.getDocumentId(fileUri);
+            int separator = documentId.lastIndexOf('/');
+            String parentDocumentId;
+            if (separator >= 0) {
+                parentDocumentId = documentId.substring(0, separator);
+            } else {
+                int volumeSeparator = documentId.indexOf(':');
+                if (volumeSeparator < 0) {
+                    throw new IllegalArgumentException("无法确定文档所在文件夹");
+                }
+                parentDocumentId = documentId.substring(0, volumeSeparator + 1);
+            }
+            if (fileUri.getPath() != null && fileUri.getPath().contains("/tree/")) {
+                return DocumentsContract.buildDocumentUriUsingTree(fileUri, parentDocumentId);
+            }
+            return DocumentsContract.buildDocumentUri(fileUri.getAuthority(), parentDocumentId);
+        }
+
+        File file = new File(filePath);
+        File parent = file.getCanonicalFile().getParentFile();
+        if (parent == null || !parent.isDirectory()) {
+            throw new java.io.FileNotFoundException("Parent folder not found: " + filePath);
+        }
+
+        String parentPath = parent.getCanonicalPath();
+        String primaryPath = android.os.Environment.getExternalStorageDirectory().getCanonicalPath();
+        if (parentPath.equals(primaryPath) || parentPath.startsWith(primaryPath + File.separator)) {
+            String relativePath = parentPath.substring(primaryPath.length()).replace(File.separatorChar, '/');
+            if (relativePath.startsWith("/")) relativePath = relativePath.substring(1);
+            String documentId = relativePath.isEmpty() ? "primary:" : "primary:" + relativePath;
+            return DocumentsContract.buildDocumentUri(
+                EXTERNAL_STORAGE_DOCUMENTS_AUTHORITY, documentId);
+        }
+
+        return FileProvider.getUriForFile(
+            getContext(), getContext().getPackageName() + ".fileprovider", parent);
     }
 
     @PluginMethod
@@ -2771,6 +2974,11 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
                     PdfExportService.ExportJob job = new PdfExportService.ExportJob();
                     job.mode = t.optString("mode", "chapter").trim();
                     job.albumId = t.optString("albumId", "");
+                    job.albumTitle = t.optString("albumTitle", "");
+                    job.coverUrl = t.optString("coverUrl", "");
+                    job.authors = t.optString("authors", "");
+                    job.singleEpisode = t.has("isSingleEpisode")
+                        ? (t.optBoolean("isSingleEpisode") ? 1 : 0) : -1;
                     job.chapterId = t.optString("chapterId", "");
                     job.chapterTitle = t.optString("chapterTitle",
                         "merged".equals(job.mode) ? "合并导出" : job.chapterId);
@@ -2779,6 +2987,7 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
                     double cr = t.optDouble("compressionRatio", 1.0);
                     job.compressionRatio = (float) Math.max(0.1, Math.min(1.0, cr));
                     job.splitPages = Math.max(0, t.optInt("splitPages", 0));
+                    job.allowOverwrite = t.optBoolean("allowOverwrite", false);
 
                     if ("merged".equals(job.mode)) {
                         JSONArray chaptersJson = t.optJSONArray("chapters");
@@ -2804,14 +3013,111 @@ public class JmcomicPlugin extends Plugin implements ServiceListener {
                 }
             }
 
-            PdfExportService pdfService = PdfExportService.getInstance(getContext());
-            pdfService.submitExport(jobs);
-
-            JSObject ret = new JSObject();
-            ret.put("accepted", true);
-            call.resolve(ret);
+            dispatchPdfCommand(pdfCommandExecutor, () -> {
+                try {
+                    PdfExportService pdfService = PdfExportService.getInstance(getContext());
+                    call.resolve(JSObject.fromJSONObject(pdfService.submitExport(jobs)));
+                } catch (Exception error) {
+                    call.reject(error.getMessage(), error);
+                }
+            });
         } catch (Exception e) {
             call.reject(e.getMessage(), e);
         }
+    }
+
+    @PluginMethod
+    public void getPdfExportTasks(PluginCall call) {
+        try {
+            call.resolve(JSObject.fromJSONObject(PdfExportService.getInstance(getContext())
+                .getExportTasksPage(call.getString("status"), call.getString("cursor"),
+                    call.getInt("limit", 50))));
+        } catch (Exception error) {
+            call.reject(error.getMessage(), error);
+        }
+    }
+
+    @PluginMethod
+    public void getPdfExportTask(PluginCall call) {
+        String exportId = call.getString("exportId");
+        JSONObject task = exportId == null ? null
+            : PdfExportService.getInstance(getContext()).getExportTask(exportId);
+        if (task == null) {
+            call.reject("PDF 导出任务不存在");
+            return;
+        }
+        try {
+            call.resolve(JSObject.fromJSONObject(task));
+        } catch (Exception error) {
+            call.reject(error.getMessage(), error);
+        }
+    }
+
+    @PluginMethod
+    public void cancelPdfExport(PluginCall call) {
+        String exportId = call.getString("exportId");
+        JSONObject task = exportId == null ? null
+            : PdfExportService.getInstance(getContext()).cancelExport(exportId);
+        if (task == null) {
+            call.reject("PDF 导出任务不存在");
+            return;
+        }
+        try {
+            call.resolve(JSObject.fromJSONObject(task));
+        } catch (Exception error) {
+            call.reject(error.getMessage(), error);
+        }
+    }
+
+    @PluginMethod
+    public void retryPdfExport(PluginCall call) {
+        String exportId = call.getString("exportId");
+        if (exportId == null || exportId.isEmpty()) {
+            call.reject("exportId is required");
+            return;
+        }
+        dispatchPdfCommand(pdfCommandExecutor, () -> {
+            try {
+                call.resolve(JSObject.fromJSONObject(PdfExportService.getInstance(getContext())
+                    .retryExport(exportId, call.getBoolean("allowOverwrite", false))));
+            } catch (Exception error) {
+                call.reject(error.getMessage(), error);
+            }
+        });
+    }
+
+    @PluginMethod
+    public void deletePdfExportTask(PluginCall call) {
+        String exportId = call.getString("exportId");
+        if (exportId == null || exportId.isEmpty()) {
+            call.reject("exportId is required");
+            return;
+        }
+        dispatchPdfCommand(pdfCommandExecutor, () -> {
+            try {
+                JSObject result = new JSObject();
+                result.put("success", PdfExportService.getInstance(getContext())
+                    .deleteExportTask(exportId));
+                call.resolve(result);
+            } catch (Exception error) {
+                call.reject(error.getMessage(), error);
+            }
+        });
+    }
+
+    static void dispatchPdfCommand(Executor executor, Runnable command) {
+        executor.execute(command);
+    }
+
+    static void dispatchPdfFileOperation(Executor executor, Runnable operation) {
+        executor.execute(operation);
+    }
+
+    static ExecutorService createPdfCommandExecutor() {
+        return Executors.newSingleThreadExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "pdf-command");
+            thread.setDaemon(true);
+            return thread;
+        });
     }
 }

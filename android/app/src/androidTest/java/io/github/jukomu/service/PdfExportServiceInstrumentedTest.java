@@ -16,6 +16,7 @@ import androidx.test.platform.app.InstrumentationRegistry;
 
 import io.github.jukomu.data.DownloadStore;
 import io.github.jukomu.data.FileStore;
+import io.github.jukomu.jmcomic.api.model.JmImage;
 
 import org.junit.After;
 import org.junit.Before;
@@ -27,8 +28,12 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 @RunWith(AndroidJUnit4.class)
 public class PdfExportServiceInstrumentedTest {
@@ -39,6 +44,7 @@ public class PdfExportServiceInstrumentedTest {
 
     private Context context;
     private FileStore fileStore;
+    private DownloadStore downloadStore;
     private File albumDirectory;
     private File outputDirectory;
 
@@ -46,7 +52,8 @@ public class PdfExportServiceInstrumentedTest {
     public void setUp() throws IOException {
         context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         fileStore = FileStore.getInstance();
-        fileStore.init(context, DownloadStore.getInstance(context), false);
+        downloadStore = DownloadStore.getInstance(context);
+        fileStore.init(context, downloadStore, false);
         albumDirectory = new File(fileStore.getBaseDir(), ALBUM_ID);
         outputDirectory = new File(context.getCacheDir(), "pdf-phase6-service");
         deleteRecursively(albumDirectory);
@@ -70,6 +77,8 @@ public class PdfExportServiceInstrumentedTest {
         createImage(chapterFive, "page-001.jpg", 30, 40, Color.BLUE);
         createImage(chapterFive, "page-002.jpg", 40, 50, Color.YELLOW);
         createImage(unselectedChapter, "page-001.jpg", 50, 60, Color.MAGENTA);
+        registerChapter("900000002", 2);
+        registerChapter("900000005", 2);
 
         File output = new File(outputDirectory, "第2话+第5话.pdf");
         PdfExportService.ExportJob job = new PdfExportService.ExportJob();
@@ -105,6 +114,8 @@ public class PdfExportServiceInstrumentedTest {
         File secondChapter = fileStore.ensureChapterDir(ALBUM_ID, "900001002");
         createRepeatedImages(firstChapter, 500, Color.RED);
         createRepeatedImages(secondChapter, 500, Color.BLUE);
+        registerChapter("900001001", 500);
+        registerChapter("900001002", 500);
 
         File output = new File(outputDirectory, "large-1000.pdf");
         PdfExportService.ExportJob job = new PdfExportService.ExportJob();
@@ -144,6 +155,30 @@ public class PdfExportServiceInstrumentedTest {
         chapter.chapterTitle = title;
         chapter.sortOrder = sortOrder;
         return chapter;
+    }
+
+    private void registerChapter(String chapterId, int pageCount) throws Exception {
+        String taskId = ALBUM_ID + "_" + chapterId;
+        downloadStore.insertTask(taskId, ALBUM_ID, chapterId, "测试漫画", "第" + chapterId + "话", "");
+        downloadStore.updateTaskDetail(taskId, pageCount, "", "[]", 0, false);
+        List<JmImage> images = new ArrayList<>();
+        JSONArray metaImages = new JSONArray();
+        for (int index = 1; index <= pageCount; index++) {
+            String filename = pageCount == 2
+                ? String.format(Locale.ROOT, "page-%03d.jpg", index)
+                : String.format(Locale.ROOT, "page-%04d.jpg", index);
+            images.add(new JmImage(chapterId, "", filename, "", "", index));
+            metaImages.put(new JSONObject()
+                .put("filename", filename)
+                .put("photoId", chapterId)
+                .put("sortOrder", index));
+        }
+        downloadStore.insertImages(taskId, images);
+        fileStore.saveMeta(ALBUM_ID, chapterId, new JSONObject()
+            .put("albumId", ALBUM_ID)
+            .put("chapterId", chapterId)
+            .put("totalPages", pageCount)
+            .put("images", metaImages));
     }
 
     private static void createImage(File directory, String name, int width, int height, int color)

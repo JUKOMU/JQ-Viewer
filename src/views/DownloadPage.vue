@@ -5,23 +5,31 @@
         <div class="toolbar-start">
           <MenuToggleButton />
         </div>
-        <div class="toolbar-end">
-          <div class="toolbar-action">
-            <span class="toolbar-action-label">导入PDF</span>
-            <button class="import-btn" @click="onImportPdf">
-              <IonIcon :icon="cloudUploadOutline" />
-            </button>
-          </div>
-          <div v-if="hasTasks" class="toolbar-action">
-            <span class="toolbar-action-label">{{ sortLabel }}</span>
-            <button class="sort-btn" @click="toggleSort">
-              <IonIcon :icon="sortIcon" />
-            </button>
-          </div>
+        <div class="view-tabs" role="tablist" aria-label="下载页面视图">
+          <button
+            type="button"
+            role="tab"
+            class="tab-btn"
+            :aria-selected="activeMainView === 'downloads'"
+            :class="{ active: activeMainView === 'downloads' }"
+            @click="selectMainView('downloads')"
+          >
+            下载
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class="tab-btn"
+            :aria-selected="activeMainView === 'pdf'"
+            :class="{ active: activeMainView === 'pdf' }"
+            @click="selectMainView('pdf')"
+          >
+            PDF
+          </button>
         </div>
       </IonToolbar>
     </IonHeader>
-    <IonContent>
+    <IonContent v-if="activeMainView === 'downloads'">
       <!-- 下拉刷新 -->
       <IonRefresher slot="fixed" @ion-refresh="onRefresh($event)">
         <IonRefresherContent />
@@ -38,6 +46,12 @@
         <div v-if="hasStorageInfo" class="storage-bar">
           <IonIcon :icon="saveOutline" class="storage-icon" />
           <span>已用 {{ spaceUsedMb }}MB / 可用 {{ spaceAvailMb }}MB</span>
+        </div>
+        <div v-if="hasTasks" class="sort-label-row">
+          <span class="toolbar-action-label">{{ sortLabel }}</span>
+          <button type="button" class="sort-btn" :aria-label="sortLabel" @click="toggleSort">
+            <IonIcon :icon="sortIcon" />
+          </button>
         </div>
 
         <!-- 下载中 -->
@@ -92,6 +106,13 @@
         </div>
         <div class="bottom-spacer" />
       </template>
+    </IonContent>
+    <IonContent v-else>
+      <PdfManagementView
+        ref="pdfManagementRef"
+        :initial-view="pdfInitialView"
+        :initial-export-id="pdfInitialExportId"
+      />
     </IonContent>
 
     <!-- 操作菜单（IonPopover） -->
@@ -227,7 +248,7 @@
 defineOptions({ name: 'DownloadPage' })
 
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import {
   alertController,
   IonAlert,
@@ -245,7 +266,6 @@ import {
   bookOutline,
   closeCircleOutline,
   cloudDownloadOutline,
-  cloudUploadOutline,
   documentLockOutline,
   informationCircleOutline,
   pauseOutline,
@@ -261,6 +281,7 @@ import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import DownloadTaskCard from '@/components/download/DownloadTaskCard.vue'
 import PdfExportBottomSheet from '@/components/download/PdfExportBottomSheet.vue'
 import DeleteChaptersBottomSheet from '@/components/download/DeleteChaptersBottomSheet.vue'
+import PdfManagementView from '@/components/download/PdfManagementView.vue'
 import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
 import { OfflineDownloadService } from '@/services/OfflineDownloadService'
 import { PdfExportService } from '@/services/PdfExportService'
@@ -269,14 +290,26 @@ import type {
   CompletedEntry,
   CompletedGroup,
   DownloadTask,
-  ImportedPdf,
   PdfExportMode,
 } from '@/services/JmcomicTypes'
-import { PdfImportService } from '@/services/PdfImportService'
 
 const router = useRouter()
+const route = useRoute()
+const activeMainView = ref<'downloads' | 'pdf'>(route.query.view === 'pdf' ? 'pdf' : 'downloads')
+const pdfInitialView = computed<'files' | 'tasks'>(() =>
+  route.query.tab === 'tasks' ? 'tasks' : 'files',
+)
+const pdfInitialExportId = computed(() =>
+  typeof route.query.exportId === 'string' ? route.query.exportId : undefined,
+)
+const pdfManagementRef = ref<InstanceType<typeof PdfManagementView> | null>(null)
+let ionEnterCount = 0
+
+const selectMainView = (view: 'downloads' | 'pdf') => {
+  activeMainView.value = view
+}
+
 const tasks = ref<DownloadTask[]>([])
-const importedPdfs = ref<ImportedPdf[]>([])
 const spaceUsedMb = ref(0)
 const spaceAvailMb = ref(0)
 const hasStorageInfo = ref(false)
@@ -296,16 +329,6 @@ interface SpeedSample {
 }
 
 const speedSamples = new Map<string, SpeedSample>()
-
-const loadImportedPdfs = async () => {
-  try {
-    const result = await JmcomicService.getImportedPdfs()
-    importedPdfs.value = result.pdfs
-    void backfillMissingEpisodeTypes()
-  } catch {
-    // 离线时保留缓存数据
-  }
-}
 
 // 排序
 type SortMode = 'time' | 'title'
@@ -455,10 +478,6 @@ const requestDeleteGroupConfirm = (group: CompletedGroup) => {
 }
 
 const confirmDelete = () => {
-  if (isSelectedPdf.value) {
-    void confirmDeletePdf()
-    return
-  }
   const g = selectedGroup.value
   if (g?.type === 'multi') {
     void deleteChapters(g.chapters)
@@ -470,22 +489,7 @@ const confirmDelete = () => {
   popoverEvent.value = null
 }
 
-const confirmDeletePdf = async () => {
-  const t = selectedTask.value
-  if (!t || !('source' in t) || !t.pdfData) return
-  try {
-    await JmcomicService.deleteImportedPdf(t.pdfData.id)
-    importedPdfs.value = importedPdfs.value.filter((p) => p.id !== t.pdfData!.id)
-    selectedTask.value = null
-    selectedGroup.value = null
-    popoverEvent.value = null
-    await showToast('已删除导入记录', 'success')
-  } catch (e: any) {
-    await showToast(sanitizeError(e, '删除失败'), 'danger')
-  }
-}
-
-const hasTasks = computed(() => tasks.value.length > 0 || importedPdfs.value.length > 0)
+const hasTasks = computed(() => tasks.value.length > 0)
 
 const activeTasks = computed(() =>
   tasks.value.filter(
@@ -504,7 +508,7 @@ const failedTasks = computed(() => tasks.value.filter((t) => t.status === 'faile
 const sortedActiveTasks = computed(() => sortTasks(activeTasks.value))
 const sortedFailedTasks = computed(() => sortTasks(failedTasks.value))
 
-// 将下载任务和导入 PDF 映射为统一的 CompletedEntry
+// 将下载任务映射为统一的 CompletedEntry
 const mapDownloadTaskToEntry = (t: DownloadTask): CompletedEntry => ({
   albumId: t.albumId,
   albumTitle: t.albumTitle,
@@ -521,27 +525,9 @@ const mapDownloadTaskToEntry = (t: DownloadTask): CompletedEntry => ({
   downloadTask: t,
 })
 
-const mapImportedPdfToEntry = (pdf: ImportedPdf): CompletedEntry => ({
-  albumId: pdf.albumId,
-  albumTitle: pdf.albumTitle || pdf.fileName || pdf.albumId,
-  coverUrl: pdf.coverUrl,
-  chapterId: pdf.chapterId || `import_pdf_${pdf.id}`,
-  displayId: pdf.chapterId || pdf.albumId,
-  chapterTitle: pdf.chapterTitle || pdf.fileName,
-  chapterSortOrder: pdf.chapterSortOrder,
-  isSingleEpisode: pdf.isSingleEpisode,
-  authors: pdf.authors,
-  createdAt: pdf.createdAt,
-  completedAt: pdf.createdAt,
-  totalSize: pdf.fileSize ?? 0,
-  source: 'pdf-import',
-  pdfData: pdf,
-})
-
-const completedEntries = computed<CompletedEntry[]>(() => [
-  ...completedTasks.value.map(mapDownloadTaskToEntry),
-  ...importedPdfs.value.map(mapImportedPdfToEntry),
-])
+const completedEntries = computed<CompletedEntry[]>(() =>
+  completedTasks.value.map(mapDownloadTaskToEntry),
+)
 
 const completedGroups = computed<CompletedGroup[]>(() => {
   const byAlbum = new Map<string, CompletedEntry[]>()
@@ -591,20 +577,12 @@ const collectEpisodeTypeBackfillAlbumIds = () => {
       ids.add(task.albumId)
     }
   }
-  for (const pdf of importedPdfs.value) {
-    if (pdf.albumId && pdf.isSingleEpisode === undefined && !backfilledAlbumIds.has(pdf.albumId)) {
-      ids.add(pdf.albumId)
-    }
-  }
   return [...ids]
 }
 
 const applyEpisodeTypeToLocalState = (albumId: string, isSingleEpisode: boolean) => {
   tasks.value = tasks.value.map((task) =>
     task.albumId === albumId ? { ...task, isSingleEpisode } : task,
-  )
-  importedPdfs.value = importedPdfs.value.map((pdf) =>
-    pdf.albumId === albumId ? { ...pdf, isSingleEpisode } : pdf,
   )
 }
 
@@ -749,14 +727,13 @@ const updateSpeedSample = (
 }
 
 const onRefresh = async (event: CustomEvent) => {
-  await syncDownloadState()
-  await loadImportedPdfs()
+  if (activeMainView.value === 'pdf') await pdfManagementRef.value?.refresh()
+  else await syncDownloadState()
   ;(event.target as HTMLIonRefresherElement).complete()
 }
 
 onMounted(async () => {
   isUnmounted = false
-  void loadImportedPdfs()
 
   JmcomicService.addDownloadProgressListener((data) => {
     const task = tasks.value.find((t) => t.taskId === data.taskId)
@@ -846,8 +823,11 @@ onMounted(async () => {
 })
 
 onIonViewWillEnter(() => {
+  ionEnterCount++
   void syncDownloadState()
-  void loadImportedPdfs()
+  if (activeMainView.value === 'pdf' && ionEnterCount > 1) {
+    void pdfManagementRef.value?.refresh()
+  }
 })
 
 onUnmounted(() => {
@@ -905,11 +885,13 @@ const onPdfExportConfirm = async (payload: {
   }
 
   // 检查文件是否已存在
+  let allowOverwrite = false
   try {
     const result = await JmcomicService.checkFilesExist(exportPlan.outputPaths)
     if (result.existing.length > 0) {
       const confirmed = await confirmOverwrite(result.existing)
       if (!confirmed) return
+      allowOverwrite = true
     }
   } catch {
     /* 检查失败时直接放行 */
@@ -918,7 +900,9 @@ const onPdfExportConfirm = async (payload: {
   await ensureNotificationPermission()
 
   try {
-    await JmcomicService.exportPdfBatch(exportPlan.tasks)
+    await JmcomicService.exportPdfBatch(
+      exportPlan.tasks.map((task) => ({ ...task, allowOverwrite })),
+    )
     await showToast('PDF导出已开始，请查看通知', 'success')
   } catch (e: any) {
     await showToast(sanitizeError(e, '导出启动失败'), 'danger')
@@ -1077,19 +1061,6 @@ const onGoToAlbumDetail = (entry: CompletedEntry | DownloadTask) => {
   void router.push(`/album/${entry.albumId}`)
 }
 
-// ========== PDF 导入入口 ==========
-
-const onImportPdf = async () => {
-  try {
-    const result = await JmcomicService.pickFolder()
-    if (result.cancelled || (!result.path && !result.treeUri)) return
-    await PdfImportService.scanAndParse(result.path || '', result.treeUri)
-    router.push('/import-review')
-  } catch (e: any) {
-    await showToast(sanitizeError(e, '无法打开文件夹选择器'), 'danger')
-  }
-}
-
 const onDelete = async (task: DownloadTask) => {
   try {
     await JmcomicService.deleteDownloaded(task.albumId, task.chapterId)
@@ -1113,7 +1084,6 @@ const onDeleteSheetConfirm = async (chapters: CompletedEntry[]) => {
 const deleteChapters = async (chapters: CompletedEntry[]) => {
   try {
     const downloadChapters = chapters.filter((ch) => ch.source === 'download')
-    const pdfChapters = chapters.filter((ch) => ch.source === 'pdf-import')
 
     const downloadResults = await Promise.all(
       downloadChapters.map(async (ch) => {
@@ -1138,26 +1108,8 @@ const deleteChapters = async (chapters: CompletedEntry[]) => {
       OfflineDownloadService.removeTask(taskId)
     }
 
-    const pdfResults = await Promise.all(
-      pdfChapters.map(async (ch) => {
-        if (!ch.pdfData) return { ch, ok: false }
-        try {
-          const result = await JmcomicService.deleteImportedPdf(ch.pdfData.id)
-          return { ch, ok: result.success !== false }
-        } catch {
-          return { ch, ok: false }
-        }
-      }),
-    )
-    const deletedPdfIds = new Set(
-      pdfResults
-        .filter((result) => result.ok && result.ch.pdfData)
-        .map((result) => result.ch.pdfData!.id),
-    )
-    importedPdfs.value = importedPdfs.value.filter((p) => !deletedPdfIds.has(p.id))
-
     void syncDownloadState()
-    const deletedCount = deletedDownloadChapters.length + deletedPdfIds.size
+    const deletedCount = deletedDownloadChapters.length
     const failedCount = chapters.length - deletedCount
     if (failedCount > 0 && deletedCount > 0) {
       await showToast(`已删除 ${deletedCount} 个，${failedCount} 个删除失败`, 'medium')
@@ -1177,8 +1129,7 @@ const clearTarget = ref<'completed' | 'failed'>('completed')
 
 const clearAlertMessage = computed(() => {
   if (clearTarget.value === 'completed') {
-    const totalCount = completedTasks.value.length + importedPdfs.value.length
-    return `将删除所有已完成任务的文件(导入的除外)和记录（${totalCount} 个），此操作不可恢复。`
+    return `将删除所有已完成下载的文件和记录（${completedTasks.value.length} 个），此操作不可恢复。`
   }
   return `将删除所有失败任务的文件和记录（${failedTasks.value.length} 个），此操作不可恢复。`
 })
@@ -1195,15 +1146,13 @@ const executeClear = async () => {
 
 const clearCompleted = async () => {
   const list = completedTasks.value
-  if (!list.length && !importedPdfs.value.length) return
-  await Promise.all([
-    ...list.map((task) =>
+  if (!list.length) return
+  await Promise.all(
+    list.map((task) =>
       JmcomicService.deleteDownloaded(task.albumId, task.chapterId).catch(() => {}),
     ),
-    ...importedPdfs.value.map((pdf) => JmcomicService.deleteImportedPdf(pdf.id).catch(() => {})),
-  ])
+  )
   tasks.value = tasks.value.filter((t) => t.status !== 'completed')
-  importedPdfs.value = []
   OfflineDownloadService.setAll(tasks.value)
   await syncDownloadState()
 }
@@ -1227,63 +1176,51 @@ const clearFailed = async () => {
   padding: 0 0 8px 14px;
 }
 
-.toolbar-title {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 16px;
-  font-weight: 600;
-  color: #4c2a18;
-}
-
-.toolbar-end {
-  position: absolute;
-  right: 12px;
-  bottom: 6px;
+.view-tabs {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  gap: 2px;
+  margin-bottom: 10px;
+  padding: 4px 14px;
+  border-radius: 18px;
+  background: #fffbf8;
 }
 
-.toolbar-action {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
+.tab-btn {
+  flex: 1;
+  height: 34px;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  color: #8a6048;
+  font-size: 12px;
+  font-weight: 600;
+  transition:
+    background-color 0.18s ease,
+    color 0.18s ease;
+}
+
+.tab-btn.active {
+  background: linear-gradient(145deg, #fa9c69, #f28752);
+  color: #fff;
 }
 
 .toolbar-action-label {
   color: #8a6048;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1;
   white-space: nowrap;
 }
 
-.import-btn {
-  width: 32px;
-  height: 32px;
-  border: 0;
-  background: transparent;
-  color: #8a6048;
-  font-size: 18px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  cursor: pointer;
-  margin-right: 2px;
-}
-
 .sort-btn {
-  width: 32px;
-  height: 32px;
-  border: 0;
-  background: transparent;
-  color: #8a6048;
-  font-size: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
+  padding: 8px;
+  border: 0;
+  border-radius: 10px;
+  background: #fffbf8;
+  color: #8a6048;
+  font-size: 16px;
   cursor: pointer;
 }
 
@@ -1305,7 +1242,7 @@ const clearFailed = async () => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding-top: 40vh;
+  padding-top: 36vh;
   color: #b89a84;
 }
 
@@ -1323,13 +1260,13 @@ const clearFailed = async () => {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 16px;
-  margin: 8px 14px;
-  background: #fffaf6;
-  border-radius: 10px;
+  margin: 0 14px 10px;
+  padding: 10px 14px;
+  border: 1px solid rgb(245 210 188 / 0.5);
+  border-radius: 8px;
+  background: #fffbf8;
   font-size: 13px;
   color: #8a6048;
-  border: 1px solid rgb(245 210 188 / 0.5);
 }
 
 .storage-icon {
@@ -1337,15 +1274,23 @@ const clearFailed = async () => {
   color: #fa9c69;
 }
 
+.sort-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  margin: -2px 18px 4px;
+}
+
 .section {
-  padding: 4px 14px;
+  padding: 0 14px;
 }
 
 .section-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 4px 6px;
+  padding: 8px 4px 10px;
 }
 
 .section-title {
@@ -1371,7 +1316,7 @@ const clearFailed = async () => {
 }
 
 .task-card {
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .bottom-spacer {
@@ -1424,5 +1369,12 @@ const clearFailed = async () => {
   font-size: 16px;
   width: 20px;
   text-align: center;
+}
+
+.sort-btn:focus-visible,
+.clear-btn:focus-visible,
+.popover-btn:focus-visible {
+  outline: 2px solid #c06f45;
+  outline-offset: 2px;
 }
 </style>

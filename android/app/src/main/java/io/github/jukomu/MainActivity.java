@@ -11,8 +11,8 @@ import androidx.annotation.NonNull;
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.BridgeWebViewClient;
 import io.github.jukomu.bridge.JmcomicPlugin;
-import io.github.jukomu.data.ImageCache;
-import io.github.jukomu.data.PdfServer;
+import io.github.jukomu.feature.cache.ImageCache;
+import io.github.jukomu.feature.pdf.web.PdfServer;
 
 public class MainActivity extends BridgeActivity {
     public static final String ACTION_OPEN_ROUTE = "io.github.jukomu.OPEN_ROUTE";

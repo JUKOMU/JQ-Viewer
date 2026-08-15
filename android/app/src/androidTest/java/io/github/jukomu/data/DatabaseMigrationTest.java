@@ -1,16 +1,16 @@
 package io.github.jukomu.data;
 
-import static org.junit.Assert.assertEquals;
-
 import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
-
 import androidx.test.platform.app.InstrumentationRegistry;
-
+import io.github.jukomu.feature.favorite.data.FavoriteStore;
+import io.github.jukomu.platform.persistence.SettingsStore;
 import org.junit.Test;
 
 import java.lang.reflect.Constructor;
+
+import static org.junit.Assert.assertEquals;
 
 public class DatabaseMigrationTest {
 

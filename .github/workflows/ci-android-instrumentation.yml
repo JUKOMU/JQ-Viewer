@@ -59,14 +59,15 @@ jobs:
           mkdir -p android/app/build/ci-diagnostics
           echo "api-level=${{ matrix.api-level }}" > android/app/build/ci-diagnostics/matrix.txt
           echo "arch=x86_64" >> android/app/build/ci-diagnostics/matrix.txt
-          echo "target=default" >> android/app/build/ci-diagnostics/matrix.txt
+          echo "target=${{ matrix.api-level == 27 && 'default' || 'google_apis' }}" \
+            >> android/app/build/ci-diagnostics/matrix.txt
 
       - name: Run instrumentation tests on API ${{ matrix.api-level }}
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ matrix.api-level }}
           arch: x86_64
-          target: default
+          target: ${{ matrix.api-level == 27 && 'default' || 'google_apis' }}
           disable-animations: true
           script: >
             diagnostics_dir="android/app/build/ci-diagnostics";

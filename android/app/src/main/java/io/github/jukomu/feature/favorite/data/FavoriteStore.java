@@ -231,7 +231,7 @@ public class FavoriteStore extends SQLiteOpenHelper {
                     COL_AUTHORS, COL_TAGS},
                 where, whereArgs, null, null,
                 COL_ID + " ASC",
-                pageSize + " OFFSET " + offset);
+                offset + "," + pageSize);
 
             JSONArray content = new JSONArray();
             while (dataCursor.moveToNext()) {

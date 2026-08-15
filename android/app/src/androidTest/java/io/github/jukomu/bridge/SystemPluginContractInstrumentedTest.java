@@ -5,6 +5,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
+import android.os.Build;
 import androidx.test.platform.app.InstrumentationRegistry;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
@@ -138,7 +139,7 @@ public class SystemPluginContractInstrumentedTest {
     }
 
     @Test
-    public void notificationPermissionUsesAndroidTwelveBranch() {
+    public void notificationPermissionUsesPlatformBranch() {
         permissionService.notificationGranted = false;
         RecordingPluginCall checkDenied = call("checkNotificationPermission");
         RecordingPluginCall requestDenied = call("requestNotificationPermission");
@@ -147,8 +148,25 @@ public class SystemPluginContractInstrumentedTest {
         plugin.requestNotificationPermission(requestDenied);
 
         assertFalse(checkDenied.resolvedData.getBool("granted"));
+        assertSynchronous(checkDenied);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            assertNull(requestDenied.resolvedData);
+            assertTrue(requestDenied.isKeptAlive());
+            assertArrayEquals(
+                new String[]{"android.permission.POST_NOTIFICATIONS"},
+                activity.requestedPermissions);
+            assertEquals(
+                PermissionService.REQUEST_POST_NOTIFICATIONS,
+                activity.permissionRequestCode);
+            plugin.handlePermissionResult(
+                PermissionService.REQUEST_POST_NOTIFICATIONS,
+                activity.requestedPermissions,
+                new int[]{PackageManager.PERMISSION_DENIED});
+            assertEquals(1, requestDenied.completionCount);
+        } else {
+            assertSynchronous(requestDenied);
+        }
         assertFalse(requestDenied.resolvedData.getBool("granted"));
-        assertSynchronous(checkDenied, requestDenied);
 
         permissionService.notificationGranted = true;
         RecordingPluginCall requestGranted = call("requestNotificationPermission");

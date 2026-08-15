@@ -54,6 +54,14 @@ final class RuntimeEventRouter implements DownloadEventSink, PreloadEventSink,
     }
 
     @Override
+    public void onImageFailed(String photoId, int sortOrder, String type) {
+        PreloadEventSink current = preloadDelegate;
+        if (current != null) {
+            current.onImageFailed(photoId, sortOrder, type);
+        }
+    }
+
+    @Override
     public void onRelocationProgress(int current, int total, String phase,
                                      String currentFile) {
         RelocationEventSink sink = relocationDelegate;

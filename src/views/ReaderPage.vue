@@ -11,20 +11,28 @@
         v-if="isVertical"
         ref="verticalViewRef"
         :image-map="imageMap"
+        :failed-sort-orders="failedSortOrders"
+        :retrying-sort-orders="retryingSortOrders"
         :total-count="totalCount"
         :current-index="currentIndex"
         @update:current-index="onPageChange"
         @request-range="onVerticalRequestRange"
         @reached-bottom="scheduleToolbarAtReaderEnd"
+        @image-error="onImageError"
+        @retry-images="retryFailedImages"
       />
       <HorizontalPageView
         v-else
         ref="horizontalViewRef"
         :image-map="imageMap"
+        :failed-sort-orders="failedSortOrders"
+        :retrying-sort-orders="retryingSortOrders"
         :total-count="totalCount"
         :current-index="currentIndex"
         @update:current-index="onPageChange"
         @toggle-toolbar="toggleToolbar"
+        @image-error="onImageError"
+        @retry-images="retryFailedImages"
       />
 
       <!-- 底部工具栏 -->
@@ -111,6 +119,8 @@ const isVertical = ref(SettingsStore.getReaderDisplayMode() === 'vertical')
 const currentIndex = ref(0)
 const totalCount = ref(0)
 const imageMap = shallowRef<Map<number, string>>(new Map())
+const failedSortOrders = shallowRef<Set<number>>(new Set())
+const retryingSortOrders = shallowRef<Set<number>>(new Set())
 const chapters = ref<PhotoMeta[]>([])
 const toolbarVisible = ref(true)
 const isDragProgress = ref(false)
@@ -128,6 +138,7 @@ let chapterLoadVersion = 0
 let chapterStateKey = ''
 let chapterStateAlbumId = ''
 let imageReadyListenerHandle: PluginListenerHandle | null = null
+let imageFailedListenerHandle: PluginListenerHandle | null = null
 let imageReadyListenerSetupPromise: Promise<void> | null = null
 let imageReadyListenerSetupId = 0
 let volumeKeyListenerHandle: PluginListenerHandle | null = null
@@ -136,6 +147,9 @@ let loadedSortOrders = new Set<number>()
 let requestedSortOrders = new Map<number, number>()
 let preloadRequestSequence = 0
 let sortOrderToImage = new Map<number, ImageInfo>()
+let retryBatchSequence = 0
+let activeRetryBatchId: number | null = null
+let retryUrlRevision = 0
 let activeAllowedSortOrders = new Set<number>()
 let activeDragPreviewSortOrder: number | null = null
 let lastWindowCenter = -1
@@ -386,6 +400,28 @@ const applyImageMap = () => {
   imageMap.value = new Map(imageMap.value)
 }
 
+const setFailedSortOrder = (sortOrder: number, failed: boolean) => {
+  const next = new Set(failedSortOrders.value)
+  if (failed) next.add(sortOrder)
+  else next.delete(sortOrder)
+  failedSortOrders.value = next
+}
+
+const onImageError = (sortOrder: number, failedUrl: string) => {
+  if (
+    !photoDetail ||
+    sortOrder < 1 ||
+    sortOrder > totalCount.value ||
+    imageMap.value.get(sortOrder) !== failedUrl
+  )
+    return
+
+  imageMap.value.delete(sortOrder)
+  loadedSortOrders.delete(sortOrder)
+  setFailedSortOrder(sortOrder, true)
+  applyImageMap()
+}
+
 interface ImageExposureContext {
   version: number
   albumId: string
@@ -408,6 +444,95 @@ const isCurrentImageExposureContext = (context: ImageExposureContext) =>
   context.albumId === albumId.value &&
   context.chapterId === chapterId.value &&
   context.photoId === photoDetail?.id
+
+const retryFailedImages = () => {
+  const context = createImageExposureContext()
+  if (!context || activeRetryBatchId !== null || failedSortOrders.value.size === 0) return
+
+  const failedSnapshot = [...failedSortOrders.value].filter(
+    (sortOrder) => sortOrder >= 1 && sortOrder <= totalCount.value,
+  )
+  if (failedSnapshot.length === 0) return
+
+  const batchId = ++retryBatchSequence
+  activeRetryBatchId = batchId
+  retryingSortOrders.value = new Set(failedSnapshot)
+
+  void (async () => {
+    let failedCount = failedSnapshot.length
+    try {
+      const latestPhoto = await JmcomicService.getPhoto(context.chapterId)
+      if (
+        activeRetryBatchId !== batchId ||
+        !isCurrentImageExposureContext(context) ||
+        latestPhoto.id !== context.photoId
+      )
+        return
+
+      const latestImages = new Map<number, ImageInfo>()
+      const duplicateSortOrders = new Set<number>()
+      for (const image of latestPhoto.images) {
+        if (latestImages.has(image.sortOrder)) duplicateSortOrders.add(image.sortOrder)
+        latestImages.set(image.sortOrder, image)
+      }
+
+      const results = await Promise.all(
+        failedSnapshot.map(async (sortOrder) => {
+          const image = latestImages.get(sortOrder)
+          if (!image || duplicateSortOrders.has(sortOrder)) {
+            return { sortOrder, image: null, success: false }
+          }
+          try {
+            await JmcomicService.retryImage(context.photoId, image)
+            return { sortOrder, image, success: true }
+          } catch {
+            return { sortOrder, image, success: false }
+          }
+        }),
+      )
+      if (activeRetryBatchId !== batchId || !isCurrentImageExposureContext(context)) return
+
+      failedCount = 0
+      const nextFailed = new Set(failedSortOrders.value)
+      retryUrlRevision = Math.max(Date.now(), retryUrlRevision + 1)
+      for (const result of results) {
+        if (!result.success) {
+          failedCount++
+          continue
+        }
+
+        nextFailed.delete(result.sortOrder)
+        sortOrderToImage.set(result.sortOrder, result.image!)
+        requestedSortOrders.delete(result.sortOrder)
+        if (activeAllowedSortOrders.has(result.sortOrder)) {
+          imageMap.value.set(
+            result.sortOrder,
+            `${getImageUrl(context.photoId, result.sortOrder, 'image')}?retry=${retryUrlRevision}`,
+          )
+          loadedSortOrders.add(result.sortOrder)
+        }
+      }
+      failedSortOrders.value = nextFailed
+      applyImageMap()
+    } catch {
+      if (activeRetryBatchId !== batchId || !isCurrentImageExposureContext(context)) return
+    } finally {
+      if (activeRetryBatchId === batchId) {
+        activeRetryBatchId = null
+        if (isCurrentImageExposureContext(context)) {
+          retryingSortOrders.value = new Set()
+          if (failedCount > 0) {
+            const message =
+              failedCount === failedSnapshot.length
+                ? '图片重试失败，请检查网络后重试'
+                : `${failedCount} 张图片重试失败`
+            void showToast(message, 'danger')
+          }
+        }
+      }
+    }
+  })()
+}
 
 const exposeImageIfAllowed = (
   context: ImageExposureContext,
@@ -438,6 +563,22 @@ const exposeImagesIfAllowed = (
   if (changed) applyImageMap()
 }
 
+const onPreloadImageReady = (context: ImageExposureContext, sortOrder: number) => {
+  if (!isCurrentImageExposureContext(context)) return
+  if (failedSortOrders.value.has(sortOrder)) setFailedSortOrder(sortOrder, false)
+  exposeImagesIfAllowed(context, [sortOrder], 'image')
+}
+
+const onPreloadImageFailed = (context: ImageExposureContext, sortOrder: number) => {
+  if (!isCurrentImageExposureContext(context) || sortOrder < 1 || sortOrder > totalCount.value)
+    return
+
+  imageMap.value.delete(sortOrder)
+  loadedSortOrders.delete(sortOrder)
+  if (!failedSortOrders.value.has(sortOrder)) setFailedSortOrder(sortOrder, true)
+  applyImageMap()
+}
+
 const setActiveAllowedSortOrders = (
   sortOrders: Iterable<number>,
   dragPreviewSortOrder: number | null,
@@ -456,7 +597,8 @@ const cleanupRequestedSortOrdersOutsideAllowed = () => {
 
 const preloadSortOrders = (sortOrders: number[], replacePending = false) => {
   const context = createImageExposureContext()
-  if (!context || !readerRuntimeActive || !imageReadyListenerHandle) return
+  if (!context || !readerRuntimeActive || !imageReadyListenerHandle || !imageFailedListenerHandle)
+    return
 
   const images: ImageInfo[] = []
   for (const sortOrder of new Set(sortOrders)) {
@@ -682,27 +824,49 @@ const removeListenerSafely = (handle: PluginListenerHandle | null) => {
 }
 
 const setupImageReadyListener = async () => {
-  if (imageReadyListenerHandle) return
+  if (imageReadyListenerHandle && imageFailedListenerHandle) return
   if (imageReadyListenerSetupPromise) return imageReadyListenerSetupPromise
   const context = createImageExposureContext()
   if (!readerRuntimeActive || !context) return
 
   const setupId = ++imageReadyListenerSetupId
   const setupPromise = (async () => {
-    const handle = await JmcomicService.addImageReadyListener(
-      context.photoId,
-      (sortOrder) => exposeImagesIfAllowed(context, [sortOrder], 'image'),
-      { type: 'image' },
-    )
-    if (
-      setupId !== imageReadyListenerSetupId ||
-      !readerRuntimeActive ||
-      !isCurrentImageExposureContext(context)
-    ) {
-      removeListenerSafely(handle)
-      return
+    let readyHandle: PluginListenerHandle | null = null
+    let failedHandle: PluginListenerHandle | null = null
+    const isCurrentSetup = () =>
+      setupId === imageReadyListenerSetupId &&
+      readerRuntimeActive &&
+      isCurrentImageExposureContext(context)
+
+    try {
+      readyHandle = await JmcomicService.addImageReadyListener(
+        context.photoId,
+        (sortOrder) => onPreloadImageReady(context, sortOrder),
+        { type: 'image' },
+      )
+      if (!isCurrentSetup()) {
+        removeListenerSafely(readyHandle)
+        return
+      }
+
+      failedHandle = await JmcomicService.addImageFailedListener(
+        context.photoId,
+        (sortOrder) => onPreloadImageFailed(context, sortOrder),
+        { type: 'image' },
+      )
+      if (!isCurrentSetup()) {
+        removeListenerSafely(readyHandle)
+        removeListenerSafely(failedHandle)
+        return
+      }
+
+      imageReadyListenerHandle = readyHandle
+      imageFailedListenerHandle = failedHandle
+    } catch (error) {
+      removeListenerSafely(readyHandle)
+      removeListenerSafely(failedHandle)
+      throw error
     }
-    imageReadyListenerHandle = handle
   })()
   imageReadyListenerSetupPromise = setupPromise
   try {
@@ -733,6 +897,8 @@ const deactivateReaderRuntime = () => {
   clearToolbarTapTimer()
   removeListenerSafely(imageReadyListenerHandle)
   imageReadyListenerHandle = null
+  removeListenerSafely(imageFailedListenerHandle)
+  imageFailedListenerHandle = null
   removeListenerSafely(volumeKeyListenerHandle)
   volumeKeyListenerHandle = null
   restoreSystemState()
@@ -890,16 +1056,22 @@ const resetChapterState = () => {
   clearAutoShowToolbarTimer()
   removeListenerSafely(imageReadyListenerHandle)
   imageReadyListenerHandle = null
+  removeListenerSafely(imageFailedListenerHandle)
+  imageFailedListenerHandle = null
   photoDetail = null
   currentIndex.value = 0
   totalCount.value = 0
   imageMap.value = new Map()
+  failedSortOrders.value = new Set()
+  retryingSortOrders.value = new Set()
   isOffline.value = route.query.source === 'download'
   isDragProgress.value = false
   settingsPanelVisible.value = false
   loadedSortOrders = new Set()
   requestedSortOrders = new Map()
   sortOrderToImage = new Map()
+  retryBatchSequence++
+  activeRetryBatchId = null
   activeAllowedSortOrders = new Set()
   activeDragPreviewSortOrder = null
   lastWindowCenter = -1

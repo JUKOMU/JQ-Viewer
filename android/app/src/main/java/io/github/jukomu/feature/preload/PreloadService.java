@@ -6,6 +6,7 @@ import android.util.Log;
 import io.github.jukomu.feature.cache.CacheCapacityPolicy;
 import io.github.jukomu.feature.cache.ImageCache;
 import io.github.jukomu.feature.download.storage.FileStore;
+import io.github.jukomu.feature.download.validation.ImageFileValidator;
 import io.github.jukomu.jmcomic.api.model.JmImage;
 import io.github.jukomu.jmcomic.core.client.impl.JmApiClient;
 import io.github.jukomu.jmcomic.core.crypto.JmImageTool;
@@ -14,6 +15,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
@@ -29,6 +31,12 @@ public class PreloadService {
     @FunctionalInterface
     interface ImageFetcher {
         byte[] fetch(JmImage image) throws Exception;
+    }
+
+    public interface ImageRetryCallback {
+        void onSuccess();
+
+        void onError(Exception error);
     }
 
     private static final String TAG = "PreloadService";
@@ -151,7 +159,7 @@ public class PreloadService {
 
             // 本地文件命中（已下载图片）
             File localFile = fileStore.getImageFileByPhotoId(photoId, sortOrder);
-            if (localFile != null) {
+            if (ImageFileValidator.validateQuick(localFile)) {
                 if (isThumb) {
                     // 缩略图：提交到线程池生成
                     pending.add(sortOrder);
@@ -211,26 +219,38 @@ public class PreloadService {
                 NetworkLoadGate.Permit permit = null;
                 try {
                     permit = networkLoadGate.acquire(() -> isStale(scopeKey, generation));
-                    if (permit == null || isStale(scopeKey, generation)) return;
+                    if (permit == null) {
+                        if (isStale(scopeKey, generation)) return;
+                        throw new IOException("当前内存压力过高，暂时无法加载图片");
+                    }
+                    if (isStale(scopeKey, generation)) return;
                     JmImage jmImage = new JmImage(photoId, scrambleId, filename, url, queryParams, sortOrder);
                     if (imageFetcher == null) {
                         throw new IllegalStateException("图片获取器未初始化");
                     }
                     byte[] decrypted = imageFetcher.fetch(jmImage);
-                    if (isStale(scopeKey, generation)
-                        || networkLoadGate.isCompletePressure()) return;
+                    if (isStale(scopeKey, generation)) return;
+                    if (networkLoadGate.isCompletePressure()) {
+                        throw new IOException("当前内存压力过高，已丢弃图片加载结果");
+                    }
                     String formatName = JmImageTool.getFormatName(filename);
                     String mimeType = "image/" + formatName;
 
                     try (ImageCache.IncomingReservation reservation =
                              imageCache.prepareForIncomingBytes(decrypted.length)) {
-                        if (reservation == null) return;
+                        if (reservation == null) {
+                            throw new IOException("图片无法写入内存缓存");
+                        }
                         if (isThumb) {
                             byte[] thumbBytes = ImageCache.createThumbnail(decrypted);
                             imageCache.put(photoId + "/" + sortOrder, decrypted, mimeType, reservation);
-                            if (!imageCache.put(cacheKey, thumbBytes, "image/jpeg")) return;
+                            if (!imageCache.put(cacheKey, thumbBytes, "image/jpeg")) {
+                                throw new IOException("缩略图无法写入内存缓存");
+                            }
                         } else {
-                            if (!imageCache.put(cacheKey, decrypted, mimeType, reservation)) return;
+                            if (!imageCache.put(cacheKey, decrypted, mimeType, reservation)) {
+                                throw new IOException("图片无法写入内存缓存");
+                            }
                         }
                     }
 
@@ -238,6 +258,9 @@ public class PreloadService {
                 } catch (Exception e) {
                     if (e instanceof InterruptedException) Thread.currentThread().interrupt();
                     Log.d(TAG, "图片下载或解密失败", e);
+                    if (!isStale(scopeKey, generation)) {
+                        notifyImageFailed(photoId, sortOrder, type);
+                    }
                 } finally {
                     if (permit != null) permit.close();
                     pendingKeys.remove(cacheKey, generation);
@@ -256,6 +279,81 @@ public class PreloadService {
             Log.d(TAG, "构建待处理列表失败", e);
         }
         return ret;
+    }
+
+    /**
+     * 使用调用方提供的最新图片元数据直接重新获取单页，仅替换内存缓存。
+     */
+    public void retryImage(String photoId, JSONObject imageObject, ImageRetryCallback callback) {
+        if (callback == null) {
+            throw new IllegalArgumentException("callback is required");
+        }
+        if (photoId == null || photoId.isEmpty()) {
+            callback.onError(new IllegalArgumentException("photoId is required"));
+            return;
+        }
+        if (imageObject == null) {
+            callback.onError(new IllegalArgumentException("image is required"));
+            return;
+        }
+
+        final int sortOrder = imageObject.optInt("sortOrder");
+        if (sortOrder <= 0) {
+            callback.onError(new IllegalArgumentException("sortOrder must be positive"));
+            return;
+        }
+        final String scrambleId = imageObject.optString("scrambleId");
+        final String filename = imageObject.optString("filename");
+        final String url = imageObject.optString("url");
+        final String queryParams = imageObject.optString("queryParams", "");
+
+        try {
+            networkExecutor.submit(() -> {
+                NetworkLoadGate.Permit permit = null;
+                Exception failure = null;
+                try {
+                    permit = networkLoadGate.acquire(null);
+                    if (permit == null) {
+                        throw new IOException("当前内存压力过高，暂时无法重试图片");
+                    }
+                    if (imageFetcher == null) {
+                        throw new IllegalStateException("图片获取器未初始化");
+                    }
+
+                    JmImage image = new JmImage(
+                        photoId, scrambleId, filename, url, queryParams, sortOrder);
+                    byte[] imageBytes = imageFetcher.fetch(image);
+                    if (!ImageFileValidator.validateQuick(imageBytes)) {
+                        throw new IOException("重新获取的图片无法解析");
+                    }
+                    if (networkLoadGate.isCompletePressure()) {
+                        throw new IOException("当前内存压力过高，已丢弃重试结果");
+                    }
+
+                    String mimeType = "image/" + JmImageTool.getFormatName(filename);
+                    if (!imageCache.put(photoId + "/" + sortOrder, imageBytes, mimeType)) {
+                        throw new IOException("重试图片无法写入内存缓存");
+                    }
+                } catch (Exception error) {
+                    if (error instanceof InterruptedException) {
+                        Thread.currentThread().interrupt();
+                    }
+                    failure = error;
+                } finally {
+                    if (permit != null) {
+                        permit.close();
+                    }
+                }
+
+                if (failure == null) {
+                    callback.onSuccess();
+                } else {
+                    callback.onError(failure);
+                }
+            });
+        } catch (RuntimeException error) {
+            callback.onError(error);
+        }
     }
 
     private boolean isStale(String scopeKey, long generation) {
@@ -387,6 +485,13 @@ public class PreloadService {
         PreloadEventSink current = eventSink;
         if (current != null) {
             current.onImageReady(photoId, sortOrder, type);
+        }
+    }
+
+    private void notifyImageFailed(String photoId, int sortOrder, String type) {
+        PreloadEventSink current = eventSink;
+        if (current != null) {
+            current.onImageFailed(photoId, sortOrder, type);
         }
     }
 }

@@ -525,6 +525,11 @@ public class JmcomicPlugin extends Plugin {
         cacheHandler.preloadImages(call);
     }
 
+    @PluginMethod
+    public void retryImage(PluginCall call) {
+        cacheHandler.retryImage(call);
+    }
+
     // @PluginMethod  // 暂不暴露给 Vue，后续需要时取消注释
     public void clearPhotoCache(PluginCall call) {
         String photoId = call.getString("photoId");

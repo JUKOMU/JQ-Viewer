@@ -11,6 +11,7 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 
 import java.io.File;
+import java.io.ByteArrayOutputStream;
 import java.io.FileOutputStream;
 import java.nio.file.Files;
 
@@ -68,6 +69,20 @@ public class ImageFileValidatorInstrumentedTest {
         Files.write(random.toPath(), new byte[]{1, 2, 3, 4});
         assertFalse(ImageFileValidator.validateQuick(random));
         assertFalse(ImageFileValidator.validateFull(random));
+    }
+
+    @Test
+    public void validatesImageBytesWithoutFullDecode() {
+        Bitmap bitmap = Bitmap.createBitmap(2, 3, Bitmap.Config.ARGB_8888);
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        try {
+            assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output));
+        } finally {
+            bitmap.recycle();
+        }
+
+        assertTrue(ImageFileValidator.validateQuick(output.toByteArray()));
+        assertFalse(ImageFileValidator.validateQuick(new byte[]{1, 2, 3, 4}));
     }
 
     private static void deleteRecursive(File file) {

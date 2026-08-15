@@ -45,6 +45,8 @@ export interface ImageReadyEvent {
   type: string
 }
 
+export type ImageFailedEvent = ImageReadyEvent
+
 export interface JmcomicListenerHandle {
   remove: () => Promise<void>
 }
@@ -79,6 +81,8 @@ export interface JmcomicClient {
     type: string
     replacePending?: boolean
   }): Promise<PreloadResult>
+
+  retryImage(options: { photoId: string; image: ImageInfo }): Promise<{ success: boolean }>
 
   setCacheCapacity(options: { mb: number }): Promise<CacheCapacityInfo & { success: boolean }>
 
@@ -129,6 +133,11 @@ export interface JmcomicClient {
   addListener(
     event: 'imageReady',
     handler: (data: ImageReadyEvent) => void,
+  ): Promise<JmcomicListenerHandle>
+
+  addListener(
+    event: 'imageFailed',
+    handler: (data: ImageFailedEvent) => void,
   ): Promise<JmcomicListenerHandle>
 
   addListener(

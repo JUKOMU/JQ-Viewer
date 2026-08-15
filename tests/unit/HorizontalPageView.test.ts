@@ -96,4 +96,33 @@ describe('HorizontalPageView', () => {
     expect(wrapper.emitted('update:currentIndex')).toEqual([[0], [1]])
     wrapper.unmount()
   })
+
+  test('图片错误上报原 URL，多个失败页显示聚合重试', async () => {
+    const wrapper = mount(HorizontalPageView, {
+      props: {
+        imageMap: new Map([
+          [1, 'image-1'],
+          [2, 'image-2'],
+        ]),
+        failedSortOrders: new Set<number>(),
+        retryingSortOrders: new Set<number>(),
+        totalCount: 2,
+        currentIndex: 0,
+      },
+    })
+
+    await wrapper.get('.page-image').trigger('error')
+    expect(wrapper.emitted('image-error')).toEqual([[1, 'image-1']])
+
+    await wrapper.setProps({failedSortOrders: new Set([1, 2])})
+    const retryButton = wrapper.get('button')
+    expect(retryButton.text()).toContain('重试全部（2）')
+    await retryButton.trigger('click')
+    expect(wrapper.emitted('retry-images')).toEqual([[]])
+
+    await wrapper.setProps({retryingSortOrders: new Set([1, 2])})
+    expect(wrapper.get('button').attributes()).toHaveProperty('disabled')
+    expect(wrapper.get('button').text()).toContain('重试中')
+    wrapper.unmount()
+  })
 })

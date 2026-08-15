@@ -52,6 +52,37 @@ public final class CachePluginHandler {
     }
 
     /**
+     * 使用最新图片元数据直接重试单页，并等待缓存替换完成。
+     */
+    public void retryImage(PluginCall call) {
+        String photoId = call.getString("photoId");
+        JSObject image = call.getObject("image");
+        if (photoId == null || photoId.isEmpty()) {
+            call.reject("photoId is required");
+            return;
+        }
+        if (image == null) {
+            call.reject("image is required");
+            return;
+        }
+
+        preloadService.retryImage(photoId, image, new PreloadService.ImageRetryCallback() {
+            @Override
+            public void onSuccess() {
+                JSObject result = new JSObject();
+                result.put("success", true);
+                call.resolve(result);
+            }
+
+            @Override
+            public void onError(Exception error) {
+                Log.w(TAG, "图片重试失败", error);
+                call.reject(error.getMessage(), error);
+            }
+        });
+    }
+
+    /**
      * 设置 64 至 1024 MB 的缓存容量，并返回当前容量信息。
      */
     public void setCacheCapacity(PluginCall call) {

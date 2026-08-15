@@ -74,6 +74,17 @@ public class FeatureEventAdapterInstrumentedTest {
     }
 
     @Test
+    public void imageFailedUsesExpectedPayload() {
+        adapter.onImageFailed("photo", 9, "image");
+
+        assertEquals("imageFailed", eventName);
+        assertEquals("photo", eventData.getString("photoId"));
+        assertEquals(9, eventData.getInteger("sortOrder").intValue());
+        assertEquals("image", eventData.getString("type"));
+        assertEquals(1, eventCount);
+    }
+
+    @Test
     public void relocationProgressIncludesCurrentFileOnlyWhenPresent() {
         adapter.onRelocationProgress(1, 3, "copy", "chapter/file.webp");
 

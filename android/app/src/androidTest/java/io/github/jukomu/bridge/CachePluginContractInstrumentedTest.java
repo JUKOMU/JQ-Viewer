@@ -114,6 +114,32 @@ public class CachePluginContractInstrumentedTest {
         assertSynchronous(call);
     }
 
+    @Test
+    public void retryImageValidatesAndForwardsLatestMetadata() throws Exception {
+        RecordingPluginCall missingPhotoId = call(
+            "retryImage", "image", new JSObject().put("sortOrder", 1));
+        RecordingPluginCall missingImage = call("retryImage", "photoId", "photo-1");
+
+        plugin.retryImage(missingPhotoId);
+        plugin.retryImage(missingImage);
+
+        assertRejected(missingPhotoId, "photoId is required");
+        assertRejected(missingImage, "image is required");
+
+        JSObject image = new JSObject()
+            .put("sortOrder", 1)
+            .put("url", "https://latest.example.com/1.jpg");
+        RecordingPluginCall valid = call(
+            "retryImage", "photoId", "photo-1", "image", image);
+        plugin.retryImage(valid);
+
+        assertEquals("photo-1", preloadService.retryPhotoId);
+        assertEquals("https://latest.example.com/1.jpg",
+            preloadService.retryImage.getString("url"));
+        assertTrue(valid.resolvedData.getBool("success"));
+        assertSynchronous(valid);
+    }
+
     private static RecordingPluginCall call(String methodName, Object... entries) {
         JSObject data = new JSObject();
         for (int index = 0; index < entries.length; index += 2) {
@@ -162,6 +188,8 @@ public class CachePluginContractInstrumentedTest {
         private long capacityMb;
         private boolean cleared;
         private RuntimeException failure;
+        private String retryPhotoId;
+        private JSONObject retryImage;
 
         private FakePreloadService() {
             super(null, null, null, null, null, null, null, null);
@@ -177,6 +205,14 @@ public class CachePluginContractInstrumentedTest {
             return jsonObject(
                 "cached", new JSONArray(),
                 "pending", new JSONArray().put(7));
+        }
+
+        @Override
+        public void retryImage(String photoId, JSONObject image,
+                               ImageRetryCallback callback) {
+            this.retryPhotoId = photoId;
+            this.retryImage = image;
+            callback.onSuccess();
         }
 
         @Override

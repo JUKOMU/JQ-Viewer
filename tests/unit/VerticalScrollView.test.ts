@@ -159,4 +159,26 @@ describe('VerticalScrollView', () => {
 
     wrapper.unmount()
   })
+
+  test('失败图片保持槽位并触发聚合重试', async () => {
+    const wrapper = mount(VerticalScrollView, {
+      props: {
+        imageMap: new Map([[1, 'image-1']]),
+        failedSortOrders: new Set<number>(),
+        retryingSortOrders: new Set<number>(),
+        totalCount: 1,
+        currentIndex: 0,
+      },
+    })
+    await flushAnimationFrames()
+
+    await wrapper.get('.reader-image').trigger('error')
+    expect(wrapper.emitted('image-error')).toEqual([[1, 'image-1']])
+
+    await wrapper.setProps({failedSortOrders: new Set([1])})
+    expect(wrapper.get('.image-error-state').text()).toContain('图片加载失败')
+    await wrapper.get('button').trigger('click')
+    expect(wrapper.emitted('retry-images')).toEqual([[]])
+    wrapper.unmount()
+  })
 })

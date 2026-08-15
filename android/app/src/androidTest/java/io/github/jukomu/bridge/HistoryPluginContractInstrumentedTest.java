@@ -70,6 +70,25 @@ public class HistoryPluginContractInstrumentedTest {
     }
 
     @Test
+    public void nonZeroOffsetPaginationRemainsCompatible() throws Exception {
+        plugin.recordBrowse(call("recordBrowse", "albumId", "album-1"));
+        plugin.recordBrowse(call("recordBrowse", "albumId", "album-2"));
+        RecordingPluginCall browseRead = call(
+            "getBrowseHistory", "limit", 1, "offset", 1);
+        plugin.getBrowseHistory(browseRead);
+        assertEquals(1, browseRead.resolvedData.getJSONArray("items").length());
+
+        plugin.addParseHistory(call("addParseHistory", "text", "first"));
+        plugin.addParseHistory(call("addParseHistory", "text", "second"));
+        RecordingPluginCall parseRead = call(
+            "getParseHistory", "limit", 1, "offset", 1);
+        plugin.getParseHistory(parseRead);
+        assertEquals(1, parseRead.resolvedData.getJSONArray("items").length());
+
+        assertNotKeptAlive(browseRead, parseRead);
+    }
+
+    @Test
     public void deleteAndClearMethodsKeepTheirSuccessContract() throws Exception {
         plugin.recordBrowse(call("recordBrowse", "albumId", "album-1"));
         plugin.recordBrowse(call("recordBrowse", "albumId", "album-2"));

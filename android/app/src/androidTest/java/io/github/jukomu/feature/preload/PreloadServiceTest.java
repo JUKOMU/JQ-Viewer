@@ -67,6 +67,8 @@ public class PreloadServiceTest {
 
         assertEquals(1, result.getJSONArray("pending").length());
         assertTrue(fetched.await(1, TimeUnit.SECONDS));
+        networkExecutor.submit(() -> {
+        }).get(1, TimeUnit.SECONDS);
         assertEquals(1, fetchCount.get());
     }
 
@@ -101,6 +103,8 @@ public class PreloadServiceTest {
         service.setMemoryPressureLevel(CacheCapacityPolicy.PressureLevel.NORMAL);
         service.preloadImages("complete-photo", "image", images);
         assertTrue(fetched.await(1, TimeUnit.SECONDS));
+        networkExecutor.submit(() -> {
+        }).get(1, TimeUnit.SECONDS);
         assertEquals(1, fetchCount.get());
     }
 

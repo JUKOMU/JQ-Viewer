@@ -135,7 +135,7 @@ public class HistoryStore extends SQLiteOpenHelper {
         Cursor c = null;
         try {
             String limitClause = limit > 0
-                ? (offset > 0 ? limit + " OFFSET " + offset : String.valueOf(limit))
+                ? (offset > 0 ? offset + "," + limit : String.valueOf(limit))
                 : null;
             c = getReadableDatabase().query(TABLE_BROWSE,
                 new String[]{COL_ID, COL_ALBUM_ID, COL_ALBUM_TITLE, COL_COVER_URL, COL_AUTHORS,
@@ -214,7 +214,7 @@ public class HistoryStore extends SQLiteOpenHelper {
         Cursor c = null;
         try {
             String limitClause = limit > 0
-                ? (offset > 0 ? limit + " OFFSET " + offset : String.valueOf(limit))
+                ? (offset > 0 ? offset + "," + limit : String.valueOf(limit))
                 : null;
             c = getReadableDatabase().query(TABLE_PARSE,
                 new String[]{COL_ID, COL_TEXT, COL_TIMESTAMP, COL_MODE},

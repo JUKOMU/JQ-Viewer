@@ -13,7 +13,12 @@ import type {
   SearchQuery,
   SearchResultItem,
 } from '../JmcomicTypes'
-import type { ImageReadyEvent, JmcomicClient, JmcomicListenerHandle } from './JmcomicClient'
+import type {
+  ImageFailedEvent,
+  ImageReadyEvent,
+  JmcomicClient,
+  JmcomicListenerHandle,
+} from './JmcomicClient'
 import { jmcomicNativeClient } from './JmcomicNativeClient'
 
 const native: JmcomicClient = jmcomicNativeClient
@@ -134,6 +139,11 @@ export const JmcomicService = {
     return native.preloadImages({ photoId, images, type, replacePending: options.replacePending })
   },
 
+  /** 使用最新图片元数据绕过本地来源和旧缓存重试单页。 */
+  retryImage(photoId: string, image: ImageInfo) {
+    return native.retryImage({ photoId, image })
+  },
+
   /** 设置图片缓存容量（MB），供设置页调用 */
   setCacheCapacity(mb: number) {
     return native.setCacheCapacity({ mb })
@@ -206,6 +216,19 @@ export const JmcomicService = {
     options: { type?: 'image' | 'thumb' } = {},
   ): Promise<JmcomicListenerHandle> {
     return native.addListener('imageReady', (data: ImageReadyEvent) => {
+      if (data.photoId === photoId && (!options.type || data.type === options.type)) {
+        handler(data.sortOrder)
+      }
+    })
+  },
+
+  /** 注册图片预载失败监听。 */
+  addImageFailedListener(
+    photoId: string,
+    handler: (sortOrder: number) => void,
+    options: { type?: 'image' | 'thumb' } = {},
+  ): Promise<JmcomicListenerHandle> {
+    return native.addListener('imageFailed', (data: ImageFailedEvent) => {
       if (data.photoId === photoId && (!options.type || data.type === options.type)) {
         handler(data.sortOrder)
       }

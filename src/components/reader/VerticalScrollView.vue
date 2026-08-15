@@ -16,12 +16,31 @@
           :style="item.style"
           :data-index="item.index"
         >
-          <template v-if="item.dataUrl">
+          <template v-if="failedSortOrders.has(item.index + 1)">
+            <div class="image-error-state">
+              <span>图片加载失败</span>
+              <button
+                type="button"
+                class="image-retry-button"
+                :disabled="retryingSortOrders.size > 0"
+                @click.stop="emit('retry-images')"
+              >
+                <IonIcon
+                  :icon="refreshOutline"
+                  :class="{ spinning: retryingSortOrders.has(item.index + 1) }"
+                  aria-hidden="true"
+                />
+                <span>{{ retryButtonLabel(item.index + 1) }}</span>
+              </button>
+            </div>
+          </template>
+          <template v-else-if="item.dataUrl">
             <img
               :src="item.dataUrl"
               class="reader-image"
               alt=""
               @load="onImageLoad(item.index, $event)"
+              @error="emit('image-error', item.index + 1, item.dataUrl)"
             />
           </template>
           <template v-else>
@@ -42,20 +61,38 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { IonIcon } from '@ionic/vue'
+import { refreshOutline } from 'ionicons/icons'
 
 defineOptions({ name: 'VerticalScrollView' })
 
-const props = defineProps<{
-  imageMap: Map<number, string>
-  totalCount: number
-  currentIndex: number
-}>()
+const props = withDefaults(
+  defineProps<{
+    imageMap: Map<number, string>
+    failedSortOrders?: Set<number>
+    retryingSortOrders?: Set<number>
+    totalCount: number
+    currentIndex: number
+  }>(),
+  {
+    failedSortOrders: () => new Set<number>(),
+    retryingSortOrders: () => new Set<number>(),
+  },
+)
 
 const emit = defineEmits<{
   'update:currentIndex': [index: number]
   requestRange: [range: { start: number; end: number; center: number }]
   'reached-bottom': []
+  'image-error': [sortOrder: number, failedUrl: string]
+  'retry-images': []
 }>()
+
+function retryButtonLabel(sortOrder: number) {
+  if (props.retryingSortOrders.has(sortOrder)) return '重试中'
+  if (props.retryingSortOrders.size > 0) return '请稍候'
+  return props.failedSortOrders.size > 1 ? `重试全部（${props.failedSortOrders.size}）` : '重试'
+}
 
 interface VisibleItem {
   index: number
@@ -706,6 +743,55 @@ defineExpose({ scrollToIndex, containerRef, isAtBottom })
   background: linear-gradient(90deg, #222 25%, #3a3a3a 50%, #222 75%);
   background-size: 200% 100%;
   animation: shimmer 1.5s ease-in-out infinite;
+}
+
+.image-error-state {
+  width: 100%;
+  height: 100%;
+  min-height: 320px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: #aaa;
+  font-size: 14px;
+  line-height: normal;
+  background: #111;
+}
+
+.image-retry-button {
+  min-width: 96px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 16px;
+  border: 1px solid #666;
+  border-radius: 4px;
+  color: #eee;
+  background: #222;
+  font: inherit;
+}
+
+.image-retry-button:disabled {
+  color: #888;
+  border-color: #444;
+}
+
+.image-retry-button ion-icon {
+  font-size: 18px;
+}
+
+.spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @keyframes shimmer {

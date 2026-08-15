@@ -15,9 +15,13 @@ const mocks = vi.hoisted(() => ({
   getPhoto: vi.fn(),
   getAlbum: vi.fn(),
   preloadImages: vi.fn(),
+  retryImage: vi.fn(),
+  showToast: vi.fn(() => Promise.resolve()),
   addImageReadyListener: vi.fn(),
+  addImageFailedListener: vi.fn(),
   addVolumeKeyListener: vi.fn(),
   imageReadyHandler: null as null | ((sortOrder: number) => void),
+  imageFailedHandler: null as null | ((sortOrder: number) => void),
   listenerRemove: vi.fn(() => Promise.resolve()),
   getImageUrl: vi.fn(
     (photoId: string, sortOrder: number, type: string) =>
@@ -55,13 +59,15 @@ vi.mock('@ionic/vue', async () => {
 
 vi.mock('@/services/JmcomicService', () => ({
   getImageUrl: mocks.getImageUrl,
-  showToast: vi.fn(() => Promise.resolve()),
+  showToast: mocks.showToast,
   JmcomicService: {
     getDownloadedPhoto: mocks.getDownloadedPhoto,
     getPhoto: mocks.getPhoto,
     getAlbum: mocks.getAlbum,
     preloadImages: mocks.preloadImages,
+    retryImage: mocks.retryImage,
     addImageReadyListener: mocks.addImageReadyListener,
+    addImageFailedListener: mocks.addImageFailedListener,
     addVolumeKeyListener: mocks.addVolumeKeyListener,
     setReaderBrightness: vi.fn(() => Promise.resolve()),
     setReaderScreenOrientation: vi.fn(() => Promise.resolve()),
@@ -99,10 +105,12 @@ const VerticalScrollViewStub = defineComponent({
   name: 'VerticalScrollView',
   props: {
     imageMap: { type: Object as PropType<Map<number, string>>, required: true },
+    failedSortOrders: { type: Object as PropType<Set<number>>, required: true },
+    retryingSortOrders: { type: Object as PropType<Set<number>>, required: true },
     totalCount: { type: Number, required: true },
     currentIndex: { type: Number, required: true },
   },
-  emits: ['update:current-index', 'request-range', 'reached-bottom'],
+  emits: ['update:current-index', 'request-range', 'reached-bottom', 'image-error', 'retry-images'],
   setup(_, { expose }) {
     expose({
       scrollToIndex: vi.fn(),
@@ -116,10 +124,12 @@ const HorizontalPageViewStub = defineComponent({
   name: 'HorizontalPageView',
   props: {
     imageMap: { type: Object as PropType<Map<number, string>>, required: true },
+    failedSortOrders: { type: Object as PropType<Set<number>>, required: true },
+    retryingSortOrders: { type: Object as PropType<Set<number>>, required: true },
     totalCount: { type: Number, required: true },
     currentIndex: { type: Number, required: true },
   },
-  emits: ['update:current-index', 'toggle-toolbar'],
+  emits: ['update:current-index', 'toggle-toolbar', 'image-error', 'retry-images'],
   setup(_, { expose }) {
     expose({ scrollToIndex: vi.fn() })
     return () => h('div')
@@ -210,13 +220,21 @@ describe('ReaderPage 在线/离线统一图片加载', () => {
     vi.clearAllMocks()
     mocks.setRouteSource?.('download')
     mocks.imageReadyHandler = null
+    mocks.imageFailedHandler = null
     mocks.getDownloadedPhoto.mockResolvedValue(makePhoto())
     mocks.getPhoto.mockResolvedValue(makePhoto())
     mocks.getAlbum.mockRejectedValue(new Error('skip history metadata'))
     mocks.preloadImages.mockResolvedValue({ cached: [], pending: [] } satisfies PreloadResult)
+    mocks.retryImage.mockResolvedValue({ success: true })
     mocks.addImageReadyListener.mockImplementation(
       (_photoId: string, handler: (sortOrder: number) => void) => {
         mocks.imageReadyHandler = handler
+        return Promise.resolve({ remove: mocks.listenerRemove })
+      },
+    )
+    mocks.addImageFailedListener.mockImplementation(
+      (_photoId: string, handler: (sortOrder: number) => void) => {
+        mocks.imageFailedHandler = handler
         return Promise.resolve({ remove: mocks.listenerRemove })
       },
     )
@@ -420,6 +438,85 @@ describe('ReaderPage 在线/离线统一图片加载', () => {
 
     expect(currentImageMap(wrapper).has(2)).toBe(false)
 
+    wrapper.unmount()
+  })
+
+  test('纯在线章节一次重试当前全部失败图片并保留部分失败状态', async () => {
+    mocks.setRouteSource?.()
+    mocks.getDownloadedPhoto.mockRejectedValue(new Error('not downloaded'))
+    const initialPhoto = makePhoto(2)
+    const latestPhoto = makePhoto(2)
+    latestPhoto.images[0].url = 'https://latest.example.com/1.jpg'
+    latestPhoto.images[1].url = 'https://latest.example.com/2.jpg'
+    mocks.getPhoto.mockResolvedValueOnce(initialPhoto).mockResolvedValueOnce(latestPhoto)
+    mocks.preloadImages.mockResolvedValue({ cached: [1, 2], pending: [] } satisfies PreloadResult)
+    mocks.retryImage
+      .mockResolvedValueOnce({ success: true })
+      .mockRejectedValueOnce(new Error('retry failed'))
+
+    const wrapper = mountReader()
+    await settle()
+    const view = wrapper.findComponent(VerticalScrollViewStub)
+    const firstUrl = currentImageMap(wrapper).get(1)!
+    const secondUrl = currentImageMap(wrapper).get(2)!
+
+    view.vm.$emit('image-error', 1, firstUrl)
+    view.vm.$emit('image-error', 2, secondUrl)
+    await nextTick()
+    expect(view.props('failedSortOrders')).toEqual(new Set([1, 2]))
+
+    view.vm.$emit('retry-images')
+    await settle()
+
+    expect(mocks.getPhoto).toHaveBeenCalledTimes(2)
+    expect(mocks.getPhoto).toHaveBeenLastCalledWith('chapter-1')
+    expect(mocks.retryImage.mock.calls).toEqual([
+      ['chapter-1', expect.objectContaining({ sortOrder: 1, url: latestPhoto.images[0].url })],
+      ['chapter-1', expect.objectContaining({ sortOrder: 2, url: latestPhoto.images[1].url })],
+    ])
+    expect(currentImageMap(wrapper).get(1)).toContain('?retry=')
+    expect(currentImageMap(wrapper).has(2)).toBe(false)
+    expect(view.props('failedSortOrders')).toEqual(new Set([2]))
+    expect(mocks.showToast).toHaveBeenCalledWith('1 张图片重试失败', 'danger')
+
+    wrapper.unmount()
+  })
+
+  test('普通预载网络失败进入同一失败集合并可直接批量重试', async () => {
+    mocks.preloadImages.mockResolvedValue({ cached: [], pending: [1, 2] } satisfies PreloadResult)
+    const wrapper = mountReader()
+    await settle()
+
+    mocks.imageFailedHandler?.(1)
+    mocks.imageFailedHandler?.(2)
+    await nextTick()
+
+    const view = wrapper.findComponent(VerticalScrollViewStub)
+    expect(view.props('failedSortOrders')).toEqual(new Set([1, 2]))
+
+    view.vm.$emit('retry-images')
+    await settle()
+
+    expect(mocks.getPhoto).toHaveBeenCalledWith('chapter-1')
+    expect(mocks.retryImage.mock.calls).toEqual([
+      ['chapter-1', expect.objectContaining({ sortOrder: 1 })],
+      ['chapter-1', expect.objectContaining({ sortOrder: 2 })],
+    ])
+    expect(view.props('failedSortOrders')).toEqual(new Set())
+    wrapper.unmount()
+  })
+
+  test('旧图片 URL 晚到的错误事件不会覆盖当前图片', async () => {
+    mocks.preloadImages.mockResolvedValue({ cached: [1], pending: [] } satisfies PreloadResult)
+    const wrapper = mountReader()
+    await settle()
+
+    const view = wrapper.findComponent(VerticalScrollViewStub)
+    view.vm.$emit('image-error', 1, 'jqviewer.local/chapter-1/image/stale')
+    await nextTick()
+
+    expect(currentImageMap(wrapper).has(1)).toBe(true)
+    expect(view.props('failedSortOrders')).toEqual(new Set())
     wrapper.unmount()
   })
 })

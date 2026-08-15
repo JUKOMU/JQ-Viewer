@@ -38,6 +38,25 @@ public final class ImageFileValidator {
     }
 
     /**
+     * 快速校验内存中的图片字节，只读取图片边界。
+     */
+    public static boolean validateQuick(byte[] imageBytes) {
+        if (imageBytes == null || imageBytes.length == 0) {
+            return false;
+        }
+
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inJustDecodeBounds = true;
+        try {
+            BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.length, options);
+            return options.outWidth > 0 && options.outHeight > 0;
+        } catch (RuntimeException | OutOfMemoryError error) {
+            Log.w(TAG, "快速图片字节校验失败", error);
+            return false;
+        }
+    }
+
+    /**
      * 完整校验实际解码图片
      *
      */

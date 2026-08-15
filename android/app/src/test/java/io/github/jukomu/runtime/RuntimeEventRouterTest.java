@@ -23,7 +23,7 @@ public class RuntimeEventRouterTest {
         emitAll(router);
 
         assertEquals(1, sinks.downloadCount);
-        assertEquals(1, sinks.preloadCount);
+        assertEquals(2, sinks.preloadCount);
         assertEquals(1, sinks.relocationCount);
         assertSame(callingThread, sinks.lastThread);
     }
@@ -43,7 +43,7 @@ public class RuntimeEventRouterTest {
         assertEquals(0, first.preloadCount);
         assertEquals(0, first.relocationCount);
         assertEquals(1, second.downloadCount);
-        assertEquals(1, second.preloadCount);
+        assertEquals(2, second.preloadCount);
         assertEquals(1, second.relocationCount);
     }
 
@@ -58,7 +58,7 @@ public class RuntimeEventRouterTest {
         emitAll(router);
 
         assertEquals(0, attached.downloadCount);
-        assertEquals(1, attached.preloadCount);
+        assertEquals(2, attached.preloadCount);
         assertEquals(0, attached.relocationCount);
     }
 
@@ -73,6 +73,7 @@ public class RuntimeEventRouterTest {
         router.onDownloadProgress(new DownloadProgressData(
             "task", "album", "chapter", 1, 2, "downloading", null, 3, 4, 5));
         router.onImageReady("photo", 6, "image");
+        router.onImageFailed("photo", 6, "image");
         router.onRelocationProgress(7, 8, "copy", "file");
     }
 
@@ -93,6 +94,12 @@ public class RuntimeEventRouterTest {
 
         @Override
         public void onImageReady(String photoId, int sortOrder, String type) {
+            preloadCount++;
+            lastThread = Thread.currentThread();
+        }
+
+        @Override
+        public void onImageFailed(String photoId, int sortOrder, String type) {
             preloadCount++;
             lastThread = Thread.currentThread();
         }

@@ -136,7 +136,8 @@ public class PreloadService {
             }
 
             final int sortOrder = imgObj.optInt("sortOrder");
-            final String cacheKey = photoId + "/" + sortOrder + (isThumb ? "/thumb" : "");
+            final String imageKey = photoId + "/" + sortOrder;
+            final String cacheKey = imageKey + (isThumb ? "/thumb" : "");
 
             // 目标缓存命中
             if (imageCache.has(cacheKey)) {
@@ -146,7 +147,7 @@ public class PreloadService {
 
             // 缩略图：优先从已缓存的原图生成
             if (isThumb) {
-                ImageCache.ImageEntry original = imageCache.get(photoId + "/" + sortOrder);
+                ImageCache.ImageEntry original = imageCache.get(imageKey);
                 if (original != null) {
                     byte[] thumbBytes = ImageCache.createThumbnail(original.data);
                     if (imageCache.put(cacheKey, thumbBytes, "image/jpeg")) {
@@ -175,7 +176,7 @@ public class PreloadService {
                             byte[] thumbBytes = ImageCache.createThumbnail(localBytes);
                             if (isStale(scopeKey, generation)) return;
                             String mime = "image/" + ImageCache.guessFormatName(localBytes);
-                            imageCache.put(photoId + "/" + sortOrder, localBytes, mime, reservation);
+                            imageCache.put(imageKey, localBytes, mime, reservation);
                             if (imageCache.put(cacheKey, thumbBytes, "image/jpeg")) {
                                 notifyImageReady(photoId, sortOrder, type);
                             }
@@ -243,7 +244,7 @@ public class PreloadService {
                         }
                         if (isThumb) {
                             byte[] thumbBytes = ImageCache.createThumbnail(decrypted);
-                            imageCache.put(photoId + "/" + sortOrder, decrypted, mimeType, reservation);
+                            imageCache.put(imageKey, decrypted, mimeType, reservation);
                             if (!imageCache.put(cacheKey, thumbBytes, "image/jpeg")) {
                                 throw new IOException("缩略图无法写入内存缓存");
                             }

@@ -170,11 +170,18 @@ import type { UpdateManifest } from '@/services/JmcomicTypes'
 const appVersion = ref('1.0.0')
 const updateChecking = ref(false)
 const updateError = ref(false)
-const hasUpdate = ref(false)
 const latestVersion = ref('')
 const updateChecked = ref(false)
 const latestManifest = UpdateService.manifest
 const updateState = UpdateService.state
+const manualHasUpdate = ref(false)
+const hasUpdate = computed(
+  () =>
+    manualHasUpdate.value ||
+    (!!latestManifest.value &&
+      updateState.value.phase !== 'idle' &&
+      updateState.value.phase !== 'up_to_date'),
+)
 
 const REPO_URL = 'https://github.com/jukomu/jq-viewer'
 const JMCOMIC_API_REPO_URL = 'https://github.com/JUKOMU/JMComic-Api-Java'
@@ -238,9 +245,8 @@ const displayText = ref('')
 const cursorVisible = ref(true)
 
 onMounted(async () => {
-  void UpdateService.init()
-  if (latestManifest.value && updateState.value.phase === 'update_available') {
-    hasUpdate.value = true
+  await UpdateService.init()
+  if (latestManifest.value) {
     latestVersion.value = latestManifest.value.versionName
     updateChecked.value = true
   }
@@ -273,14 +279,14 @@ onMounted(async () => {
 async function checkUpdate() {
   updateChecking.value = true
   updateError.value = false
-  hasUpdate.value = false
+  manualHasUpdate.value = false
   latestVersion.value = ''
   updateChecked.value = false
 
   try {
     const result = await UpdateService.check()
     if (result.updateAvailable) {
-      hasUpdate.value = true
+      manualHasUpdate.value = true
       latestVersion.value = result.manifest.versionName
       await UpdateService.runPrompt(() => showUpdateAlert(result.manifest))
     }
@@ -331,11 +337,10 @@ async function handleUpdateAction() {
     await showToast('更新已取消', 'medium')
     return
   }
-  if (updateState.value.phase === 'ready_to_install') {
-    await UpdateService.install()
-    return
-  }
-  if (updateState.value.phase === 'install_permission_required') {
+  if (
+    updateState.value.phase === 'ready_to_install' ||
+    updateState.value.phase === 'install_permission_required'
+  ) {
     await UpdateService.install()
     return
   }

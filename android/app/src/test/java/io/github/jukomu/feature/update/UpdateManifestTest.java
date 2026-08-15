@@ -46,6 +46,44 @@ public class UpdateManifestTest {
     }
 
     @Test
+    public void rejectsReleaseUrlsOutsideTheExpectedRepositories() throws Exception {
+        expectInvalid(manifestWith("githubUrl",
+            "https://example.com/JUKOMU/JQ-Viewer/releases/download/v1.4.0/JQ-Viewer-1_4_0.apk"));
+        expectInvalid(manifestWith("giteeUrl",
+            "https://gitee.com/other/jq-viewer/releases/download/v1.4.0/JQ-Viewer-1_4_0.apk"));
+        expectInvalid(manifestWith("giteeUrl",
+            "https://gitee.com:8443/jukomu/jq-viewer/releases/download/v1.4.0/JQ-Viewer-1_4_0.apk"));
+        expectInvalid(manifestWith("giteeUrl",
+            "https://user@gitee.com/jukomu/jq-viewer/releases/download/v1.4.0/JQ-Viewer-1_4_0.apk"));
+    }
+
+    @Test
+    public void rejectsReleaseUrlsWithMismatchedTagNameOrQuery() throws Exception {
+        expectInvalid(manifestWith("githubUrl",
+            "https://github.com/JUKOMU/JQ-Viewer/releases/download/v1.3.0/JQ-Viewer-1_4_0.apk"));
+        expectInvalid(manifestWith("giteeUrl",
+            "https://gitee.com/jukomu/jq-viewer/releases/download/v1.4.0/other.apk"));
+        expectInvalid(manifestWith("giteeUrl",
+            "https://gitee.com/jukomu/jq-viewer/releases/download/v1.4.0/JQ-Viewer-1_4_0.apk?x=1"));
+    }
+
+    @Test
+    public void validatesGiteeLatestManifestAssetUrl() throws Exception {
+        UpdateManifest.requireGiteeReleaseUrl(
+            "https://gitee.com/jukomu/jq-viewer/releases/download/v1.4.0/latest.json",
+            "v1.4.0", "latest.json");
+
+        try {
+            UpdateManifest.requireGiteeReleaseUrl(
+                "https://example.com/jukomu/jq-viewer/releases/download/v1.4.0/latest.json",
+                "v1.4.0", "latest.json");
+            fail("expected invalid Gitee asset URL");
+        } catch (UpdateManifest.UpdateException expected) {
+            assertTrue(expected.getMessage().contains("Gitee"));
+        }
+    }
+
+    @Test
     public void selectsEitherOnlyAvailableManifest() throws Exception {
         UpdateManifest manifest = UpdateManifest.parse(validManifest());
 
@@ -111,7 +149,10 @@ public class UpdateManifestTest {
         String sha256 = repeat('a', 64);
         String certificate = "6667B73DA7322E56626D82CA0EFCF03386E0B5560E14DF48C6025142FF4197EA";
         String apkName = "JQ-Viewer-1_4_0.apk";
-        if ("giteeUrl".equals(override)) {
+        String githubUrl = "https://github.com/JUKOMU/JQ-Viewer/releases/download/v1.4.0/JQ-Viewer-1_4_0.apk";
+        if ("githubUrl".equals(override)) {
+            githubUrl = value;
+        } else if ("giteeUrl".equals(override)) {
             giteeUrl = value;
         } else if ("tag".equals(override)) {
             tag = value;
@@ -123,7 +164,7 @@ public class UpdateManifestTest {
             apkName = value;
         }
         Map<String, Object> sources = new HashMap<>();
-        sources.put("github", "https://github.com/JUKOMU/JQ-Viewer/releases/download/v1.4.0/JQ-Viewer-1_4_0.apk");
+        sources.put("github", githubUrl);
         sources.put("gitee", giteeUrl);
         Map<String, Object> values = new HashMap<>();
         values.put("schemaVersion", 1);

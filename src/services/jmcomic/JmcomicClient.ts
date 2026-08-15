@@ -284,6 +284,8 @@ export interface JmcomicClient {
 
   requestNotificationPermission(): Promise<{ granted: boolean }>
 
+  openNotificationSettings(): Promise<{ opened: boolean }>
+
   checkUpdate(): Promise<{ updateAvailable: boolean; manifest: UpdateManifest }>
 
   startUpdate(): Promise<{ started: boolean }>

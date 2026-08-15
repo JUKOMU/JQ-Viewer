@@ -85,7 +85,20 @@ public final class UpdateService {
      * 设置当前 Bridge 会话的更新事件出口。
      */
     public void setProgressSink(Consumer<Snapshot> sink) {
-        progressSink = sink;
+        synchronized (stateLock) {
+            progressSink = sink;
+        }
+    }
+
+    /**
+     * 仅在事件出口仍属于指定 Bridge 会话时解绑。
+     */
+    public void clearProgressSink(Consumer<Snapshot> expected) {
+        synchronized (stateLock) {
+            if (progressSink == expected) {
+                progressSink = null;
+            }
+        }
     }
 
     /**
@@ -181,8 +194,10 @@ public final class UpdateService {
             if (session == null) {
                 return;
             }
+            if (!session.completionGate.cancel()) {
+                return;
+            }
             session.raceState.cancel();
-            session.cancelled = true;
         }
         closeConnections(session);
         publish("cancelled", "", session.githubBytes, session.giteeBytes,
@@ -389,16 +404,17 @@ public final class UpdateService {
     }
 
     private String findGiteeAssetUrl(JSONObject release) throws Exception {
+        String tag = release.optString("tag_name", "").trim();
         JSONArray assets = release.optJSONArray("assets");
         if (assets == null && release.has("id")) {
             JSONArray attachments = fetchArray("https://gitee.com/api/v5/repos/jukomu/jq-viewer/releases/"
                 + release.getLong("id") + "/attach_files?per_page=100");
-            return findAssetUrl(attachments);
+            return findAssetUrl(attachments, tag);
         }
-        return findAssetUrl(assets);
+        return findAssetUrl(assets, tag);
     }
 
-    private String findAssetUrl(JSONArray assets) {
+    private String findAssetUrl(JSONArray assets, String tag) throws UpdateManifest.UpdateException {
         if (assets == null) {
             return null;
         }
@@ -406,7 +422,8 @@ public final class UpdateService {
             JSONObject asset = assets.optJSONObject(index);
             if (asset != null && "latest.json".equals(asset.optString("name"))) {
                 String url = asset.optString("browser_download_url", "");
-                return url.startsWith("https://") ? url : null;
+                UpdateManifest.requireGiteeReleaseUrl(url, tag, "latest.json");
+                return url;
             }
         }
         return null;
@@ -445,7 +462,7 @@ public final class UpdateService {
         HttpURLConnection connection = null;
         boolean successful = false;
         try {
-            if (session.cancelled || session.raceState.isCancelled()
+            if (session.completionGate.isCancelled() || session.raceState.isCancelled()
                 || (session.raceState.getWinner() != null
                     && session.raceState.getWinner() != source)) {
                 return;
@@ -467,7 +484,7 @@ public final class UpdateService {
                 int count;
                 long downloaded = 0L;
                 while ((count = input.read(buffer)) != -1) {
-                    if (Thread.currentThread().isInterrupted() || session.cancelled
+                    if (Thread.currentThread().isInterrupted() || session.completionGate.isCancelled()
                         || session.raceState.isCancelled()) {
                         throw new InterruptedException("更新已取消");
                     }
@@ -508,7 +525,7 @@ public final class UpdateService {
     private void finishSession(UpdateSession session) {
         try {
             session.finishedLatch.await();
-            if (session.cancelled || session.raceState.isCancelled()) {
+            if (session.completionGate.isCancelled() || session.raceState.isCancelled()) {
                 return;
             }
             UpdateRaceState.Source winner = session.raceState.getWinner();
@@ -516,11 +533,21 @@ public final class UpdateService {
                 failSession(session, "两个下载源均未完成");
                 return;
             }
-            publish("verifying", sourceName(winner), session.githubBytes, session.giteeBytes,
-                session.manifest.getSizeBytes());
+            synchronized (stateLock) {
+                if (activeSession != session || session.completionGate.isCancelled()) {
+                    return;
+                }
+                publish("verifying", sourceName(winner), session.githubBytes, session.giteeBytes,
+                    session.manifest.getSizeBytes());
+            }
             File winnerFile = winner == UpdateRaceState.Source.GITHUB
                 ? session.githubPart : session.giteePart;
             validateApk(session.manifest, winnerFile);
+            synchronized (stateLock) {
+                if (activeSession != session || !session.completionGate.beginCommit()) {
+                    return;
+                }
+            }
             File finalFile = new File(updateDirectory, session.manifest.getApkName());
             if (!winnerFile.renameTo(finalFile)) {
                 throw new IOException("无法保存更新包");
@@ -534,7 +561,9 @@ public final class UpdateService {
         } catch (InterruptedException error) {
             Thread.currentThread().interrupt();
         } catch (Exception error) {
-            failSession(session, userMessage(error));
+            if (!session.completionGate.isCancelled()) {
+                failSession(session, userMessage(error));
+            }
         } finally {
             synchronized (stateLock) {
                 if (activeSession == session) {
@@ -787,6 +816,7 @@ public final class UpdateService {
     private static final class UpdateSession {
         private final UpdateManifest manifest;
         private final UpdateRaceState raceState = new UpdateRaceState();
+        private final CompletionGate completionGate = new CompletionGate();
         private final CountDownLatch finishedLatch = new CountDownLatch(2);
         private final File githubPart;
         private final File giteePart;
@@ -794,12 +824,35 @@ public final class UpdateService {
         private volatile HttpURLConnection giteeConnection;
         private volatile long githubBytes;
         private volatile long giteeBytes;
-        private volatile boolean cancelled;
-
         private UpdateSession(UpdateManifest manifest, File updateDirectory, int sessionId) {
             this.manifest = manifest;
             this.githubPart = new File(updateDirectory, "github-" + sessionId + ".part");
             this.giteePart = new File(updateDirectory, "gitee-" + sessionId + ".part");
+        }
+    }
+
+    static final class CompletionGate {
+        private boolean cancelled;
+        private boolean committing;
+
+        synchronized boolean cancel() {
+            if (cancelled || committing) {
+                return false;
+            }
+            cancelled = true;
+            return true;
+        }
+
+        synchronized boolean beginCommit() {
+            if (cancelled || committing) {
+                return false;
+            }
+            committing = true;
+            return true;
+        }
+
+        synchronized boolean isCancelled() {
+            return cancelled;
         }
     }
 

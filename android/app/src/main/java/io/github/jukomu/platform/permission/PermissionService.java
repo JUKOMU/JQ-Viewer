@@ -1,6 +1,5 @@
 package io.github.jukomu.platform.permission;
 
-import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -9,6 +8,7 @@ import android.os.Build;
 import android.os.Environment;
 import android.provider.Settings;
 
+import androidx.core.app.NotificationManagerCompat;
 import androidx.core.content.ContextCompat;
 
 /**
@@ -61,14 +61,26 @@ public class PermissionService {
     }
 
     /**
-     * 检查通知权限状态（API 33+ 使用 POST_NOTIFICATIONS，低版本默认开启）。
+     * 检查系统是否允许当前应用发布通知。
      */
     public boolean checkNotificationPermission(Context ctx) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-            return true;
+        return NotificationManagerCompat.from(ctx).areNotificationsEnabled();
+    }
+
+    /**
+     * 打开当前应用的系统通知设置页。
+     */
+    public void openNotificationSettings(Context ctx) {
+        Intent intent;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            intent = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS);
+            intent.putExtra(Settings.EXTRA_APP_PACKAGE, ctx.getPackageName());
+        } else {
+            intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+            intent.setData(Uri.parse("package:" + ctx.getPackageName()));
         }
-        NotificationManager nm = (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
-        return nm != null && nm.areNotificationsEnabled();
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        ctx.startActivity(intent);
     }
 
     /**

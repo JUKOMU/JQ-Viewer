@@ -502,6 +502,21 @@ public final class SystemPluginHandler {
     }
 
     /**
+     * 打开当前应用的系统通知设置页。
+     */
+    public void openNotificationSettings(PluginCall call) {
+        try {
+            permissionService.openNotificationSettings(context);
+            JSObject result = new JSObject();
+            result.put("opened", true);
+            call.resolve(result);
+        } catch (RuntimeException error) {
+            Log.w(TAG, "打开通知设置失败", error);
+            call.reject("无法打开通知设置页: " + error.getMessage());
+        }
+    }
+
+    /**
      * 返回给定文件路径和 content URI 中当前可访问的条目。
      */
     public void checkFilesExist(PluginCall call) {

@@ -98,7 +98,7 @@ public final class UpdateForegroundService extends Service {
             startForeground(NotificationIds.UPDATE_FOREGROUND,
                 buildNotification(intent, revision));
             String phase = intent == null ? "" : intent.getStringExtra(EXTRA_PHASE);
-            if ("failed".equals(phase)) {
+            if (isTerminalPhase(phase)) {
                 stopForeground(false);
                 stopSelf(startId);
             }
@@ -117,6 +117,10 @@ public final class UpdateForegroundService extends Service {
 
     static boolean isStaleRevision(int revision, int lastRevision) {
         return revision < lastRevision;
+    }
+
+    static boolean isTerminalPhase(String phase) {
+        return "failed".equals(phase) || "ready_to_install".equals(phase);
     }
 
     private void createChannel() {
@@ -146,11 +150,11 @@ public final class UpdateForegroundService extends Service {
             .setContentTitle("JQ Viewer 应用更新")
             .setContentText(content)
             .setContentIntent(createLaunchIntent())
-            .setOngoing(!"failed".equals(phase))
-            .setAutoCancel("failed".equals(phase))
+            .setOngoing(!isTerminalPhase(phase))
+            .setAutoCancel(isTerminalPhase(phase))
             .setOnlyAlertOnce(true);
 
-        if ("failed".equals(phase)) {
+        if (isTerminalPhase(phase)) {
             builder.setProgress(0, 0, false);
             return builder.build();
         }

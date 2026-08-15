@@ -560,6 +560,10 @@ export const JmcomicService = {
     return native.requestNotificationPermission()
   },
 
+  openNotificationSettings() {
+    return native.openNotificationSettings()
+  },
+
   // ========== 应用内更新 ==========
 
   checkUpdate() {

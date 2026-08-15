@@ -1,6 +1,7 @@
 import {flushPromises, mount} from '@vue/test-utils'
 import {defineComponent, h} from 'vue'
 import {afterEach, beforeEach, describe, expect, test, vi} from 'vitest'
+import type {UpdateProgressEvent} from '@/services/JmcomicTypes'
 
 const mocks = vi.hoisted(() => ({
   writeText: vi.fn(),
@@ -9,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   alertPresent: vi.fn(),
   checkUpdate: vi.fn(),
   addUpdateProgressListener: vi.fn(),
+  getUpdateState: vi.fn(),
+  progressHandler: undefined as ((event: UpdateProgressEvent) => void) | undefined,
 }))
 
 vi.mock('@capacitor/app', () => ({
@@ -47,8 +50,10 @@ vi.mock('@/services/JmcomicService', () => ({
   JmcomicService: {
     checkUpdate: mocks.checkUpdate,
     addUpdateProgressListener: mocks.addUpdateProgressListener,
+    getUpdateState: mocks.getUpdateState,
     checkNotificationPermission: vi.fn(),
     requestNotificationPermission: vi.fn(),
+    openNotificationSettings: vi.fn(),
     startUpdate: vi.fn(),
     cancelUpdate: vi.fn(),
     installUpdate: vi.fn(),
@@ -58,16 +63,33 @@ vi.mock('@/services/JmcomicService', () => ({
 }))
 
 import AboutPage from '@/views/AboutPage.vue'
+import {UpdateService} from '@/services/UpdateService'
 
-beforeEach(() => {
+beforeEach(async () => {
+  await UpdateService.dispose()
   vi.clearAllMocks()
+  UpdateService.manifest.value = null
+  UpdateService.state.value = {
+    revision: 0,
+    phase: 'idle',
+    source: '',
+    githubBytes: 0,
+    giteeBytes: 0,
+    totalBytes: 0,
+    error: '',
+  }
+  mocks.progressHandler = undefined
   mocks.writeText.mockResolvedValue(undefined)
   mocks.showToast.mockResolvedValue(undefined)
   mocks.alertCreate.mockResolvedValue({
     present: mocks.alertPresent,
     onDidDismiss: vi.fn().mockResolvedValue({role: 'cancel'}),
   })
-  mocks.addUpdateProgressListener.mockResolvedValue({remove: vi.fn()})
+  mocks.addUpdateProgressListener.mockImplementation(async (handler) => {
+    mocks.progressHandler = handler
+    return {remove: vi.fn()}
+  })
+  mocks.getUpdateState.mockResolvedValue({...UpdateService.state.value})
   mocks.checkUpdate.mockResolvedValue({
     updateAvailable: false,
     manifest: {
@@ -156,5 +178,46 @@ describe('AboutPage 更新状态', () => {
 
     expect(wrapper.get('button.info-row-action').text()).toContain('检查失败')
     wrapper.unmount()
+  })
+
+  test('下载中重新进入页面仍显示更新卡片', async () => {
+    vi.useFakeTimers()
+    mocks.checkUpdate.mockResolvedValue({
+      updateAvailable: true,
+      manifest: {
+        tag: 'v1.4.0',
+        versionName: '1.4.0',
+        versionCode: 16,
+        packageName: 'io.github.jukomu',
+        apkName: 'JQ-Viewer-1_4_0.apk',
+        sizeBytes: 20 * 1024 * 1024,
+        sha256: 'a'.repeat(64),
+        signingCertificateSha256: 'b'.repeat(64),
+        releaseNotes: '更新说明',
+        sources: {github: 'https://github.com/example.apk', gitee: 'https://gitee.com/example.apk'},
+      },
+    })
+    const first = mount(AboutPage)
+
+    await first.get('button.info-row-action').trigger('click')
+    await flushPromises()
+    mocks.progressHandler?.({
+      revision: 2,
+      phase: 'racing',
+      source: 'racing',
+      githubBytes: 1024,
+      giteeBytes: 512,
+      totalBytes: 20 * 1024 * 1024,
+      error: '',
+    })
+    await flushPromises()
+    first.unmount()
+
+    const second = mount(AboutPage)
+    await flushPromises()
+
+    expect(second.find('.update-card').exists()).toBe(true)
+    expect(second.get('.update-card').text()).toContain('下载中')
+    second.unmount()
   })
 })

@@ -3,6 +3,7 @@ package io.github.jukomu.feature.update;
 import org.junit.Test;
 
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.Assert.assertEquals;
@@ -53,11 +54,13 @@ public class UpdateRaceStateTest {
         Thread gitee = selectInParallel(state, UpdateRaceState.Source.GITEE, ready, start, winners);
         github.start();
         gitee.start();
-        ready.await();
+        assertTrue(ready.await(5, TimeUnit.SECONDS));
         start.countDown();
-        github.join();
-        gitee.join();
+        github.join(5_000L);
+        gitee.join(5_000L);
 
+        assertFalse(github.isAlive());
+        assertFalse(gitee.isAlive());
         assertEquals(1, winners.get());
         assertTrue(state.getWinner() != null);
     }

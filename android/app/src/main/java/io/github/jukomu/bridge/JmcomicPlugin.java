@@ -46,6 +46,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 /**
  * @author JUKOMU
@@ -88,6 +89,7 @@ public class JmcomicPlugin extends Plugin {
     private PdfExportEventSink pdfEventSink;
     private PdfExportCommandPort pdfExportCommandPort;
     private UpdateService updateService;
+    private Consumer<UpdateService.Snapshot> updateProgressSink;
     private UpdatePluginHandler updateHandler;
 
     // ---- 下载相关 ----
@@ -228,8 +230,9 @@ public class JmcomicPlugin extends Plugin {
         this.settingsHandler = new SettingsPluginHandler(settingsService);
         this.downloadService = runtime.getDownloadService();
         this.updateService = runtime.getUpdateService();
-        this.updateService.setProgressSink(snapshot ->
-            notifyListeners("updateProgress", snapshot.toJson()));
+        this.updateProgressSink = snapshot ->
+            notifyListeners("updateProgress", snapshot.toJson());
+        this.updateService.setProgressSink(updateProgressSink);
         this.updateHandler = new UpdatePluginHandler(updateService, this::getActivity);
         this.downloadCommandPort = new DownloadCommandAdapter(downloadService);
         DownloadCommandRouter.getInstance().attach(downloadCommandPort);
@@ -262,8 +265,9 @@ public class JmcomicPlugin extends Plugin {
         if (systemHandler != null) {
             systemHandler.destroy();
         }
-        if (updateService != null) {
-            updateService.setProgressSink(null);
+        if (updateService != null && updateProgressSink != null) {
+            updateService.clearProgressSink(updateProgressSink);
+            updateProgressSink = null;
         }
         if (runtime != null) {
             runtime.detachEventSinks(
@@ -476,6 +480,11 @@ public class JmcomicPlugin extends Plugin {
     @PluginMethod
     public void requestNotificationPermission(PluginCall call) {
         systemHandler.requestNotificationPermission(call);
+    }
+
+    @PluginMethod
+    public void openNotificationSettings(PluginCall call) {
+        systemHandler.openNotificationSettings(call);
     }
 
     @PluginMethod

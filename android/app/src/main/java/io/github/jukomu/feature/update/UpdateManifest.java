@@ -3,6 +3,8 @@ package io.github.jukomu.feature.update;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.regex.Pattern;
@@ -19,6 +21,10 @@ public final class UpdateManifest {
     private static final Pattern DIGEST_PATTERN = Pattern.compile("^[0-9a-fA-F]{64}$");
     private static final Pattern APK_NAME_PATTERN = Pattern.compile("^[A-Za-z0-9._-]+\\.apk$");
     private static final String EXPECTED_PACKAGE_NAME = "io.github.jukomu";
+    private static final String GITHUB_HOST = "github.com";
+    private static final String GITHUB_REPOSITORY_PATH = "/JUKOMU/JQ-Viewer";
+    private static final String GITEE_HOST = "gitee.com";
+    private static final String GITEE_REPOSITORY_PATH = "/jukomu/jq-viewer";
     private static final String EXPECTED_CERTIFICATE_SHA256 =
         "6667B73DA7322E56626D82CA0EFCF03386E0B5560E14DF48C6025142FF4197EA";
 
@@ -135,13 +141,40 @@ public final class UpdateManifest {
         if (!EXPECTED_CERTIFICATE_SHA256.equals(certificate)) {
             throw new UpdateException("更新签名证书不是正式证书");
         }
-        requireHttpsUrl(githubUrl, "GitHub");
-        requireHttpsUrl(giteeUrl, "Gitee");
+        requireReleaseUrl(githubUrl, "GitHub", GITHUB_HOST, GITHUB_REPOSITORY_PATH,
+            tag, apkName);
+        requireGiteeReleaseUrl(giteeUrl, tag, apkName);
     }
 
-    private static void requireHttpsUrl(String value, String source) throws UpdateException {
-        if (!value.startsWith("https://") || value.length() <= "https://".length()) {
-            throw new UpdateException(source + " 更新地址不是 HTTPS");
+    static void requireGiteeReleaseUrl(String value, String tag, String assetName)
+        throws UpdateException {
+        requireReleaseUrl(value, "Gitee", GITEE_HOST, GITEE_REPOSITORY_PATH,
+            tag, assetName);
+    }
+
+    private static void requireReleaseUrl(String value, String source, String expectedHost,
+                                          String repositoryPath, String tag, String assetName)
+        throws UpdateException {
+        if (!RELEASE_TAG_PATTERN.matcher(tag).matches()
+            || assetName == null || assetName.isEmpty() || assetName.contains("/")) {
+            throw new UpdateException(source + " 更新地址与发布信息不一致");
+        }
+        try {
+            URI uri = new URI(value);
+            String expectedPath = repositoryPath + "/releases/download/" + tag + "/" + assetName;
+            boolean validPort = uri.getPort() == -1 || uri.getPort() == 443;
+            if (!"https".equalsIgnoreCase(uri.getScheme())
+                || uri.getHost() == null
+                || !expectedHost.equalsIgnoreCase(uri.getHost())
+                || uri.getUserInfo() != null
+                || !validPort
+                || uri.getRawQuery() != null
+                || uri.getRawFragment() != null
+                || !expectedPath.equals(uri.getRawPath())) {
+                throw new UpdateException(source + " 更新地址不属于固定发布仓库");
+            }
+        } catch (URISyntaxException error) {
+            throw new UpdateException(source + " 更新地址无效", error);
         }
     }
 

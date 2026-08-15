@@ -396,7 +396,7 @@ export type UpdatePhase =
 
 export interface UpdateProgressEvent {
   revision: number
-  phase: UpdatePhase | string
+  phase: UpdatePhase
   source: string
   githubBytes: number
   giteeBytes: number

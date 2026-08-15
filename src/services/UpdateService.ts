@@ -19,7 +19,6 @@ const state = shallowRef<UpdateProgressEvent>({ ...IDLE_STATE })
 let listenerPromise: Promise<void> | null = null
 let listenerHandle: { remove: () => Promise<void> } | null = null
 let checkPromise: Promise<UpdateCheckResult> | null = null
-let notificationPrompted = false
 let notificationPromptPromise: Promise<boolean> | null = null
 let promptPromise: Promise<unknown> | null = null
 let installPromise: Promise<InstallResult> | null = null
@@ -74,19 +73,22 @@ async function ensureNotificationPermission(): Promise<boolean> {
     try {
       const current = await JmcomicService.checkNotificationPermission()
       if (current.granted) return true
-      if (notificationPrompted) return false
-      notificationPrompted = true
 
       const alert = await alertController.create({
         header: '需要通知权限',
         message: '应用更新需要系统通知显示下载进度。拒绝后不会开始下载。',
         buttons: [
           { text: '取消', role: 'cancel' },
+          { text: '打开设置', role: 'settings' },
           { text: '允许通知', role: 'confirm' },
         ],
       })
       await alert.present()
       const dismissed = await alert.onDidDismiss()
+      if (dismissed.role === 'settings') {
+        await JmcomicService.openNotificationSettings()
+        return false
+      }
       if (dismissed.role !== 'confirm') return false
       const requested = await JmcomicService.requestNotificationPermission()
       return requested.granted
@@ -163,14 +165,14 @@ async function installReadyUpdate(): Promise<InstallResult> {
           {
             text: '打开设置',
             role: 'confirm',
-            handler: async () => {
-              await JmcomicService.requestInstallPermission()
-            },
           },
         ],
       })
       await alert.present()
-      await alert.onDidDismiss()
+      const dismissed = await alert.onDidDismiss()
+      if (dismissed.role === 'confirm') {
+        await JmcomicService.requestInstallPermission()
+      }
       return result
     } catch (error) {
       await showToast(error instanceof Error ? error.message : '无法启动安装器', 'danger', 2500)

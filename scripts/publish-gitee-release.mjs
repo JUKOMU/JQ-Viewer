@@ -133,53 +133,94 @@ async function deleteAsset(token, releaseId, assetId) {
   })
 }
 
-async function uploadAsset(token, releaseId, filePath) {
+async function downloadAsset(asset) {
+  if (typeof asset.browser_download_url !== 'string' || !asset.browser_download_url) {
+    throw new Error('Gitee existing asset has no public download URL for ' + asset.name)
+  }
+  const response = await fetch(asset.browser_download_url)
+  if (!response.ok) {
+    throw new Error(
+      'Gitee existing asset download failed for ' + asset.name + ': HTTP ' + response.status,
+    )
+  }
+  return Buffer.from(await response.arrayBuffer())
+}
+
+async function uploadAssetBytes(token, releaseId, name, bytes) {
   const apiPath =
     '/repos/' +
     repositoryPath() +
     '/releases/' +
     releaseId +
     '/attach_files'
-  const file = await fs.promises.readFile(filePath)
   const form = new FormData()
   form.set('access_token', token)
-  form.set('file', new Blob([file]), path.basename(filePath))
+  form.set('file', new Blob([bytes]), name)
   return request(apiPath, {
     method: 'POST',
     body: form,
-    label: 'upload release asset ' + path.basename(filePath),
+    label: 'upload release asset ' + name,
   })
 }
 
-async function replaceAsset(token, releaseId, filePath) {
-  const name = path.basename(filePath)
-  const assets = await listAssets(releaseId)
-  const oldAsset = assets.find((asset) => asset.name === name)
-  if (oldAsset) {
-    await deleteAsset(token, releaseId, oldAsset.id)
-  }
-
-  const uploaded = await uploadAsset(token, releaseId, filePath)
+function validateUploadedAsset(uploaded, name, expectedSize) {
   if (!uploaded || uploaded.name !== name) {
     throw new Error('Gitee uploaded asset name mismatch for ' + name)
   }
   if (typeof uploaded.browser_download_url !== 'string' || !uploaded.browser_download_url) {
     throw new Error('Gitee did not return a public download URL for ' + name)
   }
-
-  const localSize = fs.statSync(filePath).size
-  if (Number(uploaded.size) !== localSize) {
+  if (Number(uploaded.size) !== expectedSize) {
     throw new Error(
       'Gitee asset size mismatch for ' +
         name +
         ': expected ' +
-        localSize +
+        expectedSize +
         ', got ' +
         uploaded.size,
     )
   }
-
   return uploaded
+}
+
+export async function replaceAsset(token, releaseId, filePath) {
+  const name = path.basename(filePath)
+  const localBytes = await fs.promises.readFile(filePath)
+  const assets = await listAssets(releaseId)
+  const oldAsset = assets.find((asset) => asset.name === name)
+  let oldBytes = null
+  if (oldAsset) {
+    oldBytes = await downloadAsset(oldAsset)
+    if (oldBytes.equals(localBytes)) {
+      return {...oldAsset, size: oldBytes.length}
+    }
+    await deleteAsset(token, releaseId, oldAsset.id)
+  }
+
+  let uploaded = null
+  try {
+    uploaded = await uploadAssetBytes(token, releaseId, name, localBytes)
+    return validateUploadedAsset(uploaded, name, localBytes.length)
+  } catch (error) {
+    if (!oldAsset || !oldBytes) {
+      throw error
+    }
+    try {
+      if (uploaded && uploaded.id) {
+        await deleteAsset(token, releaseId, uploaded.id)
+      }
+      const restored = await uploadAssetBytes(token, releaseId, name, oldBytes)
+      validateUploadedAsset(restored, name, oldBytes.length)
+    } catch (restoreError) {
+      const failure = new Error(
+        'Gitee replacement failed for ' + name +
+          '; restoring the previous asset also failed: ' + restoreError.message,
+      )
+      failure.cause = error
+      throw failure
+    }
+    throw error
+  }
 }
 
 async function main() {

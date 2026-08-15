@@ -37,6 +37,8 @@ import type {
   SearchResultItem,
   UserInfo,
   UserProfile,
+  UpdateManifest,
+  UpdateProgressEvent,
 } from '../JmcomicTypes'
 
 export interface ImageReadyEvent {
@@ -160,6 +162,11 @@ export interface JmcomicClient {
     handler: (data: { route: string }) => void,
   ): Promise<JmcomicListenerHandle>
 
+  addListener(
+    event: 'updateProgress',
+    handler: (data: UpdateProgressEvent) => void,
+  ): Promise<JmcomicListenerHandle>
+
   getDomainStates(): Promise<DomainStates>
 
   reprobeDomains(): Promise<void>
@@ -276,6 +283,20 @@ export interface JmcomicClient {
   checkNotificationPermission(): Promise<{ granted: boolean }>
 
   requestNotificationPermission(): Promise<{ granted: boolean }>
+
+  openNotificationSettings(): Promise<{ opened: boolean }>
+
+  checkUpdate(): Promise<{ updateAvailable: boolean; manifest: UpdateManifest }>
+
+  startUpdate(): Promise<{ started: boolean }>
+
+  cancelUpdate(): Promise<{ cancelled: boolean }>
+
+  getUpdateState(): Promise<UpdateProgressEvent>
+
+  installUpdate(): Promise<{ started: boolean; permissionRequired: boolean }>
+
+  requestInstallPermission(): Promise<{ requested: boolean }>
 
   consumeLaunchRoute(): Promise<{ route?: string }>
 

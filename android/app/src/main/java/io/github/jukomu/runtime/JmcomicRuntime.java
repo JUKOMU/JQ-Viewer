@@ -10,6 +10,7 @@ import io.github.jukomu.feature.download.storage.FileStore;
 import io.github.jukomu.feature.preload.PreloadEventSink;
 import io.github.jukomu.feature.preload.PreloadService;
 import io.github.jukomu.feature.settings.relocation.RelocationEventSink;
+import io.github.jukomu.feature.update.UpdateService;
 import io.github.jukomu.jmcomic.core.JmComic;
 import io.github.jukomu.jmcomic.core.client.impl.JmApiClient;
 import io.github.jukomu.jmcomic.core.config.JmConfiguration;
@@ -36,6 +37,7 @@ public final class JmcomicRuntime {
     private final ExecutorService downloadPrepareExecutor;
     private final PreloadService preloadService;
     private final DownloadService downloadService;
+    private final UpdateService updateService;
 
     private JmcomicRuntime(Context context, SettingsStore settingsDb,
                            DownloadStore downloadDb, FileStore fileStore,
@@ -53,6 +55,7 @@ public final class JmcomicRuntime {
             preloadConcurrency);
         downloadService = new DownloadService(downloadDb, fileStore, client,
             downloadPrepareExecutor, eventRouter, applicationContext);
+        updateService = new UpdateService(applicationContext);
     }
 
     public static synchronized JmcomicRuntime getOrCreate(
@@ -96,5 +99,9 @@ public final class JmcomicRuntime {
 
     public DownloadService getDownloadService() {
         return downloadService;
+    }
+
+    public UpdateService getUpdateService() {
+        return updateService;
     }
 }

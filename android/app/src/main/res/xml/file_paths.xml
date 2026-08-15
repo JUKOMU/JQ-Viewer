@@ -3,4 +3,5 @@
   <external-path name="my_images" path="."/>
   <cache-path name="my_cache_images" path="."/>
   <files-path name="internal_downloads" path="downloads/"/>
+  <files-path name="internal_updates" path="update/"/>
 </paths>

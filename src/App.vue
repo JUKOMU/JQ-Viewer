@@ -20,14 +20,14 @@ import { alertController, IonApp } from '@ionic/vue'
 import type { PluginListenerHandle } from '@capacitor/core'
 import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { App } from '@capacitor/app'
 import MainMenu from '@/components/menu/MainMenu.vue'
 import { useSideMenuState } from '@/composables/useSideMenuState'
 import { initSettings } from '@/services/SettingsService'
 import { useAuth } from '@/composables/useAuth'
 import { initNetworkProbeStore } from '@/composables/networkProbeStore'
 import { JmcomicService, showToast } from '@/services/JmcomicService'
-import { compareVersion, RELEASES_API, sanitizeReleaseBody } from '@/utils/version'
+import { UpdateService } from '@/services/UpdateService'
+import type { UpdateManifest } from '@/services/JmcomicTypes'
 
 const { isMenuNavigation, leftMenuOpen, rightMenuOpen } = useSideMenuState()
 
@@ -224,6 +224,26 @@ const navigateToLaunchRoute = async (target?: string, replace = false) => {
   }
 }
 
+async function showStartupUpdatePrompt(update: UpdateManifest) {
+  const alert = await alertController.create({
+    header: `发现新版本 ${update.versionName}`,
+    message: update.releaseNotes || '有新的正式版可用。',
+    cssClass: 'update-alert',
+    buttons: [
+      { text: '稍后', role: 'cancel' },
+      {
+        text: '查看更新',
+        role: 'confirm',
+        handler: () => {
+          void router.push('/about')
+        },
+      },
+    ],
+  })
+  await alert.present()
+  await alert.onDidDismiss()
+}
+
 onMounted(async () => {
   let launchRouteHandled = false
   try {
@@ -324,44 +344,9 @@ onMounted(async () => {
     // ---- Phase 3: 自动检查更新 ----
     void (async () => {
       try {
-        const info = await App.getInfo()
-        const resp = await fetch(RELEASES_API, {
-          headers: { Accept: 'application/vnd.github.v3+json' },
-        })
-        if (!resp.ok) return
-        const data = await resp.json()
-        const remote = (data.tag_name || '').replace(/^v/, '')
-        if (remote && compareVersion(remote, info.version) > 0) {
-          const cleaned = sanitizeReleaseBody(data.body || '')
-          const alert1 = await alertController.create({
-            header: `发现新版本 v${remote}`,
-            message: cleaned || '（无更新说明）',
-            cssClass: 'update-alert',
-            buttons: [
-              { text: '忽略', role: 'cancel' },
-              {
-                text: '好',
-                handler: async () => {
-                  const alert2 = await alertController.create({
-                    header: '前往下载',
-                    message: data.html_url || '',
-                    cssClass: 'update-alert',
-                    buttons: [
-                      { text: '取消', role: 'cancel' },
-                      {
-                        text: '打开',
-                        handler: () => {
-                          window.open(data.html_url, '_blank')
-                        },
-                      },
-                    ],
-                  })
-                  await alert2.present()
-                },
-              },
-            ],
-          })
-          await alert1.present()
+        const result = await UpdateService.check()
+        if (result.updateAvailable) {
+          await UpdateService.runPrompt(() => showStartupUpdatePrompt(result.manifest))
         }
       } catch {
         // 静默忽略网络错误

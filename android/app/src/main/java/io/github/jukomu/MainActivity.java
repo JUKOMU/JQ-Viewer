@@ -18,6 +18,7 @@ public class MainActivity extends BridgeActivity {
     public static final String ACTION_OPEN_ROUTE = "io.github.jukomu.OPEN_ROUTE";
     public static final String EXTRA_ROUTE = "io.github.jukomu.extra.ROUTE";
     public static final String ROUTE_DOWNLOAD = "/download";
+    public static final String ROUTE_ABOUT = "/about";
 
     @Override
     public void onCreate(Bundle savedInstanceState) {

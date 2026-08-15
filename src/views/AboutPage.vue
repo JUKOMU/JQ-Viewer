@@ -59,6 +59,39 @@
           </button>
         </div>
 
+        <div v-if="hasUpdate && latestManifest" class="info-card update-card">
+          <div class="info-row">
+            <span class="info-label">更新版本</span>
+            <span class="info-value">{{ latestManifest.versionName }}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">安装包大小</span>
+            <span class="info-value">{{ formatMiB(latestManifest.sizeBytes) }}</span>
+          </div>
+          <div class="info-row update-progress-row">
+            <span class="info-label">更新状态</span>
+            <span class="info-value">{{ updateStatusLabel }}</span>
+          </div>
+          <div v-if="downloadProgressLabel" class="update-progress">
+            {{ downloadProgressLabel }}
+          </div>
+          <div v-if="updateState.error" class="update-error">
+            {{ updateState.error }}
+          </div>
+          <div v-if="latestManifest.releaseNotes" class="release-notes">
+            <div class="note-title">发布说明</div>
+            <pre>{{ latestManifest.releaseNotes }}</pre>
+          </div>
+          <button
+            class="update-action"
+            type="button"
+            :disabled="updateActionDisabled"
+            @click="handleUpdateAction"
+          >
+            {{ updateActionLabel }}
+          </button>
+        </div>
+
         <!-- 仓库地址 -->
         <div class="info-card" @click="openRepo(REPO_URL)">
           <div class="info-row">
@@ -115,7 +148,7 @@
 <script setup lang="ts">
 defineOptions({ name: 'AboutPage' })
 
-import { nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { App } from '@capacitor/app'
 import {
   alertController,
@@ -131,7 +164,8 @@ import {
 } from '@ionic/vue'
 import { chevronForwardOutline, logoGithub } from 'ionicons/icons'
 import { showToast } from '@/services/JmcomicService'
-import { compareVersion, RELEASES_API, sanitizeReleaseBody } from '@/utils/version'
+import { UpdateService } from '@/services/UpdateService'
+import type { UpdateManifest } from '@/services/JmcomicTypes'
 
 const appVersion = ref('1.0.0')
 const updateChecking = ref(false)
@@ -139,15 +173,77 @@ const updateError = ref(false)
 const hasUpdate = ref(false)
 const latestVersion = ref('')
 const updateChecked = ref(false)
+const latestManifest = UpdateService.manifest
+const updateState = UpdateService.state
 
 const REPO_URL = 'https://github.com/jukomu/jq-viewer'
 const JMCOMIC_API_REPO_URL = 'https://github.com/JUKOMU/JMComic-Api-Java'
+
+const formatMiB = UpdateService.formatMiB
+const updateStatusLabel = computed(() => {
+  switch (updateState.value.phase) {
+    case 'racing':
+      return '下载中'
+    case 'selected':
+      return `已选择 ${updateState.value.source}`
+    case 'verifying':
+      return '校验中'
+    case 'ready_to_install':
+      return '准备安装'
+    case 'install_permission_required':
+      return '等待安装权限'
+    case 'installing':
+      return '正在打开安装器'
+    case 'failed':
+      return '更新失败'
+    case 'cancelled':
+      return '已取消'
+    default:
+      return hasUpdate.value ? '等待下载' : '未检查'
+  }
+})
+const downloadProgressLabel = computed(() => {
+  if (!['racing', 'selected'].includes(updateState.value.phase)) return ''
+  const source =
+    updateState.value.source === 'GitHub' || updateState.value.source === 'Gitee'
+      ? updateState.value.source
+      : updateState.value.githubBytes >= updateState.value.giteeBytes
+        ? 'GitHub'
+        : 'Gitee'
+  const bytes = source === 'GitHub' ? updateState.value.githubBytes : updateState.value.giteeBytes
+  const total = updateState.value.totalBytes || latestManifest.value?.sizeBytes || 0
+  return `${source} ${formatMiB(bytes)} / ${formatMiB(total)}`
+})
+const updateActionLabel = computed(() => {
+  switch (updateState.value.phase) {
+    case 'racing':
+    case 'selected':
+      return '取消下载'
+    case 'verifying':
+    case 'installing':
+      return '处理中...'
+    case 'ready_to_install':
+    case 'install_permission_required':
+      return '安装更新'
+    default:
+      return '下载更新'
+  }
+})
+const updateActionDisabled = computed(() =>
+  ['verifying', 'installing'].includes(updateState.value.phase),
+)
 
 const TITLE = 'JQ Viewer'
 const displayText = ref('')
 const cursorVisible = ref(true)
 
 onMounted(async () => {
+  void UpdateService.init()
+  if (latestManifest.value && updateState.value.phase === 'update_available') {
+    hasUpdate.value = true
+    latestVersion.value = latestManifest.value.versionName
+    updateChecked.value = true
+  }
   try {
     const info = await App.getInfo()
     appVersion.value = info.version
@@ -182,16 +278,11 @@ async function checkUpdate() {
   updateChecked.value = false
 
   try {
-    const resp = await fetch(RELEASES_API, {
-      headers: { Accept: 'application/vnd.github.v3+json' },
-    })
-    if (!resp.ok) throw new Error('API error')
-    const data = await resp.json()
-    const remote = (data.tag_name || '').replace(/^v/, '')
-    if (remote && compareVersion(remote, appVersion.value) > 0) {
+    const result = await UpdateService.check()
+    if (result.updateAvailable) {
       hasUpdate.value = true
-      latestVersion.value = remote
-      await showUpdateAlert(remote, data.body || '', data.html_url || '')
+      latestVersion.value = result.manifest.versionName
+      await UpdateService.runPrompt(() => showUpdateAlert(result.manifest))
     }
   } catch {
     updateError.value = true
@@ -202,38 +293,53 @@ async function checkUpdate() {
   }
 }
 
-async function showUpdateAlert(version: string, body: string, htmlUrl: string) {
-  const cleaned = sanitizeReleaseBody(body || '')
-
+async function showUpdateAlert(update: UpdateManifest) {
   const alert1 = await alertController.create({
-    header: `发现新版本 v${version}`,
-    message: cleaned || '（无更新说明）',
+    header: `发现新版本 ${update.versionName}`,
+    message: update.releaseNotes || '（无更新说明）',
     cssClass: 'update-alert',
     buttons: [
       { text: '忽略', role: 'cancel' },
       {
-        text: '好',
-        handler: async () => {
-          const alert2 = await alertController.create({
-            header: '前往下载',
-            message: htmlUrl,
-            cssClass: 'update-alert',
-            buttons: [
-              { text: '取消', role: 'cancel' },
-              {
-                text: '打开',
-                handler: () => {
-                  window.open(htmlUrl, '_blank')
-                },
-              },
-            ],
-          })
-          await alert2.present()
+        text: '下载更新',
+        handler: () => {
+          void startUpdate()
         },
       },
     ],
   })
   await alert1.present()
+  await alert1.onDidDismiss()
+}
+
+async function startUpdate() {
+  updateError.value = false
+  try {
+    const result = await UpdateService.start()
+    if (result.blocked === 'notification_permission') {
+      updateError.value = true
+      await showToast('未授予通知权限，更新未开始', 'medium', 2500)
+    }
+  } catch {
+    updateError.value = true
+  }
+}
+
+async function handleUpdateAction() {
+  if (updateState.value.phase === 'racing' || updateState.value.phase === 'selected') {
+    await UpdateService.cancel()
+    await showToast('更新已取消', 'medium')
+    return
+  }
+  if (updateState.value.phase === 'ready_to_install') {
+    await UpdateService.install()
+    return
+  }
+  if (updateState.value.phase === 'install_permission_required') {
+    await UpdateService.install()
+    return
+  }
+  await startUpdate()
 }
 
 async function openRepo(url: string) {
@@ -349,6 +455,61 @@ const reDisplay = async () => {
 
 .info-value.error {
   color: #d44;
+}
+
+.update-card {
+  border: 1px solid rgba(232, 132, 60, 0.22);
+}
+
+.update-progress-row {
+  align-items: flex-start;
+}
+
+.update-progress {
+  padding: 0 18px 12px;
+  color: #8c6b5a;
+  font-size: 13px;
+}
+
+.update-error {
+  padding: 0 18px 12px;
+  color: #d44;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.release-notes {
+  border-top: 1px solid #f5ebe4;
+  padding: 12px 18px;
+}
+
+.release-notes .note-title {
+  padding: 0 0 6px;
+}
+
+.release-notes pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #6b4e3e;
+  font: inherit;
+  line-height: 1.6;
+}
+
+.update-action {
+  width: 100%;
+  border: 0;
+  border-top: 1px solid #f5ebe4;
+  background: transparent;
+  color: #e8843c;
+  font: inherit;
+  padding: 13px 18px;
+  cursor: pointer;
+}
+
+.update-action:disabled {
+  color: #bba79b;
+  cursor: default;
 }
 
 .info-action-value {

@@ -7,7 +7,8 @@ const mocks = vi.hoisted(() => ({
   showToast: vi.fn(),
   alertCreate: vi.fn(),
   alertPresent: vi.fn(),
-  compareVersion: vi.fn(() => 0),
+  checkUpdate: vi.fn(),
+  addUpdateProgressListener: vi.fn(),
 }))
 
 vi.mock('@capacitor/app', () => ({
@@ -43,13 +44,17 @@ vi.mock('ionicons/icons', () => ({
 }))
 
 vi.mock('@/services/JmcomicService', () => ({
+  JmcomicService: {
+    checkUpdate: mocks.checkUpdate,
+    addUpdateProgressListener: mocks.addUpdateProgressListener,
+    checkNotificationPermission: vi.fn(),
+    requestNotificationPermission: vi.fn(),
+    startUpdate: vi.fn(),
+    cancelUpdate: vi.fn(),
+    installUpdate: vi.fn(),
+    requestInstallPermission: vi.fn(),
+  },
   showToast: mocks.showToast,
-}))
-
-vi.mock('@/utils/version', () => ({
-  RELEASES_API: 'https://example.test/releases',
-  compareVersion: mocks.compareVersion,
-  sanitizeReleaseBody: vi.fn((body: string) => body),
 }))
 
 import AboutPage from '@/views/AboutPage.vue'
@@ -58,9 +63,27 @@ beforeEach(() => {
   vi.clearAllMocks()
   mocks.writeText.mockResolvedValue(undefined)
   mocks.showToast.mockResolvedValue(undefined)
-  mocks.alertCreate.mockResolvedValue({present: mocks.alertPresent})
+  mocks.alertCreate.mockResolvedValue({
+    present: mocks.alertPresent,
+    onDidDismiss: vi.fn().mockResolvedValue({role: 'cancel'}),
+  })
+  mocks.addUpdateProgressListener.mockResolvedValue({remove: vi.fn()})
+  mocks.checkUpdate.mockResolvedValue({
+    updateAvailable: false,
+    manifest: {
+      tag: 'v1.3.0',
+      versionName: '1.3.0',
+      versionCode: 130,
+      packageName: 'io.github.jukomu',
+      apkName: 'jq-viewer.apk',
+      sizeBytes: 1024,
+      sha256: 'a'.repeat(64),
+      signingCertificateSha256: 'b'.repeat(64),
+      releaseNotes: '',
+      sources: {github: 'https://github.com/example.apk', gitee: 'https://gitee.com/example.apk'},
+    },
+  })
   vi.stubGlobal('navigator', {clipboard: {writeText: mocks.writeText}})
-  vi.stubGlobal('fetch', vi.fn())
 })
 
 afterEach(() => {
@@ -108,13 +131,6 @@ describe('AboutPage 更新状态', () => {
 
   test('检查成功且没有新版本后显示已是最新', async () => {
     vi.useFakeTimers()
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({tag_name: 'v1.2.0'}),
-      }),
-    )
     const wrapper = mount(AboutPage)
 
     await wrapper.get('button.info-row-action').trigger('click')
@@ -130,7 +146,7 @@ describe('AboutPage 更新状态', () => {
 
   test('检查失败后显示失败状态', async () => {
     vi.useFakeTimers()
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network error')))
+    mocks.checkUpdate.mockRejectedValue(new Error('network error'))
     const wrapper = mount(AboutPage)
 
     await wrapper.get('button.info-row-action').trigger('click')

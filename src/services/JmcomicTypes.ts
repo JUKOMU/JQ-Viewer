@@ -363,6 +363,47 @@ export interface NetworkProbeEvent {
   allDeadFallback?: boolean
 }
 
+// --- 应用内更新 ---
+
+export interface UpdateManifest {
+  tag: string
+  versionName: string
+  versionCode: number
+  packageName: string
+  apkName: string
+  sizeBytes: number
+  sha256: string
+  signingCertificateSha256: string
+  releaseNotes: string
+  sources: {
+    github: string
+    gitee: string
+  }
+}
+
+export type UpdatePhase =
+  | 'idle'
+  | 'racing'
+  | 'selected'
+  | 'verifying'
+  | 'ready_to_install'
+  | 'install_permission_required'
+  | 'installing'
+  | 'failed'
+  | 'cancelled'
+  | 'up_to_date'
+  | 'update_available'
+
+export interface UpdateProgressEvent {
+  revision: number
+  phase: UpdatePhase | string
+  source: string
+  githubBytes: number
+  giteeBytes: number
+  totalBytes: number
+  error: string
+}
+
 // --- 网络测速 ---
 
 /** 单域名延迟测试结果 */

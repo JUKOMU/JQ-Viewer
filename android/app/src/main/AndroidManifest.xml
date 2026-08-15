@@ -46,6 +46,11 @@
       android:exported="false"
       android:foregroundServiceType="dataSync"/>
 
+    <service
+      android:name=".feature.update.UpdateForegroundService"
+      android:exported="false"
+      android:foregroundServiceType="dataSync"/>
+
     <receiver
       android:name=".feature.download.notification.DownloadNotificationActionReceiver"
       android:exported="false"/>
@@ -70,4 +75,7 @@
 
   <!-- API 33+: 后台任务通知。minSdk<33 的系统自动忽略 -->
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
+  <!-- Android 8+: 安装已下载并校验的应用内更新包 -->
+  <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
 </manifest>

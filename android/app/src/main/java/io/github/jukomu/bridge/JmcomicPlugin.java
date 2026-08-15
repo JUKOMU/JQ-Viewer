@@ -33,6 +33,7 @@ import io.github.jukomu.feature.pdf.export.PdfExportService;
 import io.github.jukomu.feature.preload.PreloadService;
 import io.github.jukomu.feature.settings.SettingsService;
 import io.github.jukomu.feature.settings.relocation.DownloadRelocationService;
+import io.github.jukomu.feature.update.UpdateService;
 import io.github.jukomu.jmcomic.core.client.impl.JmApiClient;
 import io.github.jukomu.platform.permission.PermissionService;
 import io.github.jukomu.platform.permission.PermissionState;
@@ -86,6 +87,8 @@ public class JmcomicPlugin extends Plugin {
     private PdfPluginHandler pdfHandler;
     private PdfExportEventSink pdfEventSink;
     private PdfExportCommandPort pdfExportCommandPort;
+    private UpdateService updateService;
+    private UpdatePluginHandler updateHandler;
 
     // ---- 下载相关 ----
     private DownloadStore downloadDb;
@@ -224,6 +227,10 @@ public class JmcomicPlugin extends Plugin {
         this.cacheHandler = new CachePluginHandler(preloadService);
         this.settingsHandler = new SettingsPluginHandler(settingsService);
         this.downloadService = runtime.getDownloadService();
+        this.updateService = runtime.getUpdateService();
+        this.updateService.setProgressSink(snapshot ->
+            notifyListeners("updateProgress", snapshot.toJson()));
+        this.updateHandler = new UpdatePluginHandler(updateService, this::getActivity);
         this.downloadCommandPort = new DownloadCommandAdapter(downloadService);
         DownloadCommandRouter.getInstance().attach(downloadCommandPort);
         this.downloadHandler = new DownloadPluginHandler(downloadService);
@@ -236,6 +243,9 @@ public class JmcomicPlugin extends Plugin {
     @Override
     protected void handleOnResume() {
         super.handleOnResume();
+        if (updateService != null) {
+            updateService.onHostResume(getActivity());
+        }
         if (preloadService == null) return;
         long requestedMb = SettingsStore.getInstance(getContext()).getLong(
             "cache_capacity_mb", CacheCapacityPolicy.DEFAULT_REQUESTED_MB);
@@ -251,6 +261,9 @@ public class JmcomicPlugin extends Plugin {
 
         if (systemHandler != null) {
             systemHandler.destroy();
+        }
+        if (updateService != null) {
+            updateService.setProgressSink(null);
         }
         if (runtime != null) {
             runtime.detachEventSinks(
@@ -463,6 +476,36 @@ public class JmcomicPlugin extends Plugin {
     @PluginMethod
     public void requestNotificationPermission(PluginCall call) {
         systemHandler.requestNotificationPermission(call);
+    }
+
+    @PluginMethod
+    public void checkUpdate(PluginCall call) {
+        updateHandler.checkUpdate(call);
+    }
+
+    @PluginMethod
+    public void startUpdate(PluginCall call) {
+        updateHandler.startUpdate(call);
+    }
+
+    @PluginMethod
+    public void cancelUpdate(PluginCall call) {
+        updateHandler.cancelUpdate(call);
+    }
+
+    @PluginMethod
+    public void getUpdateState(PluginCall call) {
+        updateHandler.getUpdateState(call);
+    }
+
+    @PluginMethod
+    public void installUpdate(PluginCall call) {
+        updateHandler.installUpdate(call);
+    }
+
+    @PluginMethod
+    public void requestInstallPermission(PluginCall call) {
+        updateHandler.requestInstallPermission(call);
     }
 
     @PluginMethod

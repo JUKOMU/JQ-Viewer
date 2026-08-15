@@ -10,6 +10,7 @@ public final class NotificationIds {
     public static final int DOWNLOAD_FOREGROUND = 203001;
     public static final int DOWNLOAD_COMPLETED_SUMMARY = 203002;
     public static final int DOWNLOAD_FAILED_SUMMARY = 203003;
+    public static final int UPDATE_FOREGROUND = 204001;
 
     public static final int PDF_TASK_BASE = 210000;
     public static final int PDF_TASK_LIMIT = 219999;

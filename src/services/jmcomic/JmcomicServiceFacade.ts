@@ -12,6 +12,7 @@ import type {
   RelocationProgress,
   SearchQuery,
   SearchResultItem,
+  UpdateProgressEvent,
 } from '../JmcomicTypes'
 import type {
   ImageFailedEvent,
@@ -327,6 +328,12 @@ export const JmcomicService = {
     return native.addListener('launchRoute', handler)
   },
 
+  addUpdateProgressListener(
+    handler: (data: UpdateProgressEvent) => void,
+  ): Promise<JmcomicListenerHandle> {
+    return native.addListener('updateProgress', handler)
+  },
+
   /**
    * 注册文件搬迁进度监听。
    * @param handler 进度更新回调
@@ -551,6 +558,32 @@ export const JmcomicService = {
 
   requestNotificationPermission() {
     return native.requestNotificationPermission()
+  },
+
+  // ========== 应用内更新 ==========
+
+  checkUpdate() {
+    return native.checkUpdate()
+  },
+
+  startUpdate() {
+    return native.startUpdate()
+  },
+
+  cancelUpdate() {
+    return native.cancelUpdate()
+  },
+
+  getUpdateState() {
+    return native.getUpdateState()
+  },
+
+  installUpdate() {
+    return native.installUpdate()
+  },
+
+  requestInstallPermission() {
+    return native.requestInstallPermission()
   },
 
   consumeLaunchRoute() {

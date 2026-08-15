@@ -238,6 +238,36 @@ public class PreloadServiceTest {
     }
 
     @Test
+    public void localImageCacheAdmissionFailureNotifiesImageFailure() throws Exception {
+        byte[] oversizedImage = new byte[17 * 1024 * 1024];
+        byte[] png = createPng();
+        System.arraycopy(png, 0, oversizedImage, 0, png.length);
+        prepareLocalImage("local-cache-admission-failed", oversizedImage);
+
+        CountDownLatch failed = new CountDownLatch(1);
+        PreloadService service = createService(image -> createPng(), new PreloadEventSink() {
+            @Override
+            public void onImageReady(String photoId, int sortOrder, String type) {
+            }
+
+            @Override
+            public void onImageFailed(String photoId, int sortOrder, String type) {
+                assertEquals("local-cache-admission-failed", photoId);
+                assertEquals(1, sortOrder);
+                assertEquals("image", type);
+                failed.countDown();
+            }
+        });
+
+        JSONObject result = service.preloadImages(
+            "local-cache-admission-failed", "image", imageArray());
+
+        assertEquals(0, result.getJSONArray("cached").length());
+        assertEquals(0, result.getJSONArray("pending").length());
+        assertTrue(failed.await(1, TimeUnit.SECONDS));
+    }
+
+    @Test
     public void networkFailureNotifiesCurrentImageFailure() throws Exception {
         CountDownLatch failed = new CountDownLatch(1);
         AtomicReference<String> failedPhotoId = new AtomicReference<>();
@@ -262,6 +292,33 @@ public class PreloadServiceTest {
         assertTrue(failed.await(1, TimeUnit.SECONDS));
         assertEquals("network-failed", failedPhotoId.get());
         assertEquals(1, failedSortOrder.get());
+    }
+
+    @Test
+    public void invalidNetworkImageBytesNotifyFailureWithoutCaching() throws Exception {
+        CountDownLatch failed = new CountDownLatch(1);
+        PreloadService service = createService(image -> new byte[]{1, 2, 3, 4},
+            new PreloadEventSink() {
+                @Override
+                public void onImageReady(String photoId, int sortOrder, String type) {
+                    fail("无效网络图片不应发送 imageReady");
+                }
+
+                @Override
+                public void onImageFailed(String photoId, int sortOrder, String type) {
+                    assertEquals("invalid-network-image", photoId);
+                    assertEquals(1, sortOrder);
+                    assertEquals("image", type);
+                    failed.countDown();
+                }
+            });
+
+        service.preloadImages("invalid-network-image", "image", imageArray());
+
+        assertTrue(failed.await(1, TimeUnit.SECONDS));
+        networkExecutor.submit(() -> {
+        }).get(1, TimeUnit.SECONDS);
+        assertFalse(imageCache.has("invalid-network-image/1"));
     }
 
     @Test

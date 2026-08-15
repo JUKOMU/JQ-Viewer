@@ -170,7 +170,9 @@ public class PreloadService {
                     imageExecutor.submit(() -> {
                         try (ImageCache.IncomingReservation reservation =
                                  imageCache.prepareForIncomingBytes(localFile.length())) {
-                            if (reservation == null) return;
+                            if (reservation == null) {
+                                throw new IOException("本地图片无法写入内存缓存");
+                            }
                             if (isStale(scopeKey, generation)) return;
                             byte[] localBytes = fileStore.readImageBytes(localFile);
                             byte[] thumbBytes = ImageCache.createThumbnail(localBytes);
@@ -179,27 +181,37 @@ public class PreloadService {
                             imageCache.put(imageKey, localBytes, mime, reservation);
                             if (imageCache.put(cacheKey, thumbBytes, "image/jpeg")) {
                                 notifyImageReady(photoId, sortOrder, type);
+                            } else {
+                                throw new IOException("本地缩略图无法写入内存缓存");
                             }
                         } catch (Exception e) {
                             Log.d(TAG, "缩略图生成失败", e);
+                            if (!isStale(scopeKey, generation)) {
+                                notifyImageFailed(photoId, sortOrder, type);
+                            }
                         } finally {
                             pendingKeys.remove(cacheKey, generation);
                         }
                     });
                 } else {
                     // 原图：直接缓存，同步通知
+                    boolean cachedLocally = false;
                     try (ImageCache.IncomingReservation reservation =
                              imageCache.prepareForIncomingBytes(localFile.length())) {
                         if (reservation != null) {
                             byte[] localBytes = fileStore.readImageBytes(localFile);
                             String mime = "image/" + ImageCache.guessFormatName(localBytes);
-                            if (imageCache.put(cacheKey, localBytes, mime, reservation)) {
+                            cachedLocally = imageCache.put(cacheKey, localBytes, mime, reservation);
+                            if (cachedLocally) {
                                 cached.add(sortOrder);
                                 notifyImageReady(photoId, sortOrder, type);
                             }
                         }
                     } catch (Exception e) {
                         Log.d(TAG, "本地图片读取失败", e);
+                    }
+                    if (!cachedLocally) {
+                        notifyImageFailed(photoId, sortOrder, type);
                     }
                 }
                 continue;
@@ -231,6 +243,9 @@ public class PreloadService {
                     }
                     byte[] decrypted = imageFetcher.fetch(jmImage);
                     if (isStale(scopeKey, generation)) return;
+                    if (!ImageFileValidator.validateQuick(decrypted)) {
+                        throw new IOException("获取的图片无法解析");
+                    }
                     if (networkLoadGate.isCompletePressure()) {
                         throw new IOException("当前内存压力过高，已丢弃图片加载结果");
                     }

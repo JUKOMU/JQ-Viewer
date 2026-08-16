@@ -38,10 +38,9 @@ async function request(apiPath, options = {}) {
     const cause = error && typeof error === 'object' ? error.cause : null
     const causeDetails = [cause?.code, cause?.message].filter(Boolean).join(': ')
     const detail = causeDetails ? ' (' + causeDetails + ')' : ''
-    throw new Error(
-      'Gitee ' + options.label + ' transport failed: ' + error.message + detail,
-      {cause: error},
-    )
+    throw new Error('Gitee ' + options.label + ' transport failed: ' + error.message + detail, {
+      cause: error,
+    })
   }
   const raw = await response.text()
   let payload = null
@@ -55,9 +54,7 @@ async function request(apiPath, options = {}) {
 
   if (!response.ok) {
     const message =
-      payload && typeof payload === 'object' && payload.message
-        ? payload.message
-        : 'request failed'
+      payload && typeof payload === 'object' && payload.message ? payload.message : 'request failed'
     const error = new Error('Gitee API ' + response.status + ' ' + options.label + ': ' + message)
     error.status = response.status
     throw error
@@ -73,14 +70,13 @@ function formBody(token, fields) {
   })
 }
 
-async function getRelease(tag) {
-  const apiPath =
-    '/repos/' +
-    repositoryPath() +
-    '/releases/tags/' +
-    encodeURIComponent(tag)
+async function getRelease(tag, token) {
+  const apiPath = '/repos/' + repositoryPath() + '/releases/tags/' + encodeURIComponent(tag)
   try {
-    return await request(apiPath, { label: 'get release by tag' })
+    return await request(apiPath, {
+      query: { access_token: token },
+      label: 'get release by tag',
+    })
   } catch (error) {
     if (error.status === 404) return null
     throw error
@@ -88,7 +84,7 @@ async function getRelease(tag) {
 }
 
 async function upsertRelease({ token, tag, notes, targetCommit, prerelease }) {
-  const existing = await getRelease(tag)
+  const existing = await getRelease(tag, token)
   const fields = {
     tag_name: tag,
     name: tag,
@@ -101,7 +97,7 @@ async function upsertRelease({ token, tag, notes, targetCommit, prerelease }) {
     return request(apiPath, {
       method: 'PATCH',
       body: formBody(token, fields),
-      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       label: 'update release',
     })
   }
@@ -113,20 +109,15 @@ async function upsertRelease({ token, tag, notes, targetCommit, prerelease }) {
       ...fields,
       target_commitish: targetCommit,
     }),
-    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     label: 'create release',
   })
 }
 
-async function listAssets(releaseId) {
-  const apiPath =
-    '/repos/' +
-    repositoryPath() +
-    '/releases/' +
-    releaseId +
-    '/attach_files'
+async function listAssets(releaseId, token) {
+  const apiPath = '/repos/' + repositoryPath() + '/releases/' + releaseId + '/attach_files'
   const assets = await request(apiPath, {
-    query: {per_page: 100},
+    query: { access_token: token, per_page: 100 },
     label: 'list release assets',
   })
   return Array.isArray(assets) ? assets : []
@@ -134,15 +125,10 @@ async function listAssets(releaseId) {
 
 async function deleteAsset(token, releaseId, assetId) {
   const apiPath =
-    '/repos/' +
-    repositoryPath() +
-    '/releases/' +
-    releaseId +
-    '/attach_files/' +
-    assetId
+    '/repos/' + repositoryPath() + '/releases/' + releaseId + '/attach_files/' + assetId
   await request(apiPath, {
     method: 'DELETE',
-    query: {access_token: token},
+    query: { access_token: token },
     label: 'delete release asset',
   })
 }
@@ -161,12 +147,7 @@ async function downloadAsset(asset) {
 }
 
 async function uploadAssetBytes(token, releaseId, name, bytes) {
-  const apiPath =
-    '/repos/' +
-    repositoryPath() +
-    '/releases/' +
-    releaseId +
-    '/attach_files'
+  const apiPath = '/repos/' + repositoryPath() + '/releases/' + releaseId + '/attach_files'
   let raw
   try {
     raw = execFileSync(
@@ -214,7 +195,7 @@ async function uploadAssetBytes(token, releaseId, name, bytes) {
         ' failed: curl exit ' +
         exitCode +
         (apiMessage ? ': ' + apiMessage : ''),
-      {cause: error},
+      { cause: error },
     )
   }
 
@@ -250,13 +231,13 @@ function validateUploadedAsset(uploaded, name, expectedSize) {
 export async function replaceAsset(token, releaseId, filePath) {
   const name = path.basename(filePath)
   const localBytes = await fs.promises.readFile(filePath)
-  const assets = await listAssets(releaseId)
+  const assets = await listAssets(releaseId, token)
   const oldAsset = assets.find((asset) => asset.name === name)
   let oldBytes = null
   if (oldAsset) {
     oldBytes = await downloadAsset(oldAsset)
     if (oldBytes.equals(localBytes)) {
-      return {...oldAsset, size: oldBytes.length}
+      return { ...oldAsset, size: oldBytes.length }
     }
     await deleteAsset(token, releaseId, oldAsset.id)
   }
@@ -277,8 +258,10 @@ export async function replaceAsset(token, releaseId, filePath) {
       validateUploadedAsset(restored, name, oldBytes.length)
     } catch (restoreError) {
       const failure = new Error(
-        'Gitee replacement failed for ' + name +
-          '; restoring the previous asset also failed: ' + restoreError.message,
+        'Gitee replacement failed for ' +
+          name +
+          '; restoring the previous asset also failed: ' +
+          restoreError.message,
       )
       failure.cause = error
       throw failure
@@ -299,7 +282,7 @@ async function main() {
     )
   }
 
-  const {validateReleaseNotes} = await import('./release-assets.mjs')
+  const { validateReleaseNotes } = await import('./release-assets.mjs')
   const notes = validateReleaseNotes(fs.readFileSync(notesPath, 'utf8'), tag)
   const prerelease = process.env.RELEASE_PRERELEASE === 'true'
   const release = await upsertRelease({

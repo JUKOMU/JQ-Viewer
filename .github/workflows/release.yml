@@ -21,8 +21,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
 
 jobs:
   validate-release-input:
@@ -33,7 +33,7 @@ jobs:
           ref: ${{ inputs.tag || github.ref }}
           persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
 
@@ -57,11 +57,15 @@ jobs:
     needs: validate-release-input
     uses: ./.github/workflows/ci-android-instrumentation.yml
 
-  release:
+  build-release:
     needs: [validate-release-input, frontend, android-jvm, instrumentation]
-    runs-on: [self-hosted, Linux, X64, jqviewer-release]
+    runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      release_commit: ${{ steps.release_commit.outputs.sha }}
+      is_prerelease: ${{ steps.release_mode.outputs.is_prerelease }}
+      apk_name: ${{ steps.release_artifact.outputs.apk_name }}
 
     steps:
       - uses: actions/checkout@v4
@@ -105,7 +109,7 @@ jobs:
             echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -116,47 +120,6 @@ jobs:
           java-version: 21
 
       - run: npm ci
-
-      - name: Wait for mirrored Gitee tag
-        env:
-          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
-          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
-          RELEASE_COMMIT: ${{ steps.release_commit.outputs.sha }}
-        run: |
-          set -euo pipefail
-
-          if [ -z "$GITEE_TOKEN" ]; then
-            echo "::error::Missing required release secret: GITEE_TOKEN"
-            exit 1
-          fi
-
-          expected_commit="$RELEASE_COMMIT"
-          if git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
-            expected_commit="$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
-          fi
-
-          for attempt in $(seq 1 30); do
-            tags_json="$(curl --fail --silent --show-error --retry 2 --get \
-              --data-urlencode "access_token=$GITEE_TOKEN" \
-              --data-urlencode "per_page=100" \
-              --data-urlencode "page=1" \
-              "https://gitee.com/api/v5/repos/jukomu/jq-viewer/tags")"
-            gitee_commit="$(printf '%s' "$tags_json" \
-              | jq -r --arg tag "$RELEASE_TAG" \
-                '.[] | select(.name == $tag) | .commit.sha' \
-              | head -n 1)"
-
-            if [ -n "$gitee_commit" ] && [ "$gitee_commit" = "$expected_commit" ]; then
-              echo "Gitee tag verified: $RELEASE_TAG -> $gitee_commit"
-              exit 0
-            fi
-
-            echo "Waiting for Gitee mirror: tag=$RELEASE_TAG attempt=$attempt/30"
-            sleep 10
-          done
-
-          echo "::error::Gitee tag was not mirrored to the expected commit"
-          exit 1
 
       - name: Build frontend
         run: npm run build
@@ -169,10 +132,9 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
         run: |
           missing=0
-          for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD GITEE_TOKEN; do
+          for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
             value="$(printenv "$name" || true)"
             if [ -z "$value" ]; then
               echo "::error::Missing required release signing secret: $name"
@@ -299,45 +261,171 @@ jobs:
           unset certificate_digests
           echo "Release APK signature and signing certificate verified"
 
-      - name: Prepare release metadata
+      - name: Prepare release artifact
+        id: release_artifact
         env:
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="$(printf '%s' "$RELEASE_TAG" | sed 's/^v//')"
+          artifact_version="$(printf '%s' "$version" | tr '.' '_')"
+          apk_name="JQ-Viewer-$artifact_version.apk"
+          sha256sum "$apk_name" > "$apk_name.sha256"
+          echo "apk_name=$apk_name" >> "$GITHUB_OUTPUT"
+
+      - name: Upload release APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-apk
+          path: |
+            ${{ steps.release_artifact.outputs.apk_name }}
+            ${{ steps.release_artifact.outputs.apk_name }}.sha256
+          if-no-files-found: error
+          compression-level: 0
+          overwrite: true
+          retention-days: 7
+
+      - name: Attach APK to draft GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          target_commitish: ${{ steps.release_commit.outputs.sha }}
+          draft: true
+          prerelease: ${{ steps.release_mode.outputs.is_prerelease == 'true' }}
+          body_path: .github/release-notes.md
+          generate_release_notes: false
+          overwrite_files: true
+          files: ${{ steps.release_artifact.outputs.apk_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Cleanup signing secrets and build artifacts
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          rm -f android/app/release.keystore
+          rm -f android/keystore.properties
+          rm -f android/app/build/outputs/apk/release/app-release.apk
+          rm -f JQ-Viewer-*.apk
+          rm -f JQ-Viewer-*.apk.sha256
+
+  publish-release:
+    needs: build-release
+    runs-on: [self-hosted, Linux, X64, jqviewer-release]
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Verify release commit
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+          EXPECTED_RELEASE_COMMIT: ${{ needs.build-release.outputs.release_commit }}
+        run: |
+          set -euo pipefail
+
+          tag_ref="refs/tags/$RELEASE_TAG"
+          if ! git show-ref --verify --quiet "$tag_ref"; then
+            echo "::error::Release tag $RELEASE_TAG is not available in the checked-out repository"
+            exit 1
+          fi
+
+          tag_commit="$(git rev-parse "$tag_ref^{commit}")"
+          checked_out_commit="$(git rev-parse HEAD)"
+          if [ "$tag_commit" != "$EXPECTED_RELEASE_COMMIT" ] || \
+             [ "$checked_out_commit" != "$EXPECTED_RELEASE_COMMIT" ]; then
+            echo "::error::Release commit changed between build and publish"
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Download release APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: release-apk
+          path: ${{ runner.temp }}/release-artifact
+
+      - name: Verify release APK artifact
+        env:
+          APK_NAME: ${{ needs.build-release.outputs.apk_name }}
+        run: |
+          set -euo pipefail
+          artifact_dir="$RUNNER_TEMP/release-artifact"
+          if [ ! -s "$artifact_dir/$APK_NAME" ] || \
+             [ ! -s "$artifact_dir/$APK_NAME.sha256" ]; then
+            echo "::error::Release APK artifact is incomplete"
+            exit 1
+          fi
+          (cd "$artifact_dir" && sha256sum --check "$APK_NAME.sha256")
+
+      - name: Wait for mirrored Gitee tag
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+          RELEASE_COMMIT: ${{ needs.build-release.outputs.release_commit }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$GITEE_TOKEN" ]; then
+            echo "::error::Missing required release secret: GITEE_TOKEN"
+            exit 1
+          fi
+
+          for attempt in $(seq 1 30); do
+            tags_json="$(curl --fail --silent --show-error --retry 2 --get \
+              --data-urlencode "access_token=$GITEE_TOKEN" \
+              --data-urlencode "per_page=100" \
+              --data-urlencode "page=1" \
+              "https://gitee.com/api/v5/repos/jukomu/jq-viewer/tags")"
+            gitee_commit="$(printf '%s' "$tags_json" \
+              | jq -r --arg tag "$RELEASE_TAG" \
+                '.[] | select(.name == $tag) | .commit.sha' \
+              | head -n 1)"
+
+            if [ -n "$gitee_commit" ] && [ "$gitee_commit" = "$RELEASE_COMMIT" ]; then
+              echo "Gitee tag verified: $RELEASE_TAG -> $gitee_commit"
+              exit 0
+            fi
+
+            echo "Waiting for Gitee mirror: tag=$RELEASE_TAG attempt=$attempt/30"
+            sleep 10
+          done
+
+          echo "::error::Gitee tag was not mirrored to the expected commit"
+          exit 1
+
+      - name: Prepare release metadata
+        if: ${{ needs.build-release.outputs.is_prerelease != 'true' }}
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+          APK_NAME: ${{ needs.build-release.outputs.apk_name }}
           EXPECTED_RELEASE_CERT_SHA256: '6667B73DA7322E56626D82CA0EFCF03386E0B5560E14DF48C6025142FF4197EA'
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITEE_REPOSITORY: jukomu/jq-viewer
         run: |
           set -euo pipefail
-          version="$(printf '%s' "$RELEASE_TAG" | sed 's/^v//')"
-          artifact_version="$(printf '%s' "$version" | tr '.' '_')"
-          apk_path="JQ-Viewer-$artifact_version.apk"
+          apk_path="$RUNNER_TEMP/release-artifact/$APK_NAME"
           node scripts/release-assets.mjs "$RELEASE_TAG" "$apk_path" "$RUNNER_TEMP/latest.json"
-
-      - name: Attach APK to GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ inputs.tag || github.ref_name }}
-          target_commitish: ${{ steps.release_commit.outputs.sha }}
-          draft: false
-          prerelease: ${{ steps.release_mode.outputs.is_prerelease == 'true' }}
-          body_path: .github/release-notes.md
-          generate_release_notes: false
-          overwrite_files: true
-          files: JQ-Viewer-*.apk
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish APK and latest.json to Gitee Release
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
           GITEE_REPOSITORY: jukomu/jq-viewer
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
-          RELEASE_PRERELEASE: ${{ steps.release_mode.outputs.is_prerelease }}
-          RELEASE_COMMIT: ${{ steps.release_commit.outputs.sha }}
+          RELEASE_PRERELEASE: ${{ needs.build-release.outputs.is_prerelease }}
+          RELEASE_COMMIT: ${{ needs.build-release.outputs.release_commit }}
+          APK_NAME: ${{ needs.build-release.outputs.apk_name }}
         run: |
           set -euo pipefail
-          version="$(printf '%s' "$RELEASE_TAG" | sed 's/^v//')"
-          artifact_version="$(printf '%s' "$version" | tr '.' '_')"
-          apk_path="JQ-Viewer-$artifact_version.apk"
+          apk_path="$RUNNER_TEMP/release-artifact/$APK_NAME"
           args=(
             "$RELEASE_TAG"
             "$apk_path"
@@ -349,12 +437,12 @@ jobs:
           fi
           node scripts/publish-gitee-release.mjs "${args[@]}"
 
-      - name: Attach latest.json to GitHub Release
-        if: ${{ steps.release_mode.outputs.is_prerelease != 'true' }}
+      - name: Publish stable GitHub Release
+        if: ${{ needs.build-release.outputs.is_prerelease != 'true' }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
-          target_commitish: ${{ steps.release_commit.outputs.sha }}
+          target_commitish: ${{ needs.build-release.outputs.release_commit }}
           draft: false
           prerelease: false
           body_path: .github/release-notes.md
@@ -364,16 +452,27 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Publish prerelease GitHub Release
+        if: ${{ needs.build-release.outputs.is_prerelease == 'true' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          target_commitish: ${{ needs.build-release.outputs.release_commit }}
+          draft: false
+          prerelease: true
+          body_path: .github/release-notes.md
+          generate_release_notes: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Verify public release assets
-        if: ${{ steps.release_mode.outputs.is_prerelease != 'true' }}
+        if: ${{ needs.build-release.outputs.is_prerelease != 'true' }}
         env:
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          APK_NAME: ${{ needs.build-release.outputs.apk_name }}
         run: |
           set -euo pipefail
-          version="$(printf '%s' "$RELEASE_TAG" | sed 's/^v//')"
-          artifact_version="$(printf '%s' "$version" | tr '.' '_')"
-          apk_name="JQ-Viewer-$artifact_version.apk"
           github_base="https://github.com/$GITHUB_REPOSITORY/releases/download/$RELEASE_TAG"
           gitee_base="https://gitee.com/jukomu/jq-viewer/releases/download/$RELEASE_TAG"
 
@@ -385,9 +484,9 @@ jobs:
           gitee_manifest="$temp_dir/gitee-latest.json"
 
           curl --fail --silent --show-error --location --retry 3 \
-            "$github_base/$apk_name" -o "$github_apk"
+            "$github_base/$APK_NAME" -o "$github_apk"
           curl --fail --silent --show-error --location --retry 3 \
-            "$gitee_base/$apk_name" -o "$gitee_apk"
+            "$gitee_base/$APK_NAME" -o "$gitee_apk"
           curl --fail --silent --show-error --location --retry 3 \
             "$github_base/latest.json" -o "$github_manifest"
           curl --fail --silent --show-error --location --retry 3 \
@@ -418,26 +517,23 @@ jobs:
           actual_size="$(stat -c '%s' "$github_apk")"
 
           if [ "$manifest_tag" != "$RELEASE_TAG" ] || \
-             [ "$manifest_apk_name" != "$apk_name" ] || \
+             [ "$manifest_apk_name" != "$APK_NAME" ] || \
              [ "$manifest_size" != "$actual_size" ] || \
              [ "$manifest_sha" != "$github_sha" ]; then
             echo "::error::latest.json does not match the public APK"
             exit 1
           fi
-          if [ "$manifest_github_url" != "$github_base/$apk_name" ] || \
-             [ "$manifest_gitee_url" != "$gitee_base/$apk_name" ]; then
+          if [ "$manifest_github_url" != "$github_base/$APK_NAME" ] || \
+             [ "$manifest_gitee_url" != "$gitee_base/$APK_NAME" ]; then
             echo "::error::latest.json source URLs do not match release assets"
             exit 1
           fi
 
           echo "Public release assets verified: identical APK and latest.json"
 
-      - name: Cleanup release secrets and artifacts
+      - name: Cleanup downloaded release artifacts
         if: ${{ always() }}
         run: |
           set -euo pipefail
-          rm -f android/app/release.keystore
-          rm -f android/keystore.properties
-          rm -f android/app/build/outputs/apk/release/app-release.apk
-          rm -f JQ-Viewer-*.apk
+          rm -rf "$RUNNER_TEMP/release-artifact"
           rm -f "$RUNNER_TEMP/latest.json"

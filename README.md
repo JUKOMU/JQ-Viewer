@@ -57,9 +57,9 @@ JMComic 第三方 Android 漫画阅读器。它把搜索、收藏、下载、本
 | --- | --- |------------------------------------------------------------------------------------------------------------------------|
 | <img width="260" alt="PDF 导出" src="https://github.com/user-attachments/assets/b61c714b-4a2a-4ac5-a215-6a03a3bdaea8" /> | <img width="260" alt="多章节导出" src="https://github.com/user-attachments/assets/731de6a5-be0b-424e-b6cc-a4fc6f8fe044" /> | <img width="260" alt="PDF 导入匹配" src="https://github.com/user-attachments/assets/475ad932-c96c-4a24-bf4b-5d64faa6e5f3" /> |
 
-| PDF 管理  |
-| ----------- |
-| <img width="270" alt="PDF 管理" src="https://github.com/user-attachments/assets/6a54aa72-4d64-46ed-b48d-b4d5e716b328" /> <img width="270" alt="PDF 管理" src="https://github.com/user-attachments/assets/4e4f9154-c5f6-4d24-939d-dbf22937ef50" />  <img width="270" alt="PDF 管理" src="https://github.com/user-attachments/assets/76429244-172f-43fa-8946-6f1b3543ec22" /> |
+| PDF 管理 |  |  |
+| --- | --- | --- |
+| <img width="270" alt="PDF 管理" src="https://github.com/user-attachments/assets/6a54aa72-4d64-46ed-b48d-b4d5e716b328" /> | <img width="270" alt="PDF 管理" src="https://github.com/user-attachments/assets/4e4f9154-c5f6-4d24-939d-dbf22937ef50" /> | <img width="270" alt="PDF 管理" src="https://github.com/user-attachments/assets/76429244-172f-43fa-8946-6f1b3543ec22" /> |
 
 ### 设置
 

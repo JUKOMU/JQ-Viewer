@@ -1,11 +1,12 @@
+import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { Agent } from 'undici'
 
 const apiBase = (process.env.GITEE_API_BASE || 'https://gitee.com/api/v5').replace(/\/$/, '')
 const repository = process.env.GITEE_REPOSITORY || 'jukomu/jq-viewer'
-const assetUploadTimeoutMs = 10 * 60 * 1000
+const assetUploadMaxTimeSeconds = 30 * 60
+const assetUploadLowSpeedTimeSeconds = 3 * 60
 
 function repositoryPath() {
   const parts = repository.split('/')
@@ -32,7 +33,6 @@ async function request(apiPath, options = {}) {
       method: options.method || 'GET',
       headers: options.headers,
       body: options.body,
-      dispatcher: options.dispatcher,
     })
   } catch (error) {
     const cause = error && typeof error === 'object' ? error.cause : null
@@ -167,22 +167,63 @@ async function uploadAssetBytes(token, releaseId, name, bytes) {
     '/releases/' +
     releaseId +
     '/attach_files'
-  const form = new FormData()
-  form.set('access_token', token)
-  form.set('file', new Blob([bytes]), name)
-  const dispatcher = new Agent({
-    headersTimeout: assetUploadTimeoutMs,
-    bodyTimeout: assetUploadTimeoutMs,
-  })
+  let raw
   try {
-    return await request(apiPath, {
-      method: 'POST',
-      body: form,
-      dispatcher,
-      label: 'upload release asset ' + name,
+    raw = execFileSync(
+      'curl',
+      [
+        '--fail-with-body',
+        '--show-error',
+        '--progress-bar',
+        '--connect-timeout',
+        '30',
+        '--max-time',
+        String(assetUploadMaxTimeSeconds),
+        '--speed-limit',
+        '1024',
+        '--speed-time',
+        String(assetUploadLowSpeedTimeSeconds),
+        '--form-string',
+        'access_token=' + token,
+        '--form',
+        'file=@-;filename=' + name,
+        apiUrl(apiPath).toString(),
+      ],
+      {
+        input: bytes,
+        encoding: 'utf8',
+        maxBuffer: 1024 * 1024,
+        stdio: ['pipe', 'pipe', 'inherit'],
+      },
+    )
+  } catch (error) {
+    const exitCode = Number.isInteger(error?.status) ? error.status : 'unknown'
+    const responseBody = error?.stdout ? String(error.stdout).trim() : ''
+    let apiMessage = ''
+    if (responseBody) {
+      try {
+        const payload = JSON.parse(responseBody)
+        apiMessage = typeof payload?.message === 'string' ? payload.message : ''
+      } catch {
+        // curl has already written its transport diagnostics to stderr.
+      }
+    }
+    throw new Error(
+      'Gitee upload release asset ' +
+        name +
+        ' failed: curl exit ' +
+        exitCode +
+        (apiMessage ? ': ' + apiMessage : ''),
+      {cause: error},
+    )
+  }
+
+  try {
+    return JSON.parse(raw)
+  } catch (error) {
+    throw new Error('Gitee upload release asset ' + name + ' returned invalid JSON', {
+      cause: error,
     })
-  } finally {
-    await dispatcher.close()
   }
 }
 

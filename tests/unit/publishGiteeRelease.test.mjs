@@ -5,6 +5,14 @@ import os from 'node:os'
 import path from 'node:path'
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 
+const {execFileSyncMock} = vi.hoisted(() => ({
+  execFileSyncMock: vi.fn(),
+}))
+
+vi.mock('node:child_process', () => ({
+  execFileSync: execFileSyncMock,
+}))
+
 import {replaceAsset} from '../../scripts/publish-gitee-release.mjs'
 
 let tempDirectory
@@ -17,6 +25,7 @@ function jsonResponse(payload, status = 200) {
 }
 
 beforeEach(async () => {
+  execFileSyncMock.mockReset()
   tempDirectory = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'jq-gitee-release-'))
 })
 
@@ -26,23 +35,19 @@ afterEach(async () => {
 })
 
 describe('Gitee release asset replacement', () => {
-  it('uses a dedicated dispatcher for asset uploads', async () => {
+  it('uploads asset bytes through curl with bounded timeouts', async () => {
     const filePath = path.join(tempDirectory, 'latest.json')
     const content = Buffer.from('{"version":"1.4.0"}')
     await fs.promises.writeFile(filePath, content)
-    let uploadOptions
-    const fetchMock = vi.fn(async (input, options = {}) => {
-      if (options.method === 'POST') {
-        uploadOptions = options
-        return jsonResponse({
-          id: 11,
-          name: 'latest.json',
-          size: content.length,
-          browser_download_url: 'https://download.example/latest.json',
-        })
-      }
-      return jsonResponse([])
-    })
+    execFileSyncMock.mockReturnValue(
+      JSON.stringify({
+        id: 11,
+        name: 'latest.json',
+        size: content.length,
+        browser_download_url: 'https://download.example/latest.json',
+      }),
+    )
+    const fetchMock = vi.fn(async () => jsonResponse([]))
     vi.stubGlobal('fetch', fetchMock)
 
     await expect(replaceAsset('token', 1, filePath)).resolves.toMatchObject({
@@ -50,8 +55,25 @@ describe('Gitee release asset replacement', () => {
       size: content.length,
     })
 
-    expect(uploadOptions?.dispatcher).toBeDefined()
-    expect(typeof uploadOptions?.dispatcher?.dispatch).toBe('function')
+    expect(execFileSyncMock).toHaveBeenCalledOnce()
+    const [command, args, options] = execFileSyncMock.mock.calls[0]
+    expect(command).toBe('curl')
+    expect(args).toEqual(
+      expect.arrayContaining([
+        '--connect-timeout',
+        '30',
+        '--max-time',
+        '1800',
+        '--speed-limit',
+        '1024',
+        '--speed-time',
+        '180',
+        '--progress-bar',
+        'file=@-;filename=latest.json',
+      ]),
+    )
+    expect(options.input).toEqual(content)
+    expect(options.stdio).toEqual(['pipe', 'pipe', 'inherit'])
   })
 
   it('keeps an existing byte-identical asset without deleting it', async () => {
@@ -77,6 +99,7 @@ describe('Gitee release asset replacement', () => {
 
     expect(asset).toMatchObject({name: 'latest.json', size: content.length})
     expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(execFileSyncMock).not.toHaveBeenCalled()
     expect(fetchMock.mock.calls.every(([, options]) => !options || options.method !== 'DELETE')).toBe(
       true,
     )
@@ -87,8 +110,21 @@ describe('Gitee release asset replacement', () => {
     const previous = Buffer.from('{"version":"1.3.0"}')
     const replacement = Buffer.from('{"version":"1.4.0"}')
     await fs.promises.writeFile(filePath, replacement)
-    let uploadCount = 0
-    let restoredBody
+    execFileSyncMock
+      .mockImplementationOnce(() => {
+        throw Object.assign(new Error('curl failed'), {
+          status: 22,
+          stdout: Buffer.from('{"message":"upload failed"}'),
+        })
+      })
+      .mockReturnValueOnce(
+        JSON.stringify({
+          id: 11,
+          name: 'latest.json',
+          size: previous.length,
+          browser_download_url: 'https://download.example/restored-latest.json',
+        }),
+      )
     const fetchMock = vi.fn(async (input, options = {}) => {
       const url = String(input)
       if (url === 'https://download.example/latest.json') {
@@ -96,19 +132,6 @@ describe('Gitee release asset replacement', () => {
       }
       if (options.method === 'DELETE') {
         return new Response(null, {status: 204})
-      }
-      if (options.method === 'POST') {
-        uploadCount += 1
-        if (uploadCount === 1) {
-          return jsonResponse({message: 'upload failed'}, 500)
-        }
-        restoredBody = Buffer.from(await options.body.get('file').arrayBuffer())
-        return jsonResponse({
-          id: 11,
-          name: 'latest.json',
-          size: previous.length,
-          browser_download_url: 'https://download.example/restored-latest.json',
-        })
       }
       return jsonResponse([
         {
@@ -122,28 +145,27 @@ describe('Gitee release asset replacement', () => {
 
     await expect(replaceAsset('token', 1, filePath)).rejects.toThrow('upload failed')
 
-    expect(uploadCount).toBe(2)
-    expect(restoredBody).toEqual(previous)
+    expect(execFileSyncMock).toHaveBeenCalledTimes(2)
+    expect(execFileSyncMock.mock.calls[0][2].input).toEqual(replacement)
+    expect(execFileSyncMock.mock.calls[1][2].input).toEqual(previous)
   })
 
-  it('reports the upload operation and transport cause', async () => {
+  it('reports curl failures without exposing the token', async () => {
     const filePath = path.join(tempDirectory, 'latest.json')
     await fs.promises.writeFile(filePath, Buffer.from('{"version":"1.4.1"}'))
-    const transportCause = Object.assign(new Error('Headers Timeout Error'), {
-      code: 'UND_ERR_HEADERS_TIMEOUT',
+    execFileSyncMock.mockImplementation(() => {
+      throw Object.assign(new Error('curl failed'), {
+        status: 28,
+        stdout: Buffer.from(''),
+      })
     })
-    const fetchError = new TypeError('fetch failed', {cause: transportCause})
-    const fetchMock = vi.fn(async (input, options = {}) => {
-      if (options.method === 'POST') {
-        throw fetchError
-      }
-      return jsonResponse([])
-    })
+    const fetchMock = vi.fn(async () => jsonResponse([]))
     vi.stubGlobal('fetch', fetchMock)
 
-    await expect(replaceAsset('token', 1, filePath)).rejects.toThrow(
-      'Gitee upload release asset latest.json transport failed: fetch failed ' +
-        '(UND_ERR_HEADERS_TIMEOUT: Headers Timeout Error)',
-    )
+    const error = await replaceAsset('dummy-secret-token', 1, filePath).catch((reason) => reason)
+
+    expect(error).toBeInstanceOf(Error)
+    expect(error.message).toBe('Gitee upload release asset latest.json failed: curl exit 28')
+    expect(error.message).not.toContain('dummy-secret-token')
   })
 })

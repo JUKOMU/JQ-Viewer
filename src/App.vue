@@ -16,7 +16,7 @@
 <script setup lang="ts">
 defineOptions({ name: 'App' })
 
-import { alertController, IonApp } from '@ionic/vue'
+import { IonApp } from '@ionic/vue'
 import type { PluginListenerHandle } from '@capacitor/core'
 import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -27,6 +27,7 @@ import { useAuth } from '@/composables/useAuth'
 import { initNetworkProbeStore } from '@/composables/networkProbeStore'
 import { JmcomicService, showToast } from '@/services/JmcomicService'
 import { UpdateService } from '@/services/UpdateService'
+import { presentUpdatePrompt } from '@/services/UpdatePromptService'
 import type { UpdateManifest } from '@/services/JmcomicTypes'
 
 const { isMenuNavigation, leftMenuOpen, rightMenuOpen } = useSideMenuState()
@@ -225,23 +226,13 @@ const navigateToLaunchRoute = async (target?: string, replace = false) => {
 }
 
 async function showStartupUpdatePrompt(update: UpdateManifest) {
-  const alert = await alertController.create({
-    header: `发现新版本 ${update.versionName}`,
-    message: update.releaseNotes || '有新的正式版可用。',
-    cssClass: 'update-alert',
-    buttons: [
-      { text: '稍后', role: 'cancel' },
-      {
-        text: '查看更新',
-        role: 'confirm',
-        handler: () => {
-          void router.push('/about')
-        },
-      },
-    ],
+  const confirmed = await presentUpdatePrompt(update, {
+    cancelText: '稍后',
+    confirmText: '查看更新',
   })
-  await alert.present()
-  await alert.onDidDismiss()
+  if (confirmed) {
+    await router.push('/about')
+  }
 }
 
 onMounted(async () => {

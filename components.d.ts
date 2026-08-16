@@ -42,6 +42,7 @@ declare module 'vue' {
     SearchHeaderBar: typeof import('./src/components/search/SearchHeaderBar.vue')['default']
     SearchHistoryDropdown: typeof import('./src/components/history/SearchHistoryDropdown.vue')['default']
     SearchResultContainer: typeof import('./src/components/search/SearchResultContainer.vue')['default']
+    UpdatePrompt: typeof import('./src/components/update/UpdatePrompt.vue')['default']
     VerticalScrollView: typeof import('./src/components/reader/VerticalScrollView.vue')['default']
   }
 }

@@ -96,6 +96,120 @@ ion-alert .alert-button.alert-button-role-cancel {
   color: #8c6b5a;
 }
 
+/* 应用更新说明弹窗 — 单一表面，避免 Ionic Alert 的边框叠加 */
+ion-modal.update-prompt-modal {
+  --width: min(520px, calc(100% - 32px));
+  --height: min(720px, calc(100% - 48px));
+  --border-radius: 16px;
+  --background: #fffbf8;
+  --box-shadow: 0 18px 54px rgb(76 42 24 / 0.24);
+  --backdrop-opacity: 0.48;
+}
+
+ion-modal.update-prompt-modal::part(content) {
+  border: 0;
+  outline: 0;
+  overflow: hidden;
+}
+
+ion-modal.update-prompt-modal:focus,
+ion-modal.update-prompt-modal:focus-visible {
+  outline: 0;
+}
+
+.release-markdown {
+  color: #6b4e3e;
+  font-size: 14px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.release-markdown > :first-child {
+  margin-top: 0;
+}
+
+.release-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.release-markdown h1,
+.release-markdown h2,
+.release-markdown h3,
+.release-markdown h4 {
+  margin: 20px 0 8px;
+  color: #4c2a18;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.release-markdown h1 {
+  font-size: 21px;
+}
+
+.release-markdown h2 {
+  font-size: 18px;
+}
+
+.release-markdown h3,
+.release-markdown h4 {
+  font-size: 16px;
+}
+
+.release-markdown p,
+.release-markdown ul,
+.release-markdown ol,
+.release-markdown blockquote,
+.release-markdown pre {
+  margin: 0 0 12px;
+}
+
+.release-markdown ul,
+.release-markdown ol {
+  padding-inline-start: 22px;
+}
+
+.release-markdown li + li {
+  margin-top: 5px;
+}
+
+.release-markdown strong {
+  color: #4c2a18;
+  font-weight: 650;
+}
+
+.release-markdown code {
+  padding: 2px 5px;
+  border-radius: 5px;
+  background: #f3e9e2;
+  color: #6a422a;
+  font-size: 0.92em;
+}
+
+.release-markdown pre {
+  padding: 12px 14px;
+  overflow-x: auto;
+  border-radius: 8px;
+  background: #f3e9e2;
+}
+
+.release-markdown pre code {
+  padding: 0;
+  background: transparent;
+}
+
+.release-markdown blockquote {
+  padding-inline-start: 12px;
+  border-inline-start: 3px solid #e8b083;
+  color: #8c6b5a;
+}
+
+.release-markdown a {
+  color: #bd652a;
+  text-decoration: underline;
+  text-decoration-color: rgb(189 101 42 / 0.4);
+  text-underline-offset: 2px;
+}
+
 /* Toast 提示 — 匹配上下文菜单风格 */
 ion-toast.warm-toast {
   --background: #fffbf8;

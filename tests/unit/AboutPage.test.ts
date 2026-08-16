@@ -78,6 +78,7 @@ beforeEach(async () => {
     githubBytes: 0,
     giteeBytes: 0,
     totalBytes: 0,
+    speedBytesPerSecond: 0,
     error: '',
   }
   mocks.progressHandler = undefined
@@ -217,6 +218,7 @@ describe('AboutPage 更新状态', () => {
       githubBytes: 1024,
       giteeBytes: 512,
       totalBytes: 20 * 1024 * 1024,
+      speedBytesPerSecond: 1024,
       error: '',
     })
     await flushPromises()
@@ -227,6 +229,88 @@ describe('AboutPage 更新状态', () => {
 
     expect(second.find('.update-card').exists()).toBe(true)
     expect(second.get('.update-card').text()).toContain('下载中')
+    expect(second.get('.update-progress').text()).toContain('MiB/s')
+    expect(second.get('.update-progress').text()).not.toContain('·')
+    expect(second.get('.update-progress').text()).not.toContain('GitHub')
+    expect(second.get('.update-progress').text()).not.toContain('Gitee')
+    expect(second.get('button.info-row-action').text()).toContain('下载中')
+    expect(second.get('button.info-row-action').attributes('disabled')).toBeDefined()
+    expect(second.get('.update-check-card').attributes('style')).toContain('--update-progress')
     second.unmount()
+  })
+
+  test('下载展示值和百分比不会超过总大小', async () => {
+    UpdateService.manifest.value = {
+      tag: 'v1.4.0',
+      versionName: '1.4.0',
+      versionCode: 16,
+      packageName: 'io.github.jukomu',
+      apkName: 'JQ-Viewer-1_4_0.apk',
+      sizeBytes: 20 * 1024 * 1024,
+      sha256: 'a'.repeat(64),
+      signingCertificateSha256: 'b'.repeat(64),
+      releaseNotes: '',
+      sources: {
+        github: 'https://github.com/example.apk',
+        gitee: 'https://gitee.com/example.apk',
+      },
+    }
+    const wrapper = mount(AboutPage)
+    await flushPromises()
+    mocks.progressHandler?.({
+      revision: 3,
+      phase: 'selected',
+      source: 'GitHub',
+      githubBytes: 30 * 1024 * 1024,
+      giteeBytes: 12 * 1024 * 1024,
+      totalBytes: 20 * 1024 * 1024,
+      speedBytesPerSecond: 1024,
+      error: '',
+    })
+    await flushPromises()
+
+    const numbers = wrapper.findAll('.rolling-number')
+    expect(numbers[0].attributes('aria-label')).toBe('100')
+    expect(numbers[1].attributes('aria-label')).toBe('20.0')
+    expect(numbers[2].attributes('aria-label')).toBe('20.0')
+    expect(wrapper.get('.update-status-value').text()).toContain('100%')
+    expect(wrapper.get('.update-check-card').attributes('style')).toContain('100%')
+    wrapper.unmount()
+  })
+
+  test('下载完成后保留最终进度，覆盖亚秒级下载', async () => {
+    UpdateService.manifest.value = {
+      tag: 'v1.4.0',
+      versionName: '1.4.0',
+      versionCode: 16,
+      packageName: 'io.github.jukomu',
+      apkName: 'JQ-Viewer-1_4_0.apk',
+      sizeBytes: 20 * 1024 * 1024,
+      sha256: 'a'.repeat(64),
+      signingCertificateSha256: 'b'.repeat(64),
+      releaseNotes: '',
+      sources: {
+        github: 'https://github.com/example.apk',
+        gitee: 'https://gitee.com/example.apk',
+      },
+    }
+    const wrapper = mount(AboutPage)
+    await flushPromises()
+    mocks.progressHandler?.({
+      revision: 4,
+      phase: 'ready_to_install',
+      source: 'GitHub',
+      githubBytes: 20 * 1024 * 1024,
+      giteeBytes: 20 * 1024 * 1024,
+      totalBytes: 20 * 1024 * 1024,
+      speedBytesPerSecond: 0,
+      error: '',
+    })
+    await flushPromises()
+
+    expect(wrapper.get('.update-status-value').text()).toContain('100%')
+    expect(wrapper.get('.update-progress').text()).toContain('20.0')
+    expect(wrapper.get('.update-card').text()).toContain('准备安装')
+    wrapper.unmount()
   })
 })

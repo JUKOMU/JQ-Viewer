@@ -19,6 +19,8 @@ import io.github.jukomu.MainActivity;
 import io.github.jukomu.R;
 import io.github.jukomu.platform.notification.NotificationIds;
 
+import java.util.Locale;
+
 /**
  * 应用内更新独立的前台通知服务。
  */
@@ -35,6 +37,7 @@ public final class UpdateForegroundService extends Service {
     private static final String EXTRA_GITHUB_BYTES = "github_bytes";
     private static final String EXTRA_GITEE_BYTES = "gitee_bytes";
     private static final String EXTRA_TOTAL_BYTES = "total_bytes";
+    private static final String EXTRA_SPEED_BYTES_PER_SECOND = "speed_bytes_per_second";
     private static final String EXTRA_ERROR = "error";
     private static final int ICON = R.mipmap.ic_launcher;
 
@@ -52,6 +55,7 @@ public final class UpdateForegroundService extends Service {
         intent.putExtra(EXTRA_GITHUB_BYTES, snapshot.githubBytes);
         intent.putExtra(EXTRA_GITEE_BYTES, snapshot.giteeBytes);
         intent.putExtra(EXTRA_TOTAL_BYTES, snapshot.totalBytes);
+        intent.putExtra(EXTRA_SPEED_BYTES_PER_SECOND, snapshot.speedBytesPerSecond);
         intent.putExtra(EXTRA_ERROR, snapshot.error);
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -143,8 +147,11 @@ public final class UpdateForegroundService extends Service {
         long githubBytes = intent == null ? 0L : intent.getLongExtra(EXTRA_GITHUB_BYTES, 0L);
         long giteeBytes = intent == null ? 0L : intent.getLongExtra(EXTRA_GITEE_BYTES, 0L);
         long totalBytes = intent == null ? 0L : intent.getLongExtra(EXTRA_TOTAL_BYTES, 0L);
+        long speedBytesPerSecond = intent == null
+            ? 0L : intent.getLongExtra(EXTRA_SPEED_BYTES_PER_SECOND, 0L);
         String error = intent == null ? "" : intent.getStringExtra(EXTRA_ERROR);
-        String content = buildContent(phase, source, githubBytes, giteeBytes, error);
+        String content = buildContent(phase, source, githubBytes, giteeBytes, totalBytes,
+            speedBytesPerSecond, error);
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(ICON)
             .setContentTitle("JQ Viewer 应用更新")
@@ -162,36 +169,65 @@ public final class UpdateForegroundService extends Service {
             builder.setProgress(0, 0, true);
             return builder.build();
         }
-        long displayedBytes = "GitHub".equals(source) ? githubBytes
-            : "Gitee".equals(source) ? giteeBytes : Math.max(githubBytes, giteeBytes);
-        if (totalBytes > 0L) {
-            int progress = (int) Math.min(100L, displayedBytes * 100L / totalBytes);
-            builder.setProgress(100, Math.max(0, progress), false);
-        } else {
-            builder.setProgress(0, 0, true);
+        if ("racing".equals(phase) || "selected".equals(phase)) {
+            long displayedBytes = displayedBytes(source, githubBytes, giteeBytes, totalBytes);
+            if (totalBytes > 0L) {
+                builder.setProgress(100, progressPercent(displayedBytes, totalBytes), false);
+            } else {
+                builder.setProgress(0, 0, true);
+            }
         }
         return builder.build();
     }
 
-    private String buildContent(String phase, String source, long githubBytes, long giteeBytes,
-                                String error) {
+    static String buildContent(String phase, String source, long githubBytes, long giteeBytes,
+                               long totalBytes, long speedBytesPerSecond, String error) {
         if ("failed".equals(phase) && error != null && !error.isEmpty()) {
             return "更新失败 · " + error;
         }
-        String safePhase = phase == null || phase.isEmpty() ? "更新中" : phase;
-        if ("racing".equals(source)) {
-            return safePhase + " · GitHub " + formatMiB(githubBytes)
-                + " · Gitee " + formatMiB(giteeBytes);
+        if ("racing".equals(phase) || "selected".equals(phase)) {
+            long downloaded = displayedBytes(source, githubBytes, giteeBytes, totalBytes);
+            return "下载中 " + progressPercent(downloaded, totalBytes) + "%  "
+                + formatMiBPair(downloaded, totalBytes) + "  "
+                + formatMiB(speedBytesPerSecond) + "/s";
         }
-        if (!source.isEmpty()) {
-            return safePhase + " · " + source + " " + formatMiB(
-                "GitHub".equals(source) ? githubBytes : giteeBytes);
+        if ("verifying".equals(phase)) {
+            return "校验中";
         }
-        return safePhase;
+        if ("ready_to_install".equals(phase)) {
+            return "准备安装";
+        }
+        if ("failed".equals(phase)) {
+            return "更新失败";
+        }
+        return "更新中";
     }
 
-    private String formatMiB(long bytes) {
-        return (bytes / (1024L * 1024L)) + " MiB";
+    private static String formatMiB(long bytes) {
+        return String.format(Locale.US, "%.1f MiB", Math.max(0L, bytes)
+            / (1024.0 * 1024.0));
+    }
+
+    private static String formatMiBPair(long downloadedBytes, long totalBytes) {
+        return String.format(Locale.US, "%.1f / %.1f MiB",
+            Math.max(0L, downloadedBytes) / (1024.0 * 1024.0),
+            Math.max(0L, totalBytes) / (1024.0 * 1024.0));
+    }
+
+    private static int progressPercent(long downloadedBytes, long totalBytes) {
+        if (totalBytes <= 0L) {
+            return 0;
+        }
+        return (int) Math.max(0L, Math.min(100L,
+            Math.round(downloadedBytes * 100.0 / totalBytes)));
+    }
+
+    private static long displayedBytes(String source, long githubBytes, long giteeBytes,
+                                       long totalBytes) {
+        long selected = "GitHub".equals(source) ? githubBytes
+            : "Gitee".equals(source) ? giteeBytes : Math.max(githubBytes, giteeBytes);
+        return totalBytes > 0L ? Math.min(Math.max(0L, selected), totalBytes)
+            : Math.max(0L, selected);
     }
 
     private PendingIntent createLaunchIntent() {
@@ -221,16 +257,19 @@ public final class UpdateForegroundService extends Service {
         public final long githubBytes;
         public final long giteeBytes;
         public final long totalBytes;
+        public final long speedBytesPerSecond;
         public final String error;
 
         public Snapshot(int revision, String phase, String source, long githubBytes,
-                        long giteeBytes, long totalBytes, String error) {
+                        long giteeBytes, long totalBytes, long speedBytesPerSecond,
+                        String error) {
             this.revision = revision;
             this.phase = phase == null ? "" : phase;
             this.source = source == null ? "" : source;
             this.githubBytes = Math.max(0L, githubBytes);
             this.giteeBytes = Math.max(0L, giteeBytes);
             this.totalBytes = Math.max(0L, totalBytes);
+            this.speedBytesPerSecond = Math.max(0L, speedBytesPerSecond);
             this.error = error == null ? "" : error;
         }
     }

@@ -1,4 +1,4 @@
-import {beforeEach, describe, expect, test, vi} from 'vitest'
+import { beforeEach, describe, expect, test, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   alertCreate: vi.fn(),
@@ -15,7 +15,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@ionic/vue', () => ({
-  alertController: {create: mocks.alertCreate},
+  alertController: { create: mocks.alertCreate },
 }))
 
 vi.mock('@/services/JmcomicService', () => ({
@@ -40,7 +40,7 @@ async function loadUpdateService() {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  mocks.addUpdateProgressListener.mockResolvedValue({remove: vi.fn()})
+  mocks.addUpdateProgressListener.mockResolvedValue({ remove: vi.fn() })
   mocks.getUpdateState.mockResolvedValue({
     revision: 0,
     phase: 'idle',
@@ -48,25 +48,33 @@ beforeEach(() => {
     githubBytes: 0,
     giteeBytes: 0,
     totalBytes: 0,
+    speedBytesPerSecond: 0,
     error: '',
   })
-  mocks.checkNotificationPermission.mockResolvedValue({granted: false})
-  mocks.requestNotificationPermission.mockResolvedValue({granted: true})
-  mocks.openNotificationSettings.mockResolvedValue({opened: true})
-  mocks.startUpdate.mockResolvedValue({started: true})
+  mocks.checkNotificationPermission.mockResolvedValue({ granted: false })
+  mocks.requestNotificationPermission.mockResolvedValue({ granted: true })
+  mocks.openNotificationSettings.mockResolvedValue({ opened: true })
+  mocks.startUpdate.mockResolvedValue({ started: true })
   mocks.showToast.mockResolvedValue(undefined)
 })
 
 describe('UpdateService 通知权限', () => {
+  test('MiB 始终保留一位小数', async () => {
+    const service = await loadUpdateService()
+
+    expect(service.formatMiB(0)).toBe('0.0 MiB')
+    expect(service.formatMiB(10 * 1024 * 1024)).toBe('10.0 MiB')
+  })
+
   test('用户取消后再次点击仍可重新请求权限', async () => {
     mocks.alertCreate
       .mockResolvedValueOnce({
         present: vi.fn(),
-        onDidDismiss: vi.fn().mockResolvedValue({role: 'cancel'}),
+        onDidDismiss: vi.fn().mockResolvedValue({ role: 'cancel' }),
       })
       .mockResolvedValueOnce({
         present: vi.fn(),
-        onDidDismiss: vi.fn().mockResolvedValue({role: 'confirm'}),
+        onDidDismiss: vi.fn().mockResolvedValue({ role: 'confirm' }),
       })
     const service = await loadUpdateService()
 
@@ -74,7 +82,7 @@ describe('UpdateService 通知权限', () => {
       started: false,
       blocked: 'notification_permission',
     })
-    await expect(service.start()).resolves.toEqual({started: true})
+    await expect(service.start()).resolves.toEqual({ started: true })
 
     expect(mocks.alertCreate).toHaveBeenCalledTimes(2)
     expect(mocks.requestNotificationPermission).toHaveBeenCalledTimes(1)
@@ -84,7 +92,7 @@ describe('UpdateService 通知权限', () => {
   test('打开通知设置后不开始下载', async () => {
     mocks.alertCreate.mockResolvedValue({
       present: vi.fn(),
-      onDidDismiss: vi.fn().mockResolvedValue({role: 'settings'}),
+      onDidDismiss: vi.fn().mockResolvedValue({ role: 'settings' }),
     })
     const service = await loadUpdateService()
 
@@ -101,10 +109,10 @@ describe('UpdateService 通知权限', () => {
 
 describe('UpdateService 安装权限', () => {
   test('弹窗关闭后再请求安装来源权限', async () => {
-    const onDidDismiss = vi.fn().mockResolvedValue({role: 'confirm'})
-    mocks.alertCreate.mockResolvedValue({present: vi.fn(), onDidDismiss})
-    mocks.installUpdate.mockResolvedValue({started: false, permissionRequired: true})
-    mocks.requestInstallPermission.mockResolvedValue({requested: true})
+    const onDidDismiss = vi.fn().mockResolvedValue({ role: 'confirm' })
+    mocks.alertCreate.mockResolvedValue({ present: vi.fn(), onDidDismiss })
+    mocks.installUpdate.mockResolvedValue({ started: false, permissionRequired: true })
+    mocks.requestInstallPermission.mockResolvedValue({ requested: true })
     const service = await loadUpdateService()
 
     await service.install()

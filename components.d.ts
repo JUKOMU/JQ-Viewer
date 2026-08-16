@@ -37,6 +37,7 @@ declare module 'vue' {
     ReaderBottomToolbar: typeof import('./src/components/reader/ReaderBottomToolbar.vue')['default']
     ReaderSettingsPanel: typeof import('./src/components/reader/ReaderSettingsPanel.vue')['default']
     ReaderTopToolbar: typeof import('./src/components/reader/ReaderTopToolbar.vue')['default']
+    RollingNumber: typeof import('./src/components/update/RollingNumber.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     SearchHeaderBar: typeof import('./src/components/search/SearchHeaderBar.vue')['default']

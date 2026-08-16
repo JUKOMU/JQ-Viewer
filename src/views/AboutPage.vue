@@ -27,16 +27,20 @@
         </div>
 
         <!-- 检查更新 -->
-        <div class="info-card">
+        <div
+          class="info-card update-check-card"
+          :style="updateCheckCardStyle"
+        >
           <button
             class="info-row info-row-action"
             type="button"
-            :disabled="updateChecking"
+            :disabled="updateCheckDisabled"
             @click="checkUpdate"
           >
             <span class="info-label">检查更新</span>
             <span class="info-action-value">
-              <span v-if="updateChecking" class="info-value">检查中...</span>
+              <span v-if="isDownloading" class="info-value update">下载中</span>
+              <span v-else-if="updateChecking" class="info-value">检查中...</span>
               <span v-else-if="updateError" class="info-value error">检查失败</span>
               <span v-else-if="hasUpdate" class="info-value update"
                 >发现新版本 {{ latestVersion }}</span
@@ -44,7 +48,7 @@
               <span v-else-if="updateChecked" class="info-value">已是最新</span>
               <span v-else class="info-value">点击检查</span>
               <IonSpinner
-                v-if="updateChecking"
+                v-if="updateChecking || isDownloading"
                 name="circular"
                 class="entry-spinner"
                 aria-hidden="true"
@@ -70,10 +74,26 @@
           </div>
           <div class="info-row update-progress-row">
             <span class="info-label">更新状态</span>
-            <span class="info-value">{{ updateStatusLabel }}</span>
+            <span class="info-value update-status-value">
+              <span>{{ updateStatusLabel }}</span>
+              <template v-if="downloadProgress">
+                <span aria-hidden="true"> </span>
+                <RollingNumber :value="downloadProgress.percent" :decimals="0" />
+                <span aria-hidden="true">%</span>
+              </template>
+            </span>
           </div>
-          <div v-if="downloadProgressLabel" class="update-progress">
-            {{ downloadProgressLabel }}
+          <div v-if="downloadProgress" class="update-progress" aria-live="polite">
+            <span class="update-progress-size">
+              <RollingNumber :value="downloadProgress.bytesMiB" />
+              <span aria-hidden="true"> / </span>
+              <RollingNumber :value="downloadProgress.totalMiB" />
+              <span> MiB</span>
+            </span>
+            <span class="update-progress-speed">
+              <RollingNumber :value="downloadProgress.speedMiB" />
+              <span> MiB/s</span>
+            </span>
           </div>
           <div v-if="updateState.error" class="update-error">
             {{ updateState.error }}
@@ -166,6 +186,7 @@ import { chevronForwardOutline, logoGithub } from 'ionicons/icons'
 import { showToast } from '@/services/JmcomicService'
 import { UpdateService } from '@/services/UpdateService'
 import { presentUpdatePrompt } from '@/services/UpdatePromptService'
+import RollingNumber from '@/components/update/RollingNumber.vue'
 import type { UpdateManifest } from '@/services/JmcomicTypes'
 import { renderReleaseNotesMarkdown } from '@/utils/releaseNotesMarkdown'
 
@@ -189,6 +210,12 @@ const hasUpdate = computed(
       updateState.value.phase !== 'up_to_date'),
 )
 
+const isDownloading = computed(() => ['racing', 'selected'].includes(updateState.value.phase))
+const updateCheckDisabled = computed(() =>
+  updateChecking.value ||
+  ['racing', 'selected', 'verifying', 'installing'].includes(updateState.value.phase),
+)
+
 const REPO_URL = 'https://github.com/jukomu/jq-viewer'
 const JMCOMIC_API_REPO_URL = 'https://github.com/JUKOMU/JMComic-Api-Java'
 
@@ -196,9 +223,8 @@ const formatMiB = UpdateService.formatMiB
 const updateStatusLabel = computed(() => {
   switch (updateState.value.phase) {
     case 'racing':
-      return '下载中'
     case 'selected':
-      return `已选择 ${updateState.value.source}`
+      return '下载中'
     case 'verifying':
       return '校验中'
     case 'ready_to_install':
@@ -215,18 +241,39 @@ const updateStatusLabel = computed(() => {
       return hasUpdate.value ? '等待下载' : '未检查'
   }
 })
-const downloadProgressLabel = computed(() => {
-  if (!['racing', 'selected'].includes(updateState.value.phase)) return ''
-  const source =
-    updateState.value.source === 'GitHub' || updateState.value.source === 'Gitee'
-      ? updateState.value.source
-      : updateState.value.githubBytes >= updateState.value.giteeBytes
-        ? 'GitHub'
-        : 'Gitee'
-  const bytes = source === 'GitHub' ? updateState.value.githubBytes : updateState.value.giteeBytes
-  const total = updateState.value.totalBytes || latestManifest.value?.sizeBytes || 0
-  return `${source} ${formatMiB(bytes)} / ${formatMiB(total)}`
+const downloadProgress = computed(() => {
+  const phase = updateState.value.phase
+  const progressPhases = [
+    'racing',
+    'selected',
+    'verifying',
+    'ready_to_install',
+    'install_permission_required',
+    'installing',
+  ]
+  if (!progressPhases.includes(phase)) return null
+
+  const source = updateState.value.source
+  const rawBytes =
+    phase === 'selected' && (source === 'GitHub' || source === 'Gitee')
+      ? source === 'GitHub'
+        ? updateState.value.githubBytes
+        : updateState.value.giteeBytes
+      : Math.max(updateState.value.githubBytes, updateState.value.giteeBytes)
+  const total = Math.max(0, updateState.value.totalBytes || latestManifest.value?.sizeBytes || 0)
+  const bytes = total > 0 ? Math.min(total, Math.max(0, rawBytes)) : Math.max(0, rawBytes)
+  const percent = total > 0 ? Math.min(100, Math.max(0, (bytes / total) * 100)) : 0
+
+  return {
+    bytesMiB: bytes / (1024 * 1024),
+    totalMiB: total / (1024 * 1024),
+    speedMiB: Math.max(0, updateState.value.speedBytesPerSecond) / (1024 * 1024),
+    percent,
+  }
 })
+const updateCheckCardStyle = computed(() => ({
+  '--update-progress': `${downloadProgress.value?.percent ?? 0}%`,
+}))
 const updateActionLabel = computed(() => {
   switch (updateState.value.phase) {
     case 'racing':
@@ -427,6 +474,10 @@ const reDisplay = async () => {
   background: #faf4ef;
 }
 
+.info-row-action:disabled {
+  cursor: default;
+}
+
 .info-row-action:focus-visible {
   outline: 2px solid #e8843c;
   outline-offset: -2px;
@@ -460,14 +511,48 @@ const reDisplay = async () => {
   border: 1px solid rgba(232, 132, 60, 0.22);
 }
 
+.update-check-card {
+  --update-progress: 0%;
+  background: linear-gradient(
+    to right,
+    rgba(232, 132, 60, 0.16) var(--update-progress),
+    #fff var(--update-progress)
+  );
+  transition: background 180ms ease;
+}
+
 .update-progress-row {
-  align-items: flex-start;
+  align-items: center;
+}
+
+.update-status-value {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.25em;
+  white-space: nowrap;
 }
 
 .update-progress {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
   padding: 0 18px 12px;
   color: #8c6b5a;
   font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.update-progress-size,
+.update-progress-speed {
+  display: inline-flex;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.update-progress-speed {
+  flex: 0 0 auto;
 }
 
 .update-error {

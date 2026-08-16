@@ -8,6 +8,7 @@ import android.content.pm.PackageManager;
 import android.content.pm.Signature;
 import android.net.Uri;
 import android.os.Build;
+import android.os.SystemClock;
 import android.provider.Settings;
 import android.util.Log;
 
@@ -59,6 +60,8 @@ public final class UpdateService {
     private static final int MANIFEST_MAX_BYTES = 1024 * 1024;
     private static final int BUFFER_SIZE = 32 * 1024;
     private static final long MAX_DOWNLOAD_BYTES = 300L * 1024L * 1024L;
+    private static final long SPEED_SAMPLE_INTERVAL_MS = 500L;
+    private static final long NOTIFICATION_UPDATE_INTERVAL_MS = 1000L;
 
     private final Context context;
     private final File updateDirectory;
@@ -73,6 +76,9 @@ public final class UpdateService {
     private volatile File readyFile;
     private volatile UpdateManifest readyManifest;
     private volatile boolean installPermissionPending;
+    private volatile boolean installerPending;
+    private long lastNotificationAtMs;
+    private String lastNotificationPhase = "";
 
     public UpdateService(Context context) {
         this.context = context.getApplicationContext();
@@ -171,6 +177,8 @@ public final class UpdateService {
             deleteFiles(updateDirectory);
             readyFile = null;
             readyManifest = null;
+            lastNotificationAtMs = 0L;
+            lastNotificationPhase = "";
             UpdateSession session = new UpdateSession(manifest, updateDirectory,
                 revision.incrementAndGet());
             activeSession = session;
@@ -229,6 +237,7 @@ public final class UpdateService {
             launchInstaller(activity, apkFile, manifest);
             return InstallResult.started();
         } catch (Exception error) {
+            installerPending = false;
             Log.w(TAG, "启动更新安装器失败", error);
             String message = userMessage(error);
             publish("failed", "", apkFile.length(), apkFile.length(), manifest.getSizeBytes(), message);
@@ -266,29 +275,35 @@ public final class UpdateService {
      * Activity 回到前台后处理未知来源权限结果；拒绝时不重复打开设置页。
      */
     public void onHostResume(Activity activity) {
-        if (!installPermissionPending) {
+        if (installPermissionPending) {
+            installPermissionPending = false;
+            File apkFile = readyFile;
+            UpdateManifest manifest = readyManifest;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                && !context.getPackageManager().canRequestPackageInstalls()) {
+                publish("failed", "", 0L, 0L, manifest == null ? 0L : manifest.getSizeBytes(),
+                    "安装来源权限未授予");
+                return;
+            }
+            if (apkFile == null || manifest == null || !apkFile.isFile()) {
+                publish("failed", "", 0L, 0L, 0L, "没有可安装的更新包");
+                return;
+            }
+            try {
+                launchInstaller(activity, apkFile, manifest);
+            } catch (Exception error) {
+                installerPending = false;
+                Log.w(TAG, "权限返回后启动更新安装器失败", error);
+                publish("failed", "", apkFile.length(), apkFile.length(), manifest.getSizeBytes(),
+                    userMessage(error));
+            }
             return;
         }
-        installPermissionPending = false;
-        File apkFile = readyFile;
-        UpdateManifest manifest = readyManifest;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
-            && !context.getPackageManager().canRequestPackageInstalls()) {
-            publish("failed", "", 0L, 0L, manifest == null ? 0L : manifest.getSizeBytes(),
-                "安装来源权限未授予");
+        if (!installerPending) {
             return;
         }
-        if (apkFile == null || manifest == null || !apkFile.isFile()) {
-            publish("failed", "", 0L, 0L, 0L, "没有可安装的更新包");
-            return;
-        }
-        try {
-            launchInstaller(activity, apkFile, manifest);
-        } catch (Exception error) {
-            Log.w(TAG, "权限返回后启动更新安装器失败", error);
-            publish("failed", "", apkFile.length(), apkFile.length(), manifest.getSizeBytes(),
-                userMessage(error));
-        }
+        installerPending = false;
+        reconcileInstallerResult();
     }
 
     private void launchInstaller(Activity activity, File apkFile, UpdateManifest manifest) {
@@ -303,9 +318,28 @@ public final class UpdateService {
         if (!(activityContext instanceof Activity)) {
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         }
+        installerPending = true;
         activityContext.startActivity(intent);
         publish("installing", "", apkFile.length(), apkFile.length(), manifest.getSizeBytes());
         UpdateForegroundService.stop(context, revision.incrementAndGet());
+    }
+
+    private void reconcileInstallerResult() {
+        File apkFile = readyFile;
+        UpdateManifest manifest = readyManifest;
+        if (apkFile == null || manifest == null || !apkFile.isFile()) {
+            publish("failed", "", 0L, 0L, 0L, "没有可安装的更新包");
+            return;
+        }
+        if (isInstalledVersionAtLeast(manifest)) {
+            readyFile = null;
+            readyManifest = null;
+            deleteFile(apkFile);
+            publish("up_to_date", "", 0L, 0L, manifest.getSizeBytes());
+            return;
+        }
+        publish("ready_to_install", "", apkFile.length(), apkFile.length(),
+            manifest.getSizeBytes());
     }
 
     private Context getActivityContext(Activity activity) {
@@ -441,6 +475,21 @@ public final class UpdateService {
         }
     }
 
+    private boolean isInstalledVersionAtLeast(UpdateManifest manifest) {
+        if (!context.getPackageName().equals(manifest.getPackageName())) {
+            return false;
+        }
+        PackageManager packageManager = context.getPackageManager();
+        try {
+            PackageInfo info = packageManager.getPackageInfo(context.getPackageName(), 0);
+            long installedVersionCode = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                ? info.getLongVersionCode() : info.versionCode;
+            return installedVersionCode >= manifest.getVersionCode();
+        } catch (PackageManager.NameNotFoundException error) {
+            return false;
+        }
+    }
+
     private boolean isNotificationAvailable() {
         android.app.NotificationManager manager =
             (android.app.NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
@@ -497,7 +546,8 @@ public final class UpdateService {
                     if (session.raceState.trySelectWinner(source, downloaded)) {
                         cancelOtherSource(session, source);
                         publish("selected", sourceName(source), session.githubBytes,
-                            session.giteeBytes, session.manifest.getSizeBytes());
+                            session.giteeBytes, session.manifest.getSizeBytes(),
+                            session.speedBytesPerSecond, "");
                     } else if (session.raceState.getWinner() != null
                         && session.raceState.getWinner() != source) {
                         throw new InterruptedException("另一个下载源已胜出");
@@ -664,9 +714,36 @@ public final class UpdateService {
         } else {
             session.giteeBytes = bytes;
         }
-        publish("racing", session.raceState.getWinner() == null ? "racing"
-                : sourceName(session.raceState.getWinner()), session.githubBytes,
-            session.giteeBytes, session.manifest.getSizeBytes());
+        UpdateRaceState.Source winner = session.raceState.getWinner();
+        long speedBytesPerSecond = updateSpeed(session, winner);
+        publish(winner == null ? "racing" : "selected",
+            winner == null ? "racing" : sourceName(winner), session.githubBytes,
+            session.giteeBytes, session.manifest.getSizeBytes(), speedBytesPerSecond, "");
+    }
+
+    private long updateSpeed(UpdateSession session, UpdateRaceState.Source winner) {
+        long displayedBytes = winner == null
+            ? Math.max(session.githubBytes, session.giteeBytes)
+            : winner == UpdateRaceState.Source.GITHUB
+                ? session.githubBytes : session.giteeBytes;
+        long now = SystemClock.elapsedRealtime();
+        synchronized (session) {
+            if (session.lastSpeedAtMs == 0L) {
+                session.lastSpeedAtMs = now;
+                session.lastSpeedBytes = displayedBytes;
+                return 0L;
+            }
+            long elapsed = now - session.lastSpeedAtMs;
+            if (elapsed < SPEED_SAMPLE_INTERVAL_MS) {
+                return session.speedBytesPerSecond;
+            }
+            long delta = Math.max(0L, displayedBytes - session.lastSpeedBytes);
+            session.speedBytesPerSecond = elapsed > 0L
+                ? delta * 1000L / elapsed : 0L;
+            session.lastSpeedAtMs = now;
+            session.lastSpeedBytes = displayedBytes;
+            return session.speedBytesPerSecond;
+        }
     }
 
     private void cancelOtherSource(UpdateSession session, UpdateRaceState.Source winner) {
@@ -735,20 +812,28 @@ public final class UpdateService {
 
     private void publish(String phase, String source, long githubBytes, long giteeBytes,
                          long totalBytes) {
-        publish(phase, source, githubBytes, giteeBytes, totalBytes, "");
+        publish(phase, source, githubBytes, giteeBytes, totalBytes, 0L, "");
     }
 
     private void publish(String phase, String source, long githubBytes, long giteeBytes,
                          long totalBytes, String error) {
+        publish(phase, source, githubBytes, giteeBytes, totalBytes, 0L, error);
+    }
+
+    private void publish(String phase, String source, long githubBytes, long giteeBytes,
+                         long totalBytes, long speedBytesPerSecond, String error) {
         Snapshot snapshot = new Snapshot(revision.incrementAndGet(), phase, source,
-            githubBytes, giteeBytes, totalBytes, error);
+            githubBytes, giteeBytes, totalBytes, speedBytesPerSecond, error);
         latestSnapshot = snapshot;
         UpdateForegroundService.Snapshot notification = new UpdateForegroundService.Snapshot(
             snapshot.revision, phase, source, githubBytes, giteeBytes, totalBytes,
-            error);
+            speedBytesPerSecond, error);
         boolean terminalFailure = "failed".equals(phase) && activeSession != null;
-        if (terminalFailure || (!"failed".equals(phase) && !"cancelled".equals(phase)
-            && !"up_to_date".equals(phase) && !"update_available".equals(phase))) {
+        boolean notificationAllowed = !"install_permission_required".equals(phase)
+            && !"installing".equals(phase);
+        if (notificationAllowed && (terminalFailure || (!"failed".equals(phase)
+            && !"cancelled".equals(phase) && !"up_to_date".equals(phase)
+            && !"update_available".equals(phase)) && shouldPublishNotification(phase))) {
             UpdateForegroundService.update(context, notification);
         }
         Consumer<Snapshot> sink = progressSink;
@@ -758,6 +843,20 @@ public final class UpdateService {
             } catch (RuntimeException sinkError) {
                 Log.w(TAG, "发布更新进度失败", sinkError);
             }
+        }
+    }
+
+    private boolean shouldPublishNotification(String phase) {
+        long now = SystemClock.elapsedRealtime();
+        synchronized (stateLock) {
+            boolean progressPhase = "racing".equals(phase) || "selected".equals(phase);
+            if (progressPhase && phase.equals(lastNotificationPhase)
+                && now - lastNotificationAtMs < NOTIFICATION_UPDATE_INTERVAL_MS) {
+                return false;
+            }
+            lastNotificationAtMs = now;
+            lastNotificationPhase = phase;
+            return true;
         }
     }
 
@@ -824,6 +923,9 @@ public final class UpdateService {
         private volatile HttpURLConnection giteeConnection;
         private volatile long githubBytes;
         private volatile long giteeBytes;
+        private long lastSpeedBytes;
+        private long lastSpeedAtMs;
+        private volatile long speedBytesPerSecond;
         private UpdateSession(UpdateManifest manifest, File updateDirectory, int sessionId) {
             this.manifest = manifest;
             this.githubPart = new File(updateDirectory, "github-" + sessionId + ".part");
@@ -866,21 +968,24 @@ public final class UpdateService {
         public final long githubBytes;
         public final long giteeBytes;
         public final long totalBytes;
+        public final long speedBytesPerSecond;
         public final String error;
 
         private Snapshot(int revision, String phase, String source, long githubBytes,
-                         long giteeBytes, long totalBytes, String error) {
+                         long giteeBytes, long totalBytes, long speedBytesPerSecond,
+                         String error) {
             this.revision = revision;
             this.phase = phase;
             this.source = source;
             this.githubBytes = githubBytes;
             this.giteeBytes = giteeBytes;
             this.totalBytes = totalBytes;
+            this.speedBytesPerSecond = Math.max(0L, speedBytesPerSecond);
             this.error = error == null ? "" : error;
         }
 
         private static Snapshot idle() {
-            return new Snapshot(0, "idle", "", 0L, 0L, 0L, "");
+            return new Snapshot(0, "idle", "", 0L, 0L, 0L, 0L, "");
         }
 
         public JSObject toJson() {
@@ -891,6 +996,7 @@ public final class UpdateService {
             result.put("githubBytes", githubBytes);
             result.put("giteeBytes", giteeBytes);
             result.put("totalBytes", totalBytes);
+            result.put("speedBytesPerSecond", speedBytesPerSecond);
             result.put("error", error);
             return result;
         }

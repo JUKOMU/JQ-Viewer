@@ -19,38 +19,56 @@ JMComic 第三方 Android 漫画阅读器。它把搜索、收藏、下载、本
 
 ## 应用截图
 
+<details open><summary></summary>
+  
 ### 首页、搜索、分类
 
 | 首页 | 搜索 | 分类 |
 | --- | --- | --- |
-| <img width="220" alt="首页" src="https://github.com/user-attachments/assets/b3979725-d2e7-4721-92c1-5181aa160ca9" /> | <img width="220" alt="搜索" src="https://github.com/user-attachments/assets/158b13ed-396d-4add-be2e-d7d415648c44" /> | <img width="220" alt="分类" src="https://github.com/user-attachments/assets/b12c77fe-1231-4485-bad5-5b45a275d308" /> |
+| <img width="260" alt="首页" src="https://github.com/user-attachments/assets/b3979725-d2e7-4721-92c1-5181aa160ca9" /> | <img width="260" alt="搜索" src="https://github.com/user-attachments/assets/158b13ed-396d-4add-be2e-d7d415648c44" /> | <img width="260" alt="分类" src="https://github.com/user-attachments/assets/b12c77fe-1231-4485-bad5-5b45a275d308" /> |
 
 ### 详情与阅读
 
-| 详情页 | 阅读器 |
-| --- | --- |
-| <img width="220" alt="详情页" src="https://github.com/user-attachments/assets/9d340dcd-0541-4219-a555-f51f9e69c109" /> | <img width="220" alt="图片阅读器" src="https://github.com/user-attachments/assets/7750db4c-6342-41b8-b537-e03ba8a236ea" /> |
+| 详情页 | 章节选择 | 预览 |
+| --- | --- | --- |
+| <img width="260" alt="详情页" src="https://github.com/user-attachments/assets/a66e92ed-4819-446c-a8d5-e72021345af8" /> | <img width="260" alt="章节选择" src="https://github.com/user-attachments/assets/12dffcf1-d205-4ee0-9897-e14c1d37466d" /> | <img width="260" alt="预览" src="https://github.com/user-attachments/assets/fe24724b-59a7-4f24-b3fa-151a806e5275" /> |
+
+| 评论 | 阅读器 | 阅读设置 |
+| --- | --- | --- |
+| <img width="260" alt="评论" src="https://github.com/user-attachments/assets/e4cf5d50-c811-4aa6-b57a-67ad6ed00a5f" /> | <img width="260" alt="图片阅读器" src="https://github.com/user-attachments/assets/125e157f-d505-44ba-ac87-e2e6fcbd2f95" /> | <img width="260" alt="阅读设置" src="https://github.com/user-attachments/assets/17648ad7-85b0-435c-877c-e8639d6733a4" /> |
 
 ### 收藏与历史
 
 | 收藏夹 | 收藏夹搜索 | 浏览历史 |
 | --- | --- | --- |
-| <img width="220" alt="收藏夹" src="https://github.com/user-attachments/assets/9890ecad-ad3b-48a7-a2f1-f6497cd3ec5b" /> | <img width="220" alt="收藏夹搜索" src="https://github.com/user-attachments/assets/c669cf81-e5a2-43e5-91ad-fd468fdb9b75" /> | <img width="220" alt="浏览历史" src="https://github.com/user-attachments/assets/986400a7-3081-4f04-bc9e-afc80e7ae1f2" /> |
+| <img width="260" alt="收藏夹" src="https://github.com/user-attachments/assets/9890ecad-ad3b-48a7-a2f1-f6497cd3ec5b" /> | <img width="260" alt="收藏夹搜索" src="https://github.com/user-attachments/assets/c669cf81-e5a2-43e5-91ad-fd468fdb9b75" /> | <img width="260" alt="浏览历史" src="https://github.com/user-attachments/assets/986400a7-3081-4f04-bc9e-afc80e7ae1f2" /> |
 
-| 解析历史 | 批量解析 | 设置 |
-| --- | --- | --- |
-| <img width="220" alt="解析历史" src="https://github.com/user-attachments/assets/da2b69b0-1d09-489c-8f54-c31757926f8a" /> | <img width="220" alt="批量解析" src="https://github.com/user-attachments/assets/a89f8c24-0f9d-4707-87b4-73882f7844e4" /> | <img width="220" alt="设置" src="https://github.com/user-attachments/assets/2730911b-1cf1-4282-9b13-4bca4a57b652" /> |
+| 解析历史 | 批量解析 |
+| --- | --- |
+| <img width="260" alt="解析历史" src="https://github.com/user-attachments/assets/da2b69b0-1d09-489c-8f54-c31757926f8a" /> | <img width="260" alt="批量解析" src="https://github.com/user-attachments/assets/614b2ea7-94e3-4c42-b84f-a74a9296e5a7" /> |
 
 ### 下载与 PDF
 
-| 下载队列 | 下载管理 | 后台进度                                                                                                                 |
+| 下载队列 | 下载管理 | 后台进度 |
 | --- | --- |----------------------------------------------------------------------------------------------------------------------|
-| <img width="220" alt="下载队列" src="https://github.com/user-attachments/assets/41abc94a-f3dc-45f2-8b3f-e4826bd4dc2c" /> | <img width="220" alt="下载管理" src="https://github.com/user-attachments/assets/6f227a1c-efa5-4788-ae1f-b96c83e0cbae" /> | <img width="220" alt="下载通知" src="https://github.com/user-attachments/assets/083a4bb5-c8a7-43e2-b1ea-80dc7bb6b4b8" /> |
+| <img width="260" alt="下载队列" src="https://github.com/user-attachments/assets/85aef0b1-d80e-44c9-a02a-29379a9806c8" /> | <img width="260" alt="下载管理" src="https://github.com/user-attachments/assets/6f227a1c-efa5-4788-ae1f-b96c83e0cbae" /> | <img width="260" alt="下载通知" src="https://github.com/user-attachments/assets/083a4bb5-c8a7-43e2-b1ea-80dc7bb6b4b8" /> |
 
-| PDF 导出 | PDF 导入匹配 | 阅读来源                                                                                                                   |
+| PDF 导出 | 多章节导出 | PDF 导入匹配 |
 | --- | --- |------------------------------------------------------------------------------------------------------------------------|
-| <img width="220" alt="PDF 导出" src="https://github.com/user-attachments/assets/8c1a4178-ee19-4ba5-9e1e-60c47e2a5950" /> | <img width="220" alt="PDF 导出" src="https://github.com/user-attachments/assets/37bb4848-c376-4c0b-ade6-9e004d5d93fd" /> | <img width="220" alt="阅读来源选择" src="https://github.com/user-attachments/assets/9d340dcd-0541-4219-a555-f51f9e69c109" /> |
+| <img width="260" alt="PDF 导出" src="https://github.com/user-attachments/assets/b61c714b-4a2a-4ac5-a215-6a03a3bdaea8" /> | <img width="260" alt="多章节导出" src="https://github.com/user-attachments/assets/731de6a5-be0b-424e-b6cc-a4fc6f8fe044" /> | <img width="260" alt="PDF 导入匹配" src="https://github.com/user-attachments/assets/475ad932-c96c-4a24-bf4b-5d64faa6e5f3" /> |
 
+| PDF 管理  |
+| ----------- |
+| <img width="280" alt="PDF 管理" src="https://github.com/user-attachments/assets/6a54aa72-4d64-46ed-b48d-b4d5e716b328" /> <img width="280" alt="PDF 管理" src="https://github.com/user-attachments/assets/4e4f9154-c5f6-4d24-939d-dbf22937ef50" />  <img width="280" alt="PDF 管理" src="https://github.com/user-attachments/assets/76429244-172f-43fa-8946-6f1b3543ec22" /> |
+
+### 设置
+
+| 查看图片缓存 | 查看网络状态 | 导出设置 |
+| --- | --- |----------------------------------------------------------------------------------------------------------------------|
+| <img width="260" alt="查看图片缓存" src="https://github.com/user-attachments/assets/35fc1994-161c-46f8-8415-d89499905859" /> | <img width="260" alt="查看网络状态" src="https://github.com/user-attachments/assets/4229b9bb-203a-4e24-860e-c7a378337c26" /> | <img width="260" alt="下载通知" src="https://github.com/user-attachments/assets/50a0ea1f-0e0c-4ca0-a203-f5d17bb897b8" /> |
+
+</details>
+  
 ---
 
 ## 主要功能

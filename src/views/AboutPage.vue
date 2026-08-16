@@ -80,7 +80,8 @@
           </div>
           <div v-if="latestManifest.releaseNotes" class="release-notes">
             <div class="note-title">发布说明</div>
-            <pre>{{ latestManifest.releaseNotes }}</pre>
+            <!-- eslint-disable-next-line vue/no-v-html -- Markdown is sanitized before rendering. -->
+            <div class="release-markdown" v-html="renderedReleaseNotes" />
           </div>
           <button
             class="update-action"
@@ -151,7 +152,6 @@ defineOptions({ name: 'AboutPage' })
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { App } from '@capacitor/app'
 import {
-  alertController,
   IonBackButton,
   IonButtons,
   IonContent,
@@ -165,7 +165,9 @@ import {
 import { chevronForwardOutline, logoGithub } from 'ionicons/icons'
 import { showToast } from '@/services/JmcomicService'
 import { UpdateService } from '@/services/UpdateService'
+import { presentUpdatePrompt } from '@/services/UpdatePromptService'
 import type { UpdateManifest } from '@/services/JmcomicTypes'
+import { renderReleaseNotesMarkdown } from '@/utils/releaseNotesMarkdown'
 
 const appVersion = ref('1.0.0')
 const updateChecking = ref(false)
@@ -174,6 +176,10 @@ const latestVersion = ref('')
 const updateChecked = ref(false)
 const latestManifest = UpdateService.manifest
 const updateState = UpdateService.state
+const renderedReleaseNotes = computed(() => {
+  const manifest = latestManifest.value
+  return manifest ? renderReleaseNotesMarkdown(manifest.releaseNotes, manifest.versionName) : ''
+})
 const manualHasUpdate = ref(false)
 const hasUpdate = computed(
   () =>
@@ -300,22 +306,10 @@ async function checkUpdate() {
 }
 
 async function showUpdateAlert(update: UpdateManifest) {
-  const alert1 = await alertController.create({
-    header: `发现新版本 ${update.versionName}`,
-    message: update.releaseNotes || '（无更新说明）',
-    cssClass: 'update-alert',
-    buttons: [
-      { text: '忽略', role: 'cancel' },
-      {
-        text: '下载更新',
-        handler: () => {
-          void startUpdate()
-        },
-      },
-    ],
-  })
-  await alert1.present()
-  await alert1.onDidDismiss()
+  const confirmed = await presentUpdatePrompt(update)
+  if (confirmed) {
+    await startUpdate()
+  }
 }
 
 async function startUpdate() {
@@ -490,15 +484,6 @@ const reDisplay = async () => {
 
 .release-notes .note-title {
   padding: 0 0 6px;
-}
-
-.release-notes pre {
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-  color: #6b4e3e;
-  font: inherit;
-  line-height: 1.6;
 }
 
 .update-action {

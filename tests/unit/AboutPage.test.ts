@@ -1,12 +1,13 @@
-import {flushPromises, mount} from '@vue/test-utils'
-import {defineComponent, h} from 'vue'
-import {afterEach, beforeEach, describe, expect, test, vi} from 'vitest'
-import type {UpdateProgressEvent} from '@/services/JmcomicTypes'
+import { flushPromises, mount } from '@vue/test-utils'
+import { defineComponent, h } from 'vue'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import type { UpdateProgressEvent } from '@/services/JmcomicTypes'
 
 const mocks = vi.hoisted(() => ({
   writeText: vi.fn(),
   showToast: vi.fn(),
   alertCreate: vi.fn(),
+  modalCreate: vi.fn(),
   alertPresent: vi.fn(),
   checkUpdate: vi.fn(),
   addUpdateProgressListener: vi.fn(),
@@ -15,20 +16,21 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@capacitor/app', () => ({
-  App: {getInfo: vi.fn().mockResolvedValue({version: '1.2.0'})},
+  App: { getInfo: vi.fn().mockResolvedValue({ version: '1.2.0' }) },
 }))
 
 vi.mock('@ionic/vue', () => {
   const withSlot = (name: string, tag = 'div') =>
     defineComponent({
       name,
-      setup(_, {slots}) {
+      setup(_, { slots }) {
         return () => h(tag, slots.default?.())
       },
     })
 
   return {
-    alertController: {create: mocks.alertCreate},
+    alertController: { create: mocks.alertCreate },
+    modalController: { create: mocks.modalCreate },
     IonBackButton: withSlot('IonBackButton'),
     IonButtons: withSlot('IonButtons'),
     IonContent: withSlot('IonContent', 'main'),
@@ -63,7 +65,7 @@ vi.mock('@/services/JmcomicService', () => ({
 }))
 
 import AboutPage from '@/views/AboutPage.vue'
-import {UpdateService} from '@/services/UpdateService'
+import { UpdateService } from '@/services/UpdateService'
 
 beforeEach(async () => {
   await UpdateService.dispose()
@@ -83,13 +85,17 @@ beforeEach(async () => {
   mocks.showToast.mockResolvedValue(undefined)
   mocks.alertCreate.mockResolvedValue({
     present: mocks.alertPresent,
-    onDidDismiss: vi.fn().mockResolvedValue({role: 'cancel'}),
+    onDidDismiss: vi.fn().mockResolvedValue({ role: 'cancel' }),
+  })
+  mocks.modalCreate.mockResolvedValue({
+    present: vi.fn(),
+    onDidDismiss: vi.fn().mockResolvedValue({ role: 'cancel' }),
   })
   mocks.addUpdateProgressListener.mockImplementation(async (handler) => {
     mocks.progressHandler = handler
-    return {remove: vi.fn()}
+    return { remove: vi.fn() }
   })
-  mocks.getUpdateState.mockResolvedValue({...UpdateService.state.value})
+  mocks.getUpdateState.mockResolvedValue({ ...UpdateService.state.value })
   mocks.checkUpdate.mockResolvedValue({
     updateAvailable: false,
     manifest: {
@@ -102,10 +108,10 @@ beforeEach(async () => {
       sha256: 'a'.repeat(64),
       signingCertificateSha256: 'b'.repeat(64),
       releaseNotes: '',
-      sources: {github: 'https://github.com/example.apk', gitee: 'https://gitee.com/example.apk'},
+      sources: { github: 'https://github.com/example.apk', gitee: 'https://gitee.com/example.apk' },
     },
   })
-  vi.stubGlobal('navigator', {clipboard: {writeText: mocks.writeText}})
+  vi.stubGlobal('navigator', { clipboard: { writeText: mocks.writeText } })
 })
 
 afterEach(() => {
@@ -194,7 +200,10 @@ describe('AboutPage 更新状态', () => {
         sha256: 'a'.repeat(64),
         signingCertificateSha256: 'b'.repeat(64),
         releaseNotes: '更新说明',
-        sources: {github: 'https://github.com/example.apk', gitee: 'https://gitee.com/example.apk'},
+        sources: {
+          github: 'https://github.com/example.apk',
+          gitee: 'https://gitee.com/example.apk',
+        },
       },
     })
     const first = mount(AboutPage)

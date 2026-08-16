@@ -1,9 +1,11 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { Agent } from 'undici'
 
 const apiBase = (process.env.GITEE_API_BASE || 'https://gitee.com/api/v5').replace(/\/$/, '')
 const repository = process.env.GITEE_REPOSITORY || 'jukomu/jq-viewer'
+const assetUploadTimeoutMs = 10 * 60 * 1000
 
 function repositoryPath() {
   const parts = repository.split('/')
@@ -24,11 +26,23 @@ function apiUrl(apiPath, query = {}) {
 }
 
 async function request(apiPath, options = {}) {
-  const response = await fetch(apiUrl(apiPath, options.query), {
-    method: options.method || 'GET',
-    headers: options.headers,
-    body: options.body,
-  })
+  let response
+  try {
+    response = await fetch(apiUrl(apiPath, options.query), {
+      method: options.method || 'GET',
+      headers: options.headers,
+      body: options.body,
+      dispatcher: options.dispatcher,
+    })
+  } catch (error) {
+    const cause = error && typeof error === 'object' ? error.cause : null
+    const causeDetails = [cause?.code, cause?.message].filter(Boolean).join(': ')
+    const detail = causeDetails ? ' (' + causeDetails + ')' : ''
+    throw new Error(
+      'Gitee ' + options.label + ' transport failed: ' + error.message + detail,
+      {cause: error},
+    )
+  }
   const raw = await response.text()
   let payload = null
   if (raw) {
@@ -156,11 +170,20 @@ async function uploadAssetBytes(token, releaseId, name, bytes) {
   const form = new FormData()
   form.set('access_token', token)
   form.set('file', new Blob([bytes]), name)
-  return request(apiPath, {
-    method: 'POST',
-    body: form,
-    label: 'upload release asset ' + name,
+  const dispatcher = new Agent({
+    headersTimeout: assetUploadTimeoutMs,
+    bodyTimeout: assetUploadTimeoutMs,
   })
+  try {
+    return await request(apiPath, {
+      method: 'POST',
+      body: form,
+      dispatcher,
+      label: 'upload release asset ' + name,
+    })
+  } finally {
+    await dispatcher.close()
+  }
 }
 
 function validateUploadedAsset(uploaded, name, expectedSize) {

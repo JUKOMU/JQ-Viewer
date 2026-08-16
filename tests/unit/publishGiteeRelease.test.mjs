@@ -26,6 +26,34 @@ afterEach(async () => {
 })
 
 describe('Gitee release asset replacement', () => {
+  it('uses a dedicated dispatcher for asset uploads', async () => {
+    const filePath = path.join(tempDirectory, 'latest.json')
+    const content = Buffer.from('{"version":"1.4.0"}')
+    await fs.promises.writeFile(filePath, content)
+    let uploadOptions
+    const fetchMock = vi.fn(async (input, options = {}) => {
+      if (options.method === 'POST') {
+        uploadOptions = options
+        return jsonResponse({
+          id: 11,
+          name: 'latest.json',
+          size: content.length,
+          browser_download_url: 'https://download.example/latest.json',
+        })
+      }
+      return jsonResponse([])
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(replaceAsset('token', 1, filePath)).resolves.toMatchObject({
+      name: 'latest.json',
+      size: content.length,
+    })
+
+    expect(uploadOptions?.dispatcher).toBeDefined()
+    expect(typeof uploadOptions?.dispatcher?.dispatch).toBe('function')
+  })
+
   it('keeps an existing byte-identical asset without deleting it', async () => {
     const filePath = path.join(tempDirectory, 'latest.json')
     const content = Buffer.from('{"version":"1.4.0"}')
@@ -96,5 +124,26 @@ describe('Gitee release asset replacement', () => {
 
     expect(uploadCount).toBe(2)
     expect(restoredBody).toEqual(previous)
+  })
+
+  it('reports the upload operation and transport cause', async () => {
+    const filePath = path.join(tempDirectory, 'latest.json')
+    await fs.promises.writeFile(filePath, Buffer.from('{"version":"1.4.1"}'))
+    const transportCause = Object.assign(new Error('Headers Timeout Error'), {
+      code: 'UND_ERR_HEADERS_TIMEOUT',
+    })
+    const fetchError = new TypeError('fetch failed', {cause: transportCause})
+    const fetchMock = vi.fn(async (input, options = {}) => {
+      if (options.method === 'POST') {
+        throw fetchError
+      }
+      return jsonResponse([])
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(replaceAsset('token', 1, filePath)).rejects.toThrow(
+      'Gitee upload release asset latest.json transport failed: fetch failed ' +
+        '(UND_ERR_HEADERS_TIMEOUT: Headers Timeout Error)',
+    )
   })
 })

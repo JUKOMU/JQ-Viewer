@@ -59,7 +59,7 @@ jobs:
 
   release:
     needs: [validate-release-input, frontend, android-jvm, instrumentation]
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, jqviewer-release]
     permissions:
       contents: write
 
@@ -422,3 +422,13 @@ jobs:
           fi
 
           echo "Public release assets verified: identical APK and latest.json"
+
+      - name: Cleanup release secrets and artifacts
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          rm -f android/app/release.keystore
+          rm -f android/keystore.properties
+          rm -f android/app/build/outputs/apk/release/app-release.apk
+          rm -f JQ-Viewer-*.apk
+          rm -f "$RUNNER_TEMP/latest.json"

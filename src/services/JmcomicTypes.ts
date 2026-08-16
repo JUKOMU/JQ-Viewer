@@ -401,6 +401,7 @@ export interface UpdateProgressEvent {
   githubBytes: number
   giteeBytes: number
   totalBytes: number
+  speedBytesPerSecond: number
   error: string
 }
 

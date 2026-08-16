@@ -10,6 +10,7 @@ const IDLE_STATE: UpdateProgressEvent = {
   githubBytes: 0,
   giteeBytes: 0,
   totalBytes: 0,
+  speedBytesPerSecond: 0,
   error: '',
 }
 
@@ -43,6 +44,7 @@ async function ensureProgressListener(): Promise<void> {
   if (listenerHandle) return
   if (listenerPromise) return listenerPromise
   listenerPromise = JmcomicService.addUpdateProgressListener((event) => {
+    if (event.revision < state.value.revision) return
     state.value = { ...event }
     if (event.phase === 'ready_to_install' && updateStarted) {
       void installReadyUpdate()
@@ -194,9 +196,9 @@ export const UpdateService = {
   install: installReadyUpdate,
   runPrompt,
   formatMiB(bytes: number): string {
-    if (!Number.isFinite(bytes) || bytes <= 0) return '0 MiB'
+    if (!Number.isFinite(bytes) || bytes <= 0) return '0.0 MiB'
     const value = bytes / (1024 * 1024)
-    return `${value >= 10 ? value.toFixed(0) : value.toFixed(1)} MiB`
+    return `${value.toFixed(1)} MiB`
   },
   dispose: async () => {
     await listenerHandle?.remove()

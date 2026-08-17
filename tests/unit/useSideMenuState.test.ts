@@ -5,6 +5,7 @@ describe('useSideMenuState', () => {
   test('所有菜单状态初始为关闭', () => {
     const state = useSideMenuState()
     expect(state.leftMenuOpen.value).toBe(false)
+    expect(state.leftMenuGestureEnabled.value).toBe(true)
     expect(state.rightMenuOpen.value).toBe(false)
     expect(state.isDraggingRight.value).toBe(false)
     expect(state.isSnappingClosed.value).toBe(false)
@@ -33,5 +34,19 @@ describe('useSideMenuState', () => {
     expect(isMenuNavigation.value).toBe(true)
     isMenuNavigation.value = false
     expect(isMenuNavigation.value).toBe(false)
+  })
+
+  test('左侧菜单操作会关闭右侧菜单并可独立停用手势', () => {
+    const state = useSideMenuState()
+
+    state.rightMenuOpen.value = true
+    state.openLeftMenu()
+    expect(state.leftMenuOpen.value).toBe(true)
+    expect(state.rightMenuOpen.value).toBe(false)
+
+    state.setLeftMenuGestureEnabled(false)
+    expect(state.leftMenuGestureEnabled.value).toBe(false)
+    state.closeLeftMenu()
+    state.setLeftMenuGestureEnabled(true)
   })
 })

@@ -3,6 +3,9 @@ import { ref } from 'vue'
 /** 左侧主菜单是否打开 */
 export const leftMenuOpen = ref(false)
 
+/** 详情页等局部横滑手势生效时，暂时禁用全局左侧栏开启手势 */
+export const leftMenuGestureEnabled = ref(true)
+
 /** 右侧收藏夹菜单是否打开 */
 export const rightMenuOpen = ref(false)
 
@@ -18,13 +21,30 @@ export const isSnappingClosed = ref(false)
 /** 当前导航是否由侧边栏菜单触发 */
 export const isMenuNavigation = ref(false)
 
+export function openLeftMenu() {
+  rightMenuOpen.value = false
+  leftMenuOpen.value = true
+}
+
+export function closeLeftMenu() {
+  leftMenuOpen.value = false
+}
+
+export function setLeftMenuGestureEnabled(enabled: boolean) {
+  leftMenuGestureEnabled.value = enabled
+}
+
 export function useSideMenuState() {
   return {
     leftMenuOpen,
+    leftMenuGestureEnabled,
     rightMenuOpen,
     rightDragProgress,
     isDraggingRight,
     isSnappingClosed,
     isMenuNavigation,
+    openLeftMenu,
+    closeLeftMenu,
+    setLeftMenuGestureEnabled,
   }
 }

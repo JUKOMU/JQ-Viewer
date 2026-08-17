@@ -137,7 +137,7 @@ import {
   watch,
 } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { createGesture, type Gesture, IonContent, IonPage, menuController } from '@ionic/vue'
+import { createGesture, type Gesture, IonContent, IonPage } from '@ionic/vue'
 import { createAppAlert } from '@/services/AppAlertService'
 import type { PluginListenerHandle } from '@capacitor/core'
 import { getImageUrl, JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
@@ -158,6 +158,7 @@ import { OfflineDownloadService } from '@/services/OfflineDownloadService'
 import { OfflineFavoriteService } from '@/services/OfflineFavoriteService'
 import { HistoryService } from '@/services/HistoryService'
 import { useAuth } from '@/composables/useAuth'
+import { openLeftMenu, setLeftMenuGestureEnabled } from '@/composables/useSideMenuState'
 import { type PreviewImageSlotSetter, usePreviewBatches } from '@/composables/usePreviewBatches'
 import AlbumHeader from '@/components/album/AlbumHeader.vue'
 import AlbumInfoTab from '@/components/album/AlbumInfoTab.vue'
@@ -665,8 +666,7 @@ const loadAlbumData = async () => {
 
 onMounted(() => {
   updateNetworkAvailable()
-  void menuController.swipeGesture(false)
-  document.querySelector('ion-menu')?.addEventListener('ionDidClose', handleDetailMenuDidClose)
+  setLeftMenuGestureEnabled(false)
   window.addEventListener('online', updateNetworkAvailable)
   window.addEventListener('offline', updateNetworkAvailable)
   loadAlbumData()
@@ -775,13 +775,8 @@ const resetTabSwipeState = () => {
   nextTick(() => observeActiveTabPanel())
 }
 
-const handleDetailMenuDidClose = () => {
-  void menuController.swipeGesture(false)
-}
-
-const openSideMenuFromDetail = async () => {
-  await menuController.swipeGesture(true)
-  await menuController.open()
+const openSideMenuFromDetail = () => {
+  openLeftMenu()
 }
 
 const finishTabSwipe = (targetIndex: number | null, endOffset: number) => {
@@ -793,7 +788,6 @@ const finishTabSwipe = (targetIndex: number | null, endOffset: number) => {
       void switchTab(target.key)
     }
     resetTabSwipeState()
-    void menuController.swipeGesture(false)
   }, TAB_SWIPE_SETTLE_MS)
 }
 
@@ -816,7 +810,6 @@ const setupTabSwipeGesture = () => {
       tabSwipeSettling.value = false
       tabSwipeOffset.value = 0
       measureActiveTabPanel()
-      void menuController.swipeGesture(false)
     },
     onMove: (detail) => {
       tabSwipeOffset.value = getClampedTabSwipeOffset(detail.deltaX)
@@ -846,7 +839,6 @@ const setupTabSwipeGesture = () => {
 }
 
 watch(activeTab, () => {
-  void menuController.swipeGesture(false)
   nextTick(() => observeActiveTabPanel())
 })
 
@@ -1285,20 +1277,19 @@ watch(requestedChapterId, (chapterId) => {
 })
 
 onActivated(() => {
-  void menuController.swipeGesture(false)
+  setLeftMenuGestureEnabled(false)
   void restoreTabScrollPosition(activeTab.value)
 })
 
 onDeactivated(() => {
   void saveActiveTabScrollPosition()
-  void menuController.swipeGesture(true)
+  setLeftMenuGestureEnabled(true)
 })
 
 onUnmounted(() => {
   tabSwipeGesture?.destroy()
   tabResizeObserver?.disconnect()
-  document.querySelector('ion-menu')?.removeEventListener('ionDidClose', handleDetailMenuDidClose)
-  void menuController.swipeGesture(true)
+  setLeftMenuGestureEnabled(true)
   invalidatePreviewRequest()
   downloadProgressHandle?.remove()
   window.removeEventListener('online', updateNetworkAvailable)

@@ -144,7 +144,6 @@ import {
   IonPage,
   IonRefresher,
   IonRefresherContent,
-  menuController,
 } from '@ionic/vue'
 import { createAppAlert } from '@/services/AppAlertService'
 import type { PluginListenerHandle } from '@capacitor/core'
@@ -184,7 +183,7 @@ import type {
   SearchResultItem,
 } from '@/services/JmcomicTypes'
 import { OFFLINE_ALL_FOLDER_ID } from '@/services/JmcomicTypes'
-import { useSideMenuState } from '@/composables/useSideMenuState'
+import { closeLeftMenu, useSideMenuState } from '@/composables/useSideMenuState'
 import { cachedState } from '@/composables/favoritePageCache'
 
 defineOptions({ name: 'FavoritePage' })
@@ -670,7 +669,7 @@ const getPanelWidth = () => Math.min(window.innerWidth * 0.78, 320)
 
 const openRightMenu = async () => {
   if (leftMenuOpen.value) {
-    void menuController.close()
+    closeLeftMenu()
   }
   // 两阶段入场动画：先渲染在关闭位置，再 transition 到打开位置
   rightDragProgress.value = 0

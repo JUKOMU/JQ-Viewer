@@ -30,7 +30,7 @@ import { UpdateService } from '@/services/UpdateService'
 import { presentUpdatePrompt } from '@/services/UpdatePromptService'
 import type { UpdateManifest } from '@/services/JmcomicTypes'
 
-const { isMenuNavigation, leftMenuOpen, rightMenuOpen } = useSideMenuState()
+const { isMenuNavigation } = useSideMenuState()
 
 const route = useRoute()
 const router = useRouter()
@@ -193,16 +193,6 @@ const keepAliveNames = computed(() =>
     .filter(Boolean),
 )
 
-const handleMenuDidOpen = () => {
-  leftMenuOpen.value = true
-  // 关闭右侧菜单
-  rightMenuOpen.value = false
-}
-
-const handleMenuDidClose = () => {
-  leftMenuOpen.value = false
-}
-
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let activeToast: Awaited<ReturnType<typeof showToast>> | null = null
 let launchRouteHandle: PluginListenerHandle | null = null
@@ -344,12 +334,6 @@ onMounted(async () => {
       }
     })()
   })()
-
-  const menuEl = document.querySelector('ion-menu')
-  if (!menuEl) return
-
-  menuEl.addEventListener('ionDidOpen', handleMenuDidOpen)
-  menuEl.addEventListener('ionDidClose', handleMenuDidClose)
 })
 
 onBeforeUnmount(() => {
@@ -362,10 +346,6 @@ onBeforeUnmount(() => {
   activeToast = null
   launchRouteHandle?.remove()
   launchRouteHandle = null
-
-  const menuEl = document.querySelector('ion-menu')
-  menuEl?.removeEventListener('ionDidOpen', handleMenuDidOpen)
-  menuEl?.removeEventListener('ionDidClose', handleMenuDidClose)
 })
 </script>
 

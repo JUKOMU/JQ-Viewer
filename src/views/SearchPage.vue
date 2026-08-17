@@ -129,7 +129,8 @@ import {
   watch,
 } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { alertController, IonContent, IonIcon, IonPage } from '@ionic/vue'
+import { IonContent, IonIcon, IonPage } from '@ionic/vue'
+import { createAppAlert } from '@/services/AppAlertService'
 import {
   bookOutline,
   downloadOutline,
@@ -686,7 +687,7 @@ async function executeFavorite(
 }
 
 async function onPickerAddFolder() {
-  const alert = await alertController.create({
+  const alert = await createAppAlert({
     header: '新建收藏夹',
     inputs: [{ name: 'name', type: 'text', placeholder: '收藏夹名称' }],
     buttons: [
@@ -739,7 +740,7 @@ const jumpToPage = async () => {
     return
   }
 
-  const alert = await alertController.create({
+  const alert = await createAppAlert({
     header: '跳转页码',
     message: `请输入 1 - ${resultMeta.value.totalPages} 的页码`,
     inputs: [

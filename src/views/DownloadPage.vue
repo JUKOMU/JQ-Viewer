@@ -203,30 +203,6 @@
       </IonContent>
     </IonPopover>
 
-    <!-- 删除确认对话框 -->
-    <IonAlert
-      :is-open="isDeleteAlertOpen"
-      header="确认删除"
-      :message="deleteAlertMessage"
-      :buttons="[
-        { text: '取消', role: 'cancel' },
-        { text: '删除', role: 'destructive', handler: confirmDelete },
-      ]"
-      @did-dismiss="isDeleteAlertOpen = false"
-    />
-
-    <!-- 清空确认对话框 -->
-    <IonAlert
-      :is-open="isClearAlertOpen"
-      header="确认清空"
-      :message="clearAlertMessage"
-      :buttons="[
-        { text: '取消', role: 'cancel' },
-        { text: '确定清空', role: 'destructive', handler: executeClear },
-      ]"
-      @did-dismiss="isClearAlertOpen = false"
-    />
-
     <!-- PDF导出底部面板 -->
     <PdfExportBottomSheet
       v-model="showPdfSheet"
@@ -250,8 +226,6 @@ defineOptions({ name: 'DownloadPage' })
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  alertController,
-  IonAlert,
   IonContent,
   IonHeader,
   IonIcon,
@@ -282,6 +256,7 @@ import DownloadTaskCard from '@/components/download/DownloadTaskCard.vue'
 import PdfExportBottomSheet from '@/components/download/PdfExportBottomSheet.vue'
 import DeleteChaptersBottomSheet from '@/components/download/DeleteChaptersBottomSheet.vue'
 import PdfManagementView from '@/components/download/PdfManagementView.vue'
+import { createAppAlert } from '@/services/AppAlertService'
 import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
 import { OfflineDownloadService } from '@/services/OfflineDownloadService'
 import { PdfExportService } from '@/services/PdfExportService'
@@ -448,8 +423,19 @@ const deleteAlertMessage = computed(() => {
   return `将删除「${t.chapterTitle}」的下载文件和记录，此操作不可恢复。`
 })
 
-const requestDeleteConfirm = () => {
+const requestDeleteConfirm = async () => {
   isDeleteAlertOpen.value = true
+  const alert = await createAppAlert({
+    header: '确认删除',
+    message: deleteAlertMessage.value,
+    buttons: [
+      { text: '取消', role: 'cancel' },
+      { text: '删除', role: 'destructive', handler: confirmDelete },
+    ],
+  })
+  await alert.present()
+  await alert.onDidDismiss()
+  isDeleteAlertOpen.value = false
 }
 
 const showDeleteSheet = ref(false)
@@ -905,16 +891,14 @@ async function confirmOverwrite(existingFiles: string[]): Promise<boolean> {
     const fileList =
       existingFiles.slice(0, 3).join('\n') +
       (existingFiles.length > 3 ? `\n... 等 ${existingFiles.length} 个文件` : '')
-    alertController
-      .create({
-        header: '文件已存在',
-        message: `以下文件已存在，是否覆盖？\n${fileList}`,
-        buttons: [
-          { text: '取消', role: 'cancel', handler: () => resolve(false) },
-          { text: '覆盖', role: 'destructive', handler: () => resolve(true) },
-        ],
-      })
-      .then((alert) => alert.present())
+    createAppAlert({
+      header: '文件已存在',
+      message: `以下文件已存在，是否覆盖？\n${fileList}`,
+      buttons: [
+        { text: '取消', role: 'cancel', handler: () => resolve(false) },
+        { text: '覆盖', role: 'destructive', handler: () => resolve(true) },
+      ],
+    }).then((alert) => alert.present())
   })
 }
 
@@ -923,7 +907,8 @@ async function ensureNotificationPermission(): Promise<boolean> {
     const check = await JmcomicService.checkNotificationPermission()
     if (check.granted) return true
 
-    const alert = await alertController.create({
+    const alert = await createAppAlert({
+      tone: 'info',
       header: '需要通知权限',
       message:
         'PDF导出将在后台进行，需要通过通知查看进度。拒绝后仍会继续导出，但不会显示系统通知。',
@@ -1095,7 +1080,6 @@ const deleteChapters = async (chapters: CompletedEntry[]) => {
 }
 
 // 清空确认
-const isClearAlertOpen = ref(false)
 const clearTarget = ref<'completed' | 'failed'>('completed')
 
 const clearAlertMessage = computed(() => {
@@ -1105,9 +1089,17 @@ const clearAlertMessage = computed(() => {
   return `将删除所有失败任务的文件和记录（${failedTasks.value.length} 个），此操作不可恢复。`
 })
 
-const requestClear = (target: 'completed' | 'failed') => {
+const requestClear = async (target: 'completed' | 'failed') => {
   clearTarget.value = target
-  isClearAlertOpen.value = true
+  const alert = await createAppAlert({
+    header: '确认清空',
+    message: clearAlertMessage.value,
+    buttons: [
+      { text: '取消', role: 'cancel' },
+      { text: '确定清空', role: 'destructive', handler: executeClear },
+    ],
+  })
+  await alert.present()
 }
 
 const executeClear = async () => {

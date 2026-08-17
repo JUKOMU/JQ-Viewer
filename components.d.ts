@@ -16,6 +16,7 @@ declare module 'vue' {
     AlbumHeader: typeof import('./src/components/album/AlbumHeader.vue')['default']
     AlbumInfoTab: typeof import('./src/components/album/AlbumInfoTab.vue')['default']
     AlbumPreviewTab: typeof import('./src/components/album/AlbumPreviewTab.vue')['default']
+    AppAlert: typeof import('./src/components/common/AppAlert.vue')['default']
     CategorySearchToolbar: typeof import('./src/components/search/CategorySearchToolbar.vue')['default']
     DeleteChaptersBottomSheet: typeof import('./src/components/download/DeleteChaptersBottomSheet.vue')['default']
     DownloadTaskCard: typeof import('./src/components/download/DownloadTaskCard.vue')['default']

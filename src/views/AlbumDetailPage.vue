@@ -138,6 +138,7 @@ import {
 } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { createGesture, type Gesture, IonContent, IonPage, menuController } from '@ionic/vue'
+import { createAppAlert } from '@/services/AppAlertService'
 import type { PluginListenerHandle } from '@capacitor/core'
 import { getImageUrl, JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
 import { buildPdfDocumentParams, fetchPdfArrayBuffer } from '@/services/PdfReaderService'
@@ -375,8 +376,7 @@ async function onPickerSelect(payload: { folderId: string; source: 'online' | 'o
 }
 
 async function onPickerAddFolder() {
-  const { alertController } = await import('@ionic/vue')
-  const alert = await alertController.create({
+  const alert = await createAppAlert({
     header: '新建收藏夹',
     inputs: [{ name: 'name', type: 'text', placeholder: '收藏夹名称' }],
     buttons: [

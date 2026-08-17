@@ -53,47 +53,25 @@
   --ion-border-radius: 14px;
 }
 
-/* Alert 弹窗 — 匹配进度弹窗风格 */
-ion-alert {
-  --background: #fffbf8;
+/* 统一应用弹窗 */
+ion-modal.app-alert-modal {
+  --width: min(360px, calc(100% - 32px));
+  --height: auto;
+  --max-height: calc(100% - 64px);
   --border-radius: 16px;
-  --backdrop-opacity: 0.55;
-  --max-width: 320px;
-  --border-width: 0;
-  --border-style: none;
-  --border-color: transparent;
+  --background: #fffbf8;
+  --box-shadow: 0 14px 40px rgb(76 42 24 / 0.22);
+  --backdrop-opacity: 0.48;
 }
 
-ion-alert .alert-wrapper {
-  border: none;
-  box-shadow: 0 8px 28px rgba(76, 42, 24, 0.18);
+ion-modal.app-alert-modal.app-alert-modal--choice,
+ion-modal.app-alert-modal.app-alert-modal--message {
+  --width: min(400px, calc(100% - 32px));
 }
 
-ion-alert .alert-head {
-  border-bottom: 1px solid #f0e4da;
-}
-
-ion-alert .alert-title {
-  color: #4c2a18;
-  font-weight: 600;
-}
-
-ion-alert .alert-message {
-  white-space: pre-line;
-  color: #6b4e3e;
-}
-
-ion-alert .alert-button-group {
-  border-top: 1px solid #f0e4da;
-}
-
-ion-alert .alert-button {
-  color: #e8843c;
-  font-weight: 500;
-}
-
-ion-alert .alert-button.alert-button-role-cancel {
-  color: #8c6b5a;
+ion-modal.app-alert-modal::part(content) {
+  overflow: hidden;
+  border: 1px solid rgb(232 132 60 / 0.14);
 }
 
 /* 应用更新说明弹窗 — 单一表面，避免 Ionic Alert 的边框叠加 */

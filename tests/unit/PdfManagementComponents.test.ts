@@ -52,6 +52,7 @@ vi.mock('@ionic/vue', () => ({
   }),
   alertController: { create: mocks.alertCreate },
 }))
+vi.mock('@/services/AppAlertService', () => ({ createAppAlert: mocks.alertCreate }))
 vi.mock('ionicons/icons', () => ({
   bookOutline: 'book',
   checkmarkCircleOutline: 'check',

@@ -342,16 +342,17 @@ defineExpose({ panelRef })
   height: 26px;
   border: 0;
   border-radius: 999px;
-  background: #fff;
+  background: transparent;
   color: #c96d3a;
   font-size: 18px;
-  box-shadow: 0 2px 8px rgb(115 67 38 / 0.08);
   cursor: pointer;
   transition: transform 0.12s ease;
 }
 
 .section-add-btn:active {
-  transform: scale(0.9);
+  transform: scale(0.8);
+  background: #ffece0;
+  box-shadow: 0 2px 8px rgb(115 67 38 / 0.2);
 }
 
 .folder-list {

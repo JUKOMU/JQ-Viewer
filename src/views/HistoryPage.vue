@@ -169,7 +169,8 @@ defineOptions({ name: 'HistoryPage' })
 
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { alertController, IonContent, IonIcon, IonPage } from '@ionic/vue'
+import { IonContent, IonIcon, IonPage } from '@ionic/vue'
+import { createAppAlert } from '@/services/AppAlertService'
 import {
   bookOutline,
   copyOutline,
@@ -376,7 +377,7 @@ async function handleMenuDelete() {
   closeContextMenu()
 
   const isBrowse = m.type === 'browse'
-  const alert = await alertController.create({
+  const alert = await createAppAlert({
     header: '确认删除',
     message: isBrowse ? '确定要删除这条浏览记录吗？' : '确定要删除这条解析记录吗？',
     buttons: [
@@ -405,7 +406,7 @@ onBeforeUnmount(() => {
 })
 
 async function confirmClearBrowse() {
-  const alert = await alertController.create({
+  const alert = await createAppAlert({
     header: '确认清空',
     message: '确定要清空所有浏览记录吗？此操作不可撤销。',
     buttons: [
@@ -424,7 +425,7 @@ async function confirmClearBrowse() {
 }
 
 async function confirmClearParse() {
-  const alert = await alertController.create({
+  const alert = await createAppAlert({
     header: '确认清空',
     message: '确定要清空所有解析记录吗？此操作不可撤销。',
     buttons: [

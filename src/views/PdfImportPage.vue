@@ -244,7 +244,6 @@ defineOptions({ name: 'PdfImportPage' })
 
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
-  alertController,
   IonBackButton,
   IonButtons,
   IonContent,
@@ -254,6 +253,7 @@ import {
   IonTitle,
   IonToolbar,
 } from '@ionic/vue'
+import { createAppAlert } from '@/services/AppAlertService'
 import { useRouter } from 'vue-router'
 import {
   checkmarkOutline,
@@ -848,7 +848,7 @@ async function onConfirm() {
   }
 
   if (unresolved.length > 0) {
-    const alert = await alertController.create({
+    const alert = await createAppAlert({
       header: '未解决的文件',
       message: `${unresolved.length} 个文件缺少有效 ID 或章节，将被忽略。仅导入 ${resolved.length} 个已解析的文件。`,
       buttons: [
@@ -876,7 +876,7 @@ async function proceedToImport(resolvedFiles: PdfFileParseItem[]) {
     // 忽略
   }
 
-  const favAlert = await alertController.create({
+  const favAlert = await createAppAlert({
     header: '添加到离线收藏夹？',
     message: `是否将这 ${resolvedFiles.length} 个 PDF 添加到离线收藏夹？`,
     buttons: [
@@ -903,7 +903,7 @@ async function onFavFolderSelect(payload: { folderId: string; source: string }) 
 
 async function onAddFolder() {
   // 创建新离线收藏夹
-  const alert = await alertController.create({
+  const alert = await createAppAlert({
     header: '新建收藏夹',
     inputs: [{ name: 'name', placeholder: '收藏夹名称' }],
     buttons: [

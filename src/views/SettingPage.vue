@@ -469,7 +469,6 @@ defineOptions({ name: 'SettingPage' })
 import { computed, nextTick, onActivated, onDeactivated, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  alertController,
   IonContent,
   IonHeader,
   IonIcon,
@@ -482,6 +481,7 @@ import { chevronForwardOutline } from 'ionicons/icons'
 import { App } from '@capacitor/app'
 import type { PluginListenerHandle } from '@capacitor/core'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
+import { createAppAlert } from '@/services/AppAlertService'
 import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
 import {
   initSettings,
@@ -705,7 +705,7 @@ async function onCacheCapacityChange(e: Event) {
 
 // ---- 清空缓存 ----
 async function onClearCache() {
-  const alert = await alertController.create({
+  const alert = await createAppAlert({
     header: '清空缓存',
     message: '确定清空全部图片缓存吗？',
     buttons: [

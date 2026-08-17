@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@ionic/vue', () => ({
   alertController: { create: mocks.alertCreate },
 }))
+vi.mock('@/services/AppAlertService', () => ({ createAppAlert: mocks.alertCreate }))
 
 vi.mock('@/services/JmcomicService', () => ({
   JmcomicService: {

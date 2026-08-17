@@ -160,7 +160,6 @@ import {
 } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  alertController,
   createGesture,
   type Gesture,
   IonContent,
@@ -170,6 +169,7 @@ import {
   IonRefresherContent,
   menuController,
 } from '@ionic/vue'
+import { createAppAlert } from '@/services/AppAlertService'
 import type { PluginListenerHandle } from '@capacitor/core'
 import {
   bookOutline,
@@ -822,7 +822,7 @@ async function handleCardMove(item: SearchResultItem) {
     return
   }
 
-  const alert = await alertController.create({
+  const alert = await createAppAlert({
     header: '移动到',
     inputs: folders.map((f) => ({
       type: 'radio' as const,
@@ -902,7 +902,7 @@ async function handleCardRemove(item: SearchResultItem) {
     return
   }
   const isOnline = folderSource.value === 'online'
-  const alert = await alertController.create({
+  const alert = await createAppAlert({
     header: '取消收藏',
     message: `确定将「${item.title}」从收藏夹移除？`,
     buttons: [
@@ -933,7 +933,7 @@ async function handleCardRemove(item: SearchResultItem) {
 }
 
 const onAddFolder = async (source: 'online' | 'offline') => {
-  const alert = await alertController.create({
+  const alert = await createAppAlert({
     header: '新建收藏夹',
     inputs: [{ name: 'name', type: 'text', placeholder: '收藏夹名称' }],
     buttons: [
@@ -972,7 +972,7 @@ const onRenameFolder = async (payload: {
   folderName: string
   isOnline: boolean
 }) => {
-  const alert = await alertController.create({
+  const alert = await createAppAlert({
     header: '重命名收藏夹',
     inputs: [{ name: 'name', type: 'text', placeholder: '新名称', value: payload.folderName }],
     buttons: [
@@ -1016,7 +1016,7 @@ const onDeleteFolder = async (payload: {
   folderName: string
   isOnline: boolean
 }) => {
-  const alert = await alertController.create({
+  const alert = await createAppAlert({
     header: '删除收藏夹',
     message: `确定删除「${payload.folderName}」吗？此操作不可撤销。`,
     buttons: [
@@ -1071,7 +1071,7 @@ const onCopyFolder = async (payload: {
 
   if (payload.isOnline) {
     // 在线 → 离线：读取在线源夹全部项，写入本地离线文件夹
-    const alert = await alertController.create({
+    const alert = await createAppAlert({
       header: '复制到离线收藏夹',
       message: '将在线收藏夹内容复制到本地离线文件夹，确定吗？',
       inputs: [
@@ -1126,7 +1126,7 @@ const onCopyFolder = async (payload: {
     await alert.present()
   } else {
     // 离线子夹：离线副本 或 同步到在线
-    const alert = await alertController.create({
+    const alert = await createAppAlert({
       header: '复制收藏夹',
       inputs: [
         {
@@ -1280,7 +1280,7 @@ const onMoveFolder = async (payload: {
       return
     }
 
-    const alert = await alertController.create({
+    const alert = await createAppAlert({
       header: '移动到',
       message: `将「${payload.folderName}」的全部本子移动到：`,
       inputs: targets.map((t) => ({
@@ -1393,7 +1393,7 @@ const onMoveFolder = async (payload: {
       return
     }
 
-    const alert = await alertController.create({
+    const alert = await createAppAlert({
       header: '移动到',
       message: `将「${payload.folderName}」的全部本子移动到：`,
       inputs: targets.map((t) => ({
@@ -1473,7 +1473,7 @@ const onExportFolder = async (payload: {
       await showToast(`已复制 ${items.length} 条到剪贴板`, 'success')
     } catch {
       // clipboard 不可用，用 alert 展示
-      const alert = await alertController.create({
+      const alert = await createAppAlert({
         header: '导出结果',
         message: `共 ${items.length} 条，请手动复制：`,
         inputs: [{ name: 'text', type: 'textarea', value: text }],

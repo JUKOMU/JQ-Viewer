@@ -190,15 +190,8 @@ import {
   watch,
 } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import {
-  alertController,
-  IonContent,
-  IonHeader,
-  IonIcon,
-  IonPage,
-  IonSpinner,
-  IonToolbar,
-} from '@ionic/vue'
+import { IonContent, IonHeader, IonIcon, IonPage, IonSpinner, IonToolbar } from '@ionic/vue'
+import { createAppAlert } from '@/services/AppAlertService'
 import {
   bookmarkOutline,
   bookOutline,
@@ -993,7 +986,7 @@ async function onPickerSelect(payload: { folderId: string; source: 'online' | 'o
 }
 
 async function onPickerAddFolder() {
-  const alert = await alertController.create({
+  const alert = await createAppAlert({
     header: '新建收藏夹',
     inputs: [{ name: 'name', type: 'text', placeholder: '收藏夹名称' }],
     buttons: [

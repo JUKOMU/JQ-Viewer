@@ -183,7 +183,8 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { alertController, IonContent, IonIcon, IonPopover, IonSpinner } from '@ionic/vue'
+import { IonContent, IonIcon, IonPopover, IonSpinner } from '@ionic/vue'
+import { createAppAlert } from '@/services/AppAlertService'
 import {
   bookOutline,
   checkmarkCircleOutline,
@@ -481,7 +482,7 @@ const availabilityLabel = (value: ImportedPdf['availability']) =>
 const deleteFile = async (file: ImportedPdf) => {
   try {
     const current = await PdfManagementService.inspectFileForDeletion(file.id)
-    const alert = await alertController.create({
+    const alert = await createAppAlert({
       header: '确认删除实际 PDF 文件',
       message: [
         `文件名：${current.fileName}`,
@@ -531,7 +532,7 @@ const cancelTask = async (task: PdfExportTaskRecord) => {
   }
 }
 const retryTask = async (task: PdfExportTaskRecord) => {
-  const alert = await alertController.create({
+  const alert = await createAppAlert({
     header: '确认重试整个任务',
     message:
       '将从第一卷开始重新导出并覆盖已有同名文件。成功写完的卷会立即替换；若后续卷失败，未处理的旧卷会保留，但不计入本次结果。',
@@ -556,7 +557,7 @@ const retryTask = async (task: PdfExportTaskRecord) => {
   await alert.present()
 }
 const deleteTask = async (task: PdfExportTaskRecord) => {
-  const alert = await alertController.create({
+  const alert = await createAppAlert({
     header: '确认删除任务记录',
     message: `只删除「${task.displayTitle}」的任务历史，最终 PDF 文件不会被删除。`,
     buttons: [

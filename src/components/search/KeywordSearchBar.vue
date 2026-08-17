@@ -144,7 +144,8 @@ const emit = defineEmits<{
 }>()
 import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { alertController, IonIcon, IonSearchbar } from '@ionic/vue'
+import { IonIcon, IonSearchbar } from '@ionic/vue'
+import { createAppAlert } from '@/services/AppAlertService'
 import { addOutline, chevronDownOutline, helpCircleOutline, searchOutline } from 'ionicons/icons'
 import { ORDER_BY_OPTIONS, SEARCH_MAIN_TAG_OPTIONS, TIME_OPTIONS } from '@/constants/searchOptions'
 import type { AlbumDetail, SearchQuery } from '@/services/JmcomicTypes'
@@ -249,7 +250,8 @@ async function handleUpload() {
 }
 
 async function showHelp() {
-  const alert = await alertController.create({
+  const alert = await createAppAlert({
+    tone: 'info',
     header: '使用帮助',
     message: [
       '【单个解析】',
@@ -386,6 +388,7 @@ ion-searchbar.custom {
   align-items: center;
   justify-content: center;
   flex: 0 0 38px;
+  align-self: center;
   width: 38px;
   height: 38px;
   border: 0;

@@ -108,7 +108,6 @@ defineOptions({ name: 'UserPage' })
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  alertController,
   IonBackButton,
   IonButton,
   IonButtons,
@@ -121,6 +120,7 @@ import {
 } from '@ionic/vue'
 import { personCircleOutline } from 'ionicons/icons'
 import { useAuth } from '@/composables/useAuth'
+import { createAppAlert } from '@/services/AppAlertService'
 import { JmcomicService } from '@/services/JmcomicService'
 import type { UserProfile } from '@/services/JmcomicTypes'
 
@@ -157,7 +157,7 @@ onMounted(async () => {
 })
 
 async function confirmLogout() {
-  const alert = await alertController.create({
+  const alert = await createAppAlert({
     header: '确认登出',
     message: '登出后将切换到离线收藏夹模式。',
     buttons: [

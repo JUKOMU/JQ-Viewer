@@ -88,6 +88,7 @@
             :file="file"
             :has-image-resource="hasImageResource(file)"
             :verifying="verifyingIds.has(file.id)"
+            :menu-open="isFileActionMenuOpen && selectedFile === file"
             @open="readFile(file)"
             @more="openFileActions(file, $event)"
           />
@@ -134,56 +135,20 @@
       <div v-else class="state">暂无导出任务</div>
     </div>
 
-    <IonPopover
-      class="pdf-file-popover"
-      :is-open="isFilePopoverOpen"
-      :event="filePopoverEvent"
-      @did-dismiss="closeFileActions"
-    >
-      <IonContent class="popover-content">
-        <div class="popover-header">{{ selectedFile?.fileName }}</div>
-        <button type="button" class="popover-btn" @click="fileAction('read')">
-          <IonIcon :icon="bookOutline" />
-          阅读
-        </button>
-        <button type="button" class="popover-btn" @click="fileAction('detail')">
-          <IonIcon :icon="informationCircleOutline" />
-          进入详情页
-        </button>
-        <button
-          type="button"
-          class="popover-btn"
-          :disabled="isSelectedFileVerifying"
-          @click="fileAction('verify')"
-        >
-          <IonSpinner v-if="isSelectedFileVerifying" name="crescent" />
-          <IonIcon v-else :icon="checkmarkCircleOutline" />
-          {{ isSelectedFileVerifying ? '校验中' : '校验' }}
-        </button>
-        <button type="button" class="popover-btn" @click="fileAction('copy-path')">
-          <IonIcon :icon="copyOutline" />
-          复制路径
-        </button>
-        <button type="button" class="popover-btn" @click="fileAction('open-folder')">
-          <IonIcon :icon="folderOpenOutline" />
-          打开文件夹
-        </button>
-        <button type="button" class="popover-btn" @click="fileAction('remove')">
-          <IonIcon :icon="removeCircleOutline" />
-          移除
-        </button>
-        <button type="button" class="popover-btn danger" @click="fileAction('delete')">
-          <IonIcon :icon="trashOutline" />
-          删除
-        </button>
-      </IonContent>
-    </IonPopover>
+    <CardContextMenu
+      :visible="isFileActionMenuOpen"
+      :anchor="fileActionMenuAnchor"
+      :title="selectedFile?.fileName"
+      :actions="fileActionMenuActions"
+      @close="closeFileActions"
+      @select="fileAction"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { IonContent, IonIcon, IonPopover, IonSpinner } from '@ionic/vue'
+import { IonIcon } from '@ionic/vue'
 import { createAppAlert } from '@/services/AppAlertService'
 import {
   bookOutline,
@@ -199,6 +164,7 @@ import {
 import { useRouter } from 'vue-router'
 import PdfFileCard from './PdfFileCard.vue'
 import PdfExportTaskCard from './PdfExportTaskCard.vue'
+import CardContextMenu from '@/components/common/CardContextMenu.vue'
 import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
 import { PdfImportService } from '@/services/PdfImportService'
 import {
@@ -225,8 +191,8 @@ const fileFilter = ref<'all' | 'imported' | 'exported'>('all')
 const taskFilter = ref<'all' | PdfExportTaskRecord['status']>('all')
 const searchText = ref('')
 const selectedFile = ref<ImportedPdf | null>(null)
-const filePopoverEvent = ref<Event | null>(null)
-const isFilePopoverOpen = ref(false)
+const fileActionMenuAnchor = ref<HTMLElement | null>(null)
+const isFileActionMenuOpen = ref(false)
 const fileCursor = ref<string | null>(null)
 const taskCursor = ref<string | null>(null)
 const highlightedExportId = ref<string | null>(null)
@@ -258,6 +224,21 @@ const views = computed(() => [
 const isSelectedFileVerifying = computed(() =>
   selectedFile.value ? verifyingIds.value.has(selectedFile.value.id) : false,
 )
+const fileActionMenuActions = computed(() => [
+  { id: 'read', label: '阅读', icon: bookOutline },
+  { id: 'detail', label: '进入详情页', icon: informationCircleOutline },
+  {
+    id: 'verify',
+    label: isSelectedFileVerifying.value ? '校验中' : '校验',
+    icon: checkmarkCircleOutline,
+    disabled: isSelectedFileVerifying.value,
+    loading: isSelectedFileVerifying.value,
+  },
+  { id: 'copy-path', label: '复制路径', icon: copyOutline },
+  { id: 'open-folder', label: '打开文件夹', icon: folderOpenOutline },
+  { id: 'remove', label: '移除', icon: removeCircleOutline },
+  { id: 'delete', label: '删除', icon: trashOutline, danger: true },
+])
 
 const currentFileFilters = () => ({
   sourceType: fileFilter.value === 'all' ? undefined : fileFilter.value,
@@ -382,14 +363,19 @@ const loadMoreTasks = async () => {
 }
 
 const openFileActions = (file: ImportedPdf, event: Event) => {
+  const anchor = event.currentTarget as HTMLElement
+  if (fileActionMenuAnchor.value === anchor) {
+    closeFileActions()
+    return
+  }
   selectedFile.value = file
-  filePopoverEvent.value = event
-  isFilePopoverOpen.value = true
+  fileActionMenuAnchor.value = anchor
+  isFileActionMenuOpen.value = true
 }
 const closeFileActions = () => {
-  isFilePopoverOpen.value = false
+  isFileActionMenuOpen.value = false
   selectedFile.value = null
-  filePopoverEvent.value = null
+  fileActionMenuAnchor.value = null
 }
 const readFile = (file: ImportedPdf) => {
   void router.push({
@@ -438,11 +424,9 @@ const verifyFile = async (file: ImportedPdf) => {
   }
 }
 
-type FileAction = 'read' | 'detail' | 'verify' | 'copy-path' | 'open-folder' | 'remove' | 'delete'
-
-const fileAction = (action: FileAction) => {
+const fileAction = (action: string) => {
   const file = selectedFile.value
-  isFilePopoverOpen.value = false
+  closeFileActions()
   if (!file) return
 
   if (action === 'read') readFile(file)
@@ -845,69 +829,6 @@ defineExpose({ refresh: load })
 }
 
 .task-anchor.highlighted {
-  outline: 2px solid #c06f45;
-  outline-offset: 2px;
-}
-
-.popover-content {
-  --background: #fffaf6;
-}
-
-.popover-header {
-  max-width: 220px;
-  overflow: hidden;
-  padding: 10px 14px 6px;
-  color: #4c2a18;
-  font-size: 13px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.popover-btn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  border: 0;
-  padding: 10px 14px;
-  background: transparent;
-  color: #4c2a18;
-  font-size: 13px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.popover-btn:active {
-  background: #f5d2bc;
-}
-
-.popover-btn:disabled {
-  cursor: default;
-  opacity: 0.6;
-}
-
-.popover-btn.danger {
-  color: #d9534f;
-}
-
-.popover-btn.danger:active {
-  background: #ffeaea;
-}
-
-.popover-btn ion-icon {
-  width: 20px;
-  font-size: 16px;
-  text-align: center;
-}
-
-.popover-btn ion-spinner {
-  width: 16px;
-  height: 16px;
-  margin: 0 2px;
-}
-
-.popover-btn:focus-visible {
   outline: 2px solid #c06f45;
   outline-offset: 2px;
 }

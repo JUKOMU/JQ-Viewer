@@ -63,6 +63,7 @@
             <DownloadTaskCard
               :task="task"
               :show-progress="true"
+              :menu-open="isTaskMenuOpen(task)"
               @more="openActions(task, $event)"
             />
           </div>
@@ -84,6 +85,7 @@
               :show-progress="false"
               :total-size="group.totalSize"
               :downloaded-chapters="group.type === 'multi' ? group.chapters : undefined"
+              :menu-open="isTaskMenuOpen(group.chapters[0])"
               @click="onReadGroup(group)"
               @more="openGroupActions(group, $event)"
             />
@@ -100,6 +102,7 @@
             <DownloadTaskCard
               :task="task"
               :show-progress="false"
+              :menu-open="isTaskMenuOpen(task)"
               @more="openActions(task, $event)"
             />
           </div>
@@ -115,93 +118,14 @@
       />
     </IonContent>
 
-    <!-- 操作菜单（IonPopover） -->
-    <IonPopover
-      :is-open="isPopoverOpen"
-      :event="popoverEvent"
-      @did-dismiss="
-        (() => {
-          isPopoverOpen = false
-          if (!isDeleteAlertOpen) {
-            selectedTask = null
-            selectedGroup = null
-            popoverEvent = null
-          }
-        })()
-      "
-    >
-      <IonContent class="popover-content">
-        <div class="popover-header">{{ popoverTitle }}</div>
-
-        <button
-          v-if="selectedStatus === 'completed'"
-          class="popover-btn"
-          @click="popoverAction('read')"
-        >
-          <IonIcon :icon="bookOutline" />
-          {{ selectedGroup?.type === 'multi' ? '选择章节' : '阅读' }}
-        </button>
-
-        <button class="popover-btn" @click="popoverAction('detail')">
-          <IonIcon :icon="informationCircleOutline" />
-          进入详情页
-        </button>
-
-        <button
-          v-if="selectedStatus === 'completed'"
-          class="popover-btn"
-          @click="popoverAction('pdf')"
-        >
-          <IonIcon :icon="documentLockOutline" />
-          导出为PDF
-        </button>
-
-        <button
-          v-if="selectedStatus === 'failed'"
-          class="popover-btn"
-          @click="popoverAction('retry')"
-        >
-          <IonIcon :icon="refreshOutline" />
-          {{ selectedError?.includes('张图片下载失败') ? '重新下载失败图片' : '重试' }}
-        </button>
-
-        <button
-          v-if="selectedStatus === 'paused'"
-          class="popover-btn"
-          @click="popoverAction('resume')"
-        >
-          <IonIcon :icon="playOutline" />
-          继续
-        </button>
-
-        <button
-          v-if="selectedStatus === 'downloading'"
-          class="popover-btn"
-          @click="popoverAction('pause')"
-        >
-          <IonIcon :icon="pauseOutline" />
-          暂停
-        </button>
-
-        <button
-          v-if="cancelableStatuses.includes(selectedStatus ?? '')"
-          class="popover-btn danger"
-          @click="popoverAction('cancel')"
-        >
-          <IonIcon :icon="closeCircleOutline" />
-          取消
-        </button>
-
-        <button
-          v-if="deletableStatuses.includes(selectedStatus ?? '')"
-          class="popover-btn danger"
-          @click="popoverAction('delete')"
-        >
-          <IonIcon :icon="trashOutline" />
-          删除
-        </button>
-      </IonContent>
-    </IonPopover>
+    <CardContextMenu
+      :visible="isActionMenuOpen"
+      :anchor="actionMenuAnchor"
+      :title="popoverTitle"
+      :actions="actionMenuActions"
+      @close="closeActions"
+      @select="popoverAction"
+    />
 
     <!-- PDF导出底部面板 -->
     <PdfExportBottomSheet
@@ -230,7 +154,6 @@ import {
   IonHeader,
   IonIcon,
   IonPage,
-  IonPopover,
   IonRefresher,
   IonRefresherContent,
   IonToolbar,
@@ -256,6 +179,7 @@ import DownloadTaskCard from '@/components/download/DownloadTaskCard.vue'
 import PdfExportBottomSheet from '@/components/download/PdfExportBottomSheet.vue'
 import DeleteChaptersBottomSheet from '@/components/download/DeleteChaptersBottomSheet.vue'
 import PdfManagementView from '@/components/download/PdfManagementView.vue'
+import CardContextMenu from '@/components/common/CardContextMenu.vue'
 import { createAppAlert } from '@/services/AppAlertService'
 import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
 import { OfflineDownloadService } from '@/services/OfflineDownloadService'
@@ -325,8 +249,8 @@ const sortTasks = (list: DownloadTask[]) => {
 // 操作菜单
 const selectedTask = ref<DownloadTask | CompletedEntry | null>(null)
 const selectedGroup = ref<CompletedGroup | null>(null)
-const isPopoverOpen = ref(false)
-const popoverEvent = ref<Event | null>(null)
+const isActionMenuOpen = ref(false)
+const actionMenuAnchor = ref<HTMLElement | null>(null)
 
 const cancelableStatuses = ['queued', 'downloading', 'paused']
 const deletableStatuses = ['completed', 'failed']
@@ -344,6 +268,9 @@ const selectedError = computed(() => {
   return t.error
 })
 
+const isTaskMenuOpen = (task: DownloadTask | CompletedEntry) =>
+  isActionMenuOpen.value && selectedTask.value === task
+
 // PDF导出
 const showPdfSheet = ref(false)
 const chaptersForPdf = ref<DownloadTask[]>([])
@@ -355,24 +282,72 @@ const popoverTitle = computed(() => {
   return selectedTask.value?.chapterTitle ?? ''
 })
 
+const actionMenuActions = computed(() => {
+  const actions = []
+  if (selectedStatus.value === 'completed') {
+    actions.push({
+      id: 'read',
+      label: selectedGroup.value?.type === 'multi' ? '选择章节' : '阅读',
+      icon: bookOutline,
+    })
+  }
+  actions.push({ id: 'detail', label: '进入详情页', icon: informationCircleOutline })
+  if (selectedStatus.value === 'completed') {
+    actions.push({ id: 'pdf', label: '导出为PDF', icon: documentLockOutline })
+  }
+  if (selectedStatus.value === 'failed') {
+    actions.push({
+      id: 'retry',
+      label: selectedError.value?.includes('张图片下载失败') ? '重新下载失败图片' : '重试',
+      icon: refreshOutline,
+    })
+  }
+  if (selectedStatus.value === 'paused') {
+    actions.push({ id: 'resume', label: '继续', icon: playOutline })
+  }
+  if (selectedStatus.value === 'downloading') {
+    actions.push({ id: 'pause', label: '暂停', icon: pauseOutline })
+  }
+  if (cancelableStatuses.includes(selectedStatus.value ?? '')) {
+    actions.push({ id: 'cancel', label: '取消', icon: closeCircleOutline, danger: true })
+  }
+  if (deletableStatuses.includes(selectedStatus.value ?? '')) {
+    actions.push({ id: 'delete', label: '删除', icon: trashOutline, danger: true })
+  }
+  return actions
+})
+
 const openActions = (task: DownloadTask, event: Event) => {
+  const anchor = event.currentTarget as HTMLElement
+  if (actionMenuAnchor.value === anchor) {
+    closeActions()
+    return
+  }
   selectedTask.value = task
   selectedGroup.value = null
-  popoverEvent.value = event
-  isPopoverOpen.value = true
+  actionMenuAnchor.value = anchor
+  isActionMenuOpen.value = true
 }
 
 const openGroupActions = (group: CompletedGroup, event: Event) => {
+  const anchor = event.currentTarget as HTMLElement
+  if (actionMenuAnchor.value === anchor) {
+    closeActions()
+    return
+  }
   selectedTask.value = group.chapters[0]
   selectedGroup.value = group
-  popoverEvent.value = event
-  isPopoverOpen.value = true
+  actionMenuAnchor.value = anchor
+  isActionMenuOpen.value = true
 }
 
 const popoverAction = (action: string) => {
-  isPopoverOpen.value = false
+  isActionMenuOpen.value = false
   const t = selectedTask.value
-  if (!t) return
+  if (!t) {
+    closeActions()
+    return
+  }
 
   switch (action) {
     case 'read':
@@ -407,6 +382,17 @@ const popoverAction = (action: string) => {
         requestDeleteConfirm()
       }
       break
+  }
+
+  if (action !== 'delete') closeActions()
+}
+
+const closeActions = () => {
+  isActionMenuOpen.value = false
+  if (!isDeleteAlertOpen.value && !showDeleteSheet.value) {
+    selectedTask.value = null
+    selectedGroup.value = null
+    actionMenuAnchor.value = null
   }
 }
 
@@ -455,7 +441,7 @@ const confirmDelete = () => {
   }
   selectedTask.value = null
   selectedGroup.value = null
-  popoverEvent.value = null
+  actionMenuAnchor.value = null
 }
 
 const hasTasks = computed(() => tasks.value.length > 0)
@@ -1034,7 +1020,7 @@ const onDeleteSheetConfirm = async (chapters: CompletedEntry[]) => {
   deleteGroup.value = null
   selectedTask.value = null
   selectedGroup.value = null
-  popoverEvent.value = null
+  actionMenuAnchor.value = null
 }
 
 const deleteChapters = async (chapters: CompletedEntry[]) => {
@@ -1286,57 +1272,8 @@ const clearFailed = async () => {
   height: 80px;
 }
 
-/* Popover 内容样式 */
-.popover-content {
-  --background: #fffaf6;
-}
-
-.popover-header {
-  font-size: 13px;
-  font-weight: 600;
-  color: #4c2a18;
-  padding: 10px 14px 6px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 220px;
-}
-
-.popover-btn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  border: 0;
-  background: transparent;
-  color: #4c2a18;
-  font-size: 13px;
-  padding: 10px 14px;
-  cursor: pointer;
-  text-align: left;
-}
-
-.popover-btn:active {
-  background: #f5d2bc;
-}
-
-.popover-btn.danger {
-  color: #d9534f;
-}
-
-.popover-btn.danger:active {
-  background: #ffeaea;
-}
-
-.popover-btn ion-icon {
-  font-size: 16px;
-  width: 20px;
-  text-align: center;
-}
-
 .sort-btn:focus-visible,
-.clear-btn:focus-visible,
-.popover-btn:focus-visible {
+.clear-btn:focus-visible {
   outline: 2px solid #c06f45;
   outline-offset: 2px;
 }

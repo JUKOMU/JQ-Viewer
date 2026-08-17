@@ -61,40 +61,13 @@
         </template>
       </SearchResultContainer>
 
-      <!-- 卡片操作上下文菜单 -->
-      <div
-        v-if="cardMenu"
-        ref="cardMenuRef"
-        class="card-context-menu"
-        :style="cardMenuStyle"
-        @mousedown.prevent.stop
-        @touchstart.stop
-      >
-        <button type="button" class="card-menu-item" @click.stop="handleCardDetail(cardMenu.item)">
-          <IonIcon :icon="informationCircleOutline" class="card-menu-icon" />
-          <span>详情</span>
-        </button>
-        <button type="button" class="card-menu-item" @click.stop="handleCardRead(cardMenu.item)">
-          <IonIcon :icon="bookOutline" class="card-menu-icon" />
-          <span>阅读</span>
-        </button>
-        <button
-          type="button"
-          class="card-menu-item"
-          @click.stop="handleCardDownload(cardMenu.item)"
-        >
-          <IonIcon :icon="downloadOutline" class="card-menu-icon" />
-          <span>下载</span>
-        </button>
-        <button
-          type="button"
-          class="card-menu-item"
-          @click.stop="handleCardFavorite(cardMenu.item)"
-        >
-          <IonIcon :icon="heartOutline" class="card-menu-icon" />
-          <span>收藏</span>
-        </button>
-      </div>
+      <CardContextMenu
+        :visible="Boolean(cardMenu)"
+        :anchor="cardMenu?.anchor ?? null"
+        :actions="cardMenuActions"
+        @close="closeCardMenu"
+        @select="handleCardMenuAction"
+      />
 
       <!-- 收藏夹选择弹窗 -->
       <FavoriteFolderPicker
@@ -118,16 +91,7 @@
 </template>
 
 <script setup lang="ts">
-import {
-  computed,
-  nextTick,
-  onActivated,
-  onBeforeUnmount,
-  onDeactivated,
-  onMounted,
-  ref,
-  watch,
-} from 'vue'
+import { computed, nextTick, onActivated, onDeactivated, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { IonContent, IonIcon, IonPage } from '@ionic/vue'
 import { createAppAlert } from '@/services/AppAlertService'
@@ -141,6 +105,7 @@ import {
 import type { ScrollCustomEvent } from '@ionic/core'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import QuickActionFab from '@/components/common/QuickActionFab.vue'
+import CardContextMenu from '@/components/common/CardContextMenu.vue'
 import SearchHeaderBar from '@/components/search/SearchHeaderBar.vue'
 import FavoriteFolderPicker from '@/components/favorite/FavoriteFolderPicker.vue'
 import type {
@@ -511,43 +476,37 @@ const { isLoggedIn } = useAuth()
 
 interface CardMenuState {
   item: SearchResultItem
-  x: number
-  y: number
+  anchor: HTMLElement
 }
 
 const cardMenu = ref<CardMenuState | null>(null)
-const cardMenuRef = ref<HTMLElement | null>(null)
-
-const cardMenuStyle = computed(() => {
-  const m = cardMenu.value
-  if (!m) return {}
-  const menuH = 180
-  const top = m.y + menuH > window.innerHeight ? m.y - menuH - 8 : m.y
-  return {
-    position: 'fixed' as const,
-    top: `${top}px`,
-    left: `${Math.min(m.x, window.innerWidth - 160)}px`,
-  }
-})
+const cardMenuActions = computed(() => [
+  { id: 'detail', label: '详情', icon: informationCircleOutline },
+  { id: 'read', label: '阅读', icon: bookOutline },
+  { id: 'download', label: '下载', icon: downloadOutline },
+  { id: 'favorite', label: '收藏', icon: heartOutline },
+])
 
 function openCardMenu(item: SearchResultItem, event: MouseEvent) {
-  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-  cardMenu.value = { item, x: rect.left, y: rect.bottom + 4 }
-  setTimeout(() => {
-    document.addEventListener('mousedown', handleCardMenuClickOutside)
-    document.addEventListener('touchstart', handleCardMenuClickOutside)
-  }, 0)
+  const anchor = event.currentTarget as HTMLElement
+  if (cardMenu.value?.anchor === anchor) {
+    closeCardMenu()
+    return
+  }
+  cardMenu.value = { item, anchor }
 }
 
 function closeCardMenu() {
   cardMenu.value = null
-  document.removeEventListener('mousedown', handleCardMenuClickOutside)
-  document.removeEventListener('touchstart', handleCardMenuClickOutside)
 }
 
-function handleCardMenuClickOutside(e: Event) {
-  if (cardMenuRef.value?.contains(e.target as Node)) return
-  closeCardMenu()
+function handleCardMenuAction(action: string) {
+  const item = cardMenu.value?.item
+  if (!item) return
+  if (action === 'detail') handleCardDetail(item)
+  else if (action === 'read') void handleCardRead(item)
+  else if (action === 'download') void handleCardDownload(item)
+  else if (action === 'favorite') void handleCardFavorite(item)
 }
 
 function handleCardDetail(item: SearchResultItem) {
@@ -722,11 +681,6 @@ async function onPickerAddFolder() {
   await alert.present()
 }
 
-onBeforeUnmount(() => {
-  document.removeEventListener('mousedown', handleCardMenuClickOutside)
-  document.removeEventListener('touchstart', handleCardMenuClickOutside)
-})
-
 const goBack = () => {
   if (window.history.length > 1) {
     router.back()
@@ -897,48 +851,5 @@ onMounted(() => {
 :deep(.card-more-btn.active) {
   background: rgb(250 156 105 / 0.15);
   color: #c96d3a;
-}
-
-/* ---- 上下文菜单 ---- */
-
-.card-context-menu {
-  display: flex;
-  flex-direction: column;
-  min-width: 140px;
-  padding: 6px;
-  border-radius: 14px;
-  background: #fffaf6;
-  box-shadow: 0 12px 36px rgb(76 42 24 / 0.22);
-  z-index: 50;
-  overflow: hidden;
-}
-
-.card-menu-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  min-height: 42px;
-  padding: 10px 14px;
-  border: 0;
-  border-radius: 10px;
-  background: transparent;
-  color: #3a261d;
-  font: inherit;
-  font-size: 14px;
-  font-weight: 600;
-  text-align: left;
-  cursor: pointer;
-  transition: background-color 0.12s ease;
-}
-
-.card-menu-item:active {
-  background: #fff0e7;
-}
-
-.card-menu-icon {
-  flex-shrink: 0;
-  font-size: 17px;
-  color: #8a6048;
 }
 </style>

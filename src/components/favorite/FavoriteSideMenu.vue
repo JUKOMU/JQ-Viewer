@@ -49,21 +49,13 @@
               <button
                 type="button"
                 class="folder-more-btn"
+                :class="{ active: isContextMenuOpen(folder.id, true) }"
                 aria-label="更多操作"
-                @click.stop="toggleContextMenu(folder.id)"
+                :aria-expanded="isContextMenuOpen(folder.id, true)"
+                @click.stop="toggleContextMenu(folder, true, $event)"
               >
                 <IonIcon :icon="ellipsisVertical" />
               </button>
-              <FavoriteFolderContextMenu
-                :visible="openMenuFolderId === folder.id"
-                :is-default-folder="folder.id === '0'"
-                :is-online="true"
-                @rename="onContextMenuRename(folder.id, folder.name, true)"
-                @move="onContextMenuMove(folder.id, folder.name, true)"
-                @copy="onContextMenuCopy(folder.id, folder.name, true)"
-                @delete="onContextMenuDelete(folder.id, folder.name, true)"
-                @export="onContextMenuExport(folder.id, folder.name, true)"
-              />
             </div>
           </div>
         </template>
@@ -107,34 +99,43 @@
             <button
               type="button"
               class="folder-more-btn"
+              :class="{ active: isContextMenuOpen(folder.id, false) }"
               aria-label="更多操作"
-              @click.stop="toggleContextMenu(folder.id)"
+              :aria-expanded="isContextMenuOpen(folder.id, false)"
+              @click.stop="toggleContextMenu(folder, false, $event)"
             >
               <IonIcon :icon="ellipsisVertical" />
             </button>
-            <FavoriteFolderContextMenu
-              :visible="openMenuFolderId === folder.id"
-              :is-default-folder="folder.id === OFFLINE_ALL_FOLDER_ID"
-              :is-online="false"
-              @rename="onContextMenuRename(folder.id, folder.name, false)"
-              @move="onContextMenuMove(folder.id, folder.name, false)"
-              @copy="onContextMenuCopy(folder.id, folder.name, false)"
-              @delete="onContextMenuDelete(folder.id, folder.name, false)"
-              @export="onContextMenuExport(folder.id, folder.name, false)"
-            />
           </div>
         </div>
       </div>
     </div>
+    <CardContextMenu
+      :visible="Boolean(contextMenu)"
+      :anchor="contextMenu?.anchor ?? null"
+      :actions="contextMenuActions"
+      @close="closeContextMenu"
+      @select="handleContextMenuAction"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { IonIcon } from '@ionic/vue'
-import { addCircleOutline, closeOutline, ellipsisVertical, folderOpenOutline } from 'ionicons/icons'
+import {
+  addCircleOutline,
+  closeOutline,
+  copyOutline,
+  downloadOutline,
+  ellipsisVertical,
+  folderOpenOutline,
+  pencilOutline,
+  swapHorizontalOutline,
+  trashOutline,
+} from 'ionicons/icons'
 import { useSideMenuState } from '@/composables/useSideMenuState'
-import FavoriteFolderContextMenu from '@/components/favorite/FavoriteFolderContextMenu.vue'
+import CardContextMenu from '@/components/common/CardContextMenu.vue'
 import type { FolderEntry } from '@/services/JmcomicTypes'
 import { OFFLINE_ALL_FOLDER_ID } from '@/services/JmcomicTypes'
 
@@ -163,14 +164,54 @@ const emit = defineEmits<{
 const { isDraggingRight, isSnappingClosed, rightDragProgress } = useSideMenuState()
 
 const panelRef = ref<HTMLElement | null>(null)
-const openMenuFolderId = ref<string | null>(null)
-
-const closeContextMenu = () => {
-  openMenuFolderId.value = null
+interface ContextMenuState {
+  folder: FolderEntry
+  isOnline: boolean
+  anchor: HTMLElement
 }
 
-const toggleContextMenu = (folderId: string) => {
-  openMenuFolderId.value = openMenuFolderId.value === folderId ? null : folderId
+const contextMenu = ref<ContextMenuState | null>(null)
+
+const closeContextMenu = () => {
+  contextMenu.value = null
+}
+
+const isContextMenuOpen = (folderId: string, isOnline: boolean) =>
+  contextMenu.value?.folder.id === folderId && contextMenu.value.isOnline === isOnline
+
+const toggleContextMenu = (folder: FolderEntry, isOnline: boolean, event: MouseEvent) => {
+  const anchor = event.currentTarget as HTMLElement
+  if (contextMenu.value?.anchor === anchor) {
+    closeContextMenu()
+    return
+  }
+  contextMenu.value = { folder, isOnline, anchor }
+}
+
+const contextMenuActions = computed(() => {
+  const menu = contextMenu.value
+  if (!menu) return []
+  const isDefaultFolder = menu.isOnline
+    ? menu.folder.id === '0'
+    : menu.folder.id === OFFLINE_ALL_FOLDER_ID
+  return [
+    ...(isDefaultFolder ? [] : [{ id: 'rename', label: '重命名', icon: pencilOutline }]),
+    { id: 'move', label: '移动', icon: swapHorizontalOutline },
+    { id: 'copy', label: '复制', icon: copyOutline },
+    ...(isDefaultFolder ? [] : [{ id: 'delete', label: '删除', icon: trashOutline, danger: true }]),
+    { id: 'export', label: '导出', icon: downloadOutline },
+  ]
+})
+
+const handleContextMenuAction = (action: string) => {
+  const menu = contextMenu.value
+  if (!menu) return
+  const { folder, isOnline } = menu
+  if (action === 'rename') onContextMenuRename(folder.id, folder.name, isOnline)
+  else if (action === 'move') onContextMenuMove(folder.id, folder.name, isOnline)
+  else if (action === 'copy') onContextMenuCopy(folder.id, folder.name, isOnline)
+  else if (action === 'delete') onContextMenuDelete(folder.id, folder.name, isOnline)
+  else if (action === 'export') onContextMenuExport(folder.id, folder.name, isOnline)
 }
 
 const onContextMenuRename = (folderId: string, folderName: string, isOnline: boolean) => {
@@ -197,21 +238,6 @@ const onContextMenuExport = (folderId: string, folderName: string, isOnline: boo
   closeContextMenu()
   emit('export-folder', { folderId, folderName, isOnline })
 }
-
-const handleClickOutside = () => {
-  if (!openMenuFolderId.value) return
-  closeContextMenu()
-}
-
-onMounted(() => {
-  document.addEventListener('mousedown', handleClickOutside)
-  document.addEventListener('touchstart', handleClickOutside)
-})
-
-onBeforeUnmount(() => {
-  document.removeEventListener('mousedown', handleClickOutside)
-  document.removeEventListener('touchstart', handleClickOutside)
-})
 
 const isVisible = computed(
   () => props.modelValue || isDraggingRight.value || isSnappingClosed.value,
@@ -448,8 +474,10 @@ defineExpose({ panelRef })
   cursor: pointer;
 }
 
-.folder-more-btn:active {
-  background: #f5d2bc;
+.folder-more-btn:active,
+.folder-more-btn.active {
+  background: rgb(250 156 105 / 0.15);
+  color: #c96d3a;
 }
 
 .empty-state {

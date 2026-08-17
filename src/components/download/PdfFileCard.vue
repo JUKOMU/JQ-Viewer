@@ -31,8 +31,10 @@
     </button>
     <button
       class="more-btn"
+      :class="{ active: menuOpen }"
       type="button"
-      aria-label="PDF 文件操作"
+      aria-label="更多操作"
+      :aria-expanded="menuOpen"
       @click.stop="$emit('more', $event)"
     >
       <IonIcon :icon="ellipsisVertical" />
@@ -50,6 +52,7 @@ const props = defineProps<{
   file: ImportedPdf
   hasImageResource: boolean
   verifying?: boolean
+  menuOpen?: boolean
 }>()
 
 defineEmits<{
@@ -255,6 +258,12 @@ const availabilityLabel = computed(() => {
 .more-btn:focus-visible {
   outline: 2px solid #c06f45;
   outline-offset: 2px;
+}
+
+.more-btn:active,
+.more-btn.active {
+  background: rgb(250 156 105 / 0.15);
+  color: #c96d3a;
 }
 
 @media (prefers-reduced-motion: reduce) {

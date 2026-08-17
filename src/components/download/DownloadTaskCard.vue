@@ -79,7 +79,14 @@
       </div>
     </div>
 
-    <button class="more-btn" @click.stop="$emit('more', $event)">
+    <button
+      type="button"
+      class="more-btn"
+      :class="{ active: menuOpen }"
+      aria-label="更多操作"
+      :aria-expanded="menuOpen"
+      @click.stop="$emit('more', $event)"
+    >
       <IonIcon :icon="ellipsisVertical" />
     </button>
   </div>
@@ -93,6 +100,7 @@ const props = defineProps<{
   showProgress: boolean
   downloadedChapters?: CompletedEntry[]
   totalSize?: number
+  menuOpen?: boolean
 }>()
 const emit = defineEmits<{
   more: [event: Event]
@@ -365,8 +373,10 @@ const onCardClick = () => {
   cursor: pointer;
 }
 
-.more-btn:active {
-  background: #f5d2bc;
+.more-btn:active,
+.more-btn.active {
+  background: rgb(250 156 105 / 0.15);
+  color: #c96d3a;
 }
 
 .progress-bar {

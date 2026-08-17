@@ -1,4 +1,4 @@
-import { alertController } from '@ionic/vue'
+import { createAppAlert } from '@/services/AppAlertService'
 import type {
   BrowseHistoryItem,
   DownloadProgressEvent,
@@ -39,7 +39,8 @@ async function ensureDownloadNotificationPermission(): Promise<void> {
         return
       }
 
-      const alert = await alertController.create({
+      const alert = await createAppAlert({
+        tone: 'info',
         header: '需要通知权限',
         message:
           '章节下载将在后台进行，需要通过通知查看进度。拒绝后仍会继续下载，但不会显示系统通知。',

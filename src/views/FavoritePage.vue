@@ -114,36 +114,13 @@
       @export-folder="onExportFolder"
     />
 
-    <!-- 卡片操作上下文菜单 -->
-    <div
-      v-if="cardMenu"
-      ref="cardMenuRef"
-      class="card-context-menu"
-      :style="cardMenuStyle"
-      @mousedown.prevent.stop
-      @touchstart.stop
-    >
-      <button type="button" class="card-menu-item" @click.stop="handleCardRead(cardMenu.item)">
-        <IonIcon :icon="bookOutline" class="card-menu-icon" />
-        <span>阅读</span>
-      </button>
-      <button type="button" class="card-menu-item" @click.stop="handleCardMove(cardMenu.item)">
-        <IonIcon :icon="folderOpenOutline" class="card-menu-icon" />
-        <span>移动</span>
-      </button>
-      <button type="button" class="card-menu-item" @click.stop="handleCardDownload(cardMenu.item)">
-        <IonIcon :icon="downloadOutline" class="card-menu-icon" />
-        <span>下载</span>
-      </button>
-      <button
-        type="button"
-        class="card-menu-item card-menu-item--danger"
-        @click.stop="handleCardRemove(cardMenu.item)"
-      >
-        <IonIcon :icon="trashOutline" class="card-menu-icon" />
-        <span>取消收藏</span>
-      </button>
-    </div>
+    <CardContextMenu
+      :visible="Boolean(cardMenu)"
+      :anchor="cardMenu?.anchor ?? null"
+      :actions="cardMenuActions"
+      @close="closeCardMenu"
+      @select="handleCardMenuAction"
+    />
   </IonPage>
 </template>
 
@@ -160,7 +137,6 @@ import {
 } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  alertController,
   createGesture,
   type Gesture,
   IonContent,
@@ -170,12 +146,14 @@ import {
   IonRefresherContent,
   menuController,
 } from '@ionic/vue'
+import { createAppAlert } from '@/services/AppAlertService'
 import type { PluginListenerHandle } from '@capacitor/core'
 import {
   bookOutline,
   downloadOutline,
   ellipsisVertical,
   folderOpenOutline,
+  swapHorizontalOutline,
   trashOutline,
 } from 'ionicons/icons'
 import type { ScrollCustomEvent } from '@ionic/core'
@@ -183,6 +161,7 @@ import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import QuickActionFab from '@/components/common/QuickActionFab.vue'
 import FavoriteSearchBar from '@/components/favorite/FavoriteSearchBar.vue'
 import FavoriteSideMenu from '@/components/favorite/FavoriteSideMenu.vue'
+import CardContextMenu from '@/components/common/CardContextMenu.vue'
 import type {
   SearchResultContainerExposed,
   SearchResultDisplayItem,
@@ -736,52 +715,41 @@ const progressPercent = computed(() => {
 // --- 卡片操作菜单 ---
 interface CardMenuState {
   item: SearchResultItem
-  x: number
-  y: number
+  anchor: HTMLElement
 }
 
 const cardMenu = ref<CardMenuState | null>(null)
-const cardMenuRef = ref<HTMLElement | null>(null)
-
-const cardMenuStyle = computed(() => {
-  const m = cardMenu.value
-  if (!m) return {}
-  // 菜单估算高度 ~176px (4 × 44px)，超出视口底部则向上翻转
-  const menuH = 180
-  const top = m.y + menuH > window.innerHeight ? m.y - menuH - 8 : m.y
-  return {
-    position: 'fixed' as const,
-    top: `${top}px`,
-    left: `${Math.min(m.x, window.innerWidth - 160)}px`,
-  }
-})
+const cardMenuActions = computed(() => [
+  { id: 'read', label: '阅读', icon: bookOutline },
+  { id: 'move', label: '移动', icon: swapHorizontalOutline },
+  { id: 'download', label: '下载', icon: downloadOutline },
+  { id: 'remove', label: '取消收藏', icon: trashOutline, danger: true },
+])
 
 function openCardMenu(item: SearchResultItem, event: MouseEvent) {
-  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-  cardMenu.value = { item, x: rect.left, y: rect.bottom + 4 }
-  // 延迟注册 click-outside，避免同一事件触发立即关闭
-  setTimeout(() => {
-    document.addEventListener('mousedown', handleCardMenuClickOutside)
-    document.addEventListener('touchstart', handleCardMenuClickOutside)
-  }, 0)
+  const anchor = event.currentTarget as HTMLElement
+  if (cardMenu.value?.anchor === anchor) {
+    closeCardMenu()
+    return
+  }
+  cardMenu.value = { item, anchor }
 }
 
 function closeCardMenu() {
   cardMenu.value = null
-  document.removeEventListener('mousedown', handleCardMenuClickOutside)
-  document.removeEventListener('touchstart', handleCardMenuClickOutside)
 }
 
-function handleCardMenuClickOutside(e: Event) {
-  // capture 阶段触发，此时需检查 target 是否在菜单内——菜单上的 .stop 只在冒泡阶段生效
-  if (cardMenuRef.value?.contains(e.target as Node)) return
-  closeCardMenu()
+function handleCardMenuAction(action: string) {
+  const item = cardMenu.value?.item
+  if (!item) return
+  if (action === 'read') void handleCardRead(item)
+  else if (action === 'move') void handleCardMove(item)
+  else if (action === 'download') void handleCardDownload(item)
+  else if (action === 'remove') void handleCardRemove(item)
 }
 
 // 组件卸载时清理
 onBeforeUnmount(() => {
-  document.removeEventListener('mousedown', handleCardMenuClickOutside)
-  document.removeEventListener('touchstart', handleCardMenuClickOutside)
   downloadProgressHandle?.remove()
 })
 
@@ -822,7 +790,7 @@ async function handleCardMove(item: SearchResultItem) {
     return
   }
 
-  const alert = await alertController.create({
+  const alert = await createAppAlert({
     header: '移动到',
     inputs: folders.map((f) => ({
       type: 'radio' as const,
@@ -902,7 +870,7 @@ async function handleCardRemove(item: SearchResultItem) {
     return
   }
   const isOnline = folderSource.value === 'online'
-  const alert = await alertController.create({
+  const alert = await createAppAlert({
     header: '取消收藏',
     message: `确定将「${item.title}」从收藏夹移除？`,
     buttons: [
@@ -933,7 +901,7 @@ async function handleCardRemove(item: SearchResultItem) {
 }
 
 const onAddFolder = async (source: 'online' | 'offline') => {
-  const alert = await alertController.create({
+  const alert = await createAppAlert({
     header: '新建收藏夹',
     inputs: [{ name: 'name', type: 'text', placeholder: '收藏夹名称' }],
     buttons: [
@@ -972,7 +940,7 @@ const onRenameFolder = async (payload: {
   folderName: string
   isOnline: boolean
 }) => {
-  const alert = await alertController.create({
+  const alert = await createAppAlert({
     header: '重命名收藏夹',
     inputs: [{ name: 'name', type: 'text', placeholder: '新名称', value: payload.folderName }],
     buttons: [
@@ -1016,7 +984,7 @@ const onDeleteFolder = async (payload: {
   folderName: string
   isOnline: boolean
 }) => {
-  const alert = await alertController.create({
+  const alert = await createAppAlert({
     header: '删除收藏夹',
     message: `确定删除「${payload.folderName}」吗？此操作不可撤销。`,
     buttons: [
@@ -1071,7 +1039,7 @@ const onCopyFolder = async (payload: {
 
   if (payload.isOnline) {
     // 在线 → 离线：读取在线源夹全部项，写入本地离线文件夹
-    const alert = await alertController.create({
+    const alert = await createAppAlert({
       header: '复制到离线收藏夹',
       message: '将在线收藏夹内容复制到本地离线文件夹，确定吗？',
       inputs: [
@@ -1126,7 +1094,7 @@ const onCopyFolder = async (payload: {
     await alert.present()
   } else {
     // 离线子夹：离线副本 或 同步到在线
-    const alert = await alertController.create({
+    const alert = await createAppAlert({
       header: '复制收藏夹',
       inputs: [
         {
@@ -1280,7 +1248,7 @@ const onMoveFolder = async (payload: {
       return
     }
 
-    const alert = await alertController.create({
+    const alert = await createAppAlert({
       header: '移动到',
       message: `将「${payload.folderName}」的全部本子移动到：`,
       inputs: targets.map((t) => ({
@@ -1393,7 +1361,7 @@ const onMoveFolder = async (payload: {
       return
     }
 
-    const alert = await alertController.create({
+    const alert = await createAppAlert({
       header: '移动到',
       message: `将「${payload.folderName}」的全部本子移动到：`,
       inputs: targets.map((t) => ({
@@ -1473,7 +1441,7 @@ const onExportFolder = async (payload: {
       await showToast(`已复制 ${items.length} 条到剪贴板`, 'success')
     } catch {
       // clipboard 不可用，用 alert 展示
-      const alert = await alertController.create({
+      const alert = await createAppAlert({
         header: '导出结果',
         message: `共 ${items.length} 条，请手动复制：`,
         inputs: [{ name: 'text', type: 'textarea', value: text }],
@@ -1750,56 +1718,10 @@ onActivated(async () => {
   cursor: pointer;
 }
 
-.card-more-btn:active {
-  background: #f5d2bc;
-}
-
-/* 卡片上下文菜单 */
-.card-context-menu {
-  position: fixed;
-  z-index: 200;
-  min-width: 150px;
-  background: #fffbf8;
-  border: 1px solid rgb(250 156 105 / 0.3);
-  border-radius: 14px;
-  box-shadow: 0 8px 22px rgb(76 42 24 / 0.16);
-  overflow: hidden;
-}
-
-.card-menu-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  min-height: 44px;
-  padding: 10px 16px;
-  border: 0;
-  border-bottom: 1px solid rgb(245 210 188 / 0.4);
-  background: transparent;
-  color: #3a261d;
-  font: inherit;
-  font-size: 14px;
-  text-align: left;
-  cursor: pointer;
-  transition: background-color 0.14s ease;
-}
-
-.card-menu-item:last-child {
-  border-bottom: 0;
-}
-
-.card-menu-item:hover,
-.card-menu-item:active {
-  background: #fff0e7;
-}
-
-.card-menu-item--danger {
-  color: #d4533e;
-}
-
-.card-menu-icon {
-  font-size: 16px;
-  flex-shrink: 0;
+.card-more-btn:active,
+.card-more-btn.active {
+  background: rgb(250 156 105 / 0.15);
+  color: #c96d3a;
 }
 
 /* --- 操作进度弹窗 --- */

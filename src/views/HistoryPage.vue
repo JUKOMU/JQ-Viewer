@@ -123,64 +123,36 @@
         </div>
       </div>
     </IonContent>
-    <!-- 上下文菜单 -->
-    <div
-      v-if="contextMenu"
-      ref="contextMenuRef"
-      class="context-menu"
-      :style="contextMenuStyle"
-      @mousedown.prevent.stop
-      @touchstart.stop
-    >
-      <template v-if="contextMenu.type === 'browse'">
-        <button type="button" class="context-menu-item" @click.stop="handleMenuDetail">
-          <IonIcon :icon="bookOutline" class="context-menu-icon" />
-          <span>进入详情页</span>
-        </button>
-        <button
-          type="button"
-          class="context-menu-item context-menu-item--danger"
-          @click.stop="handleMenuDelete"
-        >
-          <IonIcon :icon="trashOutline" class="context-menu-icon" />
-          <span>删除此记录</span>
-        </button>
-      </template>
-      <template v-else>
-        <button type="button" class="context-menu-item" @click.stop="handleMenuCopy">
-          <IonIcon :icon="copyOutline" class="context-menu-icon" />
-          <span>复制文本</span>
-        </button>
-        <button
-          type="button"
-          class="context-menu-item context-menu-item--danger"
-          @click.stop="handleMenuDelete"
-        >
-          <IonIcon :icon="trashOutline" class="context-menu-icon" />
-          <span>删除此记录</span>
-        </button>
-      </template>
-    </div>
+    <CardContextMenu
+      :visible="Boolean(contextMenu)"
+      :anchor="contextMenu?.anchor ?? null"
+      :actions="contextMenuActions"
+      @close="closeContextMenu"
+      @select="handleContextMenuAction"
+    />
   </IonPage>
 </template>
 
 <script setup lang="ts">
 defineOptions({ name: 'HistoryPage' })
 
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { alertController, IonContent, IonIcon, IonPage } from '@ionic/vue'
+import { IonContent, IonIcon, IonPage } from '@ionic/vue'
+import { createAppAlert } from '@/services/AppAlertService'
 import {
   bookOutline,
   copyOutline,
   documentTextOutline,
   ellipsisVertical,
+  informationCircleOutline,
   timeOutline,
   trashOutline,
 } from 'ionicons/icons'
 import { HistoryService } from '@/services/HistoryService'
 import type { BrowseHistoryItem, ParseHistoryItem } from '@/services/JmcomicTypes'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
+import CardContextMenu from '@/components/common/CardContextMenu.vue'
 
 const PAGE_SIZE = 50
 const router = useRouter()
@@ -311,44 +283,41 @@ function openParseItem(item: ParseHistoryItem) {
 interface ContextMenuState {
   type: 'browse' | 'parse'
   item: BrowseHistoryItem | ParseHistoryItem
-  x: number
-  y: number
+  anchor: HTMLElement
 }
 
 const contextMenu = ref<ContextMenuState | null>(null)
-const contextMenuRef = ref<HTMLElement | null>(null)
-
-const contextMenuStyle = computed(() => {
-  const m = contextMenu.value
-  if (!m) return {}
-  const menuH = m.type === 'browse' ? 90 : 90
-  const top = m.y + menuH > window.innerHeight ? m.y - menuH - 8 : m.y
-  return {
-    position: 'fixed' as const,
-    top: `${top}px`,
-    left: `${Math.min(m.x, window.innerWidth - 160)}px`,
+const contextMenuActions = computed(() => {
+  if (contextMenu.value?.type === 'browse') {
+    return [
+      { id: 'detail', label: '进入详情页', icon: informationCircleOutline },
+      { id: 'delete', label: '删除此记录', icon: trashOutline, danger: true },
+    ]
   }
+  return [
+    { id: 'copy', label: '复制文本', icon: copyOutline },
+    { id: 'delete', label: '删除此记录', icon: trashOutline, danger: true },
+  ]
 })
 
 function openContextMenu(item: BrowseHistoryItem | ParseHistoryItem, event: MouseEvent) {
-  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  const anchor = event.currentTarget as HTMLElement
   const type = 'albumId' in item ? 'browse' : 'parse'
-  contextMenu.value = { type, item, x: rect.left, y: rect.bottom + 4 }
-  setTimeout(() => {
-    document.addEventListener('mousedown', handleContextMenuClickOutside)
-    document.addEventListener('touchstart', handleContextMenuClickOutside)
-  }, 0)
+  if (contextMenu.value?.anchor === anchor) {
+    closeContextMenu()
+    return
+  }
+  contextMenu.value = { type, item, anchor }
 }
 
 function closeContextMenu() {
   contextMenu.value = null
-  document.removeEventListener('mousedown', handleContextMenuClickOutside)
-  document.removeEventListener('touchstart', handleContextMenuClickOutside)
 }
 
-function handleContextMenuClickOutside(e: Event) {
-  if (contextMenuRef.value?.contains(e.target as Node)) return
-  closeContextMenu()
+function handleContextMenuAction(action: string) {
+  if (action === 'detail') handleMenuDetail()
+  else if (action === 'copy') void handleMenuCopy()
+  else if (action === 'delete') void handleMenuDelete()
 }
 
 function handleMenuDetail() {
@@ -376,7 +345,7 @@ async function handleMenuDelete() {
   closeContextMenu()
 
   const isBrowse = m.type === 'browse'
-  const alert = await alertController.create({
+  const alert = await createAppAlert({
     header: '确认删除',
     message: isBrowse ? '确定要删除这条浏览记录吗？' : '确定要删除这条解析记录吗？',
     buttons: [
@@ -399,13 +368,8 @@ async function handleMenuDelete() {
   await alert.present()
 }
 
-onBeforeUnmount(() => {
-  document.removeEventListener('mousedown', handleContextMenuClickOutside)
-  document.removeEventListener('touchstart', handleContextMenuClickOutside)
-})
-
 async function confirmClearBrowse() {
-  const alert = await alertController.create({
+  const alert = await createAppAlert({
     header: '确认清空',
     message: '确定要清空所有浏览记录吗？此操作不可撤销。',
     buttons: [
@@ -424,7 +388,7 @@ async function confirmClearBrowse() {
 }
 
 async function confirmClearParse() {
-  const alert = await alertController.create({
+  const alert = await createAppAlert({
     header: '确认清空',
     message: '确定要清空所有解析记录吗？此操作不可撤销。',
     buttons: [
@@ -757,48 +721,8 @@ function formatRelativeTime(timestamp: number): string {
 
 .card-more-btn:active,
 .card-more-btn.active {
-  background: #f5d2bc;
-}
-
-/* Context menu */
-.context-menu {
-  min-width: 148px;
-  background: #fffbf8;
-  border: 1px solid rgb(250 156 105 / 0.3);
-  border-radius: 14px;
-  box-shadow: 0 8px 22px rgb(76 42 24 / 0.14);
-  padding: 6px 0;
-  z-index: 999;
-}
-
-.context-menu-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  min-height: 44px;
-  padding: 0 16px;
-  border: 0;
-  background: transparent;
-  color: #30201a;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background-color 0.12s ease;
-}
-
-.context-menu-item:active {
-  background: #fff0e7;
-}
-
-.context-menu-item--danger {
-  color: #d4533e;
-}
-
-.context-menu-icon {
-  font-size: 16px;
-  flex-shrink: 0;
-  color: inherit;
+  background: rgb(250 156 105 / 0.15);
+  color: #c96d3a;
 }
 
 /* TransitionGroup */

@@ -1,138 +1,143 @@
 <template>
   <IonMenu
+    class="main-menu"
     :content-id="contentId"
     :disabled="disabled"
     :max-edge-start="menuEdgeStart"
     :swipe-gesture="true"
     type="overlay"
   >
-    <IonHeader class="ion-no-border">
-      <div class="menu-hero" @click="goUser">
-        <img
-          v-if="isLoggedIn && userInfo"
-          :src="userInfo.avatarUrl"
-          class="user-avatar"
-          alt="头像"
-        />
-        <IonIcon v-else :icon="personCircleOutline" class="user-avatar-placeholder" />
-        <div class="hero-copy">
-          <div class="hero-title">{{ isLoggedIn && userInfo ? userInfo.username : '未登录' }}</div>
-          <div class="hero-subtitle">
-            {{
-              isLoggedIn && userInfo
-                ? 'Lv.' + userInfo.level + ' ' + userInfo.levelName
-                : '点击查看账号信息'
-            }}
+    <div class="menu-surface">
+      <IonHeader class="ion-no-border menu-header">
+        <div class="menu-hero" @click="goUser">
+          <img
+            v-if="isLoggedIn && userInfo"
+            :src="userInfo.avatarUrl"
+            class="user-avatar"
+            alt="头像"
+          />
+          <IonIcon v-else :icon="personCircleOutline" class="user-avatar-placeholder" />
+          <div class="hero-copy">
+            <div class="hero-title">
+              {{ isLoggedIn && userInfo ? userInfo.username : '未登录' }}
+            </div>
+            <div class="hero-subtitle">
+              {{
+                isLoggedIn && userInfo
+                  ? 'Lv.' + userInfo.level + ' ' + userInfo.levelName
+                  : '点击查看账号信息'
+              }}
+            </div>
           </div>
         </div>
-      </div>
-    </IonHeader>
-    <IonContent class="menu-content">
-      <IonList lines="none" class="menu-list">
-        <IonMenuToggle>
-          <IonItem
-            button
-            expand="block"
-            router-link="/home"
-            router-direction="forward"
-            class="menu-item"
-            :class="{ selected: isActive('/home') }"
-            @click="handleMenuClick"
-          >
-            <IonIcon slot="start" class="menu-icon" :icon="homeSharp" />
-            <IonLabel>
-              <div class="item-title">首页</div>
-              <div class="item-subtitle">关键词搜索入口</div>
-            </IonLabel>
-          </IonItem>
-        </IonMenuToggle>
-        <IonMenuToggle>
-          <IonItem
-            button
-            expand="block"
-            router-link="/category"
-            router-direction="root"
-            class="menu-item"
-            :class="{ selected: isActive('/category') }"
-            @click="handleMenuClick"
-          >
-            <IonIcon slot="start" class="menu-icon" :icon="searchSharp" />
-            <IonLabel>
-              <div class="item-title">分类</div>
-              <div class="item-subtitle">分类筛选与检索</div>
-            </IonLabel>
-          </IonItem>
-        </IonMenuToggle>
-        <IonMenuToggle>
-          <IonItem
-            button
-            expand="block"
-            router-link="/favorite"
-            router-direction="root"
-            class="menu-item"
-            :class="{ selected: isActive('/favorite') }"
-            @click="handleMenuClick"
-          >
-            <IonIcon slot="start" class="menu-icon" :icon="heart" />
-            <IonLabel>
-              <div class="item-title">收藏夹</div>
-              <div class="item-subtitle">保存喜欢的内容</div>
-            </IonLabel>
-          </IonItem>
-        </IonMenuToggle>
-        <IonMenuToggle>
-          <IonItem
-            button
-            expand="block"
-            router-link="/download"
-            router-direction="root"
-            class="menu-item"
-            :class="{ selected: isActive('/download') }"
-            @click="handleMenuClick"
-          >
-            <IonIcon slot="start" class="menu-icon" :icon="downloadSharp" />
-            <IonLabel>
-              <div class="item-title">下载</div>
-              <div class="item-subtitle">离线任务与管理</div>
-            </IonLabel>
-          </IonItem>
-        </IonMenuToggle>
-        <IonMenuToggle>
-          <IonItem
-            button
-            expand="block"
-            router-link="/history"
-            router-direction="root"
-            class="menu-item"
-            :class="{ selected: isActive('/history') }"
-            @click="handleMenuClick"
-          >
-            <IonIcon slot="start" class="menu-icon" :icon="timeOutline" />
-            <IonLabel>
-              <div class="item-title">历史</div>
-              <div class="item-subtitle">浏览与解析记录</div>
-            </IonLabel>
-          </IonItem>
-        </IonMenuToggle>
-        <IonMenuToggle>
-          <IonItem
-            button
-            expand="block"
-            router-link="/setting"
-            router-direction="forward"
-            class="menu-item"
-            :class="{ selected: isActive('/setting') }"
-            @click="handleMenuClick"
-          >
-            <IonIcon slot="start" class="menu-icon" :icon="settingsSharp" />
-            <IonLabel>
-              <div class="item-title">设置</div>
-              <div class="item-subtitle">偏好与通用配置</div>
-            </IonLabel>
-          </IonItem>
-        </IonMenuToggle>
-      </IonList>
-    </IonContent>
+      </IonHeader>
+      <IonContent class="menu-content">
+        <IonList lines="none" class="menu-list">
+          <IonMenuToggle>
+            <IonItem
+              button
+              expand="block"
+              router-link="/home"
+              router-direction="forward"
+              class="menu-item"
+              :class="{ selected: isActive('/home') }"
+              @click="handleMenuClick"
+            >
+              <IonIcon slot="start" class="menu-icon" :icon="homeSharp" />
+              <IonLabel>
+                <div class="item-title">首页</div>
+                <div class="item-subtitle">关键词搜索入口</div>
+              </IonLabel>
+            </IonItem>
+          </IonMenuToggle>
+          <IonMenuToggle>
+            <IonItem
+              button
+              expand="block"
+              router-link="/category"
+              router-direction="root"
+              class="menu-item"
+              :class="{ selected: isActive('/category') }"
+              @click="handleMenuClick"
+            >
+              <IonIcon slot="start" class="menu-icon" :icon="searchSharp" />
+              <IonLabel>
+                <div class="item-title">分类</div>
+                <div class="item-subtitle">分类筛选与检索</div>
+              </IonLabel>
+            </IonItem>
+          </IonMenuToggle>
+          <IonMenuToggle>
+            <IonItem
+              button
+              expand="block"
+              router-link="/favorite"
+              router-direction="root"
+              class="menu-item"
+              :class="{ selected: isActive('/favorite') }"
+              @click="handleMenuClick"
+            >
+              <IonIcon slot="start" class="menu-icon" :icon="heart" />
+              <IonLabel>
+                <div class="item-title">收藏夹</div>
+                <div class="item-subtitle">保存喜欢的内容</div>
+              </IonLabel>
+            </IonItem>
+          </IonMenuToggle>
+          <IonMenuToggle>
+            <IonItem
+              button
+              expand="block"
+              router-link="/download"
+              router-direction="root"
+              class="menu-item"
+              :class="{ selected: isActive('/download') }"
+              @click="handleMenuClick"
+            >
+              <IonIcon slot="start" class="menu-icon" :icon="downloadSharp" />
+              <IonLabel>
+                <div class="item-title">下载</div>
+                <div class="item-subtitle">离线任务与管理</div>
+              </IonLabel>
+            </IonItem>
+          </IonMenuToggle>
+          <IonMenuToggle>
+            <IonItem
+              button
+              expand="block"
+              router-link="/history"
+              router-direction="root"
+              class="menu-item"
+              :class="{ selected: isActive('/history') }"
+              @click="handleMenuClick"
+            >
+              <IonIcon slot="start" class="menu-icon" :icon="timeOutline" />
+              <IonLabel>
+                <div class="item-title">历史</div>
+                <div class="item-subtitle">浏览与解析记录</div>
+              </IonLabel>
+            </IonItem>
+          </IonMenuToggle>
+          <IonMenuToggle>
+            <IonItem
+              button
+              expand="block"
+              router-link="/setting"
+              router-direction="forward"
+              class="menu-item"
+              :class="{ selected: isActive('/setting') }"
+              @click="handleMenuClick"
+            >
+              <IonIcon slot="start" class="menu-icon" :icon="settingsSharp" />
+              <IonLabel>
+                <div class="item-title">设置</div>
+                <div class="item-subtitle">偏好与通用配置</div>
+              </IonLabel>
+            </IonItem>
+          </IonMenuToggle>
+        </IonList>
+      </IonContent>
+    </div>
   </IonMenu>
 </template>
 
@@ -205,9 +210,7 @@ function handleMenuClick() {
 <style scoped>
 .menu-hero {
   padding: calc(18px + var(--ion-safe-area-top)) 18px 14px;
-  background:
-    radial-gradient(circle at top right, rgb(255 218 190 / 0.95), transparent 46%),
-    linear-gradient(160deg, #fff5ee 0%, #ffeade 100%);
+  background: transparent;
   display: flex;
   align-items: center;
   gap: 14px;
@@ -245,17 +248,55 @@ function handleMenuClick() {
   font-size: 12px;
 }
 
-.menu-content {
-  --background: linear-gradient(180deg, #fffaf6 0%, #fff3eb 100%);
+.main-menu {
+  --menu-background-image:
+    radial-gradient(ellipse at 10% 8%, rgb(255 255 255 / 0.72), transparent 36%),
+    radial-gradient(ellipse at 92% 42%, rgb(248 199 175 / 0.2), transparent 43%),
+    radial-gradient(ellipse at 18% 92%, rgb(255 255 255 / 0.36), transparent 38%),
+    linear-gradient(148deg, #fffaf4 0%, #ffece1 48%, #fffaf4 100%);
+  --menu-background-blend: soft-light, normal, normal, normal;
+  --menu-background-size: 100% 100%, 100% 100%, 100% 100%, 100% 100%;
 }
 
-.menu-list {
-  padding: 14px 14px 0;
+.main-menu::part(container) {
+  background-color: #fffaf4;
+  background-image: var(--menu-background-image);
+  background-blend-mode: var(--menu-background-blend);
+  background-size: var(--menu-background-size);
+}
+
+.menu-surface {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  width: 100%;
+  align-self: stretch;
+  min-height: 100%;
+  min-height: 100dvh;
+  height: 100%;
+  background-color: #fffaf4;
+  background-image: var(--menu-background-image);
+  background-blend-mode: var(--menu-background-blend);
+  background-size: var(--menu-background-size);
+}
+
+.menu-header {
+  --background: transparent;
   background: transparent;
 }
 
+.menu-content {
+  --background: transparent;
+}
+
+.menu-list {
+  --ion-item-background: transparent;
+  padding: 14px 14px 0;
+  background: transparent !important;
+}
+
 .menu-item {
-  --background: #fff;
+  --background: rgb(255 255 255 / 0.34);
   --border-radius: 20px;
   --padding-start: 14px;
   --inner-padding-end: 14px;
@@ -263,7 +304,8 @@ function handleMenuClick() {
   margin-bottom: 10px;
   border: 1px solid rgb(245 210 188 / 0.72);
   border-radius: 20px;
-  box-shadow: 0 12px 28px rgb(115 67 38 / 0.08);
+  box-shadow: 0 12px 28px rgb(115 67 38 / 0.06);
+  backdrop-filter: blur(6px);
 }
 
 .menu-item.selected {

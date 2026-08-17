@@ -1,4 +1,4 @@
-import { alertController } from '@ionic/vue'
+import { createAppAlert } from './AppAlertService'
 import { shallowRef } from 'vue'
 import type { UpdateManifest, UpdateProgressEvent } from './JmcomicTypes'
 import { JmcomicService, showToast } from './JmcomicService'
@@ -76,7 +76,8 @@ async function ensureNotificationPermission(): Promise<boolean> {
       const current = await JmcomicService.checkNotificationPermission()
       if (current.granted) return true
 
-      const alert = await alertController.create({
+      const alert = await createAppAlert({
+        tone: 'info',
         header: '需要通知权限',
         message: '应用更新需要系统通知显示下载进度。拒绝后不会开始下载。',
         buttons: [
@@ -159,7 +160,8 @@ async function installReadyUpdate(): Promise<InstallResult> {
       const result = await JmcomicService.installUpdate()
       if (!result.permissionRequired) return result
 
-      const alert = await alertController.create({
+      const alert = await createAppAlert({
+        tone: 'info',
         header: '允许安装更新',
         message: '请在系统设置中允许 JQ Viewer 安装未知来源应用。返回应用后将继续安装。',
         buttons: [

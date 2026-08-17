@@ -52,6 +52,7 @@ vi.mock('@ionic/vue', () => ({
   }),
   alertController: { create: mocks.alertCreate },
 }))
+vi.mock('@/services/AppAlertService', () => ({ createAppAlert: mocks.alertCreate }))
 vi.mock('ionicons/icons', () => ({
   bookOutline: 'book',
   checkmarkCircleOutline: 'check',
@@ -169,7 +170,7 @@ describe('PdfFileCard', () => {
     const wrapper = mount(PdfFileCard, { props: { file, hasImageResource: false } })
     expect(wrapper.get('article').findAll('button')).toHaveLength(2)
     expect(wrapper.get('button[aria-label="打开 PDF"]')).toBeTruthy()
-    expect(wrapper.get('button[aria-label="PDF 文件操作"]')).toBeTruthy()
+    expect(wrapper.get('button[aria-label="更多操作"]')).toBeTruthy()
     expect(wrapper.get('.meta-row').text()).toMatch(/可用1\.0 KB$/)
   })
 })
@@ -219,8 +220,9 @@ describe('PdfManagementView', () => {
   test('物理删除前刷新资源并展示完整定位符和路径复用警告', async () => {
     const wrapper = mount(PdfManagementView)
     await flushPromises()
-    await wrapper.get('button[aria-label="PDF 文件操作"]').trigger('click')
-    await wrapper.get('.popover-btn.danger').trigger('click')
+    await wrapper.get('button[aria-label="更多操作"]').trigger('click')
+    document.body.querySelector<HTMLButtonElement>('.card-menu-item--danger')?.click()
+    await flushPromises()
     await flushPromises()
 
     expect(mocks.inspectPdfFileForDeletion).toHaveBeenCalledWith(1)
@@ -238,17 +240,13 @@ describe('PdfManagementView', () => {
   test('更多菜单按下载页样式提供七项文件操作', async () => {
     const wrapper = mount(PdfManagementView)
     await flushPromises()
-    await wrapper.get('button[aria-label="PDF 文件操作"]').trigger('click')
+    await wrapper.get('button[aria-label="更多操作"]').trigger('click')
 
-    expect(wrapper.findAll('.popover-btn').map((button) => button.text())).toEqual([
-      '阅读',
-      '进入详情页',
-      '校验',
-      '复制路径',
-      '打开文件夹',
-      '移除',
-      '删除',
-    ])
+    expect(
+      Array.from(document.body.querySelectorAll('.card-menu-item')).map(
+        (button) => button.textContent,
+      ),
+    ).toEqual(['阅读', '进入详情页', '校验', '复制路径', '打开文件夹', '移除', '删除'])
     wrapper.unmount()
   })
 
@@ -272,8 +270,9 @@ describe('PdfManagementView', () => {
     await wrapper.get('button[aria-label="打开 PDF"]').trigger('click')
     expect(mocks.routerPush).toHaveBeenLastCalledWith(expectedRoute)
 
-    await wrapper.get('button[aria-label="PDF 文件操作"]').trigger('click')
-    await wrapper.findAll('.popover-btn')[0].trigger('click')
+    await wrapper.get('button[aria-label="更多操作"]').trigger('click')
+    await document.body.querySelectorAll<HTMLButtonElement>('.card-menu-item')[0].click()
+    await flushPromises()
     expect(mocks.routerPush).toHaveBeenLastCalledWith(expectedRoute)
     expect(mocks.routerPush).toHaveBeenCalledTimes(2)
     expect(mocks.openPdf).not.toHaveBeenCalled()
@@ -290,8 +289,9 @@ describe('PdfManagementView', () => {
     const wrapper = mount(PdfManagementView)
     await flushPromises()
 
-    await wrapper.get('button[aria-label="PDF 文件操作"]').trigger('click')
-    await wrapper.findAll('.popover-btn')[2].trigger('click')
+    await wrapper.get('button[aria-label="更多操作"]').trigger('click')
+    document.body.querySelectorAll<HTMLButtonElement>('.card-menu-item')[2].click()
+    await flushPromises()
 
     expect(wrapper.get('.status').text()).toContain('校验中')
     finishVerification?.({ ...file, availability: 'missing' })
@@ -306,12 +306,14 @@ describe('PdfManagementView', () => {
     const wrapper = mount(PdfManagementView)
     await flushPromises()
 
-    await wrapper.get('button[aria-label="PDF 文件操作"]').trigger('click')
-    await wrapper.findAll('.popover-btn')[1].trigger('click')
+    await wrapper.get('button[aria-label="更多操作"]').trigger('click')
+    document.body.querySelectorAll<HTMLButtonElement>('.card-menu-item')[1].click()
+    await flushPromises()
     expect(mocks.routerPush).toHaveBeenCalledWith('/album/album-1')
 
-    await wrapper.get('button[aria-label="PDF 文件操作"]').trigger('click')
-    await wrapper.findAll('.popover-btn')[4].trigger('click')
+    await wrapper.get('button[aria-label="更多操作"]').trigger('click')
+    document.body.querySelectorAll<HTMLButtonElement>('.card-menu-item')[4].click()
+    await flushPromises()
     expect(mocks.openPdfFolder).toHaveBeenCalledWith('content://provider/current.pdf')
     wrapper.unmount()
   })

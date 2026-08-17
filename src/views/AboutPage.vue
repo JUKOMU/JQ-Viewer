@@ -27,10 +27,7 @@
         </div>
 
         <!-- 检查更新 -->
-        <div
-          class="info-card update-check-card"
-          :style="updateCheckCardStyle"
-        >
+        <div class="info-card update-check-card" :style="updateCheckCardStyle">
           <button
             class="info-row info-row-action"
             type="button"
@@ -211,9 +208,10 @@ const hasUpdate = computed(
 )
 
 const isDownloading = computed(() => ['racing', 'selected'].includes(updateState.value.phase))
-const updateCheckDisabled = computed(() =>
-  updateChecking.value ||
-  ['racing', 'selected', 'verifying', 'installing'].includes(updateState.value.phase),
+const updateCheckDisabled = computed(
+  () =>
+    updateChecking.value ||
+    ['racing', 'selected', 'verifying', 'installing'].includes(updateState.value.phase),
 )
 
 const REPO_URL = 'https://github.com/jukomu/jq-viewer'

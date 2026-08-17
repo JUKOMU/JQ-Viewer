@@ -157,6 +157,8 @@ public class PdfExportService {
         }
         QueuedExportJob queued = new QueuedExportJob(job, preflight,
             NotificationIds.pdfTask(notificationCounter.getAndIncrement()));
+        updateProgress(exportId, "queued", "queued", 0, preflight.totalPages, 0,
+            preflight.volumes.size(), null, null);
         updateForegroundQueued(Collections.singletonList(queued));
         executor.submit(() -> executeBatch(batchCounter.incrementAndGet(),
             Collections.singletonList(queued)));
@@ -235,6 +237,10 @@ public class PdfExportService {
         if ("failed".equals(status)) {
             updateProgress(job.exportId, "failed", "failed", 0, 0, 0, 0,
                 errorCode, errorMessage);
+        } else {
+            updateProgress(job.exportId, "queued", "queued", 0,
+                preflight == null ? 0 : preflight.totalPages,
+                0, preflight == null ? 0 : preflight.volumes.size(), null, null);
         }
     }
 

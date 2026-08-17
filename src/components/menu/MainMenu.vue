@@ -93,15 +93,50 @@
             expand="block"
             router-link="/download"
             router-direction="root"
-            class="menu-item"
+            class="menu-item download-menu-item"
             :class="{ selected: isActive('/download') }"
             @click="handleMenuClick"
           >
+            <div
+              v-if="shouldShowTaskProgress"
+              slot="start"
+              class="task-progress-background"
+              aria-hidden="true"
+            >
+              <div
+                v-if="downloadProgress"
+                class="task-progress-band download-progress-band"
+                :style="downloadProgressBandStyle"
+              />
+              <div
+                v-if="pdfProgress"
+                class="task-progress-band pdf-progress-band"
+                :style="pdfProgressBandStyle"
+              />
+            </div>
             <IonIcon slot="start" class="menu-icon" :icon="downloadSharp" />
-            <IonLabel>
+            <IonLabel class="download-menu-label">
               <div class="item-title">下载</div>
               <div class="item-subtitle">离线任务与管理</div>
             </IonLabel>
+            <div v-if="shouldShowTaskProgress" class="task-progress-copy" aria-live="polite">
+              <div v-if="downloadProgress" class="task-progress-row">
+                <span>下载</span>
+                <template v-if="downloadProgress.percent >= 100">
+                  <IonSpinner name="crescent" class="task-progress-spinner" aria-hidden="true" />
+                  <span class="task-progress-sr-only">完成，正在处理</span>
+                </template>
+                <span v-else>{{ Math.min(99, Math.round(downloadProgress.percent)) }}%</span>
+              </div>
+              <div v-if="pdfProgress" class="task-progress-row">
+                <span>PDF</span>
+                <template v-if="pdfProgress.percent >= 100">
+                  <IonSpinner name="crescent" class="task-progress-spinner" aria-hidden="true" />
+                  <span class="task-progress-sr-only">导出完成，正在处理</span>
+                </template>
+                <span v-else>{{ Math.min(99, Math.round(pdfProgress.percent)) }}%</span>
+              </div>
+            </div>
           </IonItem>
           <IonItem
             button
@@ -149,7 +184,9 @@ import {
   IonItem,
   IonLabel,
   IonList,
+  IonSpinner,
 } from '@ionic/vue'
+import type { PluginListenerHandle } from '@capacitor/core'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import {
   downloadSharp,
@@ -170,6 +207,16 @@ import {
   openLeftMenu,
   rightMenuOpen,
 } from '@/composables/useSideMenuState'
+import { JmcomicService } from '@/services/JmcomicService'
+import type {
+  DownloadProgressEvent,
+  DownloadStatus,
+  DownloadTask,
+  PdfExportProgressEvent,
+  PdfExportStatus,
+  PdfExportTaskRecord,
+} from '@/services/JmcomicTypes'
+import { calculatePageProgress, type PageProgressInput } from '@/utils/pageProgress'
 
 defineOptions({ name: 'MainMenu' })
 
@@ -186,6 +233,309 @@ const dragProgress = ref(0)
 const isDragging = ref(false)
 let gesture: Gesture | undefined
 let previouslyFocused: HTMLElement | null = null
+
+type DownloadProgressTask = PageProgressInput & {
+  status: DownloadStatus
+  eventSequence: number
+}
+
+type PdfProgressTask = PageProgressInput & {
+  status: PdfExportStatus
+  snapshotRevision: number
+  eventSequence: number
+}
+
+const DOWNLOAD_PROGRESS_STATUSES = new Set<DownloadStatus>([
+  'queued',
+  'downloading',
+  'paused',
+  'verifying',
+])
+const PDF_PROGRESS_STATUSES = new Set<PdfExportStatus>(['queued', 'running', 'cancelling'])
+const TASK_PROGRESS_TRANSITION_MS = 220
+
+const downloadProgressTasks = ref(new Map<string, DownloadProgressTask>())
+const pdfProgressTasks = ref(new Map<string, PdfProgressTask>())
+const downloadProgress = computed(() =>
+  calculatePageProgress([...downloadProgressTasks.value.values()]),
+)
+const pdfProgress = computed(() => calculatePageProgress([...pdfProgressTasks.value.values()]))
+const shouldShowTaskProgress = computed(
+  () => !isActive('/download') && Boolean(downloadProgress.value || pdfProgress.value),
+)
+const hasBothProgress = computed(() => Boolean(downloadProgress.value && pdfProgress.value))
+const downloadProgressBandStyle = computed(() => ({
+  top: '0%',
+  height: hasBothProgress.value ? '50%' : '100%',
+  width: `${downloadProgress.value?.percent ?? 0}%`,
+}))
+const pdfProgressBandStyle = computed(() => ({
+  top: hasBothProgress.value ? '50%' : '0%',
+  height: hasBothProgress.value ? '50%' : '100%',
+  width: `${pdfProgress.value?.percent ?? 0}%`,
+}))
+
+let downloadEventSequence = 0
+let pdfEventSequence = 0
+const downloadLatestEventSequences = new Map<string, number>()
+const pdfLatestEvents = new Map<
+  string,
+  { eventSequence: number; snapshotRevision: number; status: PdfExportStatus }
+>()
+let downloadClearTimer: ReturnType<typeof setTimeout> | null = null
+let pdfClearTimer: ReturnType<typeof setTimeout> | null = null
+let downloadProgressHandle: PluginListenerHandle | null = null
+let pdfProgressHandle: PluginListenerHandle | null = null
+let progressUnmounted = false
+
+const hasActiveDownloadTasks = (
+  tasks: Map<string, DownloadProgressTask> = downloadProgressTasks.value,
+) => [...tasks.values()].some((task) => DOWNLOAD_PROGRESS_STATUSES.has(task.status))
+
+const hasActivePdfTasks = (tasks: Map<string, PdfProgressTask> = pdfProgressTasks.value) =>
+  [...tasks.values()].some((task) => PDF_PROGRESS_STATUSES.has(task.status))
+
+const clearDownloadTimer = () => {
+  if (downloadClearTimer) {
+    clearTimeout(downloadClearTimer)
+    downloadClearTimer = null
+  }
+}
+
+const clearPdfTimer = () => {
+  if (pdfClearTimer) {
+    clearTimeout(pdfClearTimer)
+    pdfClearTimer = null
+  }
+}
+
+const scheduleDownloadClear = () => {
+  if (downloadProgressTasks.value.size === 0 || hasActiveDownloadTasks() || downloadClearTimer) {
+    return
+  }
+  downloadClearTimer = setTimeout(() => {
+    downloadClearTimer = null
+    if (!hasActiveDownloadTasks()) downloadProgressTasks.value = new Map()
+  }, TASK_PROGRESS_TRANSITION_MS)
+}
+
+const schedulePdfClear = () => {
+  if (pdfProgressTasks.value.size === 0 || hasActivePdfTasks() || pdfClearTimer) return
+  pdfClearTimer = setTimeout(() => {
+    pdfClearTimer = null
+    if (!hasActivePdfTasks()) pdfProgressTasks.value = new Map()
+  }, TASK_PROGRESS_TRANSITION_MS)
+}
+
+const applyDownloadProgressEvent = (event: DownloadProgressEvent) => {
+  downloadEventSequence += 1
+  downloadLatestEventSequences.set(event.taskId, downloadEventSequence)
+  const next = new Map(downloadProgressTasks.value)
+  const existing = next.get(event.taskId)
+
+  if (DOWNLOAD_PROGRESS_STATUSES.has(event.status)) {
+    if (!hasActiveDownloadTasks(next)) next.clear()
+    clearDownloadTimer()
+    next.set(event.taskId, {
+      currentPages: event.downloadedPages,
+      totalPages: event.totalPages,
+      status: event.status,
+      eventSequence: downloadEventSequence,
+    })
+  } else if (event.status === 'completed') {
+    if (existing) {
+      next.set(event.taskId, {
+        currentPages: event.downloadedPages,
+        totalPages: event.totalPages,
+        status: event.status,
+        eventSequence: downloadEventSequence,
+      })
+    }
+  } else {
+    next.delete(event.taskId)
+  }
+
+  downloadProgressTasks.value = next
+  scheduleDownloadClear()
+}
+
+const applyPdfProgressEvent = (event: PdfExportProgressEvent) => {
+  pdfEventSequence += 1
+  const latestEvent = pdfLatestEvents.get(event.exportId)
+  if (!latestEvent || event.snapshotRevision >= latestEvent.snapshotRevision) {
+    pdfLatestEvents.set(event.exportId, {
+      eventSequence: pdfEventSequence,
+      snapshotRevision: event.snapshotRevision,
+      status: event.status,
+    })
+  }
+  const next = new Map(pdfProgressTasks.value)
+  const existing = next.get(event.exportId)
+  if (existing && event.snapshotRevision < existing.snapshotRevision) return
+
+  if (PDF_PROGRESS_STATUSES.has(event.status)) {
+    if (!hasActivePdfTasks(next)) next.clear()
+    clearPdfTimer()
+    next.set(event.exportId, {
+      currentPages: event.currentPage,
+      totalPages: event.totalPages,
+      status: event.status,
+      snapshotRevision: event.snapshotRevision,
+      eventSequence: pdfEventSequence,
+    })
+  } else if (event.status === 'completed') {
+    if (existing) {
+      next.set(event.exportId, {
+        currentPages: event.currentPage,
+        totalPages: event.totalPages,
+        status: event.status,
+        snapshotRevision: event.snapshotRevision,
+        eventSequence: pdfEventSequence,
+      })
+    }
+  } else {
+    next.delete(event.exportId)
+  }
+
+  pdfProgressTasks.value = next
+  schedulePdfClear()
+}
+
+const seedDownloadProgress = (tasks: DownloadTask[], requestSequence: number) => {
+  const next = new Map(downloadProgressTasks.value)
+  const activeTasks = tasks.filter((task) => DOWNLOAD_PROGRESS_STATUSES.has(task.status))
+  if (activeTasks.length > 0 && !hasActiveDownloadTasks(next)) {
+    const hasNewerEvent = [...next.values()].some((task) => task.eventSequence > requestSequence)
+    if (!hasNewerEvent) next.clear()
+  }
+
+  for (const task of activeTasks) {
+    const existing = next.get(task.taskId)
+    const latestEventSequence = downloadLatestEventSequences.get(task.taskId) ?? 0
+    if (
+      latestEventSequence > requestSequence ||
+      (existing && existing.eventSequence > requestSequence)
+    ) {
+      continue
+    }
+    next.set(task.taskId, {
+      currentPages: task.downloadedPages,
+      totalPages: task.totalPages,
+      status: task.status,
+      eventSequence: existing?.eventSequence ?? 0,
+    })
+  }
+
+  downloadProgressTasks.value = next
+  if (hasActiveDownloadTasks()) clearDownloadTimer()
+  scheduleDownloadClear()
+}
+
+const seedPdfProgress = (tasks: PdfExportTaskRecord[], requestSequence: number) => {
+  const latestTasks = new Map<string, PdfExportTaskRecord>()
+  for (const task of tasks) {
+    if (!PDF_PROGRESS_STATUSES.has(task.status)) continue
+    const existing = latestTasks.get(task.exportId)
+    if (!existing || task.snapshotRevision >= existing.snapshotRevision) {
+      latestTasks.set(task.exportId, task)
+    }
+  }
+
+  const next = new Map(pdfProgressTasks.value)
+  if (latestTasks.size > 0 && !hasActivePdfTasks(next)) {
+    const hasNewerEvent = [...next.values()].some((task) => task.eventSequence > requestSequence)
+    if (!hasNewerEvent) next.clear()
+  }
+
+  for (const task of latestTasks.values()) {
+    const existing = next.get(task.exportId)
+    const latestEvent = pdfLatestEvents.get(task.exportId)
+    if (
+      (latestEvent &&
+        (latestEvent.eventSequence > requestSequence ||
+          task.snapshotRevision < latestEvent.snapshotRevision ||
+          (task.snapshotRevision === latestEvent.snapshotRevision &&
+            !PDF_PROGRESS_STATUSES.has(latestEvent.status)))) ||
+      (existing &&
+        (existing.eventSequence > requestSequence ||
+          task.snapshotRevision < existing.snapshotRevision))
+    ) {
+      continue
+    }
+    next.set(task.exportId, {
+      currentPages: task.currentPage,
+      totalPages: task.totalPages,
+      status: task.status,
+      snapshotRevision: task.snapshotRevision,
+      eventSequence: existing?.eventSequence ?? 0,
+    })
+  }
+
+  pdfProgressTasks.value = next
+  if (hasActivePdfTasks()) clearPdfTimer()
+  schedulePdfClear()
+}
+
+const refreshDownloadProgress = async (requestSequence: number) => {
+  try {
+    const result = await JmcomicService.getDownloadTasks()
+    if (!progressUnmounted) seedDownloadProgress(result.tasks, requestSequence)
+  } catch {
+    // Web 调试或原生桥接未就绪时保留已收到的实时进度。
+  }
+}
+
+const refreshPdfProgress = async (requestSequence: number) => {
+  const statuses: PdfExportStatus[] = ['queued', 'running', 'cancelling']
+  const tasks: PdfExportTaskRecord[] = []
+  try {
+    for (const status of statuses) {
+      let cursor: string | undefined
+      do {
+        const result = await JmcomicService.getPdfExportTasks({ status, cursor, limit: 100 })
+        tasks.push(...result.tasks)
+        cursor = result.nextCursor || undefined
+      } while (cursor && !progressUnmounted)
+    }
+    if (!progressUnmounted) seedPdfProgress(tasks, requestSequence)
+  } catch {
+    // Web 调试或原生桥接未就绪时保留已收到的实时进度。
+  }
+}
+
+const registerProgressListeners = async () => {
+  await Promise.all([
+    (async () => {
+      try {
+        const handle = await JmcomicService.addDownloadProgressListener(applyDownloadProgressEvent)
+        if (progressUnmounted) void handle.remove()
+        else downloadProgressHandle = handle
+      } catch {
+        // Web 调试或旧版本原生插件可能没有该监听器。
+      }
+    })(),
+    (async () => {
+      try {
+        const handle = await JmcomicService.addPdfExportProgressListener(applyPdfProgressEvent)
+        if (progressUnmounted) void handle.remove()
+        else pdfProgressHandle = handle
+      } catch {
+        // Web 调试或旧版本原生插件可能没有该监听器。
+      }
+    })(),
+  ])
+}
+
+const setupTaskProgress = async () => {
+  await registerProgressListeners()
+  if (progressUnmounted) return
+  const downloadRequestSequence = downloadEventSequence
+  const pdfRequestSequence = pdfEventSequence
+  await Promise.all([
+    refreshDownloadProgress(downloadRequestSequence),
+    refreshPdfProgress(pdfRequestSequence),
+  ])
+}
 
 const isInteractive = computed(() => leftMenuOpen.value || isDragging.value)
 const currentProgress = computed(() =>
@@ -327,11 +677,26 @@ watch(
 )
 
 onMounted(() => {
+  progressUnmounted = false
+  void setupTaskProgress()
   setupGesture()
   document.addEventListener('keydown', handleKeyDown)
 })
 
 onUnmounted(() => {
+  progressUnmounted = true
+  clearDownloadTimer()
+  clearPdfTimer()
+  void downloadProgressHandle?.remove()
+  void pdfProgressHandle?.remove()
+  downloadProgressHandle = null
+  pdfProgressHandle = null
+  downloadProgressTasks.value = new Map()
+  pdfProgressTasks.value = new Map()
+  downloadLatestEventSequences.clear()
+  pdfLatestEvents.clear()
+  downloadEventSequence = 0
+  pdfEventSequence = 0
   gesture?.destroy()
   document.removeEventListener('keydown', handleKeyDown)
   updateContentAccessibility(false)
@@ -377,6 +742,10 @@ onUnmounted(() => {
   background-size: 100% 100%;
   box-shadow: 4px 0 16px rgb(76 42 24 / 0.18);
   touch-action: pan-y;
+}
+
+.main-menu-panel:focus {
+  outline: none;
 }
 
 @media (max-width: 340px) {
@@ -447,6 +816,8 @@ onUnmounted(() => {
 }
 
 .menu-item {
+  position: relative;
+  overflow: hidden;
   --background: rgb(255 255 255 / 0.5);
   --border-radius: 20px;
   --padding-start: 14px;
@@ -456,6 +827,130 @@ onUnmounted(() => {
   border: 1px solid rgb(245 210 188 / 0.72);
   border-radius: 20px;
   box-shadow: -6px -4px 12px rgb(115 67 38 / 0.1);
+}
+
+.task-progress-background {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  margin: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.task-progress-band {
+  position: absolute;
+  left: 0;
+  min-width: 0;
+  overflow: hidden;
+  transition:
+    top 220ms ease,
+    width 180ms ease,
+    height 220ms ease,
+    opacity 180ms ease;
+}
+
+.task-progress-band::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -34px;
+  width: 34px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgb(255 255 255 / 0.18) 20%,
+    rgb(255 255 255 / 0.7) 50%,
+    rgb(255 255 255 / 0.18) 80%,
+    transparent 100%
+  );
+  content: '';
+  opacity: 0;
+  pointer-events: none;
+}
+
+.main-menu.interactive .task-progress-band::after {
+  animation: task-progress-glint 1.65s ease-in-out infinite;
+}
+
+@keyframes task-progress-glint {
+  0% {
+    left: -34px;
+    opacity: 0;
+  }
+
+  8% {
+    opacity: 1;
+  }
+
+  68% {
+    left: 100%;
+    opacity: 1;
+  }
+
+  76%,
+  100% {
+    left: 100%;
+    opacity: 0;
+  }
+}
+
+.download-progress-band {
+  background: #adf4c1;
+}
+
+.pdf-progress-band {
+  background: #f1acac;
+}
+
+.download-menu-label,
+.download-menu-item > .menu-icon,
+.task-progress-copy {
+  position: relative;
+  z-index: 1;
+}
+
+.download-menu-label {
+  min-width: 0;
+}
+
+.task-progress-copy {
+  flex: 0 0 auto;
+  min-width: 54px;
+  margin-left: 8px;
+  color: #9a725b;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.task-progress-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  min-height: 15px;
+}
+
+.task-progress-spinner {
+  width: 12px;
+  height: 12px;
+  color: currentColor;
+}
+
+.task-progress-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .menu-item.selected {
@@ -489,5 +984,15 @@ onUnmounted(() => {
 
 .menu-item.selected .item-subtitle {
   color: rgb(255 244 237 / 0.9);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task-progress-band {
+    transition: none;
+  }
+
+  .main-menu.interactive .task-progress-band::after {
+    animation: none;
+  }
 }
 </style>

@@ -7,11 +7,12 @@
 <script setup lang="ts">
 defineOptions({ name: 'MenuToggleButton' })
 
-import { IonIcon, menuController } from '@ionic/vue'
+import { IonIcon } from '@ionic/vue'
 import { menuOutline } from 'ionicons/icons'
+import { openLeftMenu } from '@/composables/useSideMenuState'
 
 const openMenu = () => {
-  void menuController.open()
+  openLeftMenu()
 }
 </script>
 

@@ -104,6 +104,7 @@ public class DownloadService {
             albumTitle, chapterTitle, coverUrl);
         notificationHelper.registerTask(taskId);
         startForegroundTask(taskId);
+        notifyProgress(taskId, albumId, chapterId, 0, 0, STATUS_QUEUED, null);
 
         prepareExecutor.submit(() -> {
             try {

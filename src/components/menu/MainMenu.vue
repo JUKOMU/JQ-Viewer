@@ -277,7 +277,7 @@ function handleMenuClick() {
 }
 
 .menu-item {
-  --background: rgb(255 255 255 / 0.34);
+  --background: rgb(255 255 255 / 0.5);
   --border-radius: 20px;
   --padding-start: 14px;
   --inner-padding-end: 14px;
@@ -285,13 +285,13 @@ function handleMenuClick() {
   margin-bottom: 10px;
   border: 1px solid rgb(245 210 188 / 0.72);
   border-radius: 20px;
-  box-shadow: 0 12px 28px rgb(115 67 38 / 0.06);
+  box-shadow: -6px -4px 12px rgb(115 67 38 / 0.1);
 }
 
 .menu-item.selected {
-  --background: linear-gradient(145deg, #fa9c69, #f28752);
+  --background: linear-gradient(145deg, #faa271, #f28752);
   border-color: transparent;
-  box-shadow: 0 16px 34px rgb(240 126 73 / 0.26);
+  box-shadow: -6px -4px 16px rgb(240 126 73 / 0.35);
   color: rgb(255, 255, 255);
 }
 

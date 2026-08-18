@@ -28,6 +28,7 @@ def hasReleaseSigningProperties = keystorePropertiesFile.exists() &&
     ['storeFile', 'storePassword', 'keyAlias', 'keyPassword'].every {
         keystoreProperties[it]?.toString()?.trim()
     }
+def enableAbiSplits = project.findProperty('enableAbiSplits')?.toString()?.toBoolean() ?: false
 
 gradle.taskGraph.whenReady { taskGraph ->
     if (taskGraph.allTasks.any { it.name.toLowerCase().contains('release') }) {
@@ -68,6 +69,14 @@ android {
             if (hasReleaseSigningProperties) {
                 signingConfig signingConfigs.release
             }
+        }
+    }
+    splits {
+        abi {
+            enable enableAbiSplits
+            reset()
+            include 'arm64-v8a', 'armeabi-v7a', 'x86_64', 'x86'
+            universalApk true
         }
     }
     compileOptions {

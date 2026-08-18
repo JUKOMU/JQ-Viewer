@@ -271,14 +271,15 @@ export async function replaceAsset(token, releaseId, filePath) {
 }
 
 async function main() {
-  const [tag, apkPath, notesPath, targetCommit, latestJsonPath] = process.argv.slice(2)
+  const [tag, notesPath, targetCommit, latestJsonArgument, ...apkPaths] = process.argv.slice(2)
+  const latestJsonPath = latestJsonArgument === '-' ? null : latestJsonArgument
   const token = process.env.GITEE_TOKEN
   if (!token) {
     throw new Error('GITEE_TOKEN is required')
   }
-  if (!tag || !apkPath || !notesPath || !targetCommit) {
+  if (!tag || !notesPath || !targetCommit || apkPaths.length === 0) {
     throw new Error(
-      'usage: node scripts/publish-gitee-release.mjs <tag> <apk> <notes> <target-commit> [latest-json]',
+      'usage: node scripts/publish-gitee-release.mjs <tag> <notes> <target-commit> <latest-json|-> <apks...>',
     )
   }
 
@@ -296,7 +297,10 @@ async function main() {
     throw new Error('Gitee release response did not contain an id')
   }
 
-  const apk = await replaceAsset(token, release.id, apkPath)
+  const apks = []
+  for (const apkPath of apkPaths) {
+    apks.push(await replaceAsset(token, release.id, apkPath))
+  }
   let latest = null
   if (latestJsonPath) {
     latest = await replaceAsset(token, release.id, latestJsonPath)
@@ -308,11 +312,11 @@ async function main() {
         releaseId: release.id,
         tag,
         prerelease,
-        apk: {
+        apks: apks.map((apk) => ({
           name: apk.name,
           size: apk.size,
           browserDownloadUrl: apk.browser_download_url,
-        },
+        })),
         latestJson: latest
           ? {
               name: latest.name,

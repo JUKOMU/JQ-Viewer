@@ -1,12 +1,19 @@
 package io.github.jukomu.feature.update;
 
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -27,6 +34,8 @@ public final class UpdateManifest {
     private static final String GITEE_REPOSITORY_PATH = "/jukomu/jq-viewer";
     private static final String EXPECTED_CERTIFICATE_SHA256 =
         "6667B73DA7322E56626D82CA0EFCF03386E0B5560E14DF48C6025142FF4197EA";
+    private static final Set<String> SUPPORTED_VARIANT_ABIS = Collections.unmodifiableSet(
+        new HashSet<>(Arrays.asList("arm64-v8a", "armeabi-v7a", "x86_64", "x86")));
 
     private final int schemaVersion;
     private final String tag;
@@ -40,11 +49,12 @@ public final class UpdateManifest {
     private final String releaseNotes;
     private final String githubUrl;
     private final String giteeUrl;
+    private final List<Variant> variants;
 
     private UpdateManifest(int schemaVersion, String tag, String versionName, long versionCode,
                            String packageName, String apkName, long sizeBytes, String sha256,
                            String signingCertificateSha256, String releaseNotes,
-                           String githubUrl, String giteeUrl) {
+                           String githubUrl, String giteeUrl, List<Variant> variants) {
         this.schemaVersion = schemaVersion;
         this.tag = tag;
         this.versionName = versionName;
@@ -57,6 +67,7 @@ public final class UpdateManifest {
         this.releaseNotes = releaseNotes;
         this.githubUrl = githubUrl;
         this.giteeUrl = giteeUrl;
+        this.variants = variants;
     }
 
     /**
@@ -86,11 +97,13 @@ public final class UpdateManifest {
             JSONObject sources = requiredObject(json, "sources");
             String githubUrl = requiredString(sources, "github");
             String giteeUrl = requiredString(sources, "gitee");
+            List<Variant> variants = parseVariants(json.optJSONArray("variants"), tag);
 
             validate(schemaVersion, tag, versionName, versionCode, packageName, apkName,
                 sizeBytes, sha256, certificate, githubUrl, giteeUrl);
             return new UpdateManifest(schemaVersion, tag, versionName, versionCode, packageName,
-                apkName, sizeBytes, sha256, certificate, releaseNotes, githubUrl, giteeUrl);
+                apkName, sizeBytes, sha256, certificate, releaseNotes, githubUrl, giteeUrl,
+                variants);
         } catch (JSONException | NumberFormatException error) {
             throw new UpdateException("更新元数据字段无效", error);
         }
@@ -114,7 +127,59 @@ public final class UpdateManifest {
             && Objects.equals(signingCertificateSha256, other.signingCertificateSha256)
             && Objects.equals(releaseNotes, other.releaseNotes)
             && Objects.equals(githubUrl, other.githubUrl)
-            && Objects.equals(giteeUrl, other.giteeUrl);
+            && Objects.equals(giteeUrl, other.giteeUrl)
+            && Objects.equals(variants, other.variants);
+    }
+
+    /**
+     * 按设备声明的 ABI 优先级选择专用 APK；没有匹配项时保留顶层 universal APK。
+     */
+    public UpdateManifest selectForAbis(String[] supportedAbis) {
+        if (supportedAbis == null || variants.isEmpty()) {
+            return this;
+        }
+        for (String supportedAbi : supportedAbis) {
+            for (Variant variant : variants) {
+                if (variant.abi.equals(supportedAbi)) {
+                    return new UpdateManifest(schemaVersion, tag, versionName, versionCode,
+                        packageName, variant.apkName, variant.sizeBytes, variant.sha256,
+                        signingCertificateSha256, releaseNotes, variant.githubUrl,
+                        variant.giteeUrl, variants);
+                }
+            }
+        }
+        return this;
+    }
+
+    private static List<Variant> parseVariants(JSONArray values, String tag)
+        throws JSONException, UpdateException {
+        if (values == null) {
+            return Collections.emptyList();
+        }
+        if (values.length() != SUPPORTED_VARIANT_ABIS.size()) {
+            throw new UpdateException("更新 APK 架构条目不完整");
+        }
+        List<Variant> variants = new ArrayList<>(values.length());
+        Set<String> seenAbis = new HashSet<>(values.length());
+        for (int index = 0; index < values.length(); index++) {
+            JSONObject value = values.optJSONObject(index);
+            if (value == null) {
+                throw new UpdateException("更新 APK 架构条目无效");
+            }
+            String abi = requiredString(value, "abi");
+            String apkName = requiredString(value, "apkName");
+            long sizeBytes = requiredLong(value, "sizeBytes");
+            String sha256 = requiredString(value, "sha256").toLowerCase(Locale.ROOT);
+            JSONObject sources = requiredObject(value, "sources");
+            String githubUrl = requiredString(sources, "github");
+            String giteeUrl = requiredString(sources, "gitee");
+            if (!SUPPORTED_VARIANT_ABIS.contains(abi) || !seenAbis.add(abi)) {
+                throw new UpdateException("更新 APK 架构无效或重复");
+            }
+            validateArtifact(tag, apkName, sizeBytes, sha256, githubUrl, giteeUrl);
+            variants.add(new Variant(abi, apkName, sizeBytes, sha256, githubUrl, giteeUrl));
+        }
+        return Collections.unmodifiableList(variants);
     }
 
     private static void validate(int schemaVersion, String tag, String versionName,
@@ -131,15 +196,23 @@ public final class UpdateManifest {
         if (versionCode <= 0 || !EXPECTED_PACKAGE_NAME.equals(packageName)) {
             throw new UpdateException("更新包名或版本码无效");
         }
-        if (!APK_NAME_PATTERN.matcher(apkName).matches() || sizeBytes <= 0) {
-            throw new UpdateException("更新 APK 元数据无效");
-        }
-        if (!DIGEST_PATTERN.matcher(sha256).matches()
-            || !DIGEST_PATTERN.matcher(certificate).matches()) {
+        if (!DIGEST_PATTERN.matcher(certificate).matches()) {
             throw new UpdateException("更新摘要格式无效");
         }
         if (!EXPECTED_CERTIFICATE_SHA256.equals(certificate)) {
             throw new UpdateException("更新签名证书不是正式证书");
+        }
+        validateArtifact(tag, apkName, sizeBytes, sha256, githubUrl, giteeUrl);
+    }
+
+    private static void validateArtifact(String tag, String apkName, long sizeBytes,
+                                         String sha256, String githubUrl, String giteeUrl)
+        throws UpdateException {
+        if (!APK_NAME_PATTERN.matcher(apkName).matches() || sizeBytes <= 0) {
+            throw new UpdateException("更新 APK 元数据无效");
+        }
+        if (!DIGEST_PATTERN.matcher(sha256).matches()) {
+            throw new UpdateException("更新摘要格式无效");
         }
         requireReleaseUrl(githubUrl, "GitHub", GITHUB_HOST, GITHUB_REPOSITORY_PATH,
             tag, apkName);
@@ -243,6 +316,47 @@ public final class UpdateManifest {
 
     public String getGiteeUrl() {
         return giteeUrl;
+    }
+
+    private static final class Variant {
+        private final String abi;
+        private final String apkName;
+        private final long sizeBytes;
+        private final String sha256;
+        private final String githubUrl;
+        private final String giteeUrl;
+
+        private Variant(String abi, String apkName, long sizeBytes, String sha256,
+                        String githubUrl, String giteeUrl) {
+            this.abi = abi;
+            this.apkName = apkName;
+            this.sizeBytes = sizeBytes;
+            this.sha256 = sha256;
+            this.githubUrl = githubUrl;
+            this.giteeUrl = giteeUrl;
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            if (this == other) {
+                return true;
+            }
+            if (!(other instanceof Variant)) {
+                return false;
+            }
+            Variant variant = (Variant) other;
+            return sizeBytes == variant.sizeBytes
+                && Objects.equals(abi, variant.abi)
+                && Objects.equals(apkName, variant.apkName)
+                && Objects.equals(sha256, variant.sha256)
+                && Objects.equals(githubUrl, variant.githubUrl)
+                && Objects.equals(giteeUrl, variant.giteeUrl);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(abi, apkName, sizeBytes, sha256, githubUrl, giteeUrl);
+        }
     }
 
     /**

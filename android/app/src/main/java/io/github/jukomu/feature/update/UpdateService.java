@@ -125,7 +125,7 @@ public final class UpdateService {
                     callback.accept(CheckResult.failure(resolution.error));
                     return;
                 }
-                UpdateManifest manifest = resolution.manifest;
+                UpdateManifest manifest = resolution.manifest.selectForAbis(Build.SUPPORTED_ABIS);
                 if (!isNewerThanInstalled(manifest)) {
                     currentManifest = manifest;
                     publish("up_to_date", "", 0L, 0L, manifest.getSizeBytes());

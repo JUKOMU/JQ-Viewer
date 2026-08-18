@@ -65,7 +65,6 @@ jobs:
     outputs:
       release_commit: ${{ steps.release_commit.outputs.sha }}
       is_prerelease: ${{ steps.release_mode.outputs.is_prerelease }}
-      apk_name: ${{ steps.release_artifact.outputs.apk_name }}
 
     steps:
       - uses: actions/checkout@v4
@@ -161,18 +160,22 @@ jobs:
           PROPS
 
       - name: Build release APK
-        run: cd android && chmod +x gradlew && ./gradlew :app:assembleRelease
+        run: cd android && chmod +x gradlew && ./gradlew :app:assembleRelease -PenableAbiSplits=true
 
-      - name: Rename release APK
+      - name: Rename release APKs
         env:
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           tag_name="$RELEASE_TAG"
           version="${tag_name#v}"
           version="${version//./_}"
-          cp android/app/build/outputs/apk/release/app-release.apk "JQ-Viewer-${version}.apk"
+          output_dir="android/app/build/outputs/apk/release"
+          cp "$output_dir/app-universal-release.apk" "JQ-Viewer-${version}-universal.apk"
+          for abi in arm64-v8a armeabi-v7a x86_64 x86; do
+            cp "$output_dir/app-$abi-release.apk" "JQ-Viewer-${version}-$abi.apk"
+          done
 
-      - name: Validate release APK
+      - name: Validate release APKs
         env:
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
           EXPECTED_RELEASE_CERT_SHA256: '6667B73DA7322E56626D82CA0EFCF03386E0B5560E14DF48C6025142FF4197EA'
@@ -181,12 +184,7 @@ jobs:
 
           version="${RELEASE_TAG#v}"
           artifact_version="${version//./_}"
-          apk_path="JQ-Viewer-${artifact_version}.apk"
-
-          if [ ! -s "$apk_path" ]; then
-            echo "::error::Release APK is missing or empty: $apk_path"
-            exit 1
-          fi
+          apk_prefix="JQ-Viewer-${artifact_version}"
 
           sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
           if [ -z "$sdk_root" ]; then
@@ -218,12 +216,6 @@ jobs:
             exit 1
           fi
 
-          actual_application_id="$("$apkanalyzer_path" manifest application-id "$apk_path")"
-          actual_version_code="$("$apkanalyzer_path" manifest version-code "$apk_path")"
-          actual_version_name="$("$apkanalyzer_path" manifest version-name "$apk_path")"
-          actual_min_sdk="$("$apkanalyzer_path" manifest min-sdk "$apk_path")"
-          actual_target_sdk="$("$apkanalyzer_path" manifest target-sdk "$apk_path")"
-
           assert_equal() {
             label="$1"
             expected="$2"
@@ -235,51 +227,71 @@ jobs:
             echo "$label verified: $actual"
           }
 
-          assert_equal "Application ID" "$expected_application_id" "$actual_application_id"
-          assert_equal "Version code" "$expected_version_code" "$actual_version_code"
-          assert_equal "Version name" "$expected_version_name" "$actual_version_name"
-          assert_equal "Minimum SDK" "$expected_min_sdk" "$actual_min_sdk"
-          assert_equal "Target SDK" "$expected_target_sdk" "$actual_target_sdk"
+          validate_apk() {
+            apk_path="$1"
+            expected_abi="$2"
+            if [ ! -s "$apk_path" ]; then
+              echo "::error::Release APK is missing or empty: $apk_path"
+              exit 1
+            fi
 
-          certificate_output="$("$apksigner_path" verify \
-            --min-sdk-version "$actual_min_sdk" \
-            --print-certs \
-            "$apk_path")"
-          mapfile -t certificate_digests < <(
-            printf '%s\n' "$certificate_output" \
-              | sed -n 's/^.*certificate SHA-256 digest: //p' \
-              | tr '[:lower:]' '[:upper:]' \
-              | sort -u
-          )
-          unset certificate_output
+            actual_application_id="$("$apkanalyzer_path" manifest application-id "$apk_path")"
+            actual_version_code="$("$apkanalyzer_path" manifest version-code "$apk_path")"
+            actual_version_name="$("$apkanalyzer_path" manifest version-name "$apk_path")"
+            actual_min_sdk="$("$apkanalyzer_path" manifest min-sdk "$apk_path")"
+            actual_target_sdk="$("$apkanalyzer_path" manifest target-sdk "$apk_path")"
+            assert_equal "Application ID ($expected_abi)" "$expected_application_id" "$actual_application_id"
+            assert_equal "Version code ($expected_abi)" "$expected_version_code" "$actual_version_code"
+            assert_equal "Version name ($expected_abi)" "$expected_version_name" "$actual_version_name"
+            assert_equal "Minimum SDK ($expected_abi)" "$expected_min_sdk" "$actual_min_sdk"
+            assert_equal "Target SDK ($expected_abi)" "$expected_target_sdk" "$actual_target_sdk"
 
-          if [ "${#certificate_digests[@]}" -ne 1 ] || \
-             [ "${certificate_digests[0]}" != "$EXPECTED_RELEASE_CERT_SHA256" ]; then
-            echo "::error::Release APK signing certificate does not match the pinned certificate"
-            exit 1
-          fi
-          unset certificate_digests
-          echo "Release APK signature and signing certificate verified"
+            mapfile -t packaged_abis < <(
+              unzip -Z1 "$apk_path" | awk -F/ '$1 == "lib" { print $2 }' | sort -u
+            )
+            if [ "$expected_abi" = "universal" ]; then
+              expected_abis=(arm64-v8a armeabi-v7a x86 x86_64)
+            else
+              expected_abis=("$expected_abi")
+            fi
+            if [ "${packaged_abis[*]}" != "${expected_abis[*]}" ]; then
+              echo "::error::APK ABI mismatch for $apk_path: expected ${expected_abis[*]}, got ${packaged_abis[*]}"
+              exit 1
+            fi
+
+            certificate_output="$("$apksigner_path" verify \
+              --min-sdk-version "$actual_min_sdk" --print-certs "$apk_path")"
+            mapfile -t certificate_digests < <(
+              printf '%s\n' "$certificate_output" \
+                | sed -n 's/^.*certificate SHA-256 digest: //p' \
+                | tr '[:lower:]' '[:upper:]' | sort -u
+            )
+            if [ "${#certificate_digests[@]}" -ne 1 ] || \
+               [ "${certificate_digests[0]}" != "$EXPECTED_RELEASE_CERT_SHA256" ]; then
+              echo "::error::Release APK signing certificate mismatch for $apk_path"
+              exit 1
+            fi
+          }
+
+          validate_apk "$apk_prefix-universal.apk" universal
+          for abi in arm64-v8a armeabi-v7a x86_64 x86; do
+            validate_apk "$apk_prefix-$abi.apk" "$abi"
+          done
 
       - name: Prepare release artifact
-        id: release_artifact
-        env:
-          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
-          version="$(printf '%s' "$RELEASE_TAG" | sed 's/^v//')"
-          artifact_version="$(printf '%s' "$version" | tr '.' '_')"
-          apk_name="JQ-Viewer-$artifact_version.apk"
-          sha256sum "$apk_name" > "$apk_name.sha256"
-          echo "apk_name=$apk_name" >> "$GITHUB_OUTPUT"
+          for apk_path in JQ-Viewer-*.apk; do
+            sha256sum "$apk_path" > "$apk_path.sha256"
+          done
 
       - name: Upload release APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: release-apk
           path: |
-            ${{ steps.release_artifact.outputs.apk_name }}
-            ${{ steps.release_artifact.outputs.apk_name }}.sha256
+            JQ-Viewer-*.apk
+            JQ-Viewer-*.apk.sha256
           if-no-files-found: error
           compression-level: 0
           overwrite: true
@@ -295,7 +307,7 @@ jobs:
           body_path: .github/release-notes.md
           generate_release_notes: false
           overwrite_files: true
-          files: ${{ steps.release_artifact.outputs.apk_name }}
+          files: JQ-Viewer-*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -305,7 +317,7 @@ jobs:
           set -euo pipefail
           rm -f android/app/release.keystore
           rm -f android/keystore.properties
-          rm -f android/app/build/outputs/apk/release/app-release.apk
+          rm -f android/app/build/outputs/apk/release/app-*-release.apk
           rm -f JQ-Viewer-*.apk
           rm -f JQ-Viewer-*.apk.sha256
 
@@ -353,18 +365,22 @@ jobs:
           name: release-apk
           path: ${{ runner.temp }}/release-artifact
 
-      - name: Verify release APK artifact
-        env:
-          APK_NAME: ${{ needs.build-release.outputs.apk_name }}
+      - name: Verify release APK artifacts
         run: |
           set -euo pipefail
           artifact_dir="$RUNNER_TEMP/release-artifact"
-          if [ ! -s "$artifact_dir/$APK_NAME" ] || \
-             [ ! -s "$artifact_dir/$APK_NAME.sha256" ]; then
-            echo "::error::Release APK artifact is incomplete"
+          mapfile -t apk_files < <(find "$artifact_dir" -maxdepth 1 -type f -name 'JQ-Viewer-*.apk' | sort)
+          if [ "${#apk_files[@]}" -ne 5 ]; then
+            echo "::error::Expected five release APK artifacts, got ${#apk_files[@]}"
             exit 1
           fi
-          (cd "$artifact_dir" && sha256sum --check "$APK_NAME.sha256")
+          for apk_path in "${apk_files[@]}"; do
+            if [ ! -s "$apk_path.sha256" ]; then
+              echo "::error::Missing APK checksum: $apk_path.sha256"
+              exit 1
+            fi
+          done
+          (cd "$artifact_dir" && sha256sum --check JQ-Viewer-*.apk.sha256)
 
       - name: Wait for mirrored Gitee tag
         env:
@@ -406,14 +422,16 @@ jobs:
         if: ${{ needs.build-release.outputs.is_prerelease != 'true' }}
         env:
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
-          APK_NAME: ${{ needs.build-release.outputs.apk_name }}
           EXPECTED_RELEASE_CERT_SHA256: '6667B73DA7322E56626D82CA0EFCF03386E0B5560E14DF48C6025142FF4197EA'
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITEE_REPOSITORY: jukomu/jq-viewer
         run: |
           set -euo pipefail
-          apk_path="$RUNNER_TEMP/release-artifact/$APK_NAME"
-          node scripts/release-assets.mjs "$RELEASE_TAG" "$apk_path" "$RUNNER_TEMP/latest.json"
+          artifact_dir="$RUNNER_TEMP/release-artifact"
+          node scripts/release-assets.mjs \
+            "$RELEASE_TAG" \
+            "$RUNNER_TEMP/latest.json" \
+            "$artifact_dir"/JQ-Viewer-*.apk
 
       - name: Publish APK and latest.json to Gitee Release
         env:
@@ -422,19 +440,20 @@ jobs:
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
           RELEASE_PRERELEASE: ${{ needs.build-release.outputs.is_prerelease }}
           RELEASE_COMMIT: ${{ needs.build-release.outputs.release_commit }}
-          APK_NAME: ${{ needs.build-release.outputs.apk_name }}
         run: |
           set -euo pipefail
-          apk_path="$RUNNER_TEMP/release-artifact/$APK_NAME"
+          artifact_dir="$RUNNER_TEMP/release-artifact"
+          latest_json="-"
+          if [ "$RELEASE_PRERELEASE" != "true" ]; then
+            latest_json="$RUNNER_TEMP/latest.json"
+          fi
           args=(
             "$RELEASE_TAG"
-            "$apk_path"
             ".github/release-notes.md"
             "$RELEASE_COMMIT"
+            "$latest_json"
+            "$artifact_dir"/JQ-Viewer-*.apk
           )
-          if [ "$RELEASE_PRERELEASE" != "true" ]; then
-            args+=("$RUNNER_TEMP/latest.json")
-          fi
           node scripts/publish-gitee-release.mjs "${args[@]}"
 
       - name: Publish stable GitHub Release
@@ -470,7 +489,6 @@ jobs:
         env:
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          APK_NAME: ${{ needs.build-release.outputs.apk_name }}
         run: |
           set -euo pipefail
           github_base="https://github.com/$GITHUB_REPOSITORY/releases/download/$RELEASE_TAG"
@@ -478,58 +496,63 @@ jobs:
 
           temp_dir="$(mktemp -d)"
           trap 'rm -rf "$temp_dir"' EXIT
-          github_apk="$temp_dir/github.apk"
-          gitee_apk="$temp_dir/gitee.apk"
           github_manifest="$temp_dir/github-latest.json"
           gitee_manifest="$temp_dir/gitee-latest.json"
 
           curl --fail --silent --show-error --location --retry 3 \
-            "$github_base/$APK_NAME" -o "$github_apk"
-          curl --fail --silent --show-error --location --retry 3 \
-            "$gitee_base/$APK_NAME" -o "$gitee_apk"
-          curl --fail --silent --show-error --location --retry 3 \
             "$github_base/latest.json" -o "$github_manifest"
           curl --fail --silent --show-error --location --retry 3 \
             "$gitee_base/latest.json" -o "$gitee_manifest"
-
-          github_sha="$(sha256sum "$github_apk" | awk '{print toupper($1)}')"
-          gitee_sha="$(sha256sum "$gitee_apk" | awk '{print toupper($1)}')"
-          if [ "$github_sha" != "$gitee_sha" ]; then
-            echo "::error::GitHub/Gitee APK SHA-256 mismatch: $github_sha != $gitee_sha"
-            exit 1
-          fi
-          if ! cmp --silent "$github_apk" "$gitee_apk"; then
-            echo "::error::GitHub/Gitee APK bytes are different"
-            exit 1
-          fi
 
           if ! cmp --silent "$github_manifest" "$gitee_manifest"; then
             echo "::error::GitHub/Gitee latest.json bytes are different"
             exit 1
           fi
 
-          manifest_tag="$(jq -r '.tag' "$github_manifest")"
-          manifest_apk_name="$(jq -r '.apkName' "$github_manifest")"
-          manifest_size="$(jq -r '.sizeBytes' "$github_manifest")"
-          manifest_sha="$(jq -r '.sha256' "$github_manifest" | tr '[:lower:]' '[:upper:]')"
-          manifest_github_url="$(jq -r '.sources.github' "$github_manifest")"
-          manifest_gitee_url="$(jq -r '.sources.gitee' "$github_manifest")"
-          actual_size="$(stat -c '%s' "$github_apk")"
-
-          if [ "$manifest_tag" != "$RELEASE_TAG" ] || \
-             [ "$manifest_apk_name" != "$APK_NAME" ] || \
-             [ "$manifest_size" != "$actual_size" ] || \
-             [ "$manifest_sha" != "$github_sha" ]; then
-            echo "::error::latest.json does not match the public APK"
-            exit 1
-          fi
-          if [ "$manifest_github_url" != "$github_base/$APK_NAME" ] || \
-             [ "$manifest_gitee_url" != "$gitee_base/$APK_NAME" ]; then
-            echo "::error::latest.json source URLs do not match release assets"
+          if [ "$(jq -r '.tag' "$github_manifest")" != "$RELEASE_TAG" ] || \
+             [ "$(jq -r '.schemaVersion' "$github_manifest")" != "1" ] || \
+             [ "$(jq '.variants | length' "$github_manifest")" != "4" ]; then
+            echo "::error::latest.json release identity or variant count is invalid"
             exit 1
           fi
 
-          echo "Public release assets verified: identical APK and latest.json"
+          mapfile -t manifest_abis < <(jq -r '.variants[].abi' "$github_manifest" | sort)
+          expected_abis=(arm64-v8a armeabi-v7a x86 x86_64)
+          if [ "${manifest_abis[*]}" != "${expected_abis[*]}" ]; then
+            echo "::error::latest.json ABI variants are incomplete"
+            exit 1
+          fi
+
+          jq -c '[{abi: "universal", apkName, sizeBytes, sha256, sources}] + .variants | .[]' \
+            "$github_manifest" | while IFS= read -r artifact; do
+            abi="$(jq -r '.abi' <<<"$artifact")"
+            apk_name="$(jq -r '.apkName' <<<"$artifact")"
+            expected_size="$(jq -r '.sizeBytes' <<<"$artifact")"
+            expected_sha="$(jq -r '.sha256' <<<"$artifact" | tr '[:lower:]' '[:upper:]')"
+            expected_github_url="$(jq -r '.sources.github' <<<"$artifact")"
+            expected_gitee_url="$(jq -r '.sources.gitee' <<<"$artifact")"
+            github_apk="$temp_dir/github-$abi.apk"
+            gitee_apk="$temp_dir/gitee-$abi.apk"
+
+            curl --fail --silent --show-error --location --retry 3 \
+              "$github_base/$apk_name" -o "$github_apk"
+            curl --fail --silent --show-error --location --retry 3 \
+              "$gitee_base/$apk_name" -o "$gitee_apk"
+            if ! cmp --silent "$github_apk" "$gitee_apk"; then
+              echo "::error::GitHub/Gitee APK bytes differ for $abi"
+              exit 1
+            fi
+            actual_size="$(stat -c '%s' "$github_apk")"
+            actual_sha="$(sha256sum "$github_apk" | awk '{print toupper($1)}')"
+            if [ "$actual_size" != "$expected_size" ] || [ "$actual_sha" != "$expected_sha" ] || \
+               [ "$expected_github_url" != "$github_base/$apk_name" ] || \
+               [ "$expected_gitee_url" != "$gitee_base/$apk_name" ]; then
+              echo "::error::latest.json does not match public APK for $abi"
+              exit 1
+            fi
+          done
+
+          echo "Public release assets verified: five identical APKs and latest.json"
 
       - name: Cleanup downloaded release artifacts
         if: ${{ always() }}

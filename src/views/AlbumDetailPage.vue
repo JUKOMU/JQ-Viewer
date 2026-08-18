@@ -502,6 +502,7 @@ const PREVIEW_NEAR_BOTTOM_THRESHOLD = 200
 const tabPanelRefs = new Map<TabKey, HTMLElement>()
 let tabSwipeGesture: Gesture | undefined
 let tabResizeObserver: ResizeObserver | undefined
+let wasDeactivated = false
 const tabSwipeActive = ref(false)
 const tabSwipeSettling = ref(false)
 const tabSwipeBaseIndex = ref(0)
@@ -553,7 +554,7 @@ const selectedChapterPageCount = computed(() => {
 })
 
 // ---- 数据加载 ----
-const resetAlbumState = () => {
+const resetAlbumState = (preserveTabState = false) => {
   chapterLoadGeneration += 1
   invalidatePreviewRequest()
   albumDetail.value = null
@@ -563,11 +564,13 @@ const resetAlbumState = () => {
   comments.value = []
   commentPage.value = 1
   totalComments.value = 0
-  activeTab.value = 'info'
-  tabScrollPositions.info = 0
-  tabScrollPositions.chapters = 0
-  tabScrollPositions.preview = 0
-  tabScrollPositions.comments = 0
+  if (!preserveTabState) {
+    activeTab.value = 'info'
+    tabScrollPositions.info = 0
+    tabScrollPositions.chapters = 0
+    tabScrollPositions.preview = 0
+    tabScrollPositions.comments = 0
+  }
   showChapterActions.value = false
   sourceMenuOpen.value = false
   chapterDownloadStatuses.value = new Map()
@@ -587,16 +590,16 @@ const resolveDetailChapterId = (
   return matchedAlbumId?.id ?? album.photoMetas[0]?.id ?? ''
 }
 
-const loadAlbumData = async () => {
+const loadAlbumData = async (force = false) => {
   const targetAlbumId = albumId.value
   const requestedId = requestedChapterId.value
   const loadKey = `${targetAlbumId}:${requestedId}`
-  if (loadKey === activeAlbumLoadKey && loading.value) return
+  if (!force && loadKey === activeAlbumLoadKey && loading.value) return
 
   const loadGeneration = ++albumLoadGeneration
   activeAlbumLoadKey = loadKey
   detailStateAlbumId = targetAlbumId
-  resetAlbumState()
+  resetAlbumState(force)
   const isCurrentLoad = () =>
     loadGeneration === albumLoadGeneration &&
     albumId.value === targetAlbumId &&
@@ -1278,10 +1281,13 @@ watch(requestedChapterId, (chapterId) => {
 
 onActivated(() => {
   setLeftMenuGestureEnabled(false)
+  if (wasDeactivated && loading.value) void loadAlbumData(true)
+  wasDeactivated = false
   void restoreTabScrollPosition(activeTab.value)
 })
 
 onDeactivated(() => {
+  wasDeactivated = true
   void saveActiveTabScrollPosition()
   setLeftMenuGestureEnabled(true)
 })
@@ -1600,7 +1606,9 @@ const handleScroll = async (event: CustomEvent<{ scrollTop?: number }>) => {
   border-bottom: 1px solid rgb(245 210 188 / 0.5);
   position: relative;
   z-index: 10;
-  transition: padding-top 0.1s ease, margin-bottom 0.1s ease;
+  transition:
+    padding-top 0.1s ease,
+    margin-bottom 0.1s ease;
 }
 
 .tab-bar.sticky {
@@ -1639,7 +1647,9 @@ const handleScroll = async (event: CustomEvent<{ scrollTop?: number }>) => {
   background: linear-gradient(145deg, #fa9c69, #f28752);
   box-shadow: 0 4px 10px rgb(242 135 82 / 0.22);
   transform: translate3d(calc(var(--tab-progress) * (100% + 2px)), 0, 0);
-  transition: top 0.1s ease, transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+  transition:
+    top 0.1s ease,
+    transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .tab-bar.sticky .tab-active-indicator {
@@ -1651,7 +1661,9 @@ const handleScroll = async (event: CustomEvent<{ scrollTop?: number }>) => {
 }
 
 .tab-bar.settling .tab-active-indicator {
-  transition: top 0.1s ease, transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  transition:
+    top 0.1s ease,
+    transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /* Tab 内容 */

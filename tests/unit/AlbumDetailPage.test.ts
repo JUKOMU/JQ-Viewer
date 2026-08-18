@@ -134,7 +134,10 @@ vi.mock('@/composables/useAuth', async () => {
 vi.mock('@/components/album/AlbumHeader.vue', () => ({
   default: {
     name: 'AlbumHeader',
-    props: {pageCount: {type: Number, default: 0}},
+    props: {
+      pageCount: {type: Number, default: 0},
+      loading: {type: Boolean, default: false},
+    },
     render: () => null,
   },
 }))
@@ -634,6 +637,43 @@ describe('AlbumDetailPage tab 状态', () => {
     expect(wrapper.findComponent(AlbumDetailPage).get('.tab-btn.active').text()).toBe('预览')
     expect(scrollElement.scrollTop).toBe(720)
 
+    wrapper.unmount()
+  })
+
+  test('详情加载未完成时返回页面会强制重新加载', async () => {
+    const firstAlbum = deferred<AlbumDetail>()
+    const firstPhoto = deferred<PhotoDetail>()
+    mocks.getAlbum.mockReturnValueOnce(firstAlbum.promise).mockResolvedValueOnce(makeAlbum())
+    mocks.getPhoto.mockReturnValueOnce(firstPhoto.promise).mockResolvedValueOnce(makePhoto())
+    mocks.getDownloadTasks.mockResolvedValue({tasks: [], usedBytes: 0, availableBytes: 0})
+    mocks.getImportedPdfs.mockResolvedValue({pdfs: []})
+
+    const showDetail = ref(true)
+    const Host = defineComponent({
+      setup() {
+        return () =>
+          h(KeepAlive, null, [
+            showDetail.value ? h(AlbumDetailPage, {key: 'detail'}) : h('div', {class: 'reader-stub'}),
+          ])
+      },
+    })
+    const wrapper = mount(Host)
+    await nextTick()
+
+    showDetail.value = false
+    mocks.setRouteId?.(undefined)
+    await settle()
+
+    mocks.setRouteId?.('123')
+    showDetail.value = true
+    await settle()
+
+    expect(mocks.getAlbum).toHaveBeenCalledTimes(2)
+    expect(wrapper.findComponent({name: 'AlbumHeader'}).props('loading')).toBe(false)
+
+    firstAlbum.resolve(makeAlbum())
+    firstPhoto.resolve(makePhoto())
+    await settle()
     wrapper.unmount()
   })
 })

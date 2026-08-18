@@ -253,6 +253,19 @@ describe('MainMenu 自定义左侧手势', () => {
 })
 
 describe('MainMenu 任务进度', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  const flushTaskProgress = async () => {
+    await vi.advanceTimersByTimeAsync(500)
+    await nextTick()
+  }
+
   test('初始快照显示下载页数进度', async () => {
     mocks.getDownloadTasks.mockResolvedValue({ tasks: [downloadTask(40, 100)] })
     const wrapper = mountMenu()
@@ -260,6 +273,47 @@ describe('MainMenu 任务进度', () => {
 
     expect(wrapper.find('.task-progress-copy').text()).toContain('下载40%')
     expect(wrapper.find('.task-progress-background').attributes('slot')).toBe('start')
+    expect(wrapper.find('.download-progress-band').attributes('style')).toContain(
+      '--task-progress: 40%',
+    )
+    expect(wrapper.find('.download-progress-band').attributes('style')).not.toContain('width')
+    wrapper.unmount()
+  })
+
+  test('常规进度每 500ms 合并一次并显示周期内的最新值', async () => {
+    mocks.getDownloadTasks.mockResolvedValue({ tasks: [downloadTask(10, 100)] })
+    const wrapper = mountMenu()
+    await flushPromises()
+
+    mocks.downloadHandler?.(downloadEvent(20))
+    mocks.downloadHandler?.(downloadEvent(30))
+    mocks.pdfHandler?.(pdfEvent(20))
+    mocks.pdfHandler?.(pdfEvent(30))
+    await nextTick()
+    expect(wrapper.find('.task-progress-copy').text()).toContain('下载10%')
+    expect(wrapper.find('.task-progress-copy').text()).not.toContain('PDF')
+
+    await vi.advanceTimersByTimeAsync(499)
+    await nextTick()
+    expect(wrapper.find('.task-progress-copy').text()).toContain('下载10%')
+
+    await vi.advanceTimersByTimeAsync(1)
+    await nextTick()
+    expect(wrapper.find('.task-progress-copy').text()).toContain('下载30%')
+    expect(wrapper.find('.task-progress-copy').text()).toContain('PDF30%')
+    wrapper.unmount()
+  })
+
+  test('终态立即刷新并冲刷尚未提交的常规进度', async () => {
+    const wrapper = mountMenu()
+    await flushPromises()
+
+    mocks.downloadHandler?.(downloadEvent(80))
+    mocks.downloadHandler?.(downloadEvent(100, 100, 'completed'))
+    await nextTick()
+
+    expect(wrapper.find('.task-progress-spinner').exists()).toBe(true)
+    expect(wrapper.find('.task-progress-copy').text()).not.toContain('80%')
     wrapper.unmount()
   })
 
@@ -275,6 +329,7 @@ describe('MainMenu 任务进度', () => {
     mocks.downloadHandler?.(downloadEvent(20))
     resolveSnapshot?.({ tasks: [downloadTask(10, 100)] })
     await flushPromises()
+    await flushTaskProgress()
 
     expect(wrapper.find('.task-progress-copy').text()).toContain('下载20%')
     wrapper.unmount()
@@ -313,7 +368,7 @@ describe('MainMenu 任务进度', () => {
     await flushPromises()
     mocks.downloadHandler?.(downloadEvent(40))
     mocks.pdfHandler?.(pdfEvent(20))
-    await nextTick()
+    await flushTaskProgress()
 
     const progressText = wrapper.find('.task-progress-copy').text()
     expect(progressText).toContain('下载40%')
@@ -327,7 +382,7 @@ describe('MainMenu 任务进度', () => {
     await flushPromises()
     mocks.downloadHandler?.(downloadEvent(99))
     mocks.pdfHandler?.(pdfEvent(99))
-    await nextTick()
+    await flushTaskProgress()
 
     expect(wrapper.find('.task-progress-copy').text()).toContain('下载99%')
     expect(wrapper.find('.task-progress-copy').text()).toContain('PDF99%')
@@ -335,7 +390,7 @@ describe('MainMenu 任务进度', () => {
 
     mocks.downloadHandler?.(downloadEvent(100))
     mocks.pdfHandler?.(pdfEvent(100))
-    await nextTick()
+    await flushTaskProgress()
 
     expect(wrapper.findAll('.task-progress-spinner')).toHaveLength(2)
     expect(wrapper.find('.task-progress-copy').text()).not.toContain('100%')
@@ -388,25 +443,20 @@ describe('MainMenu 任务进度', () => {
   })
 
   test('一个任务完成后，另一个进度带恢复占满下载项', async () => {
-    vi.useFakeTimers()
-    try {
-      const wrapper = mountMenu()
-      await flushPromises()
-      mocks.downloadHandler?.(downloadEvent(40))
-      mocks.pdfHandler?.(pdfEvent(20))
-      await nextTick()
+    const wrapper = mountMenu()
+    await flushPromises()
+    mocks.downloadHandler?.(downloadEvent(40))
+    mocks.pdfHandler?.(pdfEvent(20))
+    await flushTaskProgress()
 
-      expect(wrapper.find('.download-progress-band').attributes('style')).toContain('height: 50%')
-      mocks.pdfHandler?.(pdfEvent(100, 100, 'completed', 101))
-      await nextTick()
-      vi.advanceTimersByTime(221)
-      await nextTick()
+    expect(wrapper.find('.download-progress-band').attributes('style')).toContain('height: 50%')
+    mocks.pdfHandler?.(pdfEvent(100, 100, 'completed', 101))
+    await nextTick()
+    vi.advanceTimersByTime(221)
+    await nextTick()
 
-      expect(wrapper.find('.pdf-progress-band').exists()).toBe(false)
-      expect(wrapper.find('.download-progress-band').attributes('style')).toContain('height: 100%')
-      wrapper.unmount()
-    } finally {
-      vi.useRealTimers()
-    }
+    expect(wrapper.find('.pdf-progress-band').exists()).toBe(false)
+    expect(wrapper.find('.download-progress-band').attributes('style')).toContain('height: 100%')
+    wrapper.unmount()
   })
 })

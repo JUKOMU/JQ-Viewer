@@ -253,6 +253,7 @@ const DOWNLOAD_PROGRESS_STATUSES = new Set<DownloadStatus>([
 ])
 const PDF_PROGRESS_STATUSES = new Set<PdfExportStatus>(['queued', 'running', 'cancelling'])
 const TASK_PROGRESS_TRANSITION_MS = 220
+const TASK_PROGRESS_RENDER_INTERVAL_MS = 500
 
 const downloadProgressTasks = ref(new Map<string, DownloadProgressTask>())
 const pdfProgressTasks = ref(new Map<string, PdfProgressTask>())
@@ -267,13 +268,23 @@ const hasBothProgress = computed(() => Boolean(downloadProgress.value && pdfProg
 const downloadProgressBandStyle = computed(() => ({
   top: '0%',
   height: hasBothProgress.value ? '50%' : '100%',
-  width: `${downloadProgress.value?.percent ?? 0}%`,
+  '--task-progress': `${downloadProgress.value?.percent ?? 0}%`,
 }))
 const pdfProgressBandStyle = computed(() => ({
   top: hasBothProgress.value ? '50%' : '0%',
   height: hasBothProgress.value ? '50%' : '100%',
-  width: `${pdfProgress.value?.percent ?? 0}%`,
+  '--task-progress': `${pdfProgress.value?.percent ?? 0}%`,
 }))
+
+type PendingDownloadProgressEvent = {
+  event: DownloadProgressEvent
+  eventSequence: number
+}
+
+type PendingPdfProgressEvent = {
+  event: PdfExportProgressEvent
+  eventSequence: number
+}
 
 let downloadEventSequence = 0
 let pdfEventSequence = 0
@@ -282,8 +293,11 @@ const pdfLatestEvents = new Map<
   string,
   { eventSequence: number; snapshotRevision: number; status: PdfExportStatus }
 >()
+const pendingDownloadProgressEvents = new Map<string, PendingDownloadProgressEvent>()
+const pendingPdfProgressEvents = new Map<string, PendingPdfProgressEvent>()
 let downloadClearTimer: ReturnType<typeof setTimeout> | null = null
 let pdfClearTimer: ReturnType<typeof setTimeout> | null = null
+let taskProgressRenderTimer: ReturnType<typeof setTimeout> | null = null
 let downloadProgressHandle: PluginListenerHandle | null = null
 let pdfProgressHandle: PluginListenerHandle | null = null
 let progressUnmounted = false
@@ -309,6 +323,13 @@ const clearPdfTimer = () => {
   }
 }
 
+const clearTaskProgressRenderTimer = () => {
+  if (taskProgressRenderTimer) {
+    clearTimeout(taskProgressRenderTimer)
+    taskProgressRenderTimer = null
+  }
+}
+
 const scheduleDownloadClear = () => {
   if (downloadProgressTasks.value.size === 0 || hasActiveDownloadTasks() || downloadClearTimer) {
     return
@@ -327,9 +348,7 @@ const schedulePdfClear = () => {
   }, TASK_PROGRESS_TRANSITION_MS)
 }
 
-const applyDownloadProgressEvent = (event: DownloadProgressEvent) => {
-  downloadEventSequence += 1
-  downloadLatestEventSequences.set(event.taskId, downloadEventSequence)
+const applyDownloadProgressEvent = (event: DownloadProgressEvent, eventSequence: number) => {
   const next = new Map(downloadProgressTasks.value)
   const existing = next.get(event.taskId)
 
@@ -340,7 +359,7 @@ const applyDownloadProgressEvent = (event: DownloadProgressEvent) => {
       currentPages: event.downloadedPages,
       totalPages: event.totalPages,
       status: event.status,
-      eventSequence: downloadEventSequence,
+      eventSequence,
     })
   } else if (event.status === 'completed') {
     if (existing) {
@@ -348,7 +367,7 @@ const applyDownloadProgressEvent = (event: DownloadProgressEvent) => {
         currentPages: event.downloadedPages,
         totalPages: event.totalPages,
         status: event.status,
-        eventSequence: downloadEventSequence,
+        eventSequence,
       })
     }
   } else {
@@ -359,16 +378,7 @@ const applyDownloadProgressEvent = (event: DownloadProgressEvent) => {
   scheduleDownloadClear()
 }
 
-const applyPdfProgressEvent = (event: PdfExportProgressEvent) => {
-  pdfEventSequence += 1
-  const latestEvent = pdfLatestEvents.get(event.exportId)
-  if (!latestEvent || event.snapshotRevision >= latestEvent.snapshotRevision) {
-    pdfLatestEvents.set(event.exportId, {
-      eventSequence: pdfEventSequence,
-      snapshotRevision: event.snapshotRevision,
-      status: event.status,
-    })
-  }
+const applyPdfProgressEvent = (event: PdfExportProgressEvent, eventSequence: number) => {
   const next = new Map(pdfProgressTasks.value)
   const existing = next.get(event.exportId)
   if (existing && event.snapshotRevision < existing.snapshotRevision) return
@@ -381,7 +391,7 @@ const applyPdfProgressEvent = (event: PdfExportProgressEvent) => {
       totalPages: event.totalPages,
       status: event.status,
       snapshotRevision: event.snapshotRevision,
-      eventSequence: pdfEventSequence,
+      eventSequence,
     })
   } else if (event.status === 'completed') {
     if (existing) {
@@ -390,7 +400,7 @@ const applyPdfProgressEvent = (event: PdfExportProgressEvent) => {
         totalPages: event.totalPages,
         status: event.status,
         snapshotRevision: event.snapshotRevision,
-        eventSequence: pdfEventSequence,
+        eventSequence,
       })
     }
   } else {
@@ -399,6 +409,88 @@ const applyPdfProgressEvent = (event: PdfExportProgressEvent) => {
 
   pdfProgressTasks.value = next
   schedulePdfClear()
+}
+
+const flushPendingTaskProgress = () => {
+  clearTaskProgressRenderTimer()
+  const downloadEvents = [...pendingDownloadProgressEvents.values()].sort(
+    (left, right) => left.eventSequence - right.eventSequence,
+  )
+  const pdfEvents = [...pendingPdfProgressEvents.values()].sort(
+    (left, right) => left.eventSequence - right.eventSequence,
+  )
+  pendingDownloadProgressEvents.clear()
+  pendingPdfProgressEvents.clear()
+
+  for (const { event, eventSequence } of downloadEvents) {
+    applyDownloadProgressEvent(event, eventSequence)
+  }
+  for (const { event, eventSequence } of pdfEvents) {
+    applyPdfProgressEvent(event, eventSequence)
+  }
+}
+
+const scheduleTaskProgressRender = () => {
+  if (taskProgressRenderTimer) return
+  taskProgressRenderTimer = setTimeout(() => {
+    taskProgressRenderTimer = null
+    flushPendingTaskProgress()
+  }, TASK_PROGRESS_RENDER_INTERVAL_MS)
+}
+
+const queueDownloadProgressEvent = (event: DownloadProgressEvent) => {
+  downloadEventSequence += 1
+  const eventSequence = downloadEventSequence
+  downloadLatestEventSequences.set(event.taskId, eventSequence)
+  const isActive = DOWNLOAD_PROGRESS_STATUSES.has(event.status)
+  if (isActive) clearDownloadTimer()
+
+  const pendingEntry = pendingDownloadProgressEvents.get(event.taskId)
+  const pending = pendingEntry?.event
+  const current = downloadProgressTasks.value.get(event.taskId)
+  if (
+    (pending &&
+      pending.downloadedPages === event.downloadedPages &&
+      pending.totalPages === event.totalPages &&
+      pending.status === event.status) ||
+    (!pending &&
+      current?.currentPages === event.downloadedPages &&
+      current.totalPages === event.totalPages &&
+      current.status === event.status)
+  ) {
+    return
+  }
+
+  if (!isActive && pendingEntry) {
+    pendingDownloadProgressEvents.delete(event.taskId)
+    applyDownloadProgressEvent(pendingEntry.event, pendingEntry.eventSequence)
+  }
+  pendingDownloadProgressEvents.set(event.taskId, { event, eventSequence })
+  if (isActive) scheduleTaskProgressRender()
+  else flushPendingTaskProgress()
+}
+
+const queuePdfProgressEvent = (event: PdfExportProgressEvent) => {
+  pdfEventSequence += 1
+  const eventSequence = pdfEventSequence
+  const latestEvent = pdfLatestEvents.get(event.exportId)
+  if (latestEvent && event.snapshotRevision < latestEvent.snapshotRevision) return
+
+  const isActive = PDF_PROGRESS_STATUSES.has(event.status)
+  if (isActive) clearPdfTimer()
+  pdfLatestEvents.set(event.exportId, {
+    eventSequence,
+    snapshotRevision: event.snapshotRevision,
+    status: event.status,
+  })
+  const pendingEntry = pendingPdfProgressEvents.get(event.exportId)
+  if (!isActive && pendingEntry) {
+    pendingPdfProgressEvents.delete(event.exportId)
+    applyPdfProgressEvent(pendingEntry.event, pendingEntry.eventSequence)
+  }
+  pendingPdfProgressEvents.set(event.exportId, { event, eventSequence })
+  if (isActive) scheduleTaskProgressRender()
+  else flushPendingTaskProgress()
 }
 
 const seedDownloadProgress = (tasks: DownloadTask[], requestSequence: number) => {
@@ -507,7 +599,7 @@ const registerProgressListeners = async () => {
   await Promise.all([
     (async () => {
       try {
-        const handle = await JmcomicService.addDownloadProgressListener(applyDownloadProgressEvent)
+        const handle = await JmcomicService.addDownloadProgressListener(queueDownloadProgressEvent)
         if (progressUnmounted) void handle.remove()
         else downloadProgressHandle = handle
       } catch {
@@ -516,7 +608,7 @@ const registerProgressListeners = async () => {
     })(),
     (async () => {
       try {
-        const handle = await JmcomicService.addPdfExportProgressListener(applyPdfProgressEvent)
+        const handle = await JmcomicService.addPdfExportProgressListener(queuePdfProgressEvent)
         if (progressUnmounted) void handle.remove()
         else pdfProgressHandle = handle
       } catch {
@@ -687,6 +779,7 @@ onUnmounted(() => {
   progressUnmounted = true
   clearDownloadTimer()
   clearPdfTimer()
+  clearTaskProgressRenderTimer()
   void downloadProgressHandle?.remove()
   void pdfProgressHandle?.remove()
   downloadProgressHandle = null
@@ -695,6 +788,8 @@ onUnmounted(() => {
   pdfProgressTasks.value = new Map()
   downloadLatestEventSequences.clear()
   pdfLatestEvents.clear()
+  pendingDownloadProgressEvents.clear()
+  pendingPdfProgressEvents.clear()
   downloadEventSequence = 0
   pdfEventSequence = 0
   gesture?.destroy()
@@ -723,6 +818,7 @@ onUnmounted(() => {
   padding: 0;
   border: 0;
   background: rgb(16 12 10 / 1);
+  will-change: opacity;
 }
 
 .main-menu-panel {
@@ -742,6 +838,7 @@ onUnmounted(() => {
   background-size: 100% 100%;
   box-shadow: 4px 0 16px rgb(76 42 24 / 0.18);
   touch-action: pan-y;
+  will-change: transform;
 }
 
 .main-menu-panel:focus {
@@ -842,11 +939,14 @@ onUnmounted(() => {
 .task-progress-band {
   position: absolute;
   left: 0;
+  width: 100%;
   min-width: 0;
   overflow: hidden;
+  transform: translate3d(calc(var(--task-progress) - 100%), 0, 0);
+  will-change: transform;
   transition:
     top 220ms ease,
-    width 180ms ease,
+    transform 180ms ease,
     height 220ms ease,
     opacity 180ms ease;
 }
@@ -855,9 +955,9 @@ onUnmounted(() => {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: -34px;
-  width: 34px;
-  background: linear-gradient(
+  left: calc(100% - var(--task-progress));
+  width: 100%;
+  background-image: linear-gradient(
     90deg,
     transparent 0%,
     rgb(255 255 255 / 0.18) 20%,
@@ -865,6 +965,9 @@ onUnmounted(() => {
     rgb(255 255 255 / 0.18) 80%,
     transparent 100%
   );
+  background-position: left;
+  background-repeat: no-repeat;
+  background-size: 34px 100%;
   content: '';
   opacity: 0;
   pointer-events: none;
@@ -876,7 +979,7 @@ onUnmounted(() => {
 
 @keyframes task-progress-glint {
   0% {
-    left: -34px;
+    transform: translate3d(-34px, 0, 0);
     opacity: 0;
   }
 
@@ -885,13 +988,13 @@ onUnmounted(() => {
   }
 
   68% {
-    left: 100%;
+    transform: translate3d(var(--task-progress), 0, 0);
     opacity: 1;
   }
 
   76%,
   100% {
-    left: 100%;
+    transform: translate3d(var(--task-progress), 0, 0);
     opacity: 0;
   }
 }

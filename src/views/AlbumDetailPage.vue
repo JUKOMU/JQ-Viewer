@@ -1595,18 +1595,20 @@ const handleScroll = async (event: CustomEvent<{ scrollTop?: number }>) => {
   display: flex;
   gap: 2px;
   padding: 8px 12px;
+  margin-bottom: 0;
   background: #fffaf6;
   border-bottom: 1px solid rgb(245 210 188 / 0.5);
   position: relative;
   z-index: 10;
+  transition: padding-top 0.1s ease, margin-bottom 0.1s ease;
 }
 
 .tab-bar.sticky {
   padding-top: calc(var(--ion-safe-area-top) + 8px);
+  margin-bottom: calc(-1 * var(--ion-safe-area-top));
   position: sticky;
   top: 0;
   box-shadow: 0 2px 10px rgb(76 42 24 / 0.08);
-  transition: padding-top 0.1s ease;
 }
 
 .tab-btn {
@@ -1637,7 +1639,7 @@ const handleScroll = async (event: CustomEvent<{ scrollTop?: number }>) => {
   background: linear-gradient(145deg, #fa9c69, #f28752);
   box-shadow: 0 4px 10px rgb(242 135 82 / 0.22);
   transform: translate3d(calc(var(--tab-progress) * (100% + 2px)), 0, 0);
-  transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: top 0.1s ease, transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .tab-bar.sticky .tab-active-indicator {
@@ -1649,7 +1651,7 @@ const handleScroll = async (event: CustomEvent<{ scrollTop?: number }>) => {
 }
 
 .tab-bar.settling .tab-active-indicator {
-  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: top 0.1s ease, transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /* Tab 内容 */

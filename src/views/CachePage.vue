@@ -778,6 +778,7 @@ function formatBytes(bytes: number): string {
   font-family: inherit;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
+  box-shadow: 0 1px 2px rgb(113 72 45 / 0.2);
 }
 
 .group-title {

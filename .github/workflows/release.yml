@@ -309,7 +309,7 @@ jobs:
           overwrite_files: true
           files: JQ-Viewer-*.apk
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
 
       - name: Cleanup signing secrets and build artifacts
         if: ${{ always() }}
@@ -469,7 +469,7 @@ jobs:
           overwrite_files: true
           files: ${{ runner.temp }}/latest.json
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
 
       - name: Publish prerelease GitHub Release
         if: ${{ needs.build-release.outputs.is_prerelease == 'true' }}
@@ -482,7 +482,7 @@ jobs:
           body_path: .github/release-notes.md
           generate_release_notes: false
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
 
       - name: Verify public release assets
         if: ${{ needs.build-release.outputs.is_prerelease != 'true' }}

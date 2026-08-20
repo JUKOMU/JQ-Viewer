@@ -1,4 +1,4 @@
-import {describe, expect, test} from 'vitest'
+import { describe, expect, test } from 'vitest'
 import router from '@/router'
 
 describe('AlbumDetailPage 路由状态', () => {

@@ -1,13 +1,11 @@
-import {mount} from '@vue/test-utils'
-import {afterEach, beforeEach, describe, expect, test, vi} from 'vitest'
+import { mount } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import VerticalScrollView from '@/components/reader/VerticalScrollView.vue'
 
 class ResizeObserverMock {
-  observe() {
-  }
+  observe() {}
 
-  disconnect() {
-  }
+  disconnect() {}
 }
 
 let frameId = 0
@@ -20,8 +18,7 @@ beforeEach(() => {
     Promise.resolve().then(() => callback(performance.now()))
     return id
   })
-  vi.stubGlobal('cancelAnimationFrame', () => {
-  })
+  vi.stubGlobal('cancelAnimationFrame', () => {})
 })
 
 afterEach(() => {
@@ -48,20 +45,20 @@ describe('VerticalScrollView', () => {
 
     const container = wrapper.get('.vertical-container')
     Object.defineProperties(container.element, {
-      clientHeight: {configurable: true, value: 400},
-      clientWidth: {configurable: true, value: 300},
-      scrollTop: {configurable: true, value: 0, writable: true},
+      clientHeight: { configurable: true, value: 400 },
+      clientWidth: { configurable: true, value: 300 },
+      scrollTop: { configurable: true, value: 0, writable: true },
     })
     await container.trigger('touchstart', {
       touches: [
-        {clientX: 100, clientY: 100},
-        {clientX: 200, clientY: 100},
+        { clientX: 100, clientY: 100 },
+        { clientX: 200, clientY: 100 },
       ],
     })
     await container.trigger('touchmove', {
       touches: [
-        {clientX: -200, clientY: 100},
-        {clientX: 500, clientY: 100},
+        { clientX: -200, clientY: 100 },
+        { clientX: 500, clientY: 100 },
       ],
     })
 
@@ -83,15 +80,15 @@ describe('VerticalScrollView', () => {
 
     const container = wrapper.get('.vertical-container')
     Object.defineProperties(container.element, {
-      clientHeight: {configurable: true, value: 400},
-      clientWidth: {configurable: true, value: 300},
-      scrollTop: {configurable: true, value: 0, writable: true},
+      clientHeight: { configurable: true, value: 400 },
+      clientWidth: { configurable: true, value: 300 },
+      scrollTop: { configurable: true, value: 0, writable: true },
     })
     const tap = async () => {
-      await container.trigger('touchstart', {touches: [{clientX: 150, clientY: 200}]})
+      await container.trigger('touchstart', { touches: [{ clientX: 150, clientY: 200 }] })
       await container.trigger('touchend', {
         touches: [],
-        changedTouches: [{clientX: 150, clientY: 200}],
+        changedTouches: [{ clientX: 150, clientY: 200 }],
       })
     }
     const doubleTap = async () => {
@@ -125,10 +122,10 @@ describe('VerticalScrollView', () => {
 
     const container = wrapper.get('.vertical-container')
     Object.defineProperties(container.element, {
-      scrollHeight: {configurable: true, value: 1000},
-      clientHeight: {configurable: true, value: 400},
-      clientWidth: {configurable: true, value: 300},
-      scrollTop: {configurable: true, value: 500, writable: true},
+      scrollHeight: { configurable: true, value: 1000 },
+      clientHeight: { configurable: true, value: 400 },
+      clientWidth: { configurable: true, value: 300 },
+      scrollTop: { configurable: true, value: 500, writable: true },
     })
 
     await container.trigger('scroll')
@@ -175,7 +172,7 @@ describe('VerticalScrollView', () => {
     await wrapper.get('.reader-image').trigger('error')
     expect(wrapper.emitted('image-error')).toEqual([[1, 'image-1']])
 
-    await wrapper.setProps({failedSortOrders: new Set([1])})
+    await wrapper.setProps({ failedSortOrders: new Set([1]) })
     expect(wrapper.get('.image-error-state').text()).toContain('图片加载失败')
     await wrapper.get('button').trigger('click')
     expect(wrapper.emitted('retry-images')).toEqual([[]])

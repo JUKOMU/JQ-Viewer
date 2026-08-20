@@ -3,9 +3,9 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const releaseTagPattern =
-  /^v([0-9]+\.[0-9]+\.[0-9]+)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/
+const releaseTagPattern = /^v([0-9]+\.[0-9]+\.[0-9]+)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/
 const certificateDigestPattern = /^[0-9A-Fa-f]{64}$/
+export const releaseAbis = ['arm64-v8a', 'armeabi-v7a', 'x86_64', 'x86']
 
 export function validateReleaseNotes(notes, releaseTag) {
   const normalized = String(notes).replace(/\r\n?/g, '\n').trim()
@@ -52,30 +52,51 @@ export function buildReleaseManifest({
   packageName,
   versionCode,
   versionName,
+  variants = [],
 }) {
   const match = releaseTag.match(releaseTagPattern)
   if (!match) {
     throw new Error('release tag must match vX.Y.Z or vX.Y.Z-prerelease')
-  }
-  if (!Number.isSafeInteger(sizeBytes) || sizeBytes <= 0) {
-    throw new Error('APK size must be a positive integer')
-  }
-  if (!/^[0-9a-f]{64}$/i.test(sha256)) {
-    throw new Error('APK SHA-256 must be a 64-character hexadecimal digest')
   }
   if (!certificateDigestPattern.test(signingCertificateSha256)) {
     throw new Error('signing certificate SHA-256 must be a 64-character hexadecimal digest')
   }
 
   const encode = (value) => encodeURIComponent(value)
-  const downloadUrl = (host, repository) =>
-    host +
-    '/' +
-    repository +
-    '/releases/download/' +
-    encode(releaseTag) +
-    '/' +
-    encode(apkName)
+  const downloadUrl = (host, repository, assetName) =>
+    host + '/' + repository + '/releases/download/' + encode(releaseTag) + '/' + encode(assetName)
+
+  if (variants.length > 0) {
+    const variantAbis = variants.map((variant) => variant.abi)
+    if (
+      variantAbis.length !== releaseAbis.length ||
+      new Set(variantAbis).size !== releaseAbis.length ||
+      !releaseAbis.every((abi) => variantAbis.includes(abi))
+    ) {
+      throw new Error('APK variants must contain each supported ABI exactly once')
+    }
+  }
+
+  const buildArtifact = (artifact) => {
+    if (!Number.isSafeInteger(artifact.sizeBytes) || artifact.sizeBytes <= 0) {
+      throw new Error('APK size must be a positive integer')
+    }
+    if (!/^[0-9a-f]{64}$/i.test(artifact.sha256)) {
+      throw new Error('APK SHA-256 must be a 64-character hexadecimal digest')
+    }
+    return {
+      ...(artifact.abi ? { abi: artifact.abi } : {}),
+      apkName: artifact.apkName,
+      sizeBytes: artifact.sizeBytes,
+      sha256: artifact.sha256.toLowerCase(),
+      sources: {
+        github: downloadUrl('https://github.com', githubRepository, artifact.apkName),
+        gitee: downloadUrl('https://gitee.com', giteeRepository, artifact.apkName),
+      },
+    }
+  }
+
+  const universal = buildArtifact({ apkName, sizeBytes, sha256 })
 
   return {
     schemaVersion: 1,
@@ -83,15 +104,13 @@ export function buildReleaseManifest({
     versionName,
     versionCode,
     packageName,
-    apkName,
-    sizeBytes,
-    sha256: sha256.toLowerCase(),
+    apkName: universal.apkName,
+    sizeBytes: universal.sizeBytes,
+    sha256: universal.sha256,
     signingCertificateSha256: signingCertificateSha256.toUpperCase(),
     releaseNotes,
-    sources: {
-      github: downloadUrl('https://github.com', githubRepository),
-      gitee: downloadUrl('https://gitee.com', giteeRepository),
-    },
+    sources: universal.sources,
+    ...(variants.length > 0 ? { variants: variants.map(buildArtifact) } : {}),
   }
 }
 
@@ -106,9 +125,11 @@ export function sha256File(filePath) {
 }
 
 async function main() {
-  const [releaseTag, apkPath, outputPath = 'latest.json'] = process.argv.slice(2)
-  if (!releaseTag || !apkPath) {
-    throw new Error('usage: node scripts/release-assets.mjs <tag> <apk> [output]')
+  const [releaseTag, outputPath, ...apkPaths] = process.argv.slice(2)
+  if (!releaseTag || !outputPath || apkPaths.length !== releaseAbis.length + 1) {
+    throw new Error(
+      'usage: node scripts/release-assets.mjs <tag> <output> <universal-apk> <four-abi-apks>',
+    )
   }
 
   const packageJson = JSON.parse(
@@ -122,9 +143,7 @@ async function main() {
   const tagMatch = releaseTag.match(releaseTagPattern)
 
   if (!tagMatch || tagMatch[1] !== packageJson.version) {
-    throw new Error(
-      'release tag version must match package.json version ' + packageJson.version,
-    )
+    throw new Error('release tag version must match package.json version ' + packageJson.version)
   }
 
   const releaseNotes = validateReleaseNotes(
@@ -136,12 +155,34 @@ async function main() {
     throw new Error('EXPECTED_RELEASE_CERT_SHA256 is required')
   }
 
-  const apkStat = fs.statSync(apkPath)
+  const artifactFor = async (apkPath, abi) => {
+    const apkStat = fs.statSync(apkPath)
+    return {
+      ...(abi ? { abi } : {}),
+      apkName: path.basename(apkPath),
+      sizeBytes: apkStat.size,
+      sha256: await sha256File(apkPath),
+    }
+  }
+  const universalPath = apkPaths.find((apkPath) => /-universal\.apk$/i.test(apkPath))
+  if (!universalPath) {
+    throw new Error('universal APK is required')
+  }
+  const variantPaths = new Map()
+  for (const abi of releaseAbis) {
+    const apkPath = apkPaths.find((candidate) => candidate.endsWith('-' + abi + '.apk'))
+    if (!apkPath) {
+      throw new Error('missing APK for ABI ' + abi)
+    }
+    variantPaths.set(abi, apkPath)
+  }
+  const universal = await artifactFor(universalPath)
+  const variants = await Promise.all(
+    releaseAbis.map((abi) => artifactFor(variantPaths.get(abi), abi)),
+  )
   const manifest = buildReleaseManifest({
     releaseTag,
-    apkName: path.basename(apkPath),
-    sizeBytes: apkStat.size,
-    sha256: await sha256File(apkPath),
+    ...universal,
     signingCertificateSha256: expectedCertificate,
     releaseNotes,
     githubRepository: process.env.GITHUB_REPOSITORY || 'JUKOMU/JQ-Viewer',
@@ -149,6 +190,7 @@ async function main() {
     packageName: metadata.applicationId,
     versionCode: metadata.versionCode,
     versionName: metadata.versionName,
+    variants,
   })
 
   fs.writeFileSync(outputPath, JSON.stringify(manifest, null, 2) + '\n')

@@ -1,14 +1,14 @@
-import {describe, expect, test} from 'vitest'
-import {useAuth} from '@/composables/useAuth'
+import { describe, expect, test } from 'vitest'
+import { useAuth } from '@/composables/useAuth'
 
 describe('useAuth', () => {
   test('isLoggedIn 初始为 false', () => {
-    const {isLoggedIn} = useAuth()
+    const { isLoggedIn } = useAuth()
     expect(isLoggedIn.value).toBe(false)
   })
 
   test('userInfo 初始为 null', () => {
-    const {userInfo} = useAuth()
+    const { userInfo } = useAuth()
     expect(userInfo.value).toBeNull()
   })
 

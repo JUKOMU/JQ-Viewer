@@ -1,9 +1,12 @@
 package io.github.jukomu.feature.update;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.Test;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.Assert.assertFalse;
@@ -21,6 +24,38 @@ public class UpdateManifestTest {
         assertTrue(manifest.getVersionCode() == 16L);
         assertTrue(manifest.getGithubUrl().startsWith("https://"));
         assertTrue(manifest.sameRelease(UpdateManifest.parse(validManifest())));
+    }
+
+    @Test
+    public void selectsTheFirstSupportedAbiAndFallsBackToUniversal() throws Exception {
+        UpdateManifest manifest = UpdateManifest.parse(manifestWithVariants());
+
+        UpdateManifest arm64 = manifest.selectForAbis(
+            new String[] { "unsupported", "arm64-v8a", "armeabi-v7a" });
+        UpdateManifest x86 = manifest.selectForAbis(new String[] { "x86" });
+        UpdateManifest universal = manifest.selectForAbis(new String[] { "riscv64" });
+
+        assertTrue(arm64.getApkName().endsWith("-arm64-v8a.apk"));
+        assertTrue(arm64.getSizeBytes() == 1001L);
+        assertTrue(x86.getApkName().endsWith("-x86.apk"));
+        assertTrue(universal.getApkName().equals("JQ-Viewer-1_4_0-universal.apk"));
+        assertTrue(universal.getSizeBytes() == 73400320L);
+    }
+
+    @Test
+    public void acceptsUnknownAbiVariantsAndRejectsIncompleteOrDuplicateVariants() throws Exception {
+        StubJSONObject withUnknownAbi = (StubJSONObject) manifestWithVariants();
+        StubJSONArray variants = (StubJSONArray) withUnknownAbi.values.get("variants");
+        Map<String, Object> unknown = new HashMap<>();
+        unknown.put("abi", "riscv64");
+        variants.values.add(new StubJSONObject(unknown));
+        UpdateManifest.parse(withUnknownAbi);
+
+        expectInvalid(manifestWithVariants("arm64-v8a", true));
+
+        StubJSONObject incomplete = (StubJSONObject) manifestWithVariants();
+        incomplete.values.put("variants", new StubJSONArray(new ArrayList<>()));
+        expectInvalid(incomplete);
     }
 
     @Test
@@ -143,6 +178,40 @@ public class UpdateManifestTest {
         return manifestWith(null, null);
     }
 
+    private static JSONObject manifestWithVariants() throws Exception {
+        return manifestWithVariants(null, false);
+    }
+
+    private static JSONObject manifestWithVariants(String overriddenAbi, boolean duplicate)
+        throws Exception {
+        StubJSONObject manifest = (StubJSONObject) manifestWith(null, null);
+        String[] abis = { "arm64-v8a", "armeabi-v7a", "x86_64", "x86" };
+        List<JSONObject> variants = new ArrayList<>(abis.length);
+        for (int index = 0; index < abis.length; index++) {
+            String abi = index == 0 && overriddenAbi != null ? overriddenAbi : abis[index];
+            if (duplicate && index == 1) {
+                abi = "arm64-v8a";
+            }
+            String apkName = "JQ-Viewer-1_4_0-" + abi + ".apk";
+            Map<String, Object> sources = new HashMap<>();
+            sources.put("github", "https://github.com/JUKOMU/JQ-Viewer/releases/download/v1.4.0/"
+                + apkName);
+            sources.put("gitee", "https://gitee.com/jukomu/jq-viewer/releases/download/v1.4.0/"
+                + apkName);
+            Map<String, Object> values = new HashMap<>();
+            values.put("abi", abi);
+            values.put("apkName", apkName);
+            values.put("sizeBytes", 1001L + index);
+            values.put("sha256", repeat((char) ('a' + index), 64));
+            values.put("sources", new StubJSONObject(sources));
+            variants.add(new StubJSONObject(values));
+        }
+        manifest.values.put("apkName", "JQ-Viewer-1_4_0-universal.apk");
+        manifest.values.put("sources", releaseSources("JQ-Viewer-1_4_0-universal.apk"));
+        manifest.values.put("variants", new StubJSONArray(variants));
+        return manifest;
+    }
+
     private static JSONObject manifestWith(String override, String value) throws Exception {
         String giteeUrl = "https://gitee.com/jukomu/jq-viewer/releases/download/v1.4.0/JQ-Viewer-1_4_0.apk";
         String tag = "v1.4.0";
@@ -179,6 +248,15 @@ public class UpdateManifestTest {
         values.put("releaseNotes", "# v1.4.0\n\n## 新增");
         values.put("sources", new StubJSONObject(sources));
         return new StubJSONObject(values);
+    }
+
+    private static StubJSONObject releaseSources(String apkName) {
+        Map<String, Object> sources = new HashMap<>();
+        sources.put("github", "https://github.com/JUKOMU/JQ-Viewer/releases/download/v1.4.0/"
+            + apkName);
+        sources.put("gitee", "https://gitee.com/jukomu/jq-viewer/releases/download/v1.4.0/"
+            + apkName);
+        return new StubJSONObject(sources);
     }
 
     private static void expectInvalid(JSONObject manifest) throws Exception {
@@ -237,9 +315,33 @@ public class UpdateManifestTest {
         }
 
         @Override
+        public JSONArray optJSONArray(String name) {
+            return (JSONArray) values.get(name);
+        }
+
+        @Override
         public String optString(String name, String fallback) {
             Object value = values.get(name);
             return value == null ? fallback : (String) value;
+        }
+    }
+
+    private static final class StubJSONArray extends JSONArray {
+        private final List<JSONObject> values;
+
+        private StubJSONArray(List<JSONObject> values) {
+            super();
+            this.values = values;
+        }
+
+        @Override
+        public int length() {
+            return values.size();
+        }
+
+        @Override
+        public JSONObject optJSONObject(int index) {
+            return index >= 0 && index < values.size() ? values.get(index) : null;
         }
     }
 }

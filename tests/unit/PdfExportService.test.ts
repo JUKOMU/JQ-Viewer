@@ -187,7 +187,9 @@ describe('PDF export plan', () => {
     expect(plan.tasks.map((task) => task.mode)).toEqual(['chapter', 'chapter'])
     expect(plan.tasks.map((task) => task.chapterId)).toEqual(['chapter-2', 'chapter-3'])
     expect(plan.tasks.every((task) => task.albumTitle === '测试漫画')).toBe(true)
-    expect(plan.tasks.every((task) => task.coverUrl === 'https://example.test/cover.jpg')).toBe(true)
+    expect(plan.tasks.every((task) => task.coverUrl === 'https://example.test/cover.jpg')).toBe(
+      true,
+    )
     expect(plan.tasks.every((task) => task.isSingleEpisode === false)).toBe(true)
     expect(plan.outputPaths).toEqual(plan.tasks.map((task) => task.savePath))
   })

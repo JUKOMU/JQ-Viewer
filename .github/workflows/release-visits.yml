@@ -1,0 +1,106 @@
+name: Release visits
+
+on:
+  schedule:
+    - cron: '0 16 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-visits
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Fetch Release download counts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$RUNNER_TEMP/release-visits-releases.json"
+
+      - name: Load raw visit history
+        run: |
+          set -euo pipefail
+          history_path="$RUNNER_TEMP/release-visits-history.json"
+          if git ls-remote --exit-code --heads origin release-visits-data >/dev/null 2>&1; then
+            git fetch origin release-visits-data
+            git show FETCH_HEAD:data/release-visits.json > "$history_path"
+          else
+            printf '{\n  "schemaVersion": 1,\n  "samples": []\n}\n' > "$history_path"
+          fi
+
+      - name: Build raw history and chart
+        run: |
+          node scripts/release-visits.mjs update \
+            "$RUNNER_TEMP/release-visits-releases.json" \
+            "$RUNNER_TEMP/release-visits-history.json" \
+            "$RUNNER_TEMP/release-visits-next-history.json" \
+            "$RUNNER_TEMP/release-visits.png"
+
+      - name: Configure GitHub Actions author
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+
+      - name: Publish raw visit history
+        run: |
+          set -euo pipefail
+          raw_worktree="$RUNNER_TEMP/release-visits-data"
+          if git show-ref --verify --quiet refs/remotes/origin/release-visits-data; then
+            git worktree add --detach "$raw_worktree" origin/release-visits-data
+          else
+            git worktree add --detach "$raw_worktree" HEAD
+            (
+              cd "$raw_worktree"
+              git switch --orphan release-visits-data
+              git rm -rf .
+            )
+          fi
+          (
+            cd "$raw_worktree"
+            mkdir -p data
+            cp "$RUNNER_TEMP/release-visits-next-history.json" data/release-visits.json
+            git add data/release-visits.json
+            if git diff --cached --quiet; then
+              exit 0
+            fi
+            git commit -m 'ci: 更新 Release 访问量原始统计'
+            git push origin HEAD:release-visits-data
+          )
+
+      - name: Publish chart image
+        run: |
+          set -euo pipefail
+          master_worktree="$RUNNER_TEMP/release-visits-master"
+          git fetch origin master
+          git worktree add --detach "$master_worktree" origin/master
+          (
+            cd "$master_worktree"
+            mkdir -p assets
+            cp "$RUNNER_TEMP/release-visits.png" assets/release-visits.png
+            git add assets/release-visits.png
+            if git diff --cached --quiet; then
+              exit 0
+            fi
+            git commit -m 'ci: 更新 Release 访问量图表'
+            git push origin HEAD:master
+          )

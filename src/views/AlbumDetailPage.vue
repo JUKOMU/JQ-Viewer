@@ -490,6 +490,7 @@ const commentsLoading = ref(false)
 const commentPage = ref(1)
 const totalComments = ref(0)
 const hasMoreComments = computed(() => comments.value.length < totalComments.value)
+let commentLoadGeneration = 0
 
 // ---- Tab 栏粘性 ----
 const tabBarSticky = ref(false)
@@ -502,6 +503,7 @@ const PREVIEW_NEAR_BOTTOM_THRESHOLD = 200
 const tabPanelRefs = new Map<TabKey, HTMLElement>()
 let tabSwipeGesture: Gesture | undefined
 let tabResizeObserver: ResizeObserver | undefined
+let wasDeactivated = false
 const tabSwipeActive = ref(false)
 const tabSwipeSettling = ref(false)
 const tabSwipeBaseIndex = ref(0)
@@ -553,21 +555,25 @@ const selectedChapterPageCount = computed(() => {
 })
 
 // ---- 数据加载 ----
-const resetAlbumState = () => {
+const resetAlbumState = (preserveTabState = false) => {
   chapterLoadGeneration += 1
   invalidatePreviewRequest()
+  commentLoadGeneration += 1
   albumDetail.value = null
   photoDetail.value = null
   selectedChapterId.value = ''
   chapterLoading.value = false
   comments.value = []
+  commentsLoading.value = false
   commentPage.value = 1
   totalComments.value = 0
-  activeTab.value = 'info'
-  tabScrollPositions.info = 0
-  tabScrollPositions.chapters = 0
-  tabScrollPositions.preview = 0
-  tabScrollPositions.comments = 0
+  if (!preserveTabState) {
+    activeTab.value = 'info'
+    tabScrollPositions.info = 0
+    tabScrollPositions.chapters = 0
+    tabScrollPositions.preview = 0
+    tabScrollPositions.comments = 0
+  }
   showChapterActions.value = false
   sourceMenuOpen.value = false
   chapterDownloadStatuses.value = new Map()
@@ -587,16 +593,16 @@ const resolveDetailChapterId = (
   return matchedAlbumId?.id ?? album.photoMetas[0]?.id ?? ''
 }
 
-const loadAlbumData = async () => {
+const loadAlbumData = async (force = false) => {
   const targetAlbumId = albumId.value
   const requestedId = requestedChapterId.value
   const loadKey = `${targetAlbumId}:${requestedId}`
-  if (loadKey === activeAlbumLoadKey && loading.value) return
+  if (!force && loadKey === activeAlbumLoadKey && loading.value) return
 
   const loadGeneration = ++albumLoadGeneration
   activeAlbumLoadKey = loadKey
   detailStateAlbumId = targetAlbumId
-  resetAlbumState()
+  resetAlbumState(force)
   const isCurrentLoad = () =>
     loadGeneration === albumLoadGeneration &&
     albumId.value === targetAlbumId &&
@@ -661,6 +667,8 @@ const loadAlbumData = async () => {
 
   if (isCurrentLoad() && activeTab.value === 'preview') {
     await loadPreview()
+  } else if (isCurrentLoad() && activeTab.value === 'comments') {
+    await loadComments()
   }
 }
 
@@ -1278,10 +1286,13 @@ watch(requestedChapterId, (chapterId) => {
 
 onActivated(() => {
   setLeftMenuGestureEnabled(false)
+  if (wasDeactivated && loading.value) void loadAlbumData(true)
+  wasDeactivated = false
   void restoreTabScrollPosition(activeTab.value)
 })
 
 onDeactivated(() => {
+  wasDeactivated = true
   void saveActiveTabScrollPosition()
   setLeftMenuGestureEnabled(true)
 })
@@ -1319,6 +1330,8 @@ const onOpenReader = (page: number) => {
 // ---- 评论 ----
 const loadComments = async (append = false) => {
   if (commentsLoading.value) return
+  const requestGeneration = commentLoadGeneration
+  const page = append ? commentPage.value : 1
   if (!append) {
     commentPage.value = 1
     comments.value = []
@@ -1328,19 +1341,22 @@ const loadComments = async (append = false) => {
   try {
     const result = await JmcomicService.getComments({
       albumId: albumId.value,
-      page: commentPage.value,
+      page,
     })
+    if (requestGeneration !== commentLoadGeneration) return
     totalComments.value = result.total
     if (append) {
       comments.value.push(...result.list)
     } else {
       comments.value = result.list
     }
-    commentPage.value++
+    commentPage.value = page + 1
   } catch (e: any) {
-    await showToast(sanitizeError(e, '评论加载失败'), 'danger')
+    if (requestGeneration === commentLoadGeneration) {
+      await showToast(sanitizeError(e, '评论加载失败'), 'danger')
+    }
   } finally {
-    commentsLoading.value = false
+    if (requestGeneration === commentLoadGeneration) commentsLoading.value = false
   }
 }
 
@@ -1595,18 +1611,22 @@ const handleScroll = async (event: CustomEvent<{ scrollTop?: number }>) => {
   display: flex;
   gap: 2px;
   padding: 8px 12px;
+  margin-bottom: 0;
   background: #fffaf6;
   border-bottom: 1px solid rgb(245 210 188 / 0.5);
   position: relative;
   z-index: 10;
+  transition:
+    padding-top 0.1s ease,
+    margin-bottom 0.1s ease;
 }
 
 .tab-bar.sticky {
   padding-top: calc(var(--ion-safe-area-top) + 8px);
+  margin-bottom: calc(-1 * var(--ion-safe-area-top));
   position: sticky;
   top: 0;
   box-shadow: 0 2px 10px rgb(76 42 24 / 0.08);
-  transition: padding-top 0.1s ease;
 }
 
 .tab-btn {
@@ -1637,7 +1657,9 @@ const handleScroll = async (event: CustomEvent<{ scrollTop?: number }>) => {
   background: linear-gradient(145deg, #fa9c69, #f28752);
   box-shadow: 0 4px 10px rgb(242 135 82 / 0.22);
   transform: translate3d(calc(var(--tab-progress) * (100% + 2px)), 0, 0);
-  transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+  transition:
+    top 0.1s ease,
+    transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .tab-bar.sticky .tab-active-indicator {
@@ -1649,7 +1671,9 @@ const handleScroll = async (event: CustomEvent<{ scrollTop?: number }>) => {
 }
 
 .tab-bar.settling .tab-active-indicator {
-  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  transition:
+    top 0.1s ease,
+    transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /* Tab 内容 */

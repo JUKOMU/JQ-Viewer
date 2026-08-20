@@ -1,6 +1,6 @@
-import {ref} from 'vue'
-import {afterEach, describe, expect, test, vi} from 'vitest'
-import {usePreviewBatches} from '@/composables/usePreviewBatches'
+import { ref } from 'vue'
+import { afterEach, describe, expect, test, vi } from 'vitest'
+import { usePreviewBatches } from '@/composables/usePreviewBatches'
 
 type ImageSlotSetter = (sortOrder: number, dataUrl: string) => void
 type BatchLoader = (start: number, end: number, setImageSlot: ImageSlotSetter) => Promise<void>
@@ -13,8 +13,7 @@ describe('usePreviewBatches', () => {
   test('首批槽位创建前到达的图片事件会在初始化后回填', async () => {
     vi.useFakeTimers()
     const totalCount = ref(20)
-    const loadBatch = vi.fn(async () => {
-    })
+    const loadBatch = vi.fn(async () => {})
     const previewBatches = usePreviewBatches(totalCount, loadBatch)
     const setImageSlot = previewBatches.createImageSlotSetter()
 
@@ -169,8 +168,7 @@ describe('usePreviewBatches', () => {
   test('批次提交完成但没有图片填槽时不会误判为全部可见', async () => {
     vi.useFakeTimers()
     const totalCount = ref(20)
-    const loadBatch = vi.fn<BatchLoader>(async () => {
-    })
+    const loadBatch = vi.fn<BatchLoader>(async () => {})
     const previewBatches = usePreviewBatches(totalCount, loadBatch)
 
     const initializePromise = previewBatches.initialize()
@@ -222,8 +220,7 @@ describe('usePreviewBatches', () => {
   test('reset 后旧代次的图片 setter 不会写入新槽位', async () => {
     vi.useFakeTimers()
     const totalCount = ref(20)
-    const loadBatch = vi.fn<BatchLoader>(async () => {
-    })
+    const loadBatch = vi.fn<BatchLoader>(async () => {})
     const previewBatches = usePreviewBatches(totalCount, loadBatch)
     const staleSetImageSlot = previewBatches.createImageSlotSetter()
 

@@ -1,10 +1,10 @@
 /* eslint-disable vue/one-component-per-file -- test-only Ionic and child-component fixtures */
-import {flushPromises, mount} from '@vue/test-utils'
-import {defineComponent, h} from 'vue'
-import {beforeEach, describe, expect, test, vi} from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
+import { defineComponent, h } from 'vue'
+import { beforeEach, describe, expect, test, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
-  router: {push: vi.fn(() => Promise.resolve())},
+  router: { push: vi.fn(() => Promise.resolve()) },
   getAlbum: vi.fn(),
   showToast: vi.fn(() => Promise.resolve()),
 }))
@@ -22,21 +22,22 @@ vi.mock('@ionic/vue', () => ({
   }),
   IonSearchbar: defineComponent({
     name: 'IonSearchbar',
-    props: {modelValue: {type: String, default: ''}},
+    props: { modelValue: { type: String, default: '' } },
     emits: ['update:modelValue'],
-    setup(props, {emit}) {
+    setup(props, { emit }) {
       return () =>
         h('input', {
           value: props.modelValue,
-          onInput: (event: Event) => emit('update:modelValue', (event.target as HTMLInputElement).value),
+          onInput: (event: Event) =>
+            emit('update:modelValue', (event.target as HTMLInputElement).value),
         })
     },
   }),
-  alertController: {create: vi.fn()},
+  alertController: { create: vi.fn() },
 }))
 
 vi.mock('@/services/JmcomicService', () => ({
-  JmcomicService: {getAlbum: mocks.getAlbum, pickImageAndOcr: vi.fn()},
+  JmcomicService: { getAlbum: mocks.getAlbum, pickImageAndOcr: vi.fn() },
   sanitizeError: vi.fn((error: unknown, fallback: string) => String(error || fallback)),
   showToast: mocks.showToast,
 }))
@@ -51,11 +52,11 @@ vi.mock('@/services/HistoryService', () => ({
 }))
 
 vi.mock('@/services/SettingsService', () => ({
-  SettingsStore: {getOcrEnabled: vi.fn(() => false)},
+  SettingsStore: { getOcrEnabled: vi.fn(() => false) },
 }))
 
 vi.mock('@/components/history/SearchHistoryDropdown.vue', () => ({
-  default: defineComponent({name: 'SearchHistoryDropdown', setup: () => () => null}),
+  default: defineComponent({ name: 'SearchHistoryDropdown', setup: () => () => null }),
 }))
 
 import KeywordSearchBar from '@/components/search/KeywordSearchBar.vue'
@@ -85,7 +86,7 @@ describe('KeywordSearchBar 数字 ID 导航', () => {
 
     expect(mocks.router.push).toHaveBeenCalledWith({
       path: '/album/123',
-      query: {title: '测试本子', coverUrl: 'cover.jpg', authors: '作者'},
+      query: { title: '测试本子', coverUrl: 'cover.jpg', authors: '作者' },
     })
     expect(wrapper.emitted('search')).toBeUndefined()
   })
@@ -100,7 +101,7 @@ describe('KeywordSearchBar 数字 ID 导航', () => {
     await flushPromises()
 
     expect(mocks.getAlbum).toHaveBeenCalledWith('123')
-    expect(mocks.router.push).toHaveBeenCalledWith(expect.objectContaining({path: '/album/123'}))
+    expect(mocks.router.push).toHaveBeenCalledWith(expect.objectContaining({ path: '/album/123' }))
     expect(wrapper.emitted('search')).toBeUndefined()
   })
 
@@ -118,7 +119,7 @@ describe('KeywordSearchBar 数字 ID 导航', () => {
   })
 
   test('返回空详情对象时只提示本子不存在，不发生跳转', async () => {
-    mocks.getAlbum.mockResolvedValue({id: '', title: ''})
+    mocks.getAlbum.mockResolvedValue({ id: '', title: '' })
     const wrapper = mount(KeywordSearchBar)
 
     await wrapper.find('input').setValue('999')
@@ -131,7 +132,7 @@ describe('KeywordSearchBar 数字 ID 导航', () => {
   })
 
   test('详情缺少作者字段时仍然导航', async () => {
-    mocks.getAlbum.mockResolvedValue({...album, authors: undefined})
+    mocks.getAlbum.mockResolvedValue({ ...album, authors: undefined })
     const wrapper = mount(KeywordSearchBar)
 
     await wrapper.find('input').setValue('123')
@@ -140,7 +141,7 @@ describe('KeywordSearchBar 数字 ID 导航', () => {
 
     expect(mocks.router.push).toHaveBeenCalledWith({
       path: '/album/123',
-      query: {title: '测试本子', coverUrl: 'cover.jpg', authors: ''},
+      query: { title: '测试本子', coverUrl: 'cover.jpg', authors: '' },
     })
     expect(mocks.showToast).not.toHaveBeenCalled()
   })

@@ -1,12 +1,9 @@
-import {describe, expect, it} from 'vitest'
-import {parseFilenamesForImport} from '@/utils/importPdfParse'
+import { describe, expect, it } from 'vitest'
+import { parseFilenamesForImport } from '@/utils/importPdfParse'
 
 describe('parseFilenamesForImport', () => {
   it('does not mark one file as duplicate when the same id appears twice in its name', () => {
-    const result = parseFilenamesForImport(
-      ['/tmp/JM123456 123456.pdf'],
-      ['JM123456 123456.pdf'],
-    )
+    const result = parseFilenamesForImport(['/tmp/JM123456 123456.pdf'], ['JM123456 123456.pdf'])
 
     expect(result.files[0].extractedIds).toEqual(['123456'])
     expect(result.files[0].duplicateIds).toEqual([])
@@ -35,10 +32,7 @@ describe('parseFilenamesForImport', () => {
   })
 
   it('does not treat the chapter number as a candidate id', () => {
-    const result = parseFilenamesForImport(
-      ['/tmp/123456 第789话.pdf'],
-      ['123456 第789话.pdf'],
-    )
+    const result = parseFilenamesForImport(['/tmp/123456 第789话.pdf'], ['123456 第789话.pdf'])
 
     expect(result.files[0].extractedIds).toEqual(['123456'])
     expect(result.files[0].status).toBe('resolved')

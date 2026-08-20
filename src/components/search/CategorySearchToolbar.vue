@@ -104,7 +104,7 @@ const resetQuery = () => {
   padding: 10px 16px;
   background: #fffbf8;
   border-radius: 20px;
-  box-shadow: 0 4px 6px 0 rgb(62 39 26 / 0.2);
+  box-shadow: 0 8px 22px rgb(76 42 24 / 0.12);
 }
 
 .option-section + .option-section {

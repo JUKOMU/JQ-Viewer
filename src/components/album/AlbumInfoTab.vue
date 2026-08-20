@@ -104,13 +104,25 @@
         <div v-if="album.actors.length" class="info-row">
           <span class="info-label">登场人物</span>
           <div class="info-tags">
-            <span v-for="actor in album.actors" :key="actor" class="tag">{{ actor }}</span>
+            <span
+              v-for="actor in album.actors"
+              :key="actor"
+              class="tag tag-clickable"
+              @click="searchByTag(actor)"
+              >{{ actor }}</span
+            >
           </div>
         </div>
         <div v-if="album.works.length" class="info-row">
           <span class="info-label">作品</span>
           <div class="info-tags">
-            <span v-for="work in album.works" :key="work" class="tag">{{ work }}</span>
+            <span
+              v-for="work in album.works"
+              :key="work"
+              class="tag tag-clickable"
+              @click="searchByTag(work)"
+              >{{ work }}</span
+            >
           </div>
         </div>
         <div v-if="album.category" class="info-row">
@@ -510,6 +522,7 @@ const downloadIcon = computed(() => {
 .tag-clickable {
   cursor: pointer;
   transition: background-color 0.15s ease;
+  box-shadow: 0 1px 2px rgb(113 72 45 / 0.2);
 }
 
 .tag-clickable:hover {

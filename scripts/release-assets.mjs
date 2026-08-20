@@ -58,12 +58,6 @@ export function buildReleaseManifest({
   if (!match) {
     throw new Error('release tag must match vX.Y.Z or vX.Y.Z-prerelease')
   }
-  if (!Number.isSafeInteger(sizeBytes) || sizeBytes <= 0) {
-    throw new Error('APK size must be a positive integer')
-  }
-  if (!/^[0-9a-f]{64}$/i.test(sha256)) {
-    throw new Error('APK SHA-256 must be a 64-character hexadecimal digest')
-  }
   if (!certificateDigestPattern.test(signingCertificateSha256)) {
     throw new Error('signing certificate SHA-256 must be a 64-character hexadecimal digest')
   }

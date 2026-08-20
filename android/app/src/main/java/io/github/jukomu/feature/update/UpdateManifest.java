@@ -156,9 +156,6 @@ public final class UpdateManifest {
         if (values == null) {
             return Collections.emptyList();
         }
-        if (values.length() != SUPPORTED_VARIANT_ABIS.size()) {
-            throw new UpdateException("更新 APK 架构条目不完整");
-        }
         List<Variant> variants = new ArrayList<>(values.length());
         Set<String> seenAbis = new HashSet<>(values.length());
         for (int index = 0; index < values.length(); index++) {
@@ -167,17 +164,23 @@ public final class UpdateManifest {
                 throw new UpdateException("更新 APK 架构条目无效");
             }
             String abi = requiredString(value, "abi");
+            if (!seenAbis.add(abi)) {
+                throw new UpdateException("更新 APK 架构重复");
+            }
+            if (!SUPPORTED_VARIANT_ABIS.contains(abi)) {
+                continue;
+            }
             String apkName = requiredString(value, "apkName");
             long sizeBytes = requiredLong(value, "sizeBytes");
             String sha256 = requiredString(value, "sha256").toLowerCase(Locale.ROOT);
             JSONObject sources = requiredObject(value, "sources");
             String githubUrl = requiredString(sources, "github");
             String giteeUrl = requiredString(sources, "gitee");
-            if (!SUPPORTED_VARIANT_ABIS.contains(abi) || !seenAbis.add(abi)) {
-                throw new UpdateException("更新 APK 架构无效或重复");
-            }
             validateArtifact(tag, apkName, sizeBytes, sha256, githubUrl, giteeUrl);
             variants.add(new Variant(abi, apkName, sizeBytes, sha256, githubUrl, giteeUrl));
+        }
+        if (!seenAbis.containsAll(SUPPORTED_VARIANT_ABIS)) {
+            throw new UpdateException("更新 APK 架构条目不完整");
         }
         return Collections.unmodifiableList(variants);
     }

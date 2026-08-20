@@ -490,6 +490,7 @@ const commentsLoading = ref(false)
 const commentPage = ref(1)
 const totalComments = ref(0)
 const hasMoreComments = computed(() => comments.value.length < totalComments.value)
+let commentLoadGeneration = 0
 
 // ---- Tab 栏粘性 ----
 const tabBarSticky = ref(false)
@@ -557,11 +558,13 @@ const selectedChapterPageCount = computed(() => {
 const resetAlbumState = (preserveTabState = false) => {
   chapterLoadGeneration += 1
   invalidatePreviewRequest()
+  commentLoadGeneration += 1
   albumDetail.value = null
   photoDetail.value = null
   selectedChapterId.value = ''
   chapterLoading.value = false
   comments.value = []
+  commentsLoading.value = false
   commentPage.value = 1
   totalComments.value = 0
   if (!preserveTabState) {
@@ -664,6 +667,8 @@ const loadAlbumData = async (force = false) => {
 
   if (isCurrentLoad() && activeTab.value === 'preview') {
     await loadPreview()
+  } else if (isCurrentLoad() && activeTab.value === 'comments') {
+    await loadComments()
   }
 }
 
@@ -1325,6 +1330,8 @@ const onOpenReader = (page: number) => {
 // ---- 评论 ----
 const loadComments = async (append = false) => {
   if (commentsLoading.value) return
+  const requestGeneration = commentLoadGeneration
+  const page = append ? commentPage.value : 1
   if (!append) {
     commentPage.value = 1
     comments.value = []
@@ -1334,19 +1341,22 @@ const loadComments = async (append = false) => {
   try {
     const result = await JmcomicService.getComments({
       albumId: albumId.value,
-      page: commentPage.value,
+      page,
     })
+    if (requestGeneration !== commentLoadGeneration) return
     totalComments.value = result.total
     if (append) {
       comments.value.push(...result.list)
     } else {
       comments.value = result.list
     }
-    commentPage.value++
+    commentPage.value = page + 1
   } catch (e: any) {
-    await showToast(sanitizeError(e, '评论加载失败'), 'danger')
+    if (requestGeneration === commentLoadGeneration) {
+      await showToast(sanitizeError(e, '评论加载失败'), 'danger')
+    }
   } finally {
-    commentsLoading.value = false
+    if (requestGeneration === commentLoadGeneration) commentsLoading.value = false
   }
 }
 

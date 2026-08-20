@@ -1,6 +1,6 @@
-import {nextTick, ref} from 'vue'
-import {flushPromises, mount} from '@vue/test-utils'
-import {afterEach, beforeEach, describe, expect, test, vi} from 'vitest'
+import { nextTick, ref } from 'vue'
+import { flushPromises, mount } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import MainMenu from '@/components/menu/MainMenu.vue'
 import {
   isMenuNavigation,
@@ -23,7 +23,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('vue-router', () => ({
   useRoute: () => mocks.route,
-  useRouter: () => ({push: mocks.routerPush}),
+  useRouter: () => ({ push: mocks.routerPush }),
 }))
 
 vi.mock('@/services/JmcomicService', () => ({
@@ -36,16 +36,16 @@ vi.mock('@/services/JmcomicService', () => ({
 }))
 
 vi.mock('@/composables/useAuth', () => ({
-  useAuth: () => ({userInfo: ref(null), isLoggedIn: ref(false)}),
+  useAuth: () => ({ userInfo: ref(null), isLoggedIn: ref(false) }),
 }))
 
 vi.mock('@ionic/vue', async () => {
-  const {defineComponent: makeComponent, h: makeH} = await import('vue')
+  const { defineComponent: makeComponent, h: makeH } = await import('vue')
   const withSlot = (name: string, tag = 'div') =>
     makeComponent({
       name,
       inheritAttrs: false,
-      setup(_, {attrs, slots}) {
+      setup(_, { attrs, slots }) {
         return () => makeH(tag, attrs, slots.default?.())
       },
     })
@@ -53,7 +53,7 @@ vi.mock('@ionic/vue', async () => {
   return {
     createGesture: vi.fn((config: Record<string, any>) => {
       mocks.gestureConfig = config
-      return {destroy: vi.fn(), enable: vi.fn()}
+      return { destroy: vi.fn(), enable: vi.fn() }
     }),
     IonContent: withSlot('IonContent'),
     IonHeader: withSlot('IonHeader'),
@@ -69,7 +69,7 @@ const mountMenu = () => {
   const content = document.createElement('main')
   content.id = 'main-content'
   document.body.appendChild(content)
-  return mount(MainMenu, {props: {contentId: 'main-content'}})
+  return mount(MainMenu, { props: { contentId: 'main-content' } })
 }
 
 const getGesture = () => {
@@ -188,8 +188,8 @@ describe('MainMenu 自定义左侧手势', () => {
     const gesture = getGesture()
 
     gesture.onStart()
-    gesture.onMove({deltaX: 60})
-    gesture.onEnd({velocityX: 0})
+    gesture.onMove({ deltaX: 60 })
+    gesture.onEnd({ velocityX: 0 })
     await nextTick()
 
     expect(leftMenuOpen.value).toBe(true)
@@ -203,8 +203,8 @@ describe('MainMenu 自定义左侧手势', () => {
     const gesture = getGesture()
 
     gesture.onStart()
-    gesture.onMove({deltaX: 8})
-    gesture.onEnd({velocityX: 0.13})
+    gesture.onMove({ deltaX: 8 })
+    gesture.onEnd({ velocityX: 0.13 })
     await nextTick()
 
     expect(leftMenuOpen.value).toBe(true)
@@ -218,8 +218,8 @@ describe('MainMenu 自定义左侧手势', () => {
 
     const gesture = getGesture()
     gesture.onStart()
-    gesture.onMove({deltaX: -60})
-    gesture.onEnd({velocityX: 0})
+    gesture.onMove({ deltaX: -60 })
+    gesture.onEnd({ velocityX: 0 })
     await nextTick()
 
     expect(leftMenuOpen.value).toBe(false)
@@ -231,10 +231,10 @@ describe('MainMenu 自定义左侧手势', () => {
     const gesture = getGesture()
 
     leftMenuGestureEnabled.value = false
-    expect(gesture.canStart({event: {target: document.body}})).toBe(false)
+    expect(gesture.canStart({ event: { target: document.body } })).toBe(false)
 
     leftMenuOpen.value = true
-    expect(gesture.canStart({event: {target: document.body}})).toBe(true)
+    expect(gesture.canStart({ event: { target: document.body } })).toBe(true)
     wrapper.unmount()
   })
 
@@ -244,9 +244,9 @@ describe('MainMenu 自定义左侧手势', () => {
     const range = document.createElement('input')
 
     rightMenuOpen.value = true
-    expect(gesture.canStart({event: {target: document.body}})).toBe(false)
+    expect(gesture.canStart({ event: { target: document.body } })).toBe(false)
     rightMenuOpen.value = false
-    expect(gesture.canStart({event: {target: range}})).toBe(false)
+    expect(gesture.canStart({ event: { target: range } })).toBe(false)
 
     wrapper.unmount()
   })
@@ -424,9 +424,7 @@ describe('MainMenu 任务进度', () => {
   })
 
   test('初始化查询期间收到的 PDF 终态事件不会重新显示旧快照', async () => {
-    let resolveSnapshot:
-      | ((value: { tasks: ReturnType<typeof pdfTask>[] }) => void)
-      | undefined
+    let resolveSnapshot: ((value: { tasks: ReturnType<typeof pdfTask>[] }) => void) | undefined
     mocks.getPdfExportTasks.mockReturnValueOnce(
       new Promise((resolve) => {
         resolveSnapshot = resolve

@@ -1,31 +1,34 @@
-import {mount} from '@vue/test-utils'
-import {afterEach, describe, expect, test, vi} from 'vitest'
+import { mount } from '@vue/test-utils'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 import ReaderBottomToolbar from '@/components/reader/ReaderBottomToolbar.vue'
-import type {PhotoMeta} from '@/services/JmcomicTypes'
+import type { PhotoMeta } from '@/services/JmcomicTypes'
 
-const chapters: PhotoMeta[] = Array.from({length: 9}, (_, index) => ({
+const chapters: PhotoMeta[] = Array.from({ length: 9 }, (_, index) => ({
   id: String(index + 1),
   sortOrder: index + 1,
   title: index === 4 ? '中间章节' : `章节 ${index + 1}`,
 }))
 
-const mountToolbar = (options: {
-  chapterList?: PhotoMeta[]
-  currentChapterId?: string
-} = {}) => mount(ReaderBottomToolbar, {
-  props: {
-    current: 12,
-    total: 45,
-    chapters: options.chapterList ?? chapters,
-    currentChapterId: options.currentChapterId ?? '5',
-  },
-  global: {
-    stubs: {
-      IonIcon: true,
-      IonRange: true,
+const mountToolbar = (
+  options: {
+    chapterList?: PhotoMeta[]
+    currentChapterId?: string
+  } = {},
+) =>
+  mount(ReaderBottomToolbar, {
+    props: {
+      current: 12,
+      total: 45,
+      chapters: options.chapterList ?? chapters,
+      currentChapterId: options.currentChapterId ?? '5',
     },
-  },
-})
+    global: {
+      stubs: {
+        IonIcon: true,
+        IonRange: true,
+      },
+    },
+  })
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -46,12 +49,16 @@ describe('ReaderBottomToolbar', () => {
   test('上一章和下一章按钮均显示双箭头图标', () => {
     const wrapper = mountToolbar()
 
-    expect(wrapper.get('[aria-label="上一章"] .chapter-step-icons').findAll('ion-icon-stub')).toHaveLength(2)
-    expect(wrapper.get('[aria-label="下一章"] .chapter-step-icons').findAll('ion-icon-stub')).toHaveLength(2)
+    expect(
+      wrapper.get('[aria-label="上一章"] .chapter-step-icons').findAll('ion-icon-stub'),
+    ).toHaveLength(2)
+    expect(
+      wrapper.get('[aria-label="下一章"] .chapter-step-icons').findAll('ion-icon-stub'),
+    ).toHaveLength(2)
   })
 
   test('单章节时禁用上一章和下一章', () => {
-    const wrapper = mountToolbar({chapterList: [chapters[4]]})
+    const wrapper = mountToolbar({ chapterList: [chapters[4]] })
 
     expect(wrapper.get('[aria-label="上一章"]').attributes('disabled')).toBeDefined()
     expect(wrapper.get('[aria-label="下一章"]').attributes('disabled')).toBeDefined()
@@ -102,7 +109,7 @@ describe('ReaderBottomToolbar', () => {
 
   test('章节标题为空时只显示 order 标题', async () => {
     const wrapper = mountToolbar({
-      chapterList: [{id: '1', sortOrder: 1, title: ''}],
+      chapterList: [{ id: '1', sortOrder: 1, title: '' }],
       currentChapterId: '1',
     })
 

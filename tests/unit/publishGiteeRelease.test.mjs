@@ -3,9 +3,9 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const {execFileSyncMock} = vi.hoisted(() => ({
+const { execFileSyncMock } = vi.hoisted(() => ({
   execFileSyncMock: vi.fn(),
 }))
 
@@ -13,14 +13,14 @@ vi.mock('node:child_process', () => ({
   execFileSync: execFileSyncMock,
 }))
 
-import {replaceAsset} from '../../scripts/publish-gitee-release.mjs'
+import { replaceAsset } from '../../scripts/publish-gitee-release.mjs'
 
 let tempDirectory
 
 function jsonResponse(payload, status = 200) {
   return new Response(JSON.stringify(payload), {
     status,
-    headers: {'Content-Type': 'application/json'},
+    headers: { 'Content-Type': 'application/json' },
   })
 }
 
@@ -31,7 +31,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   vi.unstubAllGlobals()
-  await fs.promises.rm(tempDirectory, {recursive: true, force: true})
+  await fs.promises.rm(tempDirectory, { recursive: true, force: true })
 })
 
 describe('Gitee release asset replacement', () => {
@@ -97,12 +97,12 @@ describe('Gitee release asset replacement', () => {
 
     const asset = await replaceAsset('token', 1, filePath)
 
-    expect(asset).toMatchObject({name: 'latest.json', size: content.length})
+    expect(asset).toMatchObject({ name: 'latest.json', size: content.length })
     expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(execFileSyncMock).not.toHaveBeenCalled()
-    expect(fetchMock.mock.calls.every(([, options]) => !options || options.method !== 'DELETE')).toBe(
-      true,
-    )
+    expect(
+      fetchMock.mock.calls.every(([, options]) => !options || options.method !== 'DELETE'),
+    ).toBe(true)
   })
 
   it('restores the previous asset when replacement upload fails', async () => {
@@ -131,7 +131,7 @@ describe('Gitee release asset replacement', () => {
         return new Response(previous)
       }
       if (options.method === 'DELETE') {
-        return new Response(null, {status: 204})
+        return new Response(null, { status: 204 })
       }
       return jsonResponse([
         {

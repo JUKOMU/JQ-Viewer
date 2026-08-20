@@ -43,8 +43,14 @@ public class UpdateManifestTest {
     }
 
     @Test
-    public void rejectsUnknownOrDuplicateAbiVariants() throws Exception {
-        expectInvalid(manifestWithVariants("riscv64", false));
+    public void acceptsUnknownAbiVariantsAndRejectsIncompleteOrDuplicateVariants() throws Exception {
+        StubJSONObject withUnknownAbi = (StubJSONObject) manifestWithVariants();
+        StubJSONArray variants = (StubJSONArray) withUnknownAbi.values.get("variants");
+        Map<String, Object> unknown = new HashMap<>();
+        unknown.put("abi", "riscv64");
+        variants.values.add(new StubJSONObject(unknown));
+        UpdateManifest.parse(withUnknownAbi);
+
         expectInvalid(manifestWithVariants("arm64-v8a", true));
 
         StubJSONObject incomplete = (StubJSONObject) manifestWithVariants();

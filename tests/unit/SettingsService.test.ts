@@ -1,5 +1,5 @@
-import {beforeEach, describe, expect, test, vi} from 'vitest'
-import type {AllSettings} from '@/services/JmcomicTypes'
+import { beforeEach, describe, expect, test, vi } from 'vitest'
+import type { AllSettings } from '@/services/JmcomicTypes'
 
 const getAllSettings = vi.hoisted(() => vi.fn())
 const setPreloadConcurrency = vi.hoisted(() => vi.fn())
@@ -12,7 +12,7 @@ function deferred<T>() {
     resolve = resolvePromise
     reject = rejectPromise
   })
-  return {promise, resolve, reject}
+  return { promise, resolve, reject }
 }
 
 vi.mock('@/services/JmcomicService', () => ({
@@ -48,7 +48,7 @@ describe('SettingsService', () => {
   test('旧版设置缺少阅读结束工具栏字段时默认开启', async () => {
     getAllSettings.mockResolvedValue(legacySettings)
 
-    const {initSettings, SettingsStore} = await import('@/services/SettingsService')
+    const { initSettings, SettingsStore } = await import('@/services/SettingsService')
     await initSettings()
 
     expect(SettingsStore.getReaderAutoShowToolbarAtEnd()).toBe(true)
@@ -65,7 +65,7 @@ describe('SettingsService', () => {
       cacheEffectiveMb: 332,
     })
 
-    const {initSettings, SettingsStore} = await import('@/services/SettingsService')
+    const { initSettings, SettingsStore } = await import('@/services/SettingsService')
     await initSettings()
 
     expect(SettingsStore.getCacheCapacityMb()).toBe(1024)
@@ -75,7 +75,7 @@ describe('SettingsService', () => {
     getAllSettings.mockResolvedValue(legacySettings)
     setPreloadConcurrency.mockRejectedValue(new Error('native failure'))
 
-    const {initSettings, SettingsStore, persistPreloadConcurrency} =
+    const { initSettings, SettingsStore, persistPreloadConcurrency } =
       await import('@/services/SettingsService')
     await initSettings()
 
@@ -85,9 +85,9 @@ describe('SettingsService', () => {
 
   test('下载并发持久化失败时回滚内存缓存', async () => {
     getAllSettings.mockResolvedValue(legacySettings)
-    setDownloadConcurrency.mockResolvedValue({success: false})
+    setDownloadConcurrency.mockResolvedValue({ success: false })
 
-    const {initSettings, SettingsStore, persistDownloadConcurrency} =
+    const { initSettings, SettingsStore, persistDownloadConcurrency } =
       await import('@/services/SettingsService')
     await initSettings()
 
@@ -97,13 +97,11 @@ describe('SettingsService', () => {
 
   test('预加载并发连续保存均失败时回滚到最后确认值', async () => {
     getAllSettings.mockResolvedValue(legacySettings)
-    const first = deferred<{success: boolean}>()
-    const second = deferred<{success: boolean}>()
-    setPreloadConcurrency
-      .mockReturnValueOnce(first.promise)
-      .mockReturnValueOnce(second.promise)
+    const first = deferred<{ success: boolean }>()
+    const second = deferred<{ success: boolean }>()
+    setPreloadConcurrency.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
 
-    const {initSettings, SettingsStore, persistPreloadConcurrency} =
+    const { initSettings, SettingsStore, persistPreloadConcurrency } =
       await import('@/services/SettingsService')
     await initSettings()
 
@@ -125,13 +123,11 @@ describe('SettingsService', () => {
 
   test('预加载并发前一笔成功后一笔失败时回滚到前一笔', async () => {
     getAllSettings.mockResolvedValue(legacySettings)
-    const first = deferred<{success: boolean}>()
-    const second = deferred<{success: boolean}>()
-    setPreloadConcurrency
-      .mockReturnValueOnce(first.promise)
-      .mockReturnValueOnce(second.promise)
+    const first = deferred<{ success: boolean }>()
+    const second = deferred<{ success: boolean }>()
+    setPreloadConcurrency.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
 
-    const {initSettings, SettingsStore, persistPreloadConcurrency} =
+    const { initSettings, SettingsStore, persistPreloadConcurrency } =
       await import('@/services/SettingsService')
     await initSettings()
 
@@ -140,10 +136,10 @@ describe('SettingsService', () => {
     const secondFailure = expect(secondSave).rejects.toThrow('保存失败')
 
     await vi.waitFor(() => expect(setPreloadConcurrency).toHaveBeenCalledTimes(1))
-    first.resolve({success: true})
+    first.resolve({ success: true })
     await firstSave
     await vi.waitFor(() => expect(setPreloadConcurrency).toHaveBeenCalledTimes(2))
-    second.resolve({success: false})
+    second.resolve({ success: false })
     await secondFailure
 
     expect(SettingsStore.getPreloadConcurrency()).toBe(8)
@@ -151,13 +147,11 @@ describe('SettingsService', () => {
 
   test('下载并发前一笔失败后一笔成功时保留后一笔', async () => {
     getAllSettings.mockResolvedValue(legacySettings)
-    const first = deferred<{success: boolean}>()
-    const second = deferred<{success: boolean}>()
-    setDownloadConcurrency
-      .mockReturnValueOnce(first.promise)
-      .mockReturnValueOnce(second.promise)
+    const first = deferred<{ success: boolean }>()
+    const second = deferred<{ success: boolean }>()
+    setDownloadConcurrency.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
 
-    const {initSettings, SettingsStore, persistDownloadConcurrency} =
+    const { initSettings, SettingsStore, persistDownloadConcurrency } =
       await import('@/services/SettingsService')
     await initSettings()
 
@@ -169,7 +163,7 @@ describe('SettingsService', () => {
     first.reject(new Error('first failure'))
     await firstFailure
     await vi.waitFor(() => expect(setDownloadConcurrency).toHaveBeenCalledTimes(2))
-    second.resolve({success: true})
+    second.resolve({ success: true })
     await secondSave
 
     expect(SettingsStore.getDownloadConcurrency()).toBe(10)

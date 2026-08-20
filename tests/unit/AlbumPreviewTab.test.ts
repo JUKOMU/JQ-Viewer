@@ -1,5 +1,5 @@
-import {mount} from '@vue/test-utils'
-import {describe, expect, test} from 'vitest'
+import { mount } from '@vue/test-utils'
+import { describe, expect, test } from 'vitest'
 import AlbumPreviewTab from '@/components/album/AlbumPreviewTab.vue'
 
 describe('AlbumPreviewTab', () => {
@@ -20,7 +20,7 @@ describe('AlbumPreviewTab', () => {
     await wrapper.get('button').trigger('click')
     expect(wrapper.emitted('loadMore')).toHaveLength(1)
 
-    await wrapper.setProps({autoLoad: true})
+    await wrapper.setProps({ autoLoad: true })
     expect(wrapper.find('button').exists()).toBe(true)
     expect(wrapper.get('button').attributes('aria-disabled')).toBe('true')
     expect(wrapper.text()).toContain('上滑加载更多...')
@@ -28,7 +28,7 @@ describe('AlbumPreviewTab', () => {
     await wrapper.get('button').trigger('click')
     expect(wrapper.emitted('loadMore')).toHaveLength(1)
 
-    await wrapper.setProps({loadedCount: 19})
+    await wrapper.setProps({ loadedCount: 19 })
     expect(wrapper.text()).toContain('上滑重新加载缺失图片...（19 / 20）')
     await wrapper.get('button').trigger('click')
     expect(wrapper.emitted('loadMore')).toHaveLength(1)
@@ -55,18 +55,18 @@ describe('AlbumPreviewTab', () => {
     expect(document.activeElement).toBe(buttonElement)
 
     await button.trigger('click')
-    await wrapper.setProps({loadingMore: true})
+    await wrapper.setProps({ loadingMore: true })
 
     expect(wrapper.get('button').element).toBe(buttonElement)
     expect(document.activeElement).toBe(buttonElement)
     expect(wrapper.get('[role="status"]').attributes('aria-live')).toBe('polite')
     expect(wrapper.get('[role="status"]').text()).toContain('正在加载')
 
-    await wrapper.setProps({loadingMore: false, autoLoad: true})
+    await wrapper.setProps({ loadingMore: false, autoLoad: true })
     expect(wrapper.get('button').element).toBe(buttonElement)
     expect(document.activeElement).toBe(buttonElement)
 
-    await wrapper.setProps({autoLoad: false, allVisible: true})
+    await wrapper.setProps({ autoLoad: false, allVisible: true })
     expect(wrapper.get('button').element).toBe(buttonElement)
     expect(document.activeElement).toBe(buttonElement)
     expect(wrapper.get('[role="status"]').text()).toContain('已显示所有')

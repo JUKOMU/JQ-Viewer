@@ -88,7 +88,7 @@ describe('release assets', () => {
     expect(manifest.variants[0].sources.github).toContain('/JQ-Viewer-1_3_0-arm64-v8a.apk')
   })
 
-  it('rejects an incomplete ABI variant set', () => {
+  it('accepts an empty ABI variant set', () => {
     expect(() =>
       buildReleaseManifest({
         releaseTag: 'v1.3.0',
@@ -105,7 +105,9 @@ describe('release assets', () => {
         variants: [],
       }),
     ).not.toThrow()
+  })
 
+  it('rejects an incomplete ABI variant set', () => {
     expect(() =>
       buildReleaseManifest({
         releaseTag: 'v1.3.0',
@@ -127,6 +129,31 @@ describe('release assets', () => {
             sha256: 'c'.repeat(64),
           },
         ],
+      }),
+    ).toThrow('each supported ABI exactly once')
+  })
+
+  it('rejects duplicated ABI variants', () => {
+    const abis = ['arm64-v8a', 'arm64-v8a', 'x86_64', 'x86']
+    expect(() =>
+      buildReleaseManifest({
+        releaseTag: 'v1.3.0',
+        apkName: 'JQ-Viewer-1_3_0-universal.apk',
+        sizeBytes: 1,
+        sha256: 'a'.repeat(64),
+        signingCertificateSha256: 'b'.repeat(64),
+        releaseNotes: '# v1.3.0\n\n内容',
+        githubRepository: 'JUKOMU/JQ-Viewer',
+        giteeRepository: 'jukomu/jq-viewer',
+        packageName: 'io.github.jukomu',
+        versionCode: 15,
+        versionName: '1.3.0',
+        variants: abis.map((abi, index) => ({
+          abi,
+          apkName: `JQ-Viewer-1_3_0-${abi}.apk`,
+          sizeBytes: index + 1,
+          sha256: String(index + 1).repeat(64),
+        })),
       }),
     ).toThrow('each supported ABI exactly once')
   })

@@ -69,9 +69,7 @@ describe('PdfImportService.confirmImport', () => {
 
     const result = await PdfImportService.confirmImport([file('/pdf/a.pdf'), file('/pdf/b.pdf')])
 
-    expect(result).toEqual(
-      expect.objectContaining({ imported: 1, skipped: 1, errorCount: 1 }),
-    )
+    expect(result).toEqual(expect.objectContaining({ imported: 1, skipped: 1, errorCount: 1 }))
     expect(result.results).toEqual([
       expect.objectContaining({ result: 'imported', filePath: '/pdf/a.pdf' }),
     ])

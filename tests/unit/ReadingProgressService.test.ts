@@ -1,5 +1,5 @@
-import {beforeEach, describe, expect, test} from 'vitest'
-import {ReadingProgressService} from '@/services/ReadingProgressService'
+import { beforeEach, describe, expect, test } from 'vitest'
+import { ReadingProgressService } from '@/services/ReadingProgressService'
 
 describe('ReadingProgressService', () => {
   beforeEach(() => {

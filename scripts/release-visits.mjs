@@ -135,12 +135,12 @@ export function renderVisitChart(points, outputPath) {
     font: '700 28px "Noto Sans CJK SC", "Microsoft YaHei", sans-serif',
   })
   drawText(context, '新增访问量', plot.left, 86, {
-    color: '#64748b',
+    color: '#0f7490',
     font: '20px "Noto Sans CJK SC", "Microsoft YaHei", sans-serif',
   })
   drawText(context, '累计访问量', plot.right, 86, {
     align: 'right',
-    color: '#64748b',
+    color: '#c2410c',
     font: '20px "Noto Sans CJK SC", "Microsoft YaHei", sans-serif',
   })
 
@@ -158,12 +158,12 @@ export function renderVisitChart(points, outputPath) {
     drawText(context, formatVisitValue(incrementMaximum * ratio), plot.left - 14, y, {
       align: 'right',
       baseline: 'middle',
-      color: '#94a3b8',
+      color: '#0f7490',
       font: '16px "Noto Sans CJK SC", "Microsoft YaHei", sans-serif',
     })
     drawText(context, formatVisitValue(totalMaximum * ratio), plot.right + 14, y, {
       baseline: 'middle',
-      color: '#94a3b8',
+      color: '#c2410c',
       font: '16px "Noto Sans CJK SC", "Microsoft YaHei", sans-serif',
     })
   }

@@ -29,6 +29,12 @@ jobs:
 
       - run: npm ci
 
+      - name: Install Chinese chart font
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes fonts-noto-cjk
+          fc-cache -f
+
       - name: Fetch Release download counts
         env:
           GH_TOKEN: ${{ github.token }}
@@ -39,8 +45,8 @@ jobs:
           set -euo pipefail
           history_path="$RUNNER_TEMP/release-visits-history.json"
           if git ls-remote --exit-code --heads origin release-visits-data >/dev/null 2>&1; then
-            git fetch origin release-visits-data
-            git show FETCH_HEAD:data/release-visits.json > "$history_path"
+            git fetch origin release-visits-data:refs/remotes/origin/release-visits-data
+            git show origin/release-visits-data:data/release-visits.json > "$history_path"
           else
             printf '{\n  "schemaVersion": 1,\n  "samples": []\n}\n' > "$history_path"
           fi

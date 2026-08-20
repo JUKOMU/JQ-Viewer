@@ -127,6 +127,14 @@ cd android
 ./gradlew :app:assembleDebug
 ```
 
+---
+
 ## 许可证
 
 [MIT License](LICENSE)
+
+---
+
+## 
+
+![访问统计](/assets/release-visits.png)

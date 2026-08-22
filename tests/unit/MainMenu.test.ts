@@ -191,33 +191,20 @@ describe('MainMenu 自定义左侧手势', () => {
     wrapper.unmount()
   })
 
-  test('在面板过渡后更新主内容无障碍状态', async () => {
-    vi.useFakeTimers()
+  test('打开和关闭时立即更新主内容无障碍状态', async () => {
     const wrapper = mountMenu()
     const content = document.getElementById('main-content')!
 
-    try {
-      leftMenuOpen.value = true
-      await nextTick()
-      expect(content.hasAttribute('inert')).toBe(false)
-      expect(content.getAttribute('aria-hidden')).toBeNull()
+    leftMenuOpen.value = true
+    await nextTick()
+    expect(content.hasAttribute('inert')).toBe(true)
+    expect(content.getAttribute('aria-hidden')).toBe('true')
 
-      await vi.advanceTimersByTimeAsync(219)
-      expect(content.hasAttribute('inert')).toBe(false)
-      await vi.advanceTimersByTimeAsync(1)
-      expect(content.hasAttribute('inert')).toBe(true)
-      expect(content.getAttribute('aria-hidden')).toBe('true')
-
-      leftMenuOpen.value = false
-      await nextTick()
-      expect(content.hasAttribute('inert')).toBe(true)
-      await vi.advanceTimersByTimeAsync(220)
-      expect(content.hasAttribute('inert')).toBe(false)
-      expect(content.getAttribute('aria-hidden')).toBeNull()
-    } finally {
-      wrapper.unmount()
-      vi.useRealTimers()
-    }
+    leftMenuOpen.value = false
+    await nextTick()
+    expect(content.hasAttribute('inert')).toBe(false)
+    expect(content.getAttribute('aria-hidden')).toBeNull()
+    wrapper.unmount()
   })
 
   test('使用低识别阈值、严格横向角度并只在捕获后锁滚动', () => {

@@ -717,20 +717,14 @@ const closeMenu = () => {
   closeLeftMenu()
 }
 
-let accessibilityTimer: ReturnType<typeof setTimeout> | null = null
-
-const clearAccessibilityTimer = () => {
-  if (accessibilityTimer) {
-    clearTimeout(accessibilityTimer)
-    accessibilityTimer = null
-  }
-}
-
-const applyContentAccessibility = (open: boolean) => {
+const updateContentAccessibility = (open: boolean) => {
   const content = document.getElementById(props.contentId)
   if (open) {
+    previouslyFocused =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null
     content?.setAttribute('aria-hidden', 'true')
     content?.setAttribute('inert', '')
+    void nextTick(() => panelRef.value?.focus({ preventScroll: true }))
     return
   }
 
@@ -738,27 +732,6 @@ const applyContentAccessibility = (open: boolean) => {
   content?.removeAttribute('inert')
   if (previouslyFocused?.isConnected) previouslyFocused.focus({ preventScroll: true })
   previouslyFocused = null
-}
-
-const updateContentAccessibility = (open: boolean, immediate = false) => {
-  clearAccessibilityTimer()
-
-  if (open && !previouslyFocused) {
-    previouslyFocused =
-      document.activeElement instanceof HTMLElement ? document.activeElement : null
-    void nextTick(() => panelRef.value?.focus({ preventScroll: true }))
-  }
-
-  if (immediate) {
-    applyContentAccessibility(open)
-    return
-  }
-
-  accessibilityTimer = setTimeout(() => {
-    accessibilityTimer = null
-    if (leftMenuOpen.value !== open) return
-    applyContentAccessibility(open)
-  }, MAIN_MENU_TRANSITION_MS)
 }
 
 const handleKeyDown = (event: KeyboardEvent) => {
@@ -810,7 +783,6 @@ onUnmounted(() => {
   clearDownloadTimer()
   clearPdfTimer()
   clearTaskProgressRenderTimer()
-  clearAccessibilityTimer()
   void downloadProgressHandle?.remove()
   void pdfProgressHandle?.remove()
   downloadProgressHandle = null
@@ -825,7 +797,7 @@ onUnmounted(() => {
   pdfEventSequence = 0
   gesture?.destroy()
   document.removeEventListener('keydown', handleKeyDown)
-  applyContentAccessibility(false)
+  updateContentAccessibility(false)
 })
 </script>
 

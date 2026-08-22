@@ -170,6 +170,56 @@ const pdfTask = (currentPage = 0, totalPages = 100, status = 'running') => ({
 })
 
 describe('MainMenu 自定义左侧手势', () => {
+  test('遮罩瞬时切换，不跟随面板拖拽进度变化', async () => {
+    const wrapper = mountMenu()
+    const backdrop = wrapper.find('.main-menu-backdrop').element as HTMLElement
+    const gesture = getGesture()
+
+    expect(backdrop.style.opacity).toBe('0')
+    expect(backdrop.style.transition).toBe('none')
+
+    gesture.onStart()
+    await nextTick()
+    expect(backdrop.style.opacity).toBe('0.32')
+    gesture.onMove({ deltaX: 60 })
+    await nextTick()
+    expect(backdrop.style.opacity).toBe('0.32')
+
+    gesture.onEnd({ velocityX: 0 })
+    await nextTick()
+    expect(backdrop.style.opacity).toBe('0.32')
+    wrapper.unmount()
+  })
+
+  test('在面板过渡后更新主内容无障碍状态', async () => {
+    vi.useFakeTimers()
+    const wrapper = mountMenu()
+    const content = document.getElementById('main-content')!
+
+    try {
+      leftMenuOpen.value = true
+      await nextTick()
+      expect(content.hasAttribute('inert')).toBe(false)
+      expect(content.getAttribute('aria-hidden')).toBeNull()
+
+      await vi.advanceTimersByTimeAsync(219)
+      expect(content.hasAttribute('inert')).toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(content.hasAttribute('inert')).toBe(true)
+      expect(content.getAttribute('aria-hidden')).toBe('true')
+
+      leftMenuOpen.value = false
+      await nextTick()
+      expect(content.hasAttribute('inert')).toBe(true)
+      await vi.advanceTimersByTimeAsync(220)
+      expect(content.hasAttribute('inert')).toBe(false)
+      expect(content.getAttribute('aria-hidden')).toBeNull()
+    } finally {
+      wrapper.unmount()
+      vi.useRealTimers()
+    }
+  })
+
   test('使用低识别阈值、严格横向角度并只在捕获后锁滚动', () => {
     const wrapper = mountMenu()
     const gesture = getGesture()

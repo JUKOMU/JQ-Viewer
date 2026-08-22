@@ -254,6 +254,7 @@ const DOWNLOAD_PROGRESS_STATUSES = new Set<DownloadStatus>([
 const PDF_PROGRESS_STATUSES = new Set<PdfExportStatus>(['queued', 'running', 'cancelling'])
 const TASK_PROGRESS_TRANSITION_MS = 220
 const TASK_PROGRESS_RENDER_INTERVAL_MS = 500
+const MAIN_MENU_TRANSITION_MS = 220
 
 const downloadProgressTasks = ref(new Map<string, DownloadProgressTask>())
 const pdfProgressTasks = ref(new Map<string, PdfProgressTask>())
@@ -635,11 +636,13 @@ const currentProgress = computed(() =>
 )
 const panelStyle = computed(() => ({
   transform: `translate3d(${(currentProgress.value - 1) * 100}%, 0, 0)`,
-  transition: isDragging.value ? 'none' : 'transform 0.22s cubic-bezier(0.22, 0.61, 0.36, 1)',
+  transition: isDragging.value
+    ? 'none'
+    : `transform ${MAIN_MENU_TRANSITION_MS}ms cubic-bezier(0.22, 0.61, 0.36, 1)`,
 }))
 const backdropStyle = computed(() => ({
-  opacity: currentProgress.value * 0.32,
-  transition: isDragging.value ? 'none' : 'opacity 0.22s ease',
+  opacity: isInteractive.value ? 0.32 : 0,
+  transition: 'none',
 }))
 
 const getPanelWidth = () => panelRef.value?.offsetWidth || (window.innerWidth <= 340 ? 264 : 304)
@@ -714,14 +717,20 @@ const closeMenu = () => {
   closeLeftMenu()
 }
 
-const updateContentAccessibility = (open: boolean) => {
+let accessibilityTimer: ReturnType<typeof setTimeout> | null = null
+
+const clearAccessibilityTimer = () => {
+  if (accessibilityTimer) {
+    clearTimeout(accessibilityTimer)
+    accessibilityTimer = null
+  }
+}
+
+const applyContentAccessibility = (open: boolean) => {
   const content = document.getElementById(props.contentId)
   if (open) {
-    previouslyFocused =
-      document.activeElement instanceof HTMLElement ? document.activeElement : null
     content?.setAttribute('aria-hidden', 'true')
     content?.setAttribute('inert', '')
-    void nextTick(() => panelRef.value?.focus({ preventScroll: true }))
     return
   }
 
@@ -729,6 +738,27 @@ const updateContentAccessibility = (open: boolean) => {
   content?.removeAttribute('inert')
   if (previouslyFocused?.isConnected) previouslyFocused.focus({ preventScroll: true })
   previouslyFocused = null
+}
+
+const updateContentAccessibility = (open: boolean, immediate = false) => {
+  clearAccessibilityTimer()
+
+  if (open && !previouslyFocused) {
+    previouslyFocused =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null
+    void nextTick(() => panelRef.value?.focus({ preventScroll: true }))
+  }
+
+  if (immediate) {
+    applyContentAccessibility(open)
+    return
+  }
+
+  accessibilityTimer = setTimeout(() => {
+    accessibilityTimer = null
+    if (leftMenuOpen.value !== open) return
+    applyContentAccessibility(open)
+  }, MAIN_MENU_TRANSITION_MS)
 }
 
 const handleKeyDown = (event: KeyboardEvent) => {
@@ -760,7 +790,7 @@ function handleMenuClick() {
   closeMenu()
 }
 
-watch(leftMenuOpen, updateContentAccessibility)
+watch(leftMenuOpen, (open) => updateContentAccessibility(open))
 watch(
   () => props.disabled,
   (disabled) => {
@@ -780,6 +810,7 @@ onUnmounted(() => {
   clearDownloadTimer()
   clearPdfTimer()
   clearTaskProgressRenderTimer()
+  clearAccessibilityTimer()
   void downloadProgressHandle?.remove()
   void pdfProgressHandle?.remove()
   downloadProgressHandle = null
@@ -794,7 +825,7 @@ onUnmounted(() => {
   pdfEventSequence = 0
   gesture?.destroy()
   document.removeEventListener('keydown', handleKeyDown)
-  updateContentAccessibility(false)
+  applyContentAccessibility(false)
 })
 </script>
 

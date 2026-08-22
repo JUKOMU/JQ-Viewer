@@ -254,6 +254,7 @@ const DOWNLOAD_PROGRESS_STATUSES = new Set<DownloadStatus>([
 const PDF_PROGRESS_STATUSES = new Set<PdfExportStatus>(['queued', 'running', 'cancelling'])
 const TASK_PROGRESS_TRANSITION_MS = 220
 const TASK_PROGRESS_RENDER_INTERVAL_MS = 500
+const MAIN_MENU_TRANSITION_MS = 220
 
 const downloadProgressTasks = ref(new Map<string, DownloadProgressTask>())
 const pdfProgressTasks = ref(new Map<string, PdfProgressTask>())
@@ -635,11 +636,13 @@ const currentProgress = computed(() =>
 )
 const panelStyle = computed(() => ({
   transform: `translate3d(${(currentProgress.value - 1) * 100}%, 0, 0)`,
-  transition: isDragging.value ? 'none' : 'transform 0.22s cubic-bezier(0.22, 0.61, 0.36, 1)',
+  transition: isDragging.value
+    ? 'none'
+    : `transform ${MAIN_MENU_TRANSITION_MS}ms cubic-bezier(0.22, 0.61, 0.36, 1)`,
 }))
 const backdropStyle = computed(() => ({
-  opacity: currentProgress.value * 0.32,
-  transition: isDragging.value ? 'none' : 'opacity 0.22s ease',
+  opacity: isInteractive.value ? 0.32 : 0,
+  transition: 'none',
 }))
 
 const getPanelWidth = () => panelRef.value?.offsetWidth || (window.innerWidth <= 340 ? 264 : 304)
@@ -760,7 +763,7 @@ function handleMenuClick() {
   closeMenu()
 }
 
-watch(leftMenuOpen, updateContentAccessibility)
+watch(leftMenuOpen, (open) => updateContentAccessibility(open))
 watch(
   () => props.disabled,
   (disabled) => {

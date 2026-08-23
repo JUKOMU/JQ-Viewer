@@ -36,41 +36,73 @@
           <template v-else>
             <div class="section-header">
               <span class="section-title">共 {{ browseItems.length }} 条记录</span>
-              <button class="clear-btn" @click="confirmClearBrowse">清空</button>
+              <button type="button" class="clear-btn" @click="confirmClearBrowse">清空</button>
             </div>
             <TransitionGroup name="history-list" tag="div" class="card-list">
-              <template v-for="group in browseGroups" :key="group.label">
-                <div class="date-group-header">{{ group.label }}</div>
-                <div
-                  v-for="item in group.items"
-                  :key="item.timestamp"
-                  class="browse-card"
-                  @click="openAlbum(item)"
-                >
-                  <div class="card-cover-wrap">
-                    <img :src="item.coverUrl" class="card-cover" alt="" loading="lazy" />
-                  </div>
-                  <div class="card-body">
-                    <h3 class="card-title">{{ item.albumTitle }}</h3>
-                    <div class="card-id">ID: {{ item.albumId }}</div>
-                    <div class="card-meta">作者：{{ item.authors }}</div>
-                    <div class="card-meta">{{ formatRelativeTime(item.timestamp) }}</div>
-                    <div v-if="item.chapterTitle" class="card-chapter">
-                      <IonIcon :icon="bookOutline" class="chapter-icon" />
-                      <span>{{ item.chapterTitle }}</span>
+              <section v-for="group in browseGroups" :key="group.key" class="date-group">
+                <h2 class="date-group-heading">
+                  <button
+                    :id="browseGroupToggleId(group.key)"
+                    type="button"
+                    class="date-group-toggle"
+                    :aria-expanded="!isBrowseGroupCollapsed(group.key)"
+                    :aria-controls="browseGroupContentId(group.key)"
+                    :aria-label="`${isBrowseGroupCollapsed(group.key) ? '展开' : '收起'}${group.label}`"
+                    @click="toggleBrowseGroup(group.key)"
+                  >
+                    <span>{{ group.label }}</span>
+                    <IonIcon
+                      class="date-group-toggle-icon"
+                      :class="{ collapsed: isBrowseGroupCollapsed(group.key) }"
+                      :icon="chevronDownOutline"
+                      aria-hidden="true"
+                    />
+                  </button>
+                </h2>
+                <Transition name="history-drawer">
+                  <div
+                    v-if="!isBrowseGroupCollapsed(group.key)"
+                    :id="browseGroupContentId(group.key)"
+                    class="date-group-content"
+                    role="region"
+                    :aria-labelledby="browseGroupToggleId(group.key)"
+                  >
+                    <div class="date-group-content-inner">
+                      <TransitionGroup name="history-list" tag="div" class="date-group-cards">
+                        <div
+                          v-for="item in group.items"
+                          :key="item.id"
+                          class="browse-card"
+                          @click="openAlbum(item)"
+                        >
+                          <div class="card-cover-wrap">
+                            <img :src="item.coverUrl" class="card-cover" alt="" loading="lazy" />
+                          </div>
+                          <div class="card-body">
+                            <h3 class="card-title">{{ item.albumTitle }}</h3>
+                            <div class="card-id">ID: {{ item.albumId }}</div>
+                            <div class="card-meta">作者：{{ item.authors }}</div>
+                            <div class="card-meta">{{ formatRelativeTime(item.timestamp) }}</div>
+                            <div v-if="item.chapterTitle" class="card-chapter">
+                              <IonIcon :icon="bookOutline" class="chapter-icon" />
+                              <span>{{ item.chapterTitle }}</span>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            class="card-more-btn"
+                            :class="{ active: contextMenu?.item.id === item.id }"
+                            aria-label="更多操作"
+                            @click.stop="openContextMenu(item, $event)"
+                          >
+                            <IonIcon :icon="ellipsisVertical" />
+                          </button>
+                        </div>
+                      </TransitionGroup>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    class="card-more-btn"
-                    :class="{ active: contextMenu?.item.id === item.id }"
-                    aria-label="更多操作"
-                    @click.stop="openContextMenu(item, $event)"
-                  >
-                    <IonIcon :icon="ellipsisVertical" />
-                  </button>
-                </div>
-              </template>
+                </Transition>
+              </section>
             </TransitionGroup>
           </template>
         </div>
@@ -84,12 +116,12 @@
           <template v-else>
             <div class="section-header">
               <span class="section-title">共 {{ parseItems.length }} 条记录</span>
-              <button class="clear-btn" @click="confirmClearParse">清空</button>
+              <button type="button" class="clear-btn" @click="confirmClearParse">清空</button>
             </div>
             <TransitionGroup name="history-list" tag="div" class="card-list">
               <div
                 v-for="item in parseItems"
-                :key="item.timestamp"
+                :key="item.id"
                 class="parse-card"
                 @click="openParseItem(item)"
               >
@@ -136,12 +168,13 @@
 <script setup lang="ts">
 defineOptions({ name: 'HistoryPage' })
 
-import { computed, onMounted, ref } from 'vue'
+import { computed, onActivated, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { IonContent, IonIcon, IonPage } from '@ionic/vue'
 import { createAppAlert } from '@/services/AppAlertService'
 import {
   bookOutline,
+  chevronDownOutline,
   copyOutline,
   documentTextOutline,
   ellipsisVertical,
@@ -151,6 +184,8 @@ import {
 } from 'ionicons/icons'
 import { HistoryService } from '@/services/HistoryService'
 import type { BrowseHistoryItem, ParseHistoryItem } from '@/services/JmcomicTypes'
+import { groupBrowseHistory } from '@/utils/historyDateGroups'
+import type { BrowseGroupKey } from '@/utils/historyDateGroups'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import CardContextMenu from '@/components/common/CardContextMenu.vue'
 
@@ -164,55 +199,68 @@ const parseItems = ref<ParseHistoryItem[]>([])
 const browseHasMore = ref(true)
 const parseHasMore = ref(true)
 const isLoadingMore = ref(false)
+const groupingNow = ref(Date.now())
+const collapsedBrowseGroups = ref<Set<BrowseGroupKey>>(new Set())
 
-interface BrowseGroup {
-  label: string
-  items: BrowseHistoryItem[]
+const browseGroups = computed(() => groupBrowseHistory(browseItems.value, groupingNow.value))
+
+function browseGroupToggleId(key: BrowseGroupKey): string {
+  return `history-group-toggle-${key}`
 }
 
-const browseGroups = computed<BrowseGroup[]>(() => {
-  const now = new Date()
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
-  const yesterdayStart = todayStart - 86_400_000
-  const dayOfWeek = now.getDay() || 7
-  const weekStart = todayStart - (dayOfWeek - 1) * 86_400_000
+function browseGroupContentId(key: BrowseGroupKey): string {
+  return `history-group-content-${key}`
+}
 
-  const groups: Record<string, BrowseHistoryItem[]> = {
-    今天: [],
-    昨天: [],
-    本周: [],
-    更早: [],
+function isBrowseGroupCollapsed(key: BrowseGroupKey): boolean {
+  return collapsedBrowseGroups.value.has(key)
+}
+
+function isContextMenuInBrowseGroup(key: BrowseGroupKey): boolean {
+  const menu = contextMenu.value
+  if (!menu || menu.type !== 'browse') return false
+  return browseGroups.value.some(
+    (group) => group.key === key && group.items.some((item) => item.id === menu.item.id),
+  )
+}
+
+function toggleBrowseGroup(key: BrowseGroupKey) {
+  const next = new Set(collapsedBrowseGroups.value)
+  if (next.has(key)) next.delete(key)
+  else {
+    if (isContextMenuInBrowseGroup(key)) closeContextMenu()
+    next.add(key)
   }
+  collapsedBrowseGroups.value = next
+}
 
-  for (const item of browseItems.value) {
-    if (item.timestamp >= todayStart) {
-      groups['今天'].push(item)
-    } else if (item.timestamp >= yesterdayStart) {
-      groups['昨天'].push(item)
-    } else if (item.timestamp >= weekStart) {
-      groups['本周'].push(item)
-    } else {
-      groups['更早'].push(item)
-    }
-  }
+function pruneCollapsedBrowseGroups() {
+  const visibleKeys = new Set(browseGroups.value.map((group) => group.key))
+  const next = new Set([...collapsedBrowseGroups.value].filter((key) => visibleKeys.has(key)))
+  if (next.size !== collapsedBrowseGroups.value.size) collapsedBrowseGroups.value = next
+}
 
-  return (Object.entries(groups) as [string, BrowseHistoryItem[]][])
-    .filter(([, items]) => items.length > 0)
-    .map(([label, items]) => ({ label, items }))
-})
+function refreshBrowseGrouping() {
+  groupingNow.value = Date.now()
+}
 
 async function loadBrowse() {
   browseItems.value = await HistoryService.getBrowseHistory(PAGE_SIZE, 0)
   browseHasMore.value = browseItems.value.length === PAGE_SIZE
+  refreshBrowseGrouping()
 }
 
 async function loadMoreBrowse() {
   if (isLoadingMore.value || !browseHasMore.value) return
   isLoadingMore.value = true
-  const batch = await HistoryService.getBrowseHistory(PAGE_SIZE, browseItems.value.length)
-  if (batch.length > 0) browseItems.value.push(...batch)
-  browseHasMore.value = batch.length === PAGE_SIZE
-  isLoadingMore.value = false
+  try {
+    const batch = await HistoryService.getBrowseHistory(PAGE_SIZE, browseItems.value.length)
+    if (batch.length > 0) browseItems.value.push(...batch)
+    browseHasMore.value = batch.length === PAGE_SIZE
+  } finally {
+    refreshBrowseGrouping()
+    isLoadingMore.value = false
+  }
 }
 
 async function loadParse() {
@@ -251,6 +299,10 @@ onMounted(async () => {
     scrollEl.value = (await (contentEl as any).getScrollElement()) as HTMLElement
   }
   await loadBrowse()
+})
+
+onActivated(() => {
+  refreshBrowseGrouping()
 })
 
 function openAlbum(item: BrowseHistoryItem) {
@@ -357,6 +409,8 @@ async function handleMenuDelete() {
           if (isBrowse) {
             await HistoryService.deleteBrowseItem(m.item.id)
             browseItems.value = browseItems.value.filter((i) => i.id !== m.item.id)
+            refreshBrowseGrouping()
+            pruneCollapsedBrowseGroups()
           } else {
             await HistoryService.deleteParseItem(m.item.id)
             parseItems.value = parseItems.value.filter((i) => i.id !== m.item.id)
@@ -379,7 +433,10 @@ async function confirmClearBrowse() {
         role: 'destructive',
         handler: async () => {
           await HistoryService.clearBrowseHistory()
+          closeContextMenu()
           browseItems.value = []
+          collapsedBrowseGroups.value = new Set()
+          refreshBrowseGrouping()
         },
       },
     ],
@@ -512,21 +569,84 @@ function formatRelativeTime(timestamp: number): string {
   background: #ffeaea;
 }
 
-/* Date group header */
-.date-group-header {
-  padding: 16px 4px 8px;
-  font-size: 13px;
-  font-weight: 600;
-  color: #8a6048;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
 /* Card list */
 .card-list {
   display: flex;
   flex-direction: column;
+  gap: 0;
+}
+
+.date-group + .date-group {
+  margin-top: 4px;
+}
+
+.date-group-heading {
+  margin: 0;
+}
+
+.date-group-toggle {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 4px 8px;
+  border: 0;
+  background: transparent;
+  color: #8a6048;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.date-group-toggle:focus-visible {
+  outline: 2px solid #e8843c;
+  outline-offset: 1px;
+  border-radius: 6px;
+}
+
+.date-group-toggle-icon {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-size: 16px;
+  transition: transform 0.24s ease;
+}
+
+.date-group-toggle-icon.collapsed {
+  transform: rotate(-90deg);
+}
+
+.date-group-content {
+  display: grid;
+  grid-template-rows: 1fr;
+  overflow: hidden;
+}
+
+.date-group-content-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.date-group-cards {
+  display: flex;
+  flex-direction: column;
   gap: 6px;
+}
+
+.history-drawer-enter-active,
+.history-drawer-leave-active {
+  transition:
+    grid-template-rows 0.24s ease,
+    opacity 0.18s ease;
+}
+
+.history-drawer-enter-from,
+.history-drawer-leave-to {
+  grid-template-rows: 0fr;
+  opacity: 0;
 }
 
 /* Browse card */
@@ -745,5 +865,16 @@ function formatRelativeTime(timestamp: number): string {
 
 .history-list-move {
   transition: transform 0.28s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .date-group-toggle-icon,
+  .history-drawer-enter-active,
+  .history-drawer-leave-active,
+  .history-list-enter-active,
+  .history-list-leave-active,
+  .history-list-move {
+    transition-duration: 0.01ms;
+  }
 }
 </style>

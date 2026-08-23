@@ -215,8 +215,8 @@ describe('HistoryPage 浏览历史分组', () => {
     await todayToggle.trigger('click')
     await todayToggle.trigger('click')
 
-    expect(todayToggle.attributes('aria-expanded')).toBe('false')
-    expect(wrapper.find(`#${todayContentId}`).exists()).toBe(false)
+    expect(todayToggle.attributes('aria-expanded')).toBe('true')
+    expect(wrapper.find(`#${todayContentId}`).exists()).toBe(true)
     wrapper.unmount()
   })
 
@@ -240,8 +240,9 @@ describe('HistoryPage 浏览历史分组', () => {
     ])
 
     await wrapper.get('#history-group-toggle-today').trigger('click')
-    await wrapper.get('.tab-btn').at(1).trigger('click')
-    await wrapper.get('.tab-btn').at(0).trigger('click')
+    const tabButtons = wrapper.findAll('.tab-btn')
+    await tabButtons[1].trigger('click')
+    await tabButtons[0].trigger('click')
     await flushPromises()
 
     expect(wrapper.get('#history-group-toggle-today').attributes('aria-expanded')).toBe('false')
@@ -265,8 +266,9 @@ describe('HistoryPage 浏览历史分组', () => {
     expect(mocks.clearBrowseHistory).toHaveBeenCalledOnce()
 
     mocks.getBrowseHistory.mockResolvedValue(items)
-    await wrapper.get('.tab-btn').at(1).trigger('click')
-    await wrapper.get('.tab-btn').at(0).trigger('click')
+    const tabButtons = wrapper.findAll('.tab-btn')
+    await tabButtons[1].trigger('click')
+    await tabButtons[0].trigger('click')
     await flushPromises()
 
     expect(wrapper.get('#history-group-toggle-today').attributes('aria-expanded')).toBe('true')

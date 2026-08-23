@@ -113,13 +113,18 @@ describe('groupBrowseHistory', () => {
   test('有限未来时间归入今天，无效时间保持更早兼容行为', () => {
     const now = localDate(2025, 7, 16)
     const groups = groupBrowseHistory(
-      [makeItem(1, now + 2 * 86_400_000), makeItem(2, Number.NaN)],
+      [
+        makeItem(1, now + 2 * 86_400_000),
+        makeItem(2, Number.NaN),
+        makeItem(3, Number.POSITIVE_INFINITY),
+        makeItem(4, Number.NEGATIVE_INFINITY),
+      ],
       now,
     )
 
     expect(groups.map((group) => [group.key, group.items.map((item) => item.id)])).toEqual([
       ['today', [1]],
-      ['earlier', [2]],
+      ['earlier', [2, 3, 4]],
     ])
   })
 

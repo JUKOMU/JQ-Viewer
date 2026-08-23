@@ -69,6 +69,8 @@ function getGroupKey(
   timestamp: number,
   boundaries: readonly BrowseGroupBoundary[],
 ): BrowseGroupKey {
+  if (!Number.isFinite(timestamp)) return 'earlier'
+
   for (const boundary of boundaries) {
     if (timestamp >= boundary.startMs) return boundary.key
   }

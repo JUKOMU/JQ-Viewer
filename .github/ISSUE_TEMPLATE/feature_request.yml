@@ -1,0 +1,49 @@
+name: 功能建议
+description: 提议一个能改善 JQ Viewer 使用体验的新功能
+title: '[Feature] '
+labels: ['enhancement']
+body:
+  - type: checkboxes
+    id: feature-duplicate-check
+    attributes:
+      label: 提交前确认
+      description: 请先搜索现有 Issue，确认没有相同或类似的问题。
+      options:
+        - label: 我已搜索现有 Issue，确认没有相同或类似的问题。
+          required: true
+
+  - type: textarea
+    id: feature-use-case
+    attributes:
+      label: 使用场景或现有问题
+      description: 请描述功能的使用场景，以及目前遇到的问题或限制。
+      placeholder: 请描述使用场景或当前遇到的问题。
+    validations:
+      required: true
+
+  - type: textarea
+    id: feature-desired-feature
+    attributes:
+      label: 希望增加的功能
+      description: 请具体描述希望 JQ Viewer 增加或改进的能力。
+      placeholder: 请描述希望增加或改进的功能。
+    validations:
+      required: true
+
+  - type: textarea
+    id: feature-expected-outcome
+    attributes:
+      label: 预期效果
+      description: 请描述功能完成后希望达到的效果，以及它如何改善使用体验。
+      placeholder: 请描述功能完成后的预期效果。
+    validations:
+      required: true
+
+  - type: textarea
+    id: feature-additional-notes
+    attributes:
+      label: 其他补充说明（可选）
+      description: 可以补充示例、参考资料、截图或其他有助于理解建议的内容。
+      placeholder: 可选补充其他信息。
+    validations:
+      required: false

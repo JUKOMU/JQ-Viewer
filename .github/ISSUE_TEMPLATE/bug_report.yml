@@ -1,0 +1,79 @@
+name: Bug 反馈
+description: 报告 JQ Viewer 中可以稳定复现的问题
+title: '[Bug] '
+labels: ['bug']
+body:
+  - type: checkboxes
+    id: duplicate-check
+    attributes:
+      label: 提交前确认
+      description: 请先搜索现有 Issue，确认没有相同或类似的问题。
+      options:
+        - label: 我已搜索现有 Issue，确认没有相同或类似的问题。
+          required: true
+
+  - type: input
+    id: jq-viewer-version
+    attributes:
+      label: JQ Viewer 版本
+      description: 请填写应用版本号。
+      placeholder: 例如：v1.2.3
+    validations:
+      required: true
+
+  - type: input
+    id: android-version
+    attributes:
+      label: Android 版本
+      description: 请填写设备运行的 Android 版本。
+      placeholder: 例如：Android 14
+    validations:
+      required: true
+
+  - type: input
+    id: device-model
+    attributes:
+      label: 设备型号
+      description: 请填写出现问题的设备型号。
+      placeholder: 例如：Google Pixel 8
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem-description
+    attributes:
+      label: 问题描述
+      description: 请清楚描述实际发生了什么，以及问题出现的频率。
+      placeholder: 请描述你遇到的问题。
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction-steps
+    attributes:
+      label: 复现步骤
+      description: 请按顺序列出可以稳定复现问题的操作步骤。
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: 预期表现
+      description: 请描述在相同步骤下原本预期发生的结果。
+      placeholder: 请描述你期望看到的结果。
+    validations:
+      required: true
+
+  - type: textarea
+    id: supporting-evidence
+    attributes:
+      label: 截图、录屏或日志（可选）
+      description: 可将截图、录屏或日志文件直接拖拽到此处。请先移除账号、个人信息或其他敏感内容。
+      placeholder: 可选补充相关截图、录屏或日志。
+    validations:
+      required: false

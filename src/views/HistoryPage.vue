@@ -208,6 +208,8 @@ const tabLoadPromises: Record<HistoryTab, Promise<void> | null> = {
 }
 const tabRequestGeneration = reactive<Record<HistoryTab, number>>({ browse: 0, parse: 0 })
 const tabScrollPositions = reactive<Record<HistoryTab, number>>({ browse: 0, parse: 0 })
+const isTabTransitioning = ref(false)
+let tabTransitionId = 0
 const groupingNow = ref(Date.now())
 const collapsedBrowseGroups = ref<Set<BrowseGroupKey>>(new Set())
 
@@ -274,7 +276,7 @@ async function loadBrowse(generation = tabRequestGeneration.browse) {
 }
 
 async function loadMoreBrowse() {
-  if (loadingMoreByTab.browse || !browseHasMore.value) return
+  if (!isTabReadyForPagination('browse') || loadingMoreByTab.browse || !browseHasMore.value) return
   loadingMoreByTab.browse = true
   const generation = tabRequestGeneration.browse
   try {
@@ -298,7 +300,7 @@ async function loadParse(generation = tabRequestGeneration.parse) {
 }
 
 async function loadMoreParse() {
-  if (loadingMoreByTab.parse || !parseHasMore.value) return
+  if (!isTabReadyForPagination('parse') || loadingMoreByTab.parse || !parseHasMore.value) return
   loadingMoreByTab.parse = true
   const generation = tabRequestGeneration.parse
   try {
@@ -312,18 +314,25 @@ async function loadMoreParse() {
 }
 
 const onScroll = (event: CustomEvent<{ scrollTop?: number }>) => {
+  const tab = activeTab.value
+  if (isTabTransitioning.value) return
+
   const eventScrollTop = event.detail?.scrollTop
-  if (typeof eventScrollTop === 'number') {
-    tabScrollPositions[activeTab.value] = Math.max(0, eventScrollTop)
-  }
+  if (typeof eventScrollTop === 'number') tabScrollPositions[tab] = Math.max(0, eventScrollTop)
+
+  if (!isTabReadyForPagination(tab)) return
 
   const el = scrollEl.value
   if (!el) return
   const threshold = 200
   if (el.scrollHeight - el.scrollTop - el.clientHeight < threshold) {
-    if (activeTab.value === 'browse') loadMoreBrowse()
+    if (tab === 'browse') loadMoreBrowse()
     else loadMoreParse()
   }
+}
+
+function isTabReadyForPagination(tab: HistoryTab): boolean {
+  return tabLoaded[tab] && tabLoadPromises[tab] === null
 }
 
 function saveActiveTabScrollPosition() {
@@ -337,6 +346,16 @@ async function restoreTabScrollPosition(tab: HistoryTab) {
   const el = await resolveScrollElement()
   if (!el || activeTab.value !== tab) return
   el.scrollTop = Math.max(0, tabScrollPositions[tab])
+}
+
+function beginTabTransition(): number {
+  const id = ++tabTransitionId
+  isTabTransitioning.value = true
+  return id
+}
+
+function endTabTransition(id: number) {
+  if (id === tabTransitionId) isTabTransitioning.value = false
 }
 
 function ensureTabLoaded(tab: HistoryTab): Promise<void> {
@@ -364,12 +383,18 @@ function invalidateTab(tab: HistoryTab) {
   loadingMoreByTab[tab] = false
 }
 
-async function switchTab(tab: 'browse' | 'parse') {
+async function switchTab(tab: HistoryTab) {
   if (activeTab.value === tab) return
-  saveActiveTabScrollPosition()
+  const wasTransitioning = isTabTransitioning.value
+  const transitionId = beginTabTransition()
+  if (!wasTransitioning) saveActiveTabScrollPosition()
   activeTab.value = tab
-  await ensureTabLoaded(tab)
-  await restoreTabScrollPosition(tab)
+  try {
+    await ensureTabLoaded(tab)
+    await restoreTabScrollPosition(tab)
+  } finally {
+    endTabTransition(transitionId)
+  }
 }
 
 onMounted(async () => {
@@ -379,7 +404,14 @@ onMounted(async () => {
 
 onActivated(() => {
   refreshBrowseGrouping()
-  void restoreTabScrollPosition(activeTab.value)
+  const transitionId = beginTabTransition()
+  void (async () => {
+    try {
+      await restoreTabScrollPosition(activeTab.value)
+    } finally {
+      endTabTransition(transitionId)
+    }
+  })()
 })
 
 onDeactivated(() => {

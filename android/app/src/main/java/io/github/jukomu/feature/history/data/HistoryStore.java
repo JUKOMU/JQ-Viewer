@@ -136,7 +136,7 @@ public class HistoryStore extends SQLiteOpenHelper {
         Cursor dataCursor = null;
         try {
             SQLiteDatabase db = getReadableDatabase();
-            long totalCount = getBrowseHistoryTotalCount();
+            long totalCount = countRows(TABLE_BROWSE);
             String limitClause = limit > 0
                 ? (offset > 0 ? offset + "," + limit : String.valueOf(limit))
                 : null;
@@ -172,10 +172,6 @@ public class HistoryStore extends SQLiteOpenHelper {
             if (dataCursor != null) dataCursor.close();
         }
         return result;
-    }
-
-    public long getBrowseHistoryTotalCount() {
-        return countRows(TABLE_BROWSE);
     }
 
     /**
@@ -230,7 +226,7 @@ public class HistoryStore extends SQLiteOpenHelper {
         Cursor dataCursor = null;
         try {
             SQLiteDatabase db = getReadableDatabase();
-            long totalCount = getParseHistoryTotalCount();
+            long totalCount = countRows(TABLE_PARSE);
             String limitClause = limit > 0
                 ? (offset > 0 ? offset + "," + limit : String.valueOf(limit))
                 : null;
@@ -261,10 +257,6 @@ public class HistoryStore extends SQLiteOpenHelper {
             if (dataCursor != null) dataCursor.close();
         }
         return result;
-    }
-
-    public long getParseHistoryTotalCount() {
-        return countRows(TABLE_PARSE);
     }
 
     public void clearParseHistory() {

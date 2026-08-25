@@ -191,8 +191,6 @@ export interface JmcomicClient {
     offset: number
   }): Promise<HistoryPageResult<BrowseHistoryItem>>
 
-  getBrowseHistoryTotalCount(): Promise<{ count: number }>
-
   recordBrowse(options: {
     albumId: string
     albumTitle: string
@@ -210,8 +208,6 @@ export interface JmcomicClient {
     limit: number
     offset: number
   }): Promise<HistoryPageResult<ParseHistoryItem>>
-
-  getParseHistoryTotalCount(): Promise<{ count: number }>
 
   addParseHistory(options: { text: string; mode: string }): Promise<{ success: boolean }>
 

@@ -763,11 +763,6 @@ public class JmcomicPlugin extends Plugin {
     }
 
     @PluginMethod
-    public void getBrowseHistoryTotalCount(PluginCall call) {
-        historyHandler.getBrowseHistoryTotalCount(call);
-    }
-
-    @PluginMethod
     public void recordBrowse(PluginCall call) {
         historyHandler.recordBrowse(call);
     }
@@ -787,11 +782,6 @@ public class JmcomicPlugin extends Plugin {
     @PluginMethod
     public void getParseHistory(PluginCall call) {
         historyHandler.getParseHistory(call);
-    }
-
-    @PluginMethod
-    public void getParseHistoryTotalCount(PluginCall call) {
-        historyHandler.getParseHistoryTotalCount(call);
     }
 
     @PluginMethod

@@ -35,7 +35,7 @@
           </div>
           <template v-else>
             <div class="section-header">
-              <span class="section-title">共 {{ browseItems.length }} 条记录</span>
+              <span class="section-title">共 {{ browseTotalCount }} 条记录</span>
               <button type="button" class="clear-btn" @click="confirmClearBrowse">清空</button>
             </div>
             <TransitionGroup name="history-list" tag="div" class="card-list">
@@ -115,7 +115,7 @@
           </div>
           <template v-else>
             <div class="section-header">
-              <span class="section-title">共 {{ parseItems.length }} 条记录</span>
+              <span class="section-title">共 {{ parseTotalCount }} 条记录</span>
               <button type="button" class="clear-btn" @click="confirmClearParse">清空</button>
             </div>
             <TransitionGroup name="history-list" tag="div" class="card-list">
@@ -183,7 +183,11 @@ import {
   trashOutline,
 } from 'ionicons/icons'
 import { HistoryService } from '@/services/HistoryService'
-import type { BrowseHistoryItem, ParseHistoryItem } from '@/services/JmcomicTypes'
+import type {
+  BrowseHistoryItem,
+  HistoryPageResult,
+  ParseHistoryItem,
+} from '@/services/JmcomicTypes'
 import { groupBrowseHistory } from '@/utils/historyDateGroups'
 import type { BrowseGroupKey } from '@/utils/historyDateGroups'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
@@ -198,6 +202,8 @@ type HistoryTab = 'browse' | 'parse'
 const activeTab = ref<HistoryTab>('browse')
 const browseItems = ref<BrowseHistoryItem[]>([])
 const parseItems = ref<ParseHistoryItem[]>([])
+const browseTotalCount = ref(0)
+const parseTotalCount = ref(0)
 const browseHasMore = ref(true)
 const parseHasMore = ref(true)
 const loadingMoreByTab = reactive<Record<HistoryTab, boolean>>({ browse: false, parse: false })
@@ -210,6 +216,7 @@ const tabRequestGeneration = reactive<Record<HistoryTab, number>>({ browse: 0, p
 const tabScrollPositions = reactive<Record<HistoryTab, number>>({ browse: 0, parse: 0 })
 const isTabTransitioning = ref(false)
 let tabTransitionId = 0
+let wasDeactivated = false
 const groupingNow = ref(Date.now())
 const collapsedBrowseGroups = ref<Set<BrowseGroupKey>>(new Set())
 
@@ -267,11 +274,43 @@ async function resolveScrollElement(): Promise<HTMLElement | null> {
   return scrollEl.value
 }
 
+interface NormalizedHistoryPage<T> extends HistoryPageResult<T> {
+  legacyArray: boolean
+}
+
+function normalizeHistoryPage<T>(result: HistoryPageResult<T> | T[]): NormalizedHistoryPage<T> {
+  if (Array.isArray(result)) {
+    return { items: result, totalCount: result.length, legacyArray: true }
+  }
+  const hasTotalCount = Number.isFinite(result.totalCount)
+  return {
+    items: result.items,
+    totalCount: hasTotalCount ? Math.max(0, result.totalCount) : result.items.length,
+    legacyArray: !hasTotalCount,
+  }
+}
+
+function updateBrowseTotalCount(
+  totalCount: number,
+  hasMore = browseItems.value.length < totalCount,
+) {
+  browseTotalCount.value = Math.max(0, totalCount)
+  browseHasMore.value = hasMore
+}
+
+function updateParseTotalCount(totalCount: number, hasMore = parseItems.value.length < totalCount) {
+  parseTotalCount.value = Math.max(0, totalCount)
+  parseHasMore.value = hasMore
+}
+
 async function loadBrowse(generation = tabRequestGeneration.browse) {
-  const items = await HistoryService.getBrowseHistory(PAGE_SIZE, 0)
+  const page = normalizeHistoryPage(await HistoryService.getBrowseHistory(PAGE_SIZE, 0))
   if (generation !== tabRequestGeneration.browse) return
-  browseItems.value = items
-  browseHasMore.value = items.length === PAGE_SIZE
+  browseItems.value = page.items
+  updateBrowseTotalCount(
+    page.totalCount,
+    page.legacyArray ? page.items.length === PAGE_SIZE : page.items.length < page.totalCount,
+  )
   refreshBrowseGrouping()
 }
 
@@ -280,10 +319,17 @@ async function loadMoreBrowse() {
   loadingMoreByTab.browse = true
   const generation = tabRequestGeneration.browse
   try {
-    const batch = await HistoryService.getBrowseHistory(PAGE_SIZE, browseItems.value.length)
+    const page = normalizeHistoryPage(
+      await HistoryService.getBrowseHistory(PAGE_SIZE, browseItems.value.length),
+    )
     if (generation !== tabRequestGeneration.browse) return
-    if (batch.length > 0) browseItems.value.push(...batch)
-    browseHasMore.value = batch.length === PAGE_SIZE
+    if (page.items.length > 0) browseItems.value.push(...page.items)
+    updateBrowseTotalCount(
+      page.totalCount,
+      page.legacyArray
+        ? page.items.length === PAGE_SIZE
+        : browseItems.value.length < page.totalCount,
+    )
   } finally {
     if (generation === tabRequestGeneration.browse) {
       refreshBrowseGrouping()
@@ -293,10 +339,13 @@ async function loadMoreBrowse() {
 }
 
 async function loadParse(generation = tabRequestGeneration.parse) {
-  const items = await HistoryService.getParseHistory(PAGE_SIZE, 0)
+  const page = normalizeHistoryPage(await HistoryService.getParseHistory(PAGE_SIZE, 0))
   if (generation !== tabRequestGeneration.parse) return
-  parseItems.value = items
-  parseHasMore.value = items.length === PAGE_SIZE
+  parseItems.value = page.items
+  updateParseTotalCount(
+    page.totalCount,
+    page.legacyArray ? page.items.length === PAGE_SIZE : page.items.length < page.totalCount,
+  )
 }
 
 async function loadMoreParse() {
@@ -304,10 +353,17 @@ async function loadMoreParse() {
   loadingMoreByTab.parse = true
   const generation = tabRequestGeneration.parse
   try {
-    const batch = await HistoryService.getParseHistory(PAGE_SIZE, parseItems.value.length)
+    const page = normalizeHistoryPage(
+      await HistoryService.getParseHistory(PAGE_SIZE, parseItems.value.length),
+    )
     if (generation !== tabRequestGeneration.parse) return
-    if (batch.length > 0) parseItems.value.push(...batch)
-    parseHasMore.value = batch.length === PAGE_SIZE
+    if (page.items.length > 0) parseItems.value.push(...page.items)
+    updateParseTotalCount(
+      page.totalCount,
+      page.legacyArray
+        ? page.items.length === PAGE_SIZE
+        : parseItems.value.length < page.totalCount,
+    )
   } finally {
     if (generation === tabRequestGeneration.parse) loadingMoreByTab.parse = false
   }
@@ -376,6 +432,48 @@ function ensureTabLoaded(tab: HistoryTab): Promise<void> {
   return promise
 }
 
+async function refreshTabTotalCount(tab: HistoryTab) {
+  if (!tabLoaded[tab] || tabLoadPromises[tab] || loadingMoreByTab[tab]) return
+  const generation = tabRequestGeneration[tab]
+  if (tab === 'browse') {
+    const getTotalCount = HistoryService.getBrowseHistoryTotalCount
+    if (typeof getTotalCount !== 'function') return
+    const totalCount = await getTotalCount()
+    if (generation !== tabRequestGeneration.browse) return
+    if (totalCount !== null) {
+      const shouldReload =
+        totalCount < browseItems.value.length || (totalCount > 0 && browseItems.value.length === 0)
+      updateBrowseTotalCount(totalCount)
+      if (shouldReload) {
+        invalidateTab('browse')
+        await ensureTabLoaded('browse')
+      }
+    }
+  } else {
+    const getTotalCount = HistoryService.getParseHistoryTotalCount
+    if (typeof getTotalCount !== 'function') return
+    const totalCount = await getTotalCount()
+    if (generation !== tabRequestGeneration.parse) return
+    if (totalCount !== null) {
+      const shouldReload =
+        totalCount < parseItems.value.length || (totalCount > 0 && parseItems.value.length === 0)
+      updateParseTotalCount(totalCount)
+      if (shouldReload) {
+        invalidateTab('parse')
+        await ensureTabLoaded('parse')
+      }
+    }
+  }
+}
+
+async function refreshTabOnActivation(tab: HistoryTab) {
+  if (!tabLoaded[tab]) {
+    if (activeTab.value === tab) await ensureTabLoaded(tab)
+    return
+  }
+  await refreshTabTotalCount(tab)
+}
+
 function invalidateTab(tab: HistoryTab) {
   tabRequestGeneration[tab] += 1
   tabLoaded[tab] = false
@@ -404,9 +502,14 @@ onMounted(async () => {
 
 onActivated(() => {
   refreshBrowseGrouping()
+  const shouldRefreshTotals = wasDeactivated
+  wasDeactivated = false
   const transitionId = beginTabTransition()
   void (async () => {
     try {
+      if (shouldRefreshTotals) {
+        await Promise.all([refreshTabOnActivation('browse'), refreshTabOnActivation('parse')])
+      }
       await restoreTabScrollPosition(activeTab.value)
     } finally {
       endTabTransition(transitionId)
@@ -415,6 +518,7 @@ onActivated(() => {
 })
 
 onDeactivated(() => {
+  wasDeactivated = true
   saveActiveTabScrollPosition()
 })
 
@@ -522,11 +626,13 @@ async function handleMenuDelete() {
           if (isBrowse) {
             await HistoryService.deleteBrowseItem(m.item.id)
             browseItems.value = browseItems.value.filter((i) => i.id !== m.item.id)
+            updateBrowseTotalCount(Math.max(0, browseTotalCount.value - 1))
             refreshBrowseGrouping()
             pruneCollapsedBrowseGroups()
           } else {
             await HistoryService.deleteParseItem(m.item.id)
             parseItems.value = parseItems.value.filter((i) => i.id !== m.item.id)
+            updateParseTotalCount(Math.max(0, parseTotalCount.value - 1))
           }
         },
       },
@@ -549,6 +655,7 @@ async function confirmClearBrowse() {
           await HistoryService.clearBrowseHistory()
           closeContextMenu()
           browseItems.value = []
+          updateBrowseTotalCount(0)
           browseHasMore.value = true
           collapsedBrowseGroups.value = new Set()
           refreshBrowseGrouping()
@@ -572,6 +679,7 @@ async function confirmClearParse() {
           invalidateTab('parse')
           await HistoryService.clearParseHistory()
           parseItems.value = []
+          updateParseTotalCount(0)
           parseHasMore.value = true
         },
       },

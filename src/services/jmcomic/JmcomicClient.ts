@@ -10,6 +10,7 @@ import type {
   FavoriteQuery,
   FavoriteResult,
   ForumQuery,
+  HistoryPageResult,
   ImageInfo,
   ImageCacheEntry,
   ImportedPdfsResult,
@@ -188,7 +189,9 @@ export interface JmcomicClient {
   getBrowseHistory(options: {
     limit: number
     offset: number
-  }): Promise<{ items: BrowseHistoryItem[] }>
+  }): Promise<HistoryPageResult<BrowseHistoryItem>>
+
+  getBrowseHistoryTotalCount(): Promise<{ count: number }>
 
   recordBrowse(options: {
     albumId: string
@@ -206,7 +209,9 @@ export interface JmcomicClient {
   getParseHistory(options: {
     limit: number
     offset: number
-  }): Promise<{ items: ParseHistoryItem[] }>
+  }): Promise<HistoryPageResult<ParseHistoryItem>>
+
+  getParseHistoryTotalCount(): Promise<{ count: number }>
 
   addParseHistory(options: { text: string; mode: string }): Promise<{ success: boolean }>
 

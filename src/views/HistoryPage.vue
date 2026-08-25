@@ -168,7 +168,7 @@
 <script setup lang="ts">
 defineOptions({ name: 'HistoryPage' })
 
-import { computed, onActivated, onMounted, ref } from 'vue'
+import { computed, nextTick, onActivated, onDeactivated, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { IonContent, IonIcon, IonPage } from '@ionic/vue'
 import { createAppAlert } from '@/services/AppAlertService'
@@ -193,12 +193,21 @@ const PAGE_SIZE = 50
 const router = useRouter()
 const contentRef = ref<InstanceType<typeof IonContent>>()
 const scrollEl = ref<HTMLElement | null>(null)
-const activeTab = ref<'browse' | 'parse'>('browse')
+type HistoryTab = 'browse' | 'parse'
+
+const activeTab = ref<HistoryTab>('browse')
 const browseItems = ref<BrowseHistoryItem[]>([])
 const parseItems = ref<ParseHistoryItem[]>([])
 const browseHasMore = ref(true)
 const parseHasMore = ref(true)
-const isLoadingMore = ref(false)
+const loadingMoreByTab = reactive<Record<HistoryTab, boolean>>({ browse: false, parse: false })
+const tabLoaded = reactive<Record<HistoryTab, boolean>>({ browse: false, parse: false })
+const tabLoadPromises: Record<HistoryTab, Promise<void> | null> = {
+  browse: null,
+  parse: null,
+}
+const tabRequestGeneration = reactive<Record<HistoryTab, number>>({ browse: 0, parse: 0 })
+const tabScrollPositions = reactive<Record<HistoryTab, number>>({ browse: 0, parse: 0 })
 const groupingNow = ref(Date.now())
 const collapsedBrowseGroups = ref<Set<BrowseGroupKey>>(new Set())
 
@@ -244,40 +253,70 @@ function refreshBrowseGrouping() {
   groupingNow.value = Date.now()
 }
 
-async function loadBrowse() {
-  browseItems.value = await HistoryService.getBrowseHistory(PAGE_SIZE, 0)
-  browseHasMore.value = browseItems.value.length === PAGE_SIZE
+type IonContentElement = HTMLElement & {
+  getScrollElement?: () => Promise<HTMLElement | null>
+}
+
+async function resolveScrollElement(): Promise<HTMLElement | null> {
+  if (scrollEl.value) return scrollEl.value
+  const contentEl = contentRef.value?.$el as IonContentElement | undefined
+  if (!contentEl?.getScrollElement) return null
+  scrollEl.value = await contentEl.getScrollElement()
+  return scrollEl.value
+}
+
+async function loadBrowse(generation = tabRequestGeneration.browse) {
+  const items = await HistoryService.getBrowseHistory(PAGE_SIZE, 0)
+  if (generation !== tabRequestGeneration.browse) return
+  browseItems.value = items
+  browseHasMore.value = items.length === PAGE_SIZE
   refreshBrowseGrouping()
 }
 
 async function loadMoreBrowse() {
-  if (isLoadingMore.value || !browseHasMore.value) return
-  isLoadingMore.value = true
+  if (loadingMoreByTab.browse || !browseHasMore.value) return
+  loadingMoreByTab.browse = true
+  const generation = tabRequestGeneration.browse
   try {
     const batch = await HistoryService.getBrowseHistory(PAGE_SIZE, browseItems.value.length)
+    if (generation !== tabRequestGeneration.browse) return
     if (batch.length > 0) browseItems.value.push(...batch)
     browseHasMore.value = batch.length === PAGE_SIZE
   } finally {
-    refreshBrowseGrouping()
-    isLoadingMore.value = false
+    if (generation === tabRequestGeneration.browse) {
+      refreshBrowseGrouping()
+      loadingMoreByTab.browse = false
+    }
   }
 }
 
-async function loadParse() {
-  parseItems.value = await HistoryService.getParseHistory(PAGE_SIZE, 0)
-  parseHasMore.value = parseItems.value.length === PAGE_SIZE
+async function loadParse(generation = tabRequestGeneration.parse) {
+  const items = await HistoryService.getParseHistory(PAGE_SIZE, 0)
+  if (generation !== tabRequestGeneration.parse) return
+  parseItems.value = items
+  parseHasMore.value = items.length === PAGE_SIZE
 }
 
 async function loadMoreParse() {
-  if (isLoadingMore.value || !parseHasMore.value) return
-  isLoadingMore.value = true
-  const batch = await HistoryService.getParseHistory(PAGE_SIZE, parseItems.value.length)
-  if (batch.length > 0) parseItems.value.push(...batch)
-  parseHasMore.value = batch.length === PAGE_SIZE
-  isLoadingMore.value = false
+  if (loadingMoreByTab.parse || !parseHasMore.value) return
+  loadingMoreByTab.parse = true
+  const generation = tabRequestGeneration.parse
+  try {
+    const batch = await HistoryService.getParseHistory(PAGE_SIZE, parseItems.value.length)
+    if (generation !== tabRequestGeneration.parse) return
+    if (batch.length > 0) parseItems.value.push(...batch)
+    parseHasMore.value = batch.length === PAGE_SIZE
+  } finally {
+    if (generation === tabRequestGeneration.parse) loadingMoreByTab.parse = false
+  }
 }
 
-const onScroll = () => {
+const onScroll = (event: CustomEvent<{ scrollTop?: number }>) => {
+  const eventScrollTop = event.detail?.scrollTop
+  if (typeof eventScrollTop === 'number') {
+    tabScrollPositions[activeTab.value] = Math.max(0, eventScrollTop)
+  }
+
   const el = scrollEl.value
   if (!el) return
   const threshold = 200
@@ -287,22 +326,64 @@ const onScroll = () => {
   }
 }
 
+function saveActiveTabScrollPosition() {
+  const el = scrollEl.value
+  if (el) tabScrollPositions[activeTab.value] = Math.max(0, el.scrollTop)
+}
+
+async function restoreTabScrollPosition(tab: HistoryTab) {
+  await nextTick()
+  if (activeTab.value !== tab) return
+  const el = await resolveScrollElement()
+  if (!el || activeTab.value !== tab) return
+  el.scrollTop = Math.max(0, tabScrollPositions[tab])
+}
+
+function ensureTabLoaded(tab: HistoryTab): Promise<void> {
+  if (tabLoaded[tab]) return Promise.resolve()
+  if (tabLoadPromises[tab]) return tabLoadPromises[tab]!
+
+  const generation = tabRequestGeneration[tab]
+  const promise = (async () => {
+    try {
+      if (tab === 'browse') await loadBrowse(generation)
+      else await loadParse(generation)
+      if (generation === tabRequestGeneration[tab]) tabLoaded[tab] = true
+    } finally {
+      if (generation === tabRequestGeneration[tab]) tabLoadPromises[tab] = null
+    }
+  })()
+  tabLoadPromises[tab] = promise
+  return promise
+}
+
+function invalidateTab(tab: HistoryTab) {
+  tabRequestGeneration[tab] += 1
+  tabLoaded[tab] = false
+  tabLoadPromises[tab] = null
+  loadingMoreByTab[tab] = false
+}
+
 async function switchTab(tab: 'browse' | 'parse') {
+  if (activeTab.value === tab) return
+  saveActiveTabScrollPosition()
   activeTab.value = tab
-  if (tab === 'browse') await loadBrowse()
-  else await loadParse()
+  await ensureTabLoaded(tab)
+  await restoreTabScrollPosition(tab)
 }
 
 onMounted(async () => {
-  const contentEl = contentRef.value?.$el
-  if (contentEl && typeof (contentEl as any).getScrollElement === 'function') {
-    scrollEl.value = (await (contentEl as any).getScrollElement()) as HTMLElement
-  }
-  await loadBrowse()
+  await resolveScrollElement()
+  await ensureTabLoaded('browse')
 })
 
 onActivated(() => {
   refreshBrowseGrouping()
+  void restoreTabScrollPosition(activeTab.value)
+})
+
+onDeactivated(() => {
+  saveActiveTabScrollPosition()
 })
 
 function openAlbum(item: BrowseHistoryItem) {
@@ -432,9 +513,11 @@ async function confirmClearBrowse() {
         text: '清空',
         role: 'destructive',
         handler: async () => {
+          invalidateTab('browse')
           await HistoryService.clearBrowseHistory()
           closeContextMenu()
           browseItems.value = []
+          browseHasMore.value = true
           collapsedBrowseGroups.value = new Set()
           refreshBrowseGrouping()
         },
@@ -454,8 +537,10 @@ async function confirmClearParse() {
         text: '清空',
         role: 'destructive',
         handler: async () => {
+          invalidateTab('parse')
           await HistoryService.clearParseHistory()
           parseItems.value = []
+          parseHasMore.value = true
         },
       },
     ],

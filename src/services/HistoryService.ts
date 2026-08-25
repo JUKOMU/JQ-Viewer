@@ -1,4 +1,4 @@
-import type { BrowseHistoryItem, ParseHistoryItem } from './JmcomicTypes'
+import type { BrowseHistoryItem, HistoryPageResult, ParseHistoryItem } from './JmcomicTypes'
 import { JmcomicService } from './JmcomicService'
 
 // ---- localStorage 搜索历史（有界，500 条/上下文）----
@@ -57,12 +57,27 @@ export const HistoryService = {
 
   // ========== 浏览历史 (原生 SQLite) ==========
 
-  async getBrowseHistory(limit: number = 50, offset: number = 0): Promise<BrowseHistoryItem[]> {
+  async getBrowseHistory(
+    limit: number = 50,
+    offset: number = 0,
+  ): Promise<HistoryPageResult<BrowseHistoryItem>> {
     try {
       const result = await JmcomicService.getBrowseHistory(limit, offset)
-      return result.items as BrowseHistoryItem[]
+      return {
+        items: result.items as BrowseHistoryItem[],
+        totalCount: result.totalCount,
+      }
     } catch {
-      return []
+      return { items: [], totalCount: 0 }
+    }
+  },
+
+  async getBrowseHistoryTotalCount(): Promise<number | null> {
+    try {
+      const result = await JmcomicService.getBrowseHistoryTotalCount()
+      return result.count
+    } catch {
+      return null
     }
   },
 
@@ -93,12 +108,27 @@ export const HistoryService = {
 
   // ========== 解析历史 (原生 SQLite) ==========
 
-  async getParseHistory(limit: number = 50, offset: number = 0): Promise<ParseHistoryItem[]> {
+  async getParseHistory(
+    limit: number = 50,
+    offset: number = 0,
+  ): Promise<HistoryPageResult<ParseHistoryItem>> {
     try {
       const result = await JmcomicService.getParseHistory(limit, offset)
-      return result.items as ParseHistoryItem[]
+      return {
+        items: result.items as ParseHistoryItem[],
+        totalCount: result.totalCount,
+      }
     } catch {
-      return []
+      return { items: [], totalCount: 0 }
+    }
+  },
+
+  async getParseHistoryTotalCount(): Promise<number | null> {
+    try {
+      const result = await JmcomicService.getParseHistoryTotalCount()
+      return result.count
+    } catch {
+      return null
     }
   },
 

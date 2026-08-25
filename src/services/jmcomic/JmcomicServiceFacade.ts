@@ -350,6 +350,9 @@ export const JmcomicService = {
   getBrowseHistory(limit: number, offset: number = 0) {
     return native.getBrowseHistory({ limit, offset })
   },
+  getBrowseHistoryTotalCount() {
+    return native.getBrowseHistoryTotalCount()
+  },
   recordBrowse(item: Omit<BrowseHistoryItem, 'id' | 'timestamp'>) {
     return native.recordBrowse(item)
   },
@@ -365,6 +368,9 @@ export const JmcomicService = {
 
   getParseHistory(limit: number, offset: number = 0) {
     return native.getParseHistory({ limit, offset })
+  },
+  getParseHistoryTotalCount() {
+    return native.getParseHistoryTotalCount()
   },
   addParseHistory(text: string, mode: string) {
     return native.addParseHistory({ text, mode })

@@ -153,6 +153,10 @@
             </TransitionGroup>
           </template>
         </div>
+
+        <div v-if="loadingMoreByTab[activeTab]" class="history-list-loader">
+          <IonSpinner name="dots" />
+        </div>
       </div>
     </IonContent>
     <CardContextMenu
@@ -170,7 +174,7 @@ defineOptions({ name: 'HistoryPage' })
 
 import { computed, nextTick, onActivated, onDeactivated, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { IonContent, IonIcon, IonPage } from '@ionic/vue'
+import { IonContent, IonIcon, IonPage, IonSpinner } from '@ionic/vue'
 import { createAppAlert } from '@/services/AppAlertService'
 import {
   bookOutline,
@@ -326,8 +330,8 @@ const onScroll = (event: CustomEvent<{ scrollTop?: number }>) => {
   if (!el) return
   const threshold = 200
   if (el.scrollHeight - el.scrollTop - el.clientHeight < threshold) {
-    if (tab === 'browse') loadMoreBrowse()
-    else loadMoreParse()
+    if (tab === 'browse') void loadMoreBrowse().catch(() => undefined)
+    else void loadMoreParse().catch(() => undefined)
   }
 }
 
@@ -691,6 +695,14 @@ function formatRelativeTime(timestamp: number): string {
   display: flex;
   flex-direction: column;
   gap: 0;
+}
+
+.history-list-loader {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 52px;
+  color: #fa9c69;
 }
 
 .date-group + .date-group {

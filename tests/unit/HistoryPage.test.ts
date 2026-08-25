@@ -1,8 +1,8 @@
 /* eslint-disable vue/one-component-per-file -- test-only Ionic fixtures */
 import { flushPromises, mount } from '@vue/test-utils'
-import { defineComponent, h } from 'vue'
+import { KeepAlive, defineComponent, h, nextTick, onMounted, ref } from 'vue'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
-import type { BrowseHistoryItem } from '@/services/JmcomicTypes'
+import type { BrowseHistoryItem, ParseHistoryItem } from '@/services/JmcomicTypes'
 
 const mocks = vi.hoisted(() => ({
   routerPush: vi.fn(),
@@ -10,6 +10,9 @@ const mocks = vi.hoisted(() => ({
   getBrowseHistory: vi.fn(),
   getParseHistory: vi.fn(),
   clearBrowseHistory: vi.fn(),
+  clearParseHistory: vi.fn(),
+  deleteBrowseItem: vi.fn(),
+  deleteParseItem: vi.fn(),
 }))
 
 vi.mock('vue-router', () => ({
@@ -27,7 +30,19 @@ vi.mock('@ionic/vue', () => {
 
   return {
     alertController: { create: vi.fn() },
-    IonContent: withSlot('IonContent', 'main'),
+    IonContent: defineComponent({
+      name: 'IonContent',
+      setup(_, { attrs, slots }) {
+        const elementRef = ref<HTMLElement | null>(null)
+        onMounted(() => {
+          const element = elementRef.value as HTMLElement & {
+            getScrollElement: () => Promise<HTMLElement | null>
+          }
+          element.getScrollElement = async () => element
+        })
+        return () => h('main', { ...attrs, ref: elementRef }, slots.default?.())
+      },
+    }),
     IonHeader: withSlot('IonHeader', 'header'),
     IonIcon: withSlot('IonIcon', 'span'),
     IonPage: withSlot('IonPage'),
@@ -54,10 +69,10 @@ vi.mock('@/services/HistoryService', () => ({
   HistoryService: {
     getBrowseHistory: mocks.getBrowseHistory,
     getParseHistory: mocks.getParseHistory,
-    deleteBrowseItem: vi.fn(),
-    deleteParseItem: vi.fn(),
+    deleteBrowseItem: mocks.deleteBrowseItem,
+    deleteParseItem: mocks.deleteParseItem,
     clearBrowseHistory: mocks.clearBrowseHistory,
-    clearParseHistory: vi.fn(),
+    clearParseHistory: mocks.clearParseHistory,
   },
 }))
 
@@ -73,11 +88,15 @@ vi.mock('@/components/common/CardContextMenu.vue', () => ({
       anchor: { type: Object, default: null },
       actions: { type: Array, default: () => [] },
     },
-    setup(props) {
+    emits: ['select'],
+    setup(props, { emit }) {
       return () =>
         h('div', {
           class: 'card-context-menu',
           'data-visible': props.visible ? 'true' : 'false',
+          onClick: () => {
+            if (props.visible) emit('select', 'delete')
+          },
         })
     },
   }),
@@ -100,6 +119,22 @@ const makeBrowseItem = (
   ...overrides,
 })
 
+const makeParseItem = (id = 1, overrides: Partial<ParseHistoryItem> = {}): ParseHistoryItem => ({
+  id,
+  text: '12345',
+  mode: 'single-mode',
+  timestamp: Date.now(),
+  ...overrides,
+})
+
+const deferred = <T>() => {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((res) => {
+    resolve = res
+  })
+  return { promise, resolve }
+}
+
 beforeEach(() => {
   vi.useFakeTimers()
   vi.setSystemTime(new Date(2025, 6, 16, 12))
@@ -107,6 +142,9 @@ beforeEach(() => {
   mocks.routerPush.mockResolvedValue(undefined)
   mocks.createAppAlert.mockResolvedValue({ present: vi.fn().mockResolvedValue(undefined) })
   mocks.clearBrowseHistory.mockResolvedValue(undefined)
+  mocks.clearParseHistory.mockResolvedValue(undefined)
+  mocks.deleteBrowseItem.mockResolvedValue(undefined)
+  mocks.deleteParseItem.mockResolvedValue(undefined)
   mocks.getBrowseHistory.mockResolvedValue([])
   mocks.getParseHistory.mockResolvedValue([])
 })
@@ -120,6 +158,12 @@ async function mountHistory(items: BrowseHistoryItem[]) {
   const wrapper = mount(HistoryPage)
   await flushPromises()
   return wrapper
+}
+
+const settle = async () => {
+  await flushPromises()
+  await nextTick()
+  await flushPromises()
 }
 
 describe('HistoryPage 详情跳转', () => {
@@ -272,6 +316,227 @@ describe('HistoryPage 浏览历史分组', () => {
     await flushPromises()
 
     expect(wrapper.get('#history-group-toggle-today').attributes('aria-expanded')).toBe('true')
+    expect(present).toHaveBeenCalledOnce()
+    wrapper.unmount()
+  })
+})
+
+describe('HistoryPage Tab 生命周期', () => {
+  test('浏览首屏请求 pending 时近底部滚动不会启动第二个 offset 0 请求', async () => {
+    const browseRequest = deferred<BrowseHistoryItem[]>()
+    mocks.getBrowseHistory.mockReturnValue(browseRequest.promise)
+
+    const wrapper = mount(HistoryPage)
+    await flushPromises()
+
+    const scrollElement = wrapper.get('main').element as HTMLElement
+    Object.defineProperties(scrollElement, {
+      scrollHeight: { configurable: true, value: 1000 },
+      clientHeight: { configurable: true, value: 600 },
+    })
+    scrollElement.scrollTop = 250
+    scrollElement.dispatchEvent(new CustomEvent('ion-scroll', { detail: { scrollTop: 250 } }))
+    await flushPromises()
+
+    expect(mocks.getBrowseHistory).toHaveBeenCalledTimes(1)
+    expect(mocks.getBrowseHistory).toHaveBeenCalledWith(50, 0)
+
+    browseRequest.resolve([makeBrowseItem('', { id: 101 }), makeBrowseItem('', { id: 102 })])
+    await settle()
+
+    expect(wrapper.findAll('.browse-card')).toHaveLength(2)
+    expect(mocks.getBrowseHistory).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
+  test('解析首屏 pending 时切换期间滚动不会重复请求，并恢复目标位置', async () => {
+    const parseRequest = deferred<ParseHistoryItem[]>()
+    mocks.getBrowseHistory.mockResolvedValue([makeBrowseItem('', { id: 10 })])
+    mocks.getParseHistory.mockReturnValue(parseRequest.promise)
+
+    const wrapper = mount(HistoryPage)
+    await settle()
+
+    const scrollElement = wrapper.get('main').element as HTMLElement
+    Object.defineProperties(scrollElement, {
+      scrollHeight: { configurable: true, value: 1000 },
+      clientHeight: { configurable: true, value: 600 },
+    })
+    scrollElement.scrollTop = 420
+    const tabButtons = wrapper.findAll('.tab-btn')
+    await tabButtons[1].trigger('click')
+    await nextTick()
+    scrollElement.scrollTop = 420
+    scrollElement.dispatchEvent(new CustomEvent('ion-scroll', { detail: { scrollTop: 420 } }))
+    await flushPromises()
+
+    expect(mocks.getParseHistory).toHaveBeenCalledTimes(1)
+    expect(mocks.getParseHistory).toHaveBeenCalledWith(50, 0)
+
+    parseRequest.resolve([
+      makeParseItem(201, { text: '首次解析' }),
+      makeParseItem(202, { text: '第二次解析' }),
+    ])
+    await settle()
+
+    expect(wrapper.findAll('.parse-card')).toHaveLength(2)
+    expect(wrapper.findAll('.parse-card').map((card) => card.text())).toEqual([
+      '首次解析单个解析刚刚',
+      '第二次解析单个解析刚刚',
+    ])
+    expect(scrollElement.scrollTop).toBe(0)
+    expect(mocks.getParseHistory).toHaveBeenCalledTimes(1)
+
+    await tabButtons[0].trigger('click')
+    await settle()
+    expect(scrollElement.scrollTop).toBe(420)
+    wrapper.unmount()
+  })
+
+  test('快速来回切换时旧的首屏任务不会恢复错误 Tab 的滚动位置', async () => {
+    const parseRequest = deferred<ParseHistoryItem[]>()
+    mocks.getBrowseHistory.mockResolvedValue([makeBrowseItem('', { id: 1 })])
+    mocks.getParseHistory.mockReturnValue(parseRequest.promise)
+
+    const wrapper = mount(HistoryPage)
+    await settle()
+    const scrollElement = wrapper.get('main').element as HTMLElement
+    scrollElement.scrollTop = 420
+    const tabButtons = wrapper.findAll('.tab-btn')
+
+    await tabButtons[1].trigger('click')
+    await nextTick()
+    await tabButtons[0].trigger('click')
+    await settle()
+
+    expect(wrapper.get('.tab-btn.active').text()).toBe('浏览历史')
+    expect(scrollElement.scrollTop).toBe(420)
+
+    parseRequest.resolve([makeParseItem(301, { text: '延迟解析' })])
+    await settle()
+    expect(wrapper.get('.tab-btn.active').text()).toBe('浏览历史')
+    expect(scrollElement.scrollTop).toBe(420)
+
+    await tabButtons[1].trigger('click')
+    await settle()
+    expect(scrollElement.scrollTop).toBe(0)
+    wrapper.unmount()
+  })
+
+  test('每个 Tab 只在首次进入时加载并保留分页数据', async () => {
+    const firstPage = Array.from({ length: 50 }, (_, index) =>
+      makeBrowseItem('', { id: index + 1 }),
+    )
+    const secondPage = Array.from({ length: 50 }, (_, index) =>
+      makeBrowseItem('', { id: index + 51 }),
+    )
+    mocks.getBrowseHistory.mockResolvedValueOnce(firstPage).mockResolvedValueOnce(secondPage)
+    mocks.getParseHistory.mockResolvedValueOnce([makeParseItem()])
+
+    const wrapper = mount(HistoryPage)
+    await flushPromises()
+
+    const scrollElement = wrapper.get('main').element as HTMLElement
+    Object.defineProperties(scrollElement, {
+      scrollHeight: { configurable: true, value: 1000 },
+      clientHeight: { configurable: true, value: 600 },
+    })
+    scrollElement.scrollTop = 250
+    scrollElement.dispatchEvent(new CustomEvent('ion-scroll', { detail: { scrollTop: 250 } }))
+    await flushPromises()
+
+    expect(mocks.getBrowseHistory).toHaveBeenNthCalledWith(2, 50, 50)
+    expect(wrapper.findAll('.browse-card')).toHaveLength(100)
+
+    const tabButtons = wrapper.findAll('.tab-btn')
+    await tabButtons[1].trigger('click')
+    await flushPromises()
+    expect(mocks.getParseHistory).toHaveBeenCalledOnce()
+
+    await tabButtons[0].trigger('click')
+    await flushPromises()
+    expect(mocks.getBrowseHistory).toHaveBeenCalledTimes(2)
+    expect(wrapper.findAll('.browse-card')).toHaveLength(100)
+
+    await tabButtons[1].trigger('click')
+    await flushPromises()
+    expect(mocks.getParseHistory).toHaveBeenCalledOnce()
+    wrapper.unmount()
+  })
+
+  test('两个 Tab 分别恢复滚动位置，并在 KeepAlive 返回时保留状态', async () => {
+    mocks.getBrowseHistory.mockResolvedValue([makeBrowseItem('', { id: 1 })])
+    mocks.getParseHistory.mockResolvedValue([makeParseItem()])
+    const showHistory = ref(true)
+    const Host = defineComponent({
+      setup() {
+        return () =>
+          h(KeepAlive, null, [
+            showHistory.value
+              ? h(HistoryPage, { key: 'history' })
+              : h('div', { class: 'other-page' }),
+          ])
+      },
+    })
+
+    const wrapper = mount(Host)
+    await flushPromises()
+    const historyWrapper = wrapper.findComponent(HistoryPage)
+    const scrollElement = historyWrapper.get('main').element as HTMLElement
+    const tabButtons = historyWrapper.findAll('.tab-btn')
+
+    scrollElement.scrollTop = 420
+    await tabButtons[1].trigger('click')
+    await flushPromises()
+    expect(scrollElement.scrollTop).toBe(0)
+
+    scrollElement.scrollTop = 180
+    await tabButtons[0].trigger('click')
+    await flushPromises()
+    expect(scrollElement.scrollTop).toBe(420)
+
+    await tabButtons[1].trigger('click')
+    await flushPromises()
+    expect(scrollElement.scrollTop).toBe(180)
+
+    showHistory.value = false
+    await nextTick()
+    scrollElement.scrollTop = 0
+    showHistory.value = true
+    await nextTick()
+    await flushPromises()
+
+    expect(wrapper.findComponent(HistoryPage).get('.tab-btn.active').text()).toBe('解析历史')
+    expect(scrollElement.scrollTop).toBe(180)
+    expect(mocks.getBrowseHistory).toHaveBeenCalledOnce()
+    expect(mocks.getParseHistory).toHaveBeenCalledOnce()
+    wrapper.unmount()
+  })
+
+  test('删除记录即时更新列表且切换 Tab 不重新加载已缓存数据', async () => {
+    const item = makeBrowseItem('', { id: 7 })
+    const present = vi.fn().mockResolvedValue(undefined)
+    mocks.getBrowseHistory.mockResolvedValue([item])
+    mocks.createAppAlert.mockImplementation(
+      async (options: { buttons: Array<{ handler?: () => void | Promise<void> }> }) => {
+        await options.buttons[1]?.handler?.()
+        return { present }
+      },
+    )
+    const wrapper = await mountHistory([item])
+
+    await wrapper.get('.card-more-btn').trigger('click')
+    await wrapper.get('.card-context-menu').trigger('click')
+    await flushPromises()
+
+    expect(mocks.deleteBrowseItem).toHaveBeenCalledWith(item.id)
+    expect(wrapper.findAll('.browse-card')).toHaveLength(0)
+
+    const tabButtons = wrapper.findAll('.tab-btn')
+    await tabButtons[1].trigger('click')
+    await tabButtons[0].trigger('click')
+    await flushPromises()
+    expect(mocks.getBrowseHistory).toHaveBeenCalledOnce()
     expect(present).toHaveBeenCalledOnce()
     wrapper.unmount()
   })

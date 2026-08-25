@@ -46,6 +46,13 @@ vi.mock('@ionic/vue', () => {
     IonHeader: withSlot('IonHeader', 'header'),
     IonIcon: withSlot('IonIcon', 'span'),
     IonPage: withSlot('IonPage'),
+    IonSpinner: defineComponent({
+      name: 'IonSpinner',
+      props: { name: { type: String, default: '' } },
+      setup(props) {
+        return () => h('span', { class: 'ion-spinner', 'data-name': props.name })
+      },
+    }),
     IonToolbar: withSlot('IonToolbar'),
   }
 })
@@ -128,11 +135,13 @@ const makeParseItem = (id = 1, overrides: Partial<ParseHistoryItem> = {}): Parse
 })
 
 const deferred = <T>() => {
-  let resolve!: (value: T) => void
-  const promise = new Promise<T>((res) => {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
     resolve = res
+    reject = rej
   })
-  return { promise, resolve }
+  return { promise, resolve, reject }
 }
 
 beforeEach(() => {
@@ -164,6 +173,33 @@ const settle = async () => {
   await flushPromises()
   await nextTick()
   await flushPromises()
+}
+
+const makeBrowsePage = (startId = 1) =>
+  Array.from({ length: 50 }, (_, index) =>
+    makeBrowseItem('', { id: startId + index, timestamp: new Date(2025, 6, 16, 10).getTime() }),
+  )
+
+const makeParsePage = (startId = 1) =>
+  Array.from({ length: 50 }, (_, index) =>
+    makeParseItem(startId + index, { text: `解析${startId + index}` }),
+  )
+
+const prepareNearBottom = (wrapper: ReturnType<typeof mount>) => {
+  const scrollElement = wrapper.get('main').element as HTMLElement
+  Object.defineProperties(scrollElement, {
+    scrollHeight: { configurable: true, value: 1000 },
+    clientHeight: { configurable: true, value: 600 },
+  })
+  scrollElement.scrollTop = 250
+  return scrollElement
+}
+
+const triggerNearBottom = async (wrapper: ReturnType<typeof mount>) => {
+  const scrollElement = prepareNearBottom(wrapper)
+  scrollElement.dispatchEvent(new CustomEvent('ion-scroll', { detail: { scrollTop: 250 } }))
+  await nextTick()
+  return scrollElement
 }
 
 describe('HistoryPage 详情跳转', () => {
@@ -317,6 +353,176 @@ describe('HistoryPage 浏览历史分组', () => {
 
     expect(wrapper.get('#history-group-toggle-today').attributes('aria-expanded')).toBe('true')
     expect(present).toHaveBeenCalledOnce()
+    wrapper.unmount()
+  })
+})
+
+describe('HistoryPage 分页加载提示', () => {
+  test('浏览历史分页成功时显示尾部提示、阻止重复触底并在无更多数据后隐藏', async () => {
+    const firstPage = makeBrowsePage()
+    const nextRequest = deferred<BrowseHistoryItem[]>()
+    mocks.getBrowseHistory.mockResolvedValueOnce(firstPage).mockReturnValueOnce(nextRequest.promise)
+
+    const wrapper = mount(HistoryPage)
+    await settle()
+
+    const scrollElement = await triggerNearBottom(wrapper)
+    expect(wrapper.find('.history-list-loader').exists()).toBe(true)
+    expect(wrapper.find('.history-list-loader .ion-spinner').attributes('data-name')).toBe('dots')
+    expect(wrapper.findAll('.browse-card')).toHaveLength(50)
+
+    scrollElement.dispatchEvent(new CustomEvent('ion-scroll', { detail: { scrollTop: 250 } }))
+    await nextTick()
+    expect(mocks.getBrowseHistory).toHaveBeenCalledTimes(2)
+    expect(mocks.getBrowseHistory).toHaveBeenNthCalledWith(2, 50, 50)
+
+    nextRequest.resolve([makeBrowseItem('', { id: 51 })])
+    await settle()
+
+    expect(wrapper.find('.history-list-loader').exists()).toBe(false)
+    expect(wrapper.findAll('.browse-card')).toHaveLength(51)
+
+    scrollElement.dispatchEvent(new CustomEvent('ion-scroll', { detail: { scrollTop: 250 } }))
+    await settle()
+    expect(mocks.getBrowseHistory).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+  })
+
+  test('解析历史分页成功时显示尾部提示并在无更多数据后隐藏', async () => {
+    const nextRequest = deferred<ParseHistoryItem[]>()
+    mocks.getBrowseHistory.mockResolvedValueOnce([makeBrowseItem()])
+    mocks.getParseHistory
+      .mockResolvedValueOnce(makeParsePage())
+      .mockReturnValueOnce(nextRequest.promise)
+
+    const wrapper = mount(HistoryPage)
+    await settle()
+    const tabButtons = wrapper.findAll('.tab-btn')
+    await tabButtons[1].trigger('click')
+    await settle()
+
+    const scrollElement = await triggerNearBottom(wrapper)
+    expect(wrapper.find('.history-list-loader').exists()).toBe(true)
+    expect(wrapper.find('.history-list-loader .ion-spinner').attributes('data-name')).toBe('dots')
+    expect(wrapper.findAll('.parse-card')).toHaveLength(50)
+
+    scrollElement.dispatchEvent(new CustomEvent('ion-scroll', { detail: { scrollTop: 250 } }))
+    await nextTick()
+    expect(mocks.getParseHistory).toHaveBeenCalledTimes(2)
+    expect(mocks.getParseHistory).toHaveBeenNthCalledWith(2, 50, 50)
+
+    nextRequest.resolve([makeParseItem(51, { text: '最后一条解析' })])
+    await settle()
+
+    expect(wrapper.find('.history-list-loader').exists()).toBe(false)
+    expect(wrapper.findAll('.parse-card')).toHaveLength(51)
+
+    scrollElement.dispatchEvent(new CustomEvent('ion-scroll', { detail: { scrollTop: 250 } }))
+    await settle()
+    expect(mocks.getParseHistory).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+  })
+
+  test('浏览历史分页失败后隐藏提示并允许重试', async () => {
+    const failedRequest = deferred<BrowseHistoryItem[]>()
+    const retryRequest = deferred<BrowseHistoryItem[]>()
+    mocks.getBrowseHistory
+      .mockResolvedValueOnce(makeBrowsePage())
+      .mockReturnValueOnce(failedRequest.promise)
+      .mockReturnValueOnce(retryRequest.promise)
+
+    const wrapper = mount(HistoryPage)
+    await settle()
+    const scrollElement = await triggerNearBottom(wrapper)
+    expect(wrapper.find('.history-list-loader').exists()).toBe(true)
+
+    failedRequest.reject(new Error('browse page failed'))
+    await settle()
+    expect(wrapper.find('.history-list-loader').exists()).toBe(false)
+    expect(wrapper.findAll('.browse-card')).toHaveLength(50)
+
+    scrollElement.dispatchEvent(new CustomEvent('ion-scroll', { detail: { scrollTop: 250 } }))
+    await nextTick()
+    expect(wrapper.find('.history-list-loader').exists()).toBe(true)
+    expect(mocks.getBrowseHistory).toHaveBeenCalledTimes(3)
+    expect(mocks.getBrowseHistory).toHaveBeenNthCalledWith(3, 50, 50)
+
+    retryRequest.resolve([makeBrowseItem('', { id: 51 })])
+    await settle()
+    expect(wrapper.find('.history-list-loader').exists()).toBe(false)
+    expect(wrapper.findAll('.browse-card')).toHaveLength(51)
+    wrapper.unmount()
+  })
+
+  test('解析历史分页失败后隐藏提示并允许重试', async () => {
+    const failedRequest = deferred<ParseHistoryItem[]>()
+    const retryRequest = deferred<ParseHistoryItem[]>()
+    mocks.getBrowseHistory.mockResolvedValueOnce([makeBrowseItem()])
+    mocks.getParseHistory
+      .mockResolvedValueOnce(makeParsePage())
+      .mockReturnValueOnce(failedRequest.promise)
+      .mockReturnValueOnce(retryRequest.promise)
+
+    const wrapper = mount(HistoryPage)
+    await settle()
+    const tabButtons = wrapper.findAll('.tab-btn')
+    await tabButtons[1].trigger('click')
+    await settle()
+    const scrollElement = await triggerNearBottom(wrapper)
+    expect(wrapper.find('.history-list-loader').exists()).toBe(true)
+
+    failedRequest.reject(new Error('parse page failed'))
+    await settle()
+    expect(wrapper.find('.history-list-loader').exists()).toBe(false)
+    expect(wrapper.findAll('.parse-card')).toHaveLength(50)
+
+    scrollElement.dispatchEvent(new CustomEvent('ion-scroll', { detail: { scrollTop: 250 } }))
+    await nextTick()
+    expect(wrapper.find('.history-list-loader').exists()).toBe(true)
+    expect(mocks.getParseHistory).toHaveBeenCalledTimes(3)
+    expect(mocks.getParseHistory).toHaveBeenNthCalledWith(3, 50, 50)
+
+    retryRequest.resolve([makeParseItem(51, { text: '重试成功' })])
+    await settle()
+    expect(wrapper.find('.history-list-loader').exists()).toBe(false)
+    expect(wrapper.findAll('.parse-card')).toHaveLength(51)
+    wrapper.unmount()
+  })
+
+  test('分页 pending 时快速切换只显示当前 Tab 的提示且不影响分组折叠', async () => {
+    const browseRequest = deferred<BrowseHistoryItem[]>()
+    mocks.getBrowseHistory
+      .mockResolvedValueOnce(makeBrowsePage())
+      .mockReturnValueOnce(browseRequest.promise)
+    mocks.getParseHistory.mockResolvedValueOnce([makeParseItem()])
+
+    const wrapper = mount(HistoryPage)
+    await settle()
+    await wrapper.get('#history-group-toggle-today').trigger('click')
+
+    const scrollElement = await triggerNearBottom(wrapper)
+    expect(wrapper.find('.history-list-loader').exists()).toBe(true)
+    expect(wrapper.find('#history-group-content-today').exists()).toBe(false)
+
+    const tabButtons = wrapper.findAll('.tab-btn')
+    await tabButtons[1].trigger('click')
+    await settle()
+    expect(tabButtons[1].classes()).toContain('active')
+    expect(wrapper.find('.history-list-loader').exists()).toBe(false)
+    expect(wrapper.findAll('.parse-card')).toHaveLength(1)
+
+    await tabButtons[0].trigger('click')
+    await settle()
+    expect(tabButtons[0].classes()).toContain('active')
+    expect(wrapper.find('.history-list-loader').exists()).toBe(true)
+    expect(wrapper.get('#history-group-toggle-today').attributes('aria-expanded')).toBe('false')
+    expect(wrapper.find('#history-group-content-today').exists()).toBe(false)
+
+    browseRequest.resolve([])
+    await settle()
+    expect(wrapper.find('.history-list-loader').exists()).toBe(false)
+    expect(wrapper.get('#history-group-toggle-today').attributes('aria-expanded')).toBe('false')
+    expect(scrollElement.scrollTop).toBe(250)
     wrapper.unmount()
   })
 })

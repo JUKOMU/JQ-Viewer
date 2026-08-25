@@ -208,6 +208,10 @@ const browseHasMore = ref(true)
 const parseHasMore = ref(true)
 const loadingMoreByTab = reactive<Record<HistoryTab, boolean>>({ browse: false, parse: false })
 const tabLoaded = reactive<Record<HistoryTab, boolean>>({ browse: false, parse: false })
+const tabHasSnapshotMetadata = reactive<Record<HistoryTab, boolean>>({
+  browse: false,
+  parse: false,
+})
 const tabLoadPromises: Record<HistoryTab, Promise<void> | null> = {
   browse: null,
   parse: null,
@@ -307,6 +311,7 @@ async function loadBrowse(generation = tabRequestGeneration.browse) {
   const page = normalizeHistoryPage(await HistoryService.getBrowseHistory(PAGE_SIZE, 0))
   if (generation !== tabRequestGeneration.browse) return
   browseItems.value = page.items
+  tabHasSnapshotMetadata.browse = !page.legacyArray
   updateBrowseTotalCount(
     page.totalCount,
     page.legacyArray ? page.items.length === PAGE_SIZE : page.items.length < page.totalCount,
@@ -342,6 +347,7 @@ async function loadParse(generation = tabRequestGeneration.parse) {
   const page = normalizeHistoryPage(await HistoryService.getParseHistory(PAGE_SIZE, 0))
   if (generation !== tabRequestGeneration.parse) return
   parseItems.value = page.items
+  tabHasSnapshotMetadata.parse = !page.legacyArray
   updateParseTotalCount(
     page.totalCount,
     page.legacyArray ? page.items.length === PAGE_SIZE : page.items.length < page.totalCount,
@@ -432,46 +438,14 @@ function ensureTabLoaded(tab: HistoryTab): Promise<void> {
   return promise
 }
 
-async function refreshTabTotalCount(tab: HistoryTab) {
-  if (!tabLoaded[tab] || tabLoadPromises[tab] || loadingMoreByTab[tab]) return
-  const generation = tabRequestGeneration[tab]
-  if (tab === 'browse') {
-    const getTotalCount = HistoryService.getBrowseHistoryTotalCount
-    if (typeof getTotalCount !== 'function') return
-    const totalCount = await getTotalCount()
-    if (generation !== tabRequestGeneration.browse) return
-    if (totalCount !== null) {
-      const shouldReload =
-        totalCount < browseItems.value.length || (totalCount > 0 && browseItems.value.length === 0)
-      updateBrowseTotalCount(totalCount)
-      if (shouldReload) {
-        invalidateTab('browse')
-        await ensureTabLoaded('browse')
-      }
-    }
-  } else {
-    const getTotalCount = HistoryService.getParseHistoryTotalCount
-    if (typeof getTotalCount !== 'function') return
-    const totalCount = await getTotalCount()
-    if (generation !== tabRequestGeneration.parse) return
-    if (totalCount !== null) {
-      const shouldReload =
-        totalCount < parseItems.value.length || (totalCount > 0 && parseItems.value.length === 0)
-      updateParseTotalCount(totalCount)
-      if (shouldReload) {
-        invalidateTab('parse')
-        await ensureTabLoaded('parse')
-      }
-    }
-  }
-}
-
 async function refreshTabOnActivation(tab: HistoryTab) {
   if (!tabLoaded[tab]) {
     if (activeTab.value === tab) await ensureTabLoaded(tab)
     return
   }
-  await refreshTabTotalCount(tab)
+  if (!tabHasSnapshotMetadata[tab]) return
+  invalidateTab(tab)
+  await ensureTabLoaded(tab)
 }
 
 function invalidateTab(tab: HistoryTab) {

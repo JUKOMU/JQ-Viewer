@@ -72,15 +72,6 @@ export const HistoryService = {
     }
   },
 
-  async getBrowseHistoryTotalCount(): Promise<number | null> {
-    try {
-      const result = await JmcomicService.getBrowseHistoryTotalCount()
-      return result.count
-    } catch {
-      return null
-    }
-  },
-
   async recordBrowse(item: Omit<BrowseHistoryItem, 'id' | 'timestamp'>): Promise<void> {
     if (!item.albumTitle) return
     try {
@@ -120,15 +111,6 @@ export const HistoryService = {
       }
     } catch {
       return { items: [], totalCount: 0 }
-    }
-  },
-
-  async getParseHistoryTotalCount(): Promise<number | null> {
-    try {
-      const result = await JmcomicService.getParseHistoryTotalCount()
-      return result.count
-    } catch {
-      return null
     }
   },
 

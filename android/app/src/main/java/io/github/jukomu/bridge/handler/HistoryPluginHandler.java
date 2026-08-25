@@ -38,19 +38,6 @@ public final class HistoryPluginHandler {
     }
 
     /**
-     * 查询浏览历史总数，不读取历史条目。
-     */
-    public void getBrowseHistoryTotalCount(PluginCall call) {
-        try {
-            JSObject result = new JSObject();
-            result.put("count", historyStore.getBrowseHistoryTotalCount());
-            call.resolve(result);
-        } catch (Exception error) {
-            call.reject(error.getMessage(), error);
-        }
-    }
-
-    /**
      * 记录浏览历史；缺失的专辑和章节字段按空字符串传给 Store。
      */
     public void recordBrowse(PluginCall call) {
@@ -105,19 +92,6 @@ public final class HistoryPluginHandler {
             JSObject result = new JSObject();
             result.put("items", data.optJSONArray("items"));
             result.put("totalCount", data.optLong("totalCount", 0L));
-            call.resolve(result);
-        } catch (Exception error) {
-            call.reject(error.getMessage(), error);
-        }
-    }
-
-    /**
-     * 查询解析历史总数，不读取历史条目。
-     */
-    public void getParseHistoryTotalCount(PluginCall call) {
-        try {
-            JSObject result = new JSObject();
-            result.put("count", historyStore.getParseHistoryTotalCount());
             call.resolve(result);
         } catch (Exception error) {
             call.reject(error.getMessage(), error);

@@ -60,7 +60,7 @@ export const HistoryService = {
   async getBrowseHistory(
     limit: number = 50,
     offset: number = 0,
-  ): Promise<HistoryPageResult<BrowseHistoryItem>> {
+  ): Promise<HistoryPageResult<BrowseHistoryItem> | null> {
     try {
       const result = await JmcomicService.getBrowseHistory(limit, offset)
       return {
@@ -68,7 +68,7 @@ export const HistoryService = {
         totalCount: result.totalCount,
       }
     } catch {
-      return { items: [], totalCount: 0 }
+      return null
     }
   },
 
@@ -102,7 +102,7 @@ export const HistoryService = {
   async getParseHistory(
     limit: number = 50,
     offset: number = 0,
-  ): Promise<HistoryPageResult<ParseHistoryItem>> {
+  ): Promise<HistoryPageResult<ParseHistoryItem> | null> {
     try {
       const result = await JmcomicService.getParseHistory(limit, offset)
       return {
@@ -110,7 +110,7 @@ export const HistoryService = {
         totalCount: result.totalCount,
       }
     } catch {
-      return { items: [], totalCount: 0 }
+      return null
     }
   },
 

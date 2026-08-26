@@ -2,6 +2,7 @@ package io.github.jukomu.bridge.handler;
 
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
+import org.json.JSONObject;
 
 import io.github.jukomu.feature.history.data.HistoryStore;
 
@@ -19,14 +20,17 @@ public final class HistoryPluginHandler {
     }
 
     /**
-     * 查询浏览历史；缺省分页参数均为 0，结果固定包装在 {@code items} 字段中。
+     * 查询浏览历史；缺省分页参数均为 0，结果包含当前页 {@code items} 和全量
+     * {@code totalCount}。
      */
     public void getBrowseHistory(PluginCall call) {
         try {
             int limit = call.getInt("limit", 0);
             int offset = call.getInt("offset", 0);
+            JSONObject data = historyStore.getBrowseHistory(limit, offset);
             JSObject result = new JSObject();
-            result.put("items", historyStore.getBrowseHistory(limit, offset));
+            result.put("items", data.optJSONArray("items"));
+            result.put("totalCount", data.optLong("totalCount", 0L));
             call.resolve(result);
         } catch (Exception error) {
             call.reject(error.getMessage(), error);
@@ -77,14 +81,17 @@ public final class HistoryPluginHandler {
     }
 
     /**
-     * 查询解析历史；缺省分页参数均为 0，结果固定包装在 {@code items} 字段中。
+     * 查询解析历史；缺省分页参数均为 0，结果包含当前页 {@code items} 和全量
+     * {@code totalCount}。
      */
     public void getParseHistory(PluginCall call) {
         try {
             int limit = call.getInt("limit", 0);
             int offset = call.getInt("offset", 0);
+            JSONObject data = historyStore.getParseHistory(limit, offset);
             JSObject result = new JSObject();
-            result.put("items", historyStore.getParseHistory(limit, offset));
+            result.put("items", data.optJSONArray("items"));
+            result.put("totalCount", data.optLong("totalCount", 0L));
             call.resolve(result);
         } catch (Exception error) {
             call.reject(error.getMessage(), error);

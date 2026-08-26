@@ -416,6 +416,11 @@ export interface LatencyResult {
 
 // --- 历史记录 ---
 
+export interface HistoryPageResult<T> {
+  items: T[]
+  totalCount: number
+}
+
 /** 浏览历史条目 */
 export interface BrowseHistoryItem {
   id: number

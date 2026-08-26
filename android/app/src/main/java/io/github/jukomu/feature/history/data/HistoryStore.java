@@ -128,39 +128,50 @@ public class HistoryStore extends SQLiteOpenHelper {
     }
 
     /**
-     * 获取浏览历史（按 timestamp DESC），支持 offset/limit 分页
+     * 获取浏览历史（按 timestamp DESC），支持 offset/limit 分页，并返回全量记录数。
      */
-    public JSONArray getBrowseHistory(int limit, int offset) {
+    public JSONObject getBrowseHistory(int limit, int offset) {
+        JSONObject result = new JSONObject();
         JSONArray arr = new JSONArray();
-        Cursor c = null;
+        Cursor dataCursor = null;
         try {
+            SQLiteDatabase db = getReadableDatabase();
+            long totalCount = countRows(TABLE_BROWSE);
             String limitClause = limit > 0
                 ? (offset > 0 ? offset + "," + limit : String.valueOf(limit))
                 : null;
-            c = getReadableDatabase().query(TABLE_BROWSE,
+            dataCursor = db.query(TABLE_BROWSE,
                 new String[]{COL_ID, COL_ALBUM_ID, COL_ALBUM_TITLE, COL_COVER_URL, COL_AUTHORS,
                     COL_CHAPTER_ID, COL_CHAPTER_TITLE, COL_TIMESTAMP},
                 null, null, null, null,
                 COL_TIMESTAMP + " DESC",
                 limitClause);
-            while (c.moveToNext()) {
+            while (dataCursor.moveToNext()) {
                 JSONObject obj = new JSONObject();
-                obj.put("id", c.getLong(0));
-                obj.put("albumId", c.getString(1));
-                obj.put("albumTitle", c.getString(2));
-                obj.put("coverUrl", c.getString(3));
-                obj.put("authors", c.getString(4));
-                obj.put("chapterId", c.getString(5));
-                obj.put("chapterTitle", c.getString(6));
-                obj.put("timestamp", c.getLong(7));
+                obj.put("id", dataCursor.getLong(0));
+                obj.put("albumId", dataCursor.getString(1));
+                obj.put("albumTitle", dataCursor.getString(2));
+                obj.put("coverUrl", dataCursor.getString(3));
+                obj.put("authors", dataCursor.getString(4));
+                obj.put("chapterId", dataCursor.getString(5));
+                obj.put("chapterTitle", dataCursor.getString(6));
+                obj.put("timestamp", dataCursor.getLong(7));
                 arr.put(obj);
             }
+            result.put("items", arr);
+            result.put("totalCount", totalCount);
         } catch (Exception e) {
             android.util.Log.w("HistoryStore", "getBrowseHistory failed", e);
+            try {
+                result.put("items", new JSONArray());
+                result.put("totalCount", 0L);
+            } catch (Exception ignored) {
+                android.util.Log.w("HistoryStore", "构建浏览历史默认返回值失败", ignored);
+            }
         } finally {
-            if (c != null) c.close();
+            if (dataCursor != null) dataCursor.close();
         }
-        return arr;
+        return result;
     }
 
     /**
@@ -209,32 +220,43 @@ public class HistoryStore extends SQLiteOpenHelper {
         }
     }
 
-    public JSONArray getParseHistory(int limit, int offset) {
+    public JSONObject getParseHistory(int limit, int offset) {
+        JSONObject result = new JSONObject();
         JSONArray arr = new JSONArray();
-        Cursor c = null;
+        Cursor dataCursor = null;
         try {
+            SQLiteDatabase db = getReadableDatabase();
+            long totalCount = countRows(TABLE_PARSE);
             String limitClause = limit > 0
                 ? (offset > 0 ? offset + "," + limit : String.valueOf(limit))
                 : null;
-            c = getReadableDatabase().query(TABLE_PARSE,
+            dataCursor = db.query(TABLE_PARSE,
                 new String[]{COL_ID, COL_TEXT, COL_TIMESTAMP, COL_MODE},
                 null, null, null, null,
                 COL_TIMESTAMP + " DESC",
                 limitClause);
-            while (c.moveToNext()) {
+            while (dataCursor.moveToNext()) {
                 JSONObject obj = new JSONObject();
-                obj.put("id", c.getLong(0));
-                obj.put("text", c.getString(1));
-                obj.put("timestamp", c.getLong(2));
-                obj.put("mode", c.getString(3));
+                obj.put("id", dataCursor.getLong(0));
+                obj.put("text", dataCursor.getString(1));
+                obj.put("timestamp", dataCursor.getLong(2));
+                obj.put("mode", dataCursor.getString(3));
                 arr.put(obj);
             }
+            result.put("items", arr);
+            result.put("totalCount", totalCount);
         } catch (Exception e) {
             android.util.Log.w("HistoryStore", "getParseHistory failed", e);
+            try {
+                result.put("items", new JSONArray());
+                result.put("totalCount", 0L);
+            } catch (Exception ignored) {
+                android.util.Log.w("HistoryStore", "构建解析历史默认返回值失败", ignored);
+            }
         } finally {
-            if (c != null) c.close();
+            if (dataCursor != null) dataCursor.close();
         }
-        return arr;
+        return result;
     }
 
     public void clearParseHistory() {
@@ -250,6 +272,16 @@ public class HistoryStore extends SQLiteOpenHelper {
             getWritableDatabase().delete(TABLE_PARSE, COL_ID + "=?", new String[]{String.valueOf(id)});
         } catch (Exception e) {
             android.util.Log.w("HistoryStore", "deleteParseItem failed", e);
+        }
+    }
+
+    private long countRows(String table) {
+        try (Cursor cursor = getReadableDatabase().rawQuery(
+            "SELECT COUNT(*) FROM " + table, null)) {
+            return cursor.moveToFirst() ? cursor.getLong(0) : 0L;
+        } catch (Exception e) {
+            android.util.Log.w("HistoryStore", "countRows failed for " + table, e);
+            return 0L;
         }
     }
 }

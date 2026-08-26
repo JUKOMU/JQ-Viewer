@@ -603,10 +603,16 @@ async function handleMenuDelete() {
             updateBrowseTotalCount(Math.max(0, browseTotalCount.value - 1))
             refreshBrowseGrouping()
             pruneCollapsedBrowseGroups()
+            if (browseItems.value.length === 0 && browseHasMore.value) {
+              await loadMoreBrowse()
+            }
           } else {
             await HistoryService.deleteParseItem(m.item.id)
             parseItems.value = parseItems.value.filter((i) => i.id !== m.item.id)
             updateParseTotalCount(Math.max(0, parseTotalCount.value - 1))
+            if (parseItems.value.length === 0 && parseHasMore.value) {
+              await loadMoreParse()
+            }
           }
         },
       },

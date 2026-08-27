@@ -1226,7 +1226,7 @@ function formatRelativeTime(timestamp: number): string {
 
 .date-group-count {
   color: #b89078;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
 }
 
@@ -1387,6 +1387,7 @@ function formatRelativeTime(timestamp: number): string {
   box-shadow: 5px 12px 28px rgb(76 42 24 / 0.2);
   cursor: pointer;
   transition: transform 0.16s ease;
+  margin-bottom: 6px;
 }
 
 .parse-card:active {

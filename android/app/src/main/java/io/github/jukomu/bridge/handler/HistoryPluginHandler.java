@@ -2,6 +2,7 @@ package io.github.jukomu.bridge.handler;
 
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import io.github.jukomu.feature.history.data.HistoryStore;
@@ -20,17 +21,36 @@ public final class HistoryPluginHandler {
     }
 
     /**
-     * 查询浏览历史；缺省分页参数均为 0，结果包含当前页 {@code items} 和全量
-     * {@code totalCount}。
+     * 查询浏览历史；缺省分页参数均为 0，结果包含当前页 {@code items} 和查询范围内的
+     * {@code totalCount}。时间边界为可选的左闭右开区间。
      */
     public void getBrowseHistory(PluginCall call) {
         try {
             int limit = call.getInt("limit", 0);
             int offset = call.getInt("offset", 0);
-            JSONObject data = historyStore.getBrowseHistory(limit, offset);
+            Long startInclusive = optionalLong(call, "startInclusive");
+            Long endExclusive = optionalLong(call, "endExclusive");
+            JSONObject data = historyStore.getBrowseHistory(
+                limit, offset, startInclusive, endExclusive);
             JSObject result = new JSObject();
             result.put("items", data.optJSONArray("items"));
             result.put("totalCount", data.optLong("totalCount", 0L));
+            call.resolve(result);
+        } catch (Exception error) {
+            call.reject(error.getMessage(), error);
+        }
+    }
+
+    /**
+     * 查询浏览历史概览；时间分组边界由前端生成后原样传入，Store 只负责聚合统计。
+     */
+    public void getBrowseHistoryOverview(PluginCall call) {
+        try {
+            JSONArray ranges = call.getData().getJSONArray("ranges");
+            JSONObject data = historyStore.getBrowseHistoryOverview(ranges);
+            JSObject result = new JSObject();
+            result.put("totalCount", data.getLong("totalCount"));
+            result.put("groupCounts", data.getJSONObject("groupCounts"));
             call.resolve(result);
         } catch (Exception error) {
             call.reject(error.getMessage(), error);
@@ -141,5 +161,20 @@ public final class HistoryPluginHandler {
         JSObject result = new JSObject();
         result.put("success", true);
         call.resolve(result);
+    }
+
+    private static Long optionalLong(PluginCall call, String key) throws Exception {
+        JSONObject data = call.getData();
+        if (!data.has(key) || data.isNull(key)) return null;
+        Object value = data.get(key);
+        if (!(value instanceof Number)) {
+            throw new IllegalArgumentException(key + " must be a finite integer");
+        }
+        double numericValue = ((Number) value).doubleValue();
+        if (!Double.isFinite(numericValue) || numericValue != Math.rint(numericValue)
+            || numericValue < Long.MIN_VALUE || numericValue > Long.MAX_VALUE) {
+            throw new IllegalArgumentException(key + " must be a finite integer");
+        }
+        return ((Number) value).longValue();
     }
 }

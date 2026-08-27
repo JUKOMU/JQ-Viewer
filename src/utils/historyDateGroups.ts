@@ -1,14 +1,10 @@
-import type { BrowseHistoryItem } from '@/services/JmcomicTypes'
+import type {
+  BrowseHistoryGroupKey,
+  BrowseHistoryItem,
+  BrowseHistoryRange,
+} from '@/services/JmcomicTypes'
 
-export type BrowseGroupKey =
-  | 'today'
-  | 'yesterday'
-  | 'thisWeek'
-  | 'thisMonth'
-  | 'lastThreeMonths'
-  | 'lastSixMonths'
-  | 'thisYear'
-  | 'earlier'
+export type BrowseGroupKey = BrowseHistoryGroupKey
 
 export interface BrowseHistoryGroup {
   key: BrowseGroupKey
@@ -30,6 +26,11 @@ export const BROWSE_GROUP_DEFINITIONS = [
 interface BrowseGroupBoundary {
   key: Exclude<BrowseGroupKey, 'earlier'>
   startMs: number
+}
+
+export interface BrowseHistoryGroupSnapshot {
+  nowMs: number
+  ranges: readonly BrowseHistoryRange[]
 }
 
 function startOfLocalDay(year: number, month: number, date: number): number {
@@ -65,14 +66,41 @@ function buildBoundaries(nowMs: number): BrowseGroupBoundary[] {
   ]
 }
 
-function getGroupKey(
-  timestamp: number,
-  boundaries: readonly BrowseGroupBoundary[],
-): BrowseGroupKey {
+function getMinimumStart(boundaries: readonly BrowseGroupBoundary[], endExclusive: number): number {
+  return Math.min(...boundaries.slice(0, endExclusive).map((boundary) => boundary.startMs))
+}
+
+export function createBrowseHistorySnapshot(
+  nowMs: number = Date.now(),
+): BrowseHistoryGroupSnapshot {
+  const candidate = new Date(nowMs).getTime()
+  const snapshotNowMs = Number.isFinite(candidate) ? nowMs : Date.now()
+  const boundaries = buildBoundaries(snapshotNowMs)
+  const ranges = BROWSE_GROUP_DEFINITIONS.map(({ key }) => {
+    if (key === 'earlier') {
+      return {
+        key,
+        startInclusive: null,
+        endExclusive: getMinimumStart(boundaries, boundaries.length),
+      }
+    }
+
+    const boundaryIndex = boundaries.findIndex((boundary) => boundary.key === key)
+    const startInclusive = boundaries[boundaryIndex]?.startMs ?? null
+    const endExclusive = boundaryIndex > 0 ? getMinimumStart(boundaries, boundaryIndex) : null
+    return { key, startInclusive, endExclusive }
+  })
+
+  return { nowMs: snapshotNowMs, ranges }
+}
+
+function getGroupKey(timestamp: number, snapshot: BrowseHistoryGroupSnapshot): BrowseGroupKey {
   if (!Number.isFinite(timestamp)) return 'earlier'
 
-  for (const boundary of boundaries) {
-    if (timestamp >= boundary.startMs) return boundary.key
+  for (const range of snapshot.ranges) {
+    if (range.startInclusive !== null && timestamp < range.startInclusive) continue
+    if (range.endExclusive !== null && timestamp >= range.endExclusive) continue
+    return range.key
   }
   return 'earlier'
 }
@@ -81,11 +109,11 @@ export function groupBrowseHistory(
   items: readonly BrowseHistoryItem[],
   nowMs: number = Date.now(),
 ): BrowseHistoryGroup[] {
-  const boundaries = buildBoundaries(nowMs)
+  const snapshot = createBrowseHistorySnapshot(nowMs)
   const itemsByKey = new Map<BrowseGroupKey, BrowseHistoryItem[]>()
 
   for (const item of items) {
-    const key = getGroupKey(item.timestamp, boundaries)
+    const key = getGroupKey(item.timestamp, snapshot)
     const groupItems = itemsByKey.get(key)
     if (groupItems) groupItems.push(item)
     else itemsByKey.set(key, [item])

@@ -1,5 +1,6 @@
 import { createAppAlert } from '@/services/AppAlertService'
 import type {
+  BrowseHistoryRange,
   BrowseHistoryItem,
   DownloadProgressEvent,
   FavoriteQuery,
@@ -347,8 +348,19 @@ export const JmcomicService = {
 
   // ========== 浏览历史 ==========
 
-  getBrowseHistory(limit: number, offset: number = 0) {
-    return native.getBrowseHistory({ limit, offset })
+  getBrowseHistory(
+    limit: number,
+    offset: number = 0,
+    range?: Pick<BrowseHistoryRange, 'startInclusive' | 'endExclusive'>,
+  ) {
+    return native.getBrowseHistory({
+      limit,
+      offset,
+      ...(range ? { startInclusive: range.startInclusive, endExclusive: range.endExclusive } : {}),
+    })
+  },
+  getBrowseHistoryOverview(ranges: readonly BrowseHistoryRange[]) {
+    return native.getBrowseHistoryOverview({ ranges })
   },
   recordBrowse(item: Omit<BrowseHistoryItem, 'id' | 'timestamp'>) {
     return native.recordBrowse(item)

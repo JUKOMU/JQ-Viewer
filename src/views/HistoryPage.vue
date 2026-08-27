@@ -28,7 +28,15 @@
     <IonContent ref="contentRef" :scroll-events="true" @ion-scroll="onScroll">
       <div class="page-shell">
         <div v-if="activeTab === 'browse'" class="tab-content">
-          <div v-if="browseItems.length === 0" class="empty-state">
+          <div v-if="!browseOverviewLoaded && browseOverviewError" class="history-error">
+            <IonIcon :icon="timeOutline" class="empty-icon" />
+            <p>浏览历史加载失败</p>
+            <button type="button" class="retry-btn" @click="retryBrowseOverview">重试</button>
+          </div>
+          <div v-else-if="!browseOverviewLoaded" class="empty-state">
+            <IonSpinner name="dots" />
+          </div>
+          <div v-else-if="browseGroups.length === 0" class="empty-state">
             <IonIcon :icon="timeOutline" class="empty-icon" />
             <p>暂无浏览记录</p>
             <p class="empty-hint">开始浏览本子，记录将自动出现在这里</p>
@@ -38,7 +46,7 @@
               <span class="section-title">共 {{ browseTotalCount }} 条记录</span>
               <button type="button" class="clear-btn" @click="confirmClearBrowse">清空</button>
             </div>
-            <TransitionGroup name="history-list" tag="div" class="card-list">
+            <div class="card-list">
               <section v-for="group in browseGroups" :key="group.key" class="date-group">
                 <h2 class="date-group-heading">
                   <button
@@ -50,7 +58,10 @@
                     :aria-label="`${isBrowseGroupCollapsed(group.key) ? '展开' : '收起'}${group.label}`"
                     @click="toggleBrowseGroup(group.key)"
                   >
-                    <span>{{ group.label }}</span>
+                    <span>
+                      {{ group.label }}
+                      <span class="date-group-count">({{ group.totalCount }})</span>
+                    </span>
                     <IonIcon
                       class="date-group-toggle-icon"
                       :class="{ collapsed: isBrowseGroupCollapsed(group.key) }"
@@ -59,51 +70,65 @@
                     />
                   </button>
                 </h2>
-                <Transition name="history-drawer">
-                  <div
-                    v-if="!isBrowseGroupCollapsed(group.key)"
-                    :id="browseGroupContentId(group.key)"
-                    class="date-group-content"
-                    role="region"
-                    :aria-labelledby="browseGroupToggleId(group.key)"
-                  >
-                    <div class="date-group-content-inner">
-                      <TransitionGroup name="history-list" tag="div" class="date-group-cards">
-                        <div
-                          v-for="item in group.items"
-                          :key="item.id"
-                          class="browse-card"
-                          @click="openAlbum(item)"
-                        >
-                          <div class="card-cover-wrap">
-                            <img :src="item.coverUrl" class="card-cover" alt="" loading="lazy" />
-                          </div>
-                          <div class="card-body">
-                            <h3 class="card-title">{{ item.albumTitle }}</h3>
-                            <div class="card-id">ID: {{ item.albumId }}</div>
-                            <div class="card-meta">作者：{{ item.authors }}</div>
-                            <div class="card-meta">{{ formatRelativeTime(item.timestamp) }}</div>
-                            <div v-if="item.chapterTitle" class="card-chapter">
-                              <IonIcon :icon="bookOutline" class="chapter-icon" />
-                              <span>{{ item.chapterTitle }}</span>
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            class="card-more-btn"
-                            :class="{ active: contextMenu?.item.id === item.id }"
-                            aria-label="更多操作"
-                            @click.stop="openContextMenu(item, $event)"
-                          >
-                            <IonIcon :icon="ellipsisVertical" />
-                          </button>
+                <div
+                  v-show="!isBrowseGroupCollapsed(group.key)"
+                  :id="browseGroupContentId(group.key)"
+                  class="date-group-content"
+                  role="region"
+                  :aria-labelledby="browseGroupToggleId(group.key)"
+                >
+                  <div class="date-group-content-inner">
+                    <div class="date-group-cards">
+                      <div
+                        v-for="item in group.items"
+                        :key="item.id"
+                        class="browse-card"
+                        @click="openAlbum(item)"
+                      >
+                        <div class="card-cover-wrap">
+                          <img :src="item.coverUrl" class="card-cover" alt="" loading="lazy" />
                         </div>
-                      </TransitionGroup>
+                        <div class="card-body">
+                          <h3 class="card-title">{{ item.albumTitle }}</h3>
+                          <div class="card-id">ID: {{ item.albumId }}</div>
+                          <div class="card-meta">作者：{{ item.authors }}</div>
+                          <div class="card-meta">{{ formatRelativeTime(item.timestamp) }}</div>
+                          <div v-if="item.chapterTitle" class="card-chapter">
+                            <IonIcon :icon="bookOutline" class="chapter-icon" />
+                            <span>{{ item.chapterTitle }}</span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          class="card-more-btn"
+                          :class="{ active: contextMenu?.item.id === item.id }"
+                          aria-label="更多操作"
+                          @click.stop="openContextMenu(item, $event)"
+                        >
+                          <IonIcon :icon="ellipsisVertical" />
+                        </button>
+                      </div>
                     </div>
+                    <div
+                      :ref="(element) => setBrowseGroupSentinel(group.key, element)"
+                      class="browse-group-sentinel"
+                      aria-hidden="true"
+                    ></div>
+                    <div v-if="group.loading" class="browse-group-loader">
+                      <IonSpinner name="dots" />
+                    </div>
+                    <button
+                      v-else-if="group.error"
+                      type="button"
+                      class="browse-group-retry"
+                      @click="retryBrowseGroup(group.key)"
+                    >
+                      加载失败，点击重试
+                    </button>
                   </div>
-                </Transition>
+                </div>
               </section>
-            </TransitionGroup>
+            </div>
           </template>
         </div>
 
@@ -118,7 +143,7 @@
               <span class="section-title">共 {{ parseTotalCount }} 条记录</span>
               <button type="button" class="clear-btn" @click="confirmClearParse">清空</button>
             </div>
-            <TransitionGroup name="history-list" tag="div" class="card-list">
+            <TransitionGroup name="parse-history-list" tag="div" class="card-list">
               <div
                 v-for="item in parseItems"
                 :key="item.id"
@@ -154,7 +179,7 @@
           </template>
         </div>
 
-        <div v-if="loadingMoreByTab[activeTab]" class="history-list-loader">
+        <div v-if="activeTab === 'parse' && loadingMoreByTab.parse" class="history-list-loader">
           <IonSpinner name="dots" />
         </div>
       </div>
@@ -173,6 +198,7 @@
 defineOptions({ name: 'HistoryPage' })
 
 import { computed, nextTick, onActivated, onDeactivated, onMounted, reactive, ref } from 'vue'
+import type { ComponentPublicInstance } from 'vue'
 import { useRouter } from 'vue-router'
 import { IonContent, IonIcon, IonPage, IonSpinner } from '@ionic/vue'
 import { createAppAlert } from '@/services/AppAlertService'
@@ -192,8 +218,8 @@ import type {
   HistoryPageResult,
   ParseHistoryItem,
 } from '@/services/JmcomicTypes'
-import { groupBrowseHistory } from '@/utils/historyDateGroups'
-import type { BrowseGroupKey } from '@/utils/historyDateGroups'
+import { BROWSE_GROUP_DEFINITIONS, createBrowseHistorySnapshot } from '@/utils/historyDateGroups'
+import type { BrowseGroupKey, BrowseHistoryGroupSnapshot } from '@/utils/historyDateGroups'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import CardContextMenu from '@/components/common/CardContextMenu.vue'
 
@@ -204,16 +230,14 @@ const scrollEl = ref<HTMLElement | null>(null)
 type HistoryTab = 'browse' | 'parse'
 
 const activeTab = ref<HistoryTab>('browse')
-const browseItems = ref<BrowseHistoryItem[]>([])
 const parseItems = ref<ParseHistoryItem[]>([])
 const browseTotalCount = ref(0)
 const parseTotalCount = ref(0)
-const browseHasMore = ref(true)
 const parseHasMore = ref(true)
 const loadingMoreByTab = reactive<Record<HistoryTab, boolean>>({ browse: false, parse: false })
 const tabLoaded = reactive<Record<HistoryTab, boolean>>({ browse: false, parse: false })
 const tabHasSnapshotMetadata = reactive<Record<HistoryTab, boolean>>({
-  browse: false,
+  browse: true,
   parse: false,
 })
 const tabLoadPromises: Record<HistoryTab, Promise<void> | null> = {
@@ -225,10 +249,59 @@ const tabScrollPositions = reactive<Record<HistoryTab, number>>({ browse: 0, par
 const isTabTransitioning = ref(false)
 let tabTransitionId = 0
 let wasDeactivated = false
-const groupingNow = ref(Date.now())
 const collapsedBrowseGroups = ref<Set<BrowseGroupKey>>(new Set())
 
-const browseGroups = computed(() => groupBrowseHistory(browseItems.value, groupingNow.value))
+interface BrowseGroupState {
+  key: BrowseGroupKey
+  label: string
+  startInclusive: number | null
+  endExclusive: number | null
+  items: BrowseHistoryItem[]
+  totalCount: number
+  offset: number
+  hasMore: boolean
+  loaded: boolean
+  loading: boolean
+  error: boolean
+  generation: number
+}
+
+function createBrowseGroupState(key: BrowseGroupKey, label: string): BrowseGroupState {
+  return {
+    key,
+    label,
+    startInclusive: null,
+    endExclusive: null,
+    items: [],
+    totalCount: 0,
+    offset: 0,
+    hasMore: false,
+    loaded: false,
+    loading: false,
+    error: false,
+    generation: 0,
+  }
+}
+
+const browseGroupStates = reactive(
+  Object.fromEntries(
+    BROWSE_GROUP_DEFINITIONS.map(({ key, label }) => [key, createBrowseGroupState(key, label)]),
+  ) as Record<BrowseGroupKey, BrowseGroupState>,
+)
+const browseSnapshot = ref<BrowseHistoryGroupSnapshot | null>(null)
+const browseOverviewLoaded = ref(false)
+const browseOverviewLoading = ref(false)
+const browseOverviewError = ref(false)
+const browseGroupPromises = new Map<BrowseGroupKey, Promise<void>>()
+const browseGroupSentinels = new Map<BrowseGroupKey, HTMLElement>()
+
+const browseGroups = computed(() => {
+  const snapshot = browseSnapshot.value
+  if (!snapshot) return []
+  return snapshot.ranges
+    .map((range) => browseGroupStates[range.key])
+    .filter((group) => group.totalCount > 0)
+})
 
 function browseGroupToggleId(key: BrowseGroupKey): string {
   return `history-group-toggle-${key}`
@@ -245,12 +318,10 @@ function isBrowseGroupCollapsed(key: BrowseGroupKey): boolean {
 function isContextMenuInBrowseGroup(key: BrowseGroupKey): boolean {
   const menu = contextMenu.value
   if (!menu || menu.type !== 'browse') return false
-  return browseGroups.value.some(
-    (group) => group.key === key && group.items.some((item) => item.id === menu.item.id),
-  )
+  return browseGroupStates[key].items.some((item) => item.id === menu.item.id)
 }
 
-function toggleBrowseGroup(key: BrowseGroupKey) {
+async function toggleBrowseGroup(key: BrowseGroupKey) {
   const next = new Set(collapsedBrowseGroups.value)
   if (next.has(key)) next.delete(key)
   else {
@@ -258,16 +329,14 @@ function toggleBrowseGroup(key: BrowseGroupKey) {
     next.add(key)
   }
   collapsedBrowseGroups.value = next
-}
-
-function pruneCollapsedBrowseGroups() {
-  const visibleKeys = new Set(browseGroups.value.map((group) => group.key))
-  const next = new Set([...collapsedBrowseGroups.value].filter((key) => visibleKeys.has(key)))
-  if (next.size !== collapsedBrowseGroups.value.size) collapsedBrowseGroups.value = next
-}
-
-function refreshBrowseGrouping() {
-  groupingNow.value = Date.now()
+  if (!next.has(key)) {
+    await nextTick()
+    const group = browseGroupStates[key]
+    if (group.totalCount > 0 && (!group.loaded || group.error)) {
+      void loadBrowseGroup(key)
+    }
+    void checkBrowseGroupSentinels()
+  }
 }
 
 type IonContentElement = HTMLElement & {
@@ -280,6 +349,14 @@ async function resolveScrollElement(): Promise<HTMLElement | null> {
   if (!contentEl?.getScrollElement) return null
   scrollEl.value = await contentEl.getScrollElement()
   return scrollEl.value
+}
+
+function setBrowseGroupSentinel(
+  key: BrowseGroupKey,
+  element: Element | ComponentPublicInstance | null,
+) {
+  if (element instanceof HTMLElement) browseGroupSentinels.set(key, element)
+  else browseGroupSentinels.delete(key)
 }
 
 interface NormalizedHistoryPage<T> extends HistoryPageResult<T> {
@@ -301,52 +378,192 @@ function normalizeHistoryPage<T>(
   }
 }
 
-function updateBrowseTotalCount(
-  totalCount: number,
-  hasMore = browseItems.value.length < totalCount,
-) {
-  browseTotalCount.value = Math.max(0, totalCount)
-  browseHasMore.value = hasMore
-}
-
 function updateParseTotalCount(totalCount: number, hasMore = parseItems.value.length < totalCount) {
   parseTotalCount.value = Math.max(0, totalCount)
   parseHasMore.value = hasMore
 }
 
-async function loadBrowse(generation = tabRequestGeneration.browse): Promise<boolean> {
-  const page = normalizeHistoryPage(await HistoryService.getBrowseHistory(PAGE_SIZE, 0))
-  if (!page || generation !== tabRequestGeneration.browse) return false
-  browseItems.value = page.items
-  tabHasSnapshotMetadata.browse = !page.legacyArray
-  updateBrowseTotalCount(
-    page.totalCount,
-    page.legacyArray ? page.items.length === PAGE_SIZE : page.items.length < page.totalCount,
-  )
-  refreshBrowseGrouping()
-  return true
+function getBrowseGroupCount(
+  groupCounts: Partial<Record<BrowseGroupKey, number>>,
+  key: BrowseGroupKey,
+): number {
+  const count = groupCounts[key]
+  return Number.isFinite(count) ? Math.max(0, count as number) : 0
 }
 
-async function loadMoreBrowse() {
-  if (!isTabReadyForPagination('browse') || loadingMoreByTab.browse || !browseHasMore.value) return
-  loadingMoreByTab.browse = true
-  const generation = tabRequestGeneration.browse
-  try {
-    const page = normalizeHistoryPage(
-      await HistoryService.getBrowseHistory(PAGE_SIZE, browseItems.value.length),
+function applyBrowseOverview(
+  snapshot: BrowseHistoryGroupSnapshot,
+  totalCount: number,
+  groupCounts: Partial<Record<BrowseGroupKey, number>>,
+) {
+  browseSnapshot.value = snapshot
+  browseTotalCount.value = Number.isFinite(totalCount) ? Math.max(0, totalCount) : 0
+
+  for (const range of snapshot.ranges) {
+    const group = browseGroupStates[range.key]
+    group.label = BROWSE_GROUP_DEFINITIONS.find((definition) => definition.key === range.key)!.label
+    group.startInclusive = range.startInclusive
+    group.endExclusive = range.endExclusive
+    group.totalCount = getBrowseGroupCount(groupCounts, range.key)
+    if (group.totalCount === 0) {
+      group.items.splice(0)
+      group.offset = 0
+      group.hasMore = false
+      group.loaded = false
+      group.loading = false
+      group.error = false
+    } else {
+      group.hasMore = group.offset < group.totalCount
+    }
+  }
+}
+
+function isBrowseGroupLoadCurrent(
+  key: BrowseGroupKey,
+  groupGeneration: number,
+  browseGeneration: number,
+): boolean {
+  return (
+    browseGeneration === tabRequestGeneration.browse &&
+    groupGeneration === browseGroupStates[key].generation
+  )
+}
+
+function loadBrowseGroup(
+  key: BrowseGroupKey,
+  options: {
+    reset?: boolean
+    targetCount?: number
+    browseGeneration?: number
+  } = {},
+): Promise<void> {
+  const existingPromise = browseGroupPromises.get(key)
+  if (existingPromise) return existingPromise
+
+  const group = browseGroupStates[key]
+  if (group.totalCount <= 0) return Promise.resolve()
+  if (!options.reset && group.loaded && !group.hasMore && !group.error) {
+    return Promise.resolve()
+  }
+
+  if (options.reset) {
+    group.generation += 1
+    group.items.splice(0)
+    group.offset = 0
+    group.loaded = false
+    group.hasMore = group.totalCount > 0
+    group.error = false
+  }
+
+  const groupGeneration = group.generation
+  const browseGeneration = options.browseGeneration ?? tabRequestGeneration.browse
+  const targetCount = Math.max(group.items.length + PAGE_SIZE, options.targetCount ?? 0)
+  const task = (async () => {
+    group.loading = true
+    group.error = false
+    try {
+      while (
+        isBrowseGroupLoadCurrent(key, groupGeneration, browseGeneration) &&
+        group.hasMore &&
+        group.items.length < targetCount
+      ) {
+        const page = normalizeHistoryPage(
+          await HistoryService.getBrowseHistory(PAGE_SIZE, group.offset, {
+            startInclusive: group.startInclusive,
+            endExclusive: group.endExclusive,
+          }),
+        )
+        if (!isBrowseGroupLoadCurrent(key, groupGeneration, browseGeneration)) return
+        if (!page) {
+          group.error = true
+          return
+        }
+
+        if (!page.legacyArray) group.totalCount = Math.max(0, page.totalCount)
+        const knownIds = new Set(group.items.map((item) => item.id))
+        for (const item of page.items) {
+          if (!knownIds.has(item.id)) {
+            group.items.push(item)
+            knownIds.add(item.id)
+          }
+        }
+        group.offset += page.items.length
+        group.loaded = true
+        group.hasMore = page.legacyArray
+          ? page.items.length === PAGE_SIZE
+          : page.items.length > 0 && group.offset < group.totalCount
+        if (page.items.length === 0) group.hasMore = false
+      }
+    } catch {
+      if (isBrowseGroupLoadCurrent(key, groupGeneration, browseGeneration)) group.error = true
+    } finally {
+      if (isBrowseGroupLoadCurrent(key, groupGeneration, browseGeneration)) {
+        group.loading = false
+      }
+    }
+
+    if (isBrowseGroupLoadCurrent(key, groupGeneration, browseGeneration)) {
+      await nextTick()
+      const scrollElement = await resolveScrollElement()
+      if (
+        activeTab.value === 'browse' &&
+        scrollElement &&
+        (scrollElement.clientHeight > 0 || scrollElement.scrollHeight > 0)
+      ) {
+        void checkBrowseGroupSentinels()
+      }
+    }
+  })()
+  browseGroupPromises.set(key, task)
+  void task.finally(() => {
+    if (browseGroupPromises.get(key) === task) browseGroupPromises.delete(key)
+  })
+  return task
+}
+
+function reloadBrowseGroup(
+  key: BrowseGroupKey,
+  targetCount: number,
+  browseGeneration: number,
+): Promise<void> {
+  return loadBrowseGroup(key, { reset: true, targetCount, browseGeneration })
+}
+
+function isSentinelNearViewport(sentinel: HTMLElement, scrollElement: HTMLElement): boolean {
+  const containerRect = scrollElement.getBoundingClientRect()
+  const sentinelRect = sentinel.getBoundingClientRect()
+  const top = sentinelRect.top - containerRect.top
+  const bottom = sentinelRect.bottom - containerRect.top
+  return top < scrollElement.clientHeight + 200 && bottom > -200
+}
+
+async function checkBrowseGroupSentinels() {
+  if (activeTab.value !== 'browse' || isTabTransitioning.value || !tabLoaded.browse) return
+  const scrollElement = await resolveScrollElement()
+  if (!scrollElement) return
+
+  const groups = browseGroups.value.slice(0, BROWSE_GROUP_DEFINITIONS.length)
+  const hasLayout = scrollElement.clientHeight > 0 || scrollElement.scrollHeight > 0
+  if (!hasLayout) {
+    const firstGroup = groups.find(
+      (group) =>
+        !isBrowseGroupCollapsed(group.key) &&
+        !group.loaded &&
+        !group.loading &&
+        !group.error &&
+        group.hasMore,
     )
-    if (!page || generation !== tabRequestGeneration.browse) return
-    if (page.items.length > 0) browseItems.value.push(...page.items)
-    updateBrowseTotalCount(
-      page.totalCount,
-      page.legacyArray
-        ? page.items.length === PAGE_SIZE
-        : browseItems.value.length < page.totalCount,
-    )
-  } finally {
-    if (generation === tabRequestGeneration.browse) {
-      refreshBrowseGrouping()
-      loadingMoreByTab.browse = false
+    if (firstGroup) void loadBrowseGroup(firstGroup.key)
+    return
+  }
+
+  for (const group of groups) {
+    if (isBrowseGroupCollapsed(group.key) || group.loading || group.error || !group.hasMore) {
+      continue
+    }
+    const sentinel = browseGroupSentinels.get(group.key)
+    if (sentinel && isSentinelNearViewport(sentinel, scrollElement)) {
+      void loadBrowseGroup(group.key)
     }
   }
 }
@@ -393,12 +610,16 @@ const onScroll = (event: CustomEvent<{ scrollTop?: number }>) => {
 
   if (!isTabReadyForPagination(tab)) return
 
+  if (tab === 'browse') {
+    void checkBrowseGroupSentinels()
+    return
+  }
+
   const el = scrollEl.value
   if (!el) return
   const threshold = 200
   if (el.scrollHeight - el.scrollTop - el.clientHeight < threshold) {
-    if (tab === 'browse') void loadMoreBrowse().catch(() => undefined)
-    else void loadMoreParse().catch(() => undefined)
+    void loadMoreParse().catch(() => undefined)
   }
 }
 
@@ -429,15 +650,83 @@ function endTabTransition(id: number) {
   if (id === tabTransitionId) isTabTransitioning.value = false
 }
 
-function ensureTabLoaded(tab: HistoryTab): Promise<void> {
+async function loadBrowseOverview(
+  generation: number,
+  reloadGroupCounts?: ReadonlyMap<BrowseGroupKey, number>,
+): Promise<boolean> {
+  const nowMs = Date.now()
+  const snapshot = createBrowseHistorySnapshot(nowMs)
+  browseOverviewLoading.value = true
+  try {
+    const overview = await HistoryService.getBrowseHistoryOverview(snapshot.ranges)
+    if (!overview) {
+      if (generation === tabRequestGeneration.browse && !browseOverviewLoaded.value) {
+        browseOverviewError.value = true
+      }
+      return false
+    }
+    if (generation !== tabRequestGeneration.browse) return false
+
+    applyBrowseOverview(snapshot, overview.totalCount, overview.groupCounts ?? {})
+    browseOverviewLoaded.value = true
+    browseOverviewError.value = false
+
+    if (reloadGroupCounts) {
+      const reloads: Promise<void>[] = []
+      for (const [key, targetCount] of reloadGroupCounts) {
+        const group = browseGroupStates[key]
+        if (targetCount > 0 && group.totalCount > 0) {
+          reloads.push(reloadBrowseGroup(key, targetCount, generation))
+        }
+      }
+      await Promise.all(reloads)
+    }
+
+    await nextTick()
+    if (activeTab.value === 'browse') void checkBrowseGroupSentinels()
+    return true
+  } catch {
+    if (generation === tabRequestGeneration.browse && !browseOverviewLoaded.value) {
+      browseOverviewError.value = true
+    }
+    return false
+  } finally {
+    if (generation === tabRequestGeneration.browse) browseOverviewLoading.value = false
+  }
+}
+
+function retryBrowseOverview() {
+  browseOverviewError.value = false
+  invalidateTab('browse')
+  void ensureTabLoaded('browse')
+}
+
+function retryBrowseGroup(key: BrowseGroupKey) {
+  void loadBrowseGroup(key)
+}
+
+interface EnsureTabOptions {
+  browseGroupCounts?: ReadonlyMap<BrowseGroupKey, number>
+}
+
+function ensureTabLoaded(tab: HistoryTab, options: EnsureTabOptions = {}): Promise<void> {
   if (tabLoaded[tab]) return Promise.resolve()
   if (tabLoadPromises[tab]) return tabLoadPromises[tab]!
 
   const generation = tabRequestGeneration[tab]
   const promise = (async () => {
     try {
-      const loaded = tab === 'browse' ? await loadBrowse(generation) : await loadParse(generation)
-      if (loaded && generation === tabRequestGeneration[tab]) tabLoaded[tab] = true
+      const loaded =
+        tab === 'browse'
+          ? await loadBrowseOverview(generation, options.browseGroupCounts)
+          : await loadParse(generation)
+      if (loaded && generation === tabRequestGeneration[tab]) {
+        tabLoaded[tab] = true
+        if (tab === 'browse') {
+          await nextTick()
+          void checkBrowseGroupSentinels()
+        }
+      }
     } finally {
       if (generation === tabRequestGeneration[tab]) tabLoadPromises[tab] = null
     }
@@ -447,6 +736,24 @@ function ensureTabLoaded(tab: HistoryTab): Promise<void> {
 }
 
 async function refreshTabOnActivation(tab: HistoryTab) {
+  if (tab === 'browse') {
+    if (!tabLoaded.browse) {
+      if (activeTab.value === 'browse') await ensureTabLoaded('browse')
+      return
+    }
+
+    const loadedGroupCounts = new Map<BrowseGroupKey, number>()
+    for (const definition of BROWSE_GROUP_DEFINITIONS) {
+      const group = browseGroupStates[definition.key]
+      if (group.loaded && group.items.length > 0) {
+        loadedGroupCounts.set(group.key, group.items.length)
+      }
+    }
+    invalidateTab('browse')
+    await ensureTabLoaded('browse', { browseGroupCounts: loadedGroupCounts })
+    return
+  }
+
   if (!tabLoaded[tab]) {
     if (activeTab.value === tab) await ensureTabLoaded(tab)
     return
@@ -461,24 +768,61 @@ function invalidateTab(tab: HistoryTab) {
   tabLoaded[tab] = false
   tabLoadPromises[tab] = null
   loadingMoreByTab[tab] = false
+  if (tab === 'browse') {
+    browseGroupPromises.clear()
+    for (const definition of BROWSE_GROUP_DEFINITIONS) {
+      const group = browseGroupStates[definition.key]
+      group.generation += 1
+      group.loading = false
+    }
+  }
 }
 
-async function reloadTabFromFirstPage(tab: HistoryTab, removedId: number) {
+function browseGroupKeyForItem(
+  itemId: number,
+  preferredKey?: BrowseGroupKey,
+): BrowseGroupKey | null {
+  if (preferredKey && browseGroupStates[preferredKey].items.some((item) => item.id === itemId)) {
+    return preferredKey
+  }
+  return (
+    BROWSE_GROUP_DEFINITIONS.find((definition) =>
+      browseGroupStates[definition.key].items.some((item) => item.id === itemId),
+    )?.key ?? null
+  )
+}
+
+async function reloadTabFromFirstPage(
+  tab: HistoryTab,
+  removedId: number,
+  preferredBrowseGroupKey?: BrowseGroupKey,
+) {
+  if (tab === 'browse') {
+    const groupKey = browseGroupKeyForItem(removedId, preferredBrowseGroupKey)
+    const group = groupKey ? browseGroupStates[groupKey] : null
+    const previousLength = group?.items.length ?? 0
+    const removed = group ? group.items.some((item) => item.id === removedId) : false
+    if (group && removed) {
+      group.items = group.items.filter((item) => item.id !== removedId)
+      group.offset = Math.max(0, group.offset - 1)
+      group.totalCount = Math.max(0, group.totalCount - 1)
+      group.hasMore = group.offset < group.totalCount
+      browseTotalCount.value = Math.max(0, browseTotalCount.value - 1)
+    }
+    const reloadGroupCounts = new Map<BrowseGroupKey, number>()
+    if (group?.loaded && previousLength > 0 && groupKey) {
+      reloadGroupCounts.set(groupKey, previousLength)
+    }
+    invalidateTab('browse')
+    await ensureTabLoaded('browse', { browseGroupCounts: reloadGroupCounts })
+    return
+  }
+
   if (!tabHasSnapshotMetadata[tab]) {
-    if (tab === 'browse') {
-      const previousLength = browseItems.value.length
-      browseItems.value = browseItems.value.filter((item) => item.id !== removedId)
-      if (browseItems.value.length !== previousLength) {
-        updateBrowseTotalCount(Math.max(0, browseTotalCount.value - 1))
-        refreshBrowseGrouping()
-        pruneCollapsedBrowseGroups()
-      }
-    } else {
-      const previousLength = parseItems.value.length
-      parseItems.value = parseItems.value.filter((item) => item.id !== removedId)
-      if (parseItems.value.length !== previousLength) {
-        updateParseTotalCount(Math.max(0, parseTotalCount.value - 1))
-      }
+    const previousLength = parseItems.value.length
+    parseItems.value = parseItems.value.filter((item) => item.id !== removedId)
+    if (parseItems.value.length !== previousLength) {
+      updateParseTotalCount(Math.max(0, parseTotalCount.value - 1))
     }
     return
   }
@@ -495,6 +839,7 @@ async function switchTab(tab: HistoryTab) {
   try {
     await ensureTabLoaded(tab)
     await restoreTabScrollPosition(tab)
+    if (tab === 'browse') void checkBrowseGroupSentinels()
   } finally {
     endTabTransition(transitionId)
   }
@@ -506,7 +851,6 @@ onMounted(async () => {
 })
 
 onActivated(() => {
-  refreshBrowseGrouping()
   const shouldRefreshTotals = wasDeactivated
   wasDeactivated = false
   const transitionId = beginTabTransition()
@@ -558,6 +902,7 @@ interface ContextMenuState {
   type: 'browse' | 'parse'
   item: BrowseHistoryItem | ParseHistoryItem
   anchor: HTMLElement
+  browseGroupKey?: BrowseGroupKey
 }
 
 const contextMenu = ref<ContextMenuState | null>(null)
@@ -581,7 +926,9 @@ function openContextMenu(item: BrowseHistoryItem | ParseHistoryItem, event: Mous
     closeContextMenu()
     return
   }
-  contextMenu.value = { type, item, anchor }
+  const browseGroupKey =
+    type === 'browse' ? (browseGroupKeyForItem(item.id) ?? undefined) : undefined
+  contextMenu.value = { type, item, anchor, browseGroupKey }
 }
 
 function closeContextMenu() {
@@ -630,7 +977,7 @@ async function handleMenuDelete() {
         handler: async () => {
           if (isBrowse) {
             await HistoryService.deleteBrowseItem(m.item.id)
-            await reloadTabFromFirstPage('browse', m.item.id)
+            await reloadTabFromFirstPage('browse', m.item.id, m.browseGroupKey)
           } else {
             await HistoryService.deleteParseItem(m.item.id)
             await reloadTabFromFirstPage('parse', m.item.id)
@@ -655,11 +1002,24 @@ async function confirmClearBrowse() {
           invalidateTab('browse')
           await HistoryService.clearBrowseHistory()
           closeContextMenu()
-          browseItems.value = []
-          updateBrowseTotalCount(0)
-          browseHasMore.value = true
+          browseOverviewLoaded.value = true
+          browseOverviewLoading.value = false
+          browseOverviewError.value = false
+          browseSnapshot.value = null
+          browseTotalCount.value = 0
+          for (const definition of BROWSE_GROUP_DEFINITIONS) {
+            const group = browseGroupStates[definition.key]
+            group.items.splice(0)
+            group.totalCount = 0
+            group.offset = 0
+            group.hasMore = false
+            group.loaded = false
+            group.loading = false
+            group.error = false
+          }
+          tabLoaded.browse = false
+          tabHasSnapshotMetadata.browse = true
           collapsedBrowseGroups.value = new Set()
-          refreshBrowseGrouping()
         },
       },
     ],
@@ -765,6 +1125,34 @@ function formatRelativeTime(timestamp: number): string {
   color: #c4a494;
 }
 
+.history-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding-top: 30vh;
+  color: #b85d52;
+}
+
+.history-error p {
+  margin: 0 0 12px;
+  font-size: 14px;
+}
+
+.retry-btn,
+.browse-group-retry {
+  border: 0;
+  border-radius: 6px;
+  background: #fff0e8;
+  color: #c96d3a;
+  cursor: pointer;
+}
+
+.retry-btn {
+  padding: 7px 18px;
+  font-size: 12px;
+}
+
 /* Section header */
 .section-header {
   display: flex;
@@ -836,6 +1224,12 @@ function formatRelativeTime(timestamp: number): string {
   -webkit-tap-highlight-color: transparent;
 }
 
+.date-group-count {
+  color: #b89078;
+  font-size: 12px;
+  font-weight: 500;
+}
+
 .date-group-toggle:focus-visible {
   outline: 2px solid #e8843c;
   outline-offset: 1px;
@@ -854,14 +1248,11 @@ function formatRelativeTime(timestamp: number): string {
 }
 
 .date-group-content {
-  display: grid;
-  grid-template-rows: 1fr;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .date-group-content-inner {
   min-height: 0;
-  overflow: hidden;
 }
 
 .date-group-cards {
@@ -870,17 +1261,24 @@ function formatRelativeTime(timestamp: number): string {
   gap: 6px;
 }
 
-.history-drawer-enter-active,
-.history-drawer-leave-active {
-  transition:
-    grid-template-rows 0.24s ease,
-    opacity 0.18s ease;
+.browse-group-sentinel {
+  height: 1px;
+  pointer-events: none;
 }
 
-.history-drawer-enter-from,
-.history-drawer-leave-to {
-  grid-template-rows: 0fr;
-  opacity: 0;
+.browse-group-loader,
+.browse-group-retry {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  color: #fa9c69;
+}
+
+.browse-group-retry {
+  width: 100%;
+  padding: 10px;
+  font-size: 12px;
 }
 
 /* Browse card */
@@ -1079,35 +1477,33 @@ function formatRelativeTime(timestamp: number): string {
   color: #c96d3a;
 }
 
-/* TransitionGroup */
-.history-list-enter-active,
-.history-list-leave-active {
+/* Parse history TransitionGroup */
+.parse-history-list-enter-active,
+.parse-history-list-leave-active {
   transition:
     opacity 0.28s ease,
     transform 0.28s ease;
 }
 
-.history-list-enter-from {
+.parse-history-list-enter-from {
   opacity: 0;
   transform: translateY(12px) scale(0.97);
 }
 
-.history-list-leave-to {
+.parse-history-list-leave-to {
   opacity: 0;
   transform: translateX(-20px);
 }
 
-.history-list-move {
+.parse-history-list-move {
   transition: transform 0.28s ease;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .date-group-toggle-icon,
-  .history-drawer-enter-active,
-  .history-drawer-leave-active,
-  .history-list-enter-active,
-  .history-list-leave-active,
-  .history-list-move {
+  .parse-history-list-enter-active,
+  .parse-history-list-leave-active,
+  .parse-history-list-move {
     transition-duration: 0.01ms;
   }
 }

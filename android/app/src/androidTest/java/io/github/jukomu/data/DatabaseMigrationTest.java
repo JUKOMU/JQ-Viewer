@@ -5,6 +5,7 @@ import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import androidx.test.platform.app.InstrumentationRegistry;
 import io.github.jukomu.feature.favorite.data.FavoriteStore;
+import io.github.jukomu.feature.history.data.HistoryStore;
 import io.github.jukomu.platform.persistence.SettingsStore;
 import org.junit.Test;
 
@@ -85,6 +86,42 @@ public class DatabaseMigrationTest {
                 db,
                 "SELECT album_id FROM offline_favorites WHERE folder_id = ?",
                 new String[]{"folder-1"}));
+        } finally {
+            db.close();
+        }
+    }
+
+    @Test
+    public void historyUpgradeFromV2PreservesRowsAndCreatesBrowseIndex() throws Exception {
+        SQLiteDatabase db = SQLiteDatabase.create(null);
+        try {
+            db.execSQL("CREATE TABLE browse_history ("
+                + "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                + "album_id TEXT NOT NULL,"
+                + "album_title TEXT NOT NULL,"
+                + "cover_url TEXT NOT NULL DEFAULT '',"
+                + "authors TEXT NOT NULL DEFAULT '',"
+                + "chapter_id TEXT NOT NULL DEFAULT '',"
+                + "chapter_title TEXT NOT NULL DEFAULT '',"
+                + "timestamp INTEGER NOT NULL)");
+            db.execSQL("CREATE TABLE parse_history ("
+                + "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                + "text TEXT NOT NULL,"
+                + "timestamp INTEGER NOT NULL,"
+                + "mode TEXT NOT NULL DEFAULT 'single-mode')");
+            db.execSQL("INSERT INTO browse_history "
+                + "(album_id, album_title, timestamp) VALUES (?, ?, ?)",
+                new Object[]{"album-1", "title", 123L});
+
+            HistoryStore store = newStore(HistoryStore.class);
+            store.onUpgrade(db, 2, 3);
+
+            assertEquals(1, queryInt(db, "SELECT COUNT(*) FROM browse_history", null));
+            assertEquals(1, queryInt(db,
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' "
+                    + "AND name = 'idx_browse_history_timestamp_id'", null));
+            assertEquals("album-1", queryString(db,
+                "SELECT album_id FROM browse_history", null));
         } finally {
             db.close();
         }

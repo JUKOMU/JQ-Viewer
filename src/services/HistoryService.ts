@@ -1,4 +1,10 @@
-import type { BrowseHistoryItem, HistoryPageResult, ParseHistoryItem } from './JmcomicTypes'
+import type {
+  BrowseHistoryItem,
+  BrowseHistoryOverview,
+  BrowseHistoryRange,
+  HistoryPageResult,
+  ParseHistoryItem,
+} from './JmcomicTypes'
 import { JmcomicService } from './JmcomicService'
 
 // ---- localStorage 搜索历史（有界，500 条/上下文）----
@@ -60,12 +66,27 @@ export const HistoryService = {
   async getBrowseHistory(
     limit: number = 50,
     offset: number = 0,
+    range?: Pick<BrowseHistoryRange, 'startInclusive' | 'endExclusive'>,
   ): Promise<HistoryPageResult<BrowseHistoryItem> | null> {
     try {
-      const result = await JmcomicService.getBrowseHistory(limit, offset)
+      const result = await JmcomicService.getBrowseHistory(limit, offset, range)
       return {
         items: result.items as BrowseHistoryItem[],
         totalCount: result.totalCount,
+      }
+    } catch {
+      return null
+    }
+  },
+
+  async getBrowseHistoryOverview(
+    ranges: readonly BrowseHistoryRange[],
+  ): Promise<BrowseHistoryOverview | null> {
+    try {
+      const result = await JmcomicService.getBrowseHistoryOverview(ranges)
+      return {
+        totalCount: result.totalCount,
+        groupCounts: result.groupCounts,
       }
     } catch {
       return null

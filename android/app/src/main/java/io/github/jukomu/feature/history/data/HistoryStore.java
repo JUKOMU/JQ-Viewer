@@ -8,6 +8,10 @@ import android.database.sqlite.SQLiteOpenHelper;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
+
 /**
  * 历史记录 SQLite 数据库。
  * <p>
@@ -17,7 +21,7 @@ import org.json.JSONObject;
 public class HistoryStore extends SQLiteOpenHelper {
 
     private static final String DB_NAME = "jq_history.db";
-    private static final int DB_VERSION = 2;
+    private static final int DB_VERSION = 3;
 
     private static final String TABLE_BROWSE = "browse_history";
     private static final String COL_ID = "id";
@@ -32,6 +36,12 @@ public class HistoryStore extends SQLiteOpenHelper {
     private static final String TABLE_PARSE = "parse_history";
     private static final String COL_TEXT = "text";
     private static final String COL_MODE = "mode";
+
+    private static final String BROWSE_INDEX = "idx_browse_history_timestamp_id";
+    private static final String[] BROWSE_GROUP_KEYS = {
+        "today", "yesterday", "thisWeek", "thisMonth",
+        "lastThreeMonths", "lastSixMonths", "thisYear", "earlier"
+    };
 
     private static HistoryStore instance;
 
@@ -65,12 +75,17 @@ public class HistoryStore extends SQLiteOpenHelper {
             + COL_TIMESTAMP + " INTEGER NOT NULL,"
             + COL_MODE + " TEXT NOT NULL DEFAULT 'single-mode'"
             + ")");
+
+        createBrowseHistoryIndex(db);
     }
 
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
         if (oldVersion < 2) {
             db.execSQL("ALTER TABLE " + TABLE_PARSE + " ADD COLUMN " + COL_MODE + " TEXT NOT NULL DEFAULT 'single-mode'");
+        }
+        if (oldVersion < 3) {
+            createBrowseHistoryIndex(db);
         }
     }
 
@@ -128,23 +143,32 @@ public class HistoryStore extends SQLiteOpenHelper {
     }
 
     /**
-     * 获取浏览历史（按 timestamp DESC），支持 offset/limit 分页，并返回全量记录数。
+     * 获取浏览历史（按 timestamp DESC, id DESC），支持 offset/limit 分页，并返回全量记录数。
      */
     public JSONObject getBrowseHistory(int limit, int offset) {
+        return getBrowseHistory(limit, offset, null, null);
+    }
+
+    /**
+     * 获取指定时间范围内的浏览历史。范围使用左闭右开区间；空区间直接返回空页。
+     */
+    public JSONObject getBrowseHistory(int limit, int offset,
+                                       Long startInclusive, Long endExclusive) {
         JSONObject result = new JSONObject();
         JSONArray arr = new JSONArray();
         Cursor dataCursor = null;
         try {
             SQLiteDatabase db = getReadableDatabase();
-            long totalCount = countRows(TABLE_BROWSE);
+            RangeSelection range = buildRangeSelection(startInclusive, endExclusive);
+            long totalCount = countRows(TABLE_BROWSE, range.selection, range.args);
             String limitClause = limit > 0
                 ? (offset > 0 ? offset + "," + limit : String.valueOf(limit))
                 : null;
             dataCursor = db.query(TABLE_BROWSE,
                 new String[]{COL_ID, COL_ALBUM_ID, COL_ALBUM_TITLE, COL_COVER_URL, COL_AUTHORS,
                     COL_CHAPTER_ID, COL_CHAPTER_TITLE, COL_TIMESTAMP},
-                null, null, null, null,
-                COL_TIMESTAMP + " DESC",
+                range.selection, range.args, null, null,
+                COL_TIMESTAMP + " DESC, " + COL_ID + " DESC",
                 limitClause);
             while (dataCursor.moveToNext()) {
                 JSONObject obj = new JSONObject();
@@ -171,6 +195,67 @@ public class HistoryStore extends SQLiteOpenHelper {
         } finally {
             if (dataCursor != null) dataCursor.close();
         }
+        return result;
+    }
+
+    /**
+     * 使用一次条件聚合查询返回总数及各时间范围的记录数。
+     */
+    public JSONObject getBrowseHistoryOverview(JSONArray ranges) throws Exception {
+        if (ranges == null || ranges.length() != BROWSE_GROUP_KEYS.length) {
+            throw new IllegalArgumentException("ranges must contain exactly eight groups");
+        }
+
+        ArrayList<BrowseRange> parsedRanges = new ArrayList<>();
+        Set<String> seenKeys = new HashSet<>();
+        for (int index = 0; index < ranges.length(); index++) {
+            JSONObject rangeObject = ranges.getJSONObject(index);
+            String key = rangeObject.optString("key", "").trim();
+            if (!isBrowseGroupKey(key) || !seenKeys.add(key)) {
+                throw new IllegalArgumentException("invalid or duplicate browse group key: " + key);
+            }
+            Long startInclusive = optionalLong(rangeObject, "startInclusive");
+            Long endExclusive = optionalLong(rangeObject, "endExclusive");
+            parsedRanges.add(new BrowseRange(key, startInclusive, endExclusive));
+        }
+        for (String key : BROWSE_GROUP_KEYS) {
+            if (!seenKeys.contains(key)) {
+                throw new IllegalArgumentException("missing browse group key: " + key);
+            }
+        }
+
+        StringBuilder query = new StringBuilder("SELECT COUNT(*)");
+        ArrayList<String> selectionArgs = new ArrayList<>();
+        for (int index = 0; index < parsedRanges.size(); index++) {
+            BrowseRange range = parsedRanges.get(index);
+            query.append(", SUM(CASE WHEN ");
+            RangeSelection selection = buildRangeSelection(range.startInclusive, range.endExclusive);
+            if (selection.selection == null) {
+                query.append("1=1");
+            } else {
+                query.append(selection.selection);
+                for (String arg : selection.args) selectionArgs.add(arg);
+            }
+            query.append(" THEN 1 ELSE 0 END) AS group_").append(index);
+        }
+        query.append(" FROM ").append(TABLE_BROWSE);
+
+        JSONObject result = new JSONObject();
+        JSONObject groupCounts = new JSONObject();
+        try (Cursor cursor = getReadableDatabase().rawQuery(
+            query.toString(), selectionArgs.toArray(new String[0]))) {
+            if (!cursor.moveToFirst()) {
+                throw new IllegalStateException("browse history overview query returned no row");
+            }
+            result.put("totalCount", cursor.getLong(0));
+            for (int index = 0; index < parsedRanges.size(); index++) {
+                groupCounts.put(parsedRanges.get(index).key, cursor.getLong(index + 1));
+            }
+        } catch (Exception error) {
+            android.util.Log.w("HistoryStore", "getBrowseHistoryOverview failed", error);
+            throw error;
+        }
+        result.put("groupCounts", groupCounts);
         return result;
     }
 
@@ -276,12 +361,84 @@ public class HistoryStore extends SQLiteOpenHelper {
     }
 
     private long countRows(String table) {
+        return countRows(table, null, null);
+    }
+
+    private long countRows(String table, String selection, String[] selectionArgs) {
         try (Cursor cursor = getReadableDatabase().rawQuery(
-            "SELECT COUNT(*) FROM " + table, null)) {
+            "SELECT COUNT(*) FROM " + table
+                + (selection == null ? "" : " WHERE " + selection), selectionArgs)) {
             return cursor.moveToFirst() ? cursor.getLong(0) : 0L;
         } catch (Exception e) {
             android.util.Log.w("HistoryStore", "countRows failed for " + table, e);
             return 0L;
+        }
+    }
+
+    private static void createBrowseHistoryIndex(SQLiteDatabase db) {
+        db.execSQL("CREATE INDEX IF NOT EXISTS " + BROWSE_INDEX + " ON " + TABLE_BROWSE
+            + " (" + COL_TIMESTAMP + " DESC, " + COL_ID + " DESC)");
+    }
+
+    private static boolean isBrowseGroupKey(String key) {
+        for (String validKey : BROWSE_GROUP_KEYS) {
+            if (validKey.equals(key)) return true;
+        }
+        return false;
+    }
+
+    private static Long optionalLong(JSONObject object, String key) throws Exception {
+        if (!object.has(key) || object.isNull(key)) return null;
+        Object value = object.get(key);
+        if (!(value instanceof Number)) {
+            throw new IllegalArgumentException(key + " must be a finite integer");
+        }
+        double numericValue = ((Number) value).doubleValue();
+        if (!Double.isFinite(numericValue) || numericValue != Math.rint(numericValue)
+            || numericValue < Long.MIN_VALUE || numericValue > Long.MAX_VALUE) {
+            throw new IllegalArgumentException(key + " must be a finite integer");
+        }
+        return ((Number) value).longValue();
+    }
+
+    private static RangeSelection buildRangeSelection(Long startInclusive, Long endExclusive) {
+        if (startInclusive != null && endExclusive != null && startInclusive >= endExclusive) {
+            return new RangeSelection("1=0", new String[0]);
+        }
+        if (startInclusive == null && endExclusive == null) {
+            return new RangeSelection(null, null);
+        }
+        if (startInclusive == null) {
+            return new RangeSelection(COL_TIMESTAMP + " < ?",
+                new String[]{String.valueOf(endExclusive)});
+        }
+        if (endExclusive == null) {
+            return new RangeSelection(COL_TIMESTAMP + " >= ?",
+                new String[]{String.valueOf(startInclusive)});
+        }
+        return new RangeSelection(COL_TIMESTAMP + " >= ? AND " + COL_TIMESTAMP + " < ?",
+            new String[]{String.valueOf(startInclusive), String.valueOf(endExclusive)});
+    }
+
+    private static final class BrowseRange {
+        private final String key;
+        private final Long startInclusive;
+        private final Long endExclusive;
+
+        private BrowseRange(String key, Long startInclusive, Long endExclusive) {
+            this.key = key;
+            this.startInclusive = startInclusive;
+            this.endExclusive = endExclusive;
+        }
+    }
+
+    private static final class RangeSelection {
+        private final String selection;
+        private final String[] args;
+
+        private RangeSelection(String selection, String[] args) {
+            this.selection = selection;
+            this.args = args;
         }
     }
 }

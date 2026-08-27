@@ -3,12 +3,16 @@ import { beforeEach, describe, expect, test, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   addListener: vi.fn(),
   retryImage: vi.fn(),
+  getBrowseHistory: vi.fn(),
+  getBrowseHistoryOverview: vi.fn(),
 }))
 
 vi.mock('@/services/jmcomic/JmcomicNativeClient', () => ({
   jmcomicNativeClient: {
     addListener: mocks.addListener,
     retryImage: mocks.retryImage,
+    getBrowseHistory: mocks.getBrowseHistory,
+    getBrowseHistoryOverview: mocks.getBrowseHistoryOverview,
   },
 }))
 
@@ -90,5 +94,39 @@ describe('JmcomicService.retryImage', () => {
 
     await expect(JmcomicService.retryImage('chapter-1', image)).resolves.toEqual({ success: true })
     expect(mocks.retryImage).toHaveBeenCalledWith({ photoId: 'chapter-1', image })
+  })
+})
+
+describe('JmcomicService 浏览历史契约', () => {
+  test('透传可选时间范围，并保留无范围分页参数', async () => {
+    const range = {
+      key: 'today' as const,
+      startInclusive: 100,
+      endExclusive: null,
+    }
+    mocks.getBrowseHistory.mockResolvedValue({ items: [], totalCount: 0 })
+
+    await JmcomicService.getBrowseHistory(50, 0, range)
+    expect(mocks.getBrowseHistory).toHaveBeenCalledWith({
+      limit: 50,
+      offset: 0,
+      startInclusive: 100,
+      endExclusive: null,
+    })
+
+    await JmcomicService.getBrowseHistory(50, 50)
+    expect(mocks.getBrowseHistory).toHaveBeenLastCalledWith({ limit: 50, offset: 50 })
+  })
+
+  test('概览调用透传八组范围数组', async () => {
+    const ranges = [{ key: 'today' as const, startInclusive: 100, endExclusive: null }]
+    mocks.getBrowseHistoryOverview.mockResolvedValue({
+      totalCount: 1,
+      groupCounts: { today: 1 },
+    })
+
+    await JmcomicService.getBrowseHistoryOverview(ranges)
+
+    expect(mocks.getBrowseHistoryOverview).toHaveBeenCalledWith({ ranges })
   })
 })

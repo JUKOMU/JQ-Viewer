@@ -1,7 +1,9 @@
 import type {
   AlbumDetail,
   AllSettings,
+  BrowseHistoryOverview,
   BrowseHistoryItem,
+  BrowseHistoryRange,
   CacheCapacityInfo,
   CommentList,
   DomainStates,
@@ -189,7 +191,13 @@ export interface JmcomicClient {
   getBrowseHistory(options: {
     limit: number
     offset: number
+    startInclusive?: number | null
+    endExclusive?: number | null
   }): Promise<HistoryPageResult<BrowseHistoryItem>>
+
+  getBrowseHistoryOverview(options: {
+    ranges: readonly BrowseHistoryRange[]
+  }): Promise<BrowseHistoryOverview>
 
   recordBrowse(options: {
     albumId: string

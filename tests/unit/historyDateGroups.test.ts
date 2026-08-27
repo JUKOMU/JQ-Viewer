@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'vitest'
 import type { BrowseHistoryItem } from '@/services/JmcomicTypes'
-import { groupBrowseHistory } from '@/utils/historyDateGroups'
+import {
+  BROWSE_GROUP_DEFINITIONS,
+  createBrowseHistorySnapshot,
+  groupBrowseHistory,
+} from '@/utils/historyDateGroups'
 
 function localDate(
   year: number,
@@ -32,6 +36,36 @@ function groupKeyFor(timestamp: number, nowMs: number) {
 }
 
 describe('groupBrowseHistory', () => {
+  test('生成互斥的左闭右开范围快照，并允许跨年时今年为空', () => {
+    const snapshot = createBrowseHistorySnapshot(localDate(2025, 1, 16, 12))
+
+    expect(snapshot.ranges).toHaveLength(BROWSE_GROUP_DEFINITIONS.length)
+    expect(snapshot.ranges.find((range) => range.key === 'thisYear')).toEqual({
+      key: 'thisYear',
+      startInclusive: localDate(2025, 1, 1, 0),
+      endExclusive: localDate(2024, 7, 16, 0),
+    })
+    expect(snapshot.ranges.find((range) => range.key === 'earlier')).toEqual({
+      key: 'earlier',
+      startInclusive: null,
+      endExclusive: localDate(2024, 7, 16, 0),
+    })
+
+    const nonEmptyRanges = snapshot.ranges.filter(
+      (range) =>
+        range.startInclusive === null ||
+        range.endExclusive === null ||
+        range.startInclusive < range.endExclusive,
+    )
+    for (let index = 1; index < nonEmptyRanges.length; index += 1) {
+      const previous = nonEmptyRanges[index - 1]
+      const current = nonEmptyRanges[index]
+      if (previous.endExclusive !== null && current.startInclusive !== null) {
+        expect(current.startInclusive).toBeLessThanOrEqual(previous.endExclusive)
+      }
+    }
+  })
+
   test('按固定顺序返回非空分组并保留组内输入顺序', () => {
     const now = localDate(2025, 7, 16)
     const items = [

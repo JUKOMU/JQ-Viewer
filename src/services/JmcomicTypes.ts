@@ -416,6 +416,29 @@ export interface LatencyResult {
 
 // --- 历史记录 ---
 
+export type BrowseHistoryGroupKey =
+  | 'today'
+  | 'yesterday'
+  | 'thisWeek'
+  | 'thisMonth'
+  | 'lastThreeMonths'
+  | 'lastSixMonths'
+  | 'thisYear'
+  | 'earlier'
+
+export interface BrowseHistoryRange {
+  key: BrowseHistoryGroupKey
+  startInclusive: number | null
+  endExclusive: number | null
+}
+
+export type BrowseHistoryGroupCounts = Record<BrowseHistoryGroupKey, number>
+
+export interface BrowseHistoryOverview {
+  totalCount: number
+  groupCounts: BrowseHistoryGroupCounts
+}
+
 export interface HistoryPageResult<T> {
   items: T[]
   totalCount: number

@@ -1,6 +1,7 @@
 package io.github.jukomu.bridge;
 
 import android.content.Context;
+import android.database.sqlite.SQLiteDatabase;
 import androidx.test.platform.app.InstrumentationRegistry;
 import com.getcapacitor.JSObject;
 import io.github.jukomu.bridge.handler.HistoryPluginHandler;
@@ -89,6 +90,70 @@ public class HistoryPluginContractInstrumentedTest {
     }
 
     @Test
+    public void browseOverviewAndRangePaginationUseAllRowsAndStableIdOrder() throws Exception {
+        plugin.recordBrowse(call("recordBrowse", "albumId", "album-1"));
+        plugin.recordBrowse(call("recordBrowse", "albumId", "album-2"));
+        plugin.recordBrowse(call("recordBrowse", "albumId", "album-3"));
+
+        RecordingPluginCall allRows = call("getBrowseHistory", "limit", 0);
+        plugin.getBrowseHistory(allRows);
+        JSONArray items = allRows.resolvedData.getJSONArray("items");
+        assertEquals(3, items.length());
+        long firstId = items.getJSONObject(0).getLong("id");
+        long secondId = items.getJSONObject(1).getLong("id");
+        long thirdId = items.getJSONObject(2).getLong("id");
+
+        HistoryStore store = HistoryStore.getInstance(context);
+        SQLiteDatabase db = store.getWritableDatabase();
+        db.execSQL("UPDATE browse_history SET timestamp = ? WHERE id = ?",
+            new Object[]{100L, firstId});
+        db.execSQL("UPDATE browse_history SET timestamp = ? WHERE id = ?",
+            new Object[]{100L, secondId});
+        db.execSQL("UPDATE browse_history SET timestamp = ? WHERE id = ?",
+            new Object[]{50L, thirdId});
+
+        JSONArray ranges = new JSONArray();
+        ranges.put(range("today", 100L, null));
+        ranges.put(range("yesterday", 50L, 100L));
+        ranges.put(range("thisWeek", 0L, 50L));
+        ranges.put(range("thisMonth", 0L, 0L));
+        ranges.put(range("lastThreeMonths", 0L, 0L));
+        ranges.put(range("lastSixMonths", 0L, 0L));
+        ranges.put(range("thisYear", 0L, 0L));
+        ranges.put(range("earlier", null, 0L));
+
+        RecordingPluginCall overview = call("getBrowseHistoryOverview", "ranges", ranges);
+        plugin.getBrowseHistoryOverview(overview);
+        assertEquals(3L, overview.resolvedData.getLong("totalCount"));
+        JSONObject groupCounts = overview.resolvedData.getJSONObject("groupCounts");
+        assertEquals(2L, groupCounts.getLong("today"));
+        assertEquals(1L, groupCounts.getLong("yesterday"));
+        assertEquals(0L, groupCounts.getLong("thisYear"));
+
+        RecordingPluginCall firstPage = call(
+            "getBrowseHistory", "limit", 1, "offset", 0,
+            "startInclusive", 100L);
+        plugin.getBrowseHistory(firstPage);
+        assertEquals(Math.max(firstId, secondId), firstPage.resolvedData.getJSONArray("items")
+            .getJSONObject(0).getLong("id"));
+
+        RecordingPluginCall secondPage = call(
+            "getBrowseHistory", "limit", 1, "offset", 1,
+            "startInclusive", 100L);
+        plugin.getBrowseHistory(secondPage);
+        assertEquals(Math.min(firstId, secondId), secondPage.resolvedData.getJSONArray("items")
+            .getJSONObject(0).getLong("id"));
+
+        RecordingPluginCall yesterday = call(
+            "getBrowseHistory", "limit", 10, "offset", 0,
+            "startInclusive", 50L, "endExclusive", 100L);
+        plugin.getBrowseHistory(yesterday);
+        assertEquals(1, yesterday.resolvedData.getJSONArray("items").length());
+        assertEquals(thirdId, yesterday.resolvedData.getJSONArray("items")
+            .getJSONObject(0).getLong("id"));
+    }
+
+    @Test
     public void deleteAndClearMethodsKeepTheirSuccessContract() throws Exception {
         plugin.recordBrowse(call("recordBrowse", "albumId", "album-1"));
         plugin.recordBrowse(call("recordBrowse", "albumId", "album-2"));
@@ -150,8 +215,10 @@ public class HistoryPluginContractInstrumentedTest {
     }
 
     @Test
-    public void allHistoryMethodsRemainNonKeepAlive() {
+    public void allHistoryMethodsRemainNonKeepAlive() throws Exception {
         RecordingPluginCall getBrowse = call("getBrowseHistory");
+        RecordingPluginCall getBrowseOverview = call(
+            "getBrowseHistoryOverview", "ranges", validRanges());
         RecordingPluginCall record = call("recordBrowse");
         RecordingPluginCall clearBrowse = call("clearBrowseHistory");
         RecordingPluginCall deleteBrowse = call("deleteBrowseItem");
@@ -161,6 +228,7 @@ public class HistoryPluginContractInstrumentedTest {
         RecordingPluginCall deleteParse = call("deleteParseItem");
 
         plugin.getBrowseHistory(getBrowse);
+        plugin.getBrowseHistoryOverview(getBrowseOverview);
         plugin.recordBrowse(record);
         plugin.clearBrowseHistory(clearBrowse);
         plugin.deleteBrowseItem(deleteBrowse);
@@ -169,7 +237,7 @@ public class HistoryPluginContractInstrumentedTest {
         plugin.clearParseHistory(clearParse);
         plugin.deleteParseItem(deleteParse);
 
-        assertNotKeptAlive(getBrowse, record, clearBrowse, deleteBrowse,
+        assertNotKeptAlive(getBrowse, getBrowseOverview, record, clearBrowse, deleteBrowse,
             getParse, addParse, clearParse, deleteParse);
     }
 
@@ -179,6 +247,27 @@ public class HistoryPluginContractInstrumentedTest {
             data.put((String) entries[index], entries[index + 1]);
         }
         return new RecordingPluginCall(methodName, data);
+    }
+
+    private static JSONObject range(String key, Long startInclusive, Long endExclusive)
+        throws Exception {
+        return new JSONObject()
+            .put("key", key)
+            .put("startInclusive", startInclusive == null ? JSONObject.NULL : startInclusive)
+            .put("endExclusive", endExclusive == null ? JSONObject.NULL : endExclusive);
+    }
+
+    private static JSONArray validRanges() throws Exception {
+        JSONArray ranges = new JSONArray();
+        ranges.put(range("today", null, null));
+        ranges.put(range("yesterday", null, null));
+        ranges.put(range("thisWeek", null, null));
+        ranges.put(range("thisMonth", null, null));
+        ranges.put(range("lastThreeMonths", null, null));
+        ranges.put(range("lastSixMonths", null, null));
+        ranges.put(range("thisYear", null, null));
+        ranges.put(range("earlier", null, null));
+        return ranges;
     }
 
     private static void assertSuccess(RecordingPluginCall call) throws Exception {

@@ -215,7 +215,7 @@ public class HistoryPluginContractInstrumentedTest {
     }
 
     @Test
-    public void allHistoryMethodsRemainNonKeepAlive() {
+    public void allHistoryMethodsRemainNonKeepAlive() throws Exception {
         RecordingPluginCall getBrowse = call("getBrowseHistory");
         RecordingPluginCall getBrowseOverview = call(
             "getBrowseHistoryOverview", "ranges", validRanges());

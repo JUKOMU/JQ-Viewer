@@ -1426,6 +1426,8 @@ const progressPercent = computed(() => {
 /* ---- 结果区域 ---- */
 
 .page-shell {
+  /* 为末尾卡片保留半个视口的滚动空间，使其也能移动到高亮中心。 */
+  padding-bottom: 50vh;
 }
 
 @media (min-width: 680px) {

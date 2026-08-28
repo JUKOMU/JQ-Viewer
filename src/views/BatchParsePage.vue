@@ -33,7 +33,7 @@
           </template>
 
           <div v-else ref="sourceScrollRef" class="source-scroll">
-            <pre
+            <div
               v-for="(line, li) in sourceLines"
               :key="li"
               class="source-line"
@@ -42,11 +42,21 @@
                 'no-results': line.hasOnlyFailed,
               }"
               @click="onSourceLineClick(li)"
-            ><span
-              v-for="(seg, si) in line.segments"
-              :key="si"
-              :class="segClass(seg.type)"
-            >{{ seg.text }}</span></pre>
+            >
+              <template v-for="(seg, si) in line.segments" :key="si">
+                <button
+                  v-if="seg.itemIndex !== undefined"
+                  type="button"
+                  class="source-id"
+                  :class="segClass(seg.type)"
+                  :aria-label="`定位到 ${seg.text}`"
+                  @click.stop="onSourceItemClick(seg.itemIndex)"
+                >
+                  {{ seg.text }}
+                </button>
+                <span v-else :class="segClass(seg.type)">{{ seg.text }}</span>
+              </template>
+            </div>
           </div>
         </div>
 
@@ -97,6 +107,7 @@
           :error-message="errorMessage"
           :mode="displayMode"
           :fav-border-class-map="favBorderClassMap"
+          :active-entry-key="activeEntryKey"
           idle-text=""
           empty-text="未找到对应本子"
           @item-click="handleItemClick"
@@ -231,6 +242,7 @@ const STORAGE_PREFIX = 'batch-parse-text:'
 interface LineSegment {
   text: string
   type: 'normal' | 'valid-id' | 'invalid-id' | 'failed-id'
+  itemIndex?: number
 }
 
 interface SourceLine {
@@ -251,11 +263,22 @@ const savedKey = ref<string>('')
 
 const originalText = ref('')
 const sourceExpanded = ref(true)
-const currentHighlightLine = ref(-1)
-
 const parsedItems = ref<ParsedIdItem[]>([])
 const invalidIds = ref<InvalidIdItem[]>([])
 const albumResults = ref<(AlbumDetail | null)[]>([])
+const currentHighlightIndex = ref(-1)
+
+const currentHighlightLine = computed(() => {
+  const item = parsedItems.value[currentHighlightIndex.value]
+  return item?.lineIndex ?? -1
+})
+
+const activeEntryKey = computed(() => {
+  const index = currentHighlightIndex.value
+  const item = parsedItems.value[index]
+  return item ? `1-${index}-${item.id}` : null
+})
+
 const loading = ref(true)
 const errorMessage = ref('')
 
@@ -329,7 +352,7 @@ const sourceLines = computed<SourceLine[]>(() => {
     if (failedIds.value[item.id]) continue
     const line = result[item.lineIndex]
     if (!line) continue
-    line.segments = splitSegments(line.segments, item.startIndex, item.endIndex, 'valid-id')
+    line.segments = splitSegments(line.segments, item.startIndex, item.endIndex, 'valid-id', i)
   }
 
   for (const line of result) {
@@ -346,6 +369,7 @@ function splitSegments(
   targetStart: number,
   targetEnd: number,
   type: LineSegment['type'],
+  itemIndex?: number,
 ): LineSegment[] {
   const out: LineSegment[] = []
   let cursor = 0
@@ -356,15 +380,27 @@ function splitSegments(
       out.push(seg)
     } else {
       if (cursor < targetStart) {
-        out.push({ text: seg.text.slice(0, targetStart - cursor), type: seg.type })
+        out.push({
+          text: seg.text.slice(0, targetStart - cursor),
+          type: seg.type,
+          itemIndex: seg.itemIndex,
+        })
       }
       const overlapStart = Math.max(cursor, targetStart)
       const overlapEnd = Math.min(segEnd, targetEnd)
       if (overlapEnd > overlapStart) {
-        out.push({ text: seg.text.slice(overlapStart - cursor, overlapEnd - cursor), type })
+        out.push({
+          text: seg.text.slice(overlapStart - cursor, overlapEnd - cursor),
+          type,
+          itemIndex,
+        })
       }
       if (segEnd > targetEnd) {
-        out.push({ text: seg.text.slice(targetEnd - cursor), type: seg.type })
+        out.push({
+          text: seg.text.slice(targetEnd - cursor),
+          type: seg.type,
+          itemIndex: seg.itemIndex,
+        })
       }
     }
     cursor = segEnd
@@ -418,6 +454,8 @@ const displayItems = computed<SearchResultDisplayItem[]>(() => {
 
 async function doParse() {
   const text = originalText.value
+  currentHighlightIndex.value = -1
+  failedIds.value = {}
   if (!text || !text.trim()) {
     errorMessage.value = '未接收到解析文本'
     loading.value = false
@@ -548,23 +586,36 @@ function updateHighlightFromScroll() {
 
   const cards = root.querySelectorAll<HTMLElement>('[data-entry-key]')
   if (cards.length === 0) {
-    currentHighlightLine.value = -1
+    currentHighlightIndex.value = -1
     return
   }
 
+  const scrollRect = scrollElementRef.value?.getBoundingClientRect()
+  const viewportTop = scrollRect?.top ?? 0
+  const viewportBottom = scrollRect?.bottom ?? window.innerHeight
+  const viewportCenter = viewportTop + (viewportBottom - viewportTop) / 2
   let bestIdx = -1
-  for (let i = cards.length - 1; i >= 0; i--) {
+  let bestDistance = Number.POSITIVE_INFINITY
+
+  for (let i = 0; i < cards.length; i++) {
     const rect = cards[i].getBoundingClientRect()
-    if (rect.top < window.innerHeight && rect.bottom > 0) {
+    if (rect.bottom <= viewportTop || rect.top >= viewportBottom) continue
+    const cardCenter = rect.top + rect.height / 2
+    const distance = Math.abs(cardCenter - viewportCenter)
+    if (distance < bestDistance) {
       bestIdx = i
-      break
+      bestDistance = distance
     }
   }
+
   if (bestIdx < 0) {
-    for (let i = cards.length - 1; i >= 0; i--) {
-      if (cards[i].getBoundingClientRect().top < 0) {
+    for (let i = 0; i < cards.length; i++) {
+      const rect = cards[i].getBoundingClientRect()
+      const cardCenter = rect.top + rect.height / 2
+      const distance = Math.abs(cardCenter - viewportCenter)
+      if (distance < bestDistance) {
         bestIdx = i
-        break
+        bestDistance = distance
       }
     }
   }
@@ -574,23 +625,28 @@ function updateHighlightFromScroll() {
     if (entryKey) {
       const parts = entryKey.split('-')
       const idx = parseInt(parts[1], 10)
-      if (!isNaN(idx) && idx < parsedItems.value.length) {
-        currentHighlightLine.value = parsedItems.value[idx].lineIndex
+      if (!isNaN(idx) && idx >= 0 && idx < parsedItems.value.length) {
+        currentHighlightIndex.value = idx
       }
     }
   }
 }
 
-function onSourceLineClick(lineIndex: number) {
-  const idx = parsedItems.value.findIndex((p) => p.lineIndex === lineIndex)
-  if (idx < 0) return
+function onSourceItemClick(index: number) {
+  const item = parsedItems.value[index]
+  if (!item) return
 
-  const entryKey = `1-${idx}-${parsedItems.value[idx].id}`
+  const entryKey = `1-${index}-${item.id}`
   const el = resultContainerRef.value?.getEntryElement(entryKey)
   if (el) {
+    currentHighlightIndex.value = index
     el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    currentHighlightLine.value = lineIndex
   }
+}
+
+function onSourceLineClick(lineIndex: number) {
+  const idx = parsedItems.value.findIndex((p) => p.lineIndex === lineIndex)
+  if (idx >= 0) onSourceItemClick(idx)
 }
 
 watch(currentHighlightLine, async (lineIndex) => {
@@ -1285,6 +1341,22 @@ const progressPercent = computed(() => {
   background: #fff7f2;
 }
 
+.source-id {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  font: inherit;
+  line-height: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.source-id:focus-visible {
+  outline: 2px solid #d96f37;
+  outline-offset: 1px;
+}
+
 .source-line.current-line {
   background: #ffe4d1;
   border-left: 3px solid #fa9c69;
@@ -1376,6 +1448,15 @@ const progressPercent = computed(() => {
 
 :deep(.fav-both) {
   border: 2px solid #5b9bd5;
+}
+
+/* ---- 当前结果卡片 ---- */
+
+:deep(.entry-highlighted) {
+  background: #fff0e7;
+  box-shadow:
+    0 0 0 2px #d96f37,
+    5px 12px 28px rgb(76 42 24 / 0.2);
 }
 
 /* ---- 卡片更多操作按钮 ---- */

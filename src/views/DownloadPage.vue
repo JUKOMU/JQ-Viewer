@@ -2,30 +2,32 @@
   <IonPage>
     <IonHeader class="ion-no-border">
       <IonToolbar>
-        <div class="toolbar-start">
-          <MenuToggleButton />
-        </div>
-        <div class="view-tabs" role="tablist" aria-label="下载页面视图">
-          <button
-            type="button"
-            role="tab"
-            class="tab-btn"
-            :aria-selected="activeMainView === 'downloads'"
-            :class="{ active: activeMainView === 'downloads' }"
-            @click="selectMainView('downloads')"
-          >
-            下载
-          </button>
-          <button
-            type="button"
-            role="tab"
-            class="tab-btn"
-            :aria-selected="activeMainView === 'pdf'"
-            :class="{ active: activeMainView === 'pdf' }"
-            @click="selectMainView('pdf')"
-          >
-            PDF
-          </button>
+        <div class="download-page-shell">
+          <div class="toolbar-start">
+            <MenuToggleButton />
+          </div>
+          <div class="view-tabs" role="tablist" aria-label="下载页面视图">
+            <button
+              type="button"
+              role="tab"
+              class="tab-btn"
+              :aria-selected="activeMainView === 'downloads'"
+              :class="{ active: activeMainView === 'downloads' }"
+              @click="selectMainView('downloads')"
+            >
+              下载
+            </button>
+            <button
+              type="button"
+              role="tab"
+              class="tab-btn"
+              :aria-selected="activeMainView === 'pdf'"
+              :class="{ active: activeMainView === 'pdf' }"
+              @click="selectMainView('pdf')"
+            >
+              PDF
+            </button>
+          </div>
         </div>
       </IonToolbar>
     </IonHeader>
@@ -35,87 +37,91 @@
         <IonRefresherContent />
       </IonRefresher>
 
-      <!-- 空状态 -->
-      <div v-if="!hasTasks" class="empty-state">
-        <IonIcon :icon="cloudDownloadOutline" class="empty-icon" />
-        <p>暂无下载内容</p>
+      <div class="download-page-shell">
+        <!-- 空状态 -->
+        <div v-if="!hasTasks" class="empty-state">
+          <IonIcon :icon="cloudDownloadOutline" class="empty-icon" />
+          <p>暂无下载内容</p>
+        </div>
+
+        <template v-else>
+          <!-- 存储信息 -->
+          <div v-if="hasStorageInfo" class="storage-bar">
+            <IonIcon :icon="saveOutline" class="storage-icon" />
+            <span>已用 {{ spaceUsedMb }}MB / 可用 {{ spaceAvailMb }}MB</span>
+          </div>
+          <div v-if="hasTasks" class="sort-label-row">
+            <span class="toolbar-action-label">{{ sortLabel }}</span>
+            <button type="button" class="sort-btn" :aria-label="sortLabel" @click="toggleSort">
+              <IonIcon :icon="sortIcon" />
+            </button>
+          </div>
+
+          <!-- 下载中 -->
+          <div v-if="sortedActiveTasks.length" class="section">
+            <div class="section-header">
+              <span class="section-title">下载中 ({{ sortedActiveTasks.length }})</span>
+            </div>
+            <div v-for="task in sortedActiveTasks" :key="task.taskId" class="task-card">
+              <DownloadTaskCard
+                :task="task"
+                :show-progress="true"
+                :menu-open="isTaskMenuOpen(task)"
+                @more="openActions(task, $event)"
+              />
+            </div>
+          </div>
+
+          <!-- 已完成 -->
+          <div v-if="completedGroups.length" class="section">
+            <div class="section-header">
+              <span class="section-title">已完成 ({{ completedGroups.length }})</span>
+              <button class="clear-btn" @click="requestClear('completed')">清空</button>
+            </div>
+            <div
+              v-for="group in completedGroups"
+              :key="group.albumId + '|' + group.chapters[0].source"
+              class="task-card"
+            >
+              <DownloadTaskCard
+                :task="group.chapters[0]"
+                :show-progress="false"
+                :total-size="group.totalSize"
+                :downloaded-chapters="group.type === 'multi' ? group.chapters : undefined"
+                :menu-open="isTaskMenuOpen(group.chapters[0])"
+                @click="onReadGroup(group)"
+                @more="openGroupActions(group, $event)"
+              />
+            </div>
+          </div>
+
+          <!-- 下载失败 -->
+          <div v-if="sortedFailedTasks.length" class="section">
+            <div class="section-header">
+              <span class="section-title">下载失败 ({{ sortedFailedTasks.length }})</span>
+              <button class="clear-btn" @click="requestClear('failed')">清空</button>
+            </div>
+            <div v-for="task in sortedFailedTasks" :key="task.taskId" class="task-card">
+              <DownloadTaskCard
+                :task="task"
+                :show-progress="false"
+                :menu-open="isTaskMenuOpen(task)"
+                @more="openActions(task, $event)"
+              />
+            </div>
+          </div>
+          <div class="bottom-spacer" />
+        </template>
       </div>
-
-      <template v-else>
-        <!-- 存储信息 -->
-        <div v-if="hasStorageInfo" class="storage-bar">
-          <IonIcon :icon="saveOutline" class="storage-icon" />
-          <span>已用 {{ spaceUsedMb }}MB / 可用 {{ spaceAvailMb }}MB</span>
-        </div>
-        <div v-if="hasTasks" class="sort-label-row">
-          <span class="toolbar-action-label">{{ sortLabel }}</span>
-          <button type="button" class="sort-btn" :aria-label="sortLabel" @click="toggleSort">
-            <IonIcon :icon="sortIcon" />
-          </button>
-        </div>
-
-        <!-- 下载中 -->
-        <div v-if="sortedActiveTasks.length" class="section">
-          <div class="section-header">
-            <span class="section-title">下载中 ({{ sortedActiveTasks.length }})</span>
-          </div>
-          <div v-for="task in sortedActiveTasks" :key="task.taskId" class="task-card">
-            <DownloadTaskCard
-              :task="task"
-              :show-progress="true"
-              :menu-open="isTaskMenuOpen(task)"
-              @more="openActions(task, $event)"
-            />
-          </div>
-        </div>
-
-        <!-- 已完成 -->
-        <div v-if="completedGroups.length" class="section">
-          <div class="section-header">
-            <span class="section-title">已完成 ({{ completedGroups.length }})</span>
-            <button class="clear-btn" @click="requestClear('completed')">清空</button>
-          </div>
-          <div
-            v-for="group in completedGroups"
-            :key="group.albumId + '|' + group.chapters[0].source"
-            class="task-card"
-          >
-            <DownloadTaskCard
-              :task="group.chapters[0]"
-              :show-progress="false"
-              :total-size="group.totalSize"
-              :downloaded-chapters="group.type === 'multi' ? group.chapters : undefined"
-              :menu-open="isTaskMenuOpen(group.chapters[0])"
-              @click="onReadGroup(group)"
-              @more="openGroupActions(group, $event)"
-            />
-          </div>
-        </div>
-
-        <!-- 下载失败 -->
-        <div v-if="sortedFailedTasks.length" class="section">
-          <div class="section-header">
-            <span class="section-title">下载失败 ({{ sortedFailedTasks.length }})</span>
-            <button class="clear-btn" @click="requestClear('failed')">清空</button>
-          </div>
-          <div v-for="task in sortedFailedTasks" :key="task.taskId" class="task-card">
-            <DownloadTaskCard
-              :task="task"
-              :show-progress="false"
-              :menu-open="isTaskMenuOpen(task)"
-              @more="openActions(task, $event)"
-            />
-          </div>
-        </div>
-        <div class="bottom-spacer" />
-      </template>
     </IonContent>
     <IonContent v-show="activeMainView === 'pdf'">
-      <PdfManagementView
-        ref="pdfManagementRef"
-        :initial-view="pdfInitialView"
-        :initial-export-id="pdfInitialExportId"
-      />
+      <div class="download-page-shell">
+        <PdfManagementView
+          ref="pdfManagementRef"
+          :initial-view="pdfInitialView"
+          :initial-export-id="pdfInitialExportId"
+        />
+      </div>
     </IonContent>
 
     <CardContextMenu
@@ -1121,6 +1127,13 @@ const clearFailed = async () => {
 </script>
 
 <style scoped>
+.download-page-shell {
+  width: 100%;
+  max-width: 1000px;
+  margin-inline: auto;
+  box-sizing: border-box;
+}
+
 .toolbar-start {
   padding: 0 0 8px 14px;
 }

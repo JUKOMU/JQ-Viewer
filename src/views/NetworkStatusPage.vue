@@ -10,51 +10,57 @@
     </IonHeader>
     <IonContent>
       <div class="page-content">
-        <!-- 域名连通性 -->
-        <div class="section-header">
-          <span class="section-label">域名连通性</span>
-          <div class="header-actions">
-            <IonIcon
-              :icon="speedometerOutline"
-              class="speed-btn"
-              :class="{ spinning: measuring }"
-              @click="handleMeasureLatency"
-            />
-            <IonIcon
-              :icon="refreshOutline"
-              class="refresh-btn"
-              :class="{ spinning: refreshing }"
-              @click="handleRefresh"
-            />
-          </div>
-        </div>
-        <div class="card">
-          <div v-if="store.domains.value.length" class="domain-list">
-            <div v-for="d in store.domains.value" :key="d.domain" class="domain-row">
-              <span
-                class="domain-dot"
-                :class="store.allDeadFallback.value ? 'dead' : d.reachable ? 'alive' : 'dead'"
-              />
-              <span class="domain-name">{{ d.domain }}</span>
-              <span class="latency" :class="latencyClass(d.domain, d.reachable)">
-                {{ latencyText(d.domain, d.reachable) }}
-              </span>
+        <div class="status-grid">
+          <section class="status-section">
+            <!-- 域名连通性 -->
+            <div class="section-header">
+              <span class="section-label">域名连通性</span>
+              <div class="header-actions">
+                <IonIcon
+                  :icon="speedometerOutline"
+                  class="speed-btn"
+                  :class="{ spinning: measuring }"
+                  @click="handleMeasureLatency"
+                />
+                <IonIcon
+                  :icon="refreshOutline"
+                  class="refresh-btn"
+                  :class="{ spinning: refreshing }"
+                  @click="handleRefresh"
+                />
+              </div>
             </div>
-          </div>
-          <div v-else class="empty-state">等待首次探活...</div>
-        </div>
+            <div class="card">
+              <div v-if="store.domains.value.length" class="domain-list">
+                <div v-for="d in store.domains.value" :key="d.domain" class="domain-row">
+                  <span
+                    class="domain-dot"
+                    :class="store.allDeadFallback.value ? 'dead' : d.reachable ? 'alive' : 'dead'"
+                  />
+                  <span class="domain-name">{{ d.domain }}</span>
+                  <span class="latency" :class="latencyClass(d.domain, d.reachable)">
+                    {{ latencyText(d.domain, d.reachable) }}
+                  </span>
+                </div>
+              </div>
+              <div v-else class="empty-state">等待首次探活...</div>
+            </div>
+          </section>
 
-        <!-- 事件日志 -->
-        <div class="section-label" style="margin: 8px 0 8px 6px">事件日志</div>
-        <div class="card">
-          <div v-if="store.events.value.length" class="log-list">
-            <div v-for="(evt, i) in store.events.value" :key="i" class="log-row">
-              <span class="log-time">{{ formatTime(evt.timestamp) }}</span>
-              <span class="log-dot" :class="phaseClass(evt.phase)" />
-              <span class="log-msg">{{ evt.message }}</span>
+          <section class="status-section">
+            <!-- 事件日志 -->
+            <div class="section-label section-title">事件日志</div>
+            <div class="card">
+              <div v-if="store.events.value.length" class="log-list">
+                <div v-for="(evt, i) in store.events.value" :key="i" class="log-row">
+                  <span class="log-time">{{ formatTime(evt.timestamp) }}</span>
+                  <span class="log-dot" :class="phaseClass(evt.phase)" />
+                  <span class="log-msg">{{ evt.message }}</span>
+                </div>
+              </div>
+              <div v-else class="empty-state">暂无事件</div>
             </div>
-          </div>
-          <div v-else class="empty-state">暂无事件</div>
+          </section>
         </div>
       </div>
     </IonContent>
@@ -186,7 +192,25 @@ function formatTime(ts: number): string {
 }
 
 .page-content {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 1000px;
+  margin: 0 auto;
   padding: 8px 16px 32px;
+}
+
+.status-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+
+.status-section {
+  min-width: 0;
+}
+
+.section-title {
+  margin: 8px 0 8px 6px;
 }
 
 .section-label {
@@ -243,6 +267,7 @@ function formatTime(ts: number): string {
   background: #fffbf8;
   border-radius: 14px;
   box-shadow: 0 2px 12px rgba(115, 67, 38, 0.06);
+  min-width: 0;
   overflow: hidden;
 }
 
@@ -251,6 +276,7 @@ function formatTime(ts: number): string {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
   padding: 10px 16px;
 }
 
@@ -277,6 +303,7 @@ function formatTime(ts: number): string {
   font-size: 13px;
   color: #4c2a18;
   word-break: break-all;
+  min-width: 0;
   flex: 1;
 }
 
@@ -304,6 +331,7 @@ function formatTime(ts: number): string {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
   padding: 6px 16px;
 }
 
@@ -344,6 +372,9 @@ function formatTime(ts: number): string {
 .log-msg {
   font-size: 12px;
   color: #4c2a18;
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
 }
 
 .empty-state {
@@ -351,5 +382,12 @@ function formatTime(ts: number): string {
   text-align: center;
   font-size: 13px;
   color: #b89a84;
+}
+
+@media (min-width: 992px) {
+  .status-grid {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+    column-gap: 16px;
+  }
 }
 </style>

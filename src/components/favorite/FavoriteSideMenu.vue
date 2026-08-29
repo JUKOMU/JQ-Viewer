@@ -1,15 +1,24 @@
 <template>
-  <div
+  <nav
     v-show="isVisible"
+    id="favorite-side-menu"
     class="fav-menu-backdrop"
+    :class="{ 'fav-menu-pane': isPaneMode }"
     :style="backdropStyle"
+    role="navigation"
+    aria-label="收藏夹"
     @click.self="closeMenu"
     @touchstart.stop
   >
-    <div ref="panelRef" class="fav-menu-panel" :style="panelStyle">
+    <div
+      ref="panelRef"
+      class="fav-menu-panel"
+      :class="{ 'fav-menu-panel--pane': isPaneMode }"
+      :style="panelStyle"
+    >
       <div class="menu-header">
         <div class="menu-title">收藏夹</div>
-        <button type="button" class="menu-close-btn" @click="closeMenu">
+        <button type="button" class="menu-close-btn" aria-label="关闭收藏夹" @click="closeMenu">
           <IonIcon :icon="closeOutline" />
         </button>
       </div>
@@ -117,7 +126,7 @@
       @close="closeContextMenu"
       @select="handleContextMenuAction"
     />
-  </div>
+  </nav>
 </template>
 
 <script setup lang="ts">
@@ -139,18 +148,30 @@ import CardContextMenu from '@/components/common/CardContextMenu.vue'
 import type { FolderEntry } from '@/services/JmcomicTypes'
 import { OFFLINE_ALL_FOLDER_ID } from '@/services/JmcomicTypes'
 
+type DisplayMode = 'overlay' | 'pane'
+
 defineOptions({ name: 'FavoriteSideMenu' })
 
-const props = defineProps<{
-  modelValue: boolean
-  onlineFolders: FolderEntry[]
-  offlineFolders: FolderEntry[]
-  selectedOnlineId: string
-  selectedOfflineId: string
-  onlineFolderCounts: Record<string, number>
-}>()
+const props = withDefaults(
+  defineProps<{
+    modelValue: boolean
+    displayMode?: DisplayMode
+    paneOpen?: boolean
+    onlineFolders: FolderEntry[]
+    offlineFolders: FolderEntry[]
+    selectedOnlineId: string
+    selectedOfflineId: string
+    onlineFolderCounts: Record<string, number>
+  }>(),
+  {
+    displayMode: 'overlay',
+    paneOpen: false,
+  },
+)
+
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
+  'update:paneOpen': [value: boolean]
   'select-online-folder': [folderId: string]
   'select-offline-folder': [folderId: string]
   'add-folder': [source: 'online' | 'offline']
@@ -162,6 +183,8 @@ const emit = defineEmits<{
 }>()
 
 const { isDraggingRight, isSnappingClosed, rightDragProgress } = useSideMenuState()
+
+const isPaneMode = computed(() => props.displayMode === 'pane')
 
 const panelRef = ref<HTMLElement | null>(null)
 interface ContextMenuState {
@@ -239,11 +262,14 @@ const onContextMenuExport = (folderId: string, folderName: string, isOnline: boo
   emit('export-folder', { folderId, folderName, isOnline })
 }
 
-const isVisible = computed(
-  () => props.modelValue || isDraggingRight.value || isSnappingClosed.value,
+const isVisible = computed(() =>
+  isPaneMode.value
+    ? props.paneOpen
+    : props.modelValue || isDraggingRight.value || isSnappingClosed.value,
 )
 
 const currentProgress = computed(() => {
+  if (isPaneMode.value) return props.paneOpen ? 1 : 0
   if (isDraggingRight.value) return rightDragProgress.value
   if (isSnappingClosed.value) return 0
   return props.modelValue ? 1 : 0
@@ -252,14 +278,22 @@ const currentProgress = computed(() => {
 const useTransition = computed(() => !isDraggingRight.value)
 
 const panelStyle = computed(() => ({
-  transform: `translateX(${(1 - currentProgress.value) * 100}%)`,
-  transition: useTransition.value ? 'transform 0.24s cubic-bezier(0.22, 0.61, 0.36, 1)' : 'none',
+  transform: isPaneMode.value ? 'none' : `translateX(${(1 - currentProgress.value) * 100}%)`,
+  transition: isPaneMode.value
+    ? 'none'
+    : useTransition.value
+      ? 'transform 0.24s cubic-bezier(0.22, 0.61, 0.36, 1)'
+      : 'none',
 }))
 
-const backdropStyle = computed(() => ({
-  opacity: currentProgress.value > 0 ? currentProgress.value : 0,
-  transition: useTransition.value ? 'opacity 0.24s ease' : 'none',
-}))
+const backdropStyle = computed(() =>
+  isPaneMode.value
+    ? {}
+    : {
+        opacity: currentProgress.value > 0 ? currentProgress.value : 0,
+        transition: useTransition.value ? 'opacity 0.24s ease' : 'none',
+      },
+)
 
 const animateClose = () => {
   if (isDraggingRight.value) return
@@ -273,17 +307,22 @@ const animateClose = () => {
 }
 
 const closeMenu = () => {
+  closeContextMenu()
+  if (isPaneMode.value) {
+    emit('update:paneOpen', false)
+    return
+  }
   animateClose()
 }
 
 const selectOnlineFolder = (folderId: string) => {
   emit('select-online-folder', folderId)
-  animateClose()
+  if (!isPaneMode.value) animateClose()
 }
 
 const selectOfflineFolder = (folderId: string) => {
   emit('select-offline-folder', folderId)
-  animateClose()
+  if (!isPaneMode.value) animateClose()
 }
 
 defineExpose({ panelRef })
@@ -298,6 +337,19 @@ defineExpose({ panelRef })
   backdrop-filter: blur(2px);
 }
 
+.fav-menu-pane {
+  position: relative;
+  inset: auto;
+  flex: 0 0 280px;
+  width: 280px;
+  min-width: 280px;
+  height: 100%;
+  overflow: hidden;
+  background: linear-gradient(180deg, #fffaf6 0%, #fff3eb 100%);
+  box-shadow: -12px 0 36px rgb(76 42 24 / 0.14);
+  backdrop-filter: none;
+}
+
 .fav-menu-panel {
   position: absolute;
   top: 0;
@@ -308,6 +360,14 @@ defineExpose({ panelRef })
   flex-direction: column;
   background: linear-gradient(180deg, #fffaf6 0%, #fff3eb 100%);
   box-shadow: -12px 0 36px rgb(76 42 24 / 0.14);
+}
+
+.fav-menu-panel--pane {
+  position: relative;
+  inset: auto;
+  width: 100%;
+  height: 100%;
+  box-shadow: none;
 }
 
 .menu-header {
@@ -336,6 +396,7 @@ defineExpose({ panelRef })
   color: #8a6048;
   font-size: 18px;
   box-shadow: 0 4px 12px rgb(115 67 38 / 0.1);
+  cursor: pointer;
 }
 
 .menu-body {
@@ -478,6 +539,14 @@ defineExpose({ panelRef })
 .folder-more-btn.active {
   background: rgb(250 156 105 / 0.15);
   color: #c96d3a;
+}
+
+.menu-close-btn:focus-visible,
+.section-add-btn:focus-visible,
+.folder-item:focus-visible,
+.folder-more-btn:focus-visible {
+  outline: 3px solid rgb(201 109 58 / 0.45);
+  outline-offset: 2px;
 }
 
 .empty-state {

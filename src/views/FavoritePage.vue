@@ -1,80 +1,104 @@
 <template>
   <IonPage>
-    <IonContent ref="contentRef" :scroll-events="true" @ion-scroll="handleContentScroll">
-      <IonRefresher
-        slot="fixed"
-        :disabled="canLoadPrevious && pageAtTop"
-        @ion-refresh="handleRefresh"
-      >
-        <IonRefresherContent />
-      </IonRefresher>
+    <div ref="pageShellRef" class="favorite-page-layout">
+      <IonContent ref="contentRef" :scroll-events="true" @ion-scroll="handleContentScroll">
+        <IonRefresher
+          slot="fixed"
+          :disabled="canLoadPrevious && pageAtTop"
+          @ion-refresh="handleRefresh"
+        >
+          <IonRefresherContent />
+        </IonRefresher>
 
-      <div class="favorite-page-top">
-        <div class="favorite-page-toolbar" :class="{ pinned: pullHeaderPinned }">
-          <MenuToggleButton />
-          <div class="toolbar-favorite">
-            <div class="toolbar-row">
-              <FavoriteSearchBar
-                ref="searchBarRef"
-                :query="currentFavoriteQuery"
-                :loading="busy"
-                @search="submitSearch"
-              />
-              <button
-                type="button"
-                class="folders-toggle-btn"
-                aria-label="收藏夹列表"
-                @click="openRightMenu"
-              >
-                <IonIcon :icon="folderOpenOutline" />
-              </button>
+        <div class="favorite-page-top">
+          <div class="favorite-page-toolbar" :class="{ pinned: pullHeaderPinned }">
+            <MenuToggleButton />
+            <div class="toolbar-favorite">
+              <div class="toolbar-row">
+                <FavoriteSearchBar
+                  ref="searchBarRef"
+                  :query="currentFavoriteQuery"
+                  :loading="busy"
+                  @search="submitSearch"
+                />
+                <button
+                  type="button"
+                  class="folders-toggle-btn"
+                  aria-label="收藏夹列表"
+                  aria-controls="favorite-side-menu"
+                  :aria-expanded="isWideLayout ? widePaneOpen : rightMenuOpen"
+                  @click="openRightMenu"
+                >
+                  <IonIcon :icon="folderOpenOutline" />
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
-      <SearchResultContainer
-        ref="resultContainerRef"
-        :result="resultMeta"
-        :items="displayItems"
-        :loading="initialLoading"
-        :loading-previous="loadingPrevious"
-        :loading-next="loadingNext"
-        :can-load-previous="canLoadPrevious"
-        :page-at-top="pageAtTop"
-        :error-message="errorMessage"
-        :mode="displayMode"
-        :loaded-page-start="loadedPageStart"
-        :loaded-page-end="loadedPageEnd"
-        :downloaded-album-ids="downloadedAlbumIds"
-        idle-text="请在右侧收藏夹菜单中选择文件夹"
-        @mode-change="displayMode = $event"
-        @item-click="handleItemClick"
-        @load-previous="handleLoadPrevious"
-        @pull-state-change="pullGestureActive = $event"
-        @retry="retrySearch"
-      >
-        <template #item-actions="{ item }">
-          <button
-            type="button"
-            class="card-more-btn"
-            :class="{ active: cardMenu?.item.id === item.id }"
-            aria-label="更多操作"
-            @click.stop="openCardMenu(item, $event)"
-          >
-            <IonIcon :icon="ellipsisVertical" />
-          </button>
-        </template>
-      </SearchResultContainer>
+        <SearchResultContainer
+          ref="resultContainerRef"
+          :result="resultMeta"
+          :items="displayItems"
+          :loading="initialLoading"
+          :loading-previous="loadingPrevious"
+          :loading-next="loadingNext"
+          :can-load-previous="canLoadPrevious"
+          :page-at-top="pageAtTop"
+          :error-message="errorMessage"
+          :mode="displayMode"
+          :loaded-page-start="loadedPageStart"
+          :loaded-page-end="loadedPageEnd"
+          :downloaded-album-ids="downloadedAlbumIds"
+          idle-text="请在右侧收藏夹菜单中选择文件夹"
+          @mode-change="displayMode = $event"
+          @item-click="handleItemClick"
+          @load-previous="handleLoadPrevious"
+          @pull-state-change="pullGestureActive = $event"
+          @retry="retrySearch"
+        >
+          <template #item-actions="{ item }">
+            <button
+              type="button"
+              class="card-more-btn"
+              :class="{ active: cardMenu?.item.id === item.id }"
+              aria-label="更多操作"
+              @click.stop="openCardMenu(item, $event)"
+            >
+              <IonIcon :icon="ellipsisVertical" />
+            </button>
+          </template>
+        </SearchResultContainer>
 
-      <QuickActionFab
-        slot="fixed"
-        @search="openRightMenu"
-        @jump="scrollToTop"
-        @top="scrollToTop"
-        @back="goBack"
+        <QuickActionFab
+          slot="fixed"
+          @search="openRightMenu"
+          @jump="scrollToTop"
+          @top="scrollToTop"
+          @back="goBack"
+        />
+      </IonContent>
+
+      <FavoriteSideMenu
+        ref="sideMenuRef"
+        v-model="rightMenuOpen"
+        v-model:pane-open="widePaneOpen"
+        :display-mode="isWideLayout ? 'pane' : 'overlay'"
+        :online-folders="onlineFolderEntries"
+        :offline-folders="offlineFolderEntries"
+        :selected-online-id="folderSource === 'online' ? currentFolderId : ''"
+        :selected-offline-id="folderSource === 'offline' ? currentFolderId : ''"
+        :online-folder-counts="onlineFolderCounts"
+        @select-online-folder="onSelectOnlineFolder"
+        @select-offline-folder="onSelectOfflineFolder"
+        @add-folder="onAddFolder"
+        @rename-folder="onRenameFolder"
+        @delete-folder="onDeleteFolder"
+        @move-folder="onMoveFolder"
+        @copy-folder="onCopyFolder"
+        @export-folder="onExportFolder"
       />
-    </IonContent>
+    </div>
 
     <!-- 操作进度遮罩（阻塞式，不可关闭） -->
     <div v-if="showProgressModal" class="progress-overlay">
@@ -95,24 +119,6 @@
         <div class="progress-warning">请勿关闭应用</div>
       </div>
     </div>
-
-    <FavoriteSideMenu
-      ref="sideMenuRef"
-      v-model="rightMenuOpen"
-      :online-folders="onlineFolderEntries"
-      :offline-folders="offlineFolderEntries"
-      :selected-online-id="folderSource === 'online' ? currentFolderId : ''"
-      :selected-offline-id="folderSource === 'offline' ? currentFolderId : ''"
-      :online-folder-counts="onlineFolderCounts"
-      @select-online-folder="onSelectOnlineFolder"
-      @select-offline-folder="onSelectOfflineFolder"
-      @add-folder="onAddFolder"
-      @rename-folder="onRenameFolder"
-      @delete-folder="onDeleteFolder"
-      @move-folder="onMoveFolder"
-      @copy-folder="onCopyFolder"
-      @export-folder="onExportFolder"
-    />
 
     <CardContextMenu
       :visible="Boolean(cardMenu)"
@@ -191,6 +197,7 @@ defineOptions({ name: 'FavoritePage' })
 const { isDraggingRight, isSnappingClosed, leftMenuOpen, rightDragProgress, rightMenuOpen } =
   useSideMenuState()
 
+const WIDE_LAYOUT_MIN_WIDTH = 1280
 const NEXT_PAGE_THRESHOLD = 220
 
 const router = useRouter()
@@ -248,10 +255,16 @@ const pageAtTop = ref(true)
 const pullGestureActive = ref(false)
 
 const contentRef = ref<InstanceType<typeof IonContent> | null>(null)
+const pageShellRef = ref<HTMLElement | null>(null)
 const scrollElementRef = ref<HTMLElement | null>(null)
 const resultContainerRef = ref<SearchResultContainerExposed | null>(null)
 const searchBarRef = ref<{ focusInput: () => Promise<void> } | null>(null)
 const sideMenuRef = ref<InstanceType<typeof FavoriteSideMenu> | null>(null)
+const pageWidth = ref(0)
+const widePaneOpen = ref(false)
+const isWideLayout = computed(() => pageWidth.value >= WIDE_LAYOUT_MIN_WIDTH)
+
+let pageResizeObserver: ResizeObserver | undefined
 
 const pageCache = ref<Record<number, SearchResultItem[]>>({})
 
@@ -396,6 +409,40 @@ const resolveScrollElement = async () => {
   if (!contentEl?.getScrollElement) return null
   scrollElementRef.value = await contentEl.getScrollElement()
   return scrollElementRef.value
+}
+
+const updatePageWidth = (width: number) => {
+  pageWidth.value = width
+}
+
+const measurePageWidth = () => {
+  const shell = pageShellRef.value
+  if (!shell) return
+  const measuredWidth =
+    shell.getBoundingClientRect().width || shell.clientWidth || window.innerWidth
+  updatePageWidth(measuredWidth)
+}
+
+const startPageResizeObserver = () => {
+  pageResizeObserver?.disconnect()
+  pageResizeObserver = undefined
+  measurePageWidth()
+
+  const shell = pageShellRef.value
+  if (!shell || typeof ResizeObserver === 'undefined') return
+
+  pageResizeObserver = new ResizeObserver((entries) => {
+    const width = entries[0]?.contentRect.width
+    if (typeof width === 'number') {
+      updatePageWidth(width)
+    }
+  })
+  pageResizeObserver.observe(shell)
+}
+
+const stopPageResizeObserver = () => {
+  pageResizeObserver?.disconnect()
+  pageResizeObserver = undefined
 }
 
 // --- 数据获取 ---
@@ -671,6 +718,12 @@ const openRightMenu = async () => {
   if (leftMenuOpen.value) {
     closeLeftMenu()
   }
+
+  if (isWideLayout.value) {
+    widePaneOpen.value = true
+    return
+  }
+
   // 两阶段入场动画：先渲染在关闭位置，再 transition 到打开位置
   rightDragProgress.value = 0
   isDraggingRight.value = true
@@ -750,6 +803,7 @@ function handleCardMenuAction(action: string) {
 // 组件卸载时清理
 onBeforeUnmount(() => {
   downloadProgressHandle?.remove()
+  stopPageResizeObserver()
 })
 
 // --- 卡片操作：阅读 ---
@@ -1570,6 +1624,21 @@ const setupCloseGesture = () => {
   menuCloseGesture.enable(true)
 }
 
+const resetOverlayMenuState = () => {
+  menuCloseGesture?.destroy()
+  menuCloseGesture = undefined
+  rightMenuOpen.value = false
+  isDraggingRight.value = false
+  isSnappingClosed.value = false
+  rightDragProgress.value = 0
+}
+
+// 宽屏 pane 与窄屏 overlay 不共享打开状态，跨越断点时始终从当前模式的默认状态开始。
+watch(isWideLayout, (wide) => {
+  widePaneOpen.value = wide
+  resetOverlayMenuState()
+})
+
 // 右侧菜单打开时建立关闭手势，关闭时销毁；同时刷新在线文件夹数量
 watch(rightMenuOpen, (open) => {
   if (open) {
@@ -1594,6 +1663,7 @@ watch(isLoggedIn, (loggedIn, wasLoggedIn) => {
 })
 
 onMounted(async () => {
+  startPageResizeObserver()
   void initOnlineFolders()
   nextTick(() => {
     void resolveScrollElement()
@@ -1615,8 +1685,10 @@ const savedScrollTop = ref(0)
 
 onDeactivated(() => {
   savedScrollTop.value = scrollElementRef.value?.scrollTop ?? 0
+  stopPageResizeObserver()
   menuCloseGesture?.destroy()
   menuCloseGesture = undefined
+  widePaneOpen.value = false
   rightMenuOpen.value = false
   isDraggingRight.value = false
   isSnappingClosed.value = false
@@ -1625,6 +1697,10 @@ onDeactivated(() => {
 
 onActivated(async () => {
   await nextTick()
+  startPageResizeObserver()
+  if (isWideLayout.value) {
+    widePaneOpen.value = true
+  }
   const scrollEl = scrollElementRef.value ?? (await resolveScrollElement())
   if (scrollEl && savedScrollTop.value > 0) {
     scrollEl.scrollTop = savedScrollTop.value
@@ -1633,8 +1709,27 @@ onActivated(async () => {
 </script>
 
 <style scoped>
+.favorite-page-layout {
+  display: flex;
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.favorite-page-layout > ion-content {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
 .favorite-page-top {
   padding: calc(var(--ion-safe-area-top) + 2px) 14px 0;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 1000px;
+  margin: 0 auto;
 }
 
 .favorite-page-toolbar {
@@ -1685,6 +1780,11 @@ onActivated(async () => {
 
 .folders-toggle-btn:active {
   transform: scale(0.94);
+}
+
+.folders-toggle-btn:focus-visible {
+  outline: 3px solid rgb(201 109 58 / 0.45);
+  outline-offset: 2px;
 }
 
 .current-folder-label {

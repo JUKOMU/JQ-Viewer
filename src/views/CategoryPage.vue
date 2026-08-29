@@ -681,6 +681,8 @@ onMounted(() => {
   grid-template-columns: 44px minmax(0, 1fr);
   align-items: start;
   gap: 5px;
+  max-width: 1000px;
+  margin-inline: auto;
 }
 
 .category-page-toolbar.pinned {

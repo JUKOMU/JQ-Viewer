@@ -89,7 +89,16 @@
       </IonToolbar>
     </IonHeader>
 
-    <IonContent ref="contentRef" :scroll-events="true" @ion-scroll="onContentScroll">
+    <IonContent
+      ref="contentRef"
+      :scroll-events="true"
+      @ion-scroll="onContentScroll"
+      @pointerdown="releaseHighlightLock"
+      @touchstart="releaseHighlightLock"
+      @wheel="releaseHighlightLock"
+      @keydown="releaseHighlightLock"
+      @click="releaseHighlightLock"
+    >
       <div class="page-shell">
         <div class="fav-legend">
           <span class="fav-legend-item"><span class="fav-legend-dot online" /> 在线收藏</span>
@@ -267,6 +276,7 @@ const parsedItems = ref<ParsedIdItem[]>([])
 const invalidIds = ref<InvalidIdItem[]>([])
 const albumResults = ref<(AlbumDetail | null)[]>([])
 const currentHighlightIndex = ref(-1)
+const lockedHighlightIndex = ref<number | null>(null)
 
 const currentHighlightLine = computed(() => {
   const item = parsedItems.value[currentHighlightIndex.value]
@@ -455,6 +465,7 @@ const displayItems = computed<SearchResultDisplayItem[]>(() => {
 async function doParse() {
   const text = originalText.value
   currentHighlightIndex.value = -1
+  lockedHighlightIndex.value = null
   failedIds.value = {}
   if (!text || !text.trim()) {
     errorMessage.value = '未接收到解析文本'
@@ -579,6 +590,16 @@ function onContentScroll(_e: ScrollCustomEvent) {
 }
 
 function updateHighlightFromScroll() {
+  const lockedIndex = lockedHighlightIndex.value
+  if (lockedIndex !== null) {
+    if (parsedItems.value[lockedIndex]) {
+      currentHighlightIndex.value = lockedIndex
+    } else {
+      lockedHighlightIndex.value = null
+    }
+    return
+  }
+
   if (!resultContainerRef.value) return
 
   const root = resultContainerRef.value.getRootElement()
@@ -640,8 +661,13 @@ function onSourceItemClick(index: number) {
   const el = resultContainerRef.value?.getEntryElement(entryKey)
   if (el) {
     currentHighlightIndex.value = index
+    lockedHighlightIndex.value = index
     el.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }
+}
+
+function releaseHighlightLock() {
+  lockedHighlightIndex.value = null
 }
 
 function onSourceLineClick(lineIndex: number) {

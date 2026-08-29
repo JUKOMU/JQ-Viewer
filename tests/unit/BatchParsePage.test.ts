@@ -17,7 +17,7 @@ vi.mock('vue-router', () => ({
 vi.mock('@ionic/vue', () => ({
   IonContent: defineComponent({
     name: 'IonContent',
-    emits: ['ion-scroll'],
+    emits: ['ion-scroll', 'pointerdown', 'touchstart', 'wheel', 'keydown', 'click'],
     setup(_, { slots }) {
       return () => h('main', slots.default?.())
     },
@@ -196,6 +196,38 @@ describe('BatchParsePage 原文与结果联动', () => {
     )
     expect(wrapper.find('.source-line.current-line').exists()).toBe(true)
     expect(target.classes()).toContain('entry-highlighted')
+  })
+
+  test('首尾卡片点击后保持高亮，直到用户再次操作内容区', async () => {
+    vi.useFakeTimers()
+    const wrapper = await mountPage()
+    const content = wrapper.findComponent({ name: 'IonContent' })
+    const result = wrapper.findComponent({ name: 'SearchResultContainer' })
+    const cards = result.findAll('[data-entry-key]')
+    setCardRect(cards[0].element, 100, 200)
+    setCardRect(cards[1].element, 334, 434)
+    setCardRect(cards[2].element, 600, 700)
+
+    const buttons = wrapper.findAll('button.source-id')
+    await buttons[0].trigger('click')
+    content.vm.$emit('ion-scroll', { detail: { scrollTop: 0 } })
+    vi.advanceTimersByTime(150)
+    await wrapper.vm.$nextTick()
+
+    expect(result.props('activeEntryKey')).toBe('1-0-111111')
+
+    content.vm.$emit('pointerdown')
+    content.vm.$emit('ion-scroll', { detail: { scrollTop: 200 } })
+    vi.advanceTimersByTime(150)
+    await wrapper.vm.$nextTick()
+    expect(result.props('activeEntryKey')).toBe('1-1-222222')
+
+    await buttons[2].trigger('click')
+    content.vm.$emit('ion-scroll', { detail: { scrollTop: 600 } })
+    vi.advanceTimersByTime(150)
+    await wrapper.vm.$nextTick()
+
+    expect(result.props('activeEntryKey')).toBe('1-2-333333')
   })
 
   test('滚动时选择中心最近卡片，而不是最后一个可见卡片', async () => {

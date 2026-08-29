@@ -241,7 +241,7 @@ describe('HistoryPage 浏览历史概览与分组', () => {
     await settle()
 
     expect(wrapper.get('.history-error').text()).toContain('加载失败')
-    expect(wrapper.find('.empty-state').exists()).toBe(false)
+    expect(wrapper.find('.tab-content').find('.empty-state').exists()).toBe(false)
     await wrapper.get('.retry-btn').trigger('click')
     await settle()
     expect(wrapper.findAll('.browse-card')).toHaveLength(1)
@@ -374,6 +374,51 @@ describe('HistoryPage 详情和生命周期', () => {
     await settle()
     expect(mocks.getParseHistory).toHaveBeenNthCalledWith(2, 50, 50)
     expect(wrapper.findAll('.parse-card')).toHaveLength(51)
+    wrapper.unmount()
+  })
+
+  test('切换 Tab 保留浏览卡片节点、折叠状态、分页数据和各自滚动位置', async () => {
+    const today = new Date(2025, 6, 16, 10).getTime()
+    const browseItems = Array.from({ length: 51 }, (_, index) => makeBrowseItem(index + 1, today))
+    mocks.getParseHistory.mockResolvedValue([makeParseItem()])
+    const wrapper = await mountHistory(browseItems)
+    const firstCardElement = wrapper.get('.browse-card').element
+    const firstCoverElement = wrapper.get('.card-cover').element
+    const todayContent = wrapper.get('#history-group-content-today')
+    const scrollElement = prepareNearBottom(wrapper)
+
+    scrollElement.scrollTop = 420
+    scrollElement.dispatchEvent(new CustomEvent('ion-scroll', { detail: { scrollTop: 420 } }))
+    await settle()
+    expect(wrapper.findAll('.browse-card')).toHaveLength(51)
+
+    await wrapper.get('#history-group-toggle-today').trigger('click')
+    expect(todayContent.attributes('style')).toContain('display: none')
+
+    await wrapper.get('.tab-btn:nth-child(2)').trigger('click')
+    await settle()
+    expect(wrapper.findAll('.tab-content')[0].attributes('style')).toContain('display: none')
+    expect(wrapper.findAll('.parse-card')).toHaveLength(1)
+    const parseCardElement = wrapper.get('.parse-card').element
+    scrollElement.scrollTop = 180
+    scrollElement.dispatchEvent(new CustomEvent('ion-scroll', { detail: { scrollTop: 180 } }))
+    await settle()
+
+    await wrapper.get('.tab-btn:nth-child(1)').trigger('click')
+    await settle()
+    expect(wrapper.findAll('.browse-card')).toHaveLength(51)
+    expect(wrapper.get('.browse-card').element).toBe(firstCardElement)
+    expect(wrapper.get('.card-cover').element).toBe(firstCoverElement)
+    expect(todayContent.attributes('style')).toContain('display: none')
+    expect(scrollElement.scrollTop).toBe(420)
+    expect(mocks.getBrowseHistoryOverview).toHaveBeenCalledOnce()
+    expect(mocks.getBrowseHistory).toHaveBeenCalledTimes(2)
+
+    await wrapper.get('.tab-btn:nth-child(2)').trigger('click')
+    await settle()
+    expect(wrapper.get('.parse-card').element).toBe(parseCardElement)
+    expect(mocks.getParseHistory).toHaveBeenCalledOnce()
+    expect(scrollElement.scrollTop).toBe(180)
     wrapper.unmount()
   })
 

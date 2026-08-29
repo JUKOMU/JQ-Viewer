@@ -789,6 +789,8 @@ onMounted(() => {
 }
 
 .search-page-toolbar {
+  max-width: 1000px;
+  margin-inline: auto;
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr);
   align-items: start;

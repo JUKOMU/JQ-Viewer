@@ -222,4 +222,12 @@ import type { CommentItem } from '@/services/JmcomicTypes'
   color: #8a6048;
   font-size: 11px;
 }
+
+@container (min-width: 960px) {
+  .comments-section {
+    width: 100%;
+    max-width: 720px;
+    margin-inline: auto;
+  }
+}
 </style>

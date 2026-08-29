@@ -12,48 +12,50 @@
       </ion-toolbar>
     </IonHeader>
     <IonContent ref="contentRef" :scroll-events="true" @ion-scroll="onIonScroll">
-      <div class="preview-container">
-        <!-- 初始加载中：骨架占位 -->
-        <div v-if="loading" class="preview-grid">
-          <div v-for="i in skeletonCount" :key="'init-skel-' + i" class="preview-item">
-            <div class="skeleton-thumb" />
-            <span class="preview-page-num">{{ i }}</span>
-          </div>
-        </div>
-
-        <!-- 逐批显示槽位 -->
-        <template v-else-if="totalCount > 0">
-          <div class="preview-grid">
-            <div v-for="i in displayCount" :key="'slot-' + i" class="preview-item">
-              <template v-if="slots[i - 1]">
-                <img
-                  :src="slots[i - 1]!.dataUrl"
-                  :alt="'第 ' + i + ' 页'"
-                  class="preview-thumb"
-                  @click="openReader(i)"
-                />
-              </template>
-              <template v-else>
-                <div class="skeleton-thumb" />
-              </template>
+      <div class="preview-page-container">
+        <div class="preview-container">
+          <!-- 初始加载中：骨架占位 -->
+          <div v-if="loading" ref="previewGridRef" class="preview-grid">
+            <div v-for="i in skeletonCount" :key="'init-skel-' + i" class="preview-item">
+              <div class="skeleton-thumb" />
               <span class="preview-page-num">{{ i }}</span>
             </div>
           </div>
 
-          <div class="preview-footer" role="status" aria-live="polite" aria-atomic="true">
-            <p v-if="loadingMore" class="footer-loading">
-              <ion-spinner name="dots" aria-hidden="true" />
-              <span>加载中...（{{ loadedCount }} / {{ totalCount }}）</span>
-            </p>
-            <p v-else-if="allVisible" class="footer-text">已显示所有图片</p>
-            <p v-else-if="loadedCount < displayCount" class="footer-text">
-              上滑重新加载缺失图片...（{{ loadedCount }} / {{ displayCount }}）
-            </p>
-            <p v-else class="footer-text">上滑加载更多...</p>
-          </div>
-        </template>
+          <!-- 逐批显示槽位 -->
+          <template v-else-if="totalCount > 0">
+            <div ref="previewGridRef" class="preview-grid">
+              <div v-for="i in displayCount" :key="'slot-' + i" class="preview-item">
+                <template v-if="slots[i - 1]">
+                  <img
+                    :src="slots[i - 1]!.dataUrl"
+                    :alt="'第 ' + i + ' 页'"
+                    class="preview-thumb"
+                    @click="openReader(i)"
+                  />
+                </template>
+                <template v-else>
+                  <div class="skeleton-thumb" />
+                </template>
+                <span class="preview-page-num">{{ i }}</span>
+              </div>
+            </div>
 
-        <p v-else class="preview-empty">暂无图片</p>
+            <div class="preview-footer" role="status" aria-live="polite" aria-atomic="true">
+              <p v-if="loadingMore" class="footer-loading">
+                <ion-spinner name="dots" aria-hidden="true" />
+                <span>加载中...（{{ loadedCount }} / {{ totalCount }}）</span>
+              </p>
+              <p v-else-if="allVisible" class="footer-text">已显示所有图片</p>
+              <p v-else-if="loadedCount < displayCount" class="footer-text">
+                上滑重新加载缺失图片...（{{ loadedCount }} / {{ displayCount }}）
+              </p>
+              <p v-else class="footer-text">上滑加载更多...</p>
+            </div>
+          </template>
+
+          <p v-else class="preview-empty">暂无图片</p>
+        </div>
       </div>
     </IonContent>
   </IonPage>
@@ -85,6 +87,7 @@ import {
   type PreviewImageSlotSetter,
   usePreviewBatches,
 } from '@/composables/usePreviewBatches'
+import { getPreviewGridItemWidth } from '@/utils/previewGrid'
 import { buildPdfDocumentParams, fetchPdfArrayBuffer } from '@/services/PdfReaderService'
 import * as pdfjsLib from 'pdfjs-dist'
 
@@ -122,6 +125,7 @@ const pdfObjectUrls = new Set<string>()
 // ---- 滚动容器 ----
 const contentRef = ref<InstanceType<typeof IonContent> | null>(null)
 const scrollEl = ref<HTMLElement | null>(null)
+const previewGridRef = ref<HTMLElement | null>(null)
 
 const resolveScrollElement = async (): Promise<HTMLElement | null> => {
   if (scrollEl.value) return scrollEl.value
@@ -140,10 +144,7 @@ const renderPdfPage = async (pageNum: number): Promise<string | null> => {
     page = await pdfDoc.getPage(pageNum)
     if (disposed) return null
     const rawViewport = page.getViewport({ scale: 1 })
-    const columns = window.innerWidth >= 680 ? 4 : 3
-    const gap = 6
-    const sidePadding = 24
-    const targetWidth = (window.innerWidth - sidePadding - gap * (columns - 1)) / columns
+    const targetWidth = getPreviewGridItemWidth(previewGridRef.value)
     const scale = Math.max(
       0.4,
       (targetWidth * Math.min(window.devicePixelRatio || 1, 2)) / rawViewport.width,
@@ -265,9 +266,9 @@ onMounted(async () => {
   await resolveScrollElement()
   if (disposed) return
 
-  loading.value = false
   await previewBatches.initialize()
   if (disposed) return
+  loading.value = false
   await maybeLoadMoreAfterRender()
 })
 
@@ -347,8 +348,17 @@ const goBack = () => router.back()
 </script>
 
 <style scoped>
+.preview-page-container {
+  width: 100%;
+  container-type: inline-size;
+}
+
 .preview-container {
   padding: 10px 12px;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 1280px;
+  margin-inline: auto;
 }
 
 .preview-grid {
@@ -432,6 +442,13 @@ const goBack = () => router.back()
 @media (min-width: 680px) {
   .preview-grid {
     grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+@container (min-width: 960px) {
+  .preview-grid {
+    grid-template-columns: repeat(auto-fill, minmax(116px, 1fr));
+    gap: 8px;
   }
 }
 </style>

@@ -16,65 +16,69 @@
       </IonToolbar>
     </IonHeader>
     <IonContent>
-      <!-- 已下载模式 -->
-      <div v-if="showMode === 'downloaded'" class="chapter-grid">
-        <button
-          v-for="ch in downloadedChapters"
-          :key="ch.chapterId"
-          type="button"
-          class="chapter-card downloaded"
-          @click="openLocalChapter(ch)"
-        >
-          <span class="chapter-num">{{ chapterNum(ch) }}</span>
-          <span class="chapter-title">{{ ch.chapterId }}</span>
-          <span v-if="ch.totalPages > 0" class="chapter-pages">{{ ch.totalPages }} 页</span>
-          <span class="source-row">
-            <span v-if="ch.downloadTask" class="source-chip image">图片</span>
-            <span v-if="ch.pdfData" class="source-chip pdf">PDF</span>
-          </span>
-          <img v-if="chapterCover(ch)" :src="chapterCover(ch)!" class="chapter-thumb" alt="" />
-        </button>
-      </div>
+      <div class="chapter-page-container">
+        <div class="chapter-content">
+          <!-- 已下载模式 -->
+          <div v-if="showMode === 'downloaded'" class="chapter-grid">
+            <button
+              v-for="ch in downloadedChapters"
+              :key="ch.chapterId"
+              type="button"
+              class="chapter-card downloaded"
+              @click="openLocalChapter(ch)"
+            >
+              <span class="chapter-num">{{ chapterNum(ch) }}</span>
+              <span class="chapter-title">{{ ch.chapterId }}</span>
+              <span v-if="ch.totalPages > 0" class="chapter-pages">{{ ch.totalPages }} 页</span>
+              <span class="source-row">
+                <span v-if="ch.downloadTask" class="source-chip image">图片</span>
+                <span v-if="ch.pdfData" class="source-chip pdf">PDF</span>
+              </span>
+              <img v-if="chapterCover(ch)" :src="chapterCover(ch)!" class="chapter-thumb" alt="" />
+            </button>
+          </div>
 
-      <!-- 全部章节模式：加载中骨架屏 -->
-      <div v-else-if="loadingAll" class="chapter-grid">
-        <div v-for="n in skeletonCount" :key="n" class="skeleton-card">
-          <div class="sk-line sk-line--short" />
-          <div class="sk-line" />
+          <!-- 全部章节模式：加载中骨架屏 -->
+          <div v-else-if="loadingAll" class="chapter-grid">
+            <div v-for="n in skeletonCount" :key="n" class="skeleton-card">
+              <div class="sk-line sk-line--short" />
+              <div class="sk-line" />
+            </div>
+          </div>
+
+          <!-- 全部章节模式：章节列表 -->
+          <div v-else class="chapter-grid">
+            <button
+              v-for="meta in allChapters"
+              :key="meta.id"
+              type="button"
+              class="chapter-card"
+              :class="{ downloaded: downloadedIds.has(meta.id) }"
+              @click="onOpenChapter(meta, downloadedIds.has(meta.id))"
+            >
+              <span class="chapter-num">第{{ meta.sortOrder }}话</span>
+              <span class="chapter-title">{{ meta.title }}</span>
+              <span v-if="downloadedIds.has(meta.id)" class="chapter-pages"
+                >{{ getDownloadedPages(meta.id) }} 页</span
+              >
+              <span v-if="downloadedIds.has(meta.id)" class="source-row">
+                <span v-if="downloadedMap.get(meta.id)?.downloadTask" class="source-chip image"
+                  >图片</span
+                >
+                <span v-if="downloadedMap.get(meta.id)?.pdfData" class="source-chip pdf">PDF</span>
+              </span>
+              <img
+                v-if="downloadedIds.has(meta.id) && getDownloadedCover(meta.id)"
+                :src="getDownloadedCover(meta.id)!"
+                class="chapter-thumb"
+                alt=""
+              />
+            </button>
+          </div>
+
+          <div class="bottom-spacer" />
         </div>
       </div>
-
-      <!-- 全部章节模式：章节列表 -->
-      <div v-else class="chapter-grid">
-        <button
-          v-for="meta in allChapters"
-          :key="meta.id"
-          type="button"
-          class="chapter-card"
-          :class="{ downloaded: downloadedIds.has(meta.id) }"
-          @click="onOpenChapter(meta, downloadedIds.has(meta.id))"
-        >
-          <span class="chapter-num">第{{ meta.sortOrder }}话</span>
-          <span class="chapter-title">{{ meta.title }}</span>
-          <span v-if="downloadedIds.has(meta.id)" class="chapter-pages"
-            >{{ getDownloadedPages(meta.id) }} 页</span
-          >
-          <span v-if="downloadedIds.has(meta.id)" class="source-row">
-            <span v-if="downloadedMap.get(meta.id)?.downloadTask" class="source-chip image"
-              >图片</span
-            >
-            <span v-if="downloadedMap.get(meta.id)?.pdfData" class="source-chip pdf">PDF</span>
-          </span>
-          <img
-            v-if="downloadedIds.has(meta.id) && getDownloadedCover(meta.id)"
-            :src="getDownloadedCover(meta.id)!"
-            class="chapter-thumb"
-            alt=""
-          />
-        </button>
-      </div>
-
-      <div class="bottom-spacer" />
     </IonContent>
   </IonPage>
 </template>
@@ -343,6 +347,17 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.chapter-page-container {
+  width: 100%;
+  container-type: inline-size;
+}
+
+.chapter-content {
+  width: 100%;
+  max-width: 1280px;
+  margin-inline: auto;
+}
+
 .toolbar-title {
   font-size: 16px;
   font-weight: 600;
@@ -496,6 +511,20 @@ onMounted(async () => {
 @media (min-width: 680px) {
   .chapter-grid {
     grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@container (min-width: 960px) {
+  .chapter-grid {
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 12px;
+    align-items: stretch;
+  }
+
+  .chapter-card {
+    width: 100%;
+    min-width: 0;
+    height: 100%;
   }
 }
 </style>

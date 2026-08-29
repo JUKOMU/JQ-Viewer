@@ -618,4 +618,18 @@ const downloadIcon = computed(() => {
     background-position: -200% 0;
   }
 }
+
+@container (min-width: 960px) {
+  .related-scroll {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    align-items: start;
+    overflow: visible;
+  }
+
+  .related-card {
+    width: auto;
+    min-width: 0;
+  }
+}
 </style>

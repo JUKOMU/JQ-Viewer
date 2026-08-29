@@ -1,113 +1,118 @@
 <template>
   <IonPage>
     <IonContent ref="contentRef" :scroll-events="true" @ion-scroll="handleScroll">
-      <!-- 区域 A：封面头部 -->
-      <AlbumHeader
-        ref="headerRef"
-        :cover-url="coverUrl"
-        :title="albumTitle"
-        :authors="albumAuthors"
-        :page-count="selectedChapterPageCount"
-        :loading="loading"
-        :chapter-loading="chapterLoading"
-        :source-menu-open="sourceMenuOpen"
-        :network-available="networkAvailable"
-        :image-available="selectedChapterHasDownload"
-        :pdf-available="Boolean(selectedChapterPdf)"
-        @back="goBack"
-        @start-reading="startReading"
-        @toggle-source-menu="toggleSourceMenu"
-        @select-source="openReaderBySource"
-      />
+      <div class="detail-page-container">
+        <div class="detail-layout">
+          <!-- 区域 A：封面头部 -->
+          <AlbumHeader
+            ref="headerRef"
+            :cover-url="coverUrl"
+            :title="albumTitle"
+            :authors="albumAuthors"
+            :page-count="selectedChapterPageCount"
+            :loading="loading"
+            :chapter-loading="chapterLoading"
+            :source-menu-open="sourceMenuOpen"
+            :network-available="networkAvailable"
+            :image-available="selectedChapterHasDownload"
+            :pdf-available="Boolean(selectedChapterPdf)"
+            @back="goBack"
+            @start-reading="startReading"
+            @toggle-source-menu="toggleSourceMenu"
+            @select-source="openReaderBySource"
+          />
 
-      <div ref="tabGestureRef" class="tab-gesture-area">
-        <!-- 区域 B：Tab 栏 -->
-        <div
-          ref="tabBarRef"
-          class="tab-bar"
-          :class="{ sticky: tabBarSticky, swiping: tabSwipeActive, settling: tabSwipeSettling }"
-          :style="tabBarStyle"
-        >
-          <div class="tab-active-indicator" />
-          <button
-            v-for="(tab, index) in tabs"
-            :key="tab.key"
-            type="button"
-            class="tab-btn"
-            :class="{ active: activeTab === tab.key }"
-            :style="getTabButtonStyle(index)"
-            @click="switchTab(tab.key)"
-          >
-            {{ tab.label }}
-          </button>
-        </div>
+          <div ref="tabGestureRef" class="tab-gesture-area">
+            <!-- 区域 B：Tab 栏 -->
+            <div
+              ref="tabBarRef"
+              class="tab-bar"
+              :class="{ sticky: tabBarSticky, swiping: tabSwipeActive, settling: tabSwipeSettling }"
+              :style="tabBarStyle"
+            >
+              <div class="tab-active-indicator" />
+              <button
+                v-for="(tab, index) in tabs"
+                :key="tab.key"
+                type="button"
+                class="tab-btn"
+                :class="{ active: activeTab === tab.key }"
+                :style="getTabButtonStyle(index)"
+                @click="switchTab(tab.key)"
+              >
+                {{ tab.label }}
+              </button>
+            </div>
 
-        <!-- 区域 C：Tab 内容 -->
-        <div
-          ref="tabContentRef"
-          class="tab-content"
-          :class="{ swiping: tabSwipeActive, settling: tabSwipeSettling }"
-          :style="tabContentStyle"
-        >
-          <div
-            v-for="(tab, index) in tabs"
-            :key="tab.key"
-            :ref="(el) => setTabPanelRef(tab.key, el)"
-            class="tab-panel"
-            :class="{ current: activeTab === tab.key }"
-            :style="getTabPanelStyle(index)"
-          >
-            <AlbumInfoTab
-              v-if="tab.key === 'info'"
-              :album="albumDetail"
-              :action-busy="actionBusy"
-              :download-status="selectedChapterDownloadStatus"
-              :image-available="selectedChapterHasDownload"
-              :pdf-available="Boolean(selectedChapterPdf)"
-              @toggle-like="handleToggleLike"
-              @toggle-favorite="handleToggleFavorite"
-              @download="handleDownload"
-              @navigate-album="onNavigateAlbum"
-            />
-            <AlbumChaptersTab
-              v-else-if="tab.key === 'chapters'"
-              :photo-metas="albumDetail?.photoMetas ?? []"
-              :selected-chapter-id="selectedChapterId"
-              :loading="loading"
-              :show-actions="showChapterActions"
-              :chapter-download-statuses="chapterDownloadStatuses"
-              :chapter-pdf-statuses="chapterPdfStatuses"
-              @select-chapter="selectChapter"
-              @download-chapter="onDownloadChapter"
-              @dismiss-actions="showChapterActions = false"
-              @batch-download="onBatchDownload"
-            />
-            <AlbumPreviewTab
-              v-else-if="tab.key === 'preview'"
-              :slots="previewSlots"
-              :total-count="previewImageTotal"
-              :visible-count="previewDisplayCount"
-              :all-visible="previewAllVisible"
-              :auto-load="previewAutoLoad"
-              :loading="previewLoading"
-              :loading-more="previewLoadingMore"
-              :loaded-count="previewLoadedCount"
-              empty-text="请先选择章节"
-              @load-more="loadMorePreview"
-              @open-reader="onOpenReader"
-            />
-            <AlbumCommentsTab
-              v-else-if="tab.key === 'comments'"
-              :comments="comments"
-              :loading="commentsLoading"
-              :has-more="hasMoreComments"
-              :total="totalComments"
-            />
+            <!-- 区域 C：Tab 内容 -->
+            <div
+              ref="tabContentRef"
+              class="tab-content"
+              :class="{ swiping: tabSwipeActive, settling: tabSwipeSettling }"
+              :style="tabContentStyle"
+            >
+              <div
+                v-for="(tab, index) in tabs"
+                :key="tab.key"
+                :ref="(el) => setTabPanelRef(tab.key, el)"
+                class="tab-panel"
+                :class="{ current: activeTab === tab.key }"
+                :style="getTabPanelStyle(index)"
+              >
+                <AlbumInfoTab
+                  v-if="tab.key === 'info'"
+                  :album="albumDetail"
+                  :action-busy="actionBusy"
+                  :download-status="selectedChapterDownloadStatus"
+                  :image-available="selectedChapterHasDownload"
+                  :pdf-available="Boolean(selectedChapterPdf)"
+                  @toggle-like="handleToggleLike"
+                  @toggle-favorite="handleToggleFavorite"
+                  @download="handleDownload"
+                  @navigate-album="onNavigateAlbum"
+                />
+                <AlbumChaptersTab
+                  v-else-if="tab.key === 'chapters'"
+                  :photo-metas="albumDetail?.photoMetas ?? []"
+                  :selected-chapter-id="selectedChapterId"
+                  :loading="loading"
+                  :show-actions="showChapterActions"
+                  :chapter-download-statuses="chapterDownloadStatuses"
+                  :chapter-pdf-statuses="chapterPdfStatuses"
+                  @select-chapter="selectChapter"
+                  @download-chapter="onDownloadChapter"
+                  @dismiss-actions="showChapterActions = false"
+                  @batch-download="onBatchDownload"
+                />
+                <AlbumPreviewTab
+                  v-else-if="tab.key === 'preview'"
+                  :ref="setPreviewTabRef"
+                  :slots="previewSlots"
+                  :total-count="previewImageTotal"
+                  :visible-count="previewDisplayCount"
+                  :all-visible="previewAllVisible"
+                  :auto-load="previewAutoLoad"
+                  :loading="previewLoading"
+                  :loading-more="previewLoadingMore"
+                  :loaded-count="previewLoadedCount"
+                  empty-text="请先选择章节"
+                  @load-more="loadMorePreview"
+                  @open-reader="onOpenReader"
+                />
+                <AlbumCommentsTab
+                  v-else-if="tab.key === 'comments'"
+                  :comments="comments"
+                  :loading="commentsLoading"
+                  :has-more="hasMoreComments"
+                  :total="totalComments"
+                />
+              </div>
+            </div>
           </div>
         </div>
-      </div>
 
-      <div class="bottom-spacer" />
+        <div class="bottom-spacer" />
+      </div>
     </IonContent>
 
     <FavoriteFolderPicker
@@ -160,6 +165,7 @@ import { HistoryService } from '@/services/HistoryService'
 import { useAuth } from '@/composables/useAuth'
 import { openLeftMenu, setLeftMenuGestureEnabled } from '@/composables/useSideMenuState'
 import { type PreviewImageSlotSetter, usePreviewBatches } from '@/composables/usePreviewBatches'
+import { getPreviewGridItemWidth } from '@/utils/previewGrid'
 import AlbumHeader from '@/components/album/AlbumHeader.vue'
 import AlbumInfoTab from '@/components/album/AlbumInfoTab.vue'
 import AlbumChaptersTab from '@/components/album/AlbumChaptersTab.vue'
@@ -498,6 +504,7 @@ const headerRef = ref<InstanceType<typeof AlbumHeader> | null>(null)
 const tabBarRef = ref<HTMLElement | null>(null)
 const tabGestureRef = ref<HTMLElement | null>(null)
 const tabContentRef = ref<HTMLElement | null>(null)
+const previewTabRef = ref<InstanceType<typeof AlbumPreviewTab> | null>(null)
 const contentRef = ref<InstanceType<typeof IonContent> | null>(null)
 const PREVIEW_NEAR_BOTTOM_THRESHOLD = 200
 const tabPanelRefs = new Map<TabKey, HTMLElement>()
@@ -706,6 +713,11 @@ const setTabPanelRef = (key: TabKey, el: Element | ComponentPublicInstance | nul
   }
 }
 
+const setPreviewTabRef = (el: Element | ComponentPublicInstance | null) => {
+  previewTabRef.value =
+    el && !(el instanceof Element) ? (el as InstanceType<typeof AlbumPreviewTab>) : null
+}
+
 const measureActiveTabPanel = () => {
   const panel = tabPanelRefs.get(activeTab.value)
   if (!panel) return
@@ -732,7 +744,7 @@ const getTabPanelWidth = () => {
   if (panel?.offsetWidth) return panel.offsetWidth
 
   const contentEl = tabContentRef.value
-  const contentWidth = contentEl?.clientWidth || window.innerWidth || 1
+  const contentWidth = contentEl?.clientWidth || tabGestureRef.value?.clientWidth || 1
   if (!contentEl) return Math.max(1, contentWidth - 28)
 
   const style = getComputedStyle(contentEl)
@@ -1002,10 +1014,7 @@ const renderPdfPreviewPage = async (
     page = await pdfDoc.getPage(pageNum)
     if (!isCurrentPreviewRequest(requestGeneration)) return null
     const rawViewport = page.getViewport({ scale: 1 })
-    const columns = window.innerWidth >= 680 ? 4 : 3
-    const gap = 6
-    const sidePadding = 24
-    const targetWidth = (window.innerWidth - sidePadding - gap * (columns - 1)) / columns
+    const targetWidth = getPreviewGridItemWidth(getAlbumPreviewGrid())
     const scale = Math.max(
       0.4,
       (targetWidth * Math.min(window.devicePixelRatio || 1, 2)) / rawViewport.width,
@@ -1087,6 +1096,11 @@ const loadNetworkPreview = async (
     setImageSlot,
   )
   return listenerReady ? photo : null
+}
+
+const getAlbumPreviewGrid = (): HTMLElement | null => {
+  const root = previewTabRef.value?.$el as HTMLElement | undefined
+  return root?.querySelector<HTMLElement>('.preview-grid') ?? null
 }
 
 const loadPreviewBatch = async (
@@ -1234,6 +1248,8 @@ const loadPreview = async () => {
     if (!context || !isCurrentPreviewRequest(requestGeneration)) return
     previewLoadContext = context
     previewSourceOverride.value = context.source
+    await nextTick()
+    if (!isCurrentPreviewRequest(requestGeneration)) return
     await previewBatches.initialize()
     if (!isCurrentPreviewRequest(requestGeneration)) return
     previewLoadedKey.value = cacheKey
@@ -1606,6 +1622,20 @@ const handleScroll = async (event: CustomEvent<{ scrollTop?: number }>) => {
 </script>
 
 <style scoped>
+.detail-page-container {
+  width: 100%;
+  container-type: inline-size;
+}
+
+.detail-layout {
+  width: 100%;
+  min-width: 0;
+}
+
+.tab-gesture-area {
+  min-width: 0;
+}
+
 /* Tab 栏 */
 .tab-bar {
   display: flex;
@@ -1716,6 +1746,36 @@ const handleScroll = async (event: CustomEvent<{ scrollTop?: number }>) => {
 
   .tab-content.swiping .tab-panel {
     width: calc(100% - 28px);
+  }
+}
+
+@container (min-width: 960px) {
+  .detail-layout {
+    display: grid;
+    grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+    align-items: start;
+    gap: 24px;
+    box-sizing: border-box;
+    max-width: 1280px;
+    margin-inline: auto;
+    padding-inline: 16px;
+  }
+
+  .tab-bar {
+    position: sticky;
+    top: 0;
+    padding-top: calc(var(--ion-safe-area-top) + 8px);
+    margin-bottom: calc(-1 * var(--ion-safe-area-top));
+    box-shadow: 0 2px 10px rgb(76 42 24 / 0.08);
+  }
+
+  .tab-active-indicator {
+    top: calc(var(--ion-safe-area-top) + 8px);
+  }
+
+  .tab-content {
+    max-width: none;
+    margin-inline: 0;
   }
 }
 </style>

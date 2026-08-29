@@ -216,4 +216,11 @@ const onLoadMore = () => {
     grid-template-columns: repeat(4, 1fr);
   }
 }
+
+@container (min-width: 960px) {
+  .preview-grid {
+    grid-template-columns: repeat(auto-fill, minmax(116px, 1fr));
+    gap: 8px;
+  }
+}
 </style>

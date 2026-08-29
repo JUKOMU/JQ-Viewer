@@ -108,6 +108,7 @@ const ZOOM_MIN = 1
 const DOUBLE_TAP_MS = 280
 const DOUBLE_TAP_DIST = 30
 const MAX_DOM_ITEMS = 100
+const READER_CONTENT_MAX_WIDTH = 720
 // 与 .edge-indicator 高度保持一致，首尾提示区不参与图片高度缩放。
 const EDGE_INDICATOR_HEIGHT = 120
 const SCROLL_SYNC_RETRY_MAX = 30
@@ -129,12 +130,26 @@ const zoomScale = ref(1)
 const zoomTx = ref(0)
 const zoomTy = ref(0)
 
+function getFallbackContentWidth() {
+  const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 0
+  return Math.min(viewportWidth || 360, READER_CONTENT_MAX_WIDTH)
+}
+
+const contentWidth = computed(() => containerWidth.value || getFallbackContentWidth())
+
 const wrapperStyle = computed(() => {
-  if (zoomScale.value <= 1 && zoomTx.value === 0 && zoomTy.value === 0) return undefined
-  return {
-    transform: `translate(${zoomTx.value}px, ${zoomTy.value}px) scale(${zoomScale.value})`,
-    transformOrigin: '0 0',
+  const style: Record<string, string> = {
+    width: `${contentWidth.value}px`,
+    left: '50%',
+    marginLeft: `${-contentWidth.value / 2}px`,
   }
+
+  if (zoomScale.value > 1 || zoomTx.value !== 0 || zoomTy.value !== 0) {
+    style.transform = `translate(${zoomTx.value}px, ${zoomTy.value}px) scale(${zoomScale.value})`
+    style.transformOrigin = '0 0'
+  }
+
+  return style
 })
 
 const contentOffset = computed(() => (props.totalCount > 0 ? EDGE_INDICATOR_HEIGHT : 0))
@@ -169,8 +184,7 @@ const visibleItems = computed<VisibleItem[]>(() => {
 })
 
 function getEstimatedHeight() {
-  const width = containerWidth.value || window.innerWidth || 360
-  return Math.max(320, (width * 4) / 3)
+  return Math.max(320, (contentWidth.value * 4) / 3)
 }
 
 function clampIndex(index: number) {
@@ -274,6 +288,11 @@ function getZoomViewportContentTop() {
   return Math.max(0, (scrollTop - zoomTy.value) / (zoomScale.value || 1))
 }
 
+function getContentOffsetX() {
+  const viewportWidth = containerRef.value?.clientWidth || window.innerWidth || 360
+  return Math.max(0, (viewportWidth - contentWidth.value) / 2)
+}
+
 function updateZoomCurrentIndex() {
   if (zoomScale.value <= 1) return
   updateVisibleRange(getZoomViewportContentTop())
@@ -303,7 +322,10 @@ function updateContainerSize() {
   const el = containerRef.value
   if (!el) return false
   const nextHeight = el.clientHeight
-  const nextWidth = el.clientWidth
+  const nextWidth =
+    el.clientWidth > 0
+      ? Math.min(el.clientWidth, READER_CONTENT_MAX_WIDTH)
+      : getFallbackContentWidth()
   const changed = nextHeight !== containerHeight.value || nextWidth !== containerWidth.value
   containerHeight.value = nextHeight
   containerWidth.value = nextWidth
@@ -338,7 +360,7 @@ function updateMeasuredHeight(index: number, nextHeight: number) {
 function onImageLoad(index: number, ev: Event) {
   const img = ev.target as HTMLImageElement | null
   if (!img || img.naturalWidth <= 0 || img.naturalHeight <= 0) return
-  const width = containerWidth.value || containerRef.value?.clientWidth || img.clientWidth
+  const width = contentWidth.value || img.clientWidth
   if (width <= 0) return
   updateMeasuredHeight(index, (width * img.naturalHeight) / img.naturalWidth)
 }
@@ -479,7 +501,7 @@ function getViewportContentPoint(relX: number, relY: number, scale = zoomScale.v
   const scrollTop = containerRef.value?.scrollTop ?? 0
   const safeScale = scale || 1
   return {
-    x: (relX - zoomTx.value) / safeScale,
+    x: (relX - getContentOffsetX() - zoomTx.value) / safeScale,
     y: (scrollTop + relY - zoomTy.value) / safeScale,
   }
 }
@@ -493,7 +515,7 @@ function applyZoomAtContentPoint(
 ) {
   const scrollTop = containerRef.value?.scrollTop ?? 0
   zoomScale.value = scale
-  zoomTx.value = relX - contentX * scale
+  zoomTx.value = relX - getContentOffsetX() - contentX * scale
   zoomTy.value = scrollTop + relY - contentY * scale
 }
 
@@ -574,7 +596,7 @@ function onTM(ev: TouchEvent) {
     const dx = ev.touches[0].clientX - startX
     const dy = ev.touches[0].clientY - startY
     if (Math.abs(dx) > 2 || Math.abs(dy) > 2) moved = true
-    const cw = containerRef.value?.clientWidth ?? 0
+    const cw = contentWidth.value
     const ch = containerRef.value?.clientHeight ?? 0
     const st = containerRef.value?.scrollTop ?? 0
     const contentHeight = Math.max(innerHeight.value, ch)
@@ -708,9 +730,13 @@ defineExpose({ scrollToIndex, containerRef, isAtBottom })
 
 .zoom-wrapper {
   position: absolute;
-  inset: 0;
-  width: 100%;
+  top: 0;
+  right: auto;
+  bottom: 0;
+  left: max(0px, calc((100% - 720px) / 2));
+  width: min(100%, 720px);
   height: 100%;
+  box-sizing: border-box;
   will-change: transform;
 }
 

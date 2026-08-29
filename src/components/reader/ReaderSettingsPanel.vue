@@ -299,6 +299,7 @@ function onPreloadConcurrencyChange(e: Event) {
 
 .panel-card {
   width: 100%;
+  max-width: 720px;
   max-height: 80vh;
   background: #fff;
   border-radius: 16px 16px 0 0;

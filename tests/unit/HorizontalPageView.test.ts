@@ -1,12 +1,37 @@
 import { mount } from '@vue/test-utils'
-import { afterEach, describe, expect, test, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import HorizontalPageView from '@/components/reader/HorizontalPageView.vue'
+
+let resizeObserverTrigger: (() => void) | null = null
+let lastResizeObserver: { disconnected: boolean } | null = null
+
+class ResizeObserverMock {
+  constructor(callback: () => void) {
+    lastResizeObserver = { disconnected: false }
+    resizeObserverTrigger = callback
+  }
+
+  observe() {}
+
+  disconnect() {
+    if (lastResizeObserver) lastResizeObserver.disconnected = true
+  }
+}
+
+beforeEach(() => {
+  resizeObserverTrigger = null
+  lastResizeObserver = null
+  vi.stubGlobal('ResizeObserver', ResizeObserverMock)
+})
 
 afterEach(() => {
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+  resizeObserverTrigger = null
+  lastResizeObserver = null
 })
 
-function mountView(currentIndex = 1) {
+function mountView(currentIndex = 1, width = 300) {
   const wrapper = mount(HorizontalPageView, {
     props: {
       imageMap: new Map([
@@ -21,12 +46,48 @@ function mountView(currentIndex = 1) {
   const container = wrapper.get('.horizontal-container')
   Object.defineProperties(container.element, {
     clientHeight: { configurable: true, value: 400 },
-    clientWidth: { configurable: true, value: 300 },
+    clientWidth: { configurable: true, value: width },
   })
   return { wrapper, container }
 }
 
 describe('HorizontalPageView', () => {
+  test('页面槽位统一使用容器实际宽度', async () => {
+    const { wrapper } = mountView(1, 1280)
+    resizeObserverTrigger?.()
+    await wrapper.vm.$nextTick()
+
+    const slots = wrapper.findAll('.page-slot')
+    expect(slots[0].attributes('style')).toContain('left: 0px')
+    expect(slots[0].attributes('style')).toContain('width: 1280px')
+    expect(slots[1].attributes('style')).toContain('left: 1280px')
+    expect(slots[2].attributes('style')).toContain('left: 2560px')
+    expect(wrapper.get('.strip').attributes('style')).toContain('width: 3840px')
+    wrapper.unmount()
+  })
+
+  test('容器尺寸变化后重新对齐当前页并断开观察器', async () => {
+    const { wrapper, container } = mountView(1, 300)
+    resizeObserverTrigger?.()
+    await wrapper.vm.$nextTick()
+    expect(wrapper.get('.strip').attributes('style')).toContain('translate3d(-300px, 0, 0)')
+
+    Object.defineProperty(container.element, 'clientWidth', {
+      configurable: true,
+      value: 800,
+    })
+    resizeObserverTrigger?.()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.get('.strip').attributes('style')).toContain('translate3d(-800px, 0, 0)')
+    expect(wrapper.findAll('.page-slot')[1].attributes('style')).toContain('width: 800px')
+    expect(wrapper.props('currentIndex')).toBe(1)
+    expect(wrapper.emitted('update:currentIndex')).toBeUndefined()
+
+    wrapper.unmount()
+    expect(lastResizeObserver?.disconnected).toBe(true)
+  })
+
   test('双指缩放上限为 5 倍', async () => {
     const { wrapper, container } = mountView(0)
 

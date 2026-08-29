@@ -1,9 +1,11 @@
 <template>
   <div class="top-toolbar">
-    <button type="button" class="back-btn" @click="$emit('back')">
-      <ion-icon :icon="arrowBack" />
-    </button>
-    <span class="chapter-title">{{ title }}</span>
+    <div class="top-toolbar-content">
+      <button type="button" class="back-btn" @click="$emit('back')">
+        <ion-icon :icon="arrowBack" />
+      </button>
+      <span class="chapter-title">{{ title }}</span>
+    </div>
   </div>
 </template>
 
@@ -29,12 +31,20 @@ import { arrowBack } from 'ionicons/icons'
   z-index: 20;
   display: flex;
   align-items: center;
-  gap: 12px;
   min-height: calc(50px + var(--jq-reader-safe-area-top, var(--ion-safe-area-top, 0px)));
   padding: 8px 14px;
   padding-top: calc(8px + var(--jq-reader-safe-area-top, var(--ion-safe-area-top, 0px)));
   background: rgba(0, 0, 0, 0.6);
   backdrop-filter: blur(8px);
+}
+
+.top-toolbar-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
 }
 
 .back-btn {
@@ -52,6 +62,8 @@ import { arrowBack } from 'ionicons/icons'
 }
 
 .chapter-title {
+  min-width: 0;
+  flex: 1;
   color: #fff;
   font-size: 14px;
   font-weight: 600;

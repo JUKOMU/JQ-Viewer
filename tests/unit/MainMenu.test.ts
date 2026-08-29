@@ -180,7 +180,7 @@ describe('MainMenu 自定义左侧手势', () => {
 
     gesture.onStart()
     await nextTick()
-    expect(backdrop.style.opacity).toBe('0.32')
+    expect(backdrop.style.opacity).toBe('0')
     gesture.onMove({ deltaX: 60 })
     await nextTick()
     expect(backdrop.style.opacity).toBe('0.32')
@@ -188,6 +188,29 @@ describe('MainMenu 自定义左侧手势', () => {
     gesture.onEnd({ velocityX: 0 })
     await nextTick()
     expect(backdrop.style.opacity).toBe('0.32')
+    wrapper.unmount()
+  })
+
+  test('收起状态下向左滑动不显示遮罩且保持关闭', async () => {
+    const wrapper = mountMenu()
+    const backdrop = wrapper.find('.main-menu-backdrop').element as HTMLElement
+    const gesture = getGesture()
+
+    gesture.onStart()
+    await nextTick()
+    expect(backdrop.style.opacity).toBe('0')
+    expect(wrapper.find('.main-menu').classes()).not.toContain('interactive')
+
+    gesture.onMove({ deltaX: -60 })
+    await nextTick()
+    expect(backdrop.style.opacity).toBe('0')
+    expect(wrapper.find('.main-menu').classes()).not.toContain('interactive')
+
+    gesture.onEnd({ velocityX: 0 })
+    await nextTick()
+    expect(leftMenuOpen.value).toBe(false)
+    expect(backdrop.style.opacity).toBe('0')
+    expect(wrapper.find('.main-menu').classes()).not.toContain('interactive')
     wrapper.unmount()
   })
 

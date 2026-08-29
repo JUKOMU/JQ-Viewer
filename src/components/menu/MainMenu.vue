@@ -630,7 +630,9 @@ const setupTaskProgress = async () => {
   ])
 }
 
-const isInteractive = computed(() => leftMenuOpen.value || isDragging.value)
+const isInteractive = computed(
+  () => leftMenuOpen.value || (isDragging.value && dragProgress.value > 0),
+)
 const currentProgress = computed(() =>
   isDragging.value ? dragProgress.value : leftMenuOpen.value ? 1 : 0,
 )

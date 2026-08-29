@@ -18,16 +18,35 @@
         <div v-show="sourceExpanded" class="source-area">
           <template v-if="editing">
             <div class="edit-toolbar">
-              <input v-model="findText" class="edit-input" placeholder="查找" enterkeyhint="done" />
-              <input
-                v-model="replaceText"
-                class="edit-input"
-                placeholder="替换为"
-                enterkeyhint="done"
-              />
-              <button type="button" class="edit-btn" @click="replaceAll">全部替换</button>
-              <button type="button" class="edit-btn" @click="removeSpaces">去除空格</button>
-              <button type="button" class="edit-btn apply" @click="applyEdit">应用修改</button>
+              <div class="edit-fields">
+                <input
+                  v-model="findText"
+                  class="edit-input"
+                  placeholder="查找"
+                  aria-label="查找文本"
+                  enterkeyhint="done"
+                />
+                <input
+                  v-model="replaceText"
+                  class="edit-input"
+                  placeholder="替换为"
+                  aria-label="替换文本"
+                  enterkeyhint="done"
+                />
+              </div>
+              <div class="edit-actions">
+                <button type="button" class="edit-btn" @click="replaceAll">全部替换</button>
+                <button type="button" class="edit-btn" @click="removeSpaces">去除空格</button>
+                <button
+                  type="button"
+                  class="edit-btn"
+                  :disabled="!canNormalizeEditText"
+                  @click="normalizeEditText"
+                >
+                  按 ID 分行
+                </button>
+                <button type="button" class="edit-btn apply" @click="applyEdit">应用修改</button>
+              </div>
             </div>
             <textarea v-model="editText" class="source-textarea" rows="5" spellcheck="false" />
           </template>
@@ -242,7 +261,7 @@ import type {
 } from '@/services/JmcomicTypes'
 
 import type { InvalidIdItem, ParsedIdItem } from '@/utils/batchParse'
-import { parseIdsFromText } from '@/utils/batchParse'
+import { parseIdsFromText, splitIdsIntoLines } from '@/utils/batchParse'
 
 defineOptions({ name: 'BatchParsePage' })
 
@@ -301,6 +320,7 @@ const editing = ref(false)
 const editText = ref('')
 const findText = ref('')
 const replaceText = ref('')
+const canNormalizeEditText = computed(() => Boolean(splitIdsIntoLines(editText.value)))
 
 function toggleEdit() {
   editing.value = !editing.value
@@ -322,6 +342,11 @@ function removeSpaces() {
     .split('\n')
     .map((line) => line.replace(/[ \t]+/g, ''))
     .join('\n')
+}
+
+function normalizeEditText() {
+  const normalized = splitIdsIntoLines(editText.value)
+  if (normalized) editText.value = normalized
 }
 
 async function applyEdit() {
@@ -900,8 +925,7 @@ async function handleCardRemove(item: SearchResultItem) {
   closeCardMenu()
   const idx = albumResults.value.findIndex((a) => a?.id === item.id)
   if (idx >= 0) {
-    const wasHighlighted =
-      currentHighlightIndex.value === idx || lockedHighlightIndex.value === idx
+    const wasHighlighted = currentHighlightIndex.value === idx || lockedHighlightIndex.value === idx
     const updated = [...albumResults.value]
     updated[idx] = null
     albumResults.value = updated
@@ -1297,8 +1321,27 @@ const progressPercent = computed(() => {
 
 .edit-toolbar {
   display: flex;
+  flex-direction: column;
   gap: 6px;
   padding: 8px 10px 4px;
+}
+
+.edit-fields,
+.edit-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.edit-actions {
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+}
+
+.edit-actions::-webkit-scrollbar {
+  display: none;
 }
 
 .edit-input {
@@ -1320,7 +1363,7 @@ const progressPercent = computed(() => {
 
 .edit-btn {
   flex-shrink: 0;
-  height: 28px;
+  min-height: 28px;
   padding: 0 10px;
   border: 1px solid rgb(250 156 105 / 0.4);
   border-radius: 999px;
@@ -1333,6 +1376,11 @@ const progressPercent = computed(() => {
 
 .edit-btn:active {
   background: #fff0e7;
+}
+
+.edit-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .edit-btn.apply {

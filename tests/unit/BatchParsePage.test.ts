@@ -236,6 +236,21 @@ describe('BatchParsePage 原文与结果联动', () => {
     )
   })
 
+  test('编辑模式可以将单行多个 ID 整理为单行单 ID', async () => {
+    const wrapper = await mountPage()
+    await wrapper.findAll('button.header-btn')[1].trigger('click')
+
+    const textarea = wrapper.find('textarea.source-textarea')
+    await textarea.setValue('jm1199508 jm1199507\n备注 jm1199508')
+    const normalizeButton = wrapper
+      .findAll('button.edit-btn')
+      .find((button) => button.text() === '按 ID 分行')
+    expect(normalizeButton).toBeDefined()
+    await normalizeButton!.trigger('click')
+
+    expect(textarea.element.value).toBe('1199508\n1199507')
+  })
+
   test('首尾卡片点击后保持高亮，直到用户再次操作内容区', async () => {
     vi.useFakeTimers()
     const wrapper = await mountPage()

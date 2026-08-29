@@ -292,7 +292,7 @@ const activeEntryKey = computed(() => {
 const loading = ref(true)
 const errorMessage = ref('')
 
-const failedIds = ref<Record<string, boolean>>({})
+const failedItems = ref<Record<number, boolean>>({})
 const displayMode = ref<'list' | 'grid'>('list')
 
 // ---- 编辑模式 ----
@@ -351,7 +351,7 @@ const sourceLines = computed<SourceLine[]>(() => {
 
   for (let i = 0; i < parsedItems.value.length; i++) {
     const item = parsedItems.value[i]
-    if (!failedIds.value[item.id]) continue
+    if (!failedItems.value[i]) continue
     const line = result[item.lineIndex]
     if (!line) continue
     line.segments = splitSegments(line.segments, item.startIndex, item.endIndex, 'failed-id')
@@ -359,7 +359,7 @@ const sourceLines = computed<SourceLine[]>(() => {
 
   for (let i = 0; i < parsedItems.value.length; i++) {
     const item = parsedItems.value[i]
-    if (failedIds.value[item.id]) continue
+    if (failedItems.value[i]) continue
     const line = result[item.lineIndex]
     if (!line) continue
     line.segments = splitSegments(line.segments, item.startIndex, item.endIndex, 'valid-id', i)
@@ -466,7 +466,7 @@ async function doParse() {
   const text = originalText.value
   currentHighlightIndex.value = -1
   lockedHighlightIndex.value = null
-  failedIds.value = {}
+  failedItems.value = {}
   if (!text || !text.trim()) {
     errorMessage.value = '未接收到解析文本'
     loading.value = false
@@ -487,7 +487,7 @@ async function doParse() {
   errorMessage.value = ''
   const total = parseResult.items.length
   const results = new Array<AlbumDetail | null>(total).fill(null)
-  const failed: Record<string, boolean> = {}
+  const failed: Record<number, boolean> = {}
   albumResults.value = [...results]
 
   const concurrency = 5
@@ -501,13 +501,13 @@ async function doParse() {
         if (r && r.id && r.title) {
           results[i] = r
         } else {
-          failed[parseResult.items[i].id] = true
+          failed[i] = true
         }
       } catch {
-        failed[parseResult.items[i].id] = true
+        failed[i] = true
       }
       albumResults.value = [...results]
-      failedIds.value = { ...failed }
+      failedItems.value = { ...failed }
     }
   }
 
@@ -671,7 +671,10 @@ function releaseHighlightLock() {
 }
 
 function onSourceLineClick(lineIndex: number) {
-  const idx = parsedItems.value.findIndex((p) => p.lineIndex === lineIndex)
+  releaseHighlightLock()
+  const idx = parsedItems.value.findIndex(
+    (item, index) => item.lineIndex === lineIndex && albumResults.value[index] !== null,
+  )
   if (idx >= 0) onSourceItemClick(idx)
 }
 
@@ -816,6 +819,7 @@ const cardMenuStyle = computed(() => {
 })
 
 function openCardMenu(item: SearchResultItem, event: MouseEvent) {
+  releaseHighlightLock()
   const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
   cardMenu.value = { item, x: rect.left, y: rect.bottom + 4 }
   setTimeout(() => {
@@ -892,13 +896,22 @@ function handleCardFavorite(item: SearchResultItem) {
   openFolderPickerForMode()
 }
 
-function handleCardRemove(item: SearchResultItem) {
+async function handleCardRemove(item: SearchResultItem) {
   closeCardMenu()
   const idx = albumResults.value.findIndex((a) => a?.id === item.id)
   if (idx >= 0) {
+    const wasHighlighted =
+      currentHighlightIndex.value === idx || lockedHighlightIndex.value === idx
     const updated = [...albumResults.value]
     updated[idx] = null
     albumResults.value = updated
+
+    if (wasHighlighted) {
+      currentHighlightIndex.value = -1
+      lockedHighlightIndex.value = null
+      await nextTick()
+      updateHighlightFromScroll()
+    }
   }
 }
 

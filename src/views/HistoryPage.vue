@@ -27,7 +27,7 @@
     </IonHeader>
     <IonContent ref="contentRef" :scroll-events="true" @ion-scroll="onScroll">
       <div class="page-shell">
-        <div v-if="activeTab === 'browse'" class="tab-content">
+        <div v-show="activeTab === 'browse'" class="tab-content">
           <div v-if="!browseOverviewLoaded && browseOverviewError" class="history-error">
             <IonIcon :icon="timeOutline" class="empty-icon" />
             <p>浏览历史加载失败</p>
@@ -132,7 +132,7 @@
           </template>
         </div>
 
-        <div v-else class="tab-content">
+        <div v-show="activeTab === 'parse'" class="tab-content">
           <div v-if="parseItems.length === 0" class="empty-state">
             <IonIcon :icon="documentTextOutline" class="empty-icon" />
             <p>暂无解析记录</p>

@@ -28,6 +28,16 @@ export interface ParseResult {
 }
 
 /**
+ * 将文本中的有效 ID 整理为“每行一个 ID”。
+ * 与解析流程保持一致：只保留 3 位及以上数字，并按首次出现顺序去重。
+ */
+export function splitIdsIntoLines(text: string): string {
+  return parseIdsFromText(text)
+    .items.map((item) => item.id)
+    .join('\n')
+}
+
+/**
  * 从文本中提取所有有效 album ID（3 位及以上数字串）。
  * 过滤 2 位及以下数字，对 3 位及以上数字去重（保留首次出现）。
  */

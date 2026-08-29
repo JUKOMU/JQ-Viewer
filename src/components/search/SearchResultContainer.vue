@@ -87,6 +87,7 @@
             :class="[
               itemCardClass,
               { downloaded: downloadedAlbumIds?.has(entry.item.id) },
+              { 'entry-highlighted': activeEntryKey === getEntryKey(entry) },
               favBorderClassMap?.[entry.item.id],
             ]"
             @click="emit('item-click', entry.item)"
@@ -162,6 +163,7 @@ const props = withDefaults(
     loadedPageEnd?: number | null
     downloadedAlbumIds?: Set<string>
     favBorderClassMap?: Record<string, string>
+    activeEntryKey?: string | null
     idleText?: string
     emptyText?: string
   }>(),
@@ -175,6 +177,7 @@ const props = withDefaults(
     loadedPageEnd: null,
     downloadedAlbumIds: () => new Set(),
     favBorderClassMap: () => ({}),
+    activeEntryKey: null,
     idleText: '搜索结果将在这里显示',
     emptyText: '没有搜索结果',
   },

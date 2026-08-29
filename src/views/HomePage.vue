@@ -93,6 +93,9 @@ const reDisplay = async () => {
 }
 
 .home-content {
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
   padding-top: 16vh;
 }
 

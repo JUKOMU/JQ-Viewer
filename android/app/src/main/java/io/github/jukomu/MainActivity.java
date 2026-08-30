@@ -13,6 +13,7 @@ import com.getcapacitor.BridgeWebViewClient;
 import io.github.jukomu.bridge.JmcomicPlugin;
 import io.github.jukomu.feature.cache.ImageCache;
 import io.github.jukomu.feature.pdf.web.PdfServer;
+import io.github.jukomu.picacomic.PicacomicPlugin;
 
 public class MainActivity extends BridgeActivity {
     public static final String ACTION_OPEN_ROUTE = "io.github.jukomu.OPEN_ROUTE";
@@ -23,6 +24,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(JmcomicPlugin.class);
+        registerPlugin(PicacomicPlugin.class);
         captureLaunchRoute(getIntent());
         super.onCreate(savedInstanceState);
 

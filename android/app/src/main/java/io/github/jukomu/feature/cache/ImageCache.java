@@ -372,6 +372,7 @@ public class ImageCache {
             }
 
             String cacheKey = photoId + "/" + sortOrder + ("thumb".equals(type) ? "/thumb" : "");
+            if ("picacomic".equals(type) && !photoId.startsWith("pica-")) return null;
 
             // 1. 查内存缓存
             ImageEntry entry = getInstance().get(cacheKey);
@@ -382,6 +383,10 @@ public class ImageCache {
                     new ByteArrayInputStream(entry.data)
                 );
             }
+
+            // Picacomic virtual URLs are memory-only.  Do not let a Pica
+            // cache miss fall through to JMComic's FileStore namespace.
+            if ("picacomic".equals(type)) return null;
 
             // 2. 缓存 miss → 依次：原图内存缓存 → FileStore
             if ("thumb".equals(type)) {

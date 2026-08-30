@@ -5,7 +5,7 @@ import com.getcapacitor.PluginCall;
 
 import java.util.concurrent.CountDownLatch;
 
-/** Minimal JVM-only Capacitor call recorder for bridge contract tests. */
+/** Android-side Capacitor call recorder for the Picacomic bridge contract. */
 final class RecordingPicacomicPluginCall extends PluginCall {
 
     final CountDownLatch completed = new CountDownLatch(1);

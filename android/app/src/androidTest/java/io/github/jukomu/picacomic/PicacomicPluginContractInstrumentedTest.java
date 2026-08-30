@@ -1,42 +1,50 @@
 package io.github.jukomu.picacomic;
 
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import io.github.jukomu.feature.cache.ImageCache;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.junit.runner.RunWith;
 
-import java.util.Collections;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
-public class PicacomicPluginContractTest {
+/**
+ * Android-side Capacitor bridge contract.  JSObject/PluginCall behavior is
+ * deliberately exercised by the real Gradle androidTest variant.
+ */
+@RunWith(AndroidJUnit4.class)
+public class PicacomicPluginContractInstrumentedTest {
 
     private final ImageCache cache = ImageCache.getInstance();
-    private FakePicacomicRemoteClient fake;
+    private PicacomicPluginFakeClient fake;
     private PicacomicRuntime runtime;
 
     @Before
     public void setUp() {
+        PicacomicRuntime.resetProcessForTests();
         PicacomicCacheNamespace.clear(cache);
-        fake = new FakePicacomicRemoteClient();
+        fake = new PicacomicPluginFakeClient();
         runtime = PicacomicRuntime.createIsolated(() -> fake, cache);
     }
 
     @After
     public void tearDown() {
         runtime.close();
+        PicacomicRuntime.resetProcessForTests();
         PicacomicCacheNamespace.clear(cache);
     }
 
     @Test
     public void authStateDoesNotCreateRuntimeAndLoginResolvesSafeSnapshotOnce() throws Exception {
-        PicacomicRuntime.resetProcessForTests();
         PicacomicPlugin plugin = new PicacomicPlugin();
         RecordingPicacomicPluginCall initial = call("getAuthState");
 
@@ -100,8 +108,7 @@ public class PicacomicPluginContractTest {
         PicacomicChapterDetail detail = runtime.getPhoto(
             ChapterRef.of("album-1", "chapter-1", 1), new PicacomicCancellationToken());
         PicacomicImageRef image = detail.images.get(0);
-        java.util.concurrent.atomic.AtomicReference<PicacomicImageEvent> event =
-            new java.util.concurrent.atomic.AtomicReference<>();
+        AtomicReference<PicacomicImageEvent> event = new AtomicReference<>();
         PicacomicPlugin plugin = PicacomicPlugin.forTests(runtime, event::set);
         RecordingPicacomicPluginCall request = call("requestImages",
             "imageKeys", new JSArray().put(image.imageKey));
@@ -169,8 +176,7 @@ public class PicacomicPluginContractTest {
         return new RecordingPicacomicPluginCall(method, data);
     }
 
-    private static void waitForEvent(
-        java.util.concurrent.atomic.AtomicReference<PicacomicImageEvent> event)
+    private static void waitForEvent(AtomicReference<PicacomicImageEvent> event)
         throws InterruptedException {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
         while (event.get() == null && System.nanoTime() < deadline) {

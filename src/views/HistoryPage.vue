@@ -1062,18 +1062,28 @@ function formatRelativeTime(timestamp: number): string {
 
 <style scoped>
 .toolbar-start {
+  width: 100%;
+  max-width: 720px;
+  box-sizing: border-box;
+  margin-inline: auto;
   padding: 0 0 8px 14px;
 }
 
 /* 页面容器 */
 .page-shell {
-  margin: 0 14px 86px;
+  width: calc(100% - 28px);
+  max-width: 720px;
+  margin: 0 auto 86px;
 }
 
 /* Tab 栏 */
 .tab-bar {
   display: flex;
+  width: 100%;
+  max-width: 720px;
+  box-sizing: border-box;
   gap: 2px;
+  margin-inline: auto;
   margin-bottom: 10px;
   padding: 4px 14px;
   border-radius: 18px;

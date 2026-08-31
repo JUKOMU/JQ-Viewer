@@ -2,7 +2,13 @@ import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import VerticalScrollView from '@/components/reader/VerticalScrollView.vue'
 
+let resizeObserverTrigger: (() => void) | null = null
+
 class ResizeObserverMock {
+  constructor(callback: () => void) {
+    resizeObserverTrigger = callback
+  }
+
   observe() {}
 
   disconnect() {}
@@ -12,6 +18,7 @@ let frameId = 0
 
 beforeEach(() => {
   frameId = 0
+  resizeObserverTrigger = null
   vi.stubGlobal('ResizeObserver', ResizeObserverMock)
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
     const id = ++frameId
@@ -24,6 +31,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
+  resizeObserverTrigger = null
 })
 
 async function flushAnimationFrames() {
@@ -154,6 +162,73 @@ describe('VerticalScrollView', () => {
     expect(wrapper.vm.isAtBottom()).toBe(true)
     expect(wrapper.emitted('reached-bottom')).toHaveLength(2)
 
+    wrapper.unmount()
+  })
+
+  test('宽屏纵向阅读轨道限制为 720px，窄屏仍使用可用宽度', async () => {
+    const wrapper = mount(VerticalScrollView, {
+      props: {
+        imageMap: new Map<number, string>(),
+        totalCount: 1,
+        currentIndex: 0,
+      },
+    })
+    const container = wrapper.get('.vertical-container')
+    Object.defineProperties(container.element, {
+      clientHeight: { configurable: true, value: 400 },
+      clientWidth: { configurable: true, value: 1440 },
+      scrollTop: { configurable: true, value: 0, writable: true },
+    })
+    await flushAnimationFrames()
+    resizeObserverTrigger?.()
+    await flushAnimationFrames()
+
+    expect(wrapper.get('.zoom-wrapper').attributes('style')).toContain('width: 720px')
+    expect(wrapper.get('.image-wrapper').attributes('style')).toContain('height: 960px')
+
+    Object.defineProperty(container.element, 'clientWidth', {
+      configurable: true,
+      value: 390,
+    })
+    resizeObserverTrigger?.()
+    await flushAnimationFrames()
+
+    expect(wrapper.get('.zoom-wrapper').attributes('style')).toContain('width: 390px')
+    expect(wrapper.get('.image-wrapper').attributes('style')).toContain('height: 520px')
+    wrapper.unmount()
+  })
+
+  test('纵向轨道尺寸变化后保持当前页和滚动锚点', async () => {
+    const wrapper = mount(VerticalScrollView, {
+      props: {
+        imageMap: new Map<number, string>(),
+        totalCount: 3,
+        currentIndex: 0,
+      },
+    })
+    const container = wrapper.get('.vertical-container')
+    Object.defineProperties(container.element, {
+      clientHeight: { configurable: true, value: 400 },
+      clientWidth: { configurable: true, value: 600 },
+      scrollTop: { configurable: true, value: 0, writable: true },
+    })
+    await flushAnimationFrames()
+    resizeObserverTrigger?.()
+    await flushAnimationFrames()
+
+    wrapper.vm.scrollToIndex(1)
+    await flushAnimationFrames()
+    expect(container.element.scrollTop).toBe(920)
+
+    Object.defineProperty(container.element, 'clientWidth', {
+      configurable: true,
+      value: 300,
+    })
+    resizeObserverTrigger?.()
+    await flushAnimationFrames()
+
+    expect(container.element.scrollTop).toBe(520)
+    expect(wrapper.emitted('update:currentIndex')).toEqual([[0], [1]])
     wrapper.unmount()
   })
 

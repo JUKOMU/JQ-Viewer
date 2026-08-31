@@ -1,7 +1,7 @@
 <template>
   <IonPage>
     <IonHeader class="ion-no-border">
-      <IonToolbar>
+      <IonToolbar class="cache-toolbar">
         <IonButtons slot="start">
           <IonBackButton default-href="/setting" />
         </IonButtons>
@@ -642,6 +642,14 @@ function formatBytes(bytes: number): string {
   font-size: 16px;
   font-weight: 600;
   color: #4c2a18;
+}
+
+.cache-content,
+:deep(ion-toolbar.cache-toolbar) {
+  width: 100%;
+  max-width: 1000px;
+  margin-inline: auto;
+  box-sizing: border-box;
 }
 
 .cache-content {

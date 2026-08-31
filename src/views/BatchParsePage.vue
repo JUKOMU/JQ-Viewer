@@ -2,108 +2,115 @@
   <IonPage>
     <IonHeader class="ion-no-border">
       <IonToolbar>
-        <div class="header-row">
-          <div class="toolbar-start">
-            <MenuToggleButton />
-          </div>
-          <button type="button" class="header-btn" @click="sourceExpanded = !sourceExpanded">
-            <span class="header-btn-label">{{ sourceExpanded ? '收起原文' : '展开原文' }}</span>
-            <IonIcon :icon="sourceExpanded ? chevronUpOutline : chevronDownOutline" />
-          </button>
-          <button type="button" class="header-btn" :class="{ active: editing }" @click="toggleEdit">
-            <IonIcon :icon="createOutline" />
-          </button>
-        </div>
-
-        <div v-show="sourceExpanded" class="source-area">
-          <template v-if="editing">
-            <div class="edit-toolbar">
-              <div class="edit-fields">
-                <input
-                  v-model="findText"
-                  class="edit-input"
-                  placeholder="查找"
-                  aria-label="查找文本"
-                  enterkeyhint="done"
-                />
-                <input
-                  v-model="replaceText"
-                  class="edit-input"
-                  placeholder="替换为"
-                  aria-label="替换文本"
-                  enterkeyhint="done"
-                />
-              </div>
-              <div class="edit-actions">
-                <button type="button" class="edit-btn" @click="replaceAll">全部替换</button>
-                <button type="button" class="edit-btn" @click="removeSpaces">去除空格</button>
-                <button
-                  type="button"
-                  class="edit-btn"
-                  :disabled="!canNormalizeEditText"
-                  @click="normalizeEditText"
-                >
-                  按 ID 分行
-                </button>
-                <button type="button" class="edit-btn apply" @click="applyEdit">应用修改</button>
-              </div>
+        <div class="toolbar-content">
+          <div class="header-row">
+            <div class="toolbar-start">
+              <MenuToggleButton />
             </div>
-            <textarea v-model="editText" class="source-textarea" rows="5" spellcheck="false" />
-          </template>
-
-          <div v-else ref="sourceScrollRef" class="source-scroll">
-            <div
-              v-for="(line, li) in sourceLines"
-              :key="li"
-              class="source-line"
-              :class="{
-                'current-line': li === currentHighlightLine,
-                'no-results': line.hasOnlyFailed,
-              }"
-              @click="onSourceLineClick(li)"
-            >
-              <template v-for="(seg, si) in line.segments" :key="si">
-                <button
-                  v-if="seg.itemIndex !== undefined"
-                  type="button"
-                  class="source-id"
-                  :class="segClass(seg.type)"
-                  :aria-label="`定位到 ${seg.text}`"
-                  @click.stop="onSourceItemClick(seg.itemIndex)"
-                >
-                  {{ seg.text }}
-                </button>
-                <span v-else :class="segClass(seg.type)">{{ seg.text }}</span>
-              </template>
-            </div>
-          </div>
-        </div>
-
-        <div v-show="sourceExpanded && !editing" class="source-actions-row">
-          <label class="fav-toggle-label">
-            <span class="fav-toggle-text">显示已收藏</span>
+            <button type="button" class="header-btn" @click="sourceExpanded = !sourceExpanded">
+              <span class="header-btn-label">{{ sourceExpanded ? '收起原文' : '展开原文' }}</span>
+              <IonIcon :icon="sourceExpanded ? chevronUpOutline : chevronDownOutline" />
+            </button>
             <button
               type="button"
-              class="fav-toggle"
-              :class="{ on: showFavStatus }"
-              :disabled="loadingFavStatus"
-              role="switch"
-              :aria-checked="showFavStatus"
-              @click="toggleFavStatus"
+              class="header-btn"
+              :class="{ active: editing }"
+              @click="toggleEdit"
             >
-              <IonSpinner v-if="loadingFavStatus" name="dots" class="fav-toggle-spinner" />
-              <span v-else class="fav-toggle-knob" />
+              <IonIcon :icon="createOutline" />
             </button>
-          </label>
-          <button
-            type="button"
-            class="save-list-btn"
-            :disabled="loading || albumResults.every((a) => a === null)"
-            @click="openBatchSave"
-          >
-            <IonIcon :icon="bookmarkOutline" class="save-list-icon" />
-            <span>保存当前列表到收藏夹</span>
-          </button>
+          </div>
+
+          <div v-show="sourceExpanded" class="source-area">
+            <template v-if="editing">
+              <div class="edit-toolbar">
+                <div class="edit-fields">
+                  <input
+                    v-model="findText"
+                    class="edit-input"
+                    placeholder="查找"
+                    aria-label="查找文本"
+                    enterkeyhint="done"
+                  />
+                  <input
+                    v-model="replaceText"
+                    class="edit-input"
+                    placeholder="替换为"
+                    aria-label="替换文本"
+                    enterkeyhint="done"
+                  />
+                </div>
+                <div class="edit-actions">
+                  <button type="button" class="edit-btn" @click="replaceAll">全部替换</button>
+                  <button type="button" class="edit-btn" @click="removeSpaces">去除空格</button>
+                  <button
+                    type="button"
+                    class="edit-btn"
+                    :disabled="!canNormalizeEditText"
+                    @click="normalizeEditText"
+                  >
+                    按 ID 分行
+                  </button>
+                  <button type="button" class="edit-btn apply" @click="applyEdit">应用修改</button>
+                </div>
+              </div>
+              <textarea v-model="editText" class="source-textarea" rows="5" spellcheck="false" />
+            </template>
+
+            <div v-else ref="sourceScrollRef" class="source-scroll">
+              <div
+                v-for="(line, li) in sourceLines"
+                :key="li"
+                class="source-line"
+                :class="{
+                  'current-line': li === currentHighlightLine,
+                  'no-results': line.hasOnlyFailed,
+                }"
+                @click="onSourceLineClick(li)"
+              >
+                <template v-for="(seg, si) in line.segments" :key="si">
+                  <button
+                    v-if="seg.itemIndex !== undefined"
+                    type="button"
+                    class="source-id"
+                    :class="segClass(seg.type)"
+                    :aria-label="`定位到 ${seg.text}`"
+                    @click.stop="onSourceItemClick(seg.itemIndex)"
+                  >
+                    {{ seg.text }}
+                  </button>
+                  <span v-else :class="segClass(seg.type)">{{ seg.text }}</span>
+                </template>
+              </div>
+            </div>
+          </div>
+
+          <div v-show="sourceExpanded && !editing" class="source-actions-row">
+            <label class="fav-toggle-label">
+              <span class="fav-toggle-text">显示已收藏</span>
+              <button
+                type="button"
+                class="fav-toggle"
+                :class="{ on: showFavStatus }"
+                :disabled="loadingFavStatus"
+                role="switch"
+                :aria-checked="showFavStatus"
+                @click="toggleFavStatus"
+              >
+                <IonSpinner v-if="loadingFavStatus" name="dots" class="fav-toggle-spinner" />
+                <span v-else class="fav-toggle-knob" />
+              </button>
+            </label>
+            <button
+              type="button"
+              class="save-list-btn"
+              :disabled="loading || albumResults.every((a) => a === null)"
+              @click="openBatchSave"
+            >
+              <IonIcon :icon="bookmarkOutline" class="save-list-icon" />
+              <span>保存当前列表到收藏夹</span>
+            </button>
+          </div>
         </div>
       </IonToolbar>
     </IonHeader>
@@ -1161,6 +1168,12 @@ const progressPercent = computed(() => {
   --min-height: auto;
   --padding-top: 0;
   --padding-bottom: 0;
+}
+
+.toolbar-content {
+  width: 100%;
+  max-width: 1000px;
+  margin-inline: auto;
 }
 
 .header-row {

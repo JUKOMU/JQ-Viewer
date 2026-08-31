@@ -144,6 +144,8 @@ let lastTapT = 0,
   lastTapX = 0,
   lastTapY = 0
 let tapTimer: ReturnType<typeof setTimeout> | null = null
+let animationTimer: ReturnType<typeof setTimeout> | null = null
+let resizeObserver: ResizeObserver | null = null
 
 // ---- 可见槽位 ----
 const visibleIndices = computed(() => {
@@ -177,11 +179,18 @@ watch(
 
 onMounted(() => {
   displayIndex.value = props.currentIndex
-  updateSlotWidth()
-  containerRef.value?.addEventListener('touchstart', onTouchStart, { passive: false })
-  containerRef.value?.addEventListener('touchmove', onTouchMove, { passive: false })
-  containerRef.value?.addEventListener('touchend', onTouchEnd)
-  containerRef.value?.addEventListener('touchcancel', onTouchEnd)
+  const el = containerRef.value
+  if (!el) return
+  refreshAfterResize()
+  el.addEventListener('touchstart', onTouchStart, { passive: false })
+  el.addEventListener('touchmove', onTouchMove, { passive: false })
+  el.addEventListener('touchend', onTouchEnd)
+  el.addEventListener('touchcancel', onTouchEnd)
+
+  if (typeof ResizeObserver !== 'undefined') {
+    resizeObserver = new ResizeObserver(refreshAfterResize)
+    resizeObserver.observe(el)
+  }
 })
 
 onUnmounted(() => {
@@ -189,20 +198,42 @@ onUnmounted(() => {
     clearTimeout(tapTimer)
     tapTimer = null
   }
-  containerRef.value?.removeEventListener('touchstart', onTouchStart)
-  containerRef.value?.removeEventListener('touchmove', onTouchMove)
-  containerRef.value?.removeEventListener('touchend', onTouchEnd)
-  containerRef.value?.removeEventListener('touchcancel', onTouchEnd)
+  clearAnimationTimer()
+  resizeObserver?.disconnect()
+  resizeObserver = null
+  const el = containerRef.value
+  if (!el) return
+  el.removeEventListener('touchstart', onTouchStart)
+  el.removeEventListener('touchmove', onTouchMove)
+  el.removeEventListener('touchend', onTouchEnd)
+  el.removeEventListener('touchcancel', onTouchEnd)
 })
 
 function updateSlotWidth() {
-  slotWidth.value = containerRef.value?.clientWidth ?? 0
+  const nextWidth = containerRef.value?.clientWidth ?? 0
+  const changed = nextWidth !== slotWidth.value
+  slotWidth.value = nextWidth
+  return changed
+}
+
+function clearAnimationTimer() {
+  if (!animationTimer) return
+  clearTimeout(animationTimer)
+  animationTimer = null
+}
+
+function refreshAfterResize() {
+  if (!updateSlotWidth()) return
+  clearAnimationTimer()
+  isAnimating.value = false
+  offsetX.value = 0
 }
 
 function slotStyle(idx: number) {
   const zoomed = idx === displayIndex.value && zoomScale.value > 1
   return {
-    left: idx * 100 + 'vw',
+    left: idx * slotWidth.value + 'px',
+    width: slotWidth.value + 'px',
     zIndex: zoomed ? 1 : 0,
     overflow: zoomed ? 'visible' : 'hidden',
   }
@@ -225,7 +256,7 @@ function mid(t: TouchList) {
 // ==================== 手势 ====================
 
 function onTouchStart(ev: TouchEvent) {
-  updateSlotWidth()
+  refreshAfterResize()
   isAnimating.value = false
   fingers = ev.touches.length
 
@@ -420,9 +451,11 @@ function snapTo(target: number) {
     return
   }
   resetZoom()
+  clearAnimationTimer()
   isAnimating.value = true
   offsetX.value = -(target - displayIndex.value) * slotWidth.value
-  setTimeout(() => {
+  animationTimer = setTimeout(() => {
+    animationTimer = null
     isAnimating.value = false
     displayIndex.value = target
     offsetX.value = 0
@@ -431,9 +464,11 @@ function snapTo(target: number) {
 }
 
 function snapBack() {
+  clearAnimationTimer()
   isAnimating.value = true
   offsetX.value = 0
-  setTimeout(() => {
+  animationTimer = setTimeout(() => {
+    animationTimer = null
     isAnimating.value = false
   }, 320)
 }
@@ -468,7 +503,8 @@ defineExpose({ scrollToIndex })
 .page-slot {
   position: absolute;
   top: 0;
-  width: 100vw;
+  left: 0;
+  width: 100%;
   height: 100%;
   overflow: hidden;
 }

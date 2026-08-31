@@ -10,7 +10,7 @@
     </IonHeader>
     <IonContent>
       <!-- 已登录 -->
-      <div v-if="isLoggedIn && userInfo" class="user-container">
+      <div v-if="isLoggedIn && userInfo" class="user-container user-container--logged-in">
         <!-- 头像信息卡 -->
         <div class="profile-card">
           <img :src="userInfo.avatarUrl" class="avatar" alt="头像" />
@@ -20,7 +20,7 @@
         </div>
 
         <!-- 经验卡 -->
-        <div class="stats-row">
+        <div class="stats-row stats-row--experience">
           <div class="stat-item stat-wide">
             <div class="stat-value">
               {{ fmtNum(userInfo.currentExp) }} / {{ fmtNum(userInfo.nextLevelExp) }}
@@ -34,7 +34,7 @@
         </div>
 
         <!-- 数值卡 -->
-        <div class="stats-row">
+        <div class="stats-row stats-row--summary">
           <div class="stat-item">
             <div class="stat-value">
               {{ userInfo.albumFavorites
@@ -90,7 +90,7 @@
       </div>
 
       <!-- 未登录 -->
-      <div v-else class="user-container">
+      <div v-else class="user-container user-container--logged-out">
         <div class="profile-card">
           <IonIcon :icon="personCircleOutline" class="avatar-placeholder" />
           <div class="username">未登录</div>
@@ -183,6 +183,8 @@ async function confirmLogout() {
   display: flex;
   flex-direction: column;
   align-items: center;
+  box-sizing: border-box;
+  min-width: 0;
 }
 
 .toolbar-title {
@@ -201,6 +203,8 @@ async function confirmLogout() {
   display: flex;
   flex-direction: column;
   align-items: center;
+  box-sizing: border-box;
+  min-width: 0;
 }
 
 .avatar {
@@ -221,12 +225,18 @@ async function confirmLogout() {
   font-size: 18px;
   font-weight: 600;
   color: #4c2a18;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  text-align: center;
 }
 
 .level {
   margin-top: 4px;
   font-size: 13px;
   color: #b89a84;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  text-align: center;
 }
 
 .hint {
@@ -240,7 +250,7 @@ async function confirmLogout() {
   color: #8b6b5c;
   font-style: italic;
   text-align: center;
-  max-width: 260px;
+  max-width: min(260px, 100%);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -279,10 +289,13 @@ async function confirmLogout() {
   display: flex;
   align-items: center;
   justify-content: center;
+  box-sizing: border-box;
+  min-width: 0;
 }
 
 .stat-item {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -298,6 +311,10 @@ async function confirmLogout() {
   font-size: 22px;
   font-weight: 700;
   color: #e8843c;
+  max-width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: center;
 }
 
 .stat-capacity {
@@ -326,6 +343,7 @@ async function confirmLogout() {
 
 .profile-row {
   width: 100%;
+  min-width: 0;
   display: flex;
   align-items: flex-start;
   padding: 8px 0;
@@ -345,9 +363,11 @@ async function confirmLogout() {
 
 .profile-value {
   flex: 1;
+  min-width: 0;
   font-size: 13px;
   color: #4c2a18;
   word-break: break-all;
+  overflow-wrap: anywhere;
 }
 
 .muted {
@@ -369,5 +389,57 @@ async function confirmLogout() {
   max-width: 400px;
   width: 100%;
   --background: linear-gradient(145deg, #fa9c69, #f07e49);
+}
+
+@media (min-width: 768px) {
+  .user-container--logged-in {
+    width: min(100%, 900px);
+    margin-inline: auto;
+    display: grid;
+    grid-template-columns: 280px minmax(0, 1fr);
+    column-gap: 24px;
+    row-gap: 14px;
+    align-items: start;
+  }
+
+  .user-container--logged-in > .profile-card {
+    grid-column: 1;
+    grid-row: 1;
+    width: 100%;
+    max-width: none;
+  }
+
+  .user-container--logged-in > .stats-row--experience {
+    grid-column: 2;
+    grid-row: 1;
+    width: 100%;
+    max-width: none;
+    margin-top: 0;
+  }
+
+  .user-container--logged-in > .stats-row--summary {
+    grid-column: 2;
+    grid-row: 2;
+    width: 100%;
+    max-width: none;
+    margin-top: 0;
+  }
+
+  .user-container--logged-in > .profile-detail {
+    grid-column: 2;
+    grid-row: 3;
+    width: 100%;
+    max-width: none;
+    margin-top: 0;
+  }
+
+  .user-container--logged-in > .logout-btn {
+    grid-column: 1;
+    grid-row: 2;
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+    margin-top: 0;
+  }
 }
 </style>

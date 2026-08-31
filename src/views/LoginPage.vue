@@ -105,6 +105,15 @@ async function doLogin() {
   padding: 32px 20px 0;
 }
 
+@media (min-width: 680px) {
+  .login-container {
+    align-items: center;
+    box-sizing: border-box;
+    min-height: 100%;
+    padding: 32px 20px;
+  }
+}
+
 .login-card {
   width: 100%;
   max-width: 400px;

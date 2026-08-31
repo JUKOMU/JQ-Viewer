@@ -380,6 +380,12 @@ onMounted(async () => {
   background: #f5d2bc;
 }
 
+.mode-btn:focus-visible,
+.chapter-card:focus-visible {
+  outline: 2px solid #e8843c;
+  outline-offset: 2px;
+}
+
 /* 章节网格 */
 .chapter-grid {
   display: grid;
@@ -394,6 +400,7 @@ onMounted(async () => {
   flex-direction: column;
   align-items: center;
   gap: 4px;
+  min-width: 0;
   padding: 14px 10px;
   border: 1px solid rgb(245 210 188 / 0.7);
   border-radius: 12px;
@@ -426,8 +433,10 @@ onMounted(async () => {
 }
 
 .chapter-title {
+  max-width: 100%;
   font-size: 11px;
   line-height: 1.3;
+  overflow-wrap: anywhere;
 }
 
 .chapter-pages {
@@ -510,7 +519,40 @@ onMounted(async () => {
 
 @media (min-width: 680px) {
   .chapter-grid {
-    grid-template-columns: repeat(3, 1fr);
+    width: 100%;
+    max-width: 1140px;
+    box-sizing: border-box;
+    grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));
+    gap: 12px;
+    padding: 16px 24px;
+    margin-inline: auto;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .mode-btn:hover:not(:disabled) {
+    background: #fff0e7;
+    border-color: #fa9c69;
+  }
+
+  .chapter-card:hover {
+    background: #fff4ed;
+    border-color: #f2b58f;
+  }
+
+  .chapter-card.downloaded:hover {
+    background: #ffe5d6;
+    border-color: #e8843c;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chapter-card {
+    transition: none;
+  }
+
+  .skeleton-card .sk-line {
+    animation: none;
   }
 }
 

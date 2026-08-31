@@ -996,6 +996,10 @@ function onAutoShowToolbarAtEndChange(e: CustomEvent) {
 
 <style scoped>
 .toolbar-start {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 720px;
+  margin-inline: auto;
   padding: 0 0 8px 14px;
 }
 
@@ -1018,6 +1022,10 @@ function onAutoShowToolbarAtEndChange(e: CustomEvent) {
 }
 
 .settings-list {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 720px;
+  margin-inline: auto;
   padding: 8px 16px 32px;
 }
 

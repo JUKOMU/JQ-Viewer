@@ -95,8 +95,10 @@ const SPEED_THRESHOLD = 10
 const EXPAND_EXPIRE_MS = 2000
 const DRAG_PREVIEW_DELAY_MS = 500
 const PDF_RENDER_CONCURRENCY = 2
+const PDF_RENDER_DENSITY = 2
 const NATIVE_PDF_MIN_RENDER_WIDTH = 1440
 const NATIVE_PDF_MAX_RENDER_WIDTH = 2400
+const READER_CONTENT_MAX_WIDTH = 720
 
 const route = useRoute()
 const router = useRouter()
@@ -147,9 +149,41 @@ let activeRenderRange: { start: number; end: number; center: number } | null = n
 let pendingSeekIndex: number | null = null
 let dragPreviewTimer: ReturnType<typeof setTimeout> | null = null
 let activeRenderCount = 0
+let renderTargetWidth = 0
+let renderResizeObserver: ResizeObserver | null = null
 
 const verticalViewRef = ref<InstanceType<typeof VerticalScrollView> | null>(null)
 const horizontalViewRef = ref<InstanceType<typeof HorizontalPageView> | null>(null)
+
+const getRenderContainer = (vertical = isVertical.value): HTMLElement | null => {
+  const view = (vertical ? verticalViewRef.value : horizontalViewRef.value) as {
+    $el?: Element | null
+  } | null
+  const element = view?.$el as HTMLElement | null | undefined
+  if (!element || typeof element.clientWidth !== 'number') return null
+  return element
+}
+
+const getReaderContentWidth = (vertical = isVertical.value): number => {
+  const measuredWidth = getRenderContainer(vertical)?.clientWidth ?? 0
+  const viewportWidth = typeof window !== 'undefined' ? window.innerWidth || 360 : 360
+  const width = measuredWidth > 0 ? measuredWidth : viewportWidth
+  return Math.max(1, vertical ? Math.min(width, READER_CONTENT_MAX_WIDTH) : width)
+}
+
+const getRenderTargetWidth = (
+  vertical = isVertical.value,
+  useNativeRenderer = nativePdfMode,
+): number => {
+  const contentWidth = getReaderContentWidth(vertical)
+  if (!useNativeRenderer) return Math.max(1, Math.ceil(contentWidth * PDF_RENDER_DENSITY))
+
+  const pixelRatio = Math.max(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1, 3)
+  return Math.min(
+    NATIVE_PDF_MAX_RENDER_WIDTH,
+    Math.max(NATIVE_PDF_MIN_RENDER_WIDTH, Math.ceil(contentWidth * pixelRatio)),
+  )
+}
 
 // ---- 工具栏 ----
 // 工具栏显示时仅恢复系统栏；阅读内容始终保持 edge-to-edge，不随系统栏改变尺寸。
@@ -225,6 +259,9 @@ const onDisplayModeChange = (vertical: boolean) => {
   syncReaderState()
   nextTick(() => {
     requestAnimationFrame(() => {
+      bindRenderResizeObserver()
+      const { increased } = updateRenderTargetWidth()
+      if (increased) invalidateActiveRenderWindow()
       goToIndex(targetIndex, 'mode')
     })
   })
@@ -302,10 +339,12 @@ const deactivateReaderRuntime = () => {
 }
 
 // ---- 渲染分辨率 ----
-const calcBaseScale = (viewport: pdfjsLib.PageViewport): number => {
-  const containerWidth = window.innerWidth
-  let scale = (containerWidth / viewport.width) * 2.0
-  const maxScale = (containerWidth * 2.5) / viewport.width
+const calcBaseScale = (
+  viewport: pdfjsLib.PageViewport,
+  contentWidth = getReaderContentWidth(),
+): number => {
+  let scale = (contentWidth / viewport.width) * PDF_RENDER_DENSITY
+  const maxScale = (contentWidth * 2.5) / viewport.width
   if (scale > maxScale) scale = maxScale
   return scale
 }
@@ -313,20 +352,20 @@ const calcBaseScale = (viewport: pdfjsLib.PageViewport): number => {
 // ---- PDF 页面渲染 ----
 const renderPageToBlob = async (pageNum: number): Promise<string | null> => {
   if (nativePdfMode) {
-    const pixelRatio = Math.max(window.devicePixelRatio || 1, 3)
-    const targetWidth = Math.min(
-      NATIVE_PDF_MAX_RENDER_WIDTH,
-      Math.max(NATIVE_PDF_MIN_RENDER_WIDTH, Math.ceil((window.innerWidth || 360) * pixelRatio)),
-    )
-    const result = await JmcomicService.renderPdfPage(filePath, pageNum, targetWidth)
-    return result.imageUrl
+    try {
+      const targetWidth = getRenderTargetWidth(isVertical.value, true)
+      const result = await JmcomicService.renderPdfPage(filePath, pageNum, targetWidth)
+      return result.imageUrl
+    } catch {
+      return null
+    }
   }
 
   if (!pdfDoc) return null
   let page: pdfjsLib.PDFPageProxy | null = null
   try {
     page = await pdfDoc.getPage(pageNum)
-    const scale = calcBaseScale(page.getViewport({ scale: 1 }))
+    const scale = calcBaseScale(page.getViewport({ scale: 1 }), getReaderContentWidth())
     const viewport = page.getViewport({ scale })
 
     const canvas = document.createElement('canvas')
@@ -525,6 +564,56 @@ const clampIndex = (index: number) => {
   return Math.min(totalCount.value - 1, Math.max(0, index))
 }
 
+const updateRenderTargetWidth = () => {
+  const next = getRenderTargetWidth()
+  const previous = renderTargetWidth
+  renderTargetWidth = next
+  return { previous, next, increased: previous > 0 && next > previous }
+}
+
+const getActiveRenderWindow = (center: number) => {
+  const windowOrders = new Set(calcWindow(center))
+  if (isVertical.value && activeRenderRange) {
+    for (let i = activeRenderRange.start; i < activeRenderRange.end; i++) {
+      if (i >= 0 && i < totalCount.value) windowOrders.add(i + 1)
+    }
+  }
+  return windowOrders
+}
+
+const invalidateActiveRenderWindow = () => {
+  const activePages = getActiveRenderWindow(currentIndex.value)
+  for (const pageNum of activePages) {
+    // 让已在途的旧 renderer 结果只能走过期分支，不能覆盖新的尺寸批次。
+    pageRenderGenerations.delete(pageNum)
+    pendingRenderPriorities.delete(pageNum)
+    pendingRenderQueue.delete(pageNum)
+
+    const url = renderedPages.get(pageNum)
+    if (url) releaseRenderedUrl(url)
+    renderedPages.delete(pageNum)
+    imageMap.value.delete(pageNum)
+  }
+  applyImageMap()
+}
+
+const bindRenderResizeObserver = () => {
+  renderResizeObserver?.disconnect()
+  renderResizeObserver = null
+
+  const element = getRenderContainer()
+  if (renderTargetWidth <= 0) renderTargetWidth = getRenderTargetWidth()
+  if (!element || typeof ResizeObserver === 'undefined') return
+
+  renderResizeObserver = new ResizeObserver(() => {
+    const { increased } = updateRenderTargetWidth()
+    if (!increased || (!pdfDoc && !nativePdfMode)) return
+    invalidateActiveRenderWindow()
+    updateWindow(currentIndex.value)
+  })
+  renderResizeObserver.observe(element)
+}
+
 const hasPendingInRange = (center: number, dir: 'forward' | 'backward'): boolean => {
   let checkStart: number, checkEnd: number
   if (dir === 'forward') {
@@ -543,12 +632,7 @@ const hasPendingInRange = (center: number, dir: 'forward' | 'backward'): boolean
 const updateWindow = (center: number) => {
   if (!pdfDoc && !nativePdfMode) return
   const generation = ++renderGeneration
-  const windowOrders = new Set(calcWindow(center))
-  if (activeRenderRange) {
-    for (let i = activeRenderRange.start; i < activeRenderRange.end; i++) {
-      if (i >= 0 && i < totalCount.value) windowOrders.add(i + 1)
-    }
-  }
+  const windowOrders = getActiveRenderWindow(center)
 
   // 清理窗口外页面
   const cleanBackward = expandDirection === 'backward' ? N_FAST : Math.floor(M / 2)
@@ -782,6 +866,7 @@ onMounted(async () => {
   }
 
   activateReaderRuntime()
+  bindRenderResizeObserver()
   activeRenderRange = null
   pendingSeekIndex = null
   if (dragPreviewTimer) {
@@ -792,6 +877,8 @@ onMounted(async () => {
   try {
     const total = await loadPdfDocument()
     if (total <= 0) throw new Error('PDF 页数异常')
+    // pdf.js 失败后可能切换到 native renderer；以实际 renderer 的限制重新建立基线。
+    renderTargetWidth = getRenderTargetWidth()
     const initialPage = ReadingProgressService.getInitialPage(
       route.query.page,
       albumId.value,
@@ -845,6 +932,8 @@ onDeactivated(() => {
 onUnmounted(() => {
   clearToolbarTapTimer()
   deactivateReaderRuntime()
+  renderResizeObserver?.disconnect()
+  renderResizeObserver = null
   if (revertTimer) clearTimeout(revertTimer)
   if (dragPreviewTimer) clearTimeout(dragPreviewTimer)
   cancelAllRenderTasks()

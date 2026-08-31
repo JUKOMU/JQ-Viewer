@@ -396,6 +396,61 @@ const showPreview = ref(false)
   }
 }
 
+@container (min-width: 960px) {
+  .header-area {
+    position: sticky;
+    top: 0;
+    z-index: 11;
+    overflow: visible;
+  }
+
+  .header-content {
+    max-width: none;
+    margin: 0;
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .header-body {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 16px;
+  }
+
+  .cover-col {
+    align-self: center;
+    width: min(100%, 220px);
+  }
+
+  .info-col {
+    width: 100%;
+    justify-content: flex-start;
+    padding-bottom: 0;
+    gap: 8px;
+  }
+
+  .album-title {
+    font-size: 20px;
+  }
+
+  .read-actions {
+    align-self: stretch;
+    width: 100%;
+  }
+
+  .read-main-row {
+    width: 100%;
+  }
+
+  .read-btn {
+    flex: 1;
+  }
+
+  .source-menu {
+    z-index: 30;
+  }
+}
+
 /* 封面预览遮罩 */
 .cover-preview-overlay {
   position: fixed;

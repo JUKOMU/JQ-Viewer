@@ -692,4 +692,24 @@ const toggleDisplayMode = () => {
     grid-template-columns: repeat(3, 1fr);
   }
 }
+
+@container (min-width: 960px) {
+  .chapter-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 12px;
+  }
+
+  .chapter-item {
+    align-items: stretch;
+    min-width: 0;
+  }
+
+  .card-wrapper {
+    width: 100%;
+  }
+
+  .chapter-card {
+    height: 100%;
+  }
+}
 </style>

@@ -2,6 +2,7 @@ package io.github.jukomu.picacomic;
 
 import android.content.Context;
 
+import io.github.jukomu.BuildConfig;
 import io.github.jukomu.feature.cache.ImageCache;
 
 import java.util.ArrayList;
@@ -63,7 +64,7 @@ public final class PicacomicRuntime implements AutoCloseable {
 
     /** Production process runtime.  The default client is intentionally unavailable in CP2. */
     public static PicacomicRuntime getOrCreate(Context context) {
-        return getOrCreate(context, UNAVAILABLE_CLIENT_FACTORY);
+        return getOrCreate(context, defaultClientFactory());
     }
 
     /** Injectable overload used by a future artifact adapter and contract tests. */
@@ -98,6 +99,11 @@ public final class PicacomicRuntime implements AutoCloseable {
     /** Isolated runtime constructor for JVM/Android contract tests. */
     public static PicacomicRuntime createIsolated(ClientFactory factory, ImageCache cache) {
         return new PicacomicRuntime(factory, cache);
+    }
+
+    private static ClientFactory defaultClientFactory() {
+        return BuildConfig.DEBUG ? PicacomicDebugRemoteClient::new
+            : UNAVAILABLE_CLIENT_FACTORY;
     }
 
     /** Test cleanup for a process singleton; it is not used by application code. */

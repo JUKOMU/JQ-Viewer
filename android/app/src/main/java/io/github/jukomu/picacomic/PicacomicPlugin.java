@@ -57,6 +57,14 @@ public final class PicacomicPlugin extends Plugin {
         return new PicacomicPlugin(runtime, null);
     }
 
+    /** Build gate for the internal fake UI; it does not create a runtime. */
+    @PluginMethod
+    public void getBuildInfo(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put("debugUiEnabled", io.github.jukomu.BuildConfig.DEBUG);
+        resolve(call, result);
+    }
+
     @PluginMethod
     public void getAuthState(PluginCall call) {
         PicacomicRuntime runtime = currentRuntime();

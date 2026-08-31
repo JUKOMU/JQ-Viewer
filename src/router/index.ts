@@ -1,5 +1,7 @@
 import { createRouter, createWebHistory } from '@ionic/vue-router'
 import type { RouteRecordRaw } from 'vue-router'
+import { createPicacomicRoutes } from '@/features/picacomic/routes'
+import { isPicacomicDebugUiEnabled } from '@/features/picacomic/routeGate'
 
 const routes: Array<RouteRecordRaw> = [
   {
@@ -117,5 +119,16 @@ const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes,
 })
+
+let picacomicRoutesRegistered = false
+
+/** Register the internal Pica routes only for Vite test/dev or native debug builds. */
+export async function registerPicacomicRoutes(): Promise<boolean> {
+  if (picacomicRoutesRegistered) return true
+  if (!(await isPicacomicDebugUiEnabled())) return false
+  for (const route of createPicacomicRoutes()) router.addRoute(route)
+  picacomicRoutesRegistered = true
+  return true
+}
 
 export default router

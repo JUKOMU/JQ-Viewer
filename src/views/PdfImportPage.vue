@@ -981,6 +981,10 @@ IonHeader {
 
 /* ---- 页面容器 ---- */
 .page-container {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 1000px;
+  margin-inline: auto;
   padding: 12px 14px 132px;
 }
 

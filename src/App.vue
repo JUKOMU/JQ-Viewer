@@ -1,14 +1,16 @@
 <template>
   <ion-app>
-    <MainMenu content-id="main-content" :disabled="route.meta.menu !== true"></MainMenu>
-    <div id="main-content" class="ion-page-container">
-      <router-view v-slot="{ Component }">
-        <transition :name="transitionName" mode="out-in" @after-enter="onAfterEnter">
-          <keep-alive :include="keepAliveNames" :exclude="keepAliveExclude">
-            <component :is="Component" />
-          </keep-alive>
-        </transition>
-      </router-view>
+    <div class="app-shell">
+      <MainMenu content-id="main-content" :disabled="route.meta.menu !== true"></MainMenu>
+      <div id="main-content" class="ion-page-container">
+        <router-view v-slot="{ Component }">
+          <transition :name="transitionName" mode="out-in" @after-enter="onAfterEnter">
+            <keep-alive :include="keepAliveNames" :exclude="keepAliveExclude">
+              <component :is="Component" />
+            </keep-alive>
+          </transition>
+        </router-view>
+      </div>
     </div>
   </ion-app>
 </template>
@@ -350,12 +352,24 @@ onBeforeUnmount(() => {
 </script>
 
 <style>
+.app-shell {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .ion-page-container {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 0;
-  bottom: 0;
+  position: relative;
+  flex: 1 1 auto;
+  width: auto;
+  height: auto;
+  min-width: 0;
+  min-height: 0;
   contain: layout size style;
   z-index: 0;
   overflow: hidden;

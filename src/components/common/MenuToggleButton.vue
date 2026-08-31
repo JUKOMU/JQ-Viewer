@@ -1,5 +1,11 @@
 <template>
-  <button type="button" class="menu-toggle-btn" @click="openMenu">
+  <button
+    v-if="!isWideMenu"
+    type="button"
+    class="menu-toggle-btn"
+    aria-label="打开侧边栏"
+    @click="openMenu"
+  >
     <IonIcon :icon="menuOutline" />
   </button>
 </template>
@@ -9,7 +15,7 @@ defineOptions({ name: 'MenuToggleButton' })
 
 import { IonIcon } from '@ionic/vue'
 import { menuOutline } from 'ionicons/icons'
-import { openLeftMenu } from '@/composables/useSideMenuState'
+import { isWideMenu, openLeftMenu } from '@/composables/useSideMenuState'
 
 const openMenu = () => {
   openLeftMenu()

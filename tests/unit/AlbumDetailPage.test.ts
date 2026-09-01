@@ -571,6 +571,31 @@ describe('AlbumDetailPage 章节路由定位', () => {
   })
 })
 
+describe('AlbumDetailPage 阅读入口', () => {
+  test('navigator.onLine 为 false 时主按钮和网络来源仍进入阅读路由', async () => {
+    const onLineSpy = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+    const wrapper = await mountLoadedPage()
+
+    try {
+      const header = wrapper.findComponent({ name: 'AlbumHeader' })
+      header.vm.$emit('start-reading')
+      header.vm.$emit('select-source', 'network')
+      await nextTick()
+
+      const expectedRoute = {
+        path: '/album/123/read/chapter-1',
+        query: { title: '测试本子', total: '2' },
+      }
+      expect(mocks.router.push).toHaveBeenNthCalledWith(1, expectedRoute)
+      expect(mocks.router.push).toHaveBeenNthCalledWith(2, expectedRoute)
+      expect(mocks.showToast).not.toHaveBeenCalledWith('当前网络不可用', 'medium')
+    } finally {
+      wrapper.unmount()
+      onLineSpy.mockRestore()
+    }
+  })
+})
+
 describe('AlbumDetailPage 批量下载', () => {
   test('离开详情页后继续使用提交时的专辑上下文', async () => {
     const firstSubmit = deferred<{ taskId: string }>()

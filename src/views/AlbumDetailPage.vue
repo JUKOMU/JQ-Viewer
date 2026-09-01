@@ -13,7 +13,6 @@
             :loading="loading"
             :chapter-loading="chapterLoading"
             :source-menu-open="sourceMenuOpen"
-            :network-available="networkAvailable"
             :image-available="selectedChapterHasDownload"
             :pdf-available="Boolean(selectedChapterPdf)"
             @back="goBack"
@@ -251,14 +250,9 @@ type ReaderSource = 'network' | 'download' | 'pdf'
 type PreviewSource = 'network' | 'download' | 'pdf'
 
 const sourceMenuOpen = ref(false)
-const networkAvailable = ref(typeof navigator === 'undefined' ? true : navigator.onLine)
 const previewLoadedKey = ref('')
 let previewPdfDoc: pdfjsLib.PDFDocumentProxy | null = null
 const previewObjectUrls = new Set<string>()
-
-const updateNetworkAvailable = () => {
-  networkAvailable.value = typeof navigator === 'undefined' ? true : navigator.onLine
-}
 
 const refreshDownloadStatuses = async () => {
   try {
@@ -680,10 +674,7 @@ const loadAlbumData = async (force = false) => {
 }
 
 onMounted(() => {
-  updateNetworkAvailable()
   setLeftMenuGestureEnabled(false)
-  window.addEventListener('online', updateNetworkAvailable)
-  window.addEventListener('offline', updateNetworkAvailable)
   loadAlbumData()
   nextTick(() => {
     setupTabSwipeGesture()
@@ -940,10 +931,6 @@ const openReaderBySource = (source: ReaderSource, page?: number) => {
   }
 
   if (source === 'download' && !selectedChapterHasDownload.value) return
-  if (source === 'network' && !networkAvailable.value) {
-    void showToast('当前网络不可用', 'medium')
-    return
-  }
 
   void router.push({
     path: `/album/${albumId.value}/read/${chapterId}`,
@@ -1319,8 +1306,6 @@ onUnmounted(() => {
   setLeftMenuGestureEnabled(true)
   invalidatePreviewRequest()
   downloadProgressHandle?.remove()
-  window.removeEventListener('online', updateNetworkAvailable)
-  window.removeEventListener('offline', updateNetworkAvailable)
 })
 
 const loadMorePreview = async () => {

@@ -4,14 +4,6 @@
       <div class="picker-header">
         <span class="picker-title">选择收藏夹</span>
         <div class="picker-header-actions">
-          <button
-            type="button"
-            class="picker-add-btn"
-            aria-label="新建收藏夹"
-            @click="$emit('add-folder')"
-          >
-            <IonIcon :icon="addOutline" />
-          </button>
           <button type="button" class="picker-close-btn" @click="close">
             <IonIcon :icon="closeOutline" />
           </button>
@@ -19,8 +11,18 @@
       </div>
 
       <div class="picker-body">
-        <template v-if="!hideOnline && onlineFolders.length > 0">
-          <div class="section-title">在线收藏夹</div>
+        <template v-if="!hideOnline">
+          <div class="section-header">
+            <span class="section-title">在线收藏夹</span>
+            <button
+              type="button"
+              class="section-add-btn"
+              aria-label="新建在线收藏夹"
+              @click="emit('add-folder', 'online')"
+            >
+              <IonIcon :icon="addCircleOutline" />
+            </button>
+          </div>
           <div class="folder-list">
             <button
               v-for="folder in onlineFolders"
@@ -38,7 +40,17 @@
           </div>
         </template>
 
-        <div class="section-title">离线收藏夹</div>
+        <div class="section-header">
+          <span class="section-title">离线收藏夹</span>
+          <button
+            type="button"
+            class="section-add-btn"
+            aria-label="新建离线收藏夹"
+            @click="emit('add-folder', 'offline')"
+          >
+            <IonIcon :icon="addCircleOutline" />
+          </button>
+        </div>
         <div class="folder-list">
           <button
             v-for="folder in offlineFolders"
@@ -53,8 +65,15 @@
           </button>
         </div>
 
-        <div v-if="onlineFolders.length === 0 && offlineFolders.length === 0" class="empty-state">
-          暂无收藏夹，请点击 + 创建
+        <div
+          v-if="
+            hideOnline
+              ? offlineFolders.length === 0
+              : onlineFolders.length === 0 && offlineFolders.length === 0
+          "
+          class="empty-state"
+        >
+          暂无收藏夹
         </div>
       </div>
     </div>
@@ -62,6 +81,10 @@
 </template>
 
 <script setup lang="ts">
+import { IonIcon } from '@ionic/vue'
+import { addCircleOutline, closeOutline, folderOpenOutline } from 'ionicons/icons'
+import type { FolderEntry } from '@/services/JmcomicTypes'
+
 defineOptions({ name: 'FavoriteFolderPicker' })
 
 defineProps<{
@@ -73,12 +96,9 @@ defineProps<{
 }>()
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
-  'add-folder': []
+  'add-folder': [source: 'online' | 'offline']
   select: [payload: { folderId: string; source: 'online' | 'offline' }]
 }>()
-import { IonIcon } from '@ionic/vue'
-import { addOutline, closeOutline, folderOpenOutline } from 'ionicons/icons'
-import type { FolderEntry } from '@/services/JmcomicTypes'
 
 const close = () => {
   emit('update:modelValue', false)
@@ -134,7 +154,6 @@ const select = (folderId: string, source: 'online' | 'offline') => {
   gap: 8px;
 }
 
-.picker-add-btn,
 .picker-close-btn {
   display: inline-flex;
   align-items: center;
@@ -150,20 +169,21 @@ const select = (folderId: string, source: 'online' | 'offline') => {
   cursor: pointer;
 }
 
-.picker-add-btn:active,
-.picker-close-btn:active {
-  transform: scale(0.94);
-}
-
 .picker-body {
   flex: 1;
   overflow-y: auto;
   padding: 14px 16px 18px;
 }
 
-.section-title {
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   margin-bottom: 10px;
-  margin-top: 8px;
+  margin-top: 10px;
+}
+
+.section-title {
   color: #7a5743;
   font-size: 11px;
   font-weight: 700;
@@ -171,8 +191,25 @@ const select = (folderId: string, source: 'online' | 'offline') => {
   text-transform: uppercase;
 }
 
-.section-title + .section-title {
-  margin-top: 20px;
+.section-add-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #c96d3a;
+  font-size: 18px;
+  cursor: pointer;
+  transition: transform 0.12s ease;
+}
+
+.section-add-btn:active {
+  transform: scale(0.8);
+  background: #ffece0;
+  box-shadow: 0 2px 8px rgb(115 67 38 / 0.2);
 }
 
 .folder-list {
@@ -238,5 +275,12 @@ const select = (folderId: string, source: 'online' | 'offline') => {
   min-height: 80px;
   color: #9e7d6a;
   font-size: 13px;
+}
+
+.picker-close-btn:focus-visible,
+.section-add-btn:focus-visible,
+.folder-item:focus-visible {
+  outline: 3px solid rgb(201 109 58 / 0.45);
+  outline-offset: 2px;
 }
 </style>

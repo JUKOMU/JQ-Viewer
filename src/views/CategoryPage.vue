@@ -69,6 +69,7 @@
         :online-folders="pickerOnlineFolders"
         :offline-folders="pickerOfflineFolders"
         :online-folder-counts="pickerOnlineFolderCounts"
+        :hide-online="!isLoggedIn"
         @select="onPickerSelect"
         @add-folder="onPickerAddFolder"
       />
@@ -544,7 +545,7 @@ async function executeFavorite(
   }
 }
 
-async function onPickerAddFolder() {
+async function onPickerAddFolder(source: 'online' | 'offline') {
   const alert = await createAppAlert({
     header: '新建收藏夹',
     inputs: [{ name: 'name', type: 'text', placeholder: '收藏夹名称' }],
@@ -556,7 +557,7 @@ async function onPickerAddFolder() {
           const name = data?.name?.trim()
           if (!name) return
 
-          if (isLoggedIn.value) {
+          if (source === 'online') {
             try {
               const r = await JmcomicService.manageFavoriteFolder('add', '0', name, '')
               if (r.status === 'ok') {

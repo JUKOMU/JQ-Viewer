@@ -119,9 +119,14 @@
       :online-folders="pickerOnlineFolders"
       :offline-folders="pickerOfflineFolders"
       :online-folder-counts="onlineFolderCounts"
+      :online-has-successful-data="onlineFolderHasSuccessfulData"
+      :online-loading="onlineFolderLoading"
+      :online-refreshing="onlineFolderRefreshing"
+      :online-error-message="onlineFolderErrorMessage"
       :hide-online="!isLoggedIn"
       @select="onPickerSelect"
       @add-folder="onPickerAddFolder"
+      @retry-online="refreshOnlineFolderData"
     />
   </IonPage>
 </template>
@@ -152,7 +157,6 @@ import type {
   AlbumDetail,
   AlbumMeta,
   CommentItem,
-  FavoriteResult,
   FolderEntry,
   ImportedPdf,
   PhotoDetail,
@@ -163,6 +167,8 @@ import { OfflineDownloadService } from '@/services/OfflineDownloadService'
 import { OfflineFavoriteService } from '@/services/OfflineFavoriteService'
 import { HistoryService } from '@/services/HistoryService'
 import { useAuth } from '@/composables/useAuth'
+import { useFavoriteFolderStore } from '@/composables/favoriteFolderStore'
+import { invalidateFavoritePageCache } from '@/composables/favoritePageCache'
 import { openLeftMenu, setLeftMenuGestureEnabled } from '@/composables/useSideMenuState'
 import { type PreviewImageSlotSetter, usePreviewBatches } from '@/composables/usePreviewBatches'
 import { getPreviewGridItemWidth } from '@/utils/previewGrid'
@@ -307,48 +313,50 @@ const refreshImportedPdfStatuses = async () => {
 const actionBusy = reactive({ like: false, favorite: false })
 
 // ---- 收藏夹选择弹窗 ----
-const { isLoggedIn } = useAuth()
+const auth = useAuth()
+const isLoggedIn = auth.isLoggedIn
+const userInfo = auth.userInfo
+const accountId = computed(
+  () => userInfo?.value?.uid ?? (isLoggedIn.value ? 'authenticated' : null),
+)
+const {
+  folders: pickerOnlineFolders,
+  counts: onlineFolderCounts,
+  hasSuccessfulData: onlineFolderHasSuccessfulData,
+  isFetching: onlineFolderRefreshing,
+  errorMessage: onlineFolderErrorMessage,
+  refresh: refreshFavoriteFolders,
+  invalidate: invalidateFavoriteFolders,
+  clear: clearFavoriteFolders,
+} = useFavoriteFolderStore()
+const onlineFolderLoading = computed(
+  () => onlineFolderRefreshing.value && !onlineFolderHasSuccessfulData.value,
+)
 const showFolderPicker = ref(false)
 
-const pickerOnlineFolders = ref<FolderEntry[]>([])
 const pickerOfflineFolders = ref<FolderEntry[]>([])
-const onlineFolderCounts = ref<Record<string, number>>({})
 
-async function openFolderPicker() {
-  await OfflineFavoriteService.ensureInit()
-  pickerOfflineFolders.value = OfflineFavoriteService.getFolders()
-
-  if (isLoggedIn.value) {
-    try {
-      const result: FavoriteResult = await JmcomicService.favorites({ folderId: '0', page: 1 })
-      if (result.folderList) {
-        const entries: FolderEntry[] = []
-        const counts: Record<string, number> = {}
-        const countPromises: Promise<void>[] = []
-        for (const [id, name] of Object.entries(result.folderList)) {
-          entries.push({ id, name, count: 0 })
-          countPromises.push(
-            JmcomicService.favorites({ folderId: id, page: 1 })
-              .then((r) => {
-                counts[id] = r.totalItems
-              })
-              .catch(() => {
-                counts[id] = 0
-              }),
-          )
-        }
-        pickerOnlineFolders.value = entries
-        await Promise.all(countPromises)
-        onlineFolderCounts.value = counts
-      }
-    } catch {
-      pickerOnlineFolders.value = []
-    }
-  } else {
-    pickerOnlineFolders.value = []
+async function refreshOnlineFolderData() {
+  if (!isLoggedIn.value) {
+    clearFavoriteFolders()
+    return
   }
+  await refreshFavoriteFolders(accountId.value)
+}
 
+function openFolderPicker() {
+  pickerOfflineFolders.value = OfflineFavoriteService.getFolders()
   showFolderPicker.value = true
+
+  void (async () => {
+    try {
+      await OfflineFavoriteService.ensureInit()
+      pickerOfflineFolders.value = OfflineFavoriteService.getFolders()
+    } catch {
+      // 离线收藏夹读取失败时保留当前缓存。
+    }
+  })()
+  void refreshOnlineFolderData()
 }
 
 async function onPickerSelect(payload: { folderId: string; source: 'online' | 'offline' }) {
@@ -359,14 +367,18 @@ async function onPickerSelect(payload: { folderId: string; source: 'online' | 'o
   try {
     if (payload.source === 'online') {
       await JmcomicService.toggleAlbumFavorite(albumId.value, payload.folderId)
+      invalidateFavoritePageCache()
+      invalidateFavoriteFolders()
+      void refreshOnlineFolderData()
     } else {
-      OfflineFavoriteService.addItem(payload.folderId, {
+      await OfflineFavoriteService.addItem(payload.folderId, {
         id: albumDetail.value.id,
         title: albumDetail.value.title,
         coverUrl: albumDetail.value.image,
         authors: albumDetail.value.authors,
         tags: albumDetail.value.tags,
       })
+      invalidateFavoritePageCache()
     }
     albumDetail.value.isFavorite = true
     await showToast('已收藏', 'success')
@@ -394,31 +406,8 @@ async function onPickerAddFolder(source: 'online' | 'offline') {
               const r = await JmcomicService.manageFavoriteFolder('add', '0', name, '')
               if (r.status === 'ok') {
                 await showToast('收藏夹已创建', 'success')
-                // 刷新在线列表 + 数量
-                const result: FavoriteResult = await JmcomicService.favorites({
-                  folderId: '0',
-                  page: 1,
-                })
-                if (result.folderList) {
-                  const entries: FolderEntry[] = []
-                  const counts: Record<string, number> = {}
-                  const countPromises: Promise<void>[] = []
-                  for (const [id, fName] of Object.entries(result.folderList)) {
-                    entries.push({ id, name: fName, count: 0 })
-                    countPromises.push(
-                      JmcomicService.favorites({ folderId: id, page: 1 })
-                        .then((r) => {
-                          counts[id] = r.totalItems
-                        })
-                        .catch(() => {
-                          counts[id] = 0
-                        }),
-                    )
-                  }
-                  pickerOnlineFolders.value = entries
-                  await Promise.all(countPromises)
-                  onlineFolderCounts.value = counts
-                }
+                invalidateFavoriteFolders()
+                await refreshOnlineFolderData()
               }
             } catch {
               /* ignore */
@@ -1416,6 +1405,9 @@ const handleToggleFavorite = async () => {
     actionBusy.favorite = true
     try {
       await JmcomicService.toggleAlbumFavorite(albumId.value)
+      invalidateFavoritePageCache()
+      invalidateFavoriteFolders()
+      void refreshOnlineFolderData()
       albumDetail.value.isFavorite = false
       await showToast('已取消收藏', 'success')
     } catch (e: any) {

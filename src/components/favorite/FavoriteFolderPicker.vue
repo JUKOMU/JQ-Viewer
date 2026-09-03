@@ -2,7 +2,15 @@
   <div v-if="modelValue" class="picker-backdrop" @click.self="close">
     <div class="picker-panel">
       <div class="picker-header">
-        <span class="picker-title">选择收藏夹</span>
+        <div class="picker-title">
+          <span>选择收藏夹</span>
+          <IonSpinner
+            v-if="!hideOnline && (onlineRefreshing || onlineLoading)"
+            name="circular"
+            class="folder-loading-spinner"
+            aria-label="正在更新收藏夹"
+          />
+        </div>
         <div class="picker-header-actions">
           <button type="button" class="picker-close-btn" @click="close">
             <IonIcon :icon="closeOutline" />
@@ -23,7 +31,23 @@
               <IonIcon :icon="addCircleOutline" />
             </button>
           </div>
-          <div class="folder-list">
+          <div
+            v-if="onlineLoading && !hasOnlineData"
+            class="folder-status loading-state"
+            role="status"
+          >
+            <IonSpinner name="dots" aria-hidden="true" />
+            <span>正在加载收藏夹</span>
+          </div>
+          <div
+            v-else-if="onlineErrorMessage && !hasOnlineData"
+            class="folder-status error-state"
+            role="alert"
+          >
+            <span>{{ onlineErrorMessage }}</span>
+            <button type="button" class="retry-btn" @click="emit('retry-online')">重试</button>
+          </div>
+          <div v-else class="folder-list">
             <button
               v-for="folder in onlineFolders"
               :key="'online-' + folder.id"
@@ -37,6 +61,10 @@
                 {{ onlineFolderCounts[folder.id] }}
               </span>
             </button>
+          </div>
+          <div v-if="onlineErrorMessage && hasOnlineData" class="refresh-error" role="status">
+            <span>更新失败，正在显示上次结果：{{ onlineErrorMessage }}</span>
+            <button type="button" class="retry-btn" @click="emit('retry-online')">重试</button>
           </div>
         </template>
 
@@ -67,9 +95,11 @@
 
         <div
           v-if="
-            hideOnline
-              ? offlineFolders.length === 0
-              : onlineFolders.length === 0 && offlineFolders.length === 0
+            !onlineLoading &&
+            !onlineErrorMessage &&
+            (hideOnline || hasOnlineData) &&
+            (hideOnline ? offlineFolders.length === 0 : onlineFolders.length === 0) &&
+            offlineFolders.length === 0
           "
           class="empty-state"
         >
@@ -81,24 +111,43 @@
 </template>
 
 <script setup lang="ts">
-import { IonIcon } from '@ionic/vue'
+import { computed } from 'vue'
+import { IonIcon, IonSpinner } from '@ionic/vue'
 import { addCircleOutline, closeOutline, folderOpenOutline } from 'ionicons/icons'
 import type { FolderEntry } from '@/services/JmcomicTypes'
 
 defineOptions({ name: 'FavoriteFolderPicker' })
 
-defineProps<{
-  modelValue: boolean
-  onlineFolders: FolderEntry[]
-  offlineFolders: FolderEntry[]
-  onlineFolderCounts: Record<string, number>
-  hideOnline?: boolean
-}>()
+const props = withDefaults(
+  defineProps<{
+    modelValue: boolean
+    onlineFolders: FolderEntry[]
+    offlineFolders: FolderEntry[]
+    onlineFolderCounts: Record<string, number>
+    hideOnline?: boolean
+    onlineHasSuccessfulData?: boolean
+    onlineLoading?: boolean
+    onlineRefreshing?: boolean
+    onlineErrorMessage?: string
+  }>(),
+  {
+    hideOnline: false,
+    onlineHasSuccessfulData: undefined,
+    onlineLoading: false,
+    onlineRefreshing: false,
+    onlineErrorMessage: '',
+  },
+)
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
   'add-folder': [source: 'online' | 'offline']
+  'retry-online': []
   select: [payload: { folderId: string; source: 'online' | 'offline' }]
 }>()
+
+const hasOnlineData = computed(
+  () => props.onlineHasSuccessfulData ?? (!props.onlineLoading && !props.onlineErrorMessage),
+)
 
 const close = () => {
   emit('update:modelValue', false)
@@ -143,9 +192,20 @@ const select = (folderId: string, source: 'online' | 'offline') => {
 }
 
 .picker-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-size: 18px;
   font-weight: 700;
   color: #3a261d;
+}
+
+.folder-loading-spinner {
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+  margin-left: 8px;
+  color: #e8843c;
 }
 
 .picker-header-actions {
@@ -218,6 +278,41 @@ const select = (folderId: string, source: 'online' | 'offline') => {
   gap: 6px;
 }
 
+.folder-status,
+.refresh-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 56px;
+  color: #9e7d6a;
+  font-size: 13px;
+}
+
+.error-state {
+  flex-direction: column;
+  color: #a6543c;
+}
+
+.refresh-error {
+  justify-content: flex-start;
+  min-height: 36px;
+  padding: 4px 8px 0;
+  color: #a6543c;
+  font-size: 12px;
+}
+
+.retry-btn {
+  border: 0;
+  border-radius: 999px;
+  padding: 4px 10px;
+  background: #fff0e7;
+  color: #b55e32;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
 .folder-item {
   display: flex;
   align-items: center;
@@ -279,7 +374,8 @@ const select = (folderId: string, source: 'online' | 'offline') => {
 
 .picker-close-btn:focus-visible,
 .section-add-btn:focus-visible,
-.folder-item:focus-visible {
+.folder-item:focus-visible,
+.retry-btn:focus-visible {
   outline: 3px solid rgb(201 109 58 / 0.45);
   outline-offset: 2px;
 }

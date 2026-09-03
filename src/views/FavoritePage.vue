@@ -50,6 +50,7 @@
           :loaded-page-start="loadedPageStart"
           :loaded-page-end="loadedPageEnd"
           :downloaded-album-ids="downloadedAlbumIds"
+          :removing-ids="removingIds"
           idle-text="请在右侧收藏夹菜单中选择文件夹"
           @mode-change="displayMode = $event"
           @item-click="handleItemClick"
@@ -89,6 +90,10 @@
         :selected-online-id="folderSource === 'online' ? currentFolderId : ''"
         :selected-offline-id="folderSource === 'offline' ? currentFolderId : ''"
         :online-folder-counts="onlineFolderCounts"
+        :online-has-successful-data="onlineFolderHasSuccessfulData"
+        :online-loading="onlineFolderLoading"
+        :online-refreshing="onlineFolderRefreshing"
+        :online-error-message="onlineFolderErrorMessage"
         @select-online-folder="onSelectOnlineFolder"
         @select-offline-folder="onSelectOfflineFolder"
         @add-folder="onAddFolder"
@@ -97,6 +102,7 @@
         @move-folder="onMoveFolder"
         @copy-folder="onCopyFolder"
         @export-folder="onExportFolder"
+        @retry-online="refreshOnlineFolderData"
       />
     </div>
 
@@ -181,6 +187,7 @@ import {
 } from '@/services/OfflineFavoriteService'
 import { ExportFormatService } from '@/services/ExportFormatService'
 import { useAuth } from '@/composables/useAuth'
+import { useFavoriteFolderStore } from '@/composables/favoriteFolderStore'
 import type {
   FavoriteQuery,
   FavoriteResult,
@@ -190,7 +197,7 @@ import type {
 } from '@/services/JmcomicTypes'
 import { OFFLINE_ALL_FOLDER_ID } from '@/services/JmcomicTypes'
 import { closeLeftMenu, useSideMenuState } from '@/composables/useSideMenuState'
-import { cachedState } from '@/composables/favoritePageCache'
+import { cachedState, clearFavoritePageCache } from '@/composables/favoritePageCache'
 
 defineOptions({ name: 'FavoritePage' })
 
@@ -206,29 +213,28 @@ const router = useRouter()
 type FolderSource = 'online' | 'offline'
 const folderSource = ref<FolderSource>('offline')
 const currentFolderId = ref('default')
-const onlineFolderMap = ref<Record<string, string>>({})
-const onlineFolderCounts = ref<Record<string, number>>({})
 const currentKeyword = ref('')
-
-const loadOnlineFolderCounts = async () => {
-  const ids = Object.keys(onlineFolderMap.value)
-  if (ids.length === 0) return
-  const counts: Record<string, number> = {}
-  const promises = ids.map((id) =>
-    JmcomicService.favorites({ folderId: id, page: 1 })
-      .then((r) => {
-        counts[id] = r.totalItems
-      })
-      .catch(() => {
-        counts[id] = 0
-      }),
-  )
-  await Promise.all(promises)
-  onlineFolderCounts.value = counts
-}
-
-const onlineFolderEntries = computed<FolderEntry[]>(() =>
-  Object.entries(onlineFolderMap.value).map(([id, name]) => ({ id, name, count: 0 })),
+const auth = useAuth()
+const isLoggedIn = auth.isLoggedIn
+const userInfo = auth.userInfo
+const accountId = computed(
+  () => userInfo?.value?.uid ?? (isLoggedIn.value ? 'authenticated' : null),
+)
+const {
+  folders: onlineFolderEntries,
+  counts: onlineFolderCounts,
+  hasSuccessfulData: onlineFolderHasSuccessfulData,
+  isFetching: onlineFolderRefreshing,
+  errorMessage: onlineFolderErrorMessage,
+  refresh: refreshFavoriteFolders,
+  invalidate: invalidateFavoriteFolders,
+  clear: clearFavoriteFolders,
+} = useFavoriteFolderStore()
+const onlineFolderLoading = computed(
+  () => onlineFolderRefreshing.value && !onlineFolderHasSuccessfulData.value,
+)
+const onlineFolderMap = computed<Record<string, string>>(() =>
+  Object.fromEntries(onlineFolderEntries.value.map((folder) => [folder.id, folder.name])),
 )
 
 const offlineFolderEntries = computed<FolderEntry[]>(() => {
@@ -269,7 +275,37 @@ let pageResizeObserver: ResizeObserver | undefined
 const pageCache = ref<Record<number, SearchResultItem[]>>({})
 
 /** 在线关键字搜索时缓存全部过滤结果，翻页直接切片不重复拉取 */
-const onlineSearchCache = ref<SearchResultItem[] | null>(null)
+const onlineSearchCache = ref<{ generation: number; items: SearchResultItem[] } | null>(null)
+
+interface FavoriteViewContext {
+  generation: number
+  accountId: string | null
+  source: FolderSource
+  folderId: string
+  keyword: string
+}
+
+let queryGeneration = 0
+
+const captureViewContext = (generation = queryGeneration): FavoriteViewContext => ({
+  generation,
+  accountId: accountId.value,
+  source: folderSource.value,
+  folderId: currentFolderId.value,
+  keyword: currentKeyword.value.trim(),
+})
+
+const isCurrentViewContext = (context: FavoriteViewContext) =>
+  context.generation === queryGeneration &&
+  context.accountId === accountId.value &&
+  context.source === folderSource.value &&
+  context.folderId === currentFolderId.value &&
+  context.keyword === currentKeyword.value.trim()
+
+const beginViewContext = () => {
+  queryGeneration += 1
+  return captureViewContext()
+}
 
 const matchesKeyword = (item: SearchResultItem, kw: string): boolean => {
   const kwLower = kw.toLowerCase()
@@ -314,6 +350,9 @@ const refreshDownloadStatuses = async () => {
 const saveToCache = () => {
   if (!resultMeta.value) return
   cachedState.value = {
+    accountId: accountId.value ?? '',
+    keyword: currentKeyword.value,
+    stale: false,
     folderSource: folderSource.value,
     currentFolderId: currentFolderId.value,
     onlineFolderMap: { ...onlineFolderMap.value },
@@ -326,38 +365,82 @@ const saveToCache = () => {
 
 const restoreFromCache = (): boolean => {
   const c = cachedState.value
-  if (!c) return false
+  if (!c || c.accountId !== (accountId.value ?? '')) {
+    return false
+  }
   folderSource.value = c.folderSource
   currentFolderId.value = c.currentFolderId
-  onlineFolderMap.value = c.onlineFolderMap
-  onlineFolderCounts.value = c.onlineFolderCounts
+  currentKeyword.value = c.keyword ?? ''
   resultMeta.value = c.resultMeta
   pageCache.value = c.pageCache
   displayMode.value = c.displayMode
   return true
 }
 
-const silentRefresh = async () => {
-  try {
-    const pageResult = await fetchPage(1)
-    const cached = pageCache.value[1] ?? []
-    const sameContent =
-      cached.length === pageResult.content.length &&
-      cached.every((item, i) => item.id === pageResult.content[i]?.id)
-    const sameTotal = resultMeta.value?.totalItems === pageResult.totalItems
-    if (!sameContent) {
-      resultMeta.value = pageResult
-      pageCache.value = { 1: pageResult.content }
-    } else if (!sameTotal) {
-      resultMeta.value = pageResult
-    }
-    saveToCache()
-    if (!sameContent) {
-      pageAtTop.value = true
-    }
-  } catch {
-    // 静默失败，缓存数据保持显示
+let silentRefreshRequest: {
+  context: FavoriteViewContext
+  promise: Promise<void>
+} | null = null
+
+const sameViewContext = (left: FavoriteViewContext, right: FavoriteViewContext) =>
+  left.generation === right.generation &&
+  left.accountId === right.accountId &&
+  left.source === right.source &&
+  left.folderId === right.folderId &&
+  left.keyword === right.keyword
+
+const silentRefresh = () => {
+  const context = captureViewContext()
+  if (silentRefreshRequest && sameViewContext(silentRefreshRequest.context, context)) {
+    return silentRefreshRequest.promise
   }
+
+  const cachedPages = loadedPages.value.length > 0 ? [...loadedPages.value] : [1]
+  const originalSearchCache = onlineSearchCache.value
+  const request: { context: FavoriteViewContext; promise: Promise<void> } = {
+    context,
+    promise: Promise.resolve(),
+  }
+  const promise = (async () => {
+    try {
+      // A keyword cache represents the whole query. Clear it so this refresh
+      // cannot reuse an older result while rebuilding every cached page.
+      if (context.source === 'online' && context.keyword) onlineSearchCache.value = null
+
+      const refreshedPages: Record<number, SearchResultItem[]> = {}
+      let refreshedMeta: SearchResult | null = null
+      for (const page of cachedPages) {
+        const pageResult = await fetchPage(page, context)
+        refreshedPages[page] = pageResult.content
+        if (!refreshedMeta) refreshedMeta = pageResult
+      }
+
+      if (!isCurrentViewContext(context) || !refreshedMeta) return
+
+      const nextPageCache: Record<number, SearchResultItem[]> = {}
+      for (const page of cachedPages) {
+        if (page <= refreshedMeta.totalPages) {
+          nextPageCache[page] = refreshedPages[page] ?? []
+        }
+      }
+      // Commit only after every cached page has completed successfully and
+      // the original query context is still current.
+      resultMeta.value = refreshedMeta
+      pageCache.value = nextPageCache
+      saveToCache()
+    } catch {
+      if (isCurrentViewContext(context)) {
+        onlineSearchCache.value = originalSearchCache
+        if (cachedState.value) cachedState.value = { ...cachedState.value, stale: true }
+      }
+      // Keep the original page/result snapshot untouched for the next retry.
+    } finally {
+      if (silentRefreshRequest === request) silentRefreshRequest = null
+    }
+  })()
+  request.promise = promise
+  silentRefreshRequest = request
+  return promise
 }
 
 const currentFavoriteQuery = computed<FavoriteQuery>(() => ({
@@ -446,34 +529,43 @@ const stopPageResizeObserver = () => {
 }
 
 // --- 数据获取 ---
-const fetchOnlineFavorites = async (page: number): Promise<SearchResult> => {
-  const kw = currentKeyword.value?.trim()
+const fetchOnlineFavorites = async (
+  page: number,
+  context: FavoriteViewContext,
+): Promise<SearchResult> => {
+  const kw = context.keyword
   const pageSize = 20
 
   if (kw) {
-    if (onlineSearchCache.value === null) {
+    const cachedSearch =
+      onlineSearchCache.value?.generation === context.generation
+        ? onlineSearchCache.value.items
+        : null
+    let filtered: SearchResultItem[]
+    if (cachedSearch) {
+      filtered = cachedSearch
+    } else {
       const allItems: SearchResultItem[] = []
       let p = 1
       let tp = 1
       while (p <= tp) {
         const result: FavoriteResult = await JmcomicService.favorites({
-          folderId: currentFolderId.value,
+          folderId: context.folderId,
           page: p,
         })
         allItems.push(...result.content)
-        if (result.folderList) {
-          onlineFolderMap.value = result.folderList
-        }
         tp = result.totalPages
         p++
         if (p <= tp) {
           await new Promise((r) => setTimeout(r, 100))
         }
       }
-      onlineSearchCache.value = allItems.filter((item) => matchesKeyword(item, kw))
+      filtered = allItems.filter((item) => matchesKeyword(item, kw))
+      if (isCurrentViewContext(context)) {
+        onlineSearchCache.value = { generation: context.generation, items: filtered }
+      }
     }
 
-    const filtered = onlineSearchCache.value
     const totalItems = filtered.length
     const totalPages = Math.max(1, Math.ceil(totalItems / pageSize))
     const currentPage = Math.min(Math.max(1, page), totalPages)
@@ -487,14 +579,11 @@ const fetchOnlineFavorites = async (page: number): Promise<SearchResult> => {
   }
 
   // 无关键字：清缓存，走服务端分页
-  onlineSearchCache.value = null
+  if (isCurrentViewContext(context)) onlineSearchCache.value = null
   const result: FavoriteResult = await JmcomicService.favorites({
-    folderId: currentFolderId.value,
+    folderId: context.folderId,
     page,
   })
-  if (result.folderList) {
-    onlineFolderMap.value = result.folderList
-  }
   return {
     currentPage: result.currentPage,
     totalItems: result.totalItems,
@@ -503,11 +592,14 @@ const fetchOnlineFavorites = async (page: number): Promise<SearchResult> => {
   }
 }
 
-const fetchOfflineFavorites = async (page: number): Promise<SearchResult> => {
+const fetchOfflineFavorites = async (
+  page: number,
+  context: FavoriteViewContext,
+): Promise<SearchResult> => {
   const pageSize = 20
-  if (currentFolderId.value === OFFLINE_ALL_FOLDER_ID) {
+  if (context.folderId === OFFLINE_ALL_FOLDER_ID) {
     const items = await OfflineFavoriteService.getAllItemsMerged()
-    const kw = currentKeyword.value || undefined
+    const kw = context.keyword || undefined
     const filtered = kw ? items.filter((i) => matchesKeyword(i, kw)) : items
     const totalItems = filtered.length
     const totalPages = Math.max(1, Math.ceil(totalItems / pageSize))
@@ -521,8 +613,8 @@ const fetchOfflineFavorites = async (page: number): Promise<SearchResult> => {
     }
   }
   const result = await OfflineFavoriteService.getItems(
-    currentFolderId.value,
-    currentKeyword.value || undefined,
+    context.folderId,
+    context.keyword || undefined,
     page,
     pageSize,
   )
@@ -534,21 +626,25 @@ const fetchOfflineFavorites = async (page: number): Promise<SearchResult> => {
   }
 }
 
-const fetchPage = async (page: number): Promise<SearchResult> => {
-  if (folderSource.value === 'online') {
-    return await fetchOnlineFavorites(page)
+const fetchPage = async (page: number, context = captureViewContext()): Promise<SearchResult> => {
+  if (context.source === 'online') {
+    return await fetchOnlineFavorites(page, context)
   }
-  return fetchOfflineFavorites(page)
+  return fetchOfflineFavorites(page, context)
 }
 
 const resetWithPage = async (page: number = 1) => {
+  const context = beginViewContext()
   onlineSearchCache.value = null
   initialLoading.value = true
+  loadingPrevious.value = false
+  loadingNext.value = false
   errorMessage.value = ''
   resultMeta.value = null
   pageCache.value = {}
   try {
-    const pageResult = await fetchPage(page)
+    const pageResult = await fetchPage(page, context)
+    if (!isCurrentViewContext(context)) return
     resultMeta.value = pageResult
     pageCache.value = { [page]: pageResult.content }
     saveToCache()
@@ -556,12 +652,160 @@ const resetWithPage = async (page: number = 1) => {
     void contentRef.value?.$el?.scrollToTop?.(0)
     pageAtTop.value = true
   } catch (error) {
+    if (!isCurrentViewContext(context)) return
     resultMeta.value = null
     pageCache.value = {}
     errorMessage.value = sanitizeError(error, '加载失败')
   } finally {
-    initialLoading.value = false
+    if (isCurrentViewContext(context)) initialLoading.value = false
   }
+}
+
+interface RemovalAnchor {
+  itemId: string
+  top: number | null
+}
+
+interface RemovalResult {
+  page: number
+  anchor: RemovalAnchor | null
+}
+
+const getEntryKey = (entry: SearchResultDisplayItem) =>
+  `${entry.page}-${entry.indexInPage}-${entry.item.id}`
+
+const removeItemFromCurrentView = (
+  itemId: string,
+  context: FavoriteViewContext,
+): RemovalResult | null => {
+  if (!isCurrentViewContext(context)) return null
+
+  const anchorEntry = displayItems.value.find((entry) => entry.item.id !== itemId)
+  const anchor = anchorEntry
+    ? {
+        itemId: anchorEntry.item.id,
+        top:
+          resultContainerRef.value
+            ?.getEntryElement(getEntryKey(anchorEntry))
+            ?.getBoundingClientRect().top ?? null,
+      }
+    : null
+
+  let removedPage: number | null = null
+  const nextPageCache: Record<number, SearchResultItem[]> = {}
+  for (const [pageString, items] of Object.entries(pageCache.value)) {
+    const page = Number(pageString)
+    const nextItems = [...items]
+    const itemIndex = nextItems.findIndex((candidate) => candidate.id === itemId)
+    if (itemIndex >= 0 && removedPage === null) {
+      nextItems.splice(itemIndex, 1)
+      removedPage = page
+    }
+    nextPageCache[page] = nextItems
+  }
+
+  if (removedPage === null) return null
+
+  const previousTotal = resultMeta.value?.totalItems ?? 0
+  const nextTotal = Math.max(0, previousTotal - 1)
+  resultMeta.value = resultMeta.value
+    ? {
+        ...resultMeta.value,
+        totalItems: nextTotal,
+        totalPages: Math.max(1, Math.ceil(nextTotal / 20)),
+      }
+    : null
+  pageCache.value = nextPageCache
+  onlineSearchCache.value = null
+  saveToCache()
+  return { page: removedPage, anchor }
+}
+
+const replenishAfterRemoval = async (
+  removal: RemovalResult,
+  itemId: string,
+  context: FavoriteViewContext,
+) => {
+  const lastLoadedPage = loadedPageEnd.value
+  if (!lastLoadedPage || !isCurrentViewContext(context)) return
+
+  try {
+    const results: Array<{ page: number; result: SearchResult }> = []
+    for (let page = removal.page; page <= lastLoadedPage; page++) {
+      const result = await fetchPage(page, context)
+      results.push({ page, result })
+    }
+    if (!isCurrentViewContext(context) || results.length === 0) return
+
+    const previousTotal = resultMeta.value?.totalItems ?? 0
+    const serverTotal = results[0].result.totalItems
+    const totalItems = Math.max(0, Math.min(serverTotal, previousTotal))
+    const totalPages = Math.max(1, Math.ceil(totalItems / 20))
+    const nextPageCache = { ...pageCache.value }
+    for (const { page, result } of results) {
+      if (page > totalPages) {
+        delete nextPageCache[page]
+        continue
+      }
+      nextPageCache[page] = result.content.filter((item) => item.id !== itemId)
+    }
+    resultMeta.value = {
+      ...results[0].result,
+      totalItems,
+      totalPages,
+    }
+    pageCache.value = nextPageCache
+    saveToCache()
+
+    if (removal.anchor) {
+      await nextTick()
+      const nextEntry = displayItems.value.find((entry) => entry.item.id === removal.anchor?.itemId)
+      if (nextEntry && removal.anchor.top !== null) {
+        const nextTop = resultContainerRef.value
+          ?.getEntryElement(getEntryKey(nextEntry))
+          ?.getBoundingClientRect().top
+        const scrollElement = await resolveScrollElement()
+        if (nextTop !== undefined && nextTop !== null && scrollElement) {
+          scrollElement.scrollTop += nextTop - removal.anchor.top
+        }
+      }
+    }
+  } catch {
+    // The confirmed local removal remains visible; the next explicit refresh retries.
+  }
+}
+
+// --- 卡片移除退场动画 ---
+const CARD_REMOVE_ANIMATION_MS = 260
+
+const removingIds = ref<Set<string>>(new Set())
+
+const prefersReducedMotion = () =>
+  typeof window !== 'undefined' &&
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+const waitForRemovalAnimation = () =>
+  new Promise<void>((resolve) => {
+    if (prefersReducedMotion()) {
+      resolve()
+      return
+    }
+    window.setTimeout(resolve, CARD_REMOVE_ANIMATION_MS)
+  })
+
+const animateRemoveFromView = async (itemId: string, context: FavoriteViewContext) => {
+  if (!isCurrentViewContext(context)) return
+  const withId = new Set(removingIds.value)
+  withId.add(itemId)
+  removingIds.value = withId
+  await nextTick()
+  await waitForRemovalAnimation()
+  const removal = removeItemFromCurrentView(itemId, context)
+  const cleared = new Set(removingIds.value)
+  cleared.delete(itemId)
+  removingIds.value = cleared
+  if (removal) void replenishAfterRemoval(removal, itemId, context)
 }
 
 const submitSearch = (query: FavoriteQuery) => {
@@ -575,20 +819,23 @@ const retrySearch = () => {
 
 const handleRefresh = async (event: CustomEvent) => {
   const refresher = event.target as HTMLIonRefresherElement
+  const context = captureViewContext()
   try {
-    if (folderSource.value === 'online') {
+    if (context.source === 'online') {
       onlineSearchCache.value = null
       errorMessage.value = ''
-      const result = await fetchOnlineFavorites(1)
+      const result = await fetchOnlineFavorites(1, context)
+      if (!isCurrentViewContext(context)) return
       resultMeta.value = result
       pageCache.value = { 1: result.content }
     } else {
-      const result = await fetchOfflineFavorites(1)
+      const result = await fetchOfflineFavorites(1, context)
+      if (!isCurrentViewContext(context)) return
       resultMeta.value = result
       pageCache.value = { 1: result.content }
     }
   } catch {
-    if (folderSource.value === 'online') {
+    if (isCurrentViewContext(context) && context.source === 'online') {
       errorMessage.value = '刷新失败'
     }
   } finally {
@@ -599,23 +846,28 @@ const handleRefresh = async (event: CustomEvent) => {
 // --- 分页 ---
 const appendPage = async (page: number) => {
   if (loadingNext.value || initialLoading.value || !canLoadNext.value) return
+  const context = captureViewContext()
   loadingNext.value = true
   try {
     errorMessage.value = ''
-    const pageResult = await fetchPage(page)
+    const pageResult = await fetchPage(page, context)
+    if (!isCurrentViewContext(context)) return
     resultMeta.value = pageResult
     pageCache.value = { ...pageCache.value, [page]: pageResult.content }
     saveToCache()
     await maybeLoadNextAfterRender()
   } catch (error) {
-    errorMessage.value = sanitizeError(error, '加载下一页失败')
+    if (isCurrentViewContext(context)) {
+      errorMessage.value = sanitizeError(error, '加载下一页失败')
+    }
   } finally {
-    loadingNext.value = false
+    if (isCurrentViewContext(context)) loadingNext.value = false
   }
 }
 
 const prependPage = async (page: number) => {
   if (loadingPrevious.value || initialLoading.value || !canLoadPrevious.value) return
+  const context = captureViewContext()
 
   const contentScrollElement = await resolveScrollElement()
   const anchorEntry = displayItems.value[0]
@@ -634,7 +886,8 @@ const prependPage = async (page: number) => {
   loadingPrevious.value = true
   try {
     errorMessage.value = ''
-    const pageResult = await fetchPage(page)
+    const pageResult = await fetchPage(page, context)
+    if (!isCurrentViewContext(context)) return
     resultMeta.value = pageResult
     pageCache.value = { [page]: pageResult.content, ...pageCache.value }
     saveToCache()
@@ -653,9 +906,11 @@ const prependPage = async (page: number) => {
       contentScrollElement.scrollTop += nextRootTop - previousRootTop
     }
   } catch (error) {
-    errorMessage.value = sanitizeError(error, '加载上一页失败')
+    if (isCurrentViewContext(context)) {
+      errorMessage.value = sanitizeError(error, '加载上一页失败')
+    }
   } finally {
-    loadingPrevious.value = false
+    if (isCurrentViewContext(context)) loadingPrevious.value = false
   }
 }
 
@@ -721,6 +976,7 @@ const openRightMenu = async () => {
 
   if (isWideLayout.value) {
     widePaneOpen.value = true
+    void refreshOnlineFolderData()
     return
   }
 
@@ -728,6 +984,7 @@ const openRightMenu = async () => {
   rightDragProgress.value = 0
   isDraggingRight.value = true
   rightMenuOpen.value = true
+  void refreshOnlineFolderData()
   await nextTick()
   const panelEl = sideMenuRef.value?.panelRef
   if (panelEl) void panelEl.offsetHeight // 强制 reflow，确认初始位置已渲染
@@ -823,7 +1080,8 @@ async function handleCardRead(item: SearchResultItem) {
 // --- 卡片操作：移动 ---
 async function handleCardMove(item: SearchResultItem) {
   closeCardMenu()
-  if (currentFolderId.value === OFFLINE_ALL_FOLDER_ID) {
+  const context = captureViewContext()
+  if (context.folderId === OFFLINE_ALL_FOLDER_ID) {
     await showToast('全部视图不支持移动，请进入具体文件夹操作', 'medium')
     return
   }
@@ -832,10 +1090,10 @@ async function handleCardMove(item: SearchResultItem) {
 
   if (isOnline) {
     folders = Object.entries(onlineFolderMap.value)
-      .filter(([id]) => id !== currentFolderId.value)
+      .filter(([id]) => id !== context.folderId)
       .map(([id, name]) => ({ id, name }))
   } else {
-    folders = OfflineFavoriteService.getFolders().filter((f) => f.id !== currentFolderId.value)
+    folders = OfflineFavoriteService.getFolders().filter((f) => f.id !== context.folderId)
   }
 
   if (folders.length === 0) {
@@ -856,30 +1114,58 @@ async function handleCardMove(item: SearchResultItem) {
         text: '确定',
         handler: async (data: string) => {
           if (!data) return
-          if (isOnline) {
-            try {
-              if (data === '0') {
-                await JmcomicService.toggleAlbumFavorite(item.id, currentFolderId.value)
-                await JmcomicService.toggleAlbumFavorite(item.id, '0')
-              } else {
-                await JmcomicService.manageFavoriteFolder('move', data, '', item.id)
-              }
-              await showToast('已移动', 'success')
-              void resetWithPage(1)
-            } catch {
-              await showToast('移动失败', 'danger')
-            }
-          } else {
-            await OfflineFavoriteService.removeItem(currentFolderId.value, item.id)
-            await OfflineFavoriteService.addItem(data, item)
-            await showToast('已移动', 'success')
-            void resetWithPage(1)
-          }
+          await alert.dismiss()
+          void performCardMove(item, context, isOnline, data)
         },
       },
     ],
   })
   await alert.present()
+}
+
+async function performCardMove(
+  item: SearchResultItem,
+  context: FavoriteViewContext,
+  isOnline: boolean,
+  targetFolderId: string,
+) {
+  if (isOnline) {
+    let sourceRemoved = false
+    try {
+      if (targetFolderId === '0') {
+        await JmcomicService.toggleAlbumFavorite(item.id, context.folderId)
+        sourceRemoved = true
+        await JmcomicService.toggleAlbumFavorite(item.id, '0')
+      } else {
+        await JmcomicService.manageFavoriteFolder('move', targetFolderId, '', item.id)
+      }
+      invalidateFavoriteFolders()
+      void refreshOnlineFolderData()
+      if (context.folderId !== '0') {
+        await animateRemoveFromView(item.id, context)
+      }
+      await showToast('已移动', 'success')
+    } catch {
+      if (sourceRemoved) {
+        invalidateFavoriteFolders()
+        void refreshOnlineFolderData()
+        if (isCurrentViewContext(context)) void resetWithPage(1)
+      }
+      await showToast('移动失败', 'danger')
+    }
+  } else {
+    let sourceRemoved = false
+    try {
+      await OfflineFavoriteService.removeItem(context.folderId, item.id)
+      sourceRemoved = true
+      await OfflineFavoriteService.addItem(targetFolderId, item)
+      await animateRemoveFromView(item.id, context)
+      await showToast('已移动', 'success')
+    } catch {
+      if (sourceRemoved && isCurrentViewContext(context)) void resetWithPage(1)
+      await showToast('移动失败', 'danger')
+    }
+  }
 }
 
 // --- 卡片操作：下载 ---
@@ -918,7 +1204,8 @@ async function handleCardDownload(item: SearchResultItem) {
 // --- 卡片操作：取消收藏 ---
 async function handleCardRemove(item: SearchResultItem) {
   closeCardMenu()
-  if (currentFolderId.value === OFFLINE_ALL_FOLDER_ID) {
+  const context = captureViewContext()
+  if (context.folderId === OFFLINE_ALL_FOLDER_ID) {
     await showToast('全部视图不支持移除，请进入具体文件夹操作', 'medium')
     return
   }
@@ -933,24 +1220,39 @@ async function handleCardRemove(item: SearchResultItem) {
         role: 'destructive' as const,
         cssClass: 'danger-alert',
         handler: async () => {
-          if (isOnline) {
-            try {
-              await JmcomicService.toggleAlbumFavorite(item.id, currentFolderId.value)
-              await showToast('已取消收藏', 'success')
-              void resetWithPage(1)
-            } catch {
-              await showToast('操作失败', 'danger')
-            }
-          } else {
-            await OfflineFavoriteService.removeItem(currentFolderId.value, item.id)
-            await showToast('已取消收藏', 'success')
-            void resetWithPage(1)
-          }
+          await alert.dismiss()
+          void performCardRemove(item, context, isOnline)
         },
       },
     ],
   })
   await alert.present()
+}
+
+async function performCardRemove(
+  item: SearchResultItem,
+  context: FavoriteViewContext,
+  isOnline: boolean,
+) {
+  if (isOnline) {
+    try {
+      await JmcomicService.toggleAlbumFavorite(item.id, context.folderId)
+      invalidateFavoriteFolders()
+      void refreshOnlineFolderData()
+      await animateRemoveFromView(item.id, context)
+      await showToast('已取消收藏', 'success')
+    } catch {
+      await showToast('操作失败', 'danger')
+    }
+  } else {
+    try {
+      await OfflineFavoriteService.removeItem(context.folderId, item.id)
+      await animateRemoveFromView(item.id, context)
+      await showToast('已取消收藏', 'success')
+    } catch {
+      await showToast('操作失败', 'danger')
+    }
+  }
 }
 
 const onAddFolder = async (source: 'online' | 'offline') => {
@@ -1510,23 +1812,23 @@ const onExportFolder = async (payload: {
 }
 
 async function refreshOnlineFolderList() {
-  try {
-    const result: FavoriteResult = await JmcomicService.favorites({ folderId: '0', page: 1 })
-    if (result.folderList) {
-      onlineFolderMap.value = result.folderList
-    }
-    await loadOnlineFolderCounts()
-  } catch {
-    /* ignore */
-  }
+  invalidateFavoriteFolders()
+  await refreshOnlineFolderData()
 }
 
 // --- 初始化 ---
-const { isLoggedIn } = useAuth()
+async function refreshOnlineFolderData() {
+  if (!isLoggedIn.value) {
+    clearFavoriteFolders()
+    return
+  }
+  await refreshFavoriteFolders(accountId.value)
+}
 
 const initOnlineFolders = async () => {
   await OfflineFavoriteService.ensureInit()
   if (!isLoggedIn.value) {
+    clearFavoriteFolders()
     folderSource.value = 'offline'
     const offlineFolders = OfflineFavoriteService.getFolders()
     if (offlineFolders.length > 0) {
@@ -1539,34 +1841,26 @@ const initOnlineFolders = async () => {
   }
 
   const hasCached = restoreFromCache()
-  if (!hasCached) {
-    initialLoading.value = true
-  }
+  if (!hasCached) initialLoading.value = true
 
-  try {
-    const result: FavoriteResult = await JmcomicService.favorites({ folderId: '0', page: 1 })
-    if (result.folderList) {
-      onlineFolderMap.value = result.folderList
-    }
-    void loadOnlineFolderCounts()
+  if (!hasCached) {
     folderSource.value = 'online'
     currentFolderId.value = '0'
-    if (hasCached) {
-      void silentRefresh()
-    } else {
+    void resetWithPage(1)
+  } else {
+    void silentRefresh()
+  }
+
+  await refreshOnlineFolderData()
+  if (!hasCached && !onlineFolderHasSuccessfulData.value && !resultMeta.value) {
+    folderSource.value = 'offline'
+    const offlineFolders = OfflineFavoriteService.getFolders()
+    if (offlineFolders.length > 0) {
+      currentFolderId.value = offlineFolders[0].id
       void resetWithPage(1)
-    }
-  } catch {
-    if (!hasCached) {
-      folderSource.value = 'offline'
-      const offlineFolders = OfflineFavoriteService.getFolders()
-      if (offlineFolders.length > 0) {
-        currentFolderId.value = offlineFolders[0].id
-        void resetWithPage(1)
-      } else {
-        currentFolderId.value = OFFLINE_ALL_FOLDER_ID
-        initialLoading.value = false
-      }
+    } else {
+      currentFolderId.value = OFFLINE_ALL_FOLDER_ID
+      initialLoading.value = false
     }
   }
 }
@@ -1639,26 +1933,56 @@ watch(isWideLayout, (wide) => {
   resetOverlayMenuState()
 })
 
-// 右侧菜单打开时建立关闭手势，关闭时销毁；同时刷新在线文件夹数量
+// 右侧菜单打开时建立关闭手势，关闭时销毁；每次实际打开都后台刷新共享列表。
 watch(rightMenuOpen, (open) => {
   if (open) {
     nextTick(() => setupCloseGesture())
-    if (isLoggedIn.value) {
-      void loadOnlineFolderCounts()
-    }
   } else {
     menuCloseGesture?.destroy()
     menuCloseGesture = undefined
   }
 })
 
+watch(widePaneOpen, (open) => {
+  if (open) void refreshOnlineFolderData()
+})
+
+const handleLogout = () => {
+  clearFavoriteFolders()
+  clearFavoritePageCache()
+  queryGeneration += 1
+  onlineSearchCache.value = null
+  folderSource.value = 'offline'
+  currentKeyword.value = ''
+
+  const folders = OfflineFavoriteService.getFolders()
+  if (folders.length > 0) {
+    currentFolderId.value = folders[0].id
+    void resetWithPage(1)
+    return
+  }
+
+  currentFolderId.value = OFFLINE_ALL_FOLDER_ID
+  resultMeta.value = null
+  pageCache.value = {}
+  initialLoading.value = false
+  loadingPrevious.value = false
+  loadingNext.value = false
+  errorMessage.value = ''
+  pageAtTop.value = true
+}
+
 // 登录态从未登录变为已登录时自动切换到在线收藏夹
-watch(isLoggedIn, (loggedIn, wasLoggedIn) => {
-  if (loggedIn && !wasLoggedIn) {
+watch([isLoggedIn, accountId], ([loggedIn, currentAccount], [wasLoggedIn, previousAccount]) => {
+  if (loggedIn && (!wasLoggedIn || currentAccount !== previousAccount)) {
     initialLoading.value = true
     folderSource.value = 'online'
     currentFolderId.value = '0'
     void resetWithPage(1)
+    invalidateFavoriteFolders()
+    void refreshOnlineFolderData()
+  } else if (!loggedIn && wasLoggedIn) {
+    handleLogout()
   }
 })
 
@@ -1698,6 +2022,8 @@ onDeactivated(() => {
 onActivated(async () => {
   await nextTick()
   startPageResizeObserver()
+  void refreshOnlineFolderData()
+  if (cachedState.value?.stale && resultMeta.value) void silentRefresh()
   if (isWideLayout.value) {
     widePaneOpen.value = true
   }

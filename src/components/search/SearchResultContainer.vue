@@ -88,6 +88,7 @@
               itemCardClass,
               { downloaded: downloadedAlbumIds?.has(entry.item.id) },
               { 'entry-highlighted': activeEntryKey === getEntryKey(entry) },
+              { 'entry-removing': removingIds?.has(entry.item.id) },
               favBorderClassMap?.[entry.item.id],
             ]"
             @click="emit('item-click', entry.item)"
@@ -163,6 +164,7 @@ const props = withDefaults(
     loadedPageEnd?: number | null
     downloadedAlbumIds?: Set<string>
     favBorderClassMap?: Record<string, string>
+    removingIds?: Set<string>
     activeEntryKey?: string | null
     idleText?: string
     emptyText?: string
@@ -177,6 +179,7 @@ const props = withDefaults(
     loadedPageEnd: null,
     downloadedAlbumIds: () => new Set(),
     favBorderClassMap: () => ({}),
+    removingIds: () => new Set(),
     activeEntryKey: null,
     idleText: '搜索结果将在这里显示',
     emptyText: '没有搜索结果',
@@ -631,6 +634,22 @@ defineExpose<SearchResultContainerExposed>({
 .list-card.downloaded,
 .grid-card.downloaded {
   background: #f0faf3;
+}
+
+.list-card.entry-removing,
+.grid-card.entry-removing {
+  opacity: 0;
+  transform: scale(0.82);
+  transition:
+    opacity 0.26s ease,
+    transform 0.26s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .list-card.entry-removing,
+  .grid-card.entry-removing {
+    transition: none;
+  }
 }
 
 .cover-wrap {

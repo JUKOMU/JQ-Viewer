@@ -8,6 +8,10 @@ vi.mock('@ionic/vue', () => ({
     name: 'IonIcon',
     setup: () => () => h('span'),
   }),
+  IonSpinner: defineComponent({
+    name: 'IonSpinner',
+    setup: () => () => h('span'),
+  }),
 }))
 
 vi.mock('@/components/common/CardContextMenu.vue', () => ({
@@ -102,6 +106,23 @@ describe('FavoriteSideMenu 展示模式', () => {
 
     expect(wrapper.emitted('update:paneOpen')).toEqual([[false]])
     expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  test('首次在线列表加载显示 loading 而不是空态', () => {
+    const wrapper = mount(FavoriteSideMenu, {
+      props: {
+        ...baseProps,
+        modelValue: true,
+        onlineFolders: [],
+        onlineHasSuccessfulData: false,
+        onlineLoading: true,
+        onlineRefreshing: true,
+      },
+    })
+
+    expect(wrapper.find('.loading-state').exists()).toBe(true)
+    expect(wrapper.find('.empty-state').exists()).toBe(false)
     wrapper.unmount()
   })
 })

@@ -378,6 +378,7 @@ async function onPickerSelect(payload: { folderId: string; source: 'online' | 'o
         authors: albumDetail.value.authors,
         tags: albumDetail.value.tags,
       })
+      invalidateFavoritePageCache()
     }
     albumDetail.value.isFavorite = true
     await showToast('已收藏', 'success')
@@ -1404,6 +1405,9 @@ const handleToggleFavorite = async () => {
     actionBusy.favorite = true
     try {
       await JmcomicService.toggleAlbumFavorite(albumId.value)
+      invalidateFavoritePageCache()
+      invalidateFavoriteFolders()
+      void refreshOnlineFolderData()
       albumDetail.value.isFavorite = false
       await showToast('已取消收藏', 'success')
     } catch (e: any) {

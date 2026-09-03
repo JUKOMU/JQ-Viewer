@@ -90,7 +90,13 @@ const refreshCounts = async (accountId: string, generation: number) => {
           folder.id === folderId ? { ...folder, count: result.totalItems } : folder,
         )
       } catch {
-        // A count is supplementary data. Keep its previous value, or leave it undefined.
+        if (!isCurrentRequest(accountId, generation)) return
+        const nextCounts = { ...state.counts }
+        delete nextCounts[folderId]
+        state.counts = nextCounts
+        state.folders = state.folders.map((folder) =>
+          folder.id === folderId ? { ...folder, count: 0 } : folder,
+        )
       }
     }),
   )

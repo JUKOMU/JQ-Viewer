@@ -196,7 +196,7 @@ import type {
 } from '@/services/JmcomicTypes'
 import { OFFLINE_ALL_FOLDER_ID } from '@/services/JmcomicTypes'
 import { closeLeftMenu, useSideMenuState } from '@/composables/useSideMenuState'
-import { cachedState } from '@/composables/favoritePageCache'
+import { cachedState, clearFavoritePageCache } from '@/composables/favoritePageCache'
 
 defineOptions({ name: 'FavoritePage' })
 
@@ -1149,10 +1149,14 @@ async function handleCardRemove(item: SearchResultItem) {
               await showToast('操作失败', 'danger')
             }
           } else {
-            await OfflineFavoriteService.removeItem(context.folderId, item.id)
-            const removal = removeItemFromCurrentView(item.id, context)
-            if (removal) void replenishAfterRemoval(removal, item.id, context)
-            await showToast('已取消收藏', 'success')
+            try {
+              await OfflineFavoriteService.removeItem(context.folderId, item.id)
+              const removal = removeItemFromCurrentView(item.id, context)
+              if (removal) void replenishAfterRemoval(removal, item.id, context)
+              await showToast('已取消收藏', 'success')
+            } catch {
+              await showToast('操作失败', 'danger')
+            }
           }
         },
       },
@@ -1853,6 +1857,31 @@ watch(widePaneOpen, (open) => {
   if (open) void refreshOnlineFolderData()
 })
 
+const handleLogout = () => {
+  clearFavoriteFolders()
+  clearFavoritePageCache()
+  queryGeneration += 1
+  onlineSearchCache.value = null
+  folderSource.value = 'offline'
+  currentKeyword.value = ''
+
+  const folders = OfflineFavoriteService.getFolders()
+  if (folders.length > 0) {
+    currentFolderId.value = folders[0].id
+    void resetWithPage(1)
+    return
+  }
+
+  currentFolderId.value = OFFLINE_ALL_FOLDER_ID
+  resultMeta.value = null
+  pageCache.value = {}
+  initialLoading.value = false
+  loadingPrevious.value = false
+  loadingNext.value = false
+  errorMessage.value = ''
+  pageAtTop.value = true
+}
+
 // 登录态从未登录变为已登录时自动切换到在线收藏夹
 watch([isLoggedIn, accountId], ([loggedIn, currentAccount], [wasLoggedIn, previousAccount]) => {
   if (loggedIn && (!wasLoggedIn || currentAccount !== previousAccount)) {
@@ -1863,7 +1892,7 @@ watch([isLoggedIn, accountId], ([loggedIn, currentAccount], [wasLoggedIn, previo
     invalidateFavoriteFolders()
     void refreshOnlineFolderData()
   } else if (!loggedIn && wasLoggedIn) {
-    clearFavoriteFolders()
+    handleLogout()
   }
 })
 

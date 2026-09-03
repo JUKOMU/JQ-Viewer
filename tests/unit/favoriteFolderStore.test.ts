@@ -111,4 +111,20 @@ describe('favoriteFolderStore', () => {
     expect(favoriteFolderState.folders).toEqual([])
     expect(favoriteFolderState.hasSuccessfulData).toBe(false)
   })
+
+  test('已有计数在后续计数请求失败时被隐藏', async () => {
+    mocks.favorites.mockResolvedValueOnce(folderResult({ a: '收藏夹 A' }))
+    mocks.favorites.mockResolvedValueOnce({ totalItems: 4 })
+    await refreshFavoriteFolders('account-a')
+    expect(favoriteFolderState.counts).toEqual({ a: 4 })
+
+    invalidateFavoriteFolders()
+    mocks.favorites.mockResolvedValueOnce(folderResult({ a: '收藏夹 A' }))
+    mocks.favorites.mockRejectedValueOnce(new Error('count failed'))
+    await refreshFavoriteFolders('account-a')
+
+    expect(favoriteFolderState.counts).toEqual({})
+    expect(favoriteFolderState.folders[0]?.count).toBe(0)
+    expect(favoriteFolderState.errorMessage).toBe('')
+  })
 })

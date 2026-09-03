@@ -1032,6 +1032,7 @@ async function executeSingleFavorite(
         return
       }
       await OfflineFavoriteService.addItem(payload.folderId, item)
+      invalidateFavoritePageCache()
       offlineFavIds.value = new Set([...offlineFavIds.value, item.id])
       showToast('已收藏到离线收藏夹', 'success')
     }
@@ -1087,6 +1088,7 @@ async function onPickerSelect(payload: { folderId: string; source: 'online' | 'o
       progressTitle.value = '正在保存到离线收藏夹'
       progressTotal.value = 1
       await OfflineFavoriteService.addItems(payload.folderId, toAdd)
+      invalidateFavoritePageCache()
       progressCurrent.value = 1
       await showToast(`已保存 ${toAdd.length} 个本子到离线`, 'success')
     } else {
@@ -1112,9 +1114,11 @@ async function onPickerSelect(payload: { folderId: string; source: 'online' | 'o
       } else {
         await showToast(`已保存 ${ok} 个本子到在线`, 'success')
       }
-      invalidateFavoriteFolders()
-      invalidateFavoritePageCache()
-      void refreshOnlineFolderData()
+      if (ok > 0) {
+        invalidateFavoriteFolders()
+        invalidateFavoritePageCache()
+        void refreshOnlineFolderData()
+      }
     }
   } catch (e: any) {
     await showToast(sanitizeError(e, '保存失败'), 'danger')

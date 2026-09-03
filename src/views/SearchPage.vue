@@ -647,6 +647,7 @@ async function executeFavorite(
       showToast('已收藏到在线收藏夹', 'success')
     } else {
       await OfflineFavoriteService.addItem(payload.folderId, item)
+      invalidateFavoritePageCache()
       showToast('已收藏到离线收藏夹', 'success')
     }
   } catch (e: any) {

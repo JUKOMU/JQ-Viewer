@@ -265,6 +265,7 @@ import {
 import { PdfImportService } from '@/services/PdfImportService'
 import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
 import { OfflineFavoriteService } from '@/services/OfflineFavoriteService'
+import { invalidateFavoritePageCache } from '@/composables/favoritePageCache'
 import FavoriteFolderPicker from '@/components/favorite/FavoriteFolderPicker.vue'
 import SearchHeaderBar from '@/components/search/SearchHeaderBar.vue'
 import type { SearchResultDisplayItem } from '@/components/search/SearchResultContainer.vue'
@@ -942,6 +943,7 @@ async function doImport(resolvedFiles: PdfFileParseItem[], folderId?: string) {
           tags: [],
         }))
       await OfflineFavoriteService.addItems(folderId, favItems)
+      if (favItems.length > 0) invalidateFavoritePageCache()
     }
     const parts = [`已导入 ${result.imported} 个 PDF`]
     if (result.duplicateCount > 0) parts.push(`${result.duplicateCount} 个已存在`)

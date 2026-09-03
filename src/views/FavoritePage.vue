@@ -50,6 +50,7 @@
           :loaded-page-start="loadedPageStart"
           :loaded-page-end="loadedPageEnd"
           :downloaded-album-ids="downloadedAlbumIds"
+          :removing-ids="removingIds"
           idle-text="请在右侧收藏夹菜单中选择文件夹"
           @mode-change="displayMode = $event"
           @item-click="handleItemClick"
@@ -779,6 +780,39 @@ const replenishAfterRemoval = async (
   }
 }
 
+// --- 卡片移除退场动画 ---
+const CARD_REMOVE_ANIMATION_MS = 260
+
+const removingIds = ref<Set<string>>(new Set())
+
+const prefersReducedMotion = () =>
+  typeof window !== 'undefined' &&
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+const waitForRemovalAnimation = () =>
+  new Promise<void>((resolve) => {
+    if (prefersReducedMotion()) {
+      resolve()
+      return
+    }
+    window.setTimeout(resolve, CARD_REMOVE_ANIMATION_MS)
+  })
+
+const animateRemoveFromView = async (itemId: string, context: FavoriteViewContext) => {
+  if (!isCurrentViewContext(context)) return
+  const withId = new Set(removingIds.value)
+  withId.add(itemId)
+  removingIds.value = withId
+  await nextTick()
+  await waitForRemovalAnimation()
+  const removal = removeItemFromCurrentView(itemId, context)
+  const cleared = new Set(removingIds.value)
+  cleared.delete(itemId)
+  removingIds.value = cleared
+  if (removal) void replenishAfterRemoval(removal, itemId, context)
+}
+
 const submitSearch = (query: FavoriteQuery) => {
   currentKeyword.value = query.keyword ?? ''
   void resetWithPage(1)
@@ -1085,50 +1119,58 @@ async function handleCardMove(item: SearchResultItem) {
         text: '确定',
         handler: async (data: string) => {
           if (!data) return
-          if (isOnline) {
-            let sourceRemoved = false
-            try {
-              if (data === '0') {
-                await JmcomicService.toggleAlbumFavorite(item.id, context.folderId)
-                sourceRemoved = true
-                await JmcomicService.toggleAlbumFavorite(item.id, '0')
-              } else {
-                await JmcomicService.manageFavoriteFolder('move', data, '', item.id)
-              }
-              invalidateFavoriteFolders()
-              void refreshOnlineFolderData()
-              if (context.folderId !== '0') {
-                const removal = removeItemFromCurrentView(item.id, context)
-                if (removal) void replenishAfterRemoval(removal, item.id, context)
-              }
-              await showToast('已移动', 'success')
-            } catch {
-              if (sourceRemoved) {
-                invalidateFavoriteFolders()
-                void refreshOnlineFolderData()
-                if (isCurrentViewContext(context)) void resetWithPage(1)
-              }
-              await showToast('移动失败', 'danger')
-            }
-          } else {
-            let sourceRemoved = false
-            try {
-              await OfflineFavoriteService.removeItem(context.folderId, item.id)
-              sourceRemoved = true
-              await OfflineFavoriteService.addItem(data, item)
-              const removal = removeItemFromCurrentView(item.id, context)
-              if (removal) void replenishAfterRemoval(removal, item.id, context)
-              await showToast('已移动', 'success')
-            } catch {
-              if (sourceRemoved && isCurrentViewContext(context)) void resetWithPage(1)
-              await showToast('移动失败', 'danger')
-            }
-          }
+          await alert.dismiss()
+          void performCardMove(item, context, isOnline, data)
         },
       },
     ],
   })
   await alert.present()
+}
+
+async function performCardMove(
+  item: SearchResultItem,
+  context: FavoriteViewContext,
+  isOnline: boolean,
+  targetFolderId: string,
+) {
+  if (isOnline) {
+    let sourceRemoved = false
+    try {
+      if (targetFolderId === '0') {
+        await JmcomicService.toggleAlbumFavorite(item.id, context.folderId)
+        sourceRemoved = true
+        await JmcomicService.toggleAlbumFavorite(item.id, '0')
+      } else {
+        await JmcomicService.manageFavoriteFolder('move', targetFolderId, '', item.id)
+      }
+      invalidateFavoriteFolders()
+      void refreshOnlineFolderData()
+      if (context.folderId !== '0') {
+        await animateRemoveFromView(item.id, context)
+      }
+      await showToast('已移动', 'success')
+    } catch {
+      if (sourceRemoved) {
+        invalidateFavoriteFolders()
+        void refreshOnlineFolderData()
+        if (isCurrentViewContext(context)) void resetWithPage(1)
+      }
+      await showToast('移动失败', 'danger')
+    }
+  } else {
+    let sourceRemoved = false
+    try {
+      await OfflineFavoriteService.removeItem(context.folderId, item.id)
+      sourceRemoved = true
+      await OfflineFavoriteService.addItem(targetFolderId, item)
+      await animateRemoveFromView(item.id, context)
+      await showToast('已移动', 'success')
+    } catch {
+      if (sourceRemoved && isCurrentViewContext(context)) void resetWithPage(1)
+      await showToast('移动失败', 'danger')
+    }
+  }
 }
 
 // --- 卡片操作：下载 ---
@@ -1183,32 +1225,39 @@ async function handleCardRemove(item: SearchResultItem) {
         role: 'destructive' as const,
         cssClass: 'danger-alert',
         handler: async () => {
-          if (isOnline) {
-            try {
-              await JmcomicService.toggleAlbumFavorite(item.id, context.folderId)
-              invalidateFavoriteFolders()
-              void refreshOnlineFolderData()
-              const removal = removeItemFromCurrentView(item.id, context)
-              if (removal) void replenishAfterRemoval(removal, item.id, context)
-              await showToast('已取消收藏', 'success')
-            } catch {
-              await showToast('操作失败', 'danger')
-            }
-          } else {
-            try {
-              await OfflineFavoriteService.removeItem(context.folderId, item.id)
-              const removal = removeItemFromCurrentView(item.id, context)
-              if (removal) void replenishAfterRemoval(removal, item.id, context)
-              await showToast('已取消收藏', 'success')
-            } catch {
-              await showToast('操作失败', 'danger')
-            }
-          }
+          await alert.dismiss()
+          void performCardRemove(item, context, isOnline)
         },
       },
     ],
   })
   await alert.present()
+}
+
+async function performCardRemove(
+  item: SearchResultItem,
+  context: FavoriteViewContext,
+  isOnline: boolean,
+) {
+  if (isOnline) {
+    try {
+      await JmcomicService.toggleAlbumFavorite(item.id, context.folderId)
+      invalidateFavoriteFolders()
+      void refreshOnlineFolderData()
+      await animateRemoveFromView(item.id, context)
+      await showToast('已取消收藏', 'success')
+    } catch {
+      await showToast('操作失败', 'danger')
+    }
+  } else {
+    try {
+      await OfflineFavoriteService.removeItem(context.folderId, item.id)
+      await animateRemoveFromView(item.id, context)
+      await showToast('已取消收藏', 'success')
+    } catch {
+      await showToast('操作失败', 'danger')
+    }
+  }
 }
 
 const onAddFolder = async (source: 'online' | 'offline') => {

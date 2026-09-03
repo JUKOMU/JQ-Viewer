@@ -423,16 +423,11 @@ const silentRefresh = () => {
           nextPageCache[page] = refreshedPages[page] ?? []
         }
       }
-      const pageOneChanged =
-        (pageCache.value[1] ?? []).length !== (nextPageCache[1] ?? []).length ||
-        (pageCache.value[1] ?? []).some((item, index) => item.id !== nextPageCache[1]?.[index]?.id)
-
       // Commit only after every cached page has completed successfully and
       // the original query context is still current.
       resultMeta.value = refreshedMeta
       pageCache.value = nextPageCache
       saveToCache()
-      if (pageOneChanged) pageAtTop.value = true
     } catch {
       if (isCurrentViewContext(context)) {
         onlineSearchCache.value = originalSearchCache

@@ -202,6 +202,7 @@ import type { ComponentPublicInstance } from 'vue'
 import { useRouter } from 'vue-router'
 import { IonContent, IonIcon, IonPage, IonSpinner } from '@ionic/vue'
 import { createAppAlert } from '@/services/AppAlertService'
+import { showToast } from '@/services/JmcomicService'
 import {
   bookOutline,
   chevronDownOutline,
@@ -235,6 +236,8 @@ const browseTotalCount = ref(0)
 const parseTotalCount = ref(0)
 const parseHasMore = ref(true)
 const loadingMoreByTab = reactive<Record<HistoryTab, boolean>>({ browse: false, parse: false })
+let parseMorePromise: Promise<void> | null = null
+let parseDeleteInProgress = false
 const tabLoaded = reactive<Record<HistoryTab, boolean>>({ browse: false, parse: false })
 const tabHasSnapshotMetadata = reactive<Record<HistoryTab, boolean>>({
   browse: true,
@@ -580,25 +583,35 @@ async function loadParse(generation = tabRequestGeneration.parse): Promise<boole
   return true
 }
 
-async function loadMoreParse() {
-  if (!isTabReadyForPagination('parse') || loadingMoreByTab.parse || !parseHasMore.value) return
+function loadMoreParse(allowDuringDelete = false): Promise<void> {
+  if (parseDeleteInProgress && !allowDuringDelete) return parseMorePromise ?? Promise.resolve()
+  if (!isTabReadyForPagination('parse') || loadingMoreByTab.parse || !parseHasMore.value) {
+    return parseMorePromise ?? Promise.resolve()
+  }
   loadingMoreByTab.parse = true
   const generation = tabRequestGeneration.parse
-  try {
-    const page = normalizeHistoryPage(
-      await HistoryService.getParseHistory(PAGE_SIZE, parseItems.value.length),
-    )
-    if (!page || generation !== tabRequestGeneration.parse) return
-    if (page.items.length > 0) parseItems.value.push(...page.items)
-    updateParseTotalCount(
-      page.totalCount,
-      page.legacyArray
-        ? page.items.length === PAGE_SIZE
-        : parseItems.value.length < page.totalCount,
-    )
-  } finally {
-    if (generation === tabRequestGeneration.parse) loadingMoreByTab.parse = false
-  }
+  const task = (async () => {
+    try {
+      const page = normalizeHistoryPage(
+        await HistoryService.getParseHistory(PAGE_SIZE, parseItems.value.length),
+      )
+      if (!page || generation !== tabRequestGeneration.parse) return
+      if (page.items.length > 0) parseItems.value.push(...page.items)
+      updateParseTotalCount(
+        page.totalCount,
+        page.legacyArray
+          ? page.items.length === PAGE_SIZE
+          : parseItems.value.length < page.totalCount,
+      )
+    } finally {
+      if (generation === tabRequestGeneration.parse) loadingMoreByTab.parse = false
+    }
+  })()
+  parseMorePromise = task
+  void task.finally(() => {
+    if (parseMorePromise === task) parseMorePromise = null
+  })
+  return task
 }
 
 const onScroll = (event: CustomEvent<{ scrollTop?: number }>) => {
@@ -831,7 +844,23 @@ async function reloadTabFromFirstPage(
   parseItems.value = parseItems.value.filter((item) => item.id !== removedId)
   if (parseItems.value.length === previousLength) return
   updateParseTotalCount(Math.max(0, parseTotalCount.value - 1))
-  if (parseHasMore.value) await loadMoreParse()
+  if (parseHasMore.value) await loadMoreParse(true)
+}
+
+async function deleteParseHistoryItem(id: number) {
+  if (parseDeleteInProgress) return
+  parseDeleteInProgress = true
+  try {
+    if (parseMorePromise) await parseMorePromise
+    const deleted = await HistoryService.deleteParseItem(id)
+    if (!deleted) {
+      await showToast('删除解析记录失败，请重试', 'danger')
+      return
+    }
+    await reloadTabFromFirstPage('parse', id)
+  } finally {
+    parseDeleteInProgress = false
+  }
 }
 
 async function switchTab(tab: HistoryTab) {
@@ -983,8 +1012,7 @@ async function handleMenuDelete() {
             await HistoryService.deleteBrowseItem(m.item.id)
             await reloadTabFromFirstPage('browse', m.item.id, m.browseGroupKey)
           } else {
-            await HistoryService.deleteParseItem(m.item.id)
-            await reloadTabFromFirstPage('parse', m.item.id)
+            await deleteParseHistoryItem(m.item.id)
           }
         },
       },

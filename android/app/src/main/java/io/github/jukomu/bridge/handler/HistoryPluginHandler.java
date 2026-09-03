@@ -150,8 +150,9 @@ public final class HistoryPluginHandler {
      */
     public void deleteParseItem(PluginCall call) {
         try {
-            historyStore.deleteParseItem(call.getInt("id", 0));
-            resolveSuccess(call);
+            JSObject result = new JSObject();
+            result.put("success", historyStore.deleteParseItem(call.getInt("id", 0)));
+            call.resolve(result);
         } catch (Exception error) {
             call.reject(error.getMessage(), error);
         }

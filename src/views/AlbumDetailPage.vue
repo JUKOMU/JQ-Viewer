@@ -13,7 +13,6 @@
             :loading="loading"
             :chapter-loading="chapterLoading"
             :source-menu-open="sourceMenuOpen"
-            :network-available="networkAvailable"
             :image-available="selectedChapterHasDownload"
             :pdf-available="Boolean(selectedChapterPdf)"
             @back="goBack"
@@ -120,6 +119,7 @@
       :online-folders="pickerOnlineFolders"
       :offline-folders="pickerOfflineFolders"
       :online-folder-counts="onlineFolderCounts"
+      :hide-online="!isLoggedIn"
       @select="onPickerSelect"
       @add-folder="onPickerAddFolder"
     />
@@ -251,14 +251,9 @@ type ReaderSource = 'network' | 'download' | 'pdf'
 type PreviewSource = 'network' | 'download' | 'pdf'
 
 const sourceMenuOpen = ref(false)
-const networkAvailable = ref(typeof navigator === 'undefined' ? true : navigator.onLine)
 const previewLoadedKey = ref('')
 let previewPdfDoc: pdfjsLib.PDFDocumentProxy | null = null
 const previewObjectUrls = new Set<string>()
-
-const updateNetworkAvailable = () => {
-  networkAvailable.value = typeof navigator === 'undefined' ? true : navigator.onLine
-}
 
 const refreshDownloadStatuses = async () => {
   try {
@@ -382,7 +377,7 @@ async function onPickerSelect(payload: { folderId: string; source: 'online' | 'o
   }
 }
 
-async function onPickerAddFolder() {
+async function onPickerAddFolder(source: 'online' | 'offline') {
   const alert = await createAppAlert({
     header: '新建收藏夹',
     inputs: [{ name: 'name', type: 'text', placeholder: '收藏夹名称' }],
@@ -394,7 +389,7 @@ async function onPickerAddFolder() {
           const name = data?.name?.trim()
           if (!name) return
 
-          if (isLoggedIn.value) {
+          if (source === 'online') {
             try {
               const r = await JmcomicService.manageFavoriteFolder('add', '0', name, '')
               if (r.status === 'ok') {
@@ -429,7 +424,7 @@ async function onPickerAddFolder() {
               /* ignore */
             }
           } else {
-            OfflineFavoriteService.createFolder(name)
+            await OfflineFavoriteService.createFolder(name)
             pickerOfflineFolders.value = OfflineFavoriteService.getFolders()
             await showToast('收藏夹已创建', 'success')
           }
@@ -680,10 +675,7 @@ const loadAlbumData = async (force = false) => {
 }
 
 onMounted(() => {
-  updateNetworkAvailable()
   setLeftMenuGestureEnabled(false)
-  window.addEventListener('online', updateNetworkAvailable)
-  window.addEventListener('offline', updateNetworkAvailable)
   loadAlbumData()
   nextTick(() => {
     setupTabSwipeGesture()
@@ -940,10 +932,6 @@ const openReaderBySource = (source: ReaderSource, page?: number) => {
   }
 
   if (source === 'download' && !selectedChapterHasDownload.value) return
-  if (source === 'network' && !networkAvailable.value) {
-    void showToast('当前网络不可用', 'medium')
-    return
-  }
 
   void router.push({
     path: `/album/${albumId.value}/read/${chapterId}`,
@@ -1319,8 +1307,6 @@ onUnmounted(() => {
   setLeftMenuGestureEnabled(true)
   invalidatePreviewRequest()
   downloadProgressHandle?.remove()
-  window.removeEventListener('online', updateNetworkAvailable)
-  window.removeEventListener('offline', updateNetworkAvailable)
 })
 
 const loadMorePreview = async () => {

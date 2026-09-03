@@ -1,7 +1,7 @@
 name: 功能建议
 description: 提议一个能改善 JQ Viewer 使用体验的新功能
 title: '[Feature] '
-labels: ['enhancement']
+labels: ['Type: Feature', 'Status: Triage']
 body:
   - type: checkboxes
     id: feature-duplicate-check

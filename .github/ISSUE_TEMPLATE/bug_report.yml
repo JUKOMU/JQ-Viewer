@@ -1,7 +1,7 @@
 name: Bug 反馈
 description: 报告 JQ Viewer 中可以稳定复现的问题
 title: '[Bug] '
-labels: ['bug']
+labels: ['Type: Bug', 'Status: Triage']
 body:
   - type: checkboxes
     id: duplicate-check

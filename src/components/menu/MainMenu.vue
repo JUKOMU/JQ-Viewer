@@ -1,6 +1,15 @@
 <template>
-  <div class="main-menu" :class="{ interactive: isInteractive }" :aria-hidden="!isInteractive">
+  <div
+    class="main-menu"
+    :class="{
+      interactive: isInteractive,
+      'wide-menu': isWideMenuActive,
+      'wide-menu-collapsed': isWideMenuActive && wideMenuCollapsed,
+    }"
+    :aria-hidden="menuAriaHidden ? 'true' : undefined"
+  >
     <button
+      v-if="!isWideMenuActive"
       type="button"
       class="main-menu-backdrop"
       aria-label="关闭侧边栏"
@@ -10,36 +19,54 @@
     />
 
     <aside
+      id="main-menu-panel"
       ref="panelRef"
       class="main-menu-panel"
-      role="dialog"
-      aria-modal="true"
+      :role="isWideMenuActive ? 'navigation' : 'dialog'"
+      :aria-modal="isWideMenuActive ? undefined : 'true'"
       aria-label="主菜单"
       tabindex="-1"
       :style="panelStyle"
     >
       <IonHeader class="ion-no-border menu-header">
-        <button type="button" class="menu-hero" @click="goUser">
-          <img
-            v-if="isLoggedIn && userInfo"
-            :src="userInfo.avatarUrl"
-            class="user-avatar"
-            alt="头像"
-          />
-          <IonIcon v-else :icon="personCircleOutline" class="user-avatar-placeholder" />
-          <div class="hero-copy">
-            <div class="hero-title">
-              {{ isLoggedIn && userInfo ? userInfo.username : '未登录' }}
+        <div class="menu-header-row">
+          <button type="button" class="menu-hero" :aria-label="accountButtonLabel" @click="goUser">
+            <img
+              v-if="isLoggedIn && userInfo"
+              :src="userInfo.avatarUrl"
+              class="user-avatar"
+              alt="头像"
+            />
+            <IonIcon v-else :icon="personCircleOutline" class="user-avatar-placeholder" />
+            <div class="hero-copy">
+              <div class="hero-title">
+                {{ isLoggedIn && userInfo ? userInfo.username : '未登录' }}
+              </div>
+              <div class="hero-subtitle">
+                {{
+                  isLoggedIn && userInfo
+                    ? 'Lv.' + userInfo.level + ' ' + userInfo.levelName
+                    : '点击查看账号信息'
+                }}
+              </div>
             </div>
-            <div class="hero-subtitle">
-              {{
-                isLoggedIn && userInfo
-                  ? 'Lv.' + userInfo.level + ' ' + userInfo.levelName
-                  : '点击查看账号信息'
-              }}
-            </div>
-          </div>
-        </button>
+          </button>
+          <button
+            v-if="isWideMenuActive"
+            type="button"
+            class="menu-collapse-button"
+            :aria-controls="'main-menu-panel'"
+            :aria-expanded="!wideMenuCollapsed"
+            :aria-label="wideMenuCollapsed ? '展开主菜单' : '收起主菜单'"
+            @click="toggleWideMenu"
+          >
+            <IonIcon
+              :icon="wideMenuCollapsed ? chevronForwardOutline : chevronBackOutline"
+              aria-hidden="true"
+            />
+            <span class="menu-collapse-text">{{ wideMenuCollapsed ? '展开' : '收起' }}</span>
+          </button>
+        </div>
       </IonHeader>
       <IonContent class="menu-content">
         <IonList lines="none" class="menu-list">
@@ -189,6 +216,8 @@ import {
 import type { PluginListenerHandle } from '@capacitor/core'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import {
+  chevronBackOutline,
+  chevronForwardOutline,
   downloadSharp,
   heart,
   homeSharp,
@@ -200,12 +229,18 @@ import {
 import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import {
+  collapseWideMenu,
   closeLeftMenu,
+  expandWideMenu,
+  isWideMenu,
   leftMenuGestureEnabled,
   leftMenuOpen,
   isMenuNavigation,
   openLeftMenu,
   rightMenuOpen,
+  startWideMenuTracking,
+  stopWideMenuTracking,
+  wideMenuCollapsed,
 } from '@/composables/useSideMenuState'
 import { JmcomicService } from '@/services/JmcomicService'
 import type {
@@ -630,17 +665,33 @@ const setupTaskProgress = async () => {
   ])
 }
 
+const isWideMenuActive = computed(() => isWideMenu.value && !props.disabled)
 const isInteractive = computed(
-  () => leftMenuOpen.value || (isDragging.value && dragProgress.value > 0),
+  () =>
+    !isWideMenu.value &&
+    !props.disabled &&
+    (leftMenuOpen.value || (isDragging.value && dragProgress.value > 0)),
+)
+const menuAriaHidden = computed(
+  () => props.disabled || (!isWideMenuActive.value && !isInteractive.value),
+)
+const accountButtonLabel = computed(() =>
+  isLoggedIn.value && userInfo.value
+    ? `查看账号信息（${userInfo.value.username}）`
+    : '查看账号信息',
 )
 const currentProgress = computed(() =>
-  isDragging.value ? dragProgress.value : leftMenuOpen.value ? 1 : 0,
+  isInteractive.value ? (isDragging.value ? dragProgress.value : leftMenuOpen.value ? 1 : 0) : 0,
 )
 const panelStyle = computed(() => ({
-  transform: `translate3d(${(currentProgress.value - 1) * 100}%, 0, 0)`,
-  transition: isDragging.value
+  transform: isWideMenuActive.value
     ? 'none'
-    : `transform ${MAIN_MENU_TRANSITION_MS}ms cubic-bezier(0.22, 0.61, 0.36, 1)`,
+    : `translate3d(${(currentProgress.value - 1) * 100}%, 0, 0)`,
+  transition: isWideMenuActive.value
+    ? 'none'
+    : isDragging.value
+      ? 'none'
+      : `transform ${MAIN_MENU_TRANSITION_MS}ms cubic-bezier(0.22, 0.61, 0.36, 1)`,
 }))
 const backdropStyle = computed(() => ({
   opacity: isInteractive.value ? 0.32 : 0,
@@ -659,6 +710,7 @@ const isBlockedTarget = (target: EventTarget | null) => {
 }
 
 const canStartGesture = (detail: { event: UIEvent }) => {
+  if (isWideMenu.value) return false
   const menuIsOpen = leftMenuOpen.value
   if (!menuIsOpen && (props.disabled || !leftMenuGestureEnabled.value || rightMenuOpen.value)) {
     return false
@@ -719,6 +771,11 @@ const closeMenu = () => {
   closeLeftMenu()
 }
 
+const toggleWideMenu = () => {
+  if (wideMenuCollapsed.value) expandWideMenu()
+  else collapseWideMenu()
+}
+
 const updateContentAccessibility = (open: boolean) => {
   const content = document.getElementById(props.contentId)
   if (open) {
@@ -765,7 +822,12 @@ function handleMenuClick() {
   closeMenu()
 }
 
-watch(leftMenuOpen, (open) => updateContentAccessibility(open))
+watch([leftMenuOpen, isWideMenu, () => props.disabled], ([open, wide, disabled]) =>
+  updateContentAccessibility(Boolean(open && !wide && !disabled)),
+)
+watch(isWideMenu, (wide) => {
+  if (wide) closeLeftMenu()
+})
 watch(
   () => props.disabled,
   (disabled) => {
@@ -775,6 +837,7 @@ watch(
 
 onMounted(() => {
   progressUnmounted = false
+  startWideMenuTracking()
   void setupTaskProgress()
   setupGesture()
   document.addEventListener('keydown', handleKeyDown)
@@ -799,6 +862,7 @@ onUnmounted(() => {
   pdfEventSequence = 0
   gesture?.destroy()
   document.removeEventListener('keydown', handleKeyDown)
+  stopWideMenuTracking()
   updateContentAccessibility(false)
 })
 </script>
@@ -813,6 +877,24 @@ onUnmounted(() => {
 
 .main-menu.interactive {
   pointer-events: auto;
+}
+
+.main-menu.wide-menu {
+  position: relative;
+  inset: auto;
+  z-index: 1;
+  flex: 0 0 304px;
+  width: 304px;
+  height: 100%;
+  pointer-events: auto;
+  transition:
+    flex-basis 220ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    width 220ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.main-menu.wide-menu.wide-menu-collapsed {
+  flex-basis: 80px;
+  width: 80px;
 }
 
 .main-menu-backdrop {
@@ -846,6 +928,16 @@ onUnmounted(() => {
   will-change: transform;
 }
 
+.main-menu.wide-menu .main-menu-panel {
+  position: relative;
+  inset: auto;
+  width: 100%;
+  height: 100%;
+  transform: none;
+  box-shadow: 4px 0 16px rgb(76 42 24 / 0.18);
+  touch-action: pan-y;
+}
+
 .main-menu-panel:focus {
   outline: none;
 }
@@ -867,6 +959,52 @@ onUnmounted(() => {
   cursor: pointer;
   text-align: left;
   font: inherit;
+}
+
+.menu-header-row {
+  display: flex;
+  align-items: flex-start;
+}
+
+.menu-hero {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.menu-collapse-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  margin: calc(18px + var(--ion-safe-area-top)) 12px 0 0;
+  padding: 0;
+  border: 1px solid rgb(245 210 188 / 0.85);
+  border-radius: 13px;
+  background: rgb(255 255 255 / 0.58);
+  color: #9a6040;
+  font-size: 18px;
+  box-shadow: -3px -2px 8px rgb(115 67 38 / 0.08);
+}
+
+.menu-collapse-text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.menu-collapse-button:focus-visible,
+.menu-hero:focus-visible,
+.menu-item:focus-visible {
+  outline: 3px solid rgb(232 132 60 / 0.62);
+  outline-offset: 2px;
 }
 
 .user-avatar {
@@ -905,6 +1043,38 @@ onUnmounted(() => {
   background: transparent;
 }
 
+.main-menu.wide-menu.wide-menu-collapsed .menu-header-row {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.main-menu.wide-menu.wide-menu-collapsed .menu-hero {
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: calc(14px + var(--ion-safe-area-top)) 4px 8px;
+  text-align: center;
+}
+
+.main-menu.wide-menu.wide-menu-collapsed .user-avatar {
+  width: 42px;
+  height: 42px;
+}
+
+.main-menu.wide-menu.wide-menu-collapsed .user-avatar-placeholder {
+  font-size: 38px;
+}
+
+.main-menu.wide-menu.wide-menu-collapsed .hero-copy {
+  display: none;
+}
+
+.main-menu.wide-menu.wide-menu-collapsed .menu-collapse-button {
+  align-self: center;
+  margin: 0 auto 10px;
+}
+
 .menu-content {
   --background: transparent;
   flex: 1;
@@ -915,6 +1085,10 @@ onUnmounted(() => {
   --ion-item-background: transparent;
   padding: 14px 14px 0;
   background: transparent !important;
+}
+
+.main-menu.wide-menu.wide-menu-collapsed .menu-list {
+  padding: 8px 6px 0;
 }
 
 .menu-item {
@@ -929,6 +1103,39 @@ onUnmounted(() => {
   border: 1px solid rgb(245 210 188 / 0.72);
   border-radius: 20px;
   box-shadow: -6px -4px 12px rgb(115 67 38 / 0.1);
+}
+
+.main-menu.wide-menu.wide-menu-collapsed .menu-item {
+  --padding-start: 6px;
+  --inner-padding-end: 6px;
+  --min-height: 58px;
+  margin-bottom: 8px;
+  border-radius: 16px;
+}
+
+.main-menu.wide-menu.wide-menu-collapsed .menu-icon {
+  margin-right: 6px;
+  font-size: 17px;
+}
+
+.main-menu.wide-menu.wide-menu-collapsed .item-title {
+  font-size: 12px;
+}
+
+.main-menu.wide-menu.wide-menu-collapsed .item-subtitle {
+  display: none;
+}
+
+.main-menu.wide-menu.wide-menu-collapsed .task-progress-copy {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .task-progress-background {
@@ -1095,6 +1302,10 @@ onUnmounted(() => {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .main-menu.wide-menu {
+    transition: none;
+  }
+
   .task-progress-band {
     transition: none;
   }

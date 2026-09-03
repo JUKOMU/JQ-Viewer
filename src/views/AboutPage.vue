@@ -15,147 +15,156 @@
           <span class="title-text">{{ displayText }}</span>
           <span v-if="cursorVisible" class="title-cursor">|</span>
         </div>
-        <div class="info-card">
-          <div class="info-row">
-            <span class="info-label">版本</span>
-            <span class="info-value">{{ appVersion }}</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">作者</span>
-            <span class="info-value">JUKOMU</span>
-          </div>
-        </div>
+        <div class="about-layout">
+          <div class="about-group">
+            <div class="info-card">
+              <div class="info-row">
+                <span class="info-label">版本</span>
+                <span class="info-value">{{ appVersion }}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">作者</span>
+                <span class="info-value">JUKOMU</span>
+              </div>
+            </div>
 
-        <!-- 检查更新 -->
-        <div class="info-card update-check-card" :style="updateCheckCardStyle">
-          <button
-            class="info-row info-row-action"
-            type="button"
-            :disabled="updateCheckDisabled"
-            @click="checkUpdate"
-          >
-            <span class="info-label">检查更新</span>
-            <span class="info-action-value">
-              <span v-if="isDownloading" class="info-value update">下载中</span>
-              <span v-else-if="updateChecking" class="info-value">检查中...</span>
-              <span v-else-if="updateError" class="info-value error">检查失败</span>
-              <span v-else-if="hasUpdate" class="info-value update"
-                >发现新版本 {{ latestVersion }}</span
+            <!-- 检查更新 -->
+            <div class="info-card update-check-card" :style="updateCheckCardStyle">
+              <button
+                class="info-row info-row-action"
+                type="button"
+                :disabled="updateCheckDisabled"
+                @click="checkUpdate"
               >
-              <span v-else-if="updateChecked" class="info-value">已是最新</span>
-              <span v-else class="info-value">点击检查</span>
-              <IonSpinner
-                v-if="updateChecking || isDownloading"
-                name="circular"
-                class="entry-spinner"
-                aria-hidden="true"
-              />
-              <IonIcon
-                v-else
-                :icon="chevronForwardOutline"
-                class="entry-arrow"
-                aria-hidden="true"
-              />
-            </span>
-          </button>
-        </div>
+                <span class="info-label">检查更新</span>
+                <span class="info-action-value">
+                  <span v-if="isDownloading" class="info-value update">下载中</span>
+                  <span v-else-if="updateChecking" class="info-value">检查中...</span>
+                  <span v-else-if="updateError" class="info-value error">检查失败</span>
+                  <span v-else-if="hasUpdate" class="info-value update"
+                    >发现新版本 {{ latestVersion }}</span
+                  >
+                  <span v-else-if="updateChecked" class="info-value">已是最新</span>
+                  <span v-else class="info-value">点击检查</span>
+                  <IonSpinner
+                    v-if="updateChecking || isDownloading"
+                    name="circular"
+                    class="entry-spinner"
+                    aria-hidden="true"
+                  />
+                  <IonIcon
+                    v-else
+                    :icon="chevronForwardOutline"
+                    class="entry-arrow"
+                    aria-hidden="true"
+                  />
+                </span>
+              </button>
+            </div>
 
-        <div v-if="hasUpdate && latestManifest" class="info-card update-card">
-          <div class="info-row">
-            <span class="info-label">更新版本</span>
-            <span class="info-value">{{ latestManifest.versionName }}</span>
+            <div v-if="hasUpdate && latestManifest" class="info-card update-card">
+              <div class="info-row">
+                <span class="info-label">更新版本</span>
+                <span class="info-value">{{ latestManifest.versionName }}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">安装包大小</span>
+                <span class="info-value">{{ formatMiB(latestManifest.sizeBytes) }}</span>
+              </div>
+              <div class="info-row update-progress-row">
+                <span class="info-label">更新状态</span>
+                <span class="info-value update-status-value">
+                  <span>{{ updateStatusLabel }}</span>
+                  <template v-if="downloadProgress">
+                    <span aria-hidden="true"> </span>
+                    <RollingNumber :value="downloadProgress.percent" :decimals="0" />
+                    <span aria-hidden="true">%</span>
+                  </template>
+                </span>
+              </div>
+              <div v-if="downloadProgress" class="update-progress" aria-live="polite">
+                <span class="update-progress-size">
+                  <RollingNumber :value="downloadProgress.bytesMiB" />
+                  <span aria-hidden="true"> / </span>
+                  <RollingNumber :value="downloadProgress.totalMiB" />
+                  <span> MiB</span>
+                </span>
+                <span class="update-progress-speed">
+                  <RollingNumber :value="downloadProgress.speedMiB" />
+                  <span> MiB/s</span>
+                </span>
+              </div>
+              <div v-if="updateState.error" class="update-error">
+                {{ updateState.error }}
+              </div>
+              <div v-if="latestManifest.releaseNotes" class="release-notes">
+                <div class="note-title">发布说明</div>
+                <!-- eslint-disable-next-line vue/no-v-html -- Markdown is sanitized before rendering. -->
+                <div class="release-markdown" v-html="renderedReleaseNotes" />
+              </div>
+              <button
+                class="update-action"
+                type="button"
+                :disabled="updateActionDisabled"
+                @click="handleUpdateAction"
+              >
+                {{ updateActionLabel }}
+              </button>
+            </div>
           </div>
-          <div class="info-row">
-            <span class="info-label">安装包大小</span>
-            <span class="info-value">{{ formatMiB(latestManifest.sizeBytes) }}</span>
-          </div>
-          <div class="info-row update-progress-row">
-            <span class="info-label">更新状态</span>
-            <span class="info-value update-status-value">
-              <span>{{ updateStatusLabel }}</span>
-              <template v-if="downloadProgress">
-                <span aria-hidden="true"> </span>
-                <RollingNumber :value="downloadProgress.percent" :decimals="0" />
-                <span aria-hidden="true">%</span>
-              </template>
-            </span>
-          </div>
-          <div v-if="downloadProgress" class="update-progress" aria-live="polite">
-            <span class="update-progress-size">
-              <RollingNumber :value="downloadProgress.bytesMiB" />
-              <span aria-hidden="true"> / </span>
-              <RollingNumber :value="downloadProgress.totalMiB" />
-              <span> MiB</span>
-            </span>
-            <span class="update-progress-speed">
-              <RollingNumber :value="downloadProgress.speedMiB" />
-              <span> MiB/s</span>
-            </span>
-          </div>
-          <div v-if="updateState.error" class="update-error">
-            {{ updateState.error }}
-          </div>
-          <div v-if="latestManifest.releaseNotes" class="release-notes">
-            <div class="note-title">发布说明</div>
-            <!-- eslint-disable-next-line vue/no-v-html -- Markdown is sanitized before rendering. -->
-            <div class="release-markdown" v-html="renderedReleaseNotes" />
-          </div>
-          <button
-            class="update-action"
-            type="button"
-            :disabled="updateActionDisabled"
-            @click="handleUpdateAction"
-          >
-            {{ updateActionLabel }}
-          </button>
-        </div>
+          <div class="about-group">
+            <!-- 仓库地址 -->
+            <div class="info-card" @click="openRepo(REPO_URL)">
+              <div class="info-row">
+                <span class="info-label">仓库地址</span>
+                <span class="info-value repo-url"
+                  ><a :href="REPO_URL" @click.prevent.stop="openRepo(REPO_URL)"
+                    ><IonIcon :icon="logoGithub" class="repo-icon" aria-hidden="true" />
+                    <span>JQ Viewer</span></a
+                  ></span
+                >
+              </div>
+              <div class="info-row">
+                <span class="info-label"></span>
+                <span class="info-value repo-url"
+                  ><a
+                    :href="JMCOMIC_API_REPO_URL"
+                    @click.prevent.stop="openRepo(JMCOMIC_API_REPO_URL)"
+                    ><IonIcon :icon="logoGithub" class="repo-icon" aria-hidden="true" />
+                    <span>JMComic-Api-Java</span></a
+                  ></span
+                >
+              </div>
+            </div>
 
-        <!-- 仓库地址 -->
-        <div class="info-card" @click="openRepo(REPO_URL)">
-          <div class="info-row">
-            <span class="info-label">仓库地址</span>
-            <span class="info-value repo-url"
-              ><a :href="REPO_URL" @click.prevent.stop="openRepo(REPO_URL)"
-                ><IonIcon :icon="logoGithub" class="repo-icon" aria-hidden="true" />
-                <span>JQ Viewer</span></a
-              ></span
-            >
-          </div>
-          <div class="info-row">
-            <span class="info-label"></span>
-            <span class="info-value repo-url"
-              ><a :href="JMCOMIC_API_REPO_URL" @click.prevent.stop="openRepo(JMCOMIC_API_REPO_URL)"
-                ><IonIcon :icon="logoGithub" class="repo-icon" aria-hidden="true" />
-                <span>JMComic-Api-Java</span></a
-              ></span
-            >
-          </div>
-        </div>
-
-        <div class="info-card author-note">
-          <div class="note-title">关于这个应用</div>
-          <div class="note-content">
-            <p>全称叫 JMComic Quick Viewer, 当然快不快得看JM的服务器。</p>
-            <p></p>
-            <p>本来是因为批量解析的功能才开始的整个项目, 下次遇到发一串车牌号的可以方便点查看。</p>
-            <p></p>
-            <p>
-              还有一个原因是本项目依赖的 JMComic API 库, 这是我的另一个开源项目,
-              我想用来做点有用的东西。
-            </p>
-            <p></p>
-            <p>
-              如果你觉得好用，欢迎分享给朋友。遇到问题或有什么建议，可以在 GitHub 提交<a
-                :href="`${REPO_URL}/issues/new`"
-                >Issue</a
-              >。
-            </p>
-            <div style="height: 1000px"></div>
-            <p>没有了, 别看了</p>
-            <div style="height: 2000px"></div>
-            <p>还看?</p>
-            <div style="height: 3000px"></div>
-            <p><img src="../../public/000.jpg" /></p>
+            <div class="info-card author-note">
+              <div class="note-title">关于这个应用</div>
+              <div class="note-content">
+                <p>全称叫 JMComic Quick Viewer, 当然快不快得看JM的服务器。</p>
+                <p></p>
+                <p>
+                  本来是因为批量解析的功能才开始的整个项目, 下次遇到发一串车牌号的可以方便点查看。
+                </p>
+                <p></p>
+                <p>
+                  还有一个原因是本项目依赖的 JMComic API 库, 这是我的另一个开源项目,
+                  我想用来做点有用的东西。
+                </p>
+                <p></p>
+                <p>
+                  如果你觉得好用，欢迎分享给朋友。遇到问题或有什么建议，可以在 GitHub 提交<a
+                    :href="`${REPO_URL}/issues/new`"
+                    >Issue</a
+                  >。
+                </p>
+                <div style="height: 1000px"></div>
+                <p>没有了, 别看了</p>
+                <div style="height: 2000px"></div>
+                <p>还看?</p>
+                <div style="height: 3000px"></div>
+                <p><img src="../../public/000.jpg" /></p>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -421,6 +430,22 @@ const reDisplay = async () => {
   align-items: center;
 }
 
+.about-layout {
+  width: 100%;
+  max-width: 824px;
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 24px;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.about-group {
+  flex: 1 1 392px;
+  max-width: 400px;
+  min-width: 0;
+}
+
 .toolbar-title {
   font-size: 16px;
   font-weight: 600;
@@ -683,6 +708,11 @@ const reDisplay = async () => {
 
 .note-content p:last-child {
   margin-bottom: 0;
+}
+
+.note-content img {
+  max-width: 100%;
+  height: auto;
 }
 
 .home-title {

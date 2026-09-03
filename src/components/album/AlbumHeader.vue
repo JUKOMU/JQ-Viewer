@@ -44,9 +44,7 @@
               <div v-if="sourceMenuOpen" class="source-menu">
                 <button
                   type="button"
-                  class="source-btn source-network"
-                  :class="{ available: networkAvailable }"
-                  :disabled="!networkAvailable"
+                  class="source-btn source-network available"
                   aria-label="网络图片阅读"
                   @click="$emit('select-source', 'network')"
                 >
@@ -108,7 +106,6 @@ defineProps<{
   loading: boolean
   chapterLoading?: boolean
   sourceMenuOpen: boolean
-  networkAvailable: boolean
   imageAvailable: boolean
   pdfAvailable: boolean
 }>()

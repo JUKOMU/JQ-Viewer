@@ -3,10 +3,12 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import MainMenu from '@/components/menu/MainMenu.vue'
 import {
+  isWideMenu,
   isMenuNavigation,
   leftMenuGestureEnabled,
   leftMenuOpen,
   rightMenuOpen,
+  wideMenuCollapsed,
 } from '@/composables/useSideMenuState'
 
 const mocks = vi.hoisted(() => ({
@@ -79,6 +81,8 @@ const getGesture = () => {
 
 beforeEach(() => {
   leftMenuOpen.value = false
+  isWideMenu.value = false
+  wideMenuCollapsed.value = false
   leftMenuGestureEnabled.value = true
   rightMenuOpen.value = false
   isMenuNavigation.value = false
@@ -106,6 +110,8 @@ beforeEach(() => {
 afterEach(() => {
   document.getElementById('main-content')?.remove()
   leftMenuOpen.value = false
+  isWideMenu.value = false
+  wideMenuCollapsed.value = false
   leftMenuGestureEnabled.value = true
   rightMenuOpen.value = false
   isMenuNavigation.value = false
@@ -308,6 +314,75 @@ describe('MainMenu 自定义左侧手势', () => {
     rightMenuOpen.value = false
     expect(gesture.canStart({ event: { target: range } })).toBe(false)
 
+    wrapper.unmount()
+  })
+})
+
+describe('MainMenu 宽屏三态布局', () => {
+  test('宽屏默认显示导航、隐藏 overlay 控制并可收起为 rail', async () => {
+    const wrapper = mountMenu()
+    isWideMenu.value = true
+    await nextTick()
+
+    const menu = wrapper.find('.main-menu')
+    const panel = wrapper.find('.main-menu-panel')
+    const collapseButton = wrapper.find('.menu-collapse-button')
+
+    expect(menu.classes()).toContain('wide-menu')
+    expect(menu.classes()).not.toContain('wide-menu-collapsed')
+    expect(menu.attributes('aria-hidden')).toBeUndefined()
+    expect(panel.attributes('role')).toBe('navigation')
+    expect(panel.attributes('aria-modal')).toBeUndefined()
+    expect(wrapper.find('.main-menu-backdrop').exists()).toBe(false)
+    expect(collapseButton.attributes('aria-controls')).toBe('main-menu-panel')
+    expect(collapseButton.attributes('aria-expanded')).toBe('true')
+    expect(collapseButton.attributes('aria-label')).toBe('收起主菜单')
+    expect(getGesture().canStart({ event: { target: document.body } })).toBe(false)
+
+    await collapseButton.trigger('click')
+    await nextTick()
+    expect(wideMenuCollapsed.value).toBe(true)
+    expect(menu.classes()).toContain('wide-menu-collapsed')
+    expect(collapseButton.attributes('aria-expanded')).toBe('false')
+    expect(collapseButton.attributes('aria-label')).toBe('展开主菜单')
+
+    await collapseButton.trigger('click')
+    await nextTick()
+    expect(wideMenuCollapsed.value).toBe(false)
+    expect(menu.classes()).not.toContain('wide-menu-collapsed')
+    wrapper.unmount()
+  })
+
+  test('跨越宽屏断点会关闭 overlay，返回窄屏后保留窄屏手势', async () => {
+    const wrapper = mountMenu()
+    leftMenuOpen.value = true
+    await nextTick()
+    const content = document.getElementById('main-content')!
+    expect(content.hasAttribute('inert')).toBe(true)
+
+    isWideMenu.value = true
+    await nextTick()
+    expect(leftMenuOpen.value).toBe(false)
+    expect(content.hasAttribute('inert')).toBe(false)
+    expect(wrapper.find('.main-menu').classes()).toContain('wide-menu')
+
+    isWideMenu.value = false
+    await nextTick()
+    expect(wrapper.find('.main-menu').classes()).not.toContain('wide-menu')
+    expect(getGesture().canStart({ event: { target: document.body } })).toBe(true)
+    wrapper.unmount()
+  })
+
+  test('宽屏菜单项导航不会意外收起 rail', async () => {
+    const wrapper = mountMenu()
+    isWideMenu.value = true
+    wideMenuCollapsed.value = true
+    await nextTick()
+
+    await wrapper.find('.menu-item').trigger('click')
+    await nextTick()
+    expect(wideMenuCollapsed.value).toBe(true)
+    expect(leftMenuOpen.value).toBe(false)
     wrapper.unmount()
   })
 })

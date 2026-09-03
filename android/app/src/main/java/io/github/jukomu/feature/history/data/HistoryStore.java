@@ -318,7 +318,7 @@ public class HistoryStore extends SQLiteOpenHelper {
             dataCursor = db.query(TABLE_PARSE,
                 new String[]{COL_ID, COL_TEXT, COL_TIMESTAMP, COL_MODE},
                 null, null, null, null,
-                COL_TIMESTAMP + " DESC",
+                COL_TIMESTAMP + " DESC, " + COL_ID + " DESC",
                 limitClause);
             while (dataCursor.moveToNext()) {
                 JSONObject obj = new JSONObject();

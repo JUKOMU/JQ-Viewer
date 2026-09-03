@@ -826,8 +826,12 @@ async function reloadTabFromFirstPage(
     }
     return
   }
-  invalidateTab(tab)
-  await ensureTabLoaded(tab)
+
+  const previousLength = parseItems.value.length
+  parseItems.value = parseItems.value.filter((item) => item.id !== removedId)
+  if (parseItems.value.length === previousLength) return
+  updateParseTotalCount(Math.max(0, parseTotalCount.value - 1))
+  if (parseHasMore.value) await loadMoreParse()
 }
 
 async function switchTab(tab: HistoryTab) {

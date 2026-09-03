@@ -377,6 +377,43 @@ describe('HistoryPage 详情和生命周期', () => {
     wrapper.unmount()
   })
 
+  test('解析历史单项删除后局部移除并按分页补齐，不重拉第一页', async () => {
+    let parseDb = Array.from({ length: 60 }, (_, index) => makeParseItem(index + 1))
+    mocks.getBrowseHistoryOverview.mockResolvedValue(makeOverview([]))
+    mocks.getParseHistory.mockImplementation(
+      async (limit: number, offset: number) => ({
+        items: parseDb.slice(offset, offset + limit),
+        totalCount: parseDb.length,
+      }),
+    )
+    mocks.deleteParseItem.mockImplementation(async (id: number) => {
+      parseDb = parseDb.filter((item) => item.id !== id)
+    })
+    mocks.createAppAlert.mockImplementation(
+      async (options: { buttons: Array<{ handler?: () => void | Promise<void> }> }) => {
+        await options.buttons[1]?.handler?.()
+        return { present: vi.fn().mockResolvedValue(undefined) }
+      },
+    )
+
+    const wrapper = mount(HistoryPage)
+    await settle()
+    await wrapper.get('.tab-btn:nth-child(2)').trigger('click')
+    await settle()
+    expect(wrapper.findAll('.parse-card')).toHaveLength(50)
+    expect(mocks.getParseHistory).toHaveBeenCalledTimes(1)
+
+    await wrapper.get('.parse-card:nth-child(3) .card-more-btn').trigger('click')
+    await wrapper.get('.card-context-menu').trigger('click')
+    await settle()
+
+    expect(mocks.deleteParseItem).toHaveBeenCalledWith(3)
+    expect(mocks.getParseHistory).toHaveBeenCalledTimes(2)
+    expect(mocks.getParseHistory).toHaveBeenNthCalledWith(2, 50, 49)
+    expect(wrapper.findAll('.parse-card')).toHaveLength(59)
+    wrapper.unmount()
+  })
+
   test('切换 Tab 保留浏览卡片节点、折叠状态、分页数据和各自滚动位置', async () => {
     const today = new Date(2025, 6, 16, 10).getTime()
     const browseItems = Array.from({ length: 51 }, (_, index) => makeBrowseItem(index + 1, today))

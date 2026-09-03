@@ -4,12 +4,14 @@ import type { BrowseHistoryRange } from '@/services/JmcomicTypes'
 const mocks = vi.hoisted(() => ({
   getBrowseHistory: vi.fn(),
   getBrowseHistoryOverview: vi.fn(),
+  deleteParseItem: vi.fn(),
 }))
 
 vi.mock('@/services/JmcomicService', () => ({
   JmcomicService: {
     getBrowseHistory: mocks.getBrowseHistory,
     getBrowseHistoryOverview: mocks.getBrowseHistoryOverview,
+    deleteParseItem: mocks.deleteParseItem,
   },
 }))
 
@@ -51,5 +53,17 @@ describe('HistoryService 浏览历史', () => {
     mocks.getBrowseHistoryOverview.mockRejectedValueOnce(new Error('overview failure'))
 
     await expect(HistoryService.getBrowseHistoryOverview(ranges)).resolves.toBeNull()
+  })
+
+  test('解析历史删除透传成功结果，失败时返回 false', async () => {
+    mocks.deleteParseItem.mockResolvedValueOnce({ success: true })
+    await expect(HistoryService.deleteParseItem(7)).resolves.toBe(true)
+    expect(mocks.deleteParseItem).toHaveBeenCalledWith(7)
+
+    mocks.deleteParseItem.mockResolvedValueOnce({ success: false })
+    await expect(HistoryService.deleteParseItem(8)).resolves.toBe(false)
+
+    mocks.deleteParseItem.mockRejectedValueOnce(new Error('native failure'))
+    await expect(HistoryService.deleteParseItem(9)).resolves.toBe(false)
   })
 })

@@ -318,7 +318,7 @@ public class HistoryStore extends SQLiteOpenHelper {
             dataCursor = db.query(TABLE_PARSE,
                 new String[]{COL_ID, COL_TEXT, COL_TIMESTAMP, COL_MODE},
                 null, null, null, null,
-                COL_TIMESTAMP + " DESC",
+                COL_TIMESTAMP + " DESC, " + COL_ID + " DESC",
                 limitClause);
             while (dataCursor.moveToNext()) {
                 JSONObject obj = new JSONObject();
@@ -352,11 +352,12 @@ public class HistoryStore extends SQLiteOpenHelper {
         }
     }
 
-    public void deleteParseItem(int id) {
+    public boolean deleteParseItem(int id) {
         try {
-            getWritableDatabase().delete(TABLE_PARSE, COL_ID + "=?", new String[]{String.valueOf(id)});
+            return getWritableDatabase().delete(TABLE_PARSE, COL_ID + "=?", new String[]{String.valueOf(id)}) > 0;
         } catch (Exception e) {
             android.util.Log.w("HistoryStore", "deleteParseItem failed", e);
+            return false;
         }
     }
 

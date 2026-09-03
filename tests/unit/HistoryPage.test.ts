@@ -13,6 +13,7 @@ import { BROWSE_GROUP_DEFINITIONS, groupBrowseHistory } from '@/utils/historyDat
 const mocks = vi.hoisted(() => ({
   routerPush: vi.fn(),
   createAppAlert: vi.fn(),
+  showToast: vi.fn(),
   getBrowseHistory: vi.fn(),
   getBrowseHistoryOverview: vi.fn(),
   getParseHistory: vi.fn(),
@@ -76,6 +77,10 @@ vi.mock('ionicons/icons', () => ({
 
 vi.mock('@/services/AppAlertService', () => ({
   createAppAlert: mocks.createAppAlert,
+}))
+
+vi.mock('@/services/JmcomicService', () => ({
+  showToast: mocks.showToast,
 }))
 
 vi.mock('@/services/HistoryService', () => ({
@@ -178,10 +183,11 @@ beforeEach(() => {
   vi.clearAllMocks()
   mocks.routerPush.mockResolvedValue(undefined)
   mocks.createAppAlert.mockResolvedValue({ present: vi.fn().mockResolvedValue(undefined) })
+  mocks.showToast.mockResolvedValue(undefined)
   mocks.clearBrowseHistory.mockResolvedValue(undefined)
   mocks.clearParseHistory.mockResolvedValue(undefined)
   mocks.deleteBrowseItem.mockResolvedValue(undefined)
-  mocks.deleteParseItem.mockResolvedValue(undefined)
+  mocks.deleteParseItem.mockResolvedValue(true)
   mocks.getBrowseHistoryOverview.mockResolvedValue(makeOverview([]))
   mocks.getBrowseHistory.mockResolvedValue({ items: [], totalCount: 0 })
   mocks.getParseHistory.mockResolvedValue([])
@@ -374,6 +380,147 @@ describe('HistoryPage 详情和生命周期', () => {
     await settle()
     expect(mocks.getParseHistory).toHaveBeenNthCalledWith(2, 50, 50)
     expect(wrapper.findAll('.parse-card')).toHaveLength(51)
+    wrapper.unmount()
+  })
+
+  test('解析历史单项删除后局部移除并按分页补齐，不重拉第一页', async () => {
+    let parseDb = Array.from({ length: 120 }, (_, index) =>
+      makeParseItem(index + 1, { text: `text-${120 - index}`, timestamp: 1_000_000 - index }),
+    )
+    mocks.getBrowseHistoryOverview.mockResolvedValue(makeOverview([]))
+    mocks.getParseHistory.mockImplementation(async (limit: number, offset: number) => ({
+      items: [...parseDb]
+        .sort((a, b) => b.timestamp - a.timestamp || b.id - a.id)
+        .slice(offset, offset + limit),
+      totalCount: parseDb.length,
+    }))
+    mocks.deleteParseItem.mockImplementation(async (id: number) => {
+      parseDb = parseDb.filter((item) => item.id !== id)
+      return true
+    })
+    mocks.createAppAlert.mockImplementation(
+      async (options: { buttons: Array<{ handler?: () => void | Promise<void> }> }) => {
+        await options.buttons[1]?.handler?.()
+        return { present: vi.fn().mockResolvedValue(undefined) }
+      },
+    )
+
+    const wrapper = mount(HistoryPage)
+    await settle()
+    await wrapper.get('.tab-btn:nth-child(2)').trigger('click')
+    await settle()
+    expect(wrapper.findAll('.parse-card')).toHaveLength(50)
+    expect(mocks.getParseHistory).toHaveBeenCalledTimes(1)
+
+    await wrapper.get('.parse-card:nth-child(3) .card-more-btn').trigger('click')
+    await wrapper.get('.card-context-menu').trigger('click')
+    await settle()
+
+    expect(mocks.deleteParseItem).toHaveBeenCalledWith(3)
+    expect(mocks.getParseHistory).toHaveBeenCalledTimes(2)
+    expect(mocks.getParseHistory).toHaveBeenNthCalledWith(2, 50, 49)
+    expect(wrapper.findAll('.parse-card')).toHaveLength(99)
+    const texts = wrapper.findAll('.parse-card .parse-text').map((node) => node.text())
+    expect(new Set(texts).size).toBe(99)
+    expect(texts).not.toContain('text-118')
+    expect(texts).toEqual([...texts].sort((a, b) => Number(b.slice(5)) - Number(a.slice(5))))
+
+    const scrollElement = prepareNearBottom(wrapper)
+    scrollElement.dispatchEvent(new CustomEvent('ion-scroll', { detail: { scrollTop: 250 } }))
+    await settle()
+    expect(mocks.getParseHistory).toHaveBeenNthCalledWith(3, 50, 99)
+    expect(wrapper.findAll('.parse-card')).toHaveLength(119)
+    expect(
+      new Set(wrapper.findAll('.parse-card .parse-text').map((node) => node.text())).size,
+    ).toBe(119)
+    wrapper.unmount()
+  })
+
+  test('解析历史删除失败时不移除记录也不补页', async () => {
+    const parseDb = Array.from({ length: 10 }, (_, index) =>
+      makeParseItem(index + 1, { text: 'text-' + (10 - index), timestamp: 1_000_000 - index }),
+    )
+    mocks.getBrowseHistoryOverview.mockResolvedValue(makeOverview([]))
+    mocks.getParseHistory.mockImplementation(async (limit: number, offset: number) => ({
+      items: [...parseDb]
+        .sort((a, b) => b.timestamp - a.timestamp || b.id - a.id)
+        .slice(offset, offset + limit),
+      totalCount: parseDb.length,
+    }))
+    mocks.deleteParseItem.mockResolvedValue(false)
+    mocks.createAppAlert.mockImplementation(
+      async (options: { buttons: Array<{ handler?: () => void | Promise<void> }> }) => {
+        await options.buttons[1]?.handler?.()
+        return { present: vi.fn().mockResolvedValue(undefined) }
+      },
+    )
+
+    const wrapper = mount(HistoryPage)
+    await settle()
+    await wrapper.get('.tab-btn:nth-child(2)').trigger('click')
+    await settle()
+    expect(wrapper.findAll('.parse-card')).toHaveLength(10)
+
+    await wrapper.get('.parse-card:nth-child(1) .card-more-btn').trigger('click')
+    await wrapper.get('.card-context-menu').trigger('click')
+    await settle()
+
+    expect(mocks.deleteParseItem).toHaveBeenCalledWith(1)
+    expect(mocks.getParseHistory).toHaveBeenCalledTimes(1)
+    expect(wrapper.findAll('.parse-card')).toHaveLength(10)
+    wrapper.unmount()
+  })
+
+  test('删除前已有分页请求在途时等待其完成后再补齐', async () => {
+    let parseDb = Array.from({ length: 120 }, (_, index) =>
+      makeParseItem(index + 1, { text: 'text-' + (120 - index), timestamp: 1_000_000 - index }),
+    )
+    mocks.getBrowseHistoryOverview.mockResolvedValue(makeOverview([]))
+    let resolveMore!: (value: { items: ParseHistoryItem[]; totalCount: number }) => void
+    mocks.getParseHistory
+      .mockResolvedValueOnce({ items: parseDb.slice(0, 50), totalCount: parseDb.length })
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveMore = resolve
+          }),
+      )
+      .mockImplementation(async (limit: number, offset: number) => ({
+        items: parseDb.slice(offset, offset + limit),
+        totalCount: parseDb.length,
+      }))
+    mocks.deleteParseItem.mockImplementation(async (id: number) => {
+      parseDb = parseDb.filter((item) => item.id !== id)
+      return true
+    })
+    mocks.createAppAlert.mockImplementation(
+      async (options: { buttons: Array<{ handler?: () => void | Promise<void> }> }) => {
+        await options.buttons[1]?.handler?.()
+        return { present: vi.fn().mockResolvedValue(undefined) }
+      },
+    )
+
+    const wrapper = mount(HistoryPage)
+    await settle()
+    await wrapper.get('.tab-btn:nth-child(2)').trigger('click')
+    await settle()
+    const scrollElement = prepareNearBottom(wrapper)
+    scrollElement.dispatchEvent(new CustomEvent('ion-scroll', { detail: { scrollTop: 250 } }))
+    await flushPromises()
+    expect(mocks.getParseHistory).toHaveBeenCalledTimes(2)
+
+    await wrapper.get('.parse-card:nth-child(5) .card-more-btn').trigger('click')
+    const deletePromise = wrapper.get('.card-context-menu').trigger('click')
+    await flushPromises()
+    expect(mocks.deleteParseItem).not.toHaveBeenCalled()
+
+    resolveMore({ items: parseDb.slice(50, 100), totalCount: parseDb.length })
+    await deletePromise
+    await settle()
+
+    expect(mocks.deleteParseItem).toHaveBeenCalledWith(5)
+    expect(mocks.getParseHistory).toHaveBeenNthCalledWith(3, 50, 99)
+    expect(wrapper.findAll('.parse-card')).toHaveLength(119)
     wrapper.unmount()
   })
 

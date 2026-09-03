@@ -153,11 +153,12 @@ export const HistoryService = {
     }
   },
 
-  async deleteParseItem(id: number): Promise<void> {
+  async deleteParseItem(id: number): Promise<boolean> {
     try {
-      await JmcomicService.deleteParseItem(id)
+      const result = await JmcomicService.deleteParseItem(id)
+      return result.success === true
     } catch {
-      /* 静默丢弃 */
+      return false
     }
   },
 }

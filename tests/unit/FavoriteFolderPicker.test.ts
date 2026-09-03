@@ -8,6 +8,10 @@ vi.mock('@ionic/vue', () => ({
     name: 'IonIcon',
     setup: () => () => h('span'),
   }),
+  IonSpinner: defineComponent({
+    name: 'IonSpinner',
+    setup: () => () => h('span'),
+  }),
 }))
 
 vi.mock('ionicons/icons', () => ({
@@ -64,5 +68,38 @@ describe('FavoriteFolderPicker 新建入口', () => {
     expect(wrapper.find('[aria-label="新建在线收藏夹"]').exists()).toBe(true)
     expect(wrapper.find('[aria-label="新建离线收藏夹"]').exists()).toBe(true)
     expect(wrapper.find('.empty-state').exists()).toBe(true)
+  })
+
+  test('首次加载立即显示加载状态而不是伪空态', () => {
+    const wrapper = mount(FavoriteFolderPicker, {
+      props: {
+        ...baseProps,
+        onlineFolders: [],
+        onlineHasSuccessfulData: false,
+        onlineLoading: true,
+        onlineRefreshing: true,
+      },
+    })
+
+    expect(wrapper.find('.picker-panel').exists()).toBe(true)
+    expect(wrapper.find('.loading-state').exists()).toBe(true)
+    expect(wrapper.find('.empty-state').exists()).toBe(false)
+  })
+
+  test('缓存刷新失败时保留旧列表并提供重试', async () => {
+    const wrapper = mount(FavoriteFolderPicker, {
+      props: {
+        ...baseProps,
+        onlineHasSuccessfulData: true,
+        onlineErrorMessage: '网络不可用',
+      },
+    })
+
+    expect(wrapper.text()).toContain('在线收藏夹')
+    expect(wrapper.text()).toContain('网络不可用')
+    expect(wrapper.find('.refresh-error').exists()).toBe(true)
+
+    await wrapper.get('.retry-btn').trigger('click')
+    expect(wrapper.emitted('retry-online')).toEqual([[]])
   })
 })

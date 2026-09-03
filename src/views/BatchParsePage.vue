@@ -204,9 +204,14 @@
       :online-folders="pickerOnlineFolders"
       :offline-folders="pickerOfflineFolders"
       :online-folder-counts="pickerOnlineFolderCounts"
+      :online-has-successful-data="onlineFolderHasSuccessfulData"
+      :online-loading="onlineFolderLoading"
+      :online-refreshing="onlineFolderRefreshing"
+      :online-error-message="onlineFolderErrorMessage"
       :hide-online="!isLoggedIn"
       @select="onPickerSelect"
       @add-folder="onPickerAddFolder"
+      @retry-online="refreshOnlineFolderData"
     />
 
     <!-- 操作进度遮罩 -->
@@ -260,6 +265,8 @@ import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicServ
 import { OfflineDownloadService } from '@/services/OfflineDownloadService'
 import { OfflineFavoriteService } from '@/services/OfflineFavoriteService'
 import { useAuth } from '@/composables/useAuth'
+import { useFavoriteFolderStore } from '@/composables/favoriteFolderStore'
+import { invalidateFavoritePageCache } from '@/composables/favoritePageCache'
 import type {
   AlbumDetail,
   FavoriteResult,
@@ -289,7 +296,25 @@ interface SourceLine {
 const router = useRouter()
 const route = useRoute()
 const routeKey = computed(() => route.query.key as string)
-const { isLoggedIn } = useAuth()
+const auth = useAuth()
+const isLoggedIn = auth.isLoggedIn
+const userInfo = auth.userInfo
+const accountId = computed(
+  () => userInfo?.value?.uid ?? (isLoggedIn.value ? 'authenticated' : null),
+)
+const {
+  folders: pickerOnlineFolders,
+  counts: pickerOnlineFolderCounts,
+  hasSuccessfulData: onlineFolderHasSuccessfulData,
+  isFetching: onlineFolderRefreshing,
+  errorMessage: onlineFolderErrorMessage,
+  refresh: refreshFavoriteFolders,
+  invalidate: invalidateFavoriteFolders,
+  clear: clearFavoriteFolders,
+} = useFavoriteFolderStore()
+const onlineFolderLoading = computed(
+  () => onlineFolderRefreshing.value && !onlineFolderHasSuccessfulData.value,
+)
 const contentRef = ref<InstanceType<typeof IonContent> | null>(null)
 const resultContainerRef = ref<InstanceType<typeof SearchResultContainer> | null>(null)
 const sourceScrollRef = ref<HTMLElement | null>(null)
@@ -558,8 +583,7 @@ async function doParse() {
 async function resolveScrollElement() {
   if (scrollElementRef.value) return scrollElementRef.value
   const contentEl = contentRef.value?.$el as
-    | { getScrollElement?: () => Promise<HTMLElement> }
-    | undefined
+    { getScrollElement?: () => Promise<HTMLElement> } | undefined
   if (!contentEl?.getScrollElement) return null
   scrollElementRef.value = await contentEl.getScrollElement()
   return scrollElementRef.value
@@ -954,47 +978,28 @@ type PickerMode = 'batch' | 'single'
 const showFolderPicker = ref(false)
 const pickerMode = ref<PickerMode>('batch')
 const pickerTargetItem = ref<SearchResultItem | null>(null)
-const pickerOnlineFolders = ref<FolderEntry[]>([])
 const pickerOfflineFolders = ref<FolderEntry[]>([])
-const pickerOnlineFolderCounts = ref<Record<string, number>>({})
 
-async function loadOnlineFolderData() {
+async function refreshOnlineFolderData() {
   if (!isLoggedIn.value) {
-    pickerOnlineFolders.value = []
+    clearFavoriteFolders()
     return
   }
-  try {
-    const result: FavoriteResult = await JmcomicService.favorites({ folderId: '0', page: 1 })
-    if (result.folderList) {
-      const entries: FolderEntry[] = []
-      const countPromises: Promise<void>[] = []
-      const counts: Record<string, number> = {}
-      for (const [id, name] of Object.entries(result.folderList)) {
-        entries.push({ id, name, count: 0 })
-        countPromises.push(
-          JmcomicService.favorites({ folderId: id, page: 1 })
-            .then((r) => {
-              counts[id] = r.totalItems
-            })
-            .catch(() => {
-              counts[id] = 0
-            }),
-        )
-      }
-      pickerOnlineFolders.value = entries
-      await Promise.all(countPromises)
-      pickerOnlineFolderCounts.value = counts
-    }
-  } catch {
-    pickerOnlineFolders.value = []
-  }
+  await refreshFavoriteFolders(accountId.value)
 }
 
-async function openFolderPickerForMode() {
-  await OfflineFavoriteService.ensureInit()
+function openFolderPickerForMode() {
   pickerOfflineFolders.value = OfflineFavoriteService.getFolders()
-  void loadOnlineFolderData()
   showFolderPicker.value = true
+  void (async () => {
+    try {
+      await OfflineFavoriteService.ensureInit()
+      pickerOfflineFolders.value = OfflineFavoriteService.getFolders()
+    } catch {
+      // 离线收藏夹读取失败时保留当前缓存。
+    }
+  })()
+  void refreshOnlineFolderData()
 }
 
 function openBatchSave() {
@@ -1017,6 +1022,9 @@ async function executeSingleFavorite(
         return
       }
       await JmcomicService.toggleAlbumFavorite(item.id, payload.folderId)
+      invalidateFavoritePageCache()
+      invalidateFavoriteFolders()
+      void refreshOnlineFolderData()
       showToast('已收藏到在线收藏夹', 'success')
     } else {
       if (offlineFavIds.value.has(item.id) || bothFavIds.value.has(item.id)) {
@@ -1104,6 +1112,9 @@ async function onPickerSelect(payload: { folderId: string; source: 'online' | 'o
       } else {
         await showToast(`已保存 ${ok} 个本子到在线`, 'success')
       }
+      invalidateFavoriteFolders()
+      invalidateFavoritePageCache()
+      void refreshOnlineFolderData()
     }
   } catch (e: any) {
     await showToast(sanitizeError(e, '保存失败'), 'danger')
@@ -1129,7 +1140,8 @@ async function onPickerAddFolder(source: 'online' | 'offline') {
               const r = await JmcomicService.manageFavoriteFolder('add', '0', name, '')
               if (r.status === 'ok') {
                 await showToast('收藏夹已创建', 'success')
-                await loadOnlineFolderData()
+                invalidateFavoriteFolders()
+                await refreshOnlineFolderData()
               } else {
                 await showToast(r.msg || '创建失败', 'danger')
               }

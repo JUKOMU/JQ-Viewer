@@ -17,63 +17,96 @@
       :style="panelStyle"
     >
       <div class="menu-header">
-        <div class="menu-title">收藏夹</div>
+        <div class="menu-title">
+          <span>收藏夹</span>
+          <IonSpinner
+            v-if="onlineRefreshing || onlineLoading"
+            name="circular"
+            class="folder-loading-spinner"
+            aria-label="正在更新收藏夹"
+          />
+        </div>
         <button type="button" class="menu-close-btn" aria-label="关闭收藏夹" @click="closeMenu">
           <IonIcon :icon="closeOutline" />
         </button>
       </div>
 
       <div class="menu-body">
-        <template v-if="onlineFolders.length > 0">
-          <div class="section-header">
-            <span class="section-title">在线收藏夹</span>
+        <div class="section-header">
+          <span class="section-title">在线收藏夹</span>
+          <button
+            type="button"
+            class="section-add-btn"
+            aria-label="新建在线收藏夹"
+            @click="emit('add-folder', 'online')"
+          >
+            <IonIcon :icon="addCircleOutline" />
+          </button>
+        </div>
+
+        <div
+          v-if="onlineLoading && !hasOnlineData"
+          class="folder-status loading-state"
+          role="status"
+        >
+          <IonSpinner name="dots" aria-hidden="true" />
+          <span>正在加载收藏夹</span>
+        </div>
+        <div
+          v-else-if="onlineErrorMessage && !hasOnlineData"
+          class="folder-status error-state"
+          role="alert"
+        >
+          <span>{{ onlineErrorMessage }}</span>
+          <button type="button" class="retry-btn" @click="emit('retry-online')">重试</button>
+        </div>
+        <div v-else-if="onlineFolders.length > 0" class="folder-list">
+          <div
+            v-for="folder in onlineFolders"
+            :key="folder.id"
+            class="folder-item-wrapper"
+            :style="{ position: 'relative' }"
+          >
             <button
               type="button"
-              class="section-add-btn"
-              aria-label="新建在线收藏夹"
-              @click="emit('add-folder', 'online')"
+              class="folder-item"
+              :class="{ selected: selectedOnlineId === folder.id }"
+              @click="selectOnlineFolder(folder.id)"
             >
-              <IonIcon :icon="addCircleOutline" />
+              <IonIcon :icon="folderOpenOutline" class="folder-icon" />
+              <span class="folder-name">{{ folder.name }}</span>
+              <span v-if="onlineFolderCounts[folder.id] !== undefined" class="folder-count">
+                {{ onlineFolderCounts[folder.id] }}
+              </span>
+            </button>
+            <button
+              type="button"
+              class="folder-more-btn"
+              :class="{ active: isContextMenuOpen(folder.id, true) }"
+              aria-label="更多操作"
+              :aria-expanded="isContextMenuOpen(folder.id, true)"
+              @click.stop="toggleContextMenu(folder, true, $event)"
+            >
+              <IonIcon :icon="ellipsisVertical" />
             </button>
           </div>
-          <div class="folder-list">
-            <div
-              v-for="folder in onlineFolders"
-              :key="folder.id"
-              class="folder-item-wrapper"
-              :style="{ position: 'relative' }"
-            >
-              <button
-                type="button"
-                class="folder-item"
-                :class="{ selected: selectedOnlineId === folder.id }"
-                @click="selectOnlineFolder(folder.id)"
-              >
-                <IonIcon :icon="folderOpenOutline" class="folder-icon" />
-                <span class="folder-name">{{ folder.name }}</span>
-                <span v-if="onlineFolderCounts[folder.id] !== undefined" class="folder-count">
-                  {{ onlineFolderCounts[folder.id] }}
-                </span>
-              </button>
-              <button
-                type="button"
-                class="folder-more-btn"
-                :class="{ active: isContextMenuOpen(folder.id, true) }"
-                aria-label="更多操作"
-                :aria-expanded="isContextMenuOpen(folder.id, true)"
-                @click.stop="toggleContextMenu(folder, true, $event)"
-              >
-                <IonIcon :icon="ellipsisVertical" />
-              </button>
-            </div>
-          </div>
-        </template>
+        </div>
 
-        <template v-if="onlineFolders.length > 0">
-          <div style="margin-top: 24px" />
-        </template>
+        <div v-if="onlineErrorMessage && hasOnlineData" class="refresh-error" role="status">
+          <span>更新失败，正在显示上次结果：{{ onlineErrorMessage }}</span>
+          <button type="button" class="retry-btn" @click="emit('retry-online')">重试</button>
+        </div>
 
-        <div v-if="onlineFolders.length === 0 && offlineFolders.length === 0" class="empty-state">
+        <div
+          v-if="
+            !onlineLoading &&
+            !onlineErrorMessage &&
+            hasOnlineData &&
+            onlineFolders.length === 0 &&
+            offlineFolders.length === 0
+          "
+          class="empty-state"
+        >
           暂无收藏夹
         </div>
 
@@ -131,7 +164,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { IonIcon } from '@ionic/vue'
+import { IonIcon, IonSpinner } from '@ionic/vue'
 import {
   addCircleOutline,
   closeOutline,
@@ -162,10 +195,18 @@ const props = withDefaults(
     selectedOnlineId: string
     selectedOfflineId: string
     onlineFolderCounts: Record<string, number>
+    onlineHasSuccessfulData?: boolean
+    onlineLoading?: boolean
+    onlineRefreshing?: boolean
+    onlineErrorMessage?: string
   }>(),
   {
     displayMode: 'overlay',
     paneOpen: false,
+    onlineHasSuccessfulData: undefined,
+    onlineLoading: false,
+    onlineRefreshing: false,
+    onlineErrorMessage: '',
   },
 )
 
@@ -175,12 +216,17 @@ const emit = defineEmits<{
   'select-online-folder': [folderId: string]
   'select-offline-folder': [folderId: string]
   'add-folder': [source: 'online' | 'offline']
+  'retry-online': []
   'rename-folder': [payload: { folderId: string; folderName: string; isOnline: boolean }]
   'delete-folder': [payload: { folderId: string; folderName: string; isOnline: boolean }]
   'move-folder': [payload: { folderId: string; folderName: string; isOnline: boolean }]
   'copy-folder': [payload: { folderId: string; folderName: string; isOnline: boolean }]
   'export-folder': [payload: { folderId: string; folderName: string; isOnline: boolean }]
 }>()
+
+const hasOnlineData = computed(
+  () => props.onlineHasSuccessfulData ?? (!props.onlineLoading && !props.onlineErrorMessage),
+)
 
 const { isDraggingRight, isSnappingClosed, rightDragProgress } = useSideMenuState()
 
@@ -379,9 +425,20 @@ defineExpose({ panelRef })
 }
 
 .menu-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-size: 18px;
   font-weight: 700;
   color: #3a261d;
+}
+
+.folder-loading-spinner {
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+  margin-left: 8px;
+  color: #e8843c;
 }
 
 .menu-close-btn {
@@ -446,6 +503,41 @@ defineExpose({ panelRef })
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.folder-status,
+.refresh-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 56px;
+  color: #9e7d6a;
+  font-size: 13px;
+}
+
+.error-state {
+  flex-direction: column;
+  color: #a6543c;
+}
+
+.refresh-error {
+  justify-content: flex-start;
+  min-height: 36px;
+  padding: 4px 8px 0;
+  color: #a6543c;
+  font-size: 12px;
+}
+
+.retry-btn {
+  border: 0;
+  border-radius: 999px;
+  padding: 4px 10px;
+  background: #fff0e7;
+  color: #b55e32;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
 }
 
 .folder-item-wrapper {
@@ -544,7 +636,8 @@ defineExpose({ panelRef })
 .menu-close-btn:focus-visible,
 .section-add-btn:focus-visible,
 .folder-item:focus-visible,
-.folder-more-btn:focus-visible {
+.folder-more-btn:focus-visible,
+.retry-btn:focus-visible {
   outline: 3px solid rgb(201 109 58 / 0.45);
   outline-offset: 2px;
 }

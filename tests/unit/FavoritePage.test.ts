@@ -155,7 +155,7 @@ vi.mock('@/composables/useAuth', async () => {
 
 import FavoritePage from '@/views/FavoritePage.vue'
 import { clearFavoriteFolderStore } from '@/composables/favoriteFolderStore'
-import { clearFavoritePageCache } from '@/composables/favoritePageCache'
+import { cachedState, clearFavoritePageCache } from '@/composables/favoritePageCache'
 
 const item = {
   id: 'album-1',
@@ -163,6 +163,19 @@ const item = {
   coverUrl: 'cover.jpg',
   authors: [],
   tags: [],
+}
+
+const secondItem = {
+  id: 'album-2',
+  title: '第二页旧内容',
+  coverUrl: 'cover-2.jpg',
+  authors: [],
+  tags: [],
+}
+
+const refreshedSecondItem = {
+  ...secondItem,
+  title: '第二页新内容',
 }
 
 const onlineResult = {
@@ -212,5 +225,85 @@ describe('FavoritePage 账号切换', () => {
 
     expect(results.props('items')).toHaveLength(0)
     expect(results.props('result')).toBeNull()
+  })
+
+  test('静默刷新会请求并原子替换全部已缓存页后清除 stale', async () => {
+    const pageOneResult = {
+      ...onlineResult,
+      totalItems: 40,
+      totalPages: 2,
+    }
+    const pageTwoResult = {
+      ...pageOneResult,
+      currentPage: 2,
+      content: [refreshedSecondItem],
+    }
+    cachedState.value = {
+      accountId: 'account-a',
+      keyword: '',
+      stale: true,
+      folderSource: 'online',
+      currentFolderId: '0',
+      onlineFolderMap: { '0': '全部' },
+      onlineFolderCounts: { '0': 40 },
+      resultMeta: pageOneResult,
+      pageCache: { 1: [item], 2: [secondItem] },
+      displayMode: 'list',
+    }
+
+    const requestedPages: number[] = []
+    mocks.favorites.mockImplementation(({ folderId, page }: { folderId: string; page: number }) => {
+      if (folderId === '0') {
+        requestedPages.push(page)
+        return Promise.resolve(page === 2 ? pageTwoResult : pageOneResult)
+      }
+      return Promise.resolve({ totalItems: 40 })
+    })
+
+    wrapper = mount(FavoritePage)
+    await flushPromises()
+
+    const results = wrapper.findComponent({ name: 'SearchResultContainer' })
+    expect(requestedPages).toContain(2)
+    expect(results.props('items').map((entry: { item: { id: string } }) => entry.item.id)).toEqual([
+      'album-1',
+      'album-2',
+    ])
+    expect(
+      results.props('items').map((entry: { item: { title: string } }) => entry.item.title),
+    ).toEqual(['在线收藏', '第二页新内容'])
+    expect(cachedState.value?.stale).toBe(false)
+  })
+
+  test('静默刷新任一缓存页失败时保留原快照并继续标记 stale', async () => {
+    const pageOneResult = { ...onlineResult, totalItems: 40, totalPages: 2 }
+    cachedState.value = {
+      accountId: 'account-a',
+      keyword: '',
+      stale: true,
+      folderSource: 'online',
+      currentFolderId: '0',
+      onlineFolderMap: { '0': '全部' },
+      onlineFolderCounts: { '0': 40 },
+      resultMeta: pageOneResult,
+      pageCache: { 1: [item], 2: [secondItem] },
+      displayMode: 'list',
+    }
+
+    mocks.favorites.mockImplementation(({ folderId, page }: { folderId: string; page: number }) => {
+      if (folderId !== '0') return Promise.resolve({ totalItems: 40 })
+      if (page === 2) return Promise.reject(new Error('page 2 failed'))
+      return Promise.resolve(pageOneResult)
+    })
+
+    wrapper = mount(FavoritePage)
+    await flushPromises()
+
+    const results = wrapper.findComponent({ name: 'SearchResultContainer' })
+    expect(results.props('items').map((entry: { item: { id: string } }) => entry.item.id)).toEqual([
+      'album-1',
+      'album-2',
+    ])
+    expect(cachedState.value?.stale).toBe(true)
   })
 })

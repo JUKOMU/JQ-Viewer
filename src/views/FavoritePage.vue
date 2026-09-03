@@ -376,29 +376,75 @@ const restoreFromCache = (): boolean => {
   return true
 }
 
-const silentRefresh = async () => {
+let silentRefreshRequest: {
+  context: FavoriteViewContext
+  promise: Promise<void>
+} | null = null
+
+const sameViewContext = (left: FavoriteViewContext, right: FavoriteViewContext) =>
+  left.generation === right.generation &&
+  left.accountId === right.accountId &&
+  left.source === right.source &&
+  left.folderId === right.folderId &&
+  left.keyword === right.keyword
+
+const silentRefresh = () => {
   const context = captureViewContext()
-  try {
-    const pageResult = await fetchPage(1, context)
-    if (!isCurrentViewContext(context)) return
-    const cached = pageCache.value[1] ?? []
-    const sameContent =
-      cached.length === pageResult.content.length &&
-      cached.every((item, i) => item.id === pageResult.content[i]?.id)
-    const sameTotal = resultMeta.value?.totalItems === pageResult.totalItems
-    if (!sameContent) {
-      resultMeta.value = pageResult
-      pageCache.value = { 1: pageResult.content }
-    } else if (!sameTotal) {
-      resultMeta.value = pageResult
-    }
-    saveToCache()
-    if (!sameContent) {
-      pageAtTop.value = true
-    }
-  } catch {
-    // 静默失败，缓存数据保持显示
+  if (silentRefreshRequest && sameViewContext(silentRefreshRequest.context, context)) {
+    return silentRefreshRequest.promise
   }
+
+  const cachedPages = loadedPages.value.length > 0 ? [...loadedPages.value] : [1]
+  const originalSearchCache = onlineSearchCache.value
+  const request: { context: FavoriteViewContext; promise: Promise<void> } = {
+    context,
+    promise: Promise.resolve(),
+  }
+  const promise = (async () => {
+    try {
+      // A keyword cache represents the whole query. Clear it so this refresh
+      // cannot reuse an older result while rebuilding every cached page.
+      if (context.source === 'online' && context.keyword) onlineSearchCache.value = null
+
+      const refreshedPages: Record<number, SearchResultItem[]> = {}
+      let refreshedMeta: SearchResult | null = null
+      for (const page of cachedPages) {
+        const pageResult = await fetchPage(page, context)
+        refreshedPages[page] = pageResult.content
+        if (!refreshedMeta) refreshedMeta = pageResult
+      }
+
+      if (!isCurrentViewContext(context) || !refreshedMeta) return
+
+      const nextPageCache: Record<number, SearchResultItem[]> = {}
+      for (const page of cachedPages) {
+        if (page <= refreshedMeta.totalPages) {
+          nextPageCache[page] = refreshedPages[page] ?? []
+        }
+      }
+      const pageOneChanged =
+        (pageCache.value[1] ?? []).length !== (nextPageCache[1] ?? []).length ||
+        (pageCache.value[1] ?? []).some((item, index) => item.id !== nextPageCache[1]?.[index]?.id)
+
+      // Commit only after every cached page has completed successfully and
+      // the original query context is still current.
+      resultMeta.value = refreshedMeta
+      pageCache.value = nextPageCache
+      saveToCache()
+      if (pageOneChanged) pageAtTop.value = true
+    } catch {
+      if (isCurrentViewContext(context)) {
+        onlineSearchCache.value = originalSearchCache
+        if (cachedState.value) cachedState.value = { ...cachedState.value, stale: true }
+      }
+      // Keep the original page/result snapshot untouched for the next retry.
+    } finally {
+      if (silentRefreshRequest === request) silentRefreshRequest = null
+    }
+  })()
+  request.promise = promise
+  silentRefreshRequest = request
+  return promise
 }
 
 const currentFavoriteQuery = computed<FavoriteQuery>(() => ({

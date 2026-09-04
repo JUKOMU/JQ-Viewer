@@ -178,8 +178,12 @@ public class PreloadService {
                             byte[] thumbBytes = ImageCache.createThumbnail(localBytes);
                             if (isStale(scopeKey, generation)) return;
                             String mime = "image/" + ImageCache.guessFormatName(localBytes);
-                            imageCache.put(imageKey, localBytes, mime, reservation);
+                            boolean originalCached = imageCache.put(
+                                imageKey, localBytes, mime, reservation);
                             if (imageCache.put(cacheKey, thumbBytes, "image/jpeg")) {
+                                if (originalCached && imageCache.has(imageKey)) {
+                                    notifyImageReady(photoId, sortOrder, "image");
+                                }
                                 notifyImageReady(photoId, sortOrder, type);
                             } else {
                                 throw new IOException("本地缩略图无法写入内存缓存");
@@ -259,9 +263,13 @@ public class PreloadService {
                         }
                         if (isThumb) {
                             byte[] thumbBytes = ImageCache.createThumbnail(decrypted);
-                            imageCache.put(imageKey, decrypted, mimeType, reservation);
+                            boolean originalCached = imageCache.put(
+                                imageKey, decrypted, mimeType, reservation);
                             if (!imageCache.put(cacheKey, thumbBytes, "image/jpeg")) {
                                 throw new IOException("缩略图无法写入内存缓存");
+                            }
+                            if (originalCached && imageCache.has(imageKey)) {
+                                notifyImageReady(photoId, sortOrder, "image");
                             }
                         } else {
                             if (!imageCache.put(cacheKey, decrypted, mimeType, reservation)) {

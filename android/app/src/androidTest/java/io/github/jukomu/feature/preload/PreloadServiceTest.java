@@ -18,7 +18,10 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -235,6 +238,63 @@ public class PreloadServiceTest {
 
         assertEquals(1, result.getJSONArray("pending").length());
         assertTrue(fetched.await(1, TimeUnit.SECONDS));
+    }
+
+    @Test
+    public void networkThumbnailNotifiesOriginalAndThumbReadyAfterCachingBoth() throws Exception {
+        List<String> readyTypes = Collections.synchronizedList(new ArrayList<>());
+        CountDownLatch ready = new CountDownLatch(2);
+        PreloadService service = createService(image -> createPng(), new PreloadEventSink() {
+            @Override
+            public void onImageReady(String photoId, int sortOrder, String type) {
+                assertEquals("network-thumb", photoId);
+                assertEquals(1, sortOrder);
+                readyTypes.add(type);
+                ready.countDown();
+            }
+
+            @Override
+            public void onImageFailed(String photoId, int sortOrder, String type) {
+                fail("有效缩略图不应发送 imageFailed");
+            }
+        });
+
+        JSONObject result = service.preloadImages("network-thumb", "thumb", imageArray());
+
+        assertEquals(1, result.getJSONArray("pending").length());
+        assertTrue(ready.await(1, TimeUnit.SECONDS));
+        assertEquals(java.util.Arrays.asList("image", "thumb"), readyTypes);
+        assertTrue(imageCache.has("network-thumb/1"));
+        assertTrue(imageCache.has("network-thumb/1/thumb"));
+    }
+
+    @Test
+    public void localThumbnailNotifiesOriginalAndThumbReadyAfterCachingBoth() throws Exception {
+        prepareLocalImage("local-thumb", createPng());
+        List<String> readyTypes = Collections.synchronizedList(new ArrayList<>());
+        CountDownLatch ready = new CountDownLatch(2);
+        PreloadService service = createService(image -> createPng(), new PreloadEventSink() {
+            @Override
+            public void onImageReady(String photoId, int sortOrder, String type) {
+                assertEquals("local-thumb", photoId);
+                assertEquals(1, sortOrder);
+                readyTypes.add(type);
+                ready.countDown();
+            }
+
+            @Override
+            public void onImageFailed(String photoId, int sortOrder, String type) {
+                fail("有效本地缩略图不应发送 imageFailed");
+            }
+        });
+
+        JSONObject result = service.preloadImages("local-thumb", "thumb", imageArray());
+
+        assertEquals(1, result.getJSONArray("pending").length());
+        assertTrue(ready.await(1, TimeUnit.SECONDS));
+        assertEquals(java.util.Arrays.asList("image", "thumb"), readyTypes);
+        assertTrue(imageCache.has("local-thumb/1"));
+        assertTrue(imageCache.has("local-thumb/1/thumb"));
     }
 
     @Test

@@ -94,11 +94,27 @@ export const JmcomicService = {
 
   favoriteToFolder(id: string, folderId: string = '0') {
     return (async () => {
-      await native.toggleAlbumFavorite({ id, folderId: '0' })
-      if (folderId !== '0') {
+      const moveToFolder = async () => {
         const result = await native.manageFavoriteFolder({ type: 'move', folderId, albumId: id })
         if (result.status !== 'ok') {
           throw new Error(result.msg || '移动到在线收藏夹失败')
+        }
+      }
+
+      const current = await native.getAlbum({ id })
+      if (current.isFavorite) {
+        if (folderId !== '0') await moveToFolder()
+        return { success: true }
+      }
+
+      await native.toggleAlbumFavorite({ id, folderId: '0' })
+      if (folderId !== '0') {
+        try {
+          await moveToFolder()
+        } catch (error) {
+          const reconciled = await native.getAlbum({ id })
+          if (!reconciled.isFavorite) throw error
+          await moveToFolder()
         }
       }
       return { success: true }

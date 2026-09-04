@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   retryImage: vi.fn(),
   getBrowseHistory: vi.fn(),
   getBrowseHistoryOverview: vi.fn(),
+  getAlbum: vi.fn(),
   toggleAlbumFavorite: vi.fn(),
   manageFavoriteFolder: vi.fn(),
 }))
@@ -15,6 +16,7 @@ vi.mock('@/services/jmcomic/JmcomicNativeClient', () => ({
     retryImage: mocks.retryImage,
     getBrowseHistory: mocks.getBrowseHistory,
     getBrowseHistoryOverview: mocks.getBrowseHistoryOverview,
+    getAlbum: mocks.getAlbum,
     toggleAlbumFavorite: mocks.toggleAlbumFavorite,
     manageFavoriteFolder: mocks.manageFavoriteFolder,
   },
@@ -103,8 +105,10 @@ describe('JmcomicService.retryImage', () => {
 
 describe('JmcomicService.favoriteToFolder', () => {
   beforeEach(() => {
+    mocks.getAlbum.mockReset()
     mocks.toggleAlbumFavorite.mockReset()
     mocks.manageFavoriteFolder.mockReset()
+    mocks.getAlbum.mockResolvedValue({ isFavorite: false })
     mocks.toggleAlbumFavorite.mockResolvedValue({ success: true })
     mocks.manageFavoriteFolder.mockResolvedValue({ status: 'ok', msg: '' })
   })
@@ -132,10 +136,39 @@ describe('JmcomicService.favoriteToFolder', () => {
     expect(mocks.manageFavoriteFolder).not.toHaveBeenCalled()
   })
 
+  test('已收藏时只移动而不再次切换', async () => {
+    mocks.getAlbum.mockResolvedValue({ isFavorite: true })
+
+    await JmcomicService.favoriteToFolder('album-1', 'folder-1')
+
+    expect(mocks.toggleAlbumFavorite).not.toHaveBeenCalled()
+    expect(mocks.manageFavoriteFolder).toHaveBeenCalledWith({
+      type: 'move',
+      folderId: 'folder-1',
+      albumId: 'album-1',
+    })
+  })
+
   test('移动接口返回失败状态时拒绝成功结果', async () => {
     mocks.manageFavoriteFolder.mockResolvedValue({ status: 'fail', msg: '移动失败' })
 
     await expect(JmcomicService.favoriteToFolder('album-1', 'folder-1')).rejects.toThrow('移动失败')
+  })
+
+  test('移动失败但对账确认已收藏时只重试移动', async () => {
+    mocks.manageFavoriteFolder
+      .mockResolvedValueOnce({ status: 'fail', msg: '暂时失败' })
+      .mockResolvedValueOnce({ status: 'ok', msg: '' })
+    mocks.getAlbum
+      .mockResolvedValueOnce({ isFavorite: false })
+      .mockResolvedValueOnce({ isFavorite: true })
+
+    await expect(JmcomicService.favoriteToFolder('album-1', 'folder-1')).resolves.toEqual({
+      success: true,
+    })
+
+    expect(mocks.toggleAlbumFavorite).toHaveBeenCalledTimes(1)
+    expect(mocks.manageFavoriteFolder).toHaveBeenCalledTimes(2)
   })
 })
 

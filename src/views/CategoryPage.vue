@@ -535,11 +535,11 @@ async function executeFavorite(
   try {
     if (payload.source === 'online') {
       const album = await JmcomicService.getAlbum(item.id)
-      if (album.isFavorite) {
+      if (album.isFavorite && payload.folderId === '0') {
         showToast('该本子已在收藏夹中', 'medium')
         return
       }
-      await JmcomicService.toggleAlbumFavorite(item.id, payload.folderId)
+      await JmcomicService.favoriteToFolder(item.id, payload.folderId)
       invalidateFavoritePageCache()
       invalidateFavoriteFolders()
       void refreshOnlineFolderData()

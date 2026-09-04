@@ -95,6 +95,7 @@ vi.mock('@/services/JmcomicService', () => ({
     getPhoto: vi.fn(),
     downloadChapter: vi.fn(),
     toggleAlbumFavorite: vi.fn(),
+    favoriteToFolder: vi.fn(),
   },
   sanitizeError: vi.fn((error: unknown, fallback: string) => String(error || fallback)),
   showToast: mocks.showToast,

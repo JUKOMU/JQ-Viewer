@@ -1017,11 +1017,11 @@ async function executeSingleFavorite(
   try {
     if (payload.source === 'online') {
       const album = await JmcomicService.getAlbum(item.id)
-      if (album?.isFavorite) {
+      if (album?.isFavorite && payload.folderId === '0') {
         showToast('该本子已在收藏夹中', 'medium')
         return
       }
-      await JmcomicService.toggleAlbumFavorite(item.id, payload.folderId)
+      await JmcomicService.favoriteToFolder(item.id, payload.folderId)
       invalidateFavoritePageCache()
       invalidateFavoriteFolders()
       void refreshOnlineFolderData()
@@ -1098,7 +1098,7 @@ async function onPickerSelect(payload: { folderId: string; source: 'online' | 'o
       const failed: string[] = []
       for (const item of toAdd) {
         try {
-          await JmcomicService.toggleAlbumFavorite(item.id, payload.folderId)
+          await JmcomicService.favoriteToFolder(item.id, payload.folderId)
           ok++
         } catch {
           failed.push(item.title || item.id)

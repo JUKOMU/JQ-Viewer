@@ -366,7 +366,7 @@ async function onPickerSelect(payload: { folderId: string; source: 'online' | 'o
   actionBusy.favorite = true
   try {
     if (payload.source === 'online') {
-      await JmcomicService.toggleAlbumFavorite(albumId.value, payload.folderId)
+      await JmcomicService.favoriteToFolder(albumId.value, payload.folderId)
       invalidateFavoritePageCache()
       invalidateFavoriteFolders()
       void refreshOnlineFolderData()

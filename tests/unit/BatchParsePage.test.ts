@@ -124,6 +124,7 @@ vi.mock('@/services/JmcomicService', () => ({
     getAlbum: mocks.getAlbum,
     favorites: vi.fn(),
     toggleAlbumFavorite: vi.fn(),
+    favoriteToFolder: vi.fn(),
     getPhoto: vi.fn(),
     downloadChapter: vi.fn(),
     manageFavoriteFolder: vi.fn(),

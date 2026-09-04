@@ -539,7 +539,7 @@ async function executeFavorite(
         showToast('该本子已在收藏夹中', 'medium')
         return
       }
-      await JmcomicService.toggleAlbumFavorite(item.id, payload.folderId)
+      await JmcomicService.favoriteToFolder(item.id, payload.folderId)
       invalidateFavoritePageCache()
       invalidateFavoriteFolders()
       void refreshOnlineFolderData()

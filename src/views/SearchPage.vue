@@ -97,7 +97,16 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onActivated, onDeactivated, onMounted, ref, watch } from 'vue'
+import {
+  computed,
+  nextTick,
+  onActivated,
+  onBeforeUnmount,
+  onDeactivated,
+  onMounted,
+  ref,
+  watch,
+} from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { IonContent, IonIcon, IonPage } from '@ionic/vue'
 import { createAppAlert } from '@/services/AppAlertService'
@@ -125,6 +134,16 @@ import { OfflineFavoriteService } from '@/services/OfflineFavoriteService'
 import { useAuth } from '@/composables/useAuth'
 import { useFavoriteFolderStore } from '@/composables/favoriteFolderStore'
 import { invalidateFavoritePageCache } from '@/composables/favoritePageCache'
+import {
+  allocateSearchPageContextGeneration,
+  clearSearchPageContext,
+  commitSearchPageWindow,
+  getSearchPageContext,
+  saveSearchPageContext,
+  SEARCH_PAGE_WINDOW_SIZE,
+  toSearchPageContextQuery,
+  type SearchPageContextSnapshot,
+} from '@/composables/searchPageContextCache'
 import type {
   AlbumDetail,
   FolderEntry,
@@ -175,7 +194,18 @@ const currentQuery = computed<SearchQuery>(() => ({
   page: readNumber(route.query.page, 1),
 }))
 
+const routeAnchorPage = ref(currentQuery.value.page ?? 1)
+
 const pageCache = ref<Record<number, SearchResultItem[]>>({})
+const savedScrollTop = ref(0)
+let snapshotSavedOnDeactivated = false
+let queryGeneration = allocateSearchPageContextGeneration()
+let activeContextQuery = toSearchPageContextQuery({
+  keyword: '',
+  orderBy: 'mr',
+  time: 'a',
+  searchMainTag: 0,
+})
 
 const loadedPages = computed(() =>
   Object.keys(pageCache.value)
@@ -228,6 +258,51 @@ const resolveScrollElement = async () => {
   return scrollElementRef.value
 }
 
+const contextQueryEqual = (left: typeof activeContextQuery, right: typeof activeContextQuery) =>
+  left.keyword === right.keyword &&
+  left.orderBy === right.orderBy &&
+  left.time === right.time &&
+  left.searchMainTag === right.searchMainTag
+
+const isCurrentGeneration = (generation: number, query = activeContextQuery) =>
+  generation === queryGeneration && contextQueryEqual(query, activeContextQuery)
+
+const updateRoutePage = (page: number) => {
+  routeAnchorPage.value = page
+  const nextQuery = { ...currentQuery.value, page }
+  lastSearchedQuery.value = nextQuery
+  if (readNumber(route.query.page, 1) === page) return
+  void router.replace({
+    path: '/search',
+    query: {
+      keyword: nextQuery.keyword ?? '',
+      orderBy: nextQuery.orderBy,
+      time: nextQuery.time,
+      searchMainTag: String(nextQuery.searchMainTag),
+      page: String(page),
+    },
+  })
+}
+
+const commitPage = (
+  page: number,
+  content: SearchResultItem[],
+  direction: 'reset' | 'append' | 'prepend',
+) => {
+  const { pageCache: nextCache, pages } = commitSearchPageWindow(
+    pageCache.value,
+    page,
+    content,
+    direction,
+  )
+  pageCache.value = nextCache
+  const routePage = routeAnchorPage.value
+  if (!pages.includes(routePage)) {
+    const replacement = direction === 'prepend' ? (pages[0] ?? page) : (pages.at(-1) ?? page)
+    updateRoutePage(replacement)
+  }
+}
+
 const maybeLoadNextAfterRender = async () => {
   if (!canLoadNext.value || loadingNext.value || initialLoading.value) {
     return
@@ -253,26 +328,111 @@ const fetchPage = async (query: SearchQuery, page: number) => {
     : await JmcomicService.categories(nextQuery)
 }
 
-const resetWithPage = async (query: SearchQuery) => {
+const captureSnapshot = (): SearchPageContextSnapshot | null => {
+  if (!resultMeta.value || !Object.keys(pageCache.value).length) return null
+  const firstItem = displayItems.value[0]
+  const anchorEntryKey = firstItem
+    ? `${firstItem.page}-${firstItem.indexInPage}-${firstItem.item.id}`
+    : null
+  const scrollTop = scrollElementRef.value?.scrollTop ?? 0
+  const anchorOffset = anchorEntryKey
+    ? (resultContainerRef.value?.getEntryElement?.(anchorEntryKey)?.getBoundingClientRect().top ??
+      null)
+    : null
+  return {
+    query: { ...activeContextQuery },
+    pageCache: { ...pageCache.value },
+    resultMeta: resultMeta.value,
+    routePage: routeAnchorPage.value,
+    anchorEntryKey,
+    anchorOffset,
+    scrollTop,
+    displayMode: displayMode.value,
+    generation: queryGeneration,
+    savedAt: Date.now(),
+  }
+}
+
+const saveContextSnapshot = () => {
+  const snapshot = captureSnapshot()
+  if (!snapshot) return false
+  saveSearchPageContext(snapshot)
+  return true
+}
+
+const restoreContextSnapshot = async (snapshot: SearchPageContextSnapshot, generation: number) => {
+  if (!isCurrentGeneration(generation, snapshot.query)) return false
+  activeContextQuery = { ...snapshot.query }
+  routeAnchorPage.value = snapshot.routePage
+  savedScrollTop.value = snapshot.scrollTop
+  resultMeta.value = snapshot.resultMeta
+  pageCache.value = snapshot.pageCache
+  displayMode.value = snapshot.displayMode
+  errorMessage.value = ''
+  await nextTick()
+  if (!isCurrentGeneration(generation, snapshot.query)) return false
+  const scrollEl = await resolveScrollElement()
+  if (!isCurrentGeneration(generation, snapshot.query)) return false
+  pageAtTop.value = snapshot.scrollTop <= 2
+  if (!scrollEl) return true
+  scrollEl.scrollTop = snapshot.scrollTop
+  if (snapshot.anchorEntryKey && snapshot.anchorOffset !== null) {
+    const restoredTop = resultContainerRef.value
+      ?.getEntryElement?.(snapshot.anchorEntryKey)
+      ?.getBoundingClientRect().top
+    if (restoredTop !== undefined && restoredTop !== null) {
+      scrollEl.scrollTop += restoredTop - snapshot.anchorOffset
+    }
+  }
+  pageAtTop.value = snapshot.scrollTop <= 2
+  return true
+}
+
+const resetWithPage = async (
+  query: SearchQuery,
+  { preferSnapshot = true }: { preferSnapshot?: boolean } = {},
+) => {
   const targetPage = query.page ?? 1
   const trimmedKeyword = (query.keyword ?? '').trim()
+  const context = toSearchPageContextQuery(query)
+  if (!contextQueryEqual(context, activeContextQuery)) saveContextSnapshot()
+  const generation = allocateSearchPageContextGeneration()
+  queryGeneration = generation
+  activeContextQuery = context
+  routeAnchorPage.value = targetPage
+  initialLoading.value = true
+  errorMessage.value = ''
+  resultMeta.value = null
+  pageCache.value = {}
+  loadingPrevious.value = false
+  loadingNext.value = false
+
+  const cachedSnapshot = getSearchPageContext(query)
+  const canRestoreSnapshot =
+    !/^\d+$/.test(trimmedKeyword) && preferSnapshot && cachedSnapshot?.routePage === targetPage
+  if (canRestoreSnapshot && (await restoreContextSnapshot(cachedSnapshot, generation))) {
+    initialLoading.value = false
+    return
+  }
+  if (!isCurrentGeneration(generation, context)) return
+  clearSearchPageContext(query)
+
   if (/^\d+$/.test(trimmedKeyword)) {
-    initialLoading.value = true
-    errorMessage.value = ''
-    resultMeta.value = null
-    pageCache.value = {}
     let album: AlbumDetail
     try {
       album = await JmcomicService.getAlbum(trimmedKeyword)
+      if (!isCurrentGeneration(generation, context)) return
       if (!album || String(album.id ?? '').trim() !== trimmedKeyword || !album.title?.trim()) {
         throw new Error('invalid album detail')
       }
     } catch {
+      if (!isCurrentGeneration(generation, context)) return
       await showToast('本子不存在', 'danger')
-      return
-    } finally {
       initialLoading.value = false
+      return
     }
+    if (!isCurrentGeneration(generation, context)) return
+    initialLoading.value = false
     try {
       await router.replace({
         path: `/album/${trimmedKeyword}`,
@@ -288,26 +448,26 @@ const resetWithPage = async (query: SearchQuery) => {
     return
   }
 
-  initialLoading.value = true
-  errorMessage.value = ''
-  resultMeta.value = null
-  pageCache.value = {}
-
   try {
-    const pageResult = await fetchPage(query, targetPage)
+    const pageResult = await fetchPage({ ...context, page: targetPage }, targetPage)
+    if (!isCurrentGeneration(generation, context)) return
     resultMeta.value = pageResult
-    pageCache.value = {
-      [targetPage]: pageResult.content,
-    }
+    commitPage(targetPage, pageResult.content, 'reset')
     await nextTick()
-    void contentRef.value?.$el?.scrollToTop?.(0)
+    const scrollEl = await resolveScrollElement()
+    if (scrollEl) scrollEl.scrollTop = 0
+    await contentRef.value?.$el?.scrollToTop?.(0)
+    savedScrollTop.value = 0
     pageAtTop.value = true
+    saveContextSnapshot()
   } catch (error) {
-    resultMeta.value = null
-    pageCache.value = {}
-    errorMessage.value = sanitizeError(error, '搜索失败')
+    if (isCurrentGeneration(generation, context)) {
+      resultMeta.value = null
+      pageCache.value = {}
+      errorMessage.value = sanitizeError(error, '搜索失败')
+    }
   } finally {
-    initialLoading.value = false
+    if (isCurrentGeneration(generation, context)) initialLoading.value = false
   }
 }
 
@@ -326,31 +486,18 @@ const updateRouteQuery = (query: SearchQuery) => {
 
 const submitSearch = (query: SearchQuery) => {
   const newQuery = { ...query, page: 1 }
-  if (/^\d+$/.test((newQuery.keyword ?? '').trim())) {
-    lastSearchedQuery.value = { ...newQuery }
-    void resetWithPage(newQuery)
-    return
-  }
   lastSearchedQuery.value = { ...newQuery }
-  void resetWithPage(newQuery)
-  updateRouteQuery(newQuery)
+  void resetWithPage(newQuery, { preferSnapshot: false })
+  if (!/^\d+$/.test((newQuery.keyword ?? '').trim())) updateRouteQuery(newQuery)
 }
 
 const submitOverlaySearch = (query: SearchQuery) => {
   closeSearchOverlay()
-  const newQuery = { ...query, page: 1 }
-  if (/^\d+$/.test((newQuery.keyword ?? '').trim())) {
-    lastSearchedQuery.value = { ...newQuery }
-    void resetWithPage(newQuery)
-    return
-  }
-  lastSearchedQuery.value = { ...newQuery }
-  void resetWithPage(newQuery)
-  updateRouteQuery(newQuery)
+  submitSearch(query)
 }
 
 const retrySearch = () => {
-  void resetWithPage(currentQuery.value)
+  void resetWithPage(currentQuery.value, { preferSnapshot: false })
 }
 
 const openSearch = () => {
@@ -369,76 +516,100 @@ const scrollToTop = () => {
 }
 
 const appendPage = async (page: number) => {
-  if (loadingNext.value || initialLoading.value || !canLoadNext.value) {
+  if (loadingNext.value || initialLoading.value || !canLoadNext.value) return
+  if (pageCache.value[page] || loadedPageEnd.value === null || page !== loadedPageEnd.value + 1)
     return
-  }
+
+  const context = { ...activeContextQuery }
+  const generation = queryGeneration
+  const anchorPage =
+    loadedPages.value.length >= SEARCH_PAGE_WINDOW_SIZE ? loadedPageStart.value : null
+  const anchorEntry =
+    displayItems.value.find((entry) => entry.page !== anchorPage) ?? displayItems.value[0]
+  const anchorKey = anchorEntry
+    ? `${anchorEntry.page}-${anchorEntry.indexInPage}-${anchorEntry.item.id}`
+    : null
+  const previousAnchorTop = anchorKey
+    ? (resultContainerRef.value?.getEntryElement?.(anchorKey)?.getBoundingClientRect().top ?? null)
+    : null
 
   loadingNext.value = true
   try {
     errorMessage.value = ''
-    const pageResult = await fetchPage(currentQuery.value, page)
+    const pageResult = await fetchPage({ ...context, page: currentQuery.value.page }, page)
+    if (!isCurrentGeneration(generation, context)) return
     resultMeta.value = pageResult
-    pageCache.value = {
-      ...pageCache.value,
-      [page]: pageResult.content,
+    commitPage(page, pageResult.content, 'append')
+    await nextTick()
+    if (anchorKey && previousAnchorTop !== null) {
+      const nextTop = resultContainerRef.value
+        ?.getEntryElement?.(anchorKey)
+        ?.getBoundingClientRect().top
+      const scrollEl = await resolveScrollElement()
+      if (scrollEl && nextTop !== undefined && nextTop !== null) {
+        scrollEl.scrollTop += nextTop - previousAnchorTop
+      }
     }
+    saveContextSnapshot()
     await maybeLoadNextAfterRender()
   } catch (error) {
-    errorMessage.value = sanitizeError(error, '加载下一页失败')
+    if (isCurrentGeneration(generation, context)) {
+      errorMessage.value = sanitizeError(error, '加载下一页失败')
+    }
   } finally {
-    loadingNext.value = false
+    if (isCurrentGeneration(generation, context)) loadingNext.value = false
   }
 }
 
 const prependPage = async (page: number) => {
-  if (loadingPrevious.value || initialLoading.value || !canLoadPrevious.value) {
+  if (loadingPrevious.value || initialLoading.value || !canLoadPrevious.value) return
+  if (pageCache.value[page] || loadedPageStart.value === null || page !== loadedPageStart.value - 1)
     return
-  }
 
+  const context = { ...activeContextQuery }
+  const generation = queryGeneration
   const contentScrollElement = await resolveScrollElement()
-  const anchorEntry = displayItems.value[0]
+  if (!isCurrentGeneration(generation, context)) return
+  const anchorPage =
+    loadedPages.value.length >= SEARCH_PAGE_WINDOW_SIZE ? loadedPageEnd.value : null
+  const anchorEntry =
+    displayItems.value.find((entry) => entry.page !== anchorPage) ?? displayItems.value[0]
   const anchorEntryKey = anchorEntry
     ? `${anchorEntry.page}-${anchorEntry.indexInPage}-${anchorEntry.item.id}`
     : null
   const previousAnchorTop = anchorEntryKey
-    ? (resultContainerRef.value?.getEntryElement(anchorEntryKey)?.getBoundingClientRect().top ??
+    ? (resultContainerRef.value?.getEntryElement?.(anchorEntryKey)?.getBoundingClientRect().top ??
       null)
     : null
-  const resultRoot = resultContainerRef.value?.getRootElement()
+  const resultRoot = resultContainerRef.value?.getRootElement?.()
   const previousRootTop = resultRoot?.getBoundingClientRect().top ?? null
 
-  if (!contentScrollElement || !resultRoot) {
-    return
-  }
+  if (!contentScrollElement || !resultRoot) return
 
   loadingPrevious.value = true
   try {
     errorMessage.value = ''
-    const pageResult = await fetchPage(currentQuery.value, page)
+    const pageResult = await fetchPage({ ...context, page: currentQuery.value.page }, page)
+    if (!isCurrentGeneration(generation, context)) return
     resultMeta.value = pageResult
-    pageCache.value = {
-      [page]: pageResult.content,
-      ...pageCache.value,
-    }
+    commitPage(page, pageResult.content, 'prepend')
     await nextTick()
-    if (anchorEntryKey && previousAnchorTop !== null) {
-      const nextAnchorTop =
-        resultContainerRef.value?.getEntryElement(anchorEntryKey)?.getBoundingClientRect().top ??
-        null
-      if (nextAnchorTop !== null) {
-        contentScrollElement.scrollTop += nextAnchorTop - previousAnchorTop
-        return
-      }
-    }
-
-    const nextRootTop = resultRoot.getBoundingClientRect().top
-    if (previousRootTop !== null) {
+    const nextTop = anchorEntryKey
+      ? resultContainerRef.value?.getEntryElement?.(anchorEntryKey)?.getBoundingClientRect().top
+      : null
+    if (nextTop !== undefined && nextTop !== null && previousAnchorTop !== null) {
+      contentScrollElement.scrollTop += nextTop - previousAnchorTop
+    } else if (previousRootTop !== null) {
+      const nextRootTop = resultRoot.getBoundingClientRect().top
       contentScrollElement.scrollTop += nextRootTop - previousRootTop
     }
+    saveContextSnapshot()
   } catch (error) {
-    errorMessage.value = sanitizeError(error, '加载上一页失败')
+    if (isCurrentGeneration(generation, context)) {
+      errorMessage.value = sanitizeError(error, '加载上一页失败')
+    }
   } finally {
-    loadingPrevious.value = false
+    if (isCurrentGeneration(generation, context)) loadingPrevious.value = false
   }
 }
 
@@ -760,13 +931,17 @@ watch(
   { immediate: true },
 )
 
-const savedScrollTop = ref(0)
-
 onDeactivated(() => {
   savedScrollTop.value = scrollElementRef.value?.scrollTop ?? 0
+  snapshotSavedOnDeactivated = saveContextSnapshot()
+})
+
+onBeforeUnmount(() => {
+  if (!snapshotSavedOnDeactivated) saveContextSnapshot()
 })
 
 onActivated(async () => {
+  snapshotSavedOnDeactivated = false
   await nextTick()
   const scrollEl = scrollElementRef.value ?? (await resolveScrollElement())
   if (scrollEl && savedScrollTop.value > 0) {
@@ -774,8 +949,11 @@ onActivated(async () => {
   }
 })
 
-onMounted(() => {
-  void resolveScrollElement()
+onMounted(async () => {
+  const scrollEl = await resolveScrollElement()
+  if (scrollEl && savedScrollTop.value > 0) {
+    scrollEl.scrollTop = savedScrollTop.value
+  }
 })
 </script>
 

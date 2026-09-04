@@ -1,7 +1,12 @@
 /* eslint-disable vue/one-component-per-file -- test-only Ionic and child-component fixtures */
 import { flushPromises, mount } from '@vue/test-utils'
-import { defineComponent, h } from 'vue'
-import { beforeEach, describe, expect, test, vi } from 'vitest'
+import { defineComponent, h, KeepAlive, nextTick, onMounted, reactive, ref } from 'vue'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+
+import {
+  clearSearchPageContextCache,
+  getSearchPageContext,
+} from '@/composables/searchPageContextCache'
 
 const mocks = vi.hoisted(() => ({
   route: {
@@ -17,7 +22,12 @@ const mocks = vi.hoisted(() => ({
   categories: vi.fn(),
   getAlbum: vi.fn(),
   showToast: vi.fn(() => Promise.resolve()),
+  scrollElement: { scrollTop: 0, scrollHeight: 5000, clientHeight: 800 },
+  anchorElement: { getBoundingClientRect: vi.fn(() => ({ top: 100 })) },
+  resultRoot: { getBoundingClientRect: vi.fn(() => ({ top: 0 })) },
 }))
+
+mocks.route = reactive(mocks.route)
 
 vi.mock('vue-router', () => ({
   useRoute: () => mocks.route,
@@ -29,7 +39,15 @@ vi.mock('@ionic/vue', () => ({
   IonContent: defineComponent({
     name: 'IonContent',
     setup(_, { slots }) {
-      return () => h('main', slots.default?.())
+      const rootRef = ref<HTMLElement | null>(null)
+      onMounted(() => {
+        if (!rootRef.value) return
+        Object.defineProperty(rootRef.value, 'getScrollElement', {
+          configurable: true,
+          value: () => Promise.resolve(mocks.scrollElement as unknown as HTMLElement),
+        })
+      })
+      return () => h('main', { ref: rootRef }, slots.default?.())
     },
   }),
   IonIcon: defineComponent({ name: 'IonIcon', setup: () => () => h('span') }),
@@ -69,7 +87,11 @@ vi.mock('@/components/search/SearchResultContainer.vue', () => ({
       loading: Boolean,
       errorMessage: { type: String, default: '' },
     },
-    setup() {
+    setup(_, { expose }) {
+      expose({
+        getRootElement: () => mocks.resultRoot,
+        getEntryElement: () => mocks.anchorElement,
+      })
       return () => h('div')
     },
   }),
@@ -120,6 +142,18 @@ vi.mock('@/composables/useAuth', () => ({
 
 import SearchPage from '@/views/SearchPage.vue'
 
+const mountedWrappers: Array<{ unmount: () => void }> = []
+
+const track = <T extends { unmount: () => void }>(wrapper: T) => {
+  mountedWrappers.push(wrapper)
+  return wrapper
+}
+
+afterEach(() => {
+  for (const wrapper of mountedWrappers) wrapper.unmount()
+  mountedWrappers.length = 0
+})
+
 const oldResult = {
   currentPage: 1,
   totalItems: 1,
@@ -137,6 +171,7 @@ const numericQuery = {
 
 describe('SearchPage 数字 ID 搜索', () => {
   beforeEach(() => {
+    clearSearchPageContextCache()
     mocks.route.name = 'SearchPage'
     mocks.route.query = {
       keyword: 'old',
@@ -154,10 +189,15 @@ describe('SearchPage 数字 ID 搜索', () => {
     mocks.categories.mockReset()
     mocks.getAlbum.mockReset()
     mocks.showToast.mockClear()
+    mocks.scrollElement.scrollTop = 0
+    mocks.anchorElement.getBoundingClientRect.mockReset()
+    mocks.anchorElement.getBoundingClientRect.mockReturnValue({ top: 100 })
+    mocks.resultRoot.getBoundingClientRect.mockReset()
+    mocks.resultRoot.getBoundingClientRect.mockReturnValue({ top: 0 })
   })
 
   test('无效数字 ID 会清除普通搜索的旧结果', async () => {
-    const wrapper = mount(SearchPage)
+    const wrapper = track(mount(SearchPage))
     await flushPromises()
     const results = wrapper.findComponent({ name: 'SearchResultContainer' })
     expect(results.props('items')).toHaveLength(1)
@@ -175,7 +215,7 @@ describe('SearchPage 数字 ID 搜索', () => {
     mocks.route.query = { ...mocks.route.query, keyword: '999' }
     mocks.getAlbum.mockResolvedValue({ id: '999', title: '数字本子', image: 'cover.jpg' })
 
-    mount(SearchPage)
+    track(mount(SearchPage))
     await flushPromises()
 
     expect(mocks.router.replace).toHaveBeenCalledWith({
@@ -195,10 +235,119 @@ describe('SearchPage 数字 ID 搜索', () => {
     })
     mocks.router.replace.mockRejectedValue(new Error('navigation failed'))
 
-    mount(SearchPage)
+    track(mount(SearchPage))
     await flushPromises()
 
     expect(mocks.showToast).toHaveBeenCalledWith('Error: navigation failed', 'danger')
     expect(mocks.showToast).not.toHaveBeenCalledWith('本子不存在', 'danger')
+  })
+
+  test('停用后销毁不会用失真的锚点覆盖有效快照', async () => {
+    const active = ref(true)
+    const SearchPageHost = defineComponent({
+      setup() {
+        return () =>
+          h(KeepAlive, null, {
+            default: () => (active.value ? h(SearchPage) : null),
+          })
+      },
+    })
+    const wrapper = mount(SearchPageHost)
+    await flushPromises()
+
+    mocks.scrollElement.scrollTop = 640
+    let captureCount = 0
+    mocks.anchorElement.getBoundingClientRect.mockImplementation(() => {
+      captureCount += 1
+      return { top: captureCount === 1 ? 180 : 0 }
+    })
+
+    active.value = false
+    await nextTick()
+    wrapper.unmount()
+
+    expect(captureCount).toBe(1)
+    expect(
+      getSearchPageContext({
+        keyword: 'old',
+        orderBy: 'mr',
+        time: 'a',
+        searchMainTag: 0,
+      }),
+    ).toMatchObject({ scrollTop: 640, anchorOffset: 180 })
+  })
+
+  test('切换搜索上下文前保存最新窗口并在返回时恢复滚动位置', async () => {
+    const queryA = {
+      keyword: 'A',
+      orderBy: 'mr',
+      time: 'a',
+      searchMainTag: 0,
+      page: 3,
+    }
+    const queryB = { ...queryA, keyword: 'B', page: 1 }
+    mocks.route.query = {
+      keyword: 'A',
+      orderBy: 'mr',
+      time: 'a',
+      searchMainTag: '0',
+      page: '3',
+    }
+    mocks.search.mockImplementation((query: { keyword?: string; page?: number }) =>
+      Promise.resolve({
+        currentPage: query.page ?? 1,
+        totalItems: 400,
+        totalPages: 5,
+        content: [
+          {
+            id: `${query.keyword ?? ''}-${query.page ?? 1}`,
+            title: `${query.keyword ?? ''} 结果`,
+            coverUrl: '',
+            authors: [],
+            tags: [],
+          },
+        ],
+      }),
+    )
+
+    const wrapper = track(mount(SearchPage))
+    await flushPromises()
+    mocks.scrollElement.scrollTop = 420
+
+    wrapper.findComponent({ name: 'SearchHeaderBar' }).vm.$emit('search', queryB)
+    await flushPromises()
+
+    mocks.route.query = {
+      keyword: 'B',
+      orderBy: 'mr',
+      time: 'a',
+      searchMainTag: '0',
+      page: '1',
+    }
+    await nextTick()
+    mocks.route.query = {
+      keyword: 'A',
+      orderBy: 'mr',
+      time: 'a',
+      searchMainTag: '0',
+      page: '3',
+    }
+    await flushPromises()
+    await nextTick()
+    await flushPromises()
+
+    expect(mocks.search).toHaveBeenCalledTimes(2)
+    expect(mocks.scrollElement.scrollTop).toBe(420)
+    expect(wrapper.findComponent({ name: 'SearchResultContainer' }).props('items')).toMatchObject([
+      { item: { id: 'A-3' } },
+    ])
+    expect(
+      getSearchPageContext({
+        keyword: 'A',
+        orderBy: 'mr',
+        time: 'a',
+        searchMainTag: 0,
+      }),
+    ).toMatchObject({ routePage: 3, scrollTop: 420 })
   })
 })

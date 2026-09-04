@@ -5,6 +5,7 @@ import {
   getSearchPageContext,
   getSearchPageContextCacheSize,
   saveSearchPageContext,
+  toSearchPageContextQuery,
   type SearchPageContextSnapshot,
 } from '@/composables/searchPageContextCache'
 
@@ -76,6 +77,17 @@ describe('searchPageContextCache', () => {
       }),
     ).toMatchObject({ routePage: 1 })
     expect(getSearchPageContextCacheSize()).toBe(1)
+  })
+
+  test('搜索上下文会归一化关键词首尾空白', () => {
+    expect(
+      toSearchPageContextQuery({
+        keyword: '  A  ',
+        orderBy: 'mr',
+        time: 'a',
+        searchMainTag: 0,
+      }),
+    ).toEqual({ keyword: 'A', orderBy: 'mr', time: 'a', searchMainTag: 0 })
   })
 
   test('最多保留三个上下文并按最近访问淘汰', () => {

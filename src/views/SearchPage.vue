@@ -198,6 +198,7 @@ const routeAnchorPage = ref(currentQuery.value.page ?? 1)
 
 const pageCache = ref<Record<number, SearchResultItem[]>>({})
 const savedScrollTop = ref(0)
+let snapshotSavedOnDeactivated = false
 let queryGeneration = allocateSearchPageContextGeneration()
 let activeContextQuery = toSearchPageContextQuery({
   keyword: '',
@@ -354,7 +355,9 @@ const captureSnapshot = (): SearchPageContextSnapshot | null => {
 
 const saveContextSnapshot = () => {
   const snapshot = captureSnapshot()
-  if (snapshot) saveSearchPageContext(snapshot)
+  if (!snapshot) return false
+  saveSearchPageContext(snapshot)
+  return true
 }
 
 const restoreContextSnapshot = async (snapshot: SearchPageContextSnapshot, generation: number) => {
@@ -392,6 +395,7 @@ const resetWithPage = async (
   const targetPage = query.page ?? 1
   const trimmedKeyword = (query.keyword ?? '').trim()
   const context = toSearchPageContextQuery(query)
+  if (!contextQueryEqual(context, activeContextQuery)) saveContextSnapshot()
   const generation = allocateSearchPageContextGeneration()
   queryGeneration = generation
   activeContextQuery = context
@@ -929,12 +933,15 @@ watch(
 
 onDeactivated(() => {
   savedScrollTop.value = scrollElementRef.value?.scrollTop ?? 0
-  saveContextSnapshot()
+  snapshotSavedOnDeactivated = saveContextSnapshot()
 })
 
-onBeforeUnmount(() => saveContextSnapshot())
+onBeforeUnmount(() => {
+  if (!snapshotSavedOnDeactivated) saveContextSnapshot()
+})
 
 onActivated(async () => {
+  snapshotSavedOnDeactivated = false
   await nextTick()
   const scrollEl = scrollElementRef.value ?? (await resolveScrollElement())
   if (scrollEl && savedScrollTop.value > 0) {

@@ -52,25 +52,19 @@ const cloneSnapshot = (snapshot: SearchPageContextSnapshot): SearchPageContextSn
   resultMeta: { ...snapshot.resultMeta, content: snapshot.resultMeta.content.map(cloneItem) },
 })
 
-export const toSearchPageContextQuery = (query: SearchQuery): SearchPageContextQuery => ({
-  keyword: query.keyword ?? '',
+export const toSearchPageContextQuery = (
+  query: Pick<SearchQuery, 'keyword' | 'orderBy' | 'time' | 'searchMainTag'>,
+): SearchPageContextQuery => ({
+  keyword: query.keyword?.trim() ?? '',
   orderBy: query.orderBy,
   time: query.time,
   searchMainTag: query.searchMainTag,
 })
 
 export const createSearchPageContextKey = (query: SearchQuery | SearchPageContextQuery) => {
-  const contextQuery: SearchPageContextQuery =
-    'page' in query
-      ? toSearchPageContextQuery(query)
-      : {
-          keyword: query.keyword ?? '',
-          orderBy: query.orderBy,
-          time: query.time,
-          searchMainTag: query.searchMainTag,
-        }
+  const contextQuery = toSearchPageContextQuery(query)
   return JSON.stringify([
-    contextQuery.keyword.trim(),
+    contextQuery.keyword,
     contextQuery.orderBy,
     contextQuery.time,
     contextQuery.searchMainTag,

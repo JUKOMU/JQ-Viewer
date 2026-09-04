@@ -249,6 +249,10 @@ public class PreloadServiceTest {
             public void onImageReady(String photoId, int sortOrder, String type) {
                 assertEquals("network-thumb", photoId);
                 assertEquals(1, sortOrder);
+                if ("image".equals(type)) {
+                    assertTrue(imageCache.has("network-thumb/1"));
+                    assertTrue(imageCache.has("network-thumb/1/thumb"));
+                }
                 readyTypes.add(type);
                 ready.countDown();
             }
@@ -278,6 +282,10 @@ public class PreloadServiceTest {
             public void onImageReady(String photoId, int sortOrder, String type) {
                 assertEquals("local-thumb", photoId);
                 assertEquals(1, sortOrder);
+                if ("image".equals(type)) {
+                    assertTrue(imageCache.has("local-thumb/1"));
+                    assertTrue(imageCache.has("local-thumb/1/thumb"));
+                }
                 readyTypes.add(type);
                 ready.countDown();
             }

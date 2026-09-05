@@ -10,8 +10,8 @@ const mocks = vi.hoisted(() => ({
   manageFavoriteFolder: vi.fn(),
 }))
 
-vi.mock('@/services/jmcomic/JmcomicNativeClient', () => ({
-  jmcomicNativeClient: {
+vi.mock('@/runtime/facadeClient', () => ({
+  createActiveFacadeClient: () => ({
     addListener: mocks.addListener,
     retryImage: mocks.retryImage,
     getBrowseHistory: mocks.getBrowseHistory,
@@ -19,7 +19,7 @@ vi.mock('@/services/jmcomic/JmcomicNativeClient', () => ({
     getAlbum: mocks.getAlbum,
     toggleAlbumFavorite: mocks.toggleAlbumFavorite,
     manageFavoriteFolder: mocks.manageFavoriteFolder,
-  },
+  }),
 }))
 
 import type { ImageReadyEvent } from '@/services/jmcomic/JmcomicClient'

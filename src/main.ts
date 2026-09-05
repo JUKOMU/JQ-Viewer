@@ -3,6 +3,8 @@ import App from './App.vue'
 import router from './router'
 
 import { IonicVue } from '@ionic/vue'
+import { configureRuntime } from './runtime/runtimeContext'
+import { createAndroidRuntime } from './runtime/android/createAndroidRuntime'
 
 /* Core CSS required for Ionic components to work properly */
 import '@ionic/vue/css/core.css'
@@ -34,6 +36,8 @@ import '@ionic/vue/css/palettes/dark.system.css'
 import './theme/variables.css'
 
 const app = createApp(App).use(IonicVue).use(router)
+
+configureRuntime(createAndroidRuntime())
 
 router.isReady().then(() => {
   app.mount('#app')

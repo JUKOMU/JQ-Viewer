@@ -21,9 +21,10 @@ import type {
   JmcomicClient,
   JmcomicListenerHandle,
 } from './JmcomicClient'
-import { jmcomicNativeClient } from './JmcomicNativeClient'
+import { createActiveFacadeClient } from '@/runtime/facadeClient'
+import { getRuntime } from '@/runtime/runtimeContext'
 
-const native: JmcomicClient = jmcomicNativeClient
+const native: JmcomicClient = createActiveFacadeClient(getRuntime)
 
 let downloadNotificationPrompted = false
 let downloadNotificationPromptPromise: Promise<void> | null = null
@@ -34,7 +35,13 @@ async function ensureDownloadNotificationPermission(): Promise<void> {
 
   downloadNotificationPromptPromise = (async () => {
     try {
-      const check = await native.checkNotificationPermission()
+      const policy = getRuntime().services.notifications
+      if (policy.kind !== 'runtime-permission') {
+        downloadNotificationPrompted = true
+        return
+      }
+
+      const check = await policy.permissions.check()
       if (check.granted) {
         downloadNotificationPrompted = true
         return
@@ -53,7 +60,7 @@ async function ensureDownloadNotificationPermission(): Promise<void> {
       await alert.present()
       const dismissed = await alert.onDidDismiss()
       if (dismissed.role === 'confirm') {
-        await native.requestNotificationPermission()
+        await policy.permissions.request()
       }
     } catch {
       // Web 调试或旧系统异常时不阻塞下载提交。

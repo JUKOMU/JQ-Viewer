@@ -165,7 +165,7 @@ const pdfTask = (currentPage = 0, totalPages = 100, status = 'running') => ({
   coverUrl: '',
   authors: '',
   displayTitle: '第一话',
-  savePath: '/tmp/export.pdf',
+  displayPath: '/tmp/export.pdf',
   allowOverwrite: false,
   useOriginal: true,
   compressionRatio: 1,

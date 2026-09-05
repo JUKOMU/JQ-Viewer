@@ -195,11 +195,11 @@ const openLocalChapter = (ch: LocalChapter) => {
     return
   }
 
-  if (ch.pdfData?.filePath) {
+  if (ch.pdfData?.fileRef) {
     void router.push({
       path: '/pdf-reader',
       query: {
-        path: ch.pdfData.filePath,
+        fileRef: String(ch.pdfData.fileRef),
         title: ch.pdfData.fileName,
         albumId: ch.albumId,
         albumTitle: ch.albumTitle,

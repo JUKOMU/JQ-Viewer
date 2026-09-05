@@ -1,6 +1,6 @@
 import type { DocumentInitParameters } from 'pdfjs-dist/types/src/display/api'
-
-const VIRTUAL_BASE = 'https://jqviewer.local'
+import { getRuntime } from '@/runtime/runtimeContext'
+import type { FileRef } from '@/runtime/FileReferences'
 
 export type PdfLoadErrorCode =
   | 'file-missing'
@@ -19,16 +19,12 @@ export class PdfLoadError extends Error {
   }
 }
 
-export function getPdfVirtualUrl(filePath: string): string {
-  const encoded = btoa(unescape(encodeURIComponent(filePath)))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '')
-  return `${VIRTUAL_BASE}/pdf/${encoded}`
+export function getPdfVirtualUrl(file: FileRef): string {
+  return getRuntime().resources.pdfDocumentUrl(file)
 }
 
-export async function fetchPdfArrayBuffer(filePath: string): Promise<ArrayBuffer> {
-  const response = await fetch(getPdfVirtualUrl(filePath))
+export async function fetchPdfArrayBuffer(file: FileRef): Promise<ArrayBuffer> {
+  const response = await fetch(getPdfVirtualUrl(file))
   if (!response.ok) {
     const errorCode = response.headers.get('X-JQViewer-Pdf-Error')
     if (errorCode === 'permission-denied') {

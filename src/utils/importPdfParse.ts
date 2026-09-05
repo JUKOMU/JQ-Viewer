@@ -1,4 +1,5 @@
 import type { AlbumDetail } from '@/services/JmcomicTypes'
+import { asFileRef, type FileRef } from '@/runtime/FileReferences'
 
 /**
  * 从文件名提取 ID 的解析结果。
@@ -8,8 +9,10 @@ import type { AlbumDetail } from '@/services/JmcomicTypes'
 export interface PdfFileParseItem {
   /** 原始文件名（不含路径） */
   fileName: string
-  /** 完整文件路径 */
-  filePath: string
+  /** 平台文件引用 */
+  fileRef: FileRef
+  /** 仅用于展示和文件名解析 */
+  displayPath: string
   /** 提取的所有有效数字串（已过滤 0 开头和 <3 位） */
   extractedIds: string[]
   /** 每个 ID 在文件名中的起止位置 */
@@ -72,7 +75,8 @@ export function parseFilenamesForImport(
 
     files.push({
       fileName,
-      filePath,
+      fileRef: asFileRef(filePath),
+      displayPath: filePath,
       extractedIds: ids,
       idPositions,
       status,

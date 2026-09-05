@@ -83,14 +83,14 @@ import {
 } from '@ionic/vue'
 import { refreshOutline, speedometerOutline } from 'ionicons/icons'
 import { JmcomicService } from '@/services/JmcomicService'
-import type { PluginListenerHandle } from '@capacitor/core'
+import type { ListenerHandle } from '@/runtime/BackendEvents'
 import { useNetworkProbeStore } from '@/composables/networkProbeStore'
 
 const store = useNetworkProbeStore()
 const refreshing = ref(false)
 const measuring = ref(false)
 const latencyMap = ref<Record<string, { latencyMs: number; timedOut: boolean }>>({})
-let probeHandle: PluginListenerHandle | null = null
+let probeHandle: ListenerHandle | null = null
 let refreshTimer: ReturnType<typeof setTimeout> | null = null
 
 onMounted(() => {

@@ -15,7 +15,6 @@ import type {
   HistoryPageResult,
   ImageInfo,
   ImageCacheEntry,
-  ImportedPdfsResult,
   ImportedPdf,
   ImportPdfItem,
   ImportPdfsResult,
@@ -25,10 +24,10 @@ import type {
   OfflineFolderInfo,
   ParseHistoryItem,
   PdfExportTask,
-  PdfExportBatchResult,
   PdfExportProgressEvent,
   PdfExportStatus,
   PdfExportTaskRecord,
+  PdfExportSubmissionTaskResult,
   PdfManagementState,
   PdfStorageDeleteResult,
   PdfScanItem,
@@ -54,6 +53,37 @@ export type ImageFailedEvent = ImageReadyEvent
 
 export interface JmcomicListenerHandle {
   remove: () => Promise<void>
+}
+
+/** Raw DTOs kept inside the Android adapter to preserve the Plugin contract. */
+export type AndroidPdfExportTask = Omit<PdfExportTask, 'target' | 'displayPath'> & {
+  savePath: string
+}
+export type AndroidPdfExportTaskRecord = Omit<
+  PdfExportTaskRecord,
+  'outputFile' | 'displayPath'
+> & {
+  savePath: string
+}
+export type AndroidPdfExportSubmissionTaskResult = Partial<AndroidPdfExportTaskRecord> &
+  Pick<PdfExportSubmissionTaskResult, 'accepted' | 'errorCode' | 'errorMessage'>
+export type AndroidPdfScanItem = Omit<PdfScanItem, 'ref' | 'displayPath'> & { filePath: string }
+export type AndroidImportedPdf = Omit<ImportedPdf, 'fileRef' | 'displayPath'> & {
+  filePath: string
+}
+export type AndroidPdfStorageDeleteResult = Omit<PdfStorageDeleteResult, 'file'> & {
+  filePath: string
+  fileName: string
+}
+export type AndroidImportPdfItem = Omit<ImportPdfItem, 'fileRef' | 'displayPath'> & {
+  filePath: string
+}
+export type AndroidPdfExportBatchResult = {
+  tasks: AndroidPdfExportSubmissionTaskResult[]
+}
+export type AndroidImportedPdfsResult = { pdfs: AndroidImportedPdf[] }
+export type AndroidImportPdfsResult = Omit<ImportPdfsResult, 'results'> & {
+  results?: Array<{ result: string; filePath?: string; fileName?: string; id?: number }>
 }
 
 export interface JmcomicClient {
@@ -281,7 +311,7 @@ export interface JmcomicClient {
 
   pickImageAndOcr(): Promise<{ text: string; error?: string }>
 
-  exportPdfBatch(options: { tasks: PdfExportTask[] }): Promise<PdfExportBatchResult>
+  exportPdfBatch(options: { tasks: AndroidPdfExportTask[] }): Promise<AndroidPdfExportBatchResult>
 
   pickFolder(): Promise<{ path: string; treeUri?: string; cancelled: boolean }>
 
@@ -309,11 +339,11 @@ export interface JmcomicClient {
 
   consumeLaunchRoute(): Promise<{ route?: string }>
 
-  scanPdfFiles(options: { path: string; treeUri?: string }): Promise<{ files: PdfScanItem[] }>
+  scanPdfFiles(options: { path: string; treeUri?: string }): Promise<{ files: AndroidPdfScanItem[] }>
 
-  importPdfs(options: { items: ImportPdfItem[] }): Promise<ImportPdfsResult>
+  importPdfs(options: { items: AndroidImportPdfItem[] }): Promise<AndroidImportPdfsResult>
 
-  getImportedPdfs(): Promise<ImportedPdfsResult>
+  getImportedPdfs(): Promise<AndroidImportedPdfsResult>
 
   getPdfFiles(options: {
     sourceType?: 'imported' | 'exported'
@@ -322,17 +352,17 @@ export interface JmcomicClient {
     query?: string
     cursor?: string
     limit: number
-  }): Promise<{ files: ImportedPdf[]; nextCursor?: string }>
+  }): Promise<{ files: AndroidImportedPdf[]; nextCursor?: string }>
 
-  refreshPdfFileAvailability(options: { ids: number[] }): Promise<{ files: ImportedPdf[] }>
+  refreshPdfFileAvailability(options: { ids: number[] }): Promise<{ files: AndroidImportedPdf[] }>
 
-  inspectPdfFileForDeletion(options: { id: number }): Promise<ImportedPdf>
+  inspectPdfFileForDeletion(options: { id: number }): Promise<AndroidImportedPdf>
 
-  verifyPdfFile(options: { id: number }): Promise<ImportedPdf>
+  verifyPdfFile(options: { id: number }): Promise<AndroidImportedPdf>
 
   removePdfFromLibrary(options: { id: number }): Promise<{ success: boolean }>
 
-  deletePdfFile(options: { id: number }): Promise<PdfStorageDeleteResult>
+  deletePdfFile(options: { id: number }): Promise<AndroidPdfStorageDeleteResult>
 
   getPdfManagementState(): Promise<PdfManagementState>
 
@@ -342,16 +372,16 @@ export interface JmcomicClient {
     status?: PdfExportStatus
     cursor?: string
     limit: number
-  }): Promise<{ tasks: PdfExportTaskRecord[]; nextCursor?: string }>
+  }): Promise<{ tasks: AndroidPdfExportTaskRecord[]; nextCursor?: string }>
 
-  getPdfExportTask(options: { exportId: string }): Promise<PdfExportTaskRecord>
+  getPdfExportTask(options: { exportId: string }): Promise<AndroidPdfExportTaskRecord>
 
-  cancelPdfExport(options: { exportId: string }): Promise<PdfExportTaskRecord>
+  cancelPdfExport(options: { exportId: string }): Promise<AndroidPdfExportTaskRecord>
 
   retryPdfExport(options: {
     exportId: string
     allowOverwrite?: boolean
-  }): Promise<PdfExportTaskRecord>
+  }): Promise<AndroidPdfExportTaskRecord>
 
   deletePdfExportTask(options: { exportId: string }): Promise<{ success: boolean }>
 

@@ -19,7 +19,7 @@
 defineOptions({ name: 'App' })
 
 import { IonApp } from '@ionic/vue'
-import type { PluginListenerHandle } from '@capacitor/core'
+import type { ListenerHandle } from '@/runtime/BackendEvents'
 import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import MainMenu from '@/components/menu/MainMenu.vue'
@@ -197,7 +197,7 @@ const keepAliveNames = computed(() =>
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let activeToast: Awaited<ReturnType<typeof showToast>> | null = null
-let launchRouteHandle: PluginListenerHandle | null = null
+let launchRouteHandle: ListenerHandle | null = null
 
 const isSafeLaunchRoute = (value?: string): value is string =>
   !!value && value.startsWith('/') && !value.startsWith('//')

@@ -22,7 +22,7 @@ const deferred = <T>(): Deferred<T> => {
 const mocks = vi.hoisted(() => ({
   route: {
     query: {
-      path: '/books/test.pdf',
+      fileRef: '/books/test.pdf',
       title: '测试 PDF',
       albumId: 'album-1',
       chapterId: 'chapter-1',
@@ -317,7 +317,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   mocks.displayMode = 'vertical'
   mocks.setRouteQuery?.({
-    path: '/books/test.pdf',
+    fileRef: '/books/test.pdf',
     title: '测试 PDF',
     albumId: 'album-1',
     chapterId: 'chapter-1',
@@ -485,7 +485,7 @@ describe('PdfReaderPage PDF 专属渲染尺寸', () => {
 
   test('模式切换保持当前页和进度，并在所需像素宽度上升时只重渲染活动窗口', async () => {
     mocks.setRouteQuery?.({
-      path: '/books/test.pdf',
+      fileRef: '/books/test.pdf',
       albumId: 'album-1',
       chapterId: 'chapter-1',
       page: '2',

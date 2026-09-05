@@ -23,7 +23,8 @@ import {
 
 const file = (id: number): ImportedPdf => ({
   id,
-  filePath: `/pdf/${id}.pdf`,
+  fileRef: `/pdf/${id}.pdf` as ImportedPdf['fileRef'],
+  displayPath: `/pdf/${id}.pdf`,
   fileName: `${id}.pdf`,
   sourceType: 'imported',
   ownership: 'external_reference',
@@ -53,7 +54,7 @@ const task = (revision: number): PdfExportTaskRecord => ({
   authors: '',
   chapterId: '1',
   displayTitle: '第一话',
-  savePath: '/pdf/1.pdf',
+  displayPath: '/pdf/1.pdf',
   allowOverwrite: false,
   useOriginal: true,
   compressionRatio: 1,

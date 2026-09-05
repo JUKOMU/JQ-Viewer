@@ -1,17 +1,39 @@
 import { App } from '@capacitor/app'
-import type { JmcomicClient } from '@/services/jmcomic/JmcomicClient'
-import type { RelocationProgress } from '@/services/JmcomicTypes'
+import type {
+  AndroidImportPdfsResult,
+  AndroidImportedPdf,
+  AndroidPdfExportBatchResult,
+  AndroidPdfExportSubmissionTaskResult,
+  AndroidPdfExportTaskRecord,
+  AndroidPdfScanItem,
+  AndroidPdfStorageDeleteResult,
+  JmcomicClient,
+} from '@/services/jmcomic/JmcomicClient'
+import type {
+  ImportedPdf,
+  ImportPdfItem,
+  PdfExportSubmissionTaskResult,
+  PdfExportTask,
+  PdfExportTaskRecord,
+  PdfStorageDeleteResult,
+  RelocationProgress,
+} from '@/services/JmcomicTypes'
 import type { BackendEvents } from '../BackendEvents'
-import { asFileRef, asFolderRef, type FileRef, type FolderRef } from '../FileReferences'
-import { withRuntimeError } from '../errors'
 import {
-  PDF_PLATFORM_METHODS,
-  type AppInfo,
-  type FileService,
-  type NotificationPermissionPort,
-  type PdfService,
-  type PlatformServices,
-  type PublicDownloadService,
+  asFileRef,
+  asFolderRef,
+  type FileDescriptor,
+  type FileRef,
+  type FolderRef,
+} from '../FileReferences'
+import { withRuntimeError } from '../errors'
+import type {
+  AppInfo,
+  FileService,
+  NotificationPermissionPort,
+  PdfService,
+  PlatformServices,
+  PublicDownloadService,
 } from '../PlatformServices'
 import { createAndroidUpdater } from './androidUpdater'
 
@@ -91,12 +113,177 @@ function createPublicDownloadService(
   }
 }
 
-function createPdfService(native: JmcomicClient): PdfService {
-  const service = {} as PdfService
-  for (const method of PDF_PLATFORM_METHODS) {
-    ;(service as Record<string, unknown>)[method] = native[method].bind(native)
+function fileNameFromPath(filePath: string): string {
+  const lastSeparator = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'))
+  return lastSeparator >= 0 ? filePath.slice(lastSeparator + 1) : filePath
+}
+
+function toFileDescriptor(filePath: string, fileName = fileNameFromPath(filePath)): FileDescriptor {
+  return { ref: asFileRef(filePath), fileName, displayPath: filePath }
+}
+
+function toImportedPdf(file: AndroidImportedPdf): ImportedPdf {
+  const { filePath, ...rest } = file
+  return { ...rest, fileRef: asFileRef(filePath), displayPath: filePath }
+}
+
+function toPdfExportTaskRecord(task: AndroidPdfExportTaskRecord): PdfExportTaskRecord {
+  const { savePath, ...rest } = task
+  return {
+    ...rest,
+    outputFile: toFileDescriptor(savePath),
+    displayPath: savePath,
   }
-  return service
+}
+
+function toPdfExportSubmissionTaskResult(
+  task: AndroidPdfExportSubmissionTaskResult,
+): PdfExportSubmissionTaskResult {
+  const { savePath, ...rest } = task
+  return {
+    ...rest,
+    ...(savePath ? { outputFile: toFileDescriptor(savePath), displayPath: savePath } : {}),
+  }
+}
+
+function toImportPdfsResult(result: AndroidImportPdfsResult) {
+  return {
+    ...result,
+    ...(result.results
+      ? {
+          results: result.results.map((item) => ({
+            result: item.result,
+            ...(item.filePath
+              ? { file: toFileDescriptor(item.filePath, item.fileName) }
+              : {}),
+            ...(item.id !== undefined ? { id: item.id } : {}),
+          })),
+        }
+      : {}),
+  }
+}
+
+function toPdfStorageDeleteResult(result: AndroidPdfStorageDeleteResult): PdfStorageDeleteResult {
+  const { filePath, fileName, ...rest } = result
+  return { ...rest, file: toFileDescriptor(filePath, fileName) }
+}
+
+const ANDROID_PDF_METHODS = [
+  'exportPdfBatch',
+  'scanPdfFiles',
+  'importPdfs',
+  'getImportedPdfs',
+  'getPdfFiles',
+  'refreshPdfFileAvailability',
+  'inspectPdfFileForDeletion',
+  'verifyPdfFile',
+  'removePdfFromLibrary',
+  'deletePdfFile',
+  'getPdfManagementState',
+  'acknowledgePdfDatabaseReset',
+  'getPdfExportTasks',
+  'getPdfExportTask',
+  'cancelPdfExport',
+  'retryPdfExport',
+  'deletePdfExportTask',
+  'deleteImportedPdf',
+  'openPdf',
+  'openPdfFolder',
+  'getPdfInfo',
+  'renderPdfPage',
+] as const
+
+function createPdfService(native: JmcomicClient, events: BackendEvents): PdfService {
+  void ANDROID_PDF_METHODS
+  return {
+    exportPdfBatch: ({ tasks }: { tasks: PdfExportTask[] }) =>
+      withRuntimeError(async () => {
+        const result: AndroidPdfExportBatchResult = await native.exportPdfBatch({
+          tasks: tasks.map(({ target: _target, displayPath, ...task }) => ({
+            ...task,
+            savePath: displayPath,
+          })),
+        })
+        return { tasks: result.tasks.map(toPdfExportSubmissionTaskResult) }
+      }),
+    scanPdfFiles: (folder) =>
+      withRuntimeError(async () => {
+        const value = String(folder)
+        const result: { files: AndroidPdfScanItem[] } = await native.scanPdfFiles({
+          path: value.startsWith('content://') ? '' : value,
+          ...(value.startsWith('content://') ? { treeUri: value } : {}),
+        })
+        return {
+          files: result.files.map((file) => ({
+            ref: asFileRef(file.filePath),
+            fileName: file.fileName,
+            displayPath: file.filePath,
+          })),
+        }
+      }),
+    importPdfs: (items: ImportPdfItem[]) =>
+      withRuntimeError(() =>
+        native
+          .importPdfs({
+            items: items.map(({ fileRef, displayPath, ...item }) => ({
+              ...item,
+              filePath: String(fileRef || displayPath),
+            })),
+          })
+          .then(toImportPdfsResult),
+      ),
+    getImportedPdfs: () =>
+      withRuntimeError(async () => {
+        const result = await native.getImportedPdfs()
+        return { pdfs: result.pdfs.map(toImportedPdf) }
+      }),
+    getPdfFiles: (options) =>
+      withRuntimeError(async () => {
+        const result = await native.getPdfFiles(options)
+        return { files: result.files.map(toImportedPdf), nextCursor: result.nextCursor }
+      }),
+    refreshPdfFileAvailability: (ids) =>
+      withRuntimeError(async () => {
+        const result = await native.refreshPdfFileAvailability({ ids })
+        return { files: result.files.map(toImportedPdf) }
+      }),
+    inspectPdfFileForDeletion: (id) =>
+      withRuntimeError(async () => toImportedPdf(await native.inspectPdfFileForDeletion({ id }))),
+    verifyPdfFile: (id) =>
+      withRuntimeError(async () => toImportedPdf(await native.verifyPdfFile({ id }))),
+    removePdfFromLibrary: (id) =>
+      withRuntimeError(() => native.removePdfFromLibrary({ id })),
+    deletePdfFile: (id) =>
+      withRuntimeError(async () => toPdfStorageDeleteResult(await native.deletePdfFile({ id }))),
+    getPdfManagementState: () => withRuntimeError(() => native.getPdfManagementState()),
+    acknowledgePdfDatabaseReset: () =>
+      withRuntimeError(() => native.acknowledgePdfDatabaseReset()),
+    getPdfExportTasks: (options) =>
+      withRuntimeError(async () => {
+        const result = await native.getPdfExportTasks(options)
+        return { tasks: result.tasks.map(toPdfExportTaskRecord), nextCursor: result.nextCursor }
+      }),
+    getPdfExportTask: (exportId) =>
+      withRuntimeError(async () => toPdfExportTaskRecord(await native.getPdfExportTask({ exportId }))),
+    cancelPdfExport: (exportId) =>
+      withRuntimeError(async () => toPdfExportTaskRecord(await native.cancelPdfExport({ exportId }))),
+    retryPdfExport: (exportId, allowOverwrite = false) =>
+      withRuntimeError(async () =>
+        toPdfExportTaskRecord(await native.retryPdfExport({ exportId, allowOverwrite })),
+      ),
+    deletePdfExportTask: (exportId) =>
+      withRuntimeError(() => native.deletePdfExportTask({ exportId })),
+    deleteImportedPdf: (id) => withRuntimeError(() => native.deleteImportedPdf({ id })),
+    updateLocalEpisodeType: (albumId, isSingleEpisode) =>
+      withRuntimeError(() => native.updateLocalEpisodeType({ albumId, isSingleEpisode })),
+    openPdf: (file) => withRuntimeError(() => native.openPdf({ filePath: String(file) })),
+    openPdfFolder: (file) =>
+      withRuntimeError(() => native.openPdfFolder({ filePath: String(file) })),
+    getPdfInfo: (file) => withRuntimeError(() => native.getPdfInfo({ filePath: String(file) })),
+    renderPdfPage: (file, page, targetWidth) =>
+      withRuntimeError(() => native.renderPdfPage({ filePath: String(file), page, targetWidth })),
+    onProgress: (handler) => events.onPdfExportProgress(handler),
+  }
 }
 
 export function createAndroidPlatformServices(
@@ -174,7 +361,7 @@ export function createAndroidPlatformServices(
         onRoute: (handler) => events.onLaunchRoute(handler),
       },
     },
-    pdf: createPdfService(native),
+    pdf: createPdfService(native, events),
     events,
   }
 }

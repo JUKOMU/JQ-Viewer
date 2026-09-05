@@ -2,6 +2,7 @@ import { createAppAlert } from './AppAlertService'
 import { shallowRef } from 'vue'
 import type { UpdateManifest, UpdateProgressEvent } from './JmcomicTypes'
 import { JmcomicService, showToast } from './JmcomicService'
+import { getRuntime } from '@/runtime/runtimeContext'
 
 const IDLE_STATE: UpdateProgressEvent = {
   revision: 0,
@@ -25,6 +26,11 @@ let promptPromise: Promise<unknown> | null = null
 let installPromise: Promise<InstallResult> | null = null
 let updateStarted = false
 
+function applyState(next: UpdateProgressEvent): void {
+  if (next.revision < state.value.revision) return
+  state.value = { ...next }
+}
+
 export interface UpdateCheckResult {
   updateAvailable: boolean
   manifest: UpdateManifest
@@ -44,8 +50,7 @@ async function ensureProgressListener(): Promise<void> {
   if (listenerHandle) return
   if (listenerPromise) return listenerPromise
   listenerPromise = JmcomicService.addUpdateProgressListener((event) => {
-    if (event.revision < state.value.revision) return
-    state.value = { ...event }
+    applyState(event)
     if (event.phase === 'ready_to_install' && updateStarted) {
       void installReadyUpdate()
     }
@@ -54,7 +59,7 @@ async function ensureProgressListener(): Promise<void> {
       listenerHandle = handle
       return JmcomicService.getUpdateState()
         .then((snapshot) => {
-          state.value = { ...snapshot }
+          applyState(snapshot)
         })
         .catch(() => {
           // Web 调试或旧版本原生插件可能没有状态快照。
@@ -175,7 +180,13 @@ async function installReadyUpdate(): Promise<InstallResult> {
       await alert.present()
       const dismissed = await alert.onDidDismiss()
       if (dismissed.role === 'confirm') {
-        await JmcomicService.requestInstallPermission()
+        const updater = getRuntime().services.updater
+        if (updater.available) {
+          const current = await updater.api.getState().catch(() => undefined)
+          if (current?.requiredUserAction) {
+            await updater.api.performUserAction(current.requiredUserAction)
+          }
+        }
       }
       return result
     } catch (error) {

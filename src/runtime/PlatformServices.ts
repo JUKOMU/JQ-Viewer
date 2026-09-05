@@ -1,5 +1,18 @@
 import type { RelocationProgress } from '@/services/JmcomicTypes'
-import type { JmcomicClient } from '@/services/jmcomic/JmcomicClient'
+import type {
+  ImportedPdf,
+  ImportedPdfsResult,
+  ImportPdfItem,
+  ImportPdfsResult,
+  PdfExportBatchResult,
+  PdfExportProgressEvent,
+  PdfExportStatus,
+  PdfExportTask,
+  PdfExportTaskRecord,
+  PdfManagementState,
+  PdfScanItem,
+  PdfStorageDeleteResult,
+} from '@/services/JmcomicTypes'
 import type { BackendEvents, ListenerHandle } from './BackendEvents'
 import type { FileDescriptor, FileRef, FolderDescriptor, FolderRef } from './FileReferences'
 import type { UpdaterService } from './UpdateTypes'
@@ -59,37 +72,46 @@ export interface LaunchRouteService {
   onRoute(handler: (event: { route: string }) => void): Promise<ListenerHandle>
 }
 
-/**
- * PDF command/query methods remain behind the platform adapter. The raw
- * Android path fields are temporary adapter inputs and are not used by the
- * common services that will consume FileRef in the next integration stage.
- */
-export const PDF_PLATFORM_METHODS = [
-  'exportPdfBatch',
-  'scanPdfFiles',
-  'importPdfs',
-  'getImportedPdfs',
-  'getPdfFiles',
-  'refreshPdfFileAvailability',
-  'inspectPdfFileForDeletion',
-  'verifyPdfFile',
-  'removePdfFromLibrary',
-  'deletePdfFile',
-  'getPdfManagementState',
-  'acknowledgePdfDatabaseReset',
-  'getPdfExportTasks',
-  'getPdfExportTask',
-  'cancelPdfExport',
-  'retryPdfExport',
-  'deletePdfExportTask',
-  'deleteImportedPdf',
-  'openPdf',
-  'openPdfFolder',
-  'getPdfInfo',
-  'renderPdfPage',
-] as const satisfies readonly (keyof JmcomicClient)[]
-
-export type PdfService = Pick<JmcomicClient, (typeof PDF_PLATFORM_METHODS)[number]>
+export interface PdfService {
+  exportPdfBatch(options: { tasks: PdfExportTask[] }): Promise<PdfExportBatchResult>
+  scanPdfFiles(folder: FolderRef): Promise<{ files: PdfScanItem[] }>
+  importPdfs(items: ImportPdfItem[]): Promise<ImportPdfsResult>
+  getImportedPdfs(): Promise<ImportedPdfsResult>
+  getPdfFiles(options: {
+    sourceType?: 'imported' | 'exported'
+    availability?: ImportedPdf['availability'] | 'problem'
+    folderId?: string
+    query?: string
+    cursor?: string
+    limit: number
+  }): Promise<{ files: ImportedPdf[]; nextCursor?: string }>
+  refreshPdfFileAvailability(ids: number[]): Promise<{ files: ImportedPdf[] }>
+  inspectPdfFileForDeletion(id: number): Promise<ImportedPdf>
+  verifyPdfFile(id: number): Promise<ImportedPdf>
+  removePdfFromLibrary(id: number): Promise<{ success: boolean }>
+  deletePdfFile(id: number): Promise<PdfStorageDeleteResult>
+  getPdfManagementState(): Promise<PdfManagementState>
+  acknowledgePdfDatabaseReset(): Promise<{ acknowledged: boolean }>
+  getPdfExportTasks(options: {
+    status?: PdfExportStatus
+    cursor?: string
+    limit: number
+  }): Promise<{ tasks: PdfExportTaskRecord[]; nextCursor?: string }>
+  getPdfExportTask(exportId: string): Promise<PdfExportTaskRecord>
+  cancelPdfExport(exportId: string): Promise<PdfExportTaskRecord>
+  retryPdfExport(exportId: string, allowOverwrite?: boolean): Promise<PdfExportTaskRecord>
+  deletePdfExportTask(exportId: string): Promise<{ success: boolean }>
+  deleteImportedPdf(id: number): Promise<{ success: boolean }>
+  updateLocalEpisodeType(
+    albumId: string,
+    isSingleEpisode: boolean,
+  ): Promise<{ success: boolean; updatedDownloads: number; updatedPdfs: number }>
+  openPdf(file: FileRef): Promise<{ success: boolean }>
+  openPdfFolder(file: FileRef): Promise<{ success: boolean }>
+  getPdfInfo(file: FileRef): Promise<{ pageCount: number }>
+  renderPdfPage(file: FileRef, page: number, targetWidth: number): Promise<{ imageUrl: string }>
+  onProgress(handler: (event: PdfExportProgressEvent) => void): Promise<ListenerHandle>
+}
 
 export interface ReaderPlatformServices {
   orientation: Capability<{ set(orientation: string): Promise<{ success: boolean }> }>

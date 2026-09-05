@@ -103,6 +103,10 @@ export interface JmcomicClient {
 
   setOcrEnabled(options: { enabled: boolean }): Promise<{ success: boolean }>
 
+  setPicacomicEnabled(options: { enabled: boolean }): Promise<{ success: boolean }>
+
+  setPicacomicConversionEnabled(options: { enabled: boolean }): Promise<{ success: boolean }>
+
   setDownloadPublic(options: {
     open: boolean
   }): Promise<{ success: boolean; downloadPublic: boolean; moved: number }>

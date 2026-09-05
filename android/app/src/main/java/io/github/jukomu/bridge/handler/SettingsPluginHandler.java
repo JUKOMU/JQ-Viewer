@@ -136,6 +136,40 @@ public final class SettingsPluginHandler {
         }
     }
 
+    /**
+     * 保存 PicaComic 接入开关；enabled 为必填布尔值。
+     */
+    public void setPicacomicEnabled(PluginCall call) {
+        try {
+            Boolean enabled = call.getBoolean("enabled");
+            if (enabled == null) {
+                call.reject("enabled is required");
+                return;
+            }
+            settingsService.setPicacomicEnabled(enabled);
+            call.resolve(successResult());
+        } catch (Exception error) {
+            call.reject(error.getMessage(), error);
+        }
+    }
+
+    /**
+     * 保存 PicaComic 转换开关；enabled 为必填布尔值。
+     */
+    public void setPicacomicConversionEnabled(PluginCall call) {
+        try {
+            Boolean enabled = call.getBoolean("enabled");
+            if (enabled == null) {
+                call.reject("enabled is required");
+                return;
+            }
+            settingsService.setPicacomicConversionEnabled(enabled);
+            call.resolve(successResult());
+        } catch (Exception error) {
+            call.reject(error.getMessage(), error);
+        }
+    }
+
     private static JSObject successResult() {
         JSObject result = new JSObject();
         result.put("success", true);

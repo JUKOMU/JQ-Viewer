@@ -201,6 +201,8 @@ export interface AllSettings {
   readerKeepScreenOn: boolean
   readerVolumeNavigation: boolean
   readerAutoShowToolbarAtEnd?: boolean
+  picacomicEnabled?: boolean
+  picacomicConversionEnabled?: boolean
 }
 
 // --- 设置页：文件搬迁 ---

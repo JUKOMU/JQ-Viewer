@@ -650,6 +650,16 @@ public class JmcomicPlugin extends Plugin {
         settingsHandler.setOcrEnabled(call);
     }
 
+    @PluginMethod
+    public void setPicacomicEnabled(PluginCall call) {
+        settingsHandler.setPicacomicEnabled(call);
+    }
+
+    @PluginMethod
+    public void setPicacomicConversionEnabled(PluginCall call) {
+        settingsHandler.setPicacomicConversionEnabled(call);
+    }
+
     // ========== 阅读器设置 ==========
 
     @PluginMethod

@@ -408,6 +408,39 @@
           </button>
         </div>
 
+        <!-- 分组：实验性功能 -->
+        <div class="section-label">实验性功能</div>
+        <div class="card">
+          <div class="row">
+            <div class="row-left">
+              <span class="row-title">接入 PicaComic</span>
+            </div>
+            <div class="row-right">
+              <IonToggle
+                :checked="picacomicEnabled"
+                :disabled="isSwitchingPicacomic"
+                aria-label="接入 PicaComic"
+                color="warning"
+                @ion-change="onPicacomicEnabledChange"
+              />
+            </div>
+          </div>
+          <div class="row divider">
+            <div class="row-left">
+              <span class="row-title">转换到 PicaComic</span>
+            </div>
+            <div class="row-right">
+              <IonToggle
+                :checked="picacomicConversionEnabled"
+                :disabled="isSwitchingPicacomic || !picacomicEnabled"
+                aria-label="转换到 PicaComic"
+                color="warning"
+                @ion-change="onPicacomicConversionEnabledChange"
+              />
+            </div>
+          </div>
+        </div>
+
         <!-- 分组：网络状态 -->
         <div class="section-label">网络状态</div>
         <div class="card">
@@ -571,6 +604,8 @@ const brightnessValue = ref(
 const keepScreenOn = ref(SettingsStore.getReaderKeepScreenOn())
 const volumeNavigation = ref(SettingsStore.getReaderVolumeNavigation())
 const autoShowToolbarAtEnd = ref(SettingsStore.getReaderAutoShowToolbarAtEnd())
+const picacomicEnabled = ref(SettingsStore.getPicacomicEnabled())
+const picacomicConversionEnabled = ref(SettingsStore.getPicacomicConversionEnabled())
 
 const exportPreview = computed(() => ExportFormatService.previewExportFormat(exportFormat.value))
 
@@ -674,6 +709,8 @@ onMounted(async () => {
   keepScreenOn.value = SettingsStore.getReaderKeepScreenOn()
   volumeNavigation.value = SettingsStore.getReaderVolumeNavigation()
   autoShowToolbarAtEnd.value = SettingsStore.getReaderAutoShowToolbarAtEnd()
+  picacomicEnabled.value = SettingsStore.getPicacomicEnabled()
+  picacomicConversionEnabled.value = SettingsStore.getPicacomicConversionEnabled()
 
   // 将 PDF 导出默认相对路径解析为绝对路径（与文件夹选择器返回的绝对路径保持一致）
   try {
@@ -789,6 +826,54 @@ async function onOcrEnabledChange(e: CustomEvent) {
     ocrEnabled.value = !enabled
     SettingsStore.setOcrEnabled(!enabled)
     await showToast('保存失败', 'danger')
+  }
+}
+
+// ---- PicaComic 实验性功能 ----
+const isSwitchingPicacomic = ref(false)
+
+async function onPicacomicEnabledChange(e: CustomEvent) {
+  if (isSwitchingPicacomic.value) return
+  const enabled = Boolean(e.detail.checked)
+  const previousEnabled = picacomicEnabled.value
+  const previousConversionEnabled = picacomicConversionEnabled.value
+  isSwitchingPicacomic.value = true
+  picacomicEnabled.value = enabled
+  if (!enabled) picacomicConversionEnabled.value = false
+  SettingsStore.setPicacomicEnabled(enabled)
+
+  try {
+    const result = await JmcomicService.setPicacomicEnabled(enabled)
+    if (!result.success) throw new Error('保存失败')
+  } catch {
+    picacomicEnabled.value = previousEnabled
+    picacomicConversionEnabled.value = previousConversionEnabled
+    SettingsStore.setPicacomicEnabled(previousEnabled)
+    SettingsStore.setPicacomicConversionEnabled(previousConversionEnabled)
+    await showToast('保存失败', 'danger')
+  } finally {
+    isSwitchingPicacomic.value = false
+  }
+}
+
+async function onPicacomicConversionEnabledChange(e: CustomEvent) {
+  if (isSwitchingPicacomic.value) return
+  const enabled = Boolean(e.detail.checked)
+  if (enabled && !picacomicEnabled.value) return
+  const previous = picacomicConversionEnabled.value
+  isSwitchingPicacomic.value = true
+  picacomicConversionEnabled.value = enabled
+  SettingsStore.setPicacomicConversionEnabled(enabled)
+
+  try {
+    const result = await JmcomicService.setPicacomicConversionEnabled(enabled)
+    if (!result.success) throw new Error('保存失败')
+  } catch {
+    picacomicConversionEnabled.value = previous
+    SettingsStore.setPicacomicConversionEnabled(previous)
+    await showToast('保存失败', 'danger')
+  } finally {
+    isSwitchingPicacomic.value = false
   }
 }
 

@@ -231,6 +231,16 @@ export const JmcomicService = {
     return native.setOcrEnabled({ enabled })
   },
 
+  /** 持久化 PicaComic 接入开关 */
+  setPicacomicEnabled(enabled: boolean) {
+    return native.setPicacomicEnabled({ enabled })
+  },
+
+  /** 持久化 PicaComic 转换开关 */
+  setPicacomicConversionEnabled(enabled: boolean) {
+    return native.setPicacomicConversionEnabled({ enabled })
+  },
+
   /** 持久化预加载并发数（下次启动生效） */
   setPreloadConcurrency(n: number) {
     return native.setPreloadConcurrency({ n })

@@ -82,7 +82,10 @@ vi.mock('@/services/JmcomicService', () => ({
 }))
 
 vi.mock('@/services/PdfExportService', () => ({
-  PdfExportService: { buildExportPlan: mocks.buildExportPlan },
+  PdfExportService: {
+    buildExportPlan: mocks.buildExportPlan,
+    getExportPath: () => '/pdf',
+  },
 }))
 
 vi.mock('@/services/OfflineDownloadService', () => ({
@@ -136,7 +139,7 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
     mocks.refreshPdf.mockResolvedValue(undefined)
     mocks.checkFilesExist.mockResolvedValue({ existing: [] })
     mocks.checkNotificationPermission.mockResolvedValue({ granted: true })
-    mocks.buildExportPlan.mockReturnValue({ tasks: [{}], outputPaths: [] })
+    mocks.buildExportPlan.mockReturnValue({ tasks: [{}], outputDisplayPaths: [] })
   })
 
   test('首次进入不重复刷新，keepAlive 重新进入时同步 PDF 子视图', async () => {

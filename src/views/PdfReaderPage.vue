@@ -61,7 +61,8 @@ import {
 } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { IonPage } from '@ionic/vue'
-import type { PluginListenerHandle } from '@capacitor/core'
+import type { ListenerHandle } from '@/runtime/BackendEvents'
+import { asFileRef } from '@/runtime/FileReferences'
 import { JmcomicService, showToast } from '@/services/JmcomicService'
 import { SettingsStore } from '@/services/SettingsService'
 import { HistoryService } from '@/services/HistoryService'
@@ -106,7 +107,7 @@ const router = useRouter()
 const updateReaderCurrentPage = inject<(page: number) => void>('updateReaderCurrentPage', () => {})
 
 // ---- 路由参数 ----
-const filePath = route.query.path as string
+const fileRef = asFileRef((route.query.fileRef as string) || '')
 const displayTitle = computed(() => (route.query.title as string) || 'PDF')
 const albumId = computed(() => (route.query.albumId as string) || '')
 const chapterId = computed(() => (route.query.chapterId as string) || albumId.value)
@@ -129,7 +130,7 @@ let lastToolbarTapTime = 0
 let lastToolbarTapX = 0
 let lastToolbarTapY = 0
 
-let volumeKeyListenerHandle: PluginListenerHandle | null = null
+let volumeKeyListenerHandle: ListenerHandle | null = null
 let readerRuntimeActive = false
 let pdfDoc: pdfjsLib.PDFDocumentProxy | null = null
 let nativePdfMode = false
@@ -354,7 +355,7 @@ const renderPageToBlob = async (pageNum: number): Promise<string | null> => {
   if (nativePdfMode) {
     try {
       const targetWidth = getRenderTargetWidth(isVertical.value, true)
-      const result = await JmcomicService.renderPdfPage(filePath, pageNum, targetWidth)
+      const result = await JmcomicService.renderPdfPage(fileRef, pageNum, targetWidth)
       return result.imageUrl
     } catch {
       return null
@@ -831,7 +832,7 @@ const recordBrowseHistory = () => {
 }
 
 const loadPdfDocument = async () => {
-  const arrayBuffer = await fetchPdfArrayBuffer(filePath)
+  const arrayBuffer = await fetchPdfArrayBuffer(fileRef)
   try {
     pdfDoc = await pdfjsLib.getDocument(buildPdfDocumentParams(arrayBuffer)).promise
     nativePdfMode = false
@@ -842,7 +843,7 @@ const loadPdfDocument = async () => {
       pdfDoc.destroy()
       pdfDoc = null
     }
-    const info = await JmcomicService.getPdfInfo(filePath)
+    const info = await JmcomicService.getPdfInfo(fileRef)
     nativePdfMode = true
     return info.pageCount
   }
@@ -859,7 +860,7 @@ const goBack = () => {
 
 // ---- 生命周期 ----
 onMounted(async () => {
-  if (!filePath) {
+  if (!fileRef) {
     await showToast('缺少文件路径', 'danger')
     router.back()
     return

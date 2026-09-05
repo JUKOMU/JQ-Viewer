@@ -478,8 +478,8 @@ import {
   IonToolbar,
 } from '@ionic/vue'
 import { chevronForwardOutline } from 'ionicons/icons'
-import { App } from '@capacitor/app'
-import type { PluginListenerHandle } from '@capacitor/core'
+import type { ListenerHandle } from '@/runtime/BackendEvents'
+import { getRuntime } from '@/runtime/runtimeContext'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import { createAppAlert } from '@/services/AppAlertService'
 import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
@@ -646,7 +646,7 @@ onMounted(async () => {
 
   // 获取应用版本
   try {
-    const info = await App.getInfo()
+    const info = await getRuntime().services.app.getInfo()
     appVersion.value = info.version
   } catch {
     /* keep default */
@@ -809,9 +809,11 @@ function resetExportFormat() {
 async function onBrowseFolder() {
   try {
     const result = await JmcomicService.pickFolder()
-    if (!result.cancelled && result.path) {
+    if (result) {
       // 确保路径以 / 结尾
-      const path = result.path.endsWith('/') ? result.path : result.path + '/'
+      const path = result.displayPath.endsWith('/')
+        ? result.displayPath
+        : result.displayPath + '/'
       pdfExportPath.value = path
       PdfExportService.setExportPath(path)
     }
@@ -887,7 +889,7 @@ async function onDownloadPublicChange(e: CustomEvent) {
   relocationCurrentFile.value = ''
 
   // 注册进度监听
-  let handle: PluginListenerHandle | null = null
+  let handle: ListenerHandle | null = null
   try {
     handle = await JmcomicService.addRelocationProgressListener((data: RelocationProgress) => {
       relocationCurrent.value = data.current

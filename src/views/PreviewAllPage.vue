@@ -78,7 +78,8 @@ import {
   IonTitle,
   IonToolbar,
 } from '@ionic/vue'
-import type { PluginListenerHandle } from '@capacitor/core'
+import type { ListenerHandle } from '@/runtime/BackendEvents'
+import { asFileRef } from '@/runtime/FileReferences'
 import { arrowBack } from 'ionicons/icons'
 import { getImageUrl, JmcomicService } from '@/services/JmcomicService'
 import type { PhotoDetail, PreloadResult } from '@/services/JmcomicTypes'
@@ -108,7 +109,7 @@ const initialTotal = Number(route.query.total as string) || 0
 const source = computed(() => (route.query.source as string) || 'network')
 const isPdfSource = computed(() => source.value === 'pdf')
 const isDownloadSource = computed(() => source.value === 'download')
-const pdfPath = computed(() => (route.query.pdfPath as string) || '')
+const pdfFileRef = computed(() => asFileRef((route.query.fileRef as string) || ''))
 
 const totalCount = ref(initialTotal)
 const loading = ref(true)
@@ -118,7 +119,7 @@ const skeletonCount = computed(() =>
 
 let photoDetail: PhotoDetail | null = null
 let pdfDoc: pdfjsLib.PDFDocumentProxy | null = null
-let imageReadyListenerHandle: PluginListenerHandle | null = null
+let imageReadyListenerHandle: ListenerHandle | null = null
 let disposed = false
 const pdfObjectUrls = new Set<string>()
 
@@ -223,8 +224,8 @@ const { slots, displayCount, loadingMore, loadedCount, allVisible } = previewBat
 onMounted(async () => {
   try {
     if (isPdfSource.value) {
-      if (!pdfPath.value) throw new Error('缺少 PDF 路径')
-      const arrayBuffer = await fetchPdfArrayBuffer(pdfPath.value)
+      if (!pdfFileRef.value) throw new Error('缺少 PDF 文件引用')
+      const arrayBuffer = await fetchPdfArrayBuffer(pdfFileRef.value)
       const loadedPdfDoc = await pdfjsLib.getDocument(buildPdfDocumentParams(arrayBuffer)).promise
       if (disposed) {
         void loadedPdfDoc.destroy()
@@ -315,11 +316,11 @@ watch(loadedCount, (count) => {
 })
 
 const openReader = (page: number) => {
-  if (isPdfSource.value && pdfPath.value) {
+  if (isPdfSource.value && pdfFileRef.value) {
     void router.push({
       path: '/pdf-reader',
       query: {
-        path: pdfPath.value,
+        fileRef: String(pdfFileRef.value),
         title: (route.query.pdfTitle as string) || chapterTitle.value,
         albumId: albumId.value,
         albumTitle: (route.query.albumTitle as string) || chapterTitle.value,

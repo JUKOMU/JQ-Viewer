@@ -13,6 +13,7 @@ import type {
   PdfExportMode,
   PdfExportTask,
 } from './JmcomicTypes'
+import { asFolderRef, type ExportTarget, type FolderRef } from '@/runtime/FileReferences'
 
 const KEY_EXPORT_PATH = 'jq-pdf-export-path'
 const KEY_DIR_TEMPLATE = 'jq-pdf-dir-template'
@@ -43,12 +44,13 @@ export interface PdfExportPlanOptions {
   useOriginal: boolean
   compressionRatio: number
   editedPath: string
+  exportFolder?: FolderRef
   splitPages: number
 }
 
 export interface PdfExportPlan {
   tasks: PdfExportTask[]
-  outputPaths: string[]
+  outputDisplayPaths: string[]
 }
 
 /** 内置示例数据，供预览和设置页渲染值展示复用 */
@@ -218,11 +220,22 @@ export function buildPdfOutputPaths(
   })
 }
 
+function buildExportTarget(displayPath: string, folder?: FolderRef): ExportTarget {
+  const normalizedPath = displayPath.replace(/\\/g, '/')
+  const folderRef = folder ?? asFolderRef(normalizedPath)
+  const normalizedFolder = String(folderRef).replace(/\\/g, '/').replace(/\/+$/, '')
+  const relativePath = normalizedPath.startsWith(`${normalizedFolder}/`)
+    ? normalizedPath.slice(normalizedFolder.length + 1)
+    : normalizedPath
+  return { folder: folderRef, relativePath }
+}
+
 export const PdfExportService = {
   TEMPLATE_VAR_KEYS,
   TEMPLATE_VAR_DEFS,
   buildChapterRange,
   buildPdfOutputPaths,
+  buildExportTarget,
   normalizePdfChapters,
   toPdfExportChapter,
 
@@ -417,7 +430,7 @@ export const PdfExportService = {
         selectedChapters,
         options.albumDetail,
       )
-      const savePath = options.editedPath
+      const displayPath = options.editedPath
       const task: PdfExportTask = {
         mode: 'merged',
         albumId,
@@ -427,7 +440,8 @@ export const PdfExportService = {
         isSingleEpisode: selectedChapters[0].isSingleEpisode,
         chapterTitle: templateData.chapterRange,
         chapters: selectedChapters.map(toPdfExportChapter),
-        savePath,
+        target: buildExportTarget(displayPath, options.exportFolder),
+        displayPath,
         useOriginal: options.useOriginal,
         compressionRatio: options.compressionRatio,
         splitPages: options.splitPages,
@@ -435,7 +449,11 @@ export const PdfExportService = {
 
       return {
         tasks: [task],
-        outputPaths: buildPdfOutputPaths(savePath, templateData.pageCount, options.splitPages),
+        outputDisplayPaths: buildPdfOutputPaths(
+          displayPath,
+          templateData.pageCount,
+          options.splitPages,
+        ),
       }
     }
 
@@ -448,12 +466,20 @@ export const PdfExportService = {
       isSingleEpisode: chapter.isSingleEpisode,
       chapterId: chapter.chapterId,
       chapterTitle: chapter.chapterTitle,
-      savePath:
+      displayPath:
         selectedChapters.length === 1
           ? options.editedPath
           : PdfExportService.buildFullPath(
               PdfExportService.buildTemplateData(chapter, options.albumDetail),
             ),
+      target: buildExportTarget(
+        selectedChapters.length === 1
+          ? options.editedPath
+          : PdfExportService.buildFullPath(
+              PdfExportService.buildTemplateData(chapter, options.albumDetail),
+            ),
+        options.exportFolder,
+      ),
       useOriginal: options.useOriginal,
       compressionRatio: options.compressionRatio,
       splitPages: options.splitPages,
@@ -461,8 +487,12 @@ export const PdfExportService = {
 
     return {
       tasks,
-      outputPaths: tasks.flatMap((task, index) =>
-        buildPdfOutputPaths(task.savePath, selectedChapters[index].totalPages, options.splitPages),
+      outputDisplayPaths: tasks.flatMap((task, index) =>
+        buildPdfOutputPaths(
+          task.displayPath,
+          selectedChapters[index].totalPages,
+          options.splitPages,
+        ),
       ),
     }
   },

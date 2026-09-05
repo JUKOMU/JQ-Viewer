@@ -176,7 +176,6 @@
 defineOptions({ name: 'AboutPage' })
 
 import { computed, nextTick, onMounted, ref } from 'vue'
-import { App } from '@capacitor/app'
 import {
   IonBackButton,
   IonButtons,
@@ -190,6 +189,7 @@ import {
 } from '@ionic/vue'
 import { chevronForwardOutline, logoGithub } from 'ionicons/icons'
 import { showToast } from '@/services/JmcomicService'
+import { getRuntime } from '@/runtime/runtimeContext'
 import { UpdateService } from '@/services/UpdateService'
 import { presentUpdatePrompt } from '@/services/UpdatePromptService'
 import RollingNumber from '@/components/update/RollingNumber.vue'
@@ -311,7 +311,7 @@ onMounted(async () => {
     updateChecked.value = true
   }
   try {
-    const info = await App.getInfo()
+    const info = await getRuntime().services.app.getInfo()
     appVersion.value = info.version
   } catch {
     /* keep default */

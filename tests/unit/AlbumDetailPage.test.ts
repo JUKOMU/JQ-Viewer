@@ -316,7 +316,8 @@ const makeDownloadTask = (): DownloadTask => ({
 
 const makeImportedPdf = (): ImportedPdf => ({
   id: 1,
-  filePath: '/imports/chapter-1.pdf',
+  fileRef: '/imports/chapter-1.pdf' as ImportedPdf['fileRef'],
+  displayPath: '/imports/chapter-1.pdf',
   fileName: 'chapter-1.pdf',
   albumId: '123',
   albumTitle: '测试本子',

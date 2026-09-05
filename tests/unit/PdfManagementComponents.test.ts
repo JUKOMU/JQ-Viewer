@@ -102,7 +102,8 @@ import PdfManagementView from '@/components/download/PdfManagementView.vue'
 
 const file: ImportedPdf = {
   id: 1,
-  filePath: 'content://provider/current.pdf',
+  fileRef: 'content://provider/current.pdf' as ImportedPdf['fileRef'],
+  displayPath: 'content://provider/current.pdf',
   fileName: 'current.pdf',
   sourceType: 'imported',
   ownership: 'external_reference',
@@ -131,7 +132,7 @@ const task = (status: PdfExportTaskRecord['status']): PdfExportTaskRecord => ({
   authors: '',
   chapterId: 'chapter-1',
   displayTitle: '第一话',
-  savePath: '/pdf/one.pdf',
+  displayPath: '/pdf/one.pdf',
   allowOverwrite: false,
   useOriginal: true,
   compressionRatio: 1,
@@ -254,7 +255,7 @@ describe('PdfManagementView', () => {
     const expectedRoute = {
       path: '/pdf-reader',
       query: {
-        path: 'content://provider/current.pdf',
+        fileRef: 'content://provider/current.pdf',
         title: 'current.pdf',
         albumId: 'album-1',
         albumTitle: '测试漫画',

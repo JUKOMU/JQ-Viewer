@@ -179,7 +179,7 @@ import {
   timeOutline,
   trashOutline,
 } from 'ionicons/icons'
-import type { PluginListenerHandle } from '@capacitor/core'
+import type { ListenerHandle } from '@/runtime/BackendEvents'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import DownloadTaskCard from '@/components/download/DownloadTaskCard.vue'
 import PdfExportBottomSheet from '@/components/download/PdfExportBottomSheet.vue'
@@ -190,6 +190,7 @@ import { createAppAlert } from '@/services/AppAlertService'
 import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
 import { OfflineDownloadService } from '@/services/OfflineDownloadService'
 import { PdfExportService } from '@/services/PdfExportService'
+import { asFileRef, asFolderRef } from '@/runtime/FileReferences'
 import type {
   AlbumDetail,
   CompletedEntry,
@@ -218,7 +219,7 @@ const tasks = ref<DownloadTask[]>([])
 const spaceUsedMb = ref(0)
 const spaceAvailMb = ref(0)
 const hasStorageInfo = ref(false)
-let downloadProgressHandle: PluginListenerHandle | null = null
+let downloadProgressHandle: ListenerHandle | null = null
 let syncPromise: Promise<void> | null = null
 let speedTimer: ReturnType<typeof setInterval> | null = null
 let isUnmounted = false
@@ -839,7 +840,11 @@ const onPdfExportConfirm = async (payload: {
 
   let exportPlan
   try {
-    exportPlan = PdfExportService.buildExportPlan({ ...payload, albumDetail })
+    exportPlan = PdfExportService.buildExportPlan({
+      ...payload,
+      albumDetail,
+      exportFolder: asFolderRef(PdfExportService.getExportPath()),
+    })
   } catch (e: any) {
     await showToast(sanitizeError(e, '无法创建导出任务'), 'danger')
     return
@@ -848,9 +853,11 @@ const onPdfExportConfirm = async (payload: {
   // 检查文件是否已存在
   let allowOverwrite = false
   try {
-    const result = await JmcomicService.checkFilesExist(exportPlan.outputPaths)
+    const result = await JmcomicService.checkFilesExist(
+      exportPlan.outputDisplayPaths.map(asFileRef),
+    )
     if (result.existing.length > 0) {
-      const confirmed = await confirmOverwrite(result.existing)
+      const confirmed = await confirmOverwrite(result.existing.map(String))
       if (!confirmed) return
       allowOverwrite = true
     }

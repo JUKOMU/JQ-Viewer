@@ -161,7 +161,8 @@ describe('PDF export plan', () => {
         coverUrl: 'https://example.test/cover.jpg',
         isSingleEpisode: false,
         chapterTitle: '第2-3话',
-        savePath: '/exports/merged.pdf',
+        displayPath: '/exports/merged.pdf',
+        target: { folder: '/exports/merged.pdf', relativePath: '/exports/merged.pdf' },
       }),
     ])
     expect(plan.tasks[0]).not.toHaveProperty('chapterId')
@@ -169,7 +170,10 @@ describe('PDF export plan', () => {
       'chapter-2',
       'chapter-3',
     ])
-    expect(plan.outputPaths).toEqual(['/exports/merged_001-025.pdf', '/exports/merged_026-050.pdf'])
+    expect(plan.outputDisplayPaths).toEqual([
+      '/exports/merged_001-025.pdf',
+      '/exports/merged_026-050.pdf',
+    ])
   })
 
   it('keeps chapter mode as one task per selected chapter', () => {
@@ -191,7 +195,7 @@ describe('PDF export plan', () => {
       true,
     )
     expect(plan.tasks.every((task) => task.isSingleEpisode === false)).toBe(true)
-    expect(plan.outputPaths).toEqual(plan.tasks.map((task) => task.savePath))
+    expect(plan.outputDisplayPaths).toEqual(plan.tasks.map((task) => task.displayPath))
   })
 
   it('rejects merged mode with fewer than two chapters', () => {

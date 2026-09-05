@@ -2,6 +2,7 @@ import { JmcomicService } from './JmcomicService'
 import type { ImportPdfParseResult, PdfFileParseItem } from '@/utils/importPdfParse'
 import { parseFilenamesForImport } from '@/utils/importPdfParse'
 import type { ImportPdfItem, ImportPdfsResult } from './JmcomicTypes'
+import type { FolderRef } from '@/runtime/FileReferences'
 
 // ========== 跨页面数据传递 ==========
 // 扫描结果暂存在此模块级变量，避免通过路由 query 传递路径（路径含特殊字符不可靠）
@@ -19,11 +20,15 @@ export function clearCachedParseResult(): void {
 // ========== 导入流程 ==========
 
 /** 步骤 1：扫描文件夹并解析文件名 */
-async function scanAndParse(folderPath: string, treeUri?: string): Promise<ImportPdfParseResult> {
-  const result = await JmcomicService.scanPdfFiles(folderPath, treeUri)
-  const filePaths = result.files.map((f) => f.filePath)
+async function scanAndParse(folder: FolderRef): Promise<ImportPdfParseResult> {
+  const result = await JmcomicService.scanPdfFiles(folder)
+  const filePaths = result.files.map((f) => f.displayPath)
   const fileNames = result.files.map((f) => f.fileName)
   const parseResult = parseFilenamesForImport(filePaths, fileNames)
+  parseResult.files.forEach((file, index) => {
+    file.fileRef = result.files[index].ref
+    file.displayPath = result.files[index].displayPath
+  })
   cachedParseResult = parseResult
   return parseResult
 }
@@ -68,7 +73,8 @@ async function confirmImport(
     .map((f) => {
       const chapter = resolveImportedChapter(f)
       return {
-        filePath: f.filePath,
+        fileRef: f.fileRef,
+        displayPath: f.displayPath,
         fileName: f.fileName,
         albumId: f.editedIds![0],
         albumTitle: f.albumDetail?.title || '',
@@ -92,12 +98,11 @@ async function confirmImport(
   let validItems = items
   let missingCount = 0
   try {
-    const paths = items.map((f) => f.filePath)
-    const { existing } = await JmcomicService.checkFilesExist(paths)
-    const existingSet = new Set(existing)
-    missingCount = items.filter((f) => !existingSet.has(f.filePath)).length
+    const { existing } = await JmcomicService.checkFilesExist(items.map((f) => f.fileRef))
+    const existingSet = new Set(existing.map(String))
+    missingCount = items.filter((f) => !existingSet.has(String(f.fileRef))).length
     if (missingCount > 0) {
-      validItems = items.filter((f) => existingSet.has(f.filePath))
+      validItems = items.filter((f) => existingSet.has(String(f.fileRef)))
     }
   } catch {
     // 检查失败则直接放行

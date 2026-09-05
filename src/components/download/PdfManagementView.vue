@@ -381,7 +381,7 @@ const readFile = (file: ImportedPdf) => {
   void router.push({
     path: '/pdf-reader',
     query: {
-      path: file.filePath,
+      fileRef: String(file.fileRef),
       title: file.fileName,
       albumId: file.albumId,
       albumTitle: file.albumTitle,
@@ -394,7 +394,7 @@ const readFile = (file: ImportedPdf) => {
 }
 const copyFilePath = async (file: ImportedPdf) => {
   try {
-    await navigator.clipboard.writeText(file.filePath)
+    await navigator.clipboard.writeText(file.displayPath)
     await showToast('PDF 路径已复制', 'success')
   } catch (error) {
     await showToast(sanitizeError(error, '复制 PDF 路径失败'), 'danger')
@@ -402,7 +402,7 @@ const copyFilePath = async (file: ImportedPdf) => {
 }
 const openFileFolder = async (file: ImportedPdf) => {
   try {
-    await PdfManagementService.openFolder(file.filePath)
+    await PdfManagementService.openFolder(file.fileRef)
   } catch (error) {
     await showToast(sanitizeError(error, '无法打开 PDF 所在文件夹'), 'danger')
   }
@@ -470,7 +470,7 @@ const deleteFile = async (file: ImportedPdf) => {
       header: '确认删除实际 PDF 文件',
       message: [
         `文件名：${current.fileName}`,
-        `完整定位符：${current.filePath}`,
+        `完整定位符：${current.displayPath}`,
         `大小：${formatBytes(current.fileSize)}`,
         `页数：${current.pageCount > 0 ? current.pageCount : '未知'}`,
         `状态：${availabilityLabel(current.availability)}`,
@@ -572,8 +572,8 @@ const acknowledgeDatabaseReset = async () => {
 const importPdf = async () => {
   try {
     const result = await PdfManagementService.pickFolder()
-    if (result.cancelled || (!result.path && !result.treeUri)) return
-    await PdfImportService.scanAndParse(result.path || '', result.treeUri)
+    if (!result) return
+    await PdfImportService.scanAndParse(result.ref)
     await router.push('/import-review')
   } catch (error) {
     await showToast(sanitizeError(error, '无法打开文件夹选择器'), 'danger')

@@ -57,6 +57,37 @@ describe('SettingsService', () => {
     expect(SettingsStore.getReaderAutoShowToolbarAtEnd()).toBe(false)
   })
 
+  test('缺少 PicaComic 设置时默认关闭并保持依赖约束', async () => {
+    getAllSettings.mockResolvedValue(legacySettings)
+
+    const { initSettings, SettingsStore } = await import('@/services/SettingsService')
+    await initSettings()
+
+    expect(SettingsStore.getPicacomicEnabled()).toBe(false)
+    expect(SettingsStore.getPicacomicConversionEnabled()).toBe(false)
+
+    SettingsStore.setPicacomicEnabled(true)
+    SettingsStore.setPicacomicConversionEnabled(true)
+    expect(SettingsStore.getPicacomicConversionEnabled()).toBe(true)
+
+    SettingsStore.setPicacomicEnabled(false)
+    expect(SettingsStore.getPicacomicConversionEnabled()).toBe(false)
+  })
+
+  test('加载已保存的 PicaComic 设置', async () => {
+    getAllSettings.mockResolvedValue({
+      ...legacySettings,
+      picacomicEnabled: true,
+      picacomicConversionEnabled: true,
+    })
+
+    const { initSettings, SettingsStore } = await import('@/services/SettingsService')
+    await initSettings()
+
+    expect(SettingsStore.getPicacomicEnabled()).toBe(true)
+    expect(SettingsStore.getPicacomicConversionEnabled()).toBe(true)
+  })
+
   test('新原生返回 requested 和 effective 时缓存用户设置值', async () => {
     getAllSettings.mockResolvedValue({
       ...legacySettings,

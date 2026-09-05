@@ -87,6 +87,36 @@ public class SettingsPluginContractInstrumentedTest {
     }
 
     @Test
+    public void picacomicSettingsValidateAndClearDependentSetting() throws Exception {
+        RecordingPluginCall blockedConversion = call("setPicacomicConversionEnabled", "enabled", true);
+        plugin.setPicacomicConversionEnabled(blockedConversion);
+
+        assertRejected(blockedConversion, "picacomicEnabled must be enabled");
+        assertFalse(settingsService.picacomicConversionEnabled);
+
+        RecordingPluginCall enable = call("setPicacomicEnabled", "enabled", true);
+        RecordingPluginCall conversion = call("setPicacomicConversionEnabled", "enabled", true);
+        plugin.setPicacomicEnabled(enable);
+        plugin.setPicacomicConversionEnabled(conversion);
+
+        assertTrue(settingsService.picacomicEnabled);
+        assertTrue(settingsService.picacomicConversionEnabled);
+        assertTrue(enable.resolvedData.getBool("success"));
+        assertTrue(conversion.resolvedData.getBool("success"));
+
+        RecordingPluginCall disable = call("setPicacomicEnabled", "enabled", false);
+        RecordingPluginCall getAll = call("getAllSettings");
+        plugin.setPicacomicEnabled(disable);
+        plugin.getAllSettings(getAll);
+
+        assertFalse(settingsService.picacomicEnabled);
+        assertFalse(settingsService.picacomicConversionEnabled);
+        assertFalse(getAll.resolvedData.getBool("picacomicEnabled"));
+        assertFalse(getAll.resolvedData.getBool("picacomicConversionEnabled"));
+        assertSynchronous(blockedConversion, enable, conversion, disable, getAll);
+    }
+
+    @Test
     public void downloadPublicValidationRejectsBeforeKeepAliveAndRelocation() {
         settingsService.validationError = "switch blocked";
         RecordingPluginCall call = call("setDownloadPublic", "open", true);
@@ -191,6 +221,8 @@ public class SettingsPluginContractInstrumentedTest {
         private int preloadConcurrency;
         private int readerPreloadPages;
         private boolean ocrEnabled = true;
+        private boolean picacomicEnabled;
+        private boolean picacomicConversionEnabled;
         private boolean validatedOpen;
         private boolean relocatedOpen;
         private String validationError;
@@ -236,7 +268,9 @@ public class SettingsPluginContractInstrumentedTest {
             return jsonObject(
                 "readerPreloadPages", 15,
                 "downloadConcurrency", 6,
-                "preloadConcurrency", 6);
+                "preloadConcurrency", 6,
+                "picacomicEnabled", picacomicEnabled,
+                "picacomicConversionEnabled", picacomicConversionEnabled);
         }
 
         @Override
@@ -247,6 +281,22 @@ public class SettingsPluginContractInstrumentedTest {
         @Override
         public void setOcrEnabled(boolean enabled) {
             ocrEnabled = enabled;
+        }
+
+        @Override
+        public void setPicacomicEnabled(boolean enabled) {
+            picacomicEnabled = enabled;
+            if (!enabled) {
+                picacomicConversionEnabled = false;
+            }
+        }
+
+        @Override
+        public void setPicacomicConversionEnabled(boolean enabled) {
+            if (enabled && !picacomicEnabled) {
+                throw new IllegalStateException("picacomicEnabled must be enabled");
+            }
+            picacomicConversionEnabled = enabled;
         }
 
         private void completeRelocationSuccess() {

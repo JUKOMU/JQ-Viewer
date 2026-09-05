@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   getAlbum: vi.fn(),
   toggleAlbumFavorite: vi.fn(),
   manageFavoriteFolder: vi.fn(),
+  setPicacomicEnabled: vi.fn(),
+  setPicacomicConversionEnabled: vi.fn(),
 }))
 
 vi.mock('@/services/jmcomic/JmcomicNativeClient', () => ({
@@ -19,6 +21,8 @@ vi.mock('@/services/jmcomic/JmcomicNativeClient', () => ({
     getAlbum: mocks.getAlbum,
     toggleAlbumFavorite: mocks.toggleAlbumFavorite,
     manageFavoriteFolder: mocks.manageFavoriteFolder,
+    setPicacomicEnabled: mocks.setPicacomicEnabled,
+    setPicacomicConversionEnabled: mocks.setPicacomicConversionEnabled,
   },
 }))
 
@@ -100,6 +104,19 @@ describe('JmcomicService.retryImage', () => {
 
     await expect(JmcomicService.retryImage('chapter-1', image)).resolves.toEqual({ success: true })
     expect(mocks.retryImage).toHaveBeenCalledWith({ photoId: 'chapter-1', image })
+  })
+})
+
+describe('JmcomicService PicaComic 设置', () => {
+  test('透传两个开关的布尔参数', async () => {
+    mocks.setPicacomicEnabled.mockResolvedValue({ success: true })
+    mocks.setPicacomicConversionEnabled.mockResolvedValue({ success: true })
+
+    await JmcomicService.setPicacomicEnabled(true)
+    await JmcomicService.setPicacomicConversionEnabled(false)
+
+    expect(mocks.setPicacomicEnabled).toHaveBeenCalledWith({ enabled: true })
+    expect(mocks.setPicacomicConversionEnabled).toHaveBeenCalledWith({ enabled: false })
   })
 })
 

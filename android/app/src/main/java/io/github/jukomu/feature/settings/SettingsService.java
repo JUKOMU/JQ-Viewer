@@ -95,6 +95,8 @@ public class SettingsService {
             ret.put("readerKeepScreenOn", getReaderKeepScreenOn());
             ret.put("readerVolumeNavigation", getReaderVolumeNavigation());
             ret.put("readerAutoShowToolbarAtEnd", getReaderAutoShowToolbarAtEnd());
+            ret.put("picacomicEnabled", getPicacomicEnabled());
+            ret.put("picacomicConversionEnabled", getPicacomicConversionEnabled());
         } catch (Exception e) {
             Log.w(TAG, "构建全部设置信息失败", e);
         }
@@ -119,6 +121,33 @@ public class SettingsService {
 
     public void setOcrEnabled(boolean enabled) {
         settingsDb.putString("ocr_enabled", String.valueOf(enabled));
+    }
+
+    public boolean getPicacomicEnabled() {
+        return settingsDb.getBoolean("picacomic_enabled", false);
+    }
+
+    public void setPicacomicEnabled(boolean enabled) {
+        if (!enabled && !settingsDb.putString("picacomic_conversion_enabled", "false")) {
+            throw new IllegalStateException("保存 PicaComic 转换设置失败");
+        }
+        if (!settingsDb.putString("picacomic_enabled", String.valueOf(enabled))) {
+            throw new IllegalStateException("保存 PicaComic 接入设置失败");
+        }
+    }
+
+    public boolean getPicacomicConversionEnabled() {
+        return getPicacomicEnabled()
+            && settingsDb.getBoolean("picacomic_conversion_enabled", false);
+    }
+
+    public void setPicacomicConversionEnabled(boolean enabled) {
+        if (enabled && !getPicacomicEnabled()) {
+            throw new IllegalStateException("picacomicEnabled must be enabled");
+        }
+        if (!settingsDb.putString("picacomic_conversion_enabled", String.valueOf(enabled))) {
+            throw new IllegalStateException("保存 PicaComic 转换设置失败");
+        }
     }
 
     // ---- 阅读器设置 ----

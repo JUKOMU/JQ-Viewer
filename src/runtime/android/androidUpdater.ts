@@ -1,6 +1,6 @@
 import type { JmcomicClient } from '@/services/jmcomic/JmcomicClient'
 import type { ListenerHandle } from '../BackendEvents'
-import { normalizeRuntimeError, withRuntimeError } from '../errors'
+import { normalizeRuntimeError, RuntimeError, withRuntimeError } from '../errors'
 import type { UpdateState, UpdateUserAction, UpdaterService } from '../UpdateTypes'
 import { createAndroidBackendEvents } from './androidBackendEvents'
 
@@ -33,11 +33,11 @@ export function createAndroidUpdater(native: JmcomicClient): UpdaterService {
     install: () => withRuntimeError(() => native.installUpdate()),
     performUserAction: async (action: UpdateUserAction) => {
       if (action.kind !== ACTION_KIND) {
-        throw new Error(`Unsupported update action: ${action.kind}`)
+        throw new RuntimeError('unavailable', `Unsupported update action: ${action.kind}`)
       }
       const current = await withRuntimeError(async () => toUpdateState(await native.getUpdateState()))
       if (current.requiredUserAction?.id !== action.id || current.revision !== action.stateRevision) {
-        throw new Error('Update action is stale')
+        throw new RuntimeError('conflict', 'Update action is stale')
       }
       if (lastActionId === action.id) return
       try {

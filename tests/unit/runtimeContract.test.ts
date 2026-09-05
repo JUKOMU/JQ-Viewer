@@ -4,8 +4,10 @@ import { COMMON_BACKEND_METHODS } from '@/runtime/BackendClient'
 import { createIdempotentListenerHandle } from '@/runtime/BackendEvents'
 import { createAndroidBackendClient } from '@/runtime/android/androidBackendClient'
 import { createAndroidBackendEvents } from '@/runtime/android/androidBackendEvents'
+import { createAndroidPlatformServices } from '@/runtime/android/androidPlatformServices'
 import { createAndroidResourceResolver } from '@/runtime/android/androidResourceResolver'
 import { createAndroidUpdater } from '@/runtime/android/androidUpdater'
+import { normalizeRuntimeError } from '@/runtime/errors'
 import { configureRuntime, getRuntime, resetRuntimeForTests } from '@/runtime/runtimeContext'
 
 function createNative(overrides: Record<string, unknown> = {}): JmcomicClient {
@@ -92,6 +94,41 @@ describe('Android bridge adapters', () => {
     })
   })
 
+  test('Android 文件和 PDF adapter 将 raw path 映射为 FileRef/displayPath', async () => {
+    const native = createNative({
+      pickFolder: vi.fn().mockResolvedValue({
+        path: '/storage/emulated/0/Books',
+        treeUri: 'content://tree/books',
+        cancelled: false,
+      }),
+      scanPdfFiles: vi.fn().mockResolvedValue({
+        files: [{ fileName: 'book.pdf', filePath: '/storage/emulated/0/Books/book.pdf' }],
+      }),
+      getImportedPdfs: vi.fn().mockResolvedValue({
+        pdfs: [{ id: 1, filePath: '/storage/emulated/0/Books/book.pdf', fileName: 'book.pdf' }],
+      }),
+    })
+    const events = createAndroidBackendEvents(native)
+    const services = createAndroidPlatformServices(native, events)
+
+    const folder = await services.files.pickFolder('pdf-root')
+    expect(folder).toEqual({
+      ref: 'content://tree/books',
+      displayPath: '/storage/emulated/0/Books',
+    })
+    const scanned = await services.pdf.scanPdfFiles(folder!.ref)
+    expect(scanned.files[0]).toEqual({
+      ref: '/storage/emulated/0/Books/book.pdf',
+      fileName: 'book.pdf',
+      displayPath: '/storage/emulated/0/Books/book.pdf',
+    })
+    const imported = await services.pdf.getImportedPdfs()
+    expect(imported.pdfs[0]).toMatchObject({
+      fileRef: '/storage/emulated/0/Books/book.pdf',
+      displayPath: '/storage/emulated/0/Books/book.pdf',
+    })
+  })
+
   test('updater action 带 revision 且同一 action 幂等', async () => {
     const getUpdateState = vi.fn().mockResolvedValue({
       revision: 4,
@@ -117,6 +154,30 @@ describe('Android bridge adapters', () => {
     await updater.performUserAction(state.requiredUserAction!)
     expect(requestInstallPermission).toHaveBeenCalledOnce()
   })
+
+  test('过期 updater action 被拒绝为 conflict', async () => {
+    const native = createNative({
+      getUpdateState: vi.fn().mockResolvedValue({
+        revision: 5,
+        phase: 'install_permission_required',
+        source: '',
+        githubBytes: 0,
+        giteeBytes: 0,
+        totalBytes: 0,
+        speedBytesPerSecond: 0,
+        error: '',
+      }),
+    })
+    const updater = createAndroidUpdater(native)
+
+    await expect(
+      updater.performUserAction({
+        id: 'grant-install-permission:4',
+        kind: 'grant-install-permission',
+        stateRevision: 4,
+      }),
+    ).rejects.toMatchObject({ code: 'conflict' })
+  })
 })
 
 describe('listener helper', () => {
@@ -125,5 +186,14 @@ describe('listener helper', () => {
     const handle = createIdempotentListenerHandle(remove)
     await Promise.all([handle.remove(), handle.remove(), handle.remove()])
     expect(remove).toHaveBeenCalledOnce()
+  })
+})
+
+describe('runtime errors', () => {
+  test('未知 rejection 不根据自然语言猜测业务 code', () => {
+    expect(normalizeRuntimeError(new Error('permission denied')).code).toBe('internal')
+    expect(normalizeRuntimeError({ errorCode: 'not-found', message: 'missing' }).code).toBe(
+      'not-found',
+    )
   })
 })

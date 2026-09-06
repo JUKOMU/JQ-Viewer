@@ -27,11 +27,13 @@ import { createActiveFacadeClient } from '@/runtime/facadeClient'
 import type { FileRef, FolderRef } from '@/runtime/FileReferences'
 import { getRuntime } from '@/runtime/runtimeContext'
 
+/** 惰性 facade client：页面沿用旧 JmcomicClient 接口，底层由当前 runtime 端口动态提供。 */
 const native: JmcomicClient = createActiveFacadeClient(getRuntime)
 
 let downloadNotificationPrompted = false
 let downloadNotificationPromptPromise: Promise<void> | null = null
 
+/** 下载前确保通知权限：仅 runtime-permission 平台需要弹窗申请，宿主管理时直接跳过。 */
 async function ensureDownloadNotificationPermission(): Promise<void> {
   if (downloadNotificationPrompted) return
   if (downloadNotificationPromptPromise) return downloadNotificationPromptPromise

@@ -3,8 +3,10 @@ import type { FileRef } from '../FileReferences'
 import type { ResourceResolver } from '../ResourceResolver'
 import { withRuntimeError } from '../errors'
 
+/** Android 虚拟资源域名，与原生侧 ImageRegistry/PdfServer 拦截规则一致。 */
 const VIRTUAL_BASE = 'https://jqviewer.local'
 
+/** 将文件引用编码为可安全放入虚拟 URL path 的 base64url 形式。 */
 function encodeFileRef(file: FileRef): string {
   return btoa(unescape(encodeURIComponent(String(file))))
     .replace(/\+/g, '-')
@@ -12,6 +14,10 @@ function encodeFileRef(file: FileRef): string {
     .replace(/=+$/, '')
 }
 
+/**
+ * 构造 Android 资源 URL 生成器：图片与 PDF 文档走虚拟 WebView 资源，
+ * PDF 逐页渲染则复用原生 RPC 返回的图片 URL。
+ */
 export function createAndroidResourceResolver(native: JmcomicClient): ResourceResolver {
   return {
     imageUrl: ({ photoId, sortOrder, type }) =>

@@ -55,7 +55,10 @@ export interface JmcomicListenerHandle {
   remove: () => Promise<void>
 }
 
-/** Raw DTOs kept inside the Android adapter to preserve the Plugin contract. */
+/**
+ * Android 原生 Plugin 的 raw DTO 集合，仅保留在 Android adapter 边界以维持原生契约：
+ * 公共层对应的类型使用 FileRef/FolderRef，这些类型则继续承载 path/SAF 字段。
+ */
 export type AndroidPdfExportTask = Omit<PdfExportTask, 'target' | 'displayPath'> & {
   savePath: string
 }

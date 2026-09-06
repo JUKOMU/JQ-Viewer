@@ -107,6 +107,7 @@ const router = useRouter()
 const updateReaderCurrentPage = inject<(page: number) => void>('updateReaderCurrentPage', () => {})
 
 // ---- 路由参数 ----
+// 路由通过 fileRef 传入平台文件引用，而不是可直接拼接的绝对路径。
 const fileRef = asFileRef((route.query.fileRef as string) || '')
 const displayTitle = computed(() => (route.query.title as string) || 'PDF')
 const albumId = computed(() => (route.query.albumId as string) || '')

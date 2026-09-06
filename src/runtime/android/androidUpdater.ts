@@ -6,6 +6,11 @@ import { createAndroidBackendEvents } from './androidBackendEvents'
 
 const ACTION_KIND = 'grant-install-permission' as const
 
+/**
+ * 把 Android 原生更新状态转换为平台无关的 UpdateState：
+ * 当原生 phase 表示需要安装权限时，生成一个带 id 与 stateRevision 的
+ * UpdateUserAction，供 UI 触发并校验过期动作。
+ */
 function toUpdateState(event: Awaited<ReturnType<JmcomicClient['getUpdateState']>>): UpdateState {
   return {
     ...event,
@@ -21,6 +26,10 @@ function toUpdateState(event: Awaited<ReturnType<JmcomicClient['getUpdateState']
   }
 }
 
+/**
+ * 构造 Android 更新器。performUserAction 会先校验动作是否过期，
+ * 再映射到原生的 requestInstallPermission；同一动作重复确认时幂等跳过。
+ */
 export function createAndroidUpdater(native: JmcomicClient): UpdaterService {
   const events = createAndroidBackendEvents(native)
   let lastActionId: string | null = null

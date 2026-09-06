@@ -500,7 +500,7 @@ export interface PdfExportTask {
   chapterId?: string
   chapterTitle: string // 用于通知显示
   chapters?: PdfExportChapter[]
-  target: ExportTarget
+  target: ExportTarget // 平台持有的导出目录引用与相对路径，不承载展示给用户的绝对路径
   displayPath: string // 仅用于预览、确认和展示
   useOriginal: boolean
   compressionRatio: number // 0.1~1.0
@@ -541,8 +541,8 @@ export interface PdfExportTaskRecord extends PdfExportProgressEvent {
   isSingleEpisode?: boolean
   chapterId?: string
   displayTitle: string
-  outputFile?: FileDescriptor
-  displayPath?: string
+  outputFile?: FileDescriptor // 实际导出文件的平台引用与展示信息
+  displayPath?: string // 仅用于展示；作为授权凭据回传时改用 outputFile.ref
   allowOverwrite: boolean
   useOriginal: boolean
   compressionRatio: number
@@ -578,16 +578,16 @@ export interface PdfManagementState {
 
 /** scanPdfFiles 返回的单个 PDF 文件条目 */
 export interface PdfScanItem {
-  ref: FileRef
+  ref: FileRef // 平台持有的文件引用，用于后续导入/校验/打开
   fileName: string
-  displayPath: string
+  displayPath: string // 仅用于展示与文件名解析
 }
 
 /** 已导入的 PDF 记录（从数据库返回） */
 export interface ImportedPdf {
   id: number
-  fileRef: FileRef
-  displayPath: string
+  fileRef: FileRef // 打开/定位文件时使用的平台引用
+  displayPath: string // 仅用于展示与复制路径
   fileName: string
   sourceType: 'imported' | 'exported'
   ownership: 'external_reference' | 'app_created'
@@ -621,8 +621,8 @@ export interface PdfStorageDeleteResult {
 
 /** importPdfs 调用的导入项 */
 export interface ImportPdfItem {
-  fileRef: FileRef
-  displayPath: string
+  fileRef: FileRef // 平台持有的文件引用
+  displayPath: string // 仅用于展示
   fileName: string
   albumId: string
   albumTitle: string

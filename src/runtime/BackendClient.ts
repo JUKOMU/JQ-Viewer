@@ -1,8 +1,9 @@
 import type { JmcomicClient } from '@/services/jmcomic/JmcomicClient'
 
 /**
- * Explicitly shared JSON command/query surface. Android-only permissions,
- * host controls, updater calls, raw file paths and addListener stay outside.
+ * 显式共享的 JSON command/query 接口白名单。
+ * 仅保留与平台无关的结构化业务方法；Android 专属权限、宿主控制、更新器、
+ * 原始文件路径以及事件订阅（addListener）都留在本白名单之外，由各自端口承载。
  */
 export const COMMON_BACKEND_METHODS = [
   'search',
@@ -72,4 +73,5 @@ export const COMMON_BACKEND_METHODS = [
 ] as const satisfies readonly (keyof JmcomicClient)[]
 
 export type CommonBackendMethod = (typeof COMMON_BACKEND_METHODS)[number]
+/** 平台无关的结构化后端方法集，页面通过它访问 JSON 业务接口，不感知底层 transport。 */
 export type BackendClient = Pick<JmcomicClient, CommonBackendMethod>

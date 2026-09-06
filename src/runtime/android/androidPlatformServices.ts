@@ -37,14 +37,17 @@ import type {
 } from '../PlatformServices'
 import { createAndroidUpdater } from './androidUpdater'
 
+/** 校验原生返回的成功标志，失败时抛出带中文提示的错误。 */
 function ensureSuccess(result: { success: boolean }, message: string): void {
   if (!result.success) throw new Error(message)
 }
 
+/** 优先使用 SAF treeUri，否则回落到普通 path，作为平台持有的目录引用。 */
 function folderRefValue(path: string, treeUri?: string): FolderRef {
   return asFolderRef(treeUri || path)
 }
 
+/** Android 文件服务：把原生 path/SAF 参数映射为 FileRef/FolderRef 语义。 */
 function createFileService(native: JmcomicClient): FileService {
   return {
     pickFolder: async () => {
@@ -92,6 +95,7 @@ function createFileService(native: JmcomicClient): FileService {
   }
 }
 
+/** 通知权限端口：直接透传 Android 原生权限方法。 */
 function createNotificationPort(native: JmcomicClient): NotificationPermissionPort {
   return {
     check: () => withRuntimeError(() => native.checkNotificationPermission()),
@@ -100,6 +104,7 @@ function createNotificationPort(native: JmcomicClient): NotificationPermissionPo
   }
 }
 
+/** 组装 Android 公开下载能力，迁移进度监听复用统一事件端口。 */
 function createPublicDownloadService(
   native: JmcomicClient,
   events: BackendEvents,
@@ -113,20 +118,24 @@ function createPublicDownloadService(
   }
 }
 
+/** 从路径中提取文件名，兼容 / 与 \ 分隔符。 */
 function fileNameFromPath(filePath: string): string {
   const lastSeparator = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'))
   return lastSeparator >= 0 ? filePath.slice(lastSeparator + 1) : filePath
 }
 
+/** 把原生 path 包装为平台中立的 FileDescriptor。 */
 function toFileDescriptor(filePath: string, fileName = fileNameFromPath(filePath)): FileDescriptor {
   return { ref: asFileRef(filePath), fileName, displayPath: filePath }
 }
 
+/** 把 Android 原生 ImportedPdf（含 filePath）转换为公共 ImportedPdf（含 fileRef）。 */
 function toImportedPdf(file: AndroidImportedPdf): ImportedPdf {
   const { filePath, ...rest } = file
   return { ...rest, fileRef: asFileRef(filePath), displayPath: filePath }
 }
 
+/** 把 Android 原生导出任务记录（含 savePath）转换为公共导出任务记录。 */
 function toPdfExportTaskRecord(task: AndroidPdfExportTaskRecord): PdfExportTaskRecord {
   const { savePath, ...rest } = task
   return {
@@ -136,6 +145,7 @@ function toPdfExportTaskRecord(task: AndroidPdfExportTaskRecord): PdfExportTaskR
   }
 }
 
+/** 把 Android 原生导出提交结果转换为公共提交结果；未指定 savePath 时不附加文件描述。 */
 function toPdfExportSubmissionTaskResult(
   task: AndroidPdfExportSubmissionTaskResult,
 ): PdfExportSubmissionTaskResult {
@@ -146,6 +156,7 @@ function toPdfExportSubmissionTaskResult(
   }
 }
 
+/** 把 Android 原生导入结果转换为公共结果，filePath 折叠为 FileDescriptor。 */
 function toImportPdfsResult(result: AndroidImportPdfsResult) {
   return {
     ...result,
@@ -163,11 +174,16 @@ function toImportPdfsResult(result: AndroidImportPdfsResult) {
   }
 }
 
+/** 把 Android 原生删除结果转换为公共结果，filePath/fileName 折叠为 FileDescriptor。 */
 function toPdfStorageDeleteResult(result: AndroidPdfStorageDeleteResult): PdfStorageDeleteResult {
   const { filePath, fileName, ...rest } = result
   return { ...rest, file: toFileDescriptor(filePath, fileName) }
 }
 
+/**
+ * Android 原生 PDF 方法清单。createPdfService 中已逐项显式实现映射，
+ * 该常量仅保留清单用途，方便与原生契约对照审计。
+ */
 const ANDROID_PDF_METHODS = [
   'exportPdfBatch',
   'scanPdfFiles',
@@ -193,6 +209,10 @@ const ANDROID_PDF_METHODS = [
   'renderPdfPage',
 ] as const
 
+/**
+ * 构造 Android PDF 平台服务。公共层使用 FileRef/FolderRef 表达文件位置，
+ * 本服务负责把引用映射回原生 path，并把原生 DTO 折叠为平台中立的文件描述。
+ */
 function createPdfService(native: JmcomicClient, events: BackendEvents): PdfService {
   void ANDROID_PDF_METHODS
   return {
@@ -286,6 +306,11 @@ function createPdfService(native: JmcomicClient, events: BackendEvents): PdfServ
   }
 }
 
+/**
+ * 装配 Android 全部平台服务，把原生能力转换为 capability 表达：
+ * Android 拥有这些真实能力，因此均标记 available；永久缺失的能力则由其他平台
+ * 以 unavailable 表达。
+ */
 export function createAndroidPlatformServices(
   native: JmcomicClient,
   events: BackendEvents,

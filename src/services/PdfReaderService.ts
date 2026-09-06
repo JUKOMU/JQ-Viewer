@@ -19,10 +19,12 @@ export class PdfLoadError extends Error {
   }
 }
 
+/** 根据平台文件引用生成 PDF 虚拟资源 URL，具体域/编码由当前 runtime 的 ResourceResolver 决定。 */
 export function getPdfVirtualUrl(file: FileRef): string {
   return getRuntime().resources.pdfDocumentUrl(file)
 }
 
+/** 拉取 PDF 文件的二进制内容，并根据响应头中的错误码归一为 PdfLoadError。 */
 export async function fetchPdfArrayBuffer(file: FileRef): Promise<ArrayBuffer> {
   const response = await fetch(getPdfVirtualUrl(file))
   if (!response.ok) {

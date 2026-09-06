@@ -4,11 +4,13 @@ import type { FrontendRuntime } from './FrontendRuntime'
 import { RuntimeError } from './errors'
 import type { Capability } from './PlatformServices'
 
+/** 断言 capability 可用并返回其 API，不可用时抛出带中文名称的 unavailable 错误。 */
 function requireCapability<T>(capability: Capability<T>, name: string): T {
   if (!capability.available) throw new RuntimeError('unavailable', capability.reason || `${name}不可用`)
   return capability.api
 }
 
+/** 把历史 addListener 的字符串事件名映射为运行时具名订阅方法。 */
 function createListener(runtime: FrontendRuntime, event: string, handler: unknown) {
   switch (event) {
     case 'imageReady':
@@ -43,9 +45,9 @@ function createListener(runtime: FrontendRuntime, event: string, handler: unknow
 }
 
 /**
- * Internal compatibility shape for the existing business facade. It is
- * assembled from the runtime ports at the application boundary; no adapter
- * or transport is exposed to pages.
+ * 为既有业务 facade 构造兼容的 JmcomicClient 形状：
+ * 在应用边界把 runtime 各端口拼装回原有接口，页面仍沿用旧调用方式，
+ * 但不向页面暴露任何 adapter 或 transport。
  */
 export function createFacadeClient(runtime: FrontendRuntime): JmcomicClient {
   const storage = () => requireCapability(runtime.services.storage, '公开下载')
@@ -140,6 +142,10 @@ export function createFacadeClient(runtime: FrontendRuntime): JmcomicClient {
   return client
 }
 
+/**
+ * 通过 Proxy 构造一个惰性 facade client：每次属性访问时都基于当前 runtime
+ * 重新生成 client，避免在业务模块顶层把 runtime 一次性固化。
+ */
 export function createActiveFacadeClient(getRuntime: () => FrontendRuntime): JmcomicClient {
   return new Proxy({} as JmcomicClient, {
     get(_target, property: string | symbol) {

@@ -6,6 +6,10 @@ import {
 } from '../BackendEvents'
 import { withRuntimeError } from '../errors'
 
+/**
+ * 构造 Android 的 BackendEvents 实现，把 Capacitor 的 addListener 事件
+ * 映射为具名订阅方法，并将原生句柄包装成幂等的 ListenerHandle。
+ */
 export function createAndroidBackendEvents(native: JmcomicClient): BackendEvents {
   const subscribe = async <T>(
     event: string,

@@ -26,6 +26,7 @@ let promptPromise: Promise<unknown> | null = null
 let installPromise: Promise<InstallResult> | null = null
 let updateStarted = false
 
+/** 按 revision 合并更新状态：旧事件或旧快照不会覆盖更新后的状态。 */
 function applyState(next: UpdateProgressEvent): void {
   if (next.revision < state.value.revision) return
   state.value = { ...next }

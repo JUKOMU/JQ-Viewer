@@ -7,10 +7,15 @@ import type {
 } from '@/services/JmcomicTypes'
 import type { ImageFailedEvent, ImageReadyEvent } from '@/services/jmcomic/JmcomicClient'
 
+/** 平台无关的事件订阅句柄。页面用它移除监听，不依赖 Capacitor 的 PluginListenerHandle。 */
 export interface ListenerHandle {
   remove(): Promise<void>
 }
 
+/**
+ * 后端主动推送的具名 JSON 事件集。
+ * 每个方法只负责订阅对应事件并返回可移除的句柄，不向下游暴露具体 transport。
+ */
 export interface BackendEvents {
   onImageReady(handler: (event: ImageReadyEvent) => void): Promise<ListenerHandle>
   onImageFailed(handler: (event: ImageFailedEvent) => void): Promise<ListenerHandle>
@@ -23,6 +28,10 @@ export interface BackendEvents {
   onVolumeKey(handler: (event: { direction: 'up' | 'down' }) => void): Promise<ListenerHandle>
 }
 
+/**
+ * 包装一个底层移除函数，生成幂等的 ListenerHandle：
+ * 重复调用 remove 只会执行一次实际移除，并始终返回同一次移除的 Promise。
+ */
 export function createIdempotentListenerHandle(remove: () => Promise<void>): ListenerHandle {
   let removed = false
   let removal: Promise<void> | null = null

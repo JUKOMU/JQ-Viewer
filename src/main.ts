@@ -37,6 +37,7 @@ import './theme/variables.css'
 
 const app = createApp(App).use(IonicVue).use(router)
 
+// 应用启动时注入 Android runtime；后续增加 Desktop 构建入口时在此处切换对应适配器。
 configureRuntime(createAndroidRuntime())
 
 router.isReady().then(() => {

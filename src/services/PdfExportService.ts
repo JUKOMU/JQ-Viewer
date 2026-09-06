@@ -220,6 +220,11 @@ export function buildPdfOutputPaths(
   })
 }
 
+/**
+ * 根据展示路径与可选导出目录构造 ExportTarget。
+ * 若能确定目录前缀则归一化为相对路径；目录引用由平台持有，
+ * 越界与分隔符处理留待底层平台校验。
+ */
 function buildExportTarget(displayPath: string, folder?: FolderRef): ExportTarget {
   const normalizedPath = displayPath.replace(/\\/g, '/')
   const folderRef = folder ?? asFolderRef(normalizedPath)

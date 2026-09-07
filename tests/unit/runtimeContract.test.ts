@@ -145,6 +145,32 @@ describe('Android bridge adapters', () => {
       fileRef: '/storage/emulated/0/Books/book.pdf',
       displayPath: '/storage/emulated/0/Books/book.pdf',
     })
+    expect('renderPdfPage' in services.pdf).toBe(false)
+  })
+
+  test('importPdfs 只接受 fileRef，缺失引用时明确失败', async () => {
+    const importPdfs = vi.fn()
+    const native = createNative({ importPdfs })
+    const events = createAndroidBackendEvents(native)
+    const services = createAndroidPlatformServices(native, events)
+
+    const item = {
+      fileRef: undefined,
+      displayPath: '/fallback/display-path.pdf',
+      fileName: 'display-path.pdf',
+      albumId: 'album-1',
+      albumTitle: '测试漫画',
+      coverUrl: '',
+      authors: '',
+      chapterId: 'chapter-1',
+      chapterTitle: '第一话',
+      chapterSortOrder: 1,
+    }
+
+    await expect(services.pdf.importPdfs([item as never])).rejects.toMatchObject({
+      code: 'not-found',
+    })
+    expect(importPdfs).not.toHaveBeenCalled()
   })
 
   test('updater action 带 revision 且同一 action 幂等', async () => {

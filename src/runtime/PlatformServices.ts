@@ -21,9 +21,7 @@ import type { UpdaterService } from './UpdateTypes'
  * 面向某一平台可选能力的判别联合：能力与实现绑定。
  * 当 available 为 false 时调用方拿不到 API，从结构上杜绝「平台返回伪成功但什么都没做」。
  */
-export type Capability<T> =
-  | { available: true; api: T }
-  | { available: false; reason: string }
+export type Capability<T> = { available: true; api: T } | { available: false; reason: string }
 
 export interface AppInfo {
   name: string
@@ -88,7 +86,7 @@ export interface LaunchRouteService {
   onRoute(handler: (event: { route: string }) => void): Promise<ListenerHandle>
 }
 
-/** PDF 平台能力：导入、导出、列表、校验、删除、打开与逐页渲染等文件生命周期操作。 */
+/** PDF 平台能力：导入、导出、列表、校验、删除与打开等文件生命周期操作。 */
 export interface PdfService {
   exportPdfBatch(options: { tasks: PdfExportTask[] }): Promise<PdfExportBatchResult>
   scanPdfFiles(folder: FolderRef): Promise<{ files: PdfScanItem[] }>
@@ -126,7 +124,6 @@ export interface PdfService {
   openPdf(file: FileRef): Promise<{ success: boolean }>
   openPdfFolder(file: FileRef): Promise<{ success: boolean }>
   getPdfInfo(file: FileRef): Promise<{ pageCount: number }>
-  renderPdfPage(file: FileRef, page: number, targetWidth: number): Promise<{ imageUrl: string }>
   onProgress(handler: (event: PdfExportProgressEvent) => void): Promise<ListenerHandle>
 }
 

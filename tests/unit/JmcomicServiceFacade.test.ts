@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   getAlbum: vi.fn(),
   toggleAlbumFavorite: vi.fn(),
   manageFavoriteFolder: vi.fn(),
+  downloadChapter: vi.fn(),
+  ensureDownloadPermission: vi.fn(),
 }))
 
 vi.mock('@/runtime/facadeClient', () => ({
@@ -19,7 +21,14 @@ vi.mock('@/runtime/facadeClient', () => ({
     getAlbum: mocks.getAlbum,
     toggleAlbumFavorite: mocks.toggleAlbumFavorite,
     manageFavoriteFolder: mocks.manageFavoriteFolder,
+    downloadChapter: mocks.downloadChapter,
   }),
+}))
+
+vi.mock('@/services/NotificationPermissionService', () => ({
+  NotificationPermissionService: {
+    ensureDownloadPermission: mocks.ensureDownloadPermission,
+  },
 }))
 
 import type { ImageReadyEvent } from '@/services/jmcomic/JmcomicClient'
@@ -169,6 +178,37 @@ describe('JmcomicService.favoriteToFolder', () => {
 
     expect(mocks.toggleAlbumFavorite).toHaveBeenCalledTimes(1)
     expect(mocks.manageFavoriteFolder).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('JmcomicService.downloadChapter', () => {
+  beforeEach(() => {
+    mocks.ensureDownloadPermission.mockReset()
+    mocks.downloadChapter.mockReset()
+    mocks.ensureDownloadPermission.mockResolvedValue(undefined)
+    mocks.downloadChapter.mockResolvedValue({ taskId: 'album-1_chapter-1' })
+  })
+
+  test('先完成通知权限工作流，再提交章节下载', async () => {
+    await JmcomicService.downloadChapter(
+      'album-1',
+      'chapter-1',
+      '测试漫画',
+      '第一话',
+      'https://example.test/cover.jpg',
+    )
+
+    expect(mocks.ensureDownloadPermission).toHaveBeenCalledOnce()
+    expect(mocks.downloadChapter).toHaveBeenCalledWith({
+      albumId: 'album-1',
+      chapterId: 'chapter-1',
+      albumTitle: '测试漫画',
+      chapterTitle: '第一话',
+      coverUrl: 'https://example.test/cover.jpg',
+    })
+    expect(mocks.ensureDownloadPermission.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.downloadChapter.mock.invocationCallOrder[0],
+    )
   })
 })
 

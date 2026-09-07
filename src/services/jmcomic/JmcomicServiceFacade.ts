@@ -1,4 +1,3 @@
-import { createAppAlert } from '@/services/AppAlertService'
 import type {
   BrowseHistoryRange,
   BrowseHistoryItem,
@@ -26,57 +25,10 @@ import type {
 import { createActiveFacadeClient } from '@/runtime/facadeClient'
 import type { FileRef, FolderRef } from '@/runtime/FileReferences'
 import { getRuntime } from '@/runtime/runtimeContext'
+import { NotificationPermissionService } from '@/services/NotificationPermissionService'
 
 /** 惰性 facade client：页面沿用旧 JmcomicClient 接口，底层由当前 runtime 端口动态提供。 */
 const native: JmcomicClient = createActiveFacadeClient(getRuntime)
-
-let downloadNotificationPrompted = false
-let downloadNotificationPromptPromise: Promise<void> | null = null
-
-/** 下载前确保通知权限：仅 runtime-permission 平台需要弹窗申请，宿主管理时直接跳过。 */
-async function ensureDownloadNotificationPermission(): Promise<void> {
-  if (downloadNotificationPrompted) return
-  if (downloadNotificationPromptPromise) return downloadNotificationPromptPromise
-
-  downloadNotificationPromptPromise = (async () => {
-    try {
-      const policy = getRuntime().services.notifications
-      if (policy.kind !== 'runtime-permission') {
-        downloadNotificationPrompted = true
-        return
-      }
-
-      const check = await policy.permissions.check()
-      if (check.granted) {
-        downloadNotificationPrompted = true
-        return
-      }
-
-      const alert = await createAppAlert({
-        tone: 'info',
-        header: '需要通知权限',
-        message:
-          '章节下载将在后台进行，需要通过通知查看进度。拒绝后仍会继续下载，但不会显示系统通知。',
-        buttons: [
-          { text: '暂不授权', role: 'cancel' },
-          { text: '允许通知', role: 'confirm' },
-        ],
-      })
-      await alert.present()
-      const dismissed = await alert.onDidDismiss()
-      if (dismissed.role === 'confirm') {
-        await policy.permissions.request()
-      }
-    } catch {
-      // Web 调试或旧系统异常时不阻塞下载提交。
-    } finally {
-      downloadNotificationPrompted = true
-      downloadNotificationPromptPromise = null
-    }
-  })()
-
-  return downloadNotificationPromptPromise
-}
 
 export const JmcomicService = {
   search(query: SearchQuery) {
@@ -321,7 +273,7 @@ export const JmcomicService = {
     chapterTitle: string,
     coverUrl: string,
   ) {
-    await ensureDownloadNotificationPermission()
+    await NotificationPermissionService.ensureDownloadPermission()
     return native.downloadChapter({ albumId, chapterId, albumTitle, chapterTitle, coverUrl })
   },
 
@@ -601,18 +553,16 @@ export const JmcomicService = {
     return getRuntime().services.pdf.getPdfInfo(file)
   },
 
-  renderPdfPage(file: FileRef, page: number, targetWidth: number) {
-    return getRuntime().services.pdf.renderPdfPage(file, page, targetWidth)
-  },
-
   checkFilesExist(files: FileRef[]) {
     return getRuntime().services.files.checkFilesExist(files)
   },
 
   getExternalStoragePath() {
-    return getRuntime().services.files.getDefaultFolder('pdf-export').then((folder) => ({
-      path: folder.displayPath,
-    }))
+    return getRuntime()
+      .services.files.getDefaultFolder('pdf-export')
+      .then((folder) => ({
+        path: folder.displayPath,
+      }))
   },
 
   checkNotificationPermission() {

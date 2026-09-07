@@ -26,7 +26,7 @@ import {
   type FileRef,
   type FolderRef,
 } from '../FileReferences'
-import { withRuntimeError } from '../errors'
+import { RuntimeError, withRuntimeError } from '../errors'
 import type {
   AppInfo,
   FileService,
@@ -129,6 +129,14 @@ function toFileDescriptor(filePath: string, fileName = fileNameFromPath(filePath
   return { ref: asFileRef(filePath), fileName, displayPath: filePath }
 }
 
+/** 导入操作只接受平台文件引用，displayPath 不得作为缺失引用时的隐式目标。 */
+function requireImportFileRef(fileRef: unknown): FileRef {
+  if (typeof fileRef !== 'string' || fileRef.trim().length === 0) {
+    throw new RuntimeError('not-found', 'PDF 文件引用无效')
+  }
+  return asFileRef(fileRef)
+}
+
 /** 把 Android 原生 ImportedPdf（含 filePath）转换为公共 ImportedPdf（含 fileRef）。 */
 function toImportedPdf(file: AndroidImportedPdf): ImportedPdf {
   const { filePath, ...rest } = file
@@ -181,7 +189,7 @@ function toPdfStorageDeleteResult(result: AndroidPdfStorageDeleteResult): PdfSto
 }
 
 /**
- * Android 原生 PDF 方法清单。createPdfService 中已逐项显式实现映射，
+ * Android 原生 PDF 方法清单。文件服务与 ResourceResolver 分别承接不同职责，
  * 该常量仅保留清单用途，方便与原生契约对照审计。
  */
 const ANDROID_PDF_METHODS = [
@@ -212,6 +220,7 @@ const ANDROID_PDF_METHODS = [
 /**
  * 构造 Android PDF 平台服务。公共层使用 FileRef/FolderRef 表达文件位置，
  * 本服务负责把引用映射回原生 path，并把原生 DTO 折叠为平台中立的文件描述。
+ * 逐页渲染属于 ResourceResolver，不在 PDF 文件服务中重复暴露。
  */
 function createPdfService(native: JmcomicClient, events: BackendEvents): PdfService {
   void ANDROID_PDF_METHODS
@@ -245,9 +254,9 @@ function createPdfService(native: JmcomicClient, events: BackendEvents): PdfServ
       withRuntimeError(() =>
         native
           .importPdfs({
-            items: items.map(({ fileRef, displayPath, ...item }) => ({
+            items: items.map(({ fileRef, displayPath: _displayPath, ...item }) => ({
               ...item,
-              filePath: String(fileRef || displayPath),
+              filePath: String(requireImportFileRef(fileRef)),
             })),
           })
           .then(toImportPdfsResult),
@@ -300,8 +309,6 @@ function createPdfService(native: JmcomicClient, events: BackendEvents): PdfServ
     openPdfFolder: (file) =>
       withRuntimeError(() => native.openPdfFolder({ filePath: String(file) })),
     getPdfInfo: (file) => withRuntimeError(() => native.getPdfInfo({ filePath: String(file) })),
-    renderPdfPage: (file, page, targetWidth) =>
-      withRuntimeError(() => native.renderPdfPage({ filePath: String(file), page, targetWidth })),
     onProgress: (handler) => events.onPdfExportProgress(handler),
   }
 }

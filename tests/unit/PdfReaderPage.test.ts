@@ -89,13 +89,23 @@ vi.mock('@/services/PdfReaderService', () => ({
   PdfLoadError: class PdfLoadError extends Error {},
 }))
 
+vi.mock('@/runtime/runtimeContext', () => ({
+  getRuntime: () => ({
+    resources: {
+      renderPdfPage: {
+        available: true,
+        api: { getUrl: mocks.renderPdfPage },
+      },
+    },
+  }),
+}))
+
 vi.mock('@/services/JmcomicService', () => ({
   showToast: mocks.showToast,
   JmcomicService: {
     addVolumeKeyListener: mocks.addVolumeKeyListener,
     getAlbum: mocks.getAlbum,
     getPdfInfo: mocks.getPdfInfo,
-    renderPdfPage: mocks.renderPdfPage,
     setReaderBrightness: vi.fn(() => Promise.resolve()),
     setReaderFullscreen: vi.fn(() => Promise.resolve()),
     setReaderKeepScreenOn: vi.fn(() => Promise.resolve()),
@@ -327,8 +337,8 @@ beforeEach(() => {
   mocks.buildPdfDocumentParams.mockImplementation((data: ArrayBuffer) => ({ data }))
   mocks.getPdfInfo.mockResolvedValue({ pageCount: 3 })
   mocks.renderPdfPage.mockImplementation(
-    (_filePath: string, pageNum: number, targetWidth: number) =>
-      Promise.resolve({ imageUrl: `native:${pageNum}:${targetWidth}` }),
+    ({ page, targetWidth }: { file: string; page: number; targetWidth: number }) =>
+      Promise.resolve(`native:${page}:${targetWidth}`),
   )
   mocks.getAlbum.mockResolvedValue({ title: '测试专辑', image: '', authors: [] })
   mocks.getInitialPage.mockImplementation((page: string | undefined) => Number(page) || 1)
@@ -420,7 +430,11 @@ describe('PdfReaderPage PDF 专属渲染尺寸', () => {
 
     expect(mocks.getPdfInfo).toHaveBeenCalledWith('/books/test.pdf')
     expect(mocks.renderPdfPage).toHaveBeenCalled()
-    expect(mocks.renderPdfPage.mock.calls.every((call) => call[2] === 2400)).toBe(true)
+    expect(
+      mocks.renderPdfPage.mock.calls.every(
+        ([call]) => (call as { targetWidth: number }).targetWidth === 2400,
+      ),
+    ).toBe(true)
     expect(renderCalls).toHaveLength(0)
     wrapper.unmount()
   })

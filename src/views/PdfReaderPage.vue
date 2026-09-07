@@ -63,6 +63,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { IonPage } from '@ionic/vue'
 import type { ListenerHandle } from '@/runtime/BackendEvents'
 import { asFileRef } from '@/runtime/FileReferences'
+import { getRuntime } from '@/runtime/runtimeContext'
 import { JmcomicService, showToast } from '@/services/JmcomicService'
 import { SettingsStore } from '@/services/SettingsService'
 import { HistoryService } from '@/services/HistoryService'
@@ -356,8 +357,9 @@ const renderPageToBlob = async (pageNum: number): Promise<string | null> => {
   if (nativePdfMode) {
     try {
       const targetWidth = getRenderTargetWidth(isVertical.value, true)
-      const result = await JmcomicService.renderPdfPage(fileRef, pageNum, targetWidth)
-      return result.imageUrl
+      const renderer = getRuntime().resources.renderPdfPage
+      if (!renderer.available) return null
+      return await renderer.api.getUrl({ file: fileRef, page: pageNum, targetWidth })
     } catch {
       return null
     }

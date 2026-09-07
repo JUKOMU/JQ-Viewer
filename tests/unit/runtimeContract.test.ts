@@ -99,14 +99,14 @@ describe('Android bridge adapters', () => {
     if (resources.renderPdfPage.available) {
       await expect(
         resources.renderPdfPage.api.getUrl({
-          file: '/books/a.pdf' as never,
+          file: 'file:path:/books/a.pdf' as never,
           page: 3,
           targetWidth: 900,
         }),
       ).resolves.toBe('data:image/png;base64,abc')
     }
     expect(renderPdfPage).toHaveBeenCalledWith({
-      filePath: '/books/a.pdf',
+      fileRef: 'file:path:/books/a.pdf',
       page: 3,
       targetWidth: 900,
     })
@@ -115,15 +115,25 @@ describe('Android bridge adapters', () => {
   test('Android 文件和 PDF adapter 将 raw path 映射为 FileRef/displayPath', async () => {
     const native = createNative({
       pickFolder: vi.fn().mockResolvedValue({
-        path: '/storage/emulated/0/Books',
-        treeUri: 'content://tree/books',
+        folderRef: 'folder:saf:content://tree/books',
+        displayPath: '/storage/emulated/0/Books',
+        provider: 'saf',
         cancelled: false,
       }),
       scanPdfFiles: vi.fn().mockResolvedValue({
-        files: [{ fileName: 'book.pdf', filePath: '/storage/emulated/0/Books/book.pdf' }],
+        files: [{
+          fileName: 'book.pdf',
+          fileRef: 'file:saf:content://tree/books/book.pdf',
+          displayPath: '/storage/emulated/0/Books/book.pdf',
+        }],
       }),
       getImportedPdfs: vi.fn().mockResolvedValue({
-        pdfs: [{ id: 1, filePath: '/storage/emulated/0/Books/book.pdf', fileName: 'book.pdf' }],
+        pdfs: [{
+          id: 1,
+          fileRef: 'file:saf:content://tree/books/book.pdf',
+          displayPath: '/storage/emulated/0/Books/book.pdf',
+          fileName: 'book.pdf',
+        }],
       }),
     })
     const events = createAndroidBackendEvents(native)
@@ -131,18 +141,18 @@ describe('Android bridge adapters', () => {
 
     const folder = await services.files.pickFolder('pdf-root')
     expect(folder).toEqual({
-      ref: 'content://tree/books',
+      ref: 'folder:saf:content://tree/books',
       displayPath: '/storage/emulated/0/Books',
     })
     const scanned = await services.pdf.scanPdfFiles(folder!.ref)
     expect(scanned.files[0]).toEqual({
-      ref: '/storage/emulated/0/Books/book.pdf',
+      ref: 'file:saf:content://tree/books/book.pdf',
       fileName: 'book.pdf',
       displayPath: '/storage/emulated/0/Books/book.pdf',
     })
     const imported = await services.pdf.getImportedPdfs()
     expect(imported.pdfs[0]).toMatchObject({
-      fileRef: '/storage/emulated/0/Books/book.pdf',
+      fileRef: 'file:saf:content://tree/books/book.pdf',
       displayPath: '/storage/emulated/0/Books/book.pdf',
     })
     expect('renderPdfPage' in services.pdf).toBe(false)
@@ -198,7 +208,7 @@ describe('Android bridge adapters', () => {
     expect(importPdfs).not.toHaveBeenCalled()
   })
 
-  test('Android PDF adapter 继续把完整展示路径映射到原生 savePath', async () => {
+  test('Android PDF adapter 只发送目录 ref 与相对 targetName', async () => {
     const exportPdfBatch = vi.fn().mockResolvedValue({ tasks: [] })
     const native = createNative({ exportPdfBatch })
     const events = createAndroidBackendEvents(native)
@@ -210,7 +220,7 @@ describe('Android bridge adapters', () => {
           mode: 'merged',
           albumId: 'album-1',
           chapterTitle: '第1-2话',
-          target: { folder: '/exports', relativePath: 'merged.pdf' },
+          target: { folder: 'folder:path:/exports', relativePath: 'merged.pdf' },
           displayPath: '/exports/merged.pdf',
           useOriginal: true,
           compressionRatio: 0.5,
@@ -222,7 +232,9 @@ describe('Android bridge adapters', () => {
     expect(exportPdfBatch).toHaveBeenCalledWith({
       tasks: [
         expect.objectContaining({
-          savePath: '/exports/merged.pdf',
+          targetFolderRef: 'folder:path:/exports',
+          targetName: 'merged.pdf',
+          displayPath: '/exports/merged.pdf',
         }),
       ],
     })

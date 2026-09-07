@@ -561,7 +561,9 @@ export const JmcomicService = {
     return getRuntime()
       .services.files.getDefaultFolder('pdf-export')
       .then((folder) => ({
-        path: folder.displayPath,
+        folderRef: String(folder.ref),
+        displayPath: folder.displayPath,
+        provider: String(folder.ref).startsWith('folder:saf:') ? 'saf' as const : 'path' as const,
       }))
   },
 

@@ -2,12 +2,14 @@ package io.github.jukomu.feature.pdf.management;
 
 import android.content.Context;
 import android.graphics.pdf.PdfRenderer;
-import android.net.Uri;
 import android.os.ParcelFileDescriptor;
 
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader;
 import com.tom_roush.pdfbox.io.MemoryUsageSetting;
 import com.tom_roush.pdfbox.pdmodel.PDDocument;
+
+import io.github.jukomu.feature.pdf.data.PdfRef;
+import io.github.jukomu.feature.pdf.data.PdfRefResolver;
 
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -22,13 +24,21 @@ public final class PdfFileValidator {
     private PdfFileValidator() {
     }
 
-    public static Report validate(Context context, String locator, int expectedPages)
+    public static Report validate(Context context, String fileRef, int expectedPages)
         throws ValidationException {
-        if (locator == null || locator.trim().isEmpty()) {
-            throw new ValidationException("PDF_PATH_INVALID", "PDF 路径为空");
+        if (fileRef == null || fileRef.isEmpty()) {
+            throw new ValidationException("PDF_PATH_INVALID", "PDF 文件引用为空");
+        }
+        try {
+            PdfRef.Parsed parsed = PdfRef.parse(fileRef);
+            if (parsed.kind != PdfRef.Kind.FILE) {
+                throw new ValidationException("PDF_PATH_INVALID", "PDF 引用不是文件");
+            }
+        } catch (IllegalArgumentException error) {
+            throw new ValidationException("PDF_PATH_INVALID", "PDF 文件引用无效", error);
         }
         Exception rendererFailure;
-        try (ParcelFileDescriptor descriptor = openDescriptor(context, locator);
+        try (ParcelFileDescriptor descriptor = openDescriptor(context, fileRef);
              PdfRenderer renderer = new PdfRenderer(descriptor)) {
             int actualPages = validatePageCount(renderer.getPageCount(), expectedPages);
             for (int pageIndex = 0; pageIndex < actualPages; pageIndex++) {
@@ -37,8 +47,9 @@ public final class PdfFileValidator {
                 }
             }
             long fileSize = descriptor.getStatSize();
-            if (fileSize < 0 && !locator.startsWith("content://")) {
-                fileSize = new File(locator).length();
+            if (fileSize < 0) {
+                File file = PdfRefResolver.pathFile(fileRef);
+                if (file != null) fileSize = file.length();
             }
             return new Report(Math.max(0L, fileSize), actualPages);
         } catch (ValidationException error) {
@@ -54,7 +65,7 @@ public final class PdfFileValidator {
         }
 
         try {
-            return validateWithPdfBox(context, locator, expectedPages);
+            return validateWithPdfBox(context, fileRef, expectedPages);
         } catch (ValidationException error) {
             error.addSuppressed(rendererFailure);
             throw error;
@@ -70,10 +81,10 @@ public final class PdfFileValidator {
         }
     }
 
-    private static Report validateWithPdfBox(Context context, String locator, int expectedPages)
+    private static Report validateWithPdfBox(Context context, String fileRef, int expectedPages)
         throws Exception {
         PDFBoxResourceLoader.init(context.getApplicationContext());
-        ParcelFileDescriptor descriptor = openDescriptor(context, locator);
+        ParcelFileDescriptor descriptor = openDescriptor(context, fileRef);
         long fileSize = descriptor.getStatSize();
         try (InputStream input = new ParcelFileDescriptor.AutoCloseInputStream(descriptor);
              PDDocument document = PDDocument.load(input,
@@ -84,8 +95,9 @@ public final class PdfFileValidator {
                     throw new ValidationException("PDF_INVALID", "PDF 包含无法读取的页面");
                 }
             }
-            if (fileSize < 0 && !locator.startsWith("content://")) {
-                fileSize = new File(locator).length();
+            if (fileSize < 0) {
+                File file = PdfRefResolver.pathFile(fileRef);
+                if (file != null) fileSize = file.length();
             }
             return new Report(Math.max(0L, fileSize), actualPages);
         }
@@ -103,17 +115,9 @@ public final class PdfFileValidator {
         return actualPages;
     }
 
-    private static ParcelFileDescriptor openDescriptor(Context context, String locator)
+    private static ParcelFileDescriptor openDescriptor(Context context, String fileRef)
         throws IOException {
-        if (locator.startsWith("content://")) {
-            ParcelFileDescriptor descriptor = context.getContentResolver()
-                .openFileDescriptor(Uri.parse(locator), "r");
-            if (descriptor == null) throw new IOException("Content URI cannot be opened");
-            return descriptor;
-        }
-        File file = new File(locator);
-        if (!file.isFile()) throw new FileNotFoundException("PDF file does not exist");
-        return ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY);
+        return PdfRefResolver.openReadDescriptor(context, fileRef);
     }
 
     public static final class Report {

@@ -1,5 +1,5 @@
 import type { AlbumDetail } from '@/services/JmcomicTypes'
-import { asFileRef, type FileRef } from '@/runtime/FileReferences'
+import { asFileRef, type FileDescriptor, type FileRef } from '@/runtime/FileReferences'
 
 /**
  * 从文件名提取 ID 的解析结果。
@@ -48,6 +48,7 @@ export interface ImportPdfParseResult {
 export function parseFilenamesForImport(
   filePaths: string[],
   fileNames?: string[],
+  fileRefs?: readonly FileRef[],
 ): ImportPdfParseResult {
   const files: PdfFileParseItem[] = []
   const idToFileIndices = new Map<string, number[]>()
@@ -75,7 +76,7 @@ export function parseFilenamesForImport(
 
     files.push({
       fileName,
-      fileRef: asFileRef(filePath),
+      fileRef: fileRefs?.[i] ?? asFileRef(filePath),
       displayPath: filePath,
       extractedIds: ids,
       idPositions,
@@ -95,6 +96,17 @@ export function parseFilenamesForImport(
   }
 
   return { files }
+}
+
+/** 生产导入入口：只接受扫描结果携带的 opaque ref，展示路径仅用于解析文件名。 */
+export function parseFileDescriptorsForImport(
+  files: readonly FileDescriptor[],
+): ImportPdfParseResult {
+  return parseFilenamesForImport(
+    files.map((file) => file.displayPath),
+    files.map((file) => file.fileName),
+    files.map((file) => file.ref),
+  )
 }
 
 /**

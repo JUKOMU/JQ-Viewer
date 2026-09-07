@@ -571,6 +571,10 @@ export interface PdfManagementState {
     resetAt?: number
     fromVersion?: number
     reason?: string
+    migratedCount?: number
+    skippedCount?: number
+    exportHistoryCleared?: boolean
+    exportFolderReset?: boolean
   }
 }
 

@@ -24,7 +24,6 @@ import {
   asFolderRef,
   type FileDescriptor,
   type FileRef,
-  type FolderRef,
 } from '../FileReferences'
 import { RuntimeError, withRuntimeError } from '../errors'
 import type {
@@ -42,53 +41,44 @@ function ensureSuccess(result: { success: boolean }, message: string): void {
   if (!result.success) throw new Error(message)
 }
 
-/** 优先使用 SAF treeUri，否则回落到普通 path，作为平台持有的目录引用。 */
-function folderRefValue(path: string, treeUri?: string): FolderRef {
-  return asFolderRef(treeUri || path)
-}
-
-/** Android 文件服务：把原生 path/SAF 参数映射为 FileRef/FolderRef 语义。 */
+/** Android 文件服务：只在边界把 opaque ref 包装为公共 branded 类型。 */
 function createFileService(native: JmcomicClient): FileService {
   return {
     pickFolder: async () => {
       const result = await withRuntimeError(() => native.pickFolder())
-      if (result.cancelled || (!result.path && !result.treeUri)) return null
+      if (result.cancelled || !result.folderRef) return null
       return {
-        ref: folderRefValue(result.path, result.treeUri),
-        displayPath: result.path || result.treeUri || '',
+        ref: asFolderRef(result.folderRef),
+        displayPath: result.displayPath,
       }
     },
     getDefaultFolder: async () => {
       const result = await withRuntimeError(() => native.getExternalStoragePath())
-      return { ref: asFolderRef(result.path), displayPath: result.path }
+      return { ref: asFolderRef(result.folderRef), displayPath: result.displayPath }
     },
     checkFilesExist: async (files: FileRef[]) => {
       const result = await withRuntimeError(() =>
-        native.checkFilesExist({ paths: files.map((file) => String(file)) }),
+        native.checkFilesExist({ fileRefs: files.map((file) => String(file)) }),
       )
-      return { existing: result.existing.map(asFileRef) }
+      return { existing: result.existingFileRefs.map(asFileRef) }
     },
     openFile: async (file) => {
-      const result = await withRuntimeError(() => native.openPdf({ filePath: String(file) }))
+      const result = await withRuntimeError(() => native.openPdf({ fileRef: String(file) }))
       ensureSuccess(result, '无法打开 PDF 文件')
     },
     openContainingFolder: async (file) => {
-      const result = await withRuntimeError(() => native.openPdfFolder({ filePath: String(file) }))
+      const result = await withRuntimeError(() => native.openPdfFolder({ fileRef: String(file) }))
       ensureSuccess(result, '无法打开 PDF 所在文件夹')
     },
     scanPdfFiles: async (folder) => {
-      const value = String(folder)
       const result = await withRuntimeError(() =>
-        native.scanPdfFiles({
-          path: value.startsWith('content://') ? '' : value,
-          ...(value.startsWith('content://') ? { treeUri: value } : {}),
-        }),
+        native.scanPdfFiles({ folderRef: String(folder) }),
       )
       return {
         files: result.files.map((file) => ({
-          ref: asFileRef(file.filePath),
+          ref: asFileRef(file.fileRef),
           fileName: file.fileName,
-          displayPath: file.filePath,
+          displayPath: file.displayPath,
         })),
       }
     },
@@ -118,15 +108,12 @@ function createPublicDownloadService(
   }
 }
 
-/** 从路径中提取文件名，兼容 / 与 \ 分隔符。 */
-function fileNameFromPath(filePath: string): string {
-  const lastSeparator = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'))
-  return lastSeparator >= 0 ? filePath.slice(lastSeparator + 1) : filePath
-}
-
-/** 把原生 path 包装为平台中立的 FileDescriptor。 */
-function toFileDescriptor(filePath: string, fileName = fileNameFromPath(filePath)): FileDescriptor {
-  return { ref: asFileRef(filePath), fileName, displayPath: filePath }
+function toFileDescriptor(
+  fileRef: string,
+  displayPath: string,
+  fileName?: string,
+): FileDescriptor {
+  return { ref: asFileRef(fileRef), fileName: fileName || displayPath, displayPath }
 }
 
 /** 导入操作只接受平台文件引用，displayPath 不得作为缺失引用时的隐式目标。 */
@@ -137,34 +124,39 @@ function requireImportFileRef(fileRef: unknown): FileRef {
   return asFileRef(fileRef)
 }
 
-/** 把 Android 原生 ImportedPdf（含 filePath）转换为公共 ImportedPdf（含 fileRef）。 */
+/** 把 Android 原生 ImportedPdf 转换为公共 ImportedPdf。 */
 function toImportedPdf(file: AndroidImportedPdf): ImportedPdf {
-  const { filePath, ...rest } = file
-  return { ...rest, fileRef: asFileRef(filePath), displayPath: filePath }
+  const { fileRef, displayPath, ...rest } = file
+  return { ...rest, fileRef: asFileRef(fileRef), displayPath }
 }
 
-/** 把 Android 原生导出任务记录（含 savePath）转换为公共导出任务记录。 */
+/** 把 Android 原生导出任务记录转换为公共导出任务记录。 */
 function toPdfExportTaskRecord(task: AndroidPdfExportTaskRecord): PdfExportTaskRecord {
-  const { savePath, ...rest } = task
+  const { outputFileRef, displayPath, ...rest } = task
   return {
     ...rest,
-    outputFile: toFileDescriptor(savePath),
-    displayPath: savePath,
+    ...(outputFileRef && displayPath
+      ? { outputFile: toFileDescriptor(outputFileRef, displayPath) }
+      : {}),
+    displayPath,
   }
 }
 
-/** 把 Android 原生导出提交结果转换为公共提交结果；未指定 savePath 时不附加文件描述。 */
+/** 把 Android 原生导出提交结果转换为公共提交结果。 */
 function toPdfExportSubmissionTaskResult(
   task: AndroidPdfExportSubmissionTaskResult,
 ): PdfExportSubmissionTaskResult {
-  const { savePath, ...rest } = task
+  const { outputFileRef, displayPath, ...rest } = task
   return {
     ...rest,
-    ...(savePath ? { outputFile: toFileDescriptor(savePath), displayPath: savePath } : {}),
+    ...(outputFileRef && displayPath
+      ? { outputFile: toFileDescriptor(outputFileRef, displayPath) }
+      : {}),
+    displayPath,
   }
 }
 
-/** 把 Android 原生导入结果转换为公共结果，filePath 折叠为 FileDescriptor。 */
+/** 把 Android 原生导入结果转换为公共结果。 */
 function toImportPdfsResult(result: AndroidImportPdfsResult) {
   return {
     ...result,
@@ -172,8 +164,8 @@ function toImportPdfsResult(result: AndroidImportPdfsResult) {
       ? {
           results: result.results.map((item) => ({
             result: item.result,
-            ...(item.filePath
-              ? { file: toFileDescriptor(item.filePath, item.fileName) }
+            ...(item.fileRef && item.displayPath
+              ? { file: toFileDescriptor(item.fileRef, item.displayPath, item.fileName) }
               : {}),
             ...(item.id !== undefined ? { id: item.id } : {}),
           })),
@@ -182,10 +174,10 @@ function toImportPdfsResult(result: AndroidImportPdfsResult) {
   }
 }
 
-/** 把 Android 原生删除结果转换为公共结果，filePath/fileName 折叠为 FileDescriptor。 */
+/** 把 Android 原生删除结果转换为公共结果。 */
 function toPdfStorageDeleteResult(result: AndroidPdfStorageDeleteResult): PdfStorageDeleteResult {
-  const { filePath, fileName, ...rest } = result
-  return { ...rest, file: toFileDescriptor(filePath, fileName) }
+  const { fileRef, displayPath, fileName, ...rest } = result
+  return { ...rest, file: toFileDescriptor(fileRef, displayPath, fileName) }
 }
 
 /**
@@ -219,7 +211,7 @@ const ANDROID_PDF_METHODS = [
 
 /**
  * 构造 Android PDF 平台服务。公共层使用 FileRef/FolderRef 表达文件位置，
- * 本服务负责把引用映射回原生 path，并把原生 DTO 折叠为平台中立的文件描述。
+ * 本服务负责把 branded ref 映射为原生 DTO，并把原生 DTO 折叠为平台中立的文件描述。
  * 逐页渲染属于 ResourceResolver，不在 PDF 文件服务中重复暴露。
  */
 function createPdfService(native: JmcomicClient, events: BackendEvents): PdfService {
@@ -228,25 +220,25 @@ function createPdfService(native: JmcomicClient, events: BackendEvents): PdfServ
     exportPdfBatch: ({ tasks }: { tasks: PdfExportTask[] }) =>
       withRuntimeError(async () => {
         const result: AndroidPdfExportBatchResult = await native.exportPdfBatch({
-          tasks: tasks.map(({ target: _target, displayPath, ...task }) => ({
+          tasks: tasks.map(({ target, displayPath, ...task }) => ({
             ...task,
-            savePath: displayPath,
+            targetFolderRef: String(target.folder),
+            targetName: target.relativePath,
+            displayPath,
           })),
         })
         return { tasks: result.tasks.map(toPdfExportSubmissionTaskResult) }
       }),
     scanPdfFiles: (folder) =>
       withRuntimeError(async () => {
-        const value = String(folder)
         const result: { files: AndroidPdfScanItem[] } = await native.scanPdfFiles({
-          path: value.startsWith('content://') ? '' : value,
-          ...(value.startsWith('content://') ? { treeUri: value } : {}),
+          folderRef: String(folder),
         })
         return {
           files: result.files.map((file) => ({
-            ref: asFileRef(file.filePath),
+            ref: asFileRef(file.fileRef),
             fileName: file.fileName,
-            displayPath: file.filePath,
+            displayPath: file.displayPath,
           })),
         }
       }),
@@ -256,7 +248,8 @@ function createPdfService(native: JmcomicClient, events: BackendEvents): PdfServ
           .importPdfs({
             items: items.map(({ fileRef, displayPath: _displayPath, ...item }) => ({
               ...item,
-              filePath: String(requireImportFileRef(fileRef)),
+              fileRef: String(requireImportFileRef(fileRef)),
+              displayPath: _displayPath,
             })),
           })
           .then(toImportPdfsResult),
@@ -305,10 +298,10 @@ function createPdfService(native: JmcomicClient, events: BackendEvents): PdfServ
     deleteImportedPdf: (id) => withRuntimeError(() => native.deleteImportedPdf({ id })),
     updateLocalEpisodeType: (albumId, isSingleEpisode) =>
       withRuntimeError(() => native.updateLocalEpisodeType({ albumId, isSingleEpisode })),
-    openPdf: (file) => withRuntimeError(() => native.openPdf({ filePath: String(file) })),
+    openPdf: (file) => withRuntimeError(() => native.openPdf({ fileRef: String(file) })),
     openPdfFolder: (file) =>
-      withRuntimeError(() => native.openPdfFolder({ filePath: String(file) })),
-    getPdfInfo: (file) => withRuntimeError(() => native.getPdfInfo({ filePath: String(file) })),
+      withRuntimeError(() => native.openPdfFolder({ fileRef: String(file) })),
+    getPdfInfo: (file) => withRuntimeError(() => native.getPdfInfo({ fileRef: String(file) })),
     onProgress: (handler) => events.onPdfExportProgress(handler),
   }
 }

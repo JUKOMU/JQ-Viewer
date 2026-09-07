@@ -678,7 +678,7 @@ onMounted(async () => {
   // 将 PDF 导出默认相对路径解析为绝对路径（与文件夹选择器返回的绝对路径保持一致）
   try {
     const result = await JmcomicService.getExternalStoragePath()
-    PdfExportService.ensureAbsolutePath(result.path)
+    PdfExportService.ensureAbsolutePath(result.displayPath)
     pdfExportPath.value = PdfExportService.getExportPath()
   } catch {
     /* keep default */
@@ -815,7 +815,10 @@ async function onBrowseFolder() {
         ? result.displayPath
         : result.displayPath + '/'
       pdfExportPath.value = path
-      PdfExportService.setExportPath(path)
+      PdfExportService.setExportFolder({
+        folderRef: result.ref,
+        displayPath: path,
+      })
     }
   } catch (e: any) {
     await showToast(sanitizeError(e, '选择文件夹失败'), 'danger')

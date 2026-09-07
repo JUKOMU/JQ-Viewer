@@ -110,7 +110,9 @@ public class PdfExportJobValidatorTest {
         job.albumId = "100";
         job.chapterId = chapterId;
         job.chapterTitle = chapterId;
-        job.savePath = "/exports/chapter.pdf";
+        job.targetFolderRef = "folder:path:/exports";
+        job.targetName = "chapter.pdf";
+        job.displayPath = "/exports/chapter.pdf";
         return job;
     }
 
@@ -120,7 +122,9 @@ public class PdfExportJobValidatorTest {
         job.albumId = "100";
         job.chapterTitle = "merged";
         job.chapters = Arrays.asList(chapters);
-        job.savePath = "/exports/merged.pdf";
+        job.targetFolderRef = "folder:path:/exports";
+        job.targetName = "merged.pdf";
+        job.displayPath = "/exports/merged.pdf";
         return job;
     }
 

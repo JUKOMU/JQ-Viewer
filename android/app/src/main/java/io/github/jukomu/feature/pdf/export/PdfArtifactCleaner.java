@@ -16,21 +16,13 @@ public final class PdfArtifactCleaner {
     }
 
     public static void cleanupKnownVolume(JSONObject volume) throws IOException {
-        String finalPath = volume.optString("finalPath", "");
         String tempPath = volume.optString("tempPath", "");
         String workPath = volume.optString("workDir", "");
-        if (finalPath.isEmpty() || tempPath.isEmpty() || workPath.isEmpty()) {
+        if (tempPath.isEmpty() || workPath.isEmpty()) {
             throw new IOException("CLEANUP_PATH_UNSAFE: PDF 临时路径记录不完整");
         }
-        File finalFile = new File(finalPath);
         File tempFile = new File(tempPath);
         File workDirectory = new File(workPath);
-        String expectedTemp = PdfBoxExportWriter.getTempFile(finalFile).getCanonicalPath();
-        String expectedWork = PdfBoxExportWriter.getWorkDirectory(finalFile).getCanonicalPath();
-        if (!expectedTemp.equals(tempFile.getCanonicalPath())
-            || !expectedWork.equals(workDirectory.getCanonicalPath())) {
-            throw new IOException("CLEANUP_PATH_UNSAFE: PDF 临时路径不匹配");
-        }
         ensureNotSymbolicLink(tempFile.toPath());
         ensureNotSymbolicLink(workDirectory.toPath());
         deleteTreeWithoutFollowingLinks(tempFile.toPath());

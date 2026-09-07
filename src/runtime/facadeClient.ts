@@ -78,27 +78,33 @@ export function createFacadeClient(runtime: FrontendRuntime): JmcomicClient {
 
     pickFolder: async () => {
       const folder = await runtime.services.files.pickFolder('pdf-root')
-      if (!folder) return { path: '', cancelled: true }
+      if (!folder) return { folderRef: '', displayPath: '', provider: 'path', cancelled: true }
       const ref = String(folder.ref)
       return {
-        path: folder.displayPath,
-        ...(ref.startsWith('content://') ? { treeUri: ref } : {}),
+        folderRef: ref,
+        displayPath: folder.displayPath,
+        provider: ref.startsWith('folder:saf:') ? 'saf' : 'path',
         cancelled: false,
       }
     },
     checkFilesExist: async (options: Parameters<JmcomicClient['checkFilesExist']>[0]) => {
-      const result = await runtime.services.files.checkFilesExist(options.paths.map(asFileRef))
-      return { existing: result.existing.map(String) }
+      const result = await runtime.services.files.checkFilesExist(options.fileRefs.map(asFileRef))
+      return { existingFileRefs: result.existing.map(String) }
     },
     getExternalStoragePath: async () => {
       const folder = await runtime.services.files.getDefaultFolder('download')
-      return { path: folder.displayPath }
+      const ref = String(folder.ref)
+      return {
+        folderRef: ref,
+        displayPath: folder.displayPath,
+        provider: ref.startsWith('folder:saf:') ? 'saf' : 'path',
+      }
     },
     openPdf: (options: Parameters<JmcomicClient['openPdf']>[0]) =>
-      runtime.services.files.openFile(asFileRef(options.filePath)).then(() => ({ success: true })),
+      runtime.services.files.openFile(asFileRef(options.fileRef)).then(() => ({ success: true })),
     openPdfFolder: (options: Parameters<JmcomicClient['openPdfFolder']>[0]) =>
       runtime.services.files
-        .openContainingFolder(asFileRef(options.filePath))
+        .openContainingFolder(asFileRef(options.fileRef))
         .then(() => ({ success: true })),
 
     checkNotificationPermission: () => notifications().check(),

@@ -5,10 +5,13 @@ import android.os.Environment;
 import android.os.PowerManager;
 import android.os.SystemClock;
 import android.util.Log;
+import androidx.documentfile.provider.DocumentFile;
 import io.github.jukomu.feature.download.data.DownloadStore;
 import io.github.jukomu.feature.download.storage.FileStore;
 import io.github.jukomu.feature.download.validation.ChapterManifestValidator;
 import io.github.jukomu.feature.pdf.PdfOperationException;
+import io.github.jukomu.feature.pdf.data.PdfRef;
+import io.github.jukomu.feature.pdf.data.PdfRefResolver;
 import io.github.jukomu.feature.pdf.data.PdfStore;
 import io.github.jukomu.feature.pdf.management.PdfFileValidator;
 import io.github.jukomu.feature.pdf.notification.PdfExportNotificationHelper;
@@ -18,6 +21,8 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.OutputStream;
 import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
@@ -196,7 +201,9 @@ public class PdfExportService {
         if (job.singleEpisode >= 0) task.put("isSingleEpisode", job.singleEpisode == 1);
         if (!"merged".equals(job.mode)) task.put("chapterId", job.chapterId);
         task.put("displayTitle", job.chapterTitle);
-        task.put("savePath", job.savePath);
+        task.put("targetFolderRef", job.targetFolderRef);
+        task.put("targetName", job.targetName);
+        task.put("displayPath", job.displayPath);
         task.put("allowOverwrite", job.allowOverwrite);
         task.put("useOriginal", job.useOriginal);
         task.put("compressionRatio", job.compressionRatio);
@@ -232,7 +239,8 @@ public class PdfExportService {
                 value.put("startPage", volume.start);
                 value.put("endPage", volume.end);
                 value.put("expectedPageCount", volume.end - volume.start);
-                value.put("finalPath", volume.file.getAbsolutePath());
+                value.put("targetName", volume.targetName);
+                value.put("displayPath", volume.displayPath);
                 value.put("tempPath", PdfBoxExportWriter.getTempFile(volume.file).getAbsolutePath());
                 value.put("workDir", PdfBoxExportWriter.getWorkDirectory(volume.file).getAbsolutePath());
                 volumes.put(value);
@@ -261,7 +269,9 @@ public class PdfExportService {
             ? (task.optBoolean("isSingleEpisode") ? 1 : 0) : -1;
         job.chapterId = task.optString("chapterId");
         job.chapterTitle = task.optString("displayTitle");
-        job.savePath = task.optString("savePath");
+        job.targetFolderRef = task.optString("targetFolderRef");
+        job.targetName = task.optString("targetName");
+        job.displayPath = task.optString("displayPath");
         job.useOriginal = task.optBoolean("useOriginal", true);
         job.compressionRatio = (float) task.optDouble("compressionRatio", 1D);
         job.splitPages = task.optInt("splitPages");
@@ -360,7 +370,9 @@ public class PdfExportService {
         public String chapterId;
         public String chapterTitle;
         public List<ExportChapter> chapters;
-        public String savePath;
+        public String targetFolderRef;
+        public String targetName;
+        public String displayPath;
         public boolean useOriginal;
         public float compressionRatio; // 0.1~1.0
         public int splitPages;         // 0=不分卷, >0=每卷页数
@@ -578,15 +590,18 @@ public class PdfExportService {
             PdfFileValidator.Report report;
             try {
                 report = PdfFileValidator.validate(
-                    context, volume.file.getAbsolutePath(), volume.end - volume.start);
+                    context, PdfRef.createPathFileRef(volume.file.getAbsolutePath()),
+                    volume.end - volume.start);
             } catch (PdfFileValidator.ValidationException error) {
                 throw new IOException(error.code + ": " + error.getMessage(), error);
             }
+            String outputFileRef = publishVolume(job, volume);
             pdfStore.completeVolumeAndRegisterFile(job.exportId, volumeNumber,
-                volume.file.getAbsolutePath(), report.fileSize, report.pageCount, job.mode,
+                outputFileRef, volume.displayPath, new File(volume.targetName).getName(),
+                report.fileSize, report.pageCount, job.mode,
                 job.albumId, job.albumTitle, job.coverUrl, job.authors, job.chapterId,
                 job.chapterTitle, 0, job.singleEpisode);
-            Log.i(TAG, "PDF saved: " + volume.file.getAbsolutePath()
+            Log.i(TAG, "PDF saved: " + volume.displayPath
                 + " (" + volume.file.length() + " bytes, volumeMs="
                 + formatMillis(SystemClock.elapsedRealtimeNanos() - volumeStartedAt) + ")");
             totalOutputBytes = saturatingAdd(totalOutputBytes, volume.file.length());
@@ -611,6 +626,54 @@ public class PdfExportService {
             + ", outputBytes=" + totalOutputBytes
             + ", outputInputRatio=" + formatRatio(totalOutputBytes, preflight.totalImageBytes)
             + ", totalMs=" + formatMillis(SystemClock.elapsedRealtimeNanos() - exportStartedAt));
+    }
+
+    private String publishVolume(ExportJob job, ExportVolume volume) throws IOException {
+        PdfRef.Parsed target = PdfRef.parse(job.targetFolderRef);
+        if (target.provider == PdfRef.Provider.PATH) {
+            return PdfRef.createPathFileRef(volume.file.getCanonicalPath());
+        }
+
+        DocumentFile folder = PdfRefResolver.documentFile(context, job.targetFolderRef);
+        if (folder == null || !folder.isDirectory() || !folder.canWrite()) {
+            throw new IOException("目标目录不可写，请重新授权");
+        }
+        String[] segments = volume.targetName.replace('\\', '/').split("/");
+        DocumentFile current = folder;
+        for (int index = 0; index < segments.length - 1; index++) {
+            String segment = segments[index];
+            if (segment.isEmpty() || ".".equals(segment) || "..".equals(segment)) {
+                throw new IOException("导出文件名包含无效目录段");
+            }
+            DocumentFile child = current.findFile(segment);
+            if (child == null) child = current.createDirectory(segment);
+            if (child == null || !child.isDirectory()) {
+                throw new IOException("无法创建导出子目录");
+            }
+            current = child;
+        }
+        String fileName = segments[segments.length - 1];
+        if (fileName.isEmpty()) throw new IOException("导出文件名为空");
+        DocumentFile destination = current.findFile(fileName);
+        if (destination != null) {
+            if (!job.allowOverwrite || !destination.delete()) {
+                throw new IOException("PDF_OUTPUT_EXISTS: 目标文件已存在，请确认覆盖后重试");
+            }
+        }
+        destination = current.createFile("application/pdf", fileName);
+        if (destination == null) throw new IOException("无法创建 SAF 导出文件");
+        try (FileInputStream input = new FileInputStream(volume.file);
+             OutputStream output = context.getContentResolver().openOutputStream(destination.getUri())) {
+            if (output == null) throw new IOException("无法写入 SAF 导出文件");
+            byte[] buffer = new byte[8192];
+            int count;
+            while ((count = input.read(buffer)) >= 0) {
+                if (count > 0) output.write(buffer, 0, count);
+            }
+        } catch (SecurityException error) {
+            throw new IOException("没有权限写入 SAF 导出文件", error);
+        }
+        return PdfRef.createSafFileRef(destination.getUri().toString());
     }
 
     // ---- 任务锁与预检 ----
@@ -682,10 +745,23 @@ public class PdfExportService {
             chapterResults.add(new ChapterPreflight(chapter, descriptors));
         }
 
-        File pdfFile = resolveAbsolutePath(job.savePath);
+        PdfRef.Parsed targetRef = PdfRef.parse(job.targetFolderRef);
+        if (targetRef.kind != PdfRef.Kind.FOLDER) {
+            throw new IOException("导出目标不是文件夹引用");
+        }
+        if (targetRef.provider == PdfRef.Provider.SAF) {
+            DocumentFile folder = PdfRefResolver.documentFile(context, job.targetFolderRef);
+            if (folder == null || !folder.exists() || !folder.isDirectory()) {
+                throw new IOException("目标导出目录不存在");
+            }
+            if (!folder.canWrite()) {
+                throw new IOException("目标目录不可写，请重新授权");
+            }
+        }
+        File pdfFile = resolveOutputWorkFile(job, targetRef);
         File parentDir = pdfFile.getParentFile();
         if (parentDir == null) {
-            throw new IOException("目标路径不可用: " + job.savePath);
+            throw new IOException("目标路径不可用: " + job.displayPath);
         }
         if (!parentDir.exists() && !parentDir.mkdirs()) {
             throw new IOException("无法创建目录: " + parentDir.getAbsolutePath());
@@ -710,7 +786,13 @@ public class PdfExportService {
         int totalPageCount = (int) totalPages;
         List<PdfBoxExportWriter.ExportImageDescriptor> imageDescriptors =
             flattenImageDescriptors(chapterResults, totalPageCount);
-        List<ExportVolume> volumes = buildVolumes(pdfFile, totalPageCount, job.splitPages);
+        List<ExportVolume> volumes = buildVolumes(
+            pdfFile,
+            totalPageCount,
+            job.splitPages,
+            new File(job.targetName).getName(),
+            job.displayPath
+        );
         ensureOverwriteAllowed(volumes, job.allowOverwrite);
         long requiredBytes = estimateRequiredBytesForExport(
             volumes,
@@ -741,12 +823,22 @@ public class PdfExportService {
     // ---- 工具方法 ----
 
     static List<ExportVolume> buildVolumes(File pdfFile, int totalPages, int splitPages) {
+        return buildVolumes(pdfFile, totalPages, splitPages,
+            pdfFile.getName(), pdfFile.getAbsolutePath());
+    }
+
+    static List<ExportVolume> buildVolumes(File pdfFile, int totalPages, int splitPages,
+                                           String targetName, String displayPath) {
         int pagesPerVolume = splitPages > 0 ? splitPages : totalPages;
         int volumeCount = (totalPages + pagesPerVolume - 1) / pagesPerVolume;
         List<ExportVolume> volumes = new ArrayList<>(volumeCount);
         String basePath = pdfFile.getAbsolutePath();
         String baseWithoutExtension = basePath.endsWith(".pdf")
             ? basePath.substring(0, basePath.length() - 4) : basePath;
+        String targetBase = targetName.endsWith(".pdf")
+            ? targetName.substring(0, targetName.length() - 4) : targetName;
+        String displayBase = displayPath.endsWith(".pdf")
+            ? displayPath.substring(0, displayPath.length() - 4) : displayPath;
 
         for (int index = 0; index < volumeCount; index++) {
             int start = index * pagesPerVolume;
@@ -760,7 +852,14 @@ public class PdfExportService {
                 end
             ))
                 : pdfFile;
-            volumes.add(new ExportVolume(start, end, volumeFile));
+            String volumeTargetName = volumeCount > 1
+                ? targetBase + String.format(Locale.ROOT, "_%03d-%03d.pdf", start + 1, end)
+                : targetName;
+            String volumeDisplayPath = volumeCount > 1
+                ? displayBase + String.format(Locale.ROOT, "_%03d-%03d.pdf", start + 1, end)
+                : displayPath;
+            volumes.add(new ExportVolume(start, end, volumeFile,
+                volumeTargetName, volumeDisplayPath));
         }
         return volumes;
     }
@@ -790,7 +889,7 @@ public class PdfExportService {
         for (int index = 0; index < persistedVolumes.length(); index++) {
             JSONObject volume = persistedVolumes.optJSONObject(index);
             if (volume == null || volume.optInt("volumeIndex", -1) != index + 1
-                || volume.optString("finalPath").isEmpty()) {
+                || volume.optString("targetName").isEmpty()) {
                 throw retryLayoutChanged();
             }
             int startPage = volume.optInt("startPage", -1);
@@ -802,7 +901,9 @@ public class PdfExportService {
             persistedVolumeLayouts.add(new ExportVolume(
                 startPage,
                 endPage,
-                new File(volume.optString("finalPath"))));
+                new File(volume.optString("tempPath")),
+                volume.optString("targetName"),
+                volume.optString("displayPath")));
         }
         List<Integer> chapterPageCounts = new ArrayList<>(preflight.chapters.size());
         for (ChapterPreflight chapter : preflight.chapters) {
@@ -824,8 +925,7 @@ public class PdfExportService {
             ExportVolume current = currentVolumes.get(index);
             if (persisted.start != current.start
                 || persisted.end != current.end
-                || !PdfStore.normalizeLocator(persisted.file.getAbsolutePath())
-                .equals(PdfStore.normalizeLocator(current.file.getAbsolutePath()))) {
+                || !persisted.targetName.equals(current.targetName)) {
                 throw retryLayoutChanged();
             }
         }
@@ -854,11 +954,26 @@ public class PdfExportService {
         }
     }
 
-    private File resolveAbsolutePath(String path) {
-        if (path.startsWith("/")) {
-            return new File(path);
+    private File resolveOutputWorkFile(ExportJob job, PdfRef.Parsed targetRef)
+        throws IOException {
+        if (targetRef.provider == PdfRef.Provider.PATH) {
+            File folder = new File(targetRef.payload).getCanonicalFile();
+            File output = new File(folder, job.targetName).getCanonicalFile();
+            String folderPath = folder.getPath();
+            if (!output.getPath().equals(folderPath)
+                && !output.getPath().startsWith(folderPath + File.separator)) {
+                throw new IOException("导出文件名越出目标目录");
+            }
+            return output;
         }
-        return new File(Environment.getExternalStorageDirectory(), path);
+
+        File workDir = new File(context.getCacheDir(), "pdf-export/" + job.exportId);
+        if (!workDir.exists() && !workDir.mkdirs()) {
+            throw new IOException("无法创建 PDF 临时目录");
+        }
+        String name = new File(job.targetName).getName();
+        if (name.isEmpty()) throw new IOException("导出文件名为空");
+        return new File(workDir, name);
     }
 
     private void updateForegroundQueued(List<QueuedExportJob> queuedJobs) {
@@ -1174,7 +1289,7 @@ public class PdfExportService {
             userMessage = "导出失败：未知错误";
         }
 
-        String path = job != null && job.savePath != null ? job.savePath : "";
+        String path = job != null && job.displayPath != null ? job.displayPath : "";
         String title = job != null && job.chapterTitle != null ? job.chapterTitle : "";
         String debugMessage = "PDF export failed: " + title
             + (path.isEmpty() ? "" : ", path=" + path)
@@ -1253,11 +1368,19 @@ public class PdfExportService {
         final int start;
         final int end;
         final File file;
+        final String targetName;
+        final String displayPath;
 
         ExportVolume(int start, int end, File file) {
+            this(start, end, file, file.getName(), file.getAbsolutePath());
+        }
+
+        ExportVolume(int start, int end, File file, String targetName, String displayPath) {
             this.start = start;
             this.end = end;
             this.file = file;
+            this.targetName = targetName;
+            this.displayPath = displayPath;
         }
     }
 

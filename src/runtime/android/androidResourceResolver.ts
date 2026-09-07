@@ -29,7 +29,7 @@ export function createAndroidResourceResolver(native: JmcomicClient): ResourceRe
         getUrl: ({ file, page, targetWidth }) =>
           withRuntimeError(async () => {
             const result = await native.renderPdfPage({
-              filePath: String(file),
+              fileRef: String(file),
               page,
               targetWidth,
             })

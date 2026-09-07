@@ -1,6 +1,6 @@
 import { JmcomicService } from './JmcomicService'
 import type { ImportPdfParseResult, PdfFileParseItem } from '@/utils/importPdfParse'
-import { parseFilenamesForImport } from '@/utils/importPdfParse'
+import { parseFileDescriptorsForImport } from '@/utils/importPdfParse'
 import type { ImportPdfItem, ImportPdfsResult } from './JmcomicTypes'
 import type { FolderRef } from '@/runtime/FileReferences'
 
@@ -24,13 +24,7 @@ async function scanAndParse(folder: FolderRef): Promise<ImportPdfParseResult> {
   // 目录失效时丢弃上一轮扫描结果，避免后续确认流程继续使用旧文件引用。
   cachedParseResult = null
   const result = await JmcomicService.scanPdfFiles(folder)
-  const filePaths = result.files.map((f) => f.displayPath)
-  const fileNames = result.files.map((f) => f.fileName)
-  const parseResult = parseFilenamesForImport(filePaths, fileNames)
-  parseResult.files.forEach((file, index) => {
-    file.fileRef = result.files[index].ref
-    file.displayPath = result.files[index].displayPath
-  })
+  const parseResult = parseFileDescriptorsForImport(result.files)
   cachedParseResult = parseResult
   return parseResult
 }

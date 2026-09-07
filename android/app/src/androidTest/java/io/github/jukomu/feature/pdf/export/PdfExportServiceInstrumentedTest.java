@@ -12,6 +12,7 @@ import com.tom_roush.pdfbox.pdmodel.PDDocument;
 import io.github.jukomu.feature.download.data.DownloadStore;
 import io.github.jukomu.feature.download.storage.FileStore;
 import io.github.jukomu.feature.pdf.data.PdfStore;
+import io.github.jukomu.feature.pdf.data.PdfRef;
 import io.github.jukomu.jmcomic.api.model.JmImage;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -85,7 +86,9 @@ public class PdfExportServiceInstrumentedTest {
             chapter("900000002", "第2话", 2),
             chapter("900000005", "第5话", 5)
         );
-        job.savePath = output.getAbsolutePath();
+        job.targetFolderRef = PdfRef.createPathFolderRef(outputDirectory.getCanonicalPath());
+        job.targetName = output.getName();
+        job.displayPath = output.getAbsolutePath();
         job.useOriginal = true;
         job.compressionRatio = 1F;
         job.splitPages = 3;
@@ -122,7 +125,9 @@ public class PdfExportServiceInstrumentedTest {
             chapter("900001001", "第1话", 1),
             chapter("900001002", "第2话", 2)
         );
-        job.savePath = output.getAbsolutePath();
+        job.targetFolderRef = PdfRef.createPathFolderRef(outputDirectory.getCanonicalPath());
+        job.targetName = output.getName();
+        job.displayPath = output.getAbsolutePath();
         job.useOriginal = true;
         job.compressionRatio = 1F;
         job.splitPages = 0;

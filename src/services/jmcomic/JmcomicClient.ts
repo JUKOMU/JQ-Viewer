@@ -55,38 +55,49 @@ export interface JmcomicListenerHandle {
   remove: () => Promise<void>
 }
 
-/**
- * Android 原生 Plugin 的 raw DTO 集合，仅保留在 Android adapter 边界以维持原生契约：
- * 公共层对应的类型使用 FileRef/FolderRef，这些类型则继续承载 path/SAF 字段。
- */
+/** Android Plugin 的原生 DTO；文件位置只以 opaque ref 传输。 */
 export type AndroidPdfExportTask = Omit<PdfExportTask, 'target' | 'displayPath'> & {
-  savePath: string
+  targetFolderRef: string
+  targetName: string
+  displayPath: string
 }
 export type AndroidPdfExportTaskRecord = Omit<
   PdfExportTaskRecord,
   'outputFile' | 'displayPath'
 > & {
-  savePath: string
+  targetFolderRef: string
+  targetName: string
+  outputFileRef?: string
+  displayPath?: string
 }
 export type AndroidPdfExportSubmissionTaskResult = Partial<AndroidPdfExportTaskRecord> &
   Pick<PdfExportSubmissionTaskResult, 'accepted' | 'errorCode' | 'errorMessage'>
-export type AndroidPdfScanItem = Omit<PdfScanItem, 'ref' | 'displayPath'> & { filePath: string }
+export type AndroidPdfScanItem = Omit<PdfScanItem, 'ref'> & { fileRef: string }
 export type AndroidImportedPdf = Omit<ImportedPdf, 'fileRef' | 'displayPath'> & {
-  filePath: string
+  fileRef: string
+  displayPath: string
 }
 export type AndroidPdfStorageDeleteResult = Omit<PdfStorageDeleteResult, 'file'> & {
-  filePath: string
+  fileRef: string
+  displayPath: string
   fileName: string
 }
 export type AndroidImportPdfItem = Omit<ImportPdfItem, 'fileRef' | 'displayPath'> & {
-  filePath: string
+  fileRef: string
+  displayPath: string
 }
 export type AndroidPdfExportBatchResult = {
   tasks: AndroidPdfExportSubmissionTaskResult[]
 }
 export type AndroidImportedPdfsResult = { pdfs: AndroidImportedPdf[] }
 export type AndroidImportPdfsResult = Omit<ImportPdfsResult, 'results'> & {
-  results?: Array<{ result: string; filePath?: string; fileName?: string; id?: number }>
+  results?: Array<{
+    result: string
+    fileRef?: string
+    displayPath?: string
+    fileName?: string
+    id?: number
+  }>
 }
 
 export interface JmcomicClient {
@@ -316,11 +327,20 @@ export interface JmcomicClient {
 
   exportPdfBatch(options: { tasks: AndroidPdfExportTask[] }): Promise<AndroidPdfExportBatchResult>
 
-  pickFolder(): Promise<{ path: string; treeUri?: string; cancelled: boolean }>
+  pickFolder(): Promise<{
+    folderRef: string
+    displayPath: string
+    provider: 'path' | 'saf'
+    cancelled: boolean
+  }>
 
-  checkFilesExist(options: { paths: string[] }): Promise<{ existing: string[] }>
+  checkFilesExist(options: { fileRefs: string[] }): Promise<{ existingFileRefs: string[] }>
 
-  getExternalStoragePath(): Promise<{ path: string }>
+  getExternalStoragePath(): Promise<{
+    folderRef: string
+    displayPath: string
+    provider: 'path' | 'saf'
+  }>
 
   checkNotificationPermission(): Promise<{ granted: boolean }>
 
@@ -342,7 +362,7 @@ export interface JmcomicClient {
 
   consumeLaunchRoute(): Promise<{ route?: string }>
 
-  scanPdfFiles(options: { path: string; treeUri?: string }): Promise<{ files: AndroidPdfScanItem[] }>
+  scanPdfFiles(options: { folderRef: string }): Promise<{ files: AndroidPdfScanItem[] }>
 
   importPdfs(options: { items: AndroidImportPdfItem[] }): Promise<AndroidImportPdfsResult>
 
@@ -395,14 +415,14 @@ export interface JmcomicClient {
 
   deleteImportedPdf(options: { id: number }): Promise<{ success: boolean }>
 
-  openPdf(options: { filePath: string }): Promise<{ success: boolean }>
+  openPdf(options: { fileRef: string }): Promise<{ success: boolean }>
 
-  openPdfFolder(options: { filePath: string }): Promise<{ success: boolean }>
+  openPdfFolder(options: { fileRef: string }): Promise<{ success: boolean }>
 
-  getPdfInfo(options: { filePath: string }): Promise<{ pageCount: number }>
+  getPdfInfo(options: { fileRef: string }): Promise<{ pageCount: number }>
 
   renderPdfPage(options: {
-    filePath: string
+    fileRef: string
     page: number
     targetWidth: number
   }): Promise<{ imageUrl: string }>

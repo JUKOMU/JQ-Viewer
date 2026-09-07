@@ -190,7 +190,6 @@ import { createAppAlert } from '@/services/AppAlertService'
 import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
 import { OfflineDownloadService } from '@/services/OfflineDownloadService'
 import { PdfExportService } from '@/services/PdfExportService'
-import { asFileRef, asFolderRef } from '@/runtime/FileReferences'
 import type {
   AlbumDetail,
   CompletedEntry,
@@ -843,27 +842,24 @@ const onPdfExportConfirm = async (payload: {
     exportPlan = PdfExportService.buildExportPlan({
       ...payload,
       albumDetail,
-      exportFolder: asFolderRef(PdfExportService.getExportPath()),
+      exportFolder: (() => {
+        const selection = PdfExportService.getExportFolder()
+        if (!selection) throw new Error('请先选择导出目录')
+        return selection.folderRef
+      })(),
+      exportFolderDisplayPath: (() => {
+        const selection = PdfExportService.getExportFolder()
+        if (!selection) throw new Error('请先选择导出目录')
+        return selection.displayPath
+      })(),
     })
   } catch (e: any) {
     await showToast(sanitizeError(e, '无法创建导出任务'), 'danger')
     return
   }
 
-  // 检查文件是否已存在
-  let allowOverwrite = false
-  try {
-    const result = await JmcomicService.checkFilesExist(
-      exportPlan.outputDisplayPaths.map(asFileRef),
-    )
-    if (result.existing.length > 0) {
-      const confirmed = await confirmOverwrite(result.existing.map(String))
-      if (!confirmed) return
-      allowOverwrite = true
-    }
-  } catch {
-    /* 检查失败时直接放行 */
-  }
+  // 输出文件 ref 只在原生创建目标文档后产生，提交前不能把展示路径冒充 fileRef。
+  const allowOverwrite = false
 
   await ensureNotificationPermission()
 
@@ -883,22 +879,6 @@ const onPdfExportConfirm = async (payload: {
   } catch (e: any) {
     await showToast(sanitizeError(e, '导出启动失败'), 'danger')
   }
-}
-
-async function confirmOverwrite(existingFiles: string[]): Promise<boolean> {
-  return new Promise((resolve) => {
-    const fileList =
-      existingFiles.slice(0, 3).join('\n') +
-      (existingFiles.length > 3 ? `\n... 等 ${existingFiles.length} 个文件` : '')
-    createAppAlert({
-      header: '文件已存在',
-      message: `以下文件已存在，是否覆盖？\n${fileList}`,
-      buttons: [
-        { text: '取消', role: 'cancel', handler: () => resolve(false) },
-        { text: '覆盖', role: 'destructive', handler: () => resolve(true) },
-      ],
-    }).then((alert) => alert.present())
-  })
 }
 
 async function ensureNotificationPermission(): Promise<boolean> {

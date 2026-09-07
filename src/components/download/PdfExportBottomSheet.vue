@@ -397,7 +397,10 @@ async function onBrowseFolder() {
     if (result) {
       const path = result.displayPath.endsWith('/') ? result.displayPath : result.displayPath + '/'
       exportPath.value = path
-      PdfExportService.setExportPath(path)
+      PdfExportService.setExportFolder({
+        folderRef: result.ref,
+        displayPath: path,
+      })
     }
   } catch {
     /* ignore */

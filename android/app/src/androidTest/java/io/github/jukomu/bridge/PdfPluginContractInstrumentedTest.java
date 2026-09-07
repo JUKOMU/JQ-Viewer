@@ -9,6 +9,7 @@ import com.getcapacitor.JSObject;
 import io.github.jukomu.bridge.handler.PdfPluginHandler;
 import io.github.jukomu.feature.download.data.DownloadStore;
 import io.github.jukomu.feature.pdf.data.PdfStore;
+import io.github.jukomu.feature.pdf.data.PdfRef;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -38,11 +39,13 @@ public class PdfPluginContractInstrumentedTest {
 
     @Test
     public void scopedPdfFailuresKeepMessagesAndExposeCodes() {
-        RecordingPluginCall scan = call("scanPdfFiles", "path", missingPdf.getAbsolutePath());
+        RecordingPluginCall scan = call("scanPdfFiles", "folderRef",
+            PdfRef.createPathFolderRef(missingPdf.getAbsolutePath()));
         handler.scanPdfFiles(scan);
-        assertRejected(scan, "Not a directory: " + missingPdf.getAbsolutePath(), "not-found");
+        assertRejected(scan, "PDF 文件夹不存在", "not-found");
 
-        RecordingPluginCall info = call("getPdfInfo", "filePath", missingPdf.getAbsolutePath());
+        RecordingPluginCall info = call("getPdfInfo", "fileRef",
+            PdfRef.createPathFileRef(missingPdf.getAbsolutePath()));
         handler.getPdfInfo(info);
         assertEquals("not-found", info.rejectionCode);
         assertTrue(info.rejectionMessage.startsWith("PDF 信息读取失败: "));
@@ -84,7 +87,7 @@ public class PdfPluginContractInstrumentedTest {
         String locator = new File(context.getCacheDir(),
             "already-missing-" + System.nanoTime() + ".pdf").getAbsolutePath();
         long id = pdfStore.insertImportedPdf(
-            locator, "missing.pdf", "album", "", "", "", "chapter", "", 0,
+            PdfRef.createPathFileRef(locator), locator, "missing.pdf", "album", "", "", "", "chapter", "", 0,
             -1, System.currentTimeMillis(), null, 0, 1);
 
         RecordingPluginCall delete = call("deletePdfFile", "id", (int) id);

@@ -18,6 +18,8 @@ import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
 import io.github.jukomu.feature.download.data.DownloadStore;
 import io.github.jukomu.feature.pdf.PdfOperationException;
+import io.github.jukomu.feature.pdf.data.PdfRef;
+import io.github.jukomu.feature.pdf.data.PdfRefResolver;
 import io.github.jukomu.feature.pdf.data.PdfStore;
 import io.github.jukomu.feature.pdf.export.PdfExportJobValidator;
 import io.github.jukomu.feature.pdf.export.PdfExportService;
@@ -58,11 +60,24 @@ public final class PdfPluginHandler {
     // ---- 文件扫描与导入 ----
 
     public void scanPdfFiles(PluginCall call) {
-        String treeUriStr = call.getString("treeUri");
-        if (treeUriStr != null && !treeUriStr.isEmpty()) {
-            scanPdfFilesViaSaf(call, Uri.parse(treeUriStr));
-        } else {
-            scanPdfFilesViaFile(call);
+        String folderRef = call.getString("folderRef");
+        if (folderRef == null || folderRef.isEmpty()) {
+            call.reject("folderRef is required");
+            return;
+        }
+        try {
+            PdfRef.Parsed parsed = PdfRef.parse(folderRef);
+            if (parsed.kind != PdfRef.Kind.FOLDER) {
+                call.reject("folderRef must be a folder reference");
+                return;
+            }
+            if (parsed.provider == PdfRef.Provider.SAF) {
+                scanPdfFilesViaSaf(call, Uri.parse(parsed.payload));
+            } else {
+                scanPdfFilesViaFile(call, parsed.payload);
+            }
+        } catch (IllegalArgumentException error) {
+            call.reject("folderRef is invalid", error);
         }
     }
 
@@ -91,7 +106,8 @@ public final class PdfPluginHandler {
                     && child.getName().toLowerCase().endsWith(".pdf")) {
                     JSObject obj = new JSObject();
                     obj.put("fileName", child.getName());
-                    obj.put("filePath", child.getUri().toString());
+                    obj.put("fileRef", PdfRef.createSafFileRef(child.getUri().toString()));
+                    obj.put("displayPath", child.getName());
                     arr.put(obj);
                 }
             }
@@ -104,15 +120,10 @@ public final class PdfPluginHandler {
         }
     }
 
-    private void scanPdfFilesViaFile(PluginCall call) {
-        String path = call.getString("path");
-        if (path == null || path.isEmpty()) {
-            call.reject("path is required");
-            return;
-        }
+    private void scanPdfFilesViaFile(PluginCall call, String path) {
         File dir = new File(path);
         if (!dir.isDirectory()) {
-            rejectWithCode(call, "Not a directory: " + path,
+            rejectWithCode(call, PDF_FOLDER_NOT_FOUND_MESSAGE,
                 PdfOperationException.NOT_FOUND, null);
             return;
         }
@@ -132,7 +143,12 @@ public final class PdfPluginHandler {
         for (File f : pdfFiles) {
             JSObject obj = new JSObject();
             obj.put("fileName", f.getName());
-            obj.put("filePath", f.getAbsolutePath());
+            try {
+                obj.put("fileRef", PdfRef.createPathFileRef(f.getAbsolutePath()));
+            } catch (Exception error) {
+                continue;
+            }
+            obj.put("displayPath", f.getAbsolutePath());
             arr.put(obj);
         }
         JSObject ret = new JSObject();
@@ -321,19 +337,21 @@ public final class PdfPluginHandler {
     // ---- 打开与渲染 ----
 
     public void openPdf(PluginCall call) {
-        String filePath = call.getString("filePath");
-        if (filePath == null || filePath.isEmpty()) {
-            call.reject("filePath is required");
+        String fileRef = call.getString("fileRef");
+        if (fileRef == null || fileRef.isEmpty()) {
+            call.reject("fileRef is required");
             return;
         }
         try {
             Uri uri;
-            if (filePath.startsWith("content://")) {
-                uri = Uri.parse(filePath);
+            PdfRef.Parsed parsed = PdfRef.parse(fileRef);
+            if (parsed.kind != PdfRef.Kind.FILE) throw new IllegalArgumentException("需要文件引用");
+            if (parsed.provider == PdfRef.Provider.SAF) {
+                uri = PdfRefResolver.uri(fileRef);
             } else {
-                File file = new File(filePath);
+                File file = PdfRefResolver.pathFile(fileRef);
                 if (!file.exists()) {
-                    call.reject("File not found: " + filePath);
+                    call.reject("File not found: " + parsed.payload);
                     return;
                 }
                 uri = FileProvider.getUriForFile(
@@ -355,14 +373,14 @@ public final class PdfPluginHandler {
     }
 
     public void openPdfFolder(PluginCall call) {
-        String filePath = call.getString("filePath");
-        if (filePath == null || filePath.isEmpty()) {
-            call.reject("filePath is required");
+        String fileRef = call.getString("fileRef");
+        if (fileRef == null || fileRef.isEmpty()) {
+            call.reject("fileRef is required");
             return;
         }
         try {
-            Uri folderUri = resolvePdfFolderUri(filePath);
-            boolean canGrantUri = filePath.startsWith("content://")
+            Uri folderUri = resolvePdfFolderUri(fileRef);
+            boolean canGrantUri = PdfRef.parse(fileRef).provider == PdfRef.Provider.SAF
                 || (context.getPackageName() + ".fileprovider")
                 .equals(folderUri.getAuthority());
             context.startActivity(createPdfFolderIntent(folderUri, canGrantUri));
@@ -390,9 +408,11 @@ public final class PdfPluginHandler {
             : 0;
     }
 
-    private Uri resolvePdfFolderUri(String filePath) throws Exception {
-        if (filePath.startsWith("content://")) {
-            Uri fileUri = Uri.parse(filePath);
+    private Uri resolvePdfFolderUri(String fileRef) throws Exception {
+        PdfRef.Parsed parsed = PdfRef.parse(fileRef);
+        if (parsed.kind != PdfRef.Kind.FILE) throw new IllegalArgumentException("需要文件引用");
+        if (parsed.provider == PdfRef.Provider.SAF) {
+            Uri fileUri = PdfRefResolver.uri(fileRef);
             String documentId = DocumentsContract.getDocumentId(fileUri);
             int separator = documentId.lastIndexOf('/');
             String parentDocumentId;
@@ -411,10 +431,10 @@ public final class PdfPluginHandler {
             return DocumentsContract.buildDocumentUri(fileUri.getAuthority(), parentDocumentId);
         }
 
-        File file = new File(filePath);
+        File file = PdfRefResolver.pathFile(fileRef);
         File parent = file.getCanonicalFile().getParentFile();
         if (parent == null || !parent.isDirectory()) {
-            throw new java.io.FileNotFoundException("Parent folder not found: " + filePath);
+            throw new java.io.FileNotFoundException("Parent folder not found: " + fileRef);
         }
 
         String parentPath = parent.getCanonicalPath();
@@ -432,16 +452,16 @@ public final class PdfPluginHandler {
     }
 
     public void getPdfInfo(PluginCall call) {
-        String filePath = call.getString("filePath");
-        if (filePath == null || filePath.isEmpty()) {
-            call.reject("filePath is required");
+        String fileRef = call.getString("fileRef");
+        if (fileRef == null || fileRef.isEmpty()) {
+            call.reject("fileRef is required");
             return;
         }
 
         ParcelFileDescriptor pfd = null;
         PdfRenderer renderer = null;
         try {
-            pfd = openPdfDescriptor(filePath);
+            pfd = openPdfDescriptor(fileRef);
             renderer = new PdfRenderer(pfd);
             JSObject ret = new JSObject();
             ret.put("pageCount", renderer.getPageCount());
@@ -472,11 +492,11 @@ public final class PdfPluginHandler {
     }
 
     public void renderPdfPage(PluginCall call) {
-        String filePath = call.getString("filePath");
+        String fileRef = call.getString("fileRef");
         int pageNumber = call.getInt("page", 1);
         int targetWidth = call.getInt("targetWidth", 1080);
-        if (filePath == null || filePath.isEmpty()) {
-            call.reject("filePath is required");
+        if (fileRef == null || fileRef.isEmpty()) {
+            call.reject("fileRef is required");
             return;
         }
 
@@ -484,7 +504,7 @@ public final class PdfPluginHandler {
         PdfRenderer renderer = null;
         PdfRenderer.Page page = null;
         try {
-            pfd = openPdfDescriptor(filePath);
+            pfd = openPdfDescriptor(fileRef);
             renderer = new PdfRenderer(pfd);
             int pageCount = renderer.getPageCount();
             if (pageNumber < 1 || pageNumber > pageCount) {
@@ -532,21 +552,8 @@ public final class PdfPluginHandler {
         }
     }
 
-    private ParcelFileDescriptor openPdfDescriptor(String filePath) throws Exception {
-        if (filePath.startsWith("content://")) {
-            ParcelFileDescriptor pfd = context.getContentResolver()
-                .openFileDescriptor(Uri.parse(filePath), "r");
-            if (pfd == null) {
-                throw new java.io.FileNotFoundException("content uri not readable");
-            }
-            return pfd;
-        }
-
-        File file = new File(filePath);
-        if (!file.exists() || !file.isFile()) {
-            throw new java.io.FileNotFoundException(filePath);
-        }
-        return ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY);
+    private ParcelFileDescriptor openPdfDescriptor(String fileRef) throws Exception {
+        return PdfRefResolver.openReadDescriptor(context, fileRef);
     }
 
     // ---- 导出任务 ----
@@ -574,7 +581,9 @@ public final class PdfPluginHandler {
                     job.chapterId = t.optString("chapterId", "");
                     job.chapterTitle = t.optString("chapterTitle",
                         "merged".equals(job.mode) ? "合并导出" : job.chapterId);
-                    job.savePath = t.optString("savePath", "");
+                    job.targetFolderRef = t.optString("targetFolderRef", "");
+                    job.targetName = t.optString("targetName", "");
+                    job.displayPath = t.optString("displayPath", "");
                     job.useOriginal = t.optBoolean("useOriginal", true);
                     double cr = t.optDouble("compressionRatio", 1.0);
                     job.compressionRatio = (float) Math.max(0.1, Math.min(1.0, cr));

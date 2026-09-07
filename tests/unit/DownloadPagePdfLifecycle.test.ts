@@ -85,6 +85,7 @@ vi.mock('@/services/PdfExportService', () => ({
   PdfExportService: {
     buildExportPlan: mocks.buildExportPlan,
     getExportPath: () => '/pdf',
+    getExportFolder: () => ({ folderRef: 'folder:path:/pdf', displayPath: '/pdf' }),
   },
 }))
 

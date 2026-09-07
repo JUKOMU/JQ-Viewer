@@ -6,6 +6,7 @@ import androidx.test.platform.app.InstrumentationRegistry;
 import io.github.jukomu.feature.download.data.DownloadStore;
 import io.github.jukomu.feature.download.storage.FileStore;
 import io.github.jukomu.feature.pdf.data.PdfStore;
+import io.github.jukomu.feature.pdf.data.PdfRef;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.After;
@@ -59,7 +60,10 @@ public class PdfExportPersistenceInstrumentedTest {
         job.albumId = "100000001";
         job.chapterId = "100000002";
         job.chapterTitle = "缺失章节";
-        job.savePath = new File(context.getCacheDir(), "rejected.pdf").getAbsolutePath();
+        File rejected = new File(context.getCacheDir(), "rejected.pdf");
+        job.targetFolderRef = PdfRef.createPathFolderRef(context.getCacheDir().getCanonicalPath());
+        job.targetName = rejected.getName();
+        job.displayPath = rejected.getAbsolutePath();
         job.useOriginal = true;
         job.compressionRatio = 1F;
 
@@ -94,7 +98,9 @@ public class PdfExportPersistenceInstrumentedTest {
             .put("albumId", "album-1")
             .put("chapterId", "chapter-1")
             .put("displayTitle", "第一话")
-            .put("savePath", finalFile.getAbsolutePath())
+            .put("targetFolderRef", PdfRef.createPathFolderRef(context.getCacheDir().getCanonicalPath()))
+            .put("targetName", finalFile.getName())
+            .put("displayPath", finalFile.getAbsolutePath())
             .put("status", "running")
             .put("phase", "writing")
             .put("totalPages", 10);
@@ -103,7 +109,8 @@ public class PdfExportPersistenceInstrumentedTest {
             .put("startPage", 0)
             .put("endPage", 10)
             .put("expectedPageCount", 10)
-            .put("finalPath", finalFile.getAbsolutePath())
+            .put("targetName", finalFile.getName())
+            .put("displayPath", finalFile.getAbsolutePath())
             .put("tempPath", tempFile.getAbsolutePath())
             .put("workDir", workDirectory.getAbsolutePath());
         store.reserveExport(task, new JSONArray(), new JSONArray().put(volume));

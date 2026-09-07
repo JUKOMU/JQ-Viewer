@@ -1,7 +1,7 @@
 import type { SearchQuery, SearchResult, SearchResultItem } from '@/services/JmcomicTypes'
 
-export const SEARCH_PAGE_WINDOW_SIZE = 5
-export const SEARCH_PAGE_CONTEXT_CACHE_LIMIT = 3
+export const SEARCH_PAGE_WINDOW_SIZE = 3
+export const SEARCH_PAGE_CONTEXT_CACHE_LIMIT = 4
 
 export type SearchPageContextQuery = {
   keyword: string

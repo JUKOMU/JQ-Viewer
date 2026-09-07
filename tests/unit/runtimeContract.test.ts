@@ -173,6 +173,61 @@ describe('Android bridge adapters', () => {
     expect(importPdfs).not.toHaveBeenCalled()
   })
 
+  test('importPdfs 不把空白 fileRef 当作展示路径', async () => {
+    const importPdfs = vi.fn()
+    const native = createNative({ importPdfs })
+    const events = createAndroidBackendEvents(native)
+    const services = createAndroidPlatformServices(native, events)
+
+    const item = {
+      fileRef: '   ',
+      displayPath: '/fallback/display-path.pdf',
+      fileName: 'display-path.pdf',
+      albumId: 'album-1',
+      albumTitle: '测试漫画',
+      coverUrl: '',
+      authors: '',
+      chapterId: 'chapter-1',
+      chapterTitle: '第一话',
+      chapterSortOrder: 1,
+    }
+
+    await expect(services.pdf.importPdfs([item as never])).rejects.toMatchObject({
+      code: 'not-found',
+    })
+    expect(importPdfs).not.toHaveBeenCalled()
+  })
+
+  test('Android PDF adapter 继续把完整展示路径映射到原生 savePath', async () => {
+    const exportPdfBatch = vi.fn().mockResolvedValue({ tasks: [] })
+    const native = createNative({ exportPdfBatch })
+    const events = createAndroidBackendEvents(native)
+    const services = createAndroidPlatformServices(native, events)
+
+    await services.pdf.exportPdfBatch({
+      tasks: [
+        {
+          mode: 'merged',
+          albumId: 'album-1',
+          chapterTitle: '第1-2话',
+          target: { folder: '/exports', relativePath: 'merged.pdf' },
+          displayPath: '/exports/merged.pdf',
+          useOriginal: true,
+          compressionRatio: 0.5,
+          splitPages: 0,
+        },
+      ],
+    })
+
+    expect(exportPdfBatch).toHaveBeenCalledWith({
+      tasks: [
+        expect.objectContaining({
+          savePath: '/exports/merged.pdf',
+        }),
+      ],
+    })
+  })
+
   test('updater action 带 revision 且同一 action 幂等', async () => {
     const getUpdateState = vi.fn().mockResolvedValue({
       revision: 4,

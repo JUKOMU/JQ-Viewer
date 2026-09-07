@@ -186,6 +186,13 @@ describe('PDF export plan', () => {
     })
   })
 
+  it('uses the filesystem root as the folder for a root-level output path', () => {
+    expect(PdfExportService.buildExportTarget('/merged.pdf')).toEqual({
+      folder: '/',
+      relativePath: 'merged.pdf',
+    })
+  })
+
   it('keeps chapter mode as one task per selected chapter', () => {
     const plan = PdfExportService.buildExportPlan({
       mode: 'chapter',

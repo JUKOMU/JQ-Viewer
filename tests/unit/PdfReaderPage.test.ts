@@ -40,6 +40,7 @@ const mocks = vi.hoisted(() => ({
   getDocument: vi.fn(),
   getPdfInfo: vi.fn(),
   renderPdfPage: vi.fn(),
+  renderPdfPageAvailable: true,
   createObjectURL: vi.fn(),
   revokeObjectURL: vi.fn(),
   showToast: vi.fn(),
@@ -93,7 +94,7 @@ vi.mock('@/runtime/runtimeContext', () => ({
   getRuntime: () => ({
     resources: {
       renderPdfPage: {
-        available: true,
+        available: mocks.renderPdfPageAvailable,
         api: { getUrl: mocks.renderPdfPage },
       },
     },
@@ -336,6 +337,7 @@ beforeEach(() => {
   mocks.fetchPdfArrayBuffer.mockResolvedValue(new ArrayBuffer(8))
   mocks.buildPdfDocumentParams.mockImplementation((data: ArrayBuffer) => ({ data }))
   mocks.getPdfInfo.mockResolvedValue({ pageCount: 3 })
+  mocks.renderPdfPageAvailable = true
   mocks.renderPdfPage.mockImplementation(
     ({ page, targetWidth }: { file: string; page: number; targetWidth: number }) =>
       Promise.resolve(`native:${page}:${targetWidth}`),
@@ -430,12 +432,29 @@ describe('PdfReaderPage PDF 专属渲染尺寸', () => {
 
     expect(mocks.getPdfInfo).toHaveBeenCalledWith('/books/test.pdf')
     expect(mocks.renderPdfPage).toHaveBeenCalled()
+    expect(mocks.renderPdfPage).toHaveBeenCalledWith(
+      expect.objectContaining({ file: '/books/test.pdf', targetWidth: 2400 }),
+    )
     expect(
       mocks.renderPdfPage.mock.calls.every(
         ([call]) => (call as { targetWidth: number }).targetWidth === 2400,
       ),
     ).toBe(true)
     expect(renderCalls).toHaveLength(0)
+    wrapper.unmount()
+  })
+
+  test('native renderer 不可用时不调用 ResourceResolver API', async () => {
+    mocks.displayMode = 'horizontal'
+    mocks.renderPdfPageAvailable = false
+    const loadFailure = deferred<never>()
+    mocks.getDocument.mockReturnValue({ promise: loadFailure.promise })
+    const wrapper = mountPage()
+    loadFailure.reject(new Error('unsupported'))
+    await settle()
+
+    expect(mocks.getPdfInfo).toHaveBeenCalledWith('/books/test.pdf')
+    expect(mocks.renderPdfPage).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 

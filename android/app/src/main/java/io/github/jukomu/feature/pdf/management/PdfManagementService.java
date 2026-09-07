@@ -5,6 +5,7 @@ import android.database.Cursor;
 import android.net.Uri;
 import android.provider.OpenableColumns;
 
+import io.github.jukomu.feature.pdf.PdfOperationException;
 import io.github.jukomu.feature.pdf.data.PdfStore;
 
 import org.json.JSONArray;
@@ -100,7 +101,9 @@ public final class PdfManagementService {
      */
     public JSONObject inspectFileForDeletion(long id) throws Exception {
         JSONObject refreshed = verifyFile(id);
-        if (refreshed == null) throw new IllegalArgumentException("PDF 文件记录不存在");
+        if (refreshed == null) {
+            throw PdfOperationException.notFound("PDF 文件记录不存在");
+        }
         return refreshed;
     }
 
@@ -134,9 +137,11 @@ public final class PdfManagementService {
             record, null);
     }
 
-    private JSONObject requireFile(long id) {
+    private JSONObject requireFile(long id) throws PdfOperationException {
         JSONObject record = store.getFile(id);
-        if (record == null) throw new IllegalArgumentException("PDF 文件记录不存在");
+        if (record == null) {
+            throw PdfOperationException.notFound("PDF 文件记录不存在");
+        }
         return record;
     }
 
@@ -149,8 +154,11 @@ public final class PdfManagementService {
                 }
                 if (!contentUriExists(uri)) return DeleteOutcome.ALREADY_MISSING;
                 throw new IOException("PDF_DELETE_FAILED: 文件提供方拒绝删除 PDF");
+            } catch (PdfOperationException error) {
+                throw error;
             } catch (SecurityException error) {
-                throw new IOException("PDF_INACCESSIBLE: 没有权限删除 PDF", error);
+                throw PdfOperationException.permissionDenied(
+                    "PDF_INACCESSIBLE: 没有权限删除 PDF", error);
             } catch (IOException error) {
                 throw error;
             } catch (Exception error) {
@@ -159,6 +167,10 @@ public final class PdfManagementService {
         }
         File file = new File(locator);
         if (!file.exists()) return DeleteOutcome.ALREADY_MISSING;
+        if (!file.canWrite()) {
+            throw PdfOperationException.permissionDenied(
+                "PDF_INACCESSIBLE: 没有权限删除 PDF", null);
+        }
         if (!file.isFile() || !file.delete()) {
             throw new IOException("PDF_DELETE_FAILED: PDF 文件删除失败");
         }
@@ -169,11 +181,13 @@ public final class PdfManagementService {
         try (Cursor cursor = context.getContentResolver().query(
             uri, new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
             if (cursor == null) {
-                throw new IOException("PDF_INACCESSIBLE: 无法确认 PDF 是否存在");
+                throw PdfOperationException.permissionDenied(
+                    "PDF_INACCESSIBLE: 无法确认 PDF 是否存在", null);
             }
             return cursor.moveToFirst();
         } catch (SecurityException error) {
-            throw new IOException("PDF_INACCESSIBLE: 没有权限读取 PDF", error);
+            throw PdfOperationException.permissionDenied(
+                "PDF_INACCESSIBLE: 没有权限读取 PDF", error);
         }
     }
 

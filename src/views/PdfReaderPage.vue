@@ -63,6 +63,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { IonPage } from '@ionic/vue'
 import type { ListenerHandle } from '@/runtime/BackendEvents'
 import { asFileRef } from '@/runtime/FileReferences'
+import { normalizeRuntimeError } from '@/runtime/errors'
 import { getRuntime } from '@/runtime/runtimeContext'
 import { JmcomicService, showToast } from '@/services/JmcomicService'
 import { SettingsStore } from '@/services/SettingsService'
@@ -911,8 +912,12 @@ onMounted(async () => {
     } else if (e instanceof TypeError && e.message === 'Failed to fetch') {
       await showToast('PDF 文件读取失败，请重新导入', 'danger')
     } else {
-      const msg = e?.message || ''
-      if (/password/i.test(msg)) {
+      const runtimeError = normalizeRuntimeError(e)
+      if (runtimeError.code === 'not-found') {
+        await showToast(runtimeError.message || 'PDF 文件不存在或已移动', 'danger')
+      } else if (runtimeError.code === 'permission-denied') {
+        await showToast(runtimeError.message || 'PDF 文件读取权限已失效，请重新导入', 'danger')
+      } else if (/password/i.test(runtimeError.message)) {
         await showToast('此 PDF 已加密，无法打开', 'danger')
       } else {
         await showToast('PDF 文件无法打开，可能已损坏', 'danger')

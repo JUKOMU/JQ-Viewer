@@ -17,6 +17,7 @@ import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
 import io.github.jukomu.feature.download.data.DownloadStore;
+import io.github.jukomu.feature.pdf.PdfOperationException;
 import io.github.jukomu.feature.pdf.data.PdfStore;
 import io.github.jukomu.feature.pdf.export.PdfExportJobValidator;
 import io.github.jukomu.feature.pdf.export.PdfExportService;
@@ -26,6 +27,7 @@ import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Executor;
@@ -36,6 +38,9 @@ import java.util.concurrent.Executor;
  */
 public final class PdfPluginHandler {
     private static final String TAG = "PdfPluginHandler";
+    private static final String PDF_FOLDER_NOT_FOUND_MESSAGE = "PDF 文件夹不存在";
+    private static final String PDF_FOLDER_PERMISSION_MESSAGE =
+        "PDF 文件夹读取权限已失效，请重新选择文件夹";
     private static final String EXTERNAL_STORAGE_DOCUMENTS_AUTHORITY =
         "com.android.externalstorage.documents";
 
@@ -62,15 +67,25 @@ public final class PdfPluginHandler {
     }
 
     private void scanPdfFilesViaSaf(PluginCall call, Uri treeUri) {
-        DocumentFile root = DocumentFile.fromTreeUri(context, treeUri);
-        if (root == null || !root.isDirectory()) {
-            // SAF 失败时回退到 java.io.File
-            scanPdfFilesViaFile(call);
-            return;
-        }
-        DocumentFile[] children = root.listFiles();
-        JSArray arr = new JSArray();
-        if (children != null) {
+        try {
+            DocumentFile root = DocumentFile.fromTreeUri(context, treeUri);
+            if (root == null || !root.exists() || !root.isDirectory()) {
+                rejectWithCode(call, PDF_FOLDER_NOT_FOUND_MESSAGE,
+                    PdfOperationException.NOT_FOUND, null);
+                return;
+            }
+            if (!root.canRead()) {
+                rejectWithCode(call, PDF_FOLDER_PERMISSION_MESSAGE,
+                    PdfOperationException.PERMISSION_DENIED, null);
+                return;
+            }
+            DocumentFile[] children = root.listFiles();
+            if (children == null) {
+                rejectWithCode(call, PDF_FOLDER_PERMISSION_MESSAGE,
+                    PdfOperationException.PERMISSION_DENIED, null);
+                return;
+            }
+            JSArray arr = new JSArray();
             for (DocumentFile child : children) {
                 if (child.isFile() && child.getName() != null
                     && child.getName().toLowerCase().endsWith(".pdf")) {
@@ -80,10 +95,13 @@ public final class PdfPluginHandler {
                     arr.put(obj);
                 }
             }
+            JSObject ret = new JSObject();
+            ret.put("files", arr);
+            call.resolve(ret);
+        } catch (SecurityException error) {
+            rejectWithCode(call, PDF_FOLDER_PERMISSION_MESSAGE,
+                PdfOperationException.PERMISSION_DENIED, error);
         }
-        JSObject ret = new JSObject();
-        ret.put("files", arr);
-        call.resolve(ret);
     }
 
     private void scanPdfFilesViaFile(PluginCall call) {
@@ -94,19 +112,28 @@ public final class PdfPluginHandler {
         }
         File dir = new File(path);
         if (!dir.isDirectory()) {
-            call.reject("Not a directory: " + path);
+            rejectWithCode(call, "Not a directory: " + path,
+                PdfOperationException.NOT_FOUND, null);
+            return;
+        }
+        if (!dir.canRead()) {
+            rejectWithCode(call, PDF_FOLDER_PERMISSION_MESSAGE,
+                PdfOperationException.PERMISSION_DENIED, null);
             return;
         }
         File[] pdfFiles = dir.listFiles((d, name) ->
             name.toLowerCase().endsWith(".pdf"));
+        if (pdfFiles == null) {
+            rejectWithCode(call, PDF_FOLDER_PERMISSION_MESSAGE,
+                PdfOperationException.PERMISSION_DENIED, null);
+            return;
+        }
         JSArray arr = new JSArray();
-        if (pdfFiles != null) {
-            for (File f : pdfFiles) {
-                JSObject obj = new JSObject();
-                obj.put("fileName", f.getName());
-                obj.put("filePath", f.getAbsolutePath());
-                arr.put(obj);
-            }
+        for (File f : pdfFiles) {
+            JSObject obj = new JSObject();
+            obj.put("fileName", f.getName());
+            obj.put("filePath", f.getAbsolutePath());
+            arr.put(obj);
         }
         JSObject ret = new JSObject();
         ret.put("files", arr);
@@ -223,6 +250,8 @@ public final class PdfPluginHandler {
             try {
                 call.resolve(JSObject.fromJSONObject(PdfManagementService.getInstance(context)
                     .inspectFileForDeletion(id)));
+            } catch (PdfOperationException error) {
+                rejectPdfOperation(call, error);
             } catch (Exception error) {
                 call.reject(error.getMessage(), error);
             }
@@ -266,6 +295,8 @@ public final class PdfPluginHandler {
             try {
                 call.resolve(JSObject.fromJSONObject(
                     PdfManagementService.getInstance(context).deleteFile(id)));
+            } catch (PdfOperationException error) {
+                rejectPdfOperation(call, error);
             } catch (Exception error) {
                 call.reject(error.getMessage(), error);
             }
@@ -415,6 +446,12 @@ public final class PdfPluginHandler {
             JSObject ret = new JSObject();
             ret.put("pageCount", renderer.getPageCount());
             call.resolve(ret);
+        } catch (FileNotFoundException error) {
+            call.reject("PDF 信息读取失败: " + error.getMessage(),
+                PdfOperationException.NOT_FOUND, error);
+        } catch (SecurityException error) {
+            call.reject("PDF 信息读取失败: " + error.getMessage(),
+                PdfOperationException.PERMISSION_DENIED, error);
         } catch (Exception e) {
             call.reject("PDF 信息读取失败: " + e.getMessage(), e);
         } finally {
@@ -596,7 +633,7 @@ public final class PdfPluginHandler {
         JSONObject task = exportId == null ? null
             : PdfExportService.getInstance(context).getExportTask(exportId);
         if (task == null) {
-            call.reject("PDF 导出任务不存在");
+            rejectWithCode(call, "PDF 导出任务不存在", PdfOperationException.NOT_FOUND, null);
             return;
         }
         try {
@@ -611,7 +648,7 @@ public final class PdfPluginHandler {
         JSONObject task = exportId == null ? null
             : PdfExportService.getInstance(context).cancelExport(exportId);
         if (task == null) {
-            call.reject("PDF 导出任务不存在");
+            rejectWithCode(call, "PDF 导出任务不存在", PdfOperationException.NOT_FOUND, null);
             return;
         }
         try {
@@ -631,6 +668,8 @@ public final class PdfPluginHandler {
             try {
                 call.resolve(JSObject.fromJSONObject(PdfExportService.getInstance(context)
                     .retryExport(exportId, call.getBoolean("allowOverwrite", false))));
+            } catch (PdfOperationException error) {
+                rejectPdfOperation(call, error);
             } catch (Exception error) {
                 call.reject(error.getMessage(), error);
             }
@@ -658,5 +697,14 @@ public final class PdfPluginHandler {
 
     private void dispatchPdfCommand(Runnable command) {
         pdfCommandExecutor.execute(command);
+    }
+
+    private static void rejectWithCode(PluginCall call, String message, String code,
+                                       Exception cause) {
+        call.reject(message, code, cause);
+    }
+
+    private static void rejectPdfOperation(PluginCall call, PdfOperationException error) {
+        rejectWithCode(call, error.getMessage(), error.code, error);
     }
 }

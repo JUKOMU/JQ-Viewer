@@ -8,6 +8,7 @@ import android.util.Log;
 import io.github.jukomu.feature.download.data.DownloadStore;
 import io.github.jukomu.feature.download.storage.FileStore;
 import io.github.jukomu.feature.download.validation.ChapterManifestValidator;
+import io.github.jukomu.feature.pdf.PdfOperationException;
 import io.github.jukomu.feature.pdf.data.PdfStore;
 import io.github.jukomu.feature.pdf.management.PdfFileValidator;
 import io.github.jukomu.feature.pdf.notification.PdfExportNotificationHelper;
@@ -142,7 +143,9 @@ public class PdfExportService {
 
     public synchronized JSONObject retryExport(String exportId, boolean allowOverwrite) throws Exception {
         JSONObject task = pdfStore.getExportTask(exportId);
-        if (task == null) throw new IllegalArgumentException("PDF 导出任务不存在");
+        if (task == null) {
+            throw PdfOperationException.notFound("PDF 导出任务不存在");
+        }
         JSONArray persistedChapters = pdfStore.getExportChapters(exportId);
         JSONArray persistedVolumes = pdfStore.getExportVolumes(exportId);
         ExportJob job = jobFromSnapshot(task, persistedChapters);
@@ -150,10 +153,12 @@ public class PdfExportService {
         ExportPreflight preflight = preflight(job);
         ensureRetryLayoutUnchanged(persistedChapters, persistedVolumes, preflight);
         job.exportId = exportId;
-        if (!acquireJobLocks(job)) throw new IllegalStateException("相同章节已有任务正在运行");
+        if (!acquireJobLocks(job)) {
+            throw PdfOperationException.conflict("相同章节已有任务正在运行");
+        }
         if (!pdfStore.prepareExportRetry(exportId, allowOverwrite)) {
             releaseJobLocksAndUpdate(job);
-            throw new IllegalStateException("当前任务状态不能重试");
+            throw PdfOperationException.conflict("当前任务状态不能重试");
         }
         QueuedExportJob queued = new QueuedExportJob(job, preflight,
             NotificationIds.pdfTask(notificationCounter.getAndIncrement()));

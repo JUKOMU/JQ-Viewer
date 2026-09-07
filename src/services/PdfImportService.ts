@@ -21,6 +21,8 @@ export function clearCachedParseResult(): void {
 
 /** 步骤 1：扫描文件夹并解析文件名 */
 async function scanAndParse(folder: FolderRef): Promise<ImportPdfParseResult> {
+  // 目录失效时丢弃上一轮扫描结果，避免后续确认流程继续使用旧文件引用。
+  cachedParseResult = null
   const result = await JmcomicService.scanPdfFiles(folder)
   const filePaths = result.files.map((f) => f.displayPath)
   const fileNames = result.files.map((f) => f.fileName)

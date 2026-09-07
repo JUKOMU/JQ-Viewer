@@ -381,10 +381,24 @@ describe('listener helper', () => {
 })
 
 describe('runtime errors', () => {
+  test('支持的 rejection code 会归一化并保留原始 message', () => {
+    expect(
+      normalizeRuntimeError({ code: 'not-found', message: 'PDF 导出任务不存在' }),
+    ).toMatchObject({ code: 'not-found', message: 'PDF 导出任务不存在' })
+    expect(
+      normalizeRuntimeError({ errorCode: 'permission-denied', message: '权限已失效' }),
+    ).toMatchObject({ code: 'permission-denied', message: '权限已失效' })
+    expect(normalizeRuntimeError({ code: 'conflict', message: '当前任务状态不能重试' })).toMatchObject({
+      code: 'conflict',
+      message: '当前任务状态不能重试',
+    })
+  })
+
   test('未知 rejection 不根据自然语言猜测业务 code', () => {
     expect(normalizeRuntimeError(new Error('permission denied')).code).toBe('internal')
-    expect(normalizeRuntimeError({ errorCode: 'not-found', message: 'missing' }).code).toBe(
-      'not-found',
-    )
+    expect(normalizeRuntimeError({ code: 'permission denied', message: '权限已失效' })).toMatchObject({
+      code: 'internal',
+      message: '权限已失效',
+    })
   })
 })

@@ -36,6 +36,8 @@ function getSafeMessage(value: unknown): string {
   if (value instanceof RuntimeError) return value.message
   if (value instanceof Error && value.message) return value.message
   if (typeof value === 'string' && value.trim()) return value
+  const message = (value as { message?: unknown } | null)?.message
+  if (typeof message === 'string' && message.trim()) return message
   return '平台操作失败'
 }
 

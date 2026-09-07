@@ -2,6 +2,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, h, nextTick, onMounted, ref, type PropType } from 'vue'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import { RuntimeError } from '@/runtime/errors'
 
 type Deferred<T> = {
   promise: Promise<T>
@@ -455,6 +456,25 @@ describe('PdfReaderPage PDF 专属渲染尺寸', () => {
 
     expect(mocks.getPdfInfo).toHaveBeenCalledWith('/books/test.pdf')
     expect(mocks.renderPdfPage).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  test('native reader 文件权限失效时展示稳定错误 message', async () => {
+    mocks.displayMode = 'horizontal'
+    const loadFailure = deferred<never>()
+    mocks.getDocument.mockReturnValue({ promise: loadFailure.promise })
+    mocks.getPdfInfo.mockRejectedValueOnce(
+      new RuntimeError('permission-denied', 'PDF 信息读取失败: 没有权限读取 PDF'),
+    )
+    const wrapper = mountPage()
+    loadFailure.reject(new Error('unsupported'))
+    await settle()
+
+    expect(mocks.showToast).toHaveBeenCalledWith(
+      'PDF 信息读取失败: 没有权限读取 PDF',
+      'danger',
+    )
+    expect(mocks.router.back).toHaveBeenCalled()
     wrapper.unmount()
   })
 

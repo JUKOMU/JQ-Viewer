@@ -33,6 +33,8 @@ function toUpdateState(event: Awaited<ReturnType<JmcomicClient['getUpdateState']
 export function createAndroidUpdater(native: JmcomicClient): UpdaterService {
   const events = createAndroidBackendEvents(native)
   let lastActionId: string | null = null
+  const completedActionIds = new Set<string>()
+  const inFlightActions = new Map<string, Promise<void>>()
 
   return {
     getState: () => withRuntimeError(async () => toUpdateState(await native.getUpdateState())),
@@ -40,21 +42,49 @@ export function createAndroidUpdater(native: JmcomicClient): UpdaterService {
     start: () => withRuntimeError(() => native.startUpdate()),
     cancel: () => withRuntimeError(() => native.cancelUpdate()),
     install: () => withRuntimeError(() => native.installUpdate()),
-    performUserAction: async (action: UpdateUserAction) => {
+    performUserAction: (action: UpdateUserAction) => {
       if (action.kind !== ACTION_KIND) {
-        throw new RuntimeError('unavailable', `Unsupported update action: ${action.kind}`)
+        return Promise.reject(
+          new RuntimeError('unavailable', `Unsupported update action: ${action.kind}`),
+        )
       }
-      const current = await withRuntimeError(async () => toUpdateState(await native.getUpdateState()))
-      if (current.requiredUserAction?.id !== action.id || current.revision !== action.stateRevision) {
-        throw new RuntimeError('conflict', 'Update action is stale')
+
+      if (lastActionId === action.id || completedActionIds.has(action.id)) {
+        return Promise.resolve()
       }
-      if (lastActionId === action.id) return
-      try {
-        await withRuntimeError(() => native.requestInstallPermission())
-        lastActionId = action.id
-      } catch (error) {
-        throw normalizeRuntimeError(error)
-      }
+
+      const existing = inFlightActions.get(action.id)
+      if (existing) return existing
+
+      const operation = (async () => {
+        const current = await withRuntimeError(async () =>
+          toUpdateState(await native.getUpdateState()),
+        )
+        if (
+          current.requiredUserAction?.id !== action.id ||
+          current.revision !== action.stateRevision
+        ) {
+          throw new RuntimeError('conflict', 'Update action is stale')
+        }
+
+        if (lastActionId === action.id || completedActionIds.has(action.id)) return
+
+        try {
+          await withRuntimeError(() => native.requestInstallPermission())
+          lastActionId = action.id
+          completedActionIds.add(action.id)
+        } catch (error) {
+          throw normalizeRuntimeError(error)
+        }
+      })()
+
+      const tracked = operation.finally(() => {
+        if (inFlightActions.get(action.id) === tracked) {
+          inFlightActions.delete(action.id)
+        }
+      })
+      inFlightActions.set(action.id, tracked)
+      return tracked
     },
     onProgress: async (handler) => {
       const handle = await events.onUpdateProgress((event) => handler(toUpdateState(event)))

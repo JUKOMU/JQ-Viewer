@@ -222,17 +222,30 @@ export function buildPdfOutputPaths(
 
 /**
  * 根据展示路径与可选导出目录构造 ExportTarget。
- * 若能确定目录前缀则归一化为相对路径；目录引用由平台持有，
- * 越界与分隔符处理留待底层平台校验。
+ * 未提供目录引用时，仅从展示路径提取父目录和文件名；提供目录引用时，
+ * 只计算目录内的逻辑相对路径。实际平台目标的拼接与越界校验留给 adapter。
  */
 function buildExportTarget(displayPath: string, folder?: FolderRef): ExportTarget {
   const normalizedPath = displayPath.replace(/\\/g, '/')
-  const folderRef = folder ?? asFolderRef(normalizedPath)
-  const normalizedFolder = String(folderRef).replace(/\\/g, '/').replace(/\/+$/, '')
-  const relativePath = normalizedPath.startsWith(`${normalizedFolder}/`)
-    ? normalizedPath.slice(normalizedFolder.length + 1)
+  if (!folder) {
+    const lastSeparator = normalizedPath.lastIndexOf('/')
+    if (lastSeparator < 0) {
+      return { folder: asFolderRef('.'), relativePath: normalizedPath }
+    }
+
+    const folderPath = lastSeparator === 0 ? '/' : normalizedPath.slice(0, lastSeparator)
+    return {
+      folder: asFolderRef(folderPath),
+      relativePath: normalizedPath.slice(lastSeparator + 1),
+    }
+  }
+
+  const normalizedFolder = String(folder).replace(/\\/g, '/').replace(/\/+$/, '') || '/'
+  const folderPrefix = normalizedFolder === '/' ? '/' : `${normalizedFolder}/`
+  const relativePath = normalizedPath.startsWith(folderPrefix)
+    ? normalizedPath.slice(folderPrefix.length)
     : normalizedPath
-  return { folder: folderRef, relativePath }
+  return { folder, relativePath }
 }
 
 export const PdfExportService = {

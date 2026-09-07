@@ -10,6 +10,20 @@ import { createAndroidUpdater } from '@/runtime/android/androidUpdater'
 import { normalizeRuntimeError } from '@/runtime/errors'
 import { configureRuntime, getRuntime, resetRuntimeForTests } from '@/runtime/runtimeContext'
 
+function deferred<T>(): {
+  promise: Promise<T>
+  resolve: (value: T) => void
+  reject: (reason?: unknown) => void
+} {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
 function createNative(overrides: Record<string, unknown> = {}): JmcomicClient {
   return {
     ...Object.fromEntries(COMMON_BACKEND_METHODS.map((method) => [method, vi.fn()])),
@@ -84,7 +98,11 @@ describe('Android bridge adapters', () => {
     expect(resources.renderPdfPage.available).toBe(true)
     if (resources.renderPdfPage.available) {
       await expect(
-        resources.renderPdfPage.api.getUrl({ file: '/books/a.pdf' as never, page: 3, targetWidth: 900 }),
+        resources.renderPdfPage.api.getUrl({
+          file: '/books/a.pdf' as never,
+          page: 3,
+          targetWidth: 900,
+        }),
       ).resolves.toBe('data:image/png;base64,abc')
     }
     expect(renderPdfPage).toHaveBeenCalledWith({
@@ -152,6 +170,98 @@ describe('Android bridge adapters', () => {
     })
     await updater.performUserAction(state.requiredUserAction!)
     await updater.performUserAction(state.requiredUserAction!)
+    expect(requestInstallPermission).toHaveBeenCalledOnce()
+  })
+
+  test('同一 updater action 并发调用复用进行中的权限请求', async () => {
+    const request = deferred<{ requested: boolean }>()
+    const getUpdateState = vi.fn().mockResolvedValue({
+      revision: 4,
+      phase: 'install_permission_required',
+      source: '',
+      githubBytes: 0,
+      giteeBytes: 0,
+      totalBytes: 0,
+      speedBytesPerSecond: 0,
+      error: '',
+    })
+    const requestInstallPermission = vi.fn().mockReturnValue(request.promise)
+    const native = createNative({ getUpdateState, requestInstallPermission })
+    const updater = createAndroidUpdater(native)
+    const action = {
+      id: 'grant-install-permission:4',
+      kind: 'grant-install-permission' as const,
+      stateRevision: 4,
+    }
+
+    const first = updater.performUserAction(action)
+    const second = updater.performUserAction(action)
+    await vi.waitFor(() => expect(requestInstallPermission).toHaveBeenCalledOnce())
+
+    request.resolve({ requested: true })
+    await expect(Promise.all([first, second])).resolves.toEqual([undefined, undefined])
+    await updater.performUserAction(action)
+    expect(requestInstallPermission).toHaveBeenCalledOnce()
+  })
+
+  test('updater action 失败后清理进行中记录并允许重试', async () => {
+    const getUpdateState = vi.fn().mockResolvedValue({
+      revision: 4,
+      phase: 'install_permission_required',
+      source: '',
+      githubBytes: 0,
+      giteeBytes: 0,
+      totalBytes: 0,
+      speedBytesPerSecond: 0,
+      error: '',
+    })
+    const requestInstallPermission = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('permission request failed'))
+      .mockResolvedValueOnce({ requested: true })
+    const native = createNative({ getUpdateState, requestInstallPermission })
+    const updater = createAndroidUpdater(native)
+    const action = {
+      id: 'grant-install-permission:4',
+      kind: 'grant-install-permission' as const,
+      stateRevision: 4,
+    }
+
+    await expect(updater.performUserAction(action)).rejects.toMatchObject({ code: 'internal' })
+    await expect(updater.performUserAction(action)).resolves.toBeUndefined()
+    expect(requestInstallPermission).toHaveBeenCalledTimes(2)
+  })
+
+  test('不同 action 不会共享权限请求，过期 action 仍被拒绝', async () => {
+    const getUpdateState = vi.fn().mockResolvedValue({
+      revision: 5,
+      phase: 'install_permission_required',
+      source: '',
+      githubBytes: 0,
+      giteeBytes: 0,
+      totalBytes: 0,
+      speedBytesPerSecond: 0,
+      error: '',
+    })
+    const requestInstallPermission = vi.fn().mockResolvedValue({ requested: true })
+    const native = createNative({ getUpdateState, requestInstallPermission })
+    const updater = createAndroidUpdater(native)
+
+    await expect(
+      updater.performUserAction({
+        id: 'grant-install-permission:4',
+        kind: 'grant-install-permission',
+        stateRevision: 4,
+      }),
+    ).rejects.toMatchObject({ code: 'conflict' })
+
+    await expect(
+      updater.performUserAction({
+        id: 'grant-install-permission:5',
+        kind: 'grant-install-permission',
+        stateRevision: 5,
+      }),
+    ).resolves.toBeUndefined()
     expect(requestInstallPermission).toHaveBeenCalledOnce()
   })
 

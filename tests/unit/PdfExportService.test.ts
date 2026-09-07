@@ -6,6 +6,7 @@ import {
   buildPdfOutputPaths,
   normalizePdfChapters,
 } from '@/services/PdfExportService'
+import { asFolderRef } from '@/runtime/FileReferences'
 import type { DownloadTask, PdfExportChapter } from '@/services/JmcomicTypes'
 
 function chapter(
@@ -162,7 +163,7 @@ describe('PDF export plan', () => {
         isSingleEpisode: false,
         chapterTitle: '第2-3话',
         displayPath: '/exports/merged.pdf',
-        target: { folder: '/exports/merged.pdf', relativePath: '/exports/merged.pdf' },
+        target: { folder: '/exports', relativePath: 'merged.pdf' },
       }),
     ])
     expect(plan.tasks[0]).not.toHaveProperty('chapterId')
@@ -174,6 +175,15 @@ describe('PDF export plan', () => {
       '/exports/merged_001-025.pdf',
       '/exports/merged_026-050.pdf',
     ])
+  })
+
+  it('uses a provided export folder and keeps the target path relative to it', () => {
+    expect(
+      PdfExportService.buildExportTarget('/exports/album/merged.pdf', asFolderRef('/exports')),
+    ).toEqual({
+      folder: '/exports',
+      relativePath: 'album/merged.pdf',
+    })
   })
 
   it('keeps chapter mode as one task per selected chapter', () => {

@@ -44,6 +44,18 @@ public class PdfExportServiceTest {
     }
 
     @Test
+    public void preservesNestedTargetDirectoriesWhenSplittingVolumes() throws Exception {
+        File output = new File(temporaryFolder.getRoot(), "merged.pdf");
+
+        List<PdfExportService.ExportVolume> volumes = PdfExportService.buildVolumes(
+            output, 205, 100, "295852/merged.pdf", "/exports/295852/merged.pdf");
+
+        assertEquals("295852/merged_001-100.pdf", volumes.get(0).targetName);
+        assertEquals("295852/merged_101-200.pdf", volumes.get(1).targetName);
+        assertEquals("295852/merged_201-205.pdf", volumes.get(2).targetName);
+    }
+
+    @Test
     public void removesOnlyTheTargetStaleArtifacts() throws Exception {
         File output = new File(temporaryFolder.getRoot(), "merged.pdf");
         File other = new File(temporaryFolder.getRoot(), "other.pdf.tmp");

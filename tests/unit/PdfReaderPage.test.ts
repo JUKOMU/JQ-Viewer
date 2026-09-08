@@ -497,6 +497,27 @@ describe('PdfReaderPage PDF 专属渲染尺寸', () => {
     wrapper.unmount()
   })
 
+  test('native renderer rejection preserves permission message', async () => {
+    mocks.displayMode = 'horizontal'
+    mocks.getPdfInfo.mockResolvedValue({ pageCount: 1 })
+    const loadFailure = deferred<never>()
+    mocks.getDocument.mockReturnValue({ promise: loadFailure.promise })
+    mocks.renderPdfPage.mockRejectedValueOnce(
+      new RuntimeError('permission-denied', 'PDF 页面读取权限已失效'),
+    )
+
+    const wrapper = mountPage()
+    loadFailure.reject(new Error('unsupported'))
+    await settle()
+
+    const view = currentView(wrapper)
+    expect((view.props('failedMessages') as Map<number, string>).get(1)).toBe(
+      'PDF 页面读取权限已失效',
+    )
+    expect(mocks.showToast).toHaveBeenCalledWith('PDF 页面读取权限已失效', 'danger')
+    wrapper.unmount()
+  })
+
   test('同一 native render generation 的多个 rejection 只提示一次', async () => {
     mocks.displayMode = 'horizontal'
     mocks.preloadPages = 2

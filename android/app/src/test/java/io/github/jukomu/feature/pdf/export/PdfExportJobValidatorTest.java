@@ -1,5 +1,6 @@
 package io.github.jukomu.feature.pdf.export;
 
+import io.github.jukomu.feature.pdf.data.PdfRef;
 import org.junit.Test;
 
 import java.util.Arrays;
@@ -102,6 +103,55 @@ public class PdfExportJobValidatorTest {
 
         assertThrows(IllegalArgumentException.class,
             () -> PdfExportJobValidator.validate(job));
+    }
+
+    @Test
+    public void rejectsFileReferenceAsExportFolder() throws Exception {
+        PdfExportService.ExportJob job = chapterJob("101");
+        job.targetFolderRef = PdfRef.createPathFileRef("/exports/book.pdf");
+
+        assertThrows(IllegalArgumentException.class,
+            () -> PdfExportJobValidator.validate(job));
+    }
+
+    @Test
+    public void rejectsInvalidFolderReference() {
+        PdfExportService.ExportJob job = chapterJob("101");
+        job.targetFolderRef = "folder:path:relative/exports";
+
+        assertThrows(IllegalArgumentException.class,
+            () -> PdfExportJobValidator.validate(job));
+    }
+
+    @Test
+    public void rejectsUnsafeTargetNameSegments() {
+        String[] invalidNames = {
+            "/absolute.pdf",
+            "../book.pdf",
+            "a/../book.pdf",
+            "a/./book.pdf",
+            "a//book.pdf",
+            "a/",
+            "",
+            "C:/book.pdf",
+        };
+
+        for (String invalidName : invalidNames) {
+            PdfExportService.ExportJob job = chapterJob("101");
+            job.targetName = invalidName;
+            assertThrows(IllegalArgumentException.class,
+                () -> PdfExportJobValidator.validate(job));
+        }
+    }
+
+    @Test
+    public void preservesLegalNestedTargetName() {
+        PdfExportService.ExportJob job = chapterJob("101");
+        job.targetName = "295852/book.pdf";
+
+        PdfExportJobValidator.validate(job);
+
+        assertEquals("295852/book.pdf", job.targetName);
     }
 
     private static PdfExportService.ExportJob chapterJob(String chapterId) {

@@ -30,10 +30,7 @@ public final class PdfExportJobValidator {
         }
         requireText(job.targetName, "targetName");
         requireText(job.displayPath, "displayPath");
-        if (job.targetName.startsWith("/") || job.targetName.contains("../")
-            || job.targetName.contains("..\\")) {
-            throw new IllegalArgumentException("targetName 不能越出导出目录");
-        }
+        job.targetName = PdfTargetPath.normalize(job.targetName);
 
         if ("chapter".equals(job.mode)) {
             requireResourceId(job.chapterId, "chapterId");

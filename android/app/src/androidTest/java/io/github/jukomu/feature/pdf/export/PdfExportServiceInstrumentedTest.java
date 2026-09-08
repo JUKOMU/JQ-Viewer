@@ -108,6 +108,36 @@ public class PdfExportServiceInstrumentedTest {
     }
 
     @Test
+    public void existingPathOutputIsRejectedBeforePersistingAnExportTask() throws Exception {
+        String chapterId = "9" + System.nanoTime();
+        File chapterDirectory = fileStore.ensureChapterDir(ALBUM_ID, chapterId);
+        createImage(chapterDirectory, "page-0001.jpg", 20, 30, Color.RED);
+        registerChapter(chapterId, 1);
+
+        File output = new File(outputDirectory, "existing.pdf");
+        assertTrue(output.createNewFile());
+        PdfExportService.ExportJob job = new PdfExportService.ExportJob();
+        job.mode = "chapter";
+        job.albumId = ALBUM_ID;
+        job.chapterId = chapterId;
+        job.chapterTitle = "已存在文件";
+        job.targetFolderRef = PdfRef.createPathFolderRef(outputDirectory.getCanonicalPath());
+        job.targetName = output.getName();
+        job.displayPath = output.getAbsolutePath();
+        job.useOriginal = true;
+        job.compressionRatio = 1F;
+
+        JSONObject submission = PdfExportService.getInstance(context)
+            .submitExport(Arrays.asList(job));
+        JSONObject result = submission.getJSONArray("tasks").getJSONObject(0);
+
+        assertFalse(result.optBoolean("accepted"));
+        assertEquals("PDF_OUTPUT_EXISTS", result.getString("errorCode"));
+        assertEquals(output.getAbsolutePath(), result.getString("displayPath"));
+        assertFalse(result.has("exportId"));
+    }
+
+    @Test
     public void exportsOneThousandPagesWithoutLeavingArtifacts() throws Exception {
         File firstChapter = fileStore.ensureChapterDir(ALBUM_ID, "900001001");
         File secondChapter = fileStore.ensureChapterDir(ALBUM_ID, "900001002");

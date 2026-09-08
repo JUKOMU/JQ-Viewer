@@ -300,10 +300,11 @@ public class PdfStore extends SQLiteOpenHelper {
                     putLegacyNullable(values, cursor, "folder_id");
                     values.put("file_size", cursorLong(cursor, "file_size"));
                     values.put("page_count", cursorInt(cursor, "page_count"));
-                    values.put("availability", legacyImported ? "unknown"
-                        : cursorString(cursor, "availability"));
-                    values.put("verification_status", legacyImported ? "unverified"
-                        : cursorString(cursor, "verification_status"));
+                    String availability = cursorString(cursor, "availability");
+                    values.put("availability", availability.isEmpty() ? "unknown" : availability);
+                    String verificationStatus = cursorString(cursor, "verification_status");
+                    values.put("verification_status", verificationStatus.isEmpty()
+                        ? "unverified" : verificationStatus);
                     putLegacyNullable(values, cursor, "verification_error");
                     values.put("created_at", cursorLong(cursor, "created_at"));
                     values.put("updated_at", cursorLong(cursor, "updated_at"));

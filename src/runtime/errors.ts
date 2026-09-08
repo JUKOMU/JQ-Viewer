@@ -31,7 +31,7 @@ function isRuntimeErrorCode(value: unknown): value is RuntimeErrorCode {
   )
 }
 
-/** 从任意值中提取安全的展示消息，避免把底层异常文本原样暴露给页面。 */
+/** 从错误值中提取并保留后端 message，供页面展示；没有可用消息时返回空串。 */
 function getSafeMessage(value: unknown): string {
   if (value instanceof RuntimeError) return value.message
   if (value instanceof Error && value.message) return value.message

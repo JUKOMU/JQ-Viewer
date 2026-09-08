@@ -142,6 +142,7 @@ public final class PdfPluginHandler {
         }
         JSArray arr = new JSArray();
         for (File f : pdfFiles) {
+            if (!f.isFile()) continue;
             JSObject obj = new JSObject();
             obj.put("fileName", f.getName());
             try {

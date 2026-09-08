@@ -3,6 +3,7 @@ package io.github.jukomu.feature.pdf.render;
 import org.junit.Test;
 
 import java.io.File;
+import java.io.RandomAccessFile;
 import java.nio.file.Files;
 
 import static org.junit.Assert.assertFalse;
@@ -39,8 +40,12 @@ public class PdfPageCacheTest {
             File newest = new File(directory, "b".repeat(64) + ".png");
             assertTrue(oldest.createNewFile());
             assertTrue(newest.createNewFile());
-            oldest.setLength(PdfPageCache.MAX_BYTES / 2L + 1L);
-            newest.setLength(PdfPageCache.MAX_BYTES / 2L + 1L);
+            try (RandomAccessFile file = new RandomAccessFile(oldest, "rw")) {
+                file.setLength(PdfPageCache.MAX_BYTES / 2L + 1L);
+            }
+            try (RandomAccessFile file = new RandomAccessFile(newest, "rw")) {
+                file.setLength(PdfPageCache.MAX_BYTES / 2L + 1L);
+            }
             oldest.setLastModified(1_000L);
             newest.setLastModified(2_000L);
 

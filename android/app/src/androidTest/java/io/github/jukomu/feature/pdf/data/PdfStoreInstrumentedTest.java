@@ -139,6 +139,18 @@ public class PdfStoreInstrumentedTest {
         JSONObject resetInfo = store.getManagementState().getJSONObject("databaseResetInfo");
         assertEquals(2, resetInfo.optInt("migratedCount"));
         assertEquals(2, resetInfo.optInt("skippedCount"));
+        assertEquals("unknown",
+            store.getFileByRef("file:path:/storage/emulated/0/book.pdf")
+                .getString("availability"));
+        assertEquals("unverified",
+            store.getFileByRef("file:path:/storage/emulated/0/book.pdf")
+                .getString("verificationStatus"));
+        assertEquals("unknown",
+            store.getFileByRef("file:saf:content://provider/document/1")
+                .getString("availability"));
+        assertEquals("unverified",
+            store.getFileByRef("file:saf:content://provider/document/1")
+                .getString("verificationStatus"));
         assertTrue(resetInfo.optBoolean("exportHistoryCleared"));
         assertTrue(resetInfo.optBoolean("exportFolderReset"));
     }

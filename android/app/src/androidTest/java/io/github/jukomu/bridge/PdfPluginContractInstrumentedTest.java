@@ -49,7 +49,7 @@ public class PdfPluginContractInstrumentedTest {
     }
 
     @Test
-    public void scopedPdfFailuresKeepMessagesAndExposeCodes() {
+    public void scopedPdfFailuresKeepMessagesAndExposeCodes() throws Exception {
         RecordingPluginCall scan = call("scanPdfFiles", "folderRef",
             PdfRef.createPathFolderRef(missingPdf.getAbsolutePath()));
         handler.scanPdfFiles(scan);
@@ -114,6 +114,32 @@ public class PdfPluginContractInstrumentedTest {
         assertEquals("already_missing", delete.resolvedData.getString("result"));
         assertNull(delete.rejectionCode);
         assertEquals(1, delete.completionCount);
+    }
+
+    @Test
+    public void pathScanIgnoresDirectoriesWhoseNamesEndWithPdf() throws Exception {
+        File folder = new File(context.getCacheDir(), "pdf-scan-" + System.nanoTime());
+        File pdfFile = new File(folder, "book.pdf");
+        File pdfDirectory = new File(folder, "archive.pdf");
+        assertTrue(folder.mkdirs());
+        assertTrue(pdfFile.createNewFile());
+        assertTrue(pdfDirectory.mkdirs());
+        try {
+            RecordingPluginCall scan = call(
+                "scanPdfFiles",
+                "folderRef", PdfRef.createPathFolderRef(folder.getCanonicalPath())
+            );
+            handler.scanPdfFiles(scan);
+
+            assertEquals(1, scan.resolvedData.getJSONArray("files").length());
+            assertEquals("book.pdf",
+                scan.resolvedData.getJSONArray("files").getJSONObject(0)
+                    .getString("fileName"));
+        } finally {
+            assertTrue(pdfDirectory.delete() || !pdfDirectory.exists());
+            assertTrue(pdfFile.delete() || !pdfFile.exists());
+            assertTrue(folder.delete() || !folder.exists());
+        }
     }
 
     @Test

@@ -27,13 +27,10 @@ public class PdfRefTest {
     }
 
     @Test
-    public void rejectsEmptyPayloadAndKindMismatchAtConsumerBoundary() {
+    public void rejectsEmptyPayloadAndKindMismatchAtConsumerBoundary() throws Exception {
         assertThrows(IllegalArgumentException.class, () -> PdfRef.parse("file:path:"));
-        PdfRef.Parsed parsed = PdfRef.parse("file:path:/tmp/a.pdf");
-        assertEquals(PdfRef.Kind.FILE, parsed.kind);
-        assertThrows(IllegalArgumentException.class, () -> {
-            if (parsed.kind != PdfRef.Kind.FOLDER) throw new IllegalArgumentException();
-        });
+        String folderRef = PdfRef.createPathFolderRef("/tmp");
+        assertThrows(IllegalArgumentException.class, () -> PdfRef.fileName(folderRef));
     }
 
     @Test

@@ -12,7 +12,6 @@ import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.BridgeWebViewClient;
 import io.github.jukomu.bridge.JmcomicPlugin;
 import io.github.jukomu.feature.cache.ImageCache;
-import io.github.jukomu.feature.pdf.render.PdfPageCache;
 import io.github.jukomu.feature.pdf.web.PdfServer;
 
 public class MainActivity extends BridgeActivity {
@@ -26,7 +25,6 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(JmcomicPlugin.class);
         captureLaunchRoute(getIntent());
         super.onCreate(savedInstanceState);
-        PdfPageCache.getInstance(getApplicationContext());
 
         WebView webView = this.getBridge().getWebView();
         webView.setWebViewClient(new BridgeWebViewClient(this.getBridge()) {

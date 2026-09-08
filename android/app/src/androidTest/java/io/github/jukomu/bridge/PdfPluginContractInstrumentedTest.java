@@ -23,6 +23,8 @@ import org.junit.Test;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -167,6 +169,36 @@ public class PdfPluginContractInstrumentedTest {
     }
 
     @Test
+    public void pdfRouteStreamsPathAndSafFileRefsWithoutRawPathFallback() throws Exception {
+        File pdf = new File(context.getCacheDir(), "pdf-server-path-" + System.nanoTime() + ".pdf");
+        createPdf(pdf);
+        try {
+            WebResourceResponse pathResponse = PdfServer.handleRequest(
+                pdfUrl(PdfRef.createPathFileRef(pdf.getCanonicalPath())), context);
+            assertPdfResponse(pathResponse);
+
+            WebResourceResponse safResponse = PdfServer.handleRequest(
+                pdfUrl(PdfRef.createSafFileRef(
+                    "content://io.github.jukomu.test.pdf/document/fixture")), context);
+            assertPdfResponse(safResponse);
+
+            WebResourceResponse folderResponse = PdfServer.handleRequest(
+                pdfUrl(PdfRef.createPathFolderRef(context.getCacheDir().getCanonicalPath())), context);
+            assertEquals(400, folderResponse.getStatusCode());
+            assertEquals("invalid-path",
+                folderResponse.getResponseHeaders().get("X-JQViewer-Pdf-Error"));
+
+            WebResourceResponse rawPathResponse = PdfServer.handleRequest(
+                pdfUrl(pdf.getCanonicalPath()), context);
+            assertEquals(400, rawPathResponse.getStatusCode());
+            assertEquals("invalid-path",
+                rawPathResponse.getResponseHeaders().get("X-JQViewer-Pdf-Error"));
+        } finally {
+            assertTrue(pdf.delete() || !pdf.exists());
+        }
+    }
+
+    @Test
     public void largePdfPagesUseTheFixedPixelBudget() {
         PdfPageSizing.Size size = PdfPageSizing.calculate(2400, 1000, 10_000);
         assertTrue(size.pixels <= PdfPageSizing.MAX_RENDER_PIXELS);
@@ -183,6 +215,26 @@ public class PdfPluginContractInstrumentedTest {
         } finally {
             document.close();
         }
+    }
+
+    private static String pdfUrl(String fileRef) {
+        String encoded = Base64.getUrlEncoder().withoutPadding().encodeToString(
+            fileRef.getBytes(StandardCharsets.UTF_8));
+        return "https://jqviewer.local/pdf/" + encoded;
+    }
+
+    private static void assertPdfResponse(WebResourceResponse response) throws Exception {
+        assertEquals(200, response.getStatusCode());
+        assertEquals("application/pdf", response.getMimeType());
+        byte[] header = new byte[5];
+        try (InputStream input = response.getData()) {
+            assertEquals(5, input.read(header));
+        }
+        assertEquals('%', header[0]);
+        assertEquals('P', header[1]);
+        assertEquals('D', header[2]);
+        assertEquals('F', header[3]);
+        assertEquals('-', header[4]);
     }
 
     private static RecordingPluginCall call(String methodName, Object... values) {

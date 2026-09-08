@@ -73,7 +73,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { IonPage } from '@ionic/vue'
 import type { ListenerHandle } from '@/runtime/BackendEvents'
 import { asFileRef } from '@/runtime/FileReferences'
-import { normalizeRuntimeError } from '@/runtime/errors'
+import { normalizeRuntimeError, RuntimeError } from '@/runtime/errors'
 import { getRuntime } from '@/runtime/runtimeContext'
 import { JmcomicService, showToast } from '@/services/JmcomicService'
 import { SettingsStore } from '@/services/SettingsService'
@@ -164,6 +164,7 @@ let lastScrollTime = 0
 let lastScrollIndex = -1
 let revertTimer: ReturnType<typeof setTimeout> | null = null
 let renderGeneration = 0
+let lastNativeRenderFailureToastGeneration: number | null = null
 let activeRenderRange: { start: number; end: number; center: number } | null = null
 let pendingSeekIndex: number | null = null
 let dragPreviewTimer: ReturnType<typeof setTimeout> | null = null
@@ -371,14 +372,12 @@ const calcBaseScale = (
 // ---- PDF 页面渲染 ----
 const renderPageToBlob = async (pageNum: number): Promise<string | null> => {
   if (nativePdfMode) {
-    try {
-      const targetWidth = getRenderTargetWidth(isVertical.value, true)
-      const renderer = getRuntime().resources.renderPdfPage
-      if (!renderer.available) return null
-      return await renderer.api.getUrl({ file: fileRef, page: pageNum, targetWidth })
-    } catch {
-      return null
+    const renderer = getRuntime().resources.renderPdfPage
+    if (!renderer.available) {
+      throw new RuntimeError('unavailable', '当前平台不支持原生 PDF 页面渲染')
     }
+    const targetWidth = getRenderTargetWidth(isVertical.value, true)
+    return await renderer.api.getUrl({ file: fileRef, page: pageNum, targetWidth })
   }
 
   if (!pdfDoc) return null
@@ -437,8 +436,34 @@ const setRetryingSortOrder = (sortOrder: number, retrying: boolean) => {
   retryingSortOrders.value = next
 }
 
+const markNativeRenderFailure = (pageNum: number, generation: number, error: unknown) => {
+  if (!nativePdfMode || generation !== pageRenderGenerations.get(pageNum)) return
+
+  const runtimeError = normalizeRuntimeError(error, 'PDF 页面渲染失败')
+  const message =
+    runtimeError.code === 'not-found' || runtimeError.code === 'permission-denied'
+      ? runtimeError.message || 'PDF 文件读取失败'
+      : 'PDF 页面渲染失败'
+
+  pageRenderGenerations.delete(pageNum)
+  renderedPageGenerations.delete(pageNum)
+  if (renderedPages.get(pageNum) === '') {
+    renderedPages.delete(pageNum)
+    imageMap.value.delete(pageNum)
+  }
+  setRetryingSortOrder(pageNum, false)
+  setFailedSortOrder(pageNum, true, message)
+  applyImageMap()
+
+  if (lastNativeRenderFailureToastGeneration !== generation) {
+    lastNativeRenderFailureToastGeneration = generation
+    void showToast(message, 'danger')
+  }
+}
+
 const clearNativeImageFailures = () => {
   nativeImageFailureStates.clear()
+  lastNativeRenderFailureToastGeneration = null
   failedSortOrders.value = new Set()
   failedMessages.value = new Map()
   retryingSortOrders.value = new Set()
@@ -629,6 +654,9 @@ const scheduleRenderQueue = () => {
           applyImageMap()
         }
         setRetryingSortOrder(pageNum, false)
+      })
+      .catch((error) => {
+        markNativeRenderFailure(pageNum, generation, error)
       })
       .finally(() => {
         activeRenderingPages.delete(pageNum)
@@ -951,6 +979,10 @@ const loadPdfDocument = async () => {
       pdfDoc.destroy()
       pdfDoc = null
     }
+    const renderer = getRuntime().resources.renderPdfPage
+    if (!renderer.available) {
+      throw new RuntimeError('unavailable', '当前平台不支持原生 PDF 页面渲染')
+    }
     const info = await JmcomicService.getPdfInfo(fileRef)
     nativePdfMode = true
     return info.pageCount
@@ -1018,7 +1050,9 @@ onMounted(async () => {
       await showToast('PDF 文件读取失败，请重新导入', 'danger')
     } else {
       const runtimeError = normalizeRuntimeError(e)
-      if (runtimeError.code === 'not-found') {
+      if (runtimeError.code === 'unavailable') {
+        await showToast(runtimeError.message || '当前平台不支持原生 PDF 页面渲染', 'danger')
+      } else if (runtimeError.code === 'not-found') {
         await showToast(runtimeError.message || 'PDF 文件不存在或已移动', 'danger')
       } else if (runtimeError.code === 'permission-denied') {
         await showToast(runtimeError.message || 'PDF 文件读取权限已失效，请重新导入', 'danger')

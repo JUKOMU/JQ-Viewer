@@ -1,10 +1,11 @@
 package io.github.jukomu.feature.pdf.web;
 
-import android.content.ContentResolver;
 import android.content.Context;
 import android.net.Uri;
 import android.webkit.WebResourceResponse;
 import io.github.jukomu.feature.cache.ImageCache;
+import io.github.jukomu.feature.pdf.data.PdfRef;
+import io.github.jukomu.feature.pdf.data.PdfRefResolver;
 import io.github.jukomu.feature.pdf.render.PdfPageCache;
 
 import java.io.*;
@@ -16,23 +17,27 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Serves PDF files through the virtual WebView host used by the PDF reader.
- * Paths may reference app files or persisted SAF content URIs and always receive CORS headers.
+ * 通过 PDF reader 使用的虚拟 WebView host 提供 FileRef 指向的 PDF，并统一附加 CORS 头。
  */
 public class PdfServer {
 
     static final String VIRTUAL_HOST = ImageCache.VIRTUAL_HOST;
     static final String PDF_PATH_PREFIX = "/pdf/";
     static final String PDF_PAGE_PATH_PREFIX = "/pdf-page/";
+    private static final Pattern PDF_PATH_PATTERN = Pattern.compile(
+        "^" + PDF_PATH_PREFIX + "[A-Za-z0-9_-]+$");
     private static final Pattern PDF_PAGE_PATH_PATTERN = Pattern.compile(
         "^" + PDF_PAGE_PATH_PREFIX + "([0-9a-f]{64})\\.png$");
 
     public static boolean isPdfUrl(String url) {
-        if (url == null) return false;
-        int idx = url.indexOf(VIRTUAL_HOST);
-        if (idx < 0) return false;
-        String pathPart = url.substring(idx + VIRTUAL_HOST.length());
-        return pathPart.startsWith(PDF_PATH_PREFIX);
+        Uri uri = parseUri(url);
+        return uri != null
+            && "https".equalsIgnoreCase(uri.getScheme())
+            && VIRTUAL_HOST.equalsIgnoreCase(uri.getHost())
+            && uri.getQuery() == null
+            && uri.getFragment() == null
+            && PDF_PATH_PATTERN.matcher(uri.getPath() == null ? "" : uri.getPath())
+                .matches();
     }
 
     /** 只匹配固定 host、scheme 和页面 PNG 路径，避免把 URL 当作任意文件路径。 */
@@ -122,31 +127,21 @@ public class PdfServer {
 
     public static WebResourceResponse handleRequest(String url, Context context) {
         try {
-            int idx = url.indexOf(VIRTUAL_HOST);
-            if (idx < 0) return errorResponse(400, "Bad Request", "invalid-url");
-            String pathPart = url.substring(idx + VIRTUAL_HOST.length());
-            String encoded = pathPart.substring(PDF_PATH_PREFIX.length());
-            // Remove any query/fragment before decoding
-            int qi = encoded.indexOf('?');
-            if (qi >= 0) encoded = encoded.substring(0, qi);
-            int fi = encoded.indexOf('#');
-            if (fi >= 0) encoded = encoded.substring(0, fi);
+            if (!isPdfUrl(url)) return errorResponse(400, "Bad Request", "invalid-url");
+            Uri uri = parseUri(url);
+            if (uri == null || uri.getPath() == null) {
+                return errorResponse(400, "Bad Request", "invalid-url");
+            }
+            String encoded = uri.getPath().substring(PDF_PATH_PREFIX.length());
+            if (encoded.isEmpty()) return errorResponse(400, "Bad Request", "invalid-path");
 
             byte[] decoded = Base64.getUrlDecoder().decode(encoded);
-            String filePath = new String(decoded, StandardCharsets.UTF_8);
-
-            InputStream stream;
-            if (filePath.startsWith("content://")) {
-                ContentResolver resolver = context.getContentResolver();
-                stream = resolver.openInputStream(Uri.parse(filePath));
-            } else {
-                File file = new File(filePath);
-                if (!file.exists() || !file.isFile()) {
-                    return errorResponse(404, "Not Found", "file-missing");
-                }
-                stream = new FileInputStream(file);
+            String fileRef = new String(decoded, StandardCharsets.UTF_8);
+            PdfRef.Parsed parsed = PdfRef.parse(fileRef);
+            if (parsed.kind != PdfRef.Kind.FILE) {
+                throw new IllegalArgumentException("需要文件引用");
             }
-            if (stream == null) return errorResponse(404, "Not Found", "file-missing");
+            InputStream stream = PdfRefResolver.openReadStream(context, fileRef);
             return withCorsHeaders(new WebResourceResponse("application/pdf", "binary", stream));
         } catch (SecurityException e) {
             return errorResponse(403, "Forbidden", "permission-denied");

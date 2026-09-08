@@ -490,7 +490,12 @@ public class PreloadService {
 
     public void clearImageCache() {
         imageCache.clear();
-        PdfPageCache.getInstance(context).clear();
+        if (context == null) return;
+        try {
+            PdfPageCache.getInstance(context).clear();
+        } catch (RuntimeException error) {
+            Log.w(TAG, "清理 PDF 页面缓存失败，已完成内存缓存清理", error);
+        }
     }
 
     private void logCapacity(String reason) {

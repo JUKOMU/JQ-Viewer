@@ -10,6 +10,7 @@ import androidx.documentfile.provider.DocumentFile;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.InputStream;
 
 /** 将 PDF ref 解析为当前运行时可访问的文件对象；不参与 ref 的持久化。 */
 public final class PdfRefResolver {
@@ -29,6 +30,13 @@ public final class PdfRefResolver {
         File file = new File(parsed.payload);
         if (!file.exists() || !file.isFile()) throw new FileNotFoundException(parsed.payload);
         return ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY);
+    }
+
+    /** 以统一的可关闭流读取文件引用，调用方不需要区分 path 与 SAF。 */
+    public static InputStream openReadStream(Context context, String fileRef)
+        throws IOException {
+        return new ParcelFileDescriptor.AutoCloseInputStream(
+            openReadDescriptor(context, fileRef));
     }
 
     public static DocumentFile documentFile(Context context, String ref) {

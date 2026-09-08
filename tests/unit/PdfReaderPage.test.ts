@@ -464,8 +464,55 @@ describe('PdfReaderPage PDF 专属渲染尺寸', () => {
     loadFailure.reject(new Error('unsupported'))
     await settle()
 
-    expect(mocks.getPdfInfo).toHaveBeenCalledWith('/books/test.pdf')
+    expect(mocks.getPdfInfo).not.toHaveBeenCalled()
     expect(mocks.renderPdfPage).not.toHaveBeenCalled()
+    expect(mocks.showToast).toHaveBeenCalledWith(
+      '当前平台不支持原生 PDF 页面渲染',
+      'danger',
+    )
+    expect(mocks.router.back).toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  test('native renderer rejection enters failure state and preserves missing message', async () => {
+    mocks.displayMode = 'horizontal'
+    mocks.getPdfInfo.mockResolvedValue({ pageCount: 1 })
+    const loadFailure = deferred<never>()
+    mocks.getDocument.mockReturnValue({ promise: loadFailure.promise })
+    mocks.renderPdfPage.mockRejectedValueOnce(
+      new RuntimeError('not-found', 'PDF 页面文件不存在或已移动'),
+    )
+
+    const wrapper = mountPage()
+    loadFailure.reject(new Error('unsupported'))
+    await settle()
+
+    const view = currentView(wrapper)
+    expect((view.props('imageMap') as Map<number, string>).has(1)).toBe(false)
+    expect((view.props('failedSortOrders') as Set<number>).has(1)).toBe(true)
+    expect((view.props('failedMessages') as Map<number, string>).get(1)).toBe(
+      'PDF 页面文件不存在或已移动',
+    )
+    expect(mocks.showToast).toHaveBeenCalledWith('PDF 页面文件不存在或已移动', 'danger')
+    wrapper.unmount()
+  })
+
+  test('同一 native render generation 的多个 rejection 只提示一次', async () => {
+    mocks.displayMode = 'horizontal'
+    mocks.preloadPages = 2
+    mocks.getPdfInfo.mockResolvedValue({ pageCount: 3 })
+    const loadFailure = deferred<never>()
+    mocks.getDocument.mockReturnValue({ promise: loadFailure.promise })
+    mocks.renderPdfPage.mockRejectedValue(new Error('cache write failed'))
+
+    const wrapper = mountPage()
+    loadFailure.reject(new Error('unsupported'))
+    await settle()
+
+    const view = currentView(wrapper)
+    expect((view.props('failedSortOrders') as Set<number>).size).toBeGreaterThan(0)
+    expect(mocks.showToast).toHaveBeenCalledTimes(1)
+    expect(mocks.showToast).toHaveBeenCalledWith('PDF 页面渲染失败', 'danger')
     wrapper.unmount()
   })
 

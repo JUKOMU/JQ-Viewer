@@ -145,7 +145,11 @@ public class JmcomicPlugin extends Plugin {
         FavoriteStore favoriteStore = FavoriteStore.getInstance(ctx);
         favoriteHandler = new FavoritePluginHandler(favoriteStore);
         PdfStore.getInstance(ctx);
-        PdfPageCache.getInstance(ctx);
+        try {
+            PdfPageCache.getInstance(ctx);
+        } catch (RuntimeException error) {
+            Log.w(TAG, "初始化 PDF 页面缓存失败，继续启动", error);
+        }
         PdfExportService pdfExportService = PdfExportService.getInstance(ctx);
         this.pdfEventSink = snapshot -> {
             if (snapshot == null) return;

@@ -97,7 +97,8 @@ public class PdfServer {
         String resourceId = matcher.group(1);
         try {
             FileInputStream stream = PdfPageCache.getInstance(context).openPage(resourceId);
-            return withCorsHeaders(new WebResourceResponse("image/png", null, stream));
+            return withCorsHeaders(new WebResourceResponse(
+                "image/png", null, 200, "OK", corsHeaders(null), stream));
         } catch (FileNotFoundException error) {
             return errorResponse(404, "Not Found", null);
         } catch (Exception error) {
@@ -142,7 +143,8 @@ public class PdfServer {
                 throw new IllegalArgumentException("需要文件引用");
             }
             InputStream stream = PdfRefResolver.openReadStream(context, fileRef);
-            return withCorsHeaders(new WebResourceResponse("application/pdf", "binary", stream));
+            return withCorsHeaders(new WebResourceResponse(
+                "application/pdf", "binary", 200, "OK", corsHeaders(null), stream));
         } catch (SecurityException e) {
             return errorResponse(403, "Forbidden", "permission-denied");
         } catch (FileNotFoundException e) {

@@ -29,6 +29,7 @@ public final class PdfRefResolver {
         }
         File file = new File(parsed.payload);
         if (!file.exists() || !file.isFile()) throw new FileNotFoundException(parsed.payload);
+        if (!file.canRead()) throw new SecurityException(parsed.payload);
         return ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY);
     }
 

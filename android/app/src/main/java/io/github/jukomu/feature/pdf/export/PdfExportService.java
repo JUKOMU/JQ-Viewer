@@ -22,6 +22,7 @@ import org.json.JSONObject;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.IOException;
 import java.util.*;
@@ -44,6 +45,7 @@ public class PdfExportService {
     private static final long ORIGINAL_OUTPUT_ESTIMATE_NUMERATOR = 110L;
     private static final long OUTPUT_ESTIMATE_DENOMINATOR = 100L;
     private static final int PDF_HEARTBEAT_PAGE_INTERVAL = 25;
+    private static final long SAF_COPY_CHECK_BYTES = 64L * 1024L;
 
     private static PdfExportService instance;
     private final Context context;
@@ -652,6 +654,12 @@ public class PdfExportService {
                 throw new IOException(error.code + ": " + error.getMessage(), error);
             }
             String outputFileRef = publishVolume(job, volume);
+            try {
+                checkExportCancelled(job.exportId);
+            } catch (ExportCancelledException error) {
+                cleanupPublishedSafDestination(job, outputFileRef, error);
+                throw error;
+            }
             if (firstOutputFileRef == null) {
                 firstOutputFileRef = outputFileRef;
                 firstOutputFileName = PdfTargetPath.basename(volume.targetName);
@@ -712,24 +720,42 @@ public class PdfExportService {
         }
         String fileName = segments.get(segments.size() - 1);
         DocumentFile destination = current.findFile(fileName);
-        if (destination != null) {
+        if (destination != null && destination.exists()) {
+            checkExportCancelled(job.exportId);
+            if (destination.isDirectory()) {
+                throw new IOException("目标路径指向文件夹");
+            }
+            if (!destination.isFile()) {
+                throw new IOException("目标文件类型无效");
+            }
             if (!job.allowOverwrite || !destination.delete()) {
                 throw new PdfOutputExistsException(
                     "PDF_OUTPUT_EXISTS: 目标文件已存在，请确认覆盖后重试");
             }
         }
+        checkExportCancelled(job.exportId);
         destination = current.createFile("application/pdf", fileName);
         if (destination == null) throw new IOException("无法创建 SAF 导出文件");
-        try (FileInputStream input = new FileInputStream(volume.file);
-             OutputStream output = context.getContentResolver().openOutputStream(destination.getUri())) {
-            if (output == null) throw new IOException("无法写入 SAF 导出文件");
-            byte[] buffer = new byte[8192];
-            int count;
-            while ((count = input.read(buffer)) >= 0) {
-                if (count > 0) output.write(buffer, 0, count);
-            }
+        try (FileInputStream input = new FileInputStream(volume.file)) {
+            OutputStream output = context.getContentResolver().openOutputStream(destination.getUri());
+            copySafDestination(
+                destination,
+                input,
+                output,
+                () -> checkExportCancelled(job.exportId)
+            );
         } catch (SecurityException error) {
+            cleanupCreatedSafDestination(destination, error);
             throw new IOException("没有权限写入 SAF 导出文件", error);
+        } catch (ExportCancelledException error) {
+            cleanupCreatedSafDestination(destination, error);
+            throw error;
+        } catch (IOException error) {
+            cleanupCreatedSafDestination(destination, error);
+            throw error;
+        } catch (RuntimeException error) {
+            cleanupCreatedSafDestination(destination, error);
+            throw error;
         }
         return PdfRef.createSafFileRef(destination.getUri().toString());
     }
@@ -938,18 +964,38 @@ public class PdfExportService {
 
     private void ensureSafOverwriteAllowed(ExportJob job, List<ExportVolume> volumes)
         throws IOException {
-        if (job.allowOverwrite) return;
         DocumentFile folder = PdfRefResolver.documentFile(context, job.targetFolderRef);
         if (folder == null || !folder.exists() || !folder.isDirectory()) {
             throw new IOException("目标导出目录不存在");
         }
         for (ExportVolume volume : volumes) {
-            DocumentFile destination = findSafTarget(folder, volume.targetName);
-            if (destination != null && destination.exists()) {
-                throw new PdfOutputExistsException(
-                    "PDF_OUTPUT_EXISTS: 目标文件已存在，请确认覆盖后重试: "
-                        + volume.displayPath);
-            }
+            validateSafTarget(folder, volume.targetName, job.allowOverwrite, volume.displayPath);
+        }
+    }
+
+    static void validateSafTarget(DocumentFile folder, String targetName, boolean allowOverwrite)
+        throws IOException {
+        validateSafTarget(folder, targetName, allowOverwrite, null);
+    }
+
+    private static void validateSafTarget(DocumentFile folder, String targetName,
+                                          boolean allowOverwrite, String displayPath)
+        throws IOException {
+        DocumentFile destination = findSafTarget(folder, targetName);
+        if (destination == null || !destination.exists()) {
+            return;
+        }
+        if (destination.isDirectory()) {
+            throw new IOException("目标路径指向文件夹");
+        }
+        if (!destination.isFile()) {
+            throw new IOException("目标文件类型无效");
+        }
+        if (!allowOverwrite) {
+            String suffix = displayPath == null || displayPath.isEmpty()
+                ? "" : ": " + displayPath;
+            throw new PdfOutputExistsException(
+                "PDF_OUTPUT_EXISTS: 目标文件已存在，请确认覆盖后重试" + suffix);
         }
     }
 
@@ -968,6 +1014,140 @@ public class PdfExportService {
             current = child;
         }
         return current.findFile(segments.get(segments.size() - 1));
+    }
+
+    private void checkExportCancelled(String exportId) throws ExportCancelledException {
+        if (pdfStore.isCancelRequested(exportId)) {
+            throw new ExportCancelledException();
+        }
+    }
+
+    /**
+     * SAF 写入只在固定数据量后查询取消状态，避免在 provider I/O 热路径上引入额外调度。
+     */
+    static void copySafData(InputStream input, OutputStream output,
+                            ExportCancellationChecker cancellationChecker) throws IOException {
+        if (input == null) {
+            throw new IOException("无法读取 SAF 导出源文件");
+        }
+        if (output == null) {
+            throw new IOException("无法写入 SAF 导出文件");
+        }
+        if (cancellationChecker != null) {
+            cancellationChecker.check();
+        }
+        byte[] buffer = new byte[8192];
+        long bytesSinceCheck = 0L;
+        int count;
+        while ((count = input.read(buffer)) != -1) {
+            if (count == 0) {
+                continue;
+            }
+            output.write(buffer, 0, count);
+            bytesSinceCheck += count;
+            if (bytesSinceCheck >= SAF_COPY_CHECK_BYTES) {
+                if (cancellationChecker != null) {
+                    cancellationChecker.check();
+                }
+                bytesSinceCheck = 0L;
+            }
+        }
+        output.flush();
+        if (cancellationChecker != null) {
+            cancellationChecker.check();
+        }
+    }
+
+    static void copySafDestination(DocumentFile destination, InputStream input,
+                                   OutputStream output,
+                                   ExportCancellationChecker cancellationChecker)
+        throws IOException {
+        try (InputStream source = input; OutputStream target = output) {
+            copySafData(source, target, cancellationChecker);
+        } catch (SecurityException error) {
+            cleanupCreatedSafDestination(destination, error);
+            throw new IOException("没有权限写入 SAF 导出文件", error);
+        } catch (ExportCancelledException error) {
+            cleanupCreatedSafDestination(destination, error);
+            throw error;
+        } catch (IOException error) {
+            cleanupCreatedSafDestination(destination, error);
+            throw error;
+        } catch (RuntimeException error) {
+            cleanupCreatedSafDestination(destination, error);
+            throw error;
+        }
+    }
+
+    /**
+     * 复制失败或取消时只删除本次创建且确认是普通文件的 SAF 文档。
+     */
+    static void cleanupCreatedSafDestination(DocumentFile destination, Throwable original) {
+        if (destination == null) {
+            return;
+        }
+        try {
+            if (!destination.exists()) {
+                return;
+            }
+            if (destination.isDirectory() || !destination.isFile()) {
+                IOException cleanupFailure = new IOException("SAF 导出目标不是普通文件，跳过清理");
+                Log.w(TAG, cleanupFailure.getMessage());
+                if (original != null) {
+                    original.addSuppressed(cleanupFailure);
+                }
+                return;
+            }
+            if (!destination.delete()) {
+                IOException cleanupFailure = new IOException("无法删除失败的 SAF 导出文件");
+                Log.w(TAG, cleanupFailure.getMessage());
+                if (original != null) {
+                    original.addSuppressed(cleanupFailure);
+                }
+            }
+        } catch (RuntimeException cleanupFailure) {
+            Log.w(TAG, "清理失败的 SAF 导出文件时发生异常", cleanupFailure);
+            if (original != null) {
+                original.addSuppressed(cleanupFailure);
+            }
+        }
+    }
+
+    private void cleanupPublishedSafDestination(ExportJob job, String outputFileRef,
+                                                Throwable original) {
+        if (job == null || outputFileRef == null || !isSafTargetFolder(job.targetFolderRef)) {
+            return;
+        }
+        try {
+            PdfRef.Parsed parsed = PdfRef.parse(outputFileRef);
+            if (parsed.kind != PdfRef.Kind.FILE || parsed.provider != PdfRef.Provider.SAF) {
+                return;
+            }
+            cleanupCreatedSafDestination(
+                PdfRefResolver.documentFile(context, outputFileRef),
+                original
+            );
+        } catch (RuntimeException cleanupFailure) {
+            Log.w(TAG, "清理取消的 SAF 导出文件时发生异常", cleanupFailure);
+            if (original != null) {
+                original.addSuppressed(cleanupFailure);
+            }
+        }
+    }
+
+    private static boolean isSafTargetFolder(String targetFolderRef) {
+        try {
+            PdfRef.Parsed parsed = PdfRef.parse(targetFolderRef);
+            return parsed.kind == PdfRef.Kind.FOLDER
+                && parsed.provider == PdfRef.Provider.SAF;
+        } catch (RuntimeException error) {
+            return false;
+        }
+    }
+
+    @FunctionalInterface
+    interface ExportCancellationChecker {
+        void check() throws IOException;
     }
 
     private static void ensureRetryLayoutUnchanged(JSONArray persistedChapters,
@@ -1533,7 +1713,7 @@ public class PdfExportService {
         }
     }
 
-    private static final class ExportCancelledException extends IOException {
+    static final class ExportCancelledException extends IOException {
         ExportCancelledException() {
             super("PDF 导出已取消");
         }

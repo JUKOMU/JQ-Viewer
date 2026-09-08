@@ -4,11 +4,15 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.file.Files;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.Assert.*;
 
@@ -124,6 +128,64 @@ public class PdfExportServiceTest {
     }
 
     @Test
+    public void copiesSafDataAndChecksCancellationAfterFixedByteAmount() throws Exception {
+        byte[] source = new byte[128 * 1024];
+        Arrays.fill(source, (byte) 7);
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        AtomicInteger checks = new AtomicInteger();
+
+        PdfExportService.ExportCancelledException error = assertThrows(
+            PdfExportService.ExportCancelledException.class,
+            () -> PdfExportService.copySafData(
+                new ByteArrayInputStream(source),
+                output,
+                () -> {
+                    if (checks.incrementAndGet() == 2) {
+                        throw new PdfExportService.ExportCancelledException();
+                    }
+                }
+            )
+        );
+
+        assertEquals("PDF 导出已取消", error.getMessage());
+        assertEquals(2, checks.get());
+        assertEquals(64 * 1024, output.size());
+    }
+
+    @Test
+    public void copiesSafDataNormallyAndFlushesTheOutput() throws Exception {
+        byte[] source = new byte[32 * 1024];
+        Arrays.fill(source, (byte) 3);
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+        PdfExportService.copySafData(
+            new ByteArrayInputStream(source), output, () -> {
+            }
+        );
+
+        assertArrayEquals(source, output.toByteArray());
+    }
+
+    @Test
+    public void preservesCopyFailureAndClosesTheStreams() {
+        IOException failure = new IOException("copy failed");
+        TrackingInputStream input = new TrackingInputStream(new byte[1]);
+        OutputStream output = new OutputStream() {
+            @Override
+            public void write(int value) throws IOException {
+                throw failure;
+            }
+        };
+
+        IOException actual = assertThrows(IOException.class,
+            () -> PdfExportService.copySafDestination(null, input, output, () -> {
+            }));
+
+        assertSame(failure, actual);
+        assertTrue(input.closed);
+    }
+
+    @Test
     public void retryRequiresThePersistedChapterAndVolumeLayout() throws Exception {
         File output = new File(temporaryFolder.getRoot(), "retry.pdf");
         List<PdfExportService.ExportVolume> volumes =
@@ -173,5 +235,19 @@ public class PdfExportServiceTest {
             fileBytes,
             true
         );
+    }
+
+    private static final class TrackingInputStream extends ByteArrayInputStream {
+        boolean closed;
+
+        TrackingInputStream(byte[] source) {
+            super(source);
+        }
+
+        @Override
+        public void close() throws IOException {
+            closed = true;
+            super.close();
+        }
     }
 }

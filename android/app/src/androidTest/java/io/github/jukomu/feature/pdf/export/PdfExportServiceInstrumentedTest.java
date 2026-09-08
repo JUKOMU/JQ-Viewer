@@ -6,6 +6,7 @@ import android.graphics.Color;
 import android.graphics.pdf.PdfRenderer;
 import android.os.ParcelFileDescriptor;
 import android.os.SystemClock;
+import androidx.documentfile.provider.DocumentFile;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
 import com.tom_roush.pdfbox.pdmodel.PDDocument;
@@ -22,13 +23,16 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.Assert.*;
 
@@ -135,6 +139,81 @@ public class PdfExportServiceInstrumentedTest {
         assertEquals("PDF_OUTPUT_EXISTS", result.getString("errorCode"));
         assertEquals(output.getAbsolutePath(), result.getString("displayPath"));
         assertFalse(result.has("exportId"));
+    }
+
+    @Test
+    public void safOverwriteRejectsDirectoriesAndFileIntermediatesWithoutDeletingData()
+        throws Exception {
+        File safRoot = new File(outputDirectory, "saf-root");
+        File nested = new File(safRoot, "295852");
+        File targetDirectory = new File(nested, "book.pdf");
+        File targetContent = new File(targetDirectory, "keep.txt");
+        assertTrue(targetDirectory.mkdirs());
+        Files.write(targetContent.toPath(), new byte[]{7, 8, 9});
+
+        IOException targetError = assertThrows(IOException.class,
+            () -> PdfExportService.validateSafTarget(
+                DocumentFile.fromFile(safRoot), "295852/book.pdf", true));
+        assertEquals("目标路径指向文件夹", targetError.getMessage());
+        assertTrue(targetDirectory.isDirectory());
+        assertArrayEquals(new byte[]{7, 8, 9}, Files.readAllBytes(targetContent.toPath()));
+
+        File intermediateFile = new File(safRoot, "not-directory");
+        Files.write(intermediateFile.toPath(), new byte[]{1});
+        IOException intermediateError = assertThrows(IOException.class,
+            () -> PdfExportService.validateSafTarget(
+                DocumentFile.fromFile(safRoot), "not-directory/book.pdf", true));
+        assertEquals("目标路径中有一段不是目录", intermediateError.getMessage());
+        assertTrue(intermediateFile.isFile());
+    }
+
+    @Test
+    public void safCopyCleansFailedAndCancelledDocumentsAndKeepsSuccessfulCopy()
+        throws Exception {
+        File source = new File(outputDirectory, "source.bin");
+        byte[] sourceBytes = new byte[128 * 1024];
+        Arrays.fill(sourceBytes, (byte) 5);
+        Files.write(source.toPath(), sourceBytes);
+
+        File failed = new File(outputDirectory, "failed.pdf");
+        assertTrue(failed.createNewFile());
+        IOException copyFailure = new IOException("copy failed");
+        IOException actualFailure = assertThrows(IOException.class,
+            () -> PdfExportService.copySafDestination(
+                DocumentFile.fromFile(failed),
+                new FileInputStream(source),
+                new FailingOutputStream(copyFailure),
+                () -> {
+                }));
+        assertSame(copyFailure, actualFailure);
+        assertFalse(failed.exists());
+
+        File cancelled = new File(outputDirectory, "cancelled.pdf");
+        assertTrue(cancelled.createNewFile());
+        AtomicInteger checks = new AtomicInteger();
+        PdfExportService.ExportCancelledException cancellation = assertThrows(
+            PdfExportService.ExportCancelledException.class,
+            () -> PdfExportService.copySafDestination(
+                DocumentFile.fromFile(cancelled),
+                new FileInputStream(source),
+                new FileOutputStream(cancelled),
+                () -> {
+                    if (checks.incrementAndGet() == 2) {
+                        throw new PdfExportService.ExportCancelledException();
+                    }
+                }));
+        assertEquals("PDF 导出已取消", cancellation.getMessage());
+        assertFalse(cancelled.exists());
+
+        File successful = new File(outputDirectory, "successful.pdf");
+        assertTrue(successful.createNewFile());
+        PdfExportService.copySafDestination(
+            DocumentFile.fromFile(successful),
+            new FileInputStream(source),
+            new FileOutputStream(successful),
+            () -> {
+            });
+        assertArrayEquals(sourceBytes, Files.readAllBytes(successful.toPath()));
     }
 
     @Test
@@ -342,6 +421,24 @@ public class PdfExportServiceInstrumentedTest {
         }
         if (!target.delete() && target.exists()) {
             throw new IOException("Unable to delete test file: " + target);
+        }
+    }
+
+    private static final class FailingOutputStream extends OutputStream {
+        private final IOException failure;
+
+        FailingOutputStream(IOException failure) {
+            this.failure = failure;
+        }
+
+        @Override
+        public void write(int value) throws IOException {
+            throw failure;
+        }
+
+        @Override
+        public void write(byte[] bytes, int offset, int length) throws IOException {
+            throw failure;
         }
     }
 }

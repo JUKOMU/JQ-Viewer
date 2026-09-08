@@ -307,4 +307,55 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
     expect(mocks.showToast).toHaveBeenCalledWith('检测到已有同名 PDF，已取消覆盖', 'medium')
     wrapper.unmount()
   })
+
+  test('混合结果取消覆盖时同时报告已开始、取消覆盖和其他失败', async () => {
+    const acceptedTask = { displayPath: '/pdf/accepted.pdf' }
+    const conflictTask = { displayPath: '/pdf/conflict.pdf' }
+    const rejectedTask = { displayPath: '/pdf/rejected.pdf' }
+    mocks.buildExportPlan.mockReturnValueOnce({
+      tasks: [acceptedTask, conflictTask, rejectedTask],
+      outputDisplayPaths: [
+        acceptedTask.displayPath,
+        conflictTask.displayPath,
+        rejectedTask.displayPath,
+      ],
+    })
+    mocks.exportPdfBatch.mockResolvedValueOnce({
+      tasks: [
+        { accepted: true },
+        {
+          accepted: false,
+          errorCode: 'PDF_OUTPUT_EXISTS',
+          displayPath: conflictTask.displayPath,
+        },
+        {
+          accepted: false,
+          errorCode: 'PDF_EXPORT_FAILED',
+          errorMessage: '导出失败',
+          displayPath: rejectedTask.displayPath,
+        },
+      ],
+    })
+
+    const wrapper = mount(DownloadPage)
+    await flushPromises()
+    wrapper.findComponent({ name: 'PdfExportBottomSheet' }).vm.$emit('confirm', {
+      selectedChapters: [
+        { albumId: 'album-1', chapterId: 'chapter-1', albumTitle: '测试漫画', chapterTitle: '第一话' },
+      ],
+      mode: 'chapter',
+      useOriginal: true,
+      compressionRatio: 1,
+      editedPath: '/pdf/test.pdf',
+      splitPages: 0,
+    })
+    await flushPromises()
+
+    expect(mocks.exportPdfBatch).toHaveBeenCalledOnce()
+    expect(mocks.showToast).toHaveBeenCalledWith(
+      '已开始 1 个，1 个已取消覆盖，另有 1 个失败',
+      'medium',
+    )
+    wrapper.unmount()
+  })
 })

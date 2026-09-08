@@ -931,7 +931,16 @@ const onPdfExportConfirm = async (payload: {
     const accepted = finalTasks.filter((task) => task.accepted).length
     const rejected = finalTasks.length - accepted
     if (conflictIndexes.length > 0 && !overwriteConfirmed) {
-      if (accepted === 0) {
+      const conflictIndexSet = new Set(conflictIndexes)
+      const otherRejected = finalTasks.filter(
+        (task, index) => !task.accepted && !conflictIndexSet.has(index),
+      ).length
+      if (otherRejected > 0) {
+        await showToast(
+          `已开始 ${accepted} 个，${conflictIndexes.length} 个已取消覆盖，另有 ${otherRejected} 个失败`,
+          'medium',
+        )
+      } else if (accepted === 0) {
         await showToast('检测到已有同名 PDF，已取消覆盖', 'medium')
       } else {
         await showToast(

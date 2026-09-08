@@ -237,7 +237,9 @@ public class PdfExportServiceInstrumentedTest {
         IOException cancellation = new IOException("PDF 导出已取消");
 
         PdfExportService.cleanupOwnedPathOutput(
+            null,
             currentVolume,
+            PdfRef.createPathFileRef(currentVolume.getCanonicalPath()),
             PdfRef.payload(outputRef),
             currentVolume.length(),
             currentVolume.lastModified(),
@@ -253,7 +255,9 @@ public class PdfExportServiceInstrumentedTest {
         assertTrue(directory.mkdirs());
         Files.write(content.toPath(), new byte[]{9});
         PdfExportService.cleanupOwnedPathOutput(
+            null,
             directory,
+            PdfRef.createPathFileRef(directory.getCanonicalPath()),
             directory.getCanonicalPath(),
             directory.length(),
             directory.lastModified(),
@@ -261,6 +265,47 @@ public class PdfExportServiceInstrumentedTest {
         );
         assertTrue(directory.isDirectory());
         assertTrue(content.isFile());
+    }
+
+    @Test
+    public void registeredPathOutputIsKeptWhenCancellationCleanupRuns() throws Exception {
+        File registered = new File(outputDirectory, "registered.pdf");
+        Files.write(registered.toPath(), new byte[]{10, 11, 12});
+        String outputRef = PdfRef.createPathFileRef(registered.getCanonicalPath());
+        PdfStore store = PdfStore.getInstance(context);
+        long recordId = store.insertImportedPdf(
+            outputRef,
+            registered.getCanonicalPath(),
+            registered.getName(),
+            ALBUM_ID,
+            "已登记 PDF",
+            "",
+            "",
+            "chapter-registered",
+            "已登记章节",
+            1,
+            -1,
+            System.currentTimeMillis(),
+            null,
+            registered.length(),
+            1
+        );
+
+        IOException cancellation = new IOException("PDF 导出已取消");
+        PdfExportService.cleanupOwnedPathOutput(
+            store,
+            registered,
+            outputRef,
+            PdfRef.payload(outputRef),
+            registered.length(),
+            registered.lastModified(),
+            cancellation
+        );
+
+        assertTrue(registered.isFile());
+        assertNotNull(store.getFileByRef(outputRef));
+        assertArrayEquals(new byte[]{10, 11, 12}, Files.readAllBytes(registered.toPath()));
+        assertTrue(store.removeFileFromLibrary(recordId));
     }
 
     @Test

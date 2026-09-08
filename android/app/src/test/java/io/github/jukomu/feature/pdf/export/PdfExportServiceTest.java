@@ -193,7 +193,9 @@ public class PdfExportServiceTest {
         Files.write(otherVolume.toPath(), new byte[]{4, 5, 6});
 
         PdfExportService.cleanupOwnedPathOutput(
+            null,
             volume,
+            "file:path:" + volume.getCanonicalPath(),
             volume.getCanonicalPath(),
             volume.length(),
             volume.lastModified(),

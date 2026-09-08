@@ -1141,7 +1141,9 @@ public class PdfExportService {
                 return;
             }
             cleanupOwnedPathOutput(
+                pdfStore,
                 volume.file,
+                outputFileRef,
                 parsed.payload,
                 pathOutputLength,
                 pathOutputLastModified,
@@ -1158,13 +1160,19 @@ public class PdfExportService {
     /**
      * path 输出只允许删除当前卷在本次写入后留下的普通文件，避免触及其他卷或目录。
      */
-    static void cleanupOwnedPathOutput(File volumeFile, String outputPath,
+    static void cleanupOwnedPathOutput(PdfStore pdfStore, File volumeFile,
+                                       String outputFileRef, String outputPath,
                                        long expectedLength, long expectedLastModified,
                                        Throwable original) {
-        if (volumeFile == null || outputPath == null || outputPath.isEmpty()) {
+        if (volumeFile == null || outputFileRef == null || outputFileRef.isEmpty()
+            || outputPath == null || outputPath.isEmpty()) {
             return;
         }
         try {
+            if (pdfStore != null && pdfStore.getFileByRef(outputFileRef) != null) {
+                Log.i(TAG, "取消清理跳过已登记的 path 输出: " + outputFileRef);
+                return;
+            }
             File referencedPath = new File(outputPath);
             if (java.nio.file.Files.isSymbolicLink(volumeFile.toPath())
                 || java.nio.file.Files.isSymbolicLink(referencedPath.toPath())) {

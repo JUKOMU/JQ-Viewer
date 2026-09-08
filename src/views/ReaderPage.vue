@@ -79,7 +79,7 @@ import {
 } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { IonPage } from '@ionic/vue'
-import type { PluginListenerHandle } from '@capacitor/core'
+import type { ListenerHandle } from '@/runtime/BackendEvents'
 import { getImageUrl, JmcomicService, showToast } from '@/services/JmcomicService'
 import type { ImageInfo, PhotoDetail, PhotoMeta, PreloadResult } from '@/services/JmcomicTypes'
 import { SettingsStore } from '@/services/SettingsService'
@@ -137,11 +137,11 @@ let photoDetail: PhotoDetail | null = null
 let chapterLoadVersion = 0
 let chapterStateKey = ''
 let chapterStateAlbumId = ''
-let imageReadyListenerHandle: PluginListenerHandle | null = null
-let imageFailedListenerHandle: PluginListenerHandle | null = null
+let imageReadyListenerHandle: ListenerHandle | null = null
+let imageFailedListenerHandle: ListenerHandle | null = null
 let imageReadyListenerSetupPromise: Promise<void> | null = null
 let imageReadyListenerSetupId = 0
-let volumeKeyListenerHandle: PluginListenerHandle | null = null
+let volumeKeyListenerHandle: ListenerHandle | null = null
 let readerRuntimeActive = false
 let loadedSortOrders = new Set<number>()
 let requestedSortOrders = new Map<number, number>()
@@ -818,7 +818,7 @@ const onProgressInput = (page1Based: number) => {
 }
 
 // ---- 图片就绪监听 ----
-const removeListenerSafely = (handle: PluginListenerHandle | null) => {
+const removeListenerSafely = (handle: ListenerHandle | null) => {
   if (!handle) return
   void handle.remove().catch(() => {})
 }
@@ -831,8 +831,8 @@ const setupImageReadyListener = async () => {
 
   const setupId = ++imageReadyListenerSetupId
   const setupPromise = (async () => {
-    let readyHandle: PluginListenerHandle | null = null
-    let failedHandle: PluginListenerHandle | null = null
+    let readyHandle: ListenerHandle | null = null
+    let failedHandle: ListenerHandle | null = null
     const isCurrentSetup = () =>
       setupId === imageReadyListenerSetupId &&
       readerRuntimeActive &&

@@ -44,11 +44,11 @@ public class PdfStoreInstrumentedTest {
     }
 
     @Test
-    public void newDatabaseCreatesVersionNineFiveTableSchemaWithoutResetNotice() throws Exception {
+    public void newDatabaseCreatesVersionTenRefSchemaWithoutResetNotice() throws Exception {
         PdfStore store = PdfStore.getInstance(context);
         SQLiteDatabase database = store.getWritableDatabase();
 
-        assertEquals(9, database.getVersion());
+        assertEquals(10, database.getVersion());
         assertTrue(tableExists(database, PdfStore.TABLE_FILES));
         assertTrue(tableExists(database, PdfStore.TABLE_TASKS));
         assertTrue(tableExists(database, PdfStore.TABLE_CHAPTERS));
@@ -60,7 +60,7 @@ public class PdfStoreInstrumentedTest {
     }
 
     @Test
-    public void versionThreeDatabaseIsRebuiltWithoutDeletingReferencedPdf() throws Exception {
+    public void versionNineDatabaseMigratesLegacyImportedPdfWithoutReadingIt() throws Exception {
         File referencedPdf = new File(context.getCacheDir(), "legacy-pdf-store-test.pdf");
         createdFiles.add(referencedPdf);
         try (FileOutputStream output = new FileOutputStream(referencedPdf)) {
@@ -77,23 +77,70 @@ public class PdfStoreInstrumentedTest {
         legacy.execSQL("INSERT INTO imported_pdfs "
                 + "(file_path,file_name,album_id,created_at) VALUES (?,?,?,?)",
             new Object[]{referencedPdf.getAbsolutePath(), referencedPdf.getName(), "1", 1L});
-        legacy.setVersion(3);
+        legacy.setVersion(9);
         legacy.close();
 
         PdfStore store = PdfStore.getInstance(context);
         SQLiteDatabase upgraded = store.getWritableDatabase();
 
-        assertEquals(9, upgraded.getVersion());
+        assertEquals(10, upgraded.getVersion());
         assertFalse(tableExists(upgraded, "imported_pdfs"));
-        assertEquals(0L, store.countFiles());
+        assertEquals(1L, store.countFiles());
         assertTrue(referencedPdf.exists());
         JSONObject resetInfo = store.getManagementState().getJSONObject("databaseResetInfo");
         assertTrue(resetInfo.optBoolean("pending"));
-        assertEquals(3, resetInfo.optInt("fromVersion"));
-        assertEquals("SCHEMA_REBUILD_V9", resetInfo.optString("reason"));
+        assertEquals(9, resetInfo.optInt("fromVersion"));
+        assertEquals("SCHEMA_MIGRATION_V10", resetInfo.optString("reason"));
+        assertEquals(1, resetInfo.optInt("migratedCount"));
         assertTrue(store.acknowledgeDatabaseReset());
         assertFalse(store.getManagementState().getJSONObject("databaseResetInfo")
             .optBoolean("pending"));
+    }
+
+    @Test
+    public void migrationKeepsFirstPdfRecordSkipsBadLocatorAndClearsExportHistory() throws Exception {
+        File databaseFile = context.getDatabasePath(DB_NAME);
+        File parent = databaseFile.getParentFile();
+        assertTrue(parent == null || parent.isDirectory() || parent.mkdirs());
+        SQLiteDatabase legacy = SQLiteDatabase.openOrCreateDatabase(databaseFile, null);
+        legacy.execSQL("CREATE TABLE pdf_files (id INTEGER PRIMARY KEY AUTOINCREMENT,"
+            + "file_path TEXT NOT NULL UNIQUE,file_name TEXT NOT NULL,"
+            + "source_type TEXT NOT NULL,ownership TEXT NOT NULL,"
+            + "chapter_link_status TEXT NOT NULL,album_id TEXT NOT NULL,"
+            + "created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL)");
+        legacy.execSQL("INSERT INTO pdf_files "
+                + "(file_path,file_name,source_type,ownership,chapter_link_status,album_id,created_at,updated_at)"
+                + " VALUES (?,?,?,?,?,?,?,?)",
+            new Object[]{"/storage/emulated/0/book.pdf", "book.pdf", "imported",
+                "external_reference", "resolved", "1", 1L, 1L});
+        legacy.execSQL("INSERT INTO pdf_files "
+                + "(file_path,file_name,source_type,ownership,chapter_link_status,album_id,created_at,updated_at)"
+                + " VALUES (?,?,?,?,?,?,?,?)",
+            new Object[]{"content://provider/document/1", "saf.pdf", "imported",
+                "external_reference", "resolved", "1", 2L, 2L});
+        legacy.execSQL("CREATE TABLE imported_pdfs (id INTEGER PRIMARY KEY AUTOINCREMENT,"
+            + "file_path TEXT NOT NULL UNIQUE,file_name TEXT NOT NULL,album_id TEXT NOT NULL,"
+            + "created_at INTEGER NOT NULL)");
+        legacy.execSQL("INSERT INTO imported_pdfs (file_path,file_name,album_id,created_at)"
+                + " VALUES (?,?,?,?)",
+            new Object[]{"/storage/emulated/0/book.pdf", "duplicate.pdf", "1", 3L});
+        legacy.execSQL("INSERT INTO imported_pdfs (file_path,file_name,album_id,created_at)"
+                + " VALUES (?,?,?,?)",
+            new Object[]{"relative.pdf", "bad.pdf", "1", 4L});
+        legacy.setVersion(9);
+        legacy.close();
+
+        PdfStore store = PdfStore.getInstance(context);
+        SQLiteDatabase upgraded = store.getWritableDatabase();
+        assertEquals(10, upgraded.getVersion());
+        assertEquals(2L, store.countFiles());
+        assertNotNull(store.getFileByRef("file:path:/storage/emulated/0/book.pdf"));
+        assertNotNull(store.getFileByRef("file:saf:content://provider/document/1"));
+        JSONObject resetInfo = store.getManagementState().getJSONObject("databaseResetInfo");
+        assertEquals(2, resetInfo.optInt("migratedCount"));
+        assertEquals(2, resetInfo.optInt("skippedCount"));
+        assertTrue(resetInfo.optBoolean("exportHistoryCleared"));
+        assertTrue(resetInfo.optBoolean("exportFolderReset"));
     }
 
     @Test
@@ -120,7 +167,8 @@ public class PdfStoreInstrumentedTest {
         assertTrue(store.claimQueuedExport("export-retry"));
         JSONObject volume = store.getExportVolume("export-retry", 1);
         store.completeVolumeAndRegisterFile("export-retry", 1,
-            volume.getString("finalPath"), 100L, 2, "chapter",
+            PdfRef.createPathFileRef(volume.getString("tempPath")),
+            volume.getString("displayPath"), volume.getString("targetName"), 100L, 2, "chapter",
             "album-1", "漫画", "", "", "chapter-1", "第一话", 1, -1);
         store.updateExportProgress(
             "export-retry", "completed", "completed", 2, 2, 1, 1, null, null);
@@ -137,13 +185,14 @@ public class PdfStoreInstrumentedTest {
         assertTrue(store.claimQueuedExport("export-partial-retry"));
         for (int index = 1; index <= 3; index++) {
             JSONObject volume = store.getExportVolume("export-partial-retry", index);
-            File oldFinal = new File(volume.getString("finalPath"));
+            File oldFinal = new File(volume.getString("tempPath"));
             createdFiles.add(oldFinal);
             try (FileOutputStream output = new FileOutputStream(oldFinal)) {
                 output.write(index);
             }
             store.completeVolumeAndRegisterFile("export-partial-retry", index,
-                oldFinal.getCanonicalPath(), oldFinal.length(), 1, "chapter",
+                PdfRef.createPathFileRef(oldFinal.getCanonicalPath()), oldFinal.getCanonicalPath(),
+                oldFinal.getName(), oldFinal.length(), 1, "chapter",
                 "album-1", "漫画", "", "", "chapter-1", "第一话", 1, -1);
         }
         store.updateExportProgress("export-partial-retry", "completed", "completed",
@@ -153,7 +202,8 @@ public class PdfStoreInstrumentedTest {
         assertTrue(store.claimQueuedExport("export-partial-retry"));
         JSONObject first = store.getExportVolume("export-partial-retry", 1);
         store.completeVolumeAndRegisterFile("export-partial-retry", 1,
-            first.getString("finalPath"), 2L, 1, "chapter",
+            PdfRef.createPathFileRef(first.getString("tempPath")), first.getString("displayPath"),
+            first.getString("targetName"), 2L, 1, "chapter",
             "album-1", "漫画", "", "", "chapter-1", "第一话", 1, -1);
         store.markVolumeOutcome("export-partial-retry", 2, "failed");
         store.updateExportProgress("export-partial-retry", "partial", "partial",
@@ -167,7 +217,7 @@ public class PdfStoreInstrumentedTest {
         assertEquals("pending", store.getExportVolume("export-partial-retry", 3)
             .optString("status"));
         assertTrue(new File(store.getExportVolume("export-partial-retry", 3)
-            .getString("finalPath")).exists());
+            .getString("tempPath")).exists());
     }
 
     @Test
@@ -205,6 +255,7 @@ public class PdfStoreInstrumentedTest {
         for (int index = 0; index < 105; index++) {
             String name = "library-" + index + ".pdf";
             long id = store.insertImportedPdf(
+                PdfRef.createPathFileRef(new File(context.getCacheDir(), name).getCanonicalPath()),
                 new File(context.getCacheDir(), name).getCanonicalPath(),
                 name, "album-1", "漫画", "", "", name, name, 0, -1,
                 index, null, 0L, 1);
@@ -238,7 +289,8 @@ public class PdfStoreInstrumentedTest {
     private void insertImportedPdf(PdfStore store, String name, String folderId,
                                    long createdAt) throws Exception {
         File file = createPdf(name);
-        long id = store.insertImportedPdf(file.getCanonicalPath(), name, "album-1",
+        long id = store.insertImportedPdf(PdfRef.createPathFileRef(file.getCanonicalPath()),
+            file.getCanonicalPath(), name, "album-1",
             "漫画", "", "", name, name, 0, -1, createdAt, folderId,
             file.length(), 1);
         assertTrue(id > 0L);
@@ -275,20 +327,23 @@ public class PdfStoreInstrumentedTest {
         task.put("albumId", "album-1");
         task.put("chapterId", "chapter-1");
         task.put("displayTitle", exportId);
-        task.put("savePath", new File(context.getCacheDir(), exportId + ".pdf")
-            .getCanonicalPath());
+        String targetPath = new File(context.getCacheDir(), exportId + ".pdf").getCanonicalPath();
+        task.put("targetFolderRef", PdfRef.createPathFolderRef(context.getCacheDir().getCanonicalPath()));
+        task.put("targetName", exportId + ".pdf");
+        task.put("displayPath", targetPath);
         task.put("status", status);
         task.put("phase", status);
         task.put("createdAt", createdAt);
         JSONArray volumes = new JSONArray();
         for (int index = 1; index <= volumeCount; index++) {
             JSONObject volume = new JSONObject();
-            String finalPath = task.getString("savePath").replace(".pdf", "-" + index + ".pdf");
+            String finalPath = task.getString("displayPath").replace(".pdf", "-" + index + ".pdf");
             volume.put("volumeIndex", index);
             volume.put("startPage", index - 1);
             volume.put("endPage", index);
             volume.put("expectedPageCount", 1);
-            volume.put("finalPath", finalPath);
+            volume.put("targetName", new File(finalPath).getName());
+            volume.put("displayPath", finalPath);
             volume.put("tempPath", finalPath + ".tmp");
             volume.put("workDir", finalPath + ".work");
             volumes.put(volume);

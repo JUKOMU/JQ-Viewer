@@ -18,8 +18,9 @@
         >
           <template v-if="failedSortOrders.has(item.index + 1)">
             <div class="image-error-state">
-              <span>图片加载失败</span>
+              <span>{{ failedMessages.get(item.index + 1) || '图片加载失败' }}</span>
               <button
+                v-if="allowRetry"
                 type="button"
                 class="image-retry-button"
                 :disabled="retryingSortOrders.size > 0"
@@ -70,12 +71,16 @@ const props = withDefaults(
   defineProps<{
     imageMap: Map<number, string>
     failedSortOrders?: Set<number>
+    failedMessages?: Map<number, string>
+    allowRetry?: boolean
     retryingSortOrders?: Set<number>
     totalCount: number
     currentIndex: number
   }>(),
   {
     failedSortOrders: () => new Set<number>(),
+    failedMessages: () => new Map<number, string>(),
+    allowRetry: true,
     retryingSortOrders: () => new Set<number>(),
   },
 )

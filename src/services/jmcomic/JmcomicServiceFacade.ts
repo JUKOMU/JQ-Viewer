@@ -1,4 +1,3 @@
-import { createAppAlert } from '@/services/AppAlertService'
 import type {
   BrowseHistoryRange,
   BrowseHistoryItem,
@@ -10,6 +9,8 @@ import type {
   NetworkProbeEvent,
   PdfExportTask,
   PdfExportProgressEvent,
+  PdfExportStatus,
+  ImportedPdf,
   RelocationProgress,
   SearchQuery,
   SearchResultItem,
@@ -21,50 +22,13 @@ import type {
   JmcomicClient,
   JmcomicListenerHandle,
 } from './JmcomicClient'
-import { jmcomicNativeClient } from './JmcomicNativeClient'
+import { createActiveFacadeClient } from '@/runtime/facadeClient'
+import type { FileRef, FolderRef } from '@/runtime/FileReferences'
+import { getRuntime } from '@/runtime/runtimeContext'
+import { NotificationPermissionService } from '@/services/NotificationPermissionService'
 
-const native: JmcomicClient = jmcomicNativeClient
-
-let downloadNotificationPrompted = false
-let downloadNotificationPromptPromise: Promise<void> | null = null
-
-async function ensureDownloadNotificationPermission(): Promise<void> {
-  if (downloadNotificationPrompted) return
-  if (downloadNotificationPromptPromise) return downloadNotificationPromptPromise
-
-  downloadNotificationPromptPromise = (async () => {
-    try {
-      const check = await native.checkNotificationPermission()
-      if (check.granted) {
-        downloadNotificationPrompted = true
-        return
-      }
-
-      const alert = await createAppAlert({
-        tone: 'info',
-        header: '需要通知权限',
-        message:
-          '章节下载将在后台进行，需要通过通知查看进度。拒绝后仍会继续下载，但不会显示系统通知。',
-        buttons: [
-          { text: '暂不授权', role: 'cancel' },
-          { text: '允许通知', role: 'confirm' },
-        ],
-      })
-      await alert.present()
-      const dismissed = await alert.onDidDismiss()
-      if (dismissed.role === 'confirm') {
-        await native.requestNotificationPermission()
-      }
-    } catch {
-      // Web 调试或旧系统异常时不阻塞下载提交。
-    } finally {
-      downloadNotificationPrompted = true
-      downloadNotificationPromptPromise = null
-    }
-  })()
-
-  return downloadNotificationPromptPromise
-}
+/** 惰性 facade client：页面沿用旧 JmcomicClient 接口，底层由当前 runtime 端口动态提供。 */
+const native: JmcomicClient = createActiveFacadeClient(getRuntime)
 
 export const JmcomicService = {
   search(query: SearchQuery) {
@@ -309,7 +273,7 @@ export const JmcomicService = {
     chapterTitle: string,
     coverUrl: string,
   ) {
-    await ensureDownloadNotificationPermission()
+    await NotificationPermissionService.ensureDownloadPermission()
     return native.downloadChapter({ albumId, chapterId, albumTitle, chapterTitle, coverUrl })
   },
 
@@ -485,113 +449,122 @@ export const JmcomicService = {
   // ========== PDF 导出 ==========
 
   exportPdfBatch(tasks: PdfExportTask[]) {
-    return native.exportPdfBatch({ tasks })
+    return getRuntime().services.pdf.exportPdfBatch({ tasks })
   },
 
   pickFolder() {
-    return native.pickFolder()
+    return getRuntime().services.files.pickFolder('pdf-root')
   },
 
   // ========== PDF 导入 ==========
 
-  scanPdfFiles(path: string, treeUri?: string) {
-    return native.scanPdfFiles({ path, treeUri })
+  scanPdfFiles(folder: FolderRef) {
+    return getRuntime().services.pdf.scanPdfFiles(folder)
   },
 
   importPdfs(items: ImportPdfItem[]) {
-    return native.importPdfs({ items })
+    return getRuntime().services.pdf.importPdfs(items)
   },
 
   getImportedPdfs() {
-    return native.getImportedPdfs()
+    return getRuntime().services.pdf.getImportedPdfs()
   },
 
-  getPdfFiles(options: Parameters<JmcomicClient['getPdfFiles']>[0]) {
-    return native.getPdfFiles(options)
+  getPdfFiles(options: {
+    sourceType?: 'imported' | 'exported'
+    availability?: ImportedPdf['availability'] | 'problem'
+    folderId?: string
+    query?: string
+    cursor?: string
+    limit: number
+  }) {
+    return getRuntime().services.pdf.getPdfFiles(options)
   },
 
   refreshPdfFileAvailability(ids: number[]) {
-    return native.refreshPdfFileAvailability({ ids })
+    return getRuntime().services.pdf.refreshPdfFileAvailability(ids)
   },
 
   inspectPdfFileForDeletion(id: number) {
-    return native.inspectPdfFileForDeletion({ id })
+    return getRuntime().services.pdf.inspectPdfFileForDeletion(id)
   },
 
   verifyPdfFile(id: number) {
-    return native.verifyPdfFile({ id })
+    return getRuntime().services.pdf.verifyPdfFile(id)
   },
 
   removePdfFromLibrary(id: number) {
-    return native.removePdfFromLibrary({ id })
+    return getRuntime().services.pdf.removePdfFromLibrary(id)
   },
 
   deletePdfFile(id: number) {
-    return native.deletePdfFile({ id })
+    return getRuntime().services.pdf.deletePdfFile(id)
   },
 
   getPdfManagementState() {
-    return native.getPdfManagementState()
+    return getRuntime().services.pdf.getPdfManagementState()
   },
 
   acknowledgePdfDatabaseReset() {
-    return native.acknowledgePdfDatabaseReset()
+    return getRuntime().services.pdf.acknowledgePdfDatabaseReset()
   },
 
-  getPdfExportTasks(options: Parameters<JmcomicClient['getPdfExportTasks']>[0]) {
-    return native.getPdfExportTasks(options)
+  getPdfExportTasks(options: { status?: PdfExportStatus; cursor?: string; limit: number }) {
+    return getRuntime().services.pdf.getPdfExportTasks(options)
   },
 
   getPdfExportTask(exportId: string) {
-    return native.getPdfExportTask({ exportId })
+    return getRuntime().services.pdf.getPdfExportTask(exportId)
   },
 
   cancelPdfExport(exportId: string) {
-    return native.cancelPdfExport({ exportId })
+    return getRuntime().services.pdf.cancelPdfExport(exportId)
   },
 
   retryPdfExport(exportId: string, allowOverwrite = false) {
-    return native.retryPdfExport({ exportId, allowOverwrite })
+    return getRuntime().services.pdf.retryPdfExport(exportId, allowOverwrite)
   },
 
   deletePdfExportTask(exportId: string) {
-    return native.deletePdfExportTask({ exportId })
+    return getRuntime().services.pdf.deletePdfExportTask(exportId)
   },
 
   addPdfExportProgressListener(handler: (event: PdfExportProgressEvent) => void) {
-    return native.addListener('pdfExportProgress', handler)
+    return getRuntime().services.pdf.onProgress(handler)
   },
 
   updateLocalEpisodeType(albumId: string, isSingleEpisode: boolean) {
-    return native.updateLocalEpisodeType({ albumId, isSingleEpisode })
+    return getRuntime().services.pdf.updateLocalEpisodeType(albumId, isSingleEpisode)
   },
 
   deleteImportedPdf(id: number) {
-    return native.deleteImportedPdf({ id })
+    return getRuntime().services.pdf.deleteImportedPdf(id)
   },
 
-  openPdf(filePath: string) {
-    return native.openPdf({ filePath })
+  openPdf(file: FileRef) {
+    return getRuntime().services.pdf.openPdf(file)
   },
 
-  openPdfFolder(filePath: string) {
-    return native.openPdfFolder({ filePath })
+  openPdfFolder(file: FileRef) {
+    return getRuntime().services.pdf.openPdfFolder(file)
   },
 
-  getPdfInfo(filePath: string) {
-    return native.getPdfInfo({ filePath })
+  getPdfInfo(file: FileRef) {
+    return getRuntime().services.pdf.getPdfInfo(file)
   },
 
-  renderPdfPage(filePath: string, page: number, targetWidth: number) {
-    return native.renderPdfPage({ filePath, page, targetWidth })
-  },
-
-  checkFilesExist(paths: string[]) {
-    return native.checkFilesExist({ paths })
+  checkFilesExist(files: FileRef[]) {
+    return getRuntime().services.files.checkFilesExist(files)
   },
 
   getExternalStoragePath() {
-    return native.getExternalStoragePath()
+    return getRuntime()
+      .services.files.getDefaultFolder('pdf-export')
+      .then((folder) => ({
+        folderRef: String(folder.ref),
+        displayPath: folder.displayPath,
+        provider: String(folder.ref).startsWith('folder:saf:') ? 'saf' as const : 'path' as const,
+      }))
   },
 
   checkNotificationPermission() {

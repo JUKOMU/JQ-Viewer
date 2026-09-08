@@ -13,6 +13,7 @@ import type {
   PdfExportMode,
   PdfExportTask,
 } from './JmcomicTypes'
+import { asFolderRef, type ExportTarget, type FolderRef } from '@/runtime/FileReferences'
 
 const KEY_EXPORT_PATH = 'jq-pdf-export-path'
 const KEY_DIR_TEMPLATE = 'jq-pdf-dir-template'
@@ -43,12 +44,19 @@ export interface PdfExportPlanOptions {
   useOriginal: boolean
   compressionRatio: number
   editedPath: string
+  exportFolder?: FolderRef
+  exportFolderDisplayPath?: string
   splitPages: number
+}
+
+export interface PdfExportFolderSelection {
+  folderRef: FolderRef
+  displayPath: string
 }
 
 export interface PdfExportPlan {
   tasks: PdfExportTask[]
-  outputPaths: string[]
+  outputDisplayPaths: string[]
 }
 
 /** 内置示例数据，供预览和设置页渲染值展示复用 */
@@ -218,11 +226,37 @@ export function buildPdfOutputPaths(
   })
 }
 
+/**
+ * 根据展示路径与可选导出目录构造 ExportTarget。
+ * 未提供目录引用时，仅从展示路径提取父目录和文件名；提供目录引用时，
+ * 只计算目录内的逻辑相对路径。实际平台目标的拼接与越界校验留给 adapter。
+ */
+function buildExportTarget(
+  displayPath: string,
+  folder?: FolderRef,
+  folderDisplayPath?: string,
+): ExportTarget {
+  const normalizedPath = displayPath.replace(/\\/g, '/')
+  if (!folder) throw new Error('请先选择导出目录')
+
+  const rawFolder = (folderDisplayPath || '').replace(/\\/g, '/')
+  const normalizedFolder = rawFolder === '/' ? '/' : rawFolder.replace(/\/+$/, '')
+  if (!normalizedFolder) throw new Error('导出目录引用缺少展示路径')
+  const folderPrefix = normalizedFolder === '/' ? '/' : `${normalizedFolder}/`
+  if (!normalizedPath.startsWith(folderPrefix)) {
+    throw new Error('导出文件必须位于已选择的导出目录内')
+  }
+  const relativePath = normalizedPath.slice(folderPrefix.length)
+  if (!relativePath) throw new Error('导出文件名不能为空')
+  return { folder, relativePath }
+}
+
 export const PdfExportService = {
   TEMPLATE_VAR_KEYS,
   TEMPLATE_VAR_DEFS,
   buildChapterRange,
   buildPdfOutputPaths,
+  buildExportTarget,
   normalizePdfChapters,
   toPdfExportChapter,
 
@@ -232,26 +266,57 @@ export const PdfExportService = {
    * 确保导出路径是绝对路径。首次加载时若为默认相对路径，则基于外部存储根目录解析。
    * 应在设置页加载时调用一次。
    */
-  ensureAbsolutePath(externalStorageRoot: string) {
+  ensureAbsolutePath(_externalStorageRoot: string) {
+    // 旧版本把展示路径直接写入 localStorage；新版本只接受带 ref 的目录描述。
     const stored = localStorage.getItem(KEY_EXPORT_PATH)
-    if (stored && stored.startsWith('/')) return // 已是绝对路径
-    // 无存储 或 为相对路径 → 解析为绝对路径
-    const base = externalStorageRoot.replace(/\/+$/, '')
-    const relative = (stored || DEFAULT_EXPORT_PATH).replace(/^\/+/, '')
-    const absPath = base + '/' + relative
-    localStorage.setItem(KEY_EXPORT_PATH, absPath)
+    if (stored && !stored.trim().startsWith('{')) localStorage.removeItem(KEY_EXPORT_PATH)
   },
 
   getExportPath(): string {
     try {
-      return localStorage.getItem(KEY_EXPORT_PATH) || DEFAULT_EXPORT_PATH
+      return PdfExportService.getExportFolder()?.displayPath || DEFAULT_EXPORT_PATH
     } catch {
       return DEFAULT_EXPORT_PATH
     }
   },
 
-  setExportPath(path: string) {
-    localStorage.setItem(KEY_EXPORT_PATH, path)
+  getExportFolder(): PdfExportFolderSelection | null {
+    try {
+      const raw = localStorage.getItem(KEY_EXPORT_PATH)
+      if (!raw) return null
+      if (!raw.trim().startsWith('{')) {
+        localStorage.removeItem(KEY_EXPORT_PATH)
+        return null
+      }
+      const value: unknown = JSON.parse(raw)
+      if (
+        !value ||
+        typeof value !== 'object' ||
+        typeof (value as { folderRef?: unknown }).folderRef !== 'string' ||
+        typeof (value as { displayPath?: unknown }).displayPath !== 'string' ||
+        !(value as { folderRef: string }).folderRef
+      ) {
+        localStorage.removeItem(KEY_EXPORT_PATH)
+        return null
+      }
+      const folder = value as { folderRef: string; displayPath: string }
+      return { folderRef: asFolderRef(folder.folderRef), displayPath: folder.displayPath }
+    } catch {
+      localStorage.removeItem(KEY_EXPORT_PATH)
+      return null
+    }
+  },
+
+  setExportFolder(selection: PdfExportFolderSelection) {
+    localStorage.setItem(
+      KEY_EXPORT_PATH,
+      JSON.stringify({ folderRef: String(selection.folderRef), displayPath: selection.displayPath }),
+    )
+  },
+
+  /** 手工编辑只更新当前表单，不把无法绑定 ref 的 raw path 写入持久化设置。 */
+  setExportPath(_path: string) {
+    localStorage.removeItem(KEY_EXPORT_PATH)
   },
 
   resetExportPath() {
@@ -417,7 +482,7 @@ export const PdfExportService = {
         selectedChapters,
         options.albumDetail,
       )
-      const savePath = options.editedPath
+      const displayPath = options.editedPath
       const task: PdfExportTask = {
         mode: 'merged',
         albumId,
@@ -427,7 +492,12 @@ export const PdfExportService = {
         isSingleEpisode: selectedChapters[0].isSingleEpisode,
         chapterTitle: templateData.chapterRange,
         chapters: selectedChapters.map(toPdfExportChapter),
-        savePath,
+        target: buildExportTarget(
+          displayPath,
+          options.exportFolder,
+          options.exportFolderDisplayPath,
+        ),
+        displayPath,
         useOriginal: options.useOriginal,
         compressionRatio: options.compressionRatio,
         splitPages: options.splitPages,
@@ -435,7 +505,11 @@ export const PdfExportService = {
 
       return {
         tasks: [task],
-        outputPaths: buildPdfOutputPaths(savePath, templateData.pageCount, options.splitPages),
+        outputDisplayPaths: buildPdfOutputPaths(
+          displayPath,
+          templateData.pageCount,
+          options.splitPages,
+        ),
       }
     }
 
@@ -448,12 +522,21 @@ export const PdfExportService = {
       isSingleEpisode: chapter.isSingleEpisode,
       chapterId: chapter.chapterId,
       chapterTitle: chapter.chapterTitle,
-      savePath:
+      displayPath:
         selectedChapters.length === 1
           ? options.editedPath
           : PdfExportService.buildFullPath(
               PdfExportService.buildTemplateData(chapter, options.albumDetail),
             ),
+      target: buildExportTarget(
+        selectedChapters.length === 1
+          ? options.editedPath
+          : PdfExportService.buildFullPath(
+              PdfExportService.buildTemplateData(chapter, options.albumDetail),
+            ),
+        options.exportFolder,
+        options.exportFolderDisplayPath,
+      ),
       useOriginal: options.useOriginal,
       compressionRatio: options.compressionRatio,
       splitPages: options.splitPages,
@@ -461,8 +544,12 @@ export const PdfExportService = {
 
     return {
       tasks,
-      outputPaths: tasks.flatMap((task, index) =>
-        buildPdfOutputPaths(task.savePath, selectedChapters[index].totalPages, options.splitPages),
+      outputDisplayPaths: tasks.flatMap((task, index) =>
+        buildPdfOutputPaths(
+          task.displayPath,
+          selectedChapters[index].totalPages,
+          options.splitPages,
+        ),
       ),
     }
   },

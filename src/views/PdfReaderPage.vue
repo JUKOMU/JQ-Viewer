@@ -9,19 +9,29 @@
         v-if="isVertical"
         ref="verticalViewRef"
         :image-map="imageMap"
+        :failed-sort-orders="failedSortOrders"
+        :failed-messages="failedMessages"
+        :allow-retry="false"
+        :retrying-sort-orders="retryingSortOrders"
         :total-count="totalCount"
         :current-index="currentIndex"
         @update:current-index="onPageChange"
         @request-range="onVerticalRequestRange"
+        @image-error="onImageError"
       />
       <HorizontalPageView
         v-else
         ref="horizontalViewRef"
         :image-map="imageMap"
+        :failed-sort-orders="failedSortOrders"
+        :failed-messages="failedMessages"
+        :allow-retry="false"
+        :retrying-sort-orders="retryingSortOrders"
         :total-count="totalCount"
         :current-index="currentIndex"
         @update:current-index="onPageChange"
         @toggle-toolbar="toggleToolbar"
+        @image-error="onImageError"
       />
 
       <Transition name="toolbar-slide">
@@ -61,7 +71,10 @@ import {
 } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { IonPage } from '@ionic/vue'
-import type { PluginListenerHandle } from '@capacitor/core'
+import type { ListenerHandle } from '@/runtime/BackendEvents'
+import { asFileRef } from '@/runtime/FileReferences'
+import { normalizeRuntimeError, RuntimeError } from '@/runtime/errors'
+import { getRuntime } from '@/runtime/runtimeContext'
 import { JmcomicService, showToast } from '@/services/JmcomicService'
 import { SettingsStore } from '@/services/SettingsService'
 import { HistoryService } from '@/services/HistoryService'
@@ -106,7 +119,8 @@ const router = useRouter()
 const updateReaderCurrentPage = inject<(page: number) => void>('updateReaderCurrentPage', () => {})
 
 // ---- 路由参数 ----
-const filePath = route.query.path as string
+// 路由通过 fileRef 传入平台文件引用，而不是可直接拼接的绝对路径。
+const fileRef = asFileRef((route.query.fileRef as string) || '')
 const displayTitle = computed(() => (route.query.title as string) || 'PDF')
 const albumId = computed(() => (route.query.albumId as string) || '')
 const chapterId = computed(() => (route.query.chapterId as string) || albumId.value)
@@ -119,6 +133,9 @@ const isVertical = ref(SettingsStore.getReaderDisplayMode() === 'vertical')
 const currentIndex = ref(0)
 const totalCount = ref(0)
 const imageMap = ref<Map<number, string>>(new Map())
+const failedSortOrders = ref<Set<number>>(new Set())
+const failedMessages = ref<Map<number, string>>(new Map())
+const retryingSortOrders = ref<Set<number>>(new Set())
 const toolbarVisible = ref(false)
 const isDragProgress = ref(false)
 const settingsPanelVisible = ref(false)
@@ -129,11 +146,13 @@ let lastToolbarTapTime = 0
 let lastToolbarTapX = 0
 let lastToolbarTapY = 0
 
-let volumeKeyListenerHandle: PluginListenerHandle | null = null
+let volumeKeyListenerHandle: ListenerHandle | null = null
 let readerRuntimeActive = false
 let pdfDoc: pdfjsLib.PDFDocumentProxy | null = null
 let nativePdfMode = false
 const renderedPages = new Map<number, string>()
+const renderedPageGenerations = new Map<number, number>()
+const nativeImageFailureStates = new Map<number, { generation: number; attempts: number }>()
 const renderTasks = new Map<number, pdfjsLib.RenderTask>()
 const pendingRenderQueue = new Set<number>()
 const pageRenderGenerations = new Map<number, number>()
@@ -145,6 +164,7 @@ let lastScrollTime = 0
 let lastScrollIndex = -1
 let revertTimer: ReturnType<typeof setTimeout> | null = null
 let renderGeneration = 0
+let lastNativeRenderFailureToastGeneration: number | null = null
 let activeRenderRange: { start: number; end: number; center: number } | null = null
 let pendingSeekIndex: number | null = null
 let dragPreviewTimer: ReturnType<typeof setTimeout> | null = null
@@ -352,13 +372,12 @@ const calcBaseScale = (
 // ---- PDF 页面渲染 ----
 const renderPageToBlob = async (pageNum: number): Promise<string | null> => {
   if (nativePdfMode) {
-    try {
-      const targetWidth = getRenderTargetWidth(isVertical.value, true)
-      const result = await JmcomicService.renderPdfPage(filePath, pageNum, targetWidth)
-      return result.imageUrl
-    } catch {
-      return null
+    const renderer = getRuntime().resources.renderPdfPage
+    if (!renderer.available) {
+      throw new RuntimeError('unavailable', '当前平台不支持原生 PDF 页面渲染')
     }
+    const targetWidth = getRenderTargetWidth(isVertical.value, true)
+    return await renderer.api.getUrl({ file: fileRef, page: pageNum, targetWidth })
   }
 
   if (!pdfDoc) return null
@@ -396,10 +415,111 @@ const releaseRenderedUrl = (url: string) => {
   if (url.startsWith('blob:')) URL.revokeObjectURL(url)
 }
 
+const setFailedSortOrder = (sortOrder: number, failed: boolean, message = '') => {
+  const nextFailed = new Set(failedSortOrders.value)
+  const nextMessages = new Map(failedMessages.value)
+  if (failed) {
+    nextFailed.add(sortOrder)
+    nextMessages.set(sortOrder, message || '图片加载失败')
+  } else {
+    nextFailed.delete(sortOrder)
+    nextMessages.delete(sortOrder)
+  }
+  failedSortOrders.value = nextFailed
+  failedMessages.value = nextMessages
+}
+
+const setRetryingSortOrder = (sortOrder: number, retrying: boolean) => {
+  const next = new Set(retryingSortOrders.value)
+  if (retrying) next.add(sortOrder)
+  else next.delete(sortOrder)
+  retryingSortOrders.value = next
+}
+
+const markNativeRenderFailure = (pageNum: number, generation: number, error: unknown) => {
+  if (!nativePdfMode || generation !== pageRenderGenerations.get(pageNum)) return
+
+  const runtimeError = normalizeRuntimeError(error, 'PDF 页面渲染失败')
+  const message =
+    runtimeError.code === 'not-found' || runtimeError.code === 'permission-denied'
+      ? runtimeError.message || 'PDF 文件读取失败'
+      : 'PDF 页面渲染失败'
+
+  pageRenderGenerations.delete(pageNum)
+  renderedPageGenerations.delete(pageNum)
+  if (renderedPages.get(pageNum) === '') {
+    renderedPages.delete(pageNum)
+    imageMap.value.delete(pageNum)
+  }
+  setRetryingSortOrder(pageNum, false)
+  setFailedSortOrder(pageNum, true, message)
+  applyImageMap()
+
+  if (lastNativeRenderFailureToastGeneration !== generation) {
+    lastNativeRenderFailureToastGeneration = generation
+    void showToast(message, 'danger')
+  }
+}
+
+const clearNativeImageFailures = () => {
+  nativeImageFailureStates.clear()
+  lastNativeRenderFailureToastGeneration = null
+  failedSortOrders.value = new Set()
+  failedMessages.value = new Map()
+  retryingSortOrders.value = new Set()
+}
+
+const isNativePdfPageUrl = (url: string): boolean => {
+  try {
+    const parsed = new URL(url)
+    return (
+      parsed.protocol === 'https:' &&
+      parsed.host === 'jqviewer.local' &&
+      /^\/pdf-page\/[0-9a-f]{64}\.png$/.test(parsed.pathname)
+    )
+  } catch {
+    return false
+  }
+}
+
+const onImageError = (sortOrder: number, failedUrl: string) => {
+  if (!nativePdfMode || !isNativePdfPageUrl(failedUrl)) return
+  if (
+    sortOrder < 1 ||
+    sortOrder > totalCount.value ||
+    imageMap.value.get(sortOrder) !== failedUrl ||
+    renderedPages.get(sortOrder) !== failedUrl
+  )
+    return
+
+  const generation = renderedPageGenerations.get(sortOrder) ?? renderGeneration
+  const previous = nativeImageFailureStates.get(sortOrder)
+  const attempts = previous?.generation === generation ? previous.attempts + 1 : 1
+  nativeImageFailureStates.set(sortOrder, { generation, attempts })
+  renderedPageGenerations.delete(sortOrder)
+  renderedPages.delete(sortOrder)
+  imageMap.value.delete(sortOrder)
+
+  if (attempts >= 2) {
+    setRetryingSortOrder(sortOrder, false)
+    setFailedSortOrder(sortOrder, true, 'PDF 页面渲染失败')
+    applyImageMap()
+    void showToast('PDF 页面渲染失败', 'danger')
+    return
+  }
+
+  setFailedSortOrder(sortOrder, false)
+  setRetryingSortOrder(sortOrder, true)
+  renderedPages.set(sortOrder, '')
+  applyImageMap()
+  startRenderPage(sortOrder, generation, 0)
+}
+
 const cancelRenderTasksOutside = (keepSet: Set<number>) => {
   for (const pageNum of activeRenderingPages) {
     if (keepSet.has(pageNum)) continue
     pageRenderGenerations.delete(pageNum)
+    renderedPageGenerations.delete(pageNum)
     pendingRenderPriorities.delete(pageNum)
     if (renderedPages.get(pageNum) === '') {
       renderedPages.delete(pageNum)
@@ -411,6 +531,7 @@ const cancelRenderTasksOutside = (keepSet: Set<number>) => {
     if (keepSet.has(pageNum)) continue
     pendingRenderQueue.delete(pageNum)
     pageRenderGenerations.delete(pageNum)
+    renderedPageGenerations.delete(pageNum)
     pendingRenderPriorities.delete(pageNum)
     if (renderedPages.get(pageNum) === '') {
       renderedPages.delete(pageNum)
@@ -423,6 +544,7 @@ const cancelRenderTasksOutside = (keepSet: Set<number>) => {
     task.cancel()
     renderTasks.delete(pageNum)
     pageRenderGenerations.delete(pageNum)
+    renderedPageGenerations.delete(pageNum)
     if (renderedPages.get(pageNum) === '') {
       renderedPages.delete(pageNum)
       imageMap.value.delete(pageNum)
@@ -433,6 +555,7 @@ const cancelRenderTasksOutside = (keepSet: Set<number>) => {
 const cancelAllRenderTasks = () => {
   pendingRenderQueue.clear()
   pageRenderGenerations.clear()
+  renderedPageGenerations.clear()
   pendingRenderPriorities.clear()
   for (const [pageNum, task] of renderTasks) {
     task.cancel()
@@ -505,6 +628,7 @@ const scheduleRenderQueue = () => {
       .then((url) => {
         if (generation !== pageRenderGenerations.get(pageNum)) {
           if (url) releaseRenderedUrl(url)
+          setRetryingSortOrder(pageNum, false)
           if (renderedPages.get(pageNum) === '' && pageRenderGenerations.has(pageNum)) {
             pendingRenderQueue.add(pageNum)
             if (!pendingRenderPriorities.has(pageNum)) {
@@ -516,16 +640,23 @@ const scheduleRenderQueue = () => {
 
         pageRenderGenerations.delete(pageNum)
         if (url) {
+          renderedPageGenerations.set(pageNum, generation)
           renderedPages.set(pageNum, url)
           imageMap.value.set(pageNum, url)
+          setRetryingSortOrder(pageNum, false)
           applyImageMap()
           return
         }
         if (renderedPages.get(pageNum) === '') {
+          renderedPageGenerations.delete(pageNum)
           renderedPages.delete(pageNum)
           imageMap.value.delete(pageNum)
           applyImageMap()
         }
+        setRetryingSortOrder(pageNum, false)
+      })
+      .catch((error) => {
+        markNativeRenderFailure(pageNum, generation, error)
       })
       .finally(() => {
         activeRenderingPages.delete(pageNum)
@@ -582,12 +713,14 @@ const getActiveRenderWindow = (center: number) => {
 }
 
 const invalidateActiveRenderWindow = () => {
+  clearNativeImageFailures()
   const activePages = getActiveRenderWindow(currentIndex.value)
   for (const pageNum of activePages) {
     // 让已在途的旧 renderer 结果只能走过期分支，不能覆盖新的尺寸批次。
     pageRenderGenerations.delete(pageNum)
     pendingRenderPriorities.delete(pageNum)
     pendingRenderQueue.delete(pageNum)
+    renderedPageGenerations.delete(pageNum)
 
     const url = renderedPages.get(pageNum)
     if (url) releaseRenderedUrl(url)
@@ -632,6 +765,8 @@ const hasPendingInRange = (center: number, dir: 'forward' | 'backward'): boolean
 const updateWindow = (center: number) => {
   if (!pdfDoc && !nativePdfMode) return
   const generation = ++renderGeneration
+  // 每个新的页面批次都重新开始资源失败计数，避免旧 URL 的失败状态污染新批次。
+  clearNativeImageFailures()
   const windowOrders = getActiveRenderWindow(center)
 
   // 清理窗口外页面
@@ -670,6 +805,7 @@ const updateWindow = (center: number) => {
   for (const [so, url] of renderedPages) {
     if (!cacheSet.has(so)) {
       if (url) releaseRenderedUrl(url)
+      renderedPageGenerations.delete(so)
       renderedPages.delete(so)
       imageMap.value.delete(so)
     }
@@ -831,7 +967,8 @@ const recordBrowseHistory = () => {
 }
 
 const loadPdfDocument = async () => {
-  const arrayBuffer = await fetchPdfArrayBuffer(filePath)
+  clearNativeImageFailures()
+  const arrayBuffer = await fetchPdfArrayBuffer(fileRef)
   try {
     pdfDoc = await pdfjsLib.getDocument(buildPdfDocumentParams(arrayBuffer)).promise
     nativePdfMode = false
@@ -842,7 +979,11 @@ const loadPdfDocument = async () => {
       pdfDoc.destroy()
       pdfDoc = null
     }
-    const info = await JmcomicService.getPdfInfo(filePath)
+    const renderer = getRuntime().resources.renderPdfPage
+    if (!renderer.available) {
+      throw new RuntimeError('unavailable', '当前平台不支持原生 PDF 页面渲染')
+    }
+    const info = await JmcomicService.getPdfInfo(fileRef)
     nativePdfMode = true
     return info.pageCount
   }
@@ -859,13 +1000,14 @@ const goBack = () => {
 
 // ---- 生命周期 ----
 onMounted(async () => {
-  if (!filePath) {
+  if (!fileRef) {
     await showToast('缺少文件路径', 'danger')
     router.back()
     return
   }
 
   activateReaderRuntime()
+  clearNativeImageFailures()
   bindRenderResizeObserver()
   activeRenderRange = null
   pendingSeekIndex = null
@@ -907,8 +1049,14 @@ onMounted(async () => {
     } else if (e instanceof TypeError && e.message === 'Failed to fetch') {
       await showToast('PDF 文件读取失败，请重新导入', 'danger')
     } else {
-      const msg = e?.message || ''
-      if (/password/i.test(msg)) {
+      const runtimeError = normalizeRuntimeError(e)
+      if (runtimeError.code === 'unavailable') {
+        await showToast(runtimeError.message || '当前平台不支持原生 PDF 页面渲染', 'danger')
+      } else if (runtimeError.code === 'not-found') {
+        await showToast(runtimeError.message || 'PDF 文件不存在或已移动', 'danger')
+      } else if (runtimeError.code === 'permission-denied') {
+        await showToast(runtimeError.message || 'PDF 文件读取权限已失效，请重新导入', 'danger')
+      } else if (/password/i.test(runtimeError.message)) {
         await showToast('此 PDF 已加密，无法打开', 'danger')
       } else {
         await showToast('PDF 文件无法打开，可能已损坏', 'danger')
@@ -920,6 +1068,7 @@ onMounted(async () => {
 
 onActivated(() => {
   activateReaderRuntime()
+  clearNativeImageFailures()
   nextTick(() => {
     goToIndex(currentIndex.value, 'route')
   })
@@ -937,6 +1086,7 @@ onUnmounted(() => {
   if (revertTimer) clearTimeout(revertTimer)
   if (dragPreviewTimer) clearTimeout(dragPreviewTimer)
   cancelAllRenderTasks()
+  clearNativeImageFailures()
 
   for (const url of renderedPages.values()) {
     if (url) releaseRenderedUrl(url)

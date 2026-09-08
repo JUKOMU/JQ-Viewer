@@ -6,6 +6,7 @@ import {
   buildPdfOutputPaths,
   normalizePdfChapters,
 } from '@/services/PdfExportService'
+import { asFolderRef } from '@/runtime/FileReferences'
 import type { DownloadTask, PdfExportChapter } from '@/services/JmcomicTypes'
 
 function chapter(
@@ -115,6 +116,23 @@ describe('chapterRange template variable', () => {
 })
 
 describe('PDF export plan', () => {
+  it('clears legacy raw export path and persists only a folder descriptor', () => {
+    localStorage.setItem('jq-pdf-export-path', '/legacy/exports')
+    expect(PdfExportService.getExportFolder()).toBeNull()
+    expect(localStorage.getItem('jq-pdf-export-path')).toBeNull()
+
+    PdfExportService.setExportFolder({
+      folderRef: asFolderRef('folder:saf:content://provider/tree/exports'),
+      displayPath: '/storage/emulated/0/Exports',
+    })
+
+    expect(PdfExportService.getExportFolder()).toEqual({
+      folderRef: 'folder:saf:content://provider/tree/exports',
+      displayPath: '/storage/emulated/0/Exports',
+    })
+    expect(localStorage.getItem('jq-pdf-export-path')).toContain('folderRef')
+  })
+
   it('sorts numeric chapters while preserving invalid chapter positions and duplicate order', () => {
     const normalized = normalizePdfChapters([
       downloadTask(3, 'chapter-3'),
@@ -150,6 +168,8 @@ describe('PDF export plan', () => {
       useOriginal: true,
       compressionRatio: 0.5,
       editedPath: '/exports/merged.pdf',
+      exportFolder: asFolderRef('folder:path:/exports'),
+      exportFolderDisplayPath: '/exports',
       splitPages: 25,
     })
 
@@ -161,7 +181,8 @@ describe('PDF export plan', () => {
         coverUrl: 'https://example.test/cover.jpg',
         isSingleEpisode: false,
         chapterTitle: '第2-3话',
-        savePath: '/exports/merged.pdf',
+        displayPath: '/exports/merged.pdf',
+        target: { folder: 'folder:path:/exports', relativePath: 'merged.pdf' },
       }),
     ])
     expect(plan.tasks[0]).not.toHaveProperty('chapterId')
@@ -169,10 +190,37 @@ describe('PDF export plan', () => {
       'chapter-2',
       'chapter-3',
     ])
-    expect(plan.outputPaths).toEqual(['/exports/merged_001-025.pdf', '/exports/merged_026-050.pdf'])
+    expect(plan.outputDisplayPaths).toEqual([
+      '/exports/merged_001-025.pdf',
+      '/exports/merged_026-050.pdf',
+    ])
+  })
+
+  it('uses a provided export folder and keeps the target path relative to it', () => {
+    expect(
+      PdfExportService.buildExportTarget(
+        '/exports/album/merged.pdf',
+        asFolderRef('folder:path:/exports'),
+        '/exports',
+      ),
+    ).toEqual({
+      folder: 'folder:path:/exports',
+      relativePath: 'album/merged.pdf',
+    })
+  })
+
+  it('uses the filesystem root as the folder for a root-level output path', () => {
+    expect(PdfExportService.buildExportTarget('/merged.pdf', asFolderRef('folder:path:/'), '/')).toEqual({
+      folder: 'folder:path:/',
+      relativePath: 'merged.pdf',
+    })
   })
 
   it('keeps chapter mode as one task per selected chapter', () => {
+    localStorage.setItem(
+      'jq-pdf-export-path',
+      JSON.stringify({ folderRef: 'folder:path:/exports', displayPath: '/exports' }),
+    )
     const plan = PdfExportService.buildExportPlan({
       mode: 'chapter',
       selectedChapters: [downloadTask(2, 'chapter-2'), downloadTask(3, 'chapter-3')],
@@ -180,6 +228,8 @@ describe('PDF export plan', () => {
       useOriginal: false,
       compressionRatio: 0.4,
       editedPath: '/exports/preview.pdf',
+      exportFolder: asFolderRef('folder:path:/exports'),
+      exportFolderDisplayPath: '/exports',
       splitPages: 0,
     })
 
@@ -191,7 +241,7 @@ describe('PDF export plan', () => {
       true,
     )
     expect(plan.tasks.every((task) => task.isSingleEpisode === false)).toBe(true)
-    expect(plan.outputPaths).toEqual(plan.tasks.map((task) => task.savePath))
+    expect(plan.outputDisplayPaths).toEqual(plan.tasks.map((task) => task.displayPath))
   })
 
   it('rejects merged mode with fewer than two chapters', () => {

@@ -2,15 +2,14 @@ package io.github.jukomu.feature.pdf.management;
 
 import android.content.Context;
 import android.database.Cursor;
-import android.net.Uri;
-import android.provider.OpenableColumns;
-
+import io.github.jukomu.feature.pdf.PdfOperationException;
+import io.github.jukomu.feature.pdf.data.PdfRef;
+import io.github.jukomu.feature.pdf.data.PdfRefResolver;
 import io.github.jukomu.feature.pdf.data.PdfStore;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.io.File;
 import java.io.IOException;
 
 /**
@@ -38,14 +37,17 @@ public final class PdfManagementService {
     }
 
     public JSONObject importPdf(JSONObject item) throws Exception {
-        String locator = PdfStore.normalizeLocator(item.getString("filePath"));
-        JSONObject existing = store.getFileByPath(locator);
+        String fileRef = item.getString("fileRef");
+        PdfRef.parse(fileRef);
+        String displayPath = item.optString("displayPath", "");
+        JSONObject existing = store.getFileByRef(fileRef);
         if (existing != null) return outcome("already_managed", existing, null);
 
-        PdfFileValidator.Report report = PdfFileValidator.validate(context, locator, -1);
+        PdfFileValidator.Report report = PdfFileValidator.validate(context, fileRef, -1);
         long id = store.insertImportedPdf(
-            locator,
-            item.optString("fileName", locatorFileName(locator)),
+            fileRef,
+            displayPath,
+            item.optString("fileName", PdfRef.fileName(fileRef)),
             item.getString("albumId"),
             item.optString("albumTitle", ""),
             item.optString("coverUrl", ""),
@@ -75,7 +77,7 @@ public final class PdfManagementService {
         JSONObject record = requireFile(id);
         try {
             PdfFileValidator.Report report = PdfFileValidator.validate(
-                context, record.getString("filePath"), record.optInt("pageCount", -1));
+                context, record.getString("fileRef"), record.optInt("pageCount", -1));
             return store.updateFileVerification(id, "available", "valid", null,
                 report.fileSize, report.pageCount);
         } catch (PdfFileValidator.ValidationException error) {
@@ -100,7 +102,9 @@ public final class PdfManagementService {
      */
     public JSONObject inspectFileForDeletion(long id) throws Exception {
         JSONObject refreshed = verifyFile(id);
-        if (refreshed == null) throw new IllegalArgumentException("PDF 文件记录不存在");
+        if (refreshed == null) {
+            throw PdfOperationException.notFound("PDF 文件记录不存在");
+        }
         return refreshed;
     }
 
@@ -125,8 +129,8 @@ public final class PdfManagementService {
 
     public JSONObject deleteFile(long id) throws Exception {
         JSONObject record = requireFile(id);
-        String locator = record.getString("filePath");
-        DeleteOutcome result = deleteLocator(locator);
+        String fileRef = record.getString("fileRef");
+        DeleteOutcome result = deleteFileRef(fileRef);
         if (!store.removeFileFromLibrary(id)) {
             throw new IOException("PDF 文件已处理，但文件库记录移除失败");
         }
@@ -134,47 +138,42 @@ public final class PdfManagementService {
             record, null);
     }
 
-    private JSONObject requireFile(long id) {
+    private JSONObject requireFile(long id) throws PdfOperationException {
         JSONObject record = store.getFile(id);
-        if (record == null) throw new IllegalArgumentException("PDF 文件记录不存在");
+        if (record == null) {
+            throw PdfOperationException.notFound("PDF 文件记录不存在");
+        }
         return record;
     }
 
-    private DeleteOutcome deleteLocator(String locator) throws IOException {
-        if (locator.startsWith("content://")) {
-            Uri uri = Uri.parse(locator);
+    private DeleteOutcome deleteFileRef(String fileRef) throws IOException {
+        PdfRef.Parsed parsed = PdfRef.parse(fileRef);
+        if (parsed.provider == PdfRef.Provider.SAF) {
             try {
-                if (context.getContentResolver().delete(uri, null, null) > 0) {
+                if (context.getContentResolver().delete(PdfRefResolver.uri(fileRef), null, null) > 0) {
                     return DeleteOutcome.DELETED;
                 }
-                if (!contentUriExists(uri)) return DeleteOutcome.ALREADY_MISSING;
+                if (!PdfRefResolver.exists(context, fileRef)) return DeleteOutcome.ALREADY_MISSING;
                 throw new IOException("PDF_DELETE_FAILED: 文件提供方拒绝删除 PDF");
             } catch (SecurityException error) {
-                throw new IOException("PDF_INACCESSIBLE: 没有权限删除 PDF", error);
+                throw PdfOperationException.permissionDenied(
+                    "PDF_INACCESSIBLE: 没有权限删除 PDF", error);
             } catch (IOException error) {
                 throw error;
             } catch (Exception error) {
                 throw new IOException("PDF_DELETE_FAILED: 无法删除 PDF", error);
             }
         }
-        File file = new File(locator);
+        java.io.File file = PdfRefResolver.pathFile(fileRef);
         if (!file.exists()) return DeleteOutcome.ALREADY_MISSING;
+        if (!file.canWrite()) {
+            throw PdfOperationException.permissionDenied(
+                "PDF_INACCESSIBLE: 没有权限删除 PDF", null);
+        }
         if (!file.isFile() || !file.delete()) {
             throw new IOException("PDF_DELETE_FAILED: PDF 文件删除失败");
         }
         return DeleteOutcome.DELETED;
-    }
-
-    private boolean contentUriExists(Uri uri) throws IOException {
-        try (Cursor cursor = context.getContentResolver().query(
-            uri, new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
-            if (cursor == null) {
-                throw new IOException("PDF_INACCESSIBLE: 无法确认 PDF 是否存在");
-            }
-            return cursor.moveToFirst();
-        } catch (SecurityException error) {
-            throw new IOException("PDF_INACCESSIBLE: 没有权限读取 PDF", error);
-        }
     }
 
     private static JSONObject outcome(String kind, JSONObject record, String message)
@@ -185,17 +184,12 @@ public final class PdfManagementService {
             result.put("id", record.optLong("id"));
             result.put("sourceType", record.optString("sourceType"));
             result.put("ownership", record.optString("ownership"));
-            result.put("filePath", record.optString("filePath"));
+            result.put("fileRef", record.optString("fileRef"));
+            result.put("displayPath", record.optString("displayPath"));
             result.put("fileName", record.optString("fileName"));
         }
         if (message != null) result.put("errorMessage", message);
         return result;
-    }
-
-    private static String locatorFileName(String locator) {
-        if (!locator.startsWith("content://")) return new File(locator).getName();
-        String segment = Uri.parse(locator).getLastPathSegment();
-        return segment == null || segment.isEmpty() ? "document.pdf" : segment;
     }
 
     private enum DeleteOutcome {

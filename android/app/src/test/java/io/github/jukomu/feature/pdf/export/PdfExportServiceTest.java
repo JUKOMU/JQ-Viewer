@@ -4,11 +4,15 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.file.Files;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.Assert.*;
 
@@ -41,6 +45,18 @@ public class PdfExportServiceTest {
         assertVolume(volumes.get(0), 0, 100, "merged_001-100.pdf");
         assertVolume(volumes.get(1), 100, 200, "merged_101-200.pdf");
         assertVolume(volumes.get(2), 200, 205, "merged_201-205.pdf");
+    }
+
+    @Test
+    public void preservesNestedTargetDirectoriesWhenSplittingVolumes() throws Exception {
+        File output = new File(temporaryFolder.getRoot(), "merged.pdf");
+
+        List<PdfExportService.ExportVolume> volumes = PdfExportService.buildVolumes(
+            output, 205, 100, "295852/merged.pdf", "/exports/295852/merged.pdf");
+
+        assertEquals("295852/merged_001-100.pdf", volumes.get(0).targetName);
+        assertEquals("295852/merged_101-200.pdf", volumes.get(1).targetName);
+        assertEquals("295852/merged_201-205.pdf", volumes.get(2).targetName);
     }
 
     @Test
@@ -112,6 +128,85 @@ public class PdfExportServiceTest {
     }
 
     @Test
+    public void copiesSafDataAndChecksCancellationAfterFixedByteAmount() throws Exception {
+        byte[] source = new byte[128 * 1024];
+        Arrays.fill(source, (byte) 7);
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        AtomicInteger checks = new AtomicInteger();
+
+        PdfExportService.ExportCancelledException error = assertThrows(
+            PdfExportService.ExportCancelledException.class,
+            () -> PdfExportService.copySafData(
+                new ByteArrayInputStream(source),
+                output,
+                () -> {
+                    if (checks.incrementAndGet() == 2) {
+                        throw new PdfExportService.ExportCancelledException();
+                    }
+                }
+            )
+        );
+
+        assertEquals("PDF 导出已取消", error.getMessage());
+        assertEquals(2, checks.get());
+        assertEquals(64 * 1024, output.size());
+    }
+
+    @Test
+    public void copiesSafDataNormallyAndFlushesTheOutput() throws Exception {
+        byte[] source = new byte[32 * 1024];
+        Arrays.fill(source, (byte) 3);
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+        PdfExportService.copySafData(
+            new ByteArrayInputStream(source), output, () -> {
+            }
+        );
+
+        assertArrayEquals(source, output.toByteArray());
+    }
+
+    @Test
+    public void preservesCopyFailureAndClosesTheStreams() {
+        IOException failure = new IOException("copy failed");
+        TrackingInputStream input = new TrackingInputStream(new byte[1]);
+        OutputStream output = new OutputStream() {
+            @Override
+            public void write(int value) throws IOException {
+                throw failure;
+            }
+        };
+
+        IOException actual = assertThrows(IOException.class,
+            () -> PdfExportService.copySafDestination(null, input, output, () -> {
+            }));
+
+        assertSame(failure, actual);
+        assertTrue(input.closed);
+    }
+
+    @Test
+    public void cleansOnlyTheMatchingOwnedPathVolume() throws Exception {
+        File volume = temporaryFolder.newFile("volume.pdf");
+        File otherVolume = temporaryFolder.newFile("other-volume.pdf");
+        Files.write(volume.toPath(), new byte[]{1, 2, 3});
+        Files.write(otherVolume.toPath(), new byte[]{4, 5, 6});
+
+        PdfExportService.cleanupOwnedPathOutput(
+            null,
+            volume,
+            "file:path:" + volume.getCanonicalPath(),
+            volume.getCanonicalPath(),
+            volume.length(),
+            volume.lastModified(),
+            new IOException("PDF 导出已取消")
+        );
+
+        assertFalse(volume.exists());
+        assertTrue(otherVolume.exists());
+    }
+
+    @Test
     public void retryRequiresThePersistedChapterAndVolumeLayout() throws Exception {
         File output = new File(temporaryFolder.getRoot(), "retry.pdf");
         List<PdfExportService.ExportVolume> volumes =
@@ -161,5 +256,19 @@ public class PdfExportServiceTest {
             fileBytes,
             true
         );
+    }
+
+    private static final class TrackingInputStream extends ByteArrayInputStream {
+        boolean closed;
+
+        TrackingInputStream(byte[] source) {
+            super(source);
+        }
+
+        @Override
+        public void close() throws IOException {
+            closed = true;
+            super.close();
+        }
     }
 }

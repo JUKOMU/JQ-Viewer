@@ -5,6 +5,7 @@ import android.graphics.pdf.PdfDocument;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
 import io.github.jukomu.feature.pdf.data.PdfStore;
+import io.github.jukomu.feature.pdf.data.PdfRef;
 import org.json.JSONObject;
 import org.junit.After;
 import org.junit.Before;
@@ -67,7 +68,7 @@ public class PdfManagementImportInstrumentedTest {
         long id = service.importPdf(item(pdf)).getLong("id");
 
         JSONObject inspected = service.inspectFileForDeletion(id);
-        assertEquals(pdf.getCanonicalPath(), inspected.getString("filePath"));
+        assertEquals(PdfRef.createPathFileRef(pdf.getCanonicalPath()), inspected.getString("fileRef"));
         assertEquals(1, inspected.getInt("pageCount"));
         assertTrue(inspected.getLong("fileSize") > 0L);
 
@@ -108,7 +109,8 @@ public class PdfManagementImportInstrumentedTest {
 
     private JSONObject item(File file) throws Exception {
         return new JSONObject()
-            .put("filePath", file.getCanonicalPath())
+            .put("fileRef", PdfRef.createPathFileRef(file.getCanonicalPath()))
+            .put("displayPath", file.getCanonicalPath())
             .put("fileName", file.getName())
             .put("albumId", "album-1")
             .put("chapterId", "chapter-1")

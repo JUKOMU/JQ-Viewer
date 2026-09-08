@@ -1,4 +1,5 @@
 import { JmcomicService } from './JmcomicService'
+import type { FileRef } from '@/runtime/FileReferences'
 import type {
   ImportedPdf,
   PdfExportProgressEvent,
@@ -91,7 +92,7 @@ export const PdfManagementService = {
   getTask: JmcomicService.getPdfExportTask,
   addProgressListener: JmcomicService.addPdfExportProgressListener,
   inspectFileForDeletion: JmcomicService.inspectPdfFileForDeletion,
-  openFolder: JmcomicService.openPdfFolder,
+  openFolder: (file: FileRef) => JmcomicService.openPdfFolder(file),
   removeFile: JmcomicService.removePdfFromLibrary,
   deleteFile: JmcomicService.deletePdfFile,
   verifyFile: JmcomicService.verifyPdfFile,

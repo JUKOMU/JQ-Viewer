@@ -5,15 +5,11 @@ import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
-import android.net.Uri;
-import android.util.Base64;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.io.File;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -23,8 +19,8 @@ import java.util.List;
 public class PdfStore extends SQLiteOpenHelper {
 
     private static final String DB_NAME = "jq_pdf_import.db";
-    private static final int DB_VERSION = 9;
-    private static final String RESET_REASON = "SCHEMA_REBUILD_V9";
+    private static final int DB_VERSION = 10;
+    private static final String RESET_REASON = "SCHEMA_MIGRATION_V10";
 
     public static final String SOURCE_IMPORTED = "imported";
     public static final String SOURCE_EXPORTED = "exported";
@@ -64,14 +60,18 @@ public class PdfStore extends SQLiteOpenHelper {
     @Override
     public void onCreate(SQLiteDatabase db) {
         createSchema(db);
-        writeResetMeta(db, false, 0, null);
+        writeResetMeta(db, false, 0, null, 0, 0, false, false);
     }
 
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
+        if (oldVersion == 9 && newVersion >= 10) {
+            migrateV9ToV10(db);
+            return;
+        }
         dropManagedTables(db);
         createSchema(db);
-        writeResetMeta(db, true, oldVersion, RESET_REASON);
+        writeResetMeta(db, true, oldVersion, RESET_REASON, 0, 0, true, true);
     }
 
     @Override
@@ -93,9 +93,25 @@ public class PdfStore extends SQLiteOpenHelper {
     }
 
     private static void createSchema(SQLiteDatabase db) {
-        db.execSQL("CREATE TABLE " + TABLE_FILES + " ("
+        createFilesTable(db, TABLE_FILES);
+        createTasksTable(db);
+        createChaptersTable(db);
+        createVolumesTable(db);
+        createMetaTable(db);
+
+        db.execSQL("CREATE INDEX idx_pdf_files_source_created ON " + TABLE_FILES
+            + "(source_type, created_at DESC, id DESC)");
+        db.execSQL("CREATE INDEX idx_pdf_files_availability_updated ON " + TABLE_FILES
+            + "(availability, updated_at DESC, id DESC)");
+        db.execSQL("CREATE INDEX idx_pdf_tasks_status_updated ON " + TABLE_TASKS
+            + "(status, updated_at DESC, export_id)");
+    }
+
+    private static void createFilesTable(SQLiteDatabase db, String table) {
+        db.execSQL("CREATE TABLE " + table + " ("
             + "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-            + "file_path TEXT NOT NULL UNIQUE,"
+            + "file_ref TEXT NOT NULL UNIQUE,"
+            + "display_path TEXT NOT NULL DEFAULT '',"
             + "file_name TEXT NOT NULL,"
             + "source_type TEXT NOT NULL CHECK(source_type IN ('imported','exported')),"
             + "ownership TEXT NOT NULL CHECK(ownership IN ('external_reference','app_created')),"
@@ -121,7 +137,9 @@ public class PdfStore extends SQLiteOpenHelper {
             + "updated_at INTEGER NOT NULL,"
             + "verified_at INTEGER"
             + ")");
+    }
 
+    private static void createTasksTable(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE " + TABLE_TASKS + " ("
             + "export_id TEXT PRIMARY KEY,"
             + "batch_id TEXT NOT NULL,"
@@ -133,7 +151,9 @@ public class PdfStore extends SQLiteOpenHelper {
             + "is_single_episode INTEGER NOT NULL DEFAULT -1 CHECK(is_single_episode IN (-1,0,1)),"
             + "chapter_id TEXT,"
             + "display_title TEXT NOT NULL,"
-            + "save_path TEXT NOT NULL,"
+            + "target_folder_ref TEXT NOT NULL,"
+            + "target_name TEXT NOT NULL,"
+            + "display_path TEXT NOT NULL DEFAULT '',"
             + "allow_overwrite INTEGER NOT NULL DEFAULT 0 CHECK(allow_overwrite IN (0,1)),"
             + "use_original INTEGER NOT NULL CHECK(use_original IN (0,1)),"
             + "compression_ratio REAL NOT NULL,"
@@ -153,7 +173,9 @@ public class PdfStore extends SQLiteOpenHelper {
             + "updated_at INTEGER NOT NULL,"
             + "completed_at INTEGER"
             + ")");
+    }
 
+    private static void createChaptersTable(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE " + TABLE_CHAPTERS + " ("
             + "export_id TEXT NOT NULL,"
             + "sequence INTEGER NOT NULL,"
@@ -166,7 +188,9 @@ public class PdfStore extends SQLiteOpenHelper {
             + "FOREIGN KEY(export_id) REFERENCES " + TABLE_TASKS
             + "(export_id) ON DELETE CASCADE"
             + ")");
+    }
 
+    private static void createVolumesTable(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE " + TABLE_VOLUMES + " ("
             + "export_id TEXT NOT NULL,"
             + "volume_index INTEGER NOT NULL,"
@@ -174,7 +198,9 @@ public class PdfStore extends SQLiteOpenHelper {
             + "end_page INTEGER NOT NULL,"
             + "expected_page_count INTEGER NOT NULL,"
             + "actual_page_count INTEGER NOT NULL DEFAULT 0,"
-            + "final_path TEXT NOT NULL,"
+            + "target_name TEXT NOT NULL,"
+            + "output_file_ref TEXT,"
+            + "display_path TEXT NOT NULL DEFAULT '',"
             + "temp_path TEXT NOT NULL,"
             + "work_dir TEXT NOT NULL,"
             + "status TEXT NOT NULL DEFAULT 'pending',"
@@ -185,26 +211,145 @@ public class PdfStore extends SQLiteOpenHelper {
             + "FOREIGN KEY(export_id) REFERENCES " + TABLE_TASKS
             + "(export_id) ON DELETE CASCADE"
             + ")");
+    }
 
+    private static void createMetaTable(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE " + TABLE_META + " ("
             + "id INTEGER PRIMARY KEY CHECK(id=1),"
             + "reset_notice_pending INTEGER NOT NULL DEFAULT 0 CHECK(reset_notice_pending IN (0,1)),"
             + "last_reset_at INTEGER,"
             + "reset_from_version INTEGER,"
             + "reset_reason TEXT,"
+            + "migrated_count INTEGER NOT NULL DEFAULT 0,"
+            + "skipped_count INTEGER NOT NULL DEFAULT 0,"
+            + "export_history_cleared INTEGER NOT NULL DEFAULT 0 CHECK(export_history_cleared IN (0,1)),"
+            + "export_folder_reset INTEGER NOT NULL DEFAULT 0 CHECK(export_folder_reset IN (0,1)),"
             + "updated_at INTEGER NOT NULL"
             + ")");
+    }
 
+    /* 保留旧表的数据只用于这一段升级；升级成功后旧 locator 表不再存在。 */
+    private static void migrateV9ToV10(SQLiteDatabase db) {
+        db.execSQL("DROP TABLE IF EXISTS pdf_files_new");
+        createFilesTable(db, "pdf_files_new");
+        int migrated = 0;
+        int skipped = 0;
+        if (tableExists(db, TABLE_FILES)) {
+            int[] counts = copyLegacyFiles(db, TABLE_FILES, "pdf_files_new", false);
+            migrated += counts[0];
+            skipped += counts[1];
+        }
+        if (tableExists(db, "imported_pdfs")) {
+            int[] counts = copyLegacyFiles(db, "imported_pdfs", "pdf_files_new", true);
+            migrated += counts[0];
+            skipped += counts[1];
+        }
+
+        db.execSQL("DROP TABLE IF EXISTS " + TABLE_CHAPTERS);
+        db.execSQL("DROP TABLE IF EXISTS " + TABLE_VOLUMES);
+        db.execSQL("DROP TABLE IF EXISTS pdf_export_path_locks");
+        db.execSQL("DROP TABLE IF EXISTS " + TABLE_TASKS);
+        db.execSQL("DROP TABLE IF EXISTS " + TABLE_FILES);
+        db.execSQL("DROP TABLE IF EXISTS imported_pdfs");
+        db.execSQL("ALTER TABLE pdf_files_new RENAME TO " + TABLE_FILES);
+        createTasksTable(db);
+        createChaptersTable(db);
+        createVolumesTable(db);
+        db.execSQL("DROP TABLE IF EXISTS " + TABLE_META);
+        createMetaTable(db);
         db.execSQL("CREATE INDEX idx_pdf_files_source_created ON " + TABLE_FILES
             + "(source_type, created_at DESC, id DESC)");
         db.execSQL("CREATE INDEX idx_pdf_files_availability_updated ON " + TABLE_FILES
             + "(availability, updated_at DESC, id DESC)");
         db.execSQL("CREATE INDEX idx_pdf_tasks_status_updated ON " + TABLE_TASKS
             + "(status, updated_at DESC, export_id)");
+        writeResetMeta(db, true, 9, RESET_REASON, migrated, skipped, true, true);
     }
 
+    private static int[] copyLegacyFiles(SQLiteDatabase db, String sourceTable,
+                                         String targetTable, boolean legacyImported) {
+        int migrated = 0;
+        int skipped = 0;
+        String order = "id ASC";
+        try (Cursor cursor = db.query(sourceTable, null, null, null, null, null, order)) {
+            while (cursor.moveToNext()) {
+                try {
+                    String legacyPath = cursorString(cursor, "file_path");
+                    String fileRef = PdfRef.fromLegacyFileLocatorForMigration(legacyPath);
+                    ContentValues values = new ContentValues();
+                    values.put("file_ref", fileRef);
+                    values.put("display_path", legacyPath);
+                    values.put("file_name", emptyToFallback(cursorString(cursor, "file_name"),
+                        PdfRef.fileName(fileRef)));
+                    values.put("source_type", legacyImported ? SOURCE_IMPORTED
+                        : cursorString(cursor, "source_type"));
+                    values.put("ownership", legacyImported ? OWNERSHIP_EXTERNAL
+                        : cursorString(cursor, "ownership"));
+                    values.put("chapter_link_status", legacyImported ? "resolved"
+                        : cursorString(cursor, "chapter_link_status"));
+                    values.put("album_id", cursorString(cursor, "album_id"));
+                    values.put("album_title", cursorString(cursor, "album_title"));
+                    values.put("cover_url", cursorString(cursor, "cover_url"));
+                    values.put("authors", cursorString(cursor, "authors"));
+                    putLegacyNullable(values, cursor, "chapter_id");
+                    values.put("chapter_title", cursorString(cursor, "chapter_title"));
+                    values.put("chapter_sort_order", cursorInt(cursor, "chapter_sort_order"));
+                    values.put("is_single_episode", cursorInt(cursor, "is_single_episode"));
+                    putLegacyNullable(values, cursor, "folder_id");
+                    values.put("file_size", cursorLong(cursor, "file_size"));
+                    values.put("page_count", cursorInt(cursor, "page_count"));
+                    values.put("availability", legacyImported ? "unknown"
+                        : cursorString(cursor, "availability"));
+                    values.put("verification_status", legacyImported ? "unverified"
+                        : cursorString(cursor, "verification_status"));
+                    putLegacyNullable(values, cursor, "verification_error");
+                    values.put("created_at", cursorLong(cursor, "created_at"));
+                    values.put("updated_at", cursorLong(cursor, "updated_at"));
+                    putLegacyNullable(values, cursor, "verified_at");
+                    long row = db.insertWithOnConflict(targetTable, null, values,
+                        SQLiteDatabase.CONFLICT_IGNORE);
+                    if (row == -1L) skipped++;
+                    else migrated++;
+                } catch (Exception ignored) {
+                    skipped++;
+                }
+            }
+        }
+        return new int[]{migrated, skipped};
+    }
+
+    private static boolean tableExists(SQLiteDatabase db, String table) {
+        try (Cursor cursor = db.rawQuery(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?",
+            new String[]{table})) {
+            return cursor.moveToFirst();
+        }
+    }
+
+    private static String cursorString(Cursor cursor, String column) {
+        int index = cursor.getColumnIndex(column);
+        return index < 0 || cursor.isNull(index) ? "" : cursor.getString(index);
+    }
+
+    private static int cursorInt(Cursor cursor, String column) {
+        int index = cursor.getColumnIndex(column);
+        return index < 0 || cursor.isNull(index) ? 0 : cursor.getInt(index);
+    }
+
+    private static long cursorLong(Cursor cursor, String column) {
+        int index = cursor.getColumnIndex(column);
+        return index < 0 || cursor.isNull(index) ? 0L : cursor.getLong(index);
+    }
+
+    private static void putLegacyNullable(ContentValues values, Cursor cursor, String column) {
+        int index = cursor.getColumnIndex(column);
+        if (index < 0 || cursor.isNull(index)) values.putNull(column);
+        else values.put(column, cursor.getString(index));
+    }
     private static void writeResetMeta(SQLiteDatabase db, boolean pending,
-                                       int fromVersion, String reason) {
+                                       int fromVersion, String reason, int migrated,
+                                       int skipped, boolean historyCleared,
+                                       boolean folderReset) {
         long now = System.currentTimeMillis();
         ContentValues values = new ContentValues();
         values.put("id", 1);
@@ -214,42 +359,49 @@ public class PdfStore extends SQLiteOpenHelper {
             values.put("reset_from_version", fromVersion);
             values.put("reset_reason", reason);
         }
+        values.put("migrated_count", migrated);
+        values.put("skipped_count", skipped);
+        values.put("export_history_cleared", historyCleared ? 1 : 0);
+        values.put("export_folder_reset", folderReset ? 1 : 0);
         values.put("updated_at", now);
         db.insertOrThrow(TABLE_META, null, values);
     }
 
-    public long insertImportedPdf(String filePath, String fileName, String albumId,
+    public long insertImportedPdf(String fileRef, String displayPath, String fileName, String albumId,
                                   String albumTitle, String coverUrl, String authors, String chapterId,
                                   String chapterTitle, int chapterSortOrder, int singleEpisode, long createdAt,
                                   String folderId, long fileSize, int pageCount) throws IOException {
-        return upsertFile(normalizeLocator(filePath), fileName, SOURCE_IMPORTED,
+        requireFileRef(fileRef);
+        return upsertFile(fileRef, displayPath, fileName, SOURCE_IMPORTED,
             OWNERSHIP_EXTERNAL, albumId, albumTitle, coverUrl, authors, chapterId,
             chapterTitle, chapterSortOrder, singleEpisode, folderId, fileSize, pageCount,
             createdAt, false, false);
     }
 
-    public long registerExportedPdf(String filePath, String fileName, String mode,
+    public long registerExportedPdf(String fileRef, String displayPath, String fileName, String mode,
                                     String albumId, String albumTitle, String coverUrl, String authors,
                                     String chapterId, String chapterTitle, int chapterSortOrder, int singleEpisode,
                                     long fileSize, int pageCount) throws IOException {
-        return upsertFile(normalizeLocator(filePath), fileName, SOURCE_EXPORTED,
+        requireFileRef(fileRef);
+        return upsertFile(fileRef, displayPath, fileName, SOURCE_EXPORTED,
             OWNERSHIP_APP_CREATED, albumId, albumTitle, coverUrl, authors,
             "merged".equals(mode) ? null : chapterId, chapterTitle, chapterSortOrder,
             singleEpisode, null, fileSize, pageCount, System.currentTimeMillis(), true,
             "merged".equals(mode));
     }
 
-    private long upsertFile(String locator, String fileName, String sourceType,
+    private long upsertFile(String fileRef, String displayPath, String fileName, String sourceType,
                             String ownership, String albumId, String albumTitle, String coverUrl,
                             String authors, String chapterId, String chapterTitle, int chapterSortOrder,
                             int singleEpisode, String folderId, long fileSize, int pageCount,
                             long createdAt, boolean replaceMetadata, boolean multiChapter) {
-        JSONObject existing = getFileByNormalizedPath(locator);
+        JSONObject existing = getFileByRef(fileRef);
         if (existing != null && !replaceMetadata) return -1L;
         long now = System.currentTimeMillis();
         ContentValues values = new ContentValues();
-        values.put("file_path", locator);
-        values.put("file_name", emptyToFallback(fileName, locatorFileName(locator)));
+        values.put("file_ref", fileRef);
+        values.put("display_path", displayPath == null ? "" : displayPath);
+        values.put("file_name", emptyToFallback(fileName, PdfRef.fileName(fileRef)));
         values.put("source_type", sourceType);
         values.put("ownership", ownership);
         values.put("chapter_link_status", multiChapter
@@ -353,13 +505,21 @@ public class PdfStore extends SQLiteOpenHelper {
         }
     }
 
-    public JSONObject getFileByPath(String filePath) throws IOException {
-        return getFileByNormalizedPath(normalizeLocator(filePath));
+    public JSONObject getFileByRef(String fileRef) {
+        requireFileRef(fileRef);
+        return getFileByRefExact(fileRef);
     }
 
-    private JSONObject getFileByNormalizedPath(String locator) {
-        try (Cursor cursor = getReadableDatabase().query(TABLE_FILES, null, "file_path = ?",
-            new String[]{locator}, null, null, null, "1")) {
+    private static void requireFileRef(String fileRef) {
+        PdfRef.Parsed parsed = PdfRef.parse(fileRef);
+        if (parsed.kind != PdfRef.Kind.FILE) {
+            throw new IllegalArgumentException("需要文件引用");
+        }
+    }
+
+    private JSONObject getFileByRefExact(String fileRef) {
+        try (Cursor cursor = getReadableDatabase().query(TABLE_FILES, null, "file_ref = ?",
+            new String[]{fileRef}, null, null, null, "1")) {
             return cursor.moveToFirst() ? cursorToFileJson(cursor) : null;
         }
     }
@@ -435,7 +595,14 @@ public class PdfStore extends SQLiteOpenHelper {
                 taskValues.putNull("chapter_id");
             } else taskValues.put("chapter_id", task.optString("chapterId"));
             taskValues.put("display_title", task.getString("displayTitle"));
-            taskValues.put("save_path", normalizeLocator(task.getString("savePath")));
+            String targetFolderRef = task.getString("targetFolderRef");
+            PdfRef.Parsed target = PdfRef.parse(targetFolderRef);
+            if (target.kind != PdfRef.Kind.FOLDER) {
+                throw new IllegalArgumentException("导出目标必须是目录引用");
+            }
+            taskValues.put("target_folder_ref", targetFolderRef);
+            taskValues.put("target_name", task.getString("targetName"));
+            taskValues.put("display_path", task.optString("displayPath", ""));
             taskValues.put("allow_overwrite", task.optBoolean("allowOverwrite") ? 1 : 0);
             taskValues.put("use_original", task.optBoolean("useOriginal", true) ? 1 : 0);
             taskValues.put("compression_ratio", task.optDouble("compressionRatio", 1D));
@@ -468,9 +635,15 @@ public class PdfStore extends SQLiteOpenHelper {
                 values.put("start_page", volume.getInt("startPage"));
                 values.put("end_page", volume.getInt("endPage"));
                 values.put("expected_page_count", volume.getInt("expectedPageCount"));
-                values.put("final_path", normalizeLocator(volume.getString("finalPath")));
-                values.put("temp_path", normalizeLocator(volume.getString("tempPath")));
-                values.put("work_dir", normalizeLocator(volume.getString("workDir")));
+                values.put("target_name", volume.getString("targetName"));
+                if (volume.has("outputFileRef") && !volume.isNull("outputFileRef")) {
+                    values.put("output_file_ref", volume.getString("outputFileRef"));
+                } else {
+                    values.putNull("output_file_ref");
+                }
+                values.put("display_path", volume.optString("displayPath", ""));
+                values.put("temp_path", volume.getString("tempPath"));
+                values.put("work_dir", volume.getString("workDir"));
                 values.put("status", "pending");
                 values.put("updated_at", now);
                 db.insertOrThrow(TABLE_VOLUMES, null, values);
@@ -694,7 +867,8 @@ public class PdfStore extends SQLiteOpenHelper {
     }
 
     public void completeVolumeAndRegisterFile(String exportId, int volumeIndex,
-                                              String finalPath, long fileSize, int pageCount, String mode, String albumId,
+                                              String outputFileRef, String displayPath,
+                                              String fileName, long fileSize, int pageCount, String mode, String albumId,
                                               String albumTitle, String coverUrl, String authors, String chapterId,
                                               String chapterTitle, int chapterSortOrder, int singleEpisode) throws IOException {
         ContentValues values = new ContentValues();
@@ -702,10 +876,12 @@ public class PdfStore extends SQLiteOpenHelper {
         values.put("status", "completed");
         values.put("actual_page_count", pageCount);
         values.put("file_size", fileSize);
+        values.put("output_file_ref", outputFileRef);
+        values.put("display_path", displayPath == null ? "" : displayPath);
         values.put("updated_at", now);
         values.put("completed_at", now);
         updateVolumeOrThrow(exportId, volumeIndex, values);
-        registerExportedPdf(finalPath, locatorFileName(finalPath), mode, albumId, albumTitle,
+        registerExportedPdf(outputFileRef, displayPath, fileName, mode, albumId, albumTitle,
             coverUrl, authors, chapterId, chapterTitle, chapterSortOrder, singleEpisode,
             fileSize, pageCount);
     }
@@ -750,6 +926,11 @@ public class PdfStore extends SQLiteOpenHelper {
                     putNullableLong(reset, "resetAt", cursor, "last_reset_at");
                     putNullableInt(reset, "fromVersion", cursor, "reset_from_version");
                     putNullableString(reset, "reason", cursor, "reset_reason");
+                    reset.put("migratedCount", getInt(cursor, "migrated_count"));
+                    reset.put("skippedCount", getInt(cursor, "skipped_count"));
+                    reset.put("exportHistoryCleared",
+                        getInt(cursor, "export_history_cleared") == 1);
+                    reset.put("exportFolderReset", getInt(cursor, "export_folder_reset") == 1);
                     result.put("databaseResetInfo", reset);
                 }
             }
@@ -795,22 +976,12 @@ public class PdfStore extends SQLiteOpenHelper {
             || "interrupted".equals(status);
     }
 
-    public static String normalizeLocator(String filePath) throws IOException {
-        if (filePath == null || filePath.trim().isEmpty()) {
-            throw new IllegalArgumentException("filePath is required");
-        }
-        String trimmed = filePath.trim();
-        if (trimmed.startsWith("content://")) {
-            return Uri.parse(trimmed).normalizeScheme().toString();
-        }
-        return new File(trimmed).getCanonicalPath();
-    }
-
     private static JSONObject cursorToFileJson(Cursor cursor) {
         JSONObject result = new JSONObject();
         try {
             result.put("id", getLong(cursor, "id"));
-            result.put("filePath", getString(cursor, "file_path"));
+            result.put("fileRef", getString(cursor, "file_ref"));
+            result.put("displayPath", getString(cursor, "display_path"));
             result.put("fileName", getString(cursor, "file_name"));
             result.put("sourceType", getString(cursor, "source_type"));
             result.put("ownership", getString(cursor, "ownership"));
@@ -853,7 +1024,9 @@ public class PdfStore extends SQLiteOpenHelper {
             if (singleEpisode >= 0) result.put("isSingleEpisode", singleEpisode == 1);
             putNullableString(result, "chapterId", cursor, "chapter_id");
             result.put("displayTitle", getString(cursor, "display_title"));
-            result.put("savePath", getString(cursor, "save_path"));
+            result.put("targetFolderRef", getString(cursor, "target_folder_ref"));
+            result.put("targetName", getString(cursor, "target_name"));
+            result.put("displayPath", getString(cursor, "display_path"));
             result.put("allowOverwrite", getInt(cursor, "allow_overwrite") == 1);
             result.put("useOriginal", getInt(cursor, "use_original") == 1);
             result.put("compressionRatio", cursor.getDouble(
@@ -888,7 +1061,9 @@ public class PdfStore extends SQLiteOpenHelper {
             result.put("endPage", getInt(cursor, "end_page"));
             result.put("expectedPageCount", getInt(cursor, "expected_page_count"));
             result.put("actualPageCount", getInt(cursor, "actual_page_count"));
-            result.put("finalPath", getString(cursor, "final_path"));
+            result.put("targetName", getString(cursor, "target_name"));
+            putNullableString(result, "outputFileRef", cursor, "output_file_ref");
+            result.put("displayPath", getString(cursor, "display_path"));
             result.put("tempPath", getString(cursor, "temp_path"));
             result.put("workDir", getString(cursor, "work_dir"));
             result.put("status", getString(cursor, "status"));
@@ -917,12 +1092,6 @@ public class PdfStore extends SQLiteOpenHelper {
         if (!source.has(jsonKey)) return;
         if (source.isNull(jsonKey)) values.putNull(column);
         else values.put(column, source.optString(jsonKey, ""));
-    }
-
-    private static String locatorFileName(String locator) {
-        if (!locator.startsWith("content://")) return new File(locator).getName();
-        String segment = Uri.parse(locator).getLastPathSegment();
-        return segment == null || segment.isEmpty() ? "document.pdf" : segment;
     }
 
     private static String emptyToFallback(String value, String fallback) {

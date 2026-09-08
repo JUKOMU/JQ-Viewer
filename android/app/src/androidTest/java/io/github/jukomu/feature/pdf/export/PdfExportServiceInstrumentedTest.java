@@ -235,11 +235,13 @@ public class PdfExportServiceInstrumentedTest {
         Files.write(otherVolume.toPath(), new byte[]{4, 5, 6});
         String outputRef = PdfRef.createPathFileRef(currentVolume.getCanonicalPath());
         IOException cancellation = new IOException("PDF 导出已取消");
+        PdfStore store = PdfStore.getInstance(context);
+        assertNull(store.getFileByRef(outputRef));
 
         PdfExportService.cleanupOwnedPathOutput(
-            null,
+            store,
             currentVolume,
-            PdfRef.createPathFileRef(currentVolume.getCanonicalPath()),
+            outputRef,
             PdfRef.payload(outputRef),
             currentVolume.length(),
             currentVolume.lastModified(),
@@ -254,10 +256,11 @@ public class PdfExportServiceInstrumentedTest {
         File content = new File(directory, "keep.txt");
         assertTrue(directory.mkdirs());
         Files.write(content.toPath(), new byte[]{9});
+        String directoryRef = PdfRef.createPathFileRef(directory.getCanonicalPath());
         PdfExportService.cleanupOwnedPathOutput(
-            null,
+            store,
             directory,
-            PdfRef.createPathFileRef(directory.getCanonicalPath()),
+            directoryRef,
             directory.getCanonicalPath(),
             directory.length(),
             directory.lastModified(),

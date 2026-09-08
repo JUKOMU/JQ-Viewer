@@ -213,7 +213,7 @@ import {
   IonList,
   IonSpinner,
 } from '@ionic/vue'
-import type { PluginListenerHandle } from '@capacitor/core'
+import type { ListenerHandle } from '@/runtime/BackendEvents'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import {
   chevronBackOutline,
@@ -334,8 +334,8 @@ const pendingPdfProgressEvents = new Map<string, PendingPdfProgressEvent>()
 let downloadClearTimer: ReturnType<typeof setTimeout> | null = null
 let pdfClearTimer: ReturnType<typeof setTimeout> | null = null
 let taskProgressRenderTimer: ReturnType<typeof setTimeout> | null = null
-let downloadProgressHandle: PluginListenerHandle | null = null
-let pdfProgressHandle: PluginListenerHandle | null = null
+let downloadProgressHandle: ListenerHandle | null = null
+let pdfProgressHandle: ListenerHandle | null = null
 let progressUnmounted = false
 
 const hasActiveDownloadTasks = (

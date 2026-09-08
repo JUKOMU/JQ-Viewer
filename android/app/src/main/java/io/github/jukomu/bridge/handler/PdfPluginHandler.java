@@ -9,7 +9,6 @@ import android.graphics.pdf.PdfRenderer;
 import android.net.Uri;
 import android.os.ParcelFileDescriptor;
 import android.provider.DocumentsContract;
-import android.util.Base64;
 import android.util.Log;
 import androidx.core.content.FileProvider;
 import androidx.documentfile.provider.DocumentFile;
@@ -17,15 +16,21 @@ import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
 import io.github.jukomu.feature.download.data.DownloadStore;
+import io.github.jukomu.feature.pdf.PdfOperationException;
+import io.github.jukomu.feature.pdf.data.PdfRef;
+import io.github.jukomu.feature.pdf.data.PdfRefResolver;
 import io.github.jukomu.feature.pdf.data.PdfStore;
 import io.github.jukomu.feature.pdf.export.PdfExportJobValidator;
 import io.github.jukomu.feature.pdf.export.PdfExportService;
 import io.github.jukomu.feature.pdf.management.PdfManagementService;
+import io.github.jukomu.feature.pdf.render.PdfPageCache;
+import io.github.jukomu.feature.pdf.render.PdfPageResourceId;
+import io.github.jukomu.feature.pdf.render.PdfPageSizing;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Executor;
@@ -36,6 +41,9 @@ import java.util.concurrent.Executor;
  */
 public final class PdfPluginHandler {
     private static final String TAG = "PdfPluginHandler";
+    private static final String PDF_FOLDER_NOT_FOUND_MESSAGE = "PDF 文件夹不存在";
+    private static final String PDF_FOLDER_PERMISSION_MESSAGE =
+        "PDF 文件夹读取权限已失效，请重新选择文件夹";
     private static final String EXTERNAL_STORAGE_DOCUMENTS_AUTHORITY =
         "com.android.externalstorage.documents";
 
@@ -53,60 +61,97 @@ public final class PdfPluginHandler {
     // ---- 文件扫描与导入 ----
 
     public void scanPdfFiles(PluginCall call) {
-        String treeUriStr = call.getString("treeUri");
-        if (treeUriStr != null && !treeUriStr.isEmpty()) {
-            scanPdfFilesViaSaf(call, Uri.parse(treeUriStr));
-        } else {
-            scanPdfFilesViaFile(call);
+        String folderRef = call.getString("folderRef");
+        if (folderRef == null || folderRef.isEmpty()) {
+            call.reject("folderRef is required");
+            return;
+        }
+        try {
+            PdfRef.Parsed parsed = PdfRef.parse(folderRef);
+            if (parsed.kind != PdfRef.Kind.FOLDER) {
+                call.reject("folderRef must be a folder reference");
+                return;
+            }
+            if (parsed.provider == PdfRef.Provider.SAF) {
+                scanPdfFilesViaSaf(call, Uri.parse(parsed.payload));
+            } else {
+                scanPdfFilesViaFile(call, parsed.payload);
+            }
+        } catch (IllegalArgumentException error) {
+            call.reject("folderRef is invalid", error);
         }
     }
 
     private void scanPdfFilesViaSaf(PluginCall call, Uri treeUri) {
-        DocumentFile root = DocumentFile.fromTreeUri(context, treeUri);
-        if (root == null || !root.isDirectory()) {
-            // SAF 失败时回退到 java.io.File
-            scanPdfFilesViaFile(call);
-            return;
-        }
-        DocumentFile[] children = root.listFiles();
-        JSArray arr = new JSArray();
-        if (children != null) {
+        try {
+            DocumentFile root = DocumentFile.fromTreeUri(context, treeUri);
+            if (root == null || !root.exists() || !root.isDirectory()) {
+                rejectWithCode(call, PDF_FOLDER_NOT_FOUND_MESSAGE,
+                    PdfOperationException.NOT_FOUND, null);
+                return;
+            }
+            if (!root.canRead()) {
+                rejectWithCode(call, PDF_FOLDER_PERMISSION_MESSAGE,
+                    PdfOperationException.PERMISSION_DENIED, null);
+                return;
+            }
+            DocumentFile[] children = root.listFiles();
+            if (children == null) {
+                rejectWithCode(call, PDF_FOLDER_PERMISSION_MESSAGE,
+                    PdfOperationException.PERMISSION_DENIED, null);
+                return;
+            }
+            JSArray arr = new JSArray();
             for (DocumentFile child : children) {
                 if (child.isFile() && child.getName() != null
                     && child.getName().toLowerCase().endsWith(".pdf")) {
                     JSObject obj = new JSObject();
                     obj.put("fileName", child.getName());
-                    obj.put("filePath", child.getUri().toString());
+                    obj.put("fileRef", PdfRef.createSafFileRef(child.getUri().toString()));
+                    obj.put("displayPath", child.getName());
                     arr.put(obj);
                 }
             }
+            JSObject ret = new JSObject();
+            ret.put("files", arr);
+            call.resolve(ret);
+        } catch (SecurityException error) {
+            rejectWithCode(call, PDF_FOLDER_PERMISSION_MESSAGE,
+                PdfOperationException.PERMISSION_DENIED, error);
         }
-        JSObject ret = new JSObject();
-        ret.put("files", arr);
-        call.resolve(ret);
     }
 
-    private void scanPdfFilesViaFile(PluginCall call) {
-        String path = call.getString("path");
-        if (path == null || path.isEmpty()) {
-            call.reject("path is required");
-            return;
-        }
+    private void scanPdfFilesViaFile(PluginCall call, String path) {
         File dir = new File(path);
         if (!dir.isDirectory()) {
-            call.reject("Not a directory: " + path);
+            rejectWithCode(call, PDF_FOLDER_NOT_FOUND_MESSAGE,
+                PdfOperationException.NOT_FOUND, null);
+            return;
+        }
+        if (!dir.canRead()) {
+            rejectWithCode(call, PDF_FOLDER_PERMISSION_MESSAGE,
+                PdfOperationException.PERMISSION_DENIED, null);
             return;
         }
         File[] pdfFiles = dir.listFiles((d, name) ->
             name.toLowerCase().endsWith(".pdf"));
+        if (pdfFiles == null) {
+            rejectWithCode(call, PDF_FOLDER_PERMISSION_MESSAGE,
+                PdfOperationException.PERMISSION_DENIED, null);
+            return;
+        }
         JSArray arr = new JSArray();
-        if (pdfFiles != null) {
-            for (File f : pdfFiles) {
-                JSObject obj = new JSObject();
-                obj.put("fileName", f.getName());
-                obj.put("filePath", f.getAbsolutePath());
-                arr.put(obj);
+        for (File f : pdfFiles) {
+            if (!f.isFile()) continue;
+            JSObject obj = new JSObject();
+            obj.put("fileName", f.getName());
+            try {
+                obj.put("fileRef", PdfRef.createPathFileRef(f.getAbsolutePath()));
+            } catch (Exception error) {
+                continue;
             }
+            obj.put("displayPath", f.getAbsolutePath());
+            arr.put(obj);
         }
         JSObject ret = new JSObject();
         ret.put("files", arr);
@@ -223,6 +268,8 @@ public final class PdfPluginHandler {
             try {
                 call.resolve(JSObject.fromJSONObject(PdfManagementService.getInstance(context)
                     .inspectFileForDeletion(id)));
+            } catch (PdfOperationException error) {
+                rejectPdfOperation(call, error);
             } catch (Exception error) {
                 call.reject(error.getMessage(), error);
             }
@@ -266,6 +313,8 @@ public final class PdfPluginHandler {
             try {
                 call.resolve(JSObject.fromJSONObject(
                     PdfManagementService.getInstance(context).deleteFile(id)));
+            } catch (PdfOperationException error) {
+                rejectPdfOperation(call, error);
             } catch (Exception error) {
                 call.reject(error.getMessage(), error);
             }
@@ -290,19 +339,21 @@ public final class PdfPluginHandler {
     // ---- 打开与渲染 ----
 
     public void openPdf(PluginCall call) {
-        String filePath = call.getString("filePath");
-        if (filePath == null || filePath.isEmpty()) {
-            call.reject("filePath is required");
+        String fileRef = call.getString("fileRef");
+        if (fileRef == null || fileRef.isEmpty()) {
+            call.reject("fileRef is required");
             return;
         }
         try {
             Uri uri;
-            if (filePath.startsWith("content://")) {
-                uri = Uri.parse(filePath);
+            PdfRef.Parsed parsed = PdfRef.parse(fileRef);
+            if (parsed.kind != PdfRef.Kind.FILE) throw new IllegalArgumentException("需要文件引用");
+            if (parsed.provider == PdfRef.Provider.SAF) {
+                uri = PdfRefResolver.uri(fileRef);
             } else {
-                File file = new File(filePath);
+                File file = PdfRefResolver.pathFile(fileRef);
                 if (!file.exists()) {
-                    call.reject("File not found: " + filePath);
+                    call.reject("File not found: " + parsed.payload);
                     return;
                 }
                 uri = FileProvider.getUriForFile(
@@ -324,14 +375,14 @@ public final class PdfPluginHandler {
     }
 
     public void openPdfFolder(PluginCall call) {
-        String filePath = call.getString("filePath");
-        if (filePath == null || filePath.isEmpty()) {
-            call.reject("filePath is required");
+        String fileRef = call.getString("fileRef");
+        if (fileRef == null || fileRef.isEmpty()) {
+            call.reject("fileRef is required");
             return;
         }
         try {
-            Uri folderUri = resolvePdfFolderUri(filePath);
-            boolean canGrantUri = filePath.startsWith("content://")
+            Uri folderUri = resolvePdfFolderUri(fileRef);
+            boolean canGrantUri = PdfRef.parse(fileRef).provider == PdfRef.Provider.SAF
                 || (context.getPackageName() + ".fileprovider")
                 .equals(folderUri.getAuthority());
             context.startActivity(createPdfFolderIntent(folderUri, canGrantUri));
@@ -359,9 +410,11 @@ public final class PdfPluginHandler {
             : 0;
     }
 
-    private Uri resolvePdfFolderUri(String filePath) throws Exception {
-        if (filePath.startsWith("content://")) {
-            Uri fileUri = Uri.parse(filePath);
+    private Uri resolvePdfFolderUri(String fileRef) throws Exception {
+        PdfRef.Parsed parsed = PdfRef.parse(fileRef);
+        if (parsed.kind != PdfRef.Kind.FILE) throw new IllegalArgumentException("需要文件引用");
+        if (parsed.provider == PdfRef.Provider.SAF) {
+            Uri fileUri = PdfRefResolver.uri(fileRef);
             String documentId = DocumentsContract.getDocumentId(fileUri);
             int separator = documentId.lastIndexOf('/');
             String parentDocumentId;
@@ -380,10 +433,10 @@ public final class PdfPluginHandler {
             return DocumentsContract.buildDocumentUri(fileUri.getAuthority(), parentDocumentId);
         }
 
-        File file = new File(filePath);
+        File file = PdfRefResolver.pathFile(fileRef);
         File parent = file.getCanonicalFile().getParentFile();
         if (parent == null || !parent.isDirectory()) {
-            throw new java.io.FileNotFoundException("Parent folder not found: " + filePath);
+            throw new java.io.FileNotFoundException("Parent folder not found: " + fileRef);
         }
 
         String parentPath = parent.getCanonicalPath();
@@ -401,20 +454,26 @@ public final class PdfPluginHandler {
     }
 
     public void getPdfInfo(PluginCall call) {
-        String filePath = call.getString("filePath");
-        if (filePath == null || filePath.isEmpty()) {
-            call.reject("filePath is required");
+        String fileRef = call.getString("fileRef");
+        if (fileRef == null || fileRef.isEmpty()) {
+            call.reject("fileRef is required");
             return;
         }
 
         ParcelFileDescriptor pfd = null;
         PdfRenderer renderer = null;
         try {
-            pfd = openPdfDescriptor(filePath);
+            pfd = openPdfDescriptor(fileRef);
             renderer = new PdfRenderer(pfd);
             JSObject ret = new JSObject();
             ret.put("pageCount", renderer.getPageCount());
             call.resolve(ret);
+        } catch (FileNotFoundException error) {
+            call.reject("PDF 信息读取失败: " + error.getMessage(),
+                PdfOperationException.NOT_FOUND, error);
+        } catch (SecurityException error) {
+            call.reject("PDF 信息读取失败: " + error.getMessage(),
+                PdfOperationException.PERMISSION_DENIED, error);
         } catch (Exception e) {
             call.reject("PDF 信息读取失败: " + e.getMessage(), e);
         } finally {
@@ -435,19 +494,69 @@ public final class PdfPluginHandler {
     }
 
     public void renderPdfPage(PluginCall call) {
-        String filePath = call.getString("filePath");
+        String fileRef = call.getString("fileRef");
         int pageNumber = call.getInt("page", 1);
         int targetWidth = call.getInt("targetWidth", 1080);
-        if (filePath == null || filePath.isEmpty()) {
-            call.reject("filePath is required");
+        if (fileRef == null || fileRef.isEmpty()) {
+            call.reject("fileRef is required");
+            return;
+        }
+        if (pageNumber < 1) {
+            call.reject("page out of range");
+            return;
+        }
+
+        dispatchPdfCommand(() -> renderPdfPageOnExecutor(call, fileRef, pageNumber, targetWidth));
+    }
+
+    /** PDF 页面渲染和磁盘资源写入统一在单线程 executor 中执行。 */
+    private void renderPdfPageOnExecutor(PluginCall call, String fileRef,
+                                         int pageNumber, int targetWidth) {
+        final PdfPageCache pageCache;
+        try {
+            pageCache = PdfPageCache.getInstance(context);
+        } catch (Exception error) {
+            call.reject("PDF 页面渲染失败: " + error.getMessage(), error);
+            return;
+        }
+        PdfPageCache.SourceStamp sourceStamp;
+        try {
+            sourceStamp = pageCache.getSourceStamp(fileRef);
+        } catch (FileNotFoundException error) {
+            rejectWithCode(call, "PDF 页面渲染失败: " + error.getMessage(),
+                PdfOperationException.NOT_FOUND, error);
+            return;
+        } catch (SecurityException error) {
+            rejectWithCode(call, "PDF 页面渲染失败: " + error.getMessage(),
+                PdfOperationException.PERMISSION_DENIED, error);
+            return;
+        } catch (Exception error) {
+            call.reject("PDF 页面渲染失败: " + error.getMessage(), error);
+            return;
+        }
+
+        final String resourceId;
+        try {
+            resourceId = PdfPageResourceId.create(
+                fileRef, pageNumber, targetWidth, sourceStamp.length, sourceStamp.lastModified);
+        } catch (Exception error) {
+            call.reject("PDF 页面渲染失败: " + error.getMessage(), error);
+            return;
+        }
+
+        if (pageCache.hasPage(resourceId)) {
+            JSObject result = new JSObject();
+            result.put("resourceUrl", pageCache.resourceUrl(resourceId));
+            call.resolve(result);
             return;
         }
 
         ParcelFileDescriptor pfd = null;
         PdfRenderer renderer = null;
-        PdfRenderer.Page page = null;
+        PdfRenderer.Page rendererPage = null;
+        Bitmap bitmap = null;
         try {
-            pfd = openPdfDescriptor(filePath);
+            pfd = openPdfDescriptor(fileRef);
             renderer = new PdfRenderer(pfd);
             int pageCount = renderer.getPageCount();
             if (pageNumber < 1 || pageNumber > pageCount) {
@@ -455,28 +564,36 @@ public final class PdfPluginHandler {
                 return;
             }
 
-            page = renderer.openPage(pageNumber - 1);
-            int width = Math.max(360, Math.min(targetWidth, 2400));
-            int height = Math.max(1, Math.round(width * (page.getHeight() / (float) page.getWidth())));
-            Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+            rendererPage = renderer.openPage(pageNumber - 1);
+            PdfPageSizing.Size size = PdfPageSizing.calculate(
+                targetWidth, rendererPage.getWidth(), rendererPage.getHeight());
+            bitmap = Bitmap.createBitmap(size.width, size.height, Bitmap.Config.ARGB_8888);
             Canvas canvas = new Canvas(bitmap);
             canvas.drawColor(Color.WHITE);
-            page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY);
+            rendererPage.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY);
+            pageCache.writePngAtomically(resourceId, bitmap);
 
-            ByteArrayOutputStream out = new ByteArrayOutputStream();
-            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out);
-            bitmap.recycle();
-
-            String encoded = Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP);
-            JSObject ret = new JSObject();
-            ret.put("imageUrl", "data:image/png;base64," + encoded);
-            call.resolve(ret);
+            JSObject result = new JSObject();
+            result.put("resourceUrl", pageCache.resourceUrl(resourceId));
+            call.resolve(result);
+        } catch (FileNotFoundException error) {
+            rejectWithCode(call, "PDF 页面渲染失败: " + error.getMessage(),
+                PdfOperationException.NOT_FOUND, error);
+        } catch (SecurityException error) {
+            rejectWithCode(call, "PDF 页面渲染失败: " + error.getMessage(),
+                PdfOperationException.PERMISSION_DENIED, error);
+        } catch (OutOfMemoryError error) {
+            call.reject("PDF 页面渲染失败: " + error.getMessage(),
+                new RuntimeException("PDF 页面资源不足", error));
         } catch (Exception e) {
             call.reject("PDF 页面渲染失败: " + e.getMessage(), e);
         } finally {
-            if (page != null) {
+            if (bitmap != null && !bitmap.isRecycled()) {
+                bitmap.recycle();
+            }
+            if (rendererPage != null) {
                 try {
-                    page.close();
+                    rendererPage.close();
                 } catch (Exception ignored) {
                 }
             }
@@ -495,21 +612,8 @@ public final class PdfPluginHandler {
         }
     }
 
-    private ParcelFileDescriptor openPdfDescriptor(String filePath) throws Exception {
-        if (filePath.startsWith("content://")) {
-            ParcelFileDescriptor pfd = context.getContentResolver()
-                .openFileDescriptor(Uri.parse(filePath), "r");
-            if (pfd == null) {
-                throw new java.io.FileNotFoundException("content uri not readable");
-            }
-            return pfd;
-        }
-
-        File file = new File(filePath);
-        if (!file.exists() || !file.isFile()) {
-            throw new java.io.FileNotFoundException(filePath);
-        }
-        return ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY);
+    private ParcelFileDescriptor openPdfDescriptor(String fileRef) throws Exception {
+        return PdfRefResolver.openReadDescriptor(context, fileRef);
     }
 
     // ---- 导出任务 ----
@@ -537,7 +641,9 @@ public final class PdfPluginHandler {
                     job.chapterId = t.optString("chapterId", "");
                     job.chapterTitle = t.optString("chapterTitle",
                         "merged".equals(job.mode) ? "合并导出" : job.chapterId);
-                    job.savePath = t.optString("savePath", "");
+                    job.targetFolderRef = t.optString("targetFolderRef", "");
+                    job.targetName = t.optString("targetName", "");
+                    job.displayPath = t.optString("displayPath", "");
                     job.useOriginal = t.optBoolean("useOriginal", true);
                     double cr = t.optDouble("compressionRatio", 1.0);
                     job.compressionRatio = (float) Math.max(0.1, Math.min(1.0, cr));
@@ -596,7 +702,7 @@ public final class PdfPluginHandler {
         JSONObject task = exportId == null ? null
             : PdfExportService.getInstance(context).getExportTask(exportId);
         if (task == null) {
-            call.reject("PDF 导出任务不存在");
+            rejectWithCode(call, "PDF 导出任务不存在", PdfOperationException.NOT_FOUND, null);
             return;
         }
         try {
@@ -611,7 +717,7 @@ public final class PdfPluginHandler {
         JSONObject task = exportId == null ? null
             : PdfExportService.getInstance(context).cancelExport(exportId);
         if (task == null) {
-            call.reject("PDF 导出任务不存在");
+            rejectWithCode(call, "PDF 导出任务不存在", PdfOperationException.NOT_FOUND, null);
             return;
         }
         try {
@@ -631,6 +737,8 @@ public final class PdfPluginHandler {
             try {
                 call.resolve(JSObject.fromJSONObject(PdfExportService.getInstance(context)
                     .retryExport(exportId, call.getBoolean("allowOverwrite", false))));
+            } catch (PdfOperationException error) {
+                rejectPdfOperation(call, error);
             } catch (Exception error) {
                 call.reject(error.getMessage(), error);
             }
@@ -658,5 +766,14 @@ public final class PdfPluginHandler {
 
     private void dispatchPdfCommand(Runnable command) {
         pdfCommandExecutor.execute(command);
+    }
+
+    private static void rejectWithCode(PluginCall call, String message, String code,
+                                       Exception cause) {
+        call.reject(message, code, cause);
+    }
+
+    private static void rejectPdfOperation(PluginCall call, PdfOperationException error) {
+        rejectWithCode(call, error.getMessage(), error.code, error);
     }
 }

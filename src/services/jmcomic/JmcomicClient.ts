@@ -15,7 +15,6 @@ import type {
   HistoryPageResult,
   ImageInfo,
   ImageCacheEntry,
-  ImportedPdfsResult,
   ImportedPdf,
   ImportPdfItem,
   ImportPdfsResult,
@@ -25,10 +24,10 @@ import type {
   OfflineFolderInfo,
   ParseHistoryItem,
   PdfExportTask,
-  PdfExportBatchResult,
   PdfExportProgressEvent,
   PdfExportStatus,
   PdfExportTaskRecord,
+  PdfExportSubmissionTaskResult,
   PdfManagementState,
   PdfStorageDeleteResult,
   PdfScanItem,
@@ -54,6 +53,51 @@ export type ImageFailedEvent = ImageReadyEvent
 
 export interface JmcomicListenerHandle {
   remove: () => Promise<void>
+}
+
+/** Android Plugin 的原生 DTO；文件位置只以 opaque ref 传输。 */
+export type AndroidPdfExportTask = Omit<PdfExportTask, 'target' | 'displayPath'> & {
+  targetFolderRef: string
+  targetName: string
+  displayPath: string
+}
+export type AndroidPdfExportTaskRecord = Omit<
+  PdfExportTaskRecord,
+  'outputFile' | 'displayPath'
+> & {
+  targetFolderRef: string
+  targetName: string
+  outputFileRef?: string
+  displayPath?: string
+}
+export type AndroidPdfExportSubmissionTaskResult = Partial<AndroidPdfExportTaskRecord> &
+  Pick<PdfExportSubmissionTaskResult, 'accepted' | 'errorCode' | 'errorMessage'>
+export type AndroidPdfScanItem = Omit<PdfScanItem, 'ref'> & { fileRef: string }
+export type AndroidImportedPdf = Omit<ImportedPdf, 'fileRef' | 'displayPath'> & {
+  fileRef: string
+  displayPath: string
+}
+export type AndroidPdfStorageDeleteResult = Omit<PdfStorageDeleteResult, 'file'> & {
+  fileRef: string
+  displayPath: string
+  fileName: string
+}
+export type AndroidImportPdfItem = Omit<ImportPdfItem, 'fileRef' | 'displayPath'> & {
+  fileRef: string
+  displayPath: string
+}
+export type AndroidPdfExportBatchResult = {
+  tasks: AndroidPdfExportSubmissionTaskResult[]
+}
+export type AndroidImportedPdfsResult = { pdfs: AndroidImportedPdf[] }
+export type AndroidImportPdfsResult = Omit<ImportPdfsResult, 'results'> & {
+  results?: Array<{
+    result: string
+    fileRef?: string
+    displayPath?: string
+    fileName?: string
+    id?: number
+  }>
 }
 
 export interface JmcomicClient {
@@ -281,13 +325,22 @@ export interface JmcomicClient {
 
   pickImageAndOcr(): Promise<{ text: string; error?: string }>
 
-  exportPdfBatch(options: { tasks: PdfExportTask[] }): Promise<PdfExportBatchResult>
+  exportPdfBatch(options: { tasks: AndroidPdfExportTask[] }): Promise<AndroidPdfExportBatchResult>
 
-  pickFolder(): Promise<{ path: string; treeUri?: string; cancelled: boolean }>
+  pickFolder(): Promise<{
+    folderRef: string
+    displayPath: string
+    provider: 'path' | 'saf'
+    cancelled: boolean
+  }>
 
-  checkFilesExist(options: { paths: string[] }): Promise<{ existing: string[] }>
+  checkFilesExist(options: { fileRefs: string[] }): Promise<{ existingFileRefs: string[] }>
 
-  getExternalStoragePath(): Promise<{ path: string }>
+  getExternalStoragePath(): Promise<{
+    folderRef: string
+    displayPath: string
+    provider: 'path' | 'saf'
+  }>
 
   checkNotificationPermission(): Promise<{ granted: boolean }>
 
@@ -309,11 +362,11 @@ export interface JmcomicClient {
 
   consumeLaunchRoute(): Promise<{ route?: string }>
 
-  scanPdfFiles(options: { path: string; treeUri?: string }): Promise<{ files: PdfScanItem[] }>
+  scanPdfFiles(options: { folderRef: string }): Promise<{ files: AndroidPdfScanItem[] }>
 
-  importPdfs(options: { items: ImportPdfItem[] }): Promise<ImportPdfsResult>
+  importPdfs(options: { items: AndroidImportPdfItem[] }): Promise<AndroidImportPdfsResult>
 
-  getImportedPdfs(): Promise<ImportedPdfsResult>
+  getImportedPdfs(): Promise<AndroidImportedPdfsResult>
 
   getPdfFiles(options: {
     sourceType?: 'imported' | 'exported'
@@ -322,17 +375,17 @@ export interface JmcomicClient {
     query?: string
     cursor?: string
     limit: number
-  }): Promise<{ files: ImportedPdf[]; nextCursor?: string }>
+  }): Promise<{ files: AndroidImportedPdf[]; nextCursor?: string }>
 
-  refreshPdfFileAvailability(options: { ids: number[] }): Promise<{ files: ImportedPdf[] }>
+  refreshPdfFileAvailability(options: { ids: number[] }): Promise<{ files: AndroidImportedPdf[] }>
 
-  inspectPdfFileForDeletion(options: { id: number }): Promise<ImportedPdf>
+  inspectPdfFileForDeletion(options: { id: number }): Promise<AndroidImportedPdf>
 
-  verifyPdfFile(options: { id: number }): Promise<ImportedPdf>
+  verifyPdfFile(options: { id: number }): Promise<AndroidImportedPdf>
 
   removePdfFromLibrary(options: { id: number }): Promise<{ success: boolean }>
 
-  deletePdfFile(options: { id: number }): Promise<PdfStorageDeleteResult>
+  deletePdfFile(options: { id: number }): Promise<AndroidPdfStorageDeleteResult>
 
   getPdfManagementState(): Promise<PdfManagementState>
 
@@ -342,16 +395,16 @@ export interface JmcomicClient {
     status?: PdfExportStatus
     cursor?: string
     limit: number
-  }): Promise<{ tasks: PdfExportTaskRecord[]; nextCursor?: string }>
+  }): Promise<{ tasks: AndroidPdfExportTaskRecord[]; nextCursor?: string }>
 
-  getPdfExportTask(options: { exportId: string }): Promise<PdfExportTaskRecord>
+  getPdfExportTask(options: { exportId: string }): Promise<AndroidPdfExportTaskRecord>
 
-  cancelPdfExport(options: { exportId: string }): Promise<PdfExportTaskRecord>
+  cancelPdfExport(options: { exportId: string }): Promise<AndroidPdfExportTaskRecord>
 
   retryPdfExport(options: {
     exportId: string
     allowOverwrite?: boolean
-  }): Promise<PdfExportTaskRecord>
+  }): Promise<AndroidPdfExportTaskRecord>
 
   deletePdfExportTask(options: { exportId: string }): Promise<{ success: boolean }>
 
@@ -362,17 +415,17 @@ export interface JmcomicClient {
 
   deleteImportedPdf(options: { id: number }): Promise<{ success: boolean }>
 
-  openPdf(options: { filePath: string }): Promise<{ success: boolean }>
+  openPdf(options: { fileRef: string }): Promise<{ success: boolean }>
 
-  openPdfFolder(options: { filePath: string }): Promise<{ success: boolean }>
+  openPdfFolder(options: { fileRef: string }): Promise<{ success: boolean }>
 
-  getPdfInfo(options: { filePath: string }): Promise<{ pageCount: number }>
+  getPdfInfo(options: { fileRef: string }): Promise<{ pageCount: number }>
 
   renderPdfPage(options: {
-    filePath: string
+    fileRef: string
     page: number
     targetWidth: number
-  }): Promise<{ imageUrl: string }>
+  }): Promise<{ resourceUrl: string }>
 
   setReaderDisplayMode(options: { mode: string }): Promise<{ success: boolean }>
 

@@ -1,3 +1,9 @@
+import type {
+  ExportTarget,
+  FileDescriptor,
+  FileRef,
+} from '@/runtime/FileReferences'
+
 // --- 用户相关 ---
 
 export interface UserInfo {
@@ -494,7 +500,8 @@ export interface PdfExportTask {
   chapterId?: string
   chapterTitle: string // 用于通知显示
   chapters?: PdfExportChapter[]
-  savePath: string // 完整路径（含文件名.pdf）
+  target: ExportTarget // 平台持有的导出目录引用与相对路径，不承载展示给用户的绝对路径
+  displayPath: string // 仅用于预览、确认和展示
   useOriginal: boolean
   compressionRatio: number // 0.1~1.0
   splitPages: number // 0=不分卷, >0=每卷页数
@@ -534,7 +541,8 @@ export interface PdfExportTaskRecord extends PdfExportProgressEvent {
   isSingleEpisode?: boolean
   chapterId?: string
   displayTitle: string
-  savePath: string
+  outputFile?: FileDescriptor // 实际导出文件的平台引用与展示信息
+  displayPath?: string // 仅用于展示；作为授权凭据回传时改用 outputFile.ref
   allowOverwrite: boolean
   useOriginal: boolean
   compressionRatio: number
@@ -563,6 +571,10 @@ export interface PdfManagementState {
     resetAt?: number
     fromVersion?: number
     reason?: string
+    migratedCount?: number
+    skippedCount?: number
+    exportHistoryCleared?: boolean
+    exportFolderReset?: boolean
   }
 }
 
@@ -570,14 +582,16 @@ export interface PdfManagementState {
 
 /** scanPdfFiles 返回的单个 PDF 文件条目 */
 export interface PdfScanItem {
+  ref: FileRef // 平台持有的文件引用，用于后续导入/校验/打开
   fileName: string
-  filePath: string
+  displayPath: string // 仅用于展示与文件名解析
 }
 
 /** 已导入的 PDF 记录（从数据库返回） */
 export interface ImportedPdf {
   id: number
-  filePath: string
+  fileRef: FileRef // 打开/定位文件时使用的平台引用
+  displayPath: string // 仅用于展示与复制路径
   fileName: string
   sourceType: 'imported' | 'exported'
   ownership: 'external_reference' | 'app_created'
@@ -606,13 +620,13 @@ export interface PdfStorageDeleteResult {
   id: number
   sourceType: ImportedPdf['sourceType']
   ownership: ImportedPdf['ownership']
-  filePath: string
-  fileName: string
+  file: FileDescriptor
 }
 
 /** importPdfs 调用的导入项 */
 export interface ImportPdfItem {
-  filePath: string
+  fileRef: FileRef // 平台持有的文件引用
+  displayPath: string // 仅用于展示
   fileName: string
   albumId: string
   albumTitle: string
@@ -630,6 +644,11 @@ export interface ImportPdfsResult {
   skipped: number
   duplicateCount: number
   errorCount: number
+  results?: Array<{
+    result: string
+    file?: FileDescriptor
+    id?: number
+  }>
 }
 
 export interface ImportedPdfsResult {

@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   checkFilesExist: vi.fn(),
   checkNotificationPermission: vi.fn(),
   exportPdfBatch: vi.fn(),
+  createAppAlert: vi.fn(),
   buildExportPlan: vi.fn(),
   showToast: vi.fn(),
   pdfMountCount: 0,
@@ -46,7 +47,7 @@ vi.mock('@ionic/vue', () => {
   }
 })
 
-vi.mock('ionicons/icons', () => ({
+  vi.mock('ionicons/icons', () => ({
   bookOutline: 'book',
   closeCircleOutline: 'close',
   cloudDownloadOutline: 'download',
@@ -59,6 +60,10 @@ vi.mock('ionicons/icons', () => ({
   textOutline: 'text',
   timeOutline: 'time',
   trashOutline: 'trash',
+}))
+
+vi.mock('@/services/AppAlertService', () => ({
+  createAppAlert: mocks.createAppAlert,
 }))
 
 vi.mock('vue-router', () => ({
@@ -82,7 +87,11 @@ vi.mock('@/services/JmcomicService', () => ({
 }))
 
 vi.mock('@/services/PdfExportService', () => ({
-  PdfExportService: { buildExportPlan: mocks.buildExportPlan },
+  PdfExportService: {
+    buildExportPlan: mocks.buildExportPlan,
+    getExportPath: () => '/pdf',
+    getExportFolder: () => ({ folderRef: 'folder:path:/pdf', displayPath: '/pdf' }),
+  },
 }))
 
 vi.mock('@/services/OfflineDownloadService', () => ({
@@ -136,7 +145,11 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
     mocks.refreshPdf.mockResolvedValue(undefined)
     mocks.checkFilesExist.mockResolvedValue({ existing: [] })
     mocks.checkNotificationPermission.mockResolvedValue({ granted: true })
-    mocks.buildExportPlan.mockReturnValue({ tasks: [{}], outputPaths: [] })
+    mocks.buildExportPlan.mockReturnValue({ tasks: [{}], outputDisplayPaths: [] })
+    mocks.createAppAlert.mockResolvedValue({
+      present: vi.fn(),
+      onDidDismiss: vi.fn().mockResolvedValue({}),
+    })
   })
 
   test('首次进入不重复刷新，keepAlive 重新进入时同步 PDF 子视图', async () => {
@@ -206,6 +219,143 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
     await flushPromises()
 
     expect(mocks.showToast).toHaveBeenCalledWith(message, tone)
+    wrapper.unmount()
+  })
+
+  test('仅重提发生 PDF_OUTPUT_EXISTS 的原始任务并允许覆盖', async () => {
+    const firstTask = { displayPath: '/pdf/first.pdf' }
+    const conflictTask = { displayPath: '/pdf/conflict.pdf' }
+    mocks.buildExportPlan.mockReturnValueOnce({
+      tasks: [firstTask, conflictTask],
+      outputDisplayPaths: [firstTask.displayPath, conflictTask.displayPath],
+    })
+    mocks.exportPdfBatch
+      .mockResolvedValueOnce({
+        tasks: [
+          { accepted: true },
+          {
+            accepted: false,
+            errorCode: 'PDF_OUTPUT_EXISTS',
+            errorMessage: '目标已存在',
+            displayPath: conflictTask.displayPath,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ tasks: [{ accepted: true }] })
+    mocks.createAppAlert.mockImplementation(async (options: any) => {
+      await options.buttons[1].handler()
+      return { present: vi.fn(), onDidDismiss: vi.fn().mockResolvedValue({}) }
+    })
+
+    const wrapper = mount(DownloadPage)
+    await flushPromises()
+    wrapper.findComponent({ name: 'PdfExportBottomSheet' }).vm.$emit('confirm', {
+      selectedChapters: [
+        { albumId: 'album-1', chapterId: 'chapter-1', albumTitle: '测试漫画', chapterTitle: '第一话' },
+        { albumId: 'album-1', chapterId: 'chapter-2', albumTitle: '测试漫画', chapterTitle: '第二话' },
+      ],
+      mode: 'chapter',
+      useOriginal: true,
+      compressionRatio: 1,
+      editedPath: '/pdf/test.pdf',
+      splitPages: 0,
+    })
+    await flushPromises()
+
+    expect(mocks.createAppAlert).toHaveBeenCalledOnce()
+    expect(mocks.exportPdfBatch).toHaveBeenCalledTimes(2)
+    expect(mocks.exportPdfBatch.mock.calls[0][0]).toEqual([
+      expect.objectContaining({ allowOverwrite: false }),
+      expect.objectContaining({ allowOverwrite: false }),
+    ])
+    expect(mocks.exportPdfBatch.mock.calls[1][0]).toEqual([
+      expect.objectContaining({ displayPath: conflictTask.displayPath, allowOverwrite: true }),
+    ])
+    expect(mocks.showToast).toHaveBeenCalledWith('PDF导出已开始，请查看通知', 'success')
+    wrapper.unmount()
+  })
+
+  test('取消覆盖时不重提冲突任务', async () => {
+    const task = { displayPath: '/pdf/conflict.pdf' }
+    mocks.buildExportPlan.mockReturnValueOnce({
+      tasks: [task],
+      outputDisplayPaths: [task.displayPath],
+    })
+    mocks.exportPdfBatch.mockResolvedValueOnce({
+      tasks: [{
+        accepted: false,
+        errorCode: 'PDF_OUTPUT_EXISTS',
+        displayPath: task.displayPath,
+      }],
+    })
+    const wrapper = mount(DownloadPage)
+    await flushPromises()
+    wrapper.findComponent({ name: 'PdfExportBottomSheet' }).vm.$emit('confirm', {
+      selectedChapters: [
+        { albumId: 'album-1', chapterId: 'chapter-1', albumTitle: '测试漫画', chapterTitle: '第一话' },
+      ],
+      mode: 'chapter',
+      useOriginal: true,
+      compressionRatio: 1,
+      editedPath: '/pdf/test.pdf',
+      splitPages: 0,
+    })
+    await flushPromises()
+
+    expect(mocks.createAppAlert).toHaveBeenCalledOnce()
+    expect(mocks.exportPdfBatch).toHaveBeenCalledOnce()
+    expect(mocks.showToast).toHaveBeenCalledWith('检测到已有同名 PDF，已取消覆盖', 'medium')
+    wrapper.unmount()
+  })
+
+  test('混合结果取消覆盖时同时报告已开始、取消覆盖和其他失败', async () => {
+    const acceptedTask = { displayPath: '/pdf/accepted.pdf' }
+    const conflictTask = { displayPath: '/pdf/conflict.pdf' }
+    const rejectedTask = { displayPath: '/pdf/rejected.pdf' }
+    mocks.buildExportPlan.mockReturnValueOnce({
+      tasks: [acceptedTask, conflictTask, rejectedTask],
+      outputDisplayPaths: [
+        acceptedTask.displayPath,
+        conflictTask.displayPath,
+        rejectedTask.displayPath,
+      ],
+    })
+    mocks.exportPdfBatch.mockResolvedValueOnce({
+      tasks: [
+        { accepted: true },
+        {
+          accepted: false,
+          errorCode: 'PDF_OUTPUT_EXISTS',
+          displayPath: conflictTask.displayPath,
+        },
+        {
+          accepted: false,
+          errorCode: 'PDF_EXPORT_FAILED',
+          errorMessage: '导出失败',
+          displayPath: rejectedTask.displayPath,
+        },
+      ],
+    })
+
+    const wrapper = mount(DownloadPage)
+    await flushPromises()
+    wrapper.findComponent({ name: 'PdfExportBottomSheet' }).vm.$emit('confirm', {
+      selectedChapters: [
+        { albumId: 'album-1', chapterId: 'chapter-1', albumTitle: '测试漫画', chapterTitle: '第一话' },
+      ],
+      mode: 'chapter',
+      useOriginal: true,
+      compressionRatio: 1,
+      editedPath: '/pdf/test.pdf',
+      splitPages: 0,
+    })
+    await flushPromises()
+
+    expect(mocks.exportPdfBatch).toHaveBeenCalledOnce()
+    expect(mocks.showToast).toHaveBeenCalledWith(
+      '已开始 1 个，1 个已取消覆盖，另有 1 个失败',
+      'medium',
+    )
     wrapper.unmount()
   })
 })

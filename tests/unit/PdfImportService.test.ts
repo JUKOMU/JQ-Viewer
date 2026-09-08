@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import type { PdfFileParseItem } from '@/utils/importPdfParse'
+import { asFileRef } from '@/runtime/FileReferences'
 
 const mocks = vi.hoisted(() => ({
   checkFilesExist: vi.fn(),
@@ -17,7 +18,8 @@ import { PdfImportService } from '@/services/PdfImportService'
 
 const file = (filePath: string): PdfFileParseItem => ({
   fileName: filePath.split('/').pop() ?? 'book.pdf',
-  filePath,
+  fileRef: asFileRef(filePath),
+  displayPath: filePath,
   extractedIds: ['123456'],
   editedIds: ['123456'],
   idPositions: [],
@@ -64,14 +66,20 @@ describe('PdfImportService.confirmImport', () => {
       skipped: 0,
       duplicateCount: 0,
       errorCount: 0,
-      results: [{ result: 'imported', filePath: '/pdf/a.pdf', id: 1 }],
+      results: [
+        {
+          result: 'imported',
+          file: { ref: asFileRef('/pdf/a.pdf'), fileName: 'a.pdf', displayPath: '/pdf/a.pdf' },
+          id: 1,
+        },
+      ],
     })
 
     const result = await PdfImportService.confirmImport([file('/pdf/a.pdf'), file('/pdf/b.pdf')])
 
     expect(result).toEqual(expect.objectContaining({ imported: 1, skipped: 1, errorCount: 1 }))
     expect(result.results).toEqual([
-      expect.objectContaining({ result: 'imported', filePath: '/pdf/a.pdf' }),
+      expect.objectContaining({ result: 'imported', file: expect.objectContaining({ displayPath: '/pdf/a.pdf' }) }),
     ])
   })
 
@@ -82,13 +90,23 @@ describe('PdfImportService.confirmImport', () => {
       skipped: 0,
       duplicateCount: 0,
       errorCount: 0,
-      results: [{ result: 'imported', filePath: '/pdf/a.pdf', id: 1 }],
+      results: [
+        {
+          result: 'imported',
+          file: { ref: asFileRef('/pdf/a.pdf'), fileName: 'a.pdf', displayPath: '/pdf/a.pdf' },
+          id: 1,
+        },
+      ],
     })
 
     await PdfImportService.confirmImport([file('/pdf/a.pdf')])
 
     expect(mocks.importPdfs).toHaveBeenCalledWith([
-      expect.objectContaining({ albumId: '123456', chapterId: '' }),
+      expect.objectContaining({
+        albumId: '123456',
+        chapterId: '',
+        fileRef: asFileRef('/pdf/a.pdf'),
+      }),
     ])
   })
 })

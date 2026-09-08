@@ -158,7 +158,7 @@ import {
   IonRefresherContent,
 } from '@ionic/vue'
 import { createAppAlert } from '@/services/AppAlertService'
-import type { PluginListenerHandle } from '@capacitor/core'
+import type { ListenerHandle } from '@/runtime/BackendEvents'
 import {
   bookOutline,
   downloadOutline,
@@ -318,7 +318,7 @@ const matchesKeyword = (item: SearchResultItem, kw: string): boolean => {
 
 // ---- 下载状态 ----
 const downloadedAlbumIds = ref<Set<string>>(new Set())
-let downloadProgressHandle: PluginListenerHandle | null = null
+let downloadProgressHandle: ListenerHandle | null = null
 
 const refreshDownloadStatuses = async () => {
   try {

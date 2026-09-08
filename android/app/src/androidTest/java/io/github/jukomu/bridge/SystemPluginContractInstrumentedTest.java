@@ -10,6 +10,7 @@ import androidx.test.platform.app.InstrumentationRegistry;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import io.github.jukomu.bridge.handler.SystemPluginHandler;
+import io.github.jukomu.feature.pdf.data.PdfRef;
 import io.github.jukomu.platform.permission.PermissionService;
 import io.github.jukomu.platform.permission.PermissionState;
 import org.json.JSONArray;
@@ -41,7 +42,14 @@ public class SystemPluginContractInstrumentedTest {
             () -> activityHolder[0] = new RecordingActivity());
         activity = activityHolder[0];
         permissionService = new FakePermissionService();
-        systemHandler = new SystemPluginHandler(
+        systemHandler = createSystemHandler((uri, flags) -> {
+        });
+        injectSystemHandler(plugin, systemHandler);
+    }
+
+    private SystemPluginHandler createSystemHandler(
+        SystemPluginHandler.PersistableUriPermission persistableUriPermission) {
+        return new SystemPluginHandler(
             context,
             () -> activity,
             permissionService,
@@ -51,8 +59,8 @@ public class SystemPluginContractInstrumentedTest {
             (permission, requestCode) -> {
                 activity.requestedPermissions = new String[]{permission};
                 activity.permissionRequestCode = requestCode;
-            });
-        injectSystemHandler(plugin, systemHandler);
+            },
+            persistableUriPermission);
     }
 
     @After
@@ -294,7 +302,7 @@ public class SystemPluginContractInstrumentedTest {
         plugin.handleActivityResult(requestCode, RESULT_CANCELED, null);
 
         assertTrue(first.resolvedData.getBool("cancelled"));
-        assertEquals("", first.resolvedData.getString("path"));
+        assertEquals("", first.resolvedData.getString("folderRef"));
         assertEquals(1, first.completionCount);
         assertFalse(first.isKeptAlive());
     }
@@ -311,9 +319,31 @@ public class SystemPluginContractInstrumentedTest {
         plugin.handleActivityResult(requestCode, RESULT_OK, result);
 
         assertFalse(call.resolvedData.getBool("cancelled"));
-        assertEquals(treeUri.toString(), call.resolvedData.getString("treeUri"));
+        assertEquals("folder:saf:" + treeUri.toString(), call.resolvedData.getString("folderRef"));
         assertEquals("/storage/emulated/0/Download/JQ-Viewer",
-            call.resolvedData.getString("path"));
+            call.resolvedData.getString("displayPath"));
+        assertSynchronous(call);
+    }
+
+    @Test
+    public void folderPickerRejectsWhenPersistablePermissionFails() throws Exception {
+        SecurityException failure = new SecurityException("permission unavailable");
+        systemHandler.destroy();
+        systemHandler = createSystemHandler((uri, flags) -> {
+            throw failure;
+        });
+        injectSystemHandler(plugin, systemHandler);
+        RecordingPluginCall call = call("pickFolder");
+        plugin.pickFolder(call);
+        int requestCode = activity.activityRequestCode;
+        Uri treeUri = Uri.parse(
+            "content://com.android.externalstorage.documents/tree/primary%3ADownload");
+
+        plugin.handleActivityResult(requestCode, RESULT_OK, new Intent().setData(treeUri));
+
+        assertEquals("无法持久化文件夹权限", call.rejectionMessage);
+        assertEquals(failure, call.rejectionException);
+        assertNull(call.resolvedData);
         assertSynchronous(call);
     }
 
@@ -348,26 +378,26 @@ public class SystemPluginContractInstrumentedTest {
     public void fileQueriesReturnOnlyExistingPaths() throws Exception {
         RecordingPluginCall missingInput = call("checkFilesExist");
         plugin.checkFilesExist(missingInput);
-        assertRejected(missingInput, "paths is required");
+        assertRejected(missingInput, "fileRefs is required");
 
         File existingFile = new File(context.getCacheDir(), "system-handler-contract.txt");
         assertTrue(existingFile.createNewFile() || existingFile.exists());
         try {
-            JSArray paths = new JSArray();
-            paths.put(existingFile.getAbsolutePath());
-            paths.put(existingFile.getAbsolutePath() + ".missing");
-            paths.put("content://io.github.jukomu.missing/item");
-            RecordingPluginCall files = call("checkFilesExist", "paths", paths);
+            JSArray fileRefs = new JSArray();
+            fileRefs.put(PdfRef.createPathFileRef(existingFile.getAbsolutePath()));
+            fileRefs.put(PdfRef.createPathFileRef(existingFile.getAbsolutePath() + ".missing"));
+            fileRefs.put("file:saf:content://io.github.jukomu.test.pdf/document/missing");
+            RecordingPluginCall files = call("checkFilesExist", "fileRefs", fileRefs);
             RecordingPluginCall externalPath = call("getExternalStoragePath");
 
             plugin.checkFilesExist(files);
             plugin.getExternalStoragePath(externalPath);
 
-            JSONArray existing = files.resolvedData.getJSONArray("existing");
+            JSONArray existing = files.resolvedData.getJSONArray("existingFileRefs");
             assertNotNull(existing);
             assertEquals(1, existing.length());
-            assertEquals(existingFile.getAbsolutePath(), existing.getString(0));
-            assertFalse(externalPath.resolvedData.getString("path").isEmpty());
+            assertEquals(PdfRef.createPathFileRef(existingFile.getAbsolutePath()), existing.getString(0));
+            assertFalse(externalPath.resolvedData.getString("folderRef").isEmpty());
             assertSynchronous(files, externalPath);
         } finally {
             assertTrue(existingFile.delete() || !existingFile.exists());

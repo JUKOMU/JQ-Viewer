@@ -7,6 +7,7 @@ import io.github.jukomu.feature.cache.CacheCapacityPolicy;
 import io.github.jukomu.feature.cache.ImageCache;
 import io.github.jukomu.feature.download.storage.FileStore;
 import io.github.jukomu.feature.download.validation.ImageFileValidator;
+import io.github.jukomu.feature.pdf.render.PdfPageCache;
 import io.github.jukomu.jmcomic.api.model.JmImage;
 import io.github.jukomu.jmcomic.core.client.impl.JmApiClient;
 import io.github.jukomu.jmcomic.core.crypto.JmImageTool;
@@ -489,6 +490,12 @@ public class PreloadService {
 
     public void clearImageCache() {
         imageCache.clear();
+        if (context == null) return;
+        try {
+            PdfPageCache.getInstance(context).clear();
+        } catch (RuntimeException error) {
+            Log.w(TAG, "清理 PDF 页面缓存失败，已完成内存缓存清理", error);
+        }
     }
 
     private void logCapacity(String reason) {

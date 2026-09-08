@@ -36,7 +36,7 @@
         <TransitionGroup v-if="files.length > 0" name="card-list" tag="div" class="file-list">
           <div
             v-for="(file, idx) in files"
-            :key="file.filePath"
+            :key="file.fileRef"
             class="file-card"
             :class="[
               cardClass(file),

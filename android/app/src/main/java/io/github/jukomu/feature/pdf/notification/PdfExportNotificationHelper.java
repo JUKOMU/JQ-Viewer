@@ -11,6 +11,8 @@ import android.util.Log;
 import androidx.core.app.NotificationCompat;
 import androidx.core.content.FileProvider;
 import io.github.jukomu.R;
+import io.github.jukomu.feature.pdf.data.PdfRef;
+import io.github.jukomu.feature.pdf.data.PdfRefResolver;
 
 import java.io.File;
 
@@ -47,13 +49,15 @@ public class PdfExportNotificationHelper {
         }
     }
 
-    public void showComplete(int notificationId, String chapterTitle, String fileName, String filePath) {
-        showComplete(notificationId, chapterTitle, fileName, filePath, null);
+    public void showComplete(int notificationId, String chapterTitle, String fileName,
+                             String outputFileRef) {
+        showComplete(notificationId, chapterTitle, fileName, outputFileRef, null);
     }
 
-    public void showComplete(int notificationId, String chapterTitle, String fileName, String filePath,
+    public void showComplete(int notificationId, String chapterTitle, String fileName,
+                             String outputFileRef,
                              String detail) {
-        PendingIntent pendingIntent = createPdfOpenIntent(notificationId, filePath);
+        PendingIntent pendingIntent = createPdfOpenIntent(notificationId, outputFileRef);
 
         String message = fileName;
         if (detail != null && !detail.isEmpty()) {
@@ -75,14 +79,21 @@ public class PdfExportNotificationHelper {
         notify(notificationId, builder.build());
     }
 
-    private PendingIntent createPdfOpenIntent(int notificationId, String filePath) {
+    private PendingIntent createPdfOpenIntent(int notificationId, String outputFileRef) {
         Intent openIntent = new Intent(Intent.ACTION_VIEW);
         try {
-            Uri uri = FileProvider.getUriForFile(
-                context,
-                context.getPackageName() + ".fileprovider",
-                new File(filePath)
-            );
+            PdfRef.Parsed parsed = PdfRef.parse(outputFileRef);
+            Uri uri;
+            if (parsed.provider == PdfRef.Provider.SAF) {
+                uri = PdfRefResolver.uri(outputFileRef);
+            } else {
+                File file = PdfRefResolver.pathFile(outputFileRef);
+                uri = FileProvider.getUriForFile(
+                    context,
+                    context.getPackageName() + ".fileprovider",
+                    file
+                );
+            }
             openIntent.setDataAndType(uri, "application/pdf");
             openIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
             return PendingIntent.getActivity(

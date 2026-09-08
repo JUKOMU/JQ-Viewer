@@ -2,11 +2,9 @@ package io.github.jukomu.bridge.handler;
 
 import android.Manifest;
 import android.app.Activity;
-import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.database.Cursor;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.Uri;
@@ -27,6 +25,8 @@ import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions;
 import io.github.jukomu.jmcomic.core.client.impl.JmApiClient;
 import io.github.jukomu.platform.permission.PermissionService;
 import io.github.jukomu.platform.permission.PermissionState;
+import io.github.jukomu.feature.pdf.data.PdfRef;
+import io.github.jukomu.feature.pdf.data.PdfRefResolver;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -46,6 +46,12 @@ import static android.app.Activity.RESULT_OK;
  */
 public final class SystemPluginHandler {
 
+    /** 封装可持久化 URI 权限操作，默认实现直接调用 ContentResolver。 */
+    @FunctionalInterface
+    public interface PersistableUriPermission {
+        void take(Uri uri, int flags);
+    }
+
     private static final String TAG = "SystemPluginHandler";
     private static final long PROBE_DEBOUNCE_MS = 2000;
     private static final int REQUEST_PICK_IMAGE = 1001;
@@ -58,6 +64,7 @@ public final class SystemPluginHandler {
     private final Supplier<JmApiClient> clientSupplier;
     private final Consumer<JSObject> networkProbeConsumer;
     private final BiConsumer<String, Integer> permissionRequester;
+    private final PersistableUriPermission persistableUriPermission;
     private final ExecutorService ocrExecutor;
     private final Object probeLock = new Object();
     private final Object permissionLock = new Object();
@@ -79,12 +86,25 @@ public final class SystemPluginHandler {
                                Supplier<JmApiClient> clientSupplier,
                                Consumer<JSObject> networkProbeConsumer,
                                BiConsumer<String, Integer> permissionRequester) {
+        this(context, activitySupplier, permissionService, clientSupplier,
+            networkProbeConsumer, permissionRequester,
+            (uri, flags) -> context.getContentResolver()
+                .takePersistableUriPermission(uri, flags));
+    }
+
+    public SystemPluginHandler(Context context, Supplier<Activity> activitySupplier,
+                               PermissionService permissionService,
+                               Supplier<JmApiClient> clientSupplier,
+                               Consumer<JSObject> networkProbeConsumer,
+                               BiConsumer<String, Integer> permissionRequester,
+                               PersistableUriPermission persistableUriPermission) {
         this.context = context;
         this.activitySupplier = activitySupplier;
         this.permissionService = permissionService;
         this.clientSupplier = clientSupplier;
         this.networkProbeConsumer = networkProbeConsumer;
         this.permissionRequester = permissionRequester;
+        this.persistableUriPermission = persistableUriPermission;
         this.ocrExecutor = Executors.newSingleThreadExecutor();
     }
 
@@ -516,50 +536,42 @@ public final class SystemPluginHandler {
         }
     }
 
-    /**
-     * 返回给定文件路径和 content URI 中当前可访问的条目。
-     */
+    /** 返回给定文件引用中当前可访问的条目。 */
     public void checkFilesExist(PluginCall call) {
         try {
-            JSArray paths = call.getArray("paths");
-            if (paths == null) {
-                call.reject("paths is required");
+            JSArray fileRefs = call.getArray("fileRefs");
+            if (fileRefs == null) {
+                call.reject("fileRefs is required");
                 return;
             }
-            ContentResolver resolver = context.getContentResolver();
-            File externalRoot = Environment.getExternalStorageDirectory();
             JSArray existing = new JSArray();
-            for (int index = 0; index < paths.length(); index++) {
-                String path = paths.getString(index);
-                if (path == null) {
-                    continue;
-                }
-                boolean exists;
-                if (path.startsWith("content://")) {
-                    exists = checkContentUriExists(resolver, path);
-                } else if (path.startsWith("/")) {
-                    exists = new File(path).exists();
-                } else {
-                    exists = new File(externalRoot, path).exists();
-                }
-                if (exists) {
-                    existing.put(path);
+            for (int index = 0; index < fileRefs.length(); index++) {
+                String fileRef = fileRefs.getString(index);
+                if (fileRef != null && PdfRef.parse(fileRef).kind == PdfRef.Kind.FILE
+                    && PdfRefResolver.exists(context, fileRef)) {
+                    existing.put(fileRef);
                 }
             }
             JSObject result = new JSObject();
-            result.put("existing", existing);
+            result.put("existingFileRefs", existing);
             call.resolve(result);
         } catch (Exception error) {
             call.reject(error.getMessage(), error);
         }
     }
 
-    /**
-     * 返回外部存储根目录的绝对路径。
-     */
+    /** 返回默认外部存储目录的 folder:path ref 与展示路径。 */
     public void getExternalStoragePath(PluginCall call) {
         JSObject result = new JSObject();
-        result.put("path", Environment.getExternalStorageDirectory().getAbsolutePath());
+        String path = Environment.getExternalStorageDirectory().getAbsolutePath();
+        try {
+            result.put("folderRef", PdfRef.createPathFolderRef(path));
+        } catch (Exception error) {
+            call.reject("无法创建默认 PDF 文件夹引用", error);
+            return;
+        }
+        result.put("displayPath", path);
+        result.put("provider", "path");
         call.resolve(result);
     }
 
@@ -712,7 +724,9 @@ public final class SystemPluginHandler {
 
         JSObject result = new JSObject();
         if (resultCode != RESULT_OK || data == null || data.getData() == null) {
-            result.put("path", "");
+            result.put("folderRef", "");
+            result.put("displayPath", "");
+            result.put("provider", "saf");
             result.put("cancelled", true);
             call.resolve(result);
             return;
@@ -720,17 +734,20 @@ public final class SystemPluginHandler {
 
         Uri treeUri = data.getData();
         try {
-            context.getContentResolver().takePersistableUriPermission(
+            persistableUriPermission.take(
                 treeUri,
                 Intent.FLAG_GRANT_READ_URI_PERMISSION
                     | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
         } catch (Exception error) {
             Log.w(TAG, "takePersistableUriPermission failed", error);
+            call.reject("无法持久化文件夹权限", error);
+            return;
         }
 
         String path = treeUriToPath(treeUri);
-        result.put("path", path != null ? path : "");
-        result.put("treeUri", treeUri.toString());
+        result.put("folderRef", PdfRef.createSafFolderRef(treeUri.toString()));
+        result.put("displayPath", path != null ? path : treeUri.toString());
+        result.put("provider", "saf");
         result.put("cancelled", false);
         call.resolve(result);
     }
@@ -772,21 +789,6 @@ public final class SystemPluginHandler {
                 + "/" + subPath;
         }
         return "/storage/" + volume + "/" + subPath;
-    }
-
-    private static boolean checkContentUriExists(ContentResolver resolver, String uriValue) {
-        Uri uri = Uri.parse(uriValue);
-        Cursor cursor = null;
-        try {
-            cursor = resolver.query(uri, null, null, null, null);
-            return cursor != null && cursor.getCount() > 0;
-        } catch (Exception error) {
-            return false;
-        } finally {
-            if (cursor != null) {
-                cursor.close();
-            }
-        }
     }
 
     private static JSObject permissionResult(PermissionState state) {

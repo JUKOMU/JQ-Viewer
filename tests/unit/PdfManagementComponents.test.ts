@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import type { ImportedPdf, PdfExportTaskRecord } from '@/services/JmcomicTypes'
+import { RuntimeError } from '@/runtime/errors'
 
 const mocks = vi.hoisted(() => ({
   getPdfFiles: vi.fn(),
@@ -18,6 +19,10 @@ const mocks = vi.hoisted(() => ({
   openPdf: vi.fn(),
   openPdfFolder: vi.fn(),
   deletePdfExportTask: vi.fn(),
+  cancelPdfExport: vi.fn(),
+  retryPdfExport: vi.fn(),
+  pickFolder: vi.fn(),
+  scanAndParse: vi.fn(),
   alertCreate: vi.fn(),
   routerPush: vi.fn(),
   showToast: vi.fn(),
@@ -86,15 +91,16 @@ vi.mock('@/services/JmcomicService', () => ({
     removePdfFromLibrary: vi.fn(),
     deletePdfFile: vi.fn(),
     verifyPdfFile: mocks.verifyPdfFile,
-    cancelPdfExport: vi.fn(),
-    retryPdfExport: vi.fn(),
+    cancelPdfExport: mocks.cancelPdfExport,
+    retryPdfExport: mocks.retryPdfExport,
     deletePdfExportTask: mocks.deletePdfExportTask,
-    pickFolder: vi.fn(),
+    pickFolder: mocks.pickFolder,
   },
-  sanitizeError: (_error: unknown, fallback: string) => fallback,
+  sanitizeError: (error: unknown, fallback: string) =>
+    error instanceof RuntimeError ? error.message : fallback,
   showToast: mocks.showToast,
 }))
-vi.mock('@/services/PdfImportService', () => ({ PdfImportService: { scanAndParse: vi.fn() } }))
+vi.mock('@/services/PdfImportService', () => ({ PdfImportService: { scanAndParse: mocks.scanAndParse } }))
 
 import PdfExportTaskCard from '@/components/download/PdfExportTaskCard.vue'
 import PdfFileCard from '@/components/download/PdfFileCard.vue'
@@ -102,7 +108,8 @@ import PdfManagementView from '@/components/download/PdfManagementView.vue'
 
 const file: ImportedPdf = {
   id: 1,
-  filePath: 'content://provider/current.pdf',
+  fileRef: 'content://provider/current.pdf' as ImportedPdf['fileRef'],
+  displayPath: 'content://provider/current.pdf',
   fileName: 'current.pdf',
   sourceType: 'imported',
   ownership: 'external_reference',
@@ -131,7 +138,7 @@ const task = (status: PdfExportTaskRecord['status']): PdfExportTaskRecord => ({
   authors: '',
   chapterId: 'chapter-1',
   displayTitle: '第一话',
-  savePath: '/pdf/one.pdf',
+  displayPath: '/pdf/one.pdf',
   allowOverwrite: false,
   useOriginal: true,
   compressionRatio: 1,
@@ -162,6 +169,8 @@ beforeEach(() => {
   mocks.addPdfExportProgressListener.mockResolvedValue({ remove: vi.fn() })
   mocks.inspectPdfFileForDeletion.mockResolvedValue(file)
   mocks.verifyPdfFile.mockResolvedValue(file)
+  mocks.pickFolder.mockResolvedValue(null)
+  mocks.scanAndParse.mockResolvedValue(undefined)
   mocks.alertCreate.mockResolvedValue({ present: vi.fn() })
 })
 
@@ -254,7 +263,7 @@ describe('PdfManagementView', () => {
     const expectedRoute = {
       path: '/pdf-reader',
       query: {
-        path: 'content://provider/current.pdf',
+        fileRef: 'content://provider/current.pdf',
         title: 'current.pdf',
         albumId: 'album-1',
         albumTitle: '测试漫画',
@@ -405,5 +414,65 @@ describe('PdfManagementView', () => {
     await flushPromises()
 
     expect(remove).toHaveBeenCalledOnce()
+  })
+
+  test('目录失效时清空旧扫描并重新选择目录', async () => {
+    mocks.pickFolder
+      .mockResolvedValueOnce({ ref: 'content://old-tree', displayPath: '/old' })
+      .mockResolvedValueOnce({ ref: 'content://new-tree', displayPath: '/new' })
+    mocks.scanAndParse
+      .mockRejectedValueOnce(new RuntimeError('permission-denied', 'PDF 文件夹读取权限已失效，请重新选择文件夹'))
+      .mockResolvedValueOnce(undefined)
+
+    const wrapper = mount(PdfManagementView)
+    await flushPromises()
+    await wrapper.get('button[aria-label="导入 PDF"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.pickFolder).toHaveBeenCalledTimes(2)
+    expect(mocks.scanAndParse).toHaveBeenNthCalledWith(1, 'content://old-tree')
+    expect(mocks.scanAndParse).toHaveBeenNthCalledWith(2, 'content://new-tree')
+    expect(mocks.routerPush).toHaveBeenCalledWith('/import-review')
+    wrapper.unmount()
+  })
+
+  test('删除前记录已消失时刷新 PDF 文件列表', async () => {
+    mocks.inspectPdfFileForDeletion.mockRejectedValueOnce(
+      new RuntimeError('not-found', 'PDF 文件记录不存在'),
+    )
+    const wrapper = mount(PdfManagementView)
+    await flushPromises()
+    const initialCalls = mocks.getPdfFiles.mock.calls.length
+
+    await wrapper.get('button[aria-label="更多操作"]').trigger('click')
+    document.body.querySelector<HTMLButtonElement>('.card-menu-item--danger')?.click()
+    await flushPromises()
+
+    expect(mocks.getPdfFiles.mock.calls.length).toBeGreaterThan(initialCalls)
+    expect(mocks.alertCreate).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  test('重试冲突时刷新任务并保留服务端 message', async () => {
+    const failedTask = task('failed')
+    mocks.getPdfExportTasks.mockResolvedValue({ tasks: [failedTask], nextCursor: null })
+    mocks.retryPdfExport.mockRejectedValueOnce(
+      new RuntimeError('conflict', '相同章节已有任务正在运行'),
+    )
+    mocks.alertCreate.mockImplementationOnce(async (options: any) => {
+      await options.buttons[1].handler()
+      return { present: vi.fn() }
+    })
+
+    const wrapper = mount(PdfManagementView, { props: { initialView: 'tasks' } })
+    await flushPromises()
+    const initialCalls = mocks.getPdfExportTasks.mock.calls.length
+
+    await wrapper.get('button[aria-label="重试整个 PDF 导出任务"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.getPdfExportTasks.mock.calls.length).toBeGreaterThan(initialCalls)
+    expect(mocks.showToast).toHaveBeenCalledWith('相同章节已有任务正在运行', 'medium')
+    wrapper.unmount()
   })
 })

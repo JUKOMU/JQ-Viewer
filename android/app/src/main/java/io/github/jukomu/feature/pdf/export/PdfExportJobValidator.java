@@ -1,5 +1,7 @@
 package io.github.jukomu.feature.pdf.export;
 
+import io.github.jukomu.feature.pdf.data.PdfRef;
+
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -21,7 +23,14 @@ public final class PdfExportJobValidator {
             throw new IllegalArgumentException("导出任务不能为空");
         }
         requireResourceId(job.albumId, "albumId");
-        requireText(job.savePath, "savePath");
+        requireText(job.targetFolderRef, "targetFolderRef");
+        PdfRef.Parsed target = PdfRef.parse(job.targetFolderRef);
+        if (target.kind != PdfRef.Kind.FOLDER) {
+            throw new IllegalArgumentException("targetFolderRef 必须是目录引用");
+        }
+        requireText(job.targetName, "targetName");
+        requireText(job.displayPath, "displayPath");
+        job.targetName = PdfTargetPath.normalize(job.targetName);
 
         if ("chapter".equals(job.mode)) {
             requireResourceId(job.chapterId, "chapterId");

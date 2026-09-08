@@ -179,7 +179,7 @@ import {
   timeOutline,
   trashOutline,
 } from 'ionicons/icons'
-import type { PluginListenerHandle } from '@capacitor/core'
+import type { ListenerHandle } from '@/runtime/BackendEvents'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import DownloadTaskCard from '@/components/download/DownloadTaskCard.vue'
 import PdfExportBottomSheet from '@/components/download/PdfExportBottomSheet.vue'
@@ -189,7 +189,7 @@ import CardContextMenu from '@/components/common/CardContextMenu.vue'
 import { createAppAlert } from '@/services/AppAlertService'
 import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
 import { OfflineDownloadService } from '@/services/OfflineDownloadService'
-import { PdfExportService } from '@/services/PdfExportService'
+import { PdfExportService, type PdfExportPlan } from '@/services/PdfExportService'
 import type {
   AlbumDetail,
   CompletedEntry,
@@ -218,7 +218,7 @@ const tasks = ref<DownloadTask[]>([])
 const spaceUsedMb = ref(0)
 const spaceAvailMb = ref(0)
 const hasStorageInfo = ref(false)
-let downloadProgressHandle: PluginListenerHandle | null = null
+let downloadProgressHandle: ListenerHandle | null = null
 let syncPromise: Promise<void> | null = null
 let speedTimer: ReturnType<typeof setInterval> | null = null
 let isUnmounted = false
@@ -817,6 +817,35 @@ const onOpenPdfSheet = () => {
   showPdfSheet.value = true
 }
 
+const requestPdfOverwriteConfirmation = async (paths: string[]): Promise<boolean> => {
+  let confirmed = false
+  const visiblePaths = [...new Set(paths.filter((path) => path.trim().length > 0))].slice(0, 3)
+  const pathSummary = visiblePaths.length
+    ? `\n${visiblePaths.map((path) => `· ${path}`).join('\n')}`
+    : ''
+  const remaining = paths.length - visiblePaths.length
+  const remainingSummary = remaining > 0 ? `\n另有 ${remaining} 个文件未展开。` : ''
+
+  const alert = await createAppAlert({
+    tone: 'danger',
+    header: '文件已存在',
+    message: `以下 PDF 已存在，是否覆盖？${pathSummary}${remainingSummary}`,
+    buttons: [
+      { text: '取消', role: 'cancel' },
+      {
+        text: '覆盖',
+        role: 'destructive',
+        handler: () => {
+          confirmed = true
+        },
+      },
+    ],
+  })
+  await alert.present()
+  await alert.onDidDismiss()
+  return confirmed
+}
+
 const onPdfExportConfirm = async (payload: {
   selectedChapters: DownloadTask[]
   mode: PdfExportMode
@@ -837,26 +866,29 @@ const onPdfExportConfirm = async (payload: {
     }
   }
 
-  let exportPlan
+  let exportPlan: PdfExportPlan
   try {
-    exportPlan = PdfExportService.buildExportPlan({ ...payload, albumDetail })
+    exportPlan = PdfExportService.buildExportPlan({
+      ...payload,
+      albumDetail,
+      exportFolder: (() => {
+        const selection = PdfExportService.getExportFolder()
+        if (!selection) throw new Error('请先选择导出目录')
+        return selection.folderRef
+      })(),
+      exportFolderDisplayPath: (() => {
+        const selection = PdfExportService.getExportFolder()
+        if (!selection) throw new Error('请先选择导出目录')
+        return selection.displayPath
+      })(),
+    })
   } catch (e: any) {
     await showToast(sanitizeError(e, '无法创建导出任务'), 'danger')
     return
   }
 
-  // 检查文件是否已存在
-  let allowOverwrite = false
-  try {
-    const result = await JmcomicService.checkFilesExist(exportPlan.outputPaths)
-    if (result.existing.length > 0) {
-      const confirmed = await confirmOverwrite(result.existing)
-      if (!confirmed) return
-      allowOverwrite = true
-    }
-  } catch {
-    /* 检查失败时直接放行 */
-  }
+  // 输出文件 ref 只在原生创建目标文档后产生，提交前不能把展示路径冒充 fileRef。
+  const allowOverwrite = false
 
   await ensureNotificationPermission()
 
@@ -864,8 +896,60 @@ const onPdfExportConfirm = async (payload: {
     const result = await JmcomicService.exportPdfBatch(
       exportPlan.tasks.map((task) => ({ ...task, allowOverwrite })),
     )
-    const accepted = result.tasks.filter((task) => task.accepted).length
-    const rejected = result.tasks.length - accepted
+    const conflictIndexes = result.tasks.flatMap((task, index) =>
+      !task.accepted && task.errorCode === 'PDF_OUTPUT_EXISTS' ? [index] : [],
+    )
+    let finalTasks = result.tasks
+    let overwriteConfirmed = false
+
+    if (conflictIndexes.length > 0) {
+      const conflictPaths = conflictIndexes.map((index) => {
+        const resultPath = result.tasks[index]?.displayPath
+        return resultPath || exportPlan.tasks[index]?.displayPath || exportPlan.outputDisplayPaths[index] || ''
+      })
+      overwriteConfirmed = await requestPdfOverwriteConfirmation(conflictPaths)
+      if (overwriteConfirmed) {
+        try {
+          const overwriteResult = await JmcomicService.exportPdfBatch(
+            conflictIndexes.map((index) => ({
+              ...exportPlan.tasks[index],
+              allowOverwrite: true,
+            })),
+          )
+          finalTasks = result.tasks.slice()
+          conflictIndexes.forEach((originalIndex, retryIndex) => {
+            const retryTask = overwriteResult.tasks[retryIndex]
+            if (retryTask) finalTasks[originalIndex] = retryTask
+          })
+        } catch (e: any) {
+          await showToast(sanitizeError(e, '覆盖导出启动失败'), 'danger')
+          return
+        }
+      }
+    }
+
+    const accepted = finalTasks.filter((task) => task.accepted).length
+    const rejected = finalTasks.length - accepted
+    if (conflictIndexes.length > 0 && !overwriteConfirmed) {
+      const conflictIndexSet = new Set(conflictIndexes)
+      const otherRejected = finalTasks.filter(
+        (task, index) => !task.accepted && !conflictIndexSet.has(index),
+      ).length
+      if (otherRejected > 0) {
+        await showToast(
+          `已开始 ${accepted} 个，${conflictIndexes.length} 个已取消覆盖，另有 ${otherRejected} 个失败`,
+          'medium',
+        )
+      } else if (accepted === 0) {
+        await showToast('检测到已有同名 PDF，已取消覆盖', 'medium')
+      } else {
+        await showToast(
+          `已开始 ${accepted} 个，${conflictIndexes.length} 个已取消覆盖`,
+          'medium',
+        )
+      }
+      return
+    }
     if (accepted === 0) {
       await showToast('PDF 导出未开始，请查看任务失败原因', 'danger')
     } else if (rejected > 0) {
@@ -876,22 +960,6 @@ const onPdfExportConfirm = async (payload: {
   } catch (e: any) {
     await showToast(sanitizeError(e, '导出启动失败'), 'danger')
   }
-}
-
-async function confirmOverwrite(existingFiles: string[]): Promise<boolean> {
-  return new Promise((resolve) => {
-    const fileList =
-      existingFiles.slice(0, 3).join('\n') +
-      (existingFiles.length > 3 ? `\n... 等 ${existingFiles.length} 个文件` : '')
-    createAppAlert({
-      header: '文件已存在',
-      message: `以下文件已存在，是否覆盖？\n${fileList}`,
-      buttons: [
-        { text: '取消', role: 'cancel', handler: () => resolve(false) },
-        { text: '覆盖', role: 'destructive', handler: () => resolve(true) },
-      ],
-    }).then((alert) => alert.present())
-  })
 }
 
 async function ensureNotificationPermission(): Promise<boolean> {

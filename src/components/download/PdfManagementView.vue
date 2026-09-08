@@ -167,6 +167,7 @@ import PdfExportTaskCard from './PdfExportTaskCard.vue'
 import CardContextMenu from '@/components/common/CardContextMenu.vue'
 import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
 import { PdfImportService } from '@/services/PdfImportService'
+import { normalizeRuntimeError } from '@/runtime/errors'
 import {
   applyPdfProgressEvent,
   mergePdfFiles,
@@ -317,11 +318,18 @@ const hasImageResource = (file: ImportedPdf) =>
 
 const focusTask = async (exportId: string) => {
   activeView.value = 'tasks'
-  const task = await PdfManagementService.getTask(exportId)
-  tasks.value = mergePdfTasks(tasks.value, [task])
-  highlightedExportId.value = exportId
-  await nextTick()
-  document.getElementById(`pdf-task-${exportId}`)?.scrollIntoView?.({ block: 'center' })
+  try {
+    const task = await PdfManagementService.getTask(exportId)
+    tasks.value = mergePdfTasks(tasks.value, [task])
+    highlightedExportId.value = exportId
+    await nextTick()
+    document.getElementById(`pdf-task-${exportId}`)?.scrollIntoView?.({ block: 'center' })
+  } catch (error) {
+    const runtimeError = normalizeRuntimeError(error)
+    if (runtimeError.code !== 'not-found') throw error
+    highlightedExportId.value = null
+    await loadTasks(true)
+  }
 }
 
 const load = async () => {
@@ -381,7 +389,7 @@ const readFile = (file: ImportedPdf) => {
   void router.push({
     path: '/pdf-reader',
     query: {
-      path: file.filePath,
+      fileRef: String(file.fileRef),
       title: file.fileName,
       albumId: file.albumId,
       albumTitle: file.albumTitle,
@@ -394,7 +402,7 @@ const readFile = (file: ImportedPdf) => {
 }
 const copyFilePath = async (file: ImportedPdf) => {
   try {
-    await navigator.clipboard.writeText(file.filePath)
+    await navigator.clipboard.writeText(file.displayPath)
     await showToast('PDF 路径已复制', 'success')
   } catch (error) {
     await showToast(sanitizeError(error, '复制 PDF 路径失败'), 'danger')
@@ -402,7 +410,7 @@ const copyFilePath = async (file: ImportedPdf) => {
 }
 const openFileFolder = async (file: ImportedPdf) => {
   try {
-    await PdfManagementService.openFolder(file.filePath)
+    await PdfManagementService.openFolder(file.fileRef)
   } catch (error) {
     await showToast(sanitizeError(error, '无法打开 PDF 所在文件夹'), 'danger')
   }
@@ -470,7 +478,7 @@ const deleteFile = async (file: ImportedPdf) => {
       header: '确认删除实际 PDF 文件',
       message: [
         `文件名：${current.fileName}`,
-        `完整定位符：${current.filePath}`,
+        `完整定位符：${current.displayPath}`,
         `大小：${formatBytes(current.fileSize)}`,
         `页数：${current.pageCount > 0 ? current.pageCount : '未知'}`,
         `状态：${availabilityLabel(current.availability)}`,
@@ -494,6 +502,14 @@ const deleteFile = async (file: ImportedPdf) => {
                   'success',
                 )
               } catch (error) {
+                const runtimeError = normalizeRuntimeError(error)
+                if (runtimeError.code === 'not-found') {
+                  await loadFiles(true)
+                  return
+                }
+                if (runtimeError.code === 'permission-denied') {
+                  await refreshFilesInBackground([file])
+                }
                 await showToast(sanitizeError(error, '删除失败，文件库记录已保留'), 'danger')
               }
             })()
@@ -503,6 +519,11 @@ const deleteFile = async (file: ImportedPdf) => {
     })
     await alert.present()
   } catch (error) {
+    const runtimeError = normalizeRuntimeError(error)
+    if (runtimeError.code === 'not-found') {
+      await loadFiles(true)
+      return
+    }
     await showToast(sanitizeError(error, '无法读取当前 PDF 文件信息'), 'danger')
   }
 }
@@ -512,6 +533,11 @@ const cancelTask = async (task: PdfExportTaskRecord) => {
     const updated = await PdfManagementService.cancelTask(task.exportId)
     tasks.value = mergePdfTasks(tasks.value, [updated])
   } catch (error) {
+    const runtimeError = normalizeRuntimeError(error)
+    if (runtimeError.code === 'not-found') {
+      await loadTasks(true)
+      return
+    }
     await showToast(sanitizeError(error, '取消导出失败'), 'danger')
   }
 }
@@ -531,6 +557,15 @@ const retryTask = async (task: PdfExportTaskRecord) => {
               const updated = await PdfManagementService.retryTask(task.exportId, true)
               tasks.value = mergePdfTasks(tasks.value, [updated])
             } catch (error) {
+              const runtimeError = normalizeRuntimeError(error)
+              if (runtimeError.code === 'not-found' || runtimeError.code === 'conflict') {
+                await loadTasks(true)
+                await showToast(
+                  sanitizeError(error, '导出任务状态已变化，请刷新后重试'),
+                  'medium',
+                )
+                return
+              }
               await showToast(sanitizeError(error, '重试导出失败'), 'danger')
             }
           })()
@@ -572,8 +607,18 @@ const acknowledgeDatabaseReset = async () => {
 const importPdf = async () => {
   try {
     const result = await PdfManagementService.pickFolder()
-    if (result.cancelled || (!result.path && !result.treeUri)) return
-    await PdfImportService.scanAndParse(result.path || '', result.treeUri)
+    if (!result) return
+    try {
+      await PdfImportService.scanAndParse(result.ref)
+    } catch (error) {
+      const runtimeError = normalizeRuntimeError(error)
+      if (runtimeError.code !== 'not-found' && runtimeError.code !== 'permission-denied') {
+        throw error
+      }
+      const replacement = await PdfManagementService.pickFolder()
+      if (!replacement) return
+      await PdfImportService.scanAndParse(replacement.ref)
+    }
     await router.push('/import-review')
   } catch (error) {
     await showToast(sanitizeError(error, '无法打开文件夹选择器'), 'danger')

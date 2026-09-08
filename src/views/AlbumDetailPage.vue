@@ -149,7 +149,7 @@ import {
 import { useRoute, useRouter } from 'vue-router'
 import { createGesture, type Gesture, IonContent, IonPage } from '@ionic/vue'
 import { createAppAlert } from '@/services/AppAlertService'
-import type { PluginListenerHandle } from '@capacitor/core'
+import type { ListenerHandle } from '@/runtime/BackendEvents'
 import { getImageUrl, JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
 import { buildPdfDocumentParams, fetchPdfArrayBuffer } from '@/services/PdfReaderService'
 import * as pdfjsLib from 'pdfjs-dist'
@@ -251,7 +251,7 @@ const chapterPdfStatuses = computed(() => {
   return map
 })
 const selectedChapterPdf = computed(() => chapterPdfMap.value.get(selectedChapterId.value) ?? null)
-let downloadProgressHandle: PluginListenerHandle | null = null
+let downloadProgressHandle: ListenerHandle | null = null
 
 type ReaderSource = 'network' | 'download' | 'pdf'
 type PreviewSource = 'network' | 'download' | 'pdf'
@@ -429,7 +429,7 @@ const previewImageTotal = ref(0)
 const previewLoading = ref(false)
 const previewSourceOverride = ref<PreviewSource | null>(null)
 const previewAutoLoad = ref(false)
-let imageReadyListenerHandle: PluginListenerHandle | null = null
+let imageReadyListenerHandle: ListenerHandle | null = null
 
 interface PreviewLoadContext {
   requestGeneration: number
@@ -895,7 +895,7 @@ const getPreferredSource = (): PreviewSource => {
 }
 
 const buildPdfReaderQuery = (pdf: ImportedPdf, page?: number) => ({
-  path: pdf.filePath,
+  fileRef: String(pdf.fileRef),
   title: pdf.fileName,
   albumId: pdf.albumId,
   albumTitle: pdf.albumTitle || albumTitle.value,
@@ -912,7 +912,7 @@ const openReaderBySource = (source: ReaderSource, page?: number) => {
 
   if (source === 'pdf') {
     const pdf = selectedChapterPdf.value
-    if (!pdf?.filePath) return
+    if (!pdf?.fileRef) return
     void router.push({
       path: '/pdf-reader',
       query: buildPdfReaderQuery(pdf, page),
@@ -1050,7 +1050,7 @@ const loadPdfPreview = async (
   pdf: ImportedPdf,
   requestGeneration: number,
 ): Promise<pdfjsLib.PDFDocumentProxy | null> => {
-  const arrayBuffer = await fetchPdfArrayBuffer(pdf.filePath)
+  const arrayBuffer = await fetchPdfArrayBuffer(pdf.fileRef)
   if (!isCurrentPreviewRequest(requestGeneration)) return null
   const pdfDoc = await pdfjsLib.getDocument(buildPdfDocumentParams(arrayBuffer)).promise
   if (!isCurrentPreviewRequest(requestGeneration)) {

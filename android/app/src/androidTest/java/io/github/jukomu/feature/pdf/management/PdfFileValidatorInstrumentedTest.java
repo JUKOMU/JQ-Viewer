@@ -2,11 +2,11 @@ package io.github.jukomu.feature.pdf.management;
 
 import android.content.Context;
 import android.graphics.pdf.PdfDocument;
-import android.net.Uri;
 
-import androidx.core.content.FileProvider;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
+
+import io.github.jukomu.feature.pdf.data.PdfRef;
 
 import org.junit.After;
 import org.junit.Before;
@@ -51,21 +51,23 @@ public class PdfFileValidatorInstrumentedTest {
     }
 
     @Test
-    public void validatesFilePathAndContentUri() throws Exception {
+    public void validatesPathAndSafFileRefs() throws Exception {
+        String pathRef = PdfRef.createPathFileRef(pdfFile.getCanonicalPath());
         PdfFileValidator.Report fileReport = PdfFileValidator.validate(
-            context, pdfFile.getAbsolutePath(), 2);
+            context, pathRef, 2);
         assertEquals(2, fileReport.pageCount);
 
-        Uri uri = FileProvider.getUriForFile(context,
-            context.getPackageName() + ".fileprovider", pdfFile);
-        PdfFileValidator.Report uriReport = PdfFileValidator.validate(context, uri.toString(), 2);
-        assertEquals(2, uriReport.pageCount);
+        String safRef = PdfRef.createSafFileRef(
+            "content://io.github.jukomu.test.pdf/document/fixture");
+        PdfFileValidator.Report safReport = PdfFileValidator.validate(context, safRef, 2);
+        assertEquals(2, safReport.pageCount);
     }
 
     @Test
     public void reportsPageMismatch() throws Exception {
         try {
-            PdfFileValidator.validate(context, pdfFile.getAbsolutePath(), 3);
+            PdfFileValidator.validate(
+                context, PdfRef.createPathFileRef(pdfFile.getCanonicalPath()), 3);
             fail("expected page mismatch");
         } catch (PdfFileValidator.ValidationException error) {
             assertEquals("PDF_PAGE_MISMATCH", error.code);
@@ -76,7 +78,8 @@ public class PdfFileValidatorInstrumentedTest {
     public void reportsMissingFileAsInvalidInput() throws Exception {
         assertEquals(true, pdfFile.delete());
         try {
-            PdfFileValidator.validate(context, pdfFile.getAbsolutePath(), 2);
+            PdfFileValidator.validate(
+                context, PdfRef.createPathFileRef(pdfFile.getCanonicalPath()), 2);
             fail("expected missing file failure");
         } catch (PdfFileValidator.ValidationException error) {
             assertEquals("PDF_MISSING", error.code);

@@ -42,7 +42,14 @@ public class SystemPluginContractInstrumentedTest {
             () -> activityHolder[0] = new RecordingActivity());
         activity = activityHolder[0];
         permissionService = new FakePermissionService();
-        systemHandler = new SystemPluginHandler(
+        systemHandler = createSystemHandler((uri, flags) -> {
+        });
+        injectSystemHandler(plugin, systemHandler);
+    }
+
+    private SystemPluginHandler createSystemHandler(
+        SystemPluginHandler.PersistableUriPermission persistableUriPermission) {
+        return new SystemPluginHandler(
             context,
             () -> activity,
             permissionService,
@@ -52,8 +59,8 @@ public class SystemPluginContractInstrumentedTest {
             (permission, requestCode) -> {
                 activity.requestedPermissions = new String[]{permission};
                 activity.permissionRequestCode = requestCode;
-            });
-        injectSystemHandler(plugin, systemHandler);
+            },
+            persistableUriPermission);
     }
 
     @After
@@ -319,6 +326,28 @@ public class SystemPluginContractInstrumentedTest {
     }
 
     @Test
+    public void folderPickerRejectsWhenPersistablePermissionFails() {
+        SecurityException failure = new SecurityException("permission unavailable");
+        systemHandler.destroy();
+        systemHandler = createSystemHandler((uri, flags) -> {
+            throw failure;
+        });
+        injectSystemHandler(plugin, systemHandler);
+        RecordingPluginCall call = call("pickFolder");
+        plugin.pickFolder(call);
+        int requestCode = activity.activityRequestCode;
+        Uri treeUri = Uri.parse(
+            "content://com.android.externalstorage.documents/tree/primary%3ADownload");
+
+        plugin.handleActivityResult(requestCode, RESULT_OK, new Intent().setData(treeUri));
+
+        assertEquals("无法持久化文件夹权限", call.rejectionMessage);
+        assertEquals(failure, call.rejectionException);
+        assertNull(call.resolvedData);
+        assertSynchronous(call);
+    }
+
+    @Test
     public void pickerLaunchFailureRejectsAndClearsPendingCall() {
         IllegalStateException failure = new IllegalStateException("picker unavailable");
         activity.startFailure = failure;
@@ -357,7 +386,7 @@ public class SystemPluginContractInstrumentedTest {
             JSArray fileRefs = new JSArray();
             fileRefs.put(PdfRef.createPathFileRef(existingFile.getAbsolutePath()));
             fileRefs.put(PdfRef.createPathFileRef(existingFile.getAbsolutePath() + ".missing"));
-            fileRefs.put("file:saf:content://io.github.jukomu.missing/item");
+            fileRefs.put("file:saf:content://io.github.jukomu.test.pdf/document/missing");
             RecordingPluginCall files = call("checkFilesExist", "fileRefs", fileRefs);
             RecordingPluginCall externalPath = call("getExternalStoragePath");
 

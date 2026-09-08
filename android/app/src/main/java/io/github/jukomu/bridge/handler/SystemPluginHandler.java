@@ -46,6 +46,12 @@ import static android.app.Activity.RESULT_OK;
  */
 public final class SystemPluginHandler {
 
+    /** 封装可持久化 URI 权限操作，默认实现直接调用 ContentResolver。 */
+    @FunctionalInterface
+    public interface PersistableUriPermission {
+        void take(Uri uri, int flags);
+    }
+
     private static final String TAG = "SystemPluginHandler";
     private static final long PROBE_DEBOUNCE_MS = 2000;
     private static final int REQUEST_PICK_IMAGE = 1001;
@@ -58,6 +64,7 @@ public final class SystemPluginHandler {
     private final Supplier<JmApiClient> clientSupplier;
     private final Consumer<JSObject> networkProbeConsumer;
     private final BiConsumer<String, Integer> permissionRequester;
+    private final PersistableUriPermission persistableUriPermission;
     private final ExecutorService ocrExecutor;
     private final Object probeLock = new Object();
     private final Object permissionLock = new Object();
@@ -79,12 +86,25 @@ public final class SystemPluginHandler {
                                Supplier<JmApiClient> clientSupplier,
                                Consumer<JSObject> networkProbeConsumer,
                                BiConsumer<String, Integer> permissionRequester) {
+        this(context, activitySupplier, permissionService, clientSupplier,
+            networkProbeConsumer, permissionRequester,
+            (uri, flags) -> context.getContentResolver()
+                .takePersistableUriPermission(uri, flags));
+    }
+
+    public SystemPluginHandler(Context context, Supplier<Activity> activitySupplier,
+                               PermissionService permissionService,
+                               Supplier<JmApiClient> clientSupplier,
+                               Consumer<JSObject> networkProbeConsumer,
+                               BiConsumer<String, Integer> permissionRequester,
+                               PersistableUriPermission persistableUriPermission) {
         this.context = context;
         this.activitySupplier = activitySupplier;
         this.permissionService = permissionService;
         this.clientSupplier = clientSupplier;
         this.networkProbeConsumer = networkProbeConsumer;
         this.permissionRequester = permissionRequester;
+        this.persistableUriPermission = persistableUriPermission;
         this.ocrExecutor = Executors.newSingleThreadExecutor();
     }
 
@@ -714,7 +734,7 @@ public final class SystemPluginHandler {
 
         Uri treeUri = data.getData();
         try {
-            context.getContentResolver().takePersistableUriPermission(
+            persistableUriPermission.take(
                 treeUri,
                 Intent.FLAG_GRANT_READ_URI_PERMISSION
                     | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);

@@ -15,8 +15,8 @@ function encodeFileRef(file: FileRef): string {
 }
 
 /**
- * 构造 Android 资源 URL 生成器：图片与 PDF 文档走虚拟 WebView 资源，
- * PDF 逐页渲染则复用原生 RPC 返回的图片 URL。
+ * 构造 Android 资源 URL 生成器：图片、PDF 文档和原生 PDF 页面都走受控的
+ * 虚拟 WebView 资源；页面渲染结果只透传原生返回的 resourceUrl。
  */
 export function createAndroidResourceResolver(native: JmcomicClient): ResourceResolver {
   return {
@@ -33,7 +33,7 @@ export function createAndroidResourceResolver(native: JmcomicClient): ResourceRe
               page,
               targetWidth,
             })
-            return result.imageUrl
+            return result.resourceUrl
           }),
       },
     },

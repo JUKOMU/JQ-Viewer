@@ -9,7 +9,6 @@ import android.graphics.pdf.PdfRenderer;
 import android.net.Uri;
 import android.os.ParcelFileDescriptor;
 import android.provider.DocumentsContract;
-import android.util.Base64;
 import android.util.Log;
 import androidx.core.content.FileProvider;
 import androidx.documentfile.provider.DocumentFile;
@@ -24,10 +23,12 @@ import io.github.jukomu.feature.pdf.data.PdfStore;
 import io.github.jukomu.feature.pdf.export.PdfExportJobValidator;
 import io.github.jukomu.feature.pdf.export.PdfExportService;
 import io.github.jukomu.feature.pdf.management.PdfManagementService;
+import io.github.jukomu.feature.pdf.render.PdfPageCache;
+import io.github.jukomu.feature.pdf.render.PdfPageResourceId;
+import io.github.jukomu.feature.pdf.render.PdfPageSizing;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.util.ArrayList;
@@ -499,10 +500,60 @@ public final class PdfPluginHandler {
             call.reject("fileRef is required");
             return;
         }
+        if (pageNumber < 1) {
+            call.reject("page out of range");
+            return;
+        }
+
+        dispatchPdfCommand(() -> renderPdfPageOnExecutor(call, fileRef, pageNumber, targetWidth));
+    }
+
+    /** PDF 页面渲染和磁盘资源写入统一在单线程 executor 中执行。 */
+    private void renderPdfPageOnExecutor(PluginCall call, String fileRef,
+                                         int pageNumber, int targetWidth) {
+        final PdfPageCache pageCache;
+        try {
+            pageCache = PdfPageCache.getInstance(context);
+        } catch (Exception error) {
+            call.reject("PDF 页面渲染失败: " + error.getMessage(), error);
+            return;
+        }
+        PdfPageCache.SourceStamp sourceStamp;
+        try {
+            sourceStamp = pageCache.getSourceStamp(fileRef);
+        } catch (FileNotFoundException error) {
+            rejectWithCode(call, "PDF 页面渲染失败: " + error.getMessage(),
+                PdfOperationException.NOT_FOUND, error);
+            return;
+        } catch (SecurityException error) {
+            rejectWithCode(call, "PDF 页面渲染失败: " + error.getMessage(),
+                PdfOperationException.PERMISSION_DENIED, error);
+            return;
+        } catch (Exception error) {
+            call.reject("PDF 页面渲染失败: " + error.getMessage(), error);
+            return;
+        }
+
+        final String resourceId;
+        try {
+            resourceId = PdfPageResourceId.create(
+                fileRef, pageNumber, targetWidth, sourceStamp.length, sourceStamp.lastModified);
+        } catch (Exception error) {
+            call.reject("PDF 页面渲染失败: " + error.getMessage(), error);
+            return;
+        }
+
+        if (pageCache.hasPage(resourceId)) {
+            JSObject result = new JSObject();
+            result.put("resourceUrl", pageCache.resourceUrl(resourceId));
+            call.resolve(result);
+            return;
+        }
 
         ParcelFileDescriptor pfd = null;
         PdfRenderer renderer = null;
-        PdfRenderer.Page page = null;
+        PdfRenderer.Page rendererPage = null;
+        Bitmap bitmap = null;
         try {
             pfd = openPdfDescriptor(fileRef);
             renderer = new PdfRenderer(pfd);
@@ -512,28 +563,36 @@ public final class PdfPluginHandler {
                 return;
             }
 
-            page = renderer.openPage(pageNumber - 1);
-            int width = Math.max(360, Math.min(targetWidth, 2400));
-            int height = Math.max(1, Math.round(width * (page.getHeight() / (float) page.getWidth())));
-            Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+            rendererPage = renderer.openPage(pageNumber - 1);
+            PdfPageSizing.Size size = PdfPageSizing.calculate(
+                targetWidth, rendererPage.getWidth(), rendererPage.getHeight());
+            bitmap = Bitmap.createBitmap(size.width, size.height, Bitmap.Config.ARGB_8888);
             Canvas canvas = new Canvas(bitmap);
             canvas.drawColor(Color.WHITE);
-            page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY);
+            rendererPage.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY);
+            pageCache.writePngAtomically(resourceId, bitmap);
 
-            ByteArrayOutputStream out = new ByteArrayOutputStream();
-            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out);
-            bitmap.recycle();
-
-            String encoded = Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP);
-            JSObject ret = new JSObject();
-            ret.put("imageUrl", "data:image/png;base64," + encoded);
-            call.resolve(ret);
+            JSObject result = new JSObject();
+            result.put("resourceUrl", pageCache.resourceUrl(resourceId));
+            call.resolve(result);
+        } catch (FileNotFoundException error) {
+            rejectWithCode(call, "PDF 页面渲染失败: " + error.getMessage(),
+                PdfOperationException.NOT_FOUND, error);
+        } catch (SecurityException error) {
+            rejectWithCode(call, "PDF 页面渲染失败: " + error.getMessage(),
+                PdfOperationException.PERMISSION_DENIED, error);
+        } catch (OutOfMemoryError error) {
+            call.reject("PDF 页面渲染失败: " + error.getMessage(),
+                new RuntimeException("PDF 页面资源不足", error));
         } catch (Exception e) {
             call.reject("PDF 页面渲染失败: " + e.getMessage(), e);
         } finally {
-            if (page != null) {
+            if (bitmap != null && !bitmap.isRecycled()) {
+                bitmap.recycle();
+            }
+            if (rendererPage != null) {
                 try {
-                    page.close();
+                    rendererPage.close();
                 } catch (Exception ignored) {
                 }
             }

@@ -425,7 +425,7 @@ export interface JmcomicClient {
     fileRef: string
     page: number
     targetWidth: number
-  }): Promise<{ imageUrl: string }>
+  }): Promise<{ resourceUrl: string }>
 
   setReaderDisplayMode(options: { mode: string }): Promise<{ success: boolean }>
 

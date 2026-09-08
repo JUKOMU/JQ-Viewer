@@ -1,6 +1,9 @@
 package io.github.jukomu.bridge;
 
 import android.content.Context;
+import android.graphics.Color;
+import android.graphics.pdf.PdfDocument;
+import android.webkit.WebResourceResponse;
 
 import androidx.test.platform.app.InstrumentationRegistry;
 
@@ -10,11 +13,16 @@ import io.github.jukomu.bridge.handler.PdfPluginHandler;
 import io.github.jukomu.feature.download.data.DownloadStore;
 import io.github.jukomu.feature.pdf.data.PdfStore;
 import io.github.jukomu.feature.pdf.data.PdfRef;
+import io.github.jukomu.feature.pdf.render.PdfPageCache;
+import io.github.jukomu.feature.pdf.render.PdfPageSizing;
+import io.github.jukomu.feature.pdf.web.PdfServer;
 
 import org.junit.Before;
 import org.junit.Test;
 
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -33,6 +41,7 @@ public class PdfPluginContractInstrumentedTest {
         context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         pdfStore = PdfStore.getInstance(context);
         handler = new PdfPluginHandler(context, DownloadStore.getInstance(context), Runnable::run);
+        PdfPageCache.getInstance(context).clear();
         missingPdf = new File(context.getCacheDir(), "missing-a1-pdf.pdf");
         if (missingPdf.exists()) assertTrue(missingPdf.delete());
     }
@@ -49,6 +58,13 @@ public class PdfPluginContractInstrumentedTest {
         handler.getPdfInfo(info);
         assertEquals("not-found", info.rejectionCode);
         assertTrue(info.rejectionMessage.startsWith("PDF 信息读取失败: "));
+
+        RecordingPluginCall render = call("renderPdfPage", "fileRef",
+            PdfRef.createPathFileRef(missingPdf.getAbsolutePath()), "page", 1,
+            "targetWidth", 900);
+        handler.renderPdfPage(render);
+        assertEquals("not-found", render.rejectionCode);
+        assertTrue(render.rejectionMessage.startsWith("PDF 页面渲染失败: "));
 
         RecordingPluginCall inspect = call("inspectPdfFileForDeletion", "id", Integer.MAX_VALUE);
         handler.inspectPdfFileForDeletion(inspect);
@@ -96,6 +112,77 @@ public class PdfPluginContractInstrumentedTest {
         assertEquals("already_missing", delete.resolvedData.getString("result"));
         assertNull(delete.rejectionCode);
         assertEquals(1, delete.completionCount);
+    }
+
+    @Test
+    public void renderPdfPageReturnsStableResourceUrlAndPdfServerStreamsPng() throws Exception {
+        File pdf = new File(context.getCacheDir(), "a4-render-" + System.nanoTime() + ".pdf");
+        createPdf(pdf);
+        try {
+            String fileRef = PdfRef.createPathFileRef(pdf.getCanonicalPath());
+            RecordingPluginCall first = call("renderPdfPage",
+                "fileRef", fileRef, "page", 1, "targetWidth", 900);
+            handler.renderPdfPage(first);
+            assertEquals(1, first.completionCount);
+            assertNull(first.rejectionMessage);
+            String firstUrl = first.resolvedData.getString("resourceUrl");
+            assertTrue(firstUrl.matches("https://jqviewer\\.local/pdf-page/[0-9a-f]{64}\\.png"));
+            assertTrue(PdfServer.isPdfPageUrl(firstUrl));
+            assertEquals(1, first.resolvedData.length());
+
+            RecordingPluginCall second = call("renderPdfPage",
+                "fileRef", fileRef, "page", 1, "targetWidth", 900);
+            handler.renderPdfPage(second);
+            assertEquals(firstUrl, second.resolvedData.getString("resourceUrl"));
+
+            WebResourceResponse response = PdfServer.handlePdfPageRequest(firstUrl, context);
+            assertEquals(200, response.getStatusCode());
+            assertEquals("image/png", response.getMimeType());
+            assertFalse(response.getResponseHeaders().containsKey("X-JQViewer-Pdf-Error"));
+            byte[] header = new byte[8];
+            try (InputStream input = response.getData()) {
+                assertEquals(8, input.read(header));
+            }
+            assertEquals((byte) 0x89, header[0]);
+            assertEquals((byte) 0x50, header[1]);
+            assertEquals((byte) 0x4e, header[2]);
+            assertEquals((byte) 0x47, header[3]);
+        } finally {
+            assertTrue(pdf.delete() || !pdf.exists());
+            PdfPageCache.getInstance(context).clear();
+        }
+    }
+
+    @Test
+    public void pdfPageRouteRejectsInvalidAndMissingResources() {
+        WebResourceResponse invalid = PdfServer.handlePdfPageRequest(
+            "https://jqviewer.local/pdf-page/not-a-resource.png", context);
+        assertEquals(400, invalid.getStatusCode());
+        assertFalse(PdfServer.isPdfPageUrl(
+            "https://other.example/pdf-page/" + "a".repeat(64) + ".png"));
+
+        WebResourceResponse missing = PdfServer.handlePdfPageRequest(
+            "https://jqviewer.local/pdf-page/" + "a".repeat(64) + ".png", context);
+        assertEquals(404, missing.getStatusCode());
+    }
+
+    @Test
+    public void largePdfPagesUseTheFixedPixelBudget() {
+        PdfPageSizing.Size size = PdfPageSizing.calculate(2400, 1000, 10_000);
+        assertTrue(size.pixels <= PdfPageSizing.MAX_RENDER_PIXELS);
+    }
+
+    private static void createPdf(File file) throws Exception {
+        PdfDocument document = new PdfDocument();
+        PdfDocument.Page page = document.startPage(new PdfDocument.PageInfo.Builder(
+            600, 800, 1).create());
+        page.getCanvas().drawColor(Color.WHITE);
+        document.finishPage(page);
+        try (FileOutputStream output = new FileOutputStream(file)) {
+            document.writeTo(output);
+        } finally {
+            document.close();
+        }
     }
 
     private static RecordingPluginCall call(String methodName, Object... values) {

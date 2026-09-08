@@ -36,6 +36,7 @@ const mocks = vi.hoisted(() => ({
     push: vi.fn(),
   },
   displayMode: 'vertical',
+  preloadPages: 1,
   fetchPdfArrayBuffer: vi.fn(),
   buildPdfDocumentParams: vi.fn(),
   getDocument: vi.fn(),
@@ -119,7 +120,7 @@ vi.mock('@/services/JmcomicService', () => ({
 vi.mock('@/services/SettingsService', () => ({
   SettingsStore: {
     getReaderDisplayMode: () => mocks.displayMode,
-    getReaderPreloadPages: () => 1,
+    getReaderPreloadPages: () => mocks.preloadPages,
     getReaderScreenOrientation: () => 'auto',
     getReaderBrightness: () => -1,
     getReaderKeepScreenOn: () => false,
@@ -221,10 +222,14 @@ const VerticalViewStub = defineComponent({
   name: 'VerticalScrollView',
   props: {
     imageMap: { type: Object as PropType<Map<number, string>>, required: true },
+    failedSortOrders: { type: Object as PropType<Set<number>>, required: true },
+    failedMessages: { type: Object as PropType<Map<number, string>>, required: true },
+    allowRetry: { type: Boolean, required: true },
+    retryingSortOrders: { type: Object as PropType<Set<number>>, required: true },
     totalCount: { type: Number, required: true },
     currentIndex: { type: Number, required: true },
   },
-  emits: ['update:current-index', 'request-range'],
+  emits: ['update:current-index', 'request-range', 'image-error'],
   setup(_, { expose }) {
     const elementRef = ref<HTMLElement | null>(null)
     const scrollToIndex = vi.fn()
@@ -242,10 +247,14 @@ const HorizontalViewStub = defineComponent({
   name: 'HorizontalPageView',
   props: {
     imageMap: { type: Object as PropType<Map<number, string>>, required: true },
+    failedSortOrders: { type: Object as PropType<Set<number>>, required: true },
+    failedMessages: { type: Object as PropType<Map<number, string>>, required: true },
+    allowRetry: { type: Boolean, required: true },
+    retryingSortOrders: { type: Object as PropType<Set<number>>, required: true },
     totalCount: { type: Number, required: true },
     currentIndex: { type: Number, required: true },
   },
-  emits: ['update:current-index', 'toggle-toolbar'],
+  emits: ['update:current-index', 'toggle-toolbar', 'image-error'],
   setup(_, { expose }) {
     const elementRef = ref<HTMLElement | null>(null)
     const scrollToIndex = vi.fn()
@@ -328,6 +337,7 @@ function triggerResize() {
 beforeEach(() => {
   vi.clearAllMocks()
   mocks.displayMode = 'vertical'
+  mocks.preloadPages = 1
   mocks.setRouteQuery?.({
     fileRef: '/books/test.pdf',
     title: '测试 PDF',
@@ -475,6 +485,74 @@ describe('PdfReaderPage PDF 专属渲染尺寸', () => {
       'danger',
     )
     expect(mocks.router.back).toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  test('native PDF 页面资源失败时同一 generation 只自动重试一次', async () => {
+    mocks.displayMode = 'horizontal'
+    const loadFailure = deferred<never>()
+    mocks.getDocument.mockReturnValue({ promise: loadFailure.promise })
+    const pageUrls = new Map<number, string>()
+    mocks.renderPdfPage.mockImplementation(({ page }: { page: number }) => {
+      if (!pageUrls.has(page)) {
+        pageUrls.set(page, `https://jqviewer.local/pdf-page/${'a'.repeat(63)}${page}.png`)
+      }
+      return Promise.resolve(pageUrls.get(page))
+    })
+
+    const wrapper = mountPage()
+    loadFailure.reject(new Error('unsupported'))
+    await settle()
+
+    const view = currentView(wrapper)
+    const firstUrl = view.props('imageMap').get(1)
+    expect(firstUrl).toBe(pageUrls.get(1))
+    view.vm.$emit('image-error', 1, firstUrl)
+    await settle()
+
+    expect(
+      mocks.renderPdfPage.mock.calls.filter(([call]) => (call as { page: number }).page === 1),
+    ).toHaveLength(2)
+    expect((view.props('failedSortOrders') as Set<number>).has(1)).toBe(false)
+
+    const retryUrl = view.props('imageMap').get(1)
+    view.vm.$emit('image-error', 1, retryUrl)
+    await settle()
+
+    expect(
+      mocks.renderPdfPage.mock.calls.filter(([call]) => (call as { page: number }).page === 1),
+    ).toHaveLength(2)
+    expect((view.props('failedSortOrders') as Set<number>).has(1)).toBe(true)
+    expect((view.props('failedMessages') as Map<number, string>).get(1)).toBe('PDF 页面渲染失败')
+    expect(mocks.showToast).toHaveBeenCalledWith('PDF 页面渲染失败', 'danger')
+    wrapper.unmount()
+  })
+
+  test('native PDF 渲染队列最多保持两个活跃调用', async () => {
+    mocks.displayMode = 'horizontal'
+    mocks.preloadPages = 2
+    mocks.getPdfInfo.mockResolvedValue({ pageCount: 4 })
+    const loadFailure = deferred<never>()
+    mocks.getDocument.mockReturnValue({ promise: loadFailure.promise })
+    const nativeRenders: Array<Deferred<string>> = []
+    mocks.renderPdfPage.mockImplementation(() => {
+      const pending = deferred<string>()
+      nativeRenders.push(pending)
+      return pending.promise
+    })
+
+    const wrapper = mountPage()
+    loadFailure.reject(new Error('unsupported'))
+    await settle()
+    expect(nativeRenders).toHaveLength(2)
+
+    nativeRenders[0].resolve(`https://jqviewer.local/pdf-page/${'b'.repeat(64)}.png`)
+    await settle()
+    expect(nativeRenders).toHaveLength(3)
+
+    nativeRenders[1].resolve(`https://jqviewer.local/pdf-page/${'c'.repeat(64)}.png`)
+    nativeRenders[2].resolve(`https://jqviewer.local/pdf-page/${'d'.repeat(64)}.png`)
+    await settle()
     wrapper.unmount()
   })
 

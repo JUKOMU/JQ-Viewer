@@ -84,8 +84,10 @@ describe('Android bridge adapters', () => {
     expect(remove).toHaveBeenCalledOnce()
   })
 
-  test('Android 资源解析保持现有虚拟 URL 和 native render fallback', async () => {
-    const renderPdfPage = vi.fn().mockResolvedValue({ imageUrl: 'data:image/png;base64,abc' })
+  test('Android 资源解析保持虚拟 URL 并只透传 native resourceUrl', async () => {
+    const renderPdfPage = vi.fn().mockResolvedValue({
+      resourceUrl: 'https://jqviewer.local/pdf-page/' + 'a'.repeat(64) + '.png',
+    })
     const native = createNative({ renderPdfPage })
     const resources = createAndroidResourceResolver(native)
 
@@ -103,7 +105,7 @@ describe('Android bridge adapters', () => {
           page: 3,
           targetWidth: 900,
         }),
-      ).resolves.toBe('data:image/png;base64,abc')
+      ).resolves.toBe('https://jqviewer.local/pdf-page/' + 'a'.repeat(64) + '.png')
     }
     expect(renderPdfPage).toHaveBeenCalledWith({
       fileRef: 'file:path:/books/a.pdf',

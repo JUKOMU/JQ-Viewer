@@ -14,7 +14,7 @@ export interface ResourceResolver {
 
   pdfDocumentUrl(file: FileRef): string
 
-  /** PDF 逐页渲染。若平台只能由宿主渲染（如通过 RPC 返回 data URL），则作为可选能力暴露。 */
+  /** PDF 逐页渲染。返回受控资源 URL，页面不接触平台传输或二进制编码细节。 */
   renderPdfPage: Capability<{
     getUrl(input: { file: FileRef; page: number; targetWidth: number }): Promise<string>
   }>

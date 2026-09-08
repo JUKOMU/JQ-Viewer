@@ -5,12 +5,15 @@ import android.content.Context;
 import android.net.Uri;
 import android.webkit.WebResourceResponse;
 import io.github.jukomu.feature.cache.ImageCache;
+import io.github.jukomu.feature.pdf.render.PdfPageCache;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Serves PDF files through the virtual WebView host used by the PDF reader.
@@ -20,6 +23,9 @@ public class PdfServer {
 
     static final String VIRTUAL_HOST = ImageCache.VIRTUAL_HOST;
     static final String PDF_PATH_PREFIX = "/pdf/";
+    static final String PDF_PAGE_PATH_PREFIX = "/pdf-page/";
+    private static final Pattern PDF_PAGE_PATH_PATTERN = Pattern.compile(
+        "^" + PDF_PAGE_PATH_PREFIX + "([0-9a-f]{64})\\.png$");
 
     public static boolean isPdfUrl(String url) {
         if (url == null) return false;
@@ -27,6 +33,18 @@ public class PdfServer {
         if (idx < 0) return false;
         String pathPart = url.substring(idx + VIRTUAL_HOST.length());
         return pathPart.startsWith(PDF_PATH_PREFIX);
+    }
+
+    /** 只匹配固定 host、scheme 和页面 PNG 路径，避免把 URL 当作任意文件路径。 */
+    public static boolean isPdfPageUrl(String url) {
+        Uri uri = parseUri(url);
+        return uri != null
+            && "https".equalsIgnoreCase(uri.getScheme())
+            && VIRTUAL_HOST.equals(uri.getHost())
+            && uri.getQuery() == null
+            && uri.getFragment() == null
+            && PDF_PAGE_PATH_PATTERN.matcher(uri.getPath() == null ? "" : uri.getPath())
+                .matches();
     }
 
     public static WebResourceResponse withCorsHeaders(WebResourceResponse response) {
@@ -47,7 +65,8 @@ public class PdfServer {
     }
 
     public static WebResourceResponse errorResponse(int statusCode, String reasonPhrase, String errorCode) {
-        byte[] body = errorCode.getBytes(StandardCharsets.UTF_8);
+        String bodyText = errorCode == null ? reasonPhrase : errorCode;
+        byte[] body = bodyText.getBytes(StandardCharsets.UTF_8);
         return new WebResourceResponse(
             "text/plain",
             "UTF-8",
@@ -56,6 +75,29 @@ public class PdfServer {
             corsHeaders(errorCode),
             new ByteArrayInputStream(body)
         );
+    }
+
+    /** 读取已生成的 PNG；该入口不创建 PdfRenderer，也不访问源 PDF。 */
+    public static WebResourceResponse handlePdfPageRequest(String url, Context context) {
+        if (!isPdfPageUrl(url)) {
+            return errorResponse(400, "Bad Request", null);
+        }
+
+        Uri uri = parseUri(url);
+        Matcher matcher = PDF_PAGE_PATH_PATTERN.matcher(uri.getPath());
+        if (!matcher.matches()) {
+            return errorResponse(400, "Bad Request", null);
+        }
+
+        String resourceId = matcher.group(1);
+        try {
+            FileInputStream stream = PdfPageCache.getInstance(context).openPage(resourceId);
+            return withCorsHeaders(new WebResourceResponse("image/png", null, stream));
+        } catch (FileNotFoundException error) {
+            return errorResponse(404, "Not Found", null);
+        } catch (Exception error) {
+            return errorResponse(500, "Internal Server Error", null);
+        }
     }
 
     private static Map<String, String> corsHeaders(String errorCode) {
@@ -67,6 +109,15 @@ public class PdfServer {
             headers.put("X-JQViewer-Pdf-Error", errorCode);
         }
         return headers;
+    }
+
+    private static Uri parseUri(String url) {
+        if (url == null || url.isEmpty()) return null;
+        try {
+            return Uri.parse(url);
+        } catch (RuntimeException error) {
+            return null;
+        }
     }
 
     public static WebResourceResponse handleRequest(String url, Context context) {

@@ -30,6 +30,7 @@ import io.github.jukomu.feature.pdf.export.PdfExportCommandPort;
 import io.github.jukomu.feature.pdf.export.PdfExportCommandRouter;
 import io.github.jukomu.feature.pdf.export.PdfExportEventSink;
 import io.github.jukomu.feature.pdf.export.PdfExportService;
+import io.github.jukomu.feature.pdf.render.PdfPageCache;
 import io.github.jukomu.feature.preload.PreloadService;
 import io.github.jukomu.feature.settings.SettingsService;
 import io.github.jukomu.feature.settings.relocation.DownloadRelocationService;
@@ -144,6 +145,7 @@ public class JmcomicPlugin extends Plugin {
         FavoriteStore favoriteStore = FavoriteStore.getInstance(ctx);
         favoriteHandler = new FavoritePluginHandler(favoriteStore);
         PdfStore.getInstance(ctx);
+        PdfPageCache.getInstance(ctx);
         PdfExportService pdfExportService = PdfExportService.getInstance(ctx);
         this.pdfEventSink = snapshot -> {
             if (snapshot == null) return;

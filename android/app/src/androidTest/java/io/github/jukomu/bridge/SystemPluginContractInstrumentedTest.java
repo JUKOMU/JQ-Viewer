@@ -326,7 +326,7 @@ public class SystemPluginContractInstrumentedTest {
     }
 
     @Test
-    public void folderPickerRejectsWhenPersistablePermissionFails() {
+    public void folderPickerRejectsWhenPersistablePermissionFails() throws Exception {
         SecurityException failure = new SecurityException("permission unavailable");
         systemHandler.destroy();
         systemHandler = createSystemHandler((uri, flags) -> {

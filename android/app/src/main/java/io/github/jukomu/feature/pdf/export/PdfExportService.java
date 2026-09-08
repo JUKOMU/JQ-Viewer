@@ -645,6 +645,8 @@ public class PdfExportService {
                     }
                 }
             );
+            long pathOutputLength = volume.file.length();
+            long pathOutputLastModified = volume.file.lastModified();
             PdfFileValidator.Report report;
             try {
                 report = PdfFileValidator.validate(
@@ -657,7 +659,14 @@ public class PdfExportService {
             try {
                 checkExportCancelled(job.exportId);
             } catch (ExportCancelledException error) {
-                cleanupPublishedSafDestination(job, outputFileRef, error);
+                cleanupPublishedOutput(
+                    job,
+                    volume,
+                    outputFileRef,
+                    pathOutputLength,
+                    pathOutputLastModified,
+                    error
+                );
                 throw error;
             }
             if (firstOutputFileRef == null) {
@@ -1113,22 +1122,88 @@ public class PdfExportService {
         }
     }
 
-    private void cleanupPublishedSafDestination(ExportJob job, String outputFileRef,
-                                                Throwable original) {
-        if (job == null || outputFileRef == null || !isSafTargetFolder(job.targetFolderRef)) {
+    private void cleanupPublishedOutput(ExportJob job, ExportVolume volume,
+                                        String outputFileRef, long pathOutputLength,
+                                        long pathOutputLastModified, Throwable original) {
+        if (job == null || volume == null || outputFileRef == null) {
             return;
         }
         try {
             PdfRef.Parsed parsed = PdfRef.parse(outputFileRef);
-            if (parsed.kind != PdfRef.Kind.FILE || parsed.provider != PdfRef.Provider.SAF) {
+            if (parsed.kind != PdfRef.Kind.FILE) {
                 return;
             }
-            cleanupCreatedSafDestination(
-                PdfRefResolver.documentFile(context, outputFileRef),
+            if (parsed.provider == PdfRef.Provider.SAF) {
+                cleanupCreatedSafDestination(
+                    PdfRefResolver.documentFile(context, outputFileRef),
+                    original
+                );
+                return;
+            }
+            cleanupOwnedPathOutput(
+                volume.file,
+                parsed.payload,
+                pathOutputLength,
+                pathOutputLastModified,
                 original
             );
         } catch (RuntimeException cleanupFailure) {
-            Log.w(TAG, "清理取消的 SAF 导出文件时发生异常", cleanupFailure);
+            Log.w(TAG, "清理取消的 PDF 导出文件时发生异常", cleanupFailure);
+            if (original != null) {
+                original.addSuppressed(cleanupFailure);
+            }
+        }
+    }
+
+    /**
+     * path 输出只允许删除当前卷在本次写入后留下的普通文件，避免触及其他卷或目录。
+     */
+    static void cleanupOwnedPathOutput(File volumeFile, String outputPath,
+                                       long expectedLength, long expectedLastModified,
+                                       Throwable original) {
+        if (volumeFile == null || outputPath == null || outputPath.isEmpty()) {
+            return;
+        }
+        try {
+            File referencedPath = new File(outputPath);
+            if (java.nio.file.Files.isSymbolicLink(volumeFile.toPath())
+                || java.nio.file.Files.isSymbolicLink(referencedPath.toPath())) {
+                Log.w(TAG, "取消清理跳过符号链接 path 输出");
+                return;
+            }
+            File expectedPath = volumeFile.getCanonicalFile();
+            File actualPath = referencedPath.getCanonicalFile();
+            if (!expectedPath.equals(actualPath)) {
+                Log.w(TAG, "取消清理跳过非当前卷 path 输出: " + outputPath);
+                return;
+            }
+            if (!actualPath.exists()) {
+                return;
+            }
+            if (!actualPath.isFile()) {
+                Log.w(TAG, "取消清理跳过非普通文件 path 输出: " + outputPath);
+                return;
+            }
+            if (actualPath.length() != expectedLength
+                || actualPath.lastModified() != expectedLastModified) {
+                Log.w(TAG, "取消清理跳过已变化的 path 输出: " + outputPath);
+                return;
+            }
+            if (!actualPath.delete()) {
+                IOException cleanupFailure = new IOException(
+                    "无法删除取消的 path PDF 输出: " + outputPath);
+                Log.w(TAG, cleanupFailure.getMessage());
+                if (original != null) {
+                    original.addSuppressed(cleanupFailure);
+                }
+            }
+        } catch (IOException cleanupFailure) {
+            Log.w(TAG, "取消清理 path PDF 输出失败", cleanupFailure);
+            if (original != null) {
+                original.addSuppressed(cleanupFailure);
+            }
+        } catch (RuntimeException cleanupFailure) {
+            Log.w(TAG, "取消清理 path PDF 输出时发生异常", cleanupFailure);
             if (original != null) {
                 original.addSuppressed(cleanupFailure);
             }

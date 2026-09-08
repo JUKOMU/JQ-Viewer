@@ -186,6 +186,25 @@ public class PdfExportServiceTest {
     }
 
     @Test
+    public void cleansOnlyTheMatchingOwnedPathVolume() throws Exception {
+        File volume = temporaryFolder.newFile("volume.pdf");
+        File otherVolume = temporaryFolder.newFile("other-volume.pdf");
+        Files.write(volume.toPath(), new byte[]{1, 2, 3});
+        Files.write(otherVolume.toPath(), new byte[]{4, 5, 6});
+
+        PdfExportService.cleanupOwnedPathOutput(
+            volume,
+            volume.getCanonicalPath(),
+            volume.length(),
+            volume.lastModified(),
+            new IOException("PDF 导出已取消")
+        );
+
+        assertFalse(volume.exists());
+        assertTrue(otherVolume.exists());
+    }
+
+    @Test
     public void retryRequiresThePersistedChapterAndVolumeLayout() throws Exception {
         File output = new File(temporaryFolder.getRoot(), "retry.pdf");
         List<PdfExportService.ExportVolume> volumes =

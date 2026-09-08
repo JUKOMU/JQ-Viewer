@@ -99,12 +99,23 @@ public class PdfExportServiceInstrumentedTest {
 
         List<PdfExportService.ExportVolume> volumes =
             PdfExportService.buildVolumes(output, 4, job.splitPages);
-        PdfExportService.getInstance(context).submitExport(Arrays.asList(job));
+        PdfExportService service = PdfExportService.getInstance(context);
+        JSONObject submission = service.submitExport(Arrays.asList(job));
+        String exportId = submission.getJSONArray("tasks").getJSONObject(0)
+            .getString("exportId");
         waitForVolumes(volumes);
 
+        JSONObject completed = waitForTaskTerminal(exportId, EXPORT_TIMEOUT_MS);
+        assertEquals("completed", completed.optString("status"));
         assertFalse(output.exists());
         assertPdf(volumes.get(0).file, new int[][]{{10, 20}, {20, 30}, {30, 40}});
         assertPdf(volumes.get(1).file, new int[][]{{40, 50}});
+        PdfStore store = PdfStore.getInstance(context);
+        for (int index = 0; index < volumes.size(); index++) {
+            JSONObject persisted = store.getExportVolume(exportId, index + 1);
+            assertEquals("completed", persisted.optString("status"));
+            assertNotNull(store.getFileByRef(persisted.getString("outputFileRef")));
+        }
         for (PdfExportService.ExportVolume volume : volumes) {
             assertFalse(PdfBoxExportWriter.getTempFile(volume.file).exists());
             assertFalse(PdfBoxExportWriter.getWorkDirectory(volume.file).exists());
@@ -214,6 +225,42 @@ public class PdfExportServiceInstrumentedTest {
             () -> {
             });
         assertArrayEquals(sourceBytes, Files.readAllBytes(successful.toPath()));
+    }
+
+    @Test
+    public void pathCancellationCleanupDeletesOnlyOwnedCurrentVolumeFile() throws Exception {
+        File currentVolume = new File(outputDirectory, "current-volume.pdf");
+        File otherVolume = new File(outputDirectory, "other-volume.pdf");
+        Files.write(currentVolume.toPath(), new byte[]{1, 2, 3});
+        Files.write(otherVolume.toPath(), new byte[]{4, 5, 6});
+        String outputRef = PdfRef.createPathFileRef(currentVolume.getCanonicalPath());
+        IOException cancellation = new IOException("PDF 导出已取消");
+
+        PdfExportService.cleanupOwnedPathOutput(
+            currentVolume,
+            PdfRef.payload(outputRef),
+            currentVolume.length(),
+            currentVolume.lastModified(),
+            cancellation
+        );
+
+        assertFalse(currentVolume.exists());
+        assertTrue(otherVolume.exists());
+        assertNull(PdfStore.getInstance(context).getFileByRef(outputRef));
+
+        File directory = new File(outputDirectory, "protected-directory");
+        File content = new File(directory, "keep.txt");
+        assertTrue(directory.mkdirs());
+        Files.write(content.toPath(), new byte[]{9});
+        PdfExportService.cleanupOwnedPathOutput(
+            directory,
+            directory.getCanonicalPath(),
+            directory.length(),
+            directory.lastModified(),
+            cancellation
+        );
+        assertTrue(directory.isDirectory());
+        assertTrue(content.isFile());
     }
 
     @Test

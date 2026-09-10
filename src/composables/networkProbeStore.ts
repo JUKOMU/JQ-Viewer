@@ -27,7 +27,7 @@ export function initNetworkProbeStore() {
   if (initiated) return
   initiated = true
 
-  JmcomicService.addNetworkProbeListener((data: NetworkProbeEvent) => {
+  void JmcomicService.addNetworkProbeListener((data: NetworkProbeEvent) => {
     if (data.domains) {
       domains.value = data.domains
       allDeadFallback.value = !!data.allDeadFallback
@@ -40,6 +40,8 @@ export function initNetworkProbeStore() {
     if (events.value.length > 50) {
       events.value = events.value.slice(-50)
     }
+  }).catch(() => {
+    // Desktop phase 1 does not install the network event transport.
   })
 
   // 拉取已有域名状态（来自 AbstractJmClient 构造时的初始探活）

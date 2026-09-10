@@ -1,0 +1,36 @@
+name: CI · Desktop
+
+on:
+  push:
+    branches: [master, main, desktop-dev]
+  pull_request:
+    branches: [master, main, desktop-dev]
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    name: Desktop JVM and HTTP
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+
+      - run: npm ci
+      - run: npm run desktop:sync
+      - run: mvn --batch-mode test -f desktop/pom.xml

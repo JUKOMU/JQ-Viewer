@@ -2059,10 +2059,13 @@ onActivated(async () => {
 }
 
 .favorite-page-toolbar {
-  display: grid;
-  grid-template-columns: 44px minmax(0, 1fr);
+  display: flex;
   align-items: start;
   gap: 10px;
+}
+
+.favorite-page-toolbar > :deep(.menu-toggle-btn) {
+  flex: 0 0 auto;
 }
 
 .favorite-page-toolbar.pinned {
@@ -2074,6 +2077,7 @@ onActivated(async () => {
 }
 
 .toolbar-favorite {
+  flex: 1 1 auto;
   min-width: 0;
 }
 

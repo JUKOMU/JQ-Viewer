@@ -27,7 +27,7 @@ export function initNetworkProbeStore() {
   if (initiated) return
   initiated = true
 
-  JmcomicService.addNetworkProbeListener((data: NetworkProbeEvent) => {
+  void JmcomicService.addNetworkProbeListener((data: NetworkProbeEvent) => {
     if (data.domains) {
       domains.value = data.domains
       allDeadFallback.value = !!data.allDeadFallback
@@ -40,6 +40,8 @@ export function initNetworkProbeStore() {
     if (events.value.length > 50) {
       events.value = events.value.slice(-50)
     }
+  }).catch(() => {
+    // Desktop runtime 不提供网络探活事件传输。
   })
 
   // 拉取已有域名状态（来自 AbstractJmClient 构造时的初始探活）
@@ -49,7 +51,7 @@ export function initNetworkProbeStore() {
       allDeadFallback.value = state.allDeadFallback
     })
     .catch(() => {
-      // client 尚未就绪时静默忽略，等待后续网络变化事件
+      // client 尚未就绪时忽略初始状态读取失败。
     })
 }
 

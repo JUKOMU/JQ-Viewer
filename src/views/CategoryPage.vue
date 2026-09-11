@@ -688,12 +688,15 @@ onMounted(() => {
 }
 
 .category-page-toolbar {
-  display: grid;
-  grid-template-columns: 44px minmax(0, 1fr);
+  display: flex;
   align-items: start;
   gap: 5px;
   max-width: 1000px;
   margin-inline: auto;
+}
+
+.category-page-toolbar > :deep(.menu-toggle-btn) {
+  flex: 0 0 auto;
 }
 
 .category-page-toolbar.pinned {
@@ -705,6 +708,7 @@ onMounted(() => {
 }
 
 .toolbar-category {
+  flex: 1 1 auto;
   min-width: 0;
 }
 

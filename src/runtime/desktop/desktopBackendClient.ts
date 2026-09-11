@@ -57,7 +57,7 @@ async function request<T>(fetcher: DesktopFetch, method: string, body: unknown):
   return payload as T
 }
 
-/** Builds the phase-1 Desktop backend surface; unimplemented methods are absent at runtime. */
+/** 构建 Desktop backend 能力面；未实现的方法不会暴露到运行时。 */
 export function createDesktopBackendClient(
   fetcher: DesktopFetch = globalThis.fetch.bind(globalThis),
 ): BackendClient {

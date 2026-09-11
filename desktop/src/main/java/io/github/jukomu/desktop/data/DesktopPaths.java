@@ -6,10 +6,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.CodeSource;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 
-/** Centralizes program and user-data locations for the Desktop process. */
+/** 统一管理 Desktop 程序文件与用户数据目录。 */
 public final class DesktopPaths {
     public static final String APPLICATION_NAME = "JQViewer";
 
@@ -32,16 +33,16 @@ public final class DesktopPaths {
         this.programDirectory = normalize(programDirectory, "programDirectory");
         Path home = normalize(userHome, "userHome");
         Map<String, String> env = Objects.requireNonNull(environment, "environment");
-        String os = operatingSystem == null ? "" : operatingSystem.toLowerCase();
+        String os = operatingSystem == null ? "" : operatingSystem.toLowerCase(Locale.ROOT);
 
-        if (os.contains("win")) {
+        if (os.contains("mac") || os.contains("darwin")) {
+            this.dataDirectory = home.resolve("Library/Application Support").resolve(APPLICATION_NAME);
+            this.cacheDirectory = home.resolve("Library/Caches").resolve(APPLICATION_NAME);
+            this.stateDirectory = this.dataDirectory.resolve("state");
+        } else if (os.contains("win")) {
             Path localAppData = configuredPath(env.get("LOCALAPPDATA"), home.resolve("AppData/Local"), home);
             this.dataDirectory = localAppData.resolve(APPLICATION_NAME);
             this.cacheDirectory = this.dataDirectory.resolve("cache");
-            this.stateDirectory = this.dataDirectory.resolve("state");
-        } else if (os.contains("mac") || os.contains("darwin")) {
-            this.dataDirectory = home.resolve("Library/Application Support").resolve(APPLICATION_NAME);
-            this.cacheDirectory = home.resolve("Library/Caches").resolve(APPLICATION_NAME);
             this.stateDirectory = this.dataDirectory.resolve("state");
         } else {
             Path dataBase = configuredPath(env.get("XDG_DATA_HOME"), home.resolve(".local/share"), home);
@@ -99,7 +100,7 @@ public final class DesktopPaths {
                 return Files.isDirectory(path) ? path : path.getParent();
             }
         } catch (Exception ignored) {
-            // Fall through to a deterministic path when the runtime does not expose CodeSource.
+            // 运行时未暴露 CodeSource 时使用确定性的工作目录。
         }
         return Paths.get(System.getProperty("user.dir", ".")).toAbsolutePath().normalize();
     }

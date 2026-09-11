@@ -2,9 +2,8 @@ package io.github.jukomu.desktop.host;
 
 import io.github.jukomu.desktop.data.DesktopPaths;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
+import java.io.InputStream;
 import java.io.OutputStreamWriter;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -23,12 +22,15 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-/** Coordinates one Desktop process and a loopback-only open-home signal. */
+/** 协调 Desktop 单实例生命周期，并提供仅限 loopback 的打开首页信号。 */
 public final class SingleInstanceGuard implements AutoCloseable {
     private static final String OPEN_HOME_COMMAND = "OPEN_HOME";
     private static final Duration SIGNAL_TIMEOUT = Duration.ofSeconds(1);
+    private static final Duration IPC_READ_TIMEOUT = Duration.ofSeconds(1);
+    private static final int MAX_IPC_COMMAND_BYTES = OPEN_HOME_COMMAND.length() + 2;
 
     private final Path lockPath;
     private final AtomicBoolean closed = new AtomicBoolean();
@@ -48,7 +50,7 @@ public final class SingleInstanceGuard implements AutoCloseable {
         this.lockPath = Objects.requireNonNull(lockPath, "lockPath").toAbsolutePath().normalize();
     }
 
-    /** Attempts to become the primary process. Returns false when another process owns the lock. */
+    /** 尝试成为主进程；已有进程持有锁时返回 false。 */
     public synchronized boolean tryAcquire(Runnable onOpenHome) throws IOException {
         Objects.requireNonNull(onOpenHome, "onOpenHome");
         if (closed.get()) {
@@ -110,25 +112,25 @@ public final class SingleInstanceGuard implements AutoCloseable {
             try {
                 candidateLock.release();
             } catch (IOException ignored) {
-                // Preserve the original startup failure.
+                // 保留原始启动异常。
             }
             try {
                 candidate.close();
             } catch (IOException ignored) {
-                // Preserve the original startup failure.
+                // 保留原始启动异常。
             }
             if (candidateServer != null) {
                 try {
                     candidateServer.close();
                 } catch (IOException ignored) {
-                    // Preserve the original startup failure.
+                    // 保留原始启动异常。
                 }
             }
             throw exception;
         }
     }
 
-    /** Signals the current owner to open its already-running home URL. */
+    /** 通知当前主进程打开已经运行的首页 URL。 */
     public boolean notifyExistingInstance() {
         Instant deadline = Instant.now().plus(SIGNAL_TIMEOUT);
         while (Instant.now().isBefore(deadline)) {
@@ -151,7 +153,7 @@ public final class SingleInstanceGuard implements AutoCloseable {
                     return true;
                 }
             } catch (NumberFormatException | IOException ignored) {
-                // The primary may still be writing its port; retry briefly.
+                // 主进程可能仍在写入端口，短暂重试。
             }
 
             try {
@@ -181,25 +183,63 @@ public final class SingleInstanceGuard implements AutoCloseable {
             if (currentServer == null) {
                 return;
             }
-            try (Socket socket = currentServer.accept();
-                 BufferedReader reader = new BufferedReader(new InputStreamReader(
-                         socket.getInputStream(),
-                         StandardCharsets.UTF_8
-                 ))) {
-                if (OPEN_HOME_COMMAND.equals(reader.readLine())) {
+            try (Socket socket = currentServer.accept()) {
+                if (OPEN_HOME_COMMAND.equals(readCommand(socket))) {
                     try {
                         onOpenHome.run();
                     } catch (RuntimeException ignored) {
-                        // A tray/browser callback must not terminate the signal loop.
+                        // 托盘或浏览器回调失败时仍保持信号循环运行。
                     }
                 }
             } catch (IOException exception) {
                 if (!closed.get()) {
-                    // Closing the server socket is the normal way to leave this loop.
+                    // 关闭 server socket 是退出循环的正常方式。
                     Thread.yield();
                 }
             }
         }
+    }
+
+    private static String readCommand(Socket socket) throws IOException {
+        InputStream input = socket.getInputStream();
+        byte[] bytes = new byte[MAX_IPC_COMMAND_BYTES];
+        long deadline = System.nanoTime() + IPC_READ_TIMEOUT.toNanos();
+        int length = 0;
+
+        while (length < bytes.length) {
+            int timeoutMillis = remainingTimeoutMillis(deadline);
+            if (timeoutMillis <= 0) {
+                return null;
+            }
+            socket.setSoTimeout(timeoutMillis);
+
+            int value = input.read();
+            if (value < 0) {
+                return null;
+            }
+            bytes[length++] = (byte) value;
+            if (value == '\n') {
+                String command = new String(bytes, 0, length, StandardCharsets.UTF_8);
+                if ((OPEN_HOME_COMMAND + "\n").equals(command)
+                        || (OPEN_HOME_COMMAND + "\r\n").equals(command)) {
+                    return OPEN_HOME_COMMAND;
+                }
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private static int remainingTimeoutMillis(long deadline) {
+        long remainingNanos = deadline - System.nanoTime();
+        if (remainingNanos <= 0) {
+            return 0;
+        }
+        long remainingMillis = TimeUnit.NANOSECONDS.toMillis(remainingNanos);
+        return (int) Math.min(
+                Integer.MAX_VALUE,
+                Math.max(1, remainingMillis)
+        );
     }
 
     public Path lockPath() {
@@ -226,7 +266,7 @@ public final class SingleInstanceGuard implements AutoCloseable {
             try {
                 currentServer.close();
             } catch (IOException ignored) {
-                // Shutdown remains idempotent.
+                // 关闭流程保持幂等。
             }
         }
 
@@ -240,7 +280,7 @@ public final class SingleInstanceGuard implements AutoCloseable {
             try {
                 currentLock.release();
             } catch (IOException ignored) {
-                // Continue closing the channel and removing our metadata.
+                // 继续关闭通道。
             }
         }
 
@@ -249,15 +289,7 @@ public final class SingleInstanceGuard implements AutoCloseable {
             try {
                 currentChannel.close();
             } catch (IOException ignored) {
-                // Shutdown remains idempotent.
-            }
-        }
-
-        if (owner) {
-            try {
-                Files.deleteIfExists(lockPath);
-            } catch (IOException ignored) {
-                // A stale lock file is harmless once the OS lock is released.
+                // 关闭流程保持幂等。
             }
         }
 

@@ -45,6 +45,30 @@ class DesktopPathsDatabaseTest {
     }
 
     @Test
+    void treatsDarwinAsMacOsBeforeCheckingWindows() {
+        Path root = Path.of("build/test-darwin").toAbsolutePath();
+        DesktopPaths paths = new DesktopPaths(
+                root.resolve("program"),
+                root.resolve("home"),
+                Map.of(),
+                "Darwin"
+        );
+
+        assertEquals(
+                root.resolve("home/Library/Application Support/JQViewer").normalize(),
+                paths.dataDirectory()
+        );
+        assertEquals(
+                root.resolve("home/Library/Caches/JQViewer").normalize(),
+                paths.cacheDirectory()
+        );
+        assertEquals(
+                root.resolve("home/Library/Application Support/JQViewer/state").normalize(),
+                paths.stateDirectory()
+        );
+    }
+
+    @Test
     void usesWindowsLocalAppDataInsteadOfProgramDirectory() {
         Path root = Path.of("build/test-windows").toAbsolutePath();
         DesktopPaths paths = new DesktopPaths(

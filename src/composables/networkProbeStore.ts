@@ -41,7 +41,7 @@ export function initNetworkProbeStore() {
       events.value = events.value.slice(-50)
     }
   }).catch(() => {
-    // Desktop phase 1 does not install the network event transport.
+    // Desktop runtime 不提供网络探活事件传输。
   })
 
   // 拉取已有域名状态（来自 AbstractJmClient 构造时的初始探活）
@@ -51,7 +51,7 @@ export function initNetworkProbeStore() {
       allDeadFallback.value = state.allDeadFallback
     })
     .catch(() => {
-      // client 尚未就绪时静默忽略，等待后续网络变化事件
+      // client 尚未就绪时忽略初始状态读取失败。
     })
 }
 

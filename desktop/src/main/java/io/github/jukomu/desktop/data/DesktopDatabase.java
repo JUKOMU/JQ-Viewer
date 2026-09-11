@@ -9,7 +9,7 @@ import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Statement;
 
-/** Owns the Desktop SQLite connection and the migration entry point. */
+/** 管理 Desktop SQLite 连接，并提供 schema migration 入口。 */
 public final class DesktopDatabase implements AutoCloseable {
     private final Path databasePath;
     private Connection connection;
@@ -45,7 +45,7 @@ public final class DesktopDatabase implements AutoCloseable {
         }
     }
 
-    /** Applies only the migration ledger in stage 1; business tables arrive with later features. */
+    /** 初始化 schema version ledger，供版本化迁移使用。 */
     public static void migrate(Connection connection) throws SQLException {
         try (Statement statement = connection.createStatement()) {
             statement.executeUpdate(
@@ -93,7 +93,7 @@ public final class DesktopDatabase implements AutoCloseable {
         try {
             connection.close();
         } catch (SQLException ignored) {
-            // Shutdown remains idempotent even when SQLite reports a close error.
+            // SQLite 关闭异常不影响幂等关闭。
         } finally {
             connection = null;
         }

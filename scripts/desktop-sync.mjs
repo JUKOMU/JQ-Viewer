@@ -14,14 +14,21 @@ import {
 import { tmpdir } from 'node:os'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { commandInvocation } from './desktop-sync-command.mjs'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const destination = join(root, 'desktop', 'src', 'main', 'resources', 'static')
 const buildOutput = mkdtempSync(join(tmpdir(), 'jq-viewer-desktop-build-'))
-const viteBinary = join(root, 'node_modules', '.bin', process.platform === 'win32' ? 'vite.cmd' : 'vite')
+const viteBinary = join(
+  root,
+  'node_modules',
+  '.bin',
+  process.platform === 'win32' ? 'vite.cmd' : 'vite',
+)
 
 function run(command, args) {
-  execFileSync(command, args, { cwd: root, stdio: 'inherit' })
+  const invocation = commandInvocation(command, args)
+  execFileSync(invocation.command, invocation.args, { cwd: root, stdio: 'inherit' })
 }
 
 function listFiles(directory) {

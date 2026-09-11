@@ -11,7 +11,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-/** Discovers the one explicit Desktop bridge and maps methods to POST routes. */
+/** 发现显式 Desktop bridge，并将方法映射为 POST 路由。 */
 public final class PluginMethodRoutes {
     private PluginMethodRoutes() {
     }
@@ -21,8 +21,7 @@ public final class PluginMethodRoutes {
     }
 
     /**
-     * The iterable overload keeps duplicate route validation testable while normal production
-     * wiring still passes exactly one DesktopPlugin instance.
+     * Iterable 重载用于统一校验多个 bridge；生产环境只注册一个 DesktopPlugin 实例。
      */
     public static void register(JavalinDefaultRoutingApi routes, Iterable<?> plugins) {
         List<DiscoveredMethod> methods = discover(plugins);

@@ -12,7 +12,7 @@ import java.awt.image.BufferedImage;
 import java.util.Objects;
 import java.util.Optional;
 
-/** Optional AWT tray integration. Browser startup does not depend on this class. */
+/** 可选的 AWT 托盘集成；浏览器启动不依赖此能力。 */
 public final class DesktopTray implements AutoCloseable {
     private final SystemTray systemTray;
     private final TrayIcon trayIcon;
@@ -55,7 +55,7 @@ public final class DesktopTray implements AutoCloseable {
         try {
             action.run();
         } catch (RuntimeException ignored) {
-            // A tray callback must not terminate the AWT event thread.
+            // 托盘回调失败时不能终止 AWT 事件线程。
         }
     }
 

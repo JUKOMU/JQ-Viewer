@@ -17,7 +17,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
-/** Hosts the loopback Javalin server and Desktop-owned resources in one JVM. */
+/** 在同一 JVM 内承载 loopback Javalin 服务与 Desktop 资源。 */
 public final class DesktopBackend implements AutoCloseable {
     public static final String LOOPBACK_HOST = "127.0.0.1";
     private static final Logger LOGGER = LoggerFactory.getLogger(DesktopBackend.class);
@@ -110,7 +110,7 @@ public final class DesktopBackend implements AutoCloseable {
                 try {
                     candidate.stop();
                 } catch (RuntimeException ignored) {
-                    // Preserve the original startup failure.
+                    // 保留原始启动异常。
                 }
             }
             database.close();

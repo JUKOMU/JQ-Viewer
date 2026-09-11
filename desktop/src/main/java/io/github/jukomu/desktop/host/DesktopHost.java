@@ -9,7 +9,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
-/** Owns the single-process Desktop lifecycle and its operating-system entry points. */
+/** 管理 Desktop 单进程生命周期及其操作系统入口。 */
 public final class DesktopHost implements AutoCloseable {
     private final DesktopBackend backend;
     private final SingleInstanceGuard instanceGuard;
@@ -41,7 +41,7 @@ public final class DesktopHost implements AutoCloseable {
         );
     }
 
-    /** Starts the primary instance, or signals the existing instance and returns false. */
+    /** 启动主实例；已有实例存在时发送信号并返回 false。 */
     public synchronized boolean start() throws Exception {
         if (closed) {
             throw new IllegalStateException("Desktop host is closed");

@@ -4,7 +4,7 @@ import { createDesktopBackendEvents } from './desktopBackendEvents'
 import { createDesktopPlatformServices } from './desktopPlatformServices'
 import { createDesktopResourceResolver } from './desktopResourceResolver'
 
-/** Assembles the phase-1 Desktop runtime over same-origin HTTP. */
+/** 通过同源 HTTP 组装 Desktop 运行时。 */
 export function createDesktopRuntime(fetcher?: DesktopFetch): FrontendRuntime {
   const events = createDesktopBackendEvents()
   return {

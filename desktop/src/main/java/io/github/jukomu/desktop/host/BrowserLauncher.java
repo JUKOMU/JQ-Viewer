@@ -7,7 +7,7 @@ import java.net.URI;
 import java.util.Objects;
 import java.util.function.Consumer;
 
-/** Opens a URL with the operating system browser without depending on tray support. */
+/** 使用系统浏览器打开 URL，不依赖托盘支持。 */
 public final class BrowserLauncher {
     private final Consumer<URI> opener;
 

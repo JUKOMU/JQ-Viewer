@@ -2,7 +2,7 @@ package io.github.jukomu.desktop;
 
 import io.github.jukomu.desktop.host.DesktopHost;
 
-/** The only Desktop application entry point. */
+/** Desktop 应用的唯一入口。 */
 public final class DesktopMain {
     private DesktopMain() {
     }

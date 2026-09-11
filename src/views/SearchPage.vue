@@ -980,10 +980,13 @@ onMounted(async () => {
 .search-page-toolbar {
   max-width: 1000px;
   margin-inline: auto;
-  display: grid;
-  grid-template-columns: 44px minmax(0, 1fr);
+  display: flex;
   align-items: start;
   gap: 10px;
+}
+
+.search-page-toolbar > :deep(.menu-toggle-btn) {
+  flex: 0 0 auto;
 }
 
 .search-page-toolbar.pinned {
@@ -995,6 +998,7 @@ onMounted(async () => {
 }
 
 .toolbar-search {
+  flex: 1 1 auto;
   min-width: 0;
 }
 

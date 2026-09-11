@@ -1,7 +1,7 @@
 <template>
   <IonPage>
     <IonHeader class="ion-no-border">
-      <IonToolbar>
+      <IonToolbar class="toolbar">
         <IonButtons slot="start">
           <IonBackButton default-href="/setting" />
         </IonButtons>
@@ -178,6 +178,13 @@ async function confirmLogout() {
 </script>
 
 <style scoped>
+.toolbar {
+  width: 100%;
+  max-width: 920px;
+  margin-inline: auto;
+  box-sizing: border-box;
+}
+
 .user-container {
   padding: 24px 20px 0;
   display: flex;

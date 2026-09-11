@@ -1,10 +1,11 @@
-package io.github.jukomu.desktop.bridge.handler;
+package io.github.jukomu.desktop.backend;
 
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import io.github.jukomu.desktop.bridge.PluginMethod;
 import io.javalin.http.Context;
 
-/** 报告 Desktop bridge 已完成装配，可以接收业务请求。 */
-public final class SystemPluginHandler {
+public final class InitOnlyPlugin {
+    @PluginMethod
     public void getInitStatus(Context context) {
         context.json(JsonNodeFactory.instance.objectNode().put("complete", true));
     }

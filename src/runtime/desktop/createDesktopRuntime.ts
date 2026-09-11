@@ -1,3 +1,4 @@
+import type { BackendClient } from '../BackendClient'
 import type { FrontendRuntime } from '../FrontendRuntime'
 import { createDesktopBackendClient, type DesktopFetch } from './desktopBackendClient'
 import { createDesktopBackendEvents } from './desktopBackendEvents'
@@ -9,7 +10,7 @@ export function createDesktopRuntime(fetcher?: DesktopFetch): FrontendRuntime {
   const events = createDesktopBackendEvents()
   return {
     platform: 'linux',
-    backend: createDesktopBackendClient(fetcher),
+    backend: createDesktopBackendClient(fetcher) as BackendClient,
     events,
     resources: createDesktopResourceResolver(),
     services: createDesktopPlatformServices(events),

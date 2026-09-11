@@ -95,7 +95,15 @@ class DesktopPathsDatabaseTest {
                     .createStatement()
                     .executeQuery("SELECT version FROM desktop_schema_version")) {
                 assertTrue(result.next());
-                assertEquals(1, result.getInt(1));
+                assertEquals(2, result.getInt(1));
+            }
+            try (ResultSet result = database.connection()
+                    .createStatement()
+                    .executeQuery("SELECT name FROM sqlite_master WHERE type = 'table'")) {
+                java.util.Set<String> tables = new java.util.HashSet<>();
+                while (result.next()) tables.add(result.getString(1));
+                assertTrue(tables.contains("desktop_settings"));
+                assertTrue(tables.contains("browse_history"));
             }
             assertTrue(database.isOpen());
         }

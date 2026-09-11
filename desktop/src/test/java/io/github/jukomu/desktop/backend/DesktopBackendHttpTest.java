@@ -1,6 +1,6 @@
-package io.github.jukomu.desktop;
+package io.github.jukomu.desktop.backend;
 
-import io.github.jukomu.desktop.backend.DesktopBackend;
+import io.github.jukomu.desktop.data.DesktopDatabase;
 import io.github.jukomu.desktop.data.DesktopPaths;
 import org.junit.jupiter.api.Test;
 
@@ -12,6 +12,7 @@ import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.concurrent.Executors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -30,7 +31,7 @@ class DesktopBackendHttpTest {
         );
         HttpClient client = HttpClient.newHttpClient();
 
-        DesktopBackend backend = new DesktopBackend(paths);
+        DesktopBackend backend = testBackend(paths);
         URI base;
         try (backend) {
             URI home = backend.start();
@@ -77,6 +78,15 @@ class DesktopBackendHttpTest {
                 () -> send(client, HttpRequest.newBuilder(base.resolve("/home")).GET().build())
         );
         assertTrue(backend.businessExecutor().isShutdown());
+    }
+
+    static DesktopBackend testBackend(DesktopPaths paths) {
+        return new DesktopBackend(
+                paths,
+                new DesktopDatabase(paths),
+                Executors.newSingleThreadExecutor(),
+                new InitOnlyPlugin()
+        );
     }
 
     private static HttpResponse<String> send(

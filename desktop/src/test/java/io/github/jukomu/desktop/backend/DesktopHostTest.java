@@ -1,6 +1,5 @@
-package io.github.jukomu.desktop;
+package io.github.jukomu.desktop.backend;
 
-import io.github.jukomu.desktop.backend.DesktopBackend;
 import io.github.jukomu.desktop.data.DesktopPaths;
 import io.github.jukomu.desktop.host.BrowserLauncher;
 import io.github.jukomu.desktop.host.DesktopHost;
@@ -29,12 +28,12 @@ class DesktopHostTest {
         );
         List<String> opened = new ArrayList<>();
         DesktopHost primary = new DesktopHost(
-                new DesktopBackend(paths),
+                DesktopBackendHttpTest.testBackend(paths),
                 new SingleInstanceGuard(paths),
                 new BrowserLauncher(uri -> opened.add(uri.toString()))
         );
         DesktopHost secondary = new DesktopHost(
-                new DesktopBackend(paths),
+                DesktopBackendHttpTest.testBackend(paths),
                 new SingleInstanceGuard(paths),
                 new BrowserLauncher(uri -> opened.add(uri.toString()))
         );

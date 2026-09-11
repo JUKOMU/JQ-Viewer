@@ -52,12 +52,40 @@ public final class DesktopDatabase implements AutoCloseable {
                     "CREATE TABLE IF NOT EXISTS desktop_schema_version "
                             + "(version INTEGER NOT NULL)"
             );
+            statement.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS desktop_settings (
+                        key TEXT PRIMARY KEY,
+                        value TEXT NOT NULL,
+                        updated_at INTEGER NOT NULL
+                    )
+                    """);
+            statement.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS browse_history (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        album_id TEXT NOT NULL,
+                        album_title TEXT NOT NULL,
+                        cover_url TEXT NOT NULL,
+                        authors TEXT NOT NULL,
+                        chapter_id TEXT NOT NULL,
+                        chapter_title TEXT NOT NULL,
+                        timestamp INTEGER NOT NULL
+                    )
+                    """);
+            statement.executeUpdate("""
+                    CREATE INDEX IF NOT EXISTS idx_browse_history_timestamp
+                    ON browse_history(timestamp DESC, id DESC)
+                    """);
         }
 
         try (PreparedStatement statement = connection.prepareStatement(
                 "INSERT INTO desktop_schema_version(version) "
-                        + "SELECT 1 WHERE NOT EXISTS "
+                        + "SELECT 2 WHERE NOT EXISTS "
                         + "(SELECT 1 FROM desktop_schema_version)"
+        )) {
+            statement.executeUpdate();
+        }
+        try (PreparedStatement statement = connection.prepareStatement(
+                "UPDATE desktop_schema_version SET version = 2 WHERE version < 2"
         )) {
             statement.executeUpdate();
         }

@@ -2,9 +2,23 @@ package io.github.jukomu.desktop.backend;
 
 import io.github.jukomu.desktop.bridge.DesktopPlugin;
 import io.github.jukomu.desktop.bridge.PluginMethodRoutes;
+import io.github.jukomu.desktop.bridge.handler.AsyncRequestHandler;
+import io.github.jukomu.desktop.bridge.handler.AuthPluginHandler;
+import io.github.jukomu.desktop.bridge.handler.CatalogPluginHandler;
+import io.github.jukomu.desktop.bridge.handler.HistoryPluginHandler;
+import io.github.jukomu.desktop.bridge.handler.SettingsPluginHandler;
+import io.github.jukomu.desktop.bridge.handler.SystemPluginHandler;
 import io.github.jukomu.desktop.data.DesktopDatabase;
 import io.github.jukomu.desktop.data.DesktopPaths;
+import io.github.jukomu.desktop.feature.auth.JmComicAuthService;
+import io.github.jukomu.desktop.feature.catalog.JmComicCatalogService;
+import io.github.jukomu.desktop.feature.history.DesktopHistory;
+import io.github.jukomu.desktop.feature.settings.DesktopSettings;
+import io.github.jukomu.jmcomic.core.JmComic;
+import io.github.jukomu.jmcomic.core.client.impl.JmApiClient;
+import io.github.jukomu.jmcomic.core.config.JmConfiguration;
 import io.javalin.Javalin;
+import io.javalin.http.Context;
 import io.javalin.http.staticfiles.Location;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,14 +58,17 @@ public final class DesktopBackend implements AutoCloseable {
     private final DesktopPaths paths;
     private final DesktopDatabase database;
     private final ExecutorService businessExecutor;
+    private final Object routeOwnerOverride;
 
     private Javalin app;
     private URI homeUrl;
+    private JmApiClient client;
+    private JmComicCatalogService catalog;
     private boolean running;
     private boolean closed;
 
     public DesktopBackend(DesktopPaths paths) {
-        this(paths, new DesktopDatabase(paths), createBusinessExecutor());
+        this(paths, new DesktopDatabase(paths), createBusinessExecutor(), null);
     }
 
     public DesktopBackend(
@@ -59,9 +76,19 @@ public final class DesktopBackend implements AutoCloseable {
             DesktopDatabase database,
             ExecutorService businessExecutor
     ) {
+        this(paths, database, businessExecutor, null);
+    }
+
+    DesktopBackend(
+            DesktopPaths paths,
+            DesktopDatabase database,
+            ExecutorService businessExecutor,
+            Object routeOwnerOverride
+    ) {
         this.paths = Objects.requireNonNull(paths, "paths");
         this.database = Objects.requireNonNull(database, "database");
         this.businessExecutor = Objects.requireNonNull(businessExecutor, "businessExecutor");
+        this.routeOwnerOverride = routeOwnerOverride;
     }
 
     public synchronized URI start() throws Exception {
@@ -82,7 +109,8 @@ public final class DesktopBackend implements AutoCloseable {
             }
 
             database.open();
-            DesktopPlugin plugin = new DesktopPlugin();
+            Object routeOwner = routeOwnerOverride == null ? createPlugin() : routeOwnerOverride;
+            JmComicCatalogService imageCatalog = catalog;
             candidate = Javalin.create(config -> {
                 config.jetty.host = LOOPBACK_HOST;
                 config.jetty.port = 0;
@@ -92,7 +120,17 @@ public final class DesktopBackend implements AutoCloseable {
                     config.spaRoot.addFile(path, "static/index.html", Location.CLASSPATH);
                 }
                 config.routes.get("/", context -> context.redirect("/home"));
-                PluginMethodRoutes.register(config.routes, plugin);
+                PluginMethodRoutes.register(config.routes, routeOwner);
+                if (imageCatalog != null) {
+                    config.routes.get(
+                            "/image/{photoId}/{sortOrder}",
+                            context -> serveImage(context, imageCatalog)
+                    );
+                    config.routes.get(
+                            "/thumb/{photoId}/{sortOrder}",
+                            context -> serveImage(context, imageCatalog)
+                    );
+                }
             });
             candidate.start();
             int port = candidate.port();
@@ -115,7 +153,35 @@ public final class DesktopBackend implements AutoCloseable {
             }
             database.close();
             businessExecutor.shutdownNow();
+            closeClient();
             throw exception;
+        }
+    }
+
+    private DesktopPlugin createPlugin() {
+        client = JmComic.newApiClient(new JmConfiguration.Builder().build());
+        catalog = new JmComicCatalogService(client);
+        return new DesktopPlugin(
+                new SystemPluginHandler(),
+                new CatalogPluginHandler(catalog, businessExecutor),
+                new AuthPluginHandler(new JmComicAuthService(client), businessExecutor),
+                new SettingsPluginHandler(new DesktopSettings(database), businessExecutor),
+                new HistoryPluginHandler(new DesktopHistory(database), businessExecutor)
+        );
+    }
+
+    private void serveImage(Context context, JmComicCatalogService imageCatalog) {
+        try {
+            String photoId = context.pathParam("photoId");
+            int sortOrder = Integer.parseInt(context.pathParam("sortOrder"));
+            AsyncRequestHandler.submit(
+                    context,
+                    businessExecutor,
+                    () -> imageCatalog.getImage(photoId, sortOrder),
+                    resource -> context.contentType(resource.mediaType()).result(resource.bytes())
+            );
+        } catch (Exception error) {
+            AsyncRequestHandler.writeError(context, error);
         }
     }
 
@@ -186,6 +252,17 @@ public final class DesktopBackend implements AutoCloseable {
             businessExecutor.shutdownNow();
             Thread.currentThread().interrupt();
         }
+        closeClient();
         database.close();
+    }
+
+    private void closeClient() {
+        JmComicCatalogService currentCatalog = catalog;
+        catalog = null;
+        if (currentCatalog != null) currentCatalog.close();
+
+        JmApiClient currentClient = client;
+        client = null;
+        if (currentClient != null) currentClient.close();
     }
 }

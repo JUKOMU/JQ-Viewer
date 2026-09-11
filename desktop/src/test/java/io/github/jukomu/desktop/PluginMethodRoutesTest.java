@@ -11,6 +11,8 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -25,6 +27,25 @@ class PluginMethodRoutesTest {
         assertTrue(method.isAnnotationPresent(PluginMethod.class));
         assertEquals(RetentionPolicy.RUNTIME, PluginMethod.class.getAnnotation(Retention.class).value());
         assertTrue(Modifier.isPublic(method.getModifiers()));
+    }
+
+    @Test
+    void desktopPluginExposesOnlyTheImplementedMethodSurface() {
+        Set<String> methods = java.util.Arrays.stream(DesktopPlugin.class.getDeclaredMethods())
+                .filter(method -> method.isAnnotationPresent(PluginMethod.class))
+                .map(Method::getName)
+                .collect(Collectors.toSet());
+
+        assertEquals(Set.of(
+                "getInitStatus",
+                "search", "categories", "getAlbum", "getPhoto", "getComments",
+                "login", "logout", "checkLoginState", "getUserProfile",
+                "getAllSettings", "setPreloadConcurrency", "setDownloadConcurrency",
+                "setReaderPreloadPages", "setReaderDisplayMode",
+                "setReaderAutoShowToolbarAtEnd",
+                "getBrowseHistory", "getBrowseHistoryOverview", "recordBrowse",
+                "clearBrowseHistory", "deleteBrowseItem"
+        ), methods);
     }
 
     @Test

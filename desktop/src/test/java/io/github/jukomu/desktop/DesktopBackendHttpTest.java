@@ -30,7 +30,7 @@ class DesktopBackendHttpTest {
         );
         HttpClient client = HttpClient.newHttpClient();
 
-        DesktopBackend backend = new DesktopBackend(paths);
+        DesktopBackend backend = new DesktopBackend(paths, new InitOnlyPlugin());
         URI base;
         try (backend) {
             URI home = backend.start();

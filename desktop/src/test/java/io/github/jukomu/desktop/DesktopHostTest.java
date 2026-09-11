@@ -29,12 +29,12 @@ class DesktopHostTest {
         );
         List<String> opened = new ArrayList<>();
         DesktopHost primary = new DesktopHost(
-                new DesktopBackend(paths),
+                new DesktopBackend(paths, new InitOnlyPlugin()),
                 new SingleInstanceGuard(paths),
                 new BrowserLauncher(uri -> opened.add(uri.toString()))
         );
         DesktopHost secondary = new DesktopHost(
-                new DesktopBackend(paths),
+                new DesktopBackend(paths, new InitOnlyPlugin()),
                 new SingleInstanceGuard(paths),
                 new BrowserLauncher(uri -> opened.add(uri.toString()))
         );

@@ -95,7 +95,7 @@ class DesktopPathsDatabaseTest {
                     .createStatement()
                     .executeQuery("SELECT version FROM desktop_schema_version")) {
                 assertTrue(result.next());
-                assertEquals(1, result.getInt(1));
+                assertEquals(DesktopDatabase.CURRENT_SCHEMA_VERSION, result.getInt(1));
             }
             assertTrue(database.isOpen());
         }

@@ -48,6 +48,11 @@ public final class PluginMethodRoutes {
                     continue;
                 }
                 validate(method);
+                if (!method.trySetAccessible()) {
+                    throw new IllegalArgumentException(
+                            "@PluginMethod is not accessible: " + method
+                    );
+                }
                 String path = "/api/" + method.getName();
                 if (!routes.add(path)) {
                     throw new IllegalArgumentException("Duplicate Desktop plugin route: " + path);

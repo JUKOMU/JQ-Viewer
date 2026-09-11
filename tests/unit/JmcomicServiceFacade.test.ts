@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
+  runtime: { platform: 'android' as 'android' | 'linux' },
   addListener: vi.fn(),
+  getDomainStates: vi.fn(),
+  preloadImages: vi.fn(),
   retryImage: vi.fn(),
   getBrowseHistory: vi.fn(),
   getBrowseHistoryOverview: vi.fn(),
@@ -15,6 +18,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/runtime/facadeClient', () => ({
   createActiveFacadeClient: () => ({
     addListener: mocks.addListener,
+    getDomainStates: mocks.getDomainStates,
+    preloadImages: mocks.preloadImages,
     retryImage: mocks.retryImage,
     getBrowseHistory: mocks.getBrowseHistory,
     getBrowseHistoryOverview: mocks.getBrowseHistoryOverview,
@@ -25,6 +30,10 @@ vi.mock('@/runtime/facadeClient', () => ({
   }),
 }))
 
+vi.mock('@/runtime/runtimeContext', () => ({
+  getRuntime: () => mocks.runtime,
+}))
+
 vi.mock('@/services/NotificationPermissionService', () => ({
   NotificationPermissionService: {
     ensureDownloadPermission: mocks.ensureDownloadPermission,
@@ -33,6 +42,57 @@ vi.mock('@/services/NotificationPermissionService', () => ({
 
 import type { ImageReadyEvent } from '@/services/jmcomic/JmcomicClient'
 import { JmcomicService } from '@/services/jmcomic/JmcomicServiceFacade'
+
+beforeEach(() => {
+  mocks.runtime.platform = 'android'
+  mocks.preloadImages.mockReset()
+})
+
+describe('Desktop 直接图片资源路径', () => {
+  test('不安装 Android 预加载方法也能返回待展示图片和空事件句柄', async () => {
+    mocks.runtime.platform = 'linux'
+    const images = [
+      {
+        photoId: 'chapter-1',
+        scrambleId: '0',
+        filename: '1.jpg',
+        url: 'https://latest.example.com/1.jpg',
+        queryParams: '',
+        sortOrder: 1,
+      },
+      {
+        photoId: 'chapter-1',
+        scrambleId: '0',
+        filename: '2.jpg',
+        url: 'https://latest.example.com/2.jpg',
+        queryParams: '',
+        sortOrder: 2,
+      },
+    ]
+
+    await expect(JmcomicService.preloadImages('chapter-1', images)).resolves.toEqual({
+      cached: [1, 2],
+      pending: [],
+    })
+    await expect(JmcomicService.retryImage('chapter-1', images[0])).resolves.toEqual({
+      success: true,
+    })
+    const listener = await JmcomicService.addImageReadyListener('chapter-1', vi.fn())
+    await listener.remove()
+
+    expect(mocks.preloadImages).not.toHaveBeenCalled()
+    expect(mocks.retryImage).not.toHaveBeenCalled()
+    expect(mocks.addListener).not.toHaveBeenCalled()
+  })
+
+  test('将 backend 的同步异常转换为可捕获的 Promise rejection', async () => {
+    mocks.getDomainStates.mockImplementation(() => {
+      throw new Error('domain state unavailable')
+    })
+
+    await expect(JmcomicService.getDomainStates()).rejects.toThrow('domain state unavailable')
+  })
+})
 
 describe('JmcomicService.addImageReadyListener', () => {
   let imageReadyHandler: ((event: ImageReadyEvent) => void) | null

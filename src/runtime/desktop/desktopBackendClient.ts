@@ -1,7 +1,30 @@
-import type { BackendClient } from '../BackendClient'
+import type { BackendClient, CommonBackendMethod } from '../BackendClient'
 import { RuntimeError, type RuntimeErrorCode } from '../errors'
 
-export const DESKTOP_BACKEND_METHODS = ['getInitStatus'] as const
+/** 阶段 2 已实际提供的 Desktop JSON 方法；未列入的方法不会绑定到运行时。 */
+export const DESKTOP_BACKEND_METHODS = [
+  'getInitStatus',
+  'search',
+  'categories',
+  'getAlbum',
+  'getPhoto',
+  'getComments',
+  'login',
+  'logout',
+  'checkLoginState',
+  'getUserProfile',
+  'getAllSettings',
+  'setPreloadConcurrency',
+  'setDownloadConcurrency',
+  'setReaderPreloadPages',
+  'setReaderDisplayMode',
+  'setReaderAutoShowToolbarAtEnd',
+  'getBrowseHistory',
+  'getBrowseHistoryOverview',
+  'recordBrowse',
+  'clearBrowseHistory',
+  'deleteBrowseItem',
+] as const satisfies readonly CommonBackendMethod[]
 
 export type DesktopFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 
@@ -61,15 +84,19 @@ async function request<T>(fetcher: DesktopFetch, method: string, body: unknown):
 export function createDesktopBackendClient(
   fetcher: DesktopFetch = globalThis.fetch.bind(globalThis),
 ): BackendClient {
-  const client = {
-    getInitStatus: async () => {
-      const result = await request<{ complete?: unknown }>(fetcher, 'getInitStatus', {})
-      if (!result || typeof result.complete !== 'boolean') {
-        throw new RuntimeError('internal', 'Invalid getInitStatus response')
-      }
-      return { complete: result.complete }
-    },
+  const client = {} as BackendClient
+  for (const method of DESKTOP_BACKEND_METHODS) {
+    ;(client as Record<string, unknown>)[method] = (body?: unknown) =>
+      request(fetcher, method, body ?? {})
   }
 
-  return client as unknown as BackendClient
+  client.getInitStatus = async () => {
+    const result = await request<{ complete?: unknown }>(fetcher, 'getInitStatus', {})
+    if (!result || typeof result.complete !== 'boolean') {
+      throw new RuntimeError('internal', 'Invalid getInitStatus response')
+    }
+    return { complete: result.complete }
+  }
+
+  return client
 }

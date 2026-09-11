@@ -7,6 +7,7 @@ import { createAndroidBackendEvents } from '@/runtime/android/androidBackendEven
 import { createAndroidPlatformServices } from '@/runtime/android/androidPlatformServices'
 import { createAndroidResourceResolver } from '@/runtime/android/androidResourceResolver'
 import { createAndroidUpdater } from '@/runtime/android/androidUpdater'
+import { createFacadeClient } from '@/runtime/facadeClient'
 import { normalizeRuntimeError } from '@/runtime/errors'
 import { configureRuntime, getRuntime, resetRuntimeForTests } from '@/runtime/runtimeContext'
 
@@ -44,6 +45,34 @@ describe('runtime context', () => {
     configureRuntime(runtime)
     expect(getRuntime()).toBe(runtime)
     expect(() => configureRuntime(runtime)).toThrow('Frontend runtime already configured')
+  })
+})
+
+describe('Facade capability failures', () => {
+  test('unavailable reader capabilities become rejections', async () => {
+    const runtime = {
+      platform: 'linux',
+      backend: {},
+      events: {},
+      resources: {},
+      services: {
+        reader: {
+          orientation: { available: false, reason: 'orientation unavailable' },
+          brightness: { available: false, reason: 'brightness unavailable' },
+          keepAwake: { available: false, reason: 'keep-awake unavailable' },
+          fullscreen: { available: false, reason: 'fullscreen unavailable' },
+          volumeKeys: { available: false, reason: 'volume keys unavailable' },
+          hostState: { available: false, reason: 'host state unavailable' },
+        },
+        pdf: {},
+      },
+    } as unknown as Parameters<typeof createFacadeClient>[0]
+
+    const facade = createFacadeClient(runtime)
+    const keepAwake = facade.setReaderKeepScreenOn({ enabled: true })
+
+    expect(keepAwake).toBeInstanceOf(Promise)
+    await expect(keepAwake).rejects.toMatchObject({ code: 'unavailable' })
   })
 })
 

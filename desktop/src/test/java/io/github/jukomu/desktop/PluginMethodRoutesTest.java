@@ -11,6 +11,7 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -25,6 +26,40 @@ class PluginMethodRoutesTest {
         assertTrue(method.isAnnotationPresent(PluginMethod.class));
         assertEquals(RetentionPolicy.RUNTIME, PluginMethod.class.getAnnotation(Retention.class).value());
         assertTrue(Modifier.isPublic(method.getModifiers()));
+    }
+
+    @Test
+    void discoversExactlyTheStage2BridgeMethods() {
+        DesktopPlugin plugin = new DesktopPlugin(null, null, null, null, null);
+
+        assertEquals(
+                Set.of(
+                        "getInitStatus",
+                        "search",
+                        "categories",
+                        "getAlbum",
+                        "getPhoto",
+                        "getComments",
+                        "login",
+                        "logout",
+                        "checkLoginState",
+                        "getUserProfile",
+                        "getAllSettings",
+                        "setPreloadConcurrency",
+                        "setDownloadConcurrency",
+                        "setReaderPreloadPages",
+                        "setReaderDisplayMode",
+                        "setReaderAutoShowToolbarAtEnd",
+                        "getBrowseHistory",
+                        "getBrowseHistoryOverview",
+                        "recordBrowse",
+                        "clearBrowseHistory",
+                        "deleteBrowseItem"
+                ),
+                PluginMethodRoutes.discover(plugin).stream()
+                        .map(method -> method.method().getName())
+                        .collect(java.util.stream.Collectors.toSet())
+        );
     }
 
     @Test

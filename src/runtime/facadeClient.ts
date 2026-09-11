@@ -124,18 +124,19 @@ export function createFacadeClient(runtime: FrontendRuntime): JmcomicClient {
     },
     consumeLaunchRoute: () => launchRoutes().consume(),
 
-    setReaderScreenOrientation: (options: Parameters<JmcomicClient['setReaderScreenOrientation']>[0]) =>
-      requireCapability(reader.orientation, '屏幕方向').set(options.orientation),
-    setReaderBrightness: (options: Parameters<JmcomicClient['setReaderBrightness']>[0]) =>
+    setReaderScreenOrientation: async (
+      options: Parameters<JmcomicClient['setReaderScreenOrientation']>[0],
+    ) => requireCapability(reader.orientation, '屏幕方向').set(options.orientation),
+    setReaderBrightness: async (options: Parameters<JmcomicClient['setReaderBrightness']>[0]) =>
       requireCapability(reader.brightness, '屏幕亮度').set(options.brightness),
-    setReaderKeepScreenOn: (options: Parameters<JmcomicClient['setReaderKeepScreenOn']>[0]) =>
+    setReaderKeepScreenOn: async (options: Parameters<JmcomicClient['setReaderKeepScreenOn']>[0]) =>
       requireCapability(reader.keepAwake, '防止熄屏').set(options.enabled),
-    setReaderFullscreen: (options: Parameters<JmcomicClient['setReaderFullscreen']>[0]) =>
+    setReaderFullscreen: async (options: Parameters<JmcomicClient['setReaderFullscreen']>[0]) =>
       requireCapability(reader.fullscreen, '全屏').set(options.enabled),
-    setReaderVolumeNavigation: (
+    setReaderVolumeNavigation: async (
       options: Parameters<JmcomicClient['setReaderVolumeNavigation']>[0],
     ) => requireCapability(reader.volumeKeys, '音量键翻页').setEnabled(options.enabled),
-    setReaderState: (options: Parameters<JmcomicClient['setReaderState']>[0]) =>
+    setReaderState: async (options: Parameters<JmcomicClient['setReaderState']>[0]) =>
       requireCapability(reader.hostState, '阅读器宿主状态').setState(
         options.isActive,
         options.isVertical,

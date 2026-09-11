@@ -11,6 +11,7 @@ import type {
   PdfExportProgressEvent,
   PdfExportStatus,
   ImportedPdf,
+  PreloadResult,
   RelocationProgress,
   SearchQuery,
   SearchResultItem,
@@ -29,6 +30,22 @@ import { NotificationPermissionService } from '@/services/NotificationPermission
 
 /** 惰性 facade client：页面沿用旧 JmcomicClient 接口，底层由当前 runtime 端口动态提供。 */
 const native: JmcomicClient = createActiveFacadeClient(getRuntime)
+
+/** Desktop 通过同源资源 URL 按需加载图片，不依赖 Android ImageRegistry 或 SSE。 */
+function isDirectDesktopImageRuntime(): boolean {
+  return getRuntime().platform !== 'android'
+}
+
+function directDesktopPreloadResult(images: readonly ImageInfo[]): PreloadResult {
+  return {
+    cached: [...new Set(images.map((image) => image.sortOrder))],
+    pending: [],
+  }
+}
+
+function directDesktopImageListener(): Promise<JmcomicListenerHandle> {
+  return Promise.resolve({ remove: () => Promise.resolve() })
+}
 
 export const JmcomicService = {
   search(query: SearchQuery) {
@@ -132,11 +149,17 @@ export const JmcomicService = {
     type: 'image' | 'thumb' = 'image',
     options: { replacePending?: boolean } = {},
   ) {
+    if (isDirectDesktopImageRuntime()) {
+      return Promise.resolve(directDesktopPreloadResult(images))
+    }
     return native.preloadImages({ photoId, images, type, replacePending: options.replacePending })
   },
 
   /** 使用最新图片元数据绕过本地来源和旧缓存重试单页。 */
   retryImage(photoId: string, image: ImageInfo) {
+    if (isDirectDesktopImageRuntime()) {
+      return Promise.resolve({ success: true })
+    }
     return native.retryImage({ photoId, image })
   },
 
@@ -211,6 +234,9 @@ export const JmcomicService = {
     handler: (sortOrder: number) => void,
     options: { type?: 'image' | 'thumb' } = {},
   ): Promise<JmcomicListenerHandle> {
+    if (isDirectDesktopImageRuntime()) {
+      return directDesktopImageListener()
+    }
     return native.addListener('imageReady', (data: ImageReadyEvent) => {
       if (data.photoId === photoId && (!options.type || data.type === options.type)) {
         handler(data.sortOrder)
@@ -224,6 +250,9 @@ export const JmcomicService = {
     handler: (sortOrder: number) => void,
     options: { type?: 'image' | 'thumb' } = {},
   ): Promise<JmcomicListenerHandle> {
+    if (isDirectDesktopImageRuntime()) {
+      return directDesktopImageListener()
+    }
     return native.addListener('imageFailed', (data: ImageFailedEvent) => {
       if (data.photoId === photoId && (!options.type || data.type === options.type)) {
         handler(data.sortOrder)
@@ -240,18 +269,18 @@ export const JmcomicService = {
     return native.addListener('networkProbe', handler)
   },
 
-  /** 读取 domainManager 中已有的域名连通性状态（同步返回，不触发探活） */
-  getDomainStates() {
+  /** 读取 domainManager 中已有的域名连通性状态，不触发探活。 */
+  async getDomainStates() {
     return native.getDomainStates()
   },
 
   /** 手动触发域名重新探活（结果通过 networkProbe 事件推送） */
-  reprobeDomains() {
+  async reprobeDomains() {
     return native.reprobeDomains()
   },
 
   /** 对可达域名进行延迟测试（HEAD 请求计时，并行执行） */
-  measureLatency() {
+  async measureLatency() {
     return native.measureLatency()
   },
 

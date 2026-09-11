@@ -2,10 +2,23 @@ package io.github.jukomu.desktop.bridge.handler;
 
 import io.javalin.http.Context;
 
-/** 提供不依赖远程服务的系统方法。 */
+import java.util.Objects;
+import java.util.function.BooleanSupplier;
+
+/** 提供初始化状态等不依赖请求参数的系统方法。 */
 public final class SystemPluginHandler {
+    private final BooleanSupplier clientPresent;
+
+    public SystemPluginHandler() {
+        this(() -> true);
+    }
+
+    public SystemPluginHandler(BooleanSupplier clientPresent) {
+        this.clientPresent = Objects.requireNonNull(clientPresent, "clientPresent");
+    }
+
     public void getInitStatus(Context context) {
-        context.json(new InitStatus(true));
+        context.json(new InitStatus(clientPresent.getAsBoolean()));
     }
 
     public record InitStatus(boolean complete) {

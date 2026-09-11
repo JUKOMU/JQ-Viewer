@@ -15,6 +15,7 @@
         <maven.compiler.release>21</maven.compiler.release>
         <javalin.version>7.2.2</javalin.version>
         <jackson.version>2.21.3</jackson.version>
+        <jmcomic.version>1.1.8</jmcomic.version>
         <sqlite.version>3.50.3.0</sqlite.version>
         <slf4j.version>2.0.17</slf4j.version>
         <junit.version>5.11.4</junit.version>
@@ -32,6 +33,11 @@
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
             <version>${jackson.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.github.jukomu</groupId>
+            <artifactId>jmcomic-core</artifactId>
+            <version>${jmcomic.version}</version>
         </dependency>
         <dependency>
             <groupId>org.xerial</groupId>

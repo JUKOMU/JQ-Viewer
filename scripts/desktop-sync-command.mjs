@@ -13,3 +13,15 @@ export function commandInvocation(
 
   return { command, args: [...args] }
 }
+
+export function parseTargetPlatform(args) {
+  const index = args.indexOf('--platform')
+  const value = index === -1 ? undefined : args[index + 1]
+  if (index === -1 || args.indexOf('--platform', index + 1) !== -1) {
+    throw new Error('Desktop sync requires exactly one --platform argument')
+  }
+  if (value !== 'windows' && value !== 'macos' && value !== 'linux') {
+    throw new Error('Desktop platform must be windows, macos, or linux')
+  }
+  return value
+}

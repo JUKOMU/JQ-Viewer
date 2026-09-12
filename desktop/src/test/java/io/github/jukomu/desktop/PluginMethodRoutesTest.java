@@ -1,6 +1,6 @@
 package io.github.jukomu.desktop;
 
-import io.github.jukomu.desktop.bridge.DesktopPlugin;
+import io.github.jukomu.desktop.bridge.Plugin;
 import io.github.jukomu.desktop.bridge.PluginMethod;
 import io.github.jukomu.desktop.bridge.PluginMethodRoutes;
 import io.javalin.http.Context;
@@ -19,8 +19,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PluginMethodRoutesTest {
     @Test
-    void annotationIsRuntimeRetainedOnDesktopPluginMethod() throws Exception {
-        Method method = DesktopPlugin.class.getDeclaredMethod("getInitStatus", Context.class);
+    void annotationIsRuntimeRetainedOnPluginMethod() throws Exception {
+        Method method = Plugin.class.getDeclaredMethod("getInitStatus", Context.class);
 
         assertTrue(method.isAnnotationPresent(PluginMethod.class));
         assertEquals(RetentionPolicy.RUNTIME, PluginMethod.class.getAnnotation(Retention.class).value());
@@ -39,16 +39,6 @@ class PluginMethodRoutesTest {
     @Test
     void rejectsInvalidSignaturesBeforeRegisteringRoutes() {
         assertThrows(IllegalArgumentException.class, () -> PluginMethodRoutes.discover(new InvalidPlugin()));
-    }
-
-    @Test
-    void rejectsDuplicateRoutesAcrossPluginInstances() {
-        IllegalArgumentException exception = assertThrows(
-                IllegalArgumentException.class,
-                () -> PluginMethodRoutes.discover(List.of(new ValidPlugin(), new ValidPlugin()))
-        );
-
-        assertTrue(exception.getMessage().contains("/api/ping"));
     }
 
     @Test

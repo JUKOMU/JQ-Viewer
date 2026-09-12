@@ -1,1 +1,1 @@
-window.__desktopTestAsset = true
+window.__testAsset = true

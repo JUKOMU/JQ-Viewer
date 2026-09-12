@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { commandInvocation } from '../../scripts/desktop-sync-command.mjs'
+import { commandInvocation, parseTargetPlatform } from '../../scripts/desktop-sync-command.mjs'
 
 describe('desktop sync command invocation', () => {
   it('uses cmd.exe for Windows command shims', () => {
@@ -33,5 +33,16 @@ describe('desktop sync command invocation', () => {
       command: 'node.exe',
       args: ['--version'],
     })
+  })
+
+  it('requires one explicit target platform', () => {
+    expect(parseTargetPlatform(['--platform', 'windows'])).toBe('windows')
+    expect(parseTargetPlatform(['--platform', 'macos'])).toBe('macos')
+    expect(parseTargetPlatform(['--platform', 'linux'])).toBe('linux')
+    expect(() => parseTargetPlatform([])).toThrow('exactly one --platform')
+    expect(() => parseTargetPlatform(['--platform', 'linux', '--platform', 'windows'])).toThrow(
+      'exactly one --platform',
+    )
+    expect(() => parseTargetPlatform(['--platform', 'darwin'])).toThrow('windows, macos, or linux')
   })
 })

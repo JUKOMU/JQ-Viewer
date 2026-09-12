@@ -14,7 +14,7 @@ import {
 import { tmpdir } from 'node:os'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { commandInvocation } from './desktop-sync-command.mjs'
+import { commandInvocation, parseTargetPlatform } from './desktop-sync-command.mjs'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const destination = join(root, 'desktop', 'src', 'main', 'resources', 'static')
@@ -25,10 +25,11 @@ const viteBinary = join(
   '.bin',
   process.platform === 'win32' ? 'vite.cmd' : 'vite',
 )
+const targetPlatform = parseTargetPlatform(process.argv.slice(2))
 
-function run(command, args) {
+function run(command, args, env = process.env) {
   const invocation = commandInvocation(command, args)
-  execFileSync(invocation.command, invocation.args, { cwd: root, stdio: 'inherit' })
+  execFileSync(invocation.command, invocation.args, { cwd: root, stdio: 'inherit', env })
 }
 
 function listFiles(directory) {
@@ -92,7 +93,10 @@ function replaceDestination() {
 
 try {
   run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'typecheck'])
-  run(viteBinary, ['build', '--mode', 'desktop', '--outDir', buildOutput, '--emptyOutDir'])
+  run(viteBinary, ['build', '--mode', 'desktop', '--outDir', buildOutput, '--emptyOutDir'], {
+    ...process.env,
+    JQ_VIEWER_PLATFORM: targetPlatform,
+  })
   validateBuild(buildOutput)
   mkdirSync(dirname(destination), { recursive: true })
   replaceDestination()

@@ -32,5 +32,5 @@ jobs:
           cache: maven
 
       - run: npm ci
-      - run: npm run desktop:sync
+      - run: npm run desktop:sync -- --platform linux
       - run: mvn --batch-mode test -f desktop/pom.xml

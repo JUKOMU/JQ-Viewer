@@ -1,0 +1,63 @@
+package io.github.jukomu.desktop;
+
+import io.github.jukomu.desktop.backend.Backend;
+import io.github.jukomu.desktop.data.Database;
+import io.github.jukomu.desktop.data.Paths;
+import io.github.jukomu.desktop.host.BrowserLauncher;
+import io.github.jukomu.desktop.host.Host;
+import io.github.jukomu.desktop.host.SingleInstanceGuard;
+import org.junit.jupiter.api.Test;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class HostTest {
+    @Test
+    void secondHostDoesNotStartAnotherBackendAndReopensPrimaryHome() throws Exception {
+        Path root = Files.createTempDirectory("jq-viewer-host-");
+        Paths paths = new Paths(
+                root.resolve("program"),
+                root.resolve("home"),
+                Map.of(),
+                "Linux"
+        );
+        List<String> opened = new ArrayList<>();
+        Host primary = new Host(
+                new Backend(paths, new Database(paths), new BackendTestExecutor()),
+                new SingleInstanceGuard(paths),
+                new BrowserLauncher(uri -> opened.add(uri.toString()))
+        );
+        Host secondary = new Host(
+                new Backend(paths, new Database(paths), new BackendTestExecutor()),
+                new SingleInstanceGuard(paths),
+                new BrowserLauncher(uri -> opened.add(uri.toString()))
+        );
+
+        try {
+            assertTrue(primary.start());
+            assertFalse(secondary.start());
+            assertEquals(primary.homeUrl().toString(), opened.getFirst());
+            long deadline = System.nanoTime() + 2_000_000_000L;
+            while (opened.size() < 2 && System.nanoTime() < deadline) {
+                Thread.sleep(10);
+            }
+            assertEquals(2, opened.size());
+            assertEquals(primary.homeUrl().toString(), opened.get(1));
+            assertFalse(secondary.backend().isRunning());
+            assertTrue(primary.backend().isRunning());
+        } finally {
+            secondary.close();
+            primary.close();
+        }
+
+        assertFalse(primary.isStarted());
+        assertFalse(primary.isPrimary());
+    }
+}

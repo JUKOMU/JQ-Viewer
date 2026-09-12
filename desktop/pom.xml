@@ -18,6 +18,7 @@
         <sqlite.version>3.50.3.0</sqlite.version>
         <slf4j.version>2.0.17</slf4j.version>
         <junit.version>5.11.4</junit.version>
+        <jmcomic.version>1.1.8</jmcomic.version>
         <maven.compiler.plugin.version>3.13.0</maven.compiler.plugin.version>
         <maven.surefire.plugin.version>3.5.2</maven.surefire.plugin.version>
     </properties>
@@ -42,6 +43,16 @@
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-simple</artifactId>
             <version>${slf4j.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.github.jukomu</groupId>
+            <artifactId>jmcomic-api</artifactId>
+            <version>${jmcomic.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.github.jukomu</groupId>
+            <artifactId>jmcomic-core</artifactId>
+            <version>${jmcomic.version}</version>
         </dependency>
 
         <dependency>

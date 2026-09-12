@@ -4,14 +4,13 @@ import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.security.CodeSource;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 
-/** 统一管理 Desktop 程序文件与用户数据目录。 */
-public final class DesktopPaths {
+/** 统一管理程序文件、用户数据、缓存和状态目录。 */
+public final class Paths {
     public static final String APPLICATION_NAME = "JQViewer";
 
     private final Path programDirectory;
@@ -24,7 +23,7 @@ public final class DesktopPaths {
     private final Path databasePath;
     private final Path instanceLockPath;
 
-    public DesktopPaths(
+    public Paths(
             Path programDirectory,
             Path userHome,
             Map<String, String> environment,
@@ -60,9 +59,9 @@ public final class DesktopPaths {
         this.instanceLockPath = stateDirectory.resolve("instance.lock");
     }
 
-    public static DesktopPaths current() {
-        Path userHome = Paths.get(System.getProperty("user.home", "."));
-        return new DesktopPaths(
+    public static Paths current() {
+        Path userHome = java.nio.file.Paths.get(System.getProperty("user.home", "."));
+        return new Paths(
                 resolveProgramDirectory(),
                 userHome,
                 System.getenv(),
@@ -83,7 +82,7 @@ public final class DesktopPaths {
         if (value == null || value.isBlank()) {
             return fallback;
         }
-        Path configured = Paths.get(value);
+        Path configured = java.nio.file.Paths.get(value);
         return configured.isAbsolute() ? configured.normalize() : home.resolve(configured).normalize();
     }
 
@@ -93,16 +92,16 @@ public final class DesktopPaths {
 
     private static Path resolveProgramDirectory() {
         try {
-            CodeSource codeSource = DesktopPaths.class.getProtectionDomain().getCodeSource();
+            CodeSource codeSource = Paths.class.getProtectionDomain().getCodeSource();
             if (codeSource != null) {
                 URI location = codeSource.getLocation().toURI();
-                Path path = Paths.get(location).toAbsolutePath().normalize();
+                Path path = java.nio.file.Paths.get(location).toAbsolutePath().normalize();
                 return Files.isDirectory(path) ? path : path.getParent();
             }
         } catch (Exception ignored) {
             // 运行时未暴露 CodeSource 时使用确定性的工作目录。
         }
-        return Paths.get(System.getProperty("user.dir", ".")).toAbsolutePath().normalize();
+        return java.nio.file.Paths.get(System.getProperty("user.dir", ".")).toAbsolutePath().normalize();
     }
 
     public Path programDirectory() {

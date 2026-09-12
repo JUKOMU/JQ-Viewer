@@ -1,9 +1,9 @@
 package io.github.jukomu.desktop;
 
-import io.github.jukomu.desktop.backend.DesktopBackend;
-import io.github.jukomu.desktop.data.DesktopPaths;
+import io.github.jukomu.desktop.backend.Backend;
+import io.github.jukomu.desktop.data.Paths;
 import io.github.jukomu.desktop.host.BrowserLauncher;
-import io.github.jukomu.desktop.host.DesktopHost;
+import io.github.jukomu.desktop.host.Host;
 import io.github.jukomu.desktop.host.SingleInstanceGuard;
 import org.junit.jupiter.api.Test;
 
@@ -17,24 +17,24 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class DesktopHostTest {
+class HostTest {
     @Test
     void secondHostDoesNotStartAnotherBackendAndReopensPrimaryHome() throws Exception {
         Path root = Files.createTempDirectory("jq-viewer-host-");
-        DesktopPaths paths = new DesktopPaths(
+        Paths paths = new Paths(
                 root.resolve("program"),
                 root.resolve("home"),
                 Map.of(),
                 "Linux"
         );
         List<String> opened = new ArrayList<>();
-        DesktopHost primary = new DesktopHost(
-                new DesktopBackend(paths),
+        Host primary = new Host(
+                new Backend(paths),
                 new SingleInstanceGuard(paths),
                 new BrowserLauncher(uri -> opened.add(uri.toString()))
         );
-        DesktopHost secondary = new DesktopHost(
-                new DesktopBackend(paths),
+        Host secondary = new Host(
+                new Backend(paths),
                 new SingleInstanceGuard(paths),
                 new BrowserLauncher(uri -> opened.add(uri.toString()))
         );

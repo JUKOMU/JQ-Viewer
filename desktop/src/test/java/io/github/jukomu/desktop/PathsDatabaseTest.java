@@ -1,7 +1,7 @@
 package io.github.jukomu.desktop;
 
-import io.github.jukomu.desktop.data.DesktopDatabase;
-import io.github.jukomu.desktop.data.DesktopPaths;
+import io.github.jukomu.desktop.data.Database;
+import io.github.jukomu.desktop.data.Paths;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
@@ -14,13 +14,13 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class DesktopPathsDatabaseTest {
+class PathsDatabaseTest {
     @Test
     void separatesProgramDirectoryFromLinuxUserDataAndUsesXdgLocations() throws Exception {
         Path root = Files.createTempDirectory("jq-viewer-paths-");
         Path program = root.resolve("program");
         Path home = root.resolve("home");
-        DesktopPaths paths = new DesktopPaths(
+        Paths paths = new Paths(
                 program,
                 home,
                 Map.of(
@@ -47,7 +47,7 @@ class DesktopPathsDatabaseTest {
     @Test
     void treatsDarwinAsMacOsBeforeCheckingWindows() {
         Path root = Path.of("build/test-darwin").toAbsolutePath();
-        DesktopPaths paths = new DesktopPaths(
+        Paths paths = new Paths(
                 root.resolve("program"),
                 root.resolve("home"),
                 Map.of(),
@@ -71,7 +71,7 @@ class DesktopPathsDatabaseTest {
     @Test
     void usesWindowsLocalAppDataInsteadOfProgramDirectory() {
         Path root = Path.of("build/test-windows").toAbsolutePath();
-        DesktopPaths paths = new DesktopPaths(
+        Paths paths = new Paths(
                 root.resolve("program"),
                 root.resolve("home"),
                 Map.of("LOCALAPPDATA", root.resolve("local-app-data").toString()),
@@ -86,16 +86,20 @@ class DesktopPathsDatabaseTest {
     }
 
     @Test
-    void opensAndMigratesDesktopDatabase() throws Exception {
+    void opensAndMigratesDatabase() throws Exception {
         Path databasePath = Files.createTempDirectory("jq-viewer-db-").resolve("data/desktop.sqlite3");
-        try (DesktopDatabase database = new DesktopDatabase(databasePath)) {
+        try (Database database = new Database(databasePath)) {
             database.open();
 
             try (ResultSet result = database.connection()
                     .createStatement()
                     .executeQuery("SELECT version FROM desktop_schema_version")) {
                 assertTrue(result.next());
-                assertEquals(1, result.getInt(1));
+                assertEquals(2, result.getInt(1));
+            }
+            try (ResultSet result = database.connection().getMetaData()
+                    .getTables(null, null, "browse_history", null)) {
+                assertTrue(result.next());
             }
             assertTrue(database.isOpen());
         }

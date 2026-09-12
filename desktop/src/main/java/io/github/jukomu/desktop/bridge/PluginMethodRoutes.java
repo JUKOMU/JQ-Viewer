@@ -11,49 +11,36 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-/** 发现显式 Desktop bridge，并将方法映射为 POST 路由。 */
+/** 发现显式 bridge 方法，并将其映射为 POST 路由。 */
 public final class PluginMethodRoutes {
     private PluginMethodRoutes() {
     }
 
     public static void register(JavalinDefaultRoutingApi routes, Object plugin) {
-        register(routes, List.of(plugin));
-    }
-
-    /**
-     * Iterable 重载用于统一校验多个 bridge；生产环境只注册一个 DesktopPlugin 实例。
-     */
-    public static void register(JavalinDefaultRoutingApi routes, Iterable<?> plugins) {
-        List<DiscoveredMethod> methods = discover(plugins);
+        List<DiscoveredMethod> methods = discover(plugin);
         for (DiscoveredMethod discovered : methods) {
             routes.post(discovered.path(), context -> invoke(discovered, context));
         }
     }
 
     public static List<DiscoveredMethod> discover(Object plugin) {
-        return discover(List.of(plugin));
-    }
-
-    public static List<DiscoveredMethod> discover(Iterable<?> plugins) {
         List<DiscoveredMethod> discovered = new ArrayList<>();
         Set<String> routes = new HashSet<>();
 
-        for (Object plugin : plugins) {
-            if (plugin == null) {
-                throw new IllegalArgumentException("Plugin instance must not be null");
-            }
+        if (plugin == null) {
+            throw new IllegalArgumentException("Plugin instance must not be null");
+        }
 
-            for (Method method : plugin.getClass().getDeclaredMethods()) {
-                if (!method.isAnnotationPresent(PluginMethod.class)) {
-                    continue;
-                }
-                validate(method);
-                String path = "/api/" + method.getName();
-                if (!routes.add(path)) {
-                    throw new IllegalArgumentException("Duplicate Desktop plugin route: " + path);
-                }
-                discovered.add(new DiscoveredMethod(plugin, method, path));
+        for (Method method : plugin.getClass().getDeclaredMethods()) {
+            if (!method.isAnnotationPresent(PluginMethod.class)) {
+                continue;
             }
+            validate(method);
+            String path = "/api/" + method.getName();
+            if (!routes.add(path)) {
+                throw new IllegalArgumentException("Duplicate plugin route: " + path);
+            }
+            discovered.add(new DiscoveredMethod(plugin, method, path));
         }
 
         return List.copyOf(discovered);

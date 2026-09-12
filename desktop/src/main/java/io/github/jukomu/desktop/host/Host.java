@@ -1,7 +1,7 @@
 package io.github.jukomu.desktop.host;
 
-import io.github.jukomu.desktop.backend.DesktopBackend;
-import io.github.jukomu.desktop.data.DesktopPaths;
+import io.github.jukomu.desktop.backend.Backend;
+import io.github.jukomu.desktop.data.Paths;
 
 import java.net.URI;
 import java.util.Objects;
@@ -9,21 +9,21 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
-/** 管理 Desktop 单进程生命周期及其操作系统入口。 */
-public final class DesktopHost implements AutoCloseable {
-    private final DesktopBackend backend;
+/** 管理单进程生命周期及其操作系统入口。 */
+public final class Host implements AutoCloseable {
+    private final Backend backend;
     private final SingleInstanceGuard instanceGuard;
     private final BrowserLauncher browserLauncher;
     private final AtomicReference<URI> homeUrl = new AtomicReference<>();
     private final CountDownLatch backendReady = new CountDownLatch(1);
 
-    private DesktopTray tray;
+    private Tray tray;
     private boolean primary;
     private boolean started;
     private boolean closed;
 
-    public DesktopHost(
-            DesktopBackend backend,
+    public Host(
+            Backend backend,
             SingleInstanceGuard instanceGuard,
             BrowserLauncher browserLauncher
     ) {
@@ -32,10 +32,10 @@ public final class DesktopHost implements AutoCloseable {
         this.browserLauncher = Objects.requireNonNull(browserLauncher, "browserLauncher");
     }
 
-    public static DesktopHost createDefault() {
-        DesktopPaths paths = DesktopPaths.current();
-        return new DesktopHost(
-                new DesktopBackend(paths),
+    public static Host createDefault() {
+        Paths paths = Paths.current();
+        return new Host(
+                new Backend(paths),
                 new SingleInstanceGuard(paths),
                 new BrowserLauncher()
         );
@@ -44,7 +44,7 @@ public final class DesktopHost implements AutoCloseable {
     /** 启动主实例；已有实例存在时发送信号并返回 false。 */
     public synchronized boolean start() throws Exception {
         if (closed) {
-            throw new IllegalStateException("Desktop host is closed");
+            throw new IllegalStateException("本地主机已关闭");
         }
         if (started) {
             return primary;
@@ -61,7 +61,7 @@ public final class DesktopHost implements AutoCloseable {
             homeUrl.set(startedHomeUrl);
             backendReady.countDown();
 
-            tray = DesktopTray.tryCreate(this::openHome, this::close).orElse(null);
+            tray = Tray.tryCreate(this::openHome, this::close).orElse(null);
             openHome();
             started = true;
             return true;
@@ -90,7 +90,7 @@ public final class DesktopHost implements AutoCloseable {
     public synchronized URI homeUrl() {
         URI url = homeUrl.get();
         if (url == null) {
-            throw new IllegalStateException("Desktop host has not started");
+            throw new IllegalStateException("本地主机尚未启动");
         }
         return url;
     }
@@ -103,7 +103,7 @@ public final class DesktopHost implements AutoCloseable {
         return started;
     }
 
-    public DesktopBackend backend() {
+    public Backend backend() {
         return backend;
     }
 

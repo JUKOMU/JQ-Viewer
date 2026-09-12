@@ -18,7 +18,7 @@ import java.util.Optional;
 /**
  * 可选的托盘集成；使用内嵌字体与轻量弹出菜单。
  */
-public final class DesktopTray implements AutoCloseable {
+public final class Tray implements AutoCloseable {
     private static final String MENU_GLYPHS = "打开首页退出";
     private static final String FONT_RESOURCE = "/fonts/NotoSansCJK-Regular.ttc";
     private static final float MENU_FONT_SIZE = 13f;
@@ -29,14 +29,14 @@ public final class DesktopTray implements AutoCloseable {
     private final JDialog hiddenDialog;
     private boolean closed;
 
-    private DesktopTray(SystemTray systemTray, TrayIcon trayIcon, JPopupMenu popupMenu, JDialog hiddenDialog) {
+    private Tray(SystemTray systemTray, TrayIcon trayIcon, JPopupMenu popupMenu, JDialog hiddenDialog) {
         this.systemTray = systemTray;
         this.trayIcon = trayIcon;
         this.popupMenu = popupMenu;
         this.hiddenDialog = hiddenDialog;
     }
 
-    public static Optional<DesktopTray> tryCreate(Runnable openHome, Runnable exit) {
+    public static Optional<Tray> tryCreate(Runnable openHome, Runnable exit) {
         Objects.requireNonNull(openHome, "openHome");
         Objects.requireNonNull(exit, "exit");
         if (GraphicsEnvironment.isHeadless() || !SystemTray.isSupported()) {
@@ -137,7 +137,7 @@ public final class DesktopTray implements AutoCloseable {
 
             SystemTray tray = SystemTray.getSystemTray();
             tray.add(icon);
-            return Optional.of(new DesktopTray(tray, icon, menu, hiddenDialog));
+            return Optional.of(new Tray(tray, icon, menu, hiddenDialog));
         } catch (AWTException | RuntimeException exception) {
             return Optional.empty();
         }
@@ -246,7 +246,7 @@ public final class DesktopTray implements AutoCloseable {
     }
 
     private static Font loadMenuFont() {
-        try (InputStream stream = DesktopTray.class.getResourceAsStream(FONT_RESOURCE)) {
+        try (InputStream stream = Tray.class.getResourceAsStream(FONT_RESOURCE)) {
             if (stream == null) {
                 return null;
             }

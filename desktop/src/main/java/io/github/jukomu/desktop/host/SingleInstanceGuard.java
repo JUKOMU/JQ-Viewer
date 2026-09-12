@@ -1,6 +1,6 @@
 package io.github.jukomu.desktop.host;
 
-import io.github.jukomu.desktop.data.DesktopPaths;
+import io.github.jukomu.desktop.data.Paths;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -25,7 +25,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-/** 协调 Desktop 单实例生命周期，并提供仅限 loopback 的打开首页信号。 */
+/** 协调单实例生命周期，并提供仅限 loopback 的打开首页信号。 */
 public final class SingleInstanceGuard implements AutoCloseable {
     private static final String OPEN_HOME_COMMAND = "OPEN_HOME";
     private static final Duration SIGNAL_TIMEOUT = Duration.ofSeconds(1);
@@ -42,7 +42,7 @@ public final class SingleInstanceGuard implements AutoCloseable {
     private volatile Runnable onOpenHome;
     private volatile boolean owner;
 
-    public SingleInstanceGuard(DesktopPaths paths) {
+    public SingleInstanceGuard(Paths paths) {
         this(paths.instanceLockPath());
     }
 
@@ -102,7 +102,7 @@ public final class SingleInstanceGuard implements AutoCloseable {
             this.onOpenHome = onOpenHome;
             this.owner = true;
             this.executor = Executors.newSingleThreadExecutor(runnable -> {
-                Thread thread = new Thread(runnable, "jq-viewer-desktop-instance");
+                Thread thread = new Thread(runnable, "jq-viewer-instance");
                 thread.setDaemon(true);
                 return thread;
             });

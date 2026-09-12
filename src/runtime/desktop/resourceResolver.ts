@@ -6,13 +6,13 @@ function encode(value: string): string {
 }
 
 /** 构建同源资源 URL；native virtual host 仅由 Android runtime 提供。 */
-export function createDesktopResourceResolver(): ResourceResolver {
+export function createResourceResolver(): ResourceResolver {
   return {
     imageUrl: ({ photoId, sortOrder, type }) => `/${type}/${encode(photoId)}/${sortOrder}`,
     pdfDocumentUrl: (file: FileRef) => `/pdf/${encode(String(file))}`,
     renderPdfPage: {
       available: false,
-      reason: 'Desktop PDF page rendering is unavailable',
+      reason: '当前平台不支持 PDF 页面渲染',
     },
   }
 }

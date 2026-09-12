@@ -1,8 +1,14 @@
 package io.github.jukomu.desktop.feature.catalog;
 
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.github.jukomu.desktop.feature.catalog.model.AlbumResponse;
+import io.github.jukomu.desktop.feature.catalog.model.AlbumSummaryResponse;
+import io.github.jukomu.desktop.feature.catalog.model.CategoryResponse;
+import io.github.jukomu.desktop.feature.catalog.model.CommentListResponse;
+import io.github.jukomu.desktop.feature.catalog.model.ImageResponse;
+import io.github.jukomu.desktop.feature.catalog.model.PhotoResponse;
+import io.github.jukomu.desktop.feature.catalog.model.PhotoSummaryResponse;
+import io.github.jukomu.desktop.feature.catalog.model.SearchRequest;
+import io.github.jukomu.desktop.feature.catalog.model.SearchResponse;
 import io.github.jukomu.desktop.feature.image.ImageService;
 import io.github.jukomu.jmcomic.api.client.JmClient;
 import io.github.jukomu.jmcomic.api.enums.Category;
@@ -25,7 +31,7 @@ import io.github.jukomu.jmcomic.api.model.SearchQuery;
 import java.util.List;
 import java.util.function.Function;
 
-/** 调用在线客户端并转换为页面使用的 JSON 结构。 */
+/** 调用在线客户端并转换为页面使用的响应模型。 */
 public final class CatalogService {
     private final JmClient client;
     private final ImageService imageService;
@@ -41,45 +47,41 @@ public final class CatalogService {
         this.albumCoverUrl = albumCoverUrl;
     }
 
-    public ObjectNode search(ObjectNode request) {
-        return toSearchPage(client.search(query(request)));
+    public SearchResponse search(SearchRequest request) {
+        return toSearchResponse(client.search(query(request)));
     }
 
-    public ObjectNode categories(ObjectNode request) {
-        return toSearchPage(client.getCategories(query(request)));
+    public SearchResponse categories(SearchRequest request) {
+        return toSearchResponse(client.getCategories(query(request)));
     }
 
-    public ObjectNode getAlbum(String id) {
-        return toAlbum(client.getAlbum(id));
+    public AlbumResponse getAlbum(String id) {
+        return toAlbumResponse(client.getAlbum(id));
     }
 
-    public ObjectNode getPhoto(String id) {
+    public PhotoResponse getPhoto(String id) {
         JmPhoto photo = client.getPhoto(id);
         imageService.register(photo);
-        return toPhoto(photo);
+        return toPhotoResponse(photo);
     }
 
-    public ObjectNode getComments(String albumId, int page) {
+    public CommentListResponse getComments(String albumId, int page) {
         JmCommentList comments = client.getComments(
                 ForumQuery.album(albumId).mode(ForumMode.ALL).page(page).build());
-        ObjectNode result = JsonNodeFactory.instance.objectNode();
-        result.put("total", comments.getTotal());
-        ArrayNode list = result.putArray("list");
-        for (JmComment comment : safe(comments.getList())) {
-            list.add(toComment(comment));
-        }
-        return result;
+        return new CommentListResponse(
+                comments.getTotal(),
+                safe(comments.getList()).stream().map(this::toCommentResponse).toList()
+        );
     }
 
-    private SearchQuery query(ObjectNode request) {
-        String keyword = request.has("keyword") ? request.path("keyword").asText() : "";
+    private SearchQuery query(SearchRequest request) {
         return new SearchQuery.Builder()
-                .text(keyword)
-                .category(category(request.path("category").asText()))
-                .orderBy(orderBy(request.path("orderBy").asText()))
-                .time(time(request.path("time").asText()))
-                .mainTag(mainTag(request.path("searchMainTag").asInt()))
-                .page(Math.max(1, request.path("page").asInt(1)))
+                .text(text(request.keyword()))
+                .category(category(text(request.category())))
+                .orderBy(orderBy(text(request.orderBy())))
+                .time(time(text(request.time())))
+                .mainTag(mainTag(request.searchMainTag() == null ? 0 : request.searchMainTag()))
+                .page(Math.max(1, request.page() == null ? 1 : request.page()))
                 .build();
     }
 
@@ -111,119 +113,116 @@ public final class CatalogService {
         return SearchMainTag.SITE_SEARCH;
     }
 
-    private ObjectNode toSearchPage(JmSearchPage page) {
-        ObjectNode result = JsonNodeFactory.instance.objectNode();
-        result.put("currentPage", page.getCurrentPage());
-        result.put("totalItems", page.getTotalItems());
-        result.put("totalPages", page.getTotalPages());
-        ArrayNode content = result.putArray("content");
-        for (JmAlbumMeta item : page.getContent()) {
-            content.add(toAlbumMeta(item));
-        }
-        return result;
+    private SearchResponse toSearchResponse(JmSearchPage page) {
+        return new SearchResponse(
+                page.getCurrentPage(),
+                page.getTotalItems(),
+                page.getTotalPages(),
+                safe(page.getContent()).stream().map(this::toAlbumSummaryResponse).toList()
+        );
     }
 
-    private ObjectNode toAlbum(JmAlbum album) {
-        ObjectNode result = JsonNodeFactory.instance.objectNode();
-        result.put("id", text(album.getId()));
-        result.put("title", text(album.getTitle()));
-        result.put("description", text(album.getDescription()));
-        result.put("addTime", text(album.getAddTime()));
-        result.put("pageCount", album.getPageCount());
-        result.put("likes", text(album.getLikes()));
-        result.put("views", text(album.getViews()));
-        result.put("commentCount", album.getCommentCount());
-        result.put("image", albumCoverUrl.apply(album.getId()));
-        result.set("category", toCategory(album.getCategory()));
-        result.set("subCategory", toCategory(album.getSubCategory()));
-        addStrings(result.putArray("authors"), album.getAuthors());
-        addStrings(result.putArray("works"), album.getWorks());
-        addStrings(result.putArray("actors"), album.getActors());
-        addStrings(result.putArray("tags"), album.getTags());
-        ArrayNode related = result.putArray("relatedAlbums");
-        for (JmAlbumMeta item : safe(album.getRelatedAlbums())) related.add(toAlbumMeta(item));
-        ArrayNode photos = result.putArray("photoMetas");
-        for (JmPhotoMeta item : safe(album.getPhotoMetas())) {
-            ObjectNode photo = photos.addObject();
-            photo.put("id", text(item.getId()));
-            photo.put("title", text(item.getTitle()));
-            photo.put("sortOrder", item.getSortOrder());
-        }
-        result.put("seriesId", text(album.getSeriesId()));
-        result.put("isSingleEpisode", album.isSingleAlbum());
-        result.put("isFavorite", album.isFavorite());
-        result.put("isLiked", album.isLiked());
-        result.put("price", text(album.getPrice()));
-        result.put("purchased", text(album.getPurchased()));
-        return result;
+    private AlbumResponse toAlbumResponse(JmAlbum album) {
+        return new AlbumResponse(
+                text(album.getId()),
+                text(album.getTitle()),
+                text(album.getDescription()),
+                text(album.getAddTime()),
+                album.getPageCount(),
+                text(album.getLikes()),
+                text(album.getViews()),
+                album.getCommentCount(),
+                albumCoverUrl.apply(album.getId()),
+                toCategoryResponse(album.getCategory()),
+                toCategoryResponse(album.getSubCategory()),
+                strings(album.getAuthors()),
+                strings(album.getWorks()),
+                strings(album.getActors()),
+                strings(album.getTags()),
+                safe(album.getRelatedAlbums()).stream().map(this::toAlbumSummaryResponse).toList(),
+                safe(album.getPhotoMetas()).stream().map(CatalogService::toPhotoSummaryResponse).toList(),
+                text(album.getSeriesId()),
+                album.isSingleAlbum(),
+                album.isFavorite(),
+                album.isLiked(),
+                text(album.getPrice()),
+                text(album.getPurchased())
+        );
     }
 
-    private ObjectNode toAlbumMeta(JmAlbumMeta item) {
-        ObjectNode result = JsonNodeFactory.instance.objectNode();
-        result.put("id", text(item.getId()));
-        result.put("title", text(item.getTitle()));
-        result.put("coverUrl", albumCoverUrl.apply(item.getId()));
-        addStrings(result.putArray("authors"), item.getAuthors());
-        addStrings(result.putArray("tags"), item.getTags());
-        result.put("description", text(item.getDescription()));
-        result.put("image", text(item.getImage()));
-        result.set("category", toCategory(item.getCategory()));
-        result.set("subCategory", toCategory(item.getSubCategory()));
-        return result;
+    private AlbumSummaryResponse toAlbumSummaryResponse(JmAlbumMeta album) {
+        return new AlbumSummaryResponse(
+                text(album.getId()),
+                text(album.getTitle()),
+                albumCoverUrl.apply(album.getId()),
+                strings(album.getAuthors()),
+                strings(album.getTags()),
+                text(album.getDescription()),
+                text(album.getImage()),
+                toCategoryResponse(album.getCategory()),
+                toCategoryResponse(album.getSubCategory())
+        );
     }
 
-    private ObjectNode toPhoto(JmPhoto photo) {
-        ObjectNode result = JsonNodeFactory.instance.objectNode();
-        result.put("id", text(photo.getId()));
-        result.put("title", text(photo.getTitle()));
-        result.put("albumId", text(photo.getAlbumId()));
-        result.put("sortOrder", photo.getSortOrder());
-        result.put("author", text(photo.getAuthor()));
-        addStrings(result.putArray("tags"), photo.getTags());
-        ArrayNode images = result.putArray("images");
-        for (JmImage image : safe(photo.getImages())) {
-            ObjectNode item = images.addObject();
-            item.put("photoId", text(image.getPhotoId()));
-            item.put("scrambleId", text(image.getScrambleId()));
-            item.put("filename", text(image.getFilename()));
-            item.put("url", text(image.getUrl()));
-            item.put("queryParams", text(image.getQueryParams()));
-            item.put("sortOrder", image.getSortOrder());
-        }
-        result.put("isSingleEpisode", photo.isSingleAlbum());
-        return result;
+    private static PhotoSummaryResponse toPhotoSummaryResponse(JmPhotoMeta photo) {
+        return new PhotoSummaryResponse(
+                text(photo.getId()),
+                text(photo.getTitle()),
+                photo.getSortOrder()
+        );
     }
 
-    private ObjectNode toComment(JmComment comment) {
-        ObjectNode result = JsonNodeFactory.instance.objectNode();
-        result.put("commentId", text(comment.getCommentId()));
-        result.put("userId", text(comment.getUserId()));
-        result.put("username", text(comment.getUsername()));
-        result.put("nickname", text(comment.getNickname()));
-        result.put("content", text(comment.getContent()));
-        result.put("postDate", text(comment.getPostDate()));
-        result.put("photo", text(comment.getPhoto()));
-        result.put("expinfo", text(comment.getExpinfo()));
-        result.put("aid", text(comment.getAid()));
-        result.put("name", text(comment.getName()));
-        result.put("likes", comment.getLikes());
-        result.put("voteUp", comment.getVoteUp());
-        result.put("voteDown", comment.getVoteDown());
-        ArrayNode replies = result.putArray("replys");
-        for (JmComment reply : safe(comment.getReplys())) replies.add(toComment(reply));
-        return result;
+    private PhotoResponse toPhotoResponse(JmPhoto photo) {
+        return new PhotoResponse(
+                text(photo.getId()),
+                text(photo.getTitle()),
+                text(photo.getAlbumId()),
+                photo.getSortOrder(),
+                text(photo.getAuthor()),
+                strings(photo.getTags()),
+                safe(photo.getImages()).stream().map(CatalogService::toImageResponse).toList(),
+                photo.isSingleAlbum()
+        );
     }
 
-    private static ObjectNode toCategory(JmCategoryMeta category) {
-        if (category == null) return null;
-        ObjectNode result = JsonNodeFactory.instance.objectNode();
-        result.put("id", text(category.getId()));
-        result.put("title", text(category.getTitle()));
-        return result;
+    private static ImageResponse toImageResponse(JmImage image) {
+        return new ImageResponse(
+                text(image.getPhotoId()),
+                text(image.getScrambleId()),
+                text(image.getFilename()),
+                text(image.getUrl()),
+                text(image.getQueryParams()),
+                image.getSortOrder()
+        );
     }
 
-    private static void addStrings(ArrayNode target, List<String> values) {
-        for (String value : safe(values)) target.add(text(value));
+    private CommentListResponse.Comment toCommentResponse(JmComment comment) {
+        return new CommentListResponse.Comment(
+                text(comment.getCommentId()),
+                text(comment.getUserId()),
+                text(comment.getUsername()),
+                text(comment.getNickname()),
+                text(comment.getContent()),
+                text(comment.getPostDate()),
+                text(comment.getPhoto()),
+                text(comment.getExpinfo()),
+                text(comment.getAid()),
+                text(comment.getName()),
+                comment.getLikes(),
+                comment.getVoteUp(),
+                comment.getVoteDown(),
+                safe(comment.getReplys()).stream().map(this::toCommentResponse).toList()
+        );
+    }
+
+    private static CategoryResponse toCategoryResponse(JmCategoryMeta category) {
+        return category == null
+                ? null
+                : new CategoryResponse(text(category.getId()), text(category.getTitle()));
+    }
+
+    private static List<String> strings(List<String> values) {
+        return safe(values).stream().map(CatalogService::text).toList();
     }
 
     private static <T> List<T> safe(List<T> values) {

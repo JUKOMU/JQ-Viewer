@@ -1,14 +1,14 @@
 package io.github.jukomu.desktop.feature.image;
 
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import io.github.jukomu.jmcomic.api.model.JmImage;
-import io.github.jukomu.jmcomic.api.model.JmPhoto;
-import io.github.jukomu.jmcomic.api.client.JmClient;
-import io.github.jukomu.jmcomic.core.crypto.JmImageTool;
 import io.github.jukomu.desktop.bridge.ApiException;
 import io.github.jukomu.desktop.bridge.EventHub;
+import io.github.jukomu.desktop.bridge.model.SuccessResponse;
+import io.github.jukomu.desktop.feature.image.model.ImageEvent;
+import io.github.jukomu.desktop.feature.image.model.PreloadImagesResponse;
+import io.github.jukomu.jmcomic.api.client.JmClient;
+import io.github.jukomu.jmcomic.api.model.JmImage;
+import io.github.jukomu.jmcomic.api.model.JmPhoto;
+import io.github.jukomu.jmcomic.core.crypto.JmImageTool;
 
 import javax.imageio.ImageIO;
 import java.awt.Graphics2D;
@@ -17,6 +17,7 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -50,8 +51,14 @@ public final class ImageService {
         images.put(photo.getId(), photoImages);
     }
 
-    public ObjectNode preload(String photoId, String type, ArrayNode input, boolean replacePending) {
+    public PreloadImagesResponse preload(
+            String photoId,
+            String type,
+            List<JmImage> input,
+            boolean replacePending
+    ) {
         validateType(type);
+        if (input == null) throw ApiException.invalidRequest("images必须是数组");
         Map<Integer, JmImage> photoImages = images.computeIfAbsent(photoId, ignored -> new ConcurrentHashMap<>());
         long currentGeneration;
         synchronized (this) {
@@ -59,10 +66,10 @@ public final class ImageService {
             if (replacePending) generations.put(photoId + "/" + type, currentGeneration);
         }
 
-        ArrayNode cached = JsonNodeFactory.instance.arrayNode();
-        ArrayNode waiting = JsonNodeFactory.instance.arrayNode();
-        for (int index = 0; index < input.size(); index++) {
-            ObjectNode value = requireImage(input.get(index));
+        List<Integer> cached = new ArrayList<>();
+        List<Integer> waiting = new ArrayList<>();
+        for (JmImage value : input) {
+            if (value == null) throw ApiException.invalidRequest("images包含无效元素");
             JmImage image = toImage(photoId, value);
             photoImages.put(image.getSortOrder(), image);
             String cacheKey = key(photoId, image.getSortOrder(), type);
@@ -84,13 +91,11 @@ public final class ImageService {
             waiting.add(image.getSortOrder());
             schedule(photoId, type, image, currentGeneration);
         }
-        ObjectNode result = JsonNodeFactory.instance.objectNode();
-        result.set("cached", cached);
-        result.set("pending", waiting);
-        return result;
+        return new PreloadImagesResponse(List.copyOf(cached), List.copyOf(waiting));
     }
 
-    public ObjectNode retry(String photoId, ObjectNode value) {
+    public SuccessResponse retry(String photoId, JmImage value) {
+        if (value == null) throw ApiException.invalidRequest("image必须是对象");
         JmImage image = toImage(photoId, value);
         cache.remove(key(photoId, image.getSortOrder(), "image"));
         cache.remove(key(photoId, image.getSortOrder(), "thumb"));
@@ -101,7 +106,7 @@ public final class ImageService {
             generations.put(photoId + "/image", currentGeneration);
         }
         schedule(photoId, "image", image, currentGeneration);
-        return JsonNodeFactory.instance.objectNode().put("success", true);
+        return SuccessResponse.ok();
     }
 
     public ImageCache.Entry read(String photoId, int sortOrder, String type) {
@@ -155,11 +160,11 @@ public final class ImageService {
                     publish(photoId, image.getSortOrder(), type);
                 } catch (Exception exception) {
                     if (generations.getOrDefault(scope, currentGeneration) == currentGeneration) {
-                        ObjectNode event = JsonNodeFactory.instance.objectNode();
-                        event.put("photoId", photoId);
-                        event.put("sortOrder", image.getSortOrder());
-                        event.put("type", type);
-                        events.publish("imageFailed", event);
+                        events.publish("imageFailed", new ImageEvent(
+                                photoId,
+                                image.getSortOrder(),
+                                type
+                        ));
                     }
                 } finally {
                     pending.remove(pendingKey, currentGeneration);
@@ -172,24 +177,20 @@ public final class ImageService {
     }
 
     private void publish(String photoId, int sortOrder, String type) {
-        ObjectNode event = JsonNodeFactory.instance.objectNode();
-        event.put("photoId", photoId);
-        event.put("sortOrder", sortOrder);
-        event.put("type", type);
-        events.publish("imageReady", event);
+        events.publish("imageReady", new ImageEvent(photoId, sortOrder, type));
     }
 
-    private static JmImage toImage(String photoId, ObjectNode value) {
-        int sortOrder = value.path("sortOrder").asInt(0);
+    private static JmImage toImage(String photoId, JmImage value) {
+        int sortOrder = value.getSortOrder();
         if (sortOrder <= 0) throw ApiException.invalidRequest("sortOrder必须是正整数");
-        return new JmImage(photoId, value.path("scrambleId").asText(""),
-                value.path("filename").asText(""), value.path("url").asText(""),
-                value.path("queryParams").asText(""), sortOrder);
-    }
-
-    private static ObjectNode requireImage(com.fasterxml.jackson.databind.JsonNode node) {
-        if (node == null || !node.isObject()) throw ApiException.invalidRequest("images包含无效元素");
-        return (ObjectNode) node;
+        return new JmImage(
+                photoId,
+                text(value.getScrambleId()),
+                text(value.getFilename()),
+                text(value.getUrl()),
+                text(value.getQueryParams()),
+                sortOrder
+        );
     }
 
     private static void validateType(String type) {
@@ -228,5 +229,9 @@ public final class ImageService {
 
     private static List<JmImage> safe(List<JmImage> value) {
         return value == null ? List.of() : value;
+    }
+
+    private static String text(String value) {
+        return value == null ? "" : value;
     }
 }

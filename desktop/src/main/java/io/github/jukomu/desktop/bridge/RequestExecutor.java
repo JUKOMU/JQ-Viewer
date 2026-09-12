@@ -1,14 +1,14 @@
 package io.github.jukomu.desktop.bridge;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.github.jukomu.desktop.bridge.model.ErrorResponse;
 import io.javalin.http.Context;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 /** 将阻塞业务调用放入有界 executor，并将结果转换为一次 HTTP 响应。 */
 public final class RequestExecutor {
@@ -20,18 +20,33 @@ public final class RequestExecutor {
         this.mapper = mapper;
     }
 
-    public void run(Context context, Function<ObjectNode, JsonNode> task) {
-        ObjectNode request;
+    public <T> void run(Context context, Class<T> requestType, Function<T, ?> task) {
+        T request;
         try {
-            request = Request.object(context, mapper);
+            request = Request.body(context, mapper, requestType);
         } catch (ApiException exception) {
             sendError(context, exception);
             return;
         }
 
-        CompletableFuture<JsonNode> response;
+        execute(context, () -> task.apply(request));
+    }
+
+    public void run(Context context, Supplier<?> task) {
         try {
-            response = CompletableFuture.supplyAsync(() -> task.apply(request), executor);
+            Request.requireObject(context, mapper);
+        } catch (ApiException exception) {
+            sendError(context, exception);
+            return;
+        }
+
+        execute(context, task);
+    }
+
+    private void execute(Context context, Supplier<?> task) {
+        CompletableFuture<?> response;
+        try {
+            response = CompletableFuture.supplyAsync(task, executor);
         } catch (RejectedExecutionException exception) {
             sendError(context, new ApiException("internal", 503, "当前请求过多，请稍后重试"));
             return;
@@ -51,10 +66,7 @@ public final class RequestExecutor {
         ApiException error = failure instanceof ApiException apiException
                 ? apiException
                 : new ApiException("internal", 500, messageOf(failure));
-        ObjectNode body = mapper.createObjectNode();
-        body.put("code", error.code());
-        body.put("message", error.getMessage());
-        context.status(error.status()).json(body);
+        context.status(error.status()).json(new ErrorResponse(error.code(), error.getMessage()));
     }
 
     private static Throwable unwrap(Throwable failure) {

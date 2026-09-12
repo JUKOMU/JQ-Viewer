@@ -1,9 +1,9 @@
 package io.github.jukomu.desktop.feature.settings;
 
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.jukomu.desktop.bridge.ApiException;
+import io.github.jukomu.desktop.bridge.model.SuccessResponse;
 import io.github.jukomu.desktop.data.Database;
+import io.github.jukomu.desktop.feature.settings.model.SettingsResponse;
 
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -20,26 +20,26 @@ public final class SettingsService {
         this.database = database;
     }
 
-    public synchronized ObjectNode all() {
-        ObjectNode result = JsonNodeFactory.instance.objectNode();
-        result.put("readerPreloadPages", integer("reader_preload_pages", 15));
-        result.put("preloadConcurrency", preloadConcurrency());
-        result.put("downloadConcurrency", downloadConcurrency());
-        result.put("downloadPublic", false);
-        result.put("cacheCapacityMb", CACHE_CAPACITY_MB);
-        result.put("cacheRequestedMb", CACHE_CAPACITY_MB);
-        result.put("cacheEffectiveMb", CACHE_CAPACITY_MB);
-        result.put("cacheMaxHeapMb", Runtime.getRuntime().maxMemory() / 1024 / 1024);
-        result.put("cacheTemporaryClamp", false);
-        result.put("cacheLimitReason", "");
-        result.put("ocrEnabled", false);
-        result.put("readerDisplayMode", text("reader_display_mode", "vertical"));
-        result.put("readerScreenOrientation", "auto");
-        result.put("readerBrightness", -1);
-        result.put("readerKeepScreenOn", true);
-        result.put("readerVolumeNavigation", false);
-        result.put("readerAutoShowToolbarAtEnd", bool("reader_auto_show_toolbar_at_end", true));
-        return result;
+    public synchronized SettingsResponse all() {
+        return new SettingsResponse(
+                integer("reader_preload_pages", 15),
+                preloadConcurrency(),
+                downloadConcurrency(),
+                false,
+                CACHE_CAPACITY_MB,
+                CACHE_CAPACITY_MB,
+                CACHE_CAPACITY_MB,
+                Runtime.getRuntime().maxMemory() / 1024 / 1024,
+                false,
+                "",
+                false,
+                text("reader_display_mode", "vertical"),
+                "auto",
+                -1,
+                true,
+                false,
+                bool("reader_auto_show_toolbar_at_end", true)
+        );
     }
 
     public synchronized int preloadConcurrency() {
@@ -50,29 +50,29 @@ public final class SettingsService {
         return concurrency("download_concurrency");
     }
 
-    public synchronized ObjectNode setConcurrency(String key, int value) {
+    public synchronized SuccessResponse setConcurrency(String key, int value) {
         if (value < 1 || value > 12) throw badRequest("n必须在1到12之间");
         put(key, value);
-        return JsonNodeFactory.instance.objectNode().put("success", true);
+        return SuccessResponse.ok();
     }
 
-    public synchronized ObjectNode setReaderPreloadPages(int value) {
+    public synchronized SuccessResponse setReaderPreloadPages(int value) {
         if (value < 5 || value > 50) throw badRequest("n必须在5到50之间");
         put("reader_preload_pages", value);
-        return JsonNodeFactory.instance.objectNode().put("success", true);
+        return SuccessResponse.ok();
     }
 
-    public synchronized ObjectNode setDisplayMode(String value) {
+    public synchronized SuccessResponse setDisplayMode(String value) {
         if (!"vertical".equals(value) && !"horizontal".equals(value)) {
             throw badRequest("mode必须是vertical或horizontal");
         }
         put("reader_display_mode", value);
-        return JsonNodeFactory.instance.objectNode().put("success", true);
+        return SuccessResponse.ok();
     }
 
-    public synchronized ObjectNode setAutoShow(boolean value) {
+    public synchronized SuccessResponse setAutoShow(boolean value) {
         put("reader_auto_show_toolbar_at_end", value);
-        return JsonNodeFactory.instance.objectNode().put("success", true);
+        return SuccessResponse.ok();
     }
 
     private int concurrency(String key) {

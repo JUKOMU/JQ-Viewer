@@ -1,11 +1,15 @@
 package io.github.jukomu.desktop.backend;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.MapperFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.json.JsonMapper;
 import io.github.jukomu.desktop.bridge.ApiException;
 import io.github.jukomu.desktop.bridge.EventHub;
 import io.github.jukomu.desktop.bridge.Plugin;
 import io.github.jukomu.desktop.bridge.PluginMethodRoutes;
 import io.github.jukomu.desktop.bridge.RequestExecutor;
+import io.github.jukomu.desktop.bridge.model.ErrorResponse;
 import io.github.jukomu.desktop.bridge.handler.ApiPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.AuthPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.HistoryPluginHandler;
@@ -29,7 +33,6 @@ import org.slf4j.LoggerFactory;
 
 import java.net.URI;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
@@ -127,7 +130,11 @@ public final class Backend implements AutoCloseable {
             }
 
             database.open();
-            ObjectMapper mapper = new ObjectMapper();
+            ObjectMapper mapper = JsonMapper.builder()
+                    .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+                    .disable(DeserializationFeature.ACCEPT_FLOAT_AS_INT)
+                    .disable(MapperFeature.ALLOW_COERCION_OF_SCALARS)
+                    .build();
             SettingsService settingsService = new SettingsService(database);
             int preloadConcurrency = settingsService.preloadConcurrency();
             configureBusinessExecutor(preloadConcurrency);
@@ -238,10 +245,7 @@ public final class Backend implements AutoCloseable {
         ApiException error = failure instanceof ApiException apiException
                 ? apiException
                 : new ApiException("internal", 500, messageOf(failure));
-        context.status(error.status()).json(Map.of(
-                "code", error.code(),
-                "message", error.getMessage()
-        ));
+        context.status(error.status()).json(new ErrorResponse(error.code(), error.getMessage()));
     }
 
     private static Throwable unwrap(Throwable failure) {

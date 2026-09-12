@@ -1,11 +1,15 @@
 package io.github.jukomu.desktop.bridge.handler;
 
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.jukomu.desktop.bridge.ApiException;
 import io.github.jukomu.desktop.bridge.Request;
 import io.github.jukomu.desktop.bridge.RequestExecutor;
 import io.github.jukomu.desktop.feature.catalog.CatalogService;
+import io.github.jukomu.desktop.feature.catalog.model.CommentsRequest;
+import io.github.jukomu.desktop.feature.catalog.model.IdRequest;
+import io.github.jukomu.desktop.feature.catalog.model.SearchRequest;
 import io.github.jukomu.desktop.feature.image.ImageService;
+import io.github.jukomu.desktop.feature.image.model.PreloadImagesRequest;
+import io.github.jukomu.desktop.feature.image.model.RetryImageRequest;
 import io.javalin.http.Context;
 
 /** 处理目录、章节和图片预加载 bridge 请求。 */
@@ -21,52 +25,45 @@ public final class ApiPluginHandler {
     }
 
     public void search(Context context) {
-        requests.run(context, catalog::search);
+        requests.run(context, SearchRequest.class, catalog::search);
     }
 
     public void categories(Context context) {
-        requests.run(context, catalog::categories);
+        requests.run(context, SearchRequest.class, catalog::categories);
     }
 
     public void getAlbum(Context context) {
-        requests.run(context, request -> catalog.getAlbum(required(request, "id")));
+        requests.run(context, IdRequest.class,
+                request -> catalog.getAlbum(Request.requiredText(request.id(), "id")));
     }
 
     public void getPhoto(Context context) {
-        requests.run(context, request -> catalog.getPhoto(required(request, "id")));
+        requests.run(context, IdRequest.class,
+                request -> catalog.getPhoto(Request.requiredText(request.id(), "id")));
     }
 
     public void getComments(Context context) {
-        requests.run(context, request -> catalog.getComments(
-                required(request, "albumId"), positive(request, "page", 1)));
+        requests.run(context, CommentsRequest.class, request -> catalog.getComments(
+                Request.requiredText(request.albumId(), "albumId"),
+                positive(request.page(), "page", 1)));
     }
 
     public void preloadImages(Context context) {
-        requests.run(context, request -> images.preload(
-                required(request, "photoId"), request.path("type").asText("image"),
-                Request.array(request, "images"),
-                request.path("replacePending").asBoolean(false)));
+        requests.run(context, PreloadImagesRequest.class, request -> images.preload(
+                Request.requiredText(request.photoId(), "photoId"),
+                request.type() == null ? "image" : request.type(),
+                request.images(),
+                Request.bool(request.replacePending(), false)));
     }
 
     public void retryImage(Context context) {
-        requests.run(context, request -> images.retry(
-                required(request, "photoId"), image(request)));
+        requests.run(context, RetryImageRequest.class, request -> images.retry(
+                Request.requiredText(request.photoId(), "photoId"), request.image()));
     }
 
-    private static String required(ObjectNode request, String name) {
-        return io.github.jukomu.desktop.bridge.Request.requiredText(request, name);
-    }
-
-    private static int positive(ObjectNode request, String name, int fallback) {
-        int value = io.github.jukomu.desktop.bridge.Request.integer(request, name, fallback);
+    private static int positive(Integer candidate, String name, int fallback) {
+        int value = Request.integer(candidate, fallback);
         if (value < 1) throw ApiException.invalidRequest(name + "必须是正整数");
         return value;
-    }
-
-    private static ObjectNode image(ObjectNode request) {
-        if (!request.has("image") || !request.get("image").isObject()) {
-            throw ApiException.invalidRequest("image必须是对象");
-        }
-        return (ObjectNode) request.get("image");
     }
 }

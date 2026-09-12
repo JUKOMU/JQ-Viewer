@@ -1,77 +1,75 @@
 package io.github.jukomu.desktop.feature.auth;
 
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.github.jukomu.desktop.bridge.model.SuccessResponse;
+import io.github.jukomu.desktop.feature.auth.model.LoginStateResponse;
+import io.github.jukomu.desktop.feature.auth.model.UserInfoResponse;
+import io.github.jukomu.desktop.feature.auth.model.UserProfileResponse;
+import io.github.jukomu.jmcomic.api.client.JmClient;
 import io.github.jukomu.jmcomic.api.model.JmUserInfo;
 import io.github.jukomu.jmcomic.api.model.JmUserProfile;
-import io.github.jukomu.jmcomic.api.client.JmClient;
 
 /** 管理当前 backend 进程内的登录会话。 */
 public final class AuthService {
     private final JmClient client;
-    private volatile ObjectNode userInfo;
+    private volatile UserInfoResponse userInfo;
 
     public AuthService(JmClient client) {
         this.client = client;
     }
 
-    public ObjectNode login(String username, String password) {
-        ObjectNode result = toUserInfo(client.login(username, password));
+    public UserInfoResponse login(String username, String password) {
+        UserInfoResponse result = toUserInfoResponse(client.login(username, password));
         userInfo = result;
-        return result.deepCopy();
+        return result;
     }
 
-    public ObjectNode logout() {
+    public SuccessResponse logout() {
         client.logout();
         userInfo = null;
-        return JsonNodeFactory.instance.objectNode().put("success", true);
+        return SuccessResponse.ok();
     }
 
-    public ObjectNode state() {
-        ObjectNode currentUserInfo = userInfo;
-        ObjectNode result = JsonNodeFactory.instance.objectNode();
-        result.put("loggedIn", currentUserInfo != null);
-        if (currentUserInfo != null) {
-            result.put("username", currentUserInfo.path("username").asText());
-            result.set("userInfo", currentUserInfo.deepCopy());
-        }
-        return result;
+    public LoginStateResponse state() {
+        UserInfoResponse currentUserInfo = userInfo;
+        return currentUserInfo == null
+                ? new LoginStateResponse(false, null, null)
+                : new LoginStateResponse(true, currentUserInfo.username(), currentUserInfo);
     }
 
-    public ObjectNode profile(String uid) {
+    public UserProfileResponse profile(String uid) {
         JmUserProfile profile = client.getUserProfile(uid);
-        ObjectNode result = JsonNodeFactory.instance.objectNode();
-        result.put("username", text(profile.username()));
-        result.put("email", text(profile.email()));
-        result.put("nickname", text(profile.nickname()));
-        result.put("birthday", text(profile.birthday()));
-        result.put("city", text(profile.city()));
-        result.put("country", text(profile.country()));
-        result.put("occupation", text(profile.occupation()));
-        result.put("aboutMe", text(profile.aboutMe()));
-        result.put("website", text(profile.website()));
-        return result;
+        return new UserProfileResponse(
+                text(profile.username()),
+                text(profile.email()),
+                text(profile.nickname()),
+                text(profile.birthday()),
+                text(profile.city()),
+                text(profile.country()),
+                text(profile.occupation()),
+                text(profile.aboutMe()),
+                text(profile.website())
+        );
     }
 
-    private static ObjectNode toUserInfo(JmUserInfo info) {
-        ObjectNode result = JsonNodeFactory.instance.objectNode();
-        result.put("uid", text(info.getUid()));
-        result.put("username", text(info.getUsername()));
-        result.put("email", text(info.getEmail()));
-        result.put("emailVerified", info.isEmailVerified());
-        result.put("avatarUrl", text(info.getPhotoUrl()));
-        result.put("firstName", text(info.getFirstName()));
-        result.put("gender", text(info.getGender()));
-        result.put("message", text(info.getMessage()));
-        result.put("level", info.getLevel());
-        result.put("levelName", text(info.getLevelName()));
-        result.put("nextLevelExp", info.getNextLevelExp());
-        result.put("currentExp", info.getCurrentExp());
-        result.put("expPercent", info.getExpPercent());
-        result.put("coin", info.getCoin());
-        result.put("albumFavorites", info.getAlbumFavorites());
-        result.put("maxAlbumFavorites", info.getMaxAlbumFavorites());
-        return result;
+    private static UserInfoResponse toUserInfoResponse(JmUserInfo info) {
+        return new UserInfoResponse(
+                text(info.getUid()),
+                text(info.getUsername()),
+                text(info.getEmail()),
+                info.isEmailVerified(),
+                text(info.getPhotoUrl()),
+                text(info.getFirstName()),
+                text(info.getGender()),
+                text(info.getMessage()),
+                info.getLevel(),
+                text(info.getLevelName()),
+                info.getNextLevelExp(),
+                info.getCurrentExp(),
+                info.getExpPercent(),
+                info.getCoin(),
+                info.getAlbumFavorites(),
+                info.getMaxAlbumFavorites()
+        );
     }
 
     private static String text(String value) {

@@ -116,6 +116,8 @@ class BackendHttpContractTest {
             ObjectNode profile = body(post(http, base, requestedMethods, "getUserProfile",
                     "{\"uid\":\"user-1\"}"));
             assertOk(post(http, base, requestedMethods, "logout", "{}"));
+            ObjectNode loggedOutState = body(post(
+                    http, base, requestedMethods, "checkLoginState", "{}"));
 
             assertOk(post(http, base, requestedMethods, "setPreloadConcurrency", "{\"n\":4}"));
             assertOk(post(http, base, requestedMethods, "setDownloadConcurrency", "{\"n\":5}"));
@@ -151,10 +153,14 @@ class BackendHttpContractTest {
             assertEquals("album-1", search.path("content").get(0).path("id").asText());
             assertEquals("album-1", categories.path("content").get(0).path("id").asText());
             assertEquals("https://cover.invalid/album-1.jpg", album.path("image").asText());
+            assertTrue(album.has("isSingleEpisode"));
             assertEquals("photo-1", photo.path("id").asText());
+            assertEquals(6, photo.path("images").get(0).size());
             assertEquals("comment-1", comments.path("list").get(0).path("commentId").asText());
             assertEquals("alice", login.path("username").asText());
             assertTrue(loginState.path("loggedIn").asBoolean());
+            assertEquals(1, loggedOutState.size());
+            assertTrue(!loggedOutState.path("loggedIn").asBoolean());
             assertEquals("Alice", profile.path("nickname").asText());
             assertEquals(4, settings.path("preloadConcurrency").asInt());
             assertEquals(5, settings.path("downloadConcurrency").asInt());
@@ -191,6 +197,8 @@ class BackendHttpContractTest {
                     "{\"id\":\"album-1\"}");
             HttpResponse<String> malformed = post(http, base, new LinkedHashSet<>(),
                     "getAllSettings", "[]");
+            HttpResponse<String> wrongType = post(http, base, new LinkedHashSet<>(),
+                    "setReaderPreloadPages", "{\"n\":\"10\"}");
             HttpResponse<String> invalidImage = http.send(
                     HttpRequest.newBuilder(base.resolve("/image/photo-1/not-a-number")).GET().build(),
                     HttpResponse.BodyHandlers.ofString());
@@ -200,6 +208,8 @@ class BackendHttpContractTest {
             assertEquals("remote failed", json(upstream).path("message").asText());
             assertEquals(400, malformed.statusCode());
             assertEquals("internal", json(malformed).path("code").asText());
+            assertEquals(400, wrongType.statusCode());
+            assertEquals("n必须是整数", json(wrongType).path("message").asText());
             assertEquals(400, invalidImage.statusCode());
             assertEquals("internal", json(invalidImage).path("code").asText());
         }

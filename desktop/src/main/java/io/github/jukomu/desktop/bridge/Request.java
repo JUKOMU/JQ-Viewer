@@ -1,87 +1,86 @@
 package io.github.jukomu.desktop.bridge;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.databind.exc.MismatchedInputException;
 import io.javalin.http.Context;
 
 import java.io.IOException;
+import java.util.Collection;
 
 /** 解析并校验 bridge 请求体中的 JSON 参数。 */
 public final class Request {
     private Request() {
     }
 
-    public static ObjectNode object(Context context, ObjectMapper mapper) {
+    public static void requireObject(Context context, ObjectMapper mapper) {
+        parseObject(context, mapper);
+    }
+
+    public static <T> T body(Context context, ObjectMapper mapper, Class<T> type) {
+        JsonNode parsed = parseObject(context, mapper);
+        try {
+            return mapper.treeToValue(parsed, type);
+        } catch (MismatchedInputException exception) {
+            throw ApiException.invalidRequest(typeError(exception));
+        } catch (IOException exception) {
+            throw ApiException.invalidRequest("请求参数类型不正确");
+        }
+    }
+
+    private static JsonNode parseObject(Context context, ObjectMapper mapper) {
         try {
             JsonNode parsed = mapper.readTree(context.body());
             if (parsed == null || !parsed.isObject()) {
                 throw ApiException.invalidRequest("请求体必须是 JSON 对象");
             }
-            return (ObjectNode) parsed;
+            return parsed;
         } catch (IOException exception) {
             throw ApiException.invalidRequest("请求体不是有效的 JSON");
         }
     }
 
-    public static String requiredText(ObjectNode request, String name) {
-        JsonNode value = request.get(name);
-        if (value == null || !value.isTextual() || value.textValue().isBlank()) {
+    public static String requiredText(String value, String name) {
+        if (value == null || value.isBlank()) {
             throw ApiException.invalidRequest(name + "不能为空");
         }
-        return value.textValue();
+        return value;
     }
 
-    public static String text(ObjectNode request, String name, String fallback) {
-        JsonNode value = request.get(name);
-        if (value == null || value.isNull()) {
-            return fallback;
-        }
-        if (!value.isTextual()) {
-            throw ApiException.invalidRequest(name + "必须是字符串");
-        }
-        return value.textValue();
+    public static int integer(Integer value, int fallback) {
+        return value == null ? fallback : value;
     }
 
-    public static int integer(ObjectNode request, String name, int fallback) {
-        JsonNode value = request.get(name);
-        if (value == null || value.isNull()) {
-            return fallback;
-        }
-        if (!value.canConvertToInt() || !value.isIntegralNumber()) {
-            throw ApiException.invalidRequest(name + "必须是整数");
-        }
-        return value.intValue();
+    public static long longValue(Long value, long fallback) {
+        return value == null ? fallback : value;
     }
 
-    public static long longValue(ObjectNode request, String name, long fallback) {
-        JsonNode value = request.get(name);
-        if (value == null || value.isNull()) {
-            return fallback;
-        }
-        if (!value.canConvertToLong() || !value.isIntegralNumber()) {
-            throw ApiException.invalidRequest(name + "必须是整数");
-        }
-        return value.longValue();
+    public static boolean bool(Boolean value, boolean fallback) {
+        return value == null ? fallback : value;
     }
 
-    public static boolean bool(ObjectNode request, String name, boolean fallback) {
-        JsonNode value = request.get(name);
-        if (value == null || value.isNull()) {
-            return fallback;
+    private static String typeError(MismatchedInputException exception) {
+        String field = null;
+        boolean indexedValue = false;
+        for (JsonMappingException.Reference reference : exception.getPath()) {
+            if (reference.getFieldName() != null) field = reference.getFieldName();
+            if (reference.getIndex() >= 0) indexedValue = true;
         }
-        if (!value.isBoolean()) {
-            throw ApiException.invalidRequest(name + "必须是布尔值");
-        }
-        return value.booleanValue();
-    }
+        if (field == null) return "请求参数类型不正确";
 
-    public static ArrayNode array(ObjectNode request, String name) {
-        JsonNode value = request.get(name);
-        if (value == null || !value.isArray()) {
-            throw ApiException.invalidRequest(name + "必须是数组");
+        Class<?> target = exception.getTargetType();
+        if (target == String.class) return field + "必须是字符串";
+        if (target == Integer.class || target == int.class
+                || target == Long.class || target == long.class) {
+            return field + "必须是整数";
         }
-        return (ArrayNode) value;
+        if (target == Boolean.class || target == boolean.class) {
+            return field + "必须是布尔值";
+        }
+        if (target != null && Collection.class.isAssignableFrom(target)) {
+            return field + "必须是数组";
+        }
+        return indexedValue ? field + "包含无效元素" : field + "必须是对象";
     }
 }

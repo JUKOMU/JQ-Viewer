@@ -15,15 +15,23 @@ public final class EventHub implements AutoCloseable {
 
     private final ObjectMapper mapper;
     private final Set<SseClient> clients = ConcurrentHashMap.newKeySet();
+    private final Object lifecycleLock = new Object();
+    private boolean closed;
 
     public EventHub(ObjectMapper mapper) {
         this.mapper = mapper;
     }
 
     public void connect(SseClient client) {
-        clients.add(client);
-        client.onClose(() -> clients.remove(client));
-        client.keepAlive();
+        synchronized (lifecycleLock) {
+            if (closed) {
+                closeClient(client);
+                return;
+            }
+            clients.add(client);
+            client.onClose(() -> clients.remove(client));
+            client.keepAlive();
+        }
     }
 
     public void publish(String event, Object payload) {
@@ -40,24 +48,28 @@ public final class EventHub implements AutoCloseable {
                 client.sendEvent(event, data);
             } catch (RuntimeException exception) {
                 clients.remove(client);
-                try {
-                    client.close();
-                } catch (RuntimeException ignored) {
-                    // 连接已经失效时无需再次上报关闭异常。
-                }
+                closeClient(client);
             }
         }
     }
 
     @Override
     public void close() {
-        for (SseClient client : clients) {
-            try {
-                client.close();
-            } catch (RuntimeException ignored) {
-                // 连接已断开时忽略关闭异常。
-            }
+        Set<SseClient> closingClients;
+        synchronized (lifecycleLock) {
+            if (closed) return;
+            closed = true;
+            closingClients = Set.copyOf(clients);
+            clients.clear();
         }
-        clients.clear();
+        closingClients.forEach(EventHub::closeClient);
+    }
+
+    private static void closeClient(SseClient client) {
+        try {
+            client.close();
+        } catch (RuntimeException ignored) {
+            // 连接已失效时无需再次上报关闭异常。
+        }
     }
 }

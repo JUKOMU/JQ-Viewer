@@ -27,7 +27,13 @@ export function createBackendEvents(): BackendEvents {
     } catch {
       return
     }
-    for (const handler of handlers.get(name) ?? []) handler(payload)
+    for (const handler of handlers.get(name) ?? []) {
+      try {
+        handler(payload)
+      } catch {
+        // 单个订阅者失败不能中断同一事件的其他订阅者。
+      }
+    }
   }
 
   function closeSourceIfUnused() {

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { createBackendClient } from '@/runtime/desktop/backendClient'
-import { createRuntime, detectRuntimePlatform } from '@/runtime/desktop/createRuntime'
+import { createRuntime } from '@/runtime/desktop/createRuntime'
 import { RuntimeError } from '@/runtime/errors'
 
 function response(payload: unknown, ok = true, status = 200): Response {
@@ -139,7 +139,9 @@ describe('runtime', () => {
   test('共享一个 SSE 连接并将具名 JSON 事件分发到订阅者', async () => {
     vi.stubGlobal('EventSource', FakeEventSource)
     const events = createRuntime('linux').events
-    const first = vi.fn()
+    const first = vi.fn(() => {
+      throw new Error('listener failed')
+    })
     const second = vi.fn()
     const firstHandle = await events.onImageReady(first)
     const secondHandle = await events.onImageReady(second)
@@ -154,15 +156,6 @@ describe('runtime', () => {
     await firstHandle.remove()
     await secondHandle.remove()
     expect(FakeEventSource.instances[0].close).toHaveBeenCalledOnce()
-  })
-
-  test('在可用的宿主平台上推断运行平台', () => {
-    vi.stubGlobal('navigator', {
-      platform: 'MacIntel',
-      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X)',
-      userAgentData: { platform: 'macOS' },
-    })
-    expect(detectRuntimePlatform()).toBe('macos')
   })
 
   test('preserves structured backend error responses', async () => {

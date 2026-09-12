@@ -38,7 +38,9 @@ const app = createApp(App).use(IonicVue).use(router)
 
 const runtimePromise =
   import.meta.env.MODE === 'desktop'
-    ? import('./runtime/desktop/createRuntime').then(({ createRuntime }) => createRuntime())
+    ? import('./runtime/desktop/createRuntime').then(({ createRuntime }) =>
+        createRuntime(__JQ_RUNTIME_PLATFORM__),
+      )
     : import('./runtime/android/createAndroidRuntime').then(({ createAndroidRuntime }) =>
         createAndroidRuntime(),
       )

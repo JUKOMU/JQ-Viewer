@@ -3,6 +3,8 @@ package io.github.jukomu.desktop.feature.catalog;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.github.jukomu.desktop.feature.image.ImageService;
+import io.github.jukomu.jmcomic.api.client.JmClient;
 import io.github.jukomu.jmcomic.api.enums.Category;
 import io.github.jukomu.jmcomic.api.enums.ForumMode;
 import io.github.jukomu.jmcomic.api.enums.OrderBy;
@@ -19,21 +21,24 @@ import io.github.jukomu.jmcomic.api.model.JmPhoto;
 import io.github.jukomu.jmcomic.api.model.JmPhotoMeta;
 import io.github.jukomu.jmcomic.api.model.JmSearchPage;
 import io.github.jukomu.jmcomic.api.model.SearchQuery;
-import io.github.jukomu.jmcomic.core.client.impl.JmApiClient;
-import io.github.jukomu.desktop.feature.image.ImageService;
 
 import java.util.List;
+import java.util.function.Function;
 
 /** 调用在线客户端并转换为页面使用的 JSON 结构。 */
 public final class CatalogService {
-    private static final String COVER_SIZE = "_3x4";
-
-    private final JmApiClient client;
+    private final JmClient client;
     private final ImageService imageService;
+    private final Function<String, String> albumCoverUrl;
 
-    public CatalogService(JmApiClient client, ImageService imageService) {
+    public CatalogService(
+            JmClient client,
+            ImageService imageService,
+            Function<String, String> albumCoverUrl
+    ) {
         this.client = client;
         this.imageService = imageService;
+        this.albumCoverUrl = albumCoverUrl;
     }
 
     public ObjectNode search(ObjectNode request) {
@@ -128,7 +133,7 @@ public final class CatalogService {
         result.put("likes", text(album.getLikes()));
         result.put("views", text(album.getViews()));
         result.put("commentCount", album.getCommentCount());
-        result.put("image", client.getAlbumCoverUrl(album.getId(), COVER_SIZE));
+        result.put("image", albumCoverUrl.apply(album.getId()));
         result.set("category", toCategory(album.getCategory()));
         result.set("subCategory", toCategory(album.getSubCategory()));
         addStrings(result.putArray("authors"), album.getAuthors());
@@ -157,7 +162,7 @@ public final class CatalogService {
         ObjectNode result = JsonNodeFactory.instance.objectNode();
         result.put("id", text(item.getId()));
         result.put("title", text(item.getTitle()));
-        result.put("coverUrl", client.getAlbumCoverUrl(item.getId(), COVER_SIZE));
+        result.put("coverUrl", albumCoverUrl.apply(item.getId()));
         addStrings(result.putArray("authors"), item.getAuthors());
         addStrings(result.putArray("tags"), item.getTags());
         result.put("description", text(item.getDescription()));

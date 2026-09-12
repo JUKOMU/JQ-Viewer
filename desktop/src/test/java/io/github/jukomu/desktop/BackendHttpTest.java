@@ -91,12 +91,12 @@ class BackendHttpTest {
             assertEquals(200, historyResponse.statusCode());
             assertTrue(historyResponse.body().contains("\"totalCount\":0"));
             assertEquals(400, malformedResponse.statusCode());
-            assertTrue(malformedResponse.body().contains("\"code\":\"bad-request\""));
+            assertTrue(malformedResponse.body().contains("\"code\":\"internal\""));
             assertEquals(404, unsupportedResponse.statusCode());
             assertEquals(400, invalidSettingResponse.statusCode());
-            assertTrue(invalidSettingResponse.body().contains("\"code\":\"bad-request\""));
+            assertTrue(invalidSettingResponse.body().contains("\"code\":\"internal\""));
             assertEquals(400, invalidImageResponse.statusCode());
-            assertTrue(invalidImageResponse.body().contains("\"code\":\"bad-request\""));
+            assertTrue(invalidImageResponse.body().contains("\"code\":\"internal\""));
         }
 
         assertFalse(paths.dataDirectory().equals(paths.programDirectory()));

@@ -64,7 +64,7 @@ public final class HistoryService {
     }
 
     public synchronized ObjectNode page(int limit, int offset, Long start, Long end) {
-        if (limit < 0 || offset < 0) throw new ApiException("bad-request", 400, "分页参数不能为负数");
+        if (limit < 0 || offset < 0) throw ApiException.invalidRequest("分页参数不能为负数");
         String where = rangeWhere(start, end);
         String args = rangeArgs(start, end);
         String sql = "SELECT id, album_id, album_title, cover_url, authors, chapter_id, "
@@ -108,7 +108,7 @@ public final class HistoryService {
 
     public synchronized ObjectNode overview(ArrayNode ranges) {
         if (ranges.size() != GROUPS.length) {
-            throw new ApiException("bad-request", 400, "ranges必须包含八个时间分组");
+            throw ApiException.invalidRequest("ranges必须包含八个时间分组");
         }
         Set<String> keys = new HashSet<>();
         ObjectNode result = JsonNodeFactory.instance.objectNode();
@@ -116,10 +116,10 @@ public final class HistoryService {
         long total = page(0, 0, null, null).path("totalCount").asLong();
         for (int index = 0; index < ranges.size(); index++) {
             JsonNode value = ranges.get(index);
-            if (!value.isObject()) throw new ApiException("bad-request", 400, "ranges包含无效元素");
+            if (!value.isObject()) throw ApiException.invalidRequest("ranges包含无效元素");
             String key = text((ObjectNode) value, "key");
             if (!Set.of(GROUPS).contains(key) || !keys.add(key)) {
-                throw new ApiException("bad-request", 400, "ranges包含无效或重复分组");
+                throw ApiException.invalidRequest("ranges包含无效或重复分组");
             }
             Long start = optionalLong((ObjectNode) value, "startInclusive");
             Long end = optionalLong((ObjectNode) value, "endExclusive");
@@ -127,7 +127,7 @@ public final class HistoryService {
             counts.put(key, page.path("totalCount").asLong());
         }
         for (String group : GROUPS) if (!keys.contains(group)) {
-            throw new ApiException("bad-request", 400, "ranges缺少时间分组");
+            throw ApiException.invalidRequest("ranges缺少时间分组");
         }
         result.put("totalCount", total);
         return result;
@@ -168,7 +168,7 @@ public final class HistoryService {
     private static String text(ObjectNode request, String key) {
         JsonNode value = request.get(key);
         if (value == null || value.isNull()) return "";
-        if (!value.isTextual()) throw new ApiException("bad-request", 400, key + "必须是字符串");
+        if (!value.isTextual()) throw ApiException.invalidRequest(key + "必须是字符串");
         return value.textValue();
     }
 
@@ -176,7 +176,7 @@ public final class HistoryService {
         if (!request.has(key) || request.get(key).isNull()) return null;
         JsonNode value = request.get(key);
         if (!value.isIntegralNumber() || !value.canConvertToLong()) {
-            throw new ApiException("bad-request", 400, key + "必须是整数");
+            throw ApiException.invalidRequest(key + "必须是整数");
         }
         return value.longValue();
     }

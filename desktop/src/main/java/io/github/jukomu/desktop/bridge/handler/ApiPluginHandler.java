@@ -1,6 +1,7 @@
 package io.github.jukomu.desktop.bridge.handler;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.github.jukomu.desktop.bridge.ApiException;
 import io.github.jukomu.desktop.bridge.Request;
 import io.github.jukomu.desktop.bridge.RequestExecutor;
 import io.github.jukomu.desktop.feature.catalog.CatalogService;
@@ -58,13 +59,13 @@ public final class ApiPluginHandler {
 
     private static int positive(ObjectNode request, String name, int fallback) {
         int value = io.github.jukomu.desktop.bridge.Request.integer(request, name, fallback);
-        if (value < 1) throw new io.github.jukomu.desktop.bridge.ApiException("bad-request", 400, name + "必须是正整数");
+        if (value < 1) throw ApiException.invalidRequest(name + "必须是正整数");
         return value;
     }
 
     private static ObjectNode image(ObjectNode request) {
         if (!request.has("image") || !request.get("image").isObject()) {
-            throw new io.github.jukomu.desktop.bridge.ApiException("bad-request", 400, "image必须是对象");
+            throw ApiException.invalidRequest("image必须是对象");
         }
         return (ObjectNode) request.get("image");
     }

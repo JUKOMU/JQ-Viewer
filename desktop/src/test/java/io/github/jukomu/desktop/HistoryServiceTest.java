@@ -69,7 +69,7 @@ class HistoryServiceTest {
 
             ranges.remove(7);
             ApiException exception = assertThrows(ApiException.class, () -> history.overview(ranges));
-            assertEquals("bad-request", exception.code());
+            assertEquals("internal", exception.code());
             assertEquals(400, exception.status());
         }
     }

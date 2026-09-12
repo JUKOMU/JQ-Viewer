@@ -18,6 +18,7 @@ import io.github.jukomu.desktop.feature.catalog.CatalogService;
 import io.github.jukomu.desktop.feature.history.HistoryService;
 import io.github.jukomu.desktop.feature.image.ImageService;
 import io.github.jukomu.desktop.feature.settings.SettingsService;
+import io.github.jukomu.jmcomic.api.client.JmClient;
 import io.github.jukomu.jmcomic.core.JmComic;
 import io.github.jukomu.jmcomic.core.client.impl.JmApiClient;
 import io.github.jukomu.jmcomic.core.config.JmConfiguration;
@@ -38,6 +39,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 
 /** 在同一 JVM 内承载 loopback Javalin 服务与本地资源。 */
 public final class Backend implements AutoCloseable {
@@ -66,6 +68,8 @@ public final class Backend implements AutoCloseable {
     private final Paths paths;
     private final Database database;
     private final ExecutorService businessExecutor;
+    private final JmClient providedClient;
+    private final Function<String, String> providedAlbumCoverUrl;
 
     private Javalin app;
     private JmApiClient client;
@@ -75,7 +79,7 @@ public final class Backend implements AutoCloseable {
     private boolean closed;
 
     public Backend(Paths paths) {
-        this(paths, new Database(paths), createBusinessExecutor());
+        this(paths, new Database(paths), createBusinessExecutor(), null, null);
     }
 
     public Backend(
@@ -83,9 +87,24 @@ public final class Backend implements AutoCloseable {
             Database database,
             ExecutorService businessExecutor
     ) {
+        this(paths, database, businessExecutor, null, null);
+    }
+
+    Backend(
+            Paths paths,
+            Database database,
+            ExecutorService businessExecutor,
+            JmClient providedClient,
+            Function<String, String> providedAlbumCoverUrl
+    ) {
         this.paths = Objects.requireNonNull(paths, "paths");
         this.database = Objects.requireNonNull(database, "database");
         this.businessExecutor = Objects.requireNonNull(businessExecutor, "businessExecutor");
+        if ((providedClient == null) != (providedAlbumCoverUrl == null)) {
+            throw new IllegalArgumentException("客户端和封面地址解析器必须同时提供");
+        }
+        this.providedClient = providedClient;
+        this.providedAlbumCoverUrl = providedAlbumCoverUrl;
     }
 
     public synchronized URI start() throws Exception {
@@ -113,18 +132,28 @@ public final class Backend implements AutoCloseable {
             int preloadConcurrency = settingsService.preloadConcurrency();
             configureBusinessExecutor(preloadConcurrency);
             startedEventHub = new EventHub(mapper);
-            startedClient = JmComic.newApiClient(new JmConfiguration.Builder()
-                    .executor(businessExecutor)
-                    .downloadThreadPoolSize(settingsService.downloadConcurrency())
-                    .concurrentImageDownloads(preloadConcurrency)
-                    .build());
+            final JmClient serviceClient;
+            final Function<String, String> albumCoverUrl;
+            if (providedClient == null) {
+                startedClient = JmComic.newApiClient(new JmConfiguration.Builder()
+                        .executor(businessExecutor)
+                        .downloadThreadPoolSize(settingsService.downloadConcurrency())
+                        .concurrentImageDownloads(preloadConcurrency)
+                        .build());
+                JmApiClient ownedClient = startedClient;
+                serviceClient = ownedClient;
+                albumCoverUrl = id -> ownedClient.getAlbumCoverUrl(id, "_3x4");
+            } else {
+                serviceClient = providedClient;
+                albumCoverUrl = providedAlbumCoverUrl;
+            }
             final EventHub eventHub = startedEventHub;
-            final JmApiClient apiClient = startedClient;
-            ImageService imageService = new ImageService(apiClient, businessExecutor, eventHub);
+            ImageService imageService = new ImageService(serviceClient, businessExecutor, eventHub);
             RequestExecutor requests = new RequestExecutor(businessExecutor, mapper);
             Plugin plugin = new Plugin(
-                    new ApiPluginHandler(requests, new CatalogService(apiClient, imageService), imageService),
-                    new AuthPluginHandler(requests, new AuthService(apiClient)),
+                    new ApiPluginHandler(requests,
+                            new CatalogService(serviceClient, imageService, albumCoverUrl), imageService),
+                    new AuthPluginHandler(requests, new AuthService(serviceClient)),
                     new SettingsPluginHandler(requests, settingsService),
                     new HistoryPluginHandler(requests, new HistoryService(database)),
                     new SystemPluginHandler());
@@ -149,7 +178,7 @@ public final class Backend implements AutoCloseable {
             }
 
             this.app = candidate;
-            this.client = apiClient;
+            this.client = startedClient;
             this.eventHub = eventHub;
             this.homeUrl = URI.create("http://" + LOOPBACK_HOST + ":" + port + "/home");
             this.running = true;
@@ -183,10 +212,7 @@ public final class Backend implements AutoCloseable {
             try {
                 sortOrder = Integer.parseInt(context.pathParam("sortOrder"));
             } catch (NumberFormatException exception) {
-                context.status(400).json(Map.of(
-                        "code", "bad-request",
-                        "message", "sortOrder必须是整数"
-                ));
+                sendImageError(context, ApiException.invalidRequest("sortOrder必须是整数"));
                 return;
             }
             int finalSortOrder = sortOrder;
@@ -293,6 +319,10 @@ public final class Backend implements AutoCloseable {
         Javalin current = app;
         app = null;
         homeUrl = null;
+        if (eventHub != null) {
+            eventHub.close();
+            eventHub = null;
+        }
         if (current != null) {
             try {
                 current.stop();
@@ -301,10 +331,6 @@ public final class Backend implements AutoCloseable {
             }
         }
 
-        if (eventHub != null) {
-            eventHub.close();
-            eventHub = null;
-        }
         if (client != null) {
             client.close();
             client = null;

@@ -18,4 +18,8 @@ public final class ApiException extends RuntimeException {
     public int status() {
         return status;
     }
+
+    public static ApiException invalidRequest(String message) {
+        return new ApiException("internal", 400, message);
+    }
 }

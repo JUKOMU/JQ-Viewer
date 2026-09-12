@@ -17,18 +17,18 @@ public final class Request {
         try {
             JsonNode parsed = mapper.readTree(context.body());
             if (parsed == null || !parsed.isObject()) {
-                throw new ApiException("bad-request", 400, "请求体必须是 JSON 对象");
+                throw ApiException.invalidRequest("请求体必须是 JSON 对象");
             }
             return (ObjectNode) parsed;
         } catch (IOException exception) {
-            throw new ApiException("bad-request", 400, "请求体不是有效的 JSON");
+            throw ApiException.invalidRequest("请求体不是有效的 JSON");
         }
     }
 
     public static String requiredText(ObjectNode request, String name) {
         JsonNode value = request.get(name);
         if (value == null || !value.isTextual() || value.textValue().isBlank()) {
-            throw new ApiException("bad-request", 400, name + "不能为空");
+            throw ApiException.invalidRequest(name + "不能为空");
         }
         return value.textValue();
     }
@@ -39,7 +39,7 @@ public final class Request {
             return fallback;
         }
         if (!value.isTextual()) {
-            throw new ApiException("bad-request", 400, name + "必须是字符串");
+            throw ApiException.invalidRequest(name + "必须是字符串");
         }
         return value.textValue();
     }
@@ -50,7 +50,7 @@ public final class Request {
             return fallback;
         }
         if (!value.canConvertToInt() || !value.isIntegralNumber()) {
-            throw new ApiException("bad-request", 400, name + "必须是整数");
+            throw ApiException.invalidRequest(name + "必须是整数");
         }
         return value.intValue();
     }
@@ -61,7 +61,7 @@ public final class Request {
             return fallback;
         }
         if (!value.canConvertToLong() || !value.isIntegralNumber()) {
-            throw new ApiException("bad-request", 400, name + "必须是整数");
+            throw ApiException.invalidRequest(name + "必须是整数");
         }
         return value.longValue();
     }
@@ -72,7 +72,7 @@ public final class Request {
             return fallback;
         }
         if (!value.isBoolean()) {
-            throw new ApiException("bad-request", 400, name + "必须是布尔值");
+            throw ApiException.invalidRequest(name + "必须是布尔值");
         }
         return value.booleanValue();
     }
@@ -80,7 +80,7 @@ public final class Request {
     public static ArrayNode array(ObjectNode request, String name) {
         JsonNode value = request.get(name);
         if (value == null || !value.isArray()) {
-            throw new ApiException("bad-request", 400, name + "必须是数组");
+            throw ApiException.invalidRequest(name + "必须是数组");
         }
         return (ArrayNode) value;
     }

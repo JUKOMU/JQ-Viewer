@@ -5,7 +5,7 @@ import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.jukomu.jmcomic.api.model.JmImage;
 import io.github.jukomu.jmcomic.api.model.JmPhoto;
-import io.github.jukomu.jmcomic.core.client.impl.JmApiClient;
+import io.github.jukomu.jmcomic.api.client.JmClient;
 import io.github.jukomu.jmcomic.core.crypto.JmImageTool;
 import io.github.jukomu.desktop.bridge.ApiException;
 import io.github.jukomu.desktop.bridge.EventHub;
@@ -28,7 +28,7 @@ public final class ImageService {
     private static final int THUMBNAIL_MAX_WIDTH = 300;
     private static final long CACHE_CAPACITY_MB = 256;
 
-    private final JmApiClient client;
+    private final JmClient client;
     private final Executor executor;
     private final EventHub events;
     private final ImageCache cache = new ImageCache(CACHE_CAPACITY_MB * 1024 * 1024);
@@ -37,7 +37,7 @@ public final class ImageService {
     private final Map<String, Long> pending = new ConcurrentHashMap<>();
     private long generation;
 
-    public ImageService(JmApiClient client, Executor executor, EventHub events) {
+    public ImageService(JmClient client, Executor executor, EventHub events) {
         this.client = client;
         this.executor = executor;
         this.events = events;
@@ -66,13 +66,14 @@ public final class ImageService {
             JmImage image = toImage(photoId, value);
             photoImages.put(image.getSortOrder(), image);
             String cacheKey = key(photoId, image.getSortOrder(), type);
-            if (cache.contains(cacheKey)) {
+            if (cache.get(cacheKey) != null) {
                 cached.add(image.getSortOrder());
                 continue;
             }
-            if ("thumb".equals(type) && cache.contains(key(photoId, image.getSortOrder(), "image"))) {
+            ImageCache.Entry original = cache.get(key(photoId, image.getSortOrder(), "image"));
+            if ("thumb".equals(type) && original != null) {
                 try {
-                    cache.put(cacheKey, thumbnail(cache.get(key(photoId, image.getSortOrder(), "image")).bytes()), "image/jpeg");
+                    cache.put(cacheKey, thumbnail(original.bytes()), "image/jpeg");
                     cached.add(image.getSortOrder());
                     publish(photoId, image.getSortOrder(), type);
                     continue;
@@ -180,20 +181,20 @@ public final class ImageService {
 
     private static JmImage toImage(String photoId, ObjectNode value) {
         int sortOrder = value.path("sortOrder").asInt(0);
-        if (sortOrder <= 0) throw new ApiException("bad-request", 400, "sortOrder必须是正整数");
+        if (sortOrder <= 0) throw ApiException.invalidRequest("sortOrder必须是正整数");
         return new JmImage(photoId, value.path("scrambleId").asText(""),
                 value.path("filename").asText(""), value.path("url").asText(""),
                 value.path("queryParams").asText(""), sortOrder);
     }
 
     private static ObjectNode requireImage(com.fasterxml.jackson.databind.JsonNode node) {
-        if (node == null || !node.isObject()) throw new ApiException("bad-request", 400, "images包含无效元素");
+        if (node == null || !node.isObject()) throw ApiException.invalidRequest("images包含无效元素");
         return (ObjectNode) node;
     }
 
     private static void validateType(String type) {
         if (!"image".equals(type) && !"thumb".equals(type)) {
-            throw new ApiException("bad-request", 400, "type必须是image或thumb");
+            throw ApiException.invalidRequest("type必须是image或thumb");
         }
     }
 

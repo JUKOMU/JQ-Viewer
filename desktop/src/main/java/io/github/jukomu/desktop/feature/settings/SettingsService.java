@@ -120,6 +120,6 @@ public final class SettingsService {
     }
 
     private static ApiException badRequest(String message) {
-        return new ApiException("bad-request", 400, message);
+        return ApiException.invalidRequest(message);
     }
 }

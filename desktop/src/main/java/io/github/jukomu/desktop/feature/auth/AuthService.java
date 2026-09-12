@@ -4,14 +4,14 @@ import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.jukomu.jmcomic.api.model.JmUserInfo;
 import io.github.jukomu.jmcomic.api.model.JmUserProfile;
-import io.github.jukomu.jmcomic.core.client.impl.JmApiClient;
+import io.github.jukomu.jmcomic.api.client.JmClient;
 
 /** 管理当前 backend 进程内的登录会话。 */
 public final class AuthService {
-    private final JmApiClient client;
+    private final JmClient client;
     private volatile ObjectNode userInfo;
 
-    public AuthService(JmApiClient client) {
+    public AuthService(JmClient client) {
         this.client = client;
     }
 
@@ -28,11 +28,12 @@ public final class AuthService {
     }
 
     public ObjectNode state() {
+        ObjectNode currentUserInfo = userInfo;
         ObjectNode result = JsonNodeFactory.instance.objectNode();
-        result.put("loggedIn", userInfo != null);
-        if (userInfo != null) {
-            result.put("username", userInfo.path("username").asText());
-            result.set("userInfo", userInfo.deepCopy());
+        result.put("loggedIn", currentUserInfo != null);
+        if (currentUserInfo != null) {
+            result.put("username", currentUserInfo.path("username").asText());
+            result.set("userInfo", currentUserInfo.deepCopy());
         }
         return result;
     }

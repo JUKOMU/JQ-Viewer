@@ -22,6 +22,7 @@ import type { BackendEvents } from '../BackendEvents'
 import {
   asFileRef,
   asFolderRef,
+  fileNameFromDisplayPath,
   type FileDescriptor,
   type FileRef,
 } from '../FileReferences'
@@ -133,11 +134,18 @@ function toImportedPdf(file: AndroidImportedPdf): ImportedPdf {
 
 /** 把 Android 原生导出任务记录转换为公共导出任务记录。 */
 function toPdfExportTaskRecord(task: AndroidPdfExportTaskRecord): PdfExportTaskRecord {
-  const { outputFileRef, displayPath, ...rest } = task
+  const { outputFileRef, displayPath, targetFolderRef, targetName, ...rest } = task
+  void targetFolderRef
   return {
     ...rest,
     ...(outputFileRef && displayPath
-      ? { outputFile: toFileDescriptor(outputFileRef, displayPath) }
+      ? {
+          outputFile: toFileDescriptor(
+            outputFileRef,
+            displayPath,
+            fileNameFromDisplayPath(displayPath, targetName),
+          ),
+        }
       : {}),
     displayPath,
   }
@@ -147,11 +155,18 @@ function toPdfExportTaskRecord(task: AndroidPdfExportTaskRecord): PdfExportTaskR
 function toPdfExportSubmissionTaskResult(
   task: AndroidPdfExportSubmissionTaskResult,
 ): PdfExportSubmissionTaskResult {
-  const { outputFileRef, displayPath, ...rest } = task
+  const { outputFileRef, displayPath, targetFolderRef, targetName, ...rest } = task
+  void targetFolderRef
   return {
     ...rest,
     ...(outputFileRef && displayPath
-      ? { outputFile: toFileDescriptor(outputFileRef, displayPath) }
+      ? {
+          outputFile: toFileDescriptor(
+            outputFileRef,
+            displayPath,
+            fileNameFromDisplayPath(displayPath, targetName),
+          ),
+        }
       : {}),
     displayPath,
   }

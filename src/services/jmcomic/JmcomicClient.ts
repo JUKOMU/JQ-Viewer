@@ -61,10 +61,7 @@ export type AndroidPdfExportTask = Omit<PdfExportTask, 'target' | 'displayPath'>
   targetName: string
   displayPath: string
 }
-export type AndroidPdfExportTaskRecord = Omit<
-  PdfExportTaskRecord,
-  'outputFile' | 'displayPath'
-> & {
+export type AndroidPdfExportTaskRecord = Omit<PdfExportTaskRecord, 'outputFile' | 'displayPath'> & {
   targetFolderRef: string
   targetName: string
   outputFileRef?: string

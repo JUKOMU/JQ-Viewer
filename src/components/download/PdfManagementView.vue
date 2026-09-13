@@ -336,10 +336,7 @@ const loadTasks = async (reset: boolean) => {
     )
   } catch (error) {
     const currentFilters = currentTaskFilters()
-    if (
-      changeSequence !== stateChangeSequence ||
-      filters.status !== currentFilters.status
-    ) {
+    if (changeSequence !== stateChangeSequence || filters.status !== currentFilters.status) {
       taskReloadRequested = true
       return
     }
@@ -347,10 +344,7 @@ const loadTasks = async (reset: boolean) => {
   }
   if (isUnmounted || requestSequence !== taskRequestSequence) return
   const currentFilters = currentTaskFilters()
-  if (
-    changeSequence !== stateChangeSequence ||
-    filters.status !== currentFilters.status
-  ) {
+  if (changeSequence !== stateChangeSequence || filters.status !== currentFilters.status) {
     taskReloadRequested = true
     if (!taskReloadPromise) void requestTasksReload()
     return
@@ -705,10 +699,7 @@ const retryTask = async (task: PdfExportTaskRecord) => {
               const runtimeError = normalizeRuntimeError(error)
               if (runtimeError.code === 'not-found' || runtimeError.code === 'conflict') {
                 await requestTasksReload()
-                await showToast(
-                  sanitizeError(error, '导出任务状态已变化，请刷新后重试'),
-                  'medium',
-                )
+                await showToast(sanitizeError(error, '导出任务状态已变化，请刷新后重试'), 'medium')
                 return
               }
               await showToast(sanitizeError(error, '重试导出失败'), 'danger')

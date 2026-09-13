@@ -8,7 +8,12 @@ import type {
   ReaderPlatformServices,
 } from '../PlatformServices'
 import type { BackendEvents } from '../BackendEvents'
-import { asFileRef, asFolderRef, type FileDescriptor } from '../FileReferences'
+import {
+  asFileRef,
+  asFolderRef,
+  fileNameFromDisplayPath,
+  type FileDescriptor,
+} from '../FileReferences'
 import type {
   ImportedPdf,
   ImportPdfItem,
@@ -86,11 +91,18 @@ function toFileDescriptor(fileRef: string, displayPath: string, fileName?: strin
 }
 
 function toPdfExportTaskRecord(task: RawPdfExportTaskRecord): PdfExportTaskRecord {
-  const { outputFileRef, displayPath, ...rest } = task
+  const { outputFileRef, displayPath, targetFolderRef, targetName, ...rest } = task
+  void targetFolderRef
   return {
     ...rest,
     ...(outputFileRef && displayPath
-      ? { outputFile: toFileDescriptor(outputFileRef, displayPath) }
+      ? {
+          outputFile: toFileDescriptor(
+            outputFileRef,
+            displayPath,
+            fileNameFromDisplayPath(displayPath, targetName),
+          ),
+        }
       : {}),
     displayPath,
   }
@@ -99,11 +111,18 @@ function toPdfExportTaskRecord(task: RawPdfExportTaskRecord): PdfExportTaskRecor
 function toPdfExportSubmissionTaskResult(
   task: RawPdfExportSubmissionTaskResult,
 ): PdfExportSubmissionTaskResult {
-  const { outputFileRef, displayPath, ...rest } = task
+  const { outputFileRef, displayPath, targetFolderRef, targetName, ...rest } = task
+  void targetFolderRef
   return {
     ...rest,
     ...(outputFileRef && displayPath
-      ? { outputFile: toFileDescriptor(outputFileRef, displayPath) }
+      ? {
+          outputFile: toFileDescriptor(
+            outputFileRef,
+            displayPath,
+            fileNameFromDisplayPath(displayPath, targetName),
+          ),
+        }
       : {}),
     displayPath,
   }
@@ -145,9 +164,11 @@ function createPdfService(events: BackendEvents, fetcher: BackendFetch): PdfServ
           ...task,
           target: { folder: String(target.folder), relativePath: target.relativePath },
         })),
-      }).then((result): PdfExportBatchResult => ({
-        tasks: result.tasks.map(toPdfExportSubmissionTaskResult),
-      })),
+      }).then(
+        (result): PdfExportBatchResult => ({
+          tasks: result.tasks.map(toPdfExportSubmissionTaskResult),
+        }),
+      ),
     scanPdfFiles: (folder) =>
       requestBackend<{ files: FileResponse[] }>(fetcher, 'scanPdfFiles', {
         folder: String(folder),

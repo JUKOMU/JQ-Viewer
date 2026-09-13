@@ -6,11 +6,7 @@ import type { Capability } from './PlatformServices'
  * 不接触底层的虚拟域名、token 或本地路径拼接。
  */
 export interface ResourceResolver {
-  imageUrl(input: {
-    photoId: string
-    sortOrder: number
-    type: 'image' | 'thumb'
-  }): string
+  imageUrl(input: { photoId: string; sortOrder: number; type: 'image' | 'thumb' }): string
 
   pdfDocumentUrl(file: FileRef): string
 

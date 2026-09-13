@@ -944,7 +944,12 @@ const onPdfExportConfirm = async (payload: {
     if (conflictIndexes.length > 0) {
       const conflictPaths = conflictIndexes.map((index) => {
         const resultPath = result.tasks[index]?.displayPath
-        return resultPath || exportPlan.tasks[index]?.displayPath || exportPlan.outputDisplayPaths[index] || ''
+        return (
+          resultPath ||
+          exportPlan.tasks[index]?.displayPath ||
+          exportPlan.outputDisplayPaths[index] ||
+          ''
+        )
       })
       overwriteConfirmed = await requestPdfOverwriteConfirmation(conflictPaths)
       if (overwriteConfirmed) {
@@ -982,10 +987,7 @@ const onPdfExportConfirm = async (payload: {
       } else if (accepted === 0) {
         await showToast('检测到已有同名 PDF，已取消覆盖', 'medium')
       } else {
-        await showToast(
-          `已开始 ${accepted} 个，${conflictIndexes.length} 个已取消覆盖`,
-          'medium',
-        )
+        await showToast(`已开始 ${accepted} 个，${conflictIndexes.length} 个已取消覆盖`, 'medium')
       }
       return
     }

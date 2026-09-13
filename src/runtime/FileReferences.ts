@@ -32,3 +32,10 @@ export function asFileRef(value: string): FileRef {
 export function asFolderRef(value: string): FolderRef {
   return value as FolderRef
 }
+
+/** 从平台展示路径中提取文件名，兼容 Windows 分隔符和 URI/Unix 风格路径。 */
+export function fileNameFromDisplayPath(displayPath: string, fallback = displayPath): string {
+  const normalized = displayPath.replace(/\\/g, '/').replace(/\/+$/, '')
+  const fileName = normalized.slice(normalized.lastIndexOf('/') + 1)
+  return fileName || fallback
+}

@@ -379,31 +379,43 @@ function onExportPathChange(e: Event) {
   PdfExportService.setExportPath(val)
 }
 
-function onDirTemplateChange(e: Event) {
+async function onDirTemplateChange(e: Event) {
   const val = (e.target as HTMLInputElement).value.trim()
+  const previous = dirTemplate.value
   dirTemplate.value = val
-  PdfExportService.setDirTemplate(val)
+  try {
+    await PdfExportService.setDirTemplate(val)
+  } catch {
+    dirTemplate.value = previous
+    await showToast('保存目录模板失败', 'danger')
+  }
 }
 
-function onNameTemplateChange(e: Event) {
+async function onNameTemplateChange(e: Event) {
   const val = (e.target as HTMLInputElement).value.trim()
+  const previous = nameTemplate.value
   nameTemplate.value = val
-  PdfExportService.setNameTemplate(val)
+  try {
+    await PdfExportService.setNameTemplate(val)
+  } catch {
+    nameTemplate.value = previous
+    await showToast('保存名称模板失败', 'danger')
+  }
 }
 
 async function onBrowseFolder() {
   try {
-    const result = await JmcomicService.pickFolder()
+    const result = await JmcomicService.pickFolder('pdf-export')
     if (result) {
       const path = result.displayPath.endsWith('/') ? result.displayPath : result.displayPath + '/'
-      exportPath.value = path
-      PdfExportService.setExportFolder({
+      await PdfExportService.setExportFolder({
         folderRef: result.ref,
         displayPath: path,
       })
+      exportPath.value = path
     }
   } catch {
-    /* ignore */
+    await showToast('选择导出文件夹失败', 'danger')
   }
 }
 

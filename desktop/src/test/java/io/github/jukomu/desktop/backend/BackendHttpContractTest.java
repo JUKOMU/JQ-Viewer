@@ -7,6 +7,8 @@ import io.github.jukomu.desktop.bridge.Plugin;
 import io.github.jukomu.desktop.bridge.PluginMethod;
 import io.github.jukomu.desktop.data.Database;
 import io.github.jukomu.desktop.data.Paths;
+import io.github.jukomu.desktop.feature.files.FileReferences;
+import io.github.jukomu.desktop.feature.files.FileService;
 import io.github.jukomu.jmcomic.api.client.JmClient;
 import io.github.jukomu.jmcomic.api.model.ForumQuery;
 import io.github.jukomu.jmcomic.api.model.JmAlbum;
@@ -128,6 +130,32 @@ class BackendHttpContractTest {
                     "{\"enabled\":false}"));
             ObjectNode settings = body(post(http, base, requestedMethods, "getAllSettings", "{}"));
 
+            ObjectNode pickedFolder = body(post(http, base, requestedMethods, "pickFolder",
+                    "{\"purpose\":\"pdf-export\"}"));
+            String folderRef = pickedFolder.path("ref").asText();
+            ObjectNode defaultFolder = body(post(http, base, requestedMethods, "getDefaultFolder",
+                    "{\"purpose\":\"download\"}"));
+            ObjectNode scannedFiles = body(post(http, base, requestedMethods, "scanPdfFiles",
+                    MAPPER.writeValueAsString(Map.of("folder", folderRef))));
+            String fileRef = scannedFiles.path("files").get(0).path("ref").asText();
+            ObjectNode existingFiles = body(post(http, base, requestedMethods, "checkFilesExist",
+                    MAPPER.writeValueAsString(Map.of("files", List.of(fileRef)))));
+            assertOk(post(http, base, requestedMethods, "openFile",
+                    MAPPER.writeValueAsString(Map.of("file", fileRef))));
+            assertOk(post(http, base, requestedMethods, "openContainingFolder",
+                    MAPPER.writeValueAsString(Map.of("file", fileRef))));
+
+            assertOk(post(http, base, requestedMethods, "setPdfExportFolder",
+                    MAPPER.writeValueAsString(Map.of("folder", Map.of(
+                            "folderRef", folderRef,
+                            "displayPath", pickedFolder.path("displayPath").asText())))));
+            assertOk(post(http, base, requestedMethods, "setPdfExportDirectoryTemplate",
+                    "{\"value\":\"{author}/{id}\"}"));
+            assertOk(post(http, base, requestedMethods, "setPdfExportFileNameTemplate",
+                    "{\"value\":\"{title}\"}"));
+            ObjectNode pdfPreferences = body(post(http, base, requestedMethods,
+                    "getPdfExportPreferences", "{}"));
+
             assertOk(post(http, base, requestedMethods, "recordBrowse",
                     "{\"albumId\":\"album-1\",\"albumTitle\":\"Album\","
                             + "\"coverUrl\":\"https://cover.invalid/album-1.jpg\","
@@ -164,6 +192,11 @@ class BackendHttpContractTest {
             assertEquals("Alice", profile.path("nickname").asText());
             assertEquals(4, settings.path("preloadConcurrency").asInt());
             assertEquals(5, settings.path("downloadConcurrency").asInt());
+            assertTrue(defaultFolder.path("ref").asText().startsWith("folder:path:"));
+            assertEquals(1, existingFiles.path("existing").size());
+            assertEquals(folderRef, pdfPreferences.path("exportFolder").path("folderRef").asText());
+            assertEquals("{author}/{id}", pdfPreferences.path("directoryTemplate").asText());
+            assertEquals("{title}", pdfPreferences.path("fileNameTemplate").asText());
             assertEquals(1, history.path("totalCount").asInt());
             assertEquals(1, overview.path("totalCount").asInt());
             assertEquals(200, image.statusCode());
@@ -218,10 +251,15 @@ class BackendHttpContractTest {
     private static Backend backend(FakeClient fake) throws Exception {
         java.nio.file.Path root = Files.createTempDirectory("jq-viewer-contract-");
         Paths paths = new Paths(root.resolve("program"), root.resolve("home"), Map.of(), "Linux");
+        paths.ensureDirectories();
+        java.nio.file.Path samplePdf = paths.pdfDirectory().resolve("sample.pdf");
+        Files.writeString(samplePdf, "%PDF-1.7");
         ThreadPoolExecutor executor = new ThreadPoolExecutor(
                 6, 6, 30, TimeUnit.SECONDS, new ArrayBlockingQueue<>(64));
+        FileService files = new FileService(paths, ignored -> paths.pdfDirectory(), ignored -> {
+        });
         return new Backend(paths, new Database(paths), executor, fake.client(),
-                id -> "https://cover.invalid/" + id + ".jpg");
+                id -> "https://cover.invalid/" + id + ".jpg", files);
     }
 
     private static HttpResponse<String> post(

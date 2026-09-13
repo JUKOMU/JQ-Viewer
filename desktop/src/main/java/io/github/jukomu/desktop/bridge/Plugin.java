@@ -3,6 +3,7 @@ package io.github.jukomu.desktop.bridge;
 import io.github.jukomu.desktop.bridge.handler.ApiPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.AuthPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.HistoryPluginHandler;
+import io.github.jukomu.desktop.bridge.handler.FilePluginHandler;
 import io.github.jukomu.desktop.bridge.handler.SettingsPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.SystemPluginHandler;
 import io.javalin.http.Context;
@@ -13,15 +14,17 @@ public final class Plugin {
     private final AuthPluginHandler auth;
     private final SettingsPluginHandler settings;
     private final HistoryPluginHandler history;
+    private final FilePluginHandler files;
     private final SystemPluginHandler system;
 
     public Plugin(ApiPluginHandler api, AuthPluginHandler auth,
                   SettingsPluginHandler settings, HistoryPluginHandler history,
-                  SystemPluginHandler system) {
+                  FilePluginHandler files, SystemPluginHandler system) {
         this.api = api;
         this.auth = auth;
         this.settings = settings;
         this.history = history;
+        this.files = files;
         this.system = system;
     }
 
@@ -113,6 +116,56 @@ public final class Plugin {
     @PluginMethod
     public void setReaderAutoShowToolbarAtEnd(Context context) {
         settings.setReaderAutoShowToolbarAtEnd(context);
+    }
+
+    @PluginMethod
+    public void getPdfExportPreferences(Context context) {
+        settings.getPdfExportPreferences(context);
+    }
+
+    @PluginMethod
+    public void setPdfExportFolder(Context context) {
+        settings.setPdfExportFolder(context);
+    }
+
+    @PluginMethod
+    public void setPdfExportDirectoryTemplate(Context context) {
+        settings.setPdfExportDirectoryTemplate(context);
+    }
+
+    @PluginMethod
+    public void setPdfExportFileNameTemplate(Context context) {
+        settings.setPdfExportFileNameTemplate(context);
+    }
+
+    @PluginMethod
+    public void pickFolder(Context context) {
+        files.pickFolder(context);
+    }
+
+    @PluginMethod
+    public void getDefaultFolder(Context context) {
+        files.getDefaultFolder(context);
+    }
+
+    @PluginMethod
+    public void checkFilesExist(Context context) {
+        files.checkFilesExist(context);
+    }
+
+    @PluginMethod
+    public void openFile(Context context) {
+        files.openFile(context);
+    }
+
+    @PluginMethod
+    public void openContainingFolder(Context context) {
+        files.openContainingFolder(context);
+    }
+
+    @PluginMethod
+    public void scanPdfFiles(Context context) {
+        files.scanPdfFiles(context);
     }
 
     @PluginMethod

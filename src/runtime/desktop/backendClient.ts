@@ -24,7 +24,11 @@ async function readJson(response: Response): Promise<unknown> {
   }
 }
 
-async function request<T>(fetcher: BackendFetch, method: string, body: unknown): Promise<T> {
+export async function requestBackend<T>(
+  fetcher: BackendFetch,
+  method: string,
+  body: unknown,
+): Promise<T> {
   let response: Response
   try {
     response = await fetcher(`/api/${method}`, {
@@ -60,7 +64,7 @@ export function createBackendClient(
     method: string,
     body: unknown,
   ): Promise<Awaited<ReturnType<Extract<JmcomicClient[K], (...args: never[]) => unknown>>>> =>
-    request(fetcher, method, body)
+    requestBackend(fetcher, method, body)
 
   const client = {
     search: (options: Parameters<JmcomicClient['search']>[0]) =>
@@ -104,7 +108,7 @@ export function createBackendClient(
     deleteBrowseItem: (options: Parameters<JmcomicClient['deleteBrowseItem']>[0]) =>
       call<'deleteBrowseItem'>('deleteBrowseItem', options),
     getInitStatus: async () => {
-      const result = await request<{ complete?: unknown }>(fetcher, 'getInitStatus', {})
+      const result = await requestBackend<{ complete?: unknown }>(fetcher, 'getInitStatus', {})
       if (!result || typeof result.complete !== 'boolean') {
         throw new RuntimeError('internal', 'Invalid getInitStatus response')
       }

@@ -105,6 +105,7 @@ class BackendHttpTest {
                 () -> send(client, HttpRequest.newBuilder(base.resolve("/home")).GET().build())
         );
         assertTrue(backend.businessExecutor().isShutdown());
+        assertTrue(backend.pdfExportExecutor().isShutdown());
     }
 
     private static HttpResponse<String> send(

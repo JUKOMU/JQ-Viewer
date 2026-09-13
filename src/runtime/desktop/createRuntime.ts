@@ -8,11 +8,12 @@ import { createResourceResolver } from './resourceResolver'
 /** 通过同源 HTTP 组装运行时。 */
 export function createRuntime(platform: RuntimePlatform, fetcher?: BackendFetch): FrontendRuntime {
   const events = createBackendEvents()
+  const backendFetch = fetcher ?? globalThis.fetch.bind(globalThis)
   return {
     platform,
-    backend: createBackendClient(fetcher),
+    backend: createBackendClient(backendFetch),
     events,
     resources: createResourceResolver(),
-    services: createPlatformServices(events),
+    services: createPlatformServices(events, backendFetch),
   }
 }

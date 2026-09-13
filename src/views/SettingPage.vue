@@ -674,15 +674,6 @@ onMounted(async () => {
   keepScreenOn.value = SettingsStore.getReaderKeepScreenOn()
   volumeNavigation.value = SettingsStore.getReaderVolumeNavigation()
   autoShowToolbarAtEnd.value = SettingsStore.getReaderAutoShowToolbarAtEnd()
-
-  // 将 PDF 导出默认相对路径解析为绝对路径（与文件夹选择器返回的绝对路径保持一致）
-  try {
-    const result = await JmcomicService.getExternalStoragePath()
-    PdfExportService.ensureAbsolutePath(result.displayPath)
-    pdfExportPath.value = PdfExportService.getExportPath()
-  } catch {
-    /* keep default */
-  }
 })
 
 // ---- 缓存上限 ----
@@ -808,48 +799,70 @@ function resetExportFormat() {
 // ---- PDF 导出设置 ----
 async function onBrowseFolder() {
   try {
-    const result = await JmcomicService.pickFolder()
+    const result = await JmcomicService.pickFolder('pdf-export')
     if (result) {
       // 确保路径以 / 结尾
-      const path = result.displayPath.endsWith('/')
-        ? result.displayPath
-        : result.displayPath + '/'
-      pdfExportPath.value = path
-      PdfExportService.setExportFolder({
+      const path = result.displayPath.endsWith('/') ? result.displayPath : result.displayPath + '/'
+      await PdfExportService.setExportFolder({
         folderRef: result.ref,
         displayPath: path,
       })
+      pdfExportPath.value = path
     }
   } catch (e: any) {
     await showToast(sanitizeError(e, '选择文件夹失败'), 'danger')
   }
 }
 
-function onPdfDirTemplateChange(e: Event) {
+async function onPdfDirTemplateChange(e: Event) {
   const val = (e.target as HTMLInputElement).value.trim()
+  const previous = pdfDirTemplate.value
   pdfDirTemplate.value = val
-  PdfExportService.setDirTemplate(val)
+  try {
+    await PdfExportService.setDirTemplate(val)
+  } catch (error) {
+    pdfDirTemplate.value = previous
+    await showToast(sanitizeError(error, '保存目录模板失败'), 'danger')
+  }
 }
 
-function onPdfNameTemplateChange(e: Event) {
+async function onPdfNameTemplateChange(e: Event) {
   const val = (e.target as HTMLInputElement).value.trim()
+  const previous = pdfNameTemplate.value
   pdfNameTemplate.value = val
-  PdfExportService.setNameTemplate(val)
+  try {
+    await PdfExportService.setNameTemplate(val)
+  } catch (error) {
+    pdfNameTemplate.value = previous
+    await showToast(sanitizeError(error, '保存名称模板失败'), 'danger')
+  }
 }
 
-function resetPdfExportPath() {
-  PdfExportService.resetExportPath()
-  pdfExportPath.value = PdfExportService.getExportPath()
+async function resetPdfExportPath() {
+  try {
+    await PdfExportService.resetExportPath()
+    pdfExportPath.value = PdfExportService.getExportPath()
+  } catch (error) {
+    await showToast(sanitizeError(error, '重置导出目录失败'), 'danger')
+  }
 }
 
-function resetPdfDirTemplate() {
-  PdfExportService.resetDirTemplate()
-  pdfDirTemplate.value = PdfExportService.getDirTemplate()
+async function resetPdfDirTemplate() {
+  try {
+    await PdfExportService.resetDirTemplate()
+    pdfDirTemplate.value = PdfExportService.getDirTemplate()
+  } catch (error) {
+    await showToast(sanitizeError(error, '重置目录模板失败'), 'danger')
+  }
 }
 
-function resetPdfNameTemplate() {
-  PdfExportService.resetNameTemplate()
-  pdfNameTemplate.value = PdfExportService.getNameTemplate()
+async function resetPdfNameTemplate() {
+  try {
+    await PdfExportService.resetNameTemplate()
+    pdfNameTemplate.value = PdfExportService.getNameTemplate()
+  } catch (error) {
+    await showToast(sanitizeError(error, '重置名称模板失败'), 'danger')
+  }
 }
 
 // ---- 公开下载 ----

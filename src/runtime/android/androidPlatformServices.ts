@@ -35,6 +35,7 @@ import type {
   PublicDownloadService,
 } from '../PlatformServices'
 import { createAndroidUpdater } from './androidUpdater'
+import { createAndroidPdfExportPreferencesStore } from './pdfExportPreferences'
 
 /** 校验原生返回的成功标志，失败时抛出带中文提示的错误。 */
 function ensureSuccess(result: { success: boolean }, message: string): void {
@@ -328,6 +329,7 @@ export function createAndroidPlatformServices(
     },
     notifications: { kind: 'runtime-permission', permissions: notifications },
     files: createFileService(native),
+    pdfExportPreferences: createAndroidPdfExportPreferencesStore(),
     storage: { available: true, api: publicDownload },
     reader: {
       orientation: {

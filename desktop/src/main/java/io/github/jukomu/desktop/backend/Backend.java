@@ -12,6 +12,7 @@ import io.github.jukomu.desktop.bridge.RequestExecutor;
 import io.github.jukomu.desktop.bridge.model.ErrorResponse;
 import io.github.jukomu.desktop.bridge.handler.ApiPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.AuthPluginHandler;
+import io.github.jukomu.desktop.bridge.handler.FilePluginHandler;
 import io.github.jukomu.desktop.bridge.handler.HistoryPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.SettingsPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.SystemPluginHandler;
@@ -21,6 +22,7 @@ import io.github.jukomu.desktop.feature.auth.AuthService;
 import io.github.jukomu.desktop.feature.catalog.CatalogService;
 import io.github.jukomu.desktop.feature.history.HistoryService;
 import io.github.jukomu.desktop.feature.image.ImageService;
+import io.github.jukomu.desktop.feature.files.FileService;
 import io.github.jukomu.desktop.feature.settings.SettingsService;
 import io.github.jukomu.jmcomic.api.client.JmClient;
 import io.github.jukomu.jmcomic.core.JmComic;
@@ -71,6 +73,8 @@ public final class Backend implements AutoCloseable {
     private final Paths paths;
     private final Database database;
     private final ExecutorService businessExecutor;
+    private final ExecutorService pdfExportExecutor;
+    private final FileService fileService;
     private final JmClient providedClient;
     private final Function<String, String> providedAlbumCoverUrl;
 
@@ -82,7 +86,8 @@ public final class Backend implements AutoCloseable {
     private boolean closed;
 
     public Backend(Paths paths) {
-        this(paths, new Database(paths), createBusinessExecutor(), null, null);
+        this(paths, new Database(paths), createBusinessExecutor(), createPdfExportExecutor(),
+                null, null, new FileService(paths));
     }
 
     public Backend(
@@ -90,7 +95,8 @@ public final class Backend implements AutoCloseable {
             Database database,
             ExecutorService businessExecutor
     ) {
-        this(paths, database, businessExecutor, null, null);
+        this(paths, database, businessExecutor, createPdfExportExecutor(), null, null,
+                new FileService(paths));
     }
 
     Backend(
@@ -100,9 +106,36 @@ public final class Backend implements AutoCloseable {
             JmClient providedClient,
             Function<String, String> providedAlbumCoverUrl
     ) {
+        this(paths, database, businessExecutor, createPdfExportExecutor(),
+                providedClient, providedAlbumCoverUrl, new FileService(paths));
+    }
+
+    Backend(
+            Paths paths,
+            Database database,
+            ExecutorService businessExecutor,
+            JmClient providedClient,
+            Function<String, String> providedAlbumCoverUrl,
+            FileService fileService
+    ) {
+        this(paths, database, businessExecutor, createPdfExportExecutor(),
+                providedClient, providedAlbumCoverUrl, fileService);
+    }
+
+    private Backend(
+            Paths paths,
+            Database database,
+            ExecutorService businessExecutor,
+            ExecutorService pdfExportExecutor,
+            JmClient providedClient,
+            Function<String, String> providedAlbumCoverUrl,
+            FileService fileService
+    ) {
         this.paths = Objects.requireNonNull(paths, "paths");
         this.database = Objects.requireNonNull(database, "database");
         this.businessExecutor = Objects.requireNonNull(businessExecutor, "businessExecutor");
+        this.pdfExportExecutor = Objects.requireNonNull(pdfExportExecutor, "pdfExportExecutor");
+        this.fileService = Objects.requireNonNull(fileService, "fileService");
         if ((providedClient == null) != (providedAlbumCoverUrl == null)) {
             throw new IllegalArgumentException("客户端和封面地址解析器必须同时提供");
         }
@@ -135,7 +168,7 @@ public final class Backend implements AutoCloseable {
                     .disable(DeserializationFeature.ACCEPT_FLOAT_AS_INT)
                     .disable(MapperFeature.ALLOW_COERCION_OF_SCALARS)
                     .build();
-            SettingsService settingsService = new SettingsService(database);
+            SettingsService settingsService = new SettingsService(database, mapper);
             int preloadConcurrency = settingsService.preloadConcurrency();
             configureBusinessExecutor(preloadConcurrency);
             startedEventHub = new EventHub(mapper);
@@ -143,7 +176,6 @@ public final class Backend implements AutoCloseable {
             final Function<String, String> albumCoverUrl;
             if (providedClient == null) {
                 startedClient = JmComic.newApiClient(new JmConfiguration.Builder()
-                        .executor(businessExecutor)
                         .downloadThreadPoolSize(settingsService.downloadConcurrency())
                         .concurrentImageDownloads(preloadConcurrency)
                         .build());
@@ -163,6 +195,7 @@ public final class Backend implements AutoCloseable {
                     new AuthPluginHandler(requests, new AuthService(serviceClient)),
                     new SettingsPluginHandler(requests, settingsService),
                     new HistoryPluginHandler(requests, new HistoryService(database)),
+                    new FilePluginHandler(requests, fileService),
                     new SystemPluginHandler());
             candidate = Javalin.create(config -> {
                 config.jetty.host = LOOPBACK_HOST;
@@ -202,6 +235,7 @@ public final class Backend implements AutoCloseable {
             database.close();
             if (startedEventHub != null) startedEventHub.close();
             if (startedClient != null) startedClient.close();
+            pdfExportExecutor.shutdownNow();
             businessExecutor.shutdownNow();
             throw exception;
         }
@@ -278,6 +312,14 @@ public final class Backend implements AutoCloseable {
         );
     }
 
+    private static ExecutorService createPdfExportExecutor() {
+        return java.util.concurrent.Executors.newSingleThreadExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "jq-viewer-pdf-export");
+            thread.setDaemon(false);
+            return thread;
+        });
+    }
+
     private void configureBusinessExecutor(int concurrency) {
         if (!(businessExecutor instanceof ThreadPoolExecutor executor)) return;
         if (concurrency > executor.getMaximumPoolSize()) {
@@ -312,6 +354,10 @@ public final class Backend implements AutoCloseable {
         return businessExecutor;
     }
 
+    public ExecutorService pdfExportExecutor() {
+        return pdfExportExecutor;
+    }
+
     @Override
     public synchronized void close() {
         if (closed) {
@@ -339,15 +385,20 @@ public final class Backend implements AutoCloseable {
             client.close();
             client = null;
         }
-        businessExecutor.shutdown();
+        shutdownExecutor(pdfExportExecutor);
+        shutdownExecutor(businessExecutor);
+        database.close();
+    }
+
+    private static void shutdownExecutor(ExecutorService executor) {
+        executor.shutdown();
         try {
-            if (!businessExecutor.awaitTermination(2, TimeUnit.SECONDS)) {
-                businessExecutor.shutdownNow();
+            if (!executor.awaitTermination(2, TimeUnit.SECONDS)) {
+                executor.shutdownNow();
             }
         } catch (InterruptedException exception) {
-            businessExecutor.shutdownNow();
+            executor.shutdownNow();
             Thread.currentThread().interrupt();
         }
-        database.close();
     }
 }

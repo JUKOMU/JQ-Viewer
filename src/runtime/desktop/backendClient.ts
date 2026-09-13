@@ -98,6 +98,19 @@ export function createBackendClient(
     setReaderAutoShowToolbarAtEnd: (
       options: Parameters<JmcomicClient['setReaderAutoShowToolbarAtEnd']>[0],
     ) => call<'setReaderAutoShowToolbarAtEnd'>('setReaderAutoShowToolbarAtEnd', options),
+    downloadChapter: (options: Parameters<JmcomicClient['downloadChapter']>[0]) =>
+      call<'downloadChapter'>('downloadChapter', options),
+    getDownloadTasks: () => call<'getDownloadTasks'>('getDownloadTasks', {}),
+    cancelDownload: (options: Parameters<JmcomicClient['cancelDownload']>[0]) =>
+      call<'cancelDownload'>('cancelDownload', options),
+    pauseDownload: (options: Parameters<JmcomicClient['pauseDownload']>[0]) =>
+      call<'pauseDownload'>('pauseDownload', options),
+    resumeDownload: (options: Parameters<JmcomicClient['resumeDownload']>[0]) =>
+      call<'resumeDownload'>('resumeDownload', options),
+    deleteDownloaded: (options: Parameters<JmcomicClient['deleteDownloaded']>[0]) =>
+      call<'deleteDownloaded'>('deleteDownloaded', options),
+    getDownloadedPhoto: (options: Parameters<JmcomicClient['getDownloadedPhoto']>[0]) =>
+      call<'getDownloadedPhoto'>('getDownloadedPhoto', options),
     getBrowseHistory: (options: Parameters<JmcomicClient['getBrowseHistory']>[0]) =>
       call<'getBrowseHistory'>('getBrowseHistory', options),
     getBrowseHistoryOverview: (options: Parameters<JmcomicClient['getBrowseHistoryOverview']>[0]) =>

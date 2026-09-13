@@ -90,15 +90,24 @@ class PathsDatabaseTest {
         Path databasePath = Files.createTempDirectory("jq-viewer-db-").resolve("data/desktop.sqlite3");
         try (Database database = new Database(databasePath)) {
             database.open();
+            Database.migrate(database.connection());
 
             try (ResultSet result = database.connection()
                     .createStatement()
                     .executeQuery("SELECT version FROM desktop_schema_version")) {
                 assertTrue(result.next());
-                assertEquals(2, result.getInt(1));
+                assertEquals(3, result.getInt(1));
             }
             try (ResultSet result = database.connection().getMetaData()
                     .getTables(null, null, "browse_history", null)) {
+                assertTrue(result.next());
+            }
+            try (ResultSet result = database.connection().getMetaData()
+                    .getTables(null, null, "download_tasks", null)) {
+                assertTrue(result.next());
+            }
+            try (ResultSet result = database.connection().getMetaData()
+                    .getTables(null, null, "download_pages", null)) {
                 assertTrue(result.next());
             }
             assertTrue(database.isOpen());

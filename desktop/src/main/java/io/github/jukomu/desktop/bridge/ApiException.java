@@ -31,6 +31,10 @@ public final class ApiException extends RuntimeException {
         return new ApiException("not-found", 404, message);
     }
 
+    public static ApiException conflict(String message) {
+        return new ApiException("conflict", 409, message);
+    }
+
     public static ApiException unavailable(String message) {
         return new ApiException("unavailable", 503, message);
     }

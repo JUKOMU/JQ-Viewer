@@ -2,6 +2,7 @@ package io.github.jukomu.desktop.bridge;
 
 import io.github.jukomu.desktop.bridge.handler.ApiPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.AuthPluginHandler;
+import io.github.jukomu.desktop.bridge.handler.DownloadPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.HistoryPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.FilePluginHandler;
 import io.github.jukomu.desktop.bridge.handler.SettingsPluginHandler;
@@ -15,16 +16,19 @@ public final class Plugin {
     private final SettingsPluginHandler settings;
     private final HistoryPluginHandler history;
     private final FilePluginHandler files;
+    private final DownloadPluginHandler downloads;
     private final SystemPluginHandler system;
 
     public Plugin(ApiPluginHandler api, AuthPluginHandler auth,
                   SettingsPluginHandler settings, HistoryPluginHandler history,
-                  FilePluginHandler files, SystemPluginHandler system) {
+                  FilePluginHandler files, DownloadPluginHandler downloads,
+                  SystemPluginHandler system) {
         this.api = api;
         this.auth = auth;
         this.settings = settings;
         this.history = history;
         this.files = files;
+        this.downloads = downloads;
         this.system = system;
     }
 
@@ -166,6 +170,41 @@ public final class Plugin {
     @PluginMethod
     public void scanPdfFiles(Context context) {
         files.scanPdfFiles(context);
+    }
+
+    @PluginMethod
+    public void downloadChapter(Context context) {
+        downloads.downloadChapter(context);
+    }
+
+    @PluginMethod
+    public void getDownloadTasks(Context context) {
+        downloads.getDownloadTasks(context);
+    }
+
+    @PluginMethod
+    public void cancelDownload(Context context) {
+        downloads.cancelDownload(context);
+    }
+
+    @PluginMethod
+    public void pauseDownload(Context context) {
+        downloads.pauseDownload(context);
+    }
+
+    @PluginMethod
+    public void resumeDownload(Context context) {
+        downloads.resumeDownload(context);
+    }
+
+    @PluginMethod
+    public void deleteDownloaded(Context context) {
+        downloads.deleteDownloaded(context);
+    }
+
+    @PluginMethod
+    public void getDownloadedPhoto(Context context) {
+        downloads.getDownloadedPhoto(context);
     }
 
     @PluginMethod

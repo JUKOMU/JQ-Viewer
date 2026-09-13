@@ -12,6 +12,7 @@ import io.github.jukomu.desktop.bridge.RequestExecutor;
 import io.github.jukomu.desktop.bridge.model.ErrorResponse;
 import io.github.jukomu.desktop.bridge.handler.ApiPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.AuthPluginHandler;
+import io.github.jukomu.desktop.bridge.handler.DownloadPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.FilePluginHandler;
 import io.github.jukomu.desktop.bridge.handler.HistoryPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.SettingsPluginHandler;
@@ -20,11 +21,15 @@ import io.github.jukomu.desktop.data.Database;
 import io.github.jukomu.desktop.data.Paths;
 import io.github.jukomu.desktop.feature.auth.AuthService;
 import io.github.jukomu.desktop.feature.catalog.CatalogService;
+import io.github.jukomu.desktop.feature.download.DownloadFiles;
+import io.github.jukomu.desktop.feature.download.DownloadService;
+import io.github.jukomu.desktop.feature.download.data.DownloadStore;
 import io.github.jukomu.desktop.feature.history.HistoryService;
 import io.github.jukomu.desktop.feature.image.ImageService;
 import io.github.jukomu.desktop.feature.files.FileService;
 import io.github.jukomu.desktop.feature.settings.SettingsService;
 import io.github.jukomu.jmcomic.api.client.JmClient;
+import io.github.jukomu.jmcomic.api.client.JmDownloadClient;
 import io.github.jukomu.jmcomic.core.JmComic;
 import io.github.jukomu.jmcomic.core.client.impl.JmApiClient;
 import io.github.jukomu.jmcomic.core.config.JmConfiguration;
@@ -80,6 +85,7 @@ public final class Backend implements AutoCloseable {
 
     private Javalin app;
     private JmApiClient client;
+    private DownloadService downloadService;
     private EventHub eventHub;
     private URI homeUrl;
     private boolean running;
@@ -154,6 +160,7 @@ public final class Backend implements AutoCloseable {
         Javalin candidate = null;
         EventHub startedEventHub = null;
         JmApiClient startedClient = null;
+        DownloadService startedDownloadService = null;
         try {
             paths.ensureDirectories();
             if (Backend.class.getResource("/static/index.html") == null) {
@@ -186,8 +193,22 @@ public final class Backend implements AutoCloseable {
                 serviceClient = providedClient;
                 albumCoverUrl = providedAlbumCoverUrl;
             }
+            if (!(serviceClient instanceof JmDownloadClient downloadClient)) {
+                throw new IllegalStateException("JMComic 客户端不支持下载任务控制");
+            }
             final EventHub eventHub = startedEventHub;
             ImageService imageService = new ImageService(serviceClient, businessExecutor, eventHub);
+            startedDownloadService = new DownloadService(
+                    new DownloadStore(database),
+                    new DownloadFiles(paths),
+                    serviceClient,
+                    downloadClient,
+                    businessExecutor,
+                    eventHub,
+                    mapper
+            );
+            startedDownloadService.reconcileOnStartup();
+            final DownloadService downloadService = startedDownloadService;
             RequestExecutor requests = new RequestExecutor(businessExecutor, mapper);
             Plugin plugin = new Plugin(
                     new ApiPluginHandler(requests,
@@ -196,6 +217,7 @@ public final class Backend implements AutoCloseable {
                     new SettingsPluginHandler(requests, settingsService),
                     new HistoryPluginHandler(requests, new HistoryService(database)),
                     new FilePluginHandler(requests, fileService),
+                    new DownloadPluginHandler(requests, downloadService),
                     new SystemPluginHandler());
             candidate = Javalin.create(config -> {
                 config.jetty.host = LOOPBACK_HOST;
@@ -208,8 +230,10 @@ public final class Backend implements AutoCloseable {
                 config.routes.get("/", context -> context.redirect("/home"));
                 PluginMethodRoutes.register(config.routes, plugin);
                 config.routes.sse("/events", eventHub::connect);
-                registerImageRoute(config, imageService, "image", "/image/{photoId}/{sortOrder}");
-                registerImageRoute(config, imageService, "thumb", "/thumb/{photoId}/{sortOrder}");
+                registerImageRoute(config, imageService, downloadService,
+                        "image", "/image/{photoId}/{sortOrder}");
+                registerImageRoute(config, imageService, downloadService,
+                        "thumb", "/thumb/{photoId}/{sortOrder}");
             });
             candidate.start();
             int port = candidate.port();
@@ -219,6 +243,7 @@ public final class Backend implements AutoCloseable {
 
             this.app = candidate;
             this.client = startedClient;
+            this.downloadService = downloadService;
             this.eventHub = eventHub;
             this.homeUrl = URI.create("http://" + LOOPBACK_HOST + ":" + port + "/home");
             this.running = true;
@@ -232,11 +257,12 @@ public final class Backend implements AutoCloseable {
                     // 保留原始启动异常。
                 }
             }
-            database.close();
+            if (startedDownloadService != null) startedDownloadService.close();
             if (startedEventHub != null) startedEventHub.close();
             if (startedClient != null) startedClient.close();
             pdfExportExecutor.shutdownNow();
             businessExecutor.shutdownNow();
+            database.close();
             throw exception;
         }
     }
@@ -244,6 +270,7 @@ public final class Backend implements AutoCloseable {
     private void registerImageRoute(
             io.javalin.config.JavalinConfig config,
             ImageService imageService,
+            DownloadService downloadService,
             String type,
             String path
     ) {
@@ -259,7 +286,10 @@ public final class Backend implements AutoCloseable {
             int finalSortOrder = sortOrder;
             try {
                 CompletableFuture<?> response = CompletableFuture.supplyAsync(
-                        () -> imageService.read(photoId, finalSortOrder, type),
+                        () -> downloadService.findCompletedImage(photoId, finalSortOrder)
+                                .map(local -> imageService.readLocal(
+                                        photoId, finalSortOrder, type, local))
+                                .orElseGet(() -> imageService.read(photoId, finalSortOrder, type)),
                         businessExecutor).handle((entry, failure) -> {
                     if (failure == null) {
                         context.contentType(entry.mimeType()).result(entry.bytes());
@@ -379,6 +409,11 @@ public final class Backend implements AutoCloseable {
             } catch (RuntimeException exception) {
                 LOGGER.warn("无法正常停止本地后端", exception);
             }
+        }
+
+        if (downloadService != null) {
+            downloadService.close();
+            downloadService = null;
         }
 
         if (client != null) {

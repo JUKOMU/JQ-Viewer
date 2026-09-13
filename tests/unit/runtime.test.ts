@@ -73,6 +73,13 @@ describe('runtime', () => {
       'setReaderPreloadPages',
       'setReaderDisplayMode',
       'setReaderAutoShowToolbarAtEnd',
+      'downloadChapter',
+      'getDownloadTasks',
+      'cancelDownload',
+      'pauseDownload',
+      'resumeDownload',
+      'deleteDownloaded',
+      'getDownloadedPhoto',
       'getBrowseHistory',
       'getBrowseHistoryOverview',
       'recordBrowse',
@@ -111,7 +118,47 @@ describe('runtime', () => {
     await expect(malformed.getInitStatus()).rejects.toMatchObject({
       code: 'internal',
     })
-    expect((backend as unknown as { downloadChapter?: unknown }).downloadChapter).toBeUndefined()
+    expect((backend as unknown as { toggleAlbumLike?: unknown }).toggleAlbumLike).toBeUndefined()
+  })
+
+  test('按共享契约转发下载方法', async () => {
+    const fetcher = vi.fn().mockResolvedValue(response({ success: true }))
+    const backend = createBackendClient(fetcher)
+
+    await backend.downloadChapter({
+      albumId: 'album-1',
+      chapterId: 'photo-1',
+      albumTitle: 'Album',
+      chapterTitle: 'Photo',
+      coverUrl: 'cover.jpg',
+    })
+    await backend.getDownloadTasks()
+    await backend.cancelDownload({ taskId: 'album-1_photo-1' })
+    await backend.pauseDownload({ taskId: 'album-1_photo-1' })
+    await backend.resumeDownload({ taskId: 'album-1_photo-1' })
+    await backend.deleteDownloaded({ albumId: 'album-1', chapterId: 'photo-1' })
+    await backend.getDownloadedPhoto({ albumId: 'album-1', chapterId: 'photo-1' })
+
+    expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
+      '/api/downloadChapter',
+      '/api/getDownloadTasks',
+      '/api/cancelDownload',
+      '/api/pauseDownload',
+      '/api/resumeDownload',
+      '/api/deleteDownloaded',
+      '/api/getDownloadedPhoto',
+    ])
+    expect(fetcher).toHaveBeenNthCalledWith(1, '/api/downloadChapter', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        albumId: 'album-1',
+        chapterId: 'photo-1',
+        albumTitle: 'Album',
+        chapterTitle: 'Photo',
+        coverUrl: 'cover.jpg',
+      }),
+    })
   })
 
   test('构造指定平台的同源运行时并保留未提供的平台能力状态', () => {

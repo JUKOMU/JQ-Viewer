@@ -10,6 +10,11 @@ import io.github.jukomu.desktop.data.Paths;
 import io.github.jukomu.desktop.feature.files.FileReferences;
 import io.github.jukomu.desktop.feature.files.FileService;
 import io.github.jukomu.jmcomic.api.client.JmClient;
+import io.github.jukomu.jmcomic.api.client.JmDownloadClient;
+import io.github.jukomu.jmcomic.api.download.DownloadProgress;
+import io.github.jukomu.jmcomic.api.download.IDownloadManager;
+import io.github.jukomu.jmcomic.api.download.enums.TaskState;
+import io.github.jukomu.jmcomic.api.download.task.BaseDownloadTask;
 import io.github.jukomu.jmcomic.api.model.ForumQuery;
 import io.github.jukomu.jmcomic.api.model.JmAlbum;
 import io.github.jukomu.jmcomic.api.model.JmAlbumMeta;
@@ -42,8 +47,10 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -156,6 +163,27 @@ class BackendHttpContractTest {
             ObjectNode pdfPreferences = body(post(http, base, requestedMethods,
                     "getPdfExportPreferences", "{}"));
 
+            ObjectNode submission = body(post(http, base, requestedMethods, "downloadChapter",
+                    "{\"albumId\":\"album-1\",\"chapterId\":\"download-photo\","
+                            + "\"albumTitle\":\"Album\",\"chapterTitle\":\"Downloaded\","
+                            + "\"coverUrl\":\"https://cover.invalid/album-1.jpg\"}"));
+            assertEquals("album-1_download-photo", submission.path("taskId").asText());
+            ObjectNode downloads = waitForDownload(
+                    http, base, requestedMethods, "album-1_download-photo", "completed");
+            ObjectNode downloadedPhoto = body(post(http, base, requestedMethods,
+                    "getDownloadedPhoto",
+                    "{\"albumId\":\"album-1\",\"chapterId\":\"download-photo\"}"));
+            HttpResponse<byte[]> downloadedImage = getBytes(
+                    http, base.resolve("/image/download-photo/1"));
+            assertOk(post(http, base, requestedMethods, "deleteDownloaded",
+                    "{\"albumId\":\"album-1\",\"chapterId\":\"download-photo\"}"));
+            assertOk(post(http, base, requestedMethods, "cancelDownload",
+                    "{\"taskId\":\"missing\"}"));
+            assertEquals(404, post(http, base, requestedMethods, "pauseDownload",
+                    "{\"taskId\":\"missing\"}").statusCode());
+            assertEquals(404, post(http, base, requestedMethods, "resumeDownload",
+                    "{\"taskId\":\"missing\"}").statusCode());
+
             assertOk(post(http, base, requestedMethods, "recordBrowse",
                     "{\"albumId\":\"album-1\",\"albumTitle\":\"Album\","
                             + "\"coverUrl\":\"https://cover.invalid/album-1.jpg\","
@@ -197,6 +225,11 @@ class BackendHttpContractTest {
             assertEquals(folderRef, pdfPreferences.path("exportFolder").path("folderRef").asText());
             assertEquals("{author}/{id}", pdfPreferences.path("directoryTemplate").asText());
             assertEquals("{title}", pdfPreferences.path("fileNameTemplate").asText());
+            assertEquals("completed", downloads.path("tasks").get(0).path("status").asText());
+            assertEquals("download-photo", downloadedPhoto.path("id").asText());
+            assertEquals(200, downloadedImage.statusCode());
+            assertEquals("image/webp",
+                    downloadedImage.headers().firstValue("Content-Type").orElseThrow());
             assertEquals(1, history.path("totalCount").asInt());
             assertEquals(1, overview.path("totalCount").asInt());
             assertEquals(200, image.statusCode());
@@ -282,6 +315,28 @@ class BackendHttpContractTest {
                 HttpResponse.BodyHandlers.ofByteArray());
     }
 
+    private static ObjectNode waitForDownload(
+            HttpClient client,
+            URI base,
+            Set<String> requestedMethods,
+            String taskId,
+            String status
+    ) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        ObjectNode latest = null;
+        while (System.nanoTime() < deadline) {
+            latest = body(post(client, base, requestedMethods, "getDownloadTasks", "{}"));
+            for (var task : latest.path("tasks")) {
+                if (taskId.equals(task.path("taskId").asText())
+                        && status.equals(task.path("status").asText())) {
+                    return latest;
+                }
+            }
+            Thread.sleep(10);
+        }
+        throw new AssertionError("Download did not reach " + status + ": " + latest);
+    }
+
     private static void assertOk(HttpResponse<String> response) {
         assertEquals(200, response.statusCode(), response.body());
     }
@@ -340,6 +395,7 @@ class BackendHttpContractTest {
 
     private static final class FakeClient {
         private final byte[] imageBytes;
+        private final FakeDownloadManager downloadManager = new FakeDownloadManager();
         private final ConcurrentLinkedQueue<Invocation> invocations = new ConcurrentLinkedQueue<>();
         private volatile String failedMethod;
         private volatile RuntimeException failure;
@@ -351,7 +407,7 @@ class BackendHttpContractTest {
         private JmClient client() {
             return (JmClient) Proxy.newProxyInstance(
                     JmClient.class.getClassLoader(),
-                    new Class<?>[]{JmClient.class},
+                    new Class<?>[]{JmClient.class, JmDownloadClient.class},
                     (proxy, method, arguments) -> invoke(proxy, method, arguments));
         }
 
@@ -372,12 +428,16 @@ class BackendHttpContractTest {
             return switch (method.getName()) {
                 case "search", "getCategories" -> searchPage();
                 case "getAlbum" -> album();
-                case "getPhoto" -> photo();
+                case "getPhoto" -> photo((String) arguments[0]);
                 case "getComments" -> comments();
                 case "fetchImageBytes" -> imageBytes;
                 case "login" -> userInfo();
                 case "logout" -> null;
                 case "getUserProfile" -> userProfile();
+                case "createDownloadTask" -> new ImmediateDownloadTask(
+                        (JmPhoto) arguments[0], (Path) arguments[1], imageBytes, downloadManager);
+                case "downloadManager" -> downloadManager;
+                case "close" -> null;
                 default -> throw new AssertionError("Unexpected client call: " + method.getName());
             };
         }
@@ -413,14 +473,18 @@ class BackendHttpContractTest {
                     "series-1", false, false, false, List.of(image()), "0", "0");
         }
 
-        private static JmPhoto photo() {
-            return new JmPhoto("photo-1", "Photo", "album-1", "1", 1,
-                    "Alice", List.of("tag"), List.of(image()), false);
+        private static JmPhoto photo(String id) {
+            return new JmPhoto(id, "Photo", "album-1", "1", 1,
+                    "Alice", List.of("tag"), List.of(image(id)), false);
+        }
+
+        private static JmImage image(String photoId) {
+            return new JmImage(photoId, "1", "001.webp",
+                    "https://example.invalid/001.webp", "", 1);
         }
 
         private static JmImage image() {
-            return new JmImage("photo-1", "1", "001.webp",
-                    "https://example.invalid/001.webp", "", 1);
+            return image("photo-1");
         }
 
         private static JmCommentList comments() {
@@ -440,6 +504,130 @@ class BackendHttpContractTest {
             return new JmUserProfile(
                     "alice", "alice@example.invalid", "Alice", "", "", "", "", "", "",
                     "", "City", "Country", "Engineer", "", "", "About", "", "", "", "", "", "");
+        }
+    }
+
+    private static final class FakeDownloadManager implements IDownloadManager {
+        private final Map<String, BaseDownloadTask> tasks = new HashMap<>();
+
+        @Override
+        public BaseDownloadTask getTask(String taskId) {
+            return tasks.get(taskId);
+        }
+
+        @Override
+        public List<BaseDownloadTask> getActiveTasks() {
+            return tasks.values().stream().filter(task -> !task.currentState().isTerminal()).toList();
+        }
+
+        @Override
+        public List<BaseDownloadTask> getTaskRegistry() {
+            return List.copyOf(tasks.values());
+        }
+
+        @Override
+        public void submit(BaseDownloadTask task) {
+            if (task.transitState(TaskState.PENDING, TaskState.QUEUED)
+                    || task.transitState(TaskState.PAUSED, TaskState.QUEUED)) {
+                tasks.put(task.getTaskId(), task);
+                task.notifyStateChanged(TaskState.QUEUED);
+                task.run();
+            }
+        }
+
+        @Override
+        public void pause(String taskId) {
+            BaseDownloadTask task = tasks.get(taskId);
+            if (task != null) task.pause();
+        }
+
+        @Override
+        public void resume(String taskId) {
+            BaseDownloadTask task = tasks.get(taskId);
+            if (task != null) task.resume();
+        }
+
+        @Override
+        public void cancel(String taskId) {
+            BaseDownloadTask task = tasks.get(taskId);
+            if (task != null) task.cancel();
+        }
+
+        @Override
+        public void close() {
+            for (BaseDownloadTask task : List.copyOf(tasks.values())) task.cancel();
+        }
+    }
+
+    private static final class ImmediateDownloadTask extends BaseDownloadTask {
+        private final JmPhoto photo;
+        private final Path directory;
+        private final byte[] bytes;
+        private final IDownloadManager manager;
+
+        private ImmediateDownloadTask(
+                JmPhoto photo,
+                Path path,
+                byte[] bytes,
+                IDownloadManager manager
+        ) {
+            this.photo = photo;
+            this.directory = photo.isSingleAlbum() ? path : path.resolve(photo.getId());
+            this.bytes = bytes;
+            this.manager = manager;
+            this.totalBytes = (long) bytes.length * photo.getImages().size();
+        }
+
+        @Override
+        public void start() {
+            if (!transitState(TaskState.QUEUED, TaskState.RUNNING)) return;
+            notifyStateChanged(TaskState.RUNNING);
+            try {
+                Files.createDirectories(directory);
+                for (JmImage image : photo.getImages()) {
+                    Path target = directory.resolve(image.getFilename());
+                    Files.write(target, bytes);
+                    addSuccessfulFile(target);
+                    completedCount++;
+                    downloadedBytes += bytes.length;
+                    notifyProgressUpdate(new DownloadProgress(
+                            photo.getAlbumId(), null, photo.getId(), photo.getTitle(),
+                            completedCount, 0, photo.getImages().size(), 0, 0, 0,
+                            false, downloadedBytes, String.valueOf(System.currentTimeMillis())));
+                }
+                if (transitState(TaskState.RUNNING, TaskState.COMPLETED)) {
+                    notifyStateChanged(TaskState.COMPLETED);
+                    notifyFinish(getCurrentDownloadResult());
+                }
+            } catch (Exception exception) {
+                notifyError(exception);
+                if (transitState(TaskState.RUNNING, TaskState.FAILED)) {
+                    notifyStateChanged(TaskState.FAILED);
+                }
+            }
+        }
+
+        @Override
+        public void pause() {
+            if (transitState(TaskState.RUNNING, TaskState.PAUSED)
+                    || transitState(TaskState.QUEUED, TaskState.PAUSED)) {
+                notifyStateChanged(TaskState.PAUSED);
+            }
+        }
+
+        @Override
+        public void resume() {
+            manager.submit(this);
+        }
+
+        @Override
+        public void cancel() {
+            boolean cancelling = transitState(TaskState.RUNNING, TaskState.CANCELLING);
+            boolean cancelled = transitState(TaskState.PENDING, TaskState.CANCELLED)
+                    || transitState(TaskState.QUEUED, TaskState.CANCELLED)
+                    || transitState(TaskState.PAUSED, TaskState.CANCELLED);
+            if (cancelling) cancelled = transitState(TaskState.CANCELLING, TaskState.CANCELLED);
+            if (cancelled) notifyStateChanged(TaskState.CANCELLED);
         }
     }
 }

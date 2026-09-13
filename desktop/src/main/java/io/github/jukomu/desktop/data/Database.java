@@ -11,7 +11,7 @@ import java.sql.Statement;
 
 /** 管理本地 SQLite 连接，并提供版本化 schema 迁移入口。 */
 public final class Database implements AutoCloseable {
-    private static final int SCHEMA_VERSION = 4;
+    private static final int SCHEMA_VERSION = 5;
 
     private final Path databasePath;
     private Connection connection;
@@ -37,6 +37,9 @@ public final class Database implements AutoCloseable {
         try {
             Class.forName("org.sqlite.JDBC");
             connection = DriverManager.getConnection("jdbc:sqlite:" + databasePath);
+            try (Statement statement = connection.createStatement()) {
+                statement.execute("PRAGMA foreign_keys = ON");
+            }
             migrate(connection);
             return connection;
         } catch (ClassNotFoundException exception) {
@@ -140,6 +143,75 @@ public final class Database implements AutoCloseable {
                     + "ON pdf_files(source_type, created_at DESC, id DESC)");
             statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_pdf_files_availability_updated "
                     + "ON pdf_files(availability, updated_at DESC, id DESC)");
+            statement.executeUpdate("CREATE TABLE IF NOT EXISTS pdf_export_tasks ("
+                    + "export_id TEXT PRIMARY KEY,"
+                    + " batch_id TEXT NOT NULL,"
+                    + " mode TEXT NOT NULL CHECK(mode IN ('chapter','merged')),"
+                    + " album_id TEXT NOT NULL,"
+                    + " album_title TEXT NOT NULL DEFAULT '',"
+                    + " cover_url TEXT NOT NULL DEFAULT '',"
+                    + " authors TEXT NOT NULL DEFAULT '',"
+                    + " is_single_episode INTEGER NOT NULL DEFAULT -1 "
+                    + "CHECK(is_single_episode IN (-1,0,1)),"
+                    + " chapter_id TEXT,"
+                    + " display_title TEXT NOT NULL,"
+                    + " target_folder_ref TEXT NOT NULL,"
+                    + " target_name TEXT NOT NULL,"
+                    + " display_path TEXT NOT NULL DEFAULT '',"
+                    + " allow_overwrite INTEGER NOT NULL DEFAULT 0 "
+                    + "CHECK(allow_overwrite IN (0,1)),"
+                    + " use_original INTEGER NOT NULL CHECK(use_original IN (0,1)),"
+                    + " compression_ratio REAL NOT NULL,"
+                    + " split_pages INTEGER NOT NULL DEFAULT 0,"
+                    + " status TEXT NOT NULL,"
+                    + " phase TEXT NOT NULL,"
+                    + " current_page INTEGER NOT NULL DEFAULT 0,"
+                    + " total_pages INTEGER NOT NULL DEFAULT 0,"
+                    + " current_volume INTEGER NOT NULL DEFAULT 0,"
+                    + " total_volumes INTEGER NOT NULL DEFAULT 0,"
+                    + " snapshot_revision INTEGER NOT NULL DEFAULT 0,"
+                    + " cancel_requested INTEGER NOT NULL DEFAULT 0 "
+                    + "CHECK(cancel_requested IN (0,1)),"
+                    + " error_code TEXT,"
+                    + " error_message TEXT,"
+                    + " created_at INTEGER NOT NULL,"
+                    + " started_at INTEGER,"
+                    + " updated_at INTEGER NOT NULL,"
+                    + " completed_at INTEGER)"
+            );
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_pdf_tasks_status_updated "
+                    + "ON pdf_export_tasks(status, updated_at DESC, export_id)");
+            statement.executeUpdate("CREATE TABLE IF NOT EXISTS pdf_export_chapters ("
+                    + "export_id TEXT NOT NULL,"
+                    + " sequence INTEGER NOT NULL,"
+                    + " album_id TEXT NOT NULL,"
+                    + " chapter_id TEXT NOT NULL,"
+                    + " chapter_title TEXT NOT NULL DEFAULT '',"
+                    + " sort_order INTEGER NOT NULL DEFAULT 0,"
+                    + " expected_page_count INTEGER NOT NULL DEFAULT 0,"
+                    + " PRIMARY KEY(export_id, sequence),"
+                    + " FOREIGN KEY(export_id) REFERENCES pdf_export_tasks(export_id) "
+                    + "ON DELETE CASCADE)"
+            );
+            statement.executeUpdate("CREATE TABLE IF NOT EXISTS pdf_export_volumes ("
+                    + "export_id TEXT NOT NULL,"
+                    + " volume_index INTEGER NOT NULL,"
+                    + " start_page INTEGER NOT NULL,"
+                    + " end_page INTEGER NOT NULL,"
+                    + " expected_page_count INTEGER NOT NULL,"
+                    + " actual_page_count INTEGER NOT NULL DEFAULT 0,"
+                    + " target_name TEXT NOT NULL,"
+                    + " output_file_ref TEXT,"
+                    + " display_path TEXT NOT NULL DEFAULT '',"
+                    + " temp_path TEXT NOT NULL,"
+                    + " status TEXT NOT NULL DEFAULT 'pending',"
+                    + " file_size INTEGER NOT NULL DEFAULT 0,"
+                    + " updated_at INTEGER NOT NULL,"
+                    + " completed_at INTEGER,"
+                    + " PRIMARY KEY(export_id, volume_index),"
+                    + " FOREIGN KEY(export_id) REFERENCES pdf_export_tasks(export_id) "
+                    + "ON DELETE CASCADE)"
+            );
         }
 
         try (PreparedStatement statement = connection.prepareStatement(

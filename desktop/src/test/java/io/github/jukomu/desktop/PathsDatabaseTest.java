@@ -96,7 +96,7 @@ class PathsDatabaseTest {
                     .createStatement()
                     .executeQuery("SELECT version FROM desktop_schema_version")) {
                 assertTrue(result.next());
-                assertEquals(4, result.getInt(1));
+                assertEquals(5, result.getInt(1));
             }
             try (ResultSet result = database.connection().getMetaData()
                     .getTables(null, null, "browse_history", null)) {
@@ -112,6 +112,18 @@ class PathsDatabaseTest {
             }
             try (ResultSet result = database.connection().getMetaData()
                     .getTables(null, null, "pdf_files", null)) {
+                assertTrue(result.next());
+            }
+            try (ResultSet result = database.connection().getMetaData()
+                    .getTables(null, null, "pdf_export_tasks", null)) {
+                assertTrue(result.next());
+            }
+            try (ResultSet result = database.connection().getMetaData()
+                    .getTables(null, null, "pdf_export_chapters", null)) {
+                assertTrue(result.next());
+            }
+            try (ResultSet result = database.connection().getMetaData()
+                    .getTables(null, null, "pdf_export_volumes", null)) {
                 assertTrue(result.next());
             }
             assertTrue(database.isOpen());

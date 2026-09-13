@@ -212,6 +212,36 @@ public final class Plugin {
     }
 
     @PluginMethod
+    public void exportPdfBatch(Context context) {
+        pdfs.exportPdfBatch(context);
+    }
+
+    @PluginMethod
+    public void getPdfExportTasks(Context context) {
+        pdfs.getPdfExportTasks(context);
+    }
+
+    @PluginMethod
+    public void getPdfExportTask(Context context) {
+        pdfs.getPdfExportTask(context);
+    }
+
+    @PluginMethod
+    public void cancelPdfExport(Context context) {
+        pdfs.cancelPdfExport(context);
+    }
+
+    @PluginMethod
+    public void retryPdfExport(Context context) {
+        pdfs.retryPdfExport(context);
+    }
+
+    @PluginMethod
+    public void deletePdfExportTask(Context context) {
+        pdfs.deletePdfExportTask(context);
+    }
+
+    @PluginMethod
     public void importPdfs(Context context) {
         pdfs.importPdfs(context);
     }

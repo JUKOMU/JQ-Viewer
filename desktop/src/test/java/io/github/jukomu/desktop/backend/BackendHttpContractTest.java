@@ -250,6 +250,40 @@ class BackendHttpContractTest {
                     "{\"albumId\":\"album-1\",\"chapterId\":\"download-photo\"}"));
             HttpResponse<byte[]> downloadedImage = getBytes(
                     http, base.resolve("/image/download-photo/1"));
+            String exportBody = MAPPER.writeValueAsString(Map.of("tasks", List.of(Map.ofEntries(
+                    Map.entry("mode", "chapter"),
+                    Map.entry("albumId", "album-1"),
+                    Map.entry("albumTitle", "Album"),
+                    Map.entry("coverUrl", ""),
+                    Map.entry("authors", "Alice"),
+                    Map.entry("isSingleEpisode", false),
+                    Map.entry("chapterId", "download-photo"),
+                    Map.entry("chapterTitle", "Downloaded"),
+                    Map.entry("target", Map.of("folder", folderRef,
+                            "relativePath", "exported.pdf")),
+                    Map.entry("displayPath", pickedFolder.path("displayPath").asText()
+                            + "/exported.pdf"),
+                    Map.entry("useOriginal", true),
+                    Map.entry("compressionRatio", 1D),
+                    Map.entry("splitPages", 0),
+                    Map.entry("allowOverwrite", false)
+            ))));
+            ObjectNode exported = body(post(http, base, requestedMethods,
+                    "exportPdfBatch", exportBody));
+            String exportId = exported.path("tasks").get(0).path("exportId").asText();
+            ObjectNode exportTask = waitForPdfExport(
+                    http, base, requestedMethods, exportId, "completed");
+            ObjectNode exportTasks = body(post(http, base, requestedMethods,
+                    "getPdfExportTasks", "{\"limit\":50}"));
+            ObjectNode cancelledCompletedExport = body(post(http, base, requestedMethods,
+                    "cancelPdfExport", "{\"exportId\":\"" + exportId + "\"}"));
+            ObjectNode retriedExport = body(post(http, base, requestedMethods,
+                    "retryPdfExport", "{\"exportId\":\"" + exportId
+                            + "\",\"allowOverwrite\":true}"));
+            ObjectNode completedRetry = waitForPdfExport(
+                    http, base, requestedMethods, exportId, "completed");
+            assertOk(post(http, base, requestedMethods, "deletePdfExportTask",
+                    "{\"exportId\":\"" + exportId + "\"}"));
             assertOk(post(http, base, requestedMethods, "deleteDownloaded",
                     "{\"albumId\":\"album-1\",\"chapterId\":\"download-photo\"}"));
             assertOk(post(http, base, requestedMethods, "cancelDownload",
@@ -327,6 +361,13 @@ class BackendHttpContractTest {
             assertEquals(200, downloadedImage.statusCode());
             assertEquals("image/webp",
                     downloadedImage.headers().firstValue("Content-Type").orElseThrow());
+            assertTrue(exported.path("tasks").get(0).path("accepted").asBoolean());
+            assertEquals("completed", exportTask.path("status").asText());
+            assertTrue(exportTask.path("outputFileRef").asText().startsWith("file:path:"));
+            assertEquals(1, exportTasks.path("tasks").size());
+            assertEquals("completed", cancelledCompletedExport.path("status").asText());
+            assertEquals("queued", retriedExport.path("status").asText());
+            assertEquals("completed", completedRetry.path("status").asText());
             assertEquals(1, history.path("totalCount").asInt());
             assertEquals(1, overview.path("totalCount").asInt());
             assertEquals(200, image.statusCode());
@@ -417,6 +458,24 @@ class BackendHttpContractTest {
     private static HttpResponse<byte[]> getBytes(HttpClient client, URI uri) throws Exception {
         return client.send(HttpRequest.newBuilder(uri).GET().build(),
                 HttpResponse.BodyHandlers.ofByteArray());
+    }
+
+    private static ObjectNode waitForPdfExport(
+            HttpClient http,
+            URI base,
+            Set<String> requestedMethods,
+            String exportId,
+            String status
+    ) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        ObjectNode task;
+        do {
+            task = body(post(http, base, requestedMethods, "getPdfExportTask",
+                    "{\"exportId\":\"" + exportId + "\"}"));
+            if (status.equals(task.path("status").asText())) return task;
+            Thread.sleep(10);
+        } while (System.nanoTime() < deadline);
+        throw new AssertionError("PDF 导出任务未进入状态 " + status + ": " + task);
     }
 
     private static ObjectNode waitForDownload(

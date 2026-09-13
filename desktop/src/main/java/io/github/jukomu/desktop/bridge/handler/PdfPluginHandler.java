@@ -3,7 +3,13 @@ package io.github.jukomu.desktop.bridge.handler;
 import io.github.jukomu.desktop.bridge.ApiException;
 import io.github.jukomu.desktop.bridge.Request;
 import io.github.jukomu.desktop.bridge.RequestExecutor;
+import io.github.jukomu.desktop.feature.pdf.export.PdfExportService;
 import io.github.jukomu.desktop.feature.pdf.management.PdfManagementService;
+import io.github.jukomu.desktop.feature.pdf.model.PdfExportBatchRequest;
+import io.github.jukomu.desktop.feature.pdf.model.PdfExportDeleteResponse;
+import io.github.jukomu.desktop.feature.pdf.model.PdfExportIdRequest;
+import io.github.jukomu.desktop.feature.pdf.model.PdfExportRetryRequest;
+import io.github.jukomu.desktop.feature.pdf.model.PdfExportTasksRequest;
 import io.github.jukomu.desktop.feature.pdf.model.ImportPdfsRequest;
 import io.github.jukomu.desktop.feature.pdf.model.ImportedPdfsResponse;
 import io.github.jukomu.desktop.feature.pdf.model.PdfFileRefRequest;
@@ -18,10 +24,47 @@ import io.javalin.http.Context;
 public final class PdfPluginHandler {
     private final RequestExecutor requests;
     private final PdfManagementService pdfs;
+    private final PdfExportService exports;
 
-    public PdfPluginHandler(RequestExecutor requests, PdfManagementService pdfs) {
+    public PdfPluginHandler(
+            RequestExecutor requests,
+            PdfManagementService pdfs,
+            PdfExportService exports
+    ) {
         this.requests = requests;
         this.pdfs = pdfs;
+        this.exports = exports;
+    }
+
+    public void exportPdfBatch(Context context) {
+        requests.run(context, PdfExportBatchRequest.class,
+                request -> exports.submit(request.tasks()));
+    }
+
+    public void getPdfExportTasks(Context context) {
+        requests.run(context, PdfExportTasksRequest.class, request -> exports.getTasks(
+                request.status(), request.cursor(), Request.integer(request.limit(), 50)));
+    }
+
+    public void getPdfExportTask(Context context) {
+        requests.run(context, PdfExportIdRequest.class,
+                request -> exports.getTask(Request.requiredText(request.exportId(), "exportId")));
+    }
+
+    public void cancelPdfExport(Context context) {
+        requests.run(context, PdfExportIdRequest.class,
+                request -> exports.cancel(Request.requiredText(request.exportId(), "exportId")));
+    }
+
+    public void retryPdfExport(Context context) {
+        requests.run(context, PdfExportRetryRequest.class, request -> exports.retry(
+                Request.requiredText(request.exportId(), "exportId"),
+                Request.bool(request.allowOverwrite(), false)));
+    }
+
+    public void deletePdfExportTask(Context context) {
+        requests.run(context, PdfExportIdRequest.class, request -> new PdfExportDeleteResponse(
+                exports.deleteTask(Request.requiredText(request.exportId(), "exportId"))));
     }
 
     public void importPdfs(Context context) {

@@ -29,6 +29,8 @@ import io.github.jukomu.desktop.feature.history.HistoryService;
 import io.github.jukomu.desktop.feature.image.ImageService;
 import io.github.jukomu.desktop.feature.files.FileService;
 import io.github.jukomu.desktop.feature.pdf.data.PdfStore;
+import io.github.jukomu.desktop.feature.pdf.export.PdfExportService;
+import io.github.jukomu.desktop.feature.pdf.export.PdfExportStore;
 import io.github.jukomu.desktop.feature.pdf.management.PdfManagementService;
 import io.github.jukomu.desktop.feature.pdf.render.PdfDocumentService;
 import io.github.jukomu.desktop.feature.pdf.render.PdfPageCache;
@@ -92,6 +94,7 @@ public final class Backend implements AutoCloseable {
     private Javalin app;
     private JmApiClient client;
     private DownloadService downloadService;
+    private PdfExportService pdfExportService;
     private EventHub eventHub;
     private URI homeUrl;
     private boolean running;
@@ -167,6 +170,7 @@ public final class Backend implements AutoCloseable {
         EventHub startedEventHub = null;
         JmApiClient startedClient = null;
         DownloadService startedDownloadService = null;
+        PdfExportService startedPdfExportService = null;
         try {
             paths.ensureDirectories();
             if (Backend.class.getResource("/static/index.html") == null) {
@@ -205,9 +209,10 @@ public final class Backend implements AutoCloseable {
             final EventHub eventHub = startedEventHub;
             ImageService imageService = new ImageService(serviceClient, businessExecutor, eventHub);
             DownloadStore downloadStore = new DownloadStore(database);
+            DownloadFiles downloadFiles = new DownloadFiles(paths);
             startedDownloadService = new DownloadService(
                     downloadStore,
-                    new DownloadFiles(paths),
+                    downloadFiles,
                     serviceClient,
                     downloadClient,
                     businessExecutor,
@@ -224,7 +229,10 @@ public final class Backend implements AutoCloseable {
                     fileService,
                     new PdfDocumentService(pdfPageCache)
             );
-            RequestExecutor pdfRequests = new RequestExecutor(pdfExportExecutor, mapper);
+            startedPdfExportService = new PdfExportService(
+                    new PdfExportStore(database), downloadStore, downloadFiles,
+                    pdfExportExecutor, eventHub);
+            startedPdfExportService.reconcileOnStartup();
             Plugin plugin = new Plugin(
                     new ApiPluginHandler(requests,
                             new CatalogService(serviceClient, imageService, albumCoverUrl), imageService),
@@ -233,7 +241,7 @@ public final class Backend implements AutoCloseable {
                     new HistoryPluginHandler(requests, new HistoryService(database)),
                     new FilePluginHandler(requests, fileService),
                     new DownloadPluginHandler(requests, downloadService),
-                    new PdfPluginHandler(pdfRequests, pdfManagementService),
+                    new PdfPluginHandler(requests, pdfManagementService, startedPdfExportService),
                     new SystemPluginHandler());
             PdfResourceService pdfResources = new PdfResourceService();
             candidate = Javalin.create(config -> {
@@ -262,6 +270,7 @@ public final class Backend implements AutoCloseable {
             this.app = candidate;
             this.client = startedClient;
             this.downloadService = downloadService;
+            this.pdfExportService = startedPdfExportService;
             this.eventHub = eventHub;
             this.homeUrl = URI.create("http://" + LOOPBACK_HOST + ":" + port + "/home");
             this.running = true;
@@ -276,6 +285,7 @@ public final class Backend implements AutoCloseable {
                 }
             }
             if (startedDownloadService != null) startedDownloadService.close();
+            if (startedPdfExportService != null) startedPdfExportService.close();
             if (startedEventHub != null) startedEventHub.close();
             if (startedClient != null) startedClient.close();
             pdfExportExecutor.shutdownNow();
@@ -400,11 +410,19 @@ public final class Backend implements AutoCloseable {
     }
 
     private static ExecutorService createPdfExportExecutor() {
-        return java.util.concurrent.Executors.newSingleThreadExecutor(runnable -> {
-            Thread thread = new Thread(runnable, "jq-viewer-pdf-export");
-            thread.setDaemon(false);
-            return thread;
-        });
+        return new ThreadPoolExecutor(
+                1,
+                1,
+                0,
+                TimeUnit.SECONDS,
+                new ArrayBlockingQueue<>(64),
+                runnable -> {
+                    Thread thread = new Thread(runnable, "jq-viewer-pdf-export");
+                    thread.setDaemon(false);
+                    return thread;
+                },
+                new ThreadPoolExecutor.AbortPolicy()
+        );
     }
 
     private void configureBusinessExecutor(int concurrency) {
@@ -456,6 +474,10 @@ public final class Backend implements AutoCloseable {
         Javalin current = app;
         app = null;
         homeUrl = null;
+        if (pdfExportService != null) {
+            pdfExportService.close();
+            pdfExportService = null;
+        }
         if (eventHub != null) {
             eventHub.close();
             eventHub = null;

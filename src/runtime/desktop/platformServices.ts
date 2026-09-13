@@ -14,11 +14,12 @@ import type {
   ImportPdfItem,
   ImportPdfsResult,
   PdfExportBatchResult,
+  PdfExportSubmissionTaskResult,
+  PdfExportTask,
   PdfExportTaskRecord,
   PdfManagementState,
   PdfStorageDeleteResult,
 } from '@/services/JmcomicTypes'
-import { RuntimeError } from '../errors'
 import { requestBackend, type BackendFetch } from './backendClient'
 import { createDesktopPdfExportPreferencesStore } from './pdfExportPreferences'
 
@@ -66,6 +67,16 @@ type RawPdfStorageDeleteResult = Omit<PdfStorageDeleteResult, 'file'> & {
   fileName: string
 }
 
+type RawPdfExportTaskRecord = Omit<PdfExportTaskRecord, 'outputFile' | 'displayPath'> & {
+  targetFolderRef: string
+  targetName: string
+  outputFileRef?: string
+  displayPath?: string
+}
+
+type RawPdfExportSubmissionTaskResult = Partial<RawPdfExportTaskRecord> &
+  Pick<PdfExportSubmissionTaskResult, 'accepted' | 'errorCode' | 'errorMessage'>
+
 function toImportedPdf(file: RawImportedPdf): ImportedPdf {
   return { ...file, fileRef: asFileRef(file.fileRef) }
 }
@@ -74,8 +85,28 @@ function toFileDescriptor(fileRef: string, displayPath: string, fileName?: strin
   return { ref: asFileRef(fileRef), displayPath, fileName: fileName || displayPath }
 }
 
-function unavailablePdf<T>(): Promise<T> {
-  return Promise.reject(new RuntimeError('unavailable', 'Desktop PDF 导出尚未实现'))
+function toPdfExportTaskRecord(task: RawPdfExportTaskRecord): PdfExportTaskRecord {
+  const { outputFileRef, displayPath, ...rest } = task
+  return {
+    ...rest,
+    ...(outputFileRef && displayPath
+      ? { outputFile: toFileDescriptor(outputFileRef, displayPath) }
+      : {}),
+    displayPath,
+  }
+}
+
+function toPdfExportSubmissionTaskResult(
+  task: RawPdfExportSubmissionTaskResult,
+): PdfExportSubmissionTaskResult {
+  const { outputFileRef, displayPath, ...rest } = task
+  return {
+    ...rest,
+    ...(outputFileRef && displayPath
+      ? { outputFile: toFileDescriptor(outputFileRef, displayPath) }
+      : {}),
+    displayPath,
+  }
 }
 
 function createFileService(fetcher: BackendFetch): FileService {
@@ -108,7 +139,15 @@ function createFileService(fetcher: BackendFetch): FileService {
 
 function createPdfService(events: BackendEvents, fetcher: BackendFetch): PdfService {
   return {
-    exportPdfBatch: () => unavailablePdf<PdfExportBatchResult>(),
+    exportPdfBatch: ({ tasks }: { tasks: PdfExportTask[] }) =>
+      requestBackend<{ tasks: RawPdfExportSubmissionTaskResult[] }>(fetcher, 'exportPdfBatch', {
+        tasks: tasks.map(({ target, ...task }) => ({
+          ...task,
+          target: { folder: String(target.folder), relativePath: target.relativePath },
+        })),
+      }).then((result): PdfExportBatchResult => ({
+        tasks: result.tasks.map(toPdfExportSubmissionTaskResult),
+      })),
     scanPdfFiles: (folder) =>
       requestBackend<{ files: FileResponse[] }>(fetcher, 'scanPdfFiles', {
         folder: String(folder),
@@ -170,12 +209,30 @@ function createPdfService(events: BackendEvents, fetcher: BackendFetch): PdfServ
       requestBackend<PdfManagementState>(fetcher, 'getPdfManagementState', {}),
     acknowledgePdfDatabaseReset: () =>
       requestBackend<{ acknowledged: boolean }>(fetcher, 'acknowledgePdfDatabaseReset', {}),
-    getPdfExportTasks: () =>
-      unavailablePdf<{ tasks: PdfExportTaskRecord[]; nextCursor?: string }>(),
-    getPdfExportTask: () => unavailablePdf<PdfExportTaskRecord>(),
-    cancelPdfExport: () => unavailablePdf<PdfExportTaskRecord>(),
-    retryPdfExport: () => unavailablePdf<PdfExportTaskRecord>(),
-    deletePdfExportTask: () => unavailablePdf<{ success: boolean }>(),
+    getPdfExportTasks: (options) =>
+      requestBackend<{ tasks: RawPdfExportTaskRecord[]; nextCursor?: string }>(
+        fetcher,
+        'getPdfExportTasks',
+        options,
+      ).then((result) => ({
+        tasks: result.tasks.map(toPdfExportTaskRecord),
+        nextCursor: result.nextCursor,
+      })),
+    getPdfExportTask: (exportId) =>
+      requestBackend<RawPdfExportTaskRecord>(fetcher, 'getPdfExportTask', { exportId }).then(
+        toPdfExportTaskRecord,
+      ),
+    cancelPdfExport: (exportId) =>
+      requestBackend<RawPdfExportTaskRecord>(fetcher, 'cancelPdfExport', { exportId }).then(
+        toPdfExportTaskRecord,
+      ),
+    retryPdfExport: (exportId, allowOverwrite = false) =>
+      requestBackend<RawPdfExportTaskRecord>(fetcher, 'retryPdfExport', {
+        exportId,
+        allowOverwrite,
+      }).then(toPdfExportTaskRecord),
+    deletePdfExportTask: (exportId) =>
+      requestBackend<{ success: boolean }>(fetcher, 'deletePdfExportTask', { exportId }),
     deleteImportedPdf: (id) =>
       requestBackend<{ success: boolean }>(fetcher, 'deleteImportedPdf', { id }),
     updateLocalEpisodeType: (albumId, isSingleEpisode) =>

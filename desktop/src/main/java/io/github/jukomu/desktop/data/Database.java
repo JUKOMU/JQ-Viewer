@@ -11,7 +11,7 @@ import java.sql.Statement;
 
 /** 管理本地 SQLite 连接，并提供版本化 schema 迁移入口。 */
 public final class Database implements AutoCloseable {
-    private static final int SCHEMA_VERSION = 2;
+    private static final int SCHEMA_VERSION = 5;
 
     private final Path databasePath;
     private Connection connection;
@@ -37,6 +37,9 @@ public final class Database implements AutoCloseable {
         try {
             Class.forName("org.sqlite.JDBC");
             connection = DriverManager.getConnection("jdbc:sqlite:" + databasePath);
+            try (Statement statement = connection.createStatement()) {
+                statement.execute("PRAGMA foreign_keys = ON");
+            }
             migrate(connection);
             return connection;
         } catch (ClassNotFoundException exception) {
@@ -65,6 +68,150 @@ public final class Database implements AutoCloseable {
                     + " timestamp INTEGER NOT NULL)");
             statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_browse_history_timestamp_id "
                     + "ON browse_history(timestamp DESC, id DESC)");
+            statement.executeUpdate("CREATE TABLE IF NOT EXISTS download_tasks ("
+                    + "task_id TEXT PRIMARY KEY,"
+                    + " album_id TEXT NOT NULL,"
+                    + " chapter_id TEXT NOT NULL,"
+                    + " album_title TEXT NOT NULL,"
+                    + " chapter_title TEXT NOT NULL,"
+                    + " cover_url TEXT NOT NULL DEFAULT '',"
+                    + " author TEXT NOT NULL DEFAULT '',"
+                    + " tags_json TEXT NOT NULL DEFAULT '[]',"
+                    + " total_pages INTEGER NOT NULL DEFAULT 0,"
+                    + " downloaded_pages INTEGER NOT NULL DEFAULT 0,"
+                    + " downloaded_bytes INTEGER NOT NULL DEFAULT 0,"
+                    + " first_image_sort_order INTEGER,"
+                    + " status TEXT NOT NULL,"
+                    + " error TEXT,"
+                    + " total_size INTEGER NOT NULL DEFAULT 0,"
+                    + " chapter_sort_order INTEGER NOT NULL DEFAULT 0,"
+                    + " is_single_episode INTEGER,"
+                    + " relative_directory TEXT NOT NULL,"
+                    + " created_at INTEGER NOT NULL,"
+                    + " completed_at INTEGER)"
+            );
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_download_tasks_created "
+                    + "ON download_tasks(created_at DESC)");
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_download_tasks_chapter "
+                    + "ON download_tasks(album_id, chapter_id)");
+            statement.executeUpdate("CREATE TABLE IF NOT EXISTS download_pages ("
+                    + "task_id TEXT NOT NULL,"
+                    + " sort_order INTEGER NOT NULL,"
+                    + " photo_id TEXT NOT NULL,"
+                    + " filename TEXT NOT NULL,"
+                    + " relative_path TEXT NOT NULL,"
+                    + " source_url TEXT NOT NULL DEFAULT '',"
+                    + " scramble_id TEXT NOT NULL DEFAULT '',"
+                    + " query_params TEXT NOT NULL DEFAULT '',"
+                    + " completed INTEGER NOT NULL DEFAULT 0,"
+                    + " PRIMARY KEY(task_id, sort_order),"
+                    + " FOREIGN KEY(task_id) REFERENCES download_tasks(task_id))"
+            );
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_download_pages_photo "
+                    + "ON download_pages(photo_id, sort_order)");
+            statement.executeUpdate("CREATE TABLE IF NOT EXISTS pdf_files ("
+                    + "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                    + " file_ref TEXT NOT NULL UNIQUE,"
+                    + " display_path TEXT NOT NULL DEFAULT '',"
+                    + " file_name TEXT NOT NULL,"
+                    + " source_type TEXT NOT NULL CHECK(source_type IN ('imported','exported')),"
+                    + " ownership TEXT NOT NULL CHECK(ownership IN ('external_reference','app_created')),"
+                    + " chapter_link_status TEXT NOT NULL "
+                    + "CHECK(chapter_link_status IN ('resolved','unresolved','multi_chapter')),"
+                    + " album_id TEXT NOT NULL,"
+                    + " album_title TEXT NOT NULL DEFAULT '',"
+                    + " cover_url TEXT NOT NULL DEFAULT '',"
+                    + " authors TEXT NOT NULL DEFAULT '',"
+                    + " chapter_id TEXT,"
+                    + " chapter_title TEXT NOT NULL DEFAULT '',"
+                    + " chapter_sort_order INTEGER NOT NULL DEFAULT 0,"
+                    + " is_single_episode INTEGER NOT NULL DEFAULT -1 "
+                    + "CHECK(is_single_episode IN (-1,0,1)),"
+                    + " folder_id TEXT,"
+                    + " file_size INTEGER NOT NULL DEFAULT 0,"
+                    + " page_count INTEGER NOT NULL DEFAULT 0,"
+                    + " availability TEXT NOT NULL DEFAULT 'unknown' "
+                    + "CHECK(availability IN ('unknown','available','missing','inaccessible','invalid')),"
+                    + " verification_status TEXT NOT NULL DEFAULT 'unverified' "
+                    + "CHECK(verification_status IN ('unverified','valid','corrupt','page_mismatch')),"
+                    + " verification_error TEXT,"
+                    + " created_at INTEGER NOT NULL,"
+                    + " updated_at INTEGER NOT NULL,"
+                    + " verified_at INTEGER)"
+            );
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_pdf_files_source_created "
+                    + "ON pdf_files(source_type, created_at DESC, id DESC)");
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_pdf_files_availability_updated "
+                    + "ON pdf_files(availability, updated_at DESC, id DESC)");
+            statement.executeUpdate("CREATE TABLE IF NOT EXISTS pdf_export_tasks ("
+                    + "export_id TEXT PRIMARY KEY,"
+                    + " batch_id TEXT NOT NULL,"
+                    + " mode TEXT NOT NULL CHECK(mode IN ('chapter','merged')),"
+                    + " album_id TEXT NOT NULL,"
+                    + " album_title TEXT NOT NULL DEFAULT '',"
+                    + " cover_url TEXT NOT NULL DEFAULT '',"
+                    + " authors TEXT NOT NULL DEFAULT '',"
+                    + " is_single_episode INTEGER NOT NULL DEFAULT -1 "
+                    + "CHECK(is_single_episode IN (-1,0,1)),"
+                    + " chapter_id TEXT,"
+                    + " display_title TEXT NOT NULL,"
+                    + " target_folder_ref TEXT NOT NULL,"
+                    + " target_name TEXT NOT NULL,"
+                    + " display_path TEXT NOT NULL DEFAULT '',"
+                    + " allow_overwrite INTEGER NOT NULL DEFAULT 0 "
+                    + "CHECK(allow_overwrite IN (0,1)),"
+                    + " use_original INTEGER NOT NULL CHECK(use_original IN (0,1)),"
+                    + " compression_ratio REAL NOT NULL,"
+                    + " split_pages INTEGER NOT NULL DEFAULT 0,"
+                    + " status TEXT NOT NULL,"
+                    + " phase TEXT NOT NULL,"
+                    + " current_page INTEGER NOT NULL DEFAULT 0,"
+                    + " total_pages INTEGER NOT NULL DEFAULT 0,"
+                    + " current_volume INTEGER NOT NULL DEFAULT 0,"
+                    + " total_volumes INTEGER NOT NULL DEFAULT 0,"
+                    + " snapshot_revision INTEGER NOT NULL DEFAULT 0,"
+                    + " cancel_requested INTEGER NOT NULL DEFAULT 0 "
+                    + "CHECK(cancel_requested IN (0,1)),"
+                    + " error_code TEXT,"
+                    + " error_message TEXT,"
+                    + " created_at INTEGER NOT NULL,"
+                    + " started_at INTEGER,"
+                    + " updated_at INTEGER NOT NULL,"
+                    + " completed_at INTEGER)"
+            );
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_pdf_tasks_status_updated "
+                    + "ON pdf_export_tasks(status, updated_at DESC, export_id)");
+            statement.executeUpdate("CREATE TABLE IF NOT EXISTS pdf_export_chapters ("
+                    + "export_id TEXT NOT NULL,"
+                    + " sequence INTEGER NOT NULL,"
+                    + " album_id TEXT NOT NULL,"
+                    + " chapter_id TEXT NOT NULL,"
+                    + " chapter_title TEXT NOT NULL DEFAULT '',"
+                    + " sort_order INTEGER NOT NULL DEFAULT 0,"
+                    + " expected_page_count INTEGER NOT NULL DEFAULT 0,"
+                    + " PRIMARY KEY(export_id, sequence),"
+                    + " FOREIGN KEY(export_id) REFERENCES pdf_export_tasks(export_id) "
+                    + "ON DELETE CASCADE)"
+            );
+            statement.executeUpdate("CREATE TABLE IF NOT EXISTS pdf_export_volumes ("
+                    + "export_id TEXT NOT NULL,"
+                    + " volume_index INTEGER NOT NULL,"
+                    + " start_page INTEGER NOT NULL,"
+                    + " end_page INTEGER NOT NULL,"
+                    + " expected_page_count INTEGER NOT NULL,"
+                    + " actual_page_count INTEGER NOT NULL DEFAULT 0,"
+                    + " target_name TEXT NOT NULL,"
+                    + " output_file_ref TEXT,"
+                    + " display_path TEXT NOT NULL DEFAULT '',"
+                    + " temp_path TEXT NOT NULL,"
+                    + " status TEXT NOT NULL DEFAULT 'pending',"
+                    + " file_size INTEGER NOT NULL DEFAULT 0,"
+                    + " updated_at INTEGER NOT NULL,"
+                    + " completed_at INTEGER,"
+                    + " PRIMARY KEY(export_id, volume_index),"
+                    + " FOREIGN KEY(export_id) REFERENCES pdf_export_tasks(export_id) "
+                    + "ON DELETE CASCADE)"
+            );
         }
 
         try (PreparedStatement statement = connection.prepareStatement(

@@ -22,4 +22,24 @@ public final class ApiException extends RuntimeException {
     public static ApiException invalidRequest(String message) {
         return new ApiException("internal", 400, message);
     }
+
+    public static ApiException cancelled(String message) {
+        return new ApiException("cancelled", 409, message);
+    }
+
+    public static ApiException notFound(String message) {
+        return new ApiException("not-found", 404, message);
+    }
+
+    public static ApiException permissionDenied(String message) {
+        return new ApiException("permission-denied", 403, message);
+    }
+
+    public static ApiException conflict(String message) {
+        return new ApiException("conflict", 409, message);
+    }
+
+    public static ApiException unavailable(String message) {
+        return new ApiException("unavailable", 503, message);
+    }
 }

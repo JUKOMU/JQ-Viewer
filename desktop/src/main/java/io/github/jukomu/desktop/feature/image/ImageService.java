@@ -17,6 +17,8 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -135,6 +137,30 @@ public final class ImageService {
         }
     }
 
+    public ImageCache.Entry readLocal(
+            String photoId,
+            int sortOrder,
+            String type,
+            Path path
+    ) {
+        validateType(type);
+        ImageCache.Entry cached = cache.get(key(photoId, sortOrder, type));
+        if (cached != null) return cached;
+        try {
+            byte[] bytes = Files.readAllBytes(path);
+            String mime = mime(path.getFileName().toString());
+            cache.put(key(photoId, sortOrder, "image"), bytes, mime);
+            if ("thumb".equals(type)) {
+                byte[] thumb = thumbnail(bytes);
+                cache.put(key(photoId, sortOrder, "thumb"), thumb, "image/jpeg");
+                return new ImageCache.Entry(thumb, "image/jpeg");
+            }
+            return new ImageCache.Entry(bytes, mime);
+        } catch (IOException exception) {
+            throw new ApiException("internal", 500, "读取本地图片失败: " + exception.getMessage());
+        }
+    }
+
     public ImageCache.Entry readCached(String photoId, int sortOrder, String type) {
         return cache.get(key(photoId, sortOrder, type));
     }
@@ -204,7 +230,11 @@ public final class ImageService {
     }
 
     private static String mime(JmImage image) {
-        String format = JmImageTool.getFormatName(image.getFilename());
+        return mime(image.getFilename());
+    }
+
+    private static String mime(String filename) {
+        String format = JmImageTool.getFormatName(filename);
         return "image/" + (format == null || format.isBlank() ? "jpeg" : format);
     }
 

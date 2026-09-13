@@ -15,6 +15,7 @@ import type {
 } from '@/services/JmcomicTypes'
 import type { BackendEvents, ListenerHandle } from './BackendEvents'
 import type { FileDescriptor, FileRef, FolderDescriptor, FolderRef } from './FileReferences'
+import type { PdfExportPreferencesStore } from './PdfExportPreferences'
 import type { UpdaterService } from './UpdateTypes'
 
 /**
@@ -150,6 +151,7 @@ export interface PlatformServices {
   app: AppService
   notifications: NotificationPolicy
   files: FileService
+  pdfExportPreferences: PdfExportPreferencesStore
   storage: Capability<PublicDownloadService>
   reader: ReaderPlatformServices
   updater: Capability<UpdaterService>

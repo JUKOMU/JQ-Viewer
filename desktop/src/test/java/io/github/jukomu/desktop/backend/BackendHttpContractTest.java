@@ -7,7 +7,14 @@ import io.github.jukomu.desktop.bridge.Plugin;
 import io.github.jukomu.desktop.bridge.PluginMethod;
 import io.github.jukomu.desktop.data.Database;
 import io.github.jukomu.desktop.data.Paths;
+import io.github.jukomu.desktop.feature.files.FileReferences;
+import io.github.jukomu.desktop.feature.files.FileService;
 import io.github.jukomu.jmcomic.api.client.JmClient;
+import io.github.jukomu.jmcomic.api.client.JmDownloadClient;
+import io.github.jukomu.jmcomic.api.download.DownloadProgress;
+import io.github.jukomu.jmcomic.api.download.IDownloadManager;
+import io.github.jukomu.jmcomic.api.download.enums.TaskState;
+import io.github.jukomu.jmcomic.api.download.task.BaseDownloadTask;
 import io.github.jukomu.jmcomic.api.model.ForumQuery;
 import io.github.jukomu.jmcomic.api.model.JmAlbum;
 import io.github.jukomu.jmcomic.api.model.JmAlbumMeta;
@@ -21,6 +28,8 @@ import io.github.jukomu.jmcomic.api.model.JmSearchPage;
 import io.github.jukomu.jmcomic.api.model.JmUserInfo;
 import io.github.jukomu.jmcomic.api.model.JmUserProfile;
 import io.github.jukomu.jmcomic.api.model.SearchQuery;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.PDPage;
 import org.junit.jupiter.api.Test;
 
 import javax.imageio.ImageIO;
@@ -40,8 +49,11 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Base64;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -128,6 +140,159 @@ class BackendHttpContractTest {
                     "{\"enabled\":false}"));
             ObjectNode settings = body(post(http, base, requestedMethods, "getAllSettings", "{}"));
 
+            ObjectNode pickedFolder = body(post(http, base, requestedMethods, "pickFolder",
+                    "{\"purpose\":\"pdf-export\"}"));
+            String folderRef = pickedFolder.path("ref").asText();
+            ObjectNode defaultFolder = body(post(http, base, requestedMethods, "getDefaultFolder",
+                    "{\"purpose\":\"download\"}"));
+            ObjectNode scannedFiles = body(post(http, base, requestedMethods, "scanPdfFiles",
+                    MAPPER.writeValueAsString(Map.of("folder", folderRef))));
+            String fileRef = scannedFiles.path("files").get(0).path("ref").asText();
+            ObjectNode existingFiles = body(post(http, base, requestedMethods, "checkFilesExist",
+                    MAPPER.writeValueAsString(Map.of("files", List.of(fileRef)))));
+            assertOk(post(http, base, requestedMethods, "openFile",
+                    MAPPER.writeValueAsString(Map.of("file", fileRef))));
+            assertOk(post(http, base, requestedMethods, "openContainingFolder",
+                    MAPPER.writeValueAsString(Map.of("file", fileRef))));
+
+            String importBody = MAPPER.writeValueAsString(Map.of("items", List.of(Map.ofEntries(
+                    Map.entry("fileRef", fileRef),
+                    Map.entry("displayPath",
+                            scannedFiles.path("files").get(0).path("displayPath").asText()),
+                    Map.entry("fileName", "sample.pdf"),
+                    Map.entry("albumId", "album-1"),
+                    Map.entry("albumTitle", "Album"),
+                    Map.entry("coverUrl", ""),
+                    Map.entry("authors", "Alice"),
+                    Map.entry("chapterId", "photo-1"),
+                    Map.entry("chapterTitle", "Photo"),
+                    Map.entry("chapterSortOrder", 1),
+                    Map.entry("isSingleEpisode", false),
+                    Map.entry("folderId", "folder-1")
+            ))));
+            ObjectNode imported = body(post(http, base, requestedMethods, "importPdfs", importBody));
+            long importedId = imported.path("results").get(0).path("id").asLong();
+            ObjectNode importedFiles = body(post(
+                    http, base, requestedMethods, "getImportedPdfs", "{}"));
+            ObjectNode pdfFiles = body(post(http, base, requestedMethods, "getPdfFiles",
+                    "{\"sourceType\":\"imported\",\"limit\":50}"));
+            ObjectNode refreshedPdfs = body(post(http, base, requestedMethods,
+                    "refreshPdfFileAvailability", "{\"ids\":[" + importedId + "]}"));
+            ObjectNode inspectedPdf = body(post(http, base, requestedMethods,
+                    "inspectPdfFileForDeletion", "{\"id\":" + importedId + "}"));
+            ObjectNode verifiedPdf = body(post(http, base, requestedMethods,
+                    "verifyPdfFile", "{\"id\":" + importedId + "}"));
+            ObjectNode pdfManagement = body(post(http, base, requestedMethods,
+                    "getPdfManagementState", "{}"));
+            ObjectNode pdfReset = body(post(http, base, requestedMethods,
+                    "acknowledgePdfDatabaseReset", "{}"));
+            assertOk(post(http, base, requestedMethods, "updateLocalEpisodeType",
+                    "{\"albumId\":\"album-1\",\"isSingleEpisode\":true}"));
+            assertOk(post(http, base, requestedMethods, "openPdf",
+                    MAPPER.writeValueAsString(Map.of("fileRef", fileRef))));
+            assertOk(post(http, base, requestedMethods, "openPdfFolder",
+                    MAPPER.writeValueAsString(Map.of("fileRef", fileRef))));
+            ObjectNode pdfInfo = body(post(http, base, requestedMethods, "getPdfInfo",
+                    MAPPER.writeValueAsString(Map.of("fileRef", fileRef))));
+            ObjectNode renderedPdfPage = body(post(http, base, requestedMethods, "renderPdfPage",
+                    MAPPER.writeValueAsString(Map.of(
+                            "fileRef", fileRef, "page", 1, "targetWidth", 720))));
+            HttpResponse<byte[]> pdfPage = getBytes(
+                    http, base.resolve(renderedPdfPage.path("resourceUrl").asText()));
+            String encodedPdf = Base64.getUrlEncoder().withoutPadding().encodeToString(
+                    fileRef.getBytes(StandardCharsets.UTF_8));
+            HttpResponse<byte[]> originalPdf = getBytes(http, base.resolve("/pdf/" + encodedPdf));
+            String missingRef = FileReferences.fileRef(
+                    FileReferences.parseFile(fileRef).resolveSibling("missing.pdf"));
+            String encodedMissing = Base64.getUrlEncoder().withoutPadding().encodeToString(
+                    missingRef.getBytes(StandardCharsets.UTF_8));
+            HttpResponse<byte[]> missingPdf = getBytes(
+                    http, base.resolve("/pdf/" + encodedMissing));
+            Path invalidPdfPath = FileReferences.parseFile(fileRef).resolveSibling("invalid.pdf");
+            Files.writeString(invalidPdfPath, "not a pdf");
+            String invalidPdfRef = FileReferences.fileRef(invalidPdfPath);
+            String encodedInvalid = Base64.getUrlEncoder().withoutPadding().encodeToString(
+                    invalidPdfRef.getBytes(StandardCharsets.UTF_8));
+            HttpResponse<byte[]> invalidPdfContent = getBytes(
+                    http, base.resolve("/pdf/" + encodedInvalid));
+
+            assertOk(post(http, base, requestedMethods, "removePdfFromLibrary",
+                    "{\"id\":" + importedId + "}"));
+            long secondPdfId = body(post(http, base, requestedMethods, "importPdfs", importBody))
+                    .path("results").get(0).path("id").asLong();
+            assertOk(post(http, base, requestedMethods, "deleteImportedPdf",
+                    "{\"id\":" + secondPdfId + "}"));
+            long thirdPdfId = body(post(http, base, requestedMethods, "importPdfs", importBody))
+                    .path("results").get(0).path("id").asLong();
+            ObjectNode deletedPdf = body(post(http, base, requestedMethods, "deletePdfFile",
+                    "{\"id\":" + thirdPdfId + "}"));
+
+            assertOk(post(http, base, requestedMethods, "setPdfExportFolder",
+                    MAPPER.writeValueAsString(Map.of("folder", Map.of(
+                            "folderRef", folderRef,
+                            "displayPath", pickedFolder.path("displayPath").asText())))));
+            assertOk(post(http, base, requestedMethods, "setPdfExportDirectoryTemplate",
+                    "{\"value\":\"{author}/{id}\"}"));
+            assertOk(post(http, base, requestedMethods, "setPdfExportFileNameTemplate",
+                    "{\"value\":\"{title}\"}"));
+            ObjectNode pdfPreferences = body(post(http, base, requestedMethods,
+                    "getPdfExportPreferences", "{}"));
+
+            ObjectNode submission = body(post(http, base, requestedMethods, "downloadChapter",
+                    "{\"albumId\":\"album-1\",\"chapterId\":\"download-photo\","
+                            + "\"albumTitle\":\"Album\",\"chapterTitle\":\"Downloaded\","
+                            + "\"coverUrl\":\"https://cover.invalid/album-1.jpg\"}"));
+            assertEquals("album-1_download-photo", submission.path("taskId").asText());
+            ObjectNode downloads = waitForDownload(
+                    http, base, requestedMethods, "album-1_download-photo", "completed");
+            ObjectNode downloadedPhoto = body(post(http, base, requestedMethods,
+                    "getDownloadedPhoto",
+                    "{\"albumId\":\"album-1\",\"chapterId\":\"download-photo\"}"));
+            HttpResponse<byte[]> downloadedImage = getBytes(
+                    http, base.resolve("/image/download-photo/1"));
+            String exportBody = MAPPER.writeValueAsString(Map.of("tasks", List.of(Map.ofEntries(
+                    Map.entry("mode", "chapter"),
+                    Map.entry("albumId", "album-1"),
+                    Map.entry("albumTitle", "Album"),
+                    Map.entry("coverUrl", ""),
+                    Map.entry("authors", "Alice"),
+                    Map.entry("isSingleEpisode", false),
+                    Map.entry("chapterId", "download-photo"),
+                    Map.entry("chapterTitle", "Downloaded"),
+                    Map.entry("target", Map.of("folder", folderRef,
+                            "relativePath", "exported.pdf")),
+                    Map.entry("displayPath", pickedFolder.path("displayPath").asText()
+                            + "/exported.pdf"),
+                    Map.entry("useOriginal", true),
+                    Map.entry("compressionRatio", 1D),
+                    Map.entry("splitPages", 0),
+                    Map.entry("allowOverwrite", false)
+            ))));
+            ObjectNode exported = body(post(http, base, requestedMethods,
+                    "exportPdfBatch", exportBody));
+            String exportId = exported.path("tasks").get(0).path("exportId").asText();
+            ObjectNode exportTask = waitForPdfExport(
+                    http, base, requestedMethods, exportId, "completed");
+            ObjectNode exportTasks = body(post(http, base, requestedMethods,
+                    "getPdfExportTasks", "{\"limit\":50}"));
+            ObjectNode cancelledCompletedExport = body(post(http, base, requestedMethods,
+                    "cancelPdfExport", "{\"exportId\":\"" + exportId + "\"}"));
+            ObjectNode retriedExport = body(post(http, base, requestedMethods,
+                    "retryPdfExport", "{\"exportId\":\"" + exportId
+                            + "\",\"allowOverwrite\":true}"));
+            ObjectNode completedRetry = waitForPdfExport(
+                    http, base, requestedMethods, exportId, "completed");
+            assertOk(post(http, base, requestedMethods, "deletePdfExportTask",
+                    "{\"exportId\":\"" + exportId + "\"}"));
+            assertOk(post(http, base, requestedMethods, "deleteDownloaded",
+                    "{\"albumId\":\"album-1\",\"chapterId\":\"download-photo\"}"));
+            assertOk(post(http, base, requestedMethods, "cancelDownload",
+                    "{\"taskId\":\"missing\"}"));
+            assertEquals(404, post(http, base, requestedMethods, "pauseDownload",
+                    "{\"taskId\":\"missing\"}").statusCode());
+            assertEquals(404, post(http, base, requestedMethods, "resumeDownload",
+                    "{\"taskId\":\"missing\"}").statusCode());
+
             assertOk(post(http, base, requestedMethods, "recordBrowse",
                     "{\"albumId\":\"album-1\",\"albumTitle\":\"Album\","
                             + "\"coverUrl\":\"https://cover.invalid/album-1.jpg\","
@@ -164,6 +329,49 @@ class BackendHttpContractTest {
             assertEquals("Alice", profile.path("nickname").asText());
             assertEquals(4, settings.path("preloadConcurrency").asInt());
             assertEquals(5, settings.path("downloadConcurrency").asInt());
+            assertTrue(defaultFolder.path("ref").asText().startsWith("folder:path:"));
+            assertEquals(1, existingFiles.path("existing").size());
+            assertEquals(1, imported.path("imported").asInt());
+            assertEquals(1, importedFiles.path("pdfs").size());
+            assertEquals(1, pdfFiles.path("files").size());
+            assertEquals("available",
+                    refreshedPdfs.path("files").get(0).path("availability").asText());
+            assertEquals("available", inspectedPdf.path("availability").asText());
+            assertEquals("valid", verifiedPdf.path("verificationStatus").asText());
+            assertEquals("ready", pdfManagement.path("recoveryState").asText());
+            assertTrue(!pdfReset.path("acknowledged").asBoolean());
+            assertEquals(1, pdfInfo.path("pageCount").asInt());
+            assertEquals(200, pdfPage.statusCode());
+            assertEquals("image/png", pdfPage.headers().firstValue("Content-Type").orElseThrow());
+            assertEquals(200, originalPdf.statusCode());
+            assertEquals("application/pdf",
+                    originalPdf.headers().firstValue("Content-Type").orElseThrow());
+            assertTrue(originalPdf.headers().firstValue("Access-Control-Allow-Origin").isEmpty());
+            assertEquals(404, missingPdf.statusCode());
+            assertEquals("file-missing",
+                    missingPdf.headers().firstValue("X-JQViewer-Pdf-Error").orElseThrow());
+            assertTrue(missingPdf.headers().firstValue("Access-Control-Allow-Origin").isEmpty());
+            assertEquals(400, invalidPdfContent.statusCode());
+            assertEquals("invalid-content",
+                    invalidPdfContent.headers().firstValue("X-JQViewer-Pdf-Error").orElseThrow());
+            assertTrue(invalidPdfContent.headers()
+                    .firstValue("Access-Control-Allow-Origin").isEmpty());
+            assertEquals("deleted", deletedPdf.path("result").asText());
+            assertEquals(folderRef, pdfPreferences.path("exportFolder").path("folderRef").asText());
+            assertEquals("{author}/{id}", pdfPreferences.path("directoryTemplate").asText());
+            assertEquals("{title}", pdfPreferences.path("fileNameTemplate").asText());
+            assertEquals("completed", downloads.path("tasks").get(0).path("status").asText());
+            assertEquals("download-photo", downloadedPhoto.path("id").asText());
+            assertEquals(200, downloadedImage.statusCode());
+            assertEquals("image/webp",
+                    downloadedImage.headers().firstValue("Content-Type").orElseThrow());
+            assertTrue(exported.path("tasks").get(0).path("accepted").asBoolean());
+            assertEquals("completed", exportTask.path("status").asText());
+            assertTrue(exportTask.path("outputFileRef").asText().startsWith("file:path:"));
+            assertEquals(1, exportTasks.path("tasks").size());
+            assertEquals("completed", cancelledCompletedExport.path("status").asText());
+            assertEquals("queued", retriedExport.path("status").asText());
+            assertEquals("completed", completedRetry.path("status").asText());
             assertEquals(1, history.path("totalCount").asInt());
             assertEquals(1, overview.path("totalCount").asInt());
             assertEquals(200, image.statusCode());
@@ -218,10 +426,22 @@ class BackendHttpContractTest {
     private static Backend backend(FakeClient fake) throws Exception {
         java.nio.file.Path root = Files.createTempDirectory("jq-viewer-contract-");
         Paths paths = new Paths(root.resolve("program"), root.resolve("home"), Map.of(), "Linux");
+        paths.ensureDirectories();
+        java.nio.file.Path samplePdf = paths.pdfDirectory().resolve("sample.pdf");
+        writePdf(samplePdf);
         ThreadPoolExecutor executor = new ThreadPoolExecutor(
                 6, 6, 30, TimeUnit.SECONDS, new ArrayBlockingQueue<>(64));
+        FileService files = new FileService(paths, ignored -> paths.pdfDirectory(), ignored -> {
+        });
         return new Backend(paths, new Database(paths), executor, fake.client(),
-                id -> "https://cover.invalid/" + id + ".jpg");
+                id -> "https://cover.invalid/" + id + ".jpg", files);
+    }
+
+    private static void writePdf(Path target) throws Exception {
+        try (PDDocument document = new PDDocument()) {
+            document.addPage(new PDPage());
+            document.save(target.toFile());
+        }
     }
 
     private static HttpResponse<String> post(
@@ -242,6 +462,46 @@ class BackendHttpContractTest {
     private static HttpResponse<byte[]> getBytes(HttpClient client, URI uri) throws Exception {
         return client.send(HttpRequest.newBuilder(uri).GET().build(),
                 HttpResponse.BodyHandlers.ofByteArray());
+    }
+
+    private static ObjectNode waitForPdfExport(
+            HttpClient http,
+            URI base,
+            Set<String> requestedMethods,
+            String exportId,
+            String status
+    ) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        ObjectNode task;
+        do {
+            task = body(post(http, base, requestedMethods, "getPdfExportTask",
+                    "{\"exportId\":\"" + exportId + "\"}"));
+            if (status.equals(task.path("status").asText())) return task;
+            Thread.sleep(10);
+        } while (System.nanoTime() < deadline);
+        throw new AssertionError("PDF 导出任务未进入状态 " + status + ": " + task);
+    }
+
+    private static ObjectNode waitForDownload(
+            HttpClient client,
+            URI base,
+            Set<String> requestedMethods,
+            String taskId,
+            String status
+    ) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        ObjectNode latest = null;
+        while (System.nanoTime() < deadline) {
+            latest = body(post(client, base, requestedMethods, "getDownloadTasks", "{}"));
+            for (var task : latest.path("tasks")) {
+                if (taskId.equals(task.path("taskId").asText())
+                        && status.equals(task.path("status").asText())) {
+                    return latest;
+                }
+            }
+            Thread.sleep(10);
+        }
+        throw new AssertionError("Download did not reach " + status + ": " + latest);
     }
 
     private static void assertOk(HttpResponse<String> response) {
@@ -302,6 +562,7 @@ class BackendHttpContractTest {
 
     private static final class FakeClient {
         private final byte[] imageBytes;
+        private final FakeDownloadManager downloadManager = new FakeDownloadManager();
         private final ConcurrentLinkedQueue<Invocation> invocations = new ConcurrentLinkedQueue<>();
         private volatile String failedMethod;
         private volatile RuntimeException failure;
@@ -313,7 +574,7 @@ class BackendHttpContractTest {
         private JmClient client() {
             return (JmClient) Proxy.newProxyInstance(
                     JmClient.class.getClassLoader(),
-                    new Class<?>[]{JmClient.class},
+                    new Class<?>[]{JmClient.class, JmDownloadClient.class},
                     (proxy, method, arguments) -> invoke(proxy, method, arguments));
         }
 
@@ -334,12 +595,16 @@ class BackendHttpContractTest {
             return switch (method.getName()) {
                 case "search", "getCategories" -> searchPage();
                 case "getAlbum" -> album();
-                case "getPhoto" -> photo();
+                case "getPhoto" -> photo((String) arguments[0]);
                 case "getComments" -> comments();
                 case "fetchImageBytes" -> imageBytes;
                 case "login" -> userInfo();
                 case "logout" -> null;
                 case "getUserProfile" -> userProfile();
+                case "createDownloadTask" -> new ImmediateDownloadTask(
+                        (JmPhoto) arguments[0], (Path) arguments[1], imageBytes, downloadManager);
+                case "downloadManager" -> downloadManager;
+                case "close" -> null;
                 default -> throw new AssertionError("Unexpected client call: " + method.getName());
             };
         }
@@ -375,14 +640,18 @@ class BackendHttpContractTest {
                     "series-1", false, false, false, List.of(image()), "0", "0");
         }
 
-        private static JmPhoto photo() {
-            return new JmPhoto("photo-1", "Photo", "album-1", "1", 1,
-                    "Alice", List.of("tag"), List.of(image()), false);
+        private static JmPhoto photo(String id) {
+            return new JmPhoto(id, "Photo", "album-1", "1", 1,
+                    "Alice", List.of("tag"), List.of(image(id)), false);
+        }
+
+        private static JmImage image(String photoId) {
+            return new JmImage(photoId, "1", "001.webp",
+                    "https://example.invalid/001.webp", "", 1);
         }
 
         private static JmImage image() {
-            return new JmImage("photo-1", "1", "001.webp",
-                    "https://example.invalid/001.webp", "", 1);
+            return image("photo-1");
         }
 
         private static JmCommentList comments() {
@@ -402,6 +671,130 @@ class BackendHttpContractTest {
             return new JmUserProfile(
                     "alice", "alice@example.invalid", "Alice", "", "", "", "", "", "",
                     "", "City", "Country", "Engineer", "", "", "About", "", "", "", "", "", "");
+        }
+    }
+
+    private static final class FakeDownloadManager implements IDownloadManager {
+        private final Map<String, BaseDownloadTask> tasks = new HashMap<>();
+
+        @Override
+        public BaseDownloadTask getTask(String taskId) {
+            return tasks.get(taskId);
+        }
+
+        @Override
+        public List<BaseDownloadTask> getActiveTasks() {
+            return tasks.values().stream().filter(task -> !task.currentState().isTerminal()).toList();
+        }
+
+        @Override
+        public List<BaseDownloadTask> getTaskRegistry() {
+            return List.copyOf(tasks.values());
+        }
+
+        @Override
+        public void submit(BaseDownloadTask task) {
+            if (task.transitState(TaskState.PENDING, TaskState.QUEUED)
+                    || task.transitState(TaskState.PAUSED, TaskState.QUEUED)) {
+                tasks.put(task.getTaskId(), task);
+                task.notifyStateChanged(TaskState.QUEUED);
+                task.run();
+            }
+        }
+
+        @Override
+        public void pause(String taskId) {
+            BaseDownloadTask task = tasks.get(taskId);
+            if (task != null) task.pause();
+        }
+
+        @Override
+        public void resume(String taskId) {
+            BaseDownloadTask task = tasks.get(taskId);
+            if (task != null) task.resume();
+        }
+
+        @Override
+        public void cancel(String taskId) {
+            BaseDownloadTask task = tasks.get(taskId);
+            if (task != null) task.cancel();
+        }
+
+        @Override
+        public void close() {
+            for (BaseDownloadTask task : List.copyOf(tasks.values())) task.cancel();
+        }
+    }
+
+    private static final class ImmediateDownloadTask extends BaseDownloadTask {
+        private final JmPhoto photo;
+        private final Path directory;
+        private final byte[] bytes;
+        private final IDownloadManager manager;
+
+        private ImmediateDownloadTask(
+                JmPhoto photo,
+                Path path,
+                byte[] bytes,
+                IDownloadManager manager
+        ) {
+            this.photo = photo;
+            this.directory = photo.isSingleAlbum() ? path : path.resolve(photo.getId());
+            this.bytes = bytes;
+            this.manager = manager;
+            this.totalBytes = (long) bytes.length * photo.getImages().size();
+        }
+
+        @Override
+        public void start() {
+            if (!transitState(TaskState.QUEUED, TaskState.RUNNING)) return;
+            notifyStateChanged(TaskState.RUNNING);
+            try {
+                Files.createDirectories(directory);
+                for (JmImage image : photo.getImages()) {
+                    Path target = directory.resolve(image.getFilename());
+                    Files.write(target, bytes);
+                    addSuccessfulFile(target);
+                    completedCount++;
+                    downloadedBytes += bytes.length;
+                    notifyProgressUpdate(new DownloadProgress(
+                            photo.getAlbumId(), null, photo.getId(), photo.getTitle(),
+                            completedCount, 0, photo.getImages().size(), 0, 0, 0,
+                            false, downloadedBytes, String.valueOf(System.currentTimeMillis())));
+                }
+                if (transitState(TaskState.RUNNING, TaskState.COMPLETED)) {
+                    notifyStateChanged(TaskState.COMPLETED);
+                    notifyFinish(getCurrentDownloadResult());
+                }
+            } catch (Exception exception) {
+                notifyError(exception);
+                if (transitState(TaskState.RUNNING, TaskState.FAILED)) {
+                    notifyStateChanged(TaskState.FAILED);
+                }
+            }
+        }
+
+        @Override
+        public void pause() {
+            if (transitState(TaskState.RUNNING, TaskState.PAUSED)
+                    || transitState(TaskState.QUEUED, TaskState.PAUSED)) {
+                notifyStateChanged(TaskState.PAUSED);
+            }
+        }
+
+        @Override
+        public void resume() {
+            manager.submit(this);
+        }
+
+        @Override
+        public void cancel() {
+            boolean cancelling = transitState(TaskState.RUNNING, TaskState.CANCELLING);
+            boolean cancelled = transitState(TaskState.PENDING, TaskState.CANCELLED)
+                    || transitState(TaskState.QUEUED, TaskState.CANCELLED)
+                    || transitState(TaskState.PAUSED, TaskState.CANCELLED);
+            if (cancelling) cancelled = transitState(TaskState.CANCELLING, TaskState.CANCELLED);
+            if (cancelled) notifyStateChanged(TaskState.CANCELLED);
         }
     }
 }

@@ -219,7 +219,10 @@ const spaceUsedMb = ref(0)
 const spaceAvailMb = ref(0)
 const hasStorageInfo = ref(false)
 let downloadProgressHandle: ListenerHandle | null = null
+let stateInvalidatedHandle: ListenerHandle | null = null
 let syncPromise: Promise<void> | null = null
+let syncRequested = false
+let downloadStateSequence = 0
 let speedTimer: ReturnType<typeof setInterval> | null = null
 let isUnmounted = false
 let episodeTypeBackfillPromise: Promise<void> | null = null
@@ -577,21 +580,36 @@ const backfillMissingEpisodeTypes = async () => {
   }
 }
 
-const syncDownloadState = async () => {
+const syncDownloadState = async (): Promise<void> => {
+  syncRequested = true
   if (syncPromise) return syncPromise
 
   syncPromise = (async () => {
-    try {
-      const result = await JmcomicService.getDownloadTasks()
-      tasks.value = result.tasks
-      spaceUsedMb.value = Math.round(result.usedBytes / (1024 * 1024))
-      spaceAvailMb.value = Math.round(result.availableBytes / (1024 * 1024))
-      hasStorageInfo.value = true
-      OfflineDownloadService.setAll(result.tasks)
-      void backfillMissingEpisodeTypes()
-    } catch {
-      tasks.value = OfflineDownloadService.getAll()
-      hasStorageInfo.value = false
+    while (syncRequested && !isUnmounted) {
+      syncRequested = false
+      const requestSequence = downloadStateSequence
+      try {
+        const result = await JmcomicService.getDownloadTasks()
+        if (isUnmounted) return
+        if (requestSequence !== downloadStateSequence) {
+          syncRequested = true
+          continue
+        }
+        tasks.value = result.tasks
+        spaceUsedMb.value = Math.round(result.usedBytes / (1024 * 1024))
+        spaceAvailMb.value = Math.round(result.availableBytes / (1024 * 1024))
+        hasStorageInfo.value = true
+        OfflineDownloadService.setAll(result.tasks)
+        void backfillMissingEpisodeTypes()
+      } catch {
+        if (isUnmounted) return
+        if (requestSequence !== downloadStateSequence) {
+          syncRequested = true
+          continue
+        }
+        tasks.value = OfflineDownloadService.getAll()
+        hasStorageInfo.value = false
+      }
     }
   })()
 
@@ -599,6 +617,7 @@ const syncDownloadState = async () => {
     await syncPromise
   } finally {
     syncPromise = null
+    if (syncRequested && !isUnmounted) void syncDownloadState()
   }
 }
 
@@ -696,7 +715,8 @@ const onRefresh = async (event: CustomEvent) => {
 onMounted(async () => {
   isUnmounted = false
 
-  JmcomicService.addDownloadProgressListener((data) => {
+  const progressRegistration = JmcomicService.addDownloadProgressListener((data) => {
+    downloadStateSequence++
     const task = tasks.value.find((t) => t.taskId === data.taskId)
     if (!task) {
       void syncDownloadState()
@@ -780,6 +800,22 @@ onMounted(async () => {
     })
     .catch(() => {})
 
+  const invalidationRegistration = JmcomicService.addStateInvalidatedListener?.(() => {
+    downloadStateSequence++
+    void syncDownloadState()
+  })
+    .then((handle) => {
+      if (!handle) return
+      if (isUnmounted) {
+        void handle.remove()
+        return
+      }
+      stateInvalidatedHandle = handle
+    })
+    .catch(() => {})
+
+  await Promise.all([progressRegistration, invalidationRegistration])
+  if (isUnmounted) return
   await syncDownloadState()
 })
 
@@ -793,8 +829,11 @@ onIonViewWillEnter(() => {
 
 onUnmounted(() => {
   isUnmounted = true
-  downloadProgressHandle?.remove()
+  void downloadProgressHandle?.remove()
+  void stateInvalidatedHandle?.remove()
   downloadProgressHandle = null
+  stateInvalidatedHandle = null
+  syncRequested = false
   stopSpeedTimer()
   speedSamples.clear()
 })
@@ -905,7 +944,12 @@ const onPdfExportConfirm = async (payload: {
     if (conflictIndexes.length > 0) {
       const conflictPaths = conflictIndexes.map((index) => {
         const resultPath = result.tasks[index]?.displayPath
-        return resultPath || exportPlan.tasks[index]?.displayPath || exportPlan.outputDisplayPaths[index] || ''
+        return (
+          resultPath ||
+          exportPlan.tasks[index]?.displayPath ||
+          exportPlan.outputDisplayPaths[index] ||
+          ''
+        )
       })
       overwriteConfirmed = await requestPdfOverwriteConfirmation(conflictPaths)
       if (overwriteConfirmed) {
@@ -943,10 +987,7 @@ const onPdfExportConfirm = async (payload: {
       } else if (accepted === 0) {
         await showToast('检测到已有同名 PDF，已取消覆盖', 'medium')
       } else {
-        await showToast(
-          `已开始 ${accepted} 个，${conflictIndexes.length} 个已取消覆盖`,
-          'medium',
-        )
+        await showToast(`已开始 ${accepted} 个，${conflictIndexes.length} 个已取消覆盖`, 'medium')
       }
       return
     }

@@ -4,6 +4,7 @@ import router from './router'
 
 import { IonicVue } from '@ionic/vue'
 import { configureRuntime } from './runtime/runtimeContext'
+import { PdfExportService } from './services/PdfExportService'
 
 /* Core CSS required for Ionic components to work properly */
 import '@ionic/vue/css/core.css'
@@ -46,7 +47,8 @@ const runtimePromise =
       )
 
 runtimePromise
-  .then((runtime) => {
+  .then(async (runtime) => {
+    await PdfExportService.initialize(runtime.services.pdfExportPreferences)
     configureRuntime(runtime)
     return router.isReady()
   })

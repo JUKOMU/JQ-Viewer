@@ -90,15 +90,40 @@ class PathsDatabaseTest {
         Path databasePath = Files.createTempDirectory("jq-viewer-db-").resolve("data/desktop.sqlite3");
         try (Database database = new Database(databasePath)) {
             database.open();
+            Database.migrate(database.connection());
 
             try (ResultSet result = database.connection()
                     .createStatement()
                     .executeQuery("SELECT version FROM desktop_schema_version")) {
                 assertTrue(result.next());
-                assertEquals(2, result.getInt(1));
+                assertEquals(5, result.getInt(1));
             }
             try (ResultSet result = database.connection().getMetaData()
                     .getTables(null, null, "browse_history", null)) {
+                assertTrue(result.next());
+            }
+            try (ResultSet result = database.connection().getMetaData()
+                    .getTables(null, null, "download_tasks", null)) {
+                assertTrue(result.next());
+            }
+            try (ResultSet result = database.connection().getMetaData()
+                    .getTables(null, null, "download_pages", null)) {
+                assertTrue(result.next());
+            }
+            try (ResultSet result = database.connection().getMetaData()
+                    .getTables(null, null, "pdf_files", null)) {
+                assertTrue(result.next());
+            }
+            try (ResultSet result = database.connection().getMetaData()
+                    .getTables(null, null, "pdf_export_tasks", null)) {
+                assertTrue(result.next());
+            }
+            try (ResultSet result = database.connection().getMetaData()
+                    .getTables(null, null, "pdf_export_chapters", null)) {
+                assertTrue(result.next());
+            }
+            try (ResultSet result = database.connection().getMetaData()
+                    .getTables(null, null, "pdf_export_volumes", null)) {
                 assertTrue(result.next());
             }
             assertTrue(database.isOpen());

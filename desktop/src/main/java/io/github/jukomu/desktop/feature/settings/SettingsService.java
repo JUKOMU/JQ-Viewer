@@ -1,8 +1,13 @@
 package io.github.jukomu.desktop.feature.settings;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.jukomu.desktop.bridge.ApiException;
 import io.github.jukomu.desktop.bridge.model.SuccessResponse;
 import io.github.jukomu.desktop.data.Database;
+import io.github.jukomu.desktop.feature.files.FileReferences;
+import io.github.jukomu.desktop.feature.settings.model.PdfExportFolder;
+import io.github.jukomu.desktop.feature.settings.model.PdfExportPreferencesResponse;
 import io.github.jukomu.desktop.feature.settings.model.SettingsResponse;
 
 import java.sql.PreparedStatement;
@@ -12,12 +17,24 @@ import java.sql.SQLException;
 /** 持久化页面需要的基础设置，并返回当前支持状态。 */
 public final class SettingsService {
     public static final int DEFAULT_CONCURRENCY = 6;
+    public static final String DEFAULT_PDF_DIRECTORY_TEMPLATE = "{id}";
+    public static final String DEFAULT_PDF_FILE_NAME_TEMPLATE =
+            "【{author}】{title}_{id} {chapterRange}";
     private static final int CACHE_CAPACITY_MB = 256;
+    private static final String PDF_EXPORT_FOLDER = "pdf_export_folder";
+    private static final String PDF_EXPORT_DIRECTORY_TEMPLATE = "pdf_export_directory_template";
+    private static final String PDF_EXPORT_FILE_NAME_TEMPLATE = "pdf_export_file_name_template";
 
     private final Database database;
+    private final ObjectMapper mapper;
 
     public SettingsService(Database database) {
+        this(database, new ObjectMapper());
+    }
+
+    public SettingsService(Database database, ObjectMapper mapper) {
         this.database = database;
+        this.mapper = mapper;
     }
 
     public synchronized SettingsResponse all() {
@@ -75,6 +92,59 @@ public final class SettingsService {
         return SuccessResponse.ok();
     }
 
+    public synchronized PdfExportPreferencesResponse pdfExportPreferences() {
+        return new PdfExportPreferencesResponse(
+                pdfExportFolder(),
+                textOrDefault(PDF_EXPORT_DIRECTORY_TEMPLATE, DEFAULT_PDF_DIRECTORY_TEMPLATE),
+                textOrDefault(PDF_EXPORT_FILE_NAME_TEMPLATE, DEFAULT_PDF_FILE_NAME_TEMPLATE)
+        );
+    }
+
+    public synchronized SuccessResponse setPdfExportFolder(PdfExportFolder folder) {
+        if (folder == null) {
+            delete(PDF_EXPORT_FOLDER);
+            return SuccessResponse.ok();
+        }
+        String folderRef = requiredText(folder.folderRef(), "folderRef");
+        String displayPath = requiredText(folder.displayPath(), "displayPath");
+        FileReferences.parseFolder(folderRef);
+        try {
+            put(PDF_EXPORT_FOLDER, mapper.writeValueAsString(
+                    new PdfExportFolder(folderRef, displayPath)));
+            return SuccessResponse.ok();
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException("保存 PDF 导出目录失败", exception);
+        }
+    }
+
+    public synchronized SuccessResponse setPdfExportDirectoryTemplate(String template) {
+        setOptionalText(PDF_EXPORT_DIRECTORY_TEMPLATE, template);
+        return SuccessResponse.ok();
+    }
+
+    public synchronized SuccessResponse setPdfExportFileNameTemplate(String template) {
+        setOptionalText(PDF_EXPORT_FILE_NAME_TEMPLATE, template);
+        return SuccessResponse.ok();
+    }
+
+    private PdfExportFolder pdfExportFolder() {
+        String value = text(PDF_EXPORT_FOLDER, null);
+        if (value == null) return null;
+        try {
+            PdfExportFolder folder = mapper.readValue(value, PdfExportFolder.class);
+            FileReferences.parseFolder(folder.folderRef());
+            requiredText(folder.displayPath(), "displayPath");
+            return folder;
+        } catch (JsonProcessingException | ApiException exception) {
+            return null;
+        }
+    }
+
+    private void setOptionalText(String key, String value) {
+        if (value == null) delete(key);
+        else put(key, value);
+    }
+
     private int concurrency(String key) {
         int value = integer(key, DEFAULT_CONCURRENCY);
         return value < 1 || value > 12 ? DEFAULT_CONCURRENCY : value;
@@ -93,6 +163,11 @@ public final class SettingsService {
     private boolean bool(String key, boolean fallback) {
         String value = text(key, null);
         return value == null ? fallback : Boolean.parseBoolean(value);
+    }
+
+    private String textOrDefault(String key, String fallback) {
+        String value = text(key, null);
+        return value == null || value.isBlank() ? fallback : value;
     }
 
     private String text(String key, String fallback) {
@@ -117,6 +192,21 @@ public final class SettingsService {
         } catch (SQLException exception) {
             throw new IllegalStateException("保存设置失败", exception);
         }
+    }
+
+    private void delete(String key) {
+        try (PreparedStatement statement = database.connection()
+                .prepareStatement("DELETE FROM settings WHERE key = ?")) {
+            statement.setString(1, key);
+            statement.executeUpdate();
+        } catch (SQLException exception) {
+            throw new IllegalStateException("删除设置失败", exception);
+        }
+    }
+
+    private static String requiredText(String value, String name) {
+        if (value == null || value.isBlank()) throw badRequest(name + "不能为空");
+        return value;
     }
 
     private static ApiException badRequest(String message) {

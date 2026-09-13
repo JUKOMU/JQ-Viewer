@@ -583,7 +583,8 @@ async function doParse() {
 async function resolveScrollElement() {
   if (scrollElementRef.value) return scrollElementRef.value
   const contentEl = contentRef.value?.$el as
-    { getScrollElement?: () => Promise<HTMLElement> } | undefined
+    | { getScrollElement?: () => Promise<HTMLElement> }
+    | undefined
   if (!contentEl?.getScrollElement) return null
   scrollElementRef.value = await contentEl.getScrollElement()
   return scrollElementRef.value

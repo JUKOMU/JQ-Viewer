@@ -13,15 +13,18 @@ import type {
   PdfExportMode,
   PdfExportTask,
 } from './JmcomicTypes'
-import { asFolderRef, type ExportTarget, type FolderRef } from '@/runtime/FileReferences'
+import type { ExportTarget, FolderRef } from '@/runtime/FileReferences'
+import {
+  DEFAULT_PDF_DIRECTORY_TEMPLATE,
+  DEFAULT_PDF_EXPORT_PATH,
+  DEFAULT_PDF_FILE_NAME_TEMPLATE,
+  defaultPdfExportPreferences,
+  type PdfExportFolderSelection,
+  type PdfExportPreferences,
+  type PdfExportPreferencesStore,
+} from '@/runtime/PdfExportPreferences'
 
-const KEY_EXPORT_PATH = 'jq-pdf-export-path'
-const KEY_DIR_TEMPLATE = 'jq-pdf-dir-template'
-const KEY_NAME_TEMPLATE = 'jq-pdf-name-template'
-
-const DEFAULT_EXPORT_PATH = 'Download/JQ-Viewer/'
-const DEFAULT_DIR_TEMPLATE = '{id}'
-const DEFAULT_NAME_TEMPLATE = '【{author}】{title}_{id} {chapterRange}'
+export type { PdfExportFolderSelection } from '@/runtime/PdfExportPreferences'
 
 export interface PdfTemplateData {
   id: string
@@ -49,14 +52,17 @@ export interface PdfExportPlanOptions {
   splitPages: number
 }
 
-export interface PdfExportFolderSelection {
-  folderRef: FolderRef
-  displayPath: string
-}
-
 export interface PdfExportPlan {
   tasks: PdfExportTask[]
   outputDisplayPaths: string[]
+}
+
+let preferences: PdfExportPreferences = defaultPdfExportPreferences()
+let preferencesStore: PdfExportPreferencesStore | null = null
+
+function requirePreferencesStore(): PdfExportPreferencesStore {
+  if (!preferencesStore) throw new Error('PDF 导出设置尚未初始化')
+  return preferencesStore
 }
 
 /** 内置示例数据，供预览和设置页渲染值展示复用 */
@@ -262,97 +268,60 @@ export const PdfExportService = {
 
   // ---- 设置读写 ----
 
-  /**
-   * 确保导出路径是绝对路径。首次加载时若为默认相对路径，则基于外部存储根目录解析。
-   * 应在设置页加载时调用一次。
-   */
-  ensureAbsolutePath(_externalStorageRoot: string) {
-    // 旧版本把展示路径直接写入 localStorage；新版本只接受带 ref 的目录描述。
-    const stored = localStorage.getItem(KEY_EXPORT_PATH)
-    if (stored && !stored.trim().startsWith('{')) localStorage.removeItem(KEY_EXPORT_PATH)
+  async initialize(store: PdfExportPreferencesStore): Promise<void> {
+    preferences = await store.get()
+    preferencesStore = store
   },
 
   getExportPath(): string {
-    try {
-      return PdfExportService.getExportFolder()?.displayPath || DEFAULT_EXPORT_PATH
-    } catch {
-      return DEFAULT_EXPORT_PATH
-    }
+    return preferences.exportFolder?.displayPath || DEFAULT_PDF_EXPORT_PATH
   },
 
   getExportFolder(): PdfExportFolderSelection | null {
-    try {
-      const raw = localStorage.getItem(KEY_EXPORT_PATH)
-      if (!raw) return null
-      if (!raw.trim().startsWith('{')) {
-        localStorage.removeItem(KEY_EXPORT_PATH)
-        return null
-      }
-      const value: unknown = JSON.parse(raw)
-      if (
-        !value ||
-        typeof value !== 'object' ||
-        typeof (value as { folderRef?: unknown }).folderRef !== 'string' ||
-        typeof (value as { displayPath?: unknown }).displayPath !== 'string' ||
-        !(value as { folderRef: string }).folderRef
-      ) {
-        localStorage.removeItem(KEY_EXPORT_PATH)
-        return null
-      }
-      const folder = value as { folderRef: string; displayPath: string }
-      return { folderRef: asFolderRef(folder.folderRef), displayPath: folder.displayPath }
-    } catch {
-      localStorage.removeItem(KEY_EXPORT_PATH)
-      return null
-    }
+    return preferences.exportFolder
   },
 
-  setExportFolder(selection: PdfExportFolderSelection) {
-    localStorage.setItem(
-      KEY_EXPORT_PATH,
-      JSON.stringify({ folderRef: String(selection.folderRef), displayPath: selection.displayPath }),
-    )
+  async setExportFolder(selection: PdfExportFolderSelection): Promise<void> {
+    await requirePreferencesStore().setExportFolder(selection)
+    preferences = { ...preferences, exportFolder: selection }
   },
 
   /** 手工编辑只更新当前表单，不把无法绑定 ref 的 raw path 写入持久化设置。 */
-  setExportPath(_path: string) {
-    localStorage.removeItem(KEY_EXPORT_PATH)
+  setExportPath(path: string) {
+    void path
   },
 
-  resetExportPath() {
-    localStorage.removeItem(KEY_EXPORT_PATH)
+  async resetExportPath(): Promise<void> {
+    await requirePreferencesStore().setExportFolder(null)
+    preferences = { ...preferences, exportFolder: null }
   },
 
   getDirTemplate(): string {
-    try {
-      return localStorage.getItem(KEY_DIR_TEMPLATE) || DEFAULT_DIR_TEMPLATE
-    } catch {
-      return DEFAULT_DIR_TEMPLATE
-    }
+    return preferences.directoryTemplate
   },
 
-  setDirTemplate(template: string) {
-    localStorage.setItem(KEY_DIR_TEMPLATE, template)
+  async setDirTemplate(template: string): Promise<void> {
+    await requirePreferencesStore().setDirectoryTemplate(template)
+    preferences = { ...preferences, directoryTemplate: template }
   },
 
-  resetDirTemplate() {
-    localStorage.removeItem(KEY_DIR_TEMPLATE)
+  async resetDirTemplate(): Promise<void> {
+    await requirePreferencesStore().setDirectoryTemplate(null)
+    preferences = { ...preferences, directoryTemplate: DEFAULT_PDF_DIRECTORY_TEMPLATE }
   },
 
   getNameTemplate(): string {
-    try {
-      return localStorage.getItem(KEY_NAME_TEMPLATE) || DEFAULT_NAME_TEMPLATE
-    } catch {
-      return DEFAULT_NAME_TEMPLATE
-    }
+    return preferences.fileNameTemplate
   },
 
-  setNameTemplate(template: string) {
-    localStorage.setItem(KEY_NAME_TEMPLATE, template)
+  async setNameTemplate(template: string): Promise<void> {
+    await requirePreferencesStore().setFileNameTemplate(template)
+    preferences = { ...preferences, fileNameTemplate: template }
   },
 
-  resetNameTemplate() {
-    localStorage.removeItem(KEY_NAME_TEMPLATE)
+  async resetNameTemplate(): Promise<void> {
+    await requirePreferencesStore().setFileNameTemplate(null)
+    preferences = { ...preferences, fileNameTemplate: DEFAULT_PDF_FILE_NAME_TEMPLATE }
   },
 
   // ---- 模板渲染 ----

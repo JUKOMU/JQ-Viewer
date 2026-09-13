@@ -31,6 +31,12 @@ import { NotificationPermissionService } from '@/services/NotificationPermission
 const native: JmcomicClient = createActiveFacadeClient(getRuntime)
 
 export const JmcomicService = {
+  /** Desktop 事件流重连后重新读取页面权威状态；Android 无需提供该能力。 */
+  addStateInvalidatedListener(handler: () => void): Promise<JmcomicListenerHandle | null> {
+    const subscribe = getRuntime().events.onStateInvalidated
+    return subscribe ? subscribe(handler) : Promise.resolve(null)
+  },
+
   search(query: SearchQuery) {
     return native.search({ query })
   },
@@ -452,14 +458,14 @@ export const JmcomicService = {
     return getRuntime().services.pdf.exportPdfBatch({ tasks })
   },
 
-  pickFolder() {
-    return getRuntime().services.files.pickFolder('pdf-root')
+  pickFolder(purpose: 'pdf-root' | 'pdf-export' | 'download' = 'pdf-root') {
+    return getRuntime().services.files.pickFolder(purpose)
   },
 
   // ========== PDF 导入 ==========
 
   scanPdfFiles(folder: FolderRef) {
-    return getRuntime().services.pdf.scanPdfFiles(folder)
+    return getRuntime().services.files.scanPdfFiles(folder)
   },
 
   importPdfs(items: ImportPdfItem[]) {
@@ -563,7 +569,9 @@ export const JmcomicService = {
       .then((folder) => ({
         folderRef: String(folder.ref),
         displayPath: folder.displayPath,
-        provider: String(folder.ref).startsWith('folder:saf:') ? 'saf' as const : 'path' as const,
+        provider: String(folder.ref).startsWith('folder:saf:')
+          ? ('saf' as const)
+          : ('path' as const),
       }))
   },
 

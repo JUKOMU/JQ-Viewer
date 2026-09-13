@@ -35,6 +35,9 @@ export async function fetchPdfArrayBuffer(file: FileRef): Promise<ArrayBuffer> {
     if (errorCode === 'invalid-path') {
       throw new PdfLoadError('invalid-path', 'PDF 文件路径无效，请重新导入')
     }
+    if (errorCode === 'invalid-content') {
+      throw new PdfLoadError('invalid-content', 'PDF 文件内容无效')
+    }
     if (errorCode === 'file-missing' || response.status === 404) {
       throw new PdfLoadError('file-missing', 'PDF 文件不存在或已移动')
     }

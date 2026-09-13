@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   PDF_SAMPLE_DATA,
   PdfExportService,
@@ -7,7 +7,15 @@ import {
   normalizePdfChapters,
 } from '@/services/PdfExportService'
 import { asFolderRef } from '@/runtime/FileReferences'
+import {
+  defaultPdfExportPreferences,
+  type PdfExportPreferences,
+  type PdfExportPreferencesStore,
+} from '@/runtime/PdfExportPreferences'
 import type { DownloadTask, PdfExportChapter } from '@/services/JmcomicTypes'
+
+let storedPreferences: PdfExportPreferences
+let preferencesStore: PdfExportPreferencesStore
 
 function chapter(
   sortOrder: number,
@@ -39,8 +47,27 @@ function downloadTask(sortOrder: number | undefined, id = String(sortOrder)): Do
   }
 }
 
-afterEach(() => {
-  localStorage.clear()
+beforeEach(async () => {
+  storedPreferences = defaultPdfExportPreferences()
+  preferencesStore = {
+    get: vi.fn(async () => storedPreferences),
+    setExportFolder: vi.fn(async (exportFolder) => {
+      storedPreferences = { ...storedPreferences, exportFolder }
+    }),
+    setDirectoryTemplate: vi.fn(async (directoryTemplate) => {
+      storedPreferences = {
+        ...storedPreferences,
+        directoryTemplate: directoryTemplate ?? defaultPdfExportPreferences().directoryTemplate,
+      }
+    }),
+    setFileNameTemplate: vi.fn(async (fileNameTemplate) => {
+      storedPreferences = {
+        ...storedPreferences,
+        fileNameTemplate: fileNameTemplate ?? defaultPdfExportPreferences().fileNameTemplate,
+      }
+    }),
+  }
+  await PdfExportService.initialize(preferencesStore)
 })
 
 describe('buildChapterRange', () => {
@@ -116,12 +143,10 @@ describe('chapterRange template variable', () => {
 })
 
 describe('PDF export plan', () => {
-  it('clears legacy raw export path and persists only a folder descriptor', () => {
-    localStorage.setItem('jq-pdf-export-path', '/legacy/exports')
+  it('persists only a folder descriptor through the platform preferences store', async () => {
     expect(PdfExportService.getExportFolder()).toBeNull()
-    expect(localStorage.getItem('jq-pdf-export-path')).toBeNull()
 
-    PdfExportService.setExportFolder({
+    await PdfExportService.setExportFolder({
       folderRef: asFolderRef('folder:saf:content://provider/tree/exports'),
       displayPath: '/storage/emulated/0/Exports',
     })
@@ -130,7 +155,10 @@ describe('PDF export plan', () => {
       folderRef: 'folder:saf:content://provider/tree/exports',
       displayPath: '/storage/emulated/0/Exports',
     })
-    expect(localStorage.getItem('jq-pdf-export-path')).toContain('folderRef')
+    expect(preferencesStore.setExportFolder).toHaveBeenCalledWith({
+      folderRef: 'folder:saf:content://provider/tree/exports',
+      displayPath: '/storage/emulated/0/Exports',
+    })
   })
 
   it('sorts numeric chapters while preserving invalid chapter positions and duplicate order', () => {
@@ -210,17 +238,19 @@ describe('PDF export plan', () => {
   })
 
   it('uses the filesystem root as the folder for a root-level output path', () => {
-    expect(PdfExportService.buildExportTarget('/merged.pdf', asFolderRef('folder:path:/'), '/')).toEqual({
+    expect(
+      PdfExportService.buildExportTarget('/merged.pdf', asFolderRef('folder:path:/'), '/'),
+    ).toEqual({
       folder: 'folder:path:/',
       relativePath: 'merged.pdf',
     })
   })
 
-  it('keeps chapter mode as one task per selected chapter', () => {
-    localStorage.setItem(
-      'jq-pdf-export-path',
-      JSON.stringify({ folderRef: 'folder:path:/exports', displayPath: '/exports' }),
-    )
+  it('keeps chapter mode as one task per selected chapter', async () => {
+    await PdfExportService.setExportFolder({
+      folderRef: asFolderRef('folder:path:/exports'),
+      displayPath: '/exports',
+    })
     const plan = PdfExportService.buildExportPlan({
       mode: 'chapter',
       selectedChapters: [downloadTask(2, 'chapter-2'), downloadTask(3, 'chapter-3')],

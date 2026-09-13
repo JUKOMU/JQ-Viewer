@@ -1,8 +1,4 @@
-import type {
-  ExportTarget,
-  FileDescriptor,
-  FileRef,
-} from '@/runtime/FileReferences'
+import type { ExportTarget, FileDescriptor, FileRef } from '@/runtime/FileReferences'
 
 // --- 用户相关 ---
 

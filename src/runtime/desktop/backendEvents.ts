@@ -7,8 +7,10 @@ type EventHandler = (event: unknown) => void
 /** 通过一个共享 SSE 连接订阅具名 JSON 事件。 */
 export function createBackendEvents(): BackendEvents {
   const handlers = new Map<string, Set<EventHandler>>()
+  const invalidationHandlers = new Set<() => void>()
   const sourceListeners = new Map<string, EventListener>()
   let source: EventSource | null = null
+  let hasOpened = false
 
   function ensureSource(): EventSource {
     if (source) return source
@@ -16,7 +18,22 @@ export function createBackendEvents(): BackendEvents {
       throw new RuntimeError('unavailable', '事件流不可用')
     }
     source = new globalThis.EventSource('/events')
+    source.addEventListener('open', handleOpen)
     return source
+  }
+
+  function handleOpen() {
+    if (!hasOpened) {
+      hasOpened = true
+      return
+    }
+    for (const handler of invalidationHandlers) {
+      try {
+        handler()
+      } catch {
+        // 单个订阅者失败不能中断其他页面的重连恢复。
+      }
+    }
   }
 
   function dispatch(name: string, event: Event) {
@@ -37,10 +54,21 @@ export function createBackendEvents(): BackendEvents {
   }
 
   function closeSourceIfUnused() {
-    if (handlers.size !== 0) return
+    if (handlers.size !== 0 || invalidationHandlers.size !== 0) return
+    source?.removeEventListener('open', handleOpen)
     source?.close()
     source = null
+    hasOpened = false
     sourceListeners.clear()
+  }
+
+  async function subscribeInvalidation(handler: () => void): Promise<ListenerHandle> {
+    ensureSource()
+    invalidationHandlers.add(handler)
+    return createIdempotentListenerHandle(async () => {
+      invalidationHandlers.delete(handler)
+      closeSourceIfUnused()
+    })
   }
 
   async function subscribe<T>(name: string, handler: (event: T) => void): Promise<ListenerHandle> {
@@ -73,6 +101,7 @@ export function createBackendEvents(): BackendEvents {
   }
 
   return {
+    onStateInvalidated: subscribeInvalidation,
     onImageReady: (handler) => subscribe('imageReady', handler),
     onImageFailed: (handler) => subscribe('imageFailed', handler),
     onDownloadProgress: (handler) => subscribe('downloadProgress', handler),

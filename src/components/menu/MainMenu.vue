@@ -336,6 +336,11 @@ let pdfClearTimer: ReturnType<typeof setTimeout> | null = null
 let taskProgressRenderTimer: ReturnType<typeof setTimeout> | null = null
 let downloadProgressHandle: ListenerHandle | null = null
 let pdfProgressHandle: ListenerHandle | null = null
+let stateInvalidatedHandle: ListenerHandle | null = null
+let downloadRefreshPromise: Promise<void> | null = null
+let pdfRefreshPromise: Promise<void> | null = null
+let downloadRefreshRequested = false
+let pdfRefreshRequested = false
 let progressUnmounted = false
 
 const hasActiveDownloadTasks = (
@@ -529,28 +534,16 @@ const queuePdfProgressEvent = (event: PdfExportProgressEvent) => {
   else flushPendingTaskProgress()
 }
 
-const seedDownloadProgress = (tasks: DownloadTask[], requestSequence: number) => {
-  const next = new Map(downloadProgressTasks.value)
+const seedDownloadProgress = (tasks: DownloadTask[]) => {
+  const next = new Map<string, DownloadProgressTask>()
   const activeTasks = tasks.filter((task) => DOWNLOAD_PROGRESS_STATUSES.has(task.status))
-  if (activeTasks.length > 0 && !hasActiveDownloadTasks(next)) {
-    const hasNewerEvent = [...next.values()].some((task) => task.eventSequence > requestSequence)
-    if (!hasNewerEvent) next.clear()
-  }
 
   for (const task of activeTasks) {
-    const existing = next.get(task.taskId)
-    const latestEventSequence = downloadLatestEventSequences.get(task.taskId) ?? 0
-    if (
-      latestEventSequence > requestSequence ||
-      (existing && existing.eventSequence > requestSequence)
-    ) {
-      continue
-    }
     next.set(task.taskId, {
       currentPages: task.downloadedPages,
       totalPages: task.totalPages,
       status: task.status,
-      eventSequence: existing?.eventSequence ?? 0,
+      eventSequence: downloadLatestEventSequences.get(task.taskId) ?? 0,
     })
   }
 
@@ -559,7 +552,7 @@ const seedDownloadProgress = (tasks: DownloadTask[], requestSequence: number) =>
   scheduleDownloadClear()
 }
 
-const seedPdfProgress = (tasks: PdfExportTaskRecord[], requestSequence: number) => {
+const seedPdfProgress = (tasks: PdfExportTaskRecord[]) => {
   const latestTasks = new Map<string, PdfExportTaskRecord>()
   for (const task of tasks) {
     if (!PDF_PROGRESS_STATUSES.has(task.status)) continue
@@ -569,25 +562,22 @@ const seedPdfProgress = (tasks: PdfExportTaskRecord[], requestSequence: number) 
     }
   }
 
-  const next = new Map(pdfProgressTasks.value)
-  if (latestTasks.size > 0 && !hasActivePdfTasks(next)) {
-    const hasNewerEvent = [...next.values()].some((task) => task.eventSequence > requestSequence)
-    if (!hasNewerEvent) next.clear()
-  }
+  const previous = pdfProgressTasks.value
+  const next = new Map<string, PdfProgressTask>()
 
   for (const task of latestTasks.values()) {
-    const existing = next.get(task.exportId)
+    const existing = previous.get(task.exportId)
     const latestEvent = pdfLatestEvents.get(task.exportId)
     if (
       (latestEvent &&
-        (latestEvent.eventSequence > requestSequence ||
-          task.snapshotRevision < latestEvent.snapshotRevision ||
+        (task.snapshotRevision < latestEvent.snapshotRevision ||
           (task.snapshotRevision === latestEvent.snapshotRevision &&
             !PDF_PROGRESS_STATUSES.has(latestEvent.status)))) ||
-      (existing &&
-        (existing.eventSequence > requestSequence ||
-          task.snapshotRevision < existing.snapshotRevision))
+      (existing && task.snapshotRevision < existing.snapshotRevision)
     ) {
+      if (existing && PDF_PROGRESS_STATUSES.has(existing.status)) {
+        next.set(task.exportId, existing)
+      }
       continue
     }
     next.set(task.exportId, {
@@ -604,30 +594,82 @@ const seedPdfProgress = (tasks: PdfExportTaskRecord[], requestSequence: number) 
   schedulePdfClear()
 }
 
-const refreshDownloadProgress = async (requestSequence: number) => {
+const refreshDownloadProgress = async (): Promise<void> => {
+  downloadRefreshRequested = true
+  if (downloadRefreshPromise) return downloadRefreshPromise
+
+  downloadRefreshPromise = (async () => {
+    while (downloadRefreshRequested && !progressUnmounted) {
+      downloadRefreshRequested = false
+      flushPendingTaskProgress()
+      const requestSequence = downloadEventSequence
+      try {
+        const result = await JmcomicService.getDownloadTasks()
+        if (progressUnmounted) return
+        if (requestSequence !== downloadEventSequence) {
+          downloadRefreshRequested = true
+          continue
+        }
+        seedDownloadProgress(result.tasks)
+      } catch {
+        if (requestSequence !== downloadEventSequence) {
+          downloadRefreshRequested = true
+          continue
+        }
+        // Web 调试或原生桥接未就绪时保留已收到的实时进度。
+      }
+    }
+  })()
+
   try {
-    const result = await JmcomicService.getDownloadTasks()
-    if (!progressUnmounted) seedDownloadProgress(result.tasks, requestSequence)
-  } catch {
-    // Web 调试或原生桥接未就绪时保留已收到的实时进度。
+    await downloadRefreshPromise
+  } finally {
+    downloadRefreshPromise = null
+    if (downloadRefreshRequested && !progressUnmounted) void refreshDownloadProgress()
   }
 }
 
-const refreshPdfProgress = async (requestSequence: number) => {
-  const statuses: PdfExportStatus[] = ['queued', 'running', 'cancelling']
-  const tasks: PdfExportTaskRecord[] = []
-  try {
-    for (const status of statuses) {
-      let cursor: string | undefined
-      do {
-        const result = await JmcomicService.getPdfExportTasks({ status, cursor, limit: 100 })
-        tasks.push(...result.tasks)
-        cursor = result.nextCursor || undefined
-      } while (cursor && !progressUnmounted)
+const refreshPdfProgress = async (): Promise<void> => {
+  pdfRefreshRequested = true
+  if (pdfRefreshPromise) return pdfRefreshPromise
+
+  pdfRefreshPromise = (async () => {
+    while (pdfRefreshRequested && !progressUnmounted) {
+      pdfRefreshRequested = false
+      flushPendingTaskProgress()
+      const requestSequence = pdfEventSequence
+      const statuses: PdfExportStatus[] = ['queued', 'running', 'cancelling']
+      const tasks: PdfExportTaskRecord[] = []
+      try {
+        for (const status of statuses) {
+          let cursor: string | undefined
+          do {
+            const result = await JmcomicService.getPdfExportTasks({ status, cursor, limit: 100 })
+            tasks.push(...result.tasks)
+            cursor = result.nextCursor || undefined
+          } while (cursor && !progressUnmounted)
+        }
+        if (progressUnmounted) return
+        if (requestSequence !== pdfEventSequence) {
+          pdfRefreshRequested = true
+          continue
+        }
+        seedPdfProgress(tasks)
+      } catch {
+        if (requestSequence !== pdfEventSequence) {
+          pdfRefreshRequested = true
+          continue
+        }
+        // Web 调试或原生桥接未就绪时保留已收到的实时进度。
+      }
     }
-    if (!progressUnmounted) seedPdfProgress(tasks, requestSequence)
-  } catch {
-    // Web 调试或原生桥接未就绪时保留已收到的实时进度。
+  })()
+
+  try {
+    await pdfRefreshPromise
+  } finally {
+    pdfRefreshPromise = null
+    if (pdfRefreshRequested && !progressUnmounted) void refreshPdfProgress()
   }
 }
 
@@ -651,18 +693,28 @@ const registerProgressListeners = async () => {
         // Web 调试或旧版本原生插件可能没有该监听器。
       }
     })(),
+    (async () => {
+      try {
+        const handle = await JmcomicService.addStateInvalidatedListener?.(() => {
+          downloadEventSequence++
+          pdfEventSequence++
+          void refreshDownloadProgress()
+          void refreshPdfProgress()
+        })
+        if (!handle) return
+        if (progressUnmounted) void handle.remove()
+        else stateInvalidatedHandle = handle
+      } catch {
+        // Android 没有断线重连失效通知，保持原有行为。
+      }
+    })(),
   ])
 }
 
 const setupTaskProgress = async () => {
   await registerProgressListeners()
   if (progressUnmounted) return
-  const downloadRequestSequence = downloadEventSequence
-  const pdfRequestSequence = pdfEventSequence
-  await Promise.all([
-    refreshDownloadProgress(downloadRequestSequence),
-    refreshPdfProgress(pdfRequestSequence),
-  ])
+  await Promise.all([refreshDownloadProgress(), refreshPdfProgress()])
 }
 
 const isWideMenuActive = computed(() => isWideMenu.value && !props.disabled)
@@ -850,8 +902,12 @@ onUnmounted(() => {
   clearTaskProgressRenderTimer()
   void downloadProgressHandle?.remove()
   void pdfProgressHandle?.remove()
+  void stateInvalidatedHandle?.remove()
   downloadProgressHandle = null
   pdfProgressHandle = null
+  stateInvalidatedHandle = null
+  downloadRefreshRequested = false
+  pdfRefreshRequested = false
   downloadProgressTasks.value = new Map()
   pdfProgressTasks.value = new Map()
   downloadLatestEventSequences.clear()

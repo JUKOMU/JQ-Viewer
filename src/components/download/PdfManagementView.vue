@@ -200,8 +200,17 @@ const highlightedExportId = ref<string | null>(null)
 const imageResourceKeys = ref<Set<string>>(new Set())
 const verifyingIds = ref<Set<number>>(new Set())
 let progressHandle: { remove: () => Promise<void> } | null = null
+let stateInvalidatedHandle: { remove: () => Promise<void> } | null = null
 let fileRequestSequence = 0
 let taskRequestSequence = 0
+let imageResourceRequestSequence = 0
+let stateChangeSequence = 0
+let fileReloadPromise: Promise<void> | null = null
+let taskReloadPromise: Promise<void> | null = null
+let fileReloadRequested = false
+let taskReloadRequested = false
+let loadPromise: Promise<void> | null = null
+let loadRequested = false
 let isUnmounted = false
 
 const fileFilters = [
@@ -279,11 +288,37 @@ const refreshFilesInBackground = async (pageFiles: ImportedPdf[]) => {
 
 const loadFiles = async (reset: boolean) => {
   const requestSequence = ++fileRequestSequence
-  const page = await PdfManagementService.getFiles(
-    currentFileFilters(),
-    reset ? undefined : fileCursor.value || undefined,
-  )
+  const changeSequence = stateChangeSequence
+  const filters = currentFileFilters()
+  let page: Awaited<ReturnType<typeof PdfManagementService.getFiles>>
+  try {
+    page = await PdfManagementService.getFiles(
+      filters,
+      reset ? undefined : fileCursor.value || undefined,
+    )
+  } catch (error) {
+    const currentFilters = currentFileFilters()
+    if (
+      changeSequence !== stateChangeSequence ||
+      filters.sourceType !== currentFilters.sourceType ||
+      filters.query !== currentFilters.query
+    ) {
+      fileReloadRequested = true
+      return
+    }
+    throw error
+  }
   if (isUnmounted || requestSequence !== fileRequestSequence) return
+  const currentFilters = currentFileFilters()
+  if (
+    changeSequence !== stateChangeSequence ||
+    filters.sourceType !== currentFilters.sourceType ||
+    filters.query !== currentFilters.query
+  ) {
+    fileReloadRequested = true
+    if (!fileReloadPromise) void requestFilesReload()
+    return
+  }
   files.value = reset ? page.items : mergePdfFiles(files.value, page.items)
   fileCursor.value = page.nextCursor
   void refreshFilesInBackground(page.items)
@@ -291,24 +326,107 @@ const loadFiles = async (reset: boolean) => {
 
 const loadTasks = async (reset: boolean) => {
   const requestSequence = ++taskRequestSequence
-  const page = await PdfManagementService.getTasks(
-    currentTaskFilters(),
-    reset ? undefined : taskCursor.value || undefined,
-  )
+  const changeSequence = stateChangeSequence
+  const filters = currentTaskFilters()
+  let page: Awaited<ReturnType<typeof PdfManagementService.getTasks>>
+  try {
+    page = await PdfManagementService.getTasks(
+      filters,
+      reset ? undefined : taskCursor.value || undefined,
+    )
+  } catch (error) {
+    const currentFilters = currentTaskFilters()
+    if (
+      changeSequence !== stateChangeSequence ||
+      filters.status !== currentFilters.status
+    ) {
+      taskReloadRequested = true
+      return
+    }
+    throw error
+  }
   if (isUnmounted || requestSequence !== taskRequestSequence) return
-  tasks.value = reset ? page.items : mergePdfTasks(tasks.value, page.items)
+  const currentFilters = currentTaskFilters()
+  if (
+    changeSequence !== stateChangeSequence ||
+    filters.status !== currentFilters.status
+  ) {
+    taskReloadRequested = true
+    if (!taskReloadPromise) void requestTasksReload()
+    return
+  }
+  tasks.value = reset
+    ? page.items.map((task) => {
+        const existing = tasks.value.find((item) => item.exportId === task.exportId)
+        return existing && existing.snapshotRevision > task.snapshotRevision ? existing : task
+      })
+    : mergePdfTasks(tasks.value, page.items)
   taskCursor.value = page.nextCursor
 }
 
+const requestFilesReload = async (): Promise<void> => {
+  fileReloadRequested = true
+  if (fileReloadPromise) return fileReloadPromise
+
+  fileReloadPromise = (async () => {
+    while (fileReloadRequested && !isUnmounted) {
+      fileReloadRequested = false
+      await loadFiles(true)
+    }
+  })()
+
+  try {
+    await fileReloadPromise
+  } finally {
+    fileReloadPromise = null
+    if (fileReloadRequested && !isUnmounted) void requestFilesReload()
+  }
+}
+
+const requestTasksReload = async (): Promise<void> => {
+  taskReloadRequested = true
+  if (taskReloadPromise) return taskReloadPromise
+
+  taskReloadPromise = (async () => {
+    while (taskReloadRequested && !isUnmounted) {
+      taskReloadRequested = false
+      await loadTasks(true)
+    }
+  })()
+
+  try {
+    await taskReloadPromise
+  } finally {
+    taskReloadPromise = null
+    if (taskReloadRequested && !isUnmounted) void requestTasksReload()
+  }
+}
+
 const loadImageResourceKeys = async () => {
+  const requestSequence = ++imageResourceRequestSequence
+  const changeSequence = stateChangeSequence
   try {
     const result = await JmcomicService.getDownloadTasks()
+    if (
+      isUnmounted ||
+      requestSequence !== imageResourceRequestSequence ||
+      changeSequence !== stateChangeSequence
+    ) {
+      return
+    }
     imageResourceKeys.value = new Set(
       result.tasks
         .filter((task) => task.status === 'completed')
         .map((task) => `${task.albumId}|${task.chapterId}`),
     )
   } catch {
+    if (
+      isUnmounted ||
+      requestSequence !== imageResourceRequestSequence ||
+      changeSequence !== stateChangeSequence
+    ) {
+      return
+    }
     imageResourceKeys.value = new Set()
   }
 }
@@ -318,8 +436,14 @@ const hasImageResource = (file: ImportedPdf) =>
 
 const focusTask = async (exportId: string) => {
   activeView.value = 'tasks'
+  const changeSequence = stateChangeSequence
   try {
     const task = await PdfManagementService.getTask(exportId)
+    if (isUnmounted) return
+    if (changeSequence !== stateChangeSequence) {
+      await requestTasksReload()
+      return
+    }
     tasks.value = mergePdfTasks(tasks.value, [task])
     highlightedExportId.value = exportId
     await nextTick()
@@ -328,22 +452,43 @@ const focusTask = async (exportId: string) => {
     const runtimeError = normalizeRuntimeError(error)
     if (runtimeError.code !== 'not-found') throw error
     highlightedExportId.value = null
-    await loadTasks(true)
+    await requestTasksReload()
   }
 }
 
-const load = async () => {
-  loading.value = true
-  errorMessage.value = ''
+const load = async (): Promise<void> => {
+  loadRequested = true
+  if (loadPromise) return loadPromise
+
+  loadPromise = (async () => {
+    loading.value = true
+    errorMessage.value = ''
+    try {
+      while (loadRequested && !isUnmounted) {
+        loadRequested = false
+        const changeSequence = stateChangeSequence
+        const stateResult = await PdfManagementService.getManagementState()
+        if (isUnmounted) return
+        if (changeSequence !== stateChangeSequence) {
+          loadRequested = true
+          continue
+        }
+        managementState.value = stateResult
+        await Promise.all([requestFilesReload(), requestTasksReload(), loadImageResourceKeys()])
+        if (props.initialExportId) await focusTask(props.initialExportId)
+      }
+    } catch (error) {
+      errorMessage.value = sanitizeError(error, 'PDF 管理数据加载失败')
+    } finally {
+      loading.value = false
+    }
+  })()
+
   try {
-    const stateResult = await PdfManagementService.getManagementState()
-    managementState.value = stateResult
-    await Promise.all([loadFiles(true), loadTasks(true), loadImageResourceKeys()])
-    if (props.initialExportId) await focusTask(props.initialExportId)
-  } catch (error) {
-    errorMessage.value = sanitizeError(error, 'PDF 管理数据加载失败')
+    await loadPromise
   } finally {
-    loading.value = false
+    loadPromise = null
+    if (loadRequested && !isUnmounted) void load()
   }
 }
 
@@ -504,7 +649,7 @@ const deleteFile = async (file: ImportedPdf) => {
               } catch (error) {
                 const runtimeError = normalizeRuntimeError(error)
                 if (runtimeError.code === 'not-found') {
-                  await loadFiles(true)
+                  await requestFilesReload()
                   return
                 }
                 if (runtimeError.code === 'permission-denied') {
@@ -521,7 +666,7 @@ const deleteFile = async (file: ImportedPdf) => {
   } catch (error) {
     const runtimeError = normalizeRuntimeError(error)
     if (runtimeError.code === 'not-found') {
-      await loadFiles(true)
+      await requestFilesReload()
       return
     }
     await showToast(sanitizeError(error, '无法读取当前 PDF 文件信息'), 'danger')
@@ -535,7 +680,7 @@ const cancelTask = async (task: PdfExportTaskRecord) => {
   } catch (error) {
     const runtimeError = normalizeRuntimeError(error)
     if (runtimeError.code === 'not-found') {
-      await loadTasks(true)
+      await requestTasksReload()
       return
     }
     await showToast(sanitizeError(error, '取消导出失败'), 'danger')
@@ -559,7 +704,7 @@ const retryTask = async (task: PdfExportTaskRecord) => {
             } catch (error) {
               const runtimeError = normalizeRuntimeError(error)
               if (runtimeError.code === 'not-found' || runtimeError.code === 'conflict') {
-                await loadTasks(true)
+                await requestTasksReload()
                 await showToast(
                   sanitizeError(error, '导出任务状态已变化，请刷新后重试'),
                   'medium',
@@ -627,7 +772,7 @@ const importPdf = async () => {
 
 const reloadFilesWithFeedback = async () => {
   try {
-    await loadFiles(true)
+    await requestFilesReload()
   } catch (error) {
     await showToast(sanitizeError(error, 'PDF 文件加载失败'), 'danger')
   }
@@ -635,7 +780,7 @@ const reloadFilesWithFeedback = async () => {
 
 const reloadTasksWithFeedback = async () => {
   try {
-    await loadTasks(true)
+    await requestTasksReload()
   } catch (error) {
     await showToast(sanitizeError(error, 'PDF 导出任务加载失败'), 'danger')
   }
@@ -662,32 +807,65 @@ watch(
 )
 
 onMounted(async () => {
-  await load()
+  isUnmounted = false
+  const progressRegistration = (async () => {
+    try {
+      const handle = await PdfManagementService.addProgressListener((event) => {
+        stateChangeSequence++
+        if (taskFilter.value !== 'all' && taskFilter.value !== event.status) {
+          tasks.value = tasks.value.filter((task) => task.exportId !== event.exportId)
+        } else {
+          const merged = applyPdfProgressEvent(tasks.value, event)
+          if (merged === null) void reloadTasksWithFeedback()
+          else tasks.value = merged
+        }
+        if (['completed', 'partial'].includes(event.status)) void reloadFilesWithFeedback()
+      })
+      if (isUnmounted) {
+        void handle.remove()
+        return
+      }
+      progressHandle = handle
+    } catch (error) {
+      if (!isUnmounted) {
+        await showToast(sanitizeError(error, 'PDF 导出进度监听失败'), 'danger')
+      }
+    }
+  })()
+  const invalidationRegistration = (async () => {
+    try {
+      const handle = await JmcomicService.addStateInvalidatedListener?.(() => {
+        stateChangeSequence++
+        void load()
+      })
+      if (!handle) return
+      if (isUnmounted) {
+        void handle.remove()
+        return
+      }
+      stateInvalidatedHandle = handle
+    } catch {
+      // Android 不需要处理 SSE 重连，保持原有加载行为。
+    }
+  })()
+
+  await Promise.all([progressRegistration, invalidationRegistration])
   if (isUnmounted) return
-  try {
-    const handle = await PdfManagementService.addProgressListener((event) => {
-      const merged = applyPdfProgressEvent(tasks.value, event)
-      if (merged === null) void reloadTasksWithFeedback()
-      else tasks.value = merged
-      if (['completed', 'partial'].includes(event.status)) void reloadFilesWithFeedback()
-    })
-    if (isUnmounted) {
-      void handle.remove()
-      return
-    }
-    progressHandle = handle
-  } catch (error) {
-    if (!isUnmounted) {
-      await showToast(sanitizeError(error, 'PDF 导出进度监听失败'), 'danger')
-    }
-  }
+  await load()
 })
 onUnmounted(() => {
   isUnmounted = true
   fileRequestSequence++
   taskRequestSequence++
+  imageResourceRequestSequence++
+  fileReloadRequested = false
+  taskReloadRequested = false
+  loadRequested = false
   if (searchTimer) clearTimeout(searchTimer)
   void progressHandle?.remove()
+  void stateInvalidatedHandle?.remove()
+  progressHandle = null
+  stateInvalidatedHandle = null
 })
 
 defineExpose({ refresh: load })

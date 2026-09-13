@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   getOfflineFolders: vi.fn(),
   getPdfExportTask: vi.fn(),
   addPdfExportProgressListener: vi.fn(),
+  addStateInvalidatedListener: vi.fn(),
   inspectPdfFileForDeletion: vi.fn(),
   verifyPdfFile: vi.fn(),
   openPdf: vi.fn(),
@@ -26,6 +27,8 @@ const mocks = vi.hoisted(() => ({
   alertCreate: vi.fn(),
   routerPush: vi.fn(),
   showToast: vi.fn(),
+  pdfProgressHandler: undefined as ((event: any) => void) | undefined,
+  stateInvalidatedHandler: undefined as (() => void) | undefined,
 }))
 
 vi.mock('@ionic/vue', () => ({
@@ -85,6 +88,7 @@ vi.mock('@/services/JmcomicService', () => ({
     getOfflineFolders: mocks.getOfflineFolders,
     getPdfExportTask: mocks.getPdfExportTask,
     addPdfExportProgressListener: mocks.addPdfExportProgressListener,
+    addStateInvalidatedListener: mocks.addStateInvalidatedListener,
     inspectPdfFileForDeletion: mocks.inspectPdfFileForDeletion,
     openPdf: mocks.openPdf,
     openPdfFolder: mocks.openPdfFolder,
@@ -166,7 +170,16 @@ beforeEach(() => {
   mocks.getPdfManagementState.mockResolvedValue({ recoveryState: 'ready' })
   mocks.getOfflineFolders.mockResolvedValue({ folders: [] })
   mocks.getPdfExportTask.mockResolvedValue(task('completed'))
-  mocks.addPdfExportProgressListener.mockResolvedValue({ remove: vi.fn() })
+  mocks.pdfProgressHandler = undefined
+  mocks.stateInvalidatedHandler = undefined
+  mocks.addPdfExportProgressListener.mockImplementation(async (handler: (event: any) => void) => {
+    mocks.pdfProgressHandler = handler
+    return { remove: vi.fn() }
+  })
+  mocks.addStateInvalidatedListener.mockImplementation(async (handler: () => void) => {
+    mocks.stateInvalidatedHandler = handler
+    return { remove: vi.fn() }
+  })
   mocks.inspectPdfFileForDeletion.mockResolvedValue(file)
   mocks.verifyPdfFile.mockResolvedValue(file)
   mocks.pickFolder.mockResolvedValue(null)
@@ -394,6 +407,57 @@ describe('PdfManagementView', () => {
 
     expect(wrapper.text()).toContain('新筛选任务')
     expect(wrapper.text()).not.toContain('旧任务')
+    wrapper.unmount()
+  })
+
+  test('任务查询期间收到事件时丢弃旧响应并串行补读', async () => {
+    let finishInitial:
+      | ((value: { tasks: PdfExportTaskRecord[]; nextCursor: null }) => void)
+      | undefined
+    const oldTask = { ...task('running'), currentPage: 1, snapshotRevision: 1 }
+    const currentTask = { ...task('running'), currentPage: 8, snapshotRevision: 3 }
+    mocks.getPdfExportTasks
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishInitial = resolve
+          }),
+      )
+      .mockResolvedValueOnce({ tasks: [currentTask], nextCursor: null })
+
+    const wrapper = mount(PdfManagementView, { props: { initialView: 'tasks' } })
+    await vi.waitFor(() => expect(mocks.getPdfExportTasks).toHaveBeenCalledOnce())
+    mocks.pdfProgressHandler?.({
+      ...currentTask,
+      currentPage: 6,
+      snapshotRevision: 2,
+    })
+    finishInitial?.({ tasks: [oldTask], nextCursor: null })
+    await flushPromises()
+
+    expect(mocks.getPdfExportTasks).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain('8/12 页')
+    wrapper.unmount()
+  })
+
+  test('事件流重连后刷新管理状态、筛选页和下载资源索引', async () => {
+    const wrapper = mount(PdfManagementView)
+    await flushPromises()
+    expect(wrapper.text()).toContain('测试漫画')
+    expect(wrapper.get('.resource-icons').attributes('aria-label')).toBe('图片和 PDF')
+
+    const reloadedFile = { ...file, id: 2, albumTitle: '重连后的文件' }
+    mocks.getPdfFiles.mockResolvedValue({ files: [reloadedFile], nextCursor: null })
+    mocks.refreshPdfFileAvailability.mockResolvedValue({ files: [reloadedFile] })
+    mocks.getPdfExportTasks.mockResolvedValue({ tasks: [], nextCursor: null })
+    mocks.getDownloadTasks.mockResolvedValue({ tasks: [] })
+    mocks.stateInvalidatedHandler?.()
+    await flushPromises()
+
+    expect(mocks.getPdfManagementState).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain('重连后的文件')
+    expect(wrapper.text()).not.toContain('测试漫画')
+    expect(wrapper.get('.resource-icons').attributes('aria-label')).toBe('PDF')
     wrapper.unmount()
   })
 

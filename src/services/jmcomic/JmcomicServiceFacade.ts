@@ -31,6 +31,12 @@ import { NotificationPermissionService } from '@/services/NotificationPermission
 const native: JmcomicClient = createActiveFacadeClient(getRuntime)
 
 export const JmcomicService = {
+  /** Desktop 事件流重连后重新读取页面权威状态；Android 无需提供该能力。 */
+  addStateInvalidatedListener(handler: () => void): Promise<JmcomicListenerHandle | null> {
+    const subscribe = getRuntime().events.onStateInvalidated
+    return subscribe ? subscribe(handler) : Promise.resolve(null)
+  },
+
   search(query: SearchQuery) {
     return native.search({ query })
   },

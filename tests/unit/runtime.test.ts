@@ -183,18 +183,24 @@ describe('runtime', () => {
     expect(runtime.events.onNetworkProbe).toBeTypeOf('function')
   })
 
-  test('共享一个 SSE 连接并将具名 JSON 事件分发到订阅者', async () => {
+  test('共享一个 SSE 连接，并只在自动重连后通知状态失效', async () => {
     vi.stubGlobal('EventSource', FakeEventSource)
     const events = createRuntime('linux').events
     const first = vi.fn(() => {
       throw new Error('listener failed')
     })
     const second = vi.fn()
+    const invalidated = vi.fn()
     const firstHandle = await events.onImageReady(first)
     const secondHandle = await events.onImageReady(second)
+    const invalidationHandle = await events.onStateInvalidated?.(invalidated)
 
     expect(FakeEventSource.instances).toHaveLength(1)
     expect(FakeEventSource.instances[0].url).toBe('/events')
+    FakeEventSource.instances[0].emit('open', null)
+    expect(invalidated).not.toHaveBeenCalled()
+    FakeEventSource.instances[0].emit('open', null)
+    expect(invalidated).toHaveBeenCalledOnce()
     FakeEventSource.instances[0].emit('imageReady', { photoId: 'p1', sortOrder: 2, type: 'image' })
     expect(first).toHaveBeenCalledWith({ photoId: 'p1', sortOrder: 2, type: 'image' })
     expect(second).toHaveBeenCalledWith({ photoId: 'p1', sortOrder: 2, type: 'image' })
@@ -202,6 +208,8 @@ describe('runtime', () => {
     await firstHandle.remove()
     await firstHandle.remove()
     await secondHandle.remove()
+    expect(FakeEventSource.instances[0].close).not.toHaveBeenCalled()
+    await invalidationHandle?.remove()
     expect(FakeEventSource.instances[0].close).toHaveBeenCalledOnce()
   })
 

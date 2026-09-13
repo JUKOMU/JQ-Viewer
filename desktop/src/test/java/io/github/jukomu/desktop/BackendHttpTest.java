@@ -1,6 +1,7 @@
 package io.github.jukomu.desktop;
 
 import io.github.jukomu.desktop.backend.Backend;
+import io.github.jukomu.desktop.backend.TestBackends;
 import io.github.jukomu.desktop.data.Database;
 import io.github.jukomu.desktop.data.Paths;
 import io.github.jukomu.desktop.feature.settings.SettingsService;
@@ -33,7 +34,8 @@ class BackendHttpTest {
         );
         HttpClient client = HttpClient.newHttpClient();
 
-        Backend backend = new Backend(paths, new Database(paths), new BackendTestExecutor());
+        Backend backend = TestBackends.offline(
+                paths, new Database(paths), new BackendTestExecutor());
         backend.database().open();
         new SettingsService(backend.database()).setConcurrency("preload_concurrency", 4);
         URI base;

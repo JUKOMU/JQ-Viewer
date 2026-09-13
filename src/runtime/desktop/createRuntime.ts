@@ -13,7 +13,7 @@ export function createRuntime(platform: RuntimePlatform, fetcher?: BackendFetch)
     platform,
     backend: createBackendClient(backendFetch),
     events,
-    resources: createResourceResolver(),
+    resources: createResourceResolver(backendFetch),
     services: createPlatformServices(events, backendFetch),
   }
 }

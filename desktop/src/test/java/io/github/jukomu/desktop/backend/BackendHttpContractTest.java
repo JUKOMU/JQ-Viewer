@@ -28,6 +28,8 @@ import io.github.jukomu.jmcomic.api.model.JmSearchPage;
 import io.github.jukomu.jmcomic.api.model.JmUserInfo;
 import io.github.jukomu.jmcomic.api.model.JmUserProfile;
 import io.github.jukomu.jmcomic.api.model.SearchQuery;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.PDPage;
 import org.junit.jupiter.api.Test;
 
 import javax.imageio.ImageIO;
@@ -50,6 +52,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -152,6 +155,78 @@ class BackendHttpContractTest {
             assertOk(post(http, base, requestedMethods, "openContainingFolder",
                     MAPPER.writeValueAsString(Map.of("file", fileRef))));
 
+            String importBody = MAPPER.writeValueAsString(Map.of("items", List.of(Map.ofEntries(
+                    Map.entry("fileRef", fileRef),
+                    Map.entry("displayPath",
+                            scannedFiles.path("files").get(0).path("displayPath").asText()),
+                    Map.entry("fileName", "sample.pdf"),
+                    Map.entry("albumId", "album-1"),
+                    Map.entry("albumTitle", "Album"),
+                    Map.entry("coverUrl", ""),
+                    Map.entry("authors", "Alice"),
+                    Map.entry("chapterId", "photo-1"),
+                    Map.entry("chapterTitle", "Photo"),
+                    Map.entry("chapterSortOrder", 1),
+                    Map.entry("isSingleEpisode", false),
+                    Map.entry("folderId", "folder-1")
+            ))));
+            ObjectNode imported = body(post(http, base, requestedMethods, "importPdfs", importBody));
+            long importedId = imported.path("results").get(0).path("id").asLong();
+            ObjectNode importedFiles = body(post(
+                    http, base, requestedMethods, "getImportedPdfs", "{}"));
+            ObjectNode pdfFiles = body(post(http, base, requestedMethods, "getPdfFiles",
+                    "{\"sourceType\":\"imported\",\"limit\":50}"));
+            ObjectNode refreshedPdfs = body(post(http, base, requestedMethods,
+                    "refreshPdfFileAvailability", "{\"ids\":[" + importedId + "]}"));
+            ObjectNode inspectedPdf = body(post(http, base, requestedMethods,
+                    "inspectPdfFileForDeletion", "{\"id\":" + importedId + "}"));
+            ObjectNode verifiedPdf = body(post(http, base, requestedMethods,
+                    "verifyPdfFile", "{\"id\":" + importedId + "}"));
+            ObjectNode pdfManagement = body(post(http, base, requestedMethods,
+                    "getPdfManagementState", "{}"));
+            ObjectNode pdfReset = body(post(http, base, requestedMethods,
+                    "acknowledgePdfDatabaseReset", "{}"));
+            assertOk(post(http, base, requestedMethods, "updateLocalEpisodeType",
+                    "{\"albumId\":\"album-1\",\"isSingleEpisode\":true}"));
+            assertOk(post(http, base, requestedMethods, "openPdf",
+                    MAPPER.writeValueAsString(Map.of("fileRef", fileRef))));
+            assertOk(post(http, base, requestedMethods, "openPdfFolder",
+                    MAPPER.writeValueAsString(Map.of("fileRef", fileRef))));
+            ObjectNode pdfInfo = body(post(http, base, requestedMethods, "getPdfInfo",
+                    MAPPER.writeValueAsString(Map.of("fileRef", fileRef))));
+            ObjectNode renderedPdfPage = body(post(http, base, requestedMethods, "renderPdfPage",
+                    MAPPER.writeValueAsString(Map.of(
+                            "fileRef", fileRef, "page", 1, "targetWidth", 720))));
+            HttpResponse<byte[]> pdfPage = getBytes(
+                    http, base.resolve(renderedPdfPage.path("resourceUrl").asText()));
+            String encodedPdf = Base64.getUrlEncoder().withoutPadding().encodeToString(
+                    fileRef.getBytes(StandardCharsets.UTF_8));
+            HttpResponse<byte[]> originalPdf = getBytes(http, base.resolve("/pdf/" + encodedPdf));
+            String missingRef = FileReferences.fileRef(
+                    FileReferences.parseFile(fileRef).resolveSibling("missing.pdf"));
+            String encodedMissing = Base64.getUrlEncoder().withoutPadding().encodeToString(
+                    missingRef.getBytes(StandardCharsets.UTF_8));
+            HttpResponse<byte[]> missingPdf = getBytes(
+                    http, base.resolve("/pdf/" + encodedMissing));
+            Path invalidPdfPath = FileReferences.parseFile(fileRef).resolveSibling("invalid.pdf");
+            Files.writeString(invalidPdfPath, "not a pdf");
+            String invalidPdfRef = FileReferences.fileRef(invalidPdfPath);
+            String encodedInvalid = Base64.getUrlEncoder().withoutPadding().encodeToString(
+                    invalidPdfRef.getBytes(StandardCharsets.UTF_8));
+            HttpResponse<byte[]> invalidPdfContent = getBytes(
+                    http, base.resolve("/pdf/" + encodedInvalid));
+
+            assertOk(post(http, base, requestedMethods, "removePdfFromLibrary",
+                    "{\"id\":" + importedId + "}"));
+            long secondPdfId = body(post(http, base, requestedMethods, "importPdfs", importBody))
+                    .path("results").get(0).path("id").asLong();
+            assertOk(post(http, base, requestedMethods, "deleteImportedPdf",
+                    "{\"id\":" + secondPdfId + "}"));
+            long thirdPdfId = body(post(http, base, requestedMethods, "importPdfs", importBody))
+                    .path("results").get(0).path("id").asLong();
+            ObjectNode deletedPdf = body(post(http, base, requestedMethods, "deletePdfFile",
+                    "{\"id\":" + thirdPdfId + "}"));
+
             assertOk(post(http, base, requestedMethods, "setPdfExportFolder",
                     MAPPER.writeValueAsString(Map.of("folder", Map.of(
                             "folderRef", folderRef,
@@ -222,6 +297,28 @@ class BackendHttpContractTest {
             assertEquals(5, settings.path("downloadConcurrency").asInt());
             assertTrue(defaultFolder.path("ref").asText().startsWith("folder:path:"));
             assertEquals(1, existingFiles.path("existing").size());
+            assertEquals(1, imported.path("imported").asInt());
+            assertEquals(1, importedFiles.path("pdfs").size());
+            assertEquals(1, pdfFiles.path("files").size());
+            assertEquals("available",
+                    refreshedPdfs.path("files").get(0).path("availability").asText());
+            assertEquals("available", inspectedPdf.path("availability").asText());
+            assertEquals("valid", verifiedPdf.path("verificationStatus").asText());
+            assertEquals("ready", pdfManagement.path("recoveryState").asText());
+            assertTrue(!pdfReset.path("acknowledged").asBoolean());
+            assertEquals(1, pdfInfo.path("pageCount").asInt());
+            assertEquals(200, pdfPage.statusCode());
+            assertEquals("image/png", pdfPage.headers().firstValue("Content-Type").orElseThrow());
+            assertEquals(200, originalPdf.statusCode());
+            assertEquals("application/pdf",
+                    originalPdf.headers().firstValue("Content-Type").orElseThrow());
+            assertEquals(404, missingPdf.statusCode());
+            assertEquals("file-missing",
+                    missingPdf.headers().firstValue("X-JQViewer-Pdf-Error").orElseThrow());
+            assertEquals(400, invalidPdfContent.statusCode());
+            assertEquals("invalid-content",
+                    invalidPdfContent.headers().firstValue("X-JQViewer-Pdf-Error").orElseThrow());
+            assertEquals("deleted", deletedPdf.path("result").asText());
             assertEquals(folderRef, pdfPreferences.path("exportFolder").path("folderRef").asText());
             assertEquals("{author}/{id}", pdfPreferences.path("directoryTemplate").asText());
             assertEquals("{title}", pdfPreferences.path("fileNameTemplate").asText());
@@ -286,13 +383,20 @@ class BackendHttpContractTest {
         Paths paths = new Paths(root.resolve("program"), root.resolve("home"), Map.of(), "Linux");
         paths.ensureDirectories();
         java.nio.file.Path samplePdf = paths.pdfDirectory().resolve("sample.pdf");
-        Files.writeString(samplePdf, "%PDF-1.7");
+        writePdf(samplePdf);
         ThreadPoolExecutor executor = new ThreadPoolExecutor(
                 6, 6, 30, TimeUnit.SECONDS, new ArrayBlockingQueue<>(64));
         FileService files = new FileService(paths, ignored -> paths.pdfDirectory(), ignored -> {
         });
         return new Backend(paths, new Database(paths), executor, fake.client(),
                 id -> "https://cover.invalid/" + id + ".jpg", files);
+    }
+
+    private static void writePdf(Path target) throws Exception {
+        try (PDDocument document = new PDDocument()) {
+            document.addPage(new PDPage());
+            document.save(target.toFile());
+        }
     }
 
     private static HttpResponse<String> post(

@@ -11,7 +11,7 @@ import java.sql.Statement;
 
 /** 管理本地 SQLite 连接，并提供版本化 schema 迁移入口。 */
 public final class Database implements AutoCloseable {
-    private static final int SCHEMA_VERSION = 3;
+    private static final int SCHEMA_VERSION = 4;
 
     private final Path databasePath;
     private Connection connection;
@@ -106,6 +106,40 @@ public final class Database implements AutoCloseable {
             );
             statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_download_pages_photo "
                     + "ON download_pages(photo_id, sort_order)");
+            statement.executeUpdate("CREATE TABLE IF NOT EXISTS pdf_files ("
+                    + "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                    + " file_ref TEXT NOT NULL UNIQUE,"
+                    + " display_path TEXT NOT NULL DEFAULT '',"
+                    + " file_name TEXT NOT NULL,"
+                    + " source_type TEXT NOT NULL CHECK(source_type IN ('imported','exported')),"
+                    + " ownership TEXT NOT NULL CHECK(ownership IN ('external_reference','app_created')),"
+                    + " chapter_link_status TEXT NOT NULL "
+                    + "CHECK(chapter_link_status IN ('resolved','unresolved','multi_chapter')),"
+                    + " album_id TEXT NOT NULL,"
+                    + " album_title TEXT NOT NULL DEFAULT '',"
+                    + " cover_url TEXT NOT NULL DEFAULT '',"
+                    + " authors TEXT NOT NULL DEFAULT '',"
+                    + " chapter_id TEXT,"
+                    + " chapter_title TEXT NOT NULL DEFAULT '',"
+                    + " chapter_sort_order INTEGER NOT NULL DEFAULT 0,"
+                    + " is_single_episode INTEGER NOT NULL DEFAULT -1 "
+                    + "CHECK(is_single_episode IN (-1,0,1)),"
+                    + " folder_id TEXT,"
+                    + " file_size INTEGER NOT NULL DEFAULT 0,"
+                    + " page_count INTEGER NOT NULL DEFAULT 0,"
+                    + " availability TEXT NOT NULL DEFAULT 'unknown' "
+                    + "CHECK(availability IN ('unknown','available','missing','inaccessible','invalid')),"
+                    + " verification_status TEXT NOT NULL DEFAULT 'unverified' "
+                    + "CHECK(verification_status IN ('unverified','valid','corrupt','page_mismatch')),"
+                    + " verification_error TEXT,"
+                    + " created_at INTEGER NOT NULL,"
+                    + " updated_at INTEGER NOT NULL,"
+                    + " verified_at INTEGER)"
+            );
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_pdf_files_source_created "
+                    + "ON pdf_files(source_type, created_at DESC, id DESC)");
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_pdf_files_availability_updated "
+                    + "ON pdf_files(availability, updated_at DESC, id DESC)");
         }
 
         try (PreparedStatement statement = connection.prepareStatement(

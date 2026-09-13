@@ -3,11 +3,22 @@ import type {
   AppInfo,
   Capability,
   FileService,
+  PdfService,
   PlatformServices,
   ReaderPlatformServices,
 } from '../PlatformServices'
 import type { BackendEvents } from '../BackendEvents'
-import { asFileRef, asFolderRef } from '../FileReferences'
+import { asFileRef, asFolderRef, type FileDescriptor } from '../FileReferences'
+import type {
+  ImportedPdf,
+  ImportPdfItem,
+  ImportPdfsResult,
+  PdfExportBatchResult,
+  PdfExportTaskRecord,
+  PdfManagementState,
+  PdfStorageDeleteResult,
+} from '@/services/JmcomicTypes'
+import { RuntimeError } from '../errors'
 import { requestBackend, type BackendFetch } from './backendClient'
 import { createDesktopPdfExportPreferencesStore } from './pdfExportPreferences'
 
@@ -35,6 +46,36 @@ interface FileResponse {
   ref: string
   fileName: string
   displayPath: string
+}
+
+type RawImportedPdf = Omit<ImportedPdf, 'fileRef'> & { fileRef: string }
+
+type RawImportPdfsResult = Omit<ImportPdfsResult, 'results'> & {
+  results?: Array<{
+    result: string
+    fileRef?: string
+    displayPath?: string
+    fileName?: string
+    id?: number
+  }>
+}
+
+type RawPdfStorageDeleteResult = Omit<PdfStorageDeleteResult, 'file'> & {
+  fileRef: string
+  displayPath: string
+  fileName: string
+}
+
+function toImportedPdf(file: RawImportedPdf): ImportedPdf {
+  return { ...file, fileRef: asFileRef(file.fileRef) }
+}
+
+function toFileDescriptor(fileRef: string, displayPath: string, fileName?: string): FileDescriptor {
+  return { ref: asFileRef(fileRef), displayPath, fileName: fileName || displayPath }
+}
+
+function unavailablePdf<T>(): Promise<T> {
+  return Promise.reject(new RuntimeError('unavailable', 'Desktop PDF 导出尚未实现'))
 }
 
 function createFileService(fetcher: BackendFetch): FileService {
@@ -65,6 +106,96 @@ function createFileService(fetcher: BackendFetch): FileService {
   }
 }
 
+function createPdfService(events: BackendEvents, fetcher: BackendFetch): PdfService {
+  return {
+    exportPdfBatch: () => unavailablePdf<PdfExportBatchResult>(),
+    scanPdfFiles: (folder) =>
+      requestBackend<{ files: FileResponse[] }>(fetcher, 'scanPdfFiles', {
+        folder: String(folder),
+      }).then((result) => ({
+        files: result.files.map((file) => ({ ...file, ref: asFileRef(file.ref) })),
+      })),
+    importPdfs: (items: ImportPdfItem[]) =>
+      requestBackend<RawImportPdfsResult>(fetcher, 'importPdfs', {
+        items: items.map(({ fileRef, ...item }) => ({ ...item, fileRef: String(fileRef) })),
+      }).then((result) => ({
+        ...result,
+        ...(result.results
+          ? {
+              results: result.results.map((item) => ({
+                result: item.result,
+                ...(item.fileRef && item.displayPath
+                  ? {
+                      file: toFileDescriptor(item.fileRef, item.displayPath, item.fileName),
+                    }
+                  : {}),
+                ...(item.id !== undefined ? { id: item.id } : {}),
+              })),
+            }
+          : {}),
+      })),
+    getImportedPdfs: () =>
+      requestBackend<{ pdfs: RawImportedPdf[] }>(fetcher, 'getImportedPdfs', {}).then((result) => ({
+        pdfs: result.pdfs.map(toImportedPdf),
+      })),
+    getPdfFiles: (options) =>
+      requestBackend<{ files: RawImportedPdf[]; nextCursor?: string }>(
+        fetcher,
+        'getPdfFiles',
+        options,
+      ).then((result) => ({
+        files: result.files.map(toImportedPdf),
+        nextCursor: result.nextCursor,
+      })),
+    refreshPdfFileAvailability: (ids) =>
+      requestBackend<{ files: RawImportedPdf[] }>(fetcher, 'refreshPdfFileAvailability', {
+        ids,
+      }).then((result) => ({ files: result.files.map(toImportedPdf) })),
+    inspectPdfFileForDeletion: (id) =>
+      requestBackend<RawImportedPdf>(fetcher, 'inspectPdfFileForDeletion', { id }).then(
+        toImportedPdf,
+      ),
+    verifyPdfFile: (id) =>
+      requestBackend<RawImportedPdf>(fetcher, 'verifyPdfFile', { id }).then(toImportedPdf),
+    removePdfFromLibrary: (id) =>
+      requestBackend<{ success: boolean }>(fetcher, 'removePdfFromLibrary', { id }),
+    deletePdfFile: (id) =>
+      requestBackend<RawPdfStorageDeleteResult>(fetcher, 'deletePdfFile', { id }).then(
+        ({ fileRef, displayPath, fileName, ...result }) => ({
+          ...result,
+          file: toFileDescriptor(fileRef, displayPath, fileName),
+        }),
+      ),
+    getPdfManagementState: () =>
+      requestBackend<PdfManagementState>(fetcher, 'getPdfManagementState', {}),
+    acknowledgePdfDatabaseReset: () =>
+      requestBackend<{ acknowledged: boolean }>(fetcher, 'acknowledgePdfDatabaseReset', {}),
+    getPdfExportTasks: () =>
+      unavailablePdf<{ tasks: PdfExportTaskRecord[]; nextCursor?: string }>(),
+    getPdfExportTask: () => unavailablePdf<PdfExportTaskRecord>(),
+    cancelPdfExport: () => unavailablePdf<PdfExportTaskRecord>(),
+    retryPdfExport: () => unavailablePdf<PdfExportTaskRecord>(),
+    deletePdfExportTask: () => unavailablePdf<{ success: boolean }>(),
+    deleteImportedPdf: (id) =>
+      requestBackend<{ success: boolean }>(fetcher, 'deleteImportedPdf', { id }),
+    updateLocalEpisodeType: (albumId, isSingleEpisode) =>
+      requestBackend<{ success: boolean; updatedDownloads: number; updatedPdfs: number }>(
+        fetcher,
+        'updateLocalEpisodeType',
+        { albumId, isSingleEpisode },
+      ),
+    openPdf: (file) =>
+      requestBackend<{ success: boolean }>(fetcher, 'openPdf', { fileRef: String(file) }),
+    openPdfFolder: (file) =>
+      requestBackend<{ success: boolean }>(fetcher, 'openPdfFolder', {
+        fileRef: String(file),
+      }),
+    getPdfInfo: (file) =>
+      requestBackend<{ pageCount: number }>(fetcher, 'getPdfInfo', { fileRef: String(file) }),
+    onProgress: (handler) => events.onPdfExportProgress(handler),
+  }
+}
+
 /** 提供明确的当前平台能力状态。 */
 export function createPlatformServices(
   events: BackendEvents,
@@ -75,10 +206,11 @@ export function createPlatformServices(
     version: packageInfo.version,
   }
 
-  const platformServices = {
+  const platformServices: PlatformServices = {
     app: { getInfo: async () => appInfo },
     notifications: { kind: 'host-managed' },
     files: createFileService(fetcher),
+    pdf: createPdfService(events, fetcher),
     pdfExportPreferences: createDesktopPdfExportPreferencesStore(fetcher),
     storage: unavailableCapability('当前平台不支持公开下载'),
     reader: createUnavailableReaderServices(),
@@ -88,6 +220,5 @@ export function createPlatformServices(
     events,
   }
 
-  // 尚未实现的 PDF 服务保持缺失，避免将能力伪装成可用接口。
-  return platformServices as unknown as PlatformServices
+  return platformServices
 }

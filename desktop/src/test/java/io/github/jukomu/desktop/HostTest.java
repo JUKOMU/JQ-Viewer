@@ -1,6 +1,7 @@
 package io.github.jukomu.desktop;
 
 import io.github.jukomu.desktop.backend.Backend;
+import io.github.jukomu.desktop.backend.TestBackends;
 import io.github.jukomu.desktop.data.Database;
 import io.github.jukomu.desktop.data.Paths;
 import io.github.jukomu.desktop.host.BrowserLauncher;
@@ -30,12 +31,12 @@ class HostTest {
         );
         List<String> opened = new ArrayList<>();
         Host primary = new Host(
-                new Backend(paths, new Database(paths), new BackendTestExecutor()),
+                TestBackends.offline(paths, new Database(paths), new BackendTestExecutor()),
                 new SingleInstanceGuard(paths),
                 new BrowserLauncher(uri -> opened.add(uri.toString()))
         );
         Host secondary = new Host(
-                new Backend(paths, new Database(paths), new BackendTestExecutor()),
+                TestBackends.offline(paths, new Database(paths), new BackendTestExecutor()),
                 new SingleInstanceGuard(paths),
                 new BrowserLauncher(uri -> opened.add(uri.toString()))
         );

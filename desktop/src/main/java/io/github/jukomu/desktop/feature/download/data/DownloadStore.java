@@ -265,6 +265,17 @@ public final class DownloadStore {
         }
     }
 
+    public synchronized int updateAlbumEpisodeType(String albumId, boolean singleEpisode) {
+        try (PreparedStatement statement = database.connection().prepareStatement(
+                "UPDATE download_tasks SET is_single_episode=? WHERE album_id=?")) {
+            statement.setInt(1, singleEpisode ? 1 : 0);
+            statement.setString(2, albumId);
+            return statement.executeUpdate();
+        } catch (SQLException exception) {
+            throw failure("更新下载章节类型失败", exception);
+        }
+    }
+
     private List<StoredDownloadTask> list(String sql) {
         List<StoredDownloadTask> tasks = new ArrayList<>();
         try (PreparedStatement statement = database.connection().prepareStatement(sql);

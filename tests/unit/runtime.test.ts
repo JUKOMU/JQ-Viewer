@@ -172,15 +172,123 @@ describe('runtime', () => {
       '/thumb/chapter%2F1/2',
     )
     expect(runtime.resources.pdfDocumentUrl('file:path:/books/book.pdf' as never)).toBe(
-      '/pdf/file%3Apath%3A%2Fbooks%2Fbook.pdf',
+      '/pdf/ZmlsZTpwYXRoOi9ib29rcy9ib29rLnBkZg',
     )
+    expect(runtime.resources.renderPdfPage.available).toBe(true)
     expect(runtime.services.storage.available).toBe(false)
     expect(runtime.services.updater.available).toBe(false)
     expect(runtime.services.reader.fullscreen.available).toBe(false)
     expect(runtime.services.notifications.kind).toBe('host-managed')
-    expect('files' in runtime.services).toBe(false)
-    expect('pdf' in runtime.services).toBe(false)
+    expect('files' in runtime.services).toBe(true)
+    expect('pdf' in runtime.services).toBe(true)
     expect(runtime.events.onNetworkProbe).toBeTypeOf('function')
+  })
+
+  test('Desktop PDF 文件库与页面回退使用统一后端契约', async () => {
+    const rawFile = {
+      id: 7,
+      fileRef: 'file:path:/books/book.pdf',
+      displayPath: '/books/book.pdf',
+      fileName: 'book.pdf',
+      sourceType: 'imported',
+      ownership: 'external_reference',
+      chapterLinkStatus: 'resolved',
+      albumId: 'album-1',
+      albumTitle: 'Album',
+      coverUrl: '',
+      authors: 'Alice',
+      chapterId: 'chapter-1',
+      chapterTitle: 'Chapter 1',
+      chapterSortOrder: 1,
+      createdAt: 1,
+      fileSize: 100,
+      pageCount: 2,
+      availability: 'available',
+      verificationStatus: 'valid',
+      updatedAt: 1,
+    }
+    const fetcher = vi
+      .fn()
+      .mockImplementation((input: RequestInfo | URL, _init?: RequestInit) => {
+        const url = String(input)
+        if (url === '/api/importPdfs') {
+          return Promise.resolve(
+            response({
+              imported: 1,
+              skipped: 0,
+              duplicateCount: 0,
+              errorCount: 0,
+              results: [
+                {
+                  result: 'imported',
+                  fileRef: rawFile.fileRef,
+                  displayPath: rawFile.displayPath,
+                  fileName: rawFile.fileName,
+                  id: rawFile.id,
+                },
+              ],
+            }),
+          )
+        }
+        if (url === '/api/getPdfFiles') {
+          return Promise.resolve(response({ files: [rawFile] }))
+        }
+        if (url === '/api/deletePdfFile') {
+          return Promise.resolve(
+            response({
+              result: 'deleted',
+              id: rawFile.id,
+              sourceType: rawFile.sourceType,
+              ownership: rawFile.ownership,
+              fileRef: rawFile.fileRef,
+              displayPath: rawFile.displayPath,
+              fileName: rawFile.fileName,
+            }),
+          )
+        }
+        if (url === '/api/renderPdfPage') {
+          return Promise.resolve(response({ resourceUrl: '/pdf-page/' + 'a'.repeat(64) + '.png' }))
+        }
+        throw new Error(`unexpected request: ${url}`)
+      })
+    const runtime = createRuntime('linux', fetcher)
+    const item = {
+      fileRef: rawFile.fileRef as never,
+      displayPath: rawFile.displayPath,
+      fileName: rawFile.fileName,
+      albumId: rawFile.albumId,
+      albumTitle: rawFile.albumTitle,
+      coverUrl: '',
+      authors: rawFile.authors,
+      chapterId: rawFile.chapterId,
+      chapterTitle: rawFile.chapterTitle,
+      chapterSortOrder: 1,
+    }
+
+    await expect(runtime.services.pdf.importPdfs([item])).resolves.toMatchObject({ imported: 1 })
+    await expect(runtime.services.pdf.getPdfFiles({ limit: 50 })).resolves.toMatchObject({
+      files: [expect.objectContaining({ fileRef: rawFile.fileRef })],
+    })
+    await expect(runtime.services.pdf.deletePdfFile(rawFile.id)).resolves.toMatchObject({
+      result: 'deleted',
+      file: { ref: rawFile.fileRef, displayPath: rawFile.displayPath, fileName: rawFile.fileName },
+    })
+    if (!runtime.resources.renderPdfPage.available) throw new Error('renderer unavailable')
+    await expect(
+      runtime.resources.renderPdfPage.api.getUrl({
+        file: rawFile.fileRef as never,
+        page: 1,
+        targetWidth: 720,
+      }),
+    ).resolves.toBe('/pdf-page/' + 'a'.repeat(64) + '.png')
+
+    expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
+      '/api/importPdfs',
+      '/api/getPdfFiles',
+      '/api/deletePdfFile',
+      '/api/renderPdfPage',
+    ])
+    expect(JSON.parse(String(fetcher.mock.calls[0][1]?.body))).toEqual({ items: [item] })
   })
 
   test('共享一个 SSE 连接，并只在自动重连后通知状态失效', async () => {

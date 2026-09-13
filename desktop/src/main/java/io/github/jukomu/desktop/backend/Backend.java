@@ -15,6 +15,7 @@ import io.github.jukomu.desktop.bridge.handler.AuthPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.DownloadPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.FilePluginHandler;
 import io.github.jukomu.desktop.bridge.handler.HistoryPluginHandler;
+import io.github.jukomu.desktop.bridge.handler.PdfPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.SettingsPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.SystemPluginHandler;
 import io.github.jukomu.desktop.data.Database;
@@ -27,6 +28,11 @@ import io.github.jukomu.desktop.feature.download.data.DownloadStore;
 import io.github.jukomu.desktop.feature.history.HistoryService;
 import io.github.jukomu.desktop.feature.image.ImageService;
 import io.github.jukomu.desktop.feature.files.FileService;
+import io.github.jukomu.desktop.feature.pdf.data.PdfStore;
+import io.github.jukomu.desktop.feature.pdf.management.PdfManagementService;
+import io.github.jukomu.desktop.feature.pdf.render.PdfDocumentService;
+import io.github.jukomu.desktop.feature.pdf.render.PdfPageCache;
+import io.github.jukomu.desktop.feature.pdf.render.PdfResourceService;
 import io.github.jukomu.desktop.feature.settings.SettingsService;
 import io.github.jukomu.jmcomic.api.client.JmClient;
 import io.github.jukomu.jmcomic.api.client.JmDownloadClient;
@@ -198,8 +204,9 @@ public final class Backend implements AutoCloseable {
             }
             final EventHub eventHub = startedEventHub;
             ImageService imageService = new ImageService(serviceClient, businessExecutor, eventHub);
+            DownloadStore downloadStore = new DownloadStore(database);
             startedDownloadService = new DownloadService(
-                    new DownloadStore(database),
+                    downloadStore,
                     new DownloadFiles(paths),
                     serviceClient,
                     downloadClient,
@@ -210,6 +217,14 @@ public final class Backend implements AutoCloseable {
             startedDownloadService.reconcileOnStartup();
             final DownloadService downloadService = startedDownloadService;
             RequestExecutor requests = new RequestExecutor(businessExecutor, mapper);
+            PdfPageCache pdfPageCache = new PdfPageCache(paths.cacheDirectory());
+            PdfManagementService pdfManagementService = new PdfManagementService(
+                    new PdfStore(database),
+                    downloadStore,
+                    fileService,
+                    new PdfDocumentService(pdfPageCache)
+            );
+            RequestExecutor pdfRequests = new RequestExecutor(pdfExportExecutor, mapper);
             Plugin plugin = new Plugin(
                     new ApiPluginHandler(requests,
                             new CatalogService(serviceClient, imageService, albumCoverUrl), imageService),
@@ -218,7 +233,9 @@ public final class Backend implements AutoCloseable {
                     new HistoryPluginHandler(requests, new HistoryService(database)),
                     new FilePluginHandler(requests, fileService),
                     new DownloadPluginHandler(requests, downloadService),
+                    new PdfPluginHandler(pdfRequests, pdfManagementService),
                     new SystemPluginHandler());
+            PdfResourceService pdfResources = new PdfResourceService();
             candidate = Javalin.create(config -> {
                 config.jetty.host = LOOPBACK_HOST;
                 config.jetty.port = 0;
@@ -234,6 +251,7 @@ public final class Backend implements AutoCloseable {
                         "image", "/image/{photoId}/{sortOrder}");
                 registerImageRoute(config, imageService, downloadService,
                         "thumb", "/thumb/{photoId}/{sortOrder}");
+                registerPdfRoutes(config, pdfResources, pdfPageCache);
             });
             candidate.start();
             int port = candidate.port();
@@ -265,6 +283,45 @@ public final class Backend implements AutoCloseable {
             database.close();
             throw exception;
         }
+    }
+
+    private void registerPdfRoutes(
+            io.javalin.config.JavalinConfig config,
+            PdfResourceService pdfResources,
+            PdfPageCache pdfPageCache
+    ) {
+        config.routes.get("/pdf/{encodedFileRef}", context -> {
+            try {
+                PdfResourceService.Resource resource = pdfResources.open(
+                        context.pathParam("encodedFileRef"));
+                context.header("Access-Control-Allow-Origin", "*");
+                context.header("Content-Length", String.valueOf(resource.length()));
+                context.contentType("application/pdf").result(resource.input());
+            } catch (PdfResourceService.ResourceException exception) {
+                context.status(exception.status());
+                context.header("Access-Control-Allow-Origin", "*");
+                context.header("X-JQViewer-Pdf-Error", exception.code());
+                context.contentType("text/plain; charset=utf-8").result(exception.getMessage());
+            }
+        });
+        config.routes.get("/pdf-page/{resourceFile}", context -> {
+            String resourceFile = context.pathParam("resourceFile");
+            if (!resourceFile.endsWith(".png")) {
+                context.status(400).result("PDF 页面资源路径无效");
+                return;
+            }
+            String resourceId = resourceFile.substring(0, resourceFile.length() - 4);
+            if (!PdfPageCache.isResourceId(resourceId)) {
+                context.status(400).result("PDF 页面资源路径无效");
+                return;
+            }
+            try {
+                context.header("Cache-Control", "private, max-age=31536000, immutable");
+                context.contentType("image/png").result(pdfPageCache.open(resourceId));
+            } catch (java.nio.file.NoSuchFileException exception) {
+                context.status(404).result("PDF 页面资源不存在");
+            }
+        });
     }
 
     private void registerImageRoute(

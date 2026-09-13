@@ -2,6 +2,7 @@ package io.github.jukomu.desktop.feature.files;
 
 import io.github.jukomu.desktop.bridge.ApiException;
 
+import java.io.IOException;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 
@@ -21,13 +22,16 @@ public final class ExportTargetResolver {
             if (relative.isAbsolute()) {
                 throw ApiException.invalidRequest("relativePath必须是相对路径");
             }
-            Path target = root.resolve(relative).normalize();
-            if (target.equals(root) || !target.startsWith(root)) {
+            Path canonicalRoot = root.toFile().getCanonicalFile().toPath();
+            Path target = canonicalRoot.resolve(relative).toFile().getCanonicalFile().toPath();
+            if (target.equals(canonicalRoot) || !target.startsWith(canonicalRoot)) {
                 throw ApiException.invalidRequest("导出目标超出所选目录");
             }
             return target;
         } catch (InvalidPathException exception) {
             throw ApiException.invalidRequest("relativePath包含无效路径");
+        } catch (IOException exception) {
+            throw ApiException.invalidRequest("导出目标路径无法解析");
         }
     }
 }

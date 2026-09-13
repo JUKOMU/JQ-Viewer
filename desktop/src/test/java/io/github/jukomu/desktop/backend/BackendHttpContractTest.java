@@ -346,12 +346,16 @@ class BackendHttpContractTest {
             assertEquals(200, originalPdf.statusCode());
             assertEquals("application/pdf",
                     originalPdf.headers().firstValue("Content-Type").orElseThrow());
+            assertTrue(originalPdf.headers().firstValue("Access-Control-Allow-Origin").isEmpty());
             assertEquals(404, missingPdf.statusCode());
             assertEquals("file-missing",
                     missingPdf.headers().firstValue("X-JQViewer-Pdf-Error").orElseThrow());
+            assertTrue(missingPdf.headers().firstValue("Access-Control-Allow-Origin").isEmpty());
             assertEquals(400, invalidPdfContent.statusCode());
             assertEquals("invalid-content",
                     invalidPdfContent.headers().firstValue("X-JQViewer-Pdf-Error").orElseThrow());
+            assertTrue(invalidPdfContent.headers()
+                    .firstValue("Access-Control-Allow-Origin").isEmpty());
             assertEquals("deleted", deletedPdf.path("result").asText());
             assertEquals(folderRef, pdfPreferences.path("exportFolder").path("folderRef").asText());
             assertEquals("{author}/{id}", pdfPreferences.path("directoryTemplate").asText());

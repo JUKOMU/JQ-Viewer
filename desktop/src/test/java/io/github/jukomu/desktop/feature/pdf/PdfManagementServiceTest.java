@@ -23,6 +23,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PdfManagementServiceTest {
@@ -79,6 +80,31 @@ class PdfManagementServiceTest {
             assertFalse(Files.exists(second));
             assertTrue(fixture.service().getImportedPdfs().files().isEmpty());
         }
+    }
+
+    @Test
+    void countsExpectedFileValidationFailuresAsImportErrors() throws Exception {
+        Fixture fixture = fixture();
+        try (Database ignored = fixture.database()) {
+            Path missing = fixture.paths().pdfDirectory().resolve("missing.pdf");
+
+            ImportPdfsResponse response = fixture.service().importPdfs(List.of(item(missing)));
+
+            assertEquals(0, response.imported());
+            assertEquals(1, response.skipped());
+            assertEquals(1, response.errorCount());
+            assertTrue(response.results().isEmpty());
+        }
+    }
+
+    @Test
+    void propagatesDatabaseFailuresDuringImport() throws Exception {
+        Fixture fixture = fixture();
+        Path pdf = writePdf(fixture.paths().pdfDirectory().resolve("database-failure.pdf"), 1);
+        fixture.database().close();
+
+        assertThrows(IllegalStateException.class,
+                () -> fixture.service().importPdfs(List.of(item(pdf))));
     }
 
     private static Fixture fixture() throws Exception {

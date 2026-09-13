@@ -95,7 +95,7 @@ public final class PdfManagementService {
                     duplicateCount++;
                     results.add(result("already_managed", inserted.file()));
                 }
-            } catch (RuntimeException | PdfFileValidator.ValidationException exception) {
+            } catch (ApiException | PdfFileValidator.ValidationException exception) {
                 skipped++;
                 errorCount++;
             }

@@ -42,7 +42,7 @@ class AuthServiceTest {
     }
 
     @Test
-    void clearsInvalidCredentialsButRetainsThemOnNetworkFailure() {
+    void clearsOnlyConfirmedInvalidCredentials() {
         MemoryCredentialStore credentials = new MemoryCredentialStore(true);
         credentials.save("alice", "secret");
 
@@ -53,10 +53,17 @@ class AuthServiceTest {
         assertEquals("alice", credentials.loadDirectly().username());
 
         AuthService authFailure = new AuthService(
-                client(new ResponseException("unauthorized")), credentials);
+                client(new ResponseException("unauthorized", 401)), credentials);
         ApiException denied = assertThrows(ApiException.class, authFailure::autoLogin);
         assertEquals("permission-denied", denied.code());
         assertNull(credentials.loadDirectly());
+
+        credentials.save("alice", "secret");
+        AuthService serverFailure = new AuthService(
+                client(new ResponseException("service unavailable", 503)), credentials);
+        ApiException unavailable = assertThrows(ApiException.class, serverFailure::autoLogin);
+        assertEquals("permission-denied", unavailable.code());
+        assertEquals("alice", credentials.loadDirectly().username());
     }
 
     @Test
@@ -71,7 +78,36 @@ class AuthServiceTest {
         assertNull(credentials.loadDirectly());
     }
 
+    @Test
+    void logoutClearsLocalStateWhenRemoteLogoutFails() {
+        MemoryCredentialStore networkCredentials = new MemoryCredentialStore(true);
+        AuthService networkFailure = new AuthService(
+                client(null, new NetworkException("network unavailable")), networkCredentials);
+        networkFailure.login("alice", "secret");
+
+        ApiException network = assertThrows(ApiException.class, networkFailure::logout);
+
+        assertEquals("network", network.code());
+        assertFalse(networkFailure.state().loggedIn());
+        assertNull(networkCredentials.loadDirectly());
+
+        MemoryCredentialStore responseCredentials = new MemoryCredentialStore(true);
+        AuthService responseFailure = new AuthService(
+                client(null, new ResponseException("logout rejected", 403)), responseCredentials);
+        responseFailure.login("alice", "secret");
+
+        ApiException denied = assertThrows(ApiException.class, responseFailure::logout);
+
+        assertEquals("permission-denied", denied.code());
+        assertFalse(responseFailure.state().loggedIn());
+        assertNull(responseCredentials.loadDirectly());
+    }
+
     private static JmClient client(RuntimeException loginFailure) {
+        return client(loginFailure, null);
+    }
+
+    private static JmClient client(RuntimeException loginFailure, RuntimeException logoutFailure) {
         return (JmClient) Proxy.newProxyInstance(
                 JmClient.class.getClassLoader(),
                 new Class<?>[]{JmClient.class},
@@ -89,7 +125,10 @@ class AuthServiceTest {
                             if (loginFailure != null) throw loginFailure;
                             yield userInfo();
                         }
-                        case "logout" -> null;
+                        case "logout" -> {
+                            if (logoutFailure != null) throw logoutFailure;
+                            yield null;
+                        }
                         default -> throw new AssertionError("未预期的客户端调用: " + method.getName());
                     };
                 }

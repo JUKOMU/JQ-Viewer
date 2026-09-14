@@ -44,15 +44,16 @@ export function initNetworkProbeStore() {
     // Desktop runtime 不提供网络探活事件传输。
   })
 
-  // 拉取已有域名状态（来自 AbstractJmClient 构造时的初始探活）
-  JmcomicService.getDomainStates()
-    .then((state) => {
+  void (async () => {
+    try {
+      // 拉取已有域名状态（来自 AbstractJmClient 构造时的初始探活）
+      const state = await JmcomicService.getDomainStates()
       domains.value = state.domains
       allDeadFallback.value = state.allDeadFallback
-    })
-    .catch(() => {
-      // client 尚未就绪时忽略初始状态读取失败。
-    })
+    } catch {
+      // 当前 runtime 未实现域名状态，或 client 尚未就绪时忽略。
+    }
+  })()
 }
 
 export function useNetworkProbeStore() {

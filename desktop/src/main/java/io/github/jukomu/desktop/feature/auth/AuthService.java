@@ -43,15 +43,25 @@ public final class AuthService {
     }
 
     public SuccessResponse logout() {
+        ApiException remoteFailure = null;
         try {
             client.logout();
         } catch (NetworkException failure) {
-            throw ApiException.network(message(failure, "退出登录网络请求失败"));
+            remoteFailure = ApiException.network(message(failure, "退出登录网络请求失败"));
         } catch (ResponseException failure) {
-            throw ApiException.permissionDenied(message(failure, "退出登录失败"));
+            remoteFailure = ApiException.permissionDenied(message(failure, "退出登录失败"));
         }
+
         userInfo = null;
-        clearCredentials("退出后无法清除自动登录凭据");
+        try {
+            clearCredentials("退出后无法清除自动登录凭据");
+        } catch (ApiException localFailure) {
+            if (remoteFailure == null) throw localFailure;
+            remoteFailure.addSuppressed(localFailure);
+            LOGGER.warn("远端退出失败后，本地会话已清除，但自动登录凭据删除失败", localFailure);
+        }
+
+        if (remoteFailure != null) throw remoteFailure;
         return SuccessResponse.ok();
     }
 
@@ -81,8 +91,13 @@ public final class AuthService {
             throw ApiException.network(message(failure, "自动登录网络请求失败"));
         } catch (ResponseException failure) {
             userInfo = null;
-            clearCredentials("自动登录凭据已失效，但无法从安全存储清除");
-            throw ApiException.permissionDenied("自动登录失败：凭据无效或已过期");
+            boolean authenticationFailure = isAuthenticationFailure(failure);
+            if (authenticationFailure) {
+                clearCredentials("自动登录凭据已失效，但无法从安全存储清除");
+            }
+            throw ApiException.permissionDenied(authenticationFailure
+                    ? "自动登录失败：凭据无效或已过期"
+                    : message(failure, "自动登录失败"));
         }
     }
 
@@ -130,6 +145,11 @@ public final class AuthService {
         return failure.getMessage() == null || failure.getMessage().isBlank()
                 ? fallback
                 : failure.getMessage();
+    }
+
+    private static boolean isAuthenticationFailure(ResponseException failure) {
+        int status = failure.getErrorCode();
+        return status == 401 || status == 403;
     }
 
     private static UserInfoResponse toUserInfoResponse(JmUserInfo info) {

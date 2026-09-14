@@ -67,6 +67,7 @@ describe('runtime', () => {
       'login',
       'logout',
       'checkLoginState',
+      'autoLogin',
       'getUserProfile',
       'getAllSettings',
       'setPreloadConcurrency',

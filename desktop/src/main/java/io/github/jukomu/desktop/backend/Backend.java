@@ -21,6 +21,8 @@ import io.github.jukomu.desktop.bridge.handler.SystemPluginHandler;
 import io.github.jukomu.desktop.data.Database;
 import io.github.jukomu.desktop.data.Paths;
 import io.github.jukomu.desktop.feature.auth.AuthService;
+import io.github.jukomu.desktop.feature.auth.CredentialStore;
+import io.github.jukomu.desktop.feature.auth.CredentialStores;
 import io.github.jukomu.desktop.feature.catalog.CatalogService;
 import io.github.jukomu.desktop.feature.download.DownloadFiles;
 import io.github.jukomu.desktop.feature.download.DownloadService;
@@ -90,6 +92,7 @@ public final class Backend implements AutoCloseable {
     private final FileService fileService;
     private final JmClient providedClient;
     private final Function<String, String> providedAlbumCoverUrl;
+    private final CredentialStore providedCredentialStore;
 
     private Javalin app;
     private JmApiClient client;
@@ -102,7 +105,7 @@ public final class Backend implements AutoCloseable {
 
     public Backend(Paths paths) {
         this(paths, new Database(paths), createBusinessExecutor(), createPdfExportExecutor(),
-                null, null, new FileService(paths));
+                null, null, new FileService(paths), null);
     }
 
     public Backend(
@@ -111,7 +114,7 @@ public final class Backend implements AutoCloseable {
             ExecutorService businessExecutor
     ) {
         this(paths, database, businessExecutor, createPdfExportExecutor(), null, null,
-                new FileService(paths));
+                new FileService(paths), null);
     }
 
     Backend(
@@ -122,7 +125,8 @@ public final class Backend implements AutoCloseable {
             Function<String, String> providedAlbumCoverUrl
     ) {
         this(paths, database, businessExecutor, createPdfExportExecutor(),
-                providedClient, providedAlbumCoverUrl, new FileService(paths));
+                providedClient, providedAlbumCoverUrl, new FileService(paths),
+                CredentialStores.unavailable());
     }
 
     Backend(
@@ -134,7 +138,20 @@ public final class Backend implements AutoCloseable {
             FileService fileService
     ) {
         this(paths, database, businessExecutor, createPdfExportExecutor(),
-                providedClient, providedAlbumCoverUrl, fileService);
+                providedClient, providedAlbumCoverUrl, fileService, CredentialStores.unavailable());
+    }
+
+    Backend(
+            Paths paths,
+            Database database,
+            ExecutorService businessExecutor,
+            JmClient providedClient,
+            Function<String, String> providedAlbumCoverUrl,
+            FileService fileService,
+            CredentialStore credentialStore
+    ) {
+        this(paths, database, businessExecutor, createPdfExportExecutor(),
+                providedClient, providedAlbumCoverUrl, fileService, credentialStore);
     }
 
     private Backend(
@@ -144,13 +161,15 @@ public final class Backend implements AutoCloseable {
             ExecutorService pdfExportExecutor,
             JmClient providedClient,
             Function<String, String> providedAlbumCoverUrl,
-            FileService fileService
+            FileService fileService,
+            CredentialStore providedCredentialStore
     ) {
         this.paths = Objects.requireNonNull(paths, "paths");
         this.database = Objects.requireNonNull(database, "database");
         this.businessExecutor = Objects.requireNonNull(businessExecutor, "businessExecutor");
         this.pdfExportExecutor = Objects.requireNonNull(pdfExportExecutor, "pdfExportExecutor");
         this.fileService = Objects.requireNonNull(fileService, "fileService");
+        this.providedCredentialStore = providedCredentialStore;
         if ((providedClient == null) != (providedAlbumCoverUrl == null)) {
             throw new IllegalArgumentException("客户端和封面地址解析器必须同时提供");
         }
@@ -222,6 +241,9 @@ public final class Backend implements AutoCloseable {
             startedDownloadService.reconcileOnStartup();
             final DownloadService downloadService = startedDownloadService;
             RequestExecutor requests = new RequestExecutor(businessExecutor, mapper);
+            CredentialStore credentialStore = providedCredentialStore == null
+                    ? CredentialStores.system()
+                    : providedCredentialStore;
             PdfPageCache pdfPageCache = new PdfPageCache(paths.cacheDirectory());
             PdfManagementService pdfManagementService = new PdfManagementService(
                     new PdfStore(database),
@@ -236,7 +258,7 @@ public final class Backend implements AutoCloseable {
             Plugin plugin = new Plugin(
                     new ApiPluginHandler(requests,
                             new CatalogService(serviceClient, imageService, albumCoverUrl), imageService),
-                    new AuthPluginHandler(requests, new AuthService(serviceClient)),
+                    new AuthPluginHandler(requests, new AuthService(serviceClient, credentialStore)),
                     new SettingsPluginHandler(requests, settingsService),
                     new HistoryPluginHandler(requests, new HistoryService(database)),
                     new FilePluginHandler(requests, fileService),

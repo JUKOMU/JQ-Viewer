@@ -57,8 +57,24 @@ vi.mock('@ionic/vue', async () => {
   }
 })
 
+vi.mock('@/runtime/runtimeContext', () => ({
+  getRuntime: () => ({
+    services: {
+      reader: {
+        orientation: { available: true, api: {} },
+        brightness: { available: true, api: {} },
+        keepAwake: { available: true, api: {} },
+        fullscreen: { available: true, api: {} },
+        volumeKeys: { available: true, api: {} },
+        hostState: { available: true, api: {} },
+      },
+    },
+  }),
+}))
+
 vi.mock('@/services/JmcomicService', () => ({
   getImageUrl: mocks.getImageUrl,
+  sanitizeError: (_error: unknown, fallback: string) => fallback,
   showToast: mocks.showToast,
   JmcomicService: {
     getDownloadedPhoto: mocks.getDownloadedPhoto,

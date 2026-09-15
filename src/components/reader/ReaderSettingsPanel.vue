@@ -26,23 +26,34 @@
         </div>
 
         <!-- 屏幕方向 -->
-        <div class="setting-row divider">
-          <span class="setting-label">屏幕方向</span>
+        <div
+          class="setting-row divider"
+          :class="{ 'capability-unavailable': !readerCapabilities.orientation.available }"
+        >
+          <div class="setting-left">
+            <span class="setting-label">屏幕方向</span>
+            <span v-if="!readerCapabilities.orientation.available" class="setting-sub">
+              {{ readerCapabilities.orientation.reason }}
+            </span>
+          </div>
           <div class="segmented">
             <button
               :class="['seg-btn', { active: localOrientation === 'auto' }]"
+              :disabled="!readerCapabilities.orientation.available"
               @click="onOrientationChange('auto')"
             >
               自动
             </button>
             <button
               :class="['seg-btn', { active: localOrientation === 'portrait' }]"
+              :disabled="!readerCapabilities.orientation.available"
               @click="onOrientationChange('portrait')"
             >
               竖屏
             </button>
             <button
               :class="['seg-btn', { active: localOrientation === 'landscape' }]"
+              :disabled="!readerCapabilities.orientation.available"
               @click="onOrientationChange('landscape')"
             >
               横屏
@@ -51,20 +62,33 @@
         </div>
 
         <!-- 亮度 -->
-        <div class="setting-row divider">
+        <div
+          class="setting-row divider"
+          :class="{ 'capability-unavailable': !readerCapabilities.brightness.available }"
+        >
           <div class="setting-left">
             <span class="setting-label">亮度</span>
-            <span class="setting-sub">跟随系统</span>
+            <span class="setting-sub">
+              {{
+                readerCapabilities.brightness.available
+                  ? '跟随系统'
+                  : readerCapabilities.brightness.reason
+              }}
+            </span>
           </div>
           <div class="setting-right">
             <IonToggle
               :checked="isFollowSystem"
+              :disabled="!readerCapabilities.brightness.available"
               color="warning"
               @ion-change="onFollowSystemChange"
             />
           </div>
         </div>
-        <div v-if="!isFollowSystem" class="setting-row brightness-row">
+        <div
+          v-if="readerCapabilities.brightness.available && !isFollowSystem"
+          class="setting-row brightness-row"
+        >
           <IonRange
             class="brightness-slider"
             :min="0"
@@ -77,11 +101,20 @@
         </div>
 
         <!-- 防止熄屏 -->
-        <div class="setting-row divider">
-          <span class="setting-label">防止熄屏</span>
+        <div
+          class="setting-row divider"
+          :class="{ 'capability-unavailable': !readerCapabilities.keepAwake.available }"
+        >
+          <div class="setting-left">
+            <span class="setting-label">防止熄屏</span>
+            <span v-if="!readerCapabilities.keepAwake.available" class="setting-sub">
+              {{ readerCapabilities.keepAwake.reason }}
+            </span>
+          </div>
           <div class="setting-right">
             <IonToggle
               :checked="localKeepScreenOn"
+              :disabled="!readerCapabilities.keepAwake.available"
               color="warning"
               @ion-change="onKeepScreenOnChange"
             />
@@ -89,15 +122,62 @@
         </div>
 
         <!-- 音量键翻页 -->
-        <div class="setting-row divider">
-          <span class="setting-label">音量键翻页</span>
+        <div
+          class="setting-row divider"
+          :class="{ 'capability-unavailable': !readerCapabilities.volumeKeys.available }"
+        >
+          <div class="setting-left">
+            <span class="setting-label">音量键翻页</span>
+            <span v-if="!readerCapabilities.volumeKeys.available" class="setting-sub">
+              {{ readerCapabilities.volumeKeys.reason }}
+            </span>
+          </div>
           <div class="setting-right">
             <IonToggle
               :checked="localVolumeNavigation"
+              :disabled="!readerCapabilities.volumeKeys.available"
               color="warning"
               @ion-change="onVolumeNavigationChange"
             />
           </div>
+        </div>
+
+        <div class="setting-row divider">
+          <div class="setting-left">
+            <span class="setting-label">页面全屏</span>
+            <span class="setting-sub">
+              {{
+                readerCapabilities.fullscreen.available
+                  ? '隐藏工具栏时进入浏览器全屏'
+                  : readerCapabilities.fullscreen.reason
+              }}
+            </span>
+          </div>
+          <span
+            class="capability-status"
+            :class="{ unavailable: !readerCapabilities.fullscreen.available }"
+          >
+            {{ readerCapabilities.fullscreen.available ? '可用' : '不可用' }}
+          </span>
+        </div>
+
+        <div class="setting-row divider">
+          <div class="setting-left">
+            <span class="setting-label">阅读器宿主状态</span>
+            <span class="setting-sub">
+              {{
+                readerCapabilities.hostState.available
+                  ? '离开阅读页时自动恢复宿主状态'
+                  : readerCapabilities.hostState.reason
+              }}
+            </span>
+          </div>
+          <span
+            class="capability-status"
+            :class="{ unavailable: !readerCapabilities.hostState.available }"
+          >
+            {{ readerCapabilities.hostState.available ? '已接入' : '不可用' }}
+          </span>
         </div>
 
         <!-- 阅读结束时展开工具栏 -->
@@ -164,7 +244,8 @@ import { nextTick, onMounted, ref } from 'vue'
 import type { RangeCustomEvent } from '@ionic/vue'
 import { IonIcon, IonRange, IonToggle } from '@ionic/vue'
 import { closeOutline } from 'ionicons/icons'
-import { JmcomicService, showToast } from '@/services/JmcomicService'
+import { getRuntime } from '@/runtime/runtimeContext'
+import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
 import { persistPreloadConcurrency, SettingsStore } from '@/services/SettingsService'
 
 defineOptions({ name: 'ReaderSettingsPanel' })
@@ -179,6 +260,7 @@ const emit = defineEmits<{
 }>()
 
 const visible = ref(false)
+const readerCapabilities = getRuntime().services.reader
 
 // 本地状态
 const localOrientation = ref(SettingsStore.getReaderScreenOrientation())
@@ -205,48 +287,85 @@ function onDisplayModeChange(vertical: boolean) {
 }
 
 // ---- 屏幕方向 ----
-function onOrientationChange(orientation: string) {
+async function onOrientationChange(orientation: string) {
+  if (!readerCapabilities.orientation.available) return
+  const previous = localOrientation.value
   localOrientation.value = orientation
   SettingsStore.setReaderScreenOrientation(orientation)
-  JmcomicService.setReaderScreenOrientation(orientation).catch(() => {})
-}
-
-// ---- 亮度 ----
-function onFollowSystemChange(e: CustomEvent) {
-  const follow = e.detail.checked
-  isFollowSystem.value = follow
-  if (follow) {
-    localBrightness.value = -1
-    SettingsStore.setReaderBrightness(-1)
-    JmcomicService.setReaderBrightness(-1).catch(() => {})
-  } else {
-    localBrightness.value = 0.5
-    SettingsStore.setReaderBrightness(0.5)
-    JmcomicService.setReaderBrightness(0.5).catch(() => {})
+  try {
+    await JmcomicService.setReaderScreenOrientation(orientation)
+  } catch (error) {
+    localOrientation.value = previous
+    SettingsStore.setReaderScreenOrientation(previous)
+    await showToast(sanitizeError(error, '切换屏幕方向失败'), 'danger')
   }
 }
 
-function onBrightnessChange(e: RangeCustomEvent) {
+// ---- 亮度 ----
+async function onFollowSystemChange(e: CustomEvent) {
+  if (!readerCapabilities.brightness.available) return
+  const follow = e.detail.checked
+  const previousBrightness = localBrightness.value
+  const previousFollowSystem = isFollowSystem.value
+  isFollowSystem.value = follow
+  const brightness = follow ? -1 : 0.5
+  localBrightness.value = brightness
+  SettingsStore.setReaderBrightness(brightness)
+  try {
+    await JmcomicService.setReaderBrightness(brightness)
+  } catch (error) {
+    localBrightness.value = previousBrightness
+    isFollowSystem.value = previousFollowSystem
+    SettingsStore.setReaderBrightness(previousBrightness)
+    await showToast(sanitizeError(error, '调整亮度失败'), 'danger')
+  }
+}
+
+async function onBrightnessChange(e: RangeCustomEvent) {
+  if (!readerCapabilities.brightness.available) return
   const val = Number(e.detail.value)
+  const previous = localBrightness.value
   localBrightness.value = val
   SettingsStore.setReaderBrightness(val)
-  JmcomicService.setReaderBrightness(val).catch(() => {})
+  try {
+    await JmcomicService.setReaderBrightness(val)
+  } catch (error) {
+    localBrightness.value = previous
+    SettingsStore.setReaderBrightness(previous)
+    await showToast(sanitizeError(error, '调整亮度失败'), 'danger')
+  }
 }
 
 // ---- 防止熄屏 ----
-function onKeepScreenOnChange(e: CustomEvent) {
+async function onKeepScreenOnChange(e: CustomEvent) {
+  if (!readerCapabilities.keepAwake.available) return
   const enabled = e.detail.checked
+  const previous = localKeepScreenOn.value
   localKeepScreenOn.value = enabled
   SettingsStore.setReaderKeepScreenOn(enabled)
-  JmcomicService.setReaderKeepScreenOn(enabled).catch(() => {})
+  try {
+    await JmcomicService.setReaderKeepScreenOn(enabled)
+  } catch (error) {
+    localKeepScreenOn.value = previous
+    SettingsStore.setReaderKeepScreenOn(previous)
+    await showToast(sanitizeError(error, '切换屏幕常亮失败'), 'danger')
+  }
 }
 
 // ---- 音量键翻页 ----
-function onVolumeNavigationChange(e: CustomEvent) {
+async function onVolumeNavigationChange(e: CustomEvent) {
+  if (!readerCapabilities.volumeKeys.available) return
   const enabled = e.detail.checked
+  const previous = localVolumeNavigation.value
   localVolumeNavigation.value = enabled
   SettingsStore.setReaderVolumeNavigation(enabled)
-  JmcomicService.setReaderVolumeNavigation(enabled).catch(() => {})
+  try {
+    await JmcomicService.setReaderVolumeNavigation(enabled)
+  } catch (error) {
+    localVolumeNavigation.value = previous
+    SettingsStore.setReaderVolumeNavigation(previous)
+    await showToast(sanitizeError(error, '切换音量键翻页失败'), 'danger')
+  }
 }
 
 // ---- 阅读结束时展开工具栏 ----
@@ -377,6 +496,20 @@ function onPreloadConcurrencyChange(e: Event) {
   flex-shrink: 0;
 }
 
+.capability-unavailable {
+  opacity: 0.68;
+}
+
+.capability-status {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: #4f7a52;
+}
+
+.capability-status.unavailable {
+  color: #9a7560;
+}
+
 /* 分段按钮 */
 .segmented {
   display: flex;
@@ -405,6 +538,10 @@ function onPreloadConcurrencyChange(e: Event) {
 .seg-btn.active {
   background: #f0a060;
   color: #fff;
+}
+
+.seg-btn:disabled {
+  cursor: not-allowed;
 }
 
 /* 亮度滑块 */

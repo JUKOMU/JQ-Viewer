@@ -94,6 +94,16 @@ vi.mock('@/services/PdfReaderService', () => ({
 
 vi.mock('@/runtime/runtimeContext', () => ({
   getRuntime: () => ({
+    services: {
+      reader: {
+        orientation: { available: true, api: {} },
+        brightness: { available: true, api: {} },
+        keepAwake: { available: true, api: {} },
+        fullscreen: { available: true, api: {} },
+        volumeKeys: { available: true, api: {} },
+        hostState: { available: true, api: {} },
+      },
+    },
     resources: {
       renderPdfPage: {
         available: mocks.renderPdfPageAvailable,
@@ -104,6 +114,7 @@ vi.mock('@/runtime/runtimeContext', () => ({
 }))
 
 vi.mock('@/services/JmcomicService', () => ({
+  sanitizeError: (_error: unknown, fallback: string) => fallback,
   showToast: mocks.showToast,
   JmcomicService: {
     addVolumeKeyListener: mocks.addVolumeKeyListener,

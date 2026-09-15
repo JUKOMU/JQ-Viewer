@@ -7,6 +7,8 @@ import io.github.jukomu.desktop.feature.history.model.HistoryOverviewRequest;
 import io.github.jukomu.desktop.feature.history.model.HistoryOverviewResponse;
 import io.github.jukomu.desktop.feature.history.model.HistoryPageResponse;
 import io.github.jukomu.desktop.feature.history.model.HistoryRecordRequest;
+import io.github.jukomu.desktop.feature.history.model.ParseHistoryPageResponse;
+import io.github.jukomu.desktop.feature.history.model.ParseHistoryRecordRequest;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
@@ -15,7 +17,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class HistoryServiceTest {
     @Test
@@ -74,6 +78,46 @@ class HistoryServiceTest {
             ApiException exception = assertThrows(ApiException.class, () -> history.overview(ranges));
             assertEquals("internal", exception.code());
             assertEquals(400, exception.status());
+        }
+    }
+
+    @Test
+    void persistsNormalizedParseHistoryAndSupportsPaginationDeleteAndClear() throws Exception {
+        Path databasePath = Files.createTempDirectory("jq-viewer-parse-history-")
+                .resolve("history.sqlite3");
+        long newestId;
+        try (Database database = new Database(databasePath)) {
+            database.open();
+            HistoryService history = new HistoryService(database);
+
+            history.addParseHistory(new ParseHistoryRecordRequest("  Keyword  ", "batch-mode"));
+            history.addParseHistory(new ParseHistoryRecordRequest("second", null));
+            history.addParseHistory(new ParseHistoryRecordRequest("keyword", "single-mode"));
+            history.addParseHistory(new ParseHistoryRecordRequest("   ", "batch-mode"));
+
+            ParseHistoryPageResponse firstPage = history.parsePage(1, 0);
+            assertEquals(2, firstPage.totalCount());
+            assertEquals("keyword", firstPage.items().get(0).text());
+            assertEquals("single-mode", firstPage.items().get(0).mode());
+            newestId = firstPage.items().get(0).id();
+
+            ParseHistoryPageResponse secondPage = history.parsePage(1, 1);
+            assertEquals("second", secondPage.items().get(0).text());
+            assertEquals("single-mode", secondPage.items().get(0).mode());
+
+            assertTrue(history.deleteParseItem(newestId).success());
+            assertFalse(history.deleteParseItem(newestId).success());
+        }
+
+        try (Database database = new Database(databasePath)) {
+            database.open();
+            HistoryService history = new HistoryService(database);
+            ParseHistoryPageResponse recovered = history.parsePage(0, 0);
+            assertEquals(1, recovered.totalCount());
+            assertEquals("second", recovered.items().get(0).text());
+
+            history.clearParseHistory();
+            assertEquals(0, history.parsePage(0, 0).totalCount());
         }
     }
 

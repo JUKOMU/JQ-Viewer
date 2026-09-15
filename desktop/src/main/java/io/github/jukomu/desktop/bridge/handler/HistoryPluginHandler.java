@@ -7,9 +7,11 @@ import io.github.jukomu.desktop.feature.history.model.HistoryDeleteRequest;
 import io.github.jukomu.desktop.feature.history.model.HistoryOverviewRequest;
 import io.github.jukomu.desktop.feature.history.model.HistoryPageRequest;
 import io.github.jukomu.desktop.feature.history.model.HistoryRecordRequest;
+import io.github.jukomu.desktop.feature.history.model.ParseHistoryPageRequest;
+import io.github.jukomu.desktop.feature.history.model.ParseHistoryRecordRequest;
 import io.javalin.http.Context;
 
-/** 处理浏览历史的 JSON bridge 请求。 */
+/** 处理浏览历史和解析历史的 JSON bridge 请求。 */
 public final class HistoryPluginHandler {
     private final RequestExecutor requests;
     private final HistoryService history;
@@ -43,5 +45,24 @@ public final class HistoryPluginHandler {
     public void deleteBrowseItem(Context context) {
         requests.run(context, HistoryDeleteRequest.class,
                 request -> history.delete(Request.longValue(request.id(), 0)));
+    }
+
+    public void getParseHistory(Context context) {
+        requests.run(context, ParseHistoryPageRequest.class, request -> history.parsePage(
+                Request.integer(request.limit(), 0),
+                Request.integer(request.offset(), 0)));
+    }
+
+    public void addParseHistory(Context context) {
+        requests.run(context, ParseHistoryRecordRequest.class, history::addParseHistory);
+    }
+
+    public void clearParseHistory(Context context) {
+        requests.run(context, history::clearParseHistory);
+    }
+
+    public void deleteParseItem(Context context) {
+        requests.run(context, HistoryDeleteRequest.class,
+                request -> history.deleteParseItem(Request.longValue(request.id(), 0)));
     }
 }

@@ -338,6 +338,17 @@ class BackendHttpContractTest {
                     "{\"id\":" + historyId + "}"));
             assertOk(post(http, base, requestedMethods, "clearBrowseHistory", "{}"));
 
+            assertOk(post(http, base, requestedMethods, "addParseHistory",
+                    "{\"text\":\"  First  \",\"mode\":\"batch-mode\"}"));
+            assertOk(post(http, base, requestedMethods, "addParseHistory",
+                    "{\"text\":\"second\"}"));
+            ObjectNode parseHistory = body(post(http, base, requestedMethods, "getParseHistory",
+                    "{\"limit\":10,\"offset\":0}"));
+            long parseHistoryId = parseHistory.path("items").get(0).path("id").asLong();
+            assertOk(post(http, base, requestedMethods, "deleteParseItem",
+                    "{\"id\":" + parseHistoryId + "}"));
+            assertOk(post(http, base, requestedMethods, "clearParseHistory", "{}"));
+
             ObjectNode offlineSource = body(post(http, base, requestedMethods,
                     "createOfflineFolder", "{\"name\":\"Offline Source\"}"));
             ObjectNode offlineTarget = body(post(http, base, requestedMethods,
@@ -477,6 +488,11 @@ class BackendHttpContractTest {
             assertEquals("completed", completedRetry.path("status").asText());
             assertEquals(1, history.path("totalCount").asInt());
             assertEquals(1, overview.path("totalCount").asInt());
+            assertEquals(2, parseHistory.path("totalCount").asInt());
+            assertEquals("second", parseHistory.path("items").get(0).path("text").asText());
+            assertEquals("single-mode", parseHistory.path("items").get(0).path("mode").asText());
+            assertEquals("First", parseHistory.path("items").get(1).path("text").asText());
+            assertEquals("batch-mode", parseHistory.path("items").get(1).path("mode").asText());
             assertFalse(offlineSourceId.isEmpty());
             assertFalse(offlineTargetId.isEmpty());
             assertEquals(1, offlineBatch.path("count").asInt());

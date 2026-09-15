@@ -425,6 +425,26 @@ public final class Plugin {
     }
 
     @PluginMethod
+    public void getParseHistory(Context context) {
+        history.getParseHistory(context);
+    }
+
+    @PluginMethod
+    public void addParseHistory(Context context) {
+        history.addParseHistory(context);
+    }
+
+    @PluginMethod
+    public void clearParseHistory(Context context) {
+        history.clearParseHistory(context);
+    }
+
+    @PluginMethod
+    public void deleteParseItem(Context context) {
+        history.deleteParseItem(context);
+    }
+
+    @PluginMethod
     public void getOfflineFolders(Context context) {
         favorites.getOfflineFolders(context);
     }

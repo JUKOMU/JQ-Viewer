@@ -97,10 +97,14 @@ class PathsDatabaseTest {
                     .createStatement()
                     .executeQuery("SELECT version FROM desktop_schema_version")) {
                 assertTrue(result.next());
-                assertEquals(6, result.getInt(1));
+                assertEquals(7, result.getInt(1));
             }
             try (ResultSet result = database.connection().getMetaData()
                     .getTables(null, null, "browse_history", null)) {
+                assertTrue(result.next());
+            }
+            try (ResultSet result = database.connection().getMetaData()
+                    .getTables(null, null, "parse_history", null)) {
                 assertTrue(result.next());
             }
             try (ResultSet result = database.connection().getMetaData()
@@ -146,17 +150,28 @@ class PathsDatabaseTest {
     }
 
     @Test
-    void upgradesVersionFiveWithoutReplacingExistingDesktopData() throws Exception {
+    void upgradesVersionSixWithoutReplacingExistingDesktopData() throws Exception {
         Path databasePath = Files.createTempDirectory("jq-viewer-db-upgrade-")
                 .resolve("desktop.sqlite3");
         Class.forName("org.sqlite.JDBC");
         try (var connection = DriverManager.getConnection("jdbc:sqlite:" + databasePath);
              var statement = connection.createStatement()) {
             statement.executeUpdate("CREATE TABLE desktop_schema_version (version INTEGER NOT NULL)");
-            statement.executeUpdate("INSERT INTO desktop_schema_version(version) VALUES (5)");
+            statement.executeUpdate("INSERT INTO desktop_schema_version(version) VALUES (6)");
             statement.executeUpdate("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
             statement.executeUpdate("INSERT INTO settings(key, value) "
                     + "VALUES ('reader_preload_pages', '23')");
+            statement.executeUpdate("CREATE TABLE browse_history ("
+                    + "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                    + " album_id TEXT NOT NULL,"
+                    + " album_title TEXT NOT NULL,"
+                    + " cover_url TEXT NOT NULL DEFAULT '',"
+                    + " authors TEXT NOT NULL DEFAULT '',"
+                    + " chapter_id TEXT NOT NULL DEFAULT '',"
+                    + " chapter_title TEXT NOT NULL DEFAULT '',"
+                    + " timestamp INTEGER NOT NULL)");
+            statement.executeUpdate("INSERT INTO browse_history("
+                    + "album_id, album_title, timestamp) VALUES ('album-1', 'Existing', 100)");
         }
 
         try (Database database = new Database(databasePath)) {
@@ -164,7 +179,7 @@ class PathsDatabaseTest {
             try (ResultSet result = database.connection().createStatement()
                     .executeQuery("SELECT version FROM desktop_schema_version")) {
                 assertTrue(result.next());
-                assertEquals(6, result.getInt(1));
+                assertEquals(7, result.getInt(1));
             }
             try (ResultSet result = database.connection().createStatement()
                     .executeQuery("SELECT value FROM settings "
@@ -174,6 +189,15 @@ class PathsDatabaseTest {
             }
             try (ResultSet result = database.connection().getMetaData()
                     .getTables(null, null, "offline_favorites", null)) {
+                assertTrue(result.next());
+            }
+            try (ResultSet result = database.connection().createStatement()
+                    .executeQuery("SELECT album_title FROM browse_history WHERE album_id = 'album-1'")) {
+                assertTrue(result.next());
+                assertEquals("Existing", result.getString(1));
+            }
+            try (ResultSet result = database.connection().getMetaData()
+                    .getTables(null, null, "parse_history", null)) {
                 assertTrue(result.next());
             }
         }

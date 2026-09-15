@@ -87,7 +87,7 @@ import { refreshOutline, speedometerOutline } from 'ionicons/icons'
 import { JmcomicService } from '@/services/JmcomicService'
 import type { ListenerHandle } from '@/runtime/BackendEvents'
 import { normalizeRuntimeError } from '@/runtime/errors'
-import { useNetworkProbeStore } from '@/composables/networkProbeStore'
+import { initNetworkProbeStore, useNetworkProbeStore } from '@/composables/networkProbeStore'
 
 const store = useNetworkProbeStore()
 const refreshing = ref(false)
@@ -102,6 +102,7 @@ const PROBE_EVENT_TIMEOUT_MS = 30_000
 
 onMounted(() => {
   disposed = false
+  initNetworkProbeStore()
   JmcomicService.addNetworkProbeListener((data) => {
     if (data.phase === 'probing' || data.phase === 'result') operationError.value = ''
     if (data.phase === 'error') operationError.value = data.message

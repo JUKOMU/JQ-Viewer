@@ -27,6 +27,7 @@ public final class SystemPluginHandler {
 
     public void reprobeDomains(Context context) {
         requests.run(context, () -> {
+            // 与 Android 保持一致：客户端未初始化时重新探活是无操作成功。
             if (network != null) network.reprobeDomains();
             return SuccessResponse.ok();
         });

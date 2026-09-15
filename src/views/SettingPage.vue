@@ -564,6 +564,7 @@ import { getRuntime } from '@/runtime/runtimeContext'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import { createAppAlert } from '@/services/AppAlertService'
 import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
+import { persistReaderSettingValue } from '@/services/ReaderSettingPersistence'
 import {
   initSettings,
   persistDownloadConcurrency,
@@ -1078,14 +1079,21 @@ function onDisplayModeChange(mode: string) {
 // ---- 屏幕方向 ----
 async function onScreenOrientationChange(orientation: string) {
   if (!readerCapabilities.orientation.available) return
-  const previous = screenOrientation.value
+  const operation = persistReaderSettingValue(
+    'orientation',
+    orientation,
+    SettingsStore.getReaderScreenOrientation(),
+    () => JmcomicService.setReaderScreenOrientation(orientation),
+  )
   screenOrientation.value = orientation
   SettingsStore.setReaderScreenOrientation(orientation)
   try {
-    await JmcomicService.setReaderScreenOrientation(orientation)
+    await operation.promise
   } catch (error) {
-    screenOrientation.value = previous
-    SettingsStore.setReaderScreenOrientation(previous)
+    if (!operation.isLatest()) return
+    const confirmed = operation.getConfirmedValue()
+    screenOrientation.value = confirmed
+    SettingsStore.setReaderScreenOrientation(confirmed)
     await showToast(sanitizeError(error, '切换屏幕方向失败'), 'danger')
   }
 }
@@ -1094,20 +1102,26 @@ async function onScreenOrientationChange(orientation: string) {
 async function onBrightnessFollowSystemChange(e: CustomEvent) {
   if (!readerCapabilities.brightness.available) return
   const follow = e.detail.checked
-  const previousFollowSystem = brightnessFollowSystem.value
-  const previousBrightness = brightnessValue.value
-  brightnessFollowSystem.value = follow
   const brightness = follow ? -1 : brightnessValue.value
+  const operation = persistReaderSettingValue(
+    'brightness',
+    brightness,
+    SettingsStore.getReaderBrightness(),
+    () => JmcomicService.setReaderBrightness(brightness),
+  )
+  brightnessFollowSystem.value = follow
   SettingsStore.setReaderBrightness(brightness)
   if (follow) {
     brightnessValue.value = 0.5
   }
   try {
-    await JmcomicService.setReaderBrightness(brightness)
+    await operation.promise
   } catch (error) {
-    brightnessFollowSystem.value = previousFollowSystem
-    brightnessValue.value = previousBrightness
-    SettingsStore.setReaderBrightness(previousFollowSystem ? -1 : previousBrightness)
+    if (!operation.isLatest()) return
+    const confirmed = operation.getConfirmedValue()
+    brightnessFollowSystem.value = confirmed < 0
+    brightnessValue.value = confirmed < 0 ? 0.5 : confirmed
+    SettingsStore.setReaderBrightness(confirmed)
     await showToast(sanitizeError(error, '调整亮度失败'), 'danger')
   }
 }
@@ -1116,14 +1130,22 @@ async function onBrightnessFollowSystemChange(e: CustomEvent) {
 async function onBrightnessChange(e: CustomEvent) {
   if (!readerCapabilities.brightness.available) return
   const val = Number(e.detail.value)
-  const previous = brightnessValue.value
+  const operation = persistReaderSettingValue(
+    'brightness',
+    val,
+    SettingsStore.getReaderBrightness(),
+    () => JmcomicService.setReaderBrightness(val),
+  )
   brightnessValue.value = val
   SettingsStore.setReaderBrightness(val)
   try {
-    await JmcomicService.setReaderBrightness(val)
+    await operation.promise
   } catch (error) {
-    brightnessValue.value = previous
-    SettingsStore.setReaderBrightness(previous)
+    if (!operation.isLatest()) return
+    const confirmed = operation.getConfirmedValue()
+    brightnessFollowSystem.value = confirmed < 0
+    brightnessValue.value = confirmed < 0 ? 0.5 : confirmed
+    SettingsStore.setReaderBrightness(confirmed)
     await showToast(sanitizeError(error, '调整亮度失败'), 'danger')
   }
 }
@@ -1132,14 +1154,21 @@ async function onBrightnessChange(e: CustomEvent) {
 async function onKeepScreenOnChange(e: CustomEvent) {
   if (!readerCapabilities.keepAwake.available) return
   const enabled = e.detail.checked
-  const previous = keepScreenOn.value
+  const operation = persistReaderSettingValue(
+    'keepAwake',
+    enabled,
+    SettingsStore.getReaderKeepScreenOn(),
+    () => JmcomicService.setReaderKeepScreenOn(enabled),
+  )
   keepScreenOn.value = enabled
   SettingsStore.setReaderKeepScreenOn(enabled)
   try {
-    await JmcomicService.setReaderKeepScreenOn(enabled)
+    await operation.promise
   } catch (error) {
-    keepScreenOn.value = previous
-    SettingsStore.setReaderKeepScreenOn(previous)
+    if (!operation.isLatest()) return
+    const confirmed = operation.getConfirmedValue()
+    keepScreenOn.value = confirmed
+    SettingsStore.setReaderKeepScreenOn(confirmed)
     await showToast(sanitizeError(error, '切换屏幕常亮失败'), 'danger')
   }
 }
@@ -1148,14 +1177,21 @@ async function onKeepScreenOnChange(e: CustomEvent) {
 async function onVolumeNavigationChange(e: CustomEvent) {
   if (!readerCapabilities.volumeKeys.available) return
   const enabled = e.detail.checked
-  const previous = volumeNavigation.value
+  const operation = persistReaderSettingValue(
+    'volumeNavigation',
+    enabled,
+    SettingsStore.getReaderVolumeNavigation(),
+    () => JmcomicService.setReaderVolumeNavigation(enabled),
+  )
   volumeNavigation.value = enabled
   SettingsStore.setReaderVolumeNavigation(enabled)
   try {
-    await JmcomicService.setReaderVolumeNavigation(enabled)
+    await operation.promise
   } catch (error) {
-    volumeNavigation.value = previous
-    SettingsStore.setReaderVolumeNavigation(previous)
+    if (!operation.isLatest()) return
+    const confirmed = operation.getConfirmedValue()
+    volumeNavigation.value = confirmed
+    SettingsStore.setReaderVolumeNavigation(confirmed)
     await showToast(sanitizeError(error, '切换音量键翻页失败'), 'danger')
   }
 }

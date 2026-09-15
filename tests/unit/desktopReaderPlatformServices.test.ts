@@ -22,6 +22,12 @@ const flushAsyncEvents = async () => {
   await Promise.resolve()
 }
 
+const pageTransitionEvent = (type: 'pagehide' | 'pageshow', persisted: boolean) => {
+  const event = new Event(type)
+  Object.defineProperty(event, 'persisted', { value: persisted })
+  return event
+}
+
 describe('Desktop 阅读器宿主能力', () => {
   test('没有可靠 Desktop 语义或浏览器 API 时明确标记 unavailable', () => {
     const document = new FakeDocument()
@@ -159,5 +165,51 @@ describe('Desktop 阅读器宿主能力', () => {
     await expect(services.hostState.api.setState(true, true)).rejects.toMatchObject({
       code: 'unavailable',
     })
+  })
+
+  test('进入 back/forward cache 时释放临时资源并在恢复后继续可用', async () => {
+    const document = new FakeDocument()
+    const window = new EventTarget()
+    const firstLock = new FakeWakeLockSentinel()
+    const secondLock = new FakeWakeLockSentinel()
+    const request = vi.fn().mockResolvedValueOnce(firstLock).mockResolvedValueOnce(secondLock)
+    document.documentElement.requestFullscreen = vi.fn(async () => {
+      document.fullscreenElement = document.documentElement as unknown as Element
+    })
+    document.exitFullscreen = vi.fn(async () => {
+      document.fullscreenElement = null
+    })
+    const services = createDesktopReaderServices({
+      document: document as unknown as Document,
+      navigator: { wakeLock: { request } },
+      window: window as unknown as Window,
+    })
+    if (
+      !services.keepAwake.available ||
+      !services.fullscreen.available ||
+      !services.hostState.available
+    ) {
+      throw new Error('expected reader host capabilities')
+    }
+
+    await services.hostState.api.setState(true, true)
+    await services.keepAwake.api.set(true)
+    await services.fullscreen.api.set(true)
+    window.dispatchEvent(pageTransitionEvent('pagehide', true))
+    await flushAsyncEvents()
+
+    expect(firstLock.release).toHaveBeenCalledTimes(1)
+    expect(document.exitFullscreen).toHaveBeenCalledTimes(1)
+    expect(document.documentElement.dataset.jqReaderActive).toBe('true')
+    await expect(services.hostState.api.setState(true, false)).resolves.toEqual({ success: true })
+    expect(request).toHaveBeenCalledTimes(1)
+
+    window.dispatchEvent(pageTransitionEvent('pageshow', true))
+    await flushAsyncEvents()
+
+    expect(request).toHaveBeenCalledTimes(2)
+    expect(document.documentElement.dataset.jqReaderMode).toBe('horizontal')
+    await services.hostState.api.setState(false, false)
+    expect(secondLock.release).toHaveBeenCalledTimes(1)
   })
 })

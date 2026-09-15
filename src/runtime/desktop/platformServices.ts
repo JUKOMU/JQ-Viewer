@@ -74,12 +74,14 @@ class DesktopReaderHost {
   private wakeLock: WakeLockSentinelLike | null = null
   private wakeLockRequest: Promise<void> | null = null
   private fullscreenOwned = false
+  private pageSuspended = false
   private disposed = false
 
   constructor(private readonly environment: DesktopReaderEnvironment) {
     environment.document?.addEventListener('visibilitychange', this.onVisibilityChange)
     environment.document?.addEventListener('fullscreenchange', this.onFullscreenChange)
     environment.window?.addEventListener('pagehide', this.onPageHide)
+    environment.window?.addEventListener('pageshow', this.onPageShow)
   }
 
   createServices(): ReaderPlatformServices {
@@ -123,9 +125,7 @@ class DesktopReaderHost {
       void this.releaseWakeLock().catch(() => {})
       return
     }
-    if (this.active && this.keepAwakeRequested) {
-      void this.acquireWakeLock().catch(() => {})
-    }
+    this.resumeWakeLock()
   }
 
   private readonly onFullscreenChange = () => {
@@ -135,8 +135,29 @@ class DesktopReaderHost {
     }
   }
 
-  private readonly onPageHide = () => {
+  private readonly onPageHide = (event: PageTransitionEvent) => {
+    if (event.persisted) {
+      this.pageSuspended = true
+      void this.restoreHostState().catch(() => {})
+      return
+    }
     this.dispose()
+  }
+
+  private readonly onPageShow = (event: PageTransitionEvent) => {
+    if (this.disposed || !event.persisted) return
+    this.pageSuspended = false
+    const pendingRequest = this.wakeLockRequest
+    if (pendingRequest) {
+      void pendingRequest.finally(() => this.resumeWakeLock()).catch(() => {})
+      return
+    }
+    this.resumeWakeLock()
+  }
+
+  private resumeWakeLock(): void {
+    if (this.disposed || this.pageSuspended || !this.active || !this.keepAwakeRequested) return
+    void this.acquireWakeLock().catch(() => {})
   }
 
   private async setKeepAwake(enabled: boolean): Promise<{ success: boolean }> {
@@ -196,6 +217,7 @@ class DesktopReaderHost {
       this.wakeLockRequest ||
       !this.active ||
       !this.keepAwakeRequested ||
+      this.pageSuspended ||
       this.environment.document?.visibilityState === 'hidden'
     ) {
       return this.wakeLockRequest ?? Promise.resolve()
@@ -208,7 +230,7 @@ class DesktopReaderHost {
     const request = manager
       .request('screen')
       .then((sentinel) => {
-        if (this.disposed || !this.active || !this.keepAwakeRequested) {
+        if (this.disposed || this.pageSuspended || !this.active || !this.keepAwakeRequested) {
           return sentinel.release()
         }
         this.wakeLock = sentinel
@@ -285,12 +307,14 @@ class DesktopReaderHost {
   private dispose(): void {
     if (this.disposed) return
     this.disposed = true
+    this.pageSuspended = false
     this.active = false
     this.keepAwakeRequested = false
     this.updateDocumentState()
     this.environment.document?.removeEventListener('visibilitychange', this.onVisibilityChange)
     this.environment.document?.removeEventListener('fullscreenchange', this.onFullscreenChange)
     this.environment.window?.removeEventListener('pagehide', this.onPageHide)
+    this.environment.window?.removeEventListener('pageshow', this.onPageShow)
     void this.releaseWakeLock().catch(() => {})
     void this.exitOwnedFullscreen().catch(() => {})
   }

@@ -11,15 +11,18 @@ public final class CacheCapacityPolicy {
     public Result calculate(long requestedMb, long maxHeapBytes) {
         long maxHeapMb = maxHeapBytes > 0 ? maxHeapBytes / MIB : 0L;
         if (maxHeapBytes <= 0L) {
-            return new Result(requestedMb, MIN_EFFECTIVE_MB, maxHeapMb, 0.0,
-                    true, "invalid-heap-fallback");
+            throw new IllegalStateException("无法确定 JVM heap 上限");
         }
 
         long heapBudgetMb = (long) Math.floor((maxHeapBytes * SAFE_RATIO) / MIB);
-        long effectiveMb = Math.max(MIN_EFFECTIVE_MB, Math.min(requestedMb, heapBudgetMb));
+        if (heapBudgetMb <= 0L) {
+            throw new IllegalStateException("JVM heap 安全预算不足 1 MiB");
+        }
+        long effectiveMb = heapBudgetMb < MIN_EFFECTIVE_MB
+                ? heapBudgetMb
+                : Math.max(MIN_EFFECTIVE_MB, Math.min(requestedMb, heapBudgetMb));
         String reason;
-        if (effectiveMb == MIN_EFFECTIVE_MB
-                && (requestedMb < MIN_EFFECTIVE_MB || heapBudgetMb < MIN_EFFECTIVE_MB)) {
+        if (effectiveMb == MIN_EFFECTIVE_MB && requestedMb < MIN_EFFECTIVE_MB) {
             reason = "minimum-safe-capacity";
         } else if (effectiveMb < requestedMb) {
             reason = "heap-budget";

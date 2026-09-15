@@ -13,9 +13,22 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CacheServiceTest {
+    @Test
+    void keepsTinyHeapCapacityWithinBudgetAndRejectsUnknownHeap() {
+        CacheCapacityPolicy policy = new CacheCapacityPolicy();
+
+        CacheCapacityPolicy.Result tiny = policy.calculate(
+                1024, 20L * CacheCapacityPolicy.MIB);
+
+        assertEquals(13, tiny.effectiveMb());
+        assertEquals("heap-budget", tiny.reason());
+        assertThrows(IllegalStateException.class, () -> policy.calculate(1024, 0));
+    }
+
     @Test
     void appliesHeapBudgetPersistsRequestedCapacityAndEnumeratesEntries() throws Exception {
         Fixture fixture = fixture();

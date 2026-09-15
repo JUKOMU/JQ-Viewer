@@ -17,12 +17,16 @@ import io.github.jukomu.jmcomic.api.download.DownloadProgress;
 import io.github.jukomu.jmcomic.api.download.IDownloadManager;
 import io.github.jukomu.jmcomic.api.download.enums.TaskState;
 import io.github.jukomu.jmcomic.api.download.task.BaseDownloadTask;
+import io.github.jukomu.jmcomic.api.enums.FavoriteFolderType;
+import io.github.jukomu.jmcomic.api.model.FavoriteQuery;
 import io.github.jukomu.jmcomic.api.model.ForumQuery;
 import io.github.jukomu.jmcomic.api.model.JmAlbum;
 import io.github.jukomu.jmcomic.api.model.JmAlbumMeta;
 import io.github.jukomu.jmcomic.api.model.JmCategoryMeta;
 import io.github.jukomu.jmcomic.api.model.JmComment;
 import io.github.jukomu.jmcomic.api.model.JmCommentList;
+import io.github.jukomu.jmcomic.api.model.JmFavoriteFolderResult;
+import io.github.jukomu.jmcomic.api.model.JmFavoritePage;
 import io.github.jukomu.jmcomic.api.model.JmImage;
 import io.github.jukomu.jmcomic.api.model.JmPhoto;
 import io.github.jukomu.jmcomic.api.model.JmPhotoMeta;
@@ -99,6 +103,16 @@ class BackendHttpContractTest {
                     "{\"id\":\"photo-1\"}"));
             ObjectNode comments = body(post(http, base, requestedMethods, "getComments",
                     "{\"albumId\":\"album-1\",\"page\":2}"));
+            ObjectNode favorites = body(post(http, base, requestedMethods, "getFavorites",
+                    "{\"folderId\":\"7\",\"page\":2}"));
+            assertOk(post(http, base, requestedMethods, "toggleAlbumLike",
+                    "{\"id\":\"album-1\"}"));
+            assertOk(post(http, base, requestedMethods, "toggleAlbumFavorite",
+                    "{\"id\":\"album-1\",\"folderId\":\"7\"}"));
+            ObjectNode managedFolder = body(post(http, base, requestedMethods,
+                    "manageFavoriteFolder",
+                    "{\"type\":\"move\",\"folderId\":\"7\","
+                            + "\"albumId\":\"album-1\"}"));
 
             HttpResponse<InputStream> eventResponse = http.sendAsync(
                     HttpRequest.newBuilder(base.resolve("/events"))
@@ -326,6 +340,13 @@ class BackendHttpContractTest {
             assertEquals("photo-1", photo.path("id").asText());
             assertEquals(6, photo.path("images").get(0).size());
             assertEquals("comment-1", comments.path("list").get(0).path("commentId").asText());
+            assertEquals("Folder 7", favorites.path("folderName").asText());
+            assertEquals("7", favorites.path("folderId").asText());
+            assertEquals(2, favorites.path("currentPage").asInt());
+            assertEquals("album-1", favorites.path("content").get(0).path("id").asText());
+            assertEquals("Reading", favorites.path("folderList").path("7").asText());
+            assertEquals("ok", managedFolder.path("status").asText());
+            assertEquals("moved", managedFolder.path("msg").asText());
             assertEquals("alice", login.path("username").asText());
             assertTrue(autoLogin.path("success").asBoolean());
             assertEquals("alice", autoLogin.path("userInfo").path("username").asText());
@@ -390,10 +411,19 @@ class BackendHttpContractTest {
 
             SearchQuery forwardedSearch = (SearchQuery) fake.firstArgument("search");
             ForumQuery forwardedComments = (ForumQuery) fake.firstArgument("getComments");
+            FavoriteQuery forwardedFavorites = (FavoriteQuery) fake.firstArgument("getFavorites");
+            List<Object> forwardedFolderManagement = fake.arguments("manageFavoriteFolder");
             assertEquals("needle", forwardedSearch.getSearchQuery());
             assertEquals(2, forwardedSearch.getPage());
             assertEquals("album-1", forwardedComments.getEntityId());
             assertEquals(2, forwardedComments.getPage());
+            assertEquals(7, forwardedFavorites.getFolderId());
+            assertEquals(2, forwardedFavorites.getPage());
+            assertEquals("album-1", fake.firstArgument("toggleAlbumLike"));
+            assertEquals(List.of("album-1", "7"), fake.arguments("toggleAlbumFavorite"));
+            assertEquals(FavoriteFolderType.MOVE, forwardedFolderManagement.get(0));
+            assertEquals(List.of("7", "", "album-1"),
+                    forwardedFolderManagement.subList(1, 4));
             assertEquals(registeredMethods(), requestedMethods);
         }
     }
@@ -409,6 +439,15 @@ class BackendHttpContractTest {
             fake.fail("getAlbum", new IllegalStateException("remote failed"));
             HttpResponse<String> upstream = post(http, base, new LinkedHashSet<>(), "getAlbum",
                     "{\"id\":\"album-1\"}");
+            fake.fail("manageFavoriteFolder", new IllegalStateException("folder rejected"));
+            HttpResponse<String> favoriteFailure = post(http, base, new LinkedHashSet<>(),
+                    "manageFavoriteFolder",
+                    "{\"type\":\"move\",\"folderId\":\"7\","
+                            + "\"albumId\":\"album-1\"}");
+            HttpResponse<String> invalidFavoriteFolder = post(http, base, new LinkedHashSet<>(),
+                    "getFavorites", "{\"folderId\":\"invalid\",\"page\":1}");
+            HttpResponse<String> protectedFolder = post(http, base, new LinkedHashSet<>(),
+                    "manageFavoriteFolder", "{\"type\":\"del\",\"folderId\":\"0\"}");
             HttpResponse<String> malformed = post(http, base, new LinkedHashSet<>(),
                     "getAllSettings", "[]");
             HttpResponse<String> wrongType = post(http, base, new LinkedHashSet<>(),
@@ -420,6 +459,15 @@ class BackendHttpContractTest {
             assertEquals(500, upstream.statusCode());
             assertEquals("internal", json(upstream).path("code").asText());
             assertEquals("remote failed", json(upstream).path("message").asText());
+            assertEquals(500, favoriteFailure.statusCode());
+            assertEquals("internal", json(favoriteFailure).path("code").asText());
+            assertEquals("folder rejected", json(favoriteFailure).path("message").asText());
+            assertEquals(400, invalidFavoriteFolder.statusCode());
+            assertEquals("folderId必须是非负整数",
+                    json(invalidFavoriteFolder).path("message").asText());
+            assertEquals(400, protectedFolder.statusCode());
+            assertEquals("编辑或删除收藏夹时 folderId 不能为空",
+                    json(protectedFolder).path("message").asText());
             assertEquals(400, malformed.statusCode());
             assertEquals("internal", json(malformed).path("code").asText());
             assertEquals(400, wrongType.statusCode());
@@ -631,6 +679,9 @@ class BackendHttpContractTest {
                 case "getAlbum" -> album();
                 case "getPhoto" -> photo((String) arguments[0]);
                 case "getComments" -> comments();
+                case "getFavorites" -> favorites((FavoriteQuery) arguments[0]);
+                case "toggleAlbumLike", "toggleAlbumFavorite" -> null;
+                case "manageFavoriteFolder" -> new JmFavoriteFolderResult("ok", "moved");
                 case "fetchImageBytes" -> imageBytes;
                 case "login" -> userInfo();
                 case "logout" -> null;
@@ -649,11 +700,15 @@ class BackendHttpContractTest {
         }
 
         private Object firstArgument(String method) {
+            return arguments(method).getFirst();
+        }
+
+        private List<Object> arguments(String method) {
             return invocations.stream()
                     .filter(invocation -> invocation.method().equals(method))
                     .findFirst()
                     .orElseThrow()
-                    .arguments().get(0);
+                    .arguments();
         }
 
         private static JmSearchPage searchPage() {
@@ -672,6 +727,18 @@ class BackendHttpContractTest {
                     List.of("Alice"), List.of("Work"), List.of("Actor"), List.of("tag"),
                     List.of(albumMeta()), List.of(new JmPhotoMeta("photo-1", "Photo", 1)),
                     "series-1", false, false, false, List.of(image()), "0", "0");
+        }
+
+        private static JmFavoritePage favorites(FavoriteQuery query) {
+            return new JmFavoritePage(
+                    "Folder " + query.getFolderId(),
+                    query.getFolderId(),
+                    query.getPage(),
+                    1,
+                    3,
+                    List.of(albumMeta()),
+                    Map.of("0", "All", "7", "Reading")
+            );
         }
 
         private static JmPhoto photo(String id) {

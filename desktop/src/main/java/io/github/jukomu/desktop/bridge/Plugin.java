@@ -67,6 +67,26 @@ public final class Plugin {
     }
 
     @PluginMethod
+    public void getFavorites(Context context) {
+        api.getFavorites(context);
+    }
+
+    @PluginMethod
+    public void toggleAlbumLike(Context context) {
+        api.toggleAlbumLike(context);
+    }
+
+    @PluginMethod
+    public void toggleAlbumFavorite(Context context) {
+        api.toggleAlbumFavorite(context);
+    }
+
+    @PluginMethod
+    public void manageFavoriteFolder(Context context) {
+        api.manageFavoriteFolder(context);
+    }
+
+    @PluginMethod
     public void preloadImages(Context context) {
         api.preloadImages(context);
     }

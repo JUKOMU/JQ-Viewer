@@ -2,6 +2,7 @@ package io.github.jukomu.desktop.bridge;
 
 import io.github.jukomu.desktop.bridge.handler.ApiPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.AuthPluginHandler;
+import io.github.jukomu.desktop.bridge.handler.CachePluginHandler;
 import io.github.jukomu.desktop.bridge.handler.DownloadPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.HistoryPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.FilePluginHandler;
@@ -15,6 +16,7 @@ import io.javalin.http.Context;
 public final class Plugin {
     private final ApiPluginHandler api;
     private final AuthPluginHandler auth;
+    private final CachePluginHandler cache;
     private final SettingsPluginHandler settings;
     private final HistoryPluginHandler history;
     private final OfflineFavoritePluginHandler favorites;
@@ -24,6 +26,7 @@ public final class Plugin {
     private final SystemPluginHandler system;
 
     public Plugin(ApiPluginHandler api, AuthPluginHandler auth,
+                  CachePluginHandler cache,
                   SettingsPluginHandler settings, HistoryPluginHandler history,
                   OfflineFavoritePluginHandler favorites,
                   FilePluginHandler files, DownloadPluginHandler downloads,
@@ -31,6 +34,7 @@ public final class Plugin {
                   SystemPluginHandler system) {
         this.api = api;
         this.auth = auth;
+        this.cache = cache;
         this.settings = settings;
         this.history = history;
         this.favorites = favorites;
@@ -98,6 +102,26 @@ public final class Plugin {
     @PluginMethod
     public void retryImage(Context context) {
         api.retryImage(context);
+    }
+
+    @PluginMethod
+    public void setCacheCapacity(Context context) {
+        cache.setCacheCapacity(context);
+    }
+
+    @PluginMethod
+    public void getCacheCapacityInfo(Context context) {
+        cache.getCacheCapacityInfo(context);
+    }
+
+    @PluginMethod
+    public void getImageCacheContents(Context context) {
+        cache.getImageCacheContents(context);
+    }
+
+    @PluginMethod
+    public void clearImageCache(Context context) {
+        cache.clearImageCache(context);
     }
 
     @PluginMethod

@@ -66,6 +66,17 @@ public final class PdfPageCache {
         }
     }
 
+    public synchronized void clear() {
+        try {
+            Files.createDirectories(directory);
+            try (var files = Files.list(directory)) {
+                for (Path file : files.toList()) Files.deleteIfExists(file);
+            }
+        } catch (IOException exception) {
+            throw new IllegalStateException("清理 PDF 页面缓存失败", exception);
+        }
+    }
+
     public static boolean isResourceId(String resourceId) {
         return resourceId != null && RESOURCE_ID.matcher(resourceId).matches();
     }

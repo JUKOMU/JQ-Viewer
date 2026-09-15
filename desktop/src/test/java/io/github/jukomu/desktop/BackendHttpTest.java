@@ -67,7 +67,7 @@ class BackendHttpTest {
             HttpResponse<String> historyResponse = send(client, post(
                     base, "/api/getBrowseHistory", "{\"limit\":10,\"offset\":0}"));
             HttpResponse<String> malformedResponse = send(client, post(base, "/api/getAllSettings", "[]"));
-            HttpResponse<String> unsupportedResponse = send(client, post(base, "/api/autoLogin", "{}"));
+            HttpResponse<String> autoLoginResponse = send(client, post(base, "/api/autoLogin", "{}"));
             HttpResponse<String> invalidSettingResponse = send(client, post(
                     base, "/api/setReaderPreloadPages", "{\"n\":1}"));
             HttpResponse<String> invalidImageResponse = send(client, HttpRequest.newBuilder(
@@ -94,7 +94,8 @@ class BackendHttpTest {
             assertTrue(historyResponse.body().contains("\"totalCount\":0"));
             assertEquals(400, malformedResponse.statusCode());
             assertTrue(malformedResponse.body().contains("\"code\":\"internal\""));
-            assertEquals(404, unsupportedResponse.statusCode());
+            assertEquals(503, autoLoginResponse.statusCode());
+            assertTrue(autoLoginResponse.body().contains("\"code\":\"unavailable\""));
             assertEquals(400, invalidSettingResponse.statusCode());
             assertTrue(invalidSettingResponse.body().contains("\"code\":\"internal\""));
             assertEquals(400, invalidImageResponse.statusCode());

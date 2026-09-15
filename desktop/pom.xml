@@ -20,6 +20,8 @@
         <junit.version>5.11.4</junit.version>
         <jmcomic.version>1.1.8</jmcomic.version>
         <pdfbox.version>3.0.5</pdfbox.version>
+        <credential.secure.storage.version>1.0.0</credential.secure.storage.version>
+        <jna.version>5.19.1</jna.version>
         <maven.compiler.plugin.version>3.13.0</maven.compiler.plugin.version>
         <maven.surefire.plugin.version>3.5.2</maven.surefire.plugin.version>
     </properties>
@@ -59,6 +61,16 @@
             <groupId>org.apache.pdfbox</groupId>
             <artifactId>pdfbox</artifactId>
             <version>${pdfbox.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.microsoft</groupId>
+            <artifactId>credential-secure-storage</artifactId>
+            <version>${credential.secure.storage.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>net.java.dev.jna</groupId>
+            <artifactId>jna-platform</artifactId>
+            <version>${jna.version}</version>
         </dependency>
 
         <dependency>

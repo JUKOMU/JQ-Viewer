@@ -42,4 +42,8 @@ public final class ApiException extends RuntimeException {
     public static ApiException unavailable(String message) {
         return new ApiException("unavailable", 503, message);
     }
+
+    public static ApiException network(String message) {
+        return new ApiException("network", 503, message);
+    }
 }

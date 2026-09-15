@@ -31,6 +31,10 @@ public final class AuthPluginHandler {
         requests.run(context, auth::state);
     }
 
+    public void autoLogin(Context context) {
+        requests.run(context, auth::autoLogin);
+    }
+
     public void getUserProfile(Context context) {
         requests.run(context, UserProfileRequest.class,
                 request -> auth.profile(Request.requiredText(request.uid(), "uid")));

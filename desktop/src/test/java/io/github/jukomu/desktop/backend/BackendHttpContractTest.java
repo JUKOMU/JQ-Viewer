@@ -7,6 +7,8 @@ import io.github.jukomu.desktop.bridge.Plugin;
 import io.github.jukomu.desktop.bridge.PluginMethod;
 import io.github.jukomu.desktop.data.Database;
 import io.github.jukomu.desktop.data.Paths;
+import io.github.jukomu.desktop.feature.auth.CredentialStore;
+import io.github.jukomu.desktop.feature.auth.LoginCredentials;
 import io.github.jukomu.desktop.feature.files.FileReferences;
 import io.github.jukomu.desktop.feature.files.FileService;
 import io.github.jukomu.jmcomic.api.client.JmClient;
@@ -78,10 +80,11 @@ class BackendHttpContractTest {
     @Test
     void servesEveryRegisteredMethodAndResourceContract() throws Exception {
         FakeClient fake = new FakeClient(webpBytes());
+        MemoryCredentialStore credentials = new MemoryCredentialStore();
         Set<String> requestedMethods = new LinkedHashSet<>();
         HttpClient http = HttpClient.newHttpClient();
 
-        try (Backend backend = backend(fake)) {
+        try (Backend backend = backend(fake, credentials)) {
             backend.start();
             URI base = URI.create("http://127.0.0.1:" + backend.port());
 
@@ -124,6 +127,7 @@ class BackendHttpContractTest {
                             + "\"queryParams\":\"\",\"sortOrder\":1}}"));
             ObjectNode login = body(post(http, base, requestedMethods, "login",
                     "{\"username\":\"alice\",\"password\":\"secret\"}"));
+            ObjectNode autoLogin = body(post(http, base, requestedMethods, "autoLogin", "{}"));
             ObjectNode loginState = body(post(http, base, requestedMethods, "checkLoginState", "{}"));
             ObjectNode profile = body(post(http, base, requestedMethods, "getUserProfile",
                     "{\"uid\":\"user-1\"}"));
@@ -323,6 +327,8 @@ class BackendHttpContractTest {
             assertEquals(6, photo.path("images").get(0).size());
             assertEquals("comment-1", comments.path("list").get(0).path("commentId").asText());
             assertEquals("alice", login.path("username").asText());
+            assertTrue(autoLogin.path("success").asBoolean());
+            assertEquals("alice", autoLogin.path("userInfo").path("username").asText());
             assertTrue(loginState.path("loggedIn").asBoolean());
             assertEquals(1, loggedOutState.size());
             assertTrue(!loggedOutState.path("loggedIn").asBoolean());
@@ -424,6 +430,10 @@ class BackendHttpContractTest {
     }
 
     private static Backend backend(FakeClient fake) throws Exception {
+        return backend(fake, new MemoryCredentialStore());
+    }
+
+    private static Backend backend(FakeClient fake, CredentialStore credentials) throws Exception {
         java.nio.file.Path root = Files.createTempDirectory("jq-viewer-contract-");
         Paths paths = new Paths(root.resolve("program"), root.resolve("home"), Map.of(), "Linux");
         paths.ensureDirectories();
@@ -434,7 +444,7 @@ class BackendHttpContractTest {
         FileService files = new FileService(paths, ignored -> paths.pdfDirectory(), ignored -> {
         });
         return new Backend(paths, new Database(paths), executor, fake.client(),
-                id -> "https://cover.invalid/" + id + ".jpg", files);
+                id -> "https://cover.invalid/" + id + ".jpg", files, credentials);
     }
 
     private static void writePdf(Path target) throws Exception {
@@ -558,6 +568,30 @@ class BackendHttpContractTest {
     }
 
     private record Invocation(String method, List<Object> arguments) {
+    }
+
+    private static final class MemoryCredentialStore implements CredentialStore {
+        private LoginCredentials credentials;
+
+        @Override
+        public boolean isAvailable() {
+            return true;
+        }
+
+        @Override
+        public LoginCredentials load() {
+            return credentials;
+        }
+
+        @Override
+        public void save(String username, String password) {
+            credentials = new LoginCredentials(username, password);
+        }
+
+        @Override
+        public void clear() {
+            credentials = null;
+        }
     }
 
     private static final class FakeClient {

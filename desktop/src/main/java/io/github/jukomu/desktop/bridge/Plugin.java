@@ -92,6 +92,11 @@ public final class Plugin {
     }
 
     @PluginMethod
+    public void autoLogin(Context context) {
+        auth.autoLogin(context);
+    }
+
+    @PluginMethod
     public void getUserProfile(Context context) {
         auth.getUserProfile(context);
     }

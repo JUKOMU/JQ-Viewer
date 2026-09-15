@@ -84,6 +84,7 @@ export function createBackendClient(
     login: (options: Parameters<JmcomicClient['login']>[0]) => call<'login'>('login', options),
     logout: () => call<'logout'>('logout', {}),
     checkLoginState: () => call<'checkLoginState'>('checkLoginState', {}),
+    autoLogin: () => call<'autoLogin'>('autoLogin', {}),
     getUserProfile: (options: Parameters<JmcomicClient['getUserProfile']>[0]) =>
       call<'getUserProfile'>('getUserProfile', options),
     getAllSettings: () => call<'getAllSettings'>('getAllSettings', {}),

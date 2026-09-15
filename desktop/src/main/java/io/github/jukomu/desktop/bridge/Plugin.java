@@ -5,6 +5,7 @@ import io.github.jukomu.desktop.bridge.handler.AuthPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.DownloadPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.HistoryPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.FilePluginHandler;
+import io.github.jukomu.desktop.bridge.handler.OfflineFavoritePluginHandler;
 import io.github.jukomu.desktop.bridge.handler.PdfPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.SettingsPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.SystemPluginHandler;
@@ -16,6 +17,7 @@ public final class Plugin {
     private final AuthPluginHandler auth;
     private final SettingsPluginHandler settings;
     private final HistoryPluginHandler history;
+    private final OfflineFavoritePluginHandler favorites;
     private final FilePluginHandler files;
     private final DownloadPluginHandler downloads;
     private final PdfPluginHandler pdfs;
@@ -23,6 +25,7 @@ public final class Plugin {
 
     public Plugin(ApiPluginHandler api, AuthPluginHandler auth,
                   SettingsPluginHandler settings, HistoryPluginHandler history,
+                  OfflineFavoritePluginHandler favorites,
                   FilePluginHandler files, DownloadPluginHandler downloads,
                   PdfPluginHandler pdfs,
                   SystemPluginHandler system) {
@@ -30,6 +33,7 @@ public final class Plugin {
         this.auth = auth;
         this.settings = settings;
         this.history = history;
+        this.favorites = favorites;
         this.files = files;
         this.downloads = downloads;
         this.pdfs = pdfs;
@@ -379,5 +383,95 @@ public final class Plugin {
     @PluginMethod
     public void deleteBrowseItem(Context context) {
         history.deleteBrowseItem(context);
+    }
+
+    @PluginMethod
+    public void getOfflineFolders(Context context) {
+        favorites.getOfflineFolders(context);
+    }
+
+    @PluginMethod
+    public void createOfflineFolder(Context context) {
+        favorites.createOfflineFolder(context);
+    }
+
+    @PluginMethod
+    public void renameOfflineFolder(Context context) {
+        favorites.renameOfflineFolder(context);
+    }
+
+    @PluginMethod
+    public void deleteOfflineFolder(Context context) {
+        favorites.deleteOfflineFolder(context);
+    }
+
+    @PluginMethod
+    public void addOfflineFavorite(Context context) {
+        favorites.addOfflineFavorite(context);
+    }
+
+    @PluginMethod
+    public void removeOfflineFavorite(Context context) {
+        favorites.removeOfflineFavorite(context);
+    }
+
+    @PluginMethod
+    public void getOfflineFavorites(Context context) {
+        favorites.getOfflineFavorites(context);
+    }
+
+    @PluginMethod
+    public void getAllOfflineFavorites(Context context) {
+        favorites.getAllOfflineFavorites(context);
+    }
+
+    @PluginMethod
+    public void getOfflineFavoritesTotalCount(Context context) {
+        favorites.getOfflineFavoritesTotalCount(context);
+    }
+
+    @PluginMethod
+    public void getAllOfflineFavoritesMerged(Context context) {
+        favorites.getAllOfflineFavoritesMerged(context);
+    }
+
+    @PluginMethod
+    public void moveAllOfflineFavorites(Context context) {
+        favorites.moveAllOfflineFavorites(context);
+    }
+
+    @PluginMethod
+    public void copyOfflineFolder(Context context) {
+        favorites.copyOfflineFolder(context);
+    }
+
+    @PluginMethod
+    public void addOfflineFavoritesBatch(Context context) {
+        favorites.addOfflineFavoritesBatch(context);
+    }
+
+    @PluginMethod
+    public void mergeOfflineAllToFolder(Context context) {
+        favorites.mergeOfflineAllToFolder(context);
+    }
+
+    @PluginMethod
+    public void saveOfflineBackup(Context context) {
+        favorites.saveOfflineBackup(context);
+    }
+
+    @PluginMethod
+    public void loadOfflineBackup(Context context) {
+        favorites.loadOfflineBackup(context);
+    }
+
+    @PluginMethod
+    public void deleteOfflineBackup(Context context) {
+        favorites.deleteOfflineBackup(context);
+    }
+
+    @PluginMethod
+    public void listOfflineBackupKeys(Context context) {
+        favorites.listOfflineBackupKeys(context);
     }
 }

@@ -91,6 +91,24 @@ describe('runtime', () => {
       'recordBrowse',
       'clearBrowseHistory',
       'deleteBrowseItem',
+      'getOfflineFolders',
+      'createOfflineFolder',
+      'renameOfflineFolder',
+      'deleteOfflineFolder',
+      'addOfflineFavorite',
+      'removeOfflineFavorite',
+      'getOfflineFavorites',
+      'getAllOfflineFavorites',
+      'getOfflineFavoritesTotalCount',
+      'getAllOfflineFavoritesMerged',
+      'moveAllOfflineFavorites',
+      'copyOfflineFolder',
+      'addOfflineFavoritesBatch',
+      'mergeOfflineAllToFolder',
+      'saveOfflineBackup',
+      'loadOfflineBackup',
+      'deleteOfflineBackup',
+      'listOfflineBackupKeys',
       'getInitStatus',
     ])
     expect(fetcher).toHaveBeenCalledWith('/api/getInitStatus', {
@@ -201,6 +219,67 @@ describe('runtime', () => {
         chapterTitle: 'Photo',
         coverUrl: 'cover.jpg',
       }),
+    })
+  })
+
+  test('按共享契约转发离线收藏和备份方法', async () => {
+    const fetcher = vi.fn().mockResolvedValue(response({ success: true }))
+    const backend = createBackendClient(fetcher)
+    const item = {
+      id: 'album-1',
+      title: 'Album',
+      coverUrl: 'cover.jpg',
+      authors: ['Alice'],
+      tags: ['tag'],
+    }
+
+    await backend.getOfflineFolders()
+    await backend.createOfflineFolder({ name: 'Folder' })
+    await backend.renameOfflineFolder({ folderId: 'folder-1', name: 'Renamed' })
+    await backend.deleteOfflineFolder({ folderId: 'folder-1' })
+    await backend.addOfflineFavorite({ folderId: 'folder-1', item })
+    await backend.removeOfflineFavorite({ folderId: 'folder-1', albumId: 'album-1' })
+    await backend.getOfflineFavorites({ folderId: 'folder-1', page: 2, pageSize: 20 })
+    await backend.getAllOfflineFavorites({ folderId: 'folder-1' })
+    await backend.getOfflineFavoritesTotalCount()
+    await backend.getAllOfflineFavoritesMerged()
+    await backend.moveAllOfflineFavorites({ sourceId: 'folder-1', targetId: 'folder-2' })
+    await backend.copyOfflineFolder({ sourceId: 'folder-2', name: 'Copy' })
+    await backend.addOfflineFavoritesBatch({ folderId: 'folder-2', items: [item] })
+    await backend.mergeOfflineAllToFolder({ targetId: 'folder-2' })
+    await backend.saveOfflineBackup({ key: 'backup-1', items: [item] })
+    await backend.loadOfflineBackup({ key: 'backup-1' })
+    await backend.deleteOfflineBackup({ key: 'backup-1' })
+    await backend.listOfflineBackupKeys()
+
+    expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
+      '/api/getOfflineFolders',
+      '/api/createOfflineFolder',
+      '/api/renameOfflineFolder',
+      '/api/deleteOfflineFolder',
+      '/api/addOfflineFavorite',
+      '/api/removeOfflineFavorite',
+      '/api/getOfflineFavorites',
+      '/api/getAllOfflineFavorites',
+      '/api/getOfflineFavoritesTotalCount',
+      '/api/getAllOfflineFavoritesMerged',
+      '/api/moveAllOfflineFavorites',
+      '/api/copyOfflineFolder',
+      '/api/addOfflineFavoritesBatch',
+      '/api/mergeOfflineAllToFolder',
+      '/api/saveOfflineBackup',
+      '/api/loadOfflineBackup',
+      '/api/deleteOfflineBackup',
+      '/api/listOfflineBackupKeys',
+    ])
+    expect(JSON.parse(String(fetcher.mock.calls[6][1]?.body))).toEqual({
+      folderId: 'folder-1',
+      page: 2,
+      pageSize: 20,
+    })
+    expect(JSON.parse(String(fetcher.mock.calls[14][1]?.body))).toEqual({
+      key: 'backup-1',
+      items: [item],
     })
   })
 

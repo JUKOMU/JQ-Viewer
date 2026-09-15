@@ -129,6 +129,42 @@ export function createBackendClient(
     clearBrowseHistory: () => call<'clearBrowseHistory'>('clearBrowseHistory', {}),
     deleteBrowseItem: (options: Parameters<JmcomicClient['deleteBrowseItem']>[0]) =>
       call<'deleteBrowseItem'>('deleteBrowseItem', options),
+    getOfflineFolders: () => call<'getOfflineFolders'>('getOfflineFolders', {}),
+    createOfflineFolder: (options: Parameters<JmcomicClient['createOfflineFolder']>[0]) =>
+      call<'createOfflineFolder'>('createOfflineFolder', options),
+    renameOfflineFolder: (options: Parameters<JmcomicClient['renameOfflineFolder']>[0]) =>
+      call<'renameOfflineFolder'>('renameOfflineFolder', options),
+    deleteOfflineFolder: (options: Parameters<JmcomicClient['deleteOfflineFolder']>[0]) =>
+      call<'deleteOfflineFolder'>('deleteOfflineFolder', options),
+    addOfflineFavorite: (options: Parameters<JmcomicClient['addOfflineFavorite']>[0]) =>
+      call<'addOfflineFavorite'>('addOfflineFavorite', options),
+    removeOfflineFavorite: (options: Parameters<JmcomicClient['removeOfflineFavorite']>[0]) =>
+      call<'removeOfflineFavorite'>('removeOfflineFavorite', options),
+    getOfflineFavorites: (options: Parameters<JmcomicClient['getOfflineFavorites']>[0]) =>
+      call<'getOfflineFavorites'>('getOfflineFavorites', options),
+    getAllOfflineFavorites: (options: Parameters<JmcomicClient['getAllOfflineFavorites']>[0]) =>
+      call<'getAllOfflineFavorites'>('getAllOfflineFavorites', options),
+    getOfflineFavoritesTotalCount: () =>
+      call<'getOfflineFavoritesTotalCount'>('getOfflineFavoritesTotalCount', {}),
+    getAllOfflineFavoritesMerged: () =>
+      call<'getAllOfflineFavoritesMerged'>('getAllOfflineFavoritesMerged', {}),
+    moveAllOfflineFavorites: (options: Parameters<JmcomicClient['moveAllOfflineFavorites']>[0]) =>
+      call<'moveAllOfflineFavorites'>('moveAllOfflineFavorites', options),
+    copyOfflineFolder: (options: Parameters<JmcomicClient['copyOfflineFolder']>[0]) =>
+      call<'copyOfflineFolder'>('copyOfflineFolder', options),
+    addOfflineFavoritesBatch: (
+      options: Parameters<JmcomicClient['addOfflineFavoritesBatch']>[0],
+    ) => call<'addOfflineFavoritesBatch'>('addOfflineFavoritesBatch', options),
+    mergeOfflineAllToFolder: (
+      options: Parameters<JmcomicClient['mergeOfflineAllToFolder']>[0],
+    ) => call<'mergeOfflineAllToFolder'>('mergeOfflineAllToFolder', options),
+    saveOfflineBackup: (options: Parameters<JmcomicClient['saveOfflineBackup']>[0]) =>
+      call<'saveOfflineBackup'>('saveOfflineBackup', options),
+    loadOfflineBackup: (options: Parameters<JmcomicClient['loadOfflineBackup']>[0]) =>
+      call<'loadOfflineBackup'>('loadOfflineBackup', options),
+    deleteOfflineBackup: (options: Parameters<JmcomicClient['deleteOfflineBackup']>[0]) =>
+      call<'deleteOfflineBackup'>('deleteOfflineBackup', options),
+    listOfflineBackupKeys: () => call<'listOfflineBackupKeys'>('listOfflineBackupKeys', {}),
     getInitStatus: async () => {
       const result = await requestBackend<{ complete?: unknown }>(fetcher, 'getInitStatus', {})
       if (!result || typeof result.complete !== 'boolean') {

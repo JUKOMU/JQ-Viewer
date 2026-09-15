@@ -11,7 +11,7 @@ import java.sql.Statement;
 
 /** 管理本地 SQLite 连接，并提供版本化 schema 迁移入口。 */
 public final class Database implements AutoCloseable {
-    private static final int SCHEMA_VERSION = 5;
+    private static final int SCHEMA_VERSION = 6;
 
     private final Path databasePath;
     private Connection connection;
@@ -68,6 +68,32 @@ public final class Database implements AutoCloseable {
                     + " timestamp INTEGER NOT NULL)");
             statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_browse_history_timestamp_id "
                     + "ON browse_history(timestamp DESC, id DESC)");
+            statement.executeUpdate("CREATE TABLE IF NOT EXISTS offline_folders ("
+                    + "folder_id TEXT PRIMARY KEY,"
+                    + " name TEXT NOT NULL,"
+                    + " created_at INTEGER NOT NULL)"
+            );
+            statement.executeUpdate("CREATE TABLE IF NOT EXISTS offline_favorites ("
+                    + "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                    + " folder_id TEXT NOT NULL,"
+                    + " album_id TEXT NOT NULL,"
+                    + " title TEXT NOT NULL DEFAULT '',"
+                    + " cover_url TEXT NOT NULL DEFAULT '',"
+                    + " authors_json TEXT NOT NULL DEFAULT '[]',"
+                    + " tags_json TEXT NOT NULL DEFAULT '[]',"
+                    + " UNIQUE(folder_id, album_id),"
+                    + " FOREIGN KEY(folder_id) REFERENCES offline_folders(folder_id) "
+                    + "ON DELETE CASCADE)"
+            );
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_offline_favorites_folder_id "
+                    + "ON offline_favorites(folder_id, id ASC)");
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_offline_favorites_album_id "
+                    + "ON offline_favorites(album_id, id ASC)");
+            statement.executeUpdate("CREATE TABLE IF NOT EXISTS offline_backups ("
+                    + "backup_key TEXT PRIMARY KEY,"
+                    + " items_json TEXT NOT NULL,"
+                    + " created_at INTEGER NOT NULL)"
+            );
             statement.executeUpdate("CREATE TABLE IF NOT EXISTS download_tasks ("
                     + "task_id TEXT PRIMARY KEY,"
                     + " album_id TEXT NOT NULL,"

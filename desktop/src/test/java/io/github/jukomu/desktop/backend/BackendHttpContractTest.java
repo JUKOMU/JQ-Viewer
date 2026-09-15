@@ -71,6 +71,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -157,6 +158,9 @@ class BackendHttpContractTest {
             assertOk(post(http, base, requestedMethods, "setReaderAutoShowToolbarAtEnd",
                     "{\"enabled\":false}"));
             ObjectNode settings = body(post(http, base, requestedMethods, "getAllSettings", "{}"));
+            ObjectNode downloadLocation = body(post(
+                    http, base, requestedMethods, "getDownloadPublic", "{}"));
+            assertOk(post(http, base, requestedMethods, "setDownloadPublic", "{\"open\":false}"));
 
             ObjectNode pickedFolder = body(post(http, base, requestedMethods, "pickFolder",
                     "{\"purpose\":\"pdf-export\"}"));
@@ -408,6 +412,7 @@ class BackendHttpContractTest {
             assertNotNull(thumbnail);
             assertEquals(300, thumbnail.getWidth());
             assertEquals(150, thumbnail.getHeight());
+            assertFalse(downloadLocation.path("downloadPublic").asBoolean());
 
             SearchQuery forwardedSearch = (SearchQuery) fake.firstArgument("search");
             ForumQuery forwardedComments = (ForumQuery) fake.firstArgument("getComments");

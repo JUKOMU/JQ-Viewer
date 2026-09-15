@@ -25,6 +25,7 @@ import io.github.jukomu.desktop.feature.auth.CredentialStore;
 import io.github.jukomu.desktop.feature.auth.CredentialStores;
 import io.github.jukomu.desktop.feature.catalog.CatalogService;
 import io.github.jukomu.desktop.feature.download.DownloadFiles;
+import io.github.jukomu.desktop.feature.download.DownloadLocationService;
 import io.github.jukomu.desktop.feature.download.DownloadService;
 import io.github.jukomu.desktop.feature.download.data.DownloadStore;
 import io.github.jukomu.desktop.feature.history.HistoryService;
@@ -228,7 +229,12 @@ public final class Backend implements AutoCloseable {
             final EventHub eventHub = startedEventHub;
             ImageService imageService = new ImageService(serviceClient, businessExecutor, eventHub);
             DownloadStore downloadStore = new DownloadStore(database);
-            DownloadFiles downloadFiles = new DownloadFiles(paths);
+            PdfExportStore pdfExportStore = new PdfExportStore(database);
+            DownloadFiles downloadFiles = new DownloadFiles(
+                    settingsService.downloadRoot(paths.downloadsDirectory()));
+            DownloadLocationService downloadLocationService = new DownloadLocationService(
+                    paths, settingsService, downloadStore, downloadFiles, pdfExportStore,
+                    fileService, eventHub);
             startedDownloadService = new DownloadService(
                     downloadStore,
                     downloadFiles,
@@ -252,14 +258,14 @@ public final class Backend implements AutoCloseable {
                     new PdfDocumentService(pdfPageCache)
             );
             startedPdfExportService = new PdfExportService(
-                    new PdfExportStore(database), downloadStore, downloadFiles,
+                    pdfExportStore, downloadStore, downloadFiles,
                     pdfExportExecutor, eventHub);
             startedPdfExportService.reconcileOnStartup();
             Plugin plugin = new Plugin(
                     new ApiPluginHandler(requests,
                             new CatalogService(serviceClient, imageService, albumCoverUrl), imageService),
                     new AuthPluginHandler(requests, new AuthService(serviceClient, credentialStore)),
-                    new SettingsPluginHandler(requests, settingsService),
+                    new SettingsPluginHandler(requests, settingsService, downloadLocationService),
                     new HistoryPluginHandler(requests, new HistoryService(database)),
                     new FilePluginHandler(requests, fileService),
                     new DownloadPluginHandler(requests, downloadService),

@@ -40,9 +40,6 @@ public final class FileService {
 
     public FolderDescriptorResponse pickFolder(String purpose) {
         String normalizedPurpose = requirePurpose(purpose);
-        if ("download".equals(normalizedPurpose)) {
-            return folder(paths.downloadsDirectory());
-        }
         Path selected = folderPicker.pick(defaultPath(normalizedPurpose));
         return selected == null ? null : folder(selected);
     }

@@ -1,5 +1,5 @@
 /**
- * 应用设置服务（Android SQLite 持久化 + 内存缓存）。
+ * 应用设置服务（平台后端持久化 + 内存缓存）。
  * 启动时由 App.vue 调用 initSettings() 从 DB 加载到缓存，
  * 之后所有读写走同步缓存，持久化由 SettingPage handler 调用 JmcomicService 完成。
  */

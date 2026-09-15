@@ -5,6 +5,7 @@ import type {
   FileService,
   PdfService,
   PlatformServices,
+  PublicDownloadService,
   ReaderPlatformServices,
 } from '../PlatformServices'
 import type { BackendEvents } from '../BackendEvents'
@@ -156,6 +157,33 @@ function createFileService(fetcher: BackendFetch): FileService {
   }
 }
 
+function createDownloadLocationService(
+  events: BackendEvents,
+  fetcher: BackendFetch,
+): PublicDownloadService {
+  return {
+    setPublic: (open) =>
+      requestBackend<{
+        success: boolean
+        downloadPublic: boolean
+        moved: number
+        displayPath: string
+      }>(fetcher, 'setDownloadPublic', { open }),
+    getPublic: () =>
+      requestBackend<{ downloadPublic: boolean; displayPath: string }>(
+        fetcher,
+        'getDownloadPublic',
+        {},
+      ),
+    requestStoragePermission: async () => ({
+      granted: true,
+      permissionType: 'not_required',
+      apiLevel: 0,
+    }),
+    onRelocationProgress: (handler) => events.onRelocationProgress(handler),
+  }
+}
+
 function createPdfService(events: BackendEvents, fetcher: BackendFetch): PdfService {
   return {
     exportPdfBatch: ({ tasks }: { tasks: PdfExportTask[] }) =>
@@ -290,7 +318,7 @@ export function createPlatformServices(
     files: createFileService(fetcher),
     pdf: createPdfService(events, fetcher),
     pdfExportPreferences: createDesktopPdfExportPreferencesStore(fetcher),
-    storage: unavailableCapability('当前平台不支持公开下载'),
+    storage: { available: true, api: createDownloadLocationService(events, fetcher) },
     reader: createUnavailableReaderServices(),
     updater: unavailableCapability('当前平台不支持应用更新'),
     ocr: unavailableCapability('当前平台不支持 OCR'),

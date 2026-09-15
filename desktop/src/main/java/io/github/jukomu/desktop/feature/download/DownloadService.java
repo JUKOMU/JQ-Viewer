@@ -100,35 +100,37 @@ public final class DownloadService implements AutoCloseable {
         }
 
         RuntimeTask runtime = new RuntimeTask();
-        synchronized (submitLock) {
-            StoredDownloadTask existing = store.findTask(taskId);
-            if (existing != null && STATUS_COMPLETED.equals(existing.status())) {
-                throw ApiException.conflict("该章节已下载完成");
-            }
-            if (existing != null && isActive(existing.status())) {
-                throw ApiException.conflict("该章节已在下载队列中");
-            }
-            files.cleanup(relativeDirectory);
-            cancelledTaskIds.remove(taskId);
-            store.createOrResetTask(
-                    taskId,
-                    albumId,
-                    chapterId,
-                    text(request.albumTitle()),
-                    text(request.chapterTitle()),
-                    text(request.coverUrl()),
-                    relativeDirectory,
-                    System.currentTimeMillis()
-            );
-            runtimes.put(taskId, runtime);
-            publish(store.findTask(taskId), 0, null);
-            try {
-                prepareExecutor.execute(() -> prepare(taskId, runtime));
-            } catch (RejectedExecutionException exception) {
-                runtimes.remove(taskId, runtime);
-                store.fail(taskId, 0, 0, 0, "下载准备队列已满");
+        synchronized (files) {
+            synchronized (submitLock) {
+                StoredDownloadTask existing = store.findTask(taskId);
+                if (existing != null && STATUS_COMPLETED.equals(existing.status())) {
+                    throw ApiException.conflict("该章节已下载完成");
+                }
+                if (existing != null && isActive(existing.status())) {
+                    throw ApiException.conflict("该章节已在下载队列中");
+                }
+                files.cleanup(relativeDirectory);
+                cancelledTaskIds.remove(taskId);
+                store.createOrResetTask(
+                        taskId,
+                        albumId,
+                        chapterId,
+                        text(request.albumTitle()),
+                        text(request.chapterTitle()),
+                        text(request.coverUrl()),
+                        relativeDirectory,
+                        System.currentTimeMillis()
+                );
+                runtimes.put(taskId, runtime);
                 publish(store.findTask(taskId), 0, null);
-                throw ApiException.unavailable("下载准备队列已满");
+                try {
+                    prepareExecutor.execute(() -> prepare(taskId, runtime));
+                } catch (RejectedExecutionException exception) {
+                    runtimes.remove(taskId, runtime);
+                    store.fail(taskId, 0, 0, 0, "下载准备队列已满");
+                    publish(store.findTask(taskId), 0, null);
+                    throw ApiException.unavailable("下载准备队列已满");
+                }
             }
         }
         return new DownloadSubmissionResponse(taskId);

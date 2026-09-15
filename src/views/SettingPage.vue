@@ -245,11 +245,11 @@
             </div>
           </div>
 
-          <!-- 公开下载 -->
+          <!-- 下载位置 -->
           <div class="row divider">
             <div class="row-left">
-              <span class="row-title">公开下载内容</span>
-              <span class="row-subtitle">开启后新下载的图片可在系统相册中查看</span>
+              <span class="row-title">{{ downloadLocationTitle }}</span>
+              <span class="row-subtitle">{{ downloadLocationSubtitle }}</span>
             </div>
             <div class="row-right">
               <IonToggle
@@ -479,6 +479,7 @@ import {
 } from '@ionic/vue'
 import { chevronForwardOutline } from 'ionicons/icons'
 import type { ListenerHandle } from '@/runtime/BackendEvents'
+import { RuntimeError } from '@/runtime/errors'
 import { getRuntime } from '@/runtime/runtimeContext'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import { createAppAlert } from '@/services/AppAlertService'
@@ -495,6 +496,8 @@ import { useAuth } from '@/composables/useAuth'
 import type { CacheCapacityInfo, RelocationProgress } from '@/services/JmcomicTypes'
 
 const router = useRouter()
+const runtime = getRuntime()
+const isAndroidRuntime = runtime.platform === 'android'
 const { userInfo } = useAuth()
 const appVersion = ref('1.0.0')
 const contentRef = ref<InstanceType<typeof IonContent> | null>(null)
@@ -560,6 +563,7 @@ const preloadPages = ref(SettingsStore.getReaderPreloadPages())
 const preloadConcurrency = ref(SettingsStore.getPreloadConcurrency())
 const downloadConcurrency = ref(SettingsStore.getDownloadConcurrency())
 const downloadPublic = ref(SettingsStore.getDownloadPublic())
+const downloadLocationPath = ref('')
 const ocrEnabled = ref(SettingsStore.getOcrEnabled())
 const exportFormat = ref(ExportFormatService.getExportFormat())
 const displayMode = ref(SettingsStore.getReaderDisplayMode())
@@ -573,6 +577,16 @@ const volumeNavigation = ref(SettingsStore.getReaderVolumeNavigation())
 const autoShowToolbarAtEnd = ref(SettingsStore.getReaderAutoShowToolbarAtEnd())
 
 const exportPreview = computed(() => ExportFormatService.previewExportFormat(exportFormat.value))
+const downloadLocationTitle = computed(() =>
+  isAndroidRuntime ? '公开下载内容' : '自定义下载位置',
+)
+const downloadLocationSubtitle = computed(() => {
+  if (isAndroidRuntime) return '开启后新下载的图片可在系统相册中查看'
+  if (downloadPublic.value && downloadLocationPath.value) {
+    return `当前目录：${downloadLocationPath.value}`
+  }
+  return '开启后选择上级文件夹，下载内容保存在其中的 JQViewer 目录'
+})
 
 // PDF导出设置
 const pdfExportPath = ref(PdfExportService.getExportPath())
@@ -646,7 +660,7 @@ onMounted(async () => {
 
   // 获取应用版本
   try {
-    const info = await getRuntime().services.app.getInfo()
+    const info = await runtime.services.app.getInfo()
     appVersion.value = info.version
   } catch {
     /* keep default */
@@ -674,6 +688,17 @@ onMounted(async () => {
   keepScreenOn.value = SettingsStore.getReaderKeepScreenOn()
   volumeNavigation.value = SettingsStore.getReaderVolumeNavigation()
   autoShowToolbarAtEnd.value = SettingsStore.getReaderAutoShowToolbarAtEnd()
+
+  if (!isAndroidRuntime && runtime.services.storage.available) {
+    try {
+      const location = await JmcomicService.getDownloadPublic()
+      downloadPublic.value = location.downloadPublic
+      downloadLocationPath.value = location.displayPath ?? ''
+      SettingsStore.setDownloadPublic(location.downloadPublic)
+    } catch {
+      /* 保留启动设置快照 */
+    }
+  }
 })
 
 // ---- 缓存上限 ----
@@ -865,18 +890,19 @@ async function resetPdfNameTemplate() {
   }
 }
 
-// ---- 公开下载 ----
+// ---- 下载位置 ----
 const isSwitchingDownloadPublic = ref(false)
 
 async function onDownloadPublicChange(e: CustomEvent) {
   if (isSwitchingDownloadPublic.value) return
   isSwitchingDownloadPublic.value = true
 
+  const previous = SettingsStore.getDownloadPublic()
   const open = e.detail.checked
   downloadPublic.value = open
 
   // 开启时根据 API 版本申请合适的权限
-  if (open) {
+  if (open && isAndroidRuntime) {
     try {
       const result = await JmcomicService.requestManageStorage()
       if (!result.granted) {
@@ -921,18 +947,28 @@ async function onDownloadPublicChange(e: CustomEvent) {
 
   try {
     const result = await JmcomicService.setDownloadPublic(open)
-    SettingsStore.setDownloadPublic(open)
-    const msg =
-      result.moved > 0
+    downloadPublic.value = result.downloadPublic
+    downloadLocationPath.value = result.displayPath ?? ''
+    SettingsStore.setDownloadPublic(result.downloadPublic)
+    const msg = isAndroidRuntime
+      ? result.moved > 0
         ? `已搬迁 ${result.moved} 个文件` + (open ? '，系统相册可查看' : '')
         : open
           ? '已设为公开，无文件需搬迁'
           : '已设为仅应用内可见'
+      : open
+        ? result.moved > 0
+          ? `已迁移 ${result.moved} 个文件，下载位置：${result.displayPath}`
+          : `下载位置已设为：${result.displayPath}`
+        : '已恢复应用内部下载位置'
     await showToast(msg, 'success')
   } catch (e: any) {
-    downloadPublic.value = !open
-    SettingsStore.setDownloadPublic(!open)
-    await showToast(sanitizeError(e, '切换失败'), 'danger')
+    downloadPublic.value = previous
+    SettingsStore.setDownloadPublic(previous)
+    await showToast(
+      sanitizeError(e, '切换失败'),
+      e instanceof RuntimeError && e.code === 'cancelled' ? 'medium' : 'danger',
+    )
   } finally {
     handle?.remove()
     showRelocationModal.value = false

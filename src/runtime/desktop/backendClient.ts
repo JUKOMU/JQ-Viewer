@@ -77,6 +77,14 @@ export function createBackendClient(
       call<'getPhoto'>('getPhoto', options),
     getComments: (options: Parameters<JmcomicClient['getComments']>[0]) =>
       call<'getComments'>('getComments', options),
+    getFavorites: (options: Parameters<JmcomicClient['getFavorites']>[0]) =>
+      call<'getFavorites'>('getFavorites', options.query),
+    toggleAlbumLike: (options: Parameters<JmcomicClient['toggleAlbumLike']>[0]) =>
+      call<'toggleAlbumLike'>('toggleAlbumLike', options),
+    toggleAlbumFavorite: (options: Parameters<JmcomicClient['toggleAlbumFavorite']>[0]) =>
+      call<'toggleAlbumFavorite'>('toggleAlbumFavorite', options),
+    manageFavoriteFolder: (options: Parameters<JmcomicClient['manageFavoriteFolder']>[0]) =>
+      call<'manageFavoriteFolder'>('manageFavoriteFolder', options),
     preloadImages: (options: Parameters<JmcomicClient['preloadImages']>[0]) =>
       call<'preloadImages'>('preloadImages', options),
     retryImage: (options: Parameters<JmcomicClient['retryImage']>[0]) =>

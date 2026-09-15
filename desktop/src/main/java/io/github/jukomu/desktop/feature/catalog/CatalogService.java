@@ -1,9 +1,12 @@
 package io.github.jukomu.desktop.feature.catalog;
 
+import io.github.jukomu.desktop.bridge.model.SuccessResponse;
 import io.github.jukomu.desktop.feature.catalog.model.AlbumResponse;
 import io.github.jukomu.desktop.feature.catalog.model.AlbumSummaryResponse;
 import io.github.jukomu.desktop.feature.catalog.model.CategoryResponse;
 import io.github.jukomu.desktop.feature.catalog.model.CommentListResponse;
+import io.github.jukomu.desktop.feature.catalog.model.FavoriteFolderResponse;
+import io.github.jukomu.desktop.feature.catalog.model.FavoriteResponse;
 import io.github.jukomu.desktop.feature.catalog.model.ImageResponse;
 import io.github.jukomu.desktop.feature.catalog.model.PhotoResponse;
 import io.github.jukomu.desktop.feature.catalog.model.PhotoSummaryResponse;
@@ -12,23 +15,29 @@ import io.github.jukomu.desktop.feature.catalog.model.SearchResponse;
 import io.github.jukomu.desktop.feature.image.ImageService;
 import io.github.jukomu.jmcomic.api.client.JmClient;
 import io.github.jukomu.jmcomic.api.enums.Category;
+import io.github.jukomu.jmcomic.api.enums.FavoriteFolderType;
 import io.github.jukomu.jmcomic.api.enums.ForumMode;
 import io.github.jukomu.jmcomic.api.enums.OrderBy;
 import io.github.jukomu.jmcomic.api.enums.SearchMainTag;
 import io.github.jukomu.jmcomic.api.enums.TimeOption;
 import io.github.jukomu.jmcomic.api.model.ForumQuery;
+import io.github.jukomu.jmcomic.api.model.FavoriteQuery;
 import io.github.jukomu.jmcomic.api.model.JmAlbum;
 import io.github.jukomu.jmcomic.api.model.JmAlbumMeta;
 import io.github.jukomu.jmcomic.api.model.JmCategoryMeta;
 import io.github.jukomu.jmcomic.api.model.JmComment;
 import io.github.jukomu.jmcomic.api.model.JmCommentList;
+import io.github.jukomu.jmcomic.api.model.JmFavoriteFolderResult;
+import io.github.jukomu.jmcomic.api.model.JmFavoritePage;
 import io.github.jukomu.jmcomic.api.model.JmImage;
 import io.github.jukomu.jmcomic.api.model.JmPhoto;
 import io.github.jukomu.jmcomic.api.model.JmPhotoMeta;
 import io.github.jukomu.jmcomic.api.model.JmSearchPage;
 import io.github.jukomu.jmcomic.api.model.SearchQuery;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Function;
 
 /** 调用在线客户端并转换为页面使用的响应模型。 */
@@ -72,6 +81,35 @@ public final class CatalogService {
                 comments.getTotal(),
                 safe(comments.getList()).stream().map(this::toCommentResponse).toList()
         );
+    }
+
+    public FavoriteResponse getFavorites(int folderId, int page) {
+        FavoriteQuery query = new FavoriteQuery.Builder()
+                .folderId(folderId)
+                .page(page)
+                .build();
+        return toFavoriteResponse(client.getFavorites(query));
+    }
+
+    public SuccessResponse toggleAlbumLike(String id) {
+        client.toggleAlbumLike(id);
+        return SuccessResponse.ok();
+    }
+
+    public SuccessResponse toggleAlbumFavorite(String id, String folderId) {
+        client.toggleAlbumFavorite(id, folderId);
+        return SuccessResponse.ok();
+    }
+
+    public FavoriteFolderResponse manageFavoriteFolder(
+            FavoriteFolderType type,
+            String folderId,
+            String folderName,
+            String albumId
+    ) {
+        JmFavoriteFolderResult result = client.manageFavoriteFolder(
+                type, folderId, folderName, albumId);
+        return new FavoriteFolderResponse(text(result.getStatus()), text(result.getMsg()));
     }
 
     private SearchQuery query(SearchRequest request) {
@@ -119,6 +157,20 @@ public final class CatalogService {
                 page.getTotalItems(),
                 page.getTotalPages(),
                 safe(page.getContent()).stream().map(this::toAlbumSummaryResponse).toList()
+        );
+    }
+
+    private FavoriteResponse toFavoriteResponse(JmFavoritePage page) {
+        return new FavoriteResponse(
+                text(page.getFolderName()),
+                String.valueOf(page.getFolderId()),
+                page.getCurrentPage(),
+                page.getTotalItems(),
+                page.getTotalPages(),
+                safe(page.getContent()).stream().map(this::toAlbumSummaryResponse).toList(),
+                page.getFolderList() == null
+                        ? Map.of()
+                        : new LinkedHashMap<>(page.getFolderList())
         );
     }
 

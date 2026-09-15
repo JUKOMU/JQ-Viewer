@@ -62,6 +62,10 @@ describe('runtime', () => {
       'getAlbum',
       'getPhoto',
       'getComments',
+      'getFavorites',
+      'toggleAlbumLike',
+      'toggleAlbumFavorite',
+      'manageFavoriteFolder',
       'preloadImages',
       'retryImage',
       'login',
@@ -107,6 +111,43 @@ describe('runtime', () => {
     })
   })
 
+  test('按共享契约转发在线点赞、收藏和收藏夹方法', async () => {
+    const fetcher = vi.fn().mockResolvedValue(response({ success: true }))
+    const backend = createBackendClient(fetcher)
+
+    await backend.getFavorites({ query: { folderId: '7', page: 2 } })
+    await backend.toggleAlbumLike({ id: 'album-1' })
+    await backend.toggleAlbumFavorite({ id: 'album-1', folderId: '7' })
+    await backend.manageFavoriteFolder({
+      type: 'move',
+      folderId: '7',
+      folderName: '',
+      albumId: 'album-1',
+    })
+
+    expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
+      '/api/getFavorites',
+      '/api/toggleAlbumLike',
+      '/api/toggleAlbumFavorite',
+      '/api/manageFavoriteFolder',
+    ])
+    expect(JSON.parse(String(fetcher.mock.calls[0][1]?.body))).toEqual({
+      folderId: '7',
+      page: 2,
+    })
+    expect(JSON.parse(String(fetcher.mock.calls[1][1]?.body))).toEqual({ id: 'album-1' })
+    expect(JSON.parse(String(fetcher.mock.calls[2][1]?.body))).toEqual({
+      id: 'album-1',
+      folderId: '7',
+    })
+    expect(JSON.parse(String(fetcher.mock.calls[3][1]?.body))).toEqual({
+      type: 'move',
+      folderId: '7',
+      folderName: '',
+      albumId: 'album-1',
+    })
+  })
+
   test('归一化传输和结构化后端错误，不添加回退方法', async () => {
     const fetcher = vi.fn().mockRejectedValue(new Error('connection refused'))
     const backend = createBackendClient(fetcher)
@@ -120,7 +161,7 @@ describe('runtime', () => {
     await expect(malformed.getInitStatus()).rejects.toMatchObject({
       code: 'internal',
     })
-    expect((backend as unknown as { toggleAlbumLike?: unknown }).toggleAlbumLike).toBeUndefined()
+    expect((backend as unknown as { getDomainStates?: unknown }).getDomainStates).toBeUndefined()
   })
 
   test('按共享契约转发下载方法', async () => {

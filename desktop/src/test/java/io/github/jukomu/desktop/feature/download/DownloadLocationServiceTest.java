@@ -23,6 +23,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -148,6 +149,53 @@ class DownloadLocationServiceTest {
         }
     }
 
+    @Test
+    void persistsFailedCleanupAndRetriesItForSameStateRequest() throws Exception {
+        try (Fixture fixture = new Fixture()) {
+            fixture.writePrivate("album/chapter/001.jpg", "source");
+            TestFileOperations failingCleanup = new TestFileOperations(0, true);
+
+            DownloadRelocationResponse first = fixture
+                    .service(fixture.selectedParent, failingCleanup)
+                    .set(true);
+
+            assertTrue(first.cleanupPending());
+            assertTrue(first.cleanupMessage().contains("下次启动"));
+            assertEquals(fixture.paths.downloadsDirectory(),
+                    fixture.settings.pendingDownloadCleanup());
+            assertTrue(Files.isRegularFile(
+                    fixture.paths.downloadsDirectory().resolve("album/chapter/001.jpg")));
+
+            DownloadRelocationResponse retried = fixture
+                    .service(fixture.selectedParent)
+                    .set(true);
+
+            assertFalse(retried.cleanupPending());
+            assertEquals(0, retried.moved());
+            assertFalse(Files.exists(fixture.paths.downloadsDirectory()));
+            assertNull(fixture.settings.pendingDownloadCleanup());
+        }
+    }
+
+    @Test
+    void retriesPersistedCleanupOnStartup() throws Exception {
+        try (Fixture fixture = new Fixture()) {
+            fixture.writePrivate("album/chapter/001.jpg", "source");
+            fixture.service(fixture.selectedParent, new TestFileOperations(0, true)).set(true);
+            DownloadFiles restartedFiles = new DownloadFiles(
+                    fixture.settings.downloadRoot(fixture.paths.downloadsDirectory()));
+            DownloadLocationService restarted = fixture.service(
+                    fixture.selectedParent, new TestFileOperations(0), restartedFiles);
+
+            restarted.reconcileOnStartup();
+
+            assertEquals(fixture.target, restartedFiles.root());
+            assertFalse(restarted.get().cleanupPending());
+            assertFalse(Files.exists(fixture.paths.downloadsDirectory()));
+            assertNull(fixture.settings.pendingDownloadCleanup());
+        }
+    }
+
     private static final class Fixture implements AutoCloseable {
         private final Path root = Files.createTempDirectory("jq-viewer-location-");
         private final Paths paths = new Paths(
@@ -179,10 +227,19 @@ class DownloadLocationServiceTest {
                 Path selected,
                 DownloadLocationService.FileOperations operations
         ) {
+            return service(selected, operations, files);
+        }
+
+        private DownloadLocationService service(
+                Path selected,
+                DownloadLocationService.FileOperations operations,
+                DownloadFiles downloadFiles
+        ) {
             FileService fileService = new FileService(paths, ignored -> selected, ignored -> {
             });
             return new DownloadLocationService(
-                    paths, settings, store, files, pdfExports, fileService, events, operations);
+                    paths, settings, store, downloadFiles, pdfExports,
+                    fileService, events, operations);
         }
 
         private void writePrivate(String relative, String content) throws IOException {
@@ -207,10 +264,16 @@ class DownloadLocationServiceTest {
 
     private static final class TestFileOperations implements DownloadLocationService.FileOperations {
         private final int failOnCopy;
+        private final boolean failDeleteTree;
         private int copyCount;
 
         private TestFileOperations(int failOnCopy) {
+            this(failOnCopy, false);
+        }
+
+        private TestFileOperations(int failOnCopy, boolean failDeleteTree) {
             this.failOnCopy = failOnCopy;
+            this.failDeleteTree = failDeleteTree;
         }
 
         @Override
@@ -246,6 +309,7 @@ class DownloadLocationServiceTest {
 
         @Override
         public void deleteTree(Path root) throws IOException {
+            if (failDeleteTree) throw new IOException("simulated cleanup failure");
             if (!Files.exists(root)) return;
             try (var paths = Files.walk(root)) {
                 for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) {

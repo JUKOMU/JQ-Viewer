@@ -158,9 +158,9 @@ class BackendHttpContractTest {
             assertOk(post(http, base, requestedMethods, "setReaderAutoShowToolbarAtEnd",
                     "{\"enabled\":false}"));
             ObjectNode settings = body(post(http, base, requestedMethods, "getAllSettings", "{}"));
+            assertOk(post(http, base, requestedMethods, "setDownloadPublic", "{\"open\":false}"));
             ObjectNode downloadLocation = body(post(
                     http, base, requestedMethods, "getDownloadPublic", "{}"));
-            assertOk(post(http, base, requestedMethods, "setDownloadPublic", "{\"open\":false}"));
 
             ObjectNode pickedFolder = body(post(http, base, requestedMethods, "pickFolder",
                     "{\"purpose\":\"pdf-export\"}"));

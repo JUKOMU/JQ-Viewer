@@ -30,6 +30,8 @@ public final class SettingsService {
     private static final String DOWNLOAD_PUBLIC = "download_public";
     private static final String DOWNLOAD_FOLDER_REF = "download_folder_ref";
     private static final String DOWNLOAD_DISPLAY_PATH = "download_display_path";
+    private static final String DOWNLOAD_PENDING_CLEANUP_FOLDER_REF =
+            "download_pending_cleanup_folder_ref";
 
     private final Database database;
     private final ObjectMapper mapper;
@@ -95,7 +97,21 @@ public final class SettingsService {
                 : privateRoot.toAbsolutePath().normalize();
     }
 
-    public synchronized void setDownloadLocation(boolean downloadPublic, Path root) {
+    public synchronized Path pendingDownloadCleanup() {
+        String folderRef = text(DOWNLOAD_PENDING_CLEANUP_FOLDER_REF, null);
+        if (folderRef == null) return null;
+        try {
+            return FileReferences.parseFolder(folderRef);
+        } catch (ApiException exception) {
+            return null;
+        }
+    }
+
+    public synchronized void setDownloadLocation(
+            boolean downloadPublic,
+            Path root,
+            Path pendingCleanup
+    ) {
         Path normalized = root.toAbsolutePath().normalize();
         Connection connection = database.connection();
         try {
@@ -110,6 +126,13 @@ public final class SettingsService {
                     delete(connection, DOWNLOAD_FOLDER_REF);
                     delete(connection, DOWNLOAD_DISPLAY_PATH);
                 }
+                if (pendingCleanup == null) {
+                    delete(connection, DOWNLOAD_PENDING_CLEANUP_FOLDER_REF);
+                } else {
+                    put(connection, DOWNLOAD_PENDING_CLEANUP_FOLDER_REF,
+                            FileReferences.folderRef(
+                                    pendingCleanup.toAbsolutePath().normalize()));
+                }
                 connection.commit();
             } catch (Exception exception) {
                 connection.rollback();
@@ -122,6 +145,10 @@ public final class SettingsService {
         } catch (SQLException exception) {
             throw new IllegalStateException("保存下载目录失败", exception);
         }
+    }
+
+    public synchronized void clearPendingDownloadCleanup() {
+        delete(DOWNLOAD_PENDING_CLEANUP_FOLDER_REF);
     }
 
     public synchronized SuccessResponse setConcurrency(String key, int value) {

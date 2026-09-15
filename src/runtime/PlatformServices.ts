@@ -70,8 +70,15 @@ export interface PublicDownloadService {
     downloadPublic: boolean
     moved: number
     displayPath?: string
+    cleanupPending?: boolean
+    cleanupMessage?: string
   }>
-  getPublic(): Promise<{ downloadPublic: boolean; displayPath?: string }>
+  getPublic(): Promise<{
+    downloadPublic: boolean
+    displayPath?: string
+    cleanupPending?: boolean
+    cleanupMessage?: string
+  }>
   requestStoragePermission(): Promise<{
     granted: boolean
     permissionType: string

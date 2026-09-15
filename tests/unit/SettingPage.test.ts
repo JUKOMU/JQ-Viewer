@@ -201,4 +201,32 @@ describe('SettingPage 导出格式重置', () => {
     )
     wrapper.unmount()
   })
+
+  test('Desktop 下载位置已切换但旧目录待清理时显示恢复提示', async () => {
+    mocks.runtimePlatform = 'windows'
+    mocks.setDownloadPublic.mockResolvedValue({
+      success: true,
+      downloadPublic: true,
+      moved: 2,
+      displayPath: 'D:\\Comics',
+      cleanupPending: true,
+      cleanupMessage: '下载位置已切换，旧目录将在下次启动时重试清理',
+    })
+
+    const wrapper = mount(SettingPage)
+    await flushPromises()
+    const row = wrapper
+      .findAll('.row')
+      .find((candidate) => candidate.text().includes('自定义下载位置'))
+    row?.findComponent({ name: 'IonToggle' }).vm.$emit('ion-change', {
+      detail: { checked: true },
+    })
+    await flushPromises()
+
+    expect(mocks.showToast).toHaveBeenCalledWith(
+      '下载位置已切换，旧目录将在下次启动时重试清理',
+      'medium',
+    )
+    wrapper.unmount()
+  })
 })

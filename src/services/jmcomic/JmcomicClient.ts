@@ -151,9 +151,16 @@ export interface JmcomicClient {
     downloadPublic: boolean
     moved: number
     displayPath?: string
+    cleanupPending?: boolean
+    cleanupMessage?: string
   }>
 
-  getDownloadPublic(): Promise<{ downloadPublic: boolean; displayPath?: string }>
+  getDownloadPublic(): Promise<{
+    downloadPublic: boolean
+    displayPath?: string
+    cleanupPending?: boolean
+    cleanupMessage?: string
+  }>
 
   requestManageStorage(): Promise<{ granted: boolean; permissionType: string; apiLevel: number }>
 

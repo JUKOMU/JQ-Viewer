@@ -695,6 +695,12 @@ onMounted(async () => {
       downloadPublic.value = location.downloadPublic
       downloadLocationPath.value = location.displayPath ?? ''
       SettingsStore.setDownloadPublic(location.downloadPublic)
+      if (location.cleanupPending) {
+        await showToast(
+          location.cleanupMessage ?? '旧下载目录仍待清理，应用稍后会自动重试',
+          'medium',
+        )
+      }
     } catch {
       /* 保留启动设置快照 */
     }
@@ -961,7 +967,12 @@ async function onDownloadPublicChange(e: CustomEvent) {
           ? `已迁移 ${result.moved} 个文件，下载位置：${result.displayPath}`
           : `下载位置已设为：${result.displayPath}`
         : '已恢复应用内部下载位置'
-    await showToast(msg, 'success')
+    await showToast(
+      result.cleanupPending
+        ? (result.cleanupMessage ?? '下载位置已切换，但旧目录仍待清理')
+        : msg,
+      result.cleanupPending ? 'medium' : 'success',
+    )
   } catch (e: any) {
     downloadPublic.value = previous
     SettingsStore.setDownloadPublic(previous)

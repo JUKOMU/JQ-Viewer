@@ -168,9 +168,16 @@ function createDownloadLocationService(
         downloadPublic: boolean
         moved: number
         displayPath: string
+        cleanupPending: boolean
+        cleanupMessage?: string
       }>(fetcher, 'setDownloadPublic', { open }),
     getPublic: () =>
-      requestBackend<{ downloadPublic: boolean; displayPath: string }>(
+      requestBackend<{
+        downloadPublic: boolean
+        displayPath: string
+        cleanupPending: boolean
+        cleanupMessage?: string
+      }>(
         fetcher,
         'getDownloadPublic',
         {},

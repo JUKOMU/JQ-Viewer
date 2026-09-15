@@ -79,6 +79,8 @@ class BackendHttpTest {
             assertTrue(backend.isRunning());
             assertTrue(backend.database().isOpen());
             assertEquals(4, ((ThreadPoolExecutor) backend.businessExecutor()).getCorePoolSize());
+            assertEquals(1,
+                    ((ThreadPoolExecutor) backend.fileOperationExecutor()).getCorePoolSize());
             assertEquals(200, homeResponse.statusCode());
             assertTrue(homeResponse.body().contains(">test<"));
             assertEquals(200, refreshResponse.statusCode());
@@ -108,6 +110,7 @@ class BackendHttpTest {
                 () -> send(client, HttpRequest.newBuilder(base.resolve("/home")).GET().build())
         );
         assertTrue(backend.businessExecutor().isShutdown());
+        assertTrue(backend.fileOperationExecutor().isShutdown());
         assertTrue(backend.pdfExportExecutor().isShutdown());
     }
 

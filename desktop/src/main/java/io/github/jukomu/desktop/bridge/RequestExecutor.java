@@ -16,10 +16,16 @@ import java.util.function.Supplier;
 public final class RequestExecutor {
     private static final long FILE_OPERATION_TIMEOUT = TimeUnit.HOURS.toMillis(24);
     private final Executor executor;
+    private final ExecutorService fileOperationExecutor;
     private final ObjectMapper mapper;
 
-    public RequestExecutor(Executor executor, ObjectMapper mapper) {
+    public RequestExecutor(
+            Executor executor,
+            ExecutorService fileOperationExecutor,
+            ObjectMapper mapper
+    ) {
         this.executor = executor;
+        this.fileOperationExecutor = fileOperationExecutor;
         this.mapper = mapper;
     }
 
@@ -44,24 +50,18 @@ public final class RequestExecutor {
             return;
         }
 
+        executeFileOperation(context, () -> task.apply(request));
+    }
+
+    public void runFileOperation(Context context, Supplier<?> task) {
         try {
-            context.async(config -> {
-                if (executor instanceof ExecutorService executorService) {
-                    config.executor = executorService;
-                }
-                config.timeout = FILE_OPERATION_TIMEOUT;
-                config.onTimeout(timeoutContext -> sendError(timeoutContext,
-                        ApiException.unavailable("文件操作超时")));
-            }, () -> {
-                try {
-                    context.json(task.apply(request));
-                } catch (Throwable failure) {
-                    sendError(context, unwrap(failure));
-                }
-            });
-        } catch (RejectedExecutionException exception) {
-            sendError(context, new ApiException("internal", 503, "当前请求过多，请稍后重试"));
+            Request.requireObject(context, mapper);
+        } catch (ApiException exception) {
+            sendError(context, exception);
+            return;
         }
+
+        executeFileOperation(context, task);
     }
 
     public void run(Context context, Supplier<?> task) {
@@ -92,6 +92,25 @@ public final class RequestExecutor {
             }
             return null;
         }));
+    }
+
+    private void executeFileOperation(Context context, Supplier<?> task) {
+        try {
+            context.async(config -> {
+                config.executor = fileOperationExecutor;
+                config.timeout = FILE_OPERATION_TIMEOUT;
+                config.onTimeout(timeoutContext -> sendError(timeoutContext,
+                        ApiException.unavailable("文件操作超时")));
+            }, () -> {
+                try {
+                    context.json(task.get());
+                } catch (Throwable failure) {
+                    sendError(context, unwrap(failure));
+                }
+            });
+        } catch (RejectedExecutionException exception) {
+            sendError(context, new ApiException("internal", 503, "当前请求过多，请稍后重试"));
+        }
     }
 
     private void sendError(Context context, Throwable failure) {

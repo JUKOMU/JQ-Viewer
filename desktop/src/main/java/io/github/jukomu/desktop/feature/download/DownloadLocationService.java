@@ -77,7 +77,17 @@ public final class DownloadLocationService {
     public DownloadLocationResponse get() {
         DownloadLocation location = settings.downloadLocation();
         Path root = files.root();
-        return new DownloadLocationResponse(location.downloadPublic(), root.toString());
+        CleanupResult cleanup = cleanupStatus();
+        return new DownloadLocationResponse(
+                location.downloadPublic(), root.toString(),
+                cleanup.pending(), cleanup.message());
+    }
+
+    public void reconcileOnStartup() {
+        synchronized (files) {
+            CleanupResult cleanup = retryPendingCleanup();
+            if (cleanup.pending()) LOGGER.warn("{}", cleanup.message());
+        }
     }
 
     public DownloadRelocationResponse set(boolean open) {
@@ -92,7 +102,7 @@ public final class DownloadLocationService {
             DownloadLocation current = settings.downloadLocation();
             Path source = files.root();
             if (current.downloadPublic() == open) {
-                return response(open, 0, source);
+                return response(open, 0, source, retryPendingCleanup());
             }
 
             Path target = open ? selectTarget() : privateRoot;
@@ -101,28 +111,60 @@ public final class DownloadLocationService {
             }
             validateRoots(source, target);
             if (source.equals(target)) {
-                settings.setDownloadLocation(open, target);
-                return response(open, 0, target);
+                settings.setDownloadLocation(open, target, null);
+                return response(open, 0, target, CleanupResult.complete());
             }
 
             validateCompletedDownloads();
             MigrationResult migration = migrate(source, target);
             try {
-                settings.setDownloadLocation(open, target);
-                files.switchRoot(target);
+                settings.setDownloadLocation(open, target, source);
             } catch (RuntimeException exception) {
                 rollbackCreatedFiles(migration.createdFiles());
                 throw exception;
             }
+            files.switchRoot(target);
 
-            publish(migration.moved(), migration.moved(), "deleting", null);
-            try {
-                fileOperations.deleteTree(source);
-            } catch (IOException exception) {
-                LOGGER.warn("下载目录已切换，但旧目录清理失败: {}", source, exception);
-            }
-            return response(open, migration.moved(), target);
+            return response(open, migration.moved(), target, retryPendingCleanup());
         }
+    }
+
+    private CleanupResult retryPendingCleanup() {
+        Path pending = settings.pendingDownloadCleanup();
+        if (pending == null) return CleanupResult.complete();
+        Path current = files.root();
+        if (!isManagedRoot(pending)
+                || pending.equals(current)
+                || pending.startsWith(current)
+                || current.startsWith(pending)) {
+            return CleanupResult.pending("下载位置已切换，但旧目录清理状态异常，请手动检查："
+                    + pending);
+        }
+
+        publish(0, 0, "deleting", null);
+        try {
+            fileOperations.deleteTree(pending);
+            settings.clearPendingDownloadCleanup();
+            return CleanupResult.complete();
+        } catch (IOException | RuntimeException exception) {
+            String message = "下载位置已切换，但旧目录暂未清理：" + pending
+                    + "。应用会在下次启动或再次确认此设置时重试。";
+            LOGGER.warn(message, exception);
+            return CleanupResult.pending(message);
+        }
+    }
+
+    private CleanupResult cleanupStatus() {
+        Path pending = settings.pendingDownloadCleanup();
+        if (pending == null) return CleanupResult.complete();
+        return CleanupResult.pending("旧下载目录仍待清理：" + pending
+                + "。应用会在下次启动或再次确认此设置时重试。");
+    }
+
+    private boolean isManagedRoot(Path root) {
+        Path fileName = root.getFileName();
+        return root.equals(privateRoot)
+                || fileName != null && Paths.APPLICATION_NAME.equals(fileName.toString());
     }
 
     private Path selectTarget() {
@@ -267,8 +309,14 @@ public final class DownloadLocationService {
         }
     }
 
-    private static DownloadRelocationResponse response(boolean open, int moved, Path target) {
-        return new DownloadRelocationResponse(true, open, moved, target.toString());
+    private static DownloadRelocationResponse response(
+            boolean open,
+            int moved,
+            Path target,
+            CleanupResult cleanup
+    ) {
+        return new DownloadRelocationResponse(
+                true, open, moved, target.toString(), cleanup.pending(), cleanup.message());
     }
 
     private static String display(Path relative) {
@@ -281,6 +329,16 @@ public final class DownloadLocationService {
     }
 
     private record MigrationResult(int moved, List<Path> createdFiles) {
+    }
+
+    private record CleanupResult(boolean pending, String message) {
+        private static CleanupResult complete() {
+            return new CleanupResult(false, null);
+        }
+
+        private static CleanupResult pending(String message) {
+            return new CleanupResult(true, message);
+        }
     }
 
     interface FileOperations {

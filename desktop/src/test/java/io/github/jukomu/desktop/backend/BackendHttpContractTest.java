@@ -390,6 +390,17 @@ class BackendHttpContractTest {
             HttpResponse<byte[]> image = getBytes(http, base.resolve("/image/photo-1/1"));
             HttpResponse<byte[]> thumb = getBytes(http, base.resolve("/thumb/photo-1/1"));
             BufferedImage thumbnail = ImageIO.read(new ByteArrayInputStream(thumb.body()));
+            ObjectNode cacheCapacity = body(post(
+                    http, base, requestedMethods, "getCacheCapacityInfo", "{}"));
+            ObjectNode cacheContents = body(post(
+                    http, base, requestedMethods, "getImageCacheContents", "{}"));
+            ObjectNode updatedCacheCapacity = body(post(
+                    http, base, requestedMethods, "setCacheCapacity", "{\"mb\":64}"));
+            ObjectNode cacheSettings = body(post(
+                    http, base, requestedMethods, "getAllSettings", "{}"));
+            assertOk(post(http, base, requestedMethods, "clearImageCache", "{}"));
+            ObjectNode clearedCacheContents = body(post(
+                    http, base, requestedMethods, "getImageCacheContents", "{}"));
 
             assertEquals(2, search.path("currentPage").asInt());
             assertEquals("album-1", search.path("content").get(0).path("id").asText());
@@ -480,6 +491,13 @@ class BackendHttpContractTest {
             assertNotNull(thumbnail);
             assertEquals(300, thumbnail.getWidth());
             assertEquals(150, thumbnail.getHeight());
+            assertEquals(256, cacheCapacity.path("requestedMb").asInt());
+            assertTrue(cacheCapacity.path("effectiveMb").asInt() > 0);
+            assertTrue(cacheContents.path("entries").size() >= 2);
+            assertTrue(updatedCacheCapacity.path("success").asBoolean());
+            assertEquals(64, updatedCacheCapacity.path("requestedMb").asInt());
+            assertEquals(64, cacheSettings.path("cacheRequestedMb").asInt());
+            assertEquals(0, clearedCacheContents.path("entries").size());
             assertFalse(downloadLocation.path("downloadPublic").asBoolean());
 
             SearchQuery forwardedSearch = (SearchQuery) fake.firstArgument("search");
@@ -525,6 +543,8 @@ class BackendHttpContractTest {
                     "getAllSettings", "[]");
             HttpResponse<String> wrongType = post(http, base, new LinkedHashSet<>(),
                     "setReaderPreloadPages", "{\"n\":\"10\"}");
+            HttpResponse<String> invalidCacheCapacity = post(
+                    http, base, new LinkedHashSet<>(), "setCacheCapacity", "{\"mb\":63}");
             HttpResponse<String> invalidImage = http.send(
                     HttpRequest.newBuilder(base.resolve("/image/photo-1/not-a-number")).GET().build(),
                     HttpResponse.BodyHandlers.ofString());
@@ -545,6 +565,9 @@ class BackendHttpContractTest {
             assertEquals("internal", json(malformed).path("code").asText());
             assertEquals(400, wrongType.statusCode());
             assertEquals("n必须是整数", json(wrongType).path("message").asText());
+            assertEquals(400, invalidCacheCapacity.statusCode());
+            assertEquals("mb must be between 64 and 1024",
+                    json(invalidCacheCapacity).path("message").asText());
             assertEquals(400, invalidImage.statusCode());
             assertEquals("internal", json(invalidImage).path("code").asText());
         }

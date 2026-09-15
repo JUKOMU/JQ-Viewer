@@ -12,6 +12,7 @@ import io.github.jukomu.desktop.bridge.RequestExecutor;
 import io.github.jukomu.desktop.bridge.model.ErrorResponse;
 import io.github.jukomu.desktop.bridge.handler.ApiPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.AuthPluginHandler;
+import io.github.jukomu.desktop.bridge.handler.CachePluginHandler;
 import io.github.jukomu.desktop.bridge.handler.DownloadPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.FilePluginHandler;
 import io.github.jukomu.desktop.bridge.handler.HistoryPluginHandler;
@@ -32,6 +33,7 @@ import io.github.jukomu.desktop.feature.download.data.DownloadStore;
 import io.github.jukomu.desktop.feature.favorite.OfflineFavoriteService;
 import io.github.jukomu.desktop.feature.favorite.data.OfflineFavoriteStore;
 import io.github.jukomu.desktop.feature.history.HistoryService;
+import io.github.jukomu.desktop.feature.image.CacheService;
 import io.github.jukomu.desktop.feature.image.ImageService;
 import io.github.jukomu.desktop.feature.files.FileService;
 import io.github.jukomu.desktop.feature.pdf.data.PdfStore;
@@ -262,6 +264,8 @@ public final class Backend implements AutoCloseable {
                     ? CredentialStores.system()
                     : providedCredentialStore;
             PdfPageCache pdfPageCache = new PdfPageCache(paths.cacheDirectory());
+            CacheService cacheService = new CacheService(
+                    settingsService, imageService.cache(), pdfPageCache);
             PdfManagementService pdfManagementService = new PdfManagementService(
                     new PdfStore(database),
                     downloadStore,
@@ -276,6 +280,7 @@ public final class Backend implements AutoCloseable {
                     new ApiPluginHandler(requests,
                             new CatalogService(serviceClient, imageService, albumCoverUrl), imageService),
                     new AuthPluginHandler(requests, new AuthService(serviceClient, credentialStore)),
+                    new CachePluginHandler(requests, cacheService),
                     new SettingsPluginHandler(requests, settingsService, downloadLocationService),
                     new HistoryPluginHandler(requests, new HistoryService(database)),
                     new OfflineFavoritePluginHandler(requests, new OfflineFavoriteService(

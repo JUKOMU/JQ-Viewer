@@ -49,6 +49,12 @@ public final class ImageCache {
         usedBytes = 0;
     }
 
+    public synchronized void setCapacityBytes(long capacityBytes) {
+        if (capacityBytes <= 0) throw new IllegalArgumentException("缓存容量必须为正数");
+        this.capacityBytes = capacityBytes;
+        evict();
+    }
+
     public synchronized long usedBytes() {
         return usedBytes;
     }

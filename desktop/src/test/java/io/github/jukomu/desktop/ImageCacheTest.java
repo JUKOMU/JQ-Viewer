@@ -34,4 +34,18 @@ class ImageCacheTest {
         assertEquals(0, cache.usedBytes());
         assertEquals(0, cache.snapshot().size());
     }
+
+    @Test
+    void shrinkingCapacityImmediatelyEvictsLeastRecentlyUsedEntries() {
+        ImageCache cache = new ImageCache(6);
+        cache.put("photo-a/1/image", new byte[]{1, 2, 3}, "image/jpeg");
+        cache.put("photo-b/1/image", new byte[]{4, 5, 6}, "image/jpeg");
+        cache.get("photo-a/1/image");
+
+        cache.setCapacityBytes(3);
+
+        assertEquals(3, cache.capacityBytes());
+        assertNull(cache.get("photo-b/1/image"));
+        assertEquals(3, cache.get("photo-a/1/image").bytes().length);
+    }
 }

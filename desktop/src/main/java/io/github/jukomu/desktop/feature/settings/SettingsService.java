@@ -6,6 +6,7 @@ import io.github.jukomu.desktop.bridge.ApiException;
 import io.github.jukomu.desktop.bridge.model.SuccessResponse;
 import io.github.jukomu.desktop.data.Database;
 import io.github.jukomu.desktop.feature.files.FileReferences;
+import io.github.jukomu.desktop.feature.image.CacheCapacityPolicy;
 import io.github.jukomu.desktop.feature.settings.model.DownloadLocation;
 import io.github.jukomu.desktop.feature.settings.model.PdfExportFolder;
 import io.github.jukomu.desktop.feature.settings.model.PdfExportPreferencesResponse;
@@ -23,7 +24,9 @@ public final class SettingsService {
     public static final String DEFAULT_PDF_DIRECTORY_TEMPLATE = "{id}";
     public static final String DEFAULT_PDF_FILE_NAME_TEMPLATE =
             "【{author}】{title}_{id} {chapterRange}";
-    private static final int CACHE_CAPACITY_MB = 256;
+    public static final int DEFAULT_CACHE_CAPACITY_MB =
+            Math.toIntExact(CacheCapacityPolicy.DEFAULT_REQUESTED_MB);
+    private static final String CACHE_CAPACITY = "cache_capacity_mb";
     private static final String PDF_EXPORT_FOLDER = "pdf_export_folder";
     private static final String PDF_EXPORT_DIRECTORY_TEMPLATE = "pdf_export_directory_template";
     private static final String PDF_EXPORT_FILE_NAME_TEMPLATE = "pdf_export_file_name_template";
@@ -46,17 +49,19 @@ public final class SettingsService {
     }
 
     public synchronized SettingsResponse all() {
+        CacheCapacityPolicy.Result cacheCapacity = new CacheCapacityPolicy().calculate(
+                cacheCapacityMb(), Runtime.getRuntime().maxMemory());
         return new SettingsResponse(
                 integer("reader_preload_pages", 15),
                 preloadConcurrency(),
                 downloadConcurrency(),
                 downloadLocation().downloadPublic(),
-                CACHE_CAPACITY_MB,
-                CACHE_CAPACITY_MB,
-                CACHE_CAPACITY_MB,
-                Runtime.getRuntime().maxMemory() / 1024 / 1024,
-                false,
-                "",
+                Math.toIntExact(cacheCapacity.effectiveMb()),
+                Math.toIntExact(cacheCapacity.requestedMb()),
+                Math.toIntExact(cacheCapacity.effectiveMb()),
+                cacheCapacity.maxHeapMb(),
+                cacheCapacity.temporaryClamp(),
+                cacheCapacity.reason(),
                 false,
                 text("reader_display_mode", "vertical"),
                 "auto",
@@ -73,6 +78,18 @@ public final class SettingsService {
 
     public synchronized int downloadConcurrency() {
         return concurrency("download_concurrency");
+    }
+
+    public synchronized int cacheCapacityMb() {
+        int value = integer(CACHE_CAPACITY, DEFAULT_CACHE_CAPACITY_MB);
+        return value < 64 || value > 1024 ? DEFAULT_CACHE_CAPACITY_MB : value;
+    }
+
+    public synchronized void setCacheCapacityMb(int value) {
+        if (value < 64 || value > 1024) {
+            throw ApiException.invalidRequest("mb must be between 64 and 1024");
+        }
+        put(CACHE_CAPACITY, value);
     }
 
     public synchronized DownloadLocation downloadLocation() {

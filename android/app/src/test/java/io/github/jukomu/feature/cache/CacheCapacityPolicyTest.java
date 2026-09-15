@@ -69,17 +69,14 @@ public class CacheCapacityPolicyTest {
     }
 
     @Test
-    public void preservesMinimumCapacityForTinyOrInvalidHeap() {
+    public void keepsTinyHeapWithinBudgetAndRejectsInvalidHeap() {
         CacheCapacityPolicy.Result tiny = calculate(1024, 8, false,
             CacheCapacityPolicy.PressureLevel.NORMAL);
-        CacheCapacityPolicy.Result invalid = policy.calculate(1024, 0, false,
-            CacheCapacityPolicy.PressureLevel.NORMAL);
 
-        assertEquals(16, tiny.effectiveMb);
-        assertEquals("minimum-safe-capacity", tiny.reason);
-        assertEquals(16, invalid.effectiveMb);
-        assertEquals("invalid-heap-fallback", invalid.reason);
-        assertTrue(invalid.temporaryClamp);
+        assertEquals(5, tiny.effectiveMb);
+        assertEquals("heap-budget", tiny.reason);
+        assertThrows(IllegalStateException.class, () -> policy.calculate(1024, 0, false,
+            CacheCapacityPolicy.PressureLevel.NORMAL));
     }
 
     private CacheCapacityPolicy.Result calculate(long requestedMb, long maxHeapMb,

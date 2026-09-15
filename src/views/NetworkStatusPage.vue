@@ -31,6 +31,7 @@
               </div>
             </div>
             <div class="card">
+              <div v-if="visibleError" class="operation-error">{{ visibleError }}</div>
               <div v-if="store.domains.value.length" class="domain-list">
                 <div v-for="d in store.domains.value" :key="d.domain" class="domain-row">
                   <span
@@ -43,7 +44,8 @@
                   </span>
                 </div>
               </div>
-              <div v-else class="empty-state">等待首次探活...</div>
+              <div v-else-if="store.loading.value" class="empty-state">正在读取域名状态...</div>
+              <div v-else-if="!visibleError" class="empty-state">暂无域名状态</div>
             </div>
           </section>
 
@@ -70,7 +72,7 @@
 <script setup lang="ts">
 defineOptions({ name: 'NetworkStatusPage' })
 
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import {
   IonBackButton,
   IonButtons,
@@ -84,47 +86,70 @@ import {
 import { refreshOutline, speedometerOutline } from 'ionicons/icons'
 import { JmcomicService } from '@/services/JmcomicService'
 import type { ListenerHandle } from '@/runtime/BackendEvents'
+import { normalizeRuntimeError } from '@/runtime/errors'
 import { useNetworkProbeStore } from '@/composables/networkProbeStore'
 
 const store = useNetworkProbeStore()
 const refreshing = ref(false)
 const measuring = ref(false)
 const latencyMap = ref<Record<string, { latencyMs: number; timedOut: boolean }>>({})
+const operationError = ref('')
+const visibleError = computed(() => operationError.value || store.errorMessage.value)
 let probeHandle: ListenerHandle | null = null
 let refreshTimer: ReturnType<typeof setTimeout> | null = null
+let disposed = false
+const PROBE_EVENT_TIMEOUT_MS = 30_000
 
 onMounted(() => {
+  disposed = false
   JmcomicService.addNetworkProbeListener((data) => {
+    if (data.phase === 'probing' || data.phase === 'result') operationError.value = ''
+    if (data.phase === 'error') operationError.value = data.message
     if (data.phase === 'result' || data.phase === 'error') {
       refreshing.value = false
+      clearRefreshTimer()
     }
-  }).then((h) => {
-    probeHandle = h
   })
+    .then((h) => {
+      if (disposed) {
+        void h.remove().catch(() => {})
+        return
+      }
+      probeHandle = h
+    })
+    .catch((error) => {
+      operationError.value = normalizeRuntimeError(error, '网络事件监听失败').message
+    })
 })
 
 onUnmounted(() => {
-  probeHandle?.remove()
+  disposed = true
+  void probeHandle?.remove().catch(() => {})
   probeHandle = null
-  if (refreshTimer) {
-    clearTimeout(refreshTimer)
-    refreshTimer = null
-  }
+  clearRefreshTimer()
 })
 
 function handleRefresh() {
   if (refreshing.value) return
   refreshing.value = true
-  JmcomicService.reprobeDomains()
-  // result/error 事件到达时 store 自动更新，超时后恢复按钮状态
+  operationError.value = ''
+  latencyMap.value = {}
+  void JmcomicService.reprobeDomains().catch((error) => {
+    operationError.value = normalizeRuntimeError(error, '重新探活失败').message
+    refreshing.value = false
+    clearRefreshTimer()
+  })
   refreshTimer = setTimeout(() => {
     refreshing.value = false
-  }, 5000)
+    operationError.value = '等待探活结果超时，请稍后重试'
+    refreshTimer = null
+  }, PROBE_EVENT_TIMEOUT_MS)
 }
 
 function handleMeasureLatency() {
   if (measuring.value) return
   measuring.value = true
+  operationError.value = ''
   latencyMap.value = {}
   JmcomicService.measureLatency()
     .then((ret) => {
@@ -134,12 +159,18 @@ function handleMeasureLatency() {
       }
       latencyMap.value = map
     })
-    .catch(() => {
-      // 测速失败静默处理
+    .catch((error) => {
+      operationError.value = normalizeRuntimeError(error, '测速失败').message
     })
     .finally(() => {
       measuring.value = false
     })
+}
+
+function clearRefreshTimer() {
+  if (!refreshTimer) return
+  clearTimeout(refreshTimer)
+  refreshTimer = null
 }
 
 function latencyText(domain: string, reachable: boolean): string {
@@ -269,6 +300,14 @@ function formatTime(ts: number): string {
   box-shadow: 0 2px 12px rgba(115, 67, 38, 0.06);
   min-width: 0;
   overflow: hidden;
+}
+
+.operation-error {
+  padding: 10px 16px;
+  border-bottom: 1px solid #f5d7d7;
+  color: #c94444;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 /* 域名列表 */

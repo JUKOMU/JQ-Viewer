@@ -11,6 +11,7 @@ import io.github.jukomu.desktop.feature.auth.CredentialStore;
 import io.github.jukomu.desktop.feature.auth.LoginCredentials;
 import io.github.jukomu.desktop.feature.files.FileReferences;
 import io.github.jukomu.desktop.feature.files.FileService;
+import io.github.jukomu.desktop.feature.network.NetworkService;
 import io.github.jukomu.jmcomic.api.client.JmClient;
 import io.github.jukomu.jmcomic.api.client.JmDownloadClient;
 import io.github.jukomu.jmcomic.api.download.DownloadProgress;
@@ -94,6 +95,11 @@ class BackendHttpContractTest {
             URI base = URI.create("http://127.0.0.1:" + backend.port());
 
             assertOk(post(http, base, requestedMethods, "getInitStatus", "{}"));
+            ObjectNode domainStates = body(post(
+                    http, base, requestedMethods, "getDomainStates", "{}"));
+            ObjectNode latency = body(post(
+                    http, base, requestedMethods, "measureLatency", "{}"));
+            assertOk(post(http, base, requestedMethods, "reprobeDomains", "{}"));
             ObjectNode search = body(post(http, base, requestedMethods, "search",
                     "{\"keyword\":\"needle\",\"category\":\"0\",\"orderBy\":\"mr\","
                             + "\"time\":\"a\",\"searchMainTag\":0,\"page\":2}"));
@@ -499,6 +505,15 @@ class BackendHttpContractTest {
             assertEquals(64, cacheSettings.path("cacheRequestedMb").asInt());
             assertEquals(0, clearedCacheContents.path("entries").size());
             assertFalse(downloadLocation.path("downloadPublic").asBoolean());
+            assertEquals(1, domainStates.path("alive").asInt());
+            assertEquals(2, domainStates.path("total").asInt());
+            assertFalse(domainStates.path("allDeadFallback").asBoolean());
+            assertTrue(domainStates.path("domains").get(0).path("reachable").asBoolean());
+            assertFalse(domainStates.path("domains").get(1).path("reachable").asBoolean());
+            assertEquals(35, latency.path("results").get(0).path("latencyMs").asInt());
+            assertFalse(latency.path("results").get(0).path("timedOut").asBoolean());
+            assertEquals(0, latency.path("results").get(1).path("latencyMs").asInt());
+            assertTrue(latency.path("results").get(1).path("timedOut").asBoolean());
 
             SearchQuery forwardedSearch = (SearchQuery) fake.firstArgument("search");
             ForumQuery forwardedComments = (ForumQuery) fake.firstArgument("getComments");
@@ -588,7 +603,8 @@ class BackendHttpContractTest {
         FileService files = new FileService(paths, ignored -> paths.pdfDirectory(), ignored -> {
         });
         return new Backend(paths, new Database(paths), executor, fake.client(),
-                id -> "https://cover.invalid/" + id + ".jpg", files, credentials);
+                id -> "https://cover.invalid/" + id + ".jpg", files, credentials,
+                fake.networkOperations());
     }
 
     private static void writePdf(Path target) throws Exception {
@@ -754,6 +770,17 @@ class BackendHttpContractTest {
                     JmClient.class.getClassLoader(),
                     new Class<?>[]{JmClient.class, JmDownloadClient.class},
                     (proxy, method, arguments) -> invoke(proxy, method, arguments));
+        }
+
+        private NetworkService.Operations networkOperations() {
+            Map<String, Integer> states = new java.util.LinkedHashMap<>();
+            states.put("https://fast.invalid", 35);
+            states.put("https://dead.invalid", Integer.MAX_VALUE);
+            Map<String, Integer> latency = new java.util.LinkedHashMap<>();
+            latency.put("https://fast.invalid", 35);
+            latency.put("https://dead.invalid", -1);
+            return new NetworkService.Operations(() -> states, () -> latency, () -> {
+            });
         }
 
         private Object invoke(Object proxy, Method method, Object[] arguments) {

@@ -36,6 +36,7 @@ import io.github.jukomu.desktop.feature.history.HistoryService;
 import io.github.jukomu.desktop.feature.image.CacheService;
 import io.github.jukomu.desktop.feature.image.ImageService;
 import io.github.jukomu.desktop.feature.files.FileService;
+import io.github.jukomu.desktop.feature.network.NetworkService;
 import io.github.jukomu.desktop.feature.pdf.data.PdfStore;
 import io.github.jukomu.desktop.feature.pdf.export.PdfExportService;
 import io.github.jukomu.desktop.feature.pdf.export.PdfExportStore;
@@ -100,11 +101,13 @@ public final class Backend implements AutoCloseable {
     private final JmClient providedClient;
     private final Function<String, String> providedAlbumCoverUrl;
     private final CredentialStore providedCredentialStore;
+    private final NetworkService.Operations providedNetworkOperations;
 
     private Javalin app;
     private JmApiClient client;
     private DownloadService downloadService;
     private PdfExportService pdfExportService;
+    private NetworkService networkService;
     private EventHub eventHub;
     private URI homeUrl;
     private boolean running;
@@ -112,7 +115,7 @@ public final class Backend implements AutoCloseable {
 
     public Backend(Paths paths) {
         this(paths, new Database(paths), createBusinessExecutor(), createFileOperationExecutor(),
-                createPdfExportExecutor(), null, null, new FileService(paths), null);
+                createPdfExportExecutor(), null, null, new FileService(paths), null, null);
     }
 
     public Backend(
@@ -121,7 +124,7 @@ public final class Backend implements AutoCloseable {
             ExecutorService businessExecutor
     ) {
         this(paths, database, businessExecutor, createFileOperationExecutor(),
-                createPdfExportExecutor(), null, null, new FileService(paths), null);
+                createPdfExportExecutor(), null, null, new FileService(paths), null, null);
     }
 
     Backend(
@@ -133,7 +136,7 @@ public final class Backend implements AutoCloseable {
     ) {
         this(paths, database, businessExecutor, createFileOperationExecutor(),
                 createPdfExportExecutor(), providedClient, providedAlbumCoverUrl,
-                new FileService(paths), CredentialStores.unavailable());
+                new FileService(paths), CredentialStores.unavailable(), null);
     }
 
     Backend(
@@ -146,7 +149,7 @@ public final class Backend implements AutoCloseable {
     ) {
         this(paths, database, businessExecutor, createFileOperationExecutor(),
                 createPdfExportExecutor(), providedClient, providedAlbumCoverUrl,
-                fileService, CredentialStores.unavailable());
+                fileService, CredentialStores.unavailable(), null);
     }
 
     Backend(
@@ -160,7 +163,22 @@ public final class Backend implements AutoCloseable {
     ) {
         this(paths, database, businessExecutor, createFileOperationExecutor(),
                 createPdfExportExecutor(), providedClient, providedAlbumCoverUrl,
-                fileService, credentialStore);
+                fileService, credentialStore, null);
+    }
+
+    Backend(
+            Paths paths,
+            Database database,
+            ExecutorService businessExecutor,
+            JmClient providedClient,
+            Function<String, String> providedAlbumCoverUrl,
+            FileService fileService,
+            CredentialStore credentialStore,
+            NetworkService.Operations networkOperations
+    ) {
+        this(paths, database, businessExecutor, createFileOperationExecutor(),
+                createPdfExportExecutor(), providedClient, providedAlbumCoverUrl,
+                fileService, credentialStore, networkOperations);
     }
 
     private Backend(
@@ -172,7 +190,8 @@ public final class Backend implements AutoCloseable {
             JmClient providedClient,
             Function<String, String> providedAlbumCoverUrl,
             FileService fileService,
-            CredentialStore providedCredentialStore
+            CredentialStore providedCredentialStore,
+            NetworkService.Operations providedNetworkOperations
     ) {
         this.paths = Objects.requireNonNull(paths, "paths");
         this.database = Objects.requireNonNull(database, "database");
@@ -182,6 +201,7 @@ public final class Backend implements AutoCloseable {
         this.pdfExportExecutor = Objects.requireNonNull(pdfExportExecutor, "pdfExportExecutor");
         this.fileService = Objects.requireNonNull(fileService, "fileService");
         this.providedCredentialStore = providedCredentialStore;
+        this.providedNetworkOperations = providedNetworkOperations;
         if ((providedClient == null) != (providedAlbumCoverUrl == null)) {
             throw new IllegalArgumentException("客户端和封面地址解析器必须同时提供");
         }
@@ -202,6 +222,7 @@ public final class Backend implements AutoCloseable {
         JmApiClient startedClient = null;
         DownloadService startedDownloadService = null;
         PdfExportService startedPdfExportService = null;
+        NetworkService startedNetworkService = null;
         try {
             paths.ensureDirectories();
             if (Backend.class.getResource("/static/index.html") == null) {
@@ -222,6 +243,7 @@ public final class Backend implements AutoCloseable {
             startedEventHub = new EventHub(mapper);
             final JmClient serviceClient;
             final Function<String, String> albumCoverUrl;
+            final NetworkService.Operations networkOperations;
             if (providedClient == null) {
                 startedClient = JmComic.newApiClient(new JmConfiguration.Builder()
                         .downloadThreadPoolSize(settingsService.downloadConcurrency())
@@ -230,14 +252,20 @@ public final class Backend implements AutoCloseable {
                 JmApiClient ownedClient = startedClient;
                 serviceClient = ownedClient;
                 albumCoverUrl = id -> ownedClient.getAlbumCoverUrl(id, "_3x4");
+                networkOperations = NetworkService.Operations.from(ownedClient);
             } else {
                 serviceClient = providedClient;
                 albumCoverUrl = providedAlbumCoverUrl;
+                networkOperations = providedNetworkOperations;
             }
             if (!(serviceClient instanceof JmDownloadClient downloadClient)) {
                 throw new IllegalStateException("JMComic 客户端不支持下载任务控制");
             }
             final EventHub eventHub = startedEventHub;
+            if (networkOperations != null) {
+                startedNetworkService = new NetworkService(
+                        networkOperations, businessExecutor, eventHub);
+            }
             ImageService imageService = new ImageService(serviceClient, businessExecutor, eventHub);
             DownloadStore downloadStore = new DownloadStore(database);
             PdfExportStore pdfExportStore = new PdfExportStore(database);
@@ -288,7 +316,7 @@ public final class Backend implements AutoCloseable {
                     new FilePluginHandler(requests, fileService),
                     new DownloadPluginHandler(requests, downloadService),
                     new PdfPluginHandler(requests, pdfManagementService, startedPdfExportService),
-                    new SystemPluginHandler());
+                    new SystemPluginHandler(requests, startedNetworkService));
             PdfResourceService pdfResources = new PdfResourceService();
             candidate = Javalin.create(config -> {
                 config.jetty.host = LOOPBACK_HOST;
@@ -317,6 +345,7 @@ public final class Backend implements AutoCloseable {
             this.client = startedClient;
             this.downloadService = downloadService;
             this.pdfExportService = startedPdfExportService;
+            this.networkService = startedNetworkService;
             this.eventHub = eventHub;
             this.homeUrl = URI.create("http://" + LOOPBACK_HOST + ":" + port + "/home");
             this.running = true;
@@ -332,6 +361,7 @@ public final class Backend implements AutoCloseable {
             }
             if (startedDownloadService != null) startedDownloadService.close();
             if (startedPdfExportService != null) startedPdfExportService.close();
+            if (startedNetworkService != null) startedNetworkService.close();
             if (startedEventHub != null) startedEventHub.close();
             if (startedClient != null) startedClient.close();
             pdfExportExecutor.shutdownNow();
@@ -552,6 +582,10 @@ public final class Backend implements AutoCloseable {
         if (pdfExportService != null) {
             pdfExportService.close();
             pdfExportService = null;
+        }
+        if (networkService != null) {
+            networkService.close();
+            networkService = null;
         }
         if (eventHub != null) {
             eventHub.close();

@@ -5,6 +5,8 @@
 import { ref } from 'vue'
 import { JmcomicService } from '@/services/JmcomicService'
 import type { NetworkProbeEvent } from '@/services/JmcomicTypes'
+import type { JmcomicListenerHandle } from '@/services/jmcomic/JmcomicClient'
+import { normalizeRuntimeError } from '@/runtime/errors'
 
 interface DomainState {
   domain: string
@@ -20,18 +22,47 @@ interface LogEntry {
 const domains = ref<DomainState[]>([])
 const allDeadFallback = ref(false)
 const events = ref<LogEntry[]>([])
+const loading = ref(false)
+const errorMessage = ref('')
 
 let initiated = false
+let generation = 0
+let refreshSequence = 0
+let probeHandle: JmcomicListenerHandle | null = null
+let invalidationHandle: JmcomicListenerHandle | null = null
+
+export async function refreshDomainStates() {
+  const sequence = ++refreshSequence
+  loading.value = true
+  try {
+    const state = await JmcomicService.getDomainStates()
+    if (sequence !== refreshSequence) return
+    domains.value = state.domains
+    allDeadFallback.value = state.allDeadFallback
+    errorMessage.value = ''
+  } catch (error) {
+    if (sequence !== refreshSequence) return
+    errorMessage.value = normalizeRuntimeError(error, '获取域名状态失败').message
+  } finally {
+    if (sequence === refreshSequence) loading.value = false
+  }
+}
 
 export function initNetworkProbeStore() {
   if (initiated) return
   initiated = true
+  const currentGeneration = ++generation
 
   void JmcomicService.addNetworkProbeListener((data: NetworkProbeEvent) => {
+    if (!initiated || generation !== currentGeneration) return
     if (data.domains) {
+      refreshSequence++
+      loading.value = false
       domains.value = data.domains
       allDeadFallback.value = !!data.allDeadFallback
     }
+    if (data.phase === 'result') errorMessage.value = ''
+    if (data.phase === 'error') errorMessage.value = data.message
     events.value.push({
       phase: data.phase,
       message: data.message,
@@ -40,22 +71,52 @@ export function initNetworkProbeStore() {
     if (events.value.length > 50) {
       events.value = events.value.slice(-50)
     }
-  }).catch(() => {
-    // Desktop runtime 不提供网络探活事件传输。
   })
+    .then((handle) => {
+      if (!initiated || generation !== currentGeneration) {
+        void handle.remove().catch(() => {})
+        return
+      }
+      probeHandle = handle
+    })
+    .catch(() => {})
 
-  void (async () => {
-    try {
-      // 拉取已有域名状态（来自 AbstractJmClient 构造时的初始探活）
-      const state = await JmcomicService.getDomainStates()
-      domains.value = state.domains
-      allDeadFallback.value = state.allDeadFallback
-    } catch {
-      // 当前 runtime 未实现域名状态，或 client 尚未就绪时忽略。
-    }
-  })()
+  const invalidationRegistration = JmcomicService.addStateInvalidatedListener?.(() => {
+    if (initiated && generation === currentGeneration) void refreshDomainStates()
+  })
+  if (invalidationRegistration) {
+    void invalidationRegistration
+      .then((handle) => {
+        if (!handle) return
+        if (!initiated || generation !== currentGeneration) {
+          void handle.remove().catch(() => {})
+          return
+        }
+        invalidationHandle = handle
+      })
+      .catch(() => {})
+  }
+
+  void refreshDomainStates()
+}
+
+export async function disposeNetworkProbeStore() {
+  initiated = false
+  generation++
+  refreshSequence++
+  const handles = [probeHandle, invalidationHandle].filter(
+    (handle): handle is JmcomicListenerHandle => handle !== null,
+  )
+  probeHandle = null
+  invalidationHandle = null
+  loading.value = false
+  domains.value = []
+  allDeadFallback.value = false
+  events.value = []
+  errorMessage.value = ''
+  await Promise.allSettled(handles.map((handle) => handle.remove()))
 }
 
 export function useNetworkProbeStore() {
-  return { domains, allDeadFallback, events }
+  return { domains, allDeadFallback, events, loading, errorMessage, refreshDomainStates }
 }

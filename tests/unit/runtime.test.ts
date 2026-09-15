@@ -109,6 +109,9 @@ describe('runtime', () => {
       'loadOfflineBackup',
       'deleteOfflineBackup',
       'listOfflineBackupKeys',
+      'getDomainStates',
+      'reprobeDomains',
+      'measureLatency',
       'getInitStatus',
     ])
     expect(fetcher).toHaveBeenCalledWith('/api/getInitStatus', {
@@ -179,7 +182,43 @@ describe('runtime', () => {
     await expect(malformed.getInitStatus()).rejects.toMatchObject({
       code: 'internal',
     })
-    expect((backend as unknown as { getDomainStates?: unknown }).getDomainStates).toBeUndefined()
+  })
+
+  test('按共享契约转发域名快照、测速和重新探活', async () => {
+    const fetcher = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+      if (String(input) === '/api/getDomainStates') {
+        return Promise.resolve(
+          response({
+            domains: [{ domain: 'https://fast.invalid', reachable: true }],
+            alive: 1,
+            total: 1,
+            allDeadFallback: false,
+          }),
+        )
+      }
+      if (String(input) === '/api/measureLatency') {
+        return Promise.resolve(
+          response({
+            results: [{ domain: 'https://fast.invalid', latencyMs: 35, timedOut: false }],
+          }),
+        )
+      }
+      return Promise.resolve(response({ success: true }))
+    })
+    const backend = createBackendClient(fetcher)
+
+    await expect(backend.getDomainStates()).resolves.toMatchObject({ alive: 1, total: 1 })
+    await expect(backend.measureLatency()).resolves.toMatchObject({
+      results: [{ domain: 'https://fast.invalid', latencyMs: 35, timedOut: false }],
+    })
+    await expect(backend.reprobeDomains()).resolves.toBeDefined()
+
+    expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
+      '/api/getDomainStates',
+      '/api/measureLatency',
+      '/api/reprobeDomains',
+    ])
+    expect(fetcher.mock.calls.map(([, init]) => init?.body)).toEqual(['{}', '{}', '{}'])
   })
 
   test('按共享契约转发下载方法', async () => {
@@ -309,9 +348,7 @@ describe('runtime', () => {
   test('Desktop 下载位置 adapter 透传切换、查询和免权限语义', async () => {
     const fetcher = vi.fn().mockImplementation((input: RequestInfo | URL) => {
       if (String(input) === '/api/getDownloadPublic') {
-        return Promise.resolve(
-          response({ downloadPublic: true, displayPath: 'D:\\Comics' }),
-        )
+        return Promise.resolve(response({ downloadPublic: true, displayPath: 'D:\\Comics' }))
       }
       if (String(input) === '/api/setDownloadPublic') {
         return Promise.resolve(

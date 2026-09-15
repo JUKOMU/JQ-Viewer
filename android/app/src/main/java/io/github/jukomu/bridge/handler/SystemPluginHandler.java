@@ -228,7 +228,7 @@ public final class SystemPluginHandler {
             for (Map.Entry<String, Integer> entry : states.entrySet()) {
                 JSONObject domain = new JSONObject();
                 domain.put("domain", entry.getKey());
-                boolean reachable = entry.getValue() < (Integer.MAX_VALUE / 2);
+                boolean reachable = isDomainReachable(entry.getValue());
                 domain.put("reachable", reachable);
                 if (reachable) {
                     alive++;
@@ -236,7 +236,7 @@ public final class SystemPluginHandler {
                 domains.put(domain);
             }
             boolean allDeadFallback = !states.isEmpty()
-                && states.values().stream().allMatch(value -> value == -1);
+                && states.values().stream().allMatch(value -> value != null && value == -1);
 
             result.put("domains", domains);
             result.put("alive", alive);
@@ -628,14 +628,14 @@ public final class SystemPluginHandler {
             for (Map.Entry<String, Integer> entry : states.entrySet()) {
                 JSONObject domain = new JSONObject();
                 domain.put("domain", entry.getKey());
-                domain.put("reachable", entry.getValue() < (Integer.MAX_VALUE / 2));
+                domain.put("reachable", isDomainReachable(entry.getValue()));
                 if (domain.getBoolean("reachable")) {
                     alive++;
                 }
                 domains.put(domain);
             }
             boolean allDeadFallback = !states.isEmpty()
-                && states.values().stream().allMatch(value -> value == -1);
+                && states.values().stream().allMatch(value -> value != null && value == -1);
             result.put("allDeadFallback", allDeadFallback);
             result.put("domains", domains);
             result.put("alive", alive);
@@ -662,6 +662,10 @@ public final class SystemPluginHandler {
                 networkProbeConsumer.accept(event);
             }
         }
+    }
+
+    private static boolean isDomainReachable(Integer state) {
+        return state != null && state >= 0 && state < (Integer.MAX_VALUE / 2);
     }
 
     private void recognizeText(PluginCall call, Intent data) {

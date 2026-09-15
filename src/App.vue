@@ -26,7 +26,7 @@ import MainMenu from '@/components/menu/MainMenu.vue'
 import { useSideMenuState } from '@/composables/useSideMenuState'
 import { initSettings } from '@/services/SettingsService'
 import { useAuth } from '@/composables/useAuth'
-import { initNetworkProbeStore } from '@/composables/networkProbeStore'
+import { disposeNetworkProbeStore, initNetworkProbeStore } from '@/composables/networkProbeStore'
 import { JmcomicService, showToast } from '@/services/JmcomicService'
 import { UpdateService } from '@/services/UpdateService'
 import { presentUpdatePrompt } from '@/services/UpdatePromptService'
@@ -348,6 +348,7 @@ onBeforeUnmount(() => {
   activeToast = null
   launchRouteHandle?.remove()
   launchRouteHandle = null
+  void disposeNetworkProbeStore()
 })
 </script>
 

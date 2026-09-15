@@ -58,6 +58,12 @@ class BackendHttpTest {
             ).header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString("{}"))
                     .build());
+            HttpResponse<String> domainStatesResponse = send(
+                    client, post(base, "/api/getDomainStates", "{}"));
+            HttpResponse<String> latencyResponse = send(
+                    client, post(base, "/api/measureLatency", "{}"));
+            HttpResponse<String> reprobeResponse = send(
+                    client, post(base, "/api/reprobeDomains", "{}"));
             HttpResponse<String> missingApiResponse = send(client, HttpRequest.newBuilder(
                     base.resolve("/api/notRegistered")
             ).header("Accept", "application/json")
@@ -88,6 +94,11 @@ class BackendHttpTest {
             assertTrue(assetResponse.body().contains("window.__testAsset = true"));
             assertEquals(200, initResponse.statusCode());
             assertEquals("{\"complete\":true}", initResponse.body());
+            assertEquals(503, domainStatesResponse.statusCode());
+            assertTrue(domainStatesResponse.body().contains("\"code\":\"unavailable\""));
+            assertEquals(503, latencyResponse.statusCode());
+            assertTrue(latencyResponse.body().contains("\"code\":\"unavailable\""));
+            assertEquals(200, reprobeResponse.statusCode());
             assertEquals(404, missingApiResponse.statusCode());
             assertEquals(200, settingsResponse.statusCode());
             assertTrue(settingsResponse.body().contains("\"readerPreloadPages\""));

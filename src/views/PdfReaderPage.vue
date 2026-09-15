@@ -75,7 +75,7 @@ import type { ListenerHandle } from '@/runtime/BackendEvents'
 import { asFileRef } from '@/runtime/FileReferences'
 import { normalizeRuntimeError, RuntimeError } from '@/runtime/errors'
 import { getRuntime } from '@/runtime/runtimeContext'
-import { JmcomicService, showToast } from '@/services/JmcomicService'
+import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
 import { SettingsStore } from '@/services/SettingsService'
 import { HistoryService } from '@/services/HistoryService'
 import { ReadingProgressService } from '@/services/ReadingProgressService'
@@ -115,6 +115,7 @@ const READER_CONTENT_MAX_WIDTH = 720
 
 const route = useRoute()
 const router = useRouter()
+const readerCapabilities = getRuntime().services.reader
 
 const updateReaderCurrentPage = inject<(page: number) => void>('updateReaderCurrentPage', () => {})
 
@@ -207,18 +208,22 @@ const getRenderTargetWidth = (
 
 // ---- 工具栏 ----
 // 工具栏显示时仅恢复系统栏；阅读内容始终保持 edge-to-edge，不随系统栏改变尺寸。
-const syncReaderFullscreen = () => {
-  if (!readerRuntimeActive) return
-  JmcomicService.setReaderFullscreen(!toolbarVisible.value).catch(() => {})
+const syncReaderFullscreen = (reportFailure = false) => {
+  if (!readerRuntimeActive || !readerCapabilities.fullscreen.available) return
+  JmcomicService.setReaderFullscreen(!toolbarVisible.value).catch((error) => {
+    if (reportFailure) {
+      void showToast(sanitizeError(error, '切换全屏失败'), 'danger')
+    }
+  })
 }
 
-const setToolbarVisible = (visible: boolean) => {
+const setToolbarVisible = (visible: boolean, reportFullscreenFailure = false) => {
   toolbarVisible.value = visible
-  syncReaderFullscreen()
+  syncReaderFullscreen(reportFullscreenFailure)
 }
 
 const toggleToolbar = () => {
-  setToolbarVisible(!toolbarVisible.value)
+  setToolbarVisible(!toolbarVisible.value, true)
 }
 
 const onDragStart = () => {
@@ -288,36 +293,55 @@ const onDisplayModeChange = (vertical: boolean) => {
 }
 
 const syncReaderState = () => {
-  JmcomicService.setReaderState(true, isVertical.value).catch(() => {})
+  if (!readerCapabilities.hostState.available) return
+  JmcomicService.setReaderState(true, isVertical.value).catch((error) => {
+    void showToast(sanitizeError(error, '同步阅读器宿主状态失败'), 'danger')
+  })
 }
 
 // ---- 阅读器设置 ----
 const applyReaderSettings = () => {
   const orientation = SettingsStore.getReaderScreenOrientation()
-  if (orientation !== 'auto') {
-    JmcomicService.setReaderScreenOrientation(orientation).catch(() => {})
+  if (readerCapabilities.orientation.available && orientation !== 'auto') {
+    JmcomicService.setReaderScreenOrientation(orientation).catch((error) => {
+      void showToast(sanitizeError(error, '应用屏幕方向失败'), 'danger')
+    })
   }
   const brightness = SettingsStore.getReaderBrightness()
-  if (brightness >= 0) {
-    JmcomicService.setReaderBrightness(brightness).catch(() => {})
+  if (readerCapabilities.brightness.available && brightness >= 0) {
+    JmcomicService.setReaderBrightness(brightness).catch((error) => {
+      void showToast(sanitizeError(error, '应用阅读亮度失败'), 'danger')
+    })
   }
-  if (SettingsStore.getReaderKeepScreenOn()) {
-    JmcomicService.setReaderKeepScreenOn(true).catch(() => {})
+  if (readerCapabilities.keepAwake.available && SettingsStore.getReaderKeepScreenOn()) {
+    JmcomicService.setReaderKeepScreenOn(true).catch((error) => {
+      void showToast(sanitizeError(error, '启用屏幕常亮失败'), 'danger')
+    })
   }
   syncReaderFullscreen()
 }
 
 const restoreSystemState = () => {
-  JmcomicService.setReaderBrightness(-1).catch(() => {})
-  JmcomicService.setReaderScreenOrientation('auto').catch(() => {})
-  JmcomicService.setReaderKeepScreenOn(false).catch(() => {})
-  JmcomicService.setReaderFullscreen(false).catch(() => {})
-  JmcomicService.setReaderState(false, false).catch(() => {})
+  if (readerCapabilities.brightness.available) {
+    JmcomicService.setReaderBrightness(-1).catch(() => {})
+  }
+  if (readerCapabilities.orientation.available) {
+    JmcomicService.setReaderScreenOrientation('auto').catch(() => {})
+  }
+  if (readerCapabilities.keepAwake.available) {
+    JmcomicService.setReaderKeepScreenOn(false).catch(() => {})
+  }
+  if (readerCapabilities.fullscreen.available) {
+    JmcomicService.setReaderFullscreen(false).catch(() => {})
+  }
+  if (readerCapabilities.hostState.available) {
+    JmcomicService.setReaderState(false, false).catch(() => {})
+  }
 }
 
 // ---- 音量键 ----
 const setupVolumeKeyListener = async () => {
-  if (volumeKeyListenerHandle) return
+  if (volumeKeyListenerHandle || !readerCapabilities.volumeKeys.available) return
   volumeKeyListenerHandle = await JmcomicService.addVolumeKeyListener((direction) => {
     if (isVertical.value) {
       const scrollAmount = window.innerHeight / 3
@@ -344,8 +368,12 @@ const setupVolumeKeyListener = async () => {
 const activateReaderRuntime = () => {
   if (readerRuntimeActive) return
   readerRuntimeActive = true
+  if (readerCapabilities.hostState.available) {
+    JmcomicService.setReaderState(true, isVertical.value).catch((error) => {
+      void showToast(sanitizeError(error, '同步阅读器宿主状态失败'), 'danger')
+    })
+  }
   applyReaderSettings()
-  JmcomicService.setReaderState(true, isVertical.value).catch(() => {})
   setupVolumeKeyListener().catch(() => {})
 }
 

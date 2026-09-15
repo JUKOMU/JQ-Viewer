@@ -11,6 +11,14 @@ const mocks = vi.hoisted(() => ({
   getDownloadPublic: vi.fn(),
   setDownloadPublic: vi.fn(),
   requestManageStorage: vi.fn(),
+  readerCapabilities: {
+    orientation: { available: true, api: {} },
+    brightness: { available: true, api: {} },
+    keepAwake: { available: true, api: {} },
+    fullscreen: { available: true, api: {} },
+    volumeKeys: { available: true, api: {} },
+    hostState: { available: true, api: {} },
+  } as Record<string, { available: boolean; api?: object; reason?: string }>,
 }))
 
 vi.mock('vue-router', () => ({
@@ -67,6 +75,7 @@ vi.mock('@/runtime/runtimeContext', () => ({
     services: {
       app: { getInfo: vi.fn().mockResolvedValue({ version: '1.2.0' }) },
       storage: { available: true, api: {} },
+      reader: mocks.readerCapabilities,
     },
   }),
 }))
@@ -130,6 +139,14 @@ import SettingPage from '@/views/SettingPage.vue'
 beforeEach(() => {
   vi.clearAllMocks()
   mocks.runtimePlatform = 'android'
+  Object.assign(mocks.readerCapabilities, {
+    orientation: { available: true, api: {} },
+    brightness: { available: true, api: {} },
+    keepAwake: { available: true, api: {} },
+    fullscreen: { available: true, api: {} },
+    volumeKeys: { available: true, api: {} },
+    hostState: { available: true, api: {} },
+  })
   mocks.showToast.mockResolvedValue(undefined)
   mocks.getDownloadPublic.mockResolvedValue({ downloadPublic: false })
   mocks.setDownloadPublic.mockResolvedValue({
@@ -227,6 +244,31 @@ describe('SettingPage 导出格式重置', () => {
       '下载位置已切换，旧目录将在下次启动时重试清理',
       'medium',
     )
+    wrapper.unmount()
+  })
+
+  test('Desktop 明确展示并禁用没有合理宿主语义的阅读器设置', async () => {
+    mocks.runtimePlatform = 'windows'
+    Object.assign(mocks.readerCapabilities, {
+      orientation: { available: false, reason: '桌面显示器不支持应用级屏幕方向控制' },
+      brightness: { available: false, reason: '桌面浏览器无法调整系统屏幕亮度' },
+      volumeKeys: { available: false, reason: '桌面浏览器无法可靠拦截系统音量键' },
+    })
+
+    const wrapper = mount(SettingPage)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('桌面显示器不支持应用级屏幕方向控制')
+    expect(wrapper.text()).toContain('桌面浏览器无法调整系统屏幕亮度')
+    expect(wrapper.text()).toContain('桌面浏览器无法可靠拦截系统音量键')
+    const orientationRow = wrapper
+      .findAll('.row')
+      .find((candidate) => candidate.text().includes('屏幕方向'))
+    expect(
+      orientationRow
+        ?.findAll('button')
+        .every((button) => button.attributes('disabled') !== undefined),
+    ).toBe(true)
     wrapper.unmount()
   })
 })

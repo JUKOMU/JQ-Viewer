@@ -50,6 +50,21 @@ public final class Plugin {
     }
 
     @PluginMethod
+    public void getDomainStates(Context context) {
+        system.getDomainStates(context);
+    }
+
+    @PluginMethod
+    public void reprobeDomains(Context context) {
+        system.reprobeDomains(context);
+    }
+
+    @PluginMethod
+    public void measureLatency(Context context) {
+        system.measureLatency(context);
+    }
+
+    @PluginMethod
     public void search(Context context) {
         api.search(context);
     }

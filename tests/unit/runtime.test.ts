@@ -91,6 +91,10 @@ describe('runtime', () => {
       'recordBrowse',
       'clearBrowseHistory',
       'deleteBrowseItem',
+      'getParseHistory',
+      'addParseHistory',
+      'clearParseHistory',
+      'deleteParseItem',
       'getOfflineFolders',
       'createOfflineFolder',
       'renameOfflineFolder',
@@ -130,6 +134,23 @@ describe('runtime', () => {
         page: 2,
       }),
     })
+  })
+
+  test('按共享契约转发解析历史方法', async () => {
+    const fetcher = vi.fn().mockResolvedValue(response({ success: true }))
+    const backend = createBackendClient(fetcher)
+
+    await backend.getParseHistory({ limit: 50, offset: 10 })
+    await backend.addParseHistory({ text: ' 123 ', mode: 'single-mode' })
+    await backend.clearParseHistory()
+    await backend.deleteParseItem({ id: 7 })
+
+    expect(fetcher.mock.calls.map(([input, init]) => [input, init?.body])).toEqual([
+      ['/api/getParseHistory', '{"limit":50,"offset":10}'],
+      ['/api/addParseHistory', '{"text":" 123 ","mode":"single-mode"}'],
+      ['/api/clearParseHistory', '{}'],
+      ['/api/deleteParseItem', '{"id":7}'],
+    ])
   })
 
   test('按共享契约转发在线点赞、收藏和收藏夹方法', async () => {

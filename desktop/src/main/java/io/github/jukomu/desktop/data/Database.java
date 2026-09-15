@@ -13,7 +13,7 @@ import java.util.List;
 
 /** 管理本地 SQLite 连接，并提供版本化 schema 迁移入口。 */
 public final class Database implements AutoCloseable {
-    private static final int SCHEMA_VERSION = 6;
+    private static final int SCHEMA_VERSION = 7;
     private static final int BUSY_TIMEOUT_MILLIS = 5_000;
 
     private final Path databasePath;
@@ -81,6 +81,13 @@ public final class Database implements AutoCloseable {
                     + " timestamp INTEGER NOT NULL)");
             statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_browse_history_timestamp_id "
                     + "ON browse_history(timestamp DESC, id DESC)");
+            statement.executeUpdate("CREATE TABLE IF NOT EXISTS parse_history "
+                    + "(id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                    + " text TEXT NOT NULL,"
+                    + " timestamp INTEGER NOT NULL,"
+                    + " mode TEXT NOT NULL DEFAULT 'single-mode')");
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_parse_history_timestamp_id "
+                    + "ON parse_history(timestamp DESC, id DESC)");
             statement.executeUpdate("CREATE TABLE IF NOT EXISTS offline_folders ("
                     + "folder_id TEXT PRIMARY KEY,"
                     + " name TEXT NOT NULL,"

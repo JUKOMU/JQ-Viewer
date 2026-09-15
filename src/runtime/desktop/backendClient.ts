@@ -129,6 +129,13 @@ export function createBackendClient(
     clearBrowseHistory: () => call<'clearBrowseHistory'>('clearBrowseHistory', {}),
     deleteBrowseItem: (options: Parameters<JmcomicClient['deleteBrowseItem']>[0]) =>
       call<'deleteBrowseItem'>('deleteBrowseItem', options),
+    getParseHistory: (options: Parameters<JmcomicClient['getParseHistory']>[0]) =>
+      call<'getParseHistory'>('getParseHistory', options),
+    addParseHistory: (options: Parameters<JmcomicClient['addParseHistory']>[0]) =>
+      call<'addParseHistory'>('addParseHistory', options),
+    clearParseHistory: () => call<'clearParseHistory'>('clearParseHistory', {}),
+    deleteParseItem: (options: Parameters<JmcomicClient['deleteParseItem']>[0]) =>
+      call<'deleteParseItem'>('deleteParseItem', options),
     getOfflineFolders: () => call<'getOfflineFolders'>('getOfflineFolders', {}),
     createOfflineFolder: (options: Parameters<JmcomicClient['createOfflineFolder']>[0]) =>
       call<'createOfflineFolder'>('createOfflineFolder', options),

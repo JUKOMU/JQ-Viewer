@@ -8,7 +8,11 @@ import io.github.jukomu.desktop.feature.history.model.HistoryOverviewRequest;
 import io.github.jukomu.desktop.feature.history.model.HistoryOverviewResponse;
 import io.github.jukomu.desktop.feature.history.model.HistoryPageResponse;
 import io.github.jukomu.desktop.feature.history.model.HistoryRecordRequest;
+import io.github.jukomu.desktop.feature.history.model.ParseHistoryItemResponse;
+import io.github.jukomu.desktop.feature.history.model.ParseHistoryPageResponse;
+import io.github.jukomu.desktop.feature.history.model.ParseHistoryRecordRequest;
 
+import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -19,22 +23,23 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** 提供浏览历史的去重写入、范围查询、分页和清理。 */
+/** 提供浏览历史和解析历史的持久化读写与清理。 */
 public final class HistoryService {
+    private static final String DEFAULT_PARSE_MODE = "single-mode";
     private static final Set<String> GROUPS = Set.of(
             "today", "yesterday", "thisWeek", "thisMonth",
             "lastThreeMonths", "lastSixMonths", "thisYear", "earlier"
     );
 
-    private final Database database;
+    private final Connection connection;
 
     public HistoryService(Database database) {
-        this.database = database;
+        this.connection = database.openIsolatedConnection();
     }
 
     public synchronized SuccessResponse record(HistoryRecordRequest request) {
         String albumId = text(request.albumId());
-        try (PreparedStatement latest = database.connection().prepareStatement(
+        try (PreparedStatement latest = connection.prepareStatement(
                 "SELECT id, album_id FROM browse_history ORDER BY timestamp DESC, id DESC LIMIT 1")) {
             long id = -1;
             boolean sameAlbum = false;
@@ -45,7 +50,7 @@ public final class HistoryService {
                 }
             }
             if (sameAlbum) {
-                try (PreparedStatement update = database.connection().prepareStatement(
+                try (PreparedStatement update = connection.prepareStatement(
                         "UPDATE browse_history SET album_title=?, cover_url=?, authors=?, "
                                 + "chapter_id=?, chapter_title=?, timestamp=? WHERE id=?")) {
                     bindItem(update, request, 1);
@@ -54,7 +59,7 @@ public final class HistoryService {
                     update.executeUpdate();
                 }
             } else {
-                try (PreparedStatement insert = database.connection().prepareStatement(
+                try (PreparedStatement insert = connection.prepareStatement(
                         "INSERT INTO browse_history(album_id, album_title, cover_url, authors, "
                                 + "chapter_id, chapter_title, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)")) {
                     insert.setString(1, albumId);
@@ -78,7 +83,7 @@ public final class HistoryService {
                 + " ORDER BY timestamp DESC, id DESC" + (limit > 0 ? " LIMIT ? OFFSET ?" : "");
         long totalCount = count(where, args, start, end);
         List<HistoryItemResponse> items = new ArrayList<>();
-        try (PreparedStatement statement = database.connection().prepareStatement(sql)) {
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
             int index = bindRange(statement, args, start, end, 1);
             if (limit > 0) {
                 statement.setInt(index++, limit);
@@ -131,7 +136,7 @@ public final class HistoryService {
     }
 
     public synchronized SuccessResponse delete(long id) {
-        try (PreparedStatement statement = database.connection().prepareStatement(
+        try (PreparedStatement statement = connection.prepareStatement(
                 "DELETE FROM browse_history WHERE id = ?")) {
             statement.setLong(1, id);
             statement.executeUpdate();
@@ -141,8 +146,90 @@ public final class HistoryService {
         }
     }
 
+    public synchronized SuccessResponse addParseHistory(ParseHistoryRecordRequest request) {
+        String normalizedText = text(request.text()).trim();
+        if (normalizedText.isEmpty()) return SuccessResponse.ok();
+        String mode = request.mode() == null ? DEFAULT_PARSE_MODE : request.mode();
+
+        boolean autoCommit;
+        try {
+            autoCommit = connection.getAutoCommit();
+            connection.setAutoCommit(false);
+            try {
+                try (PreparedStatement delete = connection.prepareStatement(
+                        "DELETE FROM parse_history WHERE text = ? COLLATE NOCASE")) {
+                    delete.setString(1, normalizedText);
+                    delete.executeUpdate();
+                }
+                try (PreparedStatement insert = connection.prepareStatement(
+                        "INSERT INTO parse_history(text, timestamp, mode) VALUES (?, ?, ?)")) {
+                    insert.setString(1, normalizedText);
+                    insert.setLong(2, System.currentTimeMillis());
+                    insert.setString(3, mode);
+                    insert.executeUpdate();
+                }
+                connection.commit();
+            } catch (Exception exception) {
+                connection.rollback();
+                if (exception instanceof SQLException sqlException) throw sqlException;
+                if (exception instanceof RuntimeException runtimeException) throw runtimeException;
+                throw new SQLException(exception);
+            } finally {
+                connection.setAutoCommit(autoCommit);
+            }
+            return SuccessResponse.ok();
+        } catch (SQLException exception) {
+            throw new IllegalStateException("记录解析历史失败", exception);
+        }
+    }
+
+    public synchronized ParseHistoryPageResponse parsePage(int limit, int offset) {
+        if (limit < 0 || offset < 0) throw ApiException.invalidRequest("分页参数不能为负数");
+        String sql = "SELECT id, text, timestamp, mode FROM parse_history "
+                + "ORDER BY timestamp DESC, id DESC"
+                + (limit > 0 ? " LIMIT ? OFFSET ?" : "");
+        List<ParseHistoryItemResponse> items = new ArrayList<>();
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            if (limit > 0) {
+                statement.setInt(1, limit);
+                statement.setInt(2, offset);
+            }
+            try (ResultSet rows = statement.executeQuery()) {
+                while (rows.next()) {
+                    items.add(new ParseHistoryItemResponse(
+                            rows.getLong(1),
+                            rows.getString(2),
+                            rows.getLong(3),
+                            rows.getString(4)
+                    ));
+                }
+            }
+            return new ParseHistoryPageResponse(
+                    List.copyOf(items),
+                    countRows("parse_history")
+            );
+        } catch (SQLException exception) {
+            throw new IllegalStateException("读取解析历史失败", exception);
+        }
+    }
+
+    public synchronized SuccessResponse clearParseHistory() {
+        execute("DELETE FROM parse_history", "清空解析历史失败");
+        return SuccessResponse.ok();
+    }
+
+    public synchronized SuccessResponse deleteParseItem(long id) {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "DELETE FROM parse_history WHERE id = ?")) {
+            statement.setLong(1, id);
+            return new SuccessResponse(statement.executeUpdate() > 0);
+        } catch (SQLException exception) {
+            throw new IllegalStateException("删除解析历史失败", exception);
+        }
+    }
+
     private long count(String where, String args, Long start, Long end) {
-        try (PreparedStatement statement = database.connection().prepareStatement(
+        try (PreparedStatement statement = connection.prepareStatement(
                 "SELECT COUNT(*) FROM browse_history " + where)) {
             bindRange(statement, args, start, end, 1);
             try (ResultSet rows = statement.executeQuery()) {
@@ -154,10 +241,24 @@ public final class HistoryService {
     }
 
     private void execute(String sql) {
-        try (PreparedStatement statement = database.connection().prepareStatement(sql)) {
+        execute(sql, "清理浏览历史失败");
+    }
+
+    private void execute(String sql, String failureMessage) {
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.executeUpdate();
         } catch (SQLException exception) {
-            throw new IllegalStateException("清理浏览历史失败", exception);
+            throw new IllegalStateException(failureMessage, exception);
+        }
+    }
+
+    private long countRows(String table) {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT COUNT(*) FROM " + table);
+             ResultSet rows = statement.executeQuery()) {
+            return rows.next() ? rows.getLong(1) : 0;
+        } catch (SQLException exception) {
+            throw new IllegalStateException("读取历史记录数量失败", exception);
         }
     }
 

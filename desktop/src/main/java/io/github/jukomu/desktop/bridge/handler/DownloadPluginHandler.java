@@ -20,15 +20,15 @@ public final class DownloadPluginHandler {
     }
 
     public void downloadChapter(Context context) {
-        requests.run(context, DownloadChapterRequest.class, downloads::downloadChapter);
+        requests.runFileOperation(context, DownloadChapterRequest.class, downloads::downloadChapter);
     }
 
     public void getDownloadTasks(Context context) {
-        requests.run(context, downloads::getDownloadTasks);
+        requests.runFileOperation(context, downloads::getDownloadTasks);
     }
 
     public void cancelDownload(Context context) {
-        requests.run(context, DownloadTaskIdRequest.class, request -> {
+        requests.runFileOperation(context, DownloadTaskIdRequest.class, request -> {
             downloads.cancelDownload(Request.requiredText(request.taskId(), "taskId"));
             return SuccessResponse.ok();
         });
@@ -49,7 +49,7 @@ public final class DownloadPluginHandler {
     }
 
     public void deleteDownloaded(Context context) {
-        requests.run(context, DownloadedChapterRequest.class, request -> {
+        requests.runFileOperation(context, DownloadedChapterRequest.class, request -> {
             downloads.deleteDownloaded(
                     Request.requiredText(request.albumId(), "albumId"),
                     Request.requiredText(request.chapterId(), "chapterId"));
@@ -58,8 +58,9 @@ public final class DownloadPluginHandler {
     }
 
     public void getDownloadedPhoto(Context context) {
-        requests.run(context, DownloadedChapterRequest.class, request -> downloads.getDownloadedPhoto(
-                Request.requiredText(request.albumId(), "albumId"),
-                Request.requiredText(request.chapterId(), "chapterId")));
+        requests.runFileOperation(context, DownloadedChapterRequest.class,
+                request -> downloads.getDownloadedPhoto(
+                        Request.requiredText(request.albumId(), "albumId"),
+                        Request.requiredText(request.chapterId(), "chapterId")));
     }
 }

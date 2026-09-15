@@ -204,7 +204,7 @@ describe('runtime', () => {
     })
   })
 
-  test('构造指定平台的同源运行时并保留未提供的平台能力状态', () => {
+  test('构造指定平台的同源运行时并保留平台能力状态', () => {
     const runtime = createRuntime(
       'windows',
       vi.fn().mockResolvedValue(response({ complete: true })),
@@ -218,13 +218,55 @@ describe('runtime', () => {
       '/pdf/ZmlsZTpwYXRoOi9ib29rcy9ib29rLnBkZg',
     )
     expect(runtime.resources.renderPdfPage.available).toBe(true)
-    expect(runtime.services.storage.available).toBe(false)
+    expect(runtime.services.storage.available).toBe(true)
     expect(runtime.services.updater.available).toBe(false)
     expect(runtime.services.reader.fullscreen.available).toBe(false)
     expect(runtime.services.notifications.kind).toBe('host-managed')
     expect('files' in runtime.services).toBe(true)
     expect('pdf' in runtime.services).toBe(true)
     expect(runtime.events.onNetworkProbe).toBeTypeOf('function')
+  })
+
+  test('Desktop 下载位置 adapter 透传切换、查询和免权限语义', async () => {
+    const fetcher = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+      if (String(input) === '/api/getDownloadPublic') {
+        return Promise.resolve(
+          response({ downloadPublic: true, displayPath: 'D:\\Comics' }),
+        )
+      }
+      if (String(input) === '/api/setDownloadPublic') {
+        return Promise.resolve(
+          response({
+            success: true,
+            downloadPublic: true,
+            moved: 2,
+            displayPath: 'D:\\Comics',
+          }),
+        )
+      }
+      throw new Error(`unexpected request: ${String(input)}`)
+    })
+    const storage = createRuntime('windows', fetcher).services.storage
+    if (!storage.available) throw new Error('storage unavailable')
+
+    await expect(storage.api.getPublic()).resolves.toEqual({
+      downloadPublic: true,
+      displayPath: 'D:\\Comics',
+    })
+    await expect(storage.api.setPublic(true)).resolves.toMatchObject({
+      downloadPublic: true,
+      moved: 2,
+    })
+    await expect(storage.api.requestStoragePermission()).resolves.toEqual({
+      granted: true,
+      permissionType: 'not_required',
+      apiLevel: 0,
+    })
+    expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
+      '/api/getDownloadPublic',
+      '/api/setDownloadPublic',
+    ])
+    expect(JSON.parse(String(fetcher.mock.calls[1][1]?.body))).toEqual({ open: true })
   })
 
   test('Desktop 文件与 PDF 导出设置 adapter 使用 opaque ref 传输', async () => {

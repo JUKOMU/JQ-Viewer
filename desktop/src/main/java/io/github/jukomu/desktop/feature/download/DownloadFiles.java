@@ -12,10 +12,22 @@ import java.util.List;
 
 /** 管理下载根目录内的安全路径、清理、空间统计和完成校验。 */
 public final class DownloadFiles {
-    private final Path root;
+    private Path root;
 
     public DownloadFiles(Paths paths) {
-        this.root = paths.downloadsDirectory().toAbsolutePath().normalize();
+        this(paths.downloadsDirectory());
+    }
+
+    public DownloadFiles(Path root) {
+        this.root = normalizeRoot(root);
+    }
+
+    public synchronized Path root() {
+        return root;
+    }
+
+    public synchronized void switchRoot(Path root) {
+        this.root = normalizeRoot(root);
     }
 
     public String relativeDirectory(String albumId, String chapterId) {
@@ -31,11 +43,11 @@ public final class DownloadFiles {
         return relative.toString().replace('\\', '/');
     }
 
-    public Path chapterDirectory(String relativeDirectory) {
+    public synchronized Path chapterDirectory(String relativeDirectory) {
         return resolve(relativeDirectory);
     }
 
-    public void prepareChapter(String relativeDirectory) {
+    public synchronized void prepareChapter(String relativeDirectory) {
         cleanup(relativeDirectory);
         try {
             Files.createDirectories(chapterDirectory(relativeDirectory));
@@ -44,7 +56,7 @@ public final class DownloadFiles {
         }
     }
 
-    public void cleanup(String relativeDirectory) {
+    public synchronized void cleanup(String relativeDirectory) {
         Path directory = chapterDirectory(relativeDirectory);
         if (!Files.exists(directory)) return;
         try (var paths = Files.walk(directory)) {
@@ -56,11 +68,11 @@ public final class DownloadFiles {
         }
     }
 
-    public Path resolvePage(StoredDownloadPage page) {
+    public synchronized Path resolvePage(StoredDownloadPage page) {
         return resolve(page.relativePath());
     }
 
-    public ChapterInspection inspect(List<StoredDownloadPage> pages) {
+    public synchronized ChapterInspection inspect(List<StoredDownloadPage> pages) {
         if (pages.isEmpty()) throw new IllegalStateException("章节没有可校验的图片");
         long totalSize = 0;
         int firstSortOrder = Integer.MAX_VALUE;
@@ -82,7 +94,7 @@ public final class DownloadFiles {
         return new ChapterInspection(totalSize, firstSortOrder);
     }
 
-    public long directorySize(String relativeDirectory) {
+    public synchronized long directorySize(String relativeDirectory) {
         Path directory = chapterDirectory(relativeDirectory);
         if (!Files.exists(directory)) return 0;
         try (var paths = Files.walk(directory)) {
@@ -100,7 +112,7 @@ public final class DownloadFiles {
         }
     }
 
-    public long usedBytes() {
+    public synchronized long usedBytes() {
         try {
             Files.createDirectories(root);
         } catch (IOException exception) {
@@ -121,7 +133,7 @@ public final class DownloadFiles {
         }
     }
 
-    public long availableBytes() {
+    public synchronized long availableBytes() {
         try {
             Files.createDirectories(root);
             return Files.getFileStore(root).getUsableSpace();
@@ -164,6 +176,10 @@ public final class DownloadFiles {
 
     private static IllegalStateException failure(String message, IOException exception) {
         return new IllegalStateException(message, exception);
+    }
+
+    private static Path normalizeRoot(Path root) {
+        return java.util.Objects.requireNonNull(root, "root").toAbsolutePath().normalize();
     }
 
     public record ChapterInspection(long totalSize, int firstSortOrder) {

@@ -3,6 +3,8 @@ package io.github.jukomu.desktop.bridge.handler;
 import io.github.jukomu.desktop.bridge.Request;
 import io.github.jukomu.desktop.bridge.RequestExecutor;
 import io.github.jukomu.desktop.feature.settings.SettingsService;
+import io.github.jukomu.desktop.feature.download.DownloadLocationService;
+import io.github.jukomu.desktop.feature.download.model.DownloadLocationRequest;
 import io.github.jukomu.desktop.feature.settings.model.BooleanSettingRequest;
 import io.github.jukomu.desktop.feature.settings.model.DisplayModeRequest;
 import io.github.jukomu.desktop.feature.settings.model.NumberSettingRequest;
@@ -14,10 +16,16 @@ import io.javalin.http.Context;
 public final class SettingsPluginHandler {
     private final RequestExecutor requests;
     private final SettingsService settings;
+    private final DownloadLocationService downloadLocation;
 
-    public SettingsPluginHandler(RequestExecutor requests, SettingsService settings) {
+    public SettingsPluginHandler(
+            RequestExecutor requests,
+            SettingsService settings,
+            DownloadLocationService downloadLocation
+    ) {
         this.requests = requests;
         this.settings = settings;
+        this.downloadLocation = downloadLocation;
     }
 
     public void getAllSettings(Context context) {
@@ -47,6 +55,15 @@ public final class SettingsPluginHandler {
     public void setReaderAutoShowToolbarAtEnd(Context context) {
         requests.run(context, BooleanSettingRequest.class, request -> settings.setAutoShow(
                 Request.bool(request.enabled(), true)));
+    }
+
+    public void getDownloadPublic(Context context) {
+        requests.run(context, downloadLocation::get);
+    }
+
+    public void setDownloadPublic(Context context) {
+        requests.runFileOperation(context, DownloadLocationRequest.class,
+                request -> downloadLocation.set(Request.bool(request.open(), false)));
     }
 
     public void getPdfExportPreferences(Context context) {

@@ -171,12 +171,12 @@ export const JmcomicService = {
     return native.setDownloadConcurrency({ n })
   },
 
-  /** 设置下载内容是否公开（系统相册可见） */
+  /** 切换平台下载位置：Android 公开目录或 Desktop 自定义目录 */
   setDownloadPublic(open: boolean) {
     return native.setDownloadPublic({ open })
   },
 
-  /** 查询下载内容是否公开 */
+  /** 查询当前下载位置状态 */
   getDownloadPublic() {
     return native.getDownloadPublic()
   },

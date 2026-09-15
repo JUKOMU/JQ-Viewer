@@ -6,10 +6,13 @@ import io.github.jukomu.desktop.bridge.ApiException;
 import io.github.jukomu.desktop.bridge.model.SuccessResponse;
 import io.github.jukomu.desktop.data.Database;
 import io.github.jukomu.desktop.feature.files.FileReferences;
+import io.github.jukomu.desktop.feature.settings.model.DownloadLocation;
 import io.github.jukomu.desktop.feature.settings.model.PdfExportFolder;
 import io.github.jukomu.desktop.feature.settings.model.PdfExportPreferencesResponse;
 import io.github.jukomu.desktop.feature.settings.model.SettingsResponse;
 
+import java.nio.file.Path;
+import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -24,6 +27,11 @@ public final class SettingsService {
     private static final String PDF_EXPORT_FOLDER = "pdf_export_folder";
     private static final String PDF_EXPORT_DIRECTORY_TEMPLATE = "pdf_export_directory_template";
     private static final String PDF_EXPORT_FILE_NAME_TEMPLATE = "pdf_export_file_name_template";
+    private static final String DOWNLOAD_PUBLIC = "download_public";
+    private static final String DOWNLOAD_FOLDER_REF = "download_folder_ref";
+    private static final String DOWNLOAD_DISPLAY_PATH = "download_display_path";
+    private static final String DOWNLOAD_PENDING_CLEANUP_FOLDER_REF =
+            "download_pending_cleanup_folder_ref";
 
     private final Database database;
     private final ObjectMapper mapper;
@@ -42,7 +50,7 @@ public final class SettingsService {
                 integer("reader_preload_pages", 15),
                 preloadConcurrency(),
                 downloadConcurrency(),
-                false,
+                downloadLocation().downloadPublic(),
                 CACHE_CAPACITY_MB,
                 CACHE_CAPACITY_MB,
                 CACHE_CAPACITY_MB,
@@ -65,6 +73,82 @@ public final class SettingsService {
 
     public synchronized int downloadConcurrency() {
         return concurrency("download_concurrency");
+    }
+
+    public synchronized DownloadLocation downloadLocation() {
+        if (!bool(DOWNLOAD_PUBLIC, false)) return new DownloadLocation(false, null, null);
+        String folderRef = text(DOWNLOAD_FOLDER_REF, null);
+        String displayPath = text(DOWNLOAD_DISPLAY_PATH, null);
+        if (folderRef == null || displayPath == null || displayPath.isBlank()) {
+            return new DownloadLocation(false, null, null);
+        }
+        try {
+            FileReferences.parseFolder(folderRef);
+            return new DownloadLocation(true, folderRef, displayPath);
+        } catch (ApiException exception) {
+            return new DownloadLocation(false, null, null);
+        }
+    }
+
+    public synchronized Path downloadRoot(Path privateRoot) {
+        DownloadLocation location = downloadLocation();
+        return location.downloadPublic()
+                ? FileReferences.parseFolder(location.folderRef())
+                : privateRoot.toAbsolutePath().normalize();
+    }
+
+    public synchronized Path pendingDownloadCleanup() {
+        String folderRef = text(DOWNLOAD_PENDING_CLEANUP_FOLDER_REF, null);
+        if (folderRef == null) return null;
+        try {
+            return FileReferences.parseFolder(folderRef);
+        } catch (ApiException exception) {
+            return null;
+        }
+    }
+
+    public synchronized void setDownloadLocation(
+            boolean downloadPublic,
+            Path root,
+            Path pendingCleanup
+    ) {
+        Path normalized = root.toAbsolutePath().normalize();
+        Connection connection = database.connection();
+        try {
+            boolean autoCommit = connection.getAutoCommit();
+            connection.setAutoCommit(false);
+            try {
+                put(connection, DOWNLOAD_PUBLIC, downloadPublic);
+                if (downloadPublic) {
+                    put(connection, DOWNLOAD_FOLDER_REF, FileReferences.folderRef(normalized));
+                    put(connection, DOWNLOAD_DISPLAY_PATH, normalized.toString());
+                } else {
+                    delete(connection, DOWNLOAD_FOLDER_REF);
+                    delete(connection, DOWNLOAD_DISPLAY_PATH);
+                }
+                if (pendingCleanup == null) {
+                    delete(connection, DOWNLOAD_PENDING_CLEANUP_FOLDER_REF);
+                } else {
+                    put(connection, DOWNLOAD_PENDING_CLEANUP_FOLDER_REF,
+                            FileReferences.folderRef(
+                                    pendingCleanup.toAbsolutePath().normalize()));
+                }
+                connection.commit();
+            } catch (Exception exception) {
+                connection.rollback();
+                if (exception instanceof SQLException sqlException) throw sqlException;
+                if (exception instanceof RuntimeException runtimeException) throw runtimeException;
+                throw new SQLException(exception);
+            } finally {
+                connection.setAutoCommit(autoCommit);
+            }
+        } catch (SQLException exception) {
+            throw new IllegalStateException("保存下载目录失败", exception);
+        }
+    }
+
+    public synchronized void clearPendingDownloadCleanup() {
+        delete(DOWNLOAD_PENDING_CLEANUP_FOLDER_REF);
     }
 
     public synchronized SuccessResponse setConcurrency(String key, int value) {
@@ -183,24 +267,36 @@ public final class SettingsService {
     }
 
     private void put(String key, Object value) {
-        try (PreparedStatement statement = database.connection().prepareStatement(
-                "INSERT INTO settings(key, value) VALUES (?, ?) "
-                        + "ON CONFLICT(key) DO UPDATE SET value = excluded.value")) {
-            statement.setString(1, key);
-            statement.setString(2, String.valueOf(value));
-            statement.executeUpdate();
+        try {
+            put(database.connection(), key, value);
         } catch (SQLException exception) {
             throw new IllegalStateException("保存设置失败", exception);
         }
     }
 
+    private static void put(Connection connection, String key, Object value) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "INSERT INTO settings(key, value) VALUES (?, ?) "
+                        + "ON CONFLICT(key) DO UPDATE SET value = excluded.value")) {
+            statement.setString(1, key);
+            statement.setString(2, String.valueOf(value));
+            statement.executeUpdate();
+        }
+    }
+
     private void delete(String key) {
-        try (PreparedStatement statement = database.connection()
+        try {
+            delete(database.connection(), key);
+        } catch (SQLException exception) {
+            throw new IllegalStateException("删除设置失败", exception);
+        }
+    }
+
+    private static void delete(Connection connection, String key) throws SQLException {
+        try (PreparedStatement statement = connection
                 .prepareStatement("DELETE FROM settings WHERE key = ?")) {
             statement.setString(1, key);
             statement.executeUpdate();
-        } catch (SQLException exception) {
-            throw new IllegalStateException("删除设置失败", exception);
         }
     }
 

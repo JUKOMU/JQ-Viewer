@@ -152,6 +152,16 @@ public final class Plugin {
     }
 
     @PluginMethod
+    public void getDownloadPublic(Context context) {
+        settings.getDownloadPublic(context);
+    }
+
+    @PluginMethod
+    public void setDownloadPublic(Context context) {
+        settings.setDownloadPublic(context);
+    }
+
+    @PluginMethod
     public void getPdfExportPreferences(Context context) {
         settings.getPdfExportPreferences(context);
     }

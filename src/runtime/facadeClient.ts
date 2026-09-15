@@ -59,7 +59,7 @@ function createListener(runtime: FrontendRuntime, event: string, handler: unknow
  * 但不向页面暴露任何 adapter 或 transport。
  */
 export function createFacadeClient(runtime: FrontendRuntime): JmcomicClient {
-  const storage = () => requireCapability(runtime.services.storage, '公开下载')
+  const storage = () => requireCapability(runtime.services.storage, '下载位置')
   const updater = () => requireCapability(runtime.services.updater, '应用更新')
   const notifications = () => {
     const policy = runtime.services.notifications

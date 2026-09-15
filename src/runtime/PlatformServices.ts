@@ -63,10 +63,22 @@ export interface FileService {
   scanPdfFiles(folder: FolderRef): Promise<{ files: FileDescriptor[] }>
 }
 
-/** Android 专属的「公开下载」能力：存储权限、公开目录切换与迁移进度监听。 */
+/** 下载位置能力：Android 切换公开目录，Desktop 选择本地目录并迁移。 */
 export interface PublicDownloadService {
-  setPublic(open: boolean): Promise<{ success: boolean; downloadPublic: boolean; moved: number }>
-  getPublic(): Promise<{ downloadPublic: boolean }>
+  setPublic(open: boolean): Promise<{
+    success: boolean
+    downloadPublic: boolean
+    moved: number
+    displayPath?: string
+    cleanupPending?: boolean
+    cleanupMessage?: string
+  }>
+  getPublic(): Promise<{
+    downloadPublic: boolean
+    displayPath?: string
+    cleanupPending?: boolean
+    cleanupMessage?: string
+  }>
   requestStoragePermission(): Promise<{
     granted: boolean
     permissionType: string
@@ -146,7 +158,7 @@ export interface ReaderPlatformServices {
   }>
 }
 
-/** 平台服务聚合：应用信息、通知、文件、公开下载、阅读器、更新、OCR、启动路由与 PDF。 */
+/** 平台服务聚合：应用信息、通知、文件、下载位置、阅读器、更新、OCR、启动路由与 PDF。 */
 export interface PlatformServices {
   app: AppService
   notifications: NotificationPolicy

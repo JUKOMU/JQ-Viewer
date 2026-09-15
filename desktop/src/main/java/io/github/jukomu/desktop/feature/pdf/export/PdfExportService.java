@@ -74,6 +74,12 @@ public final class PdfExportService implements AutoCloseable {
     }
 
     public synchronized PdfExportBatchResponse submit(List<PdfExportTaskRequest> requestedTasks) {
+        synchronized (downloadFiles) {
+            return submitWhileRootStable(requestedTasks);
+        }
+    }
+
+    private PdfExportBatchResponse submitWhileRootStable(List<PdfExportTaskRequest> requestedTasks) {
         requireOpen();
         if (requestedTasks == null || requestedTasks.isEmpty()) {
             throw ApiException.invalidRequest("tasks不能为空");
@@ -130,6 +136,12 @@ public final class PdfExportService implements AutoCloseable {
     }
 
     public synchronized PdfExportTaskResponse retry(String exportId, boolean allowOverwrite) {
+        synchronized (downloadFiles) {
+            return retryWhileRootStable(exportId, allowOverwrite);
+        }
+    }
+
+    private PdfExportTaskResponse retryWhileRootStable(String exportId, boolean allowOverwrite) {
         requireOpen();
         PdfExportTaskResponse persisted = requireTask(requireText(exportId, "exportId"));
         if (!PdfExportStore.isTerminal(persisted.status())) {

@@ -8,12 +8,16 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.List;
 
 /** 管理本地 SQLite 连接，并提供版本化 schema 迁移入口。 */
 public final class Database implements AutoCloseable {
     private static final int SCHEMA_VERSION = 6;
+    private static final int BUSY_TIMEOUT_MILLIS = 5_000;
 
     private final Path databasePath;
+    private final List<Connection> isolatedConnections = new ArrayList<>();
     private Connection connection;
 
     public Database(Paths paths) {
@@ -36,10 +40,7 @@ public final class Database implements AutoCloseable {
 
         try {
             Class.forName("org.sqlite.JDBC");
-            connection = DriverManager.getConnection("jdbc:sqlite:" + databasePath);
-            try (Statement statement = connection.createStatement()) {
-                statement.execute("PRAGMA foreign_keys = ON");
-            }
+            connection = createConnection();
             migrate(connection);
             return connection;
         } catch (ClassNotFoundException exception) {
@@ -47,6 +48,18 @@ public final class Database implements AutoCloseable {
         } catch (SQLException | RuntimeException exception) {
             close();
             throw exception;
+        }
+    }
+
+    /** 为需要独立事务状态的 Store 创建由 Database 统一关闭的连接。 */
+    public synchronized Connection openIsolatedConnection() {
+        connection();
+        try {
+            Connection isolated = createConnection();
+            isolatedConnections.add(isolated);
+            return isolated;
+        } catch (SQLException exception) {
+            throw new IllegalStateException("无法打开独立数据库连接", exception);
         }
     }
 
@@ -281,19 +294,37 @@ public final class Database implements AutoCloseable {
 
     @Override
     public synchronized void close() {
-        if (connection == null) {
-            return;
+        for (Connection isolated : isolatedConnections) {
+            closeConnection(isolated);
         }
-        try {
-            connection.close();
-        } catch (SQLException ignored) {
-            // SQLite 关闭异常不影响幂等关闭。
-        } finally {
+        isolatedConnections.clear();
+        if (connection != null) {
+            closeConnection(connection);
             connection = null;
         }
     }
 
     public Path databasePath() {
         return databasePath;
+    }
+
+    private Connection createConnection() throws SQLException {
+        Connection created = DriverManager.getConnection("jdbc:sqlite:" + databasePath);
+        try (Statement statement = created.createStatement()) {
+            statement.execute("PRAGMA foreign_keys = ON");
+            statement.execute("PRAGMA busy_timeout = " + BUSY_TIMEOUT_MILLIS);
+        } catch (SQLException exception) {
+            closeConnection(created);
+            throw exception;
+        }
+        return created;
+    }
+
+    private static void closeConnection(Connection target) {
+        try {
+            target.close();
+        } catch (SQLException ignored) {
+            // SQLite 关闭异常不影响幂等关闭。
+        }
     }
 }

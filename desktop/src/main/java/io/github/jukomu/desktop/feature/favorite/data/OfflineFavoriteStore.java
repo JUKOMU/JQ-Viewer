@@ -23,17 +23,17 @@ public final class OfflineFavoriteStore {
     private static final TypeReference<List<OfflineFavoriteItem>> ITEM_LIST = new TypeReference<>() {
     };
 
-    private final Database database;
+    private final Connection connection;
     private final ObjectMapper mapper;
 
     public OfflineFavoriteStore(Database database, ObjectMapper mapper) {
-        this.database = database;
+        this.connection = database.openIsolatedConnection();
         this.mapper = mapper;
     }
 
     public synchronized List<OfflineFavoriteFolder> folders() {
         List<OfflineFavoriteFolder> folders = new ArrayList<>();
-        try (PreparedStatement statement = database.connection().prepareStatement(
+        try (PreparedStatement statement = connection.prepareStatement(
                 "SELECT f.folder_id, f.name, COUNT(i.id) "
                         + "FROM offline_folders f "
                         + "LEFT JOIN offline_favorites i ON i.folder_id = f.folder_id "
@@ -52,7 +52,7 @@ public final class OfflineFavoriteStore {
 
     public synchronized String createFolder(String name) {
         String folderId = newFolderId();
-        try (PreparedStatement statement = database.connection().prepareStatement(
+        try (PreparedStatement statement = connection.prepareStatement(
                 "INSERT INTO offline_folders(folder_id, name, created_at) VALUES (?, ?, ?)")) {
             statement.setString(1, folderId);
             statement.setString(2, name);
@@ -65,7 +65,7 @@ public final class OfflineFavoriteStore {
     }
 
     public synchronized boolean renameFolder(String folderId, String name) {
-        try (PreparedStatement statement = database.connection().prepareStatement(
+        try (PreparedStatement statement = connection.prepareStatement(
                 "UPDATE offline_folders SET name = ? WHERE folder_id = ?")) {
             statement.setString(1, name);
             statement.setString(2, folderId);
@@ -90,9 +90,9 @@ public final class OfflineFavoriteStore {
     }
 
     public synchronized boolean addItem(String folderId, OfflineFavoriteItem item) {
-        if (!folderExists(database.connection(), folderId)) return false;
+        if (!folderExists(connection, folderId)) return false;
         StoredItem stored = stored(item);
-        try (PreparedStatement statement = database.connection().prepareStatement(
+        try (PreparedStatement statement = connection.prepareStatement(
                 "INSERT OR IGNORE INTO offline_favorites("
                         + "folder_id, album_id, title, cover_url, authors_json, tags_json) "
                         + "VALUES (?, ?, ?, ?, ?, ?)")) {
@@ -104,7 +104,7 @@ public final class OfflineFavoriteStore {
     }
 
     public synchronized boolean removeItem(String folderId, String albumId) {
-        try (PreparedStatement statement = database.connection().prepareStatement(
+        try (PreparedStatement statement = connection.prepareStatement(
                 "DELETE FROM offline_favorites WHERE folder_id = ? AND album_id = ?")) {
             statement.setString(1, folderId);
             statement.setString(2, albumId);
@@ -130,7 +130,7 @@ public final class OfflineFavoriteStore {
         int currentPage = Math.min(Math.max(1, requestedPage), totalPages);
         int offset = (currentPage - 1) * pageSize;
         List<OfflineFavoriteItem> content = new ArrayList<>();
-        try (PreparedStatement statement = database.connection().prepareStatement(
+        try (PreparedStatement statement = connection.prepareStatement(
                 "SELECT album_id, title, cover_url, authors_json, tags_json "
                         + "FROM offline_favorites WHERE " + where
                         + " ORDER BY id ASC LIMIT ? OFFSET ?")) {
@@ -158,7 +158,7 @@ public final class OfflineFavoriteStore {
 
     public synchronized List<OfflineFavoriteItem> allItemsMerged() {
         List<OfflineFavoriteItem> items = new ArrayList<>();
-        try (PreparedStatement statement = database.connection().prepareStatement(
+        try (PreparedStatement statement = connection.prepareStatement(
                 "SELECT album_id, title, cover_url, authors_json, tags_json "
                         + "FROM offline_favorites WHERE id IN ("
                         + "SELECT MIN(id) FROM offline_favorites GROUP BY album_id) "
@@ -259,7 +259,7 @@ public final class OfflineFavoriteStore {
 
     public synchronized void saveBackup(String key, List<OfflineFavoriteItem> items) {
         String itemsJson = writeJson(items);
-        try (PreparedStatement statement = database.connection().prepareStatement(
+        try (PreparedStatement statement = connection.prepareStatement(
                 "INSERT INTO offline_backups(backup_key, items_json, created_at) VALUES (?, ?, ?) "
                         + "ON CONFLICT(backup_key) DO UPDATE SET "
                         + "items_json = excluded.items_json, created_at = excluded.created_at")) {
@@ -273,7 +273,7 @@ public final class OfflineFavoriteStore {
     }
 
     public synchronized List<OfflineFavoriteItem> loadBackup(String key) {
-        try (PreparedStatement statement = database.connection().prepareStatement(
+        try (PreparedStatement statement = connection.prepareStatement(
                 "SELECT items_json FROM offline_backups WHERE backup_key = ?")) {
             statement.setString(1, key);
             try (ResultSet rows = statement.executeQuery()) {
@@ -286,7 +286,7 @@ public final class OfflineFavoriteStore {
     }
 
     public synchronized boolean deleteBackup(String key) {
-        try (PreparedStatement statement = database.connection().prepareStatement(
+        try (PreparedStatement statement = connection.prepareStatement(
                 "DELETE FROM offline_backups WHERE backup_key = ?")) {
             statement.setString(1, key);
             return statement.executeUpdate() > 0;
@@ -297,7 +297,7 @@ public final class OfflineFavoriteStore {
 
     public synchronized List<String> backupKeys() {
         List<String> keys = new ArrayList<>();
-        try (PreparedStatement statement = database.connection().prepareStatement(
+        try (PreparedStatement statement = connection.prepareStatement(
                 "SELECT backup_key FROM offline_backups "
                         + "ORDER BY created_at DESC, backup_key DESC");
              ResultSet rows = statement.executeQuery()) {
@@ -310,7 +310,7 @@ public final class OfflineFavoriteStore {
 
     private List<OfflineFavoriteItem> items(String sql, String folderId) {
         List<OfflineFavoriteItem> items = new ArrayList<>();
-        try (PreparedStatement statement = database.connection().prepareStatement(sql)) {
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setString(1, folderId);
             try (ResultSet rows = statement.executeQuery()) {
                 while (rows.next()) items.add(readItem(rows));
@@ -322,7 +322,7 @@ public final class OfflineFavoriteStore {
     }
 
     private long count(String sql, String folderId, String keyword) {
-        try (PreparedStatement statement = database.connection().prepareStatement(sql)) {
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
             if (folderId != null) bindFolderAndKeyword(statement, folderId, keyword);
             try (ResultSet rows = statement.executeQuery()) {
                 return rows.next() ? rows.getLong(1) : 0;
@@ -399,7 +399,6 @@ public final class OfflineFavoriteStore {
     }
 
     private <T> T transaction(String message, SqlTask<T> task) {
-        Connection connection = database.connection();
         try {
             boolean autoCommit = connection.getAutoCommit();
             connection.setAutoCommit(false);

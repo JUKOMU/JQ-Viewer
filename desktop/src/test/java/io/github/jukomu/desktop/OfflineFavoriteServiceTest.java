@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.Connection;
 import java.util.Arrays;
 import java.util.List;
 
@@ -123,6 +124,27 @@ class OfflineFavoriteServiceTest {
                     "missing", List.of(item("album-1", "first"))).count());
             assertEquals("", favorites.copyFolder("missing", "Copy").folderId());
             assertFalse(favorites.mergeAllToFolder("missing").success());
+        }
+    }
+
+    @Test
+    void favoriteWritesDoNotJoinAnotherServicesTransaction() throws Exception {
+        Path path = Files.createTempDirectory("jq-viewer-favorite-isolation-")
+                .resolve("desktop.sqlite3");
+        try (Database database = new Database(path)) {
+            Connection shared = database.open();
+            OfflineFavoriteService favorites = service(database);
+            boolean autoCommit = shared.getAutoCommit();
+            shared.setAutoCommit(false);
+            try {
+                String folderId = favorites.createFolder("Independent").folderId();
+
+                shared.rollback();
+
+                assertEquals(folderId, favorites.folders().folders().getFirst().folderId());
+            } finally {
+                shared.setAutoCommit(autoCommit);
+            }
         }
     }
 

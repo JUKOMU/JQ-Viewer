@@ -15,6 +15,7 @@ import io.github.jukomu.desktop.bridge.handler.AuthPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.DownloadPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.FilePluginHandler;
 import io.github.jukomu.desktop.bridge.handler.HistoryPluginHandler;
+import io.github.jukomu.desktop.bridge.handler.OfflineFavoritePluginHandler;
 import io.github.jukomu.desktop.bridge.handler.PdfPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.SettingsPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.SystemPluginHandler;
@@ -28,6 +29,8 @@ import io.github.jukomu.desktop.feature.download.DownloadFiles;
 import io.github.jukomu.desktop.feature.download.DownloadLocationService;
 import io.github.jukomu.desktop.feature.download.DownloadService;
 import io.github.jukomu.desktop.feature.download.data.DownloadStore;
+import io.github.jukomu.desktop.feature.favorite.OfflineFavoriteService;
+import io.github.jukomu.desktop.feature.favorite.data.OfflineFavoriteStore;
 import io.github.jukomu.desktop.feature.history.HistoryService;
 import io.github.jukomu.desktop.feature.image.ImageService;
 import io.github.jukomu.desktop.feature.files.FileService;
@@ -275,6 +278,8 @@ public final class Backend implements AutoCloseable {
                     new AuthPluginHandler(requests, new AuthService(serviceClient, credentialStore)),
                     new SettingsPluginHandler(requests, settingsService, downloadLocationService),
                     new HistoryPluginHandler(requests, new HistoryService(database)),
+                    new OfflineFavoritePluginHandler(requests, new OfflineFavoriteService(
+                            new OfflineFavoriteStore(database, mapper))),
                     new FilePluginHandler(requests, fileService),
                     new DownloadPluginHandler(requests, downloadService),
                     new PdfPluginHandler(requests, pdfManagementService, startedPdfExportService),

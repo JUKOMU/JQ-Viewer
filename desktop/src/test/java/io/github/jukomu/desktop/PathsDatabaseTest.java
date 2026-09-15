@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.util.Map;
 
@@ -96,7 +97,7 @@ class PathsDatabaseTest {
                     .createStatement()
                     .executeQuery("SELECT version FROM desktop_schema_version")) {
                 assertTrue(result.next());
-                assertEquals(5, result.getInt(1));
+                assertEquals(6, result.getInt(1));
             }
             try (ResultSet result = database.connection().getMetaData()
                     .getTables(null, null, "browse_history", null)) {
@@ -104,6 +105,18 @@ class PathsDatabaseTest {
             }
             try (ResultSet result = database.connection().getMetaData()
                     .getTables(null, null, "download_tasks", null)) {
+                assertTrue(result.next());
+            }
+            try (ResultSet result = database.connection().getMetaData()
+                    .getTables(null, null, "offline_folders", null)) {
+                assertTrue(result.next());
+            }
+            try (ResultSet result = database.connection().getMetaData()
+                    .getTables(null, null, "offline_favorites", null)) {
+                assertTrue(result.next());
+            }
+            try (ResultSet result = database.connection().getMetaData()
+                    .getTables(null, null, "offline_backups", null)) {
                 assertTrue(result.next());
             }
             try (ResultSet result = database.connection().getMetaData()
@@ -130,5 +143,39 @@ class PathsDatabaseTest {
         }
 
         assertTrue(Files.isRegularFile(databasePath));
+    }
+
+    @Test
+    void upgradesVersionFiveWithoutReplacingExistingDesktopData() throws Exception {
+        Path databasePath = Files.createTempDirectory("jq-viewer-db-upgrade-")
+                .resolve("desktop.sqlite3");
+        Class.forName("org.sqlite.JDBC");
+        try (var connection = DriverManager.getConnection("jdbc:sqlite:" + databasePath);
+             var statement = connection.createStatement()) {
+            statement.executeUpdate("CREATE TABLE desktop_schema_version (version INTEGER NOT NULL)");
+            statement.executeUpdate("INSERT INTO desktop_schema_version(version) VALUES (5)");
+            statement.executeUpdate("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
+            statement.executeUpdate("INSERT INTO settings(key, value) "
+                    + "VALUES ('reader_preload_pages', '23')");
+        }
+
+        try (Database database = new Database(databasePath)) {
+            database.open();
+            try (ResultSet result = database.connection().createStatement()
+                    .executeQuery("SELECT version FROM desktop_schema_version")) {
+                assertTrue(result.next());
+                assertEquals(6, result.getInt(1));
+            }
+            try (ResultSet result = database.connection().createStatement()
+                    .executeQuery("SELECT value FROM settings "
+                            + "WHERE key = 'reader_preload_pages'")) {
+                assertTrue(result.next());
+                assertEquals("23", result.getString(1));
+            }
+            try (ResultSet result = database.connection().getMetaData()
+                    .getTables(null, null, "offline_favorites", null)) {
+                assertTrue(result.next());
+            }
+        }
     }
 }

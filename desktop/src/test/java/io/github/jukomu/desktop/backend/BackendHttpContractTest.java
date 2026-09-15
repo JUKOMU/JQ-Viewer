@@ -332,6 +332,61 @@ class BackendHttpContractTest {
                     "{\"id\":" + historyId + "}"));
             assertOk(post(http, base, requestedMethods, "clearBrowseHistory", "{}"));
 
+            ObjectNode offlineSource = body(post(http, base, requestedMethods,
+                    "createOfflineFolder", "{\"name\":\"Offline Source\"}"));
+            ObjectNode offlineTarget = body(post(http, base, requestedMethods,
+                    "createOfflineFolder", "{\"name\":\"Offline Target\"}"));
+            String offlineSourceId = offlineSource.path("folderId").asText();
+            String offlineTargetId = offlineTarget.path("folderId").asText();
+            String offlineItem = "{\"id\":\"offline-album-1\",\"title\":\"Offline One\","
+                    + "\"coverUrl\":\"offline-cover.jpg\",\"authors\":[\"Alice\"],"
+                    + "\"tags\":[\"offline\"]}";
+            assertOk(post(http, base, requestedMethods, "addOfflineFavorite",
+                    "{\"folderId\":\"" + offlineSourceId + "\",\"item\":"
+                            + offlineItem + "}"));
+            ObjectNode offlineBatch = body(post(http, base, requestedMethods,
+                    "addOfflineFavoritesBatch",
+                    "{\"folderId\":\"" + offlineSourceId + "\",\"items\":["
+                            + "{\"id\":\"offline-album-2\",\"title\":\"Offline Two\","
+                            + "\"coverUrl\":\"\",\"authors\":[],\"tags\":[]}] }"));
+            ObjectNode offlineFolders = body(post(http, base, requestedMethods,
+                    "getOfflineFolders", "{}"));
+            ObjectNode offlinePage = body(post(http, base, requestedMethods,
+                    "getOfflineFavorites",
+                    "{\"folderId\":\"" + offlineSourceId
+                            + "\",\"page\":1,\"pageSize\":1}"));
+            ObjectNode offlineItems = body(post(http, base, requestedMethods,
+                    "getAllOfflineFavorites",
+                    "{\"folderId\":\"" + offlineSourceId + "\"}"));
+            ObjectNode offlineCount = body(post(http, base, requestedMethods,
+                    "getOfflineFavoritesTotalCount", "{}"));
+            ObjectNode offlineMerged = body(post(http, base, requestedMethods,
+                    "getAllOfflineFavoritesMerged", "{}"));
+            ObjectNode offlineCopy = body(post(http, base, requestedMethods,
+                    "copyOfflineFolder",
+                    "{\"sourceId\":\"" + offlineSourceId + "\",\"name\":\"Offline Copy\"}"));
+            assertOk(post(http, base, requestedMethods, "moveAllOfflineFavorites",
+                    "{\"sourceId\":\"" + offlineSourceId + "\",\"targetId\":\""
+                            + offlineTargetId + "\"}"));
+            assertOk(post(http, base, requestedMethods, "mergeOfflineAllToFolder",
+                    "{\"targetId\":\"" + offlineTargetId + "\"}"));
+            assertOk(post(http, base, requestedMethods, "saveOfflineBackup",
+                    "{\"key\":\"offline-backup\",\"items\":[" + offlineItem + "]}"));
+            ObjectNode offlineBackup = body(post(http, base, requestedMethods,
+                    "loadOfflineBackup", "{\"key\":\"offline-backup\"}"));
+            ObjectNode offlineBackupKeys = body(post(http, base, requestedMethods,
+                    "listOfflineBackupKeys", "{}"));
+            assertOk(post(http, base, requestedMethods, "deleteOfflineBackup",
+                    "{\"key\":\"offline-backup\"}"));
+            assertOk(post(http, base, requestedMethods, "removeOfflineFavorite",
+                    "{\"folderId\":\"" + offlineTargetId
+                            + "\",\"albumId\":\"offline-album-1\"}"));
+            assertOk(post(http, base, requestedMethods, "renameOfflineFolder",
+                    "{\"folderId\":\"" + offlineTargetId
+                            + "\",\"name\":\"Offline Renamed\"}"));
+            assertOk(post(http, base, requestedMethods, "deleteOfflineFolder",
+                    "{\"folderId\":\"" + offlineSourceId + "\"}"));
+
             HttpResponse<byte[]> image = getBytes(http, base.resolve("/image/photo-1/1"));
             HttpResponse<byte[]> thumb = getBytes(http, base.resolve("/thumb/photo-1/1"));
             BufferedImage thumbnail = ImageIO.read(new ByteArrayInputStream(thumb.body()));
@@ -405,6 +460,19 @@ class BackendHttpContractTest {
             assertEquals("completed", completedRetry.path("status").asText());
             assertEquals(1, history.path("totalCount").asInt());
             assertEquals(1, overview.path("totalCount").asInt());
+            assertFalse(offlineSourceId.isEmpty());
+            assertFalse(offlineTargetId.isEmpty());
+            assertEquals(1, offlineBatch.path("count").asInt());
+            assertEquals(2, offlineFolders.path("folders").size());
+            assertEquals(2, offlinePage.path("totalItems").asInt());
+            assertEquals(2, offlinePage.path("totalPages").asInt());
+            assertEquals(1, offlinePage.path("content").size());
+            assertEquals(2, offlineItems.path("items").size());
+            assertEquals(2, offlineCount.path("count").asInt());
+            assertEquals(2, offlineMerged.path("items").size());
+            assertFalse(offlineCopy.path("folderId").asText().isEmpty());
+            assertEquals(1, offlineBackup.path("items").size());
+            assertEquals("offline-backup", offlineBackupKeys.path("keys").get(0).asText());
             assertEquals(200, image.statusCode());
             assertEquals("image/webp", image.headers().firstValue("Content-Type").orElseThrow());
             assertEquals(200, thumb.statusCode());

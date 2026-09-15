@@ -8,12 +8,16 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.List;
 
 /** 管理本地 SQLite 连接，并提供版本化 schema 迁移入口。 */
 public final class Database implements AutoCloseable {
-    private static final int SCHEMA_VERSION = 5;
+    private static final int SCHEMA_VERSION = 6;
+    private static final int BUSY_TIMEOUT_MILLIS = 5_000;
 
     private final Path databasePath;
+    private final List<Connection> isolatedConnections = new ArrayList<>();
     private Connection connection;
 
     public Database(Paths paths) {
@@ -36,10 +40,7 @@ public final class Database implements AutoCloseable {
 
         try {
             Class.forName("org.sqlite.JDBC");
-            connection = DriverManager.getConnection("jdbc:sqlite:" + databasePath);
-            try (Statement statement = connection.createStatement()) {
-                statement.execute("PRAGMA foreign_keys = ON");
-            }
+            connection = createConnection();
             migrate(connection);
             return connection;
         } catch (ClassNotFoundException exception) {
@@ -47,6 +48,18 @@ public final class Database implements AutoCloseable {
         } catch (SQLException | RuntimeException exception) {
             close();
             throw exception;
+        }
+    }
+
+    /** 为需要独立事务状态的 Store 创建由 Database 统一关闭的连接。 */
+    public synchronized Connection openIsolatedConnection() {
+        connection();
+        try {
+            Connection isolated = createConnection();
+            isolatedConnections.add(isolated);
+            return isolated;
+        } catch (SQLException exception) {
+            throw new IllegalStateException("无法打开独立数据库连接", exception);
         }
     }
 
@@ -68,6 +81,32 @@ public final class Database implements AutoCloseable {
                     + " timestamp INTEGER NOT NULL)");
             statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_browse_history_timestamp_id "
                     + "ON browse_history(timestamp DESC, id DESC)");
+            statement.executeUpdate("CREATE TABLE IF NOT EXISTS offline_folders ("
+                    + "folder_id TEXT PRIMARY KEY,"
+                    + " name TEXT NOT NULL,"
+                    + " created_at INTEGER NOT NULL)"
+            );
+            statement.executeUpdate("CREATE TABLE IF NOT EXISTS offline_favorites ("
+                    + "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                    + " folder_id TEXT NOT NULL,"
+                    + " album_id TEXT NOT NULL,"
+                    + " title TEXT NOT NULL DEFAULT '',"
+                    + " cover_url TEXT NOT NULL DEFAULT '',"
+                    + " authors_json TEXT NOT NULL DEFAULT '[]',"
+                    + " tags_json TEXT NOT NULL DEFAULT '[]',"
+                    + " UNIQUE(folder_id, album_id),"
+                    + " FOREIGN KEY(folder_id) REFERENCES offline_folders(folder_id) "
+                    + "ON DELETE CASCADE)"
+            );
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_offline_favorites_folder_id "
+                    + "ON offline_favorites(folder_id, id ASC)");
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_offline_favorites_album_id "
+                    + "ON offline_favorites(album_id, id ASC)");
+            statement.executeUpdate("CREATE TABLE IF NOT EXISTS offline_backups ("
+                    + "backup_key TEXT PRIMARY KEY,"
+                    + " items_json TEXT NOT NULL,"
+                    + " created_at INTEGER NOT NULL)"
+            );
             statement.executeUpdate("CREATE TABLE IF NOT EXISTS download_tasks ("
                     + "task_id TEXT PRIMARY KEY,"
                     + " album_id TEXT NOT NULL,"
@@ -255,19 +294,37 @@ public final class Database implements AutoCloseable {
 
     @Override
     public synchronized void close() {
-        if (connection == null) {
-            return;
+        for (Connection isolated : isolatedConnections) {
+            closeConnection(isolated);
         }
-        try {
-            connection.close();
-        } catch (SQLException ignored) {
-            // SQLite 关闭异常不影响幂等关闭。
-        } finally {
+        isolatedConnections.clear();
+        if (connection != null) {
+            closeConnection(connection);
             connection = null;
         }
     }
 
     public Path databasePath() {
         return databasePath;
+    }
+
+    private Connection createConnection() throws SQLException {
+        Connection created = DriverManager.getConnection("jdbc:sqlite:" + databasePath);
+        try (Statement statement = created.createStatement()) {
+            statement.execute("PRAGMA foreign_keys = ON");
+            statement.execute("PRAGMA busy_timeout = " + BUSY_TIMEOUT_MILLIS);
+        } catch (SQLException exception) {
+            closeConnection(created);
+            throw exception;
+        }
+        return created;
+    }
+
+    private static void closeConnection(Connection target) {
+        try {
+            target.close();
+        } catch (SQLException ignored) {
+            // SQLite 关闭异常不影响幂等关闭。
+        }
     }
 }

@@ -69,6 +69,11 @@ public final class Plugin {
     }
 
     @PluginMethod
+    public void consumeLaunchRoute(Context context) {
+        system.consumeLaunchRoute(context);
+    }
+
+    @PluginMethod
     public void setOcrEnabled(Context context) {
         ocr.setOcrEnabled(context);
     }

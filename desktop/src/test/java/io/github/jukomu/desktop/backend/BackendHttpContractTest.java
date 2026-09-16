@@ -95,6 +95,8 @@ class BackendHttpContractTest {
             URI base = URI.create("http://127.0.0.1:" + backend.port());
 
             assertOk(post(http, base, requestedMethods, "getInitStatus", "{}"));
+            assertTrue(body(post(
+                    http, base, requestedMethods, "consumeLaunchRoute", "{}")).isEmpty());
             ObjectNode domainStates = body(post(
                     http, base, requestedMethods, "getDomainStates", "{}"));
             ObjectNode latency = body(post(

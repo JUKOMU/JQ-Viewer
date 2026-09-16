@@ -62,6 +62,9 @@ public final class Host implements AutoCloseable {
             backendReady.countDown();
 
             tray = Tray.tryCreate(this::openHome, this::close).orElse(null);
+            if (tray != null) {
+                backend.attachDesktopHost(tray::displayNotification, this::openRoute);
+            }
             openHome();
             started = true;
             return true;
@@ -85,6 +88,15 @@ public final class Host implements AutoCloseable {
         if (url != null) {
             browserLauncher.open(url);
         }
+    }
+
+    private void openRoute(String route) {
+        URI url = homeUrl.get();
+        if (url == null || route == null || !route.startsWith("/") || route.startsWith("//")) {
+            return;
+        }
+        URI target = URI.create(url.getScheme() + "://" + url.getAuthority() + route);
+        browserLauncher.open(target);
     }
 
     public synchronized URI homeUrl() {
@@ -115,6 +127,7 @@ public final class Host implements AutoCloseable {
         closed = true;
         backendReady.countDown();
         try {
+            backend.detachDesktopHost();
             if (tray != null) {
                 tray.close();
                 tray = null;

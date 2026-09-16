@@ -134,20 +134,25 @@ public class ReaderPluginContractInstrumentedTest {
     }
 
     @Test
-    public void launchRoutePublishesAndIsConsumedOnce() {
+    public void launchRoutesPublishAndAreConsumedInOrder() {
         ReaderPluginHandler.setPendingLaunchRoute("/download");
-        plugin.notifyLaunchRoute("/download");
+        ReaderPluginHandler.setPendingLaunchRoute("/about");
+        plugin.notifyLaunchRoute("/about");
         RecordingPluginCall first = call("consumeLaunchRoute");
         RecordingPluginCall second = call("consumeLaunchRoute");
+        RecordingPluginCall third = call("consumeLaunchRoute");
 
         plugin.consumeLaunchRoute(first);
         plugin.consumeLaunchRoute(second);
+        plugin.consumeLaunchRoute(third);
 
-        assertEquals("/download", launchRouteEvent.getString("route"));
+        assertEquals("/about", launchRouteEvent.getString("route"));
         assertEquals("/download", first.resolvedData.getString("route"));
-        assertEquals(0, second.resolvedData.length());
+        assertEquals("/about", second.resolvedData.getString("route"));
+        assertEquals(0, third.resolvedData.length());
         assertEquals(1, first.completionCount);
         assertEquals(1, second.completionCount);
+        assertEquals(1, third.completionCount);
     }
 
     @Test

@@ -1,5 +1,7 @@
 package io.github.jukomu.desktop.host;
 
+import io.github.jukomu.desktop.feature.notification.DesktopNotification;
+
 import javax.swing.*;
 import javax.swing.event.PopupMenuEvent;
 import javax.swing.event.PopupMenuListener;
@@ -14,6 +16,7 @@ import java.io.InputStream;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * 可选的托盘集成；使用内嵌字体与轻量弹出菜单。
@@ -27,6 +30,7 @@ public final class Tray implements AutoCloseable {
     private final TrayIcon trayIcon;
     private final JPopupMenu popupMenu;
     private final JDialog hiddenDialog;
+    private final AtomicReference<Runnable> notificationClick = new AtomicReference<>();
     private boolean closed;
 
     private Tray(SystemTray systemTray, TrayIcon trayIcon, JPopupMenu popupMenu, JDialog hiddenDialog) {
@@ -117,7 +121,12 @@ public final class Tray implements AutoCloseable {
             // 托盘图标及鼠标点击事件
             TrayIcon icon = new TrayIcon(createIcon(), "JQ Viewer");
             icon.setImageAutoSize(true);
-            icon.addActionListener(event -> runSafely(openHome));
+            AtomicReference<Tray> trayReference = new AtomicReference<>();
+            icon.addActionListener(event -> {
+                Tray current = trayReference.get();
+                Runnable action = current == null ? null : current.notificationClick.getAndSet(null);
+                runSafely(action == null ? openHome : action);
+            });
 
             icon.addMouseListener(new MouseAdapter() {
                 @Override
@@ -129,6 +138,10 @@ public final class Tray implements AutoCloseable {
 
                 @Override
                 public void mousePressed(MouseEvent e) {
+                    if (SwingUtilities.isLeftMouseButton(e)) {
+                        Tray current = trayReference.get();
+                        if (current != null) current.notificationClick.set(null);
+                    }
                     if (e.isPopupTrigger()) {
                         showMenu(menu, hiddenDialog, e);
                     }
@@ -137,7 +150,9 @@ public final class Tray implements AutoCloseable {
 
             SystemTray tray = SystemTray.getSystemTray();
             tray.add(icon);
-            return Optional.of(new Tray(tray, icon, menu, hiddenDialog));
+            Tray created = new Tray(tray, icon, menu, hiddenDialog);
+            trayReference.set(created);
+            return Optional.of(created);
         } catch (AWTException | RuntimeException exception) {
             return Optional.empty();
         }
@@ -280,6 +295,23 @@ public final class Tray implements AutoCloseable {
         }
     }
 
+    /** 使用操作系统托盘气泡展示通知；点击动作只消费一次。 */
+    public void displayNotification(DesktopNotification notification, Runnable onClick) {
+        Objects.requireNonNull(notification, "notification");
+        Objects.requireNonNull(onClick, "onClick");
+        if (closed) return;
+        notificationClick.set(onClick);
+        EventQueue.invokeLater(() -> {
+            if (!closed) {
+                trayIcon.displayMessage(
+                        notification.title(),
+                        notification.message(),
+                        TrayIcon.MessageType.NONE
+                );
+            }
+        });
+    }
+
     private static BufferedImage createIcon() {
         BufferedImage image = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB);
         Graphics2D graphics = image.createGraphics();
@@ -302,6 +334,7 @@ public final class Tray implements AutoCloseable {
             return;
         }
         closed = true;
+        notificationClick.set(null);
         systemTray.remove(trayIcon);
         SwingUtilities.invokeLater(() -> {
             if (popupMenu != null && popupMenu.isVisible()) {

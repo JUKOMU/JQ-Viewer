@@ -627,7 +627,13 @@ export function createPlatformServices(
     reader: createDesktopReaderServices(),
     updater: unavailableCapability('当前平台不支持应用更新'),
     ocr: { available: true, api: createOcrService(fetcher) },
-    launchRoutes: unavailableCapability('当前平台不支持启动路由'),
+    launchRoutes: {
+      available: true,
+      api: {
+        consume: () => requestBackend<{ route?: string }>(fetcher, 'consumeLaunchRoute', {}),
+        onRoute: (handler) => events.onLaunchRoute(handler),
+      },
+    },
     events,
   }
 

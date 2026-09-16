@@ -38,6 +38,9 @@ import io.github.jukomu.desktop.feature.image.CacheService;
 import io.github.jukomu.desktop.feature.image.ImageService;
 import io.github.jukomu.desktop.feature.files.FileService;
 import io.github.jukomu.desktop.feature.network.NetworkService;
+import io.github.jukomu.desktop.feature.notification.DesktopNotificationSink;
+import io.github.jukomu.desktop.feature.notification.DesktopTaskNotificationService;
+import io.github.jukomu.desktop.feature.notification.LaunchRouteService;
 import io.github.jukomu.desktop.feature.ocr.OcrService;
 import io.github.jukomu.desktop.feature.pdf.data.PdfStore;
 import io.github.jukomu.desktop.feature.pdf.export.PdfExportService;
@@ -68,6 +71,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 /** 在同一 JVM 内承载 loopback Javalin 服务与本地资源。 */
@@ -112,6 +116,8 @@ public final class Backend implements AutoCloseable {
     private NetworkService networkService;
     private OcrService ocrService;
     private EventHub eventHub;
+    private LaunchRouteService launchRouteService;
+    private DesktopTaskNotificationService taskNotifications;
     private URI homeUrl;
     private boolean running;
     private boolean closed;
@@ -227,6 +233,8 @@ public final class Backend implements AutoCloseable {
         PdfExportService startedPdfExportService = null;
         NetworkService startedNetworkService = null;
         OcrService startedOcrService = null;
+        LaunchRouteService startedLaunchRoutes = null;
+        DesktopTaskNotificationService startedTaskNotifications = null;
         try {
             paths.ensureDirectories();
             if (Backend.class.getResource("/static/index.html") == null) {
@@ -274,6 +282,10 @@ public final class Backend implements AutoCloseable {
             ImageService imageService = new ImageService(serviceClient, businessExecutor, eventHub);
             DownloadStore downloadStore = new DownloadStore(database);
             PdfExportStore pdfExportStore = new PdfExportStore(database);
+            startedLaunchRoutes = new LaunchRouteService(eventHub);
+            startedTaskNotifications = new DesktopTaskNotificationService(
+                    downloadStore, pdfExportStore, startedLaunchRoutes, eventHub);
+            DesktopTaskNotificationService taskNotifications = startedTaskNotifications;
             DownloadFiles downloadFiles = new DownloadFiles(
                     settingsService.downloadRoot(paths.downloadsDirectory()));
             DownloadLocationService downloadLocationService = new DownloadLocationService(
@@ -309,6 +321,7 @@ public final class Backend implements AutoCloseable {
                     pdfExportStore, downloadStore, downloadFiles,
                     pdfExportExecutor, eventHub);
             startedPdfExportService.reconcileOnStartup();
+            taskNotifications.start();
             Plugin plugin = new Plugin(
                     new ApiPluginHandler(requests,
                             new CatalogService(serviceClient, imageService, albumCoverUrl), imageService),
@@ -321,7 +334,7 @@ public final class Backend implements AutoCloseable {
                     new FilePluginHandler(requests, fileService),
                     new DownloadPluginHandler(requests, downloadService),
                     new PdfPluginHandler(requests, pdfManagementService, startedPdfExportService),
-                    new SystemPluginHandler(requests, startedNetworkService),
+                    new SystemPluginHandler(requests, startedNetworkService, startedLaunchRoutes),
                     new OcrPluginHandler(requests, startedOcrService));
             PdfResourceService pdfResources = new PdfResourceService();
             candidate = Javalin.create(config -> {
@@ -354,6 +367,8 @@ public final class Backend implements AutoCloseable {
             this.networkService = startedNetworkService;
             this.ocrService = startedOcrService;
             this.eventHub = eventHub;
+            this.launchRouteService = startedLaunchRoutes;
+            this.taskNotifications = startedTaskNotifications;
             this.homeUrl = URI.create("http://" + LOOPBACK_HOST + ":" + port + "/home");
             this.running = true;
             LOGGER.info("本地后端监听于 {}", homeUrl);
@@ -370,6 +385,8 @@ public final class Backend implements AutoCloseable {
             if (startedPdfExportService != null) startedPdfExportService.close();
             if (startedNetworkService != null) startedNetworkService.close();
             if (startedOcrService != null) startedOcrService.close();
+            if (startedTaskNotifications != null) startedTaskNotifications.close();
+            if (startedLaunchRoutes != null) startedLaunchRoutes.close();
             if (startedEventHub != null) startedEventHub.close();
             if (startedClient != null) startedClient.close();
             pdfExportExecutor.shutdownNow();
@@ -576,6 +593,22 @@ public final class Backend implements AutoCloseable {
         return fileOperationExecutor;
     }
 
+    public synchronized void attachDesktopHost(
+            DesktopNotificationSink notificationSink,
+            Consumer<String> routeOpener
+    ) {
+        if (!running || taskNotifications == null || launchRouteService == null) {
+            throw new IllegalStateException("本地后端尚未启动");
+        }
+        launchRouteService.attachRouteOpener(routeOpener);
+        taskNotifications.attach(notificationSink);
+    }
+
+    public synchronized void detachDesktopHost() {
+        if (taskNotifications != null) taskNotifications.detach();
+        if (launchRouteService != null) launchRouteService.detachRouteOpener();
+    }
+
     @Override
     public synchronized void close() {
         if (closed) {
@@ -587,6 +620,14 @@ public final class Backend implements AutoCloseable {
         Javalin current = app;
         app = null;
         homeUrl = null;
+        if (taskNotifications != null) {
+            taskNotifications.close();
+            taskNotifications = null;
+        }
+        if (launchRouteService != null) {
+            launchRouteService.close();
+            launchRouteService = null;
+        }
         if (pdfExportService != null) {
             pdfExportService.close();
             pdfExportService = null;

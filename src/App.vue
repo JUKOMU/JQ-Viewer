@@ -224,14 +224,15 @@ const queueLaunchRouteDrain = (replaceFirst = false) => {
     .catch(() => undefined)
     .then(async () => {
       let replace = replaceFirst
-      while (true) {
-        const launch = await JmcomicService.consumeLaunchRoute()
-        if (!launch.route) return
-        if (!isSafeLaunchRoute(launch.route)) continue
-        if (await navigateToLaunchRoute(launch.route, replace)) {
-          launchRouteNavigationVersion += 1
+      let launch = await JmcomicService.consumeLaunchRoute()
+      while (launch.route) {
+        if (isSafeLaunchRoute(launch.route)) {
+          if (await navigateToLaunchRoute(launch.route, replace)) {
+            launchRouteNavigationVersion += 1
+          }
+          replace = false
         }
-        replace = false
+        launch = await JmcomicService.consumeLaunchRoute()
       }
     })
   launchRouteDrain = next

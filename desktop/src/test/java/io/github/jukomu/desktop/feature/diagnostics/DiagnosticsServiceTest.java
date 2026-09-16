@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import java.awt.image.BufferedImage;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.ResultSet;
 import java.util.List;
 import java.util.Map;
 
@@ -64,6 +65,51 @@ class DiagnosticsServiceTest {
             assertEquals(3, snapshot.clearableResources().getFirst().sizeBytes());
             assertEquals(1, snapshot.clearableResources().get(1).entryCount());
             assertTrue(snapshot.clearableResources().get(1).sizeBytes() > 0);
+        }
+    }
+
+    @Test
+    void ordersDownloadFailuresByFailureTimeAndClearsItWhenReset() throws Exception {
+        Path root = Files.createTempDirectory("jq-viewer-diagnostics-failures-");
+        Paths paths = new Paths(root.resolve("program"), root.resolve("home"), Map.of(), "Linux");
+        paths.ensureDirectories();
+        try (Database database = new Database(paths)) {
+            database.open();
+            DownloadStore downloads = new DownloadStore(database);
+            downloads.createOrResetTask(
+                    "newer-task", "album", "newer", "漫画", "新任务", "",
+                    "album/newer", 200);
+            downloads.createOrResetTask(
+                    "older-task", "album", "older", "漫画", "旧任务", "",
+                    "album/older", 100);
+            downloads.fail("newer-task", 0, 0, 0, "先失败");
+            downloads.interrupt("older-task", "后失败");
+
+            try (ResultSet rows = database.connection().createStatement().executeQuery(
+                    "SELECT COUNT(*) FROM download_tasks WHERE failed_at IS NOT NULL")) {
+                assertTrue(rows.next());
+                assertEquals(2, rows.getInt(1));
+            }
+            try (var statement = database.connection().createStatement()) {
+                statement.executeUpdate(
+                        "UPDATE download_tasks SET failed_at=1000 WHERE task_id='newer-task'");
+                statement.executeUpdate(
+                        "UPDATE download_tasks SET failed_at=2000 WHERE task_id='older-task'");
+            }
+
+            var snapshot = downloads.diagnosticSnapshot(20);
+
+            assertEquals("older-task", snapshot.recentFailures().getFirst().id());
+            assertEquals(2000, snapshot.recentFailures().getFirst().updatedAt());
+            downloads.createOrResetTask(
+                    "older-task", "album", "older", "漫画", "旧任务", "",
+                    "album/older", 300);
+            try (ResultSet rows = database.connection().createStatement().executeQuery(
+                    "SELECT failed_at FROM download_tasks WHERE task_id='older-task'")) {
+                assertTrue(rows.next());
+                rows.getLong(1);
+                assertTrue(rows.wasNull());
+            }
         }
     }
 }

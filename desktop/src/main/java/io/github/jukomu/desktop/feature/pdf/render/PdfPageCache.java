@@ -79,7 +79,7 @@ public final class PdfPageCache {
 
     public synchronized Stats stats() {
         try {
-            Files.createDirectories(directory);
+            if (Files.notExists(directory)) return new Stats(0, 0L);
             int entryCount = 0;
             long sizeBytes = 0L;
             try (var files = Files.list(directory)) {

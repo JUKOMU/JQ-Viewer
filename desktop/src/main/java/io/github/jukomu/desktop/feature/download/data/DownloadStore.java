@@ -78,9 +78,10 @@ public final class DownloadStore {
         List<DiagnosticFailure> failures = new ArrayList<>();
         if (limit > 0) {
             try (PreparedStatement statement = database.connection().prepareStatement(
-                    "SELECT task_id,album_title,chapter_title,status,error,created_at "
+                    "SELECT task_id,album_title,chapter_title,status,error,"
+                            + "COALESCE(failed_at,created_at) AS failed_at "
                             + "FROM download_tasks WHERE status='failed' "
-                            + "ORDER BY created_at DESC,task_id DESC LIMIT ?")) {
+                            + "ORDER BY COALESCE(failed_at,created_at) DESC,task_id DESC LIMIT ?")) {
                 statement.setInt(1, limit);
                 try (ResultSet rows = statement.executeQuery()) {
                     while (rows.next()) {
@@ -91,7 +92,7 @@ public final class DownloadStore {
                                 displayTitle(chapterTitle, albumTitle, rows.getString("task_id")),
                                 rows.getString("status"),
                                 value(rows.getString("error"), "下载失败"),
-                                rows.getLong("created_at")
+                                rows.getLong("failed_at")
                         ));
                     }
                 }
@@ -125,7 +126,7 @@ public final class DownloadStore {
                             + "downloaded_pages=0, downloaded_bytes=0, first_image_sort_order=NULL, "
                             + "status='queued', error=NULL, total_size=0, chapter_sort_order=0, "
                             + "is_single_episode=NULL, relative_directory=excluded.relative_directory, "
-                            + "created_at=excluded.created_at, completed_at=NULL")) {
+                            + "created_at=excluded.created_at, failed_at=NULL, completed_at=NULL")) {
                 statement.setString(1, taskId);
                 statement.setString(2, albumId);
                 statement.setString(3, chapterId);
@@ -219,7 +220,7 @@ public final class DownloadStore {
             try (PreparedStatement task = connection.prepareStatement(
                     "UPDATE download_tasks SET status='completed', error=NULL, "
                             + "downloaded_pages=?, first_image_sort_order=?, total_size=?, "
-                            + "downloaded_bytes=?, completed_at=? WHERE task_id=?")) {
+                            + "downloaded_bytes=?, failed_at=NULL, completed_at=? WHERE task_id=?")) {
                 task.setInt(1, totalPages);
                 task.setInt(2, firstSortOrder);
                 task.setLong(3, totalSize);
@@ -236,12 +237,13 @@ public final class DownloadStore {
                                   long totalSize, String error) {
         try (PreparedStatement statement = database.connection().prepareStatement(
                 "UPDATE download_tasks SET status='failed', downloaded_pages=?, downloaded_bytes=?, "
-                        + "total_size=?, error=?, completed_at=NULL WHERE task_id=?")) {
+                        + "total_size=?, error=?, failed_at=?, completed_at=NULL WHERE task_id=?")) {
             statement.setInt(1, Math.max(0, downloadedPages));
             statement.setLong(2, Math.max(0, downloadedBytes));
             statement.setLong(3, Math.max(0, totalSize));
             statement.setString(4, error);
-            statement.setString(5, taskId);
+            statement.setLong(5, System.currentTimeMillis());
+            statement.setString(6, taskId);
             requireUpdated(statement.executeUpdate(), taskId);
         } catch (SQLException exception) {
             throw failure("记录下载失败状态失败", exception);
@@ -254,9 +256,10 @@ public final class DownloadStore {
             try (PreparedStatement statement = connection.prepareStatement(
                     "UPDATE download_tasks SET status='failed', downloaded_pages=0, "
                             + "downloaded_bytes=0, total_size=0, first_image_sort_order=NULL, "
-                            + "completed_at=NULL, error=? WHERE task_id=?")) {
-                statement.setString(1, error);
-                statement.setString(2, taskId);
+                            + "failed_at=?, completed_at=NULL, error=? WHERE task_id=?")) {
+                statement.setLong(1, System.currentTimeMillis());
+                statement.setString(2, error);
+                statement.setString(3, taskId);
                 requireUpdated(statement.executeUpdate(), taskId);
             }
             return null;

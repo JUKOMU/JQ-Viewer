@@ -6,6 +6,7 @@ import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
@@ -13,7 +14,7 @@ import java.util.List;
 
 /** 管理本地 SQLite 连接，并提供版本化 schema 迁移入口。 */
 public final class Database implements AutoCloseable {
-    private static final int SCHEMA_VERSION = 7;
+    private static final int SCHEMA_VERSION = 8;
     private static final int BUSY_TIMEOUT_MILLIS = 5_000;
 
     private final Path databasePath;
@@ -134,6 +135,7 @@ public final class Database implements AutoCloseable {
                     + " is_single_episode INTEGER,"
                     + " relative_directory TEXT NOT NULL,"
                     + " created_at INTEGER NOT NULL,"
+                    + " failed_at INTEGER,"
                     + " completed_at INTEGER)"
             );
             statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_download_tasks_created "
@@ -260,6 +262,8 @@ public final class Database implements AutoCloseable {
             );
         }
 
+        ensureDownloadFailureTimestamp(connection);
+
         try (PreparedStatement statement = connection.prepareStatement(
                 "INSERT INTO desktop_schema_version(version) "
                         + "SELECT 1 WHERE NOT EXISTS "
@@ -274,6 +278,26 @@ public final class Database implements AutoCloseable {
             statement.setInt(1, SCHEMA_VERSION);
             statement.setInt(2, SCHEMA_VERSION);
             statement.executeUpdate();
+        }
+    }
+
+    private static void ensureDownloadFailureTimestamp(Connection connection) throws SQLException {
+        boolean exists = false;
+        try (Statement statement = connection.createStatement();
+             ResultSet columns = statement.executeQuery("PRAGMA table_info(download_tasks)")) {
+            while (columns.next()) {
+                if ("failed_at".equals(columns.getString("name"))) {
+                    exists = true;
+                    break;
+                }
+            }
+        }
+        if (exists) return;
+
+        try (Statement statement = connection.createStatement()) {
+            statement.executeUpdate("ALTER TABLE download_tasks ADD COLUMN failed_at INTEGER");
+            statement.executeUpdate("UPDATE download_tasks SET failed_at=created_at "
+                    + "WHERE status='failed' AND failed_at IS NULL");
         }
     }
 

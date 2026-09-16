@@ -127,6 +127,9 @@
                   <IonIcon v-else :icon="refreshOutline" aria-hidden="true" />
                 </button>
               </div>
+              <div v-if="diagnosticsError" class="diagnostics-error">
+                {{ diagnosticsError }}
+              </div>
               <template v-if="diagnostics">
                 <div class="diagnostics-section">
                   <div class="diagnostics-title">路径</div>
@@ -178,9 +181,6 @@
                   <span>清理缓存</span>
                 </button>
               </template>
-              <div v-else-if="diagnosticsError" class="diagnostics-error">
-                {{ diagnosticsError }}
-              </div>
             </div>
           </div>
           <div class="about-group">

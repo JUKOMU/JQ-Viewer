@@ -81,6 +81,22 @@ class CacheServiceTest {
         }
     }
 
+    @Test
+    void pdfPageStatsDoesNotRecreateMissingCacheDirectory() throws Exception {
+        Fixture fixture = fixture();
+        Database database = fixture.database();
+        try (database) {
+            Path pdfPageDirectory = fixture.paths().cacheDirectory().resolve("pdf-pages");
+            Files.delete(pdfPageDirectory);
+
+            var stats = fixture.pdfPageCache().stats();
+
+            assertEquals(0, stats.entryCount());
+            assertEquals(0L, stats.sizeBytes());
+            assertFalse(Files.exists(pdfPageDirectory));
+        }
+    }
+
     private static Fixture fixture() throws Exception {
         Path root = Files.createTempDirectory("jq-viewer-cache-service-");
         Paths paths = new Paths(root.resolve("program"), root.resolve("home"), Map.of(), "Linux");

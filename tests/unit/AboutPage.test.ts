@@ -391,4 +391,24 @@ describe('AboutPage Desktop 诊断', () => {
     expect(mocks.getDiagnosticsSnapshot).not.toHaveBeenCalled()
     wrapper.unmount()
   })
+
+  test('刷新失败时保留旧快照并显示错误', async () => {
+    mocks.diagnosticsAvailable = true
+    mocks.getDiagnosticsSnapshot.mockResolvedValue({
+      generatedAt: 1,
+      paths: [{ kind: 'data', label: '应用数据', displayPath: '/home/user/data' }],
+      tasks: [],
+      clearableResources: [],
+    })
+    const wrapper = mount(AboutPage)
+    await flushPromises()
+    mocks.getDiagnosticsSnapshot.mockRejectedValueOnce(new Error('诊断刷新失败'))
+
+    await wrapper.get('.icon-action').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('.diagnostics-error').text()).toBe('诊断刷新失败')
+    expect(wrapper.get('.diagnostics-card').text()).toContain('/home/user/data')
+    wrapper.unmount()
+  })
 })

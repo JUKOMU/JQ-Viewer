@@ -7,9 +7,11 @@ import javax.swing.SwingUtilities;
 import java.awt.Component;
 import java.awt.Frame;
 import java.awt.Window;
-import java.lang.reflect.InvocationTargetException;
 import java.util.Objects;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 /** 为系统文件选择器提供可激活、可释放的 Desktop owner 窗口。 */
 public final class DesktopFileDialogHost {
@@ -30,22 +32,57 @@ public final class DesktopFileDialogHost {
     public int showOpenDialog(SystemFileChooser chooser) throws InterruptedException {
         Objects.requireNonNull(chooser, "chooser");
         if (SwingUtilities.isEventDispatchThread()) {
-            return showOnEventDispatchThread(chooser);
+            return new DialogSession(chooser).show();
         }
 
-        AtomicInteger result = new AtomicInteger(SystemFileChooser.CANCEL_OPTION);
+        DialogSession session = new DialogSession(chooser);
+        FutureTask<Integer> task = new FutureTask<>(session::show);
+        SwingUtilities.invokeLater(task);
         try {
-            SwingUtilities.invokeAndWait(() -> result.set(showOnEventDispatchThread(chooser)));
-        } catch (InvocationTargetException exception) {
+            return task.get();
+        } catch (InterruptedException exception) {
+            task.cancel(false);
+            session.cancel();
+            throw exception;
+        } catch (ExecutionException exception) {
             rethrow(exception.getCause());
+            return SystemFileChooser.CANCEL_OPTION;
         }
-        return result.get();
     }
 
-    private int showOnEventDispatchThread(SystemFileChooser chooser) {
-        try (DialogOwner owner = ownerFactory.create()) {
-            owner.activate();
-            return chooser.showOpenDialog(owner.component());
+    private final class DialogSession {
+        private final SystemFileChooser chooser;
+        private final AtomicBoolean cancellationRequested = new AtomicBoolean();
+        private final AtomicReference<DialogOwner> activeOwner = new AtomicReference<>();
+
+        private DialogSession(SystemFileChooser chooser) {
+            this.chooser = chooser;
+        }
+
+        private int show() {
+            if (cancellationRequested.get()) return SystemFileChooser.CANCEL_OPTION;
+
+            DialogOwner owner = ownerFactory.create();
+            activeOwner.set(owner);
+            try {
+                if (cancellationRequested.get()) return SystemFileChooser.CANCEL_OPTION;
+                owner.activate();
+                if (cancellationRequested.get()) return SystemFileChooser.CANCEL_OPTION;
+                return chooser.showOpenDialog(owner.component());
+            } finally {
+                closeOwner();
+            }
+        }
+
+        private void cancel() {
+            cancellationRequested.set(true);
+            // SystemFileChooser 没有取消 API；释放 owner 会关闭其拥有的原生或 Swing 对话框。
+            SwingUtilities.invokeLater(this::closeOwner);
+        }
+
+        private void closeOwner() {
+            DialogOwner owner = activeOwner.getAndSet(null);
+            if (owner != null) owner.close();
         }
     }
 

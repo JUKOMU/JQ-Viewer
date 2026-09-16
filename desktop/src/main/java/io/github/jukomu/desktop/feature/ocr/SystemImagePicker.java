@@ -1,18 +1,18 @@
 package io.github.jukomu.desktop.feature.ocr;
 
+import com.formdev.flatlaf.util.SystemFileChooser;
+import com.formdev.flatlaf.util.SystemFileChooser.FileNameExtensionFilter;
 import io.github.jukomu.desktop.bridge.ApiException;
 
-import javax.swing.JFileChooser;
 import javax.swing.SwingUtilities;
-import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.GraphicsEnvironment;
 import java.io.File;
 import java.lang.reflect.InvocationTargetException;
 import java.nio.file.Path;
 import java.util.concurrent.atomic.AtomicReference;
 
-/** 使用系统 Swing 文件选择器选择图片。 */
-public final class SwingImagePicker implements ImagePicker {
+/** 使用操作系统原生文件对话框选择待识别图片。 */
+public final class SystemImagePicker implements ImagePicker {
     private static final FileNameExtensionFilter IMAGE_FILTER =
             new FileNameExtensionFilter(
                     "图片文件 (PNG, JPG, GIF, BMP, TIFF, WEBP)",
@@ -26,12 +26,12 @@ public final class SwingImagePicker implements ImagePicker {
 
         AtomicReference<Path> selected = new AtomicReference<>();
         Runnable openChooser = () -> {
-            JFileChooser chooser = new JFileChooser();
+            SystemFileChooser chooser = new SystemFileChooser();
             chooser.setDialogTitle("选择要识别的图片");
-            chooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
+            chooser.setFileSelectionMode(SystemFileChooser.FILES_ONLY);
             chooser.setAcceptAllFileFilterUsed(false);
             chooser.addChoosableFileFilter(IMAGE_FILTER);
-            if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
+            if (chooser.showOpenDialog(null) == SystemFileChooser.APPROVE_OPTION) {
                 File file = chooser.getSelectedFile();
                 if (file != null) selected.set(file.toPath().toAbsolutePath().normalize());
             }

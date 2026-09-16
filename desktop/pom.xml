@@ -21,6 +21,7 @@
         <jmcomic.version>1.1.8</jmcomic.version>
         <pdfbox.version>3.0.5</pdfbox.version>
         <credential.secure.storage.version>1.0.0</credential.secure.storage.version>
+        <flatlaf.version>3.7.2</flatlaf.version>
         <jna.version>5.19.1</jna.version>
         <tesseract.version>5.5.1-1.5.12</tesseract.version>
         <maven.compiler.plugin.version>3.13.0</maven.compiler.plugin.version>
@@ -67,6 +68,11 @@
             <groupId>com.microsoft</groupId>
             <artifactId>credential-secure-storage</artifactId>
             <version>${credential.secure.storage.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.formdev</groupId>
+            <artifactId>flatlaf</artifactId>
+            <version>${flatlaf.version}</version>
         </dependency>
         <dependency>
             <groupId>net.java.dev.jna</groupId>

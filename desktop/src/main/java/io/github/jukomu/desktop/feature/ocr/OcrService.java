@@ -24,7 +24,7 @@ public final class OcrService implements AutoCloseable {
     }
 
     public static OcrService createDefault(SettingsService settings, Path ocrDirectory) {
-        return new OcrService(settings, new SwingImagePicker(), new TesseractOcrEngine(ocrDirectory));
+        return new OcrService(settings, new SystemImagePicker(), new TesseractOcrEngine(ocrDirectory));
     }
 
     public SuccessResponse setEnabled(boolean enabled) {

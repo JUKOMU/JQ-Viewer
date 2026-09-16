@@ -19,12 +19,15 @@
         <slf4j.version>2.0.17</slf4j.version>
         <junit.version>5.11.4</junit.version>
         <jmcomic.version>1.1.8</jmcomic.version>
+        <twelvemonkeys.version>3.14.0</twelvemonkeys.version>
         <pdfbox.version>3.0.5</pdfbox.version>
         <credential.secure.storage.version>1.0.0</credential.secure.storage.version>
         <flatlaf.version>3.7.2</flatlaf.version>
         <jna.version>5.19.1</jna.version>
         <tesseract.version>5.5.1-1.5.12</tesseract.version>
         <maven.compiler.plugin.version>3.13.0</maven.compiler.plugin.version>
+        <maven.dependency.plugin.version>3.8.1</maven.dependency.plugin.version>
+        <maven.jar.plugin.version>3.4.2</maven.jar.plugin.version>
         <maven.surefire.plugin.version>3.5.2</maven.surefire.plugin.version>
     </properties>
 
@@ -58,6 +61,17 @@
             <groupId>io.github.jukomu</groupId>
             <artifactId>jmcomic-core</artifactId>
             <version>${jmcomic.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.sejda.imageio</groupId>
+                    <artifactId>webp-imageio</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>com.twelvemonkeys.imageio</groupId>
+            <artifactId>imageio-webp</artifactId>
+            <version>${twelvemonkeys.version}</version>
         </dependency>
         <dependency>
             <groupId>org.apache.pdfbox</groupId>
@@ -104,6 +118,23 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>${maven.surefire.plugin.version}</version>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>${maven.jar.plugin.version}</version>
+                <configuration>
+                    <archive>
+                        <manifest>
+                            <mainClass>io.github.jukomu.desktop.Main</mainClass>
+                        </manifest>
+                    </archive>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>${maven.dependency.plugin.version}</version>
             </plugin>
         </plugins>
     </build>

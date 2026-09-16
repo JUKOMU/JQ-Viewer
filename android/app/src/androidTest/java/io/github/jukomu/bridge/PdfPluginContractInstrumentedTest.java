@@ -135,6 +135,37 @@ public class PdfPluginContractInstrumentedTest {
     }
 
     @Test
+    public void refreshRejectsPersistenceFailuresAtPluginBoundary() throws Exception {
+        File pdf = new File(context.getCacheDir(), "refresh-failure-" + System.nanoTime() + ".pdf");
+        createPdf(pdf);
+        long id = pdfStore.insertImportedPdf(
+            PdfRef.createPathFileRef(pdf.getCanonicalPath()),
+            pdf.getCanonicalPath(), pdf.getName(), "album-refresh-failure", "", "", "",
+            "chapter-refresh-failure", "第一话", 0, -1, System.currentTimeMillis(), null,
+            pdf.length(), 1);
+        SQLiteDatabase database = pdfStore.getWritableDatabase();
+        database.execSQL("DROP TRIGGER IF EXISTS fail_pdf_refresh_handler_for_test");
+        database.execSQL("CREATE TRIGGER fail_pdf_refresh_handler_for_test "
+            + "BEFORE UPDATE ON pdf_files BEGIN "
+            + "SELECT RAISE(ABORT, 'forced handler refresh failure'); END");
+        try {
+            RecordingPluginCall refreshCall = call(
+                "refreshPdfFileAvailability", "ids", new JSArray().put(id));
+
+            handler.refreshPdfFileAvailability(refreshCall);
+
+            assertNull(refreshCall.resolvedData);
+            assertTrue(refreshCall.rejectionException instanceof SQLiteException);
+            assertTrue(refreshCall.rejectionMessage.contains("forced handler refresh failure"));
+            assertEquals(1, refreshCall.completionCount);
+        } finally {
+            database.execSQL("DROP TRIGGER IF EXISTS fail_pdf_refresh_handler_for_test");
+            pdfStore.removeFileFromLibrary(id);
+            assertTrue(pdf.delete() || !pdf.exists());
+        }
+    }
+
+    @Test
     public void missingPhysicalFileKeepsAlreadyMissingSuccessContract() throws Exception {
         String locator = new File(context.getCacheDir(),
             "already-missing-" + System.nanoTime() + ".pdf").getAbsolutePath();

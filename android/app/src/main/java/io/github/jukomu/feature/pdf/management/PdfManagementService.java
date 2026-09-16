@@ -113,9 +113,13 @@ public final class PdfManagementService {
         for (int index = 0; index < ids.length(); index++) {
             long id = ids.optLong(index, -1L);
             if (id < 0L) continue;
-            JSONObject current = store.getFile(id);
-            if (current == null) continue;
-            files.put(verifyFile(id));
+            try {
+                JSONObject refreshed = verifyFile(id);
+                if (refreshed != null) files.put(refreshed);
+            } catch (PdfOperationException error) {
+                if (PdfOperationException.NOT_FOUND.equals(error.code)) continue;
+                throw error;
+            }
         }
         return files;
     }

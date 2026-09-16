@@ -13,6 +13,21 @@ on:
         required: false
         type: boolean
         default: false
+      release_ed25519_key_id:
+        description: Ed25519 key ID embedded into Desktop packages
+        required: false
+        type: string
+        default: ''
+      release_ed25519_public_key_spki_base64:
+        description: Ed25519 SPKI public key embedded into Desktop packages
+        required: false
+        type: string
+        default: ''
+      require_release_trust_root:
+        description: Fail instead of generating a CI-only updater trust root
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -99,6 +114,36 @@ jobs:
           $wixBin.FullName | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - run: npm ci
+
+      - name: Resolve Desktop updater trust root
+        shell: bash
+        env:
+          CONFIGURED_KEY_ID: ${{ inputs.release_ed25519_key_id }}
+          CONFIGURED_PUBLIC_KEY: ${{ inputs.release_ed25519_public_key_spki_base64 }}
+          REQUIRE_RELEASE_TRUST_ROOT: ${{ inputs.require_release_trust_root }}
+        run: |
+          set -euo pipefail
+          if [ -n "$CONFIGURED_KEY_ID" ] && [ -n "$CONFIGURED_PUBLIC_KEY" ]; then
+            {
+              echo "RELEASE_ED25519_KEY_ID=$CONFIGURED_KEY_ID"
+              echo "RELEASE_ED25519_PUBLIC_KEY_SPKI_BASE64=$CONFIGURED_PUBLIC_KEY"
+            } >> "$GITHUB_ENV"
+          elif [ "$REQUIRE_RELEASE_TRUST_ROOT" = "true" ]; then
+            echo "::error::Desktop release updater trust root is not configured"
+            exit 1
+          else
+            node <<'NODE'
+          const { generateKeyPairSync } = require('node:crypto')
+          const { appendFileSync } = require('node:fs')
+          const { publicKey } = generateKeyPairSync('ed25519')
+          const publicSpki = publicKey.export({ type: 'spki', format: 'der' })
+          appendFileSync(process.env.GITHUB_ENV, 'RELEASE_ED25519_KEY_ID=jq-viewer-ci-package\n')
+          appendFileSync(
+            process.env.GITHUB_ENV,
+            'RELEASE_ED25519_PUBLIC_KEY_SPKI_BASE64=' + publicSpki.toString('base64') + '\n',
+          )
+          NODE
+          fi
 
       - name: Build native Desktop packages
         run: >-

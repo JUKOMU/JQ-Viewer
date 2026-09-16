@@ -343,7 +343,13 @@ const downloadProgress = computed(() => {
         ? updateState.value.githubBytes
         : updateState.value.giteeBytes
       : Math.max(updateState.value.githubBytes, updateState.value.giteeBytes)
-  const total = Math.max(0, updateState.value.totalBytes || latestManifest.value?.sizeBytes || 0)
+  const total = Math.max(
+    0,
+    updateState.value.totalBytes ||
+      latestManifest.value?.desktopArtifact?.sizeBytes ||
+      latestManifest.value?.sizeBytes ||
+      0,
+  )
   const bytes = total > 0 ? Math.min(total, Math.max(0, rawBytes)) : Math.max(0, rawBytes)
   const percent = total > 0 ? Math.min(100, Math.max(0, (bytes / total) * 100)) : 0
 

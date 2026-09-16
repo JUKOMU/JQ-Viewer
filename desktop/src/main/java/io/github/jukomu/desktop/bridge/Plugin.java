@@ -11,6 +11,7 @@ import io.github.jukomu.desktop.bridge.handler.OcrPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.PdfPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.SettingsPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.SystemPluginHandler;
+import io.github.jukomu.desktop.bridge.handler.UpdatePluginHandler;
 import io.javalin.http.Context;
 
 /** 本地 HTTP bridge 的方法入口。 */
@@ -26,6 +27,7 @@ public final class Plugin {
     private final PdfPluginHandler pdfs;
     private final SystemPluginHandler system;
     private final OcrPluginHandler ocr;
+    private final UpdatePluginHandler updates;
 
     public Plugin(ApiPluginHandler api, AuthPluginHandler auth,
                   CachePluginHandler cache,
@@ -34,7 +36,8 @@ public final class Plugin {
                   FilePluginHandler files, DownloadPluginHandler downloads,
                   PdfPluginHandler pdfs,
                   SystemPluginHandler system,
-                  OcrPluginHandler ocr) {
+                  OcrPluginHandler ocr,
+                  UpdatePluginHandler updates) {
         this.api = api;
         this.auth = auth;
         this.cache = cache;
@@ -46,6 +49,7 @@ public final class Plugin {
         this.pdfs = pdfs;
         this.system = system;
         this.ocr = ocr;
+        this.updates = updates;
     }
 
     @PluginMethod
@@ -76,6 +80,31 @@ public final class Plugin {
     @PluginMethod
     public void getDiagnostics(Context context) {
         system.getDiagnostics(context);
+    }
+
+    @PluginMethod
+    public void checkUpdate(Context context) {
+        updates.checkUpdate(context);
+    }
+
+    @PluginMethod
+    public void startUpdate(Context context) {
+        updates.startUpdate(context);
+    }
+
+    @PluginMethod
+    public void cancelUpdate(Context context) {
+        updates.cancelUpdate(context);
+    }
+
+    @PluginMethod
+    public void getUpdateState(Context context) {
+        updates.getUpdateState(context);
+    }
+
+    @PluginMethod
+    public void installUpdate(Context context) {
+        updates.installUpdate(context);
     }
 
     @PluginMethod

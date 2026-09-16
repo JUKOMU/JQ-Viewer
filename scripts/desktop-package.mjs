@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process'
+import { createPublicKey } from 'node:crypto'
 import {
   copyFileSync,
   existsSync,
@@ -21,6 +22,7 @@ const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.me
 
 export const applicationName = 'JQ-Viewer'
 export const windowsUpgradeUuid = '12cd2298-f19e-46db-a283-5044b56012fb'
+const keyIdPattern = /^[A-Za-z0-9._-]{1,64}$/
 
 const targetDefinitions = new Map([
   [
@@ -135,6 +137,24 @@ export function validateNativeHost(
   }
 }
 
+export function resolveUpdateTrustRoot(env = process.env) {
+  const keyId = String(env.RELEASE_ED25519_KEY_ID || '').trim()
+  const publicKeySpkiBase64 = String(env.RELEASE_ED25519_PUBLIC_KEY_SPKI_BASE64 || '').trim()
+  if (!keyIdPattern.test(keyId)) fail('RELEASE_ED25519_KEY_ID is missing or invalid')
+  if (!publicKeySpkiBase64) fail('RELEASE_ED25519_PUBLIC_KEY_SPKI_BASE64 is missing')
+  try {
+    const publicKey = createPublicKey({
+      key: Buffer.from(publicKeySpkiBase64, 'base64'),
+      format: 'der',
+      type: 'spki',
+    })
+    if (publicKey.asymmetricKeyType !== 'ed25519') fail('release public key is not Ed25519')
+  } catch (error) {
+    fail('RELEASE_ED25519_PUBLIC_KEY_SPKI_BASE64 is invalid: ' + error.message)
+  }
+  return { keyId, publicKeySpkiBase64 }
+}
+
 function executable(name) {
   if (process.platform !== 'win32') return name
   if (name === 'npm' || name === 'mvn') return name + '.cmd'
@@ -212,8 +232,18 @@ function renameSinglePackage(directory, extension, destination) {
   validateFile(destination, extension + ' package')
 }
 
-function buildAppImage({ version, target, workDirectory, inputDirectory, runtimeDirectory }) {
-  const appImagesDirectory = path.join(workDirectory, 'app-images')
+function buildAppImage({
+  version,
+  target,
+  format,
+  trustRoot,
+  workDirectory,
+  inputDirectory,
+  runtimeDirectory,
+}) {
+  const packageType = format.startsWith('portable.') ? 'portable' : 'installer'
+  const packageFormat = format.replace(/^installer\.|^portable\./, '')
+  const appImagesDirectory = path.join(workDirectory, 'app-images', format.replaceAll('.', '-'))
   mkdirSync(appImagesDirectory, { recursive: true })
   run(executable('jpackage'), [
     '--type',
@@ -240,6 +270,20 @@ function buildAppImage({ version, target, workDirectory, inputDirectory, runtime
     'Copyright (c) JUKOMU',
     '--java-options',
     '-Dfile.encoding=UTF-8',
+    '--java-options',
+    `-Djqviewer.update.version=${version}`,
+    '--java-options',
+    `-Djqviewer.update.platform=${target.platform}`,
+    '--java-options',
+    `-Djqviewer.update.architecture=${target.architecture}`,
+    '--java-options',
+    `-Djqviewer.update.packageType=${packageType}`,
+    '--java-options',
+    `-Djqviewer.update.packageFormat=${packageFormat}`,
+    '--java-options',
+    `-Djqviewer.update.keyId=${trustRoot.keyId}`,
+    '--java-options',
+    `-Djqviewer.update.publicKeySpkiBase64=${trustRoot.publicKeySpkiBase64}`,
   ])
 
   const appImage = path.join(appImagesDirectory, applicationName)
@@ -251,7 +295,7 @@ function buildAppImage({ version, target, workDirectory, inputDirectory, runtime
   return appImage
 }
 
-function packageWindows({ version, appImage, outputDirectory, workDirectory }) {
+function packageWindows({ version, appImages, outputDirectory, workDirectory }) {
   const packageDirectory = path.join(workDirectory, 'native-package')
   mkdirSync(packageDirectory, { recursive: true })
   run(executable('jpackage'), [
@@ -260,7 +304,7 @@ function packageWindows({ version, appImage, outputDirectory, workDirectory }) {
     '--name',
     applicationName,
     '--app-image',
-    appImage,
+    appImages.get('installer.exe'),
     '--dest',
     packageDirectory,
     '--app-version',
@@ -293,7 +337,7 @@ function packageWindows({ version, appImage, outputDirectory, workDirectory }) {
     '-Command',
     'Compress-Archive',
     '-LiteralPath',
-    appImage,
+    appImages.get('portable.zip'),
     '-DestinationPath',
     archivePath,
     '-CompressionLevel',
@@ -303,14 +347,12 @@ function packageWindows({ version, appImage, outputDirectory, workDirectory }) {
   validateFile(archivePath, 'Windows portable archive')
 }
 
-function packageLinux({ version, target, appImage, outputDirectory, workDirectory }) {
+function packageLinux({ version, target, appImages, outputDirectory, workDirectory }) {
   const packageDirectory = path.join(workDirectory, 'native-package')
   mkdirSync(packageDirectory, { recursive: true })
   const commonArguments = [
     '--name',
     applicationName,
-    '--app-image',
-    appImage,
     '--dest',
     packageDirectory,
     '--app-version',
@@ -333,7 +375,13 @@ function packageLinux({ version, target, appImage, outputDirectory, workDirector
   ]
 
   for (const type of ['deb', 'rpm']) {
-    run(executable('jpackage'), ['--type', type, ...commonArguments])
+    run(executable('jpackage'), [
+      '--type',
+      type,
+      '--app-image',
+      appImages.get(type),
+      ...commonArguments,
+    ])
     const assetName = desktopAssetNames(version, 'linux', target.architecture).find((name) =>
       name.endsWith('.' + type),
     )
@@ -344,8 +392,9 @@ function packageLinux({ version, target, appImage, outputDirectory, workDirector
     name.endsWith('.tar.gz'),
   )
   const archivePath = path.join(outputDirectory, archiveName)
+  const portableImage = appImages.get('portable.tar.gz')
   rmSync(archivePath, { force: true })
-  run('tar', ['-czf', archivePath, '-C', path.dirname(appImage), path.basename(appImage)])
+  run('tar', ['-czf', archivePath, '-C', path.dirname(portableImage), path.basename(portableImage)])
   validateFile(archivePath, 'Linux portable archive')
 }
 
@@ -353,6 +402,7 @@ export function packageDesktop({ platform, architecture, output }) {
   const target = resolveTarget(platform, architecture)
   validateNativeHost(target)
   const version = packageJson.version
+  const trustRoot = resolveUpdateTrustRoot()
   const workDirectory = path.join(
     targetDirectory,
     'desktop-package-' + platform + '-' + target.architecture,
@@ -403,17 +453,24 @@ export function packageDesktop({ platform, architecture, output }) {
     'linked Java runtime',
   )
 
-  const appImage = buildAppImage({
-    version,
-    target,
-    workDirectory,
-    inputDirectory,
-    runtimeDirectory,
-  })
+  const appImages = new Map(
+    target.formats.map((format) => [
+      format,
+      buildAppImage({
+        version,
+        target,
+        format,
+        trustRoot,
+        workDirectory,
+        inputDirectory,
+        runtimeDirectory,
+      }),
+    ]),
+  )
   if (target.platform === 'windows') {
-    packageWindows({ version, appImage, outputDirectory: output, workDirectory })
+    packageWindows({ version, appImages, outputDirectory: output, workDirectory })
   } else {
-    packageLinux({ version, target, appImage, outputDirectory: output, workDirectory })
+    packageLinux({ version, target, appImages, outputDirectory: output, workDirectory })
   }
 
   const assets = desktopAssetNames(version, platform, target.architecture).map((name) => {

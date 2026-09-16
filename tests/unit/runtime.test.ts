@@ -358,7 +358,7 @@ describe('runtime', () => {
     )
     expect(runtime.resources.renderPdfPage.available).toBe(true)
     expect(runtime.services.storage.available).toBe(true)
-    expect(runtime.services.updater.available).toBe(false)
+    expect(runtime.services.updater.available).toBe(true)
     expect(runtime.services.reader.fullscreen.available).toBe(false)
     expect(runtime.services.notifications.kind).toBe('host-managed')
     expect('files' in runtime.services).toBe(true)

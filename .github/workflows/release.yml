@@ -62,6 +62,9 @@ jobs:
     uses: ./.github/workflows/ci-desktop.yml
     with:
       package: true
+      release_ed25519_key_id: ${{ vars.RELEASE_ED25519_KEY_ID }}
+      release_ed25519_public_key_spki_base64: ${{ vars.RELEASE_ED25519_PUBLIC_KEY_SPKI_BASE64 }}
+      require_release_trust_root: true
 
   build-release:
     needs: [validate-release-input, frontend, android-jvm, instrumentation, desktop]

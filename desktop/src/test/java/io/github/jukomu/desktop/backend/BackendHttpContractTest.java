@@ -94,6 +94,15 @@ class BackendHttpContractTest {
             URI base = URI.create("http://127.0.0.1:" + backend.port());
 
             assertOk(post(http, base, requestedMethods, "getInitStatus", "{}"));
+            ObjectNode updateState = body(post(
+                    http, base, requestedMethods, "getUpdateState", "{}"));
+            ObjectNode cancelledUpdate = body(post(
+                    http, base, requestedMethods, "cancelUpdate", "{}"));
+            assertEquals("idle", updateState.path("phase").asText());
+            assertFalse(cancelledUpdate.path("cancelled").asBoolean());
+            assertEquals(503, post(http, base, requestedMethods, "checkUpdate", "{}").statusCode());
+            assertEquals(503, post(http, base, requestedMethods, "startUpdate", "{}").statusCode());
+            assertEquals(503, post(http, base, requestedMethods, "installUpdate", "{}").statusCode());
             assertTrue(body(post(
                     http, base, requestedMethods, "consumeLaunchRoute", "{}")).isEmpty());
             ObjectNode domainStates = body(post(

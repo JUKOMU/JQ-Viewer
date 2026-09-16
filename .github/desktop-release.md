@@ -2,9 +2,9 @@
 
 Desktop 正式发布仅使用 GitHub Release；Gitee Release 保存同版本、同字节资产作为备份。Windows on ARM 使用 Windows x64 包和 Windows 11 的 x64 应用仿真，不发布或标注为原生 Windows ARM64。
 
-## GitHub environment
+## GitHub 配置
 
-在仓库 `Settings` → `Environments` 中创建 `release` environment。正式 Release job 只从该 environment 读取以下配置；缺失或不匹配时发布失败。
+在仓库 `Settings` → `Environments` 中创建 `release` environment。正式 Release job 只从该 environment 读取私钥；缺失或不匹配时发布失败。
 
 ### Environment secrets
 
@@ -16,13 +16,22 @@ Desktop 正式发布仅使用 GitHub Release；Gitee Release 保存同版本、�
 
 私钥不得写入仓库、Issue、PR、Actions 日志或普通 repository variable。所有者应离线保留加密备份和 OpenPGP 吊销资料。
 
-### Environment variables
+### Repository Actions variables
+
+Desktop 原生包在进入 `release` environment 前由可复用构建 workflow 生成，因此客户端需要内置的公开信任根必须配置在仓库 `Settings` → `Secrets and variables` → `Actions` → `Variables`。这些值不是秘密：
 
 | 名称                                     | 内容                                                   |
 | ---------------------------------------- | ------------------------------------------------------ |
 | `RELEASE_ED25519_KEY_ID`                 | 稳定密钥标识，只能包含字母、数字、点、下划线和连字符。 |
 | `RELEASE_ED25519_PUBLIC_KEY_SPKI_BASE64` | 与私钥对应的 Ed25519 SPKI DER 公钥 Base64。            |
-| `RPM_GPG_FINGERPRINT`                    | OpenPGP 发布密钥的完整 fingerprint。                   |
+
+### Environment variables
+
+以下值继续配置在 `release` environment：
+
+| 名称                  | 内容                                 |
+| --------------------- | ------------------------------------ |
+| `RPM_GPG_FINGERPRINT` | OpenPGP 发布密钥的完整 fingerprint。 |
 
 workflow 会从 Ed25519 私钥重新派生公钥并与 variable 逐字节比较；RPM 私钥导入后也会核对完整 fingerprint。PR CI 使用运行时生成的临时测试密钥，不读取 `release` environment。正式版继续复用已有 `latest.json`，在其中增加 `desktop.artifacts`；不发布 Desktop 专用清单或公钥 JSON。
 
@@ -37,14 +46,14 @@ openssl pkey -in jq-viewer-desktop-ed25519.pem -pubout -outform DER \
   | openssl base64 -A > jq-viewer-desktop-ed25519-public-spki.base64
 ```
 
-将私钥原文件和 Base64 文件移出仓库并离线加密备份。随后在 GitHub `release` environment 中配置：
+将私钥原文件和 Base64 文件移出仓库并离线加密备份。随后分别配置 `release` environment secret 与 repository Actions variables：
 
 ```bash
 gh secret set --env release RELEASE_ED25519_PRIVATE_KEY_BASE64 \
   < jq-viewer-desktop-ed25519.pem.base64
-gh variable set --env release RELEASE_ED25519_KEY_ID \
+gh variable set RELEASE_ED25519_KEY_ID \
   --body jq-viewer-release-2026
-gh variable set --env release RELEASE_ED25519_PUBLIC_KEY_SPKI_BASE64 \
+gh variable set RELEASE_ED25519_PUBLIC_KEY_SPKI_BASE64 \
   --body "$(cat jq-viewer-desktop-ed25519-public-spki.base64)"
 ```
 

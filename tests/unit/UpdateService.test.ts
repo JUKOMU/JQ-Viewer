@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   requestInstallPermission: vi.fn(),
   performUserAction: vi.fn(),
   showToast: vi.fn(),
+  notificationKind: 'runtime-permission' as 'runtime-permission' | 'host-managed',
 }))
 
 vi.mock('@ionic/vue', () => ({
@@ -38,6 +39,7 @@ vi.mock('@/services/JmcomicService', () => ({
 vi.mock('@/runtime/runtimeContext', () => ({
   getRuntime: () => ({
     services: {
+      notifications: { kind: mocks.notificationKind },
       updater: {
         available: true,
         api: {
@@ -73,6 +75,7 @@ beforeEach(() => {
   mocks.startUpdate.mockResolvedValue({ started: true })
   mocks.performUserAction.mockResolvedValue(undefined)
   mocks.showToast.mockResolvedValue(undefined)
+  mocks.notificationKind = 'runtime-permission'
 })
 
 describe('UpdateService 通知权限', () => {
@@ -121,6 +124,17 @@ describe('UpdateService 通知权限', () => {
     expect(mocks.openNotificationSettings).toHaveBeenCalledTimes(1)
     expect(mocks.requestNotificationPermission).not.toHaveBeenCalled()
     expect(mocks.startUpdate).not.toHaveBeenCalled()
+  })
+
+  test('宿主管理通知的平台不请求通知权限', async () => {
+    mocks.notificationKind = 'host-managed'
+    const service = await loadUpdateService()
+
+    await expect(service.start()).resolves.toEqual({ started: true })
+
+    expect(mocks.checkNotificationPermission).not.toHaveBeenCalled()
+    expect(mocks.alertCreate).not.toHaveBeenCalled()
+    expect(mocks.startUpdate).toHaveBeenCalledTimes(1)
   })
 })
 

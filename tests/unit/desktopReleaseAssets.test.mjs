@@ -106,5 +106,10 @@ describe('Desktop release assets', () => {
     })
 
     expect(() => verifyDesktopArtifacts(desktop, assetPaths)).not.toThrow()
+
+    const mutated = fs.readFileSync(assetPaths[0])
+    mutated[0] ^= 0xff
+    fs.writeFileSync(assetPaths[0], mutated)
+    expect(() => verifyDesktopArtifacts(desktop, assetPaths)).toThrow('release SHA-256 mismatch')
   })
 })

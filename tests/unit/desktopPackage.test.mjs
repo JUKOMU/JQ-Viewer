@@ -1,5 +1,7 @@
 // @vitest-environment node
 
+import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -41,5 +43,18 @@ describe('Desktop package targets', () => {
 
   it('keeps one fixed Windows upgrade identity', () => {
     expect(windowsUpgradeUuid).toBe('12cd2298-f19e-46db-a283-5044b56012fb')
+  })
+
+  it('rejects another option where an option value is required', () => {
+    const script = fileURLToPath(new URL('../../scripts/desktop-package.mjs', import.meta.url))
+    const result = spawnSync(
+      process.execPath,
+      [script, '--platform', 'invalid', '--arch', 'x64', '--output', '--unexpected'],
+      { encoding: 'utf8' },
+    )
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('usage: node scripts/desktop-package.mjs')
+    expect(result.stderr).not.toContain('unsupported Desktop package target')
   })
 })

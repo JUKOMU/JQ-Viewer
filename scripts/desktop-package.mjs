@@ -75,7 +75,7 @@ function parseOptions(args) {
   for (let index = 0; index < args.length; index += 2) {
     const name = args[index]
     const value = args[index + 1]
-    if (!name?.startsWith('--') || !value) {
+    if (!name?.startsWith('--') || !value || value.startsWith('--')) {
       fail(
         'usage: node scripts/desktop-package.mjs --platform <platform> --arch <arch> --output <dir>',
       )

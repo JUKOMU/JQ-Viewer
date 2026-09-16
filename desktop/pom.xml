@@ -22,6 +22,7 @@
         <pdfbox.version>3.0.5</pdfbox.version>
         <credential.secure.storage.version>1.0.0</credential.secure.storage.version>
         <jna.version>5.19.1</jna.version>
+        <tesseract.version>5.5.1-1.5.12</tesseract.version>
         <maven.compiler.plugin.version>3.13.0</maven.compiler.plugin.version>
         <maven.surefire.plugin.version>3.5.2</maven.surefire.plugin.version>
     </properties>
@@ -71,6 +72,11 @@
             <groupId>net.java.dev.jna</groupId>
             <artifactId>jna-platform</artifactId>
             <version>${jna.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.bytedeco</groupId>
+            <artifactId>tesseract-platform</artifactId>
+            <version>${tesseract.version}</version>
         </dependency>
 
         <dependency>

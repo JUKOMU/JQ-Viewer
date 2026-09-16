@@ -20,6 +20,7 @@ public final class Paths {
     private final Path logsDirectory;
     private final Path downloadsDirectory;
     private final Path pdfDirectory;
+    private final Path ocrDirectory;
     private final Path databasePath;
     private final Path instanceLockPath;
 
@@ -55,6 +56,7 @@ public final class Paths {
         this.logsDirectory = stateDirectory.resolve("logs");
         this.downloadsDirectory = dataDirectory.resolve("downloads");
         this.pdfDirectory = dataDirectory.resolve("pdf");
+        this.ocrDirectory = dataDirectory.resolve("ocr");
         this.databasePath = dataDirectory.resolve("desktop.sqlite3");
         this.instanceLockPath = stateDirectory.resolve("instance.lock");
     }
@@ -76,6 +78,7 @@ public final class Paths {
         Files.createDirectories(logsDirectory);
         Files.createDirectories(downloadsDirectory);
         Files.createDirectories(pdfDirectory);
+        Files.createDirectories(ocrDirectory);
     }
 
     private static Path configuredPath(String value, Path fallback, Path home) {
@@ -130,6 +133,10 @@ public final class Paths {
 
     public Path pdfDirectory() {
         return pdfDirectory;
+    }
+
+    public Path ocrDirectory() {
+        return ocrDirectory;
     }
 
     public Path databasePath() {

@@ -35,6 +35,7 @@ public final class SettingsService {
     private static final String DOWNLOAD_DISPLAY_PATH = "download_display_path";
     private static final String DOWNLOAD_PENDING_CLEANUP_FOLDER_REF =
             "download_pending_cleanup_folder_ref";
+    private static final String OCR_ENABLED = "ocr_enabled";
 
     private final Database database;
     private final ObjectMapper mapper;
@@ -62,7 +63,7 @@ public final class SettingsService {
                 cacheCapacity.maxHeapMb(),
                 cacheCapacity.temporaryClamp(),
                 cacheCapacity.reason(),
-                false,
+                bool(OCR_ENABLED, true),
                 text("reader_display_mode", "vertical"),
                 "auto",
                 -1,
@@ -190,6 +191,11 @@ public final class SettingsService {
 
     public synchronized SuccessResponse setAutoShow(boolean value) {
         put("reader_auto_show_toolbar_at_end", value);
+        return SuccessResponse.ok();
+    }
+
+    public synchronized SuccessResponse setOcrEnabled(boolean value) {
+        put(OCR_ENABLED, value);
         return SuccessResponse.ok();
     }
 

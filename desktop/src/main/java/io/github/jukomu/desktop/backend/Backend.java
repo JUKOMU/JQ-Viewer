@@ -17,6 +17,7 @@ import io.github.jukomu.desktop.bridge.handler.DownloadPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.FilePluginHandler;
 import io.github.jukomu.desktop.bridge.handler.HistoryPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.OfflineFavoritePluginHandler;
+import io.github.jukomu.desktop.bridge.handler.OcrPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.PdfPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.SettingsPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.SystemPluginHandler;
@@ -37,6 +38,7 @@ import io.github.jukomu.desktop.feature.image.CacheService;
 import io.github.jukomu.desktop.feature.image.ImageService;
 import io.github.jukomu.desktop.feature.files.FileService;
 import io.github.jukomu.desktop.feature.network.NetworkService;
+import io.github.jukomu.desktop.feature.ocr.OcrService;
 import io.github.jukomu.desktop.feature.pdf.data.PdfStore;
 import io.github.jukomu.desktop.feature.pdf.export.PdfExportService;
 import io.github.jukomu.desktop.feature.pdf.export.PdfExportStore;
@@ -108,6 +110,7 @@ public final class Backend implements AutoCloseable {
     private DownloadService downloadService;
     private PdfExportService pdfExportService;
     private NetworkService networkService;
+    private OcrService ocrService;
     private EventHub eventHub;
     private URI homeUrl;
     private boolean running;
@@ -223,6 +226,7 @@ public final class Backend implements AutoCloseable {
         DownloadService startedDownloadService = null;
         PdfExportService startedPdfExportService = null;
         NetworkService startedNetworkService = null;
+        OcrService startedOcrService = null;
         try {
             paths.ensureDirectories();
             if (Backend.class.getResource("/static/index.html") == null) {
@@ -238,6 +242,7 @@ public final class Backend implements AutoCloseable {
                     .disable(MapperFeature.ALLOW_COERCION_OF_SCALARS)
                     .build();
             SettingsService settingsService = new SettingsService(database, mapper);
+            startedOcrService = OcrService.createDefault(settingsService, paths.ocrDirectory());
             int preloadConcurrency = settingsService.preloadConcurrency();
             configureBusinessExecutor(preloadConcurrency);
             startedEventHub = new EventHub(mapper);
@@ -316,7 +321,8 @@ public final class Backend implements AutoCloseable {
                     new FilePluginHandler(requests, fileService),
                     new DownloadPluginHandler(requests, downloadService),
                     new PdfPluginHandler(requests, pdfManagementService, startedPdfExportService),
-                    new SystemPluginHandler(requests, startedNetworkService));
+                    new SystemPluginHandler(requests, startedNetworkService),
+                    new OcrPluginHandler(requests, startedOcrService));
             PdfResourceService pdfResources = new PdfResourceService();
             candidate = Javalin.create(config -> {
                 config.jetty.host = LOOPBACK_HOST;
@@ -346,6 +352,7 @@ public final class Backend implements AutoCloseable {
             this.downloadService = downloadService;
             this.pdfExportService = startedPdfExportService;
             this.networkService = startedNetworkService;
+            this.ocrService = startedOcrService;
             this.eventHub = eventHub;
             this.homeUrl = URI.create("http://" + LOOPBACK_HOST + ":" + port + "/home");
             this.running = true;
@@ -362,6 +369,7 @@ public final class Backend implements AutoCloseable {
             if (startedDownloadService != null) startedDownloadService.close();
             if (startedPdfExportService != null) startedPdfExportService.close();
             if (startedNetworkService != null) startedNetworkService.close();
+            if (startedOcrService != null) startedOcrService.close();
             if (startedEventHub != null) startedEventHub.close();
             if (startedClient != null) startedClient.close();
             pdfExportExecutor.shutdownNow();
@@ -586,6 +594,10 @@ public final class Backend implements AutoCloseable {
         if (networkService != null) {
             networkService.close();
             networkService = null;
+        }
+        if (ocrService != null) {
+            ocrService.close();
+            ocrService = null;
         }
         if (eventHub != null) {
             eventHub.close();

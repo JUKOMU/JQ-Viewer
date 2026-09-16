@@ -30,6 +30,15 @@ import { RuntimeError } from '../errors'
 import { requestBackend, type BackendFetch } from './backendClient'
 import { createDesktopPdfExportPreferencesStore } from './pdfExportPreferences'
 
+function createOcrService(fetcher: BackendFetch) {
+  return {
+    setEnabled: (enabled: boolean) =>
+      requestBackend<{ success: boolean }>(fetcher, 'setOcrEnabled', { enabled }),
+    pickImageAndOcr: () =>
+      requestBackend<{ text: string; error?: string }>(fetcher, 'pickImageAndOcr', {}),
+  }
+}
+
 function unavailableCapability<T>(reason: string): Capability<T> {
   return { available: false, reason }
 }
@@ -617,7 +626,7 @@ export function createPlatformServices(
     storage: { available: true, api: createDownloadLocationService(events, fetcher) },
     reader: createDesktopReaderServices(),
     updater: unavailableCapability('当前平台不支持应用更新'),
-    ocr: unavailableCapability('当前平台不支持 OCR'),
+    ocr: { available: true, api: createOcrService(fetcher) },
     launchRoutes: unavailableCapability('当前平台不支持启动路由'),
     events,
   }

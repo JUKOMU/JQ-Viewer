@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
 
 /** 通过一个具名 SSE 通道向前端发布 JSON 事件。 */
 public final class EventHub implements AutoCloseable {
@@ -15,6 +16,8 @@ public final class EventHub implements AutoCloseable {
 
     private final ObjectMapper mapper;
     private final Set<SseClient> clients = ConcurrentHashMap.newKeySet();
+    private final ConcurrentHashMap<String, Set<Consumer<Object>>> listeners =
+            new ConcurrentHashMap<>();
     private final Object lifecycleLock = new Object();
     private boolean closed;
 
@@ -35,6 +38,14 @@ public final class EventHub implements AutoCloseable {
     }
 
     public void publish(String event, Object payload) {
+        for (Consumer<Object> listener : listeners.getOrDefault(event, Set.of())) {
+            try {
+                listener.accept(payload);
+            } catch (RuntimeException exception) {
+                LOGGER.warn("内部事件处理失败: {}", event, exception);
+            }
+        }
+
         final String data;
         try {
             data = mapper.writeValueAsString(payload);
@@ -53,6 +64,22 @@ public final class EventHub implements AutoCloseable {
         }
     }
 
+    public AutoCloseable subscribe(String event, Consumer<Object> listener) {
+        if (event == null || event.isBlank()) throw new IllegalArgumentException("event不能为空");
+        if (listener == null) throw new IllegalArgumentException("listener不能为空");
+        synchronized (lifecycleLock) {
+            if (closed) throw new IllegalStateException("事件中心已关闭");
+            listeners.computeIfAbsent(event, ignored -> ConcurrentHashMap.newKeySet())
+                    .add(listener);
+        }
+        return () -> {
+            Set<Consumer<Object>> eventListeners = listeners.get(event);
+            if (eventListeners == null) return;
+            eventListeners.remove(listener);
+            if (eventListeners.isEmpty()) listeners.remove(event, eventListeners);
+        };
+    }
+
     @Override
     public void close() {
         Set<SseClient> closingClients;
@@ -61,6 +88,7 @@ public final class EventHub implements AutoCloseable {
             closed = true;
             closingClients = Set.copyOf(clients);
             clients.clear();
+            listeners.clear();
         }
         closingClients.forEach(EventHub::closeClient);
     }

@@ -138,6 +138,10 @@ public final class Tray implements AutoCloseable {
 
                 @Override
                 public void mousePressed(MouseEvent e) {
+                    if (SwingUtilities.isLeftMouseButton(e)) {
+                        Tray current = trayReference.get();
+                        if (current != null) current.notificationClick.set(null);
+                    }
                     if (e.isPopupTrigger()) {
                         showMenu(menu, hiddenDialog, e);
                     }

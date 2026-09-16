@@ -1,6 +1,10 @@
 import { describe, expect, test, vi } from 'vitest'
 import type { RuntimeError } from '@/runtime/errors'
-import { createDesktopReaderServices } from '@/runtime/desktop/platformServices'
+import type { BackendEvents } from '@/runtime/BackendEvents'
+import {
+  createDesktopReaderServices,
+  createPlatformServices,
+} from '@/runtime/desktop/platformServices'
 
 class FakeDocument extends EventTarget {
   visibilityState: DocumentVisibilityState = 'visible'
@@ -211,5 +215,34 @@ describe('Desktop 阅读器宿主能力', () => {
     expect(document.documentElement.dataset.jqReaderMode).toBe('horizontal')
     await services.hostState.api.setState(false, false)
     expect(secondLock.release).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('Desktop 启动路由能力', () => {
+  test('通过后端一次性消费路由并复用共享 launchRoute 事件', async () => {
+    const remove = vi.fn(async () => undefined)
+    const onLaunchRoute = vi.fn(async () => ({ remove }))
+    const events = { onLaunchRoute } as unknown as BackendEvents
+    const fetcher = vi.fn(async () =>
+      new Response(JSON.stringify({ route: '/download' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    const services = createPlatformServices(events, fetcher)
+    if (!services.launchRoutes.available) throw new Error('expected launch route capability')
+
+    await expect(services.launchRoutes.api.consume()).resolves.toEqual({ route: '/download' })
+    const handler = vi.fn()
+    const handle = await services.launchRoutes.api.onRoute(handler)
+    await handle.remove()
+
+    expect(fetcher).toHaveBeenCalledWith('/api/consumeLaunchRoute', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    })
+    expect(onLaunchRoute).toHaveBeenCalledWith(handler)
+    expect(remove).toHaveBeenCalledOnce()
   })
 })

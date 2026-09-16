@@ -5,6 +5,7 @@ import io.github.jukomu.desktop.bridge.EventHub;
 import io.github.jukomu.desktop.data.Database;
 import io.github.jukomu.desktop.data.Paths;
 import io.github.jukomu.desktop.feature.download.data.DownloadStore;
+import io.github.jukomu.desktop.feature.download.model.DownloadProgressEvent;
 import io.github.jukomu.desktop.feature.pdf.export.PdfExportStore;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -38,7 +39,8 @@ class DesktopTaskNotificationServiceTest {
         downloads = new DownloadStore(database);
         pdfExports = new PdfExportStore(database);
         launchRoutes = new LaunchRouteService(events);
-        notifications = new DesktopTaskNotificationService(downloads, pdfExports, launchRoutes);
+        notifications = new DesktopTaskNotificationService(
+                downloads, pdfExports, launchRoutes, events);
         notifications.start();
     }
 
@@ -57,8 +59,8 @@ class DesktopTaskNotificationServiceTest {
 
         createDownload("album_chapter");
         downloads.complete("album_chapter", 8, 1, 1024, 10);
-        notifications.downloadChanged("album_chapter");
-        notifications.downloadChanged("album_chapter");
+        publishDownload("album_chapter", "completed");
+        publishDownload("album_chapter", "completed");
 
         assertEquals(1, sink.entries.size());
         assertEquals("下载完成", sink.entries.getFirst().notification().title());
@@ -71,8 +73,8 @@ class DesktopTaskNotificationServiceTest {
         reservePdf("pdf id/1", "测试导出");
         pdfExports.updateProgress("pdf id/1", "completed", "completed", 8, 8,
                 1, 1, null, null);
-        notifications.pdfExportChanged("pdf id/1");
-        notifications.pdfExportChanged("pdf id/1");
+        events.publish("pdfExportProgress", pdfExports.find("pdf id/1"));
+        events.publish("pdfExportProgress", pdfExports.find("pdf id/1"));
 
         assertEquals(2, sink.entries.size());
         assertEquals("PDF 导出完成", sink.entries.get(1).notification().title());
@@ -86,7 +88,7 @@ class DesktopTaskNotificationServiceTest {
     void queuesBeforeHostAttachAndRejectsMissingOrClosedTargetsOnClick() {
         createDownload("queued_target");
         downloads.fail("queued_target", 2, 128, 128, "网络错误");
-        notifications.downloadChanged("queued_target");
+        publishDownload("queued_target", "failed");
 
         RecordingSink sink = new RecordingSink();
         notifications.attach(sink);
@@ -99,11 +101,16 @@ class DesktopTaskNotificationServiceTest {
 
         createDownload("closed_target");
         downloads.complete("closed_target", 1, 1, 10, 20);
-        notifications.downloadChanged("closed_target");
+        publishDownload("closed_target", "completed");
         Runnable click = sink.entries.get(1).click();
         notifications.close();
         click.run();
         assertTrue(launchRoutes.consume().isEmpty());
+
+        createDownload("after_close");
+        downloads.complete("after_close", 1, 1, 10, 20);
+        publishDownload("after_close", "completed");
+        assertEquals(2, sink.entries.size());
     }
 
     @Test
@@ -130,6 +137,12 @@ class DesktopTaskNotificationServiceTest {
                 taskId,
                 1
         );
+    }
+
+    private void publishDownload(String taskId, String status) {
+        events.publish("downloadProgress", new DownloadProgressEvent(
+                taskId, "album", taskId, 1, 1, status, null, 0, 10, 20L
+        ));
     }
 
     private void reservePdf(String exportId, String title) {

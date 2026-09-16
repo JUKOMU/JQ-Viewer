@@ -1,8 +1,10 @@
 package io.github.jukomu.desktop.feature.notification;
 
+import io.github.jukomu.desktop.bridge.EventHub;
 import io.github.jukomu.desktop.feature.download.DownloadService;
 import io.github.jukomu.desktop.feature.download.data.DownloadStore;
 import io.github.jukomu.desktop.feature.download.data.StoredDownloadTask;
+import io.github.jukomu.desktop.feature.download.model.DownloadProgressEvent;
 import io.github.jukomu.desktop.feature.pdf.export.PdfExportStore;
 import io.github.jukomu.desktop.feature.pdf.model.PdfExportTaskResponse;
 
@@ -18,26 +20,40 @@ public final class DesktopTaskNotificationService implements AutoCloseable {
     private final DownloadStore downloads;
     private final PdfExportStore pdfExports;
     private final LaunchRouteService launchRoutes;
+    private final EventHub events;
     private final Map<String, String> fingerprints = new LinkedHashMap<>();
     private final Map<String, PendingNotification> pending = new LinkedHashMap<>();
 
     private DesktopNotificationSink sink;
     private boolean started;
     private boolean closed;
+    private AutoCloseable downloadEvents;
+    private AutoCloseable pdfEvents;
 
     public DesktopTaskNotificationService(
             DownloadStore downloads,
             PdfExportStore pdfExports,
-            LaunchRouteService launchRoutes
+            LaunchRouteService launchRoutes,
+            EventHub events
     ) {
         this.downloads = Objects.requireNonNull(downloads, "downloads");
         this.pdfExports = Objects.requireNonNull(pdfExports, "pdfExports");
         this.launchRoutes = Objects.requireNonNull(launchRoutes, "launchRoutes");
+        this.events = Objects.requireNonNull(events, "events");
     }
 
     /** 启动恢复完成后才接受快照变更，避免把历史中断任务当作新通知。 */
     public synchronized void start() {
-        if (!closed) started = true;
+        if (closed || started) return;
+        downloadEvents = events.subscribe("downloadProgress", payload -> {
+            if (payload instanceof DownloadProgressEvent event) downloadChanged(event.taskId());
+        });
+        pdfEvents = events.subscribe("pdfExportProgress", payload -> {
+            if (payload instanceof PdfExportTaskResponse event && event.exportId() != null) {
+                pdfExportChanged(event.exportId());
+            }
+        });
+        started = true;
     }
 
     public synchronized void attach(DesktopNotificationSink notificationSink) {
@@ -99,7 +115,7 @@ public final class DesktopTaskNotificationService implements AutoCloseable {
             case "interrupted" -> "PDF 导出中断";
             default -> "PDF 导出失败";
         };
-        String message = fallback(task.displayTitle(), task.targetName());
+        String message = fallback(task.displayTitle(), fallback(task.targetName(), exportId));
         if (!"completed".equals(task.status())) {
             message += ": " + fallback(task.errorMessage(), title);
         }
@@ -120,7 +136,7 @@ public final class DesktopTaskNotificationService implements AutoCloseable {
 
     private void show(PendingNotification pendingNotification) {
         DesktopNotificationSink currentSink = sink;
-        if (currentSink == null || closed) return;
+        if (currentSink == null || closed || !pendingNotification.validator().exists()) return;
         AtomicBoolean handled = new AtomicBoolean();
         currentSink.show(pendingNotification.notification(), () -> {
             if (!handled.compareAndSet(false, true)) return;
@@ -164,8 +180,20 @@ public final class DesktopTaskNotificationService implements AutoCloseable {
         closed = true;
         started = false;
         sink = null;
+        closeQuietly(downloadEvents);
+        closeQuietly(pdfEvents);
+        downloadEvents = null;
+        pdfEvents = null;
         pending.clear();
         fingerprints.clear();
+    }
+
+    private static void closeQuietly(AutoCloseable handle) {
+        if (handle == null) return;
+        try {
+            handle.close();
+        } catch (Exception ignored) {
+        }
     }
 
     private record PendingNotification(

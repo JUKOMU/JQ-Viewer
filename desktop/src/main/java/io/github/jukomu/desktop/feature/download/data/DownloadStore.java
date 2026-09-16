@@ -55,6 +55,54 @@ public final class DownloadStore {
                 + ") ORDER BY created_at");
     }
 
+    public synchronized DiagnosticSnapshot diagnosticSnapshot(int requestedFailureLimit) {
+        int total = 0;
+        int active = 0;
+        int failed = 0;
+        try (PreparedStatement statement = database.connection().prepareStatement(
+                "SELECT COUNT(*) AS total,"
+                        + "SUM(CASE WHEN status IN (" + ACTIVE_STATUSES + ") THEN 1 ELSE 0 END) AS active,"
+                        + "SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) AS failed "
+                        + "FROM download_tasks");
+             ResultSet rows = statement.executeQuery()) {
+            if (rows.next()) {
+                total = rows.getInt("total");
+                active = rows.getInt("active");
+                failed = rows.getInt("failed");
+            }
+        } catch (SQLException exception) {
+            throw failure("读取下载诊断摘要失败", exception);
+        }
+
+        int limit = Math.max(0, Math.min(20, requestedFailureLimit));
+        List<DiagnosticFailure> failures = new ArrayList<>();
+        if (limit > 0) {
+            try (PreparedStatement statement = database.connection().prepareStatement(
+                    "SELECT task_id,album_title,chapter_title,status,error,"
+                            + "COALESCE(failed_at,created_at) AS failed_at "
+                            + "FROM download_tasks WHERE status='failed' "
+                            + "ORDER BY COALESCE(failed_at,created_at) DESC,task_id DESC LIMIT ?")) {
+                statement.setInt(1, limit);
+                try (ResultSet rows = statement.executeQuery()) {
+                    while (rows.next()) {
+                        String chapterTitle = rows.getString("chapter_title");
+                        String albumTitle = rows.getString("album_title");
+                        failures.add(new DiagnosticFailure(
+                                rows.getString("task_id"),
+                                displayTitle(chapterTitle, albumTitle, rows.getString("task_id")),
+                                rows.getString("status"),
+                                value(rows.getString("error"), "下载失败"),
+                                rows.getLong("failed_at")
+                        ));
+                    }
+                }
+            } catch (SQLException exception) {
+                throw failure("读取下载失败诊断失败", exception);
+            }
+        }
+        return new DiagnosticSnapshot(total, active, failed, List.copyOf(failures));
+    }
+
     public synchronized void createOrResetTask(
             String taskId,
             String albumId,
@@ -78,7 +126,7 @@ public final class DownloadStore {
                             + "downloaded_pages=0, downloaded_bytes=0, first_image_sort_order=NULL, "
                             + "status='queued', error=NULL, total_size=0, chapter_sort_order=0, "
                             + "is_single_episode=NULL, relative_directory=excluded.relative_directory, "
-                            + "created_at=excluded.created_at, completed_at=NULL")) {
+                            + "created_at=excluded.created_at, failed_at=NULL, completed_at=NULL")) {
                 statement.setString(1, taskId);
                 statement.setString(2, albumId);
                 statement.setString(3, chapterId);
@@ -172,7 +220,7 @@ public final class DownloadStore {
             try (PreparedStatement task = connection.prepareStatement(
                     "UPDATE download_tasks SET status='completed', error=NULL, "
                             + "downloaded_pages=?, first_image_sort_order=?, total_size=?, "
-                            + "downloaded_bytes=?, completed_at=? WHERE task_id=?")) {
+                            + "downloaded_bytes=?, failed_at=NULL, completed_at=? WHERE task_id=?")) {
                 task.setInt(1, totalPages);
                 task.setInt(2, firstSortOrder);
                 task.setLong(3, totalSize);
@@ -189,12 +237,13 @@ public final class DownloadStore {
                                   long totalSize, String error) {
         try (PreparedStatement statement = database.connection().prepareStatement(
                 "UPDATE download_tasks SET status='failed', downloaded_pages=?, downloaded_bytes=?, "
-                        + "total_size=?, error=?, completed_at=NULL WHERE task_id=?")) {
+                        + "total_size=?, error=?, failed_at=?, completed_at=NULL WHERE task_id=?")) {
             statement.setInt(1, Math.max(0, downloadedPages));
             statement.setLong(2, Math.max(0, downloadedBytes));
             statement.setLong(3, Math.max(0, totalSize));
             statement.setString(4, error);
-            statement.setString(5, taskId);
+            statement.setLong(5, System.currentTimeMillis());
+            statement.setString(6, taskId);
             requireUpdated(statement.executeUpdate(), taskId);
         } catch (SQLException exception) {
             throw failure("记录下载失败状态失败", exception);
@@ -207,9 +256,10 @@ public final class DownloadStore {
             try (PreparedStatement statement = connection.prepareStatement(
                     "UPDATE download_tasks SET status='failed', downloaded_pages=0, "
                             + "downloaded_bytes=0, total_size=0, first_image_sort_order=NULL, "
-                            + "completed_at=NULL, error=? WHERE task_id=?")) {
-                statement.setString(1, error);
-                statement.setString(2, taskId);
+                            + "failed_at=?, completed_at=NULL, error=? WHERE task_id=?")) {
+                statement.setLong(1, System.currentTimeMillis());
+                statement.setString(2, error);
+                statement.setString(3, taskId);
                 requireUpdated(statement.executeUpdate(), taskId);
             }
             return null;
@@ -362,6 +412,33 @@ public final class DownloadStore {
 
     private static IllegalStateException failure(String message, SQLException exception) {
         return new IllegalStateException(message, exception);
+    }
+
+    private static String displayTitle(String preferred, String fallback, String id) {
+        if (preferred != null && !preferred.isBlank()) return preferred;
+        if (fallback != null && !fallback.isBlank()) return fallback;
+        return id;
+    }
+
+    private static String value(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value;
+    }
+
+    public record DiagnosticSnapshot(
+            int total,
+            int active,
+            int failed,
+            List<DiagnosticFailure> recentFailures
+    ) {
+    }
+
+    public record DiagnosticFailure(
+            String id,
+            String title,
+            String status,
+            String reason,
+            long updatedAt
+    ) {
     }
 
     @FunctionalInterface

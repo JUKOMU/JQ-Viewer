@@ -223,11 +223,12 @@ describe('Desktop 启动路由能力', () => {
     const remove = vi.fn(async () => undefined)
     const onLaunchRoute = vi.fn(async () => ({ remove }))
     const events = { onLaunchRoute } as unknown as BackendEvents
-    const fetcher = vi.fn(async () =>
-      new Response(JSON.stringify({ route: '/download' }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }),
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ route: '/download' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
     )
     const services = createPlatformServices(events, fetcher)
     if (!services.launchRoutes.available) throw new Error('expected launch route capability')
@@ -244,5 +245,32 @@ describe('Desktop 启动路由能力', () => {
     })
     expect(onLaunchRoute).toHaveBeenCalledWith(handler)
     expect(remove).toHaveBeenCalledOnce()
+  })
+})
+
+describe('Desktop 诊断能力', () => {
+  test('通过统一后端方法读取诊断快照', async () => {
+    const snapshot = {
+      generatedAt: 1,
+      paths: [],
+      tasks: [],
+      clearableResources: [],
+    }
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify(snapshot), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    )
+    const services = createPlatformServices({} as BackendEvents, fetcher)
+    if (!services.diagnostics.available) throw new Error('expected diagnostics capability')
+
+    await expect(services.diagnostics.api.getSnapshot()).resolves.toEqual(snapshot)
+    expect(fetcher).toHaveBeenCalledWith('/api/getDiagnostics', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    })
   })
 })

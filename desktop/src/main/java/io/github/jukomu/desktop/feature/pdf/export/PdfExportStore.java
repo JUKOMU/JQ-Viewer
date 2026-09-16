@@ -156,6 +156,53 @@ public final class PdfExportStore {
         return new Page(List.copyOf(tasks), nextCursor);
     }
 
+    public synchronized DiagnosticSnapshot diagnosticSnapshot(int requestedFailureLimit) {
+        int total = 0;
+        int active = 0;
+        int failed = 0;
+        try (PreparedStatement statement = database.connection().prepareStatement(
+                "SELECT COUNT(*) AS total,"
+                        + "SUM(CASE WHEN status IN (" + ACTIVE_STATUSES + ") THEN 1 ELSE 0 END) AS active,"
+                        + "SUM(CASE WHEN status IN ('failed','partial','interrupted') THEN 1 ELSE 0 END) AS failed "
+                        + "FROM pdf_export_tasks");
+             ResultSet rows = statement.executeQuery()) {
+            if (rows.next()) {
+                total = rows.getInt("total");
+                active = rows.getInt("active");
+                failed = rows.getInt("failed");
+            }
+        } catch (SQLException exception) {
+            throw failure("读取 PDF 导出诊断摘要失败", exception);
+        }
+
+        int limit = Math.max(0, Math.min(20, requestedFailureLimit));
+        List<DiagnosticFailure> failures = new ArrayList<>();
+        if (limit > 0) {
+            try (PreparedStatement statement = database.connection().prepareStatement(
+                    "SELECT export_id,display_title,status,error_message,updated_at "
+                            + "FROM pdf_export_tasks "
+                            + "WHERE status IN ('failed','partial','interrupted') "
+                            + "ORDER BY updated_at DESC,export_id DESC LIMIT ?")) {
+                statement.setInt(1, limit);
+                try (ResultSet rows = statement.executeQuery()) {
+                    while (rows.next()) {
+                        String id = rows.getString("export_id");
+                        failures.add(new DiagnosticFailure(
+                                id,
+                                value(rows.getString("display_title"), id),
+                                rows.getString("status"),
+                                value(rows.getString("error_message"), "PDF 导出失败"),
+                                rows.getLong("updated_at")
+                        ));
+                    }
+                }
+            } catch (SQLException exception) {
+                throw failure("读取 PDF 导出失败诊断失败", exception);
+            }
+        }
+        return new DiagnosticSnapshot(total, active, failed, List.copyOf(failures));
+    }
+
     public synchronized List<Chapter> chapters(String exportId) {
         List<Chapter> chapters = new ArrayList<>();
         try (PreparedStatement statement = database.connection().prepareStatement(
@@ -570,6 +617,10 @@ public final class PdfExportStore {
         return value == null ? "" : value;
     }
 
+    private static String value(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value;
+    }
+
     private static IllegalStateException failure(String message, SQLException exception) {
         return new IllegalStateException(message, exception);
     }
@@ -632,6 +683,23 @@ public final class PdfExportStore {
     }
 
     public record Page(List<PdfExportTaskResponse> tasks, String nextCursor) {
+    }
+
+    public record DiagnosticSnapshot(
+            int total,
+            int active,
+            int failed,
+            List<DiagnosticFailure> recentFailures
+    ) {
+    }
+
+    public record DiagnosticFailure(
+            String id,
+            String title,
+            String status,
+            String reason,
+            long updatedAt
+    ) {
     }
 
     private record CursorPosition(long updatedAt, String exportId) {

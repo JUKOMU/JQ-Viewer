@@ -97,7 +97,7 @@ class PathsDatabaseTest {
                     .createStatement()
                     .executeQuery("SELECT version FROM desktop_schema_version")) {
                 assertTrue(result.next());
-                assertEquals(7, result.getInt(1));
+                assertEquals(8, result.getInt(1));
             }
             try (ResultSet result = database.connection().getMetaData()
                     .getTables(null, null, "browse_history", null)) {
@@ -179,7 +179,7 @@ class PathsDatabaseTest {
             try (ResultSet result = database.connection().createStatement()
                     .executeQuery("SELECT version FROM desktop_schema_version")) {
                 assertTrue(result.next());
-                assertEquals(7, result.getInt(1));
+                assertEquals(8, result.getInt(1));
             }
             try (ResultSet result = database.connection().createStatement()
                     .executeQuery("SELECT value FROM settings "
@@ -199,6 +199,43 @@ class PathsDatabaseTest {
             try (ResultSet result = database.connection().getMetaData()
                     .getTables(null, null, "parse_history", null)) {
                 assertTrue(result.next());
+            }
+        }
+    }
+
+    @Test
+    void upgradesVersionSevenDownloadTasksWithoutLosingFailures() throws Exception {
+        Path databasePath = Files.createTempDirectory("jq-viewer-db-upgrade-downloads-")
+                .resolve("desktop.sqlite3");
+        Class.forName("org.sqlite.JDBC");
+        try (var connection = DriverManager.getConnection("jdbc:sqlite:" + databasePath);
+             var statement = connection.createStatement()) {
+            statement.executeUpdate("CREATE TABLE desktop_schema_version "
+                    + "(version INTEGER NOT NULL)");
+            statement.executeUpdate("INSERT INTO desktop_schema_version(version) VALUES (7)");
+            statement.executeUpdate("CREATE TABLE download_tasks ("
+                    + "task_id TEXT PRIMARY KEY,"
+                    + "album_id TEXT NOT NULL,"
+                    + "chapter_id TEXT NOT NULL,"
+                    + "status TEXT NOT NULL,"
+                    + "created_at INTEGER NOT NULL)");
+            statement.executeUpdate("INSERT INTO download_tasks("
+                    + "task_id,album_id,chapter_id,status,created_at) "
+                    + "VALUES ('download-1','album-1','chapter-1','failed',123)");
+        }
+
+        try (Database database = new Database(databasePath)) {
+            database.open();
+            try (ResultSet result = database.connection().createStatement()
+                    .executeQuery("SELECT version FROM desktop_schema_version")) {
+                assertTrue(result.next());
+                assertEquals(8, result.getInt(1));
+            }
+            try (ResultSet result = database.connection().createStatement()
+                    .executeQuery("SELECT failed_at FROM download_tasks "
+                            + "WHERE task_id='download-1'")) {
+                assertTrue(result.next());
+                assertEquals(123, result.getLong(1));
             }
         }
     }

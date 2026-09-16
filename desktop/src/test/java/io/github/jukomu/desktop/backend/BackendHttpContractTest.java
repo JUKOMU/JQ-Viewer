@@ -420,6 +420,8 @@ class BackendHttpContractTest {
                     http, base, requestedMethods, "setCacheCapacity", "{\"mb\":64}"));
             ObjectNode cacheSettings = body(post(
                     http, base, requestedMethods, "getAllSettings", "{}"));
+            ObjectNode diagnostics = body(post(
+                    http, base, requestedMethods, "getDiagnostics", "{}"));
             assertOk(post(http, base, requestedMethods, "clearImageCache", "{}"));
             ObjectNode clearedCacheContents = body(post(
                     http, base, requestedMethods, "getImageCacheContents", "{}"));
@@ -524,6 +526,10 @@ class BackendHttpContractTest {
             assertTrue(updatedCacheCapacity.path("success").asBoolean());
             assertEquals(64, updatedCacheCapacity.path("requestedMb").asInt());
             assertEquals(64, cacheSettings.path("cacheRequestedMb").asInt());
+            assertTrue(diagnostics.path("generatedAt").asLong() > 0);
+            assertEquals("data", diagnostics.path("paths").get(0).path("kind").asText());
+            assertEquals(2, diagnostics.path("tasks").size());
+            assertEquals(2, diagnostics.path("clearableResources").size());
             assertEquals(0, clearedCacheContents.path("entries").size());
             assertFalse(downloadLocation.path("downloadPublic").asBoolean());
             assertEquals(1, domainStates.path("alive").asInt());

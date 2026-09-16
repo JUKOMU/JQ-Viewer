@@ -60,5 +60,7 @@ class HostTest {
 
         assertFalse(primary.isStarted());
         assertFalse(primary.isPrimary());
+        primary.close();
+        secondary.close();
     }
 }

@@ -2,6 +2,8 @@ import packageInfo from '../../../package.json'
 import type {
   AppInfo,
   Capability,
+  DiagnosticSnapshot,
+  DiagnosticsService,
   FileService,
   PdfService,
   PlatformServices,
@@ -36,6 +38,12 @@ function createOcrService(fetcher: BackendFetch) {
       requestBackend<{ success: boolean }>(fetcher, 'setOcrEnabled', { enabled }),
     pickImageAndOcr: () =>
       requestBackend<{ text: string; error?: string }>(fetcher, 'pickImageAndOcr', {}),
+  }
+}
+
+function createDiagnosticsService(fetcher: BackendFetch): DiagnosticsService {
+  return {
+    getSnapshot: () => requestBackend<DiagnosticSnapshot>(fetcher, 'getDiagnostics', {}),
   }
 }
 
@@ -99,8 +107,8 @@ class DesktopReaderHost {
     const wakeLockAvailable = typeof wakeLockManager?.request === 'function'
     const fullscreenAvailable = Boolean(
       document?.fullscreenEnabled !== false &&
-        typeof document?.documentElement?.requestFullscreen === 'function' &&
-        typeof document?.exitFullscreen === 'function',
+      typeof document?.documentElement?.requestFullscreen === 'function' &&
+      typeof document?.exitFullscreen === 'function',
     )
 
     return {
@@ -475,11 +483,7 @@ function createDownloadLocationService(
         displayPath: string
         cleanupPending: boolean
         cleanupMessage?: string
-      }>(
-        fetcher,
-        'getDownloadPublic',
-        {},
-      ),
+      }>(fetcher, 'getDownloadPublic', {}),
     requestStoragePermission: async () => ({
       granted: true,
       permissionType: 'not_required',
@@ -627,6 +631,7 @@ export function createPlatformServices(
     reader: createDesktopReaderServices(),
     updater: unavailableCapability('当前平台不支持应用更新'),
     ocr: { available: true, api: createOcrService(fetcher) },
+    diagnostics: { available: true, api: createDiagnosticsService(fetcher) },
     launchRoutes: {
       available: true,
       api: {

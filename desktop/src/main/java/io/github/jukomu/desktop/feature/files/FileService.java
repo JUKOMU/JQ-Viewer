@@ -25,7 +25,7 @@ public final class FileService {
     private final Consumer<Path> fileOpener;
 
     public FileService(Paths paths) {
-        this(paths, new SwingFolderPicker(), FileService::openWithDesktop);
+        this(paths, new SystemFolderPicker(), FileService::openWithDesktop);
     }
 
     public FileService(Paths paths, FolderPicker folderPicker) {

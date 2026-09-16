@@ -95,8 +95,28 @@ public final class CacheService {
         pdfPageCache.clear();
     }
 
+    public List<ResourceSnapshot> diagnosticResources() {
+        PdfPageCache.Stats pdfStats = pdfPageCache.stats();
+        return List.of(
+                new ResourceSnapshot(
+                        "image-cache", "图片缓存", imageCache.snapshot().size(),
+                        imageCache.usedBytes()),
+                new ResourceSnapshot(
+                        "pdf-page-cache", "PDF 页面缓存", pdfStats.entryCount(),
+                        pdfStats.sizeBytes())
+        );
+    }
+
     private void apply(long requestedMb) {
         capacity = capacityPolicy.calculate(requestedMb, maxHeapBytes);
         imageCache.setCapacityBytes(capacity.effectiveMb() * CacheCapacityPolicy.MIB);
+    }
+
+    public record ResourceSnapshot(
+            String kind,
+            String label,
+            int entryCount,
+            long sizeBytes
+    ) {
     }
 }

@@ -99,6 +99,48 @@ export interface LaunchRouteService {
   onRoute(handler: (event: { route: string }) => void): Promise<ListenerHandle>
 }
 
+export interface DiagnosticPathEntry {
+  kind: string
+  label: string
+  displayPath: string
+}
+
+export interface DiagnosticTaskFailure {
+  id: string
+  title: string
+  status: string
+  reason: string
+  updatedAt: number
+}
+
+export interface DiagnosticTaskSummary {
+  kind: string
+  label: string
+  total: number
+  active: number
+  failed: number
+  recentFailures: DiagnosticTaskFailure[]
+}
+
+export interface DiagnosticClearableResource {
+  kind: string
+  label: string
+  entryCount: number
+  sizeBytes: number
+}
+
+export interface DiagnosticSnapshot {
+  generatedAt: number
+  paths: DiagnosticPathEntry[]
+  tasks: DiagnosticTaskSummary[]
+  clearableResources: DiagnosticClearableResource[]
+}
+
+/** 宿主诊断能力：只读取既有路径、任务和缓存状态，不创建独立遥测数据。 */
+export interface DiagnosticsService {
+  getSnapshot(): Promise<DiagnosticSnapshot>
+}
+
 /** PDF 平台能力：导入、导出、列表、校验、删除与打开等文件生命周期操作。 */
 export interface PdfService {
   exportPdfBatch(options: { tasks: PdfExportTask[] }): Promise<PdfExportBatchResult>
@@ -158,7 +200,7 @@ export interface ReaderPlatformServices {
   }>
 }
 
-/** 平台服务聚合：应用信息、通知、文件、下载位置、阅读器、更新、OCR、启动路由与 PDF。 */
+/** 平台服务聚合：应用信息、通知、文件、下载位置、阅读器、更新、OCR、诊断、启动路由与 PDF。 */
 export interface PlatformServices {
   app: AppService
   notifications: NotificationPolicy
@@ -168,6 +210,7 @@ export interface PlatformServices {
   reader: ReaderPlatformServices
   updater: Capability<UpdaterService>
   ocr: Capability<OcrService>
+  diagnostics: Capability<DiagnosticsService>
   launchRoutes: Capability<LaunchRouteService>
   pdf: PdfService
   events: BackendEvents

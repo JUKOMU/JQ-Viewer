@@ -77,6 +77,24 @@ public final class PdfPageCache {
         }
     }
 
+    public synchronized Stats stats() {
+        try {
+            Files.createDirectories(directory);
+            int entryCount = 0;
+            long sizeBytes = 0L;
+            try (var files = Files.list(directory)) {
+                for (Path file : files.filter(path ->
+                        path.getFileName().toString().endsWith(".png")).toList()) {
+                    entryCount++;
+                    sizeBytes = saturatedAdd(sizeBytes, Files.size(file));
+                }
+            }
+            return new Stats(entryCount, sizeBytes);
+        } catch (IOException exception) {
+            throw new IllegalStateException("读取 PDF 页面缓存状态失败", exception);
+        }
+    }
+
     public static boolean isResourceId(String resourceId) {
         return resourceId != null && RESOURCE_ID.matcher(resourceId).matches();
     }
@@ -128,5 +146,8 @@ public final class PdfPageCache {
 
     private static void requireResourceId(String resourceId) {
         if (!isResourceId(resourceId)) throw new IllegalArgumentException("PDF 页面资源 ID 无效");
+    }
+
+    public record Stats(int entryCount, long sizeBytes) {
     }
 }

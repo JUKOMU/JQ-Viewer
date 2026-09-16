@@ -2,6 +2,9 @@ package io.github.jukomu.desktop.host;
 
 import io.github.jukomu.desktop.backend.Backend;
 import io.github.jukomu.desktop.data.Paths;
+import io.github.jukomu.desktop.lifecycle.CloseSequence;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.net.URI;
 import java.util.Objects;
@@ -11,6 +14,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 /** 管理单进程生命周期及其操作系统入口。 */
 public final class Host implements AutoCloseable {
+    private static final Logger LOGGER = LoggerFactory.getLogger(Host.class);
     private final Backend backend;
     private final SingleInstanceGuard instanceGuard;
     private final BrowserLauncher browserLauncher;
@@ -126,21 +130,18 @@ public final class Host implements AutoCloseable {
         }
         closed = true;
         backendReady.countDown();
-        try {
-            backend.detachDesktopHost();
-            if (tray != null) {
-                tray.close();
-                tray = null;
-            }
-        } finally {
-            try {
-                backend.close();
-            } finally {
-                instanceGuard.close();
-            }
-        }
+        Tray closingTray = tray;
+        tray = null;
         homeUrl.set(null);
         primary = false;
         started = false;
+        CloseSequence.run(LOGGER,
+                new CloseSequence.Step("Desktop 宿主绑定", backend::detachDesktopHost),
+                new CloseSequence.Step("系统托盘", () -> {
+                    if (closingTray != null) closingTray.close();
+                }),
+                new CloseSequence.Step("本地后端", backend::close),
+                new CloseSequence.Step("单实例锁", instanceGuard::close)
+        );
     }
 }

@@ -74,6 +74,11 @@ public final class Plugin {
     }
 
     @PluginMethod
+    public void getDiagnostics(Context context) {
+        system.getDiagnostics(context);
+    }
+
+    @PluginMethod
     public void setOcrEnabled(Context context) {
         ocr.setOcrEnabled(context);
     }

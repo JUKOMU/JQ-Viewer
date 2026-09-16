@@ -31,6 +31,7 @@ import io.github.jukomu.desktop.feature.download.DownloadFiles;
 import io.github.jukomu.desktop.feature.download.DownloadLocationService;
 import io.github.jukomu.desktop.feature.download.DownloadService;
 import io.github.jukomu.desktop.feature.download.data.DownloadStore;
+import io.github.jukomu.desktop.feature.diagnostics.DiagnosticsService;
 import io.github.jukomu.desktop.feature.favorite.OfflineFavoriteService;
 import io.github.jukomu.desktop.feature.favorite.data.OfflineFavoriteStore;
 import io.github.jukomu.desktop.feature.history.HistoryService;
@@ -50,6 +51,7 @@ import io.github.jukomu.desktop.feature.pdf.render.PdfDocumentService;
 import io.github.jukomu.desktop.feature.pdf.render.PdfPageCache;
 import io.github.jukomu.desktop.feature.pdf.render.PdfResourceService;
 import io.github.jukomu.desktop.feature.settings.SettingsService;
+import io.github.jukomu.desktop.lifecycle.CloseSequence;
 import io.github.jukomu.jmcomic.api.client.JmClient;
 import io.github.jukomu.jmcomic.api.client.JmDownloadClient;
 import io.github.jukomu.jmcomic.core.JmComic;
@@ -311,6 +313,8 @@ public final class Backend implements AutoCloseable {
             PdfPageCache pdfPageCache = new PdfPageCache(paths.cacheDirectory());
             CacheService cacheService = new CacheService(
                     settingsService, imageService.cache(), pdfPageCache);
+            DiagnosticsService diagnosticsService = new DiagnosticsService(
+                    paths, downloadStore, pdfExportStore, cacheService);
             PdfManagementService pdfManagementService = new PdfManagementService(
                     new PdfStore(database),
                     downloadStore,
@@ -334,7 +338,9 @@ public final class Backend implements AutoCloseable {
                     new FilePluginHandler(requests, fileService),
                     new DownloadPluginHandler(requests, downloadService),
                     new PdfPluginHandler(requests, pdfManagementService, startedPdfExportService),
-                    new SystemPluginHandler(requests, startedNetworkService, startedLaunchRoutes),
+                    new SystemPluginHandler(
+                            requests, startedNetworkService, startedLaunchRoutes,
+                            diagnosticsService),
                     new OcrPluginHandler(requests, startedOcrService));
             PdfResourceService pdfResources = new PdfResourceService();
             candidate = Javalin.create(config -> {
@@ -374,25 +380,48 @@ public final class Backend implements AutoCloseable {
             LOGGER.info("本地后端监听于 {}", homeUrl);
             return homeUrl;
         } catch (Exception | Error exception) {
-            if (candidate != null) {
-                try {
-                    candidate.stop();
-                } catch (RuntimeException ignored) {
-                    // 保留原始启动异常。
-                }
-            }
-            if (startedDownloadService != null) startedDownloadService.close();
-            if (startedPdfExportService != null) startedPdfExportService.close();
-            if (startedNetworkService != null) startedNetworkService.close();
-            if (startedOcrService != null) startedOcrService.close();
-            if (startedTaskNotifications != null) startedTaskNotifications.close();
-            if (startedLaunchRoutes != null) startedLaunchRoutes.close();
-            if (startedEventHub != null) startedEventHub.close();
-            if (startedClient != null) startedClient.close();
-            pdfExportExecutor.shutdownNow();
-            fileOperationExecutor.shutdownNow();
-            businessExecutor.shutdownNow();
-            database.close();
+            Javalin failedApp = candidate;
+            DownloadService failedDownloadService = startedDownloadService;
+            PdfExportService failedPdfExportService = startedPdfExportService;
+            NetworkService failedNetworkService = startedNetworkService;
+            OcrService failedOcrService = startedOcrService;
+            DesktopTaskNotificationService failedTaskNotifications = startedTaskNotifications;
+            LaunchRouteService failedLaunchRoutes = startedLaunchRoutes;
+            EventHub failedEventHub = startedEventHub;
+            JmApiClient failedClient = startedClient;
+            CloseSequence.run(LOGGER,
+                    step("启动中的本地后端", () -> {
+                        if (failedApp != null) failedApp.stop();
+                    }),
+                    step("任务通知", () -> {
+                        if (failedTaskNotifications != null) failedTaskNotifications.close();
+                    }),
+                    step("启动路由", () -> {
+                        if (failedLaunchRoutes != null) failedLaunchRoutes.close();
+                    }),
+                    step("下载服务", () -> {
+                        if (failedDownloadService != null) failedDownloadService.close();
+                    }),
+                    step("PDF 导出服务", () -> {
+                        if (failedPdfExportService != null) failedPdfExportService.close();
+                    }),
+                    step("网络服务", () -> {
+                        if (failedNetworkService != null) failedNetworkService.close();
+                    }),
+                    step("OCR 服务", () -> {
+                        if (failedOcrService != null) failedOcrService.close();
+                    }),
+                    step("事件中心", () -> {
+                        if (failedEventHub != null) failedEventHub.close();
+                    }),
+                    step("JMComic 客户端", () -> {
+                        if (failedClient != null) failedClient.close();
+                    }),
+                    step("PDF 导出执行器", pdfExportExecutor::shutdownNow),
+                    step("文件执行器", fileOperationExecutor::shutdownNow),
+                    step("业务执行器", businessExecutor::shutdownNow),
+                    step("数据库", database::close)
+            );
             throw exception;
         }
     }
@@ -620,51 +649,60 @@ public final class Backend implements AutoCloseable {
         Javalin current = app;
         app = null;
         homeUrl = null;
-        if (taskNotifications != null) {
-            taskNotifications.close();
-            taskNotifications = null;
-        }
-        if (launchRouteService != null) {
-            launchRouteService.close();
-            launchRouteService = null;
-        }
-        if (pdfExportService != null) {
-            pdfExportService.close();
-            pdfExportService = null;
-        }
-        if (networkService != null) {
-            networkService.close();
-            networkService = null;
-        }
-        if (ocrService != null) {
-            ocrService.close();
-            ocrService = null;
-        }
-        if (eventHub != null) {
-            eventHub.close();
-            eventHub = null;
-        }
-        if (current != null) {
-            try {
-                current.stop();
-            } catch (RuntimeException exception) {
-                LOGGER.warn("无法正常停止本地后端", exception);
-            }
-        }
+        DesktopTaskNotificationService closingTaskNotifications = taskNotifications;
+        taskNotifications = null;
+        LaunchRouteService closingLaunchRoutes = launchRouteService;
+        launchRouteService = null;
+        PdfExportService closingPdfExportService = pdfExportService;
+        pdfExportService = null;
+        NetworkService closingNetworkService = networkService;
+        networkService = null;
+        OcrService closingOcrService = ocrService;
+        ocrService = null;
+        EventHub closingEventHub = eventHub;
+        eventHub = null;
+        DownloadService closingDownloadService = downloadService;
+        downloadService = null;
+        JmApiClient closingClient = client;
+        client = null;
 
-        if (downloadService != null) {
-            downloadService.close();
-            downloadService = null;
-        }
+        CloseSequence.run(LOGGER,
+                step("任务通知", () -> {
+                    if (closingTaskNotifications != null) closingTaskNotifications.close();
+                }),
+                step("启动路由", () -> {
+                    if (closingLaunchRoutes != null) closingLaunchRoutes.close();
+                }),
+                step("PDF 导出服务", () -> {
+                    if (closingPdfExportService != null) closingPdfExportService.close();
+                }),
+                step("网络服务", () -> {
+                    if (closingNetworkService != null) closingNetworkService.close();
+                }),
+                step("OCR 服务", () -> {
+                    if (closingOcrService != null) closingOcrService.close();
+                }),
+                step("事件中心", () -> {
+                    if (closingEventHub != null) closingEventHub.close();
+                }),
+                step("本地后端", () -> {
+                    if (current != null) current.stop();
+                }),
+                step("下载服务", () -> {
+                    if (closingDownloadService != null) closingDownloadService.close();
+                }),
+                step("JMComic 客户端", () -> {
+                    if (closingClient != null) closingClient.close();
+                }),
+                step("PDF 导出执行器", () -> shutdownExecutor(pdfExportExecutor)),
+                step("文件执行器", () -> shutdownExecutor(fileOperationExecutor)),
+                step("业务执行器", () -> shutdownExecutor(businessExecutor)),
+                step("数据库", database::close)
+        );
+    }
 
-        if (client != null) {
-            client.close();
-            client = null;
-        }
-        shutdownExecutor(pdfExportExecutor);
-        shutdownExecutor(fileOperationExecutor);
-        shutdownExecutor(businessExecutor);
-        database.close();
+    private static CloseSequence.Step step(String name, Runnable action) {
+        return new CloseSequence.Step(name, action);
     }
 
     private static void shutdownExecutor(ExecutorService executor) {

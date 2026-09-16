@@ -12,6 +12,9 @@ const mocks = vi.hoisted(() => ({
   checkUpdate: vi.fn(),
   addUpdateProgressListener: vi.fn(),
   getUpdateState: vi.fn(),
+  getDiagnosticsSnapshot: vi.fn(),
+  clearImageCache: vi.fn(),
+  diagnosticsAvailable: false,
   progressHandler: undefined as ((event: UpdateProgressEvent) => void) | undefined,
 }))
 
@@ -46,6 +49,20 @@ vi.mock('@ionic/vue', () => {
 vi.mock('ionicons/icons', () => ({
   chevronForwardOutline: 'chevron-forward',
   logoGithub: 'logo-github',
+  refreshOutline: 'refresh',
+  trashOutline: 'trash',
+}))
+
+vi.mock('@/runtime/runtimeContext', () => ({
+  getRuntime: () => ({
+    services: {
+      app: { getInfo: vi.fn().mockResolvedValue({ version: '1.2.0' }) },
+      diagnostics: mocks.diagnosticsAvailable
+        ? { available: true, api: { getSnapshot: mocks.getDiagnosticsSnapshot } }
+        : { available: false, reason: 'not available' },
+      updater: { available: false, reason: 'not available' },
+    },
+  }),
 }))
 
 vi.mock('@/services/JmcomicService', () => ({
@@ -60,6 +77,7 @@ vi.mock('@/services/JmcomicService', () => ({
     cancelUpdate: vi.fn(),
     installUpdate: vi.fn(),
     requestInstallPermission: vi.fn(),
+    clearImageCache: mocks.clearImageCache,
   },
   showToast: mocks.showToast,
 }))
@@ -82,6 +100,10 @@ beforeEach(async () => {
     error: '',
   }
   mocks.progressHandler = undefined
+  mocks.diagnosticsAvailable = false
+  mocks.getDiagnosticsSnapshot.mockReset()
+  mocks.clearImageCache.mockReset()
+  mocks.clearImageCache.mockResolvedValue({ success: true })
   mocks.writeText.mockResolvedValue(undefined)
   mocks.showToast.mockResolvedValue(undefined)
   mocks.alertCreate.mockResolvedValue({
@@ -311,6 +333,62 @@ describe('AboutPage 更新状态', () => {
     expect(wrapper.get('.update-status-value').text()).toContain('100%')
     expect(wrapper.get('.update-progress').text()).toContain('20.0')
     expect(wrapper.get('.update-card').text()).toContain('准备安装')
+    wrapper.unmount()
+  })
+})
+
+describe('AboutPage Desktop 诊断', () => {
+  test('展示路径、任务失败与可清理资源，并复用现有缓存清理能力', async () => {
+    mocks.diagnosticsAvailable = true
+    mocks.getDiagnosticsSnapshot.mockResolvedValue({
+      generatedAt: 1,
+      paths: [{ kind: 'data', label: '应用数据', displayPath: '/home/user/data' }],
+      tasks: [
+        {
+          kind: 'download',
+          label: '下载任务',
+          total: 2,
+          active: 1,
+          failed: 1,
+          recentFailures: [
+            {
+              id: 'download-1',
+              title: '第一话',
+              status: 'failed',
+              reason: '网络错误',
+              updatedAt: 1,
+            },
+          ],
+        },
+      ],
+      clearableResources: [
+        { kind: 'image-cache', label: '图片缓存', entryCount: 2, sizeBytes: 2048 },
+      ],
+    })
+    const wrapper = mount(AboutPage)
+    await flushPromises()
+
+    expect(wrapper.get('.diagnostics-card').text()).toContain('应用数据')
+    expect(wrapper.get('.diagnostics-card').text()).toContain('/home/user/data')
+    expect(wrapper.get('.diagnostics-card').text()).toContain('共 2 · 进行中 1 · 异常 1')
+    expect(wrapper.get('.diagnostics-card').text()).toContain('网络错误')
+    expect(wrapper.get('.diagnostics-card').text()).toContain('2 项 · 2.0 KiB')
+
+    await wrapper.get('.diagnostics-clear').trigger('click')
+    await flushPromises()
+
+    expect(mocks.clearImageCache).toHaveBeenCalledOnce()
+    expect(mocks.getDiagnosticsSnapshot).toHaveBeenCalledTimes(2)
+    expect(mocks.showToast).toHaveBeenCalledWith('缓存已清理', 'success')
+    wrapper.unmount()
+  })
+
+  test('Android 不展示 Desktop 诊断入口', async () => {
+    const wrapper = mount(AboutPage)
+    await flushPromises()
+
+    expect(wrapper.find('.diagnostics-card').exists()).toBe(false)
+    expect(mocks.getDiagnosticsSnapshot).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 })

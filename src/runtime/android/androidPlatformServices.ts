@@ -396,6 +396,7 @@ export function createAndroidPlatformServices(
         pickImageAndOcr: () => withRuntimeError(() => native.pickImageAndOcr()),
       },
     },
+    diagnostics: { available: false, reason: 'Android 由系统工具提供应用诊断信息' },
     launchRoutes: {
       available: true,
       api: {

@@ -379,6 +379,8 @@ jobs:
           fi
 
       - name: Validate Desktop package matrix
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
           artifact_dir="$RUNNER_TEMP/desktop-release"
@@ -388,7 +390,7 @@ jobs:
             args+=(--asset "$asset")
           done
           node scripts/desktop-release-assets.mjs check \
-            --tag "${{ inputs.tag || github.ref_name }}" \
+            --tag "$RELEASE_TAG" \
             "${args[@]}"
 
       - name: Sign and verify RPM packages
@@ -762,10 +764,15 @@ jobs:
             fi
           done
 
+          mkdir -p "$temp_dir/github" "$temp_dir/gitee"
           desktop_args=()
           while IFS= read -r asset_name; do
-            github_asset="$temp_dir/github-$asset_name"
-            gitee_asset="$temp_dir/gitee-$asset_name"
+            if [ -z "$asset_name" ] || [ "$asset_name" != "$(basename -- "$asset_name")" ]; then
+              echo "::error::Invalid Desktop release asset name: $asset_name"
+              exit 1
+            fi
+            github_asset="$temp_dir/github/$asset_name"
+            gitee_asset="$temp_dir/gitee/$asset_name"
             curl --fail --silent --show-error --location --retry 3 \
               "$github_base/$asset_name" -o "$github_asset"
             curl --fail --silent --show-error --location --retry 3 \

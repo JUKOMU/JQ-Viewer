@@ -57,8 +57,14 @@ jobs:
     needs: validate-release-input
     uses: ./.github/workflows/ci-android-instrumentation.yml
 
+  desktop:
+    needs: validate-release-input
+    uses: ./.github/workflows/ci-desktop.yml
+    with:
+      package: true
+
   build-release:
-    needs: [validate-release-input, frontend, android-jvm, instrumentation]
+    needs: [validate-release-input, frontend, android-jvm, instrumentation, desktop]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -321,9 +327,170 @@ jobs:
           rm -f JQ-Viewer-*.apk
           rm -f JQ-Viewer-*.apk.sha256
 
+  prepare-desktop-release:
+    needs: [build-release, desktop]
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Install release signing tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes gnupg rpm
+
+      - name: Download native Desktop packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-package-*
+          path: ${{ runner.temp }}/desktop-release
+          merge-multiple: true
+
+      - name: Validate Desktop release configuration
+        env:
+          DESKTOP_ED25519_PRIVATE_KEY_BASE64: ${{ secrets.DESKTOP_ED25519_PRIVATE_KEY_BASE64 }}
+          DESKTOP_ED25519_KEY_ID: ${{ vars.DESKTOP_ED25519_KEY_ID }}
+          DESKTOP_ED25519_PUBLIC_KEY_SPKI_BASE64: ${{ vars.DESKTOP_ED25519_PUBLIC_KEY_SPKI_BASE64 }}
+          RPM_GPG_PRIVATE_KEY_BASE64: ${{ secrets.RPM_GPG_PRIVATE_KEY_BASE64 }}
+          RPM_GPG_PASSPHRASE: ${{ secrets.RPM_GPG_PASSPHRASE }}
+          RPM_GPG_FINGERPRINT: ${{ vars.RPM_GPG_FINGERPRINT }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in \
+            DESKTOP_ED25519_PRIVATE_KEY_BASE64 \
+            DESKTOP_ED25519_KEY_ID \
+            DESKTOP_ED25519_PUBLIC_KEY_SPKI_BASE64 \
+            RPM_GPG_PRIVATE_KEY_BASE64 \
+            RPM_GPG_PASSPHRASE \
+            RPM_GPG_FINGERPRINT; do
+            if [ -z "$(printenv "$name" || true)" ]; then
+              echo "::error::Missing required release environment value: $name"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Validate Desktop package matrix
+        run: |
+          set -euo pipefail
+          artifact_dir="$RUNNER_TEMP/desktop-release"
+          version="${{ inputs.tag || github.ref_name }}"
+          version="${version#v}"
+          version="${version%%-*}"
+          expected=(
+            "JQ-Viewer-$version-windows-x64-installer.exe"
+            "JQ-Viewer-$version-windows-x64-portable.zip"
+            "JQ-Viewer-$version-linux-x64.deb"
+            "JQ-Viewer-$version-linux-x64.rpm"
+            "JQ-Viewer-$version-linux-x64-portable.tar.gz"
+            "JQ-Viewer-$version-linux-arm64.deb"
+            "JQ-Viewer-$version-linux-arm64.rpm"
+            "JQ-Viewer-$version-linux-arm64-portable.tar.gz"
+          )
+          for name in "${expected[@]}"; do
+            if [ ! -s "$artifact_dir/$name" ]; then
+              echo "::error::Missing or empty Desktop release asset: $name"
+              exit 1
+            fi
+          done
+          actual_count="$(find "$artifact_dir" -maxdepth 1 -type f -name 'JQ-Viewer-*' | wc -l)"
+          if [ "$actual_count" -ne "${#expected[@]}" ]; then
+            echo "::error::Unexpected Desktop release asset count: $actual_count"
+            exit 1
+          fi
+
+      - name: Sign and verify RPM packages
+        env:
+          RPM_GPG_PRIVATE_KEY_BASE64: ${{ secrets.RPM_GPG_PRIVATE_KEY_BASE64 }}
+          RPM_GPG_PASSPHRASE: ${{ secrets.RPM_GPG_PASSPHRASE }}
+          RPM_GPG_FINGERPRINT: ${{ vars.RPM_GPG_FINGERPRINT }}
+        run: scripts/sign-rpm-release.sh "$RUNNER_TEMP/desktop-release"
+
+      - name: Build and verify signed Desktop manifest
+        env:
+          DESKTOP_ED25519_PRIVATE_KEY_BASE64: ${{ secrets.DESKTOP_ED25519_PRIVATE_KEY_BASE64 }}
+          DESKTOP_ED25519_KEY_ID: ${{ vars.DESKTOP_ED25519_KEY_ID }}
+          DESKTOP_ED25519_PUBLIC_KEY_SPKI_BASE64: ${{ vars.DESKTOP_ED25519_PUBLIC_KEY_SPKI_BASE64 }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITEE_REPOSITORY: jukomu/jq-viewer
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          artifact_dir="$RUNNER_TEMP/desktop-release"
+          mapfile -d '' assets < <(find "$artifact_dir" -maxdepth 1 -type f -name 'JQ-Viewer-*' -print0 | sort -z)
+          args=()
+          for asset in "${assets[@]}"; do
+            args+=(--asset "$asset")
+          done
+          node scripts/desktop-release-assets.mjs build \
+            --tag "$RELEASE_TAG" \
+            --published-at "$(date --utc +'%Y-%m-%dT%H:%M:%SZ')" \
+            --manifest "$artifact_dir/desktop-latest.json" \
+            --signature "$artifact_dir/desktop-latest.json.sig" \
+            --public-key "$artifact_dir/desktop-update-key.json" \
+            "${args[@]}"
+          node scripts/desktop-release-assets.mjs verify \
+            --manifest "$artifact_dir/desktop-latest.json" \
+            --signature "$artifact_dir/desktop-latest.json.sig" \
+            --public-key "$artifact_dir/desktop-update-key.json" \
+            "${args[@]}"
+          (
+            cd "$artifact_dir"
+            sha256sum JQ-Viewer-* desktop-latest.json desktop-latest.json.sig desktop-update-key.json \
+              > SHA256SUMS
+          )
+
+      - name: Upload signed Desktop release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-desktop
+          path: |
+            ${{ runner.temp }}/desktop-release/JQ-Viewer-*
+            ${{ runner.temp }}/desktop-release/desktop-latest.json
+            ${{ runner.temp }}/desktop-release/desktop-latest.json.sig
+            ${{ runner.temp }}/desktop-release/desktop-update-key.json
+            ${{ runner.temp }}/desktop-release/SHA256SUMS
+          if-no-files-found: error
+          compression-level: 0
+          overwrite: true
+          retention-days: 7
+
+      - name: Attach Desktop assets to draft GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          target_commitish: ${{ needs.build-release.outputs.release_commit }}
+          draft: true
+          prerelease: ${{ needs.build-release.outputs.is_prerelease == 'true' }}
+          body_path: .github/release-notes.md
+          generate_release_notes: false
+          overwrite_files: true
+          files: ${{ runner.temp }}/desktop-release/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Cleanup Desktop signing material and artifacts
+        if: ${{ always() }}
+        run: rm -rf "$RUNNER_TEMP/desktop-release"
+
   publish-release:
-    needs: build-release
+    needs: [build-release, prepare-desktop-release]
     runs-on: ubuntu-latest
+    environment: release
     permissions:
       contents: write
 
@@ -364,6 +531,12 @@ jobs:
         with:
           name: release-apk
           path: ${{ runner.temp }}/release-artifact
+
+      - name: Download signed Desktop release artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: release-desktop
+          path: ${{ runner.temp }}/desktop-release
 
       - name: Verify release APK artifacts
         run: |
@@ -443,6 +616,7 @@ jobs:
         run: |
           set -euo pipefail
           artifact_dir="$RUNNER_TEMP/release-artifact"
+          desktop_dir="$RUNNER_TEMP/desktop-release"
           latest_json="-"
           if [ "$RELEASE_PRERELEASE" != "true" ]; then
             latest_json="$RUNNER_TEMP/latest.json"
@@ -453,6 +627,7 @@ jobs:
             "$RELEASE_COMMIT"
             "$latest_json"
             "$artifact_dir"/JQ-Viewer-*.apk
+            "$desktop_dir"/*
           )
           node scripts/publish-gitee-release.mjs "${args[@]}"
 
@@ -554,9 +729,58 @@ jobs:
 
           echo "Public release assets verified: five identical APKs and latest.json"
 
+      - name: Verify public Desktop release assets
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          DESKTOP_ED25519_KEY_ID: ${{ vars.DESKTOP_ED25519_KEY_ID }}
+          DESKTOP_ED25519_PUBLIC_KEY_SPKI_BASE64: ${{ vars.DESKTOP_ED25519_PUBLIC_KEY_SPKI_BASE64 }}
+        run: |
+          set -euo pipefail
+          github_base="https://github.com/$GITHUB_REPOSITORY/releases/download/$RELEASE_TAG"
+          gitee_base="https://gitee.com/jukomu/jq-viewer/releases/download/$RELEASE_TAG"
+          temp_dir="$(mktemp -d)"
+          trap 'rm -rf "$temp_dir"' EXIT
+
+          for name in desktop-latest.json desktop-latest.json.sig desktop-update-key.json SHA256SUMS; do
+            github_path="$temp_dir/github-$name"
+            gitee_path="$temp_dir/gitee-$name"
+            curl --fail --silent --show-error --location --retry 3 \
+              "$github_base/$name" -o "$github_path"
+            curl --fail --silent --show-error --location --retry 3 \
+              "$gitee_base/$name" -o "$gitee_path"
+            if ! cmp --silent "$github_path" "$gitee_path"; then
+              echo "::error::GitHub/Gitee Desktop release metadata differ for $name"
+              exit 1
+            fi
+          done
+
+          desktop_args=()
+          while IFS= read -r asset_name; do
+            github_asset="$temp_dir/github-$asset_name"
+            gitee_asset="$temp_dir/gitee-$asset_name"
+            curl --fail --silent --show-error --location --retry 3 \
+              "$github_base/$asset_name" -o "$github_asset"
+            curl --fail --silent --show-error --location --retry 3 \
+              "$gitee_base/$asset_name" -o "$gitee_asset"
+            if ! cmp --silent "$github_asset" "$gitee_asset"; then
+              echo "::error::GitHub/Gitee Desktop asset bytes differ for $asset_name"
+              exit 1
+            fi
+            desktop_args+=(--asset "$github_asset")
+          done < <(jq -r '.artifacts[].name' "$temp_dir/github-desktop-latest.json")
+
+          node scripts/desktop-release-assets.mjs verify \
+            --manifest "$temp_dir/github-desktop-latest.json" \
+            --signature "$temp_dir/github-desktop-latest.json.sig" \
+            --public-key "$temp_dir/github-desktop-update-key.json" \
+            "${desktop_args[@]}"
+          echo "Public release assets verified: eight identical Desktop packages and signed manifest"
+
       - name: Cleanup downloaded release artifacts
         if: ${{ always() }}
         run: |
           set -euo pipefail
           rm -rf "$RUNNER_TEMP/release-artifact"
+          rm -rf "$RUNNER_TEMP/desktop-release"
           rm -f "$RUNNER_TEMP/latest.json"

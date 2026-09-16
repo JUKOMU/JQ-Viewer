@@ -12,6 +12,7 @@
     "test:unit": "vitest run",
     "test:unit:watch": "vitest",
     "desktop:sync": "node scripts/desktop-sync.mjs",
+    "desktop:package": "node scripts/desktop-package.mjs",
     "lint": "eslint .",
     "lint:fix": "eslint --fix .",
     "format": "prettier --write \"src/**/*.{vue,ts,css}\"",

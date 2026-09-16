@@ -5,8 +5,8 @@ import io.github.jukomu.desktop.data.Paths;
 import io.github.jukomu.desktop.feature.ocr.model.OcrResponse;
 import io.github.jukomu.desktop.feature.settings.SettingsService;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -15,9 +15,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class OcrServiceTest {
+    @TempDir
+    Path root;
+
     @Test
     void cancellationIsAStableEmptyResultAndSettingIsPersisted() throws Exception {
-        Path root = Files.createTempDirectory("jq-viewer-ocr-");
         Paths paths = new Paths(root.resolve("program"), root.resolve("home"), Map.of(), "Linux");
         Database database = new Database(paths);
         database.open();
@@ -53,7 +55,6 @@ class OcrServiceTest {
 
     @Test
     void concurrentRequestsAreRejectedBeforeStartingTheSecondPicker() throws Exception {
-        Path root = Files.createTempDirectory("jq-viewer-ocr-concurrent-");
         Paths paths = new Paths(root.resolve("program"), root.resolve("home"), Map.of(), "Linux");
         Database database = new Database(paths);
         database.open();

@@ -2,27 +2,27 @@ package io.github.jukomu.desktop.feature.ocr;
 
 import io.github.jukomu.desktop.bridge.ApiException;
 import io.github.jukomu.desktop.feature.ocr.model.OcrResponse;
-import org.bytedeco.javacpp.BytePointer;
-import org.bytedeco.leptonica.PIX;
-import org.bytedeco.leptonica.global.leptonica;
-import org.bytedeco.tesseract.ETEXT_DESC;
+import org.bytedeco.javacpp.Loader;
 import org.bytedeco.tesseract.TessBaseAPI;
 
+import java.io.File;
 import java.io.IOException;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.TimeUnit;
 
-import static org.bytedeco.tesseract.global.tesseract.OEM_LSTM_ONLY;
-import static org.bytedeco.tesseract.global.tesseract.PSM_AUTO;
-
-/** 基于 JavaCPP 原生绑定的 Tesseract fast OCR 实现。 */
+/** 基于 JavaCPP 随包原生程序的 Tesseract fast OCR 实现。 */
 public final class TesseractOcrEngine implements OcrEngine {
+    static final long MAX_IMAGE_BYTES = 32L * 1024L * 1024L;
+
     private static final String LANGUAGES = "chi_sim+chi_sim_vert+eng";
-    private static final int TIMEOUT_MILLIS = 30_000;
+    private static final long MAX_OUTPUT_BYTES = 8L * 1024L * 1024L;
+    private static final int TIMEOUT_SECONDS = 30;
 
     private final Path ocrDirectory;
-    private TessBaseAPI api;
+    private Path executable;
     private boolean closed;
 
     public TesseractOcrEngine(Path ocrDirectory) {
@@ -36,61 +36,99 @@ public final class TesseractOcrEngine implements OcrEngine {
             throw ApiException.notFound("图片文件不存在");
         }
 
+        Path output = null;
+        Process process = null;
         try {
-            TessBaseAPI tesseract = api();
-            byte[] bytes = Files.readAllBytes(image);
-            try (PIX pix = leptonica.pixReadMem(bytes, bytes.length)) {
-                if (pix == null || pix.isNull()) {
-                    return OcrResponse.failure("无法读取图片");
-                }
-                tesseract.SetImage(pix);
-                tesseract.SetPageSegMode(PSM_AUTO);
-                try (ETEXT_DESC monitor = new ETEXT_DESC()) {
-                    monitor.set_deadline_msecs(TIMEOUT_MILLIS);
-                    int status = tesseract.Recognize(monitor);
-                    if (monitor.deadline_exceeded()) {
-                        return OcrResponse.failure("识别超时，请重试");
-                    }
-                    if (status != 0) {
-                        return OcrResponse.failure("识别失败，请重试");
-                    }
-                    try (BytePointer text = tesseract.GetUTF8Text()) {
-                        String value = text == null || text.isNull()
-                                ? ""
-                                : text.getString(StandardCharsets.UTF_8).trim();
-                        return value.isEmpty()
-                                ? OcrResponse.failure("未识别到文字")
-                                : new OcrResponse(value, "");
-                    }
-                }
+            if (Files.size(image) > MAX_IMAGE_BYTES) {
+                return OcrResponse.failure("图片文件过大");
             }
+
+            Path dataPath = TesseractModelStore.prepare(ocrDirectory);
+            output = Files.createTempFile(ocrDirectory, "ocr-result-", ".txt");
+            process = new ProcessBuilder(
+                    executable().toString(),
+                    image.toAbsolutePath().normalize().toString(),
+                    "stdout",
+                    "--tessdata-dir", dataPath.toString(),
+                    "-l", LANGUAGES,
+                    "--oem", "1",
+                    "--psm", "3")
+                    .redirectOutput(output.toFile())
+                    .redirectError(ProcessBuilder.Redirect.DISCARD)
+                    .start();
+
+            if (!process.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                terminateAndWait(process);
+                return OcrResponse.failure("识别超时，请重试");
+            }
+            if (process.exitValue() != 0 || Files.size(output) > MAX_OUTPUT_BYTES) {
+                return OcrResponse.failure("识别失败，请重试");
+            }
+
+            String text = Files.readString(output, StandardCharsets.UTF_8).trim();
+            return text.isEmpty()
+                    ? OcrResponse.failure("未识别到文字")
+                    : new OcrResponse(text, "");
         } catch (ApiException exception) {
             throw exception;
-        } catch (IOException | RuntimeException exception) {
+        } catch (InterruptedException exception) {
+            terminateAndWait(process);
+            Thread.currentThread().interrupt();
             return OcrResponse.failure("识别失败，请重试");
+        } catch (IOException | RuntimeException exception) {
+            terminateAndWait(process);
+            return OcrResponse.failure("识别失败，请重试");
+        } finally {
+            deleteIfExists(output);
         }
     }
 
-    private TessBaseAPI api() {
-        if (api != null) return api;
-        Path dataPath = TesseractModelStore.prepare(ocrDirectory);
-        TessBaseAPI created = new TessBaseAPI();
-        int status = created.Init(dataPath.toString(), LANGUAGES, OEM_LSTM_ONLY);
-        if (status != 0) {
-            created.close();
-            throw ApiException.unavailable("OCR 模型初始化失败");
+    private Path executable() {
+        if (executable != null) return executable;
+        try {
+            Loader.load(TessBaseAPI.class);
+            String platform = Loader.getPlatform();
+            String suffix = platform.startsWith("windows") ? ".exe" : "";
+            URL resource = TessBaseAPI.class.getResource(platform + "/tesseract" + suffix);
+            if (resource == null) throw new IOException("缺少 Tesseract 原生程序");
+
+            File cached = Loader.cacheResource(resource);
+            if (cached == null) throw new IOException("无法释放 Tesseract 原生程序");
+            if (!platform.startsWith("windows") && !cached.canExecute() && !cached.setExecutable(true)) {
+                throw new IOException("Tesseract 原生程序不可执行");
+            }
+            executable = cached.toPath().toAbsolutePath().normalize();
+            return executable;
+        } catch (IOException | RuntimeException | LinkageError exception) {
+            throw ApiException.unavailable("OCR 运行环境不可用");
         }
-        api = created;
-        return created;
+    }
+
+    private static void terminateAndWait(Process process) {
+        if (process == null || !process.isAlive()) return;
+        process.destroyForcibly();
+        boolean interrupted = false;
+        while (process.isAlive()) {
+            try {
+                process.waitFor();
+            } catch (InterruptedException exception) {
+                interrupted = true;
+            }
+        }
+        if (interrupted) Thread.currentThread().interrupt();
+    }
+
+    private static void deleteIfExists(Path path) {
+        if (path == null) return;
+        try {
+            Files.deleteIfExists(path);
+        } catch (IOException ignored) {
+            // 清理失败不覆盖本次识别结果。
+        }
     }
 
     @Override
     public synchronized void close() {
         closed = true;
-        if (api != null) {
-            api.End();
-            api.close();
-            api = null;
-        }
     }
 }

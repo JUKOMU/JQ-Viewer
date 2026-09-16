@@ -154,14 +154,14 @@ jobs:
           const { privateKey, publicKey } = generateKeyPairSync('ed25519')
           const privatePem = privateKey.export({ type: 'pkcs8', format: 'pem' })
           const publicSpki = publicKey.export({ type: 'spki', format: 'der' })
-          appendFileSync(process.env.GITHUB_ENV, 'DESKTOP_ED25519_KEY_ID=jq-viewer-ci-test\n')
+          appendFileSync(process.env.GITHUB_ENV, 'RELEASE_ED25519_KEY_ID=jq-viewer-ci-test\n')
           appendFileSync(
             process.env.GITHUB_ENV,
-            'DESKTOP_ED25519_PRIVATE_KEY_BASE64=' + Buffer.from(privatePem).toString('base64') + '\n',
+            'RELEASE_ED25519_PRIVATE_KEY_BASE64=' + Buffer.from(privatePem).toString('base64') + '\n',
           )
           appendFileSync(
             process.env.GITHUB_ENV,
-            'DESKTOP_ED25519_PUBLIC_KEY_SPKI_BASE64=' + publicSpki.toString('base64') + '\n',
+            'RELEASE_ED25519_PUBLIC_KEY_SPKI_BASE64=' + publicSpki.toString('base64') + '\n',
           )
           NODE
 
@@ -193,26 +193,47 @@ jobs:
       - name: Sign test RPM packages
         run: scripts/sign-rpm-release.sh "$RUNNER_TEMP/desktop-release"
 
-      - name: Build and verify signed Desktop manifest
+      - name: Build and verify shared release manifest contract
         shell: bash
         run: |
           set -euo pipefail
           artifact_dir="$RUNNER_TEMP/desktop-release"
           version="$(node -p "require('./package.json').version")"
+          RELEASE_TAG="v$version" ARTIFACT_DIR="$artifact_dir" node --input-type=module <<'NODE'
+          import fs from 'node:fs'
+          import path from 'node:path'
+          import { buildDesktopReleaseFromPaths } from './scripts/desktop-release-assets.mjs'
+
+          const assetPaths = fs.readdirSync(process.env.ARTIFACT_DIR)
+            .filter((name) => name.startsWith('JQ-Viewer-'))
+            .map((name) => path.join(process.env.ARTIFACT_DIR, name))
+          const manifest = {
+            schemaVersion: 1,
+            tag: process.env.RELEASE_TAG,
+            desktop: buildDesktopReleaseFromPaths({
+              releaseTag: process.env.RELEASE_TAG,
+              assetPaths,
+              githubRepository: process.env.GITHUB_REPOSITORY,
+              giteeRepository: 'jukomu/jq-viewer',
+            }),
+          }
+          fs.writeFileSync(
+            path.join(process.env.ARTIFACT_DIR, 'latest.json'),
+            JSON.stringify(manifest, null, 2) + '\n',
+          )
+          NODE
           mapfile -d '' assets < <(find "$artifact_dir" -maxdepth 1 -type f -name 'JQ-Viewer-*' -print0 | sort -z)
           args=()
           for asset in "${assets[@]}"; do
             args+=(--asset "$asset")
           done
-          node scripts/desktop-release-assets.mjs build \
-            --tag "v$version" \
-            --published-at "$(git show -s --format=%cI HEAD)" \
-            --manifest "$artifact_dir/desktop-latest.json" \
-            --signature "$artifact_dir/desktop-latest.json.sig" \
-            --public-key "$artifact_dir/desktop-update-key.json" \
-            "${args[@]}"
           node scripts/desktop-release-assets.mjs verify \
-            --manifest "$artifact_dir/desktop-latest.json" \
-            --signature "$artifact_dir/desktop-latest.json.sig" \
-            --public-key "$artifact_dir/desktop-update-key.json" \
+            --tag "v$version" \
+            --manifest "$artifact_dir/latest.json" \
             "${args[@]}"
+          node scripts/release-signature.mjs sign \
+            --manifest "$artifact_dir/latest.json" \
+            --signature "$artifact_dir/latest.json.sig"
+          node scripts/release-signature.mjs verify \
+            --manifest "$artifact_dir/latest.json" \
+            --signature "$artifact_dir/latest.json.sig"

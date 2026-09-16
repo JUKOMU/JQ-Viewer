@@ -8,11 +8,11 @@ Desktop 正式发布仅使用 GitHub Release；Gitee Release 保存同版本、�
 
 ### Environment secrets
 
-| 名称                                 | 内容                                              |
-| ------------------------------------ | ------------------------------------------------- |
-| `DESKTOP_ED25519_PRIVATE_KEY_BASE64` | JQ-Viewer 专用 Ed25519 PKCS#8 PEM 私钥的 Base64。 |
-| `RPM_GPG_PRIVATE_KEY_BASE64`         | 现有 OpenPGP 发布私钥导出文件的 Base64。          |
-| `RPM_GPG_PASSPHRASE`                 | OpenPGP 私钥口令。                                |
+| 名称                                 | 内容                                                      |
+| ------------------------------------ | --------------------------------------------------------- |
+| `RELEASE_ED25519_PRIVATE_KEY_BASE64` | JQ-Viewer 发布清单专用 Ed25519 PKCS#8 PEM 私钥的 Base64。 |
+| `RPM_GPG_PRIVATE_KEY_BASE64`         | 现有 OpenPGP 发布私钥导出文件的 Base64。                  |
+| `RPM_GPG_PASSPHRASE`                 | OpenPGP 私钥口令。                                        |
 
 私钥不得写入仓库、Issue、PR、Actions 日志或普通 repository variable。所有者应离线保留加密备份和 OpenPGP 吊销资料。
 
@@ -20,11 +20,11 @@ Desktop 正式发布仅使用 GitHub Release；Gitee Release 保存同版本、�
 
 | 名称                                     | 内容                                                   |
 | ---------------------------------------- | ------------------------------------------------------ |
-| `DESKTOP_ED25519_KEY_ID`                 | 稳定密钥标识，只能包含字母、数字、点、下划线和连字符。 |
-| `DESKTOP_ED25519_PUBLIC_KEY_SPKI_BASE64` | 与私钥对应的 Ed25519 SPKI DER 公钥 Base64。            |
+| `RELEASE_ED25519_KEY_ID`                 | 稳定密钥标识，只能包含字母、数字、点、下划线和连字符。 |
+| `RELEASE_ED25519_PUBLIC_KEY_SPKI_BASE64` | 与私钥对应的 Ed25519 SPKI DER 公钥 Base64。            |
 | `RPM_GPG_FINGERPRINT`                    | OpenPGP 发布密钥的完整 fingerprint。                   |
 
-workflow 会从 Ed25519 私钥重新派生公钥并与 variable 逐字节比较；RPM 私钥导入后也会核对完整 fingerprint。PR CI 使用运行时生成的临时测试密钥，不读取 `release` environment。
+workflow 会从 Ed25519 私钥重新派生公钥并与 variable 逐字节比较；RPM 私钥导入后也会核对完整 fingerprint。PR CI 使用运行时生成的临时测试密钥，不读取 `release` environment。正式版继续复用已有 `latest.json`，在其中增加 `desktop.artifacts`；不发布 Desktop 专用清单或公钥 JSON。
 
 ## 首次配置
 
@@ -40,11 +40,11 @@ openssl pkey -in jq-viewer-desktop-ed25519.pem -pubout -outform DER \
 将私钥原文件和 Base64 文件移出仓库并离线加密备份。随后在 GitHub `release` environment 中配置：
 
 ```bash
-gh secret set --env release DESKTOP_ED25519_PRIVATE_KEY_BASE64 \
+gh secret set --env release RELEASE_ED25519_PRIVATE_KEY_BASE64 \
   < jq-viewer-desktop-ed25519.pem.base64
-gh variable set --env release DESKTOP_ED25519_KEY_ID \
-  --body jq-viewer-desktop-2026
-gh variable set --env release DESKTOP_ED25519_PUBLIC_KEY_SPKI_BASE64 \
+gh variable set --env release RELEASE_ED25519_KEY_ID \
+  --body jq-viewer-release-2026
+gh variable set --env release RELEASE_ED25519_PUBLIC_KEY_SPKI_BASE64 \
   --body "$(cat jq-viewer-desktop-ed25519-public-spki.base64)"
 ```
 
@@ -65,9 +65,8 @@ gh variable set --env release RPM_GPG_FINGERPRINT --body FULL_FINGERPRINT
 
 - Windows x64：EXE 安装版、ZIP 便携版；两者同时声明兼容 Windows x64 和 Windows on ARM x64 仿真。
 - Linux x64/arm64：DEB、RPM、TAR.GZ 便携版。
-- `desktop-latest.json`：平台、架构、兼容架构、包类型、双源 URL、大小和 SHA-256。
-- `desktop-latest.json.sig`：Ed25519 detached signature。
-- `desktop-update-key.json`：公钥信息和 fingerprint，供发布核查；客户端信任根仍必须由应用内固定公钥建立，不能信任网络下载的该文件。
-- `SHA256SUMS`：Desktop 包及清单相关文件的附加人工校验表。
+- `latest.json`：沿用 Android 正式版更新清单，并通过 `desktop.artifacts` 记录平台、架构、兼容架构、包类型、双源 URL、大小和 SHA-256。
+- `latest.json.sig`：对 `latest.json` 精确字节的 Ed25519 detached signature。公钥不会作为 Release 资产发布；客户端信任根必须由应用内固定公钥建立。
+- `SHA256SUMS`：Desktop 包、共享清单和签名的附加人工校验表；prerelease 沿用现有行为，不发布 `latest.json`，校验表只包含 Desktop 包。
 
 Windows 发布物不做 Authenticode。用户可能看到 `Unknown publisher`、SmartScreen 警告，或在受策略管理的设备上被阻止。workflow 不会声明 Windows 包已获得系统级发布者签名。

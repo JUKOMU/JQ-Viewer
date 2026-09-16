@@ -19,6 +19,7 @@
         <slf4j.version>2.0.17</slf4j.version>
         <junit.version>5.11.4</junit.version>
         <jmcomic.version>1.1.8</jmcomic.version>
+        <twelvemonkeys.version>3.14.0</twelvemonkeys.version>
         <pdfbox.version>3.0.5</pdfbox.version>
         <credential.secure.storage.version>1.0.0</credential.secure.storage.version>
         <flatlaf.version>3.7.2</flatlaf.version>
@@ -60,6 +61,17 @@
             <groupId>io.github.jukomu</groupId>
             <artifactId>jmcomic-core</artifactId>
             <version>${jmcomic.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.sejda.imageio</groupId>
+                    <artifactId>webp-imageio</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>com.twelvemonkeys.imageio</groupId>
+            <artifactId>imageio-webp</artifactId>
+            <version>${twelvemonkeys.version}</version>
         </dependency>
         <dependency>
             <groupId>org.apache.pdfbox</groupId>

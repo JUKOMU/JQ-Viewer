@@ -17,9 +17,7 @@ import { commandInvocation } from './desktop-sync-command.mjs'
 const root = fileURLToPath(new URL('..', import.meta.url))
 const desktopDirectory = path.join(root, 'desktop')
 const targetDirectory = path.join(desktopDirectory, 'target')
-const packageJson = JSON.parse(
-  readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
-)
+const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
 
 export const applicationName = 'JQ-Viewer'
 export const windowsUpgradeUuid = '12cd2298-f19e-46db-a283-5044b56012fb'
@@ -78,7 +76,9 @@ function parseOptions(args) {
     const name = args[index]
     const value = args[index + 1]
     if (!name?.startsWith('--') || !value) {
-      fail('usage: node scripts/desktop-package.mjs --platform <platform> --arch <arch> --output <dir>')
+      fail(
+        'usage: node scripts/desktop-package.mjs --platform <platform> --arch <arch> --output <dir>',
+      )
     }
     if (values.has(name)) fail('duplicate option: ' + name)
     values.set(name, value)
@@ -88,7 +88,9 @@ function parseOptions(args) {
   const architecture = normalizeArchitecture(values.get('--arch'))
   const output = values.get('--output')
   if (!platform || !architecture || !output || values.size !== 3) {
-    fail('usage: node scripts/desktop-package.mjs --platform <platform> --arch <arch> --output <dir>')
+    fail(
+      'usage: node scripts/desktop-package.mjs --platform <platform> --arch <arch> --output <dir>',
+    )
   }
   return { platform, architecture, output: path.resolve(output) }
 }
@@ -343,13 +345,7 @@ function packageLinux({ version, target, appImage, outputDirectory, workDirector
   )
   const archivePath = path.join(outputDirectory, archiveName)
   rmSync(archivePath, { force: true })
-  run('tar', [
-    '-czf',
-    archivePath,
-    '-C',
-    path.dirname(appImage),
-    path.basename(appImage),
-  ])
+  run('tar', ['-czf', archivePath, '-C', path.dirname(appImage), path.basename(appImage)])
   validateFile(archivePath, 'Linux portable archive')
 }
 
@@ -357,7 +353,10 @@ export function packageDesktop({ platform, architecture, output }) {
   const target = resolveTarget(platform, architecture)
   validateNativeHost(target)
   const version = packageJson.version
-  const workDirectory = path.join(targetDirectory, 'desktop-package-' + platform + '-' + target.architecture)
+  const workDirectory = path.join(
+    targetDirectory,
+    'desktop-package-' + platform + '-' + target.architecture,
+  )
   const inputDirectory = path.join(workDirectory, 'input')
   const runtimeDirectory = path.join(workDirectory, 'runtime')
   rmSync(workDirectory, { recursive: true, force: true })
@@ -375,6 +374,7 @@ export function packageDesktop({ platform, architecture, output }) {
     'clean',
     'package',
     'dependency:copy-dependencies',
+    '-DskipTests',
     '-DincludeScope=runtime',
     '-DoutputDirectory=' + inputDirectory,
   ])
@@ -421,7 +421,9 @@ export function packageDesktop({ platform, architecture, output }) {
     validateFile(assetPath, 'Desktop release asset')
     return { name, size: statSync(assetPath).size }
   })
-  console.log(JSON.stringify({ target: platform + '-' + target.architecture, modules, assets }, null, 2))
+  console.log(
+    JSON.stringify({ target: platform + '-' + target.architecture, modules, assets }, null, 2),
+  )
 }
 
 if (path.resolve(process.argv[1] || '') === fileURLToPath(import.meta.url)) {

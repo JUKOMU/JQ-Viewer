@@ -1,20 +1,18 @@
 // @vitest-environment node
 
-import { generateKeyPairSync } from 'node:crypto'
+import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import {
-  buildDesktopManifest,
+  buildDesktopRelease,
   classifyDesktopAssets,
   desktopArtifactDefinitions,
-  encodeManifest,
   expectedDesktopAssetName,
-  signDesktopManifest,
-  validateDesktopManifestContract,
-  verifyDesktopManifestSignature,
+  validateDesktopReleaseContract,
+  verifyDesktopArtifacts,
 } from '../../scripts/desktop-release-assets.mjs'
 
 const temporaryDirectories = []
@@ -45,19 +43,18 @@ function manifestArtifacts(classified) {
 describe('Desktop release assets', () => {
   it('requires the complete package matrix and records Windows on ARM compatibility', () => {
     const classified = classifyDesktopAssets('1.4.6', createArtifacts())
-    const manifest = buildDesktopManifest({
+    const desktop = buildDesktopRelease({
       releaseTag: 'v1.4.6',
-      publishedAt: '2026-09-16T00:00:00Z',
       artifacts: manifestArtifacts(classified),
     })
 
-    expect(manifest.artifacts).toHaveLength(8)
+    expect(desktop.artifacts).toHaveLength(8)
     expect(
-      manifest.artifacts
+      desktop.artifacts
         .filter((artifact) => artifact.platform === 'windows')
         .every((artifact) => artifact.compatibleArchitectures.join(',') === 'x64,arm64'),
     ).toBe(true)
-    expect(manifest.artifacts.filter((artifact) => artifact.platform === 'linux')).toHaveLength(6)
+    expect(desktop.artifacts.filter((artifact) => artifact.platform === 'linux')).toHaveLength(6)
   })
 
   it('rejects missing or unexpected release assets', () => {
@@ -73,65 +70,41 @@ describe('Desktop release assets', () => {
 
   it('rejects a signed-manifest shape that does not match the release contract', () => {
     const classified = classifyDesktopAssets('1.4.6', createArtifacts())
-    const manifest = buildDesktopManifest({
+    const desktop = buildDesktopRelease({
       releaseTag: 'v1.4.6',
-      publishedAt: '2026-09-16T00:00:00Z',
       artifacts: manifestArtifacts(classified),
     })
 
-    manifest.artifacts[0].compatibleArchitectures = ['x64']
-    expect(() => validateDesktopManifestContract({ manifest })).toThrow(
+    desktop.artifacts[0].compatibleArchitectures = ['x64']
+    expect(() => validateDesktopReleaseContract({ releaseTag: 'v1.4.6', desktop })).toThrow(
       'artifact contract is invalid',
     )
   })
 
   it('rejects release URLs that do not point to the configured repositories', () => {
     const classified = classifyDesktopAssets('1.4.6', createArtifacts())
-    const manifest = buildDesktopManifest({
+    const desktop = buildDesktopRelease({
       releaseTag: 'v1.4.6',
-      publishedAt: '2026-09-16T00:00:00Z',
       artifacts: manifestArtifacts(classified),
     })
 
-    manifest.artifacts[0].sources.github = 'https://example.invalid/package.exe'
-    expect(() => validateDesktopManifestContract({ manifest })).toThrow(
+    desktop.artifacts[0].sources.github = 'https://example.invalid/package.exe'
+    expect(() => validateDesktopReleaseContract({ releaseTag: 'v1.4.6', desktop })).toThrow(
       'artifact contract is invalid',
     )
   })
 
-  it('signs exact manifest bytes and rejects tampering', () => {
-    const classified = classifyDesktopAssets('1.4.6', createArtifacts())
-    const manifestBytes = encodeManifest(
-      buildDesktopManifest({
-        releaseTag: 'v1.4.6',
-        publishedAt: '2026-09-16T00:00:00Z',
-        artifacts: manifestArtifacts(classified),
-      }),
-    )
-    const { privateKey } = generateKeyPairSync('ed25519')
-    const signed = signDesktopManifest({
-      manifestBytes,
-      privateKeyPem: privateKey.export({ type: 'pkcs8', format: 'pem' }),
-      keyId: 'jq-viewer-test-2026',
+  it('verifies package bytes against the shared release section', () => {
+    const assetPaths = createArtifacts()
+    const classified = classifyDesktopAssets('1.4.6', assetPaths)
+    const desktop = buildDesktopRelease({
+      releaseTag: 'v1.4.6',
+      artifacts: classified.map((artifact) => ({
+        ...artifact,
+        sha256: createHash('sha256').update(fs.readFileSync(artifact.path)).digest('hex'),
+      })),
     })
 
-    expect(() => verifyDesktopManifestSignature({ manifestBytes, ...signed })).not.toThrow()
-    expect(() =>
-      verifyDesktopManifestSignature({
-        manifestBytes: Buffer.concat([manifestBytes, Buffer.from(' ')]),
-        ...signed,
-      }),
-    ).toThrow('signature verification failed')
-  })
-
-  it('rejects a non-Ed25519 signing key', () => {
-    const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 })
-    expect(() =>
-      signDesktopManifest({
-        manifestBytes: Buffer.from('{}\n'),
-        privateKeyPem: privateKey.export({ type: 'pkcs8', format: 'pem' }),
-        keyId: 'test',
-      }),
-    ).toThrow('must be Ed25519')
+    expect(() => verifyDesktopArtifacts(desktop, assetPaths)).not.toThrow()
   })
 })

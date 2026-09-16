@@ -40,12 +40,9 @@ import org.apache.pdfbox.pdmodel.PDPage;
 import org.junit.jupiter.api.Test;
 
 import javax.imageio.ImageIO;
-import java.awt.Color;
-import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.lang.reflect.Method;
@@ -78,6 +75,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BackendHttpContractTest {
     private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final String WEBP_FIXTURE_BASE64 =
+            "UklGRioAAABXRUJQVlA4TB0AAAAvV8JKAAcQ0f/+BwQkSf//hxH9z/jPf/7zn/+fBwA=";
     private static final String[] HISTORY_GROUPS = {
             "today", "yesterday", "thisWeek", "thisMonth",
             "lastThreeMonths", "lastSixMonths", "thisYear", "earlier"
@@ -744,15 +743,8 @@ class BackendHttpContractTest {
         }
     }
 
-    private static byte[] webpBytes() throws Exception {
-        BufferedImage image = new BufferedImage(600, 300, BufferedImage.TYPE_INT_RGB);
-        Graphics2D graphics = image.createGraphics();
-        graphics.setColor(Color.BLUE);
-        graphics.fillRect(0, 0, image.getWidth(), image.getHeight());
-        graphics.dispose();
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-        assertTrue(ImageIO.write(image, "webp", output), "WebP编码器不可用");
-        return output.toByteArray();
+    private static byte[] webpBytes() {
+        return Base64.getDecoder().decode(WEBP_FIXTURE_BASE64);
     }
 
     private record NamedEvent(String name, ObjectNode data) {

@@ -143,8 +143,12 @@ export function resolveUpdateTrustRoot(env = process.env) {
   if (!keyIdPattern.test(keyId)) fail('RELEASE_ED25519_KEY_ID is missing or invalid')
   if (!publicKeySpkiBase64) fail('RELEASE_ED25519_PUBLIC_KEY_SPKI_BASE64 is missing')
   try {
+    const publicKeyBytes = Buffer.from(publicKeySpkiBase64, 'base64')
+    if (publicKeyBytes.toString('base64') !== publicKeySpkiBase64) {
+      fail('RELEASE_ED25519_PUBLIC_KEY_SPKI_BASE64 is not canonical Base64')
+    }
     const publicKey = createPublicKey({
-      key: Buffer.from(publicKeySpkiBase64, 'base64'),
+      key: publicKeyBytes,
       format: 'der',
       type: 'spki',
     })

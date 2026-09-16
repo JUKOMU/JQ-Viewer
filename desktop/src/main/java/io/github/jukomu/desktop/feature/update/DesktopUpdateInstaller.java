@@ -4,20 +4,23 @@ import io.github.jukomu.desktop.data.Paths;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.PosixFilePermission;
 import java.time.Instant;
 import java.util.EnumSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
-/** 在主进程退出后安装原生包，或原子替换便携目录。 */
+/** 在主进程退出后安装原生包，或替换便携目录。 */
 public final class DesktopUpdateInstaller {
     private static final String APPLICATION_DIRECTORY_NAME = "JQ-Viewer";
+    private static final String STARTUP_READY_ENV = "JQ_VIEWER_UPDATE_READY_FILE";
 
     private final DesktopUpdateConfiguration configuration;
     private final Path updateDirectory;
@@ -34,9 +37,11 @@ public final class DesktopUpdateInstaller {
         try {
             Files.createDirectories(updateDirectory);
             Path logPath = updateDirectory.resolve("install-" + Instant.now().toEpochMilli() + ".log");
+            Path readyPath = updateDirectory.resolve("startup-" + UUID.randomUUID() + ".ready");
+            Files.deleteIfExists(readyPath);
             ProcessBuilder builder = configuration.platform().equals("windows")
-                    ? windowsBuilder(packagePath, logPath)
-                    : linuxBuilder(packagePath, logPath);
+                    ? windowsBuilder(packagePath, logPath, readyPath)
+                    : linuxBuilder(packagePath, logPath, readyPath);
             builder.redirectErrorStream(true);
             builder.redirectOutput(logPath.toFile());
             builder.start();
@@ -45,7 +50,11 @@ public final class DesktopUpdateInstaller {
         }
     }
 
-    private ProcessBuilder windowsBuilder(Path packagePath, Path logPath) throws IOException {
+    private ProcessBuilder windowsBuilder(
+            Path packagePath,
+            Path logPath,
+            Path readyPath
+    ) throws IOException {
         Path script = updateDirectory.resolve("apply-update-" + UUID.randomUUID() + ".ps1");
         Files.writeString(script, windowsScript(), StandardCharsets.UTF_8);
         SwapPaths swap = swapPaths();
@@ -65,11 +74,16 @@ public final class DesktopUpdateInstaller {
                 configuration.launcherPath().toString(),
                 swap.stage().toString(),
                 swap.backup().toString(),
-                logPath.toString()
+                logPath.toString(),
+                readyPath.toString()
         ));
     }
 
-    private ProcessBuilder linuxBuilder(Path packagePath, Path logPath) throws IOException {
+    private ProcessBuilder linuxBuilder(
+            Path packagePath,
+            Path logPath,
+            Path readyPath
+    ) throws IOException {
         requireCommand("/bin/sh");
         if (configuration.packageType().equals("installer")) {
             requireCommand("pkexec");
@@ -101,8 +115,44 @@ public final class DesktopUpdateInstaller {
                 configuration.launcherPath().toString(),
                 swap.stage().toString(),
                 swap.backup().toString(),
-                logPath.toString()
+                logPath.toString(),
+                readyPath.toString()
         ));
+    }
+
+    /** 更新辅助程序通过此标记确认新版本已完成宿主和后端初始化。 */
+    public static void confirmStarted(Paths paths) {
+        String configuredPath = System.getenv(STARTUP_READY_ENV);
+        if (configuredPath == null || configuredPath.isBlank()) return;
+        confirmStarted(paths, configuredPath);
+    }
+
+    static void confirmStarted(Paths paths, String configuredPath) {
+        Path updateDirectory = Objects.requireNonNull(paths, "paths")
+                .stateDirectory().resolve("update").toAbsolutePath().normalize();
+        Path readyPath = Path.of(configuredPath).toAbsolutePath().normalize();
+        String fileName = readyPath.getFileName() == null
+                ? ""
+                : readyPath.getFileName().toString();
+        if (!updateDirectory.equals(readyPath.getParent())
+                || !fileName.startsWith("startup-")
+                || !fileName.endsWith(".ready")) {
+            throw new IllegalStateException("更新启动确认文件路径无效");
+        }
+        try {
+            Files.createDirectories(updateDirectory);
+            Path temporary = updateDirectory.resolve(fileName + ".tmp-" + UUID.randomUUID());
+            Files.writeString(temporary, "ready\n", StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
+            try {
+                Files.move(temporary, readyPath, StandardCopyOption.ATOMIC_MOVE,
+                        StandardCopyOption.REPLACE_EXISTING);
+            } catch (AtomicMoveNotSupportedException exception) {
+                Files.move(temporary, readyPath, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (IOException exception) {
+            throw new IllegalStateException("无法确认更新后的 Desktop 已完成启动", exception);
+        }
     }
 
     private void requireInstallEnvironment(Path packagePath) {
@@ -117,7 +167,7 @@ public final class DesktopUpdateInstaller {
         if (configuration.packageType().equals("portable")) {
             Path parent = applicationRoot.getParent();
             if (parent == null || !Files.isWritable(parent)) {
-                throw new UpdateException("便携版所在目录不可写，无法原子替换");
+                throw new UpdateException("便携版所在目录不可写，无法替换");
             }
         }
     }
@@ -161,14 +211,32 @@ public final class DesktopUpdateInstaller {
                   [string]$LauncherPath,
                   [string]$StagePath,
                   [string]$BackupPath,
-                  [string]$LogPath
+                  [string]$LogPath,
+                  [string]$ReadyPath
                 )
                 $ErrorActionPreference = 'Stop'
-                function Start-JqViewer {
+                function Start-JqViewer([bool]$UseHandshake) {
                   if (Test-Path -LiteralPath $LauncherPath) {
-                    return Start-Process -FilePath $LauncherPath -PassThru
+                    if ($UseHandshake) {
+                      Remove-Item -LiteralPath $ReadyPath -Force -ErrorAction SilentlyContinue
+                      $env:JQ_VIEWER_UPDATE_READY_FILE = $ReadyPath
+                    }
+                    try {
+                      return Start-Process -FilePath $LauncherPath -PassThru
+                    } finally {
+                      if ($UseHandshake) {
+                        Remove-Item Env:JQ_VIEWER_UPDATE_READY_FILE -ErrorAction SilentlyContinue
+                      }
+                    }
                   }
                   return $null
+                }
+                function Wait-JqViewerReady {
+                  for ($attempt = 0; $attempt -lt 120; $attempt++) {
+                    if (Test-Path -LiteralPath $ReadyPath -PathType Leaf) { return $true }
+                    Start-Sleep -Milliseconds 500
+                  }
+                  return $false
                 }
                 try {
                   Wait-Process -Id $ParentPid -ErrorAction SilentlyContinue
@@ -177,7 +245,7 @@ public final class DesktopUpdateInstaller {
                     if ($installer.ExitCode -ne 0) {
                       throw "Installer exited with code $($installer.ExitCode)"
                     }
-                    [void](Start-JqViewer)
+                    [void](Start-JqViewer $false)
                   } else {
                     Remove-Item -LiteralPath $StagePath -Recurse -Force -ErrorAction SilentlyContinue
                     Remove-Item -LiteralPath $BackupPath -Recurse -Force -ErrorAction SilentlyContinue
@@ -188,14 +256,21 @@ public final class DesktopUpdateInstaller {
                       throw 'Portable archive root is invalid'
                     }
                     Move-Item -LiteralPath $ApplicationRoot -Destination $BackupPath
+                    $launched = $null
                     try {
                       Move-Item -LiteralPath $incoming -Destination $ApplicationRoot
-                      $launched = Start-JqViewer
+                      $launched = Start-JqViewer $true
                       if ($null -eq $launched) { throw 'Updated launcher is missing' }
-                      Start-Sleep -Seconds 1
-                      if ($launched.HasExited) { throw 'Updated application exited during startup' }
+                      if (-not (Wait-JqViewerReady)) {
+                        throw 'Updated application did not confirm startup'
+                      }
                       Remove-Item -LiteralPath $BackupPath -Recurse -Force
+                      Remove-Item -LiteralPath $ReadyPath -Force -ErrorAction SilentlyContinue
                     } catch {
+                      if ($null -ne $launched -and -not $launched.HasExited) {
+                        Stop-Process -Id $launched.Id -Force -ErrorAction SilentlyContinue
+                        Wait-Process -Id $launched.Id -ErrorAction SilentlyContinue
+                      }
                       Remove-Item -LiteralPath $ApplicationRoot -Recurse -Force -ErrorAction SilentlyContinue
                       if (Test-Path -LiteralPath $BackupPath) {
                         Move-Item -LiteralPath $BackupPath -Destination $ApplicationRoot
@@ -208,8 +283,9 @@ public final class DesktopUpdateInstaller {
                   Remove-Item -LiteralPath $PackagePath -Force -ErrorAction SilentlyContinue
                 } catch {
                   Add-Content -LiteralPath $LogPath -Value $_.Exception.ToString()
-                  [void](Start-JqViewer)
+                  [void](Start-JqViewer $false)
                 } finally {
+                  Remove-Item -LiteralPath $ReadyPath -Force -ErrorAction SilentlyContinue
                   Start-Sleep -Milliseconds 200
                   Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue
                 }
@@ -229,16 +305,31 @@ public final class DesktopUpdateInstaller {
                 stage_path="$7"
                 backup_path="$8"
                 log_path="$9"
+                ready_path="${10}"
                 exec >>"$log_path" 2>&1
 
                 start_app() {
+                  use_handshake="$1"
                   if [ -x "$launcher_path" ]; then
-                    nohup "$launcher_path" >/dev/null 2>&1 &
-                    launched_pid=$!
-                    sleep 1
-                    kill -0 "$launched_pid" 2>/dev/null
-                    return $?
+                    if [ "$use_handshake" -eq 1 ]; then
+                      rm -f -- "$ready_path"
+                      env JQ_VIEWER_UPDATE_READY_FILE="$ready_path" nohup "$launcher_path" >/dev/null 2>&1 &
+                      launched_pid=$!
+                    else
+                      nohup "$launcher_path" >/dev/null 2>&1 &
+                    fi
+                    return 0
                   fi
+                  return 1
+                }
+
+                wait_app_ready() {
+                  attempt=0
+                  while [ "$attempt" -lt 120 ]; do
+                    [ -f "$ready_path" ] && return 0
+                    attempt=$((attempt + 1))
+                    sleep 0.5
+                  done
                   return 1
                 }
 
@@ -252,46 +343,55 @@ public final class DesktopUpdateInstaller {
                     pkexec rpm -U --replacepkgs "$package_path" && status=0
                   fi
                   if [ "$status" -eq 0 ]; then
-                    start_app || true
+                    start_app 0 || true
                     rm -f -- "$package_path"
                   else
                     echo "Installer failed or was cancelled"
-                    start_app || true
+                    start_app 0 || true
                   fi
                 else
                   rm -rf -- "$stage_path" "$backup_path"
                   mkdir -p -- "$stage_path" || exit 1
                   if ! tar -xzf "$package_path" -C "$stage_path"; then
                     echo "Portable archive extraction failed"
-                    start_app || true
+                    start_app 0 || true
                     rm -rf -- "$stage_path"
                     exit 1
                   fi
                   incoming="$stage_path/JQ-Viewer"
                   if [ ! -d "$incoming" ]; then
                     echo "Portable archive root is invalid"
-                    start_app || true
+                    start_app 0 || true
                     rm -rf -- "$stage_path"
                     exit 1
                   fi
                   if ! mv -- "$application_root" "$backup_path"; then
                     echo "Unable to create portable backup"
-                    start_app || true
+                    start_app 0 || true
                     rm -rf -- "$stage_path"
                     exit 1
                   fi
-                  if mv -- "$incoming" "$application_root" && start_app; then
+                  launched_pid=""
+                  if mv -- "$incoming" "$application_root" \
+                    && start_app 1 \
+                    && wait_app_ready; then
                     rm -rf -- "$backup_path" "$stage_path"
+                    rm -f -- "$ready_path"
                     rm -f -- "$package_path"
                   else
                     echo "Portable replacement failed; rolling back"
+                    if [ -n "$launched_pid" ]; then
+                      kill "$launched_pid" 2>/dev/null || true
+                      wait "$launched_pid" 2>/dev/null || true
+                    fi
                     rm -rf -- "$application_root"
                     mv -- "$backup_path" "$application_root" || exit 1
-                    start_app || true
+                    start_app 0 || true
                     rm -rf -- "$stage_path"
                   fi
                 fi
 
+                rm -f -- "$ready_path"
                 rm -f -- "$0"
                 """;
     }

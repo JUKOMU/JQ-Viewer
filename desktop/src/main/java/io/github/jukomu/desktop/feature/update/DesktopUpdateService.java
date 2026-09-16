@@ -29,10 +29,13 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 /** Desktop 原生更新：双源验签检查、竞速下载、完整性校验与安装交接。 */
 public final class DesktopUpdateService implements AutoCloseable {
@@ -45,15 +48,19 @@ public final class DesktopUpdateService implements AutoCloseable {
 
     private static final int MANIFEST_MAX_BYTES = 1024 * 1024;
     private static final int BUFFER_SIZE = 64 * 1024;
+    private static final Duration MANIFEST_TIMEOUT = Duration.ofSeconds(20);
+    private static final Duration DOWNLOAD_TIMEOUT = Duration.ofMinutes(30);
     private static final long PROGRESS_INTERVAL_NANOS = TimeUnit.MILLISECONDS.toNanos(250);
 
     private final DesktopUpdateConfiguration configuration;
     private final ObjectMapper mapper;
     private final EventHub events;
     private final Path updateDirectory;
-    private final DesktopUpdateInstaller installer;
+    private final Consumer<Path> installationLauncher;
     private final HttpClient http;
     private final ExecutorService executor;
+    private final ScheduledExecutorService timeoutExecutor;
+    private final Duration downloadTimeout;
     private final Object stateLock = new Object();
     private final AtomicLong revision = new AtomicLong();
 
@@ -61,6 +68,8 @@ public final class DesktopUpdateService implements AutoCloseable {
     private volatile VerifiedRelease checkedRelease;
     private volatile DownloadSession activeSession;
     private volatile Path readyPackage;
+    private boolean checkInProgress;
+    private Path installingPackage;
     private volatile Runnable exitRequest;
     private volatile boolean closed;
 
@@ -79,7 +88,14 @@ public final class DesktopUpdateService implements AutoCloseable {
                     Thread thread = new Thread(runnable, "jq-viewer-update");
                     thread.setDaemon(false);
                     return thread;
-                }));
+                }),
+                Executors.newSingleThreadScheduledExecutor(runnable -> {
+                    Thread thread = new Thread(runnable, "jq-viewer-update-timeout");
+                    thread.setDaemon(true);
+                    return thread;
+                }),
+                DOWNLOAD_TIMEOUT,
+                new DesktopUpdateInstaller(configuration, paths)::launch);
     }
 
     DesktopUpdateService(
@@ -90,14 +106,41 @@ public final class DesktopUpdateService implements AutoCloseable {
             HttpClient http,
             ExecutorService executor
     ) {
+        this(configuration, mapper, events, paths, http, executor,
+                Executors.newSingleThreadScheduledExecutor(runnable -> {
+                    Thread thread = new Thread(runnable, "jq-viewer-update-timeout");
+                    thread.setDaemon(true);
+                    return thread;
+                }),
+                DOWNLOAD_TIMEOUT,
+                new DesktopUpdateInstaller(configuration, paths)::launch);
+    }
+
+    DesktopUpdateService(
+            DesktopUpdateConfiguration configuration,
+            ObjectMapper mapper,
+            EventHub events,
+            Paths paths,
+            HttpClient http,
+            ExecutorService executor,
+            ScheduledExecutorService timeoutExecutor,
+            Duration downloadTimeout,
+            Consumer<Path> installationLauncher
+    ) {
         this.configuration = Objects.requireNonNull(configuration, "configuration");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.events = Objects.requireNonNull(events, "events");
         this.updateDirectory = Objects.requireNonNull(paths, "paths")
                 .stateDirectory().resolve("update");
-        this.installer = new DesktopUpdateInstaller(configuration, paths);
+        this.installationLauncher = Objects.requireNonNull(
+                installationLauncher, "installationLauncher");
         this.http = Objects.requireNonNull(http, "http");
         this.executor = Objects.requireNonNull(executor, "executor");
+        this.timeoutExecutor = Objects.requireNonNull(timeoutExecutor, "timeoutExecutor");
+        this.downloadTimeout = Objects.requireNonNull(downloadTimeout, "downloadTimeout");
+        if (downloadTimeout.isZero() || downloadTimeout.isNegative()) {
+            throw new IllegalArgumentException("downloadTimeout必须为正数");
+        }
     }
 
     public void attachExitRequest(Runnable request) {
@@ -112,23 +155,34 @@ public final class DesktopUpdateService implements AutoCloseable {
     public CheckResult check() {
         ensureOpen();
         configuration.requireConfigured();
-        if (activeSession != null) throw new UpdateException("更新下载正在进行中");
+        synchronized (stateLock) {
+            if (activeSession != null) throw new UpdateException("更新下载正在进行中");
+            if (checkInProgress) throw new UpdateException("更新检查正在进行中");
+            if (installingPackage != null) throw new UpdateException("更新安装正在进行中");
+            checkInProgress = true;
+        }
         try {
             Future<ManifestAttempt> github = executor.submit(this::fetchGithubManifest);
             Future<ManifestAttempt> gitee = executor.submit(this::fetchGiteeManifest);
             ManifestAttempt githubAttempt = awaitAttempt(github, "GitHub");
             ManifestAttempt giteeAttempt = awaitAttempt(gitee, "Gitee");
             VerifiedRelease release = resolveManifests(githubAttempt, giteeAttempt);
-            checkedRelease = release;
-            readyPackage = null;
+            synchronized (stateLock) {
+                checkedRelease = release;
+                readyPackage = null;
+                checkInProgress = false;
+            }
             boolean available = compareVersions(
                     release.response().versionName(), configuration.currentVersion()) > 0;
             publish(available ? "update_available" : "up_to_date", "", 0, 0,
                     release.artifact().sizeBytes(), 0, "");
             return new CheckResult(available, release.response());
-        } catch (UpdateException exception) {
-            checkedRelease = null;
-            readyPackage = null;
+        } catch (RuntimeException exception) {
+            synchronized (stateLock) {
+                checkedRelease = null;
+                readyPackage = null;
+                checkInProgress = false;
+            }
             publish("failed", "", 0, 0, 0, 0, exception.getMessage());
             throw exception;
         }
@@ -138,6 +192,7 @@ public final class DesktopUpdateService implements AutoCloseable {
         ensureOpen();
         configuration.requireConfigured();
         synchronized (stateLock) {
+            if (checkInProgress || installingPackage != null) return new StartResult(false);
             if (activeSession != null) return new StartResult(false);
             VerifiedRelease release = checkedRelease;
             if (release == null || compareVersions(
@@ -166,7 +221,10 @@ public final class DesktopUpdateService implements AutoCloseable {
         synchronized (stateLock) {
             session = activeSession;
             if (session == null) return new CancelResult(false);
-            synchronized (session) {
+        }
+        synchronized (session) {
+            synchronized (stateLock) {
+                if (activeSession != session) return new CancelResult(false);
                 if (session.winner.get() != null) return new CancelResult(false);
                 session.cancelled.set(true);
                 activeSession = null;
@@ -182,15 +240,33 @@ public final class DesktopUpdateService implements AutoCloseable {
 
     public InstallResult install() {
         ensureOpen();
-        Path packagePath = readyPackage;
-        if (packagePath == null || !Files.isRegularFile(packagePath)) {
-            throw new UpdateException("没有可安装的 Desktop 更新包");
+        Path packagePath;
+        Runnable request;
+        VerifiedRelease release;
+        synchronized (stateLock) {
+            if (installingPackage != null) throw new UpdateException("更新安装正在进行中");
+            packagePath = readyPackage;
+            if (packagePath == null || !Files.isRegularFile(packagePath)) {
+                throw new UpdateException("没有可安装的 Desktop 更新包");
+            }
+            request = exitRequest;
+            if (request == null) throw new UpdateException("Desktop 宿主尚未连接更新退出流程");
+            release = checkedRelease;
+            if (release == null) throw new UpdateException("更新清单状态已失效，请重新检查更新");
+            readyPackage = null;
+            installingPackage = packagePath;
         }
-        Runnable request = exitRequest;
-        if (request == null) throw new UpdateException("Desktop 宿主尚未连接更新退出流程");
-        VerifiedRelease release = checkedRelease;
-        if (release == null) throw new UpdateException("更新清单状态已失效，请重新检查更新");
-        installer.launch(packagePath);
+        try {
+            installationLauncher.accept(packagePath);
+        } catch (RuntimeException exception) {
+            synchronized (stateLock) {
+                if (Objects.equals(installingPackage, packagePath)) {
+                    installingPackage = null;
+                    if (Files.isRegularFile(packagePath)) readyPackage = packagePath;
+                }
+            }
+            throw exception;
+        }
         publish("installing", "", Files.exists(packagePath) ? sizeQuietly(packagePath) : 0,
                 0, release.artifact().sizeBytes(), 0, "");
         request.run();
@@ -272,8 +348,9 @@ public final class DesktopUpdateService implements AutoCloseable {
     }
 
     private byte[] fetchLimited(URI uri, int maximumBytes) throws IOException, InterruptedException {
+        long deadline = deadlineAfter(MANIFEST_TIMEOUT);
         HttpRequest request = HttpRequest.newBuilder(uri)
-                .timeout(Duration.ofSeconds(20))
+                .timeout(MANIFEST_TIMEOUT)
                 .header("Accept", "application/json")
                 .GET()
                 .build();
@@ -283,15 +360,24 @@ public final class DesktopUpdateService implements AutoCloseable {
             throw new IOException("HTTP " + response.statusCode());
         }
         try (InputStream input = response.body()) {
+            AtomicBoolean timedOut = new AtomicBoolean();
+            ScheduledFuture<?> timeout = closeAtDeadline(input, deadline, timedOut);
             byte[] buffer = new byte[BUFFER_SIZE];
             java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream();
-            for (int read; (read = input.read(buffer)) >= 0; ) {
-                if (read == 0) continue;
-                if (output.size() + read > maximumBytes) {
-                    throw new IOException("响应超过允许大小");
+            try {
+                for (int read; (read = input.read(buffer)) >= 0; ) {
+                    if (read == 0) continue;
+                    if (output.size() + read > maximumBytes) {
+                        throw new IOException("响应超过允许大小");
+                    }
+                    output.write(buffer, 0, read);
                 }
-                output.write(buffer, 0, read);
+            } catch (IOException exception) {
+                throw bodyReadException(timedOut, exception);
+            } finally {
+                timeout.cancel(false);
             }
+            if (timedOut.get()) throw new IOException("响应正文读取超时");
             return output.toByteArray();
         }
     }
@@ -303,8 +389,9 @@ public final class DesktopUpdateService implements AutoCloseable {
                 ? artifact.sources().github()
                 : artifact.sources().gitee());
         try {
+            long deadline = deadlineAfter(downloadTimeout);
             HttpRequest request = HttpRequest.newBuilder(uri)
-                    .timeout(Duration.ofMinutes(30))
+                    .timeout(downloadTimeout)
                     .GET()
                     .build();
             HttpResponse<InputStream> response = http.send(
@@ -324,20 +411,29 @@ public final class DesktopUpdateService implements AutoCloseable {
             try (InputStream input = response.body();
                  var output = Files.newOutputStream(target, StandardOpenOption.CREATE,
                          StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE)) {
+                AtomicBoolean timedOut = new AtomicBoolean();
+                ScheduledFuture<?> timeout = closeAtDeadline(input, deadline, timedOut);
                 byte[] buffer = new byte[BUFFER_SIZE];
-                for (int read; (read = input.read(buffer)) >= 0; ) {
-                    if (read == 0) continue;
-                    if (session.cancelled.get() || session.winner.get() != null) {
-                        throw new InterruptedException("download cancelled");
+                try {
+                    for (int read; (read = input.read(buffer)) >= 0; ) {
+                        if (read == 0) continue;
+                        if (session.cancelled.get() || session.winner.get() != null) {
+                            throw new InterruptedException("download cancelled");
+                        }
+                        long total = counter.addAndGet(read);
+                        if (total > artifact.sizeBytes()) {
+                            throw new IOException("下载文件超过发布清单大小");
+                        }
+                        output.write(buffer, 0, read);
+                        digest.update(buffer, 0, read);
+                        publishProgress(session);
                     }
-                    long total = counter.addAndGet(read);
-                    if (total > artifact.sizeBytes()) {
-                        throw new IOException("下载文件超过发布清单大小");
-                    }
-                    output.write(buffer, 0, read);
-                    digest.update(buffer, 0, read);
-                    publishProgress(session);
+                } catch (IOException exception) {
+                    throw bodyReadException(timedOut, exception);
+                } finally {
+                    timeout.cancel(false);
                 }
+                if (timedOut.get()) throw new IOException("响应正文读取超时");
             }
             publish("verifying", label(source), session.githubBytes.get(),
                     session.giteeBytes.get(), artifact.sizeBytes(), 0, "");
@@ -354,8 +450,14 @@ public final class DesktopUpdateService implements AutoCloseable {
                 if (session.winner.get() == null) {
                     Path completed = updateDirectory.resolve(artifact.name());
                     moveReplacing(target, completed);
-                    readyPackage = completed;
-                    session.winner.set(source);
+                    synchronized (stateLock) {
+                        if (activeSession != session || session.cancelled.get()) {
+                            deleteQuietly(completed);
+                            throw new InterruptedException("download cancelled");
+                        }
+                        readyPackage = completed;
+                        session.winner.set(source);
+                    }
                     publish("ready_to_install", label(source),
                             session.githubBytes.get(), session.giteeBytes.get(),
                             artifact.sizeBytes(), 0, "");
@@ -444,6 +546,36 @@ public final class DesktopUpdateService implements AutoCloseable {
         }
     }
 
+    private long deadlineAfter(Duration timeout) {
+        long timeoutNanos = timeout.toNanos();
+        long now = System.nanoTime();
+        return now > Long.MAX_VALUE - timeoutNanos ? Long.MAX_VALUE : now + timeoutNanos;
+    }
+
+    private ScheduledFuture<?> closeAtDeadline(
+            InputStream input,
+            long deadline,
+            AtomicBoolean timedOut
+    ) {
+        long delay = Math.max(0, deadline - System.nanoTime());
+        return timeoutExecutor.schedule(() -> {
+            timedOut.set(true);
+            try {
+                input.close();
+            } catch (IOException ignored) {
+            }
+        }, delay, TimeUnit.NANOSECONDS);
+    }
+
+    private static IOException bodyReadException(
+            AtomicBoolean timedOut,
+            IOException exception
+    ) {
+        return timedOut.get()
+                ? new IOException("响应正文读取超时")
+                : exception;
+    }
+
     static int compareVersions(String left, String right) {
         String[] leftParts = left.split("\\.");
         String[] rightParts = right.split("\\.");
@@ -502,6 +634,7 @@ public final class DesktopUpdateService implements AutoCloseable {
         closed = true;
         cancel();
         executor.shutdownNow();
+        timeoutExecutor.shutdownNow();
     }
 
     public record CheckResult(boolean updateAvailable,

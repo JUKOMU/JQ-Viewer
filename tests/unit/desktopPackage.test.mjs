@@ -57,6 +57,12 @@ describe('Desktop package targets', () => {
         RELEASE_ED25519_PUBLIC_KEY_SPKI_BASE64: publicKeySpkiBase64,
       }),
     ).toEqual({ keyId: 'jq-viewer-release-1', publicKeySpkiBase64 })
+    expect(() =>
+      resolveUpdateTrustRoot({
+        RELEASE_ED25519_KEY_ID: 'jq-viewer-release-1',
+        RELEASE_ED25519_PUBLIC_KEY_SPKI_BASE64: publicKeySpkiBase64 + '!',
+      }),
+    ).toThrow('not canonical Base64')
     expect(() => resolveUpdateTrustRoot({})).toThrow('RELEASE_ED25519_KEY_ID')
   })
 

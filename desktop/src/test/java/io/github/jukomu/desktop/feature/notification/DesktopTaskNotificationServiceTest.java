@@ -114,12 +114,14 @@ class DesktopTaskNotificationServiceTest {
     }
 
     @Test
-    void retainsOnePendingRouteUntilFrontendConsumesIt() {
+    void retainsPendingRoutesInActivationOrderUntilFrontendConsumesThem() {
         List<String> opened = new ArrayList<>();
         launchRoutes.activate("/download");
+        launchRoutes.activate("/about");
         launchRoutes.attachRouteOpener(opened::add);
 
         assertEquals(Map.of("route", "/download"), launchRoutes.consume());
+        assertEquals(Map.of("route", "/about"), launchRoutes.consume());
         assertTrue(launchRoutes.consume().isEmpty());
         launchRoutes.activate("//invalid.example");
         assertTrue(launchRoutes.consume().isEmpty());

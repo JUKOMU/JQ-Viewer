@@ -69,15 +69,18 @@ public final class EventHub implements AutoCloseable {
         if (listener == null) throw new IllegalArgumentException("listener不能为空");
         synchronized (lifecycleLock) {
             if (closed) throw new IllegalStateException("事件中心已关闭");
-            listeners.computeIfAbsent(event, ignored -> ConcurrentHashMap.newKeySet())
-                    .add(listener);
+            listeners.compute(event, (ignored, eventListeners) -> {
+                Set<Consumer<Object>> current = eventListeners == null
+                        ? ConcurrentHashMap.newKeySet()
+                        : eventListeners;
+                current.add(listener);
+                return current;
+            });
         }
-        return () -> {
-            Set<Consumer<Object>> eventListeners = listeners.get(event);
-            if (eventListeners == null) return;
+        return () -> listeners.computeIfPresent(event, (ignored, eventListeners) -> {
             eventListeners.remove(listener);
-            if (eventListeners.isEmpty()) listeners.remove(event, eventListeners);
-        };
+            return eventListeners.isEmpty() ? null : eventListeners;
+        });
     }
 
     @Override

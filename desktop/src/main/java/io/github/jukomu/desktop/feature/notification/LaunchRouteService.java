@@ -2,16 +2,18 @@ package io.github.jukomu.desktop.feature.notification;
 
 import io.github.jukomu.desktop.bridge.EventHub;
 
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
-/** 保存一次性启动路由，并通过 SSE 通知已就绪的前端。 */
+/** 按顺序保存待消费的启动路由，并通过 SSE 通知已就绪的前端。 */
 public final class LaunchRouteService implements AutoCloseable {
     private final EventHub events;
-    private final AtomicReference<String> pendingRoute = new AtomicReference<>();
-    private final AtomicReference<Consumer<String>> routeOpener = new AtomicReference<>();
+    private final Object lifecycleLock = new Object();
+    private final Deque<String> pendingRoutes = new ArrayDeque<>();
+    private Consumer<String> routeOpener;
     private volatile boolean closed;
 
     public LaunchRouteService(EventHub events) {
@@ -19,25 +21,36 @@ public final class LaunchRouteService implements AutoCloseable {
     }
 
     public void attachRouteOpener(Consumer<String> opener) {
-        if (closed) return;
-        routeOpener.set(Objects.requireNonNull(opener, "opener"));
+        synchronized (lifecycleLock) {
+            if (closed) return;
+            routeOpener = Objects.requireNonNull(opener, "opener");
+        }
     }
 
     public void detachRouteOpener() {
-        routeOpener.set(null);
+        synchronized (lifecycleLock) {
+            routeOpener = null;
+        }
     }
 
     public void activate(String route) {
-        if (closed || !isSafeRoute(route)) return;
-        pendingRoute.set(route);
+        Consumer<String> opener;
+        synchronized (lifecycleLock) {
+            if (closed || !isSafeRoute(route)) return;
+            if (!route.equals(pendingRoutes.peekLast())) {
+                pendingRoutes.addLast(route);
+            }
+            opener = routeOpener;
+        }
         events.publish("launchRoute", Map.of("route", route));
-        Consumer<String> opener = routeOpener.get();
         if (opener != null) opener.accept(route);
     }
 
     public Map<String, String> consume() {
-        String route = pendingRoute.getAndSet(null);
-        return route == null ? Map.of() : Map.of("route", route);
+        synchronized (lifecycleLock) {
+            String route = pendingRoutes.pollFirst();
+            return route == null ? Map.of() : Map.of("route", route);
+        }
     }
 
     static boolean isSafeRoute(String route) {
@@ -46,8 +59,10 @@ public final class LaunchRouteService implements AutoCloseable {
 
     @Override
     public void close() {
-        closed = true;
-        pendingRoute.set(null);
-        routeOpener.set(null);
+        synchronized (lifecycleLock) {
+            closed = true;
+            pendingRoutes.clear();
+            routeOpener = null;
+        }
     }
 }

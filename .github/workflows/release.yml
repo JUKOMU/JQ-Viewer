@@ -323,7 +323,7 @@ jobs:
 
   publish-release:
     needs: build-release
-    runs-on: [self-hosted, Linux, X64, jqviewer-release]
+    runs-on: ubuntu-latest
     permissions:
       contents: write
 

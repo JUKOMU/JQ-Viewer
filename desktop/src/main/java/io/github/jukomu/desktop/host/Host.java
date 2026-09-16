@@ -10,6 +10,7 @@ import java.net.URI;
 import java.util.Objects;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 /** 管理单进程生命周期及其操作系统入口。 */
@@ -20,6 +21,7 @@ public final class Host implements AutoCloseable {
     private final BrowserLauncher browserLauncher;
     private final AtomicReference<URI> homeUrl = new AtomicReference<>();
     private final CountDownLatch backendReady = new CountDownLatch(1);
+    private final AtomicBoolean updateExitScheduled = new AtomicBoolean();
 
     private Tray tray;
     private boolean primary;
@@ -66,9 +68,10 @@ public final class Host implements AutoCloseable {
             backendReady.countDown();
 
             tray = Tray.tryCreate(this::openHome, this::close).orElse(null);
-            if (tray != null) {
-                backend.attachDesktopHost(tray::displayNotification, this::openRoute);
-            }
+            backend.attachDesktopHost(
+                    tray == null ? null : tray::displayNotification,
+                    this::openRoute,
+                    this::requestUpdateExit);
             openHome();
             started = true;
             return true;
@@ -101,6 +104,20 @@ public final class Host implements AutoCloseable {
         }
         URI target = URI.create(url.getScheme() + "://" + url.getAuthority() + route);
         browserLauncher.open(target);
+    }
+
+    private void requestUpdateExit() {
+        if (!updateExitScheduled.compareAndSet(false, true)) return;
+        Thread thread = new Thread(() -> {
+            try {
+                Thread.sleep(250);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+            }
+            close();
+        }, "jq-viewer-update-exit");
+        thread.setDaemon(false);
+        thread.start();
     }
 
     public synchronized URI homeUrl() {

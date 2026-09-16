@@ -381,6 +381,20 @@ export interface UpdateManifest {
     github: string
     gitee: string
   }
+  desktopArtifact?: {
+    name: string
+    platform: 'windows' | 'linux'
+    architecture: 'x64' | 'arm64'
+    compatibleArchitectures: Array<'x64' | 'arm64'>
+    packageType: 'installer' | 'portable'
+    packageFormat: 'exe' | 'zip' | 'deb' | 'rpm' | 'tar.gz'
+    sizeBytes: number
+    sha256: string
+    sources: {
+      github: string
+      gitee: string
+    }
+  }
 }
 
 export type UpdatePhase =

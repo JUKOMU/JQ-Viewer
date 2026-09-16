@@ -27,7 +27,9 @@ import type {
   PdfExportTaskRecord,
   PdfManagementState,
   PdfStorageDeleteResult,
+  UpdateManifest,
 } from '@/services/JmcomicTypes'
+import type { UpdaterService, UpdateUserAction } from '../UpdateTypes'
 import { RuntimeError } from '../errors'
 import { requestBackend, type BackendFetch } from './backendClient'
 import { createDesktopPdfExportPreferencesStore } from './pdfExportPreferences'
@@ -44,6 +46,29 @@ function createOcrService(fetcher: BackendFetch) {
 function createDiagnosticsService(fetcher: BackendFetch): DiagnosticsService {
   return {
     getSnapshot: () => requestBackend<DiagnosticSnapshot>(fetcher, 'getDiagnostics', {}),
+  }
+}
+
+function createDesktopUpdater(events: BackendEvents, fetcher: BackendFetch): UpdaterService {
+  return {
+    getState: () => requestBackend(fetcher, 'getUpdateState', {}),
+    check: () =>
+      requestBackend<{ updateAvailable: boolean; manifest: UpdateManifest }>(
+        fetcher,
+        'checkUpdate',
+        {},
+      ),
+    start: () => requestBackend<{ started: boolean }>(fetcher, 'startUpdate', {}),
+    cancel: () => requestBackend<{ cancelled: boolean }>(fetcher, 'cancelUpdate', {}),
+    install: () =>
+      requestBackend<{ started: boolean; permissionRequired: boolean }>(
+        fetcher,
+        'installUpdate',
+        {},
+      ),
+    performUserAction: (_action: UpdateUserAction) =>
+      Promise.reject(new RuntimeError('unavailable', 'Desktop 更新不需要应用内权限操作')),
+    onProgress: (handler) => events.onUpdateProgress(handler),
   }
 }
 
@@ -629,7 +654,7 @@ export function createPlatformServices(
     pdfExportPreferences: createDesktopPdfExportPreferencesStore(fetcher),
     storage: { available: true, api: createDownloadLocationService(events, fetcher) },
     reader: createDesktopReaderServices(),
-    updater: unavailableCapability('当前平台不支持应用更新'),
+    updater: { available: true, api: createDesktopUpdater(events, fetcher) },
     ocr: { available: true, api: createOcrService(fetcher) },
     diagnostics: { available: true, api: createDiagnosticsService(fetcher) },
     launchRoutes: {

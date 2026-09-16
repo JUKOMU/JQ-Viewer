@@ -21,6 +21,7 @@ import io.github.jukomu.desktop.bridge.handler.OcrPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.PdfPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.SettingsPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.SystemPluginHandler;
+import io.github.jukomu.desktop.bridge.handler.UpdatePluginHandler;
 import io.github.jukomu.desktop.data.Database;
 import io.github.jukomu.desktop.data.Paths;
 import io.github.jukomu.desktop.feature.auth.AuthService;
@@ -51,6 +52,8 @@ import io.github.jukomu.desktop.feature.pdf.render.PdfDocumentService;
 import io.github.jukomu.desktop.feature.pdf.render.PdfPageCache;
 import io.github.jukomu.desktop.feature.pdf.render.PdfResourceService;
 import io.github.jukomu.desktop.feature.settings.SettingsService;
+import io.github.jukomu.desktop.feature.update.DesktopUpdateConfiguration;
+import io.github.jukomu.desktop.feature.update.DesktopUpdateService;
 import io.github.jukomu.desktop.lifecycle.CloseSequence;
 import io.github.jukomu.jmcomic.api.client.JmClient;
 import io.github.jukomu.jmcomic.api.client.JmDownloadClient;
@@ -120,6 +123,7 @@ public final class Backend implements AutoCloseable {
     private EventHub eventHub;
     private LaunchRouteService launchRouteService;
     private DesktopTaskNotificationService taskNotifications;
+    private DesktopUpdateService updateService;
     private URI homeUrl;
     private boolean running;
     private boolean closed;
@@ -237,6 +241,7 @@ public final class Backend implements AutoCloseable {
         OcrService startedOcrService = null;
         LaunchRouteService startedLaunchRoutes = null;
         DesktopTaskNotificationService startedTaskNotifications = null;
+        DesktopUpdateService startedUpdateService = null;
         try {
             paths.ensureDirectories();
             if (Backend.class.getResource("/static/index.html") == null) {
@@ -256,6 +261,8 @@ public final class Backend implements AutoCloseable {
             int preloadConcurrency = settingsService.preloadConcurrency();
             configureBusinessExecutor(preloadConcurrency);
             startedEventHub = new EventHub(mapper);
+            startedUpdateService = new DesktopUpdateService(
+                    DesktopUpdateConfiguration.fromSystemProperties(), mapper, startedEventHub, paths);
             final JmClient serviceClient;
             final Function<String, String> albumCoverUrl;
             final NetworkService.Operations networkOperations;
@@ -341,7 +348,8 @@ public final class Backend implements AutoCloseable {
                     new SystemPluginHandler(
                             requests, startedNetworkService, startedLaunchRoutes,
                             diagnosticsService),
-                    new OcrPluginHandler(requests, startedOcrService));
+                    new OcrPluginHandler(requests, startedOcrService),
+                    new UpdatePluginHandler(requests, startedUpdateService));
             PdfResourceService pdfResources = new PdfResourceService();
             candidate = Javalin.create(config -> {
                 config.jetty.host = LOOPBACK_HOST;
@@ -375,6 +383,7 @@ public final class Backend implements AutoCloseable {
             this.eventHub = eventHub;
             this.launchRouteService = startedLaunchRoutes;
             this.taskNotifications = startedTaskNotifications;
+            this.updateService = startedUpdateService;
             this.homeUrl = URI.create("http://" + LOOPBACK_HOST + ":" + port + "/home");
             this.running = true;
             LOGGER.info("本地后端监听于 {}", homeUrl);
@@ -386,6 +395,7 @@ public final class Backend implements AutoCloseable {
             NetworkService failedNetworkService = startedNetworkService;
             OcrService failedOcrService = startedOcrService;
             DesktopTaskNotificationService failedTaskNotifications = startedTaskNotifications;
+            DesktopUpdateService failedUpdateService = startedUpdateService;
             LaunchRouteService failedLaunchRoutes = startedLaunchRoutes;
             EventHub failedEventHub = startedEventHub;
             JmApiClient failedClient = startedClient;
@@ -395,6 +405,9 @@ public final class Backend implements AutoCloseable {
                     }),
                     step("任务通知", () -> {
                         if (failedTaskNotifications != null) failedTaskNotifications.close();
+                    }),
+                    step("更新服务", () -> {
+                        if (failedUpdateService != null) failedUpdateService.close();
                     }),
                     step("启动路由", () -> {
                         if (failedLaunchRoutes != null) failedLaunchRoutes.close();
@@ -624,18 +637,22 @@ public final class Backend implements AutoCloseable {
 
     public synchronized void attachDesktopHost(
             DesktopNotificationSink notificationSink,
-            Consumer<String> routeOpener
+            Consumer<String> routeOpener,
+            Runnable updateExitRequest
     ) {
-        if (!running || taskNotifications == null || launchRouteService == null) {
+        if (!running || taskNotifications == null || launchRouteService == null
+                || updateService == null) {
             throw new IllegalStateException("本地后端尚未启动");
         }
         launchRouteService.attachRouteOpener(routeOpener);
-        taskNotifications.attach(notificationSink);
+        if (notificationSink != null) taskNotifications.attach(notificationSink);
+        updateService.attachExitRequest(updateExitRequest);
     }
 
     public synchronized void detachDesktopHost() {
         if (taskNotifications != null) taskNotifications.detach();
         if (launchRouteService != null) launchRouteService.detachRouteOpener();
+        if (updateService != null) updateService.detachExitRequest();
     }
 
     @Override
@@ -651,6 +668,8 @@ public final class Backend implements AutoCloseable {
         homeUrl = null;
         DesktopTaskNotificationService closingTaskNotifications = taskNotifications;
         taskNotifications = null;
+        DesktopUpdateService closingUpdateService = updateService;
+        updateService = null;
         LaunchRouteService closingLaunchRoutes = launchRouteService;
         launchRouteService = null;
         PdfExportService closingPdfExportService = pdfExportService;
@@ -669,6 +688,9 @@ public final class Backend implements AutoCloseable {
         CloseSequence.run(LOGGER,
                 step("任务通知", () -> {
                     if (closingTaskNotifications != null) closingTaskNotifications.close();
+                }),
+                step("更新服务", () -> {
+                    if (closingUpdateService != null) closingUpdateService.close();
                 }),
                 step("启动路由", () -> {
                     if (closingLaunchRoutes != null) closingLaunchRoutes.close();

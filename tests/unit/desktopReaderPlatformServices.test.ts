@@ -274,3 +274,58 @@ describe('Desktop 诊断能力', () => {
     })
   })
 })
+
+describe('Desktop 更新能力', () => {
+  test('复用统一更新方法和 updateProgress 事件', async () => {
+    const remove = vi.fn(async () => undefined)
+    const onUpdateProgress = vi.fn(async () => ({ remove }))
+    const events = { onUpdateProgress } as unknown as BackendEvents
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const method = String(input).split('/').at(-1)
+      const payloads: Record<string, unknown> = {
+        getUpdateState: {
+          revision: 0,
+          phase: 'idle',
+          source: '',
+          githubBytes: 0,
+          giteeBytes: 0,
+          totalBytes: 0,
+          speedBytesPerSecond: 0,
+          error: '',
+        },
+        checkUpdate: { updateAvailable: false, manifest: { versionName: '1.4.6' } },
+        startUpdate: { started: true },
+        cancelUpdate: { cancelled: true },
+        installUpdate: { started: true, permissionRequired: false },
+      }
+      return new Response(JSON.stringify(payloads[method ?? '']), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    })
+    const services = createPlatformServices(events, fetcher)
+    if (!services.updater.available) throw new Error('expected updater capability')
+
+    await expect(services.updater.api.getState()).resolves.toMatchObject({ phase: 'idle' })
+    await expect(services.updater.api.check()).resolves.toMatchObject({ updateAvailable: false })
+    await expect(services.updater.api.start()).resolves.toEqual({ started: true })
+    await expect(services.updater.api.cancel()).resolves.toEqual({ cancelled: true })
+    await expect(services.updater.api.install()).resolves.toEqual({
+      started: true,
+      permissionRequired: false,
+    })
+    const handler = vi.fn()
+    const handle = await services.updater.api.onProgress(handler)
+    await handle.remove()
+
+    expect(fetcher.mock.calls.map(([input]) => String(input))).toEqual([
+      '/api/getUpdateState',
+      '/api/checkUpdate',
+      '/api/startUpdate',
+      '/api/cancelUpdate',
+      '/api/installUpdate',
+    ])
+    expect(onUpdateProgress).toHaveBeenCalledWith(handler)
+    expect(remove).toHaveBeenCalledOnce()
+  })
+})

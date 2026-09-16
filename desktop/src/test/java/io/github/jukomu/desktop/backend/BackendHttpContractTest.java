@@ -163,7 +163,10 @@ class BackendHttpContractTest {
                     "{\"mode\":\"horizontal\"}"));
             assertOk(post(http, base, requestedMethods, "setReaderAutoShowToolbarAtEnd",
                     "{\"enabled\":false}"));
+            assertOk(post(http, base, requestedMethods, "setOcrEnabled",
+                    "{\"enabled\":true}"));
             ObjectNode settings = body(post(http, base, requestedMethods, "getAllSettings", "{}"));
+            assertTrue(settings.path("ocrEnabled").asBoolean());
             assertOk(post(http, base, requestedMethods, "setDownloadPublic", "{\"open\":false}"));
             ObjectNode downloadLocation = body(post(
                     http, base, requestedMethods, "getDownloadPublic", "{}"));
@@ -706,7 +709,11 @@ class BackendHttpContractTest {
     private static Set<String> registeredMethods() {
         Set<String> result = new LinkedHashSet<>();
         for (Method method : Plugin.class.getDeclaredMethods()) {
-            if (method.isAnnotationPresent(PluginMethod.class)) result.add(method.getName());
+            // 系统选图需要真实桌面会话，由 OcrServiceTest 覆盖其非 UI 行为。
+            if (method.isAnnotationPresent(PluginMethod.class)
+                    && !method.getName().equals("pickImageAndOcr")) {
+                result.add(method.getName());
+            }
         }
         return result;
     }

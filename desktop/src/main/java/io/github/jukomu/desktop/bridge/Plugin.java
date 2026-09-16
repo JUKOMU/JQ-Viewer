@@ -7,6 +7,7 @@ import io.github.jukomu.desktop.bridge.handler.DownloadPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.HistoryPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.FilePluginHandler;
 import io.github.jukomu.desktop.bridge.handler.OfflineFavoritePluginHandler;
+import io.github.jukomu.desktop.bridge.handler.OcrPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.PdfPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.SettingsPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.SystemPluginHandler;
@@ -24,6 +25,7 @@ public final class Plugin {
     private final DownloadPluginHandler downloads;
     private final PdfPluginHandler pdfs;
     private final SystemPluginHandler system;
+    private final OcrPluginHandler ocr;
 
     public Plugin(ApiPluginHandler api, AuthPluginHandler auth,
                   CachePluginHandler cache,
@@ -31,7 +33,8 @@ public final class Plugin {
                   OfflineFavoritePluginHandler favorites,
                   FilePluginHandler files, DownloadPluginHandler downloads,
                   PdfPluginHandler pdfs,
-                  SystemPluginHandler system) {
+                  SystemPluginHandler system,
+                  OcrPluginHandler ocr) {
         this.api = api;
         this.auth = auth;
         this.cache = cache;
@@ -42,6 +45,7 @@ public final class Plugin {
         this.downloads = downloads;
         this.pdfs = pdfs;
         this.system = system;
+        this.ocr = ocr;
     }
 
     @PluginMethod
@@ -62,6 +66,16 @@ public final class Plugin {
     @PluginMethod
     public void measureLatency(Context context) {
         system.measureLatency(context);
+    }
+
+    @PluginMethod
+    public void setOcrEnabled(Context context) {
+        ocr.setOcrEnabled(context);
+    }
+
+    @PluginMethod
+    public void pickImageAndOcr(Context context) {
+        ocr.pickImageAndOcr(context);
     }
 
     @PluginMethod

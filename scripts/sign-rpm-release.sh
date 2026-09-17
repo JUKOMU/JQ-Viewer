@@ -55,7 +55,7 @@ if [[ " ${secret_fingerprints[*]} " != *" $expected_fingerprint "* ]]; then
 fi
 
 GNUPGHOME="$signing_home" gpg --batch --armor --export "$expected_fingerprint" > "$public_key_file"
-rpmkeys --dbpath "$verification_db" --initdb
+rpmdb --dbpath "$verification_db" --initdb
 rpmkeys --dbpath "$verification_db" --import "$public_key_file"
 
 for rpm_path in "${rpm_files[@]}"; do

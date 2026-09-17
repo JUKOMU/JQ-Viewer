@@ -131,7 +131,7 @@ workflow 会从 Ed25519 私钥重新派生公钥并与 Repository Variable 逐�
 1. 确认待发布提交的项目版本与 tag 一致。
 2. 创建 prerelease tag，例如 `v0.0.4-beta.1`。
 3. 将 tag 推送到 GitHub；`Release` workflow 会自动开始。
-4. 在运行详情中确认 Android 与 Desktop 产物并行准备，随后统一完成 RPM 签名和 GitHub/Gitee 发布。
+4. 在运行详情中确认 Android 与 Desktop 产物并行准备，随后完成 RPM 签名并发布到 GitHub。
 
 只有重试已经存在的 tag 时才使用手动触发：
 
@@ -141,7 +141,7 @@ workflow 会从 Ed25519 私钥重新派生公钥并与 Repository Variable 逐�
 4. prerelease tag 会根据 tag 中的后缀自动识别；也可以勾选 `Mark as pre-release?` 强制按 prerelease 发布。
 5. 点击 `Run workflow`。
 
-prerelease 用于验证构建和分发，不发布正式版 `latest.json`。正式 tag 发布时才会生成并签名共享更新清单。
+prerelease 用于验证构建和 GitHub 分发，不读取或校验 `.github/release-notes.md`，发布页面不附带文案，也不等待 Gitee tag 或创建 Gitee Release。prerelease 不发布正式版 `latest.json`；正式 tag 发布时才会校验文案、发布 GitHub/Gitee Release，并生成及签名共享更新清单。
 
 ## 正式发布资产
 

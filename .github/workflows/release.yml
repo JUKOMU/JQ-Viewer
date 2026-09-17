@@ -506,6 +506,7 @@ jobs:
           fi
 
       - name: Wait for mirrored Gitee tag
+        if: ${{ needs.validate-release-input.outputs.is_prerelease != 'true' }}
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
@@ -586,26 +587,22 @@ jobs:
             printf '%s  latest.json\n' "$manifest_sha" >> SHA256SUMS
           )
 
-      - name: Publish APK and latest.json to Gitee Release
+      - name: Publish stable release assets to Gitee
+        if: ${{ needs.validate-release-input.outputs.is_prerelease != 'true' }}
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
           GITEE_REPOSITORY: jukomu/jq-viewer
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
-          RELEASE_PRERELEASE: ${{ needs.validate-release-input.outputs.is_prerelease }}
           RELEASE_COMMIT: ${{ needs.validate-release-input.outputs.release_commit }}
         run: |
           set -euo pipefail
           artifact_dir="$RUNNER_TEMP/release-artifact"
           desktop_dir="$RUNNER_TEMP/desktop-release"
-          latest_json="-"
-          if [ "$RELEASE_PRERELEASE" != "true" ]; then
-            latest_json="$RUNNER_TEMP/latest.json"
-          fi
           args=(
             "$RELEASE_TAG"
             ".github/release-notes.md"
             "$RELEASE_COMMIT"
-            "$latest_json"
+            "$RUNNER_TEMP/latest.json"
             "$artifact_dir"/JQ-Viewer-*.apk
             "$desktop_dir"/*
           )
@@ -640,7 +637,6 @@ jobs:
           target_commitish: ${{ needs.validate-release-input.outputs.release_commit }}
           draft: false
           prerelease: true
-          body_path: .github/release-notes.md
           generate_release_notes: false
           overwrite_files: true
           preserve_order: true

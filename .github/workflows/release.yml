@@ -27,11 +27,16 @@ concurrency:
 jobs:
   validate-release-input:
     runs-on: ubuntu-latest
+    outputs:
+      release_commit: ${{ steps.release_commit.outputs.sha }}
+      is_prerelease: ${{ steps.release_mode.outputs.is_prerelease }}
+
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.tag || github.ref }}
           persist-credentials: false
+          fetch-depth: 0
 
       - uses: actions/setup-node@v5
         with:
@@ -44,44 +49,6 @@ jobs:
         env:
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
         run: node scripts/check-release-tag.mjs "$RELEASE_TAG"
-
-  frontend:
-    needs: validate-release-input
-    uses: ./.github/workflows/ci-frontend.yml
-
-  android-jvm:
-    needs: validate-release-input
-    uses: ./.github/workflows/ci-android-jvm.yml
-
-  instrumentation:
-    needs: validate-release-input
-    uses: ./.github/workflows/ci-android-instrumentation.yml
-
-  desktop:
-    needs: validate-release-input
-    uses: ./.github/workflows/ci-desktop.yml
-    with:
-      package: true
-      release_ed25519_key_id: ${{ vars.RELEASE_ED25519_KEY_ID }}
-      release_ed25519_public_key_spki_base64: ${{ vars.RELEASE_ED25519_PUBLIC_KEY_SPKI_BASE64 }}
-      require_release_trust_root: true
-
-  build-release:
-    needs: [validate-release-input, frontend, android-jvm, instrumentation, desktop]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    outputs:
-      release_commit: ${{ steps.release_commit.outputs.sha }}
-      is_prerelease: ${{ steps.release_mode.outputs.is_prerelease }}
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.tag || github.ref }}
-          submodules: true
-          persist-credentials: false
-          fetch-depth: 0
 
       - name: Verify release commit
         id: release_commit
@@ -116,6 +83,40 @@ jobs:
           else
             echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
           fi
+
+  frontend:
+    needs: validate-release-input
+    uses: ./.github/workflows/ci-frontend.yml
+
+  android-jvm:
+    needs: validate-release-input
+    uses: ./.github/workflows/ci-android-jvm.yml
+
+  instrumentation:
+    needs: validate-release-input
+    uses: ./.github/workflows/ci-android-instrumentation.yml
+
+  desktop:
+    needs: validate-release-input
+    uses: ./.github/workflows/ci-desktop.yml
+    with:
+      package: true
+      release_ed25519_key_id: ${{ vars.RELEASE_ED25519_KEY_ID }}
+      release_ed25519_public_key_spki_base64: ${{ vars.RELEASE_ED25519_PUBLIC_KEY_SPKI_BASE64 }}
+      require_release_trust_root: true
+
+  build-android-release:
+    name: Build Android release
+    needs: [validate-release-input, frontend, android-jvm, instrumentation]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          submodules: true
+          persist-credentials: false
+          fetch-depth: 0
 
       - uses: actions/setup-node@v5
         with:
@@ -306,20 +307,6 @@ jobs:
           overwrite: true
           retention-days: 7
 
-      - name: Attach APK to draft GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ inputs.tag || github.ref_name }}
-          target_commitish: ${{ steps.release_commit.outputs.sha }}
-          draft: true
-          prerelease: ${{ steps.release_mode.outputs.is_prerelease == 'true' }}
-          body_path: .github/release-notes.md
-          generate_release_notes: false
-          overwrite_files: true
-          files: JQ-Viewer-*.apk
-        env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-
       - name: Cleanup signing secrets and build artifacts
         if: ${{ always() }}
         run: |
@@ -331,11 +318,10 @@ jobs:
           rm -f JQ-Viewer-*.apk.sha256
 
   prepare-desktop-release:
-    needs: [build-release, desktop]
+    name: Prepare Desktop release
+    needs: [validate-release-input, desktop]
     runs-on: ubuntu-24.04
     environment: release
-    permissions:
-      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -424,26 +410,13 @@ jobs:
           overwrite: true
           retention-days: 7
 
-      - name: Attach Desktop assets to draft GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ inputs.tag || github.ref_name }}
-          target_commitish: ${{ needs.build-release.outputs.release_commit }}
-          draft: true
-          prerelease: ${{ needs.build-release.outputs.is_prerelease == 'true' }}
-          body_path: .github/release-notes.md
-          generate_release_notes: false
-          overwrite_files: true
-          files: ${{ runner.temp }}/desktop-release/*
-        env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-
       - name: Cleanup Desktop signing material and artifacts
         if: ${{ always() }}
         run: rm -rf "$RUNNER_TEMP/desktop-release"
 
   publish-release:
-    needs: [build-release, prepare-desktop-release]
+    name: Publish unified release
+    needs: [validate-release-input, build-android-release, prepare-desktop-release]
     runs-on: ubuntu-latest
     environment: release
     permissions:
@@ -459,7 +432,7 @@ jobs:
       - name: Verify release commit
         env:
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
-          EXPECTED_RELEASE_COMMIT: ${{ needs.build-release.outputs.release_commit }}
+          EXPECTED_RELEASE_COMMIT: ${{ needs.validate-release-input.outputs.release_commit }}
         run: |
           set -euo pipefail
 
@@ -511,7 +484,7 @@ jobs:
           (cd "$artifact_dir" && sha256sum --check JQ-Viewer-*.apk.sha256)
 
       - name: Validate release manifest signing configuration
-        if: ${{ needs.build-release.outputs.is_prerelease != 'true' }}
+        if: ${{ needs.validate-release-input.outputs.is_prerelease != 'true' }}
         env:
           RELEASE_ED25519_PRIVATE_KEY_BASE64: ${{ secrets.RELEASE_ED25519_PRIVATE_KEY_BASE64 }}
           RELEASE_ED25519_KEY_ID: ${{ vars.RELEASE_ED25519_KEY_ID }}
@@ -536,7 +509,7 @@ jobs:
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
-          RELEASE_COMMIT: ${{ needs.build-release.outputs.release_commit }}
+          RELEASE_COMMIT: ${{ needs.validate-release-input.outputs.release_commit }}
         run: |
           set -euo pipefail
 
@@ -569,7 +542,7 @@ jobs:
           exit 1
 
       - name: Prepare shared release metadata and signature
-        if: ${{ needs.build-release.outputs.is_prerelease != 'true' }}
+        if: ${{ needs.validate-release-input.outputs.is_prerelease != 'true' }}
         env:
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
           EXPECTED_RELEASE_CERT_SHA256: '6667B73DA7322E56626D82CA0EFCF03386E0B5560E14DF48C6025142FF4197EA'
@@ -618,8 +591,8 @@ jobs:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
           GITEE_REPOSITORY: jukomu/jq-viewer
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
-          RELEASE_PRERELEASE: ${{ needs.build-release.outputs.is_prerelease }}
-          RELEASE_COMMIT: ${{ needs.build-release.outputs.release_commit }}
+          RELEASE_PRERELEASE: ${{ needs.validate-release-input.outputs.is_prerelease }}
+          RELEASE_COMMIT: ${{ needs.validate-release-input.outputs.release_commit }}
         run: |
           set -euo pipefail
           artifact_dir="$RUNNER_TEMP/release-artifact"
@@ -639,38 +612,47 @@ jobs:
           node scripts/publish-gitee-release.mjs "${args[@]}"
 
       - name: Publish stable GitHub Release
-        if: ${{ needs.build-release.outputs.is_prerelease != 'true' }}
+        if: ${{ needs.validate-release-input.outputs.is_prerelease != 'true' }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
-          target_commitish: ${{ needs.build-release.outputs.release_commit }}
+          target_commitish: ${{ needs.validate-release-input.outputs.release_commit }}
           draft: false
           prerelease: false
           body_path: .github/release-notes.md
           generate_release_notes: false
           overwrite_files: true
+          preserve_order: true
           files: |
+            ${{ runner.temp }}/release-artifact/JQ-Viewer-*.apk
+            ${{ runner.temp }}/desktop-release/JQ-Viewer-*
             ${{ runner.temp }}/latest.json
             ${{ runner.temp }}/desktop-release/latest.json.sig
             ${{ runner.temp }}/desktop-release/SHA256SUMS
         env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
 
       - name: Publish prerelease GitHub Release
-        if: ${{ needs.build-release.outputs.is_prerelease == 'true' }}
+        if: ${{ needs.validate-release-input.outputs.is_prerelease == 'true' }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
-          target_commitish: ${{ needs.build-release.outputs.release_commit }}
+          target_commitish: ${{ needs.validate-release-input.outputs.release_commit }}
           draft: false
           prerelease: true
           body_path: .github/release-notes.md
           generate_release_notes: false
+          overwrite_files: true
+          preserve_order: true
+          files: |
+            ${{ runner.temp }}/release-artifact/JQ-Viewer-*.apk
+            ${{ runner.temp }}/desktop-release/JQ-Viewer-*
+            ${{ runner.temp }}/desktop-release/SHA256SUMS
         env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
 
       - name: Verify public release assets
-        if: ${{ needs.build-release.outputs.is_prerelease != 'true' }}
+        if: ${{ needs.validate-release-input.outputs.is_prerelease != 'true' }}
         env:
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
           GITHUB_REPOSITORY: ${{ github.repository }}
@@ -741,7 +723,7 @@ jobs:
           echo "Public release assets verified: five identical APKs and shared latest.json"
 
       - name: Verify public Desktop release assets
-        if: ${{ needs.build-release.outputs.is_prerelease != 'true' }}
+        if: ${{ needs.validate-release-input.outputs.is_prerelease != 'true' }}
         env:
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
           GITHUB_REPOSITORY: ${{ github.repository }}

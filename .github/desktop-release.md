@@ -26,7 +26,6 @@ Secret 保存后无法在 GitHub 页面重新查看原值，只能覆盖。不�
 | `KEYSTORE_PASSWORD` | 本地 `android/keystore.properties` 的 `storePassword` 值                                                |
 | `KEY_ALIAS`         | 本地 `android/keystore.properties` 的 `keyAlias` 值                                                     |
 | `KEY_PASSWORD`      | 本地 `android/keystore.properties` 的 `keyPassword` 值                                                  |
-| `RELEASE_TOKEN`     | 具有当前仓库 Release 写入权限的 GitHub token                                                            |
 | `GITEE_TOKEN`       | 用于写入 Gitee 备份 Release 的 token                                                                    |
 
 GitHub 页面只显示 Secret 名称，不显示值。名称已经存在且 Android keystore 未更换时，不需要重新填写。`android/keystore.properties` 和 `android/app/release.keystore` 均为本地文件，不提交到仓库。
@@ -51,7 +50,7 @@ PowerShell：
 [Convert]::ToBase64String([IO.File]::ReadAllBytes('android/app/release.keystore'))
 ```
 
-发布 workflow 会用这四个 Android Secret 还原 keystore 和 `keystore.properties`，并校验 APK 签名证书。它们保持仓库级 Secret，不移动到 `release` environment。
+发布 workflow 会用这四个 Android Secret 还原 keystore 和 `keystore.properties`，并校验 APK 签名证书。它们保持仓库级 Secret，不移动到 `release` environment。GitHub Release 使用 job 自动生成的 `github.token` 和 `contents: write` 权限，不需要额外配置长期 GitHub token。
 
 ## 2. 创建 release Environment
 
@@ -118,21 +117,29 @@ gpg --batch --armor --export-secret-keys FULL_FINGERPRINT \
 
 页面应出现以下配置名称：
 
-- Repository secrets：`KEYSTORE_BASE64`、`KEYSTORE_PASSWORD`、`KEY_ALIAS`、`KEY_PASSWORD`、`RELEASE_TOKEN`、`GITEE_TOKEN`。
+- Repository secrets：`KEYSTORE_BASE64`、`KEYSTORE_PASSWORD`、`KEY_ALIAS`、`KEY_PASSWORD`、`GITEE_TOKEN`。
 - Repository variables：`RELEASE_ED25519_KEY_ID`、`RELEASE_ED25519_PUBLIC_KEY_SPKI_BASE64`。
 - `release` environment secrets：`RELEASE_ED25519_PRIVATE_KEY_BASE64`、`RPM_GPG_PRIVATE_KEY_BASE64`、`RPM_GPG_PASSPHRASE`。
 - `release` environment variable：`RPM_GPG_FINGERPRINT`。
 
 workflow 会从 Ed25519 私钥重新派生公钥并与 Repository Variable 逐字节比较；RPM 私钥导入后也会核对完整 fingerprint。缺少任一配置、密钥不匹配、RPM 签名失败或 GitHub/Gitee 双源字节不一致时都会停止，不会降级为未签名发布。
 
-## 7. 手动触发一次 prerelease 验证
+## 7. 发布或重跑 prerelease
 
-1. 确认待发布提交的项目版本与已有 tag 一致，并确保该 tag 已推送到 GitHub。
-2. 打开仓库 `Actions` → `Release`。
-3. 点击 `Run workflow`。
-4. `Tag name to release` 填写已经存在的 tag，例如 `v0.0.4-beta.1`。
-5. 勾选 `Mark as pre-release?`，点击 `Run workflow`。
-6. 在运行详情中确认 Android、Desktop、RPM 签名和 GitHub/Gitee 发布步骤均成功。
+新 prerelease 通过推送 tag 自动发布，不需要在 Actions 页面再次手动触发：
+
+1. 确认待发布提交的项目版本与 tag 一致。
+2. 创建 prerelease tag，例如 `v0.0.4-beta.1`。
+3. 将 tag 推送到 GitHub；`Release` workflow 会自动开始。
+4. 在运行详情中确认 Android 与 Desktop 产物并行准备，随后统一完成 RPM 签名和 GitHub/Gitee 发布。
+
+只有重试已经存在的 tag 时才使用手动触发：
+
+1. 先确认相同 tag 没有仍在运行或已经成功的 `Release` workflow，避免重复发布。
+2. 打开仓库 `Actions` → `Release`，点击 `Run workflow`。
+3. `Tag name to release` 填写已经存在的 tag。
+4. prerelease tag 会根据 tag 中的后缀自动识别；也可以勾选 `Mark as pre-release?` 强制按 prerelease 发布。
+5. 点击 `Run workflow`。
 
 prerelease 用于验证构建和分发，不发布正式版 `latest.json`。正式 tag 发布时才会生成并签名共享更新清单。
 

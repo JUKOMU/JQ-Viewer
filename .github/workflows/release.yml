@@ -608,7 +608,7 @@ jobs:
           )
           node scripts/publish-gitee-release.mjs "${args[@]}"
 
-      - name: Publish stable GitHub Release
+      - name: Create or update stable GitHub Release
         if: ${{ needs.validate-release-input.outputs.is_prerelease != 'true' }}
         uses: softprops/action-gh-release@v2
         with:
@@ -618,18 +618,10 @@ jobs:
           prerelease: false
           body_path: .github/release-notes.md
           generate_release_notes: false
-          overwrite_files: true
-          preserve_order: true
-          files: |
-            ${{ runner.temp }}/release-artifact/JQ-Viewer-*.apk
-            ${{ runner.temp }}/desktop-release/JQ-Viewer-*
-            ${{ runner.temp }}/latest.json
-            ${{ runner.temp }}/desktop-release/latest.json.sig
-            ${{ runner.temp }}/desktop-release/SHA256SUMS
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
-      - name: Publish prerelease GitHub Release
+      - name: Create or update prerelease GitHub Release
         if: ${{ needs.validate-release-input.outputs.is_prerelease == 'true' }}
         uses: softprops/action-gh-release@v2
         with:
@@ -638,14 +630,33 @@ jobs:
           draft: false
           prerelease: true
           generate_release_notes: false
-          overwrite_files: true
-          preserve_order: true
-          files: |
-            ${{ runner.temp }}/release-artifact/JQ-Viewer-*.apk
-            ${{ runner.temp }}/desktop-release/JQ-Viewer-*
-            ${{ runner.temp }}/desktop-release/SHA256SUMS
         env:
           GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Upload GitHub Release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+          IS_PRERELEASE: ${{ needs.validate-release-input.outputs.is_prerelease }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          artifact_dir="$RUNNER_TEMP/release-artifact"
+          desktop_dir="$RUNNER_TEMP/desktop-release"
+          assets=(
+            "$artifact_dir"/JQ-Viewer-*.apk
+            "$desktop_dir"/JQ-Viewer-*
+            "$desktop_dir"/SHA256SUMS
+          )
+          if [ "$IS_PRERELEASE" != "true" ]; then
+            assets+=(
+              "$RUNNER_TEMP/latest.json"
+              "$desktop_dir/latest.json.sig"
+            )
+          fi
+
+          bash scripts/upload-github-release-assets.sh "$RELEASE_TAG" "${assets[@]}"
 
       - name: Verify public release assets
         if: ${{ needs.validate-release-input.outputs.is_prerelease != 'true' }}

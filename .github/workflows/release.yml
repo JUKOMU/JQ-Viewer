@@ -622,6 +622,7 @@ jobs:
           body_path: .github/release-notes.md
           generate_release_notes: false
           overwrite_files: true
+          preserve_order: true
           files: |
             ${{ runner.temp }}/release-artifact/JQ-Viewer-*.apk
             ${{ runner.temp }}/desktop-release/JQ-Viewer-*
@@ -629,7 +630,7 @@ jobs:
             ${{ runner.temp }}/desktop-release/latest.json.sig
             ${{ runner.temp }}/desktop-release/SHA256SUMS
         env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
 
       - name: Publish prerelease GitHub Release
         if: ${{ needs.validate-release-input.outputs.is_prerelease == 'true' }}
@@ -642,12 +643,13 @@ jobs:
           body_path: .github/release-notes.md
           generate_release_notes: false
           overwrite_files: true
+          preserve_order: true
           files: |
             ${{ runner.temp }}/release-artifact/JQ-Viewer-*.apk
             ${{ runner.temp }}/desktop-release/JQ-Viewer-*
             ${{ runner.temp }}/desktop-release/SHA256SUMS
         env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
 
       - name: Verify public release assets
         if: ${{ needs.validate-release-input.outputs.is_prerelease != 'true' }}

@@ -26,7 +26,6 @@ Secret 保存后无法在 GitHub 页面重新查看原值，只能覆盖。不�
 | `KEYSTORE_PASSWORD` | 本地 `android/keystore.properties` 的 `storePassword` 值                                                |
 | `KEY_ALIAS`         | 本地 `android/keystore.properties` 的 `keyAlias` 值                                                     |
 | `KEY_PASSWORD`      | 本地 `android/keystore.properties` 的 `keyPassword` 值                                                  |
-| `RELEASE_TOKEN`     | 具有当前仓库 Release 写入权限的 GitHub token                                                            |
 | `GITEE_TOKEN`       | 用于写入 Gitee 备份 Release 的 token                                                                    |
 
 GitHub 页面只显示 Secret 名称，不显示值。名称已经存在且 Android keystore 未更换时，不需要重新填写。`android/keystore.properties` 和 `android/app/release.keystore` 均为本地文件，不提交到仓库。
@@ -51,7 +50,7 @@ PowerShell：
 [Convert]::ToBase64String([IO.File]::ReadAllBytes('android/app/release.keystore'))
 ```
 
-发布 workflow 会用这四个 Android Secret 还原 keystore 和 `keystore.properties`，并校验 APK 签名证书。它们保持仓库级 Secret，不移动到 `release` environment。
+发布 workflow 会用这四个 Android Secret 还原 keystore 和 `keystore.properties`，并校验 APK 签名证书。它们保持仓库级 Secret，不移动到 `release` environment。GitHub Release 使用 job 自动生成的 `github.token` 和 `contents: write` 权限，不需要额外配置长期 GitHub token。
 
 ## 2. 创建 release Environment
 
@@ -118,7 +117,7 @@ gpg --batch --armor --export-secret-keys FULL_FINGERPRINT \
 
 页面应出现以下配置名称：
 
-- Repository secrets：`KEYSTORE_BASE64`、`KEYSTORE_PASSWORD`、`KEY_ALIAS`、`KEY_PASSWORD`、`RELEASE_TOKEN`、`GITEE_TOKEN`。
+- Repository secrets：`KEYSTORE_BASE64`、`KEYSTORE_PASSWORD`、`KEY_ALIAS`、`KEY_PASSWORD`、`GITEE_TOKEN`。
 - Repository variables：`RELEASE_ED25519_KEY_ID`、`RELEASE_ED25519_PUBLIC_KEY_SPKI_BASE64`。
 - `release` environment secrets：`RELEASE_ED25519_PRIVATE_KEY_BASE64`、`RPM_GPG_PRIVATE_KEY_BASE64`、`RPM_GPG_PASSPHRASE`。
 - `release` environment variable：`RPM_GPG_FINGERPRINT`。

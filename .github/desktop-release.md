@@ -1,74 +1,140 @@
-# Desktop 发布配置
+# Desktop 发布配置（GitHub 网页手动配置）
 
 Desktop 正式发布仅使用 GitHub Release；Gitee Release 保存同版本、同字节资产作为备份。Windows on ARM 使用 Windows x64 包和 Windows 11 的 x64 应用仿真，不发布或标注为原生 Windows ARM64。
 
-## GitHub 配置
+本文只使用 GitHub 网页配置 Secret 和 Variable，不要求安装或使用 GitHub CLI。密钥仍需在离线或受控主机生成，生成命令不会上传任何内容。
 
-在仓库 `Settings` → `Environments` 中创建 `release` environment。正式 Release job 只从该 environment 读取私钥；缺失或不匹配时发布失败。
+## 配置位置
 
-### Environment secrets
+发布流程使用三类配置位置，不能混用：
 
-| 名称                                 | 内容                                                      |
-| ------------------------------------ | --------------------------------------------------------- |
-| `RELEASE_ED25519_PRIVATE_KEY_BASE64` | JQ-Viewer 发布清单专用 Ed25519 PKCS#8 PEM 私钥的 Base64。 |
-| `RPM_GPG_PRIVATE_KEY_BASE64`         | 现有 OpenPGP 发布私钥导出文件的 Base64。                  |
-| `RPM_GPG_PASSPHRASE`                 | OpenPGP 私钥口令。                                        |
+| 位置                                    | GitHub 页面路径                                                | 用途                                    |
+| --------------------------------------- | -------------------------------------------------------------- | --------------------------------------- |
+| Repository secrets                      | `Settings` → `Secrets and variables` → `Actions` → `Secrets`   | Android 签名、GitHub/Gitee 发布令牌     |
+| Repository variables                    | `Settings` → `Secrets and variables` → `Actions` → `Variables` | Desktop 客户端内置的 Ed25519 公开信任根 |
+| `release` environment secrets/variables | `Settings` → `Environments` → `release`                        | Desktop 正式发布私钥、RPM 签名身份      |
 
-私钥不得写入仓库、Issue、PR、Actions 日志或普通 repository variable。所有者应离线保留加密备份和 OpenPGP 吊销资料。
+Secret 保存后无法在 GitHub 页面重新查看原值，只能覆盖。不要把私钥、口令或令牌写入仓库、Issue、PR、Actions 日志或 Variable。
 
-### Repository Actions variables
+## 1. 核对现有 Android Repository Secrets
 
-Desktop 原生包在进入 `release` environment 前由可复用构建 workflow 生成，因此客户端需要内置的公开信任根必须配置在仓库 `Settings` → `Secrets and variables` → `Actions` → `Variables`。这些值不是秘密：
+打开 `Settings` → `Secrets and variables` → `Actions` → `Secrets`。当前发布流程需要以下仓库级 Secret：
 
-| 名称                                     | 内容                                                   |
-| ---------------------------------------- | ------------------------------------------------------ |
-| `RELEASE_ED25519_KEY_ID`                 | 稳定密钥标识，只能包含字母、数字、点、下划线和连字符。 |
-| `RELEASE_ED25519_PUBLIC_KEY_SPKI_BASE64` | 与私钥对应的 Ed25519 SPKI DER 公钥 Base64。            |
+| Secret              | 应填写的内容                                                                                            |
+| ------------------- | ------------------------------------------------------------------------------------------------------- |
+| `KEYSTORE_BASE64`   | `android/app/release.keystore` 二进制文件的单行 Base64，不是文件路径，也不是 `keystore.properties` 文本 |
+| `KEYSTORE_PASSWORD` | 本地 `android/keystore.properties` 的 `storePassword` 值                                                |
+| `KEY_ALIAS`         | 本地 `android/keystore.properties` 的 `keyAlias` 值                                                     |
+| `KEY_PASSWORD`      | 本地 `android/keystore.properties` 的 `keyPassword` 值                                                  |
+| `RELEASE_TOKEN`     | 具有当前仓库 Release 写入权限的 GitHub token                                                            |
+| `GITEE_TOKEN`       | 用于写入 Gitee 备份 Release 的 token                                                                    |
 
-### Environment variables
+GitHub 页面只显示 Secret 名称，不显示值。名称已经存在且 Android keystore 未更换时，不需要重新填写。`android/keystore.properties` 和 `android/app/release.keystore` 均为本地文件，不提交到仓库。
 
-以下值继续配置在 `release` environment：
+如需重新生成 `KEYSTORE_BASE64`，在仓库根目录执行以下任一命令，然后把输出完整复制到 GitHub Secret：
 
-| 名称                  | 内容                                 |
-| --------------------- | ------------------------------------ |
-| `RPM_GPG_FINGERPRINT` | OpenPGP 发布密钥的完整 fingerprint。 |
+Linux：
 
-workflow 会从 Ed25519 私钥重新派生公钥并与 variable 逐字节比较；RPM 私钥导入后也会核对完整 fingerprint。PR CI 使用运行时生成的临时测试密钥，不读取 `release` environment。正式版继续复用已有 `latest.json`，在其中增加 `desktop.artifacts`；不发布 Desktop 专用清单或公钥 JSON。
+```bash
+base64 --wrap=0 android/app/release.keystore
+```
 
-## 首次配置
+macOS：
 
-在离线或受控主机上生成 JQ-Viewer 专用 Ed25519 密钥，不要在 GitHub Actions 中生成正式私钥：
+```bash
+base64 < android/app/release.keystore | tr -d '\n'
+```
+
+PowerShell：
+
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes('android/app/release.keystore'))
+```
+
+发布 workflow 会用这四个 Android Secret 还原 keystore 和 `keystore.properties`，并校验 APK 签名证书。它们保持仓库级 Secret，不移动到 `release` environment。
+
+## 2. 创建 release Environment
+
+1. 打开仓库 `Settings` → `Environments`。
+2. 点击 `New environment`。
+3. 名称填写 `release`，点击 `Configure environment`。
+4. 本项目暂不要求额外审批规则；如以后增加保护规则，发布 job 会在进入该 environment 前等待审批。
+
+## 3. 生成 Ed25519 发布清单密钥
+
+在离线或受控主机执行：
 
 ```bash
 openssl genpkey -algorithm ED25519 -out jq-viewer-desktop-ed25519.pem
-openssl base64 -A -in jq-viewer-desktop-ed25519.pem > jq-viewer-desktop-ed25519.pem.base64
+openssl base64 -A -in jq-viewer-desktop-ed25519.pem \
+  > jq-viewer-desktop-ed25519.pem.base64
 openssl pkey -in jq-viewer-desktop-ed25519.pem -pubout -outform DER \
-  | openssl base64 -A > jq-viewer-desktop-ed25519-public-spki.base64
+  | openssl base64 -A \
+  > jq-viewer-desktop-ed25519-public-spki.base64
 ```
 
-将私钥原文件和 Base64 文件移出仓库并离线加密备份。随后分别配置 `release` environment secret 与 repository Actions variables：
+将私钥原文件和 Base64 文件移出仓库并离线加密备份。建议使用稳定标识 `jq-viewer-release-2026` 作为当前密钥 ID；轮换密钥时使用新的标识。
 
-```bash
-gh secret set --env release RELEASE_ED25519_PRIVATE_KEY_BASE64 \
-  < jq-viewer-desktop-ed25519.pem.base64
-gh variable set RELEASE_ED25519_KEY_ID \
-  --body jq-viewer-release-2026
-gh variable set RELEASE_ED25519_PUBLIC_KEY_SPKI_BASE64 \
-  --body "$(cat jq-viewer-desktop-ed25519-public-spki.base64)"
-```
+## 4. 手动填写 release Environment
 
-RPM 继续复用现有 OpenPGP 发布身份。在受控主机导出完整私钥并填写同一 environment；`RPM_GPG_FINGERPRINT` 必须使用 `gpg --with-colons --list-secret-keys` 输出的完整主密钥 fingerprint，不能使用短 ID：
+打开 `Settings` → `Environments` → `release`。
+
+在 `Environment secrets` 区域逐项点击 `Add environment secret`：
+
+| Name                                 | Secret value                                              |
+| ------------------------------------ | --------------------------------------------------------- |
+| `RELEASE_ED25519_PRIVATE_KEY_BASE64` | `jq-viewer-desktop-ed25519.pem.base64` 文件的完整单行内容 |
+| `RPM_GPG_PRIVATE_KEY_BASE64`         | 现有 OpenPGP 发布私钥导出文件的完整单行 Base64            |
+| `RPM_GPG_PASSPHRASE`                 | OpenPGP 私钥口令                                          |
+
+在 `Environment variables` 区域点击 `Add environment variable`：
+
+| Name                  | Value                                           |
+| --------------------- | ----------------------------------------------- |
+| `RPM_GPG_FINGERPRINT` | OpenPGP 主密钥的完整 fingerprint，不能使用短 ID |
+
+RPM 私钥可在受控主机导出：
 
 ```bash
 gpg --batch --armor --export-secret-keys FULL_FINGERPRINT \
-  | base64 --wrap=0 > jq-viewer-rpm-private-key.asc.base64
-gh secret set --env release RPM_GPG_PRIVATE_KEY_BASE64 \
-  < jq-viewer-rpm-private-key.asc.base64
-gh secret set --env release RPM_GPG_PASSPHRASE
-gh variable set --env release RPM_GPG_FINGERPRINT --body FULL_FINGERPRINT
+  | base64 --wrap=0 \
+  > jq-viewer-rpm-private-key.asc.base64
 ```
 
-配置完成后先用 prerelease tag 验证完整发布流程。正式发布缺少任一值、密钥不匹配、RPM 签名失败或双源字节不一致时都会停止，不会降级为未签名发布。
+使用 `gpg --with-colons --list-secret-keys` 核对完整主密钥 fingerprint。私钥 Base64 填入 Secret，fingerprint 填入 Variable。
+
+## 5. 手动填写 Repository Variables
+
+打开 `Settings` → `Secrets and variables` → `Actions` → `Variables`，逐项点击 `New repository variable`：
+
+| Name                                     | Value                                                             |
+| ---------------------------------------- | ----------------------------------------------------------------- |
+| `RELEASE_ED25519_KEY_ID`                 | 当前密钥的稳定标识，例如 `jq-viewer-release-2026`                 |
+| `RELEASE_ED25519_PUBLIC_KEY_SPKI_BASE64` | `jq-viewer-desktop-ed25519-public-spki.base64` 文件的完整单行内容 |
+
+这两个值不是秘密。Desktop 构建需要它们生成内置公开信任根，因此必须是 Repository Variables，不能只放在 `release` environment。
+
+## 6. 配置完成后的页面核对
+
+页面应出现以下配置名称：
+
+- Repository secrets：`KEYSTORE_BASE64`、`KEYSTORE_PASSWORD`、`KEY_ALIAS`、`KEY_PASSWORD`、`RELEASE_TOKEN`、`GITEE_TOKEN`。
+- Repository variables：`RELEASE_ED25519_KEY_ID`、`RELEASE_ED25519_PUBLIC_KEY_SPKI_BASE64`。
+- `release` environment secrets：`RELEASE_ED25519_PRIVATE_KEY_BASE64`、`RPM_GPG_PRIVATE_KEY_BASE64`、`RPM_GPG_PASSPHRASE`。
+- `release` environment variable：`RPM_GPG_FINGERPRINT`。
+
+workflow 会从 Ed25519 私钥重新派生公钥并与 Repository Variable 逐字节比较；RPM 私钥导入后也会核对完整 fingerprint。缺少任一配置、密钥不匹配、RPM 签名失败或 GitHub/Gitee 双源字节不一致时都会停止，不会降级为未签名发布。
+
+## 7. 手动触发一次 prerelease 验证
+
+1. 确认待发布提交的项目版本与已有 tag 一致，并确保该 tag 已推送到 GitHub。
+2. 打开仓库 `Actions` → `Release`。
+3. 点击 `Run workflow`。
+4. `Tag name to release` 填写已经存在的 tag，例如 `v0.0.4-beta.1`。
+5. 勾选 `Mark as pre-release?`，点击 `Run workflow`。
+6. 在运行详情中确认 Android、Desktop、RPM 签名和 GitHub/Gitee 发布步骤均成功。
+
+prerelease 用于验证构建和分发，不发布正式版 `latest.json`。正式 tag 发布时才会生成并签名共享更新清单。
 
 ## 正式发布资产
 

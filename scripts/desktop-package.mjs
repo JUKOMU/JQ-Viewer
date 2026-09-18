@@ -34,6 +34,7 @@ const targetDefinitions = new Map([
       hostArchitecture: 'x64',
       javacppPlatform: 'windows-x86_64',
       sqliteNativeDirectory: ['Windows', 'x86_64'],
+      webpNativeDirectory: ['Windows', 'x86_64'],
       formats: ['installer.exe', 'portable.zip'],
     },
   ],
@@ -46,6 +47,7 @@ const targetDefinitions = new Map([
       hostArchitecture: 'x64',
       javacppPlatform: 'linux-x86_64',
       sqliteNativeDirectory: ['Linux', 'x86_64'],
+      webpNativeDirectory: ['Linux', 'x86_64'],
       formats: ['deb', 'rpm', 'portable.tar.gz'],
     },
   ],
@@ -58,6 +60,7 @@ const targetDefinitions = new Map([
       hostArchitecture: 'arm64',
       javacppPlatform: 'linux-arm64',
       sqliteNativeDirectory: ['Linux', 'aarch64'],
+      webpNativeDirectory: ['Linux', 'aarch64'],
       formats: ['deb', 'rpm', 'portable.tar.gz'],
     },
   ],
@@ -237,6 +240,57 @@ function pruneSqliteNativeLibraries(inputDirectory, target, workDirectory) {
     { cwd: workDirectory },
   )
   validateFile(sqliteJar, 'pruned sqlite-jdbc JAR')
+}
+
+function pruneWebpNativeLibraries(inputDirectory, target, workDirectory) {
+  const matches = readdirSync(inputDirectory)
+    .filter((name) => /^webp-imageio-.+\.jar$/.test(name))
+    .map((name) => path.join(inputDirectory, name))
+  if (matches.length !== 1) {
+    fail('expected exactly one webp-imageio JAR, got ' + matches.length)
+  }
+
+  const webpJar = matches[0]
+  const extractedDirectory = path.join(workDirectory, 'webp-imageio')
+  const preservedManifest = path.join(workDirectory, 'webp-imageio-manifest.mf')
+  rmSync(extractedDirectory, { recursive: true, force: true })
+  mkdirSync(extractedDirectory, { recursive: true })
+  run(executable('jar'), ['--extract', '--file', webpJar], { cwd: extractedDirectory })
+
+  const manifest = path.join(extractedDirectory, 'META-INF', 'MANIFEST.MF')
+  validateFile(manifest, 'webp-imageio manifest')
+  copyFileSync(manifest, preservedManifest)
+  rmSync(manifest)
+
+  const nativeRoot = path.join(extractedDirectory, 'native')
+  const [targetOs, targetArchitecture] = target.webpNativeDirectory
+  const targetNativeDirectory = path.join(nativeRoot, targetOs, targetArchitecture)
+  if (!existsSync(targetNativeDirectory) || readdirSync(targetNativeDirectory).length === 0) {
+    fail(
+      `webp-imageio native library is missing for ${target.platform}-${target.architecture}`,
+    )
+  }
+
+  for (const osName of readdirSync(nativeRoot)) {
+    const osDirectory = path.join(nativeRoot, osName)
+    if (osName !== targetOs) {
+      rmSync(osDirectory, { recursive: true, force: true })
+      continue
+    }
+    for (const architectureName of readdirSync(osDirectory)) {
+      if (architectureName !== targetArchitecture) {
+        rmSync(path.join(osDirectory, architectureName), { recursive: true, force: true })
+      }
+    }
+  }
+
+  rmSync(webpJar)
+  run(
+    executable('jar'),
+    ['--create', '--file', webpJar, '--manifest', preservedManifest, '-C', extractedDirectory, '.'],
+    { cwd: workDirectory },
+  )
+  validateFile(webpJar, 'pruned webp-imageio JAR')
 }
 
 function findMainJar() {
@@ -492,6 +546,7 @@ export function packageDesktop({ platform, architecture, output }) {
   ])
 
   pruneSqliteNativeLibraries(inputDirectory, target, workDirectory)
+  pruneWebpNativeLibraries(inputDirectory, target, workDirectory)
 
   const mainJar = findMainJar()
   const packagedMainJar = path.join(inputDirectory, path.basename(mainJar))

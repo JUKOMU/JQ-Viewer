@@ -19,7 +19,7 @@
         <slf4j.version>2.0.17</slf4j.version>
         <junit.version>5.11.4</junit.version>
         <jmcomic.version>1.1.8</jmcomic.version>
-        <twelvemonkeys.version>3.14.0</twelvemonkeys.version>
+        <webp.imageio.version>0.3.3</webp.imageio.version>
         <pdfbox.version>3.0.5</pdfbox.version>
         <credential.secure.storage.version>1.0.0</credential.secure.storage.version>
         <flatlaf.version>3.7.2</flatlaf.version>
@@ -69,9 +69,9 @@
             </exclusions>
         </dependency>
         <dependency>
-            <groupId>com.twelvemonkeys.imageio</groupId>
-            <artifactId>imageio-webp</artifactId>
-            <version>${twelvemonkeys.version}</version>
+            <groupId>io.github.darkxanter</groupId>
+            <artifactId>webp-imageio</artifactId>
+            <version>${webp.imageio.version}</version>
         </dependency>
         <dependency>
             <groupId>org.apache.pdfbox</groupId>

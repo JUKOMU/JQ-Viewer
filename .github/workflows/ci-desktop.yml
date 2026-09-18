@@ -243,8 +243,8 @@ jobs:
             native_arch='aarch64'
             javacpp_arch='arm64'
           fi
-          lipo -verify_arch "$binary_arch" "$launcher"
-          lipo -verify_arch "$binary_arch" "$java_runtime"
+          lipo "$launcher" -verify_arch "$binary_arch"
+          lipo "$java_runtime" -verify_arch "$binary_arch"
 
           sqlite_jars=("$app/Contents/app"/sqlite-jdbc-*.jar)
           webp_jars=("$app/Contents/app"/webp-imageio-*.jar)

@@ -26,6 +26,10 @@ describe('Desktop package targets', () => {
       'JQ-Viewer-1.4.6-windows-x64-installer.exe',
       'JQ-Viewer-1.4.6-windows-x64-portable.zip',
     ])
+    expect(resolveTarget('windows', 'x64')).toMatchObject({
+      javacppPlatform: 'windows-x86_64',
+      sqliteNativeDirectory: ['Windows', 'x86_64'],
+    })
     expect(() => resolveTarget('windows', 'arm64')).toThrow('unsupported Desktop package target')
   })
 
@@ -35,6 +39,14 @@ describe('Desktop package targets', () => {
       'JQ-Viewer-1.4.6-linux-arm64.rpm',
       'JQ-Viewer-1.4.6-linux-arm64-portable.tar.gz',
     ])
+    expect(resolveTarget('linux', 'x64')).toMatchObject({
+      javacppPlatform: 'linux-x86_64',
+      sqliteNativeDirectory: ['Linux', 'x86_64'],
+    })
+    expect(resolveTarget('linux', 'arm64')).toMatchObject({
+      javacppPlatform: 'linux-arm64',
+      sqliteNativeDirectory: ['Linux', 'aarch64'],
+    })
   })
 
   it('rejects cross-architecture and cross-platform packaging', () => {

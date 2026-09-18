@@ -53,6 +53,25 @@ describe('Desktop package targets', () => {
     })
   })
 
+  it('publishes one native DMG for each macOS architecture', () => {
+    expect(desktopAssetNames('1.4.6', 'macos', 'x64')).toEqual(['JQ-Viewer-1.4.6-macos-x64.dmg'])
+    expect(desktopAssetNames('1.4.6', 'macos', 'arm64')).toEqual([
+      'JQ-Viewer-1.4.6-macos-arm64.dmg',
+    ])
+    expect(resolveTarget('macos', 'x64')).toMatchObject({
+      hostPlatform: 'darwin',
+      javacppPlatform: 'macosx-x86_64',
+      sqliteNativeDirectory: ['Mac', 'x86_64'],
+      webpNativeDirectory: ['Mac', 'x86_64'],
+    })
+    expect(resolveTarget('macos', 'arm64')).toMatchObject({
+      hostPlatform: 'darwin',
+      javacppPlatform: 'macosx-arm64',
+      sqliteNativeDirectory: ['Mac', 'aarch64'],
+      webpNativeDirectory: ['Mac', 'aarch64'],
+    })
+  })
+
   it('rejects cross-architecture and cross-platform packaging', () => {
     const target = resolveTarget('linux', 'arm64')
     expect(() => validateNativeHost(target, 'linux', 'x64')).toThrow('must be built natively')

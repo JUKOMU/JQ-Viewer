@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 const tagPattern = /^v([0-9]+\.[0-9]+\.[0-9]+)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/
 const digestPattern = /^[0-9a-f]{64}$/i
 
-export const desktopArtifactDefinitions = [
+export const desktopUpdateArtifactDefinitions = [
   {
     platform: 'windows',
     architecture: 'x64',
@@ -49,6 +49,18 @@ export const desktopArtifactDefinitions = [
       suffix: `linux-${architecture}.tar.gz`,
     },
   ]),
+]
+
+export const desktopArtifactDefinitions = [
+  ...desktopUpdateArtifactDefinitions,
+  ...['x64', 'arm64'].map((architecture) => ({
+    platform: 'macos',
+    architecture,
+    compatibleArchitectures: [architecture],
+    packageType: 'installer',
+    packageFormat: 'dmg',
+    suffix: `macos-${architecture}.dmg`,
+  })),
 ]
 
 function fail(message) {
@@ -97,8 +109,8 @@ export function buildDesktopRelease({
 }) {
   const match = releaseTag.match(tagPattern)
   if (!match) fail('release tag must match vX.Y.Z or vX.Y.Z-prerelease')
-  if (artifacts.length !== desktopArtifactDefinitions.length) {
-    fail('Desktop release requires the complete artifact matrix')
+  if (artifacts.length !== desktopUpdateArtifactDefinitions.length) {
+    fail('Desktop update release requires the complete update artifact matrix')
   }
 
   const desktop = {
@@ -135,10 +147,12 @@ export function buildDesktopReleaseFromPaths({
 }) {
   const match = releaseTag.match(tagPattern)
   if (!match) fail('release tag must match vX.Y.Z or vX.Y.Z-prerelease')
-  const artifacts = classifyDesktopAssets(match[1], assetPaths).map((artifact) => ({
-    ...artifact,
-    sha256: sha256FileSync(artifact.path),
-  }))
+  const classified = classifyDesktopAssets(match[1], assetPaths)
+  const byName = new Map(classified.map((artifact) => [artifact.name, artifact]))
+  const artifacts = desktopUpdateArtifactDefinitions.map((definition) => {
+    const artifact = byName.get(expectedDesktopAssetName(match[1], definition))
+    return { ...artifact, sha256: sha256FileSync(artifact.path) }
+  })
   return buildDesktopRelease({ releaseTag, artifacts, githubRepository, giteeRepository })
 }
 
@@ -152,12 +166,12 @@ export function validateDesktopReleaseContract({
   if (!match || !Array.isArray(desktop?.artifacts)) {
     fail('Desktop release metadata is invalid')
   }
-  if (desktop.artifacts.length !== desktopArtifactDefinitions.length) {
+  if (desktop.artifacts.length !== desktopUpdateArtifactDefinitions.length) {
     fail('Desktop release metadata is invalid')
   }
 
-  for (let index = 0; index < desktopArtifactDefinitions.length; index += 1) {
-    const definition = desktopArtifactDefinitions[index]
+  for (let index = 0; index < desktopUpdateArtifactDefinitions.length; index += 1) {
+    const definition = desktopUpdateArtifactDefinitions[index]
     const artifact = desktop.artifacts[index]
     const expectedName = expectedDesktopAssetName(match[1], definition)
     const compatibleArchitectures = artifact?.compatibleArchitectures
@@ -186,10 +200,14 @@ export function validateDesktopReleaseContract({
   }
 }
 
-export function verifyDesktopArtifacts(desktop, assetPaths) {
-  const byName = new Map(assetPaths.map((assetPath) => [path.basename(assetPath), assetPath]))
-  if (byName.size !== assetPaths.length) fail('Desktop asset names must be unique')
-  if (desktop.artifacts?.length !== byName.size) fail('Desktop release asset count mismatch')
+export function verifyDesktopArtifacts(desktop, assetPaths, releaseTag) {
+  const match = releaseTag?.match(tagPattern)
+  if (!match) fail('release tag must match vX.Y.Z or vX.Y.Z-prerelease')
+  const classified = classifyDesktopAssets(match[1], assetPaths)
+  const byName = new Map(classified.map((artifact) => [artifact.name, artifact.path]))
+  if (desktop.artifacts?.length !== desktopUpdateArtifactDefinitions.length) {
+    fail('Desktop update release asset count mismatch')
+  }
   for (const artifact of desktop.artifacts) {
     const assetPath = byName.get(artifact.name)
     if (!assetPath) fail('release asset is missing: ' + artifact.name)
@@ -248,7 +266,7 @@ async function main() {
     githubRepository: process.env.GITHUB_REPOSITORY || 'JUKOMU/JQ-Viewer',
     giteeRepository: process.env.GITEE_REPOSITORY || 'jukomu/jq-viewer',
   })
-  verifyDesktopArtifacts(desktop, assets)
+  verifyDesktopArtifacts(desktop, assets, releaseTag)
   console.log('Desktop release contract verified')
 }
 

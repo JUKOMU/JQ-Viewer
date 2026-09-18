@@ -1,6 +1,5 @@
 // @vitest-environment node
 
-import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -8,8 +7,10 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import {
   buildDesktopRelease,
+  buildDesktopReleaseFromPaths,
   classifyDesktopAssets,
   desktopArtifactDefinitions,
+  desktopUpdateArtifactDefinitions,
   expectedDesktopAssetName,
   validateDesktopReleaseContract,
   verifyDesktopArtifacts,
@@ -40,14 +41,26 @@ function manifestArtifacts(classified) {
   }))
 }
 
+function updateArtifacts(version, classified) {
+  const expectedNames = new Set(
+    desktopUpdateArtifactDefinitions.map((definition) =>
+      expectedDesktopAssetName(version, definition),
+    ),
+  )
+  return classified.filter((artifact) => expectedNames.has(artifact.name))
+}
+
 describe('Desktop release assets', () => {
   it('requires the complete package matrix and records Windows on ARM compatibility', () => {
-    const classified = classifyDesktopAssets('1.4.6', createArtifacts())
-    const desktop = buildDesktopRelease({
+    const assetPaths = createArtifacts()
+    const classified = classifyDesktopAssets('1.4.6', assetPaths)
+    const desktop = buildDesktopReleaseFromPaths({
       releaseTag: 'v1.4.6',
-      artifacts: manifestArtifacts(classified),
+      assetPaths,
     })
 
+    expect(classified).toHaveLength(10)
+    expect(classified.filter((artifact) => artifact.platform === 'macos')).toHaveLength(2)
     expect(desktop.artifacts).toHaveLength(8)
     expect(
       desktop.artifacts
@@ -55,11 +68,15 @@ describe('Desktop release assets', () => {
         .every((artifact) => artifact.compatibleArchitectures.join(',') === 'x64,arm64'),
     ).toBe(true)
     expect(desktop.artifacts.filter((artifact) => artifact.platform === 'linux')).toHaveLength(6)
+    expect(desktop.artifacts.filter((artifact) => artifact.platform === 'macos')).toHaveLength(0)
   })
 
   it('rejects missing or unexpected release assets', () => {
     const assets = createArtifacts()
     expect(() => classifyDesktopAssets('1.4.6', assets.slice(1))).toThrow('missing Desktop')
+    expect(() => classifyDesktopAssets('1.4.6', assets.slice(0, -1))).toThrow(
+      'JQ-Viewer-1.4.6-macos-arm64.dmg',
+    )
 
     const unexpected = path.join(path.dirname(assets[0]), 'unexpected.bin')
     fs.writeFileSync(unexpected, 'unexpected')
@@ -72,7 +89,7 @@ describe('Desktop release assets', () => {
     const classified = classifyDesktopAssets('1.4.6', createArtifacts())
     const desktop = buildDesktopRelease({
       releaseTag: 'v1.4.6',
-      artifacts: manifestArtifacts(classified),
+      artifacts: manifestArtifacts(updateArtifacts('1.4.6', classified)),
     })
 
     desktop.artifacts[0].compatibleArchitectures = ['x64']
@@ -85,7 +102,7 @@ describe('Desktop release assets', () => {
     const classified = classifyDesktopAssets('1.4.6', createArtifacts())
     const desktop = buildDesktopRelease({
       releaseTag: 'v1.4.6',
-      artifacts: manifestArtifacts(classified),
+      artifacts: manifestArtifacts(updateArtifacts('1.4.6', classified)),
     })
 
     desktop.artifacts[0].sources.github = 'https://example.invalid/package.exe'
@@ -96,20 +113,18 @@ describe('Desktop release assets', () => {
 
   it('verifies package bytes against the shared release section', () => {
     const assetPaths = createArtifacts()
-    const classified = classifyDesktopAssets('1.4.6', assetPaths)
-    const desktop = buildDesktopRelease({
+    const desktop = buildDesktopReleaseFromPaths({
       releaseTag: 'v1.4.6',
-      artifacts: classified.map((artifact) => ({
-        ...artifact,
-        sha256: createHash('sha256').update(fs.readFileSync(artifact.path)).digest('hex'),
-      })),
+      assetPaths,
     })
 
-    expect(() => verifyDesktopArtifacts(desktop, assetPaths)).not.toThrow()
+    expect(() => verifyDesktopArtifacts(desktop, assetPaths, 'v1.4.6')).not.toThrow()
 
     const mutated = fs.readFileSync(assetPaths[0])
     mutated[0] ^= 0xff
     fs.writeFileSync(assetPaths[0], mutated)
-    expect(() => verifyDesktopArtifacts(desktop, assetPaths)).toThrow('release SHA-256 mismatch')
+    expect(() => verifyDesktopArtifacts(desktop, assetPaths, 'v1.4.6')).toThrow(
+      'release SHA-256 mismatch',
+    )
   })
 })

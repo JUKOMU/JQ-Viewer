@@ -187,11 +187,9 @@ class DesktopUpdateServiceTest {
     ) throws Exception {
         String suffix = switch (packageFormat) {
             case "exe" -> "installer.exe";
-            case "zip" -> "portable.zip";
-            case "tar.gz" -> "portable.tar.gz";
             default -> packageFormat;
         };
-        String separator = packageFormat.equals("deb") || packageFormat.equals("rpm") ? "." : "-";
+        String separator = packageFormat.equals("exe") ? "-" : ".";
         String name = "JQ-Viewer-1.4.7-" + platform + "-" + architecture + separator + suffix;
         ObjectNode artifact = artifacts.addObject();
         artifact.put("name", name);
@@ -285,7 +283,7 @@ class DesktopUpdateServiceTest {
                 body = new ByteArrayInputStream(signature);
             } else if (DesktopUpdateService.GITEE_LATEST_RELEASE.equals(uri)) {
                 body = new ByteArrayInputStream(giteeRelease().getBytes(StandardCharsets.UTF_8));
-            } else if (uri.getPath().endsWith("JQ-Viewer-1.4.7-linux-x64-portable.tar.gz")) {
+            } else if (uri.getPath().endsWith("JQ-Viewer-1.4.7-linux-x64.tar.gz")) {
                 body = stallDownloads.get()
                         ? new StalledInputStream()
                         : new ByteArrayInputStream(PACKAGE_BYTES);

@@ -129,8 +129,10 @@ export function resolveTarget(platform, architecture) {
 export function desktopAssetNames(version, platform, architecture) {
   const target = resolveTarget(platform, architecture)
   return target.formats.map((format) => {
-    const separator = format === 'deb' || format === 'rpm' ? '.' : '-'
-    return `JQ-Viewer-${version}-${target.platform}-${target.architecture}${separator}${format}`
+    const portable = format.startsWith('portable.')
+    const assetFormat = portable ? format.slice('portable.'.length) : format
+    const separator = portable || format === 'deb' || format === 'rpm' ? '.' : '-'
+    return `JQ-Viewer-${version}-${target.platform}-${target.architecture}${separator}${assetFormat}`
   })
 }
 
@@ -220,9 +222,7 @@ function pruneSqliteNativeLibraries(inputDirectory, target, workDirectory) {
   const [targetOs, targetArchitecture] = target.sqliteNativeDirectory
   const targetNativeDirectory = path.join(nativeRoot, targetOs, targetArchitecture)
   if (!existsSync(targetNativeDirectory) || readdirSync(targetNativeDirectory).length === 0) {
-    fail(
-      `sqlite-jdbc native library is missing for ${target.platform}-${target.architecture}`,
-    )
+    fail(`sqlite-jdbc native library is missing for ${target.platform}-${target.architecture}`)
   }
 
   for (const osName of readdirSync(nativeRoot)) {
@@ -241,7 +241,16 @@ function pruneSqliteNativeLibraries(inputDirectory, target, workDirectory) {
   rmSync(sqliteJar)
   run(
     executable('jar'),
-    ['--create', '--file', sqliteJar, '--manifest', preservedManifest, '-C', extractedDirectory, '.'],
+    [
+      '--create',
+      '--file',
+      sqliteJar,
+      '--manifest',
+      preservedManifest,
+      '-C',
+      extractedDirectory,
+      '.',
+    ],
     { cwd: workDirectory },
   )
   validateFile(sqliteJar, 'pruned sqlite-jdbc JAR')
@@ -271,9 +280,7 @@ function pruneWebpNativeLibraries(inputDirectory, target, workDirectory) {
   const [targetOs, targetArchitecture] = target.webpNativeDirectory
   const targetNativeDirectory = path.join(nativeRoot, targetOs, targetArchitecture)
   if (!existsSync(targetNativeDirectory) || readdirSync(targetNativeDirectory).length === 0) {
-    fail(
-      `webp-imageio native library is missing for ${target.platform}-${target.architecture}`,
-    )
+    fail(`webp-imageio native library is missing for ${target.platform}-${target.architecture}`)
   }
 
   for (const osName of readdirSync(nativeRoot)) {

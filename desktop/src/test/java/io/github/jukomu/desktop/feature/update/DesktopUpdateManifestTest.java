@@ -28,7 +28,7 @@ class DesktopUpdateManifestTest {
         DesktopUpdateManifest.VerifiedRelease release = DesktopUpdateManifest.verifyAndParse(
                 manifest, signature, configuration, MAPPER);
 
-        assertEquals("JQ-Viewer-1.4.7-linux-x64-portable.tar.gz",
+        assertEquals("JQ-Viewer-1.4.7-linux-x64.tar.gz",
                 release.artifact().name());
         assertEquals("portable", release.artifact().packageType());
         assertEquals("tar.gz", release.artifact().packageFormat());
@@ -126,11 +126,9 @@ class DesktopUpdateManifestTest {
     ) {
         String suffix = switch (packageFormat) {
             case "exe" -> "installer.exe";
-            case "zip" -> "portable.zip";
-            case "tar.gz" -> "portable.tar.gz";
             default -> packageFormat;
         };
-        String separator = packageFormat.equals("deb") || packageFormat.equals("rpm") ? "." : "-";
+        String separator = packageFormat.equals("exe") ? "-" : ".";
         String name = "JQ-Viewer-1.4.7-" + platform + "-" + architecture + separator + suffix;
         ObjectNode artifact = artifacts.addObject();
         artifact.put("name", name);

@@ -156,13 +156,29 @@ jobs:
           NODE
           fi
 
-      - name: Build native Desktop packages
+      - name: Build native Desktop packages (Linux)
+        if: ${{ matrix.platform == 'linux' }}
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
         run: >-
           npm run desktop:package --
           --platform "${{ matrix.platform }}"
           --arch "${{ matrix.architecture }}"
           --output "${{ runner.temp }}/desktop-package"
-          --release-tag "${{ inputs.release_tag }}"
+          --release-tag "$RELEASE_TAG"
+
+      - name: Build native Desktop packages (Windows)
+        if: ${{ matrix.platform == 'windows' }}
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: >-
+          npm run desktop:package --
+          --platform "${{ matrix.platform }}"
+          --arch "${{ matrix.architecture }}"
+          --output "${{ runner.temp }}/desktop-package"
+          --release-tag "$env:RELEASE_TAG"
 
       - name: Upload Desktop packages
         uses: actions/upload-artifact@v4

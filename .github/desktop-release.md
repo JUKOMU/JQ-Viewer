@@ -141,14 +141,17 @@ workflow 会从 Ed25519 私钥重新派生公钥并与 Repository Variable 逐�
 4. prerelease tag 会根据 tag 中的后缀自动识别；也可以勾选 `Mark as pre-release?` 强制按 prerelease 发布。
 5. 点击 `Run workflow`。
 
-prerelease 用于验证构建和 GitHub 分发，不读取或校验 `.github/release-notes.md`，发布页面不附带文案，也不等待 Gitee tag 或创建 Gitee Release。prerelease 不发布正式版 `latest.json`；正式 tag 发布时才会校验文案、发布 GitHub/Gitee Release，并生成及签名共享更新清单。
+prerelease 用于验证构建和 GitHub 分发，不读取或校验 `.github/release-notes.md`，发布页面只附带 macOS 实验版与 Gatekeeper 提示，也不等待 Gitee tag 或创建 Gitee Release。prerelease 不发布正式版 `latest.json`；正式 tag 发布时才会校验文案、发布 GitHub/Gitee Release，并生成及签名共享更新清单。
 
 ## 正式发布资产
 
 - Windows x64：`JQ-Viewer-<version>-windows-x64-installer.exe` 安装版、`JQ-Viewer-<version>-windows-x64.zip` 便携版；两者同时声明兼容 Windows x64 和 Windows on ARM x64 仿真。
 - Linux x64/arm64：DEB、RPM 安装版，以及不带 `portable` 字样的 `JQ-Viewer-<version>-linux-<arch>.tar.gz` 便携版。
-- `latest.json`：沿用 Android 正式版更新清单，并通过 `desktop.artifacts` 记录平台、架构、兼容架构、包类型、双源 URL、大小和 SHA-256。
+- macOS Intel/Apple Silicon：分别发布 `JQ-Viewer-<version>-macos-x64.dmg` 和 `JQ-Viewer-<version>-macos-arm64.dmg`。DMG 内是包含 Java 运行时和原生依赖的 `.app`；不发布 Universal、PKG 或单独的便携版。
+- `latest.json`：沿用 Android 正式版更新清单，并通过 `desktop.artifacts` 记录 Windows/Linux 的 8 个自动更新资产。macOS DMG 暂不进入客户端自动更新清单，以保持现有 Desktop 客户端协议兼容。
 - `latest.json.sig`：对 `latest.json` 精确字节的 Ed25519 detached signature。公钥不会作为 Release 资产发布；客户端信任根必须由应用内固定公钥建立。
-- `SHA256SUMS`：Desktop 包、共享清单和签名的附加人工校验表；prerelease 沿用现有行为，不发布 `latest.json`，校验表只包含 Desktop 包。
+- `SHA256SUMS`：10 个 Desktop 包、共享清单和签名的附加人工校验表；prerelease 不发布 `latest.json`，校验表只包含 Desktop 包。
 
 Windows 发布物不做 Authenticode。用户可能看到 `Unknown publisher`、SmartScreen 警告，或在受策略管理的设备上被阻止。workflow 不会声明 Windows 包已获得系统级发布者签名。
+
+macOS DMG 不使用 Apple Developer ID 签名，也不进行 Apple 公证；JDK 工具可能为 `.app` 生成临时签名，但这不等同于受信任的开发者签名。Gatekeeper 可能阻止首次打开，Release 页面会提示用户按需在“系统设置”→“隐私与安全性”中确认，不建议关闭系统级 Gatekeeper。macOS 构建会在对应原生 runner 上挂载 DMG，核对 `.app`、运行时、架构和原生依赖，并执行无界面的启动冒烟测试；真实界面、钥匙串、文件对话框和通知仍需在实际 Mac 上验收。

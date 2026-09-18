@@ -88,6 +88,14 @@ jobs:
             runner: ubuntu-24.04-arm
             platform: linux
             architecture: arm64
+          - target: macos-x64
+            runner: macos-15-intel
+            platform: macos
+            architecture: x64
+          - target: macos-arm64
+            runner: macos-15
+            platform: macos
+            architecture: arm64
 
     steps:
       - uses: actions/checkout@v4
@@ -179,6 +187,101 @@ jobs:
           --arch "${{ matrix.architecture }}"
           --output "${{ runner.temp }}/desktop-package"
           --release-tag "$env:RELEASE_TAG"
+
+      - name: Build native Desktop package (macOS)
+        if: ${{ matrix.platform == 'macos' }}
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: >-
+          npm run desktop:package --
+          --platform "${{ matrix.platform }}"
+          --arch "${{ matrix.architecture }}"
+          --output "${{ runner.temp }}/desktop-package"
+          --release-tag "$RELEASE_TAG"
+
+      - name: Validate macOS Desktop package
+        if: ${{ matrix.platform == 'macos' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_dir="$RUNNER_TEMP/desktop-package"
+          shopt -s nullglob
+          dmg_files=("$package_dir"/*.dmg)
+          if [ "${#dmg_files[@]}" -ne 1 ]; then
+            echo "::error::Expected one macOS DMG, got ${#dmg_files[@]}"
+            exit 1
+          fi
+
+          mount_dir="$(mktemp -d)"
+          smoke_home="$(mktemp -d)"
+          smoke_log="$RUNNER_TEMP/macos-desktop-smoke.log"
+          smoke_pid=''
+          cleanup() {
+            if [ -n "$smoke_pid" ] && kill -0 "$smoke_pid" 2>/dev/null; then
+              kill "$smoke_pid" 2>/dev/null || true
+              wait "$smoke_pid" 2>/dev/null || true
+            fi
+            hdiutil detach "$mount_dir" >/dev/null 2>&1 || true
+            rm -rf "$mount_dir" "$smoke_home"
+          }
+          trap cleanup EXIT
+
+          hdiutil attach "${dmg_files[0]}" -readonly -nobrowse -mountpoint "$mount_dir"
+          app="$mount_dir/JQ-Viewer.app"
+          launcher="$app/Contents/MacOS/JQ-Viewer"
+          java_runtime="$app/Contents/runtime/Contents/Home/bin/java"
+          test -x "$launcher"
+          test -x "$java_runtime"
+
+          if [ "${{ matrix.architecture }}" = 'x64' ]; then
+            binary_arch='x86_64'
+            native_arch='x86_64'
+            javacpp_arch='x86_64'
+          else
+            binary_arch='arm64'
+            native_arch='aarch64'
+            javacpp_arch='arm64'
+          fi
+          lipo -verify_arch "$binary_arch" "$launcher"
+          lipo -verify_arch "$binary_arch" "$java_runtime"
+
+          sqlite_jars=("$app/Contents/app"/sqlite-jdbc-*.jar)
+          webp_jars=("$app/Contents/app"/webp-imageio-*.jar)
+          if [ "${#sqlite_jars[@]}" -ne 1 ] || [ "${#webp_jars[@]}" -ne 1 ]; then
+            echo '::error::Expected one SQLite JAR and one WebP JAR in the macOS app'
+            exit 1
+          fi
+          jar --list --file "${sqlite_jars[0]}" |
+            grep -Fx "org/sqlite/native/Mac/$native_arch/libsqlitejdbc.dylib"
+          jar --list --file "${webp_jars[0]}" |
+            grep -Fx "native/Mac/$native_arch/libwebp-imageio.dylib"
+          for library in javacpp leptonica tesseract; do
+            if ! find "$app/Contents/app" -maxdepth 1 -type f \
+              -name "$library-*-macosx-$javacpp_arch.jar" -print -quit | grep -q .; then
+              echo "::error::Missing $library native JAR for macosx-$javacpp_arch"
+              exit 1
+            fi
+          done
+
+          JAVA_TOOL_OPTIONS="-Djava.awt.headless=true -Duser.home=$smoke_home" \
+            "$launcher" >"$smoke_log" 2>&1 &
+          smoke_pid=$!
+          for _ in $(seq 1 30); do
+            if grep -q 'JQ Viewer started at ' "$smoke_log"; then
+              echo 'macOS Desktop launcher smoke test passed'
+              exit 0
+            fi
+            if ! kill -0 "$smoke_pid" 2>/dev/null; then
+              cat "$smoke_log"
+              echo '::error::macOS Desktop launcher exited before startup completed'
+              exit 1
+            fi
+            sleep 1
+          done
+          cat "$smoke_log"
+          echo '::error::macOS Desktop launcher did not complete startup within 30 seconds'
+          exit 1
 
       - name: Upload Desktop packages
         uses: actions/upload-artifact@v4

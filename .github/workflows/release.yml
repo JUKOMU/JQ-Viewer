@@ -467,6 +467,26 @@ jobs:
           name: release-desktop
           path: ${{ runner.temp }}/desktop-release
 
+      - name: Prepare release page notes
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+          IS_PRERELEASE: ${{ needs.validate-release-input.outputs.is_prerelease }}
+        run: |
+          set -euo pipefail
+          notes="$RUNNER_TEMP/release-page-notes.md"
+          if [ "$IS_PRERELEASE" = 'true' ]; then
+            printf '# %s\n' "$RELEASE_TAG" > "$notes"
+          else
+            cp .github/release-notes.md "$notes"
+          fi
+          cat >> "$notes" <<'EOF'
+
+          ## macOS Desktop（实验性）
+
+          macOS DMG 未使用 Apple Developer ID 签名，也未进行 Apple 公证，因此 Gatekeeper 可能阻止首次打开。需要时请在“系统设置”→“隐私与安全性”中确认打开；当前版本暂不提供 macOS 应用内自动更新。
+          EOF
+
       - name: Verify release APK artifacts
         run: |
           set -euo pipefail
@@ -601,7 +621,7 @@ jobs:
           desktop_dir="$RUNNER_TEMP/desktop-release"
           args=(
             "$RELEASE_TAG"
-            ".github/release-notes.md"
+            "$RUNNER_TEMP/release-page-notes.md"
             "$RELEASE_COMMIT"
             "$RUNNER_TEMP/latest.json"
             "$artifact_dir"/JQ-Viewer-*.apk
@@ -617,7 +637,7 @@ jobs:
           target_commitish: ${{ needs.validate-release-input.outputs.release_commit }}
           draft: false
           prerelease: false
-          body_path: .github/release-notes.md
+          body_path: ${{ runner.temp }}/release-page-notes.md
           generate_release_notes: false
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -630,6 +650,7 @@ jobs:
           target_commitish: ${{ needs.validate-release-input.outputs.release_commit }}
           draft: false
           prerelease: true
+          body_path: ${{ runner.temp }}/release-page-notes.md
           generate_release_notes: false
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -759,9 +780,17 @@ jobs:
 
           mkdir -p "$temp_dir/github" "$temp_dir/gitee"
           desktop_args=()
-          while IFS= read -r asset_name; do
+          desktop_asset_count=0
+          while read -r expected_sha asset_name extra; do
+            if [[ "$asset_name" != JQ-Viewer-* ]]; then
+              continue
+            fi
             if [ -z "$asset_name" ] || [ "$asset_name" != "$(basename -- "$asset_name")" ]; then
               echo "::error::Invalid Desktop release asset name: $asset_name"
+              exit 1
+            fi
+            if ! [[ "$expected_sha" =~ ^[0-9A-Fa-f]{64}$ ]] || [ -n "${extra:-}" ]; then
+              echo "::error::Invalid Desktop checksum entry: $expected_sha $asset_name"
               exit 1
             fi
             github_asset="$temp_dir/github/$asset_name"
@@ -774,8 +803,18 @@ jobs:
               echo "::error::GitHub/Gitee Desktop asset bytes differ for $asset_name"
               exit 1
             fi
+            actual_sha="$(sha256sum "$github_asset" | awk '{print $1}')"
+            if [ "${actual_sha,,}" != "${expected_sha,,}" ]; then
+              echo "::error::SHA256SUMS does not match public Desktop asset $asset_name"
+              exit 1
+            fi
             desktop_args+=(--asset "$github_asset")
-          done < <(jq -r '.desktop.artifacts[].name' "$temp_dir/github-latest.json")
+            desktop_asset_count=$((desktop_asset_count + 1))
+          done < "$temp_dir/github-SHA256SUMS"
+          if [ "$desktop_asset_count" -ne 10 ]; then
+            echo "::error::Expected ten Desktop release assets, got $desktop_asset_count"
+            exit 1
+          fi
 
           node scripts/desktop-release-assets.mjs verify \
             --tag "$RELEASE_TAG" \
@@ -784,7 +823,7 @@ jobs:
           node scripts/release-signature.mjs verify \
             --manifest "$temp_dir/github-latest.json" \
             --signature "$temp_dir/github-latest.json.sig"
-          echo "Public release assets verified: eight identical Desktop packages and signed shared manifest"
+          echo "Public release assets verified: ten identical Desktop packages and signed shared manifest"
 
       - name: Cleanup downloaded release artifacts
         if: ${{ always() }}
@@ -793,3 +832,4 @@ jobs:
           rm -rf "$RUNNER_TEMP/release-artifact"
           rm -rf "$RUNNER_TEMP/desktop-release"
           rm -f "$RUNNER_TEMP/latest.json"
+          rm -f "$RUNNER_TEMP/release-page-notes.md"

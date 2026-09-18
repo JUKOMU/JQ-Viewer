@@ -32,6 +32,8 @@ const targetDefinitions = new Map([
       architecture: 'x64',
       hostPlatform: 'win32',
       hostArchitecture: 'x64',
+      javacppPlatform: 'windows-x86_64',
+      sqliteNativeDirectory: ['Windows', 'x86_64'],
       formats: ['installer.exe', 'portable.zip'],
     },
   ],
@@ -42,6 +44,8 @@ const targetDefinitions = new Map([
       architecture: 'x64',
       hostPlatform: 'linux',
       hostArchitecture: 'x64',
+      javacppPlatform: 'linux-x86_64',
+      sqliteNativeDirectory: ['Linux', 'x86_64'],
       formats: ['deb', 'rpm', 'portable.tar.gz'],
     },
   ],
@@ -52,6 +56,8 @@ const targetDefinitions = new Map([
       architecture: 'arm64',
       hostPlatform: 'linux',
       hostArchitecture: 'arm64',
+      javacppPlatform: 'linux-arm64',
+      sqliteNativeDirectory: ['Linux', 'aarch64'],
       formats: ['deb', 'rpm', 'portable.tar.gz'],
     },
   ],
@@ -180,6 +186,57 @@ function listJars(directory) {
     .filter((name) => name.endsWith('.jar'))
     .map((name) => path.join(directory, name))
     .sort()
+}
+
+function pruneSqliteNativeLibraries(inputDirectory, target, workDirectory) {
+  const matches = readdirSync(inputDirectory)
+    .filter((name) => /^sqlite-jdbc-.+\.jar$/.test(name))
+    .map((name) => path.join(inputDirectory, name))
+  if (matches.length !== 1) {
+    fail('expected exactly one sqlite-jdbc JAR, got ' + matches.length)
+  }
+
+  const sqliteJar = matches[0]
+  const extractedDirectory = path.join(workDirectory, 'sqlite-jdbc')
+  const preservedManifest = path.join(workDirectory, 'sqlite-jdbc-manifest.mf')
+  rmSync(extractedDirectory, { recursive: true, force: true })
+  mkdirSync(extractedDirectory, { recursive: true })
+  run(executable('jar'), ['--extract', '--file', sqliteJar], { cwd: extractedDirectory })
+
+  const manifest = path.join(extractedDirectory, 'META-INF', 'MANIFEST.MF')
+  validateFile(manifest, 'sqlite-jdbc manifest')
+  copyFileSync(manifest, preservedManifest)
+  rmSync(manifest)
+
+  const nativeRoot = path.join(extractedDirectory, 'org', 'sqlite', 'native')
+  const [targetOs, targetArchitecture] = target.sqliteNativeDirectory
+  const targetNativeDirectory = path.join(nativeRoot, targetOs, targetArchitecture)
+  if (!existsSync(targetNativeDirectory) || readdirSync(targetNativeDirectory).length === 0) {
+    fail(
+      `sqlite-jdbc native library is missing for ${target.platform}-${target.architecture}`,
+    )
+  }
+
+  for (const osName of readdirSync(nativeRoot)) {
+    const osDirectory = path.join(nativeRoot, osName)
+    if (osName !== targetOs) {
+      rmSync(osDirectory, { recursive: true, force: true })
+      continue
+    }
+    for (const architectureName of readdirSync(osDirectory)) {
+      if (architectureName !== targetArchitecture) {
+        rmSync(path.join(osDirectory, architectureName), { recursive: true, force: true })
+      }
+    }
+  }
+
+  rmSync(sqliteJar)
+  run(
+    executable('jar'),
+    ['--create', '--file', sqliteJar, '--manifest', preservedManifest, '-C', extractedDirectory, '.'],
+    { cwd: workDirectory },
+  )
+  validateFile(sqliteJar, 'pruned sqlite-jdbc JAR')
 }
 
 function findMainJar() {
@@ -431,7 +488,10 @@ export function packageDesktop({ platform, architecture, output }) {
     '-DskipTests',
     '-DincludeScope=runtime',
     '-DoutputDirectory=' + inputDirectory,
+    '-Djavacpp.platform=' + target.javacppPlatform,
   ])
+
+  pruneSqliteNativeLibraries(inputDirectory, target, workDirectory)
 
   const mainJar = findMainJar()
   const packagedMainJar = path.join(inputDirectory, path.basename(mainJar))

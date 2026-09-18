@@ -11,19 +11,19 @@ import java.awt.event.MouseEvent;
 import java.awt.event.WindowEvent;
 import java.awt.event.WindowFocusListener;
 import java.awt.image.BufferedImage;
-import java.io.IOException;
-import java.io.InputStream;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * 可选的托盘集成；使用内嵌字体与轻量弹出菜单。
+ * 可选的托盘集成；使用系统字体与轻量弹出菜单。
  */
 public final class Tray implements AutoCloseable {
-    private static final String MENU_GLYPHS = "打开首页退出";
-    private static final String FONT_RESOURCE = "/fonts/NotoSansCJK-Regular.ttc";
+    private static final MenuLabels CHINESE_LABELS = new MenuLabels("打开首页", "退出");
+    private static final MenuLabels ENGLISH_LABELS = new MenuLabels("Open Home", "Exit");
+    private static final String CHINESE_MENU_GLYPHS =
+            CHINESE_LABELS.openHome() + CHINESE_LABELS.exit();
     private static final float MENU_FONT_SIZE = 13f;
 
     private final SystemTray systemTray;
@@ -48,10 +48,9 @@ public final class Tray implements AutoCloseable {
         }
 
         try {
-            Font menuFont = loadMenuFont();
-            if (menuFont == null) {
-                return Optional.empty();
-            }
+            MenuPresentation menuPresentation = resolveMenuPresentation(
+                    Locale.getDefault(Locale.Category.DISPLAY)
+            );
 
             // 透明宿主窗口，用于处理失焦关闭
             JDialog hiddenDialog = new JDialog();
@@ -72,8 +71,16 @@ public final class Tray implements AutoCloseable {
                 BorderFactory.createEmptyBorder(0, 0, 0, 0)
             ));
 
-            JMenuItem openHomeItem = createMenuItem("打开首页", menuFont, openHome);
-            JMenuItem exitItem = createMenuItem("退出", menuFont, exit);
+            JMenuItem openHomeItem = createMenuItem(
+                    menuPresentation.labels().openHome(),
+                    menuPresentation.font(),
+                    openHome
+            );
+            JMenuItem exitItem = createMenuItem(
+                    menuPresentation.labels().exit(),
+                    menuPresentation.font(),
+                    exit
+            );
 
             JSeparator separator = new JSeparator();
             separator.setForeground(new Color(230, 233, 236));
@@ -260,32 +267,55 @@ public final class Tray implements AutoCloseable {
         return item;
     }
 
-    private static Font loadMenuFont() {
-        try (InputStream stream = Tray.class.getResourceAsStream(FONT_RESOURCE)) {
-            if (stream == null) {
-                return null;
-            }
+    static MenuLabels selectMenuLabels(Locale locale, boolean chineseFontAvailable) {
+        Objects.requireNonNull(locale, "locale");
+        return "zh".equals(locale.getLanguage()) && chineseFontAvailable
+                ? CHINESE_LABELS
+                : ENGLISH_LABELS;
+    }
 
-            Font[] fonts = Font.createFonts(stream);
-            for (Font font : fonts) {
-                String family = font.getFamily(Locale.SIMPLIFIED_CHINESE);
-                if (family.toUpperCase(Locale.ROOT).contains("SC")
-                    && font.canDisplayUpTo(MENU_GLYPHS) == -1) {
-                    Font derived = font.deriveFont(Font.PLAIN, MENU_FONT_SIZE);
-                    GraphicsEnvironment.getLocalGraphicsEnvironment().registerFont(derived);
-                    return derived;
+    private static MenuPresentation resolveMenuPresentation(Locale locale) {
+        Font defaultFont = defaultMenuFont();
+        if (!"zh".equals(locale.getLanguage())) {
+            return new MenuPresentation(ENGLISH_LABELS, defaultFont);
+        }
+
+        Font chineseFont = findChineseMenuFont(defaultFont, locale);
+        MenuLabels labels = selectMenuLabels(locale, chineseFont != null);
+        return new MenuPresentation(labels, chineseFont == null ? defaultFont : chineseFont);
+    }
+
+    private static Font defaultMenuFont() {
+        Font font = UIManager.getFont("MenuItem.font");
+        if (font == null) {
+            font = new Font(Font.DIALOG, Font.PLAIN, Math.round(MENU_FONT_SIZE));
+        }
+        return font.deriveFont(Font.PLAIN, MENU_FONT_SIZE);
+    }
+
+    private static Font findChineseMenuFont(Font preferredFont, Locale locale) {
+        if (preferredFont.canDisplayUpTo(CHINESE_MENU_GLYPHS) == -1) {
+            return preferredFont;
+        }
+
+        try {
+            String[] families = GraphicsEnvironment.getLocalGraphicsEnvironment()
+                    .getAvailableFontFamilyNames(locale);
+            for (String family : families) {
+                Font font = new Font(family, Font.PLAIN, Math.round(MENU_FONT_SIZE));
+                if (font.canDisplayUpTo(CHINESE_MENU_GLYPHS) == -1) {
+                    return font.deriveFont(Font.PLAIN, MENU_FONT_SIZE);
                 }
             }
-            for (Font font : fonts) {
-                if (font.canDisplayUpTo(MENU_GLYPHS) == -1) {
-                    Font derived = font.deriveFont(Font.PLAIN, MENU_FONT_SIZE);
-                    GraphicsEnvironment.getLocalGraphicsEnvironment().registerFont(derived);
-                    return derived;
-                }
-            }
-        } catch (FontFormatException | IOException ignored) {
+        } catch (RuntimeException ignored) {
         }
         return null;
+    }
+
+    record MenuLabels(String openHome, String exit) {
+    }
+
+    private record MenuPresentation(MenuLabels labels, Font font) {
     }
 
     private static void runSafely(Runnable action) {

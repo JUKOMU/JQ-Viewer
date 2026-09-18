@@ -145,8 +145,8 @@ prerelease 用于验证构建和 GitHub 分发，不读取或校验 `.github/rel
 
 ## 正式发布资产
 
-- Windows x64：EXE 安装版、ZIP 便携版；两者同时声明兼容 Windows x64 和 Windows on ARM x64 仿真。
-- Linux x64/arm64：DEB、RPM、TAR.GZ 便携版。
+- Windows x64：`JQ-Viewer-<version>-windows-x64-installer.exe` 安装版、`JQ-Viewer-<version>-windows-x64.zip` 便携版；两者同时声明兼容 Windows x64 和 Windows on ARM x64 仿真。
+- Linux x64/arm64：DEB、RPM 安装版，以及不带 `portable` 字样的 `JQ-Viewer-<version>-linux-<arch>.tar.gz` 便携版。
 - `latest.json`：沿用 Android 正式版更新清单，并通过 `desktop.artifacts` 记录平台、架构、兼容架构、包类型、双源 URL、大小和 SHA-256。
 - `latest.json.sig`：对 `latest.json` 精确字节的 Ed25519 detached signature。公钥不会作为 Release 资产发布；客户端信任根必须由应用内固定公钥建立。
 - `SHA256SUMS`：Desktop 包、共享清单和签名的附加人工校验表；prerelease 沿用现有行为，不发布 `latest.json`，校验表只包含 Desktop 包。

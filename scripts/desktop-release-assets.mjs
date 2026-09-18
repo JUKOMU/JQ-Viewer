@@ -21,7 +21,7 @@ export const desktopArtifactDefinitions = [
     compatibleArchitectures: ['x64', 'arm64'],
     packageType: 'portable',
     packageFormat: 'zip',
-    suffix: 'windows-x64-portable.zip',
+    suffix: 'windows-x64.zip',
   },
   ...['x64', 'arm64'].flatMap((architecture) => [
     {
@@ -46,7 +46,7 @@ export const desktopArtifactDefinitions = [
       compatibleArchitectures: [architecture],
       packageType: 'portable',
       packageFormat: 'tar.gz',
-      suffix: `linux-${architecture}-portable.tar.gz`,
+      suffix: `linux-${architecture}.tar.gz`,
     },
   ]),
 ]

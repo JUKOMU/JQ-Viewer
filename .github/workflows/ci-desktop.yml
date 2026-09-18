@@ -227,7 +227,7 @@ jobs:
           }
           trap cleanup EXIT
 
-          hdiutil attach "${dmg_files[0]}" -acceptlicense -readonly -nobrowse -mountpoint "$mount_dir"
+          printf 'Y\n' | hdiutil attach "${dmg_files[0]}" -readonly -nobrowse -mountpoint "$mount_dir"
           app="$mount_dir/JQ-Viewer.app"
           launcher="$app/Contents/MacOS/JQ-Viewer"
           java_runtime="$app/Contents/runtime/Contents/Home/bin/java"

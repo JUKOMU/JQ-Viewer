@@ -13,6 +13,7 @@ import {
   validateNativeHost,
   windowsUpgradeUuid,
 } from '../../scripts/desktop-package.mjs'
+import { resolveWindowsInstallerVersion } from '../../scripts/windows-installer-version.mjs'
 
 describe('Desktop package targets', () => {
   it('normalizes runner architecture names', () => {
@@ -60,6 +61,27 @@ describe('Desktop package targets', () => {
 
   it('keeps one fixed Windows upgrade identity', () => {
     expect(windowsUpgradeUuid).toBe('12cd2298-f19e-46db-a283-5044b56012fb')
+  })
+
+  it('assigns ordered Windows installer versions without changing the app version', () => {
+    expect(resolveWindowsInstallerVersion('1.4.6')).toBe('1.4.6')
+    expect(resolveWindowsInstallerVersion('1.4.6', 'v1.4.6-desktop.6')).toBe('1.4.606')
+    expect(resolveWindowsInstallerVersion('1.4.6', 'v1.4.6-beta.7')).toBe('1.4.607')
+    expect(resolveWindowsInstallerVersion('1.4.6', 'v1.4.6')).toBe('1.4.699')
+    expect(resolveWindowsInstallerVersion('1.4.7', 'v1.4.7-desktop.1')).toBe('1.4.701')
+  })
+
+  it('rejects Windows installer versions that cannot be ordered safely', () => {
+    expect(() => resolveWindowsInstallerVersion('1.4.6', 'v1.4.6-beta')).toThrow(
+      'must end with a numeric sequence',
+    )
+    expect(() => resolveWindowsInstallerVersion('1.4.6', 'v1.4.6-desktop.99')).toThrow(
+      'between 1 and 98',
+    )
+    expect(() => resolveWindowsInstallerVersion('1.4.6', 'v1.4.7-desktop.1')).toThrow(
+      'must match project version',
+    )
+    expect(() => resolveWindowsInstallerVersion('1.4.655', 'v1.4.655')).toThrow('exceeds 65535')
   })
 
   it('accepts only an Ed25519 Desktop updater trust root', () => {

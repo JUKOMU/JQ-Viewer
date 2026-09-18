@@ -14,6 +14,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { commandInvocation } from './desktop-sync-command.mjs'
+import { resolveWindowsInstallerVersion } from './windows-installer-version.mjs'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const desktopDirectory = path.join(root, 'desktop')
@@ -23,6 +24,8 @@ const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.me
 export const applicationName = 'JQ-Viewer'
 export const windowsUpgradeUuid = '12cd2298-f19e-46db-a283-5044b56012fb'
 const keyIdPattern = /^[A-Za-z0-9._-]{1,64}$/
+const usage =
+  'usage: node scripts/desktop-package.mjs --platform <platform> --arch <arch> --output <dir> [--release-tag <tag>]'
 
 const targetDefinitions = new Map([
   [
@@ -86,24 +89,26 @@ function parseOptions(args) {
   for (let index = 0; index < args.length; index += 2) {
     const name = args[index]
     const value = args[index + 1]
-    if (!name?.startsWith('--') || !value || value.startsWith('--')) {
-      fail(
-        'usage: node scripts/desktop-package.mjs --platform <platform> --arch <arch> --output <dir>',
-      )
-    }
+    if (!name?.startsWith('--') || value === undefined || value.startsWith('--')) fail(usage)
     if (values.has(name)) fail('duplicate option: ' + name)
     values.set(name, value)
+  }
+
+  const supportedOptions = new Set(['--platform', '--arch', '--output', '--release-tag'])
+  for (const name of values.keys()) {
+    if (!supportedOptions.has(name)) fail('unsupported option: ' + name)
   }
 
   const platform = values.get('--platform')
   const architecture = normalizeArchitecture(values.get('--arch'))
   const output = values.get('--output')
-  if (!platform || !architecture || !output || values.size !== 3) {
-    fail(
-      'usage: node scripts/desktop-package.mjs --platform <platform> --arch <arch> --output <dir>',
-    )
+  if (!platform || !architecture || !output) fail(usage)
+  return {
+    platform,
+    architecture,
+    output: path.resolve(output),
+    releaseTag: values.get('--release-tag') || '',
   }
-  return { platform, architecture, output: path.resolve(output) }
 }
 
 export function normalizeArchitecture(value) {
@@ -410,7 +415,7 @@ function buildAppImage({
   return appImage
 }
 
-function packageWindows({ version, appImages, outputDirectory, workDirectory }) {
+function packageWindows({ version, installerVersion, appImages, outputDirectory, workDirectory }) {
   const packageDirectory = path.join(workDirectory, 'native-package')
   mkdirSync(packageDirectory, { recursive: true })
   run(executable('jpackage'), [
@@ -423,7 +428,7 @@ function packageWindows({ version, appImages, outputDirectory, workDirectory }) 
     '--dest',
     packageDirectory,
     '--app-version',
-    version,
+    installerVersion,
     '--vendor',
     'JUKOMU',
     '--description',
@@ -513,7 +518,7 @@ function packageLinux({ version, target, appImages, outputDirectory, workDirecto
   validateFile(archivePath, 'Linux portable archive')
 }
 
-export function packageDesktop({ platform, architecture, output }) {
+export function packageDesktop({ platform, architecture, output, releaseTag = '' }) {
   const target = resolveTarget(platform, architecture)
   validateNativeHost(target)
   const version = packageJson.version
@@ -587,7 +592,13 @@ export function packageDesktop({ platform, architecture, output }) {
     ]),
   )
   if (target.platform === 'windows') {
-    packageWindows({ version, appImages, outputDirectory: output, workDirectory })
+    packageWindows({
+      version,
+      installerVersion: resolveWindowsInstallerVersion(version, releaseTag),
+      appImages,
+      outputDirectory: output,
+      workDirectory,
+    })
   } else {
     packageLinux({ version, target, appImages, outputDirectory: output, workDirectory })
   }

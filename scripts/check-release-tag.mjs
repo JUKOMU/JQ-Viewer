@@ -1,5 +1,7 @@
 import fs from 'node:fs'
 
+import { resolveWindowsInstallerVersion } from './windows-installer-version.mjs'
+
 const releaseTagPattern = /^v([0-9]+\.[0-9]+\.[0-9]+)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/
 const projectVersionPattern = /^[0-9]+\.[0-9]+\.[0-9]+$/
 
@@ -27,6 +29,11 @@ if (!projectVersionPattern.test(projectVersion)) {
   } else if (match[1] !== projectVersion) {
     fail(`release tag version ${match[1]} does not match project version ${projectVersion}`)
   } else {
-    console.log(`Release tag check passed: ${releaseTag}`)
+    try {
+      resolveWindowsInstallerVersion(projectVersion, releaseTag)
+      console.log(`Release tag check passed: ${releaseTag}`)
+    } catch (error) {
+      fail(error.message)
+    }
   }
 }

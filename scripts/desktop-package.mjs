@@ -67,6 +67,32 @@ const targetDefinitions = new Map([
       formats: ['deb', 'rpm', 'portable.tar.gz'],
     },
   ],
+  [
+    'macos-x64',
+    {
+      platform: 'macos',
+      architecture: 'x64',
+      hostPlatform: 'darwin',
+      hostArchitecture: 'x64',
+      javacppPlatform: 'macosx-x86_64',
+      sqliteNativeDirectory: ['Mac', 'x86_64'],
+      webpNativeDirectory: ['Mac', 'x86_64'],
+      formats: ['dmg'],
+    },
+  ],
+  [
+    'macos-arm64',
+    {
+      platform: 'macos',
+      architecture: 'arm64',
+      hostPlatform: 'darwin',
+      hostArchitecture: 'arm64',
+      javacppPlatform: 'macosx-arm64',
+      sqliteNativeDirectory: ['Mac', 'aarch64'],
+      webpNativeDirectory: ['Mac', 'aarch64'],
+      formats: ['dmg'],
+    },
+  ],
 ])
 
 const extraRuntimeModules = [
@@ -131,7 +157,8 @@ export function desktopAssetNames(version, platform, architecture) {
   return target.formats.map((format) => {
     const portable = format.startsWith('portable.')
     const assetFormat = portable ? format.slice('portable.'.length) : format
-    const separator = portable || format === 'deb' || format === 'rpm' ? '.' : '-'
+    const separator =
+      portable || format === 'deb' || format === 'rpm' || format === 'dmg' ? '.' : '-'
     return `JQ-Viewer-${version}-${target.platform}-${target.architecture}${separator}${assetFormat}`
   })
 }
@@ -413,11 +440,16 @@ function buildAppImage({
     `-Djqviewer.update.publicKeySpkiBase64=${trustRoot.publicKeySpkiBase64}`,
   ])
 
-  const appImage = path.join(appImagesDirectory, applicationName)
+  const appImage = path.join(
+    appImagesDirectory,
+    target.platform === 'macos' ? applicationName + '.app' : applicationName,
+  )
   const launcher =
     target.platform === 'windows'
       ? path.join(appImage, applicationName + '.exe')
-      : path.join(appImage, 'bin', applicationName)
+      : target.platform === 'macos'
+        ? path.join(appImage, 'Contents', 'MacOS', applicationName)
+        : path.join(appImage, 'bin', applicationName)
   validateFile(launcher, 'Desktop launcher')
   return appImage
 }
@@ -525,6 +557,32 @@ function packageLinux({ version, target, appImages, outputDirectory, workDirecto
   validateFile(archivePath, 'Linux portable archive')
 }
 
+function packageMacos({ version, target, appImages, outputDirectory, workDirectory }) {
+  const packageDirectory = path.join(workDirectory, 'native-package')
+  mkdirSync(packageDirectory, { recursive: true })
+  run(executable('jpackage'), [
+    '--type',
+    'dmg',
+    '--name',
+    applicationName,
+    '--app-image',
+    appImages.get('dmg'),
+    '--dest',
+    packageDirectory,
+    '--app-version',
+    version,
+    '--vendor',
+    'JUKOMU',
+    '--description',
+    'JQ Viewer Desktop',
+    '--license-file',
+    path.join(root, 'LICENSE'),
+  ])
+
+  const [assetName] = desktopAssetNames(version, 'macos', target.architecture)
+  renameSinglePackage(packageDirectory, '.dmg', path.join(outputDirectory, assetName))
+}
+
 export function packageDesktop({ platform, architecture, output, releaseTag = '' }) {
   const target = resolveTarget(platform, architecture)
   validateNativeHost(target)
@@ -606,8 +664,10 @@ export function packageDesktop({ platform, architecture, output, releaseTag = ''
       outputDirectory: output,
       workDirectory,
     })
-  } else {
+  } else if (target.platform === 'linux') {
     packageLinux({ version, target, appImages, outputDirectory: output, workDirectory })
+  } else {
+    packageMacos({ version, target, appImages, outputDirectory: output, workDirectory })
   }
 
   const assets = desktopAssetNames(version, platform, target.architecture).map((name) => {

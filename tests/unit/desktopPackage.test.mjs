@@ -29,6 +29,7 @@ describe('Desktop package targets', () => {
     expect(resolveTarget('windows', 'x64')).toMatchObject({
       javacppPlatform: 'windows-x86_64',
       sqliteNativeDirectory: ['Windows', 'x86_64'],
+      webpNativeDirectory: ['Windows', 'x86_64'],
     })
     expect(() => resolveTarget('windows', 'arm64')).toThrow('unsupported Desktop package target')
   })
@@ -42,10 +43,12 @@ describe('Desktop package targets', () => {
     expect(resolveTarget('linux', 'x64')).toMatchObject({
       javacppPlatform: 'linux-x86_64',
       sqliteNativeDirectory: ['Linux', 'x86_64'],
+      webpNativeDirectory: ['Linux', 'x86_64'],
     })
     expect(resolveTarget('linux', 'arm64')).toMatchObject({
       javacppPlatform: 'linux-arm64',
       sqliteNativeDirectory: ['Linux', 'aarch64'],
+      webpNativeDirectory: ['Linux', 'aarch64'],
     })
   })
 

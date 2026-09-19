@@ -2,8 +2,8 @@ package io.github.jukomu.desktop.backend;
 
 import org.junit.jupiter.api.Test;
 
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
@@ -14,7 +14,7 @@ class ServiceExecutorsTest {
     @Test
     void imagePreloadConfigurationDoesNotResizeOrBlockApiExecutor() throws Exception {
         ThreadPoolExecutor api = new ThreadPoolExecutor(
-                1, 1, 30, TimeUnit.SECONDS, new ArrayBlockingQueue<>(4));
+                1, 1, 30, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
         CountDownLatch preloadStarted = new CountDownLatch(4);
         CountDownLatch releasePreload = new CountDownLatch(1);
 
@@ -42,6 +42,23 @@ class ServiceExecutorsTest {
         }
 
         assertTrue(api.isShutdown());
+    }
+
+    @Test
+    void serviceQueuesAreUnboundedWhenNoCapacityIsConfigured() {
+        try (ServiceExecutors executors = new ServiceExecutors()) {
+            assertUnbounded(executors.api());
+            assertUnbounded(executors.imagePreload());
+            assertUnbounded(executors.fileIo());
+            assertUnbounded(executors.pdfCommand());
+            assertUnbounded(executors.networkCommand());
+        }
+    }
+
+    private static void assertUnbounded(java.util.concurrent.ExecutorService executor) {
+        ThreadPoolExecutor pool = (ThreadPoolExecutor) executor;
+        assertTrue(pool.getQueue() instanceof LinkedBlockingQueue);
+        assertEquals(Integer.MAX_VALUE, pool.getQueue().remainingCapacity());
     }
 
     private static void await(CountDownLatch latch) {

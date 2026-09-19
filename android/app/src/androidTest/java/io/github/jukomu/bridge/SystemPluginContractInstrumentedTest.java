@@ -20,6 +20,7 @@ import org.junit.Test;
 
 import java.io.File;
 import java.lang.reflect.Field;
+import java.util.concurrent.TimeUnit;
 
 import static android.app.Activity.RESULT_CANCELED;
 import static android.app.Activity.RESULT_OK;
@@ -393,12 +394,14 @@ public class SystemPluginContractInstrumentedTest {
             plugin.checkFilesExist(files);
             plugin.getExternalStoragePath(externalPath);
 
+            assertTrue(files.awaitCompletion(1, TimeUnit.SECONDS));
             JSONArray existing = files.resolvedData.getJSONArray("existingFileRefs");
             assertNotNull(existing);
             assertEquals(1, existing.length());
             assertEquals(PdfRef.createPathFileRef(existingFile.getAbsolutePath()), existing.getString(0));
             assertFalse(externalPath.resolvedData.getString("folderRef").isEmpty());
-            assertSynchronous(files, externalPath);
+            assertCompleted(files);
+            assertSynchronous(externalPath);
         } finally {
             assertTrue(existingFile.delete() || !existingFile.exists());
         }
@@ -419,9 +422,13 @@ public class SystemPluginContractInstrumentedTest {
 
     private static void assertSynchronous(RecordingPluginCall... calls) {
         for (RecordingPluginCall call : calls) {
-            assertFalse(call.getMethodName(), call.isKeptAlive());
-            assertEquals(call.getMethodName(), 1, call.completionCount);
+            assertCompleted(call);
         }
+    }
+
+    private static void assertCompleted(RecordingPluginCall call) {
+        assertFalse(call.getMethodName(), call.isKeptAlive());
+        assertEquals(call.getMethodName(), 1, call.completionCount);
     }
 
     private static void injectSystemHandler(JmcomicPlugin plugin,

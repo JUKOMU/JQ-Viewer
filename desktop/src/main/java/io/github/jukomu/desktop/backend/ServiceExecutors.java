@@ -4,14 +4,14 @@ import io.github.jukomu.desktop.feature.settings.SettingsService;
 
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-/** Desktop 后端各服务独立的有界执行器及其生命周期。 */
+/** Desktop 后端各服务独立的无界执行器及其生命周期。 */
 final class ServiceExecutors implements AutoCloseable {
     private static final int API_THREADS = 12;
 
@@ -38,30 +38,30 @@ final class ServiceExecutors implements AutoCloseable {
     private final List<ExecutorService> owned;
 
     ServiceExecutors() {
-        this(create("jq-viewer-api", API_THREADS, 64));
+        this(create("jq-viewer-api", API_THREADS));
     }
 
     ServiceExecutors(ExecutorService api) {
         this.api = Objects.requireNonNull(api, "api");
-        imagePreload = create("jq-viewer-image-preload", SettingsService.DEFAULT_CONCURRENCY, 64);
-        imageOnDemand = create("jq-viewer-image-demand", 2, 32);
-        imageResource = create("jq-viewer-image-resource", 2, 32);
-        imageCommand = create("jq-viewer-image-command", 1, 64);
-        downloadCommand = create("jq-viewer-download-command", 2, 64);
-        downloadPrepare = create("jq-viewer-download-prepare", 2, 64);
-        fileIo = create("jq-viewer-file-io", 2, 64);
-        fileDialog = create("jq-viewer-file-dialog", 1, 4);
-        relocation = create("jq-viewer-relocation", 1, 4);
-        pdfCommand = create("jq-viewer-pdf-command", 1, 64);
-        pdfExport = create("jq-viewer-pdf-export", 1, 64);
-        networkCommand = create("jq-viewer-network-command", 1, 16);
-        networkProbe = create("jq-viewer-network-probe", 1, 4);
-        ocr = create("jq-viewer-ocr", 1, 4);
-        updateCommand = create("jq-viewer-update-command", 1, 16);
-        settings = create("jq-viewer-settings", 1, 64);
-        history = create("jq-viewer-history", 1, 64);
-        offlineFavorite = create("jq-viewer-offline-favorite", 1, 64);
-        diagnostics = create("jq-viewer-diagnostics", 1, 16);
+        imagePreload = create("jq-viewer-image-preload", SettingsService.DEFAULT_CONCURRENCY);
+        imageOnDemand = create("jq-viewer-image-demand", 2);
+        imageResource = create("jq-viewer-image-resource", 2);
+        imageCommand = create("jq-viewer-image-command", 1);
+        downloadCommand = create("jq-viewer-download-command", 2);
+        downloadPrepare = create("jq-viewer-download-prepare", 2);
+        fileIo = create("jq-viewer-file-io", 2);
+        fileDialog = create("jq-viewer-file-dialog", 1);
+        relocation = create("jq-viewer-relocation", 1);
+        pdfCommand = create("jq-viewer-pdf-command", 1);
+        pdfExport = create("jq-viewer-pdf-export", 1);
+        networkCommand = create("jq-viewer-network-command", 1);
+        networkProbe = create("jq-viewer-network-probe", 1);
+        ocr = create("jq-viewer-ocr", 1);
+        updateCommand = create("jq-viewer-update-command", 1);
+        settings = create("jq-viewer-settings", 1);
+        history = create("jq-viewer-history", 1);
+        offlineFavorite = create("jq-viewer-offline-favorite", 1);
+        diagnostics = create("jq-viewer-diagnostics", 1);
         owned = List.of(
                 api,
                 imagePreload,
@@ -202,13 +202,13 @@ final class ServiceExecutors implements AutoCloseable {
         }
     }
 
-    private static ThreadPoolExecutor create(String name, int threads, int queueCapacity) {
+    private static ThreadPoolExecutor create(String name, int threads) {
         return new ThreadPoolExecutor(
                 threads,
                 threads,
                 30,
                 TimeUnit.SECONDS,
-                new ArrayBlockingQueue<>(queueCapacity),
+                new LinkedBlockingQueue<>(),
                 namedFactory(name),
                 new ThreadPoolExecutor.AbortPolicy()
         );

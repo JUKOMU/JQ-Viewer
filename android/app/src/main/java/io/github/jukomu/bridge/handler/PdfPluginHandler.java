@@ -68,20 +68,24 @@ public final class PdfPluginHandler {
             call.reject("folderRef is required");
             return;
         }
+        final PdfRef.Parsed parsed;
         try {
-            PdfRef.Parsed parsed = PdfRef.parse(folderRef);
+            parsed = PdfRef.parse(folderRef);
             if (parsed.kind != PdfRef.Kind.FOLDER) {
                 call.reject("folderRef must be a folder reference");
                 return;
             }
+        } catch (IllegalArgumentException error) {
+            call.reject("folderRef is invalid", error);
+            return;
+        }
+        dispatchPdfCommand(() -> {
             if (parsed.provider == PdfRef.Provider.SAF) {
                 scanPdfFilesViaSaf(call, Uri.parse(parsed.payload));
             } else {
                 scanPdfFilesViaFile(call, parsed.payload);
             }
-        } catch (IllegalArgumentException error) {
-            call.reject("folderRef is invalid", error);
-        }
+        });
     }
 
     private void scanPdfFilesViaSaf(PluginCall call, Uri treeUri) {
@@ -472,6 +476,10 @@ public final class PdfPluginHandler {
             return;
         }
 
+        dispatchPdfCommand(() -> getPdfInfoOnExecutor(call, fileRef));
+    }
+
+    private void getPdfInfoOnExecutor(PluginCall call, String fileRef) {
         ParcelFileDescriptor pfd = null;
         PdfRenderer renderer = null;
         try {

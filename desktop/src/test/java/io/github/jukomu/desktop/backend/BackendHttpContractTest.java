@@ -63,7 +63,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
@@ -677,7 +677,7 @@ class BackendHttpContractTest {
         java.nio.file.Path samplePdf = paths.pdfDirectory().resolve("sample.pdf");
         writePdf(samplePdf);
         ThreadPoolExecutor executor = new ThreadPoolExecutor(
-                6, 6, 30, TimeUnit.SECONDS, new ArrayBlockingQueue<>(64));
+                6, 6, 30, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
         FileService files = new FileService(paths, ignored -> paths.pdfDirectory(), ignored -> {
         });
         return new Backend(paths, new Database(paths), executor, fake.client(),

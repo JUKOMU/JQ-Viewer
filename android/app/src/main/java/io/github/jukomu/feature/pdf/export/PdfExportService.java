@@ -16,6 +16,7 @@ import io.github.jukomu.feature.pdf.data.PdfStore;
 import io.github.jukomu.feature.pdf.management.PdfFileValidator;
 import io.github.jukomu.feature.pdf.notification.PdfExportNotificationHelper;
 import io.github.jukomu.platform.notification.NotificationIds;
+import io.github.jukomu.runtime.ServiceExecutors;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -27,7 +28,6 @@ import java.io.OutputStream;
 import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -85,11 +85,7 @@ public class PdfExportService {
     }
 
     static ExecutorService createExecutor() {
-        return Executors.newSingleThreadExecutor(r -> {
-            Thread thread = new Thread(r, "pdf-export");
-            thread.setPriority(Thread.NORM_PRIORITY);
-            return thread;
-        });
+        return ServiceExecutors.fixed("pdf-export", 1);
     }
 
     public static synchronized PdfExportService getInstance(Context context) {

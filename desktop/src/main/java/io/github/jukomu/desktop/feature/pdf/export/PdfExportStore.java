@@ -20,10 +20,10 @@ public final class PdfExportStore {
     private static final String TERMINAL_STATUSES =
             "'completed','failed','cancelled','partial','interrupted'";
 
-    private final Database database;
+    private final Connection connection;
 
     public PdfExportStore(Database database) {
-        this.database = database;
+        this.connection = database.openIsolatedConnection();
     }
 
     public synchronized void reserve(ReserveTask task, List<Chapter> chapters, List<Volume> volumes) {
@@ -104,7 +104,7 @@ public final class PdfExportStore {
     }
 
     public synchronized PdfExportTaskResponse find(String exportId) {
-        try (PreparedStatement statement = database.connection().prepareStatement(taskSelect()
+        try (PreparedStatement statement = connection.prepareStatement(taskSelect()
                 + " WHERE t.export_id=?")) {
             statement.setString(1, exportId);
             try (ResultSet rows = statement.executeQuery()) {
@@ -134,7 +134,7 @@ public final class PdfExportStore {
                 + (clauses.isEmpty() ? "" : " WHERE " + String.join(" AND ", clauses))
                 + " ORDER BY t.updated_at DESC,t.export_id DESC LIMIT ?";
         List<PdfExportTaskResponse> tasks = new ArrayList<>();
-        try (PreparedStatement statement = database.connection().prepareStatement(sql)) {
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
             int index = 1;
             for (Object argument : arguments) {
                 if (argument instanceof Long number) statement.setLong(index++, number);
@@ -160,7 +160,7 @@ public final class PdfExportStore {
         int total = 0;
         int active = 0;
         int failed = 0;
-        try (PreparedStatement statement = database.connection().prepareStatement(
+        try (PreparedStatement statement = connection.prepareStatement(
                 "SELECT COUNT(*) AS total,"
                         + "SUM(CASE WHEN status IN (" + ACTIVE_STATUSES + ") THEN 1 ELSE 0 END) AS active,"
                         + "SUM(CASE WHEN status IN ('failed','partial','interrupted') THEN 1 ELSE 0 END) AS failed "
@@ -178,7 +178,7 @@ public final class PdfExportStore {
         int limit = Math.max(0, Math.min(20, requestedFailureLimit));
         List<DiagnosticFailure> failures = new ArrayList<>();
         if (limit > 0) {
-            try (PreparedStatement statement = database.connection().prepareStatement(
+            try (PreparedStatement statement = connection.prepareStatement(
                     "SELECT export_id,display_title,status,error_message,updated_at "
                             + "FROM pdf_export_tasks "
                             + "WHERE status IN ('failed','partial','interrupted') "
@@ -205,7 +205,7 @@ public final class PdfExportStore {
 
     public synchronized List<Chapter> chapters(String exportId) {
         List<Chapter> chapters = new ArrayList<>();
-        try (PreparedStatement statement = database.connection().prepareStatement(
+        try (PreparedStatement statement = connection.prepareStatement(
                 "SELECT * FROM pdf_export_chapters WHERE export_id=? ORDER BY sequence")) {
             statement.setString(1, exportId);
             try (ResultSet rows = statement.executeQuery()) {
@@ -223,7 +223,7 @@ public final class PdfExportStore {
 
     public synchronized List<Volume> volumes(String exportId) {
         List<Volume> volumes = new ArrayList<>();
-        try (PreparedStatement statement = database.connection().prepareStatement(
+        try (PreparedStatement statement = connection.prepareStatement(
                 "SELECT * FROM pdf_export_volumes WHERE export_id=? ORDER BY volume_index")) {
             statement.setString(1, exportId);
             try (ResultSet rows = statement.executeQuery()) {
@@ -239,7 +239,7 @@ public final class PdfExportStore {
         String sql = "SELECT 1 FROM pdf_export_chapters c JOIN pdf_export_tasks t "
                 + "ON t.export_id=c.export_id WHERE t.status IN (" + ACTIVE_STATUSES + ") "
                 + "AND c.album_id=? AND c.chapter_id=? LIMIT 1";
-        try (PreparedStatement statement = database.connection().prepareStatement(sql)) {
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
             for (Chapter chapter : chapters) {
                 statement.setString(1, chapter.albumId());
                 statement.setString(2, chapter.chapterId());
@@ -255,7 +255,7 @@ public final class PdfExportStore {
 
     public synchronized PdfExportTaskResponse claim(String exportId) {
         long now = System.currentTimeMillis();
-        try (PreparedStatement statement = database.connection().prepareStatement(
+        try (PreparedStatement statement = connection.prepareStatement(
                 "UPDATE pdf_export_tasks SET status='running',phase='preparing',started_at=?,"
                         + "updated_at=?,snapshot_revision=snapshot_revision+1 "
                         + "WHERE export_id=? AND status='queued'")) {
@@ -285,7 +285,7 @@ public final class PdfExportStore {
         } else {
             return current;
         }
-        try (PreparedStatement statement = database.connection().prepareStatement(sql)) {
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
             int index = 1;
             if ("queued".equals(current.status())) statement.setLong(index++, now);
             statement.setLong(index++, now);
@@ -298,7 +298,7 @@ public final class PdfExportStore {
     }
 
     public synchronized boolean isCancellationRequested(String exportId) {
-        try (PreparedStatement statement = database.connection().prepareStatement(
+        try (PreparedStatement statement = connection.prepareStatement(
                 "SELECT cancel_requested,status FROM pdf_export_tasks WHERE export_id=?")) {
             statement.setString(1, exportId);
             try (ResultSet rows = statement.executeQuery()) {
@@ -329,7 +329,7 @@ public final class PdfExportStore {
                 + (isTerminal(status) ? "completed_at=?," : "")
                 + "snapshot_revision=snapshot_revision+1 WHERE export_id=?"
                 + ("running".equals(status) ? " AND status='running'" : "");
-        try (PreparedStatement statement = database.connection().prepareStatement(sql)) {
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
             int index = 1;
             statement.setString(index++, status);
             statement.setString(index++, phase);
@@ -350,7 +350,7 @@ public final class PdfExportStore {
     }
 
     public synchronized void markVolumeStatus(String exportId, int volumeIndex, String status) {
-        try (PreparedStatement statement = database.connection().prepareStatement(
+        try (PreparedStatement statement = connection.prepareStatement(
                 "UPDATE pdf_export_volumes SET status=?,updated_at=? "
                         + "WHERE export_id=? AND volume_index=? AND status<>'completed'")) {
             statement.setString(1, status);
@@ -438,7 +438,7 @@ public final class PdfExportStore {
     }
 
     public synchronized int completedVolumeCount(String exportId) {
-        try (PreparedStatement statement = database.connection().prepareStatement(
+        try (PreparedStatement statement = connection.prepareStatement(
                 "SELECT COUNT(*) FROM pdf_export_volumes WHERE export_id=? AND status='completed'")) {
             statement.setString(1, exportId);
             try (ResultSet rows = statement.executeQuery()) {
@@ -476,7 +476,7 @@ public final class PdfExportStore {
 
     public synchronized List<String> markActiveInterrupted() {
         List<String> tempPaths = new ArrayList<>();
-        try (PreparedStatement statement = database.connection().prepareStatement(
+        try (PreparedStatement statement = connection.prepareStatement(
                 "SELECT v.temp_path FROM pdf_export_volumes v JOIN pdf_export_tasks t "
                         + "ON t.export_id=v.export_id WHERE t.status IN (" + ACTIVE_STATUSES + ")")) {
             try (ResultSet rows = statement.executeQuery()) {
@@ -510,7 +510,7 @@ public final class PdfExportStore {
 
     public synchronized List<String> activeExportIds() {
         List<String> ids = new ArrayList<>();
-        try (PreparedStatement statement = database.connection().prepareStatement(
+        try (PreparedStatement statement = connection.prepareStatement(
                 "SELECT export_id FROM pdf_export_tasks WHERE status IN (" + ACTIVE_STATUSES + ")");
              ResultSet rows = statement.executeQuery()) {
             while (rows.next()) ids.add(rows.getString(1));
@@ -521,7 +521,7 @@ public final class PdfExportStore {
     }
 
     public synchronized boolean delete(String exportId) {
-        try (PreparedStatement statement = database.connection().prepareStatement(
+        try (PreparedStatement statement = connection.prepareStatement(
                 "DELETE FROM pdf_export_tasks WHERE export_id=? AND status IN ("
                         + TERMINAL_STATUSES + ")")) {
             statement.setString(1, exportId);
@@ -581,7 +581,7 @@ public final class PdfExportStore {
     }
 
     private <T> T transaction(SqlOperation<T> operation, String message) {
-        Connection connection = database.connection();
+        Connection connection = this.connection;
         try {
             boolean autoCommit = connection.getAutoCommit();
             connection.setAutoCommit(false);

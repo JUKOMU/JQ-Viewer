@@ -5,6 +5,7 @@ import io.github.jukomu.desktop.feature.files.FileReferences;
 import io.github.jukomu.desktop.feature.pdf.model.PdfInfoResponse;
 import io.github.jukomu.desktop.feature.pdf.model.PdfRenderPageResponse;
 import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.io.IOUtils;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.rendering.ImageType;
@@ -36,7 +37,8 @@ public final class PdfDocumentService {
 
     public PdfInfoResponse getInfo(String fileRef) {
         Path file = requireReadablePdf(fileRef);
-        try (PDDocument document = Loader.loadPDF(file.toFile())) {
+        try (PDDocument document = Loader.loadPDF(
+                file.toFile(), IOUtils.createTempFileOnlyStreamCache())) {
             int pages = document.getNumberOfPages();
             if (pages <= 0) throw ApiException.invalidRequest("PDF 没有可读取页面");
             return new PdfInfoResponse(pages);
@@ -68,7 +70,8 @@ public final class PdfDocumentService {
 
     private void render(Path file, int pageNumber, int targetWidth, String resourceId)
             throws IOException {
-        try (PDDocument document = Loader.loadPDF(file.toFile())) {
+        try (PDDocument document = Loader.loadPDF(
+                file.toFile(), IOUtils.createTempFileOnlyStreamCache())) {
             if (pageNumber > document.getNumberOfPages()) {
                 throw ApiException.invalidRequest("page超出PDF页数");
             }

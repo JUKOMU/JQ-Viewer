@@ -37,7 +37,7 @@ public final class SettingsService {
             "download_pending_cleanup_folder_ref";
     private static final String OCR_ENABLED = "ocr_enabled";
 
-    private final Database database;
+    private final Connection connection;
     private final ObjectMapper mapper;
 
     public SettingsService(Database database) {
@@ -45,7 +45,7 @@ public final class SettingsService {
     }
 
     public SettingsService(Database database, ObjectMapper mapper) {
-        this.database = database;
+        this.connection = database.openIsolatedConnection();
         this.mapper = mapper;
     }
 
@@ -131,7 +131,6 @@ public final class SettingsService {
             Path pendingCleanup
     ) {
         Path normalized = root.toAbsolutePath().normalize();
-        Connection connection = database.connection();
         try {
             boolean autoCommit = connection.getAutoCommit();
             connection.setAutoCommit(false);
@@ -278,7 +277,7 @@ public final class SettingsService {
     }
 
     private String text(String key, String fallback) {
-        try (PreparedStatement statement = database.connection()
+        try (PreparedStatement statement = connection
                 .prepareStatement("SELECT value FROM settings WHERE key = ?")) {
             statement.setString(1, key);
             try (ResultSet result = statement.executeQuery()) {
@@ -291,7 +290,7 @@ public final class SettingsService {
 
     private void put(String key, Object value) {
         try {
-            put(database.connection(), key, value);
+            put(connection, key, value);
         } catch (SQLException exception) {
             throw new IllegalStateException("保存设置失败", exception);
         }
@@ -309,7 +308,7 @@ public final class SettingsService {
 
     private void delete(String key) {
         try {
-            delete(database.connection(), key);
+            delete(connection, key);
         } catch (SQLException exception) {
             throw new IllegalStateException("删除设置失败", exception);
         }

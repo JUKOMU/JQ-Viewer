@@ -14,14 +14,14 @@ import java.util.List;
 public final class DownloadStore {
     private static final String ACTIVE_STATUSES = "'queued','downloading','paused','verifying'";
 
-    private final Database database;
+    private final Connection connection;
 
     public DownloadStore(Database database) {
-        this.database = database;
+        this.connection = database.openIsolatedConnection();
     }
 
     public synchronized StoredDownloadTask findTask(String taskId) {
-        try (PreparedStatement statement = database.connection().prepareStatement(
+        try (PreparedStatement statement = connection.prepareStatement(
                 "SELECT * FROM download_tasks WHERE task_id = ?")) {
             statement.setString(1, taskId);
             try (ResultSet rows = statement.executeQuery()) {
@@ -33,7 +33,7 @@ public final class DownloadStore {
     }
 
     public synchronized StoredDownloadTask findTask(String albumId, String chapterId) {
-        try (PreparedStatement statement = database.connection().prepareStatement(
+        try (PreparedStatement statement = connection.prepareStatement(
                 "SELECT * FROM download_tasks WHERE album_id = ? AND chapter_id = ? "
                         + "ORDER BY created_at DESC LIMIT 1")) {
             statement.setString(1, albumId);
@@ -59,7 +59,7 @@ public final class DownloadStore {
         int total = 0;
         int active = 0;
         int failed = 0;
-        try (PreparedStatement statement = database.connection().prepareStatement(
+        try (PreparedStatement statement = connection.prepareStatement(
                 "SELECT COUNT(*) AS total,"
                         + "SUM(CASE WHEN status IN (" + ACTIVE_STATUSES + ") THEN 1 ELSE 0 END) AS active,"
                         + "SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) AS failed "
@@ -77,7 +77,7 @@ public final class DownloadStore {
         int limit = Math.max(0, Math.min(20, requestedFailureLimit));
         List<DiagnosticFailure> failures = new ArrayList<>();
         if (limit > 0) {
-            try (PreparedStatement statement = database.connection().prepareStatement(
+            try (PreparedStatement statement = connection.prepareStatement(
                     "SELECT task_id,album_title,chapter_title,status,error,"
                             + "COALESCE(failed_at,created_at) AS failed_at "
                             + "FROM download_tasks WHERE status='failed' "
@@ -185,7 +185,7 @@ public final class DownloadStore {
     }
 
     public synchronized void updateStatus(String taskId, String status, String error) {
-        try (PreparedStatement statement = database.connection().prepareStatement(
+        try (PreparedStatement statement = connection.prepareStatement(
                 "UPDATE download_tasks SET status=?, error=? WHERE task_id=?")) {
             statement.setString(1, status);
             if (error == null) statement.setNull(2, Types.VARCHAR);
@@ -198,7 +198,7 @@ public final class DownloadStore {
     }
 
     public synchronized void updateProgress(String taskId, int pages, long bytes) {
-        try (PreparedStatement statement = database.connection().prepareStatement(
+        try (PreparedStatement statement = connection.prepareStatement(
                 "UPDATE download_tasks SET downloaded_pages=?, downloaded_bytes=? WHERE task_id=?")) {
             statement.setInt(1, pages);
             statement.setLong(2, Math.max(0, bytes));
@@ -235,7 +235,7 @@ public final class DownloadStore {
 
     public synchronized void fail(String taskId, int downloadedPages, long downloadedBytes,
                                   long totalSize, String error) {
-        try (PreparedStatement statement = database.connection().prepareStatement(
+        try (PreparedStatement statement = connection.prepareStatement(
                 "UPDATE download_tasks SET status='failed', downloaded_pages=?, downloaded_bytes=?, "
                         + "total_size=?, error=?, failed_at=?, completed_at=NULL WHERE task_id=?")) {
             statement.setInt(1, Math.max(0, downloadedPages));
@@ -268,7 +268,7 @@ public final class DownloadStore {
 
     public synchronized List<StoredDownloadPage> pages(String taskId) {
         List<StoredDownloadPage> pages = new ArrayList<>();
-        try (PreparedStatement statement = database.connection().prepareStatement(
+        try (PreparedStatement statement = connection.prepareStatement(
                 "SELECT * FROM download_pages WHERE task_id=? ORDER BY sort_order")) {
             statement.setString(1, taskId);
             try (ResultSet rows = statement.executeQuery()) {
@@ -281,7 +281,7 @@ public final class DownloadStore {
     }
 
     public synchronized StoredDownloadPage findCompletedPage(String photoId, int sortOrder) {
-        try (PreparedStatement statement = database.connection().prepareStatement(
+        try (PreparedStatement statement = connection.prepareStatement(
                 "SELECT p.* FROM download_pages p JOIN download_tasks t ON t.task_id=p.task_id "
                         + "WHERE p.photo_id=? AND p.sort_order=? AND p.completed=1 "
                         + "AND t.status='completed' ORDER BY t.completed_at DESC LIMIT 1")) {
@@ -309,14 +309,14 @@ public final class DownloadStore {
 
     public synchronized void deletePages(String taskId) {
         try {
-            deletePages(database.connection(), taskId);
+            deletePages(connection, taskId);
         } catch (SQLException exception) {
             throw failure("删除下载图片记录失败", exception);
         }
     }
 
     public synchronized int updateAlbumEpisodeType(String albumId, boolean singleEpisode) {
-        try (PreparedStatement statement = database.connection().prepareStatement(
+        try (PreparedStatement statement = connection.prepareStatement(
                 "UPDATE download_tasks SET is_single_episode=? WHERE album_id=?")) {
             statement.setInt(1, singleEpisode ? 1 : 0);
             statement.setString(2, albumId);
@@ -328,7 +328,7 @@ public final class DownloadStore {
 
     private List<StoredDownloadTask> list(String sql) {
         List<StoredDownloadTask> tasks = new ArrayList<>();
-        try (PreparedStatement statement = database.connection().prepareStatement(sql);
+        try (PreparedStatement statement = connection.prepareStatement(sql);
              ResultSet rows = statement.executeQuery()) {
             while (rows.next()) tasks.add(task(rows));
             return List.copyOf(tasks);
@@ -338,7 +338,7 @@ public final class DownloadStore {
     }
 
     private <T> T transaction(SqlOperation<T> operation, String message) {
-        Connection connection = database.connection();
+        Connection connection = this.connection;
         boolean autoCommit;
         try {
             autoCommit = connection.getAutoCommit();

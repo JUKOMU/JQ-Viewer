@@ -2,6 +2,7 @@ package io.github.jukomu.desktop.feature.pdf.management;
 
 import io.github.jukomu.desktop.feature.files.FileReferences;
 import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.io.IOUtils;
 import org.apache.pdfbox.pdmodel.PDDocument;
 
 import java.io.IOException;
@@ -31,7 +32,8 @@ public final class PdfFileValidator {
             throw new ValidationException("PDF_INACCESSIBLE", "没有权限读取 PDF");
         }
 
-        try (PDDocument document = Loader.loadPDF(file.toFile())) {
+        try (PDDocument document = Loader.loadPDF(
+                file.toFile(), IOUtils.createTempFileOnlyStreamCache())) {
             int pageCount = document.getNumberOfPages();
             if (pageCount <= 0) {
                 throw new ValidationException("PDF_INVALID", "PDF 没有可读取页面");

@@ -4,6 +4,7 @@ import io.github.jukomu.desktop.bridge.ApiException;
 import io.github.jukomu.desktop.data.Database;
 
 import java.nio.charset.StandardCharsets;
+import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -19,10 +20,10 @@ public final class PdfStore {
     public static final String OWNERSHIP_EXTERNAL = "external_reference";
     public static final String OWNERSHIP_APP_CREATED = "app_created";
 
-    private final Database database;
+    private final Connection connection;
 
     public PdfStore(Database database) {
-        this.database = database;
+        this.connection = database.openIsolatedConnection();
     }
 
     public synchronized InsertResult insertImported(
@@ -52,7 +53,7 @@ public final class PdfStore {
                 + "created_at, updated_at, verified_at) "
                 + "VALUES (?, ?, ?, 'imported', 'external_reference', ?, ?, ?, ?, ?, ?, ?, ?, ?, "
                 + "?, ?, ?, 'available', 'valid', NULL, ?, ?, ?)";
-        try (PreparedStatement statement = database.connection().prepareStatement(sql)) {
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setString(1, fileRef);
             statement.setString(2, value(displayPath));
             statement.setString(3, value(fileName));
@@ -85,7 +86,7 @@ public final class PdfStore {
     }
 
     public synchronized StoredPdfFile find(long id) {
-        try (PreparedStatement statement = database.connection().prepareStatement(
+        try (PreparedStatement statement = connection.prepareStatement(
                 "SELECT * FROM pdf_files WHERE id=?")) {
             statement.setLong(1, id);
             try (ResultSet rows = statement.executeQuery()) {
@@ -97,7 +98,7 @@ public final class PdfStore {
     }
 
     public synchronized StoredPdfFile findByRef(String fileRef) {
-        try (PreparedStatement statement = database.connection().prepareStatement(
+        try (PreparedStatement statement = connection.prepareStatement(
                 "SELECT * FROM pdf_files WHERE file_ref=?")) {
             statement.setString(1, fileRef);
             try (ResultSet rows = statement.executeQuery()) {
@@ -154,7 +155,7 @@ public final class PdfStore {
                 + (clauses.isEmpty() ? "" : " WHERE " + String.join(" AND ", clauses))
                 + " ORDER BY updated_at DESC, id DESC LIMIT ?";
         List<StoredPdfFile> files = new ArrayList<>();
-        try (PreparedStatement statement = database.connection().prepareStatement(sql)) {
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
             int index = 1;
             for (Object argument : arguments) {
                 if (argument instanceof Long number) statement.setLong(index++, number);
@@ -179,7 +180,7 @@ public final class PdfStore {
 
     public synchronized List<StoredPdfFile> listAll() {
         List<StoredPdfFile> files = new ArrayList<>();
-        try (PreparedStatement statement = database.connection().prepareStatement(
+        try (PreparedStatement statement = connection.prepareStatement(
                 "SELECT * FROM pdf_files ORDER BY album_id, chapter_sort_order, id");
              ResultSet rows = statement.executeQuery()) {
             while (rows.next()) files.add(file(rows));
@@ -201,7 +202,7 @@ public final class PdfStore {
         String sql = "UPDATE pdf_files SET availability=?, verification_status=?, "
                 + "verification_error=?, file_size=COALESCE(?, file_size), "
                 + "page_count=COALESCE(?, page_count), updated_at=?, verified_at=? WHERE id=?";
-        try (PreparedStatement statement = database.connection().prepareStatement(sql)) {
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setString(1, availability);
             statement.setString(2, verificationStatus);
             nullableText(statement, 3, error);
@@ -220,7 +221,7 @@ public final class PdfStore {
     }
 
     public synchronized boolean remove(long id) {
-        try (PreparedStatement statement = database.connection().prepareStatement(
+        try (PreparedStatement statement = connection.prepareStatement(
                 "DELETE FROM pdf_files WHERE id=?")) {
             statement.setLong(1, id);
             return statement.executeUpdate() == 1;
@@ -230,7 +231,7 @@ public final class PdfStore {
     }
 
     public synchronized int updateAlbumEpisodeType(String albumId, boolean singleEpisode) {
-        try (PreparedStatement statement = database.connection().prepareStatement(
+        try (PreparedStatement statement = connection.prepareStatement(
                 "UPDATE pdf_files SET is_single_episode=?, updated_at=? WHERE album_id=?")) {
             statement.setInt(1, singleEpisode ? 1 : 0);
             statement.setLong(2, System.currentTimeMillis());

@@ -5,6 +5,7 @@ import { createIdempotentListenerHandle } from '@/runtime/BackendEvents'
 import { createAndroidBackendClient } from '@/runtime/android/androidBackendClient'
 import { createAndroidBackendEvents } from '@/runtime/android/androidBackendEvents'
 import { createAndroidPlatformServices } from '@/runtime/android/androidPlatformServices'
+import { createAndroidPdfExportPreferencesStore } from '@/runtime/android/pdfExportPreferences'
 import { createAndroidResourceResolver } from '@/runtime/android/androidResourceResolver'
 import { createAndroidUpdater } from '@/runtime/android/androidUpdater'
 import { normalizeRuntimeError } from '@/runtime/errors'
@@ -34,6 +35,7 @@ function createNative(overrides: Record<string, unknown> = {}): JmcomicClient {
 
 beforeEach(() => {
   resetRuntimeForTests()
+  localStorage.clear()
 })
 
 describe('runtime context', () => {
@@ -48,6 +50,23 @@ describe('runtime context', () => {
 })
 
 describe('Android bridge adapters', () => {
+  test('Android PDF 导出设置清理旧 raw path 并保留 localStorage 行为', async () => {
+    localStorage.setItem('jq-pdf-export-path', '/legacy/exports')
+    const store = createAndroidPdfExportPreferencesStore()
+
+    await expect(store.get()).resolves.toMatchObject({ exportFolder: null })
+    expect(localStorage.getItem('jq-pdf-export-path')).toBeNull()
+
+    await store.setExportFolder({
+      folderRef: 'folder:saf:content://tree/exports' as never,
+      displayPath: '/storage/emulated/0/Exports',
+    })
+    expect(JSON.parse(localStorage.getItem('jq-pdf-export-path') ?? '')).toEqual({
+      folderRef: 'folder:saf:content://tree/exports',
+      displayPath: '/storage/emulated/0/Exports',
+    })
+  })
+
   test('只绑定 common backend allowlist', async () => {
     const search = vi.fn().mockResolvedValue({ content: [] })
     const native = createNative({ search })
@@ -123,19 +142,23 @@ describe('Android bridge adapters', () => {
         cancelled: false,
       }),
       scanPdfFiles: vi.fn().mockResolvedValue({
-        files: [{
-          fileName: 'book.pdf',
-          fileRef: 'file:saf:content://tree/books/book.pdf',
-          displayPath: '/storage/emulated/0/Books/book.pdf',
-        }],
+        files: [
+          {
+            fileName: 'book.pdf',
+            fileRef: 'file:saf:content://tree/books/book.pdf',
+            displayPath: '/storage/emulated/0/Books/book.pdf',
+          },
+        ],
       }),
       getImportedPdfs: vi.fn().mockResolvedValue({
-        pdfs: [{
-          id: 1,
-          fileRef: 'file:saf:content://tree/books/book.pdf',
-          displayPath: '/storage/emulated/0/Books/book.pdf',
-          fileName: 'book.pdf',
-        }],
+        pdfs: [
+          {
+            id: 1,
+            fileRef: 'file:saf:content://tree/books/book.pdf',
+            displayPath: '/storage/emulated/0/Books/book.pdf',
+            fileName: 'book.pdf',
+          },
+        ],
       }),
     })
     const events = createAndroidBackendEvents(native)
@@ -211,12 +234,23 @@ describe('Android bridge adapters', () => {
   })
 
   test('Android PDF adapter 只发送目录 ref 与相对 targetName', async () => {
-    const exportPdfBatch = vi.fn().mockResolvedValue({ tasks: [] })
+    const exportPdfBatch = vi.fn().mockResolvedValue({
+      tasks: [
+        {
+          accepted: true,
+          exportId: 'export-1',
+          targetFolderRef: 'folder:path:/exports',
+          targetName: 'nested/android.pdf',
+          outputFileRef: 'file:path:/exports/nested/android.pdf',
+          displayPath: '/exports/nested/android.pdf',
+        },
+      ],
+    })
     const native = createNative({ exportPdfBatch })
     const events = createAndroidBackendEvents(native)
     const services = createAndroidPlatformServices(native, events)
 
-    await services.pdf.exportPdfBatch({
+    const result = await services.pdf.exportPdfBatch({
       tasks: [
         {
           mode: 'merged',
@@ -229,6 +263,17 @@ describe('Android bridge adapters', () => {
           splitPages: 0,
         },
       ],
+    })
+
+    expect(result.tasks[0]).toEqual({
+      accepted: true,
+      exportId: 'export-1',
+      outputFile: {
+        ref: 'file:path:/exports/nested/android.pdf',
+        fileName: 'android.pdf',
+        displayPath: '/exports/nested/android.pdf',
+      },
+      displayPath: '/exports/nested/android.pdf',
     })
 
     expect(exportPdfBatch).toHaveBeenCalledWith({
@@ -402,7 +447,9 @@ describe('runtime errors', () => {
     expect(
       normalizeRuntimeError({ errorCode: 'permission-denied', message: '权限已失效' }),
     ).toMatchObject({ code: 'permission-denied', message: '权限已失效' })
-    expect(normalizeRuntimeError({ code: 'conflict', message: '当前任务状态不能重试' })).toMatchObject({
+    expect(
+      normalizeRuntimeError({ code: 'conflict', message: '当前任务状态不能重试' }),
+    ).toMatchObject({
       code: 'conflict',
       message: '当前任务状态不能重试',
     })
@@ -410,7 +457,9 @@ describe('runtime errors', () => {
 
   test('未知 rejection 不根据自然语言猜测业务 code', () => {
     expect(normalizeRuntimeError(new Error('permission denied')).code).toBe('internal')
-    expect(normalizeRuntimeError({ code: 'permission denied', message: '权限已失效' })).toMatchObject({
+    expect(
+      normalizeRuntimeError({ code: 'permission denied', message: '权限已失效' }),
+    ).toMatchObject({
       code: 'internal',
       message: '权限已失效',
     })

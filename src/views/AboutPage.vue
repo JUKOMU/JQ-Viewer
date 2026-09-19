@@ -111,6 +111,77 @@
                 {{ updateActionLabel }}
               </button>
             </div>
+
+            <div v-if="diagnosticsAvailable" class="info-card diagnostics-card">
+              <div class="diagnostics-header">
+                <span class="info-label">Desktop 诊断</span>
+                <button
+                  class="icon-action"
+                  type="button"
+                  aria-label="刷新诊断信息"
+                  title="刷新诊断信息"
+                  :disabled="diagnosticsLoading"
+                  @click="loadDiagnostics"
+                >
+                  <IonSpinner v-if="diagnosticsLoading" name="circular" aria-hidden="true" />
+                  <IonIcon v-else :icon="refreshOutline" aria-hidden="true" />
+                </button>
+              </div>
+              <div v-if="diagnosticsError" class="diagnostics-error">
+                {{ diagnosticsError }}
+              </div>
+              <template v-if="diagnostics">
+                <div class="diagnostics-section">
+                  <div class="diagnostics-title">路径</div>
+                  <div v-for="path in diagnostics.paths" :key="path.kind" class="diagnostics-row">
+                    <span>{{ path.label }}</span>
+                    <span class="diagnostics-path" :title="path.displayPath">
+                      {{ path.displayPath }}
+                    </span>
+                  </div>
+                </div>
+                <div class="diagnostics-section">
+                  <div class="diagnostics-title">任务</div>
+                  <div v-for="task in diagnostics.tasks" :key="task.kind" class="task-diagnostics">
+                    <div class="diagnostics-row">
+                      <span>{{ task.label }}</span>
+                      <span>{{ formatTaskSummary(task) }}</span>
+                    </div>
+                    <div
+                      v-for="failure in task.recentFailures"
+                      :key="failure.id"
+                      class="diagnostics-failure"
+                    >
+                      <span class="failure-title">{{ failure.title }}</span>
+                      <span class="failure-reason">{{ failure.reason }}</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="diagnostics-section">
+                  <div class="diagnostics-title">可清理资源</div>
+                  <div
+                    v-for="resource in diagnostics.clearableResources"
+                    :key="resource.kind"
+                    class="diagnostics-row"
+                  >
+                    <span>{{ resource.label }}</span>
+                    <span
+                      >{{ resource.entryCount }} 项 · {{ formatBytes(resource.sizeBytes) }}</span
+                    >
+                  </div>
+                </div>
+                <button
+                  class="diagnostics-clear"
+                  type="button"
+                  :disabled="diagnosticsClearing"
+                  @click="clearDiagnosticCaches"
+                >
+                  <IonSpinner v-if="diagnosticsClearing" name="circular" aria-hidden="true" />
+                  <IonIcon v-else :icon="trashOutline" aria-hidden="true" />
+                  <span>清理缓存</span>
+                </button>
+              </template>
+            </div>
           </div>
           <div class="about-group">
             <!-- 仓库地址 -->
@@ -187,9 +258,14 @@ import {
   IonTitle,
   IonToolbar,
 } from '@ionic/vue'
-import { chevronForwardOutline, logoGithub } from 'ionicons/icons'
-import { showToast } from '@/services/JmcomicService'
+import { chevronForwardOutline, logoGithub, refreshOutline, trashOutline } from 'ionicons/icons'
+import { JmcomicService, showToast } from '@/services/JmcomicService'
 import { getRuntime } from '@/runtime/runtimeContext'
+import type {
+  DiagnosticsService,
+  DiagnosticSnapshot,
+  DiagnosticTaskSummary,
+} from '@/runtime/PlatformServices'
 import { UpdateService } from '@/services/UpdateService'
 import { presentUpdatePrompt } from '@/services/UpdatePromptService'
 import RollingNumber from '@/components/update/RollingNumber.vue'
@@ -267,7 +343,13 @@ const downloadProgress = computed(() => {
         ? updateState.value.githubBytes
         : updateState.value.giteeBytes
       : Math.max(updateState.value.githubBytes, updateState.value.giteeBytes)
-  const total = Math.max(0, updateState.value.totalBytes || latestManifest.value?.sizeBytes || 0)
+  const total = Math.max(
+    0,
+    updateState.value.totalBytes ||
+      latestManifest.value?.desktopArtifact?.sizeBytes ||
+      latestManifest.value?.sizeBytes ||
+      0,
+  )
   const bytes = total > 0 ? Math.min(total, Math.max(0, rawBytes)) : Math.max(0, rawBytes)
   const percent = total > 0 ? Math.min(100, Math.max(0, (bytes / total) * 100)) : 0
 
@@ -303,8 +385,24 @@ const updateActionDisabled = computed(() =>
 const TITLE = 'JQ Viewer'
 const displayText = ref('')
 const cursorVisible = ref(true)
+const diagnosticsAvailable = ref(false)
+const diagnosticsLoading = ref(false)
+const diagnosticsClearing = ref(false)
+const diagnosticsError = ref('')
+const diagnostics = ref<DiagnosticSnapshot | null>(null)
+let diagnosticsService: DiagnosticsService | null = null
 
 onMounted(async () => {
+  try {
+    const capability = getRuntime().services.diagnostics
+    if (capability.available) {
+      diagnosticsService = capability.api
+      diagnosticsAvailable.value = true
+      void loadDiagnostics()
+    }
+  } catch {
+    // 运行时不提供诊断能力时隐藏入口。
+  }
   await UpdateService.init()
   if (latestManifest.value) {
     latestVersion.value = latestManifest.value.versionName
@@ -335,6 +433,47 @@ onMounted(async () => {
   }
   cursorVisible.value = false
 })
+
+async function loadDiagnostics() {
+  if (!diagnosticsService || diagnosticsLoading.value) return
+  diagnosticsLoading.value = true
+  diagnosticsError.value = ''
+  try {
+    diagnostics.value = await diagnosticsService.getSnapshot()
+  } catch (error) {
+    diagnosticsError.value = error instanceof Error ? error.message : '诊断信息读取失败'
+  } finally {
+    diagnosticsLoading.value = false
+  }
+}
+
+async function clearDiagnosticCaches() {
+  if (diagnosticsClearing.value) return
+  diagnosticsClearing.value = true
+  try {
+    await JmcomicService.clearImageCache()
+    await loadDiagnostics()
+    await showToast('缓存已清理', 'success')
+  } catch (error) {
+    await showToast(error instanceof Error ? error.message : '缓存清理失败', 'danger', 2500)
+  } finally {
+    diagnosticsClearing.value = false
+  }
+}
+
+function formatTaskSummary(task: DiagnosticTaskSummary): string {
+  const parts = [`共 ${task.total}`]
+  if (task.active > 0) parts.push(`进行中 ${task.active}`)
+  if (task.failed > 0) parts.push(`异常 ${task.failed}`)
+  return parts.join(' · ')
+}
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
+  if (bytes < 1024) return `${Math.round(bytes)} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`
+}
 
 async function checkUpdate() {
   updateChecking.value = true
@@ -624,6 +763,129 @@ const reDisplay = async () => {
   min-width: 0;
   margin-left: 12px;
   text-align: right;
+}
+
+.diagnostics-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 48px;
+  padding: 10px 12px 10px 18px;
+}
+
+.icon-action {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: #8c6b5a;
+  cursor: pointer;
+}
+
+.icon-action ion-icon,
+.icon-action ion-spinner {
+  width: 20px;
+  height: 20px;
+}
+
+.icon-action:disabled {
+  color: #c7b5ab;
+  cursor: default;
+}
+
+.diagnostics-section {
+  border-top: 1px solid #f5ebe4;
+  padding: 12px 18px;
+}
+
+.diagnostics-title {
+  margin-bottom: 8px;
+  color: #4c2a18;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.diagnostics-row {
+  display: grid;
+  grid-template-columns: minmax(72px, auto) minmax(0, 1fr);
+  gap: 12px;
+  align-items: baseline;
+  padding: 4px 0;
+  color: #8c6b5a;
+  font-size: 12px;
+}
+
+.diagnostics-row > :last-child {
+  min-width: 0;
+  text-align: right;
+}
+
+.diagnostics-path {
+  overflow: hidden;
+  font-family: monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-diagnostics + .task-diagnostics {
+  margin-top: 6px;
+}
+
+.diagnostics-failure {
+  display: grid;
+  grid-template-columns: minmax(72px, 0.45fr) minmax(0, 1fr);
+  gap: 12px;
+  padding: 4px 0;
+  color: #b04a45;
+  font-size: 12px;
+}
+
+.failure-title,
+.failure-reason {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.failure-reason {
+  text-align: right;
+}
+
+.diagnostics-clear {
+  width: 100%;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  border-top: 1px solid #f5ebe4;
+  background: transparent;
+  color: #e8843c;
+  font: inherit;
+  cursor: pointer;
+}
+
+.diagnostics-clear ion-icon,
+.diagnostics-clear ion-spinner {
+  width: 18px;
+  height: 18px;
+}
+
+.diagnostics-clear:disabled {
+  color: #bba79b;
+  cursor: default;
+}
+
+.diagnostics-error {
+  border-top: 1px solid #f5ebe4;
+  padding: 12px 18px;
+  color: #d44;
+  font-size: 13px;
 }
 
 .repo-url {

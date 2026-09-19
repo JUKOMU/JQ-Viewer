@@ -108,16 +108,17 @@ public final class PdfManagementService {
         return refreshed;
     }
 
-    public JSONArray refreshFileAvailability(JSONArray ids) {
+    public JSONArray refreshFileAvailability(JSONArray ids) throws Exception {
         JSONArray files = new JSONArray();
         for (int index = 0; index < ids.length(); index++) {
             long id = ids.optLong(index, -1L);
             if (id < 0L) continue;
             try {
-                files.put(verifyFile(id));
-            } catch (Exception ignored) {
-                JSONObject current = store.getFile(id);
-                if (current != null) files.put(current);
+                JSONObject refreshed = verifyFile(id);
+                if (refreshed != null) files.put(refreshed);
+            } catch (PdfOperationException error) {
+                if (PdfOperationException.NOT_FOUND.equals(error.code)) continue;
+                throw error;
             }
         }
         return files;

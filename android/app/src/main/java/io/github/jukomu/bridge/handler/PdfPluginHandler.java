@@ -22,11 +22,13 @@ import io.github.jukomu.feature.pdf.data.PdfRefResolver;
 import io.github.jukomu.feature.pdf.data.PdfStore;
 import io.github.jukomu.feature.pdf.export.PdfExportJobValidator;
 import io.github.jukomu.feature.pdf.export.PdfExportService;
+import io.github.jukomu.feature.pdf.management.PdfFileValidator;
 import io.github.jukomu.feature.pdf.management.PdfManagementService;
 import io.github.jukomu.feature.pdf.render.PdfPageCache;
 import io.github.jukomu.feature.pdf.render.PdfPageResourceId;
 import io.github.jukomu.feature.pdf.render.PdfPageSizing;
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.File;
@@ -179,6 +181,12 @@ public final class PdfPluginHandler {
                         duplicateCount++;
                     }
                 } catch (Exception error) {
+                    if (!isExpectedPdfImportFailure(error)) {
+                        Log.e(TAG, "PDF 导入失败", error);
+                        call.reject(error.getMessage() == null
+                            ? "PDF 导入失败" : error.getMessage(), error);
+                        return;
+                    }
                     skipped++;
                     errorCount++;
                     Log.w(TAG, "跳过无效的 PDF 导入项", error);
@@ -251,10 +259,14 @@ public final class PdfPluginHandler {
             return;
         }
         dispatchPdfCommand(() -> {
-            JSObject result = new JSObject();
-            result.put("files", PdfManagementService.getInstance(context)
-                .refreshFileAvailability(ids));
-            call.resolve(result);
+            try {
+                JSObject result = new JSObject();
+                result.put("files", PdfManagementService.getInstance(context)
+                    .refreshFileAvailability(ids));
+                call.resolve(result);
+            } catch (Exception error) {
+                call.reject(error.getMessage(), error);
+            }
         });
     }
 
@@ -766,6 +778,12 @@ public final class PdfPluginHandler {
 
     private void dispatchPdfCommand(Runnable command) {
         pdfCommandExecutor.execute(command);
+    }
+
+    private static boolean isExpectedPdfImportFailure(Exception error) {
+        return error instanceof JSONException
+            || error instanceof IllegalArgumentException
+            || error instanceof PdfFileValidator.ValidationException;
     }
 
     private static void rejectWithCode(PluginCall call, String message, String code,

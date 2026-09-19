@@ -1,11 +1,14 @@
 package io.github.jukomu.feature.pdf.management;
 
 import android.content.Context;
+import android.database.sqlite.SQLiteDatabase;
+import android.database.sqlite.SQLiteException;
 import android.graphics.pdf.PdfDocument;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
 import io.github.jukomu.feature.pdf.data.PdfStore;
 import io.github.jukomu.feature.pdf.data.PdfRef;
+import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.After;
 import org.junit.Before;
@@ -105,6 +108,27 @@ public class PdfManagementImportInstrumentedTest {
         assertEquals("invalid", verified.getString("availability"));
         assertEquals("corrupt", verified.getString("verificationStatus"));
         assertNotNull(PdfStore.getInstance(context).getFile(id));
+    }
+
+    @Test
+    public void refreshPropagatesPersistenceFailuresInsteadOfReturningStaleState()
+        throws Exception {
+        File pdf = createPdf("refresh-failure.pdf");
+        PdfManagementService service = PdfManagementService.getInstance(context);
+        PdfStore store = PdfStore.getInstance(context);
+        long id = service.importPdf(item(pdf)).getLong("id");
+        SQLiteDatabase database = store.getWritableDatabase();
+        database.execSQL("CREATE TRIGGER fail_pdf_refresh_for_test "
+            + "BEFORE UPDATE ON pdf_files BEGIN "
+            + "SELECT RAISE(ABORT, 'forced refresh failure'); END");
+        try {
+            service.refreshFileAvailability(new JSONArray().put(id));
+            fail("Expected refresh failure");
+        } catch (SQLiteException error) {
+            assertTrue(error.getMessage().contains("forced refresh failure"));
+        } finally {
+            database.execSQL("DROP TRIGGER IF EXISTS fail_pdf_refresh_for_test");
+        }
     }
 
     private JSONObject item(File file) throws Exception {

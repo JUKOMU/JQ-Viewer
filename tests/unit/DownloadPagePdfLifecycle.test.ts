@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   consumeLaunchRoute: vi.fn(),
   addLaunchRouteListener: vi.fn(),
   addDownloadProgressListener: vi.fn(),
+  addStateInvalidatedListener: vi.fn(),
   checkFilesExist: vi.fn(),
   checkNotificationPermission: vi.fn(),
   exportPdfBatch: vi.fn(),
@@ -18,6 +19,9 @@ const mocks = vi.hoisted(() => ({
   buildExportPlan: vi.fn(),
   showToast: vi.fn(),
   pdfMountCount: 0,
+  downloadHandler: undefined as ((event: any) => void) | undefined,
+  stateInvalidatedHandler: undefined as (() => void) | undefined,
+  offlineSetAll: vi.fn(),
   route: { query: { view: 'pdf' } } as { query: Record<string, string> },
 }))
 
@@ -78,6 +82,7 @@ vi.mock('@/services/JmcomicService', () => ({
     consumeLaunchRoute: mocks.consumeLaunchRoute,
     addLaunchRouteListener: mocks.addLaunchRouteListener,
     addDownloadProgressListener: mocks.addDownloadProgressListener,
+    addStateInvalidatedListener: mocks.addStateInvalidatedListener,
     checkFilesExist: mocks.checkFilesExist,
     checkNotificationPermission: mocks.checkNotificationPermission,
     exportPdfBatch: mocks.exportPdfBatch,
@@ -96,7 +101,7 @@ vi.mock('@/services/PdfExportService', () => ({
 
 vi.mock('@/services/OfflineDownloadService', () => ({
   OfflineDownloadService: {
-    setAll: vi.fn(),
+    setAll: mocks.offlineSetAll,
     getAll: vi.fn(() => []),
     updateProgress: vi.fn(),
     updateStatus: vi.fn(),
@@ -136,12 +141,21 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
     vi.clearAllMocks()
     mocks.ionViewWillEnter = undefined
     mocks.pdfMountCount = 0
+    mocks.downloadHandler = undefined
+    mocks.stateInvalidatedHandler = undefined
     mocks.route.query = { view: 'pdf' }
     mocks.getDownloadTasks.mockResolvedValue({ tasks: [], usedBytes: 0, availableBytes: 0 })
     mocks.getPdfManagementState.mockResolvedValue({ recoveryState: 'ready' })
     mocks.consumeLaunchRoute.mockResolvedValue({})
     mocks.addLaunchRouteListener.mockResolvedValue({ remove: vi.fn() })
-    mocks.addDownloadProgressListener.mockResolvedValue({ remove: vi.fn() })
+    mocks.addDownloadProgressListener.mockImplementation(async (handler: (event: any) => void) => {
+      mocks.downloadHandler = handler
+      return { remove: vi.fn() }
+    })
+    mocks.addStateInvalidatedListener.mockImplementation(async (handler: () => void) => {
+      mocks.stateInvalidatedHandler = handler
+      return { remove: vi.fn() }
+    })
     mocks.refreshPdf.mockResolvedValue(undefined)
     mocks.checkFilesExist.mockResolvedValue({ existing: [] })
     mocks.checkNotificationPermission.mockResolvedValue({ granted: true })
@@ -177,6 +191,62 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
     await wrapper.findAll('.tab-btn')[1].trigger('click')
 
     expect(mocks.pdfMountCount).toBe(1)
+    wrapper.unmount()
+  })
+
+  test('先注册下载监听，再读取初始权威快照', async () => {
+    const wrapper = mount(DownloadPage)
+    await flushPromises()
+
+    expect(mocks.addDownloadProgressListener.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.getDownloadTasks.mock.invocationCallOrder[0],
+    )
+    wrapper.unmount()
+  })
+
+  test('下载快照请求期间收到事件时丢弃旧响应并串行补读', async () => {
+    let finishInitial:
+      | ((value: { tasks: any[]; usedBytes: number; availableBytes: number }) => void)
+      | undefined
+    const currentTask = {
+      taskId: 'album_chapter',
+      albumId: 'album',
+      chapterId: 'chapter',
+      albumTitle: '漫画',
+      chapterTitle: '第一话',
+      coverUrl: '',
+      totalPages: 100,
+      downloadedPages: 20,
+      status: 'downloading',
+      createdAt: 1,
+    }
+    mocks.getDownloadTasks
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishInitial = resolve
+          }),
+      )
+      .mockResolvedValueOnce({ tasks: [currentTask], usedBytes: 20, availableBytes: 1000 })
+
+    const wrapper = mount(DownloadPage)
+    await vi.waitFor(() => expect(mocks.getDownloadTasks).toHaveBeenCalledOnce())
+    mocks.downloadHandler?.({
+      taskId: currentTask.taskId,
+      downloadedPages: 20,
+      totalPages: 100,
+      status: 'downloading',
+    })
+    finishInitial?.({
+      tasks: [{ ...currentTask, downloadedPages: 10 }],
+      usedBytes: 10,
+      availableBytes: 1000,
+    })
+    await flushPromises()
+
+    expect(mocks.getDownloadTasks).toHaveBeenCalledTimes(2)
+    expect(mocks.offlineSetAll).toHaveBeenCalledOnce()
+    expect(mocks.offlineSetAll).toHaveBeenCalledWith([currentTask])
     wrapper.unmount()
   })
 

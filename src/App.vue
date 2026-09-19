@@ -26,7 +26,7 @@ import MainMenu from '@/components/menu/MainMenu.vue'
 import { useSideMenuState } from '@/composables/useSideMenuState'
 import { initSettings } from '@/services/SettingsService'
 import { useAuth } from '@/composables/useAuth'
-import { initNetworkProbeStore } from '@/composables/networkProbeStore'
+import { disposeNetworkProbeStore, initNetworkProbeStore } from '@/composables/networkProbeStore'
 import { JmcomicService, showToast } from '@/services/JmcomicService'
 import { UpdateService } from '@/services/UpdateService'
 import { presentUpdatePrompt } from '@/services/UpdatePromptService'
@@ -198,6 +198,8 @@ const keepAliveNames = computed(() =>
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let activeToast: Awaited<ReturnType<typeof showToast>> | null = null
 let launchRouteHandle: ListenerHandle | null = null
+let launchRouteDrain: Promise<void> = Promise.resolve()
+let launchRouteNavigationVersion = 0
 
 const isSafeLaunchRoute = (value?: string): value is string =>
   !!value && value.startsWith('/') && !value.startsWith('//')
@@ -217,6 +219,26 @@ const navigateToLaunchRoute = async (target?: string, replace = false) => {
   }
 }
 
+const queueLaunchRouteDrain = (replaceFirst = false) => {
+  const next = launchRouteDrain
+    .catch(() => undefined)
+    .then(async () => {
+      let replace = replaceFirst
+      let launch = await JmcomicService.consumeLaunchRoute()
+      while (launch.route) {
+        if (isSafeLaunchRoute(launch.route)) {
+          if (await navigateToLaunchRoute(launch.route, replace)) {
+            launchRouteNavigationVersion += 1
+          }
+          replace = false
+        }
+        launch = await JmcomicService.consumeLaunchRoute()
+      }
+    })
+  launchRouteDrain = next
+  return next
+}
+
 async function showStartupUpdatePrompt(update: UpdateManifest) {
   const confirmed = await presentUpdatePrompt(update, {
     cancelText: '稍后',
@@ -228,30 +250,23 @@ async function showStartupUpdatePrompt(update: UpdateManifest) {
 }
 
 onMounted(async () => {
-  let launchRouteHandled = false
+  const launchRouteVersion = launchRouteNavigationVersion
   try {
-    const launch = await JmcomicService.consumeLaunchRoute()
-    launchRouteHandled = await navigateToLaunchRoute(launch.route, true)
+    await queueLaunchRouteDrain(true)
   } catch {
     /* Web 调试时忽略 */
   }
 
   try {
-    launchRouteHandle = await JmcomicService.addLaunchRouteListener((data) => {
-      void (async () => {
-        if (await navigateToLaunchRoute(data.route)) {
-          try {
-            await JmcomicService.consumeLaunchRoute()
-          } catch {
-            /* 忽略 */
-          }
-        }
-      })()
+    launchRouteHandle = await JmcomicService.addLaunchRouteListener(() => {
+      void queueLaunchRouteDrain().catch(() => undefined)
     })
+    await queueLaunchRouteDrain()
   } catch {
     /* Web 调试时忽略 */
   }
 
+  const launchRouteHandled = launchRouteNavigationVersion > launchRouteVersion
   if (!launchRouteHandled && (route.path === '/' || route.path === '/home')) {
     const snapshot = readReaderSnapshot()
     if (snapshot) {
@@ -348,6 +363,7 @@ onBeforeUnmount(() => {
   activeToast = null
   launchRouteHandle?.remove()
   launchRouteHandle = null
+  void disposeNetworkProbeStore()
 })
 </script>
 

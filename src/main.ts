@@ -4,7 +4,7 @@ import router from './router'
 
 import { IonicVue } from '@ionic/vue'
 import { configureRuntime } from './runtime/runtimeContext'
-import { createAndroidRuntime } from './runtime/android/createAndroidRuntime'
+import { PdfExportService } from './services/PdfExportService'
 
 /* Core CSS required for Ionic components to work properly */
 import '@ionic/vue/css/core.css'
@@ -37,9 +37,21 @@ import './theme/variables.css'
 
 const app = createApp(App).use(IonicVue).use(router)
 
-// 应用启动时注入 Android runtime；后续增加 Desktop 构建入口时在此处切换对应适配器。
-configureRuntime(createAndroidRuntime())
+const runtimePromise =
+  import.meta.env.MODE === 'desktop'
+    ? import('./runtime/desktop/createRuntime').then(({ createRuntime }) =>
+        createRuntime(__JQ_RUNTIME_PLATFORM__),
+      )
+    : import('./runtime/android/createAndroidRuntime').then(({ createAndroidRuntime }) =>
+        createAndroidRuntime(),
+      )
 
-router.isReady().then(() => {
-  app.mount('#app')
-})
+runtimePromise
+  .then(async (runtime) => {
+    await PdfExportService.initialize(runtime.services.pdfExportPreferences)
+    configureRuntime(runtime)
+    return router.isReady()
+  })
+  .then(() => {
+    app.mount('#app')
+  })

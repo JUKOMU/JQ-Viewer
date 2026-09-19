@@ -19,8 +19,10 @@ const mocks = vi.hoisted(() => ({
   getPdfExportTasks: vi.fn(),
   addDownloadProgressListener: vi.fn(),
   addPdfExportProgressListener: vi.fn(),
+  addStateInvalidatedListener: vi.fn(),
   downloadHandler: undefined as ((event: any) => void) | undefined,
   pdfHandler: undefined as ((event: any) => void) | undefined,
+  stateInvalidatedHandler: undefined as (() => void) | undefined,
 }))
 
 vi.mock('vue-router', () => ({
@@ -34,6 +36,7 @@ vi.mock('@/services/JmcomicService', () => ({
     getPdfExportTasks: mocks.getPdfExportTasks,
     addDownloadProgressListener: mocks.addDownloadProgressListener,
     addPdfExportProgressListener: mocks.addPdfExportProgressListener,
+    addStateInvalidatedListener: mocks.addStateInvalidatedListener,
   },
 }))
 
@@ -93,8 +96,10 @@ beforeEach(() => {
   mocks.getPdfExportTasks.mockReset()
   mocks.addDownloadProgressListener.mockReset()
   mocks.addPdfExportProgressListener.mockReset()
+  mocks.addStateInvalidatedListener.mockReset()
   mocks.downloadHandler = undefined
   mocks.pdfHandler = undefined
+  mocks.stateInvalidatedHandler = undefined
   mocks.getDownloadTasks.mockResolvedValue({ tasks: [] })
   mocks.getPdfExportTasks.mockResolvedValue({ tasks: [] })
   mocks.addDownloadProgressListener.mockImplementation(async (handler: (event: any) => void) => {
@@ -103,6 +108,10 @@ beforeEach(() => {
   })
   mocks.addPdfExportProgressListener.mockImplementation(async (handler: (event: any) => void) => {
     mocks.pdfHandler = handler
+    return { remove: vi.fn() }
+  })
+  mocks.addStateInvalidatedListener.mockImplementation(async (handler: () => void) => {
+    mocks.stateInvalidatedHandler = handler
     return { remove: vi.fn() }
   })
 })
@@ -459,6 +468,7 @@ describe('MainMenu 任务进度', () => {
         resolveSnapshot = resolve
       }),
     )
+    mocks.getDownloadTasks.mockResolvedValueOnce({ tasks: [downloadTask(20, 100)] })
     const wrapper = mountMenu()
     await vi.waitFor(() => expect(mocks.getDownloadTasks).toHaveBeenCalled())
     mocks.downloadHandler?.(downloadEvent(20))
@@ -467,6 +477,7 @@ describe('MainMenu 任务进度', () => {
     await flushTaskProgress()
 
     expect(wrapper.find('.task-progress-copy').text()).toContain('下载20%')
+    expect(mocks.getDownloadTasks).toHaveBeenCalledTimes(2)
     wrapper.unmount()
   })
 
@@ -483,6 +494,21 @@ describe('MainMenu 任务进度', () => {
     resolveSnapshot?.({ tasks: [downloadTask(10, 100)] })
     await flushPromises()
 
+    expect(wrapper.find('.task-progress-copy').exists()).toBe(false)
+    expect(mocks.getDownloadTasks).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+  })
+
+  test('事件流重连后用权威快照清除已不存在的活动任务', async () => {
+    mocks.getDownloadTasks.mockResolvedValueOnce({ tasks: [downloadTask(40, 100)] })
+    const wrapper = mountMenu()
+    await flushPromises()
+    expect(wrapper.find('.task-progress-copy').text()).toContain('下载40%')
+
+    mocks.stateInvalidatedHandler?.()
+    await flushPromises()
+
+    expect(mocks.getDownloadTasks).toHaveBeenCalledTimes(2)
     expect(wrapper.find('.task-progress-copy').exists()).toBe(false)
     wrapper.unmount()
   })

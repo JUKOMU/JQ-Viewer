@@ -27,6 +27,7 @@ import io.github.jukomu.platform.permission.PermissionService;
 import io.github.jukomu.platform.permission.PermissionState;
 import io.github.jukomu.feature.pdf.data.PdfRef;
 import io.github.jukomu.feature.pdf.data.PdfRefResolver;
+import io.github.jukomu.runtime.ServiceExecutors;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -66,6 +67,7 @@ public final class SystemPluginHandler {
     private final BiConsumer<String, Integer> permissionRequester;
     private final PersistableUriPermission persistableUriPermission;
     private final ExecutorService ocrExecutor;
+    private final ExecutorService fileOperationExecutor;
     private final Object probeLock = new Object();
     private final Object permissionLock = new Object();
     private final Object ocrLock = new Object();
@@ -105,7 +107,8 @@ public final class SystemPluginHandler {
         this.networkProbeConsumer = networkProbeConsumer;
         this.permissionRequester = permissionRequester;
         this.persistableUriPermission = persistableUriPermission;
-        this.ocrExecutor = Executors.newSingleThreadExecutor();
+        this.ocrExecutor = ServiceExecutors.fixed("ocr", 1);
+        this.fileOperationExecutor = ServiceExecutors.fixed("file-operation", 1);
     }
 
     /**
@@ -124,11 +127,7 @@ public final class SystemPluginHandler {
             return;
         }
 
-        domainProbeExecutor = Executors.newSingleThreadScheduledExecutor(runnable -> {
-            Thread thread = new Thread(runnable, "domain-probe-debounce");
-            thread.setDaemon(true);
-            return thread;
-        });
+        domainProbeExecutor = ServiceExecutors.scheduled("domain-probe", 1);
 
         networkCallback = new ConnectivityManager.NetworkCallback() {
             @Override
@@ -153,7 +152,7 @@ public final class SystemPluginHandler {
 
         synchronized (probeLock) {
             if (destroyed) {
-                shutdownGracefully(domainProbeExecutor);
+                domainProbeExecutor.shutdownNow();
                 return;
             }
             connectivityManager.registerDefaultNetworkCallback(networkCallback);
@@ -206,8 +205,11 @@ public final class SystemPluginHandler {
                 Log.d(TAG, "取消注册网络回调失败", error);
             }
         }
-        shutdownGracefully(domainProbeExecutor);
-        shutdownGracefully(ocrExecutor);
+        if (domainProbeExecutor != null) {
+            domainProbeExecutor.shutdownNow();
+        }
+        ocrExecutor.shutdownNow();
+        fileOperationExecutor.shutdownNow();
     }
 
     /**
@@ -538,10 +540,26 @@ public final class SystemPluginHandler {
 
     /** 返回给定文件引用中当前可访问的条目。 */
     public void checkFilesExist(PluginCall call) {
+        JSArray fileRefs = call.getArray("fileRefs");
+        if (fileRefs == null) {
+            call.reject("fileRefs is required");
+            return;
+        }
+        if (destroyed) {
+            call.reject(SESSION_ENDED_MESSAGE);
+            return;
+        }
         try {
-            JSArray fileRefs = call.getArray("fileRefs");
-            if (fileRefs == null) {
-                call.reject("fileRefs is required");
+            fileOperationExecutor.execute(() -> checkFilesExistOnExecutor(call, fileRefs));
+        } catch (RejectedExecutionException error) {
+            call.reject(SESSION_ENDED_MESSAGE, error);
+        }
+    }
+
+    private void checkFilesExistOnExecutor(PluginCall call, JSArray fileRefs) {
+        try {
+            if (destroyed) {
+                call.reject(SESSION_ENDED_MESSAGE);
                 return;
             }
             JSArray existing = new JSArray();
@@ -811,17 +829,4 @@ public final class SystemPluginHandler {
         call.reject(SESSION_ENDED_MESSAGE);
     }
 
-    private static void shutdownGracefully(ExecutorService executor) {
-        if (executor == null) {
-            return;
-        }
-        executor.shutdown();
-        try {
-            if (!executor.awaitTermination(2, TimeUnit.SECONDS)) {
-                executor.shutdownNow();
-            }
-        } catch (InterruptedException error) {
-            executor.shutdownNow();
-        }
-    }
 }

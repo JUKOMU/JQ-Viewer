@@ -40,13 +40,12 @@ import io.github.jukomu.platform.permission.PermissionService;
 import io.github.jukomu.platform.permission.PermissionState;
 import io.github.jukomu.platform.persistence.SettingsStore;
 import io.github.jukomu.runtime.JmcomicRuntime;
+import io.github.jukomu.runtime.ServiceExecutors;
 import org.json.JSONObject;
 
 import java.util.List;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 /**
@@ -288,32 +287,17 @@ public class JmcomicPlugin extends Plugin {
             instance = null;
         }
 
-        shutdownGracefully(pdfCommandExecutor);
+        if (pdfCommandExecutor != null) {
+            pdfCommandExecutor.shutdownNow();
+        }
         if (apiSession != null) {
             apiSession.destroy();
         }
         // 图片、网络和下载准备 executor 由 JmcomicRuntime 持有。
     }
 
-    private void shutdownGracefully(ExecutorService executor) {
-        if (executor == null) return;
-        executor.shutdown();
-        try {
-            if (!executor.awaitTermination(2, TimeUnit.SECONDS)) {
-                executor.shutdownNow();
-            }
-        } catch (InterruptedException e) {
-            executor.shutdownNow();
-            Thread.currentThread().interrupt();
-        }
-    }
-
     static ExecutorService createPdfCommandExecutor() {
-        return Executors.newSingleThreadExecutor(runnable -> {
-            Thread thread = new Thread(runnable, "pdf-command");
-            thread.setDaemon(true);
-            return thread;
-        });
+        return ServiceExecutors.fixed("pdf-command", 1);
     }
 
     static void dispatchPdfCommand(Executor executor, Runnable command) {

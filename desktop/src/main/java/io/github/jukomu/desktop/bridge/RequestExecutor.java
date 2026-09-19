@@ -5,27 +5,20 @@ import io.github.jukomu.desktop.bridge.model.ErrorResponse;
 import io.javalin.http.Context;
 
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
-/** 将阻塞业务调用放入有界 executor，并将结果转换为一次 HTTP 响应。 */
+/** 将单一服务的阻塞调用放入有界 executor，并将结果转换为一次 HTTP 响应。 */
 public final class RequestExecutor {
-    private static final long FILE_OPERATION_TIMEOUT = TimeUnit.HOURS.toMillis(24);
-    private final Executor executor;
-    private final ExecutorService fileOperationExecutor;
+    private static final long LONG_OPERATION_TIMEOUT = TimeUnit.HOURS.toMillis(24);
+    private final ExecutorService executor;
     private final ObjectMapper mapper;
 
-    public RequestExecutor(
-            Executor executor,
-            ExecutorService fileOperationExecutor,
-            ObjectMapper mapper
-    ) {
+    public RequestExecutor(ExecutorService executor, ObjectMapper mapper) {
         this.executor = executor;
-        this.fileOperationExecutor = fileOperationExecutor;
         this.mapper = mapper;
     }
 
@@ -41,7 +34,7 @@ public final class RequestExecutor {
         execute(context, () -> task.apply(request));
     }
 
-    public <T> void runFileOperation(Context context, Class<T> requestType, Function<T, ?> task) {
+    public <T> void runLongOperation(Context context, Class<T> requestType, Function<T, ?> task) {
         T request;
         try {
             request = Request.body(context, mapper, requestType);
@@ -50,10 +43,10 @@ public final class RequestExecutor {
             return;
         }
 
-        executeFileOperation(context, () -> task.apply(request));
+        executeLongOperation(context, () -> task.apply(request));
     }
 
-    public void runFileOperation(Context context, Supplier<?> task) {
+    public void runLongOperation(Context context, Supplier<?> task) {
         try {
             Request.requireObject(context, mapper);
         } catch (ApiException exception) {
@@ -61,7 +54,7 @@ public final class RequestExecutor {
             return;
         }
 
-        executeFileOperation(context, task);
+        executeLongOperation(context, task);
     }
 
     public void run(Context context, Supplier<?> task) {
@@ -94,13 +87,13 @@ public final class RequestExecutor {
         }));
     }
 
-    private void executeFileOperation(Context context, Supplier<?> task) {
+    private void executeLongOperation(Context context, Supplier<?> task) {
         try {
             context.async(config -> {
-                config.executor = fileOperationExecutor;
-                config.timeout = FILE_OPERATION_TIMEOUT;
+                config.executor = executor;
+                config.timeout = LONG_OPERATION_TIMEOUT;
                 config.onTimeout(timeoutContext -> sendError(timeoutContext,
-                        ApiException.unavailable("文件操作超时")));
+                        ApiException.unavailable("操作超时")));
             }, () -> {
                 try {
                     context.json(task.get());

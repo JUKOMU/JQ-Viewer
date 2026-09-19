@@ -22,6 +22,6 @@ public final class OcrPluginHandler {
     }
 
     public void pickImageAndOcr(Context context) {
-        requests.runFileOperation(context, ocr::pickImageAndOcr);
+        requests.runLongOperation(context, ocr::pickImageAndOcr);
     }
 }

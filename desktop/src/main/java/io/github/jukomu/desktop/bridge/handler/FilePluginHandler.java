@@ -11,41 +11,47 @@ import io.javalin.http.Context;
 
 /** 处理 Desktop 文件与目录 bridge 请求。 */
 public final class FilePluginHandler {
-    private final RequestExecutor requests;
+    private final RequestExecutor fileRequests;
+    private final RequestExecutor dialogRequests;
     private final FileService files;
 
-    public FilePluginHandler(RequestExecutor requests, FileService files) {
-        this.requests = requests;
+    public FilePluginHandler(
+            RequestExecutor fileRequests,
+            RequestExecutor dialogRequests,
+            FileService files
+    ) {
+        this.fileRequests = fileRequests;
+        this.dialogRequests = dialogRequests;
         this.files = files;
     }
 
     public void pickFolder(Context context) {
-        requests.run(context, FolderPurposeRequest.class,
+        dialogRequests.runLongOperation(context, FolderPurposeRequest.class,
                 request -> files.pickFolder(Request.requiredText(request.purpose(), "purpose")));
     }
 
     public void getDefaultFolder(Context context) {
-        requests.run(context, FolderPurposeRequest.class,
+        fileRequests.run(context, FolderPurposeRequest.class,
                 request -> files.getDefaultFolder(Request.requiredText(request.purpose(), "purpose")));
     }
 
     public void checkFilesExist(Context context) {
-        requests.run(context, FileRefsRequest.class,
+        fileRequests.run(context, FileRefsRequest.class,
                 request -> files.checkFilesExist(request.files()));
     }
 
     public void openFile(Context context) {
-        requests.run(context, FileRefRequest.class,
+        fileRequests.run(context, FileRefRequest.class,
                 request -> files.openFile(Request.requiredText(request.file(), "file")));
     }
 
     public void openContainingFolder(Context context) {
-        requests.run(context, FileRefRequest.class,
+        fileRequests.run(context, FileRefRequest.class,
                 request -> files.openContainingFolder(Request.requiredText(request.file(), "file")));
     }
 
     public void scanPdfFiles(Context context) {
-        requests.run(context, FolderRefRequest.class,
+        fileRequests.runLongOperation(context, FolderRefRequest.class,
                 request -> files.scanPdfFiles(Request.requiredText(request.folder(), "folder")));
     }
 }

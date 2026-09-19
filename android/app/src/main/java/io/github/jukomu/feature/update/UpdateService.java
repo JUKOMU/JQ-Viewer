@@ -15,6 +15,7 @@ import android.util.Log;
 import com.getcapacitor.JSObject;
 
 import androidx.core.content.FileProvider;
+import io.github.jukomu.runtime.ServiceExecutors;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -31,13 +32,10 @@ import java.net.URL;
 import java.security.MessageDigest;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
-import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
@@ -65,8 +63,8 @@ public final class UpdateService {
 
     private final Context context;
     private final File updateDirectory;
-    private final ThreadPoolExecutor executor;
-    private final ThreadPoolExecutor manifestExecutor;
+    private final ExecutorService executor;
+    private final ExecutorService manifestExecutor;
     private final Object stateLock = new Object();
     private final AtomicInteger revision = new AtomicInteger();
     private volatile Consumer<Snapshot> progressSink;
@@ -83,8 +81,8 @@ public final class UpdateService {
     public UpdateService(Context context) {
         this.context = context.getApplicationContext();
         this.updateDirectory = new File(this.context.getFilesDir(), UPDATE_DIRECTORY);
-        this.executor = createExecutor(3, "app-update-");
-        this.manifestExecutor = createExecutor(2, "app-update-manifest-");
+        this.executor = ServiceExecutors.fixed("app-update", 3);
+        this.manifestExecutor = ServiceExecutors.fixed("app-update-manifest", 2);
     }
 
     /**
@@ -888,20 +886,6 @@ public final class UpdateService {
         if (file != null && file.isFile() && !file.delete()) {
             Log.w(TAG, "更新临时文件删除失败: " + file.getName());
         }
-    }
-
-    private static ThreadPoolExecutor createExecutor(int size, String threadNamePrefix) {
-        ThreadFactory factory = new ThreadFactory() {
-            private final AtomicInteger sequence = new AtomicInteger();
-
-            @Override
-            public Thread newThread(Runnable runnable) {
-                return new Thread(runnable, threadNamePrefix + sequence.incrementAndGet());
-            }
-        };
-        BlockingQueue<Runnable> queue = new LinkedBlockingQueue<>(size * 4);
-        return new ThreadPoolExecutor(size, size, 0L, TimeUnit.MILLISECONDS, queue, factory,
-            new ThreadPoolExecutor.AbortPolicy());
     }
 
     private static String bytesToHex(byte[] bytes) {

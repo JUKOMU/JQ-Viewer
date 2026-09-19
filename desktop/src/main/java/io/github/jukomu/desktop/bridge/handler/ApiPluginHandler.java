@@ -18,59 +18,66 @@ import io.javalin.http.Context;
 
 /** 处理目录、章节和图片预加载 bridge 请求。 */
 public final class ApiPluginHandler {
-    private final RequestExecutor requests;
+    private final RequestExecutor apiRequests;
+    private final RequestExecutor imageRequests;
     private final CatalogService catalog;
     private final ImageService images;
 
-    public ApiPluginHandler(RequestExecutor requests, CatalogService catalog, ImageService images) {
-        this.requests = requests;
+    public ApiPluginHandler(
+            RequestExecutor apiRequests,
+            RequestExecutor imageRequests,
+            CatalogService catalog,
+            ImageService images
+    ) {
+        this.apiRequests = apiRequests;
+        this.imageRequests = imageRequests;
         this.catalog = catalog;
         this.images = images;
     }
 
     public void search(Context context) {
-        requests.run(context, SearchRequest.class, catalog::search);
+        apiRequests.run(context, SearchRequest.class, catalog::search);
     }
 
     public void categories(Context context) {
-        requests.run(context, SearchRequest.class, catalog::categories);
+        apiRequests.run(context, SearchRequest.class, catalog::categories);
     }
 
     public void getAlbum(Context context) {
-        requests.run(context, IdRequest.class,
+        apiRequests.run(context, IdRequest.class,
                 request -> catalog.getAlbum(Request.requiredText(request.id(), "id")));
     }
 
     public void getPhoto(Context context) {
-        requests.run(context, IdRequest.class,
+        apiRequests.run(context, IdRequest.class,
                 request -> catalog.getPhoto(Request.requiredText(request.id(), "id")));
     }
 
     public void getComments(Context context) {
-        requests.run(context, CommentsRequest.class, request -> catalog.getComments(
+        apiRequests.run(context, CommentsRequest.class, request -> catalog.getComments(
                 Request.requiredText(request.albumId(), "albumId"),
                 positive(request.page(), "page", 1)));
     }
 
     public void getFavorites(Context context) {
-        requests.run(context, FavoriteRequest.class, request -> catalog.getFavorites(
+        apiRequests.run(context, FavoriteRequest.class, request -> catalog.getFavorites(
                 folderId(request.folderId(), "0"),
                 positive(request.page(), "page", 1)));
     }
 
     public void toggleAlbumLike(Context context) {
-        requests.run(context, IdRequest.class,
+        apiRequests.run(context, IdRequest.class,
                 request -> catalog.toggleAlbumLike(Request.requiredText(request.id(), "id")));
     }
 
     public void toggleAlbumFavorite(Context context) {
-        requests.run(context, AlbumFavoriteRequest.class, request -> catalog.toggleAlbumFavorite(
+        apiRequests.run(context, AlbumFavoriteRequest.class, request -> catalog.toggleAlbumFavorite(
                 Request.requiredText(request.id(), "id"),
                 textOrDefault(request.folderId(), "0")));
     }
 
     public void manageFavoriteFolder(Context context) {
-        requests.run(context, FavoriteFolderRequest.class, request -> {
+        apiRequests.run(context, FavoriteFolderRequest.class, request -> {
             FavoriteFolderType type = favoriteFolderType(
                     Request.requiredText(request.type(), "type"));
             String folderId = textOrDefault(request.folderId(), "0");
@@ -87,7 +94,7 @@ public final class ApiPluginHandler {
     }
 
     public void preloadImages(Context context) {
-        requests.run(context, PreloadImagesRequest.class, request -> images.preload(
+        imageRequests.run(context, PreloadImagesRequest.class, request -> images.preload(
                 Request.requiredText(request.photoId(), "photoId"),
                 request.type() == null ? "image" : request.type(),
                 request.images(),
@@ -95,7 +102,7 @@ public final class ApiPluginHandler {
     }
 
     public void retryImage(Context context) {
-        requests.run(context, RetryImageRequest.class, request -> images.retry(
+        imageRequests.run(context, RetryImageRequest.class, request -> images.retry(
                 Request.requiredText(request.photoId(), "photoId"), request.image()));
     }
 

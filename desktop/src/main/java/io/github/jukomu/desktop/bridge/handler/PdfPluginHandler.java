@@ -37,7 +37,7 @@ public final class PdfPluginHandler {
     }
 
     public void exportPdfBatch(Context context) {
-        requests.runFileOperation(context, PdfExportBatchRequest.class,
+        requests.runLongOperation(context, PdfExportBatchRequest.class,
                 request -> exports.submit(request.tasks()));
     }
 
@@ -57,7 +57,7 @@ public final class PdfPluginHandler {
     }
 
     public void retryPdfExport(Context context) {
-        requests.runFileOperation(context, PdfExportRetryRequest.class, request -> exports.retry(
+        requests.runLongOperation(context, PdfExportRetryRequest.class, request -> exports.retry(
                 Request.requiredText(request.exportId(), "exportId"),
                 Request.bool(request.allowOverwrite(), false)));
     }

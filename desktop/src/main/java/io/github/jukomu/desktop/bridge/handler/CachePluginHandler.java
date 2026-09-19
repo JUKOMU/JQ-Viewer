@@ -30,7 +30,7 @@ public final class CachePluginHandler {
     }
 
     public void clearImageCache(Context context) {
-        requests.runFileOperation(context, () -> {
+        requests.runLongOperation(context, () -> {
             cache.clear();
             return SuccessResponse.ok();
         });

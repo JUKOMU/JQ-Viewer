@@ -54,6 +54,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
@@ -65,9 +66,11 @@ import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -570,6 +573,46 @@ class BackendHttpContractTest {
     }
 
     @Test
+    void servesCachedImagesWhileImageResourceWorkersAreBusy() throws Exception {
+        byte[] fixture = webpBytes();
+        FakeClient fake = new FakeClient(fixture);
+        HttpClient http = HttpClient.newHttpClient();
+        CountDownLatch workersStarted = new CountDownLatch(2);
+        CountDownLatch releaseWorkers = new CountDownLatch(1);
+
+        try (Backend backend = backend(fake)) {
+            backend.start();
+            URI imageUri = URI.create("http://127.0.0.1:" + backend.port()
+                    + "/image/photo-1/1");
+            HttpResponse<byte[]> initial = getBytes(http, imageUri);
+            assertEquals(200, initial.statusCode());
+
+            for (int index = 0; index < 2; index++) {
+                backend.serviceExecutors().imageResource().execute(() -> {
+                    workersStarted.countDown();
+                    await(releaseWorkers);
+                });
+            }
+            assertTrue(workersStarted.await(2, TimeUnit.SECONDS));
+
+            try {
+                HttpResponse<byte[]> cached = http.send(
+                        HttpRequest.newBuilder(imageUri)
+                                .timeout(Duration.ofSeconds(1))
+                                .GET()
+                                .build(),
+                        HttpResponse.BodyHandlers.ofByteArray());
+                assertEquals(200, cached.statusCode());
+                assertArrayEquals(initial.body(), cached.body());
+            } finally {
+                releaseWorkers.countDown();
+            }
+        } finally {
+            releaseWorkers.countDown();
+        }
+    }
+
+    @Test
     void preservesControlledFailuresAndPublicErrorCodes() throws Exception {
         FakeClient fake = new FakeClient(webpBytes());
         HttpClient http = HttpClient.newHttpClient();
@@ -667,6 +710,14 @@ class BackendHttpContractTest {
     private static HttpResponse<byte[]> getBytes(HttpClient client, URI uri) throws Exception {
         return client.send(HttpRequest.newBuilder(uri).GET().build(),
                 HttpResponse.BodyHandlers.ofByteArray());
+    }
+
+    private static void await(CountDownLatch latch) {
+        try {
+            latch.await();
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private static ObjectNode waitForPdfExport(

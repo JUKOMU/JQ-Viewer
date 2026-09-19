@@ -14,74 +14,77 @@ import io.javalin.http.Context;
 
 /** 处理页面基础设置的读取与持久化。 */
 public final class SettingsPluginHandler {
-    private final RequestExecutor requests;
+    private final RequestExecutor settingsRequests;
+    private final RequestExecutor relocationRequests;
     private final SettingsService settings;
     private final DownloadLocationService downloadLocation;
 
     public SettingsPluginHandler(
-            RequestExecutor requests,
+            RequestExecutor settingsRequests,
+            RequestExecutor relocationRequests,
             SettingsService settings,
             DownloadLocationService downloadLocation
     ) {
-        this.requests = requests;
+        this.settingsRequests = settingsRequests;
+        this.relocationRequests = relocationRequests;
         this.settings = settings;
         this.downloadLocation = downloadLocation;
     }
 
     public void getAllSettings(Context context) {
-        requests.run(context, settings::all);
+        settingsRequests.run(context, settings::all);
     }
 
     public void setPreloadConcurrency(Context context) {
-        requests.run(context, NumberSettingRequest.class, request -> settings.setConcurrency(
+        settingsRequests.run(context, NumberSettingRequest.class, request -> settings.setConcurrency(
                 "preload_concurrency", Request.integer(request.n(), 6)));
     }
 
     public void setDownloadConcurrency(Context context) {
-        requests.run(context, NumberSettingRequest.class, request -> settings.setConcurrency(
+        settingsRequests.run(context, NumberSettingRequest.class, request -> settings.setConcurrency(
                 "download_concurrency", Request.integer(request.n(), 6)));
     }
 
     public void setReaderPreloadPages(Context context) {
-        requests.run(context, NumberSettingRequest.class, request -> settings.setReaderPreloadPages(
+        settingsRequests.run(context, NumberSettingRequest.class, request -> settings.setReaderPreloadPages(
                 Request.integer(request.n(), 15)));
     }
 
     public void setReaderDisplayMode(Context context) {
-        requests.run(context, DisplayModeRequest.class, request -> settings.setDisplayMode(
+        settingsRequests.run(context, DisplayModeRequest.class, request -> settings.setDisplayMode(
                 Request.requiredText(request.mode(), "mode")));
     }
 
     public void setReaderAutoShowToolbarAtEnd(Context context) {
-        requests.run(context, BooleanSettingRequest.class, request -> settings.setAutoShow(
+        settingsRequests.run(context, BooleanSettingRequest.class, request -> settings.setAutoShow(
                 Request.bool(request.enabled(), true)));
     }
 
     public void getDownloadPublic(Context context) {
-        requests.run(context, downloadLocation::get);
+        settingsRequests.run(context, downloadLocation::get);
     }
 
     public void setDownloadPublic(Context context) {
-        requests.runFileOperation(context, DownloadLocationRequest.class,
+        relocationRequests.runLongOperation(context, DownloadLocationRequest.class,
                 request -> downloadLocation.set(Request.bool(request.open(), false)));
     }
 
     public void getPdfExportPreferences(Context context) {
-        requests.run(context, settings::pdfExportPreferences);
+        settingsRequests.run(context, settings::pdfExportPreferences);
     }
 
     public void setPdfExportFolder(Context context) {
-        requests.run(context, PdfExportFolderRequest.class,
+        settingsRequests.run(context, PdfExportFolderRequest.class,
                 request -> settings.setPdfExportFolder(request.folder()));
     }
 
     public void setPdfExportDirectoryTemplate(Context context) {
-        requests.run(context, NullableTextSettingRequest.class,
+        settingsRequests.run(context, NullableTextSettingRequest.class,
                 request -> settings.setPdfExportDirectoryTemplate(request.value()));
     }
 
     public void setPdfExportFileNameTemplate(Context context) {
-        requests.run(context, NullableTextSettingRequest.class,
+        settingsRequests.run(context, NullableTextSettingRequest.class,
                 request -> settings.setPdfExportFileNameTemplate(request.value()));
     }
 }

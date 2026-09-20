@@ -94,30 +94,31 @@ public final class AuthPluginHandler {
     }
 
     /**
-     * 注销远程会话，并在成功后清除登录态和加密凭据。
+     * 先清除本地登录态和加密凭据，再尝试注销远程会话。
      */
     public void logout(PluginCall call) {
         try {
-            startAsync(call, trackedCall -> apiService.logout(new ApiCallback() {
-                @Override
-                public void onSuccess(JSONObject result) {
-                    callSession.completeIfActive(trackedCall, activeCall -> {
-                        try {
-                            SettingsStore settingsStore = SettingsStore.getInstance(context);
-                            clearAuthState(settingsStore);
-                            CredentialStore.getInstance(context).clear();
-                            activeCall.resolve(JSObject.fromJSONObject(result));
-                        } catch (Exception error) {
-                            activeCall.reject(error.getMessage(), error);
+            startAsync(call, trackedCall -> {
+                clearStoredLogin();
+                JSObject result = new JSObject();
+                result.put("success", true);
+                trackedCall.resolve(result);
+                try {
+                    apiService.logout(new ApiCallback() {
+                        @Override
+                        public void onSuccess(JSONObject result) {
+                            // 本地登出已经完成，远端结果不再影响调用方。
+                        }
+
+                        @Override
+                        public void onError(String message, Exception error) {
+                            Log.w(TAG, "远端注销失败，本地登录态已清除", error);
                         }
                     });
+                } catch (RuntimeException error) {
+                    Log.w(TAG, "无法发起远端注销，本地登录态已清除", error);
                 }
-
-                @Override
-                public void onError(String message, Exception error) {
-                    trackedCall.reject(message, error);
-                }
-            }));
+            });
         } catch (Exception error) {
             call.reject(error.getMessage(), error);
         }
@@ -243,6 +244,11 @@ public final class AuthPluginHandler {
         );
         settingsStore.putString(AUTH_USERNAME_KEY, userInfo.getString("username"));
         settingsStore.putString(AUTH_USER_INFO_KEY, userInfo.toString());
+    }
+
+    private void clearStoredLogin() {
+        CredentialStore.getInstance(context).clear();
+        clearAuthState(SettingsStore.getInstance(context));
     }
 
     private static JSONArray cookiesToJson(List<Cookie> cookies) {

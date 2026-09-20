@@ -435,8 +435,14 @@ public final class DesktopUpdateService implements AutoCloseable {
                 }
                 if (timedOut.get()) throw new IOException("响应正文读取超时");
             }
-            publish("verifying", label(source), session.githubBytes.get(),
-                    session.giteeBytes.get(), artifact.sizeBytes(), 0, "");
+            synchronized (session) {
+                if (session.cancelled.get() || session.winner.get() != null) {
+                    deleteQuietly(target);
+                    return;
+                }
+                publish("verifying", label(source), session.githubBytes.get(),
+                        session.giteeBytes.get(), artifact.sizeBytes(), 0, "");
+            }
             long size = Files.size(target);
             String sha256 = HexFormat.of().formatHex(digest.digest()).toLowerCase(Locale.ROOT);
             if (size != artifact.sizeBytes() || !sha256.equals(artifact.sha256())) {
@@ -479,12 +485,14 @@ public final class DesktopUpdateService implements AutoCloseable {
     private void finishSession(DownloadSession session) {
         try {
             session.finished.await();
-            if (!session.cancelled.get() && session.winner.get() == null) {
-                publish("failed", "", session.githubBytes.get(), session.giteeBytes.get(),
-                        session.release.artifact().sizeBytes(), 0,
-                        "GitHub 与 Gitee 更新包均下载失败。GitHub: "
-                                + session.githubError.get() + "；Gitee: "
-                                + session.giteeError.get());
+            synchronized (session) {
+                if (!session.cancelled.get() && session.winner.get() == null) {
+                    publish("failed", "", session.githubBytes.get(), session.giteeBytes.get(),
+                            session.release.artifact().sizeBytes(), 0,
+                            "GitHub 与 Gitee 更新包均下载失败。GitHub: "
+                                    + session.githubError.get() + "；Gitee: "
+                                    + session.giteeError.get());
+                }
             }
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
@@ -498,16 +506,19 @@ public final class DesktopUpdateService implements AutoCloseable {
     }
 
     private void publishProgress(DownloadSession session) {
-        long now = System.nanoTime();
-        long previous = session.lastProgressNanos.get();
-        if (now - previous < PROGRESS_INTERVAL_NANOS
-                || !session.lastProgressNanos.compareAndSet(previous, now)) return;
-        long total = session.githubBytes.get() + session.giteeBytes.get();
-        long previousTotal = session.lastProgressBytes.getAndSet(total);
-        double seconds = Math.max(0.001, (now - previous) / 1_000_000_000d);
-        long speed = Math.max(0, Math.round((total - previousTotal) / seconds));
-        publish("racing", "racing", session.githubBytes.get(), session.giteeBytes.get(),
-                session.release.artifact().sizeBytes(), speed, "");
+        synchronized (session) {
+            if (session.cancelled.get() || session.winner.get() != null) return;
+            long now = System.nanoTime();
+            long previous = session.lastProgressNanos.get();
+            if (now - previous < PROGRESS_INTERVAL_NANOS
+                    || !session.lastProgressNanos.compareAndSet(previous, now)) return;
+            long total = session.githubBytes.get() + session.giteeBytes.get();
+            long previousTotal = session.lastProgressBytes.getAndSet(total);
+            double seconds = Math.max(0.001, (now - previous) / 1_000_000_000d);
+            long speed = Math.max(0, Math.round((total - previousTotal) / seconds));
+            publish("racing", "racing", session.githubBytes.get(), session.giteeBytes.get(),
+                    session.release.artifact().sizeBytes(), speed, "");
+        }
     }
 
     private void publish(

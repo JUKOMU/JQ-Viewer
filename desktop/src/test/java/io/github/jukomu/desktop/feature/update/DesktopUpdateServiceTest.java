@@ -131,6 +131,25 @@ class DesktopUpdateServiceTest {
         }
     }
 
+    @Test
+    void lateDownloadCannotOverwriteTheReadyState() throws Exception {
+        try (Fixture fixture = fixture(path -> {
+        }, Duration.ofSeconds(2))) {
+            fixture.http.blockGithubDownloadAtEof.set(true);
+            fixture.service.check();
+
+            assertTrue(fixture.service.start().started());
+            assertTrue(fixture.http.githubDownloadReachedEof.await(2, TimeUnit.SECONDS));
+            awaitPhase(fixture.service, "ready_to_install");
+
+            fixture.http.releaseGithubDownloadEof.countDown();
+            fixture.executor.shutdown();
+            assertTrue(fixture.executor.awaitTermination(2, TimeUnit.SECONDS));
+            assertTrue("ready_to_install".equals(fixture.service.snapshot().phase()),
+                    fixture.service.snapshot()::toString);
+        }
+    }
+
     private static Fixture fixture(Consumer<Path> launcher, Duration downloadTimeout) throws Exception {
         Path root = Files.createTempDirectory("jq-viewer-update-service-");
         Paths paths = new Paths(root.resolve("program"), root.resolve("home"), Map.of(), "Linux");
@@ -148,7 +167,7 @@ class DesktopUpdateServiceTest {
         DesktopUpdateService service = new DesktopUpdateService(
                 configuration, MAPPER, events, paths, http, executor, timeoutExecutor,
                 downloadTimeout, launcher);
-        return new Fixture(service, events, http);
+        return new Fixture(service, events, http, executor);
     }
 
     private static byte[] manifest() throws Exception {
@@ -241,7 +260,8 @@ class DesktopUpdateServiceTest {
     private record Fixture(
             DesktopUpdateService service,
             EventHub events,
-            TestHttpClient http
+            TestHttpClient http,
+            ExecutorService executor
     ) implements AutoCloseable {
         @Override
         public void close() {
@@ -255,8 +275,11 @@ class DesktopUpdateServiceTest {
         private final byte[] signature;
         private final AtomicBoolean blockNextGithubManifest = new AtomicBoolean();
         private final AtomicBoolean stallDownloads = new AtomicBoolean();
+        private final AtomicBoolean blockGithubDownloadAtEof = new AtomicBoolean();
         private final CountDownLatch blockedManifestEntered = new CountDownLatch(1);
         private final CountDownLatch releaseBlockedManifest = new CountDownLatch(1);
+        private final CountDownLatch githubDownloadReachedEof = new CountDownLatch(1);
+        private final CountDownLatch releaseGithubDownloadEof = new CountDownLatch(1);
 
         private TestHttpClient(byte[] manifest, byte[] signature) {
             this.manifest = manifest;
@@ -284,9 +307,15 @@ class DesktopUpdateServiceTest {
             } else if (DesktopUpdateService.GITEE_LATEST_RELEASE.equals(uri)) {
                 body = new ByteArrayInputStream(giteeRelease().getBytes(StandardCharsets.UTF_8));
             } else if (uri.getPath().endsWith("JQ-Viewer-1.4.7-linux-x64.tar.gz")) {
-                body = stallDownloads.get()
-                        ? new StalledInputStream()
-                        : new ByteArrayInputStream(PACKAGE_BYTES);
+                if (stallDownloads.get()) {
+                    body = new StalledInputStream();
+                } else if (blockGithubDownloadAtEof.get()
+                        && "github.com".equals(uri.getHost())) {
+                    body = new BlockingEofInputStream(
+                            PACKAGE_BYTES, githubDownloadReachedEof, releaseGithubDownloadEof);
+                } else {
+                    body = new ByteArrayInputStream(PACKAGE_BYTES);
+                }
             } else {
                 throw new IOException("unexpected URI: " + uri);
             }
@@ -373,6 +402,51 @@ class DesktopUpdateServiceTest {
         public synchronized void close() {
             closed = true;
             notifyAll();
+        }
+    }
+
+    private static final class BlockingEofInputStream extends InputStream {
+        private final ByteArrayInputStream delegate;
+        private final CountDownLatch reachedEof;
+        private final CountDownLatch releaseEof;
+        private final AtomicBoolean waitingAtEof = new AtomicBoolean();
+
+        private BlockingEofInputStream(
+                byte[] bytes,
+                CountDownLatch reachedEof,
+                CountDownLatch releaseEof
+        ) {
+            this.delegate = new ByteArrayInputStream(bytes);
+            this.reachedEof = reachedEof;
+            this.releaseEof = releaseEof;
+        }
+
+        @Override
+        public int read() throws IOException {
+            int value = delegate.read();
+            return value >= 0 ? value : awaitRelease();
+        }
+
+        @Override
+        public int read(byte[] bytes, int offset, int length) throws IOException {
+            int count = delegate.read(bytes, offset, length);
+            return count >= 0 ? count : awaitRelease();
+        }
+
+        private int awaitRelease() throws IOException {
+            if (waitingAtEof.compareAndSet(false, true)) reachedEof.countDown();
+            try {
+                releaseEof.await();
+                return -1;
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                throw new IOException("interrupted", exception);
+            }
+        }
+
+        @Override
+        public void close() {
+            releaseEof.countDown();
         }
     }
 }

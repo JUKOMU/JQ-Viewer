@@ -323,6 +323,89 @@ public class PreloadServiceTest {
     }
 
     @Test
+    public void networkResultsReserveCapacityBeforeImageProcessingQueue() throws Exception {
+        byte[] imageBytes = createPng();
+        CountDownLatch fetched = new CountDownLatch(2);
+        CountDownLatch releaseImageExecutor = new CountDownLatch(1);
+        CountDownLatch imageExecutorBlocked = new CountDownLatch(1);
+        imageExecutor.execute(() -> {
+            imageExecutorBlocked.countDown();
+            try {
+                releaseImageExecutor.await();
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        assertTrue(imageExecutorBlocked.await(1, TimeUnit.SECONDS));
+
+        PreloadService service = createService(image -> {
+            fetched.countDown();
+            return imageBytes;
+        });
+        try {
+            service.preloadImages("network-reserved", "image", imageArray(1, 2));
+            assertTrue(fetched.await(1, TimeUnit.SECONDS));
+            fileExecutor.submit(() -> {
+            }).get(1, TimeUnit.SECONDS);
+            networkExecutor.submit(() -> {
+            }).get(1, TimeUnit.SECONDS);
+
+            ImageCache.CacheStats stats = imageCache.getStats();
+            assertEquals(0, stats.currentBytes);
+            assertEquals(imageBytes.length * 2L, stats.reservedBytes);
+        } finally {
+            releaseImageExecutor.countDown();
+        }
+        awaitPreloadPipeline();
+        assertEquals(0, imageCache.getStats().reservedBytes);
+    }
+
+    @Test
+    public void retryReservesCapacityBeforeImageProcessingQueue() throws Exception {
+        byte[] imageBytes = createPng();
+        CountDownLatch releaseImageExecutor = new CountDownLatch(1);
+        CountDownLatch imageExecutorBlocked = new CountDownLatch(1);
+        CountDownLatch completed = new CountDownLatch(1);
+        AtomicReference<Exception> error = new AtomicReference<>();
+        imageExecutor.execute(() -> {
+            imageExecutorBlocked.countDown();
+            try {
+                releaseImageExecutor.await();
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        assertTrue(imageExecutorBlocked.await(1, TimeUnit.SECONDS));
+
+        PreloadService service = createService(image -> imageBytes);
+        try {
+            service.retryImage("retry-reserved", imageArray().getJSONObject(0),
+                new PreloadService.ImageRetryCallback() {
+                    @Override
+                    public void onSuccess() {
+                        completed.countDown();
+                    }
+
+                    @Override
+                    public void onError(Exception retryError) {
+                        error.set(retryError);
+                        completed.countDown();
+                    }
+                });
+            networkExecutor.submit(() -> {
+            }).get(1, TimeUnit.SECONDS);
+
+            assertEquals(1, completed.getCount());
+            assertEquals(imageBytes.length, imageCache.getStats().reservedBytes);
+        } finally {
+            releaseImageExecutor.countDown();
+        }
+        assertTrue(completed.await(1, TimeUnit.SECONDS));
+        assertNull(error.get());
+        assertEquals(0, imageCache.getStats().reservedBytes);
+    }
+
+    @Test
     public void localThumbnailNotifiesOriginalAndThumbReadyAfterCachingBoth() throws Exception {
         prepareLocalImage("local-thumb", createPng());
         List<String> readyTypes = Collections.synchronizedList(new ArrayList<>());
@@ -518,12 +601,20 @@ public class PreloadServiceTest {
     }
 
     private static JSONArray imageArray() throws Exception {
-        return new JSONArray().put(new JSONObject()
-            .put("sortOrder", 1)
-            .put("scrambleId", "scramble")
-            .put("filename", "page.png")
-            .put("url", "https://example.invalid/page.png")
-            .put("queryParams", ""));
+        return imageArray(1);
+    }
+
+    private static JSONArray imageArray(int... sortOrders) throws Exception {
+        JSONArray images = new JSONArray();
+        for (int sortOrder : sortOrders) {
+            images.put(new JSONObject()
+                .put("sortOrder", sortOrder)
+                .put("scrambleId", "scramble")
+                .put("filename", "page-" + sortOrder + ".png")
+                .put("url", "https://example.invalid/page-" + sortOrder + ".png")
+                .put("queryParams", ""));
+        }
+        return images;
     }
 
     private static byte[] createPng() {

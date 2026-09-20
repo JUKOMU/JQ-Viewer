@@ -17,6 +17,7 @@ final class ApiSession {
     private final ExecutorService apiExecutor;
     private final ScheduledExecutorService timeoutExecutor;
     private final ApiService apiService;
+    private final PluginCallSession callSession = new PluginCallSession();
 
     ApiSession(JmApiClient client) {
         this(client, ServiceExecutors.fixed("api", API_EXECUTOR_SIZE),
@@ -34,7 +35,12 @@ final class ApiSession {
         return apiService;
     }
 
+    PluginCallSession getCallSession() {
+        return callSession;
+    }
+
     void destroy() {
+        callSession.close();
         timeoutExecutor.shutdownNow();
         apiExecutor.shutdownNow();
     }

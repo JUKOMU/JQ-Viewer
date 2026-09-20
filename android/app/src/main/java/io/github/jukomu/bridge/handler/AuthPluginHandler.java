@@ -4,6 +4,7 @@ import android.content.Context;
 import android.util.Log;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
+import io.github.jukomu.bridge.PluginCallSession;
 import io.github.jukomu.feature.auth.data.CredentialStore;
 import io.github.jukomu.feature.catalog.ApiCallback;
 import io.github.jukomu.feature.catalog.ApiService;
@@ -16,6 +17,7 @@ import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 /**
@@ -33,12 +35,15 @@ public final class AuthPluginHandler {
     private final Context context;
     private final ApiService apiService;
     private final Supplier<List<Cookie>> cookieSupplier;
+    private final PluginCallSession callSession;
 
     public AuthPluginHandler(Context context, ApiService apiService,
-                             Supplier<List<Cookie>> cookieSupplier) {
+                             Supplier<List<Cookie>> cookieSupplier,
+                             PluginCallSession callSession) {
         this.context = context;
         this.apiService = apiService;
         this.cookieSupplier = cookieSupplier;
+        this.callSession = callSession;
     }
 
     /**
@@ -62,25 +67,25 @@ public final class AuthPluginHandler {
                 call.reject("username and password are required");
                 return;
             }
-            call.setKeepAlive(true);
-            apiService.login(username, password, new ApiCallback() {
+            startAsync(call, trackedCall -> apiService.login(
+                username, password, new ApiCallback() {
                 @Override
                 public void onSuccess(JSONObject userInfo) {
                     try {
                         SettingsStore settingsStore = SettingsStore.getInstance(context);
                         saveAuthState(settingsStore, userInfo);
                         CredentialStore.getInstance(context).save(username, password);
-                        call.resolve(JSObject.fromJSONObject(userInfo));
+                        trackedCall.resolve(JSObject.fromJSONObject(userInfo));
                     } catch (Exception error) {
-                        call.reject(error.getMessage(), error);
+                        trackedCall.reject(error.getMessage(), error);
                     }
                 }
 
                 @Override
                 public void onError(String message, Exception error) {
-                    call.reject(message, error);
+                    trackedCall.reject(message, error);
                 }
-            });
+            }));
         } catch (Exception error) {
             call.reject(error.getMessage(), error);
         }
@@ -91,25 +96,24 @@ public final class AuthPluginHandler {
      */
     public void logout(PluginCall call) {
         try {
-            call.setKeepAlive(true);
-            apiService.logout(new ApiCallback() {
+            startAsync(call, trackedCall -> apiService.logout(new ApiCallback() {
                 @Override
                 public void onSuccess(JSONObject result) {
                     try {
                         SettingsStore settingsStore = SettingsStore.getInstance(context);
                         clearAuthState(settingsStore);
                         CredentialStore.getInstance(context).clear();
-                        call.resolve(JSObject.fromJSONObject(result));
+                        trackedCall.resolve(JSObject.fromJSONObject(result));
                     } catch (Exception error) {
-                        call.reject(error.getMessage(), error);
+                        trackedCall.reject(error.getMessage(), error);
                     }
                 }
 
                 @Override
                 public void onError(String message, Exception error) {
-                    call.reject(message, error);
+                    trackedCall.reject(message, error);
                 }
-            });
+            }));
         } catch (Exception error) {
             call.reject(error.getMessage(), error);
         }
@@ -125,22 +129,21 @@ public final class AuthPluginHandler {
                 call.reject("uid is required");
                 return;
             }
-            call.setKeepAlive(true);
-            apiService.getUserProfile(uid, new ApiCallback() {
+            startAsync(call, trackedCall -> apiService.getUserProfile(uid, new ApiCallback() {
                 @Override
                 public void onSuccess(JSONObject result) {
                     try {
-                        call.resolve(JSObject.fromJSONObject(result));
+                        trackedCall.resolve(JSObject.fromJSONObject(result));
                     } catch (JSONException error) {
-                        call.reject(error.getMessage(), error);
+                        trackedCall.reject(error.getMessage(), error);
                     }
                 }
 
                 @Override
                 public void onError(String message, Exception error) {
-                    call.reject(message, error);
+                    trackedCall.reject(message, error);
                 }
-            });
+            }));
         } catch (Exception error) {
             call.reject(error.getMessage(), error);
         }
@@ -185,8 +188,8 @@ public final class AuthPluginHandler {
             return;
         }
 
-        call.setKeepAlive(true);
-        apiService.login(username, password, new ApiCallback() {
+        startAsync(call, trackedCall -> apiService.login(
+            username, password, new ApiCallback() {
             @Override
             public void onSuccess(JSONObject userInfo) {
                 try {
@@ -195,9 +198,9 @@ public final class AuthPluginHandler {
                     JSObject result = new JSObject();
                     result.put("success", true);
                     result.put("userInfo", JSObject.fromJSONObject(userInfo));
-                    call.resolve(result);
+                    trackedCall.resolve(result);
                 } catch (Exception error) {
-                    call.reject(error.getMessage(), error);
+                    trackedCall.reject(error.getMessage(), error);
                 }
             }
 
@@ -206,9 +209,22 @@ public final class AuthPluginHandler {
                 if (error instanceof ResponseException) {
                     credentialStore.clear();
                 }
-                call.reject("自动登录失败：凭据无效或已过期");
+                trackedCall.reject("自动登录失败：凭据无效或已过期");
             }
-        });
+        }));
+    }
+
+    private void startAsync(PluginCall call, Consumer<PluginCall> starter) {
+        PluginCall trackedCall = callSession.register(call);
+        if (trackedCall == null) {
+            return;
+        }
+        try {
+            trackedCall.setKeepAlive(true);
+            starter.accept(trackedCall);
+        } catch (RuntimeException error) {
+            trackedCall.reject(error.getMessage(), error);
+        }
     }
 
     private void saveAuthState(SettingsStore settingsStore, JSONObject userInfo)

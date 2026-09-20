@@ -49,7 +49,8 @@ public class AuthPluginContractInstrumentedTest {
         authHandler = new AuthPluginHandler(
             context,
             apiService,
-            () -> Collections.singletonList(cookie)
+            () -> Collections.singletonList(cookie),
+            new PluginCallSession()
         );
         injectAuthHandler(plugin, authHandler);
         settingsStore = SettingsStore.getInstance(context);

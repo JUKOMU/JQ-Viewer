@@ -276,6 +276,7 @@ public class PreloadService {
         String scrambleId, String filename, String url, String queryParams
     ) {
         NetworkLoadGate.Permit permit = null;
+        ImageCache.IncomingReservation reservation = null;
         boolean handedOff = false;
         try {
             permit = networkLoadGate.acquire(() -> isStale(scopeKey, generation));
@@ -294,10 +295,17 @@ public class PreloadService {
             if (networkLoadGate.isCompletePressure()) {
                 throw new IOException("当前内存压力过高，已丢弃图片加载结果");
             }
+            reservation = imageCache.prepareForIncomingBytes(imageBytes.length);
+            if (reservation == null) {
+                throw new IOException("网络图片无法写入内存缓存");
+            }
             String mimeType = "image/" + JmImageTool.getFormatName(filename);
+            ImageCache.IncomingReservation transferredReservation = reservation;
             imageExecutor.execute(() -> cacheImageBytes(
                 photoId, sortOrder, type, scopeKey, imageKey, cacheKey,
-                generation, createThumbnail, imageBytes, mimeType, null, true));
+                generation, createThumbnail, imageBytes, mimeType,
+                transferredReservation, true));
+            reservation = null;
             handedOff = true;
         } catch (Exception error) {
             if (error instanceof InterruptedException) Thread.currentThread().interrupt();
@@ -306,6 +314,7 @@ public class PreloadService {
                 notifyImageFailed(photoId, sortOrder, type);
             }
         } finally {
+            if (reservation != null) reservation.close();
             if (permit != null) permit.close();
             if (!handedOff) {
                 pendingKeys.remove(cacheKey, generation);
@@ -391,6 +400,7 @@ public class PreloadService {
         try {
             networkExecutor.execute(() -> {
                 NetworkLoadGate.Permit permit = null;
+                ImageCache.IncomingReservation reservation = null;
                 try {
                     permit = networkLoadGate.acquire(null);
                     if (permit == null) {
@@ -407,15 +417,26 @@ public class PreloadService {
                         throw new IOException("当前内存压力过高，已丢弃重试结果");
                     }
 
+                    reservation = imageCache.prepareForIncomingBytes(imageBytes.length);
+                    if (reservation == null) {
+                        throw new IOException("重试图片无法写入内存缓存");
+                    }
+
                     String mimeType = "image/" + JmImageTool.getFormatName(filename);
+                    ImageCache.IncomingReservation transferredReservation = reservation;
                     imageExecutor.execute(() -> cacheRetryImage(
-                        photoId, sortOrder, imageBytes, mimeType, callback));
+                        photoId, sortOrder, imageBytes, mimeType,
+                        transferredReservation, callback));
+                    reservation = null;
                 } catch (Exception error) {
                     if (error instanceof InterruptedException) {
                         Thread.currentThread().interrupt();
                     }
                     callback.onError(error);
                 } finally {
+                    if (reservation != null) {
+                        reservation.close();
+                    }
                     if (permit != null) {
                         permit.close();
                     }
@@ -428,7 +449,7 @@ public class PreloadService {
 
     private void cacheRetryImage(
         String photoId, int sortOrder, byte[] imageBytes, String mimeType,
-        ImageRetryCallback callback
+        ImageCache.IncomingReservation reservation, ImageRetryCallback callback
     ) {
         try {
             if (networkLoadGate.isCompletePressure()) {
@@ -437,12 +458,15 @@ public class PreloadService {
             if (!ImageFileValidator.validateQuick(imageBytes)) {
                 throw new IOException("重新获取的图片无法解析");
             }
-            if (!imageCache.put(photoId + "/" + sortOrder, imageBytes, mimeType)) {
+            if (!imageCache.put(
+                photoId + "/" + sortOrder, imageBytes, mimeType, reservation)) {
                 throw new IOException("重试图片无法写入内存缓存");
             }
             callback.onSuccess();
         } catch (Exception error) {
             callback.onError(error);
+        } finally {
+            reservation.close();
         }
     }
 

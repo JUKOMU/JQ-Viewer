@@ -118,6 +118,33 @@ public class PdfPluginContractInstrumentedTest {
     }
 
     @Test
+    public void destroyRejectsQueuedPdfCallAndNewSubmissions() throws Exception {
+        Deque<Runnable> commands = new ArrayDeque<>();
+        PdfPluginHandler queuedHandler = new PdfPluginHandler(
+            context, DownloadStore.getInstance(context), commands::addLast);
+        RecordingPluginCall queued = call("scanPdfFiles", "folderRef",
+            PdfRef.createPathFolderRef(missingPdf.getAbsolutePath()));
+
+        queuedHandler.scanPdfFiles(queued);
+        assertEquals(0, queued.completionCount);
+        assertEquals(1, commands.size());
+
+        queuedHandler.destroy();
+        assertEquals(PluginCallSession.SESSION_ENDED_MESSAGE, queued.rejectionMessage);
+        assertEquals(1, queued.completionCount);
+
+        commands.removeFirst().run();
+        assertEquals(1, queued.completionCount);
+
+        RecordingPluginCall afterDestroy = call("scanPdfFiles", "folderRef",
+            PdfRef.createPathFolderRef(missingPdf.getAbsolutePath()));
+        queuedHandler.scanPdfFiles(afterDestroy);
+        assertEquals(PluginCallSession.SESSION_ENDED_MESSAGE,
+            afterDestroy.rejectionMessage);
+        assertEquals(1, afterDestroy.completionCount);
+    }
+
+    @Test
     public void methodsOutsideA1DoNotRequireErrorCodes() {
         RecordingPluginCall importCall = call("importPdfs");
         handler.importPdfs(importCall);

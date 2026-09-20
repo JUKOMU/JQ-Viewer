@@ -22,6 +22,7 @@ import com.google.mlkit.vision.text.Text;
 import com.google.mlkit.vision.text.TextRecognition;
 import com.google.mlkit.vision.text.TextRecognizer;
 import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions;
+import io.github.jukomu.bridge.PluginCallSession;
 import io.github.jukomu.jmcomic.core.client.impl.JmApiClient;
 import io.github.jukomu.platform.permission.PermissionService;
 import io.github.jukomu.platform.permission.PermissionState;
@@ -57,7 +58,8 @@ public final class SystemPluginHandler {
     private static final long PROBE_DEBOUNCE_MS = 2000;
     private static final int REQUEST_PICK_IMAGE = 1001;
     private static final int REQUEST_PICK_FOLDER = 1002;
-    private static final String SESSION_ENDED_MESSAGE = "插件会话已结束";
+    private static final String SESSION_ENDED_MESSAGE =
+        PluginCallSession.SESSION_ENDED_MESSAGE;
 
     private final Context context;
     private final Supplier<Activity> activitySupplier;
@@ -66,8 +68,9 @@ public final class SystemPluginHandler {
     private final Consumer<JSObject> networkProbeConsumer;
     private final BiConsumer<String, Integer> permissionRequester;
     private final PersistableUriPermission persistableUriPermission;
-    private final ExecutorService ocrExecutor;
-    private final ExecutorService fileOperationExecutor;
+    private final Executor ocrExecutor;
+    private final Executor fileOperationExecutor;
+    private final PluginCallSession backgroundCallSession = new PluginCallSession();
     private final Object probeLock = new Object();
     private final Object permissionLock = new Object();
     private final Object ocrLock = new Object();
@@ -91,7 +94,9 @@ public final class SystemPluginHandler {
         this(context, activitySupplier, permissionService, clientSupplier,
             networkProbeConsumer, permissionRequester,
             (uri, flags) -> context.getContentResolver()
-                .takePersistableUriPermission(uri, flags));
+                .takePersistableUriPermission(uri, flags),
+            ServiceExecutors.fixed("ocr", 1),
+            ServiceExecutors.fixed("file-operation", 1));
     }
 
     public SystemPluginHandler(Context context, Supplier<Activity> activitySupplier,
@@ -100,6 +105,20 @@ public final class SystemPluginHandler {
                                Consumer<JSObject> networkProbeConsumer,
                                BiConsumer<String, Integer> permissionRequester,
                                PersistableUriPermission persistableUriPermission) {
+        this(context, activitySupplier, permissionService, clientSupplier,
+            networkProbeConsumer, permissionRequester, persistableUriPermission,
+            ServiceExecutors.fixed("ocr", 1),
+            ServiceExecutors.fixed("file-operation", 1));
+    }
+
+    public SystemPluginHandler(Context context, Supplier<Activity> activitySupplier,
+                               PermissionService permissionService,
+                               Supplier<JmApiClient> clientSupplier,
+                               Consumer<JSObject> networkProbeConsumer,
+                               BiConsumer<String, Integer> permissionRequester,
+                               PersistableUriPermission persistableUriPermission,
+                               Executor ocrExecutor,
+                               Executor fileOperationExecutor) {
         this.context = context;
         this.activitySupplier = activitySupplier;
         this.permissionService = permissionService;
@@ -107,8 +126,8 @@ public final class SystemPluginHandler {
         this.networkProbeConsumer = networkProbeConsumer;
         this.permissionRequester = permissionRequester;
         this.persistableUriPermission = persistableUriPermission;
-        this.ocrExecutor = ServiceExecutors.fixed("ocr", 1);
-        this.fileOperationExecutor = ServiceExecutors.fixed("file-operation", 1);
+        this.ocrExecutor = ocrExecutor;
+        this.fileOperationExecutor = fileOperationExecutor;
     }
 
     /**
@@ -197,6 +216,7 @@ public final class SystemPluginHandler {
         rejectPendingCall(notificationPermissionCall);
         rejectPendingCall(ocrCall);
         rejectPendingCall(folderCall);
+        backgroundCallSession.close();
 
         if (connectivityManager != null && networkCallback != null) {
             try {
@@ -208,8 +228,8 @@ public final class SystemPluginHandler {
         if (domainProbeExecutor != null) {
             domainProbeExecutor.shutdownNow();
         }
-        ocrExecutor.shutdownNow();
-        fileOperationExecutor.shutdownNow();
+        shutdownExecutor(ocrExecutor);
+        shutdownExecutor(fileOperationExecutor);
     }
 
     /**
@@ -467,11 +487,8 @@ public final class SystemPluginHandler {
             return;
         }
 
-        try {
-            ocrExecutor.execute(() -> recognizeText(call, data));
-        } catch (RejectedExecutionException error) {
-            call.reject(SESSION_ENDED_MESSAGE);
-        }
+        backgroundCallSession.submit(
+            ocrExecutor, call, trackedCall -> recognizeText(trackedCall, data));
     }
 
     /**
@@ -545,15 +562,8 @@ public final class SystemPluginHandler {
             call.reject("fileRefs is required");
             return;
         }
-        if (destroyed) {
-            call.reject(SESSION_ENDED_MESSAGE);
-            return;
-        }
-        try {
-            fileOperationExecutor.execute(() -> checkFilesExistOnExecutor(call, fileRefs));
-        } catch (RejectedExecutionException error) {
-            call.reject(SESSION_ENDED_MESSAGE, error);
-        }
+        backgroundCallSession.submit(fileOperationExecutor, call,
+            trackedCall -> checkFilesExistOnExecutor(trackedCall, fileRefs));
     }
 
     private void checkFilesExistOnExecutor(PluginCall call, JSArray fileRefs) {
@@ -827,6 +837,12 @@ public final class SystemPluginHandler {
         }
         call.setKeepAlive(false);
         call.reject(SESSION_ENDED_MESSAGE);
+    }
+
+    private static void shutdownExecutor(Executor executor) {
+        if (executor instanceof ExecutorService) {
+            ((ExecutorService) executor).shutdownNow();
+        }
     }
 
 }

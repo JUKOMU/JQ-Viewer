@@ -620,16 +620,45 @@ const downloadIcon = computed(() => {
 }
 
 @container (min-width: 960px) {
+  .info-section {
+    width: min(100%, 960px);
+    margin-inline: auto;
+  }
+
+  .action-bar {
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+
+  .info-row {
+    align-items: flex-start;
+    gap: 14px;
+    padding: 11px 16px;
+  }
+
+  .info-label {
+    width: 72px;
+  }
+
+  .info-value {
+    max-width: 72ch;
+  }
+
   .related-scroll {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
     align-items: start;
+    gap: 12px;
     overflow: visible;
   }
 
   .related-card {
     width: auto;
     min-width: 0;
+  }
+
+  .related-title {
+    font-size: 11px;
   }
 }
 </style>

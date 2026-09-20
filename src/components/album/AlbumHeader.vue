@@ -1,30 +1,40 @@
 <!-- 区域 A：封面头部 -->
 <template>
-  <div ref="rootRef" class="header-area">
+  <header ref="rootRef" class="header-area">
     <div class="header-bg">
       <img v-if="coverUrl" :src="coverUrl" class="header-bg-img" alt="" />
       <div class="header-bg-mask" />
     </div>
     <div class="header-content">
-      <button type="button" class="back-btn" @click="$emit('back')">
+      <button type="button" class="back-btn" aria-label="返回" @click="$emit('back')">
         <ion-icon :icon="arrowBack" />
       </button>
       <div class="header-body">
-        <div class="cover-col">
+        <button
+          type="button"
+          class="cover-col"
+          :disabled="!coverUrl"
+          aria-label="预览封面"
+          @click="showPreview = true"
+        >
           <img
             v-if="coverUrl"
             :src="coverUrl"
             class="cover-img"
             :alt="title"
-            @click="showPreview = true"
           />
           <div v-else class="cover-placeholder" />
-        </div>
+        </button>
         <div class="info-col">
-          <h1 class="album-title">{{ title || '加载中...' }}</h1>
-          <p v-if="authors" class="album-authors">{{ authors }}</p>
-          <p v-if="!loading && !chapterLoading" class="album-pages">{{ pageCount }} 页</p>
-          <div v-else class="pages-skeleton" />
+          <div class="header-copy">
+            <h1 class="album-title">{{ title || '加载中...' }}</h1>
+            <div class="album-meta">
+              <p v-if="authors" class="album-authors">{{ authors }}</p>
+              <p v-if="!loading && !chapterLoading" class="album-pages">{{ pageCount }} 页</p>
+              <div v-else class="pages-skeleton" />
+            </div>
+            <p v-if="description" class="album-description">{{ description }}</p>
+          </div>
           <div class="read-actions">
             <div class="read-main-row">
               <button type="button" class="read-btn" @click="$emit('start-reading')">
@@ -82,7 +92,7 @@
         <img :src="coverUrl" class="cover-preview-img" :alt="title" />
       </div>
     </Teleport>
-  </div>
+  </header>
 </template>
 
 <script setup lang="ts">
@@ -102,6 +112,7 @@ defineProps<{
   coverUrl: string
   title: string
   authors: string
+  description: string
   pageCount: number
   loading: boolean
   chapterLoading?: boolean
@@ -174,9 +185,16 @@ const showPreview = ref(false)
 .cover-col {
   flex-shrink: 0;
   width: 120px;
+  padding: 0;
+  border: 0;
   border-radius: 10px;
   overflow: hidden;
+  background: transparent;
   box-shadow: 0 8px 30px rgb(0 0 0 / 0.4);
+}
+
+.cover-col:disabled {
+  opacity: 1;
 }
 
 .cover-img {
@@ -215,6 +233,13 @@ const showPreview = ref(false)
   overflow: hidden;
 }
 
+.album-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+
 .album-authors {
   margin: 0;
   color: rgb(255 255 255 / 0.7);
@@ -226,6 +251,11 @@ const showPreview = ref(false)
   margin: 0;
   color: rgb(255 255 255 / 0.55);
   font-size: 11px;
+}
+
+.album-description {
+  display: none;
+  margin: 0;
 }
 
 .pages-skeleton {
@@ -395,44 +425,115 @@ const showPreview = ref(false)
 
 @container (min-width: 960px) {
   .header-area {
-    position: sticky;
-    top: 0;
-    z-index: 11;
+    position: relative;
+    isolation: isolate;
     overflow: visible;
   }
 
+  .header-bg {
+    inset: 0 auto 0 50%;
+    z-index: 0;
+    width: 100cqw;
+    transform: translateX(-50%);
+    background: #f7f8f6;
+    border-top: 1px solid rgb(92 75 65 / 0.08);
+    border-bottom: 1px solid rgb(92 75 65 / 0.12);
+  }
+
+  .header-bg-img {
+    filter: blur(32px) saturate(0.78) brightness(1.08);
+    opacity: 0.18;
+    transform: scale(1.16);
+  }
+
+  .header-bg-mask {
+    background: linear-gradient(90deg, rgb(250 249 247 / 0.86), rgb(247 248 246 / 0.96));
+  }
+
   .header-content {
-    max-width: none;
+    max-width: 1180px;
+    margin-inline: auto;
+    padding: 28px 32px 30px 80px;
+  }
+
+  .back-btn {
+    position: absolute;
+    top: 28px;
+    left: 28px;
+    width: 40px;
+    height: 40px;
     margin: 0;
-    padding-left: 16px;
-    padding-right: 16px;
+    border: 1px solid rgb(92 75 65 / 0.14);
+    background: rgb(255 255 255 / 0.72);
+    color: #5a4539;
+    box-shadow: 0 4px 14px rgb(76 42 24 / 0.08);
   }
 
   .header-body {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 16px;
+    display: grid;
+    grid-template-columns: 180px minmax(0, 1fr);
+    align-items: center;
+    gap: 36px;
   }
 
   .cover-col {
-    align-self: center;
-    width: min(100%, 220px);
+    width: 180px;
+    border-radius: 8px;
+    box-shadow: 0 14px 32px rgb(57 43 35 / 0.18);
   }
 
   .info-col {
     width: 100%;
-    justify-content: flex-start;
+    min-height: 240px;
+    justify-content: center;
     padding-bottom: 0;
-    gap: 8px;
+    gap: 20px;
+  }
+
+  .header-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-width: 76ch;
   }
 
   .album-title {
-    font-size: 20px;
+    color: #30251f;
+    font-size: 28px;
+    line-height: 1.3;
+    -webkit-line-clamp: 3;
+  }
+
+  .album-authors {
+    color: #775f52;
+    font-size: 13px;
+  }
+
+  .album-pages {
+    color: #8d786c;
+    font-size: 12px;
+  }
+
+  .album-description {
+    display: -webkit-box;
+    color: #5d4c43;
+    font-size: 13px;
+    line-height: 1.65;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    overflow: hidden;
+  }
+
+  .pages-skeleton {
+    width: 88px;
+    background: linear-gradient(90deg, #e9e2dc 25%, #f6f2ee 50%, #e9e2dc 75%);
+    background-size: 200% 100%;
   }
 
   .read-actions {
-    align-self: stretch;
-    width: 100%;
+    align-self: flex-start;
+    width: min(100%, 360px);
+    margin-top: 0;
   }
 
   .read-main-row {
@@ -441,10 +542,29 @@ const showPreview = ref(false)
 
   .read-btn {
     flex: 1;
+    height: 42px;
+    box-shadow: 0 6px 16px rgb(240 126 73 / 0.24);
+  }
+
+  .source-toggle-btn {
+    width: 42px;
+    height: 42px;
+    border-color: rgb(92 75 65 / 0.18);
+    background: rgb(255 255 255 / 0.74);
+    color: #72594b;
+    backdrop-filter: none;
+  }
+
+  .source-toggle-btn.active {
+    background: #fff0e7;
+    color: #d86932;
   }
 
   .source-menu {
     z-index: 30;
+    border: 1px solid rgb(92 75 65 / 0.12);
+    background: rgb(255 255 255 / 0.94);
+    box-shadow: 0 10px 24px rgb(76 42 24 / 0.12);
   }
 }
 

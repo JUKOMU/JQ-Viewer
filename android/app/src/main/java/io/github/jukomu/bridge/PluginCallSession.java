@@ -77,6 +77,23 @@ public final class PluginCallSession implements AutoCloseable {
         }
     }
 
+    /**
+     * Atomically completes a tracked call while it still belongs to this session.
+     *
+     * <p>The completion action may update session-owned state before resolving or rejecting the
+     * supplied delegate. If session shutdown wins first, the action is skipped entirely. If this
+     * action wins first, {@link #close()} waits until it returns.</p>
+     */
+    public boolean completeIfActive(PluginCall call, Consumer<PluginCall> completion) {
+        if (!(call instanceof GuardedPluginCall guarded) || guarded.owner != this) {
+            throw new IllegalArgumentException("call is not tracked by this session");
+        }
+        if (completion == null) {
+            throw new IllegalArgumentException("completion is required");
+        }
+        return guarded.complete(completion, false);
+    }
+
     @Override
     public void close() {
         ArrayList<GuardedPluginCall> calls;
@@ -113,23 +130,23 @@ public final class PluginCallSession implements AutoCloseable {
 
         @Override
         public void resolve(JSObject data) {
-            complete(() -> delegate.resolve(data));
+            complete(call -> call.resolve(data), false);
         }
 
         @Override
         public void resolve() {
-            complete(delegate::resolve);
+            complete(PluginCall::resolve, false);
         }
 
         @Override
         public void reject(String message, String code, Exception exception, JSObject data) {
-            complete(() -> delegate.reject(message, code, exception, data));
+            complete(call -> call.reject(message, code, exception, data), false);
         }
 
         @Override
         public void setKeepAlive(Boolean keepAlive) {
             synchronized (completionLock) {
-                if (completed) {
+                if (completed || owner.isClosed()) {
                     return;
                 }
                 delegate.setKeepAlive(keepAlive);
@@ -142,21 +159,25 @@ public final class PluginCallSession implements AutoCloseable {
         }
 
         private void rejectSessionEnded() {
-            complete(() -> {
-                delegate.setKeepAlive(false);
-                delegate.reject(SESSION_ENDED_MESSAGE);
-            });
+            complete(call -> {
+                call.setKeepAlive(false);
+                call.reject(SESSION_ENDED_MESSAGE);
+            }, true);
         }
 
-        private void complete(Runnable terminalAction) {
+        private boolean complete(Consumer<PluginCall> terminalAction, boolean allowClosedSession) {
             synchronized (completionLock) {
-                if (completed) {
-                    return;
+                if (completed || (!allowClosedSession && owner.isClosed())) {
+                    return false;
                 }
                 completed = true;
+                try {
+                    terminalAction.accept(delegate);
+                } finally {
+                    owner.remove(this);
+                }
+                return true;
             }
-            owner.remove(this);
-            terminalAction.run();
         }
     }
 }

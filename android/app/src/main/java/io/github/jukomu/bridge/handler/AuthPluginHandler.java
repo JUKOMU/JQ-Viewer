@@ -71,14 +71,16 @@ public final class AuthPluginHandler {
                 username, password, new ApiCallback() {
                 @Override
                 public void onSuccess(JSONObject userInfo) {
-                    try {
-                        SettingsStore settingsStore = SettingsStore.getInstance(context);
-                        saveAuthState(settingsStore, userInfo);
-                        CredentialStore.getInstance(context).save(username, password);
-                        trackedCall.resolve(JSObject.fromJSONObject(userInfo));
-                    } catch (Exception error) {
-                        trackedCall.reject(error.getMessage(), error);
-                    }
+                    callSession.completeIfActive(trackedCall, activeCall -> {
+                        try {
+                            SettingsStore settingsStore = SettingsStore.getInstance(context);
+                            saveAuthState(settingsStore, userInfo);
+                            CredentialStore.getInstance(context).save(username, password);
+                            activeCall.resolve(JSObject.fromJSONObject(userInfo));
+                        } catch (Exception error) {
+                            activeCall.reject(error.getMessage(), error);
+                        }
+                    });
                 }
 
                 @Override
@@ -99,14 +101,16 @@ public final class AuthPluginHandler {
             startAsync(call, trackedCall -> apiService.logout(new ApiCallback() {
                 @Override
                 public void onSuccess(JSONObject result) {
-                    try {
-                        SettingsStore settingsStore = SettingsStore.getInstance(context);
-                        clearAuthState(settingsStore);
-                        CredentialStore.getInstance(context).clear();
-                        trackedCall.resolve(JSObject.fromJSONObject(result));
-                    } catch (Exception error) {
-                        trackedCall.reject(error.getMessage(), error);
-                    }
+                    callSession.completeIfActive(trackedCall, activeCall -> {
+                        try {
+                            SettingsStore settingsStore = SettingsStore.getInstance(context);
+                            clearAuthState(settingsStore);
+                            CredentialStore.getInstance(context).clear();
+                            activeCall.resolve(JSObject.fromJSONObject(result));
+                        } catch (Exception error) {
+                            activeCall.reject(error.getMessage(), error);
+                        }
+                    });
                 }
 
                 @Override
@@ -192,24 +196,28 @@ public final class AuthPluginHandler {
             username, password, new ApiCallback() {
             @Override
             public void onSuccess(JSONObject userInfo) {
-                try {
-                    SettingsStore settingsStore = SettingsStore.getInstance(context);
-                    saveAuthState(settingsStore, userInfo);
-                    JSObject result = new JSObject();
-                    result.put("success", true);
-                    result.put("userInfo", JSObject.fromJSONObject(userInfo));
-                    trackedCall.resolve(result);
-                } catch (Exception error) {
-                    trackedCall.reject(error.getMessage(), error);
-                }
+                callSession.completeIfActive(trackedCall, activeCall -> {
+                    try {
+                        SettingsStore settingsStore = SettingsStore.getInstance(context);
+                        saveAuthState(settingsStore, userInfo);
+                        JSObject result = new JSObject();
+                        result.put("success", true);
+                        result.put("userInfo", JSObject.fromJSONObject(userInfo));
+                        activeCall.resolve(result);
+                    } catch (Exception error) {
+                        activeCall.reject(error.getMessage(), error);
+                    }
+                });
             }
 
             @Override
             public void onError(String message, Exception error) {
-                if (error instanceof ResponseException) {
-                    credentialStore.clear();
-                }
-                trackedCall.reject("自动登录失败：凭据无效或已过期");
+                callSession.completeIfActive(trackedCall, activeCall -> {
+                    if (error instanceof ResponseException) {
+                        credentialStore.clear();
+                    }
+                    activeCall.reject("自动登录失败：凭据无效或已过期");
+                });
             }
         }));
     }

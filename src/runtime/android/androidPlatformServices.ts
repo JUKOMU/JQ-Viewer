@@ -22,6 +22,7 @@ import type { BackendEvents } from '../BackendEvents'
 import {
   asFileRef,
   asFolderRef,
+  fileNameFromDisplayPath,
   type FileDescriptor,
   type FileRef,
 } from '../FileReferences'
@@ -35,6 +36,7 @@ import type {
   PublicDownloadService,
 } from '../PlatformServices'
 import { createAndroidUpdater } from './androidUpdater'
+import { createAndroidPdfExportPreferencesStore } from './pdfExportPreferences'
 
 /** 校验原生返回的成功标志，失败时抛出带中文提示的错误。 */
 function ensureSuccess(result: { success: boolean }, message: string): void {
@@ -132,11 +134,18 @@ function toImportedPdf(file: AndroidImportedPdf): ImportedPdf {
 
 /** 把 Android 原生导出任务记录转换为公共导出任务记录。 */
 function toPdfExportTaskRecord(task: AndroidPdfExportTaskRecord): PdfExportTaskRecord {
-  const { outputFileRef, displayPath, ...rest } = task
+  const { outputFileRef, displayPath, targetFolderRef, targetName, ...rest } = task
+  void targetFolderRef
   return {
     ...rest,
     ...(outputFileRef && displayPath
-      ? { outputFile: toFileDescriptor(outputFileRef, displayPath) }
+      ? {
+          outputFile: toFileDescriptor(
+            outputFileRef,
+            displayPath,
+            fileNameFromDisplayPath(displayPath, targetName),
+          ),
+        }
       : {}),
     displayPath,
   }
@@ -146,11 +155,18 @@ function toPdfExportTaskRecord(task: AndroidPdfExportTaskRecord): PdfExportTaskR
 function toPdfExportSubmissionTaskResult(
   task: AndroidPdfExportSubmissionTaskResult,
 ): PdfExportSubmissionTaskResult {
-  const { outputFileRef, displayPath, ...rest } = task
+  const { outputFileRef, displayPath, targetFolderRef, targetName, ...rest } = task
+  void targetFolderRef
   return {
     ...rest,
     ...(outputFileRef && displayPath
-      ? { outputFile: toFileDescriptor(outputFileRef, displayPath) }
+      ? {
+          outputFile: toFileDescriptor(
+            outputFileRef,
+            displayPath,
+            fileNameFromDisplayPath(displayPath, targetName),
+          ),
+        }
       : {}),
     displayPath,
   }
@@ -328,6 +344,7 @@ export function createAndroidPlatformServices(
     },
     notifications: { kind: 'runtime-permission', permissions: notifications },
     files: createFileService(native),
+    pdfExportPreferences: createAndroidPdfExportPreferencesStore(),
     storage: { available: true, api: publicDownload },
     reader: {
       orientation: {
@@ -379,6 +396,7 @@ export function createAndroidPlatformServices(
         pickImageAndOcr: () => withRuntimeError(() => native.pickImageAndOcr()),
       },
     },
+    diagnostics: { available: false, reason: 'Android 由系统工具提供应用诊断信息' },
     launchRoutes: {
       available: true,
       api: {

@@ -17,6 +17,8 @@ export interface ListenerHandle {
  * 每个方法只负责订阅对应事件并返回可移除的句柄，不向下游暴露具体 transport。
  */
 export interface BackendEvents {
+  /** Desktop SSE 自动重连成功后通知订阅者重新读取权威状态。 */
+  onStateInvalidated?(handler: () => void): Promise<ListenerHandle>
   onImageReady(handler: (event: ImageReadyEvent) => void): Promise<ListenerHandle>
   onImageFailed(handler: (event: ImageFailedEvent) => void): Promise<ListenerHandle>
   onDownloadProgress(handler: (event: DownloadProgressEvent) => void): Promise<ListenerHandle>

@@ -6,7 +6,8 @@ import type { Capability } from './PlatformServices'
 
 /** 断言 capability 可用并返回其 API，不可用时抛出带中文名称的 unavailable 错误。 */
 function requireCapability<T>(capability: Capability<T>, name: string): T {
-  if (!capability.available) throw new RuntimeError('unavailable', capability.reason || `${name}不可用`)
+  if (!capability.available)
+    throw new RuntimeError('unavailable', capability.reason || `${name}不可用`)
   return capability.api
 }
 
@@ -14,9 +15,13 @@ function requireCapability<T>(capability: Capability<T>, name: string): T {
 function createListener(runtime: FrontendRuntime, event: string, handler: unknown) {
   switch (event) {
     case 'imageReady':
-      return runtime.events.onImageReady(handler as Parameters<typeof runtime.events.onImageReady>[0])
+      return runtime.events.onImageReady(
+        handler as Parameters<typeof runtime.events.onImageReady>[0],
+      )
     case 'imageFailed':
-      return runtime.events.onImageFailed(handler as Parameters<typeof runtime.events.onImageFailed>[0])
+      return runtime.events.onImageFailed(
+        handler as Parameters<typeof runtime.events.onImageFailed>[0],
+      )
     case 'downloadProgress':
       return runtime.events.onDownloadProgress(
         handler as Parameters<typeof runtime.events.onDownloadProgress>[0],
@@ -26,9 +31,13 @@ function createListener(runtime: FrontendRuntime, event: string, handler: unknow
         handler as Parameters<typeof runtime.events.onRelocationProgress>[0],
       )
     case 'networkProbe':
-      return runtime.events.onNetworkProbe(handler as Parameters<typeof runtime.events.onNetworkProbe>[0])
+      return runtime.events.onNetworkProbe(
+        handler as Parameters<typeof runtime.events.onNetworkProbe>[0],
+      )
     case 'launchRoute':
-      return runtime.events.onLaunchRoute(handler as Parameters<typeof runtime.events.onLaunchRoute>[0])
+      return runtime.events.onLaunchRoute(
+        handler as Parameters<typeof runtime.events.onLaunchRoute>[0],
+      )
     case 'updateProgress':
       return runtime.events.onUpdateProgress(
         handler as Parameters<typeof runtime.events.onUpdateProgress>[0],
@@ -50,7 +59,7 @@ function createListener(runtime: FrontendRuntime, event: string, handler: unknow
  * 但不向页面暴露任何 adapter 或 transport。
  */
 export function createFacadeClient(runtime: FrontendRuntime): JmcomicClient {
-  const storage = () => requireCapability(runtime.services.storage, '公开下载')
+  const storage = () => requireCapability(runtime.services.storage, '下载位置')
   const updater = () => requireCapability(runtime.services.updater, '应用更新')
   const notifications = () => {
     const policy = runtime.services.notifications
@@ -124,8 +133,9 @@ export function createFacadeClient(runtime: FrontendRuntime): JmcomicClient {
     },
     consumeLaunchRoute: () => launchRoutes().consume(),
 
-    setReaderScreenOrientation: (options: Parameters<JmcomicClient['setReaderScreenOrientation']>[0]) =>
-      requireCapability(reader.orientation, '屏幕方向').set(options.orientation),
+    setReaderScreenOrientation: (
+      options: Parameters<JmcomicClient['setReaderScreenOrientation']>[0],
+    ) => requireCapability(reader.orientation, '屏幕方向').set(options.orientation),
     setReaderBrightness: (options: Parameters<JmcomicClient['setReaderBrightness']>[0]) =>
       requireCapability(reader.brightness, '屏幕亮度').set(options.brightness),
     setReaderKeepScreenOn: (options: Parameters<JmcomicClient['setReaderKeepScreenOn']>[0]) =>
@@ -141,8 +151,7 @@ export function createFacadeClient(runtime: FrontendRuntime): JmcomicClient {
         options.isVertical,
       ),
 
-    addListener: (event: string, handler: never) =>
-      createListener(runtime, event, handler),
+    addListener: (event: string, handler: never) => createListener(runtime, event, handler),
   } as unknown as JmcomicClient
 
   return client

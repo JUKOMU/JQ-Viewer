@@ -22,11 +22,13 @@ import com.google.mlkit.vision.text.Text;
 import com.google.mlkit.vision.text.TextRecognition;
 import com.google.mlkit.vision.text.TextRecognizer;
 import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions;
+import io.github.jukomu.bridge.PluginCallSession;
 import io.github.jukomu.jmcomic.core.client.impl.JmApiClient;
 import io.github.jukomu.platform.permission.PermissionService;
 import io.github.jukomu.platform.permission.PermissionState;
 import io.github.jukomu.feature.pdf.data.PdfRef;
 import io.github.jukomu.feature.pdf.data.PdfRefResolver;
+import io.github.jukomu.runtime.ServiceExecutors;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -56,7 +58,8 @@ public final class SystemPluginHandler {
     private static final long PROBE_DEBOUNCE_MS = 2000;
     private static final int REQUEST_PICK_IMAGE = 1001;
     private static final int REQUEST_PICK_FOLDER = 1002;
-    private static final String SESSION_ENDED_MESSAGE = "插件会话已结束";
+    private static final String SESSION_ENDED_MESSAGE =
+        PluginCallSession.SESSION_ENDED_MESSAGE;
 
     private final Context context;
     private final Supplier<Activity> activitySupplier;
@@ -65,7 +68,9 @@ public final class SystemPluginHandler {
     private final Consumer<JSObject> networkProbeConsumer;
     private final BiConsumer<String, Integer> permissionRequester;
     private final PersistableUriPermission persistableUriPermission;
-    private final ExecutorService ocrExecutor;
+    private final Executor ocrExecutor;
+    private final Executor fileOperationExecutor;
+    private final PluginCallSession backgroundCallSession = new PluginCallSession();
     private final Object probeLock = new Object();
     private final Object permissionLock = new Object();
     private final Object ocrLock = new Object();
@@ -89,7 +94,9 @@ public final class SystemPluginHandler {
         this(context, activitySupplier, permissionService, clientSupplier,
             networkProbeConsumer, permissionRequester,
             (uri, flags) -> context.getContentResolver()
-                .takePersistableUriPermission(uri, flags));
+                .takePersistableUriPermission(uri, flags),
+            ServiceExecutors.fixed("ocr", 1),
+            ServiceExecutors.fixed("file-operation", 1));
     }
 
     public SystemPluginHandler(Context context, Supplier<Activity> activitySupplier,
@@ -98,6 +105,20 @@ public final class SystemPluginHandler {
                                Consumer<JSObject> networkProbeConsumer,
                                BiConsumer<String, Integer> permissionRequester,
                                PersistableUriPermission persistableUriPermission) {
+        this(context, activitySupplier, permissionService, clientSupplier,
+            networkProbeConsumer, permissionRequester, persistableUriPermission,
+            ServiceExecutors.fixed("ocr", 1),
+            ServiceExecutors.fixed("file-operation", 1));
+    }
+
+    public SystemPluginHandler(Context context, Supplier<Activity> activitySupplier,
+                               PermissionService permissionService,
+                               Supplier<JmApiClient> clientSupplier,
+                               Consumer<JSObject> networkProbeConsumer,
+                               BiConsumer<String, Integer> permissionRequester,
+                               PersistableUriPermission persistableUriPermission,
+                               Executor ocrExecutor,
+                               Executor fileOperationExecutor) {
         this.context = context;
         this.activitySupplier = activitySupplier;
         this.permissionService = permissionService;
@@ -105,7 +126,8 @@ public final class SystemPluginHandler {
         this.networkProbeConsumer = networkProbeConsumer;
         this.permissionRequester = permissionRequester;
         this.persistableUriPermission = persistableUriPermission;
-        this.ocrExecutor = Executors.newSingleThreadExecutor();
+        this.ocrExecutor = ocrExecutor;
+        this.fileOperationExecutor = fileOperationExecutor;
     }
 
     /**
@@ -124,11 +146,7 @@ public final class SystemPluginHandler {
             return;
         }
 
-        domainProbeExecutor = Executors.newSingleThreadScheduledExecutor(runnable -> {
-            Thread thread = new Thread(runnable, "domain-probe-debounce");
-            thread.setDaemon(true);
-            return thread;
-        });
+        domainProbeExecutor = ServiceExecutors.scheduled("domain-probe", 1);
 
         networkCallback = new ConnectivityManager.NetworkCallback() {
             @Override
@@ -153,7 +171,7 @@ public final class SystemPluginHandler {
 
         synchronized (probeLock) {
             if (destroyed) {
-                shutdownGracefully(domainProbeExecutor);
+                domainProbeExecutor.shutdownNow();
                 return;
             }
             connectivityManager.registerDefaultNetworkCallback(networkCallback);
@@ -198,6 +216,7 @@ public final class SystemPluginHandler {
         rejectPendingCall(notificationPermissionCall);
         rejectPendingCall(ocrCall);
         rejectPendingCall(folderCall);
+        backgroundCallSession.close();
 
         if (connectivityManager != null && networkCallback != null) {
             try {
@@ -206,8 +225,11 @@ public final class SystemPluginHandler {
                 Log.d(TAG, "取消注册网络回调失败", error);
             }
         }
-        shutdownGracefully(domainProbeExecutor);
-        shutdownGracefully(ocrExecutor);
+        if (domainProbeExecutor != null) {
+            domainProbeExecutor.shutdownNow();
+        }
+        shutdownExecutor(ocrExecutor);
+        shutdownExecutor(fileOperationExecutor);
     }
 
     /**
@@ -228,7 +250,7 @@ public final class SystemPluginHandler {
             for (Map.Entry<String, Integer> entry : states.entrySet()) {
                 JSONObject domain = new JSONObject();
                 domain.put("domain", entry.getKey());
-                boolean reachable = entry.getValue() < (Integer.MAX_VALUE / 2);
+                boolean reachable = isDomainReachable(entry.getValue());
                 domain.put("reachable", reachable);
                 if (reachable) {
                     alive++;
@@ -236,7 +258,7 @@ public final class SystemPluginHandler {
                 domains.put(domain);
             }
             boolean allDeadFallback = !states.isEmpty()
-                && states.values().stream().allMatch(value -> value == -1);
+                && states.values().stream().allMatch(value -> value != null && value == -1);
 
             result.put("domains", domains);
             result.put("alive", alive);
@@ -465,11 +487,8 @@ public final class SystemPluginHandler {
             return;
         }
 
-        try {
-            ocrExecutor.execute(() -> recognizeText(call, data));
-        } catch (RejectedExecutionException error) {
-            call.reject(SESSION_ENDED_MESSAGE);
-        }
+        backgroundCallSession.submit(
+            ocrExecutor, call, trackedCall -> recognizeText(trackedCall, data));
     }
 
     /**
@@ -538,10 +557,19 @@ public final class SystemPluginHandler {
 
     /** 返回给定文件引用中当前可访问的条目。 */
     public void checkFilesExist(PluginCall call) {
+        JSArray fileRefs = call.getArray("fileRefs");
+        if (fileRefs == null) {
+            call.reject("fileRefs is required");
+            return;
+        }
+        backgroundCallSession.submit(fileOperationExecutor, call,
+            trackedCall -> checkFilesExistOnExecutor(trackedCall, fileRefs));
+    }
+
+    private void checkFilesExistOnExecutor(PluginCall call, JSArray fileRefs) {
         try {
-            JSArray fileRefs = call.getArray("fileRefs");
-            if (fileRefs == null) {
-                call.reject("fileRefs is required");
+            if (destroyed) {
+                call.reject(SESSION_ENDED_MESSAGE);
                 return;
             }
             JSArray existing = new JSArray();
@@ -628,14 +656,14 @@ public final class SystemPluginHandler {
             for (Map.Entry<String, Integer> entry : states.entrySet()) {
                 JSONObject domain = new JSONObject();
                 domain.put("domain", entry.getKey());
-                domain.put("reachable", entry.getValue() < (Integer.MAX_VALUE / 2));
+                domain.put("reachable", isDomainReachable(entry.getValue()));
                 if (domain.getBoolean("reachable")) {
                     alive++;
                 }
                 domains.put(domain);
             }
             boolean allDeadFallback = !states.isEmpty()
-                && states.values().stream().allMatch(value -> value == -1);
+                && states.values().stream().allMatch(value -> value != null && value == -1);
             result.put("allDeadFallback", allDeadFallback);
             result.put("domains", domains);
             result.put("alive", alive);
@@ -662,6 +690,10 @@ public final class SystemPluginHandler {
                 networkProbeConsumer.accept(event);
             }
         }
+    }
+
+    private static boolean isDomainReachable(Integer state) {
+        return state != null && state >= 0 && state < (Integer.MAX_VALUE / 2);
     }
 
     private void recognizeText(PluginCall call, Intent data) {
@@ -807,17 +839,10 @@ public final class SystemPluginHandler {
         call.reject(SESSION_ENDED_MESSAGE);
     }
 
-    private static void shutdownGracefully(ExecutorService executor) {
-        if (executor == null) {
-            return;
-        }
-        executor.shutdown();
-        try {
-            if (!executor.awaitTermination(2, TimeUnit.SECONDS)) {
-                executor.shutdownNow();
-            }
-        } catch (InterruptedException error) {
-            executor.shutdownNow();
+    private static void shutdownExecutor(Executor executor) {
+        if (executor instanceof ExecutorService) {
+            ((ExecutorService) executor).shutdownNow();
         }
     }
+
 }

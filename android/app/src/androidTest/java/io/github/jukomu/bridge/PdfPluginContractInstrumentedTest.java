@@ -1,12 +1,15 @@
 package io.github.jukomu.bridge;
 
 import android.content.Context;
+import android.database.sqlite.SQLiteDatabase;
+import android.database.sqlite.SQLiteException;
 import android.graphics.Color;
 import android.graphics.pdf.PdfDocument;
 import android.webkit.WebResourceResponse;
 
 import androidx.test.platform.app.InstrumentationRegistry;
 
+import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 
 import io.github.jukomu.bridge.handler.PdfPluginHandler;
@@ -24,7 +27,9 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayDeque;
 import java.util.Base64;
+import java.util.Deque;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -90,6 +95,56 @@ public class PdfPluginContractInstrumentedTest {
     }
 
     @Test
+    public void scanAndInfoRunOnPdfCommandExecutor() throws Exception {
+        Deque<Runnable> commands = new ArrayDeque<>();
+        PdfPluginHandler queuedHandler = new PdfPluginHandler(
+            context, DownloadStore.getInstance(context), commands::addLast);
+        RecordingPluginCall scan = call("scanPdfFiles", "folderRef",
+            PdfRef.createPathFolderRef(missingPdf.getAbsolutePath()));
+        RecordingPluginCall info = call("getPdfInfo", "fileRef",
+            PdfRef.createPathFileRef(missingPdf.getAbsolutePath()));
+
+        queuedHandler.scanPdfFiles(scan);
+        queuedHandler.getPdfInfo(info);
+
+        assertEquals(0, scan.completionCount);
+        assertEquals(0, info.completionCount);
+        assertEquals(2, commands.size());
+        commands.removeFirst().run();
+        commands.removeFirst().run();
+        assertRejected(scan, "PDF 文件夹不存在", "not-found");
+        assertEquals("not-found", info.rejectionCode);
+        assertTrue(info.rejectionMessage.startsWith("PDF 信息读取失败: "));
+    }
+
+    @Test
+    public void destroyRejectsQueuedPdfCallAndNewSubmissions() throws Exception {
+        Deque<Runnable> commands = new ArrayDeque<>();
+        PdfPluginHandler queuedHandler = new PdfPluginHandler(
+            context, DownloadStore.getInstance(context), commands::addLast);
+        RecordingPluginCall queued = call("scanPdfFiles", "folderRef",
+            PdfRef.createPathFolderRef(missingPdf.getAbsolutePath()));
+
+        queuedHandler.scanPdfFiles(queued);
+        assertEquals(0, queued.completionCount);
+        assertEquals(1, commands.size());
+
+        queuedHandler.destroy();
+        assertEquals(PluginCallSession.SESSION_ENDED_MESSAGE, queued.rejectionMessage);
+        assertEquals(1, queued.completionCount);
+
+        commands.removeFirst().run();
+        assertEquals(1, queued.completionCount);
+
+        RecordingPluginCall afterDestroy = call("scanPdfFiles", "folderRef",
+            PdfRef.createPathFolderRef(missingPdf.getAbsolutePath()));
+        queuedHandler.scanPdfFiles(afterDestroy);
+        assertEquals(PluginCallSession.SESSION_ENDED_MESSAGE,
+            afterDestroy.rejectionMessage);
+        assertEquals(1, afterDestroy.completionCount);
+    }
+
+    @Test
     public void methodsOutsideA1DoNotRequireErrorCodes() {
         RecordingPluginCall importCall = call("importPdfs");
         handler.importPdfs(importCall);
@@ -98,6 +153,68 @@ public class PdfPluginContractInstrumentedTest {
         assertNull(importCall.rejectionCode);
         assertEquals(1, importCall.completionCount);
         assertFalse(importCall.isKeptAlive());
+    }
+
+    @Test
+    public void importRejectsPersistenceFailuresInsteadOfReportingInvalidItems() throws Exception {
+        File pdf = new File(context.getCacheDir(), "import-failure-" + System.nanoTime() + ".pdf");
+        createPdf(pdf);
+        SQLiteDatabase database = pdfStore.getWritableDatabase();
+        database.execSQL("DROP TRIGGER IF EXISTS fail_pdf_import_for_test");
+        database.execSQL("CREATE TRIGGER fail_pdf_import_for_test "
+            + "BEFORE INSERT ON pdf_files BEGIN "
+            + "SELECT RAISE(ABORT, 'forced import failure'); END");
+        try {
+            JSObject item = new JSObject();
+            item.put("fileRef", PdfRef.createPathFileRef(pdf.getCanonicalPath()));
+            item.put("displayPath", pdf.getCanonicalPath());
+            item.put("fileName", pdf.getName());
+            item.put("albumId", "album-import-failure");
+            item.put("chapterId", "chapter-import-failure");
+            item.put("chapterTitle", "第一话");
+            RecordingPluginCall importCall = call("importPdfs", "items", new JSArray().put(item));
+
+            handler.importPdfs(importCall);
+
+            assertNull(importCall.resolvedData);
+            assertTrue(importCall.rejectionException instanceof SQLiteException);
+            assertTrue(importCall.rejectionMessage.contains("forced import failure"));
+            assertEquals(1, importCall.completionCount);
+        } finally {
+            database.execSQL("DROP TRIGGER IF EXISTS fail_pdf_import_for_test");
+            assertTrue(pdf.delete() || !pdf.exists());
+        }
+    }
+
+    @Test
+    public void refreshRejectsPersistenceFailuresAtPluginBoundary() throws Exception {
+        File pdf = new File(context.getCacheDir(), "refresh-failure-" + System.nanoTime() + ".pdf");
+        createPdf(pdf);
+        long id = pdfStore.insertImportedPdf(
+            PdfRef.createPathFileRef(pdf.getCanonicalPath()),
+            pdf.getCanonicalPath(), pdf.getName(), "album-refresh-failure", "", "", "",
+            "chapter-refresh-failure", "第一话", 0, -1, System.currentTimeMillis(), null,
+            pdf.length(), 1);
+        SQLiteDatabase database = pdfStore.getWritableDatabase();
+        database.execSQL("DROP TRIGGER IF EXISTS fail_pdf_refresh_handler_for_test");
+        database.execSQL("CREATE TRIGGER fail_pdf_refresh_handler_for_test "
+            + "BEFORE UPDATE ON pdf_files BEGIN "
+            + "SELECT RAISE(ABORT, 'forced handler refresh failure'); END");
+        try {
+            RecordingPluginCall refreshCall = call(
+                "refreshPdfFileAvailability", "ids", new JSArray().put(id));
+
+            handler.refreshPdfFileAvailability(refreshCall);
+
+            assertNull(refreshCall.resolvedData);
+            assertTrue(refreshCall.rejectionException instanceof SQLiteException);
+            assertTrue(refreshCall.rejectionMessage.contains("forced handler refresh failure"));
+            assertEquals(1, refreshCall.completionCount);
+        } finally {
+            database.execSQL("DROP TRIGGER IF EXISTS fail_pdf_refresh_handler_for_test");
+            pdfStore.removeFileFromLibrary(id);
+            assertTrue(pdf.delete() || !pdf.exists());
+        }
     }
 
     @Test

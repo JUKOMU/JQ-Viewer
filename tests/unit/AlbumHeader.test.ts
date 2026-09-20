@@ -24,6 +24,7 @@ const baseProps = {
   coverUrl: '',
   title: '测试本子',
   authors: '作者',
+  description: '这是作品简介',
   pageCount: 2,
   loading: false,
   sourceMenuOpen: true,
@@ -32,6 +33,19 @@ const baseProps = {
 }
 
 describe('AlbumHeader 阅读来源', () => {
+  test('展示作品简介并允许通过按钮预览封面', async () => {
+    const wrapper = mount(AlbumHeader, {
+      props: { ...baseProps, coverUrl: 'https://example.com/cover.jpg' },
+      attachTo: document.body,
+    })
+
+    expect(wrapper.get('.album-description').text()).toBe('这是作品简介')
+    await wrapper.get('[aria-label="预览封面"]').trigger('click')
+    expect(document.body.querySelector('.cover-preview-overlay')).not.toBeNull()
+
+    wrapper.unmount()
+  })
+
   test('网络图片阅读始终可选择并发出网络来源事件', async () => {
     const wrapper = mount(AlbumHeader, { props: baseProps })
     const networkButton = wrapper.get('[aria-label="网络图片阅读"]')

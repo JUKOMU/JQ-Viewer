@@ -15,6 +15,7 @@ import androidx.documentfile.provider.DocumentFile;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
+import io.github.jukomu.bridge.PluginCallSession;
 import io.github.jukomu.feature.download.data.DownloadStore;
 import io.github.jukomu.feature.pdf.PdfOperationException;
 import io.github.jukomu.feature.pdf.data.PdfRef;
@@ -22,11 +23,14 @@ import io.github.jukomu.feature.pdf.data.PdfRefResolver;
 import io.github.jukomu.feature.pdf.data.PdfStore;
 import io.github.jukomu.feature.pdf.export.PdfExportJobValidator;
 import io.github.jukomu.feature.pdf.export.PdfExportService;
+import io.github.jukomu.feature.pdf.management.PdfFileValidator;
 import io.github.jukomu.feature.pdf.management.PdfManagementService;
 import io.github.jukomu.feature.pdf.render.PdfPageCache;
 import io.github.jukomu.feature.pdf.render.PdfPageResourceId;
 import io.github.jukomu.feature.pdf.render.PdfPageSizing;
+import io.github.jukomu.runtime.ServiceExecutors;
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.File;
@@ -34,6 +38,8 @@ import java.io.FileNotFoundException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.function.Consumer;
 
 /**
  * Exposes PDF bridge operations and owns bridge-specific argument and response handling.
@@ -50,12 +56,25 @@ public final class PdfPluginHandler {
     private final Context context;
     private final DownloadStore downloadDb;
     private final Executor pdfCommandExecutor;
+    private final PluginCallSession callSession = new PluginCallSession();
+
+    public PdfPluginHandler(Context context, DownloadStore downloadDb) {
+        this(context, downloadDb, ServiceExecutors.fixed("pdf-command", 1));
+    }
 
     public PdfPluginHandler(Context context, DownloadStore downloadDb,
                             Executor pdfCommandExecutor) {
         this.context = context.getApplicationContext();
         this.downloadDb = downloadDb;
         this.pdfCommandExecutor = pdfCommandExecutor;
+    }
+
+    /** Ends the plugin session and completes every queued or running PDF bridge call. */
+    public void destroy() {
+        callSession.close();
+        if (pdfCommandExecutor instanceof ExecutorService) {
+            ((ExecutorService) pdfCommandExecutor).shutdownNow();
+        }
     }
 
     // ---- 文件扫描与导入 ----
@@ -66,20 +85,24 @@ public final class PdfPluginHandler {
             call.reject("folderRef is required");
             return;
         }
+        final PdfRef.Parsed parsed;
         try {
-            PdfRef.Parsed parsed = PdfRef.parse(folderRef);
+            parsed = PdfRef.parse(folderRef);
             if (parsed.kind != PdfRef.Kind.FOLDER) {
                 call.reject("folderRef must be a folder reference");
                 return;
             }
-            if (parsed.provider == PdfRef.Provider.SAF) {
-                scanPdfFilesViaSaf(call, Uri.parse(parsed.payload));
-            } else {
-                scanPdfFilesViaFile(call, parsed.payload);
-            }
         } catch (IllegalArgumentException error) {
             call.reject("folderRef is invalid", error);
+            return;
         }
+        dispatchPdfCommand(call, trackedCall -> {
+            if (parsed.provider == PdfRef.Provider.SAF) {
+                scanPdfFilesViaSaf(trackedCall, Uri.parse(parsed.payload));
+            } else {
+                scanPdfFilesViaFile(trackedCall, parsed.payload);
+            }
+        });
     }
 
     private void scanPdfFilesViaSaf(PluginCall call, Uri treeUri) {
@@ -164,7 +187,7 @@ public final class PdfPluginHandler {
             call.reject("items is required and must not be empty");
             return;
         }
-        dispatchPdfCommand(() -> {
+        dispatchPdfCommand(call, trackedCall -> {
             int imported = 0;
             int skipped = 0;
             int duplicateCount = 0;
@@ -179,6 +202,12 @@ public final class PdfPluginHandler {
                         duplicateCount++;
                     }
                 } catch (Exception error) {
+                    if (!isExpectedPdfImportFailure(error)) {
+                        Log.e(TAG, "PDF 导入失败", error);
+                        trackedCall.reject(error.getMessage() == null
+                            ? "PDF 导入失败" : error.getMessage(), error);
+                        return;
+                    }
                     skipped++;
                     errorCount++;
                     Log.w(TAG, "跳过无效的 PDF 导入项", error);
@@ -189,7 +218,7 @@ public final class PdfPluginHandler {
             ret.put("skipped", skipped);
             ret.put("duplicateCount", duplicateCount);
             ret.put("errorCount", errorCount);
-            call.resolve(ret);
+            trackedCall.resolve(ret);
         });
     }
 
@@ -250,11 +279,15 @@ public final class PdfPluginHandler {
             call.reject("ids is required");
             return;
         }
-        dispatchPdfCommand(() -> {
-            JSObject result = new JSObject();
-            result.put("files", PdfManagementService.getInstance(context)
-                .refreshFileAvailability(ids));
-            call.resolve(result);
+        dispatchPdfCommand(call, trackedCall -> {
+            try {
+                JSObject result = new JSObject();
+                result.put("files", PdfManagementService.getInstance(context)
+                    .refreshFileAvailability(ids));
+                trackedCall.resolve(result);
+            } catch (Exception error) {
+                trackedCall.reject(error.getMessage(), error);
+            }
         });
     }
 
@@ -264,14 +297,14 @@ public final class PdfPluginHandler {
             call.reject("id is required");
             return;
         }
-        dispatchPdfCommand(() -> {
+        dispatchPdfCommand(call, trackedCall -> {
             try {
-                call.resolve(JSObject.fromJSONObject(PdfManagementService.getInstance(context)
+                trackedCall.resolve(JSObject.fromJSONObject(PdfManagementService.getInstance(context)
                     .inspectFileForDeletion(id)));
             } catch (PdfOperationException error) {
-                rejectPdfOperation(call, error);
+                rejectPdfOperation(trackedCall, error);
             } catch (Exception error) {
-                call.reject(error.getMessage(), error);
+                trackedCall.reject(error.getMessage(), error);
             }
         });
     }
@@ -282,12 +315,12 @@ public final class PdfPluginHandler {
             call.reject("id is required");
             return;
         }
-        dispatchPdfCommand(() -> {
+        dispatchPdfCommand(call, trackedCall -> {
             try {
-                call.resolve(JSObject.fromJSONObject(
+                trackedCall.resolve(JSObject.fromJSONObject(
                     PdfManagementService.getInstance(context).verifyFile(id)));
             } catch (Exception error) {
-                call.reject(error.getMessage(), error);
+                trackedCall.reject(error.getMessage(), error);
             }
         });
     }
@@ -309,14 +342,14 @@ public final class PdfPluginHandler {
             call.reject("id is required");
             return;
         }
-        dispatchPdfCommand(() -> {
+        dispatchPdfCommand(call, trackedCall -> {
             try {
-                call.resolve(JSObject.fromJSONObject(
+                trackedCall.resolve(JSObject.fromJSONObject(
                     PdfManagementService.getInstance(context).deleteFile(id)));
             } catch (PdfOperationException error) {
-                rejectPdfOperation(call, error);
+                rejectPdfOperation(trackedCall, error);
             } catch (Exception error) {
-                call.reject(error.getMessage(), error);
+                trackedCall.reject(error.getMessage(), error);
             }
         });
     }
@@ -460,6 +493,11 @@ public final class PdfPluginHandler {
             return;
         }
 
+        dispatchPdfCommand(call,
+            trackedCall -> getPdfInfoOnExecutor(trackedCall, fileRef));
+    }
+
+    private void getPdfInfoOnExecutor(PluginCall call, String fileRef) {
         ParcelFileDescriptor pfd = null;
         PdfRenderer renderer = null;
         try {
@@ -506,7 +544,8 @@ public final class PdfPluginHandler {
             return;
         }
 
-        dispatchPdfCommand(() -> renderPdfPageOnExecutor(call, fileRef, pageNumber, targetWidth));
+        dispatchPdfCommand(call, trackedCall ->
+            renderPdfPageOnExecutor(trackedCall, fileRef, pageNumber, targetWidth));
     }
 
     /** PDF 页面渲染和磁盘资源写入统一在单线程 executor 中执行。 */
@@ -674,12 +713,12 @@ public final class PdfPluginHandler {
                 }
             }
 
-            dispatchPdfCommand(() -> {
+            dispatchPdfCommand(call, trackedCall -> {
                 try {
                     PdfExportService pdfService = PdfExportService.getInstance(context);
-                    call.resolve(JSObject.fromJSONObject(pdfService.submitExport(jobs)));
+                    trackedCall.resolve(JSObject.fromJSONObject(pdfService.submitExport(jobs)));
                 } catch (Exception error) {
-                    call.reject(error.getMessage(), error);
+                    trackedCall.reject(error.getMessage(), error);
                 }
             });
         } catch (Exception e) {
@@ -733,14 +772,15 @@ public final class PdfPluginHandler {
             call.reject("exportId is required");
             return;
         }
-        dispatchPdfCommand(() -> {
+        boolean allowOverwrite = call.getBoolean("allowOverwrite", false);
+        dispatchPdfCommand(call, trackedCall -> {
             try {
-                call.resolve(JSObject.fromJSONObject(PdfExportService.getInstance(context)
-                    .retryExport(exportId, call.getBoolean("allowOverwrite", false))));
+                trackedCall.resolve(JSObject.fromJSONObject(PdfExportService.getInstance(context)
+                    .retryExport(exportId, allowOverwrite)));
             } catch (PdfOperationException error) {
-                rejectPdfOperation(call, error);
+                rejectPdfOperation(trackedCall, error);
             } catch (Exception error) {
-                call.reject(error.getMessage(), error);
+                trackedCall.reject(error.getMessage(), error);
             }
         });
     }
@@ -751,21 +791,27 @@ public final class PdfPluginHandler {
             call.reject("exportId is required");
             return;
         }
-        dispatchPdfCommand(() -> {
+        dispatchPdfCommand(call, trackedCall -> {
             try {
                 JSObject result = new JSObject();
                 result.put("success", PdfExportService.getInstance(context)
                     .deleteExportTask(exportId));
-                call.resolve(result);
+                trackedCall.resolve(result);
             } catch (Exception error) {
-                call.reject(error.getMessage(), error);
+                trackedCall.reject(error.getMessage(), error);
             }
         });
     }
 
 
-    private void dispatchPdfCommand(Runnable command) {
-        pdfCommandExecutor.execute(command);
+    private void dispatchPdfCommand(PluginCall call, Consumer<PluginCall> command) {
+        callSession.submit(pdfCommandExecutor, call, command);
+    }
+
+    private static boolean isExpectedPdfImportFailure(Exception error) {
+        return error instanceof JSONException
+            || error instanceof IllegalArgumentException
+            || error instanceof PdfFileValidator.ValidationException;
     }
 
     private static void rejectWithCode(PluginCall call, String message, String code,

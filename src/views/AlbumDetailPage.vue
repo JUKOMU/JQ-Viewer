@@ -9,6 +9,7 @@
             :cover-url="coverUrl"
             :title="albumTitle"
             :authors="albumAuthors"
+            :description="albumDetail?.description ?? ''"
             :page-count="selectedChapterPageCount"
             :loading="loading"
             :chapter-loading="chapterLoading"
@@ -1729,17 +1730,20 @@ const handleScroll = async (event: CustomEvent<{ scrollTop?: number }>) => {
 
 @container (min-width: 960px) {
   .detail-layout {
-    display: grid;
-    grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
-    align-items: start;
-    gap: 24px;
     box-sizing: border-box;
-    max-width: 1280px;
+    max-width: 1320px;
     margin-inline: auto;
-    padding-inline: 16px;
+    padding-inline: 24px;
+  }
+
+  .tab-gesture-area {
+    margin-top: 12px;
   }
 
   .tab-bar {
+    width: 100%;
+    max-width: 960px;
+    margin-inline: auto;
     position: sticky;
     top: 0;
     padding-top: calc(var(--ion-safe-area-top) + 8px);
@@ -1752,8 +1756,14 @@ const handleScroll = async (event: CustomEvent<{ scrollTop?: number }>) => {
   }
 
   .tab-content {
+    padding: 20px 0;
     max-width: none;
     margin-inline: 0;
+  }
+
+  .tab-content.swiping .tab-panel {
+    inset: 20px 0 auto;
+    width: 100%;
   }
 }
 </style>

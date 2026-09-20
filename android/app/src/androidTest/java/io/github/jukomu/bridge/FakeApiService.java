@@ -41,6 +41,12 @@ final class FakeApiService extends ApiService {
         callback.onSuccess(resultFor(method));
     }
 
+    void completeError() {
+        ApiCallback callback = pendingCallback;
+        pendingCallback = null;
+        callback.onError(errorMessage, error);
+    }
+
     @Override
     public void search(String keyword, String category, String orderBy, String time,
                        int searchMainTag, int page, ApiCallback callback) {

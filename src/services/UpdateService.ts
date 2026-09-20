@@ -140,7 +140,10 @@ async function check(): Promise<UpdateCheckResult> {
 
 async function start(): Promise<StartUpdateResult> {
   await ensureProgressListener()
-  if (!(await ensureNotificationPermission())) {
+  if (
+    getRuntime().services.notifications.kind === 'runtime-permission' &&
+    !(await ensureNotificationPermission())
+  ) {
     return { started: false, blocked: 'notification_permission' }
   }
   updateStarted = true

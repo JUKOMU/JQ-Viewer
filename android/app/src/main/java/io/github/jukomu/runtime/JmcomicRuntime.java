@@ -17,7 +17,6 @@ import io.github.jukomu.jmcomic.core.config.JmConfiguration;
 import io.github.jukomu.platform.persistence.SettingsStore;
 
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 /**
  * 进程级 Jmcomic 运行时。
@@ -33,6 +32,7 @@ public final class JmcomicRuntime {
     private final RuntimeEventRouter eventRouter = new RuntimeEventRouter();
     private final JmApiClient client;
     private final ExecutorService imageExecutor;
+    private final ExecutorService imageFileExecutor;
     private final ExecutorService networkExecutor;
     private final ExecutorService downloadPrepareExecutor;
     private final PreloadService preloadService;
@@ -46,13 +46,14 @@ public final class JmcomicRuntime {
         Context applicationContext = context.getApplicationContext();
         client = JmComic.newApiClient(new JmConfiguration.Builder()
             .downloadThreadPoolSize(downloadConcurrency).build());
-        imageExecutor = Executors.newFixedThreadPool(preloadConcurrency);
-        networkExecutor = Executors.newFixedThreadPool(preloadConcurrency);
-        downloadPrepareExecutor = Executors.newFixedThreadPool(
-            DOWNLOAD_PREPARE_EXECUTOR_SIZE);
+        imageExecutor = ServiceExecutors.fixed("image", preloadConcurrency);
+        imageFileExecutor = ServiceExecutors.fixed("image-file", preloadConcurrency);
+        networkExecutor = ServiceExecutors.fixed("image-network", preloadConcurrency);
+        downloadPrepareExecutor = ServiceExecutors.fixed(
+            "download-prepare", DOWNLOAD_PREPARE_EXECUTOR_SIZE);
         preloadService = new PreloadService(imageCache, fileStore, settingsDb, client,
-            imageExecutor, networkExecutor, eventRouter, applicationContext, cachePolicy,
-            preloadConcurrency);
+            imageExecutor, imageFileExecutor, networkExecutor, eventRouter,
+            applicationContext, cachePolicy, preloadConcurrency);
         downloadService = new DownloadService(downloadDb, fileStore, client,
             downloadPrepareExecutor, eventRouter, applicationContext);
         updateService = new UpdateService(applicationContext);

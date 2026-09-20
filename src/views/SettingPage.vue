@@ -122,26 +122,35 @@
           </div>
 
           <!-- 屏幕方向 -->
-          <div class="row divider">
+          <div
+            class="row divider"
+            :class="{ 'capability-unavailable': !readerCapabilities.orientation.available }"
+          >
             <div class="row-left">
               <span class="row-title">屏幕方向</span>
+              <span v-if="!readerCapabilities.orientation.available" class="row-subtitle">
+                {{ readerCapabilities.orientation.reason }}
+              </span>
             </div>
             <div class="row-right">
               <div class="segmented">
                 <button
                   :class="['seg-btn', { active: screenOrientation === 'auto' }]"
+                  :disabled="!readerCapabilities.orientation.available"
                   @click="onScreenOrientationChange('auto')"
                 >
                   自动
                 </button>
                 <button
                   :class="['seg-btn', { active: screenOrientation === 'portrait' }]"
+                  :disabled="!readerCapabilities.orientation.available"
                   @click="onScreenOrientationChange('portrait')"
                 >
                   竖屏
                 </button>
                 <button
                   :class="['seg-btn', { active: screenOrientation === 'landscape' }]"
+                  :disabled="!readerCapabilities.orientation.available"
                   @click="onScreenOrientationChange('landscape')"
                 >
                   横屏
@@ -151,20 +160,33 @@
           </div>
 
           <!-- 亮度 -->
-          <div class="row divider">
+          <div
+            class="row divider"
+            :class="{ 'capability-unavailable': !readerCapabilities.brightness.available }"
+          >
             <div class="row-left">
               <span class="row-title">跟随系统亮度</span>
-              <span class="row-subtitle">关闭后可手动调节阅读亮度</span>
+              <span class="row-subtitle">
+                {{
+                  readerCapabilities.brightness.available
+                    ? '关闭后可手动调节阅读亮度'
+                    : readerCapabilities.brightness.reason
+                }}
+              </span>
             </div>
             <div class="row-right">
               <IonToggle
                 :checked="brightnessFollowSystem"
+                :disabled="!readerCapabilities.brightness.available"
                 color="warning"
                 @ion-change="onBrightnessFollowSystemChange"
               />
             </div>
           </div>
-          <div v-if="!brightnessFollowSystem" class="row">
+          <div
+            v-if="readerCapabilities.brightness.available && !brightnessFollowSystem"
+            class="row"
+          >
             <IonRange
               class="brightness-slider"
               :min="0"
@@ -177,14 +199,24 @@
           </div>
 
           <!-- 防止熄屏 -->
-          <div class="row divider">
+          <div
+            class="row divider"
+            :class="{ 'capability-unavailable': !readerCapabilities.keepAwake.available }"
+          >
             <div class="row-left">
               <span class="row-title">防止熄屏</span>
-              <span class="row-subtitle">阅读时保持屏幕常亮</span>
+              <span class="row-subtitle">
+                {{
+                  readerCapabilities.keepAwake.available
+                    ? '阅读时保持屏幕常亮'
+                    : readerCapabilities.keepAwake.reason
+                }}
+              </span>
             </div>
             <div class="row-right">
               <IonToggle
                 :checked="keepScreenOn"
+                :disabled="!readerCapabilities.keepAwake.available"
                 color="warning"
                 @ion-change="onKeepScreenOnChange"
               />
@@ -192,18 +224,66 @@
           </div>
 
           <!-- 音量键翻页 -->
-          <div class="row divider">
+          <div
+            class="row divider"
+            :class="{ 'capability-unavailable': !readerCapabilities.volumeKeys.available }"
+          >
             <div class="row-left">
               <span class="row-title">音量键翻页</span>
-              <span class="row-subtitle">横向模式翻页，纵向模式滚动</span>
+              <span class="row-subtitle">
+                {{
+                  readerCapabilities.volumeKeys.available
+                    ? '横向模式翻页，纵向模式滚动'
+                    : readerCapabilities.volumeKeys.reason
+                }}
+              </span>
             </div>
             <div class="row-right">
               <IonToggle
                 :checked="volumeNavigation"
+                :disabled="!readerCapabilities.volumeKeys.available"
                 color="warning"
                 @ion-change="onVolumeNavigationChange"
               />
             </div>
+          </div>
+
+          <div class="row divider">
+            <div class="row-left">
+              <span class="row-title">页面全屏</span>
+              <span class="row-subtitle">
+                {{
+                  readerCapabilities.fullscreen.available
+                    ? '阅读页隐藏工具栏时进入浏览器全屏'
+                    : readerCapabilities.fullscreen.reason
+                }}
+              </span>
+            </div>
+            <span
+              class="capability-status"
+              :class="{ unavailable: !readerCapabilities.fullscreen.available }"
+            >
+              {{ readerCapabilities.fullscreen.available ? '可用' : '不可用' }}
+            </span>
+          </div>
+
+          <div class="row divider">
+            <div class="row-left">
+              <span class="row-title">阅读器宿主状态</span>
+              <span class="row-subtitle">
+                {{
+                  readerCapabilities.hostState.available
+                    ? '离开阅读页时自动恢复宿主状态'
+                    : readerCapabilities.hostState.reason
+                }}
+              </span>
+            </div>
+            <span
+              class="capability-status"
+              :class="{ unavailable: !readerCapabilities.hostState.available }"
+            >
+              {{ readerCapabilities.hostState.available ? '已接入' : '不可用' }}
+            </span>
           </div>
 
           <!-- 阅读结束时展开工具栏 -->
@@ -245,11 +325,11 @@
             </div>
           </div>
 
-          <!-- 公开下载 -->
+          <!-- 下载位置 -->
           <div class="row divider">
             <div class="row-left">
-              <span class="row-title">公开下载内容</span>
-              <span class="row-subtitle">开启后新下载的图片可在系统相册中查看</span>
+              <span class="row-title">{{ downloadLocationTitle }}</span>
+              <span class="row-subtitle">{{ downloadLocationSubtitle }}</span>
             </div>
             <div class="row-right">
               <IonToggle
@@ -479,10 +559,12 @@ import {
 } from '@ionic/vue'
 import { chevronForwardOutline } from 'ionicons/icons'
 import type { ListenerHandle } from '@/runtime/BackendEvents'
+import { RuntimeError } from '@/runtime/errors'
 import { getRuntime } from '@/runtime/runtimeContext'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import { createAppAlert } from '@/services/AppAlertService'
 import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
+import { persistReaderSettingValue } from '@/services/ReaderSettingPersistence'
 import {
   initSettings,
   persistDownloadConcurrency,
@@ -495,6 +577,9 @@ import { useAuth } from '@/composables/useAuth'
 import type { CacheCapacityInfo, RelocationProgress } from '@/services/JmcomicTypes'
 
 const router = useRouter()
+const runtime = getRuntime()
+const isAndroidRuntime = runtime.platform === 'android'
+const readerCapabilities = runtime.services.reader
 const { userInfo } = useAuth()
 const appVersion = ref('1.0.0')
 const contentRef = ref<InstanceType<typeof IonContent> | null>(null)
@@ -560,6 +645,7 @@ const preloadPages = ref(SettingsStore.getReaderPreloadPages())
 const preloadConcurrency = ref(SettingsStore.getPreloadConcurrency())
 const downloadConcurrency = ref(SettingsStore.getDownloadConcurrency())
 const downloadPublic = ref(SettingsStore.getDownloadPublic())
+const downloadLocationPath = ref('')
 const ocrEnabled = ref(SettingsStore.getOcrEnabled())
 const exportFormat = ref(ExportFormatService.getExportFormat())
 const displayMode = ref(SettingsStore.getReaderDisplayMode())
@@ -573,6 +659,16 @@ const volumeNavigation = ref(SettingsStore.getReaderVolumeNavigation())
 const autoShowToolbarAtEnd = ref(SettingsStore.getReaderAutoShowToolbarAtEnd())
 
 const exportPreview = computed(() => ExportFormatService.previewExportFormat(exportFormat.value))
+const downloadLocationTitle = computed(() =>
+  isAndroidRuntime ? '公开下载内容' : '自定义下载位置',
+)
+const downloadLocationSubtitle = computed(() => {
+  if (isAndroidRuntime) return '开启后新下载的图片可在系统相册中查看'
+  if (downloadPublic.value && downloadLocationPath.value) {
+    return `当前目录：${downloadLocationPath.value}`
+  }
+  return '开启后选择上级文件夹，下载内容保存在其中的 JQViewer 目录'
+})
 
 // PDF导出设置
 const pdfExportPath = ref(PdfExportService.getExportPath())
@@ -646,7 +742,7 @@ onMounted(async () => {
 
   // 获取应用版本
   try {
-    const info = await getRuntime().services.app.getInfo()
+    const info = await runtime.services.app.getInfo()
     appVersion.value = info.version
   } catch {
     /* keep default */
@@ -675,13 +771,21 @@ onMounted(async () => {
   volumeNavigation.value = SettingsStore.getReaderVolumeNavigation()
   autoShowToolbarAtEnd.value = SettingsStore.getReaderAutoShowToolbarAtEnd()
 
-  // 将 PDF 导出默认相对路径解析为绝对路径（与文件夹选择器返回的绝对路径保持一致）
-  try {
-    const result = await JmcomicService.getExternalStoragePath()
-    PdfExportService.ensureAbsolutePath(result.displayPath)
-    pdfExportPath.value = PdfExportService.getExportPath()
-  } catch {
-    /* keep default */
+  if (!isAndroidRuntime && runtime.services.storage.available) {
+    try {
+      const location = await JmcomicService.getDownloadPublic()
+      downloadPublic.value = location.downloadPublic
+      downloadLocationPath.value = location.displayPath ?? ''
+      SettingsStore.setDownloadPublic(location.downloadPublic)
+      if (location.cleanupPending) {
+        await showToast(
+          location.cleanupMessage ?? '旧下载目录仍待清理，应用稍后会自动重试',
+          'medium',
+        )
+      }
+    } catch {
+      /* 保留启动设置快照 */
+    }
   }
 })
 
@@ -808,62 +912,85 @@ function resetExportFormat() {
 // ---- PDF 导出设置 ----
 async function onBrowseFolder() {
   try {
-    const result = await JmcomicService.pickFolder()
+    const result = await JmcomicService.pickFolder('pdf-export')
     if (result) {
       // 确保路径以 / 结尾
-      const path = result.displayPath.endsWith('/')
-        ? result.displayPath
-        : result.displayPath + '/'
-      pdfExportPath.value = path
-      PdfExportService.setExportFolder({
+      const path = result.displayPath.endsWith('/') ? result.displayPath : result.displayPath + '/'
+      await PdfExportService.setExportFolder({
         folderRef: result.ref,
         displayPath: path,
       })
+      pdfExportPath.value = path
     }
   } catch (e: any) {
     await showToast(sanitizeError(e, '选择文件夹失败'), 'danger')
   }
 }
 
-function onPdfDirTemplateChange(e: Event) {
+async function onPdfDirTemplateChange(e: Event) {
   const val = (e.target as HTMLInputElement).value.trim()
+  const previous = pdfDirTemplate.value
   pdfDirTemplate.value = val
-  PdfExportService.setDirTemplate(val)
+  try {
+    await PdfExportService.setDirTemplate(val)
+  } catch (error) {
+    pdfDirTemplate.value = previous
+    await showToast(sanitizeError(error, '保存目录模板失败'), 'danger')
+  }
 }
 
-function onPdfNameTemplateChange(e: Event) {
+async function onPdfNameTemplateChange(e: Event) {
   const val = (e.target as HTMLInputElement).value.trim()
+  const previous = pdfNameTemplate.value
   pdfNameTemplate.value = val
-  PdfExportService.setNameTemplate(val)
+  try {
+    await PdfExportService.setNameTemplate(val)
+  } catch (error) {
+    pdfNameTemplate.value = previous
+    await showToast(sanitizeError(error, '保存名称模板失败'), 'danger')
+  }
 }
 
-function resetPdfExportPath() {
-  PdfExportService.resetExportPath()
-  pdfExportPath.value = PdfExportService.getExportPath()
+async function resetPdfExportPath() {
+  try {
+    await PdfExportService.resetExportPath()
+    pdfExportPath.value = PdfExportService.getExportPath()
+  } catch (error) {
+    await showToast(sanitizeError(error, '重置导出目录失败'), 'danger')
+  }
 }
 
-function resetPdfDirTemplate() {
-  PdfExportService.resetDirTemplate()
-  pdfDirTemplate.value = PdfExportService.getDirTemplate()
+async function resetPdfDirTemplate() {
+  try {
+    await PdfExportService.resetDirTemplate()
+    pdfDirTemplate.value = PdfExportService.getDirTemplate()
+  } catch (error) {
+    await showToast(sanitizeError(error, '重置目录模板失败'), 'danger')
+  }
 }
 
-function resetPdfNameTemplate() {
-  PdfExportService.resetNameTemplate()
-  pdfNameTemplate.value = PdfExportService.getNameTemplate()
+async function resetPdfNameTemplate() {
+  try {
+    await PdfExportService.resetNameTemplate()
+    pdfNameTemplate.value = PdfExportService.getNameTemplate()
+  } catch (error) {
+    await showToast(sanitizeError(error, '重置名称模板失败'), 'danger')
+  }
 }
 
-// ---- 公开下载 ----
+// ---- 下载位置 ----
 const isSwitchingDownloadPublic = ref(false)
 
 async function onDownloadPublicChange(e: CustomEvent) {
   if (isSwitchingDownloadPublic.value) return
   isSwitchingDownloadPublic.value = true
 
+  const previous = SettingsStore.getDownloadPublic()
   const open = e.detail.checked
   downloadPublic.value = open
 
   // 开启时根据 API 版本申请合适的权限
-  if (open) {
+  if (open && isAndroidRuntime) {
     try {
       const result = await JmcomicService.requestManageStorage()
       if (!result.granted) {
@@ -908,18 +1035,33 @@ async function onDownloadPublicChange(e: CustomEvent) {
 
   try {
     const result = await JmcomicService.setDownloadPublic(open)
-    SettingsStore.setDownloadPublic(open)
-    const msg =
-      result.moved > 0
+    downloadPublic.value = result.downloadPublic
+    downloadLocationPath.value = result.displayPath ?? ''
+    SettingsStore.setDownloadPublic(result.downloadPublic)
+    const msg = isAndroidRuntime
+      ? result.moved > 0
         ? `已搬迁 ${result.moved} 个文件` + (open ? '，系统相册可查看' : '')
         : open
           ? '已设为公开，无文件需搬迁'
           : '已设为仅应用内可见'
-    await showToast(msg, 'success')
+      : open
+        ? result.moved > 0
+          ? `已迁移 ${result.moved} 个文件，下载位置：${result.displayPath}`
+          : `下载位置已设为：${result.displayPath}`
+        : '已恢复应用内部下载位置'
+    await showToast(
+      result.cleanupPending
+        ? (result.cleanupMessage ?? '下载位置已切换，但旧目录仍待清理')
+        : msg,
+      result.cleanupPending ? 'medium' : 'success',
+    )
   } catch (e: any) {
-    downloadPublic.value = !open
-    SettingsStore.setDownloadPublic(!open)
-    await showToast(sanitizeError(e, '切换失败'), 'danger')
+    downloadPublic.value = previous
+    SettingsStore.setDownloadPublic(previous)
+    await showToast(
+      sanitizeError(e, '切换失败'),
+      e instanceof RuntimeError && e.code === 'cancelled' ? 'medium' : 'danger',
+    )
   } finally {
     handle?.remove()
     showRelocationModal.value = false
@@ -935,59 +1077,123 @@ function onDisplayModeChange(mode: string) {
 }
 
 // ---- 屏幕方向 ----
-function onScreenOrientationChange(orientation: string) {
+async function onScreenOrientationChange(orientation: string) {
+  if (!readerCapabilities.orientation.available) return
+  const operation = persistReaderSettingValue(
+    'orientation',
+    orientation,
+    SettingsStore.getReaderScreenOrientation(),
+    () => JmcomicService.setReaderScreenOrientation(orientation),
+  )
   screenOrientation.value = orientation
   SettingsStore.setReaderScreenOrientation(orientation)
-  JmcomicService.setReaderScreenOrientation(orientation).catch(() => {})
+  try {
+    await operation.promise
+  } catch (error) {
+    if (!operation.isLatest()) return
+    const confirmed = operation.getConfirmedValue()
+    screenOrientation.value = confirmed
+    SettingsStore.setReaderScreenOrientation(confirmed)
+    await showToast(sanitizeError(error, '切换屏幕方向失败'), 'danger')
+  }
 }
 
 // ---- 亮度跟随系统 ----
 async function onBrightnessFollowSystemChange(e: CustomEvent) {
+  if (!readerCapabilities.brightness.available) return
   const follow = e.detail.checked
+  const brightness = follow ? -1 : brightnessValue.value
+  const operation = persistReaderSettingValue(
+    'brightness',
+    brightness,
+    SettingsStore.getReaderBrightness(),
+    () => JmcomicService.setReaderBrightness(brightness),
+  )
   brightnessFollowSystem.value = follow
+  SettingsStore.setReaderBrightness(brightness)
   if (follow) {
-    SettingsStore.setReaderBrightness(-1)
-    try {
-      await JmcomicService.setReaderBrightness(-1)
-    } catch {
-      /* ignore */
-    }
-  } else {
-    SettingsStore.setReaderBrightness(brightnessValue.value)
-    try {
-      await JmcomicService.setReaderBrightness(brightnessValue.value)
-    } catch {
-      /* ignore */
-    }
+    brightnessValue.value = 0.5
+  }
+  try {
+    await operation.promise
+  } catch (error) {
+    if (!operation.isLatest()) return
+    const confirmed = operation.getConfirmedValue()
+    brightnessFollowSystem.value = confirmed < 0
+    brightnessValue.value = confirmed < 0 ? 0.5 : confirmed
+    SettingsStore.setReaderBrightness(confirmed)
+    await showToast(sanitizeError(error, '调整亮度失败'), 'danger')
   }
 }
 
 // ---- 亮度滑块 ----
-function onBrightnessChange(e: CustomEvent) {
+async function onBrightnessChange(e: CustomEvent) {
+  if (!readerCapabilities.brightness.available) return
   const val = Number(e.detail.value)
+  const operation = persistReaderSettingValue(
+    'brightness',
+    val,
+    SettingsStore.getReaderBrightness(),
+    () => JmcomicService.setReaderBrightness(val),
+  )
   brightnessValue.value = val
   SettingsStore.setReaderBrightness(val)
-  JmcomicService.setReaderBrightness(val).catch(() => {})
+  try {
+    await operation.promise
+  } catch (error) {
+    if (!operation.isLatest()) return
+    const confirmed = operation.getConfirmedValue()
+    brightnessFollowSystem.value = confirmed < 0
+    brightnessValue.value = confirmed < 0 ? 0.5 : confirmed
+    SettingsStore.setReaderBrightness(confirmed)
+    await showToast(sanitizeError(error, '调整亮度失败'), 'danger')
+  }
 }
 
 // ---- 防止熄屏 ----
 async function onKeepScreenOnChange(e: CustomEvent) {
+  if (!readerCapabilities.keepAwake.available) return
   const enabled = e.detail.checked
+  const operation = persistReaderSettingValue(
+    'keepAwake',
+    enabled,
+    SettingsStore.getReaderKeepScreenOn(),
+    () => JmcomicService.setReaderKeepScreenOn(enabled),
+  )
   keepScreenOn.value = enabled
   SettingsStore.setReaderKeepScreenOn(enabled)
   try {
-    await JmcomicService.setReaderKeepScreenOn(enabled)
-  } catch {
-    /* ignore */
+    await operation.promise
+  } catch (error) {
+    if (!operation.isLatest()) return
+    const confirmed = operation.getConfirmedValue()
+    keepScreenOn.value = confirmed
+    SettingsStore.setReaderKeepScreenOn(confirmed)
+    await showToast(sanitizeError(error, '切换屏幕常亮失败'), 'danger')
   }
 }
 
 // ---- 音量键翻页 ----
-function onVolumeNavigationChange(e: CustomEvent) {
+async function onVolumeNavigationChange(e: CustomEvent) {
+  if (!readerCapabilities.volumeKeys.available) return
   const enabled = e.detail.checked
+  const operation = persistReaderSettingValue(
+    'volumeNavigation',
+    enabled,
+    SettingsStore.getReaderVolumeNavigation(),
+    () => JmcomicService.setReaderVolumeNavigation(enabled),
+  )
   volumeNavigation.value = enabled
   SettingsStore.setReaderVolumeNavigation(enabled)
-  JmcomicService.setReaderVolumeNavigation(enabled).catch(() => {})
+  try {
+    await operation.promise
+  } catch (error) {
+    if (!operation.isLatest()) return
+    const confirmed = operation.getConfirmedValue()
+    volumeNavigation.value = confirmed
+    SettingsStore.setReaderVolumeNavigation(confirmed)
+    await showToast(sanitizeError(error, '切换音量键翻页失败'), 'danger')
+  }
 }
 
 // ---- 阅读结束时展开工具栏 ----
@@ -1062,6 +1268,10 @@ function onAutoShowToolbarAtEndChange(e: CustomEvent) {
   border-top: 1px solid #f5ebe4;
 }
 
+.capability-unavailable {
+  opacity: 0.68;
+}
+
 .row.action {
   cursor: pointer;
   user-select: none;
@@ -1108,6 +1318,16 @@ function onAutoShowToolbarAtEndChange(e: CustomEvent) {
 .row-value {
   font-size: 14px;
   color: #8c6b5a;
+}
+
+.capability-status {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: #4f7a52;
+}
+
+.capability-status.unavailable {
+  color: #9a7560;
 }
 
 .row-right {

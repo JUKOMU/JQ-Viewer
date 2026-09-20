@@ -51,8 +51,11 @@ export function useAuth() {
 
   /** 登出并清除本地状态 */
   async function logout(): Promise<void> {
-    await JmcomicService.logout()
-    updateUserInfo(null)
+    try {
+      await JmcomicService.logout()
+    } finally {
+      updateUserInfo(null)
+    }
   }
 
   return { userInfo, isLoggedIn, initAuth, login, logout }

@@ -1,8 +1,4 @@
-import type {
-  ExportTarget,
-  FileDescriptor,
-  FileRef,
-} from '@/runtime/FileReferences'
+import type { ExportTarget, FileDescriptor, FileRef } from '@/runtime/FileReferences'
 
 // --- 用户相关 ---
 
@@ -384,6 +380,20 @@ export interface UpdateManifest {
   sources: {
     github: string
     gitee: string
+  }
+  desktopArtifact?: {
+    name: string
+    platform: 'windows' | 'linux'
+    architecture: 'x64' | 'arm64'
+    compatibleArchitectures: Array<'x64' | 'arm64'>
+    packageType: 'installer' | 'portable'
+    packageFormat: 'exe' | 'zip' | 'deb' | 'rpm' | 'tar.gz'
+    sizeBytes: number
+    sha256: string
+    sources: {
+      github: string
+      gitee: string
+    }
   }
 }
 

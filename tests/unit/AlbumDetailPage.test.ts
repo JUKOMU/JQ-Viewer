@@ -144,6 +144,7 @@ vi.mock('@/components/album/AlbumHeader.vue', () => ({
   default: {
     name: 'AlbumHeader',
     props: {
+      description: { type: String, default: '' },
       pageCount: { type: Number, default: 0 },
       loading: { type: Boolean, default: false },
     },

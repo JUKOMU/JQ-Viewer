@@ -141,6 +141,24 @@ public class AuthPluginContractInstrumentedTest {
     }
 
     @Test
+    public void failedRemoteLogoutStillClearsCredentialsAndDisablesAutoLogin() {
+        saveCurrentAuthState();
+        apiService.failWith("network unavailable", new IOException("network unavailable"));
+        RecordingPluginCall logout = call("logout");
+
+        plugin.logout(logout);
+
+        assertTrue(logout.resolvedData.optBoolean("success"));
+        assertEquals(1, logout.completionCount);
+        assertTrue(logout.isKeptAlive());
+        assertAuthStateCleared();
+
+        RecordingPluginCall autoLogin = call("autoLogin");
+        plugin.autoLogin(autoLogin);
+        assertRejected(autoLogin, "自动登录失败：无保存的凭据", false);
+    }
+
+    @Test
     public void damagedUserInfoIsTreatedAsLoggedOutAndCleared() throws Exception {
         settingsStore.putString("auth_cookies_json", "[]");
         settingsStore.putString("auth_username", "alice");
@@ -225,18 +243,21 @@ public class AuthPluginContractInstrumentedTest {
     }
 
     @Test
-    public void closedSessionSkipsLateLogoutStateChanges() throws Exception {
+    public void logoutCompletesLocallyBeforeLateRemoteCallback() throws Exception {
         saveCurrentAuthState();
         apiService.autoComplete = false;
         apiService.succeedWith(new JSONObject().put("success", true));
         RecordingPluginCall logout = call("logout");
 
         plugin.logout(logout);
+        assertTrue(logout.resolvedData.getBoolean("success"));
+        assertEquals(1, logout.completionCount);
+        assertAuthStateCleared();
         callSession.close();
         apiService.completeSuccess();
 
-        assertRejected(logout, PluginCallSession.SESSION_ENDED_MESSAGE, false);
-        assertCurrentAuthState();
+        assertEquals(1, logout.completionCount);
+        assertAuthStateCleared();
     }
 
     @Test
@@ -286,6 +307,14 @@ public class AuthPluginContractInstrumentedTest {
             settingsStore.getString("auth_user_info_json"));
         assertEquals("current", credentialStore.getUsername());
         assertEquals("current-secret", credentialStore.getPassword());
+    }
+
+    private void assertAuthStateCleared() {
+        assertNull(settingsStore.getString("auth_cookies_json"));
+        assertNull(settingsStore.getString("auth_username"));
+        assertNull(settingsStore.getString("auth_user_info_json"));
+        assertNull(credentialStore.getUsername());
+        assertNull(credentialStore.getPassword());
     }
 
     private static void assertRejected(RecordingPluginCall call, String message,

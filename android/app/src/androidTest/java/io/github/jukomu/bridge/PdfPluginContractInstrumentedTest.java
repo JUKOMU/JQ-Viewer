@@ -27,7 +27,9 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayDeque;
 import java.util.Base64;
+import java.util.Deque;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -90,6 +92,56 @@ public class PdfPluginContractInstrumentedTest {
         RecordingPluginCall retryTask = call("retryPdfExport", "exportId", "missing-a1-task");
         handler.retryPdfExport(retryTask);
         assertRejected(retryTask, "PDF 导出任务不存在", "not-found");
+    }
+
+    @Test
+    public void scanAndInfoRunOnPdfCommandExecutor() throws Exception {
+        Deque<Runnable> commands = new ArrayDeque<>();
+        PdfPluginHandler queuedHandler = new PdfPluginHandler(
+            context, DownloadStore.getInstance(context), commands::addLast);
+        RecordingPluginCall scan = call("scanPdfFiles", "folderRef",
+            PdfRef.createPathFolderRef(missingPdf.getAbsolutePath()));
+        RecordingPluginCall info = call("getPdfInfo", "fileRef",
+            PdfRef.createPathFileRef(missingPdf.getAbsolutePath()));
+
+        queuedHandler.scanPdfFiles(scan);
+        queuedHandler.getPdfInfo(info);
+
+        assertEquals(0, scan.completionCount);
+        assertEquals(0, info.completionCount);
+        assertEquals(2, commands.size());
+        commands.removeFirst().run();
+        commands.removeFirst().run();
+        assertRejected(scan, "PDF 文件夹不存在", "not-found");
+        assertEquals("not-found", info.rejectionCode);
+        assertTrue(info.rejectionMessage.startsWith("PDF 信息读取失败: "));
+    }
+
+    @Test
+    public void destroyRejectsQueuedPdfCallAndNewSubmissions() throws Exception {
+        Deque<Runnable> commands = new ArrayDeque<>();
+        PdfPluginHandler queuedHandler = new PdfPluginHandler(
+            context, DownloadStore.getInstance(context), commands::addLast);
+        RecordingPluginCall queued = call("scanPdfFiles", "folderRef",
+            PdfRef.createPathFolderRef(missingPdf.getAbsolutePath()));
+
+        queuedHandler.scanPdfFiles(queued);
+        assertEquals(0, queued.completionCount);
+        assertEquals(1, commands.size());
+
+        queuedHandler.destroy();
+        assertEquals(PluginCallSession.SESSION_ENDED_MESSAGE, queued.rejectionMessage);
+        assertEquals(1, queued.completionCount);
+
+        commands.removeFirst().run();
+        assertEquals(1, queued.completionCount);
+
+        RecordingPluginCall afterDestroy = call("scanPdfFiles", "folderRef",
+            PdfRef.createPathFolderRef(missingPdf.getAbsolutePath()));
+        queuedHandler.scanPdfFiles(afterDestroy);
+        assertEquals(PluginCallSession.SESSION_ENDED_MESSAGE,
+            afterDestroy.rejectionMessage);
+        assertEquals(1, afterDestroy.completionCount);
     }
 
     @Test

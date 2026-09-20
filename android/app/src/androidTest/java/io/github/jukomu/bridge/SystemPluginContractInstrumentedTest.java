@@ -20,6 +20,9 @@ import org.junit.Test;
 
 import java.io.File;
 import java.lang.reflect.Field;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.concurrent.TimeUnit;
 
 import static android.app.Activity.RESULT_CANCELED;
 import static android.app.Activity.RESULT_OK;
@@ -61,6 +64,26 @@ public class SystemPluginContractInstrumentedTest {
                 activity.permissionRequestCode = requestCode;
             },
             persistableUriPermission);
+    }
+
+    private SystemPluginHandler createSystemHandler(
+        SystemPluginHandler.PersistableUriPermission persistableUriPermission,
+        java.util.concurrent.Executor ocrExecutor,
+        java.util.concurrent.Executor fileOperationExecutor) {
+        return new SystemPluginHandler(
+            context,
+            () -> activity,
+            permissionService,
+            () -> null,
+            event -> {
+            },
+            (permission, requestCode) -> {
+                activity.requestedPermissions = new String[]{permission};
+                activity.permissionRequestCode = requestCode;
+            },
+            persistableUriPermission,
+            ocrExecutor,
+            fileOperationExecutor);
     }
 
     @After
@@ -393,15 +416,48 @@ public class SystemPluginContractInstrumentedTest {
             plugin.checkFilesExist(files);
             plugin.getExternalStoragePath(externalPath);
 
+            assertTrue(files.awaitCompletion(1, TimeUnit.SECONDS));
             JSONArray existing = files.resolvedData.getJSONArray("existingFileRefs");
             assertNotNull(existing);
             assertEquals(1, existing.length());
             assertEquals(PdfRef.createPathFileRef(existingFile.getAbsolutePath()), existing.getString(0));
             assertFalse(externalPath.resolvedData.getString("folderRef").isEmpty());
-            assertSynchronous(files, externalPath);
+            assertCompleted(files);
+            assertSynchronous(externalPath);
         } finally {
             assertTrue(existingFile.delete() || !existingFile.exists());
         }
+    }
+
+    @Test
+    public void destroyRejectsQueuedFileQueryAndNewSubmissions() throws Exception {
+        systemHandler.destroy();
+        Deque<Runnable> fileOperations = new ArrayDeque<>();
+        systemHandler = createSystemHandler((uri, flags) -> {
+        }, Runnable::run, fileOperations::addLast);
+        injectSystemHandler(plugin, systemHandler);
+        JSArray fileRefs = new JSArray();
+        fileRefs.put(PdfRef.createPathFileRef(
+            new File(context.getCacheDir(), "queued.pdf").getAbsolutePath()));
+        RecordingPluginCall queued = call("checkFilesExist", "fileRefs", fileRefs);
+
+        plugin.checkFilesExist(queued);
+        assertEquals(0, queued.completionCount);
+        assertEquals(1, fileOperations.size());
+
+        systemHandler.destroy();
+        assertEquals(PluginCallSession.SESSION_ENDED_MESSAGE, queued.rejectionMessage);
+        assertEquals(1, queued.completionCount);
+
+        fileOperations.removeFirst().run();
+        assertEquals(1, queued.completionCount);
+
+        RecordingPluginCall afterDestroy = call(
+            "checkFilesExist", "fileRefs", fileRefs);
+        plugin.checkFilesExist(afterDestroy);
+        assertEquals(PluginCallSession.SESSION_ENDED_MESSAGE,
+            afterDestroy.rejectionMessage);
+        assertEquals(1, afterDestroy.completionCount);
     }
 
     private static RecordingPluginCall call(String methodName, Object... entries) {
@@ -419,9 +475,13 @@ public class SystemPluginContractInstrumentedTest {
 
     private static void assertSynchronous(RecordingPluginCall... calls) {
         for (RecordingPluginCall call : calls) {
-            assertFalse(call.getMethodName(), call.isKeptAlive());
-            assertEquals(call.getMethodName(), 1, call.completionCount);
+            assertCompleted(call);
         }
+    }
+
+    private static void assertCompleted(RecordingPluginCall call) {
+        assertFalse(call.getMethodName(), call.isKeptAlive());
+        assertEquals(call.getMethodName(), 1, call.completionCount);
     }
 
     private static void injectSystemHandler(JmcomicPlugin plugin,

@@ -43,10 +43,6 @@ import io.github.jukomu.runtime.JmcomicRuntime;
 import org.json.JSONObject;
 
 import java.util.List;
-import java.util.concurrent.Executor;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 /**
@@ -60,7 +56,6 @@ public class JmcomicPlugin extends Plugin {
     private static final String TAG = "JmcomicPlugin";
 
     private volatile JmApiClient sharedClient;
-    private ExecutorService pdfCommandExecutor;
     private int imageConcurrency = 6;
     private int downloadConcurrency = 6;
     private final CacheCapacityPolicy cacheCapacityPolicy = new CacheCapacityPolicy();
@@ -197,8 +192,7 @@ public class JmcomicPlugin extends Plugin {
             settingsDb.getInt("preload_concurrency", SettingsService.DEFAULT_CONCURRENCY));
         downloadConcurrency = SettingsService.normalizeConcurrency(
             settingsDb.getInt("download_concurrency", SettingsService.DEFAULT_CONCURRENCY));
-        pdfCommandExecutor = createPdfCommandExecutor();
-        pdfHandler = new PdfPluginHandler(ctx, downloadDb, pdfCommandExecutor);
+        pdfHandler = new PdfPluginHandler(ctx, downloadDb);
         pdfExportCommandPort = exportId ->
             PdfExportService.getInstance(ctx).cancelExport(exportId);
         PdfExportCommandRouter.getInstance().attach(pdfExportCommandPort);
@@ -224,8 +218,10 @@ public class JmcomicPlugin extends Plugin {
         // 初始化服务
         this.apiSession = new ApiSession(sharedClient);
         ApiService apiService = apiSession.getApiService();
-        this.apiHandler = new ApiPluginHandler(apiService);
-        this.authHandler = new AuthPluginHandler(ctx, apiService, sharedClient::getCookies);
+        PluginCallSession apiCallSession = apiSession.getCallSession();
+        this.apiHandler = new ApiPluginHandler(apiService, apiCallSession);
+        this.authHandler = new AuthPluginHandler(
+            ctx, apiService, sharedClient::getCookies, apiCallSession);
         DownloadRelocationService relocationService = new DownloadRelocationService(
             ctx, settingsDb, FileStore.getInstance());
         this.settingsService = new SettingsService(settingsDb, downloadDb,
@@ -288,40 +284,13 @@ public class JmcomicPlugin extends Plugin {
             instance = null;
         }
 
-        shutdownGracefully(pdfCommandExecutor);
+        if (pdfHandler != null) {
+            pdfHandler.destroy();
+        }
         if (apiSession != null) {
             apiSession.destroy();
         }
         // 图片、网络和下载准备 executor 由 JmcomicRuntime 持有。
-    }
-
-    private void shutdownGracefully(ExecutorService executor) {
-        if (executor == null) return;
-        executor.shutdown();
-        try {
-            if (!executor.awaitTermination(2, TimeUnit.SECONDS)) {
-                executor.shutdownNow();
-            }
-        } catch (InterruptedException e) {
-            executor.shutdownNow();
-            Thread.currentThread().interrupt();
-        }
-    }
-
-    static ExecutorService createPdfCommandExecutor() {
-        return Executors.newSingleThreadExecutor(runnable -> {
-            Thread thread = new Thread(runnable, "pdf-command");
-            thread.setDaemon(true);
-            return thread;
-        });
-    }
-
-    static void dispatchPdfCommand(Executor executor, Runnable command) {
-        executor.execute(command);
-    }
-
-    static void dispatchPdfFileOperation(Executor executor, Runnable operation) {
-        executor.execute(operation);
     }
 
     static int pdfFolderGrantFlags(boolean canGrantUri) {

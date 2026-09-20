@@ -11,30 +11,21 @@ import io.javalin.http.Context;
 
 /** 提供服务状态查询。 */
 public final class SystemPluginHandler {
-    private final RequestExecutor requests;
+    private final RequestExecutor networkRequests;
+    private final RequestExecutor diagnosticsRequests;
     private final NetworkService network;
     private final LaunchRouteService launchRoutes;
     private final DiagnosticsService diagnostics;
 
-    public SystemPluginHandler(RequestExecutor requests, NetworkService network) {
-        this(requests, network, null, null);
-    }
-
     public SystemPluginHandler(
-            RequestExecutor requests,
-            NetworkService network,
-            LaunchRouteService launchRoutes
-    ) {
-        this(requests, network, launchRoutes, null);
-    }
-
-    public SystemPluginHandler(
-            RequestExecutor requests,
+            RequestExecutor networkRequests,
+            RequestExecutor diagnosticsRequests,
             NetworkService network,
             LaunchRouteService launchRoutes,
             DiagnosticsService diagnostics
     ) {
-        this.requests = requests;
+        this.networkRequests = networkRequests;
+        this.diagnosticsRequests = diagnosticsRequests;
         this.network = network;
         this.launchRoutes = launchRoutes;
         this.diagnostics = diagnostics;
@@ -45,11 +36,11 @@ public final class SystemPluginHandler {
     }
 
     public void getDomainStates(Context context) {
-        requests.run(context, () -> requireNetwork().getDomainStates());
+        networkRequests.run(context, () -> requireNetwork().getDomainStates());
     }
 
     public void reprobeDomains(Context context) {
-        requests.run(context, () -> {
+        networkRequests.run(context, () -> {
             // 与 Android 保持一致：客户端未初始化时重新探活是无操作成功。
             if (network != null) network.reprobeDomains();
             return SuccessResponse.ok();
@@ -57,7 +48,7 @@ public final class SystemPluginHandler {
     }
 
     public void measureLatency(Context context) {
-        requests.run(context, () -> requireNetwork().measureLatency());
+        networkRequests.run(context, () -> requireNetwork().measureLatency());
     }
 
     public void consumeLaunchRoute(Context context) {
@@ -65,7 +56,7 @@ public final class SystemPluginHandler {
     }
 
     public void getDiagnostics(Context context) {
-        requests.run(context, () -> requireDiagnostics().snapshot());
+        diagnosticsRequests.run(context, () -> requireDiagnostics().snapshot());
     }
 
     private NetworkService requireNetwork() {

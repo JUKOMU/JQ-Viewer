@@ -37,6 +37,7 @@ import io.github.jukomu.desktop.feature.favorite.OfflineFavoriteService;
 import io.github.jukomu.desktop.feature.favorite.data.OfflineFavoriteStore;
 import io.github.jukomu.desktop.feature.history.HistoryService;
 import io.github.jukomu.desktop.feature.image.CacheService;
+import io.github.jukomu.desktop.feature.image.ImageCache;
 import io.github.jukomu.desktop.feature.image.ImageService;
 import io.github.jukomu.desktop.feature.files.FileService;
 import io.github.jukomu.desktop.feature.network.NetworkService;
@@ -68,14 +69,11 @@ import org.slf4j.LoggerFactory;
 import java.net.URI;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -105,9 +103,7 @@ public final class Backend implements AutoCloseable {
 
     private final Paths paths;
     private final Database database;
-    private final ExecutorService businessExecutor;
-    private final ExecutorService fileOperationExecutor;
-    private final ExecutorService pdfExportExecutor;
+    private final ServiceExecutors executors;
     private final FileService fileService;
     private final JmClient providedClient;
     private final Function<String, String> providedAlbumCoverUrl;
@@ -129,79 +125,73 @@ public final class Backend implements AutoCloseable {
     private boolean closed;
 
     public Backend(Paths paths) {
-        this(paths, new Database(paths), createBusinessExecutor(), createFileOperationExecutor(),
-                createPdfExportExecutor(), null, null, new FileService(paths), null, null);
+        this(paths, new Database(paths), new ServiceExecutors(), null, null,
+                new FileService(paths), null, null);
     }
 
     public Backend(
             Paths paths,
             Database database,
-            ExecutorService businessExecutor
+            ExecutorService apiExecutor
     ) {
-        this(paths, database, businessExecutor, createFileOperationExecutor(),
-                createPdfExportExecutor(), null, null, new FileService(paths), null, null);
+        this(paths, database, new ServiceExecutors(apiExecutor), null, null,
+                new FileService(paths), null, null);
     }
 
     Backend(
             Paths paths,
             Database database,
-            ExecutorService businessExecutor,
+            ExecutorService apiExecutor,
             JmClient providedClient,
             Function<String, String> providedAlbumCoverUrl
     ) {
-        this(paths, database, businessExecutor, createFileOperationExecutor(),
-                createPdfExportExecutor(), providedClient, providedAlbumCoverUrl,
+        this(paths, database, new ServiceExecutors(apiExecutor), providedClient, providedAlbumCoverUrl,
                 new FileService(paths), CredentialStores.unavailable(), null);
     }
 
     Backend(
             Paths paths,
             Database database,
-            ExecutorService businessExecutor,
+            ExecutorService apiExecutor,
             JmClient providedClient,
             Function<String, String> providedAlbumCoverUrl,
             FileService fileService
     ) {
-        this(paths, database, businessExecutor, createFileOperationExecutor(),
-                createPdfExportExecutor(), providedClient, providedAlbumCoverUrl,
+        this(paths, database, new ServiceExecutors(apiExecutor), providedClient, providedAlbumCoverUrl,
                 fileService, CredentialStores.unavailable(), null);
     }
 
     Backend(
             Paths paths,
             Database database,
-            ExecutorService businessExecutor,
+            ExecutorService apiExecutor,
             JmClient providedClient,
             Function<String, String> providedAlbumCoverUrl,
             FileService fileService,
             CredentialStore credentialStore
     ) {
-        this(paths, database, businessExecutor, createFileOperationExecutor(),
-                createPdfExportExecutor(), providedClient, providedAlbumCoverUrl,
+        this(paths, database, new ServiceExecutors(apiExecutor), providedClient, providedAlbumCoverUrl,
                 fileService, credentialStore, null);
     }
 
     Backend(
             Paths paths,
             Database database,
-            ExecutorService businessExecutor,
+            ExecutorService apiExecutor,
             JmClient providedClient,
             Function<String, String> providedAlbumCoverUrl,
             FileService fileService,
             CredentialStore credentialStore,
             NetworkService.Operations networkOperations
     ) {
-        this(paths, database, businessExecutor, createFileOperationExecutor(),
-                createPdfExportExecutor(), providedClient, providedAlbumCoverUrl,
+        this(paths, database, new ServiceExecutors(apiExecutor), providedClient, providedAlbumCoverUrl,
                 fileService, credentialStore, networkOperations);
     }
 
     private Backend(
             Paths paths,
             Database database,
-            ExecutorService businessExecutor,
-            ExecutorService fileOperationExecutor,
-            ExecutorService pdfExportExecutor,
+            ServiceExecutors executors,
             JmClient providedClient,
             Function<String, String> providedAlbumCoverUrl,
             FileService fileService,
@@ -210,10 +200,7 @@ public final class Backend implements AutoCloseable {
     ) {
         this.paths = Objects.requireNonNull(paths, "paths");
         this.database = Objects.requireNonNull(database, "database");
-        this.businessExecutor = Objects.requireNonNull(businessExecutor, "businessExecutor");
-        this.fileOperationExecutor = Objects.requireNonNull(
-                fileOperationExecutor, "fileOperationExecutor");
-        this.pdfExportExecutor = Objects.requireNonNull(pdfExportExecutor, "pdfExportExecutor");
+        this.executors = Objects.requireNonNull(executors, "executors");
         this.fileService = Objects.requireNonNull(fileService, "fileService");
         this.providedCredentialStore = providedCredentialStore;
         this.providedNetworkOperations = providedNetworkOperations;
@@ -259,7 +246,7 @@ public final class Backend implements AutoCloseable {
             SettingsService settingsService = new SettingsService(database, mapper);
             startedOcrService = OcrService.createDefault(settingsService, paths.ocrDirectory());
             int preloadConcurrency = settingsService.preloadConcurrency();
-            configureBusinessExecutor(preloadConcurrency);
+            executors.configureImagePreload(preloadConcurrency);
             startedEventHub = new EventHub(mapper);
             startedUpdateService = new DesktopUpdateService(
                     DesktopUpdateConfiguration.fromSystemProperties(), mapper, startedEventHub, paths);
@@ -286,9 +273,10 @@ public final class Backend implements AutoCloseable {
             final EventHub eventHub = startedEventHub;
             if (networkOperations != null) {
                 startedNetworkService = new NetworkService(
-                        networkOperations, businessExecutor, eventHub);
+                        networkOperations, executors.networkProbe(), eventHub);
             }
-            ImageService imageService = new ImageService(serviceClient, businessExecutor, eventHub);
+            ImageService imageService = new ImageService(
+                    serviceClient, executors.imagePreload(), eventHub);
             DownloadStore downloadStore = new DownloadStore(database);
             PdfExportStore pdfExportStore = new PdfExportStore(database);
             startedLaunchRoutes = new LaunchRouteService(eventHub);
@@ -306,14 +294,30 @@ public final class Backend implements AutoCloseable {
                     downloadFiles,
                     serviceClient,
                     downloadClient,
-                    businessExecutor,
+                    executors.downloadPrepare(),
                     eventHub,
                     mapper
             );
             startedDownloadService.reconcileOnStartup();
             final DownloadService downloadService = startedDownloadService;
-            RequestExecutor requests = new RequestExecutor(
-                    businessExecutor, fileOperationExecutor, mapper);
+            RequestExecutor apiRequests = new RequestExecutor(executors.api(), mapper);
+            RequestExecutor imageRequests = new RequestExecutor(executors.imageCommand(), mapper);
+            RequestExecutor settingsRequests = new RequestExecutor(executors.settings(), mapper);
+            RequestExecutor historyRequests = new RequestExecutor(executors.history(), mapper);
+            RequestExecutor favoriteRequests = new RequestExecutor(
+                    executors.offlineFavorite(), mapper);
+            RequestExecutor diagnosticsRequests = new RequestExecutor(
+                    executors.diagnostics(), mapper);
+            RequestExecutor fileRequests = new RequestExecutor(executors.fileIo(), mapper);
+            RequestExecutor dialogRequests = new RequestExecutor(executors.fileDialog(), mapper);
+            RequestExecutor relocationRequests = new RequestExecutor(executors.relocation(), mapper);
+            RequestExecutor downloadRequests = new RequestExecutor(
+                    executors.downloadCommand(), mapper);
+            RequestExecutor pdfRequests = new RequestExecutor(executors.pdfCommand(), mapper);
+            RequestExecutor networkRequests = new RequestExecutor(
+                    executors.networkCommand(), mapper);
+            RequestExecutor ocrRequests = new RequestExecutor(executors.ocr(), mapper);
+            RequestExecutor updateRequests = new RequestExecutor(executors.updateCommand(), mapper);
             CredentialStore credentialStore = providedCredentialStore == null
                     ? CredentialStores.system()
                     : providedCredentialStore;
@@ -330,26 +334,28 @@ public final class Backend implements AutoCloseable {
             );
             startedPdfExportService = new PdfExportService(
                     pdfExportStore, downloadStore, downloadFiles,
-                    pdfExportExecutor, eventHub);
+                    executors.pdfExport(), eventHub);
             startedPdfExportService.reconcileOnStartup();
             taskNotifications.start();
             Plugin plugin = new Plugin(
-                    new ApiPluginHandler(requests,
+                    new ApiPluginHandler(apiRequests, imageRequests,
                             new CatalogService(serviceClient, imageService, albumCoverUrl), imageService),
-                    new AuthPluginHandler(requests, new AuthService(serviceClient, credentialStore)),
-                    new CachePluginHandler(requests, cacheService),
-                    new SettingsPluginHandler(requests, settingsService, downloadLocationService),
-                    new HistoryPluginHandler(requests, new HistoryService(database)),
-                    new OfflineFavoritePluginHandler(requests, new OfflineFavoriteService(
+                    new AuthPluginHandler(apiRequests, new AuthService(serviceClient, credentialStore)),
+                    new CachePluginHandler(imageRequests, cacheService),
+                    new SettingsPluginHandler(
+                            settingsRequests, relocationRequests,
+                            settingsService, downloadLocationService),
+                    new HistoryPluginHandler(historyRequests, new HistoryService(database)),
+                    new OfflineFavoritePluginHandler(favoriteRequests, new OfflineFavoriteService(
                             new OfflineFavoriteStore(database, mapper))),
-                    new FilePluginHandler(requests, fileService),
-                    new DownloadPluginHandler(requests, downloadService),
-                    new PdfPluginHandler(requests, pdfManagementService, startedPdfExportService),
+                    new FilePluginHandler(fileRequests, dialogRequests, fileService),
+                    new DownloadPluginHandler(downloadRequests, downloadService),
+                    new PdfPluginHandler(pdfRequests, pdfManagementService, startedPdfExportService),
                     new SystemPluginHandler(
-                            requests, startedNetworkService, startedLaunchRoutes,
-                            diagnosticsService),
-                    new OcrPluginHandler(requests, startedOcrService),
-                    new UpdatePluginHandler(requests, startedUpdateService));
+                            networkRequests, diagnosticsRequests,
+                            startedNetworkService, startedLaunchRoutes, diagnosticsService),
+                    new OcrPluginHandler(ocrRequests, startedOcrService),
+                    new UpdatePluginHandler(updateRequests, startedUpdateService));
             PdfResourceService pdfResources = new PdfResourceService();
             candidate = Javalin.create(config -> {
                 config.jetty.host = LOOPBACK_HOST;
@@ -430,9 +436,7 @@ public final class Backend implements AutoCloseable {
                     step("JMComic 客户端", () -> {
                         if (failedClient != null) failedClient.close();
                     }),
-                    step("PDF 导出执行器", pdfExportExecutor::shutdownNow),
-                    step("文件执行器", fileOperationExecutor::shutdownNow),
-                    step("业务执行器", businessExecutor::shutdownNow),
+                    step("服务执行器", executors::close),
                     step("数据库", database::close)
             );
             throw exception;
@@ -493,6 +497,11 @@ public final class Backend implements AutoCloseable {
                 return;
             }
             int finalSortOrder = sortOrder;
+            ImageCache.Entry cached = imageService.readCached(photoId, finalSortOrder, type);
+            if (cached != null) {
+                context.contentType(cached.mimeType()).result(cached.bytes());
+                return;
+            }
             try {
                 CompletableFuture<?> response = CompletableFuture
                         .supplyAsync(
@@ -500,13 +509,13 @@ public final class Backend implements AutoCloseable {
                                         .map(local -> imageService.readLocal(
                                                 photoId, finalSortOrder, type, local))
                                         .orElse(null),
-                                fileOperationExecutor)
+                                executors.imageResource())
                         .thenCompose(entry -> entry != null
                                 ? CompletableFuture.completedFuture(entry)
                                 : CompletableFuture.supplyAsync(
                                         () -> imageService.read(
                                                 photoId, finalSortOrder, type),
-                                        businessExecutor))
+                                        executors.imageOnDemand()))
                         .handle((entry, failure) -> {
                     if (failure == null) {
                         context.contentType(entry.mimeType()).result(entry.bytes());
@@ -545,65 +554,6 @@ public final class Backend implements AutoCloseable {
         return message == null || message.isBlank() ? "图片请求失败" : message;
     }
 
-    private static ExecutorService createBusinessExecutor() {
-        return new ThreadPoolExecutor(
-                SettingsService.DEFAULT_CONCURRENCY,
-                SettingsService.DEFAULT_CONCURRENCY,
-                30,
-                TimeUnit.SECONDS,
-                new ArrayBlockingQueue<>(64),
-                runnable -> {
-                    Thread thread = new Thread(runnable, "jq-viewer-business");
-                    thread.setDaemon(false);
-                    return thread;
-                },
-                new ThreadPoolExecutor.AbortPolicy()
-        );
-    }
-
-    private static ExecutorService createPdfExportExecutor() {
-        return new ThreadPoolExecutor(
-                1,
-                1,
-                0,
-                TimeUnit.SECONDS,
-                new ArrayBlockingQueue<>(64),
-                runnable -> {
-                    Thread thread = new Thread(runnable, "jq-viewer-pdf-export");
-                    thread.setDaemon(false);
-                    return thread;
-                },
-                new ThreadPoolExecutor.AbortPolicy()
-        );
-    }
-
-    private static ExecutorService createFileOperationExecutor() {
-        return new ThreadPoolExecutor(
-                1,
-                1,
-                0,
-                TimeUnit.SECONDS,
-                new ArrayBlockingQueue<>(64),
-                runnable -> {
-                    Thread thread = new Thread(runnable, "jq-viewer-file-operation");
-                    thread.setDaemon(false);
-                    return thread;
-                },
-                new ThreadPoolExecutor.AbortPolicy()
-        );
-    }
-
-    private void configureBusinessExecutor(int concurrency) {
-        if (!(businessExecutor instanceof ThreadPoolExecutor executor)) return;
-        if (concurrency > executor.getMaximumPoolSize()) {
-            executor.setMaximumPoolSize(concurrency);
-            executor.setCorePoolSize(concurrency);
-        } else {
-            executor.setCorePoolSize(concurrency);
-            executor.setMaximumPoolSize(concurrency);
-        }
-    }
-
     public synchronized boolean isRunning() {
         return running;
     }
@@ -623,16 +573,20 @@ public final class Backend implements AutoCloseable {
         return database;
     }
 
-    public ExecutorService businessExecutor() {
-        return businessExecutor;
+    public ExecutorService apiExecutor() {
+        return executors.api();
     }
 
-    public ExecutorService pdfExportExecutor() {
-        return pdfExportExecutor;
+    public ExecutorService imagePreloadExecutor() {
+        return executors.imagePreload();
     }
 
-    public ExecutorService fileOperationExecutor() {
-        return fileOperationExecutor;
+    public boolean serviceExecutorsShutdown() {
+        return executors.allShutdown();
+    }
+
+    ServiceExecutors serviceExecutors() {
+        return executors;
     }
 
     public synchronized void attachDesktopHost(
@@ -716,9 +670,7 @@ public final class Backend implements AutoCloseable {
                 step("JMComic 客户端", () -> {
                     if (closingClient != null) closingClient.close();
                 }),
-                step("PDF 导出执行器", () -> shutdownExecutor(pdfExportExecutor)),
-                step("文件执行器", () -> shutdownExecutor(fileOperationExecutor)),
-                step("业务执行器", () -> shutdownExecutor(businessExecutor)),
+                step("服务执行器", executors::close),
                 step("数据库", database::close)
         );
     }
@@ -727,15 +679,4 @@ public final class Backend implements AutoCloseable {
         return new CloseSequence.Step(name, action);
     }
 
-    private static void shutdownExecutor(ExecutorService executor) {
-        executor.shutdown();
-        try {
-            if (!executor.awaitTermination(2, TimeUnit.SECONDS)) {
-                executor.shutdownNow();
-            }
-        } catch (InterruptedException exception) {
-            executor.shutdownNow();
-            Thread.currentThread().interrupt();
-        }
-    }
 }

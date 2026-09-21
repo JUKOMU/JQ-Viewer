@@ -275,7 +275,7 @@ public final class HistoryService {
     }
 
     private static String rangeWhere(Long start, Long end) {
-        if (start != null && end != null && start >= end) return " WHERE 1 = 0";
+        if (isEmptyRange(start, end)) return " WHERE 1 = 0";
         if (start == null && end == null) return "";
         if (start == null) return " WHERE timestamp < ?";
         if (end == null) return " WHERE timestamp >= ?";
@@ -283,7 +283,12 @@ public final class HistoryService {
     }
 
     private static String rangeArgs(Long start, Long end) {
+        if (isEmptyRange(start, end)) return "";
         return start == null ? (end == null ? "" : "end") : (end == null ? "start" : "both");
+    }
+
+    private static boolean isEmptyRange(Long start, Long end) {
+        return start != null && end != null && start >= end;
     }
 
     private static int bindRange(

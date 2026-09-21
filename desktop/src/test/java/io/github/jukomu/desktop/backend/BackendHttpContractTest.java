@@ -348,7 +348,12 @@ class BackendHttpContractTest {
                     "{\"limit\":10,\"offset\":0}"));
             ObjectNode overviewRequest = MAPPER.createObjectNode();
             ArrayNode ranges = overviewRequest.putArray("ranges");
-            for (String group : HISTORY_GROUPS) ranges.addObject().put("key", group);
+            for (String group : HISTORY_GROUPS) {
+                ObjectNode range = ranges.addObject().put("key", group);
+                if ("thisWeek".equals(group)) {
+                    range.put("startInclusive", 2L).put("endExclusive", 1L);
+                }
+            }
             ObjectNode overview = body(post(http, base, requestedMethods, "getBrowseHistoryOverview",
                     MAPPER.writeValueAsString(overviewRequest)));
             long historyId = history.path("items").get(0).path("id").asLong();
@@ -507,6 +512,8 @@ class BackendHttpContractTest {
             assertEquals("queued", retriedExport.path("status").asText());
             assertEquals("completed", completedRetry.path("status").asText());
             assertEquals(1, history.path("totalCount").asInt());
+            assertTrue(overview.path("groupCounts").has("thisWeek"));
+            assertEquals(0, overview.path("groupCounts").path("thisWeek").asInt());
             assertEquals(1, overview.path("totalCount").asInt());
             assertEquals(2, parseHistory.path("totalCount").asInt());
             assertEquals("second", parseHistory.path("items").get(0).path("text").asText());

@@ -67,12 +67,18 @@ class HistoryServiceTest {
                     "today", "yesterday", "thisWeek", "thisMonth",
                     "lastThreeMonths", "lastSixMonths", "thisYear", "earlier"
             }) {
-                ranges.add(new HistoryOverviewRequest.Range(key, null, null));
+                ranges.add("thisWeek".equals(key)
+                        ? new HistoryOverviewRequest.Range(key, 2L, 1L)
+                        : new HistoryOverviewRequest.Range(key, null, null));
             }
 
             HistoryOverviewResponse overview = history.overview(ranges);
             assertEquals(1, overview.totalCount());
             assertEquals(1, overview.groupCounts().get("today"));
+            assertEquals(0, overview.groupCounts().get("thisWeek"));
+
+            assertEquals(0, history.page(10, 0, 1L, 1L).totalCount());
+            assertEquals(0, history.page(10, 0, 2L, 1L).totalCount());
 
             ranges.remove(7);
             ApiException exception = assertThrows(ApiException.class, () -> history.overview(ranges));

@@ -181,13 +181,26 @@ export function createBackendClient(
       return { complete: result.complete }
     },
     getClientState: async () => {
-      const result = await requestBackend<{ complete?: unknown }>(fetcher, 'getInitStatus', {})
-      if (!result || typeof result.complete !== 'boolean') {
-        throw new RuntimeError('internal', 'Invalid getInitStatus response')
+      const result = await requestBackend<{
+        state?: unknown
+        reason?: unknown
+        timestamp?: unknown
+      }>(fetcher, 'getClientState', {})
+      if (
+        !result ||
+        !['unavailable', 'initializing', 'ready'].includes(String(result.state)) ||
+        typeof result.timestamp !== 'number' ||
+        (result.reason !== undefined &&
+          !['no_network', 'initialization_failed'].includes(String(result.reason)))
+      ) {
+        throw new RuntimeError('internal', 'Invalid getClientState response')
       }
       return {
-        state: result.complete ? 'ready' : 'initializing',
-        timestamp: Date.now(),
+        state: result.state as 'unavailable' | 'initializing' | 'ready',
+        ...(result.reason === undefined
+          ? {}
+          : { reason: result.reason as 'no_network' | 'initialization_failed' }),
+        timestamp: result.timestamp,
       }
     },
   }

@@ -46,6 +46,7 @@ public final class NetworkService implements AutoCloseable {
         try {
             return toDomainStates(operations.domainStates().get());
         } catch (RuntimeException exception) {
+            if (exception instanceof ApiException apiException) throw apiException;
             throw ApiException.network(messageOf("获取域名状态失败，请稍后重试", exception));
         }
     }
@@ -56,6 +57,7 @@ public final class NetworkService implements AutoCloseable {
         try {
             latency = operations.latency().get();
         } catch (RuntimeException exception) {
+            if (exception instanceof ApiException apiException) throw apiException;
             throw ApiException.network(messageOf("测速失败，请稍后重试", exception));
         }
 

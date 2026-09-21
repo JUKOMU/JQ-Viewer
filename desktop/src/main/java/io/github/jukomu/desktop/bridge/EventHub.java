@@ -18,6 +18,7 @@ public final class EventHub implements AutoCloseable {
     private final Set<SseClient> clients = ConcurrentHashMap.newKeySet();
     private final ConcurrentHashMap<String, Set<Consumer<Object>>> listeners =
             new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, String> retainedEvents = new ConcurrentHashMap<>();
     private final Object lifecycleLock = new Object();
     private boolean closed;
 
@@ -34,10 +35,26 @@ public final class EventHub implements AutoCloseable {
             clients.add(client);
             client.onClose(() -> clients.remove(client));
             client.keepAlive();
+            try {
+                for (var event : retainedEvents.entrySet()) {
+                    client.sendEvent(event.getKey(), event.getValue());
+                }
+            } catch (RuntimeException failure) {
+                clients.remove(client);
+                closeClient(client);
+            }
         }
     }
 
     public void publish(String event, Object payload) {
+        publish(event, payload, false);
+    }
+
+    public void publishRetained(String event, Object payload) {
+        publish(event, payload, true);
+    }
+
+    private void publish(String event, Object payload, boolean retain) {
         for (Consumer<Object> listener : listeners.getOrDefault(event, Set.of())) {
             try {
                 listener.accept(payload);
@@ -53,6 +70,7 @@ public final class EventHub implements AutoCloseable {
             LOGGER.warn("事件序列化失败: {}", event, exception);
             return;
         }
+        if (retain) retainedEvents.put(event, data);
 
         for (SseClient client : clients) {
             try {
@@ -92,6 +110,7 @@ public final class EventHub implements AutoCloseable {
             closingClients = Set.copyOf(clients);
             clients.clear();
             listeners.clear();
+            retainedEvents.clear();
         }
         closingClients.forEach(EventHub::closeClient);
     }

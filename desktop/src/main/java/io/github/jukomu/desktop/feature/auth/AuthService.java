@@ -15,23 +15,28 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Objects;
+import java.util.function.Supplier;
 
 /** 协调当前登录会话与操作系统安全凭据。 */
 public final class AuthService {
     private static final Logger LOGGER = LoggerFactory.getLogger(AuthService.class);
-    private final JmClient client;
+    private final Supplier<JmClient> clientSupplier;
     private final CredentialStore credentials;
     private volatile UserInfoResponse userInfo;
 
     public AuthService(JmClient client, CredentialStore credentials) {
-        this.client = Objects.requireNonNull(client, "client");
+        this(() -> Objects.requireNonNull(client, "client"), credentials);
+    }
+
+    public AuthService(Supplier<JmClient> clientSupplier, CredentialStore credentials) {
+        this.clientSupplier = Objects.requireNonNull(clientSupplier, "clientSupplier");
         this.credentials = Objects.requireNonNull(credentials, "credentials");
     }
 
     public UserInfoResponse login(String username, String password) {
         UserInfoResponse result;
         try {
-            result = toUserInfoResponse(client.login(username, password));
+            result = toUserInfoResponse(requireClient().login(username, password));
         } catch (NetworkException failure) {
             throw ApiException.network(message(failure, "登录网络请求失败"));
         } catch (ResponseException failure) {
@@ -44,12 +49,15 @@ public final class AuthService {
 
     public SuccessResponse logout() {
         ApiException remoteFailure = null;
-        try {
-            client.logout();
-        } catch (NetworkException failure) {
-            remoteFailure = ApiException.network(message(failure, "退出登录网络请求失败"));
-        } catch (ResponseException failure) {
-            remoteFailure = ApiException.permissionDenied(message(failure, "退出登录失败"));
+        JmClient client = clientSupplier.get();
+        if (client != null) {
+            try {
+                client.logout();
+            } catch (NetworkException failure) {
+                remoteFailure = ApiException.network(message(failure, "退出登录网络请求失败"));
+            } catch (ResponseException failure) {
+                remoteFailure = ApiException.permissionDenied(message(failure, "退出登录失败"));
+            }
         }
 
         userInfo = null;
@@ -83,7 +91,7 @@ public final class AuthService {
 
         try {
             UserInfoResponse result = toUserInfoResponse(
-                    client.login(saved.username(), saved.password()));
+                    requireClient().login(saved.username(), saved.password()));
             userInfo = result;
             return new AutoLoginResponse(true, result);
         } catch (NetworkException failure) {
@@ -109,7 +117,7 @@ public final class AuthService {
     }
 
     public UserProfileResponse profile(String uid) {
-        JmUserProfile profile = client.getUserProfile(uid);
+        JmUserProfile profile = requireClient().getUserProfile(uid);
         return new UserProfileResponse(
                 text(profile.username()),
                 text(profile.email()),
@@ -150,6 +158,12 @@ public final class AuthService {
     private static boolean isAuthenticationFailure(ResponseException failure) {
         int status = failure.getErrorCode();
         return status == 401 || status == 403;
+    }
+
+    private JmClient requireClient() {
+        JmClient client = clientSupplier.get();
+        if (client == null) throw ApiException.unavailable("在线客户端不可用");
+        return client;
     }
 
     private static UserInfoResponse toUserInfoResponse(JmUserInfo info) {

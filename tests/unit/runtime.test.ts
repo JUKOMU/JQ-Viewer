@@ -46,7 +46,10 @@ afterEach(() => {
 
 describe('runtime', () => {
   test('绑定在线核心方法并发送页面使用的 JSON 参数', async () => {
-    const fetcher = vi.fn().mockImplementation((_input, init: RequestInit) => {
+    const fetcher = vi.fn().mockImplementation((input, init: RequestInit) => {
+      if (String(input) === '/api/getClientState') {
+        return Promise.resolve(response({ state: 'ready', timestamp: 123 }))
+      }
       const method = String(init.body).includes('keyword') ? 'search' : 'getInitStatus'
       return Promise.resolve(response(method === 'search' ? { content: [] } : { complete: true }))
     })
@@ -121,6 +124,11 @@ describe('runtime', () => {
       'getClientState',
     ])
     expect(fetcher).toHaveBeenCalledWith('/api/getInitStatus', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    })
+    expect(fetcher).toHaveBeenCalledWith('/api/getClientState', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: '{}',
@@ -741,10 +749,12 @@ describe('runtime', () => {
       throw new Error('listener failed')
     })
     const second = vi.fn()
+    const clientState = vi.fn()
     const invalidated = vi.fn()
     const firstHandle = await events.onImageReady(first)
     const secondHandle = await events.onImageReady(second)
     const invalidationHandle = await events.onStateInvalidated?.(invalidated)
+    const clientStateHandle = await events.onClientStateChanged?.(clientState)
 
     expect(FakeEventSource.instances).toHaveLength(1)
     expect(FakeEventSource.instances[0].url).toBe('/events')
@@ -753,12 +763,18 @@ describe('runtime', () => {
     FakeEventSource.instances[0].emit('open', null)
     expect(invalidated).toHaveBeenCalledOnce()
     FakeEventSource.instances[0].emit('imageReady', { photoId: 'p1', sortOrder: 2, type: 'image' })
+    FakeEventSource.instances[0].emit('clientStateChanged', {
+      state: 'ready',
+      timestamp: 123,
+    })
     expect(first).toHaveBeenCalledWith({ photoId: 'p1', sortOrder: 2, type: 'image' })
     expect(second).toHaveBeenCalledWith({ photoId: 'p1', sortOrder: 2, type: 'image' })
+    expect(clientState).toHaveBeenCalledWith({ state: 'ready', timestamp: 123 })
 
     await firstHandle.remove()
     await firstHandle.remove()
     await secondHandle.remove()
+    await clientStateHandle?.remove()
     expect(FakeEventSource.instances[0].close).not.toHaveBeenCalled()
     await invalidationHandle?.remove()
     expect(FakeEventSource.instances[0].close).toHaveBeenCalledOnce()

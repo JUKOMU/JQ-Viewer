@@ -79,6 +79,17 @@ class AuthServiceTest {
     }
 
     @Test
+    void logoutClearsSavedCredentialsWhenOnlineClientIsUnavailable() {
+        MemoryCredentialStore credentials = new MemoryCredentialStore(true);
+        credentials.save("alice", "secret");
+        AuthService service = new AuthService(() -> null, credentials);
+
+        service.logout();
+
+        assertNull(credentials.loadDirectly());
+    }
+
+    @Test
     void logoutClearsLocalStateWhenRemoteLogoutFails() {
         MemoryCredentialStore networkCredentials = new MemoryCredentialStore(true);
         AuthService networkFailure = new AuthService(

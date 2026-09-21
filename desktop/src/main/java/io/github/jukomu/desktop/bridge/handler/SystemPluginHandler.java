@@ -4,6 +4,7 @@ import io.github.jukomu.desktop.bridge.ApiException;
 import io.github.jukomu.desktop.bridge.RequestExecutor;
 import io.github.jukomu.desktop.bridge.model.InitStatusResponse;
 import io.github.jukomu.desktop.bridge.model.SuccessResponse;
+import io.github.jukomu.desktop.feature.client.JmcomicSessionManager;
 import io.github.jukomu.desktop.feature.diagnostics.DiagnosticsService;
 import io.github.jukomu.desktop.feature.network.NetworkService;
 import io.github.jukomu.desktop.feature.notification.LaunchRouteService;
@@ -13,6 +14,7 @@ import io.javalin.http.Context;
 public final class SystemPluginHandler {
     private final RequestExecutor networkRequests;
     private final RequestExecutor diagnosticsRequests;
+    private final JmcomicSessionManager clientSession;
     private final NetworkService network;
     private final LaunchRouteService launchRoutes;
     private final DiagnosticsService diagnostics;
@@ -20,19 +22,25 @@ public final class SystemPluginHandler {
     public SystemPluginHandler(
             RequestExecutor networkRequests,
             RequestExecutor diagnosticsRequests,
+            JmcomicSessionManager clientSession,
             NetworkService network,
             LaunchRouteService launchRoutes,
             DiagnosticsService diagnostics
     ) {
         this.networkRequests = networkRequests;
         this.diagnosticsRequests = diagnosticsRequests;
+        this.clientSession = clientSession;
         this.network = network;
         this.launchRoutes = launchRoutes;
         this.diagnostics = diagnostics;
     }
 
     public void getInitStatus(Context context) {
-        context.json(new InitStatusResponse(true));
+        context.json(new InitStatusResponse(clientSession.getClient() != null));
+    }
+
+    public void getClientState(Context context) {
+        context.json(clientSession.getSnapshot());
     }
 
     public void getDomainStates(Context context) {
@@ -41,8 +49,8 @@ public final class SystemPluginHandler {
 
     public void reprobeDomains(Context context) {
         networkRequests.run(context, () -> {
-            // 与 Android 保持一致：客户端未初始化时重新探活是无操作成功。
-            if (network != null) network.reprobeDomains();
+            if (clientSession.getClient() == null) clientSession.startOrRetry();
+            else if (network != null) network.reprobeDomains();
             return SuccessResponse.ok();
         });
     }

@@ -11,6 +11,7 @@ import androidx.annotation.NonNull;
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.BridgeWebViewClient;
 import io.github.jukomu.bridge.JmcomicPlugin;
+import io.github.jukomu.bridge.JqViewerPlugin;
 import io.github.jukomu.feature.cache.ImageCache;
 import io.github.jukomu.feature.pdf.web.PdfServer;
 
@@ -22,6 +23,7 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        registerPlugin(JqViewerPlugin.class);
         registerPlugin(JmcomicPlugin.class);
         captureLaunchRoute(getIntent());
         super.onCreate(savedInstanceState);
@@ -64,20 +66,20 @@ public class MainActivity extends BridgeActivity {
         if (intent == null) return;
         String route = intent.getStringExtra(EXTRA_ROUTE);
         if (route == null || route.isEmpty()) return;
-        JmcomicPlugin.setPendingLaunchRoute(route);
+        JqViewerPlugin.setPendingLaunchRoute(route);
     }
 
     @Override
     public void onTrimMemory(int level) {
         super.onTrimMemory(level);
-        JmcomicPlugin plugin = JmcomicPlugin.getInstance();
+        JqViewerPlugin plugin = JqViewerPlugin.getInstance();
         if (plugin != null) plugin.onMemoryPressure(level);
     }
 
     @Override
     public void onLowMemory() {
         super.onLowMemory();
-        JmcomicPlugin plugin = JmcomicPlugin.getInstance();
+        JqViewerPlugin plugin = JqViewerPlugin.getInstance();
         if (plugin != null) plugin.onMemoryPressure(ComponentCallbacks2.TRIM_MEMORY_COMPLETE);
     }
 
@@ -85,7 +87,7 @@ public class MainActivity extends BridgeActivity {
     public void onRequestPermissionsResult(int requestCode,
                                            @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        JmcomicPlugin plugin = JmcomicPlugin.getInstance();
+        JqViewerPlugin plugin = JqViewerPlugin.getInstance();
         if (plugin != null) {
             plugin.handlePermissionResult(requestCode, permissions, grantResults);
         }
@@ -94,7 +96,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        JmcomicPlugin plugin = JmcomicPlugin.getInstance();
+        JqViewerPlugin plugin = JqViewerPlugin.getInstance();
         if (plugin != null) {
             plugin.handleActivityResult(requestCode, resultCode, data);
         }
@@ -105,7 +107,7 @@ public class MainActivity extends BridgeActivity {
         if (event.getAction() == KeyEvent.ACTION_DOWN) {
             int code = event.getKeyCode();
             if (code == KeyEvent.KEYCODE_VOLUME_UP || code == KeyEvent.KEYCODE_VOLUME_DOWN) {
-                JmcomicPlugin plugin = JmcomicPlugin.getInstance();
+                JqViewerPlugin plugin = JqViewerPlugin.getInstance();
                 if (plugin != null && plugin.isReaderActive() && plugin.isVolumeNavigationEnabled()) {
                     plugin.notifyVolumeKey(code == KeyEvent.KEYCODE_VOLUME_UP ? "up" : "down");
                     return true;

@@ -30,7 +30,7 @@ import { disposeNetworkProbeStore, initNetworkProbeStore } from '@/composables/n
 import { JmcomicService, showToast } from '@/services/JmcomicService'
 import { UpdateService } from '@/services/UpdateService'
 import { presentUpdatePrompt } from '@/services/UpdatePromptService'
-import type { UpdateManifest } from '@/services/JmcomicTypes'
+import type { ClientStateSnapshot, UpdateManifest } from '@/services/JmcomicTypes'
 
 const { isMenuNavigation } = useSideMenuState()
 
@@ -195,8 +195,8 @@ const keepAliveNames = computed(() =>
     .filter(Boolean),
 )
 
-let pollTimer: ReturnType<typeof setInterval> | null = null
 let activeToast: Awaited<ReturnType<typeof showToast>> | null = null
+let clientStateHandle: ListenerHandle | null = null
 let launchRouteHandle: ListenerHandle | null = null
 let launchRouteDrain: Promise<void> = Promise.resolve()
 let launchRouteNavigationVersion = 0
@@ -295,72 +295,61 @@ onMounted(async () => {
   // 初始化网络探活事件 store（模块级，持续记录启动以来全部事件）
   initNetworkProbeStore()
 
-  // 启动初始化 toast 流程（不阻塞 onMounted 后续逻辑）
-  void (async () => {
-    // ---- Phase 1: 客户端初始化轮询 ----
-    const t0 = Date.now()
-    let warmupToast = await showToast('客户端初始化', 'medium', 0)
-    activeToast = warmupToast
-
-    await new Promise<void>((resolve) => {
-      pollTimer = setInterval(async () => {
-        let complete = false
-        try {
-          const status = await JmcomicService.getInitStatus()
-          complete = status.complete
-        } catch {
-          /* 桥接失败，继续轮询 */
-        }
-
-        if (complete) {
-          clearInterval(pollTimer!)
-          pollTimer = null
-          await warmupToast.dismiss()
-          activeToast = null
-          showToast('初始化完成', 'success')
-          resolve()
-        } else {
-          const n = Math.floor((Date.now() - t0) / 1000)
-          await warmupToast.dismiss()
-          warmupToast = await showToast(`客户端初始化(${n}s)`, 'medium', 0)
-          activeToast = warmupToast
-        }
-      }, 1000)
-    })
-
-    // ---- Phase 2: 自动登录 ----
-    const loginToast = await showToast('正在自动登录...', 'medium', 0)
-    activeToast = loginToast
-
-    const loggedIn = await initAuth()
-    await loginToast.dismiss()
-    activeToast = null
-    if (loggedIn) {
-      showToast('登录成功', 'success')
+  let authStarted = false
+  const handleClientState = async (state: ClientStateSnapshot) => {
+    if (state.state === 'initializing') {
+      if (!activeToast) activeToast = await showToast('客户端初始化', 'medium', 0)
+      return
     }
 
-    // ---- Phase 3: 自动检查更新 ----
-    void (async () => {
-      try {
-        const result = await UpdateService.check()
-        if (result.updateAvailable) {
-          await UpdateService.runPrompt(() => showStartupUpdatePrompt(result.manifest))
-        }
-      } catch {
-        // 静默忽略网络错误
+    if (activeToast) {
+      await activeToast.dismiss()
+      activeToast = null
+    }
+    if (state.state !== 'ready' || authStarted) return
+
+    authStarted = true
+    showToast('初始化完成', 'success')
+    const loginToast = await showToast('正在自动登录...', 'medium', 0)
+    activeToast = loginToast
+    const loggedIn = await initAuth()
+    await loginToast.dismiss()
+    if (activeToast === loginToast) activeToast = null
+    if (loggedIn) showToast('登录成功', 'success')
+  }
+
+  try {
+    clientStateHandle = await JmcomicService.addClientStateListener((state) => {
+      void handleClientState(state)
+    })
+  } catch {
+    // Desktop 没有客户端状态事件，初始快照已经足够。
+  }
+  try {
+    await handleClientState(await JmcomicService.getClientState())
+  } catch {
+    // 桥接失败不阻塞本地能力和页面挂载。
+  }
+
+  // 应用更新与 JMComic 客户端初始化相互独立。
+  void (async () => {
+    try {
+      const result = await UpdateService.check()
+      if (result.updateAvailable) {
+        await UpdateService.runPrompt(() => showStartupUpdatePrompt(result.manifest))
       }
-    })()
+    } catch {
+      // 静默忽略网络错误
+    }
   })()
 })
 
 onBeforeUnmount(() => {
-  if (pollTimer != null) {
-    clearInterval(pollTimer)
-    pollTimer = null
-  }
   clearInterval(heartbeatTimer)
   activeToast?.dismiss()
   activeToast = null
+  clientStateHandle?.remove()
+  clientStateHandle = null
   launchRouteHandle?.remove()
   launchRouteHandle = null
   void disposeNetworkProbeStore()

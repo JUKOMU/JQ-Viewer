@@ -45,6 +45,12 @@
                 </div>
               </div>
               <div v-else-if="store.loading.value" class="empty-state">正在读取域名状态...</div>
+              <div v-else-if="store.clientState.value.state === 'initializing'" class="empty-state">
+                在线客户端正在初始化
+              </div>
+              <div v-else-if="store.clientState.value.state === 'unavailable'" class="empty-state">
+                {{ clientUnavailableText }}
+              </div>
               <div v-else-if="!visibleError" class="empty-state">暂无域名状态</div>
             </div>
           </section>
@@ -95,6 +101,11 @@ const measuring = ref(false)
 const latencyMap = ref<Record<string, { latencyMs: number; timedOut: boolean }>>({})
 const operationError = ref('')
 const visibleError = computed(() => operationError.value || store.errorMessage.value)
+const clientUnavailableText = computed(() =>
+  store.clientState.value.reason === 'no_network'
+    ? '当前网络不可用，离线功能仍可使用'
+    : '在线客户端暂不可用，离线功能仍可使用',
+)
 let probeHandle: ListenerHandle | null = null
 let refreshTimer: ReturnType<typeof setTimeout> | null = null
 let disposed = false

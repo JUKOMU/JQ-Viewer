@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Supplier;
 
 /**
  * 图片预加载与缓存管理——预加载、缩略图生成、缓存容量/清理。
@@ -60,20 +61,26 @@ public class PreloadService {
         CacheCapacityPolicy.PressureLevel.NORMAL;
 
     public PreloadService(ImageCache imageCache, FileStore fileStore,
-                          SettingsStore settingsDb, JmApiClient client,
+                          SettingsStore settingsDb, Supplier<JmApiClient> clientSupplier,
                           ExecutorService imageExecutor, ExecutorService fileExecutor,
                           ExecutorService networkExecutor,
                           PreloadEventSink eventSink, Context context,
                           CacheCapacityPolicy cacheCapacityPolicy, int networkConcurrency) {
-        this(imageCache, fileStore, settingsDb, client, imageExecutor, fileExecutor,
+        this(imageCache, fileStore, settingsDb, imageExecutor, fileExecutor,
             networkExecutor,
             eventSink, context, cacheCapacityPolicy, networkConcurrency,
-            client == null ? null : client::fetchImageBytes);
+            image -> {
+                JmApiClient client = clientSupplier.get();
+                if (client == null) {
+                    throw new IllegalStateException("在线客户端不可用");
+                }
+                return client.fetchImageBytes(image);
+            });
     }
 
     PreloadService(ImageCache imageCache, FileStore fileStore,
-                   SettingsStore settingsDb, JmApiClient client,
-                   ExecutorService imageExecutor, ExecutorService fileExecutor,
+                   SettingsStore settingsDb, ExecutorService imageExecutor,
+                   ExecutorService fileExecutor,
                    ExecutorService networkExecutor,
                    PreloadEventSink eventSink, Context context,
                    CacheCapacityPolicy cacheCapacityPolicy, int networkConcurrency,

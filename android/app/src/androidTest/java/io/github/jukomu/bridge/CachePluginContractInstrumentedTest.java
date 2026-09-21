@@ -17,12 +17,12 @@ import static org.junit.Assert.*;
 
 public class CachePluginContractInstrumentedTest {
 
-    private JmcomicPlugin plugin;
+    private JqViewerPlugin plugin;
     private FakePreloadService preloadService;
 
     @Before
     public void setUp() throws Exception {
-        plugin = new JmcomicPlugin();
+        plugin = new JqViewerPlugin();
         preloadService = new FakePreloadService();
         injectCacheHandler(plugin, preloadService);
     }
@@ -172,9 +172,9 @@ public class CachePluginContractInstrumentedTest {
         }
     }
 
-    private static void injectCacheHandler(JmcomicPlugin plugin,
+    private static void injectCacheHandler(JqViewerPlugin plugin,
                                            PreloadService preloadService) throws Exception {
-        Field field = JmcomicPlugin.class.getDeclaredField("cacheHandler");
+        Field field = JqViewerPlugin.class.getDeclaredField("cacheHandler");
         field.setAccessible(true);
         field.set(plugin, new CachePluginHandler(preloadService));
     }

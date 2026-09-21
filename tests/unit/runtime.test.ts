@@ -53,6 +53,7 @@ describe('runtime', () => {
     const backend = createBackendClient(fetcher)
 
     await expect(backend.getInitStatus()).resolves.toEqual({ complete: true })
+    await expect(backend.getClientState()).resolves.toMatchObject({ state: 'ready' })
     await backend.search({
       query: { keyword: 'keyword', orderBy: 'mr', time: 'a', searchMainTag: 0, page: 2 },
     })
@@ -117,6 +118,7 @@ describe('runtime', () => {
       'reprobeDomains',
       'measureLatency',
       'getInitStatus',
+      'getClientState',
     ])
     expect(fetcher).toHaveBeenCalledWith('/api/getInitStatus', {
       method: 'POST',

@@ -19,7 +19,7 @@ import static org.junit.Assert.*;
 
 public class ReaderPluginContractInstrumentedTest {
 
-    private JmcomicPlugin plugin;
+    private JqViewerPlugin plugin;
     private FakeSettingsService settingsService;
     private ReaderPluginHandler readerHandler;
     private JSObject volumeEvent;
@@ -27,7 +27,7 @@ public class ReaderPluginContractInstrumentedTest {
 
     @Before
     public void setUp() throws Exception {
-        plugin = new JmcomicPlugin();
+        plugin = new JqViewerPlugin();
         settingsService = new FakeSettingsService();
         readerHandler = new ReaderPluginHandler(
             () -> null,
@@ -164,7 +164,7 @@ public class ReaderPluginContractInstrumentedTest {
             Throwable[] failure = new Throwable[1];
             scenario.onActivity(activity -> {
                 try {
-                    JmcomicPlugin activePlugin = JmcomicPlugin.getInstance();
+                    JqViewerPlugin activePlugin = JqViewerPlugin.getInstance();
                     assertNotNull(activePlugin);
 
                     RecordingPluginCall orientation = call(
@@ -268,14 +268,14 @@ public class ReaderPluginContractInstrumentedTest {
         assertNull(call.resolvedData);
     }
 
-    private static void injectReaderHandler(JmcomicPlugin plugin,
+    private static void injectReaderHandler(JqViewerPlugin plugin,
                                             ReaderPluginHandler handler) throws Exception {
-        Field field = JmcomicPlugin.class.getDeclaredField("readerHandler");
+        Field field = JqViewerPlugin.class.getDeclaredField("readerHandler");
         field.setAccessible(true);
         field.set(plugin, handler);
     }
 
-    private static ReaderPluginHandler readerHandler(JmcomicPlugin plugin) throws Exception {
+    private static ReaderPluginHandler readerHandler(JqViewerPlugin plugin) throws Exception {
         return (ReaderPluginHandler) field(plugin, "readerHandler");
     }
 

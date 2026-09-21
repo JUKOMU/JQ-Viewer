@@ -20,7 +20,7 @@ import static org.junit.Assert.*;
 public class HistoryPluginContractInstrumentedTest {
 
     private IsolatedDatabaseContext context;
-    private JmcomicPlugin plugin;
+    private JqViewerPlugin plugin;
 
     @Before
     public void setUp() throws Exception {
@@ -300,14 +300,14 @@ public class HistoryPluginContractInstrumentedTest {
         field.set(null, null);
     }
 
-    private static void injectHistoryHandler(JmcomicPlugin plugin,
+    private static void injectHistoryHandler(JqViewerPlugin plugin,
                                              HistoryStore historyStore) throws Exception {
-        Field field = JmcomicPlugin.class.getDeclaredField("historyHandler");
+        Field field = JqViewerPlugin.class.getDeclaredField("historyHandler");
         field.setAccessible(true);
         field.set(plugin, new HistoryPluginHandler(historyStore));
     }
 
-    private static final class ContextPlugin extends JmcomicPlugin {
+    private static final class ContextPlugin extends JqViewerPlugin {
 
         private final Context context;
 

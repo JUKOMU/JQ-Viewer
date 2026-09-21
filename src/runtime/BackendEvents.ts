@@ -1,4 +1,5 @@
 import type {
+  ClientStateSnapshot,
   DownloadProgressEvent,
   NetworkProbeEvent,
   PdfExportProgressEvent,
@@ -24,6 +25,7 @@ export interface BackendEvents {
   onDownloadProgress(handler: (event: DownloadProgressEvent) => void): Promise<ListenerHandle>
   onRelocationProgress(handler: (event: RelocationProgress) => void): Promise<ListenerHandle>
   onNetworkProbe(handler: (event: NetworkProbeEvent) => void): Promise<ListenerHandle>
+  onClientStateChanged?(handler: (event: ClientStateSnapshot) => void): Promise<ListenerHandle>
   onLaunchRoute(handler: (event: { route: string }) => void): Promise<ListenerHandle>
   onUpdateProgress(handler: (event: UpdateProgressEvent) => void): Promise<ListenerHandle>
   onPdfExportProgress(handler: (event: PdfExportProgressEvent) => void): Promise<ListenerHandle>

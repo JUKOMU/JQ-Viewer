@@ -1,22 +1,30 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
+  addClientStateListener: vi.fn(),
   addNetworkProbeListener: vi.fn(),
   addStateInvalidatedListener: vi.fn(),
+  getClientState: vi.fn(),
   getDomainStates: vi.fn(),
+  removeClientState: vi.fn(),
   removeProbe: vi.fn(),
   removeInvalidation: vi.fn(),
 }))
 
 vi.mock('@/services/JmcomicService', () => ({
   JmcomicService: {
+    addClientStateListener: mocks.addClientStateListener,
     addNetworkProbeListener: mocks.addNetworkProbeListener,
     addStateInvalidatedListener: mocks.addStateInvalidatedListener,
+    getClientState: mocks.getClientState,
     getDomainStates: mocks.getDomainStates,
   },
 }))
 
 beforeEach(() => {
+  mocks.addClientStateListener.mockResolvedValue({ remove: mocks.removeClientState })
+  mocks.getClientState.mockResolvedValue({ state: 'ready', timestamp: 1 })
+  mocks.removeClientState.mockResolvedValue(undefined)
   mocks.removeProbe.mockResolvedValue(undefined)
   mocks.removeInvalidation.mockResolvedValue(undefined)
 })
@@ -74,7 +82,7 @@ describe('networkProbeStore', () => {
     expect(store.errorMessage.value).toBe('')
   })
 
-  test('快照失败可观察，释放时移除两个共享 SSE 订阅', async () => {
+  test('快照失败可观察，释放时移除全部共享订阅', async () => {
     mocks.addNetworkProbeListener.mockResolvedValue({ remove: mocks.removeProbe })
     mocks.addStateInvalidatedListener.mockResolvedValue({ remove: mocks.removeInvalidation })
     mocks.getDomainStates.mockRejectedValue(new Error('backend unavailable'))
@@ -86,8 +94,30 @@ describe('networkProbeStore', () => {
     await vi.waitFor(() => expect(store.errorMessage.value).toBe('backend unavailable'))
 
     await disposeNetworkProbeStore()
+    expect(mocks.removeClientState).toHaveBeenCalledOnce()
     expect(mocks.removeProbe).toHaveBeenCalledOnce()
     expect(mocks.removeInvalidation).toHaveBeenCalledOnce()
+  })
+
+  test('客户端不可用时保留页面可用状态且不读取在线域名', async () => {
+    mocks.addNetworkProbeListener.mockResolvedValue({ remove: mocks.removeProbe })
+    mocks.addStateInvalidatedListener.mockResolvedValue({ remove: mocks.removeInvalidation })
+    mocks.getClientState.mockResolvedValue({
+      state: 'unavailable',
+      reason: 'initialization_failed',
+      timestamp: 1,
+    })
+    const { initNetworkProbeStore, useNetworkProbeStore } =
+      await import('@/composables/networkProbeStore')
+
+    expect(() => initNetworkProbeStore()).not.toThrow()
+    const store = useNetworkProbeStore()
+    await vi.waitFor(() => expect(store.clientState.value.state).toBe('unavailable'))
+
+    expect(store.loading.value).toBe(false)
+    expect(store.domains.value).toEqual([])
+    expect(store.errorMessage.value).toBe('')
+    expect(mocks.getDomainStates).not.toHaveBeenCalled()
   })
 
   test('较新的探活事件不会被启动时的旧快照覆盖', async () => {

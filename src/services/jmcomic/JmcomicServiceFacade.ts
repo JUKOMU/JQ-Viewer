@@ -1,6 +1,7 @@
 import type {
   BrowseHistoryRange,
   BrowseHistoryItem,
+  ClientStateSnapshot,
   DownloadProgressEvent,
   FavoriteQuery,
   ForumQuery,
@@ -246,6 +247,12 @@ export const JmcomicService = {
     return native.addListener('networkProbe', handler)
   },
 
+  addClientStateListener(
+    handler: (data: ClientStateSnapshot) => void,
+  ): Promise<JmcomicListenerHandle> {
+    return Promise.resolve().then(() => native.addListener('clientStateChanged', handler))
+  },
+
   /** 读取 domainManager 中已有的域名连通性状态（同步返回，不触发探活） */
   getDomainStates() {
     return native.getDomainStates()
@@ -264,6 +271,10 @@ export const JmcomicService = {
   /** 查询客户端预热是否完成 */
   getInitStatus() {
     return native.getInitStatus()
+  },
+
+  getClientState() {
+    return native.getClientState()
   },
 
   // ---- 下载相关 ----

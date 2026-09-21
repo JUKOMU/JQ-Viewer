@@ -38,6 +38,7 @@ export const COMMON_BACKEND_METHODS = [
   'reprobeDomains',
   'measureLatency',
   'getInitStatus',
+  'getClientState',
   'login',
   'logout',
   'checkLoginState',

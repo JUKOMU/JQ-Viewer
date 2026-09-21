@@ -16,13 +16,13 @@ import static org.junit.Assert.*;
 
 public class DownloadPluginContractInstrumentedTest {
 
-    private JmcomicPlugin plugin;
+    private JqViewerPlugin plugin;
     private FakeDownloadService downloadService;
 
     @Before
     public void setUp() throws Exception {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
-        plugin = new JmcomicPlugin();
+        plugin = new JqViewerPlugin();
         downloadService = new FakeDownloadService(context);
         injectDownloadHandler(plugin, downloadService);
     }
@@ -204,9 +204,9 @@ public class DownloadPluginContractInstrumentedTest {
         assertNull(call.rejectionException);
     }
 
-    private static void injectDownloadHandler(JmcomicPlugin plugin,
+    private static void injectDownloadHandler(JqViewerPlugin plugin,
                                               DownloadService service) throws Exception {
-        Field field = JmcomicPlugin.class.getDeclaredField("downloadHandler");
+        Field field = JqViewerPlugin.class.getDeclaredField("downloadHandler");
         field.setAccessible(true);
         field.set(plugin, new DownloadPluginHandler(service));
     }

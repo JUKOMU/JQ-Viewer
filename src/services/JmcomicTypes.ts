@@ -350,6 +350,12 @@ export interface DomainStates {
   allDeadFallback: boolean
 }
 
+export interface ClientStateSnapshot {
+  state: 'unavailable' | 'initializing' | 'ready'
+  reason?: 'no_network' | 'initialization_failed'
+  timestamp: number
+}
+
 /**
  * 网络探活事件。由 Android 侧 notifyListeners("networkProbe") 推送。
  * - phase=network_changed|network_lost|probing|error: 仅含 message + timestamp

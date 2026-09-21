@@ -11,26 +11,22 @@ import io.github.jukomu.feature.preload.PreloadEventSink;
 import io.github.jukomu.feature.preload.PreloadService;
 import io.github.jukomu.feature.settings.relocation.RelocationEventSink;
 import io.github.jukomu.feature.update.UpdateService;
-import io.github.jukomu.jmcomic.core.JmComic;
-import io.github.jukomu.jmcomic.core.client.impl.JmApiClient;
-import io.github.jukomu.jmcomic.core.config.JmConfiguration;
 import io.github.jukomu.platform.persistence.SettingsStore;
 
 import java.util.concurrent.ExecutorService;
 
 /**
- * 进程级 Jmcomic 运行时。
+ * 进程级本地应用运行时。
  *
- * <p>Activity 或 Capacitor Plugin 重建时复用客户端、下载管理器和预载任务，
+ * <p>Activity 或 Capacitor Plugin 重建时复用下载管理器和预载任务，
  * 仅重新绑定事件监听器。进程被系统回收时这些资源随进程一起释放。</p>
  */
-public final class JmcomicRuntime {
+public final class AppRuntime {
 
     private static final int DOWNLOAD_PREPARE_EXECUTOR_SIZE = 2;
-    private static JmcomicRuntime instance;
+    private static AppRuntime instance;
 
     private final RuntimeEventRouter eventRouter = new RuntimeEventRouter();
-    private final JmApiClient client;
     private final ExecutorService imageExecutor;
     private final ExecutorService imageFileExecutor;
     private final ExecutorService networkExecutor;
@@ -39,33 +35,34 @@ public final class JmcomicRuntime {
     private final DownloadService downloadService;
     private final UpdateService updateService;
 
-    private JmcomicRuntime(Context context, SettingsStore settingsDb,
+    private AppRuntime(Context context, SettingsStore settingsDb,
                            DownloadStore downloadDb, FileStore fileStore,
                            ImageCache imageCache, CacheCapacityPolicy cachePolicy,
-                           int preloadConcurrency, int downloadConcurrency) {
+                           int preloadConcurrency,
+                           JmcomicSessionManager sessionManager) {
         Context applicationContext = context.getApplicationContext();
-        client = JmComic.newApiClient(new JmConfiguration.Builder()
-            .downloadThreadPoolSize(downloadConcurrency).build());
         imageExecutor = ServiceExecutors.fixed("image", preloadConcurrency);
         imageFileExecutor = ServiceExecutors.fixed("image-file", preloadConcurrency);
         networkExecutor = ServiceExecutors.fixed("image-network", preloadConcurrency);
         downloadPrepareExecutor = ServiceExecutors.fixed(
             "download-prepare", DOWNLOAD_PREPARE_EXECUTOR_SIZE);
-        preloadService = new PreloadService(imageCache, fileStore, settingsDb, client,
+        preloadService = new PreloadService(
+            imageCache, fileStore, settingsDb, sessionManager::getClient,
             imageExecutor, imageFileExecutor, networkExecutor, eventRouter,
             applicationContext, cachePolicy, preloadConcurrency);
-        downloadService = new DownloadService(downloadDb, fileStore, client,
+        downloadService = new DownloadService(
+            downloadDb, fileStore, sessionManager::getClient,
             downloadPrepareExecutor, eventRouter, applicationContext);
         updateService = new UpdateService(applicationContext);
     }
 
-    public static synchronized JmcomicRuntime getOrCreate(
+    public static synchronized AppRuntime getOrCreate(
         Context context, SettingsStore settingsDb, DownloadStore downloadDb,
         FileStore fileStore, ImageCache imageCache, CacheCapacityPolicy cachePolicy,
-        int preloadConcurrency, int downloadConcurrency) {
+        int preloadConcurrency, JmcomicSessionManager sessionManager) {
         if (instance == null) {
-            instance = new JmcomicRuntime(context, settingsDb, downloadDb, fileStore,
-                imageCache, cachePolicy, preloadConcurrency, downloadConcurrency);
+            instance = new AppRuntime(context, settingsDb, downloadDb, fileStore,
+                imageCache, cachePolicy, preloadConcurrency, sessionManager);
         }
         return instance;
     }
@@ -88,10 +85,6 @@ public final class JmcomicRuntime {
 
     public RelocationEventSink getRelocationEventSink() {
         return eventRouter;
-    }
-
-    public JmApiClient getClient() {
-        return client;
     }
 
     public PreloadService getPreloadService() {

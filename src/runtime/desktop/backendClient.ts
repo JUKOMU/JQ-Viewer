@@ -180,6 +180,16 @@ export function createBackendClient(
       }
       return { complete: result.complete }
     },
+    getClientState: async () => {
+      const result = await requestBackend<{ complete?: unknown }>(fetcher, 'getInitStatus', {})
+      if (!result || typeof result.complete !== 'boolean') {
+        throw new RuntimeError('internal', 'Invalid getInitStatus response')
+      }
+      return {
+        state: result.complete ? 'ready' : 'initializing',
+        timestamp: Date.now(),
+      }
+    },
   }
 
   return client as unknown as BackendClient

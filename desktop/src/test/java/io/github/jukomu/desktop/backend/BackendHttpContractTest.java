@@ -512,6 +512,7 @@ class BackendHttpContractTest {
             assertEquals("queued", retriedExport.path("status").asText());
             assertEquals("completed", completedRetry.path("status").asText());
             assertEquals(1, history.path("totalCount").asInt());
+            assertTrue(overview.path("groupCounts").has("thisWeek"));
             assertEquals(0, overview.path("groupCounts").path("thisWeek").asInt());
             assertEquals(1, overview.path("totalCount").asInt());
             assertEquals(2, parseHistory.path("totalCount").asInt());

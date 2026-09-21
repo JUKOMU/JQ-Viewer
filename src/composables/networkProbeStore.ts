@@ -79,6 +79,11 @@ function startNetworkProbeStore(resetRetries: boolean) {
   initiated = true
   const currentGeneration = ++generation
 
+  const clientStateRegistration = JmcomicService.addClientStateListener((snapshot) => {
+    if (!initiated || generation !== currentGeneration) return
+    applyClientState(snapshot)
+  })
+
   const probeRegistration = JmcomicService.addNetworkProbeListener((data: NetworkProbeEvent) => {
     if (!initiated || generation !== currentGeneration) return
     if (data.domains) {
@@ -105,20 +110,12 @@ function startNetworkProbeStore(resetRetries: boolean) {
     }
   })
 
-  void JmcomicService.addClientStateListener((snapshot) => {
-    if (!initiated || generation !== currentGeneration) return
-    applyClientState(snapshot)
-  })
-    .then((handle) => {
-      if (!initiated || generation !== currentGeneration) {
-        void handle.remove()
-        return
-      }
-      clientStateHandle = handle
-    })
-    .catch(() => undefined)
-
-  void finishListenerRegistration(currentGeneration, probeRegistration, invalidationRegistration)
+  void finishListenerRegistration(
+    currentGeneration,
+    clientStateRegistration,
+    probeRegistration,
+    invalidationRegistration,
+  )
 
   void refreshClientState()
 }
@@ -146,14 +143,17 @@ function applyClientState(snapshot: ClientStateSnapshot) {
 
 async function finishListenerRegistration(
   currentGeneration: number,
+  clientStateRegistration: Promise<JmcomicListenerHandle>,
   probeRegistration: Promise<JmcomicListenerHandle>,
   invalidationRegistration: Promise<JmcomicListenerHandle | null>,
 ) {
-  const [probeResult, invalidationResult] = await Promise.allSettled([
+  const [clientStateResult, probeResult, invalidationResult] = await Promise.allSettled([
+    clientStateRegistration,
     probeRegistration,
     invalidationRegistration,
   ])
   const handles = [
+    clientStateResult.status === 'fulfilled' ? clientStateResult.value : null,
     probeResult.status === 'fulfilled' ? probeResult.value : null,
     invalidationResult.status === 'fulfilled' ? invalidationResult.value : null,
   ].filter((handle): handle is JmcomicListenerHandle => handle !== null)
@@ -163,6 +163,10 @@ async function finishListenerRegistration(
     return
   }
 
+  if (clientStateResult.status === 'rejected') {
+    await handleListenerRegistrationFailure(currentGeneration, handles, clientStateResult.reason)
+    return
+  }
   if (probeResult.status === 'rejected') {
     await handleListenerRegistrationFailure(currentGeneration, handles, probeResult.reason)
     return
@@ -172,6 +176,7 @@ async function finishListenerRegistration(
     return
   }
 
+  clientStateHandle = clientStateResult.value
   probeHandle = probeResult.value
   invalidationHandle = invalidationResult.value
   listenerErrorMessage.value = ''

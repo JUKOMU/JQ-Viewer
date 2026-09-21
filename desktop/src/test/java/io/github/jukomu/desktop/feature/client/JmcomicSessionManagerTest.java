@@ -9,14 +9,19 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Proxy;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class JmcomicSessionManagerTest {
     @Test
@@ -57,6 +62,54 @@ class JmcomicSessionManagerTest {
         }
 
         assertEquals(1, closes.get());
+    }
+
+    @Test
+    void doesNotPublishFailedAttemptAfterANewerRetryStarts() throws Exception {
+        EventHub events = new EventHub(new ObjectMapper());
+        List<String> published = Collections.synchronizedList(new ArrayList<>());
+        CountDownLatch unavailableEntered = new CountDownLatch(1);
+        CountDownLatch releaseUnavailable = new CountDownLatch(1);
+        AutoCloseable subscription = events.subscribe("clientStateChanged", value -> {
+            String state = ((JmcomicSessionManager.ClientStateSnapshot) value).state();
+            if ("unavailable".equals(state)) {
+                unavailableEntered.countDown();
+                try {
+                    assertTrue(releaseUnavailable.await(5, TimeUnit.SECONDS));
+                } catch (InterruptedException failure) {
+                    Thread.currentThread().interrupt();
+                    throw new AssertionError(failure);
+                }
+            }
+            published.add(state);
+        });
+        CompletableFuture<JmClient> firstAttempt = new CompletableFuture<>();
+        CompletableFuture<JmClient> secondAttempt = new CompletableFuture<>();
+        AtomicInteger attempts = new AtomicInteger();
+
+        try (JmcomicSessionManager session = JmcomicSessionManager.managed(
+                () -> attempts.incrementAndGet() == 1 ? firstAttempt : secondAttempt,
+                events)) {
+            session.startOrRetry();
+            CompletableFuture<Void> failure = CompletableFuture.runAsync(() ->
+                    firstAttempt.completeExceptionally(new IllegalStateException("offline")));
+            assertTrue(unavailableEntered.await(5, TimeUnit.SECONDS));
+
+            CompletableFuture<Void> retry = CompletableFuture.runAsync(session::startOrRetry);
+            Thread.sleep(50);
+            assertFalse(retry.isDone());
+            releaseUnavailable.countDown();
+            failure.get(5, TimeUnit.SECONDS);
+            retry.get(5, TimeUnit.SECONDS);
+
+            assertEquals(2, attempts.get());
+            assertEquals("initializing", session.getSnapshot().state());
+            assertEquals("initializing", published.get(published.size() - 1));
+        } finally {
+            releaseUnavailable.countDown();
+            subscription.close();
+            events.close();
+        }
     }
 
     private static JmClient client(AtomicInteger closes) {

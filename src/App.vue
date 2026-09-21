@@ -197,6 +197,8 @@ const keepAliveNames = computed(() =>
 
 let activeToast: Awaited<ReturnType<typeof showToast>> | null = null
 let clientStateHandle: ListenerHandle | null = null
+let clientStatePollTimer: ReturnType<typeof setTimeout> | null = null
+let clientStateObservationGeneration = 0
 let launchRouteHandle: ListenerHandle | null = null
 let launchRouteDrain: Promise<void> = Promise.resolve()
 let launchRouteNavigationVersion = 0
@@ -295,9 +297,15 @@ onMounted(async () => {
   // 初始化网络探活事件 store（模块级，持续记录启动以来全部事件）
   initNetworkProbeStore()
 
-  let authStarted = false
+  const observationGeneration = ++clientStateObservationGeneration
+  let latestClientStateTimestamp = -Infinity
+  let authState: 'idle' | 'running' | 'complete' = 'idle'
   const handleClientState = async (state: ClientStateSnapshot) => {
+    if (state.timestamp < latestClientStateTimestamp) return
+    latestClientStateTimestamp = state.timestamp
+
     if (state.state === 'initializing') {
+      authState = 'idle'
       if (!activeToast) activeToast = await showToast('客户端初始化', 'medium', 0)
       return
     }
@@ -306,29 +314,61 @@ onMounted(async () => {
       await activeToast.dismiss()
       activeToast = null
     }
-    if (state.state !== 'ready' || authStarted) return
+    if (state.state !== 'ready') {
+      authState = 'idle'
+      return
+    }
+    if (authState !== 'idle') return
 
-    authStarted = true
+    authState = 'running'
+    const authTimestamp = state.timestamp
     showToast('初始化完成', 'success')
     const loginToast = await showToast('正在自动登录...', 'medium', 0)
     activeToast = loginToast
-    const loggedIn = await initAuth()
+    const result = await initAuth()
     await loginToast.dismiss()
     if (activeToast === loginToast) activeToast = null
-    if (loggedIn) showToast('登录成功', 'success')
+    if (latestClientStateTimestamp !== authTimestamp) return
+    authState = result === 'retryable-error' ? 'idle' : 'complete'
+    if (result === 'authenticated') showToast('登录成功', 'success')
   }
 
+  let subscribed = false
   try {
     clientStateHandle = await JmcomicService.addClientStateListener((state) => {
       void handleClientState(state)
     })
+    subscribed = true
   } catch {
-    // Desktop 没有客户端状态事件，初始快照已经足够。
+    // 监听注册失败时由下方有限轮询继续观察初始化恢复。
   }
+  let initialClientState: ClientStateSnapshot | null = null
   try {
-    await handleClientState(await JmcomicService.getClientState())
+    initialClientState = await JmcomicService.getClientState()
+    await handleClientState(initialClientState)
   } catch {
     // 桥接失败不阻塞本地能力和页面挂载。
+  }
+  if (!subscribed && initialClientState?.state !== 'ready') {
+    const delays = [250, 500, 1_000, 2_000, 4_000, 8_000]
+    const poll = (index: number) => {
+      if (index >= delays.length || observationGeneration !== clientStateObservationGeneration) {
+        return
+      }
+      clientStatePollTimer = setTimeout(async () => {
+        clientStatePollTimer = null
+        if (observationGeneration !== clientStateObservationGeneration) return
+        try {
+          const state = await JmcomicService.getClientState()
+          await handleClientState(state)
+          if (state.state === 'ready') return
+        } catch {
+          // 下一次退避继续读取。
+        }
+        poll(index + 1)
+      }, delays[index])
+    }
+    poll(0)
   }
 
   // 应用更新与 JMComic 客户端初始化相互独立。
@@ -345,6 +385,9 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  clientStateObservationGeneration++
+  if (clientStatePollTimer) clearTimeout(clientStatePollTimer)
+  clientStatePollTimer = null
   clearInterval(heartbeatTimer)
   activeToast?.dismiss()
   activeToast = null

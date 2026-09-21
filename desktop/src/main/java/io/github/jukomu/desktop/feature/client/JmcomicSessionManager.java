@@ -79,8 +79,8 @@ public final class JmcomicSessionManager implements AutoCloseable {
                 attempt = CompletableFuture.failedFuture(failure);
             }
             pending = attempt;
+            publish(changed);
         }
-        publish(changed);
         attempt.whenComplete(this::completeAttempt);
     }
 
@@ -124,10 +124,10 @@ public final class JmcomicSessionManager implements AutoCloseable {
                 changed = setSnapshot("unavailable", "initialization_failed");
                 reportFailure = true;
             }
+            publish(changed);
         }
 
         if (closeValue) closeClient(value);
-        publish(changed);
         if (ready) {
             LOGGER.info("JMComic 客户端初始化完成");
         } else if (reportFailure) {
@@ -143,7 +143,8 @@ public final class JmcomicSessionManager implements AutoCloseable {
         if (state.equals(snapshot.state()) && Objects.equals(reason, snapshot.reason())) {
             return null;
         }
-        snapshot = snapshot(state, reason);
+        long timestamp = Math.max(System.currentTimeMillis(), snapshot.timestamp() + 1);
+        snapshot = new ClientStateSnapshot(state, reason, timestamp);
         return snapshot;
     }
 

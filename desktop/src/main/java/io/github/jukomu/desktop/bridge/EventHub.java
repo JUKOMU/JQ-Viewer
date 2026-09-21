@@ -70,14 +70,17 @@ public final class EventHub implements AutoCloseable {
             LOGGER.warn("事件序列化失败: {}", event, exception);
             return;
         }
-        if (retain) retainedEvents.put(event, data);
+        synchronized (lifecycleLock) {
+            if (closed) return;
+            if (retain) retainedEvents.put(event, data);
 
-        for (SseClient client : clients) {
-            try {
-                client.sendEvent(event, data);
-            } catch (RuntimeException exception) {
-                clients.remove(client);
-                closeClient(client);
+            for (SseClient client : clients) {
+                try {
+                    client.sendEvent(event, data);
+                } catch (RuntimeException exception) {
+                    clients.remove(client);
+                    closeClient(client);
+                }
             }
         }
     }

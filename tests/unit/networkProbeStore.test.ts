@@ -161,11 +161,20 @@ describe('networkProbeStore', () => {
     expect(store.loading.value).toBe(false)
   })
 
-  test.each(['probe', 'invalidation'] as const)(
+  test.each(['client', 'probe', 'invalidation'] as const)(
     '%s 监听首次注册失败时清理另一句柄并自动恢复',
     async (failedRegistration) => {
       vi.useFakeTimers()
       let probeListener: ((event: Record<string, unknown>) => void) | undefined
+      mocks.addClientStateListener.mockImplementation(async () => {
+        if (
+          failedRegistration === 'client' &&
+          mocks.addClientStateListener.mock.calls.length === 1
+        ) {
+          throw new Error('client listener unavailable')
+        }
+        return { remove: mocks.removeClientState }
+      })
       mocks.addNetworkProbeListener.mockImplementation(async (listener) => {
         if (
           failedRegistration === 'probe' &&
@@ -198,11 +207,14 @@ describe('networkProbeStore', () => {
       await vi.advanceTimersByTimeAsync(0)
       const store = useNetworkProbeStore()
       expect(store.errorMessage.value).toContain('listener unavailable')
-      expect(
-        failedRegistration === 'probe' ? mocks.removeInvalidation : mocks.removeProbe,
-      ).toHaveBeenCalledOnce()
+      if (failedRegistration !== 'client') expect(mocks.removeClientState).toHaveBeenCalledOnce()
+      if (failedRegistration !== 'probe') expect(mocks.removeProbe).toHaveBeenCalledOnce()
+      if (failedRegistration !== 'invalidation') {
+        expect(mocks.removeInvalidation).toHaveBeenCalledOnce()
+      }
 
       await vi.advanceTimersByTimeAsync(1_000)
+      expect(mocks.addClientStateListener).toHaveBeenCalledTimes(2)
       expect(mocks.addNetworkProbeListener).toHaveBeenCalledTimes(2)
       expect(mocks.addStateInvalidatedListener).toHaveBeenCalledTimes(2)
       expect(store.errorMessage.value).toBe('')
@@ -222,6 +234,7 @@ describe('networkProbeStore', () => {
 
   test('监听持续注册失败时只自动重试两次，之后仍可显式重新初始化', async () => {
     vi.useFakeTimers()
+    mocks.addClientStateListener.mockResolvedValue({ remove: mocks.removeClientState })
     mocks.addNetworkProbeListener.mockRejectedValue(new Error('listener unavailable'))
     mocks.addStateInvalidatedListener.mockResolvedValue({ remove: mocks.removeInvalidation })
     mocks.getDomainStates.mockResolvedValue({
@@ -238,6 +251,7 @@ describe('networkProbeStore', () => {
 
     const store = useNetworkProbeStore()
     expect(mocks.addNetworkProbeListener).toHaveBeenCalledTimes(3)
+    expect(mocks.removeClientState).toHaveBeenCalledTimes(3)
     expect(mocks.removeInvalidation).toHaveBeenCalledTimes(3)
     expect(vi.getTimerCount()).toBe(0)
     expect(store.errorMessage.value).toBe('listener unavailable')

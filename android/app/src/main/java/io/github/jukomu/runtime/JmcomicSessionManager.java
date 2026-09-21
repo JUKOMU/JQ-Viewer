@@ -27,7 +27,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public final class JmcomicSessionManager {
 
     public interface Listener {
-        void onClientStateChanged(ClientStateSnapshot snapshot);
+        void onClientStateChanged(ClientStateSnapshot snapshot, JmApiClient client);
 
         void onNetworkEvent(NetworkEvent event);
     }
@@ -54,9 +54,12 @@ public final class JmcomicSessionManager {
     private final AtomicLong manualRetrySequence = new AtomicLong();
     private final ClientSession<JmApiClient> session;
     private final Object networkLock = new Object();
+    private final Object stateDispatchLock = new Object();
 
     private ConnectivityManager.NetworkCallback networkCallback;
     private ScheduledFuture<?> pendingNetworkEvaluation;
+    private ClientStateSnapshot latestClientState;
+    private JmApiClient latestClient;
     private String lastObservedEnvironment;
     private long networkEnvironmentSequence;
 
@@ -69,9 +72,10 @@ public final class JmcomicSessionManager {
                 .build()),
             new ClientSession.Observer<>() {
                 @Override
-                public void onStateChanged(ClientSession.Snapshot snapshot) {
+                public void onStateChanged(ClientSession.Snapshot snapshot, JmApiClient client) {
                     publishClientState(new ClientStateSnapshot(
-                        snapshot.state(), snapshot.reason(), snapshot.timestamp()));
+                        snapshot.state(), snapshot.reason(), snapshot.timestamp()),
+                        client);
                 }
 
                 @Override
@@ -84,7 +88,15 @@ public final class JmcomicSessionManager {
                 public void onFailure(Throwable error) {
                     Log.w(TAG, "JMComic 客户端初始化失败，保持离线能力", error);
                 }
+
+                @Override
+                public void onDiscarded(JmApiClient client) {
+                    client.close();
+                }
             });
+        ClientSession.Snapshot initialSnapshot = session.getSnapshot();
+        latestClientState = new ClientStateSnapshot(
+            initialSnapshot.state(), initialSnapshot.reason(), initialSnapshot.timestamp());
         registerNetworkCallback();
         scheduleNetworkEvaluation();
     }
@@ -102,18 +114,22 @@ public final class JmcomicSessionManager {
     }
 
     public ClientStateSnapshot getClientState() {
-        ClientSession.Snapshot snapshot = session.getSnapshot();
-        return new ClientStateSnapshot(
-            snapshot.state(), snapshot.reason(), snapshot.timestamp());
+        synchronized (stateDispatchLock) {
+            return latestClientState;
+        }
     }
 
     public void attachListener(Listener listener) {
-        listeners.add(listener);
-        listener.onClientStateChanged(getClientState());
+        synchronized (stateDispatchLock) {
+            listeners.add(listener);
+            listener.onClientStateChanged(latestClientState, latestClient);
+        }
     }
 
     public void detachListener(Listener listener) {
-        listeners.remove(listener);
+        synchronized (stateDispatchLock) {
+            listeners.remove(listener);
+        }
     }
 
     public void retryOrReprobe() {
@@ -211,12 +227,10 @@ public final class JmcomicSessionManager {
         }
 
         JmApiClient client = session.getClient();
-        if (client == null) {
+        if (changed || client == null) {
             session.updateEnvironment(
                 environment.fingerprint() + "|epoch:" + environmentSequence,
                 true);
-        } else if (changed) {
-            scheduleDomainProbe(client);
         }
     }
 
@@ -262,7 +276,9 @@ public final class JmcomicSessionManager {
     }
 
     private void scheduleDomainProbe(JmApiClient client) {
-        executor.execute(() -> probeDomains(client));
+        executor.execute(() -> {
+            if (session.getClient() == client) probeDomains(client);
+        });
     }
 
     private void probeDomains(JmApiClient client) {
@@ -292,9 +308,13 @@ public final class JmcomicSessionManager {
         }
     }
 
-    private void publishClientState(ClientStateSnapshot snapshot) {
-        for (Listener listener : listeners) {
-            listener.onClientStateChanged(snapshot);
+    private void publishClientState(ClientStateSnapshot snapshot, JmApiClient client) {
+        synchronized (stateDispatchLock) {
+            latestClientState = snapshot;
+            latestClient = client;
+            for (Listener listener : listeners) {
+                listener.onClientStateChanged(snapshot, client);
+            }
         }
     }
 

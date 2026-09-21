@@ -90,13 +90,60 @@ public class ClientSessionTest {
         assertEquals("initializing", session.getSnapshot().state());
     }
 
+    @Test
+    public void networkLossInvalidatesReadyClientAndReconnectCreatesANewOne() {
+        List<CompletableFuture<Object>> futures = new ArrayList<>();
+        RecordingObserver observer = new RecordingObserver();
+        ClientSession<Object> session = new ClientSession<>(() -> {
+            CompletableFuture<Object> future = new CompletableFuture<>();
+            futures.add(future);
+            return future;
+        }, observer);
+        Object firstClient = new Object();
+        Object secondClient = new Object();
+
+        session.updateEnvironment("wifi", true);
+        futures.get(0).complete(firstClient);
+        session.updateEnvironment("offline", false);
+
+        assertNull(session.getClient());
+        assertEquals("unavailable", session.getSnapshot().state());
+        assertSame(firstClient, observer.discardedClients.get(0));
+
+        session.updateEnvironment("wifi", true);
+        futures.get(1).complete(secondClient);
+
+        assertSame(secondClient, session.getClient());
+        assertSame(secondClient, observer.readyClient);
+        assertEquals(List.of("initializing", "ready", "unavailable", "initializing", "ready"),
+            observer.states);
+    }
+
+    @Test
+    public void offlineTransitionDiscardsLateInitializationResult() {
+        CompletableFuture<Object> future = new CompletableFuture<>();
+        RecordingObserver observer = new RecordingObserver();
+        ClientSession<Object> session = new ClientSession<>(() -> future, observer);
+        Object staleClient = new Object();
+
+        session.updateEnvironment("wifi", true);
+        session.updateEnvironment("offline", false);
+        future.complete(staleClient);
+
+        assertNull(session.getClient());
+        assertNull(observer.readyClient);
+        assertSame(staleClient, observer.discardedClients.get(0));
+        assertEquals(List.of("initializing", "unavailable"), observer.states);
+    }
+
     private static final class RecordingObserver implements ClientSession.Observer<Object> {
         private final List<String> states = new ArrayList<>();
+        private final List<Object> discardedClients = new ArrayList<>();
         private Object readyClient;
         private int failureCount;
 
         @Override
-        public void onStateChanged(ClientSession.Snapshot snapshot) {
+        public void onStateChanged(ClientSession.Snapshot snapshot, Object client) {
             states.add(snapshot.state());
         }
 
@@ -108,6 +155,11 @@ public class ClientSessionTest {
         @Override
         public void onFailure(Throwable error) {
             failureCount++;
+        }
+
+        @Override
+        public void onDiscarded(Object client) {
+            discardedClients.add(client);
         }
     }
 }

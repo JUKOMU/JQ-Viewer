@@ -12,11 +12,14 @@ final class ClientSession<T> {
     }
 
     interface Observer<T> {
-        void onStateChanged(Snapshot snapshot);
+        void onStateChanged(Snapshot snapshot, T client);
 
         void onReady(T client);
 
         void onFailure(Throwable error);
+
+        default void onDiscarded(T client) {
+        }
     }
 
     record Snapshot(String state, String reason, long timestamp) {
@@ -28,8 +31,8 @@ final class ClientSession<T> {
     private T client;
     private Snapshot snapshot = snapshot("unavailable", "no_network");
     private String lastAttemptEnvironment;
-    private String pendingEnvironment;
     private boolean attemptInFlight;
+    private long generation;
 
     ClientSession(Factory<T> factory, Observer<T> observer) {
         this.factory = factory;
@@ -46,23 +49,23 @@ final class ClientSession<T> {
 
     void updateEnvironment(String environment, boolean available) {
         CompletableFuture<T> attempt = null;
-        Snapshot changed = null;
+        T discarded = null;
+        long attemptGeneration = 0;
         synchronized (this) {
-            if (client != null) {
-                return;
-            }
             if (!available) {
-                if (!attemptInFlight) {
-                    changed = setSnapshot("unavailable", "no_network");
-                }
-            } else if (attemptInFlight) {
-                if (!environment.equals(lastAttemptEnvironment)) {
-                    pendingEnvironment = environment;
-                }
+                if (client != null || attemptInFlight) generation++;
+                discarded = client;
+                client = null;
+                attemptInFlight = false;
+                lastAttemptEnvironment = null;
+                publish(setSnapshot("unavailable", "no_network"));
             } else if (!environment.equals(lastAttemptEnvironment)) {
+                discarded = client;
+                client = null;
                 lastAttemptEnvironment = environment;
                 attemptInFlight = true;
-                changed = setSnapshot("initializing", null);
+                attemptGeneration = ++generation;
+                publish(setSnapshot("initializing", null));
                 try {
                     attempt = factory.create();
                     if (attempt == null) {
@@ -74,38 +77,40 @@ final class ClientSession<T> {
                 }
             }
         }
-        publish(changed);
+        discard(discarded);
         if (attempt != null) {
-            attempt.whenComplete(this::completeAttempt);
+            long expectedGeneration = attemptGeneration;
+            attempt.whenComplete(
+                (value, error) -> completeAttempt(expectedGeneration, value, error));
         }
     }
 
-    private void completeAttempt(T value, Throwable error) {
-        Snapshot changed;
-        String nextEnvironment;
+    private void completeAttempt(long expectedGeneration, T value, Throwable error) {
+        T discarded = null;
+        boolean ready = false;
+        boolean failed = false;
         synchronized (this) {
-            attemptInFlight = false;
-            if (error == null && value != null) {
+            if (!attemptInFlight || expectedGeneration != generation) {
+                discarded = value;
+            } else if (error == null && value != null) {
+                attemptInFlight = false;
                 client = value;
-                changed = setSnapshot("ready", null);
-                nextEnvironment = null;
+                publish(setSnapshot("ready", null));
+                ready = true;
             } else {
-                changed = setSnapshot("unavailable", "initialization_failed");
-                nextEnvironment = pendingEnvironment;
+                attemptInFlight = false;
+                publish(setSnapshot("unavailable", "initialization_failed"));
+                failed = true;
             }
-            pendingEnvironment = null;
         }
 
-        publish(changed);
-        if (error == null && value != null) {
+        discard(discarded);
+        if (ready) {
             observer.onReady(value);
-        } else {
+        } else if (failed) {
             observer.onFailure(error != null
                 ? error
                 : new IllegalStateException("Client factory completed without a client."));
-            if (nextEnvironment != null) {
-                updateEnvironment(nextEnvironment, true);
-            }
         }
     }
 
@@ -114,14 +119,19 @@ final class ClientSession<T> {
             && java.util.Objects.equals(reason, snapshot.reason())) {
             return null;
         }
-        snapshot = snapshot(state, reason);
+        long timestamp = Math.max(System.currentTimeMillis(), snapshot.timestamp() + 1);
+        snapshot = new Snapshot(state, reason, timestamp);
         return snapshot;
     }
 
     private void publish(Snapshot changed) {
         if (changed != null) {
-            observer.onStateChanged(changed);
+            observer.onStateChanged(changed, client);
         }
+    }
+
+    private void discard(T value) {
+        if (value != null) observer.onDiscarded(value);
     }
 
     private static Snapshot snapshot(String state, String reason) {

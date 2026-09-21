@@ -189,7 +189,7 @@ public final class AuthPluginHandler {
 
         if (username == null || username.isEmpty()
             || password == null || password.isEmpty()) {
-            call.reject("自动登录失败：无保存的凭据");
+            call.reject("自动登录失败：无保存的凭据", "not-found");
             return;
         }
 
@@ -216,8 +216,13 @@ public final class AuthPluginHandler {
                 callSession.completeIfActive(trackedCall, activeCall -> {
                     if (error instanceof ResponseException) {
                         credentialStore.clear();
+                        activeCall.reject(
+                            "自动登录失败：凭据无效或已过期", "permission-denied", error);
+                    } else {
+                        activeCall.reject(
+                            message == null ? "自动登录网络请求失败" : message,
+                            "network", error);
                     }
-                    activeCall.reject("自动登录失败：凭据无效或已过期");
                 });
             }
         }));

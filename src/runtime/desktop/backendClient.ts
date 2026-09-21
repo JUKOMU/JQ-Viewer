@@ -188,10 +188,12 @@ export function createBackendClient(
       }>(fetcher, 'getClientState', {})
       if (
         !result ||
-        !['unavailable', 'initializing', 'ready'].includes(String(result.state)) ||
+        typeof result.state !== 'string' ||
+        !['unavailable', 'initializing', 'ready'].includes(result.state) ||
         typeof result.timestamp !== 'number' ||
         (result.reason !== undefined &&
-          !['no_network', 'initialization_failed'].includes(String(result.reason)))
+          (typeof result.reason !== 'string' ||
+            !['no_network', 'initialization_failed'].includes(result.reason)))
       ) {
         throw new RuntimeError('internal', 'Invalid getClientState response')
       }

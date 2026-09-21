@@ -146,6 +146,18 @@ describe('runtime', () => {
     })
   })
 
+  test.each([
+    { state: ['ready'], timestamp: 1 },
+    { state: 'unavailable', reason: ['no_network'], timestamp: 1 },
+  ])('拒绝非字符串客户端状态字段：%o', async (payload) => {
+    const backend = createBackendClient(vi.fn().mockResolvedValue(response(payload)))
+
+    await expect(backend.getClientState()).rejects.toMatchObject<RuntimeError>({
+      code: 'internal',
+      message: 'Invalid getClientState response',
+    })
+  })
+
   test('按共享契约转发解析历史方法', async () => {
     const fetcher = vi.fn().mockResolvedValue(response({ success: true }))
     const backend = createBackendClient(fetcher)

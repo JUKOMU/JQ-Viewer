@@ -42,10 +42,9 @@ public class JmcomicPlugin extends Plugin {
         sessionListener = new JmcomicSessionManager.Listener() {
             @Override
             public void onClientStateChanged(
-                JmcomicSessionManager.ClientStateSnapshot snapshot) {
-                if ("ready".equals(snapshot.state())) {
-                    bindClient(sessionManager.getClient());
-                }
+                JmcomicSessionManager.ClientStateSnapshot snapshot,
+                JmApiClient client) {
+                bindClient(client);
                 notifyListeners("clientStateChanged", clientStateJson(snapshot));
             }
 
@@ -55,7 +54,6 @@ public class JmcomicPlugin extends Plugin {
             }
         };
         sessionManager.attachListener(sessionListener);
-        bindClient(sessionManager.getClient());
     }
 
     @Override
@@ -75,12 +73,16 @@ public class JmcomicPlugin extends Plugin {
     }
 
     private synchronized void bindClient(JmApiClient client) {
-        if (client == null || client == boundClient) {
-            return;
-        }
+        if (client == boundClient) return;
         if (apiSession != null) {
             apiSession.destroy();
+            apiSession = null;
         }
+        apiHandler = null;
+        authHandler = null;
+        boundClient = null;
+        if (client == null) return;
+
         apiSession = new ApiSession(client);
         ApiService apiService = apiSession.getApiService();
         PluginCallSession callSession = apiSession.getCallSession();

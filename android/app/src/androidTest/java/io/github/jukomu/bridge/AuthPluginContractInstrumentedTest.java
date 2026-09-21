@@ -213,13 +213,15 @@ public class AuthPluginContractInstrumentedTest {
         apiService.failWith("network unavailable", new IOException("network unavailable"));
         RecordingPluginCall networkFailure = call("autoLogin");
         plugin.autoLogin(networkFailure);
-        assertRejected(networkFailure, "自动登录失败：凭据无效或已过期", true);
+        assertRejected(networkFailure, "network unavailable", true);
+        assertEquals("network", networkFailure.rejectionCode);
         assertEquals("alice", credentialStore.getUsername());
 
         apiService.failWith("unauthorized", new ResponseException("unauthorized"));
         RecordingPluginCall authFailure = call("autoLogin");
         plugin.autoLogin(authFailure);
         assertRejected(authFailure, "自动登录失败：凭据无效或已过期", true);
+        assertEquals("permission-denied", authFailure.rejectionCode);
         assertNull(credentialStore.getUsername());
         assertNull(credentialStore.getPassword());
     }

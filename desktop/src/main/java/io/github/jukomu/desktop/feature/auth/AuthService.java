@@ -15,6 +15,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Objects;
+import java.util.concurrent.Executor;
 import java.util.function.Supplier;
 
 /** 协调当前登录会话与操作系统安全凭据。 */
@@ -22,15 +23,26 @@ public final class AuthService {
     private static final Logger LOGGER = LoggerFactory.getLogger(AuthService.class);
     private final Supplier<JmClient> clientSupplier;
     private final CredentialStore credentials;
+    private final Executor remoteLogoutExecutor;
     private volatile UserInfoResponse userInfo;
 
     public AuthService(JmClient client, CredentialStore credentials) {
-        this(() -> Objects.requireNonNull(client, "client"), credentials);
+        this(() -> Objects.requireNonNull(client, "client"), credentials, Runnable::run);
     }
 
     public AuthService(Supplier<JmClient> clientSupplier, CredentialStore credentials) {
+        this(clientSupplier, credentials, Runnable::run);
+    }
+
+    public AuthService(
+            Supplier<JmClient> clientSupplier,
+            CredentialStore credentials,
+            Executor remoteLogoutExecutor
+    ) {
         this.clientSupplier = Objects.requireNonNull(clientSupplier, "clientSupplier");
         this.credentials = Objects.requireNonNull(credentials, "credentials");
+        this.remoteLogoutExecutor = Objects.requireNonNull(
+                remoteLogoutExecutor, "remoteLogoutExecutor");
     }
 
     public UserInfoResponse login(String username, String password) {
@@ -47,29 +59,11 @@ public final class AuthService {
         return result;
     }
 
+    /** 立即清除本地会话与凭据，远端注销仅作为后台尽力操作。 */
     public SuccessResponse logout() {
-        ApiException remoteFailure = null;
-        JmClient client = clientSupplier.get();
-        if (client != null) {
-            try {
-                client.logout();
-            } catch (NetworkException failure) {
-                remoteFailure = ApiException.network(message(failure, "退出登录网络请求失败"));
-            } catch (ResponseException failure) {
-                remoteFailure = ApiException.permissionDenied(message(failure, "退出登录失败"));
-            }
-        }
-
         userInfo = null;
-        try {
-            clearCredentials("退出后无法清除自动登录凭据");
-        } catch (ApiException localFailure) {
-            if (remoteFailure == null) throw localFailure;
-            remoteFailure.addSuppressed(localFailure);
-            LOGGER.warn("远端退出失败后，本地会话已清除，但自动登录凭据删除失败", localFailure);
-        }
-
-        if (remoteFailure != null) throw remoteFailure;
+        clearCredentials("退出后无法清除自动登录凭据");
+        scheduleRemoteLogout();
         return SuccessResponse.ok();
     }
 
@@ -146,6 +140,29 @@ public final class AuthService {
             credentials.clear();
         } catch (RuntimeException failure) {
             throw ApiException.unavailable(failureMessage);
+        }
+    }
+
+    private void scheduleRemoteLogout() {
+        JmClient client;
+        try {
+            client = clientSupplier.get();
+        } catch (RuntimeException failure) {
+            LOGGER.warn("无法获取远端客户端，本地登出已完成", failure);
+            return;
+        }
+        if (client == null) return;
+
+        try {
+            remoteLogoutExecutor.execute(() -> {
+                try {
+                    client.logout();
+                } catch (RuntimeException failure) {
+                    LOGGER.warn("远端注销失败，本地登出已完成", failure);
+                }
+            });
+        } catch (RuntimeException failure) {
+            LOGGER.warn("无法提交远端注销请求，本地登出已完成", failure);
         }
     }
 

@@ -214,7 +214,8 @@ public final class AuthPluginHandler {
             @Override
             public void onError(String message, Exception error) {
                 callSession.completeIfActive(trackedCall, activeCall -> {
-                    if (error instanceof ResponseException) {
+                    if (error instanceof ResponseException responseError
+                        && isAuthenticationFailure(responseError)) {
                         credentialStore.clear();
                         activeCall.reject(
                             "自动登录失败：凭据无效或已过期", "permission-denied", error);
@@ -226,6 +227,11 @@ public final class AuthPluginHandler {
                 });
             }
         }));
+    }
+
+    private static boolean isAuthenticationFailure(ResponseException error) {
+        int status = error.getErrorCode();
+        return status == 401 || status == 403;
     }
 
     private void startAsync(PluginCall call, Consumer<PluginCall> starter) {

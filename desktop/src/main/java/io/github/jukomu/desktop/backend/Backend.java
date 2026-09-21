@@ -367,7 +367,10 @@ public final class Backend implements AutoCloseable {
                             new CatalogService(clientSession::getClient, imageService, albumCoverUrl),
                             imageService),
                     new AuthPluginHandler(apiRequests,
-                            new AuthService(clientSession::getClient, credentialStore)),
+                            new AuthService(
+                                    clientSession::getClient,
+                                    credentialStore,
+                                    executors.api())),
                     new CachePluginHandler(imageRequests, cacheService),
                     new SettingsPluginHandler(
                             settingsRequests, relocationRequests,

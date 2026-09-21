@@ -36,6 +36,7 @@ const MAX_LISTENER_RETRIES = 2
 
 let initiated = false
 let generation = 0
+let latestClientStateTimestamp = -Infinity
 let refreshSequence = 0
 let listenerRetryCount = 0
 let listenerRetryTimer: ReturnType<typeof setTimeout> | null = null
@@ -78,10 +79,10 @@ function startNetworkProbeStore(resetRetries: boolean) {
   if (resetRetries) listenerRetryCount = 0
   initiated = true
   const currentGeneration = ++generation
+  latestClientStateTimestamp = -Infinity
 
   const clientStateRegistration = JmcomicService.addClientStateListener((snapshot) => {
-    if (!initiated || generation !== currentGeneration) return
-    applyClientState(snapshot)
+    applyClientStateForGeneration(currentGeneration, snapshot)
   })
 
   const probeRegistration = JmcomicService.addNetworkProbeListener((data: NetworkProbeEvent) => {
@@ -106,7 +107,7 @@ function startNetworkProbeStore(resetRetries: boolean) {
 
   const invalidationRegistration = JmcomicService.addStateInvalidatedListener(() => {
     if (initiated && generation === currentGeneration) {
-      void refreshClientState()
+      void refreshClientState(currentGeneration)
     }
   })
 
@@ -117,15 +118,27 @@ function startNetworkProbeStore(resetRetries: boolean) {
     invalidationRegistration,
   )
 
-  void refreshClientState()
+  void refreshClientState(currentGeneration)
 }
 
-async function refreshClientState() {
+async function refreshClientState(currentGeneration: number) {
   try {
-    applyClientState(await JmcomicService.getClientState())
+    applyClientStateForGeneration(currentGeneration, await JmcomicService.getClientState())
   } catch {
     // 旧 Desktop 后端没有状态事件时仍由其 ready 快照兼容层提供结果。
   }
+}
+
+function applyClientStateForGeneration(currentGeneration: number, snapshot: ClientStateSnapshot) {
+  if (
+    !initiated ||
+    generation !== currentGeneration ||
+    snapshot.timestamp <= latestClientStateTimestamp
+  ) {
+    return
+  }
+  latestClientStateTimestamp = snapshot.timestamp
+  applyClientState(snapshot)
 }
 
 function applyClientState(snapshot: ClientStateSnapshot) {
@@ -193,6 +206,7 @@ async function handleListenerRegistrationFailure(
   listenerErrorMessage.value = normalizeRuntimeError(reason, '网络状态监听失败').message
   initiated = false
   generation++
+  latestClientStateTimestamp = -Infinity
   scheduleListenerRetry()
 }
 

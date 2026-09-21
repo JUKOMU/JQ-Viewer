@@ -21,11 +21,13 @@ function updateUserInfo(next: UserInfo | null) {
 
 export function useAuth() {
   /** 启动时调用，先检查本地登录态，如无则尝试自动登录（仅 App.vue onMounted 调用） */
-  async function initAuth(): Promise<AuthInitializationResult> {
+  async function initAuth(
+    canCommit: () => boolean = () => true,
+  ): Promise<AuthInitializationResult> {
     try {
       const result = await JmcomicService.checkLoginState()
       if (result.loggedIn && result.userInfo) {
-        updateUserInfo(result.userInfo)
+        if (canCommit()) updateUserInfo(result.userInfo)
         return 'authenticated'
       }
     } catch {
@@ -35,7 +37,7 @@ export function useAuth() {
     try {
       const autoResult = await JmcomicService.autoLogin()
       if (autoResult.userInfo) {
-        updateUserInfo(autoResult.userInfo)
+        if (canCommit()) updateUserInfo(autoResult.userInfo)
         return 'authenticated'
       }
     } catch (error) {
@@ -45,9 +47,11 @@ export function useAuth() {
       }
     }
 
-    updateUserInfo(null)
-    clearFavoriteFolderStore()
-    clearFavoritePageCache()
+    if (canCommit()) {
+      updateUserInfo(null)
+      clearFavoriteFolderStore()
+      clearFavoritePageCache()
+    }
     return 'unauthenticated'
   }
 

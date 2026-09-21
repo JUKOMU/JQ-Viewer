@@ -48,6 +48,9 @@ describe('networkProbeStore', () => {
       invalidationListener = listener
       return { remove: mocks.removeInvalidation }
     })
+    mocks.getClientState
+      .mockResolvedValueOnce({ state: 'ready', timestamp: 1 })
+      .mockResolvedValueOnce({ state: 'ready', timestamp: 2 })
     mocks.getDomainStates
       .mockResolvedValueOnce({
         domains: [{ domain: 'https://first.invalid', reachable: true }],
@@ -118,6 +121,39 @@ describe('networkProbeStore', () => {
     expect(store.domains.value).toEqual([])
     expect(store.errorMessage.value).toBe('')
     expect(mocks.getDomainStates).not.toHaveBeenCalled()
+  })
+
+  test('较旧的客户端状态查询不会覆盖较新的状态事件', async () => {
+    let clientStateListener: ((snapshot: Record<string, unknown>) => void) | undefined
+    let resolveClientState: ((snapshot: Record<string, unknown>) => void) | undefined
+    mocks.addClientStateListener.mockImplementation(async (listener) => {
+      clientStateListener = listener
+      return { remove: mocks.removeClientState }
+    })
+    mocks.addNetworkProbeListener.mockResolvedValue({ remove: mocks.removeProbe })
+    mocks.addStateInvalidatedListener.mockResolvedValue(null)
+    mocks.getClientState.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveClientState = resolve
+        }),
+    )
+    mocks.getDomainStates.mockResolvedValue({
+      domains: [],
+      alive: 0,
+      total: 0,
+      allDeadFallback: false,
+    })
+    const { initNetworkProbeStore, useNetworkProbeStore } =
+      await import('@/composables/networkProbeStore')
+
+    initNetworkProbeStore()
+    await vi.waitFor(() => expect(clientStateListener).toBeTypeOf('function'))
+    clientStateListener?.({ state: 'ready', timestamp: 2 })
+    resolveClientState?.({ state: 'unavailable', reason: 'no_network', timestamp: 1 })
+    await Promise.resolve()
+
+    expect(useNetworkProbeStore().clientState.value).toEqual({ state: 'ready', timestamp: 2 })
   })
 
   test('较新的探活事件不会被启动时的旧快照覆盖', async () => {

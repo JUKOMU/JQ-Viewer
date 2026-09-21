@@ -217,13 +217,22 @@ public class AuthPluginContractInstrumentedTest {
         assertEquals("network", networkFailure.rejectionCode);
         assertEquals("alice", credentialStore.getUsername());
 
-        apiService.failWith("unauthorized", new ResponseException("unauthorized"));
+        apiService.failWith("unauthorized", new ResponseException("unauthorized", 401));
         RecordingPluginCall authFailure = call("autoLogin");
         plugin.autoLogin(authFailure);
         assertRejected(authFailure, "自动登录失败：凭据无效或已过期", true);
         assertEquals("permission-denied", authFailure.rejectionCode);
         assertNull(credentialStore.getUsername());
         assertNull(credentialStore.getPassword());
+
+        credentialStore.save("alice", "secret");
+        apiService.failWith(
+            "service unavailable", new ResponseException("service unavailable", 503));
+        RecordingPluginCall serverFailure = call("autoLogin");
+        plugin.autoLogin(serverFailure);
+        assertRejected(serverFailure, "service unavailable", true);
+        assertEquals("network", serverFailure.rejectionCode);
+        assertEquals("alice", credentialStore.getUsername());
     }
 
     @Test
@@ -283,7 +292,7 @@ public class AuthPluginContractInstrumentedTest {
     public void closedSessionSkipsLateAutoLoginCredentialClear() throws Exception {
         saveCurrentAuthState();
         apiService.autoComplete = false;
-        apiService.failWith("unauthorized", new ResponseException("unauthorized"));
+        apiService.failWith("unauthorized", new ResponseException("unauthorized", 401));
         RecordingPluginCall autoLogin = call("autoLogin");
 
         plugin.autoLogin(autoLogin);

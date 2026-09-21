@@ -299,12 +299,14 @@ onMounted(async () => {
 
   const observationGeneration = ++clientStateObservationGeneration
   let latestClientStateTimestamp = -Infinity
+  let authGeneration = 0
   let authState: 'idle' | 'running' | 'complete' = 'idle'
   const handleClientState = async (state: ClientStateSnapshot) => {
     if (state.timestamp < latestClientStateTimestamp) return
     latestClientStateTimestamp = state.timestamp
 
     if (state.state === 'initializing') {
+      authGeneration++
       authState = 'idle'
       if (!activeToast) activeToast = await showToast('客户端初始化', 'medium', 0)
       return
@@ -315,20 +317,30 @@ onMounted(async () => {
       activeToast = null
     }
     if (state.state !== 'ready') {
+      authGeneration++
       authState = 'idle'
       return
     }
     if (authState !== 'idle') return
 
     authState = 'running'
+    const currentAuthGeneration = ++authGeneration
     const authTimestamp = state.timestamp
+    const canCommitAuth = () =>
+      observationGeneration === clientStateObservationGeneration &&
+      currentAuthGeneration === authGeneration &&
+      latestClientStateTimestamp === authTimestamp
     showToast('初始化完成', 'success')
     const loginToast = await showToast('正在自动登录...', 'medium', 0)
+    if (!canCommitAuth()) {
+      await loginToast.dismiss()
+      return
+    }
     activeToast = loginToast
-    const result = await initAuth()
+    const result = await initAuth(canCommitAuth)
     await loginToast.dismiss()
     if (activeToast === loginToast) activeToast = null
-    if (latestClientStateTimestamp !== authTimestamp) return
+    if (!canCommitAuth()) return
     authState = result === 'retryable-error' ? 'idle' : 'complete'
     if (result === 'authenticated') showToast('登录成功', 'success')
   }

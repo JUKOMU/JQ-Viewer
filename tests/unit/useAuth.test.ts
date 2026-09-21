@@ -119,4 +119,29 @@ describe('useAuth', () => {
 
     expect(auth.userInfo.value).toBeNull()
   })
+
+  test('过期认证任务不会清除较新的用户状态和缓存', async () => {
+    let rejectAutoLogin: ((error: unknown) => void) | undefined
+    mocks.checkLoginState.mockResolvedValue({ loggedIn: false })
+    mocks.autoLogin.mockImplementation(
+      () =>
+        new Promise((_, reject) => {
+          rejectAutoLogin = reject
+        }),
+    )
+    const { useAuth } = await import('@/composables/useAuth')
+    const auth = useAuth()
+    let current = true
+
+    const staleInitialization = auth.initAuth(() => current)
+    await vi.waitFor(() => expect(rejectAutoLogin).toBeTypeOf('function'))
+    await auth.login('alice', 'secret')
+    current = false
+    rejectAutoLogin?.(new RuntimeError('permission-denied', 'expired'))
+
+    await expect(staleInitialization).resolves.toBe('unauthenticated')
+    expect(auth.userInfo.value?.username).toBe('alice')
+    expect(mocks.clearFavoriteFolderStore).not.toHaveBeenCalled()
+    expect(mocks.clearFavoritePageCache).not.toHaveBeenCalled()
+  })
 })

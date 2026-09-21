@@ -5,16 +5,16 @@ import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
 
-public class JmcomicPluginTest {
+public class JqViewerPluginTest {
 
     @Test
     public void exportedPdfFolderDoesNotGrantSyntheticDocumentUri() {
-        assertEquals(0, JmcomicPlugin.pdfFolderGrantFlags(false));
+        assertEquals(0, JqViewerPlugin.pdfFolderGrantFlags(false));
     }
 
     @Test
     public void importedPdfFolderKeepsReadAndPrefixGrantFlags() {
         assertEquals(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION,
-            JmcomicPlugin.pdfFolderGrantFlags(true));
+            JqViewerPlugin.pdfFolderGrantFlags(true));
     }
 }

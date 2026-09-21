@@ -25,6 +25,7 @@ import io.github.jukomu.jmcomic.api.model.JmPhoto;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -33,6 +34,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Supplier;
 
 /** Desktop 下载任务的持久化状态机与 JMComic 运行时适配。 */
 public final class DownloadService implements AutoCloseable {
@@ -47,8 +49,8 @@ public final class DownloadService implements AutoCloseable {
 
     private final DownloadStore store;
     private final DownloadFiles files;
-    private final JmClient client;
-    private final JmDownloadClient downloadClient;
+    private final Supplier<JmClient> clientSupplier;
+    private final Supplier<JmDownloadClient> downloadClientSupplier;
     private final Executor prepareExecutor;
     private final EventHub events;
     private final ObjectMapper mapper;
@@ -66,13 +68,26 @@ public final class DownloadService implements AutoCloseable {
             EventHub events,
             ObjectMapper mapper
     ) {
-        this.store = store;
-        this.files = files;
-        this.client = client;
-        this.downloadClient = downloadClient;
-        this.prepareExecutor = prepareExecutor;
-        this.events = events;
-        this.mapper = mapper;
+        this(store, files, () -> client, () -> downloadClient, prepareExecutor, events, mapper);
+    }
+
+    public DownloadService(
+            DownloadStore store,
+            DownloadFiles files,
+            Supplier<JmClient> clientSupplier,
+            Supplier<JmDownloadClient> downloadClientSupplier,
+            Executor prepareExecutor,
+            EventHub events,
+            ObjectMapper mapper
+    ) {
+        this.store = Objects.requireNonNull(store, "store");
+        this.files = Objects.requireNonNull(files, "files");
+        this.clientSupplier = Objects.requireNonNull(clientSupplier, "clientSupplier");
+        this.downloadClientSupplier = Objects.requireNonNull(
+                downloadClientSupplier, "downloadClientSupplier");
+        this.prepareExecutor = Objects.requireNonNull(prepareExecutor, "prepareExecutor");
+        this.events = Objects.requireNonNull(events, "events");
+        this.mapper = Objects.requireNonNull(mapper, "mapper");
     }
 
     public void reconcileOnStartup() {
@@ -98,6 +113,8 @@ public final class DownloadService implements AutoCloseable {
         } catch (IllegalArgumentException exception) {
             throw ApiException.invalidRequest(exception.getMessage());
         }
+        requireClient();
+        requireDownloadClient();
 
         RuntimeTask runtime = new RuntimeTask();
         synchronized (files) {
@@ -149,7 +166,7 @@ public final class DownloadService implements AutoCloseable {
         if (!STATUS_DOWNLOADING.equals(task.status())) {
             throw ApiException.conflict("只有下载中的任务可以暂停");
         }
-        downloadClient.downloadManager().pause(requireLibraryTask(taskId));
+        requireDownloadClient().downloadManager().pause(requireLibraryTask(taskId));
     }
 
     public void resumeDownload(String taskId) {
@@ -157,7 +174,7 @@ public final class DownloadService implements AutoCloseable {
         if (!STATUS_PAUSED.equals(task.status())) {
             throw ApiException.conflict("只有已暂停的任务可以继续");
         }
-        downloadClient.downloadManager().resume(requireLibraryTask(taskId));
+        requireDownloadClient().downloadManager().resume(requireLibraryTask(taskId));
     }
 
     public void cancelDownload(String taskId) {
@@ -172,7 +189,9 @@ public final class DownloadService implements AutoCloseable {
         if (runtime != null) {
             synchronized (runtime) {
                 String libraryTaskId = runtime.libraryTaskId;
-                if (libraryTaskId != null) downloadClient.downloadManager().cancel(libraryTaskId);
+                if (libraryTaskId != null) {
+                    requireDownloadClient().downloadManager().cancel(libraryTaskId);
+                }
             }
             try {
                 runtime.stopped.get(10, TimeUnit.SECONDS);
@@ -333,7 +352,7 @@ public final class DownloadService implements AutoCloseable {
         try {
             StoredDownloadTask task = store.findTask(taskId);
             if (task == null || cancelledTaskIds.contains(taskId) || closing) return;
-            JmPhoto photo = client.getPhoto(task.chapterId());
+            JmPhoto photo = requireClient().getPhoto(task.chapterId());
             if (photo == null || !task.chapterId().equals(photo.getId())) {
                 throw new IllegalStateException("远端章节信息与请求不一致");
             }
@@ -350,6 +369,7 @@ public final class DownloadService implements AutoCloseable {
                         photo.getSortOrder(), photo.isSingleAlbum(), pages);
                 Path chapterDirectory = files.chapterDirectory(task.relativeDirectory());
                 Path savePath = photo.isSingleAlbum() ? chapterDirectory : chapterDirectory.getParent();
+                JmDownloadClient downloadClient = requireDownloadClient();
                 BaseDownloadTask libraryTask = downloadClient.createDownloadTask(photo, savePath);
                 runtime.libraryTaskId = libraryTask.getTaskId();
                 libraryTask.addObserver(new DownloadObserver(taskId, pages.size(), this));
@@ -395,7 +415,7 @@ public final class DownloadService implements AutoCloseable {
         if (runtime == null || runtime.libraryTaskId == null) {
             throw ApiException.conflict("底层下载任务尚未就绪");
         }
-        IDownloadManager manager = downloadClient.downloadManager();
+        IDownloadManager manager = requireDownloadClient().downloadManager();
         if (manager.getTask(runtime.libraryTaskId) == null) {
             throw ApiException.conflict("底层下载任务不存在");
         }
@@ -487,6 +507,18 @@ public final class DownloadService implements AutoCloseable {
     private static String messageOf(Throwable failure) {
         String message = failure.getMessage();
         return message == null || message.isBlank() ? "下载失败" : message;
+    }
+
+    private JmClient requireClient() {
+        JmClient client = clientSupplier.get();
+        if (client == null) throw ApiException.unavailable("在线客户端不可用");
+        return client;
+    }
+
+    private JmDownloadClient requireDownloadClient() {
+        JmDownloadClient client = downloadClientSupplier.get();
+        if (client == null) throw ApiException.unavailable("在线客户端不可用");
+        return client;
     }
 
     private static final class RuntimeTask {

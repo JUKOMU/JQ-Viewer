@@ -16,6 +16,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -23,6 +24,44 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BackendHttpTest {
+    @Test
+    void keepsLocalBackendAvailableWhenOnlineClientInitializationFails() throws Exception {
+        Path root = Files.createTempDirectory("jq-viewer-backend-offline-");
+        Paths paths = new Paths(
+                root.resolve("program"), root.resolve("home"), Map.of(), "Linux");
+        AtomicInteger attempts = new AtomicInteger();
+        HttpClient client = HttpClient.newHttpClient();
+
+        try (Backend backend = TestBackends.initializationFailure(
+                paths, new Database(paths), new BackendTestExecutor(), attempts)) {
+            backend.start();
+            URI base = URI.create("http://127.0.0.1:" + backend.port());
+
+            HttpResponse<String> state = send(client, post(base, "/api/getClientState", "{}"));
+            HttpResponse<String> init = send(client, post(base, "/api/getInitStatus", "{}"));
+            HttpResponse<String> settings = send(client, post(base, "/api/getAllSettings", "{}"));
+            HttpResponse<String> downloads = send(client, post(base, "/api/getDownloadTasks", "{}"));
+            HttpResponse<String> search = send(client, post(base, "/api/search", "{}"));
+            HttpResponse<String> retry = send(client, post(base, "/api/reprobeDomains", "{}"));
+            HttpResponse<String> retriedState = send(
+                    client, post(base, "/api/getClientState", "{}"));
+
+            assertTrue(backend.isRunning());
+            assertEquals(2, attempts.get());
+            assertEquals(200, state.statusCode());
+            assertTrue(state.body().contains("\"state\":\"unavailable\""));
+            assertTrue(state.body().contains("\"reason\":\"initialization_failed\""));
+            assertEquals("{\"complete\":false}", init.body());
+            assertEquals(200, settings.statusCode());
+            assertEquals(200, downloads.statusCode());
+            assertTrue(downloads.body().contains("\"tasks\":[]"));
+            assertEquals(503, search.statusCode());
+            assertTrue(search.body().contains("\"code\":\"unavailable\""));
+            assertEquals(200, retry.statusCode());
+            assertTrue(retriedState.body().contains("\"state\":\"unavailable\""));
+        }
+    }
+
     @Test
     void servesSpaAssetsAndRegisteredJsonMethods() throws Exception {
         Path root = Files.createTempDirectory("jq-viewer-backend-");

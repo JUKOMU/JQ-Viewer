@@ -4,7 +4,7 @@
  */
 import { computed, ref } from 'vue'
 import { JmcomicService } from '@/services/JmcomicService'
-import type { NetworkProbeEvent } from '@/services/JmcomicTypes'
+import type { ClientStateSnapshot, NetworkProbeEvent } from '@/services/JmcomicTypes'
 import type { JmcomicListenerHandle } from '@/services/jmcomic/JmcomicClient'
 import { normalizeRuntimeError } from '@/runtime/errors'
 
@@ -20,6 +20,7 @@ interface LogEntry {
 }
 
 const domains = ref<DomainState[]>([])
+const clientState = ref<ClientStateSnapshot>({ state: 'initializing', timestamp: 0 })
 const allDeadFallback = ref(false)
 const events = ref<LogEntry[]>([])
 const loading = ref(false)
@@ -35,13 +36,23 @@ const MAX_LISTENER_RETRIES = 2
 
 let initiated = false
 let generation = 0
+let latestClientStateTimestamp = -Infinity
 let refreshSequence = 0
 let listenerRetryCount = 0
 let listenerRetryTimer: ReturnType<typeof setTimeout> | null = null
 let probeHandle: JmcomicListenerHandle | null = null
 let invalidationHandle: JmcomicListenerHandle | null = null
+let clientStateHandle: JmcomicListenerHandle | null = null
 
 export async function refreshDomainStates() {
+  if (clientState.value.state !== 'ready') {
+    refreshSequence++
+    loading.value = false
+    domains.value = []
+    allDeadFallback.value = false
+    snapshotErrorMessage.value = ''
+    return
+  }
   const sequence = ++refreshSequence
   loading.value = true
   try {
@@ -68,6 +79,11 @@ function startNetworkProbeStore(resetRetries: boolean) {
   if (resetRetries) listenerRetryCount = 0
   initiated = true
   const currentGeneration = ++generation
+  latestClientStateTimestamp = -Infinity
+
+  const clientStateRegistration = JmcomicService.addClientStateListener((snapshot) => {
+    applyClientStateForGeneration(currentGeneration, snapshot)
+  })
 
   const probeRegistration = JmcomicService.addNetworkProbeListener((data: NetworkProbeEvent) => {
     if (!initiated || generation !== currentGeneration) return
@@ -90,24 +106,67 @@ function startNetworkProbeStore(resetRetries: boolean) {
   })
 
   const invalidationRegistration = JmcomicService.addStateInvalidatedListener(() => {
-    if (initiated && generation === currentGeneration) void refreshDomainStates()
+    if (initiated && generation === currentGeneration) {
+      void refreshClientState(currentGeneration)
+    }
   })
 
-  void finishListenerRegistration(currentGeneration, probeRegistration, invalidationRegistration)
+  void finishListenerRegistration(
+    currentGeneration,
+    clientStateRegistration,
+    probeRegistration,
+    invalidationRegistration,
+  )
 
-  void refreshDomainStates()
+  void refreshClientState(currentGeneration)
+}
+
+async function refreshClientState(currentGeneration: number) {
+  try {
+    applyClientStateForGeneration(currentGeneration, await JmcomicService.getClientState())
+  } catch {
+    // 旧 Desktop 后端没有状态事件时仍由其 ready 快照兼容层提供结果。
+  }
+}
+
+function applyClientStateForGeneration(currentGeneration: number, snapshot: ClientStateSnapshot) {
+  if (
+    !initiated ||
+    generation !== currentGeneration ||
+    snapshot.timestamp <= latestClientStateTimestamp
+  ) {
+    return
+  }
+  latestClientStateTimestamp = snapshot.timestamp
+  applyClientState(snapshot)
+}
+
+function applyClientState(snapshot: ClientStateSnapshot) {
+  clientState.value = snapshot
+  if (snapshot.state === 'ready') {
+    void refreshDomainStates()
+  } else {
+    refreshSequence++
+    loading.value = false
+    domains.value = []
+    allDeadFallback.value = false
+    snapshotErrorMessage.value = ''
+  }
 }
 
 async function finishListenerRegistration(
   currentGeneration: number,
+  clientStateRegistration: Promise<JmcomicListenerHandle>,
   probeRegistration: Promise<JmcomicListenerHandle>,
   invalidationRegistration: Promise<JmcomicListenerHandle | null>,
 ) {
-  const [probeResult, invalidationResult] = await Promise.allSettled([
+  const [clientStateResult, probeResult, invalidationResult] = await Promise.allSettled([
+    clientStateRegistration,
     probeRegistration,
     invalidationRegistration,
   ])
   const handles = [
+    clientStateResult.status === 'fulfilled' ? clientStateResult.value : null,
     probeResult.status === 'fulfilled' ? probeResult.value : null,
     invalidationResult.status === 'fulfilled' ? invalidationResult.value : null,
   ].filter((handle): handle is JmcomicListenerHandle => handle !== null)
@@ -117,6 +176,10 @@ async function finishListenerRegistration(
     return
   }
 
+  if (clientStateResult.status === 'rejected') {
+    await handleListenerRegistrationFailure(currentGeneration, handles, clientStateResult.reason)
+    return
+  }
   if (probeResult.status === 'rejected') {
     await handleListenerRegistrationFailure(currentGeneration, handles, probeResult.reason)
     return
@@ -126,6 +189,7 @@ async function finishListenerRegistration(
     return
   }
 
+  clientStateHandle = clientStateResult.value
   probeHandle = probeResult.value
   invalidationHandle = invalidationResult.value
   listenerErrorMessage.value = ''
@@ -142,6 +206,7 @@ async function handleListenerRegistrationFailure(
   listenerErrorMessage.value = normalizeRuntimeError(reason, '网络状态监听失败').message
   initiated = false
   generation++
+  latestClientStateTimestamp = -Infinity
   scheduleListenerRetry()
 }
 
@@ -167,13 +232,15 @@ export async function disposeNetworkProbeStore() {
     listenerRetryTimer = null
   }
   listenerRetryCount = 0
-  const handles = [probeHandle, invalidationHandle].filter(
+  const handles = [probeHandle, invalidationHandle, clientStateHandle].filter(
     (handle): handle is JmcomicListenerHandle => handle !== null,
   )
   probeHandle = null
   invalidationHandle = null
+  clientStateHandle = null
   loading.value = false
   domains.value = []
+  clientState.value = { state: 'initializing', timestamp: 0 }
   allDeadFallback.value = false
   events.value = []
   snapshotErrorMessage.value = ''
@@ -183,5 +250,13 @@ export async function disposeNetworkProbeStore() {
 }
 
 export function useNetworkProbeStore() {
-  return { domains, allDeadFallback, events, loading, errorMessage, refreshDomainStates }
+  return {
+    domains,
+    clientState,
+    allDeadFallback,
+    events,
+    loading,
+    errorMessage,
+    refreshDomainStates,
+  }
 }

@@ -71,6 +71,16 @@ public class ApiPluginContractInstrumentedTest {
     }
 
     @Test
+    public void unavailableClientRejectsOnlineCallsWithoutStartingWork() {
+        JmcomicPlugin unavailablePlugin = new JmcomicPlugin();
+        RecordingPluginCall search = call("search", "query", new JSObject());
+
+        unavailablePlugin.search(search);
+
+        assertRejected(search, "在线客户端不可用");
+    }
+
+    @Test
     public void validCallsForwardDefaultsAndResolveServicePayloads() throws Exception {
         JSObject query = new JSObject();
         RecordingPluginCall search = call("search", "query", query);

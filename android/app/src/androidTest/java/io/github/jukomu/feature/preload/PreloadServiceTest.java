@@ -103,7 +103,7 @@ public class PreloadServiceTest {
         AtomicInteger fetchCount = new AtomicInteger();
         CacheCapacityPolicy policy = new CacheCapacityPolicy();
         PreloadService service = new PreloadService(
-            imageCache, FileStore.getInstance(), null, null,
+            imageCache, FileStore.getInstance(), null,
             imageExecutor, fileExecutor, networkExecutor, null, null, policy, 2,
             image -> {
                 fetchCount.incrementAndGet();
@@ -131,7 +131,7 @@ public class PreloadServiceTest {
         AtomicInteger fetchCount = new AtomicInteger();
         CacheCapacityPolicy policy = new CacheCapacityPolicy();
         PreloadService service = new PreloadService(
-            imageCache, FileStore.getInstance(), null, null,
+            imageCache, FileStore.getInstance(), null,
             imageExecutor, fileExecutor, networkExecutor, null, null, policy, 2,
             image -> {
                 fetchCount.incrementAndGet();
@@ -165,7 +165,7 @@ public class PreloadServiceTest {
         CountDownLatch allowFetchFinish = new CountDownLatch(1);
         CacheCapacityPolicy policy = new CacheCapacityPolicy();
         PreloadService service = new PreloadService(
-            imageCache, FileStore.getInstance(), null, null,
+            imageCache, FileStore.getInstance(), null,
             imageExecutor, fileExecutor, networkExecutor, null, null, policy, 2,
             image -> {
                 fetchStarted.countDown();
@@ -191,7 +191,7 @@ public class PreloadServiceTest {
     @Test
     public void imageCacheContentsReturnsStructuredEntries() throws Exception {
         PreloadService service = new PreloadService(
-            imageCache, FileStore.getInstance(), null, null,
+            imageCache, FileStore.getInstance(), null,
             imageExecutor, fileExecutor, networkExecutor, null, null,
             new CacheCapacityPolicy(), 2,
             image -> new byte[]{1, 2, 3});
@@ -552,7 +552,7 @@ public class PreloadServiceTest {
     private PreloadService createService(PreloadService.ImageFetcher imageFetcher,
                                          PreloadEventSink eventSink) {
         return new PreloadService(
-            imageCache, fileStore, null, null,
+            imageCache, fileStore, null,
             imageExecutor, fileExecutor, networkExecutor, eventSink, null,
             new CacheCapacityPolicy(), 2, imageFetcher);
     }

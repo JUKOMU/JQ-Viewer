@@ -8,6 +8,9 @@ import io.github.jukomu.jmcomic.api.model.JmUserInfo;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Proxy;
+import java.util.ArrayDeque;
+import java.util.Queue;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -79,15 +82,25 @@ class AuthServiceTest {
     }
 
     @Test
+    void logoutClearsSavedCredentialsWhenOnlineClientIsUnavailable() {
+        MemoryCredentialStore credentials = new MemoryCredentialStore(true);
+        credentials.save("alice", "secret");
+        AuthService service = new AuthService(() -> null, credentials);
+
+        service.logout();
+
+        assertNull(credentials.loadDirectly());
+    }
+
+    @Test
     void logoutClearsLocalStateWhenRemoteLogoutFails() {
         MemoryCredentialStore networkCredentials = new MemoryCredentialStore(true);
         AuthService networkFailure = new AuthService(
                 client(null, new NetworkException("network unavailable")), networkCredentials);
         networkFailure.login("alice", "secret");
 
-        ApiException network = assertThrows(ApiException.class, networkFailure::logout);
+        networkFailure.logout();
 
-        assertEquals("network", network.code());
         assertFalse(networkFailure.state().loggedIn());
         assertNull(networkCredentials.loadDirectly());
 
@@ -96,11 +109,48 @@ class AuthServiceTest {
                 client(null, new ResponseException("logout rejected", 403)), responseCredentials);
         responseFailure.login("alice", "secret");
 
-        ApiException denied = assertThrows(ApiException.class, responseFailure::logout);
+        responseFailure.logout();
 
-        assertEquals("permission-denied", denied.code());
         assertFalse(responseFailure.state().loggedIn());
         assertNull(responseCredentials.loadDirectly());
+    }
+
+    @Test
+    void logoutReturnsBeforeRemoteRequestRuns() {
+        MemoryCredentialStore credentials = new MemoryCredentialStore(true);
+        Queue<Runnable> remoteTasks = new ArrayDeque<>();
+        AtomicBoolean remoteLogoutCalled = new AtomicBoolean();
+        JmClient client = client(null, null, () -> remoteLogoutCalled.set(true));
+        AuthService service = new AuthService(() -> client, credentials, remoteTasks::add);
+        service.login("alice", "secret");
+
+        service.logout();
+
+        assertFalse(service.state().loggedIn());
+        assertNull(credentials.loadDirectly());
+        assertFalse(remoteLogoutCalled.get());
+        assertEquals(1, remoteTasks.size());
+
+        remoteTasks.remove().run();
+        assertTrue(remoteLogoutCalled.get());
+    }
+
+    @Test
+    void delayedRemoteLogoutDoesNotTerminateNewLoginSession() {
+        MemoryCredentialStore credentials = new MemoryCredentialStore(true);
+        Queue<Runnable> remoteTasks = new ArrayDeque<>();
+        AtomicBoolean remoteLogoutCalled = new AtomicBoolean();
+        JmClient client = client(null, null, () -> remoteLogoutCalled.set(true));
+        AuthService service = new AuthService(() -> client, credentials, remoteTasks::add);
+        service.login("alice", "old-secret");
+        service.logout();
+
+        service.login("alice", "new-secret");
+        remoteTasks.remove().run();
+
+        assertFalse(remoteLogoutCalled.get());
+        assertTrue(service.state().loggedIn());
+        assertEquals("new-secret", credentials.loadDirectly().password());
     }
 
     private static JmClient client(RuntimeException loginFailure) {
@@ -108,6 +158,15 @@ class AuthServiceTest {
     }
 
     private static JmClient client(RuntimeException loginFailure, RuntimeException logoutFailure) {
+        return client(loginFailure, logoutFailure, () -> {
+        });
+    }
+
+    private static JmClient client(
+            RuntimeException loginFailure,
+            RuntimeException logoutFailure,
+            Runnable logoutAction
+    ) {
         return (JmClient) Proxy.newProxyInstance(
                 JmClient.class.getClassLoader(),
                 new Class<?>[]{JmClient.class},
@@ -126,6 +185,7 @@ class AuthServiceTest {
                             yield userInfo();
                         }
                         case "logout" -> {
+                            logoutAction.run();
                             if (logoutFailure != null) throw logoutFailure;
                             yield null;
                         }

@@ -180,6 +180,31 @@ export function createBackendClient(
       }
       return { complete: result.complete }
     },
+    getClientState: async () => {
+      const result = await requestBackend<{
+        state?: unknown
+        reason?: unknown
+        timestamp?: unknown
+      }>(fetcher, 'getClientState', {})
+      if (
+        !result ||
+        typeof result.state !== 'string' ||
+        !['unavailable', 'initializing', 'ready'].includes(result.state) ||
+        typeof result.timestamp !== 'number' ||
+        (result.reason !== undefined &&
+          (typeof result.reason !== 'string' ||
+            !['no_network', 'initialization_failed'].includes(result.reason)))
+      ) {
+        throw new RuntimeError('internal', 'Invalid getClientState response')
+      }
+      return {
+        state: result.state as 'unavailable' | 'initializing' | 'ready',
+        ...(result.reason === undefined
+          ? {}
+          : { reason: result.reason as 'no_network' | 'initialization_failed' }),
+        timestamp: result.timestamp,
+      }
+    },
   }
 
   return client as unknown as BackendClient

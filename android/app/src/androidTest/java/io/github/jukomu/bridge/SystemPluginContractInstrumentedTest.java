@@ -31,7 +31,7 @@ import static org.junit.Assert.*;
 public class SystemPluginContractInstrumentedTest {
 
     private Context context;
-    private JmcomicPlugin plugin;
+    private JqViewerPlugin plugin;
     private RecordingActivity activity;
     private FakePermissionService permissionService;
     private SystemPluginHandler systemHandler;
@@ -39,7 +39,7 @@ public class SystemPluginContractInstrumentedTest {
     @Before
     public void setUp() throws Exception {
         context = InstrumentationRegistry.getInstrumentation().getTargetContext();
-        plugin = new JmcomicPlugin();
+        plugin = new JqViewerPlugin();
         RecordingActivity[] activityHolder = new RecordingActivity[1];
         InstrumentationRegistry.getInstrumentation().runOnMainSync(
             () -> activityHolder[0] = new RecordingActivity());
@@ -91,25 +91,6 @@ public class SystemPluginContractInstrumentedTest {
         if (systemHandler != null) {
             systemHandler.destroy();
         }
-    }
-
-    @Test
-    public void unavailableClientUsesCurrentResultsAndMessages() {
-        RecordingPluginCall domainStates = call("getDomainStates");
-        RecordingPluginCall latency = call("measureLatency");
-        RecordingPluginCall initStatus = call("getInitStatus");
-        RecordingPluginCall reprobe = call("reprobeDomains");
-
-        plugin.getDomainStates(domainStates);
-        plugin.measureLatency(latency);
-        plugin.getInitStatus(initStatus);
-        plugin.reprobeDomains(reprobe);
-
-        assertRejected(domainStates, "client 尚未初始化");
-        assertRejected(latency, "client 尚未初始化");
-        assertFalse(initStatus.resolvedData.getBool("complete"));
-        assertTrue(reprobe.resolvedWithoutData);
-        assertSynchronous(initStatus, reprobe);
     }
 
     @Test
@@ -484,9 +465,9 @@ public class SystemPluginContractInstrumentedTest {
         assertEquals(call.getMethodName(), 1, call.completionCount);
     }
 
-    private static void injectSystemHandler(JmcomicPlugin plugin,
+    private static void injectSystemHandler(JqViewerPlugin plugin,
                                             SystemPluginHandler handler) throws Exception {
-        Field field = JmcomicPlugin.class.getDeclaredField("systemHandler");
+        Field field = JqViewerPlugin.class.getDeclaredField("systemHandler");
         field.setAccessible(true);
         field.set(plugin, handler);
     }

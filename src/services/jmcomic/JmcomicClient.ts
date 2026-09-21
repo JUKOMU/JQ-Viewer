@@ -5,6 +5,7 @@ import type {
   BrowseHistoryItem,
   BrowseHistoryRange,
   CacheCapacityInfo,
+  ClientStateSnapshot,
   CommentList,
   DomainStates,
   DownloadProgressEvent,
@@ -144,9 +145,7 @@ export interface JmcomicClient {
 
   setOcrEnabled(options: { enabled: boolean }): Promise<{ success: boolean }>
 
-  setDownloadPublic(options: {
-    open: boolean
-  }): Promise<{
+  setDownloadPublic(options: { open: boolean }): Promise<{
     success: boolean
     downloadPublic: boolean
     moved: number
@@ -214,6 +213,11 @@ export interface JmcomicClient {
   ): Promise<JmcomicListenerHandle>
 
   addListener(
+    event: 'clientStateChanged',
+    handler: (data: ClientStateSnapshot) => void,
+  ): Promise<JmcomicListenerHandle>
+
+  addListener(
     event: 'launchRoute',
     handler: (data: { route: string }) => void,
   ): Promise<JmcomicListenerHandle>
@@ -230,6 +234,8 @@ export interface JmcomicClient {
   measureLatency(): Promise<{ results: LatencyResult[] }>
 
   getInitStatus(): Promise<{ complete: boolean }>
+
+  getClientState(): Promise<ClientStateSnapshot>
 
   login(options: { username: string; password: string }): Promise<UserInfo>
 

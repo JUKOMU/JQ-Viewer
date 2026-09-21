@@ -18,7 +18,7 @@ import static org.junit.Assert.*;
 public class FavoritePluginContractInstrumentedTest {
 
     private IsolatedDatabaseContext context;
-    private JmcomicPlugin plugin;
+    private JqViewerPlugin plugin;
 
     @Before
     public void setUp() throws Exception {
@@ -243,9 +243,9 @@ public class FavoritePluginContractInstrumentedTest {
         }
     }
 
-    private static void injectFavoriteHandler(JmcomicPlugin plugin,
+    private static void injectFavoriteHandler(JqViewerPlugin plugin,
                                               FavoriteStore favoriteStore) throws Exception {
-        Field field = JmcomicPlugin.class.getDeclaredField("favoriteHandler");
+        Field field = JqViewerPlugin.class.getDeclaredField("favoriteHandler");
         field.setAccessible(true);
         field.set(plugin, new FavoritePluginHandler(favoriteStore));
     }
@@ -266,7 +266,7 @@ public class FavoritePluginContractInstrumentedTest {
         field.set(null, null);
     }
 
-    private static final class ContextPlugin extends JmcomicPlugin {
+    private static final class ContextPlugin extends JqViewerPlugin {
 
         private final Context context;
 

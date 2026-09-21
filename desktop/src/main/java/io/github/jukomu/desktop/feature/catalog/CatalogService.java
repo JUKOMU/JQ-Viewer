@@ -1,5 +1,6 @@
 package io.github.jukomu.desktop.feature.catalog;
 
+import io.github.jukomu.desktop.bridge.ApiException;
 import io.github.jukomu.desktop.bridge.model.SuccessResponse;
 import io.github.jukomu.desktop.feature.catalog.model.AlbumResponse;
 import io.github.jukomu.desktop.feature.catalog.model.AlbumSummaryResponse;
@@ -38,11 +39,13 @@ import io.github.jukomu.jmcomic.api.model.SearchQuery;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 /** 调用在线客户端并转换为页面使用的响应模型。 */
 public final class CatalogService {
-    private final JmClient client;
+    private final Supplier<JmClient> clientSupplier;
     private final ImageService imageService;
     private final Function<String, String> albumCoverUrl;
 
@@ -51,31 +54,39 @@ public final class CatalogService {
             ImageService imageService,
             Function<String, String> albumCoverUrl
     ) {
-        this.client = client;
-        this.imageService = imageService;
-        this.albumCoverUrl = albumCoverUrl;
+        this(() -> client, imageService, albumCoverUrl);
+    }
+
+    public CatalogService(
+            Supplier<JmClient> clientSupplier,
+            ImageService imageService,
+            Function<String, String> albumCoverUrl
+    ) {
+        this.clientSupplier = Objects.requireNonNull(clientSupplier, "clientSupplier");
+        this.imageService = Objects.requireNonNull(imageService, "imageService");
+        this.albumCoverUrl = Objects.requireNonNull(albumCoverUrl, "albumCoverUrl");
     }
 
     public SearchResponse search(SearchRequest request) {
-        return toSearchResponse(client.search(query(request)));
+        return toSearchResponse(client().search(query(request)));
     }
 
     public SearchResponse categories(SearchRequest request) {
-        return toSearchResponse(client.getCategories(query(request)));
+        return toSearchResponse(client().getCategories(query(request)));
     }
 
     public AlbumResponse getAlbum(String id) {
-        return toAlbumResponse(client.getAlbum(id));
+        return toAlbumResponse(client().getAlbum(id));
     }
 
     public PhotoResponse getPhoto(String id) {
-        JmPhoto photo = client.getPhoto(id);
+        JmPhoto photo = client().getPhoto(id);
         imageService.register(photo);
         return toPhotoResponse(photo);
     }
 
     public CommentListResponse getComments(String albumId, int page) {
-        JmCommentList comments = client.getComments(
+        JmCommentList comments = client().getComments(
                 ForumQuery.album(albumId).mode(ForumMode.ALL).page(page).build());
         return new CommentListResponse(
                 comments.getTotal(),
@@ -88,16 +99,16 @@ public final class CatalogService {
                 .folderId(folderId)
                 .page(page)
                 .build();
-        return toFavoriteResponse(client.getFavorites(query));
+        return toFavoriteResponse(client().getFavorites(query));
     }
 
     public SuccessResponse toggleAlbumLike(String id) {
-        client.toggleAlbumLike(id);
+        client().toggleAlbumLike(id);
         return SuccessResponse.ok();
     }
 
     public SuccessResponse toggleAlbumFavorite(String id, String folderId) {
-        client.toggleAlbumFavorite(id, folderId);
+        client().toggleAlbumFavorite(id, folderId);
         return SuccessResponse.ok();
     }
 
@@ -107,7 +118,7 @@ public final class CatalogService {
             String folderName,
             String albumId
     ) {
-        JmFavoriteFolderResult result = client.manageFavoriteFolder(
+        JmFavoriteFolderResult result = client().manageFavoriteFolder(
                 type, folderId, folderName, albumId);
         return new FavoriteFolderResponse(text(result.getStatus()), text(result.getMsg()));
     }
@@ -283,5 +294,11 @@ public final class CatalogService {
 
     private static String text(String value) {
         return value == null ? "" : value;
+    }
+
+    private JmClient client() {
+        JmClient client = clientSupplier.get();
+        if (client == null) throw ApiException.unavailable("在线客户端不可用");
+        return client;
     }
 }

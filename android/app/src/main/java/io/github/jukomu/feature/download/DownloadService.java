@@ -24,6 +24,7 @@ import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
+import java.util.function.Supplier;
 
 /**
  * 下载服务——任务创建、取消、暂停、恢复、删除、查询。
@@ -43,7 +44,7 @@ public class DownloadService {
 
     private final DownloadStore downloadDb;
     private final FileStore fileStore;
-    private final JmApiClient client;
+    private final Supplier<JmApiClient> clientSupplier;
     private final ExecutorService prepareExecutor;
     private volatile DownloadEventSink eventSink;
     private final DownloadNotificationHelper notificationHelper;
@@ -67,11 +68,12 @@ public class DownloadService {
     private final Map<String, Long> lastNotificationAt = new ConcurrentHashMap<>();
 
     public DownloadService(DownloadStore downloadDb, FileStore fileStore,
-                           JmApiClient client, ExecutorService prepareExecutor,
+                           Supplier<JmApiClient> clientSupplier,
+                           ExecutorService prepareExecutor,
                            DownloadEventSink eventSink, Context context) {
         this.downloadDb = downloadDb;
         this.fileStore = fileStore;
-        this.client = client;
+        this.clientSupplier = clientSupplier;
         this.prepareExecutor = prepareExecutor;
         this.eventSink = eventSink;
         this.context = context.getApplicationContext();
@@ -108,6 +110,7 @@ public class DownloadService {
 
         prepareExecutor.submit(() -> {
             try {
+                JmApiClient client = requireClient();
                 if (downloadDb.getTask(taskId) == null) {
                     cleanupTaskMapping(taskId);
                     cancelNotification(taskId);
@@ -221,7 +224,7 @@ public class DownloadService {
             String libTaskId = taskIdMap.get(taskId);
             if (libTaskId != null) {
                 try {
-                    ((AbstractJmClient) client).downloadManager().cancel(libTaskId);
+                    ((AbstractJmClient) requireClient()).downloadManager().cancel(libTaskId);
                 } catch (Exception e) {
                     Log.d(TAG, "取消已暂停任务的底层下载失败，继续清理本地任务", e);
                 }
@@ -232,7 +235,7 @@ public class DownloadService {
             String libTaskId = taskIdMap.get(taskId);
             if (libTaskId != null) {
                 try {
-                    ((AbstractJmClient) client).downloadManager().cancel(libTaskId);
+                    ((AbstractJmClient) requireClient()).downloadManager().cancel(libTaskId);
                 } catch (Exception e) {
                     Log.d(TAG, "取消下载中的底层任务失败，继续清理本地任务", e);
                 }
@@ -260,7 +263,7 @@ public class DownloadService {
         String libTaskId = taskIdMap.get(taskId);
         if (libTaskId == null) throw new IllegalStateException("Library task not found");
 
-        AbstractJmClient ac = (AbstractJmClient) client;
+        AbstractJmClient ac = (AbstractJmClient) requireClient();
         if (ac.downloadManager().getTask(libTaskId) == null)
             throw new IllegalStateException("Task not found in download manager");
 
@@ -287,7 +290,7 @@ public class DownloadService {
         String libTaskId = taskIdMap.get(taskId);
         if (libTaskId == null) throw new IllegalStateException("Library task not found");
 
-        AbstractJmClient ac = (AbstractJmClient) client;
+        AbstractJmClient ac = (AbstractJmClient) requireClient();
         if (ac.downloadManager().getTask(libTaskId) == null)
             throw new IllegalStateException("Task not found in download manager");
 
@@ -309,7 +312,10 @@ public class DownloadService {
 
         String libTaskId = taskIdMap.get(taskId);
         if (libTaskId != null) {
-            ((AbstractJmClient) client).downloadManager().cancel(libTaskId);
+            JmApiClient client = clientSupplier.get();
+            if (client != null) {
+                ((AbstractJmClient) client).downloadManager().cancel(libTaskId);
+            }
         }
 
         fileStore.deleteChapter(albumId, chapterId);
@@ -584,6 +590,14 @@ public class DownloadService {
         if (object == null || !object.has(key) || object.isNull(key)) return null;
         String value = object.optString(key, null);
         return value == null || value.trim().isEmpty() ? null : value;
+    }
+
+    private JmApiClient requireClient() {
+        JmApiClient client = clientSupplier.get();
+        if (client == null) {
+            throw new IllegalStateException("在线客户端不可用");
+        }
+        return client;
     }
 
     private static final class ChapterValidation {

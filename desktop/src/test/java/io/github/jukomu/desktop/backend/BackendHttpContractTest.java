@@ -97,6 +97,8 @@ class BackendHttpContractTest {
             URI base = URI.create("http://127.0.0.1:" + backend.port());
 
             assertOk(post(http, base, requestedMethods, "getInitStatus", "{}"));
+            assertEquals("ready", body(post(
+                    http, base, requestedMethods, "getClientState", "{}")).path("state").asText());
             ObjectNode updateState = body(post(
                     http, base, requestedMethods, "getUpdateState", "{}"));
             ObjectNode cancelledUpdate = body(post(

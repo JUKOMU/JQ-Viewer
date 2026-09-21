@@ -58,6 +58,11 @@ public final class Plugin {
     }
 
     @PluginMethod
+    public void getClientState(Context context) {
+        system.getClientState(context);
+    }
+
+    @PluginMethod
     public void getDomainStates(Context context) {
         system.getDomainStates(context);
     }

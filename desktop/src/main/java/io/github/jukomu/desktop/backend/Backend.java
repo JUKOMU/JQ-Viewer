@@ -28,6 +28,7 @@ import io.github.jukomu.desktop.feature.auth.AuthService;
 import io.github.jukomu.desktop.feature.auth.CredentialStore;
 import io.github.jukomu.desktop.feature.auth.CredentialStores;
 import io.github.jukomu.desktop.feature.catalog.CatalogService;
+import io.github.jukomu.desktop.feature.client.JmcomicSessionManager;
 import io.github.jukomu.desktop.feature.download.DownloadFiles;
 import io.github.jukomu.desktop.feature.download.DownloadLocationService;
 import io.github.jukomu.desktop.feature.download.DownloadService;
@@ -109,9 +110,10 @@ public final class Backend implements AutoCloseable {
     private final Function<String, String> providedAlbumCoverUrl;
     private final CredentialStore providedCredentialStore;
     private final NetworkService.Operations providedNetworkOperations;
+    private final JmcomicSessionManager.Factory providedClientFactory;
 
     private Javalin app;
-    private JmApiClient client;
+    private JmcomicSessionManager clientSession;
     private DownloadService downloadService;
     private PdfExportService pdfExportService;
     private NetworkService networkService;
@@ -126,7 +128,7 @@ public final class Backend implements AutoCloseable {
 
     public Backend(Paths paths) {
         this(paths, new Database(paths), new ServiceExecutors(), null, null,
-                new FileService(paths), null, null);
+                new FileService(paths), null, null, null);
     }
 
     public Backend(
@@ -135,7 +137,7 @@ public final class Backend implements AutoCloseable {
             ExecutorService apiExecutor
     ) {
         this(paths, database, new ServiceExecutors(apiExecutor), null, null,
-                new FileService(paths), null, null);
+                new FileService(paths), null, null, null);
     }
 
     Backend(
@@ -146,7 +148,7 @@ public final class Backend implements AutoCloseable {
             Function<String, String> providedAlbumCoverUrl
     ) {
         this(paths, database, new ServiceExecutors(apiExecutor), providedClient, providedAlbumCoverUrl,
-                new FileService(paths), CredentialStores.unavailable(), null);
+                new FileService(paths), CredentialStores.unavailable(), null, null);
     }
 
     Backend(
@@ -158,7 +160,7 @@ public final class Backend implements AutoCloseable {
             FileService fileService
     ) {
         this(paths, database, new ServiceExecutors(apiExecutor), providedClient, providedAlbumCoverUrl,
-                fileService, CredentialStores.unavailable(), null);
+                fileService, CredentialStores.unavailable(), null, null);
     }
 
     Backend(
@@ -171,7 +173,7 @@ public final class Backend implements AutoCloseable {
             CredentialStore credentialStore
     ) {
         this(paths, database, new ServiceExecutors(apiExecutor), providedClient, providedAlbumCoverUrl,
-                fileService, credentialStore, null);
+                fileService, credentialStore, null, null);
     }
 
     Backend(
@@ -185,7 +187,19 @@ public final class Backend implements AutoCloseable {
             NetworkService.Operations networkOperations
     ) {
         this(paths, database, new ServiceExecutors(apiExecutor), providedClient, providedAlbumCoverUrl,
-                fileService, credentialStore, networkOperations);
+                fileService, credentialStore, networkOperations, null);
+    }
+
+    Backend(
+            Paths paths,
+            Database database,
+            ExecutorService apiExecutor,
+            FileService fileService,
+            CredentialStore credentialStore,
+            JmcomicSessionManager.Factory clientFactory
+    ) {
+        this(paths, database, new ServiceExecutors(apiExecutor), null, null,
+                fileService, credentialStore, null, clientFactory);
     }
 
     private Backend(
@@ -196,7 +210,8 @@ public final class Backend implements AutoCloseable {
             Function<String, String> providedAlbumCoverUrl,
             FileService fileService,
             CredentialStore providedCredentialStore,
-            NetworkService.Operations providedNetworkOperations
+            NetworkService.Operations providedNetworkOperations,
+            JmcomicSessionManager.Factory providedClientFactory
     ) {
         this.paths = Objects.requireNonNull(paths, "paths");
         this.database = Objects.requireNonNull(database, "database");
@@ -204,8 +219,12 @@ public final class Backend implements AutoCloseable {
         this.fileService = Objects.requireNonNull(fileService, "fileService");
         this.providedCredentialStore = providedCredentialStore;
         this.providedNetworkOperations = providedNetworkOperations;
+        this.providedClientFactory = providedClientFactory;
         if ((providedClient == null) != (providedAlbumCoverUrl == null)) {
             throw new IllegalArgumentException("客户端和封面地址解析器必须同时提供");
+        }
+        if (providedClient != null && providedClientFactory != null) {
+            throw new IllegalArgumentException("不能同时提供固定客户端和客户端工厂");
         }
         this.providedClient = providedClient;
         this.providedAlbumCoverUrl = providedAlbumCoverUrl;
@@ -221,7 +240,7 @@ public final class Backend implements AutoCloseable {
 
         Javalin candidate = null;
         EventHub startedEventHub = null;
-        JmApiClient startedClient = null;
+        JmcomicSessionManager startedClientSession = null;
         DownloadService startedDownloadService = null;
         PdfExportService startedPdfExportService = null;
         NetworkService startedNetworkService = null;
@@ -250,33 +269,37 @@ public final class Backend implements AutoCloseable {
             startedEventHub = new EventHub(mapper);
             startedUpdateService = new DesktopUpdateService(
                     DesktopUpdateConfiguration.fromSystemProperties(), mapper, startedEventHub, paths);
-            final JmClient serviceClient;
             final Function<String, String> albumCoverUrl;
             final NetworkService.Operations networkOperations;
             if (providedClient == null) {
-                startedClient = JmComic.newApiClient(new JmConfiguration.Builder()
+                JmConfiguration configuration = new JmConfiguration.Builder()
                         .downloadThreadPoolSize(settingsService.downloadConcurrency())
-                        .concurrentImageDownloads(preloadConcurrency)
-                        .build());
-                JmApiClient ownedClient = startedClient;
-                serviceClient = ownedClient;
-                albumCoverUrl = id -> ownedClient.getAlbumCoverUrl(id, "_3x4");
-                networkOperations = NetworkService.Operations.from(ownedClient);
+                        .build();
+                JmcomicSessionManager.Factory clientFactory = providedClientFactory == null
+                        ? () -> JmComic.newApiClientAsync(configuration)
+                        : providedClientFactory;
+                startedClientSession = JmcomicSessionManager.managed(
+                        clientFactory, startedEventHub);
+                JmcomicSessionManager clientSession = startedClientSession;
+                albumCoverUrl = id -> requireApiClient(clientSession).getAlbumCoverUrl(id, "_3x4");
+                networkOperations = new NetworkService.Operations(
+                        () -> requireApiClient(clientSession).getDomainStates(),
+                        () -> requireApiClient(clientSession).getDomainLatency(),
+                        () -> requireApiClient(clientSession).reprobeDomains());
             } else {
-                serviceClient = providedClient;
+                startedClientSession = JmcomicSessionManager.provided(
+                        providedClient, startedEventHub);
                 albumCoverUrl = providedAlbumCoverUrl;
                 networkOperations = providedNetworkOperations;
             }
-            if (!(serviceClient instanceof JmDownloadClient downloadClient)) {
-                throw new IllegalStateException("JMComic 客户端不支持下载任务控制");
-            }
+            final JmcomicSessionManager clientSession = startedClientSession;
             final EventHub eventHub = startedEventHub;
             if (networkOperations != null) {
                 startedNetworkService = new NetworkService(
                         networkOperations, executors.networkProbe(), eventHub);
             }
             ImageService imageService = new ImageService(
-                    serviceClient, executors.imagePreload(), eventHub);
+                    clientSession::getClient, executors.imagePreload(), eventHub);
             DownloadStore downloadStore = new DownloadStore(database);
             PdfExportStore pdfExportStore = new PdfExportStore(database);
             startedLaunchRoutes = new LaunchRouteService(eventHub);
@@ -292,8 +315,10 @@ public final class Backend implements AutoCloseable {
             startedDownloadService = new DownloadService(
                     downloadStore,
                     downloadFiles,
-                    serviceClient,
-                    downloadClient,
+                    clientSession::getClient,
+                    () -> clientSession.getClient() instanceof JmDownloadClient client
+                            ? client
+                            : null,
                     executors.downloadPrepare(),
                     eventHub,
                     mapper
@@ -339,8 +364,13 @@ public final class Backend implements AutoCloseable {
             taskNotifications.start();
             Plugin plugin = new Plugin(
                     new ApiPluginHandler(apiRequests, imageRequests,
-                            new CatalogService(serviceClient, imageService, albumCoverUrl), imageService),
-                    new AuthPluginHandler(apiRequests, new AuthService(serviceClient, credentialStore)),
+                            new CatalogService(clientSession::getClient, imageService, albumCoverUrl),
+                            imageService),
+                    new AuthPluginHandler(apiRequests,
+                            new AuthService(
+                                    clientSession::getClient,
+                                    credentialStore,
+                                    executors.api())),
                     new CachePluginHandler(imageRequests, cacheService),
                     new SettingsPluginHandler(
                             settingsRequests, relocationRequests,
@@ -353,6 +383,7 @@ public final class Backend implements AutoCloseable {
                     new PdfPluginHandler(pdfRequests, pdfManagementService, startedPdfExportService),
                     new SystemPluginHandler(
                             networkRequests, diagnosticsRequests,
+                            clientSession,
                             startedNetworkService, startedLaunchRoutes, diagnosticsService),
                     new OcrPluginHandler(ocrRequests, startedOcrService),
                     new UpdatePluginHandler(updateRequests, startedUpdateService));
@@ -379,9 +410,10 @@ public final class Backend implements AutoCloseable {
             if (port <= 0) {
                 throw new IllegalStateException("Javalin did not expose an operating-system port");
             }
+            clientSession.startOrRetry();
 
             this.app = candidate;
-            this.client = startedClient;
+            this.clientSession = clientSession;
             this.downloadService = downloadService;
             this.pdfExportService = startedPdfExportService;
             this.networkService = startedNetworkService;
@@ -404,7 +436,7 @@ public final class Backend implements AutoCloseable {
             DesktopUpdateService failedUpdateService = startedUpdateService;
             LaunchRouteService failedLaunchRoutes = startedLaunchRoutes;
             EventHub failedEventHub = startedEventHub;
-            JmApiClient failedClient = startedClient;
+            JmcomicSessionManager failedClientSession = startedClientSession;
             CloseSequence.run(LOGGER,
                     step("启动中的本地后端", () -> {
                         if (failedApp != null) failedApp.stop();
@@ -433,8 +465,8 @@ public final class Backend implements AutoCloseable {
                     step("事件中心", () -> {
                         if (failedEventHub != null) failedEventHub.close();
                     }),
-                    step("JMComic 客户端", () -> {
-                        if (failedClient != null) failedClient.close();
+                    step("JMComic 客户端会话", () -> {
+                        if (failedClientSession != null) failedClientSession.close();
                     }),
                     step("服务执行器", executors::close),
                     step("数据库", database::close)
@@ -549,6 +581,14 @@ public final class Backend implements AutoCloseable {
         return current;
     }
 
+    private static JmApiClient requireApiClient(JmcomicSessionManager clientSession) {
+        JmClient client = clientSession.requireClient();
+        if (!(client instanceof JmApiClient apiClient)) {
+            throw ApiException.unavailable("在线客户端不支持域名状态查询");
+        }
+        return apiClient;
+    }
+
     private static String messageOf(Throwable failure) {
         String message = failure.getMessage();
         return message == null || message.isBlank() ? "图片请求失败" : message;
@@ -636,8 +676,8 @@ public final class Backend implements AutoCloseable {
         eventHub = null;
         DownloadService closingDownloadService = downloadService;
         downloadService = null;
-        JmApiClient closingClient = client;
-        client = null;
+        JmcomicSessionManager closingClientSession = clientSession;
+        clientSession = null;
 
         CloseSequence.run(LOGGER,
                 step("任务通知", () -> {
@@ -667,8 +707,8 @@ public final class Backend implements AutoCloseable {
                 step("下载服务", () -> {
                     if (closingDownloadService != null) closingDownloadService.close();
                 }),
-                step("JMComic 客户端", () -> {
-                    if (closingClient != null) closingClient.close();
+                step("JMComic 客户端会话", () -> {
+                    if (closingClientSession != null) closingClientSession.close();
                 }),
                 step("服务执行器", executors::close),
                 step("数据库", database::close)

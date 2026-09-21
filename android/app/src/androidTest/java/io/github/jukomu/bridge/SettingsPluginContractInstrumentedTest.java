@@ -14,12 +14,12 @@ import static org.junit.Assert.*;
 
 public class SettingsPluginContractInstrumentedTest {
 
-    private JmcomicPlugin plugin;
+    private JqViewerPlugin plugin;
     private FakeSettingsService settingsService;
 
     @Before
     public void setUp() throws Exception {
-        plugin = new JmcomicPlugin();
+        plugin = new JqViewerPlugin();
         settingsService = new FakeSettingsService();
         injectSettingsHandler(plugin, settingsService);
     }
@@ -178,9 +178,9 @@ public class SettingsPluginContractInstrumentedTest {
         }
     }
 
-    private static void injectSettingsHandler(JmcomicPlugin plugin,
+    private static void injectSettingsHandler(JqViewerPlugin plugin,
                                               SettingsService settingsService) throws Exception {
-        Field field = JmcomicPlugin.class.getDeclaredField("settingsHandler");
+        Field field = JqViewerPlugin.class.getDeclaredField("settingsHandler");
         field.setAccessible(true);
         field.set(plugin, new SettingsPluginHandler(settingsService));
     }

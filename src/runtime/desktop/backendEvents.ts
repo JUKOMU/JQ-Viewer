@@ -107,6 +107,7 @@ export function createBackendEvents(): BackendEvents {
     onDownloadProgress: (handler) => subscribe('downloadProgress', handler),
     onRelocationProgress: (handler) => subscribe('relocationProgress', handler),
     onNetworkProbe: (handler) => subscribe('networkProbe', handler),
+    onClientStateChanged: (handler) => subscribe('clientStateChanged', handler),
     onLaunchRoute: (handler) => subscribe('launchRoute', handler),
     onUpdateProgress: (handler) => subscribe('updateProgress', handler),
     onPdfExportProgress: (handler) => subscribe('pdfExportProgress', handler),

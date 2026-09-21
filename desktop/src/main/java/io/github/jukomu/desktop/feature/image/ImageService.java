@@ -22,16 +22,18 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.function.Supplier;
 
 /** 管理章节图片元数据、实际下载、缩略图生成和事件发布。 */
 public final class ImageService {
     private static final int THUMBNAIL_MAX_WIDTH = 300;
     private static final long CACHE_CAPACITY_MB = 256;
 
-    private final JmClient client;
+    private final Supplier<JmClient> clientSupplier;
     private final Executor executor;
     private final EventHub events;
     private final ImageCache cache = new ImageCache(CACHE_CAPACITY_MB * 1024 * 1024);
@@ -41,9 +43,13 @@ public final class ImageService {
     private long generation;
 
     public ImageService(JmClient client, Executor executor, EventHub events) {
-        this.client = client;
-        this.executor = executor;
-        this.events = events;
+        this(() -> client, executor, events);
+    }
+
+    public ImageService(Supplier<JmClient> clientSupplier, Executor executor, EventHub events) {
+        this.clientSupplier = Objects.requireNonNull(clientSupplier, "clientSupplier");
+        this.executor = Objects.requireNonNull(executor, "executor");
+        this.events = Objects.requireNonNull(events, "events");
         ImageIO.scanForPlugins();
     }
 
@@ -117,13 +123,13 @@ public final class ImageService {
         if (cached != null) return cached;
         JmImage image = images.getOrDefault(photoId, Map.of()).get(sortOrder);
         if (image == null) {
-            JmPhoto photo = client.getPhoto(photoId);
+            JmPhoto photo = client().getPhoto(photoId);
             register(photo);
             image = images.getOrDefault(photoId, Map.of()).get(sortOrder);
         }
         if (image == null) throw new ApiException("not-found", 404, "图片不存在");
         try {
-            byte[] bytes = client.fetchImageBytes(image);
+            byte[] bytes = client().fetchImageBytes(image);
             String mime = mime(image);
             cache.put(key(photoId, sortOrder, "image"), bytes, mime);
             if ("thumb".equals(type)) {
@@ -178,7 +184,7 @@ public final class ImageService {
             executor.execute(() -> {
                 try {
                     if (generations.getOrDefault(scope, currentGeneration) != currentGeneration) return;
-                    byte[] bytes = client.fetchImageBytes(image);
+                    byte[] bytes = client().fetchImageBytes(image);
                     if (generations.getOrDefault(scope, currentGeneration) != currentGeneration) return;
                     String mime = mime(image);
                     cache.put(key(photoId, image.getSortOrder(), "image"), bytes, mime);
@@ -263,5 +269,11 @@ public final class ImageService {
 
     private static String text(String value) {
         return value == null ? "" : value;
+    }
+
+    private JmClient client() {
+        JmClient client = clientSupplier.get();
+        if (client == null) throw ApiException.unavailable("在线客户端不可用");
+        return client;
     }
 }

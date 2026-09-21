@@ -2,6 +2,7 @@ package io.github.jukomu.desktop.feature.download;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.jukomu.desktop.bridge.EventHub;
+import io.github.jukomu.desktop.bridge.ApiException;
 import io.github.jukomu.desktop.data.Database;
 import io.github.jukomu.desktop.data.Paths;
 import io.github.jukomu.desktop.feature.download.data.DownloadStore;
@@ -125,6 +126,27 @@ class DownloadServiceTest {
             assertThrows(RuntimeException.class, () -> fixture.service.downloadChapter(
                     new DownloadChapterRequest("..", "photo-1", "Album", "Photo", "")));
             assertTrue(fixture.store.listTasks().isEmpty());
+        }
+    }
+
+    @Test
+    void rejectsNewOnlineDownloadWithoutCreatingLocalTaskWhenClientIsUnavailable() throws Exception {
+        try (Fixture fixture = fixture(Mode.RUNNING)) {
+            DownloadService unavailable = new DownloadService(
+                    fixture.store,
+                    fixture.files,
+                    () -> null,
+                    () -> null,
+                    Runnable::run,
+                    fixture.events,
+                    fixture.mapper);
+
+            ApiException failure = assertThrows(
+                    ApiException.class, () -> unavailable.downloadChapter(request()));
+
+            assertEquals("unavailable", failure.code());
+            assertTrue(fixture.store.listTasks().isEmpty());
+            unavailable.close();
         }
     }
 

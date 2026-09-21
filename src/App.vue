@@ -30,7 +30,7 @@ import { disposeNetworkProbeStore, initNetworkProbeStore } from '@/composables/n
 import { JmcomicService, showToast } from '@/services/JmcomicService'
 import { UpdateService } from '@/services/UpdateService'
 import { presentUpdatePrompt } from '@/services/UpdatePromptService'
-import type { UpdateManifest } from '@/services/JmcomicTypes'
+import type { ClientStateSnapshot, UpdateManifest } from '@/services/JmcomicTypes'
 
 const { isMenuNavigation } = useSideMenuState()
 
@@ -195,8 +195,10 @@ const keepAliveNames = computed(() =>
     .filter(Boolean),
 )
 
-let pollTimer: ReturnType<typeof setInterval> | null = null
 let activeToast: Awaited<ReturnType<typeof showToast>> | null = null
+let clientStateHandle: ListenerHandle | null = null
+let clientStatePollTimer: ReturnType<typeof setTimeout> | null = null
+let clientStateObservationGeneration = 0
 let launchRouteHandle: ListenerHandle | null = null
 let launchRouteDrain: Promise<void> = Promise.resolve()
 let launchRouteNavigationVersion = 0
@@ -295,72 +297,114 @@ onMounted(async () => {
   // 初始化网络探活事件 store（模块级，持续记录启动以来全部事件）
   initNetworkProbeStore()
 
-  // 启动初始化 toast 流程（不阻塞 onMounted 后续逻辑）
-  void (async () => {
-    // ---- Phase 1: 客户端初始化轮询 ----
-    const t0 = Date.now()
-    let warmupToast = await showToast('客户端初始化', 'medium', 0)
-    activeToast = warmupToast
+  const observationGeneration = ++clientStateObservationGeneration
+  let latestClientStateTimestamp = -Infinity
+  let authGeneration = 0
+  let authState: 'idle' | 'running' | 'complete' = 'idle'
+  const handleClientState = async (state: ClientStateSnapshot) => {
+    if (state.timestamp < latestClientStateTimestamp) return
+    latestClientStateTimestamp = state.timestamp
 
-    await new Promise<void>((resolve) => {
-      pollTimer = setInterval(async () => {
-        let complete = false
-        try {
-          const status = await JmcomicService.getInitStatus()
-          complete = status.complete
-        } catch {
-          /* 桥接失败，继续轮询 */
-        }
-
-        if (complete) {
-          clearInterval(pollTimer!)
-          pollTimer = null
-          await warmupToast.dismiss()
-          activeToast = null
-          showToast('初始化完成', 'success')
-          resolve()
-        } else {
-          const n = Math.floor((Date.now() - t0) / 1000)
-          await warmupToast.dismiss()
-          warmupToast = await showToast(`客户端初始化(${n}s)`, 'medium', 0)
-          activeToast = warmupToast
-        }
-      }, 1000)
-    })
-
-    // ---- Phase 2: 自动登录 ----
-    const loginToast = await showToast('正在自动登录...', 'medium', 0)
-    activeToast = loginToast
-
-    const loggedIn = await initAuth()
-    await loginToast.dismiss()
-    activeToast = null
-    if (loggedIn) {
-      showToast('登录成功', 'success')
+    if (state.state === 'initializing') {
+      authGeneration++
+      authState = 'idle'
+      if (!activeToast) activeToast = await showToast('客户端初始化', 'medium', 0)
+      return
     }
 
-    // ---- Phase 3: 自动检查更新 ----
-    void (async () => {
-      try {
-        const result = await UpdateService.check()
-        if (result.updateAvailable) {
-          await UpdateService.runPrompt(() => showStartupUpdatePrompt(result.manifest))
-        }
-      } catch {
-        // 静默忽略网络错误
+    if (activeToast) {
+      await activeToast.dismiss()
+      activeToast = null
+    }
+    if (state.state !== 'ready') {
+      authGeneration++
+      authState = 'idle'
+      return
+    }
+    if (authState !== 'idle') return
+
+    authState = 'running'
+    const currentAuthGeneration = ++authGeneration
+    const authTimestamp = state.timestamp
+    const canCommitAuth = () =>
+      observationGeneration === clientStateObservationGeneration &&
+      currentAuthGeneration === authGeneration &&
+      latestClientStateTimestamp === authTimestamp
+    showToast('初始化完成', 'success')
+    const loginToast = await showToast('正在自动登录...', 'medium', 0)
+    if (!canCommitAuth()) {
+      await loginToast.dismiss()
+      return
+    }
+    activeToast = loginToast
+    const result = await initAuth(canCommitAuth)
+    await loginToast.dismiss()
+    if (activeToast === loginToast) activeToast = null
+    if (!canCommitAuth()) return
+    authState = result === 'retryable-error' ? 'idle' : 'complete'
+    if (result === 'authenticated') showToast('登录成功', 'success')
+  }
+
+  let subscribed = false
+  try {
+    clientStateHandle = await JmcomicService.addClientStateListener((state) => {
+      void handleClientState(state)
+    })
+    subscribed = true
+  } catch {
+    // 监听注册失败时由下方有限轮询继续观察初始化恢复。
+  }
+  let initialClientState: ClientStateSnapshot | null = null
+  try {
+    initialClientState = await JmcomicService.getClientState()
+    await handleClientState(initialClientState)
+  } catch {
+    // 桥接失败不阻塞本地能力和页面挂载。
+  }
+  if (!subscribed && initialClientState?.state !== 'ready') {
+    const delays = [250, 500, 1_000, 2_000, 4_000, 8_000]
+    const poll = (index: number) => {
+      if (index >= delays.length || observationGeneration !== clientStateObservationGeneration) {
+        return
       }
-    })()
+      clientStatePollTimer = setTimeout(async () => {
+        clientStatePollTimer = null
+        if (observationGeneration !== clientStateObservationGeneration) return
+        try {
+          const state = await JmcomicService.getClientState()
+          await handleClientState(state)
+          if (state.state === 'ready') return
+        } catch {
+          // 下一次退避继续读取。
+        }
+        poll(index + 1)
+      }, delays[index])
+    }
+    poll(0)
+  }
+
+  // 应用更新与 JMComic 客户端初始化相互独立。
+  void (async () => {
+    try {
+      const result = await UpdateService.check()
+      if (result.updateAvailable) {
+        await UpdateService.runPrompt(() => showStartupUpdatePrompt(result.manifest))
+      }
+    } catch {
+      // 静默忽略网络错误
+    }
   })()
 })
 
 onBeforeUnmount(() => {
-  if (pollTimer != null) {
-    clearInterval(pollTimer)
-    pollTimer = null
-  }
+  clientStateObservationGeneration++
+  if (clientStatePollTimer) clearTimeout(clientStatePollTimer)
+  clientStatePollTimer = null
   clearInterval(heartbeatTimer)
   activeToast?.dismiss()
   activeToast = null
+  clientStateHandle?.remove()
+  clientStateHandle = null
   launchRouteHandle?.remove()
   launchRouteHandle = null
   void disposeNetworkProbeStore()

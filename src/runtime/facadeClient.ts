@@ -34,6 +34,11 @@ function createListener(runtime: FrontendRuntime, event: string, handler: unknow
       return runtime.events.onNetworkProbe(
         handler as Parameters<typeof runtime.events.onNetworkProbe>[0],
       )
+    case 'clientStateChanged': {
+      const subscribe = runtime.events.onClientStateChanged
+      if (!subscribe) throw new RuntimeError('unavailable', '客户端状态事件不可用')
+      return subscribe(handler as Parameters<NonNullable<typeof subscribe>>[0])
+    }
     case 'launchRoute':
       return runtime.events.onLaunchRoute(
         handler as Parameters<typeof runtime.events.onLaunchRoute>[0],

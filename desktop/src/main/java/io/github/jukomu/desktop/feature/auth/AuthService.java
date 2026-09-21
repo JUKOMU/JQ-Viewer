@@ -24,6 +24,8 @@ public final class AuthService {
     private final Supplier<JmClient> clientSupplier;
     private final CredentialStore credentials;
     private final Executor remoteLogoutExecutor;
+    private final Object remoteAuthLock = new Object();
+    private volatile long successfulLoginGeneration;
     private volatile UserInfoResponse userInfo;
 
     public AuthService(JmClient client, CredentialStore credentials) {
@@ -48,7 +50,7 @@ public final class AuthService {
     public UserInfoResponse login(String username, String password) {
         UserInfoResponse result;
         try {
-            result = toUserInfoResponse(requireClient().login(username, password));
+            result = remoteLogin(username, password);
         } catch (NetworkException failure) {
             throw ApiException.network(message(failure, "登录网络请求失败"));
         } catch (ResponseException failure) {
@@ -84,8 +86,7 @@ public final class AuthService {
         }
 
         try {
-            UserInfoResponse result = toUserInfoResponse(
-                    requireClient().login(saved.username(), saved.password()));
+            UserInfoResponse result = remoteLogin(saved.username(), saved.password());
             userInfo = result;
             return new AutoLoginResponse(true, result);
         } catch (NetworkException failure) {
@@ -144,6 +145,7 @@ public final class AuthService {
     }
 
     private void scheduleRemoteLogout() {
+        long expectedLoginGeneration = successfulLoginGeneration;
         JmClient client;
         try {
             client = clientSupplier.get();
@@ -155,14 +157,26 @@ public final class AuthService {
 
         try {
             remoteLogoutExecutor.execute(() -> {
-                try {
-                    client.logout();
-                } catch (RuntimeException failure) {
-                    LOGGER.warn("远端注销失败，本地登出已完成", failure);
+                synchronized (remoteAuthLock) {
+                    if (successfulLoginGeneration != expectedLoginGeneration) return;
+                    try {
+                        client.logout();
+                    } catch (RuntimeException failure) {
+                        LOGGER.warn("远端注销失败，本地登出已完成", failure);
+                    }
                 }
             });
         } catch (RuntimeException failure) {
             LOGGER.warn("无法提交远端注销请求，本地登出已完成", failure);
+        }
+    }
+
+    private UserInfoResponse remoteLogin(String username, String password) {
+        synchronized (remoteAuthLock) {
+            UserInfoResponse result = toUserInfoResponse(
+                    requireClient().login(username, password));
+            successfulLoginGeneration++;
+            return result;
         }
     }
 

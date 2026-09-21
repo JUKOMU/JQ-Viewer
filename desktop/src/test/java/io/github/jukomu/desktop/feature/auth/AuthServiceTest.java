@@ -135,6 +135,24 @@ class AuthServiceTest {
         assertTrue(remoteLogoutCalled.get());
     }
 
+    @Test
+    void delayedRemoteLogoutDoesNotTerminateNewLoginSession() {
+        MemoryCredentialStore credentials = new MemoryCredentialStore(true);
+        Queue<Runnable> remoteTasks = new ArrayDeque<>();
+        AtomicBoolean remoteLogoutCalled = new AtomicBoolean();
+        JmClient client = client(null, null, () -> remoteLogoutCalled.set(true));
+        AuthService service = new AuthService(() -> client, credentials, remoteTasks::add);
+        service.login("alice", "old-secret");
+        service.logout();
+
+        service.login("alice", "new-secret");
+        remoteTasks.remove().run();
+
+        assertFalse(remoteLogoutCalled.get());
+        assertTrue(service.state().loggedIn());
+        assertEquals("new-secret", credentials.loadDirectly().password());
+    }
+
     private static JmClient client(RuntimeException loginFailure) {
         return client(loginFailure, null);
     }

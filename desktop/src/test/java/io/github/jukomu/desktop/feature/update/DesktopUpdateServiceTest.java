@@ -307,6 +307,9 @@ class DesktopUpdateServiceTest {
             } else if (DesktopUpdateService.GITEE_LATEST_RELEASE.equals(uri)) {
                 body = new ByteArrayInputStream(giteeRelease().getBytes(StandardCharsets.UTF_8));
             } else if (uri.getPath().endsWith("JQ-Viewer-1.4.7-linux-x64.tar.gz")) {
+                if (blockGithubDownloadAtEof.get() && "gitee.com".equals(uri.getHost())) {
+                    githubDownloadReachedEof.await();
+                }
                 if (stallDownloads.get()) {
                     body = new StalledInputStream();
                 } else if (blockGithubDownloadAtEof.get()

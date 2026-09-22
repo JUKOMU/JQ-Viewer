@@ -441,13 +441,13 @@ const showPreview = ref(false)
   }
 
   .header-bg-img {
-    filter: blur(32px) saturate(0.78) brightness(1.08);
-    opacity: 0.18;
+    filter: blur(8px) saturate(0.78) brightness(1.08);
+    opacity: 0.6;
     transform: scale(1.16);
   }
 
   .header-bg-mask {
-    background: linear-gradient(90deg, rgb(250 249 247 / 0.86), rgb(247 248 246 / 0.96));
+    background: linear-gradient(90deg, rgb(250 249 247 / 0.46), rgb(247 248 246 / 0.72));
   }
 
   .header-content {

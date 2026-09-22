@@ -431,10 +431,10 @@ const showPreview = ref(false)
   }
 
   .header-bg {
-    inset: 0 auto 0 50%;
+    inset: 0 auto 0 calc(-1 * var(--detail-page-inset));
     z-index: 0;
     width: 100cqw;
-    transform: translateX(-50%);
+    transform: none;
     background: #f7f8f6;
     border-top: 1px solid rgb(92 75 65 / 0.08);
     border-bottom: 1px solid rgb(92 75 65 / 0.12);
@@ -565,6 +565,12 @@ const showPreview = ref(false)
     border: 1px solid rgb(92 75 65 / 0.12);
     background: rgb(255 255 255 / 0.94);
     box-shadow: 0 10px 24px rgb(76 42 24 / 0.12);
+  }
+}
+
+@media (min-width: 992px) {
+  .header-content {
+    margin-inline: 0 auto;
   }
 }
 

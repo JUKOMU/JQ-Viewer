@@ -1602,6 +1602,9 @@ const handleScroll = async (event: CustomEvent<{ scrollTop?: number }>) => {
 
 <style scoped>
 .detail-page-container {
+  --detail-content-max: 720px;
+  --detail-page-inset: 0px;
+
   width: 100%;
   container-type: inline-size;
 }
@@ -1733,6 +1736,8 @@ const handleScroll = async (event: CustomEvent<{ scrollTop?: number }>) => {
 
 @container (min-width: 960px) {
   .detail-layout {
+    --detail-content-max: 960px;
+
     box-sizing: border-box;
     max-width: 1320px;
     margin-inline: auto;
@@ -1768,6 +1773,26 @@ const handleScroll = async (event: CustomEvent<{ scrollTop?: number }>) => {
   .tab-content.swiping .tab-panel {
     inset: 20px 0 auto;
     width: 100%;
+  }
+}
+
+@media (min-width: 992px) {
+  .detail-page-container {
+    --detail-page-inset: clamp(150px, 15cqw, 300px);
+  }
+
+  .detail-layout {
+    max-width: none;
+    margin-inline: 0;
+    padding-inline: var(--detail-page-inset) 24px;
+  }
+
+  .tab-bar,
+  .tab-content {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: var(--detail-content-max);
+    margin-inline: 0 auto;
   }
 }
 </style>

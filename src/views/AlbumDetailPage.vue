@@ -1687,6 +1687,8 @@ const handleScroll = async (event: CustomEvent<{ scrollTop?: number }>) => {
 
 /* Tab 内容 */
 .tab-content {
+  width: 100%;
+  box-sizing: border-box;
   padding: 12px 14px;
   overflow: hidden;
   position: relative;
@@ -1695,6 +1697,7 @@ const handleScroll = async (event: CustomEvent<{ scrollTop?: number }>) => {
 
 .tab-panel {
   display: none;
+  width: 100%;
 }
 
 .tab-panel.current {
@@ -1756,9 +1759,10 @@ const handleScroll = async (event: CustomEvent<{ scrollTop?: number }>) => {
   }
 
   .tab-content {
+    width: min(100%, 960px);
     padding: 20px 0;
-    max-width: none;
-    margin-inline: 0;
+    max-width: 960px;
+    margin-inline: auto;
   }
 
   .tab-content.swiping .tab-panel {

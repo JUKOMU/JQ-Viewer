@@ -1,7 +1,7 @@
 <template>
   <ion-app>
     <div class="app-shell">
-      <MainMenu content-id="main-content" :disabled="route.meta.menu !== true"></MainMenu>
+      <MainMenu content-id="main-content" :disabled="mainMenuDisabled"></MainMenu>
       <div id="main-content" class="ion-page-container">
         <router-view v-slot="{ Component }">
           <transition :name="transitionName" mode="out-in" @after-enter="onAfterEnter">
@@ -32,7 +32,7 @@ import { UpdateService } from '@/services/UpdateService'
 import { presentUpdatePrompt } from '@/services/UpdatePromptService'
 import type { ClientStateSnapshot, UpdateManifest } from '@/services/JmcomicTypes'
 
-const { isMenuNavigation } = useSideMenuState()
+const { isMenuNavigation, isWideMenu } = useSideMenuState()
 
 const route = useRoute()
 const router = useRouter()
@@ -56,6 +56,10 @@ let pendingReaderFromPath = ''
 
 const isReaderRoutePath = (path: string) =>
   path === '/pdf-reader' || /^\/album\/[^/]+\/read\/[^/]+$/.test(path)
+
+const mainMenuDisabled = computed(
+  () => isReaderRoutePath(route.path) || (!isWideMenu.value && route.meta.menu !== true),
+)
 
 const clearReaderRoute = () => {
   localStorage.removeItem(READER_ROUTE_RESTORE_KEY)

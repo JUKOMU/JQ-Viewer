@@ -1,11 +1,11 @@
 <template>
   <IonPage>
     <IonHeader class="ion-no-border">
-      <IonToolbar>
+      <IonToolbar class="toolbar">
         <IonButtons slot="start">
           <IonBackButton default-href="/user" />
         </IonButtons>
-        <IonTitle>登录</IonTitle>
+        <IonTitle class="toolbar-title">登录</IonTitle>
       </IonToolbar>
     </IonHeader>
     <IonContent>
@@ -99,6 +99,19 @@ async function doLogin() {
 </script>
 
 <style scoped>
+.toolbar {
+  width: 100%;
+  max-width: 1000px;
+  margin-inline: auto;
+  box-sizing: border-box;
+}
+
+.toolbar-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #4c2a18;
+}
+
 .login-container {
   display: flex;
   justify-content: center;

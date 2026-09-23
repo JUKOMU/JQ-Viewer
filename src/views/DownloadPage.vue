@@ -115,7 +115,7 @@
       </div>
     </IonContent>
     <IonContent v-show="activeMainView === 'pdf'">
-      <div class="download-page-shell">
+      <div class="download-page-shell desktop-page-content">
         <PdfManagementView
           ref="pdfManagementRef"
           :initial-view="pdfInitialView"

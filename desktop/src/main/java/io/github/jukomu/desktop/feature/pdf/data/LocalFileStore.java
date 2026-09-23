@@ -127,7 +127,7 @@ public final class LocalFileStore {
     }
 
     public synchronized Page list(
-            String format,
+            List<String> formats,
             String sourceType,
             String availability,
             String folderId,
@@ -139,9 +139,10 @@ public final class LocalFileStore {
         CursorPosition position = CursorPosition.parse(cursor);
         List<String> clauses = new ArrayList<>();
         List<Object> arguments = new ArrayList<>();
-        if (format != null && !format.isBlank()) {
-            clauses.add("format=?");
-            arguments.add(format);
+        if (formats != null && !formats.isEmpty()) {
+            clauses.add("format IN (" + String.join(",", formats.stream().map(
+                    ignored -> "?").toList()) + ")");
+            arguments.addAll(formats);
         }
         if (sourceType != null && !sourceType.isBlank()) {
             clauses.add("source_type=?");

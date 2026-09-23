@@ -253,7 +253,7 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
   test.each([
     {
       results: [{ accepted: true }, { accepted: true }],
-      message: 'PDF导出已开始，请查看通知',
+      message: 'PDF 导出已开始，请查看通知',
       tone: 'success',
     },
     {
@@ -272,6 +272,7 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
     await flushPromises()
 
     wrapper.findComponent({ name: 'PdfExportBottomSheet' }).vm.$emit('confirm', {
+      format: 'pdf',
       selectedChapters: [
         {
           albumId: 'album-1',
@@ -320,6 +321,7 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
     const wrapper = mount(DownloadPage)
     await flushPromises()
     wrapper.findComponent({ name: 'PdfExportBottomSheet' }).vm.$emit('confirm', {
+      format: 'pdf',
       selectedChapters: [
         { albumId: 'album-1', chapterId: 'chapter-1', albumTitle: '测试漫画', chapterTitle: '第一话' },
         { albumId: 'album-1', chapterId: 'chapter-2', albumTitle: '测试漫画', chapterTitle: '第二话' },
@@ -341,7 +343,7 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
     expect(mocks.exportBatch.mock.calls[1][0]).toEqual([
       expect.objectContaining({ displayPath: conflictTask.displayPath, allowOverwrite: true }),
     ])
-    expect(mocks.showToast).toHaveBeenCalledWith('PDF导出已开始，请查看通知', 'success')
+    expect(mocks.showToast).toHaveBeenCalledWith('PDF 导出已开始，请查看通知', 'success')
     wrapper.unmount()
   })
 
@@ -361,6 +363,7 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
     const wrapper = mount(DownloadPage)
     await flushPromises()
     wrapper.findComponent({ name: 'PdfExportBottomSheet' }).vm.$emit('confirm', {
+      format: 'pdf',
       selectedChapters: [
         { albumId: 'album-1', chapterId: 'chapter-1', albumTitle: '测试漫画', chapterTitle: '第一话' },
       ],
@@ -410,6 +413,7 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
     const wrapper = mount(DownloadPage)
     await flushPromises()
     wrapper.findComponent({ name: 'PdfExportBottomSheet' }).vm.$emit('confirm', {
+      format: 'pdf',
       selectedChapters: [
         { albumId: 'album-1', chapterId: 'chapter-1', albumTitle: '测试漫画', chapterTitle: '第一话' },
       ],

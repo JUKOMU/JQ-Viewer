@@ -11,6 +11,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.IOException;
+import java.util.List;
 
 /**
  * File-library operations that do not own the export task lifecycle.
@@ -73,9 +74,9 @@ public final class LocalFileManagementService {
         return result;
     }
 
-    public JSONObject getFiles(String format, String sourceType, String availability, String folderId,
+    public JSONObject getFiles(List<String> formats, String sourceType, String availability, String folderId,
                                String query, String cursor, int limit) {
-        return store.getFilesPage(format, sourceType, availability, folderId, query, cursor, limit);
+        return store.getFilesPage(formats, sourceType, availability, folderId, query, cursor, limit);
     }
 
     public JSONObject verifyFile(long id) throws Exception {

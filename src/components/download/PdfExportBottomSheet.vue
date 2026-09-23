@@ -4,11 +4,25 @@
       <div class="sheet-panel">
         <!-- 头部 -->
         <div class="sheet-header">
-          <span class="sheet-title">导出为PDF</span>
+          <span class="sheet-title">导出</span>
           <button class="sheet-close" aria-label="关闭" @click="close">&times;</button>
         </div>
 
         <div class="sheet-body">
+          <div class="format-tabs" role="tablist" aria-label="导出格式">
+            <button
+              v-for="format in exportFormats"
+              :key="format"
+              type="button"
+              role="tab"
+              :aria-selected="selectedFormat === format"
+              :class="{ active: selectedFormat === format }"
+              @click="selectFormat(format)"
+            >
+              {{ format.toUpperCase() }}
+            </button>
+          </div>
+
           <!-- 导出设置（可展开） -->
           <div class="section">
             <button class="expand-header" @click="showSettings = !showSettings">
@@ -56,12 +70,12 @@
               <label class="radio-label" :class="{ active: mode === 'chapter' }">
                 <input
                   type="radio"
-                  name="pdf-export-mode"
+                  name="export-mode"
                   value="chapter"
                   :checked="mode === 'chapter'"
                   @change="mode = 'chapter'"
                 />
-                <span>每章一个 PDF</span>
+                <span>每章一个 {{ formatLabel }}</span>
               </label>
               <label
                 class="radio-label"
@@ -69,13 +83,13 @@
               >
                 <input
                   type="radio"
-                  name="pdf-export-mode"
+                  name="export-mode"
                   value="merged"
                   :checked="mode === 'merged'"
                   :disabled="!canMerge"
                   @change="mode = 'merged'"
                 />
-                <span>合并为一个 PDF</span>
+                <span>合并为一个 {{ formatLabel }}</span>
               </label>
             </div>
             <p v-if="mode === 'merged'" class="mode-hint">
@@ -161,7 +175,7 @@
           </div>
 
           <!-- 图片质量 -->
-          <div class="section">
+          <div v-if="selectedFormat === 'pdf'" class="section">
             <span class="section-label">图片质量</span>
             <div class="quality-row">
               <label class="radio-label" :class="{ active: useOriginal }">
@@ -186,7 +200,7 @@
           </div>
 
           <!-- 压缩比（选中压缩时显示） -->
-          <div v-if="!useOriginal" class="section">
+          <div v-if="selectedFormat === 'pdf' && !useOriginal" class="section">
             <span class="section-label">压缩比: {{ compressionRatio.toFixed(2) }}</span>
             <IonRange
               class="ratio-slider"
@@ -219,7 +233,12 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { IonRange, IonToggle, useBackButton } from '@ionic/vue'
-import type { AlbumDetail, DownloadTask, ExportMode } from '@/services/JmcomicTypes'
+import type {
+  AlbumDetail,
+  DownloadTask,
+  ExportFormat,
+  ExportMode,
+} from '@/services/JmcomicTypes'
 import { ExportService } from '@/services/ExportService'
 import { JmcomicService, showToast } from '@/services/JmcomicService'
 
@@ -235,6 +254,7 @@ const emit = defineEmits<{
   confirm: [
     payload: {
       selectedChapters: DownloadTask[]
+      format: ExportFormat
       mode: ExportMode
       useOriginal: boolean
       compressionRatio: number
@@ -247,6 +267,7 @@ const emit = defineEmits<{
 // ---- 模板变量 ----
 const templateVars = ExportService.TEMPLATE_VAR_KEYS
 const tagConditionVars = ['{tag=标签名}', '{tag=标签A|标签B}', '{tag=标签A&标签B}']
+const exportFormats: ExportFormat[] = ['pdf', 'zip', 'cbz']
 
 // 当前选中章节的实际值（用于复制）
 const orderedChapters = computed(() => ExportService.normalizeExportChapters(props.chapters))
@@ -290,6 +311,8 @@ const nameTemplate = ref(ExportService.getNameTemplate())
 
 // ---- 导出选项 ----
 const selectedIds = ref(new Set<string>())
+const selectedFormat = ref<ExportFormat>(ExportService.getLastFormat())
+const formatLabel = computed(() => selectedFormat.value.toUpperCase())
 const mode = ref<ExportMode>('chapter')
 const canMerge = computed(() => selectedIds.value.size >= 2)
 const useOriginal = ref(true)
@@ -306,7 +329,7 @@ const templatePath = computed(() => {
   const nameTpl = nameTemplate.value
 
   const data = currentTemplateData.value
-  if (!data) return ExportService.previewPath()
+  if (!data) return ExportService.previewPath(selectedFormat.value)
 
   const dirRendered = ExportService.renderTemplate(dirTpl, data)
   const nameRendered = ExportService.renderTemplate(nameTpl, data)
@@ -318,9 +341,9 @@ const templatePath = computed(() => {
   const dirClean = dirSegments.join('/')
   const nameClean = ExportService.sanitizeSegment(nameRendered)
   if (dirClean) {
-    return `${baseTrimmed}/${dirClean}/${nameClean}.pdf`
+    return `${baseTrimmed}/${dirClean}/${nameClean}.${selectedFormat.value}`
   }
-  return `${baseTrimmed}/${nameClean}.pdf`
+  return `${baseTrimmed}/${nameClean}.${selectedFormat.value}`
 })
 
 // ---- 同步路径预览 ----
@@ -345,6 +368,7 @@ watch(
   (open) => {
     if (open) {
       selectedIds.value = new Set(props.chapters.map((c) => c.taskId))
+      selectedFormat.value = ExportService.getLastFormat()
       mode.value = 'chapter'
       useOriginal.value = true
       compressionRatio.value = 0.5
@@ -377,6 +401,22 @@ function onExportPathChange(e: Event) {
   const val = (e.target as HTMLInputElement).value.trim()
   exportPath.value = val
   ExportService.setExportPath(val)
+}
+
+async function selectFormat(format: ExportFormat) {
+  if (selectedFormat.value === format) return
+  const previous = selectedFormat.value
+  selectedFormat.value = format
+  if (format !== 'pdf') {
+    useOriginal.value = true
+    compressionRatio.value = 1
+  }
+  try {
+    await ExportService.setLastFormat(format)
+  } catch {
+    selectedFormat.value = previous
+    await showToast('保存导出格式失败', 'danger')
+  }
 }
 
 async function onDirTemplateChange(e: Event) {
@@ -489,6 +529,7 @@ async function onConfirm() {
 
   emit('confirm', {
     selectedChapters: selected,
+    format: selectedFormat.value,
     mode: mode.value,
     useOriginal: useOriginal.value,
     compressionRatio: compressionRatio.value,
@@ -545,6 +586,37 @@ async function onConfirm() {
   font-size: 17px;
   font-weight: 600;
   color: #4c2a18;
+}
+
+.format-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 16px;
+  padding: 3px;
+  border-radius: 8px;
+  background: #f0e3da;
+}
+
+.format-tabs button {
+  min-height: 34px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #8a6048;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.format-tabs button.active {
+  background: #fffaf6;
+  color: #a95128;
+  box-shadow: 0 1px 4px rgb(76 42 24 / 0.12);
+}
+
+.format-tabs button:focus-visible {
+  outline: 2px solid #c06f45;
+  outline-offset: 1px;
 }
 
 .sheet-close {

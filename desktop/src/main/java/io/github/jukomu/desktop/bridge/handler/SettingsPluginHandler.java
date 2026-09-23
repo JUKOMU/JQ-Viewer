@@ -87,4 +87,10 @@ public final class SettingsPluginHandler {
         settingsRequests.run(context, NullableTextSettingRequest.class,
                 request -> settings.setExportFileNameTemplate(request.value()));
     }
+
+    public void setExportLastFormat(Context context) {
+        settingsRequests.run(context, NullableTextSettingRequest.class,
+                request -> settings.setExportLastFormat(
+                        Request.requiredText(request.value(), "value")));
+    }
 }

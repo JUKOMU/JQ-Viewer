@@ -1,14 +1,14 @@
 <template>
   <div class="manager">
     <div class="manager-actions">
-      <button type="button" class="action-btn" aria-label="导入 PDF" @click="importPdf">
+      <button type="button" class="action-btn" aria-label="导入文件" @click="importFiles">
         <IonIcon :icon="cloudUploadOutline" />
-        <span>导入 PDF</span>
+        <span>导入文件</span>
       </button>
       <button
         type="button"
         class="icon-btn"
-        aria-label="刷新 PDF 管理数据"
+        aria-label="刷新导出管理数据"
         title="刷新"
         @click="load"
       >
@@ -16,7 +16,7 @@
       </button>
     </div>
 
-    <div class="subtabs" role="tablist" aria-label="PDF 管理视图">
+    <div class="subtabs" role="tablist" aria-label="导出管理视图">
       <button
         v-for="item in views"
         :key="item.key"
@@ -31,16 +31,16 @@
     </div>
 
     <div v-if="managementState.databaseResetInfo?.pending" class="banner">
-      <span>PDF 管理记录已重置，实际 PDF 文件未被删除，可重新导入。</span>
+      <span>文件管理记录已重置，实际文件未被删除，可重新导入。</span>
       <button type="button" @click="acknowledgeDatabaseReset">知道了</button>
     </div>
 
     <div v-if="activeView === 'files'" class="file-filters">
       <label class="search-field">
-        <span>搜索 PDF</span>
+        <span>搜索文件</span>
         <input v-model="searchText" type="search" placeholder="标题、文件名或漫画 ID" />
       </label>
-      <div class="filter-buttons" aria-label="PDF 来源筛选">
+      <div class="filter-buttons" aria-label="文件来源筛选">
         <button
           v-for="item in fileFilters"
           :key="item.key"
@@ -51,11 +51,28 @@
           {{ item.label }}
         </button>
       </div>
+      <label v-if="fileFilter !== 'zip'" class="select-field">
+        <span>文件格式</span>
+        <select v-model="fileFormat" aria-label="文件格式筛选">
+          <option value="all">全部格式</option>
+          <option value="pdf">PDF</option>
+          <option value="cbz">CBZ</option>
+        </select>
+      </label>
     </div>
 
     <div v-if="activeView === 'tasks'" class="filters task-filters">
       <span class="filter-label">任务状态</span>
-      <div class="filter-buttons task-filter-buttons" aria-label="PDF 导出任务状态筛选">
+      <label class="select-field task-format-field">
+        <span>任务格式</span>
+        <select v-model="taskFormat" aria-label="导出任务格式筛选">
+          <option value="all">全部格式</option>
+          <option value="pdf">PDF</option>
+          <option value="cbz">CBZ</option>
+          <option value="zip">ZIP</option>
+        </select>
+      </label>
+      <div class="filter-buttons task-filter-buttons" aria-label="导出任务状态筛选">
         <button
           type="button"
           :class="{ selected: taskFilter === 'all' }"
@@ -75,7 +92,7 @@
       </div>
     </div>
 
-    <div v-if="loading" class="state">正在加载 PDF 数据...</div>
+    <div v-if="loading" class="state">正在加载导出数据...</div>
     <div v-else-if="errorMessage" class="state error-state">
       <p>{{ errorMessage }}</p>
       <button type="button" class="action-btn" @click="load">重试</button>
@@ -87,6 +104,7 @@
           <LocalFileCard
             :file="file"
             :has-image-resource="hasImageResource(file)"
+            :readable="file.format !== 'zip'"
             :verifying="verifyingIds.has(file.id)"
             :menu-open="isFileActionMenuOpen && selectedFile === file"
             @open="readFile(file)"
@@ -103,14 +121,14 @@
           {{ loadingMore ? '正在加载...' : '继续加载' }}
         </button>
       </template>
-      <div v-else class="state">暂无 PDF 文件</div>
+      <div v-else class="state">暂无文件</div>
     </div>
 
     <div v-else class="list">
       <template v-if="tasks.length">
         <div
           v-for="task in tasks"
-          :id="`pdf-task-${task.exportId}`"
+          :id="`export-task-${task.exportId}`"
           :key="task.exportId"
           class="task-anchor"
           :class="{ highlighted: highlightedExportId === task.exportId }"
@@ -192,8 +210,10 @@ const loading = ref(false)
 const loadingMore = ref(false)
 const errorMessage = ref('')
 const activeView = ref<'files' | 'tasks'>(props.initialView || 'files')
-const fileFilter = ref<'all' | 'imported' | 'exported'>('all')
+const fileFilter = ref<'all' | 'imported' | 'exported' | 'zip'>('all')
+const fileFormat = ref<'all' | 'pdf' | 'cbz'>('all')
 const taskFilter = ref<'all' | ExportTaskRecord['status']>('all')
+const taskFormat = ref<'all' | ExportTaskRecord['format']>('all')
 const searchText = ref('')
 const selectedFile = ref<LocalFileRecord | null>(null)
 const fileActionMenuAnchor = ref<HTMLElement | null>(null)
@@ -221,6 +241,7 @@ const fileFilters = [
   { key: 'all' as const, label: '全部' },
   { key: 'imported' as const, label: '导入' },
   { key: 'exported' as const, label: '导出' },
+  { key: 'zip' as const, label: 'ZIP' },
 ]
 const taskFilters = [
   { key: 'queued' as const, label: '排队中' },
@@ -232,35 +253,60 @@ const taskFilters = [
   { key: 'cancelled' as const, label: '已取消' },
 ]
 const views = computed(() => [
-  { key: 'files' as const, label: 'PDF 文件', count: files.value.length },
+  { key: 'files' as const, label: '文件', count: files.value.length },
   { key: 'tasks' as const, label: '导出任务', count: tasks.value.length },
 ])
 const isSelectedFileVerifying = computed(() =>
   selectedFile.value ? verifyingIds.value.has(selectedFile.value.id) : false,
 )
-const fileActionMenuActions = computed(() => [
-  { id: 'read', label: '阅读', icon: bookOutline },
-  { id: 'detail', label: '进入详情页', icon: informationCircleOutline },
-  {
-    id: 'verify',
-    label: isSelectedFileVerifying.value ? '校验中' : '校验',
-    icon: checkmarkCircleOutline,
-    disabled: isSelectedFileVerifying.value,
-    loading: isSelectedFileVerifying.value,
-  },
-  { id: 'copy-path', label: '复制路径', icon: copyOutline },
-  { id: 'open-folder', label: '打开文件夹', icon: folderOpenOutline },
-  { id: 'remove', label: '移除', icon: removeCircleOutline },
-  { id: 'delete', label: '删除', icon: trashOutline, danger: true },
-])
-
-const currentFileFilters = () => ({
-  sourceType: fileFilter.value === 'all' ? undefined : fileFilter.value,
-  query: searchText.value,
+const fileActionMenuActions = computed(() => {
+  const file = selectedFile.value
+  const actions = []
+  if (file?.format !== 'zip') actions.push({ id: 'read', label: '阅读', icon: bookOutline })
+  actions.push({ id: 'detail', label: '进入详情页', icon: informationCircleOutline })
+  if (file?.format === 'pdf') {
+    actions.push({
+      id: 'verify',
+      label: isSelectedFileVerifying.value ? '校验中' : '校验',
+      icon: checkmarkCircleOutline,
+      disabled: isSelectedFileVerifying.value,
+      loading: isSelectedFileVerifying.value,
+    })
+  }
+  actions.push(
+    { id: 'copy-path', label: '复制路径', icon: copyOutline },
+    { id: 'open-folder', label: '打开文件夹', icon: folderOpenOutline },
+    { id: 'remove', label: '移除', icon: removeCircleOutline },
+    { id: 'delete', label: '删除', icon: trashOutline, danger: true },
+  )
+  return actions
 })
+
+const currentFileFilters = () => {
+  const formats: LocalFileRecord['format'][] =
+    fileFilter.value === 'zip'
+      ? ['zip']
+      : fileFormat.value === 'all'
+        ? ['pdf', 'cbz']
+        : [fileFormat.value]
+  return {
+    formats,
+    sourceType:
+      fileFilter.value === 'zip'
+        ? ('exported' as const)
+        : fileFilter.value === 'all'
+          ? undefined
+          : fileFilter.value,
+    query: searchText.value,
+  }
+}
 const currentTaskFilters = () => ({
+  format: taskFormat.value === 'all' ? undefined : taskFormat.value,
   status: taskFilter.value === 'all' ? undefined : taskFilter.value,
 })
+
+const sameFormats = (left: readonly string[], right: readonly string[]) =>
+  left.length === right.length && left.every((value, index) => value === right[index])
 
 const setVerifying = (ids: number[], verifying: boolean) => {
   const next = new Set(verifyingIds.value)
@@ -277,14 +323,17 @@ const updateVisibleFiles = (updated: LocalFileRecord[]) => {
 }
 
 const refreshFilesInBackground = async (pageFiles: LocalFileRecord[]) => {
-  const ids = pageFiles.map((file) => file.id).filter((id) => !verifyingIds.value.has(id))
+  const ids = pageFiles
+    .filter((file) => file.format === 'pdf')
+    .map((file) => file.id)
+    .filter((id) => !verifyingIds.value.has(id))
   if (!ids.length) return
 
   setVerifying(ids, true)
   try {
     updateVisibleFiles(await LocalFileManagementService.refreshFiles(ids))
   } catch (error) {
-    await showToast(sanitizeError(error, 'PDF 状态刷新失败'), 'danger')
+    await showToast(sanitizeError(error, '文件状态刷新失败'), 'danger')
   } finally {
     setVerifying(ids, false)
   }
@@ -304,6 +353,7 @@ const loadFiles = async (reset: boolean) => {
     const currentFilters = currentFileFilters()
     if (
       changeSequence !== stateChangeSequence ||
+      !sameFormats(filters.formats, currentFilters.formats) ||
       filters.sourceType !== currentFilters.sourceType ||
       filters.query !== currentFilters.query
     ) {
@@ -316,6 +366,7 @@ const loadFiles = async (reset: boolean) => {
   const currentFilters = currentFileFilters()
   if (
     changeSequence !== stateChangeSequence ||
+    !sameFormats(filters.formats, currentFilters.formats) ||
     filters.sourceType !== currentFilters.sourceType ||
     filters.query !== currentFilters.query
   ) {
@@ -340,7 +391,11 @@ const loadTasks = async (reset: boolean) => {
     )
   } catch (error) {
     const currentFilters = currentTaskFilters()
-    if (changeSequence !== stateChangeSequence || filters.status !== currentFilters.status) {
+    if (
+      changeSequence !== stateChangeSequence ||
+      filters.format !== currentFilters.format ||
+      filters.status !== currentFilters.status
+    ) {
       taskReloadRequested = true
       return
     }
@@ -348,7 +403,11 @@ const loadTasks = async (reset: boolean) => {
   }
   if (isUnmounted || requestSequence !== taskRequestSequence) return
   const currentFilters = currentTaskFilters()
-  if (changeSequence !== stateChangeSequence || filters.status !== currentFilters.status) {
+  if (
+    changeSequence !== stateChangeSequence ||
+    filters.format !== currentFilters.format ||
+    filters.status !== currentFilters.status
+  ) {
     taskReloadRequested = true
     if (!taskReloadPromise) void requestTasksReload()
     return
@@ -445,7 +504,7 @@ const focusTask = async (exportId: string) => {
     tasks.value = mergeExportTasks(tasks.value, [task])
     highlightedExportId.value = exportId
     await nextTick()
-    document.getElementById(`pdf-task-${exportId}`)?.scrollIntoView?.({ block: 'center' })
+    document.getElementById(`export-task-${exportId}`)?.scrollIntoView?.({ block: 'center' })
   } catch (error) {
     const runtimeError = normalizeRuntimeError(error)
     if (runtimeError.code !== 'not-found') throw error
@@ -476,7 +535,7 @@ const load = async (): Promise<void> => {
         if (props.initialExportId) await focusTask(props.initialExportId)
       }
     } catch (error) {
-      errorMessage.value = sanitizeError(error, 'PDF 管理数据加载失败')
+      errorMessage.value = sanitizeError(error, '导出管理数据加载失败')
     } finally {
       loading.value = false
     }
@@ -496,7 +555,7 @@ const loadMoreFiles = async () => {
   try {
     await loadFiles(false)
   } catch (error) {
-    await showToast(sanitizeError(error, '继续加载 PDF 文件失败'), 'danger')
+    await showToast(sanitizeError(error, '继续加载文件失败'), 'danger')
   } finally {
     loadingMore.value = false
   }
@@ -507,7 +566,7 @@ const loadMoreTasks = async () => {
   try {
     await loadTasks(false)
   } catch (error) {
-    await showToast(sanitizeError(error, '继续加载 PDF 任务失败'), 'danger')
+    await showToast(sanitizeError(error, '继续加载导出任务失败'), 'danger')
   } finally {
     loadingMore.value = false
   }
@@ -529,8 +588,9 @@ const closeFileActions = () => {
   fileActionMenuAnchor.value = null
 }
 const readFile = (file: LocalFileRecord) => {
+  if (file.format === 'zip') return
   void router.push({
-    path: '/pdf-reader',
+    path: file.format === 'cbz' ? '/cbz-reader' : '/pdf-reader',
     query: {
       fileRef: String(file.fileRef),
       title: file.fileName,
@@ -546,16 +606,16 @@ const readFile = (file: LocalFileRecord) => {
 const copyFilePath = async (file: LocalFileRecord) => {
   try {
     await navigator.clipboard.writeText(file.displayPath)
-    await showToast('PDF 路径已复制', 'success')
+    await showToast('文件路径已复制', 'success')
   } catch (error) {
-    await showToast(sanitizeError(error, '复制 PDF 路径失败'), 'danger')
+    await showToast(sanitizeError(error, '复制文件路径失败'), 'danger')
   }
 }
 const openFileFolder = async (file: LocalFileRecord) => {
   try {
     await LocalFileManagementService.openFolder(file.fileRef)
   } catch (error) {
-    await showToast(sanitizeError(error, '无法打开 PDF 所在文件夹'), 'danger')
+    await showToast(sanitizeError(error, '无法打开文件所在文件夹'), 'danger')
   }
 }
 const verifyFile = async (file: LocalFileRecord) => {
@@ -569,7 +629,7 @@ const verifyFile = async (file: LocalFileRecord) => {
       verified.availability === 'available' ? 'success' : 'medium',
     )
   } catch (error) {
-    await showToast(sanitizeError(error, 'PDF 校验失败'), 'danger')
+    await showToast(sanitizeError(error, '文件校验失败'), 'danger')
   } finally {
     setVerifying([file.id], false)
   }
@@ -580,10 +640,10 @@ const fileAction = (action: string) => {
   closeFileActions()
   if (!file) return
 
-  if (action === 'read') readFile(file)
+  if (action === 'read' && file.format !== 'zip') readFile(file)
   else if (action === 'detail') {
     if (file.albumId) void router.push(`/album/${file.albumId}`)
-    else void showToast('该 PDF 没有关联漫画，无法进入详情页', 'medium')
+    else void showToast('该文件没有关联漫画，无法进入详情页', 'medium')
   } else if (action === 'verify') void verifyFile(file)
   else if (action === 'copy-path') void copyFilePath(file)
   else if (action === 'open-folder') void openFileFolder(file)
@@ -594,7 +654,7 @@ const removeFromLibrary = async (file: LocalFileRecord) => {
   try {
     await LocalFileManagementService.removeFile(file.id)
     files.value = files.value.filter((item) => item.id !== file.id)
-    await showToast('已移出 PDF 文件库', 'success')
+    await showToast('已移出文件库', 'success')
   } catch (error) {
     await showToast(sanitizeError(error, '移出失败'), 'danger')
   }
@@ -618,7 +678,7 @@ const deleteFile = async (file: LocalFileRecord) => {
   try {
     const current = await LocalFileManagementService.inspectFileForDeletion(file.id)
     const alert = await createAppAlert({
-      header: '确认删除实际 PDF 文件',
+      header: `确认删除实际 ${current.format.toUpperCase()} 文件`,
       message: [
         `文件名：${current.fileName}`,
         `完整定位符：${current.displayPath}`,
@@ -641,7 +701,7 @@ const deleteFile = async (file: LocalFileRecord) => {
                 await showToast(
                   result.result === 'already_missing'
                     ? '文件已缺失，记录已移出'
-                    : '已删除 PDF 文件',
+                    : '已删除文件',
                   'success',
                 )
               } catch (error) {
@@ -667,7 +727,7 @@ const deleteFile = async (file: LocalFileRecord) => {
       await requestFilesReload()
       return
     }
-    await showToast(sanitizeError(error, '无法读取当前 PDF 文件信息'), 'danger')
+    await showToast(sanitizeError(error, '无法读取当前文件信息'), 'danger')
   }
 }
 
@@ -718,7 +778,7 @@ const retryTask = async (task: ExportTaskRecord) => {
 const deleteTask = async (task: ExportTaskRecord) => {
   const alert = await createAppAlert({
     header: '确认删除任务记录',
-    message: `只删除「${task.displayTitle}」的任务历史，最终 PDF 文件不会被删除。`,
+    message: `只删除「${task.displayTitle}」的任务历史，最终 ${task.format.toUpperCase()} 文件不会被删除。`,
     buttons: [
       { text: '取消', role: 'cancel' },
       {
@@ -744,7 +804,7 @@ const acknowledgeDatabaseReset = async () => {
   await LocalFileManagementService.acknowledgeDatabaseReset()
   managementState.value = { ...managementState.value, databaseResetInfo: { pending: false } }
 }
-const importPdf = async () => {
+const importFiles = async () => {
   try {
     const result = await LocalFileManagementService.pickFolder()
     if (!result) return
@@ -769,7 +829,7 @@ const reloadFilesWithFeedback = async () => {
   try {
     await requestFilesReload()
   } catch (error) {
-    await showToast(sanitizeError(error, 'PDF 文件加载失败'), 'danger')
+    await showToast(sanitizeError(error, '文件加载失败'), 'danger')
   }
 }
 
@@ -777,17 +837,19 @@ const reloadTasksWithFeedback = async () => {
   try {
     await requestTasksReload()
   } catch (error) {
-    await showToast(sanitizeError(error, 'PDF 导出任务加载失败'), 'danger')
+    await showToast(sanitizeError(error, '导出任务加载失败'), 'danger')
   }
 }
 
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 watch(fileFilter, () => void reloadFilesWithFeedback())
+watch(fileFormat, () => void reloadFilesWithFeedback())
 watch(searchText, () => {
   if (searchTimer) clearTimeout(searchTimer)
   searchTimer = setTimeout(() => void reloadFilesWithFeedback(), 300)
 })
 watch(taskFilter, () => void reloadTasksWithFeedback())
+watch(taskFormat, () => void reloadTasksWithFeedback())
 watch(
   () => props.initialView,
   (view) => {
@@ -807,7 +869,10 @@ onMounted(async () => {
     try {
       const handle = await LocalFileManagementService.addProgressListener((event) => {
         stateChangeSequence++
-        if (taskFilter.value !== 'all' && taskFilter.value !== event.status) {
+        if (
+          (taskFilter.value !== 'all' && taskFilter.value !== event.status) ||
+          (taskFormat.value !== 'all' && taskFormat.value !== event.format)
+        ) {
           tasks.value = tasks.value.filter((task) => task.exportId !== event.exportId)
         } else {
           const merged = applyExportProgressEvent(tasks.value, event)
@@ -823,7 +888,7 @@ onMounted(async () => {
       progressHandle = handle
     } catch (error) {
       if (!isUnmounted) {
-        await showToast(sanitizeError(error, 'PDF 导出进度监听失败'), 'danger')
+        await showToast(sanitizeError(error, '导出进度监听失败'), 'danger')
       }
     }
   })()
@@ -1019,6 +1084,10 @@ defineExpose({ refresh: load })
 
 .task-filters {
   align-items: flex-start;
+}
+
+.task-format-field {
+  width: min(220px, 100%);
 }
 
 .task-filter-buttons {

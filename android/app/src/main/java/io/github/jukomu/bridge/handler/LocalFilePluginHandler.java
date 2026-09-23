@@ -275,8 +275,21 @@ public final class LocalFilePluginHandler {
 
     public void getLocalFiles(PluginCall call) {
         try {
+            JSArray requestedFormats = call.getArray("formats");
+            List<String> formats = null;
+            if (requestedFormats != null) {
+                formats = new ArrayList<>();
+                for (int index = 0; index < requestedFormats.length(); index++) {
+                    String format = requestedFormats.optString(index, "");
+                    if (!"pdf".equals(format) && !"cbz".equals(format) && !"zip".equals(format)) {
+                        throw new IllegalArgumentException("formats必须只包含pdf、cbz或zip");
+                    }
+                    formats.add(format);
+                }
+                if (formats.isEmpty()) throw new IllegalArgumentException("formats不能为空");
+            }
             JSONObject result = LocalFileManagementService.getInstance(context).getFiles(
-                call.getString("format"), call.getString("sourceType"), call.getString("availability"),
+                formats, call.getString("sourceType"), call.getString("availability"),
                 call.getString("folderId"), call.getString("query"), call.getString("cursor"),
                 call.getInt("limit", 50));
             call.resolve(JSObject.fromJSONObject(result));

@@ -30,6 +30,7 @@ public final class SettingsService {
     private static final String PDF_EXPORT_FOLDER = "pdf_export_folder";
     private static final String PDF_EXPORT_DIRECTORY_TEMPLATE = "pdf_export_directory_template";
     private static final String PDF_EXPORT_FILE_NAME_TEMPLATE = "pdf_export_file_name_template";
+    private static final String EXPORT_LAST_FORMAT = "export_last_format";
     private static final String DOWNLOAD_PUBLIC = "download_public";
     private static final String DOWNLOAD_FOLDER_REF = "download_folder_ref";
     private static final String DOWNLOAD_DISPLAY_PATH = "download_display_path";
@@ -202,7 +203,8 @@ public final class SettingsService {
         return new PdfExportPreferencesResponse(
                 pdfExportFolder(),
                 textOrDefault(PDF_EXPORT_DIRECTORY_TEMPLATE, DEFAULT_PDF_DIRECTORY_TEMPLATE),
-                textOrDefault(PDF_EXPORT_FILE_NAME_TEMPLATE, DEFAULT_PDF_FILE_NAME_TEMPLATE)
+                textOrDefault(PDF_EXPORT_FILE_NAME_TEMPLATE, DEFAULT_PDF_FILE_NAME_TEMPLATE),
+                exportLastFormat()
         );
     }
 
@@ -231,6 +233,19 @@ public final class SettingsService {
     public synchronized SuccessResponse setExportFileNameTemplate(String template) {
         setOptionalText(PDF_EXPORT_FILE_NAME_TEMPLATE, template);
         return SuccessResponse.ok();
+    }
+
+    public synchronized SuccessResponse setExportLastFormat(String format) {
+        if (!"pdf".equals(format) && !"cbz".equals(format) && !"zip".equals(format)) {
+            throw ApiException.invalidRequest("format必须是pdf、cbz或zip");
+        }
+        put(EXPORT_LAST_FORMAT, format);
+        return SuccessResponse.ok();
+    }
+
+    private String exportLastFormat() {
+        String format = text(EXPORT_LAST_FORMAT, "pdf");
+        return "cbz".equals(format) || "zip".equals(format) ? format : "pdf";
     }
 
     private PdfExportFolder pdfExportFolder() {

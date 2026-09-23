@@ -3,7 +3,10 @@
     <div class="icon-wrap"><IonIcon :icon="documentOutline" /></div>
     <div class="info">
       <div class="title">{{ task.displayTitle }}</div>
-      <div class="subtitle">{{ task.mode === 'merged' ? '合并导出' : task.chapterId }}</div>
+      <div class="subtitle">
+        <span class="format-label">{{ task.format.toUpperCase() }}</span>
+        {{ task.mode === 'merged' ? '合并导出' : task.chapterId }}
+      </div>
       <div v-if="showProgress" class="progress-bar">
         <div class="progress-fill" :style="{ width: progressPercent + '%' }" />
       </div>
@@ -22,7 +25,7 @@
       <button
         v-if="cancelable"
         type="button"
-        aria-label="取消 PDF 导出"
+        :aria-label="`取消 ${task.format.toUpperCase()} 导出`"
         title="取消"
         @click.stop="$emit('cancel')"
       >
@@ -31,7 +34,7 @@
       <button
         v-if="retryable"
         type="button"
-        aria-label="重试整个 PDF 导出任务"
+        :aria-label="`重试整个 ${task.format.toUpperCase()} 导出任务`"
         title="重试整个任务"
         @click.stop="$emit('retry')"
       >
@@ -40,7 +43,7 @@
       <button
         v-if="deletable"
         type="button"
-        aria-label="删除 PDF 导出任务记录"
+        :aria-label="`删除 ${task.format.toUpperCase()} 导出任务记录`"
         title="删除任务记录"
         @click.stop="$emit('delete')"
       >
@@ -128,6 +131,11 @@ const statusLabel = computed(() => {
   margin-top: 3px;
   color: #8a6048;
   font-size: 11px;
+}
+.format-label {
+  margin-right: 6px;
+  color: #a95128;
+  font-weight: 700;
 }
 .progress-bar {
   height: 5px;

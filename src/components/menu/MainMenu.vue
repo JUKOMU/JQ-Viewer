@@ -156,7 +156,7 @@
                 <span v-else>{{ Math.min(99, Math.round(downloadProgress.percent)) }}%</span>
               </div>
               <div v-if="pdfProgress" class="task-progress-row">
-                <span>PDF</span>
+                <span>导出</span>
                 <template v-if="pdfProgress.percent >= 100">
                   <IonSpinner name="crescent" class="task-progress-spinner" aria-hidden="true" />
                   <span class="task-progress-sr-only">导出完成，正在处理</span>

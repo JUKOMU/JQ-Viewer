@@ -221,7 +221,7 @@ class BackendHttpContractTest {
             ObjectNode importedFiles = body(post(
                     http, base, requestedMethods, "getImportedLocalFiles", "{}"));
             ObjectNode pdfFiles = body(post(http, base, requestedMethods, "getLocalFiles",
-                    "{\"sourceType\":\"imported\",\"limit\":50}"));
+                    "{\"formats\":[\"pdf\"],\"sourceType\":\"imported\",\"limit\":50}"));
             ObjectNode refreshedPdfs = body(post(http, base, requestedMethods,
                     "refreshLocalFileAvailability", "{\"ids\":[" + importedId + "]}"));
             ObjectNode inspectedPdf = body(post(http, base, requestedMethods,
@@ -281,8 +281,11 @@ class BackendHttpContractTest {
                     "{\"value\":\"{author}/{id}\"}"));
             assertOk(post(http, base, requestedMethods, "setExportFileNameTemplate",
                     "{\"value\":\"{title}\"}"));
+            assertOk(post(http, base, requestedMethods, "setExportLastFormat",
+                    "{\"value\":\"cbz\"}"));
             ObjectNode pdfPreferences = body(post(http, base, requestedMethods,
                     "getExportPreferences", "{}"));
+            assertEquals("cbz", pdfPreferences.path("lastFormat").asText());
 
             ObjectNode submission = body(post(http, base, requestedMethods, "downloadChapter",
                     "{\"albumId\":\"album-1\",\"chapterId\":\"download-photo\","

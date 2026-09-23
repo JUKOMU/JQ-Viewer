@@ -12,6 +12,7 @@ import type {
   ExportTaskChapter,
   ExportMode,
   ExportTask,
+  ExportFormat,
 } from './JmcomicTypes'
 import type { ExportTarget, FolderRef } from '@/runtime/FileReferences'
 import {
@@ -41,6 +42,7 @@ export interface ExportTemplateData {
 }
 
 export interface ExportPlanOptions {
+  format: ExportFormat
   mode: ExportMode
   selectedChapters: readonly DownloadTask[]
   albumDetail: AlbumDetail | null
@@ -61,7 +63,7 @@ let preferences: ExportPreferences = defaultExportPreferences()
 let preferencesStore: ExportPreferencesStore | null = null
 
 function requirePreferencesStore(): ExportPreferencesStore {
-  if (!preferencesStore) throw new Error('PDF 导出设置尚未初始化')
+  if (!preferencesStore) throw new Error('导出设置尚未初始化')
   return preferencesStore
 }
 
@@ -215,20 +217,26 @@ export function toExportTaskChapter(chapter: DownloadTask): ExportTaskChapter {
   }
 }
 
-/** 按当前原生卷名规则列出任务可能写入的最终 PDF 路径。 */
+export function withExportExtension(path: string, format: ExportFormat): string {
+  return `${path.replace(/\.(pdf|cbz|zip)$/i, '')}.${format}`
+}
+
+/** 按当前原生卷名规则列出任务可能写入的最终文件路径。 */
 export function buildExportOutputPaths(
   savePath: string,
   totalPages: number,
   splitPages: number,
+  format: ExportFormat = 'pdf',
 ): string[] {
-  if (splitPages <= 0 || totalPages <= splitPages) return [savePath]
+  const normalizedPath = withExportExtension(savePath, format)
+  if (splitPages <= 0 || totalPages <= splitPages) return [normalizedPath]
 
-  const baseWithoutExt = savePath.endsWith('.pdf') ? savePath.slice(0, -4) : savePath
+  const baseWithoutExt = normalizedPath.slice(0, -(format.length + 1))
   const volumeCount = Math.ceil(totalPages / splitPages)
   return Array.from({ length: volumeCount }, (_, index) => {
     const start = index * splitPages + 1
     const end = Math.min(start + splitPages - 1, totalPages)
-    return `${baseWithoutExt}_${String(start).padStart(3, '0')}-${String(end).padStart(3, '0')}.pdf`
+    return `${baseWithoutExt}_${String(start).padStart(3, '0')}-${String(end).padStart(3, '0')}.${format}`
   })
 }
 
@@ -262,6 +270,7 @@ export const ExportService = {
   TEMPLATE_VAR_DEFS,
   buildChapterRange,
   buildExportOutputPaths,
+  withExportExtension,
   buildExportTarget,
   normalizeExportChapters,
   toExportTaskChapter,
@@ -322,6 +331,15 @@ export const ExportService = {
   async resetNameTemplate(): Promise<void> {
     await requirePreferencesStore().setFileNameTemplate(null)
     preferences = { ...preferences, fileNameTemplate: DEFAULT_EXPORT_FILE_NAME_TEMPLATE }
+  },
+
+  getLastFormat(): ExportFormat {
+    return preferences.lastFormat
+  },
+
+  async setLastFormat(format: ExportFormat): Promise<void> {
+    await requirePreferencesStore().setLastFormat(format)
+    preferences = { ...preferences, lastFormat: format }
   },
 
   // ---- 模板渲染 ----
@@ -412,8 +430,8 @@ export const ExportService = {
     return sanitizeSegmentValue(segment)
   },
 
-  /** 构建完整保存路径: {exportPath}/{renderedDir}/{renderedName}.pdf */
-  buildFullPath(data: ExportTemplateData): string {
+  /** 构建完整保存路径: {exportPath}/{renderedDir}/{renderedName}.{format} */
+  buildFullPath(data: ExportTemplateData, format: ExportFormat = 'pdf'): string {
     const base = ExportService.getExportPath()
     const dir = ExportService.renderTemplate(ExportService.getDirTemplate(), data)
     const name = ExportService.renderTemplate(ExportService.getNameTemplate(), data)
@@ -426,18 +444,27 @@ export const ExportService = {
     const dirClean = dirSegments.join('/')
     const nameClean = ExportService.sanitizeSegment(name)
     if (dirClean) {
-      return `${baseTrimmed}/${dirClean}/${nameClean}.pdf`
+      return `${baseTrimmed}/${dirClean}/${nameClean}.${format}`
     }
-    return `${baseTrimmed}/${nameClean}.pdf`
+    return `${baseTrimmed}/${nameClean}.${format}`
   },
 
-  buildMergedFullPath(chapters: readonly DownloadTask[], album: AlbumDetail | null): string {
-    return ExportService.buildFullPath(ExportService.buildMergedTemplateData(chapters, album))
+  buildMergedFullPath(
+    chapters: readonly DownloadTask[],
+    album: AlbumDetail | null,
+    format: ExportFormat = 'pdf',
+  ): string {
+    return ExportService.buildFullPath(
+      ExportService.buildMergedTemplateData(chapters, album),
+      format,
+    )
   },
 
   buildExportPlan(options: ExportPlanOptions): ExportPlan {
     const selectedChapters = normalizeExportChapters(options.selectedChapters)
     if (selectedChapters.length === 0) throw new Error('未选择导出章节')
+    const useOriginal = options.format === 'pdf' ? options.useOriginal : true
+    const compressionRatio = options.format === 'pdf' ? options.compressionRatio : 1
 
     if (options.mode === 'merged') {
       if (selectedChapters.length < 2) throw new Error('合并导出至少需要选择两个章节')
@@ -451,9 +478,9 @@ export const ExportService = {
         selectedChapters,
         options.albumDetail,
       )
-      const displayPath = options.editedPath
+      const displayPath = withExportExtension(options.editedPath, options.format)
       const task: ExportTask = {
-        format: 'pdf',
+        format: options.format,
         mode: 'merged',
         albumId,
         albumTitle: selectedChapters[0].albumTitle,
@@ -468,8 +495,8 @@ export const ExportService = {
           options.exportFolderDisplayPath,
         ),
         displayPath,
-        useOriginal: options.useOriginal,
-        compressionRatio: options.compressionRatio,
+        useOriginal,
+        compressionRatio,
         splitPages: options.splitPages,
       }
 
@@ -479,12 +506,13 @@ export const ExportService = {
           displayPath,
           templateData.pageCount,
           options.splitPages,
+          options.format,
         ),
       }
     }
 
     const tasks = selectedChapters.map<ExportTask>((chapter) => ({
-      format: 'pdf',
+      format: options.format,
       mode: 'chapter',
       albumId: chapter.albumId,
       albumTitle: chapter.albumTitle,
@@ -495,21 +523,23 @@ export const ExportService = {
       chapterTitle: chapter.chapterTitle,
       displayPath:
         selectedChapters.length === 1
-          ? options.editedPath
+          ? withExportExtension(options.editedPath, options.format)
           : ExportService.buildFullPath(
               ExportService.buildTemplateData(chapter, options.albumDetail),
+              options.format,
             ),
       target: buildExportTarget(
         selectedChapters.length === 1
-          ? options.editedPath
+          ? withExportExtension(options.editedPath, options.format)
           : ExportService.buildFullPath(
               ExportService.buildTemplateData(chapter, options.albumDetail),
+              options.format,
             ),
         options.exportFolder,
         options.exportFolderDisplayPath,
       ),
-      useOriginal: options.useOriginal,
-      compressionRatio: options.compressionRatio,
+      useOriginal,
+      compressionRatio,
       splitPages: options.splitPages,
     }))
 
@@ -520,13 +550,14 @@ export const ExportService = {
           task.displayPath,
           selectedChapters[index].totalPages,
           options.splitPages,
+          options.format,
         ),
       ),
     }
   },
 
   /** 用示例数据生成预览 */
-  previewPath(): string {
-    return ExportService.buildFullPath(EXPORT_SAMPLE_DATA)
+  previewPath(format: ExportFormat = 'pdf'): string {
+    return ExportService.buildFullPath(EXPORT_SAMPLE_DATA, format)
   },
 }

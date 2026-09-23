@@ -283,6 +283,11 @@ public final class Plugin {
     }
 
     @PluginMethod
+    public void setExportLastFormat(Context context) {
+        settings.setExportLastFormat(context);
+    }
+
+    @PluginMethod
     public void pickFolder(Context context) {
         files.pickFolder(context);
     }

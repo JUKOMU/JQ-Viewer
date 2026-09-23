@@ -112,6 +112,7 @@ import LocalFileManagementView from '@/components/download/LocalFileManagementVi
 
 const file: LocalFileRecord = {
   id: 1,
+  format: 'pdf',
   fileRef: 'content://provider/current.pdf' as LocalFileRecord['fileRef'],
   displayPath: 'content://provider/current.pdf',
   fileName: 'current.pdf',
@@ -125,6 +126,7 @@ const file: LocalFileRecord = {
   chapterId: 'chapter-1',
   chapterTitle: '第一话',
   chapterSortOrder: 1,
+  chapters: [],
   createdAt: 1,
   fileSize: 1024,
   pageCount: 12,
@@ -135,6 +137,7 @@ const file: LocalFileRecord = {
 const task = (status: ExportTaskRecord['status']): ExportTaskRecord => ({
   exportId: 'export-1',
   batchId: 'batch-1',
+  format: 'pdf',
   mode: 'chapter',
   albumId: 'album-1',
   albumTitle: '测试漫画',
@@ -189,9 +192,11 @@ beforeEach(() => {
 
 describe('LocalFileCard', () => {
   test('使用独立的打开和更多按钮', () => {
-    const wrapper = mount(LocalFileCard, { props: { file, hasImageResource: false } })
+    const wrapper = mount(LocalFileCard, {
+      props: { file, hasImageResource: false, readable: true },
+    })
     expect(wrapper.get('article').findAll('button')).toHaveLength(2)
-    expect(wrapper.get('button[aria-label="打开 PDF"]')).toBeTruthy()
+    expect(wrapper.get('button[aria-label="阅读 PDF"]')).toBeTruthy()
     expect(wrapper.get('button[aria-label="更多操作"]')).toBeTruthy()
     expect(wrapper.get('.meta-row').text()).toMatch(/可用1\.0 KB$/)
   })
@@ -236,6 +241,72 @@ describe('LocalFileManagementView', () => {
     await flushPromises()
 
     expect(wrapper.get('.resource-icons').attributes('aria-label')).toBe('图片和 PDF')
+    wrapper.unmount()
+  })
+
+  test('文件筛选默认排除 ZIP，ZIP 独立筛选且隐藏 PDF/CBZ 下拉框', async () => {
+    const wrapper = mount(LocalFileManagementView)
+    await flushPromises()
+
+    expect(mocks.getLocalFiles).toHaveBeenCalledWith(
+      expect.objectContaining({ formats: ['pdf', 'cbz'], sourceType: undefined }),
+    )
+    expect(wrapper.find('select[aria-label="文件格式筛选"]').exists()).toBe(true)
+
+    const sourceButtons = wrapper.findAll('.file-filters .filter-buttons button')
+    await sourceButtons[3].trigger('click')
+    await flushPromises()
+
+    expect(mocks.getLocalFiles).toHaveBeenLastCalledWith(
+      expect.objectContaining({ formats: ['zip'], sourceType: 'exported' }),
+    )
+    expect(wrapper.find('select[aria-label="文件格式筛选"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  test('格式下拉框分别下推 CBZ 文件和 ZIP 任务筛选', async () => {
+    const wrapper = mount(LocalFileManagementView)
+    await flushPromises()
+
+    await wrapper.get('select[aria-label="文件格式筛选"]').setValue('cbz')
+    await flushPromises()
+    expect(mocks.getLocalFiles).toHaveBeenLastCalledWith(
+      expect.objectContaining({ formats: ['cbz'] }),
+    )
+
+    await wrapper.findAll('.subtabs button')[1].trigger('click')
+    await wrapper.get('select[aria-label="导出任务格式筛选"]').setValue('zip')
+    await flushPromises()
+    expect(mocks.getExportTasks).toHaveBeenLastCalledWith(
+      expect.objectContaining({ format: 'zip' }),
+    )
+    wrapper.unmount()
+  })
+
+  test('ZIP 文件卡片不提供阅读和校验操作', async () => {
+    const zipFile: LocalFileRecord = {
+      ...file,
+      format: 'zip',
+      fileName: 'archive.zip',
+      displayPath: '/exports/archive.zip',
+      sourceType: 'exported',
+      ownership: 'app_created',
+    }
+    mocks.getLocalFiles.mockResolvedValue({ files: [zipFile], nextCursor: null })
+    const wrapper = mount(LocalFileManagementView)
+    await flushPromises()
+
+    const infoButton = wrapper.get<HTMLButtonElement>('.open-btn')
+    expect(infoButton.attributes('disabled')).toBeDefined()
+    await infoButton.trigger('click')
+    expect(mocks.routerPush).not.toHaveBeenCalled()
+
+    await wrapper.get('button[aria-label="更多操作"]').trigger('click')
+    expect(
+      Array.from(document.body.querySelectorAll('.card-menu-item')).map(
+        (button) => button.textContent,
+      ),
+    ).toEqual(['进入详情页', '复制路径', '打开文件夹', '移除', '删除'])
     wrapper.unmount()
   })
 
@@ -289,7 +360,7 @@ describe('LocalFileManagementView', () => {
     const wrapper = mount(LocalFileManagementView)
     await flushPromises()
 
-    await wrapper.get('button[aria-label="打开 PDF"]').trigger('click')
+    await wrapper.get('button[aria-label="阅读 PDF"]').trigger('click')
     expect(mocks.routerPush).toHaveBeenLastCalledWith(expectedRoute)
 
     await wrapper.get('button[aria-label="更多操作"]').trigger('click')
@@ -490,7 +561,7 @@ describe('LocalFileManagementView', () => {
 
     const wrapper = mount(LocalFileManagementView)
     await flushPromises()
-    await wrapper.get('button[aria-label="导入 PDF"]').trigger('click')
+    await wrapper.get('button[aria-label="导入文件"]').trigger('click')
     await flushPromises()
 
     expect(mocks.pickFolder).toHaveBeenCalledTimes(2)

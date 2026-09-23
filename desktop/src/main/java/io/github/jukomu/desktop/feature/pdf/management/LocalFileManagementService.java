@@ -108,7 +108,7 @@ public final class LocalFileManagementService {
     }
 
     public LocalFilesResponse getFiles(
-            String format,
+            List<String> formats,
             String sourceType,
             String availability,
             String folderId,
@@ -116,8 +116,9 @@ public final class LocalFileManagementService {
             String cursor,
             int limit
     ) {
-        if (format != null && !format.isBlank() && !FORMATS.contains(format)) {
-            throw ApiException.invalidRequest("format无效");
+        if (formats != null && (formats.isEmpty() || formats.stream().anyMatch(
+                format -> format == null || !FORMATS.contains(format)))) {
+            throw ApiException.invalidRequest("formats无效");
         }
         if (sourceType != null && !sourceType.isBlank() && !SOURCE_TYPES.contains(sourceType)) {
             throw ApiException.invalidRequest("sourceType无效");
@@ -127,7 +128,7 @@ public final class LocalFileManagementService {
             throw ApiException.invalidRequest("availability无效");
         }
         LocalFileStore.Page page = store.list(
-                format, sourceType, availability, folderId, query, cursor, limit);
+                formats, sourceType, availability, folderId, query, cursor, limit);
         return new LocalFilesResponse(
                 page.files().stream().map(LocalFileResponse::from).toList(), page.nextCursor());
     }

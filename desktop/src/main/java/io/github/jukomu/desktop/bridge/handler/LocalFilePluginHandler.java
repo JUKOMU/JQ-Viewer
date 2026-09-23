@@ -80,7 +80,7 @@ public final class LocalFilePluginHandler {
 
     public void getLocalFiles(Context context) {
         requests.run(context, LocalFilesRequest.class, request -> localFiles.getFiles(
-                request.format(), request.sourceType(), request.availability(),
+                request.formats(), request.sourceType(), request.availability(),
                 request.folderId(), request.query(),
                 request.cursor(), Request.integer(request.limit(), 50)));
     }

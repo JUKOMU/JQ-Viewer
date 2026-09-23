@@ -435,7 +435,7 @@ describe('MainMenu 任务进度', () => {
     mocks.pdfHandler?.(pdfEvent(30))
     await nextTick()
     expect(wrapper.find('.task-progress-copy').text()).toContain('下载10%')
-    expect(wrapper.find('.task-progress-copy').text()).not.toContain('PDF')
+    expect(wrapper.find('.task-progress-copy').text()).not.toContain('导出')
 
     await vi.advanceTimersByTimeAsync(499)
     await nextTick()
@@ -444,7 +444,7 @@ describe('MainMenu 任务进度', () => {
     await vi.advanceTimersByTimeAsync(1)
     await nextTick()
     expect(wrapper.find('.task-progress-copy').text()).toContain('下载30%')
-    expect(wrapper.find('.task-progress-copy').text()).toContain('PDF30%')
+    expect(wrapper.find('.task-progress-copy').text()).toContain('导出30%')
     wrapper.unmount()
   })
 
@@ -533,7 +533,7 @@ describe('MainMenu 任务进度', () => {
 
     const progressText = wrapper.find('.task-progress-copy').text()
     expect(progressText).toContain('下载40%')
-    expect(progressText).toContain('PDF20%')
+    expect(progressText).toContain('导出20%')
     expect(wrapper.findAll('.task-progress-band')).toHaveLength(2)
     wrapper.unmount()
   })
@@ -546,7 +546,7 @@ describe('MainMenu 任务进度', () => {
     await flushTaskProgress()
 
     expect(wrapper.find('.task-progress-copy').text()).toContain('下载99%')
-    expect(wrapper.find('.task-progress-copy').text()).toContain('PDF99%')
+    expect(wrapper.find('.task-progress-copy').text()).toContain('导出99%')
     expect(wrapper.findAll('.task-progress-spinner')).toHaveLength(0)
 
     mocks.downloadHandler?.(downloadEvent(100))
@@ -580,7 +580,7 @@ describe('MainMenu 任务进度', () => {
       { status: 'running', cursor: undefined, limit: 100 },
       { status: 'cancelling', cursor: undefined, limit: 100 },
     ])
-    expect(wrapper.find('.task-progress-copy').text()).toContain('PDF40%')
+    expect(wrapper.find('.task-progress-copy').text()).toContain('导出40%')
     wrapper.unmount()
   })
 

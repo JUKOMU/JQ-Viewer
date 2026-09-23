@@ -10,7 +10,7 @@ import type {
 const PAGE_SIZE = 50
 
 export interface LocalFileFilters {
-  format?: LocalFileRecord['format']
+  formats?: LocalFileRecord['format'][]
   sourceType?: 'imported' | 'exported'
   folderId?: string
   query?: string

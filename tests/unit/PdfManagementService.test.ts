@@ -37,6 +37,7 @@ const file = (id: number): LocalFileRecord => ({
   chapterId: String(id),
   chapterTitle: `第 ${id} 话`,
   chapterSortOrder: id,
+  chapters: [],
   createdAt: id,
   fileSize: 10,
   pageCount: 1,
@@ -117,6 +118,7 @@ describe('LocalFileManagementService', () => {
     const result = applyExportProgressEvent([current], {
       exportId: current.exportId,
       batchId: current.batchId,
+      format: current.format,
       status: 'running',
       phase: 'writing',
       currentPage: 2,

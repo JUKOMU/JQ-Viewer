@@ -397,14 +397,14 @@
           </button>
         </div>
 
-        <!-- 分组：PDF 导出设置 -->
-        <div class="section-label">PDF 导出设置</div>
+        <!-- 分组：导出设置 -->
+        <div class="section-label">导出设置</div>
         <div class="card">
-          <!-- PDF导出位置 -->
+          <!-- 导出位置 -->
           <div class="row">
             <div class="row-left">
-              <span class="row-title">PDF 导出位置</span>
-              <span class="row-subtitle">PDF 文件的基础存储路径</span>
+              <span class="row-title">导出位置</span>
+              <span class="row-subtitle">导出文件的基础存储路径</span>
             </div>
           </div>
           <div class="row path-row">
@@ -417,7 +417,7 @@
           <div class="row divider">
             <div class="row-left">
               <span class="row-title">保存目录模板</span>
-              <span class="row-subtitle">PDF 存储子目录，"/" 表示子目录层级</span>
+              <span class="row-subtitle">导出文件存储子目录，"/" 表示子目录层级</span>
               <div class="var-tags">
                 <span class="var-tag">{id}</span>
                 <span class="var-tag">{title}</span>
@@ -456,7 +456,7 @@
           <div class="row divider">
             <div class="row-left">
               <span class="row-title">保存名称模板</span>
-              <span class="row-subtitle">PDF 文件名（不含扩展名）</span>
+              <span class="row-subtitle">导出文件名（不含扩展名）</span>
             </div>
           </div>
           <div class="row template-row">

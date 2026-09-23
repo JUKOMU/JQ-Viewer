@@ -10,6 +10,7 @@ interface ExportPreferencesResponse {
   exportFolder: { folderRef: string; displayPath: string } | null
   directoryTemplate: string
   fileNameTemplate: string
+  lastFormat: ExportPreferences['lastFormat']
 }
 
 function toPreferences(response: ExportPreferencesResponse): ExportPreferences {
@@ -22,6 +23,7 @@ function toPreferences(response: ExportPreferencesResponse): ExportPreferences {
       : null,
     directoryTemplate: response.directoryTemplate,
     fileNameTemplate: response.fileNameTemplate,
+    lastFormat: response.lastFormat,
   }
 }
 
@@ -46,5 +48,7 @@ export function createDesktopExportPreferencesStore(fetcher: BackendFetch): Expo
       requestBackend(fetcher, 'setExportFileNameTemplate', { value: template }).then(
         () => undefined,
       ),
+    setLastFormat: (format) =>
+      requestBackend(fetcher, 'setExportLastFormat', { value: format }).then(() => undefined),
   }
 }

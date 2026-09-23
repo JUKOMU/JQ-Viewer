@@ -65,6 +65,9 @@ describe('Android bridge adapters', () => {
       folderRef: 'folder:saf:content://tree/exports',
       displayPath: '/storage/emulated/0/Exports',
     })
+
+    await store.setLastFormat('zip')
+    await expect(store.get()).resolves.toMatchObject({ lastFormat: 'zip' })
   })
 
   test('只绑定 common backend allowlist', async () => {

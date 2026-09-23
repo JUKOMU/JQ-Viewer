@@ -461,6 +461,7 @@ describe('runtime', () => {
               },
               directoryTemplate: '{author}/{id}',
               fileNameTemplate: '{title}',
+              lastFormat: 'cbz',
             }),
           )
         default:
@@ -502,6 +503,7 @@ describe('runtime', () => {
       exportFolder: { folderRef: 'folder:path:/exports', displayPath: '/exports' },
       directoryTemplate: '{author}/{id}',
       fileNameTemplate: '{title}',
+      lastFormat: 'cbz',
     })
     await preferences.setExportFolder({
       folderRef: asFolderRef('folder:path:/exports/new'),
@@ -510,6 +512,7 @@ describe('runtime', () => {
     await preferences.setExportFolder(null)
     await preferences.setDirectoryTemplate('{id}')
     await preferences.setFileNameTemplate(null)
+    await preferences.setLastFormat('zip')
 
     expect(
       fetcher.mock.calls.map(([url, init]) => [String(url), JSON.parse(String(init?.body))]),
@@ -533,6 +536,7 @@ describe('runtime', () => {
       ['/api/setExportFolder', { folder: null }],
       ['/api/setExportDirectoryTemplate', { value: '{id}' }],
       ['/api/setExportFileNameTemplate', { value: null }],
+      ['/api/setExportLastFormat', { value: 'zip' }],
     ])
   })
 

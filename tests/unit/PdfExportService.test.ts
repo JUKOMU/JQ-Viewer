@@ -66,6 +66,9 @@ beforeEach(async () => {
         fileNameTemplate: fileNameTemplate ?? defaultExportPreferences().fileNameTemplate,
       }
     }),
+    setLastFormat: vi.fn(async (lastFormat) => {
+      storedPreferences = { ...storedPreferences, lastFormat }
+    }),
   }
   await ExportService.initialize(preferencesStore)
 })
@@ -190,6 +193,7 @@ describe('PDF export plan', () => {
     const chapter3 = downloadTask(3, 'chapter-3')
     chapter3.totalPages = 30
     const plan = ExportService.buildExportPlan({
+      format: 'pdf',
       mode: 'merged',
       selectedChapters: [chapter3, downloadTask(2, 'chapter-2')],
       albumDetail: null,
@@ -252,6 +256,7 @@ describe('PDF export plan', () => {
       displayPath: '/exports',
     })
     const plan = ExportService.buildExportPlan({
+      format: 'pdf',
       mode: 'chapter',
       selectedChapters: [downloadTask(2, 'chapter-2'), downloadTask(3, 'chapter-3')],
       albumDetail: null,
@@ -277,6 +282,7 @@ describe('PDF export plan', () => {
   it('rejects merged mode with fewer than two chapters', () => {
     expect(() =>
       ExportService.buildExportPlan({
+        format: 'pdf',
         mode: 'merged',
         selectedChapters: [downloadTask(2, 'chapter-2')],
         albumDetail: null,
@@ -286,6 +292,41 @@ describe('PDF export plan', () => {
         splitPages: 0,
       }),
     ).toThrow('合并导出至少需要选择两个章节')
+  })
+
+  it.each(['cbz', 'zip'] as const)(
+    'uses the %s extension and forces original images for archive exports',
+    (format) => {
+      const plan = ExportService.buildExportPlan({
+        format,
+        mode: 'chapter',
+        selectedChapters: [downloadTask(2, 'chapter-2')],
+        albumDetail: null,
+        useOriginal: false,
+        compressionRatio: 0.4,
+        editedPath: '/exports/chapter.pdf',
+        exportFolder: asFolderRef('folder:path:/exports'),
+        exportFolderDisplayPath: '/exports',
+        splitPages: 0,
+      })
+
+      expect(plan.tasks[0]).toEqual(
+        expect.objectContaining({
+          format,
+          displayPath: `/exports/chapter.${format}`,
+          useOriginal: true,
+          compressionRatio: 1,
+        }),
+      )
+      expect(plan.outputDisplayPaths).toEqual([`/exports/chapter.${format}`])
+    },
+  )
+
+  it('persists the last selected export format', async () => {
+    await ExportService.setLastFormat('cbz')
+
+    expect(ExportService.getLastFormat()).toBe('cbz')
+    expect(preferencesStore.setLastFormat).toHaveBeenCalledWith('cbz')
   })
 })
 

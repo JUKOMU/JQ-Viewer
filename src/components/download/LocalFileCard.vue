@@ -12,14 +12,23 @@
         <IonIcon :icon="documentOutline" />
       </div>
     </div>
-    <button class="info open-btn" type="button" aria-label="打开 PDF" @click="$emit('open')">
+    <button
+      class="info open-btn"
+      type="button"
+      :aria-label="readable ? `阅读 ${formatLabel}` : `${formatLabel} 文件信息`"
+      :disabled="!readable"
+      @click="$emit('open')"
+    >
       <div class="title">{{ file.albumTitle || file.fileName }}</div>
       <div class="subtitle">{{ file.chapterTitle || file.fileName }}</div>
       <div class="meta-row">
         <span class="resource-icons" :aria-label="resourceLabel">
           <IonIcon v-if="hasImageResource" :icon="imagesOutline" class="image-resource-icon" />
-          <IonIcon :icon="documentOutline" class="pdf-resource-icon" />
+          <IonIcon :icon="documentOutline" class="file-resource-icon" />
         </span>
+        <span class="tag format-tag">{{ formatLabel }}</span>
+        <span class="tag source-tag">{{ sourceLabel }}</span>
+        <span class="tag link-tag">{{ chapterLinkLabel }}</span>
         <span v-if="file.pageCount > 0" class="tag completed">共 {{ file.pageCount }} 页</span>
         <span v-if="verifying" class="status verifying" role="status">
           <IonSpinner name="crescent" />
@@ -53,6 +62,7 @@ const props = defineProps<{
   hasImageResource: boolean
   verifying?: boolean
   menuOpen?: boolean
+  readable?: boolean
 }>()
 
 defineEmits<{
@@ -60,7 +70,16 @@ defineEmits<{
   more: [event: Event]
 }>()
 
-const resourceLabel = computed(() => (props.hasImageResource ? '图片和 PDF' : 'PDF'))
+const formatLabel = computed(() => props.file.format.toUpperCase())
+const resourceLabel = computed(() =>
+  props.hasImageResource ? `图片和 ${formatLabel.value}` : formatLabel.value,
+)
+const sourceLabel = computed(() => (props.file.sourceType === 'imported' ? '导入' : '导出'))
+const chapterLinkLabel = computed(() => {
+  if (props.file.chapterLinkStatus === 'multi_chapter') return '多章节'
+  if (props.file.chapterLinkStatus === 'resolved') return '已关联'
+  return '未关联'
+})
 const sizeText = computed(() => {
   const size = props.file.fileSize
   if (!size || size <= 0) return ''
@@ -177,7 +196,7 @@ const availabilityLabel = computed(() => {
   font-size: 14px;
 }
 
-.pdf-resource-icon {
+.file-resource-icon {
   color: #c03939;
 }
 
@@ -195,6 +214,17 @@ const availabilityLabel = computed(() => {
 .tag.completed {
   background: #eaf7ea;
   color: #52a86b;
+}
+
+.format-tag {
+  color: #8a4e2c;
+  font-weight: 600;
+}
+
+.source-tag,
+.link-tag {
+  background: #f0ede8;
+  color: #765b4d;
 }
 
 .status.available {
@@ -258,6 +288,11 @@ const availabilityLabel = computed(() => {
 .more-btn:focus-visible {
   outline: 2px solid #c06f45;
   outline-offset: 2px;
+}
+
+.open-btn:disabled {
+  cursor: default;
+  opacity: 1;
 }
 
 .more-btn:active,

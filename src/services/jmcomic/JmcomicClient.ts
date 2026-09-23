@@ -390,7 +390,7 @@ export interface JmcomicClient {
   getImportedLocalFiles(): Promise<AndroidImportedLocalFilesResult>
 
   getLocalFiles(options: {
-    format?: ExportFormat
+    formats?: ExportFormat[]
     sourceType?: 'imported' | 'exported'
     availability?: LocalFileRecord['availability'] | 'problem'
     folderId?: string

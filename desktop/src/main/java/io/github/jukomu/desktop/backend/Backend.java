@@ -304,7 +304,8 @@ public final class Backend implements AutoCloseable {
             ExportStore pdfExportStore = new ExportStore(database);
             startedLaunchRoutes = new LaunchRouteService(eventHub);
             startedTaskNotifications = new DesktopTaskNotificationService(
-                    downloadStore, pdfExportStore, startedLaunchRoutes, eventHub);
+                    downloadStore, pdfExportStore, startedLaunchRoutes, eventHub,
+                    fileService::openContainingFolder);
             DesktopTaskNotificationService taskNotifications = startedTaskNotifications;
             DownloadFiles downloadFiles = new DownloadFiles(
                     settingsService.downloadRoot(paths.downloadsDirectory()));

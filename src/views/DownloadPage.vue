@@ -21,11 +21,11 @@
               type="button"
               role="tab"
               class="tab-btn"
-              :aria-selected="activeMainView === 'pdf'"
-              :class="{ active: activeMainView === 'pdf' }"
-              @click="selectMainView('pdf')"
+              :aria-selected="activeMainView === 'export'"
+              :class="{ active: activeMainView === 'export' }"
+              @click="selectMainView('export')"
             >
-              PDF
+              导出
             </button>
           </div>
         </div>
@@ -114,12 +114,12 @@
         </template>
       </div>
     </IonContent>
-    <IonContent v-show="activeMainView === 'pdf'">
+    <IonContent v-show="activeMainView === 'export'">
       <div class="download-page-shell">
         <LocalFileManagementView
-          ref="pdfManagementRef"
-          :initial-view="pdfInitialView"
-          :initial-export-id="pdfInitialExportId"
+          ref="exportManagementRef"
+          :initial-view="exportInitialView"
+          :initial-export-id="exportInitialExportId"
         />
       </div>
     </IonContent>
@@ -133,11 +133,11 @@
       @select="popoverAction"
     />
 
-    <!-- PDF导出底部面板 -->
+    <!-- 导出底部面板 -->
     <PdfExportBottomSheet
-      v-model="showPdfSheet"
-      :chapters="chaptersForPdf"
-      @confirm="onPdfExportConfirm"
+      v-model="showExportSheet"
+      :chapters="chaptersForExport"
+      @confirm="onExportConfirm"
     />
 
     <!-- 多章节删除底部面板 -->
@@ -196,21 +196,24 @@ import type {
   CompletedGroup,
   DownloadTask,
   ExportMode,
+  ExportFormat,
 } from '@/services/JmcomicTypes'
 
 const router = useRouter()
 const route = useRoute()
-const activeMainView = ref<'downloads' | 'pdf'>(route.query.view === 'pdf' ? 'pdf' : 'downloads')
-const pdfInitialView = computed<'files' | 'tasks'>(() =>
+const activeMainView = ref<'downloads' | 'export'>(
+  route.query.view === 'pdf' || route.query.view === 'export' ? 'export' : 'downloads',
+)
+const exportInitialView = computed<'files' | 'tasks'>(() =>
   route.query.tab === 'tasks' ? 'tasks' : 'files',
 )
-const pdfInitialExportId = computed(() =>
+const exportInitialExportId = computed(() =>
   typeof route.query.exportId === 'string' ? route.query.exportId : undefined,
 )
-const pdfManagementRef = ref<InstanceType<typeof LocalFileManagementView> | null>(null)
+const exportManagementRef = ref<InstanceType<typeof LocalFileManagementView> | null>(null)
 let ionEnterCount = 0
 
-const selectMainView = (view: 'downloads' | 'pdf') => {
+const selectMainView = (view: 'downloads' | 'export') => {
   activeMainView.value = view
 }
 
@@ -280,9 +283,9 @@ const selectedError = computed(() => {
 const isTaskMenuOpen = (task: DownloadTask | CompletedEntry) =>
   isActionMenuOpen.value && selectedTask.value === task
 
-// PDF导出
-const showPdfSheet = ref(false)
-const chaptersForPdf = ref<DownloadTask[]>([])
+// 文件导出
+const showExportSheet = ref(false)
+const chaptersForExport = ref<DownloadTask[]>([])
 
 const popoverTitle = computed(() => {
   if (selectedGroup.value?.type === 'multi') {
@@ -302,7 +305,7 @@ const actionMenuActions = computed(() => {
   }
   actions.push({ id: 'detail', label: '进入详情页', icon: informationCircleOutline })
   if (selectedStatus.value === 'completed') {
-    actions.push({ id: 'pdf', label: '导出为PDF', icon: documentLockOutline })
+    actions.push({ id: 'export', label: '导出', icon: documentLockOutline })
   }
   if (selectedStatus.value === 'failed') {
     actions.push({
@@ -381,8 +384,8 @@ const popoverAction = (action: string) => {
     case 'cancel':
       onCancel(t as DownloadTask)
       break
-    case 'pdf':
-      onOpenPdfSheet()
+    case 'export':
+      onOpenExportSheet()
       break
     case 'delete':
       if (selectedGroup.value?.type === 'multi') {
@@ -707,7 +710,7 @@ const updateSpeedSample = (
 }
 
 const onRefresh = async (event: CustomEvent) => {
-  if (activeMainView.value === 'pdf') await pdfManagementRef.value?.refresh()
+  if (activeMainView.value === 'export') await exportManagementRef.value?.refresh()
   else await syncDownloadState()
   ;(event.target as HTMLIonRefresherElement).complete()
 }
@@ -822,8 +825,8 @@ onMounted(async () => {
 onIonViewWillEnter(() => {
   ionEnterCount++
   void syncDownloadState()
-  if (activeMainView.value === 'pdf' && ionEnterCount > 1) {
-    void pdfManagementRef.value?.refresh()
+  if (activeMainView.value === 'export' && ionEnterCount > 1) {
+    void exportManagementRef.value?.refresh()
   }
 })
 
@@ -838,25 +841,28 @@ onUnmounted(() => {
   speedSamples.clear()
 })
 
-// ---- PDF 导出 ----
-const onOpenPdfSheet = () => {
+// ---- 文件导出 ----
+const onOpenExportSheet = () => {
   const g = selectedGroup.value
   if (g?.type === 'multi') {
-    chaptersForPdf.value = g.chapters
+    chaptersForExport.value = g.chapters
       .filter((c) => c.source === 'download')
       .map((c) => c.downloadTask!)
   } else if (selectedTask.value) {
     const t = selectedTask.value
     if (!('source' in t)) {
-      chaptersForPdf.value = [t as DownloadTask]
+      chaptersForExport.value = [t as DownloadTask]
     } else if (t.source === 'download' && t.downloadTask) {
-      chaptersForPdf.value = [t.downloadTask]
+      chaptersForExport.value = [t.downloadTask]
     }
   }
-  showPdfSheet.value = true
+  showExportSheet.value = true
 }
 
-const requestPdfOverwriteConfirmation = async (paths: string[]): Promise<boolean> => {
+const requestOverwriteConfirmation = async (
+  format: ExportFormat,
+  paths: string[],
+): Promise<boolean> => {
   let confirmed = false
   const visiblePaths = [...new Set(paths.filter((path) => path.trim().length > 0))].slice(0, 3)
   const pathSummary = visiblePaths.length
@@ -868,7 +874,7 @@ const requestPdfOverwriteConfirmation = async (paths: string[]): Promise<boolean
   const alert = await createAppAlert({
     tone: 'danger',
     header: '文件已存在',
-    message: `以下 PDF 已存在，是否覆盖？${pathSummary}${remainingSummary}`,
+    message: `以下 ${format.toUpperCase()} 文件已存在，是否覆盖？${pathSummary}${remainingSummary}`,
     buttons: [
       { text: '取消', role: 'cancel' },
       {
@@ -885,15 +891,16 @@ const requestPdfOverwriteConfirmation = async (paths: string[]): Promise<boolean
   return confirmed
 }
 
-const onPdfExportConfirm = async (payload: {
+const onExportConfirm = async (payload: {
   selectedChapters: DownloadTask[]
+  format: ExportFormat
   mode: ExportMode
   useOriginal: boolean
   compressionRatio: number
   editedPath: string
   splitPages: number
 }) => {
-  showPdfSheet.value = false
+  showExportSheet.value = false
 
   // 多章节时获取本子详情以支持 author/authors/tag 模板变量
   let albumDetail: AlbumDetail | null = null
@@ -936,7 +943,9 @@ const onPdfExportConfirm = async (payload: {
       exportPlan.tasks.map((task) => ({ ...task, allowOverwrite })),
     )
     const conflictIndexes = result.tasks.flatMap((task, index) =>
-      !task.accepted && task.errorCode === 'PDF_OUTPUT_EXISTS' ? [index] : [],
+      !task.accepted && task.errorCode === `${payload.format.toUpperCase()}_OUTPUT_EXISTS`
+        ? [index]
+        : [],
     )
     let finalTasks = result.tasks
     let overwriteConfirmed = false
@@ -951,7 +960,7 @@ const onPdfExportConfirm = async (payload: {
           ''
         )
       })
-      overwriteConfirmed = await requestPdfOverwriteConfirmation(conflictPaths)
+      overwriteConfirmed = await requestOverwriteConfirmation(payload.format, conflictPaths)
       if (overwriteConfirmed) {
         try {
           const overwriteResult = await JmcomicService.exportBatch(
@@ -985,18 +994,18 @@ const onPdfExportConfirm = async (payload: {
           'medium',
         )
       } else if (accepted === 0) {
-        await showToast('检测到已有同名 PDF，已取消覆盖', 'medium')
+        await showToast(`检测到已有同名 ${payload.format.toUpperCase()}，已取消覆盖`, 'medium')
       } else {
         await showToast(`已开始 ${accepted} 个，${conflictIndexes.length} 个已取消覆盖`, 'medium')
       }
       return
     }
     if (accepted === 0) {
-      await showToast('PDF 导出未开始，请查看任务失败原因', 'danger')
+      await showToast(`${payload.format.toUpperCase()} 导出未开始，请查看任务失败原因`, 'danger')
     } else if (rejected > 0) {
       await showToast(`已开始 ${accepted} 个，${rejected} 个未进入队列，请查看导出任务`, 'medium')
     } else {
-      await showToast('PDF导出已开始，请查看通知', 'success')
+      await showToast(`${payload.format.toUpperCase()} 导出已开始，请查看通知`, 'success')
     }
   } catch (e: any) {
     await showToast(sanitizeError(e, '导出启动失败'), 'danger')
@@ -1012,7 +1021,7 @@ async function ensureNotificationPermission(): Promise<boolean> {
       tone: 'info',
       header: '需要通知权限',
       message:
-        'PDF导出将在后台进行，需要通过通知查看进度。拒绝后仍会继续导出，但不会显示系统通知。',
+        '导出将在后台进行，需要通过通知查看进度。拒绝后仍会继续导出，但不会显示系统通知。',
       buttons: [
         { text: '暂不授权', role: 'cancel' },
         {

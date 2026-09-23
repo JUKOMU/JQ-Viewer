@@ -6,10 +6,12 @@ import {
   type ExportFolderSelection,
   type ExportPreferencesStore,
 } from '../ExportPreferences'
+import type { ExportFormat } from '@/services/JmcomicTypes'
 
 const KEY_EXPORT_PATH = 'jq-pdf-export-path'
 const KEY_DIR_TEMPLATE = 'jq-pdf-dir-template'
 const KEY_NAME_TEMPLATE = 'jq-pdf-name-template'
+const KEY_LAST_FORMAT = 'jq-export-last-format'
 
 function readExportFolder(): ExportFolderSelection | null {
   try {
@@ -48,6 +50,11 @@ function readText(key: string, fallback: string): string {
   }
 }
 
+function readLastFormat(): ExportFormat {
+  const value = readText(KEY_LAST_FORMAT, 'pdf')
+  return value === 'cbz' || value === 'zip' ? value : 'pdf'
+}
+
 /** Android 保留现有 localStorage 行为，Desktop 不使用此 adapter。 */
 export function createAndroidExportPreferencesStore(): ExportPreferencesStore {
   return {
@@ -56,6 +63,7 @@ export function createAndroidExportPreferencesStore(): ExportPreferencesStore {
       exportFolder: readExportFolder(),
       directoryTemplate: readText(KEY_DIR_TEMPLATE, DEFAULT_EXPORT_DIRECTORY_TEMPLATE),
       fileNameTemplate: readText(KEY_NAME_TEMPLATE, DEFAULT_EXPORT_FILE_NAME_TEMPLATE),
+      lastFormat: readLastFormat(),
     }),
     setExportFolder: async (selection) => {
       if (!selection) {
@@ -77,6 +85,9 @@ export function createAndroidExportPreferencesStore(): ExportPreferencesStore {
     setFileNameTemplate: async (template) => {
       if (template === null) localStorage.removeItem(KEY_NAME_TEMPLATE)
       else localStorage.setItem(KEY_NAME_TEMPLATE, template)
+    },
+    setLastFormat: async (format) => {
+      localStorage.setItem(KEY_LAST_FORMAT, format)
     },
   }
 }

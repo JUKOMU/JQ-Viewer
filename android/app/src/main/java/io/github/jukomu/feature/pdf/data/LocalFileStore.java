@@ -476,7 +476,8 @@ public class LocalFileStore extends SQLiteOpenHelper {
         JSONArray files = new JSONArray();
         String cursor = null;
         do {
-            JSONObject page = getFilesPage(format, sourceType, null, null, null, cursor, 100);
+            JSONObject page = getFilesPage(format == null ? null : List.of(format), sourceType,
+                null, null, null, cursor, 100);
             JSONArray pageFiles = page.optJSONArray("files");
             if (pageFiles != null) {
                 for (int index = 0; index < pageFiles.length(); index++) {
@@ -488,15 +489,16 @@ public class LocalFileStore extends SQLiteOpenHelper {
         return files;
     }
 
-    public JSONObject getFilesPage(String format, String sourceType, String availability,
+    public JSONObject getFilesPage(List<String> formats, String sourceType, String availability,
                                    String folderId, String query, String cursor, int requestedLimit) {
         int limit = Math.max(1, Math.min(100, requestedLimit));
         CursorPosition position = CursorPosition.parse(cursor);
         List<String> clauses = new ArrayList<>();
         List<String> args = new ArrayList<>();
-        if (format != null && !format.isEmpty()) {
-            clauses.add("format = ?");
-            args.add(format);
+        if (formats != null && !formats.isEmpty()) {
+            clauses.add("format IN (" + String.join(",", java.util.Collections.nCopies(
+                formats.size(), "?")) + ")");
+            args.addAll(formats);
         }
         if (sourceType != null && !sourceType.isEmpty()) {
             clauses.add("source_type = ?");

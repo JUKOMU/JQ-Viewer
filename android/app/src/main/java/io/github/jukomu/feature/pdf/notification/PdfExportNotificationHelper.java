@@ -7,14 +7,18 @@ import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Environment;
+import android.provider.DocumentsContract;
 import android.util.Log;
 import androidx.core.app.NotificationCompat;
 import androidx.core.content.FileProvider;
 import io.github.jukomu.R;
+import io.github.jukomu.MainActivity;
 import io.github.jukomu.feature.pdf.data.PdfRef;
 import io.github.jukomu.feature.pdf.data.PdfRefResolver;
 
 import java.io.File;
+import java.io.FileNotFoundException;
 
 /**
  * 文件导出系统通知辅助类。
@@ -85,39 +89,73 @@ public class PdfExportNotificationHelper {
     }
 
     private PendingIntent createOpenIntent(int notificationId, String format, String outputFileRef) {
-        Intent openIntent = new Intent(Intent.ACTION_VIEW);
         try {
-            PdfRef.Parsed parsed = PdfRef.parse(outputFileRef);
-            Uri uri;
-            if (parsed.provider == PdfRef.Provider.SAF) {
-                uri = PdfRefResolver.uri(outputFileRef);
+            Intent openIntent;
+            if ("zip".equals(format)) {
+                Uri folderUri = resolveFolderUri(outputFileRef);
+                openIntent = new Intent(Intent.ACTION_VIEW);
+                openIntent.setDataAndType(folderUri, DocumentsContract.Document.MIME_TYPE_DIR);
+                openIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION
+                    | Intent.FLAG_ACTIVITY_NEW_TASK);
             } else {
-                File file = PdfRefResolver.pathFile(outputFileRef);
-                uri = FileProvider.getUriForFile(
-                    context,
-                    context.getPackageName() + ".fileprovider",
-                    file
-                );
+                String reader = "cbz".equals(format) ? "/cbz-reader" : "/pdf-reader";
+                String route = reader + "?fileRef=" + Uri.encode(outputFileRef);
+                openIntent = new Intent(context, MainActivity.class);
+                openIntent.setAction(MainActivity.ACTION_OPEN_ROUTE);
+                openIntent.putExtra(MainActivity.EXTRA_ROUTE, route);
+                openIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
             }
-            openIntent.setDataAndType(uri, mimeType(format));
-            openIntent.putExtra("jq_export_format", format);
-            openIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
             return PendingIntent.getActivity(
                 context,
                 notificationId,
                 openIntent,
                 PendingIntent.FLAG_IMMUTABLE
             );
-        } catch (RuntimeException e) {
+        } catch (Exception e) {
             Log.d(TAG, "导出完成通知打开入口创建失败", e);
             return null;
         }
     }
 
-    private static String mimeType(String format) {
-        if ("cbz".equals(format)) return "application/vnd.comicbook+zip";
-        if ("zip".equals(format)) return "application/zip";
-        return "application/pdf";
+    private Uri resolveFolderUri(String fileRef) throws Exception {
+        PdfRef.Parsed parsed = PdfRef.parse(fileRef);
+        if (parsed.kind != PdfRef.Kind.FILE) throw new IllegalArgumentException("需要文件引用");
+        if (parsed.provider == PdfRef.Provider.SAF) {
+            Uri fileUri = PdfRefResolver.uri(fileRef);
+            String documentId = DocumentsContract.getDocumentId(fileUri);
+            int separator = documentId.lastIndexOf('/');
+            String parentDocumentId;
+            if (separator >= 0) {
+                parentDocumentId = documentId.substring(0, separator);
+            } else {
+                int volumeSeparator = documentId.indexOf(':');
+                if (volumeSeparator < 0) throw new IllegalArgumentException("无法确定文档所在文件夹");
+                parentDocumentId = documentId.substring(0, volumeSeparator + 1);
+            }
+            if (fileUri.getPath() != null && fileUri.getPath().contains("/tree/")) {
+                return DocumentsContract.buildDocumentUriUsingTree(fileUri, parentDocumentId);
+            }
+            return DocumentsContract.buildDocumentUri(fileUri.getAuthority(), parentDocumentId);
+        }
+
+        File file = PdfRefResolver.pathFile(fileRef);
+        File parent = file.getCanonicalFile().getParentFile();
+        if (parent == null || !parent.isDirectory()) {
+            throw new FileNotFoundException("Parent folder not found: " + fileRef);
+        }
+        String parentPath = parent.getCanonicalPath();
+        String primaryPath = Environment.getExternalStorageDirectory().getCanonicalPath();
+        if (parentPath.equals(primaryPath) || parentPath.startsWith(primaryPath + File.separator)) {
+            String relativePath = parentPath.substring(primaryPath.length()).replace(
+                File.separatorChar, '/');
+            if (relativePath.startsWith("/")) relativePath = relativePath.substring(1);
+            String documentId = relativePath.isEmpty() ? "primary:" : "primary:" + relativePath;
+            return DocumentsContract.buildDocumentUri(
+                "com.android.externalstorage.documents", documentId);
+        }
+        return FileProvider.getUriForFile(
+            context, context.getPackageName() + ".fileprovider", parent);
     }
 
     public void showError(int notificationId, String chapterTitle, String error) {

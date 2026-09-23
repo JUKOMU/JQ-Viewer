@@ -1,11 +1,13 @@
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import PdfExportBottomSheet from '@/components/download/PdfExportBottomSheet.vue'
+import { ExportService } from '@/services/ExportService'
 import { JmcomicService } from '@/services/JmcomicService'
-import type { DownloadTask, ExportMode } from '@/services/JmcomicTypes'
+import type { DownloadTask, ExportFormat, ExportMode } from '@/services/JmcomicTypes'
 
 type ConfirmPayload = {
   selectedChapters: DownloadTask[]
+  format: ExportFormat
   mode: ExportMode
   useOriginal: boolean
   compressionRatio: number
@@ -111,6 +113,23 @@ describe('PdfExportBottomSheet', () => {
     await wrapper.get('.btn-confirm').trigger('click')
     expect(wrapper.emitted('confirm')?.[0]?.[0]).toEqual(
       expect.objectContaining({ mode: 'chapter' }),
+    )
+  })
+
+  test('记忆格式并按格式切换扩展名和 PDF 专属质量控件', async () => {
+    const setLastFormat = vi.spyOn(ExportService, 'setLastFormat').mockResolvedValue()
+    const wrapper = await mountSheet()
+
+    const formatButtons = wrapper.findAll('.format-tabs button')
+    await formatButtons[1].trigger('click')
+
+    expect(setLastFormat).toHaveBeenCalledWith('zip')
+    expect(wrapper.get<HTMLTextAreaElement>('.path-input').element.value).toMatch(/\.zip$/)
+    expect(wrapper.text()).not.toContain('图片质量')
+
+    await wrapper.get('.btn-confirm').trigger('click')
+    expect(wrapper.emitted('confirm')?.[0]?.[0]).toEqual(
+      expect.objectContaining({ format: 'zip', useOriginal: true, compressionRatio: 1 }),
     )
   })
 })

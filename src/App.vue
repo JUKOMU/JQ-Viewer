@@ -441,7 +441,8 @@ onBeforeUnmount(() => {
 }
 
 @media (min-width: 1264px) {
-  .desktop-page-content {
+  .ion-page-container .ion-page .desktop-page-content,
+  .ion-page ion-header.ion-no-border ion-toolbar.desktop-page-content {
     box-sizing: border-box;
     width: min(100%, calc(100% - clamp(150px, 15cqw, 300px) - 24px));
     max-width: 960px;

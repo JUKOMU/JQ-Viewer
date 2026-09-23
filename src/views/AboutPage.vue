@@ -9,7 +9,7 @@
       </IonToolbar>
     </IonHeader>
     <IonContent>
-      <div class="about-container">
+      <div class="about-container desktop-page-content">
         <!-- 应用信息 -->
         <div class="home-title" @click="reDisplay">
           <span class="title-text">{{ displayText }}</span>

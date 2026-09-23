@@ -17,7 +17,7 @@
     </IonHeader>
     <IonContent>
       <div class="chapter-page-container">
-        <div class="chapter-content">
+        <div class="chapter-content desktop-page-content">
           <!-- 已下载模式 -->
           <div v-if="showMode === 'downloaded'" class="chapter-grid">
             <button

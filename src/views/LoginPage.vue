@@ -9,7 +9,7 @@
       </IonToolbar>
     </IonHeader>
     <IonContent>
-      <div class="login-container">
+      <div class="login-container desktop-page-content">
         <div class="login-card">
           <IonInput
             v-model="username"

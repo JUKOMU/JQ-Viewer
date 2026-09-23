@@ -9,7 +9,7 @@
       </IonToolbar>
     </IonHeader>
     <IonContent>
-      <div class="page-content">
+      <div class="page-content desktop-page-content">
         <div class="status-grid">
           <section class="status-section">
             <!-- 域名连通性 -->

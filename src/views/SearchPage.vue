@@ -15,7 +15,7 @@
       </Transition>
 
       <div class="search-page-top">
-        <div class="search-page-toolbar" :class="{ pinned: pullHeaderPinned }">
+        <div class="search-page-toolbar desktop-page-content" :class="{ pinned: pullHeaderPinned }">
           <MenuToggleButton />
           <div class="toolbar-search">
             <SearchHeaderBar
@@ -29,6 +29,7 @@
       </div>
 
       <SearchResultContainer
+        class="desktop-page-content"
         ref="resultContainerRef"
         :result="resultMeta"
         :items="displayItems"

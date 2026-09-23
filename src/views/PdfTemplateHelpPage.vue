@@ -9,7 +9,7 @@
       </IonToolbar>
     </IonHeader>
     <IonContent>
-      <div class="help-container">
+      <div class="help-container desktop-page-content">
         <!-- 基本变量 -->
         <div class="section-label">基本变量</div>
         <div class="card">

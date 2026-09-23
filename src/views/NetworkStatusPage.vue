@@ -442,7 +442,7 @@ function formatTime(ts: number): string {
   color: #b89a84;
 }
 
-@media (min-width: 992px) {
+@media (min-width: 1264px) {
   .status-grid {
     grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
     column-gap: 16px;

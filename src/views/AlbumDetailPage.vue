@@ -1776,7 +1776,7 @@ const handleScroll = async (event: CustomEvent<{ scrollTop?: number }>) => {
   }
 }
 
-@media (min-width: 992px) {
+@media (min-width: 1264px) {
   .detail-page-container {
     --detail-page-inset: clamp(150px, 15cqw, 300px);
   }

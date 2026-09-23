@@ -568,7 +568,7 @@ const showPreview = ref(false)
   }
 }
 
-@media (min-width: 992px) {
+@media (min-width: 1264px) {
   .header-content {
     margin-inline: 0 auto;
   }

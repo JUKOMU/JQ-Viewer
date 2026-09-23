@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 
-export const WIDE_MENU_MEDIA_QUERY = '(min-width: 992px)'
+export const WIDE_MENU_MEDIA_QUERY = '(min-width: 1264px)'
 
 /** 左侧主菜单是否打开 */
 export const leftMenuOpen = ref(false)

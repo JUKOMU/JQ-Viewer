@@ -963,6 +963,13 @@ onMounted(async () => {
   padding: calc(var(--ion-safe-area-top) + 2px) 14px 0;
 }
 
+@media (min-width: 1264px) {
+  .search-page-top {
+    padding-right: 0;
+    padding-left: 0;
+  }
+}
+
 .search-overlay {
   position: fixed;
   inset: 0;

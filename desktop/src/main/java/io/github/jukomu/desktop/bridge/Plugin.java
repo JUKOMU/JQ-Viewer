@@ -8,7 +8,7 @@ import io.github.jukomu.desktop.bridge.handler.HistoryPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.FilePluginHandler;
 import io.github.jukomu.desktop.bridge.handler.OfflineFavoritePluginHandler;
 import io.github.jukomu.desktop.bridge.handler.OcrPluginHandler;
-import io.github.jukomu.desktop.bridge.handler.PdfPluginHandler;
+import io.github.jukomu.desktop.bridge.handler.LocalFilePluginHandler;
 import io.github.jukomu.desktop.bridge.handler.SettingsPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.SystemPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.UpdatePluginHandler;
@@ -24,7 +24,7 @@ public final class Plugin {
     private final OfflineFavoritePluginHandler favorites;
     private final FilePluginHandler files;
     private final DownloadPluginHandler downloads;
-    private final PdfPluginHandler pdfs;
+    private final LocalFilePluginHandler pdfs;
     private final SystemPluginHandler system;
     private final OcrPluginHandler ocr;
     private final UpdatePluginHandler updates;
@@ -34,7 +34,7 @@ public final class Plugin {
                   SettingsPluginHandler settings, HistoryPluginHandler history,
                   OfflineFavoritePluginHandler favorites,
                   FilePluginHandler files, DownloadPluginHandler downloads,
-                  PdfPluginHandler pdfs,
+                  LocalFilePluginHandler pdfs,
                   SystemPluginHandler system,
                   OcrPluginHandler ocr,
                   UpdatePluginHandler updates) {
@@ -263,23 +263,23 @@ public final class Plugin {
     }
 
     @PluginMethod
-    public void getPdfExportPreferences(Context context) {
-        settings.getPdfExportPreferences(context);
+    public void getExportPreferences(Context context) {
+        settings.getExportPreferences(context);
     }
 
     @PluginMethod
-    public void setPdfExportFolder(Context context) {
-        settings.setPdfExportFolder(context);
+    public void setExportFolder(Context context) {
+        settings.setExportFolder(context);
     }
 
     @PluginMethod
-    public void setPdfExportDirectoryTemplate(Context context) {
-        settings.setPdfExportDirectoryTemplate(context);
+    public void setExportDirectoryTemplate(Context context) {
+        settings.setExportDirectoryTemplate(context);
     }
 
     @PluginMethod
-    public void setPdfExportFileNameTemplate(Context context) {
-        settings.setPdfExportFileNameTemplate(context);
+    public void setExportFileNameTemplate(Context context) {
+        settings.setExportFileNameTemplate(context);
     }
 
     @PluginMethod
@@ -308,8 +308,8 @@ public final class Plugin {
     }
 
     @PluginMethod
-    public void scanPdfFiles(Context context) {
-        files.scanPdfFiles(context);
+    public void scanImportableFiles(Context context) {
+        files.scanImportableFiles(context);
     }
 
     @PluginMethod
@@ -348,88 +348,88 @@ public final class Plugin {
     }
 
     @PluginMethod
-    public void exportPdfBatch(Context context) {
-        pdfs.exportPdfBatch(context);
+    public void exportBatch(Context context) {
+        pdfs.exportBatch(context);
     }
 
     @PluginMethod
-    public void getPdfExportTasks(Context context) {
-        pdfs.getPdfExportTasks(context);
+    public void getExportTasks(Context context) {
+        pdfs.getExportTasks(context);
     }
 
     @PluginMethod
-    public void getPdfExportTask(Context context) {
-        pdfs.getPdfExportTask(context);
+    public void getExportTask(Context context) {
+        pdfs.getExportTask(context);
     }
 
     @PluginMethod
-    public void cancelPdfExport(Context context) {
-        pdfs.cancelPdfExport(context);
+    public void cancelExport(Context context) {
+        pdfs.cancelExport(context);
     }
 
     @PluginMethod
-    public void retryPdfExport(Context context) {
-        pdfs.retryPdfExport(context);
+    public void retryExport(Context context) {
+        pdfs.retryExport(context);
     }
 
     @PluginMethod
-    public void deletePdfExportTask(Context context) {
-        pdfs.deletePdfExportTask(context);
+    public void deleteExportTask(Context context) {
+        pdfs.deleteExportTask(context);
     }
 
     @PluginMethod
-    public void importPdfs(Context context) {
-        pdfs.importPdfs(context);
+    public void importLocalFiles(Context context) {
+        pdfs.importLocalFiles(context);
     }
 
     @PluginMethod
-    public void getImportedPdfs(Context context) {
-        pdfs.getImportedPdfs(context);
+    public void getImportedLocalFiles(Context context) {
+        pdfs.getImportedLocalFiles(context);
     }
 
     @PluginMethod
-    public void getPdfFiles(Context context) {
-        pdfs.getPdfFiles(context);
+    public void getLocalFiles(Context context) {
+        pdfs.getLocalFiles(context);
     }
 
     @PluginMethod
-    public void refreshPdfFileAvailability(Context context) {
-        pdfs.refreshPdfFileAvailability(context);
+    public void refreshLocalFileAvailability(Context context) {
+        pdfs.refreshLocalFileAvailability(context);
     }
 
     @PluginMethod
-    public void inspectPdfFileForDeletion(Context context) {
-        pdfs.inspectPdfFileForDeletion(context);
+    public void inspectLocalFileForDeletion(Context context) {
+        pdfs.inspectLocalFileForDeletion(context);
     }
 
     @PluginMethod
-    public void verifyPdfFile(Context context) {
-        pdfs.verifyPdfFile(context);
+    public void verifyLocalFile(Context context) {
+        pdfs.verifyLocalFile(context);
     }
 
     @PluginMethod
-    public void removePdfFromLibrary(Context context) {
-        pdfs.removePdfFromLibrary(context);
+    public void removeLocalFileFromLibrary(Context context) {
+        pdfs.removeLocalFileFromLibrary(context);
     }
 
     @PluginMethod
-    public void deletePdfFile(Context context) {
-        pdfs.deletePdfFile(context);
+    public void deleteLocalFile(Context context) {
+        pdfs.deleteLocalFile(context);
     }
 
     @PluginMethod
-    public void deleteImportedPdf(Context context) {
-        pdfs.deleteImportedPdf(context);
+    public void deleteImportedLocalFile(Context context) {
+        pdfs.deleteImportedLocalFile(context);
     }
 
     @PluginMethod
-    public void getPdfManagementState(Context context) {
-        pdfs.getPdfManagementState(context);
+    public void getLocalFileManagementState(Context context) {
+        pdfs.getLocalFileManagementState(context);
     }
 
     @PluginMethod
-    public void acknowledgePdfDatabaseReset(Context context) {
-        pdfs.acknowledgePdfDatabaseReset(context);
+    public void acknowledgeLocalFileDatabaseReset(Context context) {
+        pdfs.acknowledgeLocalFileDatabaseReset(context);
     }
 
     @PluginMethod
@@ -438,13 +438,13 @@ public final class Plugin {
     }
 
     @PluginMethod
-    public void openPdf(Context context) {
-        pdfs.openPdf(context);
+    public void openLocalFile(Context context) {
+        pdfs.openLocalFile(context);
     }
 
     @PluginMethod
-    public void openPdfFolder(Context context) {
-        pdfs.openPdfFolder(context);
+    public void openLocalFileFolder(Context context) {
+        pdfs.openLocalFileFolder(context);
     }
 
     @PluginMethod

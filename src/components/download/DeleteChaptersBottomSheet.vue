@@ -72,7 +72,7 @@ const emit = defineEmits<{
 const selectedKeys = ref(new Set<string>())
 
 const chapterKey = (ch: CompletedEntry) =>
-  `${ch.source}|${ch.chapterId}|${ch.pdfData?.id ?? ch.downloadTask?.taskId ?? ''}`
+  `${ch.source}|${ch.chapterId}|${ch.localFileData?.id ?? ch.downloadTask?.taskId ?? ''}`
 
 const chapterTitle = (ch: CompletedEntry) => {
   const order = ch.chapterSortOrder
@@ -81,8 +81,8 @@ const chapterTitle = (ch: CompletedEntry) => {
 }
 
 const chapterMeta = (ch: CompletedEntry) => {
-  if (ch.source === 'pdf-import') {
-    return `PDF · ${ch.pdfData?.pageCount ?? '?'}页`
+  if (ch.source === 'local-file') {
+    return `PDF · ${ch.localFileData?.pageCount ?? '?'}页`
   }
   return `图片 · ${ch.downloadTask?.totalPages ?? 0}页`
 }

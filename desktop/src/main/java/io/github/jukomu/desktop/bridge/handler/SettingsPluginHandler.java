@@ -69,22 +69,22 @@ public final class SettingsPluginHandler {
                 request -> downloadLocation.set(Request.bool(request.open(), false)));
     }
 
-    public void getPdfExportPreferences(Context context) {
+    public void getExportPreferences(Context context) {
         settingsRequests.run(context, settings::pdfExportPreferences);
     }
 
-    public void setPdfExportFolder(Context context) {
+    public void setExportFolder(Context context) {
         settingsRequests.run(context, PdfExportFolderRequest.class,
-                request -> settings.setPdfExportFolder(request.folder()));
+                request -> settings.setExportFolder(request.folder()));
     }
 
-    public void setPdfExportDirectoryTemplate(Context context) {
+    public void setExportDirectoryTemplate(Context context) {
         settingsRequests.run(context, NullableTextSettingRequest.class,
-                request -> settings.setPdfExportDirectoryTemplate(request.value()));
+                request -> settings.setExportDirectoryTemplate(request.value()));
     }
 
-    public void setPdfExportFileNameTemplate(Context context) {
+    public void setExportFileNameTemplate(Context context) {
         settingsRequests.run(context, NullableTextSettingRequest.class,
-                request -> settings.setPdfExportFileNameTemplate(request.value()));
+                request -> settings.setExportFileNameTemplate(request.value()));
     }
 }

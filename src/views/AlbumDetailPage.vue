@@ -159,7 +159,7 @@ import type {
   AlbumMeta,
   CommentItem,
   FolderEntry,
-  ImportedPdf,
+  LocalFileRecord,
   PhotoDetail,
   PreloadResult,
 } from '@/services/JmcomicTypes'
@@ -243,7 +243,7 @@ const chapterLoading = ref(false)
 // ---- 章节操作栏 ----
 const showChapterActions = ref(false)
 const chapterDownloadStatuses = ref<Map<string, string>>(new Map())
-const chapterPdfMap = ref<Map<string, ImportedPdf>>(new Map())
+const chapterPdfMap = ref<Map<string, LocalFileRecord>>(new Map())
 const chapterPdfStatuses = computed(() => {
   const map = new Map<string, boolean>()
   for (const key of chapterPdfMap.value.keys()) {
@@ -279,12 +279,12 @@ const refreshDownloadStatuses = async () => {
   }
 }
 
-const chooseRecentPdf = (current: ImportedPdf | undefined, next: ImportedPdf) => {
+const chooseRecentPdf = (current: LocalFileRecord | undefined, next: LocalFileRecord) => {
   if (!current) return next
   return next.createdAt >= current.createdAt ? next : current
 }
 
-const resolvePdfChapterKey = (pdf: ImportedPdf): string => {
+const resolvePdfChapterKey = (pdf: LocalFileRecord): string => {
   const metas = albumDetail.value?.photoMetas ?? []
   const exact = metas.find((meta) => meta.id === pdf.chapterId)
   if (exact) return exact.id
@@ -295,11 +295,11 @@ const resolvePdfChapterKey = (pdf: ImportedPdf): string => {
   return pdf.chapterId || pdf.albumId
 }
 
-const refreshImportedPdfStatuses = async () => {
+const refreshLocalFileRecordStatuses = async () => {
   try {
-    const result = await JmcomicService.getImportedPdfs()
-    const map = new Map<string, ImportedPdf>()
-    for (const pdf of result.pdfs ?? []) {
+    const result = await JmcomicService.getImportedLocalFiles()
+    const map = new Map<string, LocalFileRecord>()
+    for (const pdf of result.files ?? []) {
       if (pdf.albumId !== albumId.value) continue
       const key = resolvePdfChapterKey(pdf)
       map.set(key, chooseRecentPdf(map.get(key), pdf))
@@ -643,7 +643,7 @@ const loadAlbumData = async (force = false) => {
   if (!isCurrentLoad()) return
   await refreshDownloadStatuses()
   if (!isCurrentLoad()) return
-  await refreshImportedPdfStatuses()
+  await refreshLocalFileRecordStatuses()
   if (!isCurrentLoad()) return
   downloadProgressHandle?.remove()
   downloadProgressHandle = await JmcomicService.addDownloadProgressListener((data) => {
@@ -895,7 +895,7 @@ const getPreferredSource = (): PreviewSource => {
   return 'network'
 }
 
-const buildPdfReaderQuery = (pdf: ImportedPdf, page?: number) => ({
+const buildPdfReaderQuery = (pdf: LocalFileRecord, page?: number) => ({
   fileRef: String(pdf.fileRef),
   title: pdf.fileName,
   albumId: pdf.albumId,
@@ -1048,7 +1048,7 @@ const renderPdfPreviewBatch = async (
 }
 
 const loadPdfPreview = async (
-  pdf: ImportedPdf,
+  pdf: LocalFileRecord,
   requestGeneration: number,
 ): Promise<pdfjsLib.PDFDocumentProxy | null> => {
   const arrayBuffer = await fetchPdfArrayBuffer(pdf.fileRef)

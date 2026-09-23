@@ -8,7 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
- * Deletes only PDF writer artifacts whose ownership was persisted by PdfStore.
+ * Deletes only PDF writer artifacts whose ownership was persisted by LocalFileStore.
  */
 public final class PdfArtifactCleaner {
 

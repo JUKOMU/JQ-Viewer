@@ -6,7 +6,7 @@ import io.github.jukomu.desktop.data.Paths;
 import io.github.jukomu.desktop.feature.files.model.FileDescriptorResponse;
 import io.github.jukomu.desktop.feature.files.model.FileRefsResponse;
 import io.github.jukomu.desktop.feature.files.model.FolderDescriptorResponse;
-import io.github.jukomu.desktop.feature.files.model.PdfFilesResponse;
+import io.github.jukomu.desktop.feature.files.model.LocalFilesResponse;
 
 import java.awt.Desktop;
 import java.io.IOException;
@@ -73,7 +73,11 @@ public final class FileService {
         return SuccessResponse.ok();
     }
 
-    public PdfFilesResponse scanPdfFiles(String reference) {
+    public LocalFilesResponse scanImportableFiles(String reference, List<String> formats) {
+        List<String> requested = formats == null || formats.isEmpty() ? List.of("pdf") : formats;
+        if (requested.stream().anyMatch(format -> !"pdf".equals(format))) {
+            throw ApiException.invalidRequest("本轮仅支持扫描 PDF 文件");
+        }
         Path folder = FileReferences.parseFolder(reference);
         if (!Files.isDirectory(folder)) throw ApiException.notFound("目录不存在");
         try (var files = Files.list(folder)) {
@@ -84,7 +88,7 @@ public final class FileService {
                             String.CASE_INSENSITIVE_ORDER))
                     .map(FileService::file)
                     .toList();
-            return new PdfFilesResponse(results);
+            return new LocalFilesResponse(results);
         } catch (IOException exception) {
             throw new IllegalStateException("扫描 PDF 文件失败", exception);
         }
@@ -95,8 +99,8 @@ public final class FileService {
     }
 
     private static String requirePurpose(String purpose) {
-        if (!"pdf-root".equals(purpose)
-                && !"pdf-export".equals(purpose)
+        if (!"local-file-root".equals(purpose)
+                && !"export".equals(purpose)
                 && !"download".equals(purpose)) {
             throw ApiException.invalidRequest("purpose无效");
         }
@@ -116,6 +120,7 @@ public final class FileService {
     private static FileDescriptorResponse file(Path path) {
         Path normalized = path.toAbsolutePath().normalize();
         return new FileDescriptorResponse(
+                "pdf",
                 FileReferences.fileRef(normalized),
                 normalized.getFileName().toString(),
                 normalized.toString());

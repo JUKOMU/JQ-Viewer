@@ -1,27 +1,27 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  PDF_SAMPLE_DATA,
-  PdfExportService,
+  EXPORT_SAMPLE_DATA,
+  ExportService,
   buildChapterRange,
-  buildPdfOutputPaths,
-  normalizePdfChapters,
-} from '@/services/PdfExportService'
+  buildExportOutputPaths,
+  normalizeExportChapters,
+} from '@/services/ExportService'
 import { asFolderRef } from '@/runtime/FileReferences'
 import {
-  defaultPdfExportPreferences,
-  type PdfExportPreferences,
-  type PdfExportPreferencesStore,
-} from '@/runtime/PdfExportPreferences'
-import type { DownloadTask, PdfExportChapter } from '@/services/JmcomicTypes'
+  defaultExportPreferences,
+  type ExportPreferences,
+  type ExportPreferencesStore,
+} from '@/runtime/ExportPreferences'
+import type { DownloadTask, ExportTaskChapter } from '@/services/JmcomicTypes'
 
-let storedPreferences: PdfExportPreferences
-let preferencesStore: PdfExportPreferencesStore
+let storedPreferences: ExportPreferences
+let preferencesStore: ExportPreferencesStore
 
 function chapter(
   sortOrder: number,
   chapterTitle = `第${sortOrder}话`,
   chapterId = `chapter-${sortOrder}`,
-): PdfExportChapter {
+): ExportTaskChapter {
   return {
     albumId: 'album-1',
     chapterId,
@@ -48,7 +48,7 @@ function downloadTask(sortOrder: number | undefined, id = String(sortOrder)): Do
 }
 
 beforeEach(async () => {
-  storedPreferences = defaultPdfExportPreferences()
+  storedPreferences = defaultExportPreferences()
   preferencesStore = {
     get: vi.fn(async () => storedPreferences),
     setExportFolder: vi.fn(async (exportFolder) => {
@@ -57,17 +57,17 @@ beforeEach(async () => {
     setDirectoryTemplate: vi.fn(async (directoryTemplate) => {
       storedPreferences = {
         ...storedPreferences,
-        directoryTemplate: directoryTemplate ?? defaultPdfExportPreferences().directoryTemplate,
+        directoryTemplate: directoryTemplate ?? defaultExportPreferences().directoryTemplate,
       }
     }),
     setFileNameTemplate: vi.fn(async (fileNameTemplate) => {
       storedPreferences = {
         ...storedPreferences,
-        fileNameTemplate: fileNameTemplate ?? defaultPdfExportPreferences().fileNameTemplate,
+        fileNameTemplate: fileNameTemplate ?? defaultExportPreferences().fileNameTemplate,
       }
     }),
   }
-  await PdfExportService.initialize(preferencesStore)
+  await ExportService.initialize(preferencesStore)
 })
 
 describe('buildChapterRange', () => {
@@ -111,13 +111,13 @@ describe('buildChapterRange', () => {
 
 describe('chapterRange template variable', () => {
   it('is registered and rendered', () => {
-    expect(PdfExportService.TEMPLATE_VAR_KEYS).toContain('{chapterRange}')
+    expect(ExportService.TEMPLATE_VAR_KEYS).toContain('{chapterRange}')
     expect(
-      PdfExportService.renderTemplate('{title} {chapterRange}', {
-        ...PDF_SAMPLE_DATA,
+      ExportService.renderTemplate('{title} {chapterRange}', {
+        ...EXPORT_SAMPLE_DATA,
         chapterRange: '第2-3话+第5话',
       }),
-    ).toBe(`${PDF_SAMPLE_DATA.title} 第2-3话+第5话`)
+    ).toBe(`${EXPORT_SAMPLE_DATA.title} 第2-3话+第5话`)
   })
 
   it('uses the single chapter name in template data', () => {
@@ -135,23 +135,23 @@ describe('chapterRange template variable', () => {
       createdAt: 1,
     }
 
-    const data = PdfExportService.buildTemplateData(downloadTask, null)
+    const data = ExportService.buildTemplateData(downloadTask, null)
 
     expect(data.chapterRange).toBe('第2话')
-    expect(PdfExportService.renderTemplate('{chapterRange}', data)).toBe('第2话')
+    expect(ExportService.renderTemplate('{chapterRange}', data)).toBe('第2话')
   })
 })
 
 describe('PDF export plan', () => {
   it('persists only a folder descriptor through the platform preferences store', async () => {
-    expect(PdfExportService.getExportFolder()).toBeNull()
+    expect(ExportService.getExportFolder()).toBeNull()
 
-    await PdfExportService.setExportFolder({
+    await ExportService.setExportFolder({
       folderRef: asFolderRef('folder:saf:content://provider/tree/exports'),
       displayPath: '/storage/emulated/0/Exports',
     })
 
-    expect(PdfExportService.getExportFolder()).toEqual({
+    expect(ExportService.getExportFolder()).toEqual({
       folderRef: 'folder:saf:content://provider/tree/exports',
       displayPath: '/storage/emulated/0/Exports',
     })
@@ -162,7 +162,7 @@ describe('PDF export plan', () => {
   })
 
   it('sorts numeric chapters while preserving invalid chapter positions and duplicate order', () => {
-    const normalized = normalizePdfChapters([
+    const normalized = normalizeExportChapters([
       downloadTask(3, 'chapter-3'),
       downloadTask(undefined, 'extra'),
       downloadTask(2, 'chapter-2-a'),
@@ -179,17 +179,17 @@ describe('PDF export plan', () => {
 
   it('builds merged template data and a default path with chapterRange', () => {
     const chapters = [downloadTask(3, 'chapter-3'), downloadTask(2, 'chapter-2')]
-    const data = PdfExportService.buildMergedTemplateData(chapters, null)
+    const data = ExportService.buildMergedTemplateData(chapters, null)
 
     expect(data.chapterRange).toBe('第2-3话')
     expect(data.pageCount).toBe(40)
-    expect(PdfExportService.buildMergedFullPath(chapters, null)).toContain('第2-3话.pdf')
+    expect(ExportService.buildMergedFullPath(chapters, null)).toContain('第2-3话.pdf')
   })
 
   it('builds one normalized merged task and predicts all split output paths', () => {
     const chapter3 = downloadTask(3, 'chapter-3')
     chapter3.totalPages = 30
-    const plan = PdfExportService.buildExportPlan({
+    const plan = ExportService.buildExportPlan({
       mode: 'merged',
       selectedChapters: [chapter3, downloadTask(2, 'chapter-2')],
       albumDetail: null,
@@ -226,7 +226,7 @@ describe('PDF export plan', () => {
 
   it('uses a provided export folder and keeps the target path relative to it', () => {
     expect(
-      PdfExportService.buildExportTarget(
+      ExportService.buildExportTarget(
         '/exports/album/merged.pdf',
         asFolderRef('folder:path:/exports'),
         '/exports',
@@ -239,7 +239,7 @@ describe('PDF export plan', () => {
 
   it('uses the filesystem root as the folder for a root-level output path', () => {
     expect(
-      PdfExportService.buildExportTarget('/merged.pdf', asFolderRef('folder:path:/'), '/'),
+      ExportService.buildExportTarget('/merged.pdf', asFolderRef('folder:path:/'), '/'),
     ).toEqual({
       folder: 'folder:path:/',
       relativePath: 'merged.pdf',
@@ -247,11 +247,11 @@ describe('PDF export plan', () => {
   })
 
   it('keeps chapter mode as one task per selected chapter', async () => {
-    await PdfExportService.setExportFolder({
+    await ExportService.setExportFolder({
       folderRef: asFolderRef('folder:path:/exports'),
       displayPath: '/exports',
     })
-    const plan = PdfExportService.buildExportPlan({
+    const plan = ExportService.buildExportPlan({
       mode: 'chapter',
       selectedChapters: [downloadTask(2, 'chapter-2'), downloadTask(3, 'chapter-3')],
       albumDetail: null,
@@ -276,7 +276,7 @@ describe('PDF export plan', () => {
 
   it('rejects merged mode with fewer than two chapters', () => {
     expect(() =>
-      PdfExportService.buildExportPlan({
+      ExportService.buildExportPlan({
         mode: 'merged',
         selectedChapters: [downloadTask(2, 'chapter-2')],
         albumDetail: null,
@@ -289,13 +289,13 @@ describe('PDF export plan', () => {
   })
 })
 
-describe('buildPdfOutputPaths', () => {
+describe('buildExportOutputPaths', () => {
   it('keeps the base path when splitting produces only one volume', () => {
-    expect(buildPdfOutputPaths('/exports/chapter.pdf', 100, 100)).toEqual(['/exports/chapter.pdf'])
+    expect(buildExportOutputPaths('/exports/chapter.pdf', 100, 100)).toEqual(['/exports/chapter.pdf'])
   })
 
   it('matches the native range suffix for multiple volumes', () => {
-    expect(buildPdfOutputPaths('/exports/chapter.pdf', 101, 100)).toEqual([
+    expect(buildExportOutputPaths('/exports/chapter.pdf', 101, 100)).toEqual([
       '/exports/chapter_001-100.pdf',
       '/exports/chapter_101-101.pdf',
     ])

@@ -95,15 +95,15 @@ import {
   IonTitle,
   IonToolbar,
 } from '@ionic/vue'
-import { PDF_SAMPLE_DATA, PdfExportService } from '@/services/PdfExportService'
+import { EXPORT_SAMPLE_DATA, ExportService } from '@/services/ExportService'
 
-const variables = PdfExportService.TEMPLATE_VAR_DEFS.map((v) => ({
+const variables = ExportService.TEMPLATE_VAR_DEFS.map((v) => ({
   name: v.key,
   desc: v.desc,
   sample: v.sample,
 }))
 
-const render = (tpl: string) => PdfExportService.renderTemplate(tpl, PDF_SAMPLE_DATA)
+const render = (tpl: string) => ExportService.renderTemplate(tpl, EXPORT_SAMPLE_DATA)
 
 const templateExamples = [
   { usage: '作者分类', template: '【{author}】{title}', result: render('【{author}】{title}') },

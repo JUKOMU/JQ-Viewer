@@ -4,17 +4,17 @@ import { asFileRef } from '@/runtime/FileReferences'
 
 const mocks = vi.hoisted(() => ({
   checkFilesExist: vi.fn(),
-  importPdfs: vi.fn(),
+  importLocalFiles: vi.fn(),
 }))
 
 vi.mock('@/services/JmcomicService', () => ({
   JmcomicService: {
     checkFilesExist: mocks.checkFilesExist,
-    importPdfs: mocks.importPdfs,
+    importLocalFiles: mocks.importLocalFiles,
   },
 }))
 
-import { PdfImportService } from '@/services/PdfImportService'
+import { LocalFileImportService } from '@/services/LocalFileImportService'
 
 const file = (filePath: string): PdfFileParseItem => ({
   fileName: filePath.split('/').pop() ?? 'book.pdf',
@@ -48,20 +48,20 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
-describe('PdfImportService.confirmImport', () => {
+describe('LocalFileImportService.confirmImport', () => {
   test('全部文件缺失时返回汇总失败且不调用原生导入', async () => {
     mocks.checkFilesExist.mockResolvedValue({ existing: [] })
 
-    const result = await PdfImportService.confirmImport([file('/pdf/a.pdf'), file('/pdf/b.pdf')])
+    const result = await LocalFileImportService.confirmImport([file('/pdf/a.pdf'), file('/pdf/b.pdf')])
 
     expect(result.errorCount).toBe(2)
     expect(result).toEqual({ imported: 0, skipped: 2, duplicateCount: 0, errorCount: 2 })
-    expect(mocks.importPdfs).not.toHaveBeenCalled()
+    expect(mocks.importLocalFiles).not.toHaveBeenCalled()
   })
 
   test('部分文件缺失时合并原生汇总数量', async () => {
     mocks.checkFilesExist.mockResolvedValue({ existing: ['/pdf/a.pdf'] })
-    mocks.importPdfs.mockResolvedValue({
+    mocks.importLocalFiles.mockResolvedValue({
       imported: 1,
       skipped: 0,
       duplicateCount: 0,
@@ -75,7 +75,7 @@ describe('PdfImportService.confirmImport', () => {
       ],
     })
 
-    const result = await PdfImportService.confirmImport([file('/pdf/a.pdf'), file('/pdf/b.pdf')])
+    const result = await LocalFileImportService.confirmImport([file('/pdf/a.pdf'), file('/pdf/b.pdf')])
 
     expect(result).toEqual(expect.objectContaining({ imported: 1, skipped: 1, errorCount: 1 }))
     expect(result.results).toEqual([
@@ -85,7 +85,7 @@ describe('PdfImportService.confirmImport', () => {
 
   test('无法可靠对齐章节时不使用漫画 ID 伪造 chapterId', async () => {
     mocks.checkFilesExist.mockResolvedValue({ existing: ['/pdf/a.pdf'] })
-    mocks.importPdfs.mockResolvedValue({
+    mocks.importLocalFiles.mockResolvedValue({
       imported: 1,
       skipped: 0,
       duplicateCount: 0,
@@ -99,9 +99,9 @@ describe('PdfImportService.confirmImport', () => {
       ],
     })
 
-    await PdfImportService.confirmImport([file('/pdf/a.pdf')])
+    await LocalFileImportService.confirmImport([file('/pdf/a.pdf')])
 
-    expect(mocks.importPdfs).toHaveBeenCalledWith([
+    expect(mocks.importLocalFiles).toHaveBeenCalledWith([
       expect.objectContaining({
         albumId: '123456',
         chapterId: '',

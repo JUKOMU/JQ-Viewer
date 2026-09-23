@@ -3,8 +3,8 @@ package io.github.jukomu.desktop;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.jukomu.desktop.data.Database;
 import io.github.jukomu.desktop.feature.download.data.DownloadStore;
-import io.github.jukomu.desktop.feature.pdf.data.PdfStore;
-import io.github.jukomu.desktop.feature.pdf.export.PdfExportStore;
+import io.github.jukomu.desktop.feature.pdf.data.LocalFileStore;
+import io.github.jukomu.desktop.feature.pdf.export.ExportStore;
 import io.github.jukomu.desktop.feature.settings.SettingsService;
 import org.junit.jupiter.api.Test;
 
@@ -28,8 +28,8 @@ class StoreConnectionIsolationTest {
 
             SettingsService settings = new SettingsService(database, new ObjectMapper());
             DownloadStore downloads = new DownloadStore(database);
-            PdfStore pdfs = new PdfStore(database);
-            PdfExportStore exports = new PdfExportStore(database);
+            LocalFileStore pdfs = new LocalFileStore(database);
+            ExportStore exports = new ExportStore(database);
 
             assertIsolatedWrite(
                     database.connection(),
@@ -45,27 +45,27 @@ class StoreConnectionIsolationTest {
             );
             assertIsolatedWrite(
                     database.connection(),
-                    "SELECT COUNT(*) FROM pdf_files WHERE file_ref='file-ref-1'",
+                    "SELECT COUNT(*) FROM local_files WHERE file_ref='file-ref-1'",
                     () -> pdfs.insertImported(
-                            "file-ref-1", "/sample.pdf", "sample.pdf",
+                            "pdf", "file-ref-1", "/sample.pdf", "sample.pdf",
                             "album-1", "Album", "", "Author",
                             "chapter-1", "Chapter", 1, false,
                             null, 10L, 1, 2L)
             );
             assertIsolatedWrite(
                     database.connection(),
-                    "SELECT COUNT(*) FROM pdf_export_tasks WHERE export_id='export-1'",
+                    "SELECT COUNT(*) FROM export_tasks WHERE export_id='export-1'",
                     () -> exports.reserve(
-                            new PdfExportStore.ReserveTask(
-                                    "export-1", "batch-1", "chapter", "album-1",
+                            new ExportStore.ReserveTask(
+                                    "export-1", "batch-1", "pdf", "chapter", "album-1",
                                     "Album", "", "Author", false, "chapter-1",
                                     "Chapter", "folder-ref", "sample.pdf", "/sample.pdf",
                                     false, true, 1D, 0, "queued", "queued",
                                     1, null, null, 3L
                             ),
-                            List.of(new PdfExportStore.Chapter(
+                            List.of(new ExportStore.Chapter(
                                     0, "album-1", "chapter-1", "Chapter", 1, 1)),
-                            List.of(new PdfExportStore.Volume(
+                            List.of(new ExportStore.Volume(
                                     0, 1, 1, 1, "sample.pdf", "/sample.pdf", "/sample.tmp"))
                     )
             );

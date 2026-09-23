@@ -5,11 +5,11 @@ import io.github.jukomu.desktop.data.Paths;
 import io.github.jukomu.desktop.feature.download.data.DownloadStore;
 import io.github.jukomu.desktop.feature.files.FileReferences;
 import io.github.jukomu.desktop.feature.files.FileService;
-import io.github.jukomu.desktop.feature.pdf.data.PdfStore;
-import io.github.jukomu.desktop.feature.pdf.management.PdfManagementService;
-import io.github.jukomu.desktop.feature.pdf.model.ImportPdfItemRequest;
-import io.github.jukomu.desktop.feature.pdf.model.ImportPdfsResponse;
-import io.github.jukomu.desktop.feature.pdf.model.PdfFileResponse;
+import io.github.jukomu.desktop.feature.pdf.data.LocalFileStore;
+import io.github.jukomu.desktop.feature.pdf.management.LocalFileManagementService;
+import io.github.jukomu.desktop.feature.pdf.model.ImportLocalFileItemRequest;
+import io.github.jukomu.desktop.feature.pdf.model.ImportLocalFilesResponse;
+import io.github.jukomu.desktop.feature.pdf.model.LocalFileResponse;
 import io.github.jukomu.desktop.feature.pdf.render.PdfDocumentService;
 import io.github.jukomu.desktop.feature.pdf.render.PdfPageCache;
 import org.apache.pdfbox.pdmodel.PDDocument;
@@ -26,7 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class PdfManagementServiceTest {
+class LocalFileManagementServiceTest {
     @Test
     void scansOnlyDirectChildrenAndImportsWithoutCopying() throws Exception {
         Fixture fixture = fixture();
@@ -36,13 +36,14 @@ class PdfManagementServiceTest {
             Path direct = writePdf(root.resolve("direct.pdf"), 2);
             writePdf(root.resolve("nested/ignored.pdf"), 1);
 
-            var scanned = fixture.files().scanPdfFiles(FileReferences.folderRef(root));
+            var scanned = fixture.files().scanImportableFiles(
+                    FileReferences.folderRef(root), List.of("pdf"));
             assertEquals(List.of("direct.pdf"),
                     scanned.files().stream().map(file -> file.fileName()).toList());
 
-            ImportPdfsResponse imported = fixture.service().importPdfs(List.of(item(direct)));
-            ImportPdfsResponse duplicate = fixture.service().importPdfs(List.of(item(direct)));
-            PdfFileResponse record = fixture.service().getImportedPdfs().files().get(0);
+            ImportLocalFilesResponse imported = fixture.service().importLocalFiles(List.of(item(direct)));
+            ImportLocalFilesResponse duplicate = fixture.service().importLocalFiles(List.of(item(direct)));
+            LocalFileResponse record = fixture.service().getImportedLocalFiles().files().get(0);
 
             assertEquals(1, imported.imported());
             assertEquals(1, duplicate.duplicateCount());
@@ -54,7 +55,7 @@ class PdfManagementServiceTest {
 
             assertTrue(fixture.service().removeFromLibrary(record.id()).success());
             assertTrue(Files.isRegularFile(direct));
-            assertTrue(fixture.service().getImportedPdfs().files().isEmpty());
+            assertTrue(fixture.service().getImportedLocalFiles().files().isEmpty());
         }
     }
 
@@ -63,22 +64,22 @@ class PdfManagementServiceTest {
         Fixture fixture = fixture();
         try (Database ignored = fixture.database()) {
             Path pdf = writePdf(fixture.paths().pdfDirectory().resolve("delete.pdf"), 1);
-            fixture.service().importPdfs(List.of(item(pdf)));
-            PdfFileResponse first = fixture.service().getImportedPdfs().files().get(0);
+            fixture.service().importLocalFiles(List.of(item(pdf)));
+            LocalFileResponse first = fixture.service().getImportedLocalFiles().files().get(0);
 
             Files.delete(pdf);
-            PdfFileResponse missing = fixture.service().verifyFile(first.id());
+            LocalFileResponse missing = fixture.service().verifyFile(first.id());
             assertEquals("missing", missing.availability());
             assertEquals("unverified", missing.verificationStatus());
             assertEquals("already_missing", fixture.service().deleteFile(first.id()).result());
-            assertTrue(fixture.service().getImportedPdfs().files().isEmpty());
+            assertTrue(fixture.service().getImportedLocalFiles().files().isEmpty());
 
             Path second = writePdf(fixture.paths().pdfDirectory().resolve("delete-actual.pdf"), 1);
-            fixture.service().importPdfs(List.of(item(second)));
-            long secondId = fixture.service().getImportedPdfs().files().get(0).id();
+            fixture.service().importLocalFiles(List.of(item(second)));
+            long secondId = fixture.service().getImportedLocalFiles().files().get(0).id();
             assertEquals("deleted", fixture.service().deleteFile(secondId).result());
             assertFalse(Files.exists(second));
-            assertTrue(fixture.service().getImportedPdfs().files().isEmpty());
+            assertTrue(fixture.service().getImportedLocalFiles().files().isEmpty());
         }
     }
 
@@ -88,7 +89,7 @@ class PdfManagementServiceTest {
         try (Database ignored = fixture.database()) {
             Path missing = fixture.paths().pdfDirectory().resolve("missing.pdf");
 
-            ImportPdfsResponse response = fixture.service().importPdfs(List.of(item(missing)));
+            ImportLocalFilesResponse response = fixture.service().importLocalFiles(List.of(item(missing)));
 
             assertEquals(0, response.imported());
             assertEquals(1, response.skipped());
@@ -104,7 +105,7 @@ class PdfManagementServiceTest {
         fixture.database().close();
 
         assertThrows(IllegalStateException.class,
-                () -> fixture.service().importPdfs(List.of(item(pdf))));
+                () -> fixture.service().importLocalFiles(List.of(item(pdf))));
     }
 
     private static Fixture fixture() throws Exception {
@@ -115,8 +116,8 @@ class PdfManagementServiceTest {
         database.open();
         FileService files = new FileService(paths, ignored -> null, ignored -> {
         });
-        PdfManagementService service = new PdfManagementService(
-                new PdfStore(database),
+        LocalFileManagementService service = new LocalFileManagementService(
+                new LocalFileStore(database),
                 new DownloadStore(database),
                 files,
                 new PdfDocumentService(new PdfPageCache(paths.cacheDirectory()))
@@ -124,9 +125,9 @@ class PdfManagementServiceTest {
         return new Fixture(paths, database, files, service);
     }
 
-    private static ImportPdfItemRequest item(Path pdf) {
-        return new ImportPdfItemRequest(
-                FileReferences.fileRef(pdf), pdf.toString(), pdf.getFileName().toString(),
+    private static ImportLocalFileItemRequest item(Path pdf) {
+        return new ImportLocalFileItemRequest(
+                "pdf", FileReferences.fileRef(pdf), pdf.toString(), pdf.getFileName().toString(),
                 "album-1", "Album", "", "Alice", "chapter-1", "Chapter 1",
                 1, false, "folder-1"
         );
@@ -145,7 +146,7 @@ class PdfManagementServiceTest {
             Paths paths,
             Database database,
             FileService files,
-            PdfManagementService service
+            LocalFileManagementService service
     ) {
     }
 }

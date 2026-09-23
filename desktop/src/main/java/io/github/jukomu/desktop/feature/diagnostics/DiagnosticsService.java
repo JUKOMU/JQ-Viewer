@@ -4,7 +4,7 @@ import io.github.jukomu.desktop.data.Paths;
 import io.github.jukomu.desktop.feature.diagnostics.model.DiagnosticsResponse;
 import io.github.jukomu.desktop.feature.download.data.DownloadStore;
 import io.github.jukomu.desktop.feature.image.CacheService;
-import io.github.jukomu.desktop.feature.pdf.export.PdfExportStore;
+import io.github.jukomu.desktop.feature.pdf.export.ExportStore;
 
 import java.util.List;
 
@@ -14,13 +14,13 @@ public final class DiagnosticsService {
 
     private final Paths paths;
     private final DownloadStore downloads;
-    private final PdfExportStore pdfExports;
+    private final ExportStore pdfExports;
     private final CacheService cache;
 
     public DiagnosticsService(
             Paths paths,
             DownloadStore downloads,
-            PdfExportStore pdfExports,
+            ExportStore pdfExports,
             CacheService cache
     ) {
         this.paths = paths;
@@ -32,7 +32,7 @@ public final class DiagnosticsService {
     public DiagnosticsResponse snapshot() {
         DownloadStore.DiagnosticSnapshot downloadSnapshot =
                 downloads.diagnosticSnapshot(FAILURE_LIMIT);
-        PdfExportStore.DiagnosticSnapshot pdfSnapshot =
+        ExportStore.DiagnosticSnapshot pdfSnapshot =
                 pdfExports.diagnosticSnapshot(FAILURE_LIMIT);
         return new DiagnosticsResponse(
                 System.currentTimeMillis(),

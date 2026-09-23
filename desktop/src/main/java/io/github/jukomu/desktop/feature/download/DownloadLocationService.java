@@ -12,7 +12,7 @@ import io.github.jukomu.desktop.feature.download.model.RelocationProgressEvent;
 import io.github.jukomu.desktop.feature.files.FileReferences;
 import io.github.jukomu.desktop.feature.files.FileService;
 import io.github.jukomu.desktop.feature.files.model.FolderDescriptorResponse;
-import io.github.jukomu.desktop.feature.pdf.export.PdfExportStore;
+import io.github.jukomu.desktop.feature.pdf.export.ExportStore;
 import io.github.jukomu.desktop.feature.settings.SettingsService;
 import io.github.jukomu.desktop.feature.settings.model.DownloadLocation;
 import org.slf4j.Logger;
@@ -36,7 +36,7 @@ public final class DownloadLocationService {
     private final SettingsService settings;
     private final DownloadStore store;
     private final DownloadFiles files;
-    private final PdfExportStore pdfExports;
+    private final ExportStore pdfExports;
     private final FileService fileService;
     private final EventHub events;
     private final FileOperations fileOperations;
@@ -46,7 +46,7 @@ public final class DownloadLocationService {
             SettingsService settings,
             DownloadStore store,
             DownloadFiles files,
-            PdfExportStore pdfExports,
+            ExportStore pdfExports,
             FileService fileService,
             EventHub events
     ) {
@@ -59,7 +59,7 @@ public final class DownloadLocationService {
             SettingsService settings,
             DownloadStore store,
             DownloadFiles files,
-            PdfExportStore pdfExports,
+            ExportStore pdfExports,
             FileService fileService,
             EventHub events,
             FileOperations fileOperations

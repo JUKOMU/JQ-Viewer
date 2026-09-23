@@ -18,7 +18,7 @@ public final class PdfExportJobValidator {
     private PdfExportJobValidator() {
     }
 
-    public static void validate(PdfExportService.ExportJob job) {
+    public static void validate(ExportService.ExportJob job) {
         if (job == null) {
             throw new IllegalArgumentException("导出任务不能为空");
         }
@@ -46,7 +46,7 @@ public final class PdfExportJobValidator {
         Set<String> chapterIds = new HashSet<>();
         int previousPositiveOrder = 0;
         for (int i = 0; i < job.chapters.size(); i++) {
-            PdfExportService.ExportChapter chapter = job.chapters.get(i);
+            ExportService.ExportChapter chapter = job.chapters.get(i);
             if (chapter == null) {
                 throw new IllegalArgumentException("chapters[" + i + "] 不能为空");
             }
@@ -67,7 +67,7 @@ public final class PdfExportJobValidator {
         }
     }
 
-    public static String taskKey(PdfExportService.ExportJob job) {
+    public static String taskKey(ExportService.ExportJob job) {
         if ("merged".equals(job.mode)) {
             StringBuilder key = new StringBuilder("merged:").append(job.albumId).append(':');
             for (int i = 0; i < job.chapters.size(); i++) {
@@ -79,10 +79,10 @@ public final class PdfExportJobValidator {
         return "chapter:" + job.albumId + ':' + job.chapterId;
     }
 
-    public static List<String> chapterResourceKeys(PdfExportService.ExportJob job) {
+    public static List<String> chapterResourceKeys(ExportService.ExportJob job) {
         List<String> keys = new ArrayList<>();
         if ("merged".equals(job.mode)) {
-            for (PdfExportService.ExportChapter chapter : job.chapters) {
+            for (ExportService.ExportChapter chapter : job.chapters) {
                 keys.add(chapter.albumId + ':' + chapter.chapterId);
             }
         } else {

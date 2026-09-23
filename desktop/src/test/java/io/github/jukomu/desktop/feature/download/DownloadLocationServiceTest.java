@@ -9,7 +9,7 @@ import io.github.jukomu.desktop.feature.download.data.DownloadStore;
 import io.github.jukomu.desktop.feature.download.model.DownloadRelocationResponse;
 import io.github.jukomu.desktop.feature.files.FileReferences;
 import io.github.jukomu.desktop.feature.files.FileService;
-import io.github.jukomu.desktop.feature.pdf.export.PdfExportStore;
+import io.github.jukomu.desktop.feature.pdf.export.ExportStore;
 import io.github.jukomu.desktop.feature.settings.SettingsService;
 import org.junit.jupiter.api.Test;
 
@@ -93,8 +93,8 @@ class DownloadLocationServiceTest {
     void rejectsSwitchWhilePdfExportUsesDownloadedFiles() throws Exception {
         try (Fixture fixture = new Fixture()) {
             long now = System.currentTimeMillis();
-            fixture.pdfExports.reserve(new PdfExportStore.ReserveTask(
-                            "export-1", "batch-1", "chapter", "album", "Album", "", "",
+            fixture.pdfExports.reserve(new ExportStore.ReserveTask(
+                            "export-1", "batch-1", "pdf", "chapter", "album", "Album", "", "",
                             false, "chapter", "Chapter",
                             FileReferences.folderRef(fixture.root.resolve("pdf")), "book.pdf", "",
                             false, true, 1D, 0, "queued", "queued", 0,
@@ -207,7 +207,7 @@ class DownloadLocationServiceTest {
         private final SettingsService settings;
         private final DownloadStore store;
         private final DownloadFiles files;
-        private final PdfExportStore pdfExports;
+        private final ExportStore pdfExports;
         private final EventHub events = new EventHub(new ObjectMapper());
 
         private Fixture() throws Exception {
@@ -216,7 +216,7 @@ class DownloadLocationServiceTest {
             settings = new SettingsService(database);
             store = new DownloadStore(database);
             files = new DownloadFiles(paths);
-            pdfExports = new PdfExportStore(database);
+            pdfExports = new ExportStore(database);
         }
 
         private DownloadLocationService service(Path selected) {

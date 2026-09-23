@@ -572,7 +572,7 @@ import {
   SettingsStore,
 } from '@/services/SettingsService'
 import { ExportFormatService } from '@/services/ExportFormatService'
-import { PDF_SAMPLE_DATA, PdfExportService } from '@/services/PdfExportService'
+import { EXPORT_SAMPLE_DATA, ExportService } from '@/services/ExportService'
 import { useAuth } from '@/composables/useAuth'
 import type { CacheCapacityInfo, RelocationProgress } from '@/services/JmcomicTypes'
 
@@ -659,9 +659,7 @@ const volumeNavigation = ref(SettingsStore.getReaderVolumeNavigation())
 const autoShowToolbarAtEnd = ref(SettingsStore.getReaderAutoShowToolbarAtEnd())
 
 const exportPreview = computed(() => ExportFormatService.previewExportFormat(exportFormat.value))
-const downloadLocationTitle = computed(() =>
-  isAndroidRuntime ? '公开下载内容' : '自定义下载位置',
-)
+const downloadLocationTitle = computed(() => (isAndroidRuntime ? '公开下载内容' : '自定义下载位置'))
 const downloadLocationSubtitle = computed(() => {
   if (isAndroidRuntime) return '开启后新下载的图片可在系统相册中查看'
   if (downloadPublic.value && downloadLocationPath.value) {
@@ -671,17 +669,17 @@ const downloadLocationSubtitle = computed(() => {
 })
 
 // PDF导出设置
-const pdfExportPath = ref(PdfExportService.getExportPath())
-const pdfDirTemplate = ref(PdfExportService.getDirTemplate())
-const pdfNameTemplate = ref(PdfExportService.getNameTemplate())
+const pdfExportPath = ref(ExportService.getExportPath())
+const pdfDirTemplate = ref(ExportService.getDirTemplate())
+const pdfNameTemplate = ref(ExportService.getNameTemplate())
 
-const pdfPathPreview = computed(() => PdfExportService.previewPath())
+const pdfPathPreview = computed(() => ExportService.previewPath())
 
 const pdfDirRender = computed(() =>
-  PdfExportService.renderTemplate(pdfDirTemplate.value, PDF_SAMPLE_DATA),
+  ExportService.renderTemplate(pdfDirTemplate.value, EXPORT_SAMPLE_DATA),
 )
 const pdfNameRender = computed(() =>
-  PdfExportService.renderTemplate(pdfNameTemplate.value, PDF_SAMPLE_DATA),
+  ExportService.renderTemplate(pdfNameTemplate.value, EXPORT_SAMPLE_DATA),
 )
 
 // ---- 搬迁弹窗状态 ----
@@ -912,11 +910,11 @@ function resetExportFormat() {
 // ---- PDF 导出设置 ----
 async function onBrowseFolder() {
   try {
-    const result = await JmcomicService.pickFolder('pdf-export')
+    const result = await JmcomicService.pickFolder('export')
     if (result) {
       // 确保路径以 / 结尾
       const path = result.displayPath.endsWith('/') ? result.displayPath : result.displayPath + '/'
-      await PdfExportService.setExportFolder({
+      await ExportService.setExportFolder({
         folderRef: result.ref,
         displayPath: path,
       })
@@ -932,7 +930,7 @@ async function onPdfDirTemplateChange(e: Event) {
   const previous = pdfDirTemplate.value
   pdfDirTemplate.value = val
   try {
-    await PdfExportService.setDirTemplate(val)
+    await ExportService.setDirTemplate(val)
   } catch (error) {
     pdfDirTemplate.value = previous
     await showToast(sanitizeError(error, '保存目录模板失败'), 'danger')
@@ -944,7 +942,7 @@ async function onPdfNameTemplateChange(e: Event) {
   const previous = pdfNameTemplate.value
   pdfNameTemplate.value = val
   try {
-    await PdfExportService.setNameTemplate(val)
+    await ExportService.setNameTemplate(val)
   } catch (error) {
     pdfNameTemplate.value = previous
     await showToast(sanitizeError(error, '保存名称模板失败'), 'danger')
@@ -953,8 +951,8 @@ async function onPdfNameTemplateChange(e: Event) {
 
 async function resetPdfExportPath() {
   try {
-    await PdfExportService.resetExportPath()
-    pdfExportPath.value = PdfExportService.getExportPath()
+    await ExportService.resetExportPath()
+    pdfExportPath.value = ExportService.getExportPath()
   } catch (error) {
     await showToast(sanitizeError(error, '重置导出目录失败'), 'danger')
   }
@@ -962,8 +960,8 @@ async function resetPdfExportPath() {
 
 async function resetPdfDirTemplate() {
   try {
-    await PdfExportService.resetDirTemplate()
-    pdfDirTemplate.value = PdfExportService.getDirTemplate()
+    await ExportService.resetDirTemplate()
+    pdfDirTemplate.value = ExportService.getDirTemplate()
   } catch (error) {
     await showToast(sanitizeError(error, '重置目录模板失败'), 'danger')
   }
@@ -971,8 +969,8 @@ async function resetPdfDirTemplate() {
 
 async function resetPdfNameTemplate() {
   try {
-    await PdfExportService.resetNameTemplate()
-    pdfNameTemplate.value = PdfExportService.getNameTemplate()
+    await ExportService.resetNameTemplate()
+    pdfNameTemplate.value = ExportService.getNameTemplate()
   } catch (error) {
     await showToast(sanitizeError(error, '重置名称模板失败'), 'danger')
   }
@@ -1050,9 +1048,7 @@ async function onDownloadPublicChange(e: CustomEvent) {
           : `下载位置已设为：${result.displayPath}`
         : '已恢复应用内部下载位置'
     await showToast(
-      result.cleanupPending
-        ? (result.cleanupMessage ?? '下载位置已切换，但旧目录仍待清理')
-        : msg,
+      result.cleanupPending ? (result.cleanupMessage ?? '下载位置已切换，但旧目录仍待清理') : msg,
       result.cleanupPending ? 'medium' : 'success',
     )
   } catch (e: any) {

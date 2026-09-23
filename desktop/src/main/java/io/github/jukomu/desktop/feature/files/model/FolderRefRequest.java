@@ -1,4 +1,6 @@
 package io.github.jukomu.desktop.feature.files.model;
 
-public record FolderRefRequest(String folder) {
+import java.util.List;
+
+public record FolderRefRequest(String folder, List<String> formats) {
 }

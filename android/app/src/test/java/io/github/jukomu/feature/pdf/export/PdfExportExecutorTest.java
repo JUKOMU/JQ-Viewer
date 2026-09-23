@@ -14,7 +14,7 @@ public class PdfExportExecutorTest {
 
     @Test
     public void acceptsMoreThanSixteenQueuedBatchesAndRunsSerially() throws Exception {
-        ExecutorService executor = PdfExportService.createExecutor();
+        ExecutorService executor = ExportService.createExecutor();
         CountDownLatch firstStarted = new CountDownLatch(1);
         CountDownLatch releaseFirst = new CountDownLatch(1);
         CountDownLatch completed = new CountDownLatch(21);

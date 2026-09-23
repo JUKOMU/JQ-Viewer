@@ -112,7 +112,7 @@ import { documentOutline, ellipsisVertical } from 'ionicons/icons'
 import { getImageUrl, sanitizeError } from '@/services/JmcomicService'
 import type { CompletedEntry, DownloadTask } from '@/services/JmcomicTypes'
 
-const isPdfEntry = computed(() => 'source' in props.task && props.task.source === 'pdf-import')
+const isPdfEntry = computed(() => 'source' in props.task && props.task.source === 'local-file')
 
 const cardStatus = computed(() => {
   if ('source' in props.task) return 'completed'
@@ -160,10 +160,10 @@ const displayPdfPageCount = computed(() => {
   if (!isPdfEntry.value) return 0
   if (hasGroupedChapters.value && props.downloadedChapters) {
     return props.downloadedChapters
-      .filter((c) => c.source === 'pdf-import')
-      .reduce((s, c) => s + (c.pdfData?.pageCount ?? 0), 0)
+      .filter((c) => c.source === 'local-file')
+      .reduce((s, c) => s + (c.localFileData?.pageCount ?? 0), 0)
   }
-  return (props.task as CompletedEntry).pdfData?.pageCount ?? 0
+  return (props.task as CompletedEntry).localFileData?.pageCount ?? 0
 })
 
 const coverError = ref(false)

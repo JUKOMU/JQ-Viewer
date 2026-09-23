@@ -206,7 +206,7 @@ public final class SettingsService {
         );
     }
 
-    public synchronized SuccessResponse setPdfExportFolder(PdfExportFolder folder) {
+    public synchronized SuccessResponse setExportFolder(PdfExportFolder folder) {
         if (folder == null) {
             delete(PDF_EXPORT_FOLDER);
             return SuccessResponse.ok();
@@ -223,12 +223,12 @@ public final class SettingsService {
         }
     }
 
-    public synchronized SuccessResponse setPdfExportDirectoryTemplate(String template) {
+    public synchronized SuccessResponse setExportDirectoryTemplate(String template) {
         setOptionalText(PDF_EXPORT_DIRECTORY_TEMPLATE, template);
         return SuccessResponse.ok();
     }
 
-    public synchronized SuccessResponse setPdfExportFileNameTemplate(String template) {
+    public synchronized SuccessResponse setExportFileNameTemplate(String template) {
         setOptionalText(PDF_EXPORT_FILE_NAME_TEMPLATE, template);
         return SuccessResponse.ok();
     }

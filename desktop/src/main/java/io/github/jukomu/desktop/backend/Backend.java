@@ -18,7 +18,7 @@ import io.github.jukomu.desktop.bridge.handler.FilePluginHandler;
 import io.github.jukomu.desktop.bridge.handler.HistoryPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.OfflineFavoritePluginHandler;
 import io.github.jukomu.desktop.bridge.handler.OcrPluginHandler;
-import io.github.jukomu.desktop.bridge.handler.PdfPluginHandler;
+import io.github.jukomu.desktop.bridge.handler.LocalFilePluginHandler;
 import io.github.jukomu.desktop.bridge.handler.SettingsPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.SystemPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.UpdatePluginHandler;
@@ -46,10 +46,10 @@ import io.github.jukomu.desktop.feature.notification.DesktopNotificationSink;
 import io.github.jukomu.desktop.feature.notification.DesktopTaskNotificationService;
 import io.github.jukomu.desktop.feature.notification.LaunchRouteService;
 import io.github.jukomu.desktop.feature.ocr.OcrService;
-import io.github.jukomu.desktop.feature.pdf.data.PdfStore;
-import io.github.jukomu.desktop.feature.pdf.export.PdfExportService;
-import io.github.jukomu.desktop.feature.pdf.export.PdfExportStore;
-import io.github.jukomu.desktop.feature.pdf.management.PdfManagementService;
+import io.github.jukomu.desktop.feature.pdf.data.LocalFileStore;
+import io.github.jukomu.desktop.feature.pdf.export.ExportService;
+import io.github.jukomu.desktop.feature.pdf.export.ExportStore;
+import io.github.jukomu.desktop.feature.pdf.management.LocalFileManagementService;
 import io.github.jukomu.desktop.feature.pdf.render.PdfDocumentService;
 import io.github.jukomu.desktop.feature.pdf.render.PdfPageCache;
 import io.github.jukomu.desktop.feature.pdf.render.PdfResourceService;
@@ -115,7 +115,7 @@ public final class Backend implements AutoCloseable {
     private Javalin app;
     private JmcomicSessionManager clientSession;
     private DownloadService downloadService;
-    private PdfExportService pdfExportService;
+    private ExportService pdfExportService;
     private NetworkService networkService;
     private OcrService ocrService;
     private EventHub eventHub;
@@ -242,7 +242,7 @@ public final class Backend implements AutoCloseable {
         EventHub startedEventHub = null;
         JmcomicSessionManager startedClientSession = null;
         DownloadService startedDownloadService = null;
-        PdfExportService startedPdfExportService = null;
+        ExportService startedExportService = null;
         NetworkService startedNetworkService = null;
         OcrService startedOcrService = null;
         LaunchRouteService startedLaunchRoutes = null;
@@ -301,7 +301,7 @@ public final class Backend implements AutoCloseable {
             ImageService imageService = new ImageService(
                     clientSession::getClient, executors.imagePreload(), eventHub);
             DownloadStore downloadStore = new DownloadStore(database);
-            PdfExportStore pdfExportStore = new PdfExportStore(database);
+            ExportStore pdfExportStore = new ExportStore(database);
             startedLaunchRoutes = new LaunchRouteService(eventHub);
             startedTaskNotifications = new DesktopTaskNotificationService(
                     downloadStore, pdfExportStore, startedLaunchRoutes, eventHub);
@@ -351,16 +351,16 @@ public final class Backend implements AutoCloseable {
                     settingsService, imageService.cache(), pdfPageCache);
             DiagnosticsService diagnosticsService = new DiagnosticsService(
                     paths, downloadStore, pdfExportStore, cacheService);
-            PdfManagementService pdfManagementService = new PdfManagementService(
-                    new PdfStore(database),
+            LocalFileManagementService pdfManagementService = new LocalFileManagementService(
+                    new LocalFileStore(database),
                     downloadStore,
                     fileService,
                     new PdfDocumentService(pdfPageCache)
             );
-            startedPdfExportService = new PdfExportService(
+            startedExportService = new ExportService(
                     pdfExportStore, downloadStore, downloadFiles,
                     executors.pdfExport(), eventHub);
-            startedPdfExportService.reconcileOnStartup();
+            startedExportService.reconcileOnStartup();
             taskNotifications.start();
             Plugin plugin = new Plugin(
                     new ApiPluginHandler(apiRequests, imageRequests,
@@ -380,7 +380,7 @@ public final class Backend implements AutoCloseable {
                             new OfflineFavoriteStore(database, mapper))),
                     new FilePluginHandler(fileRequests, dialogRequests, fileService),
                     new DownloadPluginHandler(downloadRequests, downloadService),
-                    new PdfPluginHandler(pdfRequests, pdfManagementService, startedPdfExportService),
+                    new LocalFilePluginHandler(pdfRequests, pdfManagementService, startedExportService),
                     new SystemPluginHandler(
                             networkRequests, diagnosticsRequests,
                             clientSession,
@@ -415,7 +415,7 @@ public final class Backend implements AutoCloseable {
             this.app = candidate;
             this.clientSession = clientSession;
             this.downloadService = downloadService;
-            this.pdfExportService = startedPdfExportService;
+            this.pdfExportService = startedExportService;
             this.networkService = startedNetworkService;
             this.ocrService = startedOcrService;
             this.eventHub = eventHub;
@@ -429,7 +429,7 @@ public final class Backend implements AutoCloseable {
         } catch (Exception | Error exception) {
             Javalin failedApp = candidate;
             DownloadService failedDownloadService = startedDownloadService;
-            PdfExportService failedPdfExportService = startedPdfExportService;
+            ExportService failedExportService = startedExportService;
             NetworkService failedNetworkService = startedNetworkService;
             OcrService failedOcrService = startedOcrService;
             DesktopTaskNotificationService failedTaskNotifications = startedTaskNotifications;
@@ -454,7 +454,7 @@ public final class Backend implements AutoCloseable {
                         if (failedDownloadService != null) failedDownloadService.close();
                     }),
                     step("PDF 导出服务", () -> {
-                        if (failedPdfExportService != null) failedPdfExportService.close();
+                        if (failedExportService != null) failedExportService.close();
                     }),
                     step("网络服务", () -> {
                         if (failedNetworkService != null) failedNetworkService.close();
@@ -666,7 +666,7 @@ public final class Backend implements AutoCloseable {
         updateService = null;
         LaunchRouteService closingLaunchRoutes = launchRouteService;
         launchRouteService = null;
-        PdfExportService closingPdfExportService = pdfExportService;
+        ExportService closingExportService = pdfExportService;
         pdfExportService = null;
         NetworkService closingNetworkService = networkService;
         networkService = null;
@@ -690,7 +690,7 @@ public final class Backend implements AutoCloseable {
                     if (closingLaunchRoutes != null) closingLaunchRoutes.close();
                 }),
                 step("PDF 导出服务", () -> {
-                    if (closingPdfExportService != null) closingPdfExportService.close();
+                    if (closingExportService != null) closingExportService.close();
                 }),
                 step("网络服务", () -> {
                     if (closingNetworkService != null) closingNetworkService.close();

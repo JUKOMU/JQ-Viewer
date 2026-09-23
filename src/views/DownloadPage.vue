@@ -116,7 +116,7 @@
     </IonContent>
     <IonContent v-show="activeMainView === 'pdf'">
       <div class="download-page-shell">
-        <PdfManagementView
+        <LocalFileManagementView
           ref="pdfManagementRef"
           :initial-view="pdfInitialView"
           :initial-export-id="pdfInitialExportId"
@@ -184,18 +184,18 @@ import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import DownloadTaskCard from '@/components/download/DownloadTaskCard.vue'
 import PdfExportBottomSheet from '@/components/download/PdfExportBottomSheet.vue'
 import DeleteChaptersBottomSheet from '@/components/download/DeleteChaptersBottomSheet.vue'
-import PdfManagementView from '@/components/download/PdfManagementView.vue'
+import LocalFileManagementView from '@/components/download/LocalFileManagementView.vue'
 import CardContextMenu from '@/components/common/CardContextMenu.vue'
 import { createAppAlert } from '@/services/AppAlertService'
 import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
 import { OfflineDownloadService } from '@/services/OfflineDownloadService'
-import { PdfExportService, type PdfExportPlan } from '@/services/PdfExportService'
+import { ExportService, type ExportPlan } from '@/services/ExportService'
 import type {
   AlbumDetail,
   CompletedEntry,
   CompletedGroup,
   DownloadTask,
-  PdfExportMode,
+  ExportMode,
 } from '@/services/JmcomicTypes'
 
 const router = useRouter()
@@ -207,7 +207,7 @@ const pdfInitialView = computed<'files' | 'tasks'>(() =>
 const pdfInitialExportId = computed(() =>
   typeof route.query.exportId === 'string' ? route.query.exportId : undefined,
 )
-const pdfManagementRef = ref<InstanceType<typeof PdfManagementView> | null>(null)
+const pdfManagementRef = ref<InstanceType<typeof LocalFileManagementView> | null>(null)
 let ionEnterCount = 0
 
 const selectMainView = (view: 'downloads' | 'pdf') => {
@@ -887,7 +887,7 @@ const requestPdfOverwriteConfirmation = async (paths: string[]): Promise<boolean
 
 const onPdfExportConfirm = async (payload: {
   selectedChapters: DownloadTask[]
-  mode: PdfExportMode
+  mode: ExportMode
   useOriginal: boolean
   compressionRatio: number
   editedPath: string
@@ -905,18 +905,18 @@ const onPdfExportConfirm = async (payload: {
     }
   }
 
-  let exportPlan: PdfExportPlan
+  let exportPlan: ExportPlan
   try {
-    exportPlan = PdfExportService.buildExportPlan({
+    exportPlan = ExportService.buildExportPlan({
       ...payload,
       albumDetail,
       exportFolder: (() => {
-        const selection = PdfExportService.getExportFolder()
+        const selection = ExportService.getExportFolder()
         if (!selection) throw new Error('请先选择导出目录')
         return selection.folderRef
       })(),
       exportFolderDisplayPath: (() => {
-        const selection = PdfExportService.getExportFolder()
+        const selection = ExportService.getExportFolder()
         if (!selection) throw new Error('请先选择导出目录')
         return selection.displayPath
       })(),
@@ -932,7 +932,7 @@ const onPdfExportConfirm = async (payload: {
   await ensureNotificationPermission()
 
   try {
-    const result = await JmcomicService.exportPdfBatch(
+    const result = await JmcomicService.exportBatch(
       exportPlan.tasks.map((task) => ({ ...task, allowOverwrite })),
     )
     const conflictIndexes = result.tasks.flatMap((task, index) =>
@@ -954,7 +954,7 @@ const onPdfExportConfirm = async (payload: {
       overwriteConfirmed = await requestPdfOverwriteConfirmation(conflictPaths)
       if (overwriteConfirmed) {
         try {
-          const overwriteResult = await JmcomicService.exportPdfBatch(
+          const overwriteResult = await JmcomicService.exportBatch(
             conflictIndexes.map((index) => ({
               ...exportPlan.tasks[index],
               allowOverwrite: true,

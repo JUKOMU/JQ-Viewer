@@ -1,21 +1,22 @@
 import type { RelocationProgress } from '@/services/JmcomicTypes'
 import type {
-  ImportedPdf,
-  ImportedPdfsResult,
-  ImportPdfItem,
-  ImportPdfsResult,
-  PdfExportBatchResult,
-  PdfExportProgressEvent,
-  PdfExportStatus,
-  PdfExportTask,
-  PdfExportTaskRecord,
-  PdfManagementState,
-  PdfScanItem,
-  PdfStorageDeleteResult,
+  LocalFileRecord,
+  ImportedLocalFilesResult,
+  ImportLocalFileItem,
+  ImportLocalFilesResult,
+  ExportBatchResult,
+  ExportFormat,
+  ExportProgressEvent,
+  ExportStatus,
+  ExportTask,
+  ExportTaskRecord,
+  LocalFileManagementState,
+  LocalFileScanItem,
+  LocalFileStorageDeleteResult,
 } from '@/services/JmcomicTypes'
 import type { BackendEvents, ListenerHandle } from './BackendEvents'
 import type { FileDescriptor, FileRef, FolderDescriptor, FolderRef } from './FileReferences'
-import type { PdfExportPreferencesStore } from './PdfExportPreferences'
+import type { ExportPreferencesStore } from './ExportPreferences'
 import type { UpdaterService } from './UpdateTypes'
 
 /**
@@ -53,14 +54,17 @@ export type NotificationPolicy =
   | { kind: 'host-managed' }
   | { kind: 'unavailable'; reason: string }
 
-/** 文件系统平台能力：目录选择、默认目录、存在性检查、打开文件/目录与 PDF 扫描。 */
+/** 文件系统平台能力：目录选择、默认目录、存在性检查、打开文件/目录与可导入文件扫描。 */
 export interface FileService {
-  pickFolder(purpose: 'pdf-root' | 'pdf-export' | 'download'): Promise<FolderDescriptor | null>
-  getDefaultFolder(purpose: 'pdf-root' | 'pdf-export' | 'download'): Promise<FolderDescriptor>
+  pickFolder(purpose: 'local-file-root' | 'export' | 'download'): Promise<FolderDescriptor | null>
+  getDefaultFolder(purpose: 'local-file-root' | 'export' | 'download'): Promise<FolderDescriptor>
   checkFilesExist(files: FileRef[]): Promise<{ existing: FileRef[] }>
   openFile(file: FileRef): Promise<void>
   openContainingFolder(file: FileRef): Promise<void>
-  scanPdfFiles(folder: FolderRef): Promise<{ files: FileDescriptor[] }>
+  scanImportableFiles(
+    folder: FolderRef,
+    formats: ExportFormat[],
+  ): Promise<{ files: FileDescriptor[] }>
 }
 
 /** 下载位置能力：Android 切换公开目录，Desktop 选择本地目录并迁移。 */
@@ -141,45 +145,50 @@ export interface DiagnosticsService {
   getSnapshot(): Promise<DiagnosticSnapshot>
 }
 
-/** PDF 平台能力：导入、导出、列表、校验、删除与打开等文件生命周期操作。 */
-export interface PdfService {
-  exportPdfBatch(options: { tasks: PdfExportTask[] }): Promise<PdfExportBatchResult>
-  scanPdfFiles(folder: FolderRef): Promise<{ files: PdfScanItem[] }>
-  importPdfs(items: ImportPdfItem[]): Promise<ImportPdfsResult>
-  getImportedPdfs(): Promise<ImportedPdfsResult>
-  getPdfFiles(options: {
+/** 本地文件平台能力：导入、导出、列表、校验、删除与打开等文件生命周期操作。 */
+export interface LocalFileService {
+  exportBatch(options: { tasks: ExportTask[] }): Promise<ExportBatchResult>
+  scanImportableFiles(
+    folder: FolderRef,
+    formats: ExportFormat[],
+  ): Promise<{ files: LocalFileScanItem[] }>
+  importLocalFiles(items: ImportLocalFileItem[]): Promise<ImportLocalFilesResult>
+  getImportedLocalFiles(): Promise<ImportedLocalFilesResult>
+  getLocalFiles(options: {
+    format?: ExportFormat
     sourceType?: 'imported' | 'exported'
-    availability?: ImportedPdf['availability'] | 'problem'
+    availability?: LocalFileRecord['availability'] | 'problem'
     folderId?: string
     query?: string
     cursor?: string
     limit: number
-  }): Promise<{ files: ImportedPdf[]; nextCursor?: string }>
-  refreshPdfFileAvailability(ids: number[]): Promise<{ files: ImportedPdf[] }>
-  inspectPdfFileForDeletion(id: number): Promise<ImportedPdf>
-  verifyPdfFile(id: number): Promise<ImportedPdf>
-  removePdfFromLibrary(id: number): Promise<{ success: boolean }>
-  deletePdfFile(id: number): Promise<PdfStorageDeleteResult>
-  getPdfManagementState(): Promise<PdfManagementState>
-  acknowledgePdfDatabaseReset(): Promise<{ acknowledged: boolean }>
-  getPdfExportTasks(options: {
-    status?: PdfExportStatus
+  }): Promise<{ files: LocalFileRecord[]; nextCursor?: string }>
+  refreshLocalFileAvailability(ids: number[]): Promise<{ files: LocalFileRecord[] }>
+  inspectLocalFileForDeletion(id: number): Promise<LocalFileRecord>
+  verifyLocalFile(id: number): Promise<LocalFileRecord>
+  removeLocalFileFromLibrary(id: number): Promise<{ success: boolean }>
+  deleteLocalFile(id: number): Promise<LocalFileStorageDeleteResult>
+  getLocalFileManagementState(): Promise<LocalFileManagementState>
+  acknowledgeLocalFileDatabaseReset(): Promise<{ acknowledged: boolean }>
+  getExportTasks(options: {
+    format?: ExportFormat
+    status?: ExportStatus
     cursor?: string
     limit: number
-  }): Promise<{ tasks: PdfExportTaskRecord[]; nextCursor?: string }>
-  getPdfExportTask(exportId: string): Promise<PdfExportTaskRecord>
-  cancelPdfExport(exportId: string): Promise<PdfExportTaskRecord>
-  retryPdfExport(exportId: string, allowOverwrite?: boolean): Promise<PdfExportTaskRecord>
-  deletePdfExportTask(exportId: string): Promise<{ success: boolean }>
-  deleteImportedPdf(id: number): Promise<{ success: boolean }>
+  }): Promise<{ tasks: ExportTaskRecord[]; nextCursor?: string }>
+  getExportTask(exportId: string): Promise<ExportTaskRecord>
+  cancelExport(exportId: string): Promise<ExportTaskRecord>
+  retryExport(exportId: string, allowOverwrite?: boolean): Promise<ExportTaskRecord>
+  deleteExportTask(exportId: string): Promise<{ success: boolean }>
+  deleteImportedLocalFile(id: number): Promise<{ success: boolean }>
   updateLocalEpisodeType(
     albumId: string,
     isSingleEpisode: boolean,
-  ): Promise<{ success: boolean; updatedDownloads: number; updatedPdfs: number }>
-  openPdf(file: FileRef): Promise<{ success: boolean }>
-  openPdfFolder(file: FileRef): Promise<{ success: boolean }>
+  ): Promise<{ success: boolean; updatedDownloads: number; updatedLocalFiles: number }>
+  openLocalFile(file: FileRef): Promise<{ success: boolean }>
+  openLocalFileFolder(file: FileRef): Promise<{ success: boolean }>
   getPdfInfo(file: FileRef): Promise<{ pageCount: number }>
-  onProgress(handler: (event: PdfExportProgressEvent) => void): Promise<ListenerHandle>
+  onProgress(handler: (event: ExportProgressEvent) => void): Promise<ListenerHandle>
 }
 
 /**
@@ -200,18 +209,18 @@ export interface ReaderPlatformServices {
   }>
 }
 
-/** 平台服务聚合：应用信息、通知、文件、下载位置、阅读器、更新、OCR、诊断、启动路由与 PDF。 */
+/** 平台服务聚合：应用信息、通知、文件、导出设置、本地文件、阅读器及宿主能力。 */
 export interface PlatformServices {
   app: AppService
   notifications: NotificationPolicy
   files: FileService
-  pdfExportPreferences: PdfExportPreferencesStore
+  exportPreferences: ExportPreferencesStore
   storage: Capability<PublicDownloadService>
   reader: ReaderPlatformServices
   updater: Capability<UpdaterService>
   ocr: Capability<OcrService>
   diagnostics: Capability<DiagnosticsService>
   launchRoutes: Capability<LaunchRouteService>
-  pdf: PdfService
+  localFiles: LocalFileService
   events: BackendEvents
 }

@@ -12,9 +12,9 @@ import androidx.test.platform.app.InstrumentationRegistry;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 
-import io.github.jukomu.bridge.handler.PdfPluginHandler;
+import io.github.jukomu.bridge.handler.LocalFilePluginHandler;
 import io.github.jukomu.feature.download.data.DownloadStore;
-import io.github.jukomu.feature.pdf.data.PdfStore;
+import io.github.jukomu.feature.pdf.data.LocalFileStore;
 import io.github.jukomu.feature.pdf.data.PdfRef;
 import io.github.jukomu.feature.pdf.render.PdfPageCache;
 import io.github.jukomu.feature.pdf.render.PdfPageSizing;
@@ -38,16 +38,16 @@ import static org.junit.Assert.assertTrue;
 
 public class PdfPluginContractInstrumentedTest {
 
-    private PdfPluginHandler handler;
-    private PdfStore pdfStore;
+    private LocalFilePluginHandler handler;
+    private LocalFileStore pdfStore;
     private Context context;
     private File missingPdf;
 
     @Before
     public void setUp() {
         context = InstrumentationRegistry.getInstrumentation().getTargetContext();
-        pdfStore = PdfStore.getInstance(context);
-        handler = new PdfPluginHandler(context, DownloadStore.getInstance(context), Runnable::run);
+        pdfStore = LocalFileStore.getInstance(context);
+        handler = new LocalFilePluginHandler(context, DownloadStore.getInstance(context), Runnable::run);
         PdfPageCache.getInstance(context).clear();
         missingPdf = new File(context.getCacheDir(), "missing-a1-pdf.pdf");
         if (missingPdf.exists()) assertTrue(missingPdf.delete());
@@ -55,9 +55,9 @@ public class PdfPluginContractInstrumentedTest {
 
     @Test
     public void scopedPdfFailuresKeepMessagesAndExposeCodes() throws Exception {
-        RecordingPluginCall scan = call("scanPdfFiles", "folderRef",
+        RecordingPluginCall scan = call("scanImportableFiles", "folderRef",
             PdfRef.createPathFolderRef(missingPdf.getAbsolutePath()));
-        handler.scanPdfFiles(scan);
+        handler.scanImportableFiles(scan);
         assertRejected(scan, "PDF 文件夹不存在", "not-found");
 
         RecordingPluginCall info = call("getPdfInfo", "fileRef",
@@ -73,38 +73,38 @@ public class PdfPluginContractInstrumentedTest {
         assertEquals("not-found", render.rejectionCode);
         assertTrue(render.rejectionMessage.startsWith("PDF 页面渲染失败: "));
 
-        RecordingPluginCall inspect = call("inspectPdfFileForDeletion", "id", Integer.MAX_VALUE);
-        handler.inspectPdfFileForDeletion(inspect);
+        RecordingPluginCall inspect = call("inspectLocalFileForDeletion", "id", Integer.MAX_VALUE);
+        handler.inspectLocalFileForDeletion(inspect);
         assertRejected(inspect, "PDF 文件记录不存在", "not-found");
 
-        RecordingPluginCall delete = call("deletePdfFile", "id", Integer.MAX_VALUE);
-        handler.deletePdfFile(delete);
+        RecordingPluginCall delete = call("deleteLocalFile", "id", Integer.MAX_VALUE);
+        handler.deleteLocalFile(delete);
         assertRejected(delete, "PDF 文件记录不存在", "not-found");
 
-        RecordingPluginCall getTask = call("getPdfExportTask", "exportId", "missing-a1-task");
-        handler.getPdfExportTask(getTask);
+        RecordingPluginCall getTask = call("getExportTask", "exportId", "missing-a1-task");
+        handler.getExportTask(getTask);
         assertRejected(getTask, "PDF 导出任务不存在", "not-found");
 
-        RecordingPluginCall cancelTask = call("cancelPdfExport", "exportId", "missing-a1-task");
-        handler.cancelPdfExport(cancelTask);
+        RecordingPluginCall cancelTask = call("cancelExport", "exportId", "missing-a1-task");
+        handler.cancelExport(cancelTask);
         assertRejected(cancelTask, "PDF 导出任务不存在", "not-found");
 
-        RecordingPluginCall retryTask = call("retryPdfExport", "exportId", "missing-a1-task");
-        handler.retryPdfExport(retryTask);
+        RecordingPluginCall retryTask = call("retryExport", "exportId", "missing-a1-task");
+        handler.retryExport(retryTask);
         assertRejected(retryTask, "PDF 导出任务不存在", "not-found");
     }
 
     @Test
     public void scanAndInfoRunOnPdfCommandExecutor() throws Exception {
         Deque<Runnable> commands = new ArrayDeque<>();
-        PdfPluginHandler queuedHandler = new PdfPluginHandler(
+        LocalFilePluginHandler queuedHandler = new LocalFilePluginHandler(
             context, DownloadStore.getInstance(context), commands::addLast);
-        RecordingPluginCall scan = call("scanPdfFiles", "folderRef",
+        RecordingPluginCall scan = call("scanImportableFiles", "folderRef",
             PdfRef.createPathFolderRef(missingPdf.getAbsolutePath()));
         RecordingPluginCall info = call("getPdfInfo", "fileRef",
             PdfRef.createPathFileRef(missingPdf.getAbsolutePath()));
 
-        queuedHandler.scanPdfFiles(scan);
+        queuedHandler.scanImportableFiles(scan);
         queuedHandler.getPdfInfo(info);
 
         assertEquals(0, scan.completionCount);
@@ -120,12 +120,12 @@ public class PdfPluginContractInstrumentedTest {
     @Test
     public void destroyRejectsQueuedPdfCallAndNewSubmissions() throws Exception {
         Deque<Runnable> commands = new ArrayDeque<>();
-        PdfPluginHandler queuedHandler = new PdfPluginHandler(
+        LocalFilePluginHandler queuedHandler = new LocalFilePluginHandler(
             context, DownloadStore.getInstance(context), commands::addLast);
-        RecordingPluginCall queued = call("scanPdfFiles", "folderRef",
+        RecordingPluginCall queued = call("scanImportableFiles", "folderRef",
             PdfRef.createPathFolderRef(missingPdf.getAbsolutePath()));
 
-        queuedHandler.scanPdfFiles(queued);
+        queuedHandler.scanImportableFiles(queued);
         assertEquals(0, queued.completionCount);
         assertEquals(1, commands.size());
 
@@ -136,9 +136,9 @@ public class PdfPluginContractInstrumentedTest {
         commands.removeFirst().run();
         assertEquals(1, queued.completionCount);
 
-        RecordingPluginCall afterDestroy = call("scanPdfFiles", "folderRef",
+        RecordingPluginCall afterDestroy = call("scanImportableFiles", "folderRef",
             PdfRef.createPathFolderRef(missingPdf.getAbsolutePath()));
-        queuedHandler.scanPdfFiles(afterDestroy);
+        queuedHandler.scanImportableFiles(afterDestroy);
         assertEquals(PluginCallSession.SESSION_ENDED_MESSAGE,
             afterDestroy.rejectionMessage);
         assertEquals(1, afterDestroy.completionCount);
@@ -146,8 +146,8 @@ public class PdfPluginContractInstrumentedTest {
 
     @Test
     public void methodsOutsideA1DoNotRequireErrorCodes() {
-        RecordingPluginCall importCall = call("importPdfs");
-        handler.importPdfs(importCall);
+        RecordingPluginCall importCall = call("importLocalFiles");
+        handler.importLocalFiles(importCall);
 
         assertEquals("items is required and must not be empty", importCall.rejectionMessage);
         assertNull(importCall.rejectionCode);
@@ -162,7 +162,7 @@ public class PdfPluginContractInstrumentedTest {
         SQLiteDatabase database = pdfStore.getWritableDatabase();
         database.execSQL("DROP TRIGGER IF EXISTS fail_pdf_import_for_test");
         database.execSQL("CREATE TRIGGER fail_pdf_import_for_test "
-            + "BEFORE INSERT ON pdf_files BEGIN "
+            + "BEFORE INSERT ON local_files BEGIN "
             + "SELECT RAISE(ABORT, 'forced import failure'); END");
         try {
             JSObject item = new JSObject();
@@ -172,9 +172,9 @@ public class PdfPluginContractInstrumentedTest {
             item.put("albumId", "album-import-failure");
             item.put("chapterId", "chapter-import-failure");
             item.put("chapterTitle", "第一话");
-            RecordingPluginCall importCall = call("importPdfs", "items", new JSArray().put(item));
+            RecordingPluginCall importCall = call("importLocalFiles", "items", new JSArray().put(item));
 
-            handler.importPdfs(importCall);
+            handler.importLocalFiles(importCall);
 
             assertNull(importCall.resolvedData);
             assertTrue(importCall.rejectionException instanceof SQLiteException);
@@ -190,7 +190,7 @@ public class PdfPluginContractInstrumentedTest {
     public void refreshRejectsPersistenceFailuresAtPluginBoundary() throws Exception {
         File pdf = new File(context.getCacheDir(), "refresh-failure-" + System.nanoTime() + ".pdf");
         createPdf(pdf);
-        long id = pdfStore.insertImportedPdf(
+        long id = pdfStore.insertImportedFile("pdf",
             PdfRef.createPathFileRef(pdf.getCanonicalPath()),
             pdf.getCanonicalPath(), pdf.getName(), "album-refresh-failure", "", "", "",
             "chapter-refresh-failure", "第一话", 0, -1, System.currentTimeMillis(), null,
@@ -198,13 +198,13 @@ public class PdfPluginContractInstrumentedTest {
         SQLiteDatabase database = pdfStore.getWritableDatabase();
         database.execSQL("DROP TRIGGER IF EXISTS fail_pdf_refresh_handler_for_test");
         database.execSQL("CREATE TRIGGER fail_pdf_refresh_handler_for_test "
-            + "BEFORE UPDATE ON pdf_files BEGIN "
+            + "BEFORE UPDATE ON local_files BEGIN "
             + "SELECT RAISE(ABORT, 'forced handler refresh failure'); END");
         try {
             RecordingPluginCall refreshCall = call(
-                "refreshPdfFileAvailability", "ids", new JSArray().put(id));
+                "refreshLocalFileAvailability", "ids", new JSArray().put(id));
 
-            handler.refreshPdfFileAvailability(refreshCall);
+            handler.refreshLocalFileAvailability(refreshCall);
 
             assertNull(refreshCall.resolvedData);
             assertTrue(refreshCall.rejectionException instanceof SQLiteException);
@@ -221,12 +221,12 @@ public class PdfPluginContractInstrumentedTest {
     public void missingPhysicalFileKeepsAlreadyMissingSuccessContract() throws Exception {
         String locator = new File(context.getCacheDir(),
             "already-missing-" + System.nanoTime() + ".pdf").getAbsolutePath();
-        long id = pdfStore.insertImportedPdf(
+        long id = pdfStore.insertImportedFile("pdf",
             PdfRef.createPathFileRef(locator), locator, "missing.pdf", "album", "", "", "", "chapter", "", 0,
             -1, System.currentTimeMillis(), null, 0, 1);
 
-        RecordingPluginCall delete = call("deletePdfFile", "id", (int) id);
-        handler.deletePdfFile(delete);
+        RecordingPluginCall delete = call("deleteLocalFile", "id", (int) id);
+        handler.deleteLocalFile(delete);
 
         assertEquals("already_missing", delete.resolvedData.getString("result"));
         assertNull(delete.rejectionCode);
@@ -243,10 +243,10 @@ public class PdfPluginContractInstrumentedTest {
         assertTrue(pdfDirectory.mkdirs());
         try {
             RecordingPluginCall scan = call(
-                "scanPdfFiles",
+                "scanImportableFiles",
                 "folderRef", PdfRef.createPathFolderRef(folder.getCanonicalPath())
             );
-            handler.scanPdfFiles(scan);
+            handler.scanImportableFiles(scan);
 
             assertEquals(1, scan.resolvedData.getJSONArray("files").length());
             assertEquals("book.pdf",
@@ -257,6 +257,19 @@ public class PdfPluginContractInstrumentedTest {
             assertTrue(pdfFile.delete() || !pdfFile.exists());
             assertTrue(folder.delete() || !folder.exists());
         }
+    }
+
+    @Test
+    public void scanRejectsFormatsNotEnabledInRoundOne() throws Exception {
+        RecordingPluginCall scan = call(
+            "scanImportableFiles",
+            "folderRef", PdfRef.createPathFolderRef(context.getCacheDir().getCanonicalPath()),
+            "formats", new JSArray().put("cbz")
+        );
+
+        handler.scanImportableFiles(scan);
+
+        assertRejected(scan, "本轮仅支持扫描 PDF 文件", null);
     }
 
     @Test

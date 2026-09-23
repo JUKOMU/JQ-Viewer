@@ -6,7 +6,7 @@ import io.github.jukomu.desktop.feature.download.data.DownloadStore;
 import io.github.jukomu.desktop.feature.image.CacheCapacityPolicy;
 import io.github.jukomu.desktop.feature.image.CacheService;
 import io.github.jukomu.desktop.feature.image.ImageCache;
-import io.github.jukomu.desktop.feature.pdf.export.PdfExportStore;
+import io.github.jukomu.desktop.feature.pdf.export.ExportStore;
 import io.github.jukomu.desktop.feature.pdf.render.PdfPageCache;
 import io.github.jukomu.desktop.feature.settings.SettingsService;
 import org.junit.jupiter.api.Test;
@@ -35,9 +35,9 @@ class DiagnosticsServiceTest {
                     "album/chapter", 10);
             downloads.fail("download-1", 1, 100, 200, "网络错误");
 
-            PdfExportStore pdfExports = new PdfExportStore(database);
-            pdfExports.reserve(new PdfExportStore.ReserveTask(
-                    "export-1", "batch", "chapter", "album", "漫画", "", "作者",
+            ExportStore pdfExports = new ExportStore(database);
+            pdfExports.reserve(new ExportStore.ReserveTask(
+                    "export-1", "batch", "pdf", "chapter", "album", "漫画", "", "作者",
                     false, "chapter", "第一话 PDF", "folder:path:/exports", "one.pdf",
                     "/exports/one.pdf", false, true, 1, 0, "failed", "failed", 8,
                     "WRITE_FAILED", "磁盘空间不足", 20

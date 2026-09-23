@@ -8,11 +8,11 @@ import io.github.jukomu.desktop.feature.download.DownloadFiles;
 import io.github.jukomu.desktop.feature.download.data.DownloadStore;
 import io.github.jukomu.desktop.feature.download.data.StoredDownloadPage;
 import io.github.jukomu.desktop.feature.files.FileReferences;
-import io.github.jukomu.desktop.feature.pdf.data.PdfStore;
-import io.github.jukomu.desktop.feature.pdf.model.PdfExportBatchResponse;
-import io.github.jukomu.desktop.feature.pdf.model.PdfExportTargetRequest;
-import io.github.jukomu.desktop.feature.pdf.model.PdfExportTaskRequest;
-import io.github.jukomu.desktop.feature.pdf.model.PdfExportTaskResponse;
+import io.github.jukomu.desktop.feature.pdf.data.LocalFileStore;
+import io.github.jukomu.desktop.feature.pdf.model.ExportBatchResponse;
+import io.github.jukomu.desktop.feature.pdf.model.ExportTargetRequest;
+import io.github.jukomu.desktop.feature.pdf.model.ExportTaskRequest;
+import io.github.jukomu.desktop.feature.pdf.model.ExportTaskResponse;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
@@ -39,7 +39,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class PdfExportServiceTest {
+class ExportServiceTest {
     @Test
     void pdfBoxWriterCreatesReadableCompressedPdf() throws Exception {
         Path root = Files.createTempDirectory("jq-viewer-pdf-writer-");
@@ -69,15 +69,15 @@ class PdfExportServiceTest {
             fixture.addDownload("album-1", "chapter-1", 3);
             fixture.addDownload("album-1", "chapter-2", 1);
 
-            PdfExportBatchResponse submitted = fixture.service.submit(List.of(
+            ExportBatchResponse submitted = fixture.service.submit(List.of(
                     fixture.task("chapter-1", "first.pdf", 2, false),
                     fixture.task("chapter-2", "second.pdf", 0, false)
             ));
-            assertTrue(submitted.tasks().stream().allMatch(PdfExportTaskResponse::accepted));
+            assertTrue(submitted.tasks().stream().allMatch(ExportTaskResponse::accepted));
             long firstRevision = submitted.tasks().get(0).snapshotRevision();
 
-            PdfExportTaskResponse first = fixture.awaitTerminal(submitted.tasks().get(0).exportId());
-            PdfExportTaskResponse second = fixture.awaitTerminal(submitted.tasks().get(1).exportId());
+            ExportTaskResponse first = fixture.awaitTerminal(submitted.tasks().get(0).exportId());
+            ExportTaskResponse second = fixture.awaitTerminal(submitted.tasks().get(1).exportId());
             assertEquals("completed", first.status());
             assertEquals("completed", second.status());
             assertEquals(3, first.currentPage());
@@ -89,7 +89,7 @@ class PdfExportServiceTest {
             Path secondVolume = fixture.output.resolve("first_003-003.pdf");
             assertEquals(2, pageCount(firstVolume));
             assertEquals(1, pageCount(secondVolume));
-            assertEquals(3, new PdfStore(fixture.database).listAll().size());
+            assertEquals(3, new LocalFileStore(fixture.database).listAll().size());
             assertNotNull(first.outputFileRef());
 
             assertTrue(fixture.service.deleteTask(first.exportId()));
@@ -97,7 +97,7 @@ class PdfExportServiceTest {
             assertTrue(Files.isRegularFile(secondVolume));
             assertEquals("completed", second.status());
 
-            PdfExportBatchResponse conflict = fixture.service.submit(List.of(
+            ExportBatchResponse conflict = fixture.service.submit(List.of(
                     fixture.task("chapter-2", "second.pdf", 0, false)));
             assertFalse(conflict.tasks().get(0).accepted());
             assertEquals("PDF_OUTPUT_EXISTS", conflict.tasks().get(0).errorCode());
@@ -109,20 +109,20 @@ class PdfExportServiceTest {
         BlockingSecondVolumeWriter writer = new BlockingSecondVolumeWriter();
         try (Fixture fixture = fixture(writer)) {
             fixture.addDownload("album-1", "chapter-1", 2);
-            PdfExportTaskResponse queued = fixture.service.submit(List.of(
+            ExportTaskResponse queued = fixture.service.submit(List.of(
                     fixture.task("chapter-1", "cancel.pdf", 1, false))).tasks().get(0);
 
             assertTrue(writer.secondVolume.await(5, TimeUnit.SECONDS));
-            PdfExportTaskResponse cancelling = fixture.service.cancel(queued.exportId());
+            ExportTaskResponse cancelling = fixture.service.cancel(queued.exportId());
             assertEquals("cancelling", cancelling.status());
-            PdfExportTaskResponse terminal = fixture.awaitTerminal(queued.exportId());
+            ExportTaskResponse terminal = fixture.awaitTerminal(queued.exportId());
 
             assertEquals("partial", terminal.status());
             assertEquals("CANCELLED", terminal.errorCode());
             assertTrue(Files.isRegularFile(fixture.output.resolve("cancel_001-001.pdf")));
             assertFalse(Files.exists(fixture.output.resolve("cancel_002-002.pdf")));
             assertTrue(fixture.store.volumes(queued.exportId()).stream()
-                    .map(PdfExportStore.Volume::tempPath)
+                    .map(ExportStore.Volume::tempPath)
                     .noneMatch(path -> Files.exists(Path.of(path))));
         }
     }
@@ -132,15 +132,15 @@ class PdfExportServiceTest {
         FailSecondVolumeOnceWriter writer = new FailSecondVolumeOnceWriter();
         try (Fixture fixture = fixture(writer)) {
             fixture.addDownload("album-1", "chapter-1", 2);
-            PdfExportTaskResponse queued = fixture.service.submit(List.of(
+            ExportTaskResponse queued = fixture.service.submit(List.of(
                     fixture.task("chapter-1", "retry.pdf", 1, false))).tasks().get(0);
-            PdfExportTaskResponse partial = fixture.awaitTerminal(queued.exportId());
+            ExportTaskResponse partial = fixture.awaitTerminal(queued.exportId());
 
             assertEquals("partial", partial.status());
             assertEquals("TEST_WRITE_FAILED", partial.errorCode());
-            PdfExportTaskResponse retried = fixture.service.retry(queued.exportId(), true);
+            ExportTaskResponse retried = fixture.service.retry(queued.exportId(), true);
             assertEquals("queued", retried.status());
-            PdfExportTaskResponse completed = fixture.awaitTerminal(queued.exportId());
+            ExportTaskResponse completed = fixture.awaitTerminal(queued.exportId());
 
             assertEquals("completed", completed.status());
             assertEquals(2, completed.currentPage());
@@ -156,10 +156,10 @@ class PdfExportServiceTest {
         };
         try (Fixture fixture = fixture(writer)) {
             fixture.addDownload("album-1", "chapter-1", 1);
-            PdfExportTaskResponse queued = fixture.service.submit(List.of(
+            ExportTaskResponse queued = fixture.service.submit(List.of(
                     fixture.task("chapter-1", "failed.pdf", 0, false))).tasks().get(0);
 
-            PdfExportTaskResponse failed = fixture.awaitTerminal(queued.exportId());
+            ExportTaskResponse failed = fixture.awaitTerminal(queued.exportId());
 
             assertEquals("failed", failed.status());
             assertEquals("TEST_WRITE_FAILED", failed.errorCode());
@@ -172,16 +172,23 @@ class PdfExportServiceTest {
         try (Fixture fixture = fixture(new TrackingWriter())) {
             fixture.addDownload("album-1", "chapter-1", 2);
             fixture.addDownload("album-1", "chapter-2", 1);
-            PdfExportTaskResponse queued = fixture.service.submit(List.of(
+            ExportTaskResponse queued = fixture.service.submit(List.of(
                     fixture.mergedTask("merged.pdf"))).tasks().get(0);
 
-            PdfExportTaskResponse completed = fixture.awaitTerminal(queued.exportId());
+            ExportTaskResponse completed = fixture.awaitTerminal(queued.exportId());
 
             assertEquals("completed", completed.status());
             assertEquals(3, pageCount(fixture.output.resolve("merged.pdf")));
-            var libraryFile = new PdfStore(fixture.database).listAll().get(0);
+            var libraryFile = new LocalFileStore(fixture.database).listAll().get(0);
+            assertEquals("pdf", libraryFile.format());
             assertEquals("multi_chapter", libraryFile.chapterLinkStatus());
-            assertNull(libraryFile.chapterId());
+            assertEquals(2, libraryFile.chapters().size());
+            assertEquals("chapter-1", libraryFile.chapters().get(0).chapterId());
+            assertEquals(1, libraryFile.chapters().get(0).startPage());
+            assertEquals(2, libraryFile.chapters().get(0).endPage());
+            assertEquals("chapter-2", libraryFile.chapters().get(1).chapterId());
+            assertEquals(3, libraryFile.chapters().get(1).startPage());
+            assertEquals(3, libraryFile.chapters().get(1).endPage());
         }
     }
 
@@ -189,7 +196,7 @@ class PdfExportServiceTest {
     void startupMarksActiveTaskInterruptedAndRemovesKnownTemporaryFile() throws Exception {
         try (Fixture fixture = fixture(new TrackingWriter(), new HoldingExecutorService())) {
             fixture.addDownload("album-1", "chapter-1", 1);
-            PdfExportTaskResponse queued = fixture.service.submit(List.of(
+            ExportTaskResponse queued = fixture.service.submit(List.of(
                     fixture.task("chapter-1", "interrupted.pdf", 0, false))).tasks().get(0);
             Path temporary = Path.of(fixture.store.volumes(queued.exportId()).get(0).tempPath());
             Files.writeString(temporary, "partial");
@@ -206,10 +213,10 @@ class PdfExportServiceTest {
     void cancellingQueuedTaskMarksItsVolumesCancelled() throws Exception {
         try (Fixture fixture = fixture(new TrackingWriter(), new HoldingExecutorService())) {
             fixture.addDownload("album-1", "chapter-1", 1);
-            PdfExportTaskResponse queued = fixture.service.submit(List.of(
+            ExportTaskResponse queued = fixture.service.submit(List.of(
                     fixture.task("chapter-1", "queued-cancel.pdf", 0, false))).tasks().get(0);
 
-            PdfExportTaskResponse cancelled = fixture.service.cancel(queued.exportId());
+            ExportTaskResponse cancelled = fixture.service.cancel(queued.exportId());
 
             assertEquals("cancelled", cancelled.status());
             assertEquals("cancelled", fixture.store.volumes(queued.exportId()).get(0).status());
@@ -220,12 +227,12 @@ class PdfExportServiceTest {
     void runningProgressCannotOverwriteCancellingStatus() throws Exception {
         try (Fixture fixture = fixture(new TrackingWriter(), new HoldingExecutorService())) {
             fixture.addDownload("album-1", "chapter-1", 1);
-            PdfExportTaskResponse queued = fixture.service.submit(List.of(
+            ExportTaskResponse queued = fixture.service.submit(List.of(
                     fixture.task("chapter-1", "cancel-race.pdf", 0, false))).tasks().get(0);
             assertNotNull(fixture.store.claim(queued.exportId()));
-            PdfExportTaskResponse cancelling = fixture.store.requestCancel(queued.exportId());
+            ExportTaskResponse cancelling = fixture.store.requestCancel(queued.exportId());
 
-            PdfExportTaskResponse afterProgress = fixture.store.updateProgress(
+            ExportTaskResponse afterProgress = fixture.store.updateProgress(
                     queued.exportId(), "running", "writing", 1, 1, 1, 1, null, null);
 
             assertEquals("cancelling", afterProgress.status());
@@ -249,8 +256,8 @@ class PdfExportServiceTest {
         DownloadStore downloads = new DownloadStore(database);
         DownloadFiles files = new DownloadFiles(paths);
         EventHub events = new EventHub(new ObjectMapper());
-        PdfExportStore store = new PdfExportStore(database);
-        PdfExportService service = new PdfExportService(
+        ExportStore store = new ExportStore(database);
+        ExportService service = new ExportService(
                 store, downloads, files, executor, events, writer);
         return new Fixture(paths, output, database, downloads, files, events, store, service, executor);
     }
@@ -363,8 +370,8 @@ class PdfExportServiceTest {
             DownloadStore downloads,
             DownloadFiles files,
             EventHub events,
-            PdfExportStore store,
-            PdfExportService service,
+            ExportStore store,
+            ExportService service,
             ExecutorService executor
     ) implements AutoCloseable {
         void addDownload(String albumId, String chapterId, int pageCount) throws Exception {
@@ -390,37 +397,37 @@ class PdfExportServiceTest {
             downloads.complete(taskId, pageCount, 1, totalSize, System.currentTimeMillis());
         }
 
-        PdfExportTaskRequest task(
+        ExportTaskRequest task(
                 String chapterId,
                 String targetName,
                 int splitPages,
                 boolean allowOverwrite
         ) {
-            return new PdfExportTaskRequest(
-                    "chapter", "album-1", "Album", "", "Alice", false,
+            return new ExportTaskRequest(
+                    "pdf", "chapter", "album-1", "Album", "", "Alice", false,
                     chapterId, "Chapter", null,
-                    new PdfExportTargetRequest(FileReferences.folderRef(output), targetName),
+                    new ExportTargetRequest(FileReferences.folderRef(output), targetName),
                     output.resolve(targetName).toString(), true, 1D, splitPages, allowOverwrite);
         }
 
-        PdfExportTaskRequest mergedTask(String targetName) {
-            return new PdfExportTaskRequest(
-                    "merged", "album-1", "Album", "", "Alice", false,
+        ExportTaskRequest mergedTask(String targetName) {
+            return new ExportTaskRequest(
+                    "pdf", "merged", "album-1", "Album", "", "Alice", false,
                     null, "Album", List.of(
-                    new io.github.jukomu.desktop.feature.pdf.model.PdfExportChapterRequest(
+                    new io.github.jukomu.desktop.feature.pdf.model.ExportTaskChapterRequest(
                             "album-1", "chapter-1", "Chapter 1", 1),
-                    new io.github.jukomu.desktop.feature.pdf.model.PdfExportChapterRequest(
+                    new io.github.jukomu.desktop.feature.pdf.model.ExportTaskChapterRequest(
                             "album-1", "chapter-2", "Chapter 2", 2)),
-                    new PdfExportTargetRequest(FileReferences.folderRef(output), targetName),
+                    new ExportTargetRequest(FileReferences.folderRef(output), targetName),
                     output.resolve(targetName).toString(), true, 1D, 0, false);
         }
 
-        PdfExportTaskResponse awaitTerminal(String exportId) throws Exception {
+        ExportTaskResponse awaitTerminal(String exportId) throws Exception {
             long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-            PdfExportTaskResponse current;
+            ExportTaskResponse current;
             do {
                 current = service.getTask(exportId);
-                if (PdfExportStore.isTerminal(current.status())) return current;
+                if (ExportStore.isTerminal(current.status())) return current;
                 Thread.sleep(10);
             } while (System.nanoTime() < deadline);
             throw new AssertionError("PDF 导出任务未结束: " + current.status());

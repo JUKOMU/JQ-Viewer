@@ -7,14 +7,14 @@ const mocks = vi.hoisted(() => ({
   ionViewWillEnter: undefined as (() => void) | undefined,
   refreshPdf: vi.fn(),
   getDownloadTasks: vi.fn(),
-  getPdfManagementState: vi.fn(),
+  getLocalFileManagementState: vi.fn(),
   consumeLaunchRoute: vi.fn(),
   addLaunchRouteListener: vi.fn(),
   addDownloadProgressListener: vi.fn(),
   addStateInvalidatedListener: vi.fn(),
   checkFilesExist: vi.fn(),
   checkNotificationPermission: vi.fn(),
-  exportPdfBatch: vi.fn(),
+  exportBatch: vi.fn(),
   createAppAlert: vi.fn(),
   buildExportPlan: vi.fn(),
   showToast: vi.fn(),
@@ -78,21 +78,21 @@ vi.mock('vue-router', () => ({
 vi.mock('@/services/JmcomicService', () => ({
   JmcomicService: {
     getDownloadTasks: mocks.getDownloadTasks,
-    getPdfManagementState: mocks.getPdfManagementState,
+    getLocalFileManagementState: mocks.getLocalFileManagementState,
     consumeLaunchRoute: mocks.consumeLaunchRoute,
     addLaunchRouteListener: mocks.addLaunchRouteListener,
     addDownloadProgressListener: mocks.addDownloadProgressListener,
     addStateInvalidatedListener: mocks.addStateInvalidatedListener,
     checkFilesExist: mocks.checkFilesExist,
     checkNotificationPermission: mocks.checkNotificationPermission,
-    exportPdfBatch: mocks.exportPdfBatch,
+    exportBatch: mocks.exportBatch,
   },
   sanitizeError: (_error: unknown, fallback: string) => fallback,
   showToast: mocks.showToast,
 }))
 
-vi.mock('@/services/PdfExportService', () => ({
-  PdfExportService: {
+vi.mock('@/services/ExportService', () => ({
+  ExportService: {
     buildExportPlan: mocks.buildExportPlan,
     getExportPath: () => '/pdf',
     getExportFolder: () => ({ folderRef: 'folder:path:/pdf', displayPath: '/pdf' }),
@@ -110,9 +110,9 @@ vi.mock('@/services/OfflineDownloadService', () => ({
   },
 }))
 
-vi.mock('@/components/download/PdfManagementView.vue', () => ({
+vi.mock('@/components/download/LocalFileManagementView.vue', () => ({
   default: defineComponent({
-    name: 'PdfManagementView',
+    name: 'LocalFileManagementView',
     setup(_, { expose }) {
       mocks.pdfMountCount++
       expose({ refresh: mocks.refreshPdf })
@@ -145,7 +145,7 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
     mocks.stateInvalidatedHandler = undefined
     mocks.route.query = { view: 'pdf' }
     mocks.getDownloadTasks.mockResolvedValue({ tasks: [], usedBytes: 0, availableBytes: 0 })
-    mocks.getPdfManagementState.mockResolvedValue({ recoveryState: 'ready' })
+    mocks.getLocalFileManagementState.mockResolvedValue({ recoveryState: 'ready' })
     mocks.consumeLaunchRoute.mockResolvedValue({})
     mocks.addLaunchRouteListener.mockResolvedValue({ remove: vi.fn() })
     mocks.addDownloadProgressListener.mockImplementation(async (handler: (event: any) => void) => {
@@ -267,7 +267,7 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
       tone: 'danger',
     },
   ])('按原生接受结果显示导出提示: $message', async ({ results, message, tone }) => {
-    mocks.exportPdfBatch.mockResolvedValueOnce({ tasks: results })
+    mocks.exportBatch.mockResolvedValueOnce({ tasks: results })
     const wrapper = mount(DownloadPage)
     await flushPromises()
 
@@ -299,7 +299,7 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
       tasks: [firstTask, conflictTask],
       outputDisplayPaths: [firstTask.displayPath, conflictTask.displayPath],
     })
-    mocks.exportPdfBatch
+    mocks.exportBatch
       .mockResolvedValueOnce({
         tasks: [
           { accepted: true },
@@ -333,12 +333,12 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
     await flushPromises()
 
     expect(mocks.createAppAlert).toHaveBeenCalledOnce()
-    expect(mocks.exportPdfBatch).toHaveBeenCalledTimes(2)
-    expect(mocks.exportPdfBatch.mock.calls[0][0]).toEqual([
+    expect(mocks.exportBatch).toHaveBeenCalledTimes(2)
+    expect(mocks.exportBatch.mock.calls[0][0]).toEqual([
       expect.objectContaining({ allowOverwrite: false }),
       expect.objectContaining({ allowOverwrite: false }),
     ])
-    expect(mocks.exportPdfBatch.mock.calls[1][0]).toEqual([
+    expect(mocks.exportBatch.mock.calls[1][0]).toEqual([
       expect.objectContaining({ displayPath: conflictTask.displayPath, allowOverwrite: true }),
     ])
     expect(mocks.showToast).toHaveBeenCalledWith('PDF导出已开始，请查看通知', 'success')
@@ -351,7 +351,7 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
       tasks: [task],
       outputDisplayPaths: [task.displayPath],
     })
-    mocks.exportPdfBatch.mockResolvedValueOnce({
+    mocks.exportBatch.mockResolvedValueOnce({
       tasks: [{
         accepted: false,
         errorCode: 'PDF_OUTPUT_EXISTS',
@@ -373,7 +373,7 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
     await flushPromises()
 
     expect(mocks.createAppAlert).toHaveBeenCalledOnce()
-    expect(mocks.exportPdfBatch).toHaveBeenCalledOnce()
+    expect(mocks.exportBatch).toHaveBeenCalledOnce()
     expect(mocks.showToast).toHaveBeenCalledWith('检测到已有同名 PDF，已取消覆盖', 'medium')
     wrapper.unmount()
   })
@@ -390,7 +390,7 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
         rejectedTask.displayPath,
       ],
     })
-    mocks.exportPdfBatch.mockResolvedValueOnce({
+    mocks.exportBatch.mockResolvedValueOnce({
       tasks: [
         { accepted: true },
         {
@@ -421,7 +421,7 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
     })
     await flushPromises()
 
-    expect(mocks.exportPdfBatch).toHaveBeenCalledOnce()
+    expect(mocks.exportBatch).toHaveBeenCalledOnce()
     expect(mocks.showToast).toHaveBeenCalledWith(
       '已开始 1 个，1 个已取消覆盖，另有 1 个失败',
       'medium',

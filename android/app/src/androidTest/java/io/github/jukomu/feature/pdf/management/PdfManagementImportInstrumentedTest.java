@@ -6,7 +6,7 @@ import android.database.sqlite.SQLiteException;
 import android.graphics.pdf.PdfDocument;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
-import io.github.jukomu.feature.pdf.data.PdfStore;
+import io.github.jukomu.feature.pdf.data.LocalFileStore;
 import io.github.jukomu.feature.pdf.data.PdfRef;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -33,15 +33,15 @@ public class PdfManagementImportInstrumentedTest {
     @Before
     public void setUp() {
         context = InstrumentationRegistry.getInstrumentation().getTargetContext();
-        PdfManagementService.clearInstanceForTest();
-        PdfStore.clearInstanceForTest();
+        LocalFileManagementService.clearInstanceForTest();
+        LocalFileStore.clearInstanceForTest();
         context.deleteDatabase(DB_NAME);
     }
 
     @After
     public void tearDown() {
-        PdfManagementService.clearInstanceForTest();
-        PdfStore.clearInstanceForTest();
+        LocalFileManagementService.clearInstanceForTest();
+        LocalFileStore.clearInstanceForTest();
         context.deleteDatabase(DB_NAME);
         for (File file : createdFiles) file.delete();
         createdFiles.clear();
@@ -51,24 +51,24 @@ public class PdfManagementImportInstrumentedTest {
     public void sameLocatorIsIdempotentButSameContentAtAnotherPathCanBeImported() throws Exception {
         File first = createPdf("first.pdf");
         File second = createPdf("second.pdf");
-        PdfManagementService service = PdfManagementService.getInstance(context);
+        LocalFileManagementService service = LocalFileManagementService.getInstance(context);
 
-        JSONObject imported = service.importPdf(item(first));
-        JSONObject duplicateLocator = service.importPdf(item(first));
-        JSONObject secondPath = service.importPdf(item(second));
+        JSONObject imported = service.importLocalFile(item(first));
+        JSONObject duplicateLocator = service.importLocalFile(item(first));
+        JSONObject secondPath = service.importLocalFile(item(second));
 
         assertEquals("imported", imported.getString("result"));
         assertEquals("already_managed", duplicateLocator.getString("result"));
         assertEquals("imported", secondPath.getString("result"));
-        assertEquals(2L, PdfStore.getInstance(context).countFiles());
+        assertEquals(2L, LocalFileStore.getInstance(context).countFiles());
     }
 
     @Test
     public void inspectRefreshesCurrentInformationAndPhysicalDeleteRemovesFileAndRecord()
         throws Exception {
         File pdf = createPdf("delete-me.pdf");
-        PdfManagementService service = PdfManagementService.getInstance(context);
-        long id = service.importPdf(item(pdf)).getLong("id");
+        LocalFileManagementService service = LocalFileManagementService.getInstance(context);
+        long id = service.importLocalFile(item(pdf)).getLong("id");
 
         JSONObject inspected = service.inspectFileForDeletion(id);
         assertEquals(PdfRef.createPathFileRef(pdf.getCanonicalPath()), inspected.getString("fileRef"));
@@ -78,27 +78,27 @@ public class PdfManagementImportInstrumentedTest {
         JSONObject deleted = service.deleteFile(id);
         assertEquals("deleted", deleted.getString("result"));
         assertTrue(!pdf.exists());
-        assertNull(PdfStore.getInstance(context).getFile(id));
+        assertNull(LocalFileStore.getInstance(context).getFile(id));
     }
 
     @Test
     public void missingFileDeletionRemovesOnlyTheRecord() throws Exception {
         File pdf = createPdf("missing.pdf");
-        PdfManagementService service = PdfManagementService.getInstance(context);
-        long id = service.importPdf(item(pdf)).getLong("id");
+        LocalFileManagementService service = LocalFileManagementService.getInstance(context);
+        long id = service.importLocalFile(item(pdf)).getLong("id");
         assertTrue(pdf.delete());
 
         JSONObject result = service.deleteFile(id);
 
         assertEquals("already_missing", result.getString("result"));
-        assertNull(PdfStore.getInstance(context).getFile(id));
+        assertNull(LocalFileStore.getInstance(context).getFile(id));
     }
 
     @Test
     public void explicitValidationMarksCorruptFileWithoutRemovingRecord() throws Exception {
         File pdf = createPdf("corrupt.pdf");
-        PdfManagementService service = PdfManagementService.getInstance(context);
-        long id = service.importPdf(item(pdf)).getLong("id");
+        LocalFileManagementService service = LocalFileManagementService.getInstance(context);
+        long id = service.importLocalFile(item(pdf)).getLong("id");
         try (FileOutputStream output = new FileOutputStream(pdf, false)) {
             output.write(new byte[]{1, 2, 3});
         }
@@ -107,19 +107,19 @@ public class PdfManagementImportInstrumentedTest {
 
         assertEquals("invalid", verified.getString("availability"));
         assertEquals("corrupt", verified.getString("verificationStatus"));
-        assertNotNull(PdfStore.getInstance(context).getFile(id));
+        assertNotNull(LocalFileStore.getInstance(context).getFile(id));
     }
 
     @Test
     public void refreshPropagatesPersistenceFailuresInsteadOfReturningStaleState()
         throws Exception {
         File pdf = createPdf("refresh-failure.pdf");
-        PdfManagementService service = PdfManagementService.getInstance(context);
-        PdfStore store = PdfStore.getInstance(context);
-        long id = service.importPdf(item(pdf)).getLong("id");
+        LocalFileManagementService service = LocalFileManagementService.getInstance(context);
+        LocalFileStore store = LocalFileStore.getInstance(context);
+        long id = service.importLocalFile(item(pdf)).getLong("id");
         SQLiteDatabase database = store.getWritableDatabase();
         database.execSQL("CREATE TRIGGER fail_pdf_refresh_for_test "
-            + "BEFORE UPDATE ON pdf_files BEGIN "
+            + "BEFORE UPDATE ON local_files BEGIN "
             + "SELECT RAISE(ABORT, 'forced refresh failure'); END");
         try {
             service.refreshFileAvailability(new JSONArray().put(id));

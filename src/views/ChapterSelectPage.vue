@@ -32,7 +32,7 @@
               <span v-if="ch.totalPages > 0" class="chapter-pages">{{ ch.totalPages }} 页</span>
               <span class="source-row">
                 <span v-if="ch.downloadTask" class="source-chip image">图片</span>
-                <span v-if="ch.pdfData" class="source-chip pdf">PDF</span>
+                <span v-if="ch.localFileData" class="source-chip pdf">PDF</span>
               </span>
               <img v-if="chapterCover(ch)" :src="chapterCover(ch)!" class="chapter-thumb" alt="" />
             </button>
@@ -65,7 +65,9 @@
                 <span v-if="downloadedMap.get(meta.id)?.downloadTask" class="source-chip image"
                   >图片</span
                 >
-                <span v-if="downloadedMap.get(meta.id)?.pdfData" class="source-chip pdf">PDF</span>
+                <span v-if="downloadedMap.get(meta.id)?.localFileData" class="source-chip pdf"
+                  >PDF</span
+                >
               </span>
               <img
                 v-if="downloadedIds.has(meta.id) && getDownloadedCover(meta.id)"
@@ -97,7 +99,7 @@ import {
   IonToolbar,
 } from '@ionic/vue'
 import { getImageUrl, JmcomicService } from '@/services/JmcomicService'
-import type { ImportedPdf, PhotoMeta } from '@/services/JmcomicTypes'
+import type { LocalFileRecord, PhotoMeta } from '@/services/JmcomicTypes'
 import { arrowBack } from 'ionicons/icons'
 
 defineOptions({ name: 'ChapterSelectPage' })
@@ -123,7 +125,7 @@ interface LocalChapter {
   downloadTask?: {
     firstImageSortOrder?: number
   }
-  pdfData?: ImportedPdf
+  localFileData?: LocalFileRecord
 }
 
 // 已下载/已导入章节
@@ -159,7 +161,7 @@ const chapterCover = (ch: LocalChapter): string | null => {
   if (ch.downloadTask?.firstImageSortOrder) {
     return getImageUrl(ch.chapterId, ch.downloadTask.firstImageSortOrder, 'thumb')
   }
-  return ch.coverUrl || ch.pdfData?.coverUrl || null
+  return ch.coverUrl || ch.localFileData?.coverUrl || null
 }
 
 const toggleMode = async () => {
@@ -195,16 +197,16 @@ const openLocalChapter = (ch: LocalChapter) => {
     return
   }
 
-  if (ch.pdfData?.fileRef) {
+  if (ch.localFileData?.fileRef) {
     void router.push({
       path: '/pdf-reader',
       query: {
-        fileRef: String(ch.pdfData.fileRef),
-        title: ch.pdfData.fileName,
+        fileRef: String(ch.localFileData.fileRef),
+        title: ch.localFileData.fileName,
         albumId: ch.albumId,
         albumTitle: ch.albumTitle,
-        authors: ch.pdfData.authors,
-        coverUrl: ch.pdfData.coverUrl || ch.coverUrl,
+        authors: ch.localFileData.authors,
+        coverUrl: ch.localFileData.coverUrl || ch.coverUrl,
         chapterId: ch.chapterId,
         chapterTitle: ch.chapterId,
       },
@@ -239,7 +241,7 @@ onMounted(async () => {
   const localChapters = new Map<string, LocalChapter>()
   let albumMetas: PhotoMeta[] = []
 
-  const resolvePdfLocalKey = (pdf: ImportedPdf): string => {
+  const resolvePdfLocalKey = (pdf: LocalFileRecord): string => {
     const exact = albumMetas.find((meta) => meta.id === pdf.chapterId)
     if (exact) return exact.id
 
@@ -303,13 +305,13 @@ onMounted(async () => {
   }
 
   try {
-    const pdfResult = await JmcomicService.getImportedPdfs()
-    for (const p of pdfResult.pdfs.filter((p) => p.albumId === albumId.value)) {
+    const pdfResult = await JmcomicService.getImportedLocalFiles()
+    for (const p of pdfResult.files.filter((p) => p.albumId === albumId.value)) {
       const chapterId = resolvePdfLocalKey(p)
       const current = localChapters.get(chapterId)
       if (current) {
         const meta = findAlbumMeta(chapterId, p.chapterSortOrder)
-        current.pdfData = p
+        current.localFileData = p
         current.coverUrl ||= p.coverUrl
         current.chapterTitle = meta?.title || current.chapterTitle
         current.chapterSortOrder = meta?.sortOrder ?? current.chapterSortOrder
@@ -329,7 +331,7 @@ onMounted(async () => {
           chapterSortOrder: meta?.sortOrder ?? p.chapterSortOrder ?? 0,
           totalPages: p.pageCount ?? 0,
           coverUrl: p.coverUrl,
-          pdfData: p,
+          localFileData: p,
         })
       }
     }

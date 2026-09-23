@@ -16,22 +16,23 @@ import type {
   HistoryPageResult,
   ImageInfo,
   ImageCacheEntry,
-  ImportedPdf,
-  ImportPdfItem,
-  ImportPdfsResult,
+  LocalFileRecord,
+  ImportLocalFileItem,
+  ImportLocalFilesResult,
   LatencyResult,
   NetworkProbeEvent,
   OfflineFavoritesResult,
   OfflineFolderInfo,
   ParseHistoryItem,
-  PdfExportTask,
-  PdfExportProgressEvent,
-  PdfExportStatus,
-  PdfExportTaskRecord,
-  PdfExportSubmissionTaskResult,
-  PdfManagementState,
-  PdfStorageDeleteResult,
-  PdfScanItem,
+  ExportTask,
+  ExportFormat,
+  ExportProgressEvent,
+  ExportStatus,
+  ExportTaskRecord,
+  ExportSubmissionTaskResult,
+  LocalFileManagementState,
+  LocalFileStorageDeleteResult,
+  LocalFileScanItem,
   PhotoDetail,
   PreloadResult,
   RelocationProgress,
@@ -57,38 +58,38 @@ export interface JmcomicListenerHandle {
 }
 
 /** Android Plugin 的原生 DTO；文件位置只以 opaque ref 传输。 */
-export type AndroidPdfExportTask = Omit<PdfExportTask, 'target' | 'displayPath'> & {
+export type AndroidExportTask = Omit<ExportTask, 'target' | 'displayPath'> & {
   targetFolderRef: string
   targetName: string
   displayPath: string
 }
-export type AndroidPdfExportTaskRecord = Omit<PdfExportTaskRecord, 'outputFile' | 'displayPath'> & {
+export type AndroidExportTaskRecord = Omit<ExportTaskRecord, 'outputFile' | 'displayPath'> & {
   targetFolderRef: string
   targetName: string
   outputFileRef?: string
   displayPath?: string
 }
-export type AndroidPdfExportSubmissionTaskResult = Partial<AndroidPdfExportTaskRecord> &
-  Pick<PdfExportSubmissionTaskResult, 'accepted' | 'errorCode' | 'errorMessage'>
-export type AndroidPdfScanItem = Omit<PdfScanItem, 'ref'> & { fileRef: string }
-export type AndroidImportedPdf = Omit<ImportedPdf, 'fileRef' | 'displayPath'> & {
+export type AndroidExportSubmissionTaskResult = Partial<AndroidExportTaskRecord> &
+  Pick<ExportSubmissionTaskResult, 'accepted' | 'errorCode' | 'errorMessage'>
+export type AndroidLocalFileScanItem = Omit<LocalFileScanItem, 'ref'> & { fileRef: string }
+export type AndroidLocalFileRecord = Omit<LocalFileRecord, 'fileRef' | 'displayPath'> & {
   fileRef: string
   displayPath: string
 }
-export type AndroidPdfStorageDeleteResult = Omit<PdfStorageDeleteResult, 'file'> & {
+export type AndroidLocalFileStorageDeleteResult = Omit<LocalFileStorageDeleteResult, 'file'> & {
   fileRef: string
   displayPath: string
   fileName: string
 }
-export type AndroidImportPdfItem = Omit<ImportPdfItem, 'fileRef' | 'displayPath'> & {
+export type AndroidImportLocalFileItem = Omit<ImportLocalFileItem, 'fileRef' | 'displayPath'> & {
   fileRef: string
   displayPath: string
 }
-export type AndroidPdfExportBatchResult = {
-  tasks: AndroidPdfExportSubmissionTaskResult[]
+export type AndroidExportBatchResult = {
+  tasks: AndroidExportSubmissionTaskResult[]
 }
-export type AndroidImportedPdfsResult = { pdfs: AndroidImportedPdf[] }
-export type AndroidImportPdfsResult = Omit<ImportPdfsResult, 'results'> & {
+export type AndroidImportedLocalFilesResult = { files: AndroidLocalFileRecord[] }
+export type AndroidImportLocalFilesResult = Omit<ImportLocalFilesResult, 'results'> & {
   results?: Array<{
     result: string
     fileRef?: string
@@ -340,7 +341,7 @@ export interface JmcomicClient {
 
   pickImageAndOcr(): Promise<{ text: string; error?: string }>
 
-  exportPdfBatch(options: { tasks: AndroidPdfExportTask[] }): Promise<AndroidPdfExportBatchResult>
+  exportBatch(options: { tasks: AndroidExportTask[] }): Promise<AndroidExportBatchResult>
 
   pickFolder(): Promise<{
     folderRef: string
@@ -377,62 +378,71 @@ export interface JmcomicClient {
 
   consumeLaunchRoute(): Promise<{ route?: string }>
 
-  scanPdfFiles(options: { folderRef: string }): Promise<{ files: AndroidPdfScanItem[] }>
+  scanImportableFiles(options: {
+    folderRef: string
+    formats: ExportFormat[]
+  }): Promise<{ files: AndroidLocalFileScanItem[] }>
 
-  importPdfs(options: { items: AndroidImportPdfItem[] }): Promise<AndroidImportPdfsResult>
+  importLocalFiles(options: {
+    items: AndroidImportLocalFileItem[]
+  }): Promise<AndroidImportLocalFilesResult>
 
-  getImportedPdfs(): Promise<AndroidImportedPdfsResult>
+  getImportedLocalFiles(): Promise<AndroidImportedLocalFilesResult>
 
-  getPdfFiles(options: {
+  getLocalFiles(options: {
+    format?: ExportFormat
     sourceType?: 'imported' | 'exported'
-    availability?: ImportedPdf['availability'] | 'problem'
+    availability?: LocalFileRecord['availability'] | 'problem'
     folderId?: string
     query?: string
     cursor?: string
     limit: number
-  }): Promise<{ files: AndroidImportedPdf[]; nextCursor?: string }>
+  }): Promise<{ files: AndroidLocalFileRecord[]; nextCursor?: string }>
 
-  refreshPdfFileAvailability(options: { ids: number[] }): Promise<{ files: AndroidImportedPdf[] }>
+  refreshLocalFileAvailability(options: {
+    ids: number[]
+  }): Promise<{ files: AndroidLocalFileRecord[] }>
 
-  inspectPdfFileForDeletion(options: { id: number }): Promise<AndroidImportedPdf>
+  inspectLocalFileForDeletion(options: { id: number }): Promise<AndroidLocalFileRecord>
 
-  verifyPdfFile(options: { id: number }): Promise<AndroidImportedPdf>
+  verifyLocalFile(options: { id: number }): Promise<AndroidLocalFileRecord>
 
-  removePdfFromLibrary(options: { id: number }): Promise<{ success: boolean }>
+  removeLocalFileFromLibrary(options: { id: number }): Promise<{ success: boolean }>
 
-  deletePdfFile(options: { id: number }): Promise<AndroidPdfStorageDeleteResult>
+  deleteLocalFile(options: { id: number }): Promise<AndroidLocalFileStorageDeleteResult>
 
-  getPdfManagementState(): Promise<PdfManagementState>
+  getLocalFileManagementState(): Promise<LocalFileManagementState>
 
-  acknowledgePdfDatabaseReset(): Promise<{ acknowledged: boolean }>
+  acknowledgeLocalFileDatabaseReset(): Promise<{ acknowledged: boolean }>
 
-  getPdfExportTasks(options: {
-    status?: PdfExportStatus
+  getExportTasks(options: {
+    format?: ExportFormat
+    status?: ExportStatus
     cursor?: string
     limit: number
-  }): Promise<{ tasks: AndroidPdfExportTaskRecord[]; nextCursor?: string }>
+  }): Promise<{ tasks: AndroidExportTaskRecord[]; nextCursor?: string }>
 
-  getPdfExportTask(options: { exportId: string }): Promise<AndroidPdfExportTaskRecord>
+  getExportTask(options: { exportId: string }): Promise<AndroidExportTaskRecord>
 
-  cancelPdfExport(options: { exportId: string }): Promise<AndroidPdfExportTaskRecord>
+  cancelExport(options: { exportId: string }): Promise<AndroidExportTaskRecord>
 
-  retryPdfExport(options: {
+  retryExport(options: {
     exportId: string
     allowOverwrite?: boolean
-  }): Promise<AndroidPdfExportTaskRecord>
+  }): Promise<AndroidExportTaskRecord>
 
-  deletePdfExportTask(options: { exportId: string }): Promise<{ success: boolean }>
+  deleteExportTask(options: { exportId: string }): Promise<{ success: boolean }>
 
   updateLocalEpisodeType(options: {
     albumId: string
     isSingleEpisode: boolean
-  }): Promise<{ success: boolean; updatedDownloads: number; updatedPdfs: number }>
+  }): Promise<{ success: boolean; updatedDownloads: number; updatedLocalFiles: number }>
 
-  deleteImportedPdf(options: { id: number }): Promise<{ success: boolean }>
+  deleteImportedLocalFile(options: { id: number }): Promise<{ success: boolean }>
 
-  openPdf(options: { fileRef: string }): Promise<{ success: boolean }>
+  openLocalFile(options: { fileRef: string }): Promise<{ success: boolean }>
 
-  openPdfFolder(options: { fileRef: string }): Promise<{ success: boolean }>
+  openLocalFileFolder(options: { fileRef: string }): Promise<{ success: boolean }>
 
   getPdfInfo(options: { fileRef: string }): Promise<{ pageCount: number }>
 
@@ -459,8 +469,8 @@ export interface JmcomicClient {
   setReaderState(options: { isActive: boolean; isVertical: boolean }): Promise<{ success: boolean }>
 
   addListener(
-    event: 'pdfExportProgress',
-    handler: (data: PdfExportProgressEvent) => void,
+    event: 'exportProgress',
+    handler: (data: ExportProgressEvent) => void,
   ): Promise<JmcomicListenerHandle>
 
   addListener(

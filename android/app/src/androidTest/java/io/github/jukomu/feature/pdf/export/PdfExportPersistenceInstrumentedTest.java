@@ -5,7 +5,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
 import io.github.jukomu.feature.download.data.DownloadStore;
 import io.github.jukomu.feature.download.storage.FileStore;
-import io.github.jukomu.feature.pdf.data.PdfStore;
+import io.github.jukomu.feature.pdf.data.LocalFileStore;
 import io.github.jukomu.feature.pdf.data.PdfRef;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -33,7 +33,7 @@ public class PdfExportPersistenceInstrumentedTest {
     @Before
     public void setUp() throws Exception {
         context = InstrumentationRegistry.getInstrumentation().getTargetContext();
-        PdfStore.clearInstanceForTest();
+        LocalFileStore.clearInstanceForTest();
         context.deleteDatabase(PDF_DATABASE);
         cleanupRecoveryFiles();
         FileStore.getInstance().init(context, DownloadStore.getInstance(context), false);
@@ -42,7 +42,7 @@ public class PdfExportPersistenceInstrumentedTest {
     @After
     public void tearDown() throws Exception {
         if (executor != null) executor.shutdownNow();
-        PdfStore.clearInstanceForTest();
+        LocalFileStore.clearInstanceForTest();
         context.deleteDatabase(PDF_DATABASE);
         cleanupRecoveryFiles();
     }
@@ -50,12 +50,12 @@ public class PdfExportPersistenceInstrumentedTest {
     @Test
     public void preflightRejectedTaskIsPersistedForLaterExplanation() throws Exception {
         executor = Executors.newSingleThreadExecutor();
-        PdfExportService service = new PdfExportService(
+        ExportService service = new ExportService(
             context, executor, (ignoredContext, ignoredSnapshot) -> {
         }, () -> null);
         service.reconcileOnStartup();
 
-        PdfExportService.ExportJob job = new PdfExportService.ExportJob();
+        ExportService.ExportJob job = new ExportService.ExportJob();
         job.mode = "chapter";
         job.albumId = "100000001";
         job.chapterId = "100000002";
@@ -72,7 +72,7 @@ public class PdfExportPersistenceInstrumentedTest {
         assertFalse(result.optBoolean("accepted"));
         assertEquals("failed", result.getString("status"));
 
-        JSONObject task = PdfStore.getInstance(context).getExportTask(
+        JSONObject task = LocalFileStore.getInstance(context).getExportTask(
             result.getString("exportId"));
         assertNotNull(task);
         assertEquals("failed", task.getString("status"));
@@ -82,7 +82,7 @@ public class PdfExportPersistenceInstrumentedTest {
 
     @Test
     public void startupRecoveryInterruptsTaskAndRemovesOnlyTemporaryArtifacts() throws Exception {
-        PdfStore store = PdfStore.getInstance(context);
+        LocalFileStore store = LocalFileStore.getInstance(context);
         File finalFile = new File(context.getCacheDir(), "recovery.pdf");
         File tempFile = PdfBoxExportWriter.getTempFile(finalFile);
         File workDirectory = PdfBoxExportWriter.getWorkDirectory(finalFile);
@@ -116,7 +116,7 @@ public class PdfExportPersistenceInstrumentedTest {
         store.reserveExport(task, new JSONArray(), new JSONArray().put(volume));
 
         executor = Executors.newSingleThreadExecutor();
-        PdfExportService service = new PdfExportService(
+        ExportService service = new ExportService(
             context, executor, (ignoredContext, ignoredSnapshot) -> {
         }, () -> null);
         service.reconcileOnStartup();
@@ -131,7 +131,7 @@ public class PdfExportPersistenceInstrumentedTest {
 
     @Test
     public void startupRecoveryClearsSafStagingWithoutTouchingPathOutput() throws Exception {
-        PdfStore store = PdfStore.getInstance(context);
+        LocalFileStore store = LocalFileStore.getInstance(context);
         File pathOutput = new File(context.getCacheDir(), "path-output-kept.pdf");
         writeByte(pathOutput, 7);
         File staging = new File(context.getCacheDir(), "pdf-export/saf-recovery");
@@ -168,7 +168,7 @@ public class PdfExportPersistenceInstrumentedTest {
         store.reserveExport(task, new JSONArray(), new JSONArray().put(volume));
 
         executor = Executors.newSingleThreadExecutor();
-        PdfExportService service = new PdfExportService(
+        ExportService service = new ExportService(
             context, executor, (ignoredContext, ignoredSnapshot) -> {
         }, () -> null);
         service.reconcileOnStartup();

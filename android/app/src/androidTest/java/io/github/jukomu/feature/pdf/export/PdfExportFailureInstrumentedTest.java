@@ -17,8 +17,8 @@ public class PdfExportFailureInstrumentedTest {
     public void wakeLockRuntimeFailureDegradesAndReleasesPartialAcquisition() {
         FakeWakeLock wakeLock = new FakeWakeLock();
         wakeLock.failAcquire = true;
-        PdfExportService service = service(
-            PdfExportService.createExecutor(),
+        ExportService service = service(
+            ExportService.createExecutor(),
             (context, snapshot) -> {
             },
             () -> wakeLock
@@ -33,8 +33,8 @@ public class PdfExportFailureInstrumentedTest {
 
     @Test
     public void wakeLockCreationRuntimeFailureDegradesWithoutStartingExport() {
-        PdfExportService service = service(
-            PdfExportService.createExecutor(),
+        ExportService service = service(
+            ExportService.createExecutor(),
             (context, snapshot) -> {
             },
             () -> {
@@ -49,8 +49,8 @@ public class PdfExportFailureInstrumentedTest {
     public void wakeLockConfigurationRuntimeFailureDegradesWithoutAcquire() {
         FakeWakeLock wakeLock = new FakeWakeLock();
         wakeLock.failConfiguration = true;
-        PdfExportService service = service(
-            PdfExportService.createExecutor(),
+        ExportService service = service(
+            ExportService.createExecutor(),
             (context, snapshot) -> {
             },
             () -> wakeLock
@@ -62,14 +62,14 @@ public class PdfExportFailureInstrumentedTest {
         assertFalse(wakeLock.releaseCalled);
     }
 
-    private static PdfExportService service(ExecutorService executor,
-                                            PdfExportService.ForegroundPublisher publisher,
-                                            PdfExportService.WakeLockFactory wakeLockFactory) {
+    private static ExportService service(ExecutorService executor,
+                                            ExportService.ForegroundPublisher publisher,
+                                            ExportService.WakeLockFactory wakeLockFactory) {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
-        return new PdfExportService(context, executor, publisher, wakeLockFactory);
+        return new ExportService(context, executor, publisher, wakeLockFactory);
     }
 
-    private static final class FakeWakeLock implements PdfExportService.WakeLockHandle {
+    private static final class FakeWakeLock implements ExportService.WakeLockHandle {
         boolean failAcquire;
         boolean failConfiguration;
         boolean acquireCalled;

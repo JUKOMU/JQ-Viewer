@@ -118,9 +118,9 @@ vi.mock('@/services/ExportFormatService', () => ({
   },
 }))
 
-vi.mock('@/services/PdfExportService', () => ({
-  PDF_SAMPLE_DATA: {},
-  PdfExportService: {
+vi.mock('@/services/ExportService', () => ({
+  EXPORT_SAMPLE_DATA: {},
+  ExportService: {
     getExportPath: vi.fn(() => '/exports/'),
     getDirTemplate: vi.fn(() => '{id}'),
     getNameTemplate: vi.fn(() => '{title}'),

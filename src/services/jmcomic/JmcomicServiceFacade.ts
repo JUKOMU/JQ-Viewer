@@ -6,12 +6,13 @@ import type {
   FavoriteQuery,
   ForumQuery,
   ImageInfo,
-  ImportPdfItem,
+  ImportLocalFileItem,
   NetworkProbeEvent,
-  PdfExportTask,
-  PdfExportProgressEvent,
-  PdfExportStatus,
-  ImportedPdf,
+  ExportTask,
+  ExportFormat,
+  ExportProgressEvent,
+  ExportStatus,
+  LocalFileRecord,
   RelocationProgress,
   SearchQuery,
   SearchResultItem,
@@ -465,109 +466,115 @@ export const JmcomicService = {
 
   // ========== PDF 导出 ==========
 
-  exportPdfBatch(tasks: PdfExportTask[]) {
-    return getRuntime().services.pdf.exportPdfBatch({ tasks })
+  exportBatch(tasks: ExportTask[]) {
+    return getRuntime().services.localFiles.exportBatch({ tasks })
   },
 
-  pickFolder(purpose: 'pdf-root' | 'pdf-export' | 'download' = 'pdf-root') {
+  pickFolder(purpose: 'local-file-root' | 'export' | 'download' = 'local-file-root') {
     return getRuntime().services.files.pickFolder(purpose)
   },
 
   // ========== PDF 导入 ==========
 
-  scanPdfFiles(folder: FolderRef) {
-    return getRuntime().services.files.scanPdfFiles(folder)
+  scanImportableFiles(folder: FolderRef, formats: ExportFormat[] = ['pdf']) {
+    return getRuntime().services.files.scanImportableFiles(folder, formats)
   },
 
-  importPdfs(items: ImportPdfItem[]) {
-    return getRuntime().services.pdf.importPdfs(items)
+  importLocalFiles(items: ImportLocalFileItem[]) {
+    return getRuntime().services.localFiles.importLocalFiles(items)
   },
 
-  getImportedPdfs() {
-    return getRuntime().services.pdf.getImportedPdfs()
+  getImportedLocalFiles() {
+    return getRuntime().services.localFiles.getImportedLocalFiles()
   },
 
-  getPdfFiles(options: {
+  getLocalFiles(options: {
+    format?: ExportFormat
     sourceType?: 'imported' | 'exported'
-    availability?: ImportedPdf['availability'] | 'problem'
+    availability?: LocalFileRecord['availability'] | 'problem'
     folderId?: string
     query?: string
     cursor?: string
     limit: number
   }) {
-    return getRuntime().services.pdf.getPdfFiles(options)
+    return getRuntime().services.localFiles.getLocalFiles(options)
   },
 
-  refreshPdfFileAvailability(ids: number[]) {
-    return getRuntime().services.pdf.refreshPdfFileAvailability(ids)
+  refreshLocalFileAvailability(ids: number[]) {
+    return getRuntime().services.localFiles.refreshLocalFileAvailability(ids)
   },
 
-  inspectPdfFileForDeletion(id: number) {
-    return getRuntime().services.pdf.inspectPdfFileForDeletion(id)
+  inspectLocalFileForDeletion(id: number) {
+    return getRuntime().services.localFiles.inspectLocalFileForDeletion(id)
   },
 
-  verifyPdfFile(id: number) {
-    return getRuntime().services.pdf.verifyPdfFile(id)
+  verifyLocalFile(id: number) {
+    return getRuntime().services.localFiles.verifyLocalFile(id)
   },
 
-  removePdfFromLibrary(id: number) {
-    return getRuntime().services.pdf.removePdfFromLibrary(id)
+  removeLocalFileFromLibrary(id: number) {
+    return getRuntime().services.localFiles.removeLocalFileFromLibrary(id)
   },
 
-  deletePdfFile(id: number) {
-    return getRuntime().services.pdf.deletePdfFile(id)
+  deleteLocalFile(id: number) {
+    return getRuntime().services.localFiles.deleteLocalFile(id)
   },
 
-  getPdfManagementState() {
-    return getRuntime().services.pdf.getPdfManagementState()
+  getLocalFileManagementState() {
+    return getRuntime().services.localFiles.getLocalFileManagementState()
   },
 
-  acknowledgePdfDatabaseReset() {
-    return getRuntime().services.pdf.acknowledgePdfDatabaseReset()
+  acknowledgeLocalFileDatabaseReset() {
+    return getRuntime().services.localFiles.acknowledgeLocalFileDatabaseReset()
   },
 
-  getPdfExportTasks(options: { status?: PdfExportStatus; cursor?: string; limit: number }) {
-    return getRuntime().services.pdf.getPdfExportTasks(options)
+  getExportTasks(options: {
+    format?: ExportFormat
+    status?: ExportStatus
+    cursor?: string
+    limit: number
+  }) {
+    return getRuntime().services.localFiles.getExportTasks(options)
   },
 
-  getPdfExportTask(exportId: string) {
-    return getRuntime().services.pdf.getPdfExportTask(exportId)
+  getExportTask(exportId: string) {
+    return getRuntime().services.localFiles.getExportTask(exportId)
   },
 
-  cancelPdfExport(exportId: string) {
-    return getRuntime().services.pdf.cancelPdfExport(exportId)
+  cancelExport(exportId: string) {
+    return getRuntime().services.localFiles.cancelExport(exportId)
   },
 
-  retryPdfExport(exportId: string, allowOverwrite = false) {
-    return getRuntime().services.pdf.retryPdfExport(exportId, allowOverwrite)
+  retryExport(exportId: string, allowOverwrite = false) {
+    return getRuntime().services.localFiles.retryExport(exportId, allowOverwrite)
   },
 
-  deletePdfExportTask(exportId: string) {
-    return getRuntime().services.pdf.deletePdfExportTask(exportId)
+  deleteExportTask(exportId: string) {
+    return getRuntime().services.localFiles.deleteExportTask(exportId)
   },
 
-  addPdfExportProgressListener(handler: (event: PdfExportProgressEvent) => void) {
-    return getRuntime().services.pdf.onProgress(handler)
+  addExportProgressListener(handler: (event: ExportProgressEvent) => void) {
+    return getRuntime().services.localFiles.onProgress(handler)
   },
 
   updateLocalEpisodeType(albumId: string, isSingleEpisode: boolean) {
-    return getRuntime().services.pdf.updateLocalEpisodeType(albumId, isSingleEpisode)
+    return getRuntime().services.localFiles.updateLocalEpisodeType(albumId, isSingleEpisode)
   },
 
-  deleteImportedPdf(id: number) {
-    return getRuntime().services.pdf.deleteImportedPdf(id)
+  deleteImportedLocalFile(id: number) {
+    return getRuntime().services.localFiles.deleteImportedLocalFile(id)
   },
 
-  openPdf(file: FileRef) {
-    return getRuntime().services.pdf.openPdf(file)
+  openLocalFile(file: FileRef) {
+    return getRuntime().services.localFiles.openLocalFile(file)
   },
 
-  openPdfFolder(file: FileRef) {
-    return getRuntime().services.pdf.openPdfFolder(file)
+  openLocalFileFolder(file: FileRef) {
+    return getRuntime().services.localFiles.openLocalFileFolder(file)
   },
 
   getPdfInfo(file: FileRef) {
-    return getRuntime().services.pdf.getPdfInfo(file)
+    return getRuntime().services.localFiles.getPdfInfo(file)
   },
 
   checkFilesExist(files: FileRef[]) {
@@ -576,7 +583,7 @@ export const JmcomicService = {
 
   getExternalStoragePath() {
     return getRuntime()
-      .services.files.getDefaultFolder('pdf-export')
+      .services.files.getDefaultFolder('export')
       .then((folder) => ({
         folderRef: String(folder.ref),
         displayPath: folder.displayPath,

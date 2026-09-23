@@ -262,7 +262,7 @@ import {
   informationCircleOutline,
   searchOutline,
 } from 'ionicons/icons'
-import { PdfImportService } from '@/services/PdfImportService'
+import { LocalFileImportService } from '@/services/LocalFileImportService'
 import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
 import { OfflineFavoriteService } from '@/services/OfflineFavoriteService'
 import { invalidateFavoritePageCache } from '@/composables/favoritePageCache'
@@ -451,7 +451,7 @@ const hasAnyResolved = computed(() => files.value.some(isImportReady))
 
 // ---- 初始化 ----
 onMounted(async () => {
-  const cached = PdfImportService.getCachedParseResult()
+  const cached = LocalFileImportService.getCachedParseResult()
   if (!cached || cached.files.length === 0) {
     loading.value = false
     await showToast('未接收到扫描数据，请返回重新选择文件夹', 'danger')
@@ -469,7 +469,7 @@ onMounted(async () => {
   }
 
   // 并发获取相册详情（网络失败不阻塞）
-  await PdfImportService.fetchAlbumDetails(files.value)
+  await LocalFileImportService.fetchAlbumDetails(files.value)
   loading.value = false
 })
 
@@ -930,7 +930,7 @@ async function onAddFolder() {
 async function doImport(resolvedFiles: PdfFileParseItem[], folderId?: string) {
   loading.value = true
   try {
-    const result = await PdfImportService.confirmImport(resolvedFiles, folderId)
+    const result = await LocalFileImportService.confirmImport(resolvedFiles, folderId)
     // 同步写入离线收藏夹
     if (folderId) {
       const favItems: SearchResultItem[] = resolvedFiles
@@ -949,7 +949,7 @@ async function doImport(resolvedFiles: PdfFileParseItem[], folderId?: string) {
     if (result.duplicateCount > 0) parts.push(`${result.duplicateCount} 个已存在`)
     if (result.errorCount > 0) parts.push(`${result.errorCount} 个错误`)
     await showToast(parts.join('，'), 'success')
-    PdfImportService.clearCachedParseResult()
+    LocalFileImportService.clearCachedParseResult()
     router.replace('/download')
   } catch (e: any) {
     await showToast(sanitizeError(e, '导入失败'), 'danger')
@@ -962,7 +962,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('pointermove', handleDrawerDrag)
   window.removeEventListener('pointerup', endDrawerDrag)
   window.removeEventListener('pointercancel', endDrawerDrag)
-  PdfImportService.clearCachedParseResult()
+  LocalFileImportService.clearCachedParseResult()
 })
 </script>
 

@@ -219,8 +219,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { IonRange, IonToggle, useBackButton } from '@ionic/vue'
-import type { AlbumDetail, DownloadTask, PdfExportMode } from '@/services/JmcomicTypes'
-import { PdfExportService } from '@/services/PdfExportService'
+import type { AlbumDetail, DownloadTask, ExportMode } from '@/services/JmcomicTypes'
+import { ExportService } from '@/services/ExportService'
 import { JmcomicService, showToast } from '@/services/JmcomicService'
 
 defineOptions({ name: 'PdfExportBottomSheet' })
@@ -235,7 +235,7 @@ const emit = defineEmits<{
   confirm: [
     payload: {
       selectedChapters: DownloadTask[]
-      mode: PdfExportMode
+      mode: ExportMode
       useOriginal: boolean
       compressionRatio: number
       editedPath: string
@@ -245,11 +245,11 @@ const emit = defineEmits<{
 }>()
 
 // ---- 模板变量 ----
-const templateVars = PdfExportService.TEMPLATE_VAR_KEYS
+const templateVars = ExportService.TEMPLATE_VAR_KEYS
 const tagConditionVars = ['{tag=标签名}', '{tag=标签A|标签B}', '{tag=标签A&标签B}']
 
 // 当前选中章节的实际值（用于复制）
-const orderedChapters = computed(() => PdfExportService.normalizePdfChapters(props.chapters))
+const orderedChapters = computed(() => ExportService.normalizeExportChapters(props.chapters))
 const selectedChapters = computed(() =>
   orderedChapters.value.filter((chapter) => selectedIds.value.has(chapter.taskId)),
 )
@@ -261,9 +261,9 @@ const currentTemplateData = computed(() => {
   const chapter = firstSelectedChapter.value
   if (!chapter) return null
   if (mode.value === 'merged' && selectedChapters.value.length >= 2) {
-    return PdfExportService.buildMergedTemplateData(selectedChapters.value, albumDetail.value)
+    return ExportService.buildMergedTemplateData(selectedChapters.value, albumDetail.value)
   }
-  return PdfExportService.buildTemplateData(chapter, albumDetail.value)
+  return ExportService.buildTemplateData(chapter, albumDetail.value)
 })
 
 function chapterOrderLabel(ch: DownloadTask): string {
@@ -276,21 +276,21 @@ const templateValueMap = computed(() => {
   const data = currentTemplateData.value
   if (!data) return {} as Record<string, string>
   const map: Record<string, string> = {}
-  for (const v of PdfExportService.TEMPLATE_VAR_DEFS) {
+  for (const v of ExportService.TEMPLATE_VAR_DEFS) {
     map[v.key] = v.render(data)
   }
   return map
 })
 
-// ---- 设置（双向绑定到 PdfExportService） ----
+// ---- 设置（双向绑定到 ExportService） ----
 const showSettings = ref(false)
-const exportPath = ref(PdfExportService.getExportPath())
-const dirTemplate = ref(PdfExportService.getDirTemplate())
-const nameTemplate = ref(PdfExportService.getNameTemplate())
+const exportPath = ref(ExportService.getExportPath())
+const dirTemplate = ref(ExportService.getDirTemplate())
+const nameTemplate = ref(ExportService.getNameTemplate())
 
 // ---- 导出选项 ----
 const selectedIds = ref(new Set<string>())
-const mode = ref<PdfExportMode>('chapter')
+const mode = ref<ExportMode>('chapter')
 const canMerge = computed(() => selectedIds.value.size >= 2)
 const useOriginal = ref(true)
 const compressionRatio = ref(0.5)
@@ -306,17 +306,17 @@ const templatePath = computed(() => {
   const nameTpl = nameTemplate.value
 
   const data = currentTemplateData.value
-  if (!data) return PdfExportService.previewPath()
+  if (!data) return ExportService.previewPath()
 
-  const dirRendered = PdfExportService.renderTemplate(dirTpl, data)
-  const nameRendered = PdfExportService.renderTemplate(nameTpl, data)
+  const dirRendered = ExportService.renderTemplate(dirTpl, data)
+  const nameRendered = ExportService.renderTemplate(nameTpl, data)
   const baseTrimmed = base.replace(/\/+$/, '')
   const dirSegments = dirRendered
     .split('/')
-    .map((s) => PdfExportService.sanitizeSegment(s))
+    .map((s) => ExportService.sanitizeSegment(s))
     .filter((s) => s.length > 0)
   const dirClean = dirSegments.join('/')
-  const nameClean = PdfExportService.sanitizeSegment(nameRendered)
+  const nameClean = ExportService.sanitizeSegment(nameRendered)
   if (dirClean) {
     return `${baseTrimmed}/${dirClean}/${nameClean}.pdf`
   }
@@ -351,9 +351,9 @@ watch(
       splitEnabled.value = false
       splitPages.value = 100
       showSettings.value = false
-      exportPath.value = PdfExportService.getExportPath()
-      dirTemplate.value = PdfExportService.getDirTemplate()
-      nameTemplate.value = PdfExportService.getNameTemplate()
+      exportPath.value = ExportService.getExportPath()
+      dirTemplate.value = ExportService.getDirTemplate()
+      nameTemplate.value = ExportService.getNameTemplate()
       // 获取本子详情以支持 author/authors/tag 模板变量
       const albumId = props.chapters[0]?.albumId
       if (albumId) {
@@ -376,7 +376,7 @@ watch(
 function onExportPathChange(e: Event) {
   const val = (e.target as HTMLInputElement).value.trim()
   exportPath.value = val
-  PdfExportService.setExportPath(val)
+  ExportService.setExportPath(val)
 }
 
 async function onDirTemplateChange(e: Event) {
@@ -384,7 +384,7 @@ async function onDirTemplateChange(e: Event) {
   const previous = dirTemplate.value
   dirTemplate.value = val
   try {
-    await PdfExportService.setDirTemplate(val)
+    await ExportService.setDirTemplate(val)
   } catch {
     dirTemplate.value = previous
     await showToast('保存目录模板失败', 'danger')
@@ -396,7 +396,7 @@ async function onNameTemplateChange(e: Event) {
   const previous = nameTemplate.value
   nameTemplate.value = val
   try {
-    await PdfExportService.setNameTemplate(val)
+    await ExportService.setNameTemplate(val)
   } catch {
     nameTemplate.value = previous
     await showToast('保存名称模板失败', 'danger')
@@ -405,10 +405,10 @@ async function onNameTemplateChange(e: Event) {
 
 async function onBrowseFolder() {
   try {
-    const result = await JmcomicService.pickFolder('pdf-export')
+    const result = await JmcomicService.pickFolder('export')
     if (result) {
       const path = result.displayPath.endsWith('/') ? result.displayPath : result.displayPath + '/'
-      await PdfExportService.setExportFolder({
+      await ExportService.setExportFolder({
         folderRef: result.ref,
         displayPath: path,
       })

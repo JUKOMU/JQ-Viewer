@@ -6,7 +6,7 @@ import io.github.jukomu.desktop.data.Database;
 import io.github.jukomu.desktop.data.Paths;
 import io.github.jukomu.desktop.feature.download.data.DownloadStore;
 import io.github.jukomu.desktop.feature.download.model.DownloadProgressEvent;
-import io.github.jukomu.desktop.feature.pdf.export.PdfExportStore;
+import io.github.jukomu.desktop.feature.pdf.export.ExportStore;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -24,7 +24,7 @@ class DesktopTaskNotificationServiceTest {
     private Database database;
     private EventHub events;
     private DownloadStore downloads;
-    private PdfExportStore pdfExports;
+    private ExportStore pdfExports;
     private LaunchRouteService launchRoutes;
     private DesktopTaskNotificationService notifications;
 
@@ -37,7 +37,7 @@ class DesktopTaskNotificationServiceTest {
         database.open();
         events = new EventHub(new ObjectMapper());
         downloads = new DownloadStore(database);
-        pdfExports = new PdfExportStore(database);
+        pdfExports = new ExportStore(database);
         launchRoutes = new LaunchRouteService(events);
         notifications = new DesktopTaskNotificationService(
                 downloads, pdfExports, launchRoutes, events);
@@ -73,8 +73,8 @@ class DesktopTaskNotificationServiceTest {
         reservePdf("pdf id/1", "测试导出");
         pdfExports.updateProgress("pdf id/1", "completed", "completed", 8, 8,
                 1, 1, null, null);
-        events.publish("pdfExportProgress", pdfExports.find("pdf id/1"));
-        events.publish("pdfExportProgress", pdfExports.find("pdf id/1"));
+        events.publish("exportProgress", pdfExports.find("pdf id/1"));
+        events.publish("exportProgress", pdfExports.find("pdf id/1"));
 
         assertEquals(2, sink.entries.size());
         assertEquals("PDF 导出完成", sink.entries.get(1).notification().title());
@@ -148,9 +148,10 @@ class DesktopTaskNotificationServiceTest {
     }
 
     private void reservePdf(String exportId, String title) {
-        pdfExports.reserve(new PdfExportStore.ReserveTask(
+        pdfExports.reserve(new ExportStore.ReserveTask(
                 exportId,
                 "batch",
+                "pdf",
                 "chapter",
                 "album",
                 "漫画",

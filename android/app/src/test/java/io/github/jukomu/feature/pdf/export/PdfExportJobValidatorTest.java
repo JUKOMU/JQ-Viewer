@@ -12,7 +12,7 @@ public class PdfExportJobValidatorTest {
 
     @Test
     public void validatesChapterJob() {
-        PdfExportService.ExportJob job = chapterJob("101");
+        ExportService.ExportJob job = chapterJob("101");
 
         PdfExportJobValidator.validate(job);
 
@@ -23,7 +23,7 @@ public class PdfExportJobValidatorTest {
 
     @Test
     public void validatesMergedJobAndBuildsOrderedKeys() {
-        PdfExportService.ExportJob job = mergedJob(
+        ExportService.ExportJob job = mergedJob(
             chapter("100", "102", 2),
             chapter("100", "109", 0),
             chapter("100", "103", 3));
@@ -38,7 +38,7 @@ public class PdfExportJobValidatorTest {
 
     @Test
     public void rejectsMergedJobFromDifferentAlbums() {
-        PdfExportService.ExportJob job = mergedJob(
+        ExportService.ExportJob job = mergedJob(
             chapter("100", "101", 1),
             chapter("200", "102", 2));
 
@@ -50,7 +50,7 @@ public class PdfExportJobValidatorTest {
 
     @Test
     public void rejectsDuplicateMergedChapter() {
-        PdfExportService.ExportJob job = mergedJob(
+        ExportService.ExportJob job = mergedJob(
             chapter("100", "101", 1),
             chapter("100", "101", 1));
 
@@ -62,7 +62,7 @@ public class PdfExportJobValidatorTest {
 
     @Test
     public void rejectsOutOfOrderPositiveSortValues() {
-        PdfExportService.ExportJob job = mergedJob(
+        ExportService.ExportJob job = mergedJob(
             chapter("100", "103", 3),
             chapter("100", "109", 0),
             chapter("100", "102", 2));
@@ -75,7 +75,7 @@ public class PdfExportJobValidatorTest {
 
     @Test
     public void rejectsMergedJobWithOnlyOneChapter() {
-        PdfExportService.ExportJob job = mergedJob(chapter("100", "101", 1));
+        ExportService.ExportJob job = mergedJob(chapter("100", "101", 1));
 
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
             () -> PdfExportJobValidator.validate(job));
@@ -88,7 +88,7 @@ public class PdfExportJobValidatorTest {
         String[] invalidIds = {"../1", "1/2", "1\\2", "/1", " 1", "1 ", "album-1"};
 
         for (String invalidId : invalidIds) {
-            PdfExportService.ExportJob job = chapterJob("101");
+            ExportService.ExportJob job = chapterJob("101");
             job.albumId = invalidId;
             assertThrows(IllegalArgumentException.class,
                 () -> PdfExportJobValidator.validate(job));
@@ -97,7 +97,7 @@ public class PdfExportJobValidatorTest {
 
     @Test
     public void rejectsUnsafeMergedChapterId() {
-        PdfExportService.ExportJob job = mergedJob(
+        ExportService.ExportJob job = mergedJob(
             chapter("100", "101", 1),
             chapter("100", "../102", 2));
 
@@ -107,7 +107,7 @@ public class PdfExportJobValidatorTest {
 
     @Test
     public void rejectsFileReferenceAsExportFolder() throws Exception {
-        PdfExportService.ExportJob job = chapterJob("101");
+        ExportService.ExportJob job = chapterJob("101");
         job.targetFolderRef = PdfRef.createPathFileRef("/exports/book.pdf");
 
         assertThrows(IllegalArgumentException.class,
@@ -116,7 +116,7 @@ public class PdfExportJobValidatorTest {
 
     @Test
     public void rejectsInvalidFolderReference() {
-        PdfExportService.ExportJob job = chapterJob("101");
+        ExportService.ExportJob job = chapterJob("101");
         job.targetFolderRef = "folder:path:relative/exports";
 
         assertThrows(IllegalArgumentException.class,
@@ -137,7 +137,7 @@ public class PdfExportJobValidatorTest {
         };
 
         for (String invalidName : invalidNames) {
-            PdfExportService.ExportJob job = chapterJob("101");
+            ExportService.ExportJob job = chapterJob("101");
             job.targetName = invalidName;
             assertThrows(IllegalArgumentException.class,
                 () -> PdfExportJobValidator.validate(job));
@@ -146,7 +146,7 @@ public class PdfExportJobValidatorTest {
 
     @Test
     public void preservesLegalNestedTargetName() {
-        PdfExportService.ExportJob job = chapterJob("101");
+        ExportService.ExportJob job = chapterJob("101");
         job.targetName = "295852/book.pdf";
 
         PdfExportJobValidator.validate(job);
@@ -154,8 +154,8 @@ public class PdfExportJobValidatorTest {
         assertEquals("295852/book.pdf", job.targetName);
     }
 
-    private static PdfExportService.ExportJob chapterJob(String chapterId) {
-        PdfExportService.ExportJob job = new PdfExportService.ExportJob();
+    private static ExportService.ExportJob chapterJob(String chapterId) {
+        ExportService.ExportJob job = new ExportService.ExportJob();
         job.mode = "chapter";
         job.albumId = "100";
         job.chapterId = chapterId;
@@ -166,8 +166,8 @@ public class PdfExportJobValidatorTest {
         return job;
     }
 
-    private static PdfExportService.ExportJob mergedJob(PdfExportService.ExportChapter... chapters) {
-        PdfExportService.ExportJob job = new PdfExportService.ExportJob();
+    private static ExportService.ExportJob mergedJob(ExportService.ExportChapter... chapters) {
+        ExportService.ExportJob job = new ExportService.ExportJob();
         job.mode = "merged";
         job.albumId = "100";
         job.chapterTitle = "merged";
@@ -178,9 +178,9 @@ public class PdfExportJobValidatorTest {
         return job;
     }
 
-    private static PdfExportService.ExportChapter chapter(
+    private static ExportService.ExportChapter chapter(
         String albumId, String chapterId, int sortOrder) {
-        PdfExportService.ExportChapter chapter = new PdfExportService.ExportChapter();
+        ExportService.ExportChapter chapter = new ExportService.ExportChapter();
         chapter.albumId = albumId;
         chapter.chapterId = chapterId;
         chapter.chapterTitle = chapterId;

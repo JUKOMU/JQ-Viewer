@@ -2,11 +2,11 @@ import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import PdfExportBottomSheet from '@/components/download/PdfExportBottomSheet.vue'
 import { JmcomicService } from '@/services/JmcomicService'
-import type { DownloadTask, PdfExportMode } from '@/services/JmcomicTypes'
+import type { DownloadTask, ExportMode } from '@/services/JmcomicTypes'
 
 type ConfirmPayload = {
   selectedChapters: DownloadTask[]
-  mode: PdfExportMode
+  mode: ExportMode
   useOriginal: boolean
   compressionRatio: number
   editedPath: string

@@ -197,7 +197,7 @@ public class PdfExportForegroundService extends Service {
             displayedSessionId = snapshot.sessionId;
             displayedPhase = snapshot.phase;
         } catch (Exception e) {
-            Log.w(TAG, "启动 PDF 前台通知失败，导出任务继续由 PdfExportService 推进", e);
+            Log.w(TAG, "启动 PDF 前台通知失败，导出任务继续由 ExportService 推进", e);
             stopSelf();
         }
     }

@@ -4,6 +4,6 @@ package io.github.jukomu.desktop.feature.pdf.model;
 public record UpdateLocalEpisodeTypeResponse(
         boolean success,
         int updatedDownloads,
-        int updatedPdfs
+        int updatedLocalFiles
 ) {
 }

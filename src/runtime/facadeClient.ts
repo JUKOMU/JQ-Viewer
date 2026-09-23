@@ -47,9 +47,9 @@ function createListener(runtime: FrontendRuntime, event: string, handler: unknow
       return runtime.events.onUpdateProgress(
         handler as Parameters<typeof runtime.events.onUpdateProgress>[0],
       )
-    case 'pdfExportProgress':
-      return runtime.events.onPdfExportProgress(
-        handler as Parameters<typeof runtime.events.onPdfExportProgress>[0],
+    case 'exportProgress':
+      return runtime.events.onExportProgress(
+        handler as Parameters<typeof runtime.events.onExportProgress>[0],
       )
     case 'volumeKey':
       return runtime.events.onVolumeKey(handler as Parameters<typeof runtime.events.onVolumeKey>[0])
@@ -80,7 +80,7 @@ export function createFacadeClient(runtime: FrontendRuntime): JmcomicClient {
 
   const client = {
     ...runtime.backend,
-    ...runtime.services.pdf,
+    ...runtime.services.localFiles,
 
     setDownloadPublic: (options: Parameters<JmcomicClient['setDownloadPublic']>[0]) =>
       storage().setPublic(options.open),
@@ -91,7 +91,7 @@ export function createFacadeClient(runtime: FrontendRuntime): JmcomicClient {
     pickImageAndOcr: () => ocr().pickImageAndOcr(),
 
     pickFolder: async () => {
-      const folder = await runtime.services.files.pickFolder('pdf-root')
+      const folder = await runtime.services.files.pickFolder('local-file-root')
       if (!folder) return { folderRef: '', displayPath: '', provider: 'path', cancelled: true }
       const ref = String(folder.ref)
       return {
@@ -114,9 +114,9 @@ export function createFacadeClient(runtime: FrontendRuntime): JmcomicClient {
         provider: ref.startsWith('folder:saf:') ? 'saf' : 'path',
       }
     },
-    openPdf: (options: Parameters<JmcomicClient['openPdf']>[0]) =>
+    openLocalFile: (options: Parameters<JmcomicClient['openLocalFile']>[0]) =>
       runtime.services.files.openFile(asFileRef(options.fileRef)).then(() => ({ success: true })),
-    openPdfFolder: (options: Parameters<JmcomicClient['openPdfFolder']>[0]) =>
+    openLocalFileFolder: (options: Parameters<JmcomicClient['openLocalFileFolder']>[0]) =>
       runtime.services.files
         .openContainingFolder(asFileRef(options.fileRef))
         .then(() => ({ success: true })),

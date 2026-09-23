@@ -5,8 +5,8 @@ import io.github.jukomu.desktop.feature.download.DownloadService;
 import io.github.jukomu.desktop.feature.download.data.DownloadStore;
 import io.github.jukomu.desktop.feature.download.data.StoredDownloadTask;
 import io.github.jukomu.desktop.feature.download.model.DownloadProgressEvent;
-import io.github.jukomu.desktop.feature.pdf.export.PdfExportStore;
-import io.github.jukomu.desktop.feature.pdf.model.PdfExportTaskResponse;
+import io.github.jukomu.desktop.feature.pdf.export.ExportStore;
+import io.github.jukomu.desktop.feature.pdf.model.ExportTaskResponse;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /** 从持久化任务快照生成 Desktop 终态系统通知。 */
 public final class DesktopTaskNotificationService implements AutoCloseable {
     private final DownloadStore downloads;
-    private final PdfExportStore pdfExports;
+    private final ExportStore pdfExports;
     private final LaunchRouteService launchRoutes;
     private final EventHub events;
     private final Map<String, String> fingerprints = new LinkedHashMap<>();
@@ -32,7 +32,7 @@ public final class DesktopTaskNotificationService implements AutoCloseable {
 
     public DesktopTaskNotificationService(
             DownloadStore downloads,
-            PdfExportStore pdfExports,
+            ExportStore pdfExports,
             LaunchRouteService launchRoutes,
             EventHub events
     ) {
@@ -48,8 +48,8 @@ public final class DesktopTaskNotificationService implements AutoCloseable {
         downloadEvents = events.subscribe("downloadProgress", payload -> {
             if (payload instanceof DownloadProgressEvent event) downloadChanged(event.taskId());
         });
-        pdfEvents = events.subscribe("pdfExportProgress", payload -> {
-            if (payload instanceof PdfExportTaskResponse event && event.exportId() != null) {
+        pdfEvents = events.subscribe("exportProgress", payload -> {
+            if (payload instanceof ExportTaskResponse event && event.exportId() != null) {
                 pdfExportChanged(event.exportId());
             }
         });
@@ -99,7 +99,7 @@ public final class DesktopTaskNotificationService implements AutoCloseable {
     public synchronized void pdfExportChanged(String exportId) {
         if (!started || closed || exportId == null) return;
         String key = "pdf:" + exportId;
-        PdfExportTaskResponse task = pdfExports.find(exportId);
+        ExportTaskResponse task = pdfExports.find(exportId);
         if (task == null || !isNotifiablePdfTerminal(task.status())) {
             clear(key);
             return;
@@ -120,7 +120,7 @@ public final class DesktopTaskNotificationService implements AutoCloseable {
             message += ": " + fallback(task.errorMessage(), title);
         }
         enqueue(new DesktopNotification(key, title, message, route), () -> {
-            PdfExportTaskResponse current = pdfExports.find(exportId);
+            ExportTaskResponse current = pdfExports.find(exportId);
             return current != null && isNotifiablePdfTerminal(current.status());
         });
     }

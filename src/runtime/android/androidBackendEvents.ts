@@ -30,7 +30,7 @@ export function createAndroidBackendEvents(native: JmcomicClient): BackendEvents
     onClientStateChanged: (handler) => subscribe('clientStateChanged', handler),
     onLaunchRoute: (handler) => subscribe('launchRoute', handler),
     onUpdateProgress: (handler) => subscribe('updateProgress', handler),
-    onPdfExportProgress: (handler) => subscribe('pdfExportProgress', handler),
+    onExportProgress: (handler) => subscribe('exportProgress', handler),
     onVolumeKey: (handler) => subscribe('volumeKey', handler),
   }
 }

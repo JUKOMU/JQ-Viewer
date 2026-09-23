@@ -2,26 +2,26 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
-import type { ImportedPdf, PdfExportTaskRecord } from '@/services/JmcomicTypes'
+import type { LocalFileRecord, ExportTaskRecord } from '@/services/JmcomicTypes'
 import { RuntimeError } from '@/runtime/errors'
 
 const mocks = vi.hoisted(() => ({
-  getPdfFiles: vi.fn(),
-  refreshPdfFileAvailability: vi.fn(),
+  getLocalFiles: vi.fn(),
+  refreshLocalFileAvailability: vi.fn(),
   getDownloadTasks: vi.fn(),
-  getPdfExportTasks: vi.fn(),
-  getPdfManagementState: vi.fn(),
+  getExportTasks: vi.fn(),
+  getLocalFileManagementState: vi.fn(),
   getOfflineFolders: vi.fn(),
-  getPdfExportTask: vi.fn(),
-  addPdfExportProgressListener: vi.fn(),
+  getExportTask: vi.fn(),
+  addExportProgressListener: vi.fn(),
   addStateInvalidatedListener: vi.fn(),
-  inspectPdfFileForDeletion: vi.fn(),
-  verifyPdfFile: vi.fn(),
-  openPdf: vi.fn(),
-  openPdfFolder: vi.fn(),
-  deletePdfExportTask: vi.fn(),
-  cancelPdfExport: vi.fn(),
-  retryPdfExport: vi.fn(),
+  inspectLocalFileForDeletion: vi.fn(),
+  verifyLocalFile: vi.fn(),
+  openLocalFile: vi.fn(),
+  openLocalFileFolder: vi.fn(),
+  deleteExportTask: vi.fn(),
+  cancelExport: vi.fn(),
+  retryExport: vi.fn(),
   pickFolder: vi.fn(),
   scanAndParse: vi.fn(),
   alertCreate: vi.fn(),
@@ -79,40 +79,40 @@ vi.mock('ionicons/icons', () => ({
 vi.mock('vue-router', () => ({ useRouter: () => ({ push: mocks.routerPush }) }))
 vi.mock('@/services/JmcomicService', () => ({
   JmcomicService: {
-    getPdfFiles: mocks.getPdfFiles,
-    refreshPdfFileAvailability: mocks.refreshPdfFileAvailability,
+    getLocalFiles: mocks.getLocalFiles,
+    refreshLocalFileAvailability: mocks.refreshLocalFileAvailability,
     getDownloadTasks: mocks.getDownloadTasks,
-    getPdfExportTasks: mocks.getPdfExportTasks,
-    getPdfManagementState: mocks.getPdfManagementState,
-    acknowledgePdfDatabaseReset: vi.fn(),
+    getExportTasks: mocks.getExportTasks,
+    getLocalFileManagementState: mocks.getLocalFileManagementState,
+    acknowledgeLocalFileDatabaseReset: vi.fn(),
     getOfflineFolders: mocks.getOfflineFolders,
-    getPdfExportTask: mocks.getPdfExportTask,
-    addPdfExportProgressListener: mocks.addPdfExportProgressListener,
+    getExportTask: mocks.getExportTask,
+    addExportProgressListener: mocks.addExportProgressListener,
     addStateInvalidatedListener: mocks.addStateInvalidatedListener,
-    inspectPdfFileForDeletion: mocks.inspectPdfFileForDeletion,
-    openPdf: mocks.openPdf,
-    openPdfFolder: mocks.openPdfFolder,
-    removePdfFromLibrary: vi.fn(),
-    deletePdfFile: vi.fn(),
-    verifyPdfFile: mocks.verifyPdfFile,
-    cancelPdfExport: mocks.cancelPdfExport,
-    retryPdfExport: mocks.retryPdfExport,
-    deletePdfExportTask: mocks.deletePdfExportTask,
+    inspectLocalFileForDeletion: mocks.inspectLocalFileForDeletion,
+    openLocalFile: mocks.openLocalFile,
+    openLocalFileFolder: mocks.openLocalFileFolder,
+    removeLocalFileFromLibrary: vi.fn(),
+    deleteLocalFile: vi.fn(),
+    verifyLocalFile: mocks.verifyLocalFile,
+    cancelExport: mocks.cancelExport,
+    retryExport: mocks.retryExport,
+    deleteExportTask: mocks.deleteExportTask,
     pickFolder: mocks.pickFolder,
   },
   sanitizeError: (error: unknown, fallback: string) =>
     error instanceof RuntimeError ? error.message : fallback,
   showToast: mocks.showToast,
 }))
-vi.mock('@/services/PdfImportService', () => ({ PdfImportService: { scanAndParse: mocks.scanAndParse } }))
+vi.mock('@/services/LocalFileImportService', () => ({ LocalFileImportService: { scanAndParse: mocks.scanAndParse } }))
 
-import PdfExportTaskCard from '@/components/download/PdfExportTaskCard.vue'
-import PdfFileCard from '@/components/download/PdfFileCard.vue'
-import PdfManagementView from '@/components/download/PdfManagementView.vue'
+import ExportTaskCard from '@/components/download/ExportTaskCard.vue'
+import LocalFileCard from '@/components/download/LocalFileCard.vue'
+import LocalFileManagementView from '@/components/download/LocalFileManagementView.vue'
 
-const file: ImportedPdf = {
+const file: LocalFileRecord = {
   id: 1,
-  fileRef: 'content://provider/current.pdf' as ImportedPdf['fileRef'],
+  fileRef: 'content://provider/current.pdf' as LocalFileRecord['fileRef'],
   displayPath: 'content://provider/current.pdf',
   fileName: 'current.pdf',
   sourceType: 'imported',
@@ -132,7 +132,7 @@ const file: ImportedPdf = {
   verificationStatus: 'valid',
   updatedAt: 1,
 }
-const task = (status: PdfExportTaskRecord['status']): PdfExportTaskRecord => ({
+const task = (status: ExportTaskRecord['status']): ExportTaskRecord => ({
   exportId: 'export-1',
   batchId: 'batch-1',
   mode: 'chapter',
@@ -161,18 +161,18 @@ const task = (status: PdfExportTaskRecord['status']): PdfExportTaskRecord => ({
 
 beforeEach(() => {
   vi.clearAllMocks()
-  mocks.getPdfFiles.mockResolvedValue({ files: [file], nextCursor: null })
-  mocks.refreshPdfFileAvailability.mockResolvedValue({ files: [file] })
+  mocks.getLocalFiles.mockResolvedValue({ files: [file], nextCursor: null })
+  mocks.refreshLocalFileAvailability.mockResolvedValue({ files: [file] })
   mocks.getDownloadTasks.mockResolvedValue({
     tasks: [{ albumId: 'album-1', chapterId: 'chapter-1', status: 'completed' }],
   })
-  mocks.getPdfExportTasks.mockResolvedValue({ tasks: [task('completed')], nextCursor: null })
-  mocks.getPdfManagementState.mockResolvedValue({ recoveryState: 'ready' })
+  mocks.getExportTasks.mockResolvedValue({ tasks: [task('completed')], nextCursor: null })
+  mocks.getLocalFileManagementState.mockResolvedValue({ recoveryState: 'ready' })
   mocks.getOfflineFolders.mockResolvedValue({ folders: [] })
-  mocks.getPdfExportTask.mockResolvedValue(task('completed'))
+  mocks.getExportTask.mockResolvedValue(task('completed'))
   mocks.pdfProgressHandler = undefined
   mocks.stateInvalidatedHandler = undefined
-  mocks.addPdfExportProgressListener.mockImplementation(async (handler: (event: any) => void) => {
+  mocks.addExportProgressListener.mockImplementation(async (handler: (event: any) => void) => {
     mocks.pdfProgressHandler = handler
     return { remove: vi.fn() }
   })
@@ -180,16 +180,16 @@ beforeEach(() => {
     mocks.stateInvalidatedHandler = handler
     return { remove: vi.fn() }
   })
-  mocks.inspectPdfFileForDeletion.mockResolvedValue(file)
-  mocks.verifyPdfFile.mockResolvedValue(file)
+  mocks.inspectLocalFileForDeletion.mockResolvedValue(file)
+  mocks.verifyLocalFile.mockResolvedValue(file)
   mocks.pickFolder.mockResolvedValue(null)
   mocks.scanAndParse.mockResolvedValue(undefined)
   mocks.alertCreate.mockResolvedValue({ present: vi.fn() })
 })
 
-describe('PdfFileCard', () => {
+describe('LocalFileCard', () => {
   test('使用独立的打开和更多按钮', () => {
-    const wrapper = mount(PdfFileCard, { props: { file, hasImageResource: false } })
+    const wrapper = mount(LocalFileCard, { props: { file, hasImageResource: false } })
     expect(wrapper.get('article').findAll('button')).toHaveLength(2)
     expect(wrapper.get('button[aria-label="打开 PDF"]')).toBeTruthy()
     expect(wrapper.get('button[aria-label="更多操作"]')).toBeTruthy()
@@ -197,29 +197,29 @@ describe('PdfFileCard', () => {
   })
 })
 
-describe('PdfExportTaskCard', () => {
+describe('ExportTaskCard', () => {
   test('取消中不再显示取消按钮', () => {
-    const wrapper = mount(PdfExportTaskCard, { props: { task: task('cancelling') } })
+    const wrapper = mount(ExportTaskCard, { props: { task: task('cancelling') } })
     expect(wrapper.find('button[aria-label="取消 PDF 导出"]').exists()).toBe(false)
   })
 
   test('完成任务只提供删除记录操作', () => {
-    const wrapper = mount(PdfExportTaskCard, { props: { task: task('completed') } })
+    const wrapper = mount(ExportTaskCard, { props: { task: task('completed') } })
     expect(wrapper.findAll('button')).toHaveLength(1)
     expect(wrapper.find('button[aria-label="删除 PDF 导出任务记录"]').exists()).toBe(true)
   })
 })
 
-describe('PdfManagementView', () => {
+describe('LocalFileManagementView', () => {
   test('先显示卡片并在后台校验当前页', async () => {
-    let finishRefresh: ((value: { files: ImportedPdf[] }) => void) | undefined
-    mocks.refreshPdfFileAvailability.mockReturnValue(
+    let finishRefresh: ((value: { files: LocalFileRecord[] }) => void) | undefined
+    mocks.refreshLocalFileAvailability.mockReturnValue(
       new Promise((resolve) => {
         finishRefresh = resolve
       }),
     )
 
-    const wrapper = mount(PdfManagementView)
+    const wrapper = mount(LocalFileManagementView)
     await flushPromises()
 
     expect(wrapper.text()).toContain('测试漫画')
@@ -232,7 +232,7 @@ describe('PdfManagementView', () => {
   })
 
   test('同章节存在已完成下载时显示图片和 PDF 资源', async () => {
-    const wrapper = mount(PdfManagementView)
+    const wrapper = mount(LocalFileManagementView)
     await flushPromises()
 
     expect(wrapper.get('.resource-icons').attributes('aria-label')).toBe('图片和 PDF')
@@ -240,14 +240,14 @@ describe('PdfManagementView', () => {
   })
 
   test('物理删除前刷新资源并展示完整定位符和路径复用警告', async () => {
-    const wrapper = mount(PdfManagementView)
+    const wrapper = mount(LocalFileManagementView)
     await flushPromises()
     await wrapper.get('button[aria-label="更多操作"]').trigger('click')
     document.body.querySelector<HTMLButtonElement>('.card-menu-item--danger')?.click()
     await flushPromises()
     await flushPromises()
 
-    expect(mocks.inspectPdfFileForDeletion).toHaveBeenCalledWith(1)
+    expect(mocks.inspectLocalFileForDeletion).toHaveBeenCalledWith(1)
     expect(mocks.alertCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         header: '确认删除实际 PDF 文件',
@@ -260,7 +260,7 @@ describe('PdfManagementView', () => {
   })
 
   test('更多菜单按下载页样式提供七项文件操作', async () => {
-    const wrapper = mount(PdfManagementView)
+    const wrapper = mount(LocalFileManagementView)
     await flushPromises()
     await wrapper.get('button[aria-label="更多操作"]').trigger('click')
 
@@ -286,7 +286,7 @@ describe('PdfManagementView', () => {
         chapterTitle: '第一话',
       },
     }
-    const wrapper = mount(PdfManagementView)
+    const wrapper = mount(LocalFileManagementView)
     await flushPromises()
 
     await wrapper.get('button[aria-label="打开 PDF"]').trigger('click')
@@ -297,18 +297,18 @@ describe('PdfManagementView', () => {
     await flushPromises()
     expect(mocks.routerPush).toHaveBeenLastCalledWith(expectedRoute)
     expect(mocks.routerPush).toHaveBeenCalledTimes(2)
-    expect(mocks.openPdf).not.toHaveBeenCalled()
+    expect(mocks.openLocalFile).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
   test('手动校验显示进行中状态并提示校验结果', async () => {
-    let finishVerification: ((value: ImportedPdf) => void) | undefined
-    mocks.verifyPdfFile.mockReturnValue(
+    let finishVerification: ((value: LocalFileRecord) => void) | undefined
+    mocks.verifyLocalFile.mockReturnValue(
       new Promise((resolve) => {
         finishVerification = resolve
       }),
     )
-    const wrapper = mount(PdfManagementView)
+    const wrapper = mount(LocalFileManagementView)
     await flushPromises()
 
     await wrapper.get('button[aria-label="更多操作"]').trigger('click')
@@ -325,7 +325,7 @@ describe('PdfManagementView', () => {
   })
 
   test('详情和打开文件夹操作调用对应能力', async () => {
-    const wrapper = mount(PdfManagementView)
+    const wrapper = mount(LocalFileManagementView)
     await flushPromises()
 
     await wrapper.get('button[aria-label="更多操作"]').trigger('click')
@@ -336,12 +336,12 @@ describe('PdfManagementView', () => {
     await wrapper.get('button[aria-label="更多操作"]').trigger('click')
     document.body.querySelectorAll<HTMLButtonElement>('.card-menu-item')[4].click()
     await flushPromises()
-    expect(mocks.openPdfFolder).toHaveBeenCalledWith('content://provider/current.pdf')
+    expect(mocks.openLocalFileFolder).toHaveBeenCalledWith('content://provider/current.pdf')
     wrapper.unmount()
   })
 
   test('删除任务记录的确认不再请求影响 token', async () => {
-    const wrapper = mount(PdfManagementView, { props: { initialView: 'tasks' } })
+    const wrapper = mount(LocalFileManagementView, { props: { initialView: 'tasks' } })
     await flushPromises()
     await wrapper.get('button[aria-label="删除 PDF 导出任务记录"]').trigger('click')
 
@@ -355,9 +355,9 @@ describe('PdfManagementView', () => {
   })
 
   test('较早的文件筛选响应不会覆盖较新的结果', async () => {
-    let finishInitial: ((value: { files: ImportedPdf[]; nextCursor: null }) => void) | undefined
+    let finishInitial: ((value: { files: LocalFileRecord[]; nextCursor: null }) => void) | undefined
     const newerFile = { ...file, id: 2, fileName: 'newer.pdf', albumTitle: '新筛选结果' }
-    mocks.getPdfFiles
+    mocks.getLocalFiles
       .mockImplementationOnce(
         () =>
           new Promise((resolve) => {
@@ -365,9 +365,9 @@ describe('PdfManagementView', () => {
           }),
       )
       .mockResolvedValueOnce({ files: [newerFile], nextCursor: null })
-    mocks.refreshPdfFileAvailability.mockResolvedValue({ files: [] })
+    mocks.refreshLocalFileAvailability.mockResolvedValue({ files: [] })
 
-    const wrapper = mount(PdfManagementView)
+    const wrapper = mount(LocalFileManagementView)
     await flushPromises()
     await wrapper.findAll('.filter-buttons button')[1].trigger('click')
     await flushPromises()
@@ -381,7 +381,7 @@ describe('PdfManagementView', () => {
 
   test('较早的任务筛选响应不会覆盖较新的结果', async () => {
     let finishInitial:
-      | ((value: { tasks: PdfExportTaskRecord[]; nextCursor: null }) => void)
+      | ((value: { tasks: ExportTaskRecord[]; nextCursor: null }) => void)
       | undefined
     const oldTask = { ...task('completed'), displayTitle: '旧任务' }
     const newerTask = {
@@ -389,7 +389,7 @@ describe('PdfManagementView', () => {
       exportId: 'export-2',
       displayTitle: '新筛选任务',
     }
-    mocks.getPdfExportTasks
+    mocks.getExportTasks
       .mockImplementationOnce(
         () =>
           new Promise((resolve) => {
@@ -398,7 +398,7 @@ describe('PdfManagementView', () => {
       )
       .mockResolvedValueOnce({ tasks: [newerTask], nextCursor: null })
 
-    const wrapper = mount(PdfManagementView, { props: { initialView: 'tasks' } })
+    const wrapper = mount(LocalFileManagementView, { props: { initialView: 'tasks' } })
     await flushPromises()
     await wrapper.findAll('.task-filter-buttons button')[5].trigger('click')
     await flushPromises()
@@ -412,11 +412,11 @@ describe('PdfManagementView', () => {
 
   test('任务查询期间收到事件时丢弃旧响应并串行补读', async () => {
     let finishInitial:
-      | ((value: { tasks: PdfExportTaskRecord[]; nextCursor: null }) => void)
+      | ((value: { tasks: ExportTaskRecord[]; nextCursor: null }) => void)
       | undefined
     const oldTask = { ...task('running'), currentPage: 1, snapshotRevision: 1 }
     const currentTask = { ...task('running'), currentPage: 8, snapshotRevision: 3 }
-    mocks.getPdfExportTasks
+    mocks.getExportTasks
       .mockImplementationOnce(
         () =>
           new Promise((resolve) => {
@@ -425,8 +425,8 @@ describe('PdfManagementView', () => {
       )
       .mockResolvedValueOnce({ tasks: [currentTask], nextCursor: null })
 
-    const wrapper = mount(PdfManagementView, { props: { initialView: 'tasks' } })
-    await vi.waitFor(() => expect(mocks.getPdfExportTasks).toHaveBeenCalledOnce())
+    const wrapper = mount(LocalFileManagementView, { props: { initialView: 'tasks' } })
+    await vi.waitFor(() => expect(mocks.getExportTasks).toHaveBeenCalledOnce())
     mocks.pdfProgressHandler?.({
       ...currentTask,
       currentPage: 6,
@@ -435,26 +435,26 @@ describe('PdfManagementView', () => {
     finishInitial?.({ tasks: [oldTask], nextCursor: null })
     await flushPromises()
 
-    expect(mocks.getPdfExportTasks).toHaveBeenCalledTimes(2)
+    expect(mocks.getExportTasks).toHaveBeenCalledTimes(2)
     expect(wrapper.text()).toContain('8/12 页')
     wrapper.unmount()
   })
 
   test('事件流重连后刷新管理状态、筛选页和下载资源索引', async () => {
-    const wrapper = mount(PdfManagementView)
+    const wrapper = mount(LocalFileManagementView)
     await flushPromises()
     expect(wrapper.text()).toContain('测试漫画')
     expect(wrapper.get('.resource-icons').attributes('aria-label')).toBe('图片和 PDF')
 
     const reloadedFile = { ...file, id: 2, albumTitle: '重连后的文件' }
-    mocks.getPdfFiles.mockResolvedValue({ files: [reloadedFile], nextCursor: null })
-    mocks.refreshPdfFileAvailability.mockResolvedValue({ files: [reloadedFile] })
-    mocks.getPdfExportTasks.mockResolvedValue({ tasks: [], nextCursor: null })
+    mocks.getLocalFiles.mockResolvedValue({ files: [reloadedFile], nextCursor: null })
+    mocks.refreshLocalFileAvailability.mockResolvedValue({ files: [reloadedFile] })
+    mocks.getExportTasks.mockResolvedValue({ tasks: [], nextCursor: null })
     mocks.getDownloadTasks.mockResolvedValue({ tasks: [] })
     mocks.stateInvalidatedHandler?.()
     await flushPromises()
 
-    expect(mocks.getPdfManagementState).toHaveBeenCalledTimes(2)
+    expect(mocks.getLocalFileManagementState).toHaveBeenCalledTimes(2)
     expect(wrapper.text()).toContain('重连后的文件')
     expect(wrapper.text()).not.toContain('测试漫画')
     expect(wrapper.get('.resource-icons').attributes('aria-label')).toBe('PDF')
@@ -464,15 +464,15 @@ describe('PdfManagementView', () => {
   test('卸载后才完成注册的进度监听会立即移除', async () => {
     let finishRegistration: ((value: { remove: () => Promise<void> }) => void) | undefined
     const remove = vi.fn().mockResolvedValue(undefined)
-    mocks.addPdfExportProgressListener.mockReturnValue(
+    mocks.addExportProgressListener.mockReturnValue(
       new Promise((resolve) => {
         finishRegistration = resolve
       }),
     )
 
-    const wrapper = mount(PdfManagementView)
+    const wrapper = mount(LocalFileManagementView)
     await flushPromises()
-    expect(mocks.addPdfExportProgressListener).toHaveBeenCalledOnce()
+    expect(mocks.addExportProgressListener).toHaveBeenCalledOnce()
     wrapper.unmount()
     finishRegistration?.({ remove })
     await flushPromises()
@@ -488,7 +488,7 @@ describe('PdfManagementView', () => {
       .mockRejectedValueOnce(new RuntimeError('permission-denied', 'PDF 文件夹读取权限已失效，请重新选择文件夹'))
       .mockResolvedValueOnce(undefined)
 
-    const wrapper = mount(PdfManagementView)
+    const wrapper = mount(LocalFileManagementView)
     await flushPromises()
     await wrapper.get('button[aria-label="导入 PDF"]').trigger('click')
     await flushPromises()
@@ -501,26 +501,26 @@ describe('PdfManagementView', () => {
   })
 
   test('删除前记录已消失时刷新 PDF 文件列表', async () => {
-    mocks.inspectPdfFileForDeletion.mockRejectedValueOnce(
+    mocks.inspectLocalFileForDeletion.mockRejectedValueOnce(
       new RuntimeError('not-found', 'PDF 文件记录不存在'),
     )
-    const wrapper = mount(PdfManagementView)
+    const wrapper = mount(LocalFileManagementView)
     await flushPromises()
-    const initialCalls = mocks.getPdfFiles.mock.calls.length
+    const initialCalls = mocks.getLocalFiles.mock.calls.length
 
     await wrapper.get('button[aria-label="更多操作"]').trigger('click')
     document.body.querySelector<HTMLButtonElement>('.card-menu-item--danger')?.click()
     await flushPromises()
 
-    expect(mocks.getPdfFiles.mock.calls.length).toBeGreaterThan(initialCalls)
+    expect(mocks.getLocalFiles.mock.calls.length).toBeGreaterThan(initialCalls)
     expect(mocks.alertCreate).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
   test('重试冲突时刷新任务并保留服务端 message', async () => {
     const failedTask = task('failed')
-    mocks.getPdfExportTasks.mockResolvedValue({ tasks: [failedTask], nextCursor: null })
-    mocks.retryPdfExport.mockRejectedValueOnce(
+    mocks.getExportTasks.mockResolvedValue({ tasks: [failedTask], nextCursor: null })
+    mocks.retryExport.mockRejectedValueOnce(
       new RuntimeError('conflict', '相同章节已有任务正在运行'),
     )
     mocks.alertCreate.mockImplementationOnce(async (options: any) => {
@@ -528,14 +528,14 @@ describe('PdfManagementView', () => {
       return { present: vi.fn() }
     })
 
-    const wrapper = mount(PdfManagementView, { props: { initialView: 'tasks' } })
+    const wrapper = mount(LocalFileManagementView, { props: { initialView: 'tasks' } })
     await flushPromises()
-    const initialCalls = mocks.getPdfExportTasks.mock.calls.length
+    const initialCalls = mocks.getExportTasks.mock.calls.length
 
     await wrapper.get('button[aria-label="重试整个 PDF 导出任务"]').trigger('click')
     await flushPromises()
 
-    expect(mocks.getPdfExportTasks.mock.calls.length).toBeGreaterThan(initialCalls)
+    expect(mocks.getExportTasks.mock.calls.length).toBeGreaterThan(initialCalls)
     expect(mocks.showToast).toHaveBeenCalledWith('相同章节已有任务正在运行', 'medium')
     wrapper.unmount()
   })

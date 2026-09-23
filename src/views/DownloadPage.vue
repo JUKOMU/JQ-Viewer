@@ -2,7 +2,7 @@
   <IonPage>
     <IonHeader class="ion-no-border">
       <IonToolbar>
-        <div class="download-page-shell">
+        <div class="download-page-shell desktop-page-content">
           <div class="toolbar-start">
             <MenuToggleButton />
           </div>
@@ -37,7 +37,7 @@
         <IonRefresherContent />
       </IonRefresher>
 
-      <div class="download-page-shell">
+      <div class="download-page-shell desktop-page-content">
         <!-- 空状态 -->
         <div v-if="!hasTasks" class="empty-state">
           <IonIcon :icon="cloudDownloadOutline" class="empty-icon" />
@@ -115,7 +115,7 @@
       </div>
     </IonContent>
     <IonContent v-show="activeMainView === 'pdf'">
-      <div class="download-page-shell">
+      <div class="download-page-shell desktop-page-content">
         <PdfManagementView
           ref="pdfManagementRef"
           :initial-view="pdfInitialView"

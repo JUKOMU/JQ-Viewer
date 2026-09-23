@@ -9,7 +9,7 @@
       </IonToolbar>
     </IonHeader>
     <IonContent ref="contentRef" :scroll-events="true" @ion-scroll="handleScroll">
-      <div class="settings-list">
+      <div class="settings-list desktop-page-content">
         <!-- 分组：图片缓存 -->
         <div class="section-label">图片缓存</div>
         <div class="card">

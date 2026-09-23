@@ -1,7 +1,7 @@
 <template>
   <IonPage>
     <IonHeader class="ion-no-border">
-      <IonToolbar class="toolbar">
+      <IonToolbar class="toolbar desktop-page-content">
         <IonButtons slot="start">
           <IonBackButton default-href="/user" />
         </IonButtons>
@@ -9,7 +9,7 @@
       </IonToolbar>
     </IonHeader>
     <IonContent>
-      <div class="login-container">
+      <div class="login-container desktop-page-content">
         <div class="login-card">
           <IonInput
             v-model="username"

@@ -1,7 +1,7 @@
 <template>
   <IonPage>
     <IonHeader class="ion-no-border">
-      <IonToolbar class="toolbar">
+      <IonToolbar class="toolbar desktop-page-content">
         <IonButtons slot="start">
           <IonBackButton default-href="/setting" />
         </IonButtons>
@@ -10,7 +10,10 @@
     </IonHeader>
     <IonContent>
       <!-- 已登录 -->
-      <div v-if="isLoggedIn && userInfo" class="user-container user-container--logged-in">
+      <div
+        v-if="isLoggedIn && userInfo"
+        class="user-container user-container--logged-in desktop-page-content"
+      >
         <!-- 头像信息卡 -->
         <div class="profile-card">
           <img :src="userInfo.avatarUrl" class="avatar" alt="头像" />
@@ -90,7 +93,7 @@
       </div>
 
       <!-- 未登录 -->
-      <div v-else class="user-container user-container--logged-out">
+      <div v-else class="user-container user-container--logged-out desktop-page-content">
         <div class="profile-card">
           <IonIcon :icon="personCircleOutline" class="avatar-placeholder" />
           <div class="username">未登录</div>

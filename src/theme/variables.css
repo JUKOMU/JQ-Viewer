@@ -106,7 +106,7 @@ ion-content::part(scroll)::-webkit-scrollbar-thumb:hover {
   background-clip: padding-box;
 }
 
-@media (min-width: 992px) {
+@media (min-width: 1264px) {
   ion-content::part(scroll) {
     scrollbar-gutter: stable;
   }

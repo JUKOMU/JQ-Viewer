@@ -5,7 +5,7 @@
         <div class="toolbar-start">
           <MenuToggleButton />
         </div>
-        <div class="tab-bar">
+        <div class="tab-bar desktop-page-content">
           <button
             type="button"
             class="tab-btn"
@@ -26,7 +26,7 @@
       </IonToolbar>
     </IonHeader>
     <IonContent ref="contentRef" :scroll-events="true" @ion-scroll="onScroll">
-      <div class="page-shell">
+      <div class="page-shell desktop-page-content">
         <div v-show="activeTab === 'browse'" class="tab-content">
           <div v-if="!browseOverviewLoaded && browseOverviewError" class="history-error">
             <IonIcon :icon="timeOutline" class="empty-icon" />

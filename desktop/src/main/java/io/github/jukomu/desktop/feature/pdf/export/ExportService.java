@@ -6,6 +6,8 @@ import io.github.jukomu.desktop.feature.download.DownloadFiles;
 import io.github.jukomu.desktop.feature.download.data.DownloadStore;
 import io.github.jukomu.desktop.feature.download.data.StoredDownloadPage;
 import io.github.jukomu.desktop.feature.download.data.StoredDownloadTask;
+import io.github.jukomu.desktop.feature.export.archive.ArchiveExportPlanner;
+import io.github.jukomu.desktop.feature.export.archive.ArchiveVolumeWriter;
 import io.github.jukomu.desktop.feature.files.ExportTargetResolver;
 import io.github.jukomu.desktop.feature.files.FileReferences;
 import io.github.jukomu.desktop.feature.pdf.management.PdfFileValidator;
@@ -30,14 +32,15 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-/** Desktop 持久化单线程 PDF 导出队列。 */
+/** Desktop 持久化单线程通用导出队列。 */
 public final class ExportService implements AutoCloseable {
     private final ExportStore store;
     private final DownloadStore downloads;
     private final DownloadFiles downloadFiles;
     private final ExecutorService executor;
     private final EventHub events;
-    private final PdfVolumeWriter writer;
+    private final PdfVolumeWriter pdfWriter;
+    private final ArchiveVolumeWriter archiveWriter;
     private final AtomicBoolean startupReconciled = new AtomicBoolean();
     private boolean closed;
 
@@ -48,7 +51,8 @@ public final class ExportService implements AutoCloseable {
             ExecutorService executor,
             EventHub events
     ) {
-        this(store, downloads, downloadFiles, executor, events, new PdfBoxVolumeWriter());
+        this(store, downloads, downloadFiles, executor, events,
+                new PdfBoxVolumeWriter(), new ArchiveVolumeWriter());
     }
 
     ExportService(
@@ -59,12 +63,25 @@ public final class ExportService implements AutoCloseable {
             EventHub events,
             PdfVolumeWriter writer
     ) {
+        this(store, downloads, downloadFiles, executor, events, writer, new ArchiveVolumeWriter());
+    }
+
+    ExportService(
+            ExportStore store,
+            DownloadStore downloads,
+            DownloadFiles downloadFiles,
+            ExecutorService executor,
+            EventHub events,
+            PdfVolumeWriter pdfWriter,
+            ArchiveVolumeWriter archiveWriter
+    ) {
         this.store = Objects.requireNonNull(store, "store");
         this.downloads = Objects.requireNonNull(downloads, "downloads");
         this.downloadFiles = Objects.requireNonNull(downloadFiles, "downloadFiles");
         this.executor = Objects.requireNonNull(executor, "executor");
         this.events = Objects.requireNonNull(events, "events");
-        this.writer = Objects.requireNonNull(writer, "writer");
+        this.pdfWriter = Objects.requireNonNull(pdfWriter, "pdfWriter");
+        this.archiveWriter = Objects.requireNonNull(archiveWriter, "archiveWriter");
     }
 
     /** 将上次进程遗留的活动任务标为 interrupted，并清理已知临时文件。 */
@@ -94,7 +111,7 @@ public final class ExportService implements AutoCloseable {
                 Plan plan = preflight(exportId, batchId, task, task.allowOverwrite());
                 if (store.hasActiveChapterConflict(plan.chapters())) {
                     results.add(ExportTaskResponse.rejected(task.format(),
-                            "TASK_CONFLICT", "相同章节已有 PDF 导出任务正在排队或运行",
+                            "TASK_CONFLICT", "相同章节已有导出任务正在排队或运行",
                             task.displayPath()));
                     continue;
                 }
@@ -119,8 +136,8 @@ public final class ExportService implements AutoCloseable {
     }
 
     public ExportTasksResponse getTasks(String format, String status, String cursor, int limit) {
-        if (format != null && !format.isBlank() && !"pdf".equals(format)) {
-            throw ApiException.invalidRequest("本轮仅支持 PDF 导出任务");
+        if (format != null && !format.isBlank() && !isFormat(format)) {
+            throw ApiException.invalidRequest("format必须是pdf、cbz或zip");
         }
         ExportStore.Page page = store.list(format, status, cursor, limit);
         return new ExportTasksResponse(page.tasks(), page.nextCursor());
@@ -132,7 +149,7 @@ public final class ExportService implements AutoCloseable {
 
     public ExportTaskResponse cancel(String exportId) {
         ExportTaskResponse task = store.requestCancel(requireText(exportId, "exportId"));
-        if (task == null) throw ApiException.notFound("PDF 导出任务不存在");
+        if (task == null) throw ApiException.notFound("导出任务不存在");
         if ("cancelled".equals(task.status())) cleanupQueuedCancellation(task.exportId());
         publish(task);
         return task;
@@ -148,7 +165,7 @@ public final class ExportService implements AutoCloseable {
         requireOpen();
         ExportTaskResponse persisted = requireTask(requireText(exportId, "exportId"));
         if (!ExportStore.isTerminal(persisted.status())) {
-            throw ApiException.conflict("当前 PDF 导出任务不能重试");
+            throw ApiException.conflict("当前导出任务不能重试");
         }
         NormalizedTask task = taskFromPersisted(persisted, store.chapters(exportId));
         final Plan plan;
@@ -161,10 +178,10 @@ public final class ExportService implements AutoCloseable {
             throw new ApiException("internal", 409, exception.getMessage());
         }
         if (store.hasActiveChapterConflict(plan.chapters())) {
-            throw ApiException.conflict("相同章节已有 PDF 导出任务正在排队或运行");
+            throw ApiException.conflict("相同章节已有导出任务正在排队或运行");
         }
         if (!store.prepareRetry(exportId, allowOverwrite)) {
-            throw ApiException.conflict("当前 PDF 导出任务不能重试");
+            throw ApiException.conflict("当前导出任务不能重试");
         }
         ExportTaskResponse queued = requireTask(exportId);
         publish(queued);
@@ -175,7 +192,7 @@ public final class ExportService implements AutoCloseable {
     public synchronized boolean deleteTask(String exportId) {
         ExportTaskResponse task = requireTask(requireText(exportId, "exportId"));
         if (!ExportStore.isTerminal(task.status())) {
-            throw ApiException.conflict("活动 PDF 导出任务不能删除");
+            throw ApiException.conflict("活动导出任务不能删除");
         }
         for (ExportStore.Volume volume : store.volumes(exportId)) {
             deleteQuietly(Path.of(volume.tempPath()));
@@ -189,7 +206,7 @@ public final class ExportService implements AutoCloseable {
         } catch (RejectedExecutionException exception) {
             ExportTaskResponse failed = store.updateProgress(
                     plan.exportId(), "failed", "failed", 0, plan.images().size(),
-                    0, plan.volumes().size(), "QUEUE_REJECTED", "PDF 导出队列已关闭");
+                    0, plan.volumes().size(), "QUEUE_REJECTED", "导出队列已关闭");
             cleanupTemporaryFiles(plan);
             publish(failed);
         }
@@ -208,19 +225,8 @@ public final class ExportService implements AutoCloseable {
                         plan.images().size(), volume.record().volumeIndex(), plan.volumes().size(),
                         null, null));
 
-                List<Path> volumeImages = plan.images().subList(
-                        volume.record().startPage(), volume.record().endPage());
-                writer.write(volumeImages, volume.temporaryFile(), plan.task().useOriginal(),
-                        plan.task().compressionRatio(), pageCount -> {
-                            checkCancelled(plan.exportId());
-                            int taskPage = volume.record().startPage() + pageCount;
-                            publish(store.updateProgress(
-                                    plan.exportId(), "running", "writing", taskPage,
-                                    plan.images().size(), volume.record().volumeIndex(),
-                                    plan.volumes().size(), null, null));
-                        });
+                VolumeReport report = writeTemporary(plan, volume);
                 checkCancelled(plan.exportId());
-                PdfFileValidator.Report report = validateTemporary(volume);
                 publishTemporary(plan, volume);
                 String fileRef = FileReferences.fileRef(volume.outputFile());
                 store.completeVolumeAndRegisterFile(
@@ -235,12 +241,43 @@ public final class ExportService implements AutoCloseable {
         } catch (CancelledException | InterruptedException exception) {
             if (exception instanceof InterruptedException) Thread.currentThread().interrupt();
             finishFailure(plan, store.completedVolumeCount(plan.exportId()) > 0 ? "partial" : "cancelled",
-                    "CANCELLED", "PDF 导出已取消");
+                    "CANCELLED", "导出已取消");
         } catch (Exception exception) {
-            ExportFailure failure = describe(exception);
+            ExportFailure failure = describe(exception, plan.task().format());
             finishFailure(plan, store.completedVolumeCount(plan.exportId()) > 0 ? "partial" : "failed",
                     failure.code(), failure.message());
         }
+    }
+
+    private VolumeReport writeTemporary(Plan plan, VolumePlan volume) throws Exception {
+        PdfVolumeWriter.Progress progress = pageCount -> {
+            checkCancelled(plan.exportId());
+            int taskPage = volume.record().startPage() + pageCount;
+            publish(store.updateProgress(
+                    plan.exportId(), "running", "writing", taskPage,
+                    plan.images().size(), volume.record().volumeIndex(),
+                    plan.volumes().size(), null, null));
+        };
+        if ("pdf".equals(plan.task().format())) {
+            List<Path> volumeImages = plan.images().subList(
+                    volume.record().startPage(), volume.record().endPage());
+            pdfWriter.write(volumeImages, volume.temporaryFile(), plan.task().useOriginal(),
+                    plan.task().compressionRatio(), progress);
+            PdfFileValidator.Report report = validateTemporary(volume);
+            return new VolumeReport(report.fileSize(), report.pageCount());
+        }
+
+        ArchiveExportPlanner.Plan archivePlan = ArchiveExportPlanner.plan(
+                plan.task().format(), plan.task().mode(), plan.task().albumId(),
+                plan.task().albumTitle(), plan.task().authors(),
+                plan.chapters().stream().map(chapter -> new ArchiveExportPlanner.Chapter(
+                        chapter.chapterId(), chapter.chapterTitle(), chapter.sortOrder(),
+                        chapter.expectedPageCount())).toList(),
+                plan.images(), volume.record().startPage(), volume.record().endPage(),
+                volume.record().volumeIndex(), plan.volumes().size());
+        ArchiveVolumeWriter.Report report = archiveWriter.write(
+                archivePlan, volume.temporaryFile(), progress::pageWritten);
+        return new VolumeReport(report.fileSize(), report.pageCount());
     }
 
     private void finishFailure(Plan plan, String status, String code, String message) {
@@ -295,10 +332,11 @@ public final class ExportService implements AutoCloseable {
         try {
             root = io.github.jukomu.desktop.feature.files.FileReferences.parseFolder(task.folderRef());
         } catch (RuntimeException exception) {
-            throw new ExportException("PDF_TARGET_INVALID", "PDF 导出目录引用无效", exception);
+            throw new ExportException(code(task.format(), "TARGET_INVALID"), "导出目录引用无效", exception);
         }
         if (!Files.isDirectory(root) || !Files.isWritable(root)) {
-            throw new ExportException("PDF_TARGET_INACCESSIBLE", "PDF 导出目录不存在或不可写");
+            throw new ExportException(code(task.format(), "TARGET_INACCESSIBLE"),
+                    "导出目录不存在或不可写");
         }
         List<VolumePlan> volumes = buildVolumes(
                 exportId, task, images.size(), allowOverwrite);
@@ -325,21 +363,23 @@ public final class ExportService implements AutoCloseable {
                 output = ExportTargetResolver.resolve(task.folderRef(), targetName);
                 Files.createDirectories(output.getParent());
             } catch (RuntimeException | IOException exception) {
-                throw new ExportException("PDF_TARGET_INVALID", "PDF 导出目标路径无效", exception);
+                throw new ExportException(code(task.format(), "TARGET_INVALID"),
+                        "导出目标路径无效", exception);
             }
             if (Files.exists(output)) {
                 if (!Files.isRegularFile(output)) {
-                    throw new ExportException("PDF_TARGET_INVALID", "PDF 导出目标不是普通文件");
+                    throw new ExportException(code(task.format(), "TARGET_INVALID"),
+                            "导出目标不是普通文件");
                 }
                 if (!allowOverwrite) {
-                    throw new OutputExistsException("PDF_OUTPUT_EXISTS",
+                    throw new OutputExistsException(code(task.format(), "OUTPUT_EXISTS"),
                             "目标文件已存在，请确认覆盖后重试: " + output);
                 }
             }
             String displayPath = volumeCount == 1 ? task.displayPath()
                     : withVolumeSuffix(task.displayPath(), start + 1, end);
             Path temporary = output.resolveSibling("." + output.getFileName() + "."
-                    + exportId + ".tmp.pdf");
+                    + exportId + ".tmp." + task.format());
             ExportStore.Volume record = new ExportStore.Volume(
                     index + 1, start, end, end - start, targetName,
                     displayPath == null || displayPath.isBlank() ? output.toString() : displayPath,
@@ -376,8 +416,8 @@ public final class ExportService implements AutoCloseable {
         if (request == null) throw ApiException.invalidRequest("tasks包含空任务");
         String format = request.format() == null || request.format().isBlank()
                 ? "pdf" : request.format().trim().toLowerCase(Locale.ROOT);
-        if (!"pdf".equals(format)) {
-            throw ApiException.invalidRequest("本轮仅支持 PDF 导出");
+        if (!isFormat(format)) {
+            throw ApiException.invalidRequest("format必须是pdf、cbz或zip");
         }
         String mode = request.mode() == null || request.mode().isBlank() ? "chapter" : request.mode();
         if (!"chapter".equals(mode) && !"merged".equals(mode)) {
@@ -388,8 +428,9 @@ public final class ExportService implements AutoCloseable {
         String folderRef = requireText(request.target().folder(), "target.folder");
         String targetName = requireText(request.target().relativePath(), "target.relativePath")
                 .replace('\\', '/');
-        if (!targetName.toLowerCase(Locale.ROOT).endsWith(".pdf")) {
-            throw ApiException.invalidRequest("target.relativePath必须以.pdf结尾");
+        String extension = "." + format;
+        if (!targetName.toLowerCase(Locale.ROOT).endsWith(extension)) {
+            throw ApiException.invalidRequest("target.relativePath必须以" + extension + "结尾");
         }
         List<RequestedChapter> chapters = new ArrayList<>();
         if ("merged".equals(mode)) {
@@ -419,7 +460,8 @@ public final class ExportService implements AutoCloseable {
                 format, mode, albumId, value(request.albumTitle()), value(request.coverUrl()),
                 value(request.authors()), request.isSingleEpisode(), displayTitle,
                 List.copyOf(chapters), folderRef, targetName, value(request.displayPath()),
-                request.useOriginal() == null || request.useOriginal(), compressionRatio,
+                !"pdf".equals(format) || request.useOriginal() == null || request.useOriginal(),
+                compressionRatio,
                 splitPages, request.allowOverwrite() != null && request.allowOverwrite());
     }
 
@@ -447,7 +489,7 @@ public final class ExportService implements AutoCloseable {
     ) throws ExportException {
         if (persistedChapters.size() != plan.chapters().size()
                 || persistedVolumes.size() != plan.volumes().size()) {
-            throw new ExportException("PDF_RETRY_INPUT_CHANGED", "下载内容已变化，请新建导出任务");
+            throw retryInputChanged(plan);
         }
         for (int index = 0; index < persistedChapters.size(); index++) {
             ExportStore.Chapter before = persistedChapters.get(index);
@@ -455,7 +497,7 @@ public final class ExportService implements AutoCloseable {
             if (!before.albumId().equals(after.albumId())
                     || !before.chapterId().equals(after.chapterId())
                     || before.expectedPageCount() != after.expectedPageCount()) {
-                throw new ExportException("PDF_RETRY_INPUT_CHANGED", "下载内容已变化，请新建导出任务");
+                throw retryInputChanged(plan);
             }
         }
         for (int index = 0; index < persistedVolumes.size(); index++) {
@@ -463,7 +505,7 @@ public final class ExportService implements AutoCloseable {
             ExportStore.Volume after = plan.volumes().get(index).record();
             if (before.startPage() != after.startPage() || before.endPage() != after.endPage()
                     || !before.targetName().equals(after.targetName())) {
-                throw new ExportException("PDF_RETRY_INPUT_CHANGED", "下载内容已变化，请新建导出任务");
+                throw retryInputChanged(plan);
             }
         }
     }
@@ -496,7 +538,7 @@ public final class ExportService implements AutoCloseable {
                 }
             }
         } catch (FileAlreadyExistsException exception) {
-            throw new OutputExistsException("PDF_OUTPUT_EXISTS",
+            throw new OutputExistsException(code(plan.task().format(), "OUTPUT_EXISTS"),
                     "目标文件已存在，请确认覆盖后重试: " + volume.outputFile());
         }
     }
@@ -508,7 +550,7 @@ public final class ExportService implements AutoCloseable {
 
     private ExportTaskResponse requireTask(String exportId) {
         ExportTaskResponse task = store.find(exportId);
-        if (task == null) throw ApiException.notFound("PDF 导出任务不存在");
+        if (task == null) throw ApiException.notFound("导出任务不存在");
         return task;
     }
 
@@ -516,7 +558,7 @@ public final class ExportService implements AutoCloseable {
         if (task != null) events.publish("exportProgress", task);
     }
 
-    private static ExportFailure describe(Exception exception) {
+    private static ExportFailure describe(Exception exception, String format) {
         if (exception instanceof OutputExistsException exists) {
             return new ExportFailure(exists.code(), exists.getMessage());
         }
@@ -531,15 +573,29 @@ public final class ExportService implements AutoCloseable {
                         message.substring(separator + 1).trim());
             }
         }
-        return new ExportFailure("PDF_EXPORT_FAILED",
-                message == null || message.isBlank() ? "PDF 导出失败" : message);
+        return new ExportFailure(code(format, "EXPORT_FAILED"),
+                message == null || message.isBlank() ? "导出失败" : message);
     }
 
     private static String withVolumeSuffix(String value, int start, int end) {
-        String suffix = String.format(Locale.ROOT, "_%03d-%03d.pdf", start, end);
+        int separator = value == null ? -1 : value.lastIndexOf('.');
+        String extension = separator >= 0 ? value.substring(separator) : "";
+        String suffix = String.format(Locale.ROOT, "_%03d-%03d%s", start, end, extension);
         if (value == null || value.isBlank()) return suffix.substring(1);
-        return value.toLowerCase(Locale.ROOT).endsWith(".pdf")
-                ? value.substring(0, value.length() - 4) + suffix : value + suffix;
+        return separator >= 0 ? value.substring(0, separator) + suffix : value + suffix;
+    }
+
+    private static boolean isFormat(String format) {
+        return "pdf".equals(format) || "cbz".equals(format) || "zip".equals(format);
+    }
+
+    private static String code(String format, String suffix) {
+        return format.toUpperCase(Locale.ROOT) + "_" + suffix;
+    }
+
+    private static ExportException retryInputChanged(Plan plan) {
+        return new ExportException(code(plan.task().format(), "RETRY_INPUT_CHANGED"),
+                "下载内容已变化，请新建导出任务");
     }
 
     private static String requireText(String value, String name) {
@@ -548,7 +604,7 @@ public final class ExportService implements AutoCloseable {
     }
 
     private synchronized void requireOpen() {
-        if (closed) throw ApiException.unavailable("PDF 导出服务已关闭");
+        if (closed) throw ApiException.unavailable("导出服务已关闭");
     }
 
     private static String value(String value) {
@@ -629,6 +685,9 @@ public final class ExportService implements AutoCloseable {
     }
 
     private record ExportFailure(String code, String message) {
+    }
+
+    private record VolumeReport(long fileSize, int pageCount) {
     }
 
     private static class ExportException extends Exception {

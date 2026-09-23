@@ -32,8 +32,11 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -189,6 +192,57 @@ class ExportServiceTest {
             assertEquals("chapter-2", libraryFile.chapters().get(1).chapterId());
             assertEquals(3, libraryFile.chapters().get(1).startPage());
             assertEquals(3, libraryFile.chapters().get(1).endPage());
+        }
+    }
+
+    @Test
+    void exportsAndRegistersCbzAndMergedZipWithoutChangingImageBytes() throws Exception {
+        try (Fixture fixture = fixture(new TrackingWriter())) {
+            fixture.addDownload("album-1", "chapter-1", 2);
+            fixture.addDownload("album-1", "chapter-2", 1);
+            byte[] firstSource = Files.readAllBytes(fixture.files.chapterDirectory("album-1/chapter-1")
+                    .resolve("001.png"));
+
+            ExportTaskResponse cbzTask = fixture.service.submit(List.of(
+                    fixture.task("cbz", "chapter-1", "first.cbz", 1, false))).tasks().get(0);
+            assertEquals("completed", fixture.awaitTerminal(cbzTask.exportId()).status());
+            ExportTaskResponse zipTask = fixture.service.submit(List.of(
+                    fixture.mergedTask("zip", "merged.zip"))).tasks().get(0);
+
+            assertEquals("completed", fixture.awaitTerminal(zipTask.exportId()).status());
+            try (ZipFile firstVolume = new ZipFile(
+                    fixture.output.resolve("first_001-001.cbz").toFile())) {
+                ZipEntry image = firstVolume.getEntry("0001.png");
+                assertEquals(ZipEntry.STORED, image.getMethod());
+                assertArrayEquals(firstSource, firstVolume.getInputStream(image).readAllBytes());
+                assertNotNull(firstVolume.getEntry("ComicInfo.xml"));
+            }
+            try (ZipFile merged = new ZipFile(fixture.output.resolve("merged.zip").toFile())) {
+                assertNotNull(merged.getEntry("001_Chapter 1/0001.png"));
+                assertNotNull(merged.getEntry("001_Chapter 1/0002.png"));
+                assertNotNull(merged.getEntry("002_Chapter 2/0001.png"));
+                assertNull(merged.getEntry("ComicInfo.xml"));
+            }
+
+            var files = new LocalFileStore(fixture.database).listAll();
+            assertEquals(3, files.size());
+            assertEquals(2, files.stream().filter(file -> "cbz".equals(file.format())).count());
+            assertEquals(1, files.stream().filter(file -> "zip".equals(file.format())).count());
+            assertEquals(2, files.stream().filter(file -> "zip".equals(file.format()))
+                    .findFirst().orElseThrow().chapters().size());
+
+            ExportTaskResponse conflict = fixture.service.submit(List.of(
+                    fixture.task("cbz", "chapter-1", "first.cbz", 1, false))).tasks().get(0);
+            assertFalse(conflict.accepted());
+            assertEquals("CBZ_OUTPUT_EXISTS", conflict.errorCode());
+
+            assertEquals("queued", fixture.service.retry(cbzTask.exportId(), true).status());
+            assertEquals("completed", fixture.awaitTerminal(cbzTask.exportId()).status());
+            try (ZipFile retried = new ZipFile(
+                    fixture.output.resolve("first_001-001.cbz").toFile())) {
+                assertArrayEquals(firstSource,
+                        retried.getInputStream(retried.getEntry("0001.png")).readAllBytes());
+            }
         }
     }
 
@@ -403,16 +457,30 @@ class ExportServiceTest {
                 int splitPages,
                 boolean allowOverwrite
         ) {
+            return task("pdf", chapterId, targetName, splitPages, allowOverwrite);
+        }
+
+        ExportTaskRequest task(
+                String format,
+                String chapterId,
+                String targetName,
+                int splitPages,
+                boolean allowOverwrite
+        ) {
             return new ExportTaskRequest(
-                    "pdf", "chapter", "album-1", "Album", "", "Alice", false,
+                    format, "chapter", "album-1", "Album", "", "Alice", false,
                     chapterId, "Chapter", null,
                     new ExportTargetRequest(FileReferences.folderRef(output), targetName),
                     output.resolve(targetName).toString(), true, 1D, splitPages, allowOverwrite);
         }
 
         ExportTaskRequest mergedTask(String targetName) {
+            return mergedTask("pdf", targetName);
+        }
+
+        ExportTaskRequest mergedTask(String format, String targetName) {
             return new ExportTaskRequest(
-                    "pdf", "merged", "album-1", "Album", "", "Alice", false,
+                    format, "merged", "album-1", "Album", "", "Alice", false,
                     null, "Album", List.of(
                     new io.github.jukomu.desktop.feature.pdf.model.ExportTaskChapterRequest(
                             "album-1", "chapter-1", "Chapter 1", 1),

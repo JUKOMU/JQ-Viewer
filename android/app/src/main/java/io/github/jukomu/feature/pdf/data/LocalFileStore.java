@@ -422,8 +422,11 @@ public class LocalFileStore extends SQLiteOpenHelper {
     ) {
         JSONObject existing = getFileByRefExact(fileRef);
         if (existing != null && !replaceMetadata) return -1L;
-        if (!"pdf".equals(format)) {
-            throw new IllegalArgumentException("本轮仅支持 PDF 文件");
+        if (!isFileFormat(format)) {
+            throw new IllegalArgumentException("format必须是pdf、cbz或zip");
+        }
+        if ("zip".equals(format) && !SOURCE_EXPORTED.equals(sourceType)) {
+            throw new IllegalArgumentException("ZIP 仅支持导出文件");
         }
         long now = System.currentTimeMillis();
         ContentValues values = new ContentValues();
@@ -644,8 +647,8 @@ public class LocalFileStore extends SQLiteOpenHelper {
             taskValues.put("export_id", exportId);
             taskValues.put("batch_id", task.optString("batchId", exportId));
             String format = task.optString("format", "pdf");
-            if (!"pdf".equals(format)) {
-                throw new IllegalArgumentException("本轮仅支持 PDF 导出");
+            if (!isFileFormat(format)) {
+                throw new IllegalArgumentException("format必须是pdf、cbz或zip");
             }
             taskValues.put("format", format);
             taskValues.put("mode", task.getString("mode"));
@@ -1075,7 +1078,7 @@ public class LocalFileStore extends SQLiteOpenHelper {
             "export_id = ? AND volume_index = ?",
             new String[]{exportId, String.valueOf(volumeIndex)});
         if (updated != 1) {
-            throw new IllegalStateException("PDF 分卷记录不存在: " + exportId + "/" + volumeIndex);
+            throw new IllegalStateException("导出分卷记录不存在: " + exportId + "/" + volumeIndex);
         }
     }
 
@@ -1249,6 +1252,10 @@ public class LocalFileStore extends SQLiteOpenHelper {
 
     private static String emptyToNull(String value) {
         return value == null || value.trim().isEmpty() ? null : value.trim();
+    }
+
+    private static boolean isFileFormat(String format) {
+        return "pdf".equals(format) || "cbz".equals(format) || "zip".equals(format);
     }
 
     private static String joinClauses(List<String> clauses) {

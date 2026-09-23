@@ -80,7 +80,7 @@ class DesktopTaskNotificationServiceTest {
         assertEquals("PDF 导出完成", sink.entries.get(1).notification().title());
         assertEquals("测试导出", sink.entries.get(1).notification().message());
         sink.entries.get(1).click().run();
-        assertEquals(Map.of("route", "/download?view=pdf&tab=tasks&exportId=pdf+id%2F1"),
+        assertEquals(Map.of("route", "/download?view=pdf&tab=tasks&format=pdf&exportId=pdf+id%2F1"),
                 launchRoutes.consume());
     }
 

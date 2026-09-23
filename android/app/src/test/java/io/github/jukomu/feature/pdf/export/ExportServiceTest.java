@@ -60,6 +60,18 @@ public class ExportServiceTest {
     }
 
     @Test
+    public void buildsArchiveVolumesWithTheirOwnExtension() throws Exception {
+        File output = new File(temporaryFolder.getRoot(), "merged.cbz");
+
+        List<ExportService.ExportVolume> volumes = ExportService.buildVolumes(
+            output, 205, 100, "merged.cbz", "/exports/merged.cbz", "cbz");
+
+        assertVolume(volumes.get(0), 0, 100, "merged_001-100.cbz");
+        assertEquals("merged_001-100.cbz", volumes.get(0).targetName);
+        assertEquals("/exports/merged_001-100.cbz", volumes.get(0).displayPath);
+    }
+
+    @Test
     public void removesOnlyTheTargetStaleArtifacts() throws Exception {
         File output = new File(temporaryFolder.getRoot(), "merged.pdf");
         File other = new File(temporaryFolder.getRoot(), "other.pdf.tmp");
@@ -147,7 +159,7 @@ public class ExportServiceTest {
             )
         );
 
-        assertEquals("PDF 导出已取消", error.getMessage());
+        assertEquals("导出已取消", error.getMessage());
         assertEquals(2, checks.get());
         assertEquals(64 * 1024, output.size());
     }
@@ -238,6 +250,19 @@ public class ExportServiceTest {
                 Arrays.asList(205), persistedVolumes, Arrays.asList(205), volumes));
 
         assertTrue(error.getMessage().startsWith("PDF_RETRY_LAYOUT_CHANGED:"));
+    }
+
+    @Test
+    public void archiveRetryUsesFormatSpecificLayoutError() throws Exception {
+        File output = new File(temporaryFolder.getRoot(), "retry.cbz");
+        List<ExportService.ExportVolume> volumes = ExportService.buildVolumes(
+            output, 2, 0, "retry.cbz", output.getAbsolutePath(), "cbz");
+
+        IOException error = assertThrows(IOException.class,
+            () -> ExportService.ensureRetryLayoutUnchanged(
+                Arrays.asList(1), volumes, Arrays.asList(2), volumes, "cbz"));
+
+        assertTrue(error.getMessage().startsWith("CBZ_RETRY_LAYOUT_CHANGED:"));
     }
 
     private static void assertVolume(ExportService.ExportVolume volume, int start, int end,

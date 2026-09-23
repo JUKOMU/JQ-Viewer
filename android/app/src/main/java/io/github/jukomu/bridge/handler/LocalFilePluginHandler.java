@@ -682,10 +682,11 @@ public final class LocalFilePluginHandler {
                 try {
                     JSONObject t = tasksJson.getJSONObject(i);
                     String format = t.optString("format", "pdf").trim().toLowerCase();
-                    if (!"pdf".equals(format)) {
-                        throw new IllegalArgumentException("本轮仅支持 PDF 导出");
+                    if (!"pdf".equals(format) && !"cbz".equals(format) && !"zip".equals(format)) {
+                        throw new IllegalArgumentException("format必须是pdf、cbz或zip");
                     }
                     ExportService.ExportJob job = new ExportService.ExportJob();
+                    job.format = format;
                     job.mode = t.optString("mode", "chapter").trim();
                     job.albumId = t.optString("albumId", "");
                     job.albumTitle = t.optString("albumTitle", "");
@@ -757,7 +758,7 @@ public final class LocalFilePluginHandler {
         JSONObject task = exportId == null ? null
             : ExportService.getInstance(context).getExportTask(exportId);
         if (task == null) {
-            rejectWithCode(call, "PDF 导出任务不存在", PdfOperationException.NOT_FOUND, null);
+            rejectWithCode(call, "导出任务不存在", PdfOperationException.NOT_FOUND, null);
             return;
         }
         try {
@@ -772,7 +773,7 @@ public final class LocalFilePluginHandler {
         JSONObject task = exportId == null ? null
             : ExportService.getInstance(context).cancelExport(exportId);
         if (task == null) {
-            rejectWithCode(call, "PDF 导出任务不存在", PdfOperationException.NOT_FOUND, null);
+            rejectWithCode(call, "导出任务不存在", PdfOperationException.NOT_FOUND, null);
             return;
         }
         try {

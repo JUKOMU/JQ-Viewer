@@ -6,10 +6,11 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.Locale;
 import java.util.regex.Pattern;
 
 /**
- * Validates and identifies PDF export jobs before they enter the worker queue.
+ * Validates and identifies export jobs before they enter the worker queue.
  */
 public final class PdfExportJobValidator {
 
@@ -22,6 +23,11 @@ public final class PdfExportJobValidator {
         if (job == null) {
             throw new IllegalArgumentException("导出任务不能为空");
         }
+        job.format = job.format == null || job.format.trim().isEmpty()
+            ? "pdf" : job.format.trim().toLowerCase(Locale.ROOT);
+        if (!"pdf".equals(job.format) && !"cbz".equals(job.format) && !"zip".equals(job.format)) {
+            throw new IllegalArgumentException("format必须是pdf、cbz或zip");
+        }
         requireResourceId(job.albumId, "albumId");
         requireText(job.targetFolderRef, "targetFolderRef");
         PdfRef.Parsed target = PdfRef.parse(job.targetFolderRef);
@@ -31,13 +37,20 @@ public final class PdfExportJobValidator {
         requireText(job.targetName, "targetName");
         requireText(job.displayPath, "displayPath");
         job.targetName = PdfTargetPath.normalize(job.targetName);
+        if (!job.targetName.toLowerCase(Locale.ROOT).endsWith("." + job.format)) {
+            throw new IllegalArgumentException("targetName必须以." + job.format + "结尾");
+        }
+        if (!"pdf".equals(job.format)) {
+            job.useOriginal = true;
+            job.compressionRatio = 1F;
+        }
 
         if ("chapter".equals(job.mode)) {
             requireResourceId(job.chapterId, "chapterId");
             return;
         }
         if (!"merged".equals(job.mode)) {
-            throw new IllegalArgumentException("不支持的 PDF 导出模式: " + job.mode);
+            throw new IllegalArgumentException("不支持的导出模式: " + job.mode);
         }
         if (job.chapters == null || job.chapters.size() < 2) {
             throw new IllegalArgumentException("合并导出至少需要两个章节");

@@ -9,6 +9,8 @@ import androidx.documentfile.provider.DocumentFile;
 import io.github.jukomu.feature.download.data.DownloadStore;
 import io.github.jukomu.feature.download.storage.FileStore;
 import io.github.jukomu.feature.download.validation.ChapterManifestValidator;
+import io.github.jukomu.feature.export.archive.ArchiveExportPlanner;
+import io.github.jukomu.feature.export.archive.ArchiveVolumeWriter;
 import io.github.jukomu.feature.pdf.PdfOperationException;
 import io.github.jukomu.feature.pdf.data.PdfRef;
 import io.github.jukomu.feature.pdf.data.PdfRefResolver;
@@ -32,11 +34,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * PDF 导出服务（单例）。
+ * 本地文件导出服务（单例）。
  * <p>
  * 使用 PdfBox-Android 分块生成 PDF。
  * 后台线程串行执行，通过系统通知报告进度。
- * PDF 前台服务通知承载进行中状态，每任务 notificationId 只用于终态。
+ * 前台服务通知承载进行中状态，每任务 notificationId 只用于终态。
  */
 public class ExportService {
 
@@ -61,6 +63,7 @@ public class ExportService {
     private final Set<String> activeTaskKeys = new HashSet<>();
     private final Set<String> activeChapterKeys = new HashSet<>();
     private final PdfBoxExportWriter writer;
+    private final ArchiveVolumeWriter archiveWriter;
     private final LocalFileStore pdfStore;
     private final ForegroundPublisher foregroundPublisher;
     private final WakeLockFactory wakeLockFactory;
@@ -81,11 +84,12 @@ public class ExportService {
         this.wakeLockFactory = wakeLockFactory == null ? this::createAndroidWakeLock : wakeLockFactory;
         this.notif = new PdfExportNotificationHelper(this.context);
         this.writer = new PdfBoxExportWriter(this.context);
+        this.archiveWriter = new ArchiveVolumeWriter();
         this.pdfStore = LocalFileStore.getInstance(this.context);
     }
 
     static ExecutorService createExecutor() {
-        return ServiceExecutors.fixed("pdf-export", 1);
+        return ServiceExecutors.fixed("file-export", 1);
     }
 
     public static synchronized ExportService getInstance(Context context) {
@@ -134,8 +138,8 @@ public class ExportService {
     }
 
     public JSONObject getExportTasksPage(String format, String status, String cursor, int limit) {
-        if (format != null && !format.isEmpty() && !"pdf".equals(format)) {
-            throw new IllegalArgumentException("本轮仅支持 PDF 导出任务");
+        if (format != null && !format.isEmpty() && !isFormat(format)) {
+            throw new IllegalArgumentException("format必须是pdf、cbz或zip");
         }
         return pdfStore.getExportTasksPage(format, status, cursor, limit);
     }
@@ -151,7 +155,7 @@ public class ExportService {
     public synchronized JSONObject retryExport(String exportId, boolean allowOverwrite) throws Exception {
         JSONObject task = pdfStore.getExportTask(exportId);
         if (task == null) {
-            throw PdfOperationException.notFound("PDF 导出任务不存在");
+            throw PdfOperationException.notFound("导出任务不存在");
         }
         JSONArray persistedChapters = pdfStore.getExportChapters(exportId);
         JSONArray persistedVolumes = pdfStore.getExportVolumes(exportId);
@@ -160,7 +164,7 @@ public class ExportService {
         ExportPreflight preflight;
         try {
             preflight = preflight(job);
-            ensureRetryLayoutUnchanged(persistedChapters, persistedVolumes, preflight);
+            ensureRetryLayoutUnchanged(persistedChapters, persistedVolumes, preflight, job.format);
         } catch (Exception error) {
             cleanupStagingDirectoryQuietly(job);
             throw error;
@@ -187,12 +191,12 @@ public class ExportService {
         JSONObject task = pdfStore.getExportTask(exportId);
         if (task == null) return false;
         if (!LocalFileStore.isTerminalExportStatus(task.optString("status"))) {
-            throw new IllegalStateException("活动 PDF 导出任务不能删除");
+            throw new IllegalStateException("活动导出任务不能删除");
         }
         cleanupKnownArtifacts(exportId, true);
         cleanupStagingDirectoryQuietly(task);
         if (!pdfStore.deleteExportTask(exportId)) {
-            throw new IllegalStateException("活动 PDF 导出任务不能删除");
+            throw new IllegalStateException("活动导出任务不能删除");
         }
         return true;
     }
@@ -202,7 +206,7 @@ public class ExportService {
         JSONObject task = new JSONObject();
         task.put("exportId", job.exportId);
         task.put("batchId", batchId);
-        task.put("format", "pdf");
+        task.put("format", job.format);
         task.put("mode", job.mode);
         task.put("albumId", job.albumId);
         task.put("albumTitle", nullToEmpty(job.albumTitle));
@@ -251,8 +255,8 @@ public class ExportService {
                 value.put("expectedPageCount", volume.end - volume.start);
                 value.put("targetName", volume.targetName);
                 value.put("displayPath", volume.displayPath);
-                value.put("tempPath", PdfBoxExportWriter.getTempFile(volume.file).getAbsolutePath());
-                value.put("workDir", PdfBoxExportWriter.getWorkDirectory(volume.file).getAbsolutePath());
+                value.put("tempPath", temporaryFile(job.format, volume.file).getAbsolutePath());
+                value.put("workDir", workDirectory(job.format, volume.file).getAbsolutePath());
                 volumes.put(value);
             }
         }
@@ -270,6 +274,7 @@ public class ExportService {
     private static ExportJob jobFromSnapshot(JSONObject task, JSONArray chapters) {
         ExportJob job = new ExportJob();
         job.exportId = task.optString("exportId");
+        job.format = task.optString("format", "pdf");
         job.mode = task.optString("mode");
         job.albumId = task.optString("albumId");
         job.albumTitle = task.optString("albumTitle");
@@ -306,12 +311,12 @@ public class ExportService {
             try {
                 PdfArtifactCleaner.cleanupKnownVolume(volumes.getJSONObject(index));
             } catch (Exception error) {
-                if (failure == null) failure = new IOException("PDF 临时产物清理失败", error);
+                if (failure == null) failure = new IOException("导出临时产物清理失败", error);
                 else failure.addSuppressed(error);
             }
         }
         if (strict && failure != null) throw failure;
-        if (!strict && failure != null) Log.w(TAG, "PDF 临时产物清理失败: " + exportId, failure);
+        if (!strict && failure != null) Log.w(TAG, "导出临时产物清理失败: " + exportId, failure);
     }
 
     private void cleanupKnownArtifactsQuietly(String exportId) {
@@ -336,13 +341,13 @@ public class ExportService {
         if (exportId == null || exportId.isEmpty()) return;
         try {
             long bytes = PdfArtifactCleaner.cleanupStagingDirectory(
-                new File(context.getCacheDir(), "pdf-export"), exportId);
+                new File(context.getCacheDir(), "file-export"), exportId);
             if (bytes > 0L) {
-                Log.i(TAG, "已清理 PDF SAF staging: exportId=" + exportId
+                Log.i(TAG, "已清理导出 SAF staging: exportId=" + exportId
                     + ", bytes=" + bytes);
             }
         } catch (Exception error) {
-            Log.w(TAG, "清理 PDF SAF staging 失败: " + exportId, error);
+            Log.w(TAG, "清理导出 SAF staging 失败: " + exportId, error);
         }
     }
 
@@ -365,7 +370,7 @@ public class ExportService {
             try {
                 eventSink.onExportProgress(snapshot);
             } catch (RuntimeException error) {
-                Log.w(TAG, "发布 PDF 导出进度失败", error);
+                Log.w(TAG, "发布导出进度失败", error);
             }
         }
         return snapshot;
@@ -391,10 +396,11 @@ public class ExportService {
         return Collections.singletonList(chapter);
     }
 
-    private static String errorCode(Throwable error) {
+    private static String errorCode(Throwable error, ExportJob job) {
         String message = findErrorMessage(error);
         int separator = message.indexOf(':');
-        return separator > 0 ? message.substring(0, separator) : "PDF_EXPORT_FAILED";
+        return separator > 0 ? message.substring(0, separator)
+            : formatCode(job == null ? "pdf" : job.format, "EXPORT_FAILED");
     }
 
     private static String nullToEmpty(String value) {
@@ -405,6 +411,7 @@ public class ExportService {
 
     public static class ExportJob {
         public String exportId;
+        public String format = "pdf";
         public String mode;
         public String albumId;
         public String albumTitle;
@@ -448,7 +455,7 @@ public class ExportService {
                     results.put(new JSONObject()
                         .put("accepted", false)
                         .put("errorCode", "TASK_CONFLICT")
-                        .put("errorMessage", "相同章节已有 PDF 导出任务正在排队或运行"));
+                        .put("errorMessage", "相同章节已有导出任务正在排队或运行"));
                     continue;
                 }
                 job.exportId = UUID.randomUUID().toString();
@@ -468,14 +475,14 @@ public class ExportService {
                         releaseJobLocksAndUpdate(job);
                         results.put(new JSONObject()
                             .put("accepted", false)
-                            .put("errorCode", "PDF_OUTPUT_EXISTS")
+                            .put("errorCode", errorCode(error, job))
                             .put("errorMessage", error.getMessage())
                             .put("displayPath", nullToEmpty(job.displayPath)));
                         continue;
                     }
                     ExportFailure failure = describeExportFailure(error, job);
                     reserveExport(job, null, String.valueOf(batchId), "failed",
-                        errorCode(error), failure.userMessage);
+                        errorCode(error, job), failure.userMessage);
                     cleanupStagingDirectoryQuietly(job);
                     releaseJobLocksAndUpdate(job);
                     JSONObject task = pdfStore.getExportTask(job.exportId);
@@ -537,7 +544,7 @@ public class ExportService {
                     String status = completed > 0 ? "partial" : "cancelled";
                     cleanupKnownArtifactsQuietly(job.exportId);
                     updateTerminalProgress(job, queuedJob.preflight, status, completed,
-                        "CANCELLED", "PDF 导出已取消");
+                        "CANCELLED", "导出已取消");
                 } catch (Exception e) {
                     fail++;
                     ExportFailure failure = describeExportFailure(e, job);
@@ -546,11 +553,12 @@ public class ExportService {
                     String status = completed > 0 ? "partial" : "failed";
                     cleanupKnownArtifactsQuietly(job.exportId);
                     updateTerminalProgress(job, queuedJob.preflight, status, completed,
-                        errorCode(e), failure.userMessage);
+                        errorCode(e, job), failure.userMessage);
                     notif.showError(notificationId, job.chapterTitle, failure.userMessage);
                 } catch (Throwable t) {
                     fail++;
-                    Log.e(TAG, "PDF export crashed: " + job.chapterTitle, t);
+                    Log.e(TAG, job.format.toUpperCase(Locale.ROOT)
+                        + " export crashed: " + job.chapterTitle, t);
                     int completed = pdfStore.countCompletedVolumes(job.exportId);
                     cleanupKnownArtifactsQuietly(job.exportId);
                     updateTerminalProgress(job, queuedJob.preflight, "failed", completed,
@@ -577,7 +585,7 @@ public class ExportService {
         Log.i(TAG, "Batch " + batchId + " done: " + success + " success, " + fail + " fail");
     }
 
-    // ---- PDF 导出 ----
+    // ---- 文件导出 ----
 
     private void exportJob(ExportJob job, ExportPreflight preflight, int baseNotificationId,
                            int sessionId)
@@ -586,16 +594,16 @@ public class ExportService {
         List<PdfBoxExportWriter.ExportImageDescriptor> images =
             flattenImageDescriptors(preflight.chapters, preflight.totalPages);
         int total = images.size();
-        Log.i(TAG, "Exporting PDF: " + job.chapterTitle
+        Log.i(TAG, "Exporting " + job.format.toUpperCase(Locale.ROOT) + ": " + job.chapterTitle
             + " (" + total + " pages, imageBytes=" + preflight.totalImageBytes
             + ", requiredBytes=" + preflight.requiredBytes
             + ", preflightMs=" + formatMillis(preflight.preflightDurationNanos) + ")");
 
         List<ExportVolume> volumes = preflight.volumes;
-        PdfBoxExportWriter.cleanStaleArtifacts(preflight.pdfFile);
+        cleanStaleArtifacts(job.format, preflight.pdfFile);
         for (ExportVolume volume : volumes) {
             validateOutputFile(volume.file);
-            PdfBoxExportWriter.cleanStaleArtifacts(volume.file);
+            cleanStaleArtifacts(job.format, volume.file);
         }
 
         long totalOutputBytes = 0L;
@@ -619,42 +627,48 @@ public class ExportService {
                 volume.file.getParentFile(),
                 estimateRequiredBytesForVolume(volumeImages, job.useOriginal)
             );
-            writer.writeVolume(
-                volumeImages,
-                volume.file,
-                job.useOriginal,
-                job.compressionRatio,
-                new PdfBoxExportWriter.ProgressListener() {
-                    @Override
-                    public void onPageWritten(int currentPage) {
-                        int taskPage = volume.start + currentPage;
-                        if (pdfStore.isCancelRequested(job.exportId)) {
-                            throw new ExportCancelledRuntimeException();
-                        }
-                        updateProgress(job.exportId, "running", "writing", taskPage, total,
-                            volumeNumber, volumeCount, null, null);
-                        logPdfHeartbeat(job, sessionId, taskPage, total, volumeNumber, volumeCount);
-                        publishPdfForeground(sessionId, job, "正在导出", taskPage, total,
-                            volumeNumber, volumeCount);
+            PdfBoxExportWriter.ProgressListener progress = new PdfBoxExportWriter.ProgressListener() {
+                @Override
+                public void onPageWritten(int currentPage) {
+                    int taskPage = volume.start + currentPage;
+                    if (pdfStore.isCancelRequested(job.exportId)) {
+                        throw new ExportCancelledRuntimeException();
                     }
-
-                    @Override
-                    public void onFinalizing() {
-                        publishPdfForeground(sessionId, job, "写入文件", volume.end, total,
-                            volumeNumber, volumeCount);
-                    }
+                    updateProgress(job.exportId, "running", "writing", taskPage, total,
+                        volumeNumber, volumeCount, null, null);
+                    logPdfHeartbeat(job, sessionId, taskPage, total, volumeNumber, volumeCount);
+                    publishPdfForeground(sessionId, job, "正在导出", taskPage, total,
+                        volumeNumber, volumeCount);
                 }
-            );
+
+                @Override
+                public void onFinalizing() {
+                    publishPdfForeground(sessionId, job, "写入文件", volume.end, total,
+                        volumeNumber, volumeCount);
+                }
+            };
+            OutputReport report;
+            if ("pdf".equals(job.format)) {
+                writer.writeVolume(volumeImages, volume.file, job.useOriginal,
+                    job.compressionRatio, progress);
+                try {
+                    PdfFileValidator.Report pdfReport = PdfFileValidator.validate(
+                        context, PdfRef.createPathFileRef(volume.file.getAbsolutePath()),
+                        volume.end - volume.start);
+                    report = new OutputReport(pdfReport.fileSize, pdfReport.pageCount);
+                } catch (PdfFileValidator.ValidationException error) {
+                    throw new IOException(error.code + ": " + error.getMessage(), error);
+                }
+            } else {
+                ArchiveExportPlanner.Plan archivePlan = archivePlan(job, preflight, volume,
+                    volumeNumber, volumeCount);
+                ArchiveVolumeWriter.Report archiveReport = archiveWriter.write(
+                    archivePlan, volume.file, progress::onPageWritten);
+                progress.onFinalizing();
+                report = new OutputReport(archiveReport.fileSize, archiveReport.pageCount);
+            }
             long pathOutputLength = volume.file.length();
             long pathOutputLastModified = volume.file.lastModified();
-            PdfFileValidator.Report report;
-            try {
-                report = PdfFileValidator.validate(
-                    context, PdfRef.createPathFileRef(volume.file.getAbsolutePath()),
-                    volume.end - volume.start);
-            } catch (PdfFileValidator.ValidationException error) {
-                throw new IOException(error.code + ": " + error.getMessage(), error);
-            }
             String outputFileRef = publishVolume(job, volume);
             try {
                 checkExportCancelled(job.exportId);
@@ -678,7 +692,7 @@ public class ExportService {
                 report.fileSize, report.pageCount, job.mode,
                 job.albumId, job.albumTitle, job.coverUrl, job.authors, job.chapterId,
                 job.chapterTitle, 0, job.singleEpisode);
-            Log.i(TAG, "PDF saved: " + volume.displayPath
+            Log.i(TAG, job.format.toUpperCase(Locale.ROOT) + " saved: " + volume.displayPath
                 + " (" + volume.file.length() + " bytes, volumeMs="
                 + formatMillis(SystemClock.elapsedRealtimeNanos() - volumeStartedAt) + ")");
             totalOutputBytes = saturatingAdd(totalOutputBytes, volume.file.length());
@@ -689,13 +703,14 @@ public class ExportService {
             : null;
         notif.showComplete(
             baseNotificationId,
+            job.format,
             job.chapterTitle,
             firstOutputFileName == null
                 ? PdfTargetPath.basename(firstVolume.targetName) : firstOutputFileName,
             firstOutputFileRef,
             detail
         );
-        Log.i(TAG, "PDF export baseline: title=" + job.chapterTitle
+        Log.i(TAG, job.format.toUpperCase(Locale.ROOT) + " export baseline: title=" + job.chapterTitle
             + ", mode=" + job.mode
             + ", useOriginal=" + job.useOriginal
             + ", pages=" + total
@@ -739,11 +754,12 @@ public class ExportService {
             }
             if (!job.allowOverwrite || !destination.delete()) {
                 throw new PdfOutputExistsException(
-                    "PDF_OUTPUT_EXISTS: 目标文件已存在，请确认覆盖后重试");
+                    formatCode(job.format, "OUTPUT_EXISTS")
+                        + ": 目标文件已存在，请确认覆盖后重试");
             }
         }
         checkExportCancelled(job.exportId);
-        destination = current.createFile("application/pdf", fileName);
+        destination = current.createFile(mimeType(job.format), fileName);
         if (destination == null) throw new IOException("无法创建 SAF 导出文件");
         try (FileInputStream input = new FileInputStream(volume.file)) {
             OutputStream output = context.getContentResolver().openOutputStream(destination.getUri());
@@ -884,12 +900,13 @@ public class ExportService {
             totalPageCount,
             job.splitPages,
             job.targetName,
-            job.displayPath
+            job.displayPath,
+            job.format
         );
         if (targetRef.provider == PdfRef.Provider.SAF) {
             ensureSafOverwriteAllowed(job, volumes);
         } else {
-            ensureOverwriteAllowed(volumes, job.allowOverwrite);
+            ensureOverwriteAllowed(volumes, job.allowOverwrite, job.format);
         }
         long requiredBytes = estimateRequiredBytesForExport(
             volumes,
@@ -921,20 +938,27 @@ public class ExportService {
 
     static List<ExportVolume> buildVolumes(File pdfFile, int totalPages, int splitPages) {
         return buildVolumes(pdfFile, totalPages, splitPages,
-            pdfFile.getName(), pdfFile.getAbsolutePath());
+            pdfFile.getName(), pdfFile.getAbsolutePath(), extension(pdfFile.getName()));
     }
 
     static List<ExportVolume> buildVolumes(File pdfFile, int totalPages, int splitPages,
                                            String targetName, String displayPath) {
+        return buildVolumes(pdfFile, totalPages, splitPages, targetName, displayPath,
+            extension(targetName));
+    }
+
+    static List<ExportVolume> buildVolumes(File pdfFile, int totalPages, int splitPages,
+                                           String targetName, String displayPath, String format) {
         String normalizedTargetName = PdfTargetPath.normalize(targetName);
         int pagesPerVolume = splitPages > 0 ? splitPages : totalPages;
         int volumeCount = (totalPages + pagesPerVolume - 1) / pagesPerVolume;
         List<ExportVolume> volumes = new ArrayList<>(volumeCount);
         String basePath = pdfFile.getAbsolutePath();
-        String baseWithoutExtension = basePath.endsWith(".pdf")
-            ? basePath.substring(0, basePath.length() - 4) : basePath;
-        String displayBase = displayPath.endsWith(".pdf")
-            ? displayPath.substring(0, displayPath.length() - 4) : displayPath;
+        String extension = "." + format;
+        String baseWithoutExtension = basePath.toLowerCase(Locale.ROOT).endsWith(extension)
+            ? basePath.substring(0, basePath.length() - extension.length()) : basePath;
+        String displayBase = displayPath.toLowerCase(Locale.ROOT).endsWith(extension)
+            ? displayPath.substring(0, displayPath.length() - extension.length()) : displayPath;
 
         for (int index = 0; index < volumeCount; index++) {
             int start = index * pagesPerVolume;
@@ -942,17 +966,19 @@ public class ExportService {
             File volumeFile = volumeCount > 1
                 ? new File(String.format(
                 Locale.ROOT,
-                "%s_%03d-%03d.pdf",
+                "%s_%03d-%03d%s",
                 baseWithoutExtension,
                 start + 1,
-                end
+                end,
+                extension
             ))
                 : pdfFile;
             String volumeTargetName = volumeCount > 1
                 ? PdfTargetPath.withVolumeSuffix(normalizedTargetName, start + 1, end)
                 : normalizedTargetName;
             String volumeDisplayPath = volumeCount > 1
-                ? displayBase + String.format(Locale.ROOT, "_%03d-%03d.pdf", start + 1, end)
+                ? displayBase + String.format(Locale.ROOT, "_%03d-%03d%s",
+                    start + 1, end, extension)
                 : displayPath;
             volumes.add(new ExportVolume(start, end, volumeFile,
                 volumeTargetName, volumeDisplayPath));
@@ -960,13 +986,77 @@ public class ExportService {
         return volumes;
     }
 
+    private static String extension(String targetName) {
+        int separator = targetName == null ? -1 : targetName.lastIndexOf('.');
+        return separator >= 0 ? targetName.substring(separator + 1).toLowerCase(Locale.ROOT) : "pdf";
+    }
+
+    private static boolean isFormat(String format) {
+        return "pdf".equals(format) || "cbz".equals(format) || "zip".equals(format);
+    }
+
+    private static String formatCode(String format, String suffix) {
+        return format.toUpperCase(Locale.ROOT) + "_" + suffix;
+    }
+
+    private static String mimeType(String format) {
+        if ("pdf".equals(format)) return "application/pdf";
+        if ("cbz".equals(format)) return "application/vnd.comicbook+zip";
+        return "application/zip";
+    }
+
+    private static File temporaryFile(String format, File output) {
+        return "pdf".equals(format) ? PdfBoxExportWriter.getTempFile(output)
+            : ArchiveVolumeWriter.getTempFile(output);
+    }
+
+    private static File workDirectory(String format, File output) {
+        return "pdf".equals(format) ? PdfBoxExportWriter.getWorkDirectory(output)
+            : ArchiveVolumeWriter.getWorkDirectory(output);
+    }
+
+    private static void cleanStaleArtifacts(String format, File output) throws IOException {
+        if ("pdf".equals(format)) PdfBoxExportWriter.cleanStaleArtifacts(output);
+        else ArchiveVolumeWriter.cleanStaleArtifacts(output);
+    }
+
+    private static ArchiveExportPlanner.Plan archivePlan(
+        ExportJob job,
+        ExportPreflight preflight,
+        ExportVolume volume,
+        int volumeNumber,
+        int volumeCount
+    ) {
+        List<ArchiveExportPlanner.Chapter> chapters = new ArrayList<>();
+        List<File> images = new ArrayList<>(preflight.totalPages);
+        for (ChapterPreflight chapter : preflight.chapters) {
+            chapters.add(new ArchiveExportPlanner.Chapter(
+                chapter.chapter.chapterId,
+                chapter.chapter.chapterTitle,
+                chapter.chapter.sortOrder,
+                chapter.images.size()
+            ));
+            for (PdfBoxExportWriter.ExportImageDescriptor image : chapter.images) {
+                images.add(image.file);
+            }
+        }
+        return ArchiveExportPlanner.plan(
+            job.format, job.mode, job.albumId, job.albumTitle, job.authors,
+            chapters, images, volume.start, volume.end, volumeNumber, volumeCount);
+    }
+
     static void ensureOverwriteAllowed(List<ExportVolume> volumes, boolean allowOverwrite)
         throws IOException {
+        ensureOverwriteAllowed(volumes, allowOverwrite, "pdf");
+    }
+
+    static void ensureOverwriteAllowed(List<ExportVolume> volumes, boolean allowOverwrite,
+                                       String format) throws IOException {
         if (allowOverwrite) return;
         for (ExportVolume volume : volumes) {
             if (volume.file.exists()) {
-                throw new PdfOutputExistsException("PDF_OUTPUT_EXISTS: 目标文件已存在，请确认覆盖后重试: "
-                    + volume.file.getAbsolutePath());
+                throw new PdfOutputExistsException(formatCode(format, "OUTPUT_EXISTS")
+                    + ": 目标文件已存在，请确认覆盖后重试: " + volume.file.getAbsolutePath());
             }
         }
     }
@@ -978,7 +1068,8 @@ public class ExportService {
             throw new IOException("目标导出目录不存在");
         }
         for (ExportVolume volume : volumes) {
-            validateSafTarget(folder, volume.targetName, job.allowOverwrite, volume.displayPath);
+            validateSafTarget(folder, volume.targetName, job.allowOverwrite,
+                volume.displayPath, job.format);
         }
     }
 
@@ -990,6 +1081,12 @@ public class ExportService {
     private static void validateSafTarget(DocumentFile folder, String targetName,
                                           boolean allowOverwrite, String displayPath)
         throws IOException {
+        validateSafTarget(folder, targetName, allowOverwrite, displayPath, extension(targetName));
+    }
+
+    private static void validateSafTarget(DocumentFile folder, String targetName,
+                                          boolean allowOverwrite, String displayPath,
+                                          String format) throws IOException {
         DocumentFile destination = findSafTarget(folder, targetName);
         if (destination == null || !destination.exists()) {
             return;
@@ -1003,8 +1100,8 @@ public class ExportService {
         if (!allowOverwrite) {
             String suffix = displayPath == null || displayPath.isEmpty()
                 ? "" : ": " + displayPath;
-            throw new PdfOutputExistsException(
-                "PDF_OUTPUT_EXISTS: 目标文件已存在，请确认覆盖后重试" + suffix);
+            throw new PdfOutputExistsException(formatCode(format, "OUTPUT_EXISTS")
+                + ": 目标文件已存在，请确认覆盖后重试" + suffix);
         }
     }
 
@@ -1150,7 +1247,7 @@ public class ExportService {
                 original
             );
         } catch (RuntimeException cleanupFailure) {
-            Log.w(TAG, "清理取消的 PDF 导出文件时发生异常", cleanupFailure);
+            Log.w(TAG, "清理取消的导出文件时发生异常", cleanupFailure);
             if (original != null) {
                 original.addSuppressed(cleanupFailure);
             }
@@ -1234,12 +1331,14 @@ public class ExportService {
     }
 
     private static void ensureRetryLayoutUnchanged(JSONArray persistedChapters,
-                                                   JSONArray persistedVolumes, ExportPreflight preflight) throws IOException {
+                                                   JSONArray persistedVolumes,
+                                                   ExportPreflight preflight,
+                                                   String format) throws IOException {
         List<Integer> persistedChapterPageCounts = new ArrayList<>(persistedChapters.length());
         for (int index = 0; index < persistedChapters.length(); index++) {
             JSONObject chapter = persistedChapters.optJSONObject(index);
             if (chapter == null || chapter.optInt("expectedPageCount", -1) < 0) {
-                throw retryLayoutChanged();
+                throw retryLayoutChanged(format);
             }
             persistedChapterPageCounts.add(chapter.optInt("expectedPageCount"));
         }
@@ -1248,13 +1347,13 @@ public class ExportService {
             JSONObject volume = persistedVolumes.optJSONObject(index);
             if (volume == null || volume.optInt("volumeIndex", -1) != index + 1
                 || volume.optString("targetName").isEmpty()) {
-                throw retryLayoutChanged();
+                throw retryLayoutChanged(format);
             }
             int startPage = volume.optInt("startPage", -1);
             int endPage = volume.optInt("endPage", -1);
             if (startPage < 0 || endPage < startPage
                 || volume.optInt("expectedPageCount", -1) != endPage - startPage) {
-                throw retryLayoutChanged();
+                throw retryLayoutChanged(format);
             }
             persistedVolumeLayouts.add(new ExportVolume(
                 startPage,
@@ -1268,15 +1367,24 @@ public class ExportService {
             chapterPageCounts.add(chapter.images.size());
         }
         ensureRetryLayoutUnchanged(persistedChapterPageCounts, persistedVolumeLayouts,
-            chapterPageCounts, preflight.volumes);
+            chapterPageCounts, preflight.volumes, format);
     }
 
     static void ensureRetryLayoutUnchanged(List<Integer> persistedChapterPageCounts,
                                            List<ExportVolume> persistedVolumes, List<Integer> currentChapterPageCounts,
                                            List<ExportVolume> currentVolumes) throws IOException {
+        ensureRetryLayoutUnchanged(persistedChapterPageCounts, persistedVolumes,
+            currentChapterPageCounts, currentVolumes, "pdf");
+    }
+
+    static void ensureRetryLayoutUnchanged(List<Integer> persistedChapterPageCounts,
+                                           List<ExportVolume> persistedVolumes,
+                                           List<Integer> currentChapterPageCounts,
+                                           List<ExportVolume> currentVolumes,
+                                           String format) throws IOException {
         if (!persistedChapterPageCounts.equals(currentChapterPageCounts)
             || persistedVolumes.size() != currentVolumes.size()) {
-            throw retryLayoutChanged();
+            throw retryLayoutChanged(format);
         }
         for (int index = 0; index < persistedVolumes.size(); index++) {
             ExportVolume persisted = persistedVolumes.get(index);
@@ -1284,13 +1392,14 @@ public class ExportService {
             if (persisted.start != current.start
                 || persisted.end != current.end
                 || !persisted.targetName.equals(current.targetName)) {
-                throw retryLayoutChanged();
+                throw retryLayoutChanged(format);
             }
         }
     }
 
-    private static IOException retryLayoutChanged() {
-        return new IOException("PDF_RETRY_LAYOUT_CHANGED: 章节页数或分卷布局已变化，"
+    private static IOException retryLayoutChanged(String format) {
+        return new IOException(formatCode(format, "RETRY_LAYOUT_CHANGED")
+            + ": 章节页数或分卷布局已变化，"
             + "请重新创建导出任务");
     }
 
@@ -1327,7 +1436,7 @@ public class ExportService {
 
         File workDir = stagingDirectory(job.exportId);
         if (!workDir.exists() && !workDir.mkdirs()) {
-            throw new IOException("无法创建 PDF 临时目录");
+            throw new IOException("无法创建导出临时目录");
         }
         String name = PdfTargetPath.basename(job.targetName);
         return new File(workDir, name);
@@ -1336,12 +1445,12 @@ public class ExportService {
     private File stagingDirectory(String exportId) throws IOException {
         if (exportId == null || exportId.isEmpty()
             || exportId.contains("/") || exportId.contains("\\")) {
-            throw new IOException("PDF staging 标识无效");
+            throw new IOException("导出 staging 标识无效");
         }
-        File root = new File(context.getCacheDir(), "pdf-export").getCanonicalFile();
+        File root = new File(context.getCacheDir(), "file-export").getCanonicalFile();
         File directory = new File(root, exportId).getCanonicalFile();
         if (!directory.getPath().startsWith(root.getPath() + File.separator)) {
-            throw new IOException("PDF staging 路径越界");
+            throw new IOException("导出 staging 路径越界");
         }
         return directory;
     }
@@ -1354,6 +1463,7 @@ public class ExportService {
                 0,
                 activeCount,
                 Math.max(0, activeCount - 1),
+                firstJob.format,
                 firstJob.chapterTitle,
                 "排队中",
                 0,
@@ -1372,6 +1482,7 @@ public class ExportService {
                 sessionId,
                 activeCount,
                 Math.max(0, activeCount - 1),
+                job.format,
                 job.chapterTitle,
                 phase,
                 currentPage,
@@ -1393,16 +1504,16 @@ public class ExportService {
         try {
             wakeLock = wakeLockFactory.create();
             if (wakeLock == null) {
-                Log.w(TAG, "PDF wake lock unavailable: PowerManager service missing");
+                Log.w(TAG, "Export wake lock unavailable: PowerManager service missing");
                 return null;
             }
             wakeLock.setReferenceCounted(false);
             wakeLock.acquire();
-            Log.i(TAG, "PDF wake lock acquired: batch=" + batchId + ", jobs=" + jobCount);
+            Log.i(TAG, "Export wake lock acquired: batch=" + batchId + ", jobs=" + jobCount);
             return wakeLock;
         } catch (RuntimeException e) {
             releasePdfWakeLock(wakeLock, batchId);
-            Log.w(TAG, "PDF wake lock acquire failed; export continues without wake lock", e);
+            Log.w(TAG, "Export wake lock acquire failed; export continues without wake lock", e);
             return null;
         }
     }
@@ -1414,10 +1525,10 @@ public class ExportService {
         try {
             if (wakeLock.isHeld()) {
                 wakeLock.release();
-                Log.i(TAG, "PDF wake lock released: batch=" + batchId);
+                Log.i(TAG, "Export wake lock released: batch=" + batchId);
             }
         } catch (RuntimeException e) {
-            Log.w(TAG, "PDF wake lock release failed", e);
+            Log.w(TAG, "Export wake lock release failed", e);
         }
     }
 
@@ -1428,7 +1539,7 @@ public class ExportService {
         }
         PowerManager.WakeLock wakeLock = ((PowerManager) service).newWakeLock(
             PowerManager.PARTIAL_WAKE_LOCK,
-            context.getPackageName() + ":pdf-export"
+            context.getPackageName() + ":file-export"
         );
         return new AndroidWakeLockHandle(wakeLock);
     }
@@ -1469,7 +1580,8 @@ public class ExportService {
             0,
             activeCount,
             activeCount,
-            "PDF 导出",
+            "export",
+            "导出",
             activeCount > 0 ? "排队中" : "已结束",
             0,
             0,
@@ -1479,7 +1591,7 @@ public class ExportService {
     }
 
     private void publishForegroundLocked(int sessionId, int activeCount, int queueRemaining,
-                                         String title, String phase, int currentPage,
+                                         String format, String title, String phase, int currentPage,
                                          int totalPages, int volumeIndex, int totalVolumes) {
         foregroundPublisher.publish(
             context,
@@ -1488,6 +1600,7 @@ public class ExportService {
                 ++foregroundRevision,
                 activeCount,
                 queueRemaining,
+                format,
                 title,
                 phase,
                 currentPage,
@@ -1502,7 +1615,7 @@ public class ExportService {
                                         int totalPages, int volumeNumber, int volumeCount) {
         if (currentPage == 1 || currentPage == totalPages
             || currentPage % PDF_HEARTBEAT_PAGE_INTERVAL == 0) {
-            Log.i(TAG, "PDF export heartbeat: session=" + sessionId
+            Log.i(TAG, job.format.toUpperCase(Locale.ROOT) + " export heartbeat: session=" + sessionId
                 + ", title=" + job.chapterTitle
                 + ", page=" + currentPage + "/" + totalPages
                 + ", volume=" + volumeNumber + "/" + volumeCount);
@@ -1664,7 +1777,8 @@ public class ExportService {
 
         String path = job != null && job.displayPath != null ? job.displayPath : "";
         String title = job != null && job.chapterTitle != null ? job.chapterTitle : "";
-        String debugMessage = "PDF export failed: " + title
+        String debugMessage = (job == null ? "Export" : job.format.toUpperCase(Locale.ROOT))
+            + " export failed: " + title
             + (path.isEmpty() ? "" : ", path=" + path)
             + (rawMessage.isEmpty() ? "" : ", error=" + rawMessage);
         return new ExportFailure(userMessage, debugMessage);
@@ -1798,13 +1912,23 @@ public class ExportService {
 
     static final class ExportCancelledException extends IOException {
         ExportCancelledException() {
-            super("PDF 导出已取消");
+            super("导出已取消");
         }
     }
 
     private static final class ExportCancelledRuntimeException extends RuntimeException {
         ExportCancelledRuntimeException() {
-            super("PDF 导出已取消");
+            super("导出已取消");
+        }
+    }
+
+    private static final class OutputReport {
+        final long fileSize;
+        final int pageCount;
+
+        OutputReport(long fileSize, int pageCount) {
+            this.fileSize = fileSize;
+            this.pageCount = pageCount;
         }
     }
 

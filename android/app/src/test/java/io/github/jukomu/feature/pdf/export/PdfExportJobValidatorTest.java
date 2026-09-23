@@ -7,6 +7,7 @@ import java.util.Arrays;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThrows;
+import static org.junit.Assert.assertTrue;
 
 public class PdfExportJobValidatorTest {
 
@@ -152,6 +153,32 @@ public class PdfExportJobValidatorTest {
         PdfExportJobValidator.validate(job);
 
         assertEquals("295852/book.pdf", job.targetName);
+    }
+
+    @Test
+    public void normalizesArchiveJobsAndKeepsOriginalImages() {
+        ExportService.ExportJob cbz = chapterJob("101");
+        cbz.format = " CBZ ";
+        cbz.targetName = "chapter.cbz";
+        cbz.useOriginal = false;
+        cbz.compressionRatio = 0.25F;
+
+        PdfExportJobValidator.validate(cbz);
+
+        assertEquals("cbz", cbz.format);
+        assertTrue(cbz.useOriginal);
+        assertEquals(1F, cbz.compressionRatio, 0F);
+    }
+
+    @Test
+    public void rejectsTargetExtensionThatDoesNotMatchFormat() {
+        ExportService.ExportJob zip = chapterJob("101");
+        zip.format = "zip";
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+            () -> PdfExportJobValidator.validate(zip));
+
+        assertEquals("targetName必须以.zip结尾", error.getMessage());
     }
 
     private static ExportService.ExportJob chapterJob(String chapterId) {

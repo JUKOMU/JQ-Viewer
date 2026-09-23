@@ -17,14 +17,14 @@ import io.github.jukomu.feature.pdf.data.PdfRefResolver;
 import java.io.File;
 
 /**
- * PDF 导出系统通知辅助类。
+ * 文件导出系统通知辅助类。
  * 每任务 notificationId 只用于完成或失败终态。
  */
 public class PdfExportNotificationHelper {
 
     private static final String TAG = "PdfExportNotification";
     private static final String CHANNEL_ID = "pdf_export";
-    private static final String CHANNEL_NAME = "PDF导出";
+    private static final String CHANNEL_NAME = "文件导出";
     private static final int ICON = R.mipmap.ic_launcher;
 
     private final Context context;
@@ -43,7 +43,7 @@ public class PdfExportNotificationHelper {
                 CHANNEL_NAME,
                 NotificationManager.IMPORTANCE_DEFAULT
             );
-            channel.setDescription("PDF导出进度通知");
+            channel.setDescription("文件导出进度通知");
             channel.setShowBadge(false);
             manager.createNotificationChannel(channel);
         }
@@ -51,13 +51,18 @@ public class PdfExportNotificationHelper {
 
     public void showComplete(int notificationId, String chapterTitle, String fileName,
                              String outputFileRef) {
-        showComplete(notificationId, chapterTitle, fileName, outputFileRef, null);
+        showComplete(notificationId, "pdf", chapterTitle, fileName, outputFileRef, null);
     }
 
     public void showComplete(int notificationId, String chapterTitle, String fileName,
                              String outputFileRef,
                              String detail) {
-        PendingIntent pendingIntent = createPdfOpenIntent(notificationId, outputFileRef);
+        showComplete(notificationId, "pdf", chapterTitle, fileName, outputFileRef, detail);
+    }
+
+    public void showComplete(int notificationId, String format, String chapterTitle,
+                             String fileName, String outputFileRef, String detail) {
+        PendingIntent pendingIntent = createOpenIntent(notificationId, format, outputFileRef);
 
         String message = fileName;
         if (detail != null && !detail.isEmpty()) {
@@ -79,7 +84,7 @@ public class PdfExportNotificationHelper {
         notify(notificationId, builder.build());
     }
 
-    private PendingIntent createPdfOpenIntent(int notificationId, String outputFileRef) {
+    private PendingIntent createOpenIntent(int notificationId, String format, String outputFileRef) {
         Intent openIntent = new Intent(Intent.ACTION_VIEW);
         try {
             PdfRef.Parsed parsed = PdfRef.parse(outputFileRef);
@@ -94,7 +99,8 @@ public class PdfExportNotificationHelper {
                     file
                 );
             }
-            openIntent.setDataAndType(uri, "application/pdf");
+            openIntent.setDataAndType(uri, mimeType(format));
+            openIntent.putExtra("jq_export_format", format);
             openIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
             return PendingIntent.getActivity(
                 context,
@@ -103,9 +109,15 @@ public class PdfExportNotificationHelper {
                 PendingIntent.FLAG_IMMUTABLE
             );
         } catch (RuntimeException e) {
-            Log.d(TAG, "PDF 完成通知打开入口创建失败", e);
+            Log.d(TAG, "导出完成通知打开入口创建失败", e);
             return null;
         }
+    }
+
+    private static String mimeType(String format) {
+        if ("cbz".equals(format)) return "application/vnd.comicbook+zip";
+        if ("zip".equals(format)) return "application/zip";
+        return "application/pdf";
     }
 
     public void showError(int notificationId, String chapterTitle, String error) {
@@ -128,9 +140,9 @@ public class PdfExportNotificationHelper {
         try {
             manager.cancel(notificationId);
         } catch (SecurityException e) {
-            Log.d(TAG, "通知权限未授予，跳过取消 PDF 通知", e);
+            Log.d(TAG, "通知权限未授予，跳过取消导出通知", e);
         } catch (RuntimeException e) {
-            Log.w(TAG, "取消 PDF 通知失败", e);
+            Log.w(TAG, "取消导出通知失败", e);
         }
     }
 
@@ -139,9 +151,9 @@ public class PdfExportNotificationHelper {
         try {
             manager.notify(notificationId, notification);
         } catch (SecurityException e) {
-            Log.d(TAG, "通知权限未授予，跳过 PDF 通知", e);
+            Log.d(TAG, "通知权限未授予，跳过导出通知", e);
         } catch (RuntimeException e) {
-            Log.w(TAG, "发布 PDF 通知失败", e);
+            Log.w(TAG, "发布导出通知失败", e);
         }
     }
 }

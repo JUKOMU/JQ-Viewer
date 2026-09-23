@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /** 从持久化任务快照生成 Desktop 终态系统通知。 */
 public final class DesktopTaskNotificationService implements AutoCloseable {
     private final DownloadStore downloads;
-    private final ExportStore pdfExports;
+    private final ExportStore exports;
     private final LaunchRouteService launchRoutes;
     private final EventHub events;
     private final Map<String, String> fingerprints = new LinkedHashMap<>();
@@ -32,12 +32,12 @@ public final class DesktopTaskNotificationService implements AutoCloseable {
 
     public DesktopTaskNotificationService(
             DownloadStore downloads,
-            ExportStore pdfExports,
+            ExportStore exports,
             LaunchRouteService launchRoutes,
             EventHub events
     ) {
         this.downloads = Objects.requireNonNull(downloads, "downloads");
-        this.pdfExports = Objects.requireNonNull(pdfExports, "pdfExports");
+        this.exports = Objects.requireNonNull(exports, "exports");
         this.launchRoutes = Objects.requireNonNull(launchRoutes, "launchRoutes");
         this.events = Objects.requireNonNull(events, "events");
     }
@@ -98,8 +98,9 @@ public final class DesktopTaskNotificationService implements AutoCloseable {
 
     public synchronized void pdfExportChanged(String exportId) {
         if (!started || closed || exportId == null) return;
-        String key = "pdf:" + exportId;
-        ExportTaskResponse task = pdfExports.find(exportId);
+        ExportTaskResponse task = exports.find(exportId);
+        String format = task == null ? "export" : task.format();
+        String key = "export:" + format + ":" + exportId;
         if (task == null || !isNotifiablePdfTerminal(task.status())) {
             clear(key);
             return;
@@ -107,20 +108,22 @@ public final class DesktopTaskNotificationService implements AutoCloseable {
         String fingerprint = task.status();
         if (fingerprint.equals(fingerprints.put(key, fingerprint))) return;
 
-        String route = "/download?view=pdf&tab=tasks&exportId="
+        String view = "pdf".equals(format) ? "pdf" : "export";
+        String route = "/download?view=" + view + "&tab=tasks&format=" + format + "&exportId="
                 + URLEncoder.encode(exportId, StandardCharsets.UTF_8);
+        String label = format.toUpperCase(java.util.Locale.ROOT);
         String title = switch (task.status()) {
-            case "completed" -> "PDF 导出完成";
-            case "partial" -> "PDF 部分导出完成";
-            case "interrupted" -> "PDF 导出中断";
-            default -> "PDF 导出失败";
+            case "completed" -> label + " 导出完成";
+            case "partial" -> label + " 部分导出完成";
+            case "interrupted" -> label + " 导出中断";
+            default -> label + " 导出失败";
         };
         String message = fallback(task.displayTitle(), fallback(task.targetName(), exportId));
         if (!"completed".equals(task.status())) {
             message += ": " + fallback(task.errorMessage(), title);
         }
         enqueue(new DesktopNotification(key, title, message, route), () -> {
-            ExportTaskResponse current = pdfExports.find(exportId);
+            ExportTaskResponse current = exports.find(exportId);
             return current != null && isNotifiablePdfTerminal(current.status());
         });
     }

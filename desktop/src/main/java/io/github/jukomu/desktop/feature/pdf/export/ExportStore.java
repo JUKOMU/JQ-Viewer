@@ -101,7 +101,7 @@ public final class ExportStore {
                 statement.executeBatch();
             }
             return null;
-        }, "保存 PDF 导出任务失败");
+        }, "保存导出任务失败");
     }
 
     public synchronized ExportTaskResponse find(String exportId) {
@@ -112,7 +112,7 @@ public final class ExportStore {
                 return rows.next() ? task(rows) : null;
             }
         } catch (SQLException exception) {
-            throw failure("读取 PDF 导出任务失败", exception);
+            throw failure("读取导出任务失败", exception);
         }
     }
 
@@ -155,7 +155,7 @@ public final class ExportStore {
                 while (rows.next()) tasks.add(task(rows));
             }
         } catch (SQLException exception) {
-            throw failure("读取 PDF 导出任务列表失败", exception);
+            throw failure("读取导出任务列表失败", exception);
         }
         String nextCursor = null;
         if (tasks.size() > limit) {
@@ -182,7 +182,7 @@ public final class ExportStore {
                 failed = rows.getInt("failed");
             }
         } catch (SQLException exception) {
-            throw failure("读取 PDF 导出诊断摘要失败", exception);
+            throw failure("读取导出诊断摘要失败", exception);
         }
 
         int limit = Math.max(0, Math.min(20, requestedFailureLimit));
@@ -201,13 +201,13 @@ public final class ExportStore {
                                 id,
                                 value(rows.getString("display_title"), id),
                                 rows.getString("status"),
-                                value(rows.getString("error_message"), "PDF 导出失败"),
+                                value(rows.getString("error_message"), "导出失败"),
                                 rows.getLong("updated_at")
                         ));
                     }
                 }
             } catch (SQLException exception) {
-                throw failure("读取 PDF 导出失败诊断失败", exception);
+                throw failure("读取导出失败诊断失败", exception);
             }
         }
         return new DiagnosticSnapshot(total, active, failed, List.copyOf(failures));
@@ -227,7 +227,7 @@ public final class ExportStore {
             }
             return List.copyOf(chapters);
         } catch (SQLException exception) {
-            throw failure("读取 PDF 导出章节失败", exception);
+            throw failure("读取导出章节失败", exception);
         }
     }
 
@@ -241,7 +241,7 @@ public final class ExportStore {
             }
             return List.copyOf(volumes);
         } catch (SQLException exception) {
-            throw failure("读取 PDF 导出分卷失败", exception);
+            throw failure("读取导出分卷失败", exception);
         }
     }
 
@@ -259,7 +259,7 @@ public final class ExportStore {
             }
             return false;
         } catch (SQLException exception) {
-            throw failure("检查 PDF 导出任务冲突失败", exception);
+            throw failure("检查导出任务冲突失败", exception);
         }
     }
 
@@ -274,7 +274,7 @@ public final class ExportStore {
             statement.setString(3, exportId);
             return statement.executeUpdate() == 1 ? find(exportId) : null;
         } catch (SQLException exception) {
-            throw failure("领取 PDF 导出任务失败", exception);
+            throw failure("领取导出任务失败", exception);
         }
     }
 
@@ -285,7 +285,7 @@ public final class ExportStore {
         String sql;
         if ("queued".equals(current.status())) {
             sql = "UPDATE export_tasks SET status='cancelled',phase='cancelled',"
-                    + "cancel_requested=1,error_code='CANCELLED',error_message='PDF 导出已取消',"
+                    + "cancel_requested=1,error_code='CANCELLED',error_message='导出已取消',"
                     + "completed_at=?,updated_at=?,snapshot_revision=snapshot_revision+1 "
                     + "WHERE export_id=? AND status='queued'";
         } else if ("running".equals(current.status())) {
@@ -303,7 +303,7 @@ public final class ExportStore {
             statement.executeUpdate();
             return find(exportId);
         } catch (SQLException exception) {
-            throw failure("取消 PDF 导出任务失败", exception);
+            throw failure("取消导出任务失败", exception);
         }
     }
 
@@ -318,7 +318,7 @@ public final class ExportStore {
                         || "cancelled".equals(status) || "cancelling".equals(status);
             }
         } catch (SQLException exception) {
-            throw failure("读取 PDF 导出取消状态失败", exception);
+            throw failure("读取导出取消状态失败", exception);
         }
     }
 
@@ -355,7 +355,7 @@ public final class ExportStore {
             statement.executeUpdate();
             return find(exportId);
         } catch (SQLException exception) {
-            throw failure("更新 PDF 导出进度失败", exception);
+            throw failure("更新导出进度失败", exception);
         }
     }
 
@@ -369,7 +369,7 @@ public final class ExportStore {
             statement.setInt(4, volumeIndex);
             statement.executeUpdate();
         } catch (SQLException exception) {
-            throw failure("更新 PDF 导出分卷失败", exception);
+            throw failure("更新导出分卷失败", exception);
         }
     }
 
@@ -386,7 +386,7 @@ public final class ExportStore {
             ExportTaskResponse task = find(exportId);
             List<Chapter> chapters = chapters(exportId);
             if (task == null || chapters.isEmpty()) {
-                throw new IllegalStateException("PDF 导出任务数据不完整: " + exportId);
+                throw new IllegalStateException("导出任务数据不完整: " + exportId);
             }
             long now = System.currentTimeMillis();
             try (PreparedStatement statement = connection.prepareStatement(
@@ -402,7 +402,7 @@ public final class ExportStore {
                 statement.setString(7, exportId);
                 statement.setInt(8, volumeIndex);
                 if (statement.executeUpdate() != 1) {
-                    throw new IllegalStateException("PDF 导出分卷不存在: " + exportId + "/" + volumeIndex);
+                    throw new IllegalStateException("导出分卷不存在: " + exportId + "/" + volumeIndex);
                 }
             }
             try (PreparedStatement statement = connection.prepareStatement(
@@ -482,7 +482,7 @@ public final class ExportStore {
                 statement.executeBatch();
             }
             return null;
-        }, "登记 PDF 导出结果失败");
+        }, "登记导出结果失败");
     }
 
     public synchronized int completedVolumeCount(String exportId) {
@@ -519,7 +519,7 @@ public final class ExportStore {
                 statement.executeUpdate();
             }
             return true;
-        }, "准备 PDF 导出重试失败");
+        }, "准备导出重试失败");
     }
 
     public synchronized List<String> markActiveInterrupted() {
@@ -531,7 +531,7 @@ public final class ExportStore {
                 while (rows.next()) tempPaths.add(rows.getString(1));
             }
         } catch (SQLException exception) {
-            throw failure("读取中断 PDF 临时文件失败", exception);
+            throw failure("读取中断导出临时文件失败", exception);
         }
         long now = System.currentTimeMillis();
         transaction(connection -> {
@@ -552,7 +552,7 @@ public final class ExportStore {
                 statement.executeUpdate();
             }
             return null;
-        }, "恢复中断 PDF 导出任务失败");
+        }, "恢复中断导出任务失败");
         return List.copyOf(tempPaths);
     }
 
@@ -564,7 +564,7 @@ public final class ExportStore {
             while (rows.next()) ids.add(rows.getString(1));
             return List.copyOf(ids);
         } catch (SQLException exception) {
-            throw failure("读取活动 PDF 导出任务失败", exception);
+            throw failure("读取活动导出任务失败", exception);
         }
     }
 
@@ -575,7 +575,7 @@ public final class ExportStore {
             statement.setString(1, exportId);
             return statement.executeUpdate() == 1;
         } catch (SQLException exception) {
-            throw failure("删除 PDF 导出任务失败", exception);
+            throw failure("删除导出任务失败", exception);
         }
     }
 

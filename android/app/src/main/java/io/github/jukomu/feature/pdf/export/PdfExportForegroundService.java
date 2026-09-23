@@ -11,13 +11,13 @@ import io.github.jukomu.R;
 import io.github.jukomu.platform.notification.NotificationIds;
 
 /**
- * Keeps PDF export jobs in foreground priority while the app is backgrounded.
+ * Keeps export jobs in foreground priority while the app is backgrounded.
  */
 public class PdfExportForegroundService extends Service {
 
     private static final String TAG = "PdfExportForegroundService";
     private static final String CHANNEL_ID = "pdf_export";
-    private static final String CHANNEL_NAME = "PDF导出";
+    private static final String CHANNEL_NAME = "文件导出";
     private static final String ACTION_UPDATE = "io.github.jukomu.PDF_EXPORT_FOREGROUND_UPDATE";
     private static final String ACTION_STOP = "io.github.jukomu.PDF_EXPORT_FOREGROUND_STOP";
     private static final String EXTRA_SESSION_ID = "session_id";
@@ -25,6 +25,7 @@ public class PdfExportForegroundService extends Service {
     private static final String EXTRA_ACTIVE_COUNT = "active_count";
     private static final String EXTRA_QUEUE_REMAINING = "queue_remaining";
     private static final String EXTRA_TITLE = "title";
+    private static final String EXTRA_FORMAT = "format";
     private static final String EXTRA_PHASE = "phase";
     private static final String EXTRA_CURRENT_PAGE = "current_page";
     private static final String EXTRA_TOTAL_PAGES = "total_pages";
@@ -62,6 +63,7 @@ public class PdfExportForegroundService extends Service {
         intent.putExtra(EXTRA_ACTIVE_COUNT, snapshot.activeCount);
         intent.putExtra(EXTRA_QUEUE_REMAINING, snapshot.queueRemaining);
         intent.putExtra(EXTRA_TITLE, snapshot.title);
+        intent.putExtra(EXTRA_FORMAT, snapshot.format);
         intent.putExtra(EXTRA_PHASE, snapshot.phase);
         intent.putExtra(EXTRA_CURRENT_PAGE, snapshot.currentPage);
         intent.putExtra(EXTRA_TOTAL_PAGES, snapshot.totalPages);
@@ -74,7 +76,7 @@ public class PdfExportForegroundService extends Service {
                 context.startService(intent);
             }
         } catch (Exception e) {
-            Log.d(TAG, "更新 PDF 导出前台服务失败", e);
+            Log.d(TAG, "更新导出前台服务失败", e);
         }
     }
 
@@ -131,7 +133,7 @@ public class PdfExportForegroundService extends Service {
                 CHANNEL_NAME,
                 NotificationManager.IMPORTANCE_DEFAULT
             );
-            channel.setDescription("PDF导出进度通知");
+            channel.setDescription("文件导出进度通知");
             channel.setShowBadge(false);
             NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
             if (manager != null) {
@@ -142,13 +144,14 @@ public class PdfExportForegroundService extends Service {
 
     private Snapshot parseSnapshot(Intent intent, int revision) {
         if (intent == null) {
-            return new Snapshot(0, revision, 1, 0, "PDF 导出", "进行中", 0, 0, 0, 0);
+            return new Snapshot(0, revision, 1, 0, "pdf", "导出", "进行中", 0, 0, 0, 0);
         }
         return new Snapshot(
             intent.getIntExtra(EXTRA_SESSION_ID, 0),
             revision,
             intent.getIntExtra(EXTRA_ACTIVE_COUNT, 1),
             intent.getIntExtra(EXTRA_QUEUE_REMAINING, 0),
+            intent.getStringExtra(EXTRA_FORMAT),
             intent.getStringExtra(EXTRA_TITLE),
             intent.getStringExtra(EXTRA_PHASE),
             intent.getIntExtra(EXTRA_CURRENT_PAGE, 0),
@@ -197,7 +200,7 @@ public class PdfExportForegroundService extends Service {
             displayedSessionId = snapshot.sessionId;
             displayedPhase = snapshot.phase;
         } catch (Exception e) {
-            Log.w(TAG, "启动 PDF 前台通知失败，导出任务继续由 ExportService 推进", e);
+            Log.w(TAG, "启动导出前台通知失败，导出任务继续由 ExportService 推进", e);
             stopSelf();
         }
     }
@@ -206,7 +209,7 @@ public class PdfExportForegroundService extends Service {
         String contentText = buildContentText(snapshot);
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(ICON)
-            .setContentTitle("PDF 导出进行中")
+            .setContentTitle(snapshot.format.toUpperCase(java.util.Locale.ROOT) + " 导出进行中")
             .setContentText(contentText)
             .setStyle(new NotificationCompat.BigTextStyle()
                 .bigText(buildExpandedContentText(contentText)))
@@ -267,7 +270,7 @@ public class PdfExportForegroundService extends Service {
         try {
             stopForeground(Service.STOP_FOREGROUND_REMOVE);
         } catch (Exception e) {
-            Log.d(TAG, "停止 PDF 前台通知失败", e);
+            Log.d(TAG, "停止导出前台通知失败", e);
         }
     }
 
@@ -276,6 +279,7 @@ public class PdfExportForegroundService extends Service {
         final int revision;
         final int activeCount;
         final int queueRemaining;
+        final String format;
         final String title;
         final String phase;
         final int currentPage;
@@ -285,11 +289,19 @@ public class PdfExportForegroundService extends Service {
 
         Snapshot(int sessionId, int revision, int activeCount, int queueRemaining, String title,
                  String phase, int currentPage, int totalPages, int volumeIndex, int totalVolumes) {
+            this(sessionId, revision, activeCount, queueRemaining, "pdf", title, phase,
+                currentPage, totalPages, volumeIndex, totalVolumes);
+        }
+
+        Snapshot(int sessionId, int revision, int activeCount, int queueRemaining, String format,
+                 String title, String phase, int currentPage, int totalPages, int volumeIndex,
+                 int totalVolumes) {
             this.sessionId = sessionId;
             this.revision = revision;
             this.activeCount = Math.max(0, activeCount);
             this.queueRemaining = Math.max(0, queueRemaining);
-            this.title = title == null || title.isEmpty() ? "PDF 导出" : title;
+            this.format = format == null || format.isEmpty() ? "pdf" : format;
+            this.title = title == null || title.isEmpty() ? "导出" : title;
             this.phase = phase == null || phase.isEmpty() ? "进行中" : phase;
             this.currentPage = Math.max(0, currentPage);
             this.totalPages = Math.max(0, totalPages);

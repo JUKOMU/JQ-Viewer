@@ -8,7 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
- * Deletes only PDF writer artifacts whose ownership was persisted by LocalFileStore.
+ * Deletes only export writer artifacts whose ownership was persisted by LocalFileStore.
  */
 public final class PdfArtifactCleaner {
 
@@ -19,7 +19,7 @@ public final class PdfArtifactCleaner {
         String tempPath = volume.optString("tempPath", "");
         String workPath = volume.optString("workDir", "");
         if (tempPath.isEmpty() || workPath.isEmpty()) {
-            throw new IOException("CLEANUP_PATH_UNSAFE: PDF 临时路径记录不完整");
+            throw new IOException("CLEANUP_PATH_UNSAFE: 导出临时路径记录不完整");
         }
         File tempFile = new File(tempPath);
         File workDirectory = new File(workPath);
@@ -37,12 +37,12 @@ public final class PdfArtifactCleaner {
         throws IOException {
         if (cacheRoot == null || exportId == null || exportId.isEmpty()
             || exportId.contains("/") || exportId.contains("\\")) {
-            throw new IOException("CLEANUP_PATH_UNSAFE: PDF staging 标识无效");
+            throw new IOException("CLEANUP_PATH_UNSAFE: 导出 staging 标识无效");
         }
         File root = cacheRoot.getCanonicalFile();
         File staging = new File(root, exportId).getCanonicalFile();
         if (!staging.getPath().startsWith(root.getPath() + File.separator)) {
-            throw new IOException("CLEANUP_PATH_UNSAFE: PDF staging 路径越界");
+            throw new IOException("CLEANUP_PATH_UNSAFE: 导出 staging 路径越界");
         }
         Path stagingPath = staging.toPath();
         long bytes = treeSizeWithoutFollowingLinks(stagingPath);
@@ -84,7 +84,7 @@ public final class PdfArtifactCleaner {
 
     private static void ensureNotSymbolicLink(Path path) throws IOException {
         if (Files.isSymbolicLink(path)) {
-            throw new IOException("CLEANUP_PATH_UNSAFE: PDF 临时路径包含符号链接");
+            throw new IOException("CLEANUP_PATH_UNSAFE: 导出临时路径包含符号链接");
         }
     }
 }

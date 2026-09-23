@@ -5,7 +5,7 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * PDF 导出目标的窄范围相对路径规则。
+ * 导出目标的窄范围相对路径规则。
  * 目录引用负责提供根目录，本类只校验并拆分根目录下的文件段。
  */
 final class PdfTargetPath {
@@ -49,12 +49,11 @@ final class PdfTargetPath {
 
     static String withVolumeSuffix(String targetName, int startPage, int endPage) {
         String normalized = normalize(targetName);
-        String suffix = String.format(java.util.Locale.ROOT,
-            "_%03d-%03d.pdf", startPage, endPage);
-        String base = normalized.endsWith(".pdf")
-            ? normalized.substring(0, normalized.length() - 4)
-            : normalized;
-        return base + suffix;
+        int separator = normalized.lastIndexOf('.');
+        String extension = separator >= 0 ? normalized.substring(separator) : "";
+        String base = separator >= 0 ? normalized.substring(0, separator) : normalized;
+        return base + String.format(java.util.Locale.ROOT,
+            "_%03d-%03d%s", startPage, endPage, extension);
     }
 
     private static boolean isWindowsAbsolute(String value) {

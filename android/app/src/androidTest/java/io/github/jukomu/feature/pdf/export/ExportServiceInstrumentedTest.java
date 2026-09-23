@@ -33,6 +33,8 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 
 import static org.junit.Assert.*;
 
@@ -120,6 +122,85 @@ public class ExportServiceInstrumentedTest {
             assertFalse(PdfBoxExportWriter.getTempFile(volume.file).exists());
             assertFalse(PdfBoxExportWriter.getWorkDirectory(volume.file).exists());
         }
+    }
+
+    @Test
+    public void exportsAndRegistersCbzAndZipWithOriginalImageBytes() throws Exception {
+        String firstChapterId = "8" + System.nanoTime();
+        String secondChapterId = "7" + System.nanoTime();
+        File firstChapter = fileStore.ensureChapterDir(ALBUM_ID, firstChapterId);
+        File secondChapter = fileStore.ensureChapterDir(ALBUM_ID, secondChapterId);
+        File firstImage = new File(firstChapter, "page-0001.jpg");
+        File secondImage = new File(secondChapter, "page-0001.jpg");
+        createImage(firstChapter, firstImage.getName(), 12, 18, Color.RED);
+        createImage(secondChapter, secondImage.getName(), 20, 30, Color.BLUE);
+        registerChapter(firstChapterId, 1);
+        registerChapter(secondChapterId, 1);
+        byte[] firstBytes = Files.readAllBytes(firstImage.toPath());
+
+        File cbzOutput = new File(outputDirectory, "chapter.cbz");
+        ExportService.ExportJob cbzJob = new ExportService.ExportJob();
+        cbzJob.format = "cbz";
+        cbzJob.mode = "chapter";
+        cbzJob.albumId = ALBUM_ID;
+        cbzJob.albumTitle = "测试漫画";
+        cbzJob.authors = "测试作者";
+        cbzJob.chapterId = firstChapterId;
+        cbzJob.chapterTitle = "第一话";
+        cbzJob.targetFolderRef = PdfRef.createPathFolderRef(outputDirectory.getCanonicalPath());
+        cbzJob.targetName = cbzOutput.getName();
+        cbzJob.displayPath = cbzOutput.getAbsolutePath();
+        cbzJob.useOriginal = true;
+        cbzJob.compressionRatio = 1F;
+
+        ExportService service = ExportService.getInstance(context);
+        String cbzId = service.submitExport(Arrays.asList(cbzJob))
+            .getJSONArray("tasks").getJSONObject(0).getString("exportId");
+        assertEquals("completed", waitForTaskTerminal(cbzId, EXPORT_TIMEOUT_MS)
+            .optString("status"));
+        try (ZipFile archive = new ZipFile(cbzOutput)) {
+            ZipEntry image = archive.getEntry("0001.jpg");
+            assertEquals(ZipEntry.STORED, image.getMethod());
+            assertArrayEquals(firstBytes, archive.getInputStream(image).readAllBytes());
+            assertNotNull(archive.getEntry("ComicInfo.xml"));
+        }
+        LocalFileStore store = LocalFileStore.getInstance(context);
+        JSONObject cbzVolume = store.getExportVolume(cbzId, 1);
+        JSONObject cbzFile = store.getFileByRef(cbzVolume.getString("outputFileRef"));
+        assertEquals("cbz", cbzFile.optString("format"));
+        assertEquals(1, cbzFile.getJSONArray("chapters").length());
+
+        File zipOutput = new File(outputDirectory, "merged.zip");
+        ExportService.ExportJob zipJob = new ExportService.ExportJob();
+        zipJob.format = "zip";
+        zipJob.mode = "merged";
+        zipJob.albumId = ALBUM_ID;
+        zipJob.albumTitle = "测试漫画";
+        zipJob.authors = "测试作者";
+        zipJob.chapterTitle = "第一话+第二话";
+        zipJob.chapters = Arrays.asList(
+            chapter(firstChapterId, "第一话", 1),
+            chapter(secondChapterId, "第二话", 2)
+        );
+        zipJob.targetFolderRef = PdfRef.createPathFolderRef(outputDirectory.getCanonicalPath());
+        zipJob.targetName = zipOutput.getName();
+        zipJob.displayPath = zipOutput.getAbsolutePath();
+        zipJob.useOriginal = true;
+        zipJob.compressionRatio = 1F;
+
+        String zipId = service.submitExport(Arrays.asList(zipJob))
+            .getJSONArray("tasks").getJSONObject(0).getString("exportId");
+        assertEquals("completed", waitForTaskTerminal(zipId, EXPORT_TIMEOUT_MS)
+            .optString("status"));
+        try (ZipFile archive = new ZipFile(zipOutput)) {
+            assertNotNull(archive.getEntry("001_第一话/0001.jpg"));
+            assertNotNull(archive.getEntry("002_第二话/0001.jpg"));
+            assertNull(archive.getEntry("ComicInfo.xml"));
+        }
+        JSONObject zipVolume = store.getExportVolume(zipId, 1);
+        JSONObject zipFile = store.getFileByRef(zipVolume.getString("outputFileRef"));
+        assertEquals("zip", zipFile.optString("format"));
+        assertEquals(2, zipFile.getJSONArray("chapters").length());
     }
 
     @Test
@@ -213,7 +294,7 @@ public class ExportServiceInstrumentedTest {
                         throw new ExportService.ExportCancelledException();
                     }
                 }));
-        assertEquals("PDF 导出已取消", cancellation.getMessage());
+        assertEquals("导出已取消", cancellation.getMessage());
         assertFalse(cancelled.exists());
 
         File successful = new File(outputDirectory, "successful.pdf");

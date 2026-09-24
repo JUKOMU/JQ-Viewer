@@ -1,7 +1,7 @@
 <template>
   <ion-app>
     <div class="app-shell">
-      <MainMenu content-id="main-content" :disabled="route.meta.menu !== true"></MainMenu>
+      <MainMenu content-id="main-content" :disabled="mainMenuDisabled"></MainMenu>
       <div id="main-content" class="ion-page-container">
         <router-view v-slot="{ Component }">
           <transition :name="transitionName" mode="out-in" @after-enter="onAfterEnter">
@@ -32,7 +32,7 @@ import { UpdateService } from '@/services/UpdateService'
 import { presentUpdatePrompt } from '@/services/UpdatePromptService'
 import type { ClientStateSnapshot, UpdateManifest } from '@/services/JmcomicTypes'
 
-const { isMenuNavigation } = useSideMenuState()
+const { isMenuNavigation, isWideMenu } = useSideMenuState()
 
 const route = useRoute()
 const router = useRouter()
@@ -56,6 +56,10 @@ let pendingReaderFromPath = ''
 
 const isReaderRoutePath = (path: string) =>
   path === '/pdf-reader' || /^\/album\/[^/]+\/read\/[^/]+$/.test(path)
+
+const mainMenuDisabled = computed(
+  () => isReaderRoutePath(route.path) || (!isWideMenu.value && route.meta.menu !== true),
+)
 
 const clearReaderRoute = () => {
   localStorage.removeItem(READER_ROUTE_RESTORE_KEY)
@@ -431,8 +435,20 @@ onBeforeUnmount(() => {
   min-width: 0;
   min-height: 0;
   contain: layout size style;
+  container-type: inline-size;
   z-index: 0;
   overflow: hidden;
+}
+
+@media (min-width: 1264px) {
+  .ion-page-container .ion-page .desktop-page-content,
+  .ion-page ion-header.ion-no-border ion-toolbar.desktop-page-content {
+    box-sizing: border-box;
+    width: min(100%, calc(100% - clamp(150px, 15cqw, 300px) - 24px));
+    max-width: 960px;
+    margin-left: clamp(150px, 15cqw, 300px);
+    margin-right: auto;
+  }
 }
 
 /* 页面过渡动画 */

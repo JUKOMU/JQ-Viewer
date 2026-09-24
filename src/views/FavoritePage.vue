@@ -10,7 +10,7 @@
           <IonRefresherContent />
         </IonRefresher>
 
-        <div class="favorite-page-top">
+        <div class="favorite-page-top desktop-page-content">
           <div class="favorite-page-toolbar" :class="{ pinned: pullHeaderPinned }">
             <MenuToggleButton />
             <div class="toolbar-favorite">
@@ -37,6 +37,7 @@
         </div>
 
         <SearchResultContainer
+          class="desktop-page-content"
           ref="resultContainerRef"
           :result="resultMeta"
           :items="displayItems"

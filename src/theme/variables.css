@@ -53,6 +53,72 @@
   --ion-border-radius: 14px;
 }
 
+/* 全局滚动条外观；主页面滚动空间由下方 IonContent 规则稳定 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(176 128 96 / 0.58) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgb(176 128 96 / 0.58);
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgb(161 109 76 / 0.76);
+  background-clip: padding-box;
+}
+
+ion-content::part(scroll) {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(176 128 96 / 0.58) transparent;
+}
+
+ion-content::part(scroll)::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+ion-content::part(scroll)::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+ion-content::part(scroll)::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgb(176 128 96 / 0.58);
+  background-clip: padding-box;
+}
+
+ion-content::part(scroll)::-webkit-scrollbar-thumb:hover {
+  background: rgb(161 109 76 / 0.76);
+  background-clip: padding-box;
+}
+
+@media (min-width: 1264px) {
+  ion-content::part(scroll) {
+    scrollbar-gutter: stable;
+  }
+
+  ion-content.menu-content::part(scroll),
+  ion-modal ion-content::part(scroll),
+  ion-popover ion-content::part(scroll),
+  ion-action-sheet ion-content::part(scroll) {
+    scrollbar-gutter: auto;
+  }
+}
+
 /* 统一应用弹窗 */
 ion-modal.app-alert-modal {
   --width: min(360px, calc(100% - 32px));

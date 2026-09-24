@@ -1,7 +1,7 @@
 <template>
   <IonPage>
     <IonHeader class="ion-no-border">
-      <IonToolbar class="cache-toolbar">
+      <IonToolbar class="cache-toolbar desktop-page-content">
         <IonButtons slot="start">
           <IonBackButton default-href="/setting" />
         </IonButtons>
@@ -21,7 +21,7 @@
     </IonHeader>
 
     <IonContent ref="contentRef" :scroll-events="true" @ion-scroll="handleScroll">
-      <div class="cache-content">
+      <div class="cache-content desktop-page-content">
         <div v-if="!loading && !error" class="cache-summary">
           <div class="summary-main">
             <span class="summary-label">缓存用量</span>

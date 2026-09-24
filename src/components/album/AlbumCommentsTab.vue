@@ -226,7 +226,7 @@ import type { CommentItem } from '@/services/JmcomicTypes'
 @container (min-width: 960px) {
   .comments-section {
     width: 100%;
-    max-width: 720px;
+    max-width: none;
     margin-inline: auto;
   }
 }

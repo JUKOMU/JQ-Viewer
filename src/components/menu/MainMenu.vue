@@ -990,7 +990,7 @@ onUnmounted(() => {
   width: 100%;
   height: 100%;
   transform: none;
-  box-shadow: 4px 0 16px rgb(76 42 24 / 0.18);
+  box-shadow: none;
   touch-action: pan-y;
 }
 

@@ -18,7 +18,7 @@
         <sqlite.version>3.50.3.0</sqlite.version>
         <slf4j.version>2.0.17</slf4j.version>
         <junit.version>5.11.4</junit.version>
-        <jmcomic.version>1.1.10</jmcomic.version>
+        <jmcomic.version>1.1.11</jmcomic.version>
         <webp.imageio.version>0.3.3</webp.imageio.version>
         <pdfbox.version>3.0.5</pdfbox.version>
         <credential.secure.storage.version>1.0.0</credential.secure.storage.version>

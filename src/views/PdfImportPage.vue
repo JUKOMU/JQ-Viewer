@@ -15,7 +15,7 @@
     </IonHeader>
 
     <IonContent>
-      <div class="page-container">
+      <div class="page-container desktop-page-content">
         <!-- 空状态 -->
         <div v-if="files.length === 0 && !loading" class="empty-state">
           <IonIcon :icon="documentTextOutline" class="empty-icon" />

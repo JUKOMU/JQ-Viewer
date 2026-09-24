@@ -14,7 +14,10 @@
       </Transition>
 
       <div class="category-page-top">
-        <div class="category-page-toolbar" :class="{ pinned: pullHeaderPinned }">
+        <div
+          class="category-page-toolbar desktop-page-content"
+          :class="{ pinned: pullHeaderPinned }"
+        >
           <MenuToggleButton />
           <div class="toolbar-category">
             <CategorySearchToolbar @search="resetWithPage" />
@@ -23,6 +26,7 @@
       </div>
 
       <SearchResultContainer
+        class="desktop-page-content"
         ref="resultContainerRef"
         :result="resultMeta"
         :items="displayItems"
@@ -670,6 +674,13 @@ onMounted(() => {
 
 .category-page-top {
   padding: calc(var(--ion-safe-area-top) + 2px) 14px 0;
+}
+
+@media (min-width: 1264px) {
+  .category-page-top {
+    padding-right: 0;
+    padding-left: 0;
+  }
 }
 
 .category-overlay {

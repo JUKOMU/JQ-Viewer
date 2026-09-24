@@ -1,7 +1,7 @@
 <template>
   <IonPage>
     <IonHeader class="ion-no-border">
-      <IonToolbar class="pdf-template-help-toolbar">
+      <IonToolbar class="pdf-template-help-toolbar desktop-page-content">
         <IonButtons slot="start">
           <IonBackButton default-href="/setting" />
         </IonButtons>
@@ -9,7 +9,7 @@
       </IonToolbar>
     </IonHeader>
     <IonContent>
-      <div class="help-container">
+      <div class="help-container desktop-page-content">
         <!-- 基本变量 -->
         <div class="section-label">基本变量</div>
         <div class="card">

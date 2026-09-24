@@ -89,6 +89,11 @@ export function createBackendClient(
       call<'preloadImages'>('preloadImages', options),
     retryImage: (options: Parameters<JmcomicClient['retryImage']>[0]) =>
       call<'retryImage'>('retryImage', options),
+    setCacheCapacity: (options: Parameters<JmcomicClient['setCacheCapacity']>[0]) =>
+      call<'setCacheCapacity'>('setCacheCapacity', options),
+    getCacheCapacityInfo: () => call<'getCacheCapacityInfo'>('getCacheCapacityInfo', {}),
+    getImageCacheContents: () => call<'getImageCacheContents'>('getImageCacheContents', {}),
+    clearImageCache: () => call<'clearImageCache'>('clearImageCache', {}),
     login: (options: Parameters<JmcomicClient['login']>[0]) => call<'login'>('login', options),
     logout: () => call<'logout'>('logout', {}),
     checkLoginState: () => call<'checkLoginState'>('checkLoginState', {}),

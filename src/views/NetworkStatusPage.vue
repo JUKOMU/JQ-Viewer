@@ -1,7 +1,7 @@
 <template>
   <IonPage>
     <IonHeader class="ion-no-border">
-      <IonToolbar class="toolbar">
+      <IonToolbar class="toolbar desktop-page-content">
         <IonButtons slot="start">
           <IonBackButton default-href="/setting" />
         </IonButtons>
@@ -9,7 +9,7 @@
       </IonToolbar>
     </IonHeader>
     <IonContent>
-      <div class="page-content">
+      <div class="page-content desktop-page-content">
         <div class="status-grid">
           <section class="status-section">
             <!-- 域名连通性 -->
@@ -442,7 +442,7 @@ function formatTime(ts: number): string {
   color: #b89a84;
 }
 
-@media (min-width: 992px) {
+@media (min-width: 1264px) {
   .status-grid {
     grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
     column-gap: 16px;

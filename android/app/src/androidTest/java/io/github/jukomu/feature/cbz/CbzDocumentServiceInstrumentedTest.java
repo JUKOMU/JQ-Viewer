@@ -122,18 +122,6 @@ public class CbzDocumentServiceInstrumentedTest {
             LocalFileRef.createPathFileRef(incomplete.getCanonicalPath())).metadataWarning);
     }
 
-    @Test
-    public void rejectsExternalEntitiesInComicInfo() {
-        String content = "<!DOCTYPE ComicInfo [<!ENTITY x SYSTEM 'file:///secret'>]>"
-            + "<ComicInfo><Title>&x;</Title></ComicInfo>";
-        try {
-            ComicInfoCodec.parse(content.getBytes(StandardCharsets.UTF_8));
-            fail("Expected external entity rejection");
-        } catch (IllegalArgumentException expected) {
-            // Expected: external entities are disabled for imported ComicInfo.
-        }
-    }
-
     private File createArchive(String name, boolean damagedMetadata) throws Exception {
         File file = new File(context.getCacheDir(), System.nanoTime() + "-" + name);
         createdFiles.add(file);

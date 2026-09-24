@@ -128,9 +128,12 @@ public final class CbzDocumentService {
             if (entries.isEmpty()) {
                 throw new CbzException("CBZ_NO_IMAGES", 422, "CBZ 中没有受支持的图片");
             }
+            byte[] buffer = new byte[8192];
             for (String name : entries) {
                 try (InputStream input = zip.getInputStream(zip.getEntry(name))) {
-                    input.read();
+                    while (input.read(buffer) != -1) {
+                        // Consume every image so ZipFile verifies CRC and truncation.
+                    }
                 }
             }
             if (comicInfoEntry != null) {
@@ -139,12 +142,25 @@ public final class CbzDocumentService {
                 } catch (RuntimeException exception) {
                     metadataWarning = "ComicInfo.xml 无法解析，已改用文件名关联";
                 }
+                if (comicInfo != null && isIncomplete(comicInfo)) {
+                    metadataWarning = "ComicInfo.xml 元数据不完整，已改用文件名关联";
+                }
+            } else {
+                metadataWarning = "ComicInfo.xml 缺失，已改用文件名关联";
             }
         } catch (ZipException exception) {
             throw new CbzException("CBZ_INVALID", 422, "CBZ 无法打开或已加密", exception);
         }
         return new Index(List.copyOf(entries), comicInfo, metadataWarning,
                 coverPage(comicInfo, entries.size()));
+    }
+
+    private static boolean isIncomplete(ComicInfo info) {
+        return blank(info.title()) || blank(info.series()) || info.pageCount() <= 0;
+    }
+
+    private static boolean blank(String value) {
+        return value == null || value.isBlank();
     }
 
     private static int coverPage(ComicInfo info, int pageCount) {

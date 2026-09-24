@@ -66,7 +66,14 @@ public final class ComicInfoCodec {
     public static ComicInfo parse(byte[] content) {
         if (content == null) throw new IllegalArgumentException("ComicInfo 内容不能为空");
         try {
-            Element root = DocumentBuilderFactory.newInstance().newDocumentBuilder()
+            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
+            factory.setXIncludeAware(false);
+            factory.setExpandEntityReferences(false);
+            Element root = factory.newDocumentBuilder()
                 .parse(new ByteArrayInputStream(content)).getDocumentElement();
             List<ComicInfo.Page> pages = new ArrayList<>();
             NodeList nodes = root.getElementsByTagName("Page");

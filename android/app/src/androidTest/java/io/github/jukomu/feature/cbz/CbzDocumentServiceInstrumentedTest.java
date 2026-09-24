@@ -6,6 +6,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
 
 import io.github.jukomu.feature.localfile.data.LocalFileRef;
+import io.github.jukomu.feature.export.archive.ComicInfoCodec;
 
 import org.junit.After;
 import org.junit.Before;
@@ -108,6 +109,31 @@ public class CbzDocumentServiceInstrumentedTest {
         }
     }
 
+    @Test
+    public void missingAndIncompleteComicInfoWarn() throws Exception {
+        File missing = createSingleImageArchive("missing-metadata.cbz", null);
+        CbzDocumentService service = CbzDocumentService.getInstance(context);
+        assertNotNull(service.getInfo(LocalFileRef.createPathFileRef(missing.getCanonicalPath()))
+            .metadataWarning);
+
+        File incomplete = createSingleImageArchive("incomplete-metadata.cbz",
+            "<ComicInfo><Title>Only title</Title><PageCount>1</PageCount></ComicInfo>");
+        assertNotNull(service.getInfo(
+            LocalFileRef.createPathFileRef(incomplete.getCanonicalPath())).metadataWarning);
+    }
+
+    @Test
+    public void rejectsExternalEntitiesInComicInfo() {
+        String content = "<!DOCTYPE ComicInfo [<!ENTITY x SYSTEM 'file:///secret'>]>"
+            + "<ComicInfo><Title>&x;</Title></ComicInfo>";
+        try {
+            ComicInfoCodec.parse(content.getBytes(StandardCharsets.UTF_8));
+            fail("Expected external entity rejection");
+        } catch (IllegalArgumentException expected) {
+            // Expected: external entities are disabled for imported ComicInfo.
+        }
+    }
+
     private File createArchive(String name, boolean damagedMetadata) throws Exception {
         File file = new File(context.getCacheDir(), System.nanoTime() + "-" + name);
         createdFiles.add(file);
@@ -123,6 +149,16 @@ public class CbzDocumentServiceInstrumentedTest {
                     + "<Web>https://18comic.vip/album/123456</Web>"
                     + "<Pages><Page Image=\"1\" Type=\"FrontCover\"/></Pages>"
                     + "</ComicInfo>");
+        }
+        return file;
+    }
+
+    private File createSingleImageArchive(String name, String comicInfo) throws Exception {
+        File file = new File(context.getCacheDir(), System.nanoTime() + "-" + name);
+        createdFiles.add(file);
+        try (ZipOutputStream output = new ZipOutputStream(new FileOutputStream(file))) {
+            put(output, "001.jpg", "image");
+            if (comicInfo != null) put(output, "ComicInfo.xml", comicInfo);
         }
         return file;
     }

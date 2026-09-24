@@ -71,6 +71,29 @@ class CbzDocumentServiceTest {
         assertEquals("CBZ_NO_IMAGES", error.code());
     }
 
+    @Test
+    void missingAndIncompleteComicInfoWarn() throws Exception {
+        Path missing = Files.createTempFile("jq-cbz-missing-metadata-", ".cbz");
+        writeArchive(missing, List.of(entry("001.jpg", "image")));
+        CbzDocumentService service = new CbzDocumentService();
+        assertNotNull(service.getInfo(FileReferences.fileRef(missing)).metadataWarning());
+
+        Path incomplete = Files.createTempFile("jq-cbz-incomplete-metadata-", ".cbz");
+        writeArchive(incomplete, List.of(
+                entry("001.jpg", "image"),
+                entry("ComicInfo.xml", "<ComicInfo><Title>Only title</Title>"
+                        + "<PageCount>1</PageCount></ComicInfo>")));
+        assertNotNull(service.getInfo(FileReferences.fileRef(incomplete)).metadataWarning());
+    }
+
+    @Test
+    void rejectsExternalEntitiesInComicInfo() {
+        String content = "<!DOCTYPE ComicInfo [<!ENTITY x SYSTEM 'file:///secret'>]>"
+                + "<ComicInfo><Title>&x;</Title></ComicInfo>";
+        assertThrows(IllegalArgumentException.class,
+                () -> ComicInfoCodec.parse(content.getBytes(StandardCharsets.UTF_8)));
+    }
+
     private static Entry entry(String name, String content) {
         return new Entry(name, content.getBytes(StandardCharsets.UTF_8));
     }

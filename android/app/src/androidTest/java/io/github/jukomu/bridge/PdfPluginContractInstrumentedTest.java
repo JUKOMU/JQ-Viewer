@@ -79,11 +79,11 @@ public class PdfPluginContractInstrumentedTest {
 
         RecordingPluginCall inspect = call("inspectLocalFileForDeletion", "id", Integer.MAX_VALUE);
         handler.inspectLocalFileForDeletion(inspect);
-        assertRejected(inspect, "PDF 文件记录不存在", "not-found");
+        assertRejected(inspect, "本地文件记录不存在", "not-found");
 
         RecordingPluginCall delete = call("deleteLocalFile", "id", Integer.MAX_VALUE);
         handler.deleteLocalFile(delete);
-        assertRejected(delete, "PDF 文件记录不存在", "not-found");
+        assertRejected(delete, "本地文件记录不存在", "not-found");
 
         RecordingPluginCall getTask = call("getExportTask", "exportId", "missing-a1-task");
         handler.getExportTask(getTask);

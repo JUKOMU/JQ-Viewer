@@ -1,4 +1,4 @@
-package io.github.jukomu.feature.pdf;
+package io.github.jukomu.feature.localfile;
 
 import org.junit.Test;
 

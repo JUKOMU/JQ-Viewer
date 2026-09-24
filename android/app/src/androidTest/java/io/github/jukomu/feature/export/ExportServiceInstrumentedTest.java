@@ -156,8 +156,10 @@ public class ExportServiceInstrumentedTest {
         cbzJob.compressionRatio = 1F;
 
         ExportService service = ExportService.getInstance(context);
-        String cbzId = service.submitExport(Arrays.asList(cbzJob))
-            .getJSONArray("tasks").getJSONObject(0).getString("exportId");
+        JSONObject cbzSubmission = service.submitExport(Arrays.asList(cbzJob))
+            .getJSONArray("tasks").getJSONObject(0);
+        assertTrue(cbzSubmission.toString(), cbzSubmission.has("exportId"));
+        String cbzId = cbzSubmission.getString("exportId");
         assertEquals("completed", waitForTaskTerminal(cbzId, EXPORT_TIMEOUT_MS)
             .optString("status"));
         try (ZipFile archive = new ZipFile(cbzOutput)) {
@@ -192,8 +194,10 @@ public class ExportServiceInstrumentedTest {
         zipJob.useOriginal = true;
         zipJob.compressionRatio = 1F;
 
-        String zipId = service.submitExport(Arrays.asList(zipJob))
-            .getJSONArray("tasks").getJSONObject(0).getString("exportId");
+        JSONObject zipSubmission = service.submitExport(Arrays.asList(zipJob))
+            .getJSONArray("tasks").getJSONObject(0);
+        assertTrue(zipSubmission.toString(), zipSubmission.has("exportId"));
+        String zipId = zipSubmission.getString("exportId");
         assertEquals("completed", waitForTaskTerminal(zipId, EXPORT_TIMEOUT_MS)
             .optString("status"));
         try (ZipFile archive = new ZipFile(zipOutput)) {
@@ -555,7 +559,9 @@ public class ExportServiceInstrumentedTest {
         LocalFileStore store = LocalFileStore.getInstance(context);
         while (SystemClock.elapsedRealtime() < deadline) {
             JSONObject task = store.getExportTask(exportId);
-            if (task != null && LocalFileStore.isTerminalExportStatus(task.optString("status"))) {
+            // The terminal snapshot is persisted before the worker releases chapter locks.
+            if (task != null && LocalFileStore.isTerminalExportStatus(task.optString("status"))
+                && ExportService.getInstance(context).getActiveJobCount() == 0) {
                 return task;
             }
             SystemClock.sleep(50L);

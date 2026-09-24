@@ -589,7 +589,7 @@ public class ExportService {
 
     private void exportJob(ExportJob job, ExportPreflight preflight, int baseNotificationId,
                            int sessionId)
-        throws IOException {
+        throws Exception {
         long exportStartedAt = SystemClock.elapsedRealtimeNanos();
         List<PdfBoxExportWriter.ExportImageDescriptor> images =
             flattenImageDescriptors(preflight.chapters, preflight.totalPages);

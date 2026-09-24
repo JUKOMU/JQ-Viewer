@@ -134,7 +134,7 @@ public class PdfExportPersistenceInstrumentedTest {
         LocalFileStore store = LocalFileStore.getInstance(context);
         File pathOutput = new File(context.getCacheDir(), "path-output-kept.pdf");
         writeByte(pathOutput, 7);
-        File staging = new File(context.getCacheDir(), "pdf-export/saf-recovery");
+        File staging = new File(context.getCacheDir(), "file-export/saf-recovery");
         File stagingPdf = new File(staging, "book.pdf");
         File stagingTemp = new File(staging, "book.pdf.tmp");
         File stagingWork = new File(staging, ".book.pdf.jqpdf-work");
@@ -189,7 +189,7 @@ public class PdfExportPersistenceInstrumentedTest {
         if (finalFile.exists() && !finalFile.delete()) {
             throw new IllegalStateException("无法清理恢复测试 PDF");
         }
-        File stagingRoot = new File(context.getCacheDir(), "pdf-export");
+        File stagingRoot = new File(context.getCacheDir(), "file-export");
         deleteRecursively(stagingRoot);
         File pathOutput = new File(context.getCacheDir(), "path-output-kept.pdf");
         if (pathOutput.exists() && !pathOutput.delete()) {

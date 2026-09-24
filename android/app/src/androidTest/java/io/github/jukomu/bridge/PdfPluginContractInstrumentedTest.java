@@ -23,6 +23,7 @@ import io.github.jukomu.feature.pdf.web.PdfServer;
 import org.junit.Before;
 import org.junit.Test;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
@@ -86,15 +87,15 @@ public class PdfPluginContractInstrumentedTest {
 
         RecordingPluginCall getTask = call("getExportTask", "exportId", "missing-a1-task");
         handler.getExportTask(getTask);
-        assertRejected(getTask, "PDF 导出任务不存在", "not-found");
+        assertRejected(getTask, "导出任务不存在", "not-found");
 
         RecordingPluginCall cancelTask = call("cancelExport", "exportId", "missing-a1-task");
         handler.cancelExport(cancelTask);
-        assertRejected(cancelTask, "PDF 导出任务不存在", "not-found");
+        assertRejected(cancelTask, "导出任务不存在", "not-found");
 
         RecordingPluginCall retryTask = call("retryExport", "exportId", "missing-a1-task");
         handler.retryExport(retryTask);
-        assertRejected(retryTask, "PDF 导出任务不存在", "not-found");
+        assertRejected(retryTask, "导出任务不存在", "not-found");
     }
 
     @Test
@@ -351,7 +352,7 @@ public class PdfPluginContractInstrumentedTest {
             assertEquals(200, response.getStatusCode());
             assertEquals("image/png", response.getMimeType());
             try (InputStream input = response.getData()) {
-                assertArrayEquals("second".getBytes(StandardCharsets.UTF_8), input.readAllBytes());
+                assertArrayEquals("second".getBytes(StandardCharsets.UTF_8), readAll(input));
             }
         } finally {
             assertTrue(cbz.delete() || !cbz.exists());
@@ -459,6 +460,16 @@ public class PdfPluginContractInstrumentedTest {
         assertEquals('D', header[2]);
         assertEquals('F', header[3]);
         assertEquals('-', header[4]);
+    }
+
+    private static byte[] readAll(InputStream input) throws Exception {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        byte[] buffer = new byte[1024];
+        int count;
+        while ((count = input.read(buffer)) >= 0) {
+            if (count > 0) output.write(buffer, 0, count);
+        }
+        return output.toByteArray();
     }
 
     private static RecordingPluginCall call(String methodName, Object... values) {

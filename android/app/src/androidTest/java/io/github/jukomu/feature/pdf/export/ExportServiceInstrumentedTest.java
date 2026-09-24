@@ -22,10 +22,12 @@ import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.util.ArrayList;
@@ -161,7 +163,9 @@ public class ExportServiceInstrumentedTest {
         try (ZipFile archive = new ZipFile(cbzOutput)) {
             ZipEntry image = archive.getEntry("0001.jpg");
             assertEquals(ZipEntry.STORED, image.getMethod());
-            assertArrayEquals(firstBytes, archive.getInputStream(image).readAllBytes());
+            try (InputStream input = archive.getInputStream(image)) {
+                assertArrayEquals(firstBytes, readAll(input));
+            }
             assertNotNull(archive.getEntry("ComicInfo.xml"));
         }
         LocalFileStore store = LocalFileStore.getInstance(context);
@@ -492,6 +496,16 @@ public class ExportServiceInstrumentedTest {
             Files.write(target.toPath(), bytes);
         }
         assertTrue(source.delete());
+    }
+
+    private static byte[] readAll(InputStream input) throws IOException {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        byte[] buffer = new byte[8192];
+        int count;
+        while ((count = input.read(buffer)) >= 0) {
+            if (count > 0) output.write(buffer, 0, count);
+        }
+        return output.toByteArray();
     }
 
     private static File createSourceImage(File directory, int color) throws IOException {

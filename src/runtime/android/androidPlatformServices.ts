@@ -1,21 +1,21 @@
 import { App } from '@capacitor/app'
 import type {
-  AndroidImportPdfsResult,
-  AndroidImportedPdf,
-  AndroidPdfExportBatchResult,
-  AndroidPdfExportSubmissionTaskResult,
-  AndroidPdfExportTaskRecord,
-  AndroidPdfScanItem,
-  AndroidPdfStorageDeleteResult,
+  AndroidImportLocalFilesResult,
+  AndroidLocalFileRecord,
+  AndroidExportBatchResult,
+  AndroidExportSubmissionTaskResult,
+  AndroidExportTaskRecord,
+  AndroidLocalFileScanItem,
+  AndroidLocalFileStorageDeleteResult,
   JmcomicClient,
 } from '@/services/jmcomic/JmcomicClient'
 import type {
-  ImportedPdf,
-  ImportPdfItem,
-  PdfExportSubmissionTaskResult,
-  PdfExportTask,
-  PdfExportTaskRecord,
-  PdfStorageDeleteResult,
+  LocalFileRecord,
+  ImportLocalFileItem,
+  ExportSubmissionTaskResult,
+  ExportTask,
+  ExportTaskRecord,
+  LocalFileStorageDeleteResult,
   RelocationProgress,
 } from '@/services/JmcomicTypes'
 import type { BackendEvents } from '../BackendEvents'
@@ -31,12 +31,12 @@ import type {
   AppInfo,
   FileService,
   NotificationPermissionPort,
-  PdfService,
+  LocalFileService,
   PlatformServices,
   PublicDownloadService,
 } from '../PlatformServices'
 import { createAndroidUpdater } from './androidUpdater'
-import { createAndroidPdfExportPreferencesStore } from './pdfExportPreferences'
+import { createAndroidExportPreferencesStore } from './exportPreferences'
 
 /** 校验原生返回的成功标志，失败时抛出带中文提示的错误。 */
 function ensureSuccess(result: { success: boolean }, message: string): void {
@@ -65,19 +65,20 @@ function createFileService(native: JmcomicClient): FileService {
       return { existing: result.existingFileRefs.map(asFileRef) }
     },
     openFile: async (file) => {
-      const result = await withRuntimeError(() => native.openPdf({ fileRef: String(file) }))
+      const result = await withRuntimeError(() => native.openLocalFile({ fileRef: String(file) }))
       ensureSuccess(result, '无法打开 PDF 文件')
     },
     openContainingFolder: async (file) => {
-      const result = await withRuntimeError(() => native.openPdfFolder({ fileRef: String(file) }))
+      const result = await withRuntimeError(() => native.openLocalFileFolder({ fileRef: String(file) }))
       ensureSuccess(result, '无法打开 PDF 所在文件夹')
     },
-    scanPdfFiles: async (folder) => {
+    scanImportableFiles: async (folder, formats) => {
       const result = await withRuntimeError(() =>
-        native.scanPdfFiles({ folderRef: String(folder) }),
+        native.scanImportableFiles({ folderRef: String(folder), formats }),
       )
       return {
         files: result.files.map((file) => ({
+          format: file.format,
           ref: asFileRef(file.fileRef),
           fileName: file.fileName,
           displayPath: file.displayPath,
@@ -126,14 +127,14 @@ function requireImportFileRef(fileRef: unknown): FileRef {
   return asFileRef(fileRef)
 }
 
-/** 把 Android 原生 ImportedPdf 转换为公共 ImportedPdf。 */
-function toImportedPdf(file: AndroidImportedPdf): ImportedPdf {
+/** 把 Android 原生 LocalFileRecord 转换为公共 LocalFileRecord。 */
+function toLocalFileRecord(file: AndroidLocalFileRecord): LocalFileRecord {
   const { fileRef, displayPath, ...rest } = file
   return { ...rest, fileRef: asFileRef(fileRef), displayPath }
 }
 
 /** 把 Android 原生导出任务记录转换为公共导出任务记录。 */
-function toPdfExportTaskRecord(task: AndroidPdfExportTaskRecord): PdfExportTaskRecord {
+function toExportTaskRecord(task: AndroidExportTaskRecord): ExportTaskRecord {
   const { outputFileRef, displayPath, targetFolderRef, targetName, ...rest } = task
   void targetFolderRef
   return {
@@ -152,9 +153,9 @@ function toPdfExportTaskRecord(task: AndroidPdfExportTaskRecord): PdfExportTaskR
 }
 
 /** 把 Android 原生导出提交结果转换为公共提交结果。 */
-function toPdfExportSubmissionTaskResult(
-  task: AndroidPdfExportSubmissionTaskResult,
-): PdfExportSubmissionTaskResult {
+function toExportSubmissionTaskResult(
+  task: AndroidExportSubmissionTaskResult,
+): ExportSubmissionTaskResult {
   const { outputFileRef, displayPath, targetFolderRef, targetName, ...rest } = task
   void targetFolderRef
   return {
@@ -173,7 +174,7 @@ function toPdfExportSubmissionTaskResult(
 }
 
 /** 把 Android 原生导入结果转换为公共结果。 */
-function toImportPdfsResult(result: AndroidImportPdfsResult) {
+function toImportLocalFilesResult(result: AndroidImportLocalFilesResult) {
   return {
     ...result,
     ...(result.results
@@ -191,7 +192,7 @@ function toImportPdfsResult(result: AndroidImportPdfsResult) {
 }
 
 /** 把 Android 原生删除结果转换为公共结果。 */
-function toPdfStorageDeleteResult(result: AndroidPdfStorageDeleteResult): PdfStorageDeleteResult {
+function toLocalFileStorageDeleteResult(result: AndroidLocalFileStorageDeleteResult): LocalFileStorageDeleteResult {
   const { fileRef, displayPath, fileName, ...rest } = result
   return { ...rest, file: toFileDescriptor(fileRef, displayPath, fileName) }
 }
@@ -201,27 +202,28 @@ function toPdfStorageDeleteResult(result: AndroidPdfStorageDeleteResult): PdfSto
  * 该常量仅保留清单用途，方便与原生契约对照审计。
  */
 const ANDROID_PDF_METHODS = [
-  'exportPdfBatch',
-  'scanPdfFiles',
-  'importPdfs',
-  'getImportedPdfs',
-  'getPdfFiles',
-  'refreshPdfFileAvailability',
-  'inspectPdfFileForDeletion',
-  'verifyPdfFile',
-  'removePdfFromLibrary',
-  'deletePdfFile',
-  'getPdfManagementState',
-  'acknowledgePdfDatabaseReset',
-  'getPdfExportTasks',
-  'getPdfExportTask',
-  'cancelPdfExport',
-  'retryPdfExport',
-  'deletePdfExportTask',
-  'deleteImportedPdf',
-  'openPdf',
-  'openPdfFolder',
+  'exportBatch',
+  'scanImportableFiles',
+  'importLocalFiles',
+  'getImportedLocalFiles',
+  'getLocalFiles',
+  'refreshLocalFileAvailability',
+  'inspectLocalFileForDeletion',
+  'verifyLocalFile',
+  'removeLocalFileFromLibrary',
+  'deleteLocalFile',
+  'getLocalFileManagementState',
+  'acknowledgeLocalFileDatabaseReset',
+  'getExportTasks',
+  'getExportTask',
+  'cancelExport',
+  'retryExport',
+  'deleteExportTask',
+  'deleteImportedLocalFile',
+  'openLocalFile',
+  'openLocalFileFolder',
   'getPdfInfo',
+  'getCbzInfo',
   'renderPdfPage',
 ] as const
 
@@ -230,12 +232,12 @@ const ANDROID_PDF_METHODS = [
  * 本服务负责把 branded ref 映射为原生 DTO，并把原生 DTO 折叠为平台中立的文件描述。
  * 逐页渲染属于 ResourceResolver，不在 PDF 文件服务中重复暴露。
  */
-function createPdfService(native: JmcomicClient, events: BackendEvents): PdfService {
+function createLocalFileService(native: JmcomicClient, events: BackendEvents): LocalFileService {
   void ANDROID_PDF_METHODS
   return {
-    exportPdfBatch: ({ tasks }: { tasks: PdfExportTask[] }) =>
+    exportBatch: ({ tasks }: { tasks: ExportTask[] }) =>
       withRuntimeError(async () => {
-        const result: AndroidPdfExportBatchResult = await native.exportPdfBatch({
+        const result: AndroidExportBatchResult = await native.exportBatch({
           tasks: tasks.map(({ target, displayPath, ...task }) => ({
             ...task,
             targetFolderRef: String(target.folder),
@@ -243,82 +245,85 @@ function createPdfService(native: JmcomicClient, events: BackendEvents): PdfServ
             displayPath,
           })),
         })
-        return { tasks: result.tasks.map(toPdfExportSubmissionTaskResult) }
+        return { tasks: result.tasks.map(toExportSubmissionTaskResult) }
       }),
-    scanPdfFiles: (folder) =>
+    scanImportableFiles: (folder, formats) =>
       withRuntimeError(async () => {
-        const result: { files: AndroidPdfScanItem[] } = await native.scanPdfFiles({
+        const result: { files: AndroidLocalFileScanItem[] } = await native.scanImportableFiles({
           folderRef: String(folder),
+          formats,
         })
         return {
           files: result.files.map((file) => ({
+            format: file.format,
             ref: asFileRef(file.fileRef),
             fileName: file.fileName,
             displayPath: file.displayPath,
           })),
         }
       }),
-    importPdfs: (items: ImportPdfItem[]) =>
+    importLocalFiles: (items: ImportLocalFileItem[]) =>
       withRuntimeError(() =>
         native
-          .importPdfs({
+          .importLocalFiles({
             items: items.map(({ fileRef, displayPath: _displayPath, ...item }) => ({
               ...item,
               fileRef: String(requireImportFileRef(fileRef)),
               displayPath: _displayPath,
             })),
           })
-          .then(toImportPdfsResult),
+          .then(toImportLocalFilesResult),
       ),
-    getImportedPdfs: () =>
+    getImportedLocalFiles: () =>
       withRuntimeError(async () => {
-        const result = await native.getImportedPdfs()
-        return { pdfs: result.pdfs.map(toImportedPdf) }
+        const result = await native.getImportedLocalFiles()
+        return { files: result.files.map(toLocalFileRecord) }
       }),
-    getPdfFiles: (options) =>
+    getLocalFiles: (options) =>
       withRuntimeError(async () => {
-        const result = await native.getPdfFiles(options)
-        return { files: result.files.map(toImportedPdf), nextCursor: result.nextCursor }
+        const result = await native.getLocalFiles(options)
+        return { files: result.files.map(toLocalFileRecord), nextCursor: result.nextCursor }
       }),
-    refreshPdfFileAvailability: (ids) =>
+    refreshLocalFileAvailability: (ids) =>
       withRuntimeError(async () => {
-        const result = await native.refreshPdfFileAvailability({ ids })
-        return { files: result.files.map(toImportedPdf) }
+        const result = await native.refreshLocalFileAvailability({ ids })
+        return { files: result.files.map(toLocalFileRecord) }
       }),
-    inspectPdfFileForDeletion: (id) =>
-      withRuntimeError(async () => toImportedPdf(await native.inspectPdfFileForDeletion({ id }))),
-    verifyPdfFile: (id) =>
-      withRuntimeError(async () => toImportedPdf(await native.verifyPdfFile({ id }))),
-    removePdfFromLibrary: (id) =>
-      withRuntimeError(() => native.removePdfFromLibrary({ id })),
-    deletePdfFile: (id) =>
-      withRuntimeError(async () => toPdfStorageDeleteResult(await native.deletePdfFile({ id }))),
-    getPdfManagementState: () => withRuntimeError(() => native.getPdfManagementState()),
-    acknowledgePdfDatabaseReset: () =>
-      withRuntimeError(() => native.acknowledgePdfDatabaseReset()),
-    getPdfExportTasks: (options) =>
+    inspectLocalFileForDeletion: (id) =>
+      withRuntimeError(async () => toLocalFileRecord(await native.inspectLocalFileForDeletion({ id }))),
+    verifyLocalFile: (id) =>
+      withRuntimeError(async () => toLocalFileRecord(await native.verifyLocalFile({ id }))),
+    removeLocalFileFromLibrary: (id) =>
+      withRuntimeError(() => native.removeLocalFileFromLibrary({ id })),
+    deleteLocalFile: (id) =>
+      withRuntimeError(async () => toLocalFileStorageDeleteResult(await native.deleteLocalFile({ id }))),
+    getLocalFileManagementState: () => withRuntimeError(() => native.getLocalFileManagementState()),
+    acknowledgeLocalFileDatabaseReset: () =>
+      withRuntimeError(() => native.acknowledgeLocalFileDatabaseReset()),
+    getExportTasks: (options) =>
       withRuntimeError(async () => {
-        const result = await native.getPdfExportTasks(options)
-        return { tasks: result.tasks.map(toPdfExportTaskRecord), nextCursor: result.nextCursor }
+        const result = await native.getExportTasks(options)
+        return { tasks: result.tasks.map(toExportTaskRecord), nextCursor: result.nextCursor }
       }),
-    getPdfExportTask: (exportId) =>
-      withRuntimeError(async () => toPdfExportTaskRecord(await native.getPdfExportTask({ exportId }))),
-    cancelPdfExport: (exportId) =>
-      withRuntimeError(async () => toPdfExportTaskRecord(await native.cancelPdfExport({ exportId }))),
-    retryPdfExport: (exportId, allowOverwrite = false) =>
+    getExportTask: (exportId) =>
+      withRuntimeError(async () => toExportTaskRecord(await native.getExportTask({ exportId }))),
+    cancelExport: (exportId) =>
+      withRuntimeError(async () => toExportTaskRecord(await native.cancelExport({ exportId }))),
+    retryExport: (exportId, allowOverwrite = false) =>
       withRuntimeError(async () =>
-        toPdfExportTaskRecord(await native.retryPdfExport({ exportId, allowOverwrite })),
+        toExportTaskRecord(await native.retryExport({ exportId, allowOverwrite })),
       ),
-    deletePdfExportTask: (exportId) =>
-      withRuntimeError(() => native.deletePdfExportTask({ exportId })),
-    deleteImportedPdf: (id) => withRuntimeError(() => native.deleteImportedPdf({ id })),
+    deleteExportTask: (exportId) =>
+      withRuntimeError(() => native.deleteExportTask({ exportId })),
+    deleteImportedLocalFile: (id) => withRuntimeError(() => native.deleteImportedLocalFile({ id })),
     updateLocalEpisodeType: (albumId, isSingleEpisode) =>
       withRuntimeError(() => native.updateLocalEpisodeType({ albumId, isSingleEpisode })),
-    openPdf: (file) => withRuntimeError(() => native.openPdf({ fileRef: String(file) })),
-    openPdfFolder: (file) =>
-      withRuntimeError(() => native.openPdfFolder({ fileRef: String(file) })),
+    openLocalFile: (file) => withRuntimeError(() => native.openLocalFile({ fileRef: String(file) })),
+    openLocalFileFolder: (file) =>
+      withRuntimeError(() => native.openLocalFileFolder({ fileRef: String(file) })),
     getPdfInfo: (file) => withRuntimeError(() => native.getPdfInfo({ fileRef: String(file) })),
-    onProgress: (handler) => events.onPdfExportProgress(handler),
+    getCbzInfo: (file) => withRuntimeError(() => native.getCbzInfo({ fileRef: String(file) })),
+    onProgress: (handler) => events.onExportProgress(handler),
   }
 }
 
@@ -344,7 +349,7 @@ export function createAndroidPlatformServices(
     },
     notifications: { kind: 'runtime-permission', permissions: notifications },
     files: createFileService(native),
-    pdfExportPreferences: createAndroidPdfExportPreferencesStore(),
+    exportPreferences: createAndroidExportPreferencesStore(),
     storage: { available: true, api: publicDownload },
     reader: {
       orientation: {
@@ -404,7 +409,7 @@ export function createAndroidPlatformServices(
         onRoute: (handler) => events.onLaunchRoute(handler),
       },
     },
-    pdf: createPdfService(native, events),
+    localFiles: createLocalFileService(native, events),
     events,
   }
 }

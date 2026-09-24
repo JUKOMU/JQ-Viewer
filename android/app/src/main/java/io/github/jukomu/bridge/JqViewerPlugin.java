@@ -24,11 +24,9 @@ import io.github.jukomu.feature.download.data.DownloadStore;
 import io.github.jukomu.feature.download.storage.FileStore;
 import io.github.jukomu.feature.favorite.data.FavoriteStore;
 import io.github.jukomu.feature.history.data.HistoryStore;
-import io.github.jukomu.feature.pdf.data.PdfStore;
-import io.github.jukomu.feature.pdf.export.PdfExportCommandPort;
-import io.github.jukomu.feature.pdf.export.PdfExportCommandRouter;
-import io.github.jukomu.feature.pdf.export.PdfExportEventSink;
-import io.github.jukomu.feature.pdf.export.PdfExportService;
+import io.github.jukomu.feature.localfile.data.LocalFileStore;
+import io.github.jukomu.feature.export.ExportEventSink;
+import io.github.jukomu.feature.export.ExportService;
 import io.github.jukomu.feature.pdf.render.PdfPageCache;
 import io.github.jukomu.feature.preload.PreloadService;
 import io.github.jukomu.feature.settings.SettingsService;
@@ -76,9 +74,8 @@ public class JqViewerPlugin extends Plugin {
     private ReaderPluginHandler readerHandler;
     private SettingsPluginHandler settingsHandler;
     private SystemPluginHandler systemHandler;
-    private PdfPluginHandler pdfHandler;
-    private PdfExportEventSink pdfEventSink;
-    private PdfExportCommandPort pdfExportCommandPort;
+    private LocalFilePluginHandler localFileHandler;
+    private ExportEventSink exportEventSink;
     private UpdateService updateService;
     private Consumer<UpdateService.Snapshot> updateProgressSink;
     private UpdatePluginHandler updateHandler;
@@ -134,23 +131,23 @@ public class JqViewerPlugin extends Plugin {
         historyHandler = new HistoryPluginHandler(historyStore);
         FavoriteStore favoriteStore = FavoriteStore.getInstance(ctx);
         favoriteHandler = new FavoritePluginHandler(favoriteStore);
-        PdfStore.getInstance(ctx);
+        LocalFileStore.getInstance(ctx);
         try {
             PdfPageCache.getInstance(ctx);
         } catch (RuntimeException error) {
             Log.w(TAG, "初始化 PDF 页面缓存失败，继续启动", error);
         }
-        PdfExportService pdfExportService = PdfExportService.getInstance(ctx);
-        this.pdfEventSink = snapshot -> {
+        ExportService exportService = ExportService.getInstance(ctx);
+        this.exportEventSink = snapshot -> {
             if (snapshot == null) return;
             try {
-                notifyListeners("pdfExportProgress", JSObject.fromJSONObject(snapshot));
+                notifyListeners("exportProgress", JSObject.fromJSONObject(snapshot));
             } catch (Exception error) {
-                Log.w(TAG, "发布 PDF 导出进度失败", error);
+                Log.w(TAG, "发布文件导出进度失败", error);
             }
         };
-        pdfExportService.attachEventSink(pdfEventSink);
-        pdfExportService.reconcileOnStartup();
+        exportService.attachEventSink(exportEventSink);
+        exportService.reconcileOnStartup();
 
         boolean runtimeExists = AppRuntime.exists();
         if (!runtimeExists) {
@@ -187,10 +184,7 @@ public class JqViewerPlugin extends Plugin {
             settingsDb.getInt("preload_concurrency", SettingsService.DEFAULT_CONCURRENCY));
         downloadConcurrency = SettingsService.normalizeConcurrency(
             settingsDb.getInt("download_concurrency", SettingsService.DEFAULT_CONCURRENCY));
-        pdfHandler = new PdfPluginHandler(ctx, downloadDb);
-        pdfExportCommandPort = exportId ->
-            PdfExportService.getInstance(ctx).cancelExport(exportId);
-        PdfExportCommandRouter.getInstance().attach(pdfExportCommandPort);
+        localFileHandler = new LocalFilePluginHandler(ctx, downloadDb);
 
         JmcomicSessionManager sessionManager = JmcomicSessionManager.getOrCreate(
             ctx, downloadConcurrency);
@@ -264,22 +258,21 @@ public class JqViewerPlugin extends Plugin {
                 featureEventAdapter, featureEventAdapter, featureEventAdapter);
         }
         DownloadCommandRouter.getInstance().detach(downloadCommandPort);
-        PdfExportCommandRouter.getInstance().detach(pdfExportCommandPort);
-        if (pdfEventSink != null) {
-            PdfExportService.getInstance(getContext()).detachEventSink(pdfEventSink);
+        if (exportEventSink != null) {
+            ExportService.getInstance(getContext()).detachEventSink(exportEventSink);
         }
         if (instance == this) {
             instance = null;
         }
 
-        if (pdfHandler != null) {
-            pdfHandler.destroy();
+        if (localFileHandler != null) {
+            localFileHandler.destroy();
         }
         // 图片、网络和下载准备 executor 由 AppRuntime 持有。
     }
 
     static int pdfFolderGrantFlags(boolean canGrantUri) {
-        return PdfPluginHandler.pdfFolderGrantFlags(canGrantUri);
+        return LocalFilePluginHandler.pdfFolderGrantFlags(canGrantUri);
     }
 
     /**
@@ -781,122 +774,127 @@ public class JqViewerPlugin extends Plugin {
         favoriteHandler.listOfflineBackupKeys(call);
     }
 
-    // ========== PDF 导出 ==========
+    // ========== 文件导出 ==========
 
     // ========== PDF 导入 ==========
 
     @PluginMethod
-    public void scanPdfFiles(PluginCall call) {
-        pdfHandler.scanPdfFiles(call);
+    public void scanImportableFiles(PluginCall call) {
+        localFileHandler.scanImportableFiles(call);
     }
 
     @PluginMethod
-    public void importPdfs(PluginCall call) {
-        pdfHandler.importPdfs(call);
+    public void importLocalFiles(PluginCall call) {
+        localFileHandler.importLocalFiles(call);
     }
 
     @PluginMethod
-    public void getImportedPdfs(PluginCall call) {
-        pdfHandler.getImportedPdfs(call);
+    public void getImportedLocalFiles(PluginCall call) {
+        localFileHandler.getImportedLocalFiles(call);
     }
 
     @PluginMethod
     public void updateLocalEpisodeType(PluginCall call) {
-        pdfHandler.updateLocalEpisodeType(call);
+        localFileHandler.updateLocalEpisodeType(call);
     }
 
     @PluginMethod
-    public void deleteImportedPdf(PluginCall call) {
-        pdfHandler.deleteImportedPdf(call);
+    public void deleteImportedLocalFile(PluginCall call) {
+        localFileHandler.deleteImportedLocalFile(call);
     }
 
     @PluginMethod
-    public void getPdfFiles(PluginCall call) {
-        pdfHandler.getPdfFiles(call);
+    public void getLocalFiles(PluginCall call) {
+        localFileHandler.getLocalFiles(call);
     }
 
     @PluginMethod
-    public void refreshPdfFileAvailability(PluginCall call) {
-        pdfHandler.refreshPdfFileAvailability(call);
+    public void refreshLocalFileAvailability(PluginCall call) {
+        localFileHandler.refreshLocalFileAvailability(call);
     }
 
     @PluginMethod
-    public void inspectPdfFileForDeletion(PluginCall call) {
-        pdfHandler.inspectPdfFileForDeletion(call);
+    public void inspectLocalFileForDeletion(PluginCall call) {
+        localFileHandler.inspectLocalFileForDeletion(call);
     }
 
     @PluginMethod
-    public void verifyPdfFile(PluginCall call) {
-        pdfHandler.verifyPdfFile(call);
+    public void verifyLocalFile(PluginCall call) {
+        localFileHandler.verifyLocalFile(call);
     }
 
     @PluginMethod
-    public void removePdfFromLibrary(PluginCall call) {
-        pdfHandler.removePdfFromLibrary(call);
+    public void removeLocalFileFromLibrary(PluginCall call) {
+        localFileHandler.removeLocalFileFromLibrary(call);
     }
 
     @PluginMethod
-    public void deletePdfFile(PluginCall call) {
-        pdfHandler.deletePdfFile(call);
+    public void deleteLocalFile(PluginCall call) {
+        localFileHandler.deleteLocalFile(call);
     }
 
     @PluginMethod
-    public void getPdfManagementState(PluginCall call) {
-        pdfHandler.getPdfManagementState(call);
+    public void getLocalFileManagementState(PluginCall call) {
+        localFileHandler.getLocalFileManagementState(call);
     }
 
     @PluginMethod
-    public void acknowledgePdfDatabaseReset(PluginCall call) {
-        pdfHandler.acknowledgePdfDatabaseReset(call);
+    public void acknowledgeLocalFileDatabaseReset(PluginCall call) {
+        localFileHandler.acknowledgeLocalFileDatabaseReset(call);
     }
 
     @PluginMethod
-    public void openPdf(PluginCall call) {
-        pdfHandler.openPdf(call);
+    public void openLocalFile(PluginCall call) {
+        localFileHandler.openLocalFile(call);
     }
 
     @PluginMethod
-    public void openPdfFolder(PluginCall call) {
-        pdfHandler.openPdfFolder(call);
+    public void openLocalFileFolder(PluginCall call) {
+        localFileHandler.openLocalFileFolder(call);
     }
 
     @PluginMethod
     public void getPdfInfo(PluginCall call) {
-        pdfHandler.getPdfInfo(call);
+        localFileHandler.getPdfInfo(call);
     }
 
     @PluginMethod
     public void renderPdfPage(PluginCall call) {
-        pdfHandler.renderPdfPage(call);
+        localFileHandler.renderPdfPage(call);
     }
 
     @PluginMethod
-    public void exportPdfBatch(PluginCall call) {
-        pdfHandler.exportPdfBatch(call);
+    public void getCbzInfo(PluginCall call) {
+        localFileHandler.getCbzInfo(call);
     }
 
     @PluginMethod
-    public void getPdfExportTasks(PluginCall call) {
-        pdfHandler.getPdfExportTasks(call);
+    public void exportBatch(PluginCall call) {
+        localFileHandler.exportBatch(call);
     }
 
     @PluginMethod
-    public void getPdfExportTask(PluginCall call) {
-        pdfHandler.getPdfExportTask(call);
+    public void getExportTasks(PluginCall call) {
+        localFileHandler.getExportTasks(call);
     }
 
     @PluginMethod
-    public void cancelPdfExport(PluginCall call) {
-        pdfHandler.cancelPdfExport(call);
+    public void getExportTask(PluginCall call) {
+        localFileHandler.getExportTask(call);
     }
 
     @PluginMethod
-    public void retryPdfExport(PluginCall call) {
-        pdfHandler.retryPdfExport(call);
+    public void cancelExport(PluginCall call) {
+        localFileHandler.cancelExport(call);
     }
 
     @PluginMethod
-    public void deletePdfExportTask(PluginCall call) {
-        pdfHandler.deletePdfExportTask(call);
+    public void retryExport(PluginCall call) {
+        localFileHandler.retryExport(call);
+    }
+
+    @PluginMethod
+    public void deleteExportTask(PluginCall call) {
+        localFileHandler.deleteExportTask(call);
     }
 }

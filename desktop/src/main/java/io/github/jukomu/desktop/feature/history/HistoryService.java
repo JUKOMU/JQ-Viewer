@@ -52,19 +52,20 @@ public final class HistoryService {
             if (sameAlbum) {
                 try (PreparedStatement update = connection.prepareStatement(
                         "UPDATE browse_history SET album_title=?, cover_url=?, authors=?, "
-                                + "chapter_id=?, chapter_title=?, timestamp=? WHERE id=?")) {
+                                + "chapter_id=?, chapter_title=?, file_id=?, timestamp=? WHERE id=?")) {
                     bindItem(update, request, 1);
-                    update.setLong(6, System.currentTimeMillis());
-                    update.setLong(7, id);
+                    update.setLong(7, System.currentTimeMillis());
+                    update.setLong(8, id);
                     update.executeUpdate();
                 }
             } else {
                 try (PreparedStatement insert = connection.prepareStatement(
                         "INSERT INTO browse_history(album_id, album_title, cover_url, authors, "
-                                + "chapter_id, chapter_title, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)")) {
+                                + "chapter_id, chapter_title, file_id, timestamp) "
+                                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?)")) {
                     insert.setString(1, albumId);
                     bindItem(insert, request, 2);
-                    insert.setLong(7, System.currentTimeMillis());
+                    insert.setLong(8, System.currentTimeMillis());
                     insert.executeUpdate();
                 }
             }
@@ -79,7 +80,7 @@ public final class HistoryService {
         String where = rangeWhere(start, end);
         String args = rangeArgs(start, end);
         String sql = "SELECT id, album_id, album_title, cover_url, authors, chapter_id, "
-                + "chapter_title, timestamp FROM browse_history " + where
+                + "chapter_title, file_id, timestamp FROM browse_history " + where
                 + " ORDER BY timestamp DESC, id DESC" + (limit > 0 ? " LIMIT ? OFFSET ?" : "");
         long totalCount = count(where, args, start, end);
         List<HistoryItemResponse> items = new ArrayList<>();
@@ -99,7 +100,8 @@ public final class HistoryService {
                             rows.getString(5),
                             rows.getString(6),
                             rows.getString(7),
-                            rows.getLong(8)
+                            nullableLong(rows, 8),
+                            rows.getLong(9)
                     ));
                 }
             }
@@ -272,6 +274,8 @@ public final class HistoryService {
         statement.setString(index + 2, text(request.authors()));
         statement.setString(index + 3, text(request.chapterId()));
         statement.setString(index + 4, text(request.chapterTitle()));
+        if (request.fileId() == null) statement.setNull(index + 5, java.sql.Types.BIGINT);
+        else statement.setLong(index + 5, request.fileId());
     }
 
     private static String rangeWhere(Long start, Long end) {
@@ -309,5 +313,10 @@ public final class HistoryService {
 
     private static String text(String value) {
         return value == null ? "" : value;
+    }
+
+    private static Long nullableLong(ResultSet rows, int index) throws SQLException {
+        long value = rows.getLong(index);
+        return rows.wasNull() ? null : value;
     }
 }

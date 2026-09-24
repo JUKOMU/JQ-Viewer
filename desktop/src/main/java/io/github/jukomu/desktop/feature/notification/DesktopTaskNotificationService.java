@@ -5,8 +5,8 @@ import io.github.jukomu.desktop.feature.download.DownloadService;
 import io.github.jukomu.desktop.feature.download.data.DownloadStore;
 import io.github.jukomu.desktop.feature.download.data.StoredDownloadTask;
 import io.github.jukomu.desktop.feature.download.model.DownloadProgressEvent;
-import io.github.jukomu.desktop.feature.pdf.export.PdfExportStore;
-import io.github.jukomu.desktop.feature.pdf.model.PdfExportTaskResponse;
+import io.github.jukomu.desktop.feature.export.ExportStore;
+import io.github.jukomu.desktop.feature.localfile.model.ExportTaskResponse;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -14,13 +14,15 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 
 /** 从持久化任务快照生成 Desktop 终态系统通知。 */
 public final class DesktopTaskNotificationService implements AutoCloseable {
     private final DownloadStore downloads;
-    private final PdfExportStore pdfExports;
+    private final ExportStore exports;
     private final LaunchRouteService launchRoutes;
     private final EventHub events;
+    private final Consumer<String> openContainingFolder;
     private final Map<String, String> fingerprints = new LinkedHashMap<>();
     private final Map<String, PendingNotification> pending = new LinkedHashMap<>();
 
@@ -28,18 +30,21 @@ public final class DesktopTaskNotificationService implements AutoCloseable {
     private boolean started;
     private boolean closed;
     private AutoCloseable downloadEvents;
-    private AutoCloseable pdfEvents;
+    private AutoCloseable exportEvents;
 
     public DesktopTaskNotificationService(
             DownloadStore downloads,
-            PdfExportStore pdfExports,
+            ExportStore exports,
             LaunchRouteService launchRoutes,
-            EventHub events
+            EventHub events,
+            Consumer<String> openContainingFolder
     ) {
         this.downloads = Objects.requireNonNull(downloads, "downloads");
-        this.pdfExports = Objects.requireNonNull(pdfExports, "pdfExports");
+        this.exports = Objects.requireNonNull(exports, "exports");
         this.launchRoutes = Objects.requireNonNull(launchRoutes, "launchRoutes");
         this.events = Objects.requireNonNull(events, "events");
+        this.openContainingFolder = Objects.requireNonNull(
+                openContainingFolder, "openContainingFolder");
     }
 
     /** 启动恢复完成后才接受快照变更，避免把历史中断任务当作新通知。 */
@@ -48,9 +53,9 @@ public final class DesktopTaskNotificationService implements AutoCloseable {
         downloadEvents = events.subscribe("downloadProgress", payload -> {
             if (payload instanceof DownloadProgressEvent event) downloadChanged(event.taskId());
         });
-        pdfEvents = events.subscribe("pdfExportProgress", payload -> {
-            if (payload instanceof PdfExportTaskResponse event && event.exportId() != null) {
-                pdfExportChanged(event.exportId());
+        exportEvents = events.subscribe("exportProgress", payload -> {
+            if (payload instanceof ExportTaskResponse event && event.exportId() != null) {
+                exportChanged(event.exportId());
             }
         });
         started = true;
@@ -96,37 +101,62 @@ public final class DesktopTaskNotificationService implements AutoCloseable {
         });
     }
 
-    public synchronized void pdfExportChanged(String exportId) {
+    public synchronized void exportChanged(String exportId) {
         if (!started || closed || exportId == null) return;
-        String key = "pdf:" + exportId;
-        PdfExportTaskResponse task = pdfExports.find(exportId);
-        if (task == null || !isNotifiablePdfTerminal(task.status())) {
+        ExportTaskResponse task = exports.find(exportId);
+        String format = task == null ? "export" : task.format();
+        String key = "export:" + format + ":" + exportId;
+        if (task == null || !isNotifiableExportTerminal(task.status())) {
             clear(key);
             return;
         }
         String fingerprint = task.status();
         if (fingerprint.equals(fingerprints.put(key, fingerprint))) return;
 
-        String route = "/download?view=pdf&tab=tasks&exportId="
-                + URLEncoder.encode(exportId, StandardCharsets.UTF_8);
+        String taskRoute = "/download?view=export&tab=tasks&format=" + format + "&exportId="
+                + encode(exportId);
+        String label = format.toUpperCase(java.util.Locale.ROOT);
         String title = switch (task.status()) {
-            case "completed" -> "PDF 导出完成";
-            case "partial" -> "PDF 部分导出完成";
-            case "interrupted" -> "PDF 导出中断";
-            default -> "PDF 导出失败";
+            case "completed" -> label + " 导出完成";
+            case "partial" -> label + " 部分导出完成";
+            case "interrupted" -> label + " 导出中断";
+            default -> label + " 导出失败";
         };
         String message = fallback(task.displayTitle(), fallback(task.targetName(), exportId));
         if (!"completed".equals(task.status())) {
             message += ": " + fallback(task.errorMessage(), title);
         }
-        enqueue(new DesktopNotification(key, title, message, route), () -> {
-            PdfExportTaskResponse current = pdfExports.find(exportId);
-            return current != null && isNotifiablePdfTerminal(current.status());
-        });
+        Runnable action = () -> launchRoutes.activate(taskRoute);
+        String notificationRoute = taskRoute;
+        ExportStore.Volume output = firstCompletedVolume(exportId);
+        if ("completed".equals(task.status()) && output != null) {
+            if ("zip".equals(format)) {
+                notificationRoute = "/download?view=export&tab=files&format=zip";
+                String fileRef = output.outputFileRef();
+                action = () -> openContainingFolder.accept(fileRef);
+            } else {
+                notificationRoute = readerRoute(format, task, output.outputFileRef());
+                String route = notificationRoute;
+                action = () -> launchRoutes.activate(route);
+            }
+        }
+        enqueue(new DesktopNotification(key, title, message, notificationRoute), () -> {
+            ExportTaskResponse current = exports.find(exportId);
+            return current != null && isNotifiableExportTerminal(current.status());
+        }, action);
     }
 
     private void enqueue(DesktopNotification notification, TargetValidator validator) {
-        PendingNotification pendingNotification = new PendingNotification(notification, validator);
+        enqueue(notification, validator, () -> launchRoutes.activate(notification.route()));
+    }
+
+    private void enqueue(
+            DesktopNotification notification,
+            TargetValidator validator,
+            Runnable action
+    ) {
+        PendingNotification pendingNotification = new PendingNotification(
+                notification, validator, action);
         if (sink == null) {
             pending.put(notification.key(), pendingNotification);
             return;
@@ -143,7 +173,7 @@ public final class DesktopTaskNotificationService implements AutoCloseable {
             synchronized (DesktopTaskNotificationService.this) {
                 if (closed || !pendingNotification.validator().exists()) return;
             }
-            launchRoutes.activate(pendingNotification.notification().route());
+            pendingNotification.action().run();
         });
     }
 
@@ -157,7 +187,7 @@ public final class DesktopTaskNotificationService implements AutoCloseable {
                 || DownloadService.STATUS_FAILED.equals(status);
     }
 
-    private static boolean isNotifiablePdfTerminal(String status) {
+    private static boolean isNotifiableExportTerminal(String status) {
         return "completed".equals(status) || "failed".equals(status)
                 || "partial".equals(status) || "interrupted".equals(status);
     }
@@ -175,15 +205,44 @@ public final class DesktopTaskNotificationService implements AutoCloseable {
         return value == null || value.isBlank() ? fallback : value;
     }
 
+    private ExportStore.Volume firstCompletedVolume(String exportId) {
+        return exports.volumes(exportId).stream()
+                .filter(volume -> "completed".equals(volume.status()))
+                .filter(volume -> volume.outputFileRef() != null
+                        && !volume.outputFileRef().isBlank())
+                .findFirst()
+                .orElse(null);
+    }
+
+    private static String readerRoute(
+            String format,
+            ExportTaskResponse task,
+            String fileRef
+    ) {
+        String reader = "cbz".equals(format) ? "/cbz-reader" : "/pdf-reader";
+        return reader + "?fileRef=" + encode(fileRef)
+                + "&title=" + encode(fallback(task.targetName(), task.displayTitle()))
+                + "&albumId=" + encode(task.albumId())
+                + "&albumTitle=" + encode(task.albumTitle())
+                + "&authors=" + encode(task.authors())
+                + "&coverUrl=" + encode(task.coverUrl())
+                + "&chapterId=" + encode(fallback(task.chapterId(), task.albumId()))
+                + "&chapterTitle=" + encode(task.displayTitle());
+    }
+
+    private static String encode(String value) {
+        return URLEncoder.encode(value == null ? "" : value, StandardCharsets.UTF_8);
+    }
+
     @Override
     public synchronized void close() {
         closed = true;
         started = false;
         sink = null;
         closeQuietly(downloadEvents);
-        closeQuietly(pdfEvents);
+        closeQuietly(exportEvents);
         downloadEvents = null;
-        pdfEvents = null;
+        exportEvents = null;
         pending.clear();
         fingerprints.clear();
     }
@@ -198,7 +257,8 @@ public final class DesktopTaskNotificationService implements AutoCloseable {
 
     private record PendingNotification(
             DesktopNotification notification,
-            TargetValidator validator
+            TargetValidator validator,
+            Runnable action
     ) {
     }
 

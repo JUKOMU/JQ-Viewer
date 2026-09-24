@@ -9,7 +9,7 @@ import io.github.jukomu.desktop.feature.settings.model.BooleanSettingRequest;
 import io.github.jukomu.desktop.feature.settings.model.DisplayModeRequest;
 import io.github.jukomu.desktop.feature.settings.model.NumberSettingRequest;
 import io.github.jukomu.desktop.feature.settings.model.NullableTextSettingRequest;
-import io.github.jukomu.desktop.feature.settings.model.PdfExportFolderRequest;
+import io.github.jukomu.desktop.feature.settings.model.ExportFolderRequest;
 import io.javalin.http.Context;
 
 /** 处理页面基础设置的读取与持久化。 */
@@ -69,22 +69,28 @@ public final class SettingsPluginHandler {
                 request -> downloadLocation.set(Request.bool(request.open(), false)));
     }
 
-    public void getPdfExportPreferences(Context context) {
-        settingsRequests.run(context, settings::pdfExportPreferences);
+    public void getExportPreferences(Context context) {
+        settingsRequests.run(context, settings::exportPreferences);
     }
 
-    public void setPdfExportFolder(Context context) {
-        settingsRequests.run(context, PdfExportFolderRequest.class,
-                request -> settings.setPdfExportFolder(request.folder()));
+    public void setExportFolder(Context context) {
+        settingsRequests.run(context, ExportFolderRequest.class,
+                request -> settings.setExportFolder(request.folder()));
     }
 
-    public void setPdfExportDirectoryTemplate(Context context) {
+    public void setExportDirectoryTemplate(Context context) {
         settingsRequests.run(context, NullableTextSettingRequest.class,
-                request -> settings.setPdfExportDirectoryTemplate(request.value()));
+                request -> settings.setExportDirectoryTemplate(request.value()));
     }
 
-    public void setPdfExportFileNameTemplate(Context context) {
+    public void setExportFileNameTemplate(Context context) {
         settingsRequests.run(context, NullableTextSettingRequest.class,
-                request -> settings.setPdfExportFileNameTemplate(request.value()));
+                request -> settings.setExportFileNameTemplate(request.value()));
+    }
+
+    public void setExportLastFormat(Context context) {
+        settingsRequests.run(context, NullableTextSettingRequest.class,
+                request -> settings.setExportLastFormat(
+                        Request.requiredText(request.value(), "value")));
     }
 }

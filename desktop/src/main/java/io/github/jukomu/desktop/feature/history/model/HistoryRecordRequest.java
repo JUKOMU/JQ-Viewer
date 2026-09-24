@@ -7,6 +7,7 @@ public record HistoryRecordRequest(
         String coverUrl,
         String authors,
         String chapterId,
-        String chapterTitle
+        String chapterTitle,
+        Long fileId
 ) {
 }

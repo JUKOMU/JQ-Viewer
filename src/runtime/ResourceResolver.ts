@@ -10,6 +10,8 @@ export interface ResourceResolver {
 
   pdfDocumentUrl(file: FileRef): string
 
+  cbzPageUrl(input: { file: FileRef; page: number }): string
+
   /** PDF 逐页渲染。返回受控资源 URL，页面不接触平台传输或二进制编码细节。 */
   renderPdfPage: Capability<{
     getUrl(input: { file: FileRef; page: number; targetWidth: number }): Promise<string>

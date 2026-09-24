@@ -156,7 +156,7 @@
                 <span v-else>{{ Math.min(99, Math.round(downloadProgress.percent)) }}%</span>
               </div>
               <div v-if="pdfProgress" class="task-progress-row">
-                <span>PDF</span>
+                <span>导出</span>
                 <template v-if="pdfProgress.percent >= 100">
                   <IonSpinner name="crescent" class="task-progress-spinner" aria-hidden="true" />
                   <span class="task-progress-sr-only">导出完成，正在处理</span>
@@ -247,9 +247,9 @@ import type {
   DownloadProgressEvent,
   DownloadStatus,
   DownloadTask,
-  PdfExportProgressEvent,
-  PdfExportStatus,
-  PdfExportTaskRecord,
+  ExportProgressEvent,
+  ExportStatus,
+  ExportTaskRecord,
 } from '@/services/JmcomicTypes'
 import { calculatePageProgress, type PageProgressInput } from '@/utils/pageProgress'
 
@@ -275,7 +275,7 @@ type DownloadProgressTask = PageProgressInput & {
 }
 
 type PdfProgressTask = PageProgressInput & {
-  status: PdfExportStatus
+  status: ExportStatus
   snapshotRevision: number
   eventSequence: number
 }
@@ -286,7 +286,7 @@ const DOWNLOAD_PROGRESS_STATUSES = new Set<DownloadStatus>([
   'paused',
   'verifying',
 ])
-const PDF_PROGRESS_STATUSES = new Set<PdfExportStatus>(['queued', 'running', 'cancelling'])
+const PDF_PROGRESS_STATUSES = new Set<ExportStatus>(['queued', 'running', 'cancelling'])
 const TASK_PROGRESS_TRANSITION_MS = 220
 const TASK_PROGRESS_RENDER_INTERVAL_MS = 500
 const MAIN_MENU_TRANSITION_MS = 220
@@ -318,7 +318,7 @@ type PendingDownloadProgressEvent = {
 }
 
 type PendingPdfProgressEvent = {
-  event: PdfExportProgressEvent
+  event: ExportProgressEvent
   eventSequence: number
 }
 
@@ -327,7 +327,7 @@ let pdfEventSequence = 0
 const downloadLatestEventSequences = new Map<string, number>()
 const pdfLatestEvents = new Map<
   string,
-  { eventSequence: number; snapshotRevision: number; status: PdfExportStatus }
+  { eventSequence: number; snapshotRevision: number; status: ExportStatus }
 >()
 const pendingDownloadProgressEvents = new Map<string, PendingDownloadProgressEvent>()
 const pendingPdfProgressEvents = new Map<string, PendingPdfProgressEvent>()
@@ -419,7 +419,7 @@ const applyDownloadProgressEvent = (event: DownloadProgressEvent, eventSequence:
   scheduleDownloadClear()
 }
 
-const applyPdfProgressEvent = (event: PdfExportProgressEvent, eventSequence: number) => {
+const applyPdfProgressEvent = (event: ExportProgressEvent, eventSequence: number) => {
   const next = new Map(pdfProgressTasks.value)
   const existing = next.get(event.exportId)
   if (existing && event.snapshotRevision < existing.snapshotRevision) return
@@ -511,7 +511,7 @@ const queueDownloadProgressEvent = (event: DownloadProgressEvent) => {
   else flushPendingTaskProgress()
 }
 
-const queuePdfProgressEvent = (event: PdfExportProgressEvent) => {
+const queuePdfProgressEvent = (event: ExportProgressEvent) => {
   pdfEventSequence += 1
   const eventSequence = pdfEventSequence
   const latestEvent = pdfLatestEvents.get(event.exportId)
@@ -552,8 +552,8 @@ const seedDownloadProgress = (tasks: DownloadTask[]) => {
   scheduleDownloadClear()
 }
 
-const seedPdfProgress = (tasks: PdfExportTaskRecord[]) => {
-  const latestTasks = new Map<string, PdfExportTaskRecord>()
+const seedPdfProgress = (tasks: ExportTaskRecord[]) => {
+  const latestTasks = new Map<string, ExportTaskRecord>()
   for (const task of tasks) {
     if (!PDF_PROGRESS_STATUSES.has(task.status)) continue
     const existing = latestTasks.get(task.exportId)
@@ -638,13 +638,13 @@ const refreshPdfProgress = async (): Promise<void> => {
       pdfRefreshRequested = false
       flushPendingTaskProgress()
       const requestSequence = pdfEventSequence
-      const statuses: PdfExportStatus[] = ['queued', 'running', 'cancelling']
-      const tasks: PdfExportTaskRecord[] = []
+      const statuses: ExportStatus[] = ['queued', 'running', 'cancelling']
+      const tasks: ExportTaskRecord[] = []
       try {
         for (const status of statuses) {
           let cursor: string | undefined
           do {
-            const result = await JmcomicService.getPdfExportTasks({ status, cursor, limit: 100 })
+            const result = await JmcomicService.getExportTasks({ status, cursor, limit: 100 })
             tasks.push(...result.tasks)
             cursor = result.nextCursor || undefined
           } while (cursor && !progressUnmounted)
@@ -686,7 +686,7 @@ const registerProgressListeners = async () => {
     })(),
     (async () => {
       try {
-        const handle = await JmcomicService.addPdfExportProgressListener(queuePdfProgressEvent)
+        const handle = await JmcomicService.addExportProgressListener(queuePdfProgressEvent)
         if (progressUnmounted) void handle.remove()
         else pdfProgressHandle = handle
       } catch {

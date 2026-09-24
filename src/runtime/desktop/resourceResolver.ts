@@ -15,6 +15,7 @@ export function createResourceResolver(fetcher: BackendFetch): ResourceResolver 
     imageUrl: ({ photoId, sortOrder, type }) =>
       `/${type}/${encodeURIComponent(photoId)}/${sortOrder}`,
     pdfDocumentUrl: (file: FileRef) => `/pdf/${encodeFileRef(file)}`,
+    cbzPageUrl: ({ file, page }) => `/cbz-page/${encodeFileRef(file)}/${page}`,
     renderPdfPage: {
       available: true,
       api: {

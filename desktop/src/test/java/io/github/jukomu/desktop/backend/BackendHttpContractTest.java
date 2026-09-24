@@ -69,6 +69,8 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -187,11 +189,11 @@ class BackendHttpContractTest {
                     http, base, requestedMethods, "getDownloadPublic", "{}"));
 
             ObjectNode pickedFolder = body(post(http, base, requestedMethods, "pickFolder",
-                    "{\"purpose\":\"pdf-export\"}"));
+                    "{\"purpose\":\"export\"}"));
             String folderRef = pickedFolder.path("ref").asText();
             ObjectNode defaultFolder = body(post(http, base, requestedMethods, "getDefaultFolder",
                     "{\"purpose\":\"download\"}"));
-            ObjectNode scannedFiles = body(post(http, base, requestedMethods, "scanPdfFiles",
+            ObjectNode scannedFiles = body(post(http, base, requestedMethods, "scanImportableFiles",
                     MAPPER.writeValueAsString(Map.of("folder", folderRef))));
             String fileRef = scannedFiles.path("files").get(0).path("ref").asText();
             ObjectNode existingFiles = body(post(http, base, requestedMethods, "checkFilesExist",
@@ -216,27 +218,27 @@ class BackendHttpContractTest {
                     Map.entry("isSingleEpisode", false),
                     Map.entry("folderId", "folder-1")
             ))));
-            ObjectNode imported = body(post(http, base, requestedMethods, "importPdfs", importBody));
+            ObjectNode imported = body(post(http, base, requestedMethods, "importLocalFiles", importBody));
             long importedId = imported.path("results").get(0).path("id").asLong();
             ObjectNode importedFiles = body(post(
-                    http, base, requestedMethods, "getImportedPdfs", "{}"));
-            ObjectNode pdfFiles = body(post(http, base, requestedMethods, "getPdfFiles",
-                    "{\"sourceType\":\"imported\",\"limit\":50}"));
+                    http, base, requestedMethods, "getImportedLocalFiles", "{}"));
+            ObjectNode pdfFiles = body(post(http, base, requestedMethods, "getLocalFiles",
+                    "{\"formats\":[\"pdf\"],\"sourceType\":\"imported\",\"limit\":50}"));
             ObjectNode refreshedPdfs = body(post(http, base, requestedMethods,
-                    "refreshPdfFileAvailability", "{\"ids\":[" + importedId + "]}"));
+                    "refreshLocalFileAvailability", "{\"ids\":[" + importedId + "]}"));
             ObjectNode inspectedPdf = body(post(http, base, requestedMethods,
-                    "inspectPdfFileForDeletion", "{\"id\":" + importedId + "}"));
+                    "inspectLocalFileForDeletion", "{\"id\":" + importedId + "}"));
             ObjectNode verifiedPdf = body(post(http, base, requestedMethods,
-                    "verifyPdfFile", "{\"id\":" + importedId + "}"));
+                    "verifyLocalFile", "{\"id\":" + importedId + "}"));
             ObjectNode pdfManagement = body(post(http, base, requestedMethods,
-                    "getPdfManagementState", "{}"));
+                    "getLocalFileManagementState", "{}"));
             ObjectNode pdfReset = body(post(http, base, requestedMethods,
-                    "acknowledgePdfDatabaseReset", "{}"));
+                    "acknowledgeLocalFileDatabaseReset", "{}"));
             assertOk(post(http, base, requestedMethods, "updateLocalEpisodeType",
                     "{\"albumId\":\"album-1\",\"isSingleEpisode\":true}"));
-            assertOk(post(http, base, requestedMethods, "openPdf",
+            assertOk(post(http, base, requestedMethods, "openLocalFile",
                     MAPPER.writeValueAsString(Map.of("fileRef", fileRef))));
-            assertOk(post(http, base, requestedMethods, "openPdfFolder",
+            assertOk(post(http, base, requestedMethods, "openLocalFileFolder",
                     MAPPER.writeValueAsString(Map.of("fileRef", fileRef))));
             ObjectNode pdfInfo = body(post(http, base, requestedMethods, "getPdfInfo",
                     MAPPER.writeValueAsString(Map.of("fileRef", fileRef))));
@@ -262,27 +264,41 @@ class BackendHttpContractTest {
             HttpResponse<byte[]> invalidPdfContent = getBytes(
                     http, base.resolve("/pdf/" + encodedInvalid));
 
-            assertOk(post(http, base, requestedMethods, "removePdfFromLibrary",
+            Path cbzPath = FileReferences.parseFile(fileRef).resolveSibling("sample.cbz");
+            byte[] cbzPageBytes = "cbz-page".getBytes(StandardCharsets.UTF_8);
+            writeCbz(cbzPath, cbzPageBytes);
+            String cbzRef = FileReferences.fileRef(cbzPath);
+            ObjectNode cbzInfo = body(post(http, base, requestedMethods, "getCbzInfo",
+                    MAPPER.writeValueAsString(Map.of("fileRef", cbzRef))));
+            String encodedCbz = Base64.getUrlEncoder().withoutPadding().encodeToString(
+                    cbzRef.getBytes(StandardCharsets.UTF_8));
+            HttpResponse<byte[]> cbzPage = getBytes(
+                    http, base.resolve("/cbz-page/" + encodedCbz + "/1"));
+
+            assertOk(post(http, base, requestedMethods, "removeLocalFileFromLibrary",
                     "{\"id\":" + importedId + "}"));
-            long secondPdfId = body(post(http, base, requestedMethods, "importPdfs", importBody))
+            long secondPdfId = body(post(http, base, requestedMethods, "importLocalFiles", importBody))
                     .path("results").get(0).path("id").asLong();
-            assertOk(post(http, base, requestedMethods, "deleteImportedPdf",
+            assertOk(post(http, base, requestedMethods, "deleteImportedLocalFile",
                     "{\"id\":" + secondPdfId + "}"));
-            long thirdPdfId = body(post(http, base, requestedMethods, "importPdfs", importBody))
+            long thirdPdfId = body(post(http, base, requestedMethods, "importLocalFiles", importBody))
                     .path("results").get(0).path("id").asLong();
-            ObjectNode deletedPdf = body(post(http, base, requestedMethods, "deletePdfFile",
+            ObjectNode deletedPdf = body(post(http, base, requestedMethods, "deleteLocalFile",
                     "{\"id\":" + thirdPdfId + "}"));
 
-            assertOk(post(http, base, requestedMethods, "setPdfExportFolder",
+            assertOk(post(http, base, requestedMethods, "setExportFolder",
                     MAPPER.writeValueAsString(Map.of("folder", Map.of(
                             "folderRef", folderRef,
                             "displayPath", pickedFolder.path("displayPath").asText())))));
-            assertOk(post(http, base, requestedMethods, "setPdfExportDirectoryTemplate",
+            assertOk(post(http, base, requestedMethods, "setExportDirectoryTemplate",
                     "{\"value\":\"{author}/{id}\"}"));
-            assertOk(post(http, base, requestedMethods, "setPdfExportFileNameTemplate",
+            assertOk(post(http, base, requestedMethods, "setExportFileNameTemplate",
                     "{\"value\":\"{title}\"}"));
+            assertOk(post(http, base, requestedMethods, "setExportLastFormat",
+                    "{\"value\":\"cbz\"}"));
             ObjectNode pdfPreferences = body(post(http, base, requestedMethods,
-                    "getPdfExportPreferences", "{}"));
+                    "getExportPreferences", "{}"));
+            assertEquals("cbz", pdfPreferences.path("lastFormat").asText());
 
             ObjectNode submission = body(post(http, base, requestedMethods, "downloadChapter",
                     "{\"albumId\":\"album-1\",\"chapterId\":\"download-photo\","
@@ -315,20 +331,20 @@ class BackendHttpContractTest {
                     Map.entry("allowOverwrite", false)
             ))));
             ObjectNode exported = body(post(http, base, requestedMethods,
-                    "exportPdfBatch", exportBody));
+                    "exportBatch", exportBody));
             String exportId = exported.path("tasks").get(0).path("exportId").asText();
             ObjectNode exportTask = waitForPdfExport(
                     http, base, requestedMethods, exportId, "completed");
             ObjectNode exportTasks = body(post(http, base, requestedMethods,
-                    "getPdfExportTasks", "{\"limit\":50}"));
+                    "getExportTasks", "{\"limit\":50}"));
             ObjectNode cancelledCompletedExport = body(post(http, base, requestedMethods,
-                    "cancelPdfExport", "{\"exportId\":\"" + exportId + "\"}"));
+                    "cancelExport", "{\"exportId\":\"" + exportId + "\"}"));
             ObjectNode retriedExport = body(post(http, base, requestedMethods,
-                    "retryPdfExport", "{\"exportId\":\"" + exportId
+                    "retryExport", "{\"exportId\":\"" + exportId
                             + "\",\"allowOverwrite\":true}"));
             ObjectNode completedRetry = waitForPdfExport(
                     http, base, requestedMethods, exportId, "completed");
-            assertOk(post(http, base, requestedMethods, "deletePdfExportTask",
+            assertOk(post(http, base, requestedMethods, "deleteExportTask",
                     "{\"exportId\":\"" + exportId + "\"}"));
             assertOk(post(http, base, requestedMethods, "deleteDownloaded",
                     "{\"albumId\":\"album-1\",\"chapterId\":\"download-photo\"}"));
@@ -471,7 +487,7 @@ class BackendHttpContractTest {
             assertTrue(defaultFolder.path("ref").asText().startsWith("folder:path:"));
             assertEquals(1, existingFiles.path("existing").size());
             assertEquals(1, imported.path("imported").asInt());
-            assertEquals(1, importedFiles.path("pdfs").size());
+            assertEquals(1, importedFiles.path("files").size());
             assertEquals(1, pdfFiles.path("files").size());
             assertEquals("available",
                     refreshedPdfs.path("files").get(0).path("availability").asText());
@@ -495,6 +511,12 @@ class BackendHttpContractTest {
                     invalidPdfContent.headers().firstValue("X-JQViewer-Pdf-Error").orElseThrow());
             assertTrue(invalidPdfContent.headers()
                     .firstValue("Access-Control-Allow-Origin").isEmpty());
+            assertEquals(1, cbzInfo.path("pageCount").asInt());
+            assertEquals("Contract CBZ", cbzInfo.path("title").asText());
+            assertEquals(200, cbzPage.statusCode());
+            assertEquals("image/png",
+                    cbzPage.headers().firstValue("Content-Type").orElseThrow());
+            assertArrayEquals(cbzPageBytes, cbzPage.body());
             assertEquals("deleted", deletedPdf.path("result").asText());
             assertEquals(folderRef, pdfPreferences.path("exportFolder").path("folderRef").asText());
             assertEquals("{author}/{id}", pdfPreferences.path("directoryTemplate").asText());
@@ -701,6 +723,20 @@ class BackendHttpContractTest {
         }
     }
 
+    private static void writeCbz(Path target, byte[] pageBytes) throws Exception {
+        try (ZipOutputStream output = new ZipOutputStream(Files.newOutputStream(target))) {
+            output.putNextEntry(new ZipEntry("ComicInfo.xml"));
+            output.write(("<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                    + "<ComicInfo><Title>Contract CBZ</Title>"
+                    + "<Pages><Page Image=\"0\" Type=\"FrontCover\"/></Pages>"
+                    + "</ComicInfo>").getBytes(StandardCharsets.UTF_8));
+            output.closeEntry();
+            output.putNextEntry(new ZipEntry("001.png"));
+            output.write(pageBytes);
+            output.closeEntry();
+        }
+    }
+
     private static HttpResponse<String> post(
             HttpClient client,
             URI base,
@@ -739,7 +775,7 @@ class BackendHttpContractTest {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
         ObjectNode task;
         do {
-            task = body(post(http, base, requestedMethods, "getPdfExportTask",
+            task = body(post(http, base, requestedMethods, "getExportTask",
                     "{\"exportId\":\"" + exportId + "\"}"));
             if (status.equals(task.path("status").asText())) return task;
             Thread.sleep(10);

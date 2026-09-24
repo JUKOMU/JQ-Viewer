@@ -5,7 +5,7 @@ import { createIdempotentListenerHandle } from '@/runtime/BackendEvents'
 import { createAndroidBackendClient } from '@/runtime/android/androidBackendClient'
 import { createAndroidBackendEvents } from '@/runtime/android/androidBackendEvents'
 import { createAndroidPlatformServices } from '@/runtime/android/androidPlatformServices'
-import { createAndroidPdfExportPreferencesStore } from '@/runtime/android/pdfExportPreferences'
+import { createAndroidExportPreferencesStore } from '@/runtime/android/exportPreferences'
 import { createAndroidResourceResolver } from '@/runtime/android/androidResourceResolver'
 import { createAndroidUpdater } from '@/runtime/android/androidUpdater'
 import { normalizeRuntimeError } from '@/runtime/errors'
@@ -52,7 +52,7 @@ describe('runtime context', () => {
 describe('Android bridge adapters', () => {
   test('Android PDF 导出设置清理旧 raw path 并保留 localStorage 行为', async () => {
     localStorage.setItem('jq-pdf-export-path', '/legacy/exports')
-    const store = createAndroidPdfExportPreferencesStore()
+    const store = createAndroidExportPreferencesStore()
 
     await expect(store.get()).resolves.toMatchObject({ exportFolder: null })
     expect(localStorage.getItem('jq-pdf-export-path')).toBeNull()
@@ -65,6 +65,9 @@ describe('Android bridge adapters', () => {
       folderRef: 'folder:saf:content://tree/exports',
       displayPath: '/storage/emulated/0/Exports',
     })
+
+    await store.setLastFormat('zip')
+    await expect(store.get()).resolves.toMatchObject({ lastFormat: 'zip' })
   })
 
   test('只绑定 common backend allowlist', async () => {
@@ -141,17 +144,18 @@ describe('Android bridge adapters', () => {
         provider: 'saf',
         cancelled: false,
       }),
-      scanPdfFiles: vi.fn().mockResolvedValue({
+      scanImportableFiles: vi.fn().mockResolvedValue({
         files: [
           {
+            format: 'pdf',
             fileName: 'book.pdf',
             fileRef: 'file:saf:content://tree/books/book.pdf',
             displayPath: '/storage/emulated/0/Books/book.pdf',
           },
         ],
       }),
-      getImportedPdfs: vi.fn().mockResolvedValue({
-        pdfs: [
+      getImportedLocalFiles: vi.fn().mockResolvedValue({
+        files: [
           {
             id: 1,
             fileRef: 'file:saf:content://tree/books/book.pdf',
@@ -164,28 +168,29 @@ describe('Android bridge adapters', () => {
     const events = createAndroidBackendEvents(native)
     const services = createAndroidPlatformServices(native, events)
 
-    const folder = await services.files.pickFolder('pdf-root')
+    const folder = await services.files.pickFolder('local-file-root')
     expect(folder).toEqual({
       ref: 'folder:saf:content://tree/books',
       displayPath: '/storage/emulated/0/Books',
     })
-    const scanned = await services.pdf.scanPdfFiles(folder!.ref)
+    const scanned = await services.localFiles.scanImportableFiles(folder!.ref, ['pdf'])
     expect(scanned.files[0]).toEqual({
+      format: 'pdf',
       ref: 'file:saf:content://tree/books/book.pdf',
       fileName: 'book.pdf',
       displayPath: '/storage/emulated/0/Books/book.pdf',
     })
-    const imported = await services.pdf.getImportedPdfs()
-    expect(imported.pdfs[0]).toMatchObject({
+    const imported = await services.localFiles.getImportedLocalFiles()
+    expect(imported.files[0]).toMatchObject({
       fileRef: 'file:saf:content://tree/books/book.pdf',
       displayPath: '/storage/emulated/0/Books/book.pdf',
     })
-    expect('renderPdfPage' in services.pdf).toBe(false)
+    expect('renderPdfPage' in services.localFiles).toBe(false)
   })
 
-  test('importPdfs 只接受 fileRef，缺失引用时明确失败', async () => {
-    const importPdfs = vi.fn()
-    const native = createNative({ importPdfs })
+  test('importLocalFiles 只接受 fileRef，缺失引用时明确失败', async () => {
+    const importLocalFiles = vi.fn()
+    const native = createNative({ importLocalFiles })
     const events = createAndroidBackendEvents(native)
     const services = createAndroidPlatformServices(native, events)
 
@@ -202,15 +207,15 @@ describe('Android bridge adapters', () => {
       chapterSortOrder: 1,
     }
 
-    await expect(services.pdf.importPdfs([item as never])).rejects.toMatchObject({
+    await expect(services.localFiles.importLocalFiles([item as never])).rejects.toMatchObject({
       code: 'not-found',
     })
-    expect(importPdfs).not.toHaveBeenCalled()
+    expect(importLocalFiles).not.toHaveBeenCalled()
   })
 
-  test('importPdfs 不把空白 fileRef 当作展示路径', async () => {
-    const importPdfs = vi.fn()
-    const native = createNative({ importPdfs })
+  test('importLocalFiles 不把空白 fileRef 当作展示路径', async () => {
+    const importLocalFiles = vi.fn()
+    const native = createNative({ importLocalFiles })
     const events = createAndroidBackendEvents(native)
     const services = createAndroidPlatformServices(native, events)
 
@@ -227,14 +232,14 @@ describe('Android bridge adapters', () => {
       chapterSortOrder: 1,
     }
 
-    await expect(services.pdf.importPdfs([item as never])).rejects.toMatchObject({
+    await expect(services.localFiles.importLocalFiles([item as never])).rejects.toMatchObject({
       code: 'not-found',
     })
-    expect(importPdfs).not.toHaveBeenCalled()
+    expect(importLocalFiles).not.toHaveBeenCalled()
   })
 
   test('Android PDF adapter 只发送目录 ref 与相对 targetName', async () => {
-    const exportPdfBatch = vi.fn().mockResolvedValue({
+    const exportBatch = vi.fn().mockResolvedValue({
       tasks: [
         {
           accepted: true,
@@ -246,11 +251,11 @@ describe('Android bridge adapters', () => {
         },
       ],
     })
-    const native = createNative({ exportPdfBatch })
+    const native = createNative({ exportBatch })
     const events = createAndroidBackendEvents(native)
     const services = createAndroidPlatformServices(native, events)
 
-    const result = await services.pdf.exportPdfBatch({
+    const result = await services.localFiles.exportBatch({
       tasks: [
         {
           mode: 'merged',
@@ -276,7 +281,7 @@ describe('Android bridge adapters', () => {
       displayPath: '/exports/nested/android.pdf',
     })
 
-    expect(exportPdfBatch).toHaveBeenCalledWith({
+    expect(exportBatch).toHaveBeenCalledWith({
       tasks: [
         expect.objectContaining({
           targetFolderRef: 'folder:path:/exports',

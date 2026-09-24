@@ -5,8 +5,8 @@ import android.graphics.Bitmap;
 
 import androidx.documentfile.provider.DocumentFile;
 
-import io.github.jukomu.feature.pdf.data.PdfRef;
-import io.github.jukomu.feature.pdf.data.PdfRefResolver;
+import io.github.jukomu.feature.localfile.data.LocalFileRef;
+import io.github.jukomu.feature.localfile.data.LocalFileRefResolver;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -83,11 +83,11 @@ public final class PdfPageCache {
      */
     public SourceStamp getSourceStamp(String fileRef) throws IOException {
         if (context == null) throw new IllegalStateException("context is required");
-        PdfRef.Parsed parsed = PdfRef.parse(fileRef);
-        if (parsed.kind != PdfRef.Kind.FILE) {
+        LocalFileRef.Parsed parsed = LocalFileRef.parse(fileRef);
+        if (parsed.kind != LocalFileRef.Kind.FILE) {
             throw new IllegalArgumentException("需要文件引用");
         }
-        if (parsed.provider == PdfRef.Provider.PATH) {
+        if (parsed.provider == LocalFileRef.Provider.PATH) {
             File file = new File(parsed.payload);
             if (!file.exists() || !file.isFile()) {
                 throw new FileNotFoundException(parsed.payload);
@@ -96,7 +96,7 @@ public final class PdfPageCache {
             return new SourceStamp(file.length(), file.lastModified());
         }
 
-        DocumentFile document = PdfRefResolver.documentFile(context, fileRef);
+        DocumentFile document = LocalFileRefResolver.documentFile(context, fileRef);
         if (document == null || !document.exists() || !document.isFile()) {
             throw new FileNotFoundException(parsed.payload);
         }

@@ -5,7 +5,7 @@ import type {
   DiagnosticSnapshot,
   DiagnosticsService,
   FileService,
-  PdfService,
+  LocalFileService,
   PlatformServices,
   PublicDownloadService,
   ReaderPlatformServices,
@@ -18,21 +18,21 @@ import {
   type FileDescriptor,
 } from '../FileReferences'
 import type {
-  ImportedPdf,
-  ImportPdfItem,
-  ImportPdfsResult,
-  PdfExportBatchResult,
-  PdfExportSubmissionTaskResult,
-  PdfExportTask,
-  PdfExportTaskRecord,
-  PdfManagementState,
-  PdfStorageDeleteResult,
+  LocalFileRecord,
+  ImportLocalFileItem,
+  ImportLocalFilesResult,
+  ExportBatchResult,
+  ExportSubmissionTaskResult,
+  ExportTask,
+  ExportTaskRecord,
+  LocalFileManagementState,
+  LocalFileStorageDeleteResult,
   UpdateManifest,
 } from '@/services/JmcomicTypes'
 import type { UpdaterService, UpdateUserAction } from '../UpdateTypes'
 import { RuntimeError } from '../errors'
 import { requestBackend, type BackendFetch } from './backendClient'
-import { createDesktopPdfExportPreferencesStore } from './pdfExportPreferences'
+import { createDesktopExportPreferencesStore } from './exportPreferences'
 
 function createOcrService(fetcher: BackendFetch) {
   return {
@@ -381,14 +381,15 @@ interface FolderResponse {
 }
 
 interface FileResponse {
+  format: 'pdf' | 'cbz' | 'zip'
   ref: string
   fileName: string
   displayPath: string
 }
 
-type RawImportedPdf = Omit<ImportedPdf, 'fileRef'> & { fileRef: string }
+type RawLocalFileRecord = Omit<LocalFileRecord, 'fileRef'> & { fileRef: string }
 
-type RawImportPdfsResult = Omit<ImportPdfsResult, 'results'> & {
+type RawImportLocalFilesResult = Omit<ImportLocalFilesResult, 'results'> & {
   results?: Array<{
     result: string
     fileRef?: string
@@ -398,23 +399,23 @@ type RawImportPdfsResult = Omit<ImportPdfsResult, 'results'> & {
   }>
 }
 
-type RawPdfStorageDeleteResult = Omit<PdfStorageDeleteResult, 'file'> & {
+type RawLocalFileStorageDeleteResult = Omit<LocalFileStorageDeleteResult, 'file'> & {
   fileRef: string
   displayPath: string
   fileName: string
 }
 
-type RawPdfExportTaskRecord = Omit<PdfExportTaskRecord, 'outputFile' | 'displayPath'> & {
+type RawExportTaskRecord = Omit<ExportTaskRecord, 'outputFile' | 'displayPath'> & {
   targetFolderRef: string
   targetName: string
   outputFileRef?: string
   displayPath?: string
 }
 
-type RawPdfExportSubmissionTaskResult = Partial<RawPdfExportTaskRecord> &
-  Pick<PdfExportSubmissionTaskResult, 'accepted' | 'errorCode' | 'errorMessage'>
+type RawExportSubmissionTaskResult = Partial<RawExportTaskRecord> &
+  Pick<ExportSubmissionTaskResult, 'accepted' | 'errorCode' | 'errorMessage'>
 
-function toImportedPdf(file: RawImportedPdf): ImportedPdf {
+function toLocalFileRecord(file: RawLocalFileRecord): LocalFileRecord {
   return { ...file, fileRef: asFileRef(file.fileRef) }
 }
 
@@ -422,7 +423,7 @@ function toFileDescriptor(fileRef: string, displayPath: string, fileName?: strin
   return { ref: asFileRef(fileRef), displayPath, fileName: fileName || displayPath }
 }
 
-function toPdfExportTaskRecord(task: RawPdfExportTaskRecord): PdfExportTaskRecord {
+function toExportTaskRecord(task: RawExportTaskRecord): ExportTaskRecord {
   const { outputFileRef, displayPath, targetFolderRef, targetName, ...rest } = task
   void targetFolderRef
   return {
@@ -440,9 +441,9 @@ function toPdfExportTaskRecord(task: RawPdfExportTaskRecord): PdfExportTaskRecor
   }
 }
 
-function toPdfExportSubmissionTaskResult(
-  task: RawPdfExportSubmissionTaskResult,
-): PdfExportSubmissionTaskResult {
+function toExportSubmissionTaskResult(
+  task: RawExportSubmissionTaskResult,
+): ExportSubmissionTaskResult {
   const { outputFileRef, displayPath, targetFolderRef, targetName, ...rest } = task
   void targetFolderRef
   return {
@@ -479,9 +480,10 @@ function createFileService(fetcher: BackendFetch): FileService {
       requestBackend(fetcher, 'openFile', { file: String(file) }).then(() => undefined),
     openContainingFolder: (file) =>
       requestBackend(fetcher, 'openContainingFolder', { file: String(file) }).then(() => undefined),
-    scanPdfFiles: (folder) =>
-      requestBackend<{ files: FileResponse[] }>(fetcher, 'scanPdfFiles', {
+    scanImportableFiles: (folder, formats) =>
+      requestBackend<{ files: FileResponse[] }>(fetcher, 'scanImportableFiles', {
         folder: String(folder),
+        formats,
       }).then((result) => ({
         files: result.files.map((file) => ({ ...file, ref: asFileRef(file.ref) })),
       })),
@@ -518,27 +520,28 @@ function createDownloadLocationService(
   }
 }
 
-function createPdfService(events: BackendEvents, fetcher: BackendFetch): PdfService {
+function createLocalFileService(events: BackendEvents, fetcher: BackendFetch): LocalFileService {
   return {
-    exportPdfBatch: ({ tasks }: { tasks: PdfExportTask[] }) =>
-      requestBackend<{ tasks: RawPdfExportSubmissionTaskResult[] }>(fetcher, 'exportPdfBatch', {
+    exportBatch: ({ tasks }: { tasks: ExportTask[] }) =>
+      requestBackend<{ tasks: RawExportSubmissionTaskResult[] }>(fetcher, 'exportBatch', {
         tasks: tasks.map(({ target, ...task }) => ({
           ...task,
           target: { folder: String(target.folder), relativePath: target.relativePath },
         })),
       }).then(
-        (result): PdfExportBatchResult => ({
-          tasks: result.tasks.map(toPdfExportSubmissionTaskResult),
+        (result): ExportBatchResult => ({
+          tasks: result.tasks.map(toExportSubmissionTaskResult),
         }),
       ),
-    scanPdfFiles: (folder) =>
-      requestBackend<{ files: FileResponse[] }>(fetcher, 'scanPdfFiles', {
+    scanImportableFiles: (folder, formats) =>
+      requestBackend<{ files: FileResponse[] }>(fetcher, 'scanImportableFiles', {
         folder: String(folder),
+        formats,
       }).then((result) => ({
         files: result.files.map((file) => ({ ...file, ref: asFileRef(file.ref) })),
       })),
-    importPdfs: (items: ImportPdfItem[]) =>
-      requestBackend<RawImportPdfsResult>(fetcher, 'importPdfs', {
+    importLocalFiles: (items: ImportLocalFileItem[]) =>
+      requestBackend<RawImportLocalFilesResult>(fetcher, 'importLocalFiles', {
         items: items.map(({ fileRef, ...item }) => ({ ...item, fileRef: String(fileRef) })),
       }).then((result) => ({
         ...result,
@@ -556,83 +559,88 @@ function createPdfService(events: BackendEvents, fetcher: BackendFetch): PdfServ
             }
           : {}),
       })),
-    getImportedPdfs: () =>
-      requestBackend<{ pdfs: RawImportedPdf[] }>(fetcher, 'getImportedPdfs', {}).then((result) => ({
-        pdfs: result.pdfs.map(toImportedPdf),
-      })),
-    getPdfFiles: (options) =>
-      requestBackend<{ files: RawImportedPdf[]; nextCursor?: string }>(
+    getImportedLocalFiles: () =>
+      requestBackend<{ files: RawLocalFileRecord[] }>(fetcher, 'getImportedLocalFiles', {}).then(
+        (result) => ({
+          files: result.files.map(toLocalFileRecord),
+        }),
+      ),
+    getLocalFiles: (options) =>
+      requestBackend<{ files: RawLocalFileRecord[]; nextCursor?: string }>(
         fetcher,
-        'getPdfFiles',
+        'getLocalFiles',
         options,
       ).then((result) => ({
-        files: result.files.map(toImportedPdf),
+        files: result.files.map(toLocalFileRecord),
         nextCursor: result.nextCursor,
       })),
-    refreshPdfFileAvailability: (ids) =>
-      requestBackend<{ files: RawImportedPdf[] }>(fetcher, 'refreshPdfFileAvailability', {
+    refreshLocalFileAvailability: (ids) =>
+      requestBackend<{ files: RawLocalFileRecord[] }>(fetcher, 'refreshLocalFileAvailability', {
         ids,
-      }).then((result) => ({ files: result.files.map(toImportedPdf) })),
-    inspectPdfFileForDeletion: (id) =>
-      requestBackend<RawImportedPdf>(fetcher, 'inspectPdfFileForDeletion', { id }).then(
-        toImportedPdf,
+      }).then((result) => ({ files: result.files.map(toLocalFileRecord) })),
+    inspectLocalFileForDeletion: (id) =>
+      requestBackend<RawLocalFileRecord>(fetcher, 'inspectLocalFileForDeletion', { id }).then(
+        toLocalFileRecord,
       ),
-    verifyPdfFile: (id) =>
-      requestBackend<RawImportedPdf>(fetcher, 'verifyPdfFile', { id }).then(toImportedPdf),
-    removePdfFromLibrary: (id) =>
-      requestBackend<{ success: boolean }>(fetcher, 'removePdfFromLibrary', { id }),
-    deletePdfFile: (id) =>
-      requestBackend<RawPdfStorageDeleteResult>(fetcher, 'deletePdfFile', { id }).then(
+    verifyLocalFile: (id) =>
+      requestBackend<RawLocalFileRecord>(fetcher, 'verifyLocalFile', { id }).then(
+        toLocalFileRecord,
+      ),
+    removeLocalFileFromLibrary: (id) =>
+      requestBackend<{ success: boolean }>(fetcher, 'removeLocalFileFromLibrary', { id }),
+    deleteLocalFile: (id) =>
+      requestBackend<RawLocalFileStorageDeleteResult>(fetcher, 'deleteLocalFile', { id }).then(
         ({ fileRef, displayPath, fileName, ...result }) => ({
           ...result,
           file: toFileDescriptor(fileRef, displayPath, fileName),
         }),
       ),
-    getPdfManagementState: () =>
-      requestBackend<PdfManagementState>(fetcher, 'getPdfManagementState', {}),
-    acknowledgePdfDatabaseReset: () =>
-      requestBackend<{ acknowledged: boolean }>(fetcher, 'acknowledgePdfDatabaseReset', {}),
-    getPdfExportTasks: (options) =>
-      requestBackend<{ tasks: RawPdfExportTaskRecord[]; nextCursor?: string }>(
+    getLocalFileManagementState: () =>
+      requestBackend<LocalFileManagementState>(fetcher, 'getLocalFileManagementState', {}),
+    acknowledgeLocalFileDatabaseReset: () =>
+      requestBackend<{ acknowledged: boolean }>(fetcher, 'acknowledgeLocalFileDatabaseReset', {}),
+    getExportTasks: (options) =>
+      requestBackend<{ tasks: RawExportTaskRecord[]; nextCursor?: string }>(
         fetcher,
-        'getPdfExportTasks',
+        'getExportTasks',
         options,
       ).then((result) => ({
-        tasks: result.tasks.map(toPdfExportTaskRecord),
+        tasks: result.tasks.map(toExportTaskRecord),
         nextCursor: result.nextCursor,
       })),
-    getPdfExportTask: (exportId) =>
-      requestBackend<RawPdfExportTaskRecord>(fetcher, 'getPdfExportTask', { exportId }).then(
-        toPdfExportTaskRecord,
+    getExportTask: (exportId) =>
+      requestBackend<RawExportTaskRecord>(fetcher, 'getExportTask', { exportId }).then(
+        toExportTaskRecord,
       ),
-    cancelPdfExport: (exportId) =>
-      requestBackend<RawPdfExportTaskRecord>(fetcher, 'cancelPdfExport', { exportId }).then(
-        toPdfExportTaskRecord,
+    cancelExport: (exportId) =>
+      requestBackend<RawExportTaskRecord>(fetcher, 'cancelExport', { exportId }).then(
+        toExportTaskRecord,
       ),
-    retryPdfExport: (exportId, allowOverwrite = false) =>
-      requestBackend<RawPdfExportTaskRecord>(fetcher, 'retryPdfExport', {
+    retryExport: (exportId, allowOverwrite = false) =>
+      requestBackend<RawExportTaskRecord>(fetcher, 'retryExport', {
         exportId,
         allowOverwrite,
-      }).then(toPdfExportTaskRecord),
-    deletePdfExportTask: (exportId) =>
-      requestBackend<{ success: boolean }>(fetcher, 'deletePdfExportTask', { exportId }),
-    deleteImportedPdf: (id) =>
-      requestBackend<{ success: boolean }>(fetcher, 'deleteImportedPdf', { id }),
+      }).then(toExportTaskRecord),
+    deleteExportTask: (exportId) =>
+      requestBackend<{ success: boolean }>(fetcher, 'deleteExportTask', { exportId }),
+    deleteImportedLocalFile: (id) =>
+      requestBackend<{ success: boolean }>(fetcher, 'deleteImportedLocalFile', { id }),
     updateLocalEpisodeType: (albumId, isSingleEpisode) =>
-      requestBackend<{ success: boolean; updatedDownloads: number; updatedPdfs: number }>(
+      requestBackend<{ success: boolean; updatedDownloads: number; updatedLocalFiles: number }>(
         fetcher,
         'updateLocalEpisodeType',
         { albumId, isSingleEpisode },
       ),
-    openPdf: (file) =>
-      requestBackend<{ success: boolean }>(fetcher, 'openPdf', { fileRef: String(file) }),
-    openPdfFolder: (file) =>
-      requestBackend<{ success: boolean }>(fetcher, 'openPdfFolder', {
+    openLocalFile: (file) =>
+      requestBackend<{ success: boolean }>(fetcher, 'openLocalFile', { fileRef: String(file) }),
+    openLocalFileFolder: (file) =>
+      requestBackend<{ success: boolean }>(fetcher, 'openLocalFileFolder', {
         fileRef: String(file),
       }),
     getPdfInfo: (file) =>
       requestBackend<{ pageCount: number }>(fetcher, 'getPdfInfo', { fileRef: String(file) }),
-    onProgress: (handler) => events.onPdfExportProgress(handler),
+    getCbzInfo: (file) => requestBackend(fetcher, 'getCbzInfo', { fileRef: String(file) }),
+    onProgress: (handler) => events.onExportProgress(handler),
   }
 }
 
@@ -650,8 +658,8 @@ export function createPlatformServices(
     app: { getInfo: async () => appInfo },
     notifications: { kind: 'host-managed' },
     files: createFileService(fetcher),
-    pdf: createPdfService(events, fetcher),
-    pdfExportPreferences: createDesktopPdfExportPreferencesStore(fetcher),
+    localFiles: createLocalFileService(events, fetcher),
+    exportPreferences: createDesktopExportPreferencesStore(fetcher),
     storage: { available: true, api: createDownloadLocationService(events, fetcher) },
     reader: createDesktopReaderServices(),
     updater: { available: true, api: createDesktopUpdater(events, fetcher) },

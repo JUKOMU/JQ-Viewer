@@ -2,7 +2,7 @@ import type {
   ClientStateSnapshot,
   DownloadProgressEvent,
   NetworkProbeEvent,
-  PdfExportProgressEvent,
+  ExportProgressEvent,
   RelocationProgress,
   UpdateProgressEvent,
 } from '@/services/JmcomicTypes'
@@ -28,7 +28,7 @@ export interface BackendEvents {
   onClientStateChanged?(handler: (event: ClientStateSnapshot) => void): Promise<ListenerHandle>
   onLaunchRoute(handler: (event: { route: string }) => void): Promise<ListenerHandle>
   onUpdateProgress(handler: (event: UpdateProgressEvent) => void): Promise<ListenerHandle>
-  onPdfExportProgress(handler: (event: PdfExportProgressEvent) => void): Promise<ListenerHandle>
+  onExportProgress(handler: (event: ExportProgressEvent) => void): Promise<ListenerHandle>
   onVolumeKey(handler: (event: { direction: 'up' | 'down' }) => void): Promise<ListenerHandle>
 }
 

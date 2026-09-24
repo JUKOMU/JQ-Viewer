@@ -1,0 +1,344 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  EXPORT_SAMPLE_DATA,
+  ExportService,
+  buildChapterRange,
+  buildExportOutputPaths,
+  normalizeExportChapters,
+} from '@/services/ExportService'
+import { asFolderRef } from '@/runtime/FileReferences'
+import {
+  defaultExportPreferences,
+  type ExportPreferences,
+  type ExportPreferencesStore,
+} from '@/runtime/ExportPreferences'
+import type { DownloadTask, ExportTaskChapter } from '@/services/JmcomicTypes'
+
+let storedPreferences: ExportPreferences
+let preferencesStore: ExportPreferencesStore
+
+function chapter(
+  sortOrder: number,
+  chapterTitle = `第${sortOrder}话`,
+  chapterId = `chapter-${sortOrder}`,
+): ExportTaskChapter {
+  return {
+    albumId: 'album-1',
+    chapterId,
+    chapterTitle,
+    sortOrder,
+  }
+}
+
+function downloadTask(sortOrder: number | undefined, id = String(sortOrder)): DownloadTask {
+  return {
+    taskId: `album-1_${id}`,
+    albumId: 'album-1',
+    chapterId: id,
+    albumTitle: '测试漫画',
+    chapterTitle: `章节 ${id}`,
+    coverUrl: 'https://example.test/cover.jpg',
+    isSingleEpisode: false,
+    chapterSortOrder: sortOrder,
+    totalPages: 20,
+    downloadedPages: 20,
+    status: 'completed',
+    createdAt: 1,
+  }
+}
+
+beforeEach(async () => {
+  storedPreferences = defaultExportPreferences()
+  preferencesStore = {
+    get: vi.fn(async () => storedPreferences),
+    setExportFolder: vi.fn(async (exportFolder) => {
+      storedPreferences = { ...storedPreferences, exportFolder }
+    }),
+    setDirectoryTemplate: vi.fn(async (directoryTemplate) => {
+      storedPreferences = {
+        ...storedPreferences,
+        directoryTemplate: directoryTemplate ?? defaultExportPreferences().directoryTemplate,
+      }
+    }),
+    setFileNameTemplate: vi.fn(async (fileNameTemplate) => {
+      storedPreferences = {
+        ...storedPreferences,
+        fileNameTemplate: fileNameTemplate ?? defaultExportPreferences().fileNameTemplate,
+      }
+    }),
+    setLastFormat: vi.fn(async (lastFormat) => {
+      storedPreferences = { ...storedPreferences, lastFormat }
+    }),
+  }
+  await ExportService.initialize(preferencesStore)
+})
+
+describe('buildChapterRange', () => {
+  it('combines adjacent numeric chapters into one range', () => {
+    expect(buildChapterRange([chapter(2), chapter(3), chapter(4)])).toBe('第2-4话')
+  })
+
+  it('keeps non-adjacent ranges separate', () => {
+    expect(
+      buildChapterRange([chapter(2), chapter(3), chapter(5), chapter(6), chapter(7), chapter(9)]),
+    ).toBe('第2-3话+第5-7话+第9话')
+  })
+
+  it('preserves input order and uses sanitized titles for non-numeric chapters', () => {
+    expect(buildChapterRange([chapter(0, '番外/后日谈', 'extra'), chapter(2), chapter(3)])).toBe(
+      '番外_后日谈+第2-3话',
+    )
+  })
+
+  it('keeps duplicate sort orders as separate titled chapters', () => {
+    expect(
+      buildChapterRange([
+        chapter(2, '第2话 上', 'chapter-2-a'),
+        chapter(2, '第2话 下', 'chapter-2-b'),
+        chapter(3),
+      ]),
+    ).toBe('第2话 上+第2话 下+第3话')
+  })
+
+  it('falls back to a sanitized chapter id when a title becomes empty', () => {
+    expect(buildChapterRange([chapter(Number.NaN, '///', 'extra/one')])).toBe('extra_one')
+  })
+
+  it('limits the final range segment length', () => {
+    const result = buildChapterRange([chapter(0, '番'.repeat(300), 'extra')])
+
+    expect(result).toHaveLength(255)
+    expect(result).toBe('番'.repeat(255))
+  })
+})
+
+describe('chapterRange template variable', () => {
+  it('is registered and rendered', () => {
+    expect(ExportService.TEMPLATE_VAR_KEYS).toContain('{chapterRange}')
+    expect(
+      ExportService.renderTemplate('{title} {chapterRange}', {
+        ...EXPORT_SAMPLE_DATA,
+        chapterRange: '第2-3话+第5话',
+      }),
+    ).toBe(`${EXPORT_SAMPLE_DATA.title} 第2-3话+第5话`)
+  })
+
+  it('uses the single chapter name in template data', () => {
+    const downloadTask: DownloadTask = {
+      taskId: 'album-1_chapter-2',
+      albumId: 'album-1',
+      chapterId: 'chapter-2',
+      albumTitle: '测试漫画',
+      chapterTitle: '第二章',
+      coverUrl: '',
+      chapterSortOrder: 2,
+      totalPages: 20,
+      downloadedPages: 20,
+      status: 'completed',
+      createdAt: 1,
+    }
+
+    const data = ExportService.buildTemplateData(downloadTask, null)
+
+    expect(data.chapterRange).toBe('第2话')
+    expect(ExportService.renderTemplate('{chapterRange}', data)).toBe('第2话')
+  })
+})
+
+describe('PDF export plan', () => {
+  it('persists only a folder descriptor through the platform preferences store', async () => {
+    expect(ExportService.getExportFolder()).toBeNull()
+
+    await ExportService.setExportFolder({
+      folderRef: asFolderRef('folder:saf:content://provider/tree/exports'),
+      displayPath: '/storage/emulated/0/Exports',
+    })
+
+    expect(ExportService.getExportFolder()).toEqual({
+      folderRef: 'folder:saf:content://provider/tree/exports',
+      displayPath: '/storage/emulated/0/Exports',
+    })
+    expect(preferencesStore.setExportFolder).toHaveBeenCalledWith({
+      folderRef: 'folder:saf:content://provider/tree/exports',
+      displayPath: '/storage/emulated/0/Exports',
+    })
+  })
+
+  it('sorts numeric chapters while preserving invalid chapter positions and duplicate order', () => {
+    const normalized = normalizeExportChapters([
+      downloadTask(3, 'chapter-3'),
+      downloadTask(undefined, 'extra'),
+      downloadTask(2, 'chapter-2-a'),
+      downloadTask(2, 'chapter-2-b'),
+    ])
+
+    expect(normalized.map((item) => item.chapterId)).toEqual([
+      'chapter-2-a',
+      'extra',
+      'chapter-2-b',
+      'chapter-3',
+    ])
+  })
+
+  it('builds merged template data and a default path with chapterRange', () => {
+    const chapters = [downloadTask(3, 'chapter-3'), downloadTask(2, 'chapter-2')]
+    const data = ExportService.buildMergedTemplateData(chapters, null)
+
+    expect(data.chapterRange).toBe('第2-3话')
+    expect(data.pageCount).toBe(40)
+    expect(ExportService.buildMergedFullPath(chapters, null)).toContain('第2-3话.pdf')
+  })
+
+  it('builds one normalized merged task and predicts all split output paths', () => {
+    const chapter3 = downloadTask(3, 'chapter-3')
+    chapter3.totalPages = 30
+    const plan = ExportService.buildExportPlan({
+      format: 'pdf',
+      mode: 'merged',
+      selectedChapters: [chapter3, downloadTask(2, 'chapter-2')],
+      albumDetail: null,
+      useOriginal: true,
+      compressionRatio: 0.5,
+      editedPath: '/exports/merged.pdf',
+      exportFolder: asFolderRef('folder:path:/exports'),
+      exportFolderDisplayPath: '/exports',
+      splitPages: 25,
+    })
+
+    expect(plan.tasks).toEqual([
+      expect.objectContaining({
+        mode: 'merged',
+        albumId: 'album-1',
+        albumTitle: '测试漫画',
+        coverUrl: 'https://example.test/cover.jpg',
+        isSingleEpisode: false,
+        chapterTitle: '第2-3话',
+        displayPath: '/exports/merged.pdf',
+        target: { folder: 'folder:path:/exports', relativePath: 'merged.pdf' },
+      }),
+    ])
+    expect(plan.tasks[0]).not.toHaveProperty('chapterId')
+    expect(plan.tasks[0].chapters?.map((item) => item.chapterId)).toEqual([
+      'chapter-2',
+      'chapter-3',
+    ])
+    expect(plan.outputDisplayPaths).toEqual([
+      '/exports/merged_001-025.pdf',
+      '/exports/merged_026-050.pdf',
+    ])
+  })
+
+  it('uses a provided export folder and keeps the target path relative to it', () => {
+    expect(
+      ExportService.buildExportTarget(
+        '/exports/album/merged.pdf',
+        asFolderRef('folder:path:/exports'),
+        '/exports',
+      ),
+    ).toEqual({
+      folder: 'folder:path:/exports',
+      relativePath: 'album/merged.pdf',
+    })
+  })
+
+  it('uses the filesystem root as the folder for a root-level output path', () => {
+    expect(
+      ExportService.buildExportTarget('/merged.pdf', asFolderRef('folder:path:/'), '/'),
+    ).toEqual({
+      folder: 'folder:path:/',
+      relativePath: 'merged.pdf',
+    })
+  })
+
+  it('keeps chapter mode as one task per selected chapter', async () => {
+    await ExportService.setExportFolder({
+      folderRef: asFolderRef('folder:path:/exports'),
+      displayPath: '/exports',
+    })
+    const plan = ExportService.buildExportPlan({
+      format: 'pdf',
+      mode: 'chapter',
+      selectedChapters: [downloadTask(2, 'chapter-2'), downloadTask(3, 'chapter-3')],
+      albumDetail: null,
+      useOriginal: false,
+      compressionRatio: 0.4,
+      editedPath: '/exports/preview.pdf',
+      exportFolder: asFolderRef('folder:path:/exports'),
+      exportFolderDisplayPath: '/exports',
+      splitPages: 0,
+    })
+
+    expect(plan.tasks).toHaveLength(2)
+    expect(plan.tasks.map((task) => task.mode)).toEqual(['chapter', 'chapter'])
+    expect(plan.tasks.map((task) => task.chapterId)).toEqual(['chapter-2', 'chapter-3'])
+    expect(plan.tasks.every((task) => task.albumTitle === '测试漫画')).toBe(true)
+    expect(plan.tasks.every((task) => task.coverUrl === 'https://example.test/cover.jpg')).toBe(
+      true,
+    )
+    expect(plan.tasks.every((task) => task.isSingleEpisode === false)).toBe(true)
+    expect(plan.outputDisplayPaths).toEqual(plan.tasks.map((task) => task.displayPath))
+  })
+
+  it('rejects merged mode with fewer than two chapters', () => {
+    expect(() =>
+      ExportService.buildExportPlan({
+        format: 'pdf',
+        mode: 'merged',
+        selectedChapters: [downloadTask(2, 'chapter-2')],
+        albumDetail: null,
+        useOriginal: true,
+        compressionRatio: 0.5,
+        editedPath: '/exports/merged.pdf',
+        splitPages: 0,
+      }),
+    ).toThrow('合并导出至少需要选择两个章节')
+  })
+
+  it.each(['cbz', 'zip'] as const)(
+    'uses the %s extension and forces original images for archive exports',
+    (format) => {
+      const plan = ExportService.buildExportPlan({
+        format,
+        mode: 'chapter',
+        selectedChapters: [downloadTask(2, 'chapter-2')],
+        albumDetail: null,
+        useOriginal: false,
+        compressionRatio: 0.4,
+        editedPath: '/exports/chapter.pdf',
+        exportFolder: asFolderRef('folder:path:/exports'),
+        exportFolderDisplayPath: '/exports',
+        splitPages: 0,
+      })
+
+      expect(plan.tasks[0]).toEqual(
+        expect.objectContaining({
+          format,
+          displayPath: `/exports/chapter.${format}`,
+          useOriginal: true,
+          compressionRatio: 1,
+        }),
+      )
+      expect(plan.outputDisplayPaths).toEqual([`/exports/chapter.${format}`])
+    },
+  )
+
+  it('persists the last selected export format', async () => {
+    await ExportService.setLastFormat('cbz')
+
+    expect(ExportService.getLastFormat()).toBe('cbz')
+    expect(preferencesStore.setLastFormat).toHaveBeenCalledWith('cbz')
+  })
+})
+
+describe('buildExportOutputPaths', () => {
+  it('keeps the base path when splitting produces only one volume', () => {
+    expect(buildExportOutputPaths('/exports/chapter.pdf', 100, 100)).toEqual(['/exports/chapter.pdf'])
+  })
+
+  it('matches the native range suffix for multiple volumes', () => {
+    expect(buildExportOutputPaths('/exports/chapter.pdf', 101, 100)).toEqual([
+      '/exports/chapter_001-100.pdf',
+      '/exports/chapter_101-101.pdf',
+    ])
+  })
+})

@@ -50,8 +50,9 @@ public final class FilePluginHandler {
                 request -> files.openContainingFolder(Request.requiredText(request.file(), "file")));
     }
 
-    public void scanPdfFiles(Context context) {
+    public void scanImportableFiles(Context context) {
         fileRequests.runLongOperation(context, FolderRefRequest.class,
-                request -> files.scanPdfFiles(Request.requiredText(request.folder(), "folder")));
+                request -> files.scanImportableFiles(
+                        Request.requiredText(request.folder(), "folder"), request.formats()));
     }
 }

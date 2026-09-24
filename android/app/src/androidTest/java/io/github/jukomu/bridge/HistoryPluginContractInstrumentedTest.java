@@ -90,6 +90,18 @@ public class HistoryPluginContractInstrumentedTest {
     }
 
     @Test
+    public void browseHistoryPersistsOptionalFileId() throws Exception {
+        plugin.recordBrowse(call(
+            "recordBrowse", "albumId", "album-1", "chapterId", "chapter-1", "fileId", 42L));
+
+        RecordingPluginCall browseRead = call("getBrowseHistory", "limit", 1);
+        plugin.getBrowseHistory(browseRead);
+
+        JSONObject item = browseRead.resolvedData.getJSONArray("items").getJSONObject(0);
+        assertEquals(42L, item.getLong("fileId"));
+    }
+
+    @Test
     public void browseOverviewAndRangePaginationUseAllRowsAndStableIdOrder() throws Exception {
         plugin.recordBrowse(call("recordBrowse", "albumId", "album-1"));
         plugin.recordBrowse(call("recordBrowse", "albumId", "album-2"));

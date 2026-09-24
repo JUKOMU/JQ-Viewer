@@ -23,6 +23,7 @@ export function createAndroidResourceResolver(native: JmcomicClient): ResourceRe
     imageUrl: ({ photoId, sortOrder, type }) =>
       `${VIRTUAL_BASE}/${type}/${photoId}/${sortOrder}`,
     pdfDocumentUrl: (file) => `${VIRTUAL_BASE}/pdf/${encodeFileRef(file)}`,
+    cbzPageUrl: ({ file, page }) => `${VIRTUAL_BASE}/cbz-page/${encodeFileRef(file)}/${page}`,
     renderPdfPage: {
       available: true,
       api: {

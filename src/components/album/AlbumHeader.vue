@@ -17,12 +17,7 @@
           aria-label="预览封面"
           @click="showPreview = true"
         >
-          <img
-            v-if="coverUrl"
-            :src="coverUrl"
-            class="cover-img"
-            :alt="title"
-          />
+          <img v-if="coverUrl" :src="coverUrl" class="cover-img" :alt="title" />
           <div v-else class="cover-placeholder" />
         </button>
         <div class="info-col">
@@ -52,6 +47,16 @@
             </div>
             <Transition name="source-menu">
               <div v-if="sourceMenuOpen" class="source-menu">
+                <button
+                  type="button"
+                  class="source-btn source-cbz"
+                  :class="{ available: cbzAvailable }"
+                  :disabled="!cbzAvailable"
+                  aria-label="CBZ 阅读"
+                  @click="$emit('select-source', 'cbz')"
+                >
+                  <ion-icon :icon="archiveOutline" />
+                </button>
                 <button
                   type="button"
                   class="source-btn source-network available"
@@ -99,6 +104,7 @@
 import { ref } from 'vue'
 import { IonIcon } from '@ionic/vue'
 import {
+  archiveOutline,
   arrowBack,
   documentOutline,
   ellipsisVertical,
@@ -118,12 +124,13 @@ defineProps<{
   chapterLoading?: boolean
   sourceMenuOpen: boolean
   imageAvailable: boolean
+  cbzAvailable: boolean
   pdfAvailable: boolean
 }>()
 defineEmits<{
   'start-reading': []
   'toggle-source-menu': []
-  'select-source': [source: 'network' | 'download' | 'pdf']
+  'select-source': [source: 'network' | 'download' | 'cbz' | 'pdf']
   back: []
 }>()
 

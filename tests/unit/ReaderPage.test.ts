@@ -110,8 +110,8 @@ vi.mock('@/services/HistoryService', () => ({
 
 vi.mock('@/services/ReadingProgressService', () => ({
   ReadingProgressService: {
-    getInitialPage: () => 1,
-    record: vi.fn(),
+    getInitialChapterPage: () => 1,
+    recordChapter: vi.fn(),
   },
 }))
 

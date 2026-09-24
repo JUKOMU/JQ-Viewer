@@ -5,8 +5,8 @@ import android.net.Uri;
 import android.webkit.WebResourceResponse;
 import io.github.jukomu.feature.cache.ImageCache;
 import io.github.jukomu.feature.cbz.CbzDocumentService;
-import io.github.jukomu.feature.pdf.data.PdfRef;
-import io.github.jukomu.feature.pdf.data.PdfRefResolver;
+import io.github.jukomu.feature.localfile.data.LocalFileRef;
+import io.github.jukomu.feature.localfile.data.LocalFileRefResolver;
 import io.github.jukomu.feature.pdf.render.PdfPageCache;
 
 import java.io.*;
@@ -175,11 +175,11 @@ public class PdfServer {
 
             byte[] decoded = Base64.getUrlDecoder().decode(encoded);
             String fileRef = new String(decoded, StandardCharsets.UTF_8);
-            PdfRef.Parsed parsed = PdfRef.parse(fileRef);
-            if (parsed.kind != PdfRef.Kind.FILE) {
+            LocalFileRef.Parsed parsed = LocalFileRef.parse(fileRef);
+            if (parsed.kind != LocalFileRef.Kind.FILE) {
                 throw new IllegalArgumentException("需要文件引用");
             }
-            InputStream stream = PdfRefResolver.openReadStream(context, fileRef);
+            InputStream stream = LocalFileRefResolver.openReadStream(context, fileRef);
             return withCorsHeaders(new WebResourceResponse(
                 "application/pdf", "binary", 200, "OK", corsHeaders(null), stream));
         } catch (SecurityException e) {

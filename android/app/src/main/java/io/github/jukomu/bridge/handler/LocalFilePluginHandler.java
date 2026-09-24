@@ -18,14 +18,14 @@ import com.getcapacitor.PluginCall;
 import io.github.jukomu.bridge.PluginCallSession;
 import io.github.jukomu.feature.cbz.CbzDocumentService;
 import io.github.jukomu.feature.download.data.DownloadStore;
-import io.github.jukomu.feature.pdf.PdfOperationException;
-import io.github.jukomu.feature.pdf.data.PdfRef;
-import io.github.jukomu.feature.pdf.data.PdfRefResolver;
-import io.github.jukomu.feature.pdf.data.LocalFileStore;
-import io.github.jukomu.feature.pdf.export.PdfExportJobValidator;
-import io.github.jukomu.feature.pdf.export.ExportService;
-import io.github.jukomu.feature.pdf.management.PdfFileValidator;
-import io.github.jukomu.feature.pdf.management.LocalFileManagementService;
+import io.github.jukomu.feature.localfile.LocalFileOperationException;
+import io.github.jukomu.feature.localfile.data.LocalFileRef;
+import io.github.jukomu.feature.localfile.data.LocalFileRefResolver;
+import io.github.jukomu.feature.localfile.data.LocalFileStore;
+import io.github.jukomu.feature.export.ExportJobValidator;
+import io.github.jukomu.feature.export.ExportService;
+import io.github.jukomu.feature.localfile.management.PdfFileValidator;
+import io.github.jukomu.feature.localfile.management.LocalFileManagementService;
 import io.github.jukomu.feature.pdf.render.PdfPageCache;
 import io.github.jukomu.feature.pdf.render.PdfPageResourceId;
 import io.github.jukomu.feature.pdf.render.PdfPageSizing;
@@ -99,10 +99,10 @@ public final class LocalFilePluginHandler {
             }
             requestedFormats.add(format);
         }
-        final PdfRef.Parsed parsed;
+        final LocalFileRef.Parsed parsed;
         try {
-            parsed = PdfRef.parse(folderRef);
-            if (parsed.kind != PdfRef.Kind.FOLDER) {
+            parsed = LocalFileRef.parse(folderRef);
+            if (parsed.kind != LocalFileRef.Kind.FOLDER) {
                 call.reject("folderRef must be a folder reference");
                 return;
             }
@@ -111,7 +111,7 @@ public final class LocalFilePluginHandler {
             return;
         }
         dispatchPdfCommand(call, trackedCall -> {
-            if (parsed.provider == PdfRef.Provider.SAF) {
+            if (parsed.provider == LocalFileRef.Provider.SAF) {
                 scanImportableFilesViaSaf(trackedCall, Uri.parse(parsed.payload), requestedFormats);
             } else {
                 scanImportableFilesViaFile(trackedCall, parsed.payload, requestedFormats);
@@ -125,18 +125,18 @@ public final class LocalFilePluginHandler {
             DocumentFile root = DocumentFile.fromTreeUri(context, treeUri);
             if (root == null || !root.exists() || !root.isDirectory()) {
                 rejectWithCode(call, PDF_FOLDER_NOT_FOUND_MESSAGE,
-                    PdfOperationException.NOT_FOUND, null);
+                    LocalFileOperationException.NOT_FOUND, null);
                 return;
             }
             if (!root.canRead()) {
                 rejectWithCode(call, PDF_FOLDER_PERMISSION_MESSAGE,
-                    PdfOperationException.PERMISSION_DENIED, null);
+                    LocalFileOperationException.PERMISSION_DENIED, null);
                 return;
             }
             DocumentFile[] children = root.listFiles();
             if (children == null) {
                 rejectWithCode(call, PDF_FOLDER_PERMISSION_MESSAGE,
-                    PdfOperationException.PERMISSION_DENIED, null);
+                    LocalFileOperationException.PERMISSION_DENIED, null);
                 return;
             }
             JSArray arr = new JSArray();
@@ -146,7 +146,7 @@ public final class LocalFilePluginHandler {
                     JSObject obj = new JSObject();
                     obj.put("format", format);
                     obj.put("fileName", child.getName());
-                    obj.put("fileRef", PdfRef.createSafFileRef(child.getUri().toString()));
+                    obj.put("fileRef", LocalFileRef.createSafFileRef(child.getUri().toString()));
                     obj.put("displayPath", child.getName());
                     arr.put(obj);
                 }
@@ -156,7 +156,7 @@ public final class LocalFilePluginHandler {
             call.resolve(ret);
         } catch (SecurityException error) {
             rejectWithCode(call, PDF_FOLDER_PERMISSION_MESSAGE,
-                PdfOperationException.PERMISSION_DENIED, error);
+                LocalFileOperationException.PERMISSION_DENIED, error);
         }
     }
 
@@ -165,19 +165,19 @@ public final class LocalFilePluginHandler {
         File dir = new File(path);
         if (!dir.isDirectory()) {
             rejectWithCode(call, PDF_FOLDER_NOT_FOUND_MESSAGE,
-                PdfOperationException.NOT_FOUND, null);
+                LocalFileOperationException.NOT_FOUND, null);
             return;
         }
         if (!dir.canRead()) {
             rejectWithCode(call, PDF_FOLDER_PERMISSION_MESSAGE,
-                PdfOperationException.PERMISSION_DENIED, null);
+                LocalFileOperationException.PERMISSION_DENIED, null);
             return;
         }
         File[] importableFiles = dir.listFiles((d, name) ->
             requestedFormats.contains(importFormat(name)));
         if (importableFiles == null) {
             rejectWithCode(call, PDF_FOLDER_PERMISSION_MESSAGE,
-                PdfOperationException.PERMISSION_DENIED, null);
+                LocalFileOperationException.PERMISSION_DENIED, null);
             return;
         }
         JSArray arr = new JSArray();
@@ -189,7 +189,7 @@ public final class LocalFilePluginHandler {
             obj.put("format", importFormat(f.getName()));
             obj.put("fileName", f.getName());
             try {
-                obj.put("fileRef", PdfRef.createPathFileRef(f.getAbsolutePath()));
+                obj.put("fileRef", LocalFileRef.createPathFileRef(f.getAbsolutePath()));
             } catch (Exception error) {
                 continue;
             }
@@ -352,7 +352,7 @@ public final class LocalFilePluginHandler {
             try {
                 trackedCall.resolve(JSObject.fromJSONObject(LocalFileManagementService.getInstance(context)
                     .inspectFileForDeletion(id)));
-            } catch (PdfOperationException error) {
+            } catch (LocalFileOperationException error) {
                 rejectPdfOperation(trackedCall, error);
             } catch (Exception error) {
                 trackedCall.reject(error.getMessage(), error);
@@ -397,7 +397,7 @@ public final class LocalFilePluginHandler {
             try {
                 trackedCall.resolve(JSObject.fromJSONObject(
                     LocalFileManagementService.getInstance(context).deleteFile(id)));
-            } catch (PdfOperationException error) {
+            } catch (LocalFileOperationException error) {
                 rejectPdfOperation(trackedCall, error);
             } catch (Exception error) {
                 trackedCall.reject(error.getMessage(), error);
@@ -430,12 +430,12 @@ public final class LocalFilePluginHandler {
         }
         try {
             Uri uri;
-            PdfRef.Parsed parsed = PdfRef.parse(fileRef);
-            if (parsed.kind != PdfRef.Kind.FILE) throw new IllegalArgumentException("需要文件引用");
-            if (parsed.provider == PdfRef.Provider.SAF) {
-                uri = PdfRefResolver.uri(fileRef);
+            LocalFileRef.Parsed parsed = LocalFileRef.parse(fileRef);
+            if (parsed.kind != LocalFileRef.Kind.FILE) throw new IllegalArgumentException("需要文件引用");
+            if (parsed.provider == LocalFileRef.Provider.SAF) {
+                uri = LocalFileRefResolver.uri(fileRef);
             } else {
-                File file = PdfRefResolver.pathFile(fileRef);
+                File file = LocalFileRefResolver.pathFile(fileRef);
                 if (!file.exists()) {
                     call.reject("File not found: " + parsed.payload);
                     return;
@@ -466,7 +466,7 @@ public final class LocalFilePluginHandler {
         }
         try {
             Uri folderUri = resolvePdfFolderUri(fileRef);
-            boolean canGrantUri = PdfRef.parse(fileRef).provider == PdfRef.Provider.SAF
+            boolean canGrantUri = LocalFileRef.parse(fileRef).provider == LocalFileRef.Provider.SAF
                 || (context.getPackageName() + ".fileprovider")
                 .equals(folderUri.getAuthority());
             context.startActivity(createPdfFolderIntent(folderUri, canGrantUri));
@@ -495,10 +495,10 @@ public final class LocalFilePluginHandler {
     }
 
     private Uri resolvePdfFolderUri(String fileRef) throws Exception {
-        PdfRef.Parsed parsed = PdfRef.parse(fileRef);
-        if (parsed.kind != PdfRef.Kind.FILE) throw new IllegalArgumentException("需要文件引用");
-        if (parsed.provider == PdfRef.Provider.SAF) {
-            Uri fileUri = PdfRefResolver.uri(fileRef);
+        LocalFileRef.Parsed parsed = LocalFileRef.parse(fileRef);
+        if (parsed.kind != LocalFileRef.Kind.FILE) throw new IllegalArgumentException("需要文件引用");
+        if (parsed.provider == LocalFileRef.Provider.SAF) {
+            Uri fileUri = LocalFileRefResolver.uri(fileRef);
             String documentId = DocumentsContract.getDocumentId(fileUri);
             int separator = documentId.lastIndexOf('/');
             String parentDocumentId;
@@ -517,7 +517,7 @@ public final class LocalFilePluginHandler {
             return DocumentsContract.buildDocumentUri(fileUri.getAuthority(), parentDocumentId);
         }
 
-        File file = PdfRefResolver.pathFile(fileRef);
+        File file = LocalFileRefResolver.pathFile(fileRef);
         File parent = file.getCanonicalFile().getParentFile();
         if (parent == null || !parent.isDirectory()) {
             throw new java.io.FileNotFoundException("Parent folder not found: " + fileRef);
@@ -559,10 +559,10 @@ public final class LocalFilePluginHandler {
             call.resolve(ret);
         } catch (FileNotFoundException error) {
             call.reject("PDF 信息读取失败: " + error.getMessage(),
-                PdfOperationException.NOT_FOUND, error);
+                LocalFileOperationException.NOT_FOUND, error);
         } catch (SecurityException error) {
             call.reject("PDF 信息读取失败: " + error.getMessage(),
-                PdfOperationException.PERMISSION_DENIED, error);
+                LocalFileOperationException.PERMISSION_DENIED, error);
         } catch (Exception e) {
             call.reject("PDF 信息读取失败: " + e.getMessage(), e);
         } finally {
@@ -642,11 +642,11 @@ public final class LocalFilePluginHandler {
             sourceStamp = pageCache.getSourceStamp(fileRef);
         } catch (FileNotFoundException error) {
             rejectWithCode(call, "PDF 页面渲染失败: " + error.getMessage(),
-                PdfOperationException.NOT_FOUND, error);
+                LocalFileOperationException.NOT_FOUND, error);
             return;
         } catch (SecurityException error) {
             rejectWithCode(call, "PDF 页面渲染失败: " + error.getMessage(),
-                PdfOperationException.PERMISSION_DENIED, error);
+                LocalFileOperationException.PERMISSION_DENIED, error);
             return;
         } catch (Exception error) {
             call.reject("PDF 页面渲染失败: " + error.getMessage(), error);
@@ -696,10 +696,10 @@ public final class LocalFilePluginHandler {
             call.resolve(result);
         } catch (FileNotFoundException error) {
             rejectWithCode(call, "PDF 页面渲染失败: " + error.getMessage(),
-                PdfOperationException.NOT_FOUND, error);
+                LocalFileOperationException.NOT_FOUND, error);
         } catch (SecurityException error) {
             rejectWithCode(call, "PDF 页面渲染失败: " + error.getMessage(),
-                PdfOperationException.PERMISSION_DENIED, error);
+                LocalFileOperationException.PERMISSION_DENIED, error);
         } catch (OutOfMemoryError error) {
             call.reject("PDF 页面渲染失败: " + error.getMessage(),
                 new RuntimeException("PDF 页面资源不足", error));
@@ -731,7 +731,7 @@ public final class LocalFilePluginHandler {
     }
 
     private ParcelFileDescriptor openLocalFileDescriptor(String fileRef) throws Exception {
-        return PdfRefResolver.openReadDescriptor(context, fileRef);
+        return LocalFileRefResolver.openReadDescriptor(context, fileRef);
     }
 
     // ---- 导出任务 ----
@@ -790,7 +790,7 @@ public final class LocalFilePluginHandler {
                         }
                     }
 
-                    PdfExportJobValidator.validate(job);
+                    ExportJobValidator.validate(job);
                     jobs.add(job);
                 } catch (Exception e) {
                     throw new IllegalArgumentException("tasks[" + i + "] 无效: " + e.getMessage(), e);
@@ -825,7 +825,7 @@ public final class LocalFilePluginHandler {
         JSONObject task = exportId == null ? null
             : ExportService.getInstance(context).getExportTask(exportId);
         if (task == null) {
-            rejectWithCode(call, "导出任务不存在", PdfOperationException.NOT_FOUND, null);
+            rejectWithCode(call, "导出任务不存在", LocalFileOperationException.NOT_FOUND, null);
             return;
         }
         try {
@@ -840,7 +840,7 @@ public final class LocalFilePluginHandler {
         JSONObject task = exportId == null ? null
             : ExportService.getInstance(context).cancelExport(exportId);
         if (task == null) {
-            rejectWithCode(call, "导出任务不存在", PdfOperationException.NOT_FOUND, null);
+            rejectWithCode(call, "导出任务不存在", LocalFileOperationException.NOT_FOUND, null);
             return;
         }
         try {
@@ -861,7 +861,7 @@ public final class LocalFilePluginHandler {
             try {
                 trackedCall.resolve(JSObject.fromJSONObject(ExportService.getInstance(context)
                     .retryExport(exportId, allowOverwrite)));
-            } catch (PdfOperationException error) {
+            } catch (LocalFileOperationException error) {
                 rejectPdfOperation(trackedCall, error);
             } catch (Exception error) {
                 trackedCall.reject(error.getMessage(), error);
@@ -904,7 +904,7 @@ public final class LocalFilePluginHandler {
         call.reject(message, code, cause);
     }
 
-    private static void rejectPdfOperation(PluginCall call, PdfOperationException error) {
+    private static void rejectPdfOperation(PluginCall call, LocalFileOperationException error) {
         rejectWithCode(call, error.getMessage(), error.code, error);
     }
 }

@@ -5,8 +5,8 @@ import android.content.res.AssetFileDescriptor;
 import android.os.StatFs;
 import io.github.jukomu.feature.export.archive.ComicInfo;
 import io.github.jukomu.feature.export.archive.ComicInfoCodec;
-import io.github.jukomu.feature.pdf.data.PdfRef;
-import io.github.jukomu.feature.pdf.data.PdfRefResolver;
+import io.github.jukomu.feature.localfile.data.LocalFileRef;
+import io.github.jukomu.feature.localfile.data.LocalFileRefResolver;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -135,18 +135,18 @@ public final class CbzDocumentService {
     }
 
     private File materialize(String fileRef, boolean refreshSaf) throws CbzException {
-        PdfRef.Parsed parsed;
+        LocalFileRef.Parsed parsed;
         try {
-            parsed = PdfRef.parse(fileRef);
+            parsed = LocalFileRef.parse(fileRef);
         } catch (IllegalArgumentException error) {
             throw new CbzException("CBZ_INVALID_REF", 400, "CBZ 文件引用无效", error);
         }
-        if (parsed.kind != PdfRef.Kind.FILE) {
+        if (parsed.kind != LocalFileRef.Kind.FILE) {
             throw new CbzException("CBZ_INVALID_REF", 400, "需要 CBZ 文件引用");
         }
-        if (parsed.provider == PdfRef.Provider.PATH) {
+        if (parsed.provider == LocalFileRef.Provider.PATH) {
             try {
-                File file = PdfRefResolver.pathFile(fileRef);
+                File file = LocalFileRefResolver.pathFile(fileRef);
                 if (!file.isFile()) {
                     throw new CbzException("CBZ_MISSING", 404, "CBZ 文件不存在或已移动");
                 }
@@ -171,7 +171,7 @@ public final class CbzDocumentService {
     private void copySafToCache(String fileRef, File target) throws CbzException {
         long declaredSize = -1L;
         try (AssetFileDescriptor descriptor = context.getContentResolver()
-            .openAssetFileDescriptor(PdfRefResolver.uri(fileRef), "r")) {
+            .openAssetFileDescriptor(LocalFileRefResolver.uri(fileRef), "r")) {
             if (descriptor != null) declaredSize = descriptor.getLength();
         } catch (SecurityException error) {
             throw new CbzException("CBZ_INACCESSIBLE", 403,
@@ -192,7 +192,7 @@ public final class CbzDocumentService {
         } catch (IOException error) {
             throw translate(error);
         }
-        try (InputStream input = PdfRefResolver.openReadStream(context, fileRef);
+        try (InputStream input = LocalFileRefResolver.openReadStream(context, fileRef);
              FileOutputStream output = new FileOutputStream(temporary)) {
             byte[] buffer = new byte[64 * 1024];
             int count;

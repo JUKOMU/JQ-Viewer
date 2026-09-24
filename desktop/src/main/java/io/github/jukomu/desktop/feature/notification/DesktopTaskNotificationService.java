@@ -5,8 +5,8 @@ import io.github.jukomu.desktop.feature.download.DownloadService;
 import io.github.jukomu.desktop.feature.download.data.DownloadStore;
 import io.github.jukomu.desktop.feature.download.data.StoredDownloadTask;
 import io.github.jukomu.desktop.feature.download.model.DownloadProgressEvent;
-import io.github.jukomu.desktop.feature.pdf.export.ExportStore;
-import io.github.jukomu.desktop.feature.pdf.model.ExportTaskResponse;
+import io.github.jukomu.desktop.feature.export.ExportStore;
+import io.github.jukomu.desktop.feature.localfile.model.ExportTaskResponse;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -30,7 +30,7 @@ public final class DesktopTaskNotificationService implements AutoCloseable {
     private boolean started;
     private boolean closed;
     private AutoCloseable downloadEvents;
-    private AutoCloseable pdfEvents;
+    private AutoCloseable exportEvents;
 
     public DesktopTaskNotificationService(
             DownloadStore downloads,
@@ -53,9 +53,9 @@ public final class DesktopTaskNotificationService implements AutoCloseable {
         downloadEvents = events.subscribe("downloadProgress", payload -> {
             if (payload instanceof DownloadProgressEvent event) downloadChanged(event.taskId());
         });
-        pdfEvents = events.subscribe("exportProgress", payload -> {
+        exportEvents = events.subscribe("exportProgress", payload -> {
             if (payload instanceof ExportTaskResponse event && event.exportId() != null) {
-                pdfExportChanged(event.exportId());
+                exportChanged(event.exportId());
             }
         });
         started = true;
@@ -101,7 +101,7 @@ public final class DesktopTaskNotificationService implements AutoCloseable {
         });
     }
 
-    public synchronized void pdfExportChanged(String exportId) {
+    public synchronized void exportChanged(String exportId) {
         if (!started || closed || exportId == null) return;
         ExportTaskResponse task = exports.find(exportId);
         String format = task == null ? "export" : task.format();
@@ -240,9 +240,9 @@ public final class DesktopTaskNotificationService implements AutoCloseable {
         started = false;
         sink = null;
         closeQuietly(downloadEvents);
-        closeQuietly(pdfEvents);
+        closeQuietly(exportEvents);
         downloadEvents = null;
-        pdfEvents = null;
+        exportEvents = null;
         pending.clear();
         fingerprints.clear();
     }

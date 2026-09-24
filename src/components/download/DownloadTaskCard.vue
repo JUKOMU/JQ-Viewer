@@ -49,11 +49,15 @@
 
       <!-- 已完成 -->
       <div v-else-if="cardStatus === 'completed'" class="status-row">
-        <span v-if="!isPdfEntry" class="tag completed">共 {{ displayTotalPages }} 页</span>
-        <span v-if="isPdfEntry && displayPdfPageCount > 0" class="tag completed"
-          >共 {{ displayPdfPageCount }} 页</span
+        <span v-if="!isLocalFileEntry" class="tag completed">共 {{ displayTotalPages }} 页</span>
+        <span v-if="isLocalFileEntry && displayLocalFilePageCount > 0" class="tag completed"
+          >共 {{ displayLocalFilePageCount }} 页</span
         >
-        <IonIcon v-if="isPdfEntry" :icon="documentOutline" class="tag-icon pdf-tag-icon" />
+        <IonIcon
+          v-if="isLocalFileEntry"
+          :icon="documentOutline"
+          class="tag-icon local-file-tag-icon"
+        />
         <span v-if="sizeText" class="size-text">{{ sizeText }}</span>
       </div>
 
@@ -112,7 +116,9 @@ import { documentOutline, ellipsisVertical } from 'ionicons/icons'
 import { getImageUrl, sanitizeError } from '@/services/JmcomicService'
 import type { CompletedEntry, DownloadTask } from '@/services/JmcomicTypes'
 
-const isPdfEntry = computed(() => 'source' in props.task && props.task.source === 'local-file')
+const isLocalFileEntry = computed(
+  () => 'source' in props.task && props.task.source === 'local-file',
+)
 
 const cardStatus = computed(() => {
   if ('source' in props.task) return 'completed'
@@ -147,7 +153,7 @@ const displayId = computed(() => {
 const displayTitle = computed(() => props.task.albumTitle || displayId.value)
 
 const displayTotalPages = computed(() => {
-  if (isPdfEntry.value) return 0
+  if (isLocalFileEntry.value) return 0
   if (hasGroupedChapters.value && props.downloadedChapters) {
     return props.downloadedChapters
       .filter((c) => c.source === 'download')
@@ -156,8 +162,8 @@ const displayTotalPages = computed(() => {
   return (props.task as CompletedEntry).downloadTask?.totalPages ?? 0
 })
 
-const displayPdfPageCount = computed(() => {
-  if (!isPdfEntry.value) return 0
+const displayLocalFilePageCount = computed(() => {
+  if (!isLocalFileEntry.value) return 0
   if (hasGroupedChapters.value && props.downloadedChapters) {
     return props.downloadedChapters
       .filter((c) => c.source === 'local-file')
@@ -185,20 +191,20 @@ const onCoverError = () => {
 }
 
 const progressPct = computed(() => {
-  if (isPdfEntry.value) return 0
+  if (isLocalFileEntry.value) return 0
   const t = props.task as DownloadTask
   if (t.totalPages <= 0) return 0
   return Math.round((t.downloadedPages / t.totalPages) * 100)
 })
 
 const failedCount = computed(() => {
-  if (isPdfEntry.value) return 0
+  if (isLocalFileEntry.value) return 0
   const t = props.task as DownloadTask
   return t.totalPages - t.downloadedPages
 })
 
 const speedText = computed(() => {
-  if (isPdfEntry.value) return ''
+  if (isLocalFileEntry.value) return ''
   const s = (props.task as DownloadTask).speed
   if (!s || s <= 0) return ''
   if (s >= 1024 * 1024) {
@@ -211,7 +217,7 @@ const speedText = computed(() => {
 })
 
 const sizeText = computed(() => {
-  const s = props.totalSize ?? (isPdfEntry.value ? 0 : (props.task as DownloadTask).totalSize)
+  const s = props.totalSize ?? (isLocalFileEntry.value ? 0 : (props.task as DownloadTask).totalSize)
   if (!s || s <= 0) return ''
   if (s >= 1024 * 1024 * 1024) {
     return (s / (1024 * 1024 * 1024)).toFixed(1) + ' GB'
@@ -330,7 +336,7 @@ const onCardClick = () => {
   flex-shrink: 0;
 }
 
-.pdf-tag-icon {
+.local-file-tag-icon {
   font-size: 15px;
   color: #e03030;
 }

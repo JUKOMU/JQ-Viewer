@@ -13,28 +13,28 @@ public class NotificationIdsTest {
     public void fixedNotificationIdsDoNotOverlapTaskRanges() {
         Set<Integer> fixedIds = new HashSet<>();
 
-        assertTrue(fixedIds.add(NotificationIds.PDF_FOREGROUND));
+        assertTrue(fixedIds.add(NotificationIds.EXPORT_FOREGROUND));
         assertTrue(fixedIds.add(NotificationIds.DOWNLOAD_QUEUE_SUMMARY));
         assertTrue(fixedIds.add(NotificationIds.DOWNLOAD_FOREGROUND));
         assertTrue(fixedIds.add(NotificationIds.DOWNLOAD_COMPLETED_SUMMARY));
         assertTrue(fixedIds.add(NotificationIds.DOWNLOAD_FAILED_SUMMARY));
 
         for (int fixedId : fixedIds) {
-            assertFalse(NotificationIds.containsPdfTask(fixedId));
+            assertFalse(NotificationIds.containsExportTask(fixedId));
             assertFalse(NotificationIds.containsDownloadTask(fixedId));
         }
     }
 
     @Test
     public void pdfTaskIdsUseDedicatedRange() {
-        int span = NotificationIds.PDF_TASK_LIMIT - NotificationIds.PDF_TASK_BASE + 1;
+        int span = NotificationIds.EXPORT_TASK_LIMIT - NotificationIds.EXPORT_TASK_BASE + 1;
 
-        assertEquals(NotificationIds.PDF_TASK_BASE, NotificationIds.pdfTask(0));
-        assertEquals(NotificationIds.PDF_TASK_LIMIT, NotificationIds.pdfTask(span - 1));
-        assertEquals(NotificationIds.PDF_TASK_BASE, NotificationIds.pdfTask(span));
+        assertEquals(NotificationIds.EXPORT_TASK_BASE, NotificationIds.exportTask(0));
+        assertEquals(NotificationIds.EXPORT_TASK_LIMIT, NotificationIds.exportTask(span - 1));
+        assertEquals(NotificationIds.EXPORT_TASK_BASE, NotificationIds.exportTask(span));
 
-        assertTrue(NotificationIds.containsPdfTask(NotificationIds.pdfTask(42)));
-        assertFalse(NotificationIds.containsDownloadTask(NotificationIds.pdfTask(42)));
+        assertTrue(NotificationIds.containsExportTask(NotificationIds.exportTask(42)));
+        assertFalse(NotificationIds.containsDownloadTask(NotificationIds.exportTask(42)));
     }
 
     @Test
@@ -49,6 +49,6 @@ public class NotificationIdsTest {
         int notificationId = NotificationIds.downloadTask(taskId);
 
         assertTrue(NotificationIds.containsDownloadTask(notificationId));
-        assertFalse(NotificationIds.containsPdfTask(notificationId));
+        assertFalse(NotificationIds.containsExportTask(notificationId));
     }
 }

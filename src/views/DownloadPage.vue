@@ -134,7 +134,7 @@
     />
 
     <!-- 导出底部面板 -->
-    <PdfExportBottomSheet
+    <ExportBottomSheet
       v-model="showExportSheet"
       :chapters="chaptersForExport"
       @confirm="onExportConfirm"
@@ -153,7 +153,7 @@
 <script setup lang="ts">
 defineOptions({ name: 'DownloadPage' })
 
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   IonContent,
@@ -182,7 +182,7 @@ import {
 import type { ListenerHandle } from '@/runtime/BackendEvents'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import DownloadTaskCard from '@/components/download/DownloadTaskCard.vue'
-import PdfExportBottomSheet from '@/components/download/PdfExportBottomSheet.vue'
+import ExportBottomSheet from '@/components/download/ExportBottomSheet.vue'
 import DeleteChaptersBottomSheet from '@/components/download/DeleteChaptersBottomSheet.vue'
 import LocalFileManagementView from '@/components/download/LocalFileManagementView.vue'
 import CardContextMenu from '@/components/common/CardContextMenu.vue'
@@ -216,6 +216,13 @@ let ionEnterCount = 0
 const selectMainView = (view: 'downloads' | 'export') => {
   activeMainView.value = view
 }
+
+watch(
+  () => route.query.view,
+  (view) => {
+    activeMainView.value = view === 'pdf' || view === 'export' ? 'export' : 'downloads'
+  },
+)
 
 const tasks = ref<DownloadTask[]>([])
 const spaceUsedMb = ref(0)
@@ -824,6 +831,8 @@ onMounted(async () => {
 
 onIonViewWillEnter(() => {
   ionEnterCount++
+  activeMainView.value =
+    route.query.view === 'pdf' || route.query.view === 'export' ? 'export' : 'downloads'
   void syncDownloadState()
   if (activeMainView.value === 'export' && ionEnterCount > 1) {
     void exportManagementRef.value?.refresh()
@@ -1020,8 +1029,7 @@ async function ensureNotificationPermission(): Promise<boolean> {
     const alert = await createAppAlert({
       tone: 'info',
       header: '需要通知权限',
-      message:
-        '导出将在后台进行，需要通过通知查看进度。拒绝后仍会继续导出，但不会显示系统通知。',
+      message: '导出将在后台进行，需要通过通知查看进度。拒绝后仍会继续导出，但不会显示系统通知。',
       buttons: [
         { text: '暂不授权', role: 'cancel' },
         {

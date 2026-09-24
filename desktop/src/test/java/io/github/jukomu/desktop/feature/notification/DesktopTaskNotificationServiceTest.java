@@ -6,7 +6,7 @@ import io.github.jukomu.desktop.data.Database;
 import io.github.jukomu.desktop.data.Paths;
 import io.github.jukomu.desktop.feature.download.data.DownloadStore;
 import io.github.jukomu.desktop.feature.download.model.DownloadProgressEvent;
-import io.github.jukomu.desktop.feature.pdf.export.ExportStore;
+import io.github.jukomu.desktop.feature.export.ExportStore;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -24,7 +24,7 @@ class DesktopTaskNotificationServiceTest {
     private Database database;
     private EventHub events;
     private DownloadStore downloads;
-    private ExportStore pdfExports;
+    private ExportStore exports;
     private LaunchRouteService launchRoutes;
     private DesktopTaskNotificationService notifications;
     private List<String> openedFolders;
@@ -38,11 +38,11 @@ class DesktopTaskNotificationServiceTest {
         database.open();
         events = new EventHub(new ObjectMapper());
         downloads = new DownloadStore(database);
-        pdfExports = new ExportStore(database);
+        exports = new ExportStore(database);
         launchRoutes = new LaunchRouteService(events);
         openedFolders = new ArrayList<>();
         notifications = new DesktopTaskNotificationService(
-                downloads, pdfExports, launchRoutes, events, openedFolders::add);
+                downloads, exports, launchRoutes, events, openedFolders::add);
         notifications.start();
     }
 
@@ -73,10 +73,10 @@ class DesktopTaskNotificationServiceTest {
         assertTrue(launchRoutes.consume().isEmpty());
 
         reserveExport("pdf id/1", "pdf", "测试导出", "file:path:/tmp/output.pdf");
-        pdfExports.updateProgress("pdf id/1", "completed", "completed", 8, 8,
+        exports.updateProgress("pdf id/1", "completed", "completed", 8, 8,
                 1, 1, null, null);
-        events.publish("exportProgress", pdfExports.find("pdf id/1"));
-        events.publish("exportProgress", pdfExports.find("pdf id/1"));
+        events.publish("exportProgress", exports.find("pdf id/1"));
+        events.publish("exportProgress", exports.find("pdf id/1"));
 
         assertEquals(2, sink.entries.size());
         assertEquals("PDF 导出完成", sink.entries.get(1).notification().title());
@@ -93,16 +93,16 @@ class DesktopTaskNotificationServiceTest {
         notifications.attach(sink);
 
         reserveExport("cbz-1", "cbz", "CBZ", "file:path:/tmp/output.cbz");
-        pdfExports.updateProgress("cbz-1", "completed", "completed", 8, 8,
+        exports.updateProgress("cbz-1", "completed", "completed", 8, 8,
                 1, 1, null, null);
-        events.publish("exportProgress", pdfExports.find("cbz-1"));
+        events.publish("exportProgress", exports.find("cbz-1"));
         sink.entries.getFirst().click().run();
         assertTrue(launchRoutes.consume().get("route").startsWith("/cbz-reader?"));
 
         reserveExport("zip-1", "zip", "ZIP", "file:path:/tmp/output.zip");
-        pdfExports.updateProgress("zip-1", "completed", "completed", 8, 8,
+        exports.updateProgress("zip-1", "completed", "completed", 8, 8,
                 1, 1, null, null);
-        events.publish("exportProgress", pdfExports.find("zip-1"));
+        events.publish("exportProgress", exports.find("zip-1"));
         sink.entries.get(1).click().run();
         assertEquals(List.of("file:path:/tmp/output.zip"), openedFolders);
         assertTrue(launchRoutes.consume().isEmpty());
@@ -173,7 +173,7 @@ class DesktopTaskNotificationServiceTest {
 
     private void reserveExport(String exportId, String format, String title, String outputFileRef) {
         String extension = format.equals("pdf") ? "pdf" : format;
-        pdfExports.reserve(new ExportStore.ReserveTask(
+        exports.reserve(new ExportStore.ReserveTask(
                 exportId,
                 "batch",
                 format,
@@ -202,7 +202,7 @@ class DesktopTaskNotificationServiceTest {
                 0, "album", "chapter", title, 1, 8)), List.of(new ExportStore.Volume(
                 1, 0, 8, 8, "output." + extension,
                 "/tmp/output." + extension, "/tmp/output.tmp")));
-        pdfExports.completeVolumeAndRegisterFile(
+        exports.completeVolumeAndRegisterFile(
                 exportId, 1, outputFileRef, "/tmp/output." + extension,
                 "output." + extension, 1024, 8);
     }

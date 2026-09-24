@@ -26,8 +26,8 @@ import io.github.jukomu.bridge.PluginCallSession;
 import io.github.jukomu.jmcomic.core.client.impl.JmApiClient;
 import io.github.jukomu.platform.permission.PermissionService;
 import io.github.jukomu.platform.permission.PermissionState;
-import io.github.jukomu.feature.pdf.data.PdfRef;
-import io.github.jukomu.feature.pdf.data.PdfRefResolver;
+import io.github.jukomu.feature.localfile.data.LocalFileRef;
+import io.github.jukomu.feature.localfile.data.LocalFileRefResolver;
 import io.github.jukomu.runtime.ServiceExecutors;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -575,8 +575,8 @@ public final class SystemPluginHandler {
             JSArray existing = new JSArray();
             for (int index = 0; index < fileRefs.length(); index++) {
                 String fileRef = fileRefs.getString(index);
-                if (fileRef != null && PdfRef.parse(fileRef).kind == PdfRef.Kind.FILE
-                    && PdfRefResolver.exists(context, fileRef)) {
+                if (fileRef != null && LocalFileRef.parse(fileRef).kind == LocalFileRef.Kind.FILE
+                    && LocalFileRefResolver.exists(context, fileRef)) {
                     existing.put(fileRef);
                 }
             }
@@ -593,7 +593,7 @@ public final class SystemPluginHandler {
         JSObject result = new JSObject();
         String path = Environment.getExternalStorageDirectory().getAbsolutePath();
         try {
-            result.put("folderRef", PdfRef.createPathFolderRef(path));
+            result.put("folderRef", LocalFileRef.createPathFolderRef(path));
         } catch (Exception error) {
             call.reject("无法创建默认 PDF 文件夹引用", error);
             return;
@@ -777,7 +777,7 @@ public final class SystemPluginHandler {
         }
 
         String path = treeUriToPath(treeUri);
-        result.put("folderRef", PdfRef.createSafFolderRef(treeUri.toString()));
+        result.put("folderRef", LocalFileRef.createSafFolderRef(treeUri.toString()));
         result.put("displayPath", path != null ? path : treeUri.toString());
         result.put("provider", "saf");
         result.put("cancelled", false);

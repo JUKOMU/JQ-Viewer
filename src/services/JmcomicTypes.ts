@@ -738,15 +738,15 @@ export interface CompletedEntry {
   albumId: string
   albumTitle: string
   coverUrl: string
-  chapterId: string // download: chapterId; pdf: 内部唯一 key
+  chapterId: string // download: chapterId; local-file: 内部唯一 key
   displayId?: string // chapterId 不是用户可见 ID 时的展示兜底
-  chapterTitle: string // download: chapterTitle; pdf: fileName
+  chapterTitle: string // download: chapterTitle; local-file: fileName
   chapterSortOrder: number
   isSingleEpisode?: boolean
   authors: string
   createdAt: number
   completedAt: number
-  totalSize: number // download: totalSize; pdf: 0
+  totalSize: number // download: totalSize; local-file: 0
   source: 'download' | 'local-file'
   downloadTask?: DownloadTask // source='download' 时的原始数据
   localFileData?: LocalFileRecord // source='local-file' 时的原始数据

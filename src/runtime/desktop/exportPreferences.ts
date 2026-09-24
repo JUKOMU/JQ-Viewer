@@ -27,7 +27,7 @@ function toPreferences(response: ExportPreferencesResponse): ExportPreferences {
   }
 }
 
-/** Desktop PDF 导出设置通过 bridge 持久化到 SQLite。 */
+/** Desktop 导出设置通过 bridge 持久化到 SQLite。 */
 export function createDesktopExportPreferencesStore(fetcher: BackendFetch): ExportPreferencesStore {
   return {
     get: () =>

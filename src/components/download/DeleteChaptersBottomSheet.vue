@@ -35,9 +35,7 @@
             </div>
           </div>
 
-          <p class="delete-hint">
-            图片章节会删除下载文件和记录；PDF 章节只删除导入记录，不删除原 PDF 文件。
-          </p>
+          <p class="delete-hint">选中的下载章节会删除下载文件和记录。</p>
         </div>
 
         <div class="sheet-footer">
@@ -82,7 +80,7 @@ const chapterTitle = (ch: CompletedEntry) => {
 
 const chapterMeta = (ch: CompletedEntry) => {
   if (ch.source === 'local-file') {
-    return `PDF · ${ch.localFileData?.pageCount ?? '?'}页`
+    return `${ch.localFileData?.format.toUpperCase() ?? '文件'} · ${ch.localFileData?.pageCount ?? '?'}页`
   }
   return `图片 · ${ch.downloadTask?.totalPages ?? 0}页`
 }

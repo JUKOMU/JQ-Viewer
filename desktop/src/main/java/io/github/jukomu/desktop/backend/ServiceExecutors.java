@@ -26,7 +26,7 @@ final class ServiceExecutors implements AutoCloseable {
     private final ExecutorService fileDialog;
     private final ExecutorService relocation;
     private final ExecutorService pdfCommand;
-    private final ExecutorService pdfExport;
+    private final ExecutorService exportJobs;
     private final ExecutorService networkCommand;
     private final ExecutorService networkProbe;
     private final ExecutorService ocr;
@@ -53,7 +53,7 @@ final class ServiceExecutors implements AutoCloseable {
         fileDialog = create("jq-viewer-file-dialog", 1);
         relocation = create("jq-viewer-relocation", 1);
         pdfCommand = create("jq-viewer-pdf-command", 1);
-        pdfExport = create("jq-viewer-pdf-export", 1);
+        exportJobs = create("jq-viewer-file-export", 1);
         networkCommand = create("jq-viewer-network-command", 1);
         networkProbe = create("jq-viewer-network-probe", 1);
         ocr = create("jq-viewer-ocr", 1);
@@ -74,7 +74,7 @@ final class ServiceExecutors implements AutoCloseable {
                 fileDialog,
                 relocation,
                 pdfCommand,
-                pdfExport,
+                exportJobs,
                 networkCommand,
                 networkProbe,
                 ocr,
@@ -130,8 +130,8 @@ final class ServiceExecutors implements AutoCloseable {
         return pdfCommand;
     }
 
-    ExecutorService pdfExport() {
-        return pdfExport;
+    ExecutorService exportJobs() {
+        return exportJobs;
     }
 
     ExecutorService networkCommand() {

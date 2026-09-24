@@ -47,10 +47,10 @@ import io.github.jukomu.desktop.feature.notification.DesktopNotificationSink;
 import io.github.jukomu.desktop.feature.notification.DesktopTaskNotificationService;
 import io.github.jukomu.desktop.feature.notification.LaunchRouteService;
 import io.github.jukomu.desktop.feature.ocr.OcrService;
-import io.github.jukomu.desktop.feature.pdf.data.LocalFileStore;
-import io.github.jukomu.desktop.feature.pdf.export.ExportService;
-import io.github.jukomu.desktop.feature.pdf.export.ExportStore;
-import io.github.jukomu.desktop.feature.pdf.management.LocalFileManagementService;
+import io.github.jukomu.desktop.feature.localfile.data.LocalFileStore;
+import io.github.jukomu.desktop.feature.export.ExportService;
+import io.github.jukomu.desktop.feature.export.ExportStore;
+import io.github.jukomu.desktop.feature.localfile.management.LocalFileManagementService;
 import io.github.jukomu.desktop.feature.pdf.render.PdfDocumentService;
 import io.github.jukomu.desktop.feature.pdf.render.PdfPageCache;
 import io.github.jukomu.desktop.feature.pdf.render.PdfResourceService;
@@ -117,7 +117,7 @@ public final class Backend implements AutoCloseable {
     private Javalin app;
     private JmcomicSessionManager clientSession;
     private DownloadService downloadService;
-    private ExportService pdfExportService;
+    private ExportService exportService;
     private NetworkService networkService;
     private OcrService ocrService;
     private EventHub eventHub;
@@ -303,16 +303,16 @@ public final class Backend implements AutoCloseable {
             ImageService imageService = new ImageService(
                     clientSession::getClient, executors.imagePreload(), eventHub);
             DownloadStore downloadStore = new DownloadStore(database);
-            ExportStore pdfExportStore = new ExportStore(database);
+            ExportStore exportStore = new ExportStore(database);
             startedLaunchRoutes = new LaunchRouteService(eventHub);
             startedTaskNotifications = new DesktopTaskNotificationService(
-                    downloadStore, pdfExportStore, startedLaunchRoutes, eventHub,
+                    downloadStore, exportStore, startedLaunchRoutes, eventHub,
                     fileService::openContainingFolder);
             DesktopTaskNotificationService taskNotifications = startedTaskNotifications;
             DownloadFiles downloadFiles = new DownloadFiles(
                     settingsService.downloadRoot(paths.downloadsDirectory()));
             DownloadLocationService downloadLocationService = new DownloadLocationService(
-                    paths, settingsService, downloadStore, downloadFiles, pdfExportStore,
+                    paths, settingsService, downloadStore, downloadFiles, exportStore,
                     fileService, eventHub);
             downloadLocationService.reconcileOnStartup();
             startedDownloadService = new DownloadService(
@@ -354,7 +354,7 @@ public final class Backend implements AutoCloseable {
             CacheService cacheService = new CacheService(
                     settingsService, imageService.cache(), pdfPageCache);
             DiagnosticsService diagnosticsService = new DiagnosticsService(
-                    paths, downloadStore, pdfExportStore, cacheService);
+                    paths, downloadStore, exportStore, cacheService);
             LocalFileManagementService pdfManagementService = new LocalFileManagementService(
                     new LocalFileStore(database),
                     downloadStore,
@@ -363,8 +363,8 @@ public final class Backend implements AutoCloseable {
                     cbzDocuments
             );
             startedExportService = new ExportService(
-                    pdfExportStore, downloadStore, downloadFiles,
-                    executors.pdfExport(), eventHub);
+                    exportStore, downloadStore, downloadFiles,
+                    executors.exportJobs(), eventHub);
             startedExportService.reconcileOnStartup();
             taskNotifications.start();
             Plugin plugin = new Plugin(
@@ -421,7 +421,7 @@ public final class Backend implements AutoCloseable {
             this.app = candidate;
             this.clientSession = clientSession;
             this.downloadService = downloadService;
-            this.pdfExportService = startedExportService;
+            this.exportService = startedExportService;
             this.networkService = startedNetworkService;
             this.ocrService = startedOcrService;
             this.eventHub = eventHub;
@@ -459,7 +459,7 @@ public final class Backend implements AutoCloseable {
                     step("下载服务", () -> {
                         if (failedDownloadService != null) failedDownloadService.close();
                     }),
-                    step("PDF 导出服务", () -> {
+                    step("文件导出服务", () -> {
                         if (failedExportService != null) failedExportService.close();
                     }),
                     step("网络服务", () -> {
@@ -697,8 +697,8 @@ public final class Backend implements AutoCloseable {
         updateService = null;
         LaunchRouteService closingLaunchRoutes = launchRouteService;
         launchRouteService = null;
-        ExportService closingExportService = pdfExportService;
-        pdfExportService = null;
+        ExportService closingExportService = exportService;
+        exportService = null;
         NetworkService closingNetworkService = networkService;
         networkService = null;
         OcrService closingOcrService = ocrService;
@@ -720,7 +720,7 @@ public final class Backend implements AutoCloseable {
                 step("启动路由", () -> {
                     if (closingLaunchRoutes != null) closingLaunchRoutes.close();
                 }),
-                step("PDF 导出服务", () -> {
+                step("文件导出服务", () -> {
                     if (closingExportService != null) closingExportService.close();
                 }),
                 step("网络服务", () -> {

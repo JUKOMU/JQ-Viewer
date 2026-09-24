@@ -9,7 +9,7 @@ import io.github.jukomu.desktop.feature.download.data.DownloadStore;
 import io.github.jukomu.desktop.feature.download.model.DownloadRelocationResponse;
 import io.github.jukomu.desktop.feature.files.FileReferences;
 import io.github.jukomu.desktop.feature.files.FileService;
-import io.github.jukomu.desktop.feature.pdf.export.ExportStore;
+import io.github.jukomu.desktop.feature.export.ExportStore;
 import io.github.jukomu.desktop.feature.settings.SettingsService;
 import org.junit.jupiter.api.Test;
 
@@ -93,7 +93,7 @@ class DownloadLocationServiceTest {
     void rejectsSwitchWhilePdfExportUsesDownloadedFiles() throws Exception {
         try (Fixture fixture = new Fixture()) {
             long now = System.currentTimeMillis();
-            fixture.pdfExports.reserve(new ExportStore.ReserveTask(
+            fixture.exports.reserve(new ExportStore.ReserveTask(
                             "export-1", "batch-1", "pdf", "chapter", "album", "Album", "", "",
                             false, "chapter", "Chapter",
                             FileReferences.folderRef(fixture.root.resolve("pdf")), "book.pdf", "",
@@ -105,7 +105,7 @@ class DownloadLocationServiceTest {
                     ApiException.class, () -> fixture.service(fixture.selectedParent).set(true));
 
             assertEquals("conflict", failure.code());
-            assertTrue(failure.getMessage().contains("PDF 导出任务"));
+            assertTrue(failure.getMessage().contains("导出任务"));
             assertFalse(fixture.settings.downloadLocation().downloadPublic());
         }
     }
@@ -207,7 +207,7 @@ class DownloadLocationServiceTest {
         private final SettingsService settings;
         private final DownloadStore store;
         private final DownloadFiles files;
-        private final ExportStore pdfExports;
+        private final ExportStore exports;
         private final EventHub events = new EventHub(new ObjectMapper());
 
         private Fixture() throws Exception {
@@ -216,7 +216,7 @@ class DownloadLocationServiceTest {
             settings = new SettingsService(database);
             store = new DownloadStore(database);
             files = new DownloadFiles(paths);
-            pdfExports = new ExportStore(database);
+            exports = new ExportStore(database);
         }
 
         private DownloadLocationService service(Path selected) {
@@ -238,7 +238,7 @@ class DownloadLocationServiceTest {
             FileService fileService = new FileService(paths, ignored -> selected, ignored -> {
             });
             return new DownloadLocationService(
-                    paths, settings, store, downloadFiles, pdfExports,
+                    paths, settings, store, downloadFiles, exports,
                     fileService, events, operations);
         }
 

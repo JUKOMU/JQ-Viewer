@@ -24,11 +24,9 @@ import io.github.jukomu.feature.download.data.DownloadStore;
 import io.github.jukomu.feature.download.storage.FileStore;
 import io.github.jukomu.feature.favorite.data.FavoriteStore;
 import io.github.jukomu.feature.history.data.HistoryStore;
-import io.github.jukomu.feature.pdf.data.LocalFileStore;
-import io.github.jukomu.feature.pdf.export.PdfExportCommandPort;
-import io.github.jukomu.feature.pdf.export.PdfExportCommandRouter;
-import io.github.jukomu.feature.pdf.export.PdfExportEventSink;
-import io.github.jukomu.feature.pdf.export.ExportService;
+import io.github.jukomu.feature.localfile.data.LocalFileStore;
+import io.github.jukomu.feature.export.ExportEventSink;
+import io.github.jukomu.feature.export.ExportService;
 import io.github.jukomu.feature.pdf.render.PdfPageCache;
 import io.github.jukomu.feature.preload.PreloadService;
 import io.github.jukomu.feature.settings.SettingsService;
@@ -77,8 +75,7 @@ public class JqViewerPlugin extends Plugin {
     private SettingsPluginHandler settingsHandler;
     private SystemPluginHandler systemHandler;
     private LocalFilePluginHandler localFileHandler;
-    private PdfExportEventSink pdfEventSink;
-    private PdfExportCommandPort pdfExportCommandPort;
+    private ExportEventSink exportEventSink;
     private UpdateService updateService;
     private Consumer<UpdateService.Snapshot> updateProgressSink;
     private UpdatePluginHandler updateHandler;
@@ -140,17 +137,17 @@ public class JqViewerPlugin extends Plugin {
         } catch (RuntimeException error) {
             Log.w(TAG, "初始化 PDF 页面缓存失败，继续启动", error);
         }
-        ExportService pdfExportService = ExportService.getInstance(ctx);
-        this.pdfEventSink = snapshot -> {
+        ExportService exportService = ExportService.getInstance(ctx);
+        this.exportEventSink = snapshot -> {
             if (snapshot == null) return;
             try {
                 notifyListeners("exportProgress", JSObject.fromJSONObject(snapshot));
             } catch (Exception error) {
-                Log.w(TAG, "发布 PDF 导出进度失败", error);
+                Log.w(TAG, "发布文件导出进度失败", error);
             }
         };
-        pdfExportService.attachEventSink(pdfEventSink);
-        pdfExportService.reconcileOnStartup();
+        exportService.attachEventSink(exportEventSink);
+        exportService.reconcileOnStartup();
 
         boolean runtimeExists = AppRuntime.exists();
         if (!runtimeExists) {
@@ -188,9 +185,6 @@ public class JqViewerPlugin extends Plugin {
         downloadConcurrency = SettingsService.normalizeConcurrency(
             settingsDb.getInt("download_concurrency", SettingsService.DEFAULT_CONCURRENCY));
         localFileHandler = new LocalFilePluginHandler(ctx, downloadDb);
-        pdfExportCommandPort = exportId ->
-            ExportService.getInstance(ctx).cancelExport(exportId);
-        PdfExportCommandRouter.getInstance().attach(pdfExportCommandPort);
 
         JmcomicSessionManager sessionManager = JmcomicSessionManager.getOrCreate(
             ctx, downloadConcurrency);
@@ -264,9 +258,8 @@ public class JqViewerPlugin extends Plugin {
                 featureEventAdapter, featureEventAdapter, featureEventAdapter);
         }
         DownloadCommandRouter.getInstance().detach(downloadCommandPort);
-        PdfExportCommandRouter.getInstance().detach(pdfExportCommandPort);
-        if (pdfEventSink != null) {
-            ExportService.getInstance(getContext()).detachEventSink(pdfEventSink);
+        if (exportEventSink != null) {
+            ExportService.getInstance(getContext()).detachEventSink(exportEventSink);
         }
         if (instance == this) {
             instance = null;
@@ -781,7 +774,7 @@ public class JqViewerPlugin extends Plugin {
         favoriteHandler.listOfflineBackupKeys(call);
     }
 
-    // ========== PDF 导出 ==========
+    // ========== 文件导出 ==========
 
     // ========== PDF 导入 ==========
 

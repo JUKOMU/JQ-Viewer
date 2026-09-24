@@ -9,7 +9,7 @@ import io.github.jukomu.desktop.feature.settings.model.BooleanSettingRequest;
 import io.github.jukomu.desktop.feature.settings.model.DisplayModeRequest;
 import io.github.jukomu.desktop.feature.settings.model.NumberSettingRequest;
 import io.github.jukomu.desktop.feature.settings.model.NullableTextSettingRequest;
-import io.github.jukomu.desktop.feature.settings.model.PdfExportFolderRequest;
+import io.github.jukomu.desktop.feature.settings.model.ExportFolderRequest;
 import io.javalin.http.Context;
 
 /** 处理页面基础设置的读取与持久化。 */
@@ -70,11 +70,11 @@ public final class SettingsPluginHandler {
     }
 
     public void getExportPreferences(Context context) {
-        settingsRequests.run(context, settings::pdfExportPreferences);
+        settingsRequests.run(context, settings::exportPreferences);
     }
 
     public void setExportFolder(Context context) {
-        settingsRequests.run(context, PdfExportFolderRequest.class,
+        settingsRequests.run(context, ExportFolderRequest.class,
                 request -> settings.setExportFolder(request.folder()));
     }
 

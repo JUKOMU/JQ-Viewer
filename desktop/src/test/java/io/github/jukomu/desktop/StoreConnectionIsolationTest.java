@@ -3,8 +3,8 @@ package io.github.jukomu.desktop;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.jukomu.desktop.data.Database;
 import io.github.jukomu.desktop.feature.download.data.DownloadStore;
-import io.github.jukomu.desktop.feature.pdf.data.LocalFileStore;
-import io.github.jukomu.desktop.feature.pdf.export.ExportStore;
+import io.github.jukomu.desktop.feature.localfile.data.LocalFileStore;
+import io.github.jukomu.desktop.feature.export.ExportStore;
 import io.github.jukomu.desktop.feature.settings.SettingsService;
 import org.junit.jupiter.api.Test;
 

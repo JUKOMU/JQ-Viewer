@@ -14,8 +14,8 @@ import com.getcapacitor.JSObject;
 
 import io.github.jukomu.bridge.handler.LocalFilePluginHandler;
 import io.github.jukomu.feature.download.data.DownloadStore;
-import io.github.jukomu.feature.pdf.data.LocalFileStore;
-import io.github.jukomu.feature.pdf.data.PdfRef;
+import io.github.jukomu.feature.localfile.data.LocalFileStore;
+import io.github.jukomu.feature.localfile.data.LocalFileRef;
 import io.github.jukomu.feature.pdf.render.PdfPageCache;
 import io.github.jukomu.feature.pdf.render.PdfPageSizing;
 import io.github.jukomu.feature.pdf.web.PdfServer;
@@ -43,14 +43,14 @@ import static org.junit.Assert.assertTrue;
 public class PdfPluginContractInstrumentedTest {
 
     private LocalFilePluginHandler handler;
-    private LocalFileStore pdfStore;
+    private LocalFileStore localFileStore;
     private Context context;
     private File missingPdf;
 
     @Before
     public void setUp() {
         context = InstrumentationRegistry.getInstrumentation().getTargetContext();
-        pdfStore = LocalFileStore.getInstance(context);
+        localFileStore = LocalFileStore.getInstance(context);
         handler = new LocalFilePluginHandler(context, DownloadStore.getInstance(context), Runnable::run);
         PdfPageCache.getInstance(context).clear();
         missingPdf = new File(context.getCacheDir(), "missing-a1-pdf.pdf");
@@ -60,18 +60,18 @@ public class PdfPluginContractInstrumentedTest {
     @Test
     public void scopedPdfFailuresKeepMessagesAndExposeCodes() throws Exception {
         RecordingPluginCall scan = call("scanImportableFiles", "folderRef",
-            PdfRef.createPathFolderRef(missingPdf.getAbsolutePath()));
+            LocalFileRef.createPathFolderRef(missingPdf.getAbsolutePath()));
         handler.scanImportableFiles(scan);
         assertRejected(scan, "PDF 文件夹不存在", "not-found");
 
         RecordingPluginCall info = call("getPdfInfo", "fileRef",
-            PdfRef.createPathFileRef(missingPdf.getAbsolutePath()));
+            LocalFileRef.createPathFileRef(missingPdf.getAbsolutePath()));
         handler.getPdfInfo(info);
         assertEquals("not-found", info.rejectionCode);
         assertTrue(info.rejectionMessage.startsWith("PDF 信息读取失败: "));
 
         RecordingPluginCall render = call("renderPdfPage", "fileRef",
-            PdfRef.createPathFileRef(missingPdf.getAbsolutePath()), "page", 1,
+            LocalFileRef.createPathFileRef(missingPdf.getAbsolutePath()), "page", 1,
             "targetWidth", 900);
         handler.renderPdfPage(render);
         assertEquals("not-found", render.rejectionCode);
@@ -104,9 +104,9 @@ public class PdfPluginContractInstrumentedTest {
         LocalFilePluginHandler queuedHandler = new LocalFilePluginHandler(
             context, DownloadStore.getInstance(context), commands::addLast);
         RecordingPluginCall scan = call("scanImportableFiles", "folderRef",
-            PdfRef.createPathFolderRef(missingPdf.getAbsolutePath()));
+            LocalFileRef.createPathFolderRef(missingPdf.getAbsolutePath()));
         RecordingPluginCall info = call("getPdfInfo", "fileRef",
-            PdfRef.createPathFileRef(missingPdf.getAbsolutePath()));
+            LocalFileRef.createPathFileRef(missingPdf.getAbsolutePath()));
 
         queuedHandler.scanImportableFiles(scan);
         queuedHandler.getPdfInfo(info);
@@ -127,7 +127,7 @@ public class PdfPluginContractInstrumentedTest {
         LocalFilePluginHandler queuedHandler = new LocalFilePluginHandler(
             context, DownloadStore.getInstance(context), commands::addLast);
         RecordingPluginCall queued = call("scanImportableFiles", "folderRef",
-            PdfRef.createPathFolderRef(missingPdf.getAbsolutePath()));
+            LocalFileRef.createPathFolderRef(missingPdf.getAbsolutePath()));
 
         queuedHandler.scanImportableFiles(queued);
         assertEquals(0, queued.completionCount);
@@ -141,7 +141,7 @@ public class PdfPluginContractInstrumentedTest {
         assertEquals(1, queued.completionCount);
 
         RecordingPluginCall afterDestroy = call("scanImportableFiles", "folderRef",
-            PdfRef.createPathFolderRef(missingPdf.getAbsolutePath()));
+            LocalFileRef.createPathFolderRef(missingPdf.getAbsolutePath()));
         queuedHandler.scanImportableFiles(afterDestroy);
         assertEquals(PluginCallSession.SESSION_ENDED_MESSAGE,
             afterDestroy.rejectionMessage);
@@ -163,14 +163,14 @@ public class PdfPluginContractInstrumentedTest {
     public void importRejectsPersistenceFailuresInsteadOfReportingInvalidItems() throws Exception {
         File pdf = new File(context.getCacheDir(), "import-failure-" + System.nanoTime() + ".pdf");
         createPdf(pdf);
-        SQLiteDatabase database = pdfStore.getWritableDatabase();
+        SQLiteDatabase database = localFileStore.getWritableDatabase();
         database.execSQL("DROP TRIGGER IF EXISTS fail_pdf_import_for_test");
         database.execSQL("CREATE TRIGGER fail_pdf_import_for_test "
             + "BEFORE INSERT ON local_files BEGIN "
             + "SELECT RAISE(ABORT, 'forced import failure'); END");
         try {
             JSObject item = new JSObject();
-            item.put("fileRef", PdfRef.createPathFileRef(pdf.getCanonicalPath()));
+            item.put("fileRef", LocalFileRef.createPathFileRef(pdf.getCanonicalPath()));
             item.put("displayPath", pdf.getCanonicalPath());
             item.put("fileName", pdf.getName());
             item.put("albumId", "album-import-failure");
@@ -194,12 +194,12 @@ public class PdfPluginContractInstrumentedTest {
     public void refreshRejectsPersistenceFailuresAtPluginBoundary() throws Exception {
         File pdf = new File(context.getCacheDir(), "refresh-failure-" + System.nanoTime() + ".pdf");
         createPdf(pdf);
-        long id = pdfStore.insertImportedFile("pdf",
-            PdfRef.createPathFileRef(pdf.getCanonicalPath()),
+        long id = localFileStore.insertImportedFile("pdf",
+            LocalFileRef.createPathFileRef(pdf.getCanonicalPath()),
             pdf.getCanonicalPath(), pdf.getName(), "album-refresh-failure", "", "", "",
             "chapter-refresh-failure", "第一话", 0, -1, System.currentTimeMillis(), null,
             pdf.length(), 1);
-        SQLiteDatabase database = pdfStore.getWritableDatabase();
+        SQLiteDatabase database = localFileStore.getWritableDatabase();
         database.execSQL("DROP TRIGGER IF EXISTS fail_pdf_refresh_handler_for_test");
         database.execSQL("CREATE TRIGGER fail_pdf_refresh_handler_for_test "
             + "BEFORE UPDATE ON local_files BEGIN "
@@ -216,7 +216,7 @@ public class PdfPluginContractInstrumentedTest {
             assertEquals(1, refreshCall.completionCount);
         } finally {
             database.execSQL("DROP TRIGGER IF EXISTS fail_pdf_refresh_handler_for_test");
-            pdfStore.removeFileFromLibrary(id);
+            localFileStore.removeFileFromLibrary(id);
             assertTrue(pdf.delete() || !pdf.exists());
         }
     }
@@ -225,8 +225,8 @@ public class PdfPluginContractInstrumentedTest {
     public void missingPhysicalFileKeepsAlreadyMissingSuccessContract() throws Exception {
         String locator = new File(context.getCacheDir(),
             "already-missing-" + System.nanoTime() + ".pdf").getAbsolutePath();
-        long id = pdfStore.insertImportedFile("pdf",
-            PdfRef.createPathFileRef(locator), locator, "missing.pdf", "album", "", "", "", "chapter", "", 0,
+        long id = localFileStore.insertImportedFile("pdf",
+            LocalFileRef.createPathFileRef(locator), locator, "missing.pdf", "album", "", "", "", "chapter", "", 0,
             -1, System.currentTimeMillis(), null, 0, 1);
 
         RecordingPluginCall delete = call("deleteLocalFile", "id", (int) id);
@@ -248,7 +248,7 @@ public class PdfPluginContractInstrumentedTest {
         try {
             RecordingPluginCall scan = call(
                 "scanImportableFiles",
-                "folderRef", PdfRef.createPathFolderRef(folder.getCanonicalPath())
+                "folderRef", LocalFileRef.createPathFolderRef(folder.getCanonicalPath())
             );
             handler.scanImportableFiles(scan);
 
@@ -276,7 +276,7 @@ public class PdfPluginContractInstrumentedTest {
         try {
             RecordingPluginCall scan = call(
                 "scanImportableFiles",
-                "folderRef", PdfRef.createPathFolderRef(folder.getCanonicalPath()),
+                "folderRef", LocalFileRef.createPathFolderRef(folder.getCanonicalPath()),
                 "formats", new JSArray().put("pdf").put("cbz")
             );
 
@@ -300,7 +300,7 @@ public class PdfPluginContractInstrumentedTest {
         File pdf = new File(context.getCacheDir(), "a4-render-" + System.nanoTime() + ".pdf");
         createPdf(pdf);
         try {
-            String fileRef = PdfRef.createPathFileRef(pdf.getCanonicalPath());
+            String fileRef = LocalFileRef.createPathFileRef(pdf.getCanonicalPath());
             RecordingPluginCall first = call("renderPdfPage",
                 "fileRef", fileRef, "page", 1, "targetWidth", 900);
             handler.renderPdfPage(first);
@@ -339,7 +339,7 @@ public class PdfPluginContractInstrumentedTest {
         File cbz = new File(context.getCacheDir(), "cbz-server-" + System.nanoTime() + ".cbz");
         createCbz(cbz);
         try {
-            String fileRef = PdfRef.createPathFileRef(cbz.getCanonicalPath());
+            String fileRef = LocalFileRef.createPathFileRef(cbz.getCanonicalPath());
             RecordingPluginCall info = call("getCbzInfo", "fileRef", fileRef);
 
             handler.getCbzInfo(info);
@@ -378,16 +378,16 @@ public class PdfPluginContractInstrumentedTest {
         createPdf(pdf);
         try {
             WebResourceResponse pathResponse = PdfServer.handleRequest(
-                pdfUrl(PdfRef.createPathFileRef(pdf.getCanonicalPath())), context);
+                pdfUrl(LocalFileRef.createPathFileRef(pdf.getCanonicalPath())), context);
             assertPdfResponse(pathResponse);
 
             WebResourceResponse safResponse = PdfServer.handleRequest(
-                pdfUrl(PdfRef.createSafFileRef(
+                pdfUrl(LocalFileRef.createSafFileRef(
                     "content://io.github.jukomu.test.pdf/document/fixture")), context);
             assertPdfResponse(safResponse);
 
             WebResourceResponse folderResponse = PdfServer.handleRequest(
-                pdfUrl(PdfRef.createPathFolderRef(context.getCacheDir().getCanonicalPath())), context);
+                pdfUrl(LocalFileRef.createPathFolderRef(context.getCacheDir().getCanonicalPath())), context);
             assertEquals(400, folderResponse.getStatusCode());
             assertEquals("invalid-path",
                 folderResponse.getResponseHeaders().get("X-JQViewer-Pdf-Error"));

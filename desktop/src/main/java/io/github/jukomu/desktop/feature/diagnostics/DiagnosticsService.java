@@ -4,7 +4,7 @@ import io.github.jukomu.desktop.data.Paths;
 import io.github.jukomu.desktop.feature.diagnostics.model.DiagnosticsResponse;
 import io.github.jukomu.desktop.feature.download.data.DownloadStore;
 import io.github.jukomu.desktop.feature.image.CacheService;
-import io.github.jukomu.desktop.feature.pdf.export.ExportStore;
+import io.github.jukomu.desktop.feature.export.ExportStore;
 
 import java.util.List;
 
@@ -14,18 +14,18 @@ public final class DiagnosticsService {
 
     private final Paths paths;
     private final DownloadStore downloads;
-    private final ExportStore pdfExports;
+    private final ExportStore exports;
     private final CacheService cache;
 
     public DiagnosticsService(
             Paths paths,
             DownloadStore downloads,
-            ExportStore pdfExports,
+            ExportStore exports,
             CacheService cache
     ) {
         this.paths = paths;
         this.downloads = downloads;
-        this.pdfExports = pdfExports;
+        this.exports = exports;
         this.cache = cache;
     }
 
@@ -33,7 +33,7 @@ public final class DiagnosticsService {
         DownloadStore.DiagnosticSnapshot downloadSnapshot =
                 downloads.diagnosticSnapshot(FAILURE_LIMIT);
         ExportStore.DiagnosticSnapshot pdfSnapshot =
-                pdfExports.diagnosticSnapshot(FAILURE_LIMIT);
+                exports.diagnosticSnapshot(FAILURE_LIMIT);
         return new DiagnosticsResponse(
                 System.currentTimeMillis(),
                 List.of(
@@ -55,7 +55,7 @@ public final class DiagnosticsService {
                                                 failure.reason(), failure.updatedAt()))
                                         .toList()),
                         new DiagnosticsResponse.TaskSummary(
-                                "pdf-export", "PDF 导出",
+                                "pdf-export", "文件导出",
                                 pdfSnapshot.total(), pdfSnapshot.active(), pdfSnapshot.failed(),
                                 pdfSnapshot.recentFailures().stream()
                                         .map(failure -> new DiagnosticsResponse.TaskFailure(

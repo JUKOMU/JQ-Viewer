@@ -464,7 +464,7 @@ export const JmcomicService = {
     return native.pickImageAndOcr()
   },
 
-  // ========== PDF 导出 ==========
+  // ========== 文件导出 ==========
 
   exportBatch(tasks: ExportTask[]) {
     return getRuntime().services.localFiles.exportBatch({ tasks })

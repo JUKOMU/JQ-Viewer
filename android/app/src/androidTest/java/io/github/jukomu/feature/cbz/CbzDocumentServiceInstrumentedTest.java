@@ -5,7 +5,7 @@ import android.content.Context;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
 
-import io.github.jukomu.feature.pdf.data.PdfRef;
+import io.github.jukomu.feature.localfile.data.LocalFileRef;
 
 import org.junit.After;
 import org.junit.Before;
@@ -50,7 +50,7 @@ public class CbzDocumentServiceInstrumentedTest {
     @Test
     public void indexesImagesNaturallyAndReadsComicInfoCover() throws Exception {
         File cbz = createArchive("chapter.cbz", false);
-        String fileRef = PdfRef.createPathFileRef(cbz.getCanonicalPath());
+        String fileRef = LocalFileRef.createPathFileRef(cbz.getCanonicalPath());
         CbzDocumentService service = CbzDocumentService.getInstance(context);
 
         CbzDocumentService.Info info = service.getInfo(fileRef);
@@ -73,7 +73,7 @@ public class CbzDocumentServiceInstrumentedTest {
 
     @Test
     public void readsSafArchivesThroughControlledCache() throws Exception {
-        String fileRef = PdfRef.createSafFileRef(
+        String fileRef = LocalFileRef.createSafFileRef(
             "content://io.github.jukomu.test.pdf/document/fixture-cbz");
         CbzDocumentService service = CbzDocumentService.getInstance(context);
 
@@ -91,7 +91,7 @@ public class CbzDocumentServiceInstrumentedTest {
     public void damagedMetadataWarnsAndArchivesWithoutImagesAreRejected() throws Exception {
         File damagedMetadata = createArchive("damaged-metadata.cbz", true);
         CbzDocumentService.Info info = CbzDocumentService.getInstance(context).getInfo(
-            PdfRef.createPathFileRef(damagedMetadata.getCanonicalPath()));
+            LocalFileRef.createPathFileRef(damagedMetadata.getCanonicalPath()));
         assertNotNull(info.metadataWarning);
 
         File empty = new File(context.getCacheDir(), "empty-" + System.nanoTime() + ".cbz");
@@ -101,7 +101,7 @@ public class CbzDocumentServiceInstrumentedTest {
         }
         try {
             CbzDocumentService.getInstance(context).getInfo(
-                PdfRef.createPathFileRef(empty.getCanonicalPath()));
+                LocalFileRef.createPathFileRef(empty.getCanonicalPath()));
             fail("Expected CBZ_NO_IMAGES");
         } catch (CbzDocumentService.CbzException error) {
             assertEquals("CBZ_NO_IMAGES", error.code);

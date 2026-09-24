@@ -17,7 +17,7 @@ export interface ExportPreferences {
   lastFormat: ExportFormat
 }
 
-/** PDF 导出设置的窄持久化端口；页面只通过 ExportService 使用它。 */
+/** 文件导出设置的窄持久化端口；页面只通过 ExportService 使用它。 */
 export interface ExportPreferencesStore {
   get(): Promise<ExportPreferences>
   setExportFolder(selection: ExportFolderSelection | null): Promise<void>

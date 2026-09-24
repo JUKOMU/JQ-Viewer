@@ -8,8 +8,8 @@ import io.github.jukomu.desktop.data.Database;
 import io.github.jukomu.desktop.feature.files.FileReferences;
 import io.github.jukomu.desktop.feature.image.CacheCapacityPolicy;
 import io.github.jukomu.desktop.feature.settings.model.DownloadLocation;
-import io.github.jukomu.desktop.feature.settings.model.PdfExportFolder;
-import io.github.jukomu.desktop.feature.settings.model.PdfExportPreferencesResponse;
+import io.github.jukomu.desktop.feature.settings.model.ExportFolder;
+import io.github.jukomu.desktop.feature.settings.model.ExportPreferencesResponse;
 import io.github.jukomu.desktop.feature.settings.model.SettingsResponse;
 
 import java.nio.file.Path;
@@ -21,15 +21,15 @@ import java.sql.SQLException;
 /** 持久化页面需要的基础设置，并返回当前支持状态。 */
 public final class SettingsService {
     public static final int DEFAULT_CONCURRENCY = 6;
-    public static final String DEFAULT_PDF_DIRECTORY_TEMPLATE = "{id}";
-    public static final String DEFAULT_PDF_FILE_NAME_TEMPLATE =
+    public static final String DEFAULT_EXPORT_DIRECTORY_TEMPLATE = "{id}";
+    public static final String DEFAULT_EXPORT_FILE_NAME_TEMPLATE =
             "【{author}】{title}_{id} {chapterRange}";
     public static final int DEFAULT_CACHE_CAPACITY_MB =
             Math.toIntExact(CacheCapacityPolicy.DEFAULT_REQUESTED_MB);
     private static final String CACHE_CAPACITY = "cache_capacity_mb";
-    private static final String PDF_EXPORT_FOLDER = "pdf_export_folder";
-    private static final String PDF_EXPORT_DIRECTORY_TEMPLATE = "pdf_export_directory_template";
-    private static final String PDF_EXPORT_FILE_NAME_TEMPLATE = "pdf_export_file_name_template";
+    private static final String EXPORT_FOLDER_KEY = "pdf_export_folder";
+    private static final String EXPORT_DIRECTORY_TEMPLATE_KEY = "pdf_export_directory_template";
+    private static final String EXPORT_FILE_NAME_TEMPLATE_KEY = "pdf_export_file_name_template";
     private static final String EXPORT_LAST_FORMAT = "export_last_format";
     private static final String DOWNLOAD_PUBLIC = "download_public";
     private static final String DOWNLOAD_FOLDER_REF = "download_folder_ref";
@@ -199,39 +199,39 @@ public final class SettingsService {
         return SuccessResponse.ok();
     }
 
-    public synchronized PdfExportPreferencesResponse pdfExportPreferences() {
-        return new PdfExportPreferencesResponse(
-                pdfExportFolder(),
-                textOrDefault(PDF_EXPORT_DIRECTORY_TEMPLATE, DEFAULT_PDF_DIRECTORY_TEMPLATE),
-                textOrDefault(PDF_EXPORT_FILE_NAME_TEMPLATE, DEFAULT_PDF_FILE_NAME_TEMPLATE),
+    public synchronized ExportPreferencesResponse exportPreferences() {
+        return new ExportPreferencesResponse(
+                exportFolder(),
+                textOrDefault(EXPORT_DIRECTORY_TEMPLATE_KEY, DEFAULT_EXPORT_DIRECTORY_TEMPLATE),
+                textOrDefault(EXPORT_FILE_NAME_TEMPLATE_KEY, DEFAULT_EXPORT_FILE_NAME_TEMPLATE),
                 exportLastFormat()
         );
     }
 
-    public synchronized SuccessResponse setExportFolder(PdfExportFolder folder) {
+    public synchronized SuccessResponse setExportFolder(ExportFolder folder) {
         if (folder == null) {
-            delete(PDF_EXPORT_FOLDER);
+            delete(EXPORT_FOLDER_KEY);
             return SuccessResponse.ok();
         }
         String folderRef = requiredText(folder.folderRef(), "folderRef");
         String displayPath = requiredText(folder.displayPath(), "displayPath");
         FileReferences.parseFolder(folderRef);
         try {
-            put(PDF_EXPORT_FOLDER, mapper.writeValueAsString(
-                    new PdfExportFolder(folderRef, displayPath)));
+            put(EXPORT_FOLDER_KEY, mapper.writeValueAsString(
+                    new ExportFolder(folderRef, displayPath)));
             return SuccessResponse.ok();
         } catch (JsonProcessingException exception) {
-            throw new IllegalStateException("保存 PDF 导出目录失败", exception);
+            throw new IllegalStateException("保存导出目录失败", exception);
         }
     }
 
     public synchronized SuccessResponse setExportDirectoryTemplate(String template) {
-        setOptionalText(PDF_EXPORT_DIRECTORY_TEMPLATE, template);
+        setOptionalText(EXPORT_DIRECTORY_TEMPLATE_KEY, template);
         return SuccessResponse.ok();
     }
 
     public synchronized SuccessResponse setExportFileNameTemplate(String template) {
-        setOptionalText(PDF_EXPORT_FILE_NAME_TEMPLATE, template);
+        setOptionalText(EXPORT_FILE_NAME_TEMPLATE_KEY, template);
         return SuccessResponse.ok();
     }
 
@@ -248,11 +248,11 @@ public final class SettingsService {
         return "cbz".equals(format) || "zip".equals(format) ? format : "pdf";
     }
 
-    private PdfExportFolder pdfExportFolder() {
-        String value = text(PDF_EXPORT_FOLDER, null);
+    private ExportFolder exportFolder() {
+        String value = text(EXPORT_FOLDER_KEY, null);
         if (value == null) return null;
         try {
-            PdfExportFolder folder = mapper.readValue(value, PdfExportFolder.class);
+            ExportFolder folder = mapper.readValue(value, ExportFolder.class);
             FileReferences.parseFolder(folder.folderRef());
             requiredText(folder.displayPath(), "displayPath");
             return folder;

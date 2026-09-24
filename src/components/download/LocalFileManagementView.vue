@@ -265,7 +265,7 @@ const fileActionMenuActions = computed(() => {
   const actions = []
   if (file?.format !== 'zip') actions.push({ id: 'read', label: '阅读', icon: bookOutline })
   actions.push({ id: 'detail', label: '进入详情页', icon: informationCircleOutline })
-  if (file && file.format !== 'zip') {
+  if (file) {
     actions.push({
       id: 'verify',
       label: isSelectedFileVerifying.value ? '校验中' : '校验',

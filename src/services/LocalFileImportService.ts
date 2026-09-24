@@ -1,15 +1,15 @@
 import { JmcomicService } from './JmcomicService'
-import type { ImportPdfParseResult, PdfFileParseItem } from '@/utils/importPdfParse'
-import { parseFileDescriptorsForImport } from '@/utils/importPdfParse'
+import type { ImportFileParseResult, LocalFileParseItem } from '@/utils/importLocalFileParse'
+import { parseFileDescriptorsForImport } from '@/utils/importLocalFileParse'
 import type { ImportLocalFileItem, ImportLocalFilesResult, LocalFileScanItem } from './JmcomicTypes'
 import type { FolderRef } from '@/runtime/FileReferences'
 
 // ========== 跨页面数据传递 ==========
 // 扫描结果暂存在此模块级变量，避免通过路由 query 传递路径（路径含特殊字符不可靠）
 
-let cachedParseResult: ImportPdfParseResult | null = null
+let cachedParseResult: ImportFileParseResult | null = null
 
-export function getCachedParseResult(): ImportPdfParseResult | null {
+export function getCachedParseResult(): ImportFileParseResult | null {
   return cachedParseResult
 }
 
@@ -20,7 +20,7 @@ export function clearCachedParseResult(): void {
 // ========== 导入流程 ==========
 
 /** 步骤 1：扫描文件夹并解析文件名 */
-async function scanAndParse(folder: FolderRef): Promise<ImportPdfParseResult> {
+async function scanAndParse(folder: FolderRef): Promise<ImportFileParseResult> {
   // 目录失效时丢弃上一轮扫描结果，避免后续确认流程继续使用旧文件引用。
   cachedParseResult = null
   const result = await JmcomicService.scanImportableFiles(folder, ['pdf', 'cbz'])
@@ -43,7 +43,7 @@ async function scanAndParse(folder: FolderRef): Promise<ImportPdfParseResult> {
 }
 
 /** 步骤 2：并发获取相册详情（仅 resolved 文件，网络失败静默跳过） */
-async function fetchAlbumDetails(files: PdfFileParseItem[]): Promise<void> {
+async function fetchAlbumDetails(files: LocalFileParseItem[]): Promise<void> {
   const resolvedFiles = files.filter((f) => f.status === 'resolved' && f.extractedIds.length === 1)
   if (resolvedFiles.length === 0) return
 
@@ -74,7 +74,7 @@ async function fetchAlbumDetails(files: PdfFileParseItem[]): Promise<void> {
 
 /** 步骤 3：确认导入 */
 async function confirmImport(
-  resolvedFiles: PdfFileParseItem[],
+  resolvedFiles: LocalFileParseItem[],
   folderId?: string,
 ): Promise<ImportLocalFilesResult> {
   const items: ImportLocalFileItem[] = resolvedFiles
@@ -131,7 +131,7 @@ async function confirmImport(
   return result
 }
 
-function resolveImportedChapter(file: PdfFileParseItem) {
+function resolveImportedChapter(file: LocalFileParseItem) {
   const chapters = file.albumDetail?.photoMetas ?? []
   const targetSortOrder = file.chapterSortOrder ?? file.chapterSortOrderHint
   if (targetSortOrder !== undefined) {
@@ -140,7 +140,7 @@ function resolveImportedChapter(file: PdfFileParseItem) {
   return chapters.length === 1 ? chapters[0] : null
 }
 
-function applyResolvedChapter(file: PdfFileParseItem): void {
+function applyResolvedChapter(file: LocalFileParseItem): void {
   const chapter = resolveImportedChapter(file)
   file.chapterId = chapter?.id
   file.chapterTitle = chapter?.title

@@ -296,7 +296,7 @@ describe('LocalFileManagementView', () => {
     wrapper.unmount()
   })
 
-  test('ZIP 文件卡片不提供阅读和校验操作', async () => {
+  test('ZIP 文件卡片支持校验但不提供阅读操作', async () => {
     const zipFile: LocalFileRecord = {
       ...file,
       format: 'zip',
@@ -319,7 +319,7 @@ describe('LocalFileManagementView', () => {
       Array.from(document.body.querySelectorAll('.card-menu-item')).map(
         (button) => button.textContent,
       ),
-    ).toEqual(['进入详情页', '复制路径', '打开文件夹', '移除', '删除'])
+    ).toEqual(['进入详情页', '校验', '复制路径', '打开文件夹', '移除', '删除'])
     wrapper.unmount()
   })
 

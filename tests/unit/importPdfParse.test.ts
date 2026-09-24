@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { parseFilenamesForImport } from '@/utils/importPdfParse'
+import { asFileRef } from '@/runtime/FileReferences'
+import { parseFileDescriptorsForImport, parseFilenamesForImport } from '@/utils/importPdfParse'
 
 describe('parseFilenamesForImport', () => {
   it('does not mark one file as duplicate when the same id appears twice in its name', () => {
@@ -47,5 +48,52 @@ describe('parseFilenamesForImport', () => {
 
     expect(result.files[0].extractedIds).toEqual(['222222', '111111'])
     expect(result.files[0].status).toBe('ambiguous')
+  })
+
+  it('uses JM ComicInfo metadata before the filename and keeps the chapter hint', () => {
+    const result = parseFileDescriptorsForImport([
+      {
+        format: 'cbz',
+        ref: asFileRef('/tmp/999999.cbz'),
+        fileName: '999999.cbz',
+        displayPath: '/tmp/999999.cbz',
+        cbzInfo: {
+          pageCount: 20,
+          title: '第二话',
+          series: '测试漫画',
+          number: '2',
+          authors: 'Alice',
+          web: 'https://18comic.vip/album/123456',
+          coverPage: 1,
+        },
+      },
+    ])
+
+    expect(result.files[0]).toEqual(
+      expect.objectContaining({
+        format: 'cbz',
+        extractedIds: ['123456'],
+        status: 'resolved',
+        chapterSortOrderHint: 2,
+      }),
+    )
+  })
+
+  it('does not accept non-JM ComicInfo links as album ids', () => {
+    const result = parseFileDescriptorsForImport([
+      {
+        format: 'cbz',
+        ref: asFileRef('/tmp/JM654321.cbz'),
+        fileName: 'JM654321.cbz',
+        displayPath: '/tmp/JM654321.cbz',
+        cbzInfo: {
+          pageCount: 10,
+          web: 'https://example.com/album/123456',
+          coverPage: 1,
+        },
+      },
+    ])
+
+    expect(result.files[0].extractedIds).toEqual(['654321'])
   })
 })

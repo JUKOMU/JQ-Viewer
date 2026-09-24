@@ -13,9 +13,10 @@ import type {
   LocalFileManagementState,
   LocalFileScanItem,
   LocalFileStorageDeleteResult,
+  CbzDocumentInfo,
 } from '@/services/JmcomicTypes'
 import type { BackendEvents, ListenerHandle } from './BackendEvents'
-import type { FileDescriptor, FileRef, FolderDescriptor, FolderRef } from './FileReferences'
+import type { FileRef, FolderDescriptor, FolderRef } from './FileReferences'
 import type { ExportPreferencesStore } from './ExportPreferences'
 import type { UpdaterService } from './UpdateTypes'
 
@@ -64,7 +65,7 @@ export interface FileService {
   scanImportableFiles(
     folder: FolderRef,
     formats: ExportFormat[],
-  ): Promise<{ files: FileDescriptor[] }>
+  ): Promise<{ files: LocalFileScanItem[] }>
 }
 
 /** 下载位置能力：Android 切换公开目录，Desktop 选择本地目录并迁移。 */
@@ -188,6 +189,7 @@ export interface LocalFileService {
   openLocalFile(file: FileRef): Promise<{ success: boolean }>
   openLocalFileFolder(file: FileRef): Promise<{ success: boolean }>
   getPdfInfo(file: FileRef): Promise<{ pageCount: number }>
+  getCbzInfo(file: FileRef): Promise<CbzDocumentInfo>
   onProgress(handler: (event: ExportProgressEvent) => void): Promise<ListenerHandle>
 }
 

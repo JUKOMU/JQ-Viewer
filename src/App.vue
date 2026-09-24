@@ -55,7 +55,7 @@ type ReaderRouteSnapshot = {
 let pendingReaderFromPath = ''
 
 const isReaderRoutePath = (path: string) =>
-  path === '/pdf-reader' || /^\/album\/[^/]+\/read\/[^/]+$/.test(path)
+  path === '/pdf-reader' || path === '/cbz-reader' || /^\/album\/[^/]+\/read\/[^/]+$/.test(path)
 
 const mainMenuDisabled = computed(
   () => isReaderRoutePath(route.path) || (!isWideMenu.value && route.meta.menu !== true),

@@ -577,6 +577,10 @@ export const JmcomicService = {
     return getRuntime().services.localFiles.getPdfInfo(file)
   },
 
+  getCbzInfo(file: FileRef) {
+    return getRuntime().services.localFiles.getCbzInfo(file)
+  },
+
   checkFilesExist(files: FileRef[]) {
     return getRuntime().services.files.checkFilesExist(files)
   },

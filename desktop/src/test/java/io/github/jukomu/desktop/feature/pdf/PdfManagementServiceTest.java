@@ -3,6 +3,7 @@ package io.github.jukomu.desktop.feature.pdf;
 import io.github.jukomu.desktop.data.Database;
 import io.github.jukomu.desktop.data.Paths;
 import io.github.jukomu.desktop.feature.download.data.DownloadStore;
+import io.github.jukomu.desktop.feature.cbz.CbzDocumentService;
 import io.github.jukomu.desktop.feature.files.FileReferences;
 import io.github.jukomu.desktop.feature.files.FileService;
 import io.github.jukomu.desktop.feature.pdf.data.LocalFileStore;
@@ -20,6 +21,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -108,6 +111,35 @@ class LocalFileManagementServiceTest {
                 () -> fixture.service().importLocalFiles(List.of(item(pdf))));
     }
 
+    @Test
+    void scansImportsAndVerifiesCbzWithoutTreatingZipAsImportable() throws Exception {
+        Fixture fixture = fixture();
+        try (Database ignored = fixture.database()) {
+            Path root = fixture.paths().pdfDirectory();
+            Path cbz = root.resolve("123 第2话.cbz");
+            writeCbz(cbz, "001.jpg", "page");
+            writeCbz(root.resolve("ignored.zip"), "001.jpg", "page");
+
+            var scanned = fixture.files().scanImportableFiles(
+                    FileReferences.folderRef(root), List.of("pdf", "cbz"));
+            assertEquals(List.of("123 第2话.cbz"),
+                    scanned.files().stream().map(file -> file.fileName()).toList());
+            assertEquals("cbz", scanned.files().getFirst().format());
+
+            ImportLocalFileItemRequest item = new ImportLocalFileItemRequest(
+                    "cbz", FileReferences.fileRef(cbz), cbz.toString(), cbz.getFileName().toString(),
+                    "123", "Album", "", "Alice", "chapter-2", "Chapter 2",
+                    2, false, null);
+            ImportLocalFilesResponse imported = fixture.service().importLocalFiles(List.of(item));
+            LocalFileResponse record = fixture.service().getImportedLocalFiles().files().getFirst();
+
+            assertEquals(1, imported.imported());
+            assertEquals("cbz", record.format());
+            assertEquals(1, record.pageCount());
+            assertEquals("valid", fixture.service().verifyFile(record.id()).verificationStatus());
+        }
+    }
+
     private static Fixture fixture() throws Exception {
         Path root = Files.createTempDirectory("jq-viewer-pdf-library-");
         Paths paths = new Paths(root.resolve("program"), root.resolve("home"), Map.of(), "Linux");
@@ -120,7 +152,8 @@ class LocalFileManagementServiceTest {
                 new LocalFileStore(database),
                 new DownloadStore(database),
                 files,
-                new PdfDocumentService(new PdfPageCache(paths.cacheDirectory()))
+                new PdfDocumentService(new PdfPageCache(paths.cacheDirectory())),
+                new CbzDocumentService()
         );
         return new Fixture(paths, database, files, service);
     }
@@ -140,6 +173,15 @@ class LocalFileManagementServiceTest {
             document.save(path.toFile());
         }
         return path;
+    }
+
+    private static void writeCbz(Path path, String entryName, String content) throws Exception {
+        Files.createDirectories(path.getParent());
+        try (ZipOutputStream output = new ZipOutputStream(Files.newOutputStream(path))) {
+            output.putNextEntry(new ZipEntry(entryName));
+            output.write(content.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            output.closeEntry();
+        }
     }
 
     private record Fixture(

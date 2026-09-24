@@ -223,6 +223,7 @@ const ANDROID_PDF_METHODS = [
   'openLocalFile',
   'openLocalFileFolder',
   'getPdfInfo',
+  'getCbzInfo',
   'renderPdfPage',
 ] as const
 
@@ -321,6 +322,7 @@ function createLocalFileService(native: JmcomicClient, events: BackendEvents): L
     openLocalFileFolder: (file) =>
       withRuntimeError(() => native.openLocalFileFolder({ fileRef: String(file) })),
     getPdfInfo: (file) => withRuntimeError(() => native.getPdfInfo({ fileRef: String(file) })),
+    getCbzInfo: (file) => withRuntimeError(() => native.getCbzInfo({ fileRef: String(file) })),
     onProgress: (handler) => events.onExportProgress(handler),
   }
 }

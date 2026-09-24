@@ -30,7 +30,10 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.Base64;
 import java.util.Deque;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
@@ -260,16 +263,35 @@ public class PdfPluginContractInstrumentedTest {
     }
 
     @Test
-    public void scanRejectsFormatsNotEnabledInRoundOne() throws Exception {
-        RecordingPluginCall scan = call(
-            "scanImportableFiles",
-            "folderRef", PdfRef.createPathFolderRef(context.getCacheDir().getCanonicalPath()),
-            "formats", new JSArray().put("cbz")
-        );
+    public void scanSupportsPdfAndCbzButNeverZip() throws Exception {
+        File folder = new File(context.getCacheDir(), "mixed-scan-" + System.nanoTime());
+        File pdf = new File(folder, "book.pdf");
+        File cbz = new File(folder, "book.cbz");
+        File zip = new File(folder, "book.zip");
+        assertTrue(folder.mkdirs());
+        assertTrue(pdf.createNewFile());
+        assertTrue(cbz.createNewFile());
+        assertTrue(zip.createNewFile());
+        try {
+            RecordingPluginCall scan = call(
+                "scanImportableFiles",
+                "folderRef", PdfRef.createPathFolderRef(folder.getCanonicalPath()),
+                "formats", new JSArray().put("pdf").put("cbz")
+            );
 
-        handler.scanImportableFiles(scan);
+            handler.scanImportableFiles(scan);
 
-        assertRejected(scan, "本轮仅支持扫描 PDF 文件", null);
+            assertEquals(2, scan.resolvedData.getJSONArray("files").length());
+            assertEquals("cbz", scan.resolvedData.getJSONArray("files")
+                .getJSONObject(0).getString("format"));
+            assertEquals("pdf", scan.resolvedData.getJSONArray("files")
+                .getJSONObject(1).getString("format"));
+        } finally {
+            assertTrue(zip.delete() || !zip.exists());
+            assertTrue(cbz.delete() || !cbz.exists());
+            assertTrue(pdf.delete() || !pdf.exists());
+            assertTrue(folder.delete() || !folder.exists());
+        }
     }
 
     @Test
@@ -308,6 +330,31 @@ public class PdfPluginContractInstrumentedTest {
         } finally {
             assertTrue(pdf.delete() || !pdf.exists());
             PdfPageCache.getInstance(context).clear();
+        }
+    }
+
+    @Test
+    public void cbzInfoAndPageRouteShareTheIndexedArchive() throws Exception {
+        File cbz = new File(context.getCacheDir(), "cbz-server-" + System.nanoTime() + ".cbz");
+        createCbz(cbz);
+        try {
+            String fileRef = PdfRef.createPathFileRef(cbz.getCanonicalPath());
+            RecordingPluginCall info = call("getCbzInfo", "fileRef", fileRef);
+
+            handler.getCbzInfo(info);
+
+            assertNull(info.rejectionMessage);
+            assertEquals(2, info.resolvedData.getInt("pageCount"));
+            assertEquals("Bridge CBZ", info.resolvedData.getString("title"));
+
+            WebResourceResponse response = PdfServer.handleCbzPageRequest(cbzPageUrl(fileRef, 2), context);
+            assertEquals(200, response.getStatusCode());
+            assertEquals("image/png", response.getMimeType());
+            try (InputStream input = response.getData()) {
+                assertArrayEquals("second".getBytes(StandardCharsets.UTF_8), input.readAllBytes());
+            }
+        } finally {
+            assertTrue(cbz.delete() || !cbz.exists());
         }
     }
 
@@ -373,10 +420,31 @@ public class PdfPluginContractInstrumentedTest {
         }
     }
 
+    private static void createCbz(File file) throws Exception {
+        try (ZipOutputStream output = new ZipOutputStream(new FileOutputStream(file))) {
+            output.putNextEntry(new ZipEntry("ComicInfo.xml"));
+            output.write("<ComicInfo><Title>Bridge CBZ</Title></ComicInfo>"
+                .getBytes(StandardCharsets.UTF_8));
+            output.closeEntry();
+            output.putNextEntry(new ZipEntry("001.jpg"));
+            output.write("first".getBytes(StandardCharsets.UTF_8));
+            output.closeEntry();
+            output.putNextEntry(new ZipEntry("002.png"));
+            output.write("second".getBytes(StandardCharsets.UTF_8));
+            output.closeEntry();
+        }
+    }
+
     private static String pdfUrl(String fileRef) {
         String encoded = Base64.getUrlEncoder().withoutPadding().encodeToString(
             fileRef.getBytes(StandardCharsets.UTF_8));
         return "https://jqviewer.local/pdf/" + encoded;
+    }
+
+    private static String cbzPageUrl(String fileRef, int page) {
+        String encoded = Base64.getUrlEncoder().withoutPadding().encodeToString(
+            fileRef.getBytes(StandardCharsets.UTF_8));
+        return "https://jqviewer.local/cbz-page/" + encoded + "/" + page;
     }
 
     private static void assertPdfResponse(WebResourceResponse response) throws Exception {

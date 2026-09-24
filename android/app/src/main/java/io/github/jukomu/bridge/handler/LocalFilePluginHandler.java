@@ -16,6 +16,7 @@ import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
 import io.github.jukomu.bridge.PluginCallSession;
+import io.github.jukomu.feature.cbz.CbzDocumentService;
 import io.github.jukomu.feature.download.data.DownloadStore;
 import io.github.jukomu.feature.pdf.PdfOperationException;
 import io.github.jukomu.feature.pdf.data.PdfRef;
@@ -36,7 +37,9 @@ import org.json.JSONObject;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.function.Consumer;
@@ -85,14 +88,16 @@ public final class LocalFilePluginHandler {
             call.reject("folderRef is required");
             return;
         }
+        final Set<String> requestedFormats = new HashSet<>();
         JSArray formats = call.getArray("formats");
-        if (formats != null) {
-            for (int index = 0; index < formats.length(); index++) {
-                if (!"pdf".equals(formats.optString(index))) {
-                    call.reject("本轮仅支持扫描 PDF 文件");
-                    return;
-                }
+        if (formats == null || formats.length() == 0) requestedFormats.add("pdf");
+        else for (int index = 0; index < formats.length(); index++) {
+            String format = formats.optString(index, "").toLowerCase();
+            if (!"pdf".equals(format) && !"cbz".equals(format)) {
+                call.reject("导入扫描仅支持 PDF 和 CBZ");
+                return;
             }
+            requestedFormats.add(format);
         }
         final PdfRef.Parsed parsed;
         try {
@@ -107,14 +112,15 @@ public final class LocalFilePluginHandler {
         }
         dispatchPdfCommand(call, trackedCall -> {
             if (parsed.provider == PdfRef.Provider.SAF) {
-                scanImportableFilesViaSaf(trackedCall, Uri.parse(parsed.payload));
+                scanImportableFilesViaSaf(trackedCall, Uri.parse(parsed.payload), requestedFormats);
             } else {
-                scanImportableFilesViaFile(trackedCall, parsed.payload);
+                scanImportableFilesViaFile(trackedCall, parsed.payload, requestedFormats);
             }
         });
     }
 
-    private void scanImportableFilesViaSaf(PluginCall call, Uri treeUri) {
+    private void scanImportableFilesViaSaf(PluginCall call, Uri treeUri,
+                                            Set<String> requestedFormats) {
         try {
             DocumentFile root = DocumentFile.fromTreeUri(context, treeUri);
             if (root == null || !root.exists() || !root.isDirectory()) {
@@ -135,10 +141,10 @@ public final class LocalFilePluginHandler {
             }
             JSArray arr = new JSArray();
             for (DocumentFile child : children) {
-                if (child.isFile() && child.getName() != null
-                    && child.getName().toLowerCase().endsWith(".pdf")) {
+                String format = child.getName() == null ? "" : importFormat(child.getName());
+                if (child.isFile() && requestedFormats.contains(format)) {
                     JSObject obj = new JSObject();
-                    obj.put("format", "pdf");
+                    obj.put("format", format);
                     obj.put("fileName", child.getName());
                     obj.put("fileRef", PdfRef.createSafFileRef(child.getUri().toString()));
                     obj.put("displayPath", child.getName());
@@ -154,7 +160,8 @@ public final class LocalFilePluginHandler {
         }
     }
 
-    private void scanImportableFilesViaFile(PluginCall call, String path) {
+    private void scanImportableFilesViaFile(PluginCall call, String path,
+                                             Set<String> requestedFormats) {
         File dir = new File(path);
         if (!dir.isDirectory()) {
             rejectWithCode(call, PDF_FOLDER_NOT_FOUND_MESSAGE,
@@ -166,18 +173,20 @@ public final class LocalFilePluginHandler {
                 PdfOperationException.PERMISSION_DENIED, null);
             return;
         }
-        File[] pdfFiles = dir.listFiles((d, name) ->
-            name.toLowerCase().endsWith(".pdf"));
-        if (pdfFiles == null) {
+        File[] importableFiles = dir.listFiles((d, name) ->
+            requestedFormats.contains(importFormat(name)));
+        if (importableFiles == null) {
             rejectWithCode(call, PDF_FOLDER_PERMISSION_MESSAGE,
                 PdfOperationException.PERMISSION_DENIED, null);
             return;
         }
         JSArray arr = new JSArray();
-        for (File f : pdfFiles) {
+        java.util.Arrays.sort(importableFiles,
+            java.util.Comparator.comparing(File::getName, String.CASE_INSENSITIVE_ORDER));
+        for (File f : importableFiles) {
             if (!f.isFile()) continue;
             JSObject obj = new JSObject();
-            obj.put("format", "pdf");
+            obj.put("format", importFormat(f.getName()));
             obj.put("fileName", f.getName());
             try {
                 obj.put("fileRef", PdfRef.createPathFileRef(f.getAbsolutePath()));
@@ -190,6 +199,13 @@ public final class LocalFilePluginHandler {
         JSObject ret = new JSObject();
         ret.put("files", arr);
         call.resolve(ret);
+    }
+
+    private static String importFormat(String name) {
+        String lower = name == null ? "" : name.toLowerCase(java.util.Locale.ROOT);
+        if (lower.endsWith(".pdf")) return "pdf";
+        if (lower.endsWith(".cbz")) return "cbz";
+        return "";
     }
 
     public void importLocalFiles(PluginCall call) {
@@ -213,15 +229,15 @@ public final class LocalFilePluginHandler {
                         duplicateCount++;
                     }
                 } catch (Exception error) {
-                    if (!isExpectedPdfImportFailure(error)) {
-                        Log.e(TAG, "PDF 导入失败", error);
+                    if (!isExpectedImportFailure(error)) {
+                        Log.e(TAG, "本地文件导入失败", error);
                         trackedCall.reject(error.getMessage() == null
-                            ? "PDF 导入失败" : error.getMessage(), error);
+                            ? "本地文件导入失败" : error.getMessage(), error);
                         return;
                     }
                     skipped++;
                     errorCount++;
-                    Log.w(TAG, "跳过无效的 PDF 导入项", error);
+                    Log.w(TAG, "跳过无效的本地文件导入项", error);
                 }
             }
             JSObject ret = new JSObject();
@@ -573,6 +589,34 @@ public final class LocalFilePluginHandler {
             renderPdfPageOnExecutor(trackedCall, fileRef, pageNumber, targetWidth));
     }
 
+    public void getCbzInfo(PluginCall call) {
+        String fileRef = call.getString("fileRef");
+        if (fileRef == null || fileRef.isEmpty()) {
+            call.reject("fileRef is required");
+            return;
+        }
+        dispatchPdfCommand(call, trackedCall -> {
+            try {
+                CbzDocumentService.Info info = CbzDocumentService.getInstance(context)
+                    .getInfo(fileRef);
+                JSObject result = new JSObject();
+                result.put("pageCount", info.pageCount);
+                result.put("title", info.title);
+                result.put("series", info.series);
+                result.put("number", info.number);
+                result.put("authors", info.authors);
+                result.put("web", info.web);
+                result.put("coverPage", info.coverPage);
+                result.put("metadataWarning", info.metadataWarning);
+                trackedCall.resolve(result);
+            } catch (CbzDocumentService.CbzException error) {
+                trackedCall.reject(error.getMessage(), error.code, error);
+            } catch (Exception error) {
+                trackedCall.reject(error.getMessage(), error);
+            }
+        });
+    }
+
     /** PDF 页面渲染和磁盘资源写入统一在单线程 executor 中执行。 */
     private void renderPdfPageOnExecutor(PluginCall call, String fileRef,
                                          int pageNumber, int targetWidth) {
@@ -838,10 +882,11 @@ public final class LocalFilePluginHandler {
         callSession.submit(pdfCommandExecutor, call, command);
     }
 
-    private static boolean isExpectedPdfImportFailure(Exception error) {
+    private static boolean isExpectedImportFailure(Exception error) {
         return error instanceof JSONException
             || error instanceof IllegalArgumentException
-            || error instanceof PdfFileValidator.ValidationException;
+            || error instanceof PdfFileValidator.ValidationException
+            || error instanceof CbzDocumentService.CbzException;
     }
 
     private static void rejectWithCode(PluginCall call, String message, String code,

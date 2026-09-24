@@ -5,7 +5,7 @@
         <IonButtons slot="start">
           <IonBackButton default-href="/download" />
         </IonButtons>
-        <IonTitle class="toolbar-title">导入PDF</IonTitle>
+        <IonTitle class="toolbar-title">导入</IonTitle>
         <IonButtons slot="end" class="toolbar-end-actions">
           <button class="confirm-btn" :disabled="loading || !hasAnyResolved" @click="onConfirm">
             确认导入
@@ -19,7 +19,7 @@
         <!-- 空状态 -->
         <div v-if="files.length === 0 && !loading" class="empty-state">
           <IonIcon :icon="documentTextOutline" class="empty-icon" />
-          <p>所选文件夹中未找到 PDF 文件</p>
+          <p>所选文件夹中未找到 PDF 或 CBZ 文件</p>
         </div>
 
         <!-- 统计栏 -->
@@ -47,6 +47,11 @@
             <!-- 封面区 -->
             <div class="cover-wrap">
               <img v-if="file.albumDetail?.image" :src="file.albumDetail.image" class="cover-img" />
+              <img
+                v-else-if="file.format === 'cbz' && file.cbzInfo"
+                :src="cbzCoverUrl(file)"
+                class="cover-img"
+              />
               <div v-else class="cover-placeholder">
                 <IonIcon :icon="canSearchFile(file) ? searchOutline : documentTextOutline" />
               </div>
@@ -55,11 +60,28 @@
             <!-- 信息区 -->
             <div class="info" @click="editingIdx !== idx ? undefined : undefined">
               <h3 class="item-title">
-                {{ file.albumDetail?.title || '未识别本子' }}
+                {{
+                  file.albumDetail?.title ||
+                  file.cbzInfo?.series ||
+                  file.cbzInfo?.title ||
+                  '未识别本子'
+                }}
               </h3>
-              <div class="item-meta file-name-line">{{ file.fileName }}</div>
+              <div class="item-meta file-name-line">
+                <span class="format-badge">{{ file.format.toUpperCase() }}</span>
+                {{ file.fileName }}
+              </div>
               <div v-if="file.albumDetail?.authors?.length" class="item-meta">
                 作者：{{ file.albumDetail.authors.join(' / ') }}
+              </div>
+              <div v-else-if="file.cbzInfo?.authors" class="item-meta">
+                作者：{{ file.cbzInfo.authors }}
+              </div>
+              <div v-if="file.cbzInfo?.metadataWarning" class="item-meta metadata-warning">
+                {{ file.cbzInfo.metadataWarning }}
+              </div>
+              <div v-if="file.validationError" class="item-meta metadata-warning">
+                {{ file.validationError }}
               </div>
               <div v-if="file.albumDetail?.tags?.length" class="item-tags">
                 <span v-for="t in file.albumDetail.tags.slice(0, 10)" :key="t" class="tag-chip">{{
@@ -263,6 +285,7 @@ import {
   searchOutline,
 } from 'ionicons/icons'
 import { LocalFileImportService } from '@/services/LocalFileImportService'
+import { getRuntime } from '@/runtime/runtimeContext'
 import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
 import { OfflineFavoriteService } from '@/services/OfflineFavoriteService'
 import { invalidateFavoritePageCache } from '@/composables/favoritePageCache'
@@ -379,7 +402,7 @@ const needsChapterSelection = (file: PdfFileParseItem): boolean =>
   !file.chapterId
 
 const isImportReady = (file: PdfFileParseItem): boolean =>
-  !!resolvedId(file) && !needsChapterSelection(file)
+  !file.validationError && !!resolvedId(file) && !needsChapterSelection(file)
 
 const shouldShowChapterTag = (file: PdfFileParseItem): boolean =>
   file.chapterSortOrder != null && (file.albumDetail?.photoMetas?.length ?? 0) > 1
@@ -435,12 +458,19 @@ const drawerStyle = computed(() => ({
 }))
 
 const canSearchFile = (file: PdfFileParseItem) =>
-  file.status !== 'resolved' ||
-  file.duplicateIds.length > 0 ||
-  candidateIds(file).length !== 1 ||
-  needsChapterSelection(file)
+  !file.validationError &&
+  (file.status !== 'resolved' ||
+    file.duplicateIds.length > 0 ||
+    candidateIds(file).length !== 1 ||
+    needsChapterSelection(file))
 
-const stripPdfExtension = (fileName: string) => fileName.replace(/\.pdf$/i, '').trim()
+const stripImportExtension = (fileName: string) => fileName.replace(/\.(?:pdf|cbz)$/i, '').trim()
+
+const cbzCoverUrl = (file: PdfFileParseItem) =>
+  getRuntime().resources.cbzPageUrl({
+    file: file.fileRef,
+    page: file.cbzInfo?.coverPage || 1,
+  })
 
 // ---- 统计 ----
 const resolvedCount = computed(() => files.value.filter(isImportReady).length)
@@ -635,7 +665,7 @@ async function openSearchDrawer(idx: number) {
   selectedChapterSortOrder.value = null
   drawerDetailVisible.value = false
   drawerQuery.value = {
-    keyword: stripPdfExtension(file.fileName),
+    keyword: file.cbzInfo?.series || file.cbzInfo?.title || stripImportExtension(file.fileName),
     orderBy: 'mr',
     time: 'a',
     searchMainTag: 0,
@@ -806,11 +836,13 @@ function cardClass(file: PdfFileParseItem) {
       file.status === 'resolved' && effectiveLen === 1 && file.duplicateIds.length === 0,
     'card-ambiguous': file.status === 'ambiguous',
     'card-missing': file.status === 'missing',
+    'card-invalid': !!file.validationError,
     'card-duplicate': file.duplicateIds.length > 0,
   }
 }
 
 function statusTagText(file: PdfFileParseItem): string {
+  if (file.validationError) return '文件不可导入'
   const id = resolvedId(file) || candidateIds(file)[0]
   if (file.status === 'missing') return '未识别ID'
   if (file.status === 'ambiguous') {
@@ -823,6 +855,7 @@ function statusTagText(file: PdfFileParseItem): string {
 }
 
 function statusTagClass(file: PdfFileParseItem): string {
+  if (file.validationError) return 'tag-missing'
   if (file.status === 'missing') return 'tag-missing'
   if (file.status === 'ambiguous') return 'tag-ambiguous'
   if (file.duplicateIds.length > 0) return 'tag-duplicate'
@@ -879,7 +912,7 @@ async function proceedToImport(resolvedFiles: PdfFileParseItem[]) {
 
   const favAlert = await createAppAlert({
     header: '添加到离线收藏夹？',
-    message: `是否将这 ${resolvedFiles.length} 个 PDF 添加到离线收藏夹？`,
+    message: `是否将这 ${resolvedFiles.length} 个文件添加到离线收藏夹？`,
     buttons: [
       {
         text: '跳过',
@@ -945,7 +978,7 @@ async function doImport(resolvedFiles: PdfFileParseItem[], folderId?: string) {
       await OfflineFavoriteService.addItems(folderId, favItems)
       if (favItems.length > 0) invalidateFavoritePageCache()
     }
-    const parts = [`已导入 ${result.imported} 个 PDF`]
+    const parts = [`已导入 ${result.imported} 个文件`]
     if (result.duplicateCount > 0) parts.push(`${result.duplicateCount} 个已存在`)
     if (result.errorCount > 0) parts.push(`${result.errorCount} 个错误`)
     await showToast(parts.join('，'), 'success')
@@ -1124,6 +1157,11 @@ IonHeader {
   border-left-color: #f44336;
 }
 
+.file-card.card-invalid {
+  border-left-color: #c62828;
+  background: #fff7f7;
+}
+
 .file-card.card-duplicate {
   border-left-color: #7c4dff;
 }
@@ -1193,6 +1231,25 @@ IonHeader {
 
 .file-name-line {
   word-break: break-all;
+  white-space: normal;
+}
+
+.format-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 16px;
+  margin-right: 4px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #5d6b77;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.metadata-warning {
+  color: #b3261e;
   white-space: normal;
 }
 

@@ -264,7 +264,7 @@ const fileActionMenuActions = computed(() => {
   const actions = []
   if (file?.format !== 'zip') actions.push({ id: 'read', label: '阅读', icon: bookOutline })
   actions.push({ id: 'detail', label: '进入详情页', icon: informationCircleOutline })
-  if (file?.format === 'pdf') {
+  if (file && file.format !== 'zip') {
     actions.push({
       id: 'verify',
       label: isSelectedFileVerifying.value ? '校验中' : '校验',
@@ -699,9 +699,7 @@ const deleteFile = async (file: LocalFileRecord) => {
                 const result = await LocalFileManagementService.deleteFile(file.id)
                 files.value = files.value.filter((item) => item.id !== file.id)
                 await showToast(
-                  result.result === 'already_missing'
-                    ? '文件已缺失，记录已移出'
-                    : '已删除文件',
+                  result.result === 'already_missing' ? '文件已缺失，记录已移出' : '已删除文件',
                   'success',
                 )
               } catch (error) {

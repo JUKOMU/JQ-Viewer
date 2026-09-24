@@ -19,6 +19,9 @@ public record ComicInfo(
         pages = pages == null ? List.of() : List.copyOf(pages);
     }
 
-    public record Page(int image, String bookmark) {
+    public record Page(int image, String bookmark, String type) {
+        public Page(int image, String bookmark) {
+            this(image, bookmark, null);
+        }
     }
 }

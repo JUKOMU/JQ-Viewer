@@ -639,6 +639,7 @@ function createLocalFileService(events: BackendEvents, fetcher: BackendFetch): L
       }),
     getPdfInfo: (file) =>
       requestBackend<{ pageCount: number }>(fetcher, 'getPdfInfo', { fileRef: String(file) }),
+    getCbzInfo: (file) => requestBackend(fetcher, 'getCbzInfo', { fileRef: String(file) }),
     onProgress: (handler) => events.onExportProgress(handler),
   }
 }

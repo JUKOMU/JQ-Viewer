@@ -26,6 +26,7 @@ import io.github.jukomu.desktop.data.Database;
 import io.github.jukomu.desktop.data.Paths;
 import io.github.jukomu.desktop.feature.auth.AuthService;
 import io.github.jukomu.desktop.feature.auth.CredentialStore;
+import io.github.jukomu.desktop.feature.cbz.CbzDocumentService;
 import io.github.jukomu.desktop.feature.auth.CredentialStores;
 import io.github.jukomu.desktop.feature.catalog.CatalogService;
 import io.github.jukomu.desktop.feature.client.JmcomicSessionManager;
@@ -99,7 +100,8 @@ public final class Backend implements AutoCloseable {
             "/pdf-template-help",
             "/batch-parse",
             "/import-review",
-            "/pdf-reader"
+            "/pdf-reader",
+            "/cbz-reader"
     );
 
     private final Paths paths;
@@ -348,6 +350,7 @@ public final class Backend implements AutoCloseable {
                     ? CredentialStores.system()
                     : providedCredentialStore;
             PdfPageCache pdfPageCache = new PdfPageCache(paths.cacheDirectory());
+            CbzDocumentService cbzDocuments = new CbzDocumentService();
             CacheService cacheService = new CacheService(
                     settingsService, imageService.cache(), pdfPageCache);
             DiagnosticsService diagnosticsService = new DiagnosticsService(
@@ -356,7 +359,8 @@ public final class Backend implements AutoCloseable {
                     new LocalFileStore(database),
                     downloadStore,
                     fileService,
-                    new PdfDocumentService(pdfPageCache)
+                    new PdfDocumentService(pdfPageCache),
+                    cbzDocuments
             );
             startedExportService = new ExportService(
                     pdfExportStore, downloadStore, downloadFiles,
@@ -405,6 +409,7 @@ public final class Backend implements AutoCloseable {
                 registerImageRoute(config, imageService, downloadService,
                         "thumb", "/thumb/{photoId}/{sortOrder}");
                 registerPdfRoutes(config, pdfResources, pdfPageCache);
+                registerCbzRoutes(config, cbzDocuments);
             });
             candidate.start();
             int port = candidate.port();
@@ -509,6 +514,31 @@ public final class Backend implements AutoCloseable {
                 context.contentType("image/png").result(pdfPageCache.open(resourceId));
             } catch (java.nio.file.NoSuchFileException exception) {
                 context.status(404).result("PDF 页面资源不存在");
+            }
+        });
+    }
+
+    private void registerCbzRoutes(
+            io.javalin.config.JavalinConfig config,
+            CbzDocumentService cbzDocuments
+    ) {
+        config.routes.get("/cbz-page/{encodedFileRef}/{page}", context -> {
+            try {
+                String fileRef = new String(java.util.Base64.getUrlDecoder().decode(
+                        context.pathParam("encodedFileRef")), java.nio.charset.StandardCharsets.UTF_8);
+                int page = Integer.parseInt(context.pathParam("page"));
+                CbzDocumentService.PageResource resource = cbzDocuments.openPage(fileRef, page);
+                if (resource.length() > 0L) {
+                    context.header("Content-Length", String.valueOf(resource.length()));
+                }
+                context.header("Cache-Control", "private, max-age=3600");
+                context.contentType(resource.mimeType()).result(resource.input());
+            } catch (IllegalArgumentException exception) {
+                context.status(400).result("CBZ 页面资源路径无效");
+            } catch (CbzDocumentService.CbzException exception) {
+                context.status(exception.status());
+                context.header("X-JQViewer-Cbz-Error", exception.code());
+                context.result(exception.getMessage());
             }
         });
     }

@@ -463,6 +463,11 @@ public final class Plugin {
     }
 
     @PluginMethod
+    public void getCbzInfo(Context context) {
+        pdfs.getCbzInfo(context);
+    }
+
+    @PluginMethod
     public void getBrowseHistory(Context context) {
         history.getBrowseHistory(context);
     }

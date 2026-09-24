@@ -617,12 +617,25 @@ export interface LocalFileManagementState {
 
 // --- 本地文件导入 ---
 
-/** scanImportableFiles 返回的单个文件条目。第一轮仅返回 PDF。 */
+/** scanImportableFiles 返回的单个文件条目。 */
 export interface LocalFileScanItem {
   format: ExportFormat
   ref: FileRef // 平台持有的文件引用，用于后续导入/校验/打开
   fileName: string
   displayPath: string // 仅用于展示与文件名解析
+  cbzInfo?: CbzDocumentInfo
+  scanError?: string
+}
+
+export interface CbzDocumentInfo {
+  pageCount: number
+  title?: string
+  series?: string
+  number?: string
+  authors?: string
+  web?: string
+  coverPage: number
+  metadataWarning?: string
 }
 
 export interface LocalFileChapter {

@@ -35,10 +35,16 @@ public final class ComicInfo {
     public static final class Page {
         public final int image;
         public final String bookmark;
+        public final String type;
 
         public Page(int image, String bookmark) {
+            this(image, bookmark, null);
+        }
+
+        public Page(int image, String bookmark, String type) {
             this.image = image;
             this.bookmark = bookmark;
+            this.type = type;
         }
     }
 }

@@ -1,7 +1,7 @@
 import { JmcomicService } from './JmcomicService'
 import type { ImportPdfParseResult, PdfFileParseItem } from '@/utils/importPdfParse'
 import { parseFileDescriptorsForImport } from '@/utils/importPdfParse'
-import type { ImportLocalFileItem, ImportLocalFilesResult } from './JmcomicTypes'
+import type { ImportLocalFileItem, ImportLocalFilesResult, LocalFileScanItem } from './JmcomicTypes'
 import type { FolderRef } from '@/runtime/FileReferences'
 
 // ========== 跨页面数据传递 ==========
@@ -23,8 +23,21 @@ export function clearCachedParseResult(): void {
 async function scanAndParse(folder: FolderRef): Promise<ImportPdfParseResult> {
   // 目录失效时丢弃上一轮扫描结果，避免后续确认流程继续使用旧文件引用。
   cachedParseResult = null
-  const result = await JmcomicService.scanImportableFiles(folder, ['pdf'])
-  const parseResult = parseFileDescriptorsForImport(result.files)
+  const result = await JmcomicService.scanImportableFiles(folder, ['pdf', 'cbz'])
+  const files: LocalFileScanItem[] = await Promise.all(
+    result.files.map(async (file) => {
+      if (file.format !== 'cbz') return file
+      try {
+        return { ...file, cbzInfo: await JmcomicService.getCbzInfo(file.ref) }
+      } catch (error) {
+        return {
+          ...file,
+          scanError: error instanceof Error ? error.message : 'CBZ 无法打开',
+        }
+      }
+    }),
+  )
+  const parseResult = parseFileDescriptorsForImport(files)
   cachedParseResult = parseResult
   return parseResult
 }
@@ -65,18 +78,18 @@ async function confirmImport(
   folderId?: string,
 ): Promise<ImportLocalFilesResult> {
   const items: ImportLocalFileItem[] = resolvedFiles
-    .filter((f) => f.editedIds && f.editedIds.length === 1)
+    .filter((f) => !f.validationError && f.editedIds && f.editedIds.length === 1)
     .map((f) => {
       const chapter = resolveImportedChapter(f)
       return {
-        format: 'pdf',
+        format: f.format,
         fileRef: f.fileRef,
         displayPath: f.displayPath,
         fileName: f.fileName,
         albumId: f.editedIds![0],
-        albumTitle: f.albumDetail?.title || '',
+        albumTitle: f.albumDetail?.title || f.cbzInfo?.series || f.cbzInfo?.title || '',
         coverUrl: f.albumDetail?.image || '',
-        authors: f.albumDetail?.authors?.join(',') || '',
+        authors: f.albumDetail?.authors?.join(',') || f.cbzInfo?.authors || '',
         chapterId: f.chapterId || chapter?.id || '',
         chapterTitle: f.chapterTitle || chapter?.title || '',
         chapterSortOrder: f.chapterSortOrder ?? chapter?.sortOrder ?? 0,

@@ -69,6 +69,8 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -261,6 +263,17 @@ class BackendHttpContractTest {
                     invalidPdfRef.getBytes(StandardCharsets.UTF_8));
             HttpResponse<byte[]> invalidPdfContent = getBytes(
                     http, base.resolve("/pdf/" + encodedInvalid));
+
+            Path cbzPath = FileReferences.parseFile(fileRef).resolveSibling("sample.cbz");
+            byte[] cbzPageBytes = "cbz-page".getBytes(StandardCharsets.UTF_8);
+            writeCbz(cbzPath, cbzPageBytes);
+            String cbzRef = FileReferences.fileRef(cbzPath);
+            ObjectNode cbzInfo = body(post(http, base, requestedMethods, "getCbzInfo",
+                    MAPPER.writeValueAsString(Map.of("fileRef", cbzRef))));
+            String encodedCbz = Base64.getUrlEncoder().withoutPadding().encodeToString(
+                    cbzRef.getBytes(StandardCharsets.UTF_8));
+            HttpResponse<byte[]> cbzPage = getBytes(
+                    http, base.resolve("/cbz-page/" + encodedCbz + "/1"));
 
             assertOk(post(http, base, requestedMethods, "removeLocalFileFromLibrary",
                     "{\"id\":" + importedId + "}"));
@@ -498,6 +511,12 @@ class BackendHttpContractTest {
                     invalidPdfContent.headers().firstValue("X-JQViewer-Pdf-Error").orElseThrow());
             assertTrue(invalidPdfContent.headers()
                     .firstValue("Access-Control-Allow-Origin").isEmpty());
+            assertEquals(1, cbzInfo.path("pageCount").asInt());
+            assertEquals("Contract CBZ", cbzInfo.path("title").asText());
+            assertEquals(200, cbzPage.statusCode());
+            assertEquals("image/png",
+                    cbzPage.headers().firstValue("Content-Type").orElseThrow());
+            assertArrayEquals(cbzPageBytes, cbzPage.body());
             assertEquals("deleted", deletedPdf.path("result").asText());
             assertEquals(folderRef, pdfPreferences.path("exportFolder").path("folderRef").asText());
             assertEquals("{author}/{id}", pdfPreferences.path("directoryTemplate").asText());
@@ -701,6 +720,20 @@ class BackendHttpContractTest {
         try (PDDocument document = new PDDocument()) {
             document.addPage(new PDPage());
             document.save(target.toFile());
+        }
+    }
+
+    private static void writeCbz(Path target, byte[] pageBytes) throws Exception {
+        try (ZipOutputStream output = new ZipOutputStream(Files.newOutputStream(target))) {
+            output.putNextEntry(new ZipEntry("ComicInfo.xml"));
+            output.write(("<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                    + "<ComicInfo><Title>Contract CBZ</Title>"
+                    + "<Pages><Page Image=\"0\" Type=\"FrontCover\"/></Pages>"
+                    + "</ComicInfo>").getBytes(StandardCharsets.UTF_8));
+            output.closeEntry();
+            output.putNextEntry(new ZipEntry("001.png"));
+            output.write(pageBytes);
+            output.closeEntry();
         }
     }
 

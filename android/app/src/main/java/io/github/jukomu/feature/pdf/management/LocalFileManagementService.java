@@ -2,6 +2,7 @@ package io.github.jukomu.feature.pdf.management;
 
 import android.content.Context;
 import android.database.Cursor;
+import io.github.jukomu.feature.cbz.CbzDocumentService;
 import io.github.jukomu.feature.pdf.PdfOperationException;
 import io.github.jukomu.feature.pdf.data.PdfRef;
 import io.github.jukomu.feature.pdf.data.PdfRefResolver;
@@ -39,8 +40,8 @@ public final class LocalFileManagementService {
 
     public JSONObject importLocalFile(JSONObject item) throws Exception {
         String format = item.optString("format", "pdf").trim().toLowerCase();
-        if (!"pdf".equals(format)) {
-            throw new IllegalArgumentException("本轮仅支持 PDF 文件");
+        if (!"pdf".equals(format) && !"cbz".equals(format)) {
+            throw new IllegalArgumentException("导入仅支持 PDF 和 CBZ");
         }
         String fileRef = item.getString("fileRef");
         PdfRef.parse(fileRef);
@@ -48,7 +49,7 @@ public final class LocalFileManagementService {
         JSONObject existing = store.getFileByRef(fileRef);
         if (existing != null) return outcome("already_managed", existing, null);
 
-        PdfFileValidator.Report report = PdfFileValidator.validate(context, fileRef, -1);
+        ValidationReport report = validate(format, fileRef, -1);
         long id = store.insertImportedFile(
             format,
             fileRef,
@@ -81,12 +82,10 @@ public final class LocalFileManagementService {
 
     public JSONObject verifyFile(long id) throws Exception {
         JSONObject record = requireFile(id);
-        if (!"pdf".equals(record.optString("format", "pdf"))) {
-            throw new IllegalArgumentException("本轮仅支持 PDF 文件校验");
-        }
+        String format = record.optString("format", "pdf");
         try {
-            PdfFileValidator.Report report = PdfFileValidator.validate(
-                context, record.getString("fileRef"), record.optInt("pageCount", -1));
+            ValidationReport report = validate(
+                format, record.getString("fileRef"), record.optInt("pageCount", -1));
             return store.updateFileVerification(id, "available", "valid", null,
                 report.fileSize, report.pageCount);
         } catch (PdfFileValidator.ValidationException error) {
@@ -99,6 +98,20 @@ public final class LocalFileManagementService {
                 availability = "inaccessible";
                 verificationStatus = "unverified";
             } else if ("PDF_PAGE_MISMATCH".equals(error.code)) {
+                verificationStatus = "page_mismatch";
+            }
+            return store.updateFileVerification(id, availability, verificationStatus,
+                error.code + ": " + error.getMessage(), -1L, -1);
+        } catch (CbzDocumentService.CbzException error) {
+            String availability = "invalid";
+            String verificationStatus = "corrupt";
+            if ("CBZ_MISSING".equals(error.code)) {
+                availability = "missing";
+                verificationStatus = "unverified";
+            } else if ("CBZ_INACCESSIBLE".equals(error.code)) {
+                availability = "inaccessible";
+                verificationStatus = "unverified";
+            } else if ("CBZ_PAGE_MISMATCH".equals(error.code)) {
                 verificationStatus = "page_mismatch";
             }
             return store.updateFileVerification(id, availability, verificationStatus,
@@ -205,5 +218,29 @@ public final class LocalFileManagementService {
     private enum DeleteOutcome {
         DELETED,
         ALREADY_MISSING
+    }
+
+    private ValidationReport validate(String format, String fileRef, int expectedPages)
+        throws PdfFileValidator.ValidationException, CbzDocumentService.CbzException {
+        if ("cbz".equals(format)) {
+            CbzDocumentService.ValidationReport report = CbzDocumentService.getInstance(context)
+                .validate(fileRef, expectedPages);
+            return new ValidationReport(report.fileSize, report.pageCount);
+        }
+        if (!"pdf".equals(format)) {
+            throw new IllegalArgumentException("内容校验仅支持 PDF 和 CBZ");
+        }
+        PdfFileValidator.Report report = PdfFileValidator.validate(context, fileRef, expectedPages);
+        return new ValidationReport(report.fileSize, report.pageCount);
+    }
+
+    private static final class ValidationReport {
+        final long fileSize;
+        final int pageCount;
+
+        ValidationReport(long fileSize, int pageCount) {
+            this.fileSize = fileSize;
+            this.pageCount = pageCount;
+        }
     }
 }

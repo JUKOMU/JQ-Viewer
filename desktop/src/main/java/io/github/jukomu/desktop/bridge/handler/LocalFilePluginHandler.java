@@ -151,6 +151,11 @@ public final class LocalFilePluginHandler {
                 Request.integer(request.targetWidth(), 1080)));
     }
 
+    public void getCbzInfo(Context context) {
+        requests.run(context, LocalFileRefRequest.class, request -> localFiles.getCbzInfo(
+                Request.requiredText(request.fileRef(), "fileRef")));
+    }
+
     private static long requireId(Long id) {
         if (id == null || id < 0L) throw ApiException.invalidRequest("id必须是非负整数");
         return id;

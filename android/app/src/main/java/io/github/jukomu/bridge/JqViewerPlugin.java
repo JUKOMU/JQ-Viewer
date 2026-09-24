@@ -871,6 +871,11 @@ public class JqViewerPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void getCbzInfo(PluginCall call) {
+        localFileHandler.getCbzInfo(call);
+    }
+
+    @PluginMethod
     public void exportBatch(PluginCall call) {
         localFileHandler.exportBatch(call);
     }

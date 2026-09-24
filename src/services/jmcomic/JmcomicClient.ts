@@ -4,6 +4,7 @@ import type {
   BrowseHistoryOverview,
   BrowseHistoryItem,
   BrowseHistoryRange,
+  CbzDocumentInfo,
   CacheCapacityInfo,
   ClientStateSnapshot,
   CommentList,
@@ -445,6 +446,8 @@ export interface JmcomicClient {
   openLocalFileFolder(options: { fileRef: string }): Promise<{ success: boolean }>
 
   getPdfInfo(options: { fileRef: string }): Promise<{ pageCount: number }>
+
+  getCbzInfo(options: { fileRef: string }): Promise<CbzDocumentInfo>
 
   renderPdfPage(options: {
     fileRef: string

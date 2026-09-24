@@ -19,6 +19,9 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.nio.charset.StandardCharsets;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 import static org.junit.Assert.*;
 
@@ -111,6 +114,34 @@ public class PdfManagementImportInstrumentedTest {
     }
 
     @Test
+    public void cbzImportAndVerificationUseTheSameFileLibraryContract() throws Exception {
+        File cbz = createCbz("chapter.cbz");
+        LocalFileManagementService service = LocalFileManagementService.getInstance(context);
+
+        JSONObject imported = service.importLocalFile(item(cbz).put("format", "cbz"));
+
+        assertEquals("imported", imported.getString("result"));
+        assertEquals(2, imported.getInt("pageCount"));
+        JSONObject record = LocalFileStore.getInstance(context).getFile(imported.getLong("id"));
+        assertEquals("cbz", record.getString("format"));
+        JSONObject verified = service.verifyFile(imported.getLong("id"));
+        assertEquals("available", verified.getString("availability"));
+        assertEquals("valid", verified.getString("verificationStatus"));
+    }
+
+    @Test
+    public void zipCannotBeImportedIntoTheReadableFileLibrary() throws Exception {
+        File zip = createCbz("archive.zip");
+        try {
+            LocalFileManagementService.getInstance(context).importLocalFile(
+                item(zip).put("format", "zip"));
+            fail("Expected ZIP import rejection");
+        } catch (IllegalArgumentException error) {
+            assertEquals("导入仅支持 PDF 和 CBZ", error.getMessage());
+        }
+    }
+
+    @Test
     public void refreshPropagatesPersistenceFailuresInsteadOfReturningStaleState()
         throws Exception {
         File pdf = createPdf("refresh-failure.pdf");
@@ -154,6 +185,20 @@ public class PdfManagementImportInstrumentedTest {
             }
         } finally {
             document.close();
+        }
+        return file;
+    }
+
+    private File createCbz(String name) throws Exception {
+        File file = new File(context.getCacheDir(), System.nanoTime() + "-" + name);
+        createdFiles.add(file);
+        try (ZipOutputStream output = new ZipOutputStream(new FileOutputStream(file))) {
+            output.putNextEntry(new ZipEntry("001.jpg"));
+            output.write("first".getBytes(StandardCharsets.UTF_8));
+            output.closeEntry();
+            output.putNextEntry(new ZipEntry("002.png"));
+            output.write("second".getBytes(StandardCharsets.UTF_8));
+            output.closeEntry();
         }
         return file;
     }

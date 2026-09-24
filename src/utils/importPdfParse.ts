@@ -1,5 +1,10 @@
-import type { AlbumDetail } from '@/services/JmcomicTypes'
-import { asFileRef, type FileDescriptor, type FileRef } from '@/runtime/FileReferences'
+import type {
+  AlbumDetail,
+  CbzDocumentInfo,
+  ExportFormat,
+  LocalFileScanItem,
+} from '@/services/JmcomicTypes'
+import { asFileRef, type FileRef } from '@/runtime/FileReferences'
 
 /**
  * 从文件名提取 ID 的解析结果。
@@ -7,6 +12,7 @@ import { asFileRef, type FileDescriptor, type FileRef } from '@/runtime/FileRefe
  */
 
 export interface PdfFileParseItem {
+  format: ExportFormat
   /** 原始文件名（不含路径） */
   fileName: string
   /** 平台文件引用 */
@@ -35,6 +41,8 @@ export interface PdfFileParseItem {
   chapterId?: string
   /** 匹配到的章节标题 */
   chapterTitle?: string
+  cbzInfo?: CbzDocumentInfo
+  validationError?: string
 }
 
 export interface ImportPdfParseResult {
@@ -75,6 +83,7 @@ export function parseFilenamesForImport(
     }
 
     files.push({
+      format: 'pdf',
       fileName,
       fileRef: fileRefs?.[i] ?? asFileRef(filePath),
       displayPath: filePath,
@@ -100,13 +109,42 @@ export function parseFilenamesForImport(
 
 /** 生产导入入口：只接受扫描结果携带的 opaque ref，展示路径仅用于解析文件名。 */
 export function parseFileDescriptorsForImport(
-  files: readonly FileDescriptor[],
+  files: readonly LocalFileScanItem[],
 ): ImportPdfParseResult {
-  return parseFilenamesForImport(
+  const result = parseFilenamesForImport(
     files.map((file) => file.displayPath),
     files.map((file) => file.fileName),
     files.map((file) => file.ref),
   )
+  result.files.forEach((item, index) => {
+    const source = files[index]
+    item.format = source.format
+    item.cbzInfo = source.cbzInfo
+    item.validationError = source.scanError
+    const comicInfoId = extractJmAlbumId(source.cbzInfo?.web)
+    if (comicInfoId) {
+      item.extractedIds = [comicInfoId]
+      item.idPositions = []
+      item.status = 'resolved'
+    }
+    const comicInfoNumber = Number.parseInt(source.cbzInfo?.number ?? '', 10)
+    if (Number.isFinite(comicInfoNumber) && comicInfoNumber > 0) {
+      item.chapterSortOrderHint = comicInfoNumber
+    }
+  })
+  rebuildDuplicateIds(result.files)
+  return result
+}
+
+export function extractJmAlbumId(web?: string): string | undefined {
+  if (!web) return undefined
+  try {
+    const url = new URL(web)
+    if (!/(^|\.)18comic\./i.test(url.hostname)) return undefined
+    return url.pathname.match(/\/album\/(\d+)(?:\/|$)/i)?.[1]
+  } catch {
+    return undefined
+  }
 }
 
 /**
@@ -194,4 +232,20 @@ function extractChapterHint(text: string): {
 
 function normalizeDigits(text: string): string {
   return text.replace(/[０-９]/g, (char) => String.fromCharCode(char.charCodeAt(0) - 0xfee0))
+}
+
+function rebuildDuplicateIds(files: PdfFileParseItem[]): void {
+  const occurrences = new Map<string, number[]>()
+  files.forEach((file, index) => {
+    file.duplicateIds = []
+    for (const id of new Set(file.extractedIds)) {
+      const indices = occurrences.get(id) ?? []
+      indices.push(index)
+      occurrences.set(id, indices)
+    }
+  })
+  for (const [id, indices] of occurrences) {
+    if (indices.length < 2) continue
+    for (const index of indices) files[index].duplicateIds.push(id)
+  }
 }

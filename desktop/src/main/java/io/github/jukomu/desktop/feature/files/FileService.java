@@ -16,6 +16,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Consumer;
 
 /** Desktop 目录选择、文件引用与系统打开能力。 */
@@ -75,22 +76,23 @@ public final class FileService {
 
     public LocalFilesResponse scanImportableFiles(String reference, List<String> formats) {
         List<String> requested = formats == null || formats.isEmpty() ? List.of("pdf") : formats;
-        if (requested.stream().anyMatch(format -> !"pdf".equals(format))) {
-            throw ApiException.invalidRequest("本轮仅支持扫描 PDF 文件");
+        if (requested.stream().anyMatch(format -> !"pdf".equals(format) && !"cbz".equals(format))) {
+            throw ApiException.invalidRequest("导入扫描仅支持 PDF 和 CBZ");
         }
+        Set<String> requestedFormats = Set.copyOf(requested);
         Path folder = FileReferences.parseFolder(reference);
         if (!Files.isDirectory(folder)) throw ApiException.notFound("目录不存在");
         try (var files = Files.list(folder)) {
             List<FileDescriptorResponse> results = files
                     .filter(Files::isRegularFile)
-                    .filter(FileService::isPdf)
+                    .filter(path -> requestedFormats.contains(format(path)))
                     .sorted(Comparator.comparing(path -> path.getFileName().toString(),
                             String.CASE_INSENSITIVE_ORDER))
                     .map(FileService::file)
                     .toList();
             return new LocalFilesResponse(results);
         } catch (IOException exception) {
-            throw new IllegalStateException("扫描 PDF 文件失败", exception);
+            throw new IllegalStateException("扫描可导入文件失败", exception);
         }
     }
 
@@ -107,8 +109,11 @@ public final class FileService {
         return purpose;
     }
 
-    private static boolean isPdf(Path path) {
-        return path.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".pdf");
+    private static String format(Path path) {
+        String name = path.getFileName().toString().toLowerCase(Locale.ROOT);
+        if (name.endsWith(".pdf")) return "pdf";
+        if (name.endsWith(".cbz")) return "cbz";
+        return "";
     }
 
     private static FolderDescriptorResponse folder(Path path) {
@@ -120,7 +125,7 @@ public final class FileService {
     private static FileDescriptorResponse file(Path path) {
         Path normalized = path.toAbsolutePath().normalize();
         return new FileDescriptorResponse(
-                "pdf",
+                format(normalized),
                 FileReferences.fileRef(normalized),
                 normalized.getFileName().toString(),
                 normalized.toString());

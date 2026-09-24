@@ -111,6 +111,12 @@ const routes: Array<RouteRecordRaw> = [
     component: () => import('@/views/PdfReaderPage.vue'),
     meta: { menu: false, keepAlive: true },
   },
+  {
+    path: '/cbz-reader',
+    name: 'CbzReaderPage',
+    component: () => import('@/views/CbzReaderPage.vue'),
+    meta: { menu: false, keepAlive: true },
+  },
 ]
 
 const router = createRouter({

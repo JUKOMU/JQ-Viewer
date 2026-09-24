@@ -14,10 +14,14 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 /** 测试专用文档 provider，用于验证 PdfServer 的 SAF FileRef 读取链路。 */
 public final class FixturePdfProvider extends ContentProvider {
     private static final String PATH = "/document/fixture";
+    private static final String CBZ_PATH = "/document/fixture-cbz";
 
     @Override
     public boolean onCreate() {
@@ -27,19 +31,21 @@ public final class FixturePdfProvider extends ContentProvider {
     @Nullable
     @Override
     public String getType(Uri uri) {
-        return "application/pdf";
+        return CBZ_PATH.equals(uri.getPath()) ? "application/vnd.comicbook+zip" : "application/pdf";
     }
 
     @Nullable
     @Override
     public ParcelFileDescriptor openFile(Uri uri, String mode) throws FileNotFoundException {
-        if (!PATH.equals(uri.getPath()) || !mode.contains("r")) {
+        if ((!PATH.equals(uri.getPath()) && !CBZ_PATH.equals(uri.getPath())) || !mode.contains("r")) {
             throw new FileNotFoundException(uri.toString());
         }
         if (getContext() == null) throw new FileNotFoundException("provider context unavailable");
-        File file = new File(getContext().getCacheDir(), "fixture.pdf");
+        boolean cbz = CBZ_PATH.equals(uri.getPath());
+        File file = new File(getContext().getCacheDir(), cbz ? "fixture.cbz" : "fixture.pdf");
         try {
-            writeFixture(file);
+            if (cbz) writeCbzFixture(file);
+            else writeFixture(file);
         } catch (IOException error) {
             throw new FileNotFoundException(error.getMessage());
         }
@@ -61,6 +67,20 @@ public final class FixturePdfProvider extends ContentProvider {
         } finally {
             document.close();
         }
+    }
+
+    private static void writeCbzFixture(File file) throws IOException {
+        try (ZipOutputStream output = new ZipOutputStream(new FileOutputStream(file))) {
+            put(output, "ComicInfo.xml", "<ComicInfo><Title>SAF CBZ</Title></ComicInfo>");
+            put(output, "001.jpg", "first");
+            put(output, "002.png", "second");
+        }
+    }
+
+    private static void put(ZipOutputStream output, String name, String content) throws IOException {
+        output.putNextEntry(new ZipEntry(name));
+        output.write(content.getBytes(StandardCharsets.UTF_8));
+        output.closeEntry();
     }
 
     @Nullable

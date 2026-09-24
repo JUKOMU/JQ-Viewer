@@ -46,6 +46,9 @@ public final class ComicInfoCodec {
                     if (value.bookmark != null && !value.bookmark.trim().isEmpty()) {
                         page.setAttribute("Bookmark", value.bookmark);
                     }
+                    if (value.type != null && !value.type.trim().isEmpty()) {
+                        page.setAttribute("Type", value.type);
+                    }
                     pages.appendChild(page);
                 }
             }
@@ -70,7 +73,7 @@ public final class ComicInfoCodec {
             for (int index = 0; index < nodes.getLength(); index++) {
                 Element page = (Element) nodes.item(index);
                 pages.add(new ComicInfo.Page(integer(page.getAttribute("Image"), index),
-                    value(page.getAttribute("Bookmark"))));
+                    value(page.getAttribute("Bookmark")), value(page.getAttribute("Type"))));
             }
             return new ComicInfo(
                 text(root, "Title"), text(root, "Series"), text(root, "Number"),

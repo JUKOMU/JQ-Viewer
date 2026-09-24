@@ -4,6 +4,7 @@ import android.content.Context;
 import android.net.Uri;
 import android.webkit.WebResourceResponse;
 import io.github.jukomu.feature.cache.ImageCache;
+import io.github.jukomu.feature.cbz.CbzDocumentService;
 import io.github.jukomu.feature.pdf.data.PdfRef;
 import io.github.jukomu.feature.pdf.data.PdfRefResolver;
 import io.github.jukomu.feature.pdf.render.PdfPageCache;
@@ -24,10 +25,13 @@ public class PdfServer {
     static final String VIRTUAL_HOST = ImageCache.VIRTUAL_HOST;
     static final String PDF_PATH_PREFIX = "/pdf/";
     static final String PDF_PAGE_PATH_PREFIX = "/pdf-page/";
+    static final String CBZ_PAGE_PATH_PREFIX = "/cbz-page/";
     private static final Pattern PDF_PATH_PATTERN = Pattern.compile(
         "^" + PDF_PATH_PREFIX + "[A-Za-z0-9_-]+$");
     private static final Pattern PDF_PAGE_PATH_PATTERN = Pattern.compile(
         "^" + PDF_PAGE_PATH_PREFIX + "([0-9a-f]{64})\\.png$");
+    private static final Pattern CBZ_PAGE_PATH_PATTERN = Pattern.compile(
+        "^" + CBZ_PAGE_PATH_PREFIX + "([A-Za-z0-9_-]+)/([1-9][0-9]*)$");
 
     public static boolean isPdfUrl(String url) {
         Uri uri = parseUri(url);
@@ -50,6 +54,39 @@ public class PdfServer {
             && uri.getFragment() == null
             && PDF_PAGE_PATH_PATTERN.matcher(uri.getPath() == null ? "" : uri.getPath())
                 .matches();
+    }
+
+    public static boolean isCbzPageUrl(String url) {
+        Uri uri = parseUri(url);
+        return uri != null
+            && "https".equalsIgnoreCase(uri.getScheme())
+            && VIRTUAL_HOST.equals(uri.getHost())
+            && uri.getQuery() == null
+            && uri.getFragment() == null
+            && CBZ_PAGE_PATH_PATTERN.matcher(uri.getPath() == null ? "" : uri.getPath())
+                .matches();
+    }
+
+    public static WebResourceResponse handleCbzPageRequest(String url, Context context) {
+        if (!isCbzPageUrl(url)) return errorResponse(400, "Bad Request", null);
+        Matcher matcher = CBZ_PAGE_PATH_PATTERN.matcher(parseUri(url).getPath());
+        if (!matcher.matches()) return errorResponse(400, "Bad Request", null);
+        try {
+            String fileRef = new String(Base64.getUrlDecoder().decode(matcher.group(1)),
+                StandardCharsets.UTF_8);
+            int page = Integer.parseInt(matcher.group(2));
+            CbzDocumentService.PageResource resource = CbzDocumentService.getInstance(context)
+                .openPage(fileRef, page);
+            Map<String, String> headers = corsHeaders(null);
+            headers.put("Cache-Control", "private, max-age=3600");
+            if (resource.length > 0L) headers.put("Content-Length", String.valueOf(resource.length));
+            return new WebResourceResponse(
+                resource.mimeType, null, 200, "OK", headers, resource.input);
+        } catch (CbzDocumentService.CbzException error) {
+            return errorResponse(error.status, "CBZ Error", error.code);
+        } catch (Exception error) {
+            return errorResponse(400, "Bad Request", "invalid-path");
+        }
     }
 
     public static WebResourceResponse withCorsHeaders(WebResourceResponse response) {

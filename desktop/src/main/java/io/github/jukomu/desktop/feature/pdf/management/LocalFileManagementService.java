@@ -3,6 +3,7 @@ package io.github.jukomu.desktop.feature.pdf.management;
 import io.github.jukomu.desktop.bridge.ApiException;
 import io.github.jukomu.desktop.bridge.Request;
 import io.github.jukomu.desktop.bridge.model.SuccessResponse;
+import io.github.jukomu.desktop.feature.cbz.CbzDocumentService;
 import io.github.jukomu.desktop.feature.download.data.DownloadStore;
 import io.github.jukomu.desktop.feature.files.FileReferences;
 import io.github.jukomu.desktop.feature.files.FileService;
@@ -42,17 +43,20 @@ public final class LocalFileManagementService {
     private final DownloadStore downloads;
     private final FileService files;
     private final PdfDocumentService documents;
+    private final CbzDocumentService cbzDocuments;
 
     public LocalFileManagementService(
             LocalFileStore store,
             DownloadStore downloads,
             FileService files,
-            PdfDocumentService documents
+            PdfDocumentService documents,
+            CbzDocumentService cbzDocuments
     ) {
         this.store = store;
         this.downloads = downloads;
         this.files = files;
         this.documents = documents;
+        this.cbzDocuments = cbzDocuments;
     }
 
     public ImportLocalFilesResponse importLocalFiles(List<ImportLocalFileItemRequest> items) {
@@ -66,7 +70,7 @@ public final class LocalFileManagementService {
         List<ImportLocalFileResultResponse> results = new ArrayList<>();
         for (ImportLocalFileItemRequest item : items) {
             try {
-                String format = requirePdfFormat(item.format());
+                String format = requireImportFormat(item.format());
                 String fileRef = Request.requiredText(item.fileRef(), "fileRef");
                 Path file = FileReferences.parseFile(fileRef);
                 StoredLocalFile existing = store.findByRef(fileRef);
@@ -76,7 +80,7 @@ public final class LocalFileManagementService {
                     results.add(result("already_managed", existing));
                     continue;
                 }
-                PdfFileValidator.Report report = PdfFileValidator.validate(fileRef, -1);
+                ValidationReport report = validate(format, fileRef, -1);
                 LocalFileStore.InsertResult inserted = store.insertImported(
                         format,
                         fileRef,
@@ -98,7 +102,8 @@ public final class LocalFileManagementService {
                     duplicateCount++;
                     results.add(result("already_managed", inserted.file()));
                 }
-            } catch (ApiException | PdfFileValidator.ValidationException exception) {
+            } catch (ApiException | PdfFileValidator.ValidationException
+                     | CbzDocumentService.CbzException exception) {
                 skipped++;
                 errorCount++;
             }
@@ -141,12 +146,11 @@ public final class LocalFileManagementService {
 
     public LocalFileResponse verifyFile(long id) {
         StoredLocalFile current = requireFile(id);
-        requirePdfFormat(current.format());
         long now = System.currentTimeMillis();
         StoredLocalFile updated;
         try {
-            PdfFileValidator.Report report = PdfFileValidator.validate(
-                    current.fileRef(), current.pageCount());
+            ValidationReport report = validate(
+                    current.format(), current.fileRef(), current.pageCount());
             updated = store.updateVerification(
                     id, "available", "valid", null,
                     report.fileSize(), report.pageCount(), now);
@@ -165,8 +169,23 @@ public final class LocalFileManagementService {
             updated = store.updateVerification(
                     id, availability, verificationStatus,
                     exception.code() + ": " + exception.getMessage(), null, null, now);
+        } catch (CbzDocumentService.CbzException exception) {
+            String availability = "invalid";
+            String verificationStatus = "corrupt";
+            if ("CBZ_MISSING".equals(exception.code())) {
+                availability = "missing";
+                verificationStatus = "unverified";
+            } else if ("CBZ_INACCESSIBLE".equals(exception.code())) {
+                availability = "inaccessible";
+                verificationStatus = "unverified";
+            } else if ("CBZ_PAGE_MISMATCH".equals(exception.code())) {
+                verificationStatus = "page_mismatch";
+            }
+            updated = store.updateVerification(
+                    id, availability, verificationStatus,
+                    exception.code() + ": " + exception.getMessage(), null, null, now);
         }
-        if (updated == null) throw ApiException.notFound("PDF 文件记录不存在");
+        if (updated == null) throw ApiException.notFound("本地文件记录不存在");
         return LocalFileResponse.from(updated);
     }
 
@@ -207,13 +226,13 @@ public final class LocalFileManagementService {
         } catch (NoSuchFileException exception) {
             result = "already_missing";
         } catch (AccessDeniedException | SecurityException exception) {
-            throw ApiException.permissionDenied("没有权限删除 PDF 文件");
+            throw ApiException.permissionDenied("没有权限删除本地文件");
         } catch (IOException exception) {
             throw new ApiException("internal", 500,
-                    "PDF 文件删除失败，文件库记录已保留: " + exception.getMessage());
+                    "本地文件删除失败，文件库记录已保留: " + exception.getMessage());
         }
         if (!store.remove(id)) {
-            throw new ApiException("internal", 500, "PDF 文件已处理，但文件库记录移除失败");
+            throw new ApiException("internal", 500, "本地文件已处理，但文件库记录移除失败");
         }
         return new LocalFileStorageDeleteResponse(
                 result, record.id(), record.sourceType(), record.ownership(),
@@ -234,6 +253,14 @@ public final class LocalFileManagementService {
 
     public PdfRenderPageResponse renderPdfPage(String fileRef, int page, int targetWidth) {
         return documents.renderPage(fileRef, page, targetWidth);
+    }
+
+    public CbzDocumentService.Info getCbzInfo(String fileRef) {
+        try {
+            return cbzDocuments.getInfo(fileRef);
+        } catch (CbzDocumentService.CbzException exception) {
+            throw new ApiException(exception.code(), exception.status(), exception.getMessage());
+        }
     }
 
     public LocalFileManagementStateResponse managementState() {
@@ -257,7 +284,7 @@ public final class LocalFileManagementService {
 
     private StoredLocalFile requireFile(long id) {
         StoredLocalFile file = store.find(id);
-        if (file == null) throw ApiException.notFound("PDF 文件记录不存在");
+        if (file == null) throw ApiException.notFound("本地文件记录不存在");
         return file;
     }
 
@@ -266,12 +293,29 @@ public final class LocalFileManagementService {
                 result, file.fileRef(), file.displayPath(), file.fileName(), file.id());
     }
 
-    private static String requirePdfFormat(String format) {
+    private static String requireImportFormat(String format) {
         String normalized = format == null || format.isBlank()
                 ? "pdf" : format.trim().toLowerCase();
-        if (!"pdf".equals(normalized)) {
-            throw ApiException.invalidRequest("本轮仅支持 PDF 文件");
+        if (!"pdf".equals(normalized) && !"cbz".equals(normalized)) {
+            throw ApiException.invalidRequest("导入仅支持 PDF 和 CBZ");
         }
         return normalized;
+    }
+
+    private ValidationReport validate(String format, String fileRef, int expectedPages)
+            throws PdfFileValidator.ValidationException, CbzDocumentService.CbzException {
+        if ("cbz".equals(format)) {
+            CbzDocumentService.ValidationReport report = cbzDocuments.validate(
+                    fileRef, expectedPages);
+            return new ValidationReport(report.fileSize(), report.pageCount());
+        }
+        if (!"pdf".equals(format)) {
+            throw ApiException.invalidRequest("内容校验仅支持 PDF 和 CBZ");
+        }
+        PdfFileValidator.Report report = PdfFileValidator.validate(fileRef, expectedPages);
+        return new ValidationReport(report.fileSize(), report.pageCount());
+    }
+
+    private record ValidationReport(long fileSize, int pageCount) {
     }
 }

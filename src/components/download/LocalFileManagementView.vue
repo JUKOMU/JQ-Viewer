@@ -181,6 +181,7 @@ import {
 } from 'ionicons/icons'
 import { useRouter } from 'vue-router'
 import LocalFileCard from './LocalFileCard.vue'
+import { ChapterSourceService } from '@/services/ChapterSourceService'
 import ExportTaskCard from './ExportTaskCard.vue'
 import CardContextMenu from '@/components/common/CardContextMenu.vue'
 import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
@@ -589,19 +590,7 @@ const closeFileActions = () => {
 }
 const readFile = (file: LocalFileRecord) => {
   if (file.format === 'zip') return
-  void router.push({
-    path: file.format === 'cbz' ? '/cbz-reader' : '/pdf-reader',
-    query: {
-      fileRef: String(file.fileRef),
-      title: file.fileName,
-      albumId: file.albumId,
-      albumTitle: file.albumTitle,
-      authors: file.authors,
-      coverUrl: file.coverUrl,
-      chapterId: file.chapterId || file.albumId,
-      chapterTitle: file.chapterTitle,
-    },
-  })
+  void router.push(ChapterSourceService.fileReaderLocation(file))
 }
 const copyFilePath = async (file: LocalFileRecord) => {
   try {

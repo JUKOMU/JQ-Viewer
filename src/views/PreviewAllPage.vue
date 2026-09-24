@@ -80,6 +80,7 @@ import {
 } from '@ionic/vue'
 import type { ListenerHandle } from '@/runtime/BackendEvents'
 import { asFileRef } from '@/runtime/FileReferences'
+import { getRuntime } from '@/runtime/runtimeContext'
 import { arrowBack } from 'ionicons/icons'
 import { getImageUrl, JmcomicService } from '@/services/JmcomicService'
 import type { PhotoDetail, PreloadResult } from '@/services/JmcomicTypes'
@@ -108,8 +109,12 @@ const chapterTitle = computed(() => (route.query.title as string) || chapterId.v
 const initialTotal = Number(route.query.total as string) || 0
 const source = computed(() => (route.query.source as string) || 'network')
 const isPdfSource = computed(() => source.value === 'pdf')
+const isCbzSource = computed(() => source.value === 'cbz')
 const isDownloadSource = computed(() => source.value === 'download')
-const pdfFileRef = computed(() => asFileRef((route.query.fileRef as string) || ''))
+const localFileRef = computed(() => asFileRef((route.query.fileRef as string) || ''))
+const chapterStartPage = computed(() => Math.max(1, Number(route.query.chapterStartPage) || 1))
+const chapterPageCount = computed(() => Math.max(0, Number(route.query.chapterPageCount) || 0))
+const runtime = getRuntime()
 
 const totalCount = ref(initialTotal)
 const loading = ref(true)
@@ -142,7 +147,7 @@ const renderPdfPage = async (pageNum: number): Promise<string | null> => {
   if (!pdfDoc || disposed) return null
   let page: pdfjsLib.PDFPageProxy | null = null
   try {
-    page = await pdfDoc.getPage(pageNum)
+    page = await pdfDoc.getPage(chapterStartPage.value + pageNum - 1)
     if (disposed) return null
     const rawViewport = page.getViewport({ scale: 1 })
     const targetWidth = getPreviewGridItemWidth(previewGridRef.value)
@@ -201,6 +206,18 @@ const preloadImageBatch = async (
     await renderPdfBatch(start, end, setImageSlot)
     return
   }
+  if (isCbzSource.value && localFileRef.value) {
+    for (let index = start; index < end; index++) {
+      setImageSlot(
+        index + 1,
+        runtime.resources.cbzPageUrl({
+          file: localFileRef.value,
+          page: chapterStartPage.value + index,
+        }),
+      )
+    }
+    return
+  }
   if (!photoDetail) return
   if (isDownloadSource.value) {
     for (const image of photoDetail.images.slice(start, end)) {
@@ -224,15 +241,19 @@ const { slots, displayCount, loadingMore, loadedCount, allVisible } = previewBat
 onMounted(async () => {
   try {
     if (isPdfSource.value) {
-      if (!pdfFileRef.value) throw new Error('缺少 PDF 文件引用')
-      const arrayBuffer = await fetchPdfArrayBuffer(pdfFileRef.value)
+      if (!localFileRef.value) throw new Error('缺少 PDF 文件引用')
+      const arrayBuffer = await fetchPdfArrayBuffer(localFileRef.value)
       const loadedPdfDoc = await pdfjsLib.getDocument(buildPdfDocumentParams(arrayBuffer)).promise
       if (disposed) {
         void loadedPdfDoc.destroy()
         return
       }
       pdfDoc = loadedPdfDoc
-      totalCount.value = loadedPdfDoc.numPages
+      totalCount.value = chapterPageCount.value || loadedPdfDoc.numPages
+    } else if (isCbzSource.value) {
+      if (!localFileRef.value) throw new Error('缺少 CBZ 文件引用')
+      const info = await JmcomicService.getCbzInfo(localFileRef.value)
+      totalCount.value = chapterPageCount.value || info.pageCount
     } else if (isDownloadSource.value) {
       photoDetail = await JmcomicService.getDownloadedPhoto(albumId.value, chapterId.value)
       totalCount.value = photoDetail.images.length
@@ -249,7 +270,7 @@ onMounted(async () => {
 
   if (disposed) return
 
-  if (!isPdfSource.value && !isDownloadSource.value) {
+  if (!isPdfSource.value && !isCbzSource.value && !isDownloadSource.value) {
     const setImageSlot = previewBatches.createImageSlotSetter()
     const listenerHandle = await JmcomicService.addImageReadyListener(
       chapterId.value,
@@ -316,11 +337,13 @@ watch(loadedCount, (count) => {
 })
 
 const openReader = (page: number) => {
-  if (isPdfSource.value && pdfFileRef.value) {
+  if ((isPdfSource.value || isCbzSource.value) && localFileRef.value) {
     void router.push({
-      path: '/pdf-reader',
+      path: isCbzSource.value ? '/cbz-reader' : '/pdf-reader',
       query: {
-        fileRef: String(pdfFileRef.value),
+        fileRef: String(localFileRef.value),
+        fileId: String(route.query.fileId || ''),
+        readingContext: 'chapter',
         title: (route.query.pdfTitle as string) || chapterTitle.value,
         albumId: albumId.value,
         albumTitle: (route.query.albumTitle as string) || chapterTitle.value,
@@ -328,6 +351,8 @@ const openReader = (page: number) => {
         coverUrl: (route.query.coverUrl as string) || '',
         chapterId: chapterId.value,
         chapterTitle: chapterTitle.value,
+        chapterStartPage: String(chapterStartPage.value),
+        chapterPageCount: String(totalCount.value),
         page: String(page),
       },
     })

@@ -14,7 +14,7 @@ import java.util.List;
 
 /** 管理本地 SQLite 连接，并提供版本化 schema 迁移入口。 */
 public final class Database implements AutoCloseable {
-    private static final int SCHEMA_VERSION = 9;
+    private static final int SCHEMA_VERSION = 10;
     private static final int BUSY_TIMEOUT_MILLIS = 5_000;
 
     private final Path databasePath;
@@ -79,6 +79,7 @@ public final class Database implements AutoCloseable {
                     + " authors TEXT NOT NULL DEFAULT '',"
                     + " chapter_id TEXT NOT NULL DEFAULT '',"
                     + " chapter_title TEXT NOT NULL DEFAULT '',"
+                    + " file_id INTEGER,"
                     + " timestamp INTEGER NOT NULL)");
             statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_browse_history_timestamp_id "
                     + "ON browse_history(timestamp DESC, id DESC)");
@@ -173,7 +174,14 @@ public final class Database implements AutoCloseable {
             return;
         }
         if (currentVersion == 8) {
-            transaction(connection, () -> migrateV8ToV9(connection));
+            transaction(connection, () -> {
+                migrateV8ToV9(connection);
+                migrateV9ToV10(connection);
+            });
+            return;
+        }
+        if (currentVersion == 9) {
+            transaction(connection, () -> migrateV9ToV10(connection));
             return;
         }
         if (currentVersion != SCHEMA_VERSION) {
@@ -340,7 +348,27 @@ public final class Database implements AutoCloseable {
             statement.executeUpdate("DROP TABLE pdf_export_volumes");
             statement.executeUpdate("DROP TABLE pdf_export_tasks");
             statement.executeUpdate("DROP TABLE pdf_files");
-            statement.executeUpdate("UPDATE desktop_schema_version SET version=" + SCHEMA_VERSION);
+            statement.executeUpdate("UPDATE desktop_schema_version SET version=9");
+        }
+    }
+
+    private static void migrateV9ToV10(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            if (!hasColumn(connection, "browse_history", "file_id")) {
+                statement.executeUpdate("ALTER TABLE browse_history ADD COLUMN file_id INTEGER");
+            }
+            statement.executeUpdate("UPDATE desktop_schema_version SET version=10");
+        }
+    }
+
+    private static boolean hasColumn(Connection connection, String table, String column)
+            throws SQLException {
+        try (Statement statement = connection.createStatement();
+             ResultSet rows = statement.executeQuery("PRAGMA table_info(" + table + ")")) {
+            while (rows.next()) {
+                if (column.equals(rows.getString("name"))) return true;
+            }
+            return false;
         }
     }
 

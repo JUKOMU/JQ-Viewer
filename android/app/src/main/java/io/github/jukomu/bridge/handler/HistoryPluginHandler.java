@@ -68,7 +68,8 @@ public final class HistoryPluginHandler {
                 call.getString("coverUrl", ""),
                 call.getString("authors", ""),
                 call.getString("chapterId", ""),
-                call.getString("chapterTitle", "")
+                call.getString("chapterTitle", ""),
+                optionalLong(call, "fileId")
             );
             resolveSuccess(call);
         } catch (Exception error) {

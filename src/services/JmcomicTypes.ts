@@ -475,6 +475,7 @@ export interface BrowseHistoryItem {
   authors: string
   chapterId: string
   chapterTitle: string
+  fileId?: number
   timestamp: number
 }
 
@@ -490,6 +491,13 @@ export interface ParseHistoryItem {
 export interface ReadingProgressItem {
   albumId: string
   chapterId: string
+  page: number
+  totalPages: number
+  updatedAt: number
+}
+
+export interface FileReadingProgressItem {
+  fileId: number
   page: number
   totalPages: number
   updatedAt: number

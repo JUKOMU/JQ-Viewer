@@ -53,7 +53,9 @@
         <span class="list-item-text">第{{ meta.sortOrder }}话 {{ meta.title }}</span>
         <span
           v-if="
-            chapterDownloadStatuses.get(meta.id) === 'completed' || chapterPdfStatuses.get(meta.id)
+            chapterDownloadStatuses.get(meta.id) === 'completed' ||
+            chapterCbzStatuses.get(meta.id) ||
+            chapterPdfStatuses.get(meta.id)
           "
           class="list-item-chips"
         >
@@ -62,6 +64,9 @@
             class="chapter-source-chip source-chip-image"
           >
             <ion-icon :icon="imageOutline" />
+          </span>
+          <span v-if="chapterCbzStatuses.get(meta.id)" class="chapter-source-chip source-chip-cbz">
+            <ion-icon :icon="archiveOutline" />
           </span>
           <span v-if="chapterPdfStatuses.get(meta.id)" class="chapter-source-chip source-chip-pdf">
             <ion-icon :icon="documentOutline" />
@@ -131,7 +136,9 @@
         </div>
         <span
           v-if="
-            chapterDownloadStatuses.get(meta.id) === 'completed' || chapterPdfStatuses.get(meta.id)
+            chapterDownloadStatuses.get(meta.id) === 'completed' ||
+            chapterCbzStatuses.get(meta.id) ||
+            chapterPdfStatuses.get(meta.id)
           "
           class="chapter-source-row"
         >
@@ -140,6 +147,9 @@
             class="chapter-source-chip source-chip-image"
           >
             <ion-icon :icon="imageOutline" />
+          </span>
+          <span v-if="chapterCbzStatuses.get(meta.id)" class="chapter-source-chip source-chip-cbz">
+            <ion-icon :icon="archiveOutline" />
           </span>
           <span v-if="chapterPdfStatuses.get(meta.id)" class="chapter-source-chip source-chip-pdf">
             <ion-icon :icon="documentOutline" />
@@ -161,6 +171,7 @@
 import { computed, ref } from 'vue'
 import { IonIcon } from '@ionic/vue'
 import {
+  archiveOutline,
   arrowBack,
   checkmark,
   closeOutline,
@@ -179,6 +190,7 @@ const props = defineProps<{
   loading?: boolean
   showActions: boolean
   chapterDownloadStatuses: Map<string, string>
+  chapterCbzStatuses: Map<string, boolean>
   chapterPdfStatuses: Map<string, boolean>
 }>()
 
@@ -559,6 +571,12 @@ const toggleDisplayMode = () => {
   border-color: #e05555;
   background: #fdf0f0;
   color: #c03939;
+}
+
+.source-chip-cbz {
+  border-color: #4f9168;
+  background: #edf8f1;
+  color: #397d54;
 }
 
 /* ---- 批量勾选框（网格模式） ---- */

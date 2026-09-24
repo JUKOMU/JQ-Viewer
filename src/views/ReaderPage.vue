@@ -792,7 +792,7 @@ const goToIndex = (index: number, source: PageChangeSource) => {
   if (!isVertical.value && previous !== next && next === totalCount.value - 1) {
     scheduleToolbarAtReaderEnd()
   }
-  ReadingProgressService.record(albumId.value, chapterId.value, next + 1, totalCount.value)
+  ReadingProgressService.recordChapter(albumId.value, chapterId.value, next + 1, totalCount.value)
 
   if (source === 'slider-input') {
     scheduleDragPreviewLoad(next)
@@ -972,7 +972,7 @@ const applyPhotoBaseState = (pd: PhotoDetail) => {
   ensureCurrentChapterMeta(pd)
 
   const total = pd.images.length
-  const initialPage = ReadingProgressService.getInitialPage(
+  const initialPage = ReadingProgressService.getInitialChapterPage(
     route.query.page,
     albumId.value,
     chapterId.value,
@@ -981,7 +981,12 @@ const applyPhotoBaseState = (pd: PhotoDetail) => {
   currentIndex.value = Math.min(Math.max(initialPage - 1, 0), Math.max(0, total - 1))
   totalCount.value = total
   updateReaderCurrentPage(currentIndex.value + 1)
-  ReadingProgressService.record(albumId.value, chapterId.value, currentIndex.value + 1, total)
+  ReadingProgressService.recordChapter(
+    albumId.value,
+    chapterId.value,
+    currentIndex.value + 1,
+    total,
+  )
   setToolbarVisible(true)
 }
 

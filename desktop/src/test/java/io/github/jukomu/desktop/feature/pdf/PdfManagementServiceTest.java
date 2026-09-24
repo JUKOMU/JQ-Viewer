@@ -56,6 +56,18 @@ class LocalFileManagementServiceTest {
             assertEquals(2, record.pageCount());
             assertTrue(Files.isRegularFile(direct));
 
+            var chapterPage = fixture.service().getFiles(
+                    List.of("pdf"), null, null, null,
+                    "album-1", "chapter-1", null, null, null, 10);
+            assertEquals(1, chapterPage.files().size());
+            assertEquals(record.id(), chapterPage.files().getFirst().id());
+
+            var filePage = fixture.service().getFiles(
+                    null, null, null, record.id(),
+                    null, null, null, null, null, 10);
+            assertEquals(1, filePage.files().size());
+            assertEquals(record.id(), filePage.files().getFirst().id());
+
             assertTrue(fixture.service().removeFromLibrary(record.id()).success());
             assertTrue(Files.isRegularFile(direct));
             assertTrue(fixture.service().getImportedLocalFiles().files().isEmpty());

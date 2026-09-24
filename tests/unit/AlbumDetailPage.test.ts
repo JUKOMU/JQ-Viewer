@@ -40,6 +40,9 @@ const mocks = vi.hoisted(() => ({
   buildPdfDocumentParams: vi.fn(),
   pdfGetDocument: vi.fn(),
   menuSwipeGesture: vi.fn(() => Promise.resolve()),
+  getAlbumSources: vi.fn(),
+  resolveChapterSource: vi.fn(),
+  readerLocation: vi.fn(),
 }))
 
 vi.mock('vue-router', async () => {
@@ -118,6 +121,18 @@ vi.mock('@/services/JmcomicService', () => ({
 vi.mock('@/services/PdfReaderService', () => ({
   buildPdfDocumentParams: mocks.buildPdfDocumentParams,
   fetchPdfArrayBuffer: mocks.fetchPdfArrayBuffer,
+}))
+
+vi.mock('@/runtime/runtimeContext', () => ({
+  getRuntime: () => ({ resources: { cbzPageUrl: vi.fn() } }),
+}))
+
+vi.mock('@/services/ChapterSourceService', () => ({
+  ChapterSourceService: {
+    getAlbumSources: mocks.getAlbumSources,
+    resolve: mocks.resolveChapterSource,
+    readerLocation: mocks.readerLocation,
+  },
 }))
 
 vi.mock('@/services/OfflineDownloadService', () => ({
@@ -366,6 +381,39 @@ const mountLoadedPage = async ({ downloaded = false, pdf = false, album = makeAl
     availableBytes: 0,
   })
   mocks.getImportedLocalFiles.mockResolvedValue({ files: pdf ? [makeLocalFileRecord()] : [] })
+  const summary: Record<string, unknown> = {}
+  if (downloaded) summary.download = makeDownloadTask()
+  if (pdf) {
+    const file = makeLocalFileRecord()
+    summary.pdf = {
+      kind: 'pdf',
+      file,
+      chapter: {
+        sequence: 0,
+        albumId: '123',
+        chapterId: 'chapter-1',
+        chapterTitle: '第一章',
+        sortOrder: 1,
+        startPage: 1,
+        endPage: 2,
+        pageCount: 2,
+      },
+    }
+  }
+  mocks.getAlbumSources.mockResolvedValue(
+    Object.keys(summary).length ? new Map([['chapter-1', summary]]) : new Map(),
+  )
+  mocks.resolveChapterSource.mockImplementation(
+    async (_albumId: string, _chapterId: string, requested = 'preferred') => {
+      if (requested === 'network') return { kind: 'network' }
+      if ((requested === 'preferred' || requested === 'download') && summary.download) {
+        return { kind: 'download', task: summary.download }
+      }
+      if ((requested === 'preferred' || requested === 'cbz') && summary.cbz) return summary.cbz
+      if ((requested === 'preferred' || requested === 'pdf') && summary.pdf) return summary.pdf
+      return requested === 'preferred' ? { kind: 'network' } : null
+    },
+  )
 
   const wrapper = mount(AlbumDetailPage)
   await settle()
@@ -399,6 +447,12 @@ beforeEach(() => {
   mocks.getDownloadedPhoto.mockResolvedValue(makePhoto())
   mocks.getDownloadTasks.mockResolvedValue({ tasks: [], usedBytes: 0, availableBytes: 0 })
   mocks.getImportedLocalFiles.mockResolvedValue({ files: [] })
+  mocks.getAlbumSources.mockResolvedValue(new Map())
+  mocks.resolveChapterSource.mockResolvedValue({ kind: 'network' })
+  mocks.readerLocation.mockImplementation((_source, metadata) => ({
+    path: `/album/${metadata.albumId}/read/${metadata.chapterId}`,
+    query: { title: metadata.albumTitle, total: String(metadata.totalPages ?? 0) },
+  }))
   mocks.listenerRemove.mockResolvedValue(undefined)
   mocks.addDownloadProgressListener.mockResolvedValue({ remove: mocks.listenerRemove })
   mocks.addImageReadyListener.mockImplementation(

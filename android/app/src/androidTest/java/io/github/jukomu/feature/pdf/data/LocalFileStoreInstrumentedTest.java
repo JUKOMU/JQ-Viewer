@@ -258,14 +258,23 @@ public class LocalFileStoreInstrumentedTest {
         insertImportedFile(store, "cursor-2.pdf", "folder-a", 2L);
         insertImportedFile(store, "cursor-3.pdf", "folder-b", 3L);
 
-        JSONObject firstFiles = store.getFilesPage(null, null, null, "folder-a", null, null, 1);
-        JSONObject secondFiles = store.getFilesPage(null, null, null, "folder-a", null,
+        JSONObject firstFiles = store.getFilesPage(
+            null, null, null, null, null, null, "folder-a", null, null, 1);
+        JSONObject secondFiles = store.getFilesPage(null, null, null, null, null, null, "folder-a", null,
             firstFiles.getString("nextCursor"), 1);
         assertEquals(1, firstFiles.getJSONArray("files").length());
         assertEquals(1, secondFiles.getJSONArray("files").length());
         assertTrue(secondFiles.isNull("nextCursor"));
         assertThrows(IllegalArgumentException.class,
-            () -> store.getFilesPage(null, null, null, null, null, "not-a-cursor", 10));
+            () -> store.getFilesPage(
+                null, null, null, null, null, null, null, null, "not-a-cursor", 10));
+
+        JSONObject chapterFiles = store.getFilesPage(
+            List.of("pdf"), null, null, null, "album-1", "cursor-2.pdf",
+            null, null, null, 10);
+        assertEquals(1, chapterFiles.getJSONArray("files").length());
+        assertEquals("cursor-2.pdf", chapterFiles.getJSONArray("files")
+            .getJSONObject(0).getString("chapterId"));
 
         reserveTask(store, "export-a", "failed", 1L, false);
         reserveTask(store, "export-b", "cancelled", 2L, false);

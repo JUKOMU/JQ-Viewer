@@ -130,6 +130,9 @@ public final class LocalFileStore {
             List<String> formats,
             String sourceType,
             String availability,
+            Long fileId,
+            String albumId,
+            String chapterId,
             String folderId,
             String query,
             String cursor,
@@ -155,6 +158,25 @@ public final class LocalFileStore {
                 clauses.add("availability=?");
                 arguments.add(availability);
             }
+        }
+        if (fileId != null) {
+            clauses.add("id=?");
+            arguments.add(fileId);
+        }
+        if ((albumId != null && !albumId.isBlank())
+                || (chapterId != null && !chapterId.isBlank())) {
+            List<String> chapterClauses = new ArrayList<>();
+            chapterClauses.add("chapter.file_id=local_files.id");
+            if (albumId != null && !albumId.isBlank()) {
+                chapterClauses.add("chapter.album_id=?");
+                arguments.add(albumId);
+            }
+            if (chapterId != null && !chapterId.isBlank()) {
+                chapterClauses.add("chapter.chapter_id=?");
+                arguments.add(chapterId);
+            }
+            clauses.add("EXISTS (SELECT 1 FROM local_file_chapters chapter WHERE "
+                    + String.join(" AND ", chapterClauses) + ")");
         }
         if (folderId != null && !folderId.isBlank()) {
             clauses.add("folder_id=?");

@@ -73,7 +73,7 @@ import { getRuntime } from '@/runtime/runtimeContext'
 import { normalizeRuntimeError } from '@/runtime/errors'
 import { JmcomicService, showToast } from '@/services/JmcomicService'
 import { SettingsStore } from '@/services/SettingsService'
-import { ReadingProgressService } from '@/services/ReadingProgressService'
+import { createLocalReaderSession, type LocalReaderSession } from '@/services/LocalReaderSession'
 import { HistoryService } from '@/services/HistoryService'
 import ReaderTopToolbar from '@/components/reader/ReaderTopToolbar.vue'
 import ReaderBottomToolbar from '@/components/reader/ReaderBottomToolbar.vue'
@@ -91,9 +91,13 @@ const fileRef = asFileRef((route.query.fileRef as string) || '')
 const displayTitle = computed(() => (route.query.title as string) || 'CBZ')
 const albumId = computed(() => (route.query.albumId as string) || '')
 const chapterId = computed(() => (route.query.chapterId as string) || albumId.value)
+const historyChapterId = computed(() =>
+  route.query.readingContext === 'file' ? (route.query.chapterId as string) || '' : chapterId.value,
+)
 const albumTitle = computed(() => (route.query.albumTitle as string) || '')
 const authors = computed(() => (route.query.authors as string) || '')
 const coverUrl = computed(() => (route.query.coverUrl as string) || '')
+const fileId = computed(() => Number(route.query.fileId) || 0)
 
 const isVertical = ref(SettingsStore.getReaderDisplayMode() === 'vertical')
 const toolbarVisible = ref(true)
@@ -110,8 +114,10 @@ const updateReaderCurrentPage = inject<(page: number) => void>('updateReaderCurr
 let volumeKeyListener: ListenerHandle | null = null
 let readerActive = false
 let toolbarTimer: ReturnType<typeof setTimeout> | null = null
+let readerSession: LocalReaderSession | null = null
 
-const pageUrl = (page: number) => runtime.resources.cbzPageUrl({ file: fileRef, page })
+const pageUrl = (page: number) =>
+  runtime.resources.cbzPageUrl({ file: fileRef, page: readerSession?.physicalPage(page) ?? page })
 
 const ensureWindow = (center: number, start = center, end = center + 1) => {
   const preload = Math.max(2, SettingsStore.getReaderPreloadPages())
@@ -137,7 +143,7 @@ const moveToIndex = (index: number) => {
   currentIndex.value = next
   ensureWindow(next)
   updateReaderCurrentPage(next + 1)
-  ReadingProgressService.record(albumId.value, chapterId.value, next + 1, totalCount.value)
+  readerSession?.recordPage(next + 1)
   nextTick(() => {
     if (isVertical.value) verticalViewRef.value?.scrollToIndex(next)
   })
@@ -250,8 +256,9 @@ const recordHistory = () => {
     albumTitle: albumTitle.value || displayTitle.value,
     coverUrl: coverUrl.value,
     authors: authors.value,
-    chapterId: chapterId.value,
+    chapterId: historyChapterId.value,
     chapterTitle: displayTitle.value,
+    ...(fileId.value > 0 ? { fileId: fileId.value } : {}),
   })
 }
 
@@ -267,13 +274,9 @@ onMounted(async () => {
   try {
     const info = await JmcomicService.getCbzInfo(fileRef)
     if (info.pageCount <= 0) throw new Error('CBZ 中没有可阅读图片')
-    totalCount.value = info.pageCount
-    const initialPage = ReadingProgressService.getInitialPage(
-      route.query.page,
-      albumId.value,
-      chapterId.value,
-      info.pageCount,
-    )
+    readerSession = createLocalReaderSession(route.query, info.pageCount)
+    totalCount.value = readerSession.totalPages
+    const initialPage = readerSession.initialPage(route.query.page)
     moveToIndex(initialPage - 1)
     recordHistory()
   } catch (error) {

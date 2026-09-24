@@ -267,6 +267,7 @@ export interface JmcomicClient {
     authors: string
     chapterId: string
     chapterTitle: string
+    fileId?: number
   }): Promise<{ success: boolean }>
 
   clearBrowseHistory(): Promise<{ success: boolean }>
@@ -394,6 +395,9 @@ export interface JmcomicClient {
     formats?: ExportFormat[]
     sourceType?: 'imported' | 'exported'
     availability?: LocalFileRecord['availability'] | 'problem'
+    fileId?: number
+    albumId?: string
+    chapterId?: string
     folderId?: string
     query?: string
     cursor?: string

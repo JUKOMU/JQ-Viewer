@@ -69,8 +69,11 @@ vi.mock('@/services/SettingsService', () => ({
 
 vi.mock('@/services/ReadingProgressService', () => ({
   ReadingProgressService: {
-    getInitialPage: mocks.getInitialPage,
-    record: mocks.recordProgress,
+    getInitialChapterPage: mocks.getInitialPage,
+    recordChapter: mocks.recordProgress,
+    getInitialFilePage: mocks.getInitialPage,
+    recordFile: mocks.recordProgress,
+    chapterToFilePage: (_chapter: unknown, page: number) => page,
   },
 }))
 

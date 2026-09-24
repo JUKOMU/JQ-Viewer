@@ -306,12 +306,22 @@ public final class LocalFilePluginHandler {
             }
             JSONObject result = LocalFileManagementService.getInstance(context).getFiles(
                 formats, call.getString("sourceType"), call.getString("availability"),
-                call.getString("folderId"), call.getString("query"), call.getString("cursor"),
+                optionalLong(call, "fileId"), call.getString("albumId"),
+                call.getString("chapterId"), call.getString("folderId"),
+                call.getString("query"), call.getString("cursor"),
                 call.getInt("limit", 50));
             call.resolve(JSObject.fromJSONObject(result));
         } catch (Exception error) {
             call.reject(error.getMessage(), error);
         }
+    }
+
+    private static Long optionalLong(PluginCall call, String key) throws Exception {
+        JSONObject data = call.getData();
+        if (!data.has(key) || data.isNull(key)) return null;
+        Object value = data.get(key);
+        if (!(value instanceof Number)) throw new IllegalArgumentException(key + "必须是整数");
+        return ((Number) value).longValue();
     }
 
     public void refreshLocalFileAvailability(PluginCall call) {

@@ -116,6 +116,9 @@ public final class LocalFileManagementService {
             List<String> formats,
             String sourceType,
             String availability,
+            Long fileId,
+            String albumId,
+            String chapterId,
             String folderId,
             String query,
             String cursor,
@@ -133,7 +136,8 @@ public final class LocalFileManagementService {
             throw ApiException.invalidRequest("availability无效");
         }
         LocalFileStore.Page page = store.list(
-                formats, sourceType, availability, folderId, query, cursor, limit);
+                formats, sourceType, availability, fileId, albumId, chapterId,
+                folderId, query, cursor, limit);
         return new LocalFilesResponse(
                 page.files().stream().map(LocalFileResponse::from).toList(), page.nextCursor());
     }

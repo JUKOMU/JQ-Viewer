@@ -104,7 +104,9 @@ vi.mock('@/services/JmcomicService', () => ({
     error instanceof RuntimeError ? error.message : fallback,
   showToast: mocks.showToast,
 }))
-vi.mock('@/services/LocalFileImportService', () => ({ LocalFileImportService: { scanAndParse: mocks.scanAndParse } }))
+vi.mock('@/services/LocalFileImportService', () => ({
+  LocalFileImportService: { scanAndParse: mocks.scanAndParse },
+}))
 
 import ExportTaskCard from '@/components/download/ExportTaskCard.vue'
 import LocalFileCard from '@/components/download/LocalFileCard.vue'
@@ -126,7 +128,18 @@ const file: LocalFileRecord = {
   chapterId: 'chapter-1',
   chapterTitle: '第一话',
   chapterSortOrder: 1,
-  chapters: [],
+  chapters: [
+    {
+      sequence: 0,
+      albumId: 'album-1',
+      chapterId: 'chapter-1',
+      chapterTitle: '第一话',
+      sortOrder: 1,
+      startPage: 1,
+      endPage: 12,
+      pageCount: 12,
+    },
+  ],
   createdAt: 1,
   fileSize: 1024,
   pageCount: 12,
@@ -353,8 +366,12 @@ describe('LocalFileManagementView', () => {
         albumTitle: '测试漫画',
         authors: '',
         coverUrl: '',
+        fileId: '1',
+        readingContext: 'file',
         chapterId: 'chapter-1',
         chapterTitle: '第一话',
+        chapterStartPage: '1',
+        chapterPageCount: '12',
       },
     }
     const wrapper = mount(LocalFileManagementView)
@@ -556,7 +573,9 @@ describe('LocalFileManagementView', () => {
       .mockResolvedValueOnce({ ref: 'content://old-tree', displayPath: '/old' })
       .mockResolvedValueOnce({ ref: 'content://new-tree', displayPath: '/new' })
     mocks.scanAndParse
-      .mockRejectedValueOnce(new RuntimeError('permission-denied', 'PDF 文件夹读取权限已失效，请重新选择文件夹'))
+      .mockRejectedValueOnce(
+        new RuntimeError('permission-denied', 'PDF 文件夹读取权限已失效，请重新选择文件夹'),
+      )
       .mockResolvedValueOnce(undefined)
 
     const wrapper = mount(LocalFileManagementView)

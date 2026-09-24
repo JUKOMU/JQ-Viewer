@@ -477,7 +477,7 @@ public class LocalFileStore extends SQLiteOpenHelper {
         String cursor = null;
         do {
             JSONObject page = getFilesPage(format == null ? null : List.of(format), sourceType,
-                null, null, null, cursor, 100);
+                null, null, null, null, null, null, cursor, 100);
             JSONArray pageFiles = page.optJSONArray("files");
             if (pageFiles != null) {
                 for (int index = 0; index < pageFiles.length(); index++) {
@@ -490,6 +490,7 @@ public class LocalFileStore extends SQLiteOpenHelper {
     }
 
     public JSONObject getFilesPage(List<String> formats, String sourceType, String availability,
+                                   Long fileId, String albumId, String chapterId,
                                    String folderId, String query, String cursor, int requestedLimit) {
         int limit = Math.max(1, Math.min(100, requestedLimit));
         CursorPosition position = CursorPosition.parse(cursor);
@@ -510,6 +511,25 @@ public class LocalFileStore extends SQLiteOpenHelper {
                 clauses.add("availability = ?");
                 args.add(availability);
             }
+        }
+        if (fileId != null) {
+            clauses.add("id = ?");
+            args.add(String.valueOf(fileId));
+        }
+        if ((albumId != null && !albumId.isEmpty())
+            || (chapterId != null && !chapterId.isEmpty())) {
+            List<String> chapterClauses = new ArrayList<>();
+            chapterClauses.add("chapter.file_id = " + TABLE_FILES + ".id");
+            if (albumId != null && !albumId.isEmpty()) {
+                chapterClauses.add("chapter.album_id = ?");
+                args.add(albumId);
+            }
+            if (chapterId != null && !chapterId.isEmpty()) {
+                chapterClauses.add("chapter.chapter_id = ?");
+                args.add(chapterId);
+            }
+            clauses.add("EXISTS (SELECT 1 FROM " + TABLE_FILE_CHAPTERS + " chapter WHERE "
+                + String.join(" AND ", chapterClauses) + ")");
         }
         if (folderId != null && !folderId.isEmpty()) {
             clauses.add("folder_id = ?");

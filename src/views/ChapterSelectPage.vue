@@ -32,7 +32,8 @@
               <span v-if="ch.totalPages > 0" class="chapter-pages">{{ ch.totalPages }} 页</span>
               <span class="source-row">
                 <span v-if="ch.downloadTask" class="source-chip image">图片</span>
-                <span v-if="ch.localFileData" class="source-chip pdf">PDF</span>
+                <span v-if="ch.sources.cbz" class="source-chip cbz">CBZ</span>
+                <span v-if="ch.sources.pdf" class="source-chip pdf">PDF</span>
               </span>
               <img v-if="chapterCover(ch)" :src="chapterCover(ch)!" class="chapter-thumb" alt="" />
             </button>
@@ -54,7 +55,7 @@
               type="button"
               class="chapter-card"
               :class="{ downloaded: downloadedIds.has(meta.id) }"
-              @click="onOpenChapter(meta, downloadedIds.has(meta.id))"
+              @click="onOpenChapter(meta)"
             >
               <span class="chapter-num">第{{ meta.sortOrder }}话</span>
               <span class="chapter-title">{{ meta.title }}</span>
@@ -65,7 +66,10 @@
                 <span v-if="downloadedMap.get(meta.id)?.downloadTask" class="source-chip image"
                   >图片</span
                 >
-                <span v-if="downloadedMap.get(meta.id)?.localFileData" class="source-chip pdf"
+                <span v-if="downloadedMap.get(meta.id)?.sources.cbz" class="source-chip cbz"
+                  >CBZ</span
+                >
+                <span v-if="downloadedMap.get(meta.id)?.sources.pdf" class="source-chip pdf"
                   >PDF</span
                 >
               </span>
@@ -99,20 +103,20 @@ import {
   IonToolbar,
 } from '@ionic/vue'
 import { getImageUrl, JmcomicService } from '@/services/JmcomicService'
-import type { LocalFileRecord, PhotoMeta } from '@/services/JmcomicTypes'
+import { ChapterSourceService, type ChapterSourceSummary } from '@/services/ChapterSourceService'
+import type { PhotoMeta } from '@/services/JmcomicTypes'
 import { arrowBack } from 'ionicons/icons'
 
 defineOptions({ name: 'ChapterSelectPage' })
 
 const route = useRoute()
 const router = useRouter()
-
 const albumId = computed(() => route.params.albumId as string)
 const albumTitle = ref('')
-
-type ShowMode = 'downloaded' | 'all'
-const showMode = ref<ShowMode>('downloaded')
+const showMode = ref<'downloaded' | 'all'>('downloaded')
 const loadingAll = ref(false)
+const allChapters = ref<PhotoMeta[]>([])
+const skeletonCount = 6
 
 interface LocalChapter {
   albumId: string
@@ -122,227 +126,111 @@ interface LocalChapter {
   chapterSortOrder: number
   totalPages: number
   coverUrl: string
-  downloadTask?: {
-    firstImageSortOrder?: number
-  }
-  localFileData?: LocalFileRecord
+  sources: ChapterSourceSummary
+  downloadTask?: ChapterSourceSummary['download']
 }
 
-// 已下载/已导入章节
 const downloadedChapters = ref<LocalChapter[]>([])
 const downloadedIds = computed(() => new Set(downloadedChapters.value.map((ch) => ch.chapterId)))
-const downloadedMap = computed(() => {
-  const map = new Map<string, LocalChapter>()
-  for (const ch of downloadedChapters.value) {
-    map.set(ch.chapterId, ch)
+const downloadedMap = computed(
+  () => new Map(downloadedChapters.value.map((chapter) => [chapter.chapterId, chapter])),
+)
+
+const chapterNum = (chapter: LocalChapter) =>
+  chapter.chapterSortOrder > 0 ? `第${chapter.chapterSortOrder}话` : chapter.chapterId
+const getDownloadedPages = (chapterId: string) =>
+  downloadedMap.value.get(chapterId)?.totalPages ?? 0
+const getDownloadedCover = (chapterId: string) => {
+  const chapter = downloadedMap.value.get(chapterId)
+  return chapter ? chapterCover(chapter) : null
+}
+const chapterCover = (chapter: LocalChapter): string | null => {
+  if (chapter.downloadTask?.firstImageSortOrder) {
+    return getImageUrl(chapter.chapterId, chapter.downloadTask.firstImageSortOrder, 'thumb')
   }
-  return map
-})
-
-// 全部章节
-const allChapters = ref<PhotoMeta[]>([])
-const skeletonCount = 6
-
-const chapterNum = (ch: LocalChapter) => {
-  const so = ch.chapterSortOrder
-  return so && so > 0 ? `第${so}话` : ch.chapterId
-}
-
-const getDownloadedPages = (chapterId: string): number => {
-  return downloadedMap.value.get(chapterId)?.totalPages ?? 0
-}
-
-const getDownloadedCover = (chapterId: string): string | null => {
-  const dt = downloadedMap.value.get(chapterId)
-  return dt ? chapterCover(dt) : null
-}
-
-const chapterCover = (ch: LocalChapter): string | null => {
-  if (ch.downloadTask?.firstImageSortOrder) {
-    return getImageUrl(ch.chapterId, ch.downloadTask.firstImageSortOrder, 'thumb')
-  }
-  return ch.coverUrl || ch.localFileData?.coverUrl || null
+  return (
+    chapter.coverUrl ||
+    chapter.sources.cbz?.file.coverUrl ||
+    chapter.sources.pdf?.file.coverUrl ||
+    null
+  )
 }
 
 const toggleMode = async () => {
-  if (showMode.value === 'downloaded') {
-    showMode.value = 'all'
-    if (allChapters.value.length === 0) {
-      loadingAll.value = true
-      try {
-        const album = await JmcomicService.getAlbum(albumId.value)
-        albumTitle.value = album.title
-        allChapters.value = album.photoMetas ?? []
-      } catch {
-        // 加载失败，保持在已下载列表可见
-      } finally {
-        loadingAll.value = false
-      }
-    }
-  } else {
-    showMode.value = 'downloaded'
-  }
-}
-
-const openLocalChapter = (ch: LocalChapter) => {
-  if (ch.downloadTask) {
-    void router.push({
-      path: `/album/${albumId.value}/read/${ch.chapterId}`,
-      query: {
-        title: ch.chapterId,
-        total: String(ch.totalPages),
-        source: 'download',
-      },
-    })
-    return
-  }
-
-  if (ch.localFileData?.fileRef) {
-    void router.push({
-      path: '/pdf-reader',
-      query: {
-        fileRef: String(ch.localFileData.fileRef),
-        title: ch.localFileData.fileName,
-        albumId: ch.albumId,
-        albumTitle: ch.albumTitle,
-        authors: ch.localFileData.authors,
-        coverUrl: ch.localFileData.coverUrl || ch.coverUrl,
-        chapterId: ch.chapterId,
-        chapterTitle: ch.chapterId,
-      },
-    })
-    return
-  }
-}
-
-const onOpenChapter = (ch: PhotoMeta, isDownloaded: boolean) => {
-  const chapterId = ch.id
-  const localChapter = downloadedMap.value.get(chapterId)
-  if (isDownloaded && localChapter) {
-    openLocalChapter(localChapter)
-    return
-  }
-
-  const query: Record<string, string> = {
-    title: ch.title ?? '',
-    total: '0',
-  }
-  void router.push({
-    path: `/album/${albumId.value}/read/${chapterId}`,
-    query,
-  })
-}
-
-const goBack = () => {
-  router.back()
-}
-
-onMounted(async () => {
-  const localChapters = new Map<string, LocalChapter>()
-  let albumMetas: PhotoMeta[] = []
-
-  const resolvePdfLocalKey = (pdf: LocalFileRecord): string => {
-    const exact = albumMetas.find((meta) => meta.id === pdf.chapterId)
-    if (exact) return exact.id
-
-    const byOrder = albumMetas.find((meta) => meta.sortOrder === pdf.chapterSortOrder)
-    if (byOrder) return byOrder.id
-
-    if (pdf.chapterSortOrder && pdf.chapterSortOrder > 0) {
-      const localByOrder = [...localChapters.values()].find(
-        (chapter) => chapter.chapterSortOrder === pdf.chapterSortOrder,
-      )
-      if (localByOrder) return localByOrder.chapterId
-    }
-
-    if (pdf.chapterId && localChapters.has(pdf.chapterId)) return pdf.chapterId
-
-    if ((pdf.chapterId === pdf.albumId || !pdf.chapterId) && localChapters.size === 1) {
-      return [...localChapters.keys()][0]
-    }
-    return pdf.chapterId || pdf.albumId
-  }
-
-  const findAlbumMeta = (chapterId: string, sortOrder?: number): PhotoMeta | undefined => {
-    const exact = albumMetas.find((meta) => meta.id === chapterId)
-    if (exact) return exact
-    if (sortOrder && sortOrder > 0) {
-      return albumMetas.find((meta) => meta.sortOrder === sortOrder)
-    }
-    return undefined
-  }
-
+  showMode.value = showMode.value === 'downloaded' ? 'all' : 'downloaded'
+  if (showMode.value !== 'all' || allChapters.value.length > 0) return
+  loadingAll.value = true
   try {
     const album = await JmcomicService.getAlbum(albumId.value)
     albumTitle.value = album.title
-    albumMetas = album.photoMetas ?? []
-    allChapters.value = albumMetas
-  } catch {
-    // 网络失败时仍保留本地下载/PDF 列表可见
+    allChapters.value = album.photoMetas ?? []
+  } finally {
+    loadingAll.value = false
   }
+}
 
-  try {
-    const downloadResult = await JmcomicService.getDownloadTasks()
-    for (const t of downloadResult.tasks.filter(
-      (t) => t.status === 'completed' && t.albumId === albumId.value,
-    )) {
-      const meta = findAlbumMeta(t.chapterId, t.chapterSortOrder)
-      localChapters.set(t.chapterId, {
-        albumId: t.albumId,
-        albumTitle: t.albumTitle,
-        chapterId: t.chapterId,
-        chapterTitle: meta?.title || t.chapterTitle,
-        chapterSortOrder: meta?.sortOrder ?? t.chapterSortOrder ?? 0,
-        totalPages: t.totalPages,
-        coverUrl: t.coverUrl,
-        downloadTask: {
-          firstImageSortOrder: t.firstImageSortOrder,
-        },
-      })
-    }
-  } catch {
-    // 离线或不支持时保留 PDF 导入列表加载机会
-  }
-
-  try {
-    const pdfResult = await JmcomicService.getImportedLocalFiles()
-    for (const p of pdfResult.files.filter((p) => p.albumId === albumId.value)) {
-      const chapterId = resolvePdfLocalKey(p)
-      const current = localChapters.get(chapterId)
-      if (current) {
-        const meta = findAlbumMeta(chapterId, p.chapterSortOrder)
-        current.localFileData = p
-        current.coverUrl ||= p.coverUrl
-        current.chapterTitle = meta?.title || current.chapterTitle
-        current.chapterSortOrder = meta?.sortOrder ?? current.chapterSortOrder
-        if (!current.downloadTask) {
-          current.albumTitle = p.albumTitle || p.fileName || p.albumId
-          current.chapterTitle = meta?.title || p.chapterTitle || p.fileName
-          current.chapterSortOrder = meta?.sortOrder ?? p.chapterSortOrder ?? 0
-          current.totalPages = p.pageCount ?? 0
-        }
-      } else {
-        const meta = findAlbumMeta(chapterId, p.chapterSortOrder)
-        localChapters.set(chapterId, {
-          albumId: p.albumId,
-          albumTitle: p.albumTitle || p.fileName || p.albumId,
-          chapterId,
-          chapterTitle: meta?.title || p.chapterTitle || p.fileName,
-          chapterSortOrder: meta?.sortOrder ?? p.chapterSortOrder ?? 0,
-          totalPages: p.pageCount ?? 0,
-          coverUrl: p.coverUrl,
-          localFileData: p,
-        })
-      }
-    }
-  } catch {
-    // 导入 PDF 列表读取失败不影响图片下载章节
-  }
-
-  downloadedChapters.value = [...localChapters.values()].sort(
-    (a, b) => (a.chapterSortOrder ?? 0) - (b.chapterSortOrder ?? 0),
+const openLocalChapter = async (chapter: LocalChapter) => {
+  const source = await ChapterSourceService.resolve(albumId.value, chapter.chapterId)
+  if (!source) return
+  await router.push(
+    ChapterSourceService.readerLocation(source, {
+      albumId: chapter.albumId,
+      albumTitle: chapter.albumTitle,
+      chapterId: chapter.chapterId,
+      chapterTitle: chapter.chapterTitle,
+      authors: chapter.sources.cbz?.file.authors || chapter.sources.pdf?.file.authors || '',
+      coverUrl: chapterCover(chapter) || '',
+      totalPages: chapter.totalPages,
+    }),
   )
-  if (downloadedChapters.value.length > 0) {
+}
+
+const onOpenChapter = async (chapter: PhotoMeta) => {
+  const local = downloadedMap.value.get(chapter.id)
+  if (local) {
+    await openLocalChapter(local)
+    return
+  }
+  await router.push({
+    path: `/album/${albumId.value}/read/${chapter.id}`,
+    query: { title: chapter.title ?? '', total: '0' },
+  })
+}
+
+const goBack = () => router.back()
+
+onMounted(async () => {
+  try {
+    const album = await JmcomicService.getAlbum(albumId.value)
+    albumTitle.value = album.title
+    allChapters.value = album.photoMetas ?? []
+  } catch {
+    // 离线时仍显示本地来源。
+  }
+
+  const sources = await ChapterSourceService.getAlbumSources(albumId.value).catch(
+    () => new Map<string, ChapterSourceSummary>(),
+  )
+  downloadedChapters.value = [...sources.entries()]
+    .map(([chapterId, summary]) => {
+      const meta = allChapters.value.find((candidate) => candidate.id === chapterId)
+      const local = summary.cbz ?? summary.pdf
+      return {
+        albumId: albumId.value,
+        albumTitle: summary.download?.albumTitle || local?.file.albumTitle || albumTitle.value,
+        chapterId,
+        chapterTitle:
+          meta?.title || summary.download?.chapterTitle || local?.chapter.chapterTitle || chapterId,
+        chapterSortOrder:
+          meta?.sortOrder ?? summary.download?.chapterSortOrder ?? local?.chapter.sortOrder ?? 0,
+        totalPages: summary.download?.totalPages ?? local?.chapter.pageCount ?? 0,
+        coverUrl: summary.download?.coverUrl || local?.file.coverUrl || '',
+        sources: summary,
+        downloadTask: summary.download,
+      }
+    })
+    .sort((left, right) => left.chapterSortOrder - right.chapterSortOrder)
+  if (!albumTitle.value && downloadedChapters.value.length > 0) {
     albumTitle.value = downloadedChapters.value[0].albumTitle
   }
 })
@@ -468,6 +356,11 @@ onMounted(async () => {
 .source-chip.pdf {
   background: #ffeaea;
   color: #d9534f;
+}
+
+.source-chip.cbz {
+  background: #edf8f1;
+  color: #397d54;
 }
 
 .chapter-thumb {

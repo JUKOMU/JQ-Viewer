@@ -75,9 +75,11 @@ public final class LocalFileManagementService {
         return result;
     }
 
-    public JSONObject getFiles(List<String> formats, String sourceType, String availability, String folderId,
+    public JSONObject getFiles(List<String> formats, String sourceType, String availability,
+                               Long fileId, String albumId, String chapterId, String folderId,
                                String query, String cursor, int limit) {
-        return store.getFilesPage(formats, sourceType, availability, folderId, query, cursor, limit);
+        return store.getFilesPage(formats, sourceType, availability, fileId, albumId, chapterId,
+            folderId, query, cursor, limit);
     }
 
     public JSONObject verifyFile(long id) throws Exception {

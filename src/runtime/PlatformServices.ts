@@ -159,6 +159,9 @@ export interface LocalFileService {
     formats?: ExportFormat[]
     sourceType?: 'imported' | 'exported'
     availability?: LocalFileRecord['availability'] | 'problem'
+    fileId?: number
+    albumId?: string
+    chapterId?: string
     folderId?: string
     query?: string
     cursor?: string

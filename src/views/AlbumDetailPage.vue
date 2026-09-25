@@ -1757,7 +1757,7 @@ const handleScroll = async (event: CustomEvent<{ scrollTop?: number }>) => {
   }
 
   .tab-gesture-area {
-    margin-top: 12px;
+    margin-top: 0;
   }
 
   .tab-bar {
@@ -1805,6 +1805,28 @@ const handleScroll = async (event: CustomEvent<{ scrollTop?: number }>) => {
     width: 100%;
     max-width: var(--detail-content-max);
     margin-inline: 0 auto;
+  }
+
+  .tab-bar {
+    isolation: isolate;
+    background: transparent;
+    border-bottom: 0;
+    box-shadow: none;
+  }
+
+  .tab-bar::before {
+    content: '';
+    position: absolute;
+    inset: 0 auto 0 calc(-1 * var(--detail-page-inset));
+    width: 100cqw;
+    background: #fffaf6;
+    border-bottom: 1px solid rgb(245 210 188 / 0.5);
+    pointer-events: none;
+    z-index: -1;
+  }
+
+  .tab-bar.sticky::before {
+    box-shadow: 0 2px 10px rgb(76 42 24 / 0.08);
   }
 }
 </style>

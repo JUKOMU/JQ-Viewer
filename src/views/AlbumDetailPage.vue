@@ -1615,7 +1615,7 @@ const handleScroll = async (event: CustomEvent<{ scrollTop?: number }>) => {
 <style scoped>
 .detail-page-container {
   --detail-content-max: 720px;
-  --detail-page-inset: 0px;
+  --detail-page-inset: 24px;
 
   width: 100%;
   container-type: inline-size;
@@ -1628,6 +1628,7 @@ const handleScroll = async (event: CustomEvent<{ scrollTop?: number }>) => {
 
 .tab-gesture-area {
   min-width: 0;
+  --tab-bar-centered-offset: 0px;
 }
 
 /* Tab 栏 */
@@ -1757,7 +1758,8 @@ const handleScroll = async (event: CustomEvent<{ scrollTop?: number }>) => {
   }
 
   .tab-gesture-area {
-    margin-top: 12px;
+    margin-top: 0;
+    --tab-bar-centered-offset: max(0px, (100cqw - 48px - var(--detail-content-max)) / 2);
   }
 
   .tab-bar {
@@ -1768,11 +1770,29 @@ const handleScroll = async (event: CustomEvent<{ scrollTop?: number }>) => {
     top: 0;
     padding-top: calc(var(--ion-safe-area-top) + 8px);
     margin-bottom: calc(-1 * var(--ion-safe-area-top));
+    isolation: isolate;
+    background: transparent;
+    border-bottom: 0;
     box-shadow: 0 2px 10px rgb(76 42 24 / 0.08);
   }
 
   .tab-active-indicator {
     top: calc(var(--ion-safe-area-top) + 8px);
+  }
+
+  .tab-bar::before {
+    content: '';
+    position: absolute;
+    inset: 0 auto 0 calc(-1 * (var(--detail-page-inset) + var(--tab-bar-centered-offset)));
+    width: 100cqw;
+    background: #fffaf6;
+    border-bottom: 1px solid rgb(245 210 188 / 0.5);
+    pointer-events: none;
+    z-index: -1;
+  }
+
+  .tab-bar.sticky::before {
+    box-shadow: 0 2px 10px rgb(76 42 24 / 0.08);
   }
 
   .tab-content {
@@ -1799,12 +1819,24 @@ const handleScroll = async (event: CustomEvent<{ scrollTop?: number }>) => {
     padding-inline: var(--detail-page-inset) 24px;
   }
 
+  .tab-gesture-area {
+    --tab-bar-centered-offset: 0px;
+  }
+
   .tab-bar,
   .tab-content {
     box-sizing: border-box;
     width: 100%;
     max-width: var(--detail-content-max);
     margin-inline: 0 auto;
+  }
+
+  .tab-bar {
+    box-shadow: none;
+  }
+
+  .tab-bar.sticky::before {
+    box-shadow: none;
   }
 }
 </style>

@@ -444,7 +444,6 @@ const showPreview = ref(false)
     transform: none;
     background: #f7f8f6;
     border-top: 1px solid rgb(92 75 65 / 0.08);
-    border-bottom: 1px solid rgb(92 75 65 / 0.12);
   }
 
   .header-bg-img {

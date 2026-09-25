@@ -1,13 +1,18 @@
 <template>
   <IonPage>
-    <div class="reader-root" @click="onRootClick">
+    <div
+      ref="readerRoot"
+      class="reader-root"
+      :tabindex="isDesktopRuntime ? -1 : undefined"
+      @click="onRootClick"
+    >
       <Transition name="toolbar-slide">
         <ReaderTopToolbar
           v-if="toolbarVisible"
           :title="displayTitle"
           :show-desktop-controls="isDesktopRuntime"
           :is-fullscreen="isFullscreen"
-          @click.stop
+          @click.stop="restoreReaderFocus"
           @back="goBack"
           @zoom-in="zoomIn"
           @zoom-out="zoomOut"
@@ -160,6 +165,7 @@ const retryingSortOrders = ref<Set<number>>(new Set())
 const toolbarVisible = ref(false)
 const isDragProgress = ref(false)
 const settingsPanelVisible = ref(false)
+const readerRoot = ref<HTMLElement | null>(null)
 const TOOLBAR_TAP_DELAY_MS = 280
 const TOOLBAR_DOUBLE_TAP_DIST = 30
 let toolbarTapTimer: ReturnType<typeof setTimeout> | null = null
@@ -246,6 +252,10 @@ const setToolbarVisible = (visible: boolean, reportFullscreenFailure = false) =>
 
 const toggleToolbar = () => {
   setToolbarVisible(!toolbarVisible.value, true)
+}
+
+const restoreReaderFocus = () => {
+  if (isDesktopRuntime) readerRoot.value?.focus({ preventScroll: true })
 }
 
 const onDragStart = () => {

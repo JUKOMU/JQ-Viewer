@@ -163,7 +163,12 @@ function zoomIn() {
 }
 
 function zoomOut() {
-  zoomAtViewportCenter(previousZoomScale())
+  const next = previousZoomScale()
+  if (next === ZOOM_MIN) {
+    resetZoom()
+    return
+  }
+  zoomAtViewportCenter(next)
 }
 
 // ---- 手势临时变量 ----
@@ -185,6 +190,7 @@ let tapTimer: ReturnType<typeof setTimeout> | null = null
 let animationTimer: ReturnType<typeof setTimeout> | null = null
 let resizeObserver: ResizeObserver | null = null
 let mousePointerId: number | null = null
+let lastPointerType = ''
 let mouseStartX = 0
 let mouseStartY = 0
 let mouseStartTx = 0
@@ -500,6 +506,7 @@ function onTouchEnd(ev: TouchEvent) {
 }
 
 function onMousePointerDown(ev: PointerEvent) {
+  lastPointerType = ev.pointerType
   if (
     !props.enableMouseControls ||
     ev.pointerType !== 'mouse' ||
@@ -539,7 +546,12 @@ function onMousePointerUp(ev: PointerEvent) {
 }
 
 function onMouseClick(ev: MouseEvent) {
-  if (!props.enableMouseControls || ev.button !== 0 || mouseDragged) {
+  if (
+    !props.enableMouseControls ||
+    lastPointerType !== 'mouse' ||
+    ev.button !== 0 ||
+    mouseDragged
+  ) {
     mouseDragged = false
     return
   }

@@ -571,7 +571,12 @@ function zoomIn() {
 }
 
 function zoomOut() {
-  zoomAtViewportCenter(previousZoomScale())
+  const next = previousZoomScale()
+  if (next === ZOOM_MIN) {
+    resetZoom(true)
+    return
+  }
+  zoomAtViewportCenter(next)
 }
 
 function cycleDoubleTapZoom(clientX: number, clientY: number) {

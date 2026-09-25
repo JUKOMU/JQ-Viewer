@@ -1,6 +1,11 @@
 <template>
   <IonPage>
-    <div class="reader-root" @click="onRootClick">
+    <div
+      ref="readerRoot"
+      class="reader-root"
+      :tabindex="isDesktopRuntime ? -1 : undefined"
+      @click="onRootClick"
+    >
       <!-- 顶部工具栏 -->
       <Transition name="toolbar-slide">
         <ReaderTopToolbar
@@ -8,7 +13,7 @@
           :title="chapterTitle"
           :show-desktop-controls="isDesktopRuntime"
           :is-fullscreen="isFullscreen"
-          @click.stop
+          @click.stop="restoreReaderFocus"
           @back="goBack"
           @zoom-in="zoomIn"
           @zoom-out="zoomOut"
@@ -143,6 +148,7 @@ const chapters = ref<PhotoMeta[]>([])
 const toolbarVisible = ref(true)
 const isDragProgress = ref(false)
 const settingsPanelVisible = ref(false)
+const readerRoot = ref<HTMLElement | null>(null)
 const TOOLBAR_TAP_DELAY_MS = 280
 const TOOLBAR_DOUBLE_TAP_DIST = 30
 const AUTO_SHOW_TOOLBAR_DELAY_MS = 1000
@@ -251,6 +257,10 @@ const isAtReaderEnd = () => {
 const toggleToolbar = () => {
   clearAutoShowToolbarTimer()
   setToolbarVisible(!toolbarVisible.value, true)
+}
+
+const restoreReaderFocus = () => {
+  if (isDesktopRuntime) readerRoot.value?.focus({ preventScroll: true })
 }
 
 const scheduleToolbarAtReaderEnd = () => {

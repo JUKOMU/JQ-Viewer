@@ -1,13 +1,18 @@
 <template>
   <IonPage>
-    <div class="reader-root" @click="onRootClick">
+    <div
+      ref="readerRoot"
+      class="reader-root"
+      :tabindex="isDesktopRuntime ? -1 : undefined"
+      @click="onRootClick"
+    >
       <Transition name="toolbar-slide">
         <ReaderTopToolbar
           v-if="toolbarVisible"
           :title="displayTitle"
           :show-desktop-controls="isDesktopRuntime"
           :is-fullscreen="isFullscreen"
-          @click.stop
+          @click.stop="restoreReaderFocus"
           @back="goBack"
           @zoom-in="zoomIn"
           @zoom-out="zoomOut"
@@ -117,6 +122,7 @@ const fileId = computed(() => Number(route.query.fileId) || 0)
 const isVertical = ref(SettingsStore.getReaderDisplayMode() === 'vertical')
 const toolbarVisible = ref(true)
 const settingsPanelVisible = ref(false)
+const readerRoot = ref<HTMLElement | null>(null)
 const currentIndex = ref(0)
 const totalCount = ref(0)
 const imageMap = ref<Map<number, string>>(new Map())
@@ -239,6 +245,10 @@ const syncReaderFullscreen = () => {
 const toggleToolbar = () => {
   toolbarVisible.value = !toolbarVisible.value
   syncReaderFullscreen()
+}
+
+const restoreReaderFocus = () => {
+  if (isDesktopRuntime) readerRoot.value?.focus({ preventScroll: true })
 }
 
 const onRootClick = () => {

@@ -490,7 +490,6 @@ public final class Backend implements AutoCloseable {
             try {
                 PdfResourceService.Resource resource = pdfResources.open(
                         context.pathParam("encodedFileRef"));
-                context.header("Content-Length", String.valueOf(resource.length()));
                 context.contentType("application/pdf").result(resource.input());
             } catch (PdfResourceService.ResourceException exception) {
                 context.status(exception.status());
@@ -528,9 +527,6 @@ public final class Backend implements AutoCloseable {
                         context.pathParam("encodedFileRef")), java.nio.charset.StandardCharsets.UTF_8);
                 int page = Integer.parseInt(context.pathParam("page"));
                 CbzDocumentService.PageResource resource = cbzDocuments.openPage(fileRef, page);
-                if (resource.length() > 0L) {
-                    context.header("Content-Length", String.valueOf(resource.length()));
-                }
                 context.header("Cache-Control", "private, max-age=3600");
                 context.contentType(resource.mimeType()).result(resource.input());
             } catch (IllegalArgumentException exception) {

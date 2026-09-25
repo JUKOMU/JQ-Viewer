@@ -108,6 +108,26 @@ describe('HorizontalPageView', () => {
     wrapper.unmount()
   })
 
+  test('桌面控制接口按 1/2/3/5 倍缩放并可重置', async () => {
+    const { wrapper } = mountView(0)
+    wrapper.vm.zoomIn()
+    await wrapper.vm.$nextTick()
+    expect(wrapper.get('.page-content').attributes('style')).toContain('scale(2)')
+
+    wrapper.vm.zoomIn()
+    await wrapper.vm.$nextTick()
+    expect(wrapper.get('.page-content').attributes('style')).toContain('scale(3)')
+
+    wrapper.vm.zoomOut()
+    await wrapper.vm.$nextTick()
+    expect(wrapper.get('.page-content').attributes('style')).toContain('scale(2)')
+
+    wrapper.vm.resetZoom()
+    await wrapper.vm.$nextTick()
+    expect(wrapper.findAll('.page-content').every((item) => !item.attributes('style'))).toBe(true)
+    wrapper.unmount()
+  })
+
   test('中间区域双击按 1 倍、2 倍、3 倍、5 倍循环缩放', async () => {
     let now = 1000
     vi.spyOn(Date, 'now').mockImplementation(() => now)

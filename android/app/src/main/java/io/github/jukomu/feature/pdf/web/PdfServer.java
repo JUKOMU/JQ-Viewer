@@ -79,7 +79,6 @@ public class PdfServer {
                 .openPage(fileRef, page);
             Map<String, String> headers = corsHeaders(null);
             headers.put("Cache-Control", "private, max-age=3600");
-            if (resource.length > 0L) headers.put("Content-Length", String.valueOf(resource.length));
             return new WebResourceResponse(
                 resource.mimeType, null, 200, "OK", headers, resource.input);
         } catch (CbzDocumentService.CbzException error) {

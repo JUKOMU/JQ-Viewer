@@ -74,6 +74,31 @@ describe('VerticalScrollView', () => {
     wrapper.unmount()
   })
 
+  test('桌面控制接口按 1/2/3/5 倍缩放并可重置', async () => {
+    const wrapper = mount(VerticalScrollView, {
+      props: {
+        imageMap: new Map([[1, 'image-1']]),
+        totalCount: 1,
+        currentIndex: 0,
+      },
+    })
+    await flushAnimationFrames()
+
+    wrapper.vm.zoomIn()
+    await wrapper.vm.$nextTick()
+    expect(wrapper.get('.zoom-wrapper').attributes('style')).toContain('scale(2)')
+    wrapper.vm.zoomIn()
+    await wrapper.vm.$nextTick()
+    expect(wrapper.get('.zoom-wrapper').attributes('style')).toContain('scale(3)')
+    wrapper.vm.zoomOut()
+    await wrapper.vm.$nextTick()
+    expect(wrapper.get('.zoom-wrapper').attributes('style')).toContain('scale(2)')
+    wrapper.vm.resetZoom()
+    await wrapper.vm.$nextTick()
+    expect(wrapper.get('.zoom-wrapper').attributes('style') ?? '').not.toContain('scale(')
+    wrapper.unmount()
+  })
+
   test('双击按 1 倍、2 倍、3 倍、5 倍循环缩放', async () => {
     let now = 1000
     vi.spyOn(Date, 'now').mockImplementation(() => now)

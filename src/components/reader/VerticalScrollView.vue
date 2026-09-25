@@ -4,6 +4,7 @@
     class="vertical-container"
     :class="{ noscroll: zoomScale > 1 }"
     @scroll="onScroll"
+    @click="onMouseClick"
   >
     <div class="virtual-inner" :style="{ height: innerHeight + 'px' }">
       <div ref="wrapperRef" class="zoom-wrapper" :style="wrapperStyle">
@@ -76,12 +77,14 @@ const props = withDefaults(
     retryingSortOrders?: Set<number>
     totalCount: number
     currentIndex: number
+    enableMouseControls?: boolean
   }>(),
   {
     failedSortOrders: () => new Set<number>(),
     failedMessages: () => new Map<number, string>(),
     allowRetry: true,
     retryingSortOrders: () => new Set<number>(),
+    enableMouseControls: false,
   },
 )
 
@@ -487,6 +490,13 @@ let moved = false
 let lastTapT = 0
 let lastTapX = 0
 let lastTapY = 0
+let mousePointerId: number | null = null
+let mouseStartX = 0
+let mouseStartY = 0
+let mouseStartTx = 0
+let mouseStartTy = 0
+let mouseStartScrollTop = 0
+let mouseDragged = false
 
 function dist(t: TouchList) {
   if (t.length < 2) return 0
@@ -534,6 +544,39 @@ function nextDoubleTapScale() {
   if (zoomScale.value < 3) return 3
   if (zoomScale.value < ZOOM_MAX) return ZOOM_MAX
   return ZOOM_MIN
+}
+
+function nextZoomScale() {
+  if (zoomScale.value < 2) return 2
+  if (zoomScale.value < 3) return 3
+  return ZOOM_MAX
+}
+
+function previousZoomScale() {
+  if (zoomScale.value <= 1) return ZOOM_MIN
+  if (zoomScale.value <= 2) return ZOOM_MIN
+  if (zoomScale.value <= 3) return 2
+  return 3
+}
+
+function zoomAtViewportCenter(scale: number) {
+  const rect = containerRef.value?.getBoundingClientRect()
+  const relX = (rect?.width ?? containerWidth.value ?? window.innerWidth) / 2
+  const relY = (rect?.height ?? containerHeight.value ?? window.innerHeight) / 2
+  zoomAtViewportPoint(relX, relY, scale)
+}
+
+function zoomIn() {
+  zoomAtViewportCenter(nextZoomScale())
+}
+
+function zoomOut() {
+  const next = previousZoomScale()
+  if (next === ZOOM_MIN) {
+    resetZoom(true)
+    return
+  }
+  zoomAtViewportCenter(next)
 }
 
 function cycleDoubleTapZoom(clientX: number, clientY: number) {
@@ -662,6 +705,60 @@ function onTE(ev: TouchEvent) {
   }
 }
 
+function onMousePointerDown(ev: PointerEvent) {
+  if (
+    !props.enableMouseControls ||
+    ev.pointerType !== 'mouse' ||
+    ev.button !== 0 ||
+    zoomScale.value <= 1
+  ) {
+    return
+  }
+  const el = containerRef.value
+  if (!el) return
+  mousePointerId = ev.pointerId
+  mouseStartX = ev.clientX
+  mouseStartY = ev.clientY
+  mouseStartTx = zoomTx.value
+  mouseStartTy = zoomTy.value
+  mouseStartScrollTop = el.scrollTop
+  mouseDragged = false
+  el.setPointerCapture(ev.pointerId)
+}
+
+function onMousePointerMove(ev: PointerEvent) {
+  if (mousePointerId !== ev.pointerId || zoomScale.value <= 1) return
+  const dx = ev.clientX - mouseStartX
+  const dy = ev.clientY - mouseStartY
+  if (Math.abs(dx) > 3 || Math.abs(dy) > 3) mouseDragged = true
+  if (!mouseDragged) return
+  ev.preventDefault()
+  const el = containerRef.value
+  if (!el) return
+  const width = containerWidth.value || el.clientWidth || window.innerWidth
+  const height = containerHeight.value || el.clientHeight || window.innerHeight
+  const contentHeight = Math.max(innerHeight.value, height)
+  const minTx = width - width * zoomScale.value
+  const minTy = mouseStartScrollTop + height - contentHeight * zoomScale.value
+  const maxTy = mouseStartScrollTop
+  zoomTx.value = Math.max(minTx, Math.min(0, mouseStartTx + dx))
+  zoomTy.value = Math.max(minTy, Math.min(maxTy, mouseStartTy + dy))
+  updateZoomCurrentIndex()
+}
+
+function onMousePointerUp(ev: PointerEvent) {
+  if (mousePointerId !== ev.pointerId) return
+  containerRef.value?.releasePointerCapture(ev.pointerId)
+  mousePointerId = null
+}
+
+function onMouseClick(ev: MouseEvent) {
+  if (!props.enableMouseControls || ev.button !== 0 || !mouseDragged) return
+  mouseDragged = false
+  ev.preventDefault()
+  ev.stopPropagation()
+}
+
 watch(
   () => props.totalCount,
   () => {
@@ -696,6 +793,12 @@ onMounted(() => {
   el.addEventListener('touchmove', onTouch, { passive: false })
   el.addEventListener('touchend', onTouch)
   el.addEventListener('touchcancel', onTouch)
+  if (props.enableMouseControls) {
+    el.addEventListener('pointerdown', onMousePointerDown)
+    el.addEventListener('pointermove', onMousePointerMove)
+    el.addEventListener('pointerup', onMousePointerUp)
+    el.addEventListener('pointercancel', onMousePointerUp)
+  }
 
   resizeObserver = new ResizeObserver(() => refreshAfterResize())
   resizeObserver.observe(el)
@@ -712,9 +815,13 @@ onUnmounted(() => {
   el.removeEventListener('touchmove', onTouch)
   el.removeEventListener('touchend', onTouch)
   el.removeEventListener('touchcancel', onTouch)
+  el.removeEventListener('pointerdown', onMousePointerDown)
+  el.removeEventListener('pointermove', onMousePointerMove)
+  el.removeEventListener('pointerup', onMousePointerUp)
+  el.removeEventListener('pointercancel', onMousePointerUp)
 })
 
-defineExpose({ scrollToIndex, containerRef, isAtBottom })
+defineExpose({ scrollToIndex, containerRef, isAtBottom, zoomIn, zoomOut, resetZoom })
 </script>
 
 <style scoped>

@@ -1,8 +1,24 @@
 <template>
   <IonPage>
-    <div class="reader-root" @click="onRootClick">
+    <div
+      ref="readerRoot"
+      class="reader-root"
+      :tabindex="isDesktopRuntime ? -1 : undefined"
+      @click="onRootClick"
+    >
       <Transition name="toolbar-slide">
-        <ReaderTopToolbar v-if="toolbarVisible" :title="displayTitle" @click.stop @back="goBack" />
+        <ReaderTopToolbar
+          v-if="toolbarVisible"
+          :title="displayTitle"
+          :show-desktop-controls="isDesktopRuntime"
+          :is-fullscreen="isFullscreen"
+          @click.stop="restoreReaderFocus"
+          @back="goBack"
+          @zoom-in="zoomIn"
+          @zoom-out="zoomOut"
+          @reset-zoom="resetZoom"
+          @toggle-fullscreen="toggleFullscreen"
+        />
       </Transition>
 
       <VerticalScrollView
@@ -14,6 +30,7 @@
         :allow-retry="false"
         :total-count="totalCount"
         :current-index="currentIndex"
+        :enable-mouse-controls="isDesktopRuntime"
         @update:current-index="onPageChange"
         @request-range="onRequestRange"
         @image-error="onImageError"
@@ -27,6 +44,7 @@
         :allow-retry="false"
         :total-count="totalCount"
         :current-index="currentIndex"
+        :enable-mouse-controls="isDesktopRuntime"
         @update:current-index="onPageChange"
         @toggle-toolbar="toggleToolbar"
         @image-error="onImageError"
@@ -80,6 +98,7 @@ import ReaderBottomToolbar from '@/components/reader/ReaderBottomToolbar.vue'
 import ReaderSettingsPanel from '@/components/reader/ReaderSettingsPanel.vue'
 import VerticalScrollView from '@/components/reader/VerticalScrollView.vue'
 import HorizontalPageView from '@/components/reader/HorizontalPageView.vue'
+import { useDesktopReaderControls } from '@/composables/useDesktopReaderControls'
 
 defineOptions({ name: 'CbzReaderPage' })
 
@@ -87,6 +106,7 @@ const route = useRoute()
 const router = useRouter()
 const runtime = getRuntime()
 const readerCapabilities = runtime.services.reader
+const isDesktopRuntime = runtime.platform !== 'android'
 const fileRef = asFileRef((route.query.fileRef as string) || '')
 const displayTitle = computed(() => (route.query.title as string) || 'CBZ')
 const albumId = computed(() => (route.query.albumId as string) || '')
@@ -102,6 +122,7 @@ const fileId = computed(() => Number(route.query.fileId) || 0)
 const isVertical = ref(SettingsStore.getReaderDisplayMode() === 'vertical')
 const toolbarVisible = ref(true)
 const settingsPanelVisible = ref(false)
+const readerRoot = ref<HTMLElement | null>(null)
 const currentIndex = ref(0)
 const totalCount = ref(0)
 const imageMap = ref<Map<number, string>>(new Map())
@@ -138,18 +159,20 @@ const onRequestRange = (range: { start: number; end: number; center: number }) =
   ensureWindow(range.center, range.start, range.end)
 }
 
-const moveToIndex = (index: number) => {
+const moveToIndex = (index: number, syncView = true) => {
   const next = Math.max(0, Math.min(index, Math.max(0, totalCount.value - 1)))
   currentIndex.value = next
   ensureWindow(next)
   updateReaderCurrentPage(next + 1)
   readerSession?.recordPage(next + 1)
-  nextTick(() => {
-    if (isVertical.value) verticalViewRef.value?.scrollToIndex(next)
-  })
+  if (syncView) {
+    nextTick(() => {
+      if (isVertical.value) verticalViewRef.value?.scrollToIndex(next)
+    })
+  }
 }
 
-const onPageChange = (index: number) => moveToIndex(index)
+const onPageChange = (index: number) => moveToIndex(index, false)
 const onProgressChange = (page: number) => moveToIndex(page - 1)
 
 const onImageError = (page: number) => {
@@ -161,14 +184,74 @@ const onImageError = (page: number) => {
   failedMessages.value = messages
 }
 
-const syncFullscreen = () => {
-  if (!readerActive || !readerCapabilities.fullscreen.available) return
+const handleVolumeDirection = (direction: 'up' | 'down') => {
+  if (isVertical.value) {
+    const container = (verticalViewRef.value as { containerRef?: HTMLElement | null })?.containerRef
+    if (!container) return false
+    container.scrollBy({
+      top: direction === 'up' ? -window.innerHeight / 3 : window.innerHeight / 3,
+      behavior: 'smooth',
+    })
+    return true
+  }
+
+  if (direction === 'up' && currentIndex.value > 0) {
+    moveToIndex(currentIndex.value - 1)
+    return true
+  }
+  if (direction === 'down' && currentIndex.value < totalCount.value - 1) {
+    moveToIndex(currentIndex.value + 1)
+    return true
+  }
+  return false
+}
+
+const { isFullscreen, toggleFullscreen } = useDesktopReaderControls({
+  enabled: isDesktopRuntime,
+  isActive: () => readerActive,
+  isVertical,
+  currentIndex,
+  totalCount,
+  fullscreenAvailable: readerCapabilities.fullscreen.available,
+  onPreviousPage: () => moveToIndex(currentIndex.value - 1),
+  onNextPage: () => moveToIndex(currentIndex.value + 1),
+  onVolumeDirection: handleVolumeDirection,
+  setFullscreen: (enabled) => JmcomicService.setReaderFullscreen(enabled),
+  onFullscreenError: () => {
+    void showToast('切换全屏失败', 'danger')
+  },
+})
+
+const zoomIn = () => {
+  if (isVertical.value) verticalViewRef.value?.zoomIn()
+  else horizontalViewRef.value?.zoomIn()
+}
+
+const zoomOut = () => {
+  if (isVertical.value) verticalViewRef.value?.zoomOut()
+  else horizontalViewRef.value?.zoomOut()
+}
+
+const resetZoom = () => {
+  if (isVertical.value) verticalViewRef.value?.resetZoom(true)
+  else horizontalViewRef.value?.resetZoom()
+}
+
+const syncReaderFullscreen = () => {
+  if (isDesktopRuntime || !readerActive || !readerCapabilities.fullscreen.available) {
+    return
+  }
   JmcomicService.setReaderFullscreen(!toolbarVisible.value).catch(() => {})
 }
 
 const toggleToolbar = () => {
   toolbarVisible.value = !toolbarVisible.value
-  syncFullscreen()
+  syncReaderFullscreen()
+}
+
+const restoreReaderFocus = (event: MouseEvent) => {
+  if (event.detail === 0) return
+  if (isDesktopRuntime) readerRoot.value?.focus({ preventScroll: true })
 }
 
 const onRootClick = () => {
@@ -192,7 +275,7 @@ const applyReaderSettings = () => {
   if (readerCapabilities.keepAwake.available && SettingsStore.getReaderKeepScreenOn()) {
     JmcomicService.setReaderKeepScreenOn(true).catch(() => {})
   }
-  syncFullscreen()
+  syncReaderFullscreen()
 }
 
 const restoreReaderSettings = () => {
@@ -216,17 +299,7 @@ const activateReader = () => {
   }
   applyReaderSettings()
   if (readerCapabilities.volumeKeys.available) {
-    JmcomicService.addVolumeKeyListener((direction) => {
-      if (isVertical.value) {
-        const container = (verticalViewRef.value as { containerRef?: HTMLElement })?.containerRef
-        container?.scrollBy({
-          top: direction === 'up' ? -window.innerHeight / 3 : window.innerHeight / 3,
-          behavior: 'smooth',
-        })
-      } else {
-        moveToIndex(currentIndex.value + (direction === 'up' ? -1 : 1))
-      }
-    })
+    JmcomicService.addVolumeKeyListener(handleVolumeDirection)
       .then((handle) => {
         volumeKeyListener = handle
       })

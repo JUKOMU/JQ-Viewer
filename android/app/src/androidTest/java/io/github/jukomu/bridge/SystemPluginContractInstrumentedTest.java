@@ -10,7 +10,7 @@ import androidx.test.platform.app.InstrumentationRegistry;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import io.github.jukomu.bridge.handler.SystemPluginHandler;
-import io.github.jukomu.feature.pdf.data.PdfRef;
+import io.github.jukomu.feature.localfile.data.LocalFileRef;
 import io.github.jukomu.platform.permission.PermissionService;
 import io.github.jukomu.platform.permission.PermissionState;
 import org.json.JSONArray;
@@ -388,8 +388,8 @@ public class SystemPluginContractInstrumentedTest {
         assertTrue(existingFile.createNewFile() || existingFile.exists());
         try {
             JSArray fileRefs = new JSArray();
-            fileRefs.put(PdfRef.createPathFileRef(existingFile.getAbsolutePath()));
-            fileRefs.put(PdfRef.createPathFileRef(existingFile.getAbsolutePath() + ".missing"));
+            fileRefs.put(LocalFileRef.createPathFileRef(existingFile.getAbsolutePath()));
+            fileRefs.put(LocalFileRef.createPathFileRef(existingFile.getAbsolutePath() + ".missing"));
             fileRefs.put("file:saf:content://io.github.jukomu.test.pdf/document/missing");
             RecordingPluginCall files = call("checkFilesExist", "fileRefs", fileRefs);
             RecordingPluginCall externalPath = call("getExternalStoragePath");
@@ -401,7 +401,7 @@ public class SystemPluginContractInstrumentedTest {
             JSONArray existing = files.resolvedData.getJSONArray("existingFileRefs");
             assertNotNull(existing);
             assertEquals(1, existing.length());
-            assertEquals(PdfRef.createPathFileRef(existingFile.getAbsolutePath()), existing.getString(0));
+            assertEquals(LocalFileRef.createPathFileRef(existingFile.getAbsolutePath()), existing.getString(0));
             assertFalse(externalPath.resolvedData.getString("folderRef").isEmpty());
             assertCompleted(files);
             assertSynchronous(externalPath);
@@ -418,7 +418,7 @@ public class SystemPluginContractInstrumentedTest {
         }, Runnable::run, fileOperations::addLast);
         injectSystemHandler(plugin, systemHandler);
         JSArray fileRefs = new JSArray();
-        fileRefs.put(PdfRef.createPathFileRef(
+        fileRefs.put(LocalFileRef.createPathFileRef(
             new File(context.getCacheDir(), "queued.pdf").getAbsolutePath()));
         RecordingPluginCall queued = call("checkFilesExist", "fileRefs", fileRefs);
 

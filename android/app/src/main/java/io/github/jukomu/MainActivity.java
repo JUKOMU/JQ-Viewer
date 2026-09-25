@@ -33,6 +33,12 @@ public class MainActivity extends BridgeActivity {
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
                 String url = request.getUrl().toString();
+                if (PdfServer.isCbzPageUrl(url)) {
+                    if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
+                        return PdfServer.optionsResponse();
+                    }
+                    return PdfServer.handleCbzPageRequest(url, getApplicationContext());
+                }
                 if (PdfServer.isPdfPageUrl(url)) {
                     if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
                         return PdfServer.optionsResponse();

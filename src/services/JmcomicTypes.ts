@@ -475,6 +475,7 @@ export interface BrowseHistoryItem {
   authors: string
   chapterId: string
   chapterTitle: string
+  fileId?: number
   timestamp: number
 }
 
@@ -495,19 +496,44 @@ export interface ReadingProgressItem {
   updatedAt: number
 }
 
-// --- PDF 导出 ---
+export interface FileReadingProgressItem {
+  fileId: number
+  page: number
+  totalPages: number
+  updatedAt: number
+}
 
-export type PdfExportMode = 'chapter' | 'merged'
+// --- 本地文件与导出 ---
 
-export interface PdfExportChapter {
+export type ExportFormat = 'pdf' | 'cbz' | 'zip'
+
+export type ExportMode = 'chapter' | 'merged'
+
+export interface ExportTaskChapter {
   albumId: string
   chapterId: string
   chapterTitle: string
   sortOrder: number
+  expectedPageCount?: number
 }
 
-export interface PdfExportTask {
-  mode: PdfExportMode
+export interface ExportTaskVolume {
+  volumeIndex: number
+  startPage: number
+  endPage: number
+  expectedPageCount: number
+  actualPageCount: number
+  targetName: string
+  outputFile?: FileDescriptor
+  displayPath: string
+  status: string
+  fileSize: number
+  completedAt?: number
+}
+
+export interface ExportTask {
+  format: ExportFormat
+  mode: ExportMode
   albumId: string
   albumTitle?: string
   coverUrl?: string
@@ -515,7 +541,7 @@ export interface PdfExportTask {
   isSingleEpisode?: boolean
   chapterId?: string
   chapterTitle: string // 用于通知显示
-  chapters?: PdfExportChapter[]
+  chapters?: ExportTaskChapter[]
   target: ExportTarget // 平台持有的导出目录引用与相对路径，不承载展示给用户的绝对路径
   displayPath: string // 仅用于预览、确认和展示
   useOriginal: boolean
@@ -524,7 +550,7 @@ export interface PdfExportTask {
   allowOverwrite?: boolean
 }
 
-export type PdfExportStatus =
+export type ExportStatus =
   | 'queued'
   | 'running'
   | 'cancelling'
@@ -534,10 +560,11 @@ export type PdfExportStatus =
   | 'failed'
   | 'interrupted'
 
-export interface PdfExportProgressEvent {
+export interface ExportProgressEvent {
   exportId: string
   batchId: string
-  status: PdfExportStatus
+  format: ExportFormat
+  status: ExportStatus
   phase: string
   currentPage: number
   totalPages: number
@@ -548,8 +575,8 @@ export interface PdfExportProgressEvent {
   errorMessage?: string
 }
 
-export interface PdfExportTaskRecord extends PdfExportProgressEvent {
-  mode: PdfExportMode
+export interface ExportTaskRecord extends ExportProgressEvent {
+  mode: ExportMode
   albumId: string
   albumTitle: string
   coverUrl: string
@@ -557,6 +584,8 @@ export interface PdfExportTaskRecord extends PdfExportProgressEvent {
   isSingleEpisode?: boolean
   chapterId?: string
   displayTitle: string
+  chapters?: ExportTaskChapter[]
+  volumes?: ExportTaskVolume[]
   outputFile?: FileDescriptor // 实际导出文件的平台引用与展示信息
   displayPath?: string // 仅用于展示；作为授权凭据回传时改用 outputFile.ref
   allowOverwrite: boolean
@@ -570,17 +599,17 @@ export interface PdfExportTaskRecord extends PdfExportProgressEvent {
   completedAt?: number
 }
 
-export type PdfExportSubmissionTaskResult = Partial<PdfExportTaskRecord> & {
+export type ExportSubmissionTaskResult = Partial<ExportTaskRecord> & {
   accepted: boolean
   errorCode?: string
   errorMessage?: string
 }
 
-export interface PdfExportBatchResult {
-  tasks: PdfExportSubmissionTaskResult[]
+export interface ExportBatchResult {
+  tasks: ExportSubmissionTaskResult[]
 }
 
-export interface PdfManagementState {
+export interface LocalFileManagementState {
   recoveryState: 'ready'
   databaseResetInfo?: {
     pending: boolean
@@ -594,18 +623,44 @@ export interface PdfManagementState {
   }
 }
 
-// --- PDF 导入 ---
+// --- 本地文件导入 ---
 
-/** scanPdfFiles 返回的单个 PDF 文件条目 */
-export interface PdfScanItem {
+/** scanImportableFiles 返回的单个文件条目。 */
+export interface LocalFileScanItem {
+  format: ExportFormat
   ref: FileRef // 平台持有的文件引用，用于后续导入/校验/打开
   fileName: string
   displayPath: string // 仅用于展示与文件名解析
+  cbzInfo?: CbzDocumentInfo
+  scanError?: string
 }
 
-/** 已导入的 PDF 记录（从数据库返回） */
-export interface ImportedPdf {
+export interface CbzDocumentInfo {
+  pageCount: number
+  title?: string
+  series?: string
+  number?: string
+  authors?: string
+  web?: string
+  coverPage: number
+  metadataWarning?: string
+}
+
+export interface LocalFileChapter {
+  sequence: number
+  albumId: string
+  chapterId: string
+  chapterTitle: string
+  sortOrder: number
+  startPage: number
+  endPage: number
+  pageCount: number
+}
+
+/** 本地文件记录（从数据库返回）。 */
+export interface LocalFileRecord {
   id: number
+  format: ExportFormat
   fileRef: FileRef // 打开/定位文件时使用的平台引用
   displayPath: string // 仅用于展示与复制路径
   fileName: string
@@ -619,6 +674,7 @@ export interface ImportedPdf {
   chapterId?: string
   chapterTitle: string
   chapterSortOrder: number
+  chapters: LocalFileChapter[]
   isSingleEpisode?: boolean
   createdAt: number
   folderId?: string
@@ -631,16 +687,17 @@ export interface ImportedPdf {
   verifiedAt?: number
 }
 
-export interface PdfStorageDeleteResult {
+export interface LocalFileStorageDeleteResult {
   result: 'deleted' | 'already_missing'
   id: number
-  sourceType: ImportedPdf['sourceType']
-  ownership: ImportedPdf['ownership']
+  sourceType: LocalFileRecord['sourceType']
+  ownership: LocalFileRecord['ownership']
   file: FileDescriptor
 }
 
-/** importPdfs 调用的导入项 */
-export interface ImportPdfItem {
+/** importLocalFiles 调用的导入项 */
+export interface ImportLocalFileItem {
+  format: ExportFormat
   fileRef: FileRef // 平台持有的文件引用
   displayPath: string // 仅用于展示
   fileName: string
@@ -655,7 +712,7 @@ export interface ImportPdfItem {
   folderId?: string
 }
 
-export interface ImportPdfsResult {
+export interface ImportLocalFilesResult {
   imported: number
   skipped: number
   duplicateCount: number
@@ -667,8 +724,8 @@ export interface ImportPdfsResult {
   }>
 }
 
-export interface ImportedPdfsResult {
-  pdfs: ImportedPdf[]
+export interface ImportedLocalFilesResult {
+  files: LocalFileRecord[]
 }
 
 // --- 已完成区统一展示类型 ---
@@ -681,16 +738,16 @@ export interface CompletedEntry {
   albumId: string
   albumTitle: string
   coverUrl: string
-  chapterId: string // download: chapterId; pdf: 内部唯一 key
+  chapterId: string // download: chapterId; local-file: 内部唯一 key
   displayId?: string // chapterId 不是用户可见 ID 时的展示兜底
-  chapterTitle: string // download: chapterTitle; pdf: fileName
+  chapterTitle: string // download: chapterTitle; local-file: fileName
   chapterSortOrder: number
   isSingleEpisode?: boolean
   authors: string
   createdAt: number
   completedAt: number
-  totalSize: number // download: totalSize; pdf: 0
-  source: 'download' | 'pdf-import'
+  totalSize: number // download: totalSize; local-file: 0
+  source: 'download' | 'local-file'
   downloadTask?: DownloadTask // source='download' 时的原始数据
-  pdfData?: ImportedPdf // source='pdf-import' 时的原始数据
+  localFileData?: LocalFileRecord // source='local-file' 时的原始数据
 }

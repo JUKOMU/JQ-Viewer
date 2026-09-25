@@ -397,27 +397,27 @@
           </button>
         </div>
 
-        <!-- 分组：PDF 导出设置 -->
-        <div class="section-label">PDF 导出设置</div>
+        <!-- 分组：导出设置 -->
+        <div class="section-label">导出设置</div>
         <div class="card">
-          <!-- PDF导出位置 -->
+          <!-- 导出位置 -->
           <div class="row">
             <div class="row-left">
-              <span class="row-title">PDF 导出位置</span>
-              <span class="row-subtitle">PDF 文件的基础存储路径</span>
+              <span class="row-title">导出位置</span>
+              <span class="row-subtitle">导出文件的基础存储路径</span>
             </div>
           </div>
           <div class="row path-row">
-            <span class="path-display">{{ pdfExportPath }}</span>
+            <span class="path-display">{{ exportPath }}</span>
             <button class="browse-btn" @click="onBrowseFolder">浏览</button>
-            <button class="reset-mini-btn" @click="resetPdfExportPath">重置</button>
+            <button class="reset-mini-btn" @click="resetExportPath">重置</button>
           </div>
 
           <!-- 保存目录模板 -->
           <div class="row divider">
             <div class="row-left">
               <span class="row-title">保存目录模板</span>
-              <span class="row-subtitle">PDF 存储子目录，"/" 表示子目录层级</span>
+              <span class="row-subtitle">导出文件存储子目录，"/" 表示子目录层级</span>
               <div class="var-tags">
                 <span class="var-tag">{id}</span>
                 <span class="var-tag">{title}</span>
@@ -442,47 +442,47 @@
             <input
               class="text-input full-width"
               type="text"
-              :value="pdfDirTemplate"
-              @change="onPdfDirTemplateChange"
+              :value="exportDirTemplate"
+              @change="onExportDirTemplateChange"
             />
-            <button class="reset-mini-btn" @click="resetPdfDirTemplate">重置</button>
+            <button class="reset-mini-btn" @click="resetExportDirTemplate">重置</button>
           </div>
           <div class="render-row">
             <span class="render-label">→</span>
-            <span class="render-value">{{ pdfDirRender }}</span>
+            <span class="render-value">{{ exportDirRender }}</span>
           </div>
 
           <!-- 保存名称模板 -->
           <div class="row divider">
             <div class="row-left">
               <span class="row-title">保存名称模板</span>
-              <span class="row-subtitle">PDF 文件名（不含扩展名）</span>
+              <span class="row-subtitle">导出文件名（不含扩展名）</span>
             </div>
           </div>
           <div class="row template-row">
             <input
               class="text-input full-width"
               type="text"
-              :value="pdfNameTemplate"
-              @change="onPdfNameTemplateChange"
+              :value="exportNameTemplate"
+              @change="onExportNameTemplateChange"
             />
-            <button class="reset-mini-btn" @click="resetPdfNameTemplate">重置</button>
+            <button class="reset-mini-btn" @click="resetExportNameTemplate">重置</button>
           </div>
           <div class="render-row">
             <span class="render-label">→</span>
-            <span class="render-value">{{ pdfNameRender }}</span>
+            <span class="render-value">{{ exportNameRender }}</span>
           </div>
 
           <!-- 预览 -->
           <div class="row divider">
             <div class="row-left">
               <span class="row-title">预览</span>
-              <span class="row-subtitle preview-mono">{{ pdfPathPreview }}</span>
+              <span class="row-subtitle preview-mono">{{ exportPathPreview }}</span>
             </div>
           </div>
 
           <!-- 食用方法 -->
-          <button class="row divider action row-action" type="button" @click="goPdfTemplateHelp">
+          <button class="row divider action row-action" type="button" @click="goExportTemplateHelp">
             <span class="row-title">食用方法</span>
             <IonIcon :icon="chevronForwardOutline" class="entry-arrow" aria-hidden="true" />
           </button>
@@ -572,7 +572,7 @@ import {
   SettingsStore,
 } from '@/services/SettingsService'
 import { ExportFormatService } from '@/services/ExportFormatService'
-import { PDF_SAMPLE_DATA, PdfExportService } from '@/services/PdfExportService'
+import { EXPORT_SAMPLE_DATA, ExportService } from '@/services/ExportService'
 import { useAuth } from '@/composables/useAuth'
 import type { CacheCapacityInfo, RelocationProgress } from '@/services/JmcomicTypes'
 
@@ -631,7 +631,7 @@ function goAbout() {
   router.push('/about')
 }
 
-function goPdfTemplateHelp() {
+function goExportTemplateHelp() {
   router.push('/pdf-template-help')
 }
 
@@ -659,9 +659,7 @@ const volumeNavigation = ref(SettingsStore.getReaderVolumeNavigation())
 const autoShowToolbarAtEnd = ref(SettingsStore.getReaderAutoShowToolbarAtEnd())
 
 const exportPreview = computed(() => ExportFormatService.previewExportFormat(exportFormat.value))
-const downloadLocationTitle = computed(() =>
-  isAndroidRuntime ? '公开下载内容' : '自定义下载位置',
-)
+const downloadLocationTitle = computed(() => (isAndroidRuntime ? '公开下载内容' : '自定义下载位置'))
 const downloadLocationSubtitle = computed(() => {
   if (isAndroidRuntime) return '开启后新下载的图片可在系统相册中查看'
   if (downloadPublic.value && downloadLocationPath.value) {
@@ -670,18 +668,18 @@ const downloadLocationSubtitle = computed(() => {
   return '开启后选择上级文件夹，下载内容保存在其中的 JQViewer 目录'
 })
 
-// PDF导出设置
-const pdfExportPath = ref(PdfExportService.getExportPath())
-const pdfDirTemplate = ref(PdfExportService.getDirTemplate())
-const pdfNameTemplate = ref(PdfExportService.getNameTemplate())
+// 文件导出设置
+const exportPath = ref(ExportService.getExportPath())
+const exportDirTemplate = ref(ExportService.getDirTemplate())
+const exportNameTemplate = ref(ExportService.getNameTemplate())
 
-const pdfPathPreview = computed(() => PdfExportService.previewPath())
+const exportPathPreview = computed(() => ExportService.previewPath())
 
-const pdfDirRender = computed(() =>
-  PdfExportService.renderTemplate(pdfDirTemplate.value, PDF_SAMPLE_DATA),
+const exportDirRender = computed(() =>
+  ExportService.renderTemplate(exportDirTemplate.value, EXPORT_SAMPLE_DATA),
 )
-const pdfNameRender = computed(() =>
-  PdfExportService.renderTemplate(pdfNameTemplate.value, PDF_SAMPLE_DATA),
+const exportNameRender = computed(() =>
+  ExportService.renderTemplate(exportNameTemplate.value, EXPORT_SAMPLE_DATA),
 )
 
 // ---- 搬迁弹窗状态 ----
@@ -909,70 +907,70 @@ function resetExportFormat() {
   showToast('已重置为默认格式', 'success')
 }
 
-// ---- PDF 导出设置 ----
+// ---- 文件导出设置 ----
 async function onBrowseFolder() {
   try {
-    const result = await JmcomicService.pickFolder('pdf-export')
+    const result = await JmcomicService.pickFolder('export')
     if (result) {
       // 确保路径以 / 结尾
       const path = result.displayPath.endsWith('/') ? result.displayPath : result.displayPath + '/'
-      await PdfExportService.setExportFolder({
+      await ExportService.setExportFolder({
         folderRef: result.ref,
         displayPath: path,
       })
-      pdfExportPath.value = path
+      exportPath.value = path
     }
   } catch (e: any) {
     await showToast(sanitizeError(e, '选择文件夹失败'), 'danger')
   }
 }
 
-async function onPdfDirTemplateChange(e: Event) {
+async function onExportDirTemplateChange(e: Event) {
   const val = (e.target as HTMLInputElement).value.trim()
-  const previous = pdfDirTemplate.value
-  pdfDirTemplate.value = val
+  const previous = exportDirTemplate.value
+  exportDirTemplate.value = val
   try {
-    await PdfExportService.setDirTemplate(val)
+    await ExportService.setDirTemplate(val)
   } catch (error) {
-    pdfDirTemplate.value = previous
+    exportDirTemplate.value = previous
     await showToast(sanitizeError(error, '保存目录模板失败'), 'danger')
   }
 }
 
-async function onPdfNameTemplateChange(e: Event) {
+async function onExportNameTemplateChange(e: Event) {
   const val = (e.target as HTMLInputElement).value.trim()
-  const previous = pdfNameTemplate.value
-  pdfNameTemplate.value = val
+  const previous = exportNameTemplate.value
+  exportNameTemplate.value = val
   try {
-    await PdfExportService.setNameTemplate(val)
+    await ExportService.setNameTemplate(val)
   } catch (error) {
-    pdfNameTemplate.value = previous
+    exportNameTemplate.value = previous
     await showToast(sanitizeError(error, '保存名称模板失败'), 'danger')
   }
 }
 
-async function resetPdfExportPath() {
+async function resetExportPath() {
   try {
-    await PdfExportService.resetExportPath()
-    pdfExportPath.value = PdfExportService.getExportPath()
+    await ExportService.resetExportPath()
+    exportPath.value = ExportService.getExportPath()
   } catch (error) {
     await showToast(sanitizeError(error, '重置导出目录失败'), 'danger')
   }
 }
 
-async function resetPdfDirTemplate() {
+async function resetExportDirTemplate() {
   try {
-    await PdfExportService.resetDirTemplate()
-    pdfDirTemplate.value = PdfExportService.getDirTemplate()
+    await ExportService.resetDirTemplate()
+    exportDirTemplate.value = ExportService.getDirTemplate()
   } catch (error) {
     await showToast(sanitizeError(error, '重置目录模板失败'), 'danger')
   }
 }
 
-async function resetPdfNameTemplate() {
+async function resetExportNameTemplate() {
   try {
-    await PdfExportService.resetNameTemplate()
-    pdfNameTemplate.value = PdfExportService.getNameTemplate()
+    await ExportService.resetNameTemplate()
+    exportNameTemplate.value = ExportService.getNameTemplate()
   } catch (error) {
     await showToast(sanitizeError(error, '重置名称模板失败'), 'danger')
   }
@@ -1050,9 +1048,7 @@ async function onDownloadPublicChange(e: CustomEvent) {
           : `下载位置已设为：${result.displayPath}`
         : '已恢复应用内部下载位置'
     await showToast(
-      result.cleanupPending
-        ? (result.cleanupMessage ?? '下载位置已切换，但旧目录仍待清理')
-        : msg,
+      result.cleanupPending ? (result.cleanupMessage ?? '下载位置已切换，但旧目录仍待清理') : msg,
       result.cleanupPending ? 'medium' : 'success',
     )
   } catch (e: any) {
@@ -1542,7 +1538,7 @@ function onAutoShowToolbarAtEndChange(e: CustomEvent) {
   color: #fff;
 }
 
-/* PDF 导出设置 */
+/* 文件导出设置 */
 .path-row {
   display: flex;
   align-items: center;

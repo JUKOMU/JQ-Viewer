@@ -12,6 +12,7 @@ import org.junit.Test;
 import java.lang.reflect.Constructor;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 public class DatabaseMigrationTest {
 
@@ -114,7 +115,7 @@ public class DatabaseMigrationTest {
                 new Object[]{"album-1", "title", 123L});
 
             HistoryStore store = newStore(HistoryStore.class);
-            store.onUpgrade(db, 2, 3);
+            store.onUpgrade(db, 2, 4);
 
             assertEquals(1, queryInt(db, "SELECT COUNT(*) FROM browse_history", null));
             assertEquals(1, queryInt(db,
@@ -122,6 +123,7 @@ public class DatabaseMigrationTest {
                     + "AND name = 'idx_browse_history_timestamp_id'", null));
             assertEquals("album-1", queryString(db,
                 "SELECT album_id FROM browse_history", null));
+            assertTrue(hasColumn(db, "browse_history", "file_id"));
         } finally {
             db.close();
         }
@@ -145,6 +147,16 @@ public class DatabaseMigrationTest {
         try (Cursor cursor = db.rawQuery(sql, args)) {
             cursor.moveToFirst();
             return cursor.getString(0);
+        }
+    }
+
+    private static boolean hasColumn(SQLiteDatabase db, String table, String column) {
+        try (Cursor cursor = db.rawQuery("PRAGMA table_info(" + table + ")", null)) {
+            int nameIndex = cursor.getColumnIndexOrThrow("name");
+            while (cursor.moveToNext()) {
+                if (column.equals(cursor.getString(nameIndex))) return true;
+            }
+            return false;
         }
     }
 }

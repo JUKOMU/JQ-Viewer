@@ -37,6 +37,7 @@ class HistoryServiceTest {
             assertEquals(2, page.totalCount());
             assertEquals("album-b", page.items().get(0).albumId());
             assertEquals("chapter-b1", page.items().get(0).chapterId());
+            assertEquals(42L, page.items().get(0).fileId());
 
             HistoryPageResponse secondPage = history.page(1, 1, null, null);
             assertEquals("album-a", secondPage.items().get(0).albumId());
@@ -134,7 +135,8 @@ class HistoryServiceTest {
                 "https://example.invalid/" + albumId,
                 "Author",
                 chapterId,
-                "Chapter " + chapterId
+                "Chapter " + chapterId,
+                42L
         );
     }
 }

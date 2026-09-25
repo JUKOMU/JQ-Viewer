@@ -3,13 +3,14 @@ package io.github.jukomu.desktop.feature.pdf;
 import io.github.jukomu.desktop.data.Database;
 import io.github.jukomu.desktop.data.Paths;
 import io.github.jukomu.desktop.feature.download.data.DownloadStore;
+import io.github.jukomu.desktop.feature.cbz.CbzDocumentService;
 import io.github.jukomu.desktop.feature.files.FileReferences;
 import io.github.jukomu.desktop.feature.files.FileService;
-import io.github.jukomu.desktop.feature.pdf.data.PdfStore;
-import io.github.jukomu.desktop.feature.pdf.management.PdfManagementService;
-import io.github.jukomu.desktop.feature.pdf.model.ImportPdfItemRequest;
-import io.github.jukomu.desktop.feature.pdf.model.ImportPdfsResponse;
-import io.github.jukomu.desktop.feature.pdf.model.PdfFileResponse;
+import io.github.jukomu.desktop.feature.localfile.data.LocalFileStore;
+import io.github.jukomu.desktop.feature.localfile.management.LocalFileManagementService;
+import io.github.jukomu.desktop.feature.localfile.model.ImportLocalFileItemRequest;
+import io.github.jukomu.desktop.feature.localfile.model.ImportLocalFilesResponse;
+import io.github.jukomu.desktop.feature.localfile.model.LocalFileResponse;
 import io.github.jukomu.desktop.feature.pdf.render.PdfDocumentService;
 import io.github.jukomu.desktop.feature.pdf.render.PdfPageCache;
 import org.apache.pdfbox.pdmodel.PDDocument;
@@ -20,13 +21,15 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class PdfManagementServiceTest {
+class LocalFileManagementServiceTest {
     @Test
     void scansOnlyDirectChildrenAndImportsWithoutCopying() throws Exception {
         Fixture fixture = fixture();
@@ -36,13 +39,14 @@ class PdfManagementServiceTest {
             Path direct = writePdf(root.resolve("direct.pdf"), 2);
             writePdf(root.resolve("nested/ignored.pdf"), 1);
 
-            var scanned = fixture.files().scanPdfFiles(FileReferences.folderRef(root));
+            var scanned = fixture.files().scanImportableFiles(
+                    FileReferences.folderRef(root), List.of("pdf"));
             assertEquals(List.of("direct.pdf"),
                     scanned.files().stream().map(file -> file.fileName()).toList());
 
-            ImportPdfsResponse imported = fixture.service().importPdfs(List.of(item(direct)));
-            ImportPdfsResponse duplicate = fixture.service().importPdfs(List.of(item(direct)));
-            PdfFileResponse record = fixture.service().getImportedPdfs().files().get(0);
+            ImportLocalFilesResponse imported = fixture.service().importLocalFiles(List.of(item(direct)));
+            ImportLocalFilesResponse duplicate = fixture.service().importLocalFiles(List.of(item(direct)));
+            LocalFileResponse record = fixture.service().getImportedLocalFiles().files().get(0);
 
             assertEquals(1, imported.imported());
             assertEquals(1, duplicate.duplicateCount());
@@ -52,9 +56,21 @@ class PdfManagementServiceTest {
             assertEquals(2, record.pageCount());
             assertTrue(Files.isRegularFile(direct));
 
+            var chapterPage = fixture.service().getFiles(
+                    List.of("pdf"), null, null, null,
+                    "album-1", "chapter-1", null, null, null, 10);
+            assertEquals(1, chapterPage.files().size());
+            assertEquals(record.id(), chapterPage.files().getFirst().id());
+
+            var filePage = fixture.service().getFiles(
+                    null, null, null, record.id(),
+                    null, null, null, null, null, 10);
+            assertEquals(1, filePage.files().size());
+            assertEquals(record.id(), filePage.files().getFirst().id());
+
             assertTrue(fixture.service().removeFromLibrary(record.id()).success());
             assertTrue(Files.isRegularFile(direct));
-            assertTrue(fixture.service().getImportedPdfs().files().isEmpty());
+            assertTrue(fixture.service().getImportedLocalFiles().files().isEmpty());
         }
     }
 
@@ -63,22 +79,22 @@ class PdfManagementServiceTest {
         Fixture fixture = fixture();
         try (Database ignored = fixture.database()) {
             Path pdf = writePdf(fixture.paths().pdfDirectory().resolve("delete.pdf"), 1);
-            fixture.service().importPdfs(List.of(item(pdf)));
-            PdfFileResponse first = fixture.service().getImportedPdfs().files().get(0);
+            fixture.service().importLocalFiles(List.of(item(pdf)));
+            LocalFileResponse first = fixture.service().getImportedLocalFiles().files().get(0);
 
             Files.delete(pdf);
-            PdfFileResponse missing = fixture.service().verifyFile(first.id());
+            LocalFileResponse missing = fixture.service().verifyFile(first.id());
             assertEquals("missing", missing.availability());
             assertEquals("unverified", missing.verificationStatus());
             assertEquals("already_missing", fixture.service().deleteFile(first.id()).result());
-            assertTrue(fixture.service().getImportedPdfs().files().isEmpty());
+            assertTrue(fixture.service().getImportedLocalFiles().files().isEmpty());
 
             Path second = writePdf(fixture.paths().pdfDirectory().resolve("delete-actual.pdf"), 1);
-            fixture.service().importPdfs(List.of(item(second)));
-            long secondId = fixture.service().getImportedPdfs().files().get(0).id();
+            fixture.service().importLocalFiles(List.of(item(second)));
+            long secondId = fixture.service().getImportedLocalFiles().files().get(0).id();
             assertEquals("deleted", fixture.service().deleteFile(secondId).result());
             assertFalse(Files.exists(second));
-            assertTrue(fixture.service().getImportedPdfs().files().isEmpty());
+            assertTrue(fixture.service().getImportedLocalFiles().files().isEmpty());
         }
     }
 
@@ -88,7 +104,7 @@ class PdfManagementServiceTest {
         try (Database ignored = fixture.database()) {
             Path missing = fixture.paths().pdfDirectory().resolve("missing.pdf");
 
-            ImportPdfsResponse response = fixture.service().importPdfs(List.of(item(missing)));
+            ImportLocalFilesResponse response = fixture.service().importLocalFiles(List.of(item(missing)));
 
             assertEquals(0, response.imported());
             assertEquals(1, response.skipped());
@@ -104,7 +120,36 @@ class PdfManagementServiceTest {
         fixture.database().close();
 
         assertThrows(IllegalStateException.class,
-                () -> fixture.service().importPdfs(List.of(item(pdf))));
+                () -> fixture.service().importLocalFiles(List.of(item(pdf))));
+    }
+
+    @Test
+    void scansImportsAndVerifiesCbzWithoutTreatingZipAsImportable() throws Exception {
+        Fixture fixture = fixture();
+        try (Database ignored = fixture.database()) {
+            Path root = fixture.paths().pdfDirectory();
+            Path cbz = root.resolve("123 第2话.cbz");
+            writeCbz(cbz, "001.jpg", "page");
+            writeCbz(root.resolve("ignored.zip"), "001.jpg", "page");
+
+            var scanned = fixture.files().scanImportableFiles(
+                    FileReferences.folderRef(root), List.of("pdf", "cbz"));
+            assertEquals(List.of("123 第2话.cbz"),
+                    scanned.files().stream().map(file -> file.fileName()).toList());
+            assertEquals("cbz", scanned.files().getFirst().format());
+
+            ImportLocalFileItemRequest item = new ImportLocalFileItemRequest(
+                    "cbz", FileReferences.fileRef(cbz), cbz.toString(), cbz.getFileName().toString(),
+                    "123", "Album", "", "Alice", "chapter-2", "Chapter 2",
+                    2, false, null);
+            ImportLocalFilesResponse imported = fixture.service().importLocalFiles(List.of(item));
+            LocalFileResponse record = fixture.service().getImportedLocalFiles().files().getFirst();
+
+            assertEquals(1, imported.imported());
+            assertEquals("cbz", record.format());
+            assertEquals(1, record.pageCount());
+            assertEquals("valid", fixture.service().verifyFile(record.id()).verificationStatus());
+        }
     }
 
     private static Fixture fixture() throws Exception {
@@ -115,18 +160,19 @@ class PdfManagementServiceTest {
         database.open();
         FileService files = new FileService(paths, ignored -> null, ignored -> {
         });
-        PdfManagementService service = new PdfManagementService(
-                new PdfStore(database),
+        LocalFileManagementService service = new LocalFileManagementService(
+                new LocalFileStore(database),
                 new DownloadStore(database),
                 files,
-                new PdfDocumentService(new PdfPageCache(paths.cacheDirectory()))
+                new PdfDocumentService(new PdfPageCache(paths.cacheDirectory())),
+                new CbzDocumentService()
         );
         return new Fixture(paths, database, files, service);
     }
 
-    private static ImportPdfItemRequest item(Path pdf) {
-        return new ImportPdfItemRequest(
-                FileReferences.fileRef(pdf), pdf.toString(), pdf.getFileName().toString(),
+    private static ImportLocalFileItemRequest item(Path pdf) {
+        return new ImportLocalFileItemRequest(
+                "pdf", FileReferences.fileRef(pdf), pdf.toString(), pdf.getFileName().toString(),
                 "album-1", "Album", "", "Alice", "chapter-1", "Chapter 1",
                 1, false, "folder-1"
         );
@@ -141,11 +187,20 @@ class PdfManagementServiceTest {
         return path;
     }
 
+    private static void writeCbz(Path path, String entryName, String content) throws Exception {
+        Files.createDirectories(path.getParent());
+        try (ZipOutputStream output = new ZipOutputStream(Files.newOutputStream(path))) {
+            output.putNextEntry(new ZipEntry(entryName));
+            output.write(content.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            output.closeEntry();
+        }
+    }
+
     private record Fixture(
             Paths paths,
             Database database,
             FileService files,
-            PdfManagementService service
+            LocalFileManagementService service
     ) {
     }
 }

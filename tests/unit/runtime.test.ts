@@ -388,7 +388,7 @@ describe('runtime', () => {
     expect(runtime.services.reader.fullscreen.available).toBe(false)
     expect(runtime.services.notifications.kind).toBe('host-managed')
     expect('files' in runtime.services).toBe(true)
-    expect('pdf' in runtime.services).toBe(true)
+    expect('localFiles' in runtime.services).toBe(true)
     expect(runtime.events.onNetworkProbe).toBeTypeOf('function')
   })
 
@@ -443,11 +443,12 @@ describe('runtime', () => {
           )
         case '/api/checkFilesExist':
           return Promise.resolve(response({ existing: ['file:path:/exports/book.pdf'] }))
-        case '/api/scanPdfFiles':
+        case '/api/scanImportableFiles':
           return Promise.resolve(
             response({
               files: [
                 {
+                  format: 'pdf',
                   ref: 'file:path:/exports/book.pdf',
                   fileName: 'book.pdf',
                   displayPath: '/exports/book.pdf',
@@ -455,7 +456,7 @@ describe('runtime', () => {
               ],
             }),
           )
-        case '/api/getPdfExportPreferences':
+        case '/api/getExportPreferences':
           return Promise.resolve(
             response({
               exportFolder: {
@@ -464,6 +465,7 @@ describe('runtime', () => {
               },
               directoryTemplate: '{author}/{id}',
               fileNameTemplate: '{title}',
+              lastFormat: 'cbz',
             }),
           )
         default:
@@ -474,7 +476,7 @@ describe('runtime', () => {
     const book = asFileRef('file:path:/exports/book.pdf')
     const missing = asFileRef('file:path:/exports/missing.pdf')
 
-    await expect(runtime.services.files.pickFolder('pdf-export')).resolves.toEqual({
+    await expect(runtime.services.files.pickFolder('export')).resolves.toEqual({
       ref: 'folder:path:/exports',
       displayPath: '/exports',
     })
@@ -488,10 +490,11 @@ describe('runtime', () => {
     await expect(runtime.services.files.openFile(book)).resolves.toBeUndefined()
     await expect(runtime.services.files.openContainingFolder(book)).resolves.toBeUndefined()
     await expect(
-      runtime.services.files.scanPdfFiles(asFolderRef('folder:path:/exports')),
+      runtime.services.files.scanImportableFiles(asFolderRef('folder:path:/exports'), ['pdf']),
     ).resolves.toEqual({
       files: [
         {
+          format: 'pdf',
           ref: book,
           fileName: 'book.pdf',
           displayPath: '/exports/book.pdf',
@@ -499,11 +502,12 @@ describe('runtime', () => {
       ],
     })
 
-    const preferences = runtime.services.pdfExportPreferences
+    const preferences = runtime.services.exportPreferences
     await expect(preferences.get()).resolves.toEqual({
       exportFolder: { folderRef: 'folder:path:/exports', displayPath: '/exports' },
       directoryTemplate: '{author}/{id}',
       fileNameTemplate: '{title}',
+      lastFormat: 'cbz',
     })
     await preferences.setExportFolder({
       folderRef: asFolderRef('folder:path:/exports/new'),
@@ -512,19 +516,20 @@ describe('runtime', () => {
     await preferences.setExportFolder(null)
     await preferences.setDirectoryTemplate('{id}')
     await preferences.setFileNameTemplate(null)
+    await preferences.setLastFormat('zip')
 
     expect(
       fetcher.mock.calls.map(([url, init]) => [String(url), JSON.parse(String(init?.body))]),
     ).toEqual([
-      ['/api/pickFolder', { purpose: 'pdf-export' }],
+      ['/api/pickFolder', { purpose: 'export' }],
       ['/api/getDefaultFolder', { purpose: 'download' }],
       ['/api/checkFilesExist', { files: [String(book), String(missing)] }],
       ['/api/openFile', { file: String(book) }],
       ['/api/openContainingFolder', { file: String(book) }],
-      ['/api/scanPdfFiles', { folder: 'folder:path:/exports' }],
-      ['/api/getPdfExportPreferences', {}],
+      ['/api/scanImportableFiles', { folder: 'folder:path:/exports', formats: ['pdf'] }],
+      ['/api/getExportPreferences', {}],
       [
-        '/api/setPdfExportFolder',
+        '/api/setExportFolder',
         {
           folder: {
             folderRef: 'folder:path:/exports/new',
@@ -532,9 +537,10 @@ describe('runtime', () => {
           },
         },
       ],
-      ['/api/setPdfExportFolder', { folder: null }],
-      ['/api/setPdfExportDirectoryTemplate', { value: '{id}' }],
-      ['/api/setPdfExportFileNameTemplate', { value: null }],
+      ['/api/setExportFolder', { folder: null }],
+      ['/api/setExportDirectoryTemplate', { value: '{id}' }],
+      ['/api/setExportFileNameTemplate', { value: null }],
+      ['/api/setExportLastFormat', { value: 'zip' }],
     ])
   })
 
@@ -572,17 +578,17 @@ describe('runtime', () => {
       completedAt: 2,
     }
     const fetcher = vi.fn().mockImplementation((input: RequestInfo | URL) => {
-      if (String(input) === '/api/getPdfExportTasks') {
+      if (String(input) === '/api/getExportTasks') {
         return Promise.resolve(response({ tasks: [rawTask], nextCursor: 'cursor-2' }))
       }
-      if (String(input) === '/api/deletePdfExportTask') {
+      if (String(input) === '/api/deleteExportTask') {
         return Promise.resolve(response({ success: true }))
       }
       return Promise.resolve(
-        response(String(input) === '/api/exportPdfBatch' ? { tasks: [rawTask] } : rawTask),
+        response(String(input) === '/api/exportBatch' ? { tasks: [rawTask] } : rawTask),
       )
     })
-    const pdf = createRuntime('windows', fetcher).services.pdf
+    const pdf = createRuntime('windows', fetcher).services.localFiles
     const task = {
       mode: 'chapter' as const,
       albumId: 'album-1',
@@ -599,12 +605,12 @@ describe('runtime', () => {
       splitPages: 0,
     }
 
-    const submitted = await pdf.exportPdfBatch({ tasks: [task] })
-    const listed = await pdf.getPdfExportTasks({ status: 'completed', limit: 20 })
-    const loaded = await pdf.getPdfExportTask('export-1')
-    const cancelled = await pdf.cancelPdfExport('export-1')
-    const retried = await pdf.retryPdfExport('export-1')
-    await expect(pdf.deletePdfExportTask('export-1')).resolves.toEqual({ success: true })
+    const submitted = await pdf.exportBatch({ tasks: [task] })
+    const listed = await pdf.getExportTasks({ status: 'completed', limit: 20 })
+    const loaded = await pdf.getExportTask('export-1')
+    const cancelled = await pdf.cancelExport('export-1')
+    const retried = await pdf.retryExport('export-1')
+    await expect(pdf.deleteExportTask('export-1')).resolves.toEqual({ success: true })
 
     for (const result of [submitted.tasks[0], listed.tasks[0], loaded, cancelled, retried]) {
       expect(result).toMatchObject({
@@ -624,7 +630,7 @@ describe('runtime', () => {
       fetcher.mock.calls.map(([url, init]) => [String(url), JSON.parse(String(init?.body))]),
     ).toEqual([
       [
-        '/api/exportPdfBatch',
+        '/api/exportBatch',
         {
           tasks: [
             {
@@ -645,17 +651,18 @@ describe('runtime', () => {
           ],
         },
       ],
-      ['/api/getPdfExportTasks', { status: 'completed', limit: 20 }],
-      ['/api/getPdfExportTask', { exportId: 'export-1' }],
-      ['/api/cancelPdfExport', { exportId: 'export-1' }],
-      ['/api/retryPdfExport', { exportId: 'export-1', allowOverwrite: false }],
-      ['/api/deletePdfExportTask', { exportId: 'export-1' }],
+      ['/api/getExportTasks', { status: 'completed', limit: 20 }],
+      ['/api/getExportTask', { exportId: 'export-1' }],
+      ['/api/cancelExport', { exportId: 'export-1' }],
+      ['/api/retryExport', { exportId: 'export-1', allowOverwrite: false }],
+      ['/api/deleteExportTask', { exportId: 'export-1' }],
     ])
   })
 
   test('Desktop PDF 文件库与页面回退使用统一后端契约', async () => {
     const rawFile = {
       id: 7,
+      format: 'pdf',
       fileRef: 'file:path:/books/book.pdf',
       displayPath: '/books/book.pdf',
       fileName: 'book.pdf',
@@ -678,7 +685,7 @@ describe('runtime', () => {
     }
     const fetcher = vi.fn().mockImplementation((input: RequestInfo | URL, _init?: RequestInit) => {
       const url = String(input)
-      if (url === '/api/importPdfs') {
+      if (url === '/api/importLocalFiles') {
         return Promise.resolve(
           response({
             imported: 1,
@@ -697,10 +704,10 @@ describe('runtime', () => {
           }),
         )
       }
-      if (url === '/api/getPdfFiles') {
+      if (url === '/api/getLocalFiles') {
         return Promise.resolve(response({ files: [rawFile] }))
       }
-      if (url === '/api/deletePdfFile') {
+      if (url === '/api/deleteLocalFile') {
         return Promise.resolve(
           response({
             result: 'deleted',
@@ -732,11 +739,11 @@ describe('runtime', () => {
       chapterSortOrder: 1,
     }
 
-    await expect(runtime.services.pdf.importPdfs([item])).resolves.toMatchObject({ imported: 1 })
-    await expect(runtime.services.pdf.getPdfFiles({ limit: 50 })).resolves.toMatchObject({
+    await expect(runtime.services.localFiles.importLocalFiles([item])).resolves.toMatchObject({ imported: 1 })
+    await expect(runtime.services.localFiles.getLocalFiles({ limit: 50 })).resolves.toMatchObject({
       files: [expect.objectContaining({ fileRef: rawFile.fileRef })],
     })
-    await expect(runtime.services.pdf.deletePdfFile(rawFile.id)).resolves.toMatchObject({
+    await expect(runtime.services.localFiles.deleteLocalFile(rawFile.id)).resolves.toMatchObject({
       result: 'deleted',
       file: { ref: rawFile.fileRef, displayPath: rawFile.displayPath, fileName: rawFile.fileName },
     })
@@ -750,9 +757,9 @@ describe('runtime', () => {
     ).resolves.toBe('/pdf-page/' + 'a'.repeat(64) + '.png')
 
     expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
-      '/api/importPdfs',
-      '/api/getPdfFiles',
-      '/api/deletePdfFile',
+      '/api/importLocalFiles',
+      '/api/getLocalFiles',
+      '/api/deleteLocalFile',
       '/api/renderPdfPage',
     ])
     expect(JSON.parse(String(fetcher.mock.calls[0][1]?.body))).toEqual({ items: [item] })

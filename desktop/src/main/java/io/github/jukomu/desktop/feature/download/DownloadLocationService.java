@@ -12,7 +12,7 @@ import io.github.jukomu.desktop.feature.download.model.RelocationProgressEvent;
 import io.github.jukomu.desktop.feature.files.FileReferences;
 import io.github.jukomu.desktop.feature.files.FileService;
 import io.github.jukomu.desktop.feature.files.model.FolderDescriptorResponse;
-import io.github.jukomu.desktop.feature.pdf.export.PdfExportStore;
+import io.github.jukomu.desktop.feature.export.ExportStore;
 import io.github.jukomu.desktop.feature.settings.SettingsService;
 import io.github.jukomu.desktop.feature.settings.model.DownloadLocation;
 import org.slf4j.Logger;
@@ -36,7 +36,7 @@ public final class DownloadLocationService {
     private final SettingsService settings;
     private final DownloadStore store;
     private final DownloadFiles files;
-    private final PdfExportStore pdfExports;
+    private final ExportStore exports;
     private final FileService fileService;
     private final EventHub events;
     private final FileOperations fileOperations;
@@ -46,11 +46,11 @@ public final class DownloadLocationService {
             SettingsService settings,
             DownloadStore store,
             DownloadFiles files,
-            PdfExportStore pdfExports,
+            ExportStore exports,
             FileService fileService,
             EventHub events
     ) {
-        this(paths, settings, store, files, pdfExports, fileService, events,
+        this(paths, settings, store, files, exports, fileService, events,
                 new DefaultFileOperations());
     }
 
@@ -59,7 +59,7 @@ public final class DownloadLocationService {
             SettingsService settings,
             DownloadStore store,
             DownloadFiles files,
-            PdfExportStore pdfExports,
+            ExportStore exports,
             FileService fileService,
             EventHub events,
             FileOperations fileOperations
@@ -68,7 +68,7 @@ public final class DownloadLocationService {
         this.settings = settings;
         this.store = store;
         this.files = files;
-        this.pdfExports = pdfExports;
+        this.exports = exports;
         this.fileService = fileService;
         this.events = events;
         this.fileOperations = fileOperations;
@@ -95,8 +95,8 @@ public final class DownloadLocationService {
             if (!store.listActiveTasks().isEmpty()) {
                 throw ApiException.conflict("有下载任务未完成，请等待全部完成或取消后再切换");
             }
-            if (!pdfExports.activeExportIds().isEmpty()) {
-                throw ApiException.conflict("有 PDF 导出任务未完成，请等待全部完成或取消后再切换");
+            if (!exports.activeExportIds().isEmpty()) {
+                throw ApiException.conflict("有导出任务未完成，请等待全部完成或取消后再切换");
             }
 
             DownloadLocation current = settings.downloadLocation();

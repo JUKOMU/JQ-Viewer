@@ -6,7 +6,7 @@ import io.github.jukomu.desktop.data.Database;
 import io.github.jukomu.desktop.data.Paths;
 import io.github.jukomu.desktop.feature.download.data.DownloadStore;
 import io.github.jukomu.desktop.feature.download.model.DownloadProgressEvent;
-import io.github.jukomu.desktop.feature.pdf.export.PdfExportStore;
+import io.github.jukomu.desktop.feature.export.ExportStore;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -24,9 +24,10 @@ class DesktopTaskNotificationServiceTest {
     private Database database;
     private EventHub events;
     private DownloadStore downloads;
-    private PdfExportStore pdfExports;
+    private ExportStore exports;
     private LaunchRouteService launchRoutes;
     private DesktopTaskNotificationService notifications;
+    private List<String> openedFolders;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -37,10 +38,11 @@ class DesktopTaskNotificationServiceTest {
         database.open();
         events = new EventHub(new ObjectMapper());
         downloads = new DownloadStore(database);
-        pdfExports = new PdfExportStore(database);
+        exports = new ExportStore(database);
         launchRoutes = new LaunchRouteService(events);
+        openedFolders = new ArrayList<>();
         notifications = new DesktopTaskNotificationService(
-                downloads, pdfExports, launchRoutes, events);
+                downloads, exports, launchRoutes, events, openedFolders::add);
         notifications.start();
     }
 
@@ -70,18 +72,40 @@ class DesktopTaskNotificationServiceTest {
         assertEquals(Map.of("route", "/download"), launchRoutes.consume());
         assertTrue(launchRoutes.consume().isEmpty());
 
-        reservePdf("pdf id/1", "测试导出");
-        pdfExports.updateProgress("pdf id/1", "completed", "completed", 8, 8,
+        reserveExport("pdf id/1", "pdf", "测试导出", "file:path:/tmp/output.pdf");
+        exports.updateProgress("pdf id/1", "completed", "completed", 8, 8,
                 1, 1, null, null);
-        events.publish("pdfExportProgress", pdfExports.find("pdf id/1"));
-        events.publish("pdfExportProgress", pdfExports.find("pdf id/1"));
+        events.publish("exportProgress", exports.find("pdf id/1"));
+        events.publish("exportProgress", exports.find("pdf id/1"));
 
         assertEquals(2, sink.entries.size());
         assertEquals("PDF 导出完成", sink.entries.get(1).notification().title());
         assertEquals("测试导出", sink.entries.get(1).notification().message());
         sink.entries.get(1).click().run();
-        assertEquals(Map.of("route", "/download?view=pdf&tab=tasks&exportId=pdf+id%2F1"),
-                launchRoutes.consume());
+        String route = launchRoutes.consume().get("route");
+        assertTrue(route.startsWith("/pdf-reader?"));
+        assertTrue(route.contains("fileRef=file%3Apath%3A%2Ftmp%2Foutput.pdf"));
+    }
+
+    @Test
+    void opensCbzInReaderAndZipInContainingFolder() {
+        RecordingSink sink = new RecordingSink();
+        notifications.attach(sink);
+
+        reserveExport("cbz-1", "cbz", "CBZ", "file:path:/tmp/output.cbz");
+        exports.updateProgress("cbz-1", "completed", "completed", 8, 8,
+                1, 1, null, null);
+        events.publish("exportProgress", exports.find("cbz-1"));
+        sink.entries.getFirst().click().run();
+        assertTrue(launchRoutes.consume().get("route").startsWith("/cbz-reader?"));
+
+        reserveExport("zip-1", "zip", "ZIP", "file:path:/tmp/output.zip");
+        exports.updateProgress("zip-1", "completed", "completed", 8, 8,
+                1, 1, null, null);
+        events.publish("exportProgress", exports.find("zip-1"));
+        sink.entries.get(1).click().run();
+        assertEquals(List.of("file:path:/tmp/output.zip"), openedFolders);
+        assertTrue(launchRoutes.consume().isEmpty());
     }
 
     @Test
@@ -147,10 +171,12 @@ class DesktopTaskNotificationServiceTest {
         ));
     }
 
-    private void reservePdf(String exportId, String title) {
-        pdfExports.reserve(new PdfExportStore.ReserveTask(
+    private void reserveExport(String exportId, String format, String title, String outputFileRef) {
+        String extension = format.equals("pdf") ? "pdf" : format;
+        exports.reserve(new ExportStore.ReserveTask(
                 exportId,
                 "batch",
+                format,
                 "chapter",
                 "album",
                 "漫画",
@@ -160,8 +186,8 @@ class DesktopTaskNotificationServiceTest {
                 "chapter",
                 title,
                 "folder:path:/tmp",
-                "output.pdf",
-                "/tmp/output.pdf",
+                "output." + extension,
+                "/tmp/output." + extension,
                 false,
                 true,
                 1,
@@ -172,7 +198,13 @@ class DesktopTaskNotificationServiceTest {
                 null,
                 null,
                 1
-        ), List.of(), List.of());
+        ), List.of(new ExportStore.Chapter(
+                0, "album", "chapter", title, 1, 8)), List.of(new ExportStore.Volume(
+                1, 0, 8, 8, "output." + extension,
+                "/tmp/output." + extension, "/tmp/output.tmp")));
+        exports.completeVolumeAndRegisterFile(
+                exportId, 1, outputFileRef, "/tmp/output." + extension,
+                "output." + extension, 1024, 8);
     }
 
     private static final class RecordingSink implements DesktopNotificationSink {

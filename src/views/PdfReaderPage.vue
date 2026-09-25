@@ -78,7 +78,7 @@ import { getRuntime } from '@/runtime/runtimeContext'
 import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
 import { SettingsStore } from '@/services/SettingsService'
 import { HistoryService } from '@/services/HistoryService'
-import { ReadingProgressService } from '@/services/ReadingProgressService'
+import { createLocalReaderSession, type LocalReaderSession } from '@/services/LocalReaderSession'
 import * as pdfjsLib from 'pdfjs-dist'
 import {
   buildPdfDocumentParams,
@@ -125,9 +125,13 @@ const fileRef = asFileRef((route.query.fileRef as string) || '')
 const displayTitle = computed(() => (route.query.title as string) || 'PDF')
 const albumId = computed(() => (route.query.albumId as string) || '')
 const chapterId = computed(() => (route.query.chapterId as string) || albumId.value)
+const historyChapterId = computed(() =>
+  route.query.readingContext === 'file' ? (route.query.chapterId as string) || '' : chapterId.value,
+)
 const albumTitle = computed(() => (route.query.albumTitle as string) || '')
 const authors = computed(() => (route.query.authors as string) || '')
 const coverUrl = computed(() => (route.query.coverUrl as string) || '')
+const fileId = computed(() => Number(route.query.fileId) || 0)
 
 // ---- 核心状态 ----
 const isVertical = ref(SettingsStore.getReaderDisplayMode() === 'vertical')
@@ -172,6 +176,7 @@ let dragPreviewTimer: ReturnType<typeof setTimeout> | null = null
 let activeRenderCount = 0
 let renderTargetWidth = 0
 let renderResizeObserver: ResizeObserver | null = null
+let readerSession: LocalReaderSession | null = null
 
 const verticalViewRef = ref<InstanceType<typeof VerticalScrollView> | null>(null)
 const horizontalViewRef = ref<InstanceType<typeof HorizontalPageView> | null>(null)
@@ -399,19 +404,20 @@ const calcBaseScale = (
 
 // ---- PDF 页面渲染 ----
 const renderPageToBlob = async (pageNum: number): Promise<string | null> => {
+  const physicalPage = readerSession?.physicalPage(pageNum) ?? pageNum
   if (nativePdfMode) {
     const renderer = getRuntime().resources.renderPdfPage
     if (!renderer.available) {
       throw new RuntimeError('unavailable', '当前平台不支持原生 PDF 页面渲染')
     }
     const targetWidth = getRenderTargetWidth(isVertical.value, true)
-    return await renderer.api.getUrl({ file: fileRef, page: pageNum, targetWidth })
+    return await renderer.api.getUrl({ file: fileRef, page: physicalPage, targetWidth })
   }
 
   if (!pdfDoc) return null
   let page: pdfjsLib.PDFPageProxy | null = null
   try {
-    page = await pdfDoc.getPage(pageNum)
+    page = await pdfDoc.getPage(physicalPage)
     const scale = calcBaseScale(page.getViewport({ scale: 1 }), getReaderContentWidth())
     const viewport = page.getViewport({ scale })
 
@@ -909,7 +915,7 @@ const goToIndex = (index: number, source: PageChangeSource) => {
   const next = clampIndex(index)
   currentIndex.value = next
   updateReaderCurrentPage(next + 1)
-  ReadingProgressService.record(albumId.value, chapterId.value, next + 1, totalCount.value)
+  readerSession?.recordPage(next + 1)
 
   if (source === 'slider-input') {
     scheduleDragPreviewRender(next)
@@ -965,7 +971,7 @@ const onProgressInput = (page1Based: number) => {
 const recordBrowseHistory = () => {
   const aId = albumId.value
   if (!aId) return
-  const cId = chapterId.value
+  const cId = historyChapterId.value
   const aTitle = albumTitle.value
   const aCover = coverUrl.value
   const aAuthors = authors.value
@@ -980,6 +986,7 @@ const recordBrowseHistory = () => {
         authors: (album.authors ?? []).join(' / ') || aAuthors,
         chapterId: cId,
         chapterTitle: cTitle,
+        ...(fileId.value > 0 ? { fileId: fileId.value } : {}),
       })
     })
     .catch(() => {
@@ -990,6 +997,7 @@ const recordBrowseHistory = () => {
         authors: aAuthors,
         chapterId: cId,
         chapterTitle: cTitle,
+        ...(fileId.value > 0 ? { fileId: fileId.value } : {}),
       })
     })
 }
@@ -1049,17 +1057,16 @@ onMounted(async () => {
     if (total <= 0) throw new Error('PDF 页数异常')
     // pdf.js 失败后可能切换到 native renderer；以实际 renderer 的限制重新建立基线。
     renderTargetWidth = getRenderTargetWidth()
-    const initialPage = ReadingProgressService.getInitialPage(
-      route.query.page,
-      albumId.value,
-      chapterId.value,
-      total,
+    readerSession = createLocalReaderSession(route.query, total)
+    const initialPage = readerSession.initialPage(route.query.page)
+    const initIndex = Math.min(
+      Math.max(initialPage - 1, 0),
+      Math.max(0, readerSession.totalPages - 1),
     )
-    const initIndex = Math.min(Math.max(initialPage - 1, 0), Math.max(0, total - 1))
     currentIndex.value = initIndex
-    totalCount.value = total
+    totalCount.value = readerSession.totalPages
     updateReaderCurrentPage(initIndex + 1)
-    ReadingProgressService.record(albumId.value, chapterId.value, initIndex + 1, total)
+    readerSession.recordPage(initIndex + 1)
     setToolbarVisible(true)
 
     updateWindow(initIndex)

@@ -9,6 +9,7 @@ public record HistoryItemResponse(
         String authors,
         String chapterId,
         String chapterTitle,
+        Long fileId,
         long timestamp
 ) {
 }

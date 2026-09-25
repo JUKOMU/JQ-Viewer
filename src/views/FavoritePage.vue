@@ -332,9 +332,9 @@ const refreshDownloadStatuses = async () => {
         }
       }
       try {
-        const pdfsResult = await JmcomicService.getImportedPdfs()
-        if (pdfsResult?.pdfs) {
-          for (const pdf of pdfsResult.pdfs) {
+        const pdfsResult = await JmcomicService.getImportedLocalFiles()
+        if (pdfsResult?.files) {
+          for (const pdf of pdfsResult.files) {
             if (pdf.albumId) set.add(pdf.albumId)
           }
         }

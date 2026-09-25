@@ -18,7 +18,7 @@ import io.github.jukomu.desktop.bridge.handler.FilePluginHandler;
 import io.github.jukomu.desktop.bridge.handler.HistoryPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.OfflineFavoritePluginHandler;
 import io.github.jukomu.desktop.bridge.handler.OcrPluginHandler;
-import io.github.jukomu.desktop.bridge.handler.PdfPluginHandler;
+import io.github.jukomu.desktop.bridge.handler.LocalFilePluginHandler;
 import io.github.jukomu.desktop.bridge.handler.SettingsPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.SystemPluginHandler;
 import io.github.jukomu.desktop.bridge.handler.UpdatePluginHandler;
@@ -26,6 +26,7 @@ import io.github.jukomu.desktop.data.Database;
 import io.github.jukomu.desktop.data.Paths;
 import io.github.jukomu.desktop.feature.auth.AuthService;
 import io.github.jukomu.desktop.feature.auth.CredentialStore;
+import io.github.jukomu.desktop.feature.cbz.CbzDocumentService;
 import io.github.jukomu.desktop.feature.auth.CredentialStores;
 import io.github.jukomu.desktop.feature.catalog.CatalogService;
 import io.github.jukomu.desktop.feature.client.JmcomicSessionManager;
@@ -46,10 +47,10 @@ import io.github.jukomu.desktop.feature.notification.DesktopNotificationSink;
 import io.github.jukomu.desktop.feature.notification.DesktopTaskNotificationService;
 import io.github.jukomu.desktop.feature.notification.LaunchRouteService;
 import io.github.jukomu.desktop.feature.ocr.OcrService;
-import io.github.jukomu.desktop.feature.pdf.data.PdfStore;
-import io.github.jukomu.desktop.feature.pdf.export.PdfExportService;
-import io.github.jukomu.desktop.feature.pdf.export.PdfExportStore;
-import io.github.jukomu.desktop.feature.pdf.management.PdfManagementService;
+import io.github.jukomu.desktop.feature.localfile.data.LocalFileStore;
+import io.github.jukomu.desktop.feature.export.ExportService;
+import io.github.jukomu.desktop.feature.export.ExportStore;
+import io.github.jukomu.desktop.feature.localfile.management.LocalFileManagementService;
 import io.github.jukomu.desktop.feature.pdf.render.PdfDocumentService;
 import io.github.jukomu.desktop.feature.pdf.render.PdfPageCache;
 import io.github.jukomu.desktop.feature.pdf.render.PdfResourceService;
@@ -99,7 +100,8 @@ public final class Backend implements AutoCloseable {
             "/pdf-template-help",
             "/batch-parse",
             "/import-review",
-            "/pdf-reader"
+            "/pdf-reader",
+            "/cbz-reader"
     );
 
     private final Paths paths;
@@ -115,7 +117,7 @@ public final class Backend implements AutoCloseable {
     private Javalin app;
     private JmcomicSessionManager clientSession;
     private DownloadService downloadService;
-    private PdfExportService pdfExportService;
+    private ExportService exportService;
     private NetworkService networkService;
     private OcrService ocrService;
     private EventHub eventHub;
@@ -242,7 +244,7 @@ public final class Backend implements AutoCloseable {
         EventHub startedEventHub = null;
         JmcomicSessionManager startedClientSession = null;
         DownloadService startedDownloadService = null;
-        PdfExportService startedPdfExportService = null;
+        ExportService startedExportService = null;
         NetworkService startedNetworkService = null;
         OcrService startedOcrService = null;
         LaunchRouteService startedLaunchRoutes = null;
@@ -301,15 +303,16 @@ public final class Backend implements AutoCloseable {
             ImageService imageService = new ImageService(
                     clientSession::getClient, executors.imagePreload(), eventHub);
             DownloadStore downloadStore = new DownloadStore(database);
-            PdfExportStore pdfExportStore = new PdfExportStore(database);
+            ExportStore exportStore = new ExportStore(database);
             startedLaunchRoutes = new LaunchRouteService(eventHub);
             startedTaskNotifications = new DesktopTaskNotificationService(
-                    downloadStore, pdfExportStore, startedLaunchRoutes, eventHub);
+                    downloadStore, exportStore, startedLaunchRoutes, eventHub,
+                    fileService::openContainingFolder);
             DesktopTaskNotificationService taskNotifications = startedTaskNotifications;
             DownloadFiles downloadFiles = new DownloadFiles(
                     settingsService.downloadRoot(paths.downloadsDirectory()));
             DownloadLocationService downloadLocationService = new DownloadLocationService(
-                    paths, settingsService, downloadStore, downloadFiles, pdfExportStore,
+                    paths, settingsService, downloadStore, downloadFiles, exportStore,
                     fileService, eventHub);
             downloadLocationService.reconcileOnStartup();
             startedDownloadService = new DownloadService(
@@ -347,20 +350,22 @@ public final class Backend implements AutoCloseable {
                     ? CredentialStores.system()
                     : providedCredentialStore;
             PdfPageCache pdfPageCache = new PdfPageCache(paths.cacheDirectory());
+            CbzDocumentService cbzDocuments = new CbzDocumentService();
             CacheService cacheService = new CacheService(
                     settingsService, imageService.cache(), pdfPageCache);
             DiagnosticsService diagnosticsService = new DiagnosticsService(
-                    paths, downloadStore, pdfExportStore, cacheService);
-            PdfManagementService pdfManagementService = new PdfManagementService(
-                    new PdfStore(database),
+                    paths, downloadStore, exportStore, cacheService);
+            LocalFileManagementService pdfManagementService = new LocalFileManagementService(
+                    new LocalFileStore(database),
                     downloadStore,
                     fileService,
-                    new PdfDocumentService(pdfPageCache)
+                    new PdfDocumentService(pdfPageCache),
+                    cbzDocuments
             );
-            startedPdfExportService = new PdfExportService(
-                    pdfExportStore, downloadStore, downloadFiles,
-                    executors.pdfExport(), eventHub);
-            startedPdfExportService.reconcileOnStartup();
+            startedExportService = new ExportService(
+                    exportStore, downloadStore, downloadFiles,
+                    executors.exportJobs(), eventHub);
+            startedExportService.reconcileOnStartup();
             taskNotifications.start();
             Plugin plugin = new Plugin(
                     new ApiPluginHandler(apiRequests, imageRequests,
@@ -380,7 +385,7 @@ public final class Backend implements AutoCloseable {
                             new OfflineFavoriteStore(database, mapper))),
                     new FilePluginHandler(fileRequests, dialogRequests, fileService),
                     new DownloadPluginHandler(downloadRequests, downloadService),
-                    new PdfPluginHandler(pdfRequests, pdfManagementService, startedPdfExportService),
+                    new LocalFilePluginHandler(pdfRequests, pdfManagementService, startedExportService),
                     new SystemPluginHandler(
                             networkRequests, diagnosticsRequests,
                             clientSession,
@@ -404,6 +409,7 @@ public final class Backend implements AutoCloseable {
                 registerImageRoute(config, imageService, downloadService,
                         "thumb", "/thumb/{photoId}/{sortOrder}");
                 registerPdfRoutes(config, pdfResources, pdfPageCache);
+                registerCbzRoutes(config, cbzDocuments);
             });
             candidate.start();
             int port = candidate.port();
@@ -415,7 +421,7 @@ public final class Backend implements AutoCloseable {
             this.app = candidate;
             this.clientSession = clientSession;
             this.downloadService = downloadService;
-            this.pdfExportService = startedPdfExportService;
+            this.exportService = startedExportService;
             this.networkService = startedNetworkService;
             this.ocrService = startedOcrService;
             this.eventHub = eventHub;
@@ -429,7 +435,7 @@ public final class Backend implements AutoCloseable {
         } catch (Exception | Error exception) {
             Javalin failedApp = candidate;
             DownloadService failedDownloadService = startedDownloadService;
-            PdfExportService failedPdfExportService = startedPdfExportService;
+            ExportService failedExportService = startedExportService;
             NetworkService failedNetworkService = startedNetworkService;
             OcrService failedOcrService = startedOcrService;
             DesktopTaskNotificationService failedTaskNotifications = startedTaskNotifications;
@@ -453,8 +459,8 @@ public final class Backend implements AutoCloseable {
                     step("下载服务", () -> {
                         if (failedDownloadService != null) failedDownloadService.close();
                     }),
-                    step("PDF 导出服务", () -> {
-                        if (failedPdfExportService != null) failedPdfExportService.close();
+                    step("文件导出服务", () -> {
+                        if (failedExportService != null) failedExportService.close();
                     }),
                     step("网络服务", () -> {
                         if (failedNetworkService != null) failedNetworkService.close();
@@ -508,6 +514,31 @@ public final class Backend implements AutoCloseable {
                 context.contentType("image/png").result(pdfPageCache.open(resourceId));
             } catch (java.nio.file.NoSuchFileException exception) {
                 context.status(404).result("PDF 页面资源不存在");
+            }
+        });
+    }
+
+    private void registerCbzRoutes(
+            io.javalin.config.JavalinConfig config,
+            CbzDocumentService cbzDocuments
+    ) {
+        config.routes.get("/cbz-page/{encodedFileRef}/{page}", context -> {
+            try {
+                String fileRef = new String(java.util.Base64.getUrlDecoder().decode(
+                        context.pathParam("encodedFileRef")), java.nio.charset.StandardCharsets.UTF_8);
+                int page = Integer.parseInt(context.pathParam("page"));
+                CbzDocumentService.PageResource resource = cbzDocuments.openPage(fileRef, page);
+                if (resource.length() > 0L) {
+                    context.header("Content-Length", String.valueOf(resource.length()));
+                }
+                context.header("Cache-Control", "private, max-age=3600");
+                context.contentType(resource.mimeType()).result(resource.input());
+            } catch (IllegalArgumentException exception) {
+                context.status(400).result("CBZ 页面资源路径无效");
+            } catch (CbzDocumentService.CbzException exception) {
+                context.status(exception.status());
+                context.header("X-JQViewer-Cbz-Error", exception.code());
+                context.result(exception.getMessage());
             }
         });
     }
@@ -666,8 +697,8 @@ public final class Backend implements AutoCloseable {
         updateService = null;
         LaunchRouteService closingLaunchRoutes = launchRouteService;
         launchRouteService = null;
-        PdfExportService closingPdfExportService = pdfExportService;
-        pdfExportService = null;
+        ExportService closingExportService = exportService;
+        exportService = null;
         NetworkService closingNetworkService = networkService;
         networkService = null;
         OcrService closingOcrService = ocrService;
@@ -689,8 +720,8 @@ public final class Backend implements AutoCloseable {
                 step("启动路由", () -> {
                     if (closingLaunchRoutes != null) closingLaunchRoutes.close();
                 }),
-                step("PDF 导出服务", () -> {
-                    if (closingPdfExportService != null) closingPdfExportService.close();
+                step("文件导出服务", () -> {
+                    if (closingExportService != null) closingExportService.close();
                 }),
                 step("网络服务", () -> {
                     if (closingNetworkService != null) closingNetworkService.close();

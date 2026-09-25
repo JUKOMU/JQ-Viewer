@@ -83,7 +83,7 @@
                         v-for="item in group.items"
                         :key="item.id"
                         class="browse-card"
-                        @click="openAlbum(item)"
+                        @click="openHistoryTarget(item)"
                       >
                         <div class="card-cover-wrap">
                           <img :src="item.coverUrl" class="card-cover" alt="" loading="lazy" />
@@ -214,6 +214,7 @@ import {
   trashOutline,
 } from 'ionicons/icons'
 import { HistoryService } from '@/services/HistoryService'
+import { ChapterSourceService, type LocalChapterSource } from '@/services/ChapterSourceService'
 import type {
   BrowseHistoryItem,
   HistoryPageResult,
@@ -904,7 +905,7 @@ onDeactivated(() => {
   saveActiveTabScrollPosition()
 })
 
-function openAlbum(item: BrowseHistoryItem) {
+function openAlbumDetail(item: BrowseHistoryItem) {
   const authorsParam = item.authors.replace(/\s*\/\s*/g, ',')
   const chapterId = item.chapterId.trim()
   void router.push({
@@ -916,6 +917,55 @@ function openAlbum(item: BrowseHistoryItem) {
       ...(chapterId ? { chapterId } : {}),
     },
   })
+}
+
+async function openHistoryTarget(item: BrowseHistoryItem) {
+  const chapterId = item.chapterId.trim()
+  if (item.fileId) {
+    const file = await ChapterSourceService.resolveFile(item.fileId)
+    if (file) {
+      const chapter = file.chapters.find(
+        (candidate) => candidate.albumId === item.albumId && candidate.chapterId === chapterId,
+      )
+      if (chapter) {
+        const source: LocalChapterSource = {
+          kind: file.format === 'cbz' ? 'cbz' : 'pdf',
+          file,
+          chapter,
+        }
+        await router.push(
+          ChapterSourceService.readerLocation(source, {
+            albumId: item.albumId,
+            albumTitle: item.albumTitle,
+            chapterId,
+            chapterTitle: item.chapterTitle,
+            authors: item.authors,
+            coverUrl: item.coverUrl,
+          }),
+        )
+        return
+      }
+      await router.push(ChapterSourceService.fileReaderLocation(file))
+      return
+    }
+  }
+  if (chapterId) {
+    const source = await ChapterSourceService.resolve(item.albumId, chapterId)
+    if (source) {
+      await router.push(
+        ChapterSourceService.readerLocation(source, {
+          albumId: item.albumId,
+          albumTitle: item.albumTitle,
+          chapterId,
+          chapterTitle: item.chapterTitle,
+          authors: item.authors,
+          coverUrl: item.coverUrl,
+        }),
+      )
+      return
+    }
+  }
+  openAlbumDetail(item)
 }
 
 function openParseItem(item: ParseHistoryItem) {
@@ -977,7 +1027,7 @@ function handleContextMenuAction(action: string) {
 function handleMenuDetail() {
   const item = contextMenu.value?.item as BrowseHistoryItem
   closeContextMenu()
-  if (item) openAlbum(item)
+  if (item) openAlbumDetail(item)
 }
 
 async function handleMenuCopy() {

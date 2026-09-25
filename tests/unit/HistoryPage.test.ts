@@ -6,6 +6,7 @@ import type {
   BrowseHistoryItem,
   BrowseHistoryOverview,
   BrowseHistoryRange,
+  LocalFileRecord,
   ParseHistoryItem,
 } from '@/services/JmcomicTypes'
 import { BROWSE_GROUP_DEFINITIONS, groupBrowseHistory } from '@/utils/historyDateGroups'
@@ -21,6 +22,10 @@ const mocks = vi.hoisted(() => ({
   clearParseHistory: vi.fn(),
   deleteBrowseItem: vi.fn(),
   deleteParseItem: vi.fn(),
+  resolveFile: vi.fn(),
+  resolveChapterSource: vi.fn(),
+  readerLocation: vi.fn(),
+  fileReaderLocation: vi.fn(),
 }))
 
 vi.mock('vue-router', () => ({
@@ -95,6 +100,15 @@ vi.mock('@/services/HistoryService', () => ({
   },
 }))
 
+vi.mock('@/services/ChapterSourceService', () => ({
+  ChapterSourceService: {
+    resolveFile: mocks.resolveFile,
+    resolve: mocks.resolveChapterSource,
+    readerLocation: mocks.readerLocation,
+    fileReaderLocation: mocks.fileReaderLocation,
+  },
+}))
+
 vi.mock('@/components/common/MenuToggleButton.vue', () => ({
   default: { name: 'MenuToggleButton', render: () => null },
 }))
@@ -147,6 +161,41 @@ const makeParseItem = (id = 1, overrides: Partial<ParseHistoryItem> = {}): Parse
   ...overrides,
 })
 
+const makeLocalFile = (): LocalFileRecord => ({
+  id: 42,
+  format: 'cbz',
+  fileRef: 'file:path:/books/merged.cbz' as LocalFileRecord['fileRef'],
+  displayPath: '/books/merged.cbz',
+  fileName: 'merged.cbz',
+  sourceType: 'exported',
+  ownership: 'app_created',
+  chapterLinkStatus: 'multi_chapter',
+  albumId: '100',
+  albumTitle: '测试本子 1',
+  coverUrl: 'https://example.test/1.jpg',
+  authors: '作者甲 / 作者乙',
+  chapterTitle: '第二话',
+  chapterSortOrder: 2,
+  chapters: [
+    {
+      sequence: 0,
+      albumId: '100',
+      chapterId: '200',
+      chapterTitle: '第二话',
+      sortOrder: 2,
+      startPage: 6,
+      endPage: 10,
+      pageCount: 5,
+    },
+  ],
+  createdAt: 1,
+  fileSize: 100,
+  pageCount: 10,
+  availability: 'available',
+  verificationStatus: 'valid',
+  updatedAt: 1,
+})
+
 function matchesRange(timestamp: number, range?: BrowseHistoryRange): boolean {
   if (!range) return true
   if (range.startInclusive !== null && timestamp < range.startInclusive) return false
@@ -191,6 +240,16 @@ beforeEach(() => {
   mocks.getBrowseHistoryOverview.mockResolvedValue(makeOverview([]))
   mocks.getBrowseHistory.mockResolvedValue({ items: [], totalCount: 0 })
   mocks.getParseHistory.mockResolvedValue([])
+  mocks.resolveFile.mockResolvedValue(null)
+  mocks.resolveChapterSource.mockResolvedValue({ kind: 'network' })
+  mocks.readerLocation.mockImplementation((_source, metadata) => ({
+    path: `/album/${metadata.albumId}/read/${metadata.chapterId}`,
+    query: { title: metadata.chapterTitle, total: '0' },
+  }))
+  mocks.fileReaderLocation.mockImplementation((file: LocalFileRecord) => ({
+    path: file.format === 'cbz' ? '/cbz-reader' : '/pdf-reader',
+    query: { fileId: String(file.id), readingContext: 'file' },
+  }))
 })
 
 afterEach(() => {
@@ -345,20 +404,83 @@ describe('HistoryPage 分组分页', () => {
 })
 
 describe('HistoryPage 详情和生命周期', () => {
-  test('历史记录有章节 ID 时定位到对应章节', async () => {
+  test('文件仍可用时按 fileId 重开原文件章节', async () => {
+    const file = makeLocalFile()
+    mocks.resolveFile.mockResolvedValue(file)
     const wrapper = await mountHistory([
-      makeBrowseItem(1, Date.now(), { albumId: '100', chapterId: '200', chapterTitle: '第二话' }),
+      makeBrowseItem(1, Date.now(), {
+        albumId: '100',
+        chapterId: '200',
+        chapterTitle: '第二话',
+        fileId: 42,
+      }),
     ])
-    await wrapper.get('.browse-card').trigger('click')
 
+    await wrapper.get('.browse-card').trigger('click')
+    await settle()
+
+    expect(mocks.resolveFile).toHaveBeenCalledWith(42)
+    expect(mocks.readerLocation).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'cbz', file, chapter: file.chapters[0] }),
+      expect.objectContaining({ albumId: '100', chapterId: '200' }),
+    )
+    expect(mocks.resolveChapterSource).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  test('原文件失效且章节可确定时按来源优先级重新解析', async () => {
+    const wrapper = await mountHistory([
+      makeBrowseItem(1, Date.now(), {
+        albumId: '100',
+        chapterId: '200',
+        chapterTitle: '第二话',
+        fileId: 42,
+      }),
+    ])
+
+    await wrapper.get('.browse-card').trigger('click')
+    await settle()
+
+    expect(mocks.resolveFile).toHaveBeenCalledWith(42)
+    expect(mocks.resolveChapterSource).toHaveBeenCalledWith('100', '200')
+    expect(mocks.routerPush).toHaveBeenCalledWith({
+      path: '/album/100/read/200',
+      query: { title: '第二话', total: '0' },
+    })
+    wrapper.unmount()
+  })
+
+  test('原文件失效且没有章节目标时回到漫画详情', async () => {
+    const wrapper = await mountHistory([
+      makeBrowseItem(1, Date.now(), { albumId: '100', chapterId: '', fileId: 42 }),
+    ])
+
+    await wrapper.get('.browse-card').trigger('click')
+    await settle()
+
+    expect(mocks.resolveFile).toHaveBeenCalledWith(42)
+    expect(mocks.resolveChapterSource).not.toHaveBeenCalled()
     expect(mocks.routerPush).toHaveBeenCalledWith({
       path: '/album/100',
       query: {
         title: '测试本子 1',
         coverUrl: 'https://example.test/1.jpg',
         authors: '作者甲,作者乙',
-        chapterId: '200',
       },
+    })
+    wrapper.unmount()
+  })
+
+  test('历史记录有章节 ID 时定位到对应章节', async () => {
+    const wrapper = await mountHistory([
+      makeBrowseItem(1, Date.now(), { albumId: '100', chapterId: '200', chapterTitle: '第二话' }),
+    ])
+    await wrapper.get('.browse-card').trigger('click')
+
+    await settle()
+    expect(mocks.routerPush).toHaveBeenCalledWith({
+      path: '/album/100/read/200',
+      query: { title: '第二话', total: '0' },
     })
     wrapper.unmount()
   })

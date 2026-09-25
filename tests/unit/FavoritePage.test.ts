@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
   auth: null as null | { isLoggedIn: ReturnType<typeof ref>; userInfo: ReturnType<typeof ref> },
   favorites: vi.fn(),
   getDownloadTasks: vi.fn(),
-  getImportedPdfs: vi.fn(),
+  getImportedLocalFiles: vi.fn(),
   addDownloadProgressListener: vi.fn(),
   showToast: vi.fn(() => Promise.resolve()),
   router: {
@@ -121,7 +121,7 @@ vi.mock('@/services/JmcomicService', () => ({
   JmcomicService: {
     favorites: mocks.favorites,
     getDownloadTasks: mocks.getDownloadTasks,
-    getImportedPdfs: mocks.getImportedPdfs,
+    getImportedLocalFiles: mocks.getImportedLocalFiles,
     addDownloadProgressListener: mocks.addDownloadProgressListener,
   },
   sanitizeError: (_error: unknown, fallback: string) => fallback,
@@ -199,8 +199,8 @@ beforeEach(() => {
   mocks.favorites.mockResolvedValue(onlineResult)
   mocks.getDownloadTasks.mockReset()
   mocks.getDownloadTasks.mockResolvedValue({ tasks: [] })
-  mocks.getImportedPdfs.mockReset()
-  mocks.getImportedPdfs.mockResolvedValue({ pdfs: [] })
+  mocks.getImportedLocalFiles.mockReset()
+  mocks.getImportedLocalFiles.mockResolvedValue({ files: [] })
   mocks.addDownloadProgressListener.mockReset()
   mocks.addDownloadProgressListener.mockResolvedValue({ remove: vi.fn(() => Promise.resolve()) })
 })

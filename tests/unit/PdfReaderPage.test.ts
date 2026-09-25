@@ -144,8 +144,11 @@ vi.mock('@/services/HistoryService', () => ({
 
 vi.mock('@/services/ReadingProgressService', () => ({
   ReadingProgressService: {
-    getInitialPage: mocks.getInitialPage,
-    record: mocks.recordProgress,
+    getInitialChapterPage: mocks.getInitialPage,
+    recordChapter: mocks.recordProgress,
+    getInitialFilePage: mocks.getInitialPage,
+    recordFile: mocks.recordProgress,
+    chapterToFilePage: (_chapter: unknown, page: number) => page,
   },
 }))
 
@@ -477,10 +480,7 @@ describe('PdfReaderPage PDF 专属渲染尺寸', () => {
 
     expect(mocks.getPdfInfo).not.toHaveBeenCalled()
     expect(mocks.renderPdfPage).not.toHaveBeenCalled()
-    expect(mocks.showToast).toHaveBeenCalledWith(
-      '当前平台不支持原生 PDF 页面渲染',
-      'danger',
-    )
+    expect(mocks.showToast).toHaveBeenCalledWith('当前平台不支持原生 PDF 页面渲染', 'danger')
     expect(mocks.router.back).toHaveBeenCalled()
     wrapper.unmount()
   })
@@ -559,10 +559,7 @@ describe('PdfReaderPage PDF 专属渲染尺寸', () => {
     loadFailure.reject(new Error('unsupported'))
     await settle()
 
-    expect(mocks.showToast).toHaveBeenCalledWith(
-      'PDF 信息读取失败: 没有权限读取 PDF',
-      'danger',
-    )
+    expect(mocks.showToast).toHaveBeenCalledWith('PDF 信息读取失败: 没有权限读取 PDF', 'danger')
     expect(mocks.router.back).toHaveBeenCalled()
     wrapper.unmount()
   })

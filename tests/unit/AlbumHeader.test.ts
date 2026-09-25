@@ -13,6 +13,7 @@ vi.mock('@ionic/vue', async () => {
 })
 
 vi.mock('ionicons/icons', () => ({
+  archiveOutline: 'archive',
   arrowBack: 'arrow-back',
   documentOutline: 'document',
   ellipsisVertical: 'ellipsis',
@@ -29,6 +30,7 @@ const baseProps = {
   loading: false,
   sourceMenuOpen: true,
   imageAvailable: false,
+  cbzAvailable: false,
   pdfAvailable: false,
 }
 
@@ -58,21 +60,25 @@ describe('AlbumHeader 阅读来源', () => {
     expect(wrapper.emitted('select-source')).toEqual([['network']])
   })
 
-  test('下载和 PDF 按钮仍按本地资源状态控制', async () => {
+  test('下载、CBZ 和 PDF 按钮按本地资源状态控制', async () => {
     const wrapper = mount(AlbumHeader, { props: baseProps })
     const imageButton = wrapper.get('[aria-label="本地图片阅读"]')
+    const cbzButton = wrapper.get('[aria-label="CBZ 阅读"]')
     const pdfButton = wrapper.get('[aria-label="PDF 阅读"]')
 
     expect((imageButton.element as HTMLButtonElement).disabled).toBe(true)
+    expect((cbzButton.element as HTMLButtonElement).disabled).toBe(true)
     expect((pdfButton.element as HTMLButtonElement).disabled).toBe(true)
 
-    await wrapper.setProps({ imageAvailable: true, pdfAvailable: true })
+    await wrapper.setProps({ imageAvailable: true, cbzAvailable: true, pdfAvailable: true })
     expect((imageButton.element as HTMLButtonElement).disabled).toBe(false)
+    expect((cbzButton.element as HTMLButtonElement).disabled).toBe(false)
     expect((pdfButton.element as HTMLButtonElement).disabled).toBe(false)
 
     await imageButton.trigger('click')
+    await cbzButton.trigger('click')
     await pdfButton.trigger('click')
 
-    expect(wrapper.emitted('select-source')).toEqual([['download'], ['pdf']])
+    expect(wrapper.emitted('select-source')).toEqual([['download'], ['cbz'], ['pdf']])
   })
 })

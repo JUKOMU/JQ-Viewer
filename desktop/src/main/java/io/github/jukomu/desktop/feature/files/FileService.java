@@ -6,7 +6,7 @@ import io.github.jukomu.desktop.data.Paths;
 import io.github.jukomu.desktop.feature.files.model.FileDescriptorResponse;
 import io.github.jukomu.desktop.feature.files.model.FileRefsResponse;
 import io.github.jukomu.desktop.feature.files.model.FolderDescriptorResponse;
-import io.github.jukomu.desktop.feature.files.model.PdfFilesResponse;
+import io.github.jukomu.desktop.feature.files.model.LocalFilesResponse;
 
 import java.awt.Desktop;
 import java.io.IOException;
@@ -16,6 +16,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Consumer;
 
 /** Desktop 目录选择、文件引用与系统打开能力。 */
@@ -73,20 +74,25 @@ public final class FileService {
         return SuccessResponse.ok();
     }
 
-    public PdfFilesResponse scanPdfFiles(String reference) {
+    public LocalFilesResponse scanImportableFiles(String reference, List<String> formats) {
+        List<String> requested = formats == null || formats.isEmpty() ? List.of("pdf") : formats;
+        if (requested.stream().anyMatch(format -> !"pdf".equals(format) && !"cbz".equals(format))) {
+            throw ApiException.invalidRequest("导入扫描仅支持 PDF 和 CBZ");
+        }
+        Set<String> requestedFormats = Set.copyOf(requested);
         Path folder = FileReferences.parseFolder(reference);
         if (!Files.isDirectory(folder)) throw ApiException.notFound("目录不存在");
         try (var files = Files.list(folder)) {
             List<FileDescriptorResponse> results = files
                     .filter(Files::isRegularFile)
-                    .filter(FileService::isPdf)
+                    .filter(path -> requestedFormats.contains(format(path)))
                     .sorted(Comparator.comparing(path -> path.getFileName().toString(),
                             String.CASE_INSENSITIVE_ORDER))
                     .map(FileService::file)
                     .toList();
-            return new PdfFilesResponse(results);
+            return new LocalFilesResponse(results);
         } catch (IOException exception) {
-            throw new IllegalStateException("扫描 PDF 文件失败", exception);
+            throw new IllegalStateException("扫描可导入文件失败", exception);
         }
     }
 
@@ -95,16 +101,19 @@ public final class FileService {
     }
 
     private static String requirePurpose(String purpose) {
-        if (!"pdf-root".equals(purpose)
-                && !"pdf-export".equals(purpose)
+        if (!"local-file-root".equals(purpose)
+                && !"export".equals(purpose)
                 && !"download".equals(purpose)) {
             throw ApiException.invalidRequest("purpose无效");
         }
         return purpose;
     }
 
-    private static boolean isPdf(Path path) {
-        return path.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".pdf");
+    private static String format(Path path) {
+        String name = path.getFileName().toString().toLowerCase(Locale.ROOT);
+        if (name.endsWith(".pdf")) return "pdf";
+        if (name.endsWith(".cbz")) return "cbz";
+        return "";
     }
 
     private static FolderDescriptorResponse folder(Path path) {
@@ -116,6 +125,7 @@ public final class FileService {
     private static FileDescriptorResponse file(Path path) {
         Path normalized = path.toAbsolutePath().normalize();
         return new FileDescriptorResponse(
+                format(normalized),
                 FileReferences.fileRef(normalized),
                 normalized.getFileName().toString(),
                 normalized.toString());

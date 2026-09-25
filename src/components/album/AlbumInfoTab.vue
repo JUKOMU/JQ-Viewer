@@ -38,6 +38,9 @@
             <span class="source-state-chip source-chip-image" :class="{ active: imageAvailable }">
               <ion-icon :icon="imageOutline" />
             </span>
+            <span class="source-state-chip source-chip-cbz" :class="{ active: cbzAvailable }">
+              <ion-icon :icon="archiveOutline" />
+            </span>
             <span class="source-state-chip source-chip-pdf" :class="{ active: pdfAvailable }">
               <ion-icon :icon="documentOutline" />
             </span>
@@ -176,6 +179,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { IonIcon } from '@ionic/vue'
 import {
+  archiveOutline,
   bookmark,
   checkmarkCircleOutline,
   cloudDownloadOutline,
@@ -197,6 +201,7 @@ const props = defineProps<{
   actionBusy: { like: boolean; favorite: boolean }
   downloadStatus?: string
   imageAvailable: boolean
+  cbzAvailable: boolean
   pdfAvailable: boolean
 }>()
 
@@ -424,6 +429,12 @@ const downloadIcon = computed(() => {
   border-color: #e05555;
   background: #fdf0f0;
   color: #c03939;
+}
+
+.source-chip-cbz.active {
+  border-color: #397d54;
+  background: #edf8f1;
+  color: #2f7049;
 }
 
 /* 信息列表 */

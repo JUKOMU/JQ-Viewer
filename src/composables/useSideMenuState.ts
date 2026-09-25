@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 
-export const WIDE_MENU_MEDIA_QUERY = '(min-width: 1264px)'
+export const WIDE_MENU_MEDIA_QUERY = '(min-width: 960px)'
+export const EXPANDED_WIDE_MENU_MEDIA_QUERY = '(min-width: 1264px)'
 
 /** 左侧主菜单是否打开 */
 export const leftMenuOpen = ref(false)
@@ -31,9 +32,12 @@ export const isMenuNavigation = ref(false)
 
 let wideMenuMediaQuery: MediaQueryList | null = null
 let wideMenuChangeListener: ((event: MediaQueryListEvent) => void) | null = null
+let expandedWideMenuMediaQuery: MediaQueryList | null = null
+let expandedWideMenuChangeListener: ((event: MediaQueryListEvent) => void) | null = null
 
-const syncWideMenu = (matches: boolean) => {
+const syncWideMenu = (matches: boolean, expandedMatches = false) => {
   isWideMenu.value = matches
+  wideMenuCollapsed.value = matches ? !expandedMatches : false
   // overlay 只属于窄屏，跨断点时立即收起，避免旧状态覆盖正文。
   leftMenuOpen.value = false
 }
@@ -47,9 +51,14 @@ export function startWideMenuTracking() {
   if (wideMenuMediaQuery) return
 
   wideMenuMediaQuery = window.matchMedia(WIDE_MENU_MEDIA_QUERY)
-  syncWideMenu(wideMenuMediaQuery.matches)
-  wideMenuChangeListener = (event) => syncWideMenu(event.matches)
+  expandedWideMenuMediaQuery = window.matchMedia(EXPANDED_WIDE_MENU_MEDIA_QUERY)
+  syncWideMenu(wideMenuMediaQuery.matches, expandedWideMenuMediaQuery.matches)
+  wideMenuChangeListener = (event) =>
+    syncWideMenu(event.matches, expandedWideMenuMediaQuery?.matches ?? false)
+  expandedWideMenuChangeListener = (event) =>
+    syncWideMenu(wideMenuMediaQuery?.matches ?? false, event.matches)
   wideMenuMediaQuery.addEventListener('change', wideMenuChangeListener)
+  expandedWideMenuMediaQuery.addEventListener('change', expandedWideMenuChangeListener)
 }
 
 /** 停止监听宽屏断点并清理组件所属的运行期状态。 */
@@ -57,8 +66,13 @@ export function stopWideMenuTracking() {
   if (wideMenuMediaQuery && wideMenuChangeListener) {
     wideMenuMediaQuery.removeEventListener('change', wideMenuChangeListener)
   }
+  if (expandedWideMenuMediaQuery && expandedWideMenuChangeListener) {
+    expandedWideMenuMediaQuery.removeEventListener('change', expandedWideMenuChangeListener)
+  }
   wideMenuMediaQuery = null
   wideMenuChangeListener = null
+  expandedWideMenuMediaQuery = null
+  expandedWideMenuChangeListener = null
   syncWideMenu(false)
 }
 

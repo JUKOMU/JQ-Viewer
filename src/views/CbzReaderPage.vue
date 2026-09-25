@@ -233,7 +233,7 @@ const zoomOut = () => {
 }
 
 const resetZoom = () => {
-  if (isVertical.value) verticalViewRef.value?.resetZoom()
+  if (isVertical.value) verticalViewRef.value?.resetZoom(true)
   else horizontalViewRef.value?.resetZoom()
 }
 
@@ -249,7 +249,8 @@ const toggleToolbar = () => {
   syncReaderFullscreen()
 }
 
-const restoreReaderFocus = () => {
+const restoreReaderFocus = (event: MouseEvent) => {
+  if (event.detail === 0) return
   if (isDesktopRuntime) readerRoot.value?.focus({ preventScroll: true })
 }
 

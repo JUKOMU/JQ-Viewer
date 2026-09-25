@@ -276,6 +276,7 @@ public final class Backend implements AutoCloseable {
             if (providedClient == null) {
                 JmConfiguration configuration = new JmConfiguration.Builder()
                         .downloadThreadPoolSize(settingsService.downloadConcurrency())
+                        .retryTimes(3)
                         .build();
                 JmcomicSessionManager.Factory clientFactory = providedClientFactory == null
                         ? () -> JmComic.newApiClientAsync(configuration)

@@ -1834,5 +1834,9 @@ const handleScroll = async (event: CustomEvent<{ scrollTop?: number }>) => {
   .tab-bar {
     box-shadow: none;
   }
+
+  .tab-bar.sticky::before {
+    box-shadow: none;
+  }
 }
 </style>

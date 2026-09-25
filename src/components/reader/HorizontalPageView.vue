@@ -1,5 +1,5 @@
 <template>
-  <div ref="containerRef" class="horizontal-container">
+  <div ref="containerRef" class="horizontal-container" @click="onMouseClick">
     <div class="strip" :style="stripStyle">
       <div v-for="idx in visibleIndices" :key="idx" class="page-slot" :style="slotStyle(idx)">
         <div class="page-content" :style="idx === displayIndex ? contentStyle : undefined">
@@ -57,12 +57,14 @@ const props = withDefaults(
     retryingSortOrders?: Set<number>
     totalCount: number
     currentIndex: number
+    enableMouseControls?: boolean
   }>(),
   {
     failedSortOrders: () => new Set<number>(),
     failedMessages: () => new Map<number, string>(),
     allowRetry: true,
     retryingSortOrders: () => new Set<number>(),
+    enableMouseControls: false,
   },
 )
 
@@ -133,6 +135,37 @@ function cycleDoubleTapZoom(relX: number, relY: number) {
   zoomTy.value = relY * (1 - ratio) + zoomTy.value * ratio
 }
 
+function nextZoomScale() {
+  if (zoomScale.value < 2) return 2
+  if (zoomScale.value < 3) return 3
+  return ZOOM_MAX
+}
+
+function previousZoomScale() {
+  if (zoomScale.value <= 1) return ZOOM_MIN
+  if (zoomScale.value <= 2) return ZOOM_MIN
+  if (zoomScale.value <= 3) return 2
+  return 3
+}
+
+function zoomAtViewportCenter(scale: number) {
+  const rect = containerRef.value?.getBoundingClientRect()
+  const relX = (rect?.width ?? slotWidth.value ?? window.innerWidth) / 2
+  const relY = (rect?.height ?? containerRef.value?.clientHeight ?? window.innerHeight) / 2
+  const ratio = scale / zoomScale.value
+  zoomScale.value = scale
+  zoomTx.value = relX * (1 - ratio) + zoomTx.value * ratio
+  zoomTy.value = relY * (1 - ratio) + zoomTy.value * ratio
+}
+
+function zoomIn() {
+  zoomAtViewportCenter(nextZoomScale())
+}
+
+function zoomOut() {
+  zoomAtViewportCenter(previousZoomScale())
+}
+
 // ---- 手势临时变量 ----
 let startX = 0,
   startY = 0,
@@ -151,6 +184,12 @@ let lastTapT = 0,
 let tapTimer: ReturnType<typeof setTimeout> | null = null
 let animationTimer: ReturnType<typeof setTimeout> | null = null
 let resizeObserver: ResizeObserver | null = null
+let mousePointerId: number | null = null
+let mouseStartX = 0
+let mouseStartY = 0
+let mouseStartTx = 0
+let mouseStartTy = 0
+let mouseDragged = false
 
 // ---- 可见槽位 ----
 const visibleIndices = computed(() => {
@@ -191,6 +230,12 @@ onMounted(() => {
   el.addEventListener('touchmove', onTouchMove, { passive: false })
   el.addEventListener('touchend', onTouchEnd)
   el.addEventListener('touchcancel', onTouchEnd)
+  if (props.enableMouseControls) {
+    el.addEventListener('pointerdown', onMousePointerDown)
+    el.addEventListener('pointermove', onMousePointerMove)
+    el.addEventListener('pointerup', onMousePointerUp)
+    el.addEventListener('pointercancel', onMousePointerUp)
+  }
 
   if (typeof ResizeObserver !== 'undefined') {
     resizeObserver = new ResizeObserver(refreshAfterResize)
@@ -212,6 +257,10 @@ onUnmounted(() => {
   el.removeEventListener('touchmove', onTouchMove)
   el.removeEventListener('touchend', onTouchEnd)
   el.removeEventListener('touchcancel', onTouchEnd)
+  el.removeEventListener('pointerdown', onMousePointerDown)
+  el.removeEventListener('pointermove', onMousePointerMove)
+  el.removeEventListener('pointerup', onMousePointerUp)
+  el.removeEventListener('pointercancel', onMousePointerUp)
 })
 
 function updateSlotWidth() {
@@ -450,6 +499,53 @@ function onTouchEnd(ev: TouchEvent) {
   }
 }
 
+function onMousePointerDown(ev: PointerEvent) {
+  if (
+    !props.enableMouseControls ||
+    ev.pointerType !== 'mouse' ||
+    ev.button !== 0 ||
+    zoomScale.value <= 1
+  ) {
+    return
+  }
+  mousePointerId = ev.pointerId
+  mouseStartX = ev.clientX
+  mouseStartY = ev.clientY
+  mouseStartTx = zoomTx.value
+  mouseStartTy = zoomTy.value
+  mouseDragged = false
+  containerRef.value?.setPointerCapture(ev.pointerId)
+}
+
+function onMousePointerMove(ev: PointerEvent) {
+  if (mousePointerId !== ev.pointerId || zoomScale.value <= 1) return
+  const dx = ev.clientX - mouseStartX
+  const dy = ev.clientY - mouseStartY
+  if (Math.abs(dx) > 3 || Math.abs(dy) > 3) mouseDragged = true
+  if (!mouseDragged) return
+  ev.preventDefault()
+  const width = slotWidth.value || containerRef.value?.clientWidth || window.innerWidth
+  const height = containerRef.value?.clientHeight || window.innerHeight
+  const minTx = width - width * zoomScale.value
+  const minTy = height - height * zoomScale.value
+  zoomTx.value = Math.max(minTx, Math.min(0, mouseStartTx + dx))
+  zoomTy.value = Math.max(minTy, Math.min(0, mouseStartTy + dy))
+}
+
+function onMousePointerUp(ev: PointerEvent) {
+  if (mousePointerId !== ev.pointerId) return
+  containerRef.value?.releasePointerCapture(ev.pointerId)
+  mousePointerId = null
+}
+
+function onMouseClick(ev: MouseEvent) {
+  if (!props.enableMouseControls || ev.button !== 0 || mouseDragged) {
+    mouseDragged = false
+    return
+  }
+  emit('toggle-toolbar')
+}
+
 function snapTo(target: number) {
   if (target === displayIndex.value) {
     snapBack()
@@ -486,7 +582,7 @@ function scrollToIndex(index: number) {
   offsetX.value = 0
 }
 
-defineExpose({ scrollToIndex })
+defineExpose({ scrollToIndex, zoomIn, zoomOut, resetZoom })
 </script>
 
 <style scoped>

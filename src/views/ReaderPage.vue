@@ -3,7 +3,18 @@
     <div class="reader-root" @click="onRootClick">
       <!-- 顶部工具栏 -->
       <Transition name="toolbar-slide">
-        <ReaderTopToolbar v-if="toolbarVisible" :title="chapterTitle" @click.stop @back="goBack" />
+        <ReaderTopToolbar
+          v-if="toolbarVisible"
+          :title="chapterTitle"
+          :show-desktop-controls="isDesktopRuntime"
+          :is-fullscreen="isFullscreen"
+          @click.stop
+          @back="goBack"
+          @zoom-in="zoomIn"
+          @zoom-out="zoomOut"
+          @reset-zoom="resetZoom"
+          @toggle-fullscreen="toggleFullscreen"
+        />
       </Transition>
 
       <!-- 图片视图 -->
@@ -15,6 +26,7 @@
         :retrying-sort-orders="retryingSortOrders"
         :total-count="totalCount"
         :current-index="currentIndex"
+        :enable-mouse-controls="isDesktopRuntime"
         @update:current-index="onPageChange"
         @request-range="onVerticalRequestRange"
         @reached-bottom="scheduleToolbarAtReaderEnd"
@@ -29,6 +41,7 @@
         :retrying-sort-orders="retryingSortOrders"
         :total-count="totalCount"
         :current-index="currentIndex"
+        :enable-mouse-controls="isDesktopRuntime"
         @update:current-index="onPageChange"
         @toggle-toolbar="toggleToolbar"
         @image-error="onImageError"
@@ -91,6 +104,7 @@ import ReaderBottomToolbar from '@/components/reader/ReaderBottomToolbar.vue'
 import VerticalScrollView from '@/components/reader/VerticalScrollView.vue'
 import HorizontalPageView from '@/components/reader/HorizontalPageView.vue'
 import ReaderSettingsPanel from '@/components/reader/ReaderSettingsPanel.vue'
+import { useDesktopReaderControls } from '@/composables/useDesktopReaderControls'
 
 defineOptions({ name: 'ReaderPage' })
 
@@ -106,7 +120,9 @@ const DRAG_PREVIEW_DELAY_MS = 500
 
 const route = useRoute()
 const router = useRouter()
-const readerCapabilities = getRuntime().services.reader
+const runtime = getRuntime()
+const readerCapabilities = runtime.services.reader
+const isDesktopRuntime = runtime.platform !== 'android'
 
 const updateReaderCurrentPage = inject<(page: number) => void>('updateReaderCurrentPage', () => {})
 
@@ -204,9 +220,10 @@ const switchChapter = (targetChapterId: string) => {
 }
 
 // ---- 工具栏 ----
-// 工具栏显示时仅恢复系统栏；阅读内容始终保持 edge-to-edge，不随系统栏改变尺寸。
 const syncReaderFullscreen = (reportFailure = false) => {
-  if (!readerRuntimeActive || !readerCapabilities.fullscreen.available) return
+  if (isDesktopRuntime || !readerRuntimeActive || !readerCapabilities.fullscreen.available) {
+    return
+  }
   JmcomicService.setReaderFullscreen(!toolbarVisible.value).catch((error) => {
     if (reportFailure) {
       void showToast(sanitizeError(error, '切换全屏失败'), 'danger')
@@ -358,30 +375,38 @@ const restoreSystemState = () => {
   }
 }
 
-// ---- 音量键 ----
-const setupVolumeKeyListener = async () => {
-  if (volumeKeyListenerHandle || !readerCapabilities.volumeKeys.available) return
-  volumeKeyListenerHandle = await JmcomicService.addVolumeKeyListener((direction) => {
-    if (isVertical.value) {
-      const scrollAmount = window.innerHeight / 3
-      const el = verticalViewRef.value
-      if (el && 'containerRef' in el) {
-        const container = (el as any).containerRef as HTMLElement | null
-        if (container) {
-          container.scrollBy({
-            top: direction === 'up' ? -scrollAmount : scrollAmount,
-            behavior: 'smooth',
-          })
-        }
-      }
-    } else {
-      if (direction === 'up' && currentIndex.value > 0) {
-        goToIndex(currentIndex.value - 1, 'volume')
-      } else if (direction === 'down' && currentIndex.value < totalCount.value - 1) {
-        goToIndex(currentIndex.value + 1, 'volume')
+// ---- 音量键与桌面方向键共用动作 ----
+const handleVolumeDirection = (direction: 'up' | 'down') => {
+  if (isVertical.value) {
+    const scrollAmount = window.innerHeight / 3
+    const el = verticalViewRef.value
+    if (el && 'containerRef' in el) {
+      const container = (el as { containerRef: HTMLElement | null }).containerRef
+      if (container) {
+        container.scrollBy({
+          top: direction === 'up' ? -scrollAmount : scrollAmount,
+          behavior: 'smooth',
+        })
+        return true
       }
     }
-  })
+    return false
+  }
+
+  if (direction === 'up' && currentIndex.value > 0) {
+    goToIndex(currentIndex.value - 1, 'volume')
+    return true
+  }
+  if (direction === 'down' && currentIndex.value < totalCount.value - 1) {
+    goToIndex(currentIndex.value + 1, 'volume')
+    return true
+  }
+  return false
+}
+
+const setupVolumeKeyListener = async () => {
+  if (volumeKeyListenerHandle || !readerCapabilities.volumeKeys.available) return
+  volumeKeyListenerHandle = await JmcomicService.addVolumeKeyListener(handleVolumeDirection)
 }
 
 // ---- 滑动窗口预加载 ----
@@ -827,6 +852,37 @@ const goToIndex = (index: number, source: PageChangeSource) => {
   updateWindow(next, source === 'slider' || source === 'route')
 
   moveReaderViewToIndex(next)
+}
+
+const { isFullscreen, toggleFullscreen } = useDesktopReaderControls({
+  enabled: isDesktopRuntime,
+  isActive: () => readerRuntimeActive,
+  isVertical,
+  currentIndex,
+  totalCount,
+  fullscreenAvailable: readerCapabilities.fullscreen.available,
+  onPreviousPage: () => goToIndex(currentIndex.value - 1, 'volume'),
+  onNextPage: () => goToIndex(currentIndex.value + 1, 'volume'),
+  onVolumeDirection: handleVolumeDirection,
+  setFullscreen: (enabled) => JmcomicService.setReaderFullscreen(enabled),
+  onFullscreenError: (error) => {
+    void showToast(sanitizeError(error, '切换全屏失败'), 'danger')
+  },
+})
+
+const zoomIn = () => {
+  if (isVertical.value) verticalViewRef.value?.zoomIn()
+  else horizontalViewRef.value?.zoomIn()
+}
+
+const zoomOut = () => {
+  if (isVertical.value) verticalViewRef.value?.zoomOut()
+  else horizontalViewRef.value?.zoomOut()
+}
+
+const resetZoom = () => {
+  if (isVertical.value) verticalViewRef.value?.resetZoom()
+  else horizontalViewRef.value?.resetZoom()
 }
 
 const onPageChange = (index: number) => {

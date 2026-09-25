@@ -159,18 +159,20 @@ const onRequestRange = (range: { start: number; end: number; center: number }) =
   ensureWindow(range.center, range.start, range.end)
 }
 
-const moveToIndex = (index: number) => {
+const moveToIndex = (index: number, syncView = true) => {
   const next = Math.max(0, Math.min(index, Math.max(0, totalCount.value - 1)))
   currentIndex.value = next
   ensureWindow(next)
   updateReaderCurrentPage(next + 1)
   readerSession?.recordPage(next + 1)
-  nextTick(() => {
-    if (isVertical.value) verticalViewRef.value?.scrollToIndex(next)
-  })
+  if (syncView) {
+    nextTick(() => {
+      if (isVertical.value) verticalViewRef.value?.scrollToIndex(next)
+    })
+  }
 }
 
-const onPageChange = (index: number) => moveToIndex(index)
+const onPageChange = (index: number) => moveToIndex(index, false)
 const onProgressChange = (page: number) => moveToIndex(page - 1)
 
 const onImageError = (page: number) => {

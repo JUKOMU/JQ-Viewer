@@ -490,7 +490,6 @@ public final class Backend implements AutoCloseable {
             try {
                 PdfResourceService.Resource resource = pdfResources.open(
                         context.pathParam("encodedFileRef"));
-                context.header("Content-Length", String.valueOf(resource.length()));
                 context.contentType("application/pdf").result(resource.input());
             } catch (PdfResourceService.ResourceException exception) {
                 context.status(exception.status());

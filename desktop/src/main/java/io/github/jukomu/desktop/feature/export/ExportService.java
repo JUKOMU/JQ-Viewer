@@ -4,8 +4,8 @@ import io.github.jukomu.desktop.bridge.ApiException;
 import io.github.jukomu.desktop.bridge.EventHub;
 import io.github.jukomu.desktop.feature.download.DownloadFiles;
 import io.github.jukomu.desktop.feature.download.data.DownloadStore;
-import io.github.jukomu.desktop.feature.download.data.StoredDownloadPage;
 import io.github.jukomu.desktop.feature.download.data.StoredDownloadTask;
+import io.github.jukomu.desktop.feature.download.validation.ChapterManifestValidator;
 import io.github.jukomu.desktop.feature.export.archive.ArchiveExportPlanner;
 import io.github.jukomu.desktop.feature.export.archive.ArchiveVolumeWriter;
 import io.github.jukomu.desktop.feature.files.ExportTargetResolver;
@@ -299,24 +299,25 @@ public final class ExportService implements AutoCloseable {
                 throw new ExportException("DOWNLOAD_NOT_COMPLETED",
                     "章节“" + chapter.title() + "”尚未完成下载");
             }
-            List<StoredDownloadPage> pages = downloads.pages(download.taskId());
-            if (download.totalPages() <= 0 || pages.size() != download.totalPages()
-                || pages.stream().anyMatch(page -> !page.completed())) {
+            var pages = downloads.pages(download.taskId());
+            if (pages.stream().anyMatch(page -> !page.completed())) {
                 throw new ExportException("DOWNLOAD_MANIFEST_INVALID",
                     "章节“" + chapter.title() + "”下载清单不完整");
             }
+            ChapterManifestValidator.Report manifest;
             try {
-                downloadFiles.inspect(pages);
-            } catch (RuntimeException exception) {
-                throw new ExportException("DOWNLOAD_FILE_INVALID",
-                    "章节“" + chapter.title() + "”下载文件不可用", exception);
+                manifest = ChapterManifestValidator.validate(
+                    downloads, downloadFiles, chapter.albumId(), chapter.chapterId());
+            } catch (ChapterManifestValidator.ValidationException exception) {
+                throw new ExportException(exportValidationCode(exception.code()),
+                    "章节“" + chapter.title() + "”" + exception.getMessage(), exception);
             }
-            for (StoredDownloadPage page : pages) images.add(downloadFiles.resolvePage(page));
+            images.addAll(manifest.expectedFiles());
             int sortOrder = chapter.sortOrder() != null
                 ? chapter.sortOrder() : download.chapterSortOrder();
             chapters.add(new ExportStore.Chapter(
                 index, chapter.albumId(), chapter.chapterId(), chapter.title(),
-                sortOrder, pages.size()));
+                sortOrder, manifest.totalPages()));
         }
         if (images.isEmpty()) throw new ExportException("DOWNLOAD_MANIFEST_INVALID", "没有可导出的图片");
 
@@ -583,6 +584,11 @@ public final class ExportService implements AutoCloseable {
 
     private static String code(String format, String suffix) {
         return format.toUpperCase(Locale.ROOT) + "_" + suffix;
+    }
+
+    private static String exportValidationCode(String validationCode) {
+        return validationCode.startsWith("IMAGE_MANIFEST") || "IMAGE_EXTRA".equals(validationCode)
+            ? "DOWNLOAD_MANIFEST_INVALID" : "DOWNLOAD_FILE_INVALID";
     }
 
     private static ExportException retryInputChanged(Plan plan) {

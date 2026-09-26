@@ -11,6 +11,7 @@ import io.github.jukomu.desktop.feature.download.data.DownloadStore;
 import io.github.jukomu.desktop.feature.download.data.StoredDownloadPage;
 import io.github.jukomu.desktop.feature.download.data.StoredDownloadTask;
 import io.github.jukomu.desktop.feature.download.model.*;
+import io.github.jukomu.desktop.feature.download.validation.ChapterManifestValidator;
 import io.github.jukomu.jmcomic.api.client.JmClient;
 import io.github.jukomu.jmcomic.api.client.JmDownloadClient;
 import io.github.jukomu.jmcomic.api.download.IDownloadManager;
@@ -285,11 +286,14 @@ public final class DownloadService implements AutoCloseable {
         try {
             store.updateStatus(taskId, STATUS_VERIFYING, null);
             publish(store.findTask(taskId), 0, null);
-            List<StoredDownloadPage> pages = store.pages(taskId);
-            DownloadFiles.ChapterInspection inspection = files.inspect(pages);
-            store.complete(taskId, pages.size(), inspection.firstSortOrder(),
+            ChapterManifestValidator.Report inspection = ChapterManifestValidator.validate(
+                store, files, task.albumId(), task.chapterId());
+            store.complete(taskId, inspection.totalPages(), inspection.firstSortOrder(),
                 inspection.totalSize(), System.currentTimeMillis());
             publish(store.findTask(taskId), 0, inspection.totalSize());
+        } catch (ChapterManifestValidator.ValidationException exception) {
+            failDownload(taskId, exception.verifiedPages(), task.downloadedBytes(),
+                "下载校验失败: " + exception.code() + ": " + exception.getMessage());
         } catch (RuntimeException exception) {
             failDownload(taskId, task.downloadedPages(), task.downloadedBytes(),
                 "下载校验失败: " + messageOf(exception));

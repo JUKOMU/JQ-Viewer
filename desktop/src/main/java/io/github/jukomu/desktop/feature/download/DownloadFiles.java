@@ -2,8 +2,8 @@ package io.github.jukomu.desktop.feature.download;
 
 import io.github.jukomu.desktop.data.Paths;
 import io.github.jukomu.desktop.feature.download.data.StoredDownloadPage;
+import io.github.jukomu.desktop.feature.download.validation.ImageFileValidator;
 
-import javax.imageio.ImageIO;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -82,7 +82,7 @@ public final class DownloadFiles {
                 if (!Files.isRegularFile(path) || Files.size(path) <= 0) {
                     throw new IllegalStateException("下载图片缺失: " + page.filename());
                 }
-                if (ImageIO.read(path.toFile()) == null) {
+                if (!ImageFileValidator.validateFull(path)) {
                     throw new IllegalStateException("下载图片无法解析: " + page.filename());
                 }
                 totalSize += Files.size(path);

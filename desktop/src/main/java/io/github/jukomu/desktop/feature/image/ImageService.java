@@ -3,6 +3,7 @@ package io.github.jukomu.desktop.feature.image;
 import io.github.jukomu.desktop.bridge.ApiException;
 import io.github.jukomu.desktop.bridge.EventHub;
 import io.github.jukomu.desktop.bridge.model.SuccessResponse;
+import io.github.jukomu.desktop.feature.download.validation.ImageFileValidator;
 import io.github.jukomu.desktop.feature.image.model.ImageEvent;
 import io.github.jukomu.desktop.feature.image.model.PreloadImagesResponse;
 import io.github.jukomu.jmcomic.api.client.JmClient;
@@ -139,6 +140,9 @@ public final class ImageService {
         if (image == null) throw new ApiException("not-found", 404, "图片不存在");
         try {
             byte[] bytes = client().fetchImageBytes(image);
+            if (!ImageFileValidator.validateQuick(bytes)) {
+                throw new IOException("无法解析图片");
+            }
             String mime = mime(image);
             cache.put(key(photoId, sortOrder, "image"), bytes, mime);
             if ("thumb".equals(type)) {
@@ -163,6 +167,9 @@ public final class ImageService {
         if (cached != null) return cached;
         try {
             byte[] bytes = Files.readAllBytes(path);
+            if (!ImageFileValidator.validateQuick(bytes)) {
+                throw new IOException("无法解析图片");
+            }
             String mime = mime(path.getFileName().toString());
             if ("thumb".equals(type)) {
                 byte[] thumb = thumbnail(bytes);
@@ -170,7 +177,6 @@ public final class ImageService {
                 cache.put(key(photoId, sortOrder, "thumb"), thumb, "image/jpeg");
                 return new ImageCache.Entry(thumb, "image/jpeg");
             }
-            validateImage(bytes);
             cache.put(key(photoId, sortOrder, "image"), bytes, mime);
             return new ImageCache.Entry(bytes, mime);
         } catch (IOException exception) {
@@ -204,7 +210,7 @@ public final class ImageService {
                     if (generations.getOrDefault(scope, currentGeneration) != currentGeneration) return;
                     if (preferLocal) {
                         Optional<Path> local = findLocalImage(photoId, image.getSortOrder());
-                        if (local.isPresent()) {
+                        if (local.isPresent() && ImageFileValidator.validateQuick(local.get())) {
                             try {
                                 readLocal(photoId, image.getSortOrder(), type, local.get());
                                 if (publishEvents) {
@@ -218,9 +224,11 @@ public final class ImageService {
                     }
                     byte[] bytes = client().fetchImageBytes(image);
                     if (generations.getOrDefault(scope, currentGeneration) != currentGeneration) return;
+                    if (!ImageFileValidator.validateQuick(bytes)) {
+                        throw new IOException("无法解析图片");
+                    }
                     String mime = mime(image);
                     byte[] thumb = "thumb".equals(type) ? thumbnail(bytes) : null;
-                    if (thumb == null) validateImage(bytes);
                     cache.put(key(photoId, image.getSortOrder(), "image"), bytes, mime);
                     if (thumb != null) cache.put(pendingKey, thumb, "image/jpeg");
                     if (publishEvents) {
@@ -342,13 +350,6 @@ public final class ImageService {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         if (!ImageIO.write(source, "jpg", output)) throw new IOException("JPEG编码器不可用");
         return output.toByteArray();
-    }
-
-    private static void validateImage(byte[] bytes) throws IOException {
-        BufferedImage image = ImageIO.read(new ByteArrayInputStream(bytes));
-        if (image == null || image.getWidth() <= 0 || image.getHeight() <= 0) {
-            throw new IOException("无法解析图片");
-        }
     }
 
     private static List<JmImage> safe(List<JmImage> value) {

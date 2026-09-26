@@ -301,8 +301,6 @@ public final class Backend implements AutoCloseable {
                 startedNetworkService = new NetworkService(
                         networkOperations, executors.networkProbe(), eventHub);
             }
-            ImageService imageService = new ImageService(
-                    clientSession::getClient, executors.imagePreload(), eventHub);
             DownloadStore downloadStore = new DownloadStore(database);
             ExportStore exportStore = new ExportStore(database);
             startedLaunchRoutes = new LaunchRouteService(eventHub);
@@ -329,6 +327,11 @@ public final class Backend implements AutoCloseable {
             );
             startedDownloadService.reconcileOnStartup();
             final DownloadService downloadService = startedDownloadService;
+            ImageService imageService = new ImageService(
+                    clientSession::getClient,
+                    executors.imagePreload(),
+                    eventHub,
+                    downloadService::findCompletedImage);
             RequestExecutor apiRequests = new RequestExecutor(executors.api(), mapper);
             RequestExecutor imageRequests = new RequestExecutor(executors.imageCommand(), mapper);
             RequestExecutor settingsRequests = new RequestExecutor(executors.settings(), mapper);

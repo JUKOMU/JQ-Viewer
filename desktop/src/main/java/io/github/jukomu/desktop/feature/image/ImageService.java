@@ -23,9 +23,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.function.BiFunction;
 import java.util.function.Supplier;
 
 /** 管理章节图片元数据、实际下载、缩略图生成和事件发布。 */
@@ -36,6 +38,7 @@ public final class ImageService {
     private final Supplier<JmClient> clientSupplier;
     private final Executor executor;
     private final EventHub events;
+    private final BiFunction<String, Integer, Optional<Path>> localImageFinder;
     private final ImageCache cache = new ImageCache(CACHE_CAPACITY_MB * 1024 * 1024);
     private final Map<String, Map<Integer, JmImage>> images = new ConcurrentHashMap<>();
     private final Map<String, Long> generations = new ConcurrentHashMap<>();
@@ -43,13 +46,23 @@ public final class ImageService {
     private long generation;
 
     public ImageService(JmClient client, Executor executor, EventHub events) {
-        this(() -> client, executor, events);
+        this(() -> client, executor, events, (photoId, sortOrder) -> Optional.empty());
     }
 
     public ImageService(Supplier<JmClient> clientSupplier, Executor executor, EventHub events) {
+        this(clientSupplier, executor, events, (photoId, sortOrder) -> Optional.empty());
+    }
+
+    public ImageService(
+            Supplier<JmClient> clientSupplier,
+            Executor executor,
+            EventHub events,
+            BiFunction<String, Integer, Optional<Path>> localImageFinder
+    ) {
         this.clientSupplier = Objects.requireNonNull(clientSupplier, "clientSupplier");
         this.executor = Objects.requireNonNull(executor, "executor");
         this.events = Objects.requireNonNull(events, "events");
+        this.localImageFinder = Objects.requireNonNull(localImageFinder, "localImageFinder");
         ImageIO.scanForPlugins();
     }
 
@@ -87,17 +100,13 @@ public final class ImageService {
             }
             ImageCache.Entry original = cache.get(key(photoId, image.getSortOrder(), "image"));
             if ("thumb".equals(type) && original != null) {
-                try {
-                    cache.put(cacheKey, thumbnail(original.bytes()), "image/jpeg");
-                    cached.add(image.getSortOrder());
-                    publish(photoId, image.getSortOrder(), type);
-                    continue;
-                } catch (IOException exception) {
-                    // 原图不可解析时按普通网络下载继续处理。
-                }
+                waiting.add(image.getSortOrder());
+                scheduleCachedThumbnail(
+                        photoId, image.getSortOrder(), currentGeneration, original);
+                continue;
             }
             waiting.add(image.getSortOrder());
-            schedule(photoId, type, image, currentGeneration);
+            schedule(photoId, type, image, currentGeneration, true, true);
         }
         return new PreloadImagesResponse(List.copyOf(cached), List.copyOf(waiting));
     }
@@ -113,7 +122,7 @@ public final class ImageService {
             currentGeneration = ++generation;
             generations.put(photoId + "/image", currentGeneration);
         }
-        schedule(photoId, "image", image, currentGeneration);
+        schedule(photoId, "image", image, currentGeneration, false, false);
         return SuccessResponse.ok();
     }
 
@@ -155,12 +164,14 @@ public final class ImageService {
         try {
             byte[] bytes = Files.readAllBytes(path);
             String mime = mime(path.getFileName().toString());
-            cache.put(key(photoId, sortOrder, "image"), bytes, mime);
             if ("thumb".equals(type)) {
                 byte[] thumb = thumbnail(bytes);
+                cache.put(key(photoId, sortOrder, "image"), bytes, mime);
                 cache.put(key(photoId, sortOrder, "thumb"), thumb, "image/jpeg");
                 return new ImageCache.Entry(thumb, "image/jpeg");
             }
+            validateImage(bytes);
+            cache.put(key(photoId, sortOrder, "image"), bytes, mime);
             return new ImageCache.Entry(bytes, mime);
         } catch (IOException exception) {
             throw new ApiException("internal", 500, "读取本地图片失败: " + exception.getMessage());
@@ -175,7 +186,14 @@ public final class ImageService {
         return cache;
     }
 
-    private void schedule(String photoId, String type, JmImage image, long currentGeneration) {
+    private void schedule(
+            String photoId,
+            String type,
+            JmImage image,
+            long currentGeneration,
+            boolean preferLocal,
+            boolean publishEvents
+    ) {
         String scope = photoId + "/" + type;
         String pendingKey = key(photoId, image.getSortOrder(), type);
         Long old = pending.put(pendingKey, currentGeneration);
@@ -184,14 +202,33 @@ public final class ImageService {
             executor.execute(() -> {
                 try {
                     if (generations.getOrDefault(scope, currentGeneration) != currentGeneration) return;
+                    if (preferLocal) {
+                        Optional<Path> local = findLocalImage(photoId, image.getSortOrder());
+                        if (local.isPresent()) {
+                            try {
+                                readLocal(photoId, image.getSortOrder(), type, local.get());
+                                if (publishEvents) {
+                                    publishLoaded(photoId, image.getSortOrder(), type);
+                                }
+                                return;
+                            } catch (Exception ignored) {
+                                // 本地文件不可读时按 Android 语义回退到网络来源。
+                            }
+                        }
+                    }
                     byte[] bytes = client().fetchImageBytes(image);
                     if (generations.getOrDefault(scope, currentGeneration) != currentGeneration) return;
                     String mime = mime(image);
+                    byte[] thumb = "thumb".equals(type) ? thumbnail(bytes) : null;
+                    if (thumb == null) validateImage(bytes);
                     cache.put(key(photoId, image.getSortOrder(), "image"), bytes, mime);
-                    if ("thumb".equals(type)) cache.put(pendingKey, thumbnail(bytes), "image/jpeg");
-                    publish(photoId, image.getSortOrder(), type);
+                    if (thumb != null) cache.put(pendingKey, thumb, "image/jpeg");
+                    if (publishEvents) {
+                        publishLoaded(photoId, image.getSortOrder(), type);
+                    }
                 } catch (Exception exception) {
-                    if (generations.getOrDefault(scope, currentGeneration) == currentGeneration) {
+                    if (publishEvents
+                            && generations.getOrDefault(scope, currentGeneration) == currentGeneration) {
                         events.publish("imageFailed", new ImageEvent(
                                 photoId,
                                 image.getSortOrder(),
@@ -208,8 +245,52 @@ public final class ImageService {
         }
     }
 
+    private void scheduleCachedThumbnail(
+            String photoId,
+            int sortOrder,
+            long currentGeneration,
+            ImageCache.Entry original
+    ) {
+        String scope = photoId + "/thumb";
+        String pendingKey = key(photoId, sortOrder, "thumb");
+        Long old = pending.put(pendingKey, currentGeneration);
+        if (old != null && old == currentGeneration) return;
+        try {
+            executor.execute(() -> {
+                try {
+                    if (generations.getOrDefault(scope, currentGeneration) != currentGeneration) return;
+                    cache.put(pendingKey, thumbnail(original.bytes()), "image/jpeg");
+                    publish(photoId, sortOrder, "thumb");
+                } catch (Exception exception) {
+                    if (generations.getOrDefault(scope, currentGeneration) == currentGeneration) {
+                        events.publish("imageFailed", new ImageEvent(photoId, sortOrder, "thumb"));
+                    }
+                } finally {
+                    pending.remove(pendingKey, currentGeneration);
+                }
+            });
+        } catch (RejectedExecutionException exception) {
+            pending.remove(pendingKey, currentGeneration);
+            throw new ApiException("internal", 503, "图片任务队列已满");
+        }
+    }
+
     private void publish(String photoId, int sortOrder, String type) {
         events.publish("imageReady", new ImageEvent(photoId, sortOrder, type));
+    }
+
+    private void publishLoaded(String photoId, int sortOrder, String type) {
+        if ("thumb".equals(type)) publish(photoId, sortOrder, "image");
+        publish(photoId, sortOrder, type);
+    }
+
+    private Optional<Path> findLocalImage(String photoId, int sortOrder) {
+        try {
+            Optional<Path> path = localImageFinder.apply(photoId, sortOrder);
+            return path == null ? Optional.empty() : path.filter(Files::isRegularFile);
+        } catch (RuntimeException ignored) {
+            return Optional.empty();
+        }
     }
 
     private static JmImage toImage(String photoId, JmImage value) {
@@ -261,6 +342,13 @@ public final class ImageService {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         if (!ImageIO.write(source, "jpg", output)) throw new IOException("JPEG编码器不可用");
         return output.toByteArray();
+    }
+
+    private static void validateImage(byte[] bytes) throws IOException {
+        BufferedImage image = ImageIO.read(new ByteArrayInputStream(bytes));
+        if (image == null || image.getWidth() <= 0 || image.getHeight() <= 0) {
+            throw new IOException("无法解析图片");
+        }
     }
 
     private static List<JmImage> safe(List<JmImage> value) {

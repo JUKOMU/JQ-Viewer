@@ -9,7 +9,9 @@ import io.github.jukomu.desktop.feature.download.model.DownloadTaskIdRequest;
 import io.github.jukomu.desktop.feature.download.model.DownloadedChapterRequest;
 import io.javalin.http.Context;
 
-/** 处理下载任务 bridge 请求并完成参数适配。 */
+/**
+ * 处理下载任务 bridge 请求并完成参数适配。
+ */
 public final class DownloadPluginHandler {
     private final RequestExecutor requests;
     private final DownloadService downloads;
@@ -51,16 +53,16 @@ public final class DownloadPluginHandler {
     public void deleteDownloaded(Context context) {
         requests.runLongOperation(context, DownloadedChapterRequest.class, request -> {
             downloads.deleteDownloaded(
-                    Request.requiredText(request.albumId(), "albumId"),
-                    Request.requiredText(request.chapterId(), "chapterId"));
+                Request.requiredText(request.albumId(), "albumId"),
+                Request.requiredText(request.chapterId(), "chapterId"));
             return SuccessResponse.ok();
         });
     }
 
     public void getDownloadedPhoto(Context context) {
         requests.runLongOperation(context, DownloadedChapterRequest.class,
-                request -> downloads.getDownloadedPhoto(
-                        Request.requiredText(request.albumId(), "albumId"),
-                        Request.requiredText(request.chapterId(), "chapterId")));
+            request -> downloads.getDownloadedPhoto(
+                Request.requiredText(request.albumId(), "albumId"),
+                Request.requiredText(request.chapterId(), "chapterId")));
     }
 }

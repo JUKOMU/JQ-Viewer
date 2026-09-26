@@ -13,38 +13,26 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.file.AtomicMoveNotSupportedException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
-import java.nio.file.StandardOpenOption;
+import java.nio.file.*;
 import java.security.MessageDigest;
 import java.time.Duration;
-import java.util.HexFormat;
-import java.util.List;
-import java.util.Locale;
-import java.util.Objects;
-import java.util.UUID;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
+import java.util.*;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
-/** Desktop 原生更新：双源验签检查、竞速下载、完整性校验与安装交接。 */
+/**
+ * Desktop 原生更新：双源验签检查、竞速下载、完整性校验与安装交接。
+ */
 public final class DesktopUpdateService implements AutoCloseable {
     static final URI GITHUB_MANIFEST = URI.create(
-            "https://github.com/JUKOMU/JQ-Viewer/releases/latest/download/latest.json");
+        "https://github.com/JUKOMU/JQ-Viewer/releases/latest/download/latest.json");
     static final URI GITHUB_SIGNATURE = URI.create(
-            "https://github.com/JUKOMU/JQ-Viewer/releases/latest/download/latest.json.sig");
+        "https://github.com/JUKOMU/JQ-Viewer/releases/latest/download/latest.json.sig");
     static final URI GITEE_LATEST_RELEASE = URI.create(
-            "https://gitee.com/api/v5/repos/jukomu/jq-viewer/releases/latest");
+        "https://gitee.com/api/v5/repos/jukomu/jq-viewer/releases/latest");
 
     private static final int MANIFEST_MAX_BYTES = 1024 * 1024;
     private static final int BUFFER_SIZE = 64 * 1024;
@@ -74,66 +62,66 @@ public final class DesktopUpdateService implements AutoCloseable {
     private volatile boolean closed;
 
     public DesktopUpdateService(
-            DesktopUpdateConfiguration configuration,
-            ObjectMapper mapper,
-            EventHub events,
-            Paths paths
+        DesktopUpdateConfiguration configuration,
+        ObjectMapper mapper,
+        EventHub events,
+        Paths paths
     ) {
         this(configuration, mapper, events, paths,
-                HttpClient.newBuilder()
-                        .followRedirects(HttpClient.Redirect.NORMAL)
-                        .connectTimeout(Duration.ofSeconds(10))
-                        .build(),
-                Executors.newFixedThreadPool(3, runnable -> {
-                    Thread thread = new Thread(runnable, "jq-viewer-update");
-                    thread.setDaemon(false);
-                    return thread;
-                }),
-                Executors.newSingleThreadScheduledExecutor(runnable -> {
-                    Thread thread = new Thread(runnable, "jq-viewer-update-timeout");
-                    thread.setDaemon(true);
-                    return thread;
-                }),
-                DOWNLOAD_TIMEOUT,
-                new DesktopUpdateInstaller(configuration, paths)::launch);
+            HttpClient.newBuilder()
+                .followRedirects(HttpClient.Redirect.NORMAL)
+                .connectTimeout(Duration.ofSeconds(10))
+                .build(),
+            Executors.newFixedThreadPool(3, runnable -> {
+                Thread thread = new Thread(runnable, "jq-viewer-update");
+                thread.setDaemon(false);
+                return thread;
+            }),
+            Executors.newSingleThreadScheduledExecutor(runnable -> {
+                Thread thread = new Thread(runnable, "jq-viewer-update-timeout");
+                thread.setDaemon(true);
+                return thread;
+            }),
+            DOWNLOAD_TIMEOUT,
+            new DesktopUpdateInstaller(configuration, paths)::launch);
     }
 
     DesktopUpdateService(
-            DesktopUpdateConfiguration configuration,
-            ObjectMapper mapper,
-            EventHub events,
-            Paths paths,
-            HttpClient http,
-            ExecutorService executor
+        DesktopUpdateConfiguration configuration,
+        ObjectMapper mapper,
+        EventHub events,
+        Paths paths,
+        HttpClient http,
+        ExecutorService executor
     ) {
         this(configuration, mapper, events, paths, http, executor,
-                Executors.newSingleThreadScheduledExecutor(runnable -> {
-                    Thread thread = new Thread(runnable, "jq-viewer-update-timeout");
-                    thread.setDaemon(true);
-                    return thread;
-                }),
-                DOWNLOAD_TIMEOUT,
-                new DesktopUpdateInstaller(configuration, paths)::launch);
+            Executors.newSingleThreadScheduledExecutor(runnable -> {
+                Thread thread = new Thread(runnable, "jq-viewer-update-timeout");
+                thread.setDaemon(true);
+                return thread;
+            }),
+            DOWNLOAD_TIMEOUT,
+            new DesktopUpdateInstaller(configuration, paths)::launch);
     }
 
     DesktopUpdateService(
-            DesktopUpdateConfiguration configuration,
-            ObjectMapper mapper,
-            EventHub events,
-            Paths paths,
-            HttpClient http,
-            ExecutorService executor,
-            ScheduledExecutorService timeoutExecutor,
-            Duration downloadTimeout,
-            Consumer<Path> installationLauncher
+        DesktopUpdateConfiguration configuration,
+        ObjectMapper mapper,
+        EventHub events,
+        Paths paths,
+        HttpClient http,
+        ExecutorService executor,
+        ScheduledExecutorService timeoutExecutor,
+        Duration downloadTimeout,
+        Consumer<Path> installationLauncher
     ) {
         this.configuration = Objects.requireNonNull(configuration, "configuration");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.events = Objects.requireNonNull(events, "events");
         this.updateDirectory = Objects.requireNonNull(paths, "paths")
-                .stateDirectory().resolve("update");
+            .stateDirectory().resolve("update");
         this.installationLauncher = Objects.requireNonNull(
-                installationLauncher, "installationLauncher");
+            installationLauncher, "installationLauncher");
         this.http = Objects.requireNonNull(http, "http");
         this.executor = Objects.requireNonNull(executor, "executor");
         this.timeoutExecutor = Objects.requireNonNull(timeoutExecutor, "timeoutExecutor");
@@ -151,7 +139,9 @@ public final class DesktopUpdateService implements AutoCloseable {
         exitRequest = null;
     }
 
-    /** 并行读取 GitHub/Gitee 的同一份清单和签名，双源均可用时要求字节一致。 */
+    /**
+     * 并行读取 GitHub/Gitee 的同一份清单和签名，双源均可用时要求字节一致。
+     */
     public CheckResult check() {
         ensureOpen();
         configuration.requireConfigured();
@@ -173,9 +163,9 @@ public final class DesktopUpdateService implements AutoCloseable {
                 checkInProgress = false;
             }
             boolean available = compareVersions(
-                    release.response().versionName(), configuration.currentVersion()) > 0;
+                release.response().versionName(), configuration.currentVersion()) > 0;
             publish(available ? "update_available" : "up_to_date", "", 0, 0,
-                    release.artifact().sizeBytes(), 0, "");
+                release.artifact().sizeBytes(), 0, "");
             return new CheckResult(available, release.response());
         } catch (RuntimeException exception) {
             synchronized (stateLock) {
@@ -196,7 +186,7 @@ public final class DesktopUpdateService implements AutoCloseable {
             if (activeSession != null) return new StartResult(false);
             VerifiedRelease release = checkedRelease;
             if (release == null || compareVersions(
-                    release.response().versionName(), configuration.currentVersion()) <= 0) {
+                release.response().versionName(), configuration.currentVersion()) <= 0) {
                 return new StartResult(false);
             }
             try {
@@ -234,7 +224,7 @@ public final class DesktopUpdateService implements AutoCloseable {
         deleteQuietly(session.githubPath);
         deleteQuietly(session.giteePath);
         publish("cancelled", "", session.githubBytes.get(), session.giteeBytes.get(),
-                session.release.artifact().sizeBytes(), 0, "");
+            session.release.artifact().sizeBytes(), 0, "");
         return new CancelResult(true);
     }
 
@@ -268,7 +258,7 @@ public final class DesktopUpdateService implements AutoCloseable {
             throw exception;
         }
         publish("installing", "", Files.exists(packagePath) ? sizeQuietly(packagePath) : 0,
-                0, release.artifact().sizeBytes(), 0, "");
+            0, release.artifact().sizeBytes(), 0, "");
         request.run();
         return new InstallResult(true, false);
     }
@@ -282,7 +272,7 @@ public final class DesktopUpdateService implements AutoCloseable {
             byte[] manifest = fetchLimited(GITHUB_MANIFEST, MANIFEST_MAX_BYTES);
             byte[] signature = fetchLimited(GITHUB_SIGNATURE, MANIFEST_MAX_BYTES);
             return ManifestAttempt.success(DesktopUpdateManifest.verifyAndParse(
-                    manifest, signature, configuration, mapper));
+                manifest, signature, configuration, mapper));
         } catch (Exception exception) {
             return ManifestAttempt.failure(messageOf(exception));
         }
@@ -295,7 +285,7 @@ public final class DesktopUpdateService implements AutoCloseable {
             JsonNode assets = release.path("assets");
             if (!assets.isArray() && release.path("id").canConvertToLong()) {
                 URI attachments = URI.create("https://gitee.com/api/v5/repos/jukomu/jq-viewer/releases/"
-                        + release.path("id").longValue() + "/attach_files?per_page=100");
+                    + release.path("id").longValue() + "/attach_files?per_page=100");
                 assets = mapper.readTree(fetchLimited(attachments, MANIFEST_MAX_BYTES));
             }
             URI manifestUrl = findGiteeAsset(assets, tag, "latest.json");
@@ -303,7 +293,7 @@ public final class DesktopUpdateService implements AutoCloseable {
             byte[] manifest = fetchLimited(manifestUrl, MANIFEST_MAX_BYTES);
             byte[] signature = fetchLimited(signatureUrl, MANIFEST_MAX_BYTES);
             return ManifestAttempt.success(DesktopUpdateManifest.verifyAndParse(
-                    manifest, signature, configuration, mapper));
+                manifest, signature, configuration, mapper));
         } catch (Exception exception) {
             return ManifestAttempt.failure(messageOf(exception));
         }
@@ -315,7 +305,7 @@ public final class DesktopUpdateService implements AutoCloseable {
             if (!name.equals(asset.path("name").asText())) continue;
             String value = asset.path("browser_download_url").asText("");
             DesktopUpdateManifest.requireReleaseUrl(
-                    value, "gitee.com", "/jukomu/jq-viewer", tag, name);
+                value, "gitee.com", "/jukomu/jq-viewer", tag, name);
             return URI.create(value);
         }
         throw new UpdateException("Gitee 缺少 " + name);
@@ -331,7 +321,7 @@ public final class DesktopUpdateService implements AutoCloseable {
         if (github.release != null) return github.release;
         if (gitee.release != null) return gitee.release;
         throw new UpdateException("GitHub 与 Gitee 更新元数据均不可用。GitHub: "
-                + github.error + "；Gitee: " + gitee.error);
+            + github.error + "；Gitee: " + gitee.error);
     }
 
     private ManifestAttempt awaitAttempt(Future<ManifestAttempt> future, String source) {
@@ -350,10 +340,10 @@ public final class DesktopUpdateService implements AutoCloseable {
     private byte[] fetchLimited(URI uri, int maximumBytes) throws IOException, InterruptedException {
         long deadline = deadlineAfter(MANIFEST_TIMEOUT);
         HttpRequest request = HttpRequest.newBuilder(uri)
-                .timeout(MANIFEST_TIMEOUT)
-                .header("Accept", "application/json")
-                .GET()
-                .build();
+            .timeout(MANIFEST_TIMEOUT)
+            .header("Accept", "application/json")
+            .GET()
+            .build();
         HttpResponse<InputStream> response = http.send(request, HttpResponse.BodyHandlers.ofInputStream());
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
             response.body().close();
@@ -386,16 +376,16 @@ public final class DesktopUpdateService implements AutoCloseable {
         Artifact artifact = session.release.artifact();
         Path target = source == Source.GITHUB ? session.githubPath : session.giteePath;
         URI uri = URI.create(source == Source.GITHUB
-                ? artifact.sources().github()
-                : artifact.sources().gitee());
+            ? artifact.sources().github()
+            : artifact.sources().gitee());
         try {
             long deadline = deadlineAfter(downloadTimeout);
             HttpRequest request = HttpRequest.newBuilder(uri)
-                    .timeout(downloadTimeout)
-                    .GET()
-                    .build();
+                .timeout(downloadTimeout)
+                .GET()
+                .build();
             HttpResponse<InputStream> response = http.send(
-                    request, HttpResponse.BodyHandlers.ofInputStream());
+                request, HttpResponse.BodyHandlers.ofInputStream());
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 response.body().close();
                 throw new IOException("HTTP " + response.statusCode());
@@ -410,7 +400,7 @@ public final class DesktopUpdateService implements AutoCloseable {
             AtomicLong counter = source == Source.GITHUB ? session.githubBytes : session.giteeBytes;
             try (InputStream input = response.body();
                  var output = Files.newOutputStream(target, StandardOpenOption.CREATE,
-                         StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE)) {
+                     StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE)) {
                 AtomicBoolean timedOut = new AtomicBoolean();
                 ScheduledFuture<?> timeout = closeAtDeadline(input, deadline, timedOut);
                 byte[] buffer = new byte[BUFFER_SIZE];
@@ -441,7 +431,7 @@ public final class DesktopUpdateService implements AutoCloseable {
                     return;
                 }
                 publish("verifying", label(source), session.githubBytes.get(),
-                        session.giteeBytes.get(), artifact.sizeBytes(), 0, "");
+                    session.giteeBytes.get(), artifact.sizeBytes(), 0, "");
             }
             long size = Files.size(target);
             String sha256 = HexFormat.of().formatHex(digest.digest()).toLowerCase(Locale.ROOT);
@@ -465,8 +455,8 @@ public final class DesktopUpdateService implements AutoCloseable {
                         session.winner.set(source);
                     }
                     publish("ready_to_install", label(source),
-                            session.githubBytes.get(), session.giteeBytes.get(),
-                            artifact.sizeBytes(), 0, "");
+                        session.githubBytes.get(), session.giteeBytes.get(),
+                        artifact.sizeBytes(), 0, "");
                 } else {
                     deleteQuietly(target);
                 }
@@ -488,10 +478,10 @@ public final class DesktopUpdateService implements AutoCloseable {
             synchronized (session) {
                 if (!session.cancelled.get() && session.winner.get() == null) {
                     publish("failed", "", session.githubBytes.get(), session.giteeBytes.get(),
-                            session.release.artifact().sizeBytes(), 0,
-                            "GitHub 与 Gitee 更新包均下载失败。GitHub: "
-                                    + session.githubError.get() + "；Gitee: "
-                                    + session.giteeError.get());
+                        session.release.artifact().sizeBytes(), 0,
+                        "GitHub 与 Gitee 更新包均下载失败。GitHub: "
+                            + session.githubError.get() + "；Gitee: "
+                            + session.giteeError.get());
                 }
             }
         } catch (InterruptedException exception) {
@@ -511,27 +501,27 @@ public final class DesktopUpdateService implements AutoCloseable {
             long now = System.nanoTime();
             long previous = session.lastProgressNanos.get();
             if (now - previous < PROGRESS_INTERVAL_NANOS
-                    || !session.lastProgressNanos.compareAndSet(previous, now)) return;
+                || !session.lastProgressNanos.compareAndSet(previous, now)) return;
             long total = session.githubBytes.get() + session.giteeBytes.get();
             long previousTotal = session.lastProgressBytes.getAndSet(total);
             double seconds = Math.max(0.001, (now - previous) / 1_000_000_000d);
             long speed = Math.max(0, Math.round((total - previousTotal) / seconds));
             publish("racing", "racing", session.githubBytes.get(), session.giteeBytes.get(),
-                    session.release.artifact().sizeBytes(), speed, "");
+                session.release.artifact().sizeBytes(), speed, "");
         }
     }
 
     private void publish(
-            String phase,
-            String source,
-            long githubBytes,
-            long giteeBytes,
-            long totalBytes,
-            long speed,
-            String error
+        String phase,
+        String source,
+        long githubBytes,
+        long giteeBytes,
+        long totalBytes,
+        long speed,
+        String error
     ) {
         Snapshot next = new Snapshot(revision.incrementAndGet(), phase, source,
-                githubBytes, giteeBytes, totalBytes, speed, error);
+            githubBytes, giteeBytes, totalBytes, speed, error);
         snapshot = next;
         events.publish("updateProgress", next);
     }
@@ -551,7 +541,7 @@ public final class DesktopUpdateService implements AutoCloseable {
     private static void moveReplacing(Path source, Path target) throws IOException {
         try {
             Files.move(source, target, StandardCopyOption.ATOMIC_MOVE,
-                    StandardCopyOption.REPLACE_EXISTING);
+                StandardCopyOption.REPLACE_EXISTING);
         } catch (AtomicMoveNotSupportedException exception) {
             Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
         }
@@ -564,9 +554,9 @@ public final class DesktopUpdateService implements AutoCloseable {
     }
 
     private ScheduledFuture<?> closeAtDeadline(
-            InputStream input,
-            long deadline,
-            AtomicBoolean timedOut
+        InputStream input,
+        long deadline,
+        AtomicBoolean timedOut
     ) {
         long delay = Math.max(0, deadline - System.nanoTime());
         return timeoutExecutor.schedule(() -> {
@@ -579,12 +569,12 @@ public final class DesktopUpdateService implements AutoCloseable {
     }
 
     private static IOException bodyReadException(
-            AtomicBoolean timedOut,
-            IOException exception
+        AtomicBoolean timedOut,
+        IOException exception
     ) {
         return timedOut.get()
-                ? new IOException("响应正文读取超时")
-                : exception;
+            ? new IOException("响应正文读取超时")
+            : exception;
     }
 
     static int compareVersions(String left, String right) {
@@ -596,7 +586,7 @@ public final class DesktopUpdateService implements AutoCloseable {
         try {
             for (int index = 0; index < 3; index++) {
                 int comparison = Integer.compare(
-                        Integer.parseInt(leftParts[index]), Integer.parseInt(rightParts[index]));
+                    Integer.parseInt(leftParts[index]), Integer.parseInt(rightParts[index]));
                 if (comparison != 0) return comparison;
             }
         } catch (NumberFormatException exception) {
@@ -631,8 +621,8 @@ public final class DesktopUpdateService implements AutoCloseable {
         }
         String message = current.getMessage();
         return message == null || message.isBlank()
-                ? current.getClass().getSimpleName()
-                : message;
+            ? current.getClass().getSimpleName()
+            : message;
     }
 
     private void ensureOpen() {
@@ -662,14 +652,14 @@ public final class DesktopUpdateService implements AutoCloseable {
     }
 
     public record Snapshot(
-            long revision,
-            String phase,
-            String source,
-            long githubBytes,
-            long giteeBytes,
-            long totalBytes,
-            long speedBytesPerSecond,
-            String error
+        long revision,
+        String phase,
+        String source,
+        long githubBytes,
+        long giteeBytes,
+        long totalBytes,
+        long speedBytesPerSecond,
+        String error
     ) {
         public static Snapshot idle() {
             return new Snapshot(0, "idle", "", 0, 0, 0, 0, "");
@@ -710,9 +700,9 @@ public final class DesktopUpdateService implements AutoCloseable {
             this.release = release;
             String token = UUID.randomUUID().toString();
             this.githubPath = updateDirectory.resolve(
-                    release.artifact().name() + "." + token + ".github.part");
+                release.artifact().name() + "." + token + ".github.part");
             this.giteePath = updateDirectory.resolve(
-                    release.artifact().name() + "." + token + ".gitee.part");
+                release.artifact().name() + "." + token + ".gitee.part");
         }
 
         private void recordError(Source source, String error) {

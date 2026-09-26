@@ -9,7 +9,10 @@ import io.github.jukomu.feature.localfile.data.LocalFileRef;
 import io.github.jukomu.feature.localfile.data.LocalFileRefResolver;
 import io.github.jukomu.feature.pdf.render.PdfPageCache;
 
-import java.io.*;
+import java.io.ByteArrayInputStream;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.HashMap;
@@ -41,10 +44,12 @@ public class PdfServer {
             && uri.getQuery() == null
             && uri.getFragment() == null
             && PDF_PATH_PATTERN.matcher(uri.getPath() == null ? "" : uri.getPath())
-                .matches();
+            .matches();
     }
 
-    /** 只匹配固定 host、scheme 和页面 PNG 路径，避免把 URL 当作任意文件路径。 */
+    /**
+     * 只匹配固定 host、scheme 和页面 PNG 路径，避免把 URL 当作任意文件路径。
+     */
     public static boolean isPdfPageUrl(String url) {
         Uri uri = parseUri(url);
         return uri != null
@@ -53,7 +58,7 @@ public class PdfServer {
             && uri.getQuery() == null
             && uri.getFragment() == null
             && PDF_PAGE_PATH_PATTERN.matcher(uri.getPath() == null ? "" : uri.getPath())
-                .matches();
+            .matches();
     }
 
     public static boolean isCbzPageUrl(String url) {
@@ -64,7 +69,7 @@ public class PdfServer {
             && uri.getQuery() == null
             && uri.getFragment() == null
             && CBZ_PAGE_PATH_PATTERN.matcher(uri.getPath() == null ? "" : uri.getPath())
-                .matches();
+            .matches();
     }
 
     public static WebResourceResponse handleCbzPageRequest(String url, Context context) {
@@ -118,7 +123,9 @@ public class PdfServer {
         );
     }
 
-    /** 读取已生成的 PNG；该入口不创建 PdfRenderer，也不访问源 PDF。 */
+    /**
+     * 读取已生成的 PNG；该入口不创建 PdfRenderer，也不访问源 PDF。
+     */
     public static WebResourceResponse handlePdfPageRequest(String url, Context context) {
         if (!isPdfPageUrl(url)) {
             return errorResponse(400, "Bad Request", null);

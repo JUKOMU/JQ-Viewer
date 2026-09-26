@@ -10,11 +10,7 @@ import io.github.jukomu.desktop.feature.catalog.model.PhotoResponse;
 import io.github.jukomu.desktop.feature.download.data.DownloadStore;
 import io.github.jukomu.desktop.feature.download.data.StoredDownloadPage;
 import io.github.jukomu.desktop.feature.download.data.StoredDownloadTask;
-import io.github.jukomu.desktop.feature.download.model.DownloadChapterRequest;
-import io.github.jukomu.desktop.feature.download.model.DownloadProgressEvent;
-import io.github.jukomu.desktop.feature.download.model.DownloadSubmissionResponse;
-import io.github.jukomu.desktop.feature.download.model.DownloadTaskResponse;
-import io.github.jukomu.desktop.feature.download.model.DownloadTasksResponse;
+import io.github.jukomu.desktop.feature.download.model.*;
 import io.github.jukomu.jmcomic.api.client.JmClient;
 import io.github.jukomu.jmcomic.api.client.JmDownloadClient;
 import io.github.jukomu.jmcomic.api.download.IDownloadManager;
@@ -28,15 +24,12 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executor;
-import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.*;
 import java.util.function.Supplier;
 
-/** Desktop 下载任务的持久化状态机与 JMComic 运行时适配。 */
+/**
+ * Desktop 下载任务的持久化状态机与 JMComic 运行时适配。
+ */
 public final class DownloadService implements AutoCloseable {
     public static final String STATUS_QUEUED = "queued";
     public static final String STATUS_DOWNLOADING = "downloading";
@@ -60,31 +53,31 @@ public final class DownloadService implements AutoCloseable {
     private volatile boolean closing;
 
     public DownloadService(
-            DownloadStore store,
-            DownloadFiles files,
-            JmClient client,
-            JmDownloadClient downloadClient,
-            Executor prepareExecutor,
-            EventHub events,
-            ObjectMapper mapper
+        DownloadStore store,
+        DownloadFiles files,
+        JmClient client,
+        JmDownloadClient downloadClient,
+        Executor prepareExecutor,
+        EventHub events,
+        ObjectMapper mapper
     ) {
         this(store, files, () -> client, () -> downloadClient, prepareExecutor, events, mapper);
     }
 
     public DownloadService(
-            DownloadStore store,
-            DownloadFiles files,
-            Supplier<JmClient> clientSupplier,
-            Supplier<JmDownloadClient> downloadClientSupplier,
-            Executor prepareExecutor,
-            EventHub events,
-            ObjectMapper mapper
+        DownloadStore store,
+        DownloadFiles files,
+        Supplier<JmClient> clientSupplier,
+        Supplier<JmDownloadClient> downloadClientSupplier,
+        Executor prepareExecutor,
+        EventHub events,
+        ObjectMapper mapper
     ) {
         this.store = Objects.requireNonNull(store, "store");
         this.files = Objects.requireNonNull(files, "files");
         this.clientSupplier = Objects.requireNonNull(clientSupplier, "clientSupplier");
         this.downloadClientSupplier = Objects.requireNonNull(
-                downloadClientSupplier, "downloadClientSupplier");
+            downloadClientSupplier, "downloadClientSupplier");
         this.prepareExecutor = Objects.requireNonNull(prepareExecutor, "prepareExecutor");
         this.events = Objects.requireNonNull(events, "events");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
@@ -129,14 +122,14 @@ public final class DownloadService implements AutoCloseable {
                 files.cleanup(relativeDirectory);
                 cancelledTaskIds.remove(taskId);
                 store.createOrResetTask(
-                        taskId,
-                        albumId,
-                        chapterId,
-                        text(request.albumTitle()),
-                        text(request.chapterTitle()),
-                        text(request.coverUrl()),
-                        relativeDirectory,
-                        System.currentTimeMillis()
+                    taskId,
+                    albumId,
+                    chapterId,
+                    text(request.albumTitle()),
+                    text(request.chapterTitle()),
+                    text(request.coverUrl()),
+                    relativeDirectory,
+                    System.currentTimeMillis()
                 );
                 runtimes.put(taskId, runtime);
                 publish(store.findTask(taskId), 0, null);
@@ -155,9 +148,9 @@ public final class DownloadService implements AutoCloseable {
 
     public DownloadTasksResponse getDownloadTasks() {
         return new DownloadTasksResponse(
-                store.listTasks().stream().map(DownloadService::response).toList(),
-                files.usedBytes(),
-                files.availableBytes()
+            store.listTasks().stream().map(DownloadService::response).toList(),
+            files.usedBytes(),
+            files.availableBytes()
         );
     }
 
@@ -237,18 +230,18 @@ public final class DownloadService implements AutoCloseable {
         }
         List<StoredDownloadPage> pages = store.pages(task.taskId());
         if (pages.isEmpty() || pages.stream().anyMatch(page -> !page.completed()
-                || !Files.isRegularFile(files.resolvePage(page)))) {
+            || !Files.isRegularFile(files.resolvePage(page)))) {
             throw ApiException.notFound("已下载章节文件不完整");
         }
         return new PhotoResponse(
-                task.chapterId(),
-                task.chapterTitle(),
-                task.albumId(),
-                task.chapterSortOrder(),
-                task.author(),
-                tags(task.tagsJson()),
-                pages.stream().map(DownloadService::imageResponse).toList(),
-                Boolean.TRUE.equals(task.isSingleEpisode())
+            task.chapterId(),
+            task.chapterTitle(),
+            task.albumId(),
+            task.chapterSortOrder(),
+            task.author(),
+            tags(task.tagsJson()),
+            pages.stream().map(DownloadService::imageResponse).toList(),
+            Boolean.TRUE.equals(task.isSingleEpisode())
         );
     }
 
@@ -295,11 +288,11 @@ public final class DownloadService implements AutoCloseable {
             List<StoredDownloadPage> pages = store.pages(taskId);
             DownloadFiles.ChapterInspection inspection = files.inspect(pages);
             store.complete(taskId, pages.size(), inspection.firstSortOrder(),
-                    inspection.totalSize(), System.currentTimeMillis());
+                inspection.totalSize(), System.currentTimeMillis());
             publish(store.findTask(taskId), 0, inspection.totalSize());
         } catch (RuntimeException exception) {
             failDownload(taskId, task.downloadedPages(), task.downloadedBytes(),
-                    "下载校验失败: " + messageOf(exception));
+                "下载校验失败: " + messageOf(exception));
         } finally {
             finishRuntime(taskId);
         }
@@ -363,10 +356,10 @@ public final class DownloadService implements AutoCloseable {
                 if (cancelledTaskIds.contains(taskId) || closing || store.findTask(taskId) == null) return;
                 files.prepareChapter(task.relativeDirectory());
                 List<StoredDownloadPage> pages = images.stream()
-                        .map(image -> page(taskId, task.relativeDirectory(), image))
-                        .toList();
+                    .map(image -> page(taskId, task.relativeDirectory(), image))
+                    .toList();
                 store.saveManifest(taskId, pages.size(), text(photo.getAuthor()), tagsJson(photo.getTags()),
-                        photo.getSortOrder(), photo.isSingleAlbum(), pages);
+                    photo.getSortOrder(), photo.isSingleAlbum(), pages);
                 Path chapterDirectory = files.chapterDirectory(task.relativeDirectory());
                 Path savePath = photo.isSingleAlbum() ? chapterDirectory : chapterDirectory.getParent();
                 JmDownloadClient downloadClient = requireDownloadClient();
@@ -394,15 +387,15 @@ public final class DownloadService implements AutoCloseable {
         }
         try {
             return new StoredDownloadPage(
-                    taskId,
-                    image.getSortOrder(),
-                    text(image.getPhotoId()),
-                    filename,
-                    files.relativeImagePath(relativeDirectory, filename),
-                    text(image.getUrl()),
-                    text(image.getScrambleId()),
-                    text(image.getQueryParams()),
-                    false
+                taskId,
+                image.getSortOrder(),
+                text(image.getPhotoId()),
+                filename,
+                files.relativeImagePath(relativeDirectory, filename),
+                text(image.getUrl()),
+                text(image.getScrambleId()),
+                text(image.getQueryParams()),
+                false
             );
         } catch (IllegalArgumentException exception) {
             throw new IllegalStateException("图片文件名无效: " + filename, exception);
@@ -440,18 +433,18 @@ public final class DownloadService implements AutoCloseable {
     private void publish(StoredDownloadTask task, long speed, Long totalBytes) {
         if (task == null || closing) return;
         events.publish("downloadProgress", new DownloadProgressEvent(
-                task.taskId(), task.albumId(), task.chapterId(), task.downloadedPages(),
-                task.totalPages(), task.status(), task.error(), speed, task.downloadedBytes(),
-                totalBytes == null ? sizeOrNull(task.totalSize()) : totalBytes
+            task.taskId(), task.albumId(), task.chapterId(), task.downloadedPages(),
+            task.totalPages(), task.status(), task.error(), speed, task.downloadedBytes(),
+            totalBytes == null ? sizeOrNull(task.totalSize()) : totalBytes
         ));
     }
 
     private void publishCancelled(StoredDownloadTask task) {
         if (closing) return;
         events.publish("downloadProgress", new DownloadProgressEvent(
-                task.taskId(), task.albumId(), task.chapterId(), task.downloadedPages(),
-                task.totalPages(), "cancelled", null, 0, task.downloadedBytes(),
-                sizeOrNull(task.totalSize())
+            task.taskId(), task.albumId(), task.chapterId(), task.downloadedPages(),
+            task.totalPages(), "cancelled", null, 0, task.downloadedBytes(),
+            sizeOrNull(task.totalSize())
         ));
     }
 
@@ -474,21 +467,21 @@ public final class DownloadService implements AutoCloseable {
 
     private static ImageResponse imageResponse(StoredDownloadPage page) {
         return new ImageResponse(page.photoId(), page.scrambleId(), page.filename(),
-                page.sourceUrl(), page.queryParams(), page.sortOrder());
+            page.sourceUrl(), page.queryParams(), page.sortOrder());
     }
 
     private static DownloadTaskResponse response(StoredDownloadTask task) {
         return new DownloadTaskResponse(
-                task.taskId(), task.albumId(), task.chapterId(), task.albumTitle(), task.chapterTitle(),
-                task.coverUrl(), task.firstImageSortOrder(), task.chapterSortOrder(), task.isSingleEpisode(),
-                task.totalPages(), task.downloadedPages(), task.status(), task.createdAt(), task.completedAt(),
-                task.error(), task.downloadedBytes(), task.totalSize()
+            task.taskId(), task.albumId(), task.chapterId(), task.albumTitle(), task.chapterTitle(),
+            task.coverUrl(), task.firstImageSortOrder(), task.chapterSortOrder(), task.isSingleEpisode(),
+            task.totalPages(), task.downloadedPages(), task.status(), task.createdAt(), task.completedAt(),
+            task.error(), task.downloadedBytes(), task.totalSize()
         );
     }
 
     private static boolean isActive(String status) {
         return STATUS_QUEUED.equals(status) || STATUS_DOWNLOADING.equals(status)
-                || STATUS_PAUSED.equals(status) || STATUS_VERIFYING.equals(status);
+            || STATUS_PAUSED.equals(status) || STATUS_VERIFYING.equals(status);
     }
 
     private static Long sizeOrNull(long size) {

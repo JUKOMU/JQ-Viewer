@@ -4,53 +4,38 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.MapperFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.json.JsonMapper;
-import io.github.jukomu.desktop.bridge.ApiException;
-import io.github.jukomu.desktop.bridge.EventHub;
-import io.github.jukomu.desktop.bridge.Plugin;
-import io.github.jukomu.desktop.bridge.PluginMethodRoutes;
-import io.github.jukomu.desktop.bridge.RequestExecutor;
+import io.github.jukomu.desktop.bridge.*;
+import io.github.jukomu.desktop.bridge.handler.*;
 import io.github.jukomu.desktop.bridge.model.ErrorResponse;
-import io.github.jukomu.desktop.bridge.handler.ApiPluginHandler;
-import io.github.jukomu.desktop.bridge.handler.AuthPluginHandler;
-import io.github.jukomu.desktop.bridge.handler.CachePluginHandler;
-import io.github.jukomu.desktop.bridge.handler.DownloadPluginHandler;
-import io.github.jukomu.desktop.bridge.handler.FilePluginHandler;
-import io.github.jukomu.desktop.bridge.handler.HistoryPluginHandler;
-import io.github.jukomu.desktop.bridge.handler.OfflineFavoritePluginHandler;
-import io.github.jukomu.desktop.bridge.handler.OcrPluginHandler;
-import io.github.jukomu.desktop.bridge.handler.LocalFilePluginHandler;
-import io.github.jukomu.desktop.bridge.handler.SettingsPluginHandler;
-import io.github.jukomu.desktop.bridge.handler.SystemPluginHandler;
-import io.github.jukomu.desktop.bridge.handler.UpdatePluginHandler;
 import io.github.jukomu.desktop.data.Database;
 import io.github.jukomu.desktop.data.Paths;
 import io.github.jukomu.desktop.feature.auth.AuthService;
 import io.github.jukomu.desktop.feature.auth.CredentialStore;
-import io.github.jukomu.desktop.feature.cbz.CbzDocumentService;
 import io.github.jukomu.desktop.feature.auth.CredentialStores;
 import io.github.jukomu.desktop.feature.catalog.CatalogService;
+import io.github.jukomu.desktop.feature.cbz.CbzDocumentService;
 import io.github.jukomu.desktop.feature.client.JmcomicSessionManager;
+import io.github.jukomu.desktop.feature.diagnostics.DiagnosticsService;
 import io.github.jukomu.desktop.feature.download.DownloadFiles;
 import io.github.jukomu.desktop.feature.download.DownloadLocationService;
 import io.github.jukomu.desktop.feature.download.DownloadService;
 import io.github.jukomu.desktop.feature.download.data.DownloadStore;
-import io.github.jukomu.desktop.feature.diagnostics.DiagnosticsService;
+import io.github.jukomu.desktop.feature.export.ExportService;
+import io.github.jukomu.desktop.feature.export.ExportStore;
 import io.github.jukomu.desktop.feature.favorite.OfflineFavoriteService;
 import io.github.jukomu.desktop.feature.favorite.data.OfflineFavoriteStore;
+import io.github.jukomu.desktop.feature.files.FileService;
 import io.github.jukomu.desktop.feature.history.HistoryService;
 import io.github.jukomu.desktop.feature.image.CacheService;
 import io.github.jukomu.desktop.feature.image.ImageCache;
 import io.github.jukomu.desktop.feature.image.ImageService;
-import io.github.jukomu.desktop.feature.files.FileService;
+import io.github.jukomu.desktop.feature.localfile.data.LocalFileStore;
+import io.github.jukomu.desktop.feature.localfile.management.LocalFileManagementService;
 import io.github.jukomu.desktop.feature.network.NetworkService;
 import io.github.jukomu.desktop.feature.notification.DesktopNotificationSink;
 import io.github.jukomu.desktop.feature.notification.DesktopTaskNotificationService;
 import io.github.jukomu.desktop.feature.notification.LaunchRouteService;
 import io.github.jukomu.desktop.feature.ocr.OcrService;
-import io.github.jukomu.desktop.feature.localfile.data.LocalFileStore;
-import io.github.jukomu.desktop.feature.export.ExportService;
-import io.github.jukomu.desktop.feature.export.ExportStore;
-import io.github.jukomu.desktop.feature.localfile.management.LocalFileManagementService;
 import io.github.jukomu.desktop.feature.pdf.render.PdfDocumentService;
 import io.github.jukomu.desktop.feature.pdf.render.PdfPageCache;
 import io.github.jukomu.desktop.feature.pdf.render.PdfResourceService;
@@ -71,37 +56,35 @@ import org.slf4j.LoggerFactory;
 import java.net.URI;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.*;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
-/** 在同一 JVM 内承载 loopback Javalin 服务与本地资源。 */
+/**
+ * 在同一 JVM 内承载 loopback Javalin 服务与本地资源。
+ */
 public final class Backend implements AutoCloseable {
     public static final String LOOPBACK_HOST = "127.0.0.1";
     private static final Logger LOGGER = LoggerFactory.getLogger(Backend.class);
     private static final List<String> SPA_PATHS = List.of(
-            "/home",
-            "/category",
-            "/search",
-            "/favorite",
-            "/download",
-            "/setting",
-            "/cache",
-            "/history",
-            "/album",
-            "/login",
-            "/user",
-            "/network-status",
-            "/about",
-            "/pdf-template-help",
-            "/batch-parse",
-            "/import-review",
-            "/pdf-reader",
-            "/cbz-reader"
+        "/home",
+        "/category",
+        "/search",
+        "/favorite",
+        "/download",
+        "/setting",
+        "/cache",
+        "/history",
+        "/album",
+        "/login",
+        "/user",
+        "/network-status",
+        "/about",
+        "/pdf-template-help",
+        "/batch-parse",
+        "/import-review",
+        "/pdf-reader",
+        "/cbz-reader"
     );
 
     private final Paths paths;
@@ -130,90 +113,90 @@ public final class Backend implements AutoCloseable {
 
     public Backend(Paths paths) {
         this(paths, new Database(paths), new ServiceExecutors(), null, null,
-                new FileService(paths), null, null, null);
+            new FileService(paths), null, null, null);
     }
 
     public Backend(
-            Paths paths,
-            Database database,
-            ExecutorService apiExecutor
+        Paths paths,
+        Database database,
+        ExecutorService apiExecutor
     ) {
         this(paths, database, new ServiceExecutors(apiExecutor), null, null,
-                new FileService(paths), null, null, null);
+            new FileService(paths), null, null, null);
     }
 
     Backend(
-            Paths paths,
-            Database database,
-            ExecutorService apiExecutor,
-            JmClient providedClient,
-            Function<String, String> providedAlbumCoverUrl
+        Paths paths,
+        Database database,
+        ExecutorService apiExecutor,
+        JmClient providedClient,
+        Function<String, String> providedAlbumCoverUrl
     ) {
         this(paths, database, new ServiceExecutors(apiExecutor), providedClient, providedAlbumCoverUrl,
-                new FileService(paths), CredentialStores.unavailable(), null, null);
+            new FileService(paths), CredentialStores.unavailable(), null, null);
     }
 
     Backend(
-            Paths paths,
-            Database database,
-            ExecutorService apiExecutor,
-            JmClient providedClient,
-            Function<String, String> providedAlbumCoverUrl,
-            FileService fileService
+        Paths paths,
+        Database database,
+        ExecutorService apiExecutor,
+        JmClient providedClient,
+        Function<String, String> providedAlbumCoverUrl,
+        FileService fileService
     ) {
         this(paths, database, new ServiceExecutors(apiExecutor), providedClient, providedAlbumCoverUrl,
-                fileService, CredentialStores.unavailable(), null, null);
+            fileService, CredentialStores.unavailable(), null, null);
     }
 
     Backend(
-            Paths paths,
-            Database database,
-            ExecutorService apiExecutor,
-            JmClient providedClient,
-            Function<String, String> providedAlbumCoverUrl,
-            FileService fileService,
-            CredentialStore credentialStore
+        Paths paths,
+        Database database,
+        ExecutorService apiExecutor,
+        JmClient providedClient,
+        Function<String, String> providedAlbumCoverUrl,
+        FileService fileService,
+        CredentialStore credentialStore
     ) {
         this(paths, database, new ServiceExecutors(apiExecutor), providedClient, providedAlbumCoverUrl,
-                fileService, credentialStore, null, null);
+            fileService, credentialStore, null, null);
     }
 
     Backend(
-            Paths paths,
-            Database database,
-            ExecutorService apiExecutor,
-            JmClient providedClient,
-            Function<String, String> providedAlbumCoverUrl,
-            FileService fileService,
-            CredentialStore credentialStore,
-            NetworkService.Operations networkOperations
+        Paths paths,
+        Database database,
+        ExecutorService apiExecutor,
+        JmClient providedClient,
+        Function<String, String> providedAlbumCoverUrl,
+        FileService fileService,
+        CredentialStore credentialStore,
+        NetworkService.Operations networkOperations
     ) {
         this(paths, database, new ServiceExecutors(apiExecutor), providedClient, providedAlbumCoverUrl,
-                fileService, credentialStore, networkOperations, null);
+            fileService, credentialStore, networkOperations, null);
     }
 
     Backend(
-            Paths paths,
-            Database database,
-            ExecutorService apiExecutor,
-            FileService fileService,
-            CredentialStore credentialStore,
-            JmcomicSessionManager.Factory clientFactory
+        Paths paths,
+        Database database,
+        ExecutorService apiExecutor,
+        FileService fileService,
+        CredentialStore credentialStore,
+        JmcomicSessionManager.Factory clientFactory
     ) {
         this(paths, database, new ServiceExecutors(apiExecutor), null, null,
-                fileService, credentialStore, null, clientFactory);
+            fileService, credentialStore, null, clientFactory);
     }
 
     private Backend(
-            Paths paths,
-            Database database,
-            ServiceExecutors executors,
-            JmClient providedClient,
-            Function<String, String> providedAlbumCoverUrl,
-            FileService fileService,
-            CredentialStore providedCredentialStore,
-            NetworkService.Operations providedNetworkOperations,
-            JmcomicSessionManager.Factory providedClientFactory
+        Paths paths,
+        Database database,
+        ServiceExecutors executors,
+        JmClient providedClient,
+        Function<String, String> providedAlbumCoverUrl,
+        FileService fileService,
+        CredentialStore providedCredentialStore,
+        NetworkService.Operations providedNetworkOperations,
+        JmcomicSessionManager.Factory providedClientFactory
     ) {
         this.paths = Objects.requireNonNull(paths, "paths");
         this.database = Objects.requireNonNull(database, "database");
@@ -254,44 +237,44 @@ public final class Backend implements AutoCloseable {
             paths.ensureDirectories();
             if (Backend.class.getResource("/static/index.html") == null) {
                 throw new IllegalStateException(
-                        "静态资源缺失；请先运行 npm run desktop:sync"
+                    "静态资源缺失；请先运行 npm run desktop:sync"
                 );
             }
 
             database.open();
             ObjectMapper mapper = JsonMapper.builder()
-                    .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
-                    .disable(DeserializationFeature.ACCEPT_FLOAT_AS_INT)
-                    .disable(MapperFeature.ALLOW_COERCION_OF_SCALARS)
-                    .build();
+                .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+                .disable(DeserializationFeature.ACCEPT_FLOAT_AS_INT)
+                .disable(MapperFeature.ALLOW_COERCION_OF_SCALARS)
+                .build();
             SettingsService settingsService = new SettingsService(database, mapper);
             startedOcrService = OcrService.createDefault(settingsService, paths.ocrDirectory());
             int preloadConcurrency = settingsService.preloadConcurrency();
             executors.configureImagePreload(preloadConcurrency);
             startedEventHub = new EventHub(mapper);
             startedUpdateService = new DesktopUpdateService(
-                    DesktopUpdateConfiguration.fromSystemProperties(), mapper, startedEventHub, paths);
+                DesktopUpdateConfiguration.fromSystemProperties(), mapper, startedEventHub, paths);
             final Function<String, String> albumCoverUrl;
             final NetworkService.Operations networkOperations;
             if (providedClient == null) {
                 JmConfiguration configuration = new JmConfiguration.Builder()
-                        .downloadThreadPoolSize(settingsService.downloadConcurrency())
-                        .retryTimes(3)
-                        .build();
+                    .downloadThreadPoolSize(settingsService.downloadConcurrency())
+                    .retryTimes(3)
+                    .build();
                 JmcomicSessionManager.Factory clientFactory = providedClientFactory == null
-                        ? () -> JmComic.newApiClientAsync(configuration)
-                        : providedClientFactory;
+                    ? () -> JmComic.newApiClientAsync(configuration)
+                    : providedClientFactory;
                 startedClientSession = JmcomicSessionManager.managed(
-                        clientFactory, startedEventHub);
+                    clientFactory, startedEventHub);
                 JmcomicSessionManager clientSession = startedClientSession;
                 albumCoverUrl = id -> requireApiClient(clientSession).getAlbumCoverUrl(id, "_3x4");
                 networkOperations = new NetworkService.Operations(
-                        () -> requireApiClient(clientSession).getDomainStates(),
-                        () -> requireApiClient(clientSession).getDomainLatency(),
-                        () -> requireApiClient(clientSession).reprobeDomains());
+                    () -> requireApiClient(clientSession).getDomainStates(),
+                    () -> requireApiClient(clientSession).getDomainLatency(),
+                    () -> requireApiClient(clientSession).reprobeDomains());
             } else {
                 startedClientSession = JmcomicSessionManager.provided(
-                        providedClient, startedEventHub);
+                    providedClient, startedEventHub);
                 albumCoverUrl = providedAlbumCoverUrl;
                 networkOperations = providedNetworkOperations;
             }
@@ -299,103 +282,103 @@ public final class Backend implements AutoCloseable {
             final EventHub eventHub = startedEventHub;
             if (networkOperations != null) {
                 startedNetworkService = new NetworkService(
-                        networkOperations, executors.networkProbe(), eventHub);
+                    networkOperations, executors.networkProbe(), eventHub);
             }
             DownloadStore downloadStore = new DownloadStore(database);
             ExportStore exportStore = new ExportStore(database);
             startedLaunchRoutes = new LaunchRouteService(eventHub);
             startedTaskNotifications = new DesktopTaskNotificationService(
-                    downloadStore, exportStore, startedLaunchRoutes, eventHub,
-                    fileService::openContainingFolder);
+                downloadStore, exportStore, startedLaunchRoutes, eventHub,
+                fileService::openContainingFolder);
             DesktopTaskNotificationService taskNotifications = startedTaskNotifications;
             DownloadFiles downloadFiles = new DownloadFiles(
-                    settingsService.downloadRoot(paths.downloadsDirectory()));
+                settingsService.downloadRoot(paths.downloadsDirectory()));
             DownloadLocationService downloadLocationService = new DownloadLocationService(
-                    paths, settingsService, downloadStore, downloadFiles, exportStore,
-                    fileService, eventHub);
+                paths, settingsService, downloadStore, downloadFiles, exportStore,
+                fileService, eventHub);
             downloadLocationService.reconcileOnStartup();
             startedDownloadService = new DownloadService(
-                    downloadStore,
-                    downloadFiles,
-                    clientSession::getClient,
-                    () -> clientSession.getClient() instanceof JmDownloadClient client
-                            ? client
-                            : null,
-                    executors.downloadPrepare(),
-                    eventHub,
-                    mapper
+                downloadStore,
+                downloadFiles,
+                clientSession::getClient,
+                () -> clientSession.getClient() instanceof JmDownloadClient client
+                    ? client
+                    : null,
+                executors.downloadPrepare(),
+                eventHub,
+                mapper
             );
             startedDownloadService.reconcileOnStartup();
             final DownloadService downloadService = startedDownloadService;
             ImageService imageService = new ImageService(
-                    clientSession::getClient,
-                    executors.imagePreload(),
-                    eventHub,
-                    downloadService::findCompletedImage);
+                clientSession::getClient,
+                executors.imagePreload(),
+                eventHub,
+                downloadService::findCompletedImage);
             RequestExecutor apiRequests = new RequestExecutor(executors.api(), mapper);
             RequestExecutor imageRequests = new RequestExecutor(executors.imageCommand(), mapper);
             RequestExecutor settingsRequests = new RequestExecutor(executors.settings(), mapper);
             RequestExecutor historyRequests = new RequestExecutor(executors.history(), mapper);
             RequestExecutor favoriteRequests = new RequestExecutor(
-                    executors.offlineFavorite(), mapper);
+                executors.offlineFavorite(), mapper);
             RequestExecutor diagnosticsRequests = new RequestExecutor(
-                    executors.diagnostics(), mapper);
+                executors.diagnostics(), mapper);
             RequestExecutor fileRequests = new RequestExecutor(executors.fileIo(), mapper);
             RequestExecutor dialogRequests = new RequestExecutor(executors.fileDialog(), mapper);
             RequestExecutor relocationRequests = new RequestExecutor(executors.relocation(), mapper);
             RequestExecutor downloadRequests = new RequestExecutor(
-                    executors.downloadCommand(), mapper);
+                executors.downloadCommand(), mapper);
             RequestExecutor pdfRequests = new RequestExecutor(executors.pdfCommand(), mapper);
             RequestExecutor networkRequests = new RequestExecutor(
-                    executors.networkCommand(), mapper);
+                executors.networkCommand(), mapper);
             RequestExecutor ocrRequests = new RequestExecutor(executors.ocr(), mapper);
             RequestExecutor updateRequests = new RequestExecutor(executors.updateCommand(), mapper);
             CredentialStore credentialStore = providedCredentialStore == null
-                    ? CredentialStores.system()
-                    : providedCredentialStore;
+                ? CredentialStores.system()
+                : providedCredentialStore;
             PdfPageCache pdfPageCache = new PdfPageCache(paths.cacheDirectory());
             CbzDocumentService cbzDocuments = new CbzDocumentService();
             CacheService cacheService = new CacheService(
-                    settingsService, imageService.cache(), pdfPageCache);
+                settingsService, imageService.cache(), pdfPageCache);
             DiagnosticsService diagnosticsService = new DiagnosticsService(
-                    paths, downloadStore, exportStore, cacheService);
+                paths, downloadStore, exportStore, cacheService);
             LocalFileManagementService pdfManagementService = new LocalFileManagementService(
-                    new LocalFileStore(database),
-                    downloadStore,
-                    fileService,
-                    new PdfDocumentService(pdfPageCache),
-                    cbzDocuments
+                new LocalFileStore(database),
+                downloadStore,
+                fileService,
+                new PdfDocumentService(pdfPageCache),
+                cbzDocuments
             );
             startedExportService = new ExportService(
-                    exportStore, downloadStore, downloadFiles,
-                    executors.exportJobs(), eventHub);
+                exportStore, downloadStore, downloadFiles,
+                executors.exportJobs(), eventHub);
             startedExportService.reconcileOnStartup();
             taskNotifications.start();
             Plugin plugin = new Plugin(
-                    new ApiPluginHandler(apiRequests, imageRequests,
-                            new CatalogService(clientSession::getClient, imageService, albumCoverUrl),
-                            imageService),
-                    new AuthPluginHandler(apiRequests,
-                            new AuthService(
-                                    clientSession::getClient,
-                                    credentialStore,
-                                    executors.api())),
-                    new CachePluginHandler(imageRequests, cacheService),
-                    new SettingsPluginHandler(
-                            settingsRequests, relocationRequests,
-                            settingsService, downloadLocationService),
-                    new HistoryPluginHandler(historyRequests, new HistoryService(database)),
-                    new OfflineFavoritePluginHandler(favoriteRequests, new OfflineFavoriteService(
-                            new OfflineFavoriteStore(database, mapper))),
-                    new FilePluginHandler(fileRequests, dialogRequests, fileService),
-                    new DownloadPluginHandler(downloadRequests, downloadService),
-                    new LocalFilePluginHandler(pdfRequests, pdfManagementService, startedExportService),
-                    new SystemPluginHandler(
-                            networkRequests, diagnosticsRequests,
-                            clientSession,
-                            startedNetworkService, startedLaunchRoutes, diagnosticsService),
-                    new OcrPluginHandler(ocrRequests, startedOcrService),
-                    new UpdatePluginHandler(updateRequests, startedUpdateService));
+                new ApiPluginHandler(apiRequests, imageRequests,
+                    new CatalogService(clientSession::getClient, imageService, albumCoverUrl),
+                    imageService),
+                new AuthPluginHandler(apiRequests,
+                    new AuthService(
+                        clientSession::getClient,
+                        credentialStore,
+                        executors.api())),
+                new CachePluginHandler(imageRequests, cacheService),
+                new SettingsPluginHandler(
+                    settingsRequests, relocationRequests,
+                    settingsService, downloadLocationService),
+                new HistoryPluginHandler(historyRequests, new HistoryService(database)),
+                new OfflineFavoritePluginHandler(favoriteRequests, new OfflineFavoriteService(
+                    new OfflineFavoriteStore(database, mapper))),
+                new FilePluginHandler(fileRequests, dialogRequests, fileService),
+                new DownloadPluginHandler(downloadRequests, downloadService),
+                new LocalFilePluginHandler(pdfRequests, pdfManagementService, startedExportService),
+                new SystemPluginHandler(
+                    networkRequests, diagnosticsRequests,
+                    clientSession,
+                    startedNetworkService, startedLaunchRoutes, diagnosticsService),
+                new OcrPluginHandler(ocrRequests, startedOcrService),
+                new UpdatePluginHandler(updateRequests, startedUpdateService));
             PdfResourceService pdfResources = new PdfResourceService();
             candidate = Javalin.create(config -> {
                 config.jetty.host = LOOPBACK_HOST;
@@ -409,9 +392,9 @@ public final class Backend implements AutoCloseable {
                 PluginMethodRoutes.register(config.routes, plugin);
                 config.routes.sse("/events", eventHub::connect);
                 registerImageRoute(config, imageService, downloadService,
-                        "image", "/image/{photoId}/{sortOrder}");
+                    "image", "/image/{photoId}/{sortOrder}");
                 registerImageRoute(config, imageService, downloadService,
-                        "thumb", "/thumb/{photoId}/{sortOrder}");
+                    "thumb", "/thumb/{photoId}/{sortOrder}");
                 registerPdfRoutes(config, pdfResources, pdfPageCache);
                 registerCbzRoutes(config, cbzDocuments);
             });
@@ -448,52 +431,52 @@ public final class Backend implements AutoCloseable {
             EventHub failedEventHub = startedEventHub;
             JmcomicSessionManager failedClientSession = startedClientSession;
             CloseSequence.run(LOGGER,
-                    step("启动中的本地后端", () -> {
-                        if (failedApp != null) failedApp.stop();
-                    }),
-                    step("任务通知", () -> {
-                        if (failedTaskNotifications != null) failedTaskNotifications.close();
-                    }),
-                    step("更新服务", () -> {
-                        if (failedUpdateService != null) failedUpdateService.close();
-                    }),
-                    step("启动路由", () -> {
-                        if (failedLaunchRoutes != null) failedLaunchRoutes.close();
-                    }),
-                    step("下载服务", () -> {
-                        if (failedDownloadService != null) failedDownloadService.close();
-                    }),
-                    step("文件导出服务", () -> {
-                        if (failedExportService != null) failedExportService.close();
-                    }),
-                    step("网络服务", () -> {
-                        if (failedNetworkService != null) failedNetworkService.close();
-                    }),
-                    step("OCR 服务", () -> {
-                        if (failedOcrService != null) failedOcrService.close();
-                    }),
-                    step("事件中心", () -> {
-                        if (failedEventHub != null) failedEventHub.close();
-                    }),
-                    step("JMComic 客户端会话", () -> {
-                        if (failedClientSession != null) failedClientSession.close();
-                    }),
-                    step("服务执行器", executors::close),
-                    step("数据库", database::close)
+                step("启动中的本地后端", () -> {
+                    if (failedApp != null) failedApp.stop();
+                }),
+                step("任务通知", () -> {
+                    if (failedTaskNotifications != null) failedTaskNotifications.close();
+                }),
+                step("更新服务", () -> {
+                    if (failedUpdateService != null) failedUpdateService.close();
+                }),
+                step("启动路由", () -> {
+                    if (failedLaunchRoutes != null) failedLaunchRoutes.close();
+                }),
+                step("下载服务", () -> {
+                    if (failedDownloadService != null) failedDownloadService.close();
+                }),
+                step("文件导出服务", () -> {
+                    if (failedExportService != null) failedExportService.close();
+                }),
+                step("网络服务", () -> {
+                    if (failedNetworkService != null) failedNetworkService.close();
+                }),
+                step("OCR 服务", () -> {
+                    if (failedOcrService != null) failedOcrService.close();
+                }),
+                step("事件中心", () -> {
+                    if (failedEventHub != null) failedEventHub.close();
+                }),
+                step("JMComic 客户端会话", () -> {
+                    if (failedClientSession != null) failedClientSession.close();
+                }),
+                step("服务执行器", executors::close),
+                step("数据库", database::close)
             );
             throw exception;
         }
     }
 
     private void registerPdfRoutes(
-            io.javalin.config.JavalinConfig config,
-            PdfResourceService pdfResources,
-            PdfPageCache pdfPageCache
+        io.javalin.config.JavalinConfig config,
+        PdfResourceService pdfResources,
+        PdfPageCache pdfPageCache
     ) {
         config.routes.get("/pdf/{encodedFileRef}", context -> {
             try {
                 PdfResourceService.Resource resource = pdfResources.open(
-                        context.pathParam("encodedFileRef"));
+                    context.pathParam("encodedFileRef"));
                 context.contentType("application/pdf").result(resource.input());
             } catch (PdfResourceService.ResourceException exception) {
                 context.status(exception.status());
@@ -522,13 +505,13 @@ public final class Backend implements AutoCloseable {
     }
 
     private void registerCbzRoutes(
-            io.javalin.config.JavalinConfig config,
-            CbzDocumentService cbzDocuments
+        io.javalin.config.JavalinConfig config,
+        CbzDocumentService cbzDocuments
     ) {
         config.routes.get("/cbz-page/{encodedFileRef}/{page}", context -> {
             try {
                 String fileRef = new String(java.util.Base64.getUrlDecoder().decode(
-                        context.pathParam("encodedFileRef")), java.nio.charset.StandardCharsets.UTF_8);
+                    context.pathParam("encodedFileRef")), java.nio.charset.StandardCharsets.UTF_8);
                 int page = Integer.parseInt(context.pathParam("page"));
                 CbzDocumentService.PageResource resource = cbzDocuments.openPage(fileRef, page);
                 context.header("Cache-Control", "private, max-age=3600");
@@ -544,11 +527,11 @@ public final class Backend implements AutoCloseable {
     }
 
     private void registerImageRoute(
-            io.javalin.config.JavalinConfig config,
-            ImageService imageService,
-            DownloadService downloadService,
-            String type,
-            String path
+        io.javalin.config.JavalinConfig config,
+        ImageService imageService,
+        DownloadService downloadService,
+        String type,
+        String path
     ) {
         config.routes.get(path, context -> {
             String photoId = context.pathParam("photoId");
@@ -567,26 +550,26 @@ public final class Backend implements AutoCloseable {
             }
             try {
                 CompletableFuture<?> response = CompletableFuture
-                        .supplyAsync(
-                                () -> downloadService.findCompletedImage(photoId, finalSortOrder)
-                                        .map(local -> imageService.readLocal(
-                                                photoId, finalSortOrder, type, local))
-                                        .orElse(null),
-                                executors.imageResource())
-                        .thenCompose(entry -> entry != null
-                                ? CompletableFuture.completedFuture(entry)
-                                : CompletableFuture.supplyAsync(
-                                        () -> imageService.read(
-                                                photoId, finalSortOrder, type),
-                                        executors.imageOnDemand()))
-                        .handle((entry, failure) -> {
-                    if (failure == null) {
-                        context.contentType(entry.mimeType()).result(entry.bytes());
-                    } else {
-                        sendImageError(context, unwrap(failure));
-                    }
-                    return null;
-                });
+                    .supplyAsync(
+                        () -> downloadService.findCompletedImage(photoId, finalSortOrder)
+                            .map(local -> imageService.readLocal(
+                                photoId, finalSortOrder, type, local))
+                            .orElse(null),
+                        executors.imageResource())
+                    .thenCompose(entry -> entry != null
+                        ? CompletableFuture.completedFuture(entry)
+                        : CompletableFuture.supplyAsync(
+                        () -> imageService.read(
+                            photoId, finalSortOrder, type),
+                        executors.imageOnDemand()))
+                    .handle((entry, failure) -> {
+                        if (failure == null) {
+                            context.contentType(entry.mimeType()).result(entry.bytes());
+                        } else {
+                            sendImageError(context, unwrap(failure));
+                        }
+                        return null;
+                    });
                 context.future(() -> response);
             } catch (RejectedExecutionException exception) {
                 sendImageError(context, new ApiException("internal", 503, "图片任务队列已满"));
@@ -596,17 +579,17 @@ public final class Backend implements AutoCloseable {
 
     private static void sendImageError(io.javalin.http.Context context, Throwable failure) {
         ApiException error = failure instanceof ApiException apiException
-                ? apiException
-                : failure instanceof RejectedExecutionException
-                ? new ApiException("internal", 503, "图片任务队列已满")
-                : new ApiException("internal", 500, messageOf(failure));
+            ? apiException
+            : failure instanceof RejectedExecutionException
+              ? new ApiException("internal", 503, "图片任务队列已满")
+              : new ApiException("internal", 500, messageOf(failure));
         context.status(error.status()).json(new ErrorResponse(error.code(), error.getMessage()));
     }
 
     private static Throwable unwrap(Throwable failure) {
         Throwable current = failure;
         while ((current instanceof CompletionException || current instanceof ExecutionException)
-                && current.getCause() != null) {
+            && current.getCause() != null) {
             current = current.getCause();
         }
         return current;
@@ -661,12 +644,12 @@ public final class Backend implements AutoCloseable {
     }
 
     public synchronized void attachDesktopHost(
-            DesktopNotificationSink notificationSink,
-            Consumer<String> routeOpener,
-            Runnable updateExitRequest
+        DesktopNotificationSink notificationSink,
+        Consumer<String> routeOpener,
+        Runnable updateExitRequest
     ) {
         if (!running || taskNotifications == null || launchRouteService == null
-                || updateService == null) {
+            || updateService == null) {
             throw new IllegalStateException("本地后端尚未启动");
         }
         launchRouteService.attachRouteOpener(routeOpener);
@@ -711,38 +694,38 @@ public final class Backend implements AutoCloseable {
         clientSession = null;
 
         CloseSequence.run(LOGGER,
-                step("任务通知", () -> {
-                    if (closingTaskNotifications != null) closingTaskNotifications.close();
-                }),
-                step("更新服务", () -> {
-                    if (closingUpdateService != null) closingUpdateService.close();
-                }),
-                step("启动路由", () -> {
-                    if (closingLaunchRoutes != null) closingLaunchRoutes.close();
-                }),
-                step("文件导出服务", () -> {
-                    if (closingExportService != null) closingExportService.close();
-                }),
-                step("网络服务", () -> {
-                    if (closingNetworkService != null) closingNetworkService.close();
-                }),
-                step("OCR 服务", () -> {
-                    if (closingOcrService != null) closingOcrService.close();
-                }),
-                step("事件中心", () -> {
-                    if (closingEventHub != null) closingEventHub.close();
-                }),
-                step("本地后端", () -> {
-                    if (current != null) current.stop();
-                }),
-                step("下载服务", () -> {
-                    if (closingDownloadService != null) closingDownloadService.close();
-                }),
-                step("JMComic 客户端会话", () -> {
-                    if (closingClientSession != null) closingClientSession.close();
-                }),
-                step("服务执行器", executors::close),
-                step("数据库", database::close)
+            step("任务通知", () -> {
+                if (closingTaskNotifications != null) closingTaskNotifications.close();
+            }),
+            step("更新服务", () -> {
+                if (closingUpdateService != null) closingUpdateService.close();
+            }),
+            step("启动路由", () -> {
+                if (closingLaunchRoutes != null) closingLaunchRoutes.close();
+            }),
+            step("文件导出服务", () -> {
+                if (closingExportService != null) closingExportService.close();
+            }),
+            step("网络服务", () -> {
+                if (closingNetworkService != null) closingNetworkService.close();
+            }),
+            step("OCR 服务", () -> {
+                if (closingOcrService != null) closingOcrService.close();
+            }),
+            step("事件中心", () -> {
+                if (closingEventHub != null) closingEventHub.close();
+            }),
+            step("本地后端", () -> {
+                if (current != null) current.stop();
+            }),
+            step("下载服务", () -> {
+                if (closingDownloadService != null) closingDownloadService.close();
+            }),
+            step("JMComic 客户端会话", () -> {
+                if (closingClientSession != null) closingClientSession.close();
+            }),
+            step("服务执行器", executors::close),
+            step("数据库", database::close)
         );
     }
 

@@ -18,14 +18,16 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 
-/** 持久化页面需要的基础设置，并返回当前支持状态。 */
+/**
+ * 持久化页面需要的基础设置，并返回当前支持状态。
+ */
 public final class SettingsService {
     public static final int DEFAULT_CONCURRENCY = 6;
     public static final String DEFAULT_EXPORT_DIRECTORY_TEMPLATE = "{id}";
     public static final String DEFAULT_EXPORT_FILE_NAME_TEMPLATE =
-            "【{author}】{title}_{id} {chapterRange}";
+        "【{author}】{title}_{id} {chapterRange}";
     public static final int DEFAULT_CACHE_CAPACITY_MB =
-            Math.toIntExact(CacheCapacityPolicy.DEFAULT_REQUESTED_MB);
+        Math.toIntExact(CacheCapacityPolicy.DEFAULT_REQUESTED_MB);
     private static final String CACHE_CAPACITY = "cache_capacity_mb";
     private static final String EXPORT_FOLDER_KEY = "pdf_export_folder";
     private static final String EXPORT_DIRECTORY_TEMPLATE_KEY = "pdf_export_directory_template";
@@ -35,7 +37,7 @@ public final class SettingsService {
     private static final String DOWNLOAD_FOLDER_REF = "download_folder_ref";
     private static final String DOWNLOAD_DISPLAY_PATH = "download_display_path";
     private static final String DOWNLOAD_PENDING_CLEANUP_FOLDER_REF =
-            "download_pending_cleanup_folder_ref";
+        "download_pending_cleanup_folder_ref";
     private static final String OCR_ENABLED = "ocr_enabled";
 
     private final Connection connection;
@@ -52,25 +54,25 @@ public final class SettingsService {
 
     public synchronized SettingsResponse all() {
         CacheCapacityPolicy.Result cacheCapacity = new CacheCapacityPolicy().calculate(
-                cacheCapacityMb(), Runtime.getRuntime().maxMemory());
+            cacheCapacityMb(), Runtime.getRuntime().maxMemory());
         return new SettingsResponse(
-                integer("reader_preload_pages", 15),
-                preloadConcurrency(),
-                downloadConcurrency(),
-                downloadLocation().downloadPublic(),
-                Math.toIntExact(cacheCapacity.effectiveMb()),
-                Math.toIntExact(cacheCapacity.requestedMb()),
-                Math.toIntExact(cacheCapacity.effectiveMb()),
-                cacheCapacity.maxHeapMb(),
-                cacheCapacity.temporaryClamp(),
-                cacheCapacity.reason(),
-                bool(OCR_ENABLED, true),
-                text("reader_display_mode", "vertical"),
-                "auto",
-                -1,
-                true,
-                false,
-                bool("reader_auto_show_toolbar_at_end", true)
+            integer("reader_preload_pages", 15),
+            preloadConcurrency(),
+            downloadConcurrency(),
+            downloadLocation().downloadPublic(),
+            Math.toIntExact(cacheCapacity.effectiveMb()),
+            Math.toIntExact(cacheCapacity.requestedMb()),
+            Math.toIntExact(cacheCapacity.effectiveMb()),
+            cacheCapacity.maxHeapMb(),
+            cacheCapacity.temporaryClamp(),
+            cacheCapacity.reason(),
+            bool(OCR_ENABLED, true),
+            text("reader_display_mode", "vertical"),
+            "auto",
+            -1,
+            true,
+            false,
+            bool("reader_auto_show_toolbar_at_end", true)
         );
     }
 
@@ -112,8 +114,8 @@ public final class SettingsService {
     public synchronized Path downloadRoot(Path privateRoot) {
         DownloadLocation location = downloadLocation();
         return location.downloadPublic()
-                ? FileReferences.parseFolder(location.folderRef())
-                : privateRoot.toAbsolutePath().normalize();
+            ? FileReferences.parseFolder(location.folderRef())
+            : privateRoot.toAbsolutePath().normalize();
     }
 
     public synchronized Path pendingDownloadCleanup() {
@@ -127,9 +129,9 @@ public final class SettingsService {
     }
 
     public synchronized void setDownloadLocation(
-            boolean downloadPublic,
-            Path root,
-            Path pendingCleanup
+        boolean downloadPublic,
+        Path root,
+        Path pendingCleanup
     ) {
         Path normalized = root.toAbsolutePath().normalize();
         try {
@@ -148,8 +150,8 @@ public final class SettingsService {
                     delete(connection, DOWNLOAD_PENDING_CLEANUP_FOLDER_REF);
                 } else {
                     put(connection, DOWNLOAD_PENDING_CLEANUP_FOLDER_REF,
-                            FileReferences.folderRef(
-                                    pendingCleanup.toAbsolutePath().normalize()));
+                        FileReferences.folderRef(
+                            pendingCleanup.toAbsolutePath().normalize()));
                 }
                 connection.commit();
             } catch (Exception exception) {
@@ -201,10 +203,10 @@ public final class SettingsService {
 
     public synchronized ExportPreferencesResponse exportPreferences() {
         return new ExportPreferencesResponse(
-                exportFolder(),
-                textOrDefault(EXPORT_DIRECTORY_TEMPLATE_KEY, DEFAULT_EXPORT_DIRECTORY_TEMPLATE),
-                textOrDefault(EXPORT_FILE_NAME_TEMPLATE_KEY, DEFAULT_EXPORT_FILE_NAME_TEMPLATE),
-                exportLastFormat()
+            exportFolder(),
+            textOrDefault(EXPORT_DIRECTORY_TEMPLATE_KEY, DEFAULT_EXPORT_DIRECTORY_TEMPLATE),
+            textOrDefault(EXPORT_FILE_NAME_TEMPLATE_KEY, DEFAULT_EXPORT_FILE_NAME_TEMPLATE),
+            exportLastFormat()
         );
     }
 
@@ -218,7 +220,7 @@ public final class SettingsService {
         FileReferences.parseFolder(folderRef);
         try {
             put(EXPORT_FOLDER_KEY, mapper.writeValueAsString(
-                    new ExportFolder(folderRef, displayPath)));
+                new ExportFolder(folderRef, displayPath)));
             return SuccessResponse.ok();
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("保存导出目录失败", exception);
@@ -293,7 +295,7 @@ public final class SettingsService {
 
     private String text(String key, String fallback) {
         try (PreparedStatement statement = connection
-                .prepareStatement("SELECT value FROM settings WHERE key = ?")) {
+            .prepareStatement("SELECT value FROM settings WHERE key = ?")) {
             statement.setString(1, key);
             try (ResultSet result = statement.executeQuery()) {
                 return result.next() ? result.getString(1) : fallback;
@@ -313,8 +315,8 @@ public final class SettingsService {
 
     private static void put(Connection connection, String key, Object value) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(
-                "INSERT INTO settings(key, value) VALUES (?, ?) "
-                        + "ON CONFLICT(key) DO UPDATE SET value = excluded.value")) {
+            "INSERT INTO settings(key, value) VALUES (?, ?) "
+                + "ON CONFLICT(key) DO UPDATE SET value = excluded.value")) {
             statement.setString(1, key);
             statement.setString(2, String.valueOf(value));
             statement.executeUpdate();
@@ -331,7 +333,7 @@ public final class SettingsService {
 
     private static void delete(Connection connection, String key) throws SQLException {
         try (PreparedStatement statement = connection
-                .prepareStatement("DELETE FROM settings WHERE key = ?")) {
+            .prepareStatement("DELETE FROM settings WHERE key = ?")) {
             statement.setString(1, key);
             statement.executeUpdate();
         }

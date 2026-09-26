@@ -2,9 +2,9 @@ package io.github.jukomu.desktop.feature.pdf.render;
 
 import io.github.jukomu.desktop.feature.files.FileReferences;
 
+import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.BufferedInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AccessDeniedException;
 import java.nio.file.Files;
@@ -13,7 +13,9 @@ import java.nio.file.Path;
 import java.util.Base64;
 import java.util.Locale;
 
-/** 将 URL 中的 base64url FileRef 解析为原 PDF 流。 */
+/**
+ * 将 URL 中的 base64url FileRef 解析为原 PDF 流。
+ */
 public final class PdfResourceService {
     public Resource open(String encodedFileRef) throws ResourceException {
         final String fileRef;

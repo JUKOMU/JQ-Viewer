@@ -11,22 +11,13 @@ import android.os.Build;
 import android.os.SystemClock;
 import android.provider.Settings;
 import android.util.Log;
-
-import com.getcapacitor.JSObject;
-
 import androidx.core.content.FileProvider;
+import com.getcapacitor.JSObject;
 import io.github.jukomu.runtime.ServiceExecutors;
-
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
+import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.security.MessageDigest;
@@ -36,7 +27,6 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
@@ -511,7 +501,7 @@ public final class UpdateService {
         try {
             if (session.completionGate.isCancelled() || session.raceState.isCancelled()
                 || (session.raceState.getWinner() != null
-                    && session.raceState.getWinner() != source)) {
+                && session.raceState.getWinner() != source)) {
                 return;
             }
             connection = openConnection(url);
@@ -723,7 +713,7 @@ public final class UpdateService {
         long displayedBytes = winner == null
             ? Math.max(session.githubBytes, session.giteeBytes)
             : winner == UpdateRaceState.Source.GITHUB
-                ? session.githubBytes : session.giteeBytes;
+              ? session.githubBytes : session.giteeBytes;
         long now = SystemClock.elapsedRealtime();
         synchronized (session) {
             if (session.lastSpeedAtMs == 0L) {
@@ -910,6 +900,7 @@ public final class UpdateService {
         private long lastSpeedBytes;
         private long lastSpeedAtMs;
         private volatile long speedBytesPerSecond;
+
         private UpdateSession(UpdateManifest manifest, File updateDirectory, int sessionId) {
             this.manifest = manifest;
             this.githubPart = new File(updateDirectory, "github-" + sessionId + ".part");

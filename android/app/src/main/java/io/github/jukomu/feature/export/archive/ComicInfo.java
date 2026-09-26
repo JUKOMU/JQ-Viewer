@@ -4,7 +4,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-/** ComicInfo v2.0 中当前导出和导入需要的标准字段。 */
+/**
+ * ComicInfo v2.0 中当前导出和导入需要的标准字段。
+ */
 public final class ComicInfo {
     public final String title;
     public final String series;

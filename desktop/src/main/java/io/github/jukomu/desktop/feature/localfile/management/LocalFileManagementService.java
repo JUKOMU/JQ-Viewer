@@ -9,18 +9,9 @@ import io.github.jukomu.desktop.feature.files.FileReferences;
 import io.github.jukomu.desktop.feature.files.FileService;
 import io.github.jukomu.desktop.feature.localfile.data.LocalFileStore;
 import io.github.jukomu.desktop.feature.localfile.data.StoredLocalFile;
-import io.github.jukomu.desktop.feature.localfile.model.ImportLocalFileItemRequest;
-import io.github.jukomu.desktop.feature.localfile.model.ImportLocalFileResultResponse;
-import io.github.jukomu.desktop.feature.localfile.model.ImportLocalFilesResponse;
-import io.github.jukomu.desktop.feature.localfile.model.LocalFileDatabaseResetResponse;
-import io.github.jukomu.desktop.feature.localfile.model.LocalFileResponse;
-import io.github.jukomu.desktop.feature.localfile.model.LocalFilesRefreshResponse;
-import io.github.jukomu.desktop.feature.localfile.model.LocalFilesResponse;
+import io.github.jukomu.desktop.feature.localfile.model.*;
 import io.github.jukomu.desktop.feature.pdf.model.PdfInfoResponse;
-import io.github.jukomu.desktop.feature.localfile.model.LocalFileManagementStateResponse;
 import io.github.jukomu.desktop.feature.pdf.model.PdfRenderPageResponse;
-import io.github.jukomu.desktop.feature.localfile.model.LocalFileStorageDeleteResponse;
-import io.github.jukomu.desktop.feature.localfile.model.UpdateLocalEpisodeTypeResponse;
 import io.github.jukomu.desktop.feature.pdf.render.PdfDocumentService;
 
 import java.io.IOException;
@@ -32,12 +23,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
-/** Desktop 本地文件库的导入、校验、管理与阅读入口。 */
+/**
+ * Desktop 本地文件库的导入、校验、管理与阅读入口。
+ */
 public final class LocalFileManagementService {
     private static final Set<String> FORMATS = Set.of("pdf", "cbz", "zip");
     private static final Set<String> SOURCE_TYPES = Set.of("imported", "exported");
     private static final Set<String> AVAILABILITY = Set.of(
-            "unknown", "available", "missing", "inaccessible", "invalid", "problem");
+        "unknown", "available", "missing", "inaccessible", "invalid", "problem");
 
     private final LocalFileStore store;
     private final DownloadStore downloads;
@@ -46,11 +39,11 @@ public final class LocalFileManagementService {
     private final CbzDocumentService cbzDocuments;
 
     public LocalFileManagementService(
-            LocalFileStore store,
-            DownloadStore downloads,
-            FileService files,
-            PdfDocumentService documents,
-            CbzDocumentService cbzDocuments
+        LocalFileStore store,
+        DownloadStore downloads,
+        FileService files,
+        PdfDocumentService documents,
+        CbzDocumentService cbzDocuments
     ) {
         this.store = store;
         this.downloads = downloads;
@@ -82,17 +75,17 @@ public final class LocalFileManagementService {
                 }
                 ValidationReport report = validate(format, fileRef, -1);
                 LocalFileStore.InsertResult inserted = store.insertImported(
-                        format,
-                        fileRef,
-                        item.displayPath() == null || item.displayPath().isBlank()
-                                ? file.toString() : item.displayPath(),
-                        item.fileName() == null || item.fileName().isBlank()
-                                ? file.getFileName().toString() : item.fileName(),
-                        Request.requiredText(item.albumId(), "albumId"),
-                        item.albumTitle(), item.coverUrl(), item.authors(), item.chapterId(),
-                        item.chapterTitle(), Request.integer(item.chapterSortOrder(), 0),
-                        item.isSingleEpisode(), item.folderId(), report.fileSize(),
-                        report.pageCount(), System.currentTimeMillis()
+                    format,
+                    fileRef,
+                    item.displayPath() == null || item.displayPath().isBlank()
+                        ? file.toString() : item.displayPath(),
+                    item.fileName() == null || item.fileName().isBlank()
+                        ? file.getFileName().toString() : item.fileName(),
+                    Request.requiredText(item.albumId(), "albumId"),
+                    item.albumTitle(), item.coverUrl(), item.authors(), item.chapterId(),
+                    item.chapterTitle(), Request.integer(item.chapterSortOrder(), 0),
+                    item.isSingleEpisode(), item.folderId(), report.fileSize(),
+                    report.pageCount(), System.currentTimeMillis()
                 );
                 if (inserted.inserted()) {
                     imported++;
@@ -110,43 +103,43 @@ public final class LocalFileManagementService {
             }
         }
         return new ImportLocalFilesResponse(
-                imported, skipped, duplicateCount, errorCount, List.copyOf(results));
+            imported, skipped, duplicateCount, errorCount, List.copyOf(results));
     }
 
     public LocalFilesResponse getFiles(
-            List<String> formats,
-            String sourceType,
-            String availability,
-            Long fileId,
-            String albumId,
-            String chapterId,
-            String folderId,
-            String query,
-            String cursor,
-            int limit
+        List<String> formats,
+        String sourceType,
+        String availability,
+        Long fileId,
+        String albumId,
+        String chapterId,
+        String folderId,
+        String query,
+        String cursor,
+        int limit
     ) {
         if (formats != null && (formats.isEmpty() || formats.stream().anyMatch(
-                format -> format == null || !FORMATS.contains(format)))) {
+            format -> format == null || !FORMATS.contains(format)))) {
             throw ApiException.invalidRequest("formats无效");
         }
         if (sourceType != null && !sourceType.isBlank() && !SOURCE_TYPES.contains(sourceType)) {
             throw ApiException.invalidRequest("sourceType无效");
         }
         if (availability != null && !availability.isBlank()
-                && !AVAILABILITY.contains(availability)) {
+            && !AVAILABILITY.contains(availability)) {
             throw ApiException.invalidRequest("availability无效");
         }
         LocalFileStore.Page page = store.list(
-                formats, sourceType, availability, fileId, albumId, chapterId,
-                folderId, query, cursor, limit);
+            formats, sourceType, availability, fileId, albumId, chapterId,
+            folderId, query, cursor, limit);
         return new LocalFilesResponse(
-                page.files().stream().map(LocalFileResponse::from).toList(), page.nextCursor());
+            page.files().stream().map(LocalFileResponse::from).toList(), page.nextCursor());
     }
 
     public LocalFilesResponse getImportedLocalFiles() {
         return new LocalFilesResponse(
-                store.listAll(LocalFileStore.SOURCE_IMPORTED).stream()
-                        .map(LocalFileResponse::from).toList(), null);
+            store.listAll(LocalFileStore.SOURCE_IMPORTED).stream()
+                .map(LocalFileResponse::from).toList(), null);
     }
 
     public LocalFileResponse verifyFile(long id) {
@@ -155,10 +148,10 @@ public final class LocalFileManagementService {
         StoredLocalFile updated;
         try {
             ValidationReport report = validate(
-                    current.format(), current.fileRef(), current.pageCount());
+                current.format(), current.fileRef(), current.pageCount());
             updated = store.updateVerification(
-                    id, "available", "valid", null,
-                    report.fileSize(), report.pageCount(), now);
+                id, "available", "valid", null,
+                report.fileSize(), report.pageCount(), now);
         } catch (PdfFileValidator.ValidationException exception) {
             String availability = "invalid";
             String verificationStatus = "corrupt";
@@ -172,8 +165,8 @@ public final class LocalFileManagementService {
                 verificationStatus = "page_mismatch";
             }
             updated = store.updateVerification(
-                    id, availability, verificationStatus,
-                    exception.code() + ": " + exception.getMessage(), null, null, now);
+                id, availability, verificationStatus,
+                exception.code() + ": " + exception.getMessage(), null, null, now);
         } catch (CbzDocumentService.CbzException exception) {
             String availability = "invalid";
             String verificationStatus = "corrupt";
@@ -187,21 +180,21 @@ public final class LocalFileManagementService {
                 verificationStatus = "page_mismatch";
             }
             updated = store.updateVerification(
-                    id, availability, verificationStatus,
-                    exception.code() + ": " + exception.getMessage(), null, null, now);
+                id, availability, verificationStatus,
+                exception.code() + ": " + exception.getMessage(), null, null, now);
         } catch (ZipFileValidator.ValidationException exception) {
             String availability = "invalid";
             String verificationStatus = "corrupt";
             if ("ZIP_MISSING".equals(exception.code())
-                    || "ZIP_INACCESSIBLE".equals(exception.code())) {
+                || "ZIP_INACCESSIBLE".equals(exception.code())) {
                 availability = "ZIP_MISSING".equals(exception.code()) ? "missing" : "inaccessible";
                 verificationStatus = "unverified";
             } else if ("ZIP_PAGE_MISMATCH".equals(exception.code())) {
                 verificationStatus = "page_mismatch";
             }
             updated = store.updateVerification(
-                    id, availability, verificationStatus,
-                    exception.code() + ": " + exception.getMessage(), null, null, now);
+                id, availability, verificationStatus,
+                exception.code() + ": " + exception.getMessage(), null, null, now);
         }
         if (updated == null) throw ApiException.notFound("本地文件记录不存在");
         return LocalFileResponse.from(updated);
@@ -247,14 +240,14 @@ public final class LocalFileManagementService {
             throw ApiException.permissionDenied("没有权限删除本地文件");
         } catch (IOException exception) {
             throw new ApiException("internal", 500,
-                    "本地文件删除失败，文件库记录已保留: " + exception.getMessage());
+                "本地文件删除失败，文件库记录已保留: " + exception.getMessage());
         }
         if (!store.remove(id)) {
             throw new ApiException("internal", 500, "本地文件已处理，但文件库记录移除失败");
         }
         return new LocalFileStorageDeleteResponse(
-                result, record.id(), record.sourceType(), record.ownership(),
-                record.fileRef(), record.displayPath(), record.fileName());
+            result, record.id(), record.sourceType(), record.ownership(),
+            record.fileRef(), record.displayPath(), record.fileName());
     }
 
     public SuccessResponse openLocalFile(String fileRef) {
@@ -290,13 +283,13 @@ public final class LocalFileManagementService {
     }
 
     public UpdateLocalEpisodeTypeResponse updateLocalEpisodeType(
-            String albumId,
-            boolean singleEpisode
+        String albumId,
+        boolean singleEpisode
     ) {
         return new UpdateLocalEpisodeTypeResponse(
-                true,
-                downloads.updateAlbumEpisodeType(albumId, singleEpisode),
-                store.updateAlbumEpisodeType(albumId, singleEpisode)
+            true,
+            downloads.updateAlbumEpisodeType(albumId, singleEpisode),
+            store.updateAlbumEpisodeType(albumId, singleEpisode)
         );
     }
 
@@ -308,12 +301,12 @@ public final class LocalFileManagementService {
 
     private static ImportLocalFileResultResponse result(String result, StoredLocalFile file) {
         return new ImportLocalFileResultResponse(
-                result, file.fileRef(), file.displayPath(), file.fileName(), file.id());
+            result, file.fileRef(), file.displayPath(), file.fileName(), file.id());
     }
 
     private static String requireImportFormat(String format) {
         String normalized = format == null || format.isBlank()
-                ? "pdf" : format.trim().toLowerCase();
+            ? "pdf" : format.trim().toLowerCase();
         if (!"pdf".equals(normalized) && !"cbz".equals(normalized)) {
             throw ApiException.invalidRequest("导入仅支持 PDF 和 CBZ");
         }
@@ -321,11 +314,11 @@ public final class LocalFileManagementService {
     }
 
     private ValidationReport validate(String format, String fileRef, int expectedPages)
-            throws PdfFileValidator.ValidationException, CbzDocumentService.CbzException,
-            ZipFileValidator.ValidationException {
+        throws PdfFileValidator.ValidationException, CbzDocumentService.CbzException,
+        ZipFileValidator.ValidationException {
         if ("cbz".equals(format)) {
             CbzDocumentService.ValidationReport report = cbzDocuments.validate(
-                    fileRef, expectedPages);
+                fileRef, expectedPages);
             return new ValidationReport(report.fileSize(), report.pageCount());
         }
         if ("zip".equals(format)) {

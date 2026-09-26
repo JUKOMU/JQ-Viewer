@@ -12,7 +12,6 @@ import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ConcurrentHashMap;
@@ -20,10 +19,12 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipException;
 import java.util.zip.ZipFile;
 
-/** CBZ 索引、校验和按页随机读取。 */
+/**
+ * CBZ 索引、校验和按页随机读取。
+ */
 public final class CbzDocumentService {
     private static final List<String> IMAGE_EXTENSIONS = List.of(
-            ".jpg", ".jpeg", ".png", ".webp", ".gif");
+        ".jpg", ".jpeg", ".png", ".webp", ".gif");
 
     private final ConcurrentHashMap<Path, CachedIndex> indexes = new ConcurrentHashMap<>();
 
@@ -31,14 +32,14 @@ public final class CbzDocumentService {
         Index index = index(fileRef);
         ComicInfo comicInfo = index.comicInfo();
         return new Info(
-                index.entries().size(),
-                comicInfo == null ? null : comicInfo.title(),
-                comicInfo == null ? null : comicInfo.series(),
-                comicInfo == null ? null : comicInfo.number(),
-                comicInfo == null ? null : comicInfo.writer(),
-                comicInfo == null ? null : comicInfo.web(),
-                index.coverPage(),
-                index.metadataWarning()
+            index.entries().size(),
+            comicInfo == null ? null : comicInfo.title(),
+            comicInfo == null ? null : comicInfo.series(),
+            comicInfo == null ? null : comicInfo.number(),
+            comicInfo == null ? null : comicInfo.writer(),
+            comicInfo == null ? null : comicInfo.web(),
+            index.coverPage(),
+            index.metadataWarning()
         );
     }
 
@@ -47,7 +48,7 @@ public final class CbzDocumentService {
         Index index = index(fileRef);
         if (expectedPages > 0 && index.entries().size() != expectedPages) {
             throw new CbzException("CBZ_PAGE_MISMATCH", 422,
-                    "CBZ 页数与文件库记录不一致");
+                "CBZ 页数与文件库记录不一致");
         }
         try {
             return new ValidationReport(Files.size(file), index.entries().size());
@@ -152,7 +153,7 @@ public final class CbzDocumentService {
             throw new CbzException("CBZ_INVALID", 422, "CBZ 无法打开或已加密", exception);
         }
         return new Index(List.copyOf(entries), comicInfo, metadataWarning,
-                coverPage(comicInfo, entries.size()));
+            coverPage(comicInfo, entries.size()));
     }
 
     private static boolean isIncomplete(ComicInfo info) {
@@ -167,7 +168,7 @@ public final class CbzDocumentService {
         if (info != null) {
             for (ComicInfo.Page page : info.pages()) {
                 if ("frontcover".equalsIgnoreCase(page.type())
-                        && page.image() >= 0 && page.image() < pageCount) {
+                    && page.image() >= 0 && page.image() < pageCount) {
                     return page.image() + 1;
                 }
             }
@@ -234,14 +235,14 @@ public final class CbzDocumentService {
     }
 
     public record Info(
-            int pageCount,
-            String title,
-            String series,
-            String number,
-            String authors,
-            String web,
-            int coverPage,
-            String metadataWarning
+        int pageCount,
+        String title,
+        String series,
+        String number,
+        String authors,
+        String web,
+        int coverPage,
+        String metadataWarning
     ) {
     }
 
@@ -252,10 +253,10 @@ public final class CbzDocumentService {
     }
 
     private record Index(
-            List<String> entries,
-            ComicInfo comicInfo,
-            String metadataWarning,
-            int coverPage
+        List<String> entries,
+        ComicInfo comicInfo,
+        String metadataWarning,
+        int coverPage
     ) {
     }
 

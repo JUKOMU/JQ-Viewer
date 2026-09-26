@@ -1,12 +1,10 @@
 package io.github.jukomu.desktop.feature.image;
 
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
-/** 进程内按字节容量淘汰的图片缓存。 */
+/**
+ * 进程内按字节容量淘汰的图片缓存。
+ */
 public final class ImageCache {
     public record Entry(byte[] bytes, String mimeType) {
     }
@@ -70,7 +68,7 @@ public final class ImageCache {
             if (parts.length != 3) continue;
             try {
                 result.add(new Info(parts[0], Integer.parseInt(parts[1]), parts[2],
-                        entry.getValue().bytes().length, entry.getValue().mimeType()));
+                    entry.getValue().bytes().length, entry.getValue().mimeType()));
             } catch (NumberFormatException ignored) {
                 // 只记录由服务写入的合法缓存键。
             }

@@ -1,13 +1,11 @@
 package io.github.jukomu.feature.export.archive;
 
 import java.io.File;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
-import java.util.Locale;
+import java.util.*;
 
-/** 将规范化章节和页范围转换为确定的 CBZ/ZIP 条目布局。 */
+/**
+ * 将规范化章节和页范围转换为确定的 CBZ/ZIP 条目布局。
+ */
 public final class ArchiveExportPlanner {
     private ArchiveExportPlanner() {
     }
@@ -64,7 +62,7 @@ public final class ArchiveExportPlanner {
                 single ? first.title : range(first.title, last.title), albumTitle,
                 single ? chapterNumber(first) : range(chapterNumber(first), chapterNumber(last)),
                 authors, albumId == null || albumId.trim().isEmpty() ? null
-                    : "https://18comic.vip/album/" + albumId,
+                : "https://18comic.vip/album/" + albumId,
                 pages.size(), "YesAndRightToLeft", volumeCount > 1 ? volumeIndex : null,
                 volumeCount > 1 ? volumeCount : null, pages);
             comicInfo = ComicInfoCodec.serialize(info);
@@ -106,7 +104,7 @@ public final class ArchiveExportPlanner {
 
     private static String archiveSegment(String value) {
         String normalized = value == null ? "" : value.trim()
-            .replaceAll("[\\\\/:*?\"<>|\\p{Cntrl}]", "_");
+                                                 .replaceAll("[\\\\/:*?\"<>|\\p{Cntrl}]", "_");
         return normalized.trim().isEmpty() ? "章节" : normalized;
     }
 

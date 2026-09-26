@@ -8,7 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
- * Deletes only export writer artifacts whose ownership was persisted by LocalFileStore.
+ * 仅删除由LocalFileStore持久化的导出产物。
  */
 public final class ExportArtifactCleaner {
 

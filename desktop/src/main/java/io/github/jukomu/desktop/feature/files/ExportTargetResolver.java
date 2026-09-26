@@ -6,7 +6,9 @@ import java.io.IOException;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 
-/** 将 FolderRef 与目录内相对路径解析为受约束的本地导出目标。 */
+/**
+ * 将 FolderRef 与目录内相对路径解析为受约束的本地导出目标。
+ */
 public final class ExportTargetResolver {
     private ExportTargetResolver() {
     }

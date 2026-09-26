@@ -13,7 +13,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
 
-/** 基于 JavaCPP 随包原生程序的 Tesseract fast OCR 实现。 */
+/**
+ * 基于 JavaCPP 随包原生程序的 Tesseract fast OCR 实现。
+ */
 public final class TesseractOcrEngine implements OcrEngine {
     static final long MAX_IMAGE_BYTES = 32L * 1024L * 1024L;
 
@@ -46,16 +48,16 @@ public final class TesseractOcrEngine implements OcrEngine {
             Path dataPath = TesseractModelStore.prepare(ocrDirectory);
             output = Files.createTempFile(ocrDirectory, "ocr-result-", ".txt");
             process = new ProcessBuilder(
-                    executable().toString(),
-                    image.toAbsolutePath().normalize().toString(),
-                    "stdout",
-                    "--tessdata-dir", dataPath.toString(),
-                    "-l", LANGUAGES,
-                    "--oem", "1",
-                    "--psm", "3")
-                    .redirectOutput(output.toFile())
-                    .redirectError(ProcessBuilder.Redirect.DISCARD)
-                    .start();
+                executable().toString(),
+                image.toAbsolutePath().normalize().toString(),
+                "stdout",
+                "--tessdata-dir", dataPath.toString(),
+                "-l", LANGUAGES,
+                "--oem", "1",
+                "--psm", "3")
+                .redirectOutput(output.toFile())
+                .redirectError(ProcessBuilder.Redirect.DISCARD)
+                .start();
 
             if (!process.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
                 terminateAndWait(process);
@@ -67,8 +69,8 @@ public final class TesseractOcrEngine implements OcrEngine {
 
             String text = Files.readString(output, StandardCharsets.UTF_8).trim();
             return text.isEmpty()
-                    ? OcrResponse.failure("未识别到文字")
-                    : new OcrResponse(text, "");
+                ? OcrResponse.failure("未识别到文字")
+                : new OcrResponse(text, "");
         } catch (ApiException exception) {
             throw exception;
         } catch (InterruptedException exception) {

@@ -12,7 +12,9 @@ import java.util.Locale;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
-/** Stream through the archive so verification checks image bytes, not just ZIP headers. */
+/**
+ * Stream through the archive so verification checks image bytes, not just ZIP headers.
+ */
 public final class ZipFileValidator {
     private ZipFileValidator() {
     }
@@ -27,7 +29,7 @@ public final class ZipFileValidator {
             while ((entry = zip.getNextEntry()) != null) {
                 String name = entry.getName().toLowerCase(Locale.ROOT);
                 if (!entry.isDirectory() && (name.endsWith(".jpg") || name.endsWith(".jpeg")
-                        || name.endsWith(".png") || name.endsWith(".webp") || name.endsWith(".gif"))) {
+                    || name.endsWith(".png") || name.endsWith(".webp") || name.endsWith(".gif"))) {
                     pages++;
                 }
                 while (zip.read(buffer) != -1) {

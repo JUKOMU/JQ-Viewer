@@ -16,7 +16,9 @@ import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
-/** 从持久化任务快照生成 Desktop 终态系统通知。 */
+/**
+ * 从持久化任务快照生成 Desktop 终态系统通知。
+ */
 public final class DesktopTaskNotificationService implements AutoCloseable {
     private final DownloadStore downloads;
     private final ExportStore exports;
@@ -33,21 +35,23 @@ public final class DesktopTaskNotificationService implements AutoCloseable {
     private AutoCloseable exportEvents;
 
     public DesktopTaskNotificationService(
-            DownloadStore downloads,
-            ExportStore exports,
-            LaunchRouteService launchRoutes,
-            EventHub events,
-            Consumer<String> openContainingFolder
+        DownloadStore downloads,
+        ExportStore exports,
+        LaunchRouteService launchRoutes,
+        EventHub events,
+        Consumer<String> openContainingFolder
     ) {
         this.downloads = Objects.requireNonNull(downloads, "downloads");
         this.exports = Objects.requireNonNull(exports, "exports");
         this.launchRoutes = Objects.requireNonNull(launchRoutes, "launchRoutes");
         this.events = Objects.requireNonNull(events, "events");
         this.openContainingFolder = Objects.requireNonNull(
-                openContainingFolder, "openContainingFolder");
+            openContainingFolder, "openContainingFolder");
     }
 
-    /** 启动恢复完成后才接受快照变更，避免把历史中断任务当作新通知。 */
+    /**
+     * 启动恢复完成后才接受快照变更，避免把历史中断任务当作新通知。
+     */
     public synchronized void start() {
         if (closed || started) return;
         downloadEvents = events.subscribe("downloadProgress", payload -> {
@@ -89,10 +93,10 @@ public final class DesktopTaskNotificationService implements AutoCloseable {
             notification = new DesktopNotification(key, "下载完成", label, "/download");
         } else {
             notification = new DesktopNotification(
-                    key,
-                    "下载失败",
-                    label + ": " + fallback(task.error(), "下载失败"),
-                    "/download"
+                key,
+                "下载失败",
+                label + ": " + fallback(task.error(), "下载失败"),
+                "/download"
             );
         }
         enqueue(notification, () -> {
@@ -114,7 +118,7 @@ public final class DesktopTaskNotificationService implements AutoCloseable {
         if (fingerprint.equals(fingerprints.put(key, fingerprint))) return;
 
         String taskRoute = "/download?view=export&tab=tasks&format=" + format + "&exportId="
-                + encode(exportId);
+            + encode(exportId);
         String label = format.toUpperCase(java.util.Locale.ROOT);
         String title = switch (task.status()) {
             case "completed" -> label + " 导出完成";
@@ -151,12 +155,12 @@ public final class DesktopTaskNotificationService implements AutoCloseable {
     }
 
     private void enqueue(
-            DesktopNotification notification,
-            TargetValidator validator,
-            Runnable action
+        DesktopNotification notification,
+        TargetValidator validator,
+        Runnable action
     ) {
         PendingNotification pendingNotification = new PendingNotification(
-                notification, validator, action);
+            notification, validator, action);
         if (sink == null) {
             pending.put(notification.key(), pendingNotification);
             return;
@@ -184,12 +188,12 @@ public final class DesktopTaskNotificationService implements AutoCloseable {
 
     private static boolean isDownloadTerminal(String status) {
         return DownloadService.STATUS_COMPLETED.equals(status)
-                || DownloadService.STATUS_FAILED.equals(status);
+            || DownloadService.STATUS_FAILED.equals(status);
     }
 
     private static boolean isNotifiableExportTerminal(String status) {
         return "completed".equals(status) || "failed".equals(status)
-                || "partial".equals(status) || "interrupted".equals(status);
+            || "partial".equals(status) || "interrupted".equals(status);
     }
 
     private static String taskLabel(String albumTitle, String chapterTitle, String taskId) {
@@ -207,27 +211,27 @@ public final class DesktopTaskNotificationService implements AutoCloseable {
 
     private ExportStore.Volume firstCompletedVolume(String exportId) {
         return exports.volumes(exportId).stream()
-                .filter(volume -> "completed".equals(volume.status()))
-                .filter(volume -> volume.outputFileRef() != null
-                        && !volume.outputFileRef().isBlank())
-                .findFirst()
-                .orElse(null);
+            .filter(volume -> "completed".equals(volume.status()))
+            .filter(volume -> volume.outputFileRef() != null
+                && !volume.outputFileRef().isBlank())
+            .findFirst()
+            .orElse(null);
     }
 
     private static String readerRoute(
-            String format,
-            ExportTaskResponse task,
-            String fileRef
+        String format,
+        ExportTaskResponse task,
+        String fileRef
     ) {
         String reader = "cbz".equals(format) ? "/cbz-reader" : "/pdf-reader";
         return reader + "?fileRef=" + encode(fileRef)
-                + "&title=" + encode(fallback(task.targetName(), task.displayTitle()))
-                + "&albumId=" + encode(task.albumId())
-                + "&albumTitle=" + encode(task.albumTitle())
-                + "&authors=" + encode(task.authors())
-                + "&coverUrl=" + encode(task.coverUrl())
-                + "&chapterId=" + encode(fallback(task.chapterId(), task.albumId()))
-                + "&chapterTitle=" + encode(task.displayTitle());
+            + "&title=" + encode(fallback(task.targetName(), task.displayTitle()))
+            + "&albumId=" + encode(task.albumId())
+            + "&albumTitle=" + encode(task.albumTitle())
+            + "&authors=" + encode(task.authors())
+            + "&coverUrl=" + encode(task.coverUrl())
+            + "&chapterId=" + encode(fallback(task.chapterId(), task.albumId()))
+            + "&chapterTitle=" + encode(task.displayTitle());
     }
 
     private static String encode(String value) {
@@ -256,9 +260,9 @@ public final class DesktopTaskNotificationService implements AutoCloseable {
     }
 
     private record PendingNotification(
-            DesktopNotification notification,
-            TargetValidator validator,
-            Runnable action
+        DesktopNotification notification,
+        TargetValidator validator,
+        Runnable action
     ) {
     }
 

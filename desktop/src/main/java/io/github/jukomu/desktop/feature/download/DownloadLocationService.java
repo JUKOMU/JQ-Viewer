@@ -9,10 +9,10 @@ import io.github.jukomu.desktop.feature.download.data.StoredDownloadTask;
 import io.github.jukomu.desktop.feature.download.model.DownloadLocationResponse;
 import io.github.jukomu.desktop.feature.download.model.DownloadRelocationResponse;
 import io.github.jukomu.desktop.feature.download.model.RelocationProgressEvent;
+import io.github.jukomu.desktop.feature.export.ExportStore;
 import io.github.jukomu.desktop.feature.files.FileReferences;
 import io.github.jukomu.desktop.feature.files.FileService;
 import io.github.jukomu.desktop.feature.files.model.FolderDescriptorResponse;
-import io.github.jukomu.desktop.feature.export.ExportStore;
 import io.github.jukomu.desktop.feature.settings.SettingsService;
 import io.github.jukomu.desktop.feature.settings.model.DownloadLocation;
 import org.slf4j.Logger;
@@ -22,13 +22,11 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 
-/** 选择 Desktop 下载目录，并在不破坏源文件的前提下切换下载根目录。 */
+/**
+ * 选择 Desktop 下载目录，并在不破坏源文件的前提下切换下载根目录。
+ */
 public final class DownloadLocationService {
     private static final Logger LOGGER = LoggerFactory.getLogger(DownloadLocationService.class);
 
@@ -42,27 +40,27 @@ public final class DownloadLocationService {
     private final FileOperations fileOperations;
 
     public DownloadLocationService(
-            Paths paths,
-            SettingsService settings,
-            DownloadStore store,
-            DownloadFiles files,
-            ExportStore exports,
-            FileService fileService,
-            EventHub events
+        Paths paths,
+        SettingsService settings,
+        DownloadStore store,
+        DownloadFiles files,
+        ExportStore exports,
+        FileService fileService,
+        EventHub events
     ) {
         this(paths, settings, store, files, exports, fileService, events,
-                new DefaultFileOperations());
+            new DefaultFileOperations());
     }
 
     DownloadLocationService(
-            Paths paths,
-            SettingsService settings,
-            DownloadStore store,
-            DownloadFiles files,
-            ExportStore exports,
-            FileService fileService,
-            EventHub events,
-            FileOperations fileOperations
+        Paths paths,
+        SettingsService settings,
+        DownloadStore store,
+        DownloadFiles files,
+        ExportStore exports,
+        FileService fileService,
+        EventHub events,
+        FileOperations fileOperations
     ) {
         this.privateRoot = paths.downloadsDirectory().toAbsolutePath().normalize();
         this.settings = settings;
@@ -79,8 +77,8 @@ public final class DownloadLocationService {
         Path root = files.root();
         CleanupResult cleanup = cleanupStatus();
         return new DownloadLocationResponse(
-                location.downloadPublic(), root.toString(),
-                cleanup.pending(), cleanup.message());
+            location.downloadPublic(), root.toString(),
+            cleanup.pending(), cleanup.message());
     }
 
     public void reconcileOnStartup() {
@@ -134,11 +132,11 @@ public final class DownloadLocationService {
         if (pending == null) return CleanupResult.complete();
         Path current = files.root();
         if (!isManagedRoot(pending)
-                || pending.equals(current)
-                || pending.startsWith(current)
-                || current.startsWith(pending)) {
+            || pending.equals(current)
+            || pending.startsWith(current)
+            || current.startsWith(pending)) {
             return CleanupResult.pending("下载位置已切换，但旧目录清理状态异常，请手动检查："
-                    + pending);
+                + pending);
         }
 
         publish(0, 0, "deleting", null);
@@ -148,7 +146,7 @@ public final class DownloadLocationService {
             return CleanupResult.complete();
         } catch (IOException | RuntimeException exception) {
             String message = "下载位置已切换，但旧目录暂未清理：" + pending
-                    + "。应用会在下次启动或再次确认此设置时重试。";
+                + "。应用会在下次启动或再次确认此设置时重试。";
             LOGGER.warn(message, exception);
             return CleanupResult.pending(message);
         }
@@ -158,22 +156,22 @@ public final class DownloadLocationService {
         Path pending = settings.pendingDownloadCleanup();
         if (pending == null) return CleanupResult.complete();
         return CleanupResult.pending("旧下载目录仍待清理：" + pending
-                + "。应用会在下次启动或再次确认此设置时重试。");
+            + "。应用会在下次启动或再次确认此设置时重试。");
     }
 
     private boolean isManagedRoot(Path root) {
         Path fileName = root.getFileName();
         return root.equals(privateRoot)
-                || fileName != null && Paths.APPLICATION_NAME.equals(fileName.toString());
+            || fileName != null && Paths.APPLICATION_NAME.equals(fileName.toString());
     }
 
     private Path selectTarget() {
         FolderDescriptorResponse selected = fileService.pickFolder("download");
         if (selected == null) throw ApiException.cancelled("目录选择已取消");
         return FileReferences.parseFolder(selected.ref())
-                .resolve(Paths.APPLICATION_NAME)
-                .toAbsolutePath()
-                .normalize();
+            .resolve(Paths.APPLICATION_NAME)
+            .toAbsolutePath()
+            .normalize();
     }
 
     private MigrationResult migrate(Path source, Path target) {
@@ -199,13 +197,13 @@ public final class DownloadLocationService {
                 Path targetFile = target.resolve(source.relativize(sourceFile));
                 if (Files.exists(targetFile) && !Files.isRegularFile(targetFile)) {
                     throw ApiException.conflict("目标目录包含与现有下载不一致的路径: "
-                            + display(source.relativize(sourceFile)));
+                        + display(source.relativize(sourceFile)));
                 }
                 if (!Files.isRegularFile(targetFile)) requiredBytes += Files.size(sourceFile);
             }
             if (fileOperations.availableBytes(target) < requiredBytes) {
                 throw ApiException.unavailable("目标存储空间不足，需要至少 "
-                        + Math.max(1, (requiredBytes + 1024 * 1024 - 1) / (1024 * 1024)) + " MB");
+                    + Math.max(1, (requiredBytes + 1024 * 1024 - 1) / (1024 * 1024)) + " MB");
             }
 
             int total = sourceFiles.size();
@@ -247,12 +245,12 @@ public final class DownloadLocationService {
             if (!DownloadService.STATUS_COMPLETED.equals(task.status())) continue;
             List<StoredDownloadPage> pages = store.pages(task.taskId());
             boolean complete = task.totalPages() > 0
-                    && pages.size() == task.totalPages()
-                    && pages.stream().allMatch(page -> page.completed()
-                    && Files.isRegularFile(files.resolvePage(page)));
+                && pages.size() == task.totalPages()
+                && pages.stream().allMatch(page -> page.completed()
+                && Files.isRegularFile(files.resolvePage(page)));
             if (!complete) {
                 throw ApiException.conflict("已下载章节文件不完整，不能切换下载目录: "
-                        + task.chapterTitle());
+                    + task.chapterTitle());
             }
         }
     }
@@ -270,7 +268,7 @@ public final class DownloadLocationService {
                 }
                 if (!Files.isDirectory(entry) && !Files.isRegularFile(entry)) {
                     throw ApiException.conflict(label + "包含不支持的文件类型: "
-                            + display(root.relativize(entry)));
+                        + display(root.relativize(entry)));
                 }
             }
             return entries.stream().filter(Files::isRegularFile).toList();
@@ -298,7 +296,7 @@ public final class DownloadLocationService {
 
     private void publish(int current, int total, String phase, String currentFile) {
         events.publish("relocationProgress",
-                new RelocationProgressEvent(current, total, phase, currentFile));
+            new RelocationProgressEvent(current, total, phase, currentFile));
     }
 
     private boolean matches(Path source, Path target) {
@@ -310,13 +308,13 @@ public final class DownloadLocationService {
     }
 
     private static DownloadRelocationResponse response(
-            boolean open,
-            int moved,
-            Path target,
-            CleanupResult cleanup
+        boolean open,
+        int moved,
+        Path target,
+        CleanupResult cleanup
     ) {
         return new DownloadRelocationResponse(
-                true, open, moved, target.toString(), cleanup.pending(), cleanup.message());
+            true, open, moved, target.toString(), cleanup.pending(), cleanup.message());
     }
 
     private static String display(Path relative) {
@@ -374,8 +372,8 @@ public final class DownloadLocationService {
         @Override
         public boolean matches(Path source, Path target) throws IOException {
             return Files.isRegularFile(source)
-                    && Files.isRegularFile(target)
-                    && Files.mismatch(source, target) == -1;
+                && Files.isRegularFile(target)
+                && Files.mismatch(source, target) == -1;
         }
 
         @Override

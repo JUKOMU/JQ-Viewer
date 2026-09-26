@@ -1,7 +1,7 @@
 package io.github.jukomu.platform.notification;
 
 /**
- * Centralizes fixed notification IDs and disjoint ranges for background operations.
+ * 集中管理后台操作的固定通知ID和互不重叠的区间。
  */
 public final class NotificationIds {
 

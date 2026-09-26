@@ -1,12 +1,7 @@
 package io.github.jukomu.bridge;
 
 import android.content.Context;
-import android.util.Log;
-import com.getcapacitor.JSArray;
-import com.getcapacitor.JSObject;
-import com.getcapacitor.Plugin;
-import com.getcapacitor.PluginCall;
-import com.getcapacitor.PluginMethod;
+import com.getcapacitor.*;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import io.github.jukomu.bridge.handler.ApiPluginHandler;
 import io.github.jukomu.bridge.handler.AuthPluginHandler;
@@ -18,7 +13,9 @@ import io.github.jukomu.runtime.JmcomicSessionManager;
 
 import java.util.Map;
 
-/** Online JMComic bridge. Local application capabilities live in {@link JqViewerPlugin}. */
+/**
+ * 在线功能JMComic插件。本地功能在 {@link JqViewerPlugin} 中。
+ */
 @CapacitorPlugin(name = "Jmcomic")
 public class JmcomicPlugin extends Plugin {
 
@@ -98,7 +95,9 @@ public class JmcomicPlugin extends Plugin {
         call.resolve(clientStateJson(sessionManager.getClientState()));
     }
 
-    /** Kept for older web bundles while getClientState is rolled out. */
+    /**
+     * Kept for older web bundles while getClientState is rolled out.
+     */
     @PluginMethod
     public void getInitStatus(PluginCall call) {
         JSObject result = new JSObject();

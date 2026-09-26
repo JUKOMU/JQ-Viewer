@@ -18,14 +18,14 @@ import com.getcapacitor.PluginCall;
 import io.github.jukomu.bridge.PluginCallSession;
 import io.github.jukomu.feature.cbz.CbzDocumentService;
 import io.github.jukomu.feature.download.data.DownloadStore;
+import io.github.jukomu.feature.export.ExportJobValidator;
+import io.github.jukomu.feature.export.ExportService;
 import io.github.jukomu.feature.localfile.LocalFileOperationException;
 import io.github.jukomu.feature.localfile.data.LocalFileRef;
 import io.github.jukomu.feature.localfile.data.LocalFileRefResolver;
 import io.github.jukomu.feature.localfile.data.LocalFileStore;
-import io.github.jukomu.feature.export.ExportJobValidator;
-import io.github.jukomu.feature.export.ExportService;
-import io.github.jukomu.feature.localfile.management.PdfFileValidator;
 import io.github.jukomu.feature.localfile.management.LocalFileManagementService;
+import io.github.jukomu.feature.localfile.management.PdfFileValidator;
 import io.github.jukomu.feature.pdf.render.PdfPageCache;
 import io.github.jukomu.feature.pdf.render.PdfPageResourceId;
 import io.github.jukomu.feature.pdf.render.PdfPageSizing;
@@ -45,8 +45,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.function.Consumer;
 
 /**
- * Exposes PDF bridge operations and owns bridge-specific argument and response handling.
- * Long-running file, rendering, and export commands use the executor supplied by the plugin session.
+ * 公开PDF插件操作，并负责处理桥接相关的参数和响应。
+ * 长时间运行的文件处理、渲染及导出命令采用由插件会话提供的执行器。
  */
 public final class LocalFilePluginHandler {
     private static final String TAG = "LocalFilePluginHandler";
@@ -66,13 +66,15 @@ public final class LocalFilePluginHandler {
     }
 
     public LocalFilePluginHandler(Context context, DownloadStore downloadDb,
-                            Executor pdfCommandExecutor) {
+                                  Executor pdfCommandExecutor) {
         this.context = context.getApplicationContext();
         this.downloadDb = downloadDb;
         this.pdfCommandExecutor = pdfCommandExecutor;
     }
 
-    /** Ends the plugin session and completes every queued or running PDF bridge call. */
+    /**
+     * Ends the plugin session and completes every queued or running PDF bridge call.
+     */
     public void destroy() {
         callSession.close();
         if (pdfCommandExecutor instanceof ExecutorService) {
@@ -120,7 +122,7 @@ public final class LocalFilePluginHandler {
     }
 
     private void scanImportableFilesViaSaf(PluginCall call, Uri treeUri,
-                                            Set<String> requestedFormats) {
+                                           Set<String> requestedFormats) {
         try {
             DocumentFile root = DocumentFile.fromTreeUri(context, treeUri);
             if (root == null || !root.exists() || !root.isDirectory()) {
@@ -161,7 +163,7 @@ public final class LocalFilePluginHandler {
     }
 
     private void scanImportableFilesViaFile(PluginCall call, String path,
-                                             Set<String> requestedFormats) {
+                                            Set<String> requestedFormats) {
         File dir = new File(path);
         if (!dir.isDirectory()) {
             rejectWithCode(call, PDF_FOLDER_NOT_FOUND_MESSAGE,
@@ -627,7 +629,9 @@ public final class LocalFilePluginHandler {
         });
     }
 
-    /** PDF 页面渲染和磁盘资源写入统一在单线程 executor 中执行。 */
+    /**
+     * PDF 页面渲染和磁盘资源写入统一在单线程 executor 中执行。
+     */
     private void renderPdfPageOnExecutor(PluginCall call, String fileRef,
                                          int pageNumber, int targetWidth) {
         final PdfPageCache pageCache;

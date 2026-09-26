@@ -9,7 +9,9 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 
-/** 统一管理程序文件、用户数据、缓存和状态目录。 */
+/**
+ * 统一管理程序文件、用户数据、缓存和状态目录。
+ */
 public final class Paths {
     public static final String APPLICATION_NAME = "JQViewer";
 
@@ -25,10 +27,10 @@ public final class Paths {
     private final Path instanceLockPath;
 
     public Paths(
-            Path programDirectory,
-            Path userHome,
-            Map<String, String> environment,
-            String operatingSystem
+        Path programDirectory,
+        Path userHome,
+        Map<String, String> environment,
+        String operatingSystem
     ) {
         this.programDirectory = normalize(programDirectory, "programDirectory");
         Path home = normalize(userHome, "userHome");
@@ -64,10 +66,10 @@ public final class Paths {
     public static Paths current() {
         Path userHome = java.nio.file.Paths.get(System.getProperty("user.home", "."));
         return new Paths(
-                resolveProgramDirectory(),
-                userHome,
-                System.getenv(),
-                System.getProperty("os.name", "")
+            resolveProgramDirectory(),
+            userHome,
+            System.getenv(),
+            System.getProperty("os.name", "")
         );
     }
 

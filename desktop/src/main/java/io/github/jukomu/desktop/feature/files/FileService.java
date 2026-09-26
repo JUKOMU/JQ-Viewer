@@ -8,18 +8,17 @@ import io.github.jukomu.desktop.feature.files.model.FileRefsResponse;
 import io.github.jukomu.desktop.feature.files.model.FolderDescriptorResponse;
 import io.github.jukomu.desktop.feature.files.model.LocalFilesResponse;
 
-import java.awt.Desktop;
+import java.awt.*;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Comparator;
+import java.util.*;
 import java.util.List;
-import java.util.Locale;
-import java.util.Objects;
-import java.util.Set;
 import java.util.function.Consumer;
 
-/** Desktop 目录选择、文件引用与系统打开能力。 */
+/**
+ * Desktop 目录选择、文件引用与系统打开能力。
+ */
 public final class FileService {
     private final Paths paths;
     private final FolderPicker folderPicker;
@@ -52,8 +51,8 @@ public final class FileService {
     public FileRefsResponse checkFilesExist(List<String> references) {
         if (references == null) throw ApiException.invalidRequest("files必须是数组");
         List<String> existing = references.stream()
-                .filter(reference -> Files.isRegularFile(FileReferences.parseFile(reference)))
-                .toList();
+            .filter(reference -> Files.isRegularFile(FileReferences.parseFile(reference)))
+            .toList();
         return new FileRefsResponse(existing);
     }
 
@@ -84,12 +83,12 @@ public final class FileService {
         if (!Files.isDirectory(folder)) throw ApiException.notFound("目录不存在");
         try (var files = Files.list(folder)) {
             List<FileDescriptorResponse> results = files
-                    .filter(Files::isRegularFile)
-                    .filter(path -> requestedFormats.contains(format(path)))
-                    .sorted(Comparator.comparing(path -> path.getFileName().toString(),
-                            String.CASE_INSENSITIVE_ORDER))
-                    .map(FileService::file)
-                    .toList();
+                .filter(Files::isRegularFile)
+                .filter(path -> requestedFormats.contains(format(path)))
+                .sorted(Comparator.comparing(path -> path.getFileName().toString(),
+                    String.CASE_INSENSITIVE_ORDER))
+                .map(FileService::file)
+                .toList();
             return new LocalFilesResponse(results);
         } catch (IOException exception) {
             throw new IllegalStateException("扫描可导入文件失败", exception);
@@ -102,8 +101,8 @@ public final class FileService {
 
     private static String requirePurpose(String purpose) {
         if (!"local-file-root".equals(purpose)
-                && !"export".equals(purpose)
-                && !"download".equals(purpose)) {
+            && !"export".equals(purpose)
+            && !"download".equals(purpose)) {
             throw ApiException.invalidRequest("purpose无效");
         }
         return purpose;
@@ -119,16 +118,16 @@ public final class FileService {
     private static FolderDescriptorResponse folder(Path path) {
         Path normalized = path.toAbsolutePath().normalize();
         return new FolderDescriptorResponse(
-                FileReferences.folderRef(normalized), normalized.toString());
+            FileReferences.folderRef(normalized), normalized.toString());
     }
 
     private static FileDescriptorResponse file(Path path) {
         Path normalized = path.toAbsolutePath().normalize();
         return new FileDescriptorResponse(
-                format(normalized),
-                FileReferences.fileRef(normalized),
-                normalized.getFileName().toString(),
-                normalized.toString());
+            format(normalized),
+            FileReferences.fileRef(normalized),
+            normalized.getFileName().toString(),
+            normalized.toString());
     }
 
     private static void openWithDesktop(Path path) {

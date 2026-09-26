@@ -12,7 +12,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
-/** ComicInfo v2.0 的最小双向 codec；缺失字段按空值处理。 */
+/**
+ * ComicInfo v2.0 的最小双向 codec；缺失字段按空值处理。
+ */
 public final class ComicInfoCodec {
     private ComicInfoCodec() {
     }
@@ -21,7 +23,7 @@ public final class ComicInfoCodec {
         try {
             ByteArrayOutputStream output = new ByteArrayOutputStream();
             XMLStreamWriter xml = XMLOutputFactory.newFactory()
-                    .createXMLStreamWriter(output, StandardCharsets.UTF_8.name());
+                .createXMLStreamWriter(output, StandardCharsets.UTF_8.name());
             xml.writeStartDocument(StandardCharsets.UTF_8.name(), "1.0");
             xml.writeStartElement("ComicInfo");
             xml.writeNamespace("xsi", "http://www.w3.org/2001/XMLSchema-instance");
@@ -32,7 +34,7 @@ public final class ComicInfoCodec {
             element(xml, "Writer", info.writer());
             element(xml, "Web", info.web());
             element(xml, "PageCount", info.pageCount() > 0
-                    ? String.valueOf(info.pageCount()) : null);
+                ? String.valueOf(info.pageCount()) : null);
             element(xml, "Manga", info.manga());
             element(xml, "Volume", info.volume() == null ? null : String.valueOf(info.volume()));
             element(xml, "Count", info.count() == null ? null : String.valueOf(info.count()));
@@ -71,20 +73,20 @@ public final class ComicInfoCodec {
             factory.setXIncludeAware(false);
             factory.setExpandEntityReferences(false);
             Element root = factory.newDocumentBuilder()
-                    .parse(new ByteArrayInputStream(content)).getDocumentElement();
+                .parse(new ByteArrayInputStream(content)).getDocumentElement();
             List<ComicInfo.Page> pages = new ArrayList<>();
             NodeList nodes = root.getElementsByTagName("Page");
             for (int index = 0; index < nodes.getLength(); index++) {
                 Element page = (Element) nodes.item(index);
                 pages.add(new ComicInfo.Page(integer(page.getAttribute("Image"), index),
-                        value(page.getAttribute("Bookmark")), value(page.getAttribute("Type"))));
+                    value(page.getAttribute("Bookmark")), value(page.getAttribute("Type"))));
             }
             return new ComicInfo(
-                    text(root, "Title"), text(root, "Series"), text(root, "Number"),
-                    text(root, "Writer"), text(root, "Web"),
-                    integer(text(root, "PageCount"), pages.size()), text(root, "Manga"),
-                    nullableInteger(text(root, "Volume")), nullableInteger(text(root, "Count")),
-                    pages);
+                text(root, "Title"), text(root, "Series"), text(root, "Number"),
+                text(root, "Writer"), text(root, "Web"),
+                integer(text(root, "PageCount"), pages.size()), text(root, "Manga"),
+                nullableInteger(text(root, "Volume")), nullableInteger(text(root, "Count")),
+                pages);
         } catch (Exception exception) {
             throw new IllegalArgumentException("ComicInfo 解析失败", exception);
         }

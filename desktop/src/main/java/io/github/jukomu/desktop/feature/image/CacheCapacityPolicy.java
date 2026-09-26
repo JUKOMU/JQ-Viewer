@@ -1,6 +1,8 @@
 package io.github.jukomu.desktop.feature.image;
 
-/** 根据 JVM heap 上限计算 Desktop 图片缓存的安全容量。 */
+/**
+ * 根据 JVM heap 上限计算 Desktop 图片缓存的安全容量。
+ */
 public final class CacheCapacityPolicy {
     public static final long MIB = 1024L * 1024L;
     public static final long DEFAULT_REQUESTED_MB = 256L;
@@ -19,8 +21,8 @@ public final class CacheCapacityPolicy {
             throw new IllegalStateException("JVM heap 安全预算不足 1 MiB");
         }
         long effectiveMb = heapBudgetMb < MIN_EFFECTIVE_MB
-                ? heapBudgetMb
-                : Math.max(MIN_EFFECTIVE_MB, Math.min(requestedMb, heapBudgetMb));
+            ? heapBudgetMb
+            : Math.max(MIN_EFFECTIVE_MB, Math.min(requestedMb, heapBudgetMb));
         String reason;
         if (effectiveMb == MIN_EFFECTIVE_MB && requestedMb < MIN_EFFECTIVE_MB) {
             reason = "minimum-safe-capacity";
@@ -33,12 +35,12 @@ public final class CacheCapacityPolicy {
     }
 
     public record Result(
-            long requestedMb,
-            long effectiveMb,
-            long maxHeapMb,
-            double safeRatio,
-            boolean temporaryClamp,
-            String reason
+        long requestedMb,
+        long effectiveMb,
+        long maxHeapMb,
+        double safeRatio,
+        boolean temporaryClamp,
+        String reason
     ) {
     }
 }

@@ -1,20 +1,11 @@
 package io.github.jukomu.desktop.bridge;
 
-import io.github.jukomu.desktop.bridge.handler.ApiPluginHandler;
-import io.github.jukomu.desktop.bridge.handler.AuthPluginHandler;
-import io.github.jukomu.desktop.bridge.handler.CachePluginHandler;
-import io.github.jukomu.desktop.bridge.handler.DownloadPluginHandler;
-import io.github.jukomu.desktop.bridge.handler.HistoryPluginHandler;
-import io.github.jukomu.desktop.bridge.handler.FilePluginHandler;
-import io.github.jukomu.desktop.bridge.handler.OfflineFavoritePluginHandler;
-import io.github.jukomu.desktop.bridge.handler.OcrPluginHandler;
-import io.github.jukomu.desktop.bridge.handler.LocalFilePluginHandler;
-import io.github.jukomu.desktop.bridge.handler.SettingsPluginHandler;
-import io.github.jukomu.desktop.bridge.handler.SystemPluginHandler;
-import io.github.jukomu.desktop.bridge.handler.UpdatePluginHandler;
+import io.github.jukomu.desktop.bridge.handler.*;
 import io.javalin.http.Context;
 
-/** 本地 HTTP bridge 的方法入口。 */
+/**
+ * 本地 HTTP bridge 的方法入口。
+ */
 public final class Plugin {
     private final ApiPluginHandler api;
     private final AuthPluginHandler auth;

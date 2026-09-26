@@ -1,12 +1,10 @@
 package io.github.jukomu.bridge.handler;
 
+import android.app.Activity;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
-
 import io.github.jukomu.feature.update.UpdateManifest;
 import io.github.jukomu.feature.update.UpdateService;
-
-import android.app.Activity;
 
 import java.util.function.Supplier;
 

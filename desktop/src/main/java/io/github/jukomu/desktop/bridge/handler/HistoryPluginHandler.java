@@ -3,15 +3,12 @@ package io.github.jukomu.desktop.bridge.handler;
 import io.github.jukomu.desktop.bridge.Request;
 import io.github.jukomu.desktop.bridge.RequestExecutor;
 import io.github.jukomu.desktop.feature.history.HistoryService;
-import io.github.jukomu.desktop.feature.history.model.HistoryDeleteRequest;
-import io.github.jukomu.desktop.feature.history.model.HistoryOverviewRequest;
-import io.github.jukomu.desktop.feature.history.model.HistoryPageRequest;
-import io.github.jukomu.desktop.feature.history.model.HistoryRecordRequest;
-import io.github.jukomu.desktop.feature.history.model.ParseHistoryPageRequest;
-import io.github.jukomu.desktop.feature.history.model.ParseHistoryRecordRequest;
+import io.github.jukomu.desktop.feature.history.model.*;
 import io.javalin.http.Context;
 
-/** 处理浏览历史和解析历史的 JSON bridge 请求。 */
+/**
+ * 处理浏览历史和解析历史的 JSON bridge 请求。
+ */
 public final class HistoryPluginHandler {
     private final RequestExecutor requests;
     private final HistoryService history;
@@ -23,15 +20,15 @@ public final class HistoryPluginHandler {
 
     public void getBrowseHistory(Context context) {
         requests.run(context, HistoryPageRequest.class, request -> history.page(
-                Request.integer(request.limit(), 0),
-                Request.integer(request.offset(), 0),
-                request.startInclusive(),
-                request.endExclusive()));
+            Request.integer(request.limit(), 0),
+            Request.integer(request.offset(), 0),
+            request.startInclusive(),
+            request.endExclusive()));
     }
 
     public void getBrowseHistoryOverview(Context context) {
         requests.run(context, HistoryOverviewRequest.class,
-                request -> history.overview(request.ranges()));
+            request -> history.overview(request.ranges()));
     }
 
     public void recordBrowse(Context context) {
@@ -44,13 +41,13 @@ public final class HistoryPluginHandler {
 
     public void deleteBrowseItem(Context context) {
         requests.run(context, HistoryDeleteRequest.class,
-                request -> history.delete(Request.longValue(request.id(), 0)));
+            request -> history.delete(Request.longValue(request.id(), 0)));
     }
 
     public void getParseHistory(Context context) {
         requests.run(context, ParseHistoryPageRequest.class, request -> history.parsePage(
-                Request.integer(request.limit(), 0),
-                Request.integer(request.offset(), 0)));
+            Request.integer(request.limit(), 0),
+            Request.integer(request.offset(), 0)));
     }
 
     public void addParseHistory(Context context) {
@@ -63,6 +60,6 @@ public final class HistoryPluginHandler {
 
     public void deleteParseItem(Context context) {
         requests.run(context, HistoryDeleteRequest.class,
-                request -> history.deleteParseItem(Request.longValue(request.id(), 0)));
+            request -> history.deleteParseItem(Request.longValue(request.id(), 0)));
     }
 }

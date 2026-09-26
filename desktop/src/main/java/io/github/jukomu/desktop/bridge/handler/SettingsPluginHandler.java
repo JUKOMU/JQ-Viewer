@@ -2,17 +2,15 @@ package io.github.jukomu.desktop.bridge.handler;
 
 import io.github.jukomu.desktop.bridge.Request;
 import io.github.jukomu.desktop.bridge.RequestExecutor;
-import io.github.jukomu.desktop.feature.settings.SettingsService;
 import io.github.jukomu.desktop.feature.download.DownloadLocationService;
 import io.github.jukomu.desktop.feature.download.model.DownloadLocationRequest;
-import io.github.jukomu.desktop.feature.settings.model.BooleanSettingRequest;
-import io.github.jukomu.desktop.feature.settings.model.DisplayModeRequest;
-import io.github.jukomu.desktop.feature.settings.model.NumberSettingRequest;
-import io.github.jukomu.desktop.feature.settings.model.NullableTextSettingRequest;
-import io.github.jukomu.desktop.feature.settings.model.ExportFolderRequest;
+import io.github.jukomu.desktop.feature.settings.SettingsService;
+import io.github.jukomu.desktop.feature.settings.model.*;
 import io.javalin.http.Context;
 
-/** 处理页面基础设置的读取与持久化。 */
+/**
+ * 处理页面基础设置的读取与持久化。
+ */
 public final class SettingsPluginHandler {
     private final RequestExecutor settingsRequests;
     private final RequestExecutor relocationRequests;
@@ -20,10 +18,10 @@ public final class SettingsPluginHandler {
     private final DownloadLocationService downloadLocation;
 
     public SettingsPluginHandler(
-            RequestExecutor settingsRequests,
-            RequestExecutor relocationRequests,
-            SettingsService settings,
-            DownloadLocationService downloadLocation
+        RequestExecutor settingsRequests,
+        RequestExecutor relocationRequests,
+        SettingsService settings,
+        DownloadLocationService downloadLocation
     ) {
         this.settingsRequests = settingsRequests;
         this.relocationRequests = relocationRequests;
@@ -37,27 +35,27 @@ public final class SettingsPluginHandler {
 
     public void setPreloadConcurrency(Context context) {
         settingsRequests.run(context, NumberSettingRequest.class, request -> settings.setConcurrency(
-                "preload_concurrency", Request.integer(request.n(), 6)));
+            "preload_concurrency", Request.integer(request.n(), 6)));
     }
 
     public void setDownloadConcurrency(Context context) {
         settingsRequests.run(context, NumberSettingRequest.class, request -> settings.setConcurrency(
-                "download_concurrency", Request.integer(request.n(), 6)));
+            "download_concurrency", Request.integer(request.n(), 6)));
     }
 
     public void setReaderPreloadPages(Context context) {
         settingsRequests.run(context, NumberSettingRequest.class, request -> settings.setReaderPreloadPages(
-                Request.integer(request.n(), 15)));
+            Request.integer(request.n(), 15)));
     }
 
     public void setReaderDisplayMode(Context context) {
         settingsRequests.run(context, DisplayModeRequest.class, request -> settings.setDisplayMode(
-                Request.requiredText(request.mode(), "mode")));
+            Request.requiredText(request.mode(), "mode")));
     }
 
     public void setReaderAutoShowToolbarAtEnd(Context context) {
         settingsRequests.run(context, BooleanSettingRequest.class, request -> settings.setAutoShow(
-                Request.bool(request.enabled(), true)));
+            Request.bool(request.enabled(), true)));
     }
 
     public void getDownloadPublic(Context context) {
@@ -66,7 +64,7 @@ public final class SettingsPluginHandler {
 
     public void setDownloadPublic(Context context) {
         relocationRequests.runLongOperation(context, DownloadLocationRequest.class,
-                request -> downloadLocation.set(Request.bool(request.open(), false)));
+            request -> downloadLocation.set(Request.bool(request.open(), false)));
     }
 
     public void getExportPreferences(Context context) {
@@ -75,22 +73,22 @@ public final class SettingsPluginHandler {
 
     public void setExportFolder(Context context) {
         settingsRequests.run(context, ExportFolderRequest.class,
-                request -> settings.setExportFolder(request.folder()));
+            request -> settings.setExportFolder(request.folder()));
     }
 
     public void setExportDirectoryTemplate(Context context) {
         settingsRequests.run(context, NullableTextSettingRequest.class,
-                request -> settings.setExportDirectoryTemplate(request.value()));
+            request -> settings.setExportDirectoryTemplate(request.value()));
     }
 
     public void setExportFileNameTemplate(Context context) {
         settingsRequests.run(context, NullableTextSettingRequest.class,
-                request -> settings.setExportFileNameTemplate(request.value()));
+            request -> settings.setExportFileNameTemplate(request.value()));
     }
 
     public void setExportLastFormat(Context context) {
         settingsRequests.run(context, NullableTextSettingRequest.class,
-                request -> settings.setExportLastFormat(
-                        Request.requiredText(request.value(), "value")));
+            request -> settings.setExportLastFormat(
+                Request.requiredText(request.value(), "value")));
     }
 }

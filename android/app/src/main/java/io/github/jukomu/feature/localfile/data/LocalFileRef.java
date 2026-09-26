@@ -10,9 +10,9 @@ import java.io.IOException;
  * path 引用仅在创建时规范化；解析已有引用时只校验边界，避免改变持久化值。</p>
  */
 public final class LocalFileRef {
-    public enum Kind { FILE, FOLDER }
+    public enum Kind {FILE, FOLDER}
 
-    public enum Provider { PATH, SAF }
+    public enum Provider {PATH, SAF}
 
     public static final class Parsed {
         public final Kind kind;
@@ -115,7 +115,9 @@ public final class LocalFileRef {
         return createPathFileRef(locator);
     }
 
-    /** 迁移旧记录时只做字符串转换，避免升级事务访问文件系统或 SAF provider。 */
+    /**
+     * 迁移旧记录时只做字符串转换，避免升级事务访问文件系统或 SAF provider。
+     */
     public static String fromLegacyFileLocatorForMigration(String locator) {
         if (locator == null || locator.isEmpty()) {
             throw new IllegalArgumentException("旧 PDF locator 为空");

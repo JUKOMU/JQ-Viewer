@@ -12,26 +12,24 @@ import io.github.jukomu.jmcomic.api.model.JmPhoto;
 import io.github.jukomu.jmcomic.core.crypto.JmImageTool;
 
 import javax.imageio.ImageIO;
-import java.awt.Graphics2D;
-import java.awt.RenderingHints;
+import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
+import java.util.*;
 import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.function.BiFunction;
 import java.util.function.Supplier;
 
-/** 管理章节图片元数据、实际下载、缩略图生成和事件发布。 */
+/**
+ * 管理章节图片元数据、实际下载、缩略图生成和事件发布。
+ */
 public final class ImageService {
     private static final int THUMBNAIL_MAX_WIDTH = 300;
     private static final long CACHE_CAPACITY_MB = 256;
@@ -55,10 +53,10 @@ public final class ImageService {
     }
 
     public ImageService(
-            Supplier<JmClient> clientSupplier,
-            Executor executor,
-            EventHub events,
-            BiFunction<String, Integer, Optional<Path>> localImageFinder
+        Supplier<JmClient> clientSupplier,
+        Executor executor,
+        EventHub events,
+        BiFunction<String, Integer, Optional<Path>> localImageFinder
     ) {
         this.clientSupplier = Objects.requireNonNull(clientSupplier, "clientSupplier");
         this.executor = Objects.requireNonNull(executor, "executor");
@@ -74,10 +72,10 @@ public final class ImageService {
     }
 
     public PreloadImagesResponse preload(
-            String photoId,
-            String type,
-            List<JmImage> input,
-            boolean replacePending
+        String photoId,
+        String type,
+        List<JmImage> input,
+        boolean replacePending
     ) {
         validateType(type);
         if (input == null) throw ApiException.invalidRequest("images必须是数组");
@@ -103,7 +101,7 @@ public final class ImageService {
             if ("thumb".equals(type) && original != null) {
                 waiting.add(image.getSortOrder());
                 scheduleCachedThumbnail(
-                        photoId, image.getSortOrder(), currentGeneration, original);
+                    photoId, image.getSortOrder(), currentGeneration, original);
                 continue;
             }
             waiting.add(image.getSortOrder());
@@ -157,10 +155,10 @@ public final class ImageService {
     }
 
     public ImageCache.Entry readLocal(
-            String photoId,
-            int sortOrder,
-            String type,
-            Path path
+        String photoId,
+        int sortOrder,
+        String type,
+        Path path
     ) {
         validateType(type);
         ImageCache.Entry cached = cache.get(key(photoId, sortOrder, type));
@@ -193,12 +191,12 @@ public final class ImageService {
     }
 
     private void schedule(
-            String photoId,
-            String type,
-            JmImage image,
-            long currentGeneration,
-            boolean preferLocal,
-            boolean publishEvents
+        String photoId,
+        String type,
+        JmImage image,
+        long currentGeneration,
+        boolean preferLocal,
+        boolean publishEvents
     ) {
         String scope = photoId + "/" + type;
         String pendingKey = key(photoId, image.getSortOrder(), type);
@@ -236,11 +234,11 @@ public final class ImageService {
                     }
                 } catch (Exception exception) {
                     if (publishEvents
-                            && generations.getOrDefault(scope, currentGeneration) == currentGeneration) {
+                        && generations.getOrDefault(scope, currentGeneration) == currentGeneration) {
                         events.publish("imageFailed", new ImageEvent(
-                                photoId,
-                                image.getSortOrder(),
-                                type
+                            photoId,
+                            image.getSortOrder(),
+                            type
                         ));
                     }
                 } finally {
@@ -254,10 +252,10 @@ public final class ImageService {
     }
 
     private void scheduleCachedThumbnail(
-            String photoId,
-            int sortOrder,
-            long currentGeneration,
-            ImageCache.Entry original
+        String photoId,
+        int sortOrder,
+        long currentGeneration,
+        ImageCache.Entry original
     ) {
         String scope = photoId + "/thumb";
         String pendingKey = key(photoId, sortOrder, "thumb");
@@ -305,12 +303,12 @@ public final class ImageService {
         int sortOrder = value.getSortOrder();
         if (sortOrder <= 0) throw ApiException.invalidRequest("sortOrder必须是正整数");
         return new JmImage(
-                photoId,
-                text(value.getScrambleId()),
-                text(value.getFilename()),
-                text(value.getUrl()),
-                text(value.getQueryParams()),
-                sortOrder
+            photoId,
+            text(value.getScrambleId()),
+            text(value.getFilename()),
+            text(value.getUrl()),
+            text(value.getQueryParams()),
+            sortOrder
         );
     }
 

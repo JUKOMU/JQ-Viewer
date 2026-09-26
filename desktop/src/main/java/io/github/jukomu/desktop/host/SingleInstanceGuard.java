@@ -25,7 +25,9 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-/** 协调单实例生命周期，并提供仅限 loopback 的打开首页信号。 */
+/**
+ * 协调单实例生命周期，并提供仅限 loopback 的打开首页信号。
+ */
 public final class SingleInstanceGuard implements AutoCloseable {
     private static final String OPEN_HOME_COMMAND = "OPEN_HOME";
     private static final Duration SIGNAL_TIMEOUT = Duration.ofSeconds(1);
@@ -50,7 +52,9 @@ public final class SingleInstanceGuard implements AutoCloseable {
         this.lockPath = Objects.requireNonNull(lockPath, "lockPath").toAbsolutePath().normalize();
     }
 
-    /** 尝试成为主进程；已有进程持有锁时返回 false。 */
+    /**
+     * 尝试成为主进程；已有进程持有锁时返回 false。
+     */
     public synchronized boolean tryAcquire(Runnable onOpenHome) throws IOException {
         Objects.requireNonNull(onOpenHome, "onOpenHome");
         if (closed.get()) {
@@ -66,10 +70,10 @@ public final class SingleInstanceGuard implements AutoCloseable {
         }
 
         FileChannel candidate = FileChannel.open(
-                lockPath,
-                StandardOpenOption.CREATE,
-                StandardOpenOption.READ,
-                StandardOpenOption.WRITE
+            lockPath,
+            StandardOpenOption.CREATE,
+            StandardOpenOption.READ,
+            StandardOpenOption.WRITE
         );
         FileLock candidateLock;
         try {
@@ -90,9 +94,9 @@ public final class SingleInstanceGuard implements AutoCloseable {
         ServerSocket candidateServer = null;
         try {
             candidateServer = new ServerSocket(
-                    0,
-                    16,
-                    InetAddress.getLoopbackAddress()
+                0,
+                16,
+                InetAddress.getLoopbackAddress()
             );
             writePort(candidate, candidateServer.getLocalPort());
 
@@ -130,7 +134,9 @@ public final class SingleInstanceGuard implements AutoCloseable {
         }
     }
 
-    /** 通知当前主进程打开已经运行的首页 URL。 */
+    /**
+     * 通知当前主进程打开已经运行的首页 URL。
+     */
     public boolean notifyExistingInstance() {
         Instant deadline = Instant.now().plus(SIGNAL_TIMEOUT);
         while (Instant.now().isBefore(deadline)) {
@@ -139,12 +145,12 @@ public final class SingleInstanceGuard implements AutoCloseable {
                 int port = Integer.parseInt(value);
                 try (Socket socket = new Socket()) {
                     socket.connect(
-                            new InetSocketAddress(InetAddress.getLoopbackAddress(), port),
-                            250
+                        new InetSocketAddress(InetAddress.getLoopbackAddress(), port),
+                        250
                     );
                     try (OutputStreamWriter writer = new OutputStreamWriter(
-                            socket.getOutputStream(),
-                            StandardCharsets.UTF_8
+                        socket.getOutputStream(),
+                        StandardCharsets.UTF_8
                     )) {
                         writer.write(OPEN_HOME_COMMAND);
                         writer.write('\n');
@@ -221,7 +227,7 @@ public final class SingleInstanceGuard implements AutoCloseable {
             if (value == '\n') {
                 String command = new String(bytes, 0, length, StandardCharsets.UTF_8);
                 if ((OPEN_HOME_COMMAND + "\n").equals(command)
-                        || (OPEN_HOME_COMMAND + "\r\n").equals(command)) {
+                    || (OPEN_HOME_COMMAND + "\r\n").equals(command)) {
                     return OPEN_HOME_COMMAND;
                 }
                 return null;
@@ -237,8 +243,8 @@ public final class SingleInstanceGuard implements AutoCloseable {
         }
         long remainingMillis = TimeUnit.NANOSECONDS.toMillis(remainingNanos);
         return (int) Math.min(
-                Integer.MAX_VALUE,
-                Math.max(1, remainingMillis)
+            Integer.MAX_VALUE,
+            Math.max(1, remainingMillis)
         );
     }
 

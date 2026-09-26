@@ -8,7 +8,9 @@ import io.github.jukomu.jmcomic.api.download.task.TaskObserver;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
-/** 将 JMComic 任务状态按“先写 SQLite、后发事件”的顺序同步到 Desktop。 */
+/**
+ * 将 JMComic 任务状态按“先写 SQLite、后发事件”的顺序同步到 Desktop。
+ */
 final class DownloadObserver implements TaskObserver {
     private final String taskId;
     private final int totalPages;
@@ -47,13 +49,13 @@ final class DownloadObserver implements TaskObserver {
                 } else {
                     int completed = Math.max(0, totalPages - failed);
                     service.failDownload(taskId, completed, task.getDownloadedBytes(),
-                            failed + "/" + totalPages + " 张图片下载失败");
+                        failed + "/" + totalPages + " 张图片下载失败");
                 }
             }
             case FAILED -> service.failDownload(taskId, task.getCompletedCount(),
-                    task.getDownloadedBytes(), "下载失败");
+                task.getDownloadedBytes(), "下载失败");
             case CANCELLED -> service.failDownload(taskId, task.getCompletedCount(),
-                    task.getDownloadedBytes(), "下载已取消");
+                task.getDownloadedBytes(), "下载已取消");
             default -> {
             }
         }
@@ -65,8 +67,8 @@ final class DownloadObserver implements TaskObserver {
         long now = System.currentTimeMillis();
         long currentBytes = Math.max(0, progress.downloadedBytes());
         long speed = lastBytes > 0 && now > lastTimestamp
-                ? Math.max(0, (currentBytes - lastBytes) * 1000 / (now - lastTimestamp))
-                : 0;
+            ? Math.max(0, (currentBytes - lastBytes) * 1000 / (now - lastTimestamp))
+            : 0;
         lastBytes = currentBytes;
         lastTimestamp = now;
         Long totalBytes = task.getTotalBytes() >= 0 ? task.getTotalBytes() : null;
@@ -86,6 +88,6 @@ final class DownloadObserver implements TaskObserver {
         }
         if (!finalized.compareAndSet(false, true)) return;
         service.failDownload(taskId, task.getCompletedCount(), task.getDownloadedBytes(),
-                exception == null ? "下载失败" : exception.getMessage());
+            exception == null ? "下载失败" : exception.getMessage());
     }
 }

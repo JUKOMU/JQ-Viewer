@@ -23,16 +23,15 @@ import com.google.mlkit.vision.text.TextRecognition;
 import com.google.mlkit.vision.text.TextRecognizer;
 import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions;
 import io.github.jukomu.bridge.PluginCallSession;
+import io.github.jukomu.feature.localfile.data.LocalFileRef;
+import io.github.jukomu.feature.localfile.data.LocalFileRefResolver;
 import io.github.jukomu.jmcomic.core.client.impl.JmApiClient;
 import io.github.jukomu.platform.permission.PermissionService;
 import io.github.jukomu.platform.permission.PermissionState;
-import io.github.jukomu.feature.localfile.data.LocalFileRef;
-import io.github.jukomu.feature.localfile.data.LocalFileRefResolver;
 import io.github.jukomu.runtime.ServiceExecutors;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.io.File;
 import java.util.Map;
 import java.util.concurrent.*;
 import java.util.function.BiConsumer;
@@ -48,7 +47,9 @@ import static android.app.Activity.RESULT_OK;
  */
 public final class SystemPluginHandler {
 
-    /** 封装可持久化 URI 权限操作，默认实现直接调用 ContentResolver。 */
+    /**
+     * 封装可持久化 URI 权限操作，默认实现直接调用 ContentResolver。
+     */
     @FunctionalInterface
     public interface PersistableUriPermission {
         void take(Uri uri, int flags);
@@ -555,7 +556,9 @@ public final class SystemPluginHandler {
         }
     }
 
-    /** 返回给定文件引用中当前可访问的条目。 */
+    /**
+     * 返回给定文件引用中当前可访问的条目。
+     */
     public void checkFilesExist(PluginCall call) {
         JSArray fileRefs = call.getArray("fileRefs");
         if (fileRefs == null) {
@@ -588,7 +591,9 @@ public final class SystemPluginHandler {
         }
     }
 
-    /** 返回默认外部存储目录的 folder:path ref 与展示路径。 */
+    /**
+     * 返回默认外部存储目录的 folder:path ref 与展示路径。
+     */
     public void getExternalStoragePath(PluginCall call) {
         JSObject result = new JSObject();
         String path = Environment.getExternalStorageDirectory().getAbsolutePath();

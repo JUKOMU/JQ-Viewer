@@ -9,7 +9,9 @@ import java.nio.file.Path;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-/** Desktop OCR 用例：图片选择、开关持久化、串行识别和生命周期清理。 */
+/**
+ * Desktop OCR 用例：图片选择、开关持久化、串行识别和生命周期清理。
+ */
 public final class OcrService implements AutoCloseable {
     private final SettingsService settings;
     private final ImagePicker imagePicker;

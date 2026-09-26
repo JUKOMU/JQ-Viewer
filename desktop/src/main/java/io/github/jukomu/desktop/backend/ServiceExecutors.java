@@ -4,14 +4,12 @@ import io.github.jukomu.desktop.feature.settings.SettingsService;
 
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
-/** Desktop 后端各服务独立的无界执行器及其生命周期。 */
+/**
+ * Desktop 后端各服务独立的无界执行器及其生命周期。
+ */
 final class ServiceExecutors implements AutoCloseable {
     private static final int API_THREADS = 12;
 
@@ -63,26 +61,26 @@ final class ServiceExecutors implements AutoCloseable {
         offlineFavorite = create("jq-viewer-offline-favorite", 1);
         diagnostics = create("jq-viewer-diagnostics", 1);
         owned = List.of(
-                api,
-                imagePreload,
-                imageOnDemand,
-                imageResource,
-                imageCommand,
-                downloadCommand,
-                downloadPrepare,
-                fileIo,
-                fileDialog,
-                relocation,
-                pdfCommand,
-                exportJobs,
-                networkCommand,
-                networkProbe,
-                ocr,
-                updateCommand,
-                settings,
-                history,
-                offlineFavorite,
-                diagnostics
+            api,
+            imagePreload,
+            imageOnDemand,
+            imageResource,
+            imageCommand,
+            downloadCommand,
+            downloadPrepare,
+            fileIo,
+            fileDialog,
+            relocation,
+            pdfCommand,
+            exportJobs,
+            networkCommand,
+            networkProbe,
+            ocr,
+            updateCommand,
+            settings,
+            history,
+            offlineFavorite,
+            diagnostics
         );
     }
 
@@ -204,13 +202,13 @@ final class ServiceExecutors implements AutoCloseable {
 
     private static ThreadPoolExecutor create(String name, int threads) {
         return new ThreadPoolExecutor(
-                threads,
-                threads,
-                30,
-                TimeUnit.SECONDS,
-                new LinkedBlockingQueue<>(),
-                namedFactory(name),
-                new ThreadPoolExecutor.AbortPolicy()
+            threads,
+            threads,
+            30,
+            TimeUnit.SECONDS,
+            new LinkedBlockingQueue<>(),
+            namedFactory(name),
+            new ThreadPoolExecutor.AbortPolicy()
         );
     }
 

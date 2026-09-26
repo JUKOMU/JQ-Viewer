@@ -12,8 +12,8 @@ import android.provider.DocumentsContract;
 import android.util.Log;
 import androidx.core.app.NotificationCompat;
 import androidx.core.content.FileProvider;
-import io.github.jukomu.R;
 import io.github.jukomu.MainActivity;
+import io.github.jukomu.R;
 import io.github.jukomu.feature.localfile.data.LocalFileRef;
 import io.github.jukomu.feature.localfile.data.LocalFileRefResolver;
 
@@ -163,7 +163,7 @@ public class ExportNotificationHelper {
 
         String title = "interrupted".equals(status) ? "导出中断: " + chapterTitle
             : "partial".equals(status) ? "部分导出完成: " + chapterTitle
-            : "导出失败: " + chapterTitle;
+              : "导出失败: " + chapterTitle;
 
         notify(notificationId, new NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(ICON)

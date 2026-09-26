@@ -6,7 +6,9 @@ import io.github.jukomu.desktop.feature.image.CacheService;
 import io.github.jukomu.desktop.feature.image.model.CacheCapacityRequest;
 import io.javalin.http.Context;
 
-/** 处理图片缓存容量、内容查询和缓存域清理。 */
+/**
+ * 处理图片缓存容量、内容查询和缓存域清理。
+ */
 public final class CachePluginHandler {
     private final RequestExecutor requests;
     private final CacheService cache;
@@ -18,7 +20,7 @@ public final class CachePluginHandler {
 
     public void setCacheCapacity(Context context) {
         requests.run(context, CacheCapacityRequest.class,
-                request -> cache.setCapacity(request.mb()));
+            request -> cache.setCapacity(request.mb()));
     }
 
     public void getCacheCapacityInfo(Context context) {

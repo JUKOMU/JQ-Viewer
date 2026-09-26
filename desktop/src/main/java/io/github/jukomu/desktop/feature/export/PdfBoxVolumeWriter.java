@@ -9,27 +9,27 @@ import org.apache.pdfbox.pdmodel.graphics.image.LosslessFactory;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
 
 import javax.imageio.ImageIO;
-import java.awt.Color;
-import java.awt.Graphics2D;
-import java.awt.RenderingHints;
+import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
-/** 使用 PDFBox 将下载图片顺序写入同目录临时 PDF。 */
+/**
+ * 使用 PDFBox 将下载图片顺序写入同目录临时 PDF。
+ */
 public final class PdfBoxVolumeWriter implements PdfVolumeWriter {
     private static final float MAX_PAGE_DIMENSION = 14_400F;
     private static final float COMPRESSED_JPEG_QUALITY = 0.8F;
 
     @Override
     public void write(
-            List<Path> images,
-            Path temporaryFile,
-            boolean useOriginal,
-            double compressionRatio,
-            Progress progress
+        List<Path> images,
+        Path temporaryFile,
+        boolean useOriginal,
+        double compressionRatio,
+        Progress progress
     ) throws Exception {
         Files.createDirectories(temporaryFile.getParent());
         Files.deleteIfExists(temporaryFile);
@@ -39,19 +39,19 @@ public final class PdfBoxVolumeWriter implements PdfVolumeWriter {
                 if (Thread.currentThread().isInterrupted()) throw new InterruptedException();
                 BufferedImage source = readImage(imagePath);
                 double requestedScale = useOriginal ? 1D
-                        : Math.max(0.1D, Math.min(1D, compressionRatio));
+                    : Math.max(0.1D, Math.min(1D, compressionRatio));
                 double scale = Math.min(requestedScale, MAX_PAGE_DIMENSION
-                        / Math.max(source.getWidth(), source.getHeight()));
+                    / Math.max(source.getWidth(), source.getHeight()));
                 BufferedImage image = useOriginal ? source : scaledRgbImage(source, scale);
                 float width = useOriginal
-                        ? Math.max(1F, (float) (source.getWidth() * scale)) : image.getWidth();
+                    ? Math.max(1F, (float) (source.getWidth() * scale)) : image.getWidth();
                 float height = useOriginal
-                        ? Math.max(1F, (float) (source.getHeight() * scale)) : image.getHeight();
+                    ? Math.max(1F, (float) (source.getHeight() * scale)) : image.getHeight();
                 PDPage page = new PDPage(new PDRectangle(width, height));
                 document.addPage(page);
                 PDImageXObject pdfImage = useOriginal
-                        ? LosslessFactory.createFromImage(document, image)
-                        : JPEGFactory.createFromImage(document, image, COMPRESSED_JPEG_QUALITY);
+                    ? LosslessFactory.createFromImage(document, image)
+                    : JPEGFactory.createFromImage(document, image, COMPRESSED_JPEG_QUALITY);
                 try (PDPageContentStream content = new PDPageContentStream(document, page)) {
                     content.drawImage(pdfImage, 0, 0, width, height);
                 }
@@ -71,7 +71,7 @@ public final class PdfBoxVolumeWriter implements PdfVolumeWriter {
     private static BufferedImage readImage(Path path) throws IOException {
         BufferedImage image = ImageIO.read(path.toFile());
         if (image == null) throw new IOException("PDF_IMAGE_UNREADABLE: 下载图片无法解析: "
-                + path.getFileName());
+            + path.getFileName());
         return image;
     }
 
@@ -84,7 +84,7 @@ public final class PdfBoxVolumeWriter implements PdfVolumeWriter {
             graphics.setColor(Color.WHITE);
             graphics.fillRect(0, 0, width, height);
             graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
-                    RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+                RenderingHints.VALUE_INTERPOLATION_BICUBIC);
             graphics.drawImage(source, 0, 0, width, height, null);
         } finally {
             graphics.dispose();

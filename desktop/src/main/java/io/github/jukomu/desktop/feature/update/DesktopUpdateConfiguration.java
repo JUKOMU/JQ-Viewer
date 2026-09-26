@@ -6,17 +6,19 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.regex.Pattern;
 
-/** Desktop 更新客户端的构建时固定配置。 */
+/**
+ * Desktop 更新客户端的构建时固定配置。
+ */
 public record DesktopUpdateConfiguration(
-        String currentVersion,
-        String platform,
-        String architecture,
-        String packageType,
-        String packageFormat,
-        String keyId,
-        byte[] publicKeySpki,
-        Path launcherPath,
-        Path applicationRoot
+    String currentVersion,
+    String platform,
+    String architecture,
+    String packageType,
+    String packageFormat,
+    String keyId,
+    byte[] publicKeySpki,
+    Path launcherPath,
+    Path applicationRoot
 ) {
     private static final Pattern VERSION_PATTERN = Pattern.compile("^[0-9]+\\.[0-9]+\\.[0-9]+$");
     private static final Pattern KEY_ID_PATTERN = Pattern.compile("^[A-Za-z0-9._-]{1,64}$");
@@ -31,8 +33,8 @@ public record DesktopUpdateConfiguration(
         publicKeySpki = publicKeySpki == null ? new byte[0] : publicKeySpki.clone();
         launcherPath = launcherPath == null ? null : launcherPath.toAbsolutePath().normalize();
         applicationRoot = applicationRoot == null
-                ? null
-                : applicationRoot.toAbsolutePath().normalize();
+            ? null
+            : applicationRoot.toAbsolutePath().normalize();
     }
 
     public static DesktopUpdateConfiguration fromSystemProperties() {
@@ -40,30 +42,30 @@ public record DesktopUpdateConfiguration(
         Path launcherPath = appPathValue.isEmpty() ? null : Path.of(appPathValue);
         Path applicationRoot = resolveApplicationRoot(launcherPath);
         byte[] publicKey = decodeBase64(
-                System.getProperty("jqviewer.update.publicKeySpkiBase64", ""));
+            System.getProperty("jqviewer.update.publicKeySpkiBase64", ""));
         return new DesktopUpdateConfiguration(
-                System.getProperty("jqviewer.update.version", ""),
-                System.getProperty("jqviewer.update.platform", ""),
-                System.getProperty("jqviewer.update.architecture", ""),
-                System.getProperty("jqviewer.update.packageType", ""),
-                System.getProperty("jqviewer.update.packageFormat", ""),
-                System.getProperty("jqviewer.update.keyId", ""),
-                publicKey,
-                launcherPath,
-                applicationRoot
+            System.getProperty("jqviewer.update.version", ""),
+            System.getProperty("jqviewer.update.platform", ""),
+            System.getProperty("jqviewer.update.architecture", ""),
+            System.getProperty("jqviewer.update.packageType", ""),
+            System.getProperty("jqviewer.update.packageFormat", ""),
+            System.getProperty("jqviewer.update.keyId", ""),
+            publicKey,
+            launcherPath,
+            applicationRoot
         );
     }
 
     public boolean isConfigured() {
         return VERSION_PATTERN.matcher(currentVersion).matches()
-                && (platform.equals("windows") || platform.equals("linux"))
-                && (architecture.equals("x64") || architecture.equals("arm64"))
-                && (packageType.equals("installer") || packageType.equals("portable"))
-                && supportedFormat()
-                && KEY_ID_PATTERN.matcher(keyId).matches()
-                && publicKeySpki.length > 0
-                && launcherPath != null
-                && applicationRoot != null;
+            && (platform.equals("windows") || platform.equals("linux"))
+            && (architecture.equals("x64") || architecture.equals("arm64"))
+            && (packageType.equals("installer") || packageType.equals("portable"))
+            && supportedFormat()
+            && KEY_ID_PATTERN.matcher(keyId).matches()
+            && publicKeySpki.length > 0
+            && launcherPath != null
+            && applicationRoot != null;
     }
 
     public void requireConfigured() {
@@ -82,8 +84,8 @@ public record DesktopUpdateConfiguration(
             return packageFormat.equals("exe") || packageFormat.equals("zip");
         }
         return packageFormat.equals("deb")
-                || packageFormat.equals("rpm")
-                || packageFormat.equals("tar.gz");
+            || packageFormat.equals("rpm")
+            || packageFormat.equals("tar.gz");
     }
 
     private static Path resolveApplicationRoot(Path launcherPath) {

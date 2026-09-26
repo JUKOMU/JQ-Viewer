@@ -10,7 +10,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Iterator;
 
-/** 图片文件的快速校验和完整校验。 */
+/**
+ * 图片文件的快速校验和完整校验。
+ */
 public final class ImageFileValidator {
 
     static {
@@ -20,7 +22,9 @@ public final class ImageFileValidator {
     private ImageFileValidator() {
     }
 
-    /** 只读取图片边界，判断文件是否能被图片解码器识别。 */
+    /**
+     * 只读取图片边界，判断文件是否能被图片解码器识别。
+     */
     public static boolean validateQuick(Path imageFile) {
         if (!isNonEmptyFile(imageFile)) {
             return false;
@@ -33,21 +37,25 @@ public final class ImageFileValidator {
         }
     }
 
-    /** 只读取图片边界，判断字节是否能被图片解码器识别。 */
+    /**
+     * 只读取图片边界，判断字节是否能被图片解码器识别。
+     */
     public static boolean validateQuick(byte[] imageBytes) {
         if (imageBytes == null || imageBytes.length == 0) {
             return false;
         }
 
         try (ImageInputStream input = ImageIO.createImageInputStream(
-                new ByteArrayInputStream(imageBytes))) {
+            new ByteArrayInputStream(imageBytes))) {
             return input != null && validateQuick(input);
         } catch (IOException | RuntimeException | OutOfMemoryError error) {
             return false;
         }
     }
 
-    /** 实际解码图片并检查尺寸。 */
+    /**
+     * 实际解码图片并检查尺寸。
+     */
     public static synchronized boolean validateFull(Path imageFile) {
         if (!isNonEmptyFile(imageFile)) {
             return false;

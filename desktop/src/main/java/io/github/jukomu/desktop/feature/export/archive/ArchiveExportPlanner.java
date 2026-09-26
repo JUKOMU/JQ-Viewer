@@ -5,7 +5,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
-/** 将规范化章节和页范围转换为确定的 CBZ/ZIP 条目布局。 */
+/**
+ * 将规范化章节和页范围转换为确定的 CBZ/ZIP 条目布局。
+ */
 public final class ArchiveExportPlanner {
     private static final String MANGA = "YesAndRightToLeft";
 
@@ -13,17 +15,17 @@ public final class ArchiveExportPlanner {
     }
 
     public static Plan plan(
-            String format,
-            String mode,
-            String albumId,
-            String albumTitle,
-            String authors,
-            List<Chapter> chapters,
-            List<Path> images,
-            int volumeStart,
-            int volumeEnd,
-            int volumeIndex,
-            int volumeCount
+        String format,
+        String mode,
+        String albumId,
+        String albumTitle,
+        String authors,
+        List<Chapter> chapters,
+        List<Path> images,
+        int volumeStart,
+        int volumeEnd,
+        int volumeIndex,
+        int volumeCount
     ) {
         if (!"cbz".equals(format) && !"zip".equals(format)) {
             throw new IllegalArgumentException("归档格式必须是 cbz 或 zip");
@@ -50,10 +52,10 @@ public final class ArchiveExportPlanner {
             if ("zip".equals(format) && "merged".equals(mode)) {
                 int chapterStartInVolume = Math.max(span.start(), volumeStart);
                 name = String.format(Locale.ROOT, "%03d_%s/%s.%s",
-                        span.index() + 1, archiveSegment(span.chapter().title()),
-                        pageNumber(globalPage - chapterStartInVolume + 1,
-                                Math.min(span.end(), volumeEnd) - chapterStartInVolume),
-                        extension);
+                    span.index() + 1, archiveSegment(span.chapter().title()),
+                    pageNumber(globalPage - chapterStartInVolume + 1,
+                        Math.min(span.end(), volumeEnd) - chapterStartInVolume),
+                    extension);
             } else {
                 name = pageNumber(volumePage + 1, volumeEnd - volumeStart) + "." + extension;
             }
@@ -65,21 +67,21 @@ public final class ArchiveExportPlanner {
         byte[] comicInfo = null;
         if ("cbz".equals(format)) {
             List<ChapterSpan> covered = spans.stream()
-                    .filter(span -> span.end() > volumeStart && span.start() < volumeEnd)
-                    .toList();
+                .filter(span -> span.end() > volumeStart && span.start() < volumeEnd)
+                .toList();
             Chapter first = covered.getFirst().chapter();
             Chapter last = covered.getLast().chapter();
             boolean singleChapter = covered.size() == 1;
             String title = singleChapter ? first.title() : range(first.title(), last.title());
             String number = singleChapter ? chapterNumber(first) : range(chapterNumber(first), chapterNumber(last));
             ComicInfo info = new ComicInfo(
-                    title, albumTitle, number, authors,
-                    albumId == null || albumId.isBlank() ? null
-                            : "https://18comic.vip/album/" + albumId,
-                    pages.size(), MANGA,
-                    volumeCount > 1 ? volumeIndex : null,
-                    volumeCount > 1 ? volumeCount : null,
-                    pages);
+                title, albumTitle, number, authors,
+                albumId == null || albumId.isBlank() ? null
+                    : "https://18comic.vip/album/" + albumId,
+                pages.size(), MANGA,
+                volumeCount > 1 ? volumeIndex : null,
+                volumeCount > 1 ? volumeCount : null,
+                pages);
             comicInfo = ComicInfoCodec.serialize(info);
         }
         return new Plan(List.copyOf(entries), comicInfo, volumeEnd - volumeStart);
@@ -99,7 +101,7 @@ public final class ArchiveExportPlanner {
 
     private static ChapterSpan containing(List<ChapterSpan> spans, int page) {
         return spans.stream().filter(span -> page >= span.start() && page < span.end())
-                .findFirst().orElseThrow(() -> new IllegalArgumentException("页码没有对应章节"));
+            .findFirst().orElseThrow(() -> new IllegalArgumentException("页码没有对应章节"));
     }
 
     private static String extension(Path image) {
@@ -120,7 +122,7 @@ public final class ArchiveExportPlanner {
 
     private static String archiveSegment(String value) {
         String normalized = value == null ? "" : value.trim()
-                .replaceAll("[\\\\/:*?\"<>|\\p{Cntrl}]", "_");
+                                                 .replaceAll("[\\\\/:*?\"<>|\\p{Cntrl}]", "_");
         return normalized.isBlank() ? "章节" : normalized;
     }
 

@@ -10,7 +10,9 @@ import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.List;
 
-/** 管理下载根目录内的安全路径、清理、空间统计和完成校验。 */
+/**
+ * 管理下载根目录内的安全路径、清理、空间统计和完成校验。
+ */
 public final class DownloadFiles {
     private Path root;
 
@@ -99,14 +101,14 @@ public final class DownloadFiles {
         if (!Files.exists(directory)) return 0;
         try (var paths = Files.walk(directory)) {
             return paths.filter(Files::isRegularFile)
-                    .mapToLong(path -> {
-                        try {
-                            return Files.size(path);
-                        } catch (IOException exception) {
-                            throw failure("统计下载文件大小失败", exception);
-                        }
-                    })
-                    .sum();
+                .mapToLong(path -> {
+                    try {
+                        return Files.size(path);
+                    } catch (IOException exception) {
+                        throw failure("统计下载文件大小失败", exception);
+                    }
+                })
+                .sum();
         } catch (IOException exception) {
             throw failure("统计下载目录大小失败", exception);
         }
@@ -120,14 +122,14 @@ public final class DownloadFiles {
         }
         try (var paths = Files.walk(root)) {
             return paths.filter(Files::isRegularFile)
-                    .mapToLong(path -> {
-                        try {
-                            return Files.size(path);
-                        } catch (IOException exception) {
-                            throw failure("统计下载空间失败", exception);
-                        }
-                    })
-                    .sum();
+                .mapToLong(path -> {
+                    try {
+                        return Files.size(path);
+                    } catch (IOException exception) {
+                        throw failure("统计下载空间失败", exception);
+                    }
+                })
+                .sum();
         } catch (IOException exception) {
             throw failure("统计下载空间失败", exception);
         }
@@ -165,7 +167,7 @@ public final class DownloadFiles {
     private static void validateSegment(String value, String name) {
         if (value == null || value.isBlank()) throw new IllegalArgumentException(name + "不能为空");
         if (".".equals(value) || "..".equals(value)
-                || value.indexOf('/') >= 0 || value.indexOf('\\') >= 0 || value.indexOf('\0') >= 0) {
+            || value.indexOf('/') >= 0 || value.indexOf('\\') >= 0 || value.indexOf('\0') >= 0) {
             throw new IllegalArgumentException(name + "包含无效路径字符");
         }
     }

@@ -29,6 +29,8 @@
               :src="imageMap.get(idx + 1)!"
               class="page-image"
               alt=""
+              draggable="false"
+              @dragstart.prevent
               @error="emit('image-error', idx + 1, imageMap.get(idx + 1)!)"
             />
           </template>
@@ -507,14 +509,10 @@ function onTouchEnd(ev: TouchEvent) {
 
 function onMousePointerDown(ev: PointerEvent) {
   lastPointerType = ev.pointerType
-  if (
-    !props.enableMouseControls ||
-    ev.pointerType !== 'mouse' ||
-    ev.button !== 0 ||
-    zoomScale.value <= 1
-  ) {
+  if (!props.enableMouseControls || ev.pointerType !== 'mouse' || ev.button !== 0) {
     return
   }
+  ev.preventDefault()
   mousePointerId = ev.pointerId
   mouseStartX = ev.clientX
   mouseStartY = ev.clientY
@@ -525,12 +523,16 @@ function onMousePointerDown(ev: PointerEvent) {
 }
 
 function onMousePointerMove(ev: PointerEvent) {
-  if (mousePointerId !== ev.pointerId || zoomScale.value <= 1) return
+  if (mousePointerId !== ev.pointerId) return
   const dx = ev.clientX - mouseStartX
   const dy = ev.clientY - mouseStartY
   if (Math.abs(dx) > 3 || Math.abs(dy) > 3) mouseDragged = true
   if (!mouseDragged) return
   ev.preventDefault()
+  if (zoomScale.value <= 1) {
+    offsetX.value = dx
+    return
+  }
   const width = slotWidth.value || containerRef.value?.clientWidth || window.innerWidth
   const height = containerRef.value?.clientHeight || window.innerHeight
   const minTx = width - width * zoomScale.value
@@ -541,18 +543,29 @@ function onMousePointerMove(ev: PointerEvent) {
 
 function onMousePointerUp(ev: PointerEvent) {
   if (mousePointerId !== ev.pointerId) return
+  if (zoomScale.value <= 1 && mouseDragged) {
+    const dx = ev.clientX - mouseStartX
+    if (Math.abs(dx) > SWIPE_THRESHOLD) {
+      if (dx > 0 && displayIndex.value > 0) snapTo(displayIndex.value - 1)
+      else if (dx < 0 && displayIndex.value < props.totalCount - 1) snapTo(displayIndex.value + 1)
+      else snapBack()
+    } else {
+      snapBack()
+    }
+  }
   containerRef.value?.releasePointerCapture(ev.pointerId)
   mousePointerId = null
 }
 
 function onMouseClick(ev: MouseEvent) {
-  if (
-    !props.enableMouseControls ||
-    lastPointerType !== 'mouse' ||
-    ev.button !== 0 ||
-    mouseDragged
-  ) {
+  if (!props.enableMouseControls || lastPointerType !== 'mouse' || ev.button !== 0) {
     mouseDragged = false
+    return
+  }
+  if (mouseDragged) {
+    mouseDragged = false
+    ev.preventDefault()
+    ev.stopPropagation()
     return
   }
   emit('toggle-toolbar')

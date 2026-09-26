@@ -99,6 +99,91 @@ describe('VerticalScrollView', () => {
     wrapper.unmount()
   })
 
+  test('图片禁用原生拖动，鼠标缩放拖拽按下时取消默认行为', async () => {
+    const wrapper = mount(VerticalScrollView, {
+      props: {
+        imageMap: new Map([[1, 'image-1']]),
+        totalCount: 1,
+        currentIndex: 0,
+        enableMouseControls: true,
+      },
+    })
+    await flushAnimationFrames()
+
+    const container = wrapper.get('.vertical-container')
+    Object.defineProperties(container.element, {
+      clientHeight: { configurable: true, value: 400 },
+      clientWidth: { configurable: true, value: 300 },
+      scrollTop: { configurable: true, value: 0, writable: true },
+      setPointerCapture: { configurable: true, value: vi.fn() },
+    })
+    wrapper.vm.zoomIn()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.get('.reader-image').attributes('draggable')).toBe('false')
+    const dragStart = new Event('dragstart', { bubbles: true, cancelable: true })
+    wrapper.get('.reader-image').element.dispatchEvent(dragStart)
+    expect(dragStart.defaultPrevented).toBe(true)
+
+    const event = new Event('pointerdown', { bubbles: true, cancelable: true }) as PointerEvent
+    Object.defineProperties(event, {
+      pointerId: { value: 1 },
+      pointerType: { value: 'mouse' },
+      button: { value: 0 },
+      clientX: { value: 100 },
+      clientY: { value: 100 },
+    })
+    container.element.dispatchEvent(event)
+
+    expect(event.defaultPrevented).toBe(true)
+    wrapper.unmount()
+  })
+
+  test('1 倍鼠标拖拽滚动页面并吞掉点击', async () => {
+    const wrapper = mount(VerticalScrollView, {
+      props: {
+        imageMap: new Map([[1, 'image-1']]),
+        totalCount: 1,
+        currentIndex: 0,
+        enableMouseControls: true,
+      },
+    })
+    await flushAnimationFrames()
+
+    const container = wrapper.get('.vertical-container')
+    Object.defineProperties(container.element, {
+      clientHeight: { configurable: true, value: 400 },
+      clientWidth: { configurable: true, value: 300 },
+      scrollTop: { configurable: true, value: 300, writable: true },
+      setPointerCapture: { configurable: true, value: vi.fn() },
+      releasePointerCapture: { configurable: true, value: vi.fn() },
+    })
+
+    const createPointerEvent = (type: string, clientY: number) => {
+      const event = new Event(type, { bubbles: true, cancelable: true }) as PointerEvent
+      Object.defineProperties(event, {
+        pointerId: { value: 1 },
+        pointerType: { value: 'mouse' },
+        button: { value: 0 },
+        clientX: { value: 150 },
+        clientY: { value: clientY },
+      })
+      return event
+    }
+
+    container.element.dispatchEvent(createPointerEvent('pointerdown', 200))
+    const move = createPointerEvent('pointermove', 120)
+    container.element.dispatchEvent(move)
+    expect(move.defaultPrevented).toBe(true)
+    expect(container.element.scrollTop).toBe(380)
+    container.element.dispatchEvent(createPointerEvent('pointerup', 120))
+
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 })
+    container.element.dispatchEvent(click)
+    expect(click.defaultPrevented).toBe(true)
+    wrapper.unmount()
+  })
+
   test('双击按 1 倍、2 倍、3 倍、5 倍循环缩放', async () => {
     let now = 1000
     vi.spyOn(Date, 'now').mockImplementation(() => now)

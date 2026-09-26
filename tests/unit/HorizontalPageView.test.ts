@@ -31,7 +31,7 @@ afterEach(() => {
   lastResizeObserver = null
 })
 
-function mountView(currentIndex = 1, width = 300) {
+function mountView(currentIndex = 1, width = 300, enableMouseControls = false) {
   const wrapper = mount(HorizontalPageView, {
     props: {
       imageMap: new Map([
@@ -41,6 +41,7 @@ function mountView(currentIndex = 1, width = 300) {
       ]),
       totalCount: 3,
       currentIndex,
+      enableMouseControls,
     },
   })
   const container = wrapper.get('.horizontal-container')
@@ -125,6 +126,70 @@ describe('HorizontalPageView', () => {
     wrapper.vm.resetZoom()
     await wrapper.vm.$nextTick()
     expect(wrapper.findAll('.page-content').every((item) => !item.attributes('style'))).toBe(true)
+    wrapper.unmount()
+  })
+
+  test('图片禁用原生拖动，鼠标缩放拖拽按下时取消默认行为', async () => {
+    const { wrapper, container } = mountView(0, 300, true)
+    Object.defineProperty(container.element, 'setPointerCapture', {
+      configurable: true,
+      value: vi.fn(),
+    })
+    wrapper.vm.zoomIn()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.get('.page-image').attributes('draggable')).toBe('false')
+    const dragStart = new Event('dragstart', { bubbles: true, cancelable: true })
+    wrapper.get('.page-image').element.dispatchEvent(dragStart)
+    expect(dragStart.defaultPrevented).toBe(true)
+
+    const event = new Event('pointerdown', { bubbles: true, cancelable: true }) as PointerEvent
+    Object.defineProperties(event, {
+      pointerId: { value: 1 },
+      pointerType: { value: 'mouse' },
+      button: { value: 0 },
+      clientX: { value: 100 },
+      clientY: { value: 100 },
+    })
+    container.element.dispatchEvent(event)
+
+    expect(event.defaultPrevented).toBe(true)
+    wrapper.unmount()
+  })
+
+  test('1 倍鼠标拖拽按阈值翻页并吞掉点击', async () => {
+    const { wrapper, container } = mountView(1, 300, true)
+    resizeObserverTrigger?.()
+    await wrapper.vm.$nextTick()
+    Object.defineProperties(container.element, {
+      setPointerCapture: { configurable: true, value: vi.fn() },
+      releasePointerCapture: { configurable: true, value: vi.fn() },
+    })
+
+    const createPointerEvent = (type: string, clientX: number) => {
+      const event = new Event(type, { bubbles: true, cancelable: true }) as PointerEvent
+      Object.defineProperties(event, {
+        pointerId: { value: 1 },
+        pointerType: { value: 'mouse' },
+        button: { value: 0 },
+        clientX: { value: clientX },
+        clientY: { value: 200 },
+      })
+      return event
+    }
+
+    container.element.dispatchEvent(createPointerEvent('pointerdown', 150))
+    const move = createPointerEvent('pointermove', 70)
+    container.element.dispatchEvent(move)
+    expect(move.defaultPrevented).toBe(true)
+    container.element.dispatchEvent(createPointerEvent('pointerup', 70))
+    await wrapper.vm.$nextTick()
+
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 })
+    container.element.dispatchEvent(click)
+    expect(click.defaultPrevented).toBe(true)
+    expect(wrapper.get('.strip').attributes('style')).toContain('translate3d(-600px, 0, 0)')
+    expect(wrapper.emitted('toggle-toolbar')).toBeUndefined()
     wrapper.unmount()
   })
 

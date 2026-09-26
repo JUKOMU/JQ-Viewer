@@ -41,6 +41,8 @@
               :src="item.dataUrl"
               class="reader-image"
               alt=""
+              draggable="false"
+              @dragstart.prevent
               @load="onImageLoad(item.index, $event)"
               @error="emit('image-error', item.index + 1, item.dataUrl)"
             />
@@ -706,16 +708,12 @@ function onTE(ev: TouchEvent) {
 }
 
 function onMousePointerDown(ev: PointerEvent) {
-  if (
-    !props.enableMouseControls ||
-    ev.pointerType !== 'mouse' ||
-    ev.button !== 0 ||
-    zoomScale.value <= 1
-  ) {
+  if (!props.enableMouseControls || ev.pointerType !== 'mouse' || ev.button !== 0) {
     return
   }
   const el = containerRef.value
   if (!el) return
+  ev.preventDefault()
   mousePointerId = ev.pointerId
   mouseStartX = ev.clientX
   mouseStartY = ev.clientY
@@ -727,7 +725,7 @@ function onMousePointerDown(ev: PointerEvent) {
 }
 
 function onMousePointerMove(ev: PointerEvent) {
-  if (mousePointerId !== ev.pointerId || zoomScale.value <= 1) return
+  if (mousePointerId !== ev.pointerId) return
   const dx = ev.clientX - mouseStartX
   const dy = ev.clientY - mouseStartY
   if (Math.abs(dx) > 3 || Math.abs(dy) > 3) mouseDragged = true
@@ -735,6 +733,11 @@ function onMousePointerMove(ev: PointerEvent) {
   ev.preventDefault()
   const el = containerRef.value
   if (!el) return
+  if (zoomScale.value <= 1) {
+    el.scrollTop = mouseStartScrollTop - dy
+    onScroll()
+    return
+  }
   const width = containerWidth.value || el.clientWidth || window.innerWidth
   const height = containerHeight.value || el.clientHeight || window.innerHeight
   const contentHeight = Math.max(innerHeight.value, height)

@@ -86,6 +86,7 @@ describe('runtime', () => {
       'setDownloadConcurrency',
       'setReaderPreloadPages',
       'setReaderDisplayMode',
+      'setReaderWidthPercent',
       'setReaderAutoShowToolbarAtEnd',
       'downloadChapter',
       'getDownloadTasks',

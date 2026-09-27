@@ -32,6 +32,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@ionic/vue', () => ({
+  useBackButton: vi.fn(),
   IonContent: defineComponent({
     name: 'IonContent',
     setup:

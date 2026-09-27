@@ -60,6 +60,7 @@ vi.mock('@ionic/vue', async () => {
       mocks.gestureConfig = config
       return { destroy: vi.fn(), enable: vi.fn() }
     }),
+    useBackButton: vi.fn(),
     IonContent: withSlot('IonContent'),
     IonHeader: withSlot('IonHeader'),
     IonIcon: withSlot('IonIcon'),

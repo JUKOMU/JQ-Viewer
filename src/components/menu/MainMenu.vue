@@ -212,6 +212,7 @@ import {
   IonLabel,
   IonList,
   IonSpinner,
+  useBackButton,
 } from '@ionic/vue'
 import type { ListenerHandle } from '@/runtime/BackendEvents'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
@@ -845,12 +846,10 @@ const updateContentAccessibility = (open: boolean) => {
   previouslyFocused = null
 }
 
-const handleKeyDown = (event: KeyboardEvent) => {
-  if (event.key === 'Escape' && leftMenuOpen.value) {
-    event.preventDefault()
-    closeMenu()
-  }
-}
+useBackButton(10, (processNextHandler) => {
+  if (leftMenuOpen.value) closeMenu()
+  else processNextHandler()
+})
 
 function goUser() {
   isMenuNavigation.value = true
@@ -892,7 +891,6 @@ onMounted(() => {
   startWideMenuTracking()
   void setupTaskProgress()
   setupGesture()
-  document.addEventListener('keydown', handleKeyDown)
 })
 
 onUnmounted(() => {
@@ -917,7 +915,6 @@ onUnmounted(() => {
   downloadEventSequence = 0
   pdfEventSequence = 0
   gesture?.destroy()
-  document.removeEventListener('keydown', handleKeyDown)
   stopWideMenuTracking()
   updateContentAccessibility(false)
 })

@@ -35,7 +35,7 @@ import '@ionic/vue/css/palettes/dark.system.css'
 /* Theme variables */
 import './theme/variables.css'
 
-const app = createApp(App).use(IonicVue).use(router)
+const app = createApp(App).use(IonicVue, { hardwareBackButton: true }).use(router)
 
 const runtimePromise =
   import.meta.env.MODE === 'desktop'

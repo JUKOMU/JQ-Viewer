@@ -54,6 +54,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.*;
@@ -381,24 +383,22 @@ public final class Backend implements AutoCloseable {
                 new UpdatePluginHandler(updateRequests, startedUpdateService));
             PdfResourceService pdfResources = new PdfResourceService();
             candidate = Javalin.create(config -> {
-                config.jetty.host = LOOPBACK_HOST;
-                config.jetty.port = 0;
-                config.http.asyncTimeout = 30_000;
-                config.staticFiles.add("/static", Location.CLASSPATH);
-                for (String path : SPA_PATHS) {
-                    config.spaRoot.addFile(path, "static/index.html", Location.CLASSPATH);
-                }
-                config.routes.get("/", context -> context.redirect("/home"));
-                PluginMethodRoutes.register(config.routes, plugin);
-                config.routes.sse("/events", eventHub::connect);
-                registerImageRoute(config, imageService, downloadService,
-                    "image", "/image/{photoId}/{sortOrder}");
-                registerImageRoute(config, imageService, downloadService,
-                    "thumb", "/thumb/{photoId}/{sortOrder}");
-                registerPdfRoutes(config, pdfResources, pdfPageCache);
-                registerCbzRoutes(config, cbzDocuments);
+                configureApplication(config, preferredBackendPort(), plugin, eventHub,
+                    imageService, downloadService, pdfResources, pdfPageCache, cbzDocuments);
             });
-            candidate.start();
+            int preferredPort = preferredBackendPort();
+            try {
+                candidate.start();
+            } catch (Exception | Error firstStartFailure) {
+                if (preferredPort <= 0) {
+                    throw firstStartFailure;
+                }
+                candidate.stop();
+                candidate = Javalin.create(config -> configureApplication(config, 0, plugin,
+                    eventHub, imageService, downloadService, pdfResources, pdfPageCache,
+                    cbzDocuments));
+                candidate.start();
+            }
             int port = candidate.port();
             if (port <= 0) {
                 throw new IllegalStateException("Javalin did not expose an operating-system port");
@@ -417,6 +417,7 @@ public final class Backend implements AutoCloseable {
             this.updateService = startedUpdateService;
             this.homeUrl = URI.create("http://" + LOOPBACK_HOST + ":" + port + "/home");
             this.running = true;
+            persistBackendPort(port);
             LOGGER.info("本地后端监听于 {}", homeUrl);
             return homeUrl;
         } catch (Exception | Error exception) {
@@ -465,6 +466,53 @@ public final class Backend implements AutoCloseable {
                 step("数据库", database::close)
             );
             throw exception;
+        }
+    }
+
+    private void configureApplication(
+        io.javalin.config.JavalinConfig config,
+        int port,
+        Plugin plugin,
+        EventHub eventHub,
+        ImageService imageService,
+        DownloadService downloadService,
+        PdfResourceService pdfResources,
+        PdfPageCache pdfPageCache,
+        CbzDocumentService cbzDocuments
+    ) {
+        config.jetty.host = LOOPBACK_HOST;
+        config.jetty.port = port;
+        config.http.asyncTimeout = 30_000;
+        config.staticFiles.add("/static", Location.CLASSPATH);
+        for (String path : SPA_PATHS) {
+            config.spaRoot.addFile(path, "static/index.html", Location.CLASSPATH);
+        }
+        config.routes.get("/", context -> context.redirect("/home"));
+        PluginMethodRoutes.register(config.routes, plugin);
+        config.routes.sse("/events", eventHub::connect);
+        registerImageRoute(config, imageService, downloadService,
+            "image", "/image/{photoId}/{sortOrder}");
+        registerImageRoute(config, imageService, downloadService,
+            "thumb", "/thumb/{photoId}/{sortOrder}");
+        registerPdfRoutes(config, pdfResources, pdfPageCache);
+        registerCbzRoutes(config, cbzDocuments);
+    }
+
+    private int preferredBackendPort() {
+        try {
+            String value = Files.readString(paths.backendPortPath(), StandardCharsets.UTF_8).trim();
+            int port = Integer.parseInt(value);
+            return port > 0 && port <= 65_535 ? port : 0;
+        } catch (Exception ignored) {
+            return 0;
+        }
+    }
+
+    private void persistBackendPort(int port) {
+        try {
+            Files.writeString(paths.backendPortPath(), Integer.toString(port), StandardCharsets.UTF_8);
+        } catch (Exception exception) {
+            LOGGER.warn("无法保存本地后端端口 {}", port, exception);
         }
     }
 

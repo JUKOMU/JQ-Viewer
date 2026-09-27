@@ -132,23 +132,23 @@ public class JqViewerPlugin extends Plugin {
         historyHandler = new HistoryPluginHandler(historyStore);
         FavoriteStore favoriteStore = FavoriteStore.getInstance(ctx);
         favoriteHandler = new FavoritePluginHandler(favoriteStore);
-        LocalFileStore.getInstance(ctx);
         try {
-            PdfPageCache.getInstance(ctx);
-        } catch (RuntimeException error) {
-            Log.w(TAG, "初始化 PDF 页面缓存失败，继续启动", error);
-        }
-        ExportService exportService = ExportService.getInstance(ctx);
-        this.exportEventSink = snapshot -> {
-            if (snapshot == null) return;
+            LocalFileStore.getInstance(ctx);
             try {
-                notifyListeners("exportProgress", JSObject.fromJSONObject(snapshot));
-            } catch (Exception error) {
-                Log.w(TAG, "发布文件导出进度失败", error);
+                PdfPageCache.getInstance(ctx);
+            } catch (RuntimeException error) {
+                Log.w(TAG, "初始化 PDF 页面缓存失败，继续启动", error);
             }
-        };
-        exportService.attachEventSink(exportEventSink);
-        try {
+            ExportService exportService = ExportService.getInstance(ctx);
+            this.exportEventSink = snapshot -> {
+                if (snapshot == null) return;
+                try {
+                    notifyListeners("exportProgress", JSObject.fromJSONObject(snapshot));
+                } catch (Exception error) {
+                    Log.w(TAG, "发布文件导出进度失败", error);
+                }
+            };
+            exportService.attachEventSink(exportEventSink);
             exportService.reconcileOnStartup();
         } catch (RuntimeException error) {
             localFileStartupError = error;

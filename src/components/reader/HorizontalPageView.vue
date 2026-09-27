@@ -541,14 +541,14 @@ function onTouchEnd(ev: TouchEvent) {
 
   if (elapsed < 300) {
     const sw = slotWidth.value || window.innerWidth
-    if (ex < sw * 0.3) {
+    if (ex < sw * 0.2) {
       if (displayIndex.value > 0) {
         resetZoom()
         emit('update:currentIndex', displayIndex.value - 1)
         displayIndex.value--
         offsetX.value = 0
       }
-    } else if (ex > sw * 0.6) {
+    } else if (ex > sw * 0.8) {
       if (displayIndex.value < props.totalCount - 1) {
         resetZoom()
         emit('update:currentIndex', displayIndex.value + 1)

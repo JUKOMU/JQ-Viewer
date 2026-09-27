@@ -109,6 +109,8 @@ export function createBackendClient(
       call<'setReaderPreloadPages'>('setReaderPreloadPages', options),
     setReaderDisplayMode: (options: Parameters<JmcomicClient['setReaderDisplayMode']>[0]) =>
       call<'setReaderDisplayMode'>('setReaderDisplayMode', options),
+    setReaderWidthPercent: (options: Parameters<JmcomicClient['setReaderWidthPercent']>[0]) =>
+      call<'setReaderWidthPercent'>('setReaderWidthPercent', options),
     setReaderAutoShowToolbarAtEnd: (
       options: Parameters<JmcomicClient['setReaderAutoShowToolbarAtEnd']>[0],
     ) => call<'setReaderAutoShowToolbarAtEnd'>('setReaderAutoShowToolbarAtEnd', options),

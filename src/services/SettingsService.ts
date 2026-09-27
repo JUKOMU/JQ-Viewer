@@ -20,6 +20,7 @@ let cachedReaderBrightness = -1
 let cachedReaderKeepScreenOn = true
 let cachedReaderVolumeNavigation = false
 let cachedReaderAutoShowToolbarAtEnd = true
+let cachedReaderWidthPercent: number | null = null
 let confirmedPreloadConcurrency = 6
 let confirmedDownloadConcurrency = 6
 let preloadConcurrencySaveVersion = 0
@@ -46,6 +47,7 @@ export async function initSettings(): Promise<void> {
     cachedReaderKeepScreenOn = all.readerKeepScreenOn ?? true
     cachedReaderVolumeNavigation = all.readerVolumeNavigation ?? false
     cachedReaderAutoShowToolbarAtEnd = all.readerAutoShowToolbarAtEnd ?? true
+    cachedReaderWidthPercent = normalizeReaderWidthPercent(all.readerWidthPercent)
     settingsLoaded = true
   } catch (e) {
     // 使用默认值（已在缓存变量中预设）
@@ -54,6 +56,13 @@ export async function initSettings(): Promise<void> {
 }
 
 export const SettingsStore = {
+  getReaderWidthPercent(): number | null {
+    return cachedReaderWidthPercent
+  },
+  setReaderWidthPercent(value: number | null) {
+    cachedReaderWidthPercent = normalizeReaderWidthPercent(value)
+  },
+
   // ---- 阅读：预加载页数 ----
   getReaderPreloadPages(): number {
     return cachedReaderPreloadPages
@@ -149,6 +158,14 @@ export const SettingsStore = {
   setReaderAutoShowToolbarAtEnd(enabled: boolean) {
     cachedReaderAutoShowToolbarAtEnd = enabled
   },
+}
+
+function normalizeReaderWidthPercent(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null
+  const normalized = Number(value)
+  return Number.isFinite(normalized) && normalized >= 0 && normalized <= 100
+    ? normalized
+    : null
 }
 
 export function persistPreloadConcurrency(n: number): Promise<void> {

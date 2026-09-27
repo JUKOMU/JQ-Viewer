@@ -1,7 +1,13 @@
 <template>
-  <div ref="containerRef" class="horizontal-container" @click="onMouseClick">
+  <div ref="containerRef" class="horizontal-container" @click="onMouseClick" @wheel="onWheel">
     <div class="strip" :style="stripStyle">
-      <div v-for="idx in visibleIndices" :key="idx" class="page-slot" :style="slotStyle(idx)">
+      <div
+        v-for="idx in visibleIndices"
+        :key="idx"
+        class="page-slot"
+        :data-index="idx"
+        :style="slotStyle(idx)"
+      >
         <div class="page-content" :style="idx === displayIndex ? contentStyle : undefined">
           <template v-if="failedSortOrders.has(idx + 1)">
             <div class="image-error-state">
@@ -28,6 +34,7 @@
             <img
               :src="imageMap.get(idx + 1)!"
               class="page-image"
+              :style="imageStyle"
               alt=""
               draggable="false"
               @dragstart.prevent
@@ -59,6 +66,7 @@ const props = withDefaults(
     retryingSortOrders?: Set<number>
     totalCount: number
     currentIndex: number
+    widthPercent?: number | null
     enableMouseControls?: boolean
   }>(),
   {
@@ -67,6 +75,7 @@ const props = withDefaults(
     allowRetry: true,
     retryingSortOrders: () => new Set<number>(),
     enableMouseControls: false,
+    widthPercent: null,
   },
 )
 
@@ -95,13 +104,63 @@ const offsetX = ref(0)
 const isAnimating = ref(false)
 const slotWidth = ref(0)
 
+const slotHeight = ref(0)
+const imageStyle = computed(() => {
+  if (props.widthPercent !== null) {
+    return { width: `${props.widthPercent}%`, height: 'auto', maxHeight: 'none', flexShrink: 0 }
+  }
+  return props.enableMouseControls ? { width: '100%', height: '100%' } : undefined
+})
+
+function getImageSize() {
+  const width = slotWidth.value || containerRef.value?.clientWidth || 0
+  const height = slotHeight.value || containerRef.value?.clientHeight || 0
+  const img = containerRef.value?.querySelector<HTMLImageElement>(
+    `[data-index="${displayIndex.value}"] .page-image`,
+  )
+  if (props.widthPercent === null || !img?.naturalWidth) return { width, height }
+  const imageWidth = (width * props.widthPercent) / 100
+  return { width: imageWidth, height: (imageWidth * img.naturalHeight) / img.naturalWidth }
+}
+
+function clampPan(tx: number, ty: number) {
+  const width = slotWidth.value || containerRef.value?.clientWidth || 0
+  const height = slotHeight.value || containerRef.value?.clientHeight || 0
+  const size = getImageSize()
+  const scale = zoomScale.value
+  const bound = (value: number, viewport: number, image: number) => {
+    const center = (viewport * (1 - scale)) / 2
+    const overflow = Math.max(0, (image * scale - viewport) / 2)
+    return Math.max(center - overflow, Math.min(center + overflow, value))
+  }
+  zoomTx.value = bound(tx, width, size.width)
+  zoomTy.value = bound(ty, height, size.height)
+}
+
+function hasVerticalOverflow() {
+  return props.widthPercent !== null && getImageSize().height > slotHeight.value
+}
+
+function onWheel(event: WheelEvent) {
+  if (!props.enableMouseControls || !hasVerticalOverflow() || event.ctrlKey) return
+  event.preventDefault()
+  const delta =
+    event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? slotHeight.value : 1)
+  clampPan(zoomTx.value, zoomTy.value - delta)
+}
+
+watch(
+  () => props.widthPercent,
+  () => resetZoom(),
+)
+
 // ---- 缩放状态 ----
 const zoomScale = ref(1)
 const zoomTx = ref(0)
 const zoomTy = ref(0)
 
 const contentStyle = computed(() => {
-  if (zoomScale.value <= 1) return undefined
+  if (zoomScale.value <= 1 && zoomTy.value === 0) return undefined
   return {
     transform: `translate(${zoomTx.value}px, ${zoomTy.value}px) scale(${zoomScale.value})`,
     transformOrigin: '0 0',
@@ -135,6 +194,7 @@ function cycleDoubleTapZoom(relX: number, relY: number) {
   zoomScale.value = nextScale
   zoomTx.value = relX * (1 - ratio) + zoomTx.value * ratio
   zoomTy.value = relY * (1 - ratio) + zoomTy.value * ratio
+  if (props.widthPercent !== null) clampPan(zoomTx.value, zoomTy.value)
 }
 
 function nextZoomScale() {
@@ -158,6 +218,7 @@ function zoomAtViewportCenter(scale: number) {
   zoomScale.value = scale
   zoomTx.value = relX * (1 - ratio) + zoomTx.value * ratio
   zoomTy.value = relY * (1 - ratio) + zoomTy.value * ratio
+  if (props.widthPercent !== null) clampPan(zoomTx.value, zoomTy.value)
 }
 
 function zoomIn() {
@@ -273,8 +334,10 @@ onUnmounted(() => {
 
 function updateSlotWidth() {
   const nextWidth = containerRef.value?.clientWidth ?? 0
-  const changed = nextWidth !== slotWidth.value
+  const nextHeight = containerRef.value?.clientHeight ?? 0
+  const changed = nextWidth !== slotWidth.value || nextHeight !== slotHeight.value
   slotWidth.value = nextWidth
+  slotHeight.value = nextHeight
   return changed
 }
 
@@ -289,6 +352,7 @@ function refreshAfterResize() {
   clearAnimationTimer()
   isAnimating.value = false
   offsetX.value = 0
+  clampPan(zoomTx.value, zoomTy.value)
 }
 
 function slotStyle(idx: number) {
@@ -344,7 +408,7 @@ function onTouchStart(ev: TouchEvent) {
   startTime = Date.now()
   moved = false
 
-  if (zoomScale.value > 1) {
+  if (zoomScale.value > 1 || hasVerticalOverflow()) {
     startTx = zoomTx.value
     startTy = zoomTy.value
   }
@@ -361,6 +425,7 @@ function onTouchMove(ev: TouchEvent) {
     zoomScale.value = ns
     zoomTx.value = pinchRelX * (1 - ratio) + startTx * ratio
     zoomTy.value = pinchRelY * (1 - ratio) + startTy * ratio
+    if (props.widthPercent !== null) clampPan(zoomTx.value, zoomTy.value)
     moved = true
     return
   }
@@ -370,16 +435,19 @@ function onTouchMove(ev: TouchEvent) {
     const dx = ev.touches[0].clientX - startX
     const dy = ev.touches[0].clientY - startY
     if (Math.abs(dx) > 2 || Math.abs(dy) > 2) moved = true
-    const cw = slotWidth.value
-    const ch = containerRef.value?.clientHeight ?? 0
-    const minTx = cw - cw * zoomScale.value
-    const minTy = ch - ch * zoomScale.value
-    zoomTx.value = Math.max(minTx, Math.min(0, startTx + dx))
-    zoomTy.value = Math.max(minTy, Math.min(0, startTy + dy))
+    clampPan(startTx + dx, startTy + dy)
     return
   }
 
   const dx = ev.touches[0].clientX - startX
+  const dy = ev.touches[0].clientY - startY
+  if (hasVerticalOverflow() && Math.abs(dy) > Math.abs(dx)) {
+    ev.preventDefault()
+    if (Math.abs(dy) > 6) moved = true
+    offsetX.value = 0
+    clampPan(zoomTx.value, startTy + dy)
+    return
+  }
   if (Math.abs(dx) > 6) moved = true
   offsetX.value = dx
 }
@@ -456,7 +524,11 @@ function onTouchEnd(ev: TouchEvent) {
   const dx = ex - startX
   const elapsed = Date.now() - startTime
 
-  if (moved && Math.abs(dx) > SWIPE_THRESHOLD) {
+  if (
+    moved &&
+    Math.abs(dx) > SWIPE_THRESHOLD &&
+    (!hasVerticalOverflow() || Math.abs(dx) > Math.abs(ey - startY))
+  ) {
     if (dx > 0 && displayIndex.value > 0) snapTo(displayIndex.value - 1)
     else if (dx < 0 && displayIndex.value < props.totalCount - 1) snapTo(displayIndex.value + 1)
     else snapBack()
@@ -530,22 +602,25 @@ function onMousePointerMove(ev: PointerEvent) {
   if (!mouseDragged) return
   ev.preventDefault()
   if (zoomScale.value <= 1) {
-    offsetX.value = dx
+    if (hasVerticalOverflow() && Math.abs(dy) > Math.abs(dx)) {
+      offsetX.value = 0
+      clampPan(zoomTx.value, mouseStartTy + dy)
+    } else {
+      offsetX.value = dx
+    }
     return
   }
-  const width = slotWidth.value || containerRef.value?.clientWidth || window.innerWidth
-  const height = containerRef.value?.clientHeight || window.innerHeight
-  const minTx = width - width * zoomScale.value
-  const minTy = height - height * zoomScale.value
-  zoomTx.value = Math.max(minTx, Math.min(0, mouseStartTx + dx))
-  zoomTy.value = Math.max(minTy, Math.min(0, mouseStartTy + dy))
+  clampPan(mouseStartTx + dx, mouseStartTy + dy)
 }
 
 function onMousePointerUp(ev: PointerEvent) {
   if (mousePointerId !== ev.pointerId) return
   if (zoomScale.value <= 1 && mouseDragged) {
     const dx = ev.clientX - mouseStartX
-    if (Math.abs(dx) > SWIPE_THRESHOLD) {
+    if (
+      Math.abs(dx) > SWIPE_THRESHOLD &&
+      (!hasVerticalOverflow() || Math.abs(dx) > Math.abs(ev.clientY - mouseStartY))
+    ) {
       if (dx > 0 && displayIndex.value > 0) snapTo(displayIndex.value - 1)
       else if (dx < 0 && displayIndex.value < props.totalCount - 1) snapTo(displayIndex.value + 1)
       else snapBack()

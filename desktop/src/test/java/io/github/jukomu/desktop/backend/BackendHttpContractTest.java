@@ -178,12 +178,15 @@ class BackendHttpContractTest {
             assertOk(post(http, base, requestedMethods, "setReaderPreloadPages", "{\"n\":10}"));
             assertOk(post(http, base, requestedMethods, "setReaderDisplayMode",
                     "{\"mode\":\"horizontal\"}"));
+            assertOk(post(http, base, requestedMethods, "setReaderWidthPercent",
+                    "{\"value\":75}"));
             assertOk(post(http, base, requestedMethods, "setReaderAutoShowToolbarAtEnd",
                     "{\"enabled\":false}"));
             assertOk(post(http, base, requestedMethods, "setOcrEnabled",
                     "{\"enabled\":true}"));
             ObjectNode settings = body(post(http, base, requestedMethods, "getAllSettings", "{}"));
             assertTrue(settings.path("ocrEnabled").asBoolean());
+            assertEquals(75, settings.path("readerWidthPercent").asInt());
             assertOk(post(http, base, requestedMethods, "setDownloadPublic", "{\"open\":false}"));
             ObjectNode downloadLocation = body(post(
                     http, base, requestedMethods, "getDownloadPublic", "{}"));

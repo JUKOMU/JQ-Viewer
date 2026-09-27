@@ -53,6 +53,10 @@ public final class SettingsPluginHandler {
             Request.requiredText(request.mode(), "mode")));
     }
 
+    public void setReaderWidthPercent(Context context) {
+        settingsRequests.run(context, WidthPercentRequest.class, request -> settings.setReaderWidthPercent(request.value()));
+    }
+
     public void setReaderAutoShowToolbarAtEnd(Context context) {
         settingsRequests.run(context, BooleanSettingRequest.class, request -> settings.setAutoShow(
             Request.bool(request.enabled(), true)));

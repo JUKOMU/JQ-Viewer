@@ -72,7 +72,8 @@ public final class SettingsService {
             -1,
             true,
             false,
-            bool("reader_auto_show_toolbar_at_end", true)
+            bool("reader_auto_show_toolbar_at_end", true),
+            readerWidthPercent()
         );
     }
 
@@ -194,6 +195,26 @@ public final class SettingsService {
     public synchronized SuccessResponse setAutoShow(boolean value) {
         put("reader_auto_show_toolbar_at_end", value);
         return SuccessResponse.ok();
+    }
+
+    public synchronized SuccessResponse setReaderWidthPercent(Integer value) {
+        if (value != null && (value < 0 || value > 100)) {
+            throw badRequest("value必须在0到100之间或为空");
+        }
+        if (value == null) delete("reader_width_percent");
+        else put("reader_width_percent", value);
+        return SuccessResponse.ok();
+    }
+
+    private Integer readerWidthPercent() {
+        String value = text("reader_width_percent", null);
+        if (value == null) return null;
+        try {
+            int parsed = Integer.parseInt(value);
+            return parsed >= 0 && parsed <= 100 ? parsed : null;
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
     }
 
     public synchronized SuccessResponse setOcrEnabled(boolean value) {

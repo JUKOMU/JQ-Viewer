@@ -20,6 +20,7 @@ public record SettingsResponse(
     int readerBrightness,
     boolean readerKeepScreenOn,
     boolean readerVolumeNavigation,
-    boolean readerAutoShowToolbarAtEnd
+    boolean readerAutoShowToolbarAtEnd,
+    Integer readerWidthPercent
 ) {
 }

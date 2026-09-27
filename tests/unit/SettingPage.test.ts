@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   getDownloadPublic: vi.fn(),
   setDownloadPublic: vi.fn(),
   requestManageStorage: vi.fn(),
+  setReaderWidthPercent: vi.fn(),
   readerCapabilities: {
     orientation: { available: true, api: {} },
     brightness: { available: true, api: {} },
@@ -62,6 +63,7 @@ vi.mock('@/services/JmcomicService', () => ({
     getExternalStoragePath: vi.fn().mockResolvedValue({ path: '/storage/emulated/0/' }),
     getDownloadPublic: mocks.getDownloadPublic,
     setDownloadPublic: mocks.setDownloadPublic,
+    setReaderWidthPercent: mocks.setReaderWidthPercent,
     requestManageStorage: mocks.requestManageStorage,
     addRelocationProgressListener: vi.fn().mockResolvedValue({ remove: vi.fn() }),
   },
@@ -93,6 +95,7 @@ vi.mock('@/services/SettingsService', () => ({
     getReaderAutoShowToolbarAtEnd: vi.fn(() => true),
     getReaderBrightness: vi.fn(() => -1),
     getReaderDisplayMode: vi.fn(() => 'vertical'),
+    getReaderWidthPercent: vi.fn(() => null),
     getReaderKeepScreenOn: vi.fn(() => false),
     getReaderPreloadPages: vi.fn(() => 10),
     getReaderScreenOrientation: vi.fn(() => 'auto'),
@@ -103,6 +106,7 @@ vi.mock('@/services/SettingsService', () => ({
     setReaderAutoShowToolbarAtEnd: vi.fn(),
     setReaderBrightness: vi.fn(),
     setReaderDisplayMode: vi.fn(),
+    setReaderWidthPercent: vi.fn(),
     setReaderKeepScreenOn: vi.fn(),
     setReaderPreloadPages: vi.fn(),
     setReaderScreenOrientation: vi.fn(),
@@ -154,6 +158,7 @@ beforeEach(() => {
     downloadPublic: true,
     moved: 0,
   })
+  mocks.setReaderWidthPercent.mockResolvedValue({ success: true })
   mocks.requestManageStorage.mockResolvedValue({
     granted: true,
     permissionType: 'MANAGE_EXTERNAL_STORAGE',
@@ -212,10 +217,7 @@ describe('SettingPage 导出格式重置', () => {
 
     expect(mocks.requestManageStorage).not.toHaveBeenCalled()
     expect(mocks.setDownloadPublic).toHaveBeenCalledWith(true)
-    expect(mocks.showToast).toHaveBeenCalledWith(
-      '已迁移 2 个文件，下载位置：D:\\Comics',
-      'success',
-    )
+    expect(mocks.showToast).toHaveBeenCalledWith('已迁移 2 个文件，下载位置：D:\\Comics', 'success')
     wrapper.unmount()
   })
 
@@ -269,6 +271,31 @@ describe('SettingPage 导出格式重置', () => {
         ?.findAll('button')
         .every((button) => button.attributes('disabled') !== undefined),
     ).toBe(true)
+    wrapper.unmount()
+  })
+
+  test('Desktop 展示默认宽度并支持重置为自动适配', async () => {
+    mocks.runtimePlatform = 'windows'
+
+    const wrapper = mount(SettingPage)
+    await flushPromises()
+
+    const row = wrapper.findAll('.row').find((candidate) => candidate.text().includes('默认宽度'))
+    expect(row).toBeDefined()
+    expect(row?.find('input[aria-label="默认宽度"]').exists()).toBe(true)
+    expect(row?.text()).toContain('自动适配')
+
+    const input = row?.find('input[aria-label="默认宽度"]')
+    await input?.setValue('60')
+    await input?.trigger('input')
+    await flushPromises()
+    expect(mocks.setReaderWidthPercent).toHaveBeenLastCalledWith(60)
+    expect(row?.text()).toContain('60%')
+
+    await row?.get('button[aria-label="重置为自动适配"]').trigger('click')
+    await flushPromises()
+    expect(mocks.setReaderWidthPercent).toHaveBeenLastCalledWith(null)
+    expect(row?.text()).toContain('自动适配')
     wrapper.unmount()
   })
 })

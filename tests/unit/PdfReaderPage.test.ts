@@ -130,6 +130,8 @@ vi.mock('@/services/JmcomicService', () => ({
 
 vi.mock('@/services/SettingsService', () => ({
   SettingsStore: {
+    getReaderWidthPercent: vi.fn(() => null),
+    setReaderWidthPercent: vi.fn(),
     getReaderDisplayMode: () => mocks.displayMode,
     getReaderPreloadPages: () => mocks.preloadPages,
     getReaderScreenOrientation: () => 'auto',
@@ -303,7 +305,7 @@ const ReaderBottomToolbarStub = defineComponent({
 const ReaderSettingsPanelStub = defineComponent({
   name: 'ReaderSettingsPanel',
   props: { isVertical: { type: Boolean, required: true } },
-  emits: ['close', 'update:display-mode'],
+  emits: ['close', 'update:display-mode', 'update:width-percent'],
   setup() {
     return () => h('div', { class: 'reader-settings-panel-stub' })
   },
@@ -716,4 +718,27 @@ describe('PdfReaderPage PDF 专属渲染尺寸', () => {
     expect(mocks.recordProgress).toHaveBeenLastCalledWith('album-1', 'chapter-1', 2, 3)
     wrapper.unmount()
   })
+})
+
+test('PDF 调宽后按新宽度重新渲染，切换模式和重置保留独立宽度状态', async () => {
+  viewWidths.vertical = 1440
+  const wrapper = mountPage()
+  await settle()
+  wrapper.findComponent(ReaderBottomToolbarStub).vm.$emit('open-settings')
+  await settle()
+  const panel = wrapper.findComponent(ReaderSettingsPanelStub)
+  panel.vm.$emit('update:width-percent', 100)
+  await settle()
+  expect(currentView(wrapper).attributes('width-percent')).toBe('100')
+  expect(renderCalls.some(({ canvas }) => canvas.width === 2880)).toBe(true)
+  panel.vm.$emit('update:display-mode', false)
+  await settle()
+  expect(currentView(wrapper).attributes('width-percent')).toBe('100')
+  panel.vm.$emit('update:width-percent', 0)
+  await settle()
+  expect(currentView(wrapper).attributes('width-percent')).toBe('0')
+  panel.vm.$emit('update:width-percent', null)
+  await settle()
+  expect(currentView(wrapper).attributes('width-percent')).toBeUndefined()
+  wrapper.unmount()
 })

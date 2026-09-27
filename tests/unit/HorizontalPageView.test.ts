@@ -272,3 +272,79 @@ describe('HorizontalPageView', () => {
     wrapper.unmount()
   })
 })
+
+test('桌面自动撑满槽位，百分比宽度独立于放大和重置放大', async () => {
+  const { wrapper } = mountView(0, 1000, true)
+  resizeObserverTrigger?.()
+  await wrapper.vm.$nextTick()
+  expect(wrapper.get('.page-image').attributes('style')).toContain('height: 100%')
+  await wrapper.setProps({ widthPercent: 50 })
+  expect(wrapper.get('.page-image').attributes('style')).toContain('width: 50%')
+  wrapper.vm.zoomIn()
+  await wrapper.vm.$nextTick()
+  expect(wrapper.get('.page-content').attributes('style')).toContain('scale(2)')
+  wrapper.vm.resetZoom()
+  await wrapper.vm.$nextTick()
+  expect(wrapper.get('.page-image').attributes('style')).toContain('width: 50%')
+  await wrapper.setProps({ widthPercent: 0 })
+  expect(wrapper.get('.page-image').attributes('style')).toContain('width: 0%')
+  await wrapper.setProps({ widthPercent: null })
+  expect(wrapper.get('.page-image').attributes('style')).toContain('height: 100%')
+  wrapper.unmount()
+})
+
+test('100% 宽度长图在 1 倍时可滚动至上下边缘且不翻页', async () => {
+  const { wrapper, container } = mountView(0, 1000, true)
+  resizeObserverTrigger?.()
+  await wrapper.setProps({ widthPercent: 100 })
+  const image = wrapper.get('.page-image')
+  Object.defineProperties(image.element, {
+    naturalWidth: { value: 500 },
+    naturalHeight: { value: 1000 },
+  })
+  await image.trigger('load')
+  await container.trigger('wheel', { deltaY: 10000 })
+  expect(wrapper.get('.page-content').attributes('style')).toContain('translate(0px, -800px)')
+  await container.trigger('wheel', { deltaY: -10000 })
+  expect(wrapper.get('.page-content').attributes('style')).toContain('translate(0px, 800px)')
+  expect(wrapper.emitted('update:currentIndex')).toBeUndefined()
+  await wrapper.setProps({ widthPercent: null })
+  expect(wrapper.get('.page-content').attributes('style') ?? '').not.toContain('translate(')
+  wrapper.unmount()
+})
+
+test('自定义宽度长图鼠标纵向拖拽不翻页，放大后仍可到达底部', async () => {
+  const { wrapper, container } = mountView(0, 1000, true)
+  resizeObserverTrigger?.()
+  await wrapper.setProps({ widthPercent: 100 })
+  Object.defineProperties(wrapper.get('.page-image').element, {
+    naturalWidth: { value: 500 },
+    naturalHeight: { value: 1000 },
+  })
+  Object.defineProperties(container.element, {
+    setPointerCapture: { value: vi.fn() },
+    releasePointerCapture: { value: vi.fn() },
+    getBoundingClientRect: { value: () => ({ width: 1000, height: 400, left: 0, top: 0 }) },
+  })
+  const drag = async (dy: number) => {
+    await container.trigger('pointerdown', {
+      pointerType: 'mouse',
+      pointerId: 1,
+      button: 0,
+      clientX: 500,
+      clientY: 200,
+    })
+    await container.trigger('pointermove', { pointerId: 1, clientX: 500, clientY: 200 + dy })
+    await container.trigger('pointerup', { pointerId: 1, clientX: 500, clientY: 200 + dy })
+  }
+  await drag(-5000)
+  expect(wrapper.get('.page-content').attributes('style')).toContain('translate(0px, -800px)')
+  expect(wrapper.emitted('update:currentIndex')).toBeUndefined()
+  wrapper.vm.zoomIn()
+  await wrapper.vm.$nextTick()
+  await drag(-5000)
+  expect(wrapper.get('.page-content').attributes('style')).toContain(
+    'translate(-500px, -2000px) scale(2)',
+  )
+  wrapper.unmount()
+})

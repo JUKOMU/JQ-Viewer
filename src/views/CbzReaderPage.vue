@@ -31,6 +31,7 @@
         :total-count="totalCount"
         :current-index="currentIndex"
         :enable-mouse-controls="isDesktopRuntime"
+        :width-percent="readerWidthPercent"
         @update:current-index="onPageChange"
         @request-range="onRequestRange"
         @image-error="onImageError"
@@ -45,6 +46,7 @@
         :total-count="totalCount"
         :current-index="currentIndex"
         :enable-mouse-controls="isDesktopRuntime"
+        :width-percent="readerWidthPercent"
         @update:current-index="onPageChange"
         @toggle-toolbar="toggleToolbar"
         @image-error="onImageError"
@@ -65,6 +67,9 @@
       <ReaderSettingsPanel
         v-if="settingsPanelVisible"
         :is-vertical="isVertical"
+        :show-width-control="isDesktopRuntime"
+        :width-percent="readerWidthPercent"
+        @update:width-percent="readerWidthPercent = $event"
         @close="settingsPanelVisible = false"
         @update:display-mode="onDisplayModeChange"
       />
@@ -120,6 +125,7 @@ const coverUrl = computed(() => (route.query.coverUrl as string) || '')
 const fileId = computed(() => Number(route.query.fileId) || 0)
 
 const isVertical = ref(SettingsStore.getReaderDisplayMode() === 'vertical')
+const readerWidthPercent = ref(isDesktopRuntime ? SettingsStore.getReaderWidthPercent() : null)
 const toolbarVisible = ref(true)
 const settingsPanelVisible = ref(false)
 const readerRoot = ref<HTMLElement | null>(null)

@@ -59,6 +59,8 @@ vi.mock('@/services/JmcomicService', () => ({
 
 vi.mock('@/services/SettingsService', () => ({
   SettingsStore: {
+    getReaderWidthPercent: vi.fn(() => null),
+    setReaderWidthPercent: vi.fn(),
     getReaderDisplayMode: () => 'vertical',
     getReaderPreloadPages: () => 1,
     getReaderScreenOrientation: () => 'auto',
@@ -95,6 +97,21 @@ const VerticalViewStub = defineComponent({
   },
 })
 
+const WidthSettingsStub = defineComponent({
+  name: 'ReaderSettingsPanel',
+  emits: ['update:width-percent', 'update:display-mode'],
+  setup() {
+    return () => h('div')
+  },
+})
+const BottomToolbarStub = defineComponent({
+  name: 'ReaderBottomToolbar',
+  emits: ['open-settings'],
+  setup() {
+    return () => h('div')
+  },
+})
+
 const EmptyStub = defineComponent({
   setup() {
     return () => h('div')
@@ -108,8 +125,8 @@ const mountPage = () =>
     global: {
       stubs: {
         ReaderTopToolbar: EmptyStub,
-        ReaderBottomToolbar: EmptyStub,
-        ReaderSettingsPanel: EmptyStub,
+        ReaderBottomToolbar: BottomToolbarStub,
+        ReaderSettingsPanel: WidthSettingsStub,
         VerticalScrollView: VerticalViewStub,
         HorizontalPageView: EmptyStub,
       },
@@ -169,4 +186,19 @@ describe('CbzReaderPage', () => {
     expect(mocks.router.back).toHaveBeenCalled()
     wrapper.unmount()
   })
+})
+
+test('CBZ 宽度修改与重置接入共享阅读视图', async () => {
+  const wrapper = mountPage()
+  await settle()
+  wrapper.findComponent(BottomToolbarStub).vm.$emit('open-settings')
+  await settle()
+  const panel = wrapper.findComponent(WidthSettingsStub)
+  panel.vm.$emit('update:width-percent', 0)
+  await settle()
+  expect(wrapper.findComponent(VerticalViewStub).attributes('width-percent')).toBe('0')
+  panel.vm.$emit('update:width-percent', null)
+  await settle()
+  expect(wrapper.findComponent(VerticalViewStub).attributes('width-percent')).toBeUndefined()
+  wrapper.unmount()
 })

@@ -57,6 +57,7 @@ vi.mock('@/services/JmcomicService', () => ({
     setReaderAutoShowToolbarAtEnd: vi.fn(),
     setReaderBrightness: vi.fn(),
     setReaderDisplayMode: vi.fn(),
+    setReaderWidthPercent: vi.fn(() => Promise.resolve({ success: true })),
     setReaderKeepScreenOn: vi.fn(),
     setReaderScreenOrientation: vi.fn(),
     setReaderVolumeNavigation: vi.fn(),
@@ -68,6 +69,8 @@ vi.mock('@/services/JmcomicService', () => ({
 vi.mock('@/services/SettingsService', () => ({
   persistPreloadConcurrency: vi.fn(),
   SettingsStore: {
+    getReaderWidthPercent: vi.fn(() => null),
+    setReaderWidthPercent: vi.fn(),
     getPreloadConcurrency: vi.fn(() => 4),
     getReaderAutoShowToolbarAtEnd: vi.fn(() => true),
     getReaderBrightness: vi.fn(() => -1),
@@ -113,4 +116,31 @@ describe('ReaderSettingsPanel Desktop 宿主能力', () => {
       true,
     )
   })
+})
+
+test.each([true, false])('桌面宽度实时变更和独立重置，纵向=%s', async (isVertical) => {
+  const { SettingsStore } = await import('@/services/SettingsService')
+  const wrapper = mount(ReaderSettingsPanel, {
+    props: { isVertical, showWidthControl: true, widthPercent: null },
+  })
+  expect(wrapper.text()).toContain('自动适配')
+  const slider = wrapper.get('input[aria-label="默认宽度"]')
+  await slider.setValue('100')
+  expect(wrapper.emitted('update:width-percent')?.at(-1)).toEqual([100])
+  expect(SettingsStore.setReaderWidthPercent).toHaveBeenLastCalledWith(100)
+  await slider.setValue('0')
+  expect(wrapper.emitted('update:width-percent')?.at(-1)).toEqual([0])
+  await wrapper.setProps({ widthPercent: 0 })
+  expect(wrapper.text()).toContain('0%')
+  const reset = wrapper.findAll('button').find((button) => button.text() === '重置为自动适配')!
+  await reset.trigger('click')
+  expect(wrapper.emitted('update:width-percent')?.at(-1)).toEqual([null])
+  expect(SettingsStore.setReaderWidthPercent).toHaveBeenLastCalledWith(null)
+  wrapper.unmount()
+})
+
+test('非桌面阅读设置隐藏宽度控件', () => {
+  const wrapper = mount(ReaderSettingsPanel, { props: { isVertical: true } })
+  expect(wrapper.find('input[type="range"]').exists()).toBe(false)
+  wrapper.unmount()
 })

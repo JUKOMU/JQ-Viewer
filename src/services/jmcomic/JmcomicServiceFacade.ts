@@ -647,6 +647,10 @@ export const JmcomicService = {
   setReaderDisplayMode(mode: string) {
     return native.setReaderDisplayMode({ mode })
   },
+
+  setReaderWidthPercent(value: number | null) {
+    return native.setReaderWidthPercent({ value })
+  },
   setReaderScreenOrientation(orientation: string) {
     return native.setReaderScreenOrientation({ orientation })
   },

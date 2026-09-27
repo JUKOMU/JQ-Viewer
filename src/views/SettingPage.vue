@@ -121,6 +121,39 @@
             </div>
           </div>
 
+          <!-- 默认宽度 -->
+          <div v-if="!isAndroidRuntime" class="row divider reader-width-row">
+            <div class="row-left">
+              <span class="row-title">默认宽度</span>
+              <span class="row-subtitle">
+                {{ readerWidthPercent === null ? '自动适配' : `${readerWidthPercent}%` }}
+              </span>
+            </div>
+            <div class="row-right reader-width-right">
+              <input
+                aria-label="默认宽度"
+                type="range"
+                min="0"
+                max="100"
+                step="1"
+                :value="readerWidthPercent ?? 100"
+                :style="{ '--width-progress': `${readerWidthPercent ?? 100}%` }"
+                :aria-valuetext="
+                  readerWidthPercent === null ? '自动适配' : `${readerWidthPercent}%`
+                "
+                @input="onReaderWidthInput"
+              />
+              <button
+                type="button"
+                class="reset-mini-btn"
+                aria-label="重置为自动适配"
+                @click="onReaderWidthChange(null)"
+              >
+                重置为自动适配
+              </button>
+            </div>
+          </div>
+
           <!-- 屏幕方向 -->
           <div
             class="row divider"
@@ -649,6 +682,7 @@ const downloadLocationPath = ref('')
 const ocrEnabled = ref(SettingsStore.getOcrEnabled())
 const exportFormat = ref(ExportFormatService.getExportFormat())
 const displayMode = ref(SettingsStore.getReaderDisplayMode())
+const readerWidthPercent = ref(SettingsStore.getReaderWidthPercent())
 const screenOrientation = ref(SettingsStore.getReaderScreenOrientation())
 const brightnessFollowSystem = ref(SettingsStore.getReaderBrightness() < 0)
 const brightnessValue = ref(
@@ -1072,6 +1106,28 @@ function onDisplayModeChange(mode: string) {
   JmcomicService.setReaderDisplayMode(mode).catch(() => {})
 }
 
+// ---- 默认宽度 ----
+function onReaderWidthInput(event: Event) {
+  const value = Number((event.target as HTMLInputElement).value)
+  if (!Number.isFinite(value)) return
+  void onReaderWidthChange(value)
+}
+
+async function onReaderWidthChange(value: number | null) {
+  const previous = readerWidthPercent.value
+  const normalized = value === null ? null : Math.max(0, Math.min(100, Math.round(value)))
+  readerWidthPercent.value = normalized
+  SettingsStore.setReaderWidthPercent(normalized)
+  try {
+    const result = await JmcomicService.setReaderWidthPercent(normalized)
+    if (!result.success) throw new Error('保存失败')
+  } catch {
+    readerWidthPercent.value = previous
+    SettingsStore.setReaderWidthPercent(previous)
+    await showToast('保存失败', 'danger')
+  }
+}
+
 // ---- 屏幕方向 ----
 async function onScreenOrientationChange(orientation: string) {
   if (!readerCapabilities.orientation.available) return
@@ -1361,6 +1417,72 @@ function onAutoShowToolbarAtEndChange(e: CustomEvent) {
 .unit {
   font-size: 13px;
   color: #b89a84;
+}
+
+.reader-width-right {
+  min-width: min(430px, 58%);
+  justify-content: flex-end;
+}
+
+.reader-width-right input[type='range'] {
+  width: 150px;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  outline: 0;
+  box-shadow: none;
+  background: transparent;
+  accent-color: #f0a060;
+}
+
+.reader-width-right input[type='range']::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 3px;
+  background: linear-gradient(
+    to right,
+    #f0a060 0%,
+    #f0a060 var(--width-progress),
+    #f0e4db var(--width-progress),
+    #f0e4db 100%
+  );
+}
+
+.reader-width-right input[type='range']::-moz-range-track {
+  height: 4px;
+  border-radius: 3px;
+  background: #f0e4db;
+}
+
+.reader-width-right input[type='range']::-moz-range-progress {
+  height: 4px;
+  border-radius: 3px;
+  background: #f0a060;
+}
+
+.reader-width-right input[type='range']::-webkit-slider-thumb {
+  width: 18px;
+  height: 18px;
+  margin-top: -7px;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  border-radius: 50%;
+  background: #f0a060;
+  box-shadow: none;
+}
+
+.reader-width-right input[type='range']::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 50%;
+  background: #f0a060;
+  box-shadow: none;
+}
+
+.reader-width-right input[type='range']:focus-visible {
+  outline: 2px solid #f0a060;
+  outline-offset: 2px;
 }
 
 /* 缓存用量条 */

@@ -239,6 +239,11 @@ public final class Plugin {
     }
 
     @PluginMethod
+    public void setReaderWidthPercent(Context context) {
+        settings.setReaderWidthPercent(context);
+    }
+
+    @PluginMethod
     public void setReaderAutoShowToolbarAtEnd(Context context) {
         settings.setReaderAutoShowToolbarAtEnd(context);
     }

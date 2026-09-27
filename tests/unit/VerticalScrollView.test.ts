@@ -364,3 +364,45 @@ describe('VerticalScrollView', () => {
     wrapper.unmount()
   })
 })
+
+test('纵向百分比绕过 720px 限制，0% 保留页位，重置恢复默认轨道', async () => {
+  const wrapper = mount(VerticalScrollView, {
+    props: {
+      imageMap: new Map([
+        [1, 'image-1'],
+        [2, 'image-2'],
+        [3, 'image-3'],
+      ]),
+      totalCount: 3,
+      currentIndex: 0,
+    },
+  })
+  const container = wrapper.get('.vertical-container')
+  Object.defineProperties(container.element, {
+    clientHeight: { configurable: true, value: 400 },
+    clientWidth: { configurable: true, value: 1440 },
+    scrollTop: { configurable: true, value: 0, writable: true },
+  })
+  await flushAnimationFrames()
+  resizeObserverTrigger?.()
+  await flushAnimationFrames()
+  wrapper.vm.scrollToIndex(1)
+  await flushAnimationFrames()
+  const initialTop = container.element.scrollTop
+  await wrapper.setProps({ widthPercent: 100 })
+  await flushAnimationFrames()
+  expect(wrapper.get('.zoom-wrapper').attributes('style')).toContain('width: 1440px')
+  expect(container.element.scrollTop).toBe(120 + (initialTop - 120) * 2)
+  const expandedTop = container.element.scrollTop
+  const virtualHeight = wrapper.get('.virtual-inner').attributes('style')
+  await wrapper.setProps({ widthPercent: 0 })
+  await flushAnimationFrames()
+  expect(wrapper.get('.zoom-wrapper').attributes('style')).toContain('width: 0px')
+  expect(wrapper.get('.virtual-inner').attributes('style')).toBe(virtualHeight)
+  expect(container.element.scrollTop).toBe(expandedTop)
+  await wrapper.setProps({ widthPercent: null })
+  await flushAnimationFrames()
+  expect(wrapper.get('.zoom-wrapper').attributes('style')).toContain('width: 720px')
+  expect(container.element.scrollTop).toBe(initialTop)
+  wrapper.unmount()
+})

@@ -157,7 +157,6 @@ const PREVIEW_ZOOM_MIN = 1
 const PREVIEW_DOUBLE_TAP_MS = 280
 const PREVIEW_DOUBLE_TAP_DIST = 30
 const PREVIEW_DISMISS_THRESHOLD = 120
-const PREVIEW_BACKDROP_OPACITY = 0.85
 
 const showPreview = ref(false)
 const previewOverlayRef = ref<HTMLElement | null>(null)
@@ -172,7 +171,8 @@ const previewDragProgress = computed(() => {
 })
 
 const previewOverlayStyle = computed(() => ({
-  backgroundColor: `rgba(0, 0, 0, ${PREVIEW_BACKDROP_OPACITY * (1 - previewDragProgress.value)})`,
+  opacity: 1 - previewDragProgress.value,
+  transition: previewTransition.value ? 'opacity 220ms ease' : 'none',
 }))
 
 const previewImageStyle = computed(() => ({
@@ -912,7 +912,6 @@ onBeforeUnmount(() => {
   max-width: 100vw;
   max-height: 100vh;
   border-radius: 0px;
-  box-shadow: 0 8px 40px rgb(0 0 0 / 0.5);
   object-fit: contain;
   touch-action: none;
   user-select: none;

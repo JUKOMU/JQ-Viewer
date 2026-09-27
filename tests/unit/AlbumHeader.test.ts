@@ -119,7 +119,7 @@ describe('AlbumHeader 阅读来源', () => {
     await first.overlay.trigger('pointerdown', pointer(1, 150, 200))
     await first.overlay.trigger('pointermove', pointer(1, 300, 200))
     await first.wrapper.vm.$nextTick()
-    expect(first.overlay.element.getAttribute('style') ?? '').toContain('background-color:')
+    expect(first.overlay.attributes('style')).toContain('opacity: 0;')
     await first.overlay.trigger('pointerup', pointer(1, 300, 200))
     await first.wrapper.vm.$nextTick()
     expect(document.body.querySelector('.cover-preview-overlay')).toBeNull()
@@ -128,9 +128,12 @@ describe('AlbumHeader 阅读来源', () => {
     const second = await openPreview()
     await second.overlay.trigger('pointerdown', pointer(1, 150, 200))
     await second.overlay.trigger('pointermove', pointer(1, 180, 200))
+    expect(second.overlay.attributes('style')).toContain('opacity: 0.75;')
     await second.overlay.trigger('pointerup', pointer(1, 180, 200))
     await second.wrapper.vm.$nextTick()
     expect(second.overlay.exists()).toBe(true)
+    expect(second.overlay.attributes('style')).toContain('opacity: 1;')
+    expect(second.overlay.attributes('style')).toContain('opacity 220ms ease')
     expect(second.overlay.get('.cover-preview-img').attributes('style')).toContain(
       'translate3d(0px, 0px, 0)',
     )

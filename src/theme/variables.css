@@ -53,70 +53,84 @@
   --ion-border-radius: 14px;
 }
 
-/* 全局滚动条外观；主页面滚动空间由下方 IonContent 规则稳定 */
-* {
+/* 桌面滚动条外观；Android 保持触摸滚动且不显示滚动条。 */
+:root:not([data-runtime-platform='android']) * {
   scrollbar-width: thin;
   scrollbar-color: rgb(176 128 96 / 0.58) transparent;
 }
 
-*::-webkit-scrollbar {
+:root:not([data-runtime-platform='android']) *::-webkit-scrollbar {
   width: 9px;
   height: 9px;
 }
 
-*::-webkit-scrollbar-track {
+:root:not([data-runtime-platform='android']) *::-webkit-scrollbar-track {
   background: transparent;
 }
 
-*::-webkit-scrollbar-thumb {
+:root:not([data-runtime-platform='android']) *::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
   border-radius: 999px;
   background: rgb(176 128 96 / 0.58);
   background-clip: padding-box;
 }
 
-*::-webkit-scrollbar-thumb:hover {
+:root:not([data-runtime-platform='android']) *::-webkit-scrollbar-thumb:hover {
   background: rgb(161 109 76 / 0.76);
   background-clip: padding-box;
 }
 
-ion-content::part(scroll) {
+:root:not([data-runtime-platform='android']) ion-content::part(scroll) {
   scrollbar-width: thin;
   scrollbar-color: rgb(176 128 96 / 0.58) transparent;
 }
 
-ion-content::part(scroll)::-webkit-scrollbar {
+:root:not([data-runtime-platform='android']) ion-content::part(scroll)::-webkit-scrollbar {
   width: 9px;
   height: 9px;
 }
 
-ion-content::part(scroll)::-webkit-scrollbar-track {
+:root:not([data-runtime-platform='android']) ion-content::part(scroll)::-webkit-scrollbar-track {
   background: transparent;
 }
 
-ion-content::part(scroll)::-webkit-scrollbar-thumb {
+:root:not([data-runtime-platform='android']) ion-content::part(scroll)::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
   border-radius: 999px;
   background: rgb(176 128 96 / 0.58);
   background-clip: padding-box;
 }
 
-ion-content::part(scroll)::-webkit-scrollbar-thumb:hover {
+:root:not([data-runtime-platform='android'])
+  ion-content::part(scroll)::-webkit-scrollbar-thumb:hover {
   background: rgb(161 109 76 / 0.76);
   background-clip: padding-box;
 }
 
 @media (min-width: 1264px) {
-  ion-content::part(scroll) {
+  :root:not([data-runtime-platform='android']) ion-content::part(scroll) {
     scrollbar-gutter: stable;
   }
 
-  ion-content.menu-content::part(scroll),
-  ion-modal ion-content::part(scroll),
-  ion-popover ion-content::part(scroll),
-  ion-action-sheet ion-content::part(scroll) {
+  :root:not([data-runtime-platform='android']) ion-content.menu-content::part(scroll),
+  :root:not([data-runtime-platform='android']) ion-modal ion-content::part(scroll),
+  :root:not([data-runtime-platform='android']) ion-popover ion-content::part(scroll),
+  :root:not([data-runtime-platform='android']) ion-action-sheet ion-content::part(scroll) {
     scrollbar-gutter: auto;
   }
+}
+
+html[data-runtime-platform='android'] *,
+html[data-runtime-platform='android'] ion-content::part(scroll) {
+  scrollbar-width: none;
+  scrollbar-gutter: auto;
+}
+
+html[data-runtime-platform='android'] *::-webkit-scrollbar,
+html[data-runtime-platform='android'] ion-content::part(scroll)::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 /* 统一应用弹窗 */

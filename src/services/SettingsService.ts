@@ -163,9 +163,7 @@ export const SettingsStore = {
 function normalizeReaderWidthPercent(value: unknown): number | null {
   if (value === null || value === undefined || value === '') return null
   const normalized = Number(value)
-  return Number.isFinite(normalized) && normalized >= 0 && normalized <= 100
-    ? normalized
-    : null
+  return Number.isFinite(normalized) && normalized >= 0 && normalized <= 100 ? normalized : null
 }
 
 export function persistPreloadConcurrency(n: number): Promise<void> {

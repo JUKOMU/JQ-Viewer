@@ -67,12 +67,139 @@ public class LocalFileStore extends SQLiteOpenHelper {
 
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
+        if (oldVersion >= 1 && oldVersion < 9 && newVersion == 11) {
+            rebuildLegacyDatabase(db, oldVersion);
+            return;
+        }
+        if (oldVersion == 9 && newVersion == 11) {
+            migrateV9ToV11(db);
+            return;
+        }
         if (oldVersion == 10 && newVersion == 11) {
             migrateV10ToV11(db);
             return;
         }
         throw new IllegalStateException(
             "Unsupported local file database upgrade: " + oldVersion + " -> " + newVersion);
+    }
+
+    /** Pre-v9 management records are reset; referenced files are never accessed. */
+    private static void rebuildLegacyDatabase(SQLiteDatabase db, int oldVersion) {
+        db.execSQL("DROP TABLE IF EXISTS pdf_export_chapters");
+        db.execSQL("DROP TABLE IF EXISTS pdf_export_volumes");
+        db.execSQL("DROP TABLE IF EXISTS pdf_export_path_locks");
+        db.execSQL("DROP TABLE IF EXISTS pdf_files");
+        db.execSQL("DROP TABLE IF EXISTS pdf_export_tasks");
+        db.execSQL("DROP TABLE IF EXISTS pdf_store_meta");
+        db.execSQL("DROP TABLE IF EXISTS imported_pdfs");
+        db.execSQL("DROP TABLE IF EXISTS imported_pdfs_new");
+        db.execSQL("DROP TABLE IF EXISTS pdf_files_new");
+        createSchema(db);
+        writeResetMeta(db, true, oldVersion, "SCHEMA_REBUILD_V11", 0, 0, true, true);
+    }
+
+    /** Upgrade the released v9 locator schema without touching the referenced files. */
+    private static void migrateV9ToV11(SQLiteDatabase db) {
+        createSchema(db);
+        int[] counts = copyV9Files(db, "pdf_files", false);
+        if (tableExists(db, "imported_pdfs")) {
+            int[] imported = copyV9Files(db, "imported_pdfs", true);
+            counts[0] += imported[0];
+            counts[1] += imported[1];
+        }
+        db.execSQL("DROP TABLE IF EXISTS pdf_export_chapters");
+        db.execSQL("DROP TABLE IF EXISTS pdf_export_volumes");
+        db.execSQL("DROP TABLE IF EXISTS pdf_export_path_locks");
+        db.execSQL("DROP TABLE IF EXISTS pdf_export_tasks");
+        db.execSQL("DROP TABLE pdf_files");
+        db.execSQL("DROP TABLE IF EXISTS imported_pdfs");
+        db.execSQL("DROP TABLE IF EXISTS pdf_store_meta");
+        writeResetMeta(db, true, 9, "FILE_REF_MIGRATION_V11", counts[0], counts[1], true, true);
+    }
+
+    private static int[] copyV9Files(SQLiteDatabase db, String source, boolean imported) {
+        int migrated = 0;
+        int skipped = 0;
+        try (Cursor cursor = db.query(source, null, null, null, null, null, "id ASC")) {
+            while (cursor.moveToNext()) {
+                String locator = cursorString(cursor, "file_path");
+                String fileRef;
+                try {
+                    fileRef = LocalFileRef.fromLegacyFileLocatorForMigration(locator);
+                } catch (IllegalArgumentException error) {
+                    skipped++;
+                    continue;
+                }
+                ContentValues values = new ContentValues();
+                values.put("format", "pdf");
+                values.put("file_ref", fileRef);
+                values.put("display_path", locator);
+                values.put("file_name", emptyToFallback(cursorString(cursor, "file_name"),
+                    LocalFileRef.fileName(fileRef)));
+                values.put("source_type", imported ? SOURCE_IMPORTED : cursorString(cursor, "source_type"));
+                values.put("ownership", imported ? OWNERSHIP_EXTERNAL : cursorString(cursor, "ownership"));
+                values.put("chapter_link_status", imported ? "resolved"
+                    : cursorString(cursor, "chapter_link_status"));
+                values.put("album_id", cursorString(cursor, "album_id"));
+                values.put("album_title", cursorString(cursor, "album_title"));
+                values.put("cover_url", cursorString(cursor, "cover_url"));
+                values.put("authors", cursorString(cursor, "authors"));
+                values.put("is_single_episode", cursorInt(cursor, "is_single_episode"));
+                putLegacyNullable(values, cursor, "folder_id");
+                values.put("file_size", cursorLong(cursor, "file_size"));
+                values.put("page_count", cursorInt(cursor, "page_count"));
+                values.put("availability", emptyToFallback(cursorString(cursor, "availability"), "unknown"));
+                values.put("verification_status", emptyToFallback(
+                    cursorString(cursor, "verification_status"), "unverified"));
+                putLegacyNullable(values, cursor, "verification_error");
+                values.put("created_at", cursorLong(cursor, "created_at"));
+                values.put("updated_at", cursorLong(cursor, "updated_at"));
+                putLegacyNullable(values, cursor, "verified_at");
+                long fileId = db.insertWithOnConflict(TABLE_FILES, null, values,
+                    SQLiteDatabase.CONFLICT_IGNORE);
+                if (fileId == -1L) {
+                    skipped++;
+                    continue;
+                }
+                String chapterId = cursorString(cursor, "chapter_id");
+                if (!chapterId.trim().isEmpty()) {
+                    int pageCount = cursorInt(cursor, "page_count");
+                    insertFileChapter(db, fileId, 0, cursorString(cursor, "album_id"),
+                        chapterId, cursorString(cursor, "chapter_title"),
+                        cursorInt(cursor, "chapter_sort_order"), 1, pageCount, pageCount);
+                }
+                migrated++;
+            }
+        }
+        return new int[]{migrated, skipped};
+    }
+
+    private static boolean tableExists(SQLiteDatabase db, String table) {
+        try (Cursor cursor = db.rawQuery("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            new String[]{table})) {
+            return cursor.moveToFirst();
+        }
+    }
+
+    private static String cursorString(Cursor cursor, String column) {
+        int index = cursor.getColumnIndex(column);
+        return index < 0 || cursor.isNull(index) ? "" : cursor.getString(index);
+    }
+
+    private static int cursorInt(Cursor cursor, String column) {
+        int index = cursor.getColumnIndex(column);
+        return index < 0 || cursor.isNull(index) ? 0 : cursor.getInt(index);
+    }
+
+    private static long cursorLong(Cursor cursor, String column) {
+        int index = cursor.getColumnIndex(column);
+        return index < 0 || cursor.isNull(index) ? 0L : cursor.getLong(index);
+    }
+
+    private static void putLegacyNullable(ContentValues values, Cursor cursor, String column) {
+        int index = cursor.getColumnIndex(column);
+        if (index < 0 || cursor.isNull(index)) values.putNull(column);
+        else values.put(column, cursor.getString(index));
     }
 
     @Override

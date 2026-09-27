@@ -75,6 +75,7 @@ public class JqViewerPlugin extends Plugin {
     private SettingsPluginHandler settingsHandler;
     private SystemPluginHandler systemHandler;
     private LocalFilePluginHandler localFileHandler;
+    private RuntimeException localFileStartupError;
     private ExportEventSink exportEventSink;
     private UpdateService updateService;
     private Consumer<UpdateService.Snapshot> updateProgressSink;
@@ -147,7 +148,12 @@ public class JqViewerPlugin extends Plugin {
             }
         };
         exportService.attachEventSink(exportEventSink);
-        exportService.reconcileOnStartup();
+        try {
+            exportService.reconcileOnStartup();
+        } catch (RuntimeException error) {
+            localFileStartupError = error;
+            Log.e(TAG, "本地文件初始化失败，保留历史、阅读和其他本地功能", error);
+        }
 
         boolean runtimeExists = AppRuntime.exists();
         if (!runtimeExists) {
@@ -774,127 +780,136 @@ public class JqViewerPlugin extends Plugin {
         favoriteHandler.listOfflineBackupKeys(call);
     }
 
+    private void callLocalFileHandler(PluginCall call, Consumer<PluginCall> command) {
+        if (localFileStartupError != null) {
+            call.reject("本地文件初始化失败，请重启应用后重试", "LOCAL_FILE_INIT_FAILED",
+                localFileStartupError);
+            return;
+        }
+        command.accept(call);
+    }
+
     // ========== 文件导出 ==========
 
     // ========== PDF 导入 ==========
 
     @PluginMethod
     public void scanImportableFiles(PluginCall call) {
-        localFileHandler.scanImportableFiles(call);
+        callLocalFileHandler(call, localFileHandler::scanImportableFiles);
     }
 
     @PluginMethod
     public void importLocalFiles(PluginCall call) {
-        localFileHandler.importLocalFiles(call);
+        callLocalFileHandler(call, localFileHandler::importLocalFiles);
     }
 
     @PluginMethod
     public void getImportedLocalFiles(PluginCall call) {
-        localFileHandler.getImportedLocalFiles(call);
+        callLocalFileHandler(call, localFileHandler::getImportedLocalFiles);
     }
 
     @PluginMethod
     public void updateLocalEpisodeType(PluginCall call) {
-        localFileHandler.updateLocalEpisodeType(call);
+        callLocalFileHandler(call, localFileHandler::updateLocalEpisodeType);
     }
 
     @PluginMethod
     public void deleteImportedLocalFile(PluginCall call) {
-        localFileHandler.deleteImportedLocalFile(call);
+        callLocalFileHandler(call, localFileHandler::deleteImportedLocalFile);
     }
 
     @PluginMethod
     public void getLocalFiles(PluginCall call) {
-        localFileHandler.getLocalFiles(call);
+        callLocalFileHandler(call, localFileHandler::getLocalFiles);
     }
 
     @PluginMethod
     public void refreshLocalFileAvailability(PluginCall call) {
-        localFileHandler.refreshLocalFileAvailability(call);
+        callLocalFileHandler(call, localFileHandler::refreshLocalFileAvailability);
     }
 
     @PluginMethod
     public void inspectLocalFileForDeletion(PluginCall call) {
-        localFileHandler.inspectLocalFileForDeletion(call);
+        callLocalFileHandler(call, localFileHandler::inspectLocalFileForDeletion);
     }
 
     @PluginMethod
     public void verifyLocalFile(PluginCall call) {
-        localFileHandler.verifyLocalFile(call);
+        callLocalFileHandler(call, localFileHandler::verifyLocalFile);
     }
 
     @PluginMethod
     public void removeLocalFileFromLibrary(PluginCall call) {
-        localFileHandler.removeLocalFileFromLibrary(call);
+        callLocalFileHandler(call, localFileHandler::removeLocalFileFromLibrary);
     }
 
     @PluginMethod
     public void deleteLocalFile(PluginCall call) {
-        localFileHandler.deleteLocalFile(call);
+        callLocalFileHandler(call, localFileHandler::deleteLocalFile);
     }
 
     @PluginMethod
     public void getLocalFileManagementState(PluginCall call) {
-        localFileHandler.getLocalFileManagementState(call);
+        callLocalFileHandler(call, localFileHandler::getLocalFileManagementState);
     }
 
     @PluginMethod
     public void acknowledgeLocalFileDatabaseReset(PluginCall call) {
-        localFileHandler.acknowledgeLocalFileDatabaseReset(call);
+        callLocalFileHandler(call, localFileHandler::acknowledgeLocalFileDatabaseReset);
     }
 
     @PluginMethod
     public void openLocalFile(PluginCall call) {
-        localFileHandler.openLocalFile(call);
+        callLocalFileHandler(call, localFileHandler::openLocalFile);
     }
 
     @PluginMethod
     public void openLocalFileFolder(PluginCall call) {
-        localFileHandler.openLocalFileFolder(call);
+        callLocalFileHandler(call, localFileHandler::openLocalFileFolder);
     }
 
     @PluginMethod
     public void getPdfInfo(PluginCall call) {
-        localFileHandler.getPdfInfo(call);
+        callLocalFileHandler(call, localFileHandler::getPdfInfo);
     }
 
     @PluginMethod
     public void renderPdfPage(PluginCall call) {
-        localFileHandler.renderPdfPage(call);
+        callLocalFileHandler(call, localFileHandler::renderPdfPage);
     }
 
     @PluginMethod
     public void getCbzInfo(PluginCall call) {
-        localFileHandler.getCbzInfo(call);
+        callLocalFileHandler(call, localFileHandler::getCbzInfo);
     }
 
     @PluginMethod
     public void exportBatch(PluginCall call) {
-        localFileHandler.exportBatch(call);
+        callLocalFileHandler(call, localFileHandler::exportBatch);
     }
 
     @PluginMethod
     public void getExportTasks(PluginCall call) {
-        localFileHandler.getExportTasks(call);
+        callLocalFileHandler(call, localFileHandler::getExportTasks);
     }
 
     @PluginMethod
     public void getExportTask(PluginCall call) {
-        localFileHandler.getExportTask(call);
+        callLocalFileHandler(call, localFileHandler::getExportTask);
     }
 
     @PluginMethod
     public void cancelExport(PluginCall call) {
-        localFileHandler.cancelExport(call);
+        callLocalFileHandler(call, localFileHandler::cancelExport);
     }
 
     @PluginMethod
     public void retryExport(PluginCall call) {
-        localFileHandler.retryExport(call);
+        callLocalFileHandler(call, localFileHandler::retryExport);
     }
 
     @PluginMethod
     public void deleteExportTask(PluginCall call) {
-        localFileHandler.deleteExportTask(call);
+        callLocalFileHandler(call, localFileHandler::deleteExportTask);
     }
 }

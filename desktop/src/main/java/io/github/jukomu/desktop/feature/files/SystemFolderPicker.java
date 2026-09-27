@@ -4,10 +4,12 @@ import com.formdev.flatlaf.util.SystemFileChooser;
 import io.github.jukomu.desktop.bridge.ApiException;
 import io.github.jukomu.desktop.feature.dialog.DesktopFileDialogHost;
 
-import java.awt.GraphicsEnvironment;
+import java.awt.*;
 import java.nio.file.Path;
 
-/** 使用操作系统原生文件对话框选择目录。 */
+/**
+ * 使用操作系统原生文件对话框选择目录。
+ */
 public final class SystemFolderPicker implements FolderPicker {
     private final DesktopFileDialogHost dialogHost = DesktopFileDialogHost.shared();
 

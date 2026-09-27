@@ -4,7 +4,9 @@ import org.slf4j.Logger;
 
 import java.util.Objects;
 
-/** 按声明顺序释放资源；单项失败只记录，不阻断后续清理。 */
+/**
+ * 按声明顺序释放资源；单项失败只记录，不阻断后续清理。
+ */
 public final class CloseSequence {
     private CloseSequence() {
     }

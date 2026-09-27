@@ -1,13 +1,11 @@
 package io.github.jukomu.runtime;
 
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ScheduledThreadPoolExecutor;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
-/** Android 各服务使用的命名无界执行器工厂。 */
+/**
+ * Android 各服务使用的命名无界执行器工厂。
+ */
 public final class ServiceExecutors {
 
     private ServiceExecutors() {

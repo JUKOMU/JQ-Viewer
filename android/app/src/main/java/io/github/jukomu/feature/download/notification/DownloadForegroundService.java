@@ -13,7 +13,7 @@ import io.github.jukomu.R;
 import io.github.jukomu.platform.notification.NotificationIds;
 
 /**
- * Keeps active chapter downloads in foreground priority while the app is backgrounded.
+ * 应用进入后台时，仍保持活跃章节下载的前台优先级。
  */
 public class DownloadForegroundService extends Service {
 

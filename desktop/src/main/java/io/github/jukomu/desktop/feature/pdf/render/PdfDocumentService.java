@@ -23,7 +23,9 @@ import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.Locale;
 
-/** 读取 PDF 页数，并为 pdf.js 失败场景生成受控 PNG 页面。 */
+/**
+ * 读取 PDF 页数，并为 pdf.js 失败场景生成受控 PNG 页面。
+ */
 public final class PdfDocumentService {
     static final int MIN_TARGET_WIDTH = 360;
     static final int MAX_TARGET_WIDTH = 2400;
@@ -38,7 +40,7 @@ public final class PdfDocumentService {
     public PdfInfoResponse getInfo(String fileRef) {
         Path file = requireReadablePdf(fileRef);
         try (PDDocument document = Loader.loadPDF(
-                file.toFile(), IOUtils.createTempFileOnlyStreamCache())) {
+            file.toFile(), IOUtils.createTempFileOnlyStreamCache())) {
             int pages = document.getNumberOfPages();
             if (pages <= 0) throw ApiException.invalidRequest("PDF 没有可读取页面");
             return new PdfInfoResponse(pages);
@@ -48,9 +50,9 @@ public final class PdfDocumentService {
     }
 
     public synchronized PdfRenderPageResponse renderPage(
-            String fileRef,
-            int pageNumber,
-            int requestedWidth
+        String fileRef,
+        int pageNumber,
+        int requestedWidth
     ) {
         if (pageNumber < 1) throw ApiException.invalidRequest("page必须从1开始");
         Path file = requireReadablePdf(fileRef);
@@ -69,9 +71,9 @@ public final class PdfDocumentService {
     }
 
     private void render(Path file, int pageNumber, int targetWidth, String resourceId)
-            throws IOException {
+        throws IOException {
         try (PDDocument document = Loader.loadPDF(
-                file.toFile(), IOUtils.createTempFileOnlyStreamCache())) {
+            file.toFile(), IOUtils.createTempFileOnlyStreamCache())) {
             if (pageNumber > document.getNumberOfPages()) {
                 throw ApiException.invalidRequest("page超出PDF页数");
             }
@@ -123,17 +125,17 @@ public final class PdfDocumentService {
     }
 
     private static String resourceId(
-            String fileRef,
-            int page,
-            int targetWidth,
-            long sourceLength,
-            long sourceModified
+        String fileRef,
+        int page,
+        int targetWidth,
+        long sourceLength,
+        long sourceModified
     ) {
         String material = fileRef + "\n" + page + "\n" + targetWidth + "\n"
-                + sourceLength + "\n" + sourceModified;
+            + sourceLength + "\n" + sourceModified;
         try {
             byte[] digest = MessageDigest.getInstance("SHA-256")
-                    .digest(material.getBytes(StandardCharsets.UTF_8));
+                .digest(material.getBytes(StandardCharsets.UTF_8));
             return HexFormat.of().formatHex(digest);
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("SHA-256 不可用", exception);

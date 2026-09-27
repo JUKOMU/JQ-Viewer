@@ -3,7 +3,6 @@
     ref="toolbarRef"
     class="bottom-toolbar"
     :class="{ 'with-chapters': chapters.length > 0 }"
-    @keydown.esc="closeChapterPicker(true)"
   >
     <Transition name="chapter-picker">
       <ul
@@ -109,7 +108,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { RangeCustomEvent } from '@ionic/vue'
-import { IonIcon, IonRange } from '@ionic/vue'
+import { IonIcon, IonRange, useBackButton } from '@ionic/vue'
 import {
   chevronBack,
   chevronDown,
@@ -189,6 +188,11 @@ const closeChapterPicker = (restoreFocus = false) => {
   chapterPickerOpen.value = false
   if (restoreFocus) nextTick(() => chapterTriggerRef.value?.focus())
 }
+
+useBackButton(10, (processNextHandler) => {
+  if (chapterPickerOpen.value) closeChapterPicker(true)
+  else processNextHandler()
+})
 
 const selectChapter = (chapterId: string) => {
   closeChapterPicker()

@@ -95,6 +95,8 @@ vi.mock('@/services/JmcomicService', () => ({
 
 vi.mock('@/services/SettingsService', () => ({
   SettingsStore: {
+    getReaderWidthPercent: vi.fn(() => null),
+    setReaderWidthPercent: vi.fn(),
     getReaderPreloadPages: () => 1,
     getReaderDisplayMode: () => 'vertical',
     getReaderScreenOrientation: () => 'auto',
@@ -173,6 +175,14 @@ const ReaderBottomToolbarStub = defineComponent({
   },
 })
 
+const WidthSettingsStub = defineComponent({
+  name: 'ReaderSettingsPanel',
+  emits: ['update:width-percent', 'update:display-mode'],
+  setup() {
+    return () => h('div')
+  },
+})
+
 const EmptyStub = defineComponent({
   setup() {
     return () => h('div')
@@ -217,7 +227,7 @@ const mountReader = () =>
         ReaderBottomToolbar: ReaderBottomToolbarStub,
         VerticalScrollView: VerticalScrollViewStub,
         HorizontalPageView: HorizontalPageViewStub,
-        ReaderSettingsPanel: EmptyStub,
+        ReaderSettingsPanel: WidthSettingsStub,
       },
     },
   })
@@ -259,6 +269,21 @@ describe('ReaderPage 在线/离线统一图片加载', () => {
 
   afterEach(() => {
     vi.useRealTimers()
+  })
+
+  test('普通阅读页同步默认宽度到纵向和横向视图', async () => {
+    const wrapper = mountReader()
+    await settle()
+    wrapper.findComponent(ReaderBottomToolbarStub).vm.$emit('open-settings')
+    await settle()
+    const settings = wrapper.findComponent(WidthSettingsStub)
+    settings.vm.$emit('update:width-percent', 45)
+    await settle()
+    expect(wrapper.findComponent(VerticalScrollViewStub).attributes('width-percent')).toBe('45')
+    settings.vm.$emit('update:display-mode', false)
+    await settle()
+    expect(wrapper.findComponent(HorizontalPageViewStub).attributes('width-percent')).toBe('45')
+    wrapper.unmount()
   })
 
   test('离线章节等待 imageReady 监听注册后再预加载，并通过 cached 暴露图片', async () => {

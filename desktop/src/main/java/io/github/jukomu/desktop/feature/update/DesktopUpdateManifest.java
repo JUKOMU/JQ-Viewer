@@ -9,15 +9,12 @@ import java.security.KeyFactory;
 import java.security.PublicKey;
 import java.security.Signature;
 import java.security.spec.X509EncodedKeySpec;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Base64;
-import java.util.List;
-import java.util.Locale;
-import java.util.Objects;
+import java.util.*;
 import java.util.regex.Pattern;
 
-/** 验证共享 latest.json 签名并选择当前 Desktop 包。 */
+/**
+ * 验证共享 latest.json 签名并选择当前 Desktop 包。
+ */
 public final class DesktopUpdateManifest {
     private static final Pattern TAG_PATTERN = Pattern.compile("^v([0-9]+\\.[0-9]+\\.[0-9]+)$");
     private static final Pattern DIGEST_PATTERN = Pattern.compile("^[0-9a-fA-F]{64}$");
@@ -27,10 +24,10 @@ public final class DesktopUpdateManifest {
     }
 
     public static VerifiedRelease verifyAndParse(
-            byte[] manifestBytes,
-            byte[] signatureBytes,
-            DesktopUpdateConfiguration configuration,
-            ObjectMapper mapper
+        byte[] manifestBytes,
+        byte[] signatureBytes,
+        DesktopUpdateConfiguration configuration,
+        ObjectMapper mapper
     ) {
         Objects.requireNonNull(mapper, "mapper");
         configuration.requireConfigured();
@@ -65,17 +62,17 @@ public final class DesktopUpdateManifest {
 
             Artifact artifact = selected.getFirst();
             ManifestResponse response = new ManifestResponse(
-                    tag,
-                    versionName,
-                    requiredLong(root, "versionCode"),
-                    requiredText(root, "packageName"),
-                    requiredText(root, "apkName"),
-                    requiredLong(root, "sizeBytes"),
-                    requiredText(root, "sha256"),
-                    requiredText(root, "signingCertificateSha256"),
-                    root.path("releaseNotes").asText(""),
-                    parseSources(requiredNode(root, "sources"), tag, requiredText(root, "apkName")),
-                    artifact
+                tag,
+                versionName,
+                requiredLong(root, "versionCode"),
+                requiredText(root, "packageName"),
+                requiredText(root, "apkName"),
+                requiredLong(root, "sizeBytes"),
+                requiredText(root, "sha256"),
+                requiredText(root, "signingCertificateSha256"),
+                root.path("releaseNotes").asText(""),
+                parseSources(requiredNode(root, "sources"), tag, requiredText(root, "apkName")),
+                artifact
             );
             return new VerifiedRelease(manifestBytes.clone(), signatureBytes.clone(), response, artifact);
         } catch (UpdateException exception) {
@@ -87,32 +84,32 @@ public final class DesktopUpdateManifest {
 
     public static boolean sameRelease(VerifiedRelease first, VerifiedRelease second) {
         return first != null && second != null
-                && Arrays.equals(first.manifestBytes(), second.manifestBytes())
-                && Arrays.equals(first.signatureBytes(), second.signatureBytes());
+            && Arrays.equals(first.manifestBytes(), second.manifestBytes())
+            && Arrays.equals(first.signatureBytes(), second.signatureBytes());
     }
 
     private static void verifySignature(
-            byte[] manifestBytes,
-            byte[] signatureBytes,
-            DesktopUpdateConfiguration configuration,
-            ObjectMapper mapper
+        byte[] manifestBytes,
+        byte[] signatureBytes,
+        DesktopUpdateConfiguration configuration,
+        ObjectMapper mapper
     ) {
         try {
             JsonNode signatureDocument = mapper.readTree(signatureBytes);
             if (requiredInt(signatureDocument, "schemaVersion") != 1
-                    || !"Ed25519".equals(requiredText(signatureDocument, "algorithm"))
-                    || !configuration.keyId().equals(requiredText(signatureDocument, "keyId"))
-                    || !"latest.json".equals(requiredText(signatureDocument, "manifest"))) {
+                || !"Ed25519".equals(requiredText(signatureDocument, "algorithm"))
+                || !configuration.keyId().equals(requiredText(signatureDocument, "keyId"))
+                || !"latest.json".equals(requiredText(signatureDocument, "manifest"))) {
                 throw new UpdateException("发布签名元数据无效");
             }
 
             PublicKey publicKey = KeyFactory.getInstance("Ed25519").generatePublic(
-                    new X509EncodedKeySpec(configuration.publicKeySpki()));
+                new X509EncodedKeySpec(configuration.publicKeySpki()));
             Signature verifier = Signature.getInstance("Ed25519");
             verifier.initVerify(publicKey);
             verifier.update(manifestBytes);
             byte[] signature = Base64.getDecoder().decode(
-                    requiredText(signatureDocument, "signature"));
+                requiredText(signatureDocument, "signature"));
             if (!verifier.verify(signature)) {
                 throw new UpdateException("发布清单签名校验失败");
             }
@@ -132,7 +129,7 @@ public final class DesktopUpdateManifest {
         long sizeBytes = requiredLong(node, "sizeBytes");
         String sha256 = requiredText(node, "sha256").toLowerCase(Locale.ROOT);
         if (!ASSET_NAME_PATTERN.matcher(name).matches() || sizeBytes <= 0
-                || !DIGEST_PATTERN.matcher(sha256).matches()) {
+            || !DIGEST_PATTERN.matcher(sha256).matches()) {
             throw new UpdateException("Desktop 更新包元数据无效");
         }
 
@@ -144,7 +141,7 @@ public final class DesktopUpdateManifest {
         compatible.forEach(value -> architectures.add(value.asText("").toLowerCase(Locale.ROOT)));
         Sources sources = parseSources(requiredNode(node, "sources"), tag, name);
         return new Artifact(name, platform, architecture, List.copyOf(architectures), packageType,
-                packageFormat, sizeBytes, sha256, sources);
+            packageFormat, sizeBytes, sha256, sources);
     }
 
     private static Sources parseSources(JsonNode node, String tag, String assetName) {
@@ -156,24 +153,24 @@ public final class DesktopUpdateManifest {
     }
 
     static void requireReleaseUrl(
-            String value,
-            String expectedHost,
-            String repositoryPath,
-            String tag,
-            String assetName
+        String value,
+        String expectedHost,
+        String repositoryPath,
+        String tag,
+        String assetName
     ) {
         try {
             URI uri = new URI(value);
             String expectedPath = repositoryPath + "/releases/download/" + tag + "/" + assetName;
             boolean validPort = uri.getPort() == -1 || uri.getPort() == 443;
             if (!"https".equalsIgnoreCase(uri.getScheme())
-                    || uri.getHost() == null
-                    || !expectedHost.equalsIgnoreCase(uri.getHost())
-                    || uri.getUserInfo() != null
-                    || !validPort
-                    || uri.getRawQuery() != null
-                    || uri.getRawFragment() != null
-                    || !expectedPath.equals(uri.getRawPath())) {
+                || uri.getHost() == null
+                || !expectedHost.equalsIgnoreCase(uri.getHost())
+                || uri.getUserInfo() != null
+                || !validPort
+                || uri.getRawQuery() != null
+                || uri.getRawFragment() != null
+                || !expectedPath.equals(uri.getRawPath())) {
                 throw new UpdateException("更新地址不属于固定发布仓库");
             }
         } catch (URISyntaxException exception) {
@@ -213,44 +210,44 @@ public final class DesktopUpdateManifest {
     }
 
     public record Artifact(
-            String name,
-            String platform,
-            String architecture,
-            List<String> compatibleArchitectures,
-            String packageType,
-            String packageFormat,
-            long sizeBytes,
-            String sha256,
-            Sources sources
+        String name,
+        String platform,
+        String architecture,
+        List<String> compatibleArchitectures,
+        String packageType,
+        String packageFormat,
+        long sizeBytes,
+        String sha256,
+        Sources sources
     ) {
         boolean matches(DesktopUpdateConfiguration configuration) {
             return platform.equals(configuration.platform())
-                    && packageType.equals(configuration.packageType())
-                    && packageFormat.equals(configuration.packageFormat())
-                    && compatibleArchitectures.contains(configuration.architecture());
+                && packageType.equals(configuration.packageType())
+                && packageFormat.equals(configuration.packageFormat())
+                && compatibleArchitectures.contains(configuration.architecture());
         }
     }
 
     public record ManifestResponse(
-            String tag,
-            String versionName,
-            long versionCode,
-            String packageName,
-            String apkName,
-            long sizeBytes,
-            String sha256,
-            String signingCertificateSha256,
-            String releaseNotes,
-            Sources sources,
-            Artifact desktopArtifact
+        String tag,
+        String versionName,
+        long versionCode,
+        String packageName,
+        String apkName,
+        long sizeBytes,
+        String sha256,
+        String signingCertificateSha256,
+        String releaseNotes,
+        Sources sources,
+        Artifact desktopArtifact
     ) {
     }
 
     public record VerifiedRelease(
-            byte[] manifestBytes,
-            byte[] signatureBytes,
-            ManifestResponse response,
-            Artifact artifact
+        byte[] manifestBytes,
+        byte[] signatureBytes,
+        ManifestResponse response,
+        Artifact artifact
     ) {
         public VerifiedRelease {
             manifestBytes = manifestBytes.clone();

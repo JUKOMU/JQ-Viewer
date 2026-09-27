@@ -461,6 +461,8 @@ export interface JmcomicClient {
 
   setReaderDisplayMode(options: { mode: string }): Promise<{ success: boolean }>
 
+  setReaderWidthPercent(options: { value: number | null }): Promise<{ success: boolean }>
+
   setReaderScreenOrientation(options: { orientation: string }): Promise<{ success: boolean }>
 
   setReaderBrightness(options: { brightness: number }): Promise<{ success: boolean }>

@@ -36,10 +36,10 @@ public final class AppRuntime {
     private final UpdateService updateService;
 
     private AppRuntime(Context context, SettingsStore settingsDb,
-                           DownloadStore downloadDb, FileStore fileStore,
-                           ImageCache imageCache, CacheCapacityPolicy cachePolicy,
-                           int preloadConcurrency,
-                           JmcomicSessionManager sessionManager) {
+                       DownloadStore downloadDb, FileStore fileStore,
+                       ImageCache imageCache, CacheCapacityPolicy cachePolicy,
+                       int preloadConcurrency,
+                       JmcomicSessionManager sessionManager) {
         Context applicationContext = context.getApplicationContext();
         imageExecutor = ServiceExecutors.fixed("image", preloadConcurrency);
         imageFileExecutor = ServiceExecutors.fixed("image-file", preloadConcurrency);

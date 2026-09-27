@@ -3,7 +3,7 @@ package io.github.jukomu.runtime;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * Coordinates one asynchronously-created client across changing network environments.
+ * 协调异步创建的客户端在动态网络环境中运行。
  */
 final class ClientSession<T> {
 

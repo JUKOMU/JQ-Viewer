@@ -11,7 +11,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
-/** 将单一服务的阻塞调用放入有界 executor，并将结果转换为一次 HTTP 响应。 */
+/**
+ * 将单一服务的阻塞调用放入有界 executor，并将结果转换为一次 HTTP 响应。
+ */
 public final class RequestExecutor {
     private static final long LONG_OPERATION_TIMEOUT = TimeUnit.HOURS.toMillis(24);
     private final ExecutorService executor;
@@ -93,7 +95,7 @@ public final class RequestExecutor {
                 config.executor = executor;
                 config.timeout = LONG_OPERATION_TIMEOUT;
                 config.onTimeout(timeoutContext -> sendError(timeoutContext,
-                        ApiException.unavailable("操作超时")));
+                    ApiException.unavailable("操作超时")));
             }, () -> {
                 try {
                     context.json(task.get());
@@ -108,16 +110,16 @@ public final class RequestExecutor {
 
     private void sendError(Context context, Throwable failure) {
         ApiException error = failure instanceof ApiException apiException
-                ? apiException
-                : new ApiException("internal", 500, messageOf(failure));
+            ? apiException
+            : new ApiException("internal", 500, messageOf(failure));
         context.status(error.status()).json(new ErrorResponse(error.code(), error.getMessage()));
     }
 
     private static Throwable unwrap(Throwable failure) {
         Throwable current = failure;
         while ((current instanceof java.util.concurrent.CompletionException
-                || current instanceof java.util.concurrent.ExecutionException)
-                && current.getCause() != null) {
+            || current instanceof java.util.concurrent.ExecutionException)
+            && current.getCause() != null) {
             current = current.getCause();
         }
         return current;

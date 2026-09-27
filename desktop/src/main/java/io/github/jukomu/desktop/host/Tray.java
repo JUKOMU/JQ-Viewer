@@ -23,7 +23,7 @@ public final class Tray implements AutoCloseable {
     private static final MenuLabels CHINESE_LABELS = new MenuLabels("打开首页", "退出");
     private static final MenuLabels ENGLISH_LABELS = new MenuLabels("Open Home", "Exit");
     private static final String CHINESE_MENU_GLYPHS =
-            CHINESE_LABELS.openHome() + CHINESE_LABELS.exit();
+        CHINESE_LABELS.openHome() + CHINESE_LABELS.exit();
     private static final float MENU_FONT_SIZE = 13f;
 
     private final SystemTray systemTray;
@@ -49,7 +49,7 @@ public final class Tray implements AutoCloseable {
 
         try {
             MenuPresentation menuPresentation = resolveMenuPresentation(
-                    Locale.getDefault(Locale.Category.DISPLAY)
+                Locale.getDefault(Locale.Category.DISPLAY)
             );
 
             // 透明宿主窗口，用于处理失焦关闭
@@ -72,14 +72,14 @@ public final class Tray implements AutoCloseable {
             ));
 
             JMenuItem openHomeItem = createMenuItem(
-                    menuPresentation.labels().openHome(),
-                    menuPresentation.font(),
-                    openHome
+                menuPresentation.labels().openHome(),
+                menuPresentation.font(),
+                openHome
             );
             JMenuItem exitItem = createMenuItem(
-                    menuPresentation.labels().exit(),
-                    menuPresentation.font(),
-                    exit
+                menuPresentation.labels().exit(),
+                menuPresentation.font(),
+                exit
             );
 
             JSeparator separator = new JSeparator();
@@ -270,8 +270,8 @@ public final class Tray implements AutoCloseable {
     static MenuLabels selectMenuLabels(Locale locale, boolean chineseFontAvailable) {
         Objects.requireNonNull(locale, "locale");
         return "zh".equals(locale.getLanguage()) && chineseFontAvailable
-                ? CHINESE_LABELS
-                : ENGLISH_LABELS;
+            ? CHINESE_LABELS
+            : ENGLISH_LABELS;
     }
 
     private static MenuPresentation resolveMenuPresentation(Locale locale) {
@@ -300,7 +300,7 @@ public final class Tray implements AutoCloseable {
 
         try {
             String[] families = GraphicsEnvironment.getLocalGraphicsEnvironment()
-                    .getAvailableFontFamilyNames(locale);
+                .getAvailableFontFamilyNames(locale);
             for (String family : families) {
                 Font font = new Font(family, Font.PLAIN, Math.round(MENU_FONT_SIZE));
                 if (font.canDisplayUpTo(CHINESE_MENU_GLYPHS) == -1) {
@@ -325,7 +325,9 @@ public final class Tray implements AutoCloseable {
         }
     }
 
-    /** 使用操作系统托盘气泡展示通知；点击动作只消费一次。 */
+    /**
+     * 使用操作系统托盘气泡展示通知；点击动作只消费一次。
+     */
     public void displayNotification(DesktopNotification notification, Runnable onClick) {
         Objects.requireNonNull(notification, "notification");
         Objects.requireNonNull(onClick, "onClick");
@@ -334,9 +336,9 @@ public final class Tray implements AutoCloseable {
         EventQueue.invokeLater(() -> {
             if (!closed) {
                 trayIcon.displayMessage(
-                        notification.title(),
-                        notification.message(),
-                        TrayIcon.MessageType.NONE
+                    notification.title(),
+                    notification.message(),
+                    TrayIcon.MessageType.NONE
                 );
             }
         });

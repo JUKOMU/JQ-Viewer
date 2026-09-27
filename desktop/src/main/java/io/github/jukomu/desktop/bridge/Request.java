@@ -1,7 +1,7 @@
 package io.github.jukomu.desktop.bridge;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.JsonMappingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.exc.MismatchedInputException;
 import io.javalin.http.Context;
@@ -9,7 +9,9 @@ import io.javalin.http.Context;
 import java.io.IOException;
 import java.util.Collection;
 
-/** 解析并校验 bridge 请求体中的 JSON 参数。 */
+/**
+ * 解析并校验 bridge 请求体中的 JSON 参数。
+ */
 public final class Request {
     private Request() {
     }
@@ -72,7 +74,7 @@ public final class Request {
         Class<?> target = exception.getTargetType();
         if (target == String.class) return field + "必须是字符串";
         if (target == Integer.class || target == int.class
-                || target == Long.class || target == long.class) {
+            || target == Long.class || target == long.class) {
             return field + "必须是整数";
         }
         if (target == Boolean.class || target == boolean.class) {

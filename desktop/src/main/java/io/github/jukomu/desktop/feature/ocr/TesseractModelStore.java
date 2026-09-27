@@ -9,12 +9,14 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.List;
 
-/** 将随应用发布的 tessdata_fast 模型释放到用户数据目录，供原生 Tesseract 读取。 */
+/**
+ * 将随应用发布的 tessdata_fast 模型释放到用户数据目录，供原生 Tesseract 读取。
+ */
 final class TesseractModelStore {
     private static final List<String> MODELS = List.of(
-            "chi_sim.traineddata",
-            "chi_sim_vert.traineddata",
-            "eng.traineddata");
+        "chi_sim.traineddata",
+        "chi_sim_vert.traineddata",
+        "eng.traineddata");
 
     private TesseractModelStore() {
     }
@@ -43,7 +45,7 @@ final class TesseractModelStore {
             Files.copy(input, temporary, StandardCopyOption.REPLACE_EXISTING);
             try {
                 Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE,
-                        StandardCopyOption.REPLACE_EXISTING);
+                    StandardCopyOption.REPLACE_EXISTING);
             } catch (java.nio.file.AtomicMoveNotSupportedException ignored) {
                 Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
             }

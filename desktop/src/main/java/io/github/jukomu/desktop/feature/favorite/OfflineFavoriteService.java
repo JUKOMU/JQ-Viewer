@@ -3,19 +3,13 @@ package io.github.jukomu.desktop.feature.favorite;
 import io.github.jukomu.desktop.bridge.ApiException;
 import io.github.jukomu.desktop.bridge.model.SuccessResponse;
 import io.github.jukomu.desktop.feature.favorite.data.OfflineFavoriteStore;
-import io.github.jukomu.desktop.feature.favorite.model.OfflineFavoriteBackupKeysResponse;
-import io.github.jukomu.desktop.feature.favorite.model.OfflineFavoriteBackupResponse;
-import io.github.jukomu.desktop.feature.favorite.model.OfflineFavoriteBatchResponse;
-import io.github.jukomu.desktop.feature.favorite.model.OfflineFavoriteCountResponse;
-import io.github.jukomu.desktop.feature.favorite.model.OfflineFavoriteFolderResponse;
-import io.github.jukomu.desktop.feature.favorite.model.OfflineFavoriteFoldersResponse;
-import io.github.jukomu.desktop.feature.favorite.model.OfflineFavoriteItem;
-import io.github.jukomu.desktop.feature.favorite.model.OfflineFavoriteItemsResponse;
-import io.github.jukomu.desktop.feature.favorite.model.OfflineFavoritePageResponse;
+import io.github.jukomu.desktop.feature.favorite.model.*;
 
 import java.util.List;
 
-/** 提供离线收藏的输入规范化、事务操作和共享响应契约。 */
+/**
+ * 提供离线收藏的输入规范化、事务操作和共享响应契约。
+ */
 public final class OfflineFavoriteService {
     private final OfflineFavoriteStore store;
 
@@ -34,7 +28,7 @@ public final class OfflineFavoriteService {
     public SuccessResponse renameFolder(String folderId, String name) {
         String normalizedName = text(name).trim();
         boolean success = !normalizedName.isEmpty()
-                && store.renameFolder(text(folderId), normalizedName);
+            && store.renameFolder(text(folderId), normalizedName);
         return new SuccessResponse(success);
     }
 
@@ -51,10 +45,10 @@ public final class OfflineFavoriteService {
     }
 
     public OfflineFavoritePageResponse page(
-            String folderId,
-            String keyword,
-            int page,
-            int pageSize
+        String folderId,
+        String keyword,
+        int page,
+        int pageSize
     ) {
         if (pageSize <= 0) throw ApiException.invalidRequest("pageSize必须是正整数");
         return store.page(text(folderId), keyword, page, pageSize);
@@ -78,15 +72,15 @@ public final class OfflineFavoriteService {
 
     public OfflineFavoriteFolderResponse copyFolder(String sourceId, String name) {
         return new OfflineFavoriteFolderResponse(
-                store.copyFolder(text(sourceId), text(name)));
+            store.copyFolder(text(sourceId), text(name)));
     }
 
     public OfflineFavoriteBatchResponse addItemsBatch(
-            String folderId,
-            List<OfflineFavoriteItem> items
+        String folderId,
+        List<OfflineFavoriteItem> items
     ) {
         return new OfflineFavoriteBatchResponse(
-                store.addItemsBatch(text(folderId), normalize(items)));
+            store.addItemsBatch(text(folderId), normalize(items)));
     }
 
     public SuccessResponse mergeAllToFolder(String targetId) {
@@ -120,11 +114,11 @@ public final class OfflineFavoriteService {
         String id = text(item.id());
         if (id.isBlank()) throw ApiException.invalidRequest("item.id不能为空");
         return new OfflineFavoriteItem(
-                id,
-                text(item.title()),
-                text(item.coverUrl()),
-                strings(item.authors()),
-                strings(item.tags())
+            id,
+            text(item.title()),
+            text(item.coverUrl()),
+            strings(item.authors()),
+            strings(item.tags())
         );
     }
 

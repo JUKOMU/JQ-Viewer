@@ -2,6 +2,8 @@ package io.github.jukomu.desktop.feature.localfile.model;
 
 import java.util.List;
 
-/** 批量刷新 PDF 文件状态参数。 */
+/**
+ * 批量刷新 PDF 文件状态参数。
+ */
 public record LocalFileIdsRequest(List<Long> ids) {
 }

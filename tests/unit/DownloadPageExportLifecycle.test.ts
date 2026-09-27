@@ -34,6 +34,7 @@ vi.mock('@ionic/vue', () => {
       },
     })
   return {
+    useBackButton: vi.fn(),
     alertController: { create: vi.fn() },
     toastController: { create: vi.fn() },
     IonAlert: withSlot('IonAlert'),

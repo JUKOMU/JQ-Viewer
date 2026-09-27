@@ -6,7 +6,9 @@ import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.Objects;
 
-/** Desktop 文件引用的编码与校验边界。 */
+/**
+ * Desktop 文件引用的编码与校验边界。
+ */
 public final class FileReferences {
     private static final String FILE_PREFIX = "file:path:";
     private static final String FOLDER_PREFIX = "folder:path:";

@@ -2,15 +2,11 @@ package io.github.jukomu.feature.export;
 
 import io.github.jukomu.feature.localfile.data.LocalFileRef;
 
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.Locale;
+import java.util.*;
 import java.util.regex.Pattern;
 
 /**
- * Validates and identifies export jobs before they enter the worker queue.
+ * 在导出任务进入工作队列之前，进行验证和识别。
  */
 public final class ExportJobValidator {
 

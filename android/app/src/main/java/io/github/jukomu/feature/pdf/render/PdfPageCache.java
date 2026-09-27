@@ -2,17 +2,11 @@ package io.github.jukomu.feature.pdf.render;
 
 import android.content.Context;
 import android.graphics.Bitmap;
-
 import androidx.documentfile.provider.DocumentFile;
-
 import io.github.jukomu.feature.localfile.data.LocalFileRef;
 import io.github.jukomu.feature.localfile.data.LocalFileRefResolver;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
-import java.io.IOException;
+import java.io.*;
 import java.util.Arrays;
 import java.util.Comparator;
 
@@ -64,7 +58,9 @@ public final class PdfPageCache {
         return fileForId(resourceId).isFile();
     }
 
-    /** 打开已生成的 PNG，并尽力更新时间戳以维护最近访问顺序。 */
+    /**
+     * 打开已生成的 PNG，并尽力更新时间戳以维护最近访问顺序。
+     */
     public FileInputStream openPage(String resourceId) throws IOException {
         File file = fileForId(resourceId);
         if (!file.isFile()) throw new FileNotFoundException(file.getAbsolutePath());
@@ -106,7 +102,9 @@ public final class PdfPageCache {
         return new SourceStamp(Math.max(0L, length), Math.max(0L, lastModified));
     }
 
-    /** 将 Bitmap 先写入随机 tmp，关闭后再替换为最终 PNG 文件。 */
+    /**
+     * 将 Bitmap 先写入随机 tmp，关闭后再替换为最终 PNG 文件。
+     */
     public void writePngAtomically(String resourceId, Bitmap bitmap) throws IOException {
         if (bitmap == null) throw new IllegalArgumentException("bitmap is required");
         File target = fileForId(resourceId);

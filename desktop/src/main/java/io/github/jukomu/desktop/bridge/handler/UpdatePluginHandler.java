@@ -8,7 +8,9 @@ import io.javalin.http.Context;
 
 import java.util.function.Supplier;
 
-/** Desktop 更新 bridge。 */
+/**
+ * Desktop 更新 bridge。
+ */
 public final class UpdatePluginHandler {
     private final RequestExecutor requests;
     private final DesktopUpdateService updates;

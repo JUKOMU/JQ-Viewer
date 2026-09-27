@@ -2,39 +2,11 @@ package io.github.jukomu.desktop.feature.catalog;
 
 import io.github.jukomu.desktop.bridge.ApiException;
 import io.github.jukomu.desktop.bridge.model.SuccessResponse;
-import io.github.jukomu.desktop.feature.catalog.model.AlbumResponse;
-import io.github.jukomu.desktop.feature.catalog.model.AlbumSummaryResponse;
-import io.github.jukomu.desktop.feature.catalog.model.CategoryResponse;
-import io.github.jukomu.desktop.feature.catalog.model.CommentListResponse;
-import io.github.jukomu.desktop.feature.catalog.model.FavoriteFolderResponse;
-import io.github.jukomu.desktop.feature.catalog.model.FavoriteResponse;
-import io.github.jukomu.desktop.feature.catalog.model.ImageResponse;
-import io.github.jukomu.desktop.feature.catalog.model.PhotoResponse;
-import io.github.jukomu.desktop.feature.catalog.model.PhotoSummaryResponse;
-import io.github.jukomu.desktop.feature.catalog.model.SearchRequest;
-import io.github.jukomu.desktop.feature.catalog.model.SearchResponse;
+import io.github.jukomu.desktop.feature.catalog.model.*;
 import io.github.jukomu.desktop.feature.image.ImageService;
 import io.github.jukomu.jmcomic.api.client.JmClient;
-import io.github.jukomu.jmcomic.api.enums.Category;
-import io.github.jukomu.jmcomic.api.enums.FavoriteFolderType;
-import io.github.jukomu.jmcomic.api.enums.ForumMode;
-import io.github.jukomu.jmcomic.api.enums.OrderBy;
-import io.github.jukomu.jmcomic.api.enums.SearchMainTag;
-import io.github.jukomu.jmcomic.api.enums.TimeOption;
-import io.github.jukomu.jmcomic.api.model.ForumQuery;
-import io.github.jukomu.jmcomic.api.model.FavoriteQuery;
-import io.github.jukomu.jmcomic.api.model.JmAlbum;
-import io.github.jukomu.jmcomic.api.model.JmAlbumMeta;
-import io.github.jukomu.jmcomic.api.model.JmCategoryMeta;
-import io.github.jukomu.jmcomic.api.model.JmComment;
-import io.github.jukomu.jmcomic.api.model.JmCommentList;
-import io.github.jukomu.jmcomic.api.model.JmFavoriteFolderResult;
-import io.github.jukomu.jmcomic.api.model.JmFavoritePage;
-import io.github.jukomu.jmcomic.api.model.JmImage;
-import io.github.jukomu.jmcomic.api.model.JmPhoto;
-import io.github.jukomu.jmcomic.api.model.JmPhotoMeta;
-import io.github.jukomu.jmcomic.api.model.JmSearchPage;
-import io.github.jukomu.jmcomic.api.model.SearchQuery;
+import io.github.jukomu.jmcomic.api.enums.*;
+import io.github.jukomu.jmcomic.api.model.*;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -43,24 +15,26 @@ import java.util.Objects;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
-/** 调用在线客户端并转换为页面使用的响应模型。 */
+/**
+ * 调用在线客户端并转换为页面使用的响应模型。
+ */
 public final class CatalogService {
     private final Supplier<JmClient> clientSupplier;
     private final ImageService imageService;
     private final Function<String, String> albumCoverUrl;
 
     public CatalogService(
-            JmClient client,
-            ImageService imageService,
-            Function<String, String> albumCoverUrl
+        JmClient client,
+        ImageService imageService,
+        Function<String, String> albumCoverUrl
     ) {
         this(() -> client, imageService, albumCoverUrl);
     }
 
     public CatalogService(
-            Supplier<JmClient> clientSupplier,
-            ImageService imageService,
-            Function<String, String> albumCoverUrl
+        Supplier<JmClient> clientSupplier,
+        ImageService imageService,
+        Function<String, String> albumCoverUrl
     ) {
         this.clientSupplier = Objects.requireNonNull(clientSupplier, "clientSupplier");
         this.imageService = Objects.requireNonNull(imageService, "imageService");
@@ -87,18 +61,18 @@ public final class CatalogService {
 
     public CommentListResponse getComments(String albumId, int page) {
         JmCommentList comments = client().getComments(
-                ForumQuery.album(albumId).mode(ForumMode.ALL).page(page).build());
+            ForumQuery.album(albumId).mode(ForumMode.ALL).page(page).build());
         return new CommentListResponse(
-                comments.getTotal(),
-                safe(comments.getList()).stream().map(this::toCommentResponse).toList()
+            comments.getTotal(),
+            safe(comments.getList()).stream().map(this::toCommentResponse).toList()
         );
     }
 
     public FavoriteResponse getFavorites(int folderId, int page) {
         FavoriteQuery query = new FavoriteQuery.Builder()
-                .folderId(folderId)
-                .page(page)
-                .build();
+            .folderId(folderId)
+            .page(page)
+            .build();
         return toFavoriteResponse(client().getFavorites(query));
     }
 
@@ -113,25 +87,25 @@ public final class CatalogService {
     }
 
     public FavoriteFolderResponse manageFavoriteFolder(
-            FavoriteFolderType type,
-            String folderId,
-            String folderName,
-            String albumId
+        FavoriteFolderType type,
+        String folderId,
+        String folderName,
+        String albumId
     ) {
         JmFavoriteFolderResult result = client().manageFavoriteFolder(
-                type, folderId, folderName, albumId);
+            type, folderId, folderName, albumId);
         return new FavoriteFolderResponse(text(result.getStatus()), text(result.getMsg()));
     }
 
     private SearchQuery query(SearchRequest request) {
         return new SearchQuery.Builder()
-                .text(text(request.keyword()))
-                .category(category(text(request.category())))
-                .orderBy(orderBy(text(request.orderBy())))
-                .time(time(text(request.time())))
-                .mainTag(mainTag(request.searchMainTag() == null ? 0 : request.searchMainTag()))
-                .page(Math.max(1, request.page() == null ? 1 : request.page()))
-                .build();
+            .text(text(request.keyword()))
+            .category(category(text(request.category())))
+            .orderBy(orderBy(text(request.orderBy())))
+            .time(time(text(request.time())))
+            .mainTag(mainTag(request.searchMainTag() == null ? 0 : request.searchMainTag()))
+            .page(Math.max(1, request.page() == null ? 1 : request.page()))
+            .build();
     }
 
     private static Category category(String value) {
@@ -164,124 +138,124 @@ public final class CatalogService {
 
     private SearchResponse toSearchResponse(JmSearchPage page) {
         return new SearchResponse(
-                page.getCurrentPage(),
-                page.getTotalItems(),
-                page.getTotalPages(),
-                safe(page.getContent()).stream().map(this::toAlbumSummaryResponse).toList()
+            page.getCurrentPage(),
+            page.getTotalItems(),
+            page.getTotalPages(),
+            safe(page.getContent()).stream().map(this::toAlbumSummaryResponse).toList()
         );
     }
 
     private FavoriteResponse toFavoriteResponse(JmFavoritePage page) {
         return new FavoriteResponse(
-                text(page.getFolderName()),
-                String.valueOf(page.getFolderId()),
-                page.getCurrentPage(),
-                page.getTotalItems(),
-                page.getTotalPages(),
-                safe(page.getContent()).stream().map(this::toAlbumSummaryResponse).toList(),
-                page.getFolderList() == null
-                        ? Map.of()
-                        : new LinkedHashMap<>(page.getFolderList())
+            text(page.getFolderName()),
+            String.valueOf(page.getFolderId()),
+            page.getCurrentPage(),
+            page.getTotalItems(),
+            page.getTotalPages(),
+            safe(page.getContent()).stream().map(this::toAlbumSummaryResponse).toList(),
+            page.getFolderList() == null
+                ? Map.of()
+                : new LinkedHashMap<>(page.getFolderList())
         );
     }
 
     private AlbumResponse toAlbumResponse(JmAlbum album) {
         return new AlbumResponse(
-                text(album.getId()),
-                text(album.getTitle()),
-                text(album.getDescription()),
-                text(album.getAddTime()),
-                album.getPageCount(),
-                text(album.getLikes()),
-                text(album.getViews()),
-                album.getCommentCount(),
-                albumCoverUrl.apply(album.getId()),
-                toCategoryResponse(album.getCategory()),
-                toCategoryResponse(album.getSubCategory()),
-                strings(album.getAuthors()),
-                strings(album.getWorks()),
-                strings(album.getActors()),
-                strings(album.getTags()),
-                safe(album.getRelatedAlbums()).stream().map(this::toAlbumSummaryResponse).toList(),
-                safe(album.getPhotoMetas()).stream().map(CatalogService::toPhotoSummaryResponse).toList(),
-                text(album.getSeriesId()),
-                album.isSingleAlbum(),
-                album.isFavorite(),
-                album.isLiked(),
-                text(album.getPrice()),
-                text(album.getPurchased())
+            text(album.getId()),
+            text(album.getTitle()),
+            text(album.getDescription()),
+            text(album.getAddTime()),
+            album.getPageCount(),
+            text(album.getLikes()),
+            text(album.getViews()),
+            album.getCommentCount(),
+            albumCoverUrl.apply(album.getId()),
+            toCategoryResponse(album.getCategory()),
+            toCategoryResponse(album.getSubCategory()),
+            strings(album.getAuthors()),
+            strings(album.getWorks()),
+            strings(album.getActors()),
+            strings(album.getTags()),
+            safe(album.getRelatedAlbums()).stream().map(this::toAlbumSummaryResponse).toList(),
+            safe(album.getPhotoMetas()).stream().map(CatalogService::toPhotoSummaryResponse).toList(),
+            text(album.getSeriesId()),
+            album.isSingleAlbum(),
+            album.isFavorite(),
+            album.isLiked(),
+            text(album.getPrice()),
+            text(album.getPurchased())
         );
     }
 
     private AlbumSummaryResponse toAlbumSummaryResponse(JmAlbumMeta album) {
         return new AlbumSummaryResponse(
-                text(album.getId()),
-                text(album.getTitle()),
-                albumCoverUrl.apply(album.getId()),
-                strings(album.getAuthors()),
-                strings(album.getTags()),
-                text(album.getDescription()),
-                text(album.getImage()),
-                toCategoryResponse(album.getCategory()),
-                toCategoryResponse(album.getSubCategory())
+            text(album.getId()),
+            text(album.getTitle()),
+            albumCoverUrl.apply(album.getId()),
+            strings(album.getAuthors()),
+            strings(album.getTags()),
+            text(album.getDescription()),
+            text(album.getImage()),
+            toCategoryResponse(album.getCategory()),
+            toCategoryResponse(album.getSubCategory())
         );
     }
 
     private static PhotoSummaryResponse toPhotoSummaryResponse(JmPhotoMeta photo) {
         return new PhotoSummaryResponse(
-                text(photo.getId()),
-                text(photo.getTitle()),
-                photo.getSortOrder()
+            text(photo.getId()),
+            text(photo.getTitle()),
+            photo.getSortOrder()
         );
     }
 
     private PhotoResponse toPhotoResponse(JmPhoto photo) {
         return new PhotoResponse(
-                text(photo.getId()),
-                text(photo.getTitle()),
-                text(photo.getAlbumId()),
-                photo.getSortOrder(),
-                text(photo.getAuthor()),
-                strings(photo.getTags()),
-                safe(photo.getImages()).stream().map(CatalogService::toImageResponse).toList(),
-                photo.isSingleAlbum()
+            text(photo.getId()),
+            text(photo.getTitle()),
+            text(photo.getAlbumId()),
+            photo.getSortOrder(),
+            text(photo.getAuthor()),
+            strings(photo.getTags()),
+            safe(photo.getImages()).stream().map(CatalogService::toImageResponse).toList(),
+            photo.isSingleAlbum()
         );
     }
 
     private static ImageResponse toImageResponse(JmImage image) {
         return new ImageResponse(
-                text(image.getPhotoId()),
-                text(image.getScrambleId()),
-                text(image.getFilename()),
-                text(image.getUrl()),
-                text(image.getQueryParams()),
-                image.getSortOrder()
+            text(image.getPhotoId()),
+            text(image.getScrambleId()),
+            text(image.getFilename()),
+            text(image.getUrl()),
+            text(image.getQueryParams()),
+            image.getSortOrder()
         );
     }
 
     private CommentListResponse.Comment toCommentResponse(JmComment comment) {
         return new CommentListResponse.Comment(
-                text(comment.getCommentId()),
-                text(comment.getUserId()),
-                text(comment.getUsername()),
-                text(comment.getNickname()),
-                text(comment.getContent()),
-                text(comment.getPostDate()),
-                text(comment.getPhoto()),
-                text(comment.getExpinfo()),
-                text(comment.getAid()),
-                text(comment.getName()),
-                comment.getLikes(),
-                comment.getVoteUp(),
-                comment.getVoteDown(),
-                safe(comment.getReplys()).stream().map(this::toCommentResponse).toList()
+            text(comment.getCommentId()),
+            text(comment.getUserId()),
+            text(comment.getUsername()),
+            text(comment.getNickname()),
+            text(comment.getContent()),
+            text(comment.getPostDate()),
+            text(comment.getPhoto()),
+            text(comment.getExpinfo()),
+            text(comment.getAid()),
+            text(comment.getName()),
+            comment.getLikes(),
+            comment.getVoteUp(),
+            comment.getVoteDown(),
+            safe(comment.getReplys()).stream().map(this::toCommentResponse).toList()
         );
     }
 
     private static CategoryResponse toCategoryResponse(JmCategoryMeta category) {
         return category == null
-                ? null
-                : new CategoryResponse(text(category.getId()), text(category.getTitle()));
+            ? null
+            : new CategoryResponse(text(category.getId()), text(category.getTitle()));
     }
 
     private static List<String> strings(List<String> values) {

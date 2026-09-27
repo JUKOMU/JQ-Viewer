@@ -18,7 +18,9 @@ import java.util.Objects;
 import java.util.concurrent.Executor;
 import java.util.function.Supplier;
 
-/** 协调当前登录会话与操作系统安全凭据。 */
+/**
+ * 协调当前登录会话与操作系统安全凭据。
+ */
 public final class AuthService {
     private static final Logger LOGGER = LoggerFactory.getLogger(AuthService.class);
     private final Supplier<JmClient> clientSupplier;
@@ -37,14 +39,14 @@ public final class AuthService {
     }
 
     public AuthService(
-            Supplier<JmClient> clientSupplier,
-            CredentialStore credentials,
-            Executor remoteLogoutExecutor
+        Supplier<JmClient> clientSupplier,
+        CredentialStore credentials,
+        Executor remoteLogoutExecutor
     ) {
         this.clientSupplier = Objects.requireNonNull(clientSupplier, "clientSupplier");
         this.credentials = Objects.requireNonNull(credentials, "credentials");
         this.remoteLogoutExecutor = Objects.requireNonNull(
-                remoteLogoutExecutor, "remoteLogoutExecutor");
+            remoteLogoutExecutor, "remoteLogoutExecutor");
     }
 
     public UserInfoResponse login(String username, String password) {
@@ -61,7 +63,9 @@ public final class AuthService {
         return result;
     }
 
-    /** 立即清除本地会话与凭据，远端注销仅作为后台尽力操作。 */
+    /**
+     * 立即清除本地会话与凭据，远端注销仅作为后台尽力操作。
+     */
     public SuccessResponse logout() {
         userInfo = null;
         clearCredentials("退出后无法清除自动登录凭据");
@@ -81,7 +85,7 @@ public final class AuthService {
             throw ApiException.unavailable("无法读取操作系统安全凭据，自动登录不可用");
         }
         if (saved == null || saved.username() == null || saved.username().isBlank()
-                || saved.password() == null || saved.password().isEmpty()) {
+            || saved.password() == null || saved.password().isEmpty()) {
             throw ApiException.notFound("没有保存的自动登录凭据");
         }
 
@@ -99,30 +103,30 @@ public final class AuthService {
                 clearCredentials("自动登录凭据已失效，但无法从安全存储清除");
             }
             throw ApiException.permissionDenied(authenticationFailure
-                    ? "自动登录失败：凭据无效或已过期"
-                    : message(failure, "自动登录失败"));
+                ? "自动登录失败：凭据无效或已过期"
+                : message(failure, "自动登录失败"));
         }
     }
 
     public LoginStateResponse state() {
         UserInfoResponse currentUserInfo = userInfo;
         return currentUserInfo == null
-                ? new LoginStateResponse(false, null, null)
-                : new LoginStateResponse(true, currentUserInfo.username(), currentUserInfo);
+            ? new LoginStateResponse(false, null, null)
+            : new LoginStateResponse(true, currentUserInfo.username(), currentUserInfo);
     }
 
     public UserProfileResponse profile(String uid) {
         JmUserProfile profile = requireClient().getUserProfile(uid);
         return new UserProfileResponse(
-                text(profile.username()),
-                text(profile.email()),
-                text(profile.nickname()),
-                text(profile.birthday()),
-                text(profile.city()),
-                text(profile.country()),
-                text(profile.occupation()),
-                text(profile.aboutMe()),
-                text(profile.website())
+            text(profile.username()),
+            text(profile.email()),
+            text(profile.nickname()),
+            text(profile.birthday()),
+            text(profile.city()),
+            text(profile.country()),
+            text(profile.occupation()),
+            text(profile.aboutMe()),
+            text(profile.website())
         );
     }
 
@@ -174,7 +178,7 @@ public final class AuthService {
     private UserInfoResponse remoteLogin(String username, String password) {
         synchronized (remoteAuthLock) {
             UserInfoResponse result = toUserInfoResponse(
-                    requireClient().login(username, password));
+                requireClient().login(username, password));
             successfulLoginGeneration++;
             return result;
         }
@@ -182,8 +186,8 @@ public final class AuthService {
 
     private static String message(RuntimeException failure, String fallback) {
         return failure.getMessage() == null || failure.getMessage().isBlank()
-                ? fallback
-                : failure.getMessage();
+            ? fallback
+            : failure.getMessage();
     }
 
     private static boolean isAuthenticationFailure(ResponseException failure) {
@@ -199,22 +203,22 @@ public final class AuthService {
 
     private static UserInfoResponse toUserInfoResponse(JmUserInfo info) {
         return new UserInfoResponse(
-                text(info.getUid()),
-                text(info.getUsername()),
-                text(info.getEmail()),
-                info.isEmailVerified(),
-                text(info.getPhotoUrl()),
-                text(info.getFirstName()),
-                text(info.getGender()),
-                text(info.getMessage()),
-                info.getLevel(),
-                text(info.getLevelName()),
-                info.getNextLevelExp(),
-                info.getCurrentExp(),
-                info.getExpPercent(),
-                info.getCoin(),
-                info.getAlbumFavorites(),
-                info.getMaxAlbumFavorites()
+            text(info.getUid()),
+            text(info.getUsername()),
+            text(info.getEmail()),
+            info.isEmailVerified(),
+            text(info.getPhotoUrl()),
+            text(info.getFirstName()),
+            text(info.getGender()),
+            text(info.getMessage()),
+            info.getLevel(),
+            text(info.getLevelName()),
+            info.getNextLevelExp(),
+            info.getCurrentExp(),
+            info.getExpPercent(),
+            info.getCoin(),
+            info.getAlbumFavorites(),
+            info.getMaxAlbumFavorites()
         );
     }
 

@@ -4,16 +4,14 @@ import io.github.jukomu.desktop.bridge.ApiException;
 import io.github.jukomu.desktop.data.Database;
 
 import java.nio.charset.StandardCharsets;
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Types;
+import java.sql.*;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 
-/** 持久化 Desktop 本地文件库，并提供稳定的分页顺序。 */
+/**
+ * 持久化 Desktop 本地文件库，并提供稳定的分页顺序。
+ */
 public final class LocalFileStore {
     public static final String SOURCE_IMPORTED = "imported";
     public static final String SOURCE_EXPORTED = "exported";
@@ -27,33 +25,33 @@ public final class LocalFileStore {
     }
 
     public synchronized InsertResult insertImported(
-            String format,
-            String fileRef,
-            String displayPath,
-            String fileName,
-            String albumId,
-            String albumTitle,
-            String coverUrl,
-            String authors,
-            String chapterId,
-            String chapterTitle,
-            int chapterSortOrder,
-            Boolean singleEpisode,
-            String folderId,
-            long fileSize,
-            int pageCount,
-            long now
+        String format,
+        String fileRef,
+        String displayPath,
+        String fileName,
+        String albumId,
+        String albumTitle,
+        String coverUrl,
+        String authors,
+        String chapterId,
+        String chapterTitle,
+        int chapterSortOrder,
+        Boolean singleEpisode,
+        String folderId,
+        long fileSize,
+        int pageCount,
+        long now
     ) {
         StoredLocalFile existing = findByRef(fileRef);
         if (existing != null) return new InsertResult(existing, false);
 
         String sql = "INSERT INTO local_files(format, file_ref, display_path, file_name, source_type, "
-                + "ownership, chapter_link_status, album_id, album_title, cover_url, authors, "
-                + "is_single_episode, folder_id, "
-                + "file_size, page_count, availability, verification_status, verification_error, "
-                + "created_at, updated_at, verified_at) "
-                + "VALUES (?, ?, ?, ?, 'imported', 'external_reference', ?, ?, ?, ?, ?, ?, ?, ?, ?, "
-                + "'available', 'valid', NULL, ?, ?, ?)";
+            + "ownership, chapter_link_status, album_id, album_title, cover_url, authors, "
+            + "is_single_episode, folder_id, "
+            + "file_size, page_count, availability, verification_status, verification_error, "
+            + "created_at, updated_at, verified_at) "
+            + "VALUES (?, ?, ?, ?, 'imported', 'external_reference', ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+            + "'available', 'valid', NULL, ?, ?, ?)";
         try {
             boolean autoCommit = connection.getAutoCommit();
             connection.setAutoCommit(false);
@@ -80,7 +78,7 @@ public final class LocalFileStore {
             if (inserted == null) throw new SQLException("inserted local file is missing");
             if (chapterId != null && !chapterId.isBlank()) {
                 insertChapter(inserted.id(), 0, albumId, chapterId, chapterTitle,
-                        chapterSortOrder, 1, pageCount, pageCount);
+                    chapterSortOrder, 1, pageCount, pageCount);
             }
             connection.commit();
             connection.setAutoCommit(autoCommit);
@@ -104,7 +102,7 @@ public final class LocalFileStore {
 
     public synchronized StoredLocalFile find(long id) {
         try (PreparedStatement statement = connection.prepareStatement(
-                "SELECT * FROM local_files WHERE id=?")) {
+            "SELECT * FROM local_files WHERE id=?")) {
             statement.setLong(1, id);
             try (ResultSet rows = statement.executeQuery()) {
                 return rows.next() ? file(rows) : null;
@@ -116,7 +114,7 @@ public final class LocalFileStore {
 
     public synchronized StoredLocalFile findByRef(String fileRef) {
         try (PreparedStatement statement = connection.prepareStatement(
-                "SELECT * FROM local_files WHERE file_ref=?")) {
+            "SELECT * FROM local_files WHERE file_ref=?")) {
             statement.setString(1, fileRef);
             try (ResultSet rows = statement.executeQuery()) {
                 return rows.next() ? file(rows) : null;
@@ -127,16 +125,16 @@ public final class LocalFileStore {
     }
 
     public synchronized Page list(
-            List<String> formats,
-            String sourceType,
-            String availability,
-            Long fileId,
-            String albumId,
-            String chapterId,
-            String folderId,
-            String query,
-            String cursor,
-            int requestedLimit
+        List<String> formats,
+        String sourceType,
+        String availability,
+        Long fileId,
+        String albumId,
+        String chapterId,
+        String folderId,
+        String query,
+        String cursor,
+        int requestedLimit
     ) {
         int limit = Math.max(1, Math.min(100, requestedLimit));
         CursorPosition position = CursorPosition.parse(cursor);
@@ -144,7 +142,7 @@ public final class LocalFileStore {
         List<Object> arguments = new ArrayList<>();
         if (formats != null && !formats.isEmpty()) {
             clauses.add("format IN (" + String.join(",", formats.stream().map(
-                    ignored -> "?").toList()) + ")");
+                ignored -> "?").toList()) + ")");
             arguments.addAll(formats);
         }
         if (sourceType != null && !sourceType.isBlank()) {
@@ -164,7 +162,7 @@ public final class LocalFileStore {
             arguments.add(fileId);
         }
         if ((albumId != null && !albumId.isBlank())
-                || (chapterId != null && !chapterId.isBlank())) {
+            || (chapterId != null && !chapterId.isBlank())) {
             List<String> chapterClauses = new ArrayList<>();
             chapterClauses.add("chapter.file_id=local_files.id");
             if (albumId != null && !albumId.isBlank()) {
@@ -176,7 +174,7 @@ public final class LocalFileStore {
                 arguments.add(chapterId);
             }
             clauses.add("EXISTS (SELECT 1 FROM local_file_chapters chapter WHERE "
-                    + String.join(" AND ", chapterClauses) + ")");
+                + String.join(" AND ", chapterClauses) + ")");
         }
         if (folderId != null && !folderId.isBlank()) {
             clauses.add("folder_id=?");
@@ -197,8 +195,8 @@ public final class LocalFileStore {
         }
 
         String sql = "SELECT * FROM local_files"
-                + (clauses.isEmpty() ? "" : " WHERE " + String.join(" AND ", clauses))
-                + " ORDER BY updated_at DESC, id DESC LIMIT ?";
+            + (clauses.isEmpty() ? "" : " WHERE " + String.join(" AND ", clauses))
+            + " ORDER BY updated_at DESC, id DESC LIMIT ?";
         List<StoredLocalFile> files = new ArrayList<>();
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
             int index = 1;
@@ -230,10 +228,10 @@ public final class LocalFileStore {
     public synchronized List<StoredLocalFile> listAll(String sourceType) {
         List<StoredLocalFile> files = new ArrayList<>();
         try (PreparedStatement statement = connection.prepareStatement(
-                "SELECT * FROM local_files"
-                        + (sourceType == null || sourceType.isBlank()
-                        ? "" : " WHERE source_type=?")
-                        + " ORDER BY album_id, id")) {
+            "SELECT * FROM local_files"
+                + (sourceType == null || sourceType.isBlank()
+                ? "" : " WHERE source_type=?")
+                + " ORDER BY album_id, id")) {
             if (sourceType != null && !sourceType.isBlank()) statement.setString(1, sourceType);
             try (ResultSet rows = statement.executeQuery()) {
                 while (rows.next()) files.add(file(rows));
@@ -245,17 +243,17 @@ public final class LocalFileStore {
     }
 
     public synchronized StoredLocalFile updateVerification(
-            long id,
-            String availability,
-            String verificationStatus,
-            String error,
-            Long fileSize,
-            Integer pageCount,
-            long verifiedAt
+        long id,
+        String availability,
+        String verificationStatus,
+        String error,
+        Long fileSize,
+        Integer pageCount,
+        long verifiedAt
     ) {
         String sql = "UPDATE local_files SET availability=?, verification_status=?, "
-                + "verification_error=?, file_size=COALESCE(?, file_size), "
-                + "page_count=COALESCE(?, page_count), updated_at=?, verified_at=? WHERE id=?";
+            + "verification_error=?, file_size=COALESCE(?, file_size), "
+            + "page_count=COALESCE(?, page_count), updated_at=?, verified_at=? WHERE id=?";
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setString(1, availability);
             statement.setString(2, verificationStatus);
@@ -276,7 +274,7 @@ public final class LocalFileStore {
 
     public synchronized boolean remove(long id) {
         try (PreparedStatement statement = connection.prepareStatement(
-                "DELETE FROM local_files WHERE id=?")) {
+            "DELETE FROM local_files WHERE id=?")) {
             statement.setLong(1, id);
             return statement.executeUpdate() == 1;
         } catch (SQLException exception) {
@@ -286,7 +284,7 @@ public final class LocalFileStore {
 
     public synchronized int updateAlbumEpisodeType(String albumId, boolean singleEpisode) {
         try (PreparedStatement statement = connection.prepareStatement(
-                "UPDATE local_files SET is_single_episode=?, updated_at=? WHERE album_id=?")) {
+            "UPDATE local_files SET is_single_episode=?, updated_at=? WHERE album_id=?")) {
             statement.setInt(1, singleEpisode ? 1 : 0);
             statement.setLong(2, System.currentTimeMillis());
             statement.setString(3, albumId);
@@ -305,33 +303,33 @@ public final class LocalFileStore {
         List<StoredLocalFileChapter> chapters = chapters(id);
         StoredLocalFileChapter first = chapters.isEmpty() ? null : chapters.get(0);
         return new StoredLocalFile(
-                id, rows.getString("format"), rows.getString("file_ref"), rows.getString("display_path"),
-                rows.getString("file_name"), rows.getString("source_type"),
-                rows.getString("ownership"), rows.getString("chapter_link_status"),
-                rows.getString("album_id"), rows.getString("album_title"),
-                rows.getString("cover_url"), rows.getString("authors"),
-                first == null ? null : first.chapterId(),
-                first == null ? "" : first.chapterTitle(),
-                first == null ? 0 : first.sortOrder(), single, rows.getString("folder_id"),
-                rows.getLong("file_size"), rows.getInt("page_count"),
-                rows.getString("availability"), rows.getString("verification_status"),
-                rows.getString("verification_error"), rows.getLong("created_at"),
-                rows.getLong("updated_at"), verified, chapters
+            id, rows.getString("format"), rows.getString("file_ref"), rows.getString("display_path"),
+            rows.getString("file_name"), rows.getString("source_type"),
+            rows.getString("ownership"), rows.getString("chapter_link_status"),
+            rows.getString("album_id"), rows.getString("album_title"),
+            rows.getString("cover_url"), rows.getString("authors"),
+            first == null ? null : first.chapterId(),
+            first == null ? "" : first.chapterTitle(),
+            first == null ? 0 : first.sortOrder(), single, rows.getString("folder_id"),
+            rows.getLong("file_size"), rows.getInt("page_count"),
+            rows.getString("availability"), rows.getString("verification_status"),
+            rows.getString("verification_error"), rows.getLong("created_at"),
+            rows.getLong("updated_at"), verified, chapters
         );
     }
 
     private List<StoredLocalFileChapter> chapters(long fileId) throws SQLException {
         List<StoredLocalFileChapter> chapters = new ArrayList<>();
         try (PreparedStatement statement = connection.prepareStatement(
-                "SELECT * FROM local_file_chapters WHERE file_id=? ORDER BY sequence")) {
+            "SELECT * FROM local_file_chapters WHERE file_id=? ORDER BY sequence")) {
             statement.setLong(1, fileId);
             try (ResultSet rows = statement.executeQuery()) {
                 while (rows.next()) {
                     chapters.add(new StoredLocalFileChapter(
-                            rows.getInt("sequence"), rows.getString("album_id"),
-                            rows.getString("chapter_id"), rows.getString("chapter_title"),
-                            rows.getInt("sort_order"), rows.getInt("start_page"),
-                            rows.getInt("end_page"), rows.getInt("page_count")));
+                        rows.getInt("sequence"), rows.getString("album_id"),
+                        rows.getString("chapter_id"), rows.getString("chapter_title"),
+                        rows.getInt("sort_order"), rows.getInt("start_page"),
+                        rows.getInt("end_page"), rows.getInt("page_count")));
                 }
             }
         }
@@ -342,8 +340,8 @@ public final class LocalFileStore {
                                String chapterTitle, int sortOrder, int startPage,
                                int endPage, int pageCount) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(
-                "INSERT INTO local_file_chapters(file_id,sequence,album_id,chapter_id,chapter_title,"
-                        + "sort_order,start_page,end_page,page_count) VALUES (?,?,?,?,?,?,?,?,?)")) {
+            "INSERT INTO local_file_chapters(file_id,sequence,album_id,chapter_id,chapter_title,"
+                + "sort_order,start_page,end_page,page_count) VALUES (?,?,?,?,?,?,?,?,?)")) {
             statement.setLong(1, fileId);
             statement.setInt(2, sequence);
             statement.setString(3, value(albumId));
@@ -358,7 +356,7 @@ public final class LocalFileStore {
     }
 
     private static void nullableText(PreparedStatement statement, int index, String value)
-            throws SQLException {
+        throws SQLException {
         if (value == null || value.isBlank()) statement.setNull(index, Types.VARCHAR);
         else statement.setString(index, value);
     }
@@ -369,7 +367,7 @@ public final class LocalFileStore {
 
     private static boolean isUniqueConflict(SQLException exception) {
         return exception.getMessage() != null
-                && exception.getMessage().toLowerCase().contains("unique constraint failed");
+            && exception.getMessage().toLowerCase().contains("unique constraint failed");
     }
 
     private static IllegalStateException failure(String message, SQLException exception) {
@@ -390,8 +388,8 @@ public final class LocalFileStore {
                 int separator = value.indexOf(':');
                 if (separator <= 0 || separator == value.length() - 1) throw new IllegalArgumentException();
                 return new CursorPosition(
-                        Long.parseLong(value.substring(0, separator)),
-                        Long.parseLong(value.substring(separator + 1))
+                    Long.parseLong(value.substring(0, separator)),
+                    Long.parseLong(value.substring(separator + 1))
                 );
             } catch (RuntimeException exception) {
                 throw ApiException.invalidRequest("cursor无效");
@@ -401,7 +399,7 @@ public final class LocalFileStore {
         private static String encode(long updatedAt, long id) {
             String value = updatedAt + ":" + id;
             return Base64.getUrlEncoder().withoutPadding()
-                    .encodeToString(value.getBytes(StandardCharsets.UTF_8));
+                .encodeToString(value.getBytes(StandardCharsets.UTF_8));
         }
     }
 }

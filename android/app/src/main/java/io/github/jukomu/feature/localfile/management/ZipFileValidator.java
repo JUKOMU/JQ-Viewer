@@ -12,7 +12,9 @@ import java.util.Locale;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
-/** Stream through the archive so verification checks image bytes, not just ZIP headers. */
+/**
+ * 流式处理归档文件，验证时检查图像字节而非仅ZIP头。
+ */
 public final class ZipFileValidator {
     private ZipFileValidator() {
     }

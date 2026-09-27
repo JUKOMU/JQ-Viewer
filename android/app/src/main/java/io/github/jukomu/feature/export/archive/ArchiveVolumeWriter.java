@@ -1,12 +1,6 @@
 package io.github.jukomu.feature.export.archive;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
+import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.zip.CRC32;
@@ -14,7 +8,9 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
 
-/** 以 STORED 条目写入 CBZ/ZIP，图片字节保持不变。 */
+/**
+ * 以 STORED 条目写入 CBZ/ZIP，图片字节保持不变。
+ */
 public final class ArchiveVolumeWriter {
     private static final int BUFFER_SIZE = 64 * 1024;
 

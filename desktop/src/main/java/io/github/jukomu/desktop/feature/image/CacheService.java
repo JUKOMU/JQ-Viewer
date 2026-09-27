@@ -10,7 +10,9 @@ import io.github.jukomu.desktop.feature.settings.SettingsService;
 
 import java.util.List;
 
-/** 统一处理图片缓存容量、内容查询和缓存域清理。 */
+/**
+ * 统一处理图片缓存容量、内容查询和缓存域清理。
+ */
 public final class CacheService {
     private final SettingsService settings;
     private final ImageCache imageCache;
@@ -20,20 +22,20 @@ public final class CacheService {
     private CacheCapacityPolicy.Result capacity;
 
     public CacheService(
-            SettingsService settings,
-            ImageCache imageCache,
-            PdfPageCache pdfPageCache
+        SettingsService settings,
+        ImageCache imageCache,
+        PdfPageCache pdfPageCache
     ) {
         this(settings, imageCache, pdfPageCache, new CacheCapacityPolicy(),
-                Runtime.getRuntime().maxMemory());
+            Runtime.getRuntime().maxMemory());
     }
 
     CacheService(
-            SettingsService settings,
-            ImageCache imageCache,
-            PdfPageCache pdfPageCache,
-            CacheCapacityPolicy capacityPolicy,
-            long maxHeapBytes
+        SettingsService settings,
+        ImageCache imageCache,
+        PdfPageCache pdfPageCache,
+        CacheCapacityPolicy capacityPolicy,
+        long maxHeapBytes
     ) {
         this.settings = settings;
         this.imageCache = imageCache;
@@ -51,42 +53,42 @@ public final class CacheService {
         apply(requestedMb);
         CacheCapacityInfo info = capacityInfo();
         return new CacheCapacityUpdateResponse(
-                true,
-                info.capacityMb(),
-                info.usedMb(),
-                info.requestedMb(),
-                info.effectiveMb(),
-                info.maxHeapMb(),
-                info.safeRatio(),
-                info.pressureLevel(),
-                info.temporaryClamp(),
-                info.limitReason()
+            true,
+            info.capacityMb(),
+            info.usedMb(),
+            info.requestedMb(),
+            info.effectiveMb(),
+            info.maxHeapMb(),
+            info.safeRatio(),
+            info.pressureLevel(),
+            info.temporaryClamp(),
+            info.limitReason()
         );
     }
 
     public synchronized CacheCapacityInfo capacityInfo() {
         return new CacheCapacityInfo(
-                capacity.effectiveMb(),
-                Math.round(imageCache.usedBytes() / (double) CacheCapacityPolicy.MIB),
-                capacity.requestedMb(),
-                capacity.effectiveMb(),
-                capacity.maxHeapMb(),
-                capacity.safeRatio(),
-                "normal",
-                capacity.temporaryClamp(),
-                capacity.reason()
+            capacity.effectiveMb(),
+            Math.round(imageCache.usedBytes() / (double) CacheCapacityPolicy.MIB),
+            capacity.requestedMb(),
+            capacity.effectiveMb(),
+            capacity.maxHeapMb(),
+            capacity.safeRatio(),
+            "normal",
+            capacity.temporaryClamp(),
+            capacity.reason()
         );
     }
 
     public ImageCacheContentsResponse contents() {
         List<ImageCacheEntryResponse> entries = imageCache.snapshot().stream()
-                .map(entry -> new ImageCacheEntryResponse(
-                        entry.photoId(),
-                        entry.sortOrder(),
-                        entry.type(),
-                        entry.sizeBytes(),
-                        entry.mimeType()))
-                .toList();
+            .map(entry -> new ImageCacheEntryResponse(
+                entry.photoId(),
+                entry.sortOrder(),
+                entry.type(),
+                entry.sizeBytes(),
+                entry.mimeType()))
+            .toList();
         return new ImageCacheContentsResponse(entries);
     }
 
@@ -98,12 +100,12 @@ public final class CacheService {
     public List<ResourceSnapshot> diagnosticResources() {
         PdfPageCache.Stats pdfStats = pdfPageCache.stats();
         return List.of(
-                new ResourceSnapshot(
-                        "image-cache", "图片缓存", imageCache.snapshot().size(),
-                        imageCache.usedBytes()),
-                new ResourceSnapshot(
-                        "pdf-page-cache", "PDF 页面缓存", pdfStats.entryCount(),
-                        pdfStats.sizeBytes())
+            new ResourceSnapshot(
+                "image-cache", "图片缓存", imageCache.snapshot().size(),
+                imageCache.usedBytes()),
+            new ResourceSnapshot(
+                "pdf-page-cache", "PDF 页面缓存", pdfStats.entryCount(),
+                pdfStats.sizeBytes())
         );
     }
 
@@ -113,10 +115,10 @@ public final class CacheService {
     }
 
     public record ResourceSnapshot(
-            String kind,
-            String label,
-            int entryCount,
-            long sizeBytes
+        String kind,
+        String label,
+        int entryCount,
+        long sizeBytes
     ) {
     }
 }

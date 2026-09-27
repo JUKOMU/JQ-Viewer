@@ -25,13 +25,14 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.useRealTimers()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
   resizeObserverTrigger = null
   lastResizeObserver = null
 })
 
-function mountView(currentIndex = 1, width = 300) {
+function mountView(currentIndex = 1, width = 300, enableMouseControls = false) {
   const wrapper = mount(HorizontalPageView, {
     props: {
       imageMap: new Map([
@@ -41,6 +42,7 @@ function mountView(currentIndex = 1, width = 300) {
       ]),
       totalCount: 3,
       currentIndex,
+      enableMouseControls,
     },
   })
   const container = wrapper.get('.horizontal-container')
@@ -49,6 +51,30 @@ function mountView(currentIndex = 1, width = 300) {
     clientWidth: { configurable: true, value: width },
   })
   return { wrapper, container }
+}
+
+function mountMouseView(currentIndex = 1, left = 0) {
+  const { wrapper, container } = mountView(currentIndex, 300, true)
+  Object.defineProperties(container.element, {
+    setPointerCapture: { value: vi.fn() },
+    releasePointerCapture: { value: vi.fn() },
+    getBoundingClientRect: { value: () => ({ left, top: 0, width: 300, height: 400 }) },
+  })
+  resizeObserverTrigger?.()
+  const pointer = (type: string, x: number) =>
+    container.trigger(type, {
+      pointerId: 1,
+      pointerType: 'mouse',
+      button: 0,
+      clientX: left + x,
+      clientY: 200,
+    })
+  const click = async (x: number) => {
+    await pointer('pointerdown', x)
+    await pointer('pointerup', x)
+    await container.trigger('click', { button: 0, clientX: left + x, clientY: 200 })
+  }
+  return { wrapper, container, pointer, click }
 }
 
 describe('HorizontalPageView', () => {
@@ -125,6 +151,117 @@ describe('HorizontalPageView', () => {
     wrapper.vm.resetZoom()
     await wrapper.vm.$nextTick()
     expect(wrapper.findAll('.page-content').every((item) => !item.attributes('style'))).toBe(true)
+    wrapper.unmount()
+  })
+
+  test('图片禁用原生拖动，鼠标缩放拖拽按下时取消默认行为', async () => {
+    const { wrapper, container } = mountView(0, 300, true)
+    Object.defineProperty(container.element, 'setPointerCapture', {
+      configurable: true,
+      value: vi.fn(),
+    })
+    wrapper.vm.zoomIn()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.get('.page-image').attributes('draggable')).toBe('false')
+    const dragStart = new Event('dragstart', { bubbles: true, cancelable: true })
+    wrapper.get('.page-image').element.dispatchEvent(dragStart)
+    expect(dragStart.defaultPrevented).toBe(true)
+
+    const event = new Event('pointerdown', { bubbles: true, cancelable: true }) as PointerEvent
+    Object.defineProperties(event, {
+      pointerId: { value: 1 },
+      pointerType: { value: 'mouse' },
+      button: { value: 0 },
+      clientX: { value: 100 },
+      clientY: { value: 100 },
+    })
+    container.element.dispatchEvent(event)
+
+    expect(event.defaultPrevented).toBe(true)
+    wrapper.unmount()
+  })
+
+  test('1 倍鼠标拖拽按阈值翻页并吞掉点击', async () => {
+    const { wrapper, container } = mountView(1, 300, true)
+    resizeObserverTrigger?.()
+    await wrapper.vm.$nextTick()
+    Object.defineProperties(container.element, {
+      setPointerCapture: { configurable: true, value: vi.fn() },
+      releasePointerCapture: { configurable: true, value: vi.fn() },
+    })
+
+    const createPointerEvent = (type: string, clientX: number) => {
+      const event = new Event(type, { bubbles: true, cancelable: true }) as PointerEvent
+      Object.defineProperties(event, {
+        pointerId: { value: 1 },
+        pointerType: { value: 'mouse' },
+        button: { value: 0 },
+        clientX: { value: clientX },
+        clientY: { value: 200 },
+      })
+      return event
+    }
+
+    container.element.dispatchEvent(createPointerEvent('pointerdown', 150))
+    const move = createPointerEvent('pointermove', 70)
+    container.element.dispatchEvent(move)
+    expect(move.defaultPrevented).toBe(true)
+    container.element.dispatchEvent(createPointerEvent('pointerup', 70))
+    await wrapper.vm.$nextTick()
+
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 })
+    container.element.dispatchEvent(click)
+    expect(click.defaultPrevented).toBe(true)
+    expect(wrapper.get('.strip').attributes('style')).toContain('translate3d(-600px, 0, 0)')
+    expect(wrapper.emitted('toggle-toolbar')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  test('桌面单击按横向区域翻页或切换工具栏', async () => {
+    const { wrapper, click } = mountMouseView(1, 100)
+    await click(89)
+    await click(89) // 首页不越界，也不切换工具栏
+    await click(90)
+    await click(180)
+    await click(181)
+    await click(181)
+    await click(181) // 末页不越界
+    expect(wrapper.emitted('update:currentIndex')).toEqual([[0], [1], [2]])
+    expect(wrapper.emitted('toggle-toolbar')).toEqual([[], []])
+    expect(wrapper.get('.strip').attributes('style')).toContain('translate3d(-600px, 0, 0)')
+    wrapper.unmount()
+  })
+
+  test('放大后桌面左右 20% 单击翻页', async () => {
+    const { wrapper, click } = mountMouseView()
+    wrapper.vm.zoomIn()
+    await wrapper.vm.$nextTick()
+    await click(60)
+    await click(240)
+    await click(59)
+    expect(wrapper.findAll('.page-content').every((page) => !page.attributes('style'))).toBe(true)
+    wrapper.vm.zoomIn()
+    await click(241)
+    expect(wrapper.emitted('update:currentIndex')).toEqual([[0], [1]])
+    expect(wrapper.emitted('toggle-toolbar')).toEqual([[], []])
+    expect(wrapper.findAll('.page-content').every((page) => !page.attributes('style'))).toBe(true)
+    wrapper.unmount()
+  })
+
+  test('拖拽后吞掉点击，随后单击翻页不被旧动画覆盖', async () => {
+    vi.useFakeTimers()
+    const { wrapper, container, pointer, click } = mountMouseView()
+    await pointer('pointerdown', 150)
+    await pointer('pointermove', 70)
+    await pointer('pointerup', 70)
+    await container.trigger('click', { button: 0, clientX: 70 })
+    expect(wrapper.emitted('update:currentIndex')).toBeUndefined()
+    expect(wrapper.emitted('toggle-toolbar')).toBeUndefined()
+    await click(30)
+    await vi.advanceTimersByTimeAsync(400)
+    expect(wrapper.emitted('update:currentIndex')).toEqual([[0]])
+    expect(wrapper.get('.strip').attributes('style')).toContain('translate3d(0px, 0, 0)')
     wrapper.unmount()
   })
 
@@ -206,4 +343,80 @@ describe('HorizontalPageView', () => {
     expect(wrapper.get('button').text()).toContain('重试中')
     wrapper.unmount()
   })
+})
+
+test('桌面自动撑满槽位，百分比宽度独立于放大和重置放大', async () => {
+  const { wrapper } = mountView(0, 1000, true)
+  resizeObserverTrigger?.()
+  await wrapper.vm.$nextTick()
+  expect(wrapper.get('.page-image').attributes('style')).toContain('height: 100%')
+  await wrapper.setProps({ widthPercent: 50 })
+  expect(wrapper.get('.page-image').attributes('style')).toContain('width: 50%')
+  wrapper.vm.zoomIn()
+  await wrapper.vm.$nextTick()
+  expect(wrapper.get('.page-content').attributes('style')).toContain('scale(2)')
+  wrapper.vm.resetZoom()
+  await wrapper.vm.$nextTick()
+  expect(wrapper.get('.page-image').attributes('style')).toContain('width: 50%')
+  await wrapper.setProps({ widthPercent: 0 })
+  expect(wrapper.get('.page-image').attributes('style')).toContain('width: 0%')
+  await wrapper.setProps({ widthPercent: null })
+  expect(wrapper.get('.page-image').attributes('style')).toContain('height: 100%')
+  wrapper.unmount()
+})
+
+test('100% 宽度长图在 1 倍时可滚动至上下边缘且不翻页', async () => {
+  const { wrapper, container } = mountView(0, 1000, true)
+  resizeObserverTrigger?.()
+  await wrapper.setProps({ widthPercent: 100 })
+  const image = wrapper.get('.page-image')
+  Object.defineProperties(image.element, {
+    naturalWidth: { value: 500 },
+    naturalHeight: { value: 1000 },
+  })
+  await image.trigger('load')
+  await container.trigger('wheel', { deltaY: 10000 })
+  expect(wrapper.get('.page-content').attributes('style')).toContain('translate(0px, -800px)')
+  await container.trigger('wheel', { deltaY: -10000 })
+  expect(wrapper.get('.page-content').attributes('style')).toContain('translate(0px, 800px)')
+  expect(wrapper.emitted('update:currentIndex')).toBeUndefined()
+  await wrapper.setProps({ widthPercent: null })
+  expect(wrapper.get('.page-content').attributes('style') ?? '').not.toContain('translate(')
+  wrapper.unmount()
+})
+
+test('自定义宽度长图鼠标纵向拖拽不翻页，放大后仍可到达底部', async () => {
+  const { wrapper, container } = mountView(0, 1000, true)
+  resizeObserverTrigger?.()
+  await wrapper.setProps({ widthPercent: 100 })
+  Object.defineProperties(wrapper.get('.page-image').element, {
+    naturalWidth: { value: 500 },
+    naturalHeight: { value: 1000 },
+  })
+  Object.defineProperties(container.element, {
+    setPointerCapture: { value: vi.fn() },
+    releasePointerCapture: { value: vi.fn() },
+    getBoundingClientRect: { value: () => ({ width: 1000, height: 400, left: 0, top: 0 }) },
+  })
+  const drag = async (dy: number) => {
+    await container.trigger('pointerdown', {
+      pointerType: 'mouse',
+      pointerId: 1,
+      button: 0,
+      clientX: 500,
+      clientY: 200,
+    })
+    await container.trigger('pointermove', { pointerId: 1, clientX: 500, clientY: 200 + dy })
+    await container.trigger('pointerup', { pointerId: 1, clientX: 500, clientY: 200 + dy })
+  }
+  await drag(-5000)
+  expect(wrapper.get('.page-content').attributes('style')).toContain('translate(0px, -800px)')
+  expect(wrapper.emitted('update:currentIndex')).toBeUndefined()
+  wrapper.vm.zoomIn()
+  await wrapper.vm.$nextTick()
+  await drag(-5000)
+  expect(wrapper.get('.page-content').attributes('style')).toContain(
+    'translate(-500px, -2000px) scale(2)',
+  )
+  wrapper.unmount()
 })

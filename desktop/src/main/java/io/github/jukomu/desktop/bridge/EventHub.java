@@ -10,14 +10,16 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
-/** 通过一个具名 SSE 通道向前端发布 JSON 事件。 */
+/**
+ * 通过一个具名 SSE 通道向前端发布 JSON 事件。
+ */
 public final class EventHub implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(EventHub.class);
 
     private final ObjectMapper mapper;
     private final Set<SseClient> clients = ConcurrentHashMap.newKeySet();
     private final ConcurrentHashMap<String, Set<Consumer<Object>>> listeners =
-            new ConcurrentHashMap<>();
+        new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, String> retainedEvents = new ConcurrentHashMap<>();
     private final Object lifecycleLock = new Object();
     private boolean closed;
@@ -92,8 +94,8 @@ public final class EventHub implements AutoCloseable {
             if (closed) throw new IllegalStateException("事件中心已关闭");
             listeners.compute(event, (ignored, eventListeners) -> {
                 Set<Consumer<Object>> current = eventListeners == null
-                        ? ConcurrentHashMap.newKeySet()
-                        : eventListeners;
+                    ? ConcurrentHashMap.newKeySet()
+                    : eventListeners;
                 current.add(listener);
                 return current;
             });

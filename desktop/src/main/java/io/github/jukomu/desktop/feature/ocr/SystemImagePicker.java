@@ -5,16 +5,18 @@ import com.formdev.flatlaf.util.SystemFileChooser.FileNameExtensionFilter;
 import io.github.jukomu.desktop.bridge.ApiException;
 import io.github.jukomu.desktop.feature.dialog.DesktopFileDialogHost;
 
-import java.awt.GraphicsEnvironment;
+import java.awt.*;
 import java.io.File;
 import java.nio.file.Path;
 
-/** 使用操作系统原生文件对话框选择待识别图片。 */
+/**
+ * 使用操作系统原生文件对话框选择待识别图片。
+ */
 public final class SystemImagePicker implements ImagePicker {
     private static final FileNameExtensionFilter IMAGE_FILTER =
-            new FileNameExtensionFilter(
-                    "图片文件 (PNG, JPG, GIF, BMP, TIFF, WEBP)",
-                    "png", "jpg", "jpeg", "gif", "bmp", "tif", "tiff", "webp");
+        new FileNameExtensionFilter(
+            "图片文件 (PNG, JPG, GIF, BMP, TIFF, WEBP)",
+            "png", "jpg", "jpeg", "gif", "bmp", "tif", "tiff", "webp");
     private final DesktopFileDialogHost dialogHost = DesktopFileDialogHost.shared();
 
     @Override

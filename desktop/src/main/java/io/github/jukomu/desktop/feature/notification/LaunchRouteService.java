@@ -8,7 +8,9 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.function.Consumer;
 
-/** 按顺序保存待消费的启动路由，并通过 SSE 通知已就绪的前端。 */
+/**
+ * 按顺序保存待消费的启动路由，并通过 SSE 通知已就绪的前端。
+ */
 public final class LaunchRouteService implements AutoCloseable {
     private final EventHub events;
     private final Object lifecycleLock = new Object();

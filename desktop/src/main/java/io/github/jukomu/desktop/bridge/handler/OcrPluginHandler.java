@@ -6,7 +6,9 @@ import io.github.jukomu.desktop.feature.ocr.OcrService;
 import io.github.jukomu.desktop.feature.settings.model.BooleanSettingRequest;
 import io.javalin.http.Context;
 
-/** 处理 Desktop OCR 设置、图片选择和识别请求。 */
+/**
+ * 处理 Desktop OCR 设置、图片选择和识别请求。
+ */
 public final class OcrPluginHandler {
     private final RequestExecutor requests;
     private final OcrService ocr;
@@ -18,7 +20,7 @@ public final class OcrPluginHandler {
 
     public void setOcrEnabled(Context context) {
         requests.run(context, BooleanSettingRequest.class,
-                request -> ocr.setEnabled(Request.bool(request.enabled(), true)));
+            request -> ocr.setEnabled(Request.bool(request.enabled(), true)));
     }
 
     public void pickImageAndOcr(Context context) {

@@ -12,7 +12,7 @@ import java.io.IOException;
 import java.util.*;
 
 /**
- * Validates a downloaded chapter manifest without mutating its files.
+ * 验证下载的章节清单，而不修改其文件。
  */
 public final class ChapterManifestValidator {
 

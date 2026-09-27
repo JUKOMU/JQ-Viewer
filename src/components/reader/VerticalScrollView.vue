@@ -2,7 +2,11 @@
   <div
     ref="containerRef"
     class="vertical-container"
-    :class="{ noscroll: zoomScale > 1 }"
+    :class="{
+      noscroll: zoomScale > 1,
+      'custom-width': widthPercent !== null,
+      'images-hidden': widthPercent === 0,
+    }"
     @scroll="onScroll"
     @click="onMouseClick"
   >
@@ -41,6 +45,8 @@
               :src="item.dataUrl"
               class="reader-image"
               alt=""
+              draggable="false"
+              @dragstart.prevent
               @load="onImageLoad(item.index, $event)"
               @error="emit('image-error', item.index + 1, item.dataUrl)"
             />
@@ -77,6 +83,7 @@ const props = withDefaults(
     retryingSortOrders?: Set<number>
     totalCount: number
     currentIndex: number
+    widthPercent?: number | null
     enableMouseControls?: boolean
   }>(),
   {
@@ -85,6 +92,7 @@ const props = withDefaults(
     allowRetry: true,
     retryingSortOrders: () => new Set<number>(),
     enableMouseControls: false,
+    widthPercent: null,
   },
 )
 
@@ -138,18 +146,27 @@ const zoomScale = ref(1)
 const zoomTx = ref(0)
 const zoomTy = ref(0)
 
+function resolveContentWidth(viewportWidth: number) {
+  // 0% 只隐藏图片，保留高度模型和阅读位置，避免虚拟列表跳到末页。
+  if (props.widthPercent === 0)
+    return containerWidth.value || Math.min(viewportWidth, READER_CONTENT_MAX_WIDTH)
+  return props.widthPercent === null
+    ? Math.min(viewportWidth, READER_CONTENT_MAX_WIDTH)
+    : (viewportWidth * props.widthPercent) / 100
+}
+
 function getFallbackContentWidth() {
   const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 0
-  return Math.min(viewportWidth || 360, READER_CONTENT_MAX_WIDTH)
+  return resolveContentWidth(viewportWidth || 360)
 }
 
 const contentWidth = computed(() => containerWidth.value || getFallbackContentWidth())
 
 const wrapperStyle = computed(() => {
   const style: Record<string, string> = {
-    width: `${contentWidth.value}px`,
+    width: `${props.widthPercent === 0 ? 0 : contentWidth.value}px`,
     left: '50%',
-    marginLeft: `${-contentWidth.value / 2}px`,
+    marginLeft: `${props.widthPercent === 0 ? 0 : -contentWidth.value / 2}px`,
   }
 
   if (zoomScale.value > 1 || zoomTx.value !== 0 || zoomTy.value !== 0) {
@@ -331,9 +348,7 @@ function updateContainerSize() {
   if (!el) return false
   const nextHeight = el.clientHeight
   const nextWidth =
-    el.clientWidth > 0
-      ? Math.min(el.clientWidth, READER_CONTENT_MAX_WIDTH)
-      : getFallbackContentWidth()
+    el.clientWidth > 0 ? resolveContentWidth(el.clientWidth) : getFallbackContentWidth()
   const changed = nextHeight !== containerHeight.value || nextWidth !== containerWidth.value
   containerHeight.value = nextHeight
   containerWidth.value = nextWidth
@@ -471,6 +486,14 @@ function refreshAfterResize() {
     updateVisibleRange(containerRef.value.scrollTop)
   }
 }
+
+watch(
+  () => props.widthPercent,
+  () => {
+    resetZoom(true)
+    refreshAfterResize()
+  },
+)
 
 let resizeObserver: ResizeObserver | null = null
 
@@ -706,16 +729,12 @@ function onTE(ev: TouchEvent) {
 }
 
 function onMousePointerDown(ev: PointerEvent) {
-  if (
-    !props.enableMouseControls ||
-    ev.pointerType !== 'mouse' ||
-    ev.button !== 0 ||
-    zoomScale.value <= 1
-  ) {
+  if (!props.enableMouseControls || ev.pointerType !== 'mouse' || ev.button !== 0) {
     return
   }
   const el = containerRef.value
   if (!el) return
+  ev.preventDefault()
   mousePointerId = ev.pointerId
   mouseStartX = ev.clientX
   mouseStartY = ev.clientY
@@ -727,7 +746,7 @@ function onMousePointerDown(ev: PointerEvent) {
 }
 
 function onMousePointerMove(ev: PointerEvent) {
-  if (mousePointerId !== ev.pointerId || zoomScale.value <= 1) return
+  if (mousePointerId !== ev.pointerId) return
   const dx = ev.clientX - mouseStartX
   const dy = ev.clientY - mouseStartY
   if (Math.abs(dx) > 3 || Math.abs(dy) > 3) mouseDragged = true
@@ -735,6 +754,11 @@ function onMousePointerMove(ev: PointerEvent) {
   ev.preventDefault()
   const el = containerRef.value
   if (!el) return
+  if (zoomScale.value <= 1) {
+    el.scrollTop = mouseStartScrollTop - dy
+    onScroll()
+    return
+  }
   const width = containerWidth.value || el.clientWidth || window.innerWidth
   const height = containerHeight.value || el.clientHeight || window.innerHeight
   const contentHeight = Math.max(innerHeight.value, height)
@@ -872,6 +896,14 @@ defineExpose({ scrollToIndex, containerRef, isAtBottom, zoomIn, zoomOut, resetZo
   pointer-events: none;
   user-select: none;
   -webkit-user-drag: none;
+}
+
+.custom-width .reader-image {
+  min-height: 0;
+}
+
+.images-hidden .image-wrapper {
+  visibility: hidden;
 }
 
 .skeleton-image {

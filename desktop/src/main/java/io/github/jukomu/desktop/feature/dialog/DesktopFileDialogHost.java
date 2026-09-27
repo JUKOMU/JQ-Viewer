@@ -2,21 +2,20 @@ package io.github.jukomu.desktop.feature.dialog;
 
 import com.formdev.flatlaf.util.SystemFileChooser;
 
-import javax.swing.JDialog;
-import javax.swing.SwingUtilities;
-import java.awt.Component;
-import java.awt.Frame;
-import java.awt.Window;
+import javax.swing.*;
+import java.awt.*;
 import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
-/** 为系统文件选择器提供可激活、可释放的 Desktop owner 窗口。 */
+/**
+ * 为系统文件选择器提供可激活、可释放的 Desktop owner 窗口。
+ */
 public final class DesktopFileDialogHost {
     private static final DesktopFileDialogHost SHARED =
-            new DesktopFileDialogHost(SwingDialogOwner::new);
+        new DesktopFileDialogHost(SwingDialogOwner::new);
 
     private final DialogOwnerFactory ownerFactory;
 
@@ -28,7 +27,9 @@ public final class DesktopFileDialogHost {
         return SHARED;
     }
 
-    /** 在 Swing EDT 上打开选择器，并在返回或失败后释放临时 owner。 */
+    /**
+     * 在 Swing EDT 上打开选择器，并在返回或失败后释放临时 owner。
+     */
     public int showOpenDialog(SystemFileChooser chooser) throws InterruptedException {
         Objects.requireNonNull(chooser, "chooser");
         if (SwingUtilities.isEventDispatchThread()) {

@@ -1,6 +1,8 @@
 package io.github.jukomu.desktop.bridge;
 
-/** 带有稳定错误码和 HTTP 状态的业务异常。 */
+/**
+ * 带有稳定错误码和 HTTP 状态的业务异常。
+ */
 public final class ApiException extends RuntimeException {
     private final String code;
     private final int status;

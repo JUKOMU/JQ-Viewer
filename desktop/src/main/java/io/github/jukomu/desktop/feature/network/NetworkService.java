@@ -2,11 +2,7 @@ package io.github.jukomu.desktop.feature.network;
 
 import io.github.jukomu.desktop.bridge.ApiException;
 import io.github.jukomu.desktop.bridge.EventHub;
-import io.github.jukomu.desktop.feature.network.model.DomainStateResponse;
-import io.github.jukomu.desktop.feature.network.model.DomainStatesResponse;
-import io.github.jukomu.desktop.feature.network.model.LatencyResultResponse;
-import io.github.jukomu.desktop.feature.network.model.LatencyResultsResponse;
-import io.github.jukomu.desktop.feature.network.model.NetworkProbeEvent;
+import io.github.jukomu.desktop.feature.network.model.*;
 import io.github.jukomu.jmcomic.core.client.impl.JmApiClient;
 
 import java.util.ArrayList;
@@ -18,7 +14,9 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
-/** 读取 JMComic 域名状态，并串行合并重复的手动探活请求。 */
+/**
+ * 读取 JMComic 域名状态，并串行合并重复的手动探活请求。
+ */
 public final class NetworkService implements AutoCloseable {
     private final Operations operations;
     private final Executor executor;
@@ -32,9 +30,9 @@ public final class NetworkService implements AutoCloseable {
     }
 
     NetworkService(
-            Operations operations,
-            Executor executor,
-            Consumer<NetworkProbeEvent> eventPublisher
+        Operations operations,
+        Executor executor,
+        Consumer<NetworkProbeEvent> eventPublisher
     ) {
         this.operations = Objects.requireNonNull(operations, "operations");
         this.executor = Objects.requireNonNull(executor, "executor");
@@ -66,7 +64,7 @@ public final class NetworkService implements AutoCloseable {
             Integer measured = entry.getValue();
             boolean timedOut = measured == null || measured < 0;
             results.add(new LatencyResultResponse(
-                    entry.getKey(), timedOut ? 0 : measured, timedOut));
+                entry.getKey(), timedOut ? 0 : measured, timedOut));
         }
         return new LatencyResultsResponse(List.copyOf(results));
     }
@@ -125,7 +123,7 @@ public final class NetworkService implements AutoCloseable {
     private static DomainStatesResponse toDomainStates(Map<String, Integer> rawStates) {
         Map<String, Integer> states = safeMap(rawStates);
         boolean allDeadFallback = !states.isEmpty()
-                && states.values().stream().allMatch(value -> value != null && value == -1);
+            && states.values().stream().allMatch(value -> value != null && value == -1);
         int alive = 0;
         List<DomainStateResponse> domains = new ArrayList<>();
         for (Map.Entry<String, Integer> entry : states.entrySet()) {
@@ -134,7 +132,7 @@ public final class NetworkService implements AutoCloseable {
             domains.add(new DomainStateResponse(entry.getKey(), reachable));
         }
         return new DomainStatesResponse(
-                List.copyOf(domains), alive, domains.size(), allDeadFallback);
+            List.copyOf(domains), alive, domains.size(), allDeadFallback);
     }
 
     private static boolean isReachable(Integer state) {
@@ -157,11 +155,13 @@ public final class NetworkService implements AutoCloseable {
         }
     }
 
-    /** 把 JMComic 现有域名能力组合成 Desktop 可执行操作。 */
+    /**
+     * 把 JMComic 现有域名能力组合成 Desktop 可执行操作。
+     */
     public record Operations(
-            Supplier<Map<String, Integer>> domainStates,
-            Supplier<Map<String, Integer>> latency,
-            Runnable reprobe
+        Supplier<Map<String, Integer>> domainStates,
+        Supplier<Map<String, Integer>> latency,
+        Runnable reprobe
     ) {
         public Operations {
             Objects.requireNonNull(domainStates, "domainStates");
@@ -172,9 +172,9 @@ public final class NetworkService implements AutoCloseable {
         public static Operations from(JmApiClient client) {
             Objects.requireNonNull(client, "client");
             return new Operations(
-                    client::getDomainStates,
-                    client::getDomainLatency,
-                    client::reprobeDomains);
+                client::getDomainStates,
+                client::getDomainLatency,
+                client::reprobeDomains);
         }
     }
 }

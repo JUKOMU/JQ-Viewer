@@ -31,6 +31,9 @@ import { JmcomicService, showToast } from '@/services/JmcomicService'
 import { UpdateService } from '@/services/UpdateService'
 import { presentUpdatePrompt } from '@/services/UpdatePromptService'
 import type { ClientStateSnapshot, UpdateManifest } from '@/services/JmcomicTypes'
+import { useDesktopBackButton } from '@/composables/useDesktopBackButton'
+
+useDesktopBackButton()
 
 const { isMenuNavigation, isWideMenu } = useSideMenuState()
 

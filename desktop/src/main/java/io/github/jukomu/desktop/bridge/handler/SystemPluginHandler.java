@@ -10,7 +10,9 @@ import io.github.jukomu.desktop.feature.network.NetworkService;
 import io.github.jukomu.desktop.feature.notification.LaunchRouteService;
 import io.javalin.http.Context;
 
-/** 提供服务状态查询。 */
+/**
+ * 提供服务状态查询。
+ */
 public final class SystemPluginHandler {
     private final RequestExecutor networkRequests;
     private final RequestExecutor diagnosticsRequests;
@@ -20,12 +22,12 @@ public final class SystemPluginHandler {
     private final DiagnosticsService diagnostics;
 
     public SystemPluginHandler(
-            RequestExecutor networkRequests,
-            RequestExecutor diagnosticsRequests,
-            JmcomicSessionManager clientSession,
-            NetworkService network,
-            LaunchRouteService launchRoutes,
-            DiagnosticsService diagnostics
+        RequestExecutor networkRequests,
+        RequestExecutor diagnosticsRequests,
+        JmcomicSessionManager clientSession,
+        NetworkService network,
+        LaunchRouteService launchRoutes,
+        DiagnosticsService diagnostics
     ) {
         this.networkRequests = networkRequests;
         this.diagnosticsRequests = diagnosticsRequests;

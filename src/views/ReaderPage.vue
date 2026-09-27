@@ -32,6 +32,7 @@
         :total-count="totalCount"
         :current-index="currentIndex"
         :enable-mouse-controls="isDesktopRuntime"
+        :width-percent="readerWidthPercent"
         @update:current-index="onPageChange"
         @request-range="onVerticalRequestRange"
         @reached-bottom="scheduleToolbarAtReaderEnd"
@@ -47,6 +48,7 @@
         :total-count="totalCount"
         :current-index="currentIndex"
         :enable-mouse-controls="isDesktopRuntime"
+        :width-percent="readerWidthPercent"
         @update:current-index="onPageChange"
         @toggle-toolbar="toggleToolbar"
         @image-error="onImageError"
@@ -75,6 +77,9 @@
       <ReaderSettingsPanel
         v-if="settingsPanelVisible"
         :is-vertical="isVertical"
+        :show-width-control="isDesktopRuntime"
+        :width-percent="readerWidthPercent"
+        @update:width-percent="readerWidthPercent = $event"
         @close="settingsPanelVisible = false"
         @update:display-mode="onDisplayModeChange"
       />
@@ -139,6 +144,7 @@ const isOffline = ref(route.query.source === 'download')
 
 // ---- 核心状态 ----
 const isVertical = ref(SettingsStore.getReaderDisplayMode() === 'vertical')
+const readerWidthPercent = ref(isDesktopRuntime ? SettingsStore.getReaderWidthPercent() : null)
 const currentIndex = ref(0)
 const totalCount = ref(0)
 const imageMap = shallowRef<Map<number, string>>(new Map())

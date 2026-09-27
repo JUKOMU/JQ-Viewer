@@ -1,7 +1,6 @@
 package io.github.jukomu.feature.export;
 
 import android.content.Context;
-import android.os.Environment;
 import android.os.PowerManager;
 import android.os.SystemClock;
 import android.util.Log;
@@ -11,23 +10,18 @@ import io.github.jukomu.feature.download.storage.FileStore;
 import io.github.jukomu.feature.download.validation.ChapterManifestValidator;
 import io.github.jukomu.feature.export.archive.ArchiveExportPlanner;
 import io.github.jukomu.feature.export.archive.ArchiveVolumeWriter;
+import io.github.jukomu.feature.export.notification.ExportNotificationHelper;
 import io.github.jukomu.feature.localfile.LocalFileOperationException;
 import io.github.jukomu.feature.localfile.data.LocalFileRef;
 import io.github.jukomu.feature.localfile.data.LocalFileRefResolver;
 import io.github.jukomu.feature.localfile.data.LocalFileStore;
 import io.github.jukomu.feature.localfile.management.PdfFileValidator;
-import io.github.jukomu.feature.export.notification.ExportNotificationHelper;
 import io.github.jukomu.platform.notification.NotificationIds;
 import io.github.jukomu.runtime.ServiceExecutors;
-
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.io.IOException;
+import java.io.*;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -77,7 +71,7 @@ public class ExportService {
     }
 
     ExportService(Context context, ExecutorService executor,
-                     ForegroundPublisher foregroundPublisher, WakeLockFactory wakeLockFactory) {
+                  ForegroundPublisher foregroundPublisher, WakeLockFactory wakeLockFactory) {
         this.context = context.getApplicationContext();
         this.executor = executor;
         this.foregroundPublisher = foregroundPublisher;
@@ -1000,7 +994,7 @@ public class ExportService {
                 : normalizedTargetName;
             String volumeDisplayPath = volumeCount > 1
                 ? displayBase + String.format(Locale.ROOT, "_%03d-%03d%s",
-                    start + 1, end, extension)
+                start + 1, end, extension)
                 : displayPath;
             volumes.add(new ExportVolume(start, end, volumeFile,
                 volumeTargetName, volumeDisplayPath));
@@ -1497,7 +1491,7 @@ public class ExportService {
     }
 
     private void publishExportForeground(int sessionId, ExportJob job, String phase, int currentPage,
-                                      int totalPages, int volumeIndex, int totalVolumes) {
+                                         int totalPages, int volumeIndex, int totalVolumes) {
         synchronized (activeJobsLock) {
             int activeCount = activeTaskKeys.size();
             publishForegroundLocked(

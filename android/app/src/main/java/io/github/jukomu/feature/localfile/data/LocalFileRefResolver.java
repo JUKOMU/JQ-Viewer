@@ -12,7 +12,9 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 
-/** 将本地文件 ref 解析为当前运行时可访问的对象；不参与 ref 的持久化。 */
+/**
+ * 将本地文件 ref 解析为当前运行时可访问的对象；不参与 ref 的持久化。
+ */
 public final class LocalFileRefResolver {
     private LocalFileRefResolver() {
     }
@@ -33,7 +35,9 @@ public final class LocalFileRefResolver {
         return ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY);
     }
 
-    /** 以统一的可关闭流读取文件引用，调用方不需要区分 path 与 SAF。 */
+    /**
+     * 以统一的可关闭流读取文件引用，调用方不需要区分 path 与 SAF。
+     */
     public static InputStream openReadStream(Context context, String fileRef)
         throws IOException {
         return new ParcelFileDescriptor.AutoCloseInputStream(

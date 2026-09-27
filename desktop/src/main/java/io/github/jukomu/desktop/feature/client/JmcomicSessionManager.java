@@ -12,7 +12,9 @@ import org.slf4j.LoggerFactory;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 
-/** 管理 Desktop 进程内可空的 JMComic 在线客户端。 */
+/**
+ * 管理 Desktop 进程内可空的 JMComic 在线客户端。
+ */
 public final class JmcomicSessionManager implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(JmcomicSessionManager.class);
     private static final String CLIENT_UNAVAILABLE = "在线客户端不可用";
@@ -36,23 +38,23 @@ public final class JmcomicSessionManager implements AutoCloseable {
     private boolean closed;
 
     private JmcomicSessionManager(
-            Factory factory,
-            JmClient client,
-            boolean ownsClient,
-            EventHub events
+        Factory factory,
+        JmClient client,
+        boolean ownsClient,
+        EventHub events
     ) {
         this.factory = factory;
         this.client = client;
         this.ownsClient = ownsClient;
         this.events = Objects.requireNonNull(events, "events");
         this.snapshot = client == null
-                ? snapshot("unavailable", "no_network")
-                : snapshot("ready", null);
+            ? snapshot("unavailable", "no_network")
+            : snapshot("ready", null);
     }
 
     public static JmcomicSessionManager managed(Factory factory, EventHub events) {
         return new JmcomicSessionManager(
-                Objects.requireNonNull(factory, "factory"), null, true, events);
+            Objects.requireNonNull(factory, "factory"), null, true, events);
     }
 
     public static JmcomicSessionManager provided(JmClient client, EventHub events) {
@@ -73,7 +75,7 @@ public final class JmcomicSessionManager implements AutoCloseable {
                 attempt = factory.create();
                 if (attempt == null) {
                     attempt = CompletableFuture.failedFuture(
-                            new IllegalStateException("JMComic 客户端工厂返回了空 Future"));
+                        new IllegalStateException("JMComic 客户端工厂返回了空 Future"));
                 }
             } catch (Throwable failure) {
                 attempt = CompletableFuture.failedFuture(failure);
@@ -132,8 +134,8 @@ public final class JmcomicSessionManager implements AutoCloseable {
             LOGGER.info("JMComic 客户端初始化完成");
         } else if (reportFailure) {
             Throwable cause = failure != null
-                    ? unwrap(failure)
-                    : new IllegalStateException("JMComic 客户端不支持下载任务控制");
+                ? unwrap(failure)
+                : new IllegalStateException("JMComic 客户端不支持下载任务控制");
             LOGGER.warn("JMComic 客户端初始化失败，Desktop 保持离线能力", cause);
             if (ownsClient && value != null) closeClient(value);
         }
@@ -175,8 +177,8 @@ public final class JmcomicSessionManager implements AutoCloseable {
     private static Throwable unwrap(Throwable failure) {
         Throwable current = failure;
         while ((current instanceof java.util.concurrent.CompletionException
-                || current instanceof java.util.concurrent.ExecutionException)
-                && current.getCause() != null) {
+            || current instanceof java.util.concurrent.ExecutionException)
+            && current.getCause() != null) {
             current = current.getCause();
         }
         return current;

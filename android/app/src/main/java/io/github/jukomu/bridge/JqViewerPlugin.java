@@ -22,11 +22,11 @@ import io.github.jukomu.feature.download.DownloadCommandRouter;
 import io.github.jukomu.feature.download.DownloadService;
 import io.github.jukomu.feature.download.data.DownloadStore;
 import io.github.jukomu.feature.download.storage.FileStore;
+import io.github.jukomu.feature.export.ExportEventSink;
+import io.github.jukomu.feature.export.ExportService;
 import io.github.jukomu.feature.favorite.data.FavoriteStore;
 import io.github.jukomu.feature.history.data.HistoryStore;
 import io.github.jukomu.feature.localfile.data.LocalFileStore;
-import io.github.jukomu.feature.export.ExportEventSink;
-import io.github.jukomu.feature.export.ExportService;
 import io.github.jukomu.feature.pdf.render.PdfPageCache;
 import io.github.jukomu.feature.preload.PreloadService;
 import io.github.jukomu.feature.settings.SettingsService;
@@ -44,7 +44,7 @@ import java.util.function.Consumer;
 
 /**
  * @author JUKOMU
- * @Description:
+ * @Description: 应用相关插件
  * @Project: jq-viewer
  * @Date: 2026/4/22
  */

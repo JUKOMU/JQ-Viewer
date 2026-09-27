@@ -1,13 +1,13 @@
 package io.github.jukomu.desktop.host;
 
-import java.awt.Desktop;
-import java.awt.GraphicsEnvironment;
-import java.awt.HeadlessException;
+import java.awt.*;
 import java.net.URI;
 import java.util.Objects;
 import java.util.function.Consumer;
 
-/** 使用系统浏览器打开 URL，不依赖托盘支持。 */
+/**
+ * 使用系统浏览器打开 URL，不依赖托盘支持。
+ */
 public final class BrowserLauncher {
     private final Consumer<URI> opener;
 

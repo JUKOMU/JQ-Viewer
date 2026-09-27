@@ -3,14 +3,14 @@ package io.github.jukomu.desktop.feature.download;
 import io.github.jukomu.desktop.data.Paths;
 import io.github.jukomu.desktop.feature.download.data.StoredDownloadPage;
 
-import javax.imageio.ImageIO;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
-import java.util.List;
 
-/** 管理下载根目录内的安全路径、清理、空间统计和完成校验。 */
+/**
+ * 管理下载根目录内的安全路径、清理和空间统计。
+ */
 public final class DownloadFiles {
     private Path root;
 
@@ -72,41 +72,19 @@ public final class DownloadFiles {
         return resolve(page.relativePath());
     }
 
-    public synchronized ChapterInspection inspect(List<StoredDownloadPage> pages) {
-        if (pages.isEmpty()) throw new IllegalStateException("章节没有可校验的图片");
-        long totalSize = 0;
-        int firstSortOrder = Integer.MAX_VALUE;
-        for (StoredDownloadPage page : pages) {
-            Path path = resolvePage(page);
-            try {
-                if (!Files.isRegularFile(path) || Files.size(path) <= 0) {
-                    throw new IllegalStateException("下载图片缺失: " + page.filename());
-                }
-                if (ImageIO.read(path.toFile()) == null) {
-                    throw new IllegalStateException("下载图片无法解析: " + page.filename());
-                }
-                totalSize += Files.size(path);
-                firstSortOrder = Math.min(firstSortOrder, page.sortOrder());
-            } catch (IOException exception) {
-                throw failure("校验下载图片失败: " + page.filename(), exception);
-            }
-        }
-        return new ChapterInspection(totalSize, firstSortOrder);
-    }
-
     public synchronized long directorySize(String relativeDirectory) {
         Path directory = chapterDirectory(relativeDirectory);
         if (!Files.exists(directory)) return 0;
         try (var paths = Files.walk(directory)) {
             return paths.filter(Files::isRegularFile)
-                    .mapToLong(path -> {
-                        try {
-                            return Files.size(path);
-                        } catch (IOException exception) {
-                            throw failure("统计下载文件大小失败", exception);
-                        }
-                    })
-                    .sum();
+                .mapToLong(path -> {
+                    try {
+                        return Files.size(path);
+                    } catch (IOException exception) {
+                        throw failure("统计下载文件大小失败", exception);
+                    }
+                })
+                .sum();
         } catch (IOException exception) {
             throw failure("统计下载目录大小失败", exception);
         }
@@ -120,14 +98,14 @@ public final class DownloadFiles {
         }
         try (var paths = Files.walk(root)) {
             return paths.filter(Files::isRegularFile)
-                    .mapToLong(path -> {
-                        try {
-                            return Files.size(path);
-                        } catch (IOException exception) {
-                            throw failure("统计下载空间失败", exception);
-                        }
-                    })
-                    .sum();
+                .mapToLong(path -> {
+                    try {
+                        return Files.size(path);
+                    } catch (IOException exception) {
+                        throw failure("统计下载空间失败", exception);
+                    }
+                })
+                .sum();
         } catch (IOException exception) {
             throw failure("统计下载空间失败", exception);
         }
@@ -165,7 +143,7 @@ public final class DownloadFiles {
     private static void validateSegment(String value, String name) {
         if (value == null || value.isBlank()) throw new IllegalArgumentException(name + "不能为空");
         if (".".equals(value) || "..".equals(value)
-                || value.indexOf('/') >= 0 || value.indexOf('\\') >= 0 || value.indexOf('\0') >= 0) {
+            || value.indexOf('/') >= 0 || value.indexOf('\\') >= 0 || value.indexOf('\0') >= 0) {
             throw new IllegalArgumentException(name + "包含无效路径字符");
         }
     }
@@ -182,6 +160,4 @@ public final class DownloadFiles {
         return java.util.Objects.requireNonNull(root, "root").toAbsolutePath().normalize();
     }
 
-    public record ChapterInspection(long totalSize, int firstSortOrder) {
-    }
 }

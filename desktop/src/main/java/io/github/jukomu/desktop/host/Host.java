@@ -13,7 +13,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
-/** 管理单进程生命周期及其操作系统入口。 */
+/**
+ * 管理单进程生命周期及其操作系统入口。
+ */
 public final class Host implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(Host.class);
     private final Backend backend;
@@ -29,9 +31,9 @@ public final class Host implements AutoCloseable {
     private boolean closed;
 
     public Host(
-            Backend backend,
-            SingleInstanceGuard instanceGuard,
-            BrowserLauncher browserLauncher
+        Backend backend,
+        SingleInstanceGuard instanceGuard,
+        BrowserLauncher browserLauncher
     ) {
         this.backend = Objects.requireNonNull(backend, "backend");
         this.instanceGuard = Objects.requireNonNull(instanceGuard, "instanceGuard");
@@ -41,13 +43,15 @@ public final class Host implements AutoCloseable {
     public static Host createDefault() {
         Paths paths = Paths.current();
         return new Host(
-                new Backend(paths),
-                new SingleInstanceGuard(paths),
-                new BrowserLauncher()
+            new Backend(paths),
+            new SingleInstanceGuard(paths),
+            new BrowserLauncher()
         );
     }
 
-    /** 启动主实例；已有实例存在时发送信号并返回 false。 */
+    /**
+     * 启动主实例；已有实例存在时发送信号并返回 false。
+     */
     public synchronized boolean start() throws Exception {
         if (closed) {
             throw new IllegalStateException("本地主机已关闭");
@@ -69,9 +73,9 @@ public final class Host implements AutoCloseable {
 
             tray = Tray.tryCreate(this::openHome, this::close).orElse(null);
             backend.attachDesktopHost(
-                    tray == null ? null : tray::displayNotification,
-                    this::openRoute,
-                    this::requestUpdateExit);
+                tray == null ? null : tray::displayNotification,
+                this::openRoute,
+                this::requestUpdateExit);
             openHome();
             started = true;
             return true;
@@ -153,12 +157,12 @@ public final class Host implements AutoCloseable {
         primary = false;
         started = false;
         CloseSequence.run(LOGGER,
-                new CloseSequence.Step("Desktop 宿主绑定", backend::detachDesktopHost),
-                new CloseSequence.Step("系统托盘", () -> {
-                    if (closingTray != null) closingTray.close();
-                }),
-                new CloseSequence.Step("本地后端", backend::close),
-                new CloseSequence.Step("单实例锁", instanceGuard::close)
+            new CloseSequence.Step("Desktop 宿主绑定", backend::detachDesktopHost),
+            new CloseSequence.Step("系统托盘", () -> {
+                if (closingTray != null) closingTray.close();
+            }),
+            new CloseSequence.Step("本地后端", backend::close),
+            new CloseSequence.Step("单实例锁", instanceGuard::close)
         );
     }
 }

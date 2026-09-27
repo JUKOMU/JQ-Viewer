@@ -1,13 +1,11 @@
 package io.github.jukomu.feature.localfile.management;
 
 import android.content.Context;
-import android.database.Cursor;
 import io.github.jukomu.feature.cbz.CbzDocumentService;
 import io.github.jukomu.feature.localfile.LocalFileOperationException;
 import io.github.jukomu.feature.localfile.data.LocalFileRef;
 import io.github.jukomu.feature.localfile.data.LocalFileRefResolver;
 import io.github.jukomu.feature.localfile.data.LocalFileStore;
-
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -15,7 +13,7 @@ import java.io.IOException;
 import java.util.List;
 
 /**
- * File-library operations that do not own the export task lifecycle.
+ * 不拥有导出任务生命周期的文件库操作。
  */
 public final class LocalFileManagementService {
 

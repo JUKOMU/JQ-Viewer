@@ -8,27 +8,16 @@ import io.github.jukomu.feature.export.archive.ComicInfoCodec;
 import io.github.jukomu.feature.localfile.data.LocalFileRef;
 import io.github.jukomu.feature.localfile.data.LocalFileRefResolver;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
-import java.io.FilterInputStream;
-import java.io.IOException;
-import java.io.InputStream;
+import java.io.*;
 import java.security.MessageDigest;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.Enumeration;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
+import java.util.*;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipException;
 import java.util.zip.ZipFile;
 
-/** Android CBZ 索引、SAF 受控缓存、校验和按页随机读取。 */
+/**
+ * Android CBZ 索引、SAF 受控缓存、校验和按页随机读取。
+ */
 public final class CbzDocumentService {
     private static final long STALE_CACHE_MS = 7L * 24L * 60L * 60L * 1000L;
     private static final List<String> IMAGE_EXTENSIONS = List.of(

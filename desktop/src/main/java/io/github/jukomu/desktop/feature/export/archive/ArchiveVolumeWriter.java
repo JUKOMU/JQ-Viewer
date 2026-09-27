@@ -11,16 +11,18 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
 
-/** 以 STORED 条目写入 CBZ/ZIP，图片字节保持不变。 */
+/**
+ * 以 STORED 条目写入 CBZ/ZIP，图片字节保持不变。
+ */
 public final class ArchiveVolumeWriter {
     private static final int BUFFER_SIZE = 64 * 1024;
 
     public Report write(ArchiveExportPlanner.Plan plan, Path temporaryFile, Progress progress)
-            throws Exception {
+        throws Exception {
         Files.createDirectories(temporaryFile.getParent());
         Files.deleteIfExists(temporaryFile);
         try (ZipOutputStream output = new ZipOutputStream(new BufferedOutputStream(
-                Files.newOutputStream(temporaryFile)))) {
+            Files.newOutputStream(temporaryFile)))) {
             int written = 0;
             for (ArchiveExportPlanner.Entry entry : plan.entries()) {
                 if (Thread.currentThread().isInterrupted()) throw new InterruptedException();
@@ -100,7 +102,7 @@ public final class ArchiveVolumeWriter {
                 ZipEntry entry = zip.getEntry(expected.name());
                 if (entry == null || entry.getMethod() != ZipEntry.STORED) {
                     throw new IOException("ARCHIVE_INVALID: 归档图片条目缺失或不是 STORE: "
-                            + expected.name());
+                        + expected.name());
                 }
             }
             if (plan.comicInfo() != null) {

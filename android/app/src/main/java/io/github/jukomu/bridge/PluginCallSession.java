@@ -10,10 +10,10 @@ import java.util.concurrent.Executor;
 import java.util.function.Consumer;
 
 /**
- * Tracks asynchronous bridge calls that belong to one plugin session.
+ * 追踪属于插件会话的异步桥接调用。
  *
- * <p>Destroying the session rejects every unfinished call exactly once. Late task results are
- * ignored, so executor shutdown cannot leave a call unresolved or publish a second result.</p>
+ * <p>销毁会话时将对所有未完成的调用执行精确一次拒绝操作。
+ * 后续到达的任务结果将被忽略，从而确保执行器关闭时不会遗留未解决的调用，   * 或发布重复的结果。</p>
  */
 public final class PluginCallSession implements AutoCloseable {
 
@@ -24,7 +24,9 @@ public final class PluginCallSession implements AutoCloseable {
     private final Set<GuardedPluginCall> activeCalls = new HashSet<>();
     private boolean closed;
 
-    /** Registers an asynchronous call, or rejects it immediately if the session already ended. */
+    /**
+     * 注册异步调用，若会话已结束则立即拒绝。
+     */
     public PluginCall register(PluginCall call) {
         if (call == null) {
             throw new IllegalArgumentException("call is required");
@@ -40,7 +42,9 @@ public final class PluginCallSession implements AutoCloseable {
         return null;
     }
 
-    /** Registers and dispatches a task while keeping its bridge call lifecycle-safe. */
+    /**
+     * Registers and dispatches a task while keeping its bridge call lifecycle-safe.
+     */
     public void submit(Executor executor, PluginCall call, Consumer<PluginCall> task) {
         if (executor == null) {
             call.reject(SUBMISSION_FAILED_MESSAGE,

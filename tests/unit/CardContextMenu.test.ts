@@ -4,6 +4,7 @@ import { defineComponent, h, nextTick, ref } from 'vue'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 
 vi.mock('@ionic/vue', () => ({
+  useBackButton: vi.fn(),
   IonIcon: defineComponent({
     name: 'IonIcon',
     setup: () => () => h('span'),

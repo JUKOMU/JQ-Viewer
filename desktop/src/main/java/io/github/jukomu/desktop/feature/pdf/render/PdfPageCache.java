@@ -1,5 +1,6 @@
 package io.github.jukomu.desktop.feature.pdf.render;
 
+import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
@@ -11,9 +12,9 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.regex.Pattern;
 
-import javax.imageio.ImageIO;
-
-/** PDFBox 页面 PNG 的磁盘缓存。 */
+/**
+ * PDFBox 页面 PNG 的磁盘缓存。
+ */
 public final class PdfPageCache {
     public static final long MAX_BYTES = 128L * 1024L * 1024L;
     private static final Pattern RESOURCE_ID = Pattern.compile("[0-9a-f]{64}");
@@ -39,7 +40,7 @@ public final class PdfPageCache {
         InputStream input = Files.newInputStream(file);
         try {
             Files.setLastModifiedTime(file, java.nio.file.attribute.FileTime.fromMillis(
-                    System.currentTimeMillis()));
+                System.currentTimeMillis()));
         } catch (IOException ignored) {
             // 时间戳只用于容量淘汰顺序。
         }
@@ -56,7 +57,7 @@ public final class PdfPageCache {
             }
             try {
                 Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE,
-                        StandardCopyOption.REPLACE_EXISTING);
+                    StandardCopyOption.REPLACE_EXISTING);
             } catch (AtomicMoveNotSupportedException exception) {
                 Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
             }
@@ -84,7 +85,7 @@ public final class PdfPageCache {
             long sizeBytes = 0L;
             try (var files = Files.list(directory)) {
                 for (Path file : files.filter(path ->
-                        path.getFileName().toString().endsWith(".png")).toList()) {
+                    path.getFileName().toString().endsWith(".png")).toList()) {
                     entryCount++;
                     sizeBytes = saturatedAdd(sizeBytes, Files.size(file));
                 }
@@ -104,7 +105,7 @@ public final class PdfPageCache {
             Files.createDirectories(directory);
             try (var files = Files.list(directory)) {
                 for (Path file : files.filter(path -> path.getFileName().toString().endsWith(".tmp"))
-                        .toList()) {
+                    .toList()) {
                     Files.deleteIfExists(file);
                 }
             }
@@ -118,9 +119,9 @@ public final class PdfPageCache {
         List<Path> pages;
         try (var files = Files.list(directory)) {
             pages = files.filter(path -> path.getFileName().toString().endsWith(".png"))
-                    .sorted(Comparator.comparingLong(PdfPageCache::lastModified)
-                            .thenComparing(path -> path.getFileName().toString()))
-                    .toList();
+                .sorted(Comparator.comparingLong(PdfPageCache::lastModified)
+                    .thenComparing(path -> path.getFileName().toString()))
+                .toList();
         }
         long total = 0L;
         for (Path page : pages) total = saturatedAdd(total, Files.size(page));

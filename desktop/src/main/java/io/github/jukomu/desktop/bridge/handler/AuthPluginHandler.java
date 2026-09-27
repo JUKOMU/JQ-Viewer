@@ -7,7 +7,9 @@ import io.github.jukomu.desktop.feature.auth.model.LoginRequest;
 import io.github.jukomu.desktop.feature.auth.model.UserProfileRequest;
 import io.javalin.http.Context;
 
-/** 处理当前进程登录会话的 bridge 请求。 */
+/**
+ * 处理当前进程登录会话的 bridge 请求。
+ */
 public final class AuthPluginHandler {
     private final RequestExecutor requests;
     private final AuthService auth;
@@ -19,8 +21,8 @@ public final class AuthPluginHandler {
 
     public void login(Context context) {
         requests.run(context, LoginRequest.class, request -> auth.login(
-                Request.requiredText(request.username(), "username"),
-                Request.requiredText(request.password(), "password")));
+            Request.requiredText(request.username(), "username"),
+            Request.requiredText(request.password(), "password")));
     }
 
     public void logout(Context context) {
@@ -37,6 +39,6 @@ public final class AuthPluginHandler {
 
     public void getUserProfile(Context context) {
         requests.run(context, UserProfileRequest.class,
-                request -> auth.profile(Request.requiredText(request.uid(), "uid")));
+            request -> auth.profile(Request.requiredText(request.uid(), "uid")));
     }
 }

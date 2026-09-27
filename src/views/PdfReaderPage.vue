@@ -32,6 +32,7 @@
         :total-count="totalCount"
         :current-index="currentIndex"
         :enable-mouse-controls="isDesktopRuntime"
+        :width-percent="readerWidthPercent"
         @update:current-index="onPageChange"
         @request-range="onVerticalRequestRange"
         @image-error="onImageError"
@@ -47,6 +48,7 @@
         :total-count="totalCount"
         :current-index="currentIndex"
         :enable-mouse-controls="isDesktopRuntime"
+        :width-percent="readerWidthPercent"
         @update:current-index="onPageChange"
         @toggle-toolbar="toggleToolbar"
         @image-error="onImageError"
@@ -69,6 +71,9 @@
       <ReaderSettingsPanel
         v-if="settingsPanelVisible"
         :is-vertical="isVertical"
+        :show-width-control="isDesktopRuntime"
+        :width-percent="readerWidthPercent"
+        @update:width-percent="readerWidthPercent = $event"
         @close="settingsPanelVisible = false"
         @update:display-mode="onDisplayModeChange"
       />
@@ -79,6 +84,7 @@
 <script setup lang="ts">
 import {
   computed,
+  watch,
   inject,
   nextTick,
   onActivated,
@@ -156,6 +162,7 @@ const fileId = computed(() => Number(route.query.fileId) || 0)
 
 // ---- 核心状态 ----
 const isVertical = ref(SettingsStore.getReaderDisplayMode() === 'vertical')
+const readerWidthPercent = ref(isDesktopRuntime ? SettingsStore.getReaderWidthPercent() : null)
 const currentIndex = ref(0)
 const totalCount = ref(0)
 const imageMap = ref<Map<number, string>>(new Map())
@@ -216,6 +223,9 @@ const getReaderContentWidth = (vertical = isVertical.value): number => {
   const measuredWidth = getRenderContainer(vertical)?.clientWidth ?? 0
   const viewportWidth = typeof window !== 'undefined' ? window.innerWidth || 360 : 360
   const width = measuredWidth > 0 ? measuredWidth : viewportWidth
+  if (readerWidthPercent.value !== null && readerWidthPercent.value > 0) {
+    return Math.max(1, (width * readerWidthPercent.value) / 100)
+  }
   return Math.max(1, vertical ? Math.min(width, READER_CONTENT_MAX_WIDTH) : width)
 }
 
@@ -799,6 +809,13 @@ const invalidateActiveRenderWindow = () => {
   }
   applyImageMap()
 }
+
+watch(readerWidthPercent, () => {
+  const { increased } = updateRenderTargetWidth()
+  if (!increased || (!pdfDoc && !nativePdfMode)) return
+  invalidateActiveRenderWindow()
+  updateWindow(currentIndex.value)
+})
 
 const bindRenderResizeObserver = () => {
   renderResizeObserver?.disconnect()

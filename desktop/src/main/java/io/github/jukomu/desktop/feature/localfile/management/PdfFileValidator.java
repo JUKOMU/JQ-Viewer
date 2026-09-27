@@ -10,7 +10,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Locale;
 
-/** 使用当前 FileRef 校验 PDF 的可读性、页树和文件元数据。 */
+/**
+ * 使用当前 FileRef 校验 PDF 的可读性、页树和文件元数据。
+ */
 public final class PdfFileValidator {
     private PdfFileValidator() {
     }
@@ -33,15 +35,15 @@ public final class PdfFileValidator {
         }
 
         try (PDDocument document = Loader.loadPDF(
-                file.toFile(), IOUtils.createTempFileOnlyStreamCache())) {
+            file.toFile(), IOUtils.createTempFileOnlyStreamCache())) {
             int pageCount = document.getNumberOfPages();
             if (pageCount <= 0) {
                 throw new ValidationException("PDF_INVALID", "PDF 没有可读取页面");
             }
             if (expectedPages >= 0 && expectedPages != pageCount) {
                 throw new ValidationException(
-                        "PDF_PAGE_MISMATCH",
-                        "PDF 页数不符，预期 " + expectedPages + " 页，实际 " + pageCount + " 页"
+                    "PDF_PAGE_MISMATCH",
+                    "PDF 页数不符，预期 " + expectedPages + " 页，实际 " + pageCount + " 页"
                 );
             }
             for (int index = 0; index < pageCount; index++) {

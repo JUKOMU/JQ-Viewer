@@ -11,7 +11,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-/** 发现显式 bridge 方法，并将其映射为 POST 路由。 */
+/**
+ * 发现显式 bridge 方法，并将其映射为 POST 路由。
+ */
 public final class PluginMethodRoutes {
     private PluginMethodRoutes() {
     }
@@ -49,14 +51,14 @@ public final class PluginMethodRoutes {
     private static void validate(Method method) {
         if (!Modifier.isPublic(method.getModifiers()) || Modifier.isStatic(method.getModifiers())) {
             throw new IllegalArgumentException(
-                    "@PluginMethod must be a public instance method: " + method
+                "@PluginMethod must be a public instance method: " + method
             );
         }
         if (method.getReturnType() != void.class
-                || method.getParameterCount() != 1
-                || method.getParameterTypes()[0] != Context.class) {
+            || method.getParameterCount() != 1
+            || method.getParameterTypes()[0] != Context.class) {
             throw new IllegalArgumentException(
-                    "@PluginMethod must have signature void method(Context): " + method
+                "@PluginMethod must have signature void method(Context): " + method
             );
         }
     }

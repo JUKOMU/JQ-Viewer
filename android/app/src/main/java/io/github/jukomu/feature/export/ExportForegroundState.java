@@ -1,7 +1,7 @@
 package io.github.jukomu.feature.export;
 
 /**
- * Owns the foreground identity of the single running PDF export.
+ * 负责当前运行的PDF导出的前台标识。
  */
 final class ExportForegroundState {
 

@@ -1,11 +1,7 @@
 package io.github.jukomu.runtime;
 
 import android.content.Context;
-import android.net.ConnectivityManager;
-import android.net.LinkProperties;
-import android.net.Network;
-import android.net.NetworkCapabilities;
-import android.net.ProxyInfo;
+import android.net.*;
 import android.util.Log;
 import androidx.annotation.NonNull;
 import io.github.jukomu.jmcomic.core.JmComic;
@@ -22,7 +18,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Process-wide nullable JMComic client lifecycle and network retry policy.
+ * 进程范围内允许为null的JMComic客户端生命周期管理及网络重试策略。
  */
 public final class JmcomicSessionManager {
 
@@ -74,7 +70,7 @@ public final class JmcomicSessionManager {
                 @Override
                 public void onStateChanged(ClientSession.Snapshot snapshot, JmApiClient client) {
                     publishClientState(new ClientStateSnapshot(
-                        snapshot.state(), snapshot.reason(), snapshot.timestamp()),
+                            snapshot.state(), snapshot.reason(), snapshot.timestamp()),
                         client);
                 }
 

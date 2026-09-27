@@ -17,7 +17,7 @@ import java.io.IOException;
 import java.io.InputStream;
 
 /**
- * Opens a PDF and verifies that every expected page can be addressed.
+ * 打开PDF并验证所有预期页面均可访问。
  */
 public final class PdfFileValidator {
 

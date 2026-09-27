@@ -6,7 +6,9 @@ import com.microsoft.credentialstorage.model.StoredCredential;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/** 创建由操作系统凭据管理器承载的登录凭据存储。 */
+/**
+ * 创建由操作系统凭据管理器承载的登录凭据存储。
+ */
 public final class CredentialStores {
     private static final Logger LOGGER = LoggerFactory.getLogger(CredentialStores.class);
     private static final String CREDENTIAL_KEY = "io.github.jukomu.JQ-Viewer.login";
@@ -38,7 +40,7 @@ public final class CredentialStores {
     public static CredentialStore system() {
         try {
             SecretStore<StoredCredential> store = StorageProvider.getCredentialStorage(
-                    true, StorageProvider.SecureOption.REQUIRED);
+                true, StorageProvider.SecureOption.REQUIRED);
             if (store == null || !store.isSecure()) {
                 LOGGER.warn("操作系统安全凭据存储不可用，自动登录已禁用");
                 return UNAVAILABLE;
@@ -126,8 +128,8 @@ public final class CredentialStores {
             rethrowFatal(failure);
             available = false;
             return failure instanceof IllegalStateException exception
-                    ? exception
-                    : new IllegalStateException(message, failure);
+                ? exception
+                : new IllegalStateException(message, failure);
         }
     }
 }

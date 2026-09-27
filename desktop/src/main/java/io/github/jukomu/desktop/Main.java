@@ -4,7 +4,9 @@ import io.github.jukomu.desktop.data.Paths;
 import io.github.jukomu.desktop.feature.update.DesktopUpdateInstaller;
 import io.github.jukomu.desktop.host.Host;
 
-/** 应用的唯一入口。 */
+/**
+ * 应用的唯一入口。
+ */
 public final class Main {
     private Main() {
     }

@@ -25,6 +25,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.useRealTimers()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
   resizeObserverTrigger = null
@@ -50,6 +51,30 @@ function mountView(currentIndex = 1, width = 300, enableMouseControls = false) {
     clientWidth: { configurable: true, value: width },
   })
   return { wrapper, container }
+}
+
+function mountMouseView(currentIndex = 1, left = 0) {
+  const { wrapper, container } = mountView(currentIndex, 300, true)
+  Object.defineProperties(container.element, {
+    setPointerCapture: { value: vi.fn() },
+    releasePointerCapture: { value: vi.fn() },
+    getBoundingClientRect: { value: () => ({ left, top: 0, width: 300, height: 400 }) },
+  })
+  resizeObserverTrigger?.()
+  const pointer = (type: string, x: number) =>
+    container.trigger(type, {
+      pointerId: 1,
+      pointerType: 'mouse',
+      button: 0,
+      clientX: left + x,
+      clientY: 200,
+    })
+  const click = async (x: number) => {
+    await pointer('pointerdown', x)
+    await pointer('pointerup', x)
+    await container.trigger('click', { button: 0, clientX: left + x, clientY: 200 })
+  }
+  return { wrapper, container, pointer, click }
 }
 
 describe('HorizontalPageView', () => {
@@ -190,6 +215,53 @@ describe('HorizontalPageView', () => {
     expect(click.defaultPrevented).toBe(true)
     expect(wrapper.get('.strip').attributes('style')).toContain('translate3d(-600px, 0, 0)')
     expect(wrapper.emitted('toggle-toolbar')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  test('桌面单击按横向区域翻页或切换工具栏', async () => {
+    const { wrapper, click } = mountMouseView(1, 100)
+    await click(89)
+    await click(89) // 首页不越界，也不切换工具栏
+    await click(90)
+    await click(180)
+    await click(181)
+    await click(181)
+    await click(181) // 末页不越界
+    expect(wrapper.emitted('update:currentIndex')).toEqual([[0], [1], [2]])
+    expect(wrapper.emitted('toggle-toolbar')).toEqual([[], []])
+    expect(wrapper.get('.strip').attributes('style')).toContain('translate3d(-600px, 0, 0)')
+    wrapper.unmount()
+  })
+
+  test('放大后桌面左右 20% 单击翻页', async () => {
+    const { wrapper, click } = mountMouseView()
+    wrapper.vm.zoomIn()
+    await wrapper.vm.$nextTick()
+    await click(60)
+    await click(240)
+    await click(59)
+    expect(wrapper.findAll('.page-content').every((page) => !page.attributes('style'))).toBe(true)
+    wrapper.vm.zoomIn()
+    await click(241)
+    expect(wrapper.emitted('update:currentIndex')).toEqual([[0], [1]])
+    expect(wrapper.emitted('toggle-toolbar')).toEqual([[], []])
+    expect(wrapper.findAll('.page-content').every((page) => !page.attributes('style'))).toBe(true)
+    wrapper.unmount()
+  })
+
+  test('拖拽后吞掉点击，随后单击翻页不被旧动画覆盖', async () => {
+    vi.useFakeTimers()
+    const { wrapper, container, pointer, click } = mountMouseView()
+    await pointer('pointerdown', 150)
+    await pointer('pointermove', 70)
+    await pointer('pointerup', 70)
+    await container.trigger('click', { button: 0, clientX: 70 })
+    expect(wrapper.emitted('update:currentIndex')).toBeUndefined()
+    expect(wrapper.emitted('toggle-toolbar')).toBeUndefined()
+    await click(30)
+    await vi.advanceTimersByTimeAsync(400)
+    expect(wrapper.emitted('update:currentIndex')).toEqual([[0]])
+    expect(wrapper.get('.strip').attributes('style')).toContain('translate3d(0px, 0, 0)')
     wrapper.unmount()
   })
 

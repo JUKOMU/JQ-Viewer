@@ -643,7 +643,21 @@ function onMouseClick(ev: MouseEvent) {
     ev.stopPropagation()
     return
   }
-  emit('toggle-toolbar')
+  const rect = containerRef.value?.getBoundingClientRect()
+  const x = ev.clientX - (rect?.left ?? 0)
+  const width = rect?.width || slotWidth.value || window.innerWidth
+  const leftEdge = zoomScale.value > 1 ? 0.2 : 0.3
+  const rightEdge = zoomScale.value > 1 ? 0.8 : 0.6
+  const direction = x < width * leftEdge ? -1 : x > width * rightEdge ? 1 : 0
+  if (direction === 0) {
+    emit('toggle-toolbar')
+    return
+  }
+  const target = displayIndex.value + direction
+  if (target < 0 || target >= props.totalCount) return
+  clearAnimationTimer()
+  scrollToIndex(target)
+  emit('update:currentIndex', target)
 }
 
 function snapTo(target: number) {

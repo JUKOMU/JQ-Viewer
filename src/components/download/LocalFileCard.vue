@@ -183,6 +183,7 @@ const availabilityLabel = computed(() => {
 
 .meta-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   margin-top: 6px;
@@ -192,6 +193,7 @@ const availabilityLabel = computed(() => {
 
 .resource-icons {
   display: inline-flex;
+  flex: 0 0 auto;
   gap: 3px;
   font-size: 14px;
 }
@@ -206,6 +208,8 @@ const availabilityLabel = computed(() => {
 
 .tag,
 .status {
+  flex: 0 0 auto;
+  white-space: nowrap;
   padding: 2px 6px;
   border-radius: 4px;
   background: #f5e2d6;

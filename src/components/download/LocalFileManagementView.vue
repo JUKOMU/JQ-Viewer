@@ -51,45 +51,44 @@
           {{ item.label }}
         </button>
       </div>
-      <label v-if="fileFilter !== 'zip'" class="select-field">
-        <span>文件格式</span>
-        <select v-model="fileFormat" aria-label="文件格式筛选">
-          <option value="all">全部格式</option>
-          <option value="pdf">PDF</option>
-          <option value="cbz">CBZ</option>
-        </select>
-      </label>
+      <InlineSelect
+        v-if="fileFilter !== 'zip'"
+        v-model="fileFormat"
+        label="文件格式"
+        label-text="文件格式筛选"
+        :options="fileFormatOptions"
+      />
     </div>
 
     <div v-if="activeView === 'tasks'" class="filters task-filters">
-      <span class="filter-label">任务状态</span>
-      <label class="select-field task-format-field">
-        <span>任务格式</span>
-        <select v-model="taskFormat" aria-label="导出任务格式筛选">
-          <option value="all">全部格式</option>
-          <option value="pdf">PDF</option>
-          <option value="cbz">CBZ</option>
-          <option value="zip">ZIP</option>
-        </select>
-      </label>
-      <div class="filter-buttons task-filter-buttons" aria-label="导出任务状态筛选">
-        <button
-          type="button"
-          :class="{ selected: taskFilter === 'all' }"
-          @click="taskFilter = 'all'"
-        >
-          全部状态
-        </button>
-        <button
-          v-for="item in taskFilters"
-          :key="item.key"
-          type="button"
-          :class="{ selected: taskFilter === item.key }"
-          @click="taskFilter = item.key"
-        >
-          {{ item.label }}
-        </button>
+      <div class="task-status-group">
+        <span class="filter-label">任务状态</span>
+        <div class="filter-buttons task-filter-buttons" aria-label="导出任务状态筛选">
+          <button
+            type="button"
+            :class="{ selected: taskFilter === 'all' }"
+            @click="taskFilter = 'all'"
+          >
+            全部状态
+          </button>
+          <button
+            v-for="item in taskFilters"
+            :key="item.key"
+            type="button"
+            :class="{ selected: taskFilter === item.key }"
+            @click="taskFilter = item.key"
+          >
+            {{ item.label }}
+          </button>
+        </div>
       </div>
+      <InlineSelect
+        v-model="taskFormat"
+        label="任务格式"
+        label-text="导出任务格式筛选"
+        :options="taskFormatOptions"
+        class="task-format-field"
+      />
     </div>
 
     <div v-if="loading" class="state">正在加载导出数据...</div>
@@ -183,6 +182,7 @@ import { useRouter } from 'vue-router'
 import LocalFileCard from './LocalFileCard.vue'
 import { ChapterSourceService } from '@/services/ChapterSourceService'
 import ExportTaskCard from './ExportTaskCard.vue'
+import InlineSelect from '@/components/common/InlineSelect.vue'
 import CardContextMenu from '@/components/common/CardContextMenu.vue'
 import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
 import { LocalFileImportService } from '@/services/LocalFileImportService'
@@ -243,6 +243,17 @@ const fileFilters = [
   { key: 'imported' as const, label: '导入' },
   { key: 'exported' as const, label: '导出' },
   { key: 'zip' as const, label: 'ZIP' },
+]
+const fileFormatOptions = [
+  { value: 'all', label: '全部格式' },
+  { value: 'pdf', label: 'PDF' },
+  { value: 'cbz', label: 'CBZ' },
+]
+const taskFormatOptions = [
+  { value: 'all', label: '全部格式' },
+  { value: 'pdf', label: 'PDF' },
+  { value: 'cbz', label: 'CBZ' },
+  { value: 'zip', label: 'ZIP' },
 ]
 const taskFilters = [
   { key: 'queued' as const, label: '排队中' },
@@ -1015,8 +1026,7 @@ defineExpose({ refresh: load })
   margin: 8px 0 10px;
 }
 
-.search-field,
-.select-field {
+.search-field {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -1035,8 +1045,7 @@ defineExpose({ refresh: load })
   width: 100%;
 }
 
-.search-field input,
-.select-field select {
+.search-field input {
   min-height: 36px;
   border: 1px solid #ead1c1;
   border-radius: 16px;
@@ -1071,6 +1080,10 @@ defineExpose({ refresh: load })
 
 .task-filters {
   align-items: flex-start;
+}
+
+.task-status-group {
+  width: 100%;
 }
 
 .task-format-field {

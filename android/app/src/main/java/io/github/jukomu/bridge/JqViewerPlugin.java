@@ -133,7 +133,7 @@ public class JqViewerPlugin extends Plugin {
         FavoriteStore favoriteStore = FavoriteStore.getInstance(ctx);
         favoriteHandler = new FavoritePluginHandler(favoriteStore);
         try {
-            LocalFileStore.getInstance(ctx);
+            LocalFileStore.getInstance(ctx).getReadableDatabase();
             try {
                 PdfPageCache.getInstance(ctx);
             } catch (RuntimeException error) {

@@ -48,6 +48,7 @@ const runtimePromise =
 
 runtimePromise
   .then(async (runtime) => {
+    document.documentElement.dataset.runtimePlatform = runtime.platform
     await ExportService.initialize(runtime.services.exportPreferences)
     configureRuntime(runtime)
     return router.isReady()

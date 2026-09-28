@@ -134,19 +134,143 @@ public class LocalFileStoreInstrumentedTest {
     }
 
     @Test
-    public void unsupportedDatabaseVersionIsRejectedWithoutFallback() {
-        File databaseFile = context.getDatabasePath(DB_NAME);
-        File parent = databaseFile.getParentFile();
-        assertTrue(parent == null || parent.isDirectory() || parent.mkdirs());
-        SQLiteDatabase legacy = SQLiteDatabase.openOrCreateDatabase(databaseFile, null);
-        legacy.setVersion(9);
-        legacy.close();
+    public void versionNineUpgradePreservesFilesAndChapterLinksWithoutTouchingStorage() throws Exception {
+        File physicalFile = new File(context.getCacheDir(), "v9-retained.pdf");
+        createdFiles.add(physicalFile);
+        try (FileOutputStream output = new FileOutputStream(physicalFile)) {
+            output.write(new byte[]{1, 2, 3});
+        }
+        try (SQLiteDatabase legacy = LegacyLocalFileDatabase.createVersionNine(context)) {
+            legacy.execSQL("INSERT INTO pdf_files (file_path,file_name,source_type,ownership,"
+                + "chapter_link_status,album_id,chapter_id,chapter_title,chapter_sort_order,"
+                + "page_count,folder_id,created_at,updated_at) VALUES "
+                + "(?,'retained.pdf','imported','external_reference','resolved','album-1',"
+                + "'chapter-1','Chapter',3,5,'folder-1',100,200)",
+                new Object[]{physicalFile.getAbsolutePath()});
+            legacy.execSQL("INSERT INTO pdf_files (file_path,file_name,source_type,ownership,"
+                + "chapter_link_status,album_id,created_at,updated_at) VALUES "
+                + "('content://missing.provider/document/42','saf.pdf','imported','external_reference',"
+                + "'unresolved','album-2',101,201),"
+                + "('/exports/merged.pdf','merged.pdf','exported','app_created','multi_chapter','album-3',102,202),"
+                + "('relative.pdf','invalid.pdf','imported','external_reference','unresolved','album-4',103,203)");
+            legacy.execSQL("CREATE TABLE imported_pdfs (id INTEGER PRIMARY KEY,file_path TEXT,"
+                + "file_name TEXT,album_id TEXT,chapter_id TEXT)");
+            legacy.execSQL("INSERT INTO imported_pdfs VALUES "
+                + "(1,'content://missing.provider/document/43','unlinked.pdf','album-2',NULL),"
+                + "(2,'/imports/old.pdf','old.pdf','album-5','chapter-5')");
+            legacy.execSQL("INSERT INTO pdf_export_tasks (export_id,batch_id,mode,album_id,display_title,"
+                + "save_path,use_original,compression_ratio,status,phase,created_at,updated_at) VALUES "
+                + "('legacy-task','batch','chapter','album-1','Export','/exports',1,1,'running','writing',1,1)");
+        }
 
-        IllegalStateException error = assertThrows(IllegalStateException.class,
-            () -> LocalFileStore.getInstance(context).getWritableDatabase());
+        LocalFileStore store = LocalFileStore.getInstance(context);
+        assertEquals(11, store.getWritableDatabase().getVersion());
+        assertEquals(5, store.countFiles());
+        JSONObject file = store.getFileByRef("file:path:" + physicalFile.getAbsolutePath());
+        assertEquals("pdf", file.getString("format"));
+        assertEquals("folder-1", file.getString("folderId"));
+        assertEquals(100, file.getLong("createdAt"));
+        JSONObject chapter = file.getJSONArray("chapters").getJSONObject(0);
+        assertEquals("chapter-1", chapter.getString("chapterId"));
+        assertEquals(3, chapter.getInt("sortOrder"));
+        assertEquals(1, chapter.getInt("startPage"));
+        assertEquals(5, chapter.getInt("endPage"));
+        JSONObject importedWithoutChapter = store.getFileByRef(
+            "file:saf:content://missing.provider/document/43");
+        assertNotNull(importedWithoutChapter);
+        assertEquals("unresolved", importedWithoutChapter.getString("chapterLinkStatus"));
+        assertEquals("multi_chapter", store.getFileByRef("file:path:/exports/merged.pdf")
+            .getString("chapterLinkStatus"));
+        assertEquals(0, store.getAllExportTasks().length());
+        assertEquals(3, physicalFile.length());
+        assertFalse(tableExists(store.getWritableDatabase(), "pdf_files"));
+        assertFalse(tableExists(store.getWritableDatabase(), "imported_pdfs"));
+        JSONObject notice = store.getManagementState().getJSONObject("databaseResetInfo");
+        assertTrue(notice.getBoolean("pending"));
+        assertEquals(9, notice.getInt("fromVersion"));
+        assertEquals(5, notice.getInt("migratedCount"));
+        assertEquals(1, notice.getInt("skippedCount"));
+        assertTrue(notice.getBoolean("exportHistoryCleared"));
+        assertTrue(notice.getBoolean("exportFolderReset"));
 
-        assertTrue(error.getMessage().contains(
-            "Unsupported local file database upgrade: 9 -> 11"));
+        LocalFileStore.clearInstanceForTest();
+        assertEquals(5, LocalFileStore.getInstance(context).countFiles());
+    }
+
+    @Test
+    public void failedUpgradesRollBackSchemaAndKeepOldRecords() throws Exception {
+        for (int version : new int[]{8, 9}) {
+            LocalFileStore.clearInstanceForTest();
+            context.deleteDatabase(DB_NAME);
+            try (SQLiteDatabase legacy = LegacyLocalFileDatabase.createVersionNine(context)) {
+                legacy.setVersion(version);
+                legacy.execSQL("INSERT INTO pdf_files (file_path,file_name,source_type,ownership,"
+                    + "chapter_link_status,album_id,created_at,updated_at) VALUES "
+                    + "('/imports/keep.pdf','keep.pdf','imported','external_reference','unresolved','album',1,1)");
+                legacy.execSQL("CREATE TABLE local_file_chapters (fixture INTEGER)");
+            }
+
+            assertThrows(SQLiteException.class,
+                () -> LocalFileStore.getInstance(context).getWritableDatabase());
+            LocalFileStore.clearInstanceForTest();
+            try (SQLiteDatabase database = SQLiteDatabase.openDatabase(
+                context.getDatabasePath(DB_NAME).getPath(), null, SQLiteDatabase.OPEN_READONLY)) {
+                assertEquals(version, database.getVersion());
+                assertEquals(1, scalarLong(database, "SELECT COUNT(*) FROM pdf_files"));
+                assertFalse(tableExists(database, "local_files"));
+            }
+        }
+    }
+
+    @Test
+    public void versionsBeforeNineRebuildRecordsAndKeepPhysicalFiles() throws Exception {
+        File physicalFile = new File(context.getCacheDir(), "legacy-retained.pdf");
+        createdFiles.add(physicalFile);
+        byte[] content = new byte[]{1, 2, 3};
+        try (FileOutputStream output = new FileOutputStream(physicalFile)) {
+            output.write(content);
+        }
+        String[] oldTables = {"pdf_files", "pdf_export_tasks", "pdf_export_chapters",
+            "pdf_export_volumes", "pdf_store_meta", "pdf_export_path_locks",
+            "imported_pdfs", "imported_pdfs_new", "pdf_files_new"};
+        for (int version = 1; version < 9; version++) {
+            LocalFileStore.clearInstanceForTest();
+            context.deleteDatabase(DB_NAME);
+            try (SQLiteDatabase legacy = LegacyLocalFileDatabase.createVersionNine(context)) {
+                legacy.setVersion(version);
+                legacy.execSQL("INSERT INTO pdf_files (file_path,file_name,source_type,ownership,"
+                    + "chapter_link_status,album_id,created_at,updated_at) VALUES "
+                    + "(?,'keep.pdf','imported','external_reference','unresolved','album',1,1)",
+                    new Object[]{physicalFile.getAbsolutePath()});
+                for (String table : new String[]{"pdf_export_path_locks", "imported_pdfs",
+                    "imported_pdfs_new", "pdf_files_new"}) {
+                    legacy.execSQL("CREATE TABLE " + table + " (file_path TEXT)");
+                    legacy.execSQL("INSERT INTO " + table + " VALUES (?)",
+                        new Object[]{physicalFile.getAbsolutePath()});
+                }
+            }
+            LocalFileStore store = LocalFileStore.getInstance(context);
+            SQLiteDatabase upgraded = store.getWritableDatabase();
+            assertEquals(11, upgraded.getVersion());
+            assertEquals(0, store.countFiles());
+            assertEquals(0, store.getAllExportTasks().length());
+            for (String table : oldTables) assertFalse(table, tableExists(upgraded, table));
+            assertArrayEquals(content, java.nio.file.Files.readAllBytes(physicalFile.toPath()));
+            JSONObject notice = store.getManagementState().getJSONObject("databaseResetInfo");
+            assertTrue(notice.getBoolean("pending"));
+            assertEquals(version, notice.getInt("fromVersion"));
+            assertEquals(0, notice.getInt("migratedCount"));
+            assertTrue(notice.getBoolean("exportHistoryCleared"));
+            assertTrue(notice.getBoolean("exportFolderReset"));
+            assertTrue(store.acknowledgeDatabaseReset());
+            store.insertImportedFile("pdf", "file:path:" + physicalFile.getAbsolutePath(),
+                physicalFile.getAbsolutePath(), "keep.pdf", "album", "Album", "", "",
+                "chapter", "Chapter", 1, 1, 1L, null, 3L, 1);
+            LocalFileStore.clearInstanceForTest();
+            assertEquals(1, LocalFileStore.getInstance(context).countFiles());
+            assertFalse(LocalFileStore.getInstance(context).getManagementState()
+                .getJSONObject("databaseResetInfo").getBoolean("pending"));
+        }
     }
 
     @Test

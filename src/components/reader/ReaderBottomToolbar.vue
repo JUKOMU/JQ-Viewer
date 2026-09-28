@@ -1,9 +1,5 @@
 <template>
-  <div
-    ref="toolbarRef"
-    class="bottom-toolbar"
-    :class="{ 'with-chapters': chapters.length > 0 }"
-  >
+  <div ref="toolbarRef" class="bottom-toolbar" :class="{ 'with-chapters': chapters.length > 0 }">
     <Transition name="chapter-picker">
       <ul
         v-if="chapterPickerOpen"

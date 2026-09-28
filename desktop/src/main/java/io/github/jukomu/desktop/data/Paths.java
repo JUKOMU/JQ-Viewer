@@ -25,6 +25,7 @@ public final class Paths {
     private final Path ocrDirectory;
     private final Path databasePath;
     private final Path instanceLockPath;
+    private final Path backendPortPath;
 
     public Paths(
         Path programDirectory,
@@ -61,6 +62,7 @@ public final class Paths {
         this.ocrDirectory = dataDirectory.resolve("ocr");
         this.databasePath = dataDirectory.resolve("desktop.sqlite3");
         this.instanceLockPath = stateDirectory.resolve("instance.lock");
+        this.backendPortPath = stateDirectory.resolve("backend.port");
     }
 
     public static Paths current() {
@@ -147,5 +149,9 @@ public final class Paths {
 
     public Path instanceLockPath() {
         return instanceLockPath;
+    }
+
+    public Path backendPortPath() {
+        return backendPortPath;
     }
 }

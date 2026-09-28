@@ -296,19 +296,19 @@ describe('HorizontalPageView', () => {
     wrapper.unmount()
   })
 
-  test('左右区域第一次点击仍立即翻页', async () => {
+  test('移动端左右 20% 区域第一次点击仍立即翻页', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(1000)
     const { wrapper, container } = mountView()
 
-    await container.trigger('touchstart', { touches: [{ clientX: 30, clientY: 200 }] })
+    await container.trigger('touchstart', { touches: [{ clientX: 59, clientY: 200 }] })
     await container.trigger('touchend', {
       touches: [],
-      changedTouches: [{ clientX: 30, clientY: 200 }],
+      changedTouches: [{ clientX: 59, clientY: 200 }],
     })
-    await container.trigger('touchstart', { touches: [{ clientX: 270, clientY: 200 }] })
+    await container.trigger('touchstart', { touches: [{ clientX: 241, clientY: 200 }] })
     await container.trigger('touchend', {
       touches: [],
-      changedTouches: [{ clientX: 270, clientY: 200 }],
+      changedTouches: [{ clientX: 241, clientY: 200 }],
     })
 
     expect(wrapper.emitted('update:currentIndex')).toEqual([[0], [1]])

@@ -51,7 +51,7 @@ public class ExportService {
     private final AtomicInteger batchCounter = new AtomicInteger(0);
     private final AtomicInteger notificationCounter = new AtomicInteger(0);
     private final AtomicInteger foregroundSessionCounter = new AtomicInteger(0);
-    private final AtomicBoolean startupReconciled = new AtomicBoolean(false);
+    private boolean startupReconciled;
     private int foregroundRevision;
     private final Object activeJobsLock = new Object();
     private final Set<String> activeTaskKeys = new HashSet<>();
@@ -114,8 +114,8 @@ public class ExportService {
     /**
      * Marks unfinished persisted work as interrupted and removes its known temporary artifacts once per process.
      */
-    public void reconcileOnStartup() {
-        if (!startupReconciled.compareAndSet(false, true)) return;
+    public synchronized void reconcileOnStartup() {
+        if (startupReconciled) return;
         Set<String> newlyInterrupted = new HashSet<>();
         JSONArray before = localFileStore.getAllExportTasks();
         for (int index = 0; index < before.length(); index++) {
@@ -140,6 +140,7 @@ public class ExportService {
             }
             cleanupStagingDirectoryQuietly(task);
         }
+        startupReconciled = true;
     }
 
     public JSONObject getManagementState() {

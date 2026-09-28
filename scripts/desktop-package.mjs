@@ -19,6 +19,8 @@ import { resolveWindowsInstallerVersion } from './windows-installer-version.mjs'
 const root = fileURLToPath(new URL('..', import.meta.url))
 const desktopDirectory = path.join(root, 'desktop')
 const targetDirectory = path.join(desktopDirectory, 'target')
+const appIconPng = path.join(desktopDirectory, 'packaging', 'app-icon.png')
+const appIconIco = path.join(desktopDirectory, 'packaging', 'app-icon.ico')
 const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
 
 export const applicationName = 'JQ-Viewer'
@@ -381,6 +383,8 @@ function buildAppImage({
     appImagesDirectory,
     '--name',
     applicationName,
+    '--icon',
+    target.platform === 'windows' ? appIconIco : appIconPng,
     '--main-jar',
     path.basename(findMainJar()),
     '--main-class',

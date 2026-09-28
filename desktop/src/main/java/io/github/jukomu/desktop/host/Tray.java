@@ -10,6 +10,7 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.WindowEvent;
 import java.awt.event.WindowFocusListener;
+import java.awt.image.BaseMultiResolutionImage;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
@@ -24,6 +25,7 @@ public final class Tray implements AutoCloseable {
     private static final String CHINESE_MENU_GLYPHS =
         CHINESE_LABELS.openHome() + CHINESE_LABELS.exit();
     private static final float MENU_FONT_SIZE = 13f;
+    private static final int MENU_POINTER_GAP = 6;
 
     private final SystemTray systemTray;
     private final TrayIcon trayIcon;
@@ -126,10 +128,10 @@ public final class Tray implements AutoCloseable {
 
             // 托盘图标及鼠标点击事件
             TrayIcon icon = new TrayIcon(
-                new ImageIcon(Tray.class.getResource("/static/favicon.png")).getImage(),
+                loadTrayImage(),
                 "JQ Viewer"
             );
-            icon.setImageAutoSize(true);
+            icon.setImageAutoSize(false);
             AtomicReference<Tray> trayReference = new AtomicReference<>();
             icon.addActionListener(event -> {
                 Tray current = trayReference.get();
@@ -228,21 +230,30 @@ public final class Tray implements AutoCloseable {
         int maxY = screenBounds.y + screenBounds.height - insets.bottom;
 
         int x = mousePos.x;
-        int y = mousePos.y;
+        int y = mousePos.y - menuSize.height - MENU_POINTER_GAP;
 
         // 右侧空间不足向左弹出
         if (x + menuSize.width > maxX) {
             x = mousePos.x - menuSize.width;
         }
-        // 下方被任务栏或屏幕遮挡则向上弹出
-        if (y + menuSize.height > maxY) {
-            y = mousePos.y - menuSize.height;
+        // 上方空间不足时向下弹出
+        if (y < minY + 2) {
+            y = mousePos.y + MENU_POINTER_GAP;
         }
 
         x = Math.max(minX + 2, Math.min(x, maxX - menuSize.width - 2));
         y = Math.max(minY + 2, Math.min(y, maxY - menuSize.height - 2));
 
         return new Point(x, y);
+    }
+
+    static Image loadTrayImage() {
+        int[] sizes = {16, 20, 24, 32, 64};
+        Image[] images = new Image[sizes.length];
+        for (int i = 0; i < sizes.length; i++) {
+            images[i] = new ImageIcon(Tray.class.getResource("/tray-icons/favicon-" + sizes[i] + ".png")).getImage();
+        }
+        return new BaseMultiResolutionImage(images);
     }
 
     private static JMenuItem createMenuItem(String text, Font font, Runnable action) {

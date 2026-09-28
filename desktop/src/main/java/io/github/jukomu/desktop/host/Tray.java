@@ -10,7 +10,6 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.WindowEvent;
 import java.awt.event.WindowFocusListener;
-import java.awt.image.BufferedImage;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
@@ -126,7 +125,10 @@ public final class Tray implements AutoCloseable {
             });
 
             // 托盘图标及鼠标点击事件
-            TrayIcon icon = new TrayIcon(createIcon(), "JQ Viewer");
+            TrayIcon icon = new TrayIcon(
+                new ImageIcon(Tray.class.getResource("/static/favicon.png")).getImage(),
+                "JQ Viewer"
+            );
             icon.setImageAutoSize(true);
             AtomicReference<Tray> trayReference = new AtomicReference<>();
             icon.addActionListener(event -> {
@@ -342,22 +344,6 @@ public final class Tray implements AutoCloseable {
                 );
             }
         });
-    }
-
-    private static BufferedImage createIcon() {
-        BufferedImage image = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB);
-        Graphics2D graphics = image.createGraphics();
-        try {
-            graphics.setColor(new Color(32, 95, 170));
-            graphics.fillRoundRect(1, 1, 14, 14, 3, 3);
-            graphics.setColor(Color.WHITE);
-            graphics.fillRect(5, 4, 2, 8);
-            graphics.fillRect(9, 4, 2, 8);
-            graphics.fillRect(5, 10, 6, 2);
-        } finally {
-            graphics.dispose();
-        }
-        return image;
     }
 
     @Override

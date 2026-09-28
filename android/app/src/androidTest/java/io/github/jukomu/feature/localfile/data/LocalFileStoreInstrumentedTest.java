@@ -156,7 +156,7 @@ public class LocalFileStoreInstrumentedTest {
             legacy.execSQL("CREATE TABLE imported_pdfs (id INTEGER PRIMARY KEY,file_path TEXT,"
                 + "file_name TEXT,album_id TEXT,chapter_id TEXT)");
             legacy.execSQL("INSERT INTO imported_pdfs VALUES "
-                + "(1,'content://missing.provider/document/42','duplicate.pdf','album-2',NULL),"
+                + "(1,'content://missing.provider/document/43','unlinked.pdf','album-2',NULL),"
                 + "(2,'/imports/old.pdf','old.pdf','album-5','chapter-5')");
             legacy.execSQL("INSERT INTO pdf_export_tasks (export_id,batch_id,mode,album_id,display_title,"
                 + "save_path,use_original,compression_ratio,status,phase,created_at,updated_at) VALUES "
@@ -165,7 +165,7 @@ public class LocalFileStoreInstrumentedTest {
 
         LocalFileStore store = LocalFileStore.getInstance(context);
         assertEquals(11, store.getWritableDatabase().getVersion());
-        assertEquals(4, store.countFiles());
+        assertEquals(5, store.countFiles());
         JSONObject file = store.getFileByRef("file:path:" + physicalFile.getAbsolutePath());
         assertEquals("pdf", file.getString("format"));
         assertEquals("folder-1", file.getString("folderId"));
@@ -175,7 +175,10 @@ public class LocalFileStoreInstrumentedTest {
         assertEquals(3, chapter.getInt("sortOrder"));
         assertEquals(1, chapter.getInt("startPage"));
         assertEquals(5, chapter.getInt("endPage"));
-        assertNotNull(store.getFileByRef("file:saf:content://missing.provider/document/42"));
+        JSONObject importedWithoutChapter = store.getFileByRef(
+            "file:saf:content://missing.provider/document/43");
+        assertNotNull(importedWithoutChapter);
+        assertEquals("unresolved", importedWithoutChapter.getString("chapterLinkStatus"));
         assertEquals("multi_chapter", store.getFileByRef("file:path:/exports/merged.pdf")
             .getString("chapterLinkStatus"));
         assertEquals(0, store.getAllExportTasks().length());
@@ -185,13 +188,13 @@ public class LocalFileStoreInstrumentedTest {
         JSONObject notice = store.getManagementState().getJSONObject("databaseResetInfo");
         assertTrue(notice.getBoolean("pending"));
         assertEquals(9, notice.getInt("fromVersion"));
-        assertEquals(4, notice.getInt("migratedCount"));
-        assertEquals(2, notice.getInt("skippedCount"));
+        assertEquals(5, notice.getInt("migratedCount"));
+        assertEquals(1, notice.getInt("skippedCount"));
         assertTrue(notice.getBoolean("exportHistoryCleared"));
         assertTrue(notice.getBoolean("exportFolderReset"));
 
         LocalFileStore.clearInstanceForTest();
-        assertEquals(4, LocalFileStore.getInstance(context).countFiles());
+        assertEquals(5, LocalFileStore.getInstance(context).countFiles());
     }
 
     @Test

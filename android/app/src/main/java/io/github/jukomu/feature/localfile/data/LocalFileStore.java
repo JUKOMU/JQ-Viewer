@@ -138,7 +138,9 @@ public class LocalFileStore extends SQLiteOpenHelper {
                     LocalFileRef.fileName(fileRef)));
                 values.put("source_type", imported ? SOURCE_IMPORTED : cursorString(cursor, "source_type"));
                 values.put("ownership", imported ? OWNERSHIP_EXTERNAL : cursorString(cursor, "ownership"));
-                values.put("chapter_link_status", imported ? "resolved"
+                String chapterId = cursorString(cursor, "chapter_id");
+                values.put("chapter_link_status", imported
+                    ? (chapterId.trim().isEmpty() ? "unresolved" : "resolved")
                     : cursorString(cursor, "chapter_link_status"));
                 values.put("album_id", cursorString(cursor, "album_id"));
                 values.put("album_title", cursorString(cursor, "album_title"));
@@ -161,7 +163,6 @@ public class LocalFileStore extends SQLiteOpenHelper {
                     skipped++;
                     continue;
                 }
-                String chapterId = cursorString(cursor, "chapter_id");
                 if (!chapterId.trim().isEmpty()) {
                     int pageCount = cursorInt(cursor, "page_count");
                     insertFileChapter(db, fileId, 0, cursorString(cursor, "album_id"),

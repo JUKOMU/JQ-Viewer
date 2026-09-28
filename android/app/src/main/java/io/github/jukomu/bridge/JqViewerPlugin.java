@@ -139,17 +139,24 @@ public class JqViewerPlugin extends Plugin {
             } catch (RuntimeException error) {
                 Log.w(TAG, "初始化 PDF 页面缓存失败，继续启动", error);
             }
-            ExportService exportService = ExportService.getInstance(ctx);
-            this.exportEventSink = snapshot -> {
-                if (snapshot == null) return;
-                try {
-                    notifyListeners("exportProgress", JSObject.fromJSONObject(snapshot));
-                } catch (Exception error) {
-                    Log.w(TAG, "发布文件导出进度失败", error);
-                }
-            };
-            exportService.attachEventSink(exportEventSink);
-            exportService.reconcileOnStartup();
+            ExportService exportService = null;
+            try {
+                exportService = ExportService.getInstance(ctx);
+                this.exportEventSink = snapshot -> {
+                    if (snapshot == null) return;
+                    try {
+                        notifyListeners("exportProgress", JSObject.fromJSONObject(snapshot));
+                    } catch (Exception error) {
+                        Log.w(TAG, "发布文件导出进度失败", error);
+                    }
+                };
+                exportService.attachEventSink(exportEventSink);
+            } catch (RuntimeException error) {
+                Log.w(TAG, "初始化文件导出服务失败，继续提供本地文件功能", error);
+            }
+            if (exportService != null) {
+                exportService.reconcileOnStartup();
+            }
         } catch (RuntimeException error) {
             localFileStartupError = error;
             Log.e(TAG, "本地文件初始化失败，保留历史、阅读和其他本地功能", error);

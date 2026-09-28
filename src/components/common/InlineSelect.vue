@@ -2,6 +2,7 @@
   <div ref="root" class="inline-select">
     <span v-if="label" class="select-label">{{ label }}</span>
     <button
+      ref="trigger"
       type="button"
       class="select-trigger"
       :class="{ open }"
@@ -51,6 +52,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 const root = ref<HTMLElement | null>(null)
+const trigger = ref<HTMLButtonElement | null>(null)
 const open = ref(false)
 const selectedLabel = computed(
   () => props.options.find((option) => option.value === props.modelValue)?.label || '',
@@ -59,6 +61,7 @@ const selectedLabel = computed(
 const selectOption = (value: string) => {
   emit('update:modelValue', value)
   open.value = false
+  trigger.value?.focus()
 }
 
 const handlePointerDown = (event: PointerEvent) => {
@@ -68,6 +71,7 @@ const handlePointerDown = (event: PointerEvent) => {
 const handleKeydown = (event: KeyboardEvent) => {
   if (event.key === 'Escape' && open.value) {
     open.value = false
+    trigger.value?.focus()
     event.stopPropagation()
   }
 }

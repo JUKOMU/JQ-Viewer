@@ -382,11 +382,11 @@ public final class Backend implements AutoCloseable {
                 new OcrPluginHandler(ocrRequests, startedOcrService),
                 new UpdatePluginHandler(updateRequests, startedUpdateService));
             PdfResourceService pdfResources = new PdfResourceService();
+            int preferredPort = preferredBackendPort();
             candidate = Javalin.create(config -> {
-                configureApplication(config, preferredBackendPort(), plugin, eventHub,
+                configureApplication(config, preferredPort, plugin, eventHub,
                     imageService, downloadService, pdfResources, pdfPageCache, cbzDocuments);
             });
-            int preferredPort = preferredBackendPort();
             try {
                 candidate.start();
             } catch (Exception | Error firstStartFailure) {

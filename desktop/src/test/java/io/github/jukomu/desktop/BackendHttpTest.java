@@ -8,6 +8,7 @@ import io.github.jukomu.desktop.feature.settings.SettingsService;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.net.ServerSocket;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -59,6 +60,30 @@ class BackendHttpTest {
             assertTrue(search.body().contains("\"code\":\"unavailable\""));
             assertEquals(200, retry.statusCode());
             assertTrue(retriedState.body().contains("\"state\":\"unavailable\""));
+        }
+    }
+
+    @Test
+    void fallsBackWhenPersistedBackendPortIsOccupiedAndPersistsActualPort() throws Exception {
+        Path root = Files.createTempDirectory("jq-viewer-backend-port-");
+        Paths paths = new Paths(
+                root.resolve("program"), root.resolve("home"), Map.of(), "Linux");
+        Files.createDirectories(paths.stateDirectory());
+
+        try (ServerSocket occupied = new ServerSocket(0)) {
+            int preferredPort = occupied.getLocalPort();
+            Files.writeString(paths.backendPortPath(), Integer.toString(preferredPort));
+
+            try (Backend backend = TestBackends.offline(
+                    paths, new Database(paths), new BackendTestExecutor())) {
+                backend.start();
+
+                assertTrue(backend.isRunning());
+                assertTrue(backend.port() > 0);
+                assertTrue(backend.port() != preferredPort);
+                assertEquals(Integer.toString(backend.port()),
+                        Files.readString(paths.backendPortPath()));
+            }
         }
     }
 

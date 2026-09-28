@@ -53,6 +53,7 @@ async function ensureProgressListener(): Promise<void> {
   listenerPromise = JmcomicService.addUpdateProgressListener((event) => {
     applyState(event)
     if (event.phase === 'ready_to_install' && updateStarted) {
+      updateStarted = false
       void installReadyUpdate()
     }
   })

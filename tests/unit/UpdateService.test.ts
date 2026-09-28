@@ -139,6 +139,39 @@ describe('UpdateService 通知权限', () => {
 })
 
 describe('UpdateService 安装权限', () => {
+  test('取消系统安装后不再自动拉起安装器，可手动重试', async () => {
+    let eventHandler: ((event: UpdateProgressEvent) => void) | undefined
+    mocks.notificationKind = 'host-managed'
+    mocks.addUpdateProgressListener.mockImplementation((handler) => {
+      eventHandler = handler
+      return Promise.resolve({ remove: vi.fn() })
+    })
+    mocks.installUpdate.mockResolvedValue({ started: true, permissionRequired: false })
+    const service = await loadUpdateService()
+
+    await service.start()
+    const event = {
+      revision: 1,
+      phase: 'ready_to_install',
+      source: '',
+      githubBytes: 1,
+      giteeBytes: 0,
+      totalBytes: 1,
+      speedBytesPerSecond: 0,
+      error: '',
+    } satisfies UpdateProgressEvent
+    eventHandler?.(event)
+    expect(mocks.installUpdate).toHaveBeenCalledTimes(1)
+
+    eventHandler?.({ ...event, revision: 2, phase: 'installing' })
+    eventHandler?.({ ...event, revision: 3 })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(mocks.installUpdate).toHaveBeenCalledTimes(1)
+
+    await service.install()
+    expect(mocks.installUpdate).toHaveBeenCalledTimes(2)
+  })
+
   test('弹窗关闭后再请求安装来源权限', async () => {
     const onDidDismiss = vi.fn().mockResolvedValue({ role: 'confirm' })
     mocks.alertCreate.mockResolvedValue({ present: vi.fn(), onDidDismiss })

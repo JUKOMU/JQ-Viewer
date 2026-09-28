@@ -69,7 +69,9 @@
               </div>
               <div class="info-row">
                 <span class="info-label">安装包大小</span>
-                <span class="info-value">{{ formatMiB(latestManifest.sizeBytes) }}</span>
+                <span class="info-value">{{
+                  formatMiB(latestManifest.desktopArtifact?.sizeBytes ?? latestManifest.sizeBytes)
+                }}</span>
               </div>
               <div class="info-row update-progress-row">
                 <span class="info-label">更新状态</span>

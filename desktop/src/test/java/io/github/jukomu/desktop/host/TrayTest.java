@@ -2,17 +2,31 @@ package io.github.jukomu.desktop.host;
 
 import org.junit.jupiter.api.Test;
 
+import java.awt.Dimension;
 import java.awt.Graphics2D;
 import java.awt.Image;
+import java.awt.geom.RoundRectangle2D;
 import java.awt.image.BufferedImage;
 import java.awt.image.MultiResolutionImage;
 import java.util.Locale;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TrayTest {
+    @Test
+    void roundsMenuCornersByFivePercentOfEachDimension() {
+        RoundRectangle2D shape = Tray.menuShape(new Dimension(100, 60));
+
+        assertEquals(10, shape.getArcWidth());
+        assertEquals(6, shape.getArcHeight());
+        assertFalse(shape.contains(0, 0));
+        assertTrue(shape.contains(50, 30));
+    }
+
     @Test
     void usesChineseLabelsForAnyChineseDisplayLocaleWithAvailableFont() {
         assertEquals(

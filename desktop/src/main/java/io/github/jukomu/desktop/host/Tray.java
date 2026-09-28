@@ -3,6 +3,7 @@ package io.github.jukomu.desktop.host;
 import io.github.jukomu.desktop.feature.notification.DesktopNotification;
 
 import javax.swing.*;
+import javax.swing.border.AbstractBorder;
 import javax.swing.event.PopupMenuEvent;
 import javax.swing.event.PopupMenuListener;
 import java.awt.*;
@@ -10,6 +11,7 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.WindowEvent;
 import java.awt.event.WindowFocusListener;
+import java.awt.geom.RoundRectangle2D;
 import java.awt.image.BaseMultiResolutionImage;
 import java.util.Locale;
 import java.util.Objects;
@@ -67,10 +69,24 @@ public final class Tray implements AutoCloseable {
             JPopupMenu menu = new JPopupMenu();
             menu.setLightWeightPopupEnabled(false);
             menu.setBackground(Color.WHITE);
-            menu.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(210, 215, 220), 1),
-                BorderFactory.createEmptyBorder(0, 0, 0, 0)
-            ));
+            menu.setBorder(new AbstractBorder() {
+                @Override
+                public Insets getBorderInsets(Component c) {
+                    return new Insets(1, 1, 1, 1);
+                }
+
+                @Override
+                public void paintBorder(Component c, Graphics g, int x, int y, int width, int height) {
+                    Graphics2D g2 = (Graphics2D) g.create();
+                    g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                    g2.setColor(new Color(210, 215, 220));
+                    g2.draw(new RoundRectangle2D.Double(
+                        x + 0.5, y + 0.5, width - 1, height - 1,
+                        width * 0.1, height * 0.1
+                    ));
+                    g2.dispose();
+                }
+            });
 
             JMenuItem openHomeItem = createMenuItem(
                 menuPresentation.labels().openHome(),
@@ -195,7 +211,15 @@ public final class Tray implements AutoCloseable {
             hiddenDialog.toFront();
 
             menu.show(hiddenDialog, 0, 0);
+            Window popupWindow = SwingUtilities.getWindowAncestor(menu);
+            if (popupWindow != null && popupWindow != hiddenDialog) {
+                popupWindow.setShape(menuShape(menu.getSize()));
+            }
         });
+    }
+
+    static RoundRectangle2D menuShape(Dimension size) {
+        return new RoundRectangle2D.Double(0, 0, size.width, size.height, size.width * 0.1, size.height * 0.1);
     }
 
     /**

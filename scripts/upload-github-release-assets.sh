@@ -20,13 +20,13 @@ if ! [[ "$upload_timeout_seconds" =~ ^[1-9][0-9]*$ ]]; then
 fi
 
 release_id="$(gh api "repos/$repository/releases/tags/$release_tag" --jq '.id' 2>/dev/null || true)"
-if [ -z "$release_id" ]; then
+if ! [[ "$release_id" =~ ^[0-9]+$ ]]; then
   releases_json="$(gh api "repos/$repository/releases?per_page=100")"
   release_id="$(jq -r --arg tag "$release_tag" \
     '[.[] | select(.tag_name == $tag)][0].id // empty' <<<"$releases_json")"
 fi
-if [ -z "$release_id" ]; then
-  echo "::error::GitHub Release was not found for tag: $release_tag" >&2
+if ! [[ "$release_id" =~ ^[0-9]+$ ]]; then
+  echo "::error::Invalid GitHub Release ID for tag: $release_tag" >&2
   exit 1
 fi
 

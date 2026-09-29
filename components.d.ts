@@ -20,6 +20,7 @@ declare module 'vue' {
     CardContextMenu: typeof import('./src/components/common/CardContextMenu.vue')['default']
     CategorySearchToolbar: typeof import('./src/components/search/CategorySearchToolbar.vue')['default']
     DeleteChaptersBottomSheet: typeof import('./src/components/download/DeleteChaptersBottomSheet.vue')['default']
+    DesktopRouteTrail: typeof import('./src/components/common/DesktopRouteTrail.vue')['default']
     DownloadTaskCard: typeof import('./src/components/download/DownloadTaskCard.vue')['default']
     ExportBottomSheet: typeof import('./src/components/download/ExportBottomSheet.vue')['default']
     ExportTaskCard: typeof import('./src/components/download/ExportTaskCard.vue')['default']

@@ -3,13 +3,20 @@
     <div class="app-shell">
       <MainMenu content-id="main-content" :disabled="mainMenuDisabled"></MainMenu>
       <div id="main-content" class="ion-page-container">
-        <router-view v-slot="{ Component }">
-          <transition :name="transitionName" mode="out-in" @after-enter="onAfterEnter">
-            <keep-alive :include="keepAliveNames" :exclude="keepAliveExclude">
-              <component :is="Component" />
-            </keep-alive>
-          </transition>
-        </router-view>
+        <DesktopRouteTrail
+          v-if="showDesktopRouteTrail"
+          :route-stack="routeStack"
+          :current-path="route.fullPath"
+        />
+        <div class="page-view-container">
+          <router-view v-slot="{ Component }">
+            <transition :name="transitionName" mode="out-in" @after-enter="onAfterEnter">
+              <keep-alive :include="keepAliveNames" :exclude="keepAliveExclude">
+                <component :is="Component" />
+              </keep-alive>
+            </transition>
+          </router-view>
+        </div>
       </div>
     </div>
   </ion-app>
@@ -32,6 +39,7 @@ import { UpdateService } from '@/services/UpdateService'
 import { presentUpdatePrompt } from '@/services/UpdatePromptService'
 import type { ClientStateSnapshot, UpdateManifest } from '@/services/JmcomicTypes'
 import { useDesktopBackButton } from '@/composables/useDesktopBackButton'
+import DesktopRouteTrail from '@/components/common/DesktopRouteTrail.vue'
 
 useDesktopBackButton()
 
@@ -62,6 +70,9 @@ const isReaderRoutePath = (path: string) =>
 
 const mainMenuDisabled = computed(
   () => isReaderRoutePath(route.path) || (!isWideMenu.value && route.meta.menu !== true),
+)
+const showDesktopRouteTrail = computed(
+  () => import.meta.env.MODE === 'desktop' && isWideMenu.value && !mainMenuDisabled.value,
 )
 
 const clearReaderRoute = () => {
@@ -432,6 +443,8 @@ onBeforeUnmount(() => {
 
 .ion-page-container {
   position: relative;
+  display: flex;
+  flex-direction: column;
   flex: 1 1 auto;
   width: auto;
   height: auto;
@@ -440,6 +453,15 @@ onBeforeUnmount(() => {
   contain: layout size style;
   container-type: inline-size;
   z-index: 0;
+  overflow: hidden;
+}
+
+.page-view-container {
+  position: relative;
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
   overflow: hidden;
 }
 

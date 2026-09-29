@@ -7,6 +7,7 @@
           v-if="showDesktopRouteTrail"
           :route-stack="routeStack"
           :current-path="route.fullPath"
+          @navigate="navigateFromDesktopRouteTrail"
         />
         <div class="page-view-container">
           <router-view v-slot="{ Component }">
@@ -40,6 +41,7 @@ import { presentUpdatePrompt } from '@/services/UpdatePromptService'
 import type { ClientStateSnapshot, UpdateManifest } from '@/services/JmcomicTypes'
 import { useDesktopBackButton } from '@/composables/useDesktopBackButton'
 import DesktopRouteTrail from '@/components/common/DesktopRouteTrail.vue'
+import { truncateDesktopRouteStack, updateDesktopRouteStack } from '@/utils/desktopRouteTrail'
 
 useDesktopBackButton()
 
@@ -52,6 +54,8 @@ const routeStack = ref<string[]>([])
 const isBack = ref(false)
 const keepAliveExclude = ref<string[]>([])
 let initialReaderRestorePending = true
+let pendingPopstateNavigation = false
+let pendingTrailTargetIndex: number | null = null
 
 const READER_ROUTE_RESTORE_KEY = 'jq_reader_route_restore'
 const READER_ROUTE_RESTORE_TTL_MS = 2 * 60 * 1000
@@ -74,6 +78,21 @@ const mainMenuDisabled = computed(
 const showDesktopRouteTrail = computed(
   () => import.meta.env.MODE === 'desktop' && isWideMenu.value && !mainMenuDisabled.value,
 )
+
+const navigateFromDesktopRouteTrail = (payload: { path: string; trailIndex: number }) => {
+  pendingTrailTargetIndex = payload.trailIndex
+  if (payload.path === route.fullPath) {
+    isBack.value = true
+    routeStack.value = truncateDesktopRouteStack(
+      routeStack.value,
+      route.fullPath,
+      payload.trailIndex,
+    )
+    pendingTrailTargetIndex = null
+    return
+  }
+  void router.push(payload.path)
+}
 
 const clearReaderRoute = () => {
   localStorage.removeItem(READER_ROUTE_RESTORE_KEY)
@@ -153,6 +172,12 @@ const updateReaderCurrentPage = (page: number) => {
 
 provide('updateReaderCurrentPage', updateReaderCurrentPage)
 
+const onPopstate = () => {
+  pendingPopstateNavigation = true
+}
+
+window.addEventListener('popstate', onPopstate)
+
 const syncReaderRouteSnapshot = (path: string, fullPath: string) => {
   if (isReaderRoutePath(path)) {
     saveReaderRoute(fullPath, pendingReaderFromPath || undefined)
@@ -163,16 +188,26 @@ const syncReaderRouteSnapshot = (path: string, fullPath: string) => {
 }
 
 router.beforeEach((to, from) => {
-  const fromMenu = isMenuNavigation.value
   isMenuNavigation.value = false
+  const isHistoryBack = pendingPopstateNavigation
+  const trailTargetIndex = pendingTrailTargetIndex
+  pendingPopstateNavigation = false
+  pendingTrailTargetIndex = null
 
-  const idx = routeStack.value.lastIndexOf(to.fullPath)
-  if (idx >= 0 && !fromMenu) {
+  if (isHistoryBack || trailTargetIndex !== null) {
     isBack.value = true
-    routeStack.value = routeStack.value.slice(0, idx)
+    routeStack.value =
+      trailTargetIndex !== null
+        ? truncateDesktopRouteStack(routeStack.value, from.fullPath, trailTargetIndex)
+        : updateDesktopRouteStack(routeStack.value, from.fullPath, to.fullPath, 'back')
   } else {
     isBack.value = false
-    if (from.fullPath) routeStack.value.push(from.fullPath)
+    routeStack.value = updateDesktopRouteStack(
+      routeStack.value,
+      from.fullPath,
+      to.fullPath,
+      'forward',
+    )
 
     // 前进导航：从 keepAlive 缓存排除，强制组件重建还原初始状态
     const name = to.name
@@ -415,6 +450,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('popstate', onPopstate)
   clientStateObservationGeneration++
   if (clientStatePollTimer) clearTimeout(clientStatePollTimer)
   clientStatePollTimer = null

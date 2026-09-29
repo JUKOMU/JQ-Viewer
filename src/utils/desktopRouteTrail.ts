@@ -2,13 +2,17 @@ export type DesktopRouteTrailItem =
   | {
       path: string
       label: string
+      trailIndex: number
       isEllipsis?: false
     }
   | {
       path: null
       label: '…'
+      trailIndex: null
       isEllipsis: true
     }
+
+export type DesktopRouteNavigationKind = 'forward' | 'back' | 'trail'
 
 const routeLabels: Array<{ pattern: RegExp | string; label: string }> = [
   { pattern: '/home', label: '首页' },
@@ -29,7 +33,6 @@ const routeLabels: Array<{ pattern: RegExp | string; label: string }> = [
   { pattern: /^\/album\/[^/]+\/preview\/[^/]+$/, label: '章节预览' },
   { pattern: /^\/album\/[^/]+\/download-chapters$/, label: '章节下载' },
   { pattern: /^\/album\/[^/]+\/read\/[^/]+$/, label: '阅读器' },
-  { pattern: /^\/album\/[^/]+$/, label: '漫画详情' },
   { pattern: '/pdf-reader', label: 'PDF 阅读器' },
   { pattern: '/cbz-reader', label: 'CBZ 阅读器' },
 ]
@@ -38,15 +41,21 @@ const routePath = (fullPath: string) => fullPath.split(/[?#]/, 1)[0] || '/'
 
 export function getDesktopRouteLabel(fullPath: string): string {
   const path = routePath(fullPath)
+  const albumDetailMatch = path.match(/^\/album\/([^/]+)$/)
+  if (albumDetailMatch) {
+    return `本子详情(${albumDetailMatch[1]})`
+  }
+
   const match = routeLabels.find(({ pattern }) =>
     typeof pattern === 'string' ? path === pattern : pattern.test(path),
   )
   return match?.label ?? '页面'
 }
 
-const createItem = (path: string): DesktopRouteTrailItem => ({
+const createItem = (path: string, trailIndex: number): DesktopRouteTrailItem => ({
   path,
   label: getDesktopRouteLabel(path),
+  trailIndex,
 })
 
 export function buildDesktopRouteTrail(
@@ -57,11 +66,37 @@ export function buildDesktopRouteTrail(
     return index === 0 || path !== all[index - 1]
   })
 
-  if (paths.length <= 9) return paths.map(createItem)
+  if (paths.length <= 9) return paths.map((path, index) => createItem(path, index))
 
   return [
-    createItem(paths[0]),
-    { path: null, label: '…', isEllipsis: true },
-    ...paths.slice(-8).map(createItem),
+    createItem(paths[0], 0),
+    { path: null, label: '…', trailIndex: null, isEllipsis: true },
+    ...paths.slice(-8).map((path, index) => createItem(path, paths.length - 8 + index)),
   ]
+}
+
+export function truncateDesktopRouteStack(
+  routeStack: readonly string[],
+  currentPath: string,
+  trailIndex: number,
+): string[] {
+  const paths = [...routeStack, currentPath].filter(Boolean).filter((path, index, all) => {
+    return index === 0 || path !== all[index - 1]
+  })
+  return paths.slice(0, Math.max(0, trailIndex))
+}
+
+export function updateDesktopRouteStack(
+  routeStack: readonly string[],
+  fromPath: string,
+  toPath: string,
+  navigationKind: DesktopRouteNavigationKind,
+): string[] {
+  if (navigationKind === 'forward') {
+    return fromPath ? [...routeStack, fromPath] : [...routeStack]
+  }
+
+  const targetIndex = routeStack.lastIndexOf(toPath)
+  if (targetIndex >= 0) return routeStack.slice(0, targetIndex)
+  return routeStack.slice(0, -1)
 }

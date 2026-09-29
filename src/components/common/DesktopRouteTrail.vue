@@ -14,18 +14,16 @@
         >
           {{ item.label }}
         </span>
-        <span
-          v-else-if="index === items.length - 1"
-          class="desktop-route-trail-current"
-          aria-current="page"
-        >
-          {{ item.label }}
-        </span>
         <RouterLink
           v-else
-          class="desktop-route-trail-link"
+          :class="[
+            'desktop-route-trail-link',
+            { 'desktop-route-trail-current': index === items.length - 1 },
+          ]"
           :to="item.path"
           :aria-label="`返回${item.label}`"
+          :aria-current="index === items.length - 1 ? 'page' : undefined"
+          @click="onTrailItemClick($event, item.path, item.trailIndex)"
         >
           {{ item.label }}
         </RouterLink>
@@ -45,7 +43,17 @@ const props = defineProps<{
   currentPath: string
 }>()
 
+const emit = defineEmits<{
+  navigate: [payload: { path: string; trailIndex: number }]
+}>()
+
 const items = computed(() => buildDesktopRouteTrail(props.routeStack, props.currentPath))
+
+const onTrailItemClick = (event: MouseEvent, path: string | null, trailIndex: number | null) => {
+  if (!path || trailIndex === null) return
+  event.preventDefault()
+  emit('navigate', { path, trailIndex })
+}
 </script>
 
 <style scoped>
@@ -120,6 +128,11 @@ const items = computed(() => buildDesktopRouteTrail(props.routeStack, props.curr
   max-width: 240px;
   color: #4c2a18;
   font-weight: 600;
+}
+
+.desktop-route-trail-current:hover {
+  background: #fff0e7;
+  color: #4c2a18;
 }
 
 .desktop-route-trail-ellipsis {

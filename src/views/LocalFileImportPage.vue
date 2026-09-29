@@ -1,7 +1,7 @@
 <template>
   <IonPage>
     <IonHeader class="ion-no-border">
-      <IonToolbar>
+      <IonToolbar class="toolbar desktop-page-content">
         <IonButtons slot="start">
           <IonBackButton default-href="/download" />
         </IonButtons>
@@ -1000,6 +1000,13 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.toolbar {
+  width: 100%;
+  max-width: 920px;
+  margin-inline: auto;
+  box-sizing: border-box;
+}
+
 IonHeader {
   --ion-background-color: var(--ion-background-color, #fff);
 }

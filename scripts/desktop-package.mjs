@@ -130,11 +130,12 @@ export function resolveTarget(platform, architecture) {
 
 export function desktopAssetNames(version, platform, architecture) {
   const target = resolveTarget(platform, architecture)
+  const assetVersion = version.replaceAll('.', '_')
   return target.formats.map((format) => {
     const portable = format.startsWith('portable.')
     const assetFormat = portable ? format.slice('portable.'.length) : format
     const separator = portable || format === 'deb' || format === 'rpm' ? '.' : '-'
-    return `JQ-Viewer-${version}-${target.platform}-${target.architecture}${separator}${assetFormat}`
+    return `JQ-Viewer-${assetVersion}-${target.platform}-${target.architecture}${separator}${assetFormat}`
   })
 }
 

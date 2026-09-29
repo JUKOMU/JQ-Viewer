@@ -60,7 +60,7 @@ function releaseUrl(host, repository, tag, assetName) {
 }
 
 export function expectedDesktopAssetName(version, definition) {
-  return `JQ-Viewer-${version}-${definition.suffix}`
+  return `JQ-Viewer-${version.replaceAll('.', '_')}-${definition.suffix}`
 }
 
 export function classifyDesktopAssets(version, assetPaths) {

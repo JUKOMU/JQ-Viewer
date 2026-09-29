@@ -24,8 +24,8 @@ describe('Desktop package targets', () => {
 
   it('publishes Windows x64 for both native x64 and Windows on ARM emulation', () => {
     expect(desktopAssetNames('1.4.6', 'windows', 'x64')).toEqual([
-      'JQ-Viewer-1.4.6-windows-x64-installer.exe',
-      'JQ-Viewer-1.4.6-windows-x64.zip',
+      'JQ-Viewer-1_4_6-windows-x64-installer.exe',
+      'JQ-Viewer-1_4_6-windows-x64.zip',
     ])
     expect(resolveTarget('windows', 'x64')).toMatchObject({
       javacppPlatform: 'windows-x86_64',
@@ -37,9 +37,9 @@ describe('Desktop package targets', () => {
 
   it('publishes all Linux package forms for both native architectures', () => {
     expect(desktopAssetNames('1.4.6', 'linux', 'arm64')).toEqual([
-      'JQ-Viewer-1.4.6-linux-arm64.deb',
-      'JQ-Viewer-1.4.6-linux-arm64.rpm',
-      'JQ-Viewer-1.4.6-linux-arm64.tar.gz',
+      'JQ-Viewer-1_4_6-linux-arm64.deb',
+      'JQ-Viewer-1_4_6-linux-arm64.rpm',
+      'JQ-Viewer-1_4_6-linux-arm64.tar.gz',
     ])
     expect(resolveTarget('linux', 'x64')).toMatchObject({
       javacppPlatform: 'linux-x86_64',

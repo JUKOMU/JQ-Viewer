@@ -32,7 +32,7 @@ describe('release assets', () => {
   })
 
   it('builds one manifest with both deterministic download URLs', () => {
-    const desktop = { artifacts: [{ name: 'JQ-Viewer-1.3.0-windows-x64-installer.exe' }] }
+    const desktop = { artifacts: [{ name: 'JQ-Viewer-1_3_0-windows-x64-installer.exe' }] }
     const manifest = buildReleaseManifest({
       releaseTag: 'v1.3.0',
       apkName: 'JQ-Viewer-1_3_0.apk',

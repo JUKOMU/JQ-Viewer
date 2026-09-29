@@ -19,7 +19,16 @@ if ! [[ "$upload_timeout_seconds" =~ ^[1-9][0-9]*$ ]]; then
   exit 2
 fi
 
-release_id="$(gh api "repos/$repository/releases/tags/$release_tag" --jq '.id')"
+release_id="$(gh api "repos/$repository/releases/tags/$release_tag" --jq '.id' 2>/dev/null || true)"
+if [ -z "$release_id" ]; then
+  releases_json="$(gh api "repos/$repository/releases?per_page=100")"
+  release_id="$(jq -r --arg tag "$release_tag" \
+    '[.[] | select(.tag_name == $tag)][0].id // empty' <<<"$releases_json")"
+fi
+if [ -z "$release_id" ]; then
+  echo "::error::GitHub Release was not found for tag: $release_tag" >&2
+  exit 1
+fi
 
 upload_asset_once() {
   local asset_path="$1"
@@ -62,8 +71,12 @@ upload_asset_once() {
   echo "Uploading GitHub Release asset: $asset_name "\
     "(timeout: ${upload_timeout_seconds}s)"
   upload_status=0
+  upload_url="https://uploads.github.com/repos/$repository/releases/$release_id/assets?name=$(jq -rn --arg name "$asset_name" '$name | @uri')"
   timeout --signal=TERM --kill-after=30s "${upload_timeout_seconds}s" \
-    gh release upload "$release_tag" "$asset_path" --repo "$repository" || \
+    gh api --method POST \
+      --header 'Content-Type: application/octet-stream' \
+      --input "$asset_path" \
+      "$upload_url" >/dev/null || \
     upload_status=$?
 
   if [ "$upload_status" -eq 124 ] || [ "$upload_status" -eq 137 ]; then

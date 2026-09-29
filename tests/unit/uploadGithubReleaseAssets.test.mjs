@@ -42,25 +42,24 @@ if [ "$1" = "api" ]; then
     echo "$4" > "$DELETE_MARKER_PATH"
     exit 0
   fi
+  if [ "$2" = "--method" ] && [ "$3" = "POST" ]; then
+    attempt=0
+    if [ -f "$UPLOAD_ATTEMPT_PATH" ]; then
+      attempt="$(cat "$UPLOAD_ATTEMPT_PATH")"
+    fi
+    attempt=$((attempt + 1))
+    echo "$attempt" > "$UPLOAD_ATTEMPT_PATH"
+    if [ "$attempt" -eq 1 ]; then
+      /bin/sleep 2
+    fi
+    exit 0
+  fi
   if [[ "$2" == *"/releases/tags/"* ]]; then
     echo 1
   elif [ -f "$UPLOAD_ATTEMPT_PATH" ] && [ "$(cat "$UPLOAD_ATTEMPT_PATH")" -eq 1 ]; then
     echo '[{"id":99,"name":"asset.bin","state":"starter","digest":null}]'
   else
     echo '[]'
-  fi
-  exit 0
-fi
-
-if [ "$1" = "release" ] && [ "$2" = "upload" ]; then
-  attempt=0
-  if [ -f "$UPLOAD_ATTEMPT_PATH" ]; then
-    attempt="$(cat "$UPLOAD_ATTEMPT_PATH")"
-  fi
-  attempt=$((attempt + 1))
-  echo "$attempt" > "$UPLOAD_ATTEMPT_PATH"
-  if [ "$attempt" -eq 1 ]; then
-    /bin/sleep 2
   fi
   exit 0
 fi

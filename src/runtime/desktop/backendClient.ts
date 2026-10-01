@@ -178,6 +178,11 @@ export function createBackendClient(
       call<'deleteOfflineBackup'>('deleteOfflineBackup', options),
     listOfflineBackupKeys: () => call<'listOfflineBackupKeys'>('listOfflineBackupKeys', {}),
     getDomainStates: () => call<'getDomainStates'>('getDomainStates', {}),
+    getUsedDomain: () => call<'getUsedDomain'>('getUsedDomain', {}),
+    applyApiRoute: (options: Parameters<JmcomicClient['applyApiRoute']>[0]) =>
+      call<'applyApiRoute'>('applyApiRoute', options),
+    setApiRoutePreference: (options: Parameters<JmcomicClient['setApiRoutePreference']>[0]) =>
+      call<'setApiRoutePreference'>('setApiRoutePreference', options),
     reprobeDomains: () => call<'reprobeDomains'>('reprobeDomains', {}),
     measureLatency: () => call<'measureLatency'>('measureLatency', {}),
     getInitStatus: async () => {

@@ -530,6 +530,11 @@ public class JqViewerPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void setApiRoutePreference(PluginCall call) {
+        settingsHandler.setApiRoutePreference(call);
+    }
+
+    @PluginMethod
     public void setReaderPreloadPages(PluginCall call) {
         settingsHandler.setReaderPreloadPages(call);
     }

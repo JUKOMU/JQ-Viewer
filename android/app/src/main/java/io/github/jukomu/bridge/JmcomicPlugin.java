@@ -117,6 +117,42 @@ public class JmcomicPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void getUsedDomain(PluginCall call) {
+        JmApiClient client = requireClient(call);
+        if (client == null) return;
+        JSObject result = new JSObject();
+        result.put("domain", client.getUsedDomain());
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void applyApiRoute(PluginCall call) {
+        JmApiClient client = requireClient(call);
+        if (client == null) return;
+        try {
+            String mode = call.getString("mode");
+            if ("auto".equals(mode)) {
+                client.useAutoDomain();
+            } else if ("manual".equals(mode)) {
+                String domain = call.getString("domain");
+                if (domain == null || domain.isBlank()) {
+                    call.reject("domain is required in manual mode");
+                    return;
+                }
+                client.useDomain(domain);
+            } else {
+                call.reject("mode must be auto or manual");
+                return;
+            }
+            JSObject result = new JSObject();
+            result.put("domain", client.getUsedDomain());
+            call.resolve(result);
+        } catch (RuntimeException error) {
+            call.reject(error.getMessage(), error);
+        }
+    }
+
+    @PluginMethod
     public void reprobeDomains(PluginCall call) {
         sessionManager.retryOrReprobe();
         call.resolve();
@@ -230,7 +266,7 @@ public class JmcomicPlugin extends Plugin {
 
     private synchronized ApiPluginHandler requireApiHandler(PluginCall call) {
         if (apiHandler == null) {
-            call.reject(CLIENT_UNAVAILABLE);
+            call.reject(CLIENT_UNAVAILABLE, "unavailable");
             return null;
         }
         return apiHandler;
@@ -238,7 +274,7 @@ public class JmcomicPlugin extends Plugin {
 
     private synchronized AuthPluginHandler requireAuthHandler(PluginCall call) {
         if (authHandler == null) {
-            call.reject(CLIENT_UNAVAILABLE);
+            call.reject(CLIENT_UNAVAILABLE, "unavailable");
             return null;
         }
         return authHandler;
@@ -247,7 +283,7 @@ public class JmcomicPlugin extends Plugin {
     private JmApiClient requireClient(PluginCall call) {
         JmApiClient client = sessionManager.getClient();
         if (client == null) {
-            call.reject(CLIENT_UNAVAILABLE);
+            call.reject(CLIENT_UNAVAILABLE, "unavailable");
         }
         return client;
     }

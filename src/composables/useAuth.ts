@@ -55,6 +55,27 @@ export function useAuth() {
     return 'unauthenticated'
   }
 
+  async function reauthenticate(
+    canCommit: () => boolean = () => true,
+  ): Promise<AuthInitializationResult> {
+    try {
+      const result = await JmcomicService.autoLogin()
+      if (result.userInfo) {
+        if (canCommit()) updateUserInfo(result.userInfo)
+        return 'authenticated'
+      }
+      if (canCommit()) updateUserInfo(null)
+      return 'unauthenticated'
+    } catch (error) {
+      const normalized = normalizeRuntimeError(error, '自动登录失败')
+      if (normalized.code === 'not-found' || normalized.code === 'permission-denied') {
+        if (canCommit()) updateUserInfo(null)
+        return 'unauthenticated'
+      }
+      return 'retryable-error'
+    }
+  }
+
   /** 登录并更新本地状态 */
   async function login(username: string, password: string): Promise<UserInfo> {
     const info = await JmcomicService.login(username, password)
@@ -71,5 +92,5 @@ export function useAuth() {
     }
   }
 
-  return { userInfo, isLoggedIn, initAuth, login, logout }
+  return { userInfo, isLoggedIn, initAuth, reauthenticate, login, logout }
 }

@@ -1,7 +1,7 @@
 import type { JmcomicClient } from '@/services/jmcomic/JmcomicClient'
 import { asFileRef } from './FileReferences'
 import type { FrontendRuntime } from './FrontendRuntime'
-import { RuntimeError } from './errors'
+import { normalizeRuntimeError, RuntimeError } from './errors'
 import type { Capability } from './PlatformServices'
 
 /** 断言 capability 可用并返回其 API，不可用时抛出带中文名称的 unavailable 错误。 */
@@ -159,7 +159,77 @@ export function createFacadeClient(runtime: FrontendRuntime): JmcomicClient {
     addListener: (event: string, handler: never) => createListener(runtime, event, handler),
   } as unknown as JmcomicClient
 
-  return client
+  return new Proxy(client, {
+    get(target, property: string | symbol, receiver) {
+      const value = Reflect.get(target, property, receiver)
+      if (
+        typeof property !== 'string' ||
+        typeof value !== 'function' ||
+        !SAFE_READ_METHODS.has(property)
+      ) {
+        return value
+      }
+      return (...args: unknown[]) =>
+        retryAfterNetworkRestore(runtime, () => Promise.resolve(Reflect.apply(value, target, args)))
+    },
+  })
+}
+
+const SAFE_READ_METHODS = new Set([
+  'search',
+  'categories',
+  'getAlbum',
+  'getPhoto',
+  'getComments',
+  'getFavorites',
+  'getUserProfile',
+  'getBrowseHistory',
+  'getBrowseHistoryOverview',
+  'getParseHistory',
+])
+
+async function retryAfterNetworkRestore<T>(
+  runtime: FrontendRuntime,
+  operation: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await operation()
+  } catch (error) {
+    const code = normalizeRuntimeError(error).code
+    if (code !== 'network' && code !== 'unavailable') throw error
+    await new Promise<void>((resolve, reject) => {
+      let settled = false
+      let handle: Awaited<ReturnType<typeof runtime.events.onNetworkProbe>> | null = null
+      let timeout: ReturnType<typeof setTimeout> | null = null
+      const finish = (restored: boolean) => {
+        if (settled) return
+        settled = true
+        if (timeout) clearTimeout(timeout)
+        void handle?.remove().catch(() => {})
+        if (restored) resolve()
+        else reject(error)
+      }
+      timeout = setTimeout(() => finish(false), 5_000)
+      runtime.events
+        .onNetworkProbe((event) => {
+          if (event.phase === 'network_restored') finish(true)
+        })
+        .then((registered) => {
+          handle = registered
+          if (settled) void registered.remove()
+          else {
+            void runtime.backend
+              .getDomainStates()
+              .then((state) => {
+                if (state.domains.some((domain) => domain.reachable)) finish(true)
+              })
+              .catch(() => undefined)
+          }
+        })
+        .catch(() => finish(false))
+    })
+    return operation()
+  }
 }
 
 /**

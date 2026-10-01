@@ -43,6 +43,7 @@ declare module 'vue' {
     RollingNumber: typeof import('./src/components/update/RollingNumber.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
+    RouteSwitchButton: typeof import('./src/components/common/RouteSwitchButton.vue')['default']
     SearchHeaderBar: typeof import('./src/components/search/SearchHeaderBar.vue')['default']
     SearchHistoryDropdown: typeof import('./src/components/history/SearchHistoryDropdown.vue')['default']
     SearchResultContainer: typeof import('./src/components/search/SearchResultContainer.vue')['default']

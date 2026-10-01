@@ -114,6 +114,9 @@ class BackendHttpContractTest {
                     http, base, requestedMethods, "consumeLaunchRoute", "{}")).isEmpty());
             ObjectNode domainStates = body(post(
                     http, base, requestedMethods, "getDomainStates", "{}"));
+            assertEquals(503, post(http, base, requestedMethods, "getUsedDomain", "{}").statusCode());
+            assertEquals(503, post(http, base, requestedMethods, "applyApiRoute",
+                    "{\"mode\":\"manual\",\"domain\":\"api.example\"}").statusCode());
             ObjectNode latency = body(post(
                     http, base, requestedMethods, "measureLatency", "{}"));
             assertOk(post(http, base, requestedMethods, "reprobeDomains", "{}"));
@@ -187,6 +190,13 @@ class BackendHttpContractTest {
             ObjectNode settings = body(post(http, base, requestedMethods, "getAllSettings", "{}"));
             assertTrue(settings.path("ocrEnabled").asBoolean());
             assertEquals(75, settings.path("readerWidthPercent").asInt());
+            assertEquals("auto", settings.path("apiRouteMode").asText());
+            assertOk(post(http, base, requestedMethods, "setApiRoutePreference",
+                    "{\"mode\":\"manual\",\"domain\":\"api.example\"}"));
+            ObjectNode routeSettings = body(post(
+                    http, base, requestedMethods, "getAllSettings", "{}"));
+            assertEquals("manual", routeSettings.path("apiRouteMode").asText());
+            assertEquals("api.example", routeSettings.path("apiRouteDomain").asText());
             assertOk(post(http, base, requestedMethods, "setDownloadPublic", "{\"open\":false}"));
             ObjectNode downloadLocation = body(post(
                     http, base, requestedMethods, "getDownloadPublic", "{}"));

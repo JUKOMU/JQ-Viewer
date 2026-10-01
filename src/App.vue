@@ -19,6 +19,7 @@
           </router-view>
         </div>
       </div>
+      <RouteSwitchButton />
     </div>
   </ion-app>
 </template>
@@ -41,7 +42,10 @@ import { presentUpdatePrompt } from '@/services/UpdatePromptService'
 import type { ClientStateSnapshot, UpdateManifest } from '@/services/JmcomicTypes'
 import { useDesktopBackButton } from '@/composables/useDesktopBackButton'
 import DesktopRouteTrail from '@/components/common/DesktopRouteTrail.vue'
+import RouteSwitchButton from '@/components/common/RouteSwitchButton.vue'
+import { useApiRoute } from '@/composables/useApiRoute'
 import { truncateDesktopRouteStack, updateDesktopRouteStack } from '@/utils/desktopRouteTrail'
+import { normalizeRuntimeError } from '@/runtime/errors'
 
 useDesktopBackButton()
 
@@ -49,6 +53,7 @@ const { isMenuNavigation, isWideMenu } = useSideMenuState()
 
 const route = useRoute()
 const router = useRouter()
+const apiRoute = useApiRoute()
 
 const routeStack = ref<string[]>([])
 const isBack = ref(false)
@@ -253,6 +258,7 @@ let clientStateHandle: ListenerHandle | null = null
 let clientStatePollTimer: ReturnType<typeof setTimeout> | null = null
 let clientStateObservationGeneration = 0
 let launchRouteHandle: ListenerHandle | null = null
+let networkRecoveryHandle: ListenerHandle | null = null
 let launchRouteDrain: Promise<void> = Promise.resolve()
 let launchRouteNavigationVersion = 0
 
@@ -342,7 +348,7 @@ onMounted(async () => {
   initialReaderRestorePending = false
   syncReaderRouteSnapshot(route.path, route.fullPath)
 
-  const { initAuth } = useAuth()
+  const auth = useAuth()
 
   // 加载设置到内存缓存（必须在任何页面渲染前完成）
   await initSettings()
@@ -354,6 +360,8 @@ onMounted(async () => {
   let latestClientStateTimestamp = -Infinity
   let authGeneration = 0
   let authState: 'idle' | 'running' | 'complete' = 'idle'
+  let networkRecoveryPending = false
+  let recoveringAuth = false
   const handleClientState = async (state: ClientStateSnapshot) => {
     if (state.timestamp < latestClientStateTimestamp) return
     latestClientStateTimestamp = state.timestamp
@@ -361,7 +369,9 @@ onMounted(async () => {
     if (state.state === 'initializing') {
       authGeneration++
       authState = 'idle'
-      if (!activeToast) activeToast = await showToast('客户端初始化', 'medium', 0)
+      if (!networkRecoveryPending && !activeToast) {
+        activeToast = await showToast('客户端初始化', 'medium', 0)
+      }
       return
     }
 
@@ -383,19 +393,88 @@ onMounted(async () => {
       observationGeneration === clientStateObservationGeneration &&
       currentAuthGeneration === authGeneration &&
       latestClientStateTimestamp === authTimestamp
-    showToast('初始化完成', 'success')
-    const loginToast = await showToast('正在自动登录...', 'medium', 0)
+    const recovering = networkRecoveryPending
+    networkRecoveryPending = false
+    recoveringAuth = recovering
+    if (!recovering) showToast('初始化完成', 'success')
+    const loginToast = recovering ? null : await showToast('正在自动登录...', 'medium', 0)
     if (!canCommitAuth()) {
-      await loginToast.dismiss()
+      await loginToast?.dismiss()
+      recoveringAuth = false
       return
     }
     activeToast = loginToast
-    const result = await initAuth(canCommitAuth)
-    await loginToast.dismiss()
+    let result: Awaited<ReturnType<typeof auth.initAuth>>
+    try {
+      await apiRoute.applySavedPreference()
+      result = recovering
+        ? await auth.reauthenticate(canCommitAuth)
+        : await auth.initAuth(canCommitAuth)
+      await apiRoute.refresh().catch(() => undefined)
+    } catch (error) {
+      showToast(`线路应用失败：${normalizeRuntimeError(error, '无法应用线路').message}`, 'danger')
+      result = 'retryable-error'
+    }
+    await loginToast?.dismiss()
     if (activeToast === loginToast) activeToast = null
+    recoveringAuth = false
     if (!canCommitAuth()) return
     authState = result === 'retryable-error' ? 'idle' : 'complete'
-    if (result === 'authenticated') showToast('登录成功', 'success')
+    if (!recovering && result === 'authenticated') showToast('登录成功', 'success')
+    if (recovering && result === 'retryable-error') {
+      showToast('网络恢复后登录失败，请稍后重试', 'danger')
+    }
+    if (import.meta.env.MODE === 'desktop' && networkRecoveryPending && authState === 'complete') {
+      void recoverDesktopNetwork()
+    }
+  }
+
+  const recoverDesktopNetwork = async () => {
+    if (authState === 'running') {
+      if (!recoveringAuth) networkRecoveryPending = true
+      return
+    }
+    networkRecoveryPending = false
+    authState = 'running'
+    recoveringAuth = true
+    const currentGeneration = ++authGeneration
+    const canCommit = () =>
+      observationGeneration === clientStateObservationGeneration &&
+      currentGeneration === authGeneration
+    try {
+      await apiRoute.applySavedPreference()
+      if ((await auth.reauthenticate(canCommit)) === 'retryable-error') {
+        showToast('网络恢复后登录失败，请稍后重试', 'danger')
+      }
+      await apiRoute.refresh().catch(() => undefined)
+    } catch (error) {
+      showToast(`网络恢复失败：${normalizeRuntimeError(error, '线路恢复失败').message}`, 'danger')
+    } finally {
+      recoveringAuth = false
+      if (canCommit()) authState = 'complete'
+    }
+  }
+
+  try {
+    networkRecoveryHandle = await JmcomicService.addNetworkProbeListener((event) => {
+      if (event.phase === 'network_changed' || event.phase === 'network_lost') {
+        networkRecoveryPending = true
+      }
+      if (import.meta.env.MODE === 'desktop' && event.phase === 'network_restored') {
+        void recoverDesktopNetwork()
+      } else if (
+        import.meta.env.MODE !== 'desktop' &&
+        event.phase === 'network_restored' &&
+        authState === 'idle'
+      ) {
+        networkRecoveryPending = true
+        void JmcomicService.getClientState()
+          .then((state) => handleClientState(state))
+          .catch(() => undefined)
+      }
+    })
+  } catch {
+    // 客户端状态变化仍可在移动端触发恢复流程。
   }
 
   let subscribed = false
@@ -459,6 +538,8 @@ onBeforeUnmount(() => {
   activeToast = null
   clientStateHandle?.remove()
   clientStateHandle = null
+  networkRecoveryHandle?.remove()
+  networkRecoveryHandle = null
   launchRouteHandle?.remove()
   launchRouteHandle = null
   void disposeNetworkProbeStore()

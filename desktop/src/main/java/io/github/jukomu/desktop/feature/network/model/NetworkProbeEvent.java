@@ -5,7 +5,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.List;
 
 /**
- * 手动域名探活过程中的状态变化。
+ * 域名探活与网络恢复过程中的状态变化。
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record NetworkProbeEvent(
@@ -36,5 +36,23 @@ public record NetworkProbeEvent(
         return new NetworkProbeEvent(
             "error", message, System.currentTimeMillis(),
             null, null, null, null);
+    }
+
+    public static NetworkProbeEvent networkChanged() {
+        return new NetworkProbeEvent(
+            "network_changed", "网络环境已变化", System.currentTimeMillis(),
+            null, null, null, null);
+    }
+
+    public static NetworkProbeEvent networkLost() {
+        return new NetworkProbeEvent(
+            "network_lost", "网络不可用", System.currentTimeMillis(),
+            null, null, null, null);
+    }
+
+    public static NetworkProbeEvent networkRestored(DomainStatesResponse state) {
+        return new NetworkProbeEvent(
+            "network_restored", "网络恢复并完成线路探测", System.currentTimeMillis(),
+            state.domains(), state.alive(), state.total(), state.allDeadFallback());
     }
 }

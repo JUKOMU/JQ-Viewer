@@ -3,6 +3,7 @@ package io.github.jukomu.desktop.bridge.handler;
 import io.github.jukomu.desktop.bridge.ApiException;
 import io.github.jukomu.desktop.bridge.RequestExecutor;
 import io.github.jukomu.desktop.bridge.model.InitStatusResponse;
+import io.github.jukomu.desktop.bridge.model.RouteSelectionRequest;
 import io.github.jukomu.desktop.bridge.model.SuccessResponse;
 import io.github.jukomu.desktop.feature.client.JmcomicSessionManager;
 import io.github.jukomu.desktop.feature.diagnostics.DiagnosticsService;
@@ -47,6 +48,35 @@ public final class SystemPluginHandler {
 
     public void getDomainStates(Context context) {
         networkRequests.run(context, () -> requireNetwork().getDomainStates());
+    }
+
+    public void getUsedDomain(Context context) {
+        networkRequests.run(context, () -> {
+            var client = clientSession.requireClient();
+            if (!(client instanceof io.github.jukomu.jmcomic.core.client.impl.JmApiClient apiClient)) {
+                throw ApiException.unavailable("当前 JMComic 客户端不支持线路选择");
+            }
+            String domain = apiClient.getUsedDomain();
+            return java.util.Map.of("domain", domain == null ? "" : domain);
+        });
+    }
+
+    public void applyApiRoute(Context context) {
+        networkRequests.run(context, RouteSelectionRequest.class, request -> {
+            var client = clientSession.requireClient();
+            if (!(client instanceof io.github.jukomu.jmcomic.core.client.impl.JmApiClient apiClient)) {
+                throw ApiException.unavailable("当前 JMComic 客户端不支持线路选择");
+            }
+            if ("auto".equals(request.mode())) apiClient.useAutoDomain();
+            else if ("manual".equals(request.mode())) {
+                if (request.domain() == null || request.domain().isBlank()) {
+                    throw ApiException.invalidRequest("domain is required in manual mode");
+                }
+                apiClient.useDomain(request.domain());
+            } else throw ApiException.invalidRequest("mode must be auto or manual");
+            String domain = apiClient.getUsedDomain();
+            return java.util.Map.of("domain", domain == null ? "" : domain);
+        });
     }
 
     public void reprobeDomains(Context context) {

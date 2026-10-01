@@ -73,8 +73,25 @@ public final class SettingsService {
             true,
             false,
             bool("reader_auto_show_toolbar_at_end", true),
-            readerWidthPercent()
+            readerWidthPercent(),
+            apiRouteMode(),
+            text("api_route_domain", "")
         );
+    }
+
+    public synchronized void setApiRoute(String mode, String domain) {
+        if (!"auto".equals(mode) && !"manual".equals(mode)) {
+            throw ApiException.invalidRequest("mode must be auto or manual");
+        }
+        if ("manual".equals(mode) && (domain == null || domain.isBlank())) {
+            throw ApiException.invalidRequest("domain is required in manual mode");
+        }
+        put("api_route_mode", mode);
+        put("api_route_domain", "manual".equals(mode) ? domain : "");
+    }
+
+    private String apiRouteMode() {
+        return "manual".equals(text("api_route_mode", "auto")) ? "manual" : "auto";
     }
 
     public synchronized int preloadConcurrency() {

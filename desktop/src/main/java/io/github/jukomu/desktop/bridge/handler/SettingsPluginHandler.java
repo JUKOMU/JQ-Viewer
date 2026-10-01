@@ -2,6 +2,7 @@ package io.github.jukomu.desktop.bridge.handler;
 
 import io.github.jukomu.desktop.bridge.Request;
 import io.github.jukomu.desktop.bridge.RequestExecutor;
+import io.github.jukomu.desktop.bridge.model.SuccessResponse;
 import io.github.jukomu.desktop.feature.download.DownloadLocationService;
 import io.github.jukomu.desktop.feature.download.model.DownloadLocationRequest;
 import io.github.jukomu.desktop.feature.settings.SettingsService;
@@ -31,6 +32,13 @@ public final class SettingsPluginHandler {
 
     public void getAllSettings(Context context) {
         settingsRequests.run(context, settings::all);
+    }
+
+    public void setApiRoutePreference(Context context) {
+        settingsRequests.run(context, ApiRouteRequest.class, request -> {
+            settings.setApiRoute(request.mode(), request.domain());
+            return SuccessResponse.ok();
+        });
     }
 
     public void setPreloadConcurrency(Context context) {

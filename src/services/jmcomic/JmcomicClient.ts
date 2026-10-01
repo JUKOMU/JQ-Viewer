@@ -231,6 +231,18 @@ export interface JmcomicClient {
 
   getDomainStates(): Promise<DomainStates>
 
+  getUsedDomain(): Promise<{ domain: string | null }>
+
+  applyApiRoute(options: {
+    mode: 'auto' | 'manual'
+    domain?: string
+  }): Promise<{ domain: string | null }>
+
+  setApiRoutePreference(options: {
+    mode: 'auto' | 'manual'
+    domain?: string
+  }): Promise<{ success: boolean }>
+
   reprobeDomains(): Promise<void>
 
   measureLatency(): Promise<{ results: LatencyResult[] }>

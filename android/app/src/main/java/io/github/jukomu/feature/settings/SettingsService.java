@@ -95,10 +95,28 @@ public class SettingsService {
             ret.put("readerKeepScreenOn", getReaderKeepScreenOn());
             ret.put("readerVolumeNavigation", getReaderVolumeNavigation());
             ret.put("readerAutoShowToolbarAtEnd", getReaderAutoShowToolbarAtEnd());
+            ret.put("apiRouteMode", getApiRouteMode());
+            ret.put("apiRouteDomain", settingsDb.getString("api_route_domain") == null
+                ? "" : settingsDb.getString("api_route_domain"));
         } catch (Exception e) {
             Log.w(TAG, "构建全部设置信息失败", e);
         }
         return ret;
+    }
+
+    public String getApiRouteMode() {
+        return "manual".equals(settingsDb.getString("api_route_mode")) ? "manual" : "auto";
+    }
+
+    public void setApiRoute(String mode, String domain) {
+        if (!"auto".equals(mode) && !"manual".equals(mode)) {
+            throw new IllegalArgumentException("mode must be auto or manual");
+        }
+        if ("manual".equals(mode) && (domain == null || domain.isBlank())) {
+            throw new IllegalArgumentException("domain is required in manual mode");
+        }
+        settingsDb.putString("api_route_mode", mode);
+        settingsDb.putString("api_route_domain", "manual".equals(mode) ? domain : "");
     }
 
     public static int normalizeConcurrency(int value) {

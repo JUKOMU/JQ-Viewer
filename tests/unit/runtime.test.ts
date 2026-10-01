@@ -123,6 +123,9 @@ describe('runtime', () => {
       'deleteOfflineBackup',
       'listOfflineBackupKeys',
       'getDomainStates',
+      'getUsedDomain',
+      'applyApiRoute',
+      'setApiRoutePreference',
       'reprobeDomains',
       'measureLatency',
       'getInitStatus',
@@ -251,6 +254,9 @@ describe('runtime', () => {
           }),
         )
       }
+      if (String(input) === '/api/getUsedDomain') {
+        return Promise.resolve(response({ domain: 'https://fast.invalid' }))
+      }
       return Promise.resolve(response({ success: true }))
     })
     const backend = createBackendClient(fetcher)
@@ -259,14 +265,27 @@ describe('runtime', () => {
     await expect(backend.measureLatency()).resolves.toMatchObject({
       results: [{ domain: 'https://fast.invalid', latencyMs: 35, timedOut: false }],
     })
+    await expect(backend.getUsedDomain()).resolves.toEqual({ domain: 'https://fast.invalid' })
+    await expect(backend.applyApiRoute({ mode: 'manual', domain: 'https://fast.invalid' }))
+      .resolves.toMatchObject({ success: true })
+    await expect(backend.setApiRoutePreference({ mode: 'manual', domain: 'https://fast.invalid' }))
+      .resolves.toMatchObject({ success: true })
     await expect(backend.reprobeDomains()).resolves.toBeDefined()
 
     expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
       '/api/getDomainStates',
       '/api/measureLatency',
+      '/api/getUsedDomain',
+      '/api/applyApiRoute',
+      '/api/setApiRoutePreference',
       '/api/reprobeDomains',
     ])
-    expect(fetcher.mock.calls.map(([, init]) => init?.body)).toEqual(['{}', '{}', '{}'])
+    expect(fetcher.mock.calls.map(([, init]) => init?.body)).toEqual([
+      '{}', '{}', '{}',
+      JSON.stringify({ mode: 'manual', domain: 'https://fast.invalid' }),
+      JSON.stringify({ mode: 'manual', domain: 'https://fast.invalid' }),
+      '{}',
+    ])
   })
 
   test('按共享契约转发下载方法', async () => {

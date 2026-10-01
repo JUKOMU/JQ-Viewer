@@ -7,6 +7,7 @@ import androidx.annotation.NonNull;
 import io.github.jukomu.jmcomic.core.JmComic;
 import io.github.jukomu.jmcomic.core.client.impl.JmApiClient;
 import io.github.jukomu.jmcomic.core.config.JmConfiguration;
+import io.github.jukomu.platform.persistence.SettingsStore;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -16,6 +17,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 进程范围内允许为null的JMComic客户端生命周期管理及网络重试策略。
@@ -44,10 +46,12 @@ public final class JmcomicSessionManager {
     private static JmcomicSessionManager instance;
 
     private final ConnectivityManager connectivityManager;
+    private final SettingsStore settingsStore;
     private final ScheduledExecutorService executor =
         ServiceExecutors.scheduled("jmcomic-session", 1);
     private final Set<Listener> listeners = new CopyOnWriteArraySet<>();
     private final AtomicLong manualRetrySequence = new AtomicLong();
+    private final AtomicBoolean networkRecoveryPending = new AtomicBoolean();
     private final ClientSession<JmApiClient> session;
     private final Object networkLock = new Object();
     private final Object stateDispatchLock = new Object();
@@ -62,10 +66,11 @@ public final class JmcomicSessionManager {
     private JmcomicSessionManager(Context context, int downloadConcurrency) {
         connectivityManager = (ConnectivityManager) context.getApplicationContext()
             .getSystemService(Context.CONNECTIVITY_SERVICE);
+        settingsStore = SettingsStore.getInstance(context);
         session = new ClientSession<>(
             () -> JmComic.newApiClientAsync(new JmConfiguration.Builder()
                 .downloadThreadPoolSize(downloadConcurrency)
-                .build()),
+                .build()).thenApply(this::applySavedRoute),
             new ClientSession.Observer<>() {
                 @Override
                 public void onStateChanged(ClientSession.Snapshot snapshot, JmApiClient client) {
@@ -95,6 +100,21 @@ public final class JmcomicSessionManager {
             initialSnapshot.state(), initialSnapshot.reason(), initialSnapshot.timestamp());
         registerNetworkCallback();
         scheduleNetworkEvaluation();
+    }
+
+    private JmApiClient applySavedRoute(JmApiClient client) {
+        if (!"manual".equals(settingsStore.getString("api_route_mode"))) return client;
+        String domain = settingsStore.getString("api_route_domain");
+        try {
+            if (domain == null || domain.isBlank()) {
+                throw new IllegalStateException("保存的手动线路为空");
+            }
+            client.useDomain(domain);
+            return client;
+        } catch (RuntimeException error) {
+            client.close();
+            throw error;
+        }
     }
 
     public static synchronized JmcomicSessionManager getOrCreate(
@@ -217,6 +237,9 @@ public final class JmcomicSessionManager {
 
         boolean changed = !environment.fingerprint().equals(previous);
         if (changed) {
+            if (previous != null) networkRecoveryPending.set(true);
+        }
+        if (changed && previous != null) {
             publishNetworkEvent(new NetworkEvent(
                 "network_changed", "网络环境已变化",
                 System.currentTimeMillis(), null, false));
@@ -295,6 +318,11 @@ public final class JmcomicSessionManager {
                     ? "探活完成 · 全部不可达"
                     : "探活完成 · " + alive + "/" + states.size() + " 可达",
                 System.currentTimeMillis(), states, allDeadFallback));
+            if (networkRecoveryPending.compareAndSet(true, false)) {
+                publishNetworkEvent(new NetworkEvent(
+                    "network_restored", "网络恢复并完成线路探测",
+                    System.currentTimeMillis(), states, allDeadFallback));
+            }
         } catch (RuntimeException error) {
             Log.w(TAG, "域名重新探活失败", error);
             String message = error.getMessage();

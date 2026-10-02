@@ -14,7 +14,7 @@
       </IonToolbar>
     </IonHeader>
     <IonContent>
-      <div ref="contentRef" class="logs-page desktop-page-content">
+      <div class="logs-page desktop-page-content">
         <div class="logs-meta">
           <span>{{ fileName || '当前日志' }}</span>
           <span v-if="updatedAt">更新于 {{ formatTime(updatedAt) }}</span>
@@ -49,13 +49,15 @@ import { refreshOutline } from 'ionicons/icons'
 import { getRuntime } from '@/runtime/runtimeContext'
 
 const runtime = getRuntime()
-const contentRef = ref<HTMLElement | null>(null)
 const logOutputRef = ref<HTMLElement | null>(null)
 const content = ref('')
 const fileName = ref('')
 const updatedAt = ref(0)
 const loading = ref(false)
 const errorMessage = ref('')
+let nextLine = 0
+let nextOffset = 0
+let hasCursor = false
 let refreshTimer: ReturnType<typeof setInterval> | null = null
 
 const logs = computed(() => runtime.services.logs)
@@ -76,10 +78,17 @@ async function loadLogs() {
   errorMessage.value = ''
   try {
     const wasNearBottom = isNearBottom()
-    const snapshot = await logs.value.api.getCurrent()
-    content.value = snapshot.content
+    const snapshot = await logs.value.api.getCurrent({
+      fromLine: hasCursor ? nextLine : 0,
+      fromOffset: hasCursor ? nextOffset : 0,
+    })
+    if (!hasCursor || snapshot.reset) content.value = snapshot.content
+    else if (snapshot.content) content.value += snapshot.content
     fileName.value = snapshot.fileName
     updatedAt.value = snapshot.updatedAt
+    nextLine = snapshot.nextLine
+    nextOffset = snapshot.nextOffset
+    hasCursor = true
     await nextTick()
     if (wasNearBottom) scrollToBottom()
   } catch (error) {

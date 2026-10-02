@@ -149,11 +149,14 @@ export interface DiagnosticsService {
 export interface ApplicationLogSnapshot {
   fileName: string
   updatedAt: number
+  nextLine: number
+  nextOffset: number
   content: string
+  reset: boolean
 }
 
 export interface LogsService {
-  getCurrent(): Promise<ApplicationLogSnapshot>
+  getCurrent(cursor: { fromLine: number; fromOffset: number }): Promise<ApplicationLogSnapshot>
 }
 
 /** 本地文件平台能力：导入、导出、列表、校验、删除与打开等文件生命周期操作。 */

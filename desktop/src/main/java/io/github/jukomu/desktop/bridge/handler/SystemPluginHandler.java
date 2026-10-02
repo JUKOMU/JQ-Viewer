@@ -3,6 +3,7 @@ package io.github.jukomu.desktop.bridge.handler;
 import io.github.jukomu.desktop.bridge.ApiException;
 import io.github.jukomu.desktop.bridge.RequestExecutor;
 import io.github.jukomu.desktop.bridge.model.InitStatusResponse;
+import io.github.jukomu.desktop.bridge.model.LogReadRequest;
 import io.github.jukomu.desktop.bridge.model.RouteSelectionRequest;
 import io.github.jukomu.desktop.bridge.model.SuccessResponse;
 import io.github.jukomu.desktop.feature.client.JmcomicSessionManager;
@@ -117,9 +118,11 @@ public final class SystemPluginHandler {
 
     public void getLogs(Context context) {
         if (paths == null) throw ApiException.unavailable("日志服务尚未初始化");
-        diagnosticsRequests.run(context, () -> {
+        diagnosticsRequests.run(context, LogReadRequest.class, request -> {
             try {
-                return ApplicationLogging.readCurrent(paths);
+                long fromLine = request.fromLine() == null ? 0L : request.fromLine();
+                long fromOffset = request.fromOffset() == null ? 0L : request.fromOffset();
+                return ApplicationLogging.readCurrent(paths, fromLine, fromOffset);
             } catch (java.io.IOException error) {
                 throw new ApiException("internal", 500, "读取应用日志失败");
             }

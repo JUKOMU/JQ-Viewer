@@ -19,7 +19,7 @@ public final class Main {
         try {
             ApplicationLogging.initialize(paths);
         } catch (Exception error) {
-            throw new IllegalStateException("无法初始化 JQ Viewer 日志", error);
+            LoggerFactory.getLogger(Main.class).error("无法初始化 JQ Viewer 日志，继续启动应用", error);
         }
         Logger logger = LoggerFactory.getLogger(Main.class);
         logger.info("应用启动");

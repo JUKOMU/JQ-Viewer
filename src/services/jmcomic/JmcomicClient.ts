@@ -165,7 +165,14 @@ export interface JmcomicClient {
 
   requestManageStorage(): Promise<{ granted: boolean; permissionType: string; apiLevel: number }>
 
-  getLogs(): Promise<{ fileName: string; updatedAt: number; content: string }>
+  getLogs(options: { fromLine: number; fromOffset: number }): Promise<{
+    fileName: string
+    updatedAt: number
+    nextLine: number
+    nextOffset: number
+    content: string
+    reset: boolean
+  }>
 
   getAllSettings(): Promise<AllSettings>
 

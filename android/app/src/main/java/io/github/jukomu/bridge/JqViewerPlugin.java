@@ -293,12 +293,18 @@ public class JqViewerPlugin extends Plugin {
     @PluginMethod
     public void getLogs(PluginCall call) {
         try {
+            JSONObject data = call.getData();
+            long fromLine = data.optLong("fromLine", 0L);
+            long fromOffset = data.optLong("fromOffset", 0L);
             ApplicationLogging.LogSnapshot snapshot =
-                ApplicationLogging.readCurrent(getContext());
+                ApplicationLogging.readCurrent(getContext(), fromLine, fromOffset);
             JSObject result = new JSObject();
             result.put("fileName", snapshot.fileName());
             result.put("updatedAt", snapshot.updatedAt());
+            result.put("nextLine", snapshot.nextLine());
+            result.put("nextOffset", snapshot.nextOffset());
             result.put("content", snapshot.content());
+            result.put("reset", snapshot.reset());
             call.resolve(result);
         } catch (Exception error) {
             LOGGER.error("读取应用日志失败", error);

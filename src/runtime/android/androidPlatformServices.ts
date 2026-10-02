@@ -405,7 +405,7 @@ export function createAndroidPlatformServices(
     logs: {
       available: true,
       api: {
-        getCurrent: () => withRuntimeError(() => native.getLogs()),
+        getCurrent: (cursor) => withRuntimeError(() => native.getLogs(cursor)),
       },
     },
     launchRoutes: {

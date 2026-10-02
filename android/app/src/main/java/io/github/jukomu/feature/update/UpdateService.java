@@ -10,7 +10,8 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.SystemClock;
 import android.provider.Settings;
-import android.util.Log;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import androidx.core.content.FileProvider;
 import com.getcapacitor.JSObject;
 import io.github.jukomu.runtime.ServiceExecutors;
@@ -34,8 +35,7 @@ import java.util.function.Consumer;
  * Android 原生应用内更新服务。
  */
 public final class UpdateService {
-
-    private static final String TAG = "UpdateService";
+    private static final Logger LOGGER = LoggerFactory.getLogger(UpdateService.class);
     private static final String GITHUB_MANIFEST_URL =
         "https://github.com/JUKOMU/JQ-Viewer/releases/latest/download/latest.json";
     // Gitee 没有稳定的 releases/latest/download/latest.json 路径，先取正式 Release API，
@@ -226,7 +226,7 @@ public final class UpdateService {
             return InstallResult.started();
         } catch (Exception error) {
             installerPending = false;
-            Log.w(TAG, "启动更新安装器失败", error);
+            LOGGER.warn( "启动更新安装器失败", error);
             String message = userMessage(error);
             publish("failed", "", apkFile.length(), apkFile.length(), manifest.getSizeBytes(), message);
             return InstallResult.failure(message);
@@ -251,7 +251,7 @@ public final class UpdateService {
                 readyManifest == null ? 0L : readyManifest.getSizeBytes());
             return true;
         } catch (Exception error) {
-            Log.w(TAG, "打开安装来源设置失败", error);
+            LOGGER.warn( "打开安装来源设置失败", error);
             publish("failed", "", 0L, 0L,
                 readyManifest == null ? 0L : readyManifest.getSizeBytes(),
                 "无法打开安装来源设置");
@@ -281,7 +281,7 @@ public final class UpdateService {
                 launchInstaller(activity, apkFile, manifest);
             } catch (Exception error) {
                 installerPending = false;
-                Log.w(TAG, "权限返回后启动更新安装器失败", error);
+                LOGGER.warn( "权限返回后启动更新安装器失败", error);
                 publish("failed", "", apkFile.length(), apkFile.length(), manifest.getSizeBytes(),
                     userMessage(error));
             }
@@ -546,7 +546,7 @@ public final class UpdateService {
         } catch (InterruptedException error) {
             Thread.currentThread().interrupt();
         } catch (IOException error) {
-            Log.w(TAG, sourceName(source) + " 更新下载失败", error);
+            LOGGER.warn( sourceName(source) + " 更新下载失败", error);
         } finally {
             if (connection != null) {
                 connection.disconnect();
@@ -829,7 +829,7 @@ public final class UpdateService {
             try {
                 sink.accept(snapshot);
             } catch (RuntimeException sinkError) {
-                Log.w(TAG, "发布更新进度失败", sinkError);
+                LOGGER.warn( "发布更新进度失败", sinkError);
             }
         }
     }
@@ -867,14 +867,14 @@ public final class UpdateService {
         }
         for (File file : files) {
             if (file.isFile() && !file.delete()) {
-                Log.w(TAG, "更新临时文件删除失败: " + file.getName());
+                LOGGER.warn( "更新临时文件删除失败: " + file.getName());
             }
         }
     }
 
     private void deleteFile(File file) {
         if (file != null && file.isFile() && !file.delete()) {
-            Log.w(TAG, "更新临时文件删除失败: " + file.getName());
+            LOGGER.warn( "更新临时文件删除失败: " + file.getName());
         }
     }
 

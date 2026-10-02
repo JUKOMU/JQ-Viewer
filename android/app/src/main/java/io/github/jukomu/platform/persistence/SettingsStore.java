@@ -5,7 +5,8 @@ import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
-import android.util.Log;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * 应用设置 SQLite 数据库（权威持久化源）。
@@ -13,8 +14,7 @@ import android.util.Log;
  * 表结构：单表 key-value，新增设置通过数据迁移补齐默认行。
  */
 public class SettingsStore extends SQLiteOpenHelper {
-
-    private static final String TAG = "SettingsStore";
+    private static final Logger LOGGER = LoggerFactory.getLogger(SettingsStore.class);
     private static final String DB_NAME = "jq_settings.db";
     private static final int DB_VERSION = 2;
 
@@ -83,7 +83,7 @@ public class SettingsStore extends SQLiteOpenHelper {
                 return c.getString(0);
             }
         } catch (Exception e) {
-            Log.w(TAG, "读取设置项失败", e);
+            LOGGER.warn( "读取设置项失败", e);
         }
         return null;
     }
@@ -120,7 +120,7 @@ public class SettingsStore extends SQLiteOpenHelper {
         try {
             return getWritableDatabase().delete(TABLE, COL_KEY + "=?", new String[]{key}) > 0;
         } catch (Exception e) {
-            Log.w(TAG, "删除设置项失败", e);
+            LOGGER.warn( "删除设置项失败", e);
             return false;
         }
     }
@@ -134,7 +134,7 @@ public class SettingsStore extends SQLiteOpenHelper {
             return getWritableDatabase().insertWithOnConflict(TABLE, null, cv,
                 SQLiteDatabase.CONFLICT_REPLACE) != -1;
         } catch (Exception e) {
-            Log.w(TAG, "写入设置项失败", e);
+            LOGGER.warn( "写入设置项失败", e);
             return false;
         }
     }

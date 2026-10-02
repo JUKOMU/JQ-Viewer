@@ -9,7 +9,8 @@ import android.os.Debug;
 import android.os.SystemClock;
 import android.system.ErrnoException;
 import android.system.Os;
-import android.util.Log;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader;
 import com.tom_roush.pdfbox.io.MemoryUsageSetting;
 import com.tom_roush.pdfbox.multipdf.PDFMergerUtility;
@@ -29,8 +30,7 @@ import java.util.Locale;
  * 使用 PdfBox-Android 按固定页数分块生成单个 PDF 卷。
  */
 final class PdfBoxExportWriter {
-
-    private static final String TAG = "PdfBoxExportWriter";
+    private static final Logger LOGGER = LoggerFactory.getLogger(PdfBoxExportWriter.class);
     private static final int CHUNK_PAGES = 100;
     private static final int JPEG_QUALITY = 80;
     private static final int ORIGINAL_JPEG_QUALITY = 100;
@@ -128,7 +128,7 @@ final class PdfBoxExportWriter {
             throw error;
         } finally {
             metrics.finish(completed);
-            Log.i(TAG, metrics.toLogMessage(finalFile));
+            LOGGER.info( metrics.toLogMessage(finalFile));
             IOException cleanupError = null;
             try {
                 deleteRecursively(workDir);
@@ -150,7 +150,7 @@ final class PdfBoxExportWriter {
                 if (failure != null) {
                     failure.addSuppressed(cleanupError);
                 } else if (completed) {
-                    Log.w(TAG, "PDF 已生成，但临时文件清理失败", cleanupError);
+                    LOGGER.warn( "PDF 已生成，但临时文件清理失败", cleanupError);
                 } else {
                     throw cleanupError;
                 }
@@ -189,7 +189,7 @@ final class PdfBoxExportWriter {
             PDFBoxResourceLoader.init(context);
             initializationDurationNanos = SystemClock.elapsedRealtimeNanos() - startedAt;
             initialized = true;
-            Log.i(TAG, String.format(
+            LOGGER.info( String.format(
                 Locale.ROOT,
                 "PdfBox initialized in %.3f ms",
                 initializationDurationNanos / 1_000_000D
@@ -390,7 +390,7 @@ final class PdfBoxExportWriter {
             return new PdfPageImage(pdfImage, bounds.outWidth, bounds.outHeight);
         } finally {
             if (materialized.temporary && materialized.file.exists() && !materialized.file.delete()) {
-                Log.w(TAG, "无法立即删除临时图片: " + materialized.file.getAbsolutePath());
+                LOGGER.warn( "无法立即删除临时图片: " + materialized.file.getAbsolutePath());
             }
         }
     }

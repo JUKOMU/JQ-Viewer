@@ -402,6 +402,12 @@ export function createAndroidPlatformServices(
       },
     },
     diagnostics: { available: false, reason: 'Android 由系统工具提供应用诊断信息' },
+    logs: {
+      available: true,
+      api: {
+        getCurrent: () => withRuntimeError(() => native.getLogs()),
+      },
+    },
     launchRoutes: {
       available: true,
       api: {

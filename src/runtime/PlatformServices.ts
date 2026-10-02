@@ -146,6 +146,16 @@ export interface DiagnosticsService {
   getSnapshot(): Promise<DiagnosticSnapshot>
 }
 
+export interface ApplicationLogSnapshot {
+  fileName: string
+  updatedAt: number
+  content: string
+}
+
+export interface LogsService {
+  getCurrent(): Promise<ApplicationLogSnapshot>
+}
+
 /** 本地文件平台能力：导入、导出、列表、校验、删除与打开等文件生命周期操作。 */
 export interface LocalFileService {
   exportBatch(options: { tasks: ExportTask[] }): Promise<ExportBatchResult>
@@ -225,6 +235,7 @@ export interface PlatformServices {
   updater: Capability<UpdaterService>
   ocr: Capability<OcrService>
   diagnostics: Capability<DiagnosticsService>
+  logs: Capability<LogsService>
   launchRoutes: Capability<LaunchRouteService>
   localFiles: LocalFileService
   events: BackendEvents

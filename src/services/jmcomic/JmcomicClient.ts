@@ -165,6 +165,8 @@ export interface JmcomicClient {
 
   requestManageStorage(): Promise<{ granted: boolean; permissionType: string; apiLevel: number }>
 
+  getLogs(): Promise<{ fileName: string; updatedAt: number; content: string }>
+
   getAllSettings(): Promise<AllSettings>
 
   setReaderPreloadPages(options: { n: number }): Promise<{ success: boolean }>

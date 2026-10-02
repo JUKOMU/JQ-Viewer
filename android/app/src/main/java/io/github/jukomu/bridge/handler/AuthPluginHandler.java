@@ -1,7 +1,8 @@
 package io.github.jukomu.bridge.handler;
 
 import android.content.Context;
-import android.util.Log;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
 import io.github.jukomu.bridge.PluginCallSession;
@@ -26,8 +27,7 @@ import java.util.function.Supplier;
  * <p>网络认证由 {@link ApiService} 异步执行，Cookie 通过 JSON 存入设置数据库。
  */
 public final class AuthPluginHandler {
-
-    private static final String TAG = "AuthPluginHandler";
+    private static final Logger LOGGER = LoggerFactory.getLogger(AuthPluginHandler.class);
     private static final String AUTH_COOKIES_KEY = "auth_cookies_json";
     private static final String AUTH_USERNAME_KEY = "auth_username";
     private static final String AUTH_USER_INFO_KEY = "auth_user_info_json";
@@ -112,11 +112,11 @@ public final class AuthPluginHandler {
 
                         @Override
                         public void onError(String message, Exception error) {
-                            Log.w(TAG, "远端注销失败，本地登录态已清除", error);
+                            LOGGER.warn( "远端注销失败，本地登录态已清除", error);
                         }
                     });
                 } catch (RuntimeException error) {
-                    Log.w(TAG, "无法发起远端注销，本地登录态已清除", error);
+                    LOGGER.warn( "无法发起远端注销，本地登录态已清除", error);
                 }
             });
         } catch (Exception error) {
@@ -277,7 +277,7 @@ public final class AuthPluginHandler {
                 item.put("persistent", cookie.persistent());
                 result.put(item);
             } catch (JSONException error) {
-                Log.d(TAG, "跳过无效cookie条目", error);
+                LOGGER.debug( "跳过无效cookie条目", error);
             }
         }
         return result;
@@ -315,7 +315,7 @@ public final class AuthPluginHandler {
                     cookies.add(builder.hostOnlyDomain(item.getString("domain")).build());
                 }
             } catch (Exception error) {
-                Log.d(TAG, "跳过损坏的cookie条目", error);
+                LOGGER.debug( "跳过损坏的cookie条目", error);
             }
         }
         return cookies;

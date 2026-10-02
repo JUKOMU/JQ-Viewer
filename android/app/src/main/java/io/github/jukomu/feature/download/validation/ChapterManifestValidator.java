@@ -1,6 +1,7 @@
 package io.github.jukomu.feature.download.validation;
 
-import android.util.Log;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import io.github.jukomu.feature.download.api.DownloadTaskReader;
 import io.github.jukomu.feature.download.storage.FileStore;
 import org.json.JSONArray;
@@ -15,9 +16,7 @@ import java.util.*;
  * 验证下载的章节清单，而不修改其文件。
  */
 public final class ChapterManifestValidator {
-
-    private static final String TAG = "ChapterManifestValidator";
-
+    private static final Logger LOGGER = LoggerFactory.getLogger(ChapterManifestValidator.class);
     private ChapterManifestValidator() {
     }
 
@@ -32,7 +31,7 @@ public final class ChapterManifestValidator {
         } catch (org.json.JSONException error) {
             throw failure("IMAGE_MANIFEST_INVALID", "章节清单 meta.json 内容无效");
         } catch (IOException error) {
-            Log.e(TAG, "读取章节清单失败: " + taskId, error);
+            LOGGER.error( "读取章节清单失败: " + taskId, error);
             throw failure("IMAGE_MANIFEST_READ_FAILED", "章节清单读取失败");
         }
 
@@ -121,7 +120,7 @@ public final class ChapterManifestValidator {
                         filename, expectedFiles.size());
                 }
             } catch (OutOfMemoryError error) {
-                Log.e(TAG, "图片完整校验资源不足: " + filename, error);
+                LOGGER.error( "图片完整校验资源不足: " + filename, error);
                 throw failure("IMAGE_VALIDATION_OOM", "图片校验资源不足，未生成 PDF",
                     filename, expectedFiles.size());
             }

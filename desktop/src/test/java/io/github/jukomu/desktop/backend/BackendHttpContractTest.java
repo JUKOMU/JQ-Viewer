@@ -469,6 +469,11 @@ class BackendHttpContractTest {
                     http, base, requestedMethods, "getAllSettings", "{}"));
             ObjectNode diagnostics = body(post(
                     http, base, requestedMethods, "getDiagnostics", "{}"));
+            ObjectNode logs = body(post(
+                    http, base, requestedMethods, "getLogs", "{}"));
+            assertTrue(logs.has("fileName"));
+            assertTrue(logs.has("updatedAt"));
+            assertTrue(logs.has("content"));
             assertOk(post(http, base, requestedMethods, "clearImageCache", "{}"));
             ObjectNode clearedCacheContents = body(post(
                     http, base, requestedMethods, "getImageCacheContents", "{}"));

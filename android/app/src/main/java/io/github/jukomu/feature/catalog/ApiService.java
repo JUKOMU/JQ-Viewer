@@ -1,6 +1,7 @@
 package io.github.jukomu.feature.catalog;
 
-import android.util.Log;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import io.github.jukomu.jmcomic.api.enums.*;
 import io.github.jukomu.jmcomic.api.model.*;
 import io.github.jukomu.jmcomic.core.client.impl.JmApiClient;
@@ -20,8 +21,7 @@ import java.util.concurrent.TimeUnit;
  * 纯业务逻辑，不依赖 Capacitor API。
  */
 public class ApiService {
-
-    private static final String TAG = "ApiService";
+    private static final Logger LOGGER = LoggerFactory.getLogger(ApiService.class);
     private static final String SEARCH_COVER_SIZE = "_3x4";
     private static final long API_TIMEOUT_MINUTES = 5;
 
@@ -49,7 +49,7 @@ public class ApiService {
                 JSONObject result = task.execute();
                 callback.onSuccess(result);
             } catch (Exception e) {
-                Log.e(TAG, "API call failed", e);
+                LOGGER.error( "API call failed", e);
                 callback.onError(e.getMessage(), e);
             }
         });

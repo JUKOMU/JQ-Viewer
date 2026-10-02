@@ -9,6 +9,8 @@ import io.github.jukomu.desktop.feature.client.JmcomicSessionManager;
 import io.github.jukomu.desktop.feature.diagnostics.DiagnosticsService;
 import io.github.jukomu.desktop.feature.network.NetworkService;
 import io.github.jukomu.desktop.feature.notification.LaunchRouteService;
+import io.github.jukomu.desktop.data.Paths;
+import io.github.jukomu.desktop.logging.ApplicationLogging;
 import io.javalin.http.Context;
 
 /**
@@ -21,6 +23,7 @@ public final class SystemPluginHandler {
     private final NetworkService network;
     private final LaunchRouteService launchRoutes;
     private final DiagnosticsService diagnostics;
+    private final Paths paths;
 
     public SystemPluginHandler(
         RequestExecutor networkRequests,
@@ -30,12 +33,25 @@ public final class SystemPluginHandler {
         LaunchRouteService launchRoutes,
         DiagnosticsService diagnostics
     ) {
+        this(networkRequests, diagnosticsRequests, clientSession, network, launchRoutes, diagnostics, null);
+    }
+
+    public SystemPluginHandler(
+        RequestExecutor networkRequests,
+        RequestExecutor diagnosticsRequests,
+        JmcomicSessionManager clientSession,
+        NetworkService network,
+        LaunchRouteService launchRoutes,
+        DiagnosticsService diagnostics,
+        Paths paths
+    ) {
         this.networkRequests = networkRequests;
         this.diagnosticsRequests = diagnosticsRequests;
         this.clientSession = clientSession;
         this.network = network;
         this.launchRoutes = launchRoutes;
         this.diagnostics = diagnostics;
+        this.paths = paths;
     }
 
     public void getInitStatus(Context context) {
@@ -97,6 +113,17 @@ public final class SystemPluginHandler {
 
     public void getDiagnostics(Context context) {
         diagnosticsRequests.run(context, () -> requireDiagnostics().snapshot());
+    }
+
+    public void getLogs(Context context) {
+        if (paths == null) throw ApiException.unavailable("日志服务尚未初始化");
+        diagnosticsRequests.run(context, () -> {
+            try {
+                return ApplicationLogging.readCurrent(paths);
+            } catch (java.io.IOException error) {
+                throw new ApiException("internal", 500, "读取应用日志失败");
+            }
+        });
     }
 
     private NetworkService requireNetwork() {

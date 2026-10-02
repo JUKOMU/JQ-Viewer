@@ -1,6 +1,7 @@
 package io.github.jukomu.bridge.handler;
 
-import android.util.Log;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
@@ -15,9 +16,7 @@ import org.json.JSONObject;
  * 负责图片预加载和内存缓存 Bridge 的参数转换与响应适配。
  */
 public final class CachePluginHandler {
-
-    private static final String TAG = "CachePluginHandler";
-
+    private static final Logger LOGGER = LoggerFactory.getLogger(CachePluginHandler.class);
     private final PreloadService preloadService;
 
     public CachePluginHandler(PreloadService preloadService) {
@@ -39,7 +38,7 @@ public final class CachePluginHandler {
                     try {
                         jsonImages.put(imagesArray.getJSONObject(index));
                     } catch (Exception error) {
-                        Log.d(TAG, "跳过无效图片条目", error);
+                        LOGGER.debug( "跳过无效图片条目", error);
                     }
                 }
             }
@@ -76,7 +75,7 @@ public final class CachePluginHandler {
 
             @Override
             public void onError(Exception error) {
-                Log.w(TAG, "图片重试失败", error);
+                LOGGER.warn( "图片重试失败", error);
                 call.reject(error.getMessage(), error);
             }
         });

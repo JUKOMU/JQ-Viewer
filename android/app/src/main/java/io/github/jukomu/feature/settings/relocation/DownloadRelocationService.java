@@ -3,7 +3,8 @@ package io.github.jukomu.feature.settings.relocation;
 import android.content.Context;
 import android.media.MediaScannerConnection;
 import android.os.Environment;
-import android.util.Log;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import io.github.jukomu.feature.download.storage.FileStore;
 import io.github.jukomu.platform.persistence.SettingsStore;
 import org.json.JSONObject;
@@ -18,8 +19,7 @@ import java.util.function.Supplier;
  * 执行下载目录切换所需的复制、校验、清理、检查点和媒体扫描。
  */
 public final class DownloadRelocationService {
-
-    private static final String TAG = "DownloadRelocation";
+    private static final Logger LOGGER = LoggerFactory.getLogger(DownloadRelocationService.class);
     private static final String CHECKPOINT_KEY = "relocation_checkpoint";
     private static final int BATCH_SIZE = 20;
     private static final int MEDIA_SCAN_BATCH = 100;
@@ -128,7 +128,7 @@ public final class DownloadRelocationService {
             scanPublicDir(newDir, listener);
         }
 
-        Log.i(TAG, "Relocated " + current + " files to "
+        LOGGER.info( "Relocated " + current + " files to "
             + (usePublicDir ? "public" : "private"));
         return current;
     }
@@ -159,7 +159,7 @@ public final class DownloadRelocationService {
                 fileOperations.delete(source);
             }
         } catch (Exception error) {
-            Log.w(TAG, "搬迁检查点损坏，从头开始", error);
+            LOGGER.warn( "搬迁检查点损坏，从头开始", error);
         }
         return startIndex;
     }
@@ -196,7 +196,7 @@ public final class DownloadRelocationService {
             File source = sourceFiles.get(index);
             notifyPhase(listener, index, total, "deleting", source, oldBaseDir);
             if (!fileOperations.delete(source)) {
-                Log.w(TAG, "Failed to delete source: " + source.getAbsolutePath());
+                LOGGER.warn( "Failed to delete source: " + source.getAbsolutePath());
             }
         }
     }
@@ -210,7 +210,7 @@ public final class DownloadRelocationService {
             checkpoint.put("startedAt", System.currentTimeMillis());
             checkpointConsumer.accept(checkpoint.toString());
         } catch (Exception error) {
-            Log.d(TAG, "保存搬迁检查点失败", error);
+            LOGGER.debug( "保存搬迁检查点失败", error);
         }
     }
 

@@ -3,7 +3,8 @@ package io.github.jukomu.feature.export;
 import android.content.Context;
 import android.os.PowerManager;
 import android.os.SystemClock;
-import android.util.Log;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import androidx.documentfile.provider.DocumentFile;
 import io.github.jukomu.feature.download.data.DownloadStore;
 import io.github.jukomu.feature.download.storage.FileStore;
@@ -35,8 +36,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 前台服务通知承载进行中状态，每任务 notificationId 只用于终态。
  */
 public class ExportService {
-
-    private static final String TAG = "ExportService";
+    private static final Logger LOGGER = LoggerFactory.getLogger(ExportService.class);
     private static final long FREE_SPACE_MARGIN_BYTES = 16L * 1024L * 1024L;
     private static final long ORIGINAL_OUTPUT_ESTIMATE_NUMERATOR = 110L;
     private static final long OUTPUT_ESTIMATE_DENOMINATOR = 100L;
@@ -326,7 +326,7 @@ public class ExportService {
             }
         }
         if (strict && failure != null) throw failure;
-        if (!strict && failure != null) Log.w(TAG, "导出临时产物清理失败: " + exportId, failure);
+        if (!strict && failure != null) LOGGER.warn( "导出临时产物清理失败: " + exportId, failure);
     }
 
     private void cleanupKnownArtifactsQuietly(String exportId) {
@@ -353,11 +353,11 @@ public class ExportService {
             long bytes = ExportArtifactCleaner.cleanupStagingDirectory(
                 new File(context.getCacheDir(), "file-export"), exportId);
             if (bytes > 0L) {
-                Log.i(TAG, "已清理导出 SAF staging: exportId=" + exportId
+                LOGGER.info( "已清理导出 SAF staging: exportId=" + exportId
                     + ", bytes=" + bytes);
             }
         } catch (Exception error) {
-            Log.w(TAG, "清理导出 SAF staging 失败: " + exportId, error);
+            LOGGER.warn( "清理导出 SAF staging 失败: " + exportId, error);
         }
     }
 
@@ -380,7 +380,7 @@ public class ExportService {
             try {
                 eventSink.onExportProgress(snapshot);
             } catch (RuntimeException error) {
-                Log.w(TAG, "发布导出进度失败", error);
+                LOGGER.warn( "发布导出进度失败", error);
             }
         }
         return snapshot;
@@ -564,7 +564,7 @@ public class ExportService {
                 } catch (Exception e) {
                     fail++;
                     ExportFailure failure = describeExportFailure(e, job);
-                    Log.e(TAG, failure.debugMessage, e);
+                    LOGGER.error( failure.debugMessage, e);
                     int completed = localFileStore.countCompletedVolumes(job.exportId);
                     String status = completed > 0 ? "partial" : "failed";
                     cleanupKnownArtifactsQuietly(job.exportId);
@@ -574,7 +574,7 @@ public class ExportService {
                         status, failure.userMessage);
                 } catch (Throwable t) {
                     fail++;
-                    Log.e(TAG, job.format.toUpperCase(Locale.ROOT)
+                    LOGGER.error( job.format.toUpperCase(Locale.ROOT)
                         + " export crashed: " + job.chapterTitle, t);
                     int completed = localFileStore.countCompletedVolumes(job.exportId);
                     cleanupKnownArtifactsQuietly(job.exportId);
@@ -599,7 +599,7 @@ public class ExportService {
             }
         }
 
-        Log.i(TAG, "Batch " + batchId + " done: " + success + " success, " + fail + " fail");
+        LOGGER.info( "Batch " + batchId + " done: " + success + " success, " + fail + " fail");
     }
 
     // ---- 文件导出 ----
@@ -611,7 +611,7 @@ public class ExportService {
         List<PdfBoxExportWriter.ExportImageDescriptor> images =
             flattenImageDescriptors(preflight.chapters, preflight.totalPages);
         int total = images.size();
-        Log.i(TAG, "Exporting " + job.format.toUpperCase(Locale.ROOT) + ": " + job.chapterTitle
+        LOGGER.info( "Exporting " + job.format.toUpperCase(Locale.ROOT) + ": " + job.chapterTitle
             + " (" + total + " pages, imageBytes=" + preflight.totalImageBytes
             + ", requiredBytes=" + preflight.requiredBytes
             + ", preflightMs=" + formatMillis(preflight.preflightDurationNanos) + ")");
@@ -632,7 +632,7 @@ public class ExportService {
             final int volumeNumber = volumeIndex + 1;
             final int volumeCount = volumes.size();
             long volumeStartedAt = SystemClock.elapsedRealtimeNanos();
-            Log.i(TAG, "Volume " + (volumeIndex + 1) + "/" + volumes.size()
+            LOGGER.info( "Volume " + (volumeIndex + 1) + "/" + volumes.size()
                 + ": " + volume.file.getName());
 
             List<PdfBoxExportWriter.ExportImageDescriptor> volumeImages =
@@ -709,7 +709,7 @@ public class ExportService {
                 report.fileSize, report.pageCount, job.mode,
                 job.albumId, job.albumTitle, job.coverUrl, job.authors, job.chapterId,
                 job.chapterTitle, 0, job.singleEpisode);
-            Log.i(TAG, job.format.toUpperCase(Locale.ROOT) + " saved: " + volume.displayPath
+            LOGGER.info( job.format.toUpperCase(Locale.ROOT) + " saved: " + volume.displayPath
                 + " (" + volume.file.length() + " bytes, volumeMs="
                 + formatMillis(SystemClock.elapsedRealtimeNanos() - volumeStartedAt) + ")");
             totalOutputBytes = saturatingAdd(totalOutputBytes, volume.file.length());
@@ -727,7 +727,7 @@ public class ExportService {
             firstOutputFileRef,
             detail
         );
-        Log.i(TAG, job.format.toUpperCase(Locale.ROOT) + " export baseline: title=" + job.chapterTitle
+        LOGGER.info( job.format.toUpperCase(Locale.ROOT) + " export baseline: title=" + job.chapterTitle
             + ", mode=" + job.mode
             + ", useOriginal=" + job.useOriginal
             + ", pages=" + total
@@ -932,7 +932,7 @@ public class ExportService {
         );
         long availableBytes = parentDir.getUsableSpace();
         ensureUsableSpace(parentDir, requiredBytes);
-        Log.i(TAG, "PDF preflight passed: mode=" + job.mode
+        LOGGER.info( "PDF preflight passed: mode=" + job.mode
             + ", chapters=" + chapterResults.size()
             + ", pages=" + totalPages
             + ", imageBytes=" + totalImageBytes
@@ -1215,7 +1215,7 @@ public class ExportService {
             }
             if (destination.isDirectory() || !destination.isFile()) {
                 IOException cleanupFailure = new IOException("SAF 导出目标不是普通文件，跳过清理");
-                Log.w(TAG, cleanupFailure.getMessage());
+                LOGGER.warn( cleanupFailure.getMessage());
                 if (original != null) {
                     original.addSuppressed(cleanupFailure);
                 }
@@ -1223,13 +1223,13 @@ public class ExportService {
             }
             if (!destination.delete()) {
                 IOException cleanupFailure = new IOException("无法删除失败的 SAF 导出文件");
-                Log.w(TAG, cleanupFailure.getMessage());
+                LOGGER.warn( cleanupFailure.getMessage());
                 if (original != null) {
                     original.addSuppressed(cleanupFailure);
                 }
             }
         } catch (RuntimeException cleanupFailure) {
-            Log.w(TAG, "清理失败的 SAF 导出文件时发生异常", cleanupFailure);
+            LOGGER.warn( "清理失败的 SAF 导出文件时发生异常", cleanupFailure);
             if (original != null) {
                 original.addSuppressed(cleanupFailure);
             }
@@ -1264,7 +1264,7 @@ public class ExportService {
                 original
             );
         } catch (RuntimeException cleanupFailure) {
-            Log.w(TAG, "清理取消的导出文件时发生异常", cleanupFailure);
+            LOGGER.warn( "清理取消的导出文件时发生异常", cleanupFailure);
             if (original != null) {
                 original.addSuppressed(cleanupFailure);
             }
@@ -1284,48 +1284,48 @@ public class ExportService {
         }
         try {
             if (localFileStore != null && localFileStore.getFileByRef(outputFileRef) != null) {
-                Log.i(TAG, "取消清理跳过已登记的 path 输出: " + outputFileRef);
+                LOGGER.info( "取消清理跳过已登记的 path 输出: " + outputFileRef);
                 return;
             }
             File referencedPath = new File(outputPath);
             if (java.nio.file.Files.isSymbolicLink(volumeFile.toPath())
                 || java.nio.file.Files.isSymbolicLink(referencedPath.toPath())) {
-                Log.w(TAG, "取消清理跳过符号链接 path 输出");
+                LOGGER.warn( "取消清理跳过符号链接 path 输出");
                 return;
             }
             File expectedPath = volumeFile.getCanonicalFile();
             File actualPath = referencedPath.getCanonicalFile();
             if (!expectedPath.equals(actualPath)) {
-                Log.w(TAG, "取消清理跳过非当前卷 path 输出: " + outputPath);
+                LOGGER.warn( "取消清理跳过非当前卷 path 输出: " + outputPath);
                 return;
             }
             if (!actualPath.exists()) {
                 return;
             }
             if (!actualPath.isFile()) {
-                Log.w(TAG, "取消清理跳过非普通文件 path 输出: " + outputPath);
+                LOGGER.warn( "取消清理跳过非普通文件 path 输出: " + outputPath);
                 return;
             }
             if (actualPath.length() != expectedLength
                 || actualPath.lastModified() != expectedLastModified) {
-                Log.w(TAG, "取消清理跳过已变化的 path 输出: " + outputPath);
+                LOGGER.warn( "取消清理跳过已变化的 path 输出: " + outputPath);
                 return;
             }
             if (!actualPath.delete()) {
                 IOException cleanupFailure = new IOException(
                     "无法删除取消的 path PDF 输出: " + outputPath);
-                Log.w(TAG, cleanupFailure.getMessage());
+                LOGGER.warn( cleanupFailure.getMessage());
                 if (original != null) {
                     original.addSuppressed(cleanupFailure);
                 }
             }
         } catch (IOException cleanupFailure) {
-            Log.w(TAG, "取消清理 path PDF 输出失败", cleanupFailure);
+            LOGGER.warn( "取消清理 path PDF 输出失败", cleanupFailure);
             if (original != null) {
                 original.addSuppressed(cleanupFailure);
             }
         } catch (RuntimeException cleanupFailure) {
-            Log.w(TAG, "取消清理 path PDF 输出时发生异常", cleanupFailure);
+            LOGGER.warn( "取消清理 path PDF 输出时发生异常", cleanupFailure);
             if (original != null) {
                 original.addSuppressed(cleanupFailure);
             }
@@ -1521,16 +1521,16 @@ public class ExportService {
         try {
             wakeLock = wakeLockFactory.create();
             if (wakeLock == null) {
-                Log.w(TAG, "Export wake lock unavailable: PowerManager service missing");
+                LOGGER.warn( "Export wake lock unavailable: PowerManager service missing");
                 return null;
             }
             wakeLock.setReferenceCounted(false);
             wakeLock.acquire();
-            Log.i(TAG, "Export wake lock acquired: batch=" + batchId + ", jobs=" + jobCount);
+            LOGGER.info( "Export wake lock acquired: batch=" + batchId + ", jobs=" + jobCount);
             return wakeLock;
         } catch (RuntimeException e) {
             releasePdfWakeLock(wakeLock, batchId);
-            Log.w(TAG, "Export wake lock acquire failed; export continues without wake lock", e);
+            LOGGER.warn( "Export wake lock acquire failed; export continues without wake lock", e);
             return null;
         }
     }
@@ -1542,10 +1542,10 @@ public class ExportService {
         try {
             if (wakeLock.isHeld()) {
                 wakeLock.release();
-                Log.i(TAG, "Export wake lock released: batch=" + batchId);
+                LOGGER.info( "Export wake lock released: batch=" + batchId);
             }
         } catch (RuntimeException e) {
-            Log.w(TAG, "Export wake lock release failed", e);
+            LOGGER.warn( "Export wake lock release failed", e);
         }
     }
 
@@ -1632,7 +1632,7 @@ public class ExportService {
                                         int totalPages, int volumeNumber, int volumeCount) {
         if (currentPage == 1 || currentPage == totalPages
             || currentPage % PDF_HEARTBEAT_PAGE_INTERVAL == 0) {
-            Log.i(TAG, job.format.toUpperCase(Locale.ROOT) + " export heartbeat: session=" + sessionId
+            LOGGER.info( job.format.toUpperCase(Locale.ROOT) + " export heartbeat: session=" + sessionId
                 + ", title=" + job.chapterTitle
                 + ", page=" + currentPage + "/" + totalPages
                 + ", volume=" + volumeNumber + "/" + volumeCount);

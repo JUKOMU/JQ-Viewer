@@ -89,6 +89,11 @@ public final class Plugin {
     }
 
     @PluginMethod
+    public void getLogs(Context context) {
+        system.getLogs(context);
+    }
+
+    @PluginMethod
     public void checkUpdate(Context context) {
         updates.checkUpdate(context);
     }

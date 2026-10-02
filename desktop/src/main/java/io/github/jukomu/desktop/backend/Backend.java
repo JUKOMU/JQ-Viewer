@@ -82,6 +82,7 @@ public final class Backend implements AutoCloseable {
         "/user",
         "/network-status",
         "/about",
+        "/logs",
         "/pdf-template-help",
         "/batch-parse",
         "/import-review",
@@ -392,7 +393,7 @@ public final class Backend implements AutoCloseable {
                 new SystemPluginHandler(
                     networkRequests, diagnosticsRequests,
                     clientSession,
-                    startedNetworkService, startedLaunchRoutes, diagnosticsService),
+                    startedNetworkService, startedLaunchRoutes, diagnosticsService, paths),
                 new OcrPluginHandler(ocrRequests, startedOcrService),
                 new UpdatePluginHandler(updateRequests, startedUpdateService));
             PdfResourceService pdfResources = new PdfResourceService();

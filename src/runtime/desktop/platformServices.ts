@@ -2,8 +2,10 @@ import packageInfo from '../../../package.json'
 import type {
   AppInfo,
   Capability,
+  ApplicationLogSnapshot,
   DiagnosticSnapshot,
   DiagnosticsService,
+  LogsService,
   FileService,
   LocalFileService,
   PlatformServices,
@@ -46,6 +48,12 @@ function createOcrService(fetcher: BackendFetch) {
 function createDiagnosticsService(fetcher: BackendFetch): DiagnosticsService {
   return {
     getSnapshot: () => requestBackend<DiagnosticSnapshot>(fetcher, 'getDiagnostics', {}),
+  }
+}
+
+function createLogsService(fetcher: BackendFetch): LogsService {
+  return {
+    getCurrent: () => requestBackend<ApplicationLogSnapshot>(fetcher, 'getLogs', {}),
   }
 }
 
@@ -665,6 +673,7 @@ export function createPlatformServices(
     updater: { available: true, api: createDesktopUpdater(events, fetcher) },
     ocr: { available: true, api: createOcrService(fetcher) },
     diagnostics: { available: true, api: createDiagnosticsService(fetcher) },
+    logs: { available: true, api: createLogsService(fetcher) },
     launchRoutes: {
       available: true,
       api: {

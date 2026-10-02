@@ -1,7 +1,8 @@
 package io.github.jukomu.feature.settings;
 
 import android.content.Context;
-import android.util.Log;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import io.github.jukomu.feature.cache.ImageCache;
 import io.github.jukomu.feature.download.DownloadService;
 import io.github.jukomu.feature.download.api.DownloadTaskReader;
@@ -19,8 +20,7 @@ import java.util.List;
  * 纯业务逻辑，不依赖 Capacitor API。
  */
 public class SettingsService {
-
-    private static final String TAG = "SettingsService";
+    private static final Logger LOGGER = LoggerFactory.getLogger(SettingsService.class);
     public static final int DEFAULT_CONCURRENCY = 6;
     private static final int MIN_CONCURRENCY = 1;
     private static final int MAX_CONCURRENCY = 12;
@@ -99,7 +99,7 @@ public class SettingsService {
             ret.put("apiRouteDomain", settingsDb.getString("api_route_domain") == null
                 ? "" : settingsDb.getString("api_route_domain"));
         } catch (Exception e) {
-            Log.w(TAG, "构建全部设置信息失败", e);
+            LOGGER.warn( "构建全部设置信息失败", e);
         }
         return ret;
     }

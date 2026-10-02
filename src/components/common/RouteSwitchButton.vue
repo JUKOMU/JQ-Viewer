@@ -14,7 +14,12 @@
   <IonModal class="route-switch-modal" :is-open="modalOpen" @did-dismiss="modalOpen = false">
     <header class="route-modal-header">
       <h2>选择 API 线路</h2>
-      <button class="route-modal-close" type="button" aria-label="关闭线路选择" @click="modalOpen = false">
+      <button
+        class="route-modal-close"
+        type="button"
+        aria-label="关闭线路选择"
+        @click="modalOpen = false"
+      >
         <IonIcon :icon="closeOutline" aria-hidden="true" />
       </button>
     </header>
@@ -78,16 +83,9 @@
 <script setup lang="ts">
 defineOptions({ name: 'RouteSwitchButton' })
 
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import {
-  IonContent,
-  IonIcon,
-  IonItem,
-  IonLabel,
-  IonModal,
-  IonRadio,
-} from '@ionic/vue'
+import { IonContent, IonIcon, IonItem, IonLabel, IonModal, IonRadio } from '@ionic/vue'
 import { closeOutline, flashOutline } from 'ionicons/icons'
 import { normalizeRuntimeError } from '@/runtime/errors'
 import { useApiRoute } from '@/composables/useApiRoute'
@@ -103,6 +101,30 @@ const errorMessage = ref('')
 const latencyMap = ref<Record<string, { latencyMs: number; timedOut: boolean }>>({})
 const probing = ref(false)
 const { visible, reveal, dispose } = useTimedReveal(1000)
+let routeRefreshSequence = 0
+
+function refreshRoute() {
+  const sequence = ++routeRefreshSequence
+  return route
+    .refresh()
+    .then(() => {
+      if (sequence === routeRefreshSequence) errorMessage.value = ''
+    })
+    .catch((error) => {
+      if (sequence === routeRefreshSequence) {
+        errorMessage.value = normalizeRuntimeError(error, '读取线路状态失败').message
+      }
+      throw error
+    })
+}
+
+watch(
+  () => probeStore.clientState.value.state,
+  (state, previousState) => {
+    if (state !== 'ready' || previousState === 'ready' || !modalOpen.value) return
+    void refreshRoute().catch(() => undefined)
+  },
+)
 
 const isReader = () =>
   currentRoute.path === '/pdf-reader' ||
@@ -136,14 +158,11 @@ function openPicker() {
   initNetworkProbeStore()
   probing.value = true
   void Promise.allSettled([
-    route.refresh(),
+    refreshRoute(),
     JmcomicService.reprobeDomains(),
     JmcomicService.measureLatency(),
   ])
-    .then(([routeResult, , latencyResult]) => {
-      if (routeResult.status === 'rejected') {
-        errorMessage.value = normalizeRuntimeError(routeResult.reason, '读取线路状态失败').message
-      }
+    .then(([, , latencyResult]) => {
       if (latencyResult.status === 'fulfilled') {
         latencyMap.value = Object.fromEntries(
           latencyResult.value.results.map((result) => [result.domain, result]),
@@ -263,8 +282,12 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 
-.route-modal-close:hover { background: #f5ebe4; }
-.route-modal-close ion-icon { font-size: 22px; }
+.route-modal-close:hover {
+  background: #f5ebe4;
+}
+.route-modal-close ion-icon {
+  font-size: 22px;
+}
 .route-modal-intro {
   display: grid;
   gap: 5px;

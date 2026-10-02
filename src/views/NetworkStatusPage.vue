@@ -119,7 +119,7 @@
 <script setup lang="ts">
 defineOptions({ name: 'NetworkStatusPage' })
 
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import {
   IonBackButton,
   IonButtons,
@@ -153,14 +153,35 @@ const clientUnavailableText = computed(() =>
 let probeHandle: ListenerHandle | null = null
 let refreshTimer: ReturnType<typeof setTimeout> | null = null
 let disposed = false
+let routeRefreshSequence = 0
 const PROBE_EVENT_TIMEOUT_MS = 30_000
+
+function refreshRoute() {
+  const sequence = ++routeRefreshSequence
+  return route
+    .refresh()
+    .then(() => {
+      if (sequence === routeRefreshSequence) routeError.value = ''
+    })
+    .catch((error) => {
+      if (sequence === routeRefreshSequence) {
+        routeError.value = normalizeRuntimeError(error, '获取线路状态失败').message
+      }
+    })
+}
+
+watch(
+  () => store.clientState.value.state,
+  (state, previousState) => {
+    if (state !== 'ready' || previousState === 'ready') return
+    void refreshRoute()
+  },
+)
 
 onMounted(() => {
   disposed = false
   initNetworkProbeStore()
-  void route.refresh().catch((error) => {
-    routeError.value = normalizeRuntimeError(error, '获取线路状态失败').message
-  })
+  void refreshRoute()
   JmcomicService.addNetworkProbeListener((data) => {
     if (data.phase === 'probing' || data.phase === 'result') operationError.value = ''
     if (data.phase === 'error') operationError.value = data.message

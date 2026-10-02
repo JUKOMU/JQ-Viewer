@@ -11,7 +11,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.time.Duration;
-import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Objects;
 
@@ -19,7 +19,8 @@ import java.util.Objects;
 public final class ApplicationLogging {
     private static final String FILE_PREFIX = "jq-viewer-";
     private static final String FILE_SUFFIX = ".log";
-    private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ISO_LOCAL_DATE;
+    private static final DateTimeFormatter FILE_DATE_FORMAT =
+        DateTimeFormatter.ofPattern("yyyy-MM-dd-HHmmss-SSS");
     private static final Duration RETENTION = Duration.ofDays(3);
     private static volatile Path activeLogFile;
 
@@ -31,8 +32,7 @@ public final class ApplicationLogging {
         paths.ensureDirectories();
         cleanup(paths.logsDirectory());
 
-        Path currentFile = paths.logsDirectory().resolve(
-            FILE_PREFIX + LocalDate.now().format(DATE_FORMAT) + FILE_SUFFIX);
+        Path currentFile = createStartupLogFile(paths.logsDirectory());
         activeLogFile = currentFile;
         System.setProperty("org.slf4j.simpleLogger.logFile", currentFile.toString());
         System.setProperty("org.slf4j.simpleLogger.showDateTime", "true");
@@ -45,11 +45,26 @@ public final class ApplicationLogging {
         System.setProperty("org.slf4j.simpleLogger.log.io.github.jukomu.jmcomic", "debug");
     }
 
+    private static Path createStartupLogFile(Path logsDirectory) throws IOException {
+        String timestamp = LocalDateTime.now().format(FILE_DATE_FORMAT);
+        Path candidate = logsDirectory.resolve(FILE_PREFIX + timestamp + FILE_SUFFIX);
+        int suffix = 1;
+        while (true) {
+            try {
+                Files.createFile(candidate);
+                return candidate;
+            } catch (java.nio.file.FileAlreadyExistsException error) {
+                candidate = logsDirectory.resolve(
+                    FILE_PREFIX + timestamp + "-" + suffix++ + FILE_SUFFIX);
+            }
+        }
+    }
+
     public static Path currentLogFile(Paths paths) {
         Path current = activeLogFile;
         if (current != null && current.getParent().equals(paths.logsDirectory())) return current;
         return paths.logsDirectory().resolve(
-            FILE_PREFIX + LocalDate.now().format(DATE_FORMAT) + FILE_SUFFIX);
+            FILE_PREFIX + LocalDateTime.now().format(FILE_DATE_FORMAT) + FILE_SUFFIX);
     }
 
     public static LogSnapshot readCurrent(Paths paths, long fromLine, long fromOffset)

@@ -11,6 +11,7 @@
     </appender>
 
     <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <append>true</append>
         <file>${LOG_DIR}/current.log</file>
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
             <fileNamePattern>${LOG_DIR}/jq-viewer-%d{yyyy-MM-dd}.log</fileNamePattern>

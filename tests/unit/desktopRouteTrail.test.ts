@@ -101,4 +101,36 @@ describe('桌面端路径栏轨迹', () => {
     expect(trail[0]).toMatchObject({ path: '/history', trailIndex: 0 })
     expect(truncateDesktopRouteStack(routeStack, '/history', trail[0].trailIndex)).toEqual([])
   })
+
+  test('历史导航监听区分后退与前进，普通 push 不残留方向', async () => {
+    const history = createMemoryHistory()
+    const router = createRouter({
+      history,
+      routes: [
+        { path: '/history', component: { template: '<div />' } },
+        { path: '/album/123', component: { template: '<div />' } },
+      ],
+    })
+    let navigationDirection: 'back' | 'forward' | null = null
+    const removeHistoryListener = history.listen((_to, _from, info) => {
+      navigationDirection =
+        info.direction === 'back' || info.direction === 'forward' ? info.direction : null
+    })
+
+    await router.push('/history')
+    await router.push('/album/123')
+    await router.back()
+    expect(navigationDirection).toBe('back')
+
+    await router.forward()
+    expect(navigationDirection).toBe('forward')
+
+    await router.back()
+    expect(navigationDirection).toBe('back')
+
+    navigationDirection = null
+    await router.push('/album/123')
+    expect(navigationDirection).toBeNull()
+    removeHistoryListener()
+  })
 })

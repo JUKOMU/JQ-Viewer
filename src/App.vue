@@ -59,7 +59,7 @@ const routeStack = ref<string[]>([])
 const isBack = ref(false)
 const keepAliveExclude = ref<string[]>([])
 let initialReaderRestorePending = true
-let pendingPopstateNavigation = false
+let pendingHistoryNavigation: 'back' | 'forward' | null = null
 let pendingTrailTargetIndex: number | null = null
 
 const READER_ROUTE_RESTORE_KEY = 'jq_reader_route_restore'
@@ -177,11 +177,10 @@ const updateReaderCurrentPage = (page: number) => {
 
 provide('updateReaderCurrentPage', updateReaderCurrentPage)
 
-const onPopstate = () => {
-  pendingPopstateNavigation = true
-}
-
-window.addEventListener('popstate', onPopstate)
+const removeHistoryListener = router.options.history.listen((_to, _from, info) => {
+  pendingHistoryNavigation =
+    info.direction === 'back' || info.direction === 'forward' ? info.direction : null
+})
 
 const syncReaderRouteSnapshot = (path: string, fullPath: string) => {
   if (isReaderRoutePath(path)) {
@@ -194,12 +193,12 @@ const syncReaderRouteSnapshot = (path: string, fullPath: string) => {
 
 router.beforeEach((to, from) => {
   isMenuNavigation.value = false
-  const isHistoryBack = pendingPopstateNavigation
+  const historyNavigation = pendingHistoryNavigation
   const trailTargetIndex = pendingTrailTargetIndex
-  pendingPopstateNavigation = false
+  pendingHistoryNavigation = null
   pendingTrailTargetIndex = null
 
-  if (isHistoryBack || trailTargetIndex !== null) {
+  if (historyNavigation === 'back' || trailTargetIndex !== null) {
     isBack.value = true
     routeStack.value =
       trailTargetIndex !== null
@@ -529,7 +528,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
-  window.removeEventListener('popstate', onPopstate)
+  removeHistoryListener()
   clientStateObservationGeneration++
   if (clientStatePollTimer) clearTimeout(clientStatePollTimer)
   clientStatePollTimer = null

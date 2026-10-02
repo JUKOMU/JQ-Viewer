@@ -9,8 +9,6 @@ import android.graphics.pdf.PdfRenderer;
 import android.net.Uri;
 import android.os.ParcelFileDescriptor;
 import android.provider.DocumentsContract;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import androidx.core.content.FileProvider;
 import androidx.documentfile.provider.DocumentFile;
 import com.getcapacitor.JSArray;
@@ -34,6 +32,8 @@ import io.github.jukomu.runtime.ServiceExecutors;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -233,14 +233,14 @@ public final class LocalFilePluginHandler {
                     }
                 } catch (Exception error) {
                     if (!isExpectedImportFailure(error)) {
-                        LOGGER.error( "本地文件导入失败", error);
+                        LOGGER.error("本地文件导入失败", error);
                         trackedCall.reject(error.getMessage() == null
                             ? "本地文件导入失败" : error.getMessage(), error);
                         return;
                     }
                     skipped++;
                     errorCount++;
-                    LOGGER.warn( "跳过无效的本地文件导入项", error);
+                    LOGGER.warn("跳过无效的本地文件导入项", error);
                 }
             }
             JSObject ret = new JSObject();
@@ -478,7 +478,7 @@ public final class LocalFilePluginHandler {
             result.put("success", true);
             call.resolve(result);
         } catch (Exception error) {
-            LOGGER.error( "打开 PDF 所在文件夹失败", error);
+            LOGGER.error("打开 PDF 所在文件夹失败", error);
             call.reject("系统文件管理器无法打开该目录");
         }
     }

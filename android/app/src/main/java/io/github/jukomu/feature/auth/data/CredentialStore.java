@@ -2,10 +2,10 @@ package io.github.jukomu.feature.auth.data;
 
 import android.content.Context;
 import android.content.SharedPreferences;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import androidx.security.crypto.EncryptedSharedPreferences;
 import androidx.security.crypto.MasterKeys;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.security.GeneralSecurityException;
@@ -40,14 +40,14 @@ public class CredentialStore {
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
             );
         } catch (GeneralSecurityException | IOException e) {
-            LOGGER.error( "Encrypted storage unavailable; credentials will not be saved", e);
+            LOGGER.error("Encrypted storage unavailable; credentials will not be saved", e);
         }
         prefs = p;
     }
 
     public void save(String username, String password) {
         if (prefs == null) {
-            LOGGER.warn( "Skip saving credentials because encrypted storage is unavailable");
+            LOGGER.warn("Skip saving credentials because encrypted storage is unavailable");
             return;
         }
         prefs.edit()

@@ -12,9 +12,9 @@ import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.BridgeWebViewClient;
 import io.github.jukomu.bridge.JmcomicPlugin;
 import io.github.jukomu.bridge.JqViewerPlugin;
-import io.github.jukomu.platform.logging.ApplicationLogging;
 import io.github.jukomu.feature.cache.ImageCache;
 import io.github.jukomu.feature.pdf.web.PdfServer;
+import io.github.jukomu.platform.logging.ApplicationLogging;
 
 public class MainActivity extends BridgeActivity {
     public static final String ACTION_OPEN_ROUTE = "io.github.jukomu.OPEN_ROUTE";

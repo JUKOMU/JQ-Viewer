@@ -83,7 +83,7 @@ public class SettingsStore extends SQLiteOpenHelper {
                 return c.getString(0);
             }
         } catch (Exception e) {
-            LOGGER.warn( "读取设置项失败", e);
+            LOGGER.warn("读取设置项失败", e);
         }
         return null;
     }
@@ -120,7 +120,7 @@ public class SettingsStore extends SQLiteOpenHelper {
         try {
             return getWritableDatabase().delete(TABLE, COL_KEY + "=?", new String[]{key}) > 0;
         } catch (Exception e) {
-            LOGGER.warn( "删除设置项失败", e);
+            LOGGER.warn("删除设置项失败", e);
             return false;
         }
     }
@@ -134,7 +134,7 @@ public class SettingsStore extends SQLiteOpenHelper {
             return getWritableDatabase().insertWithOnConflict(TABLE, null, cv,
                 SQLiteDatabase.CONFLICT_REPLACE) != -1;
         } catch (Exception e) {
-            LOGGER.warn( "写入设置项失败", e);
+            LOGGER.warn("写入设置项失败", e);
             return false;
         }
     }

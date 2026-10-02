@@ -1,8 +1,6 @@
 package io.github.jukomu.feature.settings;
 
 import android.content.Context;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import io.github.jukomu.feature.cache.ImageCache;
 import io.github.jukomu.feature.download.DownloadService;
 import io.github.jukomu.feature.download.api.DownloadTaskReader;
@@ -12,6 +10,8 @@ import io.github.jukomu.platform.permission.PermissionService;
 import io.github.jukomu.platform.permission.PermissionState;
 import io.github.jukomu.platform.persistence.SettingsStore;
 import org.json.JSONObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 
@@ -99,7 +99,7 @@ public class SettingsService {
             ret.put("apiRouteDomain", settingsDb.getString("api_route_domain") == null
                 ? "" : settingsDb.getString("api_route_domain"));
         } catch (Exception e) {
-            LOGGER.warn( "构建全部设置信息失败", e);
+            LOGGER.warn("构建全部设置信息失败", e);
         }
         return ret;
     }

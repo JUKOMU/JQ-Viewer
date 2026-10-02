@@ -3,11 +3,11 @@ package io.github.jukomu.feature.settings.relocation;
 import android.content.Context;
 import android.media.MediaScannerConnection;
 import android.os.Environment;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import io.github.jukomu.feature.download.storage.FileStore;
 import io.github.jukomu.platform.persistence.SettingsStore;
 import org.json.JSONObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.*;
 import java.util.ArrayList;
@@ -128,7 +128,7 @@ public final class DownloadRelocationService {
             scanPublicDir(newDir, listener);
         }
 
-        LOGGER.info( "Relocated " + current + " files to "
+        LOGGER.info("Relocated " + current + " files to "
             + (usePublicDir ? "public" : "private"));
         return current;
     }
@@ -159,7 +159,7 @@ public final class DownloadRelocationService {
                 fileOperations.delete(source);
             }
         } catch (Exception error) {
-            LOGGER.warn( "搬迁检查点损坏，从头开始", error);
+            LOGGER.warn("搬迁检查点损坏，从头开始", error);
         }
         return startIndex;
     }
@@ -196,7 +196,7 @@ public final class DownloadRelocationService {
             File source = sourceFiles.get(index);
             notifyPhase(listener, index, total, "deleting", source, oldBaseDir);
             if (!fileOperations.delete(source)) {
-                LOGGER.warn( "Failed to delete source: " + source.getAbsolutePath());
+                LOGGER.warn("Failed to delete source: " + source.getAbsolutePath());
             }
         }
     }
@@ -210,7 +210,7 @@ public final class DownloadRelocationService {
             checkpoint.put("startedAt", System.currentTimeMillis());
             checkpointConsumer.accept(checkpoint.toString());
         } catch (Exception error) {
-            LOGGER.debug( "保存搬迁检查点失败", error);
+            LOGGER.debug("保存搬迁检查点失败", error);
         }
     }
 

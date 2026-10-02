@@ -14,7 +14,9 @@ import java.nio.file.attribute.FileTime;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-/** 配置 Android 文件日志并提供当前日志读取能力。 */
+/**
+ * 配置 Android 文件日志并提供当前日志读取能力。
+ */
 public final class ApplicationLogging {
     public static final String LOG_DIRECTORY_PROPERTY = "JQ_VIEWER_LOG_DIR";
     private static final String CURRENT_FILE_NAME = "current.log";
@@ -43,7 +45,7 @@ public final class ApplicationLogging {
     }
 
     public static LogSnapshot readCurrent(Context context, long fromLine, long fromOffset)
-            throws IOException {
+        throws IOException {
         Path file = currentLogFile(context.getApplicationContext());
         if (!Files.exists(file)) {
             return new LogSnapshot(file.getFileName().toString(), 0L, 0L, 0L, "", false);
@@ -81,7 +83,7 @@ public final class ApplicationLogging {
     }
 
     private static LogSnapshot readFrom(Path file, long updatedAt, long fromLine, long fromOffset)
-            throws IOException {
+        throws IOException {
         try (RandomAccessFile input = new RandomAccessFile(file.toFile(), "r")) {
             input.seek(fromOffset);
             byte[] remaining = readBytes(input, fromOffset, input.length() - fromOffset);

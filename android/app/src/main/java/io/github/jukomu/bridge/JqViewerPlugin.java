@@ -7,8 +7,6 @@ import android.content.ComponentCallbacks2;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import androidx.core.app.ActivityCompat;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -33,13 +31,15 @@ import io.github.jukomu.feature.preload.PreloadService;
 import io.github.jukomu.feature.settings.SettingsService;
 import io.github.jukomu.feature.settings.relocation.DownloadRelocationService;
 import io.github.jukomu.feature.update.UpdateService;
+import io.github.jukomu.platform.logging.ApplicationLogging;
 import io.github.jukomu.platform.permission.PermissionService;
 import io.github.jukomu.platform.permission.PermissionState;
 import io.github.jukomu.platform.persistence.SettingsStore;
-import io.github.jukomu.platform.logging.ApplicationLogging;
 import io.github.jukomu.runtime.AppRuntime;
 import io.github.jukomu.runtime.JmcomicSessionManager;
 import org.json.JSONObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.function.Consumer;
@@ -139,7 +139,7 @@ public class JqViewerPlugin extends Plugin {
             try {
                 PdfPageCache.getInstance(ctx);
             } catch (RuntimeException error) {
-                LOGGER.warn( "初始化 PDF 页面缓存失败，继续启动", error);
+                LOGGER.warn("初始化 PDF 页面缓存失败，继续启动", error);
             }
             ExportService exportService = null;
             try {
@@ -149,19 +149,19 @@ public class JqViewerPlugin extends Plugin {
                     try {
                         notifyListeners("exportProgress", JSObject.fromJSONObject(snapshot));
                     } catch (Exception error) {
-                        LOGGER.warn( "发布文件导出进度失败", error);
+                        LOGGER.warn("发布文件导出进度失败", error);
                     }
                 };
                 exportService.attachEventSink(exportEventSink);
             } catch (RuntimeException error) {
-                LOGGER.warn( "初始化文件导出服务失败，继续提供本地文件功能", error);
+                LOGGER.warn("初始化文件导出服务失败，继续提供本地文件功能", error);
             }
             if (exportService != null) {
                 exportService.reconcileOnStartup();
             }
         } catch (RuntimeException error) {
             localFileStartupError = error;
-            LOGGER.error( "本地文件初始化失败，保留历史、阅读和其他本地功能", error);
+            LOGGER.error("本地文件初始化失败，保留历史、阅读和其他本地功能", error);
         }
 
         boolean runtimeExists = AppRuntime.exists();
@@ -177,7 +177,7 @@ public class JqViewerPlugin extends Plugin {
                     try {
                         FileStore.validateChapterIds(albumId, chapterId);
                     } catch (IllegalArgumentException error) {
-                        LOGGER.warn( "跳过章节标识无效的遗留任务: "
+                        LOGGER.warn("跳过章节标识无效的遗留任务: "
                             + t.optString("taskId"), error);
                         continue;
                     }
@@ -367,7 +367,7 @@ public class JqViewerPlugin extends Plugin {
 
     private void logCachePolicy(String event) {
         ImageCache.CacheStats stats = ImageCache.getInstance().getStats();
-        LOGGER.info( "缓存策略: requestedMb=" + stats.requestedMb
+        LOGGER.info("缓存策略: requestedMb=" + stats.requestedMb
             + ", effectiveMb=" + stats.effectiveMb
             + ", currentMb=" + Math.round(stats.currentBytes / (1024.0 * 1024.0))
             + ", maxHeapMb=" + stats.maxHeapMb

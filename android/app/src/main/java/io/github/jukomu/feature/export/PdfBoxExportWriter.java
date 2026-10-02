@@ -9,8 +9,6 @@ import android.os.Debug;
 import android.os.SystemClock;
 import android.system.ErrnoException;
 import android.system.Os;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader;
 import com.tom_roush.pdfbox.io.MemoryUsageSetting;
 import com.tom_roush.pdfbox.multipdf.PDFMergerUtility;
@@ -20,6 +18,8 @@ import com.tom_roush.pdfbox.pdmodel.PDPageContentStream;
 import com.tom_roush.pdfbox.pdmodel.common.PDRectangle;
 import com.tom_roush.pdfbox.pdmodel.graphics.image.JPEGFactory;
 import com.tom_roush.pdfbox.pdmodel.graphics.image.PDImageXObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.*;
 import java.util.ArrayList;
@@ -128,7 +128,7 @@ final class PdfBoxExportWriter {
             throw error;
         } finally {
             metrics.finish(completed);
-            LOGGER.info( metrics.toLogMessage(finalFile));
+            LOGGER.info(metrics.toLogMessage(finalFile));
             IOException cleanupError = null;
             try {
                 deleteRecursively(workDir);
@@ -150,7 +150,7 @@ final class PdfBoxExportWriter {
                 if (failure != null) {
                     failure.addSuppressed(cleanupError);
                 } else if (completed) {
-                    LOGGER.warn( "PDF 已生成，但临时文件清理失败", cleanupError);
+                    LOGGER.warn("PDF 已生成，但临时文件清理失败", cleanupError);
                 } else {
                     throw cleanupError;
                 }
@@ -189,7 +189,7 @@ final class PdfBoxExportWriter {
             PDFBoxResourceLoader.init(context);
             initializationDurationNanos = SystemClock.elapsedRealtimeNanos() - startedAt;
             initialized = true;
-            LOGGER.info( String.format(
+            LOGGER.info(String.format(
                 Locale.ROOT,
                 "PdfBox initialized in %.3f ms",
                 initializationDurationNanos / 1_000_000D
@@ -390,7 +390,7 @@ final class PdfBoxExportWriter {
             return new PdfPageImage(pdfImage, bounds.outWidth, bounds.outHeight);
         } finally {
             if (materialized.temporary && materialized.file.exists() && !materialized.file.delete()) {
-                LOGGER.warn( "无法立即删除临时图片: " + materialized.file.getAbsolutePath());
+                LOGGER.warn("无法立即删除临时图片: " + materialized.file.getAbsolutePath());
             }
         }
     }

@@ -6,11 +6,11 @@ import io.github.jukomu.desktop.bridge.model.InitStatusResponse;
 import io.github.jukomu.desktop.bridge.model.LogReadRequest;
 import io.github.jukomu.desktop.bridge.model.RouteSelectionRequest;
 import io.github.jukomu.desktop.bridge.model.SuccessResponse;
+import io.github.jukomu.desktop.data.Paths;
 import io.github.jukomu.desktop.feature.client.JmcomicSessionManager;
 import io.github.jukomu.desktop.feature.diagnostics.DiagnosticsService;
 import io.github.jukomu.desktop.feature.network.NetworkService;
 import io.github.jukomu.desktop.feature.notification.LaunchRouteService;
-import io.github.jukomu.desktop.data.Paths;
 import io.github.jukomu.desktop.logging.ApplicationLogging;
 import io.javalin.http.Context;
 

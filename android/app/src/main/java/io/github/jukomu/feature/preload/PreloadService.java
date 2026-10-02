@@ -2,8 +2,6 @@ package io.github.jukomu.feature.preload;
 
 import android.app.ActivityManager;
 import android.content.Context;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import io.github.jukomu.feature.cache.CacheCapacityPolicy;
 import io.github.jukomu.feature.cache.ImageCache;
 import io.github.jukomu.feature.download.storage.FileStore;
@@ -15,6 +13,8 @@ import io.github.jukomu.jmcomic.core.crypto.JmImageTool;
 import io.github.jukomu.platform.persistence.SettingsStore;
 import org.json.JSONArray;
 import org.json.JSONObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
@@ -42,6 +42,7 @@ public class PreloadService {
 
         void onError(Exception error);
     }
+
     private final ImageCache imageCache;
     private final FileStore fileStore;
     private final SettingsStore settingsDb;
@@ -109,12 +110,12 @@ public class PreloadService {
             try {
                 ret.put("cached", new JSONArray());
             } catch (Exception e) {
-                LOGGER.debug( "构建空缓存列表失败", e);
+                LOGGER.debug("构建空缓存列表失败", e);
             }
             try {
                 ret.put("pending", new JSONArray());
             } catch (Exception e) {
-                LOGGER.debug( "构建空待处理列表失败", e);
+                LOGGER.debug("构建空待处理列表失败", e);
             }
             return ret;
         }
@@ -178,7 +179,7 @@ public class PreloadService {
                     isThumb, scrambleId, filename, url, queryParams));
             } catch (RuntimeException error) {
                 pendingKeys.remove(cacheKey, generation);
-                LOGGER.debug( "图片文件任务提交失败", error);
+                LOGGER.debug("图片文件任务提交失败", error);
                 if (!isStale(scopeKey, generation)) {
                     notifyImageFailed(photoId, sortOrder, type);
                 }
@@ -188,12 +189,12 @@ public class PreloadService {
         try {
             ret.put("cached", new JSONArray(cached));
         } catch (Exception e) {
-            LOGGER.debug( "构建缓存列表失败", e);
+            LOGGER.debug("构建缓存列表失败", e);
         }
         try {
             ret.put("pending", new JSONArray(pending));
         } catch (Exception e) {
-            LOGGER.debug( "构建待处理列表失败", e);
+            LOGGER.debug("构建待处理列表失败", e);
         }
         return ret;
     }
@@ -213,7 +214,7 @@ public class PreloadService {
                     }
                     notifyImageReady(photoId, sortOrder, type);
                 } catch (Exception error) {
-                    LOGGER.debug( "缓存缩略图生成失败", error);
+                    LOGGER.debug("缓存缩略图生成失败", error);
                     if (!isStale(scopeKey, generation)) {
                         notifyImageFailed(photoId, sortOrder, type);
                     }
@@ -223,7 +224,7 @@ public class PreloadService {
             });
         } catch (RuntimeException error) {
             pendingKeys.remove(cacheKey, generation);
-            LOGGER.debug( "缓存缩略图任务提交失败", error);
+            LOGGER.debug("缓存缩略图任务提交失败", error);
             if (!isStale(scopeKey, generation)) {
                 notifyImageFailed(photoId, sortOrder, type);
             }
@@ -262,7 +263,7 @@ public class PreloadService {
                 handedOff = true;
             }
         } catch (Exception error) {
-            LOGGER.debug( "图片文件定位或读取失败", error);
+            LOGGER.debug("图片文件定位或读取失败", error);
             if (!isStale(scopeKey, generation)) {
                 notifyImageFailed(photoId, sortOrder, type);
             }
@@ -315,7 +316,7 @@ public class PreloadService {
             handedOff = true;
         } catch (Exception error) {
             if (error instanceof InterruptedException) Thread.currentThread().interrupt();
-            LOGGER.debug( "图片下载或解密失败", error);
+            LOGGER.debug("图片下载或解密失败", error);
             if (!isStale(scopeKey, generation)) {
                 notifyImageFailed(photoId, sortOrder, type);
             }
@@ -365,7 +366,7 @@ public class PreloadService {
             }
             notifyImageReady(photoId, sortOrder, type);
         } catch (Exception error) {
-            LOGGER.debug( networkSource ? "网络图片处理失败" : "本地图片处理失败", error);
+            LOGGER.debug(networkSource ? "网络图片处理失败" : "本地图片处理失败", error);
             if (!isStale(scopeKey, generation)) {
                 notifyImageFailed(photoId, sortOrder, type);
             }
@@ -539,7 +540,7 @@ public class PreloadService {
             ret.put("temporaryClamp", stats.temporaryClamp);
             ret.put("limitReason", stats.reason);
         } catch (Exception e) {
-            LOGGER.debug( "构建缓存容量信息失败", e);
+            LOGGER.debug("构建缓存容量信息失败", e);
         }
         return ret;
     }
@@ -578,7 +579,7 @@ public class PreloadService {
             }
             ret.put("entries", entries);
         } catch (Exception e) {
-            LOGGER.debug( "构建图片缓存内容失败", e);
+            LOGGER.debug("构建图片缓存内容失败", e);
         }
         return ret;
     }
@@ -589,13 +590,13 @@ public class PreloadService {
         try {
             PdfPageCache.getInstance(context).clear();
         } catch (RuntimeException error) {
-            LOGGER.warn( "清理 PDF 页面缓存失败，已完成内存缓存清理", error);
+            LOGGER.warn("清理 PDF 页面缓存失败，已完成内存缓存清理", error);
         }
     }
 
     private void logCapacity(String reason) {
         ImageCache.CacheStats stats = imageCache.getStats();
-        LOGGER.info( "缓存策略: requestedMb=" + stats.requestedMb
+        LOGGER.info("缓存策略: requestedMb=" + stats.requestedMb
             + ", effectiveMb=" + stats.effectiveMb
             + ", currentMb=" + Math.round(stats.currentBytes / (1024.0 * 1024.0))
             + ", maxHeapMb=" + stats.maxHeapMb

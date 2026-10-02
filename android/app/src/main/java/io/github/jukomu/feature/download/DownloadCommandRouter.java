@@ -1,9 +1,8 @@
 package io.github.jukomu.feature.download;
 
+import io.github.jukomu.feature.download.notification.DownloadNotificationActionReceiver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import io.github.jukomu.feature.download.notification.DownloadNotificationActionReceiver;
 
 /**
  * 将下载通知动作转发给当前会话的命令执行者。
@@ -34,7 +33,7 @@ public final class DownloadCommandRouter {
     public void dispatch(String action, String taskId) {
         DownloadCommandPort current = delegate;
         if (current == null) {
-            LOGGER.warn( "下载通知操作到达时服务未就绪: " + action + ", " + taskId);
+            LOGGER.warn("下载通知操作到达时服务未就绪: " + action + ", " + taskId);
             return;
         }
         try {
@@ -46,7 +45,7 @@ public final class DownloadCommandRouter {
                 current.cancelDownload(taskId);
             }
         } catch (Exception error) {
-            LOGGER.warn( "处理下载通知操作失败: " + action + ", " + taskId, error);
+            LOGGER.warn("处理下载通知操作失败: " + action + ", " + taskId, error);
         }
     }
 }

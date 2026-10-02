@@ -1,8 +1,6 @@
 package io.github.jukomu.bridge.handler;
 
 import android.content.Context;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
 import io.github.jukomu.bridge.PluginCallSession;
@@ -15,6 +13,8 @@ import okhttp3.Cookie;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -112,11 +112,11 @@ public final class AuthPluginHandler {
 
                         @Override
                         public void onError(String message, Exception error) {
-                            LOGGER.warn( "远端注销失败，本地登录态已清除", error);
+                            LOGGER.warn("远端注销失败，本地登录态已清除", error);
                         }
                     });
                 } catch (RuntimeException error) {
-                    LOGGER.warn( "无法发起远端注销，本地登录态已清除", error);
+                    LOGGER.warn("无法发起远端注销，本地登录态已清除", error);
                 }
             });
         } catch (Exception error) {
@@ -277,7 +277,7 @@ public final class AuthPluginHandler {
                 item.put("persistent", cookie.persistent());
                 result.put(item);
             } catch (JSONException error) {
-                LOGGER.debug( "跳过无效cookie条目", error);
+                LOGGER.debug("跳过无效cookie条目", error);
             }
         }
         return result;
@@ -315,7 +315,7 @@ public final class AuthPluginHandler {
                     cookies.add(builder.hostOnlyDomain(item.getString("domain")).build());
                 }
             } catch (Exception error) {
-                LOGGER.debug( "跳过损坏的cookie条目", error);
+                LOGGER.debug("跳过损坏的cookie条目", error);
             }
         }
         return cookies;

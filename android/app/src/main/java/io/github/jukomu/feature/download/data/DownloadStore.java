@@ -5,12 +5,10 @@ import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
+import io.github.jukomu.feature.download.api.DownloadTaskReader;
+import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import io.github.jukomu.feature.download.api.DownloadTaskReader;
-
-import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -230,7 +228,7 @@ public class DownloadStore extends SQLiteOpenHelper implements DownloadTaskReade
                 while (c.moveToNext()) {
                     JSONObject task = cursorToTaskJson(c);
                     if (task == null) {
-                        LOGGER.warn( "跳过损坏的任务记录");
+                        LOGGER.warn("跳过损坏的任务记录");
                         continue;
                     }
                     list.add(task);
@@ -307,7 +305,7 @@ public class DownloadStore extends SQLiteOpenHelper implements DownloadTaskReade
                         obj.put("queryParams", c.getString(c.getColumnIndexOrThrow(COL_QUERY_PARAMS)));
                         list.add(obj);
                     } catch (Exception e) {
-                        LOGGER.debug( "跳过无效图片记录", e);
+                        LOGGER.debug("跳过无效图片记录", e);
                     }
                 }
             } finally {
@@ -375,7 +373,7 @@ public class DownloadStore extends SQLiteOpenHelper implements DownloadTaskReade
                 }
             }
         } catch (Exception e) {
-            LOGGER.warn( "转换任务记录失败", e);
+            LOGGER.warn("转换任务记录失败", e);
             return null;
         }
         return obj;

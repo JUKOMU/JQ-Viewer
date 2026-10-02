@@ -15,7 +15,9 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Objects;
 
-/** 配置 Desktop 文件日志并提供当前日志读取能力。 */
+/**
+ * 配置 Desktop 文件日志并提供当前日志读取能力。
+ */
 public final class ApplicationLogging {
     private static final String FILE_PREFIX = "jq-viewer-";
     private static final String FILE_SUFFIX = ".log";
@@ -68,7 +70,7 @@ public final class ApplicationLogging {
     }
 
     public static LogSnapshot readCurrent(Paths paths, long fromLine, long fromOffset)
-            throws IOException {
+        throws IOException {
         Path file = currentLogFile(paths);
         if (!Files.exists(file)) {
             return new LogSnapshot(file.getFileName().toString(), 0L, 0L, 0L, "", false);
@@ -98,7 +100,7 @@ public final class ApplicationLogging {
     }
 
     private static LogSnapshot readFrom(Path file, long updatedAt, long fromLine, long fromOffset)
-            throws IOException {
+        throws IOException {
         try (RandomAccessFile input = new RandomAccessFile(file.toFile(), "r")) {
             input.seek(fromOffset);
             byte[] remaining = readBytes(input, fromOffset, input.length() - fromOffset);

@@ -5,14 +5,14 @@ import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
 import android.os.IBinder;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
 import io.github.jukomu.MainActivity;
 import io.github.jukomu.R;
 import io.github.jukomu.platform.notification.NotificationIds;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Locale;
 
@@ -58,7 +58,7 @@ public final class UpdateForegroundService extends Service {
                 context.startService(intent);
             }
         } catch (RuntimeException error) {
-            LOGGER.warn( "启动更新前台通知失败", error);
+            LOGGER.warn("启动更新前台通知失败", error);
         }
     }
 
@@ -70,7 +70,7 @@ public final class UpdateForegroundService extends Service {
         try {
             context.stopService(intent);
         } catch (RuntimeException error) {
-            LOGGER.warn( "停止更新前台通知失败", error);
+            LOGGER.warn("停止更新前台通知失败", error);
         }
     }
 
@@ -101,7 +101,7 @@ public final class UpdateForegroundService extends Service {
                 stopSelf(startId);
             }
         } catch (RuntimeException error) {
-            LOGGER.warn( "创建更新前台通知失败", error);
+            LOGGER.warn("创建更新前台通知失败", error);
             stopSelf(startId);
         }
         return START_NOT_STICKY;
@@ -237,7 +237,7 @@ public final class UpdateForegroundService extends Service {
         try {
             stopForeground(Service.STOP_FOREGROUND_REMOVE);
         } catch (RuntimeException error) {
-            LOGGER.warn( "移除更新前台通知失败", error);
+            LOGGER.warn("移除更新前台通知失败", error);
         }
     }
 

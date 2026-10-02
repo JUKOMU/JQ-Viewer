@@ -1,13 +1,13 @@
 package io.github.jukomu.feature.catalog;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import io.github.jukomu.jmcomic.api.enums.*;
 import io.github.jukomu.jmcomic.api.model.*;
 import io.github.jukomu.jmcomic.core.client.impl.JmApiClient;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Map;
@@ -49,7 +49,7 @@ public class ApiService {
                 JSONObject result = task.execute();
                 callback.onSuccess(result);
             } catch (Exception e) {
-                LOGGER.error( "API call failed", e);
+                LOGGER.error("API call failed", e);
                 callback.onError(e.getMessage(), e);
             }
         });

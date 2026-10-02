@@ -3,11 +3,11 @@ package io.github.jukomu.feature.download.storage;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.os.Environment;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import io.github.jukomu.feature.download.data.DownloadStore;
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -102,10 +102,10 @@ public class FileStore {
                     sortOrderToFilename.put(key, filename);
                 }
             } catch (Exception e) {
-                LOGGER.debug( "跳过无效下载任务记录", e);
+                LOGGER.debug("跳过无效下载任务记录", e);
             }
         }
-        LOGGER.info( "Indices built: " + chapterIdToAlbumId.size()
+        LOGGER.info("Indices built: " + chapterIdToAlbumId.size()
             + " chapters, " + sortOrderToFilename.size() + " images");
     }
 
@@ -185,7 +185,7 @@ public class FileStore {
                 getChapterDir(albumId, chapterId),
                 expectedFilename);
         } catch (IOException error) {
-            LOGGER.warn( "预期图片文件查询失败", error);
+            LOGGER.warn("预期图片文件查询失败", error);
             return null;
         }
     }
@@ -198,7 +198,7 @@ public class FileStore {
         try {
             return readImageBytes(imageFile);
         } catch (IOException e) {
-            LOGGER.error( "Failed to read image: " + imageFile.getPath(), e);
+            LOGGER.error("Failed to read image: " + imageFile.getPath(), e);
             return null;
         }
     }
@@ -211,7 +211,7 @@ public class FileStore {
         try {
             return resolveImageFile(getChapterDir(albumId, chapterId), filename);
         } catch (IOException e) {
-            LOGGER.warn( "图片路径校验失败", e);
+            LOGGER.warn("图片路径校验失败", e);
             return null;
         }
     }
@@ -276,7 +276,7 @@ public class FileStore {
                         minSo = so;
                     }
                 } catch (NumberFormatException e) {
-                    LOGGER.debug( "解析排序序号失败", e);
+                    LOGGER.debug("解析排序序号失败", e);
                 }
             }
         }
@@ -323,7 +323,7 @@ public class FileStore {
                 String key = makeSortKey(albumId, chapterId, sortOrder);
                 sortOrderToFilename.put(key, filename);
             } catch (Exception e) {
-                LOGGER.debug( "跳过无效图片映射记录", e);
+                LOGGER.debug("跳过无效图片映射记录", e);
             }
         }
     }

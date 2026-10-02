@@ -4,12 +4,12 @@ import android.app.*;
 import android.content.Context;
 import android.content.Intent;
 import android.os.*;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 import io.github.jukomu.R;
 import io.github.jukomu.platform.notification.NotificationIds;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Keeps export jobs in foreground priority while the app is backgrounded.
@@ -76,7 +76,7 @@ public class ExportForegroundService extends Service {
                 context.startService(intent);
             }
         } catch (Exception e) {
-            LOGGER.debug( "更新导出前台服务失败", e);
+            LOGGER.debug("更新导出前台服务失败", e);
         }
     }
 
@@ -200,7 +200,7 @@ public class ExportForegroundService extends Service {
             displayedSessionId = snapshot.sessionId;
             displayedPhase = snapshot.phase;
         } catch (Exception e) {
-            LOGGER.warn( "启动导出前台通知失败，导出任务继续由 ExportService 推进", e);
+            LOGGER.warn("启动导出前台通知失败，导出任务继续由 ExportService 推进", e);
             stopSelf();
         }
     }
@@ -270,7 +270,7 @@ public class ExportForegroundService extends Service {
         try {
             stopForeground(Service.STOP_FOREGROUND_REMOVE);
         } catch (Exception e) {
-            LOGGER.debug( "停止导出前台通知失败", e);
+            LOGGER.debug("停止导出前台通知失败", e);
         }
     }
 

@@ -5,13 +5,13 @@ import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
 import android.os.IBinder;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 import io.github.jukomu.MainActivity;
 import io.github.jukomu.R;
 import io.github.jukomu.platform.notification.NotificationIds;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * 应用进入后台时，仍保持活跃章节下载的前台优先级。
@@ -39,7 +39,7 @@ public class DownloadForegroundService extends Service {
                 context.startService(intent);
             }
         } catch (Exception e) {
-            LOGGER.debug( "更新下载前台服务失败", e);
+            LOGGER.debug("更新下载前台服务失败", e);
         }
     }
 
@@ -68,7 +68,7 @@ public class DownloadForegroundService extends Service {
         try {
             startForeground(NotificationIds.DOWNLOAD_FOREGROUND, buildNotification(Math.max(1, activeCount)));
         } catch (Exception e) {
-            LOGGER.warn( "启动下载前台通知失败，任务继续由下载服务推进", e);
+            LOGGER.warn("启动下载前台通知失败，任务继续由下载服务推进", e);
             stopSelf(startId);
         }
         return START_NOT_STICKY;
@@ -131,7 +131,7 @@ public class DownloadForegroundService extends Service {
         try {
             stopForeground(Service.STOP_FOREGROUND_REMOVE);
         } catch (Exception e) {
-            LOGGER.debug( "停止下载前台通知失败", e);
+            LOGGER.debug("停止下载前台通知失败", e);
         }
     }
 }

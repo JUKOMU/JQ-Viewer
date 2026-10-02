@@ -2,8 +2,6 @@ package io.github.jukomu.feature.download;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import io.github.jukomu.feature.download.data.DownloadStore;
 import io.github.jukomu.feature.download.model.DownloadProgressData;
 import io.github.jukomu.feature.download.notification.DownloadForegroundService;
@@ -18,6 +16,8 @@ import io.github.jukomu.jmcomic.core.client.impl.JmApiClient;
 import io.github.jukomu.platform.notification.NotificationIds;
 import org.json.JSONArray;
 import org.json.JSONObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -196,7 +196,7 @@ public class DownloadService {
             try {
                 arr.put(task);
             } catch (Exception e) {
-                LOGGER.debug( "跳过无效下载任务条目", e);
+                LOGGER.debug("跳过无效下载任务条目", e);
             }
         }
         return arr;
@@ -225,7 +225,7 @@ public class DownloadService {
                 try {
                     ((AbstractJmClient) requireClient()).downloadManager().cancel(libTaskId);
                 } catch (Exception e) {
-                    LOGGER.debug( "取消已暂停任务的底层下载失败，继续清理本地任务", e);
+                    LOGGER.debug("取消已暂停任务的底层下载失败，继续清理本地任务", e);
                 }
             }
             completeCancel(taskId, task);
@@ -236,7 +236,7 @@ public class DownloadService {
                 try {
                     ((AbstractJmClient) requireClient()).downloadManager().cancel(libTaskId);
                 } catch (Exception e) {
-                    LOGGER.debug( "取消下载中的底层任务失败，继续清理本地任务", e);
+                    LOGGER.debug("取消下载中的底层任务失败，继续清理本地任务", e);
                 }
             }
             completeCancel(taskId, task);
@@ -356,7 +356,7 @@ public class DownloadService {
             }
             ret.put("images", imageArray);
         } catch (Exception e) {
-            LOGGER.warn( "构建已下载章节信息失败", e);
+            LOGGER.warn("构建已下载章节信息失败", e);
         }
         return ret;
     }
@@ -488,7 +488,7 @@ public class DownloadService {
         } catch (org.json.JSONException error) {
             return ChapterValidation.failure(0, "meta.json 内容无效");
         } catch (java.io.IOException error) {
-            LOGGER.error( "meta.json 读取失败: " + taskId, error);
+            LOGGER.error("meta.json 读取失败: " + taskId, error);
             return ChapterValidation.failure(0, "meta.json 读取失败");
         }
 
@@ -522,10 +522,10 @@ public class DownloadService {
 
                 allValid = false;
                 if (imageFile != null && imageFile.isFile() && !imageFile.delete()) {
-                    LOGGER.warn( "校验失败图片删除失败: " + imageFile.getPath());
+                    LOGGER.warn("校验失败图片删除失败: " + imageFile.getPath());
                 }
             } catch (OutOfMemoryError error) {
-                LOGGER.error( "图片完整校验资源不足: " + filename, error);
+                LOGGER.error("图片完整校验资源不足: " + filename, error);
                 return ChapterValidation.failure(verifiedPages, "图片校验资源不足");
             }
         }

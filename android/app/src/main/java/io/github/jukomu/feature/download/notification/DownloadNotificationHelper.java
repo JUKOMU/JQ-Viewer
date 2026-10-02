@@ -10,13 +10,13 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.os.Build;
 import android.service.notification.StatusBarNotification;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import android.widget.RemoteViews;
 import androidx.core.app.NotificationCompat;
 import io.github.jukomu.MainActivity;
 import io.github.jukomu.R;
 import io.github.jukomu.platform.notification.NotificationIds;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
@@ -176,9 +176,9 @@ public class DownloadNotificationHelper {
             try {
                 manager.cancel(notificationId);
             } catch (SecurityException e) {
-                LOGGER.debug( "通知权限未授予，跳过取消下载通知", e);
+                LOGGER.debug("通知权限未授予，跳过取消下载通知", e);
             } catch (RuntimeException e) {
-                LOGGER.warn( "取消下载通知失败", e);
+                LOGGER.warn("取消下载通知失败", e);
             }
         }
     }
@@ -298,9 +298,9 @@ public class DownloadNotificationHelper {
                 }
             }
         } catch (SecurityException e) {
-            LOGGER.debug( "通知权限未授予，跳过清理旧下载通知", e);
+            LOGGER.debug("通知权限未授予，跳过清理旧下载通知", e);
         } catch (RuntimeException e) {
-            LOGGER.warn( "清理旧下载通知失败", e);
+            LOGGER.warn("清理旧下载通知失败", e);
         }
     }
 
@@ -334,9 +334,9 @@ public class DownloadNotificationHelper {
         try {
             manager.notify(notificationId, notification);
         } catch (SecurityException e) {
-            LOGGER.debug( "通知权限未授予，跳过下载通知", e);
+            LOGGER.debug("通知权限未授予，跳过下载通知", e);
         } catch (RuntimeException e) {
-            LOGGER.warn( "发布下载通知失败", e);
+            LOGGER.warn("发布下载通知失败", e);
         }
     }
 
@@ -470,7 +470,7 @@ public class DownloadNotificationHelper {
             coverCache.put(coverUrl, cover);
             return cover;
         } catch (Exception e) {
-            LOGGER.debug( "下载通知封面加载失败", e);
+            LOGGER.debug("下载通知封面加载失败", e);
             return null;
         } finally {
             if (conn != null) conn.disconnect();

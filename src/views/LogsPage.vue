@@ -167,7 +167,11 @@ onUnmounted(() => {
   border-radius: 12px;
   background: #211a17;
   color: #f6eee9;
-  font: 12px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace;
+  font:
+    12px/1.6 ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    monospace;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }

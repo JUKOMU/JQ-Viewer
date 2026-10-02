@@ -53,8 +53,7 @@ function createDiagnosticsService(fetcher: BackendFetch): DiagnosticsService {
 
 function createLogsService(fetcher: BackendFetch): LogsService {
   return {
-    getCurrent: (cursor) =>
-      requestBackend<ApplicationLogSnapshot>(fetcher, 'getLogs', cursor),
+    getCurrent: (cursor) => requestBackend<ApplicationLogSnapshot>(fetcher, 'getLogs', cursor),
   }
 }
 

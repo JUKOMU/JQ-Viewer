@@ -177,8 +177,8 @@ ion-modal.update-prompt-modal:focus-visible {
 
 /* API 线路选择弹窗 */
 ion-modal.route-switch-modal {
-  --width: min(560px, calc(100% - 32px));
-  --height: min(720px, calc(100% - 48px));
+  --width: min(480px, calc(100% - 48px));
+  --height: min(800px, calc(100% - 64px));
   --border-radius: 16px;
   --background: #fffaf7;
   --box-shadow: 0 18px 54px rgb(76 42 24 / 0.24);

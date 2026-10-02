@@ -329,8 +329,9 @@ onBeforeUnmount(() => {
   --inner-padding-end: 12px;
   min-height: 66px;
 }
-.route-group ion-item:last-child {
+.route-group ion-item:last-of-type {
   --border-width: 0;
+  --inner-border-width: 0;
 }
 .route-group ion-label h2 {
   color: #4c2a18;

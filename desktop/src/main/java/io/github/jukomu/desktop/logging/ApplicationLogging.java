@@ -40,7 +40,9 @@ public final class ApplicationLogging {
         System.setProperty("org.slf4j.simpleLogger.showThreadName", "true");
         System.setProperty("org.slf4j.simpleLogger.showLogName", "true");
         System.setProperty("org.slf4j.simpleLogger.showShortLogName", "false");
-        System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", "debug");
+        System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", "info");
+        System.setProperty("org.slf4j.simpleLogger.log.io.github.jukomu.desktop", "debug");
+        System.setProperty("org.slf4j.simpleLogger.log.io.github.jukomu.jmcomic", "debug");
     }
 
     public static Path currentLogFile(Paths paths) {

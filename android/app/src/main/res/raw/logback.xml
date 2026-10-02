@@ -22,7 +22,10 @@
         </encoder>
     </appender>
 
-    <root level="DEBUG">
+    <logger name="io.github.jukomu" level="DEBUG" />
+    <logger name="io.github.jukomu.jmcomic" level="DEBUG" />
+
+    <root level="INFO">
         <appender-ref ref="LOGCAT" />
         <appender-ref ref="FILE" />
     </root>

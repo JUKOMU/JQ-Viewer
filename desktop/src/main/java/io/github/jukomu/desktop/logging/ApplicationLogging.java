@@ -97,10 +97,15 @@ public final class ApplicationLogging {
             if (contentLength < length - start) {
                 int completeLength = lastLineBreak(content);
                 if (completeLength < 0) {
+                    int readableLength = completeUtf8Length(content);
                     return new LogSnapshot(file.getFileName().toString(), updatedAt,
-                        line, start, "", true);
+                        line, start + readableLength,
+                        new String(content, 0, readableLength, StandardCharsets.UTF_8), true);
                 }
                 contentLength = completeLength + 1L;
+            } else if (lastLineBreak(content) < 0) {
+                return new LogSnapshot(file.getFileName().toString(), updatedAt,
+                    line, start, "", true);
             }
             return new LogSnapshot(file.getFileName().toString(), updatedAt,
                 line + countLineBreaks(content, (int) contentLength), start + contentLength,
@@ -112,10 +117,18 @@ public final class ApplicationLogging {
         throws IOException {
         try (RandomAccessFile input = new RandomAccessFile(file.toFile(), "r")) {
             input.seek(fromOffset);
-            long remainingLength = Math.min(input.length() - fromOffset, MAX_READ_BYTES);
+            long fileLength = input.length();
+            long availableLength = fileLength - fromOffset;
+            long remainingLength = Math.min(availableLength, MAX_READ_BYTES);
             byte[] remaining = readBytes(input, fromOffset, remainingLength);
             int completeLength = lastLineBreak(remaining);
             if (completeLength < 0) {
+                if (remainingLength < availableLength) {
+                    int readableLength = completeUtf8Length(remaining);
+                    return new LogSnapshot(file.getFileName().toString(), updatedAt,
+                        fromLine, fromOffset + readableLength,
+                        new String(remaining, 0, readableLength, StandardCharsets.UTF_8), false);
+                }
                 return new LogSnapshot(file.getFileName().toString(), updatedAt,
                     fromLine, fromOffset, "", false);
             }
@@ -172,6 +185,22 @@ public final class ApplicationLogging {
             if (bytes[index] == '\n') return index;
         }
         return -1;
+    }
+
+    private static int completeUtf8Length(byte[] bytes) {
+        int continuationBytes = 0;
+        int index = bytes.length;
+        while (index > 0 && (bytes[index - 1] & 0xC0) == 0x80) {
+            continuationBytes++;
+            index--;
+        }
+        if (index == 0) return bytes.length;
+        int leadingByte = bytes[index - 1] & 0xFF;
+        int expectedBytes = leadingByte < 0x80 ? 1
+            : leadingByte < 0xE0 ? 2
+            : leadingByte < 0xF0 ? 3
+            : leadingByte < 0xF8 ? 4 : 1;
+        return continuationBytes >= expectedBytes - 1 ? bytes.length : index - 1;
     }
 
     private static long countLineBreaks(byte[] bytes, int length) {

@@ -24,6 +24,7 @@ public final class ApplicationLogging {
     private static final DateTimeFormatter FILE_DATE_FORMAT =
         DateTimeFormatter.ofPattern("yyyy-MM-dd-HHmmss-SSS");
     private static final Duration RETENTION = Duration.ofDays(3);
+    private static final int MAX_READ_BYTES = 256 * 1024;
     private static volatile Path activeLogFile;
 
     private ApplicationLogging() {
@@ -91,11 +92,19 @@ public final class ApplicationLogging {
             }
             long start = findLastLineStart(input, length);
             long line = countLineBreaks(input, start) + 1;
-            boolean terminated = readByte(input, length - 1) == '\n';
-            byte[] content = readBytes(input, start, length - start);
+            long contentLength = Math.min(length - start, MAX_READ_BYTES);
+            byte[] content = readBytes(input, start, contentLength);
+            if (contentLength < length - start) {
+                int completeLength = lastLineBreak(content);
+                if (completeLength < 0) {
+                    return new LogSnapshot(file.getFileName().toString(), updatedAt,
+                        line, start, "", true);
+                }
+                contentLength = completeLength + 1L;
+            }
             return new LogSnapshot(file.getFileName().toString(), updatedAt,
-                terminated ? line + 1L : line, length,
-                new String(content, StandardCharsets.UTF_8), true);
+                line + countLineBreaks(content, (int) contentLength), start + contentLength,
+                new String(content, 0, (int) contentLength, StandardCharsets.UTF_8), true);
         }
     }
 
@@ -103,7 +112,8 @@ public final class ApplicationLogging {
         throws IOException {
         try (RandomAccessFile input = new RandomAccessFile(file.toFile(), "r")) {
             input.seek(fromOffset);
-            byte[] remaining = readBytes(input, fromOffset, input.length() - fromOffset);
+            long remainingLength = Math.min(input.length() - fromOffset, MAX_READ_BYTES);
+            byte[] remaining = readBytes(input, fromOffset, remainingLength);
             int completeLength = lastLineBreak(remaining);
             if (completeLength < 0) {
                 return new LogSnapshot(file.getFileName().toString(), updatedAt,
@@ -130,8 +140,15 @@ public final class ApplicationLogging {
     private static long countLineBreaks(RandomAccessFile input, long endExclusive) throws IOException {
         input.seek(0L);
         long count = 0L;
-        for (long index = 0; index < endExclusive; index++) {
-            if (input.readByte() == '\n') count++;
+        byte[] buffer = new byte[8192];
+        long remaining = endExclusive;
+        while (remaining > 0) {
+            int read = input.read(buffer, 0, (int) Math.min(buffer.length, remaining));
+            if (read < 0) break;
+            for (int index = 0; index < read; index++) {
+                if (buffer[index] == '\n') count++;
+            }
+            remaining -= read;
         }
         return count;
     }

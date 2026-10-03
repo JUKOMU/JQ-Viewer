@@ -508,13 +508,21 @@ const drawerStyle = computed(() => ({
 }))
 
 const desktopPanePercentBounds = () => {
-  const width = desktopWorkspaceRef.value?.getBoundingClientRect().width ?? 0
-  if (!width) return { min: 30, max: 70 }
+  const workspace = desktopWorkspaceRef.value
+  const width = workspace ? workspace.clientWidth - 32 : 0
+  if (width <= 0) return { min: 30, max: 70 }
 
-  return {
-    min: Math.max(30, (DESKTOP_MIN_PREVIEW_WIDTH / width) * 100),
-    max: Math.min(70, ((width - DESKTOP_SPLITTER_WIDTH - DESKTOP_MIN_SEARCH_WIDTH) / width) * 100),
+  const min = Math.max(30, (DESKTOP_MIN_PREVIEW_WIDTH / width) * 100)
+  const max = Math.min(
+    70,
+    ((width - DESKTOP_SPLITTER_WIDTH - DESKTOP_MIN_SEARCH_WIDTH) / width) * 100,
+  )
+  if (min > max) {
+    const fixed = Math.min(70, min)
+    return { min: fixed, max: fixed }
   }
+
+  return { min, max }
 }
 
 const clampDesktopPanePercent = (percent: number) => {
@@ -534,8 +542,8 @@ function startDesktopSplitDrag(event: PointerEvent) {
 }
 
 function handleDesktopSplitDrag(event: PointerEvent) {
-  const width = desktopWorkspaceRef.value?.getBoundingClientRect().width ?? 0
-  if (!width) return
+  const width = (desktopWorkspaceRef.value?.clientWidth ?? 0) - 32
+  if (width <= 0) return
 
   const nextPercent =
     desktopSplitStartPercent + ((event.clientX - desktopSplitStartX) / width) * 100
@@ -1091,6 +1099,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('pointermove', handleDrawerDrag)
   window.removeEventListener('pointerup', endDrawerDrag)
   window.removeEventListener('pointercancel', endDrawerDrag)
+  endDesktopSplitDrag()
   LocalFileImportService.clearCachedParseResult()
 })
 </script>

@@ -22,9 +22,9 @@
         <div v-if="errorMessage" class="logs-state logs-error" role="alert">
           {{ errorMessage }}
         </div>
-        <div v-else-if="loading && !content" class="logs-state">正在读取日志...</div>
-        <pre v-else-if="content" ref="logOutputRef" class="log-output">{{ content }}</pre>
-        <div v-else class="logs-state">当前没有日志内容</div>
+        <div v-if="loading && !content && !errorMessage" class="logs-state">正在读取日志...</div>
+        <pre v-if="content" ref="logOutputRef" class="log-output">{{ content }}</pre>
+        <div v-if="!loading && !content && !errorMessage" class="logs-state">当前没有日志内容</div>
       </div>
     </IonContent>
   </IonPage>
@@ -59,6 +59,7 @@ let nextLine = 0
 let nextOffset = 0
 let hasCursor = false
 let refreshTimer: ReturnType<typeof setInterval> | null = null
+const MAX_LOG_LINES = 500
 
 const logs = computed(() => runtime.services.logs)
 
@@ -72,18 +73,25 @@ function formatTime(timestamp: number) {
   }).format(timestamp)
 }
 
+function keepRecentLines(value: string) {
+  const hasTrailingNewline = value.endsWith('\n')
+  const lines = hasTrailingNewline ? value.slice(0, -1).split('\n') : value.split('\n')
+  if (lines.length <= MAX_LOG_LINES) return value
+  return lines.slice(-MAX_LOG_LINES).join('\n') + (hasTrailingNewline ? '\n' : '')
+}
+
 async function loadLogs() {
   if (!logs.value.available || loading.value) return
   loading.value = true
-  errorMessage.value = ''
   try {
     const wasNearBottom = isNearBottom()
     const snapshot = await logs.value.api.getCurrent({
       fromLine: hasCursor ? nextLine : 0,
       fromOffset: hasCursor ? nextOffset : 0,
     })
-    if (!hasCursor || snapshot.reset) content.value = snapshot.content
-    else if (snapshot.content) content.value += snapshot.content
+    errorMessage.value = ''
+    if (!hasCursor || snapshot.reset) content.value = keepRecentLines(snapshot.content)
+    else if (snapshot.content) content.value = keepRecentLines(content.value + snapshot.content)
     fileName.value = snapshot.fileName
     updatedAt.value = snapshot.updatedAt
     nextLine = snapshot.nextLine

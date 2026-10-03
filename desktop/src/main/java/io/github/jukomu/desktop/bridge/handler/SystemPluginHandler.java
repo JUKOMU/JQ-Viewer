@@ -3,11 +3,15 @@ package io.github.jukomu.desktop.bridge.handler;
 import io.github.jukomu.desktop.bridge.ApiException;
 import io.github.jukomu.desktop.bridge.RequestExecutor;
 import io.github.jukomu.desktop.bridge.model.InitStatusResponse;
+import io.github.jukomu.desktop.bridge.model.LogReadRequest;
+import io.github.jukomu.desktop.bridge.model.RouteSelectionRequest;
 import io.github.jukomu.desktop.bridge.model.SuccessResponse;
+import io.github.jukomu.desktop.data.Paths;
 import io.github.jukomu.desktop.feature.client.JmcomicSessionManager;
 import io.github.jukomu.desktop.feature.diagnostics.DiagnosticsService;
 import io.github.jukomu.desktop.feature.network.NetworkService;
 import io.github.jukomu.desktop.feature.notification.LaunchRouteService;
+import io.github.jukomu.desktop.logging.ApplicationLogging;
 import io.javalin.http.Context;
 
 /**
@@ -20,6 +24,7 @@ public final class SystemPluginHandler {
     private final NetworkService network;
     private final LaunchRouteService launchRoutes;
     private final DiagnosticsService diagnostics;
+    private final Paths paths;
 
     public SystemPluginHandler(
         RequestExecutor networkRequests,
@@ -29,12 +34,25 @@ public final class SystemPluginHandler {
         LaunchRouteService launchRoutes,
         DiagnosticsService diagnostics
     ) {
+        this(networkRequests, diagnosticsRequests, clientSession, network, launchRoutes, diagnostics, null);
+    }
+
+    public SystemPluginHandler(
+        RequestExecutor networkRequests,
+        RequestExecutor diagnosticsRequests,
+        JmcomicSessionManager clientSession,
+        NetworkService network,
+        LaunchRouteService launchRoutes,
+        DiagnosticsService diagnostics,
+        Paths paths
+    ) {
         this.networkRequests = networkRequests;
         this.diagnosticsRequests = diagnosticsRequests;
         this.clientSession = clientSession;
         this.network = network;
         this.launchRoutes = launchRoutes;
         this.diagnostics = diagnostics;
+        this.paths = paths;
     }
 
     public void getInitStatus(Context context) {
@@ -47,6 +65,35 @@ public final class SystemPluginHandler {
 
     public void getDomainStates(Context context) {
         networkRequests.run(context, () -> requireNetwork().getDomainStates());
+    }
+
+    public void getUsedDomain(Context context) {
+        networkRequests.run(context, () -> {
+            var client = clientSession.requireClient();
+            if (!(client instanceof io.github.jukomu.jmcomic.core.client.impl.JmApiClient apiClient)) {
+                throw ApiException.unavailable("当前 JMComic 客户端不支持线路选择");
+            }
+            String domain = apiClient.getUsedDomain();
+            return java.util.Map.of("domain", domain == null ? "" : domain);
+        });
+    }
+
+    public void applyApiRoute(Context context) {
+        networkRequests.run(context, RouteSelectionRequest.class, request -> {
+            var client = clientSession.requireClient();
+            if (!(client instanceof io.github.jukomu.jmcomic.core.client.impl.JmApiClient apiClient)) {
+                throw ApiException.unavailable("当前 JMComic 客户端不支持线路选择");
+            }
+            if ("auto".equals(request.mode())) apiClient.useAutoDomain();
+            else if ("manual".equals(request.mode())) {
+                if (request.domain() == null || request.domain().isBlank()) {
+                    throw ApiException.invalidRequest("domain is required in manual mode");
+                }
+                apiClient.useDomain(request.domain());
+            } else throw ApiException.invalidRequest("mode must be auto or manual");
+            String domain = apiClient.getUsedDomain();
+            return java.util.Map.of("domain", domain == null ? "" : domain);
+        });
     }
 
     public void reprobeDomains(Context context) {
@@ -67,6 +114,19 @@ public final class SystemPluginHandler {
 
     public void getDiagnostics(Context context) {
         diagnosticsRequests.run(context, () -> requireDiagnostics().snapshot());
+    }
+
+    public void getLogs(Context context) {
+        if (paths == null) throw ApiException.unavailable("日志服务尚未初始化");
+        diagnosticsRequests.run(context, LogReadRequest.class, request -> {
+            try {
+                long fromLine = request.fromLine() == null ? 0L : request.fromLine();
+                long fromOffset = request.fromOffset() == null ? 0L : request.fromOffset();
+                return ApplicationLogging.readCurrent(paths, fromLine, fromOffset);
+            } catch (java.io.IOException error) {
+                throw new ApiException("internal", 500, "读取应用日志失败");
+            }
+        });
     }
 
     private NetworkService requireNetwork() {

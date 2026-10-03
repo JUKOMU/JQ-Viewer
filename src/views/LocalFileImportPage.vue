@@ -1,7 +1,7 @@
 <template>
   <IonPage>
     <IonHeader class="ion-no-border">
-      <IonToolbar>
+      <IonToolbar class="toolbar desktop-page-content">
         <IonButtons slot="start">
           <IonBackButton default-href="/download" />
         </IonButtons>
@@ -15,131 +15,268 @@
     </IonHeader>
 
     <IonContent>
-      <div class="page-container desktop-page-content">
-        <!-- 空状态 -->
-        <div v-if="files.length === 0 && !loading" class="empty-state">
-          <IonIcon :icon="documentTextOutline" class="empty-icon" />
-          <p>所选文件夹中未找到 PDF 或 CBZ 文件</p>
-        </div>
-
-        <!-- 统计栏 -->
-        <div v-if="files.length > 0" class="stats-card">
-          <span class="stat resolved">已解析 {{ resolvedCount }}</span>
-          <span class="stat ambiguous">多ID {{ ambiguousCount }}</span>
-          <span class="stat missing">无ID {{ missingCount }}</span>
-          <span v-if="duplicateCount > 0" class="stat duplicate">
-            ID重复 {{ duplicateCount }}
-          </span>
-        </div>
-
-        <!-- 文件卡片列表 -->
-        <TransitionGroup v-if="files.length > 0" name="card-list" tag="div" class="file-list">
-          <div
-            v-for="(file, idx) in files"
-            :key="file.fileRef"
-            class="file-card"
-            :class="[
-              cardClass(file),
-              { searchable: canSearchFile(file), selected: searchTargetIdx === idx },
-            ]"
-            @click="openSearchDrawer(idx)"
-          >
-            <!-- 封面区 -->
-            <div class="cover-wrap">
-              <img v-if="file.albumDetail?.image" :src="file.albumDetail.image" class="cover-img" />
-              <img
-                v-else-if="file.format === 'cbz' && file.cbzInfo"
-                :src="cbzCoverUrl(file)"
-                class="cover-img"
-              />
-              <div v-else class="cover-placeholder">
-                <IonIcon :icon="canSearchFile(file) ? searchOutline : documentTextOutline" />
-              </div>
-            </div>
-
-            <!-- 信息区 -->
-            <div class="info" @click="editingIdx !== idx ? undefined : undefined">
-              <h3 class="item-title">
-                {{
-                  file.albumDetail?.title ||
-                  file.cbzInfo?.series ||
-                  file.cbzInfo?.title ||
-                  '未识别本子'
-                }}
-              </h3>
-              <div class="item-meta file-name-line">
-                <span class="format-badge">{{ file.format.toUpperCase() }}</span>
-                {{ file.fileName }}
-              </div>
-              <div v-if="file.albumDetail?.authors?.length" class="item-meta">
-                作者：{{ file.albumDetail.authors.join(' / ') }}
-              </div>
-              <div v-else-if="file.cbzInfo?.authors" class="item-meta">
-                作者：{{ file.cbzInfo.authors }}
-              </div>
-              <div v-if="file.cbzInfo?.metadataWarning" class="item-meta metadata-warning">
-                {{ file.cbzInfo.metadataWarning }}
-              </div>
-              <div v-if="file.validationError" class="item-meta metadata-warning">
-                {{ file.validationError }}
-              </div>
-              <div v-if="file.albumDetail?.tags?.length" class="item-tags">
-                <span v-for="t in file.albumDetail.tags.slice(0, 10)" :key="t" class="tag-chip">{{
-                  t
-                }}</span>
-                <span v-if="file.albumDetail.tags.length > 10" class="tag-chip tag-more">...</span>
-              </div>
-              <div class="status-row">
-                <span class="status-tag" :class="statusTagClass(file)">{{
-                  statusTagText(file)
-                }}</span>
-                <span v-if="shouldShowChapterTag(file)" class="status-tag chapter-tag">
-                  第{{ file.chapterSortOrder }}话
-                </span>
-                <span
-                  v-else-if="needsChapterSelection(file)"
-                  class="status-tag chapter-tag pending"
-                >
-                  {{ chapterSelectionText(file) }}
-                </span>
-              </div>
-              <div
-                v-if="file.status === 'ambiguous' && candidateIds(file).length > 1"
-                class="candidate-row"
-              >
-                <button
-                  v-for="id in candidateIds(file)"
-                  :key="id"
-                  type="button"
-                  class="candidate-id-btn"
-                  :disabled="resolvingCandidate"
-                  @click.stop="selectParsedCandidate(idx, id)"
-                >
-                  #{{ id }}
-                </button>
-              </div>
-            </div>
-
-            <!-- 编辑按钮 -->
-            <button class="edit-btn" @click.stop="toggleEdit(idx)">
-              <IonIcon :icon="editingIdx === idx ? checkmarkOutline : createOutline" />
-            </button>
-
-            <!-- 编辑模式遮罩 -->
-            <div v-show="editingIdx === idx" class="edit-overlay">
-              <textarea
-                v-model="editText"
-                class="edit-textarea"
-                rows="2"
-                @keydown.enter.prevent="applyEdit(idx)"
-              />
-              <div class="edit-actions">
-                <span class="edit-hint">末尾空格+数字=章节序号，如 <code>123456 3</code></span>
-                <button class="apply-btn" @click="applyEdit(idx)">应用</button>
-              </div>
-            </div>
+      <div
+        ref="desktopWorkspaceRef"
+        class="import-workspace desktop-page-content"
+        :class="{ 'split-dragging': desktopSplitDragging }"
+        :style="desktopWorkspaceStyle"
+      >
+        <div class="page-container">
+          <!-- 空状态 -->
+          <div v-if="files.length === 0 && !loading" class="empty-state">
+            <IonIcon :icon="documentTextOutline" class="empty-icon" />
+            <p>所选文件夹中未找到 PDF 或 CBZ 文件</p>
           </div>
-        </TransitionGroup>
+
+          <!-- 统计栏 -->
+          <div v-if="files.length > 0" class="stats-card">
+            <span class="stat resolved">已解析 {{ resolvedCount }}</span>
+            <span class="stat ambiguous">多ID {{ ambiguousCount }}</span>
+            <span class="stat missing">无ID {{ missingCount }}</span>
+            <span v-if="duplicateCount > 0" class="stat duplicate">
+              ID重复 {{ duplicateCount }}
+            </span>
+          </div>
+
+          <!-- 文件卡片列表 -->
+          <TransitionGroup v-if="files.length > 0" name="card-list" tag="div" class="file-list">
+            <div
+              v-for="(file, idx) in files"
+              :key="file.fileRef"
+              class="file-card"
+              :class="[
+                cardClass(file),
+                { searchable: canSearchFile(file), selected: searchTargetIdx === idx },
+              ]"
+              @click="openSearchDrawer(idx)"
+            >
+              <!-- 封面区 -->
+              <div class="cover-wrap">
+                <img
+                  v-if="file.albumDetail?.image"
+                  :src="file.albumDetail.image"
+                  class="cover-img"
+                />
+                <img
+                  v-else-if="file.format === 'cbz' && file.cbzInfo"
+                  :src="cbzCoverUrl(file)"
+                  class="cover-img"
+                />
+                <div v-else class="cover-placeholder">
+                  <IonIcon :icon="canSearchFile(file) ? searchOutline : documentTextOutline" />
+                </div>
+              </div>
+
+              <!-- 信息区 -->
+              <div class="info" @click="editingIdx !== idx ? undefined : undefined">
+                <h3 class="item-title">
+                  {{
+                    file.albumDetail?.title ||
+                    file.cbzInfo?.series ||
+                    file.cbzInfo?.title ||
+                    '未识别本子'
+                  }}
+                </h3>
+                <div class="item-meta file-name-line">
+                  <span class="format-badge">{{ file.format.toUpperCase() }}</span>
+                  {{ file.fileName }}
+                </div>
+                <div v-if="file.albumDetail?.authors?.length" class="item-meta">
+                  作者：{{ file.albumDetail.authors.join(' / ') }}
+                </div>
+                <div v-else-if="file.cbzInfo?.authors" class="item-meta">
+                  作者：{{ file.cbzInfo.authors }}
+                </div>
+                <div v-if="file.cbzInfo?.metadataWarning" class="item-meta metadata-warning">
+                  {{ file.cbzInfo.metadataWarning }}
+                </div>
+                <div v-if="file.validationError" class="item-meta metadata-warning">
+                  {{ file.validationError }}
+                </div>
+                <div v-if="file.albumDetail?.tags?.length" class="item-tags">
+                  <span v-for="t in file.albumDetail.tags.slice(0, 10)" :key="t" class="tag-chip">{{
+                    t
+                  }}</span>
+                  <span v-if="file.albumDetail.tags.length > 10" class="tag-chip tag-more"
+                    >...</span
+                  >
+                </div>
+                <div class="status-row">
+                  <span class="status-tag" :class="statusTagClass(file)">{{
+                    statusTagText(file)
+                  }}</span>
+                  <span v-if="shouldShowChapterTag(file)" class="status-tag chapter-tag">
+                    第{{ file.chapterSortOrder }}话
+                  </span>
+                  <span
+                    v-else-if="needsChapterSelection(file)"
+                    class="status-tag chapter-tag pending"
+                  >
+                    {{ chapterSelectionText(file) }}
+                  </span>
+                </div>
+                <div
+                  v-if="file.status === 'ambiguous' && candidateIds(file).length > 1"
+                  class="candidate-row"
+                >
+                  <button
+                    v-for="id in candidateIds(file)"
+                    :key="id"
+                    type="button"
+                    class="candidate-id-btn"
+                    :disabled="resolvingCandidate"
+                    @click.stop="selectParsedCandidate(idx, id)"
+                  >
+                    #{{ id }}
+                  </button>
+                </div>
+              </div>
+
+              <!-- 编辑按钮 -->
+              <button class="edit-btn" @click.stop="toggleEdit(idx)">
+                <IonIcon :icon="editingIdx === idx ? checkmarkOutline : createOutline" />
+              </button>
+
+              <!-- 编辑模式遮罩 -->
+              <div v-show="editingIdx === idx" class="edit-overlay">
+                <textarea
+                  v-model="editText"
+                  class="edit-textarea"
+                  rows="2"
+                  @keydown.enter.prevent="applyEdit(idx)"
+                />
+                <div class="edit-actions">
+                  <span class="edit-hint">末尾空格+数字=章节序号，如 <code>123456 3</code></span>
+                  <button class="apply-btn" @click="applyEdit(idx)">应用</button>
+                </div>
+              </div>
+            </div>
+          </TransitionGroup>
+        </div>
+
+        <div
+          v-if="files.length > 0"
+          class="desktop-splitter"
+          :class="{ dragging: desktopSplitDragging }"
+          role="separator"
+          tabindex="0"
+          aria-label="调整导入预览和搜索区宽度"
+          aria-orientation="vertical"
+          :aria-valuenow="Math.round(desktopPanePercent)"
+          aria-valuemin="30"
+          aria-valuemax="70"
+          aria-valuetext="导入预览占页面宽度"
+          @pointerdown="startDesktopSplitDrag"
+          @keydown.left.prevent="adjustDesktopPane(-2)"
+          @keydown.right.prevent="adjustDesktopPane(2)"
+        />
+
+        <section
+          v-if="files.length > 0"
+          class="search-drawer"
+          :class="{ active: drawerState !== 'closed' }"
+          :style="drawerStyle"
+        >
+          <div class="drawer-grip-zone" @pointerdown="startDrawerDrag">
+            <Transition name="drawer-confirm">
+              <button
+                v-if="selectedCandidate"
+                type="button"
+                class="drawer-confirm-btn"
+                :disabled="!canConfirmCandidate"
+                @click.stop="confirmCandidate"
+              >
+                {{ confirmButtonLabel }}
+              </button>
+            </Transition>
+            <div class="drawer-grip" />
+          </div>
+
+          <div class="drawer-body">
+            <div class="drawer-target">
+              <span class="drawer-title">搜索匹配</span>
+              <span class="drawer-subtitle">{{ drawerTargetText }}</span>
+            </div>
+            <SearchHeaderBar
+              ref="drawerSearchRef"
+              :query="drawerQuery"
+              :loading="drawerSearchLoading"
+              @search="submitDrawerSearch"
+            />
+            <Transition name="chapter-panel">
+              <section
+                v-if="selectedCandidate && candidateChapters.length > 1"
+                class="chapter-select-panel"
+              >
+                <div class="chapter-select-head">
+                  <span class="chapter-select-title">选择章节</span>
+                  <span v-if="candidateDetailLoading" class="chapter-select-loading"
+                    >加载中...</span
+                  >
+                </div>
+                <div class="chapter-list">
+                  <button
+                    v-for="chapter in candidateChapters"
+                    :key="chapter.id"
+                    type="button"
+                    class="chapter-option"
+                    :class="{ active: selectedChapterSortOrder === chapter.sortOrder }"
+                    @click="selectedChapterSortOrder = chapter.sortOrder"
+                  >
+                    <span class="chapter-order">第{{ chapter.sortOrder }}话</span>
+                    <span class="chapter-name">{{ chapter.title }}</span>
+                  </button>
+                </div>
+              </section>
+            </Transition>
+            <SearchResultContainer
+              :result="drawerResult"
+              :items="drawerDisplayItems"
+              :loading="drawerSearchLoading"
+              :loading-next="false"
+              :error-message="drawerError"
+              :mode="drawerMode"
+              idle-text="点击未解析卡片后自动搜索"
+              empty-text="没有匹配结果"
+              @mode-change="drawerMode = $event"
+              @item-click="selectCandidate"
+              @retry="retryDrawerSearch"
+            >
+              <template #item-actions="{ item }">
+                <button
+                  type="button"
+                  class="drawer-detail-btn"
+                  :class="{ active: drawerDetailVisible && selectedCandidate?.id === item.id }"
+                  aria-label="查看详情"
+                  @click.stop="openCandidateDetail(item)"
+                >
+                  <IonIcon :icon="informationCircleOutline" />
+                </button>
+              </template>
+              <template #item-info-extra="{ item }">
+                <Transition name="drawer-detail-panel">
+                  <section
+                    v-if="drawerDetailVisible && selectedCandidate?.id === item.id"
+                    class="drawer-info-expanded"
+                  >
+                    <div v-if="candidateDetailLoading" class="drawer-detail-loading">
+                      正在加载详情...
+                    </div>
+                    <div v-else>
+                      <div v-if="candidateChapters.length > 0" class="drawer-detail-meta-row">
+                        <span>章节：{{ candidateChapters.length }}</span>
+                      </div>
+                      <p v-if="selectedCandidateDetail?.description" class="drawer-detail-desc">
+                        {{ selectedCandidateDetail.description }}
+                      </p>
+                      <p v-else class="drawer-detail-desc muted">暂无描述</p>
+                    </div>
+                  </section>
+                </Transition>
+              </template>
+            </SearchResultContainer>
+          </div>
+        </section>
       </div>
     </IonContent>
 
@@ -153,111 +290,6 @@
       @select="onFavFolderSelect"
       @add-folder="onAddFolder"
     />
-
-    <section
-      v-if="files.length > 0"
-      class="search-drawer"
-      :class="{ active: drawerState !== 'closed' }"
-      :style="drawerStyle"
-    >
-      <div class="drawer-grip-zone" @pointerdown="startDrawerDrag">
-        <Transition name="drawer-confirm">
-          <button
-            v-if="selectedCandidate"
-            type="button"
-            class="drawer-confirm-btn"
-            :disabled="!canConfirmCandidate"
-            @click.stop="confirmCandidate"
-          >
-            {{ confirmButtonLabel }}
-          </button>
-        </Transition>
-        <div class="drawer-grip" />
-      </div>
-
-      <div class="drawer-body">
-        <div class="drawer-target">
-          <span class="drawer-title">搜索匹配</span>
-          <span class="drawer-subtitle">{{ drawerTargetText }}</span>
-        </div>
-        <SearchHeaderBar
-          ref="drawerSearchRef"
-          :query="drawerQuery"
-          :loading="drawerSearchLoading"
-          @search="submitDrawerSearch"
-        />
-        <Transition name="chapter-panel">
-          <section
-            v-if="selectedCandidate && candidateChapters.length > 1"
-            class="chapter-select-panel"
-          >
-            <div class="chapter-select-head">
-              <span class="chapter-select-title">选择章节</span>
-              <span v-if="candidateDetailLoading" class="chapter-select-loading">加载中...</span>
-            </div>
-            <div class="chapter-list">
-              <button
-                v-for="chapter in candidateChapters"
-                :key="chapter.id"
-                type="button"
-                class="chapter-option"
-                :class="{ active: selectedChapterSortOrder === chapter.sortOrder }"
-                @click="selectedChapterSortOrder = chapter.sortOrder"
-              >
-                <span class="chapter-order">第{{ chapter.sortOrder }}话</span>
-                <span class="chapter-name">{{ chapter.title }}</span>
-              </button>
-            </div>
-          </section>
-        </Transition>
-        <SearchResultContainer
-          :result="drawerResult"
-          :items="drawerDisplayItems"
-          :loading="drawerSearchLoading"
-          :loading-next="false"
-          :error-message="drawerError"
-          :mode="drawerMode"
-          idle-text="点击未解析卡片后自动搜索"
-          empty-text="没有匹配结果"
-          @mode-change="drawerMode = $event"
-          @item-click="selectCandidate"
-          @retry="retryDrawerSearch"
-        >
-          <template #item-actions="{ item }">
-            <button
-              type="button"
-              class="drawer-detail-btn"
-              :class="{ active: drawerDetailVisible && selectedCandidate?.id === item.id }"
-              aria-label="查看详情"
-              @click.stop="openCandidateDetail(item)"
-            >
-              <IonIcon :icon="informationCircleOutline" />
-            </button>
-          </template>
-          <template #item-info-extra="{ item }">
-            <Transition name="drawer-detail-panel">
-              <section
-                v-if="drawerDetailVisible && selectedCandidate?.id === item.id"
-                class="drawer-info-expanded"
-              >
-                <div v-if="candidateDetailLoading" class="drawer-detail-loading">
-                  正在加载详情...
-                </div>
-                <div v-else>
-                  <div v-if="candidateChapters.length > 0" class="drawer-detail-meta-row">
-                    <span>章节：{{ candidateChapters.length }}</span>
-                  </div>
-                  <p v-if="selectedCandidateDetail?.description" class="drawer-detail-desc">
-                    {{ selectedCandidateDetail.description }}
-                  </p>
-                  <p v-else class="drawer-detail-desc muted">暂无描述</p>
-                </div>
-              </section>
-            </Transition>
-          </template>
-        </SearchResultContainer>
-      </div>
-    </section>
   </IonPage>
 </template>
 
@@ -345,9 +377,27 @@ const selectedChapterSortOrder = ref<number | null>(null)
 const drawerDetailVisible = ref(false)
 const resolvingCandidate = ref(false)
 
+// ---- 桌面端分栏 ----
+const DESKTOP_SPLITTER_WIDTH = 32
+const DESKTOP_MIN_PREVIEW_WIDTH = 360
+const DESKTOP_MIN_SEARCH_WIDTH = 320
+
+const desktopWorkspaceRef = ref<HTMLElement | null>(null)
+const desktopPanePercent = ref(58)
+const desktopSplitDragging = ref(false)
+
+const desktopWorkspaceStyle = computed(
+  () =>
+    ({
+      '--import-preview-percent': `${desktopPanePercent.value}%`,
+    }) as Record<string, string>,
+)
+
 let drawerDragStartY = 0
 let drawerDragStartOffset = 0
 let candidateDetailRequestSeq = 0
+let desktopSplitStartX = 0
+let desktopSplitStartPercent = desktopPanePercent.value
 
 const drawerDisplayItems = computed<SearchResultDisplayItem[]>(() =>
   (drawerResult.value?.content ?? []).map((item, indexInPage) => ({
@@ -454,8 +504,62 @@ const drawerBaseOffset = () => {
 }
 
 const drawerStyle = computed(() => ({
-  transform: `translateY(${drawerDragOffset.value ?? drawerBaseOffset()}px)`,
+  '--drawer-offset': `${drawerDragOffset.value ?? drawerBaseOffset()}px`,
 }))
+
+const desktopPanePercentBounds = () => {
+  const workspace = desktopWorkspaceRef.value
+  const width = workspace ? workspace.clientWidth - 32 : 0
+  if (width <= 0) return { min: 30, max: 70 }
+
+  const min = Math.max(30, (DESKTOP_MIN_PREVIEW_WIDTH / width) * 100)
+  const max = Math.min(
+    70,
+    ((width - DESKTOP_SPLITTER_WIDTH - DESKTOP_MIN_SEARCH_WIDTH) / width) * 100,
+  )
+  if (min > max) {
+    const fixed = Math.min(70, min)
+    return { min: fixed, max: fixed }
+  }
+
+  return { min, max }
+}
+
+const clampDesktopPanePercent = (percent: number) => {
+  const { min, max } = desktopPanePercentBounds()
+  return Math.min(max, Math.max(min, percent))
+}
+
+function startDesktopSplitDrag(event: PointerEvent) {
+  if (event.pointerType === 'mouse' && event.button !== 0) return
+
+  desktopSplitStartX = event.clientX
+  desktopSplitStartPercent = desktopPanePercent.value
+  desktopSplitDragging.value = true
+  window.addEventListener('pointermove', handleDesktopSplitDrag)
+  window.addEventListener('pointerup', endDesktopSplitDrag)
+  window.addEventListener('pointercancel', endDesktopSplitDrag)
+}
+
+function handleDesktopSplitDrag(event: PointerEvent) {
+  const width = (desktopWorkspaceRef.value?.clientWidth ?? 0) - 32
+  if (width <= 0) return
+
+  const nextPercent =
+    desktopSplitStartPercent + ((event.clientX - desktopSplitStartX) / width) * 100
+  desktopPanePercent.value = clampDesktopPanePercent(nextPercent)
+}
+
+function endDesktopSplitDrag() {
+  desktopSplitDragging.value = false
+  window.removeEventListener('pointermove', handleDesktopSplitDrag)
+  window.removeEventListener('pointerup', endDesktopSplitDrag)
+  window.removeEventListener('pointercancel', endDesktopSplitDrag)
+}
+
+function adjustDesktopPane(delta: number) {
+  desktopPanePercent.value = clampDesktopPanePercent(desktopPanePercent.value + delta)
+}
 
 const canSearchFile = (file: LocalFileParseItem) =>
   !file.validationError &&
@@ -995,11 +1099,19 @@ onBeforeUnmount(() => {
   window.removeEventListener('pointermove', handleDrawerDrag)
   window.removeEventListener('pointerup', endDrawerDrag)
   window.removeEventListener('pointercancel', endDrawerDrag)
+  endDesktopSplitDrag()
   LocalFileImportService.clearCachedParseResult()
 })
 </script>
 
 <style scoped>
+.toolbar {
+  width: 100%;
+  max-width: 920px;
+  margin-inline: auto;
+  box-sizing: border-box;
+}
+
 IonHeader {
   --ion-background-color: var(--ion-background-color, #fff);
 }
@@ -1021,6 +1133,10 @@ IonHeader {
   max-width: 1000px;
   margin-inline: auto;
   padding: 12px 14px 132px;
+}
+
+.import-workspace {
+  min-width: 0;
 }
 
 /* ---- 确认按钮 ---- */
@@ -1437,6 +1553,7 @@ IonHeader {
   border-radius: 18px 18px 0 0;
   background: #fffaf6;
   box-shadow: 0 -10px 28px rgb(76 42 24 / 0.16);
+  transform: translateY(var(--drawer-offset, 0px));
   transition: transform 0.24s ease;
   will-change: transform;
 }
@@ -1701,10 +1818,149 @@ IonHeader {
   transform: translateY(8px);
 }
 
-@media (min-width: 680px) {
+@media (min-width: 680px) and (max-width: 1079px) {
   .search-drawer {
     left: max(0px, calc((100vw - 720px) / 2));
     right: max(0px, calc((100vw - 720px) / 2));
+  }
+}
+
+@media (min-width: 1080px) {
+  :global(.ion-page-container .ion-page .import-workspace.desktop-page-content) {
+    width: 100%;
+    max-width: none;
+    margin-inline: 0;
+  }
+
+  :global(.ion-page ion-header.ion-no-border ion-toolbar.toolbar.desktop-page-content) {
+    width: 100%;
+    max-width: none;
+    margin-inline: 0;
+  }
+
+  .import-workspace {
+    display: grid;
+    grid-template-columns:
+      minmax(360px, var(--import-preview-percent, 58%))
+      32px
+      minmax(320px, 1fr);
+    gap: 0;
+    height: 100%;
+    min-height: 0;
+    margin-inline: 0;
+    padding: 12px 16px 16px;
+    overflow: hidden;
+  }
+
+  .page-container {
+    min-width: 0;
+    min-height: 0;
+    max-width: none;
+    margin: 0;
+    padding: 0 12px 24px 0;
+    overflow-y: auto;
+  }
+
+  .desktop-splitter {
+    position: relative;
+    z-index: 1;
+    cursor: col-resize;
+    touch-action: none;
+    outline: none;
+  }
+
+  .desktop-splitter::before {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 5px;
+    height: 48px;
+    border-radius: 999px;
+    background: #d2aa91;
+    content: '';
+    transform: translate(-50%, -50%);
+    transition:
+      background-color 0.15s ease,
+      width 0.15s ease;
+  }
+
+  .desktop-splitter:hover::before,
+  .desktop-splitter:focus-visible::before,
+  .desktop-splitter.dragging::before {
+    height: 56px;
+    background: #fa9c69;
+  }
+
+  .desktop-splitter.dragging {
+    cursor: col-resize;
+  }
+
+  .import-workspace.split-dragging {
+    user-select: none;
+  }
+
+  .search-drawer {
+    position: relative;
+    inset: auto;
+    z-index: auto;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
+    padding: 0;
+    border: 1px solid #f0e3da;
+    border-radius: 8px;
+    box-shadow: 0 2px 12px rgb(115 67 38 / 0.06);
+    transform: none;
+    transition: none;
+    will-change: auto;
+    overflow: hidden;
+  }
+
+  .search-drawer.active {
+    box-shadow: 0 2px 12px rgb(115 67 38 / 0.06);
+  }
+
+  .drawer-grip-zone {
+    flex: 0 0 42px;
+    justify-content: flex-end;
+    height: 42px;
+    padding: 0 12px;
+    touch-action: auto;
+  }
+
+  .drawer-grip {
+    display: none;
+  }
+
+  .drawer-confirm-btn {
+    position: static;
+    max-width: 100%;
+    transform: none;
+  }
+
+  .drawer-confirm-enter-active,
+  .drawer-confirm-leave-active {
+    transition:
+      opacity 0.18s ease,
+      transform 0.18s ease;
+  }
+
+  .drawer-confirm-enter-from,
+  .drawer-confirm-leave-to {
+    transform: translateY(8px);
+  }
+
+  .drawer-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: auto;
+    padding: 0 12px 16px;
+  }
+
+  .drawer-body :deep(.result-shell) {
+    margin-bottom: 24px;
   }
 }
 </style>

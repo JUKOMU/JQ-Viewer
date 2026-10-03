@@ -760,6 +760,26 @@ describe('AlbumDetailPage tab 状态', () => {
     wrapper.unmount()
   })
 
+  test('离开带 chapterId 的详情页时不触发空 albumId 重载', async () => {
+    mocks.setRouteChapterId?.('chapter-1')
+    mocks.getAlbum.mockResolvedValue(makeAlbum())
+    mocks.getPhoto.mockResolvedValue(makePhoto())
+
+    const wrapper = mount(AlbumDetailPage)
+    await settle()
+    mocks.getAlbum.mockClear()
+    mocks.getPhoto.mockClear()
+
+    mocks.setRouteId?.(undefined)
+    mocks.setRouteChapterId?.(undefined)
+    await settle()
+
+    expect(mocks.getAlbum).not.toHaveBeenCalled()
+    expect(mocks.getPhoto).not.toHaveBeenCalled()
+    expect(wrapper.findComponent({ name: 'AlbumHeader' }).props('loading')).toBe(false)
+    wrapper.unmount()
+  })
+
   test('详情加载未完成时返回页面会强制重新加载', async () => {
     const firstAlbum = deferred<AlbumDetail>()
     const firstPhoto = deferred<PhotoDetail>()

@@ -12,7 +12,6 @@ import android.os.Build;
 import android.os.Environment;
 import android.provider.DocumentsContract;
 import android.provider.MediaStore;
-import android.util.Log;
 import androidx.annotation.NonNull;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
@@ -31,6 +30,8 @@ import io.github.jukomu.platform.permission.PermissionState;
 import io.github.jukomu.runtime.ServiceExecutors;
 import org.json.JSONArray;
 import org.json.JSONObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Map;
 import java.util.concurrent.*;
@@ -46,6 +47,7 @@ import static android.app.Activity.RESULT_OK;
  * <p>网络监听和 OCR 线程属于当前插件会话，调用 {@link #destroy()} 后停止接收新任务。
  */
 public final class SystemPluginHandler {
+    private static final Logger LOGGER = LoggerFactory.getLogger(SystemPluginHandler.class);
 
     /**
      * 封装可持久化 URI 权限操作，默认实现直接调用 ContentResolver。
@@ -55,7 +57,6 @@ public final class SystemPluginHandler {
         void take(Uri uri, int flags);
     }
 
-    private static final String TAG = "SystemPluginHandler";
     private static final long PROBE_DEBOUNCE_MS = 2000;
     private static final int REQUEST_PICK_IMAGE = 1001;
     private static final int REQUEST_PICK_FOLDER = 1002;
@@ -143,7 +144,7 @@ public final class SystemPluginHandler {
         connectivityManager = (ConnectivityManager) context.getSystemService(
             Context.CONNECTIVITY_SERVICE);
         if (connectivityManager == null) {
-            Log.w(TAG, "ConnectivityManager 不可用，跳过网络监听");
+            LOGGER.warn("ConnectivityManager 不可用，跳过网络监听");
             return;
         }
 
@@ -176,7 +177,7 @@ public final class SystemPluginHandler {
                 return;
             }
             connectivityManager.registerDefaultNetworkCallback(networkCallback);
-            Log.i(TAG, "网络变化监听已注册");
+            LOGGER.info("网络变化监听已注册");
         }
     }
 
@@ -223,7 +224,7 @@ public final class SystemPluginHandler {
             try {
                 connectivityManager.unregisterNetworkCallback(networkCallback);
             } catch (IllegalArgumentException error) {
-                Log.d(TAG, "取消注册网络回调失败", error);
+                LOGGER.debug("取消注册网络回调失败", error);
             }
         }
         if (domainProbeExecutor != null) {
@@ -267,7 +268,7 @@ public final class SystemPluginHandler {
             result.put("allDeadFallback", allDeadFallback);
             call.resolve(result);
         } catch (Exception error) {
-            Log.e(TAG, "获取域名状态失败", error);
+            LOGGER.error("获取域名状态失败", error);
             call.reject("获取域名状态失败，请稍后重试");
         }
     }
@@ -305,7 +306,7 @@ public final class SystemPluginHandler {
             result.put("results", items);
             call.resolve(result);
         } catch (Exception error) {
-            Log.e(TAG, "测速失败", error);
+            LOGGER.error("测速失败", error);
             call.reject("测速失败，请稍后重试");
         }
     }
@@ -387,7 +388,7 @@ public final class SystemPluginHandler {
             } else {
                 boolean granted = grantResults.length > 0
                     && grantResults[0] == PackageManager.PERMISSION_GRANTED;
-                Log.i(TAG, "启动时存储权限请求结果: granted=" + granted);
+                LOGGER.info("启动时存储权限请求结果: granted=" + granted);
             }
         } else if (requestCode == PermissionService.REQUEST_POST_NOTIFICATIONS) {
             boolean granted = permissionService.interpretNotificationResult(grantResults);
@@ -401,7 +402,7 @@ public final class SystemPluginHandler {
                 result.put("granted", granted);
                 call.resolve(result);
             } else {
-                Log.i(TAG, "通知权限请求结果: granted=" + granted);
+                LOGGER.info("通知权限请求结果: granted=" + granted);
             }
         }
     }
@@ -551,7 +552,7 @@ public final class SystemPluginHandler {
             result.put("opened", true);
             call.resolve(result);
         } catch (RuntimeException error) {
-            Log.w(TAG, "打开通知设置失败", error);
+            LOGGER.warn("打开通知设置失败", error);
             call.reject("无法打开通知设置页: " + error.getMessage());
         }
     }
@@ -635,13 +636,13 @@ public final class SystemPluginHandler {
             startEvent.put("timestamp", System.currentTimeMillis());
             publishNetworkEvent(startEvent);
 
-            Log.i(TAG, "重新探活域名...");
+            LOGGER.info("重新探活域名...");
             client.reprobeDomains();
-            Log.i(TAG, "域名重新探活完成");
+            LOGGER.info("域名重新探活完成");
 
             publishDomainProbeResult(client);
         } catch (Exception error) {
-            Log.w(TAG, "域名重新探活失败", error);
+            LOGGER.warn("域名重新探活失败", error);
             JSObject errorEvent = new JSObject();
             errorEvent.put("phase", "error");
             String message = error.getMessage();
@@ -730,7 +731,7 @@ public final class SystemPluginHandler {
                 result.put("error", "识别超时，请重试");
             } else if (errorHolder[0] != null) {
                 result.put("text", "");
-                Log.e(TAG, "OCR识别失败", errorHolder[0]);
+                LOGGER.error("OCR识别失败", errorHolder[0]);
                 result.put("error", "识别失败，请重试");
             } else if (resultHolder[0] != null) {
                 result.put("text", resultHolder[0].getText());
@@ -743,7 +744,7 @@ public final class SystemPluginHandler {
         } catch (Exception error) {
             JSObject result = new JSObject();
             result.put("text", "");
-            Log.e(TAG, "OCR调用失败", error);
+            LOGGER.error("OCR调用失败", error);
             result.put("error", "识别失败，请重试");
             call.resolve(result);
         }
@@ -776,7 +777,7 @@ public final class SystemPluginHandler {
                 Intent.FLAG_GRANT_READ_URI_PERMISSION
                     | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
         } catch (Exception error) {
-            Log.w(TAG, "takePersistableUriPermission failed", error);
+            LOGGER.warn("takePersistableUriPermission failed", error);
             call.reject("无法持久化文件夹权限", error);
             return;
         }

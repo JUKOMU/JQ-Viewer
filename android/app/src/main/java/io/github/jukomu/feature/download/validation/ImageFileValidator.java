@@ -2,7 +2,8 @@ package io.github.jukomu.feature.download.validation;
 
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
-import android.util.Log;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 
@@ -11,8 +12,7 @@ import java.io.File;
  *
  */
 public final class ImageFileValidator {
-
-    private static final String TAG = "ImageFileValidator";
+    private static final Logger LOGGER = LoggerFactory.getLogger(ImageFileValidator.class);
 
     private ImageFileValidator() {
     }
@@ -32,7 +32,7 @@ public final class ImageFileValidator {
             BitmapFactory.decodeFile(imageFile.getAbsolutePath(), options);
             return options.outWidth > 0 && options.outHeight > 0;
         } catch (RuntimeException | OutOfMemoryError error) {
-            Log.w(TAG, "快速图片校验失败: " + imageFile.getPath(), error);
+            LOGGER.warn("快速图片校验失败: " + imageFile.getPath(), error);
             return false;
         }
     }
@@ -51,7 +51,7 @@ public final class ImageFileValidator {
             BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.length, options);
             return options.outWidth > 0 && options.outHeight > 0;
         } catch (RuntimeException | OutOfMemoryError error) {
-            Log.w(TAG, "快速图片字节校验失败", error);
+            LOGGER.warn("快速图片字节校验失败", error);
             return false;
         }
     }
@@ -70,10 +70,10 @@ public final class ImageFileValidator {
             bitmap = BitmapFactory.decodeFile(imageFile.getAbsolutePath());
             return bitmap != null && bitmap.getWidth() > 0 && bitmap.getHeight() > 0;
         } catch (RuntimeException error) {
-            Log.w(TAG, "完整图片校验失败: " + imageFile.getPath(), error);
+            LOGGER.warn("完整图片校验失败: " + imageFile.getPath(), error);
             return false;
         } catch (OutOfMemoryError error) {
-            Log.e(TAG, "完整图片校验资源不足: " + imageFile.getPath(), error);
+            LOGGER.error("完整图片校验资源不足: " + imageFile.getPath(), error);
             throw error;
         } finally {
             if (bitmap != null && !bitmap.isRecycled()) {

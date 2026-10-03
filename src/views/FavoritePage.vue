@@ -37,8 +37,8 @@
         </div>
 
         <SearchResultContainer
-          class="desktop-page-content"
           ref="resultContainerRef"
+          class="desktop-page-content"
           :result="resultMeta"
           :items="displayItems"
           :loading="initialLoading"

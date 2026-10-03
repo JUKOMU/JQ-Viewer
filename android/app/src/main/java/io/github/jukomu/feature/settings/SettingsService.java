@@ -1,7 +1,6 @@
 package io.github.jukomu.feature.settings;
 
 import android.content.Context;
-import android.util.Log;
 import io.github.jukomu.feature.cache.ImageCache;
 import io.github.jukomu.feature.download.DownloadService;
 import io.github.jukomu.feature.download.api.DownloadTaskReader;
@@ -11,6 +10,8 @@ import io.github.jukomu.platform.permission.PermissionService;
 import io.github.jukomu.platform.permission.PermissionState;
 import io.github.jukomu.platform.persistence.SettingsStore;
 import org.json.JSONObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 
@@ -19,8 +20,7 @@ import java.util.List;
  * 纯业务逻辑，不依赖 Capacitor API。
  */
 public class SettingsService {
-
-    private static final String TAG = "SettingsService";
+    private static final Logger LOGGER = LoggerFactory.getLogger(SettingsService.class);
     public static final int DEFAULT_CONCURRENCY = 6;
     private static final int MIN_CONCURRENCY = 1;
     private static final int MAX_CONCURRENCY = 12;
@@ -95,10 +95,28 @@ public class SettingsService {
             ret.put("readerKeepScreenOn", getReaderKeepScreenOn());
             ret.put("readerVolumeNavigation", getReaderVolumeNavigation());
             ret.put("readerAutoShowToolbarAtEnd", getReaderAutoShowToolbarAtEnd());
+            ret.put("apiRouteMode", getApiRouteMode());
+            ret.put("apiRouteDomain", settingsDb.getString("api_route_domain") == null
+                ? "" : settingsDb.getString("api_route_domain"));
         } catch (Exception e) {
-            Log.w(TAG, "构建全部设置信息失败", e);
+            LOGGER.warn("构建全部设置信息失败", e);
         }
         return ret;
+    }
+
+    public String getApiRouteMode() {
+        return "manual".equals(settingsDb.getString("api_route_mode")) ? "manual" : "auto";
+    }
+
+    public void setApiRoute(String mode, String domain) {
+        if (!"auto".equals(mode) && !"manual".equals(mode)) {
+            throw new IllegalArgumentException("mode must be auto or manual");
+        }
+        if ("manual".equals(mode) && (domain == null || domain.isBlank())) {
+            throw new IllegalArgumentException("domain is required in manual mode");
+        }
+        settingsDb.putString("api_route_mode", mode);
+        settingsDb.putString("api_route_domain", "manual".equals(mode) ? domain : "");
     }
 
     public static int normalizeConcurrency(int value) {

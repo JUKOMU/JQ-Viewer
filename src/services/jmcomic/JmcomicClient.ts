@@ -165,6 +165,15 @@ export interface JmcomicClient {
 
   requestManageStorage(): Promise<{ granted: boolean; permissionType: string; apiLevel: number }>
 
+  getLogs(options: { fromLine: number; fromOffset: number }): Promise<{
+    fileName: string
+    updatedAt: number
+    nextLine: number
+    nextOffset: number
+    content: string
+    reset: boolean
+  }>
+
   getAllSettings(): Promise<AllSettings>
 
   setReaderPreloadPages(options: { n: number }): Promise<{ success: boolean }>
@@ -230,6 +239,18 @@ export interface JmcomicClient {
   ): Promise<JmcomicListenerHandle>
 
   getDomainStates(): Promise<DomainStates>
+
+  getUsedDomain(): Promise<{ domain: string | null }>
+
+  applyApiRoute(options: {
+    mode: 'auto' | 'manual'
+    domain?: string
+  }): Promise<{ domain: string | null }>
+
+  setApiRoutePreference(options: {
+    mode: 'auto' | 'manual'
+    domain?: string
+  }): Promise<{ success: boolean }>
 
   reprobeDomains(): Promise<void>
 

@@ -9,13 +9,14 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
 import android.provider.DocumentsContract;
-import android.util.Log;
 import androidx.core.app.NotificationCompat;
 import androidx.core.content.FileProvider;
 import io.github.jukomu.MainActivity;
 import io.github.jukomu.R;
 import io.github.jukomu.feature.localfile.data.LocalFileRef;
 import io.github.jukomu.feature.localfile.data.LocalFileRefResolver;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -25,8 +26,7 @@ import java.io.FileNotFoundException;
  * 每任务 notificationId 只用于完成或失败终态。
  */
 public class ExportNotificationHelper {
-
-    private static final String TAG = "ExportNotification";
+    private static final Logger LOGGER = LoggerFactory.getLogger(ExportNotificationHelper.class);
     private static final String CHANNEL_ID = "pdf_export";
     private static final String CHANNEL_NAME = "文件导出";
     private static final int ICON = R.mipmap.ic_launcher;
@@ -102,7 +102,7 @@ public class ExportNotificationHelper {
                 PendingIntent.FLAG_IMMUTABLE
             );
         } catch (Exception e) {
-            Log.d(TAG, "导出完成通知打开入口创建失败", e);
+            LOGGER.debug("导出完成通知打开入口创建失败", e);
             return null;
         }
     }
@@ -181,9 +181,9 @@ public class ExportNotificationHelper {
         try {
             manager.cancel(notificationId);
         } catch (SecurityException e) {
-            Log.d(TAG, "通知权限未授予，跳过取消导出通知", e);
+            LOGGER.debug("通知权限未授予，跳过取消导出通知", e);
         } catch (RuntimeException e) {
-            Log.w(TAG, "取消导出通知失败", e);
+            LOGGER.warn("取消导出通知失败", e);
         }
     }
 
@@ -192,9 +192,9 @@ public class ExportNotificationHelper {
         try {
             manager.notify(notificationId, notification);
         } catch (SecurityException e) {
-            Log.d(TAG, "通知权限未授予，跳过导出通知", e);
+            LOGGER.debug("通知权限未授予，跳过导出通知", e);
         } catch (RuntimeException e) {
-            Log.w(TAG, "发布导出通知失败", e);
+            LOGGER.warn("发布导出通知失败", e);
         }
     }
 }

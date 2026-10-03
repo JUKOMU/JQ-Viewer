@@ -204,6 +204,8 @@ export interface AllSettings {
   readerVolumeNavigation: boolean
   readerAutoShowToolbarAtEnd?: boolean
   readerWidthPercent?: number
+  apiRouteMode?: 'auto' | 'manual'
+  apiRouteDomain?: string
 }
 
 // --- 设置页：文件搬迁 ---
@@ -360,10 +362,10 @@ export interface ClientStateSnapshot {
 /**
  * 网络探活事件。由 Android 侧 notifyListeners("networkProbe") 推送。
  * - phase=network_changed|network_lost|probing|error: 仅含 message + timestamp
- * - phase=result: 额外含 domains (域名+可达性) + alive (可达数) + total (总数) + allDeadFallback (全死回退标记)
+ * - phase=result|network_restored: 额外含 domains (域名+可达性) + alive (可达数) + total (总数) + allDeadFallback (全死回退标记)
  */
 export interface NetworkProbeEvent {
-  phase: 'network_changed' | 'network_lost' | 'probing' | 'result' | 'error'
+  phase: 'network_changed' | 'network_lost' | 'network_restored' | 'probing' | 'result' | 'error'
   message: string
   timestamp: number
   domains?: { domain: string; reachable: boolean }[]

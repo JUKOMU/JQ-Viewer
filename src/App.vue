@@ -3,14 +3,23 @@
     <div class="app-shell">
       <MainMenu content-id="main-content" :disabled="mainMenuDisabled"></MainMenu>
       <div id="main-content" class="ion-page-container">
-        <router-view v-slot="{ Component }">
-          <transition :name="transitionName" mode="out-in" @after-enter="onAfterEnter">
-            <keep-alive :include="keepAliveNames" :exclude="keepAliveExclude">
-              <component :is="Component" />
-            </keep-alive>
-          </transition>
-        </router-view>
+        <DesktopRouteTrail
+          v-if="showDesktopRouteTrail"
+          :route-stack="routeStack"
+          :current-path="route.fullPath"
+          @navigate="navigateFromDesktopRouteTrail"
+        />
+        <div class="page-view-container">
+          <router-view v-slot="{ Component }">
+            <transition :name="transitionName" mode="out-in" @after-enter="onAfterEnter">
+              <keep-alive :include="keepAliveNames" :exclude="keepAliveExclude">
+                <component :is="Component" />
+              </keep-alive>
+            </transition>
+          </router-view>
+        </div>
       </div>
+      <RouteSwitchButton />
     </div>
   </ion-app>
 </template>
@@ -32,6 +41,11 @@ import { UpdateService } from '@/services/UpdateService'
 import { presentUpdatePrompt } from '@/services/UpdatePromptService'
 import type { ClientStateSnapshot, UpdateManifest } from '@/services/JmcomicTypes'
 import { useDesktopBackButton } from '@/composables/useDesktopBackButton'
+import DesktopRouteTrail from '@/components/common/DesktopRouteTrail.vue'
+import RouteSwitchButton from '@/components/common/RouteSwitchButton.vue'
+import { useApiRoute } from '@/composables/useApiRoute'
+import { truncateDesktopRouteStack, updateDesktopRouteStack } from '@/utils/desktopRouteTrail'
+import { normalizeRuntimeError } from '@/runtime/errors'
 
 useDesktopBackButton()
 
@@ -39,11 +53,14 @@ const { isMenuNavigation, isWideMenu } = useSideMenuState()
 
 const route = useRoute()
 const router = useRouter()
+const apiRoute = useApiRoute()
 
 const routeStack = ref<string[]>([])
 const isBack = ref(false)
 const keepAliveExclude = ref<string[]>([])
 let initialReaderRestorePending = true
+let pendingHistoryNavigation: 'back' | 'forward' | null = null
+let pendingTrailTargetIndex: number | null = null
 
 const READER_ROUTE_RESTORE_KEY = 'jq_reader_route_restore'
 const READER_ROUTE_RESTORE_TTL_MS = 2 * 60 * 1000
@@ -63,6 +80,24 @@ const isReaderRoutePath = (path: string) =>
 const mainMenuDisabled = computed(
   () => isReaderRoutePath(route.path) || (!isWideMenu.value && route.meta.menu !== true),
 )
+const showDesktopRouteTrail = computed(
+  () => import.meta.env.MODE === 'desktop' && isWideMenu.value && !mainMenuDisabled.value,
+)
+
+const navigateFromDesktopRouteTrail = (payload: { path: string; trailIndex: number }) => {
+  pendingTrailTargetIndex = payload.trailIndex
+  if (payload.path === route.fullPath) {
+    isBack.value = true
+    routeStack.value = truncateDesktopRouteStack(
+      routeStack.value,
+      route.fullPath,
+      payload.trailIndex,
+    )
+    pendingTrailTargetIndex = null
+    return
+  }
+  void router.push(payload.path)
+}
 
 const clearReaderRoute = () => {
   localStorage.removeItem(READER_ROUTE_RESTORE_KEY)
@@ -142,6 +177,11 @@ const updateReaderCurrentPage = (page: number) => {
 
 provide('updateReaderCurrentPage', updateReaderCurrentPage)
 
+const removeHistoryListener = router.options.history.listen((_to, _from, info) => {
+  pendingHistoryNavigation =
+    info.direction === 'back' || info.direction === 'forward' ? info.direction : null
+})
+
 const syncReaderRouteSnapshot = (path: string, fullPath: string) => {
   if (isReaderRoutePath(path)) {
     saveReaderRoute(fullPath, pendingReaderFromPath || undefined)
@@ -152,16 +192,26 @@ const syncReaderRouteSnapshot = (path: string, fullPath: string) => {
 }
 
 router.beforeEach((to, from) => {
-  const fromMenu = isMenuNavigation.value
   isMenuNavigation.value = false
+  const historyNavigation = pendingHistoryNavigation
+  const trailTargetIndex = pendingTrailTargetIndex
+  pendingHistoryNavigation = null
+  pendingTrailTargetIndex = null
 
-  const idx = routeStack.value.lastIndexOf(to.fullPath)
-  if (idx >= 0 && !fromMenu) {
+  if (historyNavigation === 'back' || trailTargetIndex !== null) {
     isBack.value = true
-    routeStack.value = routeStack.value.slice(0, idx)
+    routeStack.value =
+      trailTargetIndex !== null
+        ? truncateDesktopRouteStack(routeStack.value, from.fullPath, trailTargetIndex)
+        : updateDesktopRouteStack(routeStack.value, from.fullPath, to.fullPath, 'back')
   } else {
     isBack.value = false
-    if (from.fullPath) routeStack.value.push(from.fullPath)
+    routeStack.value = updateDesktopRouteStack(
+      routeStack.value,
+      from.fullPath,
+      to.fullPath,
+      'forward',
+    )
 
     // 前进导航：从 keepAlive 缓存排除，强制组件重建还原初始状态
     const name = to.name
@@ -207,6 +257,7 @@ let clientStateHandle: ListenerHandle | null = null
 let clientStatePollTimer: ReturnType<typeof setTimeout> | null = null
 let clientStateObservationGeneration = 0
 let launchRouteHandle: ListenerHandle | null = null
+let networkRecoveryHandle: ListenerHandle | null = null
 let launchRouteDrain: Promise<void> = Promise.resolve()
 let launchRouteNavigationVersion = 0
 
@@ -296,7 +347,7 @@ onMounted(async () => {
   initialReaderRestorePending = false
   syncReaderRouteSnapshot(route.path, route.fullPath)
 
-  const { initAuth } = useAuth()
+  const auth = useAuth()
 
   // 加载设置到内存缓存（必须在任何页面渲染前完成）
   await initSettings()
@@ -308,6 +359,8 @@ onMounted(async () => {
   let latestClientStateTimestamp = -Infinity
   let authGeneration = 0
   let authState: 'idle' | 'running' | 'complete' = 'idle'
+  let networkRecoveryPending = false
+  let recoveringAuth = false
   const handleClientState = async (state: ClientStateSnapshot) => {
     if (state.timestamp < latestClientStateTimestamp) return
     latestClientStateTimestamp = state.timestamp
@@ -315,7 +368,9 @@ onMounted(async () => {
     if (state.state === 'initializing') {
       authGeneration++
       authState = 'idle'
-      if (!activeToast) activeToast = await showToast('客户端初始化', 'medium', 0)
+      if (!networkRecoveryPending && !activeToast) {
+        activeToast = await showToast('客户端初始化', 'medium', 0)
+      }
       return
     }
 
@@ -337,19 +392,93 @@ onMounted(async () => {
       observationGeneration === clientStateObservationGeneration &&
       currentAuthGeneration === authGeneration &&
       latestClientStateTimestamp === authTimestamp
-    showToast('初始化完成', 'success')
-    const loginToast = await showToast('正在自动登录...', 'medium', 0)
+    const recovering = networkRecoveryPending
+    networkRecoveryPending = false
+    recoveringAuth = recovering
+    if (!recovering) showToast('初始化完成', 'success')
+    const loginToast = recovering ? null : await showToast('正在自动登录...', 'medium', 0)
     if (!canCommitAuth()) {
-      await loginToast.dismiss()
+      await loginToast?.dismiss()
+      recoveringAuth = false
       return
     }
     activeToast = loginToast
-    const result = await initAuth(canCommitAuth)
-    await loginToast.dismiss()
+    let result: Awaited<ReturnType<typeof auth.initAuth>>
+    try {
+      await apiRoute.applySavedPreference()
+      result = recovering
+        ? await auth.reauthenticate(canCommitAuth)
+        : await auth.initAuth(canCommitAuth)
+      await apiRoute.refresh().catch(() => undefined)
+    } catch (error) {
+      showToast(`线路应用失败：${normalizeRuntimeError(error, '无法应用线路').message}`, 'danger')
+      result = 'retryable-error'
+    }
+    await loginToast?.dismiss()
     if (activeToast === loginToast) activeToast = null
+    recoveringAuth = false
     if (!canCommitAuth()) return
     authState = result === 'retryable-error' ? 'idle' : 'complete'
-    if (result === 'authenticated') showToast('登录成功', 'success')
+    if (!recovering && result === 'authenticated') showToast('登录成功', 'success')
+    if (recovering && result === 'retryable-error') {
+      showToast('网络恢复后登录失败，请稍后重试', 'danger')
+    }
+    if (import.meta.env.MODE === 'desktop' && networkRecoveryPending && authState === 'complete') {
+      void recoverDesktopNetwork()
+    }
+  }
+
+  const recoverDesktopNetwork = async () => {
+    if (authState === 'running') {
+      if (!recoveringAuth) networkRecoveryPending = true
+      return
+    }
+    networkRecoveryPending = false
+    authState = 'running'
+    recoveringAuth = true
+    const currentGeneration = ++authGeneration
+    let recoverAgain = false
+    const canCommit = () =>
+      observationGeneration === clientStateObservationGeneration &&
+      currentGeneration === authGeneration
+    try {
+      await apiRoute.applySavedPreference()
+      if ((await auth.reauthenticate(canCommit)) === 'retryable-error') {
+        showToast('网络恢复后登录失败，请稍后重试', 'danger')
+      }
+      await apiRoute.refresh().catch(() => undefined)
+    } catch (error) {
+      showToast(`网络恢复失败：${normalizeRuntimeError(error, '线路恢复失败').message}`, 'danger')
+    } finally {
+      recoveringAuth = false
+      if (canCommit()) {
+        authState = 'complete'
+        recoverAgain = networkRecoveryPending
+      }
+    }
+    if (recoverAgain) void recoverDesktopNetwork()
+  }
+
+  try {
+    networkRecoveryHandle = await JmcomicService.addNetworkProbeListener((event) => {
+      if (event.phase === 'network_changed' || event.phase === 'network_lost') {
+        networkRecoveryPending = true
+      }
+      if (import.meta.env.MODE === 'desktop' && event.phase === 'network_restored') {
+        void recoverDesktopNetwork()
+      } else if (
+        import.meta.env.MODE !== 'desktop' &&
+        event.phase === 'network_restored' &&
+        authState === 'idle'
+      ) {
+        networkRecoveryPending = true
+        void JmcomicService.getClientState()
+          .then((state) => handleClientState(state))
+          .catch(() => undefined)
+      }
+    })
+  } catch {
+    // 客户端状态变化仍可在移动端触发恢复流程。
   }
 
   let subscribed = false
@@ -404,6 +533,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  removeHistoryListener()
   clientStateObservationGeneration++
   if (clientStatePollTimer) clearTimeout(clientStatePollTimer)
   clientStatePollTimer = null
@@ -412,6 +542,8 @@ onBeforeUnmount(() => {
   activeToast = null
   clientStateHandle?.remove()
   clientStateHandle = null
+  networkRecoveryHandle?.remove()
+  networkRecoveryHandle = null
   launchRouteHandle?.remove()
   launchRouteHandle = null
   void disposeNetworkProbeStore()
@@ -432,6 +564,8 @@ onBeforeUnmount(() => {
 
 .ion-page-container {
   position: relative;
+  display: flex;
+  flex-direction: column;
   flex: 1 1 auto;
   width: auto;
   height: auto;
@@ -440,6 +574,15 @@ onBeforeUnmount(() => {
   contain: layout size style;
   container-type: inline-size;
   z-index: 0;
+  overflow: hidden;
+}
+
+.page-view-container {
+  position: relative;
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
   overflow: hidden;
 }
 

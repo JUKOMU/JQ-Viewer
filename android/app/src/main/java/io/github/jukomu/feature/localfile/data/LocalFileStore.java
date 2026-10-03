@@ -83,7 +83,9 @@ public class LocalFileStore extends SQLiteOpenHelper {
             "Unsupported local file database upgrade: " + oldVersion + " -> " + newVersion);
     }
 
-    /** Pre-v9 management records are reset; referenced files are never accessed. */
+    /**
+     * Pre-v9 management records are reset; referenced files are never accessed.
+     */
     private static void rebuildLegacyDatabase(SQLiteDatabase db, int oldVersion) {
         db.execSQL("DROP TABLE IF EXISTS pdf_export_chapters");
         db.execSQL("DROP TABLE IF EXISTS pdf_export_volumes");
@@ -98,7 +100,9 @@ public class LocalFileStore extends SQLiteOpenHelper {
         writeResetMeta(db, true, oldVersion, "SCHEMA_REBUILD_V11", 0, 0, true, true);
     }
 
-    /** Upgrade the released v9 locator schema without touching the referenced files. */
+    /**
+     * Upgrade the released v9 locator schema without touching the referenced files.
+     */
     private static void migrateV9ToV11(SQLiteDatabase db) {
         createSchema(db);
         int[] counts = copyV9Files(db, "pdf_files", false);

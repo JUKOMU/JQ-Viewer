@@ -9,21 +9,24 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.Executor;
-import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.*;
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 /**
- * 读取 JMComic 域名状态，并串行合并重复的手动探活请求。
+ * 读取 JMComic 域名状态、合并探活请求并监听 Desktop 网络变化。
  */
 public final class NetworkService implements AutoCloseable {
     private final Operations operations;
     private final Executor executor;
     private final Consumer<NetworkProbeEvent> eventPublisher;
+    private final ScheduledExecutorService networkMonitor;
     private final Object lifecycleLock = new Object();
     private boolean probing;
     private boolean closed;
+    private boolean awaitingClient;
+    private String networkFingerprint;
 
     public NetworkService(Operations operations, Executor executor, EventHub eventHub) {
         this(operations, executor, event -> eventHub.publish("networkProbe", event));
@@ -37,6 +40,18 @@ public final class NetworkService implements AutoCloseable {
         this.operations = Objects.requireNonNull(operations, "operations");
         this.executor = Objects.requireNonNull(executor, "executor");
         this.eventPublisher = Objects.requireNonNull(eventPublisher, "eventPublisher");
+        if (operations.recoverNetwork() == null) {
+            networkMonitor = null;
+        } else {
+            networkFingerprint = currentNetworkFingerprint();
+            networkMonitor = Executors.newSingleThreadScheduledExecutor(task -> {
+                Thread thread = new Thread(task, "jq-viewer-network-monitor");
+                thread.setDaemon(true);
+                return thread;
+            });
+            networkMonitor.scheduleWithFixedDelay(
+                this::checkNetwork, 500, 1000, TimeUnit.MILLISECONDS);
+        }
     }
 
     public DomainStatesResponse getDomainStates() {
@@ -110,6 +125,106 @@ public final class NetworkService implements AutoCloseable {
         eventPublisher.accept(event);
     }
 
+    private void checkNetwork() {
+        String current = currentNetworkFingerprint();
+        String previous = null;
+        boolean changed;
+        synchronized (lifecycleLock) {
+            if (closed) return;
+            changed = !current.equals(networkFingerprint);
+            if (changed) {
+                previous = networkFingerprint;
+                networkFingerprint = current;
+            } else if (awaitingClient
+                && operations.clientReady() != null
+                && operations.clientReady().getAsBoolean()) {
+                awaitingClient = false;
+            } else {
+                return;
+            }
+        }
+        if (!changed) {
+            scheduleRecovery();
+            return;
+        }
+        if (current.isEmpty()) {
+            synchronized (lifecycleLock) {
+                awaitingClient = false;
+            }
+            if (!previous.isEmpty()) publish(NetworkProbeEvent.networkLost());
+            return;
+        }
+
+        publish(NetworkProbeEvent.networkChanged());
+        if (operations.clientReady() != null && !operations.clientReady().getAsBoolean()) {
+            synchronized (lifecycleLock) {
+                awaitingClient = true;
+            }
+            if (operations.retryClient() != null) operations.retryClient().run();
+            return;
+        }
+        synchronized (lifecycleLock) {
+            awaitingClient = false;
+        }
+        scheduleRecovery();
+    }
+
+    private void scheduleRecovery() {
+        try {
+            executor.execute(this::recoverAndProbe);
+        } catch (RejectedExecutionException exception) {
+            publish(NetworkProbeEvent.error("网络恢复任务无法启动，请稍后重试"));
+        }
+    }
+
+    private void recoverAndProbe() {
+        synchronized (lifecycleLock) {
+            if (closed) return;
+        }
+        try {
+            operations.recoverNetwork().run();
+            publish(NetworkProbeEvent.probing());
+            operations.reprobe().run();
+            publish(NetworkProbeEvent.networkRestored(
+                toDomainStates(operations.domainStates().get())));
+        } catch (RuntimeException exception) {
+            publish(NetworkProbeEvent.error(messageOf("网络恢复探测失败", exception)));
+        }
+    }
+
+    private static String currentNetworkFingerprint() {
+        try {
+            String routeAddress;
+            try (java.net.DatagramSocket socket = new java.net.DatagramSocket()) {
+                // UDP connect only selects the operating-system route; it sends no packet.
+                socket.connect(java.net.InetAddress.getByName("1.1.1.1"), 53);
+                java.net.InetAddress localAddress = socket.getLocalAddress();
+                if (localAddress.isAnyLocalAddress()) return "";
+                routeAddress = localAddress.getHostAddress();
+            }
+            var interfaces = java.net.NetworkInterface.getNetworkInterfaces();
+            if (interfaces == null) return routeAddress;
+            List<String> active = new ArrayList<>();
+            while (interfaces.hasMoreElements()) {
+                java.net.NetworkInterface network = interfaces.nextElement();
+                if (!network.isUp() || network.isLoopback()) continue;
+                List<String> addresses = new ArrayList<>();
+                var items = network.getInetAddresses();
+                while (items.hasMoreElements()) {
+                    addresses.add(items.nextElement().getHostAddress());
+                }
+                addresses.sort(String::compareTo);
+                active.add(network.getName() + ":" + String.join(",", addresses));
+            }
+            active.sort(String::compareTo);
+            return routeAddress + "|" + String.join("|", active);
+        } catch (java.net.SocketException exception) {
+            return "";
+        } catch (java.io.IOException exception) {
+            return "";
+        }
+    }
+
     private void ensureOpen() {
         synchronized (lifecycleLock) {
             ensureOpenLocked();
@@ -153,6 +268,7 @@ public final class NetworkService implements AutoCloseable {
         synchronized (lifecycleLock) {
             closed = true;
         }
+        if (networkMonitor != null) networkMonitor.shutdownNow();
     }
 
     /**
@@ -161,8 +277,28 @@ public final class NetworkService implements AutoCloseable {
     public record Operations(
         Supplier<Map<String, Integer>> domainStates,
         Supplier<Map<String, Integer>> latency,
-        Runnable reprobe
+        Runnable reprobe,
+        Runnable recoverNetwork,
+        BooleanSupplier clientReady,
+        Runnable retryClient
     ) {
+        public Operations(
+            Supplier<Map<String, Integer>> domainStates,
+            Supplier<Map<String, Integer>> latency,
+            Runnable reprobe
+        ) {
+            this(domainStates, latency, reprobe, null, null, null);
+        }
+
+        public Operations(
+            Supplier<Map<String, Integer>> domainStates,
+            Supplier<Map<String, Integer>> latency,
+            Runnable reprobe,
+            Runnable recoverNetwork
+        ) {
+            this(domainStates, latency, reprobe, recoverNetwork, null, null);
+        }
+
         public Operations {
             Objects.requireNonNull(domainStates, "domainStates");
             Objects.requireNonNull(latency, "latency");
@@ -174,7 +310,10 @@ public final class NetworkService implements AutoCloseable {
             return new Operations(
                 client::getDomainStates,
                 client::getDomainLatency,
-                client::reprobeDomains);
+                client::reprobeDomains,
+                client::recoverNetwork,
+                () -> true,
+                null);
         }
     }
 }

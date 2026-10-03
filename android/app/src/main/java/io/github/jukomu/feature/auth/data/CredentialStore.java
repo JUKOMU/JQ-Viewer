@@ -2,9 +2,10 @@ package io.github.jukomu.feature.auth.data;
 
 import android.content.Context;
 import android.content.SharedPreferences;
-import android.util.Log;
 import androidx.security.crypto.EncryptedSharedPreferences;
 import androidx.security.crypto.MasterKeys;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.security.GeneralSecurityException;
@@ -14,6 +15,7 @@ import java.security.GeneralSecurityException;
  * 加密不可用时禁用凭据持久化，避免明文保存密码。
  */
 public class CredentialStore {
+    private static final Logger LOGGER = LoggerFactory.getLogger(CredentialStore.class);
 
     private static final String PREF_NAME = "jq_credentials";
     private static CredentialStore instance;
@@ -38,14 +40,14 @@ public class CredentialStore {
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
             );
         } catch (GeneralSecurityException | IOException e) {
-            Log.e("CredentialStore", "Encrypted storage unavailable; credentials will not be saved", e);
+            LOGGER.error("Encrypted storage unavailable; credentials will not be saved", e);
         }
         prefs = p;
     }
 
     public void save(String username, String password) {
         if (prefs == null) {
-            Log.w("CredentialStore", "Skip saving credentials because encrypted storage is unavailable");
+            LOGGER.warn("Skip saving credentials because encrypted storage is unavailable");
             return;
         }
         prefs.edit()

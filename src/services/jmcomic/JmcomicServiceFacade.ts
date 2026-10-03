@@ -259,6 +259,18 @@ export const JmcomicService = {
     return native.getDomainStates()
   },
 
+  getUsedDomain() {
+    return native.getUsedDomain()
+  },
+
+  applyApiRoute(options: { mode: 'auto' | 'manual'; domain?: string }) {
+    return native.applyApiRoute(options)
+  },
+
+  setApiRoutePreference(options: { mode: 'auto' | 'manual'; domain?: string }) {
+    return native.setApiRoutePreference(options)
+  },
+
   /** 手动触发域名重新探活（结果通过 networkProbe 事件推送） */
   reprobeDomains() {
     return native.reprobeDomains()

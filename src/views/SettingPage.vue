@@ -540,6 +540,15 @@
           </button>
         </div>
 
+        <!-- 分组：日志 -->
+        <div class="section-label">诊断</div>
+        <div class="card">
+          <button class="row action row-action" type="button" @click="goLogs">
+            <span class="row-title">应用日志</span>
+            <IonIcon :icon="chevronForwardOutline" class="entry-arrow" aria-hidden="true" />
+          </button>
+        </div>
+
         <!-- 分组：关于 -->
         <div class="section-label">关于</div>
         <div class="card">
@@ -662,6 +671,10 @@ function goUser() {
 
 function goAbout() {
   router.push('/about')
+}
+
+function goLogs() {
+  router.push('/logs')
 }
 
 function goExportTemplateHelp() {

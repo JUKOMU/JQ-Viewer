@@ -5,10 +5,10 @@ import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
-import android.util.Log;
-
 import org.json.JSONArray;
 import org.json.JSONObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -17,8 +17,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 两张表：offline_folders（文件夹）、offline_favorites（收藏项）。
  */
 public class FavoriteStore extends SQLiteOpenHelper {
-
-    private static final String TAG = "FavoriteStore";
+    private static final Logger LOGGER = LoggerFactory.getLogger(FavoriteStore.class);
     private static final String DB_NAME = "jq_offline_favorites.db";
     private static final int DB_VERSION = 1;
 
@@ -110,7 +109,7 @@ public class FavoriteStore extends SQLiteOpenHelper {
                 arr.put(obj);
             }
         } catch (Exception e) {
-            android.util.Log.w("FavoriteStore", "getFolders failed", e);
+            LOGGER.warn("getFolders failed", e);
         } finally {
             if (c != null) c.close();
         }
@@ -139,7 +138,7 @@ public class FavoriteStore extends SQLiteOpenHelper {
                 COL_FOLDER_ID + "=?", new String[]{folderId});
             return rows > 0;
         } catch (Exception e) {
-            android.util.Log.w("FavoriteStore", "renameFolder failed", e);
+            LOGGER.warn("renameFolder failed", e);
             return false;
         }
     }
@@ -155,7 +154,7 @@ public class FavoriteStore extends SQLiteOpenHelper {
             db.setTransactionSuccessful();
             return true;
         } catch (Exception e) {
-            android.util.Log.w("FavoriteStore", "deleteFolder failed", e);
+            LOGGER.warn("deleteFolder failed", e);
             return false;
         } finally {
             db.endTransaction();
@@ -180,7 +179,7 @@ public class FavoriteStore extends SQLiteOpenHelper {
                 SQLiteDatabase.CONFLICT_IGNORE);
             return rowId != -1;
         } catch (Exception e) {
-            android.util.Log.w("FavoriteStore", "addItem failed", e);
+            LOGGER.warn("addItem failed", e);
             return false;
         }
     }
@@ -193,7 +192,7 @@ public class FavoriteStore extends SQLiteOpenHelper {
                 new String[]{folderId, albumId});
             return rows > 0;
         } catch (Exception e) {
-            android.util.Log.w("FavoriteStore", "removeItem failed", e);
+            LOGGER.warn("removeItem failed", e);
             return false;
         }
     }
@@ -243,14 +242,14 @@ public class FavoriteStore extends SQLiteOpenHelper {
             result.put("currentPage", currentPage);
             result.put("content", content);
         } catch (Exception e) {
-            android.util.Log.w("FavoriteStore", "getItems failed", e);
+            LOGGER.warn("getItems failed", e);
             try {
                 result.put("totalItems", 0);
                 result.put("totalPages", 1);
                 result.put("currentPage", 1);
                 result.put("content", new JSONArray());
             } catch (Exception ex) {
-                Log.w(TAG, "构建默认返回值失败", ex);
+                LOGGER.warn("构建默认返回值失败", ex);
             }
         } finally {
             if (countCursor != null) countCursor.close();
@@ -272,7 +271,7 @@ public class FavoriteStore extends SQLiteOpenHelper {
                 arr.put(cursorToItem(c));
             }
         } catch (Exception e) {
-            android.util.Log.w("FavoriteStore", "getAllItems failed", e);
+            LOGGER.warn("getAllItems failed", e);
         } finally {
             if (c != null) c.close();
         }
@@ -289,7 +288,7 @@ public class FavoriteStore extends SQLiteOpenHelper {
                     + TABLE_FAVORITES, null);
             return c.moveToFirst() ? c.getInt(0) : 0;
         } catch (Exception e) {
-            android.util.Log.w("FavoriteStore", "getTotalCount failed", e);
+            LOGGER.warn("getTotalCount failed", e);
             return 0;
         } finally {
             if (c != null) c.close();
@@ -314,7 +313,7 @@ public class FavoriteStore extends SQLiteOpenHelper {
                 arr.put(cursorToItem(c));
             }
         } catch (Exception e) {
-            android.util.Log.w("FavoriteStore", "getAllItemsMerged failed", e);
+            LOGGER.warn("getAllItemsMerged failed", e);
         } finally {
             if (c != null) c.close();
         }
@@ -359,7 +358,7 @@ public class FavoriteStore extends SQLiteOpenHelper {
             db.setTransactionSuccessful();
             return true;
         } catch (Exception e) {
-            android.util.Log.w("FavoriteStore", "moveAllItems failed", e);
+            LOGGER.warn("moveAllItems failed", e);
             return false;
         } finally {
             if (c != null) c.close();
@@ -399,7 +398,7 @@ public class FavoriteStore extends SQLiteOpenHelper {
             db.setTransactionSuccessful();
             return newFolderId;
         } catch (Exception e) {
-            android.util.Log.w("FavoriteStore", "copyFolder failed", e);
+            LOGGER.warn("copyFolder failed", e);
             return "";
         } finally {
             if (c != null) c.close();
@@ -430,7 +429,7 @@ public class FavoriteStore extends SQLiteOpenHelper {
             }
             db.setTransactionSuccessful();
         } catch (Exception e) {
-            android.util.Log.w("FavoriteStore", "addItemsBatch failed", e);
+            LOGGER.warn("addItemsBatch failed", e);
         } finally {
             db.endTransaction();
         }
@@ -476,7 +475,7 @@ public class FavoriteStore extends SQLiteOpenHelper {
             db.setTransactionSuccessful();
             return true;
         } catch (Exception e) {
-            android.util.Log.w("FavoriteStore", "mergeAllToFolder failed", e);
+            LOGGER.warn("mergeAllToFolder failed", e);
             return false;
         } finally {
             if (c != null) c.close();
@@ -496,7 +495,7 @@ public class FavoriteStore extends SQLiteOpenHelper {
             db.insertWithOnConflict(TABLE_BACKUPS, null, cv,
                 SQLiteDatabase.CONFLICT_REPLACE);
         } catch (Exception e) {
-            android.util.Log.w("FavoriteStore", "saveBackup failed", e);
+            LOGGER.warn("saveBackup failed", e);
         }
     }
 
@@ -511,7 +510,7 @@ public class FavoriteStore extends SQLiteOpenHelper {
                 return new JSONArray(c.getString(0));
             }
         } catch (Exception e) {
-            android.util.Log.w("FavoriteStore", "loadBackup failed", e);
+            LOGGER.warn("loadBackup failed", e);
         } finally {
             if (c != null) c.close();
         }
@@ -525,7 +524,7 @@ public class FavoriteStore extends SQLiteOpenHelper {
                 COL_BACKUP_KEY + "=?", new String[]{key});
             return rows > 0;
         } catch (Exception e) {
-            android.util.Log.w("FavoriteStore", "deleteBackup failed", e);
+            LOGGER.warn("deleteBackup failed", e);
             return false;
         }
     }
@@ -542,7 +541,7 @@ public class FavoriteStore extends SQLiteOpenHelper {
                 arr.put(c.getString(0));
             }
         } catch (Exception e) {
-            android.util.Log.w("FavoriteStore", "listBackupKeys failed", e);
+            LOGGER.warn("listBackupKeys failed", e);
         } finally {
             if (c != null) c.close();
         }
@@ -561,7 +560,7 @@ public class FavoriteStore extends SQLiteOpenHelper {
             obj.put("authors", new JSONArray(c.getString(3)));
             obj.put("tags", new JSONArray(c.getString(4)));
         } catch (Exception e) {
-            Log.d(TAG, "转换收藏项记录失败", e);
+            LOGGER.debug("转换收藏项记录失败", e);
         }
         return obj;
     }

@@ -82,6 +82,7 @@ public final class Backend implements AutoCloseable {
         "/user",
         "/network-status",
         "/about",
+        "/logs",
         "/pdf-template-help",
         "/batch-parse",
         "/import-review",
@@ -264,7 +265,18 @@ public final class Backend implements AutoCloseable {
                     .retryTimes(3)
                     .build();
                 JmcomicSessionManager.Factory clientFactory = providedClientFactory == null
-                    ? () -> JmComic.newApiClientAsync(configuration)
+                    ? () -> JmComic.newApiClientAsync(configuration).thenApply(client -> {
+                    try {
+                        var route = settingsService.all();
+                        if ("manual".equals(route.apiRouteMode())) {
+                            client.useDomain(route.apiRouteDomain());
+                        }
+                        return client;
+                    } catch (RuntimeException error) {
+                        client.close();
+                        throw error;
+                    }
+                })
                     : providedClientFactory;
                 startedClientSession = JmcomicSessionManager.managed(
                     clientFactory, startedEventHub);
@@ -273,7 +285,10 @@ public final class Backend implements AutoCloseable {
                 networkOperations = new NetworkService.Operations(
                     () -> requireApiClient(clientSession).getDomainStates(),
                     () -> requireApiClient(clientSession).getDomainLatency(),
-                    () -> requireApiClient(clientSession).reprobeDomains());
+                    () -> requireApiClient(clientSession).reprobeDomains(),
+                    () -> requireApiClient(clientSession).recoverNetwork(),
+                    () -> clientSession.getClient() != null,
+                    clientSession::startOrRetry);
             } else {
                 startedClientSession = JmcomicSessionManager.provided(
                     providedClient, startedEventHub);
@@ -378,7 +393,7 @@ public final class Backend implements AutoCloseable {
                 new SystemPluginHandler(
                     networkRequests, diagnosticsRequests,
                     clientSession,
-                    startedNetworkService, startedLaunchRoutes, diagnosticsService),
+                    startedNetworkService, startedLaunchRoutes, diagnosticsService, paths),
                 new OcrPluginHandler(ocrRequests, startedOcrService),
                 new UpdatePluginHandler(updateRequests, startedUpdateService));
             PdfResourceService pdfResources = new PdfResourceService();

@@ -102,6 +102,17 @@ public final class SettingsPluginHandler {
         }
     }
 
+    public void setApiRoutePreference(PluginCall call) {
+        try {
+            String mode = call.getString("mode");
+            String domain = call.getString("domain", "");
+            settingsService.setApiRoute(mode, domain);
+            call.resolve(successResult());
+        } catch (Exception error) {
+            call.reject(error.getMessage(), error);
+        }
+    }
+
     /**
      * 保存 5 至 50 的阅读器预加载页数。
      */

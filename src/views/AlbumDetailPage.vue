@@ -1287,6 +1287,8 @@ watch(albumId, (newId) => {
 })
 
 watch(requestedChapterId, (chapterId) => {
+  if (!albumId.value) return
+
   const album = albumDetail.value
   if (!album || albumId.value !== detailStateAlbumId) {
     void loadAlbumData()

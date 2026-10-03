@@ -14,6 +14,7 @@ import io.github.jukomu.bridge.JmcomicPlugin;
 import io.github.jukomu.bridge.JqViewerPlugin;
 import io.github.jukomu.feature.cache.ImageCache;
 import io.github.jukomu.feature.pdf.web.PdfServer;
+import io.github.jukomu.platform.logging.ApplicationLogging;
 
 public class MainActivity extends BridgeActivity {
     public static final String ACTION_OPEN_ROUTE = "io.github.jukomu.OPEN_ROUTE";
@@ -23,6 +24,7 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        ApplicationLogging.initialize(getApplicationContext());
         registerPlugin(JqViewerPlugin.class);
         registerPlugin(JmcomicPlugin.class);
         captureLaunchRoute(getIntent());

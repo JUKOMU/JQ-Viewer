@@ -15,6 +15,8 @@ const ONLINE_METHODS = new Set<keyof JmcomicClient>([
   'toggleAlbumFavorite',
   'manageFavoriteFolder',
   'getDomainStates',
+  'getUsedDomain',
+  'applyApiRoute',
   'reprobeDomains',
   'measureLatency',
   'getInitStatus',

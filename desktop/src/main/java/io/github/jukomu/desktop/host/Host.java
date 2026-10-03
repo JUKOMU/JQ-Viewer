@@ -41,7 +41,10 @@ public final class Host implements AutoCloseable {
     }
 
     public static Host createDefault() {
-        Paths paths = Paths.current();
+        return createDefault(Paths.current());
+    }
+
+    public static Host createDefault(Paths paths) {
         return new Host(
             new Backend(paths),
             new SingleInstanceGuard(paths),

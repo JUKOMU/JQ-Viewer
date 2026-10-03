@@ -59,6 +59,16 @@ public final class Plugin {
     }
 
     @PluginMethod
+    public void getUsedDomain(Context context) {
+        system.getUsedDomain(context);
+    }
+
+    @PluginMethod
+    public void applyApiRoute(Context context) {
+        system.applyApiRoute(context);
+    }
+
+    @PluginMethod
     public void reprobeDomains(Context context) {
         system.reprobeDomains(context);
     }
@@ -76,6 +86,11 @@ public final class Plugin {
     @PluginMethod
     public void getDiagnostics(Context context) {
         system.getDiagnostics(context);
+    }
+
+    @PluginMethod
+    public void getLogs(Context context) {
+        system.getLogs(context);
     }
 
     @PluginMethod
@@ -216,6 +231,11 @@ public final class Plugin {
     @PluginMethod
     public void getAllSettings(Context context) {
         settings.getAllSettings(context);
+    }
+
+    @PluginMethod
+    public void setApiRoutePreference(Context context) {
+        settings.setApiRoutePreference(context);
     }
 
     @PluginMethod

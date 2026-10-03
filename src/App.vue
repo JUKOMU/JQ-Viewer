@@ -450,7 +450,9 @@ onMounted(async () => {
       showToast(`网络恢复失败：${normalizeRuntimeError(error, '线路恢复失败').message}`, 'danger')
     } finally {
       recoveringAuth = false
-      if (canCommit()) authState = 'complete'
+      if (!canCommit()) return
+      authState = 'complete'
+      if (networkRecoveryPending) void recoverDesktopNetwork()
     }
   }
 

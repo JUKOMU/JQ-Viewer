@@ -437,6 +437,7 @@ onMounted(async () => {
     authState = 'running'
     recoveringAuth = true
     const currentGeneration = ++authGeneration
+    let recoverAgain = false
     const canCommit = () =>
       observationGeneration === clientStateObservationGeneration &&
       currentGeneration === authGeneration
@@ -450,10 +451,12 @@ onMounted(async () => {
       showToast(`网络恢复失败：${normalizeRuntimeError(error, '线路恢复失败').message}`, 'danger')
     } finally {
       recoveringAuth = false
-      if (!canCommit()) return
-      authState = 'complete'
-      if (networkRecoveryPending) void recoverDesktopNetwork()
+      if (canCommit()) {
+        authState = 'complete'
+        recoverAgain = networkRecoveryPending
+      }
     }
+    if (recoverAgain) void recoverDesktopNetwork()
   }
 
   try {

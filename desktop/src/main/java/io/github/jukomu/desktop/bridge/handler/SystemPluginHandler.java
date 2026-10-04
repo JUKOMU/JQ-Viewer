@@ -8,6 +8,7 @@ import io.github.jukomu.desktop.bridge.model.RouteSelectionRequest;
 import io.github.jukomu.desktop.bridge.model.SuccessResponse;
 import io.github.jukomu.desktop.data.Paths;
 import io.github.jukomu.desktop.feature.client.JmcomicSessionManager;
+import io.github.jukomu.desktop.feature.auth.AuthService;
 import io.github.jukomu.desktop.feature.diagnostics.DiagnosticsService;
 import io.github.jukomu.desktop.feature.network.NetworkService;
 import io.github.jukomu.desktop.feature.notification.LaunchRouteService;
@@ -25,6 +26,7 @@ public final class SystemPluginHandler {
     private final LaunchRouteService launchRoutes;
     private final DiagnosticsService diagnostics;
     private final Paths paths;
+    private final AuthService auth;
 
     public SystemPluginHandler(
         RequestExecutor networkRequests,
@@ -34,7 +36,7 @@ public final class SystemPluginHandler {
         LaunchRouteService launchRoutes,
         DiagnosticsService diagnostics
     ) {
-        this(networkRequests, diagnosticsRequests, clientSession, network, launchRoutes, diagnostics, null);
+        this(networkRequests, diagnosticsRequests, clientSession, network, launchRoutes, diagnostics, null, null);
     }
 
     public SystemPluginHandler(
@@ -44,7 +46,8 @@ public final class SystemPluginHandler {
         NetworkService network,
         LaunchRouteService launchRoutes,
         DiagnosticsService diagnostics,
-        Paths paths
+        Paths paths,
+        AuthService auth
     ) {
         this.networkRequests = networkRequests;
         this.diagnosticsRequests = diagnosticsRequests;
@@ -53,6 +56,7 @@ public final class SystemPluginHandler {
         this.launchRoutes = launchRoutes;
         this.diagnostics = diagnostics;
         this.paths = paths;
+        this.auth = auth;
     }
 
     public void getInitStatus(Context context) {
@@ -84,6 +88,7 @@ public final class SystemPluginHandler {
             if (!(client instanceof io.github.jukomu.jmcomic.core.client.impl.JmApiClient apiClient)) {
                 throw ApiException.unavailable("当前 JMComic 客户端不支持线路选择");
             }
+            String beforeDomain = apiClient.getUsedDomain();
             if ("auto".equals(request.mode())) apiClient.useAutoDomain();
             else if ("manual".equals(request.mode())) {
                 if (request.domain() == null || request.domain().isBlank()) {
@@ -92,6 +97,13 @@ public final class SystemPluginHandler {
                 apiClient.useDomain(request.domain());
             } else throw ApiException.invalidRequest("mode must be auto or manual");
             String domain = apiClient.getUsedDomain();
+            if (auth != null && !java.util.Objects.equals(beforeDomain, domain)) {
+                try {
+                    auth.reauthenticateAfterRouteChange();
+                } catch (ApiException error) {
+                    // 线路切换本身已经完成；无凭据或网络暂时不可用由下一次认证处理。
+                }
+            }
             return java.util.Map.of("domain", domain == null ? "" : domain);
         });
     }

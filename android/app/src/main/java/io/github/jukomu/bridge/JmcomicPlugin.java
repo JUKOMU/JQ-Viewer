@@ -130,6 +130,7 @@ public class JmcomicPlugin extends Plugin {
         JmApiClient client = requireClient(call);
         if (client == null) return;
         try {
+            String previousDomain = client.getUsedDomain();
             String mode = call.getString("mode");
             if ("auto".equals(mode)) {
                 client.useAutoDomain();
@@ -145,8 +146,12 @@ public class JmcomicPlugin extends Plugin {
                 return;
             }
             JSObject result = new JSObject();
-            result.put("domain", client.getUsedDomain());
+            String domain = client.getUsedDomain();
+            result.put("domain", domain);
             call.resolve(result);
+            if (authHandler != null && !java.util.Objects.equals(previousDomain, domain)) {
+                authHandler.reauthenticateAfterRouteChange();
+            }
         } catch (RuntimeException error) {
             call.reject(error.getMessage(), error);
         }

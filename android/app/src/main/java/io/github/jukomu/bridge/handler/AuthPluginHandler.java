@@ -36,6 +36,9 @@ public final class AuthPluginHandler {
     private final ApiService apiService;
     private final Supplier<List<Cookie>> cookieSupplier;
     private final PluginCallSession callSession;
+    private volatile String memoryUsername;
+    private volatile String memoryPassword;
+    private volatile boolean credentialsLoaded;
 
     public AuthPluginHandler(Context context, ApiService apiService,
                              Supplier<List<Cookie>> cookieSupplier,
@@ -75,6 +78,8 @@ public final class AuthPluginHandler {
                             try {
                                 SettingsStore settingsStore = SettingsStore.getInstance(context);
                                 saveAuthState(settingsStore, userInfo);
+                                memoryUsername = username;
+                                memoryPassword = password;
                                 CredentialStore.getInstance(context).save(username, password);
                                 activeCall.resolve(JSObject.fromJSONObject(userInfo));
                             } catch (Exception error) {
@@ -183,24 +188,37 @@ public final class AuthPluginHandler {
      * 使用加密凭据自动登录；认证失败时删除凭据，网络错误时保留凭据。
      */
     public void autoLogin(PluginCall call) {
-        CredentialStore credentialStore = CredentialStore.getInstance(context);
-        String username = credentialStore.getUsername();
-        String password = credentialStore.getPassword();
+        String username = memoryUsername;
+        String password = memoryPassword;
+        if (username == null || username.isEmpty() || password == null || password.isEmpty()) {
+            CredentialStore credentialStore = CredentialStore.getInstance(context);
+            if (!credentialsLoaded) {
+                credentialsLoaded = true;
+                username = credentialStore.getUsername();
+                password = credentialStore.getPassword();
+                memoryUsername = username;
+                memoryPassword = password;
+            }
+        }
 
         if (username == null || username.isEmpty()
             || password == null || password.isEmpty()) {
             call.reject("自动登录失败：无保存的凭据", "not-found");
             return;
         }
+        final String loginUsername = username;
+        final String loginPassword = password;
 
         startAsync(call, trackedCall -> apiService.login(
-            username, password, new ApiCallback() {
+            loginUsername, loginPassword, new ApiCallback() {
                 @Override
                 public void onSuccess(JSONObject userInfo) {
                     callSession.completeIfActive(trackedCall, activeCall -> {
                         try {
                             SettingsStore settingsStore = SettingsStore.getInstance(context);
                             saveAuthState(settingsStore, userInfo);
+                            memoryUsername = loginUsername;
+                            memoryPassword = loginPassword;
                             JSObject result = new JSObject();
                             result.put("success", true);
                             result.put("userInfo", JSObject.fromJSONObject(userInfo));
@@ -216,7 +234,20 @@ public final class AuthPluginHandler {
                     callSession.completeIfActive(trackedCall, activeCall -> {
                         if (error instanceof ResponseException responseError
                             && isAuthenticationFailure(responseError)) {
-                            credentialStore.clear();
+                            memoryUsername = null;
+                            memoryPassword = null;
+                            CredentialStore.getInstance(context).clear();
+                            clearAuthState(SettingsStore.getInstance(context));
+                            try {
+                                apiService.logout(new ApiCallback() {
+                                    @Override public void onSuccess(JSONObject result) { }
+                                    @Override public void onError(String message, Exception error) {
+                                        LOGGER.warn("认证失败后远端注销失败", error);
+                                    }
+                                });
+                            } catch (RuntimeException logoutError) {
+                                LOGGER.warn("认证失败后无法发起远端注销", logoutError);
+                            }
                             activeCall.reject(
                                 "自动登录失败：凭据无效或已过期", "permission-denied", error);
                         } else {
@@ -258,6 +289,9 @@ public final class AuthPluginHandler {
     }
 
     private void clearStoredLogin() {
+        memoryUsername = null;
+        memoryPassword = null;
+        credentialsLoaded = true;
         CredentialStore.getInstance(context).clear();
         clearAuthState(SettingsStore.getInstance(context));
     }

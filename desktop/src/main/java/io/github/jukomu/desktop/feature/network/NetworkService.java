@@ -170,10 +170,15 @@ public final class NetworkService implements AutoCloseable {
     }
 
     private void scheduleRecovery() {
-        try {
-            executor.execute(this::recoverAndProbe);
-        } catch (RejectedExecutionException exception) {
-            publish(NetworkProbeEvent.error("网络恢复任务无法启动，请稍后重试"));
+        synchronized (lifecycleLock) {
+            if (closed || probing) return;
+            probing = true;
+            try {
+                executor.execute(this::recoverAndProbe);
+            } catch (RejectedExecutionException exception) {
+                probing = false;
+                publish(NetworkProbeEvent.error("网络恢复任务无法启动，请稍后重试"));
+            }
         }
     }
 
@@ -189,6 +194,10 @@ public final class NetworkService implements AutoCloseable {
                 toDomainStates(operations.domainStates().get())));
         } catch (RuntimeException exception) {
             publish(NetworkProbeEvent.error(messageOf("网络恢复探测失败", exception)));
+        } finally {
+            synchronized (lifecycleLock) {
+                probing = false;
+            }
         }
     }
 

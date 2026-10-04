@@ -65,6 +65,30 @@ class JmcomicSessionManagerTest {
     }
 
     @Test
+    void retriesInitializationAfterBackoff() throws Exception {
+        EventHub events = new EventHub(new ObjectMapper());
+        AtomicInteger attempts = new AtomicInteger();
+        AtomicInteger closes = new AtomicInteger();
+        JmClient readyClient = client(closes);
+        try (JmcomicSessionManager session = JmcomicSessionManager.managed(
+                () -> attempts.incrementAndGet() == 1
+                        ? CompletableFuture.failedFuture(new IllegalStateException("offline"))
+                        : CompletableFuture.completedFuture(readyClient),
+                events)) {
+            session.startOrRetry();
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            while (session.getClient() == null && System.nanoTime() < deadline) {
+                Thread.sleep(50);
+            }
+            assertEquals(2, attempts.get());
+            assertSame(readyClient, session.requireClient());
+        } finally {
+            events.close();
+        }
+        assertEquals(1, closes.get());
+    }
+
+    @Test
     void doesNotPublishFailedAttemptAfterANewerRetryStarts() throws Exception {
         EventHub events = new EventHub(new ObjectMapper());
         List<String> published = Collections.synchronizedList(new ArrayList<>());

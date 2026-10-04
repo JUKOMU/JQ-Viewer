@@ -104,7 +104,12 @@ public final class AuthPluginHandler {
                                 LOGGER.warn("直接登录认证失败后无法发起远端注销", logoutError);
                             }
                         }
-                        trackedCall.reject(message, error);
+                        trackedCall.reject(
+                            message == null ? "登录失败" : message,
+                            error instanceof ResponseException responseError
+                                && isAuthenticationFailure(responseError)
+                                ? "permission-denied" : errorCode(error),
+                            error);
                     }
                 }));
         } catch (Exception error) {
@@ -263,8 +268,8 @@ public final class AuthPluginHandler {
                                 "自动登录失败：凭据无效或已过期", "permission-denied", error);
                         } else {
                             activeCall.reject(
-                                message == null ? "自动登录网络请求失败" : message,
-                                "network", error);
+                                message == null ? "自动登录失败" : message,
+                                errorCode(error), error);
                         }
                     });
                 }
@@ -342,6 +347,11 @@ public final class AuthPluginHandler {
     private static boolean isAuthenticationFailure(ResponseException error) {
         int status = error.getErrorCode();
         return status == 401 || status == 403;
+    }
+
+    private static String errorCode(Exception error) {
+        if (!(error instanceof ResponseException responseError)) return "network";
+        return responseError.getErrorCode() >= 500 ? "network" : "internal";
     }
 
     private void startAsync(PluginCall call, Consumer<PluginCall> starter) {

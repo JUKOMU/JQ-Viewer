@@ -233,6 +233,15 @@ public class AuthPluginContractInstrumentedTest {
         assertRejected(serverFailure, "service unavailable", true);
         assertEquals("network", serverFailure.rejectionCode);
         assertEquals("alice", credentialStore.getUsername());
+
+        credentialStore.save("alice", "secret");
+        apiService.failWith(
+            "invalid request", new ResponseException("invalid request", 400));
+        RecordingPluginCall businessFailure = call("autoLogin");
+        plugin.autoLogin(businessFailure);
+        assertRejected(businessFailure, "invalid request", true);
+        assertEquals("internal", businessFailure.rejectionCode);
+        assertEquals("alice", credentialStore.getUsername());
     }
 
     @Test

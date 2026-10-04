@@ -59,9 +59,10 @@ public final class AuthService {
             throw ApiException.network(message(failure, "登录网络请求失败"));
         } catch (ResponseException failure) {
             if (isAuthenticationFailure(failure)) {
+                userInfo = null;
                 logoutClientQuietly();
             }
-            throw ApiException.permissionDenied(message(failure, "用户名或密码错误"));
+            throw mapResponseFailure(failure, "用户名或密码错误");
         }
         userInfo = result;
         memoryCredentials = new LoginCredentials(username, password);
@@ -96,17 +97,16 @@ public final class AuthService {
             memoryCredentials = saved;
             return new AutoLoginResponse(true, result);
         } catch (NetworkException failure) {
-            userInfo = null;
             throw ApiException.network(message(failure, "自动登录网络请求失败"));
         } catch (ResponseException failure) {
-            userInfo = null;
             boolean authenticationFailure = isAuthenticationFailure(failure);
             if (authenticationFailure) {
+                userInfo = null;
                 logoutClientQuietly();
             }
-            throw ApiException.permissionDenied(authenticationFailure
-                ? "自动登录失败：凭据无效或已过期"
-                : message(failure, "自动登录失败"));
+            throw mapResponseFailure(
+                failure,
+                authenticationFailure ? "自动登录失败：凭据无效或已过期" : "自动登录失败");
         }
     }
 
@@ -244,6 +244,14 @@ public final class AuthService {
     private static boolean isAuthenticationFailure(ResponseException failure) {
         int status = failure.getErrorCode();
         return status == 401 || status == 403;
+    }
+
+    private static ApiException mapResponseFailure(ResponseException failure, String fallback) {
+        int status = failure.getErrorCode();
+        String message = message(failure, fallback);
+        if (status == 401 || status == 403) return ApiException.permissionDenied(message);
+        if (status >= 500) return ApiException.network(message);
+        return new ApiException("internal", status > 0 ? status : 500, message);
     }
 
     private JmClient requireClient() {

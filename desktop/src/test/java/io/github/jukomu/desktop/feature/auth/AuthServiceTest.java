@@ -76,7 +76,14 @@ class AuthServiceTest {
         AuthService serverFailure = new AuthService(
                 client(new ResponseException("service unavailable", 503)), credentials);
         ApiException unavailable = assertThrows(ApiException.class, serverFailure::autoLogin);
-        assertEquals("permission-denied", unavailable.code());
+        assertEquals("network", unavailable.code());
+        assertEquals("alice", credentials.loadDirectly().username());
+
+        AuthService businessFailure = new AuthService(
+                client(new ResponseException("invalid request", 400)), credentials);
+        ApiException business = assertThrows(ApiException.class, businessFailure::autoLogin);
+        assertEquals("internal", business.code());
+        assertEquals(400, business.status());
         assertEquals("alice", credentials.loadDirectly().username());
     }
 

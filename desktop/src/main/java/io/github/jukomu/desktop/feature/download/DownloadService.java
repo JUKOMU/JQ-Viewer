@@ -18,6 +18,8 @@ import io.github.jukomu.jmcomic.api.download.IDownloadManager;
 import io.github.jukomu.jmcomic.api.download.task.BaseDownloadTask;
 import io.github.jukomu.jmcomic.api.model.JmImage;
 import io.github.jukomu.jmcomic.api.model.JmPhoto;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -32,6 +34,8 @@ import java.util.function.Supplier;
  * Desktop 下载任务的持久化状态机与 JMComic 运行时适配。
  */
 public final class DownloadService implements AutoCloseable {
+    private static final Logger LOGGER = LoggerFactory.getLogger(DownloadService.class);
+    private static final long LOG_HEARTBEAT_NANOS = TimeUnit.SECONDS.toNanos(5);
     public static final String STATUS_QUEUED = "queued";
     public static final String STATUS_DOWNLOADING = "downloading";
     public static final String STATUS_PAUSED = "paused";
@@ -93,6 +97,7 @@ public final class DownloadService implements AutoCloseable {
                 error += "；残留文件清理失败: " + messageOf(exception);
             }
             store.interrupt(task.taskId(), error);
+            logWarn(task, "interrupted", "interrupted", "PROCESS_INTERRUPTED", error, null, null);
         }
     }
 
@@ -133,12 +138,16 @@ public final class DownloadService implements AutoCloseable {
                     System.currentTimeMillis()
                 );
                 runtimes.put(taskId, runtime);
+                logInfo("submit", taskId, albumId, chapterId, "submit", null, null, 0,
+                    null, "queued", null, 0);
                 publish(store.findTask(taskId), 0, null);
                 try {
                     prepareExecutor.execute(() -> prepare(taskId, runtime));
                 } catch (RejectedExecutionException exception) {
                     runtimes.remove(taskId, runtime);
                     store.fail(taskId, 0, 0, 0, "下载准备队列已满");
+                    logError("failed", taskId, albumId, chapterId, "submit", "QUEUE_REJECTED",
+                        "下载准备队列已满", 0, 0, 0);
                     publish(store.findTask(taskId), 0, null);
                     throw ApiException.unavailable("下载准备队列已满");
                 }
@@ -200,11 +209,15 @@ public final class DownloadService implements AutoCloseable {
         }
 
         try {
+            long cancelElapsed = elapsed(taskId);
             files.cleanup(task.relativeDirectory());
             store.deleteTask(taskId);
             if (runtime == null) runtimes.remove(taskId);
             else runtimes.remove(taskId, runtime);
             publishCancelled(task);
+            logInfo("cancelled", task.taskId(), task.albumId(), task.chapterId(), "downloading", null,
+                runtime == null ? null : runtime.libraryTaskId, task.downloadedPages(),
+                task.downloadedBytes(), "cancelled", task, cancelElapsed);
         } finally {
             cancelledTaskIds.remove(taskId);
         }
@@ -256,6 +269,7 @@ public final class DownloadService implements AutoCloseable {
     void markDownloading(String taskId) {
         if (ignoreCallbacks(taskId)) return;
         store.updateStatus(taskId, STATUS_DOWNLOADING, null);
+        logState(taskId, "downloading", "downloading", null);
         publish(store.findTask(taskId), 0, null);
     }
 
@@ -263,6 +277,7 @@ public final class DownloadService implements AutoCloseable {
         if (ignoreCallbacks(taskId)) return;
         store.updateProgress(taskId, completedPages, downloadedBytes);
         store.updateStatus(taskId, STATUS_PAUSED, null);
+        logState(taskId, "paused", "downloading", null);
         publish(store.findTask(taskId), 0, null);
     }
 
@@ -270,6 +285,9 @@ public final class DownloadService implements AutoCloseable {
                         long speed, Long totalBytes) {
         if (ignoreCallbacks(taskId)) return;
         store.updateProgress(taskId, completedPages, downloadedBytes);
+        RuntimeTask runtime = runtimes.get(taskId);
+        if (runtime != null) logProgress(taskId, completedPages, downloadedBytes, speed,
+            totalBytes, runtime);
         publish(store.findTask(taskId), speed, totalBytes);
     }
 
@@ -285,11 +303,15 @@ public final class DownloadService implements AutoCloseable {
         }
         try {
             store.updateStatus(taskId, STATUS_VERIFYING, null);
+            logState(taskId, "verifying", "verifying", null);
             publish(store.findTask(taskId), 0, null);
             ChapterManifestValidator.Report inspection = ChapterManifestValidator.validate(
                 store, files, task.albumId(), task.chapterId());
             store.complete(taskId, inspection.totalPages(), inspection.firstSortOrder(),
                 inspection.totalSize(), System.currentTimeMillis());
+            logInfo("completed", taskId, task.albumId(), task.chapterId(), "completed", null,
+                null, inspection.totalPages(), inspection.totalSize(), "completed", task,
+                elapsed(taskId));
             publish(store.findTask(taskId), 0, inspection.totalSize());
         } catch (ChapterManifestValidator.ValidationException exception) {
             failDownload(taskId, exception.verifiedPages(), task.downloadedBytes(),
@@ -321,6 +343,8 @@ public final class DownloadService implements AutoCloseable {
         }
         try {
             store.fail(taskId, completedPages, downloadedBytes, totalSize, failure);
+            logError("failed", taskId, task.albumId(), task.chapterId(), "verifying", "DOWNLOAD_FAILED",
+                failure, elapsed(taskId), completedPages, downloadedBytes);
             publish(store.findTask(taskId), 0, totalSize);
         } finally {
             finishRuntime(taskId);
@@ -355,6 +379,8 @@ public final class DownloadService implements AutoCloseable {
             }
             List<JmImage> images = photo.getImages() == null ? List.of() : List.copyOf(photo.getImages());
             if (images.isEmpty()) throw new IllegalStateException("章节没有可下载的图片");
+            logInfo("remote_metadata", taskId, task.albumId(), task.chapterId(), "remote_metadata",
+                null, null, images.size(), null, "queued", task, elapsed(taskId));
 
             synchronized (runtime) {
                 if (cancelledTaskIds.contains(taskId) || closing || store.findTask(taskId) == null) return;
@@ -369,6 +395,9 @@ public final class DownloadService implements AutoCloseable {
                 JmDownloadClient downloadClient = requireDownloadClient();
                 BaseDownloadTask libraryTask = downloadClient.createDownloadTask(photo, savePath);
                 runtime.libraryTaskId = libraryTask.getTaskId();
+                logInfo("downloading", taskId, task.albumId(), task.chapterId(), "downloading",
+                    null, runtime.libraryTaskId, images.size(), null, "downloading", task,
+                    elapsed(taskId));
                 libraryTask.addObserver(new DownloadObserver(taskId, pages.size(), this));
                 downloadClient.downloadManager().submit(libraryTask);
             }
@@ -506,6 +535,110 @@ public final class DownloadService implements AutoCloseable {
         return message == null || message.isBlank() ? "下载失败" : message;
     }
 
+    private void logState(String taskId, String event, String phase, String errorCode) {
+        StoredDownloadTask task = store.findTask(taskId);
+        if (task == null) return;
+        logInfo(event, taskId, task.albumId(), task.chapterId(), phase, errorCode, null,
+            task.downloadedPages(), task.downloadedBytes(), task.status(), task, elapsed(taskId));
+    }
+
+    void logObserverState(String event, BaseDownloadTask task, String phase, String status) {
+        StoredDownloadTask stored = store.findTask(taskIdOf(task));
+        if (stored == null) return;
+        logInfo(event, stored.taskId(), stored.albumId(), stored.chapterId(), phase, null,
+            task.getTaskId(), task.getCompletedCount(), task.getDownloadedBytes(), status,
+            stored, elapsed(stored.taskId()));
+    }
+
+    void logObserverFailure(BaseDownloadTask task, String code, Throwable error) {
+        StoredDownloadTask stored = store.findTask(taskIdOf(task));
+        if (stored == null) return;
+        logError("failed", stored.taskId(), stored.albumId(), stored.chapterId(), "downloading",
+            code, messageOf(error), elapsed(stored.taskId()), task.getCompletedCount(),
+            task.getDownloadedBytes());
+    }
+
+    void logObserverProgress(BaseDownloadTask task, int page, long bytes, long speed, Long totalBytes) {
+        StoredDownloadTask stored = store.findTask(taskIdOf(task));
+        RuntimeTask runtime = stored == null ? null : runtimes.get(stored.taskId());
+        if (stored != null && runtime != null && runtime.shouldLog(page)) {
+            logInfo("progress", stored.taskId(), stored.albumId(), stored.chapterId(), "downloading",
+                null, task.getTaskId(), page, bytes, "downloading", stored, elapsed(stored.taskId()),
+                speed, totalBytes);
+        }
+    }
+
+    private String taskIdOf(BaseDownloadTask task) {
+        for (var entry : runtimes.entrySet()) {
+            if (Objects.equals(entry.getValue().libraryTaskId, task.getTaskId())) return entry.getKey();
+        }
+        return task.getTaskId();
+    }
+
+    private long elapsed(String taskId) {
+        RuntimeTask runtime = runtimes.get(taskId);
+        return runtime == null ? 0 : TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - runtime.startedNanos);
+    }
+
+    private void logProgress(String taskId, int page, long bytes, long speed, Long totalBytes,
+                             RuntimeTask runtime) {
+        if (!runtime.shouldLog(page)) return;
+        StoredDownloadTask task = store.findTask(taskId);
+        if (task != null) logInfo("progress", taskId, task.albumId(), task.chapterId(), "downloading",
+            null, runtime.libraryTaskId, page, bytes, task.status(), task, elapsed(taskId),
+            speed, totalBytes);
+    }
+
+    private void logInfo(String event, String taskId, String albumId, String chapterId,
+                         String phase, String errorCode, String libraryTaskId, int page,
+                         Long bytes, String status, StoredDownloadTask task, long elapsedMs,
+                         Object... extra) {
+        StringBuilder line = new StringBuilder("download event=").append(clean(event))
+            .append(" taskId=").append(clean(taskId)).append(" albumId=").append(clean(albumId))
+            .append(" chapterId=").append(clean(chapterId));
+        append(line, "phase", phase); append(line, "status", status); append(line, "elapsedMs", elapsedMs);
+        append(line, "page", page); if (task != null) append(line, "totalPages", task.totalPages());
+        append(line, "bytes", bytes); append(line, "libraryTaskId", libraryTaskId); append(line, "errorCode", errorCode);
+        if (extra.length > 0 && extra[0] instanceof Long speed) append(line, "speed", speed);
+        if (extra.length > 1 && extra[1] instanceof Long totalBytes) append(line, "totalBytes", totalBytes);
+        LOGGER.info(line.toString());
+    }
+
+    private void logWarn(StoredDownloadTask task, String event, String phase, String code,
+                         String message, Long page, Long bytes) {
+        String line = base(task, event, phase, "failed", 0, page, bytes, code, null);
+        LOGGER.warn(line + " message=" + clean(message));
+    }
+
+    private void logError(String event, String taskId, String albumId, String chapterId, String phase,
+                          String code, String message, long elapsedMs, int page, long bytes) {
+        LOGGER.error("download event={} taskId={} albumId={} chapterId={} phase={} status=failed elapsedMs={} page={} bytes={} errorCode={} message={}",
+            clean(event), clean(taskId), clean(albumId), clean(chapterId), clean(phase), elapsedMs,
+            page, bytes, clean(code), clean(message));
+    }
+
+    private String base(StoredDownloadTask task, String event, String phase, String status,
+                        long elapsedMs, Long page, Long bytes, String code, String libraryTaskId) {
+        return "download event=" + clean(event) + " taskId=" + clean(task.taskId())
+            + " albumId=" + clean(task.albumId()) + " chapterId=" + clean(task.chapterId())
+            + " phase=" + clean(phase) + " status=" + clean(status) + " elapsedMs=" + elapsedMs
+            + " page=" + (page == null ? "-" : page) + " totalPages=" + task.totalPages()
+            + " bytes=" + (bytes == null ? "-" : bytes) + " errorCode=" + clean(code)
+            + (libraryTaskId == null ? "" : " libraryTaskId=" + clean(libraryTaskId));
+    }
+
+    private static void append(StringBuilder line, String key, Object value) {
+        if (value != null && (!(value instanceof String string) || !string.isBlank())) {
+            line.append(' ').append(key).append('=').append(clean(String.valueOf(value)));
+        }
+    }
+
+    private static String clean(String value) {
+        if (value == null || value.isBlank()) return "-";
+        String cleaned = value.replaceAll("[\\p{Cntrl}\\r\\n]+", " ").trim();
+        return cleaned.substring(0, Math.min(256, cleaned.length()));
+    }
+
     private JmClient requireClient() {
         JmClient client = clientSupplier.get();
         if (client == null) throw ApiException.unavailable("在线客户端不可用");
@@ -520,6 +653,18 @@ public final class DownloadService implements AutoCloseable {
 
     private static final class RuntimeTask {
         private final CompletableFuture<Void> stopped = new CompletableFuture<>();
+        private final long startedNanos = System.nanoTime();
+        private long lastLogNanos;
+        private int lastLoggedPage;
         private volatile String libraryTaskId;
+
+        private synchronized boolean shouldLog(int page) {
+            long now = System.nanoTime();
+            if (lastLogNanos != 0 && now - lastLogNanos < LOG_HEARTBEAT_NANOS
+                && page - lastLoggedPage < 25) return false;
+            lastLogNanos = now;
+            lastLoggedPage = page;
+            return true;
+        }
     }
 }

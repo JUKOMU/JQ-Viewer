@@ -2,6 +2,7 @@ package io.github.jukomu.feature.download;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
+import android.os.SystemClock;
 import io.github.jukomu.feature.download.data.DownloadStore;
 import io.github.jukomu.feature.download.model.DownloadProgressData;
 import io.github.jukomu.feature.download.notification.DownloadForegroundService;
@@ -65,6 +66,7 @@ public class DownloadService {
     private final DownloadForegroundState foregroundState = new DownloadForegroundState();
     private final Object mapLock = new Object();
     private final Map<String, Long> lastNotificationAt = new ConcurrentHashMap<>();
+    private final Map<String, Long> taskStartedAtNanos = new ConcurrentHashMap<>();
 
     public DownloadService(DownloadStore downloadDb, FileStore fileStore,
                            Supplier<JmApiClient> clientSupplier,
@@ -101,8 +103,11 @@ public class DownloadService {
         }
 
         cancelledTaskIds.remove(taskId);
+        taskStartedAtNanos.put(taskId, SystemClock.elapsedRealtimeNanos());
         downloadDb.insertTask(taskId, albumId, chapterId,
             albumTitle, chapterTitle, coverUrl);
+        logDownloadEvent(taskId, albumId, chapterId, "started", "submit", STATUS_QUEUED,
+            0, 0, 0, 0, null, null, null);
         notificationHelper.registerTask(taskId);
         startForegroundTask(taskId);
         notifyProgress(taskId, albumId, chapterId, 0, 0, STATUS_QUEUED, null);
@@ -117,6 +122,8 @@ public class DownloadService {
                 }
                 JmPhoto photo = client.getPhoto(chapterId);
                 List<JmImage> images = photo.getImages();
+                logDownloadEvent(taskId, albumId, chapterId, "phase", "remote_metadata",
+                    STATUS_QUEUED, 0, images.size(), 0, 0, null, null, null);
 
                 downloadDb.insertImages(taskId, images);
                 downloadDb.updateTaskDetail(taskId, images.size(),
@@ -160,6 +167,8 @@ public class DownloadService {
                     images.size(), downloadDb, fileStore, this));
 
                 downloadDb.updateStatus(taskId, STATUS_DOWNLOADING);
+                logDownloadEvent(taskId, albumId, chapterId, "phase", "downloading",
+                    STATUS_DOWNLOADING, 0, images.size(), 0, 0, libTaskId, null, null);
                 notifyProgress(taskId, albumId, chapterId, 0, images.size(),
                     STATUS_DOWNLOADING, null);
 
@@ -177,6 +186,8 @@ public class DownloadService {
                     abstractClient.downloadManager().cancel(libTaskId);
                 }
             } catch (Exception e) {
+                logDownloadEvent(taskId, albumId, chapterId, "failed", "prepare", STATUS_FAILED,
+                    0, 0, 0, 0, null, "PREPARE_FAILED", e);
                 downloadDb.updateFailed(taskId, 0, e.getMessage());
                 showFailedNotification(taskId, albumTitle, chapterId,
                     chapterTitle, e.getMessage());
@@ -371,7 +382,59 @@ public class DownloadService {
             }
         }
         lastNotificationAt.remove(ourTaskId);
+        taskStartedAtNanos.remove(ourTaskId);
         stopForegroundTask(ourTaskId);
+    }
+
+    void logDownloadEvent(String taskId, String albumId, String chapterId, String event,
+                          String phase, String status, int page, int totalPages, long bytes,
+                          long speed, String libTaskId, String errorCode, Throwable error) {
+        Long started = taskStartedAtNanos.get(taskId);
+        long elapsedMs = started == null ? 0 : (SystemClock.elapsedRealtimeNanos() - started) / 1_000_000L;
+        String message = formatLogEvent("download", event, taskId, albumId, chapterId, phase,
+            status, elapsedMs, page, totalPages, bytes, speed, libTaskId, errorCode,
+            error == null ? null : error.getMessage());
+        try {
+            if ("failed".equals(event) || "crashed".equals(event)) LOGGER.error(message, error);
+            else LOGGER.info(message);
+        } catch (RuntimeException ignored) {
+            // Diagnostics must never change task state.
+        }
+    }
+
+    static String formatLogEvent(String operation, String event, String taskId, String albumId,
+                                 String chapterId, String phase, String status, long elapsedMs,
+                                 int page, int totalPages, long bytes, long speed,
+                                 String libTaskId, String errorCode, String errorMessage) {
+        StringBuilder out = new StringBuilder(operation).append(" event=").append(event);
+        appendLogField(out, "taskId", taskId);
+        appendLogField(out, "albumId", albumId);
+        appendLogField(out, "chapterId", chapterId);
+        appendLogField(out, "phase", phase);
+        appendLogField(out, "status", status);
+        if (elapsedMs >= 0) out.append(" elapsedMs=").append(elapsedMs);
+        if (page >= 0) out.append(" page=").append(page);
+        if (totalPages >= 0) out.append(" totalPages=").append(totalPages);
+        if (bytes >= 0) out.append(" bytes=").append(bytes);
+        if (speed >= 0) out.append(" speed=").append(speed);
+        appendLogField(out, "libTaskId", libTaskId);
+        appendLogField(out, "errorCode", errorCode);
+        appendLogField(out, "error", errorMessage);
+        return out.toString();
+    }
+
+    private static void appendLogField(StringBuilder out, String key, String value) {
+        if (value == null || value.isEmpty()) return;
+        out.append(' ').append(key).append('=').append(cleanLogValue(value));
+    }
+
+    private static String cleanLogValue(String value) {
+        StringBuilder out = new StringBuilder(Math.min(value.length(), 256));
+        for (int i = 0; i < value.length() && out.length() < 256; i++) {
+            char c = value.charAt(i);
+            out.append(Character.isISOControl(c) ? ' ' : c);
+        }
+        return out.toString();
     }
 
     void updateDownloadNotification(String taskId, int downloadedPages, int totalPages,
@@ -444,6 +507,8 @@ public class DownloadService {
 
         downloadDb.updateProgress(taskId, totalImages);
         downloadDb.updateStatus(taskId, STATUS_VERIFYING);
+        logDownloadEvent(taskId, albumId, chapterId, "phase", "verifying", STATUS_VERIFYING,
+            totalImages, totalImages, 0, 0, taskIdMap.get(taskId), null, null);
         notifyProgress(taskId, albumId, chapterId, totalImages, totalImages,
             STATUS_VERIFYING, null);
         updateDownloadNotification(taskId, totalImages, totalImages,
@@ -457,6 +522,9 @@ public class DownloadService {
         long totalSize = calcChapterFileSize(albumId, chapterId);
         downloadDb.updateSize(taskId, totalSize);
         if (!result.valid) {
+            logDownloadEvent(taskId, albumId, chapterId, "failed", "verifying", STATUS_FAILED,
+                result.verifiedPages, totalImages, totalSize, 0, taskIdMap.get(taskId),
+                "VERIFY_FAILED", new IllegalStateException(result.error));
             downloadDb.updateFailed(taskId, result.verifiedPages, result.error);
             updateDownloadNotification(taskId, result.verifiedPages,
                 totalImages, STATUS_FAILED, result.error);
@@ -473,6 +541,8 @@ public class DownloadService {
             totalImages, STATUS_COMPLETED, null);
         notifyProgress(taskId, albumId, chapterId, totalImages,
             totalImages, STATUS_COMPLETED, null, 0, totalSize);
+        logDownloadEvent(taskId, albumId, chapterId, "completed", "completed", STATUS_COMPLETED,
+            totalImages, totalImages, totalSize, 0, taskIdMap.get(taskId), null, null);
         cleanupTaskMapping(taskId);
     }
 
@@ -624,6 +694,9 @@ public class DownloadService {
         pendingCancel.remove(taskId);
         String albumId = task.optString("albumId");
         String chapterId = task.optString("chapterId");
+        logDownloadEvent(taskId, albumId, chapterId, "cancelled", "completed", "cancelled",
+            task.optInt("downloadedPages"), task.optInt("totalPages"), 0, 0,
+            taskIdMap.get(taskId), null, null);
         fileStore.deleteChapter(albumId, chapterId);
         downloadDb.deleteImages(taskId);
         downloadDb.deleteTask(taskId);

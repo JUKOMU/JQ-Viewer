@@ -38,15 +38,26 @@ final class DownloadObserver implements TaskObserver {
         if (state.isTerminal() && !finalized.compareAndSet(false, true)) return;
 
         switch (state) {
-            case QUEUED, RUNNING -> service.markDownloading(taskId);
-            case PAUSED -> service.markPaused(taskId, task.getCompletedCount(), task.getDownloadedBytes());
-            case COMPLETED, SKIPPED -> service.finishDownload(taskId);
+            case QUEUED, RUNNING -> {
+                service.logObserverState(state == TaskState.QUEUED ? "queued" : "downloading",
+                    task, "downloading", "downloading");
+                service.markDownloading(taskId);
+            }
+            case PAUSED -> {
+                service.logObserverState("paused", task, "downloading", "paused");
+                service.markPaused(taskId, task.getCompletedCount(), task.getDownloadedBytes());
+            }
+            case COMPLETED, SKIPPED -> {
+                service.logObserverState("completed", task, "completed", "completed");
+                service.finishDownload(taskId);
+            }
             case COMPLETED_WITH_ERRORS -> {
                 DownloadResult result = task.getCurrentDownloadResult();
                 int failed = result.getFailedTasks().size();
                 if (failed == 0) {
                     service.finishDownload(taskId);
                 } else {
+                    service.logObserverFailure(task, "DOWNLOAD_FAILED", null);
                     int completed = Math.max(0, totalPages - failed);
                     service.failDownload(taskId, completed, task.getDownloadedBytes(),
                         failed + "/" + totalPages + " 张图片下载失败");
@@ -54,8 +65,11 @@ final class DownloadObserver implements TaskObserver {
             }
             case FAILED -> service.failDownload(taskId, task.getCompletedCount(),
                 task.getDownloadedBytes(), "下载失败");
-            case CANCELLED -> service.failDownload(taskId, task.getCompletedCount(),
-                task.getDownloadedBytes(), "下载已取消");
+            case CANCELLED -> {
+                service.logObserverState("cancelled", task, "downloading", "cancelled");
+                service.failDownload(taskId, task.getCompletedCount(),
+                    task.getDownloadedBytes(), "下载已取消");
+            }
             default -> {
             }
         }
@@ -72,6 +86,7 @@ final class DownloadObserver implements TaskObserver {
         lastBytes = currentBytes;
         lastTimestamp = now;
         Long totalBytes = task.getTotalBytes() >= 0 ? task.getTotalBytes() : null;
+        service.logObserverProgress(task, progress.completedImages(), currentBytes, speed, totalBytes);
         service.updateProgress(taskId, progress.completedImages(), currentBytes, speed, totalBytes);
     }
 
@@ -87,6 +102,7 @@ final class DownloadObserver implements TaskObserver {
             return;
         }
         if (!finalized.compareAndSet(false, true)) return;
+        service.logObserverFailure(task, "DOWNLOAD_FAILED", exception);
         service.failDownload(taskId, task.getCompletedCount(), task.getDownloadedBytes(),
             exception == null ? "下载失败" : exception.getMessage());
     }

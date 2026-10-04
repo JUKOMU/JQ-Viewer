@@ -36,6 +36,11 @@ public final class AuthPluginHandler {
     private final ApiService apiService;
     private final Supplier<List<Cookie>> cookieSupplier;
     private final PluginCallSession callSession;
+    private volatile String memoryUsername;
+    private volatile String memoryPassword;
+    private volatile boolean credentialsLoaded;
+    private boolean sessionActive = true;
+    private long authGeneration;
 
     public AuthPluginHandler(Context context, ApiService apiService,
                              Supplier<List<Cookie>> cookieSupplier,
@@ -56,6 +61,14 @@ public final class AuthPluginHandler {
     }
 
     /**
+     * 使绑定客户端上的后台认证回调失效。
+     */
+    public synchronized void invalidateSession() {
+        sessionActive = false;
+        authGeneration++;
+    }
+
+    /**
      * 使用非空用户名和密码登录，并持久化登录态与加密凭据。
      */
     public void login(PluginCall call) {
@@ -67,15 +80,27 @@ public final class AuthPluginHandler {
                 call.reject("username and password are required");
                 return;
             }
+            final long loginGeneration;
+            synchronized (this) {
+                loginGeneration = ++authGeneration;
+            }
             startAsync(call, trackedCall -> apiService.login(
                 username, password, new ApiCallback() {
                     @Override
                     public void onSuccess(JSONObject userInfo) {
                         callSession.completeIfActive(trackedCall, activeCall -> {
                             try {
-                                SettingsStore settingsStore = SettingsStore.getInstance(context);
-                                saveAuthState(settingsStore, userInfo);
-                                CredentialStore.getInstance(context).save(username, password);
+                                synchronized (AuthPluginHandler.this) {
+                                    if (loginGeneration != authGeneration) {
+                                        activeCall.reject("认证状态已变化", "cancelled");
+                                        return;
+                                    }
+                                    SettingsStore settingsStore = SettingsStore.getInstance(context);
+                                    saveAuthState(settingsStore, userInfo);
+                                    memoryUsername = username;
+                                    memoryPassword = password;
+                                    CredentialStore.getInstance(context).save(username, password);
+                                }
                                 activeCall.resolve(JSObject.fromJSONObject(userInfo));
                             } catch (Exception error) {
                                 activeCall.reject(error.getMessage(), error);
@@ -85,7 +110,32 @@ public final class AuthPluginHandler {
 
                     @Override
                     public void onError(String message, Exception error) {
-                        trackedCall.reject(message, error);
+                        if (error instanceof ResponseException responseError
+                            && isAuthenticationFailure(responseError)) {
+                            synchronized (AuthPluginHandler.this) {
+                                if (loginGeneration != authGeneration) {
+                                    trackedCall.reject(message, "permission-denied", error);
+                                    return;
+                                }
+                                clearAuthState(SettingsStore.getInstance(context));
+                            }
+                            try {
+                                apiService.logout(new ApiCallback() {
+                                    @Override public void onSuccess(JSONObject result) { }
+                                    @Override public void onError(String logoutMessage, Exception logoutError) {
+                                        LOGGER.warn("直接登录认证失败后远端注销失败", logoutError);
+                                    }
+                                });
+                            } catch (RuntimeException logoutError) {
+                                LOGGER.warn("直接登录认证失败后无法发起远端注销", logoutError);
+                            }
+                        }
+                        trackedCall.reject(
+                            message == null ? "登录失败" : message,
+                            error instanceof ResponseException responseError
+                                && isAuthenticationFailure(responseError)
+                                ? "permission-denied" : errorCode(error),
+                            error);
                     }
                 }));
         } catch (Exception error) {
@@ -183,24 +233,38 @@ public final class AuthPluginHandler {
      * 使用加密凭据自动登录；认证失败时删除凭据，网络错误时保留凭据。
      */
     public void autoLogin(PluginCall call) {
-        CredentialStore credentialStore = CredentialStore.getInstance(context);
-        String username = credentialStore.getUsername();
-        String password = credentialStore.getPassword();
+        String[] credentials = loadCredentialsIfNeeded();
+        String username = credentials[0];
+        String password = credentials[1];
 
         if (username == null || username.isEmpty()
             || password == null || password.isEmpty()) {
             call.reject("自动登录失败：无保存的凭据", "not-found");
             return;
         }
+        final String loginUsername = username;
+        final String loginPassword = password;
+        final long loginGeneration;
+        synchronized (this) {
+            loginGeneration = authGeneration;
+        }
 
         startAsync(call, trackedCall -> apiService.login(
-            username, password, new ApiCallback() {
+            loginUsername, loginPassword, new ApiCallback() {
                 @Override
                 public void onSuccess(JSONObject userInfo) {
                     callSession.completeIfActive(trackedCall, activeCall -> {
                         try {
-                            SettingsStore settingsStore = SettingsStore.getInstance(context);
-                            saveAuthState(settingsStore, userInfo);
+                            synchronized (AuthPluginHandler.this) {
+                                if (loginGeneration != authGeneration) {
+                                    activeCall.reject("认证状态已变化", "cancelled");
+                                    return;
+                                }
+                                SettingsStore settingsStore = SettingsStore.getInstance(context);
+                                saveAuthState(settingsStore, userInfo);
+                                memoryUsername = loginUsername;
+                                memoryPassword = loginPassword;
+                            }
                             JSObject result = new JSObject();
                             result.put("success", true);
                             result.put("userInfo", JSObject.fromJSONObject(userInfo));
@@ -214,24 +278,119 @@ public final class AuthPluginHandler {
                 @Override
                 public void onError(String message, Exception error) {
                     callSession.completeIfActive(trackedCall, activeCall -> {
+                        synchronized (AuthPluginHandler.this) {
+                            if (loginGeneration != authGeneration) {
+                                activeCall.reject(message, errorCode(error), error);
+                                return;
+                            }
+                        }
                         if (error instanceof ResponseException responseError
                             && isAuthenticationFailure(responseError)) {
-                            credentialStore.clear();
+                            clearAuthState(SettingsStore.getInstance(context));
+                            try {
+                                apiService.logout(new ApiCallback() {
+                                    @Override public void onSuccess(JSONObject result) { }
+                                    @Override public void onError(String message, Exception error) {
+                                        LOGGER.warn("认证失败后远端注销失败", error);
+                                    }
+                                });
+                            } catch (RuntimeException logoutError) {
+                                LOGGER.warn("认证失败后无法发起远端注销", logoutError);
+                            }
                             activeCall.reject(
                                 "自动登录失败：凭据无效或已过期", "permission-denied", error);
                         } else {
                             activeCall.reject(
-                                message == null ? "自动登录网络请求失败" : message,
-                                "network", error);
+                                message == null ? "自动登录失败" : message,
+                                errorCode(error), error);
                         }
                     });
                 }
-            }));
+        }));
+    }
+
+    /**
+     * 线路切换后只清理 JM 客户端会话，保留应用层内存/安全存储凭据并异步重登。
+     */
+    public void reauthenticateAfterRouteChange() {
+        final String[] credentials;
+        final long routeGeneration;
+        synchronized (this) {
+            if (!sessionActive) return;
+            clearAuthState(SettingsStore.getInstance(context));
+            credentials = loadCredentialsIfNeeded();
+            routeGeneration = ++authGeneration;
+        }
+        String username = credentials[0];
+        String password = credentials[1];
+        if (username == null || username.isEmpty() || password == null || password.isEmpty()) return;
+        final String loginUsername = username;
+        final String loginPassword = password;
+        try {
+            apiService.logout(new ApiCallback() {
+                @Override public void onSuccess(JSONObject result) {
+                    loginAfterRoute(loginUsername, loginPassword, routeGeneration);
+                }
+                @Override public void onError(String message, Exception error) {
+                    loginAfterRoute(loginUsername, loginPassword, routeGeneration);
+                }
+            });
+        } catch (RuntimeException error) {
+            LOGGER.warn("线路切换后无法清理旧认证态", error);
+            loginAfterRoute(loginUsername, loginPassword, routeGeneration);
+        }
+    }
+
+    private void loginAfterRoute(String username, String password, long expectedGeneration) {
+        synchronized (this) {
+            if (!sessionActive || expectedGeneration != authGeneration) return;
+        }
+        try {
+            apiService.login(username, password, new ApiCallback() {
+                @Override public void onSuccess(JSONObject userInfo) {
+                    try {
+                        synchronized (AuthPluginHandler.this) {
+                            if (!sessionActive || expectedGeneration != authGeneration) return;
+                            saveAuthState(SettingsStore.getInstance(context), userInfo);
+                            memoryUsername = username;
+                            memoryPassword = password;
+                        }
+                    } catch (Exception error) {
+                        LOGGER.warn("线路切换后保存认证态失败", error);
+                    }
+                }
+
+                @Override public void onError(String message, Exception error) {
+                    if (error instanceof ResponseException responseError
+                        && isAuthenticationFailure(responseError)) {
+                        synchronized (AuthPluginHandler.this) {
+                            if (!sessionActive || expectedGeneration != authGeneration) return;
+                            clearAuthState(SettingsStore.getInstance(context));
+                        }
+                        try {
+                            apiService.logout(new ApiCallback() {
+                                @Override public void onSuccess(JSONObject result) { }
+                                @Override public void onError(String message, Exception error) { }
+                            });
+                        } catch (RuntimeException logoutError) {
+                            LOGGER.warn("线路切换认证失败后无法注销", logoutError);
+                        }
+                    }
+                }
+            });
+        } catch (RuntimeException error) {
+            LOGGER.warn("线路切换后自动登录启动失败", error);
+        }
     }
 
     private static boolean isAuthenticationFailure(ResponseException error) {
         int status = error.getErrorCode();
         return status == 401 || status == 403;
+    }
+
+    private static String errorCode(Exception error) {
+        if (!(error instanceof ResponseException responseError)) return "network";
+        return responseError.getErrorCode() >= 500 ? "network" : "internal";
     }
 
     private void startAsync(PluginCall call, Consumer<PluginCall> starter) {
@@ -258,8 +417,28 @@ public final class AuthPluginHandler {
     }
 
     private void clearStoredLogin() {
+        synchronized (this) {
+            authGeneration++;
+            memoryUsername = null;
+            memoryPassword = null;
+            credentialsLoaded = true;
+        }
         CredentialStore.getInstance(context).clear();
         clearAuthState(SettingsStore.getInstance(context));
+    }
+
+    private synchronized String[] loadCredentialsIfNeeded() {
+        if (memoryUsername != null && !memoryUsername.isEmpty()
+            && memoryPassword != null && !memoryPassword.isEmpty()) {
+            return new String[]{memoryUsername, memoryPassword};
+        }
+        if (!credentialsLoaded) {
+            CredentialStore credentialStore = CredentialStore.getInstance(context);
+            memoryUsername = credentialStore.getUsername();
+            memoryPassword = credentialStore.getPassword();
+            credentialsLoaded = true;
+        }
+        return new String[]{memoryUsername, memoryPassword};
     }
 
     private static JSONArray cookiesToJson(List<Cookie> cookies) {

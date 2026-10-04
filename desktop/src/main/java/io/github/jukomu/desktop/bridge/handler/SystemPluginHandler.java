@@ -8,16 +8,23 @@ import io.github.jukomu.desktop.bridge.model.RouteSelectionRequest;
 import io.github.jukomu.desktop.bridge.model.SuccessResponse;
 import io.github.jukomu.desktop.data.Paths;
 import io.github.jukomu.desktop.feature.client.JmcomicSessionManager;
+import io.github.jukomu.desktop.feature.auth.AuthService;
 import io.github.jukomu.desktop.feature.diagnostics.DiagnosticsService;
 import io.github.jukomu.desktop.feature.network.NetworkService;
 import io.github.jukomu.desktop.feature.notification.LaunchRouteService;
 import io.github.jukomu.desktop.logging.ApplicationLogging;
 import io.javalin.http.Context;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.concurrent.Executor;
+
 /**
  * 提供服务状态查询。
  */
 public final class SystemPluginHandler {
+    private static final Logger LOGGER = LoggerFactory.getLogger(SystemPluginHandler.class);
     private final RequestExecutor networkRequests;
     private final RequestExecutor diagnosticsRequests;
     private final JmcomicSessionManager clientSession;
@@ -25,6 +32,8 @@ public final class SystemPluginHandler {
     private final LaunchRouteService launchRoutes;
     private final DiagnosticsService diagnostics;
     private final Paths paths;
+    private final AuthService auth;
+    private final Executor authExecutor;
 
     public SystemPluginHandler(
         RequestExecutor networkRequests,
@@ -34,7 +43,7 @@ public final class SystemPluginHandler {
         LaunchRouteService launchRoutes,
         DiagnosticsService diagnostics
     ) {
-        this(networkRequests, diagnosticsRequests, clientSession, network, launchRoutes, diagnostics, null);
+        this(networkRequests, diagnosticsRequests, clientSession, network, launchRoutes, diagnostics, null, null, Runnable::run);
     }
 
     public SystemPluginHandler(
@@ -44,7 +53,9 @@ public final class SystemPluginHandler {
         NetworkService network,
         LaunchRouteService launchRoutes,
         DiagnosticsService diagnostics,
-        Paths paths
+        Paths paths,
+        AuthService auth,
+        Executor authExecutor
     ) {
         this.networkRequests = networkRequests;
         this.diagnosticsRequests = diagnosticsRequests;
@@ -53,6 +64,8 @@ public final class SystemPluginHandler {
         this.launchRoutes = launchRoutes;
         this.diagnostics = diagnostics;
         this.paths = paths;
+        this.auth = auth;
+        this.authExecutor = authExecutor;
     }
 
     public void getInitStatus(Context context) {
@@ -84,6 +97,7 @@ public final class SystemPluginHandler {
             if (!(client instanceof io.github.jukomu.jmcomic.core.client.impl.JmApiClient apiClient)) {
                 throw ApiException.unavailable("当前 JMComic 客户端不支持线路选择");
             }
+            String beforeDomain = apiClient.getUsedDomain();
             if ("auto".equals(request.mode())) apiClient.useAutoDomain();
             else if ("manual".equals(request.mode())) {
                 if (request.domain() == null || request.domain().isBlank()) {
@@ -92,6 +106,19 @@ public final class SystemPluginHandler {
                 apiClient.useDomain(request.domain());
             } else throw ApiException.invalidRequest("mode must be auto or manual");
             String domain = apiClient.getUsedDomain();
+            if (auth != null && !java.util.Objects.equals(beforeDomain, domain)) {
+                try {
+                    authExecutor.execute(() -> {
+                        try {
+                            auth.reauthenticateAfterRouteChange();
+                        } catch (RuntimeException error) {
+                            LOGGER.warn("线路切换后自动登录失败", error);
+                        }
+                    });
+                } catch (RuntimeException error) {
+                    LOGGER.warn("无法提交线路切换后的自动登录", error);
+                }
+            }
             return java.util.Map.of("domain", domain == null ? "" : domain);
         });
     }

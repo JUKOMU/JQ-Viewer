@@ -222,8 +222,8 @@ public class AuthPluginContractInstrumentedTest {
         plugin.autoLogin(authFailure);
         assertRejected(authFailure, "自动登录失败：凭据无效或已过期", true);
         assertEquals("permission-denied", authFailure.rejectionCode);
-        assertNull(credentialStore.getUsername());
-        assertNull(credentialStore.getPassword());
+        assertEquals("alice", credentialStore.getUsername());
+        assertEquals("secret", credentialStore.getPassword());
 
         credentialStore.save("alice", "secret");
         apiService.failWith(
@@ -232,6 +232,15 @@ public class AuthPluginContractInstrumentedTest {
         plugin.autoLogin(serverFailure);
         assertRejected(serverFailure, "service unavailable", true);
         assertEquals("network", serverFailure.rejectionCode);
+        assertEquals("alice", credentialStore.getUsername());
+
+        credentialStore.save("alice", "secret");
+        apiService.failWith(
+            "invalid request", new ResponseException("invalid request", 400));
+        RecordingPluginCall businessFailure = call("autoLogin");
+        plugin.autoLogin(businessFailure);
+        assertRejected(businessFailure, "invalid request", true);
+        assertEquals("internal", businessFailure.rejectionCode);
         assertEquals("alice", credentialStore.getUsername());
     }
 
@@ -301,6 +310,23 @@ public class AuthPluginContractInstrumentedTest {
 
         assertRejected(autoLogin, PluginCallSession.SESSION_ENDED_MESSAGE, false);
         assertCurrentAuthState();
+    }
+
+    @Test
+    public void routeReauthenticationCannotRestoreStateAfterSessionInvalidation() throws Exception {
+        credentialStore.save("current", "current-secret");
+        apiService.autoComplete = false;
+
+        authHandler.reauthenticateAfterRouteChange();
+        apiService.completeSuccess();
+        authHandler.invalidateSession();
+        apiService.completeSuccess();
+
+        assertNull(settingsStore.getString("auth_cookies_json"));
+        assertNull(settingsStore.getString("auth_username"));
+        assertNull(settingsStore.getString("auth_user_info_json"));
+        assertEquals("current", credentialStore.getUsername());
+        assertEquals("current-secret", credentialStore.getPassword());
     }
 
     private void saveCurrentAuthState() {

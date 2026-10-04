@@ -52,29 +52,39 @@
       <div class="info-list">
         <div class="info-row">
           <span class="info-label">ID</span>
-          <span class="info-value clickable" @click="copyText(String(album.id))">
+          <button type="button" class="info-value clickable" @click="copyText(String(album.id))">
             {{ album.id }}
             <ion-icon class="copy-icon" :icon="copyOutline" />
-          </span>
+          </button>
         </div>
         <div class="info-row">
           <span class="info-label">标题</span>
-          <span class="info-value clickable" @click="copyText(album.title)">
+          <button type="button" class="info-value clickable" @click="copyText(album.title)">
             {{ album.title }}
             <ion-icon class="copy-icon" :icon="copyOutline" />
-          </span>
+          </button>
         </div>
         <div v-if="album.description" class="info-row">
           <span class="info-label">描述</span>
           <div class="info-value">
-            <p ref="descTextRef" class="desc-text" :class="{ expanded: descExpanded }">
-              {{ album.description }}
-            </p>
+            <div
+              class="copy-control clickable"
+              role="button"
+              tabindex="0"
+              @click="copyText(album.description)"
+              @keydown.enter.prevent="copyText(album.description)"
+              @keydown.space.prevent="copyText(album.description)"
+            >
+              <p ref="descTextRef" class="desc-text" :class="{ expanded: descExpanded }">
+                {{ album.description }}
+              </p>
+              <ion-icon class="copy-icon" :icon="copyOutline" />
+            </div>
             <button
               v-if="descOverflows"
               type="button"
               class="desc-toggle"
-              @click="descExpanded = !descExpanded"
+              @click.stop="descExpanded = !descExpanded"
             >
               {{ descExpanded ? '收起' : '展开' }}
             </button>
@@ -137,11 +147,17 @@
         </div>
         <div v-if="album.addTime" class="info-row">
           <span class="info-label">发布日期</span>
-          <span class="info-value">{{ formatDate(album.addTime) }}</span>
+          <button type="button" class="info-value clickable" @click="copyText(formatDate(album.addTime))">
+            {{ formatDate(album.addTime) }}
+            <ion-icon class="copy-icon" :icon="copyOutline" />
+          </button>
         </div>
         <div v-if="album.views" class="info-row">
           <span class="info-label">浏览</span>
-          <span class="info-value">{{ album.views }}</span>
+          <button type="button" class="info-value clickable" @click="copyText(String(album.views))">
+            {{ album.views }}
+            <ion-icon class="copy-icon" :icon="copyOutline" />
+          </button>
         </div>
       </div>
 
@@ -479,7 +495,15 @@ const downloadIcon = computed(() => {
   cursor: pointer;
   position: relative;
   padding-right: 18px;
+  border: 0;
+  background: transparent;
+  text-align: left;
   transition: color 0.15s ease;
+}
+
+.copy-control {
+  position: relative;
+  padding-right: 18px;
 }
 
 .info-value.clickable:hover {
@@ -649,10 +673,6 @@ const downloadIcon = computed(() => {
 
   .info-label {
     width: 72px;
-  }
-
-  .info-value {
-    max-width: 72ch;
   }
 
   .related-scroll {

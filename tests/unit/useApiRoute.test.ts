@@ -5,7 +5,6 @@ const mocks = vi.hoisted(() => ({
   setApiRoutePreference: vi.fn(),
   getUsedDomain: vi.fn(),
   getDomainStates: vi.fn(),
-  reauthenticate: vi.fn(),
   mode: 'auto' as 'auto' | 'manual',
   domain: '',
 }))
@@ -30,10 +29,6 @@ vi.mock('@/services/SettingsService', () => ({
   },
 }))
 
-vi.mock('@/composables/useAuth', () => ({
-  useAuth: () => ({ isLoggedIn: { value: true }, reauthenticate: mocks.reauthenticate }),
-}))
-
 describe('useApiRoute', () => {
   beforeEach(() => {
     vi.resetModules()
@@ -44,10 +39,9 @@ describe('useApiRoute', () => {
     mocks.getUsedDomain.mockResolvedValue({ domain: 'api.example' })
     mocks.getDomainStates.mockResolvedValue({ domains: [], alive: 0, total: 0, allDeadFallback: false })
     mocks.setApiRoutePreference.mockResolvedValue({ success: true })
-    mocks.reauthenticate.mockResolvedValue('authenticated')
   })
 
-  test('切换线路时先应用库选择，再持久化偏好并重新认证', async () => {
+  test('切换线路时先应用库选择，再持久化偏好', async () => {
     const { useApiRoute } = await import('@/composables/useApiRoute')
     const route = useApiRoute()
 
@@ -55,7 +49,6 @@ describe('useApiRoute', () => {
 
     expect(mocks.applyApiRoute).toHaveBeenCalledWith({ mode: 'manual', domain: 'api.example' })
     expect(mocks.setApiRoutePreference).toHaveBeenCalledWith({ mode: 'manual', domain: 'api.example' })
-    expect(mocks.reauthenticate).toHaveBeenCalledOnce()
     expect(route.mode.value).toBe('manual')
     expect(route.selectedDomain.value).toBe('api.example')
   })
@@ -68,7 +61,6 @@ describe('useApiRoute', () => {
 
     expect(mocks.setApiRoutePreference).not.toHaveBeenCalled()
     expect(mocks.applyApiRoute).toHaveBeenCalledTimes(1)
-    expect(mocks.reauthenticate).not.toHaveBeenCalled()
   })
 
   test('自动模式先清理当前实际线路，再切回自动选择', async () => {

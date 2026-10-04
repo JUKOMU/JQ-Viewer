@@ -29,6 +29,9 @@ public final class AuthService {
     private final Object remoteAuthLock = new Object();
     private volatile long successfulLoginGeneration;
     private volatile UserInfoResponse userInfo;
+    private volatile LoginCredentials memoryCredentials;
+    private volatile boolean credentialsLoaded;
+    private volatile long authGeneration;
 
     public AuthService(JmClient client, CredentialStore credentials) {
         this(() -> Objects.requireNonNull(client, "client"), credentials, Runnable::run);
@@ -50,16 +53,30 @@ public final class AuthService {
     }
 
     public UserInfoResponse login(String username, String password) {
+        long expectedGeneration = nextAuthGeneration();
         UserInfoResponse result;
         try {
             result = remoteLogin(username, password);
         } catch (NetworkException failure) {
             throw ApiException.network(message(failure, "登录网络请求失败"));
         } catch (ResponseException failure) {
-            throw ApiException.permissionDenied(message(failure, "用户名或密码错误"));
+            if (isAuthenticationFailure(failure)) {
+                if (expectedGeneration != authGeneration) {
+                    throw ApiException.cancelled("认证状态已变化");
+                }
+                userInfo = null;
+                logoutClientQuietly();
+            }
+            throw mapResponseFailure(failure, "用户名或密码错误");
         }
-        userInfo = result;
-        saveCredentials(username, password);
+        synchronized (this) {
+            if (expectedGeneration != authGeneration) {
+                throw ApiException.cancelled("认证状态已变化");
+            }
+            userInfo = result;
+            memoryCredentials = new LoginCredentials(username, password);
+            saveCredentials(username, password);
+        }
         return result;
     }
 
@@ -67,22 +84,19 @@ public final class AuthService {
      * 立即清除本地会话与凭据，远端注销仅作为后台尽力操作。
      */
     public SuccessResponse logout() {
+        nextAuthGeneration();
         userInfo = null;
+        clearMemoryCredentials();
         clearCredentials("退出后无法清除自动登录凭据");
         scheduleRemoteLogout();
         return SuccessResponse.ok();
     }
 
     public AutoLoginResponse autoLogin() {
-        if (!credentials.isAvailable()) {
-            throw ApiException.unavailable("操作系统安全凭据存储不可用，无法自动登录");
-        }
-
-        LoginCredentials saved;
-        try {
-            saved = credentials.load();
-        } catch (RuntimeException failure) {
-            throw ApiException.unavailable("无法读取操作系统安全凭据，自动登录不可用");
+        long expectedGeneration = currentAuthGeneration();
+        LoginCredentials saved = memoryCredentials;
+        if (saved == null) {
+            saved = loadCredentialsOnce();
         }
         if (saved == null || saved.username() == null || saved.username().isBlank()
             || saved.password() == null || saved.password().isEmpty()) {
@@ -91,20 +105,70 @@ public final class AuthService {
 
         try {
             UserInfoResponse result = remoteLogin(saved.username(), saved.password());
-            userInfo = result;
+            synchronized (this) {
+                if (expectedGeneration != authGeneration) {
+                    throw ApiException.cancelled("认证状态已变化");
+                }
+                userInfo = result;
+                memoryCredentials = saved;
+            }
             return new AutoLoginResponse(true, result);
         } catch (NetworkException failure) {
-            userInfo = null;
             throw ApiException.network(message(failure, "自动登录网络请求失败"));
         } catch (ResponseException failure) {
-            userInfo = null;
             boolean authenticationFailure = isAuthenticationFailure(failure);
             if (authenticationFailure) {
-                clearCredentials("自动登录凭据已失效，但无法从安全存储清除");
+                if (expectedGeneration != authGeneration) {
+                    throw ApiException.cancelled("认证状态已变化");
+                }
+                userInfo = null;
+                logoutClientQuietly();
             }
-            throw ApiException.permissionDenied(authenticationFailure
-                ? "自动登录失败：凭据无效或已过期"
-                : message(failure, "自动登录失败"));
+            throw mapResponseFailure(
+                failure,
+                authenticationFailure ? "自动登录失败：凭据无效或已过期" : "自动登录失败");
+        }
+    }
+
+    /**
+     * 线路切换后只清理 JM 客户端的远端会话，再复用应用层凭据登录。
+     * 应用层凭据不能因线路切换而清除。
+     */
+    public AutoLoginResponse reauthenticateAfterRouteChange() {
+        long expectedGeneration = nextAuthGeneration();
+        userInfo = null;
+        logoutClientQuietly();
+        return autoLogin(expectedGeneration);
+    }
+
+    private AutoLoginResponse autoLogin(long expectedGeneration) {
+        LoginCredentials saved = memoryCredentials;
+        if (saved == null) saved = loadCredentialsOnce();
+        if (saved == null || saved.username() == null || saved.username().isBlank()
+            || saved.password() == null || saved.password().isEmpty()) {
+            throw ApiException.notFound("没有保存的自动登录凭据");
+        }
+        try {
+            UserInfoResponse result = remoteLogin(saved.username(), saved.password());
+            synchronized (this) {
+                if (expectedGeneration != authGeneration) {
+                    throw ApiException.cancelled("认证状态已变化");
+                }
+                userInfo = result;
+                memoryCredentials = saved;
+            }
+            return new AutoLoginResponse(true, result);
+        } catch (NetworkException failure) {
+            throw ApiException.network(message(failure, "自动登录网络请求失败"));
+        } catch (ResponseException failure) {
+            boolean authenticationFailure = isAuthenticationFailure(failure);
+            if (authenticationFailure && expectedGeneration == currentAuthGeneration()) {
+                userInfo = null;
+                logoutClientQuietly();
+            }
+            throw mapResponseFailure(
+                failure,
+                authenticationFailure ? "自动登录失败：凭据无效或已过期" : "自动登录失败");
         }
     }
 
@@ -136,6 +200,57 @@ public final class AuthService {
             credentials.save(username, password);
         } catch (RuntimeException failure) {
             LOGGER.warn("登录成功，但无法保存自动登录凭据", failure);
+        }
+    }
+
+    private LoginCredentials loadCredentialsOnce() {
+        if (credentialsLoaded) return memoryCredentials;
+        synchronized (this) {
+            if (credentialsLoaded) return memoryCredentials;
+            if (!credentials.isAvailable()) {
+                throw ApiException.unavailable("操作系统安全凭据存储不可用，无法自动登录");
+            }
+            try {
+                LoginCredentials loaded = credentials.load();
+                memoryCredentials = loaded;
+                credentialsLoaded = true;
+                return loaded;
+            } catch (RuntimeException failure) {
+                throw ApiException.unavailable("无法读取操作系统安全凭据，自动登录不可用");
+            }
+        }
+    }
+
+    private long nextAuthGeneration() {
+        synchronized (this) {
+            return ++authGeneration;
+        }
+    }
+
+    private long currentAuthGeneration() {
+        synchronized (this) {
+            return authGeneration;
+        }
+    }
+
+    private void clearMemoryCredentials() {
+        memoryCredentials = null;
+        credentialsLoaded = true;
+    }
+
+    private void clearCredentialsQuietly() {
+        if (!credentials.isAvailable()) return;
+        try { credentials.clear(); } catch (RuntimeException failure) {
+            LOGGER.warn("认证失败后无法清除自动登录凭据", failure);
+        }
+    }
+
+    private void logoutClientQuietly() {
+        try {
+            JmClient client = clientSupplier.get();
+            if (client != null) client.logout();
+        } catch (RuntimeException failure) {
+            LOGGER.warn("认证失败后远端注销失败", failure);
         }
     }
 
@@ -193,6 +308,14 @@ public final class AuthService {
     private static boolean isAuthenticationFailure(ResponseException failure) {
         int status = failure.getErrorCode();
         return status == 401 || status == 403;
+    }
+
+    private static ApiException mapResponseFailure(ResponseException failure, String fallback) {
+        int status = failure.getErrorCode();
+        String message = message(failure, fallback);
+        if (status == 401 || status == 403) return ApiException.permissionDenied(message);
+        if (status >= 500) return ApiException.network(message);
+        return new ApiException("internal", status > 0 ? status : 500, message);
     }
 
     private JmClient requireClient() {

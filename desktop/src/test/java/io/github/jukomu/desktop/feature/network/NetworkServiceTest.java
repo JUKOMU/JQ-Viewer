@@ -53,7 +53,7 @@ class NetworkServiceTest {
     }
 
     @Test
-    void mergesRepeatedReprobesAndPublishesOneResultSequence() {
+    void queuesRepeatedReprobesAndPublishesEachResultSequence() {
         Queue<Runnable> tasks = new ArrayDeque<>();
         List<NetworkProbeEvent> events = new ArrayList<>();
         AtomicInteger reprobes = new AtomicInteger();
@@ -70,9 +70,12 @@ class NetworkServiceTest {
         assertEquals(1, tasks.size());
         tasks.remove().run();
         assertEquals(1, reprobes.get());
-        assertEquals(List.of("probing", "result"),
+        assertEquals(1, tasks.size());
+        tasks.remove().run();
+        assertEquals(2, reprobes.get());
+        assertEquals(List.of("probing", "result", "probing", "result"),
                 events.stream().map(NetworkProbeEvent::phase).toList());
-        assertEquals(1, events.get(1).alive());
+        assertEquals(1, events.get(3).alive());
     }
 
     @Test

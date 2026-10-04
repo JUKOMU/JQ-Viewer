@@ -165,27 +165,32 @@ export function createFacadeClient(runtime: FrontendRuntime): JmcomicClient {
       if (
         typeof property !== 'string' ||
         typeof value !== 'function' ||
-        !SAFE_READ_METHODS.has(property)
+        !PUBLIC_ONLINE_METHODS.has(property)
       ) {
         return value
       }
-      return (...args: unknown[]) =>
-        retryAfterNetworkRestore(runtime, () => Promise.resolve(Reflect.apply(value, target, args)))
+      return (...args: unknown[]) => {
+        const operation = () => Promise.resolve(Reflect.apply(value, target, args))
+        const replacesPendingImages =
+          property === 'preloadImages' &&
+          (args[0] as { replacePending?: boolean } | undefined)?.replacePending === true
+        return replacesPendingImages ? operation() : retryAfterNetworkRestore(runtime, operation)
+      }
     },
   })
 }
 
-const SAFE_READ_METHODS = new Set([
+/** 方案 A 允许失败后等待网络恢复并最多重试一次的公开在线能力。 */
+const PUBLIC_ONLINE_METHODS = new Set([
   'search',
   'categories',
   'getAlbum',
   'getPhoto',
   'getComments',
-  'getFavorites',
-  'getUserProfile',
-  'getBrowseHistory',
-  'getBrowseHistoryOverview',
-  'getParseHistory',
+  'getDomainStates',
+  'getUsedDomain',
+  'measureLatency',
+  'preloadImages',
 ])
 
 async function retryAfterNetworkRestore<T>(

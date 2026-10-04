@@ -5,6 +5,12 @@ import org.junit.Test;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -134,6 +140,35 @@ public class ClientSessionTest {
         assertNull(observer.readyClient);
         assertSame(staleClient, observer.discardedClients.get(0));
         assertEquals(List.of("initializing", "unavailable"), observer.states);
+    }
+
+    @Test
+    public void initializationFailureRetriesCurrentEnvironmentWithBackoff() throws Exception {
+        ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+        AtomicInteger factoryCalls = new AtomicInteger();
+        RecordingObserver observer = new RecordingObserver();
+        try {
+            ClientSession<Object> session = new ClientSession<>(() -> {
+                if (factoryCalls.incrementAndGet() == 1) {
+                    return CompletableFuture.failedFuture(new IllegalStateException("offline"));
+                }
+                return CompletableFuture.completedFuture(new Object());
+            }, observer, scheduler);
+
+            session.updateEnvironment("wifi", true);
+
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
+            while (session.getClient() == null && System.nanoTime() < deadline) {
+                Thread.sleep(20);
+            }
+
+            assertEquals(2, factoryCalls.get());
+            assertEquals("ready", session.getSnapshot().state());
+            assertEquals(List.of("initializing", "unavailable", "initializing", "ready"),
+                observer.states);
+        } finally {
+            scheduler.shutdownNow();
+        }
     }
 
     private static final class RecordingObserver implements ClientSession.Observer<Object> {

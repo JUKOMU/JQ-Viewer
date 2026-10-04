@@ -34,13 +34,24 @@ class AuthServiceTest {
     }
 
     @Test
+    void reusesInMemoryCredentialsWithoutReloadingSecureStorage() {
+        MemoryCredentialStore credentials = new MemoryCredentialStore(true);
+        credentials.save("alice", "secret");
+        AuthService service = new AuthService(client(null), credentials);
+
+        assertTrue(service.autoLogin().success());
+        assertTrue(service.autoLogin().success());
+
+        assertEquals(1, credentials.loadCalls());
+    }
+
+    @Test
     void keepsManualLoginAvailableWhenSecureStorageIsUnavailable() {
         MemoryCredentialStore credentials = new MemoryCredentialStore(false);
         AuthService service = new AuthService(client(null), credentials);
 
         assertEquals("alice", service.login("alice", "secret").username());
-        ApiException failure = assertThrows(ApiException.class, service::autoLogin);
-        assertEquals("unavailable", failure.code());
+        assertTrue(service.autoLogin().success());
         assertNull(credentials.loadDirectly());
     }
 
@@ -204,6 +215,7 @@ class AuthServiceTest {
     private static final class MemoryCredentialStore implements CredentialStore {
         private final boolean available;
         private LoginCredentials credentials;
+        private int loadCalls;
 
         private MemoryCredentialStore(boolean available) {
             this.available = available;
@@ -217,6 +229,7 @@ class AuthServiceTest {
         @Override
         public LoginCredentials load() {
             if (!available) throw new IllegalStateException("unavailable");
+            loadCalls++;
             return credentials;
         }
 
@@ -234,6 +247,10 @@ class AuthServiceTest {
 
         private LoginCredentials loadDirectly() {
             return credentials;
+        }
+
+        private int loadCalls() {
+            return loadCalls;
         }
     }
 }

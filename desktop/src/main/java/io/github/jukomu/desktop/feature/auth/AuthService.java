@@ -29,6 +29,8 @@ public final class AuthService {
     private final Object remoteAuthLock = new Object();
     private volatile long successfulLoginGeneration;
     private volatile UserInfoResponse userInfo;
+    private volatile LoginCredentials memoryCredentials;
+    private volatile boolean credentialsLoaded;
 
     public AuthService(JmClient client, CredentialStore credentials) {
         this(() -> Objects.requireNonNull(client, "client"), credentials, Runnable::run);
@@ -56,9 +58,15 @@ public final class AuthService {
         } catch (NetworkException failure) {
             throw ApiException.network(message(failure, "登录网络请求失败"));
         } catch (ResponseException failure) {
+            if (isAuthenticationFailure(failure)) {
+                clearMemoryCredentials();
+                clearCredentialsQuietly();
+                logoutClientQuietly();
+            }
             throw ApiException.permissionDenied(message(failure, "用户名或密码错误"));
         }
         userInfo = result;
+        memoryCredentials = new LoginCredentials(username, password);
         saveCredentials(username, password);
         return result;
     }
@@ -68,21 +76,16 @@ public final class AuthService {
      */
     public SuccessResponse logout() {
         userInfo = null;
+        clearMemoryCredentials();
         clearCredentials("退出后无法清除自动登录凭据");
         scheduleRemoteLogout();
         return SuccessResponse.ok();
     }
 
     public AutoLoginResponse autoLogin() {
-        if (!credentials.isAvailable()) {
-            throw ApiException.unavailable("操作系统安全凭据存储不可用，无法自动登录");
-        }
-
-        LoginCredentials saved;
-        try {
-            saved = credentials.load();
-        } catch (RuntimeException failure) {
-            throw ApiException.unavailable("无法读取操作系统安全凭据，自动登录不可用");
+        LoginCredentials saved = memoryCredentials;
+        if (saved == null) {
+            saved = loadCredentialsOnce();
         }
         if (saved == null || saved.username() == null || saved.username().isBlank()
             || saved.password() == null || saved.password().isEmpty()) {
@@ -92,6 +95,7 @@ public final class AuthService {
         try {
             UserInfoResponse result = remoteLogin(saved.username(), saved.password());
             userInfo = result;
+            memoryCredentials = saved;
             return new AutoLoginResponse(true, result);
         } catch (NetworkException failure) {
             userInfo = null;
@@ -100,7 +104,9 @@ public final class AuthService {
             userInfo = null;
             boolean authenticationFailure = isAuthenticationFailure(failure);
             if (authenticationFailure) {
+                clearMemoryCredentials();
                 clearCredentials("自动登录凭据已失效，但无法从安全存储清除");
+                logoutClientQuietly();
             }
             throw ApiException.permissionDenied(authenticationFailure
                 ? "自动登录失败：凭据无效或已过期"
@@ -136,6 +142,45 @@ public final class AuthService {
             credentials.save(username, password);
         } catch (RuntimeException failure) {
             LOGGER.warn("登录成功，但无法保存自动登录凭据", failure);
+        }
+    }
+
+    private LoginCredentials loadCredentialsOnce() {
+        if (credentialsLoaded) return null;
+        synchronized (this) {
+            if (credentialsLoaded) return null;
+            credentialsLoaded = true;
+            if (!credentials.isAvailable()) {
+                throw ApiException.unavailable("操作系统安全凭据存储不可用，无法自动登录");
+            }
+            try {
+                LoginCredentials loaded = credentials.load();
+                memoryCredentials = loaded;
+                return loaded;
+            } catch (RuntimeException failure) {
+                throw ApiException.unavailable("无法读取操作系统安全凭据，自动登录不可用");
+            }
+        }
+    }
+
+    private void clearMemoryCredentials() {
+        memoryCredentials = null;
+        credentialsLoaded = true;
+    }
+
+    private void clearCredentialsQuietly() {
+        if (!credentials.isAvailable()) return;
+        try { credentials.clear(); } catch (RuntimeException failure) {
+            LOGGER.warn("认证失败后无法清除自动登录凭据", failure);
+        }
+    }
+
+    private void logoutClientQuietly() {
+        try {
+            JmClient client = clientSupplier.get();
+            if (client != null) client.logout();
+        } catch (RuntimeException failure) {
+            LOGGER.warn("认证失败后远端注销失败", failure);
         }
     }
 

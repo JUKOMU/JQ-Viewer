@@ -11,6 +11,10 @@ import org.slf4j.LoggerFactory;
 
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 管理 Desktop 进程内可空的 JMComic 在线客户端。
@@ -18,6 +22,7 @@ import java.util.concurrent.CompletableFuture;
 public final class JmcomicSessionManager implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(JmcomicSessionManager.class);
     private static final String CLIENT_UNAVAILABLE = "在线客户端不可用";
+    private static final long[] RETRY_DELAYS_SECONDS = {1, 2, 4, 8, 16, 30};
 
     @FunctionalInterface
     public interface Factory {
@@ -31,11 +36,14 @@ public final class JmcomicSessionManager implements AutoCloseable {
     private final Factory factory;
     private final boolean ownsClient;
     private final EventHub events;
+    private final ScheduledExecutorService retryExecutor;
 
     private JmClient client;
     private CompletableFuture<? extends JmClient> pending;
     private ClientStateSnapshot snapshot;
     private boolean closed;
+    private int retryIndex;
+    private ScheduledFuture<?> retryTask;
 
     private JmcomicSessionManager(
         Factory factory,
@@ -47,6 +55,11 @@ public final class JmcomicSessionManager implements AutoCloseable {
         this.client = client;
         this.ownsClient = ownsClient;
         this.events = Objects.requireNonNull(events, "events");
+        this.retryExecutor = Executors.newSingleThreadScheduledExecutor(task -> {
+            Thread thread = new Thread(task, "jq-viewer-client-retry");
+            thread.setDaemon(true);
+            return thread;
+        });
         this.snapshot = client == null
             ? snapshot("unavailable", "no_network")
             : snapshot("ready", null);
@@ -70,6 +83,10 @@ public final class JmcomicSessionManager implements AutoCloseable {
         ClientStateSnapshot changed;
         synchronized (this) {
             if (closed || client != null || pending != null || factory == null) return;
+            if (retryTask != null) {
+                retryTask.cancel(false);
+                retryTask = null;
+            }
             changed = setSnapshot("initializing", null);
             try {
                 attempt = factory.create();
@@ -120,11 +137,13 @@ public final class JmcomicSessionManager implements AutoCloseable {
                 changed = null;
             } else if (failure == null && value instanceof JmDownloadClient) {
                 client = value;
+                retryIndex = 0;
                 changed = setSnapshot("ready", null);
                 ready = true;
             } else {
                 changed = setSnapshot("unavailable", "initialization_failed");
                 reportFailure = true;
+                scheduleRetryLocked();
             }
             publish(changed);
         }
@@ -139,6 +158,19 @@ public final class JmcomicSessionManager implements AutoCloseable {
             LOGGER.warn("JMComic 客户端初始化失败，Desktop 保持离线能力", cause);
             if (ownsClient && value != null) closeClient(value);
         }
+    }
+
+    private void scheduleRetryLocked() {
+        if (closed || client != null || pending != null || retryTask != null) return;
+        long delay = RETRY_DELAYS_SECONDS[Math.min(retryIndex, RETRY_DELAYS_SECONDS.length - 1)];
+        retryIndex++;
+        retryTask = retryExecutor.schedule(() -> {
+            synchronized (this) {
+                retryTask = null;
+                if (closed || client != null || pending != null) return;
+            }
+            startOrRetry();
+        }, delay, TimeUnit.SECONDS);
     }
 
     private synchronized ClientStateSnapshot setSnapshot(String state, String reason) {
@@ -163,10 +195,13 @@ public final class JmcomicSessionManager implements AutoCloseable {
             closed = true;
             pendingAttempt = pending;
             pending = null;
+            if (retryTask != null) retryTask.cancel(false);
+            retryTask = null;
             current = client;
             client = null;
         }
         if (pendingAttempt != null) pendingAttempt.cancel(true);
+        retryExecutor.shutdownNow();
         if (ownsClient && current != null) closeClient(current);
     }
 

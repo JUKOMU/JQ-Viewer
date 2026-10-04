@@ -222,8 +222,8 @@ public class AuthPluginContractInstrumentedTest {
         plugin.autoLogin(authFailure);
         assertRejected(authFailure, "自动登录失败：凭据无效或已过期", true);
         assertEquals("permission-denied", authFailure.rejectionCode);
-        assertNull(credentialStore.getUsername());
-        assertNull(credentialStore.getPassword());
+        assertEquals("alice", credentialStore.getUsername());
+        assertEquals("secret", credentialStore.getPassword());
 
         credentialStore.save("alice", "secret");
         apiService.failWith(

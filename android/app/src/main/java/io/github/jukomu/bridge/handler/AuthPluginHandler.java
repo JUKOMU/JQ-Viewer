@@ -234,9 +234,6 @@ public final class AuthPluginHandler {
                     callSession.completeIfActive(trackedCall, activeCall -> {
                         if (error instanceof ResponseException responseError
                             && isAuthenticationFailure(responseError)) {
-                            memoryUsername = null;
-                            memoryPassword = null;
-                            CredentialStore.getInstance(context).clear();
                             clearAuthState(SettingsStore.getInstance(context));
                             try {
                                 apiService.logout(new ApiCallback() {

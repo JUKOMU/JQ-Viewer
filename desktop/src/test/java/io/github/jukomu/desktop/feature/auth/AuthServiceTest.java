@@ -70,7 +70,7 @@ class AuthServiceTest {
                 client(new ResponseException("unauthorized", 401)), credentials);
         ApiException denied = assertThrows(ApiException.class, authFailure::autoLogin);
         assertEquals("permission-denied", denied.code());
-        assertNull(credentials.loadDirectly());
+        assertEquals("alice", credentials.loadDirectly().username());
 
         credentials.save("alice", "secret");
         AuthService serverFailure = new AuthService(
@@ -78,6 +78,18 @@ class AuthServiceTest {
         ApiException unavailable = assertThrows(ApiException.class, serverFailure::autoLogin);
         assertEquals("permission-denied", unavailable.code());
         assertEquals("alice", credentials.loadDirectly().username());
+    }
+
+    @Test
+    void failedManualLoginKeepsApplicationCredentials() {
+        MemoryCredentialStore credentials = new MemoryCredentialStore(true);
+        credentials.save("alice", "secret");
+        AuthService service = new AuthService(
+                client(new ResponseException("unauthorized", 401)), credentials);
+
+        assertThrows(ApiException.class, () -> service.login("alice", "wrong"));
+        assertEquals("alice", credentials.loadDirectly().username());
+        assertEquals("secret", credentials.loadDirectly().password());
     }
 
     @Test

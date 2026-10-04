@@ -59,8 +59,6 @@ public final class AuthService {
             throw ApiException.network(message(failure, "登录网络请求失败"));
         } catch (ResponseException failure) {
             if (isAuthenticationFailure(failure)) {
-                clearMemoryCredentials();
-                clearCredentialsQuietly();
                 logoutClientQuietly();
             }
             throw ApiException.permissionDenied(message(failure, "用户名或密码错误"));
@@ -104,8 +102,6 @@ public final class AuthService {
             userInfo = null;
             boolean authenticationFailure = isAuthenticationFailure(failure);
             if (authenticationFailure) {
-                clearMemoryCredentials();
-                clearCredentials("自动登录凭据已失效，但无法从安全存储清除");
                 logoutClientQuietly();
             }
             throw ApiException.permissionDenied(authenticationFailure

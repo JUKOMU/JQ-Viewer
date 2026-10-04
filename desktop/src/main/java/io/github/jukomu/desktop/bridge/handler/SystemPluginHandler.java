@@ -15,10 +15,16 @@ import io.github.jukomu.desktop.feature.notification.LaunchRouteService;
 import io.github.jukomu.desktop.logging.ApplicationLogging;
 import io.javalin.http.Context;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.concurrent.Executor;
+
 /**
  * 提供服务状态查询。
  */
 public final class SystemPluginHandler {
+    private static final Logger LOGGER = LoggerFactory.getLogger(SystemPluginHandler.class);
     private final RequestExecutor networkRequests;
     private final RequestExecutor diagnosticsRequests;
     private final JmcomicSessionManager clientSession;
@@ -27,6 +33,7 @@ public final class SystemPluginHandler {
     private final DiagnosticsService diagnostics;
     private final Paths paths;
     private final AuthService auth;
+    private final Executor authExecutor;
 
     public SystemPluginHandler(
         RequestExecutor networkRequests,
@@ -36,7 +43,7 @@ public final class SystemPluginHandler {
         LaunchRouteService launchRoutes,
         DiagnosticsService diagnostics
     ) {
-        this(networkRequests, diagnosticsRequests, clientSession, network, launchRoutes, diagnostics, null, null);
+        this(networkRequests, diagnosticsRequests, clientSession, network, launchRoutes, diagnostics, null, null, Runnable::run);
     }
 
     public SystemPluginHandler(
@@ -47,7 +54,8 @@ public final class SystemPluginHandler {
         LaunchRouteService launchRoutes,
         DiagnosticsService diagnostics,
         Paths paths,
-        AuthService auth
+        AuthService auth,
+        Executor authExecutor
     ) {
         this.networkRequests = networkRequests;
         this.diagnosticsRequests = diagnosticsRequests;
@@ -57,6 +65,7 @@ public final class SystemPluginHandler {
         this.diagnostics = diagnostics;
         this.paths = paths;
         this.auth = auth;
+        this.authExecutor = authExecutor;
     }
 
     public void getInitStatus(Context context) {
@@ -99,9 +108,15 @@ public final class SystemPluginHandler {
             String domain = apiClient.getUsedDomain();
             if (auth != null && !java.util.Objects.equals(beforeDomain, domain)) {
                 try {
-                    auth.reauthenticateAfterRouteChange();
-                } catch (ApiException error) {
-                    // 线路切换本身已经完成；无凭据或网络暂时不可用由下一次认证处理。
+                    authExecutor.execute(() -> {
+                        try {
+                            auth.reauthenticateAfterRouteChange();
+                        } catch (RuntimeException error) {
+                            LOGGER.warn("线路切换后自动登录失败", error);
+                        }
+                    });
+                } catch (RuntimeException error) {
+                    LOGGER.warn("无法提交线路切换后的自动登录", error);
                 }
             }
             return java.util.Map.of("domain", domain == null ? "" : domain);

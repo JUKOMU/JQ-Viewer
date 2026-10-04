@@ -95,7 +95,7 @@ public final class JmcomicSessionManager {
                 public void onDiscarded(JmApiClient client) {
                     client.close();
                 }
-            });
+            }, executor);
         ClientSession.Snapshot initialSnapshot = session.getSnapshot();
         latestClientState = new ClientStateSnapshot(
             initialSnapshot.state(), initialSnapshot.reason(), initialSnapshot.timestamp());

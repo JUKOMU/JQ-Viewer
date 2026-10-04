@@ -1,6 +1,7 @@
 package io.github.jukomu.feature.download;
 
 import android.annotation.SuppressLint;
+import android.os.SystemClock;
 import io.github.jukomu.feature.download.data.DownloadStore;
 import io.github.jukomu.feature.download.storage.FileStore;
 import io.github.jukomu.jmcomic.api.download.DownloadProgress;
@@ -26,6 +27,8 @@ class DownloadObserver implements TaskObserver {
     private final AtomicBoolean finalized = new AtomicBoolean(false);
     private long lastBytes = 0;
     private long lastTimestamp = 0;
+    private long lastLogAtNanos = 0;
+    private int lastLogPage = 0;
 
     DownloadObserver(String ourTaskId, String albumId, String chapterId, int totalImages,
                      DownloadStore downloadDb, FileStore fileStore,
@@ -38,6 +41,7 @@ class DownloadObserver implements TaskObserver {
         this.fileStore = fileStore;
         this.service = service;
         this.lastTimestamp = System.currentTimeMillis();
+        this.lastLogAtNanos = SystemClock.elapsedRealtimeNanos();
     }
 
     private boolean markFinalized() {
@@ -50,15 +54,25 @@ class DownloadObserver implements TaskObserver {
         if (newState.isTerminal() && !markFinalized()) return;
 
         if (newState == TaskState.COMPLETED) {
+            service.logDownloadEvent(ourTaskId, albumId, chapterId, "phase", "completed",
+                DownloadService.STATUS_COMPLETED, totalImages, totalImages, progressBytes(task), 0,
+                task.getTaskId(), null, null);
             service.finishDownloadWithValidation(
                 ourTaskId, albumId, chapterId, totalImages);
         } else if (newState == TaskState.FAILED) {
+            service.logDownloadEvent(ourTaskId, albumId, chapterId, "failed", "downloading",
+                DownloadService.STATUS_FAILED, task.getCompletedCount(), totalImages,
+                progressBytes(task), 0, task.getTaskId(), "DOWNLOAD_FAILED",
+                new IllegalStateException("下载失败"));
             downloadDb.updateFailed(ourTaskId, 0, "下载失败");
             notifyProgress(0, totalImages, DownloadService.STATUS_FAILED, "下载失败");
             service.updateDownloadNotification(ourTaskId, 0, totalImages,
                 DownloadService.STATUS_FAILED, "下载失败");
             service.cleanupTaskMapping(ourTaskId);
         } else if (newState == TaskState.CANCELLED) {
+            service.logDownloadEvent(ourTaskId, albumId, chapterId, "cancelled", "downloading",
+                "cancelled", task.getCompletedCount(), totalImages, progressBytes(task), 0,
+                task.getTaskId(), null, null);
             if (downloadDb.getTask(ourTaskId) == null) return;
             fileStore.deleteChapter(albumId, chapterId);
             downloadDb.deleteImages(ourTaskId);
@@ -84,6 +98,9 @@ class DownloadObserver implements TaskObserver {
             }
             int succeeded = totalImages - failed;
             String error = failed + "/" + totalImages + " 张图片下载失败";
+            service.logDownloadEvent(ourTaskId, albumId, chapterId, "failed", "downloading",
+                DownloadService.STATUS_FAILED, succeeded, totalImages, progressBytes(task), 0,
+                task.getTaskId(), "PARTIAL_DOWNLOAD", new IllegalStateException(error));
             downloadDb.updateFailed(ourTaskId, succeeded, error);
             long totalSize = service.calcChapterFileSize(albumId, chapterId);
             downloadDb.updateSize(ourTaskId, totalSize);
@@ -113,6 +130,17 @@ class DownloadObserver implements TaskObserver {
             lastBytes = currentBytes;
             lastTimestamp = now;
 
+            long nowNanos = SystemClock.elapsedRealtimeNanos();
+            if (completed == totalImages || completed - lastLogPage >= 25
+                || nowNanos - lastLogAtNanos >= 5_000_000_000L) {
+                long logSpeed = speed;
+                service.logDownloadEvent(ourTaskId, albumId, chapterId, "heartbeat",
+                    "downloading", DownloadService.STATUS_DOWNLOADING, completed, totalImages,
+                    currentBytes, logSpeed, task.getTaskId(), null, null);
+                lastLogPage = completed;
+                lastLogAtNanos = nowNanos;
+            }
+
             downloadDb.updateProgress(ourTaskId, completed);
             notifyProgress(completed, totalImages,
                 DownloadService.STATUS_DOWNLOADING, null, speed, 0, currentBytes);
@@ -130,6 +158,9 @@ class DownloadObserver implements TaskObserver {
     public void onError(BaseDownloadTask task, Exception e) {
         if (service.isCancelled(ourTaskId)) return;
         if (!markFinalized()) return;
+        service.logDownloadEvent(ourTaskId, albumId, chapterId, "failed", "downloading",
+            DownloadService.STATUS_FAILED, task.getCompletedCount(), totalImages,
+            progressBytes(task), 0, task.getTaskId(), "DOWNLOAD_ERROR", e);
         downloadDb.updateFailed(ourTaskId, 0, e.getMessage());
         notifyProgress(0, totalImages, DownloadService.STATUS_FAILED, e.getMessage());
         service.updateDownloadNotification(ourTaskId, 0, totalImages,
@@ -157,5 +188,9 @@ class DownloadObserver implements TaskObserver {
                                 long downloadedBytes) {
         service.notifyDownloadProgress(ourTaskId, albumId, chapterId, downloadedPages,
             totalPages, status, error, speed, totalSize, downloadedBytes);
+    }
+
+    private long progressBytes(BaseDownloadTask task) {
+        return lastBytes;
     }
 }

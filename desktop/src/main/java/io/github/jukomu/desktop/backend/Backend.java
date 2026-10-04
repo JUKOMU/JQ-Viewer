@@ -393,7 +393,7 @@ public final class Backend implements AutoCloseable {
                     networkRequests, diagnosticsRequests,
                     clientSession,
                     startedNetworkService, startedLaunchRoutes, diagnosticsService, paths,
-                    authService),
+                    authService, executors.api()),
                 new OcrPluginHandler(ocrRequests, startedOcrService),
                 new UpdatePluginHandler(updateRequests, startedUpdateService));
             PdfResourceService pdfResources = new PdfResourceService();

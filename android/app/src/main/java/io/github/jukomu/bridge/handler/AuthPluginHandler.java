@@ -90,6 +90,20 @@ public final class AuthPluginHandler {
 
                     @Override
                     public void onError(String message, Exception error) {
+                        if (error instanceof ResponseException responseError
+                            && isAuthenticationFailure(responseError)) {
+                            clearAuthState(SettingsStore.getInstance(context));
+                            try {
+                                apiService.logout(new ApiCallback() {
+                                    @Override public void onSuccess(JSONObject result) { }
+                                    @Override public void onError(String logoutMessage, Exception logoutError) {
+                                        LOGGER.warn("直接登录认证失败后远端注销失败", logoutError);
+                                    }
+                                });
+                            } catch (RuntimeException logoutError) {
+                                LOGGER.warn("直接登录认证失败后无法发起远端注销", logoutError);
+                            }
+                        }
                         trackedCall.reject(message, error);
                     }
                 }));

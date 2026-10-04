@@ -39,6 +39,7 @@ public final class AuthPluginHandler {
     private volatile String memoryUsername;
     private volatile String memoryPassword;
     private volatile boolean credentialsLoaded;
+    private boolean sessionActive = true;
     private long authGeneration;
 
     public AuthPluginHandler(Context context, ApiService apiService,
@@ -57,6 +58,14 @@ public final class AuthPluginHandler {
         settingsStore.deleteKey(AUTH_COOKIES_KEY);
         settingsStore.deleteKey(AUTH_USERNAME_KEY);
         settingsStore.deleteKey(AUTH_USER_INFO_KEY);
+    }
+
+    /**
+     * 使绑定客户端上的后台认证回调失效。
+     */
+    public synchronized void invalidateSession() {
+        sessionActive = false;
+        authGeneration++;
     }
 
     /**
@@ -304,17 +313,19 @@ public final class AuthPluginHandler {
      * 线路切换后只清理 JM 客户端会话，保留应用层内存/安全存储凭据并异步重登。
      */
     public void reauthenticateAfterRouteChange() {
-        clearAuthState(SettingsStore.getInstance(context));
-        String[] credentials = loadCredentialsIfNeeded();
+        final String[] credentials;
+        final long routeGeneration;
+        synchronized (this) {
+            if (!sessionActive) return;
+            clearAuthState(SettingsStore.getInstance(context));
+            credentials = loadCredentialsIfNeeded();
+            routeGeneration = ++authGeneration;
+        }
         String username = credentials[0];
         String password = credentials[1];
         if (username == null || username.isEmpty() || password == null || password.isEmpty()) return;
         final String loginUsername = username;
         final String loginPassword = password;
-        final long routeGeneration;
-        synchronized (this) {
-            routeGeneration = ++authGeneration;
-        }
         try {
             apiService.logout(new ApiCallback() {
                 @Override public void onSuccess(JSONObject result) {
@@ -332,14 +343,14 @@ public final class AuthPluginHandler {
 
     private void loginAfterRoute(String username, String password, long expectedGeneration) {
         synchronized (this) {
-            if (expectedGeneration != authGeneration) return;
+            if (!sessionActive || expectedGeneration != authGeneration) return;
         }
         try {
             apiService.login(username, password, new ApiCallback() {
                 @Override public void onSuccess(JSONObject userInfo) {
                     try {
                         synchronized (AuthPluginHandler.this) {
-                            if (expectedGeneration != authGeneration) return;
+                            if (!sessionActive || expectedGeneration != authGeneration) return;
                             saveAuthState(SettingsStore.getInstance(context), userInfo);
                             memoryUsername = username;
                             memoryPassword = password;
@@ -353,9 +364,9 @@ public final class AuthPluginHandler {
                     if (error instanceof ResponseException responseError
                         && isAuthenticationFailure(responseError)) {
                         synchronized (AuthPluginHandler.this) {
-                            if (expectedGeneration != authGeneration) return;
+                            if (!sessionActive || expectedGeneration != authGeneration) return;
+                            clearAuthState(SettingsStore.getInstance(context));
                         }
-                        clearAuthState(SettingsStore.getInstance(context));
                         try {
                             apiService.logout(new ApiCallback() {
                                 @Override public void onSuccess(JSONObject result) { }

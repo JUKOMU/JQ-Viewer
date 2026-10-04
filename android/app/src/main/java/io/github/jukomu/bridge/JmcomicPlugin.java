@@ -59,6 +59,9 @@ public class JmcomicPlugin extends Plugin {
             sessionManager.detachListener(sessionListener);
         }
         synchronized (this) {
+            if (authHandler != null) {
+                authHandler.invalidateSession();
+            }
             if (apiSession != null) {
                 apiSession.destroy();
                 apiSession = null;
@@ -71,6 +74,9 @@ public class JmcomicPlugin extends Plugin {
 
     private synchronized void bindClient(JmApiClient client) {
         if (client == boundClient) return;
+        if (authHandler != null) {
+            authHandler.invalidateSession();
+        }
         if (apiSession != null) {
             apiSession.destroy();
             apiSession = null;

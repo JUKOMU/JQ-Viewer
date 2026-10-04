@@ -93,6 +93,7 @@ public final class AuthService {
     }
 
     public AutoLoginResponse autoLogin() {
+        long expectedGeneration = currentAuthGeneration();
         LoginCredentials saved = memoryCredentials;
         if (saved == null) {
             saved = loadCredentialsOnce();
@@ -101,7 +102,6 @@ public final class AuthService {
             || saved.password() == null || saved.password().isEmpty()) {
             throw ApiException.notFound("没有保存的自动登录凭据");
         }
-        long expectedGeneration = currentAuthGeneration();
 
         try {
             UserInfoResponse result = remoteLogin(saved.username(), saved.password());

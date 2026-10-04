@@ -312,6 +312,23 @@ public class AuthPluginContractInstrumentedTest {
         assertCurrentAuthState();
     }
 
+    @Test
+    public void routeReauthenticationCannotRestoreStateAfterSessionInvalidation() throws Exception {
+        credentialStore.save("current", "current-secret");
+        apiService.autoComplete = false;
+
+        authHandler.reauthenticateAfterRouteChange();
+        apiService.completeSuccess();
+        authHandler.invalidateSession();
+        apiService.completeSuccess();
+
+        assertNull(settingsStore.getString("auth_cookies_json"));
+        assertNull(settingsStore.getString("auth_username"));
+        assertNull(settingsStore.getString("auth_user_info_json"));
+        assertEquals("current", credentialStore.getUsername());
+        assertEquals("current-secret", credentialStore.getPassword());
+    }
+
     private void saveCurrentAuthState() {
         settingsStore.putString("auth_cookies_json", "[]");
         settingsStore.putString("auth_username", "current");

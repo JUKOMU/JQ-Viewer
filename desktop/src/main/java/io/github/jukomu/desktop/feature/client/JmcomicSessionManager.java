@@ -172,8 +172,8 @@ public final class JmcomicSessionManager implements AutoCloseable {
                 if (expectedRetryGeneration != retryGeneration || retryTask == null) return;
                 retryTask = null;
                 if (closed || client != null || pending != null) return;
+                startOrRetry();
             }
-            startOrRetry();
         }, delay, TimeUnit.SECONDS);
     }
 

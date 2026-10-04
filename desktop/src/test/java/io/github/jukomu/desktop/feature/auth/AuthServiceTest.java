@@ -10,7 +10,10 @@ import org.junit.jupiter.api.Test;
 import java.lang.reflect.Proxy;
 import java.util.ArrayDeque;
 import java.util.Queue;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -183,12 +186,61 @@ class AuthServiceTest {
         assertEquals("new-secret", credentials.loadDirectly().password());
     }
 
+    @Test
+    void logoutInvalidatesAutoLoginBeforeCredentialsAreLoaded() throws Exception {
+        MemoryCredentialStore credentials = new MemoryCredentialStore(true);
+        credentials.save("alice", "secret");
+        CountDownLatch loginEntered = new CountDownLatch(1);
+        CountDownLatch releaseLogin = new CountDownLatch(1);
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        AuthService service = new AuthService(
+                client(null, null, () -> { }, () -> {
+                    loginEntered.countDown();
+                    try {
+                        assertTrue(releaseLogin.await(5, TimeUnit.SECONDS));
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        throw new AssertionError(interrupted);
+                    }
+                }), credentials);
+        credentials.blockNextLoad();
+
+        Thread autoLogin = new Thread(() -> {
+            try {
+                service.autoLogin();
+            } catch (Throwable error) {
+                failure.set(error);
+            }
+        });
+        autoLogin.start();
+        assertTrue(credentials.loadEntered.await(5, TimeUnit.SECONDS));
+
+        Thread logout = new Thread(service::logout);
+        logout.start();
+        credentials.releaseLoad.countDown();
+        assertTrue(loginEntered.await(5, TimeUnit.SECONDS));
+        long logoutDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (credentials.loadDirectly() != null && System.nanoTime() < logoutDeadline) {
+            Thread.sleep(10);
+        }
+        assertNull(credentials.loadDirectly());
+        releaseLogin.countDown();
+
+        autoLogin.join(5000);
+        logout.join(5000);
+        assertTrue(failure.get() instanceof ApiException);
+        assertEquals("cancelled", ((ApiException) failure.get()).code());
+        assertFalse(service.state().loggedIn());
+        assertNull(credentials.loadDirectly());
+    }
+
     private static JmClient client(RuntimeException loginFailure) {
         return client(loginFailure, null);
     }
 
     private static JmClient client(RuntimeException loginFailure, RuntimeException logoutFailure) {
         return client(loginFailure, logoutFailure, () -> {
+        }, () -> {
         });
     }
 
@@ -196,6 +248,16 @@ class AuthServiceTest {
             RuntimeException loginFailure,
             RuntimeException logoutFailure,
             Runnable logoutAction
+    ) {
+        return client(loginFailure, logoutFailure, logoutAction, () -> {
+        });
+    }
+
+    private static JmClient client(
+            RuntimeException loginFailure,
+            RuntimeException logoutFailure,
+            Runnable logoutAction,
+            Runnable loginAction
     ) {
         return (JmClient) Proxy.newProxyInstance(
                 JmClient.class.getClassLoader(),
@@ -211,6 +273,7 @@ class AuthServiceTest {
                     }
                     return switch (method.getName()) {
                         case "login" -> {
+                            loginAction.run();
                             if (loginFailure != null) throw loginFailure;
                             yield userInfo();
                         }
@@ -235,6 +298,8 @@ class AuthServiceTest {
         private final boolean available;
         private LoginCredentials credentials;
         private int loadCalls;
+        private CountDownLatch loadEntered;
+        private CountDownLatch releaseLoad;
 
         private MemoryCredentialStore(boolean available) {
             this.available = available;
@@ -249,7 +314,26 @@ class AuthServiceTest {
         public LoginCredentials load() {
             if (!available) throw new IllegalStateException("unavailable");
             loadCalls++;
-            return credentials;
+            LoginCredentials loaded = credentials;
+            CountDownLatch entered = loadEntered;
+            CountDownLatch release = releaseLoad;
+            if (entered != null && release != null) {
+                entered.countDown();
+                try {
+                    if (!release.await(5, TimeUnit.SECONDS)) {
+                        throw new AssertionError("凭据加载未及时释放");
+                    }
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new AssertionError(interrupted);
+                }
+            }
+            return loaded;
+        }
+
+        private void blockNextLoad() {
+            loadEntered = new CountDownLatch(1);
+            releaseLoad = new CountDownLatch(1);
         }
 
         @Override

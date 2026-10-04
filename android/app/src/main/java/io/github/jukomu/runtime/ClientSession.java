@@ -39,6 +39,7 @@ final class ClientSession<T> {
     private long generation;
     private int retryAttempt;
     private ScheduledFuture<?> retryFuture;
+    private long retryGeneration;
 
     ClientSession(Factory<T> factory, Observer<T> observer) {
         this(factory, observer, null);
@@ -159,15 +160,19 @@ final class ClientSession<T> {
         if (retryScheduler == null || lastAttemptEnvironment == null || retryFuture != null) return;
         long delaySeconds = retryAttempt < 5 ? 1L << retryAttempt : 30L;
         retryAttempt++;
+        long expectedRetryGeneration = ++retryGeneration;
         retryFuture = retryScheduler.schedule(() -> {
             synchronized (ClientSession.this) {
+                if (expectedRetryGeneration != retryGeneration || retryFuture == null) return;
                 retryFuture = null;
+                if (lastAttemptEnvironment == null || attemptInFlight || client != null) return;
             }
             retryCurrentEnvironment();
         }, delaySeconds, TimeUnit.SECONDS);
     }
 
     private void cancelRetryLocked() {
+        retryGeneration++;
         if (retryFuture != null) {
             retryFuture.cancel(false);
             retryFuture = null;

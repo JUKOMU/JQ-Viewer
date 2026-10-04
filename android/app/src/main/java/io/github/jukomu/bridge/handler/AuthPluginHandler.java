@@ -39,6 +39,7 @@ public final class AuthPluginHandler {
     private volatile String memoryUsername;
     private volatile String memoryPassword;
     private volatile boolean credentialsLoaded;
+    private long authGeneration;
 
     public AuthPluginHandler(Context context, ApiService apiService,
                              Supplier<List<Cookie>> cookieSupplier,
@@ -70,17 +71,27 @@ public final class AuthPluginHandler {
                 call.reject("username and password are required");
                 return;
             }
+            final long loginGeneration;
+            synchronized (this) {
+                loginGeneration = ++authGeneration;
+            }
             startAsync(call, trackedCall -> apiService.login(
                 username, password, new ApiCallback() {
                     @Override
                     public void onSuccess(JSONObject userInfo) {
                         callSession.completeIfActive(trackedCall, activeCall -> {
                             try {
-                                SettingsStore settingsStore = SettingsStore.getInstance(context);
-                                saveAuthState(settingsStore, userInfo);
-                                memoryUsername = username;
-                                memoryPassword = password;
-                                CredentialStore.getInstance(context).save(username, password);
+                                synchronized (AuthPluginHandler.this) {
+                                    if (loginGeneration != authGeneration) {
+                                        activeCall.reject("认证状态已变化", "cancelled");
+                                        return;
+                                    }
+                                    SettingsStore settingsStore = SettingsStore.getInstance(context);
+                                    saveAuthState(settingsStore, userInfo);
+                                    memoryUsername = username;
+                                    memoryPassword = password;
+                                    CredentialStore.getInstance(context).save(username, password);
+                                }
                                 activeCall.resolve(JSObject.fromJSONObject(userInfo));
                             } catch (Exception error) {
                                 activeCall.reject(error.getMessage(), error);
@@ -92,7 +103,13 @@ public final class AuthPluginHandler {
                     public void onError(String message, Exception error) {
                         if (error instanceof ResponseException responseError
                             && isAuthenticationFailure(responseError)) {
-                            clearAuthState(SettingsStore.getInstance(context));
+                            synchronized (AuthPluginHandler.this) {
+                                if (loginGeneration != authGeneration) {
+                                    trackedCall.reject(message, "permission-denied", error);
+                                    return;
+                                }
+                                clearAuthState(SettingsStore.getInstance(context));
+                            }
                             try {
                                 apiService.logout(new ApiCallback() {
                                     @Override public void onSuccess(JSONObject result) { }
@@ -207,18 +224,9 @@ public final class AuthPluginHandler {
      * 使用加密凭据自动登录；认证失败时删除凭据，网络错误时保留凭据。
      */
     public void autoLogin(PluginCall call) {
-        String username = memoryUsername;
-        String password = memoryPassword;
-        if (username == null || username.isEmpty() || password == null || password.isEmpty()) {
-            CredentialStore credentialStore = CredentialStore.getInstance(context);
-            if (!credentialsLoaded) {
-                credentialsLoaded = true;
-                username = credentialStore.getUsername();
-                password = credentialStore.getPassword();
-                memoryUsername = username;
-                memoryPassword = password;
-            }
-        }
+        String[] credentials = loadCredentialsIfNeeded();
+        String username = credentials[0];
+        String password = credentials[1];
 
         if (username == null || username.isEmpty()
             || password == null || password.isEmpty()) {
@@ -227,6 +235,10 @@ public final class AuthPluginHandler {
         }
         final String loginUsername = username;
         final String loginPassword = password;
+        final long loginGeneration;
+        synchronized (this) {
+            loginGeneration = authGeneration;
+        }
 
         startAsync(call, trackedCall -> apiService.login(
             loginUsername, loginPassword, new ApiCallback() {
@@ -234,10 +246,16 @@ public final class AuthPluginHandler {
                 public void onSuccess(JSONObject userInfo) {
                     callSession.completeIfActive(trackedCall, activeCall -> {
                         try {
-                            SettingsStore settingsStore = SettingsStore.getInstance(context);
-                            saveAuthState(settingsStore, userInfo);
-                            memoryUsername = loginUsername;
-                            memoryPassword = loginPassword;
+                            synchronized (AuthPluginHandler.this) {
+                                if (loginGeneration != authGeneration) {
+                                    activeCall.reject("认证状态已变化", "cancelled");
+                                    return;
+                                }
+                                SettingsStore settingsStore = SettingsStore.getInstance(context);
+                                saveAuthState(settingsStore, userInfo);
+                                memoryUsername = loginUsername;
+                                memoryPassword = loginPassword;
+                            }
                             JSObject result = new JSObject();
                             result.put("success", true);
                             result.put("userInfo", JSObject.fromJSONObject(userInfo));
@@ -251,6 +269,12 @@ public final class AuthPluginHandler {
                 @Override
                 public void onError(String message, Exception error) {
                     callSession.completeIfActive(trackedCall, activeCall -> {
+                        synchronized (AuthPluginHandler.this) {
+                            if (loginGeneration != authGeneration) {
+                                activeCall.reject(message, errorCode(error), error);
+                                return;
+                            }
+                        }
                         if (error instanceof ResponseException responseError
                             && isAuthenticationFailure(responseError)) {
                             clearAuthState(SettingsStore.getInstance(context));
@@ -281,44 +305,45 @@ public final class AuthPluginHandler {
      */
     public void reauthenticateAfterRouteChange() {
         clearAuthState(SettingsStore.getInstance(context));
-        String username = memoryUsername;
-        String password = memoryPassword;
-        if (username == null || username.isEmpty() || password == null || password.isEmpty()) {
-            CredentialStore credentialStore = CredentialStore.getInstance(context);
-            if (!credentialsLoaded) {
-                credentialsLoaded = true;
-                username = credentialStore.getUsername();
-                password = credentialStore.getPassword();
-                memoryUsername = username;
-                memoryPassword = password;
-            }
-        }
+        String[] credentials = loadCredentialsIfNeeded();
+        String username = credentials[0];
+        String password = credentials[1];
         if (username == null || username.isEmpty() || password == null || password.isEmpty()) return;
         final String loginUsername = username;
         final String loginPassword = password;
+        final long routeGeneration;
+        synchronized (this) {
+            routeGeneration = ++authGeneration;
+        }
         try {
             apiService.logout(new ApiCallback() {
                 @Override public void onSuccess(JSONObject result) {
-                    loginAfterRoute(loginUsername, loginPassword);
+                    loginAfterRoute(loginUsername, loginPassword, routeGeneration);
                 }
                 @Override public void onError(String message, Exception error) {
-                    loginAfterRoute(loginUsername, loginPassword);
+                    loginAfterRoute(loginUsername, loginPassword, routeGeneration);
                 }
             });
         } catch (RuntimeException error) {
             LOGGER.warn("线路切换后无法清理旧认证态", error);
-            loginAfterRoute(loginUsername, loginPassword);
+            loginAfterRoute(loginUsername, loginPassword, routeGeneration);
         }
     }
 
-    private void loginAfterRoute(String username, String password) {
+    private void loginAfterRoute(String username, String password, long expectedGeneration) {
+        synchronized (this) {
+            if (expectedGeneration != authGeneration) return;
+        }
         try {
             apiService.login(username, password, new ApiCallback() {
                 @Override public void onSuccess(JSONObject userInfo) {
                     try {
-                        saveAuthState(SettingsStore.getInstance(context), userInfo);
-                        memoryUsername = username;
-                        memoryPassword = password;
+                        synchronized (AuthPluginHandler.this) {
+                            if (expectedGeneration != authGeneration) return;
+                            saveAuthState(SettingsStore.getInstance(context), userInfo);
+                            memoryUsername = username;
+                            memoryPassword = password;
+                        }
                     } catch (Exception error) {
                         LOGGER.warn("线路切换后保存认证态失败", error);
                     }
@@ -327,6 +352,9 @@ public final class AuthPluginHandler {
                 @Override public void onError(String message, Exception error) {
                     if (error instanceof ResponseException responseError
                         && isAuthenticationFailure(responseError)) {
+                        synchronized (AuthPluginHandler.this) {
+                            if (expectedGeneration != authGeneration) return;
+                        }
                         clearAuthState(SettingsStore.getInstance(context));
                         try {
                             apiService.logout(new ApiCallback() {
@@ -378,11 +406,28 @@ public final class AuthPluginHandler {
     }
 
     private void clearStoredLogin() {
-        memoryUsername = null;
-        memoryPassword = null;
-        credentialsLoaded = true;
+        synchronized (this) {
+            authGeneration++;
+            memoryUsername = null;
+            memoryPassword = null;
+            credentialsLoaded = true;
+        }
         CredentialStore.getInstance(context).clear();
         clearAuthState(SettingsStore.getInstance(context));
+    }
+
+    private synchronized String[] loadCredentialsIfNeeded() {
+        if (memoryUsername != null && !memoryUsername.isEmpty()
+            && memoryPassword != null && !memoryPassword.isEmpty()) {
+            return new String[]{memoryUsername, memoryPassword};
+        }
+        if (!credentialsLoaded) {
+            CredentialStore credentialStore = CredentialStore.getInstance(context);
+            memoryUsername = credentialStore.getUsername();
+            memoryPassword = credentialStore.getPassword();
+            credentialsLoaded = true;
+        }
+        return new String[]{memoryUsername, memoryPassword};
     }
 
     private static JSONArray cookiesToJson(List<Cookie> cookies) {

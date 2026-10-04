@@ -31,6 +31,7 @@ public final class AuthService {
     private volatile UserInfoResponse userInfo;
     private volatile LoginCredentials memoryCredentials;
     private volatile boolean credentialsLoaded;
+    private volatile long authGeneration;
 
     public AuthService(JmClient client, CredentialStore credentials) {
         this(() -> Objects.requireNonNull(client, "client"), credentials, Runnable::run);
@@ -52,6 +53,7 @@ public final class AuthService {
     }
 
     public UserInfoResponse login(String username, String password) {
+        long expectedGeneration = nextAuthGeneration();
         UserInfoResponse result;
         try {
             result = remoteLogin(username, password);
@@ -59,14 +61,22 @@ public final class AuthService {
             throw ApiException.network(message(failure, "登录网络请求失败"));
         } catch (ResponseException failure) {
             if (isAuthenticationFailure(failure)) {
+                if (expectedGeneration != authGeneration) {
+                    throw ApiException.cancelled("认证状态已变化");
+                }
                 userInfo = null;
                 logoutClientQuietly();
             }
             throw mapResponseFailure(failure, "用户名或密码错误");
         }
-        userInfo = result;
-        memoryCredentials = new LoginCredentials(username, password);
-        saveCredentials(username, password);
+        synchronized (this) {
+            if (expectedGeneration != authGeneration) {
+                throw ApiException.cancelled("认证状态已变化");
+            }
+            userInfo = result;
+            memoryCredentials = new LoginCredentials(username, password);
+            saveCredentials(username, password);
+        }
         return result;
     }
 
@@ -74,6 +84,7 @@ public final class AuthService {
      * 立即清除本地会话与凭据，远端注销仅作为后台尽力操作。
      */
     public SuccessResponse logout() {
+        nextAuthGeneration();
         userInfo = null;
         clearMemoryCredentials();
         clearCredentials("退出后无法清除自动登录凭据");
@@ -90,17 +101,26 @@ public final class AuthService {
             || saved.password() == null || saved.password().isEmpty()) {
             throw ApiException.notFound("没有保存的自动登录凭据");
         }
+        long expectedGeneration = currentAuthGeneration();
 
         try {
             UserInfoResponse result = remoteLogin(saved.username(), saved.password());
-            userInfo = result;
-            memoryCredentials = saved;
+            synchronized (this) {
+                if (expectedGeneration != authGeneration) {
+                    throw ApiException.cancelled("认证状态已变化");
+                }
+                userInfo = result;
+                memoryCredentials = saved;
+            }
             return new AutoLoginResponse(true, result);
         } catch (NetworkException failure) {
             throw ApiException.network(message(failure, "自动登录网络请求失败"));
         } catch (ResponseException failure) {
             boolean authenticationFailure = isAuthenticationFailure(failure);
             if (authenticationFailure) {
+                if (expectedGeneration != authGeneration) {
+                    throw ApiException.cancelled("认证状态已变化");
+                }
                 userInfo = null;
                 logoutClientQuietly();
             }
@@ -115,9 +135,41 @@ public final class AuthService {
      * 应用层凭据不能因线路切换而清除。
      */
     public AutoLoginResponse reauthenticateAfterRouteChange() {
+        long expectedGeneration = nextAuthGeneration();
         userInfo = null;
         logoutClientQuietly();
-        return autoLogin();
+        return autoLogin(expectedGeneration);
+    }
+
+    private AutoLoginResponse autoLogin(long expectedGeneration) {
+        LoginCredentials saved = memoryCredentials;
+        if (saved == null) saved = loadCredentialsOnce();
+        if (saved == null || saved.username() == null || saved.username().isBlank()
+            || saved.password() == null || saved.password().isEmpty()) {
+            throw ApiException.notFound("没有保存的自动登录凭据");
+        }
+        try {
+            UserInfoResponse result = remoteLogin(saved.username(), saved.password());
+            synchronized (this) {
+                if (expectedGeneration != authGeneration) {
+                    throw ApiException.cancelled("认证状态已变化");
+                }
+                userInfo = result;
+                memoryCredentials = saved;
+            }
+            return new AutoLoginResponse(true, result);
+        } catch (NetworkException failure) {
+            throw ApiException.network(message(failure, "自动登录网络请求失败"));
+        } catch (ResponseException failure) {
+            boolean authenticationFailure = isAuthenticationFailure(failure);
+            if (authenticationFailure && expectedGeneration == currentAuthGeneration()) {
+                userInfo = null;
+                logoutClientQuietly();
+            }
+            throw mapResponseFailure(
+                failure,
+                authenticationFailure ? "自动登录失败：凭据无效或已过期" : "自动登录失败");
+        }
     }
 
     public LoginStateResponse state() {
@@ -152,20 +204,32 @@ public final class AuthService {
     }
 
     private LoginCredentials loadCredentialsOnce() {
-        if (credentialsLoaded) return null;
+        if (credentialsLoaded) return memoryCredentials;
         synchronized (this) {
-            if (credentialsLoaded) return null;
-            credentialsLoaded = true;
+            if (credentialsLoaded) return memoryCredentials;
             if (!credentials.isAvailable()) {
                 throw ApiException.unavailable("操作系统安全凭据存储不可用，无法自动登录");
             }
             try {
                 LoginCredentials loaded = credentials.load();
                 memoryCredentials = loaded;
+                credentialsLoaded = true;
                 return loaded;
             } catch (RuntimeException failure) {
                 throw ApiException.unavailable("无法读取操作系统安全凭据，自动登录不可用");
             }
+        }
+    }
+
+    private long nextAuthGeneration() {
+        synchronized (this) {
+            return ++authGeneration;
+        }
+    }
+
+    private long currentAuthGeneration() {
+        synchronized (this) {
+            return authGeneration;
         }
     }
 

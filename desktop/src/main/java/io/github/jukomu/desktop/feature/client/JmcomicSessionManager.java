@@ -44,6 +44,7 @@ public final class JmcomicSessionManager implements AutoCloseable {
     private boolean closed;
     private int retryIndex;
     private ScheduledFuture<?> retryTask;
+    private long retryGeneration;
 
     private JmcomicSessionManager(
         Factory factory,
@@ -85,6 +86,7 @@ public final class JmcomicSessionManager implements AutoCloseable {
             if (closed || client != null || pending != null || factory == null) return;
             if (retryTask != null) {
                 retryTask.cancel(false);
+                retryGeneration++;
                 retryTask = null;
             }
             changed = setSnapshot("initializing", null);
@@ -164,8 +166,10 @@ public final class JmcomicSessionManager implements AutoCloseable {
         if (closed || client != null || pending != null || retryTask != null) return;
         long delay = RETRY_DELAYS_SECONDS[Math.min(retryIndex, RETRY_DELAYS_SECONDS.length - 1)];
         retryIndex++;
+        long expectedRetryGeneration = ++retryGeneration;
         retryTask = retryExecutor.schedule(() -> {
             synchronized (this) {
+                if (expectedRetryGeneration != retryGeneration || retryTask == null) return;
                 retryTask = null;
                 if (closed || client != null || pending != null) return;
             }
@@ -196,6 +200,7 @@ public final class JmcomicSessionManager implements AutoCloseable {
             pendingAttempt = pending;
             pending = null;
             if (retryTask != null) retryTask.cancel(false);
+            retryGeneration++;
             retryTask = null;
             current = client;
             client = null;

@@ -169,8 +169,13 @@ export function createFacadeClient(runtime: FrontendRuntime): JmcomicClient {
       ) {
         return value
       }
-      return (...args: unknown[]) =>
-        retryAfterNetworkRestore(runtime, () => Promise.resolve(Reflect.apply(value, target, args)))
+      return (...args: unknown[]) => {
+        const operation = () => Promise.resolve(Reflect.apply(value, target, args))
+        const replacesPendingImages =
+          property === 'preloadImages' &&
+          (args[0] as { replacePending?: boolean } | undefined)?.replacePending === true
+        return replacesPendingImages ? operation() : retryAfterNetworkRestore(runtime, operation)
+      }
     },
   })
 }
@@ -186,8 +191,6 @@ const PUBLIC_ONLINE_METHODS = new Set([
   'getUsedDomain',
   'measureLatency',
   'preloadImages',
-  'retryImage',
-  'downloadChapter',
 ])
 
 async function retryAfterNetworkRestore<T>(

@@ -26,6 +26,8 @@ public final class NetworkService implements AutoCloseable {
     private boolean probing;
     private boolean closed;
     private boolean awaitingClient;
+    private boolean pendingRecovery;
+    private boolean pendingNetworkRecovery;
     private String networkFingerprint;
 
     public NetworkService(Operations operations, Executor executor, EventHub eventHub) {
@@ -87,7 +89,10 @@ public final class NetworkService implements AutoCloseable {
     public void reprobeDomains() {
         synchronized (lifecycleLock) {
             ensureOpenLocked();
-            if (probing) return;
+            if (probing) {
+                pendingRecovery = true;
+                return;
+            }
             probing = true;
             try {
                 executor.execute(this::runProbe);
@@ -112,9 +117,7 @@ public final class NetworkService implements AutoCloseable {
         } catch (RuntimeException exception) {
             publish(NetworkProbeEvent.error(messageOf("探活异常", exception)));
         } finally {
-            synchronized (lifecycleLock) {
-                probing = false;
-            }
+            finishProbe();
         }
     }
 
@@ -171,7 +174,12 @@ public final class NetworkService implements AutoCloseable {
 
     private void scheduleRecovery() {
         synchronized (lifecycleLock) {
-            if (closed || probing) return;
+            if (closed) return;
+            if (probing) {
+                pendingRecovery = true;
+                pendingNetworkRecovery = true;
+                return;
+            }
             probing = true;
             try {
                 executor.execute(this::recoverAndProbe);
@@ -195,10 +203,27 @@ public final class NetworkService implements AutoCloseable {
         } catch (RuntimeException exception) {
             publish(NetworkProbeEvent.error(messageOf("网络恢复探测失败", exception)));
         } finally {
-            synchronized (lifecycleLock) {
+            finishProbe();
+        }
+    }
+
+    private void finishProbe() {
+        boolean rejected = false;
+        synchronized (lifecycleLock) {
+            probing = false;
+            if (closed || !pendingRecovery) return;
+            boolean runNetworkRecovery = pendingNetworkRecovery;
+            pendingRecovery = false;
+            pendingNetworkRecovery = false;
+            probing = true;
+            try {
+                executor.execute(runNetworkRecovery ? this::recoverAndProbe : this::runProbe);
+            } catch (RejectedExecutionException exception) {
                 probing = false;
+                rejected = true;
             }
         }
+        if (rejected) publish(NetworkProbeEvent.error("网络恢复任务无法启动，请稍后重试"));
     }
 
     private static String currentNetworkFingerprint() {

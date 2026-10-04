@@ -61,6 +61,28 @@ describe('facadeClient network retry', () => {
     expect(getFavorites).toHaveBeenCalledOnce()
   })
 
+  test('不重放可能已生效的图片重试、下载和替换型预载', async () => {
+    const retryImage = vi.fn().mockRejectedValue(new RuntimeError('network', 'offline'))
+    const downloadChapter = vi.fn().mockRejectedValue(new RuntimeError('network', 'offline'))
+    const preloadImages = vi.fn().mockRejectedValue(new RuntimeError('network', 'offline'))
+    const runtime = {
+      backend: { retryImage, downloadChapter, preloadImages },
+      events: { onNetworkProbe: vi.fn() },
+      services: { reader: {}, localFiles: {} },
+    } as unknown as FrontendRuntime
+    const client = createFacadeClient(runtime)
+
+    await expect(client.retryImage({ photoId: 'p1', image: {} } as never)).rejects.toThrow('offline')
+    await expect(client.downloadChapter({ albumId: 'a1', chapterId: 'c1' } as never))
+      .rejects.toThrow('offline')
+    await expect(client.preloadImages({ photoId: 'p1', images: [], type: 'image', replacePending: true }))
+      .rejects.toThrow('offline')
+
+    expect(retryImage).toHaveBeenCalledOnce()
+    expect(downloadChapter).toHaveBeenCalledOnce()
+    expect(preloadImages).toHaveBeenCalledOnce()
+  })
+
   test('安全读取最多等待五秒且超时后保留原错误', async () => {
     vi.useFakeTimers()
     const search = vi.fn().mockRejectedValue(new RuntimeError('network', 'offline'))

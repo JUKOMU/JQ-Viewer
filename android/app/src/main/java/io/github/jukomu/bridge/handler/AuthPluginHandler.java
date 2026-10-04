@@ -254,7 +254,75 @@ public final class AuthPluginHandler {
                         }
                     });
                 }
-            }));
+        }));
+    }
+
+    /**
+     * 线路切换后只清理 JM 客户端会话，保留应用层内存/安全存储凭据并异步重登。
+     */
+    public void reauthenticateAfterRouteChange() {
+        clearAuthState(SettingsStore.getInstance(context));
+        String username = memoryUsername;
+        String password = memoryPassword;
+        if (username == null || username.isEmpty() || password == null || password.isEmpty()) {
+            CredentialStore credentialStore = CredentialStore.getInstance(context);
+            if (!credentialsLoaded) {
+                credentialsLoaded = true;
+                username = credentialStore.getUsername();
+                password = credentialStore.getPassword();
+                memoryUsername = username;
+                memoryPassword = password;
+            }
+        }
+        if (username == null || username.isEmpty() || password == null || password.isEmpty()) return;
+        final String loginUsername = username;
+        final String loginPassword = password;
+        try {
+            apiService.logout(new ApiCallback() {
+                @Override public void onSuccess(JSONObject result) {
+                    loginAfterRoute(loginUsername, loginPassword);
+                }
+                @Override public void onError(String message, Exception error) {
+                    loginAfterRoute(loginUsername, loginPassword);
+                }
+            });
+        } catch (RuntimeException error) {
+            LOGGER.warn("线路切换后无法清理旧认证态", error);
+            loginAfterRoute(loginUsername, loginPassword);
+        }
+    }
+
+    private void loginAfterRoute(String username, String password) {
+        try {
+            apiService.login(username, password, new ApiCallback() {
+                @Override public void onSuccess(JSONObject userInfo) {
+                    try {
+                        saveAuthState(SettingsStore.getInstance(context), userInfo);
+                        memoryUsername = username;
+                        memoryPassword = password;
+                    } catch (Exception error) {
+                        LOGGER.warn("线路切换后保存认证态失败", error);
+                    }
+                }
+
+                @Override public void onError(String message, Exception error) {
+                    if (error instanceof ResponseException responseError
+                        && isAuthenticationFailure(responseError)) {
+                        clearAuthState(SettingsStore.getInstance(context));
+                        try {
+                            apiService.logout(new ApiCallback() {
+                                @Override public void onSuccess(JSONObject result) { }
+                                @Override public void onError(String message, Exception error) { }
+                            });
+                        } catch (RuntimeException logoutError) {
+                            LOGGER.warn("线路切换认证失败后无法注销", logoutError);
+                        }
+                    }
+                }
+            });
+        } catch (RuntimeException error) {
+            LOGGER.warn("线路切换后自动登录启动失败", error);
+        }
     }
 
     private static boolean isAuthenticationFailure(ResponseException error) {

@@ -353,6 +353,8 @@ public final class Backend implements AutoCloseable {
             CredentialStore credentialStore = providedCredentialStore == null
                 ? CredentialStores.system()
                 : providedCredentialStore;
+            AuthService authService = new AuthService(
+                clientSession::getClient, credentialStore, executors.api());
             PdfPageCache pdfPageCache = new PdfPageCache(paths.cacheDirectory());
             CbzDocumentService cbzDocuments = new CbzDocumentService();
             CacheService cacheService = new CacheService(
@@ -376,10 +378,7 @@ public final class Backend implements AutoCloseable {
                     new CatalogService(clientSession::getClient, imageService, albumCoverUrl),
                     imageService),
                 new AuthPluginHandler(apiRequests,
-                    new AuthService(
-                        clientSession::getClient,
-                        credentialStore,
-                        executors.api())),
+                    authService),
                 new CachePluginHandler(imageRequests, cacheService),
                 new SettingsPluginHandler(
                     settingsRequests, relocationRequests,
@@ -393,7 +392,8 @@ public final class Backend implements AutoCloseable {
                 new SystemPluginHandler(
                     networkRequests, diagnosticsRequests,
                     clientSession,
-                    startedNetworkService, startedLaunchRoutes, diagnosticsService, paths),
+                    startedNetworkService, startedLaunchRoutes, diagnosticsService, paths,
+                    authService),
                 new OcrPluginHandler(ocrRequests, startedOcrService),
                 new UpdatePluginHandler(updateRequests, startedUpdateService));
             PdfResourceService pdfResources = new PdfResourceService();

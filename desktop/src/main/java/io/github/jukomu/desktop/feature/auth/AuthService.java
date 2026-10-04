@@ -110,6 +110,16 @@ public final class AuthService {
         }
     }
 
+    /**
+     * 线路切换后只清理 JM 客户端的远端会话，再复用应用层凭据登录。
+     * 应用层凭据不能因线路切换而清除。
+     */
+    public AutoLoginResponse reauthenticateAfterRouteChange() {
+        userInfo = null;
+        logoutClientQuietly();
+        return autoLogin();
+    }
+
     public LoginStateResponse state() {
         UserInfoResponse currentUserInfo = userInfo;
         return currentUserInfo == null

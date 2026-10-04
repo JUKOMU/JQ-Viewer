@@ -48,6 +48,19 @@ describe('facadeClient network retry', () => {
     expect(toggleAlbumFavorite).toHaveBeenCalledOnce()
   })
 
+  test('不重放需认证读取', async () => {
+    const getFavorites = vi.fn().mockRejectedValue(new RuntimeError('network', 'offline'))
+    const runtime = {
+      backend: { getFavorites },
+      events: { onNetworkProbe: vi.fn() },
+      services: { reader: {}, localFiles: {} },
+    } as unknown as FrontendRuntime
+
+    await expect(createFacadeClient(runtime).getFavorites({ query: {} } as never))
+      .rejects.toThrow('offline')
+    expect(getFavorites).toHaveBeenCalledOnce()
+  })
+
   test('安全读取最多等待五秒且超时后保留原错误', async () => {
     vi.useFakeTimers()
     const search = vi.fn().mockRejectedValue(new RuntimeError('network', 'offline'))

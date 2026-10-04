@@ -1,5 +1,4 @@
 import { ref } from 'vue'
-import { useAuth } from '@/composables/useAuth'
 import { JmcomicService } from '@/services/JmcomicService'
 import { SettingsStore } from '@/services/SettingsService'
 import type { DomainStates } from '@/services/JmcomicTypes'
@@ -46,8 +45,6 @@ export function useApiRoute() {
   async function select(nextMode: ApiRouteMode, domain = '') {
     if (loading.value) return
     loading.value = true
-    const auth = useAuth()
-    const wasLoggedIn = auth.isLoggedIn.value
     try {
       const result = await applyRoutePreference(nextMode, domain)
       await JmcomicService.setApiRoutePreference({
@@ -58,9 +55,6 @@ export function useApiRoute() {
       mode.value = nextMode
       selectedDomain.value = nextMode === 'manual' ? domain : ''
       currentDomain.value = result.domain || null
-      if (wasLoggedIn && (await auth.reauthenticate()) === 'retryable-error') {
-        throw new Error('线路已切换，但登录恢复失败')
-      }
       await refresh().catch(() => undefined)
     } finally {
       loading.value = false

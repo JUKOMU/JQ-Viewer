@@ -299,7 +299,7 @@ public final class DownloadLocationService {
                 }
                 if (!Files.isRegularFile(targetFile)) requiredBytes += Files.size(sourceFile);
             }
-                if (fileOperations.availableBytes(target) < requiredBytes) {
+            if (fileOperations.availableBytes(target) < requiredBytes) {
                 reject(context, "INSUFFICIENT_SPACE", fields(
                     "requiredBytes", requiredBytes, "availableBytes", fileOperations.availableBytes(target)));
                 throw ApiException.unavailable("目标存储空间不足，需要至少 "

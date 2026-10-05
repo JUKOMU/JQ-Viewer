@@ -40,11 +40,7 @@ import java.io.FileNotFoundException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.function.Consumer;
@@ -418,7 +414,7 @@ public final class LocalFilePluginHandler {
                 trackedCall.resolve(JSObject.fromJSONObject(
                     LocalFileManagementService.getInstance(context).verifyFile(id, operationId)));
                 LOGGER.info("event=local_file_verify_bridge phase=complete operationId={} fileId={} "
-                        + "result=success durationMs={}", operationId, id, elapsedMs(startedAt));
+                    + "result=success durationMs={}", operationId, id, elapsedMs(startedAt));
             } catch (Exception error) {
                 LOGGER.error("event=local_file_verify_bridge phase=complete operationId={} fileId={} "
                         + "result=failed errorCode={} durationMs={}", operationId, id,
@@ -457,7 +453,7 @@ public final class LocalFilePluginHandler {
                 trackedCall.resolve(JSObject.fromJSONObject(
                     LocalFileManagementService.getInstance(context).deleteFile(id, operationId)));
                 LOGGER.info("event=local_file_delete_bridge phase=complete operationId={} fileId={} "
-                        + "result=success durationMs={}", operationId, id, elapsedMs(startedAt));
+                    + "result=success durationMs={}", operationId, id, elapsedMs(startedAt));
             } catch (LocalFileOperationException error) {
                 LOGGER.warn("event=local_file_delete_bridge phase=complete operationId={} fileId={} "
                         + "result=failed errorCode={} durationMs={}", operationId, id,

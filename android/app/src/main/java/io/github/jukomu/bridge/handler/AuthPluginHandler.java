@@ -121,8 +121,12 @@ public final class AuthPluginHandler {
                             }
                             try {
                                 apiService.logout(new ApiCallback() {
-                                    @Override public void onSuccess(JSONObject result) { }
-                                    @Override public void onError(String logoutMessage, Exception logoutError) {
+                                    @Override
+                                    public void onSuccess(JSONObject result) {
+                                    }
+
+                                    @Override
+                                    public void onError(String logoutMessage, Exception logoutError) {
                                         LOGGER.warn("直接登录认证失败后远端注销失败", logoutError);
                                     }
                                 });
@@ -289,8 +293,12 @@ public final class AuthPluginHandler {
                             clearAuthState(SettingsStore.getInstance(context));
                             try {
                                 apiService.logout(new ApiCallback() {
-                                    @Override public void onSuccess(JSONObject result) { }
-                                    @Override public void onError(String message, Exception error) {
+                                    @Override
+                                    public void onSuccess(JSONObject result) {
+                                    }
+
+                                    @Override
+                                    public void onError(String message, Exception error) {
                                         LOGGER.warn("认证失败后远端注销失败", error);
                                     }
                                 });
@@ -306,7 +314,7 @@ public final class AuthPluginHandler {
                         }
                     });
                 }
-        }));
+            }));
     }
 
     /**
@@ -328,10 +336,13 @@ public final class AuthPluginHandler {
         final String loginPassword = password;
         try {
             apiService.logout(new ApiCallback() {
-                @Override public void onSuccess(JSONObject result) {
+                @Override
+                public void onSuccess(JSONObject result) {
                     loginAfterRoute(loginUsername, loginPassword, routeGeneration);
                 }
-                @Override public void onError(String message, Exception error) {
+
+                @Override
+                public void onError(String message, Exception error) {
                     loginAfterRoute(loginUsername, loginPassword, routeGeneration);
                 }
             });
@@ -347,7 +358,8 @@ public final class AuthPluginHandler {
         }
         try {
             apiService.login(username, password, new ApiCallback() {
-                @Override public void onSuccess(JSONObject userInfo) {
+                @Override
+                public void onSuccess(JSONObject userInfo) {
                     try {
                         synchronized (AuthPluginHandler.this) {
                             if (!sessionActive || expectedGeneration != authGeneration) return;
@@ -360,7 +372,8 @@ public final class AuthPluginHandler {
                     }
                 }
 
-                @Override public void onError(String message, Exception error) {
+                @Override
+                public void onError(String message, Exception error) {
                     if (error instanceof ResponseException responseError
                         && isAuthenticationFailure(responseError)) {
                         synchronized (AuthPluginHandler.this) {
@@ -369,8 +382,13 @@ public final class AuthPluginHandler {
                         }
                         try {
                             apiService.logout(new ApiCallback() {
-                                @Override public void onSuccess(JSONObject result) { }
-                                @Override public void onError(String message, Exception error) { }
+                                @Override
+                                public void onSuccess(JSONObject result) {
+                                }
+
+                                @Override
+                                public void onError(String message, Exception error) {
+                                }
                             });
                         } catch (RuntimeException logoutError) {
                             LOGGER.warn("线路切换认证失败后无法注销", logoutError);

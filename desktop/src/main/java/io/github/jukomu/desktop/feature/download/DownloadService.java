@@ -596,9 +596,14 @@ public final class DownloadService implements AutoCloseable {
         StringBuilder line = new StringBuilder("download event=").append(clean(event))
             .append(" taskId=").append(clean(taskId)).append(" albumId=").append(clean(albumId))
             .append(" chapterId=").append(clean(chapterId));
-        append(line, "phase", phase); append(line, "status", status); append(line, "elapsedMs", elapsedMs);
-        append(line, "page", page); if (task != null) append(line, "totalPages", task.totalPages());
-        append(line, "bytes", bytes); append(line, "libraryTaskId", libraryTaskId); append(line, "errorCode", errorCode);
+        append(line, "phase", phase);
+        append(line, "status", status);
+        append(line, "elapsedMs", elapsedMs);
+        append(line, "page", page);
+        if (task != null) append(line, "totalPages", task.totalPages());
+        append(line, "bytes", bytes);
+        append(line, "libraryTaskId", libraryTaskId);
+        append(line, "errorCode", errorCode);
         if (extra.length > 0 && extra[0] instanceof Long speed) append(line, "speed", speed);
         if (extra.length > 1 && extra[1] instanceof Long totalBytes) append(line, "totalBytes", totalBytes);
         LOGGER.info(line.toString());

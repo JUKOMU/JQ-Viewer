@@ -20,6 +20,27 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class NetworkServiceTest {
     @Test
+    void requiresFingerprintCandidateToRemainStableForTwoSeconds() {
+        NetworkService.FingerprintTracker tracker =
+            new NetworkService.FingerprintTracker("route-a");
+
+        assertTrue(tracker.observe("route-b", 0).pending());
+        assertTrue(tracker.observe("route-b", 1_999_999_999L).pending());
+        assertEquals("route-a", tracker.observe("route-b", 2_000_000_000L).previous());
+        assertTrue(tracker.observe("route-a", 2_000_000_001L).pending());
+    }
+
+    @Test
+    void cancelsUnstableFingerprintCandidateWhenRouteReturns() {
+        NetworkService.FingerprintTracker tracker =
+            new NetworkService.FingerprintTracker("route-a");
+
+        assertTrue(tracker.observe("route-b", 0).pending());
+        assertFalse(tracker.observe("route-a", 1_000_000_000L).pending());
+        assertTrue(tracker.observe("route-b", 2_000_000_000L).pending());
+    }
+
+    @Test
     void returnsCompleteSnapshotsAndTimeoutResults() {
         AtomicReference<Map<String, Integer>> states = new AtomicReference<>(linkedMap(
                 "https://fast.invalid", 42,

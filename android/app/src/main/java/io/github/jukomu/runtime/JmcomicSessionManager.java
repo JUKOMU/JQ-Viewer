@@ -290,13 +290,17 @@ public final class JmcomicSessionManager {
             }
         }
         if (linkProperties != null) {
-            result.append("|interface=").append(linkProperties.getInterfaceName());
-            ProxyInfo proxy = linkProperties.getHttpProxy();
-            if (proxy != null) {
-                result.append("|proxy=").append(proxy);
-            }
+            result.append("|proxy=").append(proxyFingerprint(linkProperties.getHttpProxy()));
         }
         return result.toString();
+    }
+
+    static String proxyFingerprint(ProxyInfo proxy) {
+        if (proxy == null) return "direct";
+        if (proxy.getPacFileUrl() != null && !Uri.EMPTY.equals(proxy.getPacFileUrl())) {
+            return "pac:" + proxy.getPacFileUrl();
+        }
+        return "http:" + proxy.getHost() + ":" + proxy.getPort();
     }
 
     private void scheduleDomainProbe(JmApiClient client, String trigger) {

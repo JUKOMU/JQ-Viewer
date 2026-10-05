@@ -21,6 +21,8 @@ import java.util.function.Supplier;
  */
 public final class NetworkService implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(NetworkService.class);
+    private static final long NETWORK_FINGERPRINT_STABILITY_NANOS =
+        TimeUnit.SECONDS.toNanos(2);
 
     private final Operations operations;
     private final Executor executor;
@@ -32,7 +34,7 @@ public final class NetworkService implements AutoCloseable {
     private boolean awaitingClient;
     private boolean pendingRecovery;
     private boolean pendingNetworkRecovery;
-    private String networkFingerprint;
+    private final FingerprintTracker fingerprintTracker;
 
     public NetworkService(Operations operations, Executor executor, EventHub eventHub) {
         this(operations, executor, event -> eventHub.publish("networkProbe", event));
@@ -47,9 +49,10 @@ public final class NetworkService implements AutoCloseable {
         this.executor = Objects.requireNonNull(executor, "executor");
         this.eventPublisher = Objects.requireNonNull(eventPublisher, "eventPublisher");
         if (operations.recoverNetwork() == null) {
+            fingerprintTracker = null;
             networkMonitor = null;
         } else {
-            networkFingerprint = currentNetworkFingerprint();
+            fingerprintTracker = new FingerprintTracker(currentNetworkFingerprint());
             networkMonitor = Executors.newSingleThreadScheduledExecutor(task -> {
                 Thread thread = new Thread(task, "jq-viewer-network-monitor");
                 thread.setDaemon(true);
@@ -140,11 +143,12 @@ public final class NetworkService implements AutoCloseable {
         boolean changed;
         synchronized (lifecycleLock) {
             if (closed) return;
-            changed = !current.equals(networkFingerprint);
+            FingerprintObservation observation = fingerprintTracker.observe(
+                current, System.nanoTime());
+            changed = observation.changed();
             if (changed) {
-                previous = networkFingerprint;
-                networkFingerprint = current;
-            } else if (awaitingClient
+                previous = observation.previous();
+            } else if (!observation.pending() && awaitingClient
                 && operations.clientReady() != null
                 && operations.clientReady().getAsBoolean()) {
                 awaitingClient = false;
@@ -275,6 +279,39 @@ public final class NetworkService implements AutoCloseable {
     private static String fingerprintSummary(String fingerprint) {
         if (fingerprint == null || fingerprint.isEmpty()) return "空";
         return Integer.toHexString(fingerprint.hashCode());
+    }
+
+    record FingerprintObservation(String previous, boolean changed, boolean pending) {
+    }
+
+    static final class FingerprintTracker {
+        private String confirmed;
+        private String candidate;
+        private long candidateSinceNanos;
+
+        FingerprintTracker(String initial) {
+            confirmed = Objects.requireNonNull(initial, "initial");
+        }
+
+        FingerprintObservation observe(String current, long nowNanos) {
+            Objects.requireNonNull(current, "current");
+            if (current.equals(confirmed)) {
+                candidate = null;
+                return new FingerprintObservation(null, false, false);
+            }
+            if (!current.equals(candidate)) {
+                candidate = current;
+                candidateSinceNanos = nowNanos;
+                return new FingerprintObservation(null, false, true);
+            }
+            if (nowNanos - candidateSinceNanos < NETWORK_FINGERPRINT_STABILITY_NANOS) {
+                return new FingerprintObservation(null, false, true);
+            }
+            String previous = confirmed;
+            confirmed = current;
+            candidate = null;
+            return new FingerprintObservation(previous, true, false);
+        }
     }
 
     private void ensureOpen() {

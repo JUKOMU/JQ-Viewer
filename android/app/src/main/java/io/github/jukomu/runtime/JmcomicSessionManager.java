@@ -83,7 +83,7 @@ public final class JmcomicSessionManager {
                 @Override
                 public void onReady(JmApiClient client) {
                     LOGGER.info("JMComic 客户端初始化完成");
-                    scheduleDomainProbe(client);
+                    scheduleDomainProbe(client, "客户端初始化完成");
                 }
 
                 @Override
@@ -152,7 +152,8 @@ public final class JmcomicSessionManager {
     public void retryOrReprobe() {
         JmApiClient client = session.getClient();
         if (client != null) {
-            scheduleDomainProbe(client);
+            LOGGER.info("收到手动域名探活请求，客户端已就绪");
+            scheduleDomainProbe(client, "手动请求");
             return;
         }
         NetworkEnvironment environment = currentEnvironment();
@@ -238,6 +239,8 @@ public final class JmcomicSessionManager {
 
         boolean changed = !environment.fingerprint().equals(previous);
         if (changed) {
+            LOGGER.info("网络环境发生变化，旧摘要={}，新摘要={}", fingerprintSummary(previous),
+                fingerprintSummary(environment.fingerprint()));
             if (previous != null) networkRecoveryPending.set(true);
         }
         if (changed && previous != null) {
@@ -248,6 +251,7 @@ public final class JmcomicSessionManager {
 
         JmApiClient client = session.getClient();
         if (changed || client == null) {
+            LOGGER.info("{}触发客户端恢复", changed ? "网络环境变化" : "客户端未初始化");
             session.updateEnvironment(
                 environment.fingerprint() + "|epoch:" + environmentSequence,
                 true);
@@ -295,13 +299,15 @@ public final class JmcomicSessionManager {
         return result.toString();
     }
 
-    private void scheduleDomainProbe(JmApiClient client) {
+    private void scheduleDomainProbe(JmApiClient client, String trigger) {
+        LOGGER.info("{}触发域名探活", trigger);
         executor.execute(() -> {
             if (session.getClient() == client) probeDomains(client);
         });
     }
 
     private void probeDomains(JmApiClient client) {
+        LOGGER.info("开始域名探活");
         publishNetworkEvent(new NetworkEvent(
             "probing", "正在探测域名连通性...",
             System.currentTimeMillis(), null, false));
@@ -319,6 +325,7 @@ public final class JmcomicSessionManager {
                     ? "探活完成 · 全部不可达"
                     : "探活完成 · " + alive + "/" + states.size() + " 可达",
                 System.currentTimeMillis(), states, allDeadFallback));
+            LOGGER.info("域名探活完成: {}/{} 个域名可达", alive, states.size());
             if (networkRecoveryPending.compareAndSet(true, false)) {
                 publishNetworkEvent(new NetworkEvent(
                     "network_restored", "网络恢复并完成线路探测",
@@ -351,5 +358,10 @@ public final class JmcomicSessionManager {
 
     private static boolean isDomainReachable(Integer state) {
         return state != null && state >= 0 && state < (Integer.MAX_VALUE / 2);
+    }
+
+    private static String fingerprintSummary(String fingerprint) {
+        if (fingerprint == null || fingerprint.isEmpty()) return "空";
+        return Integer.toHexString(fingerprint.hashCode());
     }
 }

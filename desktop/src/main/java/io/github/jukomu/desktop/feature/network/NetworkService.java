@@ -4,6 +4,8 @@ import io.github.jukomu.desktop.bridge.ApiException;
 import io.github.jukomu.desktop.bridge.EventHub;
 import io.github.jukomu.desktop.feature.network.model.*;
 import io.github.jukomu.jmcomic.core.client.impl.JmApiClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -18,6 +20,8 @@ import java.util.function.Supplier;
  * 读取 JMComic 域名状态、合并探活请求并监听 Desktop 网络变化。
  */
 public final class NetworkService implements AutoCloseable {
+    private static final Logger LOGGER = LoggerFactory.getLogger(NetworkService.class);
+
     private final Operations operations;
     private final Executor executor;
     private final Consumer<NetworkProbeEvent> eventPublisher;
@@ -91,9 +95,11 @@ public final class NetworkService implements AutoCloseable {
             ensureOpenLocked();
             if (probing) {
                 pendingRecovery = true;
+                LOGGER.info("收到手动域名探活请求，当前探活进行中，已排队下一轮");
                 return;
             }
             probing = true;
+            LOGGER.info("收到手动域名探活请求，开始探活");
             try {
                 executor.execute(this::runProbe);
             } catch (RejectedExecutionException exception) {
@@ -146,8 +152,12 @@ public final class NetworkService implements AutoCloseable {
                 return;
             }
         }
+        if (changed) {
+            LOGGER.info("网络指纹发生变化，旧摘要={}，新摘要={}", fingerprintSummary(previous),
+                fingerprintSummary(current));
+        }
         if (!changed) {
-            scheduleRecovery();
+            scheduleRecovery("客户端恢复就绪");
             return;
         }
         if (current.isEmpty()) {
@@ -155,6 +165,7 @@ public final class NetworkService implements AutoCloseable {
                 awaitingClient = false;
             }
             if (!previous.isEmpty()) publish(NetworkProbeEvent.networkLost());
+            LOGGER.info("网络指纹为空，暂不执行网络恢复探活");
             return;
         }
 
@@ -169,18 +180,20 @@ public final class NetworkService implements AutoCloseable {
         synchronized (lifecycleLock) {
             awaitingClient = false;
         }
-        scheduleRecovery();
+        scheduleRecovery("网络指纹变化");
     }
 
-    private void scheduleRecovery() {
+    private void scheduleRecovery(String trigger) {
         synchronized (lifecycleLock) {
             if (closed) return;
             if (probing) {
                 pendingRecovery = true;
                 pendingNetworkRecovery = true;
+                LOGGER.info("{}触发网络恢复探活，当前探活进行中，已排队下一轮", trigger);
                 return;
             }
             probing = true;
+            LOGGER.info("{}触发网络恢复探活，开始探活", trigger);
             try {
                 executor.execute(this::recoverAndProbe);
             } catch (RejectedExecutionException exception) {
@@ -257,6 +270,11 @@ public final class NetworkService implements AutoCloseable {
         } catch (java.io.IOException exception) {
             return "";
         }
+    }
+
+    private static String fingerprintSummary(String fingerprint) {
+        if (fingerprint == null || fingerprint.isEmpty()) return "空";
+        return Integer.toHexString(fingerprint.hashCode());
     }
 
     private void ensureOpen() {

@@ -158,7 +158,7 @@ public final class SystemPluginHandler {
                 event.put("message", "网络已切换，即将重新探活");
                 event.put("timestamp", System.currentTimeMillis());
                 publishNetworkEvent(event);
-                scheduleDomainProbe();
+                scheduleDomainProbe("网络变化");
             }
 
             @Override
@@ -277,7 +277,7 @@ public final class SystemPluginHandler {
      * 将一次域名重新探活任务加入去抖调度队列。
      */
     public void reprobeDomains(PluginCall call) {
-        scheduleDomainProbe();
+        scheduleDomainProbe("手动请求");
         call.resolve();
     }
 
@@ -609,7 +609,7 @@ public final class SystemPluginHandler {
         call.resolve(result);
     }
 
-    private void scheduleDomainProbe() {
+    private void scheduleDomainProbe(String trigger) {
         synchronized (probeLock) {
             if (destroyed || domainProbeExecutor == null) {
                 return;
@@ -620,15 +620,18 @@ public final class SystemPluginHandler {
             }
             if (pendingProbe != null) {
                 pendingProbe.cancel(false);
+                LOGGER.info("{}触发域名探活，已覆盖上一轮待执行任务", trigger);
+            } else {
+                LOGGER.info("{}触发域名探活，已加入去抖队列", trigger);
             }
             pendingProbe = domainProbeExecutor.schedule(
-                () -> probeDomains(client),
+                () -> probeDomains(client, trigger),
                 PROBE_DEBOUNCE_MS,
                 TimeUnit.MILLISECONDS);
         }
     }
 
-    private void probeDomains(JmApiClient client) {
+    private void probeDomains(JmApiClient client, String trigger) {
         try {
             JSObject startEvent = new JSObject();
             startEvent.put("phase", "probing");
@@ -636,9 +639,8 @@ public final class SystemPluginHandler {
             startEvent.put("timestamp", System.currentTimeMillis());
             publishNetworkEvent(startEvent);
 
-            LOGGER.info("重新探活域名...");
+            LOGGER.info("开始域名探活，触发来源={}", trigger);
             client.reprobeDomains();
-            LOGGER.info("域名重新探活完成");
 
             publishDomainProbeResult(client);
         } catch (Exception error) {
@@ -680,6 +682,7 @@ public final class SystemPluginHandler {
                 allDeadFallback
                     ? "探活完成 · 全部不可达"
                     : "探活完成 · " + alive + "/" + states.size() + " 可达");
+            LOGGER.info("域名探活完成: {}/{} 个域名可达", alive, states.size());
             publishNetworkEvent(JSObject.fromJSONObject(result));
         } catch (Exception ignored) {
             JSObject result = new JSObject();

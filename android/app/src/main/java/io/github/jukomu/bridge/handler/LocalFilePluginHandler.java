@@ -37,10 +37,14 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.FileNotFoundException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.function.Consumer;
@@ -86,6 +90,8 @@ public final class LocalFilePluginHandler {
     // ---- 文件扫描与导入 ----
 
     public void scanImportableFiles(PluginCall call) {
+        final String operationId = newOperationId();
+        final long startedAt = System.nanoTime();
         String folderRef = call.getString("folderRef");
         if (folderRef == null || folderRef.isEmpty()) {
             call.reject("folderRef is required");
@@ -115,31 +121,37 @@ public final class LocalFilePluginHandler {
         }
         dispatchPdfCommand(call, trackedCall -> {
             if (parsed.provider == LocalFileRef.Provider.SAF) {
-                scanImportableFilesViaSaf(trackedCall, Uri.parse(parsed.payload), requestedFormats);
+                scanImportableFilesViaSaf(trackedCall, Uri.parse(parsed.payload), requestedFormats,
+                    operationId, startedAt);
             } else {
-                scanImportableFilesViaFile(trackedCall, parsed.payload, requestedFormats);
+                scanImportableFilesViaFile(trackedCall, parsed.payload, requestedFormats,
+                    operationId, startedAt);
             }
         });
     }
 
     private void scanImportableFilesViaSaf(PluginCall call, Uri treeUri,
-                                           Set<String> requestedFormats) {
+                                           Set<String> requestedFormats, String operationId,
+                                           long startedAt) {
         try {
             DocumentFile root = DocumentFile.fromTreeUri(context, treeUri);
             if (root == null || !root.exists() || !root.isDirectory()) {
                 rejectWithCode(call, PDF_FOLDER_NOT_FOUND_MESSAGE,
                     LocalFileOperationException.NOT_FOUND, null);
+                logScan(operationId, "saf", "not_found", 0, startedAt, null);
                 return;
             }
             if (!root.canRead()) {
                 rejectWithCode(call, PDF_FOLDER_PERMISSION_MESSAGE,
                     LocalFileOperationException.PERMISSION_DENIED, null);
+                logScan(operationId, "saf", "permission_denied", 0, startedAt, null);
                 return;
             }
             DocumentFile[] children = root.listFiles();
             if (children == null) {
                 rejectWithCode(call, PDF_FOLDER_PERMISSION_MESSAGE,
                     LocalFileOperationException.PERMISSION_DENIED, null);
+                logScan(operationId, "saf", "permission_denied", 0, startedAt, null);
                 return;
             }
             JSArray arr = new JSArray();
@@ -157,23 +169,28 @@ public final class LocalFilePluginHandler {
             JSObject ret = new JSObject();
             ret.put("files", arr);
             call.resolve(ret);
+            logScan(operationId, "saf", "success", arr.length(), startedAt, null);
         } catch (SecurityException error) {
             rejectWithCode(call, PDF_FOLDER_PERMISSION_MESSAGE,
                 LocalFileOperationException.PERMISSION_DENIED, error);
+            logScan(operationId, "saf", "permission_denied", 0, startedAt, error);
         }
     }
 
     private void scanImportableFilesViaFile(PluginCall call, String path,
-                                            Set<String> requestedFormats) {
+                                            Set<String> requestedFormats, String operationId,
+                                            long startedAt) {
         File dir = new File(path);
         if (!dir.isDirectory()) {
             rejectWithCode(call, PDF_FOLDER_NOT_FOUND_MESSAGE,
                 LocalFileOperationException.NOT_FOUND, null);
+            logScan(operationId, "path", "not_found", 0, startedAt, null);
             return;
         }
         if (!dir.canRead()) {
             rejectWithCode(call, PDF_FOLDER_PERMISSION_MESSAGE,
                 LocalFileOperationException.PERMISSION_DENIED, null);
+            logScan(operationId, "path", "permission_denied", 0, startedAt, null);
             return;
         }
         File[] importableFiles = dir.listFiles((d, name) ->
@@ -181,6 +198,7 @@ public final class LocalFilePluginHandler {
         if (importableFiles == null) {
             rejectWithCode(call, PDF_FOLDER_PERMISSION_MESSAGE,
                 LocalFileOperationException.PERMISSION_DENIED, null);
+            logScan(operationId, "path", "permission_denied", 0, startedAt, null);
             return;
         }
         JSArray arr = new JSArray();
@@ -202,6 +220,7 @@ public final class LocalFilePluginHandler {
         JSObject ret = new JSObject();
         ret.put("files", arr);
         call.resolve(ret);
+        logScan(operationId, "path", "success", arr.length(), startedAt, null);
     }
 
     private static String importFormat(String name) {
@@ -212,6 +231,8 @@ public final class LocalFilePluginHandler {
     }
 
     public void importLocalFiles(PluginCall call) {
+        final String operationId = newOperationId();
+        final long startedAt = System.nanoTime();
         JSArray items = call.getArray("items");
         if (items == null || items.length() == 0) {
             call.reject("items is required and must not be empty");
@@ -224,23 +245,31 @@ public final class LocalFilePluginHandler {
             int errorCount = 0;
             LocalFileManagementService service = LocalFileManagementService.getInstance(context);
             for (int i = 0; i < items.length(); i++) {
+                long itemStartedAt = System.nanoTime();
                 try {
-                    JSONObject result = service.importLocalFile(items.getJSONObject(i));
+                    JSONObject item = items.getJSONObject(i);
+                    JSONObject result = service.importLocalFile(item, operationId);
                     if ("imported".equals(result.optString("result"))) imported++;
                     else {
                         skipped++;
                         duplicateCount++;
                     }
+                    logImportItem(operationId, i, item, result.optString("result"),
+                        result.optLong("id", -1L), itemStartedAt, null);
                 } catch (Exception error) {
                     if (!isExpectedImportFailure(error)) {
-                        LOGGER.error("本地文件导入失败", error);
+                        LOGGER.error("event=local_file_import_batch phase=complete operationId={} "
+                                + "itemIndex={} result=failed errorCode={} durationMs={}",
+                            operationId, i, errorCode(error), elapsedMs(startedAt),
+                            error.getClass().getSimpleName());
                         trackedCall.reject(error.getMessage() == null
                             ? "本地文件导入失败" : error.getMessage(), error);
                         return;
                     }
                     skipped++;
                     errorCount++;
-                    LOGGER.warn("跳过无效的本地文件导入项", error);
+                    JSONObject item = items.optJSONObject(i);
+                    logImportItem(operationId, i, item, "invalid", -1L, itemStartedAt, error);
                 }
             }
             JSObject ret = new JSObject();
@@ -249,6 +278,10 @@ public final class LocalFilePluginHandler {
             ret.put("duplicateCount", duplicateCount);
             ret.put("errorCount", errorCount);
             trackedCall.resolve(ret);
+            LOGGER.info("event=local_file_import_batch phase=complete operationId={} "
+                    + "itemCount={} imported={} duplicates={} skipped={} failed={} result=success "
+                    + "durationMs={}", operationId, items.length(), imported, duplicateCount,
+                skipped, errorCount, elapsedMs(startedAt));
         });
     }
 
@@ -328,6 +361,8 @@ public final class LocalFilePluginHandler {
     }
 
     public void refreshLocalFileAvailability(PluginCall call) {
+        final String operationId = newOperationId();
+        final long startedAt = System.nanoTime();
         JSArray ids = call.getArray("ids");
         if (ids == null) {
             call.reject("ids is required");
@@ -337,9 +372,16 @@ public final class LocalFilePluginHandler {
             try {
                 JSObject result = new JSObject();
                 result.put("files", LocalFileManagementService.getInstance(context)
-                    .refreshFileAvailability(ids));
+                    .refreshFileAvailability(ids, operationId));
                 trackedCall.resolve(result);
+                LOGGER.info("event=local_file_refresh_batch_bridge phase=complete operationId={} "
+                        + "requestedCount={} result=success durationMs={}", operationId,
+                    ids.length(), elapsedMs(startedAt));
             } catch (Exception error) {
+                LOGGER.error("event=local_file_refresh_batch_bridge phase=complete operationId={} "
+                        + "requestedCount={} result=failed errorCode={} durationMs={}", operationId,
+                    ids.length(), errorCode(error), elapsedMs(startedAt),
+                    error.getClass().getSimpleName());
                 trackedCall.reject(error.getMessage(), error);
             }
         });
@@ -364,6 +406,8 @@ public final class LocalFilePluginHandler {
     }
 
     public void verifyLocalFile(PluginCall call) {
+        final String operationId = newOperationId();
+        final long startedAt = System.nanoTime();
         int id = call.getInt("id", -1);
         if (id < 0) {
             call.reject("id is required");
@@ -372,14 +416,21 @@ public final class LocalFilePluginHandler {
         dispatchPdfCommand(call, trackedCall -> {
             try {
                 trackedCall.resolve(JSObject.fromJSONObject(
-                    LocalFileManagementService.getInstance(context).verifyFile(id)));
+                    LocalFileManagementService.getInstance(context).verifyFile(id, operationId)));
+                LOGGER.info("event=local_file_verify_bridge phase=complete operationId={} fileId={} "
+                        + "result=success durationMs={}", operationId, id, elapsedMs(startedAt));
             } catch (Exception error) {
+                LOGGER.error("event=local_file_verify_bridge phase=complete operationId={} fileId={} "
+                        + "result=failed errorCode={} durationMs={}", operationId, id,
+                    errorCode(error), elapsedMs(startedAt), error.getClass().getSimpleName());
                 trackedCall.reject(error.getMessage(), error);
             }
         });
     }
 
     public void removeLocalFileFromLibrary(PluginCall call) {
+        final String operationId = newOperationId();
+        final long startedAt = System.nanoTime();
         int id = call.getInt("id", -1);
         if (id < 0) {
             call.reject("id is required");
@@ -388,9 +439,14 @@ public final class LocalFilePluginHandler {
         JSObject result = new JSObject();
         result.put("success", LocalFileStore.getInstance(context).removeFileFromLibrary(id));
         call.resolve(result);
+        LOGGER.info("event=local_file_delete phase=complete operationId={} fileId={} "
+                + "result=library_removed physicalDelete=false recordDelete={} durationMs={}",
+            operationId, id, result.optBoolean("success"), elapsedMs(startedAt));
     }
 
     public void deleteLocalFile(PluginCall call) {
+        final String operationId = newOperationId();
+        final long startedAt = System.nanoTime();
         int id = call.getInt("id", -1);
         if (id < 0) {
             call.reject("id is required");
@@ -399,10 +455,18 @@ public final class LocalFilePluginHandler {
         dispatchPdfCommand(call, trackedCall -> {
             try {
                 trackedCall.resolve(JSObject.fromJSONObject(
-                    LocalFileManagementService.getInstance(context).deleteFile(id)));
+                    LocalFileManagementService.getInstance(context).deleteFile(id, operationId)));
+                LOGGER.info("event=local_file_delete_bridge phase=complete operationId={} fileId={} "
+                        + "result=success durationMs={}", operationId, id, elapsedMs(startedAt));
             } catch (LocalFileOperationException error) {
+                LOGGER.warn("event=local_file_delete_bridge phase=complete operationId={} fileId={} "
+                        + "result=failed errorCode={} durationMs={}", operationId, id,
+                    error.code, elapsedMs(startedAt), error.getClass().getSimpleName());
                 rejectPdfOperation(trackedCall, error);
             } catch (Exception error) {
+                LOGGER.error("event=local_file_delete_bridge phase=complete operationId={} fileId={} "
+                        + "result=failed errorCode={} durationMs={}", operationId, id,
+                    errorCode(error), elapsedMs(startedAt), error.getClass().getSimpleName());
                 trackedCall.reject(error.getMessage(), error);
             }
         });
@@ -426,6 +490,8 @@ public final class LocalFilePluginHandler {
     // ---- 打开与渲染 ----
 
     public void openLocalFile(PluginCall call) {
+        final String operationId = newOperationId();
+        final long startedAt = System.nanoTime();
         String fileRef = call.getString("fileRef");
         if (fileRef == null || fileRef.isEmpty()) {
             call.reject("fileRef is required");
@@ -441,6 +507,10 @@ public final class LocalFilePluginHandler {
                 File file = LocalFileRefResolver.pathFile(fileRef);
                 if (!file.exists()) {
                     call.reject("File not found: " + parsed.payload);
+                    LOGGER.info("event=local_file_open phase=complete operationId={} provider={} "
+                            + "fileRefHash={} result=missing errorCode=NOT_FOUND durationMs={}",
+                        operationId, parsed.provider.name().toLowerCase(), refHash(fileRef),
+                        elapsedMs(startedAt));
                     return;
                 }
                 uri = FileProvider.getUriForFile(
@@ -456,7 +526,14 @@ public final class LocalFilePluginHandler {
             JSObject ret = new JSObject();
             ret.put("success", true);
             call.resolve(ret);
+            LOGGER.info("event=local_file_open phase=complete operationId={} provider={} "
+                    + "fileRefHash={} result=started durationMs={}", operationId,
+                parsed.provider.name().toLowerCase(), refHash(fileRef), elapsedMs(startedAt));
         } catch (Exception e) {
+            LOGGER.warn("event=local_file_open phase=complete operationId={} provider={} "
+                    + "fileRefHash={} result=failed errorCode={} durationMs={}", operationId,
+                provider(fileRef), refHash(fileRef), errorCode(e), elapsedMs(startedAt),
+                e.getClass().getSimpleName());
             call.reject("无法打开 PDF: " + e.getMessage());
         }
     }
@@ -902,6 +979,79 @@ public final class LocalFilePluginHandler {
             || error instanceof IllegalArgumentException
             || error instanceof PdfFileValidator.ValidationException
             || error instanceof CbzDocumentService.CbzException;
+    }
+
+    private static void logScan(String operationId, String provider, String result, int count,
+                                long startedAt, Throwable error) {
+        String message = "event=local_file_scan phase=complete operationId=" + operationId
+            + " provider=" + provider + " result=" + result + " candidateCount=" + count
+            + " durationMs=" + elapsedMs(startedAt)
+            + (error == null ? "" : " errorCode=" + errorCode(error));
+        if (error == null) LOGGER.info(message);
+        else LOGGER.warn(message + " errorClass=" + error.getClass().getSimpleName());
+    }
+
+    private static void logImportItem(String operationId, int itemIndex, JSONObject item,
+                                      String result, long fileId, long startedAt,
+                                      Throwable error) {
+        String fileRef = item == null ? null : item.optString("fileRef", null);
+        String format = item == null ? "unknown" : item.optString("format", "pdf");
+        String message = "event=local_file_import_item phase=bridge operationId=" + operationId
+            + " itemIndex=" + itemIndex + " format=" + format + " provider=" + provider(fileRef)
+            + " fileRefHash=" + refHash(fileRef) + " result=" + result
+            + (fileId < 0 ? "" : " fileId=" + fileId)
+            + " durationMs=" + elapsedMs(startedAt)
+            + (error == null ? "" : " errorCode=" + errorCode(error));
+        if (error == null) LOGGER.info(message);
+        else LOGGER.warn(message + " errorClass=" + error.getClass().getSimpleName());
+    }
+
+    private static String newOperationId() {
+        return UUID.randomUUID().toString();
+    }
+
+    private static long elapsedMs(long startedAt) {
+        return (System.nanoTime() - startedAt) / 1_000_000L;
+    }
+
+    private static String provider(String fileRef) {
+        if (fileRef == null) return "unknown";
+        try {
+            return LocalFileRef.parse(fileRef).provider.name().toLowerCase();
+        } catch (RuntimeException ignored) {
+            return "unknown";
+        }
+    }
+
+    private static String refHash(String fileRef) {
+        if (fileRef == null) return "unknown";
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                .digest(fileRef.getBytes(StandardCharsets.UTF_8));
+            StringBuilder result = new StringBuilder(16);
+            for (int index = 0; index < 8; index++) {
+                result.append(String.format("%02x", digest[index]));
+            }
+            return result.toString();
+        } catch (NoSuchAlgorithmException impossible) {
+            return Integer.toHexString(fileRef.hashCode());
+        }
+    }
+
+    private static String errorCode(Throwable error) {
+        if (error instanceof PdfFileValidator.ValidationException) {
+            return ((PdfFileValidator.ValidationException) error).code;
+        }
+        if (error instanceof CbzDocumentService.CbzException) {
+            return ((CbzDocumentService.CbzException) error).code;
+        }
+        if (error instanceof LocalFileOperationException) {
+            return ((LocalFileOperationException) error).code;
+        }
+        if (error instanceof IllegalArgumentException) return "INVALID_ARGUMENT";
+        if (error instanceof SecurityException) return "PERMISSION_DENIED";
+        if (error instanceof JSONException) return "INVALID_JSON";
+        return error == null ? "UNKNOWN" : error.getClass().getSimpleName();
     }
 
     private static void rejectWithCode(PluginCall call, String message, String code,

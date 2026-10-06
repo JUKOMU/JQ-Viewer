@@ -97,7 +97,7 @@ public final class DownloadRelocationService {
 
             if (totalFiles == 0) {
                 LOGGER.info("relocation event=preflight relocationId={} dest={} totalFiles=0 totalBytes=0 availableBytes=unknown batchSize={} matchMode=length elapsedMs={}",
-                    run.id,
+                    run.id, run.destination,
                     BATCH_SIZE, run.elapsedMs());
                 baseDirConsumer.accept(newDir);
                 if (!newDir.exists()) {

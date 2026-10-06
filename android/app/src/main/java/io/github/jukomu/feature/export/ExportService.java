@@ -558,8 +558,13 @@ public class ExportService {
         appendLogField(message, "errorCode", errorCode);
         appendLogField(message, "detail", extra);
         try {
-            if ("failed".equals(event) || "crashed".equals(event)) LOGGER.error(message.toString(), error);
-            else LOGGER.info(message.toString());
+            if ("failed".equals(event) || "crashed".equals(event)) {
+                if (errorCode != null && errorCode.endsWith("_OUTPUT_EXISTS")) {
+                    LOGGER.error(message.toString());
+                } else {
+                    LOGGER.error(message.toString(), error);
+                }
+            } else LOGGER.info(message.toString());
         } catch (RuntimeException ignored) {
             // Diagnostics must never change export state.
         }

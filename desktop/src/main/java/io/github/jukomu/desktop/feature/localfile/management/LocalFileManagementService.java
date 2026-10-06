@@ -303,12 +303,14 @@ public final class LocalFileManagementService {
         } catch (NoSuchFileException exception) {
             result = "already_missing";
         } catch (AccessDeniedException | SecurityException exception) {
-            LOGGER.warn("local_file.delete event=failed operationId={} fileId={} format={} fileName={} errorCode=permission-denied elapsedMs={}",
-                clean(operationId), id, clean(record.format()), clean(record.fileName()), elapsed(startedNanos), exception);
+            LOGGER.warn("local_file.delete event=failed operationId={} fileId={} format={} fileName={} errorCode=permission-denied elapsedMs={} errorClass={}",
+                clean(operationId), id, clean(record.format()), clean(record.fileName()), elapsed(startedNanos),
+                exception.getClass().getSimpleName());
             throw ApiException.permissionDenied("没有权限删除本地文件");
         } catch (IOException exception) {
-            LOGGER.error("local_file.delete event=failed operationId={} fileId={} format={} fileName={} errorCode=DELETE_IO_FAILED elapsedMs={}",
-                clean(operationId), id, clean(record.format()), clean(record.fileName()), elapsed(startedNanos), exception);
+            LOGGER.error("local_file.delete event=failed operationId={} fileId={} format={} fileName={} errorCode=DELETE_IO_FAILED elapsedMs={} errorClass={}",
+                clean(operationId), id, clean(record.format()), clean(record.fileName()), elapsed(startedNanos),
+                exception.getClass().getSimpleName());
             throw new ApiException("internal", 500,
                 "本地文件删除失败，文件库记录已保留: " + exception.getMessage());
         }

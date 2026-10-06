@@ -146,6 +146,9 @@ class DownloadObserver implements TaskObserver {
                 DownloadService.STATUS_DOWNLOADING, null, speed, 0, currentBytes);
             service.updateDownloadNotification(ourTaskId, completed, totalImages,
                 DownloadService.STATUS_DOWNLOADING, null);
+        } else {
+            lastBytes = progress.downloadedBytes();
+            lastTimestamp = System.currentTimeMillis();
         }
     }
 

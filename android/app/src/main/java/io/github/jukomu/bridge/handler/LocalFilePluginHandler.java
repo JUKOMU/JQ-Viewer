@@ -255,7 +255,7 @@ public final class LocalFilePluginHandler {
                 } catch (Exception error) {
                     if (!isExpectedImportFailure(error)) {
                         LOGGER.error("event=local_file_import_batch phase=complete operationId={} "
-                                + "itemIndex={} result=failed errorCode={} durationMs={}",
+                                + "itemIndex={} result=failed errorCode={} durationMs={} errorClass={}",
                             operationId, i, errorCode(error), elapsedMs(startedAt),
                             error.getClass().getSimpleName());
                         trackedCall.reject(error.getMessage() == null
@@ -375,7 +375,7 @@ public final class LocalFilePluginHandler {
                     ids.length(), elapsedMs(startedAt));
             } catch (Exception error) {
                 LOGGER.error("event=local_file_refresh_batch_bridge phase=complete operationId={} "
-                        + "requestedCount={} result=failed errorCode={} durationMs={}", operationId,
+                        + "requestedCount={} result=failed errorCode={} durationMs={} errorClass={}", operationId,
                     ids.length(), errorCode(error), elapsedMs(startedAt),
                     error.getClass().getSimpleName());
                 trackedCall.reject(error.getMessage(), error);
@@ -417,7 +417,7 @@ public final class LocalFilePluginHandler {
                     + "result=success durationMs={}", operationId, id, elapsedMs(startedAt));
             } catch (Exception error) {
                 LOGGER.error("event=local_file_verify_bridge phase=complete operationId={} fileId={} "
-                        + "result=failed errorCode={} durationMs={}", operationId, id,
+                        + "result=failed errorCode={} durationMs={} errorClass={}", operationId, id,
                     errorCode(error), elapsedMs(startedAt), error.getClass().getSimpleName());
                 trackedCall.reject(error.getMessage(), error);
             }
@@ -456,12 +456,12 @@ public final class LocalFilePluginHandler {
                     + "result=success durationMs={}", operationId, id, elapsedMs(startedAt));
             } catch (LocalFileOperationException error) {
                 LOGGER.warn("event=local_file_delete_bridge phase=complete operationId={} fileId={} "
-                        + "result=failed errorCode={} durationMs={}", operationId, id,
+                        + "result=failed errorCode={} durationMs={} errorClass={}", operationId, id,
                     error.code, elapsedMs(startedAt), error.getClass().getSimpleName());
                 rejectPdfOperation(trackedCall, error);
             } catch (Exception error) {
                 LOGGER.error("event=local_file_delete_bridge phase=complete operationId={} fileId={} "
-                        + "result=failed errorCode={} durationMs={}", operationId, id,
+                        + "result=failed errorCode={} durationMs={} errorClass={}", operationId, id,
                     errorCode(error), elapsedMs(startedAt), error.getClass().getSimpleName());
                 trackedCall.reject(error.getMessage(), error);
             }
@@ -527,7 +527,7 @@ public final class LocalFilePluginHandler {
                 parsed.provider.name().toLowerCase(), refHash(fileRef), elapsedMs(startedAt));
         } catch (Exception e) {
             LOGGER.warn("event=local_file_open phase=complete operationId={} provider={} "
-                    + "fileRefHash={} result=failed errorCode={} durationMs={}", operationId,
+                    + "fileRefHash={} result=failed errorCode={} durationMs={} errorClass={}", operationId,
                 provider(fileRef), refHash(fileRef), errorCode(e), elapsedMs(startedAt),
                 e.getClass().getSimpleName());
             call.reject("无法打开 PDF: " + e.getMessage());

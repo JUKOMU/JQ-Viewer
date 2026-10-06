@@ -115,7 +115,7 @@ public final class LocalFileManagementService {
             return result;
         } catch (RuntimeException error) {
             LOGGER.error("event=local_file_query phase=complete operationId={} result=failed "
-                    + "errorCode={} durationMs={}", operationId, errorCode(error),
+                    + "errorCode={} durationMs={} errorClass={}", operationId, errorCode(error),
                 elapsedMs(startedAt), error.getClass().getSimpleName());
             throw error;
         }
@@ -190,7 +190,7 @@ public final class LocalFileManagementService {
             return result;
         } catch (Exception error) {
             LOGGER.error("event=local_file_verify phase=complete operationId={} fileId={} "
-                    + "format={} provider={} fileRefHash={} result=failed errorCode={} durationMs={}",
+                    + "format={} provider={} fileRefHash={} result=failed errorCode={} durationMs={} errorClass={}",
                 operationId, id, format, provider(fileRef), refHash(fileRef), errorCode(error),
                 elapsedMs(startedAt), error.getClass().getSimpleName());
             throw error;
@@ -229,7 +229,7 @@ public final class LocalFileManagementService {
                 }
                 LOGGER.error("event=local_file_refresh_batch phase=complete operationId={} "
                         + "requestedCount={} verifiedCount={} skippedNotFound={} result=failed "
-                        + "errorCode={} durationMs={}", operationId, ids.length(), files.length(),
+                        + "errorCode={} durationMs={} errorClass={}", operationId, ids.length(), files.length(),
                     skippedNotFound, errorCode(error), elapsedMs(startedAt),
                     error.getClass().getSimpleName());
                 throw error;
@@ -268,7 +268,7 @@ public final class LocalFileManagementService {
         } catch (Exception error) {
             LOGGER.error("event=local_file_delete phase=complete operationId={} fileId={} "
                     + "provider={} fileRefHash={} result=failed physicalDelete=unknown "
-                    + "recordDelete=unknown errorCode={} durationMs={}", operationId, id,
+                    + "recordDelete=unknown errorCode={} durationMs={} errorClass={}", operationId, id,
                 provider(fileRef), refHash(fileRef), errorCode(error), elapsedMs(startedAt),
                 error.getClass().getSimpleName());
             throw error;

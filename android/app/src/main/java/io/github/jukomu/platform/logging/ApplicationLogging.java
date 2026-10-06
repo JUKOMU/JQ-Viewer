@@ -185,8 +185,8 @@ public final class ApplicationLogging {
         int leadingByte = bytes[index - 1] & 0xFF;
         int expectedBytes = leadingByte < 0x80 ? 1
             : leadingByte < 0xE0 ? 2
-            : leadingByte < 0xF0 ? 3
-            : leadingByte < 0xF8 ? 4 : 1;
+              : leadingByte < 0xF0 ? 3
+                : leadingByte < 0xF8 ? 4 : 1;
         return continuationBytes >= expectedBytes - 1 ? bytes.length : index - 1;
     }
 

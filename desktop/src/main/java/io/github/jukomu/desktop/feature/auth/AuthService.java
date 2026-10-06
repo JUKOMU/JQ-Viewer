@@ -240,7 +240,9 @@ public final class AuthService {
 
     private void clearCredentialsQuietly() {
         if (!credentials.isAvailable()) return;
-        try { credentials.clear(); } catch (RuntimeException failure) {
+        try {
+            credentials.clear();
+        } catch (RuntimeException failure) {
             LOGGER.warn("认证失败后无法清除自动登录凭据", failure);
         }
     }

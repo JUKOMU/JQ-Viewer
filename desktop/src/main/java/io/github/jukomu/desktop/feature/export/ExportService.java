@@ -12,6 +12,8 @@ import io.github.jukomu.desktop.feature.files.ExportTargetResolver;
 import io.github.jukomu.desktop.feature.files.FileReferences;
 import io.github.jukomu.desktop.feature.localfile.management.PdfFileValidator;
 import io.github.jukomu.desktop.feature.localfile.model.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.file.*;
@@ -24,6 +26,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Desktop 持久化单线程通用导出队列。
  */
 public final class ExportService implements AutoCloseable {
+    private static final Logger LOGGER = LoggerFactory.getLogger(ExportService.class);
+    private static final long LOG_HEARTBEAT_NANOS = java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
     private final ExportStore store;
     private final DownloadStore downloads;
     private final DownloadFiles downloadFiles;
@@ -94,13 +98,18 @@ public final class ExportService implements AutoCloseable {
             throw ApiException.invalidRequest("tasks不能为空");
         }
         String batchId = UUID.randomUUID().toString();
+        logEvent("submit", null, batchId, null, "submit", "queued", 0, 0, 0,
+            requestedTasks.size(), null, null, false, null);
         List<ExportTaskResponse> results = new ArrayList<>();
         List<Plan> acceptedPlans = new ArrayList<>();
         for (ExportTaskRequest request : requestedTasks) {
             NormalizedTask task = normalize(request);
             String exportId = UUID.randomUUID().toString();
             try {
+                long preflightStarted = System.nanoTime();
                 Plan plan = preflight(exportId, batchId, task, task.allowOverwrite());
+                logEvent("preflight", plan, "preflight", "queued", elapsed(preflightStarted),
+                    0, plan.images().size(), plan.volumes().size(), null, null, false, null);
                 if (store.hasActiveChapterConflict(plan.chapters())) {
                     results.add(ExportTaskResponse.rejected(task.format(),
                         "TASK_CONFLICT", "相同章节已有导出任务正在排队或运行",
@@ -113,9 +122,13 @@ public final class ExportService implements AutoCloseable {
                 acceptedPlans.add(plan);
                 publish(snapshot);
             } catch (OutputExistsException exception) {
+                logEvent("failed", exportId, batchId, task.format(), "preflight", "failed", 0,
+                    0, 0, 0, exception.code(), exception.getMessage(), false, null);
                 results.add(ExportTaskResponse.rejected(task.format(),
                     exception.code(), exception.getMessage(), task.displayPath()));
             } catch (ExportException exception) {
+                logEvent("failed", exportId, batchId, task.format(), "preflight", "failed", 0,
+                    0, 0, 0, exception.code(), exception.getMessage(), false, exception);
                 Plan failed = failedPlan(exportId, batchId, task);
                 reserve(failed, "failed", "failed", exception.code(), exception.getMessage());
                 ExportTaskResponse snapshot = requireTask(exportId).withAccepted(false);
@@ -124,6 +137,8 @@ public final class ExportService implements AutoCloseable {
             }
         }
         for (Plan plan : acceptedPlans) schedule(plan);
+        logEvent("submitted", null, batchId, null, "submit", "queued", 0, 0, 0,
+            acceptedPlans.size(), null, null, false, null);
         return new ExportBatchResponse(List.copyOf(results));
     }
 
@@ -143,6 +158,9 @@ public final class ExportService implements AutoCloseable {
         ExportTaskResponse task = store.requestCancel(requireText(exportId, "exportId"));
         if (task == null) throw ApiException.notFound("导出任务不存在");
         if ("cancelled".equals(task.status())) cleanupQueuedCancellation(task.exportId());
+        logEvent("cancelled", task.exportId(), task.batchId(), task.format(), "cancelled",
+            task.status(), elapsedSince(task.createdAt()), task.currentPage(), task.totalPages(),
+            task.currentVolume(), null, null, false, null);
         publish(task);
         return task;
     }
@@ -176,6 +194,8 @@ public final class ExportService implements AutoCloseable {
             throw ApiException.conflict("当前导出任务不能重试");
         }
         ExportTaskResponse queued = requireTask(exportId);
+        logEvent("retry", queued.exportId(), queued.batchId(), queued.format(), "submit", "queued",
+            0, 0, queued.totalPages(), queued.totalVolumes(), null, null, true, null);
         publish(queued);
         schedule(plan);
         return queued;
@@ -200,18 +220,27 @@ public final class ExportService implements AutoCloseable {
                 plan.exportId(), "failed", "failed", 0, plan.images().size(),
                 0, plan.volumes().size(), "QUEUE_REJECTED", "导出队列已关闭");
             cleanupTemporaryFiles(plan);
+            logEvent("failed", plan, "submit", "failed", 0, 0, plan.images().size(),
+                plan.volumes().size(), "QUEUE_REJECTED", "导出队列已关闭", false, exception);
             publish(failed);
         }
     }
 
     private void execute(Plan plan) {
+        long startedNanos = System.nanoTime();
         ExportTaskResponse claimed = store.claim(plan.exportId());
         if (claimed == null) return;
+        logEvent("started", plan, "prepare", "running", 0, 0, plan.images().size(),
+            plan.volumes().size(), null, null, false, null);
         publish(claimed);
         try {
             for (VolumePlan volume : plan.volumes()) {
                 checkCancelled(plan.exportId());
+                long volumeStarted = System.nanoTime();
                 store.markVolumeStatus(plan.exportId(), volume.record().volumeIndex(), "writing");
+                logEvent("started", plan, "writing", "running", elapsed(startedNanos),
+                    volume.record().startPage(), plan.images().size(), volume.record().volumeIndex(),
+                    null, null, false, null);
                 publish(store.updateProgress(
                     plan.exportId(), "running", "writing", volume.record().startPage(),
                     plan.images().size(), volume.record().volumeIndex(), plan.volumes().size(),
@@ -219,32 +248,62 @@ public final class ExportService implements AutoCloseable {
 
                 VolumeReport report = writeTemporary(plan, volume);
                 checkCancelled(plan.exportId());
+                logEvent("validated", plan, "validating", "running", elapsed(volumeStarted),
+                    volume.record().endPage(), plan.images().size(), volume.record().volumeIndex(),
+                    null, null, false, null);
+                long publishStarted = System.nanoTime();
                 publishTemporary(plan, volume);
+                logEvent("published", plan, "publishing", "running", elapsed(publishStarted),
+                    volume.record().endPage(), plan.images().size(), volume.record().volumeIndex(),
+                    null, null, false, null);
                 String fileRef = FileReferences.fileRef(volume.outputFile());
                 store.completeVolumeAndRegisterFile(
                     plan.exportId(), volume.record().volumeIndex(), fileRef,
                     volume.record().displayPath(), volume.outputFile().getFileName().toString(),
                     report.fileSize(), report.pageCount());
+                logEvent("volume_completed", plan, "completed", "running", elapsed(volumeStarted),
+                    volume.record().endPage(), plan.images().size(), volume.record().volumeIndex(),
+                    null, null, false, null);
             }
             publish(store.updateProgress(
                 plan.exportId(), "completed", "completed", plan.images().size(),
                 plan.images().size(), plan.volumes().size(), plan.volumes().size(),
                 null, null));
+            logEvent("completed", plan, "completed", "completed", elapsed(startedNanos),
+                plan.images().size(), plan.images().size(), plan.volumes().size(), null, null, false, null);
         } catch (CancelledException | InterruptedException exception) {
             if (exception instanceof InterruptedException) Thread.currentThread().interrupt();
-            finishFailure(plan, store.completedVolumeCount(plan.exportId()) > 0 ? "partial" : "cancelled",
+            String status = store.completedVolumeCount(plan.exportId()) > 0 ? "partial" : "cancelled";
+            finishFailure(plan, status,
                 "CANCELLED", "导出已取消");
+            logEvent("cancelled", plan, "cancelled", status, elapsed(startedNanos),
+                0, plan.images().size(), plan.volumes().size(), "CANCELLED", "导出已取消", false, exception);
         } catch (Exception exception) {
             ExportFailure failure = describe(exception, plan.task().format());
-            finishFailure(plan, store.completedVolumeCount(plan.exportId()) > 0 ? "partial" : "failed",
+            String status = store.completedVolumeCount(plan.exportId()) > 0 ? "partial" : "failed";
+            finishFailure(plan, status,
                 failure.code(), failure.message());
+            logEvent("failed", plan, "failed", status, elapsed(startedNanos),
+                0, plan.images().size(), plan.volumes().size(), failure.code(), failure.message(), false, exception);
         }
     }
 
     private VolumeReport writeTemporary(Plan plan, VolumePlan volume) throws Exception {
+        long startedNanos = System.nanoTime();
+        long[] lastLogNanos = {0};
+        int[] lastLoggedPage = {0};
         PdfVolumeWriter.Progress progress = pageCount -> {
             checkCancelled(plan.exportId());
             int taskPage = volume.record().startPage() + pageCount;
+            long now = System.nanoTime();
+            boolean due = shouldLogProgress(now, pageCount, lastLogNanos[0], lastLoggedPage[0],
+                volume.record().expectedPageCount());
+            if (due) {
+                lastLogNanos[0] = now;
+                lastLoggedPage[0] = pageCount;
+                logEvent("progress", plan, "writing", "running", elapsed(startedNanos), taskPage,
+                    plan.images().size(), volume.record().volumeIndex(), null, null, false, null);
+            }
             publish(store.updateProgress(
                 plan.exportId(), "running", "writing", taskPage,
                 plan.images().size(), volume.record().volumeIndex(),
@@ -256,6 +315,8 @@ public final class ExportService implements AutoCloseable {
             pdfWriter.write(volumeImages, volume.temporaryFile(), plan.task().useOriginal(),
                 plan.task().compressionRatio(), progress);
             PdfFileValidator.Report report = validateTemporary(volume);
+            logEvent("validated", plan, "validating", "running", 0, volume.record().endPage(),
+                plan.images().size(), volume.record().volumeIndex(), null, null, false, null);
             return new VolumeReport(report.fileSize(), report.pageCount());
         }
 
@@ -619,6 +680,58 @@ public final class ExportService implements AutoCloseable {
 
     private static void cleanupTemporaryFiles(Plan plan) {
         for (VolumePlan volume : plan.volumes()) deleteQuietly(volume.temporaryFile());
+    }
+
+    private static long elapsed(long startedNanos) {
+        return java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNanos);
+    }
+
+    private static long elapsedSince(long createdAtMillis) {
+        return Math.max(0, System.currentTimeMillis() - createdAtMillis);
+    }
+
+    static boolean shouldLogProgress(long nowNanos, int page, long lastLogNanos,
+                                     int lastPage, int totalPages) {
+        return page == 1 || page == totalPages || lastLogNanos == 0
+            || page - lastPage >= 25 || nowNanos - lastLogNanos >= LOG_HEARTBEAT_NANOS;
+    }
+
+    private void logEvent(String event, Plan plan, String phase, String status, long elapsedMs,
+                          int page, int totalPages, int volume, String code, String message,
+                          boolean retry, Throwable failure) {
+        logEvent(event, plan.exportId(), plan.batchId(), plan.task().format(), phase, status,
+            elapsedMs, page, totalPages, volume, code, message, retry, failure);
+    }
+
+    private void logEvent(String event, String exportId, String batchId, String format,
+                          String phase, String status, long elapsedMs, int page, int totalPages,
+                          int volume, String code, String message, boolean retry, Throwable failure) {
+        StringBuilder line = new StringBuilder("export event=").append(clean(event))
+            .append(" exportId=").append(clean(exportId)).append(" batchId=").append(clean(batchId))
+            .append(" format=").append(clean(format)).append(" phase=").append(clean(phase))
+            .append(" status=").append(clean(status)).append(" elapsedMs=").append(elapsedMs)
+            .append(" page=").append(page).append(" totalPages=").append(totalPages)
+            .append(" volume=").append(volume);
+        append(line, "retry", retry ? "true" : null);
+        append(line, "errorCode", code);
+        boolean outputExists = code != null && code.endsWith("_OUTPUT_EXISTS");
+        if (!outputExists) append(line, "message", message);
+        if (failure == null || outputExists) {
+            if ("failed".equals(status)) LOGGER.error(line.toString());
+            else LOGGER.info(line.toString());
+        } else {
+            LOGGER.error(line.toString(), failure);
+        }
+    }
+
+    private static void append(StringBuilder line, String key, String value) {
+        if (value != null && !value.isBlank()) line.append(' ').append(key).append('=').append(clean(value));
+    }
+
+    private static String clean(String value) {
+        if (value == null || value.isBlank()) return "-";
+        String cleaned = value.replaceAll("[\\p{Cntrl}\\r\\n]+", " ").trim();
+        return cleaned.substring(0, Math.min(256, cleaned.length()));
     }
 
     private void cleanupQueuedCancellation(String exportId) {

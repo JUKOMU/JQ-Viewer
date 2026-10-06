@@ -7,6 +7,8 @@ import io.github.jukomu.desktop.feature.files.model.FileDescriptorResponse;
 import io.github.jukomu.desktop.feature.files.model.FileRefsResponse;
 import io.github.jukomu.desktop.feature.files.model.FolderDescriptorResponse;
 import io.github.jukomu.desktop.feature.files.model.LocalFilesResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.awt.*;
 import java.io.IOException;
@@ -20,6 +22,7 @@ import java.util.function.Consumer;
  * Desktop 目录选择、文件引用与系统打开能力。
  */
 public final class FileService {
+    private static final Logger LOGGER = LoggerFactory.getLogger(FileService.class);
     private final Paths paths;
     private final FolderPicker folderPicker;
     private final Consumer<Path> fileOpener;
@@ -57,42 +60,138 @@ public final class FileService {
     }
 
     public SuccessResponse openFile(String reference) {
-        Path file = FileReferences.parseFile(reference);
-        if (!Files.isRegularFile(file)) throw ApiException.notFound("文件不存在");
-        fileOpener.accept(file);
-        return SuccessResponse.ok();
+        return open(reference, "file");
     }
 
     public SuccessResponse openContainingFolder(String reference) {
-        Path file = FileReferences.parseFile(reference);
-        Path parent = file.getParent();
-        if (parent == null || !Files.isDirectory(parent)) {
-            throw ApiException.notFound("文件所在目录不存在");
+        long startedNanos = System.nanoTime();
+        String operationId = operationId();
+        try {
+            Path file = FileReferences.parseFile(reference);
+            Path parent = file.getParent();
+            if (parent == null || !Files.isDirectory(parent)) {
+                throw ApiException.notFound("文件所在目录不存在");
+            }
+            fileOpener.accept(parent);
+            logEvent("local_file.open", operationId, "folder", file, "completed",
+                elapsed(startedNanos), null, null, null);
+            return SuccessResponse.ok();
+        } catch (RuntimeException exception) {
+            logEvent("local_file.open", operationId, "folder", reference, "failed",
+                elapsed(startedNanos), errorCode(exception), exception.getMessage(), exception);
+            throw exception;
         }
-        fileOpener.accept(parent);
-        return SuccessResponse.ok();
     }
 
     public LocalFilesResponse scanImportableFiles(String reference, List<String> formats) {
+        long startedNanos = System.nanoTime();
+        String operationId = operationId();
         List<String> requested = formats == null || formats.isEmpty() ? List.of("pdf") : formats;
-        if (requested.stream().anyMatch(format -> !"pdf".equals(format) && !"cbz".equals(format))) {
-            throw ApiException.invalidRequest("导入扫描仅支持 PDF 和 CBZ");
-        }
-        Set<String> requestedFormats = Set.copyOf(requested);
-        Path folder = FileReferences.parseFolder(reference);
-        if (!Files.isDirectory(folder)) throw ApiException.notFound("目录不存在");
-        try (var files = Files.list(folder)) {
-            List<FileDescriptorResponse> results = files
-                .filter(Files::isRegularFile)
-                .filter(path -> requestedFormats.contains(format(path)))
-                .sorted(Comparator.comparing(path -> path.getFileName().toString(),
-                    String.CASE_INSENSITIVE_ORDER))
-                .map(FileService::file)
-                .toList();
-            return new LocalFilesResponse(results);
+        LOGGER.info("local_file.scan event=started operationId={} requestedFormats={} elapsedMs=0",
+            clean(operationId), clean(String.join(",", requested)));
+        int candidateCount = 0;
+        try {
+            if (requested.stream().anyMatch(format -> !"pdf".equals(format) && !"cbz".equals(format))) {
+                throw ApiException.invalidRequest("导入扫描仅支持 PDF 和 CBZ");
+            }
+            Set<String> requestedFormats = Set.copyOf(requested);
+            Path folder = FileReferences.parseFolder(reference);
+            if (!Files.isDirectory(folder)) throw ApiException.notFound("目录不存在");
+            try (var files = Files.list(folder)) {
+                List<Path> candidates = files.filter(Files::isRegularFile).toList();
+                candidateCount = candidates.size();
+                List<FileDescriptorResponse> results = candidates.stream()
+                    .filter(path -> requestedFormats.contains(format(path)))
+                    .sorted(Comparator.comparing(path -> path.getFileName().toString(),
+                        String.CASE_INSENSITIVE_ORDER))
+                    .map(FileService::file)
+                    .toList();
+                logEvent("local_file.scan", operationId, folder, "completed", elapsed(startedNanos),
+                    candidateCount, results.size(), null, null, null);
+                return new LocalFilesResponse(results);
+            }
         } catch (IOException exception) {
+            logEvent("local_file.scan", operationId, reference, "failed", elapsed(startedNanos),
+                candidateCount, 0, "SCAN_IO_FAILED", exception.getMessage(), exception);
             throw new IllegalStateException("扫描可导入文件失败", exception);
+        } catch (RuntimeException exception) {
+            logEvent("local_file.scan", operationId, reference, "failed", elapsed(startedNanos),
+                candidateCount, 0, errorCode(exception), exception.getMessage(), exception);
+            throw exception;
         }
+    }
+
+    private SuccessResponse open(String reference, String operation) {
+        long startedNanos = System.nanoTime();
+        String operationId = operationId();
+        try {
+            Path file = FileReferences.parseFile(reference);
+            if (!Files.isRegularFile(file)) throw ApiException.notFound("文件不存在");
+            fileOpener.accept(file);
+            logEvent("local_file.open", operationId, operation, file, "completed",
+                elapsed(startedNanos), null, null, null);
+            return SuccessResponse.ok();
+        } catch (RuntimeException exception) {
+            logEvent("local_file.open", operationId, operation, reference, "failed",
+                elapsed(startedNanos), errorCode(exception), exception.getMessage(), exception);
+            throw exception;
+        }
+    }
+
+    private static void logEvent(String event, String operationId, String operation,
+                                 Object reference, String status, long elapsedMs,
+                                 String errorCode, String message, Throwable failure) {
+        String referenceSummary = reference instanceof Path path
+            ? path.getFileName() == null ? "-" : path.getFileName().toString()
+            : fileName(reference == null ? null : reference.toString());
+        String line = "local_file event=" + clean(event)
+            + " operationId=" + clean(operationId)
+            + " operation=" + clean(operation)
+            + " fileName=" + clean(referenceSummary)
+            + " status=" + clean(status)
+            + " elapsedMs=" + elapsedMs;
+        if (errorCode != null && !errorCode.isBlank()) line += " errorCode=" + clean(errorCode);
+        if (failure == null) LOGGER.info(line);
+        else LOGGER.warn(line + " errorClass=" + failure.getClass().getSimpleName());
+    }
+
+    private static void logEvent(String event, String operationId, Object folder, String status,
+                                 long elapsedMs, int candidateCount, int matchedCount,
+                                 String errorCode, String message, Throwable failure) {
+        String line = "local_file event=" + clean(event)
+            + " operationId=" + clean(operationId)
+            + " folderKind=local-file-root status=" + clean(status)
+            + " candidateCount=" + candidateCount + " matchedCount=" + matchedCount
+            + " elapsedMs=" + elapsedMs;
+        if (errorCode != null && !errorCode.isBlank()) line += " errorCode=" + clean(errorCode);
+        if (failure == null) LOGGER.info(line);
+        else LOGGER.error(line + " errorClass=" + failure.getClass().getSimpleName());
+    }
+
+    private static String errorCode(Throwable exception) {
+        if (exception instanceof ApiException apiException) return apiException.code();
+        return exception.getClass().getSimpleName();
+    }
+
+    private static String fileName(String reference) {
+        if (reference == null || reference.isBlank()) return "-";
+        int slash = Math.max(reference.lastIndexOf('/'), reference.lastIndexOf('\\'));
+        return slash >= 0 && slash + 1 < reference.length()
+            ? reference.substring(slash + 1) : reference;
+    }
+
+    private static String operationId() {
+        return UUID.randomUUID().toString();
+    }
+
+    private static long elapsed(long startedNanos) {
+        return java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNanos);
+    }
+
+    private static String clean(String value) {
+        if (value == null || value.isBlank()) return "-";
+        String cleaned = value.replaceAll("[\\p{Cntrl}\\r\\n]+", " ").trim();
+        return cleaned.substring(0, Math.min(256, cleaned.length()));
     }
 
     private Path defaultPath(String purpose) {

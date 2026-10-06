@@ -18,6 +18,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Comparator;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -28,6 +29,42 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DownloadLocationServiceTest {
+    @Test
+    void recordsRelocationLifecycleAndCopiedVersusReusedFiles() throws Exception {
+        try (Fixture fixture = new Fixture()) {
+            fixture.writePrivate("album/chapter/001.jpg", "first");
+            fixture.writePrivate("album/chapter/002.jpg", "second");
+            fixture.writeTarget("album/chapter/001.jpg", "first");
+            List<LogEntry> logs = new ArrayList<>();
+
+            DownloadRelocationResponse response = fixture.service(
+                    fixture.selectedParent, new TestFileOperations(0), fixture.files,
+                    (event, values) -> logs.add(new LogEntry(event, values))).set(true);
+
+            assertEquals(2, response.moved());
+            assertTrue(logs.stream().anyMatch(log -> log.event().equals("relocation_started")));
+            assertTrue(logs.stream().anyMatch(log -> log.event().equals("relocation_settings")
+                    && "succeeded".equals(log.values().get("status"))));
+            assertTrue(logs.stream().anyMatch(log -> log.event().equals("relocation_copy")
+                    && "copied".equals(log.values().get("action"))));
+            assertTrue(logs.stream().anyMatch(log -> log.event().equals("relocation_copy")
+                    && "reused".equals(log.values().get("action"))));
+            assertTrue(logs.stream().anyMatch(log -> log.event().equals("relocation_verify")
+                    && "succeeded".equals(log.values().get("status"))));
+            assertTrue(logs.stream().anyMatch(log -> log.event().equals("relocation_completed")
+                    && "succeeded".equals(log.values().get("status"))
+                    && "false".equals(String.valueOf(log.values().get("cleanupPending")))));
+            assertTrue(logs.stream().allMatch(log -> log.values().get("relocationId") != null));
+            assertTrue(logs.stream().allMatch(log -> log.values().get("sourceRoot") == null
+                    || log.values().get("sourceRoot").equals("source-root")));
+            assertTrue(logs.stream().allMatch(log -> log.values().get("targetRoot") == null
+                    || log.values().get("targetRoot").equals("target-root")));
+            assertTrue(logs.stream().allMatch(log -> !log.values().containsKey("errorMessage")));
+            assertTrue(logs.stream().flatMap(log -> log.values().values().stream())
+                    .noneMatch(value -> String.valueOf(value).contains(fixture.root.toString())));
+        }
+    }
+
     @Test
     void migratesBothDirectionsAndRestoresConfiguredRootOnRestart() throws Exception {
         try (Fixture fixture = new Fixture()) {
@@ -235,11 +272,25 @@ class DownloadLocationServiceTest {
                 DownloadLocationService.FileOperations operations,
                 DownloadFiles downloadFiles
         ) {
+            return service(selected, operations, downloadFiles, null);
+        }
+
+        private DownloadLocationService service(
+                Path selected,
+                DownloadLocationService.FileOperations operations,
+                DownloadFiles downloadFiles,
+                DownloadLocationService.RelocationLogSink relocationLog
+        ) {
             FileService fileService = new FileService(paths, ignored -> selected, ignored -> {
             });
+            if (relocationLog == null) {
+                return new DownloadLocationService(
+                        paths, settings, store, downloadFiles, exports,
+                        fileService, events, operations);
+            }
             return new DownloadLocationService(
                     paths, settings, store, downloadFiles, exports,
-                    fileService, events, operations);
+                    fileService, events, operations, relocationLog);
         }
 
         private void writePrivate(String relative, String content) throws IOException {
@@ -260,6 +311,9 @@ class DownloadLocationServiceTest {
             events.close();
             database.close();
         }
+    }
+
+    private record LogEntry(String event, Map<String, Object> values) {
     }
 
     private static final class TestFileOperations implements DownloadLocationService.FileOperations {

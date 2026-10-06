@@ -35,6 +35,18 @@ public class ExportServiceTest {
     }
 
     @Test
+    public void heartbeatUsesPageOrTimeThresholdAndAlwaysLogsLastPage() {
+        assertFalse(ExportService.shouldLogHeartbeat(1_000_000_000L,
+            0L, 10, 1, 100));
+        assertTrue(ExportService.shouldLogHeartbeat(1_000_000_000L,
+            0L, 26, 1, 100));
+        assertTrue(ExportService.shouldLogHeartbeat(5_000_000_000L,
+            0L, 10, 1, 100));
+        assertTrue(ExportService.shouldLogHeartbeat(1L,
+            0L, 100, 99, 100));
+    }
+
+    @Test
     public void buildsVolumesFromTheWholeMergedPageRange() throws Exception {
         File output = new File(temporaryFolder.getRoot(), "merged.pdf");
 

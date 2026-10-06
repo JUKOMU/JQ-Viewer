@@ -147,7 +147,11 @@
         </div>
         <div v-if="album.addTime" class="info-row">
           <span class="info-label">发布日期</span>
-          <button type="button" class="info-value clickable" @click="copyText(formatDate(album.addTime))">
+          <button
+            type="button"
+            class="info-value clickable"
+            @click="copyText(formatDate(album.addTime))"
+          >
             {{ formatDate(album.addTime) }}
             <ion-icon class="copy-icon" :icon="copyOutline" />
           </button>

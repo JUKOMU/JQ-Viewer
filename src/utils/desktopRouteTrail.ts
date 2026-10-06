@@ -35,6 +35,7 @@ const routeLabels: Array<{ pattern: RegExp | string; label: string }> = [
   { pattern: /^\/album\/[^/]+\/read\/[^/]+$/, label: '阅读器' },
   { pattern: '/pdf-reader', label: 'PDF 阅读器' },
   { pattern: '/cbz-reader', label: 'CBZ 阅读器' },
+  { pattern: '/logs', label: '日志' },
 ]
 
 const routePath = (fullPath: string) => fullPath.split(/[?#]/, 1)[0] || '/'

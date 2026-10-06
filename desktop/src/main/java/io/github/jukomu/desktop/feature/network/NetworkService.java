@@ -65,9 +65,15 @@ public final class NetworkService implements AutoCloseable {
 
     public DomainStatesResponse getDomainStates() {
         ensureOpen();
+        long started = System.nanoTime();
         try {
-            return toDomainStates(operations.domainStates().get());
+            DomainStatesResponse result = toDomainStates(operations.domainStates().get());
+            LOGGER.info("network_request operation=domainStates status=success domains={} alive={} elapsedMs={}",
+                result.total(), result.alive(), elapsedMs(started));
+            return result;
         } catch (RuntimeException exception) {
+            LOGGER.warn("network_request operation=domainStates status=failed error={} errorClass={} elapsedMs={}",
+                errorCategory(exception), exception.getClass().getSimpleName(), elapsedMs(started));
             if (exception instanceof ApiException apiException) throw apiException;
             throw ApiException.network(messageOf("获取域名状态失败，请稍后重试", exception));
         }
@@ -75,10 +81,13 @@ public final class NetworkService implements AutoCloseable {
 
     public LatencyResultsResponse measureLatency() {
         ensureOpen();
+        long started = System.nanoTime();
         final Map<String, Integer> latency;
         try {
             latency = operations.latency().get();
         } catch (RuntimeException exception) {
+            LOGGER.warn("network_request operation=latency status=failed error={} errorClass={} elapsedMs={}",
+                errorCategory(exception), exception.getClass().getSimpleName(), elapsedMs(started));
             if (exception instanceof ApiException apiException) throw apiException;
             throw ApiException.network(messageOf("测速失败，请稍后重试", exception));
         }
@@ -90,7 +99,11 @@ public final class NetworkService implements AutoCloseable {
             results.add(new LatencyResultResponse(
                 entry.getKey(), timedOut ? 0 : measured, timedOut));
         }
-        return new LatencyResultsResponse(List.copyOf(results));
+        LatencyResultsResponse result = new LatencyResultsResponse(List.copyOf(results));
+        long timedOut = results.stream().filter(LatencyResultResponse::timedOut).count();
+        LOGGER.info("network_request operation=latency status=success domains={} timedOut={} elapsedMs={}",
+            results.size(), timedOut, elapsedMs(started));
+        return result;
     }
 
     public void reprobeDomains() {
@@ -113,6 +126,7 @@ public final class NetworkService implements AutoCloseable {
     }
 
     private void runProbe() {
+        long started = System.nanoTime();
         synchronized (lifecycleLock) {
             if (closed) {
                 probing = false;
@@ -124,8 +138,11 @@ public final class NetworkService implements AutoCloseable {
             operations.reprobe().run();
             publish(NetworkProbeEvent.result(toDomainStates(operations.domainStates().get())));
         } catch (RuntimeException exception) {
+            LOGGER.warn("network_probe operation=manual status=failed error={} errorClass={} elapsedMs={}",
+                errorCategory(exception), exception.getClass().getSimpleName(), elapsedMs(started));
             publish(NetworkProbeEvent.error(messageOf("探活异常", exception)));
         } finally {
+            LOGGER.info("network_probe operation=manual status=finished elapsedMs={}", elapsedMs(started));
             finishProbe();
         }
     }
@@ -208,6 +225,7 @@ public final class NetworkService implements AutoCloseable {
     }
 
     private void recoverAndProbe() {
+        long started = System.nanoTime();
         synchronized (lifecycleLock) {
             if (closed) return;
         }
@@ -218,8 +236,11 @@ public final class NetworkService implements AutoCloseable {
             publish(NetworkProbeEvent.networkRestored(
                 toDomainStates(operations.domainStates().get())));
         } catch (RuntimeException exception) {
+            LOGGER.warn("network_probe operation=recover status=failed error={} errorClass={} elapsedMs={}",
+                errorCategory(exception), exception.getClass().getSimpleName(), elapsedMs(started));
             publish(NetworkProbeEvent.error(messageOf("网络恢复探测失败", exception)));
         } finally {
+            LOGGER.info("network_probe operation=recover status=finished elapsedMs={}", elapsedMs(started));
             finishProbe();
         }
     }
@@ -333,6 +354,15 @@ public final class NetworkService implements AutoCloseable {
     private static String messageOf(String fallback, RuntimeException exception) {
         String message = exception.getMessage();
         return message == null || message.isBlank() ? fallback : fallback + " · " + message;
+    }
+
+    private static long elapsedMs(long started) {
+        return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
+    }
+
+    private static String errorCategory(RuntimeException exception) {
+        if (exception instanceof ApiException apiException) return apiException.code();
+        return "runtime";
     }
 
     @Override

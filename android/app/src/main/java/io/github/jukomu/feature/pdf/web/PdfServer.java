@@ -8,6 +8,8 @@ import io.github.jukomu.feature.cbz.CbzDocumentService;
 import io.github.jukomu.feature.localfile.data.LocalFileRef;
 import io.github.jukomu.feature.localfile.data.LocalFileRefResolver;
 import io.github.jukomu.feature.pdf.render.PdfPageCache;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayInputStream;
 import java.io.FileInputStream;
@@ -24,6 +26,7 @@ import java.util.regex.Pattern;
  * 通过 PDF reader 使用的虚拟 WebView host 提供 FileRef 指向的 PDF，并统一附加 CORS 头。
  */
 public class PdfServer {
+    private static final Logger LOGGER = LoggerFactory.getLogger(PdfServer.class);
 
     static final String VIRTUAL_HOST = ImageCache.VIRTUAL_HOST;
     static final String PDF_PATH_PREFIX = "/pdf/";
@@ -127,24 +130,33 @@ public class PdfServer {
      * 读取已生成的 PNG；该入口不创建 PdfRenderer，也不访问源 PDF。
      */
     public static WebResourceResponse handlePdfPageRequest(String url, Context context) {
+        long startedNanos = System.nanoTime();
         if (!isPdfPageUrl(url)) {
+            LOGGER.debug("PDF 页面资源请求拒绝: event=invalid_url, elapsedMs={}", elapsedMs(startedNanos));
             return errorResponse(400, "Bad Request", null);
         }
 
         Uri uri = parseUri(url);
         Matcher matcher = PDF_PAGE_PATH_PATTERN.matcher(uri.getPath());
         if (!matcher.matches()) {
+            LOGGER.debug("PDF 页面资源请求拒绝: event=invalid_path, elapsedMs={}", elapsedMs(startedNanos));
             return errorResponse(400, "Bad Request", null);
         }
 
         String resourceId = matcher.group(1);
         try {
             FileInputStream stream = PdfPageCache.getInstance(context).openPage(resourceId);
+            LOGGER.debug("PDF 页面资源读取完成: event=read, resourceId={}, elapsedMs={}",
+                resourceId, elapsedMs(startedNanos));
             return withCorsHeaders(new WebResourceResponse(
                 "image/png", null, 200, "OK", corsHeaders(null), stream));
         } catch (FileNotFoundException error) {
+            LOGGER.debug("PDF 页面资源读取失败: event=missing, resourceId={}, elapsedMs={}",
+                resourceId, elapsedMs(startedNanos));
             return errorResponse(404, "Not Found", null);
         } catch (Exception error) {
+            LOGGER.warn("PDF 页面资源读取失败: event=failed, resourceId={}, errorClass={}, elapsedMs={}",
+                resourceId, error.getClass().getSimpleName(), elapsedMs(startedNanos));
             return errorResponse(500, "Internal Server Error", null);
         }
     }
@@ -170,6 +182,7 @@ public class PdfServer {
     }
 
     public static WebResourceResponse handleRequest(String url, Context context) {
+        long startedNanos = System.nanoTime();
         try {
             if (!isPdfUrl(url)) return errorResponse(400, "Bad Request", "invalid-url");
             Uri uri = parseUri(url);
@@ -186,16 +199,28 @@ public class PdfServer {
                 throw new IllegalArgumentException("需要文件引用");
             }
             InputStream stream = LocalFileRefResolver.openReadStream(context, fileRef);
+            LOGGER.debug("PDF 源文件资源读取完成: event=read, provider={}, elapsedMs={}",
+                parsed.provider, elapsedMs(startedNanos));
             return withCorsHeaders(new WebResourceResponse(
                 "application/pdf", "binary", 200, "OK", corsHeaders(null), stream));
         } catch (SecurityException e) {
+            LOGGER.warn("PDF 源文件资源读取失败: event=permission_denied, errorClass={}, elapsedMs={}",
+                e.getClass().getSimpleName(), elapsedMs(startedNanos));
             return errorResponse(403, "Forbidden", "permission-denied");
         } catch (FileNotFoundException e) {
+            LOGGER.debug("PDF 源文件资源读取失败: event=missing, elapsedMs={}", elapsedMs(startedNanos));
             return errorResponse(404, "Not Found", "file-missing");
         } catch (IllegalArgumentException e) {
+            LOGGER.debug("PDF 源文件资源读取失败: event=invalid_path, elapsedMs={}", elapsedMs(startedNanos));
             return errorResponse(400, "Bad Request", "invalid-path");
         } catch (Exception e) {
+            LOGGER.warn("PDF 源文件资源读取失败: event=failed, errorClass={}, elapsedMs={}",
+                e.getClass().getSimpleName(), elapsedMs(startedNanos));
             return errorResponse(500, "Internal Server Error", "open-failed");
         }
+    }
+
+    private static long elapsedMs(long startedNanos) {
+        return (System.nanoTime() - startedNanos) / 1_000_000L;
     }
 }

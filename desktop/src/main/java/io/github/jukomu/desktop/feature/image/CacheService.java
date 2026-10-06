@@ -7,6 +7,8 @@ import io.github.jukomu.desktop.feature.image.model.ImageCacheContentsResponse;
 import io.github.jukomu.desktop.feature.image.model.ImageCacheEntryResponse;
 import io.github.jukomu.desktop.feature.pdf.render.PdfPageCache;
 import io.github.jukomu.desktop.feature.settings.SettingsService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 
@@ -14,6 +16,7 @@ import java.util.List;
  * 统一处理图片缓存容量、内容查询和缓存域清理。
  */
 public final class CacheService {
+    private static final Logger LOGGER = LoggerFactory.getLogger(CacheService.class);
     private final SettingsService settings;
     private final ImageCache imageCache;
     private final PdfPageCache pdfPageCache;
@@ -52,6 +55,8 @@ public final class CacheService {
         settings.setCacheCapacityMb(requestedMb);
         apply(requestedMb);
         CacheCapacityInfo info = capacityInfo();
+        LOGGER.info("cache.capacity event=updated requestedMb={} effectiveMb={} usedMb={} temporaryClamp={}",
+            info.requestedMb(), info.effectiveMb(), info.usedMb(), info.temporaryClamp());
         return new CacheCapacityUpdateResponse(
             true,
             info.capacityMb(),
@@ -93,8 +98,14 @@ public final class CacheService {
     }
 
     public void clear() {
+        long startedNanos = System.nanoTime();
+        int imageEntries = imageCache.snapshot().size();
+        long imageBytes = imageCache.usedBytes();
+        PdfPageCache.Stats pdfStats = pdfPageCache.stats();
         imageCache.clear();
         pdfPageCache.clear();
+        LOGGER.info("cache event=cleared imageEntryCount={} imageSizeBytes={} pdfEntryCount={} pdfSizeBytes={} elapsedMs={}",
+            imageEntries, imageBytes, pdfStats.entryCount(), pdfStats.sizeBytes(), elapsed(startedNanos));
     }
 
     public List<ResourceSnapshot> diagnosticResources() {
@@ -112,6 +123,13 @@ public final class CacheService {
     private void apply(long requestedMb) {
         capacity = capacityPolicy.calculate(requestedMb, maxHeapBytes);
         imageCache.setCapacityBytes(capacity.effectiveMb() * CacheCapacityPolicy.MIB);
+        LOGGER.debug("cache.capacity event=applied requestedMb={} effectiveMb={} maxHeapMb={} temporaryClamp={}",
+            capacity.requestedMb(), capacity.effectiveMb(), capacity.maxHeapMb(), capacity.temporaryClamp());
+    }
+
+    private static long elapsed(long startedNanos) {
+        return java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(
+            System.nanoTime() - startedNanos);
     }
 
     public record ResourceSnapshot(

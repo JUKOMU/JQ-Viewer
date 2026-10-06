@@ -1,11 +1,16 @@
 package io.github.jukomu.desktop.feature.image;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.*;
 
 /**
  * 进程内按字节容量淘汰的图片缓存。
  */
 public final class ImageCache {
+    private static final Logger LOGGER = LoggerFactory.getLogger(ImageCache.class);
+
     public record Entry(byte[] bytes, String mimeType) {
     }
 
@@ -29,7 +34,11 @@ public final class ImageCache {
     }
 
     public synchronized void put(String key, byte[] bytes, String mimeType) {
-        if (bytes.length > capacityBytes) return;
+        if (bytes.length > capacityBytes) {
+            LOGGER.warn("image-cache event=skip-entry key={} sizeBytes={} capacityBytes={}",
+                clean(key), bytes.length, capacityBytes);
+            return;
+        }
         Entry previous = entries.remove(key);
         if (previous != null) usedBytes -= previous.bytes().length;
         entries.put(key, new Entry(bytes, mimeType));
@@ -43,14 +52,21 @@ public final class ImageCache {
     }
 
     public synchronized void clear() {
+        int entryCount = entries.size();
+        long clearedBytes = usedBytes;
         entries.clear();
         usedBytes = 0;
+        if (entryCount > 0) {
+            LOGGER.info("image-cache event=cleared entryCount={} sizeBytes={}", entryCount, clearedBytes);
+        }
     }
 
     public synchronized void setCapacityBytes(long capacityBytes) {
         if (capacityBytes <= 0) throw new IllegalArgumentException("缓存容量必须为正数");
         this.capacityBytes = capacityBytes;
         evict();
+        LOGGER.info("image-cache event=capacity-updated capacityBytes={} usedBytes={}",
+            capacityBytes, usedBytes);
     }
 
     public synchronized long usedBytes() {
@@ -78,10 +94,25 @@ public final class ImageCache {
 
     private void evict() {
         Iterator<Map.Entry<String, Entry>> iterator = entries.entrySet().iterator();
+        int evictedCount = 0;
+        long evictedBytes = 0L;
         while (usedBytes > capacityBytes && iterator.hasNext()) {
             Entry removed = iterator.next().getValue();
-            usedBytes -= removed.bytes().length;
+            long size = removed.bytes().length;
+            usedBytes -= size;
+            evictedBytes += size;
+            evictedCount++;
             iterator.remove();
         }
+        if (evictedCount > 0) {
+            LOGGER.info("image-cache event=evicted entryCount={} sizeBytes={} usedBytes={} capacityBytes={}",
+                evictedCount, evictedBytes, usedBytes, capacityBytes);
+        }
+    }
+
+    private static String clean(String value) {
+        if (value == null || value.isBlank()) return "-";
+        String cleaned = value.replaceAll("[\\p{Cntrl}\\r\\n]+", " ").trim();
+        return cleaned.substring(0, Math.min(128, cleaned.length()));
     }
 }

@@ -15,6 +15,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * API 服务——搜索、详情、评论、收藏等远程 API 调用。
@@ -24,6 +25,7 @@ public class ApiService {
     private static final Logger LOGGER = LoggerFactory.getLogger(ApiService.class);
     private static final String SEARCH_COVER_SIZE = "_3x4";
     private static final long API_TIMEOUT_MINUTES = 5;
+    private static final AtomicLong REQUEST_SEQUENCE = new AtomicLong();
 
     private final JmApiClient client;
     private final ExecutorService apiExecutor;
@@ -43,22 +45,46 @@ public class ApiService {
         JSONObject execute() throws Exception;
     }
 
-    private void runAsync(ApiTask task, ApiCallback callback) {
+    private void runAsync(String operation, ApiTask task, ApiCallback callback) {
+        String requestId = operation + "-" + REQUEST_SEQUENCE.incrementAndGet();
+        long startedAt = System.nanoTime();
+        LOGGER.info("API request started operation={} requestId={}", operation, requestId);
         Future<?> future = apiExecutor.submit(() -> {
             try {
                 JSONObject result = task.execute();
+                LOGGER.info("API request succeeded operation={} requestId={} elapsedMs={}",
+                    operation, requestId, elapsedMillis(startedAt));
                 callback.onSuccess(result);
             } catch (Exception e) {
-                LOGGER.error("API call failed", e);
+                LOGGER.warn("API request failed operation={} requestId={} elapsedMs={} errorType={}",
+                    operation, requestId, elapsedMillis(startedAt), errorType(e));
                 callback.onError(e.getMessage(), e);
             }
         });
         timeoutExecutor.schedule(() -> {
             if (!future.isDone()) {
                 future.cancel(true);
+                LOGGER.warn("API request timed out operation={} requestId={} elapsedMs={} timeoutMinutes={}",
+                    operation, requestId, elapsedMillis(startedAt), API_TIMEOUT_MINUTES);
                 callback.onError("API call timeout (" + API_TIMEOUT_MINUTES + " minutes)", null);
             }
         }, API_TIMEOUT_MINUTES, TimeUnit.MINUTES);
+    }
+
+    private static long elapsedMillis(long startedAt) {
+        return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
+    }
+
+    private static String errorType(Exception error) {
+        return error == null ? "unknown" : error.getClass().getSimpleName();
+    }
+
+    private void reportImmediateFailure(String operation, ApiCallback callback, Exception error) {
+        String requestId = operation + "-" + REQUEST_SEQUENCE.incrementAndGet();
+        LOGGER.info("API request started operation={} requestId={}", operation, requestId);
+        LOGGER.warn("API request failed operation={} requestId={} elapsedMs=0 errorType={}",
+            operation, requestId, errorType(error));
+        callback.onError(error.getMessage(), error);
     }
 
     // ---- API 方法 ----
@@ -67,9 +93,9 @@ public class ApiService {
                        int searchMainTag, int page, ApiCallback callback) {
         try {
             SearchQuery query = buildQuery(keyword, category, orderBy, time, searchMainTag, page);
-            runAsync(() -> toSearchPage(client.search(query)), callback);
+            runAsync("search", () -> toSearchPage(client.search(query)), callback);
         } catch (Exception e) {
-            callback.onError(e.getMessage(), e);
+            reportImmediateFailure("search", callback, e);
         }
     }
 
@@ -77,50 +103,50 @@ public class ApiService {
                            int searchMainTag, int page, ApiCallback callback) {
         try {
             SearchQuery query = buildQuery(keyword, category, orderBy, time, searchMainTag, page);
-            runAsync(() -> toSearchPage(client.getCategories(query)), callback);
+            runAsync("categories", () -> toSearchPage(client.getCategories(query)), callback);
         } catch (Exception e) {
-            callback.onError(e.getMessage(), e);
+            reportImmediateFailure("categories", callback, e);
         }
     }
 
     public void getAlbum(String id, ApiCallback callback) {
         try {
-            runAsync(() -> {
+            runAsync("getAlbum", () -> {
                 JmAlbum album = client.getAlbum(id);
                 return toAlbumObject(album);
             }, callback);
         } catch (Exception e) {
-            callback.onError(e.getMessage(), e);
+            reportImmediateFailure("getAlbum", callback, e);
         }
     }
 
     public void getPhoto(String id, ApiCallback callback) {
         try {
-            runAsync(() -> toPhotoObject(client.getPhoto(id)), callback);
+            runAsync("getPhoto", () -> toPhotoObject(client.getPhoto(id)), callback);
         } catch (Exception e) {
-            callback.onError(e.getMessage(), e);
+            reportImmediateFailure("getPhoto", callback, e);
         }
     }
 
     public void getComments(String albumId, int page, ApiCallback callback) {
         try {
             ForumQuery query = ForumQuery.album(albumId).mode(ForumMode.ALL).page(page).build();
-            runAsync(() -> toCommentListObject(client.getComments(query)), callback);
+            runAsync("getComments", () -> toCommentListObject(client.getComments(query)), callback);
         } catch (Exception e) {
-            callback.onError(e.getMessage(), e);
+            reportImmediateFailure("getComments", callback, e);
         }
     }
 
     public void toggleAlbumLike(String id, ApiCallback callback) {
         try {
-            runAsync(() -> {
+            runAsync("toggleAlbumLike", () -> {
                 client.toggleAlbumLike(id);
                 JSONObject ret = new JSONObject();
                 ret.put("success", true);
                 return ret;
             }, callback);
         } catch (Exception e) {
-            callback.onError(e.getMessage(), e);
+            reportImmediateFailure("toggleAlbumLike", callback, e);
         }
     }
 
@@ -130,22 +156,22 @@ public class ApiService {
                 .folderId(folderId)
                 .page(page)
                 .build();
-            runAsync(() -> toFavoritePage(client.getFavorites(query)), callback);
+            runAsync("getFavorites", () -> toFavoritePage(client.getFavorites(query)), callback);
         } catch (Exception e) {
-            callback.onError(e.getMessage(), e);
+            reportImmediateFailure("getFavorites", callback, e);
         }
     }
 
     public void toggleAlbumFavorite(String id, String folderId, ApiCallback callback) {
         try {
-            runAsync(() -> {
+            runAsync("toggleAlbumFavorite", () -> {
                 client.toggleAlbumFavorite(id, folderId);
                 JSONObject ret = new JSONObject();
                 ret.put("success", true);
                 return ret;
             }, callback);
         } catch (Exception e) {
-            callback.onError(e.getMessage(), e);
+            reportImmediateFailure("toggleAlbumFavorite", callback, e);
         }
     }
 
@@ -154,7 +180,7 @@ public class ApiService {
                                      ApiCallback callback) {
         try {
             FavoriteFolderType folderType = findFavoriteFolderType(type);
-            runAsync(() -> {
+            runAsync("manageFavoriteFolder", () -> {
                 JmFavoriteFolderResult result = client.manageFavoriteFolder(
                     folderType, folderId, folderName, albumId);
                 JSONObject ret = new JSONObject();
@@ -163,7 +189,7 @@ public class ApiService {
                 return ret;
             }, callback);
         } catch (Exception e) {
-            callback.onError(e.getMessage(), e);
+            reportImmediateFailure("manageFavoriteFolder", callback, e);
         }
     }
 
@@ -171,25 +197,25 @@ public class ApiService {
 
     public void login(String username, String password, ApiCallback callback) {
         try {
-            runAsync(() -> {
+            runAsync("login", () -> {
                 JmUserInfo userInfo = client.login(username, password);
                 return toUserInfoObject(userInfo);
             }, callback);
         } catch (Exception e) {
-            callback.onError(e.getMessage(), e);
+            reportImmediateFailure("login", callback, e);
         }
     }
 
     public void logout(ApiCallback callback) {
         try {
-            runAsync(() -> {
+            runAsync("logout", () -> {
                 client.logout();
                 JSONObject ret = new JSONObject();
                 ret.put("success", true);
                 return ret;
             }, callback);
         } catch (Exception e) {
-            callback.onError(e.getMessage(), e);
+            reportImmediateFailure("logout", callback, e);
         }
     }
 
@@ -458,12 +484,12 @@ public class ApiService {
      */
     public void getUserProfile(String uid, ApiCallback callback) {
         try {
-            runAsync(() -> {
+            runAsync("getUserProfile", () -> {
                 JmUserProfile profile = client.getUserProfile(uid);
                 return toUserProfileObject(profile);
             }, callback);
         } catch (Exception e) {
-            callback.onError(e.getMessage(), e);
+            reportImmediateFailure("getUserProfile", callback, e);
         }
     }
 

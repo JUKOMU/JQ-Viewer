@@ -5,6 +5,8 @@ import android.graphics.Bitmap;
 import androidx.documentfile.provider.DocumentFile;
 import io.github.jukomu.feature.localfile.data.LocalFileRef;
 import io.github.jukomu.feature.localfile.data.LocalFileRefResolver;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.*;
 import java.util.Arrays;
@@ -16,6 +18,8 @@ import java.util.Comparator;
  */
 public final class PdfPageCache {
     public static final long MAX_BYTES = 128L * 1024L * 1024L;
+    private static final Logger LOGGER = LoggerFactory.getLogger(PdfPageCache.class);
+    private static final long SLOW_PAGE_LOG_MS = 500L;
 
     private static volatile PdfPageCache instance;
 
@@ -62,13 +66,26 @@ public final class PdfPageCache {
      * 打开已生成的 PNG，并尽力更新时间戳以维护最近访问顺序。
      */
     public FileInputStream openPage(String resourceId) throws IOException {
+        long startedNanos = System.nanoTime();
         File file = fileForId(resourceId);
-        if (!file.isFile()) throw new FileNotFoundException(file.getAbsolutePath());
+        if (!file.isFile()) {
+            LOGGER.debug("PDF 页面读取失败: event=missing, resourceId={}, elapsedMs={}",
+                resourceId, elapsedMs(startedNanos));
+            throw new FileNotFoundException(file.getAbsolutePath());
+        }
         FileInputStream stream = new FileInputStream(file);
         try {
             file.setLastModified(System.currentTimeMillis());
         } catch (RuntimeException ignored) {
             // 时间戳只用于淘汰顺序，更新失败不应影响 PNG 读取。
+        }
+        long elapsedMs = elapsedMs(startedNanos);
+        if (elapsedMs >= SLOW_PAGE_LOG_MS) {
+            LOGGER.warn("PDF 页面读取慢操作: event=read, resourceId={}, sizeBytes={}, elapsedMs={}",
+                resourceId, file.length(), elapsedMs);
+        } else {
+            LOGGER.debug("PDF 页面读取完成: event=read, resourceId={}, sizeBytes={}, elapsedMs={}",
+                resourceId, file.length(), elapsedMs);
         }
         return stream;
     }
@@ -78,6 +95,7 @@ public final class PdfPageCache {
      * 该过程只在实际渲染调用中执行，不在页面拦截线程中访问源 PDF。
      */
     public SourceStamp getSourceStamp(String fileRef) throws IOException {
+        long startedNanos = System.nanoTime();
         if (context == null) throw new IllegalStateException("context is required");
         LocalFileRef.Parsed parsed = LocalFileRef.parse(fileRef);
         if (parsed.kind != LocalFileRef.Kind.FILE) {
@@ -89,7 +107,10 @@ public final class PdfPageCache {
                 throw new FileNotFoundException(parsed.payload);
             }
             if (!file.canRead()) throw new SecurityException(parsed.payload);
-            return new SourceStamp(file.length(), file.lastModified());
+            SourceStamp stamp = new SourceStamp(file.length(), file.lastModified());
+            LOGGER.debug("PDF 源文件元数据读取完成: event=source_stamp, provider=path, sizeBytes={}, elapsedMs={}",
+                stamp.length, elapsedMs(startedNanos));
+            return stamp;
         }
 
         DocumentFile document = LocalFileRefResolver.documentFile(context, fileRef);
@@ -99,13 +120,17 @@ public final class PdfPageCache {
         if (!document.canRead()) throw new SecurityException(parsed.payload);
         long length = document.length();
         long lastModified = document.lastModified();
-        return new SourceStamp(Math.max(0L, length), Math.max(0L, lastModified));
+        SourceStamp stamp = new SourceStamp(Math.max(0L, length), Math.max(0L, lastModified));
+        LOGGER.debug("PDF 源文件元数据读取完成: event=source_stamp, provider=saf, sizeBytes={}, elapsedMs={}",
+            stamp.length, elapsedMs(startedNanos));
+        return stamp;
     }
 
     /**
      * 将 Bitmap 先写入随机 tmp，关闭后再替换为最终 PNG 文件。
      */
     public void writePngAtomically(String resourceId, Bitmap bitmap) throws IOException {
+        long startedNanos = System.nanoTime();
         if (bitmap == null) throw new IllegalArgumentException("bitmap is required");
         File target = fileForId(resourceId);
         synchronized (this) {
@@ -127,6 +152,18 @@ public final class PdfPageCache {
                     }
                 }
                 enforceCapacityLocked();
+                long elapsedMs = elapsedMs(startedNanos);
+                if (elapsedMs >= SLOW_PAGE_LOG_MS) {
+                    LOGGER.warn("PDF 页面缓存写入慢操作: event=write, resourceId={}, sizeBytes={}, elapsedMs={}",
+                        resourceId, target.length(), elapsedMs);
+                } else {
+                    LOGGER.debug("PDF 页面缓存写入完成: event=write, resourceId={}, sizeBytes={}, elapsedMs={}",
+                        resourceId, target.length(), elapsedMs);
+                }
+            } catch (IOException | RuntimeException error) {
+                LOGGER.warn("PDF 页面缓存写入失败: event=write_failed, resourceId={}, errorClass={}, elapsedMs={}",
+                    resourceId, error.getClass().getSimpleName(), elapsedMs(startedNanos));
+                throw error;
             } finally {
                 // 临时文件只可能由当前写入操作创建，成功替换或失败退出都应清理。
                 if (temporary.exists()) temporary.delete();
@@ -136,7 +173,8 @@ public final class PdfPageCache {
 
     public void clear() {
         synchronized (this) {
-            deletePageFilesLocked();
+            int deleted = deletePageFilesLocked();
+            LOGGER.info("PDF 页面缓存清理完成: event=clear, deleted={}", deleted);
         }
     }
 
@@ -153,11 +191,15 @@ public final class PdfPageCache {
         }
     }
 
-    private void deletePageFilesLocked() {
+    private int deletePageFilesLocked() {
         File[] files = directory.listFiles((dir, name) ->
             name.endsWith(".png") || name.endsWith(".tmp"));
-        if (files == null) return;
-        for (File file : files) file.delete();
+        if (files == null) return 0;
+        int deleted = 0;
+        for (File file : files) {
+            if (file.delete()) deleted++;
+        }
+        return deleted;
     }
 
     void enforceCapacity() {
@@ -175,11 +217,22 @@ public final class PdfPageCache {
             .thenComparing(File::getName));
         long total = 0L;
         for (File page : pages) total = addSaturated(total, page.length());
+        int evicted = 0;
         for (File page : pages) {
             if (total <= MAX_BYTES) break;
             long size = page.length();
-            if (page.delete()) total = Math.max(0L, total - size);
+            if (page.delete()) {
+                total = Math.max(0L, total - size);
+                evicted++;
+            }
         }
+        if (evicted > 0) {
+            LOGGER.debug("PDF 页面缓存淘汰完成: event=evict, evicted={}", evicted);
+        }
+    }
+
+    private static long elapsedMs(long startedNanos) {
+        return (System.nanoTime() - startedNanos) / 1_000_000L;
     }
 
     private static long addSaturated(long left, long right) {

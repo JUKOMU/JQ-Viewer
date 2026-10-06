@@ -10,6 +10,8 @@ import io.github.jukomu.jmcomic.api.client.JmClient;
 import io.github.jukomu.jmcomic.api.model.JmImage;
 import io.github.jukomu.jmcomic.api.model.JmPhoto;
 import io.github.jukomu.jmcomic.core.crypto.JmImageTool;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.imageio.ImageIO;
 import java.awt.*;
@@ -31,8 +33,10 @@ import java.util.function.Supplier;
  * 管理章节图片元数据、实际下载、缩略图生成和事件发布。
  */
 public final class ImageService {
+    private static final Logger LOGGER = LoggerFactory.getLogger(ImageService.class);
     private static final int THUMBNAIL_MAX_WIDTH = 300;
     private static final long CACHE_CAPACITY_MB = 256;
+    private static final long SLOW_OPERATION_MS = 500L;
 
     private final Supplier<JmClient> clientSupplier;
     private final Executor executor;
@@ -107,6 +111,8 @@ public final class ImageService {
             waiting.add(image.getSortOrder());
             schedule(photoId, type, image, currentGeneration, true, true);
         }
+        LOGGER.info("image.preload event=scheduled photoId={} type={} requested={} cached={} pending={} replacePending={}",
+            clean(photoId), type, input.size(), cached.size(), waiting.size(), replacePending);
         return new PreloadImagesResponse(List.copyOf(cached), List.copyOf(waiting));
     }
 
@@ -128,14 +134,30 @@ public final class ImageService {
     public ImageCache.Entry read(String photoId, int sortOrder, String type) {
         validateType(type);
         ImageCache.Entry cached = cache.get(key(photoId, sortOrder, type));
-        if (cached != null) return cached;
+        if (cached != null) {
+            LOGGER.debug("image.read event=cache-hit photoId={} sortOrder={} type={} sizeBytes={}",
+                clean(photoId), sortOrder, type, cached.bytes().length);
+            return cached;
+        }
+        long startedNanos = System.nanoTime();
         JmImage image = images.getOrDefault(photoId, Map.of()).get(sortOrder);
         if (image == null) {
-            JmPhoto photo = client().getPhoto(photoId);
-            register(photo);
+            try {
+                JmPhoto photo = client().getPhoto(photoId);
+                register(photo);
+            } catch (RuntimeException exception) {
+                LOGGER.warn("image.read event=failed photoId={} sortOrder={} type={} elapsedMs={} errorClass={}",
+                    clean(photoId), sortOrder, type, elapsed(startedNanos),
+                    exception.getClass().getSimpleName());
+                throw exception;
+            }
             image = images.getOrDefault(photoId, Map.of()).get(sortOrder);
         }
-        if (image == null) throw new ApiException("not-found", 404, "图片不存在");
+        if (image == null) {
+            LOGGER.warn("image.read event=failed photoId={} sortOrder={} type={} elapsedMs={} errorClass=NotFound",
+                clean(photoId), sortOrder, type, elapsed(startedNanos));
+            throw new ApiException("not-found", 404, "图片不存在");
+        }
         try {
             byte[] bytes = client().fetchImageBytes(image);
             if (!ImageFileValidator.validateQuick(bytes)) {
@@ -146,11 +168,19 @@ public final class ImageService {
             if ("thumb".equals(type)) {
                 byte[] thumb = thumbnail(bytes);
                 cache.put(key(photoId, sortOrder, "thumb"), thumb, "image/jpeg");
+                logSlowRead(photoId, sortOrder, type, startedNanos);
                 return new ImageCache.Entry(thumb, "image/jpeg");
             }
+            logSlowRead(photoId, sortOrder, type, startedNanos);
             return new ImageCache.Entry(bytes, mime);
         } catch (IOException exception) {
+            LOGGER.warn("image.read event=failed photoId={} sortOrder={} type={} elapsedMs={} errorClass={}",
+                clean(photoId), sortOrder, type, elapsed(startedNanos), exception.getClass().getSimpleName());
             throw new ApiException("internal", 502, "图片处理失败: " + exception.getMessage());
+        } catch (RuntimeException exception) {
+            LOGGER.warn("image.read event=failed photoId={} sortOrder={} type={} elapsedMs={} errorClass={}",
+                clean(photoId), sortOrder, type, elapsed(startedNanos), exception.getClass().getSimpleName());
+            throw exception;
         }
     }
 
@@ -162,7 +192,12 @@ public final class ImageService {
     ) {
         validateType(type);
         ImageCache.Entry cached = cache.get(key(photoId, sortOrder, type));
-        if (cached != null) return cached;
+        if (cached != null) {
+            LOGGER.debug("image.read-local event=cache-hit photoId={} sortOrder={} type={} sizeBytes={}",
+                clean(photoId), sortOrder, type, cached.bytes().length);
+            return cached;
+        }
+        long startedNanos = System.nanoTime();
         try {
             byte[] bytes = Files.readAllBytes(path);
             if (!ImageFileValidator.validateQuick(bytes)) {
@@ -173,17 +208,30 @@ public final class ImageService {
                 byte[] thumb = thumbnail(bytes);
                 cache.put(key(photoId, sortOrder, "image"), bytes, mime);
                 cache.put(key(photoId, sortOrder, "thumb"), thumb, "image/jpeg");
+                logSlowRead(photoId, sortOrder, type, startedNanos);
                 return new ImageCache.Entry(thumb, "image/jpeg");
             }
             cache.put(key(photoId, sortOrder, "image"), bytes, mime);
+            logSlowRead(photoId, sortOrder, type, startedNanos);
             return new ImageCache.Entry(bytes, mime);
         } catch (IOException exception) {
+            LOGGER.warn("image.read-local event=failed photoId={} sortOrder={} type={} elapsedMs={} errorClass={}",
+                clean(photoId), sortOrder, type, elapsed(startedNanos), exception.getClass().getSimpleName());
             throw new ApiException("internal", 500, "读取本地图片失败: " + exception.getMessage());
+        } catch (RuntimeException exception) {
+            LOGGER.warn("image.read-local event=failed photoId={} sortOrder={} type={} elapsedMs={} errorClass={}",
+                clean(photoId), sortOrder, type, elapsed(startedNanos), exception.getClass().getSimpleName());
+            throw exception;
         }
     }
 
     public ImageCache.Entry readCached(String photoId, int sortOrder, String type) {
-        return cache.get(key(photoId, sortOrder, type));
+        ImageCache.Entry cached = cache.get(key(photoId, sortOrder, type));
+        if (cached != null) {
+            LOGGER.debug("image.read-cached event=cache-hit photoId={} sortOrder={} type={} sizeBytes={}",
+                clean(photoId), sortOrder, type, cached.bytes().length);
+        }
+        return cached;
     }
 
     public ImageCache cache() {
@@ -204,6 +252,7 @@ public final class ImageService {
         if (old != null && old == currentGeneration) return;
         try {
             executor.execute(() -> {
+                long startedNanos = System.nanoTime();
                 try {
                     if (generations.getOrDefault(scope, currentGeneration) != currentGeneration) return;
                     if (preferLocal) {
@@ -214,6 +263,7 @@ public final class ImageService {
                                 if (publishEvents) {
                                     publishLoaded(photoId, image.getSortOrder(), type);
                                 }
+                                logSlowPreload(photoId, image.getSortOrder(), type, startedNanos, "local");
                                 return;
                             } catch (Exception ignored) {
                                 // 本地文件不可读时按 Android 语义回退到网络来源。
@@ -232,7 +282,11 @@ public final class ImageService {
                     if (publishEvents) {
                         publishLoaded(photoId, image.getSortOrder(), type);
                     }
+                    logSlowPreload(photoId, image.getSortOrder(), type, startedNanos, "remote");
                 } catch (Exception exception) {
+                    LOGGER.warn("image.preload event=failed photoId={} sortOrder={} type={} elapsedMs={} errorClass={}",
+                        clean(photoId), image.getSortOrder(), type, elapsed(startedNanos),
+                        exception.getClass().getSimpleName());
                     if (publishEvents
                         && generations.getOrDefault(scope, currentGeneration) == currentGeneration) {
                         events.publish("imageFailed", new ImageEvent(
@@ -263,11 +317,15 @@ public final class ImageService {
         if (old != null && old == currentGeneration) return;
         try {
             executor.execute(() -> {
+                long startedNanos = System.nanoTime();
                 try {
                     if (generations.getOrDefault(scope, currentGeneration) != currentGeneration) return;
                     cache.put(pendingKey, thumbnail(original.bytes()), "image/jpeg");
                     publish(photoId, sortOrder, "thumb");
+                    logSlowPreload(photoId, sortOrder, "thumb", startedNanos, "cached-image");
                 } catch (Exception exception) {
+                    LOGGER.warn("image.preload event=failed photoId={} sortOrder={} type=thumb elapsedMs={} errorClass={}",
+                        clean(photoId), sortOrder, elapsed(startedNanos), exception.getClass().getSimpleName());
                     if (generations.getOrDefault(scope, currentGeneration) == currentGeneration) {
                         events.publish("imageFailed", new ImageEvent(photoId, sortOrder, "thumb"));
                     }
@@ -362,5 +420,34 @@ public final class ImageService {
         JmClient client = clientSupplier.get();
         if (client == null) throw ApiException.unavailable("在线客户端不可用");
         return client;
+    }
+
+    private static void logSlowRead(String photoId, int sortOrder, String type, long startedNanos) {
+        long elapsedMs = elapsed(startedNanos);
+        if (elapsedMs >= SLOW_OPERATION_MS) {
+            LOGGER.warn("image.read event=slow photoId={} sortOrder={} type={} elapsedMs={}",
+                clean(photoId), sortOrder, type, elapsedMs);
+        }
+    }
+
+    private static void logSlowPreload(
+        String photoId, int sortOrder, String type, long startedNanos, String source
+    ) {
+        long elapsedMs = elapsed(startedNanos);
+        if (elapsedMs >= SLOW_OPERATION_MS) {
+            LOGGER.warn("image.preload event=slow photoId={} sortOrder={} type={} source={} elapsedMs={}",
+                clean(photoId), sortOrder, type, source, elapsedMs);
+        }
+    }
+
+    private static long elapsed(long startedNanos) {
+        return java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(
+            System.nanoTime() - startedNanos);
+    }
+
+    private static String clean(String value) {
+        if (value == null || value.isBlank()) return "-";
+        String cleaned = value.replaceAll("[\\p{Cntrl}\\r\\n]+", " ").trim();
+        return cleaned.substring(0, Math.min(128, cleaned.length()));
     }
 }

@@ -619,15 +619,28 @@ public final class SystemPluginHandler {
                 return;
             }
             if (pendingProbe != null) {
-                pendingProbe.cancel(false);
-                LOGGER.info("{}触发域名探活，已覆盖上一轮待执行任务", trigger);
+                boolean cancelled = pendingProbe.cancel(false);
+                if (cancelled) {
+                    LOGGER.info("{}触发域名探活，已覆盖上一轮待执行任务", trigger);
+                } else {
+                    LOGGER.info("{}触发域名探活，上一轮任务已开始执行，已加入新任务", trigger);
+                }
             } else {
                 LOGGER.info("{}触发域名探活，已加入去抖队列", trigger);
             }
-            pendingProbe = domainProbeExecutor.schedule(
-                () -> probeDomains(client, trigger),
+            ScheduledFuture<?>[] scheduledTask = new ScheduledFuture<?>[1];
+            scheduledTask[0] = domainProbeExecutor.schedule(
+                () -> {
+                    synchronized (probeLock) {
+                        if (pendingProbe == scheduledTask[0]) {
+                            pendingProbe = null;
+                        }
+                    }
+                    probeDomains(client, trigger);
+                },
                 PROBE_DEBOUNCE_MS,
                 TimeUnit.MILLISECONDS);
+            pendingProbe = scheduledTask[0];
         }
     }
 

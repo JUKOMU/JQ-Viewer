@@ -273,15 +273,17 @@ public final class ExportService implements AutoCloseable {
                 plan.images().size(), plan.images().size(), plan.volumes().size(), null, null, false, null);
         } catch (CancelledException | InterruptedException exception) {
             if (exception instanceof InterruptedException) Thread.currentThread().interrupt();
-            finishFailure(plan, store.completedVolumeCount(plan.exportId()) > 0 ? "partial" : "cancelled",
+            String status = store.completedVolumeCount(plan.exportId()) > 0 ? "partial" : "cancelled";
+            finishFailure(plan, status,
                 "CANCELLED", "导出已取消");
-            logEvent("cancelled", plan, "cancelled", "cancelled", elapsed(startedNanos),
+            logEvent("cancelled", plan, "cancelled", status, elapsed(startedNanos),
                 0, plan.images().size(), plan.volumes().size(), "CANCELLED", "导出已取消", false, exception);
         } catch (Exception exception) {
             ExportFailure failure = describe(exception, plan.task().format());
-            finishFailure(plan, store.completedVolumeCount(plan.exportId()) > 0 ? "partial" : "failed",
+            String status = store.completedVolumeCount(plan.exportId()) > 0 ? "partial" : "failed";
+            finishFailure(plan, status,
                 failure.code(), failure.message());
-            logEvent("failed", plan, "failed", "failed", elapsed(startedNanos),
+            logEvent("failed", plan, "failed", status, elapsed(startedNanos),
                 0, plan.images().size(), plan.volumes().size(), failure.code(), failure.message(), false, exception);
         }
     }
@@ -312,9 +314,9 @@ public final class ExportService implements AutoCloseable {
                 volume.record().startPage(), volume.record().endPage());
             pdfWriter.write(volumeImages, volume.temporaryFile(), plan.task().useOriginal(),
                 plan.task().compressionRatio(), progress);
+            PdfFileValidator.Report report = validateTemporary(volume);
             logEvent("validated", plan, "validating", "running", 0, volume.record().endPage(),
                 plan.images().size(), volume.record().volumeIndex(), null, null, false, null);
-            PdfFileValidator.Report report = validateTemporary(volume);
             return new VolumeReport(report.fileSize(), report.pageCount());
         }
 
@@ -712,8 +714,9 @@ public final class ExportService implements AutoCloseable {
             .append(" volume=").append(volume);
         append(line, "retry", retry ? "true" : null);
         append(line, "errorCode", code);
-        append(line, "message", message);
-        if (failure == null) {
+        boolean outputExists = code != null && code.endsWith("_OUTPUT_EXISTS");
+        if (!outputExists) append(line, "message", message);
+        if (failure == null || outputExists) {
             if ("failed".equals(status)) LOGGER.error(line.toString());
             else LOGGER.info(line.toString());
         } else {

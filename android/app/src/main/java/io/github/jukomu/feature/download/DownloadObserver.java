@@ -54,8 +54,8 @@ class DownloadObserver implements TaskObserver {
         if (newState.isTerminal() && !markFinalized()) return;
 
         if (newState == TaskState.COMPLETED) {
-            service.logDownloadEvent(ourTaskId, albumId, chapterId, "phase", "completed",
-                DownloadService.STATUS_COMPLETED, totalImages, totalImages, progressBytes(task), 0,
+            service.logDownloadEvent(ourTaskId, albumId, chapterId, "end", "downloading",
+                DownloadService.STATUS_DOWNLOADING, totalImages, totalImages, progressBytes(task), 0,
                 task.getTaskId(), null, null);
             service.finishDownloadWithValidation(
                 ourTaskId, albumId, chapterId, totalImages);

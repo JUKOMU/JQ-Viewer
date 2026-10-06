@@ -343,7 +343,12 @@ public final class DownloadService implements AutoCloseable {
         }
         try {
             store.fail(taskId, completedPages, downloadedBytes, totalSize, failure);
-            logError("failed", taskId, task.albumId(), task.chapterId(), "verifying", "DOWNLOAD_FAILED",
+            String phase = switch (task.status()) {
+                case STATUS_VERIFYING -> STATUS_VERIFYING;
+                case STATUS_DOWNLOADING -> STATUS_DOWNLOADING;
+                default -> "prepare";
+            };
+            logError("failed", taskId, task.albumId(), task.chapterId(), phase, "DOWNLOAD_FAILED",
                 failure, elapsed(taskId), completedPages, downloadedBytes);
             publish(store.findTask(taskId), 0, totalSize);
         } finally {
@@ -531,6 +536,7 @@ public final class DownloadService implements AutoCloseable {
     }
 
     private static String messageOf(Throwable failure) {
+        if (failure == null) return "下载失败";
         String message = failure.getMessage();
         return message == null || message.isBlank() ? "下载失败" : message;
     }

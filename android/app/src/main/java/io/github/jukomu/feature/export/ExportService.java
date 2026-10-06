@@ -25,6 +25,7 @@ import org.slf4j.LoggerFactory;
 import java.io.*;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -51,9 +52,9 @@ public class ExportService {
     private final AtomicInteger batchCounter = new AtomicInteger(0);
     private final AtomicInteger notificationCounter = new AtomicInteger(0);
     private final AtomicInteger foregroundSessionCounter = new AtomicInteger(0);
-    private final Map<String, Long> taskStartedAtNanos = new HashMap<>();
-    private final Map<String, Long> lastHeartbeatAtNanos = new HashMap<>();
-    private final Map<String, Integer> lastHeartbeatPage = new HashMap<>();
+    private final Map<String, Long> taskStartedAtNanos = new ConcurrentHashMap<>();
+    private final Map<String, Long> lastHeartbeatAtNanos = new ConcurrentHashMap<>();
+    private final Map<String, Integer> lastHeartbeatPage = new ConcurrentHashMap<>();
     private boolean startupReconciled;
     private int foregroundRevision;
     private final Object activeJobsLock = new Object();
@@ -190,6 +191,7 @@ public class ExportService {
             releaseJobLocksAndUpdate(job);
             throw LocalFileOperationException.conflict("当前任务状态不能重试");
         }
+        taskStartedAtNanos.put(exportId, SystemClock.elapsedRealtimeNanos());
         QueuedExportJob queued = new QueuedExportJob(job, preflight,
             NotificationIds.exportTask(notificationCounter.getAndIncrement()));
         updateProgress(exportId, "queued", "queued", 0, preflight.totalPages, 0,
@@ -490,6 +492,7 @@ public class ExportService {
                 } catch (Exception error) {
                     logExportEvent(job, String.valueOf(batchId), "failed", "preflight", "failed",
                         0, 0, errorCode(error, job), null, error);
+                    taskStartedAtNanos.remove(job.exportId);
                     if (error instanceof PdfOutputExistsException) {
                         cleanupStagingDirectoryQuietly(job);
                         releaseJobLocksAndUpdate(job);
@@ -646,10 +649,8 @@ public class ExportService {
                         "内部错误: " + t.getClass().getSimpleName());
                 } finally {
                     cleanupStagingDirectoryQuietly(job);
+                    clearTaskTracking(job.exportId);
                     releaseJobLocksAndUpdate(job);
-                    taskStartedAtNanos.remove(job.exportId);
-                    lastHeartbeatAtNanos.remove(job.exportId);
-                    lastHeartbeatPage.remove(job.exportId);
                     releasedJobs++;
                 }
             }
@@ -735,12 +736,12 @@ public class ExportService {
                 writer.writeVolume(volumeImages, volume.file, job.useOriginal,
                     job.compressionRatio, progress);
                 try {
+                    logExportEvent(job, batchId, "phase", "validating", "running", volume.end,
+                        total, null, "volume=" + volumeNumber + "/" + volumeCount, null);
                     PdfFileValidator.Report pdfReport = PdfFileValidator.validate(
                         context, LocalFileRef.createPathFileRef(volume.file.getAbsolutePath()),
                         volume.end - volume.start);
                     report = new OutputReport(pdfReport.fileSize, pdfReport.pageCount);
-                    logExportEvent(job, batchId, "phase", "validating", "running", volume.end,
-                        total, null, "volume=" + volumeNumber + "/" + volumeCount, null);
                 } catch (PdfFileValidator.ValidationException error) {
                     throw new IOException(error.code + ": " + error.getMessage(), error);
                 }
@@ -754,9 +755,9 @@ public class ExportService {
             }
             long pathOutputLength = volume.file.length();
             long pathOutputLastModified = volume.file.lastModified();
-            String outputFileRef = publishVolume(job, volume);
             logExportEvent(job, batchId, "phase", "publishing", "running", volume.end, total,
                 null, "volume=" + volumeNumber + "/" + volumeCount, null);
+            String outputFileRef = publishVolume(job, volume);
             try {
                 checkExportCancelled(job.exportId);
             } catch (ExportCancelledException error) {
@@ -1638,6 +1639,7 @@ public class ExportService {
         try {
             for (QueuedExportJob queuedJob : accepted) {
                 cleanupStagingDirectoryQuietly(queuedJob.job);
+                clearTaskTracking(queuedJob.job.exportId);
             }
             releaseQueuedJobLocksAndUpdate(accepted);
         } catch (RuntimeException | Error rollbackFailure) {
@@ -1700,17 +1702,28 @@ public class ExportService {
 
     private void logExportHeartbeat(ExportJob job, String batchId, int currentPage, int totalPages,
                                     int volumeNumber, int volumeCount) {
-        long now = SystemClock.elapsedRealtimeNanos();
-        Long lastAt = lastHeartbeatAtNanos.get(job.exportId);
-        Integer lastPage = lastHeartbeatPage.get(job.exportId);
-        if (!shouldLogHeartbeat(now, lastAt == null ? 0 : lastAt,
-            currentPage, lastPage == null ? 0 : lastPage, totalPages)) {
-            return;
+        synchronized (lastHeartbeatAtNanos) {
+            long now = SystemClock.elapsedRealtimeNanos();
+            Long lastAt = lastHeartbeatAtNanos.get(job.exportId);
+            Integer lastPage = lastHeartbeatPage.get(job.exportId);
+            if (!shouldLogHeartbeat(now, lastAt == null ? 0 : lastAt,
+                currentPage, lastPage == null ? 0 : lastPage, totalPages)) {
+                return;
+            }
+            lastHeartbeatAtNanos.put(job.exportId, now);
+            lastHeartbeatPage.put(job.exportId, currentPage);
         }
-        lastHeartbeatAtNanos.put(job.exportId, now);
-        lastHeartbeatPage.put(job.exportId, currentPage);
         logExportEvent(job, batchId, "heartbeat", "writing", "running", currentPage,
             totalPages, null, "volume=" + volumeNumber + "/" + volumeCount, null);
+    }
+
+    private void clearTaskTracking(String exportId) {
+        if (exportId == null || exportId.isEmpty()) return;
+        taskStartedAtNanos.remove(exportId);
+        synchronized (lastHeartbeatAtNanos) {
+            lastHeartbeatAtNanos.remove(exportId);
+            lastHeartbeatPage.remove(exportId);
+        }
     }
 
     static boolean shouldLogHeartbeat(long nowNanos, long lastNanos, int currentPage,

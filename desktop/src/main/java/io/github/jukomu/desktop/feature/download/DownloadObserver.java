@@ -48,13 +48,20 @@ final class DownloadObserver implements TaskObserver {
                 service.markPaused(taskId, task.getCompletedCount(), task.getDownloadedBytes());
             }
             case COMPLETED, SKIPPED -> {
-                service.logObserverState("completed", task, "completed", "completed");
+                service.logObserverState("end", task, "downloading", "downloading");
                 service.finishDownload(taskId);
             }
             case COMPLETED_WITH_ERRORS -> {
                 DownloadResult result = task.getCurrentDownloadResult();
+                if (result == null || result.getFailedTasks() == null) {
+                    service.logObserverFailure(task, "DOWNLOAD_FAILED", null);
+                    service.failDownload(taskId, task.getCompletedCount(), task.getDownloadedBytes(),
+                        "下载失败");
+                    return;
+                }
                 int failed = result.getFailedTasks().size();
                 if (failed == 0) {
+                    service.logObserverState("end", task, "downloading", "downloading");
                     service.finishDownload(taskId);
                 } else {
                     service.logObserverFailure(task, "DOWNLOAD_FAILED", null);

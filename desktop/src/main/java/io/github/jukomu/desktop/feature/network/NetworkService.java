@@ -245,30 +245,13 @@ public final class NetworkService implements AutoCloseable {
 
     private static String currentNetworkFingerprint() {
         try {
-            String routeAddress;
             try (java.net.DatagramSocket socket = new java.net.DatagramSocket()) {
                 // UDP connect only selects the operating-system route; it sends no packet.
                 socket.connect(java.net.InetAddress.getByName("1.1.1.1"), 53);
                 java.net.InetAddress localAddress = socket.getLocalAddress();
                 if (localAddress.isAnyLocalAddress()) return "";
-                routeAddress = localAddress.getHostAddress();
+                return localAddress.getHostAddress();
             }
-            var interfaces = java.net.NetworkInterface.getNetworkInterfaces();
-            if (interfaces == null) return routeAddress;
-            List<String> active = new ArrayList<>();
-            while (interfaces.hasMoreElements()) {
-                java.net.NetworkInterface network = interfaces.nextElement();
-                if (!network.isUp() || network.isLoopback()) continue;
-                List<String> addresses = new ArrayList<>();
-                var items = network.getInetAddresses();
-                while (items.hasMoreElements()) {
-                    addresses.add(items.nextElement().getHostAddress());
-                }
-                addresses.sort(String::compareTo);
-                active.add(network.getName() + ":" + String.join(",", addresses));
-            }
-            active.sort(String::compareTo);
-            return routeAddress + "|" + String.join("|", active);
         } catch (java.net.SocketException exception) {
             return "";
         } catch (java.io.IOException exception) {

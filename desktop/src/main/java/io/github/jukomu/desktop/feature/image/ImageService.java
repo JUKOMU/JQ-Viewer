@@ -446,8 +446,6 @@ public final class ImageService {
     }
 
     private static String clean(String value) {
-        if (value == null || value.isBlank()) return "-";
-        String cleaned = value.replaceAll("[\\p{Cntrl}\\r\\n]+", " ").trim();
-        return cleaned.substring(0, Math.min(128, cleaned.length()));
+        return value == null || value.isBlank() ? "empty" : "present";
     }
 }

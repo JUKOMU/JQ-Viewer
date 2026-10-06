@@ -164,7 +164,6 @@ public final class AuthService {
     }
 
     private AutoLoginResponse autoLogin(long expectedGeneration) {
-        long started = System.nanoTime();
         LoginCredentials saved = memoryCredentials;
         if (saved == null) saved = loadCredentialsOnce();
         if (saved == null || saved.username() == null || saved.username().isBlank()
@@ -180,13 +179,10 @@ public final class AuthService {
                 userInfo = result;
                 memoryCredentials = saved;
             }
-            LOGGER.info("auth_request operation=reauthenticate status=success elapsedMs={}", elapsedMs(started));
             return new AutoLoginResponse(true, result);
         } catch (NetworkException failure) {
-            logFailure("reauthenticate", "network", started, failure);
             throw ApiException.network(message(failure, "自动登录网络请求失败"));
         } catch (ResponseException failure) {
-            logFailure("reauthenticate", responseError(failure), started, failure);
             boolean authenticationFailure = isAuthenticationFailure(failure);
             if (authenticationFailure && expectedGeneration == currentAuthGeneration()) {
                 userInfo = null;

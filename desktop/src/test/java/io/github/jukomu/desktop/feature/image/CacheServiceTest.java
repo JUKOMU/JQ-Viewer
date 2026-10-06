@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.abort;
 
 class CacheServiceTest {
     @Test
@@ -94,6 +95,27 @@ class CacheServiceTest {
             assertEquals(0, stats.entryCount());
             assertEquals(0L, stats.sizeBytes());
             assertFalse(Files.exists(pdfPageDirectory));
+        }
+    }
+
+    @Test
+    void clearStillClearsImageCacheWhenPdfStatsCannotReadDanglingPng() throws Exception {
+        Fixture fixture = fixture();
+        Database database = fixture.database();
+        try (database) {
+            fixture.imageCache().put("photo-20/1/image", new byte[]{1, 2, 3}, "image/jpeg");
+            Path pdfPageDirectory = fixture.paths().cacheDirectory().resolve("pdf-pages");
+            Path dangling = pdfPageDirectory.resolve("a".repeat(64) + ".png");
+            try {
+                Files.createSymbolicLink(dangling, pdfPageDirectory.resolve("missing.png"));
+            } catch (UnsupportedOperationException | SecurityException | java.io.IOException error) {
+                abort("当前文件系统不支持符号链接测试");
+            }
+
+            fixture.service().clear();
+
+            assertEquals(0, fixture.imageCache().usedBytes());
+            assertFalse(Files.isSymbolicLink(dangling));
         }
     }
 

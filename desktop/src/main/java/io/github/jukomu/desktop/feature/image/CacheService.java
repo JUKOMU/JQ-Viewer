@@ -101,11 +101,19 @@ public final class CacheService {
         long startedNanos = System.nanoTime();
         int imageEntries = imageCache.snapshot().size();
         long imageBytes = imageCache.usedBytes();
-        PdfPageCache.Stats pdfStats = pdfPageCache.stats();
+        PdfPageCache.Stats pdfStats = null;
+        try {
+            pdfStats = pdfPageCache.stats();
+        } catch (IllegalStateException exception) {
+            LOGGER.warn("cache event=pdf-stats-failed errorClass={}",
+                exception.getClass().getSimpleName());
+        }
         imageCache.clear();
         pdfPageCache.clear();
         LOGGER.info("cache event=cleared imageEntryCount={} imageSizeBytes={} pdfEntryCount={} pdfSizeBytes={} elapsedMs={}",
-            imageEntries, imageBytes, pdfStats.entryCount(), pdfStats.sizeBytes(), elapsed(startedNanos));
+            imageEntries, imageBytes,
+            pdfStats == null ? -1 : pdfStats.entryCount(),
+            pdfStats == null ? -1L : pdfStats.sizeBytes(), elapsed(startedNanos));
     }
 
     public List<ResourceSnapshot> diagnosticResources() {

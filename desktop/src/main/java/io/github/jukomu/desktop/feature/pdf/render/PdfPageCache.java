@@ -68,23 +68,38 @@ public final class PdfPageCache {
             } catch (AtomicMoveNotSupportedException exception) {
                 Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
             }
+            long sizeBytes = Files.size(target);
             enforceCapacity();
             LOGGER.debug("pdf-page-cache event=written resourceId={} sizeBytes={} elapsedMs={}",
-                resourceId, Files.size(target), elapsed(startedNanos));
+                resourceId, sizeBytes, elapsed(startedNanos));
         } finally {
             Files.deleteIfExists(temporary);
         }
     }
 
     public synchronized void clear() {
-        Stats before = stats();
         try {
             Files.createDirectories(directory);
+            int clearedCount = 0;
+            long clearedBytes = 0L;
             try (var files = Files.list(directory)) {
-                for (Path file : files.toList()) Files.deleteIfExists(file);
+                for (Path file : files.toList()) {
+                    long sizeBytes = -1L;
+                    try {
+                        sizeBytes = Files.size(file);
+                    } catch (IOException ignored) {
+                        // 统计失败不能阻止清理目录项。
+                    }
+                    if (Files.deleteIfExists(file)) {
+                        clearedCount++;
+                        if (sizeBytes >= 0L) {
+                            clearedBytes = saturatedAdd(clearedBytes, sizeBytes);
+                        }
+                    }
+                }
             }
             LOGGER.info("pdf-page-cache event=cleared entryCount={} sizeBytes={}",
-                before.entryCount(), before.sizeBytes());
+                clearedCount, clearedBytes);
         } catch (IOException exception) {
             LOGGER.error("pdf-page-cache event=clear-failed errorClass={}",
                 exception.getClass().getSimpleName());

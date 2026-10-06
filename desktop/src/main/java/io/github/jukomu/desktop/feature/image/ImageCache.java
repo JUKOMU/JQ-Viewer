@@ -35,8 +35,8 @@ public final class ImageCache {
 
     public synchronized void put(String key, byte[] bytes, String mimeType) {
         if (bytes.length > capacityBytes) {
-            LOGGER.warn("image-cache event=skip-entry key={} sizeBytes={} capacityBytes={}",
-                clean(key), bytes.length, capacityBytes);
+            LOGGER.warn("image-cache event=skip-entry keyKind={} sizeBytes={} capacityBytes={}",
+                "present", bytes.length, capacityBytes);
             return;
         }
         Entry previous = entries.remove(key);
@@ -110,9 +110,4 @@ public final class ImageCache {
         }
     }
 
-    private static String clean(String value) {
-        if (value == null || value.isBlank()) return "-";
-        String cleaned = value.replaceAll("[\\p{Cntrl}\\r\\n]+", " ").trim();
-        return cleaned.substring(0, Math.min(128, cleaned.length()));
-    }
 }

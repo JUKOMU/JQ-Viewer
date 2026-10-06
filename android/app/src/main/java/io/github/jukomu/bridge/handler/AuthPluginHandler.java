@@ -87,8 +87,8 @@ public final class AuthPluginHandler {
             synchronized (this) {
                 loginGeneration = ++authGeneration;
             }
-            LOGGER.info("认证登录开始 attemptId={} usernameHash={} generation={}",
-                attemptId, stableHash(username), loginGeneration);
+            LOGGER.info("认证登录开始 attemptId={} generation={}",
+                attemptId, loginGeneration);
             startAsync(call, trackedCall -> apiService.login(
                 username, password, new ApiCallback() {
                     @Override
@@ -108,8 +108,7 @@ public final class AuthPluginHandler {
                                     memoryPassword = password;
                                     CredentialStore.getInstance(context).save(username, password);
                                 }
-                                LOGGER.info("认证登录成功 attemptId={} usernameHash={}",
-                                    attemptId, stableHash(username));
+                                LOGGER.info("认证登录成功 attemptId={}", attemptId);
                                 activeCall.resolve(JSObject.fromJSONObject(userInfo));
                             } catch (Exception error) {
                                 activeCall.reject(error.getMessage(), error);
@@ -119,8 +118,8 @@ public final class AuthPluginHandler {
 
                     @Override
                     public void onError(String message, Exception error) {
-                        LOGGER.warn("认证登录失败 attemptId={} usernameHash={} errorType={}",
-                            attemptId, stableHash(username), errorType(error));
+                        LOGGER.warn("认证登录失败 attemptId={} errorType={}",
+                            attemptId, errorType(error));
                         if (error instanceof ResponseException responseError
                             && isAuthenticationFailure(responseError)) {
                             synchronized (AuthPluginHandler.this) {
@@ -276,8 +275,8 @@ public final class AuthPluginHandler {
         synchronized (this) {
             loginGeneration = authGeneration;
         }
-        LOGGER.info("自动登录开始 attemptId={} usernameHash={} generation={}",
-            attemptId, stableHash(loginUsername), loginGeneration);
+        LOGGER.info("自动登录开始 attemptId={} generation={}",
+            attemptId, loginGeneration);
 
         startAsync(call, trackedCall -> apiService.login(
             loginUsername, loginPassword, new ApiCallback() {
@@ -297,8 +296,7 @@ public final class AuthPluginHandler {
                                 memoryUsername = loginUsername;
                                 memoryPassword = loginPassword;
                             }
-                            LOGGER.info("自动登录成功 attemptId={} usernameHash={}",
-                                attemptId, stableHash(loginUsername));
+                            LOGGER.info("自动登录成功 attemptId={}", attemptId);
                             JSObject result = new JSObject();
                             result.put("success", true);
                             result.put("userInfo", JSObject.fromJSONObject(userInfo));
@@ -311,8 +309,8 @@ public final class AuthPluginHandler {
 
                 @Override
                 public void onError(String message, Exception error) {
-                    LOGGER.warn("自动登录失败 attemptId={} usernameHash={} errorType={}",
-                        attemptId, stableHash(loginUsername), errorType(error));
+                    LOGGER.warn("自动登录失败 attemptId={} errorType={}",
+                        attemptId, errorType(error));
                     callSession.completeIfActive(trackedCall, activeCall -> {
                         synchronized (AuthPluginHandler.this) {
                             if (loginGeneration != authGeneration) {
@@ -375,8 +373,8 @@ public final class AuthPluginHandler {
         final String loginUsername = username;
         final String loginPassword = password;
         final long attemptId = authAttemptSequence.incrementAndGet();
-        LOGGER.info("线路切换后认证恢复开始 attemptId={} usernameHash={} generation={}",
-            attemptId, stableHash(loginUsername), routeGeneration);
+        LOGGER.info("线路切换后认证恢复开始 attemptId={} generation={}",
+            attemptId, routeGeneration);
         try {
             apiService.logout(new ApiCallback() {
                 @Override
@@ -407,8 +405,8 @@ public final class AuthPluginHandler {
                 return;
             }
         }
-        LOGGER.info("线路切换后认证登录发起 attemptId={} usernameHash={} generation={}",
-            attemptId, stableHash(username), expectedGeneration);
+        LOGGER.info("线路切换后认证登录发起 attemptId={} generation={}",
+            attemptId, expectedGeneration);
         try {
             apiService.login(username, password, new ApiCallback() {
                 @Override
@@ -419,8 +417,7 @@ public final class AuthPluginHandler {
                             saveAuthState(SettingsStore.getInstance(context), userInfo);
                             memoryUsername = username;
                             memoryPassword = password;
-                            LOGGER.info("线路切换后认证恢复成功 attemptId={} usernameHash={}",
-                                attemptId, stableHash(username));
+                            LOGGER.info("线路切换后认证恢复成功 attemptId={}", attemptId);
                         }
                     } catch (Exception error) {
                         LOGGER.warn("线路切换后保存认证态失败 errorType={}", errorType(error));
@@ -467,11 +464,6 @@ public final class AuthPluginHandler {
     private static String errorCode(Exception error) {
         if (!(error instanceof ResponseException responseError)) return "network";
         return responseError.getErrorCode() >= 500 ? "network" : "internal";
-    }
-
-    private static String stableHash(String value) {
-        if (value == null || value.isEmpty()) return "empty";
-        return Integer.toHexString(value.hashCode());
     }
 
     private static String errorType(Exception error) {

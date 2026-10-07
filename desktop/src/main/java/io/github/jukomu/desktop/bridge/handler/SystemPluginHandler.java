@@ -68,11 +68,11 @@ public final class SystemPluginHandler {
     }
 
     public void getInitStatus(Context context) {
-        context.json(new InitStatusResponse(clientSession.getClient() != null));
+        respond(context, "getInitStatus", new InitStatusResponse(clientSession.getClient() != null));
     }
 
     public void getClientState(Context context) {
-        context.json(clientSession.getSnapshot());
+        respond(context, "getClientState", clientSession.getSnapshot());
     }
 
     public void getDomainStates(Context context) {
@@ -135,7 +135,7 @@ public final class SystemPluginHandler {
     }
 
     public void consumeLaunchRoute(Context context) {
-        context.json(requireLaunchRoutes().consume());
+        respond(context, "consumeLaunchRoute", requireLaunchRoutes().consume());
     }
 
     public void getDiagnostics(Context context) {
@@ -168,5 +168,21 @@ public final class SystemPluginHandler {
     private DiagnosticsService requireDiagnostics() {
         if (diagnostics == null) throw ApiException.unavailable("诊断服务尚未初始化");
         return diagnostics;
+    }
+
+    private static void respond(Context context, String operation, Object value) {
+        long startedAtNanos = System.nanoTime();
+        try {
+            context.json(value);
+            LOGGER.info("bridge direct response completed operation={} status=success elapsedMs={}",
+                operation, java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(
+                    System.nanoTime() - startedAtNanos));
+        } catch (RuntimeException failure) {
+            LOGGER.warn("bridge direct response failed operation={} errorType={} elapsedMs={}",
+                operation, failure.getClass().getSimpleName(),
+                java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(
+                    System.nanoTime() - startedAtNanos));
+            throw failure;
+        }
     }
 }

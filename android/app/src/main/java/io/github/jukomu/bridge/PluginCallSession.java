@@ -7,7 +7,11 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.Executor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * 追踪属于插件会话的异步桥接调用。
@@ -19,6 +23,8 @@ public final class PluginCallSession implements AutoCloseable {
 
     public static final String SESSION_ENDED_MESSAGE = "插件会话已结束";
     private static final String SUBMISSION_FAILED_MESSAGE = "后台任务提交失败";
+    private static final Logger LOGGER = LoggerFactory.getLogger(PluginCallSession.class);
+    private static final AtomicLong OPERATION_SEQUENCE = new AtomicLong();
 
     private final Object lock = new Object();
     private final Set<GuardedPluginCall> activeCalls = new HashSet<>();
@@ -35,9 +41,14 @@ public final class PluginCallSession implements AutoCloseable {
         synchronized (lock) {
             if (!closed) {
                 activeCalls.add(guarded);
+                LOGGER.info("bridge_call event=register phase=start operationId={} method={} activeCalls={}",
+                    guarded.operationId, guarded.methodName, activeCalls.size());
                 return guarded;
             }
         }
+        LOGGER.warn("bridge_call event=register phase=complete operationId={} method={} "
+                + "result=rejected reason=session_closed",
+            guarded.operationId, guarded.methodName);
         guarded.rejectSessionEnded();
         return null;
     }
@@ -47,11 +58,15 @@ public final class PluginCallSession implements AutoCloseable {
      */
     public void submit(Executor executor, PluginCall call, Consumer<PluginCall> task) {
         if (executor == null) {
+            LOGGER.warn("bridge_call event=submit phase=complete method={} result=failed "
+                    + "reason=executor_missing", call.getMethodName());
             call.reject(SUBMISSION_FAILED_MESSAGE,
                 new IllegalStateException("executor is required"));
             return;
         }
         if (task == null) {
+            LOGGER.warn("bridge_call event=submit phase=complete method={} result=failed "
+                    + "reason=task_missing", call.getMethodName());
             call.reject(SUBMISSION_FAILED_MESSAGE,
                 new IllegalArgumentException("task is required"));
             return;
@@ -61,16 +76,26 @@ public final class PluginCallSession implements AutoCloseable {
         if (guarded == null) {
             return;
         }
+        GuardedPluginCall trackedCall = (GuardedPluginCall) guarded;
+        LOGGER.info("bridge_call event=submit phase=start operationId={} method={}",
+            trackedCall.operationId, trackedCall.methodName);
         try {
             executor.execute(() -> {
                 try {
                     task.accept(guarded);
                 } catch (RuntimeException error) {
+                    LOGGER.warn("bridge_call event=task phase=complete operationId={} method={} "
+                            + "result=failed errorClass={}",
+                        trackedCall.operationId, trackedCall.methodName,
+                        error.getClass().getSimpleName());
                     guarded.reject(error.getMessage() == null
                         ? SUBMISSION_FAILED_MESSAGE : error.getMessage(), error);
                 }
             });
         } catch (RuntimeException error) {
+            LOGGER.warn("bridge_call event=submit phase=complete operationId={} method={} "
+                    + "result=failed errorClass={}", trackedCall.operationId,
+                trackedCall.methodName, error.getClass().getSimpleName());
             guarded.reject(isClosed() ? SESSION_ENDED_MESSAGE : SUBMISSION_FAILED_MESSAGE, error);
         }
     }
@@ -103,13 +128,23 @@ public final class PluginCallSession implements AutoCloseable {
         ArrayList<GuardedPluginCall> calls;
         synchronized (lock) {
             if (closed) {
+                LOGGER.debug("bridge_call_session event=close result=already_closed");
                 return;
             }
             closed = true;
             calls = new ArrayList<>(activeCalls);
         }
+        LOGGER.info("bridge_call_session event=close phase=start pendingCalls={}", calls.size());
         for (GuardedPluginCall call : calls) {
             call.rejectSessionEnded();
+        }
+        LOGGER.info("bridge_call_session event=close phase=complete pendingCalls={} "
+                + "result=completed", activeCallCount());
+    }
+
+    private int activeCallCount() {
+        synchronized (lock) {
+            return activeCalls.size();
         }
     }
 
@@ -122,6 +157,9 @@ public final class PluginCallSession implements AutoCloseable {
     private static final class GuardedPluginCall extends PluginCall {
         private final PluginCallSession owner;
         private final PluginCall delegate;
+        private final long operationId = OPERATION_SEQUENCE.incrementAndGet();
+        private final String methodName;
+        private final long startedAt = System.nanoTime();
         private final Object completionLock = new Object();
         private boolean completed;
 
@@ -130,6 +168,7 @@ public final class PluginCallSession implements AutoCloseable {
                 delegate.getMethodName(), delegate.getData());
             this.owner = owner;
             this.delegate = delegate;
+            this.methodName = delegate.getMethodName();
         }
 
         @Override
@@ -179,9 +218,17 @@ public final class PluginCallSession implements AutoCloseable {
                     terminalAction.accept(delegate);
                 } finally {
                     owner.remove(this);
+                    LOGGER.info("bridge_call event=complete operationId={} method={} "
+                            + "result={} durationMs={}", operationId, methodName,
+                        allowClosedSession ? "session_closed" : "completed",
+                        elapsedMs(startedAt));
                 }
                 return true;
             }
+        }
+
+        private static long elapsedMs(long startedAt) {
+            return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
         }
     }
 }

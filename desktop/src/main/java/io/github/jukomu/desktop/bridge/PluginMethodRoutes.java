@@ -2,6 +2,8 @@ package io.github.jukomu.desktop.bridge;
 
 import io.javalin.http.Context;
 import io.javalin.router.JavalinDefaultRoutingApi;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -15,6 +17,8 @@ import java.util.Set;
  * 发现显式 bridge 方法，并将其映射为 POST 路由。
  */
 public final class PluginMethodRoutes {
+    private static final Logger LOGGER = LoggerFactory.getLogger(PluginMethodRoutes.class);
+
     private PluginMethodRoutes() {
     }
 
@@ -64,10 +68,15 @@ public final class PluginMethodRoutes {
     }
 
     private static void invoke(DiscoveredMethod discovered, Context context) throws Exception {
+        long startedAtNanos = System.nanoTime();
+        LOGGER.debug("bridge route dispatched method=POST route={}", discovered.path());
         try {
             discovered.method().invoke(discovered.plugin(), context);
         } catch (InvocationTargetException exception) {
             Throwable cause = exception.getCause();
+            LOGGER.warn("bridge route invocation failed method=POST route={} errorType={}",
+                discovered.path(), cause == null ? exception.getClass().getSimpleName()
+                    : cause.getClass().getSimpleName());
             if (cause instanceof Exception checkedException) {
                 throw checkedException;
             }
@@ -75,6 +84,10 @@ public final class PluginMethodRoutes {
                 throw error;
             }
             throw new RuntimeException(cause);
+        } finally {
+            LOGGER.debug("bridge route handler returned method=POST route={} elapsedMs={}",
+                discovered.path(), java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(
+                    System.nanoTime() - startedAtNanos));
         }
     }
 

@@ -5,6 +5,8 @@ import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
 import io.github.jukomu.feature.update.UpdateManifest;
 import io.github.jukomu.feature.update.UpdateService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.function.Supplier;
 
@@ -12,6 +14,8 @@ import java.util.function.Supplier;
  * 负责应用内更新 Bridge 参数校验和结果适配。
  */
 public final class UpdatePluginHandler {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(UpdatePluginHandler.class);
 
     private final UpdateService updateService;
     private final Supplier<Activity> activitySupplier;
@@ -25,8 +29,10 @@ public final class UpdatePluginHandler {
      * 获取并校验 GitHub/Gitee 正式版更新元数据。
      */
     public void checkUpdate(PluginCall call) {
+        LOGGER.debug("更新 Bridge 调用: operation=checkUpdate");
         updateService.checkUpdate(result -> {
             if (!result.success) {
+                LOGGER.warn("更新 Bridge 调用失败: operation=checkUpdate, errorType=service");
                 call.reject(result.error);
                 return;
             }
@@ -34,6 +40,8 @@ public final class UpdatePluginHandler {
             response.put("updateAvailable", result.updateAvailable);
             response.put("manifest", manifestToJson(result.manifest));
             call.resolve(response);
+            LOGGER.info("更新 Bridge 调用完成: operation=checkUpdate, updateAvailable={}",
+                result.updateAvailable);
         });
     }
 
@@ -41,7 +49,9 @@ public final class UpdatePluginHandler {
      * 开始最近一次检查确认的双源下载。
      */
     public void startUpdate(PluginCall call) {
+        LOGGER.debug("更新 Bridge 调用: operation=startUpdate");
         if (!updateService.startUpdate()) {
+            LOGGER.warn("更新 Bridge 调用失败: operation=startUpdate, errorType=not_started");
             call.reject("更新无法开始，请先完成检查并允许通知");
             return;
         }
@@ -54,6 +64,7 @@ public final class UpdatePluginHandler {
      * 取消下载并清理更新临时文件。
      */
     public void cancelUpdate(PluginCall call) {
+        LOGGER.debug("更新 Bridge 调用: operation=cancelUpdate");
         updateService.cancelUpdate();
         JSObject result = new JSObject();
         result.put("cancelled", true);
@@ -64,6 +75,7 @@ public final class UpdatePluginHandler {
      * 返回当前原生更新状态快照。
      */
     public void getUpdateState(PluginCall call) {
+        LOGGER.debug("更新 Bridge 调用: operation=getUpdateState");
         call.resolve(updateService.getSnapshot().toJson());
     }
 
@@ -71,8 +83,10 @@ public final class UpdatePluginHandler {
      * 启动已校验的 APK 安装器，必要时返回未知来源权限提示。
      */
     public void installUpdate(PluginCall call) {
+        LOGGER.debug("更新 Bridge 调用: operation=installUpdate");
         UpdateService.InstallResult result = updateService.installUpdate(activitySupplier.get());
         if (!result.started && !result.permissionRequired) {
+            LOGGER.warn("更新 Bridge 调用失败: operation=installUpdate, errorType=service");
             call.reject(result.error == null ? "无法启动安装器" : result.error);
             return;
         }
@@ -86,6 +100,7 @@ public final class UpdatePluginHandler {
      * 打开应用的未知来源安装权限设置页。
      */
     public void requestInstallPermission(PluginCall call) {
+        LOGGER.debug("更新 Bridge 调用: operation=requestInstallPermission");
         JSObject response = new JSObject();
         response.put("requested", updateService.requestInstallPermission(activitySupplier.get()));
         call.resolve(response);

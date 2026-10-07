@@ -56,14 +56,19 @@ public final class Host implements AutoCloseable {
      * 启动主实例；已有实例存在时发送信号并返回 false。
      */
     public synchronized boolean start() throws Exception {
+        long startedAt = System.nanoTime();
+        LOGGER.info("host_lifecycle event=start status=started");
         if (closed) {
             throw new IllegalStateException("本地主机已关闭");
         }
         if (started) {
+            LOGGER.info("host_lifecycle event=start status=already-started primary={} elapsedMs={}",
+                primary, elapsedMs(startedAt));
             return primary;
         }
 
         if (!instanceGuard.tryAcquire(this::openHomeWhenReady)) {
+            LOGGER.info("host_lifecycle event=single-instance status=redirected");
             instanceGuard.notifyExistingInstance();
             return false;
         }
@@ -81,8 +86,12 @@ public final class Host implements AutoCloseable {
                 this::requestUpdateExit);
             openHome();
             started = true;
+            LOGGER.info("host_lifecycle event=start status=completed primary=true elapsedMs={}",
+                elapsedMs(startedAt));
             return true;
         } catch (Exception | Error exception) {
+            LOGGER.error("host_lifecycle event=start status=failed elapsedMs={} errorClass={}",
+                elapsedMs(startedAt), exception.getClass().getSimpleName());
             close();
             throw exception;
         }
@@ -150,8 +159,11 @@ public final class Host implements AutoCloseable {
     @Override
     public synchronized void close() {
         if (closed) {
+            LOGGER.info("host_lifecycle event=close status=already-closed");
             return;
         }
+        long startedAt = System.nanoTime();
+        LOGGER.info("host_lifecycle event=close status=started primary={} started={}", primary, started);
         closed = true;
         backendReady.countDown();
         Tray closingTray = tray;
@@ -167,5 +179,10 @@ public final class Host implements AutoCloseable {
             new CloseSequence.Step("本地后端", backend::close),
             new CloseSequence.Step("单实例锁", instanceGuard::close)
         );
+        LOGGER.info("host_lifecycle event=close status=completed elapsedMs={}", elapsedMs(startedAt));
+    }
+
+    private static long elapsedMs(long started) {
+        return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
     }
 }

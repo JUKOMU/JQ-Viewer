@@ -42,6 +42,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 /**
@@ -87,6 +88,8 @@ public class JqViewerPlugin extends Plugin {
 
     @Override
     public void load() {
+        long startedAt = System.nanoTime();
+        LOGGER.info("jq_viewer_plugin event=load phase=start");
         ApplicationLogging.initialize(getContext());
         this.featureEventAdapter = new FeatureEventAdapter(
             (eventName, event) -> notifyListeners(eventName, event));
@@ -239,24 +242,37 @@ public class JqViewerPlugin extends Plugin {
         DownloadCommandRouter.getInstance().attach(downloadCommandPort);
         this.downloadHandler = new DownloadPluginHandler(downloadService);
         this.preloadService.setMemoryPressureLevel(CacheCapacityPolicy.PressureLevel.NORMAL);
+        LOGGER.info("jq_viewer_plugin event=load phase=complete runtimeReady={} "
+                + "localFileReady={} durationMs={}", runtime != null,
+            localFileHandler != null && localFileStartupError == null, elapsedMs(startedAt));
 
     }
 
     @Override
     protected void handleOnResume() {
+        long startedAt = System.nanoTime();
+        LOGGER.info("jq_viewer_plugin event=resume phase=start");
         super.handleOnResume();
         if (updateService != null) {
             updateService.onHostResume(getActivity());
         }
-        if (preloadService == null) return;
+        if (preloadService == null) {
+            LOGGER.warn("jq_viewer_plugin event=resume phase=complete result=skipped "
+                    + "reason=runtime_not_ready durationMs={}", elapsedMs(startedAt));
+            return;
+        }
         long requestedMb = SettingsStore.getInstance(getContext()).getLong(
             "cache_capacity_mb", CacheCapacityPolicy.DEFAULT_REQUESTED_MB);
         applyCachePolicy(requestedMb, CacheCapacityPolicy.PressureLevel.NORMAL);
         logCachePolicy("foreground-resume");
+        LOGGER.info("jq_viewer_plugin event=resume phase=complete result=ready durationMs={}",
+            elapsedMs(startedAt));
     }
 
     @Override
     protected void handleOnDestroy() {
+        long startedAt = System.nanoTime();
+        LOGGER.info("jq_viewer_plugin event=destroy phase=start");
         if (readerHandler != null) {
             readerHandler.destroy();
         }
@@ -284,6 +300,12 @@ public class JqViewerPlugin extends Plugin {
             localFileHandler.destroy();
         }
         // 图片、网络和下载准备 executor 由 AppRuntime 持有。
+        LOGGER.info("jq_viewer_plugin event=destroy phase=complete result=detached durationMs={}",
+            elapsedMs(startedAt));
+    }
+
+    private static long elapsedMs(long startedAt) {
+        return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
     }
 
     static int pdfFolderGrantFlags(boolean canGrantUri) {

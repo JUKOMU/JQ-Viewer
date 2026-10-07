@@ -1,5 +1,8 @@
 package io.github.jukomu.runtime;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -8,6 +11,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public final class ServiceExecutors {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(ServiceExecutors.class);
+
     private ServiceExecutors() {
     }
 
@@ -15,14 +20,17 @@ public final class ServiceExecutors {
         if (threads < 1) {
             throw new IllegalArgumentException("threads must be positive");
         }
-        return new ThreadPoolExecutor(
+        ThreadPoolExecutor executor = new ThreadPoolExecutor(
             threads,
             threads,
             0L,
             TimeUnit.MILLISECONDS,
             new LinkedBlockingQueue<>(),
             namedFactory(serviceName),
-            new ThreadPoolExecutor.AbortPolicy());
+            rejectedHandler(serviceName));
+        LOGGER.info("service_executors event=created pool={} type=fixed threads={} status=ready",
+            serviceName, threads);
+        return executor;
     }
 
     public static ScheduledThreadPoolExecutor scheduled(String serviceName, int threads) {
@@ -32,9 +40,20 @@ public final class ServiceExecutors {
         ScheduledThreadPoolExecutor executor = new ScheduledThreadPoolExecutor(
             threads,
             namedFactory(serviceName),
-            new ThreadPoolExecutor.AbortPolicy());
+            rejectedHandler(serviceName));
         executor.setRemoveOnCancelPolicy(true);
+        LOGGER.info("service_executors event=created pool={} type=scheduled threads={} status=ready",
+            serviceName, threads);
         return executor;
+    }
+
+    private static RejectedExecutionHandler rejectedHandler(String serviceName) {
+        return (runnable, executor) -> {
+            LOGGER.warn("service_executors event=task_rejected pool={} shutdown={} "
+                    + "queueSize={} status=failed", serviceName, executor.isShutdown(),
+                executor.getQueue().size());
+            throw new RejectedExecutionException("线程池任务已拒绝: " + serviceName);
+        };
     }
 
     private static ThreadFactory namedFactory(String serviceName) {

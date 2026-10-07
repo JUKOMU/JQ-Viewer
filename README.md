@@ -1,6 +1,6 @@
 # JQ Viewer
 
-JMComic 第三方 Android 漫画阅读器。它把搜索、收藏、下载、本地阅读、PDF 导入导出和批量解析放在一个移动端界面里，适合想在手机上更顺手地整理和阅读漫画的人。
+JMComic 第三方漫画阅读器，支持 Android 移动端和 Windows、Linux 桌面端。它把搜索、收藏、下载、本地阅读、PDF 导入导出和批量解析放在同一套界面里，方便整理和阅读漫画。
 
 [![Version](https://img.shields.io/badge/Version-2.0.0-brightgreen.svg)](https://github.com/JUKOMU/JQ-Viewer/releases)
 [![Android](https://img.shields.io/badge/Android-7.0%2B-3DDC84?logo=android&logoColor=white)](https://github.com/JUKOMU/JQ-Viewer/releases)
@@ -11,23 +11,19 @@ JMComic 第三方 Android 漫画阅读器。它把搜索、收藏、下载、本
 
 > JQ Viewer 是个人项目，与 JMComic 官方无关。项目本身不包含漫画资源，请遵守所在地法律法规和目标站点规则。
 
-## ⚠️ 项目状态：开发阶段 ⚠️
+## 项目状态
 
-**请注意**: 本项目目前正处于积极的开发和测试阶段。欢迎任何想法和反馈。
+项目目前同时维护 Android 移动端和 Desktop 桌面端，功能和发行版本以 [Releases](https://github.com/JUKOMU/JQ-Viewer/releases) 页面为准。欢迎提交 Issue 和 Pull Request。
 
-**Please note**: This project is currently in an active development and testing phase. Welcome any ideas and feedback.
-
-| 正在进行 | 进度 | 说明 |
-| --- | --- | --- |
-| Desktop/桌面版开发 | 完成✅ |  |
-| 接入 PicaComic | 10% | 可行性验证通过，目前搁置 |
-| issue & pr | 排在 desktop 后 | 正常提交和创建，依旧会看 |
-
-> 这个项目可能要暂缓一下开发了，感觉最近没有动力去推进项目。
+| 平台 | 支持情况 |
+| --- | --- |
+| Android | 支持 Android 7.0 及以上版本 |
+| Windows | 支持 Windows x64；Windows on ARM 使用 x64 应用仿真 |
+| Linux | 支持 x64 和 arm64 |
 
 > 这个项目最初完全是按个人的想法开发的，很多功能在规划时只考虑了我自己的想法和用途，还远远没有达到能够给大众使用的软件的质量。尽管如此，还是逐渐有人开始使用这款应用，也有人提出了建议和问题，帮助项目完善。开发过程中也得到了朋友的大力帮助。
 
-> 这个项目没有被放弃，issue和pr依然会看，只是开发的速度变慢了。
+> 这个项目仍会持续维护，Issue 和 Pull Request 依然会看，开发速度会根据实际情况调整。
 
 ---
 
@@ -121,25 +117,49 @@ JMComic 第三方 Android 漫画阅读器。它把搜索、收藏、下载、本
 
 ## 安装
 
-前往 [Releases](https://github.com/JUKOMU/JQ-Viewer/releases) 下载 APK 安装。应用内也可以在“设置 > 关于 > 检查更新”查看最新版本。
+前往 [Releases](https://github.com/JUKOMU/JQ-Viewer/releases) 下载对应平台的发行包：
 
-最低支持 Android 7.0。
+- Android：下载 APK 安装。应用内可以在“设置 > 关于 > 检查更新”查看最新版本。
+- Windows：下载安装版 EXE，或使用便携版 ZIP。
+- Linux：下载 DEB、RPM 安装包，或使用便携版 TAR.GZ。
+
+Android 最低支持 7.0。Windows 和 Linux 的具体架构请根据发行包名称选择；Windows on ARM 使用 Windows x64 包和系统提供的 x64 仿真运行。
 
 ---
 
 ## 开发构建
 
-项目主体是 Vue 3 + Ionic + Capacitor，Android 原生侧负责下载、缓存、PDF、OCR 等能力；接口调用依赖 [JMComic-Api-Java](https://github.com/JUKOMU/JMComic-Api-Java)。
+项目主体是 Vue 3 + Ionic。Android 端使用 Capacitor 和原生插件，负责下载、缓存、PDF、OCR 等能力；Desktop 端使用 Java 21 宿主和本地服务提供对应能力。接口调用依赖 [JMComic-Api-Java](https://github.com/JUKOMU/JMComic-Api-Java)。
 
-构建环境需要 Node.js、JDK 21 和 Android SDK：
+通用构建环境需要 Node.js、JDK 21 和 Maven。构建 Android 还需要 Android SDK：
 
 ```bash
 npm install
 npm run build
-npx cap sync android
-cd android
-./gradlew :app:assembleDebug
 ```
+
+构建 Android Debug APK：
+
+```bash
+npm run build:android
+```
+
+同步并构建 Desktop 前端和 Java 宿主：
+
+```bash
+npm run desktop:sync -- --platform windows
+mvn -f desktop/pom.xml package
+```
+
+生成 Desktop 发行包时，需要在目标平台原生环境执行，并指定平台、架构和输出目录。例如：
+
+```bash
+npm run desktop:package -- --platform windows --arch x64 --output dist/desktop
+npm run desktop:package -- --platform linux --arch x64 --output dist/desktop
+npm run desktop:package -- --platform linux --arch arm64 --output dist/desktop
+```
+
+桌面端打包脚本会先构建前端资源，再编译 Java 宿主并生成对应平台的安装包和便携包。
 
 ---
 

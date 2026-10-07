@@ -1,6 +1,8 @@
 package io.github.jukomu.desktop.feature.update;
 
 import io.github.jukomu.desktop.data.Paths;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -17,6 +19,7 @@ import java.util.concurrent.TimeUnit;
  * 在主进程退出后安装原生包，或替换便携目录。
  */
 public final class DesktopUpdateInstaller {
+    private static final Logger LOGGER = LoggerFactory.getLogger(DesktopUpdateInstaller.class);
     private static final String APPLICATION_DIRECTORY_NAME = "JQ-Viewer";
     private static final String STARTUP_READY_ENV = "JQ_VIEWER_UPDATE_READY_FILE";
 
@@ -32,6 +35,9 @@ public final class DesktopUpdateInstaller {
     public void launch(Path packagePath) {
         configuration.requireConfigured();
         requireInstallEnvironment(packagePath);
+        long startedNanos = System.nanoTime();
+        LOGGER.info("desktop_update_install event=launch-started platform={} packageType={} packageFormat={} packageSizeBytes={}",
+            configuration.platform(), configuration.packageType(), configuration.packageFormat(), sizeQuietly(packagePath));
         try {
             Files.createDirectories(updateDirectory);
             Path logPath = updateDirectory.resolve("install-" + Instant.now().toEpochMilli() + ".log");
@@ -43,7 +49,11 @@ public final class DesktopUpdateInstaller {
             builder.redirectErrorStream(true);
             builder.redirectOutput(logPath.toFile());
             builder.start();
+            LOGGER.info("desktop_update_install event=helper-started status=success elapsedMs={}",
+                elapsedMs(startedNanos));
         } catch (IOException exception) {
+            LOGGER.error("desktop_update_install event=helper-started status=failed errorClass={} elapsedMs={}",
+                exception.getClass().getSimpleName(), elapsedMs(startedNanos));
             throw new UpdateException("无法启动更新安装辅助程序", exception);
         }
     }
@@ -124,6 +134,7 @@ public final class DesktopUpdateInstaller {
     public static void confirmStarted(Paths paths) {
         String configuredPath = System.getenv(STARTUP_READY_ENV);
         if (configuredPath == null || configuredPath.isBlank()) return;
+        LOGGER.debug("desktop_update_install event=startup-confirmation status=started");
         confirmStarted(paths, configuredPath);
     }
 
@@ -151,8 +162,11 @@ public final class DesktopUpdateInstaller {
                 Files.move(temporary, readyPath, StandardCopyOption.REPLACE_EXISTING);
             }
         } catch (IOException exception) {
+            LOGGER.error("desktop_update_install event=startup-confirmation status=failed errorClass={}",
+                exception.getClass().getSimpleName());
             throw new IllegalStateException("无法确认更新后的 Desktop 已完成启动", exception);
         }
+        LOGGER.info("desktop_update_install event=startup-confirmation status=success");
     }
 
     private void requireInstallEnvironment(Path packagePath) {
@@ -189,6 +203,18 @@ public final class DesktopUpdateInstaller {
             Thread.currentThread().interrupt();
             throw new UpdateException("更新安装环境检查已取消", exception);
         }
+    }
+
+    private static long sizeQuietly(Path path) {
+        try {
+            return Files.size(path);
+        } catch (IOException ignored) {
+            return 0L;
+        }
+    }
+
+    private static long elapsedMs(long startedNanos) {
+        return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNanos);
     }
 
     private SwapPaths swapPaths() {

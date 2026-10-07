@@ -219,10 +219,13 @@ public final class Backend implements AutoCloseable {
     }
 
     public synchronized URI start() throws Exception {
+        long startedAt = System.nanoTime();
+        LOGGER.info("backend_lifecycle event=start status=started");
         if (closed) {
             throw new IllegalStateException("本地后端已关闭");
         }
         if (running) {
+            LOGGER.info("backend_lifecycle event=start status=already-started elapsedMs={}", elapsedMs(startedAt));
             return homeUrl;
         }
 
@@ -433,9 +436,12 @@ public final class Backend implements AutoCloseable {
             this.homeUrl = URI.create("http://" + LOOPBACK_HOST + ":" + port + "/home");
             this.running = true;
             persistBackendPort(port);
-            LOGGER.info("本地后端监听于 {}", homeUrl);
+            LOGGER.info("backend_lifecycle event=start status=completed port={} elapsedMs={}",
+                port, elapsedMs(startedAt));
             return homeUrl;
         } catch (Exception | Error exception) {
+            LOGGER.error("backend_lifecycle event=start status=failed elapsedMs={} errorClass={}",
+                elapsedMs(startedAt), exception.getClass().getSimpleName());
             Javalin failedApp = candidate;
             DownloadService failedDownloadService = startedDownloadService;
             ExportService failedExportService = startedExportService;
@@ -729,8 +735,11 @@ public final class Backend implements AutoCloseable {
     @Override
     public synchronized void close() {
         if (closed) {
+            LOGGER.info("backend_lifecycle event=close status=already-closed");
             return;
         }
+        long startedAt = System.nanoTime();
+        LOGGER.info("backend_lifecycle event=close status=started running={}", running);
         closed = true;
         running = false;
 
@@ -790,10 +799,15 @@ public final class Backend implements AutoCloseable {
             step("服务执行器", executors::close),
             step("数据库", database::close)
         );
+        LOGGER.info("backend_lifecycle event=close status=completed elapsedMs={}", elapsedMs(startedAt));
     }
 
     private static CloseSequence.Step step(String name, Runnable action) {
         return new CloseSequence.Step(name, action);
+    }
+
+    private static long elapsedMs(long started) {
+        return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
     }
 
 }

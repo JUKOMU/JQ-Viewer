@@ -1,6 +1,8 @@
 package io.github.jukomu.desktop.backend;
 
 import io.github.jukomu.desktop.feature.settings.SettingsService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Objects;
@@ -12,6 +14,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 final class ServiceExecutors implements AutoCloseable {
     private static final int API_THREADS = 12;
+    private static final Logger LOGGER = LoggerFactory.getLogger(ServiceExecutors.class);
 
     private final ExecutorService api;
     private final ThreadPoolExecutor imagePreload;
@@ -82,6 +85,8 @@ final class ServiceExecutors implements AutoCloseable {
             offlineFavorite,
             diagnostics
         );
+        LOGGER.info("service_executors event=created pools={} apiThreads={} imagePreloadThreads={} status=ready",
+            owned.size(), API_THREADS, imagePreload.getCorePoolSize());
     }
 
     ExecutorService api() {
@@ -173,6 +178,8 @@ final class ServiceExecutors implements AutoCloseable {
             imagePreload.setCorePoolSize(threads);
             imagePreload.setMaximumPoolSize(threads);
         }
+        LOGGER.info("service_executors event=reconfigured pool=image-preload requestedThreads={} threads={} status=ready",
+            concurrency, threads);
     }
 
     boolean allShutdown() {
@@ -181,23 +188,32 @@ final class ServiceExecutors implements AutoCloseable {
 
     @Override
     public void close() {
+        long started = System.nanoTime();
+        LOGGER.info("service_executors event=close status=started pools={}", owned.size());
         for (ExecutorService executor : owned) {
             executor.shutdown();
         }
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
         try {
-            for (ExecutorService executor : owned.reversed()) {
+            for (int index = owned.size() - 1; index >= 0; index--) {
+                ExecutorService executor = owned.get(index);
                 long remaining = deadline - System.nanoTime();
                 if (remaining <= 0 || !executor.awaitTermination(remaining, TimeUnit.NANOSECONDS)) {
+                    LOGGER.warn("service_executors event=pool-close poolIndex={} status=timeout elapsedMs={}",
+                        index, elapsedMs(started));
                     executor.shutdownNow();
                 }
             }
         } catch (InterruptedException exception) {
+            LOGGER.warn("service_executors event=close status=interrupted elapsedMs={} errorClass={}",
+                elapsedMs(started), exception.getClass().getSimpleName());
             for (ExecutorService executor : owned) {
                 executor.shutdownNow();
             }
             Thread.currentThread().interrupt();
         }
+        LOGGER.info("service_executors event=close status=completed elapsedMs={} allShutdown={}",
+            elapsedMs(started), allShutdown());
     }
 
     private static ThreadPoolExecutor create(String name, int threads) {
@@ -208,8 +224,20 @@ final class ServiceExecutors implements AutoCloseable {
             TimeUnit.SECONDS,
             new LinkedBlockingQueue<>(),
             namedFactory(name),
-            new ThreadPoolExecutor.AbortPolicy()
+            rejectedHandler(name)
         );
+    }
+
+    private static RejectedExecutionHandler rejectedHandler(String name) {
+        return (runnable, executor) -> {
+            LOGGER.warn("service_executors event=task-rejected pool={} shutdown={} queueSize={} status=failed",
+                name, executor.isShutdown(), executor.getQueue().size());
+            new ThreadPoolExecutor.AbortPolicy().rejectedExecution(runnable, executor);
+        };
+    }
+
+    private static long elapsedMs(long started) {
+        return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
     }
 
     private static ThreadFactory namedFactory(String prefix) {

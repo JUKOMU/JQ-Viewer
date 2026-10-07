@@ -1,6 +1,5 @@
 package io.github.jukomu.desktop.bridge;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.javalin.http.sse.SseClient;
 import org.slf4j.Logger;
@@ -31,18 +30,33 @@ public final class EventHub implements AutoCloseable {
     public void connect(SseClient client) {
         synchronized (lifecycleLock) {
             if (closed) {
+                LOGGER.debug("bridge sse connect rejected status=closed");
                 closeClient(client);
                 return;
             }
             clients.add(client);
-            client.onClose(() -> clients.remove(client));
-            client.keepAlive();
+            LOGGER.debug("bridge sse client connected clients={}", clients.size());
+            client.onClose(() -> {
+                clients.remove(client);
+                LOGGER.debug("bridge sse client closed clients={}", clients.size());
+            });
+            try {
+                client.keepAlive();
+            } catch (RuntimeException failure) {
+                clients.remove(client);
+                LOGGER.warn("bridge sse keepalive failed errorType={}",
+                    failure.getClass().getSimpleName());
+                closeClient(client);
+                throw failure;
+            }
             try {
                 for (var event : retainedEvents.entrySet()) {
                     client.sendEvent(event.getKey(), event.getValue());
                 }
             } catch (RuntimeException failure) {
                 clients.remove(client);
+                LOGGER.warn("bridge sse retained event send failed errorType={}",
+                    failure.getClass().getSimpleName());
                 closeClient(client);
             }
         }
@@ -61,19 +75,24 @@ public final class EventHub implements AutoCloseable {
             try {
                 listener.accept(payload);
             } catch (RuntimeException exception) {
-                LOGGER.warn("内部事件处理失败: {}", event, exception);
+                LOGGER.warn("bridge event listener failed event={} errorType={}",
+                    event, exception.getClass().getSimpleName());
             }
         }
 
         final String data;
         try {
             data = mapper.writeValueAsString(payload);
-        } catch (JsonProcessingException exception) {
-            LOGGER.warn("事件序列化失败: {}", event, exception);
+        } catch (Exception exception) {
+            LOGGER.warn("bridge event serialization failed event={} errorType={}",
+                event, exception.getClass().getSimpleName());
             return;
         }
         synchronized (lifecycleLock) {
-            if (closed) return;
+            if (closed) {
+                LOGGER.debug("bridge event publish skipped event={} status=closed", event);
+                return;
+            }
             if (retain) retainedEvents.put(event, data);
 
             for (SseClient client : clients) {
@@ -81,6 +100,8 @@ public final class EventHub implements AutoCloseable {
                     client.sendEvent(event, data);
                 } catch (RuntimeException exception) {
                     clients.remove(client);
+                    LOGGER.warn("bridge event send failed event={} clients={} errorType={}",
+                        event, clients.size(), exception.getClass().getSimpleName());
                     closeClient(client);
                 }
             }
@@ -110,21 +131,26 @@ public final class EventHub implements AutoCloseable {
     public void close() {
         Set<SseClient> closingClients;
         synchronized (lifecycleLock) {
-            if (closed) return;
+            if (closed) {
+                LOGGER.debug("bridge event hub close skipped status=closed");
+                return;
+            }
             closed = true;
             closingClients = Set.copyOf(clients);
             clients.clear();
             listeners.clear();
             retainedEvents.clear();
         }
+        LOGGER.info("bridge event hub closed clients={}", closingClients.size());
         closingClients.forEach(EventHub::closeClient);
     }
 
     private static void closeClient(SseClient client) {
         try {
             client.close();
-        } catch (RuntimeException ignored) {
-            // 连接已失效时无需再次上报关闭异常。
+        } catch (RuntimeException failure) {
+            LOGGER.debug("bridge sse client close failed errorType={}",
+                failure.getClass().getSimpleName());
         }
     }
 }

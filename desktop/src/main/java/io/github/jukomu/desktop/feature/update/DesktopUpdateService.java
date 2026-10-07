@@ -6,6 +6,8 @@ import io.github.jukomu.desktop.bridge.EventHub;
 import io.github.jukomu.desktop.data.Paths;
 import io.github.jukomu.desktop.feature.update.DesktopUpdateManifest.Artifact;
 import io.github.jukomu.desktop.feature.update.DesktopUpdateManifest.VerifiedRelease;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -27,6 +29,7 @@ import java.util.function.Consumer;
  * Desktop 原生更新：双源验签检查、竞速下载、完整性校验与安装交接。
  */
 public final class DesktopUpdateService implements AutoCloseable {
+    private static final Logger LOGGER = LoggerFactory.getLogger(DesktopUpdateService.class);
     static final URI GITHUB_MANIFEST = URI.create(
         "https://github.com/JUKOMU/JQ-Viewer/releases/latest/download/latest.json");
     static final URI GITHUB_SIGNATURE = URI.create(
@@ -145,12 +148,14 @@ public final class DesktopUpdateService implements AutoCloseable {
     public CheckResult check() {
         ensureOpen();
         configuration.requireConfigured();
+        long startedNanos = System.nanoTime();
         synchronized (stateLock) {
             if (activeSession != null) throw new UpdateException("更新下载正在进行中");
             if (checkInProgress) throw new UpdateException("更新检查正在进行中");
             if (installingPackage != null) throw new UpdateException("更新安装正在进行中");
             checkInProgress = true;
         }
+        LOGGER.info("desktop_update operation=check status=started");
         try {
             Future<ManifestAttempt> github = executor.submit(this::fetchGithubManifest);
             Future<ManifestAttempt> gitee = executor.submit(this::fetchGiteeManifest);
@@ -164,6 +169,9 @@ public final class DesktopUpdateService implements AutoCloseable {
             }
             boolean available = compareVersions(
                 release.response().versionName(), configuration.currentVersion()) > 0;
+            LOGGER.info("desktop_update operation=check status=success available={} version={} artifactSizeBytes={} elapsedMs={}",
+                available, release.response().versionName(), release.artifact().sizeBytes(),
+                elapsedMs(startedNanos));
             publish(available ? "update_available" : "up_to_date", "", 0, 0,
                 release.artifact().sizeBytes(), 0, "");
             return new CheckResult(available, release.response());
@@ -173,6 +181,8 @@ public final class DesktopUpdateService implements AutoCloseable {
                 readyPackage = null;
                 checkInProgress = false;
             }
+            LOGGER.warn("desktop_update operation=check status=failed error={} errorClass={} elapsedMs={}",
+                errorCategory(exception), exception.getClass().getSimpleName(), elapsedMs(startedNanos));
             publish("failed", "", 0, 0, 0, 0, exception.getMessage());
             throw exception;
         }
@@ -181,12 +191,20 @@ public final class DesktopUpdateService implements AutoCloseable {
     public StartResult start() {
         ensureOpen();
         configuration.requireConfigured();
+        long startedNanos = System.nanoTime();
         synchronized (stateLock) {
-            if (checkInProgress || installingPackage != null) return new StartResult(false);
-            if (activeSession != null) return new StartResult(false);
+            if (checkInProgress || installingPackage != null) {
+                LOGGER.info("desktop_update operation=download status=skipped error=state_busy elapsedMs={}", elapsedMs(startedNanos));
+                return new StartResult(false);
+            }
+            if (activeSession != null) {
+                LOGGER.info("desktop_update operation=download status=skipped error=already_active elapsedMs={}", elapsedMs(startedNanos));
+                return new StartResult(false);
+            }
             VerifiedRelease release = checkedRelease;
             if (release == null || compareVersions(
                 release.response().versionName(), configuration.currentVersion()) <= 0) {
+                LOGGER.info("desktop_update operation=download status=skipped error=no_update elapsedMs={}", elapsedMs(startedNanos));
                 return new StartResult(false);
             }
             try {
@@ -198,6 +216,8 @@ public final class DesktopUpdateService implements AutoCloseable {
             readyPackage = null;
             DownloadSession session = new DownloadSession(release);
             activeSession = session;
+            LOGGER.info("desktop_update operation=download status=started version={} artifactSizeBytes={}",
+                release.response().versionName(), release.artifact().sizeBytes());
             publish("racing", "racing", 0, 0, release.artifact().sizeBytes(), 0, "");
             session.futures.add(executor.submit(() -> download(session, Source.GITHUB)));
             session.futures.add(executor.submit(() -> download(session, Source.GITEE)));
@@ -210,12 +230,21 @@ public final class DesktopUpdateService implements AutoCloseable {
         DownloadSession session;
         synchronized (stateLock) {
             session = activeSession;
-            if (session == null) return new CancelResult(false);
+            if (session == null) {
+                LOGGER.info("desktop_update operation=cancel status=skipped error=not_active");
+                return new CancelResult(false);
+            }
         }
         synchronized (session) {
             synchronized (stateLock) {
-                if (activeSession != session) return new CancelResult(false);
-                if (session.winner.get() != null) return new CancelResult(false);
+                if (activeSession != session) {
+                    LOGGER.info("desktop_update operation=cancel status=skipped error=already_finished");
+                    return new CancelResult(false);
+                }
+                if (session.winner.get() != null) {
+                    LOGGER.info("desktop_update operation=cancel status=skipped error=package_ready");
+                    return new CancelResult(false);
+                }
                 session.cancelled.set(true);
                 activeSession = null;
             }
@@ -225,11 +254,14 @@ public final class DesktopUpdateService implements AutoCloseable {
         deleteQuietly(session.giteePath);
         publish("cancelled", "", session.githubBytes.get(), session.giteeBytes.get(),
             session.release.artifact().sizeBytes(), 0, "");
+        LOGGER.info("desktop_update operation=cancel status=success githubBytes={} giteeBytes={}",
+            session.githubBytes.get(), session.giteeBytes.get());
         return new CancelResult(true);
     }
 
     public InstallResult install() {
         ensureOpen();
+        long startedNanos = System.nanoTime();
         Path packagePath;
         Runnable request;
         VerifiedRelease release;
@@ -246,6 +278,8 @@ public final class DesktopUpdateService implements AutoCloseable {
             readyPackage = null;
             installingPackage = packagePath;
         }
+        LOGGER.info("desktop_update operation=install status=started version={} packageSizeBytes={}",
+            release.response().versionName(), sizeQuietly(packagePath));
         try {
             installationLauncher.accept(packagePath);
         } catch (RuntimeException exception) {
@@ -255,11 +289,15 @@ public final class DesktopUpdateService implements AutoCloseable {
                     if (Files.isRegularFile(packagePath)) readyPackage = packagePath;
                 }
             }
+            LOGGER.warn("desktop_update operation=install status=failed error={} errorClass={} elapsedMs={}",
+                errorCategory(exception), exception.getClass().getSimpleName(), elapsedMs(startedNanos));
             throw exception;
         }
         publish("installing", "", Files.exists(packagePath) ? sizeQuietly(packagePath) : 0,
             0, release.artifact().sizeBytes(), 0, "");
         request.run();
+        LOGGER.info("desktop_update operation=install status=handoff version={} elapsedMs={}",
+            release.response().versionName(), elapsedMs(startedNanos));
         return new InstallResult(true, false);
     }
 
@@ -268,17 +306,26 @@ public final class DesktopUpdateService implements AutoCloseable {
     }
 
     private ManifestAttempt fetchGithubManifest() {
+        long startedNanos = System.nanoTime();
+        LOGGER.debug("desktop_update_manifest source=github event=fetch-started");
         try {
             byte[] manifest = fetchLimited(GITHUB_MANIFEST, MANIFEST_MAX_BYTES);
             byte[] signature = fetchLimited(GITHUB_SIGNATURE, MANIFEST_MAX_BYTES);
-            return ManifestAttempt.success(DesktopUpdateManifest.verifyAndParse(
-                manifest, signature, configuration, mapper));
+            VerifiedRelease release = DesktopUpdateManifest.verifyAndParse(
+                manifest, signature, configuration, mapper);
+            LOGGER.info("desktop_update_manifest source=github event=verified status=success version={} artifactSizeBytes={} elapsedMs={}",
+                release.response().versionName(), release.artifact().sizeBytes(), elapsedMs(startedNanos));
+            return ManifestAttempt.success(release);
         } catch (Exception exception) {
+            LOGGER.warn("desktop_update_manifest source=github event=verified status=failed error={} errorClass={} elapsedMs={}",
+                errorCategory(exception), exception.getClass().getSimpleName(), elapsedMs(startedNanos));
             return ManifestAttempt.failure(messageOf(exception));
         }
     }
 
     private ManifestAttempt fetchGiteeManifest() {
+        long startedNanos = System.nanoTime();
+        LOGGER.debug("desktop_update_manifest source=gitee event=fetch-started");
         try {
             JsonNode release = mapper.readTree(fetchLimited(GITEE_LATEST_RELEASE, MANIFEST_MAX_BYTES));
             String tag = release.path("tag_name").asText("").trim();
@@ -292,9 +339,14 @@ public final class DesktopUpdateService implements AutoCloseable {
             URI signatureUrl = findGiteeAsset(assets, tag, "latest.json.sig");
             byte[] manifest = fetchLimited(manifestUrl, MANIFEST_MAX_BYTES);
             byte[] signature = fetchLimited(signatureUrl, MANIFEST_MAX_BYTES);
-            return ManifestAttempt.success(DesktopUpdateManifest.verifyAndParse(
-                manifest, signature, configuration, mapper));
+            VerifiedRelease verifiedRelease = DesktopUpdateManifest.verifyAndParse(
+                manifest, signature, configuration, mapper);
+            LOGGER.info("desktop_update_manifest source=gitee event=verified status=success version={} artifactSizeBytes={} elapsedMs={}",
+                verifiedRelease.response().versionName(), verifiedRelease.artifact().sizeBytes(), elapsedMs(startedNanos));
+            return ManifestAttempt.success(verifiedRelease);
         } catch (Exception exception) {
+            LOGGER.warn("desktop_update_manifest source=gitee event=verified status=failed error={} errorClass={} elapsedMs={}",
+                errorCategory(exception), exception.getClass().getSimpleName(), elapsedMs(startedNanos));
             return ManifestAttempt.failure(messageOf(exception));
         }
     }
@@ -314,12 +366,21 @@ public final class DesktopUpdateService implements AutoCloseable {
     private VerifiedRelease resolveManifests(ManifestAttempt github, ManifestAttempt gitee) {
         if (github.release != null && gitee.release != null) {
             if (!DesktopUpdateManifest.sameRelease(github.release, gitee.release)) {
+                LOGGER.warn("desktop_update_manifest event=resolved status=failed error=source_mismatch");
                 throw new UpdateException("GitHub 与 Gitee 发布元数据不一致");
             }
+            LOGGER.debug("desktop_update_manifest event=resolved source=both status=success");
             return github.release;
         }
-        if (github.release != null) return github.release;
-        if (gitee.release != null) return gitee.release;
+        if (github.release != null) {
+            LOGGER.info("desktop_update_manifest event=resolved source=github status=degraded");
+            return github.release;
+        }
+        if (gitee.release != null) {
+            LOGGER.info("desktop_update_manifest event=resolved source=gitee status=degraded");
+            return gitee.release;
+        }
+        LOGGER.warn("desktop_update_manifest event=resolved status=failed error=no_source");
         throw new UpdateException("GitHub 与 Gitee 更新元数据均不可用。GitHub: "
             + github.error + "；Gitee: " + gitee.error);
     }
@@ -373,11 +434,14 @@ public final class DesktopUpdateService implements AutoCloseable {
     }
 
     private void download(DownloadSession session, Source source) {
+        long startedNanos = System.nanoTime();
         Artifact artifact = session.release.artifact();
         Path target = source == Source.GITHUB ? session.githubPath : session.giteePath;
         URI uri = URI.create(source == Source.GITHUB
             ? artifact.sources().github()
             : artifact.sources().gitee());
+        LOGGER.info("desktop_update_download source={} event=started expectedSizeBytes={}",
+            label(source), artifact.sizeBytes());
         try {
             long deadline = deadlineAfter(downloadTimeout);
             HttpRequest request = HttpRequest.newBuilder(uri)
@@ -438,6 +502,8 @@ public final class DesktopUpdateService implements AutoCloseable {
             if (size != artifact.sizeBytes() || !sha256.equals(artifact.sha256())) {
                 throw new IOException("下载包大小或 SHA-256 与发布清单不一致");
             }
+            LOGGER.info("desktop_update_download source={} event=verified status=success sizeBytes={} elapsedMs={}",
+                label(source), size, elapsedMs(startedNanos));
 
             synchronized (session) {
                 if (session.cancelled.get()) {
@@ -457,6 +523,8 @@ public final class DesktopUpdateService implements AutoCloseable {
                     publish("ready_to_install", label(source),
                         session.githubBytes.get(), session.giteeBytes.get(),
                         artifact.sizeBytes(), 0, "");
+                    LOGGER.info("desktop_update_download source={} event=ready status=success sizeBytes={} elapsedMs={}",
+                        label(source), size, elapsedMs(startedNanos));
                 } else {
                     deleteQuietly(target);
                 }
@@ -464,9 +532,13 @@ public final class DesktopUpdateService implements AutoCloseable {
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             deleteQuietly(target);
+            LOGGER.info("desktop_update_download source={} event=finished status=cancelled elapsedMs={}",
+                label(source), elapsedMs(startedNanos));
         } catch (Exception exception) {
             session.recordError(source, messageOf(exception));
             deleteQuietly(target);
+            LOGGER.warn("desktop_update_download source={} event=finished status=failed error={} errorClass={} elapsedMs={}",
+                label(source), errorCategory(exception), exception.getClass().getSimpleName(), elapsedMs(startedNanos));
         } finally {
             session.finished.countDown();
         }
@@ -482,6 +554,11 @@ public final class DesktopUpdateService implements AutoCloseable {
                         "GitHub 与 Gitee 更新包均下载失败。GitHub: "
                             + session.githubError.get() + "；Gitee: "
                             + session.giteeError.get());
+                    LOGGER.warn("desktop_update_download event=finished status=failed githubBytes={} giteeBytes={}",
+                        session.githubBytes.get(), session.giteeBytes.get());
+                } else if (session.winner.get() != null) {
+                    LOGGER.info("desktop_update_download event=finished status=success source={} githubBytes={} giteeBytes={}",
+                        label(session.winner.get()), session.githubBytes.get(), session.giteeBytes.get());
                 }
             }
         } catch (InterruptedException exception) {
@@ -636,6 +713,20 @@ public final class DesktopUpdateService implements AutoCloseable {
         cancel();
         executor.shutdownNow();
         timeoutExecutor.shutdownNow();
+        LOGGER.info("desktop_update operation=close status=success");
+    }
+
+    private static String errorCategory(Throwable exception) {
+        if (exception == null) return "unknown";
+        if (exception instanceof UpdateException) return "update_rejected";
+        if (exception instanceof IOException) return "io";
+        if (exception instanceof TimeoutException) return "timeout";
+        if (exception instanceof InterruptedException) return "interrupted";
+        return "runtime";
+    }
+
+    private static long elapsedMs(long startedNanos) {
+        return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNanos);
     }
 
     public record CheckResult(boolean updateAvailable,

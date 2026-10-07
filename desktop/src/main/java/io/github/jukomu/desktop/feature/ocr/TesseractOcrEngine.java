@@ -4,6 +4,8 @@ import io.github.jukomu.desktop.bridge.ApiException;
 import io.github.jukomu.desktop.feature.ocr.model.OcrResponse;
 import org.bytedeco.javacpp.Loader;
 import org.bytedeco.tesseract.TessBaseAPI;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
@@ -17,6 +19,7 @@ import java.util.concurrent.TimeUnit;
  * 基于 JavaCPP 随包原生程序的 Tesseract fast OCR 实现。
  */
 public final class TesseractOcrEngine implements OcrEngine {
+    private static final Logger LOGGER = LoggerFactory.getLogger(TesseractOcrEngine.class);
     static final long MAX_IMAGE_BYTES = 32L * 1024L * 1024L;
 
     private static final String LANGUAGES = "chi_sim+chi_sim_vert+eng";
@@ -38,10 +41,15 @@ public final class TesseractOcrEngine implements OcrEngine {
             throw ApiException.notFound("图片文件不存在");
         }
 
+        long startedNanos = System.nanoTime();
         Path output = null;
         Process process = null;
         try {
-            if (Files.size(image) > MAX_IMAGE_BYTES) {
+            long imageSize = Files.size(image);
+            LOGGER.debug("ocr_engine event=started imageSizeBytes={} elapsedMs=0", imageSize);
+            if (imageSize > MAX_IMAGE_BYTES) {
+                LOGGER.warn("ocr_engine event=completed status=failed error=image_too_large elapsedMs={}",
+                    elapsedMs(startedNanos));
                 return OcrResponse.failure("图片文件过大");
             }
 
@@ -58,27 +66,44 @@ public final class TesseractOcrEngine implements OcrEngine {
                 .redirectOutput(output.toFile())
                 .redirectError(ProcessBuilder.Redirect.DISCARD)
                 .start();
+            LOGGER.debug("ocr_engine event=process-started status=running");
 
             if (!process.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
                 terminateAndWait(process);
+                LOGGER.warn("ocr_engine event=completed status=failed error=timeout elapsedMs={}",
+                    elapsedMs(startedNanos));
                 return OcrResponse.failure("识别超时，请重试");
             }
-            if (process.exitValue() != 0 || Files.size(output) > MAX_OUTPUT_BYTES) {
+            long outputSize = Files.size(output);
+            if (process.exitValue() != 0 || outputSize > MAX_OUTPUT_BYTES) {
+                LOGGER.warn("ocr_engine event=completed status=failed error=process_output_invalid exitCode={} outputSizeBytes={} elapsedMs={}",
+                    process.exitValue(), outputSize, elapsedMs(startedNanos));
                 return OcrResponse.failure("识别失败，请重试");
             }
 
             String text = Files.readString(output, StandardCharsets.UTF_8).trim();
-            return text.isEmpty()
-                ? OcrResponse.failure("未识别到文字")
-                : new OcrResponse(text, "");
+            if (text.isEmpty()) {
+                LOGGER.info("ocr_engine event=completed status=failed error=empty_result outputSizeBytes={} elapsedMs={}",
+                    outputSize, elapsedMs(startedNanos));
+                return OcrResponse.failure("未识别到文字");
+            }
+            LOGGER.info("ocr_engine event=completed status=success textLength={} outputSizeBytes={} elapsedMs={}",
+                text.length(), outputSize, elapsedMs(startedNanos));
+            return new OcrResponse(text, "");
         } catch (ApiException exception) {
+            LOGGER.warn("ocr_engine event=completed status=failed error={} errorClass={} elapsedMs={}",
+                exception.code(), exception.getClass().getSimpleName(), elapsedMs(startedNanos));
             throw exception;
         } catch (InterruptedException exception) {
             terminateAndWait(process);
             Thread.currentThread().interrupt();
+            LOGGER.warn("ocr_engine event=completed status=failed error=interrupted errorClass={} elapsedMs={}",
+                exception.getClass().getSimpleName(), elapsedMs(startedNanos));
             return OcrResponse.failure("识别失败，请重试");
         } catch (IOException | RuntimeException exception) {
             terminateAndWait(process);
+            LOGGER.warn("ocr_engine event=completed status=failed error=runtime errorClass={} elapsedMs={}",
+                exception.getClass().getSimpleName(), elapsedMs(startedNanos));
             return OcrResponse.failure("识别失败，请重试");
         } finally {
             deleteIfExists(output);
@@ -100,8 +125,11 @@ public final class TesseractOcrEngine implements OcrEngine {
                 throw new IOException("Tesseract 原生程序不可执行");
             }
             executable = cached.toPath().toAbsolutePath().normalize();
+            LOGGER.info("ocr_engine event=runtime-loaded status=success platform={}", platform);
             return executable;
         } catch (IOException | RuntimeException | LinkageError exception) {
+            LOGGER.error("ocr_engine event=runtime-loaded status=failed errorClass={}",
+                exception.getClass().getSimpleName());
             throw ApiException.unavailable("OCR 运行环境不可用");
         }
     }
@@ -125,12 +153,18 @@ public final class TesseractOcrEngine implements OcrEngine {
         try {
             Files.deleteIfExists(path);
         } catch (IOException ignored) {
-            // 清理失败不覆盖本次识别结果。
+            LOGGER.warn("ocr_engine event=temporary-output-cleanup status=failed errorClass={}",
+                ignored.getClass().getSimpleName());
         }
     }
 
     @Override
     public synchronized void close() {
         closed = true;
+        LOGGER.info("ocr_engine operation=close status=success");
+    }
+
+    private static long elapsedMs(long startedNanos) {
+        return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNanos);
     }
 }

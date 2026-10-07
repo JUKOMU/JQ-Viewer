@@ -11,11 +11,14 @@ import java.security.Signature;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.*;
 import java.util.regex.Pattern;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * 验证共享 latest.json 签名并选择当前 Desktop 包。
  */
 public final class DesktopUpdateManifest {
+    private static final Logger LOGGER = LoggerFactory.getLogger(DesktopUpdateManifest.class);
     private static final Pattern TAG_PATTERN = Pattern.compile("^v([0-9]+\\.[0-9]+\\.[0-9]+)$");
     private static final Pattern DIGEST_PATTERN = Pattern.compile("^[0-9a-fA-F]{64}$");
     private static final Pattern ASSET_NAME_PATTERN = Pattern.compile("^[A-Za-z0-9._-]+$");
@@ -31,6 +34,10 @@ public final class DesktopUpdateManifest {
     ) {
         Objects.requireNonNull(mapper, "mapper");
         configuration.requireConfigured();
+        long startedNanos = System.nanoTime();
+        LOGGER.debug("desktop_update_manifest event=parse-started manifestSizeBytes={} signatureSizeBytes={}",
+            manifestBytes == null ? -1 : manifestBytes.length,
+            signatureBytes == null ? -1 : signatureBytes.length);
         verifySignature(manifestBytes, signatureBytes, configuration, mapper);
 
         try {
@@ -74,10 +81,16 @@ public final class DesktopUpdateManifest {
                 parseSources(requiredNode(root, "sources"), tag, requiredText(root, "apkName")),
                 artifact
             );
+            LOGGER.info("desktop_update_manifest event=parse-completed status=success version={} artifactSizeBytes={} elapsedMs={}",
+                response.versionName(), artifact.sizeBytes(), elapsedMs(startedNanos));
             return new VerifiedRelease(manifestBytes.clone(), signatureBytes.clone(), response, artifact);
         } catch (UpdateException exception) {
+            LOGGER.warn("desktop_update_manifest event=parse-completed status=failed error=update_rejected errorClass={} elapsedMs={}",
+                exception.getClass().getSimpleName(), elapsedMs(startedNanos));
             throw exception;
         } catch (Exception exception) {
+            LOGGER.warn("desktop_update_manifest event=parse-completed status=failed error=invalid_metadata errorClass={} elapsedMs={}",
+                exception.getClass().getSimpleName(), elapsedMs(startedNanos));
             throw new UpdateException("更新元数据字段无效", exception);
         }
     }
@@ -111,13 +124,22 @@ public final class DesktopUpdateManifest {
             byte[] signature = Base64.getDecoder().decode(
                 requiredText(signatureDocument, "signature"));
             if (!verifier.verify(signature)) {
+                LOGGER.warn("desktop_update_manifest event=signature-verified status=failed error=signature_mismatch");
                 throw new UpdateException("发布清单签名校验失败");
             }
+            LOGGER.debug("desktop_update_manifest event=signature-verified status=success");
         } catch (UpdateException exception) {
             throw exception;
         } catch (Exception exception) {
+            LOGGER.warn("desktop_update_manifest event=signature-verified status=failed error=invalid_signature errorClass={}",
+                exception.getClass().getSimpleName());
             throw new UpdateException("发布签名无效", exception);
         }
+    }
+
+    private static long elapsedMs(long startedNanos) {
+        return java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(
+            System.nanoTime() - startedNanos);
     }
 
     private static Artifact parseArtifact(JsonNode node, String tag) {

@@ -41,6 +41,8 @@ public final class UpdateForegroundService extends Service {
      * 发布当前更新进度；旧 revision 不得覆盖新通知。
      */
     public static void update(Context context, Snapshot snapshot) {
+        LOGGER.debug("应用更新前台通知更新: event=notification_update, revision={}, phase={}, source={}",
+            snapshot.revision, snapshot.phase, snapshot.source);
         Intent intent = new Intent(context, UpdateForegroundService.class);
         intent.setAction(ACTION_UPDATE);
         intent.putExtra(EXTRA_REVISION, snapshot.revision);
@@ -58,7 +60,8 @@ public final class UpdateForegroundService extends Service {
                 context.startService(intent);
             }
         } catch (RuntimeException error) {
-            LOGGER.warn("启动更新前台通知失败", error);
+            LOGGER.warn("启动更新前台通知失败: event=notification_start_failed, errorType={}",
+                error.getClass().getSimpleName());
         }
     }
 
@@ -66,11 +69,13 @@ public final class UpdateForegroundService extends Service {
      * 清理更新通知并停止服务。
      */
     public static void stop(Context context, int revision) {
+        LOGGER.debug("应用更新前台通知停止: event=notification_stop, revision={}", revision);
         Intent intent = new Intent(context, UpdateForegroundService.class);
         try {
             context.stopService(intent);
         } catch (RuntimeException error) {
-            LOGGER.warn("停止更新前台通知失败", error);
+            LOGGER.warn("停止更新前台通知失败: event=notification_stop_failed, errorType={}",
+                error.getClass().getSimpleName());
         }
     }
 
@@ -78,16 +83,26 @@ public final class UpdateForegroundService extends Service {
     public void onCreate() {
         super.onCreate();
         createChannel();
+        LOGGER.info("应用更新前台服务创建: event=service_created");
+    }
+
+    @Override
+    public void onDestroy() {
+        LOGGER.info("应用更新前台服务销毁: event=service_destroyed");
+        super.onDestroy();
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         int revision = intent == null ? 0 : intent.getIntExtra(EXTRA_REVISION, 0);
         if (revision < lastRevision) {
+            LOGGER.debug("忽略过期更新通知: event=notification_stale, revision={}, lastRevision={}",
+                revision, lastRevision);
             return START_NOT_STICKY;
         }
         lastRevision = revision;
         if (intent != null && ACTION_STOP.equals(intent.getAction())) {
+            LOGGER.info("应用更新前台服务停止: event=service_stopped, revision={}", revision);
             stopForegroundSafely();
             stopSelf(startId);
             return START_NOT_STICKY;
@@ -97,11 +112,14 @@ public final class UpdateForegroundService extends Service {
                 buildNotification(intent, revision));
             String phase = intent == null ? "" : intent.getStringExtra(EXTRA_PHASE);
             if (isTerminalPhase(phase)) {
+                LOGGER.info("应用更新前台服务终态: event=service_terminal, revision={}, phase={}",
+                    revision, phase);
                 stopForeground(false);
                 stopSelf(startId);
             }
         } catch (RuntimeException error) {
-            LOGGER.warn("创建更新前台通知失败", error);
+            LOGGER.warn("创建更新前台通知失败: event=notification_failed, revision={}, errorType={}",
+                revision, error.getClass().getSimpleName());
             stopSelf(startId);
         }
         return START_NOT_STICKY;
@@ -237,7 +255,8 @@ public final class UpdateForegroundService extends Service {
         try {
             stopForeground(Service.STOP_FOREGROUND_REMOVE);
         } catch (RuntimeException error) {
-            LOGGER.warn("移除更新前台通知失败", error);
+            LOGGER.warn("移除更新前台通知失败: event=notification_remove_failed, errorType={}",
+                error.getClass().getSimpleName());
         }
     }
 

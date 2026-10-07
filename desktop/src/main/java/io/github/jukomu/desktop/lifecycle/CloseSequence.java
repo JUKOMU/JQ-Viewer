@@ -35,7 +35,7 @@ public final class CloseSequence {
                 }
             } catch (RuntimeException exception) {
                 logger.warn("lifecycle_close event=step status=failed step={} elapsedMs={} errorClass={}",
-                    step.name(), elapsedMs(stepStarted), exception.getClass().getSimpleName());
+                    step.name(), elapsedMs(stepStarted), exception.getClass().getSimpleName(), exception);
             }
         }
         logger.info("lifecycle_close event=sequence status=completed elapsedMs={}", elapsedMs(started));

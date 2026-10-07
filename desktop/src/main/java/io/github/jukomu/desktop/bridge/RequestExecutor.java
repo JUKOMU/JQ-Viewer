@@ -178,8 +178,8 @@ public final class RequestExecutor {
 
     private static int bodyLength(Context context) {
         try {
-            String body = context.body();
-            return body == null ? 0 : body.length();
+            byte[] body = context.bodyAsBytes();
+            return body == null ? 0 : body.length;
         } catch (RuntimeException ignored) {
             return -1;
         }

@@ -41,6 +41,9 @@ public final class JmcomicSessionManager implements AutoCloseable {
     private int retryIndex;
     private ScheduledFuture<?> retryTask;
     private long retryGeneration;
+    private long pendingStartedNanos;
+    private long attemptSequence;
+    private long pendingAttemptSequence;
 
     private JmcomicSessionManager(
         Factory factory,
@@ -86,6 +89,10 @@ public final class JmcomicSessionManager implements AutoCloseable {
                 retryTask = null;
             }
             changed = setSnapshot("initializing", null);
+            pendingStartedNanos = System.nanoTime();
+            pendingAttemptSequence = ++attemptSequence;
+            LOGGER.info("client_init operation=start attempt={} retryIndex={}",
+                pendingAttemptSequence, retryIndex);
             try {
                 attempt = factory.create();
                 if (attempt == null) {
@@ -124,11 +131,15 @@ public final class JmcomicSessionManager implements AutoCloseable {
     }
 
     private void completeAttempt(JmClient value, Throwable failure) {
+        long elapsed;
+        long attempt;
         ClientStateSnapshot changed;
         boolean closeValue = false;
         boolean ready = false;
         boolean reportFailure = false;
         synchronized (this) {
+            elapsed = elapsedMs(pendingStartedNanos);
+            attempt = pendingAttemptSequence;
             pending = null;
             if (closed) {
                 closeValue = ownsClient && value != null;
@@ -148,12 +159,14 @@ public final class JmcomicSessionManager implements AutoCloseable {
 
         if (closeValue) closeClient(value);
         if (ready) {
-            LOGGER.info("JMComic 客户端初始化完成");
+            LOGGER.info("client_init operation=complete status=success attempt={} elapsedMs={}",
+                attempt, elapsed);
         } else if (reportFailure) {
             Throwable cause = failure != null
                 ? unwrap(failure)
                 : new IllegalStateException("JMComic 客户端不支持下载任务控制");
-            LOGGER.warn("JMComic 客户端初始化失败，Desktop 保持离线能力", cause);
+            LOGGER.warn("client_init operation=complete status=failed attempt={} errorClass={} elapsedMs={}",
+                attempt, cause.getClass().getSimpleName(), elapsed);
             if (ownsClient && value != null) closeClient(value);
         }
     }
@@ -161,6 +174,7 @@ public final class JmcomicSessionManager implements AutoCloseable {
     private void scheduleRetryLocked() {
         if (closed || client != null || pending != null || retryTask != null) return;
         long delay = RETRY_DELAYS_SECONDS[Math.min(retryIndex, RETRY_DELAYS_SECONDS.length - 1)];
+        LOGGER.info("client_init operation=retry_scheduled retryIndex={} delaySeconds={}", retryIndex, delay);
         retryIndex++;
         long expectedRetryGeneration = ++retryGeneration;
         retryTask = retryExecutor.schedule(() -> {
@@ -225,7 +239,12 @@ public final class JmcomicSessionManager implements AutoCloseable {
             if (client instanceof JmApiClient apiClient) apiClient.close();
             else if (client instanceof AutoCloseable closeable) closeable.close();
         } catch (Exception failure) {
-            LOGGER.warn("关闭 JMComic 客户端失败", failure);
+            LOGGER.warn("client_init operation=close status=failed errorClass={}",
+                failure.getClass().getSimpleName());
         }
+    }
+
+    private static long elapsedMs(long started) {
+        return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
     }
 }

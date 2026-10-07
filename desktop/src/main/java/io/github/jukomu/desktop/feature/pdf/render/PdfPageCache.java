@@ -1,5 +1,8 @@
 package io.github.jukomu.desktop.feature.pdf.render;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
@@ -16,6 +19,7 @@ import java.util.regex.Pattern;
  * PDFBox 页面 PNG 的磁盘缓存。
  */
 public final class PdfPageCache {
+    private static final Logger LOGGER = LoggerFactory.getLogger(PdfPageCache.class);
     public static final long MAX_BYTES = 128L * 1024L * 1024L;
     private static final Pattern RESOURCE_ID = Pattern.compile("[0-9a-f]{64}");
 
@@ -37,7 +41,9 @@ public final class PdfPageCache {
 
     public synchronized InputStream open(String resourceId) throws IOException {
         Path file = fileFor(resourceId);
+        long sizeBytes = Files.size(file);
         InputStream input = Files.newInputStream(file);
+        LOGGER.debug("pdf-page-cache event=hit resourceId={} sizeBytes={}", resourceId, sizeBytes);
         try {
             Files.setLastModifiedTime(file, java.nio.file.attribute.FileTime.fromMillis(
                 System.currentTimeMillis()));
@@ -48,6 +54,7 @@ public final class PdfPageCache {
     }
 
     public synchronized void write(String resourceId, BufferedImage image) throws IOException {
+        long startedNanos = System.nanoTime();
         Path target = fileFor(resourceId);
         Files.createDirectories(directory);
         Path temporary = Files.createTempFile(directory, resourceId + ".", ".tmp");
@@ -61,7 +68,10 @@ public final class PdfPageCache {
             } catch (AtomicMoveNotSupportedException exception) {
                 Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
             }
+            long sizeBytes = Files.size(target);
             enforceCapacity();
+            LOGGER.debug("pdf-page-cache event=written resourceId={} sizeBytes={} elapsedMs={}",
+                resourceId, sizeBytes, elapsed(startedNanos));
         } finally {
             Files.deleteIfExists(temporary);
         }
@@ -70,10 +80,29 @@ public final class PdfPageCache {
     public synchronized void clear() {
         try {
             Files.createDirectories(directory);
+            int clearedCount = 0;
+            long clearedBytes = 0L;
             try (var files = Files.list(directory)) {
-                for (Path file : files.toList()) Files.deleteIfExists(file);
+                for (Path file : files.toList()) {
+                    long sizeBytes = -1L;
+                    try {
+                        sizeBytes = Files.size(file);
+                    } catch (IOException ignored) {
+                        // 统计失败不能阻止清理目录项。
+                    }
+                    if (Files.deleteIfExists(file)) {
+                        clearedCount++;
+                        if (sizeBytes >= 0L) {
+                            clearedBytes = saturatedAdd(clearedBytes, sizeBytes);
+                        }
+                    }
+                }
             }
+            LOGGER.info("pdf-page-cache event=cleared entryCount={} sizeBytes={}",
+                clearedCount, clearedBytes);
         } catch (IOException exception) {
+            LOGGER.error("pdf-page-cache event=clear-failed errorClass={}",
+                exception.getClass().getSimpleName());
             throw new IllegalStateException("清理 PDF 页面缓存失败", exception);
         }
     }
@@ -125,10 +154,20 @@ public final class PdfPageCache {
         }
         long total = 0L;
         for (Path page : pages) total = saturatedAdd(total, Files.size(page));
+        int evictedCount = 0;
+        long evictedBytes = 0L;
         for (Path page : pages) {
             if (total <= MAX_BYTES) break;
             long size = Files.size(page);
-            if (Files.deleteIfExists(page)) total = Math.max(0L, total - size);
+            if (Files.deleteIfExists(page)) {
+                total = Math.max(0L, total - size);
+                evictedCount++;
+                evictedBytes = saturatedAdd(evictedBytes, size);
+            }
+        }
+        if (evictedCount > 0) {
+            LOGGER.info("pdf-page-cache event=evicted entryCount={} sizeBytes={} remainingBytes={}",
+                evictedCount, evictedBytes, total);
         }
     }
 
@@ -143,6 +182,11 @@ public final class PdfPageCache {
     private static long saturatedAdd(long left, long right) {
         if (right <= 0L || left > Long.MAX_VALUE - right) return Long.MAX_VALUE;
         return left + right;
+    }
+
+    private static long elapsed(long startedNanos) {
+        return java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(
+            System.nanoTime() - startedNanos);
     }
 
     private static void requireResourceId(String resourceId) {

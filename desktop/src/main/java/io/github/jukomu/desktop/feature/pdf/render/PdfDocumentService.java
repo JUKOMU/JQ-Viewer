@@ -10,6 +10,8 @@ import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.rendering.ImageType;
 import org.apache.pdfbox.rendering.PDFRenderer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.awt.image.BufferedImage;
 import java.io.IOException;
@@ -27,9 +29,11 @@ import java.util.Locale;
  * 读取 PDF 页数，并为 pdf.js 失败场景生成受控 PNG 页面。
  */
 public final class PdfDocumentService {
+    private static final Logger LOGGER = LoggerFactory.getLogger(PdfDocumentService.class);
     static final int MIN_TARGET_WIDTH = 360;
     static final int MAX_TARGET_WIDTH = 2400;
     static final long MAX_RENDER_PIXELS = 8_000_000L;
+    private static final long SLOW_OPERATION_MS = 500L;
 
     private final PdfPageCache cache;
 
@@ -39,13 +43,24 @@ public final class PdfDocumentService {
 
     public PdfInfoResponse getInfo(String fileRef) {
         Path file = requireReadablePdf(fileRef);
+        String pdfKey = fileKey(file);
+        long startedNanos = System.nanoTime();
+        LOGGER.debug("pdf.open event=started pdfKey={}", pdfKey);
         try (PDDocument document = Loader.loadPDF(
             file.toFile(), IOUtils.createTempFileOnlyStreamCache())) {
             int pages = document.getNumberOfPages();
             if (pages <= 0) throw ApiException.invalidRequest("PDF 没有可读取页面");
+            LOGGER.info("pdf.open event=completed pdfKey={} pages={} elapsedMs={}",
+                pdfKey, pages, elapsed(startedNanos));
             return new PdfInfoResponse(pages);
         } catch (IOException exception) {
+            LOGGER.error("pdf.open event=failed pdfKey={} elapsedMs={} errorClass={}",
+                pdfKey, elapsed(startedNanos), exception.getClass().getSimpleName());
             throw loadFailure(file, "PDF 信息读取失败", exception);
+        } catch (ApiException exception) {
+            LOGGER.warn("pdf.open event=failed pdfKey={} elapsedMs={} errorCode={}",
+                pdfKey, elapsed(startedNanos), exception.code());
+            throw exception;
         }
     }
 
@@ -56,17 +71,36 @@ public final class PdfDocumentService {
     ) {
         if (pageNumber < 1) throw ApiException.invalidRequest("page必须从1开始");
         Path file = requireReadablePdf(fileRef);
+        String pdfKey = fileKey(file);
+        long startedNanos = System.nanoTime();
         int targetWidth = Math.max(MIN_TARGET_WIDTH, Math.min(MAX_TARGET_WIDTH, requestedWidth));
         try {
             long size = Files.size(file);
             long modified = Files.getLastModifiedTime(file).toMillis();
             String resourceId = resourceId(fileRef, pageNumber, targetWidth, size, modified);
-            if (!cache.contains(resourceId)) {
+            boolean cacheHit = cache.contains(resourceId);
+            if (cacheHit) {
+                LOGGER.debug("pdf.render event=cache-hit pdfKey={} page={} targetWidth={} elapsedMs={}",
+                    pdfKey, pageNumber, targetWidth, elapsed(startedNanos));
+            } else {
                 render(file, pageNumber, targetWidth, resourceId);
+            }
+            long elapsedMs = elapsed(startedNanos);
+            LOGGER.debug("pdf.render event=completed pdfKey={} page={} targetWidth={} cacheHit={} elapsedMs={}",
+                pdfKey, pageNumber, targetWidth, cacheHit, elapsedMs);
+            if (elapsedMs >= SLOW_OPERATION_MS) {
+                LOGGER.warn("pdf.render event=slow pdfKey={} page={} targetWidth={} cacheHit={} elapsedMs={}",
+                    pdfKey, pageNumber, targetWidth, cacheHit, elapsedMs);
             }
             return new PdfRenderPageResponse("/pdf-page/" + resourceId + ".png");
         } catch (IOException exception) {
+            LOGGER.error("pdf.render event=failed pdfKey={} page={} targetWidth={} elapsedMs={} errorClass={}",
+                pdfKey, pageNumber, targetWidth, elapsed(startedNanos), exception.getClass().getSimpleName());
             throw loadFailure(file, "PDF 页面渲染失败", exception);
+        } catch (ApiException exception) {
+            LOGGER.warn("pdf.render event=failed pdfKey={} page={} targetWidth={} elapsedMs={} errorCode={}",
+                pdfKey, pageNumber, targetWidth, elapsed(startedNanos), exception.code());
+            throw exception;
         }
     }
 
@@ -95,7 +129,12 @@ public final class PdfDocumentService {
                 if (saturatedMultiply(image.getWidth(), image.getHeight()) > MAX_RENDER_PIXELS) {
                     throw ApiException.invalidRequest("PDF 页面渲染尺寸过大");
                 }
+                long startedNanos = System.nanoTime();
                 cache.write(resourceId, image);
+                long elapsedMs = elapsed(startedNanos);
+                if (elapsedMs >= SLOW_OPERATION_MS) {
+                    LOGGER.warn("pdf.render-cache event=slow resourceId={} elapsedMs={}", resourceId, elapsedMs);
+                }
             } finally {
                 image.flush();
             }
@@ -146,5 +185,20 @@ public final class PdfDocumentService {
         if (left <= 0L || right <= 0L) return 0L;
         if (left > Long.MAX_VALUE / right) return Long.MAX_VALUE;
         return left * right;
+    }
+
+    private static long elapsed(long startedNanos) {
+        return java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(
+            System.nanoTime() - startedNanos);
+    }
+
+    private static String fileKey(Path file) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                .digest(file.toAbsolutePath().normalize().toString().getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest, 0, 8);
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 不可用", exception);
+        }
     }
 }

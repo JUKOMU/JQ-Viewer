@@ -4,8 +4,9 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.webkit.WebResourceResponse;
-
 import io.github.jukomu.feature.download.storage.FileStore;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.*;
 import java.util.ArrayList;
@@ -21,6 +22,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  * 容量由 {@link CacheCapacityPolicy} 统一计算，并支持读取前的在途字节预留。
  */
 public class ImageCache {
+    private static final Logger LOGGER = LoggerFactory.getLogger(ImageCache.class);
 
     public static final String VIRTUAL_HOST = "jqviewer.local";
     private static final int THUMBNAIL_MAX_WIDTH = 300;
@@ -139,8 +141,16 @@ public class ImageCache {
         if (size <= 0L) return null;
         writeLock.lock();
         try {
-            if (size > capacity || reservedSize + size > capacity) return null;
-            if (!evictForHeapMargin(reservedSize + size)) return null;
+            if (size > capacity || reservedSize + size > capacity) {
+                LOGGER.warn("图片缓存预留拒绝: event=reserve_reject, reason=capacity, sizeBytes={}, capacityBytes={}",
+                    size, capacity);
+                return null;
+            }
+            if (!evictForHeapMargin(reservedSize + size)) {
+                LOGGER.warn("图片缓存预留拒绝: event=reserve_reject, reason=heap_margin, sizeBytes={}",
+                    size);
+                return null;
+            }
             evictToTarget(capacity - reservedSize - size);
             reservedSize += size;
             return new IncomingReservation(this, size);
@@ -166,10 +176,17 @@ public class ImageCache {
         writeLock.lock();
         try {
             boolean hadReservation = consumeReservation(reservation);
-            if (size > capacity || reservedSize + size > capacity) return false;
+            if (size > capacity || reservedSize + size > capacity) {
+                LOGGER.warn("图片缓存写入拒绝: event=reject, reason=capacity, sizeBytes={}, capacityBytes={}",
+                    size, capacity);
+                return false;
+            }
 
             long unaccountedBytes = hadReservation ? reservedSize : reservedSize + size;
-            if (!evictForHeapMargin(unaccountedBytes)) return false;
+            if (!evictForHeapMargin(unaccountedBytes)) {
+                LOGGER.warn("图片缓存写入拒绝: event=reject, reason=heap_margin, sizeBytes={}", size);
+                return false;
+            }
 
             // 若 key 已存在，先移除旧的
             ImageEntry old = cache.remove(key);
@@ -192,7 +209,9 @@ public class ImageCache {
     public ImageEntry get(String key) {
         writeLock.lock();
         try {
-            return cache.get(key);
+            ImageEntry entry = cache.get(key);
+            LOGGER.debug("图片缓存{}: key={}", entry == null ? "未命中" : "命中", safeKey(key));
+            return entry;
         } finally {
             writeLock.unlock();
         }
@@ -232,6 +251,7 @@ public class ImageCache {
         try {
             cache.clear();
             currentSize = 0;
+            LOGGER.info("图片缓存清理完成: event=clear");
         } finally {
             writeLock.unlock();
         }
@@ -243,14 +263,18 @@ public class ImageCache {
     public void clearByPrefix(String prefix) {
         writeLock.lock();
         try {
+            int removed = 0;
             var it = cache.entrySet().iterator();
             while (it.hasNext()) {
                 var entry = it.next();
                 if (entry.getKey().startsWith(prefix)) {
                     currentSize -= entry.getValue().data.length;
                     it.remove();
+                    removed++;
                 }
             }
+            LOGGER.info("图片缓存前缀清理完成: event=clear_prefix, prefix={}, removed={}",
+                safeKey(prefix), removed);
         } finally {
             writeLock.unlock();
         }
@@ -264,12 +288,17 @@ public class ImageCache {
 
     private void evictToTarget(long target) {
         if (currentSize <= target) return;
+        long before = currentSize;
+        int removed = 0;
         var it = cache.entrySet().iterator();
         while (it.hasNext() && currentSize > target) {
             var entry = it.next();
             currentSize -= entry.getValue().data.length;
             it.remove();
+            removed++;
         }
+        LOGGER.debug("图片缓存淘汰完成: event=evict, removed={}, freedBytes={}",
+            removed, before - currentSize);
     }
 
     /**
@@ -304,6 +333,8 @@ public class ImageCache {
             freed += len;
             it.remove();
         }
+        LOGGER.debug("图片缓存堆压力淘汰: event=heap_evict, freedBytes={}, needBytes={}",
+            freed, needToFree);
         return true;
     }
 
@@ -356,6 +387,7 @@ public class ImageCache {
      * 查找顺序：内存缓存 → FileStore（离线下载的图片）→ null（在线等待 preloadImages）
      */
     public static WebResourceResponse handleRequest(String url) {
+        long startedNanos = System.nanoTime();
         try {
             Uri uri = Uri.parse(url);
             List<String> segments = uri.getPathSegments();
@@ -376,6 +408,7 @@ public class ImageCache {
             // 1. 查内存缓存
             ImageEntry entry = getInstance().get(cacheKey);
             if (entry != null) {
+                logResource("memory-hit", type, photoId, sortOrder, startedNanos, null);
                 return new WebResourceResponse(
                     entry.mimeType,
                     "UTF-8",
@@ -390,6 +423,7 @@ public class ImageCache {
                 if (original != null) {
                     byte[] thumbData = createThumbnail(original.data);
                     getInstance().put(cacheKey, thumbData, "image/jpeg");
+                    logResource("thumbnail-memory", type, photoId, sortOrder, startedNanos, null);
                     return new WebResourceResponse("image/jpeg", "UTF-8",
                         new ByteArrayInputStream(thumbData));
                 }
@@ -404,6 +438,7 @@ public class ImageCache {
                         byte[] thumbData = createThumbnail(originalData);
                         reservation.close();
                         getInstance().put(cacheKey, thumbData, "image/jpeg");
+                        logResource("file-thumbnail", type, photoId, sortOrder, startedNanos, null);
                         return new WebResourceResponse("image/jpeg", "UTF-8",
                             new ByteArrayInputStream(thumbData));
                     }
@@ -417,6 +452,7 @@ public class ImageCache {
                         byte[] data = FileStore.getInstance().readImageBytes(imageFile);
                         String mime = "image/" + guessFormatName(data);
                         getInstance().put(cacheKey, data, mime, reservation);
+                        logResource("file-hit", type, photoId, sortOrder, startedNanos, null);
                         return new WebResourceResponse(mime, "UTF-8",
                             new ByteArrayInputStream(data));
                     }
@@ -424,10 +460,26 @@ public class ImageCache {
             }
 
             // 3. 仍未找到 → 返回 null（在线场景等待 preloadImages 下载/FileStore 兜底）
+            logResource("miss", type, photoId, sortOrder, startedNanos, null);
             return null;
         } catch (Exception e) {
+            LOGGER.debug("图片缓存资源读取失败: event=failed, errorClass={}",
+                e.getClass().getSimpleName());
             return null;
         }
+    }
+
+    private static void logResource(String event, String type, String photoId, int sortOrder,
+                                    long startedNanos, Throwable error) {
+        long elapsedMs = (System.nanoTime() - startedNanos) / 1_000_000L;
+        LOGGER.debug("图片缓存资源: event={}, type={}, photoId={}, sortOrder={}, elapsedMs={}, errorClass={}",
+            event, type, photoId, sortOrder, elapsedMs,
+            error == null ? "" : error.getClass().getSimpleName());
+    }
+
+    private static String safeKey(String value) {
+        if (value == null) return "";
+        return value.length() <= 96 ? value : value.substring(0, 96);
     }
 
     static WebResourceResponse createFileResponse(File imageFile) throws IOException {

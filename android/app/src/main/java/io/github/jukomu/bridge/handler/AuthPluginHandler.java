@@ -18,6 +18,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -41,6 +42,7 @@ public final class AuthPluginHandler {
     private volatile boolean credentialsLoaded;
     private boolean sessionActive = true;
     private long authGeneration;
+    private final AtomicLong authAttemptSequence = new AtomicLong();
 
     public AuthPluginHandler(Context context, ApiService apiService,
                              Supplier<List<Cookie>> cookieSupplier,
@@ -81,9 +83,12 @@ public final class AuthPluginHandler {
                 return;
             }
             final long loginGeneration;
+            final long attemptId = authAttemptSequence.incrementAndGet();
             synchronized (this) {
                 loginGeneration = ++authGeneration;
             }
+            LOGGER.info("认证登录开始 attemptId={} generation={}",
+                attemptId, loginGeneration);
             startAsync(call, trackedCall -> apiService.login(
                 username, password, new ApiCallback() {
                     @Override
@@ -92,6 +97,8 @@ public final class AuthPluginHandler {
                             try {
                                 synchronized (AuthPluginHandler.this) {
                                     if (loginGeneration != authGeneration) {
+                                        LOGGER.info("认证登录取消 attemptId={} reason=generation_changed",
+                                            attemptId);
                                         activeCall.reject("认证状态已变化", "cancelled");
                                         return;
                                     }
@@ -101,6 +108,7 @@ public final class AuthPluginHandler {
                                     memoryPassword = password;
                                     CredentialStore.getInstance(context).save(username, password);
                                 }
+                                LOGGER.info("认证登录成功 attemptId={}", attemptId);
                                 activeCall.resolve(JSObject.fromJSONObject(userInfo));
                             } catch (Exception error) {
                                 activeCall.reject(error.getMessage(), error);
@@ -110,6 +118,8 @@ public final class AuthPluginHandler {
 
                     @Override
                     public void onError(String message, Exception error) {
+                        LOGGER.warn("认证登录失败 attemptId={} errorType={}",
+                            attemptId, errorType(error));
                         if (error instanceof ResponseException responseError
                             && isAuthenticationFailure(responseError)) {
                             synchronized (AuthPluginHandler.this) {
@@ -127,11 +137,13 @@ public final class AuthPluginHandler {
 
                                     @Override
                                     public void onError(String logoutMessage, Exception logoutError) {
-                                        LOGGER.warn("直接登录认证失败后远端注销失败", logoutError);
+                                        LOGGER.warn("直接登录认证失败后远端注销失败 errorType={}",
+                                            errorType(logoutError));
                                     }
                                 });
                             } catch (RuntimeException logoutError) {
-                                LOGGER.warn("直接登录认证失败后无法发起远端注销", logoutError);
+                                LOGGER.warn("直接登录认证失败后无法发起远端注销 errorType={}",
+                                    errorType(logoutError));
                             }
                         }
                         trackedCall.reject(
@@ -153,24 +165,34 @@ public final class AuthPluginHandler {
     public void logout(PluginCall call) {
         try {
             startAsync(call, trackedCall -> {
+                long attemptId = authAttemptSequence.incrementAndGet();
+                LOGGER.info("认证注销开始 attemptId={}", attemptId);
                 clearStoredLogin();
                 JSObject result = new JSObject();
                 result.put("success", true);
                 trackedCall.resolve(result);
+                LOGGER.info("认证注销本地状态已清除 attemptId={}", attemptId);
                 try {
                     apiService.logout(new ApiCallback() {
                         @Override
                         public void onSuccess(JSONObject result) {
+                            LOGGER.info("认证注销远端完成 attemptId={}", attemptId);
                             // 本地登出已经完成，远端结果不再影响调用方。
                         }
 
                         @Override
                         public void onError(String message, Exception error) {
-                            LOGGER.warn("远端注销失败，本地登录态已清除", error);
+                            LOGGER.warn("认证注销远端失败 attemptId={} errorType={}",
+                                attemptId, errorType(error));
+                            LOGGER.warn("远端注销失败，本地登录态已清除 errorType={}",
+                                errorType(error));
                         }
                     });
                 } catch (RuntimeException error) {
-                    LOGGER.warn("无法发起远端注销，本地登录态已清除", error);
+                    LOGGER.warn("认证注销远端启动失败 attemptId={} errorType={}",
+                        attemptId, errorType(error));
+                    LOGGER.warn("无法发起远端注销，本地登录态已清除 errorType={}",
+                        errorType(error));
                 }
             });
         } catch (Exception error) {
@@ -248,10 +270,13 @@ public final class AuthPluginHandler {
         }
         final String loginUsername = username;
         final String loginPassword = password;
+        final long attemptId = authAttemptSequence.incrementAndGet();
         final long loginGeneration;
         synchronized (this) {
             loginGeneration = authGeneration;
         }
+        LOGGER.info("自动登录开始 attemptId={} generation={}",
+            attemptId, loginGeneration);
 
         startAsync(call, trackedCall -> apiService.login(
             loginUsername, loginPassword, new ApiCallback() {
@@ -261,6 +286,8 @@ public final class AuthPluginHandler {
                         try {
                             synchronized (AuthPluginHandler.this) {
                                 if (loginGeneration != authGeneration) {
+                                    LOGGER.info("自动登录取消 attemptId={} reason=generation_changed",
+                                        attemptId);
                                     activeCall.reject("认证状态已变化", "cancelled");
                                     return;
                                 }
@@ -269,6 +296,7 @@ public final class AuthPluginHandler {
                                 memoryUsername = loginUsername;
                                 memoryPassword = loginPassword;
                             }
+                            LOGGER.info("自动登录成功 attemptId={}", attemptId);
                             JSObject result = new JSObject();
                             result.put("success", true);
                             result.put("userInfo", JSObject.fromJSONObject(userInfo));
@@ -281,6 +309,8 @@ public final class AuthPluginHandler {
 
                 @Override
                 public void onError(String message, Exception error) {
+                    LOGGER.warn("自动登录失败 attemptId={} errorType={}",
+                        attemptId, errorType(error));
                     callSession.completeIfActive(trackedCall, activeCall -> {
                         synchronized (AuthPluginHandler.this) {
                             if (loginGeneration != authGeneration) {
@@ -299,11 +329,13 @@ public final class AuthPluginHandler {
 
                                     @Override
                                     public void onError(String message, Exception error) {
-                                        LOGGER.warn("认证失败后远端注销失败", error);
+                                        LOGGER.warn("认证失败后远端注销失败 errorType={}",
+                                            errorType(error));
                                     }
                                 });
                             } catch (RuntimeException logoutError) {
-                                LOGGER.warn("认证失败后无法发起远端注销", logoutError);
+                                LOGGER.warn("认证失败后无法发起远端注销 errorType={}",
+                                    errorType(logoutError));
                             }
                             activeCall.reject(
                                 "自动登录失败：凭据无效或已过期", "permission-denied", error);
@@ -324,38 +356,57 @@ public final class AuthPluginHandler {
         final String[] credentials;
         final long routeGeneration;
         synchronized (this) {
-            if (!sessionActive) return;
+            if (!sessionActive) {
+                LOGGER.info("线路切换后认证恢复跳过 reason=session_inactive");
+                return;
+            }
             clearAuthState(SettingsStore.getInstance(context));
             credentials = loadCredentialsIfNeeded();
             routeGeneration = ++authGeneration;
         }
         String username = credentials[0];
         String password = credentials[1];
-        if (username == null || username.isEmpty() || password == null || password.isEmpty()) return;
+        if (username == null || username.isEmpty() || password == null || password.isEmpty()) {
+            LOGGER.info("线路切换后认证恢复跳过 reason=no_credentials");
+            return;
+        }
         final String loginUsername = username;
         final String loginPassword = password;
+        final long attemptId = authAttemptSequence.incrementAndGet();
+        LOGGER.info("线路切换后认证恢复开始 attemptId={} generation={}",
+            attemptId, routeGeneration);
         try {
             apiService.logout(new ApiCallback() {
                 @Override
                 public void onSuccess(JSONObject result) {
-                    loginAfterRoute(loginUsername, loginPassword, routeGeneration);
+                    LOGGER.info("线路切换后旧会话清理完成 attemptId={}", attemptId);
+                    loginAfterRoute(loginUsername, loginPassword, routeGeneration, attemptId);
                 }
 
                 @Override
                 public void onError(String message, Exception error) {
-                    loginAfterRoute(loginUsername, loginPassword, routeGeneration);
+                    LOGGER.warn("线路切换后旧会话清理失败，继续重登 attemptId={} errorType={}",
+                        attemptId, errorType(error));
+                    loginAfterRoute(loginUsername, loginPassword, routeGeneration, attemptId);
                 }
             });
         } catch (RuntimeException error) {
-            LOGGER.warn("线路切换后无法清理旧认证态", error);
-            loginAfterRoute(loginUsername, loginPassword, routeGeneration);
+            LOGGER.warn("线路切换后无法清理旧认证态 errorType={}", errorType(error));
+            loginAfterRoute(loginUsername, loginPassword, routeGeneration, attemptId);
         }
     }
 
-    private void loginAfterRoute(String username, String password, long expectedGeneration) {
+    private void loginAfterRoute(String username, String password, long expectedGeneration,
+                                 long attemptId) {
         synchronized (this) {
-            if (!sessionActive || expectedGeneration != authGeneration) return;
+            if (!sessionActive || expectedGeneration != authGeneration) {
+                LOGGER.info("线路切换后认证登录跳过 reason=stale_generation generation={}",
+                    expectedGeneration);
+                return;
+            }
         }
+        LOGGER.info("线路切换后认证登录发起 attemptId={} generation={}",
+            attemptId, expectedGeneration);
         try {
             apiService.login(username, password, new ApiCallback() {
                 @Override
@@ -366,14 +417,17 @@ public final class AuthPluginHandler {
                             saveAuthState(SettingsStore.getInstance(context), userInfo);
                             memoryUsername = username;
                             memoryPassword = password;
+                            LOGGER.info("线路切换后认证恢复成功 attemptId={}", attemptId);
                         }
                     } catch (Exception error) {
-                        LOGGER.warn("线路切换后保存认证态失败", error);
+                        LOGGER.warn("线路切换后保存认证态失败 errorType={}", errorType(error));
                     }
                 }
 
                 @Override
                 public void onError(String message, Exception error) {
+                    LOGGER.warn("线路切换后认证恢复失败 attemptId={} errorType={}",
+                        attemptId, errorType(error));
                     if (error instanceof ResponseException responseError
                         && isAuthenticationFailure(responseError)) {
                         synchronized (AuthPluginHandler.this) {
@@ -391,13 +445,14 @@ public final class AuthPluginHandler {
                                 }
                             });
                         } catch (RuntimeException logoutError) {
-                            LOGGER.warn("线路切换认证失败后无法注销", logoutError);
+                            LOGGER.warn("线路切换认证失败后无法注销 errorType={}",
+                                errorType(logoutError));
                         }
                     }
                 }
             });
         } catch (RuntimeException error) {
-            LOGGER.warn("线路切换后自动登录启动失败", error);
+            LOGGER.warn("线路切换后自动登录启动失败 errorType={}", errorType(error));
         }
     }
 
@@ -409,6 +464,10 @@ public final class AuthPluginHandler {
     private static String errorCode(Exception error) {
         if (!(error instanceof ResponseException responseError)) return "network";
         return responseError.getErrorCode() >= 500 ? "network" : "internal";
+    }
+
+    private static String errorType(Exception error) {
+        return error == null ? "unknown" : error.getClass().getSimpleName();
     }
 
     private void startAsync(PluginCall call, Consumer<PluginCall> starter) {
@@ -474,7 +533,7 @@ public final class AuthPluginHandler {
                 item.put("persistent", cookie.persistent());
                 result.put(item);
             } catch (JSONException error) {
-                LOGGER.debug("跳过无效cookie条目", error);
+                LOGGER.debug("跳过无效cookie条目 errorType={}", errorType(error));
             }
         }
         return result;
@@ -512,7 +571,7 @@ public final class AuthPluginHandler {
                     cookies.add(builder.hostOnlyDomain(item.getString("domain")).build());
                 }
             } catch (Exception error) {
-                LOGGER.debug("跳过损坏的cookie条目", error);
+                LOGGER.debug("跳过损坏的cookie条目 errorType={}", errorType(error));
             }
         }
         return cookies;

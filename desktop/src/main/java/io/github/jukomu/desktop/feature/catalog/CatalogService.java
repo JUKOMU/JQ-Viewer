@@ -7,11 +7,14 @@ import io.github.jukomu.desktop.feature.image.ImageService;
 import io.github.jukomu.jmcomic.api.client.JmClient;
 import io.github.jukomu.jmcomic.api.enums.*;
 import io.github.jukomu.jmcomic.api.model.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -19,6 +22,7 @@ import java.util.function.Supplier;
  * 调用在线客户端并转换为页面使用的响应模型。
  */
 public final class CatalogService {
+    private static final Logger LOGGER = LoggerFactory.getLogger(CatalogService.class);
     private final Supplier<JmClient> clientSupplier;
     private final ImageService imageService;
     private final Function<String, String> albumCoverUrl;
@@ -42,30 +46,34 @@ public final class CatalogService {
     }
 
     public SearchResponse search(SearchRequest request) {
-        return toSearchResponse(client().search(query(request)));
+        return request("search", () -> toSearchResponse(client().search(query(request))));
     }
 
     public SearchResponse categories(SearchRequest request) {
-        return toSearchResponse(client().getCategories(query(request)));
+        return request("categories", () -> toSearchResponse(client().getCategories(query(request))));
     }
 
     public AlbumResponse getAlbum(String id) {
-        return toAlbumResponse(client().getAlbum(id));
+        return request("getAlbum", () -> toAlbumResponse(client().getAlbum(id)));
     }
 
     public PhotoResponse getPhoto(String id) {
-        JmPhoto photo = client().getPhoto(id);
-        imageService.register(photo);
-        return toPhotoResponse(photo);
+        return request("getPhoto", () -> {
+            JmPhoto photo = client().getPhoto(id);
+            imageService.register(photo);
+            return toPhotoResponse(photo);
+        });
     }
 
     public CommentListResponse getComments(String albumId, int page) {
-        JmCommentList comments = client().getComments(
-            ForumQuery.album(albumId).mode(ForumMode.ALL).page(page).build());
-        return new CommentListResponse(
-            comments.getTotal(),
-            safe(comments.getList()).stream().map(this::toCommentResponse).toList()
-        );
+        return request("getComments", () -> {
+            JmCommentList comments = client().getComments(
+                ForumQuery.album(albumId).mode(ForumMode.ALL).page(page).build());
+            return new CommentListResponse(
+                comments.getTotal(),
+                safe(comments.getList()).stream().map(this::toCommentResponse).toList()
+            );
+        });
     }
 
     public FavoriteResponse getFavorites(int folderId, int page) {
@@ -73,17 +81,21 @@ public final class CatalogService {
             .folderId(folderId)
             .page(page)
             .build();
-        return toFavoriteResponse(client().getFavorites(query));
+        return request("getFavorites", () -> toFavoriteResponse(client().getFavorites(query)));
     }
 
     public SuccessResponse toggleAlbumLike(String id) {
-        client().toggleAlbumLike(id);
-        return SuccessResponse.ok();
+        return request("toggleAlbumLike", () -> {
+            client().toggleAlbumLike(id);
+            return SuccessResponse.ok();
+        });
     }
 
     public SuccessResponse toggleAlbumFavorite(String id, String folderId) {
-        client().toggleAlbumFavorite(id, folderId);
-        return SuccessResponse.ok();
+        return request("toggleAlbumFavorite", () -> {
+            client().toggleAlbumFavorite(id, folderId);
+            return SuccessResponse.ok();
+        });
     }
 
     public FavoriteFolderResponse manageFavoriteFolder(
@@ -92,9 +104,11 @@ public final class CatalogService {
         String folderName,
         String albumId
     ) {
-        JmFavoriteFolderResult result = client().manageFavoriteFolder(
-            type, folderId, folderName, albumId);
-        return new FavoriteFolderResponse(text(result.getStatus()), text(result.getMsg()));
+        return request("manageFavoriteFolder", () -> {
+            JmFavoriteFolderResult result = client().manageFavoriteFolder(
+                type, folderId, folderName, albumId);
+            return new FavoriteFolderResponse(text(result.getStatus()), text(result.getMsg()));
+        });
     }
 
     private SearchQuery query(SearchRequest request) {
@@ -274,5 +288,28 @@ public final class CatalogService {
         JmClient client = clientSupplier.get();
         if (client == null) throw ApiException.unavailable("在线客户端不可用");
         return client;
+    }
+
+    private <T> T request(String operation, Supplier<T> action) {
+        long started = System.nanoTime();
+        try {
+            T result = action.get();
+            LOGGER.info("catalog_request operation={} status=success elapsedMs={}",
+                operation, elapsedMs(started));
+            return result;
+        } catch (RuntimeException failure) {
+            LOGGER.warn("catalog_request operation={} status=failed error={} errorClass={} elapsedMs={}",
+                operation, errorCategory(failure), failure.getClass().getSimpleName(), elapsedMs(started));
+            throw failure;
+        }
+    }
+
+    private static String errorCategory(RuntimeException failure) {
+        if (failure instanceof ApiException apiException) return apiException.code();
+        return "runtime";
+    }
+
+    private static long elapsedMs(long started) {
+        return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
     }
 }

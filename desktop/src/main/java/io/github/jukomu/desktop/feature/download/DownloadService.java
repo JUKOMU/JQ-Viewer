@@ -388,7 +388,9 @@ public final class DownloadService implements AutoCloseable {
             JmAlbum album = null;
             try {
                 JmAlbum candidate = requireClient().getAlbum(task.albumId());
-                if (candidate != null && task.albumId().equals(candidate.getId())) album = candidate;
+                if (candidate != null && task.albumId().equals(candidate.getId())) {
+                    album = candidate;
+                }
             } catch (RuntimeException exception) {
                 LOGGER.debug("读取作品元数据失败，使用章节元数据", exception);
             }
@@ -410,7 +412,8 @@ public final class DownloadService implements AutoCloseable {
                 store.updateMetadata(taskId, album == null ? task.albumTitle() : album.getTitle(),
                     photo.getTitle(), authors.isEmpty() ? text(photo.getAuthor()) : authors.get(0),
                     JsonUtils.toJsonString(authors, "保存作者列表失败"),
-                    JsonUtils.toJsonString(album == null || album.getTags() == null ? List.of() : album.getTags(), "保存章节标签失败"),
+                    JsonUtils.toJsonString(album != null && album.getTags() != null ? album.getTags()
+                        : photo.getTags() == null ? List.of() : photo.getTags(), "保存章节标签失败"),
                     photo.getSortOrder(), photo.isSingleAlbum());
                 Path chapterDirectory = files.chapterDirectory(task.relativeDirectory());
                 Path savePath = photo.isSingleAlbum() ? chapterDirectory : chapterDirectory.getParent();
@@ -523,8 +526,10 @@ public final class DownloadService implements AutoCloseable {
         JmAlbum album = null;
         if (client != null) {
             try {
-                album = client.getAlbum(task.albumId());
-                if (album == null || !task.albumId().equals(album.getId())) {
+                JmAlbum candidate = client.getAlbum(task.albumId());
+                if (candidate != null && task.albumId().equals(candidate.getId())) {
+                    album = candidate;
+                } else {
                     LOGGER.debug("读取作品元数据失败，使用已有下载记录");
                 }
             } catch (RuntimeException exception) {

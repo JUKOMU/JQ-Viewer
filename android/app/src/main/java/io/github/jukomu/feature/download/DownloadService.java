@@ -132,7 +132,9 @@ public class DownloadService {
                 JmAlbum album = null;
                 try {
                     JmAlbum candidate = client.getAlbum(albumId);
-                    if (candidate != null && albumId.equals(candidate.getId())) album = candidate;
+                    if (candidate != null && albumId.equals(candidate.getId())) {
+                        album = candidate;
+                    }
                 } catch (RuntimeException exception) {
                     LOGGER.debug("读取作品元数据失败，使用章节元数据", exception);
                 }
@@ -277,7 +279,9 @@ public class DownloadService {
             if (client != null) {
                 try {
                     JmAlbum candidate = client.getAlbum(task.optString("albumId"));
-                    if (candidate != null && task.optString("albumId").equals(candidate.getId())) album = candidate;
+                    if (candidate != null && task.optString("albumId").equals(candidate.getId())) {
+                        album = candidate;
+                    }
                 } catch (RuntimeException exception) {
                     LOGGER.debug("读取作品元数据失败，使用已有下载记录", exception);
                 }

@@ -43,13 +43,6 @@ public final class Request {
         }
     }
 
-    public static String requiredText(String value, String name) {
-        if (value == null || value.isBlank()) {
-            throw ApiException.invalidRequest(name + "不能为空");
-        }
-        return value;
-    }
-
     public static int integer(Integer value, int fallback) {
         return value == null ? fallback : value;
     }

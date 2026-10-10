@@ -9,6 +9,8 @@ import io.github.jukomu.desktop.feature.localfile.model.*;
 import io.github.jukomu.desktop.feature.pdf.model.PdfRenderPageRequest;
 import io.javalin.http.Context;
 
+import static io.github.jukomu.desktop.util.RequestValidation.requiredText;
+
 /**
  * 处理 Desktop 本地文件库、导出与 PDF 阅读 bridge 请求。
  */
@@ -40,23 +42,23 @@ public final class LocalFilePluginHandler {
 
     public void getExportTask(Context context) {
         requests.run(context, ExportIdRequest.class,
-            request -> exports.getTask(Request.requiredText(request.exportId(), "exportId")));
+            request -> exports.getTask(requiredText(request.exportId(), "exportId")));
     }
 
     public void cancelExport(Context context) {
         requests.run(context, ExportIdRequest.class,
-            request -> exports.cancel(Request.requiredText(request.exportId(), "exportId")));
+            request -> exports.cancel(requiredText(request.exportId(), "exportId")));
     }
 
     public void retryExport(Context context) {
         requests.runLongOperation(context, ExportRetryRequest.class, request -> exports.retry(
-            Request.requiredText(request.exportId(), "exportId"),
+            requiredText(request.exportId(), "exportId"),
             Request.bool(request.allowOverwrite(), false)));
     }
 
     public void deleteExportTask(Context context) {
         requests.run(context, ExportIdRequest.class, request -> new ExportDeleteResponse(
-            exports.deleteTask(Request.requiredText(request.exportId(), "exportId"))));
+            exports.deleteTask(requiredText(request.exportId(), "exportId"))));
     }
 
     public void importLocalFiles(Context context) {
@@ -117,35 +119,35 @@ public final class LocalFilePluginHandler {
     public void updateLocalEpisodeType(Context context) {
         requests.run(context, UpdateLocalEpisodeTypeRequest.class, request ->
             localFiles.updateLocalEpisodeType(
-                Request.requiredText(request.albumId(), "albumId"),
+                requiredText(request.albumId(), "albumId"),
                 requireBoolean(request.isSingleEpisode(), "isSingleEpisode")));
     }
 
     public void openLocalFile(Context context) {
         requests.run(context, LocalFileRefRequest.class, request ->
-            localFiles.openLocalFile(Request.requiredText(request.fileRef(), "fileRef")));
+            localFiles.openLocalFile(requiredText(request.fileRef(), "fileRef")));
     }
 
     public void openLocalFileFolder(Context context) {
         requests.run(context, LocalFileRefRequest.class, request ->
-            localFiles.openLocalFileFolder(Request.requiredText(request.fileRef(), "fileRef")));
+            localFiles.openLocalFileFolder(requiredText(request.fileRef(), "fileRef")));
     }
 
     public void getPdfInfo(Context context) {
         requests.run(context, LocalFileRefRequest.class, request ->
-            localFiles.getPdfInfo(Request.requiredText(request.fileRef(), "fileRef")));
+            localFiles.getPdfInfo(requiredText(request.fileRef(), "fileRef")));
     }
 
     public void renderPdfPage(Context context) {
         requests.run(context, PdfRenderPageRequest.class, request -> localFiles.renderPdfPage(
-            Request.requiredText(request.fileRef(), "fileRef"),
+            requiredText(request.fileRef(), "fileRef"),
             Request.integer(request.page(), 1),
             Request.integer(request.targetWidth(), 1080)));
     }
 
     public void getCbzInfo(Context context) {
         requests.run(context, LocalFileRefRequest.class, request -> localFiles.getCbzInfo(
-            Request.requiredText(request.fileRef(), "fileRef")));
+            requiredText(request.fileRef(), "fileRef")));
     }
 
     private static long requireId(Long id) {

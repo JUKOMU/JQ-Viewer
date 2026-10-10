@@ -1,6 +1,7 @@
 package io.github.jukomu.desktop.feature.download.data;
 
 import io.github.jukomu.desktop.data.Database;
+import io.github.jukomu.desktop.util.JsonUtils;
 
 import java.sql.*;
 import java.util.ArrayList;
@@ -44,8 +45,51 @@ public final class DownloadStore {
         }
     }
 
+    /**
+     * 旧版本记录只保存单作者时，补齐作者数组并回写，保证导出快照稳定。
+     */
+    public synchronized StoredDownloadTask completeMetadata(StoredDownloadTask task) {
+        if (task == null) return null;
+        String authors = task.authorsJson();
+        if (authors != null && !authors.isBlank() && !"[]".equals(authors.trim())) return task;
+        String author = task.author() == null ? "" : task.author().trim();
+        if (author.isEmpty()) return task;
+        try (PreparedStatement statement = connection.prepareStatement(
+            "UPDATE download_tasks SET authors_json=? WHERE task_id=?")) {
+            statement.setString(1, JsonUtils.toJsonString(List.of(author), "补全下载任务作者失败"));
+            statement.setString(2, task.taskId());
+            requireUpdated(statement.executeUpdate(), task.taskId());
+            return findTask(task.taskId());
+        } catch (SQLException exception) {
+            throw failure("补全下载任务元数据失败", exception);
+        } catch (RuntimeException exception) {
+            throw new IllegalStateException("补全下载任务元数据失败", exception);
+        }
+    }
+
     public synchronized List<StoredDownloadTask> listTasks() {
         return list("SELECT * FROM download_tasks ORDER BY created_at DESC");
+    }
+
+    public synchronized StoredDownloadTask updateMetadata(String taskId, String albumTitle,
+                                                          String chapterTitle, String author, String authorsJson, String tagsJson,
+                                                          int chapterSortOrder, boolean singleEpisode) {
+        try (PreparedStatement statement = connection.prepareStatement(
+            "UPDATE download_tasks SET album_title=?,chapter_title=?,author=?,authors_json=?,"
+                + "tags_json=?,chapter_sort_order=?,is_single_episode=? WHERE task_id=?")) {
+            statement.setString(1, albumTitle);
+            statement.setString(2, chapterTitle);
+            statement.setString(3, author);
+            statement.setString(4, authorsJson);
+            statement.setString(5, tagsJson);
+            statement.setInt(6, chapterSortOrder);
+            statement.setInt(7, singleEpisode ? 1 : 0);
+            statement.setString(8, taskId);
+            requireUpdated(statement.executeUpdate(), taskId);
+            return findTask(taskId);
+        } catch (SQLException exception) {
+            throw failure("补全下载任务元数据失败", exception);
+        }
     }
 
     public synchronized List<StoredDownloadTask> listActiveTasks() {
@@ -120,7 +164,7 @@ public final class DownloadStore {
                     + "ON CONFLICT(task_id) DO UPDATE SET "
                     + "album_id=excluded.album_id, chapter_id=excluded.chapter_id, "
                     + "album_title=excluded.album_title, chapter_title=excluded.chapter_title, "
-                    + "cover_url=excluded.cover_url, author='', tags_json='[]', total_pages=0, "
+                    + "cover_url=excluded.cover_url, author='', authors_json='[]', tags_json='[]', total_pages=0, "
                     + "downloaded_pages=0, downloaded_bytes=0, first_image_sort_order=NULL, "
                     + "status='queued', error=NULL, total_size=0, chapter_sort_order=0, "
                     + "is_single_episode=NULL, relative_directory=excluded.relative_directory, "
@@ -143,6 +187,7 @@ public final class DownloadStore {
         String taskId,
         int totalPages,
         String author,
+        String authorsJson,
         String tagsJson,
         int chapterSortOrder,
         boolean singleEpisode,
@@ -150,14 +195,15 @@ public final class DownloadStore {
     ) {
         transaction(connection -> {
             try (PreparedStatement statement = connection.prepareStatement(
-                "UPDATE download_tasks SET total_pages=?, author=?, tags_json=?, "
+                "UPDATE download_tasks SET total_pages=?, author=?, authors_json=?, tags_json=?, "
                     + "chapter_sort_order=?, is_single_episode=? WHERE task_id=?")) {
                 statement.setInt(1, totalPages);
                 statement.setString(2, author);
-                statement.setString(3, tagsJson);
-                statement.setInt(4, chapterSortOrder);
-                statement.setInt(5, singleEpisode ? 1 : 0);
-                statement.setString(6, taskId);
+                statement.setString(3, authorsJson == null || authorsJson.isBlank() ? "[]" : authorsJson);
+                statement.setString(4, tagsJson);
+                statement.setInt(5, chapterSortOrder);
+                statement.setInt(6, singleEpisode ? 1 : 0);
+                statement.setString(7, taskId);
                 requireUpdated(statement.executeUpdate(), taskId);
             }
             deletePages(connection, taskId);
@@ -180,6 +226,14 @@ public final class DownloadStore {
             }
             return null;
         }, "保存下载图片清单失败");
+    }
+
+    public synchronized void saveManifest(
+        String taskId, int totalPages, String author, String tagsJson,
+        int chapterSortOrder, boolean singleEpisode, List<StoredDownloadPage> pages
+    ) {
+        saveManifest(taskId, totalPages, author, "[]", tagsJson,
+            chapterSortOrder, singleEpisode, pages);
     }
 
     public synchronized void updateStatus(String taskId, String status, String error) {
@@ -366,7 +420,7 @@ public final class DownloadStore {
             rows.getString("task_id"), rows.getString("album_id"),
             rows.getString("chapter_id"), rows.getString("album_title"),
             rows.getString("chapter_title"), rows.getString("cover_url"),
-            rows.getString("author"), rows.getString("tags_json"),
+            rows.getString("author"), rows.getString("authors_json"), rows.getString("tags_json"),
             rows.getInt("total_pages"), rows.getInt("downloaded_pages"),
             rows.getLong("downloaded_bytes"), firstSortOrder,
             rows.getString("status"), rows.getString("error"),

@@ -29,6 +29,8 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.function.BiFunction;
 import java.util.function.Supplier;
 
+import static io.github.jukomu.desktop.util.TextUtils.text;
+
 /**
  * 管理章节图片元数据、实际下载、缩略图生成和事件发布。
  */
@@ -410,10 +412,6 @@ public final class ImageService {
 
     private static List<JmImage> safe(List<JmImage> value) {
         return value == null ? List.of() : value;
-    }
-
-    private static String text(String value) {
-        return value == null ? "" : value;
     }
 
     private JmClient client() {

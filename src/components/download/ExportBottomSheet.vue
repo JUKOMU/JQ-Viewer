@@ -233,7 +233,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { IonRange, IonToggle, useBackButton } from '@ionic/vue'
-import type { AlbumDetail, DownloadTask, ExportFormat, ExportMode } from '@/services/JmcomicTypes'
+import type { DownloadTask, ExportFormat, ExportMode } from '@/services/JmcomicTypes'
 import { ExportService } from '@/services/ExportService'
 import { JmcomicService, showToast } from '@/services/JmcomicService'
 
@@ -271,15 +271,13 @@ const selectedChapters = computed(() =>
 )
 const firstSelectedChapter = computed(() => selectedChapters.value[0] ?? orderedChapters.value[0])
 
-const albumDetail = ref<AlbumDetail | null>(null)
-
 const currentTemplateData = computed(() => {
   const chapter = firstSelectedChapter.value
   if (!chapter) return null
   if (mode.value === 'merged' && selectedChapters.value.length >= 2) {
-    return ExportService.buildMergedTemplateData(selectedChapters.value, albumDetail.value)
+    return ExportService.buildMergedTemplateData(selectedChapters.value)
   }
-  return ExportService.buildTemplateData(chapter, albumDetail.value)
+  return ExportService.buildTemplateData(chapter)
 })
 
 function chapterOrderLabel(ch: DownloadTask): string {
@@ -373,20 +371,6 @@ watch(
       exportPath.value = ExportService.getExportPath()
       dirTemplate.value = ExportService.getDirTemplate()
       nameTemplate.value = ExportService.getNameTemplate()
-      // 获取本子详情以支持 author/authors/tag 模板变量
-      const albumId = props.chapters[0]?.albumId
-      if (albumId) {
-        albumDetail.value = null
-        JmcomicService.getAlbum(albumId)
-          .then((album) => {
-            albumDetail.value = album
-          })
-          .catch(() => {
-            albumDetail.value = null
-          })
-      } else {
-        albumDetail.value = null
-      }
     }
   },
 )

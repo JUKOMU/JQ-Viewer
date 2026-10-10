@@ -44,6 +44,34 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ExportServiceTest {
     @Test
+    void exportSnapshotsUseDownloadMetadataForEveryFormatAndRejectIncompleteMetadata() throws Exception {
+        try (Fixture fixture = fixture(new TrackingWriter())) {
+            fixture.addDownload("album-1", "chapter-1", 1);
+            fixture.database.connection().createStatement().executeUpdate(
+                "UPDATE download_tasks SET authors_json='[\"Alice\",\"Bob\"]',chapter_sort_order=7");
+            for (String format : List.of("pdf", "cbz", "zip")) {
+                ExportTaskRequest request = new ExportTaskRequest(format, "chapter", "album-1",
+                    "Wrong album", "wrong-cover", "Wrong author", true, "chapter-1", "Wrong chapter", null,
+                    new ExportTargetRequest(FileReferences.folderRef(fixture.output), "metadata." + format),
+                    fixture.output.resolve("metadata." + format).toString(), true, 1D, 0, false);
+                ExportTaskResponse accepted = fixture.service.submit(List.of(request)).tasks().get(0);
+                assertTrue(accepted.accepted());
+                assertEquals("Album", accepted.albumTitle());
+                assertEquals("Alice、Bob", accepted.authors());
+                assertEquals("Chapter 1", accepted.displayTitle());
+                assertEquals(7, fixture.store.chapters(accepted.exportId()).get(0).sortOrder());
+                assertEquals("completed", fixture.awaitTerminal(accepted.exportId()).status());
+            }
+            fixture.service.setMetadataResolver(task -> { throw new IllegalStateException("metadata unavailable"); });
+            int before = fixture.service.getTasks(null, null, null, 100).tasks().size();
+            ExportTaskResponse rejected = fixture.service.submit(List.of(fixture.task("chapter-1", "rejected.pdf", 0, false))).tasks().get(0);
+            assertFalse(rejected.accepted());
+            assertEquals("DOWNLOAD_METADATA_INCOMPLETE", rejected.errorCode());
+            assertEquals(before, fixture.service.getTasks(null, null, null, 100).tasks().size());
+        }
+    }
+
+    @Test
     void pdfBoxWriterCreatesReadableCompressedPdf() throws Exception {
         Path root = Files.createTempDirectory("jq-viewer-pdf-writer-");
         Path image = root.resolve("page.png");
@@ -431,7 +459,7 @@ class ExportServiceTest {
         void addDownload(String albumId, String chapterId, int pageCount) throws Exception {
             String taskId = albumId + "_" + chapterId;
             String relativeDirectory = files.relativeDirectory(albumId, chapterId);
-            downloads.createOrResetTask(taskId, albumId, chapterId, "Album", "Chapter", "",
+            downloads.createOrResetTask(taskId, albumId, chapterId, "Album", "Chapter " + chapterId.substring(chapterId.lastIndexOf('-') + 1), "",
                     relativeDirectory, System.currentTimeMillis());
             List<StoredDownloadPage> pages = new java.util.ArrayList<>();
             long totalSize = 0;

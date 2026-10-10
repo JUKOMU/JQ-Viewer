@@ -2,6 +2,8 @@ package io.github.jukomu.desktop.feature.download.model;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 
+import java.util.List;
+
 /**
  * 下载页使用的持久化任务快照。
  */
@@ -13,6 +15,9 @@ public record DownloadTaskResponse(
     String albumTitle,
     String chapterTitle,
     String coverUrl,
+    String author,
+    List<String> authors,
+    List<String> tags,
     Integer firstImageSortOrder,
     Integer chapterSortOrder,
     Boolean isSingleEpisode,

@@ -9,6 +9,8 @@ import io.github.jukomu.desktop.feature.settings.SettingsService;
 import io.github.jukomu.desktop.feature.settings.model.*;
 import io.javalin.http.Context;
 
+import static io.github.jukomu.desktop.util.RequestValidation.requiredText;
+
 /**
  * 处理页面基础设置的读取与持久化。
  */
@@ -58,7 +60,7 @@ public final class SettingsPluginHandler {
 
     public void setReaderDisplayMode(Context context) {
         settingsRequests.run(context, DisplayModeRequest.class, request -> settings.setDisplayMode(
-            Request.requiredText(request.mode(), "mode")));
+            requiredText(request.mode(), "mode")));
     }
 
     public void setReaderWidthPercent(Context context) {
@@ -101,6 +103,6 @@ public final class SettingsPluginHandler {
     public void setExportLastFormat(Context context) {
         settingsRequests.run(context, NullableTextSettingRequest.class,
             request -> settings.setExportLastFormat(
-                Request.requiredText(request.value(), "value")));
+                requiredText(request.value(), "value")));
     }
 }

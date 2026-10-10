@@ -9,6 +9,7 @@ import java.util.Objects;
  */
 public final class CloseSequence {
     private static final long STEP_TIMEOUT_MILLIS = 2_000;
+
     private CloseSequence() {
     }
 

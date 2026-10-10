@@ -1,11 +1,11 @@
 package io.github.jukomu.desktop.feature.favorite.data;
 
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.jukomu.desktop.data.Database;
 import io.github.jukomu.desktop.feature.favorite.model.OfflineFavoriteFolder;
 import io.github.jukomu.desktop.feature.favorite.model.OfflineFavoriteItem;
 import io.github.jukomu.desktop.feature.favorite.model.OfflineFavoritePageResponse;
+import io.github.jukomu.desktop.util.JsonUtils;
 
 import java.io.IOException;
 import java.sql.Connection;
@@ -26,11 +26,9 @@ public final class OfflineFavoriteStore {
     };
 
     private final Connection connection;
-    private final ObjectMapper mapper;
 
-    public OfflineFavoriteStore(Database database, ObjectMapper mapper) {
+    public OfflineFavoriteStore(Database database) {
         this.connection = database.openIsolatedConnection();
-        this.mapper = mapper;
     }
 
     public synchronized List<OfflineFavoriteFolder> folders() {
@@ -280,7 +278,7 @@ public final class OfflineFavoriteStore {
             statement.setString(1, key);
             try (ResultSet rows = statement.executeQuery()) {
                 if (!rows.next()) return null;
-                return List.copyOf(mapper.readValue(rows.getString(1), ITEM_LIST));
+                return List.copyOf(JsonUtils.fromJson(rows.getString(1), ITEM_LIST));
             }
         } catch (SQLException | IOException exception) {
             throw failure("读取离线收藏备份失败", exception);
@@ -365,8 +363,8 @@ public final class OfflineFavoriteStore {
                 rows.getString(1),
                 rows.getString(2),
                 rows.getString(3),
-                List.copyOf(mapper.readValue(rows.getString(4), STRING_LIST)),
-                List.copyOf(mapper.readValue(rows.getString(5), STRING_LIST))
+                List.copyOf(JsonUtils.fromJson(rows.getString(4), STRING_LIST)),
+                List.copyOf(JsonUtils.fromJson(rows.getString(5), STRING_LIST))
             );
         } catch (IOException exception) {
             throw failure("离线收藏条目数据损坏", exception);
@@ -394,8 +392,8 @@ public final class OfflineFavoriteStore {
 
     private String writeJson(Object value) {
         try {
-            return mapper.writeValueAsString(value);
-        } catch (IOException exception) {
+            return JsonUtils.toJsonString(value, "序列化离线收藏数据失败");
+        } catch (RuntimeException exception) {
             throw failure("序列化离线收藏数据失败", exception);
         }
     }

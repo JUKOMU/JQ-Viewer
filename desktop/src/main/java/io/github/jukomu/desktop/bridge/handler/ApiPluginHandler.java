@@ -11,6 +11,8 @@ import io.github.jukomu.desktop.feature.image.model.RetryImageRequest;
 import io.github.jukomu.jmcomic.api.enums.FavoriteFolderType;
 import io.javalin.http.Context;
 
+import static io.github.jukomu.desktop.util.RequestValidation.requiredText;
+
 /**
  * 处理目录、章节和图片预加载 bridge 请求。
  */
@@ -42,17 +44,17 @@ public final class ApiPluginHandler {
 
     public void getAlbum(Context context) {
         apiRequests.run(context, IdRequest.class,
-            request -> catalog.getAlbum(Request.requiredText(request.id(), "id")));
+            request -> catalog.getAlbum(requiredText(request.id(), "id")));
     }
 
     public void getPhoto(Context context) {
         apiRequests.run(context, IdRequest.class,
-            request -> catalog.getPhoto(Request.requiredText(request.id(), "id")));
+            request -> catalog.getPhoto(requiredText(request.id(), "id")));
     }
 
     public void getComments(Context context) {
         apiRequests.run(context, CommentsRequest.class, request -> catalog.getComments(
-            Request.requiredText(request.albumId(), "albumId"),
+            requiredText(request.albumId(), "albumId"),
             positive(request.page(), "page", 1)));
     }
 
@@ -64,19 +66,19 @@ public final class ApiPluginHandler {
 
     public void toggleAlbumLike(Context context) {
         apiRequests.run(context, IdRequest.class,
-            request -> catalog.toggleAlbumLike(Request.requiredText(request.id(), "id")));
+            request -> catalog.toggleAlbumLike(requiredText(request.id(), "id")));
     }
 
     public void toggleAlbumFavorite(Context context) {
         apiRequests.run(context, AlbumFavoriteRequest.class, request -> catalog.toggleAlbumFavorite(
-            Request.requiredText(request.id(), "id"),
+            requiredText(request.id(), "id"),
             textOrDefault(request.folderId(), "0")));
     }
 
     public void manageFavoriteFolder(Context context) {
         apiRequests.run(context, FavoriteFolderRequest.class, request -> {
             FavoriteFolderType type = favoriteFolderType(
-                Request.requiredText(request.type(), "type"));
+                requiredText(request.type(), "type"));
             String folderId = textOrDefault(request.folderId(), "0");
             if ((type == FavoriteFolderType.EDIT || type == FavoriteFolderType.DELETE)
                 && "0".equals(folderId)) {
@@ -92,7 +94,7 @@ public final class ApiPluginHandler {
 
     public void preloadImages(Context context) {
         imageRequests.run(context, PreloadImagesRequest.class, request -> images.preload(
-            Request.requiredText(request.photoId(), "photoId"),
+            requiredText(request.photoId(), "photoId"),
             request.type() == null ? "image" : request.type(),
             request.images(),
             Request.bool(request.replacePending(), false)));
@@ -100,7 +102,7 @@ public final class ApiPluginHandler {
 
     public void retryImage(Context context) {
         imageRequests.run(context, RetryImageRequest.class, request -> images.retry(
-            Request.requiredText(request.photoId(), "photoId"), request.image()));
+            requiredText(request.photoId(), "photoId"), request.image()));
     }
 
     private static int positive(Integer candidate, String name, int fallback) {

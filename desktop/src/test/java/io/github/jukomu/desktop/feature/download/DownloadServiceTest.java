@@ -15,6 +15,7 @@ import io.github.jukomu.jmcomic.api.download.IDownloadManager;
 import io.github.jukomu.jmcomic.api.download.enums.TaskState;
 import io.github.jukomu.jmcomic.api.download.task.BaseDownloadTask;
 import io.github.jukomu.jmcomic.api.model.JmImage;
+import io.github.jukomu.jmcomic.api.model.JmAlbum;
 import io.github.jukomu.jmcomic.api.model.JmPhoto;
 import org.junit.jupiter.api.Test;
 
@@ -47,6 +48,8 @@ class DownloadServiceTest {
             assertNotNull(task);
             assertEquals(DownloadService.STATUS_COMPLETED, task.status());
             assertEquals(1, task.downloadedPages());
+            assertEquals("[\"Alice\",\"Bob\"]", task.authorsJson());
+            assertEquals(List.of("Alice", "Bob"), fixture.service.getDownloadTasks().tasks().get(0).authors());
             assertTrue(task.totalSize() > 0);
             assertEquals(1, fixture.service.getDownloadTasks().tasks().size());
             assertTrue(fixture.service.findCompletedImage("photo-1", 1).isPresent());
@@ -138,8 +141,7 @@ class DownloadServiceTest {
                     () -> null,
                     () -> null,
                     Runnable::run,
-                    fixture.events,
-                    fixture.mapper);
+                    fixture.events);
 
             ApiException failure = assertThrows(
                     ApiException.class, () -> unavailable.downloadChapter(request()));
@@ -153,6 +155,26 @@ class DownloadServiceTest {
     private static DownloadChapterRequest request() {
         return new DownloadChapterRequest(
                 "album-1", "photo-1", "Album", "Photo", "https://cover.invalid/album-1.jpg");
+    }
+
+    @Test
+    void supplementsLegacyMetadataAndPreservesRowsOnFailure() throws Exception {
+        try (Fixture fixture = fixture(Mode.COMPLETE)) {
+            fixture.service.downloadChapter(request());
+            fixture.database.connection().createStatement().executeUpdate(
+                "UPDATE download_tasks SET authors_json='[]',album_title='',chapter_title='',is_single_episode=NULL");
+            StoredDownloadTask restored = fixture.service.prepareExportMetadata(fixture.store.findTask("album-1_photo-1"));
+            assertEquals("Album", restored.albumTitle());
+            assertEquals("Photo", restored.chapterTitle());
+            assertEquals("[\"Alice\",\"Bob\"]", restored.authorsJson());
+            fixture.database.connection().createStatement().executeUpdate("UPDATE download_tasks SET authors_json='[]'");
+            fixture.client.albumUnavailable = true;
+            assertEquals("[\"Alice\"]", fixture.service.prepareExportMetadata(fixture.store.findTask("album-1_photo-1")).authorsJson());
+            fixture.database.connection().createStatement().executeUpdate("UPDATE download_tasks SET album_title='',authors_json='[]'");
+            assertThrows(IllegalStateException.class, () -> fixture.service.prepareExportMetadata(fixture.store.findTask("album-1_photo-1")));
+            assertEquals("", fixture.store.findTask("album-1_photo-1").albumTitle());
+            assertEquals("[]", fixture.store.findTask("album-1_photo-1").authorsJson());
+        }
     }
 
     private static Fixture fixture(Mode mode) throws Exception {
@@ -189,14 +211,14 @@ class DownloadServiceTest {
             this.client = new TestClient(mode, pngBytes());
             this.downloadClient = client.downloadClient();
             this.service = new DownloadService(
-                    store, files, client.client(), downloadClient, Runnable::run, events, mapper);
+                    store, files, client.client(), downloadClient, Runnable::run, events);
         }
 
         private DownloadService newService(Mode mode) throws Exception {
             TestClient restarted = new TestClient(mode, pngBytes());
             return new DownloadService(
                     store, files, restarted.client(), restarted.downloadClient(),
-                    Runnable::run, events, mapper);
+                    Runnable::run, events);
         }
 
         @Override
@@ -213,6 +235,7 @@ class DownloadServiceTest {
         private final byte[] bytes;
         private final TestDownloadManager manager = new TestDownloadManager();
         private final Object proxy;
+        private boolean albumUnavailable;
 
         private TestClient(Mode mode, byte[] bytes) {
             this.mode = mode;
@@ -242,6 +265,12 @@ class DownloadServiceTest {
             }
             return switch (method.getName()) {
                 case "getPhoto" -> photo((String) arguments[0]);
+                case "getAlbum" -> {
+                    if (albumUnavailable) throw new IllegalStateException("Offline album metadata");
+                    yield new JmAlbum("album-1", "Album", "", "1", "", 1, "0", "0", 0,
+                        "", null, null, List.of("Alice", "Bob"), List.of(), List.of(), List.of("tag"),
+                        List.of(), List.of(), "1", false, false, false, List.of(), "0", "0");
+                }
                 case "createDownloadTask" -> new TestDownloadTask(
                         photo(((JmPhoto) arguments[0]).getId()),
                         (Path) arguments[1], bytes, mode, manager);

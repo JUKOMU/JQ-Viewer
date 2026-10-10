@@ -1,8 +1,5 @@
 package io.github.jukomu.desktop.feature.download;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.jukomu.desktop.bridge.ApiException;
 import io.github.jukomu.desktop.bridge.EventHub;
 import io.github.jukomu.desktop.feature.catalog.model.ImageResponse;
@@ -12,10 +9,12 @@ import io.github.jukomu.desktop.feature.download.data.StoredDownloadPage;
 import io.github.jukomu.desktop.feature.download.data.StoredDownloadTask;
 import io.github.jukomu.desktop.feature.download.model.*;
 import io.github.jukomu.desktop.feature.download.validation.ChapterManifestValidator;
+import io.github.jukomu.desktop.util.JsonUtils;
 import io.github.jukomu.jmcomic.api.client.JmClient;
 import io.github.jukomu.jmcomic.api.client.JmDownloadClient;
 import io.github.jukomu.jmcomic.api.download.IDownloadManager;
 import io.github.jukomu.jmcomic.api.download.task.BaseDownloadTask;
+import io.github.jukomu.jmcomic.api.model.JmAlbum;
 import io.github.jukomu.jmcomic.api.model.JmImage;
 import io.github.jukomu.jmcomic.api.model.JmPhoto;
 import org.slf4j.Logger;
@@ -29,6 +28,10 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.*;
 import java.util.function.Supplier;
+
+import static io.github.jukomu.desktop.util.LogFields.clean;
+import static io.github.jukomu.desktop.util.RequestValidation.requiredText;
+import static io.github.jukomu.desktop.util.TextUtils.text;
 
 /**
  * Desktop 下载任务的持久化状态机与 JMComic 运行时适配。
@@ -51,7 +54,6 @@ public final class DownloadService implements AutoCloseable {
     private final Supplier<JmDownloadClient> downloadClientSupplier;
     private final Executor prepareExecutor;
     private final EventHub events;
-    private final ObjectMapper mapper;
     private final Object submitLock = new Object();
     private final ConcurrentHashMap<String, RuntimeTask> runtimes = new ConcurrentHashMap<>();
     private final Set<String> cancelledTaskIds = ConcurrentHashMap.newKeySet();
@@ -63,10 +65,9 @@ public final class DownloadService implements AutoCloseable {
         JmClient client,
         JmDownloadClient downloadClient,
         Executor prepareExecutor,
-        EventHub events,
-        ObjectMapper mapper
+        EventHub events
     ) {
-        this(store, files, () -> client, () -> downloadClient, prepareExecutor, events, mapper);
+        this(store, files, () -> client, () -> downloadClient, prepareExecutor, events);
     }
 
     public DownloadService(
@@ -75,8 +76,7 @@ public final class DownloadService implements AutoCloseable {
         Supplier<JmClient> clientSupplier,
         Supplier<JmDownloadClient> downloadClientSupplier,
         Executor prepareExecutor,
-        EventHub events,
-        ObjectMapper mapper
+        EventHub events
     ) {
         this.store = Objects.requireNonNull(store, "store");
         this.files = Objects.requireNonNull(files, "files");
@@ -85,7 +85,6 @@ public final class DownloadService implements AutoCloseable {
             downloadClientSupplier, "downloadClientSupplier");
         this.prepareExecutor = Objects.requireNonNull(prepareExecutor, "prepareExecutor");
         this.events = Objects.requireNonNull(events, "events");
-        this.mapper = Objects.requireNonNull(mapper, "mapper");
     }
 
     public void reconcileOnStartup() {
@@ -103,8 +102,8 @@ public final class DownloadService implements AutoCloseable {
 
     public DownloadSubmissionResponse downloadChapter(DownloadChapterRequest request) {
         if (closing) throw ApiException.unavailable("下载服务正在关闭");
-        String albumId = required(request.albumId(), "albumId");
-        String chapterId = required(request.chapterId(), "chapterId");
+        String albumId = requiredText(request.albumId(), "albumId");
+        String chapterId = requiredText(request.chapterId(), "chapterId");
         String taskId = albumId + "_" + chapterId;
         String relativeDirectory;
         try {
@@ -158,7 +157,7 @@ public final class DownloadService implements AutoCloseable {
 
     public DownloadTasksResponse getDownloadTasks() {
         return new DownloadTasksResponse(
-            store.listTasks().stream().map(DownloadService::response).toList(),
+            store.listTasks().stream().map(this::response).toList(),
             files.usedBytes(),
             files.availableBytes()
         );
@@ -181,7 +180,7 @@ public final class DownloadService implements AutoCloseable {
     }
 
     public void cancelDownload(String taskId) {
-        StoredDownloadTask task = store.findTask(required(taskId, "taskId"));
+        StoredDownloadTask task = store.findTask(requiredText(taskId, "taskId"));
         if (task == null) return;
         if (STATUS_VERIFYING.equals(task.status())) {
             throw ApiException.conflict("校验中的任务不能取消");
@@ -224,8 +223,8 @@ public final class DownloadService implements AutoCloseable {
     }
 
     public void deleteDownloaded(String albumId, String chapterId) {
-        required(albumId, "albumId");
-        required(chapterId, "chapterId");
+        requiredText(albumId, "albumId");
+        requiredText(chapterId, "chapterId");
         StoredDownloadTask task = store.findTask(albumId, chapterId);
         if (task == null) return;
         if (isActive(task.status())) {
@@ -237,7 +236,7 @@ public final class DownloadService implements AutoCloseable {
     }
 
     public PhotoResponse getDownloadedPhoto(String albumId, String chapterId) {
-        StoredDownloadTask task = store.findTask(required(albumId, "albumId"), required(chapterId, "chapterId"));
+        StoredDownloadTask task = store.findTask(requiredText(albumId, "albumId"), requiredText(chapterId, "chapterId"));
         if (task == null) throw ApiException.notFound("下载任务不存在");
         if (!STATUS_COMPLETED.equals(task.status())) {
             throw ApiException.conflict("章节尚未下载完成");
@@ -253,7 +252,7 @@ public final class DownloadService implements AutoCloseable {
             task.albumId(),
             task.chapterSortOrder(),
             task.author(),
-            tags(task.tagsJson()),
+            JsonUtils.parseJsonStringListOrEmpty(task.tagsJson()),
             pages.stream().map(DownloadService::imageResponse).toList(),
             Boolean.TRUE.equals(task.isSingleEpisode())
         );
@@ -379,11 +378,22 @@ public final class DownloadService implements AutoCloseable {
             StoredDownloadTask task = store.findTask(taskId);
             if (task == null || cancelledTaskIds.contains(taskId) || closing) return;
             JmPhoto photo = requireClient().getPhoto(task.chapterId());
-            if (photo == null || !task.chapterId().equals(photo.getId())) {
+            if (photo == null || !task.chapterId().equals(photo.getId())
+                || !(task.albumId().equals(photo.getAlbumId())
+                || photo.isSingleAlbum() && task.albumId().equals(photo.getId()))) {
                 throw new IllegalStateException("远端章节信息与请求不一致");
             }
             List<JmImage> images = photo.getImages() == null ? List.of() : List.copyOf(photo.getImages());
             if (images.isEmpty()) throw new IllegalStateException("章节没有可下载的图片");
+            JmAlbum album = null;
+            try {
+                JmAlbum candidate = requireClient().getAlbum(task.albumId());
+                if (candidate != null && task.albumId().equals(candidate.getId())) album = candidate;
+            } catch (RuntimeException exception) {
+                LOGGER.debug("读取作品元数据失败，使用章节元数据", exception);
+            }
+            List<String> authors = album != null && album.getAuthors() != null && !album.getAuthors().isEmpty()
+                ? album.getAuthors() : text(photo.getAuthor()).isBlank() ? List.of() : List.of(photo.getAuthor());
             logInfo("remote_metadata", taskId, task.albumId(), task.chapterId(), "remote_metadata",
                 null, null, images.size(), null, "queued", task, elapsed(taskId));
 
@@ -393,8 +403,15 @@ public final class DownloadService implements AutoCloseable {
                 List<StoredDownloadPage> pages = images.stream()
                     .map(image -> page(taskId, task.relativeDirectory(), image))
                     .toList();
-                store.saveManifest(taskId, pages.size(), text(photo.getAuthor()), tagsJson(photo.getTags()),
+                store.saveManifest(taskId, pages.size(), text(photo.getAuthor()),
+                    JsonUtils.toJsonString(authors, "保存作者列表失败"),
+                    JsonUtils.toJsonString(photo.getTags() == null ? List.of() : photo.getTags(), "保存章节标签失败"),
                     photo.getSortOrder(), photo.isSingleAlbum(), pages);
+                store.updateMetadata(taskId, album == null ? task.albumTitle() : album.getTitle(),
+                    photo.getTitle(), authors.isEmpty() ? text(photo.getAuthor()) : authors.get(0),
+                    JsonUtils.toJsonString(authors, "保存作者列表失败"),
+                    JsonUtils.toJsonString(album == null || album.getTags() == null ? List.of() : album.getTags(), "保存章节标签失败"),
+                    photo.getSortOrder(), photo.isSingleAlbum());
                 Path chapterDirectory = files.chapterDirectory(task.relativeDirectory());
                 Path savePath = photo.isSingleAlbum() ? chapterDirectory : chapterDirectory.getParent();
                 JmDownloadClient downloadClient = requireDownloadClient();
@@ -441,7 +458,7 @@ public final class DownloadService implements AutoCloseable {
     }
 
     private String requireLibraryTask(String taskId) {
-        String requiredTaskId = required(taskId, "taskId");
+        String requiredTaskId = requiredText(taskId, "taskId");
         RuntimeTask runtime = runtimes.get(requiredTaskId);
         if (runtime == null || runtime.libraryTaskId == null) {
             throw ApiException.conflict("底层下载任务尚未就绪");
@@ -454,7 +471,7 @@ public final class DownloadService implements AutoCloseable {
     }
 
     private StoredDownloadTask requireTask(String taskId) {
-        StoredDownloadTask task = store.findTask(required(taskId, "taskId"));
+        StoredDownloadTask task = store.findTask(requiredText(taskId, "taskId"));
         if (task == null) throw ApiException.notFound("下载任务不存在");
         return task;
     }
@@ -486,21 +503,54 @@ public final class DownloadService implements AutoCloseable {
         ));
     }
 
-    private String tagsJson(List<String> tags) {
-        try {
-            return mapper.writeValueAsString(tags == null ? List.of() : tags);
-        } catch (JsonProcessingException exception) {
-            throw new IllegalStateException("保存章节标签失败", exception);
+    public StoredDownloadTask prepareExportMetadata(StoredDownloadTask task) {
+        boolean chapterMissing = text(task.chapterTitle()).isBlank() || task.isSingleEpisode() == null;
+        List<String> authors = JsonUtils.parseJsonStringListOrEmpty(task.authorsJson());
+        List<String> metadataTags = JsonUtils.parseJsonStringListOrEmpty(task.tagsJson());
+        if (!chapterMissing && !text(task.albumTitle()).isBlank()
+            && !authors.isEmpty() && !metadataTags.isEmpty()) return task;
+        JmClient client = clientSupplier.get();
+        JmPhoto photo = null;
+        if (chapterMissing) {
+            if (client == null) throw new IllegalStateException("下载记录缺少章节信息，需要联网补全");
+            photo = client.getPhoto(task.chapterId());
+            if (photo == null || !task.chapterId().equals(photo.getId())
+                || !(task.albumId().equals(photo.getAlbumId())
+                || photo.isSingleAlbum() && task.albumId().equals(photo.getId()))) {
+                throw new IllegalStateException("远端章节信息与请求不一致");
+            }
         }
-    }
-
-    private List<String> tags(String tagsJson) {
-        try {
-            return mapper.readValue(tagsJson, new TypeReference<>() {
-            });
-        } catch (JsonProcessingException exception) {
-            return List.of();
+        JmAlbum album = null;
+        if (client != null) {
+            try {
+                album = client.getAlbum(task.albumId());
+                if (album == null || !task.albumId().equals(album.getId())) {
+                    LOGGER.debug("读取作品元数据失败，使用已有下载记录");
+                }
+            } catch (RuntimeException exception) {
+                LOGGER.debug("读取作品元数据失败，使用已有下载记录", exception);
+            }
         }
+        String albumTitle = text(task.albumTitle());
+        if (albumTitle.isBlank() && album != null) albumTitle = text(album.getTitle());
+        String chapterTitle = photo == null ? text(task.chapterTitle()) : text(photo.getTitle());
+        if (albumTitle.isBlank() || chapterTitle.isBlank()) {
+            throw new IllegalStateException("下载记录缺少标题，无法补全导出元数据");
+        }
+        if (authors.isEmpty() && album != null && album.getAuthors() != null) authors = album.getAuthors();
+        String author = text(task.author());
+        if (author.isBlank() && photo != null) author = text(photo.getAuthor());
+        if (authors.isEmpty() && !author.isBlank()) authors = List.of(author);
+        if (authors.isEmpty() && album == null) {
+            throw new IllegalStateException("下载记录缺少作者，需要联网补全");
+        }
+        if (metadataTags.isEmpty() && album != null && album.getTags() != null) metadataTags = album.getTags();
+        return store.updateMetadata(task.taskId(), albumTitle, chapterTitle,
+            authors.isEmpty() ? author : authors.get(0),
+            JsonUtils.toJsonString(authors, "保存作者列表失败"),
+            JsonUtils.toJsonString(metadataTags, "保存章节标签失败"),
+            photo == null ? task.chapterSortOrder() : photo.getSortOrder(),
+            photo == null ? Boolean.TRUE.equals(task.isSingleEpisode()) : photo.isSingleAlbum());
     }
 
     private static ImageResponse imageResponse(StoredDownloadPage page) {
@@ -508,10 +558,12 @@ public final class DownloadService implements AutoCloseable {
             page.sourceUrl(), page.queryParams(), page.sortOrder());
     }
 
-    private static DownloadTaskResponse response(StoredDownloadTask task) {
+    private DownloadTaskResponse response(StoredDownloadTask task) {
         return new DownloadTaskResponse(
             task.taskId(), task.albumId(), task.chapterId(), task.albumTitle(), task.chapterTitle(),
-            task.coverUrl(), task.firstImageSortOrder(), task.chapterSortOrder(), task.isSingleEpisode(),
+            task.coverUrl(), task.author(), JsonUtils.parseJsonStringListOrEmpty(task.authorsJson()),
+            JsonUtils.parseJsonStringListOrEmpty(task.tagsJson()),
+            task.firstImageSortOrder(), task.chapterSortOrder(), task.isSingleEpisode(),
             task.totalPages(), task.downloadedPages(), task.status(), task.createdAt(), task.completedAt(),
             task.error(), task.downloadedBytes(), task.totalSize()
         );
@@ -524,15 +576,6 @@ public final class DownloadService implements AutoCloseable {
 
     private static Long sizeOrNull(long size) {
         return size > 0 ? size : null;
-    }
-
-    private static String required(String value, String name) {
-        if (value == null || value.isBlank()) throw ApiException.invalidRequest(name + "不能为空");
-        return value;
-    }
-
-    private static String text(String value) {
-        return value == null ? "" : value;
     }
 
     private static String messageOf(Throwable failure) {
@@ -642,12 +685,6 @@ public final class DownloadService implements AutoCloseable {
         if (value != null && (!(value instanceof String string) || !string.isBlank())) {
             line.append(' ').append(key).append('=').append(clean(String.valueOf(value)));
         }
-    }
-
-    private static String clean(String value) {
-        if (value == null || value.isBlank()) return "-";
-        String cleaned = value.replaceAll("[\\p{Cntrl}\\r\\n]+", " ").trim();
-        return cleaned.substring(0, Math.min(256, cleaned.length()));
     }
 
     private JmClient requireClient() {

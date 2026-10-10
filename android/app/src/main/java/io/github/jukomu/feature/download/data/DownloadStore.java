@@ -6,6 +6,8 @@ import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
 import io.github.jukomu.feature.download.api.DownloadTaskReader;
+import io.github.jukomu.util.JsonUtils;
+import org.json.JSONArray;
 import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,7 +25,7 @@ import java.util.List;
 public class DownloadStore extends SQLiteOpenHelper implements DownloadTaskReader {
     private static final Logger LOGGER = LoggerFactory.getLogger(DownloadStore.class);
     private static final String DB_NAME = "jq_download.db";
-    private static final int DB_VERSION = 4;
+    private static final int DB_VERSION = 5;
 
     // ---- 表名 ----
     static final String TABLE_TASKS = "download_tasks";
@@ -37,6 +39,7 @@ public class DownloadStore extends SQLiteOpenHelper implements DownloadTaskReade
     static final String COL_CHAPTER_TITLE = "chapter_title";
     static final String COL_COVER_URL = "cover_url";
     static final String COL_AUTHOR = "author";
+    static final String COL_AUTHORS = "authors_json";
     static final String COL_TAGS = "tags";
     static final String COL_TOTAL_PAGES = "total_pages";
     static final String COL_DOWNLOADED_PAGES = "downloaded_pages";
@@ -80,6 +83,7 @@ public class DownloadStore extends SQLiteOpenHelper implements DownloadTaskReade
             + COL_CHAPTER_TITLE + " TEXT NOT NULL,"
             + COL_COVER_URL + " TEXT NOT NULL,"
             + COL_AUTHOR + " TEXT DEFAULT '',"
+            + COL_AUTHORS + " TEXT DEFAULT '[]',"
             + COL_TAGS + " TEXT DEFAULT '[]',"
             + COL_TOTAL_PAGES + " INTEGER NOT NULL,"
             + COL_DOWNLOADED_PAGES + " INTEGER DEFAULT 0,"
@@ -117,6 +121,9 @@ public class DownloadStore extends SQLiteOpenHelper implements DownloadTaskReade
         if (oldVersion < 4) {
             db.execSQL("ALTER TABLE " + TABLE_TASKS + " ADD COLUMN " + COL_IS_SINGLE_EPISODE + " INTEGER DEFAULT -1");
         }
+        if (oldVersion < 5) {
+            db.execSQL("ALTER TABLE " + TABLE_TASKS + " ADD COLUMN " + COL_AUTHORS + " TEXT DEFAULT '[]'");
+        }
     }
 
     // ========== 任务操作 ==========
@@ -137,16 +144,23 @@ public class DownloadStore extends SQLiteOpenHelper implements DownloadTaskReade
             SQLiteDatabase.CONFLICT_IGNORE);
     }
 
-    public void updateTaskDetail(String taskId, int totalPages, String author, String tags,
+    public void updateTaskDetail(String taskId, int totalPages, String author, String authors,
+                                 String tags,
                                  int sortOrder, boolean isSingleEpisode) {
         ContentValues cv = new ContentValues();
         cv.put(COL_TOTAL_PAGES, totalPages);
         cv.put(COL_AUTHOR, author);
+        cv.put(COL_AUTHORS, authors == null || authors.isBlank() ? "[]" : authors);
         cv.put(COL_TAGS, tags);
         cv.put(COL_CHAPTER_SORT_ORDER, sortOrder);
         cv.put(COL_IS_SINGLE_EPISODE, isSingleEpisode ? 1 : 0);
         getWritableDatabase().update(TABLE_TASKS, cv,
             COL_TASK_ID + " = ?", new String[]{taskId});
+    }
+
+    public void updateTaskDetail(String taskId, int totalPages, String author, String tags,
+                                 int sortOrder, boolean isSingleEpisode) {
+        updateTaskDetail(taskId, totalPages, author, "[]", tags, sortOrder, isSingleEpisode);
     }
 
     public void updateStatus(String taskId, String status) {
@@ -256,6 +270,38 @@ public class DownloadStore extends SQLiteOpenHelper implements DownloadTaskReade
         return null;
     }
 
+    public JSONObject updateMetadata(String taskId, JSONObject metadata) {
+        ContentValues values = new ContentValues();
+        values.put(COL_ALBUM_TITLE, metadata.optString("albumTitle"));
+        values.put(COL_CHAPTER_TITLE, metadata.optString("chapterTitle"));
+        values.put(COL_AUTHOR, metadata.optString("author"));
+        values.put(COL_AUTHORS, metadata.optJSONArray("authors").toString());
+        values.put(COL_TAGS, metadata.optJSONArray("tags").toString());
+        values.put(COL_CHAPTER_SORT_ORDER, metadata.optInt("chapterSortOrder"));
+        values.put(COL_IS_SINGLE_EPISODE, metadata.optBoolean("isSingleEpisode") ? 1 : 0);
+        if (getWritableDatabase().update(TABLE_TASKS, values,
+            COL_TASK_ID + " = ?", new String[]{taskId}) != 1) {
+            throw new IllegalStateException("下载任务不存在: " + taskId);
+        }
+        return getTask(taskId);
+    }
+
+    /**
+     * 旧版本仅保存单作者时，在导出预检阶段补齐作者数组。
+     */
+    public JSONObject completeMetadata(String taskId) {
+        JSONObject task = getTask(taskId);
+        if (task == null) return null;
+        JSONArray authors = task.optJSONArray("authors");
+        if (authors != null && authors.length() > 0) return task;
+        String author = task.optString("author", "").trim();
+        if (author.isEmpty()) return task;
+        ContentValues values = new ContentValues();
+        values.put(COL_AUTHORS, JsonUtils.toJsonArray(List.of(author)).toString());
+        getWritableDatabase().update(TABLE_TASKS, values, COL_TASK_ID + " = ?", new String[]{taskId});
+        return getTask(taskId);
+    }
+
     public void deleteTask(String taskId) {
         getWritableDatabase().delete(TABLE_TASKS,
             COL_TASK_ID + " = ?", new String[]{taskId});
@@ -341,6 +387,18 @@ public class DownloadStore extends SQLiteOpenHelper implements DownloadTaskReade
             obj.put("albumTitle", c.getString(c.getColumnIndexOrThrow(COL_ALBUM_TITLE)));
             obj.put("chapterTitle", c.getString(c.getColumnIndexOrThrow(COL_CHAPTER_TITLE)));
             obj.put("coverUrl", c.getString(c.getColumnIndexOrThrow(COL_COVER_URL)));
+            int authorIdx = c.getColumnIndex(COL_AUTHOR);
+            if (authorIdx >= 0) obj.put("author", c.getString(authorIdx));
+            int authorsIdx = c.getColumnIndex(COL_AUTHORS);
+            if (authorsIdx >= 0) {
+                String authors = c.getString(authorsIdx);
+                obj.put("authors", authors == null || authors.isBlank() ? new JSONArray() : JsonUtils.parseJsonArray(authors));
+            }
+            int tagsIdx = c.getColumnIndex(COL_TAGS);
+            if (tagsIdx >= 0) {
+                String tags = c.getString(tagsIdx);
+                obj.put("tags", tags == null || tags.isBlank() ? new JSONArray() : JsonUtils.parseJsonArray(tags));
+            }
             int firstSOIdx = c.getColumnIndex(COL_FIRST_IMAGE_SORT_ORDER);
             if (!c.isNull(firstSOIdx)) {
                 obj.put("firstImageSortOrder", c.getInt(firstSOIdx));

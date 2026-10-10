@@ -19,6 +19,8 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
+import static io.github.jukomu.desktop.util.TextUtils.text;
+
 /**
  * 协调当前登录会话与操作系统安全凭据。
  */
@@ -382,10 +384,6 @@ public final class AuthService {
             info.getAlbumFavorites(),
             info.getMaxAlbumFavorites()
         );
-    }
-
-    private static String text(String value) {
-        return value == null ? "" : value;
     }
 
     private void logFailure(String operation, String error, long started, RuntimeException failure) {

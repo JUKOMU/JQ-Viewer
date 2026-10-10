@@ -13,6 +13,7 @@ import android.provider.Settings;
 import androidx.core.content.FileProvider;
 import com.getcapacitor.JSObject;
 import io.github.jukomu.runtime.ServiceExecutors;
+import io.github.jukomu.util.JsonUtils;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.slf4j.Logger;
@@ -450,7 +451,7 @@ public final class UpdateService {
                 throw new IOException("HTTP " + status);
             }
             byte[] body = readLimited(connection.getInputStream(), MANIFEST_MAX_BYTES);
-            return new JSONObject(new String(body, java.nio.charset.StandardCharsets.UTF_8));
+            return JsonUtils.parseJsonObject(body);
         } finally {
             if (connection != null) {
                 connection.disconnect();
@@ -467,7 +468,7 @@ public final class UpdateService {
                 throw new IOException("HTTP " + status);
             }
             byte[] body = readLimited(connection.getInputStream(), MANIFEST_MAX_BYTES);
-            return new JSONArray(new String(body, java.nio.charset.StandardCharsets.UTF_8));
+            return JsonUtils.parseJsonArray(body);
         } finally {
             if (connection != null) {
                 connection.disconnect();

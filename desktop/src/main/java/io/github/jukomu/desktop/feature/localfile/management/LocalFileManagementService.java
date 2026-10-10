@@ -27,6 +27,9 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
+import static io.github.jukomu.desktop.util.LogFields.clean;
+import static io.github.jukomu.desktop.util.RequestValidation.requiredText;
+
 /**
  * Desktop 本地文件库的导入、校验、管理与阅读入口。
  */
@@ -77,7 +80,7 @@ public final class LocalFileManagementService {
                 item == null ? null : item.fileRef());
             try {
                 format = requireImportFormat(item == null ? null : item.format());
-                String fileRef = Request.requiredText(item.fileRef(), "fileRef");
+                String fileRef = requiredText(item.fileRef(), "fileRef");
                 Path file = FileReferences.parseFile(fileRef);
                 fileName = fileName(item.fileName(), fileRef);
                 StoredLocalFile existing = store.findByRef(fileRef);
@@ -97,7 +100,7 @@ public final class LocalFileManagementService {
                         ? file.toString() : item.displayPath(),
                     item.fileName() == null || item.fileName().isBlank()
                         ? file.getFileName().toString() : item.fileName(),
-                    Request.requiredText(item.albumId(), "albumId"),
+                    requiredText(item.albumId(), "albumId"),
                     item.albumTitle(), item.coverUrl(), item.authors(), item.chapterId(),
                     item.chapterTitle(), Request.integer(item.chapterSortOrder(), 0),
                     item.isSingleEpisode(), item.folderId(), report.fileSize(),
@@ -470,12 +473,6 @@ public final class LocalFileManagementService {
 
     private static long elapsed(long startedNanos) {
         return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNanos);
-    }
-
-    private static String clean(String value) {
-        if (value == null || value.isBlank()) return "-";
-        String cleaned = value.replaceAll("[\\p{Cntrl}\\r\\n]+", " ").trim();
-        return cleaned.substring(0, Math.min(256, cleaned.length()));
     }
 
     private ValidationReport validate(String format, String fileRef, int expectedPages)

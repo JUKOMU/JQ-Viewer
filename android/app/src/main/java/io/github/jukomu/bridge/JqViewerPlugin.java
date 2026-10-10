@@ -258,7 +258,7 @@ public class JqViewerPlugin extends Plugin {
         }
         if (preloadService == null) {
             LOGGER.warn("jq_viewer_plugin event=resume phase=complete result=skipped "
-                    + "reason=runtime_not_ready durationMs={}", elapsedMs(startedAt));
+                + "reason=runtime_not_ready durationMs={}", elapsedMs(startedAt));
             return;
         }
         long requestedMb = SettingsStore.getInstance(getContext()).getLong(

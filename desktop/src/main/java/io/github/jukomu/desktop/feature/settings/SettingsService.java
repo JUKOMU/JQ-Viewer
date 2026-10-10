@@ -18,6 +18,8 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 
+import static io.github.jukomu.desktop.util.RequestValidation.requiredText;
+
 /**
  * 持久化页面需要的基础设置，并返回当前支持状态。
  */
@@ -375,11 +377,6 @@ public final class SettingsService {
             statement.setString(1, key);
             statement.executeUpdate();
         }
-    }
-
-    private static String requiredText(String value, String name) {
-        if (value == null || value.isBlank()) throw badRequest(name + "不能为空");
-        return value;
     }
 
     private static ApiException badRequest(String message) {

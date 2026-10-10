@@ -7,7 +7,6 @@
  */
 
 import type {
-  AlbumDetail,
   DownloadTask,
   ExportTaskChapter,
   ExportMode,
@@ -45,7 +44,6 @@ export interface ExportPlanOptions {
   format: ExportFormat
   mode: ExportMode
   selectedChapters: readonly DownloadTask[]
-  albumDetail: AlbumDetail | null
   useOriginal: boolean
   compressionRatio: number
   editedPath: string
@@ -117,8 +115,8 @@ const TEMPLATE_VARS: TemplateVarDef[] = [
 export const TEMPLATE_VAR_KEYS = TEMPLATE_VARS.map((v) => v.key)
 export const TEMPLATE_VAR_DEFS = TEMPLATE_VARS
 
-function resolveChapterName(ch: DownloadTask, album: AlbumDetail | null): string {
-  if (album?.seriesId === '0') return album.title || ch.albumTitle
+function resolveChapterName(ch: DownloadTask): string {
+  if (ch.isSingleEpisode) return ch.albumTitle
   const order = ch.chapterSortOrder
   if (order && order > 0) return `第${order}话`
   return ch.chapterTitle || ''
@@ -345,11 +343,12 @@ export const ExportService = {
   // ---- 模板渲染 ----
 
   /**
-   * 从 DownloadTask + AlbumDetail 构建 ExportTemplateData。
+   * 从下载记录构建模板数据。
    * 唯一的模板数据工厂函数，所有调用方统一使用。
    */
-  buildTemplateData(ch: DownloadTask, album: AlbumDetail | null): ExportTemplateData {
-    const chapterName = resolveChapterName(ch, album)
+  buildTemplateData(ch: DownloadTask): ExportTemplateData {
+    const chapterName = resolveChapterName(ch)
+    const authors = ch.authors?.length ? ch.authors : ch.author ? [ch.author] : []
     return {
       id: ch.albumId,
       title: ch.albumTitle,
@@ -358,24 +357,21 @@ export const ExportService = {
       chapterTitle: ch.chapterTitle || '',
       chapterRange: chapterName,
       pageCount: ch.totalPages,
-      author: album?.authors?.[0] ?? '',
-      authors: album?.authors?.join('、') ?? '',
-      tags: album?.tags ?? [],
+      author: authors[0] ?? '',
+      authors: authors.join('、'),
+      tags: ch.tags ?? [],
       index: ch.chapterSortOrder || '',
     }
   },
 
-  buildMergedTemplateData(
-    chapters: readonly DownloadTask[],
-    album: AlbumDetail | null,
-  ): ExportTemplateData {
+  buildMergedTemplateData(chapters: readonly DownloadTask[]): ExportTemplateData {
     const orderedChapters = normalizeExportChapters(chapters)
     const firstChapter = orderedChapters[0]
     if (!firstChapter) throw new Error('未选择导出章节')
 
     const exportChapters = orderedChapters.map(toExportTaskChapter)
     return {
-      ...ExportService.buildTemplateData(firstChapter, album),
+      ...ExportService.buildTemplateData(firstChapter),
       chapterRange: buildChapterRange(exportChapters),
       pageCount: orderedChapters.reduce((total, chapter) => total + chapter.totalPages, 0),
     }
@@ -449,15 +445,8 @@ export const ExportService = {
     return `${baseTrimmed}/${nameClean}.${format}`
   },
 
-  buildMergedFullPath(
-    chapters: readonly DownloadTask[],
-    album: AlbumDetail | null,
-    format: ExportFormat = 'pdf',
-  ): string {
-    return ExportService.buildFullPath(
-      ExportService.buildMergedTemplateData(chapters, album),
-      format,
-    )
+  buildMergedFullPath(chapters: readonly DownloadTask[], format: ExportFormat = 'pdf'): string {
+    return ExportService.buildFullPath(ExportService.buildMergedTemplateData(chapters), format)
   },
 
   buildExportPlan(options: ExportPlanOptions): ExportPlan {
@@ -474,21 +463,13 @@ export const ExportService = {
         throw new Error('合并导出只能选择同一本漫画的章节')
       }
 
-      const templateData = ExportService.buildMergedTemplateData(
-        selectedChapters,
-        options.albumDetail,
-      )
+      const templateData = ExportService.buildMergedTemplateData(selectedChapters)
       const displayPath = withExportExtension(options.editedPath, options.format)
       const task: ExportTask = {
         format: options.format,
         mode: 'merged',
         albumId,
-        albumTitle: selectedChapters[0].albumTitle,
-        coverUrl: selectedChapters[0].coverUrl,
-        authors: templateData.authors,
-        isSingleEpisode: selectedChapters[0].isSingleEpisode,
-        chapterTitle: templateData.chapterRange,
-        chapters: selectedChapters.map(toExportTaskChapter),
+        chapters: selectedChapters.map(({ albumId, chapterId }) => ({ albumId, chapterId })),
         target: buildExportTarget(
           displayPath,
           options.exportFolder,
@@ -515,26 +496,15 @@ export const ExportService = {
       format: options.format,
       mode: 'chapter',
       albumId: chapter.albumId,
-      albumTitle: chapter.albumTitle,
-      coverUrl: chapter.coverUrl,
-      authors: options.albumDetail?.authors?.join('、') ?? '',
-      isSingleEpisode: chapter.isSingleEpisode,
       chapterId: chapter.chapterId,
-      chapterTitle: chapter.chapterTitle,
       displayPath:
         selectedChapters.length === 1
           ? withExportExtension(options.editedPath, options.format)
-          : ExportService.buildFullPath(
-              ExportService.buildTemplateData(chapter, options.albumDetail),
-              options.format,
-            ),
+          : ExportService.buildFullPath(ExportService.buildTemplateData(chapter), options.format),
       target: buildExportTarget(
         selectedChapters.length === 1
           ? withExportExtension(options.editedPath, options.format)
-          : ExportService.buildFullPath(
-              ExportService.buildTemplateData(chapter, options.albumDetail),
-              options.format,
-            ),
+          : ExportService.buildFullPath(ExportService.buildTemplateData(chapter), options.format),
         options.exportFolder,
         options.exportFolderDisplayPath,
       ),

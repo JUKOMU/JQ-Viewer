@@ -11,6 +11,7 @@ public record StoredDownloadTask(
     String chapterTitle,
     String coverUrl,
     String author,
+    String authorsJson,
     String tagsJson,
     int totalPages,
     int downloadedPages,

@@ -12,6 +12,7 @@ import io.github.jukomu.desktop.feature.files.ExportTargetResolver;
 import io.github.jukomu.desktop.feature.files.FileReferences;
 import io.github.jukomu.desktop.feature.localfile.management.PdfFileValidator;
 import io.github.jukomu.desktop.feature.localfile.model.*;
+import io.github.jukomu.desktop.util.JsonUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -21,6 +22,9 @@ import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
+
+import static io.github.jukomu.desktop.util.LogFields.clean;
+import static io.github.jukomu.desktop.util.RequestValidation.requiredTrimmedText;
 
 /**
  * Desktop 持久化单线程通用导出队列。
@@ -37,6 +41,7 @@ public final class ExportService implements AutoCloseable {
     private final ArchiveVolumeWriter archiveWriter;
     private final AtomicBoolean startupReconciled = new AtomicBoolean();
     private boolean closed;
+    private java.util.function.Function<StoredDownloadTask, StoredDownloadTask> metadataResolver;
 
     public ExportService(
         ExportStore store,
@@ -72,6 +77,7 @@ public final class ExportService implements AutoCloseable {
         this.store = Objects.requireNonNull(store, "store");
         this.downloads = Objects.requireNonNull(downloads, "downloads");
         this.downloadFiles = Objects.requireNonNull(downloadFiles, "downloadFiles");
+        this.metadataResolver = downloads::completeMetadata;
         this.executor = Objects.requireNonNull(executor, "executor");
         this.events = Objects.requireNonNull(events, "events");
         this.pdfWriter = Objects.requireNonNull(pdfWriter, "pdfWriter");
@@ -90,6 +96,10 @@ public final class ExportService implements AutoCloseable {
         synchronized (downloadFiles) {
             return submitWhileRootStable(requestedTasks);
         }
+    }
+
+    public void setMetadataResolver(java.util.function.Function<StoredDownloadTask, StoredDownloadTask> resolver) {
+        this.metadataResolver = Objects.requireNonNull(resolver, "resolver");
     }
 
     private ExportBatchResponse submitWhileRootStable(List<ExportTaskRequest> requestedTasks) {
@@ -130,6 +140,10 @@ public final class ExportService implements AutoCloseable {
                 logEvent("failed", exportId, batchId, task.format(), "preflight", "failed", 0,
                     0, 0, 0, exception.code(), exception.getMessage(), false, exception);
                 Plan failed = failedPlan(exportId, batchId, task);
+                if ("DOWNLOAD_METADATA_INCOMPLETE".equals(exception.code())) {
+                    results.add(ExportTaskResponse.rejected(task.format(), exception.code(), exception.getMessage(), task.displayPath()));
+                    continue;
+                }
                 reserve(failed, "failed", "failed", exception.code(), exception.getMessage());
                 ExportTaskResponse snapshot = requireTask(exportId).withAccepted(false);
                 results.add(snapshot);
@@ -353,6 +367,10 @@ public final class ExportService implements AutoCloseable {
         List<ExportStore.Chapter> chapters = new ArrayList<>();
         List<Path> images = new ArrayList<>();
         List<RequestedChapter> requested = task.chapters();
+        String albumTitle = task.albumTitle();
+        String coverUrl = task.coverUrl();
+        String authors = task.authors();
+        Boolean singleEpisode = task.singleEpisode();
         for (int index = 0; index < requested.size(); index++) {
             RequestedChapter chapter = requested.get(index);
             StoredDownloadTask download = downloads.findTask(chapter.albumId(), chapter.chapterId());
@@ -360,6 +378,24 @@ public final class ExportService implements AutoCloseable {
                 throw new ExportException("DOWNLOAD_NOT_COMPLETED",
                     "章节“" + chapter.title() + "”尚未完成下载");
             }
+            try {
+                download = metadataResolver.apply(download);
+                if (download.chapterTitle() == null || download.chapterTitle().isBlank()
+                    || download.albumTitle() == null || download.albumTitle().isBlank()
+                    || download.isSingleEpisode() == null) {
+                    throw new IllegalStateException("DOWNLOAD_METADATA_INCOMPLETE");
+                }
+            } catch (RuntimeException exception) {
+                throw new ExportException("DOWNLOAD_METADATA_INCOMPLETE", "无法补全下载元数据", exception);
+            }
+            if (index == 0) {
+                albumTitle = value(download.albumTitle());
+                coverUrl = value(download.coverUrl());
+                authors = authorText(download.author(), download.authorsJson());
+                singleEpisode = download.isSingleEpisode();
+            }
+            chapter = new RequestedChapter(chapter.albumId(), chapter.chapterId(),
+                value(download.chapterTitle()), download.chapterSortOrder());
             var pages = downloads.pages(download.taskId());
             if (pages.stream().anyMatch(page -> !page.completed())) {
                 throw new ExportException("DOWNLOAD_MANIFEST_INVALID",
@@ -392,9 +428,18 @@ public final class ExportService implements AutoCloseable {
             throw new ExportException(code(task.format(), "TARGET_INACCESSIBLE"),
                 "导出目录不存在或不可写");
         }
+        String resolvedDisplayTitle = "merged".equals(task.mode()) ? albumTitle
+            : chapters.get(0).chapterTitle();
+        NormalizedTask resolved = new NormalizedTask(task.format(), task.mode(), task.albumId(),
+            albumTitle, coverUrl, authors, singleEpisode, resolvedDisplayTitle,
+            chapters.stream().map(c -> new RequestedChapter(c.albumId(), c.chapterId(),
+                c.chapterTitle(), c.sortOrder())).toList(), task.folderRef(), task.targetName(),
+            task.displayPath(), task.useOriginal(), task.compressionRatio(), task.splitPages(),
+            allowOverwrite);
+        // 元数据补全后再构造目标卷，确保后续目标布局使用已固定的任务快照。
         List<VolumePlan> volumes = buildVolumes(
-            exportId, task, images.size(), allowOverwrite);
-        return new Plan(exportId, batchId, task.withAllowOverwrite(allowOverwrite),
+            exportId, resolved, images.size(), allowOverwrite);
+        return new Plan(exportId, batchId, resolved,
             List.copyOf(chapters), List.copyOf(images), List.copyOf(volumes));
     }
 
@@ -496,13 +541,12 @@ public final class ExportService implements AutoCloseable {
                 chapters.add(new RequestedChapter(
                     requireText(chapter.albumId(), "chapters.albumId"),
                     requireText(chapter.chapterId(), "chapters.chapterId"),
-                    requireText(chapter.chapterTitle(), "chapters.chapterTitle"),
-                    chapter.sortOrder()));
+                    "", null));
             }
         } else {
             chapters.add(new RequestedChapter(albumId,
                 requireText(request.chapterId(), "chapterId"),
-                requireText(request.chapterTitle(), "chapterTitle"), null));
+                "", null));
         }
         String displayTitle = request.chapterTitle();
         if (displayTitle == null || displayTitle.isBlank()) displayTitle = request.albumTitle();
@@ -511,8 +555,7 @@ public final class ExportService implements AutoCloseable {
             : Math.max(0.1D, Math.min(1D, request.compressionRatio()));
         int splitPages = Math.max(0, request.splitPages() == null ? 0 : request.splitPages());
         return new NormalizedTask(
-            format, mode, albumId, value(request.albumTitle()), value(request.coverUrl()),
-            value(request.authors()), request.isSingleEpisode(), displayTitle,
+            format, mode, albumId, "", "", "", null, albumId,
             List.copyOf(chapters), folderRef, targetName, value(request.displayPath()),
             !"pdf".equals(format) || request.useOriginal() == null || request.useOriginal(),
             compressionRatio,
@@ -658,8 +701,7 @@ public final class ExportService implements AutoCloseable {
     }
 
     private static String requireText(String value, String name) {
-        if (value == null || value.isBlank()) throw ApiException.invalidRequest(name + "不能为空");
-        return value.trim();
+        return requiredTrimmedText(value, name);
     }
 
     private synchronized void requireOpen() {
@@ -668,6 +710,17 @@ public final class ExportService implements AutoCloseable {
 
     private static String value(String value) {
         return value == null ? "" : value;
+    }
+
+    private String authorText(String author, String authorsJson) {
+        try {
+            List<String> authors = JsonUtils.parseJsonStringList(
+                authorsJson == null ? "[]" : authorsJson);
+            if (authors != null && !authors.isEmpty()) return String.join("、", authors);
+        } catch (Exception ignored) {
+            // 历史记录中的作者 JSON 损坏时降级到兼容字段。
+        }
+        return value(author);
     }
 
     private static void deleteQuietly(Path file) {
@@ -726,12 +779,6 @@ public final class ExportService implements AutoCloseable {
 
     private static void append(StringBuilder line, String key, String value) {
         if (value != null && !value.isBlank()) line.append(' ').append(key).append('=').append(clean(value));
-    }
-
-    private static String clean(String value) {
-        if (value == null || value.isBlank()) return "-";
-        String cleaned = value.replaceAll("[\\p{Cntrl}\\r\\n]+", " ").trim();
-        return cleaned.substring(0, Math.min(256, cleaned.length()));
     }
 
     private void cleanupQueuedCancellation(String exportId) {

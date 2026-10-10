@@ -149,9 +149,9 @@ public class DownloadStore extends SQLiteOpenHelper implements DownloadTaskReade
                                  int sortOrder, boolean isSingleEpisode) {
         ContentValues cv = new ContentValues();
         cv.put(COL_TOTAL_PAGES, totalPages);
-        cv.put(COL_AUTHOR, author);
+        cv.put(COL_AUTHOR, author == null ? "" : author);
         cv.put(COL_AUTHORS, authors == null || authors.isBlank() ? "[]" : authors);
-        cv.put(COL_TAGS, tags);
+        cv.put(COL_TAGS, tags == null || tags.isBlank() ? "[]" : tags);
         cv.put(COL_CHAPTER_SORT_ORDER, sortOrder);
         cv.put(COL_IS_SINGLE_EPISODE, isSingleEpisode ? 1 : 0);
         getWritableDatabase().update(TABLE_TASKS, cv,
@@ -274,9 +274,11 @@ public class DownloadStore extends SQLiteOpenHelper implements DownloadTaskReade
         ContentValues values = new ContentValues();
         values.put(COL_ALBUM_TITLE, metadata.optString("albumTitle"));
         values.put(COL_CHAPTER_TITLE, metadata.optString("chapterTitle"));
-        values.put(COL_AUTHOR, metadata.optString("author"));
-        values.put(COL_AUTHORS, metadata.optJSONArray("authors").toString());
-        values.put(COL_TAGS, metadata.optJSONArray("tags").toString());
+        values.put(COL_AUTHOR, metadata.optString("author", ""));
+        JSONArray authors = metadata.optJSONArray("authors");
+        JSONArray tags = metadata.optJSONArray("tags");
+        values.put(COL_AUTHORS, authors == null ? "[]" : authors.toString());
+        values.put(COL_TAGS, tags == null ? "[]" : tags.toString());
         values.put(COL_CHAPTER_SORT_ORDER, metadata.optInt("chapterSortOrder"));
         values.put(COL_IS_SINGLE_EPISODE, metadata.optBoolean("isSingleEpisode") ? 1 : 0);
         if (getWritableDatabase().update(TABLE_TASKS, values,

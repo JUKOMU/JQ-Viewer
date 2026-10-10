@@ -124,7 +124,10 @@ public class DownloadService {
                     return;
                 }
                 JmPhoto photo = client.getPhoto(chapterId);
-                if (photo == null || !chapterId.equals(photo.getId())
+                if (photo == null || isBlank(photo.getId()) || isBlank(photo.getTitle())
+                    || isBlank(photo.getAlbumId()) || photo.getSortOrder() <= 0
+                    || photo.getImages() == null || photo.getImages().isEmpty()
+                    || !chapterId.equals(photo.getId())
                     || !(albumId.equals(photo.getAlbumId())
                     || photo.isSingleAlbum() && albumId.equals(photo.getId()))) {
                     throw new IllegalStateException("远端章节信息与请求不一致");
@@ -138,6 +141,7 @@ public class DownloadService {
                 } catch (RuntimeException exception) {
                     LOGGER.debug("读取作品元数据失败，使用章节元数据", exception);
                 }
+                if (album != null && isBlank(album.getTitle())) throw new IllegalStateException("远端作品标题为空");
                 List<String> authors = album == null || album.getAuthors() == null || album.getAuthors().isEmpty()
                     ? (photo.getAuthor() == null || photo.getAuthor().isBlank()
                        ? List.of() : List.of(photo.getAuthor()))
@@ -156,11 +160,11 @@ public class DownloadService {
                 fileStore.refreshMappings(albumId, chapterId, downloadDb);
 
                 JSONObject metadata = new JSONObject();
-                metadata.put("albumTitle", album == null ? albumTitle : album.getTitle());
+                metadata.put("albumTitle", album == null || isBlank(album.getTitle()) ? albumTitle : album.getTitle());
                 metadata.put("chapterTitle", photo.getTitle());
                 metadata.put("author", authors.isEmpty() ? photo.getAuthor() : authors.get(0));
                 metadata.put("authors", JsonUtils.toJsonArray(authors));
-                metadata.put("tags", JsonUtils.toJsonArray(album == null ? photo.getTags() : album.getTags()));
+                metadata.put("tags", JsonUtils.toJsonArray(preferredTags(album == null ? null : album.getTags(), photo.getTags())));
                 metadata.put("chapterSortOrder", photo.getSortOrder());
                 metadata.put("isSingleEpisode", photo.isSingleAlbum());
                 downloadDb.updateMetadata(taskId, metadata);
@@ -176,8 +180,8 @@ public class DownloadService {
                 metaJson.put("author", photo.getAuthor());
                 metaJson.put("authors", JsonUtils.toJsonArray(authors));
                 if (album != null) {
-                    metaJson.put("albumTitle", album.getTitle());
-                    metaJson.put("tags", JsonUtils.toJsonArray(album.getTags()));
+                    metaJson.put("albumTitle", isBlank(album.getTitle()) ? albumTitle : album.getTitle());
+                    metaJson.put("tags", JsonUtils.toJsonArray(preferredTags(album.getTags(), photo.getTags())));
                 } else {
                     metaJson.put("tags", JsonUtils.toJsonArray(photo.getTags()));
                 }
@@ -262,14 +266,17 @@ public class DownloadService {
         JSONArray authors = task.optJSONArray("authors");
         JSONArray tags = task.optJSONArray("tags");
         if (!chapterMissing && !task.optString("albumTitle").isBlank()
-            && authors != null && authors.length() > 0 && tags != null && tags.length() > 0) return task;
+            && authors != null && authors.length() > 0) return task;
         try {
             JmApiClient client = clientSupplier.get();
             JmPhoto photo = null;
             if (chapterMissing) {
                 if (client == null) throw new IllegalStateException("下载记录缺少章节信息，需要联网补全");
                 photo = client.getPhoto(task.optString("chapterId"));
-                if (photo == null || !task.optString("chapterId").equals(photo.getId())
+                if (photo == null || isBlank(photo.getId()) || isBlank(photo.getTitle())
+                    || isBlank(photo.getAlbumId()) || photo.getSortOrder() <= 0
+                    || photo.getImages() == null || photo.getImages().isEmpty()
+                    || !task.optString("chapterId").equals(photo.getId())
                     || !(task.optString("albumId").equals(photo.getAlbumId())
                     || photo.isSingleAlbum() && task.optString("albumId").equals(photo.getId()))) {
                     throw new IllegalStateException("远端章节信息与请求不一致");
@@ -286,8 +293,9 @@ public class DownloadService {
                     LOGGER.debug("读取作品元数据失败，使用已有下载记录", exception);
                 }
             }
+            if (album != null && isBlank(album.getTitle())) throw new IllegalStateException("远端作品标题为空");
             String albumTitle = task.optString("albumTitle");
-            if (albumTitle.isBlank() && album != null) albumTitle = album.getTitle();
+            if (albumTitle.isBlank() && album != null && !isBlank(album.getTitle())) albumTitle = album.getTitle();
             String chapterTitle = photo == null ? task.optString("chapterTitle") : photo.getTitle();
             if (albumTitle == null || albumTitle.isBlank() || chapterTitle == null || chapterTitle.isBlank()) {
                 throw new IllegalStateException("下载记录缺少标题，无法补全导出元数据");
@@ -298,10 +306,9 @@ public class DownloadService {
             String author = task.optString("author");
             if (author.isBlank() && photo != null && photo.getAuthor() != null) author = photo.getAuthor();
             if (authors.length() == 0 && !author.isBlank()) authors.put(author);
-            if (authors.length() == 0 && album == null)
-                throw new IllegalStateException("下载记录缺少作者，需要联网补全");
             if (tags == null || tags.length() == 0) {
-                tags = JsonUtils.toJsonArray(album == null ? null : album.getTags());
+                tags = JsonUtils.toJsonArray(preferredTags(album == null ? null : album.getTags(),
+                    photo == null ? null : photo.getTags()));
             }
             task.put("albumTitle", albumTitle);
             task.put("chapterTitle", chapterTitle);
@@ -758,6 +765,15 @@ public class DownloadService {
         if (object == null || !object.has(key) || object.isNull(key)) return null;
         String value = object.optString(key, null);
         return value == null || value.trim().isEmpty() ? null : value;
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
+    }
+
+    private static List<String> preferredTags(List<String> primary, List<String> fallback) {
+        return primary != null && !primary.isEmpty() ? primary
+            : fallback == null ? List.of() : fallback;
     }
 
     private JmApiClient requireClient() {

@@ -79,9 +79,9 @@ public final class DownloadStore {
                 + "tags_json=?,chapter_sort_order=?,is_single_episode=? WHERE task_id=?")) {
             statement.setString(1, albumTitle);
             statement.setString(2, chapterTitle);
-            statement.setString(3, author);
+            statement.setString(3, author == null ? "" : author);
             statement.setString(4, authorsJson);
-            statement.setString(5, tagsJson);
+            statement.setString(5, tagsJson == null || tagsJson.isBlank() ? "[]" : tagsJson);
             statement.setInt(6, chapterSortOrder);
             statement.setInt(7, singleEpisode ? 1 : 0);
             statement.setString(8, taskId);
@@ -198,9 +198,9 @@ public final class DownloadStore {
                 "UPDATE download_tasks SET total_pages=?, author=?, authors_json=?, tags_json=?, "
                     + "chapter_sort_order=?, is_single_episode=? WHERE task_id=?")) {
                 statement.setInt(1, totalPages);
-                statement.setString(2, author);
+                statement.setString(2, author == null ? "" : author);
                 statement.setString(3, authorsJson == null || authorsJson.isBlank() ? "[]" : authorsJson);
-                statement.setString(4, tagsJson);
+                statement.setString(4, tagsJson == null || tagsJson.isBlank() ? "[]" : tagsJson);
                 statement.setInt(5, chapterSortOrder);
                 statement.setInt(6, singleEpisode ? 1 : 0);
                 statement.setString(7, taskId);

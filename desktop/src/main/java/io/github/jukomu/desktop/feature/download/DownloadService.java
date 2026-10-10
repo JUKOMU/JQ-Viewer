@@ -378,7 +378,10 @@ public final class DownloadService implements AutoCloseable {
             StoredDownloadTask task = store.findTask(taskId);
             if (task == null || cancelledTaskIds.contains(taskId) || closing) return;
             JmPhoto photo = requireClient().getPhoto(task.chapterId());
-            if (photo == null || !task.chapterId().equals(photo.getId())
+            if (photo == null || isBlank(photo.getId()) || isBlank(photo.getTitle())
+                || isBlank(photo.getAlbumId()) || photo.getSortOrder() <= 0
+                || photo.getImages() == null || photo.getImages().isEmpty()
+                || !task.chapterId().equals(photo.getId())
                 || !(task.albumId().equals(photo.getAlbumId())
                 || photo.isSingleAlbum() && task.albumId().equals(photo.getId()))) {
                 throw new IllegalStateException("远端章节信息与请求不一致");
@@ -394,6 +397,7 @@ public final class DownloadService implements AutoCloseable {
             } catch (RuntimeException exception) {
                 LOGGER.debug("读取作品元数据失败，使用章节元数据", exception);
             }
+            if (album != null && isBlank(album.getTitle())) throw new IllegalStateException("远端作品标题为空");
             List<String> authors = album != null && album.getAuthors() != null && !album.getAuthors().isEmpty()
                 ? album.getAuthors() : text(photo.getAuthor()).isBlank() ? List.of() : List.of(photo.getAuthor());
             logInfo("remote_metadata", taskId, task.albumId(), task.chapterId(), "remote_metadata",
@@ -409,11 +413,10 @@ public final class DownloadService implements AutoCloseable {
                     JsonUtils.toJsonString(authors, "保存作者列表失败"),
                     JsonUtils.toJsonString(photo.getTags() == null ? List.of() : photo.getTags(), "保存章节标签失败"),
                     photo.getSortOrder(), photo.isSingleAlbum(), pages);
-                store.updateMetadata(taskId, album == null ? task.albumTitle() : album.getTitle(),
+                store.updateMetadata(taskId, album == null || isBlank(album.getTitle()) ? task.albumTitle() : album.getTitle(),
                     photo.getTitle(), authors.isEmpty() ? text(photo.getAuthor()) : authors.get(0),
                     JsonUtils.toJsonString(authors, "保存作者列表失败"),
-                    JsonUtils.toJsonString(album != null && album.getTags() != null ? album.getTags()
-                        : photo.getTags() == null ? List.of() : photo.getTags(), "保存章节标签失败"),
+                    JsonUtils.toJsonString(preferredTags(album == null ? null : album.getTags(), photo.getTags()), "保存章节标签失败"),
                     photo.getSortOrder(), photo.isSingleAlbum());
                 Path chapterDirectory = files.chapterDirectory(task.relativeDirectory());
                 Path savePath = photo.isSingleAlbum() ? chapterDirectory : chapterDirectory.getParent();
@@ -510,14 +513,16 @@ public final class DownloadService implements AutoCloseable {
         boolean chapterMissing = text(task.chapterTitle()).isBlank() || task.isSingleEpisode() == null;
         List<String> authors = JsonUtils.parseJsonStringListOrEmpty(task.authorsJson());
         List<String> metadataTags = JsonUtils.parseJsonStringListOrEmpty(task.tagsJson());
-        if (!chapterMissing && !text(task.albumTitle()).isBlank()
-            && !authors.isEmpty() && !metadataTags.isEmpty()) return task;
+        if (!chapterMissing && !text(task.albumTitle()).isBlank() && !authors.isEmpty()) return task;
         JmClient client = clientSupplier.get();
         JmPhoto photo = null;
         if (chapterMissing) {
             if (client == null) throw new IllegalStateException("下载记录缺少章节信息，需要联网补全");
             photo = client.getPhoto(task.chapterId());
-            if (photo == null || !task.chapterId().equals(photo.getId())
+            if (photo == null || isBlank(photo.getId()) || isBlank(photo.getTitle())
+                || isBlank(photo.getAlbumId()) || photo.getSortOrder() <= 0
+                || photo.getImages() == null || photo.getImages().isEmpty()
+                || !task.chapterId().equals(photo.getId())
                 || !(task.albumId().equals(photo.getAlbumId())
                 || photo.isSingleAlbum() && task.albumId().equals(photo.getId()))) {
                 throw new IllegalStateException("远端章节信息与请求不一致");
@@ -535,9 +540,10 @@ public final class DownloadService implements AutoCloseable {
             } catch (RuntimeException exception) {
                 LOGGER.debug("读取作品元数据失败，使用已有下载记录", exception);
             }
+            if (album != null && isBlank(album.getTitle())) throw new IllegalStateException("远端作品标题为空");
         }
         String albumTitle = text(task.albumTitle());
-        if (albumTitle.isBlank() && album != null) albumTitle = text(album.getTitle());
+        if (albumTitle.isBlank() && album != null && !isBlank(album.getTitle())) albumTitle = text(album.getTitle());
         String chapterTitle = photo == null ? text(task.chapterTitle()) : text(photo.getTitle());
         if (albumTitle.isBlank() || chapterTitle.isBlank()) {
             throw new IllegalStateException("下载记录缺少标题，无法补全导出元数据");
@@ -546,10 +552,8 @@ public final class DownloadService implements AutoCloseable {
         String author = text(task.author());
         if (author.isBlank() && photo != null) author = text(photo.getAuthor());
         if (authors.isEmpty() && !author.isBlank()) authors = List.of(author);
-        if (authors.isEmpty() && album == null) {
-            throw new IllegalStateException("下载记录缺少作者，需要联网补全");
-        }
-        if (metadataTags.isEmpty() && album != null && album.getTags() != null) metadataTags = album.getTags();
+        if (metadataTags.isEmpty()) metadataTags = preferredTags(album == null ? null : album.getTags(),
+            photo == null ? null : photo.getTags());
         return store.updateMetadata(task.taskId(), albumTitle, chapterTitle,
             authors.isEmpty() ? author : authors.get(0),
             JsonUtils.toJsonString(authors, "保存作者列表失败"),
@@ -561,6 +565,15 @@ public final class DownloadService implements AutoCloseable {
     private static ImageResponse imageResponse(StoredDownloadPage page) {
         return new ImageResponse(page.photoId(), page.scrambleId(), page.filename(),
             page.sourceUrl(), page.queryParams(), page.sortOrder());
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
+    }
+
+    private static List<String> preferredTags(List<String> primary, List<String> fallback) {
+        return primary != null && !primary.isEmpty() ? primary
+            : fallback == null ? List.of() : fallback;
     }
 
     private DownloadTaskResponse response(StoredDownloadTask task) {

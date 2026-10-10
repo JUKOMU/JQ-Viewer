@@ -4,6 +4,7 @@ import android.annotation.SuppressLint;
 import android.content.Context;
 import android.os.Environment;
 import io.github.jukomu.feature.download.data.DownloadStore;
+import io.github.jukomu.util.JsonUtils;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.slf4j.Logger;
@@ -171,7 +172,7 @@ public class FileStore {
         }
 
         byte[] bytes = Files.readAllBytes(metaFile.toPath());
-        return new JSONObject(new String(bytes, StandardCharsets.UTF_8));
+        return JsonUtils.parseJsonObject(bytes);
     }
 
     public File getExpectedImageFile(String albumId, String chapterId,

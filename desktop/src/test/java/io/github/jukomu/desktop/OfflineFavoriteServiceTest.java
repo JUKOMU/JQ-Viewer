@@ -149,7 +149,7 @@ class OfflineFavoriteServiceTest {
     }
 
     private static OfflineFavoriteService service(Database database) {
-        return new OfflineFavoriteService(new OfflineFavoriteStore(database, new ObjectMapper()));
+        return new OfflineFavoriteService(new OfflineFavoriteStore(database));
     }
 
     private static OfflineFavoriteItem item(String id, String title) {

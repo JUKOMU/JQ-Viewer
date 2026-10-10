@@ -10,11 +10,14 @@ import io.github.jukomu.feature.download.notification.DownloadNotificationHelper
 import io.github.jukomu.feature.download.storage.FileStore;
 import io.github.jukomu.feature.download.validation.ImageFileValidator;
 import io.github.jukomu.jmcomic.api.download.task.BaseDownloadTask;
+import io.github.jukomu.jmcomic.api.model.JmAlbum;
 import io.github.jukomu.jmcomic.api.model.JmImage;
 import io.github.jukomu.jmcomic.api.model.JmPhoto;
 import io.github.jukomu.jmcomic.core.client.AbstractJmClient;
 import io.github.jukomu.jmcomic.core.client.impl.JmApiClient;
 import io.github.jukomu.platform.notification.NotificationIds;
+import io.github.jukomu.util.JsonUtils;
+import io.github.jukomu.util.LogFields;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.slf4j.Logger;
@@ -121,24 +124,67 @@ public class DownloadService {
                     return;
                 }
                 JmPhoto photo = client.getPhoto(chapterId);
+                if (photo == null || isBlank(photo.getId()) || isBlank(photo.getTitle())
+                    || isBlank(photo.getAlbumId()) || photo.getSortOrder() <= 0
+                    || photo.getImages() == null || photo.getImages().isEmpty()
+                    || !chapterId.equals(photo.getId())
+                    || !(albumId.equals(photo.getAlbumId())
+                    || photo.isSingleAlbum() && albumId.equals(photo.getId()))) {
+                    throw new IllegalStateException("远端章节信息与请求不一致");
+                }
+                JmAlbum album = null;
+                try {
+                    JmAlbum candidate = client.getAlbum(albumId);
+                    if (candidate != null && albumId.equals(candidate.getId())) {
+                        album = candidate;
+                    }
+                } catch (RuntimeException exception) {
+                    LOGGER.debug("读取作品元数据失败，使用章节元数据", exception);
+                }
+                if (album != null && isBlank(album.getTitle())) throw new IllegalStateException("远端作品标题为空");
+                List<String> authors = album == null || album.getAuthors() == null || album.getAuthors().isEmpty()
+                    ? (photo.getAuthor() == null || photo.getAuthor().isBlank()
+                       ? List.of() : List.of(photo.getAuthor()))
+                    : album.getAuthors();
                 List<JmImage> images = photo.getImages();
                 logDownloadEvent(taskId, albumId, chapterId, "phase", "remote_metadata",
                     STATUS_QUEUED, 0, images.size(), 0, 0, null, null, null);
 
                 downloadDb.insertImages(taskId, images);
                 downloadDb.updateTaskDetail(taskId, images.size(),
-                    photo.getAuthor(), new JSONArray(photo.getTags()).toString(),
+                    photo.getAuthor(), JsonUtils.toJsonArray(authors).toString(),
+                    JsonUtils.toJsonArray(photo.getTags()).toString(),
                     photo.getSortOrder(), photo.isSingleAlbum());
 
                 File chapterDir = fileStore.ensureChapterDir(albumId, chapterId);
                 fileStore.refreshMappings(albumId, chapterId, downloadDb);
 
+                JSONObject metadata = new JSONObject();
+                metadata.put("albumTitle", album == null || isBlank(album.getTitle()) ? albumTitle : album.getTitle());
+                metadata.put("chapterTitle", photo.getTitle());
+                metadata.put("author", authors.isEmpty() ? photo.getAuthor() : authors.get(0));
+                metadata.put("authors", JsonUtils.toJsonArray(authors));
+                metadata.put("tags", JsonUtils.toJsonArray(preferredTags(album == null ? null : album.getTags(), photo.getTags())));
+                metadata.put("chapterSortOrder", photo.getSortOrder());
+                metadata.put("isSingleEpisode", photo.isSingleAlbum());
+                downloadDb.updateMetadata(taskId, metadata);
+
                 JSONObject metaJson = new JSONObject();
                 metaJson.put("albumId", albumId);
                 metaJson.put("chapterId", chapterId);
-                metaJson.put("title", chapterTitle);
+                metaJson.put("title", photo.getTitle());
+                metaJson.put("chapterTitle", photo.getTitle());
+                metaJson.put("albumTitle", metadata.optString("albumTitle"));
+                metaJson.put("chapterSortOrder", photo.getSortOrder());
+                metaJson.put("isSingleEpisode", photo.isSingleAlbum());
                 metaJson.put("author", photo.getAuthor());
-                metaJson.put("tags", new JSONArray(photo.getTags()));
+                metaJson.put("authors", JsonUtils.toJsonArray(authors));
+                if (album != null) {
+                    metaJson.put("albumTitle", isBlank(album.getTitle()) ? albumTitle : album.getTitle());
+                    metaJson.put("tags", JsonUtils.toJsonArray(preferredTags(album.getTags(), photo.getTags())));
+                } else {
+                    metaJson.put("tags", JsonUtils.toJsonArray(photo.getTags()));
+                }
                 metaJson.put("totalPages", images.size());
                 JSONArray metaImages = new JSONArray();
                 for (JmImage img : images) {
@@ -211,6 +257,72 @@ public class DownloadService {
             }
         }
         return arr;
+    }
+
+    public JSONObject prepareExportMetadata(String taskId) {
+        JSONObject task = downloadDb.getTask(taskId);
+        if (task == null) return null;
+        boolean chapterMissing = task.optString("chapterTitle").isBlank() || !task.has("isSingleEpisode");
+        JSONArray authors = task.optJSONArray("authors");
+        JSONArray tags = task.optJSONArray("tags");
+        if (!chapterMissing && !task.optString("albumTitle").isBlank()
+            && authors != null && authors.length() > 0) return task;
+        try {
+            JmApiClient client = clientSupplier.get();
+            JmPhoto photo = null;
+            if (chapterMissing) {
+                if (client == null) throw new IllegalStateException("下载记录缺少章节信息，需要联网补全");
+                photo = client.getPhoto(task.optString("chapterId"));
+                if (photo == null || isBlank(photo.getId()) || isBlank(photo.getTitle())
+                    || isBlank(photo.getAlbumId()) || photo.getSortOrder() <= 0
+                    || photo.getImages() == null || photo.getImages().isEmpty()
+                    || !task.optString("chapterId").equals(photo.getId())
+                    || !(task.optString("albumId").equals(photo.getAlbumId())
+                    || photo.isSingleAlbum() && task.optString("albumId").equals(photo.getId()))) {
+                    throw new IllegalStateException("远端章节信息与请求不一致");
+                }
+            }
+            JmAlbum album = null;
+            if (client != null) {
+                try {
+                    JmAlbum candidate = client.getAlbum(task.optString("albumId"));
+                    if (candidate != null && task.optString("albumId").equals(candidate.getId())) {
+                        album = candidate;
+                    }
+                } catch (RuntimeException exception) {
+                    LOGGER.debug("读取作品元数据失败，使用已有下载记录", exception);
+                }
+            }
+            if (album != null && isBlank(album.getTitle())) throw new IllegalStateException("远端作品标题为空");
+            String albumTitle = task.optString("albumTitle");
+            if (albumTitle.isBlank() && album != null && !isBlank(album.getTitle())) albumTitle = album.getTitle();
+            String chapterTitle = photo == null ? task.optString("chapterTitle") : photo.getTitle();
+            if (albumTitle == null || albumTitle.isBlank() || chapterTitle == null || chapterTitle.isBlank()) {
+                throw new IllegalStateException("下载记录缺少标题，无法补全导出元数据");
+            }
+            if (authors == null || authors.length() == 0) {
+                authors = JsonUtils.toJsonArray(album == null ? null : album.getAuthors());
+            }
+            String author = task.optString("author");
+            if (author.isBlank() && photo != null && photo.getAuthor() != null) author = photo.getAuthor();
+            if (authors.length() == 0 && !author.isBlank()) authors.put(author);
+            if (tags == null || tags.length() == 0) {
+                tags = JsonUtils.toJsonArray(preferredTags(album == null ? null : album.getTags(),
+                    photo == null ? null : photo.getTags()));
+            }
+            task.put("albumTitle", albumTitle);
+            task.put("chapterTitle", chapterTitle);
+            task.put("author", authors.length() == 0 ? author : authors.optString(0));
+            task.put("authors", authors);
+            task.put("tags", tags);
+            if (photo != null) {
+                task.put("chapterSortOrder", photo.getSortOrder());
+                task.put("isSingleEpisode", photo.isSingleAlbum());
+            }
+            return downloadDb.updateMetadata(taskId, task);
+        } catch (Exception exception) {
+            throw new IllegalStateException("无法补全下载元数据", exception);
+        }
     }
 
     public long getUsedBytes() {
@@ -352,7 +464,10 @@ public class DownloadService {
             ret.put("albumId", albumId);
             ret.put("sortOrder", 0);
             ret.put("author", task.optString("author", ""));
-            ret.put("tags", new JSONArray());
+            ret.put("authors", task.optJSONArray("authors") == null
+                ? new JSONArray() : task.optJSONArray("authors"));
+            ret.put("tags", task.optJSONArray("tags") == null
+                ? new JSONArray() : task.optJSONArray("tags"));
 
             JSONArray imageArray = new JSONArray();
             for (JSONObject img : images) {
@@ -425,16 +540,7 @@ public class DownloadService {
 
     private static void appendLogField(StringBuilder out, String key, String value) {
         if (value == null || value.isEmpty()) return;
-        out.append(' ').append(key).append('=').append(cleanLogValue(value));
-    }
-
-    private static String cleanLogValue(String value) {
-        StringBuilder out = new StringBuilder(Math.min(value.length(), 256));
-        for (int i = 0; i < value.length() && out.length() < 256; i++) {
-            char c = value.charAt(i);
-            out.append(Character.isISOControl(c) ? ' ' : c);
-        }
-        return out.toString();
+        out.append(' ').append(key).append('=').append(LogFields.clean(value));
     }
 
     void updateDownloadNotification(String taskId, int downloadedPages, int totalPages,
@@ -659,6 +765,15 @@ public class DownloadService {
         if (object == null || !object.has(key) || object.isNull(key)) return null;
         String value = object.optString(key, null);
         return value == null || value.trim().isEmpty() ? null : value;
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
+    }
+
+    private static List<String> preferredTags(List<String> primary, List<String> fallback) {
+        return primary != null && !primary.isEmpty() ? primary
+            : fallback == null ? List.of() : fallback;
     }
 
     private JmApiClient requireClient() {

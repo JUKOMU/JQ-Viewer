@@ -99,7 +99,7 @@ class PathsDatabaseTest {
                     .createStatement()
                     .executeQuery("SELECT version FROM desktop_schema_version")) {
                 assertTrue(result.next());
-                assertEquals(10, result.getInt(1));
+                assertEquals(11, result.getInt(1));
             }
             try (ResultSet result = database.connection().getMetaData()
                     .getTables(null, null, "browse_history", null)) {
@@ -156,6 +156,37 @@ class PathsDatabaseTest {
     }
 
     @Test
+    void upgradesVersionTenDownloadAuthorsAndRollsBackOnFailure() throws Exception {
+        Path path = Files.createTempDirectory("download-migration-").resolve("desktop.sqlite3");
+        try (Database database = new Database(path)) {
+            database.open();
+            var connection = database.connection();
+            try (var statement = connection.createStatement()) {
+                statement.executeUpdate("ALTER TABLE download_tasks DROP COLUMN authors_json");
+                statement.executeUpdate("UPDATE desktop_schema_version SET version=10");
+                statement.executeUpdate("INSERT INTO download_tasks(task_id,album_id,chapter_id,album_title,chapter_title,author,status,relative_directory,created_at) VALUES ('old','1','2','Album','Chapter','Alice','completed','1/2',1)");
+                statement.executeUpdate("CREATE TRIGGER stop_upgrade BEFORE UPDATE ON desktop_schema_version BEGIN SELECT RAISE(ABORT,'test migration failure'); END");
+            }
+            assertThrows(SQLException.class, () -> Database.migrate(connection));
+            try (var rows = connection.createStatement().executeQuery("SELECT version FROM desktop_schema_version")) {
+                assertTrue(rows.next());
+                assertEquals(10, rows.getInt(1));
+            }
+            try (var statement = connection.createStatement()) {
+                statement.executeUpdate("DROP TRIGGER stop_upgrade");
+            }
+            Database.migrate(connection);
+            Database.migrate(connection);
+            try (var rows = connection.createStatement().executeQuery("SELECT author,authors_json,status FROM download_tasks WHERE task_id='old'")) {
+                assertTrue(rows.next());
+                assertEquals("Alice", rows.getString(1));
+                assertEquals("[]", rows.getString(2));
+                assertEquals("completed", rows.getString(3));
+            }
+        }
+    }
+
+    @Test
     void migratesVersionEightPdfDataToGenericLocalFileSchema() throws Exception {
         Path databasePath = Files.createTempDirectory("jq-viewer-db-upgrade-")
                 .resolve("desktop.sqlite3");
@@ -166,7 +197,7 @@ class PathsDatabaseTest {
             try (ResultSet result = database.connection().createStatement()
                     .executeQuery("SELECT version FROM desktop_schema_version")) {
                 assertTrue(result.next());
-                assertEquals(10, result.getInt(1));
+                assertEquals(11, result.getInt(1));
             }
             try (ResultSet result = database.connection().createStatement()
                     .executeQuery("SELECT format,chapter_link_status FROM local_files "

@@ -18,6 +18,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
+import static io.github.jukomu.desktop.util.TextUtils.text;
+
 /**
  * 调用在线客户端并转换为页面使用的响应模型。
  */
@@ -273,15 +275,11 @@ public final class CatalogService {
     }
 
     private static List<String> strings(List<String> values) {
-        return safe(values).stream().map(CatalogService::text).toList();
+        return safe(values).stream().map(io.github.jukomu.desktop.util.TextUtils::text).toList();
     }
 
     private static <T> List<T> safe(List<T> values) {
         return values == null ? List.of() : values;
-    }
-
-    private static String text(String value) {
-        return value == null ? "" : value;
     }
 
     private JmClient client() {

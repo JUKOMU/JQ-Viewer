@@ -2,6 +2,8 @@ package io.github.jukomu.bridge;
 
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -10,8 +12,6 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * 追踪属于插件会话的异步桥接调用。
@@ -59,14 +59,14 @@ public final class PluginCallSession implements AutoCloseable {
     public void submit(Executor executor, PluginCall call, Consumer<PluginCall> task) {
         if (executor == null) {
             LOGGER.warn("bridge_call event=submit phase=complete method={} result=failed "
-                    + "reason=executor_missing", call.getMethodName());
+                + "reason=executor_missing", call.getMethodName());
             call.reject(SUBMISSION_FAILED_MESSAGE,
                 new IllegalStateException("executor is required"));
             return;
         }
         if (task == null) {
             LOGGER.warn("bridge_call event=submit phase=complete method={} result=failed "
-                    + "reason=task_missing", call.getMethodName());
+                + "reason=task_missing", call.getMethodName());
             call.reject(SUBMISSION_FAILED_MESSAGE,
                 new IllegalArgumentException("task is required"));
             return;
@@ -139,7 +139,7 @@ public final class PluginCallSession implements AutoCloseable {
             call.rejectSessionEnded();
         }
         LOGGER.info("bridge_call_session event=close phase=complete pendingCalls={} "
-                + "result=completed", activeCallCount());
+            + "result=completed", activeCallCount());
     }
 
     private int activeCallCount() {

@@ -325,8 +325,7 @@ public final class Backend implements AutoCloseable {
                     ? client
                     : null,
                 executors.downloadPrepare(),
-                eventHub,
-                mapper
+                eventHub
             );
             startedDownloadService.reconcileOnStartup();
             final DownloadService downloadService = startedDownloadService;
@@ -374,6 +373,7 @@ public final class Backend implements AutoCloseable {
             startedExportService = new ExportService(
                 exportStore, downloadStore, downloadFiles,
                 executors.exportJobs(), eventHub);
+            startedExportService.setMetadataResolver(startedDownloadService::prepareExportMetadata);
             startedExportService.reconcileOnStartup();
             taskNotifications.start();
             Plugin plugin = new Plugin(
@@ -388,7 +388,7 @@ public final class Backend implements AutoCloseable {
                     settingsService, downloadLocationService),
                 new HistoryPluginHandler(historyRequests, new HistoryService(database)),
                 new OfflineFavoritePluginHandler(favoriteRequests, new OfflineFavoriteService(
-                    new OfflineFavoriteStore(database, mapper))),
+                    new OfflineFavoriteStore(database))),
                 new FilePluginHandler(fileRequests, dialogRequests, fileService),
                 new DownloadPluginHandler(downloadRequests, downloadService),
                 new LocalFilePluginHandler(pdfRequests, pdfManagementService, startedExportService),

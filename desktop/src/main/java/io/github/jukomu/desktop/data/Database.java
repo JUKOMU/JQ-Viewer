@@ -11,7 +11,7 @@ import java.util.List;
  * 管理本地 SQLite 连接，并提供版本化 schema 迁移入口。
  */
 public final class Database implements AutoCloseable {
-    private static final int SCHEMA_VERSION = 10;
+    private static final int SCHEMA_VERSION = 11;
     private static final int BUSY_TIMEOUT_MILLIS = 5_000;
 
     private final Path databasePath;
@@ -125,6 +125,7 @@ public final class Database implements AutoCloseable {
                 + " chapter_title TEXT NOT NULL,"
                 + " cover_url TEXT NOT NULL DEFAULT '',"
                 + " author TEXT NOT NULL DEFAULT '',"
+                + " authors_json TEXT NOT NULL DEFAULT '[]',"
                 + " tags_json TEXT NOT NULL DEFAULT '[]',"
                 + " total_pages INTEGER NOT NULL DEFAULT 0,"
                 + " downloaded_pages INTEGER NOT NULL DEFAULT 0,"
@@ -178,11 +179,19 @@ public final class Database implements AutoCloseable {
             transaction(connection, () -> {
                 migrateV8ToV9(connection);
                 migrateV9ToV10(connection);
+                migrateV10ToV11(connection);
             });
             return;
         }
         if (currentVersion == 9) {
-            transaction(connection, () -> migrateV9ToV10(connection));
+            transaction(connection, () -> {
+                migrateV9ToV10(connection);
+                migrateV10ToV11(connection);
+            });
+            return;
+        }
+        if (currentVersion == 10) {
+            transaction(connection, () -> migrateV10ToV11(connection));
             return;
         }
         if (currentVersion != SCHEMA_VERSION) {
@@ -359,6 +368,17 @@ public final class Database implements AutoCloseable {
                 statement.executeUpdate("ALTER TABLE browse_history ADD COLUMN file_id INTEGER");
             }
             statement.executeUpdate("UPDATE desktop_schema_version SET version=10");
+        }
+    }
+
+    private static void migrateV10ToV11(Connection connection) throws SQLException {
+        if (!hasColumn(connection, "download_tasks", "authors_json")) {
+            try (Statement statement = connection.createStatement()) {
+                statement.executeUpdate("ALTER TABLE download_tasks ADD COLUMN authors_json TEXT NOT NULL DEFAULT '[]'");
+            }
+        }
+        try (Statement statement = connection.createStatement()) {
+            statement.executeUpdate("UPDATE desktop_schema_version SET version=11");
         }
     }
 

@@ -74,6 +74,7 @@ describe('ExportBottomSheet', () => {
       'chapter-3',
       'chapter-5',
     ])
+    expect(JmcomicService.getAlbum).not.toHaveBeenCalled()
   })
 
   test('合并模式预览章节范围并按规范顺序发出确认事件', async () => {

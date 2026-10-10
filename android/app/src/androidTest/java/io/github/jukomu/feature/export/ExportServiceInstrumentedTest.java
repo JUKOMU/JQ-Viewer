@@ -127,6 +127,38 @@ public class ExportServiceInstrumentedTest {
     }
 
     @Test
+    public void exportSnapshotsIgnoreSubmittedMetadataForEveryFormat() throws Exception {
+        String chapterId = "900000080";
+        File chapterDirectory = fileStore.ensureChapterDir(ALBUM_ID, chapterId);
+        createImage(chapterDirectory, "page-0001.jpg", 20, 30, Color.RED);
+        registerChapter(chapterId, 1);
+        downloadStore.updateTaskDetail(ALBUM_ID + "_" + chapterId, 1, "Alice",
+            "[\"Alice\",\"Bob\"]", "[\"tag\"]", 7, false);
+        ExportService service = ExportService.getInstance(context);
+        for (String format : Arrays.asList("pdf", "cbz", "zip")) {
+            ExportService.ExportJob job = new ExportService.ExportJob();
+            job.format = format;
+            job.mode = "chapter";
+            job.albumId = ALBUM_ID;
+            job.chapterId = chapterId;
+            job.albumTitle = "Wrong album";
+            job.chapterTitle = "Wrong chapter";
+            job.authors = "Wrong author";
+            job.targetFolderRef = LocalFileRef.createPathFolderRef(outputDirectory.getCanonicalPath());
+            job.targetName = "metadata." + format;
+            job.displayPath = new File(outputDirectory, job.targetName).getAbsolutePath();
+            job.useOriginal = true;
+            job.compressionRatio = 1F;
+            JSONObject accepted = service.submitExport(Arrays.asList(job)).getJSONArray("tasks").getJSONObject(0);
+            assertTrue(accepted.optBoolean("accepted"));
+            assertEquals("测试漫画", accepted.optString("albumTitle"));
+            assertEquals("Alice、Bob", accepted.optString("authors"));
+            assertEquals("第" + chapterId + "话", job.chapterTitle);
+            assertEquals("completed", waitForTaskTerminal(accepted.getString("exportId"), EXPORT_TIMEOUT_MS).optString("status"));
+        }
+    }
+
+    @Test
     public void exportsAndRegistersCbzAndZipWithOriginalImageBytes() throws Exception {
         String firstChapterId = "8" + System.nanoTime();
         String secondChapterId = "7" + System.nanoTime();
@@ -138,6 +170,10 @@ public class ExportServiceInstrumentedTest {
         createImage(secondChapter, secondImage.getName(), 20, 30, Color.BLUE);
         registerChapter(firstChapterId, 1);
         registerChapter(secondChapterId, 1);
+        downloadStore.getWritableDatabase().execSQL("UPDATE download_tasks SET chapter_title=?,chapter_sort_order=? WHERE task_id=?",
+            new Object[]{"第一话", 1, ALBUM_ID + "_" + firstChapterId});
+        downloadStore.getWritableDatabase().execSQL("UPDATE download_tasks SET chapter_title=?,chapter_sort_order=? WHERE task_id=?",
+            new Object[]{"第二话", 2, ALBUM_ID + "_" + secondChapterId});
         byte[] firstBytes = Files.readAllBytes(firstImage.toPath());
 
         File cbzOutput = new File(outputDirectory, "chapter.cbz");
@@ -457,6 +493,7 @@ public class ExportServiceInstrumentedTest {
         String taskId = ALBUM_ID + "_" + chapterId;
         downloadStore.insertTask(taskId, ALBUM_ID, chapterId, "测试漫画", "第" + chapterId + "话", "");
         downloadStore.updateTaskDetail(taskId, pageCount, "", "[]", 0, false);
+        downloadStore.updateCompleted(taskId, pageCount, 1);
         List<JmImage> images = new ArrayList<>();
         JSONArray metaImages = new JSONArray();
         for (int index = 1; index <= pageCount; index++) {

@@ -834,14 +834,8 @@ public final class LocalFilePluginHandler {
                     job.format = format;
                     job.mode = t.optString("mode", "chapter").trim();
                     job.albumId = t.optString("albumId", "");
-                    job.albumTitle = t.optString("albumTitle", "");
-                    job.coverUrl = t.optString("coverUrl", "");
-                    job.authors = t.optString("authors", "");
-                    job.singleEpisode = t.has("isSingleEpisode")
-                        ? (t.optBoolean("isSingleEpisode") ? 1 : 0) : -1;
                     job.chapterId = t.optString("chapterId", "");
-                    job.chapterTitle = t.optString("chapterTitle",
-                        "merged".equals(job.mode) ? "合并导出" : job.chapterId);
+                    job.chapterTitle = job.chapterId;
                     job.targetFolderRef = t.optString("targetFolderRef", "");
                     job.targetName = t.optString("targetName", "");
                     job.displayPath = t.optString("displayPath", "");
@@ -861,8 +855,7 @@ public final class LocalFilePluginHandler {
                                     new ExportService.ExportChapter();
                                 chapter.albumId = c.optString("albumId", "");
                                 chapter.chapterId = c.optString("chapterId", "");
-                                chapter.chapterTitle = c.optString("chapterTitle", chapter.chapterId);
-                                chapter.sortOrder = c.optInt("sortOrder", 0);
+                                chapter.chapterTitle = chapter.chapterId;
                                 job.chapters.add(chapter);
                             }
                         }

@@ -7,6 +7,7 @@ import io.github.jukomu.feature.download.DownloadEventSink;
 import io.github.jukomu.feature.download.DownloadService;
 import io.github.jukomu.feature.download.data.DownloadStore;
 import io.github.jukomu.feature.download.storage.FileStore;
+import io.github.jukomu.feature.export.ExportService;
 import io.github.jukomu.feature.preload.PreloadEventSink;
 import io.github.jukomu.feature.preload.PreloadService;
 import io.github.jukomu.feature.settings.relocation.RelocationEventSink;
@@ -60,6 +61,8 @@ public final class AppRuntime {
         downloadService = new DownloadService(
             downloadDb, fileStore, sessionManager::getClient,
             downloadPrepareExecutor, eventRouter, applicationContext);
+        ExportService.getInstance(applicationContext)
+            .setMetadataResolver(downloadService::prepareExportMetadata);
         updateService = new UpdateService(applicationContext);
         LOGGER.info("app_runtime event=create phase=complete pools=4 durationMs={} status=ready",
             elapsedMs(startedAt));

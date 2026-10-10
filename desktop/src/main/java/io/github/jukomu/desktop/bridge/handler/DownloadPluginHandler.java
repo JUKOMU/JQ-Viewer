@@ -1,6 +1,5 @@
 package io.github.jukomu.desktop.bridge.handler;
 
-import io.github.jukomu.desktop.bridge.Request;
 import io.github.jukomu.desktop.bridge.RequestExecutor;
 import io.github.jukomu.desktop.bridge.model.SuccessResponse;
 import io.github.jukomu.desktop.feature.download.DownloadService;
@@ -8,6 +7,8 @@ import io.github.jukomu.desktop.feature.download.model.DownloadChapterRequest;
 import io.github.jukomu.desktop.feature.download.model.DownloadTaskIdRequest;
 import io.github.jukomu.desktop.feature.download.model.DownloadedChapterRequest;
 import io.javalin.http.Context;
+
+import static io.github.jukomu.desktop.util.RequestValidation.requiredText;
 
 /**
  * 处理下载任务 bridge 请求并完成参数适配。
@@ -31,21 +32,21 @@ public final class DownloadPluginHandler {
 
     public void cancelDownload(Context context) {
         requests.runLongOperation(context, DownloadTaskIdRequest.class, request -> {
-            downloads.cancelDownload(Request.requiredText(request.taskId(), "taskId"));
+            downloads.cancelDownload(requiredText(request.taskId(), "taskId"));
             return SuccessResponse.ok();
         });
     }
 
     public void pauseDownload(Context context) {
         requests.run(context, DownloadTaskIdRequest.class, request -> {
-            downloads.pauseDownload(Request.requiredText(request.taskId(), "taskId"));
+            downloads.pauseDownload(requiredText(request.taskId(), "taskId"));
             return SuccessResponse.ok();
         });
     }
 
     public void resumeDownload(Context context) {
         requests.run(context, DownloadTaskIdRequest.class, request -> {
-            downloads.resumeDownload(Request.requiredText(request.taskId(), "taskId"));
+            downloads.resumeDownload(requiredText(request.taskId(), "taskId"));
             return SuccessResponse.ok();
         });
     }
@@ -53,8 +54,8 @@ public final class DownloadPluginHandler {
     public void deleteDownloaded(Context context) {
         requests.runLongOperation(context, DownloadedChapterRequest.class, request -> {
             downloads.deleteDownloaded(
-                Request.requiredText(request.albumId(), "albumId"),
-                Request.requiredText(request.chapterId(), "chapterId"));
+                requiredText(request.albumId(), "albumId"),
+                requiredText(request.chapterId(), "chapterId"));
             return SuccessResponse.ok();
         });
     }
@@ -62,7 +63,7 @@ public final class DownloadPluginHandler {
     public void getDownloadedPhoto(Context context) {
         requests.runLongOperation(context, DownloadedChapterRequest.class,
             request -> downloads.getDownloadedPhoto(
-                Request.requiredText(request.albumId(), "albumId"),
-                Request.requiredText(request.chapterId(), "chapterId")));
+                requiredText(request.albumId(), "albumId"),
+                requiredText(request.chapterId(), "chapterId")));
     }
 }

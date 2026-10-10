@@ -11,6 +11,8 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.*;
 
+import static io.github.jukomu.desktop.util.TextUtils.text;
+
 /**
  * 提供浏览历史和解析历史的持久化读写与清理。
  */
@@ -299,10 +301,6 @@ public final class HistoryService {
             statement.setLong(index++, end);
         }
         return index;
-    }
-
-    private static String text(String value) {
-        return value == null ? "" : value;
     }
 
     private static Long nullableLong(ResultSet rows, int index) throws SQLException {

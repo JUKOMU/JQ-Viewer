@@ -17,6 +17,7 @@ import io.github.jukomu.feature.localfile.data.LocalFileStore;
 import io.github.jukomu.feature.localfile.management.PdfFileValidator;
 import io.github.jukomu.platform.notification.NotificationIds;
 import io.github.jukomu.runtime.ServiceExecutors;
+import io.github.jukomu.util.LogFields;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.slf4j.Logger;
@@ -67,6 +68,7 @@ public class ExportService {
     private final WakeLockFactory wakeLockFactory;
     private volatile ExportEventSink eventSink = snapshot -> {
     };
+    private volatile java.util.function.Function<String, JSONObject> metadataResolver;
 
     private final ExportNotificationHelper notif;
 
@@ -84,10 +86,15 @@ public class ExportService {
         this.writer = new PdfBoxExportWriter(this.context);
         this.archiveWriter = new ArchiveVolumeWriter();
         this.localFileStore = LocalFileStore.getInstance(this.context);
+        this.metadataResolver = DownloadStore.getInstance(this.context)::completeMetadata;
     }
 
     static ExecutorService createExecutor() {
         return ServiceExecutors.fixed("file-export", 1);
+    }
+
+    public void setMetadataResolver(java.util.function.Function<String, JSONObject> resolver) {
+        this.metadataResolver = Objects.requireNonNull(resolver, "resolver");
     }
 
     public static synchronized ExportService getInstance(Context context) {
@@ -504,6 +511,15 @@ public class ExportService {
                         continue;
                     }
                     ExportFailure failure = describeExportFailure(error, job);
+                    if (error.getMessage() != null && error.getMessage().startsWith("DOWNLOAD_METADATA_INCOMPLETE")) {
+                        cleanupStagingDirectoryQuietly(job);
+                        releaseJobLocksAndUpdate(job);
+                        results.put(new JSONObject().put("accepted", false)
+                            .put("errorCode", "DOWNLOAD_METADATA_INCOMPLETE")
+                            .put("errorMessage", "无法补全下载元数据")
+                            .put("displayPath", nullToEmpty(job.displayPath)));
+                        continue;
+                    }
                     reserveExport(job, null, String.valueOf(batchId), "failed",
                         errorCode(error, job), failure.userMessage);
                     notif.showError(NotificationIds.exportTask(notificationCounter.getAndIncrement()),
@@ -572,16 +588,7 @@ public class ExportService {
 
     private static void appendLogField(StringBuilder out, String key, String value) {
         if (value == null || value.isEmpty()) return;
-        out.append(' ').append(key).append('=').append(cleanLogValue(value));
-    }
-
-    private static String cleanLogValue(String value) {
-        StringBuilder out = new StringBuilder(Math.min(value.length(), 256));
-        for (int i = 0; i < value.length() && out.length() < 256; i++) {
-            char c = value.charAt(i);
-            out.append(Character.isISOControl(c) ? ' ' : c);
-        }
-        return out.toString();
+        out.append(' ').append(key).append('=').append(LogFields.clean(value));
     }
 
     private void executeBatch(int batchId, List<QueuedExportJob> queuedJobs) {
@@ -915,11 +922,50 @@ public class ExportService {
             exportChapters.add(chapter);
         }
 
+        DownloadStore downloadStore = DownloadStore.getInstance(context);
+        boolean metadataLoaded = false;
         List<ChapterPreflight> chapterResults = new ArrayList<>();
         long totalImageBytes = 0L;
         long totalPages = 0L;
         long boundsDecodeNanos = 0L;
         for (ExportChapter chapter : exportChapters) {
+            JSONObject storedTask = downloadStore.getTask(chapter.albumId + "_" + chapter.chapterId);
+            if (storedTask == null || !"completed".equals(storedTask.optString("status"))) {
+                throw new IOException("章节“" + chapter.chapterId + "”尚未完成下载");
+            }
+            try {
+                storedTask = metadataResolver.apply(chapter.albumId + "_" + chapter.chapterId);
+                if (storedTask == null || storedTask.optString("albumTitle").isBlank()
+                    || storedTask.optString("chapterTitle").isBlank() || !storedTask.has("isSingleEpisode")) {
+                    throw new IllegalStateException("下载记录缺少必要元数据");
+                }
+            } catch (RuntimeException error) {
+                throw new IOException("DOWNLOAD_METADATA_INCOMPLETE: 无法补全下载元数据", error);
+            }
+            chapter.chapterTitle = storedTask.optString("chapterTitle", chapter.chapterId);
+            if (storedTask.has("chapterSortOrder")) {
+                chapter.sortOrder = storedTask.optInt("chapterSortOrder", 0);
+            }
+            if (!metadataLoaded) {
+                job.albumTitle = storedTask.optString("albumTitle");
+                job.coverUrl = storedTask.optString("coverUrl");
+                JSONArray authors = storedTask.optJSONArray("authors");
+                if (authors == null) {
+                    job.authors = storedTask.optString("author", "");
+                } else {
+                    StringBuilder joined = new StringBuilder();
+                    for (int authorIndex = 0; authorIndex < authors.length(); authorIndex++) {
+                        if (authorIndex > 0) joined.append('、');
+                        joined.append(authors.optString(authorIndex));
+                    }
+                    job.authors = joined.toString();
+                }
+                if (storedTask.has("isSingleEpisode")) {
+                    job.singleEpisode = storedTask.optBoolean("isSingleEpisode") ? 1 : 0;
+                }
+                metadataLoaded = true;
+            }
+            if (!"merged".equals(job.mode)) job.chapterTitle = chapter.chapterTitle;
             String label = chapter.chapterTitle == null || chapter.chapterTitle.trim().isEmpty()
                 ? chapter.chapterId : chapter.chapterTitle;
             ChapterManifestValidator.Report manifest;
@@ -947,6 +993,7 @@ public class ExportService {
             chapterResults.add(new ChapterPreflight(chapter, descriptors));
         }
 
+        if ("merged".equals(job.mode)) job.chapterTitle = job.albumTitle;
         LocalFileRef.Parsed targetRef = LocalFileRef.parse(job.targetFolderRef);
         if (targetRef.kind != LocalFileRef.Kind.FOLDER) {
             throw new IOException("导出目标不是文件夹引用");

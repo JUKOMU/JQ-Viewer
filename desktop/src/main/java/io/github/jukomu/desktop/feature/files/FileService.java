@@ -18,6 +18,8 @@ import java.util.*;
 import java.util.List;
 import java.util.function.Consumer;
 
+import static io.github.jukomu.desktop.util.LogFields.clean;
+
 /**
  * Desktop 目录选择、文件引用与系统打开能力。
  */
@@ -186,12 +188,6 @@ public final class FileService {
 
     private static long elapsed(long startedNanos) {
         return java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNanos);
-    }
-
-    private static String clean(String value) {
-        if (value == null || value.isBlank()) return "-";
-        String cleaned = value.replaceAll("[\\p{Cntrl}\\r\\n]+", " ").trim();
-        return cleaned.substring(0, Math.min(256, cleaned.length()));
     }
 
     private Path defaultPath(String purpose) {

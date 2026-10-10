@@ -299,6 +299,9 @@ export interface DownloadTask {
   albumTitle: string
   chapterTitle: string
   coverUrl: string
+  author?: string
+  authors?: string[]
+  tags?: string[]
   firstImageSortOrder?: number
   chapterSortOrder?: number
   isSingleEpisode?: boolean
@@ -538,13 +541,8 @@ export interface ExportTask {
   format: ExportFormat
   mode: ExportMode
   albumId: string
-  albumTitle?: string
-  coverUrl?: string
-  authors?: string
-  isSingleEpisode?: boolean
   chapterId?: string
-  chapterTitle: string // 用于通知显示
-  chapters?: ExportTaskChapter[]
+  chapters?: Pick<ExportTaskChapter, 'albumId' | 'chapterId'>[]
   target: ExportTarget // 平台持有的导出目录引用与相对路径，不承载展示给用户的绝对路径
   displayPath: string // 仅用于预览、确认和展示
   useOriginal: boolean

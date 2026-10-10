@@ -7,6 +7,8 @@ import io.github.jukomu.desktop.feature.favorite.model.*;
 
 import java.util.List;
 
+import static io.github.jukomu.desktop.util.TextUtils.text;
+
 /**
  * 提供离线收藏的输入规范化、事务操作和共享响应契约。
  */
@@ -124,10 +126,7 @@ public final class OfflineFavoriteService {
 
     private static List<String> strings(List<String> values) {
         if (values == null) return List.of();
-        return values.stream().map(OfflineFavoriteService::text).toList();
+        return values.stream().map(io.github.jukomu.desktop.util.TextUtils::text).toList();
     }
 
-    private static String text(String value) {
-        return value == null ? "" : value;
-    }
 }

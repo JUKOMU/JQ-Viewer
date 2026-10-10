@@ -113,6 +113,16 @@ describe('buildChapterRange', () => {
 })
 
 describe('chapterRange template variable', () => {
+  it('uses each download snapshot and falls back to the legacy single author', () => {
+    const first = { ...downloadTask(1), author: 'Legacy', authors: ['Alice', 'Bob'], tags: ['tag'] }
+    const second = { ...downloadTask(2), albumTitle: 'Other', author: 'Carol', authors: [] }
+    expect(ExportService.buildTemplateData(first)).toEqual(expect.objectContaining({
+      title: '测试漫画', author: 'Alice', authors: 'Alice、Bob', tags: ['tag'],
+    }))
+    expect(ExportService.buildTemplateData(second)).toEqual(expect.objectContaining({
+      title: 'Other', author: 'Carol', authors: 'Carol', tags: [],
+    }))
+  })
   it('is registered and rendered', () => {
     expect(ExportService.TEMPLATE_VAR_KEYS).toContain('{chapterRange}')
     expect(
@@ -138,7 +148,7 @@ describe('chapterRange template variable', () => {
       createdAt: 1,
     }
 
-    const data = ExportService.buildTemplateData(downloadTask, null)
+    const data = ExportService.buildTemplateData(downloadTask)
 
     expect(data.chapterRange).toBe('第2话')
     expect(ExportService.renderTemplate('{chapterRange}', data)).toBe('第2话')
@@ -182,11 +192,11 @@ describe('PDF export plan', () => {
 
   it('builds merged template data and a default path with chapterRange', () => {
     const chapters = [downloadTask(3, 'chapter-3'), downloadTask(2, 'chapter-2')]
-    const data = ExportService.buildMergedTemplateData(chapters, null)
+    const data = ExportService.buildMergedTemplateData(chapters)
 
     expect(data.chapterRange).toBe('第2-3话')
     expect(data.pageCount).toBe(40)
-    expect(ExportService.buildMergedFullPath(chapters, null)).toContain('第2-3话.pdf')
+    expect(ExportService.buildMergedFullPath(chapters)).toContain('第2-3话.pdf')
   })
 
   it('builds one normalized merged task and predicts all split output paths', () => {
@@ -196,7 +206,6 @@ describe('PDF export plan', () => {
       format: 'pdf',
       mode: 'merged',
       selectedChapters: [chapter3, downloadTask(2, 'chapter-2')],
-      albumDetail: null,
       useOriginal: true,
       compressionRatio: 0.5,
       editedPath: '/exports/merged.pdf',
@@ -209,15 +218,14 @@ describe('PDF export plan', () => {
       expect.objectContaining({
         mode: 'merged',
         albumId: 'album-1',
-        albumTitle: '测试漫画',
-        coverUrl: 'https://example.test/cover.jpg',
-        isSingleEpisode: false,
-        chapterTitle: '第2-3话',
         displayPath: '/exports/merged.pdf',
         target: { folder: 'folder:path:/exports', relativePath: 'merged.pdf' },
       }),
     ])
     expect(plan.tasks[0]).not.toHaveProperty('chapterId')
+    expect(plan.tasks[0]).not.toHaveProperty('authors')
+    expect(plan.tasks[0]).not.toHaveProperty('chapterTitle')
+    expect(plan.tasks[0].chapters?.[0]).toEqual({ albumId: 'album-1', chapterId: 'chapter-2' })
     expect(plan.tasks[0].chapters?.map((item) => item.chapterId)).toEqual([
       'chapter-2',
       'chapter-3',
@@ -259,7 +267,6 @@ describe('PDF export plan', () => {
       format: 'pdf',
       mode: 'chapter',
       selectedChapters: [downloadTask(2, 'chapter-2'), downloadTask(3, 'chapter-3')],
-      albumDetail: null,
       useOriginal: false,
       compressionRatio: 0.4,
       editedPath: '/exports/preview.pdf',
@@ -271,11 +278,7 @@ describe('PDF export plan', () => {
     expect(plan.tasks).toHaveLength(2)
     expect(plan.tasks.map((task) => task.mode)).toEqual(['chapter', 'chapter'])
     expect(plan.tasks.map((task) => task.chapterId)).toEqual(['chapter-2', 'chapter-3'])
-    expect(plan.tasks.every((task) => task.albumTitle === '测试漫画')).toBe(true)
-    expect(plan.tasks.every((task) => task.coverUrl === 'https://example.test/cover.jpg')).toBe(
-      true,
-    )
-    expect(plan.tasks.every((task) => task.isSingleEpisode === false)).toBe(true)
+    expect(plan.tasks.every((task) => !('albumTitle' in task) && !('authors' in task))).toBe(true)
     expect(plan.outputDisplayPaths).toEqual(plan.tasks.map((task) => task.displayPath))
   })
 
@@ -285,7 +288,6 @@ describe('PDF export plan', () => {
         format: 'pdf',
         mode: 'merged',
         selectedChapters: [downloadTask(2, 'chapter-2')],
-        albumDetail: null,
         useOriginal: true,
         compressionRatio: 0.5,
         editedPath: '/exports/merged.pdf',
@@ -301,7 +303,6 @@ describe('PDF export plan', () => {
         format,
         mode: 'chapter',
         selectedChapters: [downloadTask(2, 'chapter-2')],
-        albumDetail: null,
         useOriginal: false,
         compressionRatio: 0.4,
         editedPath: '/exports/chapter.pdf',

@@ -911,21 +911,10 @@ const onExportConfirm = async (payload: {
 }) => {
   showExportSheet.value = false
 
-  // 多章节时获取本子详情以支持 author/authors/tag 模板变量
-  let albumDetail: AlbumDetail | null = null
-  if (payload.selectedChapters.length !== 1) {
-    try {
-      albumDetail = await JmcomicService.getAlbum(payload.selectedChapters[0].albumId)
-    } catch {
-      /* 获取失败则变量渲染为空 */
-    }
-  }
-
   let exportPlan: ExportPlan
   try {
     exportPlan = ExportService.buildExportPlan({
       ...payload,
-      albumDetail,
       exportFolder: (() => {
         const selection = ExportService.getExportFolder()
         if (!selection) throw new Error('请先选择导出目录')

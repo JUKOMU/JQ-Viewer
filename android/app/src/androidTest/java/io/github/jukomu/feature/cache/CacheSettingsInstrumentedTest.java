@@ -23,7 +23,8 @@ public class CacheSettingsInstrumentedTest {
         CacheCapacityPolicy policy = new CacheCapacityPolicy();
         CacheCapacityPolicy.Result result = policy.calculate(
             requestedMb, 512L * CacheCapacityPolicy.MIB, false,
-            CacheCapacityPolicy.PressureLevel.NORMAL);
+            CacheCapacityPolicy.PressureLevel.NORMAL,
+            CacheCapacityPolicy.SpaceSnapshot.unavailable());
         ImageCache imageCache = ImageCache.createIsolated();
         imageCache.applyPolicy(result);
 

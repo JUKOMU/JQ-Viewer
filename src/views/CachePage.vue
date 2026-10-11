@@ -32,6 +32,10 @@
             {{ cachedPageCount }} 页 · {{ groups.length }} 个 章节 ·
             {{ formatBytes(cachedSizeBytes) }}
           </div>
+          <div v-if="cacheInfo.memoryCapacityMb !== undefined" class="summary-detail">
+            内存 {{ cacheInfo.memoryUsedMb ?? 0 }} / {{ cacheInfo.memoryCapacityMb }} MB · 磁盘
+            {{ cacheInfo.diskUsedMb ?? 0 }} / {{ cacheInfo.diskCapacityMb ?? 0 }} MB
+          </div>
           <div class="usage-bar" aria-hidden="true">
             <div class="usage-fill" :style="{ width: usagePercent + '%' }" />
           </div>

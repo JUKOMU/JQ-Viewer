@@ -18,7 +18,8 @@ public class ImageCacheTest {
     @Before
     public void setUp() {
         CacheCapacityPolicy.Result result = new CacheCapacityPolicy().calculate(
-            16, 64L * MIB, false, CacheCapacityPolicy.PressureLevel.NORMAL);
+            16, 64L * MIB, false, CacheCapacityPolicy.PressureLevel.NORMAL,
+            CacheCapacityPolicy.SpaceSnapshot.unavailable());
         cache.applyPolicy(result);
         cache.clear();
     }

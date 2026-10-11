@@ -175,6 +175,11 @@ export interface CacheCapacityInfo {
   pressureLevel?: string
   temporaryClamp?: boolean
   limitReason?: string
+  memoryCapacityMb?: number
+  memoryUsedMb?: number
+  diskCapacityMb?: number
+  diskUsedMb?: number
+  diskReserveMb?: number
 }
 
 export interface ImageCacheEntry {
@@ -196,6 +201,11 @@ export interface AllSettings {
   cacheMaxHeapMb?: number
   cacheTemporaryClamp?: boolean
   cacheLimitReason?: string
+  cacheMemoryCapacityMb?: number
+  cacheMemoryUsedMb?: number
+  cacheDiskCapacityMb?: number
+  cacheDiskUsedMb?: number
+  cacheDiskReserveMb?: number
   ocrEnabled: boolean
   readerDisplayMode: string
   readerScreenOrientation: string

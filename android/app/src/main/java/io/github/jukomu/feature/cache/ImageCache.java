@@ -1,5 +1,6 @@
 package io.github.jukomu.feature.cache;
 
+import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.net.Uri;
@@ -50,13 +51,16 @@ public class ImageCache {
     private long currentSize = 0;
     private long reservedSize = 0;
     private CacheCapacityPolicy.Result policyResult;
+    private DiskImageCache diskCache;
+    private final List<Map.Entry<String, ImageEntry>> pendingSpills = new ArrayList<>();
 
     private ImageCache() {
         policyResult = new CacheCapacityPolicy().calculate(
             CacheCapacityPolicy.DEFAULT_REQUESTED_MB,
             Runtime.getRuntime().maxMemory(),
             false,
-            CacheCapacityPolicy.PressureLevel.NORMAL);
+            CacheCapacityPolicy.PressureLevel.NORMAL,
+            CacheCapacityPolicy.SpaceSnapshot.unavailable());
         capacity = policyResult.effectiveMb * CacheCapacityPolicy.MIB;
     }
 
@@ -69,6 +73,16 @@ public class ImageCache {
             }
         }
         return instance;
+    }
+
+    public synchronized void initDiskCache(Context context) {
+        if (diskCache == null && context != null) {
+            diskCache = new DiskImageCache(context.getApplicationContext());
+            diskCache.recover();
+        }
+        if (diskCache != null && policyResult != null) {
+            diskCache.setCapacity(policyResult.diskCapacityMb * CacheCapacityPolicy.MIB);
+        }
     }
 
     static ImageCache createIsolated() {
@@ -94,6 +108,7 @@ public class ImageCache {
      */
     public void applyPolicy(CacheCapacityPolicy.Result result) {
         if (result == null) return;
+        DiskImageCache disk = diskCache;
         writeLock.lock();
         try {
             policyResult = result;
@@ -102,6 +117,8 @@ public class ImageCache {
         } finally {
             writeLock.unlock();
         }
+        drainPendingSpills();
+        if (disk != null) disk.setCapacity(result.diskCapacityMb * CacheCapacityPolicy.MIB);
     }
 
     /**
@@ -119,7 +136,7 @@ public class ImageCache {
     public CacheStats getStats() {
         readLock.lock();
         try {
-            return new CacheStats(policyResult, currentSize, reservedSize);
+            return new CacheStats(policyResult, currentSize, reservedSize, getDiskUsedBytes());
         } finally {
             readLock.unlock();
         }
@@ -139,6 +156,7 @@ public class ImageCache {
      */
     public IncomingReservation prepareForIncomingBytes(long size) {
         if (size <= 0L) return null;
+        IncomingReservation reservation;
         writeLock.lock();
         try {
             if (size > capacity || reservedSize + size > capacity) {
@@ -153,10 +171,12 @@ public class ImageCache {
             }
             evictToTarget(capacity - reservedSize - size);
             reservedSize += size;
-            return new IncomingReservation(this, size);
+            reservation = new IncomingReservation(this, size);
         } finally {
             writeLock.unlock();
         }
+        drainPendingSpills();
+        return reservation;
     }
 
     // ---- 缓存操作 ----
@@ -173,6 +193,7 @@ public class ImageCache {
         }
         int size = data.length;
 
+        boolean accepted;
         writeLock.lock();
         try {
             boolean hadReservation = consumeReservation(reservation);
@@ -200,10 +221,12 @@ public class ImageCache {
             cache.put(key, entry);
             currentSize += size;
             evictIfNeeded();
-            return cache.containsKey(key);
+            accepted = cache.containsKey(key);
         } finally {
             writeLock.unlock();
         }
+        drainPendingSpills();
+        return accepted;
     }
 
     public ImageEntry get(String key) {
@@ -215,6 +238,37 @@ public class ImageCache {
         } finally {
             writeLock.unlock();
         }
+    }
+
+    DiskImageCache.Entry getDisk(String key) {
+        return diskCache == null ? null : diskCache.get(key);
+    }
+
+    private boolean promoteFromDisk(String key, DiskImageCache.Entry diskEntry) {
+        try {
+            byte[] data = diskEntry.readBytes();
+            if (!put(key, data, diskEntry.mimeType)) return false;
+            DiskImageCache disk = diskCache;
+            if (disk != null) disk.removeKey(key);
+            return true;
+        } catch (IOException error) {
+            return false;
+        }
+    }
+
+    public List<DiskImageCache.Info> getDiskEntries() {
+        return diskCache == null ? java.util.Collections.emptyList() : diskCache.snapshot();
+    }
+
+    public long getDiskUsedBytes() {
+        return diskCache == null ? 0L : diskCache.usedBytes();
+    }
+
+    public CacheCapacityPolicy.SpaceSnapshot getSpaceSnapshot() {
+        if (diskCache == null) return CacheCapacityPolicy.SpaceSnapshot.unavailable();
+        long available = diskCache.availableBytes();
+        return available < 0L ? CacheCapacityPolicy.SpaceSnapshot.unavailable()
+            : new CacheCapacityPolicy.SpaceSnapshot(available, diskCache.usedBytes(), true);
     }
 
     public boolean has(String key) {
@@ -247,11 +301,24 @@ public class ImageCache {
      * 清空全部缓存。
      */
     public void clear() {
+        DiskImageCache disk = diskCache;
         writeLock.lock();
         try {
             cache.clear();
             currentSize = 0;
             LOGGER.info("图片缓存清理完成: event=clear");
+        } finally {
+            writeLock.unlock();
+        }
+        if (disk != null) disk.clear();
+    }
+
+    /** 系统内存压力只释放热层，保留可重启恢复的冷层。 */
+    public void clearMemory() {
+        writeLock.lock();
+        try {
+            cache.clear();
+            currentSize = 0;
         } finally {
             writeLock.unlock();
         }
@@ -261,6 +328,7 @@ public class ImageCache {
      * 按前缀清理（如清理某个 photoId 下的所有图片：photoId + "/"）。
      */
     public void clearByPrefix(String prefix) {
+        DiskImageCache disk = diskCache;
         writeLock.lock();
         try {
             int removed = 0;
@@ -278,6 +346,7 @@ public class ImageCache {
         } finally {
             writeLock.unlock();
         }
+        if (disk != null) disk.removeByPrefix(prefix);
     }
 
     // ---- 淘汰 ----
@@ -294,6 +363,7 @@ public class ImageCache {
         while (it.hasNext() && currentSize > target) {
             var entry = it.next();
             currentSize -= entry.getValue().data.length;
+            pendingSpills.add(Map.entry(entry.getKey(), entry.getValue()));
             it.remove();
             removed++;
         }
@@ -366,11 +436,30 @@ public class ImageCache {
             var it = cache.entrySet().iterator();
             while (it.hasNext() && currentSize > target) {
                 var entry = it.next();
+                pendingSpills.add(Map.entry(entry.getKey(), entry.getValue()));
                 currentSize -= entry.getValue().data.length;
                 it.remove();
             }
         } finally {
             writeLock.unlock();
+        }
+        drainPendingSpills();
+    }
+
+    private void drainPendingSpills() {
+        DiskImageCache disk = diskCache;
+        if (disk == null) return;
+        List<Map.Entry<String, ImageEntry>> batch;
+        writeLock.lock();
+        try {
+            if (pendingSpills.isEmpty()) return;
+            batch = new ArrayList<>(pendingSpills);
+            pendingSpills.clear();
+        } finally {
+            writeLock.unlock();
+        }
+        for (Map.Entry<String, ImageEntry> entry : batch) {
+            disk.put(entry.getKey(), entry.getValue().data, entry.getValue().mimeType);
         }
     }
 
@@ -414,6 +503,18 @@ public class ImageCache {
                     "UTF-8",
                     new ByteArrayInputStream(entry.data)
                 );
+            }
+
+            DiskImageCache.Entry diskEntry = getInstance().getDisk(cacheKey);
+            if (diskEntry != null) {
+                if (getInstance().promoteFromDisk(cacheKey, diskEntry)) {
+                    ImageEntry promoted = getInstance().get(cacheKey);
+                    logResource("disk-promote", type, photoId, sortOrder, startedNanos, null);
+                    return new WebResourceResponse(promoted.mimeType, "UTF-8",
+                        new ByteArrayInputStream(promoted.data));
+                }
+                logResource("disk-hit", type, photoId, sortOrder, startedNanos, null);
+                return new WebResourceResponse(diskEntry.mimeType, null, diskEntry.open());
             }
 
             // 2. 缓存 miss → 依次：原图内存缓存 → FileStore
@@ -600,8 +701,12 @@ public class ImageCache {
         public final String pressureLevel;
         public final boolean temporaryClamp;
         public final String reason;
+        public final long memoryCapacityMb;
+        public final long diskCapacityMb;
+        public final long diskUsedBytes;
+        public final long diskReserveMb;
 
-        CacheStats(CacheCapacityPolicy.Result result, long currentBytes, long reservedBytes) {
+        CacheStats(CacheCapacityPolicy.Result result, long currentBytes, long reservedBytes, long diskBytes) {
             this.requestedMb = result.requestedMb;
             this.effectiveMb = result.effectiveMb;
             this.currentBytes = currentBytes;
@@ -611,6 +716,10 @@ public class ImageCache {
             this.pressureLevel = result.pressureLevel.getValue();
             this.temporaryClamp = result.temporaryClamp;
             this.reason = result.reason;
+            this.memoryCapacityMb = result.memoryCapacityMb;
+            this.diskCapacityMb = result.diskCapacityMb;
+            this.diskUsedBytes = diskBytes;
+            this.diskReserveMb = CacheCapacityPolicy.DISK_RESERVE_MB;
         }
     }
 }

@@ -131,6 +131,7 @@ public class JqViewerPlugin extends Plugin {
             }
         }
         FileStore.getInstance().init(ctx, downloadDb, usePublicDir);
+        ImageCache.getInstance().initDiskCache(ctx);
 
         // 初始化历史记录数据库
         HistoryStore historyStore = HistoryStore.getInstance(ctx);
@@ -378,7 +379,7 @@ public class JqViewerPlugin extends Plugin {
             .getSystemService(Context.ACTIVITY_SERVICE);
         boolean lowRam = am != null && am.isLowRamDevice();
         return cacheCapacityPolicy.calculate(requestedMb, Runtime.getRuntime().maxMemory(),
-            lowRam, pressureLevel);
+            lowRam, pressureLevel, ImageCache.getInstance().getSpaceSnapshot());
     }
 
     private void applyCachePolicy(long requestedMb,
@@ -427,7 +428,7 @@ public class JqViewerPlugin extends Plugin {
         applyCachePolicy(requestedMb, pressureLevel);
 
         if (level >= ComponentCallbacks2.TRIM_MEMORY_COMPLETE) {
-            ImageCache.getInstance().clear();
+            ImageCache.getInstance().clearMemory();
         } else if (level >= ComponentCallbacks2.TRIM_MEMORY_MODERATE) {
             ImageCache.getInstance().trimToFraction(0.2);
         } else if (level >= ComponentCallbacks2.TRIM_MEMORY_BACKGROUND) {

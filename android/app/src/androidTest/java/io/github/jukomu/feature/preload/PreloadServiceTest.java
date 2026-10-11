@@ -53,7 +53,8 @@ public class PreloadServiceTest {
     public void setUp() throws Exception {
         imageCache.applyPolicy(new CacheCapacityPolicy().calculate(
             16, 64L * CacheCapacityPolicy.MIB, false,
-            CacheCapacityPolicy.PressureLevel.NORMAL));
+            CacheCapacityPolicy.PressureLevel.NORMAL,
+            CacheCapacityPolicy.SpaceSnapshot.unavailable()));
         imageCache.clear();
         imageExecutor = Executors.newSingleThreadExecutor();
         fileExecutor = Executors.newSingleThreadExecutor();

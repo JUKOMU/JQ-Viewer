@@ -765,6 +765,18 @@ const usagePercent = computed(() => {
 const cacheEffectiveMb = computed(() => cacheInfo.value.effectiveMb ?? cacheInfo.value.capacityMb)
 
 const cacheDiagnosticText = computed(() => {
+  if (isAndroidRuntime && cacheInfo.value.memoryCapacityMb !== undefined) {
+    const reasonLabels: Record<string, string> = {
+      'requested-limit': '按用户设置生效',
+      'disk-space': '磁盘空间不足，已保留安全空间',
+      'disk-unavailable': '磁盘缓存暂不可用',
+      'memory-pressure': '系统内存压力临时收缩',
+    }
+    const reason = cacheInfo.value.limitReason
+      ? reasonLabels[cacheInfo.value.limitReason] || cacheInfo.value.limitReason
+      : ''
+    return `内存 ${cacheInfo.value.memoryCapacityMb} MB · 磁盘 ${cacheInfo.value.diskCapacityMb ?? 0} MB${reason ? ` · ${reason}` : ''}`
+  }
   const maxHeapMb = cacheInfo.value.maxHeapMb
   if (!maxHeapMb) return ''
   const reasonLabels: Record<string, string> = {

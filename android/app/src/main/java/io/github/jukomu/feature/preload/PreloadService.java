@@ -4,6 +4,7 @@ import android.app.ActivityManager;
 import android.content.Context;
 import android.os.SystemClock;
 import io.github.jukomu.feature.cache.CacheCapacityPolicy;
+import io.github.jukomu.feature.cache.DiskImageCache;
 import io.github.jukomu.feature.cache.ImageCache;
 import io.github.jukomu.feature.download.storage.FileStore;
 import io.github.jukomu.feature.download.validation.ImageFileValidator;
@@ -20,7 +21,9 @@ import org.slf4j.LoggerFactory;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicLong;
@@ -524,6 +527,7 @@ public class PreloadService {
                 photoId + "/" + sortOrder, imageBytes, mimeType, reservation)) {
                 throw new IOException("重试图片无法写入内存缓存");
             }
+            imageCache.removeDisk(photoId + "/" + sortOrder);
             callback.onSuccess();
             logImageCompleted("retry-cache", photoId, sortOrder, "image", startedNanos);
         } catch (Exception error) {
@@ -571,7 +575,7 @@ public class PreloadService {
                                                                         .getSystemService(Context.ACTIVITY_SERVICE);
         boolean lowRam = am != null && am.isLowRamDevice();
         return cacheCapacityPolicy.calculate(requestedMb, Runtime.getRuntime().maxMemory(),
-            lowRam, pressureLevel);
+            lowRam, pressureLevel, imageCache.getSpaceSnapshot());
     }
 
     public void setMemoryPressureLevel(CacheCapacityPolicy.PressureLevel level) {
@@ -596,6 +600,12 @@ public class PreloadService {
             ret.put("pressureLevel", stats.pressureLevel);
             ret.put("temporaryClamp", stats.temporaryClamp);
             ret.put("limitReason", stats.reason);
+            ret.put("memoryCapacityMb", stats.memoryCapacityMb);
+            ret.put("memoryUsedMb", Math.round(stats.memoryBytes / (1024.0 * 1024.0)));
+            ret.put("diskCapacityMb", stats.diskCapacityMb);
+            ret.put("diskUsedMb", Math.round(stats.diskUsedBytes / (1024.0 * 1024.0)));
+            ret.put("diskReserveMb", stats.diskReserveMb);
+            ret.put("diskState", stats.diskState);
         } catch (Exception e) {
             LOGGER.debug("构建缓存容量信息失败", e);
         }
@@ -605,6 +615,7 @@ public class PreloadService {
     public JSONObject getImageCacheContents() {
         JSONObject ret = new JSONObject();
         JSONArray entries = new JSONArray();
+        Map<String, JSONObject> byKey = new LinkedHashMap<>();
         try {
             for (ImageCache.CacheEntryInfo entry : imageCache.getEntriesSnapshot()) {
                 String[] parts = entry.key.split("/", -1);
@@ -632,8 +643,27 @@ public class PreloadService {
                 item.put("type", type);
                 item.put("sizeBytes", entry.sizeBytes);
                 item.put("mimeType", entry.mimeType == null ? "" : entry.mimeType);
-                entries.put(item);
+                byKey.put(parts[0] + "/" + parts[1] + "/" + type, item);
             }
+            for (DiskImageCache.Info entry : imageCache.getDiskEntries()) {
+                String[] parts = entry.key().split("/", -1);
+                if (parts.length < 2 || parts.length > 3 || parts[0].isEmpty()) continue;
+                int sortOrder;
+                try {
+                    sortOrder = Integer.parseInt(parts[1]);
+                } catch (NumberFormatException ignored) {
+                    continue;
+                }
+                String type = parts.length == 2 ? "image" : "thumb";
+                JSONObject item = new JSONObject();
+                item.put("photoId", parts[0]);
+                item.put("sortOrder", sortOrder);
+                item.put("type", type);
+                item.put("sizeBytes", entry.sizeBytes());
+                item.put("mimeType", entry.mimeType() == null ? "" : entry.mimeType());
+                byKey.put(parts[0] + "/" + parts[1] + "/" + type, item);
+            }
+            for (JSONObject item : byKey.values()) entries.put(item);
             ret.put("entries", entries);
         } catch (Exception e) {
             LOGGER.debug("构建图片缓存内容失败", e);

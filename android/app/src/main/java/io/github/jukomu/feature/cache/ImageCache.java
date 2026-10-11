@@ -14,6 +14,9 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
@@ -47,12 +50,20 @@ public class ImageCache {
         }
     };
 
-    private long capacity;
-    private long currentSize = 0;
-    private long reservedSize = 0;
+    private long memoryUsedBytes;
+    private long reservedMemoryBytes;
     private CacheCapacityPolicy.Result policyResult;
-    private DiskImageCache diskCache;
+    private volatile DiskImageCache diskCache;
+    private CompletableFuture<DiskImageCache> diskInitialization;
+    private Throwable diskInitializationFailure;
+    private boolean policyApplied;
+    private final ExecutorService diskExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "jq-viewer-image-cache");
+        thread.setDaemon(true);
+        return thread;
+    });
     private final List<Map.Entry<String, ImageEntry>> pendingSpills = new ArrayList<>();
+    private final Object spillLock = new Object();
 
     private ImageCache() {
         policyResult = new CacheCapacityPolicy().calculate(
@@ -61,7 +72,6 @@ public class ImageCache {
             false,
             CacheCapacityPolicy.PressureLevel.NORMAL,
             CacheCapacityPolicy.SpaceSnapshot.unavailable());
-        capacity = policyResult.effectiveMb * CacheCapacityPolicy.MIB;
     }
 
     public static ImageCache getInstance() {
@@ -76,31 +86,103 @@ public class ImageCache {
     }
 
     public synchronized void initDiskCache(Context context) {
-        if (diskCache == null && context != null) {
-            diskCache = new DiskImageCache(context.getApplicationContext());
-            diskCache.recover();
-        }
-        if (diskCache != null && policyResult != null) {
-            diskCache.setCapacity(policyResult.diskCapacityMb * CacheCapacityPolicy.MIB);
-        }
+        if (context == null || diskInitialization != null) return;
+        Context applicationContext = context.getApplicationContext();
+        diskInitialization = CompletableFuture.supplyAsync(() -> {
+            DiskImageCache recovered = new DiskImageCache(applicationContext);
+            recovered.recover();
+            CacheCapacityPolicy.Result result;
+            boolean shouldApply;
+            readLock.lock();
+            try {
+                result = policyResult;
+                shouldApply = policyApplied;
+            } finally {
+                readLock.unlock();
+            }
+            if (shouldApply && result != null) {
+                long available = recovered.availableBytes();
+                if (available >= 0L) {
+                    long usable = Math.max(0L, available + recovered.usedBytes()
+                        - CacheCapacityPolicy.DISK_RESERVE_MB * CacheCapacityPolicy.MIB);
+                    long diskAvailableMb = usable / CacheCapacityPolicy.MIB;
+                    long diskCapacityMb = Math.min(result.diskTargetMb, diskAvailableMb);
+                    result = new CacheCapacityPolicy.Result(
+                        result.requestedMb, result.memoryCapacityMb + diskCapacityMb,
+                        result.memoryCapacityMb, result.diskTargetMb, diskCapacityMb,
+                        result.maxHeapMb, result.safeRatio, result.pressureLevel,
+                        result.temporaryClamp, result.reason, available);
+                    writeLock.lock();
+                    try {
+                        policyResult = result;
+                    } finally {
+                        writeLock.unlock();
+                    }
+                }
+                recovered.setCapacity(result.diskCapacityMb * CacheCapacityPolicy.MIB);
+            }
+            synchronized (ImageCache.this) {
+                diskCache = recovered;
+            }
+            drainPendingSpills();
+            return recovered;
+        }, diskExecutor).whenComplete((ignored, error) -> {
+            if (error != null) {
+                synchronized (ImageCache.this) { diskInitializationFailure = error; }
+                writeLock.lock();
+                try {
+                    pendingSpills.clear();
+                } finally {
+                    writeLock.unlock();
+                }
+                LOGGER.warn("图片冷层初始化失败，降级为仅内存缓存", error);
+            }
+        });
     }
 
     static ImageCache createIsolated() {
         return new ImageCache();
     }
 
+    private DiskImageCache awaitDiskCache() {
+        DiskImageCache current = diskCache;
+        if (current != null) return current;
+        CompletableFuture<DiskImageCache> initialization;
+        synchronized (this) {
+            if (diskCache != null) return diskCache;
+            if (diskInitializationFailure != null || diskInitialization == null) return null;
+            initialization = diskInitialization;
+        }
+        try {
+            return initialization.get();
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            return null;
+        } catch (java.util.concurrent.ExecutionException error) {
+            return null;
+        }
+    }
+
+    public synchronized String getDiskState() {
+        if (diskCache != null) return "ready";
+        if (diskInitializationFailure != null) return "failed";
+        return diskInitialization == null ? "not-initialized" : "initializing";
+    }
+
     // ---- 容量配置 ----
 
-    /**
-     * 获取当前容量（字节），供外部查询。
-     */
-    public long getCapacity() {
+    /** 获取内存热层容量（字节）。 */
+    public long getMemoryCapacity() {
         readLock.lock();
         try {
-            return capacity;
+            return memoryCapacityBytes();
         } finally {
             readLock.unlock();
         }
+    }
+
+    private long memoryCapacityBytes() {
+        return policyResult.memoryCapacityMb * CacheCapacityPolicy.MIB;
     }
 
     /**
@@ -112,31 +194,49 @@ public class ImageCache {
         writeLock.lock();
         try {
             policyResult = result;
-            capacity = result.effectiveMb * CacheCapacityPolicy.MIB;
+            policyApplied = true;
             evictIfNeeded();
         } finally {
             writeLock.unlock();
         }
         drainPendingSpills();
+        disk = awaitDiskCache();
         if (disk != null) disk.setCapacity(result.diskCapacityMb * CacheCapacityPolicy.MIB);
     }
 
-    /**
-     * 获取当前已用字节。
-     */
+
+    /** 获取内存热层当前图片 payload 使用量（字节）。 */
     public long getCurrentSize() {
         readLock.lock();
         try {
-            return currentSize;
+            return memoryUsedBytes;
         } finally {
             readLock.unlock();
         }
     }
 
     public CacheStats getStats() {
+        CacheCapacityPolicy.Result result;
+        long memoryBytes;
+        long reservedBytes;
         readLock.lock();
         try {
-            return new CacheStats(policyResult, currentSize, reservedSize, getDiskUsedBytes());
+            result = policyResult;
+            memoryBytes = memoryUsedBytes;
+            reservedBytes = reservedMemoryBytes;
+        } finally {
+            readLock.unlock();
+        }
+        DiskImageCache disk = awaitDiskCache();
+        long diskBytes = disk == null ? 0L : disk.payloadBytes();
+        return new CacheStats(result, memoryBytes, reservedBytes, diskBytes, disk == null ? getDiskState() : "ready");
+    }
+
+    /** 获取磁盘冷层容量（字节）。 */
+    public long getDiskCapacity() {
+        readLock.lock();
+        try {
+            return policyResult.diskCapacityMb * CacheCapacityPolicy.MIB;
         } finally {
             readLock.unlock();
         }
@@ -145,7 +245,7 @@ public class ImageCache {
     public boolean canAccept(long size) {
         readLock.lock();
         try {
-            return size > 0L && size <= capacity;
+            return size > 0L && size <= memoryCapacityBytes();
         } finally {
             readLock.unlock();
         }
@@ -159,18 +259,19 @@ public class ImageCache {
         IncomingReservation reservation;
         writeLock.lock();
         try {
-            if (size > capacity || reservedSize + size > capacity) {
+            long capacity = memoryCapacityBytes();
+            if (size > capacity || reservedMemoryBytes + size > capacity) {
                 LOGGER.warn("图片缓存预留拒绝: event=reserve_reject, reason=capacity, sizeBytes={}, capacityBytes={}",
                     size, capacity);
                 return null;
             }
-            if (!evictForHeapMargin(reservedSize + size)) {
+            if (!evictForHeapMargin(reservedMemoryBytes + size)) {
                 LOGGER.warn("图片缓存预留拒绝: event=reserve_reject, reason=heap_margin, sizeBytes={}",
                     size);
                 return null;
             }
-            evictToTarget(capacity - reservedSize - size);
-            reservedSize += size;
+            evictToTarget(capacity - reservedMemoryBytes - size);
+            reservedMemoryBytes += size;
             reservation = new IncomingReservation(this, size);
         } finally {
             writeLock.unlock();
@@ -197,13 +298,14 @@ public class ImageCache {
         writeLock.lock();
         try {
             boolean hadReservation = consumeReservation(reservation);
-            if (size > capacity || reservedSize + size > capacity) {
+            long capacity = memoryCapacityBytes();
+            if (size > capacity || reservedMemoryBytes + size > capacity) {
                 LOGGER.warn("图片缓存写入拒绝: event=reject, reason=capacity, sizeBytes={}, capacityBytes={}",
                     size, capacity);
                 return false;
             }
 
-            long unaccountedBytes = hadReservation ? reservedSize : reservedSize + size;
+            long unaccountedBytes = hadReservation ? reservedMemoryBytes : reservedMemoryBytes + size;
             if (!evictForHeapMargin(unaccountedBytes)) {
                 LOGGER.warn("图片缓存写入拒绝: event=reject, reason=heap_margin, sizeBytes={}", size);
                 return false;
@@ -212,14 +314,14 @@ public class ImageCache {
             // 若 key 已存在，先移除旧的
             ImageEntry old = cache.remove(key);
             if (old != null) {
-                currentSize -= old.data.length;
+                memoryUsedBytes -= old.data.length;
             }
 
-            evictToTarget(capacity - reservedSize - size);
+            evictToTarget(capacity - reservedMemoryBytes - size);
 
             ImageEntry entry = new ImageEntry(data, mimeType);
             cache.put(key, entry);
-            currentSize += size;
+            memoryUsedBytes += size;
             evictIfNeeded();
             accepted = cache.containsKey(key);
         } finally {
@@ -241,15 +343,21 @@ public class ImageCache {
     }
 
     DiskImageCache.Entry getDisk(String key) {
-        return diskCache == null ? null : diskCache.get(key);
+        DiskImageCache disk = awaitDiskCache();
+        return disk == null ? null : disk.get(key);
     }
 
     private boolean promoteFromDisk(String key, DiskImageCache.Entry diskEntry) {
-        try {
+        IncomingReservation reservation = prepareForIncomingBytes(diskEntry.size);
+        if (reservation == null) {
+            diskEntry.close();
+            return false;
+        }
+        try (diskEntry; reservation) {
             byte[] data = diskEntry.readBytes();
-            if (!put(key, data, diskEntry.mimeType)) return false;
+            if (!put(key, data, diskEntry.mimeType, reservation)) return false;
             DiskImageCache disk = diskCache;
-            if (disk != null) disk.removeKey(key);
+            if (disk != null) disk.removeKey(key, diskEntry);
             return true;
         } catch (IOException error) {
             return false;
@@ -257,27 +365,33 @@ public class ImageCache {
     }
 
     public List<DiskImageCache.Info> getDiskEntries() {
-        return diskCache == null ? java.util.Collections.emptyList() : diskCache.snapshot();
+        DiskImageCache disk = awaitDiskCache();
+        return disk == null ? java.util.Collections.emptyList() : disk.snapshot();
     }
 
+    /** 获取磁盘冷层图片 payload 使用量（字节）。 */
     public long getDiskUsedBytes() {
-        return diskCache == null ? 0L : diskCache.usedBytes();
+        DiskImageCache disk = awaitDiskCache();
+        return disk == null ? 0L : disk.payloadBytes();
     }
 
     public CacheCapacityPolicy.SpaceSnapshot getSpaceSnapshot() {
-        if (diskCache == null) return CacheCapacityPolicy.SpaceSnapshot.unavailable();
-        long available = diskCache.availableBytes();
+        DiskImageCache disk = awaitDiskCache();
+        if (disk == null) return CacheCapacityPolicy.SpaceSnapshot.unavailable();
+        long available = disk.availableBytes();
         return available < 0L ? CacheCapacityPolicy.SpaceSnapshot.unavailable()
-            : new CacheCapacityPolicy.SpaceSnapshot(available, diskCache.usedBytes(), true);
+            : new CacheCapacityPolicy.SpaceSnapshot(available, disk.usedBytes(), true);
     }
 
     public boolean has(String key) {
         writeLock.lock();
         try {
-            return cache.containsKey(key);
+            if (cache.containsKey(key)) return true;
         } finally {
             writeLock.unlock();
         }
+        DiskImageCache disk = awaitDiskCache();
+        return disk != null && disk.has(key);
     }
 
     /**
@@ -301,16 +415,19 @@ public class ImageCache {
      * 清空全部缓存。
      */
     public void clear() {
-        DiskImageCache disk = diskCache;
         writeLock.lock();
         try {
             cache.clear();
-            currentSize = 0;
+            memoryUsedBytes = 0;
+            pendingSpills.clear();
             LOGGER.info("图片缓存清理完成: event=clear");
         } finally {
             writeLock.unlock();
         }
-        if (disk != null) disk.clear();
+        synchronized (spillLock) {
+            DiskImageCache disk = awaitDiskCache();
+            if (disk != null) disk.clear();
+        }
     }
 
     /** 系统内存压力只释放热层，保留可重启恢复的冷层。 */
@@ -318,7 +435,8 @@ public class ImageCache {
         writeLock.lock();
         try {
             cache.clear();
-            currentSize = 0;
+            memoryUsedBytes = 0;
+            if ("failed".equals(getDiskState())) pendingSpills.clear();
         } finally {
             writeLock.unlock();
         }
@@ -328,7 +446,6 @@ public class ImageCache {
      * 按前缀清理（如清理某个 photoId 下的所有图片：photoId + "/"）。
      */
     public void clearByPrefix(String prefix) {
-        DiskImageCache disk = diskCache;
         writeLock.lock();
         try {
             int removed = 0;
@@ -336,39 +453,43 @@ public class ImageCache {
             while (it.hasNext()) {
                 var entry = it.next();
                 if (entry.getKey().startsWith(prefix)) {
-                    currentSize -= entry.getValue().data.length;
+                    memoryUsedBytes -= entry.getValue().data.length;
                     it.remove();
                     removed++;
                 }
             }
+            pendingSpills.removeIf(entry -> entry.getKey().startsWith(prefix));
             LOGGER.info("图片缓存前缀清理完成: event=clear_prefix, prefix={}, removed={}",
                 safeKey(prefix), removed);
         } finally {
             writeLock.unlock();
         }
-        if (disk != null) disk.removeByPrefix(prefix);
+        synchronized (spillLock) {
+            DiskImageCache disk = awaitDiskCache();
+            if (disk != null) disk.removeByPrefix(prefix);
+        }
     }
 
     // ---- 淘汰 ----
 
     private void evictIfNeeded() {
-        evictToTarget(Math.max(0L, capacity - reservedSize));
+        evictToTarget(Math.max(0L, memoryCapacityBytes() - reservedMemoryBytes));
     }
 
     private void evictToTarget(long target) {
-        if (currentSize <= target) return;
-        long before = currentSize;
+        if (memoryUsedBytes <= target) return;
+        long before = memoryUsedBytes;
         int removed = 0;
         var it = cache.entrySet().iterator();
-        while (it.hasNext() && currentSize > target) {
+        while (it.hasNext() && memoryUsedBytes > target) {
             var entry = it.next();
-            currentSize -= entry.getValue().data.length;
+            memoryUsedBytes -= entry.getValue().data.length;
             pendingSpills.add(Map.entry(entry.getKey(), entry.getValue()));
             it.remove();
             removed++;
         }
         LOGGER.debug("图片缓存淘汰完成: event=evict, removed={}, freedBytes={}",
-            removed, before - currentSize);
+            removed, before - memoryUsedBytes);
     }
 
     /**
@@ -399,7 +520,8 @@ public class ImageCache {
         while (it.hasNext() && freed < needToFree) {
             var entry = it.next();
             int len = entry.getValue().data.length;
-            currentSize -= len;
+            memoryUsedBytes -= len;
+            pendingSpills.add(Map.entry(entry.getKey(), entry.getValue()));
             freed += len;
             it.remove();
         }
@@ -410,7 +532,7 @@ public class ImageCache {
 
     private boolean consumeReservation(IncomingReservation reservation) {
         if (reservation == null || reservation.owner != this || !reservation.open) return false;
-        reservedSize -= reservation.size;
+        reservedMemoryBytes -= reservation.size;
         reservation.open = false;
         return true;
     }
@@ -426,18 +548,18 @@ public class ImageCache {
 
     /**
      * 将缓存缩减至容量的 fraction 比例（0.0 = 清空, 0.5 = 减半, 1.0 = 无操作）。
-     * 供内存压力回调使用，不改变持久化的 capacity 值。
+     * 供内存压力回调使用，不改变持久化的内存热层容量。
      */
     public void trimToFraction(double fraction) {
         writeLock.lock();
         try {
-            long target = (long) (capacity * fraction);
-            if (currentSize <= target) return;
+            long target = (long) (memoryCapacityBytes() * fraction);
+            if (memoryUsedBytes <= target) return;
             var it = cache.entrySet().iterator();
-            while (it.hasNext() && currentSize > target) {
+            while (it.hasNext() && memoryUsedBytes > target) {
                 var entry = it.next();
                 pendingSpills.add(Map.entry(entry.getKey(), entry.getValue()));
-                currentSize -= entry.getValue().data.length;
+                memoryUsedBytes -= entry.getValue().data.length;
                 it.remove();
             }
         } finally {
@@ -447,19 +569,41 @@ public class ImageCache {
     }
 
     private void drainPendingSpills() {
-        DiskImageCache disk = diskCache;
-        if (disk == null) return;
-        List<Map.Entry<String, ImageEntry>> batch;
-        writeLock.lock();
-        try {
-            if (pendingSpills.isEmpty()) return;
-            batch = new ArrayList<>(pendingSpills);
-            pendingSpills.clear();
-        } finally {
-            writeLock.unlock();
+        synchronized (spillLock) {
+            DiskImageCache disk = diskCache;
+            if (disk == null) {
+                if ("failed".equals(getDiskState())) {
+                    writeLock.lock();
+                    try {
+                        pendingSpills.clear();
+                    } finally {
+                        writeLock.unlock();
+                    }
+                }
+                return;
+            }
+            List<Map.Entry<String, ImageEntry>> batch;
+            writeLock.lock();
+            try {
+                if (pendingSpills.isEmpty()) return;
+                batch = new ArrayList<>(pendingSpills);
+                pendingSpills.clear();
+            } finally {
+                writeLock.unlock();
+            }
+            for (Map.Entry<String, ImageEntry> entry : batch) {
+                disk.put(entry.getKey(), entry.getValue().data, entry.getValue().mimeType);
+            }
         }
-        for (Map.Entry<String, ImageEntry> entry : batch) {
-            disk.put(entry.getKey(), entry.getValue().data, entry.getValue().mimeType);
+    }
+
+    /** 删除指定键的磁盘冷层条目，用于覆盖重试结果。 */
+    public void removeDisk(String key) {
+        DiskImageCache disk = awaitDiskCache();
+        if (disk != null) {
+            synchronized (spillLock) {
+                disk.removeKey(key);
+            }
         }
     }
 
@@ -513,6 +657,8 @@ public class ImageCache {
                     return new WebResourceResponse(promoted.mimeType, "UTF-8",
                         new ByteArrayInputStream(promoted.data));
                 }
+                diskEntry = getInstance().getDisk(cacheKey);
+                if (diskEntry == null) return null;
                 logResource("disk-hit", type, photoId, sortOrder, startedNanos, null);
                 return new WebResourceResponse(diskEntry.mimeType, null, diskEntry.open());
             }
@@ -693,23 +839,33 @@ public class ImageCache {
 
     public static final class CacheStats {
         public final long requestedMb;
+        /** 冷热两层合计的有效容量（MiB）。 */
         public final long effectiveMb;
+        /** 冷热两层合计的图片 payload 使用量（字节）。 */
         public final long currentBytes;
+        /** 内存热层当前图片 payload 使用量（字节）。 */
+        public final long memoryBytes;
         public final long reservedBytes;
         public final long maxHeapMb;
         public final double safeRatio;
         public final String pressureLevel;
         public final boolean temporaryClamp;
         public final String reason;
+        /** 内存热层容量（MiB）。 */
         public final long memoryCapacityMb;
+        /** 磁盘冷层容量（MiB）。 */
         public final long diskCapacityMb;
+        /** 磁盘冷层图片 payload 使用量（字节）。 */
         public final long diskUsedBytes;
         public final long diskReserveMb;
+        public final String diskState;
 
-        CacheStats(CacheCapacityPolicy.Result result, long currentBytes, long reservedBytes, long diskBytes) {
+        CacheStats(CacheCapacityPolicy.Result result, long currentBytes, long reservedBytes,
+                   long diskBytes, String diskState) {
             this.requestedMb = result.requestedMb;
             this.effectiveMb = result.effectiveMb;
-            this.currentBytes = currentBytes;
+            this.memoryBytes = currentBytes;
+            this.currentBytes = currentBytes + diskBytes;
             this.reservedBytes = reservedBytes;
             this.maxHeapMb = result.maxHeapMb;
             this.safeRatio = result.safeRatio;
@@ -720,6 +876,7 @@ public class ImageCache {
             this.diskCapacityMb = result.diskCapacityMb;
             this.diskUsedBytes = diskBytes;
             this.diskReserveMb = CacheCapacityPolicy.DISK_RESERVE_MB;
+            this.diskState = diskState;
         }
     }
 }

@@ -89,7 +89,7 @@ public class SettingsService {
             ret.put("cacheTemporaryClamp", cacheStats.temporaryClamp);
             ret.put("cacheLimitReason", cacheStats.reason);
             ret.put("cacheMemoryCapacityMb", cacheStats.memoryCapacityMb);
-            ret.put("cacheMemoryUsedMb", Math.round(cacheStats.currentBytes / (1024.0 * 1024.0)));
+            ret.put("cacheMemoryUsedMb", Math.round(cacheStats.memoryBytes / (1024.0 * 1024.0)));
             ret.put("cacheDiskCapacityMb", cacheStats.diskCapacityMb);
             ret.put("cacheDiskUsedMb", Math.round(cacheStats.diskUsedBytes / (1024.0 * 1024.0)));
             ret.put("cacheDiskReserveMb", cacheStats.diskReserveMb);

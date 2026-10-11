@@ -527,6 +527,7 @@ public class PreloadService {
                 photoId + "/" + sortOrder, imageBytes, mimeType, reservation)) {
                 throw new IOException("重试图片无法写入内存缓存");
             }
+            imageCache.removeDisk(photoId + "/" + sortOrder);
             callback.onSuccess();
             logImageCompleted("retry-cache", photoId, sortOrder, "image", startedNanos);
         } catch (Exception error) {
@@ -600,10 +601,11 @@ public class PreloadService {
             ret.put("temporaryClamp", stats.temporaryClamp);
             ret.put("limitReason", stats.reason);
             ret.put("memoryCapacityMb", stats.memoryCapacityMb);
-            ret.put("memoryUsedMb", Math.round(stats.currentBytes / (1024.0 * 1024.0)));
+            ret.put("memoryUsedMb", Math.round(stats.memoryBytes / (1024.0 * 1024.0)));
             ret.put("diskCapacityMb", stats.diskCapacityMb);
             ret.put("diskUsedMb", Math.round(stats.diskUsedBytes / (1024.0 * 1024.0)));
             ret.put("diskReserveMb", stats.diskReserveMb);
+            ret.put("diskState", stats.diskState);
         } catch (Exception e) {
             LOGGER.debug("构建缓存容量信息失败", e);
         }

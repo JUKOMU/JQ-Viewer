@@ -109,8 +109,7 @@ public final class DiskImageCache extends SQLiteOpenHelper {
     synchronized boolean put(String key, byte[] data, String mimeType) {
         if (!policyApplied || data == null || data.length == 0 || data.length > capacityBytes) return false;
         StoredEntry old = peek(key);
-        long reclaimed = old != null && !readers.containsKey(old.file) ? old.size : 0L;
-        if (!evictToCapacity(data.length - reclaimed, key)) return false;
+        if (!evictToCapacity(data.length, key)) return false;
         long available = availableBytes();
         if (available < CacheCapacityPolicy.DISK_RESERVE_MB * CacheCapacityPolicy.MIB + data.length) return false;
         String revision = digest(key) + "." + UUID.randomUUID();

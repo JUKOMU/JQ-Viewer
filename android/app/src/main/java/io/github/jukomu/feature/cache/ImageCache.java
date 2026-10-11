@@ -17,6 +17,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
@@ -64,6 +65,7 @@ public class ImageCache {
     });
     private final List<Map.Entry<String, ImageEntry>> pendingSpills = new ArrayList<>();
     private final Object spillLock = new Object();
+    private final AtomicBoolean drainScheduled = new AtomicBoolean();
 
     private ImageCache() {
         policyResult = new CacheCapacityPolicy().calculate(
@@ -199,9 +201,13 @@ public class ImageCache {
         } finally {
             writeLock.unlock();
         }
-        drainPendingSpills();
-        disk = awaitDiskCache();
-        if (disk != null) disk.setCapacity(result.diskCapacityMb * CacheCapacityPolicy.MIB);
+        scheduleDrain();
+        disk = diskCache;
+        if (disk != null) {
+            DiskImageCache targetDisk = disk;
+            long diskCapacity = result.diskCapacityMb * CacheCapacityPolicy.MIB;
+            diskExecutor.execute(() -> targetDisk.setCapacity(diskCapacity));
+        }
     }
 
 
@@ -276,7 +282,7 @@ public class ImageCache {
         } finally {
             writeLock.unlock();
         }
-        drainPendingSpills();
+        scheduleDrain();
         return reservation;
     }
 
@@ -327,7 +333,7 @@ public class ImageCache {
         } finally {
             writeLock.unlock();
         }
-        drainPendingSpills();
+        scheduleDrain();
         return accepted;
     }
 
@@ -424,9 +430,11 @@ public class ImageCache {
         } finally {
             writeLock.unlock();
         }
-        synchronized (spillLock) {
-            DiskImageCache disk = awaitDiskCache();
-            if (disk != null) disk.clear();
+        DiskImageCache disk = awaitDiskCache();
+        if (disk != null) {
+            synchronized (spillLock) {
+                disk.clear();
+            }
         }
     }
 
@@ -464,9 +472,11 @@ public class ImageCache {
         } finally {
             writeLock.unlock();
         }
-        synchronized (spillLock) {
-            DiskImageCache disk = awaitDiskCache();
-            if (disk != null) disk.removeByPrefix(prefix);
+        DiskImageCache disk = awaitDiskCache();
+        if (disk != null) {
+            synchronized (spillLock) {
+                disk.removeByPrefix(prefix);
+            }
         }
     }
 
@@ -565,7 +575,7 @@ public class ImageCache {
         } finally {
             writeLock.unlock();
         }
-        drainPendingSpills();
+        scheduleDrain();
     }
 
     private void drainPendingSpills() {
@@ -594,6 +604,29 @@ public class ImageCache {
             for (Map.Entry<String, ImageEntry> entry : batch) {
                 disk.put(entry.getKey(), entry.getValue().data, entry.getValue().mimeType);
             }
+        }
+    }
+
+    private void scheduleDrain() {
+        DiskImageCache disk = diskCache;
+        if (disk == null || !hasPendingSpills()) return;
+        if (!drainScheduled.compareAndSet(false, true)) return;
+        diskExecutor.execute(() -> {
+            try {
+                drainPendingSpills();
+            } finally {
+                drainScheduled.set(false);
+                scheduleDrain();
+            }
+        });
+    }
+
+    private boolean hasPendingSpills() {
+        writeLock.lock();
+        try {
+            return !pendingSpills.isEmpty();
+        } finally {
+            writeLock.unlock();
         }
     }
 

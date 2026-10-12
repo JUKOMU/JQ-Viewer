@@ -1,6 +1,6 @@
 <template>
   <button
-    v-if="visible"
+    v-if="visible && !leftMenuOpen"
     class="route-switch-button"
     :class="{ 'is-reader': isReader() }"
     type="button"
@@ -92,6 +92,7 @@ import { useApiRoute } from '@/composables/useApiRoute'
 import { useTimedReveal } from '@/composables/useTimedReveal'
 import { initNetworkProbeStore, useNetworkProbeStore } from '@/composables/networkProbeStore'
 import { JmcomicService } from '@/services/JmcomicService'
+import { leftMenuOpen } from '@/composables/useSideMenuState'
 
 const route = useApiRoute()
 const probeStore = useNetworkProbeStore()
@@ -132,8 +133,13 @@ const isReader = () =>
   /^\/album\/[^/]+\/read\/[^/]+$/.test(currentRoute.path)
 
 function revealFromInteraction() {
-  if (modalOpen.value) return
+  if (modalOpen.value || leftMenuOpen.value) return
   reveal()
+}
+
+function handlePointerDown(event: PointerEvent) {
+  if (event.target instanceof Element && event.target.closest('.main-menu')) return
+  revealFromInteraction()
 }
 
 function isEditable(target: EventTarget | null): boolean {
@@ -200,13 +206,13 @@ async function select(mode: 'auto' | 'manual', domain = '') {
 }
 
 onMounted(() => {
-  window.addEventListener('pointerdown', revealFromInteraction, { capture: true, passive: true })
+  window.addEventListener('pointerdown', handlePointerDown, { capture: true, passive: true })
   window.addEventListener('keydown', handleKeydown, { capture: true })
   void route.refresh().catch(() => undefined)
 })
 
 onBeforeUnmount(() => {
-  window.removeEventListener('pointerdown', revealFromInteraction, true)
+  window.removeEventListener('pointerdown', handlePointerDown, true)
   window.removeEventListener('keydown', handleKeydown, true)
   dispose()
 })

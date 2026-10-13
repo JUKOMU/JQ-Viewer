@@ -75,7 +75,7 @@
         <QuickActionFab
           slot="fixed"
           @search="openRightMenu"
-          @jump="scrollToTop"
+          @jump="jumpToPage"
           @top="scrollToTop"
           @back="goBack"
         />
@@ -958,6 +958,40 @@ const handleItemClick = (item: SearchResultItem) => {
 
 const scrollToTop = () => {
   void contentRef.value?.$el?.scrollToTop?.(300)
+}
+
+const jumpToPage = async () => {
+  if (!resultMeta.value) return
+
+  const totalPages = resultMeta.value.totalPages
+  const alert = await createAppAlert({
+    header: '跳转页码',
+    message: `请输入 1 - ${totalPages} 的页码`,
+    inputs: [
+      {
+        name: 'page',
+        type: 'number',
+        min: 1,
+        max: totalPages,
+        value: String(resultMeta.value.currentPage),
+        placeholder: '页码',
+      },
+    ],
+    buttons: [
+      { text: '取消', role: 'cancel' },
+      {
+        text: '跳转',
+        handler: (data: { page?: string }) => {
+          const page = Number(data.page)
+          if (!Number.isInteger(page) || page < 1 || page > totalPages) return false
+          void resetWithPage(page)
+          return true
+        },
+      },
+    ],
+  })
+
+  await alert.present()
 }
 
 const goBack = () => {

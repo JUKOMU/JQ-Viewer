@@ -2,7 +2,7 @@
   <button
     v-if="visible && !leftMenuOpen"
     class="route-switch-button"
-    :class="{ 'is-reader': isReader() }"
+    :class="{ 'is-reader': isReader(), 'has-quick-actions': hasQuickActions }"
     type="button"
     aria-label="切换 API 线路"
     title="切换 API 线路"
@@ -83,7 +83,7 @@
 <script setup lang="ts">
 defineOptions({ name: 'RouteSwitchButton' })
 
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { IonContent, IonIcon, IonItem, IonLabel, IonModal, IonRadio } from '@ionic/vue'
 import { closeOutline, flashOutline } from 'ionicons/icons'
@@ -103,6 +103,10 @@ const latencyMap = ref<Record<string, { latencyMs: number; timedOut: boolean }>>
 const probing = ref(false)
 const { visible, reveal, dispose } = useTimedReveal(1000)
 let routeRefreshSequence = 0
+
+const hasQuickActions = computed(() =>
+  ['/search', '/category', '/favorite'].includes(currentRoute.path),
+)
 
 function refreshRoute() {
   const sequence = ++routeRefreshSequence
@@ -137,9 +141,16 @@ function revealFromInteraction() {
   reveal()
 }
 
-function handlePointerDown(event: PointerEvent) {
+let revealTimer: ReturnType<typeof setTimeout> | null = null
+
+function handlePointerUp(event: PointerEvent) {
   if (event.target instanceof Element && event.target.closest('.main-menu')) return
-  revealFromInteraction()
+  if (modalOpen.value || leftMenuOpen.value) return
+  if (revealTimer) clearTimeout(revealTimer)
+  revealTimer = setTimeout(() => {
+    revealTimer = null
+    revealFromInteraction()
+  }, 0)
 }
 
 function isEditable(target: EventTarget | null): boolean {
@@ -206,14 +217,15 @@ async function select(mode: 'auto' | 'manual', domain = '') {
 }
 
 onMounted(() => {
-  window.addEventListener('pointerdown', handlePointerDown, { capture: true, passive: true })
+  window.addEventListener('pointerup', handlePointerUp, { capture: true, passive: true })
   window.addEventListener('keydown', handleKeydown, { capture: true })
   void route.refresh().catch(() => undefined)
 })
 
 onBeforeUnmount(() => {
-  window.removeEventListener('pointerdown', handlePointerDown, true)
+  window.removeEventListener('pointerup', handlePointerUp, true)
   window.removeEventListener('keydown', handleKeydown, true)
+  if (revealTimer) clearTimeout(revealTimer)
   dispose()
 })
 </script>
@@ -223,7 +235,7 @@ onBeforeUnmount(() => {
   position: fixed;
   z-index: 20;
   right: calc(18px + var(--ion-safe-area-right, 0px));
-  bottom: calc(18px + var(--ion-safe-area-bottom, 0px));
+  bottom: calc(86px + var(--ion-safe-area-bottom, 0px));
   display: grid;
   width: 42px;
   height: 42px;
@@ -243,6 +255,11 @@ onBeforeUnmount(() => {
 
 .route-switch-button.is-reader {
   bottom: calc(126px + var(--ion-safe-area-bottom, 0px));
+}
+
+.route-switch-button.has-quick-actions {
+  right: calc(16px + 52px + 10px + var(--ion-safe-area-right, 0px));
+  bottom: calc(18px + var(--ion-safe-area-bottom, 0px));
 }
 
 .route-switch-button ion-icon {

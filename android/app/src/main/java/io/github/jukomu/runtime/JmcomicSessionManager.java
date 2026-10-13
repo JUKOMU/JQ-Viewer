@@ -72,6 +72,7 @@ public final class JmcomicSessionManager {
         session = new ClientSession<>(
             () -> JmComic.newApiClientAsync(new JmConfiguration.Builder()
                 .downloadThreadPoolSize(downloadConcurrency)
+                .retryTimes(3)
                 .build()).thenApply(this::applySavedRoute),
             new ClientSession.Observer<>() {
                 @Override

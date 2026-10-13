@@ -51,13 +51,20 @@
           {{ item.label }}
         </button>
       </div>
-      <InlineSelect
-        v-if="fileFilter !== 'zip'"
-        v-model="fileFormat"
-        label="文件格式"
-        label-text="文件格式筛选"
-        :options="fileFormatOptions"
-      />
+      <div v-if="fileFilter !== 'zip'" class="filter-group">
+        <span class="filter-label">文件格式</span>
+        <div class="filter-buttons task-filter-buttons" aria-label="文件格式筛选">
+          <button
+            v-for="item in fileFormatOptions"
+            :key="item.value"
+            type="button"
+            :class="{ selected: fileFormat === item.value }"
+            @click="fileFormat = item.value"
+          >
+            {{ item.label }}
+          </button>
+        </div>
+      </div>
     </div>
 
     <div v-if="activeView === 'tasks'" class="filters task-filters">
@@ -82,13 +89,20 @@
           </button>
         </div>
       </div>
-      <InlineSelect
-        v-model="taskFormat"
-        label="任务格式"
-        label-text="导出任务格式筛选"
-        :options="taskFormatOptions"
-        class="task-format-field"
-      />
+      <div class="filter-group task-format-field">
+        <span class="filter-label">任务格式</span>
+        <div class="filter-buttons task-filter-buttons" aria-label="导出任务格式筛选">
+          <button
+            v-for="item in taskFormatOptions"
+            :key="item.value"
+            type="button"
+            :class="{ selected: taskFormat === item.value }"
+            @click="taskFormat = item.value"
+          >
+            {{ item.label }}
+          </button>
+        </div>
+      </div>
     </div>
 
     <div v-if="loading" class="state">正在加载导出数据...</div>
@@ -182,7 +196,6 @@ import { useRouter } from 'vue-router'
 import LocalFileCard from './LocalFileCard.vue'
 import { ChapterSourceService } from '@/services/ChapterSourceService'
 import ExportTaskCard from './ExportTaskCard.vue'
-import InlineSelect from '@/components/common/InlineSelect.vue'
 import CardContextMenu from '@/components/common/CardContextMenu.vue'
 import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
 import { LocalFileImportService } from '@/services/LocalFileImportService'
@@ -244,12 +257,12 @@ const fileFilters = [
   { key: 'exported' as const, label: '导出' },
   { key: 'zip' as const, label: 'ZIP' },
 ]
-const fileFormatOptions = [
+const fileFormatOptions: readonly { value: typeof fileFormat.value; label: string }[] = [
   { value: 'all', label: '全部格式' },
   { value: 'pdf', label: 'PDF' },
   { value: 'cbz', label: 'CBZ' },
 ]
-const taskFormatOptions = [
+const taskFormatOptions: readonly { value: typeof taskFormat.value; label: string }[] = [
   { value: 'all', label: '全部格式' },
   { value: 'pdf', label: 'PDF' },
   { value: 'cbz', label: 'CBZ' },
@@ -1083,6 +1096,16 @@ defineExpose({ refresh: load })
 }
 
 .task-status-group {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   width: 100%;
 }
 

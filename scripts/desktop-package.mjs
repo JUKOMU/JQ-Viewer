@@ -375,6 +375,13 @@ function buildAppImage({
   const packageFormat = format.replace(/^installer\.|^portable\./, '')
   const appImagesDirectory = path.join(workDirectory, 'app-images', format.replaceAll('.', '-'))
   mkdirSync(appImagesDirectory, { recursive: true })
+  const launcherArguments = []
+  if (target.platform === 'windows' && packageType === 'installer') {
+    launcherArguments.push(
+      '--add-launcher',
+      `uninstall=${path.join(desktopDirectory, 'packaging', 'uninstaller-launcher.properties')}`,
+    )
+  }
   run(executable('jpackage'), [
     '--type',
     'app-image',
@@ -390,6 +397,7 @@ function buildAppImage({
     path.basename(findMainJar()),
     '--main-class',
     'io.github.jukomu.desktop.Main',
+    ...launcherArguments,
     '--runtime-image',
     runtimeDirectory,
     '--app-version',

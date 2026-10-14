@@ -78,6 +78,10 @@ vi.mock('@/services/JmcomicService', () => ({
 
 import CachePage from '@/views/CachePage.vue'
 
+function pointer(pointerId: number, clientX: number, clientY: number, pointerType = 'touch') {
+  return { pointerId, pointerType, button: 0, clientX, clientY }
+}
+
 describe('CachePage 章节标题', () => {
   afterEach(() => {
     vi.useRealTimers()
@@ -269,6 +273,43 @@ describe('CachePage 章节标题', () => {
     wrapper.unmount()
   })
 
+  test('未缩放时拖拽超过阈值关闭，未超过阈值回弹', async () => {
+    mocks.getPhoto.mockRejectedValue(new Error('offline'))
+
+    const first = mount(CachePage)
+    await flushPromises()
+    await first.find('.image-frame').trigger('click')
+    const firstStage = first.find('.preview-stage')
+    await firstStage.trigger('pointerdown', pointer(1, 150, 200))
+    await firstStage.trigger('pointermove', pointer(1, 300, 200))
+    expect(firstStage.attributes('style')).toContain('opacity: 0;')
+    expect(first.findComponent({ name: 'IonModal' }).attributes('style')).toContain(
+      '--backdrop-opacity: 0;',
+    )
+    await firstStage.trigger('pointerup', pointer(1, 300, 200))
+    expect(first.findComponent({ name: 'IonModal' }).props('isOpen')).toBe(false)
+    first.unmount()
+
+    const second = mount(CachePage)
+    await flushPromises()
+    await second.find('.image-frame').trigger('click')
+    const secondStage = second.find('.preview-stage')
+    await secondStage.trigger('pointerdown', pointer(1, 150, 200))
+    await secondStage.trigger('pointermove', pointer(1, 180, 200))
+    expect(secondStage.attributes('style')).toContain('opacity: 0.75;')
+    expect(second.findComponent({ name: 'IonModal' }).attributes('style')).toContain(
+      '--backdrop-opacity: 0.75;',
+    )
+    await secondStage.trigger('pointerup', pointer(1, 180, 200))
+    await second.vm.$nextTick()
+    expect(second.findComponent({ name: 'IonModal' }).props('isOpen')).toBe(true)
+    expect(secondStage.attributes('style')).toContain('opacity: 1;')
+    expect(secondStage.find('img').attributes('style')).toContain(
+      'translate3d(0px, 0px, 0) scale(1)',
+    )
+    second.unmount()
+  })
+
   test('支持最大 5 倍双指缩放和单指平移，手势结束后不会误关闭并在重新打开时复位', async () => {
     mocks.getPhoto.mockRejectedValue(new Error('offline'))
 
@@ -282,28 +323,21 @@ describe('CachePage 章节标题', () => {
       clientHeight: { value: 400 },
     })
 
-    await stage.trigger('touchstart', {
-      touches: [
-        { clientX: 100, clientY: 100 },
-        { clientX: 200, clientY: 100 },
-      ],
-    })
-    await stage.trigger('touchmove', {
-      touches: [
-        { clientX: -200, clientY: 100 },
-        { clientX: 500, clientY: 100 },
-      ],
-    })
-    await stage.trigger('touchend', { touches: [], changedTouches: [] })
+    await stage.trigger('pointerdown', pointer(1, 100, 100))
+    await stage.trigger('pointerdown', pointer(2, 200, 100))
+    await stage.trigger('pointermove', pointer(1, -200, 100))
+    await stage.trigger('pointermove', pointer(2, 500, 100))
+    await stage.trigger('pointerup', pointer(1, 150, 100))
+    await stage.trigger('pointerup', pointer(2, 150, 100))
 
     expect(stage.find('img').attributes('style')).toContain(
       'translate3d(-600px, -400px, 0) scale(5)',
     )
     expect(wrapper.findComponent({ name: 'IonModal' }).props('isOpen')).toBe(true)
 
-    await stage.trigger('touchstart', { touches: [{ clientX: 150, clientY: 100 }] })
-    await stage.trigger('touchmove', { touches: [{ clientX: 100, clientY: 50 }] })
-    await stage.trigger('touchend', { touches: [], changedTouches: [] })
+    await stage.trigger('pointerdown', pointer(3, 150, 100))
+    await stage.trigger('pointermove', pointer(3, 100, 50))
+    await stage.trigger('pointerup', pointer(3, 100, 50))
     await stage.trigger('click')
 
     expect(stage.find('img').attributes('style')).toContain(
@@ -338,22 +372,15 @@ describe('CachePage 章节标题', () => {
       naturalHeight: { configurable: true, value: 2_000 },
     })
 
-    await stage.trigger('touchstart', {
-      touches: [
-        { clientX: 100, clientY: 100 },
-        { clientX: 200, clientY: 100 },
-      ],
-    })
-    await stage.trigger('touchmove', {
-      touches: [
-        { clientX: -200, clientY: 100 },
-        { clientX: 500, clientY: 100 },
-      ],
-    })
-    await stage.trigger('touchend', { touches: [], changedTouches: [] })
+    await stage.trigger('pointerdown', pointer(1, 100, 100))
+    await stage.trigger('pointerdown', pointer(2, 200, 100))
+    await stage.trigger('pointermove', pointer(1, -200, 100))
+    await stage.trigger('pointermove', pointer(2, 500, 100))
+    await stage.trigger('pointerup', pointer(1, 150, 100))
+    await stage.trigger('pointerup', pointer(2, 150, 100))
 
-    await stage.trigger('touchstart', { touches: [{ clientX: 150, clientY: 100 }] })
-    await stage.trigger('touchmove', { touches: [{ clientX: -1_000, clientY: 100 }] })
+    await stage.trigger('pointerdown', pointer(3, 150, 100))
+    await stage.trigger('pointermove', pointer(3, -1_000, 100))
 
     expect(image.attributes('style')).toContain('translate3d(-950px, -400px, 0) scale(5)')
     wrapper.unmount()
@@ -374,11 +401,8 @@ describe('CachePage 章节标题', () => {
       clientHeight: { value: 400 },
     })
     const tap = async () => {
-      await stage.trigger('touchstart', { touches: [{ clientX: 150, clientY: 200 }] })
-      await stage.trigger('touchend', {
-        touches: [],
-        changedTouches: [{ clientX: 150, clientY: 200 }],
-      })
+      await stage.trigger('pointerdown', pointer(1, 150, 200))
+      await stage.trigger('pointerup', pointer(1, 150, 200))
     }
     const doubleTap = async () => {
       await tap()
@@ -399,7 +423,7 @@ describe('CachePage 章节标题', () => {
     wrapper.unmount()
   })
 
-  test('触摸单击等待双击判定后关闭预览', async () => {
+  test('指针单击等待双击判定后关闭预览', async () => {
     mocks.getPhoto.mockRejectedValue(new Error('offline'))
 
     const wrapper = mount(CachePage)
@@ -408,11 +432,8 @@ describe('CachePage 章节标题', () => {
     vi.useFakeTimers()
 
     const stage = wrapper.find('.preview-stage')
-    await stage.trigger('touchstart', { touches: [{ clientX: 100, clientY: 100 }] })
-    await stage.trigger('touchend', {
-      touches: [],
-      changedTouches: [{ clientX: 100, clientY: 100 }],
-    })
+    await stage.trigger('pointerdown', pointer(1, 100, 100))
+    await stage.trigger('pointerup', pointer(1, 100, 100))
 
     expect(wrapper.findComponent({ name: 'IonModal' }).props('isOpen')).toBe(true)
     vi.advanceTimersByTime(280)

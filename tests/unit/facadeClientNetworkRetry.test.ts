@@ -3,9 +3,27 @@ import { createFacadeClient } from '@/runtime/facadeClient'
 import { RuntimeError } from '@/runtime/errors'
 import type { FrontendRuntime } from '@/runtime/FrontendRuntime'
 import type { NetworkProbeEvent } from '@/services/JmcomicTypes'
+import { manualOffline } from '@/runtime/onlineCapability'
 
 describe('facadeClient network retry', () => {
-  afterEach(() => vi.useRealTimers())
+  afterEach(() => {
+    manualOffline.value = false
+    vi.useRealTimers()
+  })
+
+  test('手动离线时阻止公开在线读取', async () => {
+    const search = vi.fn()
+    const runtime = {
+      backend: { search },
+      events: { onNetworkProbe: vi.fn() },
+      services: { reader: {}, localFiles: {} },
+    } as unknown as FrontendRuntime
+    manualOffline.value = true
+
+    await expect(createFacadeClient(runtime).search({ query: {} } as never))
+      .rejects.toMatchObject({ code: 'unavailable', message: '在线能力已关闭' })
+    expect(search).not.toHaveBeenCalled()
+  })
 
   test('等待线路恢复事件后仅重试一次安全读取', async () => {
     const search = vi.fn()

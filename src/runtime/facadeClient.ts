@@ -3,6 +3,7 @@ import { asFileRef } from './FileReferences'
 import type { FrontendRuntime } from './FrontendRuntime'
 import { normalizeRuntimeError, RuntimeError } from './errors'
 import type { Capability } from './PlatformServices'
+import { manualOffline } from './onlineCapability'
 
 /** 断言 capability 可用并返回其 API，不可用时抛出带中文名称的 unavailable 错误。 */
 function requireCapability<T>(capability: Capability<T>, name: string): T {
@@ -170,6 +171,9 @@ export function createFacadeClient(runtime: FrontendRuntime): JmcomicClient {
         return value
       }
       return (...args: unknown[]) => {
+        if (manualOffline.value) {
+          return Promise.reject(new RuntimeError('unavailable', '在线能力已关闭'))
+        }
         const operation = () => Promise.resolve(Reflect.apply(value, target, args))
         const replacesPendingImages =
           property === 'preloadImages' &&

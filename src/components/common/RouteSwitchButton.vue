@@ -208,9 +208,9 @@ async function selectManual(domain: string) {
 
 async function select(mode: 'auto' | 'manual', domain = '') {
   errorMessage.value = ''
+  modalOpen.value = false
   try {
     await route.select(mode, domain)
-    modalOpen.value = false
   } catch (error) {
     errorMessage.value = normalizeRuntimeError(error, '切换线路失败').message
   }

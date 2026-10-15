@@ -65,9 +65,15 @@
           <IonLabel>
             <h2>{{ item.domain }}</h2>
             <p>
-              <span :class="item.reachable ? 'status-ok' : 'status-bad'">{{
-                latencyText(item.domain, item.reachable)
-              }}</span>
+              <span :class="item.reachable ? 'status-ok' : 'status-bad'">
+                {{ latencyText(item.domain, item.reachable) }}
+                <IonSpinner
+                  v-if="probing && item.reachable && !latencyMap[item.domain]"
+                  class="status-spinner"
+                  name="crescent"
+                  aria-label="测速中"
+                />
+              </span>
               <span v-if="item.domain === route.currentDomain.value"> · 当前线路</span>
             </p>
           </IonLabel>
@@ -85,7 +91,7 @@ defineOptions({ name: 'RouteSwitchButton' })
 
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { IonContent, IonIcon, IonItem, IonLabel, IonModal, IonRadio } from '@ionic/vue'
+import { IonContent, IonIcon, IonItem, IonLabel, IonModal, IonRadio, IonSpinner } from '@ionic/vue'
 import { closeOutline, flashOutline } from 'ionicons/icons'
 import { normalizeRuntimeError } from '@/runtime/errors'
 import { useApiRoute } from '@/composables/useApiRoute'
@@ -370,6 +376,13 @@ onBeforeUnmount(() => {
 }
 .status-bad {
   color: #d15d55;
+}
+.status-spinner {
+  width: 12px;
+  height: 12px;
+  margin-left: 4px;
+  color: inherit;
+  vertical-align: -2px;
 }
 
 ion-content {

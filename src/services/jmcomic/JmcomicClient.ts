@@ -174,6 +174,16 @@ export interface JmcomicClient {
     reset: boolean
   }>
 
+  listLogFiles(): Promise<{
+    files: Array<{ fileName: string; updatedAt: number; sizeBytes: number; current: boolean }>
+  }>
+
+  exportLogFiles(options: { folderRef: string; fileNames: string[] }): Promise<{
+    exported: string[]
+    skipped: string[]
+    failed: Array<{ fileName: string; message: string }>
+  }>
+
   getAllSettings(): Promise<AllSettings>
 
   setReaderPreloadPages(options: { n: number }): Promise<{ success: boolean }>

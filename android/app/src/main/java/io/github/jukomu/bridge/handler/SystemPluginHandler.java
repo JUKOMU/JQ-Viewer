@@ -24,6 +24,7 @@ import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions;
 import io.github.jukomu.bridge.PluginCallSession;
 import io.github.jukomu.feature.localfile.data.LocalFileRef;
 import io.github.jukomu.feature.localfile.data.LocalFileRefResolver;
+import io.github.jukomu.platform.logging.ApplicationLogging;
 import io.github.jukomu.jmcomic.core.client.impl.JmApiClient;
 import io.github.jukomu.platform.permission.PermissionService;
 import io.github.jukomu.platform.permission.PermissionState;
@@ -34,6 +35,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Map;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import androidx.documentfile.provider.DocumentFile;
 import java.util.concurrent.*;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
@@ -568,6 +575,92 @@ public final class SystemPluginHandler {
         }
         backgroundCallSession.submit(fileOperationExecutor, call,
             trackedCall -> checkFilesExistOnExecutor(trackedCall, fileRefs));
+    }
+
+    public void listLogFiles(PluginCall call) {
+        backgroundCallSession.submit(fileOperationExecutor, call, trackedCall -> {
+            try {
+                JSArray files = new JSArray();
+                for (ApplicationLogging.LogFile file : ApplicationLogging.listFiles(context)) {
+                    JSObject item = new JSObject();
+                    item.put("fileName", file.fileName());
+                    item.put("updatedAt", file.updatedAt());
+                    item.put("sizeBytes", file.sizeBytes());
+                    item.put("current", file.current());
+                    files.put(item);
+                }
+                JSObject result = new JSObject();
+                result.put("files", files);
+                trackedCall.resolve(result);
+            } catch (Exception error) {
+                trackedCall.reject("列出日志文件失败", error);
+            }
+        });
+    }
+
+    public void exportLogFiles(PluginCall call) {
+        String folderRef = call.getString("folderRef");
+        JSArray fileNames = call.getArray("fileNames");
+        if (folderRef == null || fileNames == null || fileNames.length() == 0) {
+            call.reject("folderRef和fileNames不能为空");
+            return;
+        }
+        backgroundCallSession.submit(fileOperationExecutor, call, trackedCall -> {
+            try {
+                LocalFileRef.Parsed folder = LocalFileRef.parse(folderRef);
+                if (folder.kind != LocalFileRef.Kind.FOLDER) throw new IllegalArgumentException("导出目标必须是目录");
+                DocumentFile documentFolder = LocalFileRefResolver.documentFile(context, folderRef);
+                Path pathFolder = LocalFileRefResolver.pathFile(folderRef) == null
+                    ? null : LocalFileRefResolver.pathFile(folderRef).toPath();
+                if (documentFolder == null && (pathFolder == null || !Files.isDirectory(pathFolder))) {
+                    throw new IllegalArgumentException("导出目录不存在");
+                }
+                JSArray exported = new JSArray();
+                JSArray skipped = new JSArray();
+                JSArray failed = new JSArray();
+                Path sourceDirectory = ApplicationLogging.logsDirectory(context).toAbsolutePath().normalize();
+                boolean sameDirectory = pathFolder != null
+                    && sourceDirectory.equals(pathFolder.toAbsolutePath().normalize());
+                for (int index = 0; index < fileNames.length(); index++) {
+                    String fileName = fileNames.getString(index);
+                    try {
+                        Path source = ApplicationLogging.resolveLogFile(context, fileName);
+                        if (!Files.isRegularFile(source)) throw new java.io.FileNotFoundException(fileName);
+                        if (sameDirectory) {
+                            skipped.put(fileName);
+                        } else if (documentFolder != null) {
+                            DocumentFile target = documentFolder.findFile(fileName);
+                            if (target != null) target.delete();
+                            target = documentFolder.createFile("text/plain", fileName);
+                            if (target == null) throw new java.io.IOException("无法创建导出文件");
+                            try (InputStream input = Files.newInputStream(source);
+                                 OutputStream output = context.getContentResolver().openOutputStream(target.getUri())) {
+                                if (output == null) throw new java.io.IOException("无法写入导出文件");
+                                input.transferTo(output);
+                            }
+                            exported.put(fileName);
+                        } else if (pathFolder != null) {
+                            Files.copy(source, pathFolder.resolve(fileName), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                            exported.put(fileName);
+                        } else {
+                            throw new IllegalArgumentException("导出目录引用无效");
+                        }
+                    } catch (Exception error) {
+                        JSObject item = new JSObject();
+                        item.put("fileName", fileName);
+                        item.put("message", error.getMessage() == null ? "导出失败" : error.getMessage());
+                        failed.put(item);
+                    }
+                }
+                JSObject result = new JSObject();
+                result.put("exported", exported);
+                result.put("skipped", skipped);
+                result.put("failed", failed);
+                trackedCall.resolve(result);
+            } catch (Exception error) {
+                trackedCall.reject("导出日志失败", error);
+            }
+        });
     }
 
     private void checkFilesExistOnExecutor(PluginCall call, JSArray fileRefs) {

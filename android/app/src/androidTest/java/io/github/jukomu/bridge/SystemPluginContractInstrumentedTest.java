@@ -13,12 +13,16 @@ import io.github.jukomu.bridge.handler.SystemPluginHandler;
 import io.github.jukomu.feature.localfile.data.LocalFileRef;
 import io.github.jukomu.platform.permission.PermissionService;
 import io.github.jukomu.platform.permission.PermissionState;
+import io.github.jukomu.platform.logging.ApplicationLogging;
 import org.json.JSONArray;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
 import java.io.File;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.lang.reflect.Field;
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -407,6 +411,46 @@ public class SystemPluginContractInstrumentedTest {
             assertSynchronous(externalPath);
         } finally {
             assertTrue(existingFile.delete() || !existingFile.exists());
+        }
+    }
+
+    @Test
+    public void logFilesCanBeListedExportedAndSkippedWhenTargetIsSourceDirectory() throws Exception {
+        Path logsDirectory = ApplicationLogging.logsDirectory(context);
+        Files.createDirectories(logsDirectory);
+        Path source = logsDirectory.resolve("current.log");
+        Files.writeString(source, "android log\n", StandardCharsets.UTF_8);
+        File targetDirectory = new File(context.getCacheDir(), "log-export-contract");
+        assertTrue(targetDirectory.mkdirs() || targetDirectory.isDirectory());
+        try {
+            RecordingPluginCall listed = call("listLogFiles");
+            plugin.listLogFiles(listed);
+            assertTrue(listed.awaitCompletion(1, TimeUnit.SECONDS));
+            assertEquals("current.log", listed.resolvedData.getJSONArray("files")
+                .getJSONObject(0).getString("fileName"));
+
+            JSArray names = new JSArray();
+            names.put("current.log");
+            RecordingPluginCall exported = call(
+                "exportLogFiles",
+                "folderRef", LocalFileRef.createPathFolderRef(targetDirectory.getAbsolutePath()),
+                "fileNames", names);
+            plugin.exportLogFiles(exported);
+            assertTrue(exported.awaitCompletion(1, TimeUnit.SECONDS));
+            assertEquals("current.log", exported.resolvedData.getJSONArray("exported").getString(0));
+            assertTrue(new File(targetDirectory, "current.log").isFile());
+
+            RecordingPluginCall skipped = call(
+                "exportLogFiles",
+                "folderRef", LocalFileRef.createPathFolderRef(logsDirectory.toString()),
+                "fileNames", names);
+            plugin.exportLogFiles(skipped);
+            assertTrue(skipped.awaitCompletion(1, TimeUnit.SECONDS));
+            assertEquals("current.log", skipped.resolvedData.getJSONArray("skipped").getString(0));
+        } finally {
+            Files.deleteIfExists(source);
+            Files.deleteIfExists(new File(targetDirectory, "current.log").toPath());
+            assertTrue(targetDirectory.delete() || !targetDirectory.exists());
         }
     }
 

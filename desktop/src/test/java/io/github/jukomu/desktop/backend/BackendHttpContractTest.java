@@ -12,6 +12,7 @@ import io.github.jukomu.desktop.feature.auth.LoginCredentials;
 import io.github.jukomu.desktop.feature.files.FileReferences;
 import io.github.jukomu.desktop.feature.files.FileService;
 import io.github.jukomu.desktop.feature.network.NetworkService;
+import io.github.jukomu.desktop.logging.ApplicationLogging;
 import io.github.jukomu.jmcomic.api.client.JmClient;
 import io.github.jukomu.jmcomic.api.client.JmDownloadClient;
 import io.github.jukomu.jmcomic.api.download.DownloadProgress;
@@ -474,6 +475,35 @@ class BackendHttpContractTest {
             assertTrue(logs.has("fileName"));
             assertTrue(logs.has("updatedAt"));
             assertTrue(logs.has("content"));
+            ObjectNode logFiles = body(post(http, base, requestedMethods, "listLogFiles", "{}"));
+            assertTrue(logFiles.has("files"));
+            assertEquals(400, post(http, base, requestedMethods, "exportLogFiles", "{}").statusCode());
+            String logFileName = logFiles.path("files").get(0).path("fileName").asText();
+            ObjectNode logTarget = body(post(http, base, requestedMethods, "getDefaultFolder",
+                    "{\"purpose\":\"download\"}"));
+            ObjectNode copiedLogs = body(post(http, base, requestedMethods, "exportLogFiles",
+                    MAPPER.writeValueAsString(Map.of(
+                            "folder", logTarget.path("ref").asText(),
+                            "fileNames", List.of(logFileName)))));
+            assertEquals(List.of(logFileName), MAPPER.convertValue(
+                    copiedLogs.path("exported"), MAPPER.getTypeFactory().constructCollectionType(List.class, String.class)));
+            assertTrue(Files.isRegularFile(FileReferences.parseFolder(logTarget.path("ref").asText())
+                    .resolve(logFileName)));
+            ObjectNode sameDirectory = body(post(http, base, requestedMethods, "getDefaultFolder",
+                    "{\"purpose\":\"logs\"}"));
+            ObjectNode skippedLogs = body(post(http, base, requestedMethods, "exportLogFiles",
+                    MAPPER.writeValueAsString(Map.of(
+                            "folder", sameDirectory.path("ref").asText(),
+                            "fileNames", List.of(logFileName)))));
+            assertEquals(List.of(logFileName), MAPPER.convertValue(
+                    skippedLogs.path("skipped"), MAPPER.getTypeFactory().constructCollectionType(List.class, String.class)));
+            ObjectNode partialLogs = body(post(http, base, requestedMethods, "exportLogFiles",
+                    MAPPER.writeValueAsString(Map.of(
+                            "folder", logTarget.path("ref").asText(),
+                            "fileNames", List.of(logFileName, "jq-viewer-missing.log")))));
+            assertEquals(List.of(logFileName), MAPPER.convertValue(
+                    partialLogs.path("exported"), MAPPER.getTypeFactory().constructCollectionType(List.class, String.class)));
+            assertEquals("jq-viewer-missing.log", partialLogs.path("failed").get(0).path("fileName").asText());
             assertOk(post(http, base, requestedMethods, "clearImageCache", "{}"));
             ObjectNode clearedCacheContents = body(post(
                     http, base, requestedMethods, "getImageCacheContents", "{}"));
@@ -723,6 +753,9 @@ class BackendHttpContractTest {
         java.nio.file.Path root = Files.createTempDirectory("jq-viewer-contract-");
         Paths paths = new Paths(root.resolve("program"), root.resolve("home"), Map.of(), "Linux");
         paths.ensureDirectories();
+        Files.writeString(paths.logsDirectory().resolve("jq-viewer-test.log"),
+                "contract log\n", StandardCharsets.UTF_8);
+        ApplicationLogging.initialize(paths);
         java.nio.file.Path samplePdf = paths.pdfDirectory().resolve("sample.pdf");
         writePdf(samplePdf);
         ThreadPoolExecutor executor = new ThreadPoolExecutor(

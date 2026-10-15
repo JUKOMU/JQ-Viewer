@@ -335,6 +335,16 @@ public class JqViewerPlugin extends Plugin {
         }
     }
 
+    @PluginMethod
+    public void listLogFiles(PluginCall call) {
+        systemHandler.listLogFiles(call);
+    }
+
+    @PluginMethod
+    public void exportLogFiles(PluginCall call) {
+        systemHandler.exportLogFiles(call);
+    }
+
     /**
      * 请求存储权限（根据 API 版本选择最合适的权限）。
      * 返回 { granted: boolean, permissionType: string, apiLevel: int }

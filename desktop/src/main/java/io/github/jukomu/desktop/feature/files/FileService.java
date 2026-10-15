@@ -191,13 +191,16 @@ public final class FileService {
     }
 
     private Path defaultPath(String purpose) {
-        return "download".equals(purpose) ? paths.downloadsDirectory() : paths.pdfDirectory();
+        if ("download".equals(purpose)) return paths.downloadsDirectory();
+        if ("logs".equals(purpose)) return paths.logsDirectory();
+        return paths.pdfDirectory();
     }
 
     private static String requirePurpose(String purpose) {
         if (!"local-file-root".equals(purpose)
             && !"export".equals(purpose)
-            && !"download".equals(purpose)) {
+            && !"download".equals(purpose)
+            && !"logs".equals(purpose)) {
             throw ApiException.invalidRequest("purpose无效");
         }
         return purpose;

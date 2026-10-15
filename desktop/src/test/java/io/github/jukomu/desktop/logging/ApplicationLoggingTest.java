@@ -67,6 +67,21 @@ class ApplicationLoggingTest {
         assertEquals(longLine + "\nnext\n", combined.toString());
     }
 
+    @Test
+    void listsLogFilesAndRejectsPathTraversal() throws Exception {
+        Paths paths = testPaths();
+        ApplicationLogging.initialize(paths);
+        Path current = ApplicationLogging.currentLogFile(paths);
+        Files.writeString(current, "current\n", StandardCharsets.UTF_8);
+        Path archived = paths.logsDirectory().resolve("jq-viewer-2026-10-14.log");
+        Files.writeString(archived, "archived\n", StandardCharsets.UTF_8);
+
+        assertEquals(2, ApplicationLogging.listFiles(paths).size());
+        assertEquals(current, ApplicationLogging.resolveLogFile(paths, current.getFileName().toString()));
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+            () -> ApplicationLogging.resolveLogFile(paths, "../outside.log"));
+    }
+
     private static Paths testPaths() throws Exception {
         Path root = Files.createTempDirectory("jq-viewer-logging-");
         return new Paths(

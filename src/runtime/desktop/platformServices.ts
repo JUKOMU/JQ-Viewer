@@ -2,6 +2,7 @@ import packageInfo from '../../../package.json'
 import type {
   AppInfo,
   Capability,
+  ApplicationLogFile,
   ApplicationLogSnapshot,
   DiagnosticSnapshot,
   DiagnosticsService,
@@ -53,7 +54,20 @@ function createDiagnosticsService(fetcher: BackendFetch): DiagnosticsService {
 
 function createLogsService(fetcher: BackendFetch): LogsService {
   return {
+    listFiles: () =>
+      requestBackend<{ files: ApplicationLogFile[] }>(fetcher, 'listLogFiles', {}).then(
+        (result) => result.files,
+      ),
     getCurrent: (cursor) => requestBackend<ApplicationLogSnapshot>(fetcher, 'getLogs', cursor),
+    exportFiles: ({ folder, fileNames }) =>
+      requestBackend<{
+        exported: string[]
+        skipped: string[]
+        failed: Array<{ fileName: string; message: string }>
+      }>(fetcher, 'exportLogFiles', {
+        folder: String(folder),
+        fileNames,
+      }),
   }
 }
 

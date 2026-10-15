@@ -18,6 +18,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.Executor;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 /**
  * 提供服务状态查询。
@@ -152,6 +154,51 @@ public final class SystemPluginHandler {
             } catch (java.io.IOException error) {
                 throw new ApiException("internal", 500, "读取应用日志失败");
             }
+        });
+    }
+
+    public void listLogFiles(Context context) {
+        if (paths == null) throw ApiException.unavailable("日志服务尚未初始化");
+        diagnosticsRequests.run(context, () -> {
+            try {
+                return java.util.Map.of("files", ApplicationLogging.listFiles(paths));
+            } catch (java.io.IOException error) {
+                throw new ApiException("internal", 500, "列出日志文件失败");
+            }
+        });
+    }
+
+    public void exportLogFiles(Context context) {
+        if (paths == null) throw ApiException.unavailable("日志服务尚未初始化");
+        diagnosticsRequests.run(context, io.github.jukomu.desktop.bridge.model.LogExportRequest.class, request -> {
+            if (request.folder() == null || request.fileNames() == null || request.fileNames().isEmpty()) {
+                throw ApiException.invalidRequest("folder和fileNames不能为空");
+            }
+            Path targetDirectory = io.github.jukomu.desktop.feature.files.FileReferences.parseFolder(request.folder());
+            if (!Files.isDirectory(targetDirectory)) throw ApiException.notFound("导出目录不存在");
+            java.util.List<String> exported = new java.util.ArrayList<>();
+            java.util.List<String> skipped = new java.util.ArrayList<>();
+            java.util.List<java.util.Map<String, String>> failed = new java.util.ArrayList<>();
+            Path sourceDirectory = paths.logsDirectory().toAbsolutePath().normalize();
+            boolean sameDirectory = sourceDirectory.equals(targetDirectory.toAbsolutePath().normalize());
+            for (String fileName : request.fileNames()) {
+                try {
+                    Path source = ApplicationLogging.resolveLogFile(paths, fileName);
+                    if (!Files.isRegularFile(source)) throw ApiException.notFound("日志文件不存在");
+                    if (sameDirectory) {
+                        skipped.add(fileName);
+                    } else {
+                        Files.copy(source, targetDirectory.resolve(fileName),
+                            java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                        exported.add(fileName);
+                    }
+                } catch (Exception error) {
+                    failed.add(java.util.Map.of(
+                        "fileName", fileName,
+                        "message", error.getMessage() == null ? "导出失败" : error.getMessage()));
+                }
+            }
+            return java.util.Map.of("exported", exported, "skipped", skipped, "failed", failed);
         });
     }
 

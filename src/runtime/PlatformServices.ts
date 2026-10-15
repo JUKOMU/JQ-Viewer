@@ -57,8 +57,8 @@ export type NotificationPolicy =
 
 /** 文件系统平台能力：目录选择、默认目录、存在性检查、打开文件/目录与可导入文件扫描。 */
 export interface FileService {
-  pickFolder(purpose: 'local-file-root' | 'export' | 'download'): Promise<FolderDescriptor | null>
-  getDefaultFolder(purpose: 'local-file-root' | 'export' | 'download'): Promise<FolderDescriptor>
+  pickFolder(purpose: 'local-file-root' | 'export' | 'download' | 'logs'): Promise<FolderDescriptor | null>
+  getDefaultFolder(purpose: 'local-file-root' | 'export' | 'download' | 'logs'): Promise<FolderDescriptor>
   checkFilesExist(files: FileRef[]): Promise<{ existing: FileRef[] }>
   openFile(file: FileRef): Promise<void>
   openContainingFolder(file: FileRef): Promise<void>
@@ -155,8 +155,21 @@ export interface ApplicationLogSnapshot {
   reset: boolean
 }
 
+export interface ApplicationLogFile {
+  fileName: string
+  updatedAt: number
+  sizeBytes: number
+  current: boolean
+}
+
 export interface LogsService {
+  listFiles(): Promise<ApplicationLogFile[]>
   getCurrent(cursor: { fromLine: number; fromOffset: number }): Promise<ApplicationLogSnapshot>
+  exportFiles(options: { folder: FolderRef; fileNames: string[] }): Promise<{
+    exported: string[]
+    skipped: string[]
+    failed: Array<{ fileName: string; message: string }>
+  }>
 }
 
 /** 本地文件平台能力：导入、导出、列表、校验、删除与打开等文件生命周期操作。 */

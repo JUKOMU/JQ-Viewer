@@ -12,6 +12,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -65,6 +68,34 @@ public final class ApplicationLogging {
 
     public static Path logsDirectory(Context context) {
         return context.getFilesDir().toPath().resolve("state").resolve("logs");
+    }
+
+    public static List<LogFile> listFiles(Context context) throws IOException {
+        Path directory = logsDirectory(context.getApplicationContext());
+        if (!Files.isDirectory(directory)) return List.of();
+        List<LogFile> result = new ArrayList<>();
+        try (DirectoryStream<Path> files = Files.newDirectoryStream(directory, "*.log")) {
+            for (Path file : files) {
+                if (!Files.isRegularFile(file)) continue;
+                result.add(new LogFile(file.getFileName().toString(),
+                    Files.getLastModifiedTime(file).toMillis(), Files.size(file),
+                    CURRENT_FILE_NAME.equals(file.getFileName().toString())));
+            }
+        }
+        result.sort(Comparator.comparingLong(LogFile::updatedAt).reversed()
+            .thenComparing(LogFile::fileName));
+        return result;
+    }
+
+    public static Path resolveLogFile(Context context, String fileName) {
+        if (fileName == null || fileName.isBlank() || fileName.contains("/")
+            || fileName.contains("\\") || !fileName.endsWith(".log")) {
+            throw new IllegalArgumentException("日志文件名无效");
+        }
+        Path directory = logsDirectory(context.getApplicationContext()).toAbsolutePath().normalize();
+        Path file = directory.resolve(fileName).normalize();
+        if (!file.getParent().equals(directory)) throw new IllegalArgumentException("日志文件名无效");
+        return file;
     }
 
     private static Path currentLogFile(Context context) {
@@ -223,5 +254,8 @@ public final class ApplicationLogging {
         String content,
         boolean reset
     ) {
+    }
+
+    public record LogFile(String fileName, long updatedAt, long sizeBytes, boolean current) {
     }
 }

@@ -1,8 +1,8 @@
 <template>
   <button
-    v-if="visible"
+    v-if="visible && !leftMenuOpen"
     class="route-switch-button"
-    :class="{ 'is-reader': isReader() }"
+    :class="{ 'is-reader': isReader(), 'has-quick-actions': hasQuickActions }"
     type="button"
     aria-label="切换 API 线路"
     title="切换 API 线路"
@@ -65,9 +65,15 @@
           <IonLabel>
             <h2>{{ item.domain }}</h2>
             <p>
-              <span :class="item.reachable ? 'status-ok' : 'status-bad'">{{
-                latencyText(item.domain, item.reachable)
-              }}</span>
+              <span :class="item.reachable ? 'status-ok' : 'status-bad'">
+                {{ latencyText(item.domain, item.reachable) }}
+                <IonSpinner
+                  v-if="probing && item.reachable && !latencyMap[item.domain]"
+                  class="status-spinner"
+                  name="crescent"
+                  aria-label="测速中"
+                />
+              </span>
               <span v-if="item.domain === route.currentDomain.value"> · 当前线路</span>
             </p>
           </IonLabel>
@@ -83,15 +89,16 @@
 <script setup lang="ts">
 defineOptions({ name: 'RouteSwitchButton' })
 
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { IonContent, IonIcon, IonItem, IonLabel, IonModal, IonRadio } from '@ionic/vue'
+import { IonContent, IonIcon, IonItem, IonLabel, IonModal, IonRadio, IonSpinner } from '@ionic/vue'
 import { closeOutline, flashOutline } from 'ionicons/icons'
 import { normalizeRuntimeError } from '@/runtime/errors'
 import { useApiRoute } from '@/composables/useApiRoute'
 import { useTimedReveal } from '@/composables/useTimedReveal'
 import { initNetworkProbeStore, useNetworkProbeStore } from '@/composables/networkProbeStore'
 import { JmcomicService } from '@/services/JmcomicService'
+import { leftMenuOpen } from '@/composables/useSideMenuState'
 
 const route = useApiRoute()
 const probeStore = useNetworkProbeStore()
@@ -102,6 +109,10 @@ const latencyMap = ref<Record<string, { latencyMs: number; timedOut: boolean }>>
 const probing = ref(false)
 const { visible, reveal, dispose } = useTimedReveal(1000)
 let routeRefreshSequence = 0
+
+const hasQuickActions = computed(() =>
+  ['/search', '/category', '/favorite'].includes(currentRoute.path),
+)
 
 function refreshRoute() {
   const sequence = ++routeRefreshSequence
@@ -132,8 +143,20 @@ const isReader = () =>
   /^\/album\/[^/]+\/read\/[^/]+$/.test(currentRoute.path)
 
 function revealFromInteraction() {
-  if (modalOpen.value) return
+  if (modalOpen.value || leftMenuOpen.value) return
   reveal()
+}
+
+let revealTimer: ReturnType<typeof setTimeout> | null = null
+
+function handlePointerUp(event: PointerEvent) {
+  if (event.target instanceof Element && event.target.closest('.main-menu')) return
+  if (modalOpen.value || leftMenuOpen.value) return
+  if (revealTimer) clearTimeout(revealTimer)
+  revealTimer = setTimeout(() => {
+    revealTimer = null
+    revealFromInteraction()
+  }, 0)
 }
 
 function isEditable(target: EventTarget | null): boolean {
@@ -191,23 +214,24 @@ async function selectManual(domain: string) {
 
 async function select(mode: 'auto' | 'manual', domain = '') {
   errorMessage.value = ''
+  modalOpen.value = false
   try {
     await route.select(mode, domain)
-    modalOpen.value = false
   } catch (error) {
     errorMessage.value = normalizeRuntimeError(error, '切换线路失败').message
   }
 }
 
 onMounted(() => {
-  window.addEventListener('pointerdown', revealFromInteraction, { capture: true, passive: true })
+  window.addEventListener('pointerup', handlePointerUp, { capture: true, passive: true })
   window.addEventListener('keydown', handleKeydown, { capture: true })
   void route.refresh().catch(() => undefined)
 })
 
 onBeforeUnmount(() => {
-  window.removeEventListener('pointerdown', revealFromInteraction, true)
+  window.removeEventListener('pointerup', handlePointerUp, true)
   window.removeEventListener('keydown', handleKeydown, true)
+  if (revealTimer) clearTimeout(revealTimer)
   dispose()
 })
 </script>
@@ -217,7 +241,7 @@ onBeforeUnmount(() => {
   position: fixed;
   z-index: 20;
   right: calc(18px + var(--ion-safe-area-right, 0px));
-  bottom: calc(18px + var(--ion-safe-area-bottom, 0px));
+  bottom: calc(86px + var(--ion-safe-area-bottom, 0px));
   display: grid;
   width: 42px;
   height: 42px;
@@ -237,6 +261,11 @@ onBeforeUnmount(() => {
 
 .route-switch-button.is-reader {
   bottom: calc(126px + var(--ion-safe-area-bottom, 0px));
+}
+
+.route-switch-button.has-quick-actions {
+  right: calc(16px + 52px + 10px + var(--ion-safe-area-right, 0px));
+  bottom: calc(18px + var(--ion-safe-area-bottom, 0px));
 }
 
 .route-switch-button ion-icon {
@@ -347,6 +376,13 @@ onBeforeUnmount(() => {
 }
 .status-bad {
   color: #d15d55;
+}
+.status-spinner {
+  width: 12px;
+  height: 12px;
+  margin-left: 4px;
+  color: inherit;
+  vertical-align: -2px;
 }
 
 ion-content {

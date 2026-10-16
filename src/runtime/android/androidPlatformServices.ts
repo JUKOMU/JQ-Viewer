@@ -405,7 +405,12 @@ export function createAndroidPlatformServices(
     logs: {
       available: true,
       api: {
+        listFiles: () => withRuntimeError(() => native.listLogFiles()).then((result) => result.files),
         getCurrent: (cursor) => withRuntimeError(() => native.getLogs(cursor)),
+        exportFiles: (options) =>
+          withRuntimeError(() =>
+            native.exportLogFiles({ folderRef: String(options.folder), fileNames: options.fileNames }),
+          ),
       },
     },
     launchRoutes: {

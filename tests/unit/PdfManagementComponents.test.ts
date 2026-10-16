@@ -259,14 +259,20 @@ describe('LocalFileManagementView', () => {
     wrapper.unmount()
   })
 
-  test('文件筛选默认排除 ZIP，ZIP 独立筛选且隐藏 PDF/CBZ 下拉框', async () => {
+  test('文件筛选默认排除 ZIP，ZIP 独立筛选且隐藏 PDF/CBZ 选项', async () => {
     const wrapper = mount(LocalFileManagementView)
     await flushPromises()
 
     expect(mocks.getLocalFiles).toHaveBeenCalledWith(
       expect.objectContaining({ formats: ['pdf', 'cbz'], sourceType: undefined }),
     )
-    expect(wrapper.find('button[aria-label="文件格式筛选"]').exists()).toBe(true)
+    expect(wrapper.find('[aria-label="文件格式筛选"]').exists()).toBe(true)
+    expect(
+      wrapper
+        .findAll('[aria-label="文件格式筛选"] button')
+        .find((button) => button.text() === '全部格式')
+        ?.classes(),
+    ).toContain('selected')
 
     const sourceButtons = wrapper.findAll('.file-filters .filter-buttons button')
     await sourceButtons[3].trigger('click')
@@ -275,23 +281,19 @@ describe('LocalFileManagementView', () => {
     expect(mocks.getLocalFiles).toHaveBeenLastCalledWith(
       expect.objectContaining({ formats: ['zip'], sourceType: 'exported' }),
     )
-    expect(wrapper.find('button[aria-label="文件格式筛选"]').exists()).toBe(false)
+    expect(wrapper.find('[aria-label="文件格式筛选"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
-  test('格式下拉框分别下推 CBZ 文件和 ZIP 任务筛选', async () => {
+  test('格式选项分别筛选 CBZ 文件和 ZIP 任务', async () => {
     const wrapper = mount(LocalFileManagementView, { attachTo: document.body })
     await flushPromises()
 
-    const fileFormatButton = wrapper.get('button[aria-label="文件格式筛选"]')
-    expect(fileFormatButton.attributes('aria-expanded')).toBe('false')
-    await fileFormatButton.trigger('click')
-    expect(fileFormatButton.attributes('aria-expanded')).toBe('true')
-    expect(wrapper.find('[role="listbox"]').exists()).toBe(true)
-    const cbzOption = wrapper.findAll('[role="option"]').find((option) => option.text() === 'CBZ')
+    const fileFormatButtons = wrapper.findAll('.file-filters [aria-label="文件格式筛选"] button')
+    const cbzOption = fileFormatButtons.find((option) => option.text() === 'CBZ')
     expect(cbzOption).toBeDefined()
     await cbzOption!.trigger('click')
-    expect(document.activeElement).toBe(fileFormatButton.element)
+    expect(cbzOption!.classes()).toContain('selected')
     await flushPromises()
     expect(mocks.getLocalFiles).toHaveBeenLastCalledWith(
       expect.objectContaining({ formats: ['cbz'] }),
@@ -299,16 +301,13 @@ describe('LocalFileManagementView', () => {
 
     await wrapper.findAll('.subtabs button')[1].trigger('click')
     expect(wrapper.text().indexOf('任务状态')).toBeLessThan(wrapper.text().indexOf('任务格式'))
-    const taskFormatButton = wrapper.get('button[aria-label="导出任务格式筛选"]')
-    await taskFormatButton.trigger('click')
-    await taskFormatButton.trigger('keydown', { key: 'Escape' })
-    expect(taskFormatButton.attributes('aria-expanded')).toBe('false')
-    expect(document.activeElement).toBe(taskFormatButton.element)
-    await taskFormatButton.trigger('click')
-    const zipOption = wrapper.findAll('[role="option"]').find((option) => option.text() === 'ZIP')
+    const taskFormatButtons = wrapper.findAll(
+      '[aria-label="导出任务格式筛选"] button',
+    )
+    const zipOption = taskFormatButtons.find((option) => option.text() === 'ZIP')
     expect(zipOption).toBeDefined()
     await zipOption!.trigger('click')
-    expect(document.activeElement).toBe(taskFormatButton.element)
+    expect(zipOption!.classes()).toContain('selected')
     await flushPromises()
     expect(mocks.getExportTasks).toHaveBeenLastCalledWith(
       expect.objectContaining({ format: 'zip' }),

@@ -131,17 +131,19 @@
     <IonModal
       class="cache-preview-modal"
       :is-open="previewOpen"
+      :style="previewModalStyle"
       @did-dismiss="handlePreviewDismiss"
     >
       <button
         class="preview-stage"
         type="button"
         aria-label="关闭图片预览"
+        :style="previewStageStyle"
         @click="handlePreviewClick"
-        @touchstart="handlePreviewTouchStart"
-        @touchmove="handlePreviewTouchMove"
-        @touchend="handlePreviewTouchEnd"
-        @touchcancel="handlePreviewTouchEnd"
+        @pointerdown="handlePreviewPointerDown"
+        @pointermove="handlePreviewPointerMove"
+        @pointerup="handlePreviewPointerUp"
+        @pointercancel="handlePreviewPointerCancel"
       >
         <img
           v-if="selectedPreview"
@@ -190,6 +192,7 @@ const previewOpen = ref(false)
 const previewScale = ref(1)
 const previewTranslateX = ref(0)
 const previewTranslateY = ref(0)
+const previewTransition = ref(false)
 let titleLoadVersion = 0
 let cacheScrollTop = 0
 
@@ -200,7 +203,8 @@ const PREVIEW_ZOOM_MAX = 5
 const PREVIEW_MOVE_THRESHOLD = 6
 const PREVIEW_DOUBLE_TAP_MS = 280
 const PREVIEW_DOUBLE_TAP_DISTANCE = 30
-const TOUCH_CLICK_DELAY_MS = 500
+const PREVIEW_DISMISS_THRESHOLD = 120
+const POINTER_CLICK_DELAY_MS = 500
 
 const groups = computed(() => buildImageCacheGroups(entries.value))
 const cachedPageCount = computed(() =>
@@ -217,23 +221,40 @@ const usagePercent = computed(() => {
 const previewImageStyle = computed(() => ({
   transform: `translate3d(${previewTranslateX.value}px, ${previewTranslateY.value}px, 0) scale(${previewScale.value})`,
   transformOrigin: '0 0',
+  transition: previewTransition.value ? 'transform 220ms ease' : 'none',
+}))
+const previewDragProgress = computed(() => {
+  if (previewScale.value > PREVIEW_ZOOM_MIN) return 0
+  return Math.min(
+    1,
+    Math.hypot(previewTranslateX.value, previewTranslateY.value) / PREVIEW_DISMISS_THRESHOLD,
+  )
+})
+const previewStageStyle = computed(() => ({
+  opacity: 1 - previewDragProgress.value,
+  transition: previewTransition.value ? 'opacity 220ms ease' : 'none',
+}))
+const previewModalStyle = computed(() => ({
+  '--backdrop-opacity': String(1 - previewDragProgress.value),
 }))
 
-let previewTouchStartX = 0
-let previewTouchStartY = 0
+let previewTransitionTimer: ReturnType<typeof setTimeout> | null = null
+let previewStartX = 0
+let previewStartY = 0
 let previewStartTranslateX = 0
 let previewStartTranslateY = 0
-let previewStartScale = 1
+let previewStartScale = PREVIEW_ZOOM_MIN
 let previewPinchDistance = 0
 let previewPinchOriginX = 0
 let previewPinchOriginY = 0
 let previewGestureMoved = false
 let previewGestureUsedMultipleTouches = false
-let lastPreviewTouchEndAt = 0
+let lastPreviewPointerUpAt = 0
 let previewLastTapAt = 0
 let previewLastTapX = 0
 let previewLastTapY = 0
 let previewTapTimer: ReturnType<typeof setTimeout> | null = null
+const previewPointers = new Map<number, { x: number; y: number }>()
 
 type IonContentElement = HTMLElement & {
   getScrollElement?: () => Promise<HTMLElement | null>
@@ -276,6 +297,7 @@ onDeactivated(() => {
 onUnmounted(() => {
   titleLoadVersion += 1
   clearPreviewTapState()
+  clearPreviewTransitionTimer()
 })
 
 async function loadCache() {
@@ -359,6 +381,9 @@ function openPreview(page: CachePageView) {
 
 function closePreview() {
   clearPreviewTapState()
+  previewPointers.clear()
+  previewGestureMoved = false
+  previewGestureUsedMultipleTouches = false
   previewOpen.value = false
 }
 
@@ -366,13 +391,30 @@ function handlePreviewDismiss() {
   previewOpen.value = false
   selectedPreview.value = null
   clearPreviewTapState()
+  previewPointers.clear()
+  previewGestureMoved = false
+  previewGestureUsedMultipleTouches = false
   resetPreviewTransform()
 }
 
-function resetPreviewTransform() {
+function clearPreviewTransitionTimer() {
+  if (!previewTransitionTimer) return
+  clearTimeout(previewTransitionTimer)
+  previewTransitionTimer = null
+}
+
+function resetPreviewTransform(animate = false) {
+  clearPreviewTransitionTimer()
+  previewTransition.value = animate
   previewScale.value = PREVIEW_ZOOM_MIN
   previewTranslateX.value = 0
   previewTranslateY.value = 0
+  if (animate) {
+    previewTransitionTimer = setTimeout(() => {
+      previewTransition.value = false
+      previewTransitionTimer = null
+    }, 220)
+  }
 }
 
 function clearPreviewTapState() {
@@ -389,18 +431,17 @@ function cancelPreviewTapTimer() {
   }
 }
 
-function previewTouchDistance(touches: TouchList): number {
-  if (touches.length < 2) return 0
-  return Math.hypot(
-    touches[0].clientX - touches[1].clientX,
-    touches[0].clientY - touches[1].clientY,
-  )
+function previewPointerDistance(): number {
+  if (previewPointers.size < 2) return 0
+  const points = [...previewPointers.values()]
+  return Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y)
 }
 
-function previewTouchMidpoint(touches: TouchList) {
+function previewPointerMidpoint() {
+  const points = [...previewPointers.values()]
   return {
-    x: (touches[0].clientX + touches[1].clientX) / 2,
-    y: (touches[0].clientY + touches[1].clientY) / 2,
+    x: (points[0].x + points[1].x) / 2,
+    y: (points[0].y + points[1].y) / 2,
   }
 }
 
@@ -484,26 +525,23 @@ function zoomPreviewAtPoint(target: EventTarget | null, clientX: number, clientY
   clampPreviewTranslation(target)
 }
 
-function handlePreviewTap(event: TouchEvent) {
-  const touch = event.changedTouches[0]
-  if (!touch) return
+function handlePreviewTap(target: EventTarget | null, clientX: number, clientY: number) {
   const now = Date.now()
-  const tapDistance =
-    Math.abs(touch.clientX - previewLastTapX) + Math.abs(touch.clientY - previewLastTapY)
+  const tapDistance = Math.abs(clientX - previewLastTapX) + Math.abs(clientY - previewLastTapY)
   if (
     previewLastTapAt > 0 &&
     now - previewLastTapAt < PREVIEW_DOUBLE_TAP_MS &&
     tapDistance < PREVIEW_DOUBLE_TAP_DISTANCE
   ) {
     clearPreviewTapState()
-    zoomPreviewAtPoint(event.currentTarget, touch.clientX, touch.clientY)
+    zoomPreviewAtPoint(target, clientX, clientY)
     return
   }
 
   clearPreviewTapState()
   previewLastTapAt = now
-  previewLastTapX = touch.clientX
-  previewLastTapY = touch.clientY
+  previewLastTapX = clientX
+  previewLastTapY = clientY
   previewTapTimer = setTimeout(() => {
     previewTapTimer = null
     previewLastTapAt = 0
@@ -511,45 +549,48 @@ function handlePreviewTap(event: TouchEvent) {
   }, PREVIEW_DOUBLE_TAP_MS)
 }
 
-function handlePreviewTouchStart(event: TouchEvent) {
-  if (event.touches.length === 1) {
-    const touch = event.touches[0]
-    const tapDistance =
-      Math.abs(touch.clientX - previewLastTapX) + Math.abs(touch.clientY - previewLastTapY)
-    if (
-      previewLastTapAt > 0 &&
-      Date.now() - previewLastTapAt < PREVIEW_DOUBLE_TAP_MS &&
-      tapDistance < PREVIEW_DOUBLE_TAP_DISTANCE
-    ) {
-      cancelPreviewTapTimer()
-    }
-    previewGestureMoved = false
-    previewGestureUsedMultipleTouches = false
-    previewTouchStartX = touch.clientX
-    previewTouchStartY = touch.clientY
+function handlePreviewPointerDown(event: PointerEvent) {
+  if (!previewOpen.value || (event.pointerType === 'mouse' && event.button !== 0)) return
+  cancelPreviewTapTimer()
+  previewTransition.value = false
+  previewGestureMoved = false
+  previewGestureUsedMultipleTouches = false
+  previewPointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
+  const stage = event.currentTarget as HTMLElement
+  stage.setPointerCapture?.(event.pointerId)
+
+  if (previewPointers.size >= 2) {
+    event.preventDefault()
+    clearPreviewTapState()
+    previewGestureUsedMultipleTouches = true
+    previewPinchDistance = previewPointerDistance()
+    previewStartScale = previewScale.value
     previewStartTranslateX = previewTranslateX.value
     previewStartTranslateY = previewTranslateY.value
+    const midpoint = previewPointerMidpoint()
+    const rect = stage.getBoundingClientRect()
+    previewPinchOriginX = midpoint.x - rect.left
+    previewPinchOriginY = midpoint.y - rect.top
     return
   }
 
-  if (event.touches.length < 2) return
-  event.preventDefault()
-  clearPreviewTapState()
-  previewGestureUsedMultipleTouches = true
-  previewPinchDistance = previewTouchDistance(event.touches)
-  previewStartScale = previewScale.value
+  previewStartX = event.clientX
+  previewStartY = event.clientY
   previewStartTranslateX = previewTranslateX.value
   previewStartTranslateY = previewTranslateY.value
-  const midpoint = previewTouchMidpoint(event.touches)
-  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-  previewPinchOriginX = midpoint.x - rect.left
-  previewPinchOriginY = midpoint.y - rect.top
+  previewStartScale = previewScale.value
 }
 
-function handlePreviewTouchMove(event: TouchEvent) {
-  if (event.touches.length >= 2) {
+function handlePreviewPointerMove(event: PointerEvent) {
+  const pointer = previewPointers.get(event.pointerId)
+  if (!pointer) return
+  pointer.x = event.clientX
+  pointer.y = event.clientY
+  const stage = event.currentTarget as HTMLElement
+
+  if (previewPointers.size >= 2) {
     event.preventDefault()
-    const distance = previewTouchDistance(event.touches)
+    const distance = previewPointerDistance()
     if (previewPinchDistance <= 0) return
     const nextScale = Math.max(
       PREVIEW_ZOOM_MIN,
@@ -559,58 +600,92 @@ function handlePreviewTouchMove(event: TouchEvent) {
     previewScale.value = nextScale
     previewTranslateX.value = previewPinchOriginX * (1 - ratio) + previewStartTranslateX * ratio
     previewTranslateY.value = previewPinchOriginY * (1 - ratio) + previewStartTranslateY * ratio
-    clampPreviewTranslation(event.currentTarget)
+    clampPreviewTranslation(stage)
     previewGestureMoved = true
     return
   }
 
-  if (event.touches.length !== 1) return
-  const deltaX = event.touches[0].clientX - previewTouchStartX
-  const deltaY = event.touches[0].clientY - previewTouchStartY
+  if (previewPointers.size !== 1) return
+  const deltaX = event.clientX - previewStartX
+  const deltaY = event.clientY - previewStartY
   if (Math.abs(deltaX) > PREVIEW_MOVE_THRESHOLD || Math.abs(deltaY) > PREVIEW_MOVE_THRESHOLD) {
     previewGestureMoved = true
     clearPreviewTapState()
   }
-  if (previewScale.value <= PREVIEW_ZOOM_MIN) return
-  event.preventDefault()
-  previewTranslateX.value = previewStartTranslateX + deltaX
-  previewTranslateY.value = previewStartTranslateY + deltaY
-  clampPreviewTranslation(event.currentTarget)
+  if (previewScale.value > PREVIEW_ZOOM_MIN) {
+    event.preventDefault()
+    previewTranslateX.value = previewStartTranslateX + deltaX
+    previewTranslateY.value = previewStartTranslateY + deltaY
+    clampPreviewTranslation(stage)
+  } else if (previewGestureMoved) {
+    event.preventDefault()
+    previewTranslateX.value = previewStartTranslateX + deltaX
+    previewTranslateY.value = previewStartTranslateY + deltaY
+  }
 }
 
-function handlePreviewTouchEnd(event: TouchEvent) {
-  if (event.touches.length > 0) {
-    if (previewGestureUsedMultipleTouches && event.touches.length === 1) {
-      previewTouchStartX = event.touches[0].clientX
-      previewTouchStartY = event.touches[0].clientY
+function handlePreviewPointerUp(event: PointerEvent) {
+  const wasPinching = previewGestureUsedMultipleTouches
+  previewPointers.delete(event.pointerId)
+  const stage = event.currentTarget as HTMLElement
+  if (stage.hasPointerCapture?.(event.pointerId)) stage.releasePointerCapture(event.pointerId)
+
+  if (previewPointers.size > 0) {
+    if (wasPinching && previewPointers.size === 1) {
+      const remaining = [...previewPointers.values()][0]
+      previewStartX = remaining.x
+      previewStartY = remaining.y
       previewStartTranslateX = previewTranslateX.value
       previewStartTranslateY = previewTranslateY.value
     }
     return
   }
 
-  lastPreviewTouchEndAt = Date.now()
-  if (event.type === 'touchcancel') {
-    clampPreviewTranslation(event.currentTarget)
-    return
-  }
-  if (previewGestureUsedMultipleTouches) {
+  lastPreviewPointerUpAt = Date.now()
+  if (wasPinching) {
+    previewGestureUsedMultipleTouches = false
+    previewLastTapAt = 0
     if (previewScale.value < 1.05) {
-      resetPreviewTransform()
+      resetPreviewTransform(true)
     } else {
-      clampPreviewTranslation(event.currentTarget)
+      clampPreviewTranslation(stage)
     }
     return
   }
+
   if (previewGestureMoved) {
-    clampPreviewTranslation(event.currentTarget)
+    previewLastTapAt = 0
+    if (previewScale.value <= PREVIEW_ZOOM_MIN) {
+      if (
+        Math.hypot(previewTranslateX.value, previewTranslateY.value) >= PREVIEW_DISMISS_THRESHOLD
+      ) {
+        closePreview()
+      } else {
+        resetPreviewTransform(true)
+      }
+    } else {
+      clampPreviewTranslation(stage)
+    }
+    previewGestureMoved = false
     return
   }
-  handlePreviewTap(event)
+
+  handlePreviewTap(stage, event.clientX, event.clientY)
+}
+
+function handlePreviewPointerCancel(event: PointerEvent) {
+  const stage = event.currentTarget as HTMLElement
+  previewPointers.delete(event.pointerId)
+  if (stage.hasPointerCapture?.(event.pointerId)) stage.releasePointerCapture(event.pointerId)
+  previewPointers.clear()
+  previewGestureMoved = false
+  previewGestureUsedMultipleTouches = false
+  clearPreviewTapState()
+  resetPreviewTransform(true)
 }
 
 function handlePreviewClick() {
-  if (Date.now() - lastPreviewTouchEndAt < TOUCH_CLICK_DELAY_MS) return
+  if (Date.now() - lastPreviewPointerUpAt < POINTER_CLICK_DELAY_MS) return
   closePreview()
 }
 

@@ -40,6 +40,7 @@ class FakeEventSource {
 }
 
 afterEach(() => {
+  vi.useRealTimers()
   vi.unstubAllGlobals()
   FakeEventSource.instances = []
 })
@@ -794,14 +795,15 @@ describe('runtime', () => {
     const second = vi.fn()
     const clientState = vi.fn()
     const invalidated = vi.fn()
-    const firstHandle = await events.onImageReady(first)
-    const secondHandle = await events.onImageReady(second)
-    const invalidationHandle = await events.onStateInvalidated?.(invalidated)
-    const clientStateHandle = await events.onClientStateChanged?.(clientState)
+    const firstHandleReady = events.onImageReady(first)
 
     expect(FakeEventSource.instances).toHaveLength(1)
     expect(FakeEventSource.instances[0].url).toBe('/events')
     FakeEventSource.instances[0].emit('open', null)
+    const firstHandle = await firstHandleReady
+    const secondHandle = await events.onImageReady(second)
+    const invalidationHandle = await events.onStateInvalidated?.(invalidated)
+    const clientStateHandle = await events.onClientStateChanged?.(clientState)
     expect(invalidated).not.toHaveBeenCalled()
     FakeEventSource.instances[0].emit('open', null)
     expect(invalidated).toHaveBeenCalledOnce()
@@ -821,6 +823,28 @@ describe('runtime', () => {
     expect(FakeEventSource.instances[0].close).not.toHaveBeenCalled()
     await invalidationHandle?.remove()
     expect(FakeEventSource.instances[0].close).toHaveBeenCalledOnce()
+  })
+
+  test('首次 SSE 连接超时后结束订阅并允许重新连接', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('EventSource', FakeEventSource)
+    const events = createRuntime('linux').events
+    const registration = events.onImageReady(vi.fn())
+    const timeoutAssertion = expect(registration).rejects.toMatchObject({
+      code: 'unavailable',
+      message: '事件流连接超时',
+    })
+
+    await vi.advanceTimersByTimeAsync(5_000)
+
+    await timeoutAssertion
+    expect(FakeEventSource.instances[0].close).toHaveBeenCalledOnce()
+
+    const secondRegistration = events.onImageReady(vi.fn())
+    expect(FakeEventSource.instances).toHaveLength(2)
+    FakeEventSource.instances[1].emit('open', null)
+    await expect(secondRegistration).resolves.toBeDefined()
+    await (await secondRegistration).remove()
   })
 
   test('preserves structured backend error responses', async () => {

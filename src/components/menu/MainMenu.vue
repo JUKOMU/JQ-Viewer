@@ -31,13 +31,15 @@
       <IonHeader class="ion-no-border menu-header">
         <div class="menu-header-row">
           <button type="button" class="menu-hero" :aria-label="accountButtonLabel" @click="goUser">
-            <img
-              v-if="isLoggedIn && userInfo"
-              :src="userInfo.avatarUrl"
-              class="user-avatar"
-              alt="头像"
-            />
-            <IonIcon v-else :icon="personCircleOutline" class="user-avatar-placeholder" />
+            <span class="menu-avatar-wrap">
+              <img
+                v-if="isLoggedIn && userInfo"
+                :src="userInfo.avatarUrl"
+                class="user-avatar"
+                alt="头像"
+              />
+              <IonIcon v-else :icon="personCircleOutline" class="user-avatar-placeholder" />
+            </span>
             <div class="hero-copy">
               <div class="hero-title">
                 {{ isLoggedIn && userInfo ? userInfo.username : '未登录' }}
@@ -50,6 +52,23 @@
                 }}
               </div>
             </div>
+          </button>
+          <button
+            type="button"
+            class="online-status-button"
+            :class="onlineStatusClass"
+            :aria-label="onlineStatusLabel"
+            :disabled="onlineStatusBusy"
+            @click="toggleOnlineCapability"
+          >
+            <IonSpinner v-if="onlineStatusBusy" name="crescent" aria-hidden="true" />
+            <IonIcon v-else-if="onlineRecoveryFailed" :icon="onlineStatusIcon" aria-hidden="true" />
+            <svg v-else class="online-wifi-mark" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M2.5 8.5a14.5 14.5 0 0 1 19 0" />
+              <path d="M5 12.55a9 9 0 0 1 14 0" />
+              <path d="M8.5 16.05a4 4 0 0 1 7 0" />
+              <circle cx="12" cy="20" r="1" />
+            </svg>
           </button>
           <button
             v-if="isWideMenuActive"
@@ -223,12 +242,15 @@ import {
   heart,
   homeSharp,
   personCircleOutline,
+  refresh,
   searchSharp,
   settingsSharp,
   timeOutline,
 } from 'ionicons/icons'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
+import { useNetworkProbeStore } from '@/composables/networkProbeStore'
+import { manualOffline } from '@/runtime/onlineCapability'
 import {
   collapseWideMenu,
   closeLeftMenu,
@@ -243,7 +265,7 @@ import {
   stopWideMenuTracking,
   wideMenuCollapsed,
 } from '@/composables/useSideMenuState'
-import { JmcomicService } from '@/services/JmcomicService'
+import { JmcomicService, showToast } from '@/services/JmcomicService'
 import type {
   DownloadProgressEvent,
   DownloadStatus,
@@ -264,11 +286,112 @@ const props = defineProps<{
 const route = useRoute()
 const router = useRouter()
 const { userInfo, isLoggedIn } = useAuth()
+const { clientState } = useNetworkProbeStore()
 const panelRef = ref<HTMLElement | null>(null)
 const dragProgress = ref(0)
 const isDragging = ref(false)
 let gesture: Gesture | undefined
 let previouslyFocused: HTMLElement | null = null
+const onlineStatusBusy = ref(false)
+const onlineRecoveryFailed = ref(false)
+let onlineRecoveryFailureTimer: ReturnType<typeof setTimeout> | null = null
+
+const onlineStatus = computed(() => {
+  if (onlineStatusBusy.value) return 'loading'
+  if (onlineRecoveryFailed.value) return 'failed'
+  if (manualOffline.value || clientState.value.state !== 'ready') return 'offline'
+  return 'online'
+})
+const onlineStatusClass = computed(() => `online-status-button--${onlineStatus.value}`)
+const onlineStatusIcon = refresh
+const onlineStatusLabel = computed(() => {
+  if (onlineStatus.value === 'loading') return '正在恢复在线能力'
+  if (onlineStatus.value === 'failed') return '在线恢复失败，点击刷新重试'
+  if (onlineStatus.value === 'offline') return '离线，点击切换为在线'
+  return '在线，点击切换为离线'
+})
+
+const clearOnlineRecoveryFailure = () => {
+  if (onlineRecoveryFailureTimer) clearTimeout(onlineRecoveryFailureTimer)
+  onlineRecoveryFailureTimer = null
+  onlineRecoveryFailed.value = false
+}
+
+const showOnlineRecoveryFailure = () => {
+  onlineRecoveryFailed.value = true
+  if (onlineRecoveryFailureTimer) clearTimeout(onlineRecoveryFailureTimer)
+  onlineRecoveryFailureTimer = setTimeout(() => {
+    onlineRecoveryFailureTimer = null
+    onlineRecoveryFailed.value = false
+  }, 5_000)
+}
+
+const waitForOnlineProbe = () => {
+  let finishProbe: ((success: boolean) => void) | null = null
+  let ready: Promise<unknown> = Promise.resolve()
+  const promise = new Promise<boolean>((resolve) => {
+    let handle: Awaited<ReturnType<typeof JmcomicService.addNetworkProbeListener>> | null = null
+    let timer: ReturnType<typeof setTimeout> | null = null
+    let settled = false
+    function finish(success: boolean) {
+      if (settled) return
+      settled = true
+      if (timer) clearTimeout(timer)
+      timer = null
+      void handle?.remove()
+      resolve(success)
+    }
+    timer = setTimeout(() => finish(false), 5_000)
+    finishProbe = finish
+    ready = JmcomicService.addNetworkProbeListener((event) => {
+      if (event.phase === 'error') finish(false)
+      if (event.phase === 'result' || event.phase === 'network_restored') {
+        finish(Boolean(event.domains?.some((domain) => domain.reachable)))
+      }
+    })
+      .then((registered) => {
+        handle = registered
+        if (settled) void registered.remove()
+      })
+    void ready.catch(() => finish(false))
+  })
+  return {
+    promise,
+    ready: Promise.race([ready, promise.then(() => undefined)]),
+    cancel: () => finishProbe?.(false),
+  }
+}
+
+const toggleOnlineCapability = async () => {
+  if (onlineStatusBusy.value) return
+  if (onlineStatus.value === 'online') {
+    clearOnlineRecoveryFailure()
+    manualOffline.value = true
+    await showToast('已切换为离线模式', 'medium')
+    return
+  }
+
+  onlineStatusBusy.value = true
+  const probe = waitForOnlineProbe()
+  try {
+    await probe.ready
+    await JmcomicService.reprobeDomains()
+    if (await probe.promise) {
+      clearOnlineRecoveryFailure()
+      manualOffline.value = false
+      await showToast('在线能力已恢复', 'success')
+    } else {
+      showOnlineRecoveryFailure()
+      await showToast('在线能力恢复失败，已保持离线', 'danger')
+    }
+  } catch {
+    probe.cancel()
+    showOnlineRecoveryFailure()
+    await showToast('在线能力恢复失败，已保持离线', 'danger')
+  } finally {
+    onlineStatusBusy.value = false
+  }
+}
 
 type DownloadProgressTask = PageProgressInput & {
   status: DownloadStatus
@@ -895,6 +1018,8 @@ onMounted(() => {
 
 onUnmounted(() => {
   progressUnmounted = true
+  if (onlineRecoveryFailureTimer) clearTimeout(onlineRecoveryFailureTimer)
+  onlineRecoveryFailureTimer = null
   clearDownloadTimer()
   clearPdfTimer()
   clearTaskProgressRenderTimer()
@@ -1065,7 +1190,7 @@ onUnmounted(() => {
   height: 60px;
   border-radius: 50%;
   object-fit: cover;
-  border: 2px solid #f5d0b8;
+  border: 0.5px solid #f5d0b8;
   flex-shrink: 0;
 }
 
@@ -1073,6 +1198,93 @@ onUnmounted(() => {
   font-size: 48px;
   color: #e0b694;
   flex-shrink: 0;
+}
+
+.menu-avatar-wrap {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+}
+
+.online-status-button {
+  position: relative;
+  display: grid;
+  flex: 0 0 28px;
+  align-self: flex-start;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin: calc(18px + var(--ion-safe-area-top) + 16px) 14px 0 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 0.5);
+  color: #3aa369;
+  font-size: 15px;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 0.5px rgb(245 208 188 / 70%);
+}
+
+.online-status-button:focus-visible,
+.online-status-button:hover {
+  outline: 0;
+  box-shadow: inset 0 0 0 0.5px rgb(245 208 188 / 70%);
+}
+
+.online-status-button--offline {
+  color: #808080;
+}
+
+.online-status-button--offline::after {
+  position: absolute;
+  width: 19px;
+  height: 1.5px;
+  border-radius: 0.75px;
+  background: currentColor;
+  content: '';
+  transform: rotate(-45deg);
+}
+
+.online-status-button--failed {
+  color: #858585;
+  opacity: 0.62;
+}
+
+.online-status-button--loading {
+  color: #858585;
+}
+
+.online-status-button ion-spinner {
+  width: 16px;
+  height: 16px;
+}
+
+.online-status-button--failed ion-icon {
+  width: 16px;
+  height: 16px;
+  --ionicon-stroke-width: 40px;
+}
+
+.online-wifi-mark {
+  display: block;
+  width: 18px;
+  height: 18px;
+  color: currentColor;
+}
+
+.online-wifi-mark path {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 1.5;
+}
+
+.online-wifi-mark circle {
+  fill: currentColor;
+}
+
+.online-status-button:disabled {
+  cursor: wait;
 }
 
 .hero-copy {
@@ -1121,6 +1333,12 @@ onUnmounted(() => {
 
 .main-menu.wide-menu.wide-menu-collapsed .hero-copy {
   display: none;
+}
+
+.main-menu.wide-menu.wide-menu-collapsed .online-status-button {
+  flex-basis: 28px;
+  align-self: center;
+  margin: 0 auto 8px;
 }
 
 .main-menu.wide-menu.wide-menu-collapsed .menu-collapse-button {

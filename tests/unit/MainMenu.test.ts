@@ -2,6 +2,9 @@ import { nextTick, ref } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import MainMenu from '@/components/menu/MainMenu.vue'
+import { useNetworkProbeStore } from '@/composables/networkProbeStore'
+import { manualOffline } from '@/runtime/onlineCapability'
+import { refresh } from 'ionicons/icons'
 import {
   isWideMenu,
   isMenuNavigation,
@@ -20,9 +23,14 @@ const mocks = vi.hoisted(() => ({
   addDownloadProgressListener: vi.fn(),
   addExportProgressListener: vi.fn(),
   addStateInvalidatedListener: vi.fn(),
+  addNetworkProbeListener: vi.fn(),
+  reprobeDomains: vi.fn(),
+  getClientState: vi.fn(),
+  showToast: vi.fn(),
   downloadHandler: undefined as ((event: any) => void) | undefined,
   pdfHandler: undefined as ((event: any) => void) | undefined,
   stateInvalidatedHandler: undefined as (() => void) | undefined,
+  networkProbeHandler: undefined as ((event: any) => void) | undefined,
 }))
 
 vi.mock('vue-router', () => ({
@@ -37,7 +45,11 @@ vi.mock('@/services/JmcomicService', () => ({
     addDownloadProgressListener: mocks.addDownloadProgressListener,
     addExportProgressListener: mocks.addExportProgressListener,
     addStateInvalidatedListener: mocks.addStateInvalidatedListener,
+    addNetworkProbeListener: mocks.addNetworkProbeListener,
+    reprobeDomains: mocks.reprobeDomains,
+    getClientState: mocks.getClientState,
   },
+  showToast: mocks.showToast,
 }))
 
 vi.mock('@/composables/useAuth', () => ({
@@ -98,9 +110,14 @@ beforeEach(() => {
   mocks.addDownloadProgressListener.mockReset()
   mocks.addExportProgressListener.mockReset()
   mocks.addStateInvalidatedListener.mockReset()
+  mocks.addNetworkProbeListener.mockReset()
+  mocks.reprobeDomains.mockReset()
+  mocks.getClientState.mockReset()
+  mocks.showToast.mockReset()
   mocks.downloadHandler = undefined
   mocks.pdfHandler = undefined
   mocks.stateInvalidatedHandler = undefined
+  mocks.networkProbeHandler = undefined
   mocks.getDownloadTasks.mockResolvedValue({ tasks: [] })
   mocks.getExportTasks.mockResolvedValue({ tasks: [] })
   mocks.addDownloadProgressListener.mockImplementation(async (handler: (event: any) => void) => {
@@ -115,6 +132,15 @@ beforeEach(() => {
     mocks.stateInvalidatedHandler = handler
     return { remove: vi.fn() }
   })
+  mocks.reprobeDomains.mockResolvedValue(undefined)
+  mocks.getClientState.mockResolvedValue({ state: 'ready', timestamp: 1 })
+  mocks.showToast.mockResolvedValue(undefined)
+  mocks.addNetworkProbeListener.mockImplementation(async (handler: (event: any) => void) => {
+    mocks.networkProbeHandler = handler
+    return { remove: vi.fn() }
+  })
+  manualOffline.value = false
+  useNetworkProbeStore().clientState.value = { state: 'ready', timestamp: 1 }
 })
 
 afterEach(() => {
@@ -125,6 +151,7 @@ afterEach(() => {
   leftMenuGestureEnabled.value = true
   rightMenuOpen.value = false
   isMenuNavigation.value = false
+  manualOffline.value = false
 })
 
 const downloadTask = (downloadedPages = 0, totalPages = 100) => ({
@@ -394,6 +421,71 @@ describe('MainMenu 宽屏三态布局', () => {
     expect(wideMenuCollapsed.value).toBe(true)
     expect(leftMenuOpen.value).toBe(false)
     wrapper.unmount()
+  })
+})
+
+describe('MainMenu 在线能力状态', () => {
+  test('在线状态点击后切换为离线', async () => {
+    const wrapper = mountMenu()
+    const status = wrapper.find('.online-status-button')
+
+    await status.trigger('click')
+    expect(manualOffline.value).toBe(true)
+    expect(status.classes()).toContain('online-status-button--offline')
+    wrapper.unmount()
+  })
+
+  test('探活结果可达后恢复在线', async () => {
+    const wrapper = mountMenu()
+    manualOffline.value = true
+    await nextTick()
+
+    const status = wrapper.find('.online-status-button')
+    const restoring = status.trigger('click')
+    await flushPromises()
+    mocks.networkProbeHandler?.({
+      phase: 'result',
+      message: '探活完成',
+      timestamp: 1,
+      domains: [{ domain: 'https://example.invalid', reachable: true }],
+    })
+    await restoring
+    await flushPromises()
+    await nextTick()
+
+    expect(manualOffline.value).toBe(false)
+    expect(status.classes()).toContain('online-status-button--online')
+    wrapper.unmount()
+  })
+
+  test('恢复失败显示刷新图标，五秒后回到离线且再次失败会重新计时', async () => {
+    vi.useFakeTimers()
+    mocks.reprobeDomains.mockRejectedValue(new Error('offline'))
+    const wrapper = mountMenu()
+    manualOffline.value = true
+    await nextTick()
+
+    const status = wrapper.find('.online-status-button')
+    await status.trigger('click')
+    await flushPromises()
+    expect(status.classes()).toContain('online-status-button--failed')
+    expect(status.findComponent({ name: 'IonIcon' }).attributes('icon')).toBe(refresh)
+
+    await vi.advanceTimersByTimeAsync(4_999)
+    await nextTick()
+    expect(status.classes()).toContain('online-status-button--failed')
+
+    await status.trigger('click')
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(1)
+    await nextTick()
+    expect(status.classes()).toContain('online-status-button--failed')
+
+    await vi.advanceTimersByTimeAsync(4_999)
+    await nextTick()
+    expect(status.classes()).toContain('online-status-button--offline')
+    wrapper.unmount()
+    vi.useRealTimers()
   })
 })
 

@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   setApiRoutePreference: vi.fn(),
   getUsedDomain: vi.fn(),
   getDomainStates: vi.fn(),
+  showToast: vi.fn(),
   mode: 'auto' as 'auto' | 'manual',
   domain: '',
 }))
@@ -16,6 +17,7 @@ vi.mock('@/services/JmcomicService', () => ({
     getUsedDomain: mocks.getUsedDomain,
     getDomainStates: mocks.getDomainStates,
   },
+  showToast: mocks.showToast,
 }))
 
 vi.mock('@/services/SettingsService', () => ({
@@ -39,6 +41,7 @@ describe('useApiRoute', () => {
     mocks.getUsedDomain.mockResolvedValue({ domain: 'api.example' })
     mocks.getDomainStates.mockResolvedValue({ domains: [], alive: 0, total: 0, allDeadFallback: false })
     mocks.setApiRoutePreference.mockResolvedValue({ success: true })
+    mocks.showToast.mockImplementation(async () => ({ dismiss: vi.fn() }))
   })
 
   test('切换线路时先应用库选择，再持久化偏好', async () => {
@@ -74,4 +77,5 @@ describe('useApiRoute', () => {
     })
     expect(mocks.applyApiRoute).toHaveBeenNthCalledWith(2, { mode: 'auto' })
   })
+
 })

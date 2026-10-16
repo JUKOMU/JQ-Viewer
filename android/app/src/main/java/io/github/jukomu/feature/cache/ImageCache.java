@@ -130,7 +130,9 @@ public class ImageCache {
             return recovered;
         }, diskExecutor).whenComplete((ignored, error) -> {
             if (error != null) {
-                synchronized (ImageCache.this) { diskInitializationFailure = error; }
+                synchronized (ImageCache.this) {
+                    diskInitializationFailure = error;
+                }
                 writeLock.lock();
                 try {
                     pendingSpills.clear();
@@ -173,7 +175,9 @@ public class ImageCache {
 
     // ---- 容量配置 ----
 
-    /** 获取内存热层容量（字节）。 */
+    /**
+     * 获取内存热层容量（字节）。
+     */
     public long getMemoryCapacity() {
         readLock.lock();
         try {
@@ -211,7 +215,9 @@ public class ImageCache {
     }
 
 
-    /** 获取内存热层当前图片 payload 使用量（字节）。 */
+    /**
+     * 获取内存热层当前图片 payload 使用量（字节）。
+     */
     public long getCurrentSize() {
         readLock.lock();
         try {
@@ -238,7 +244,9 @@ public class ImageCache {
         return new CacheStats(result, memoryBytes, reservedBytes, diskBytes, disk == null ? getDiskState() : "ready");
     }
 
-    /** 获取磁盘冷层容量（字节）。 */
+    /**
+     * 获取磁盘冷层容量（字节）。
+     */
     public long getDiskCapacity() {
         readLock.lock();
         try {
@@ -375,7 +383,9 @@ public class ImageCache {
         return disk == null ? java.util.Collections.emptyList() : disk.snapshot();
     }
 
-    /** 获取磁盘冷层图片 payload 使用量（字节）。 */
+    /**
+     * 获取磁盘冷层图片 payload 使用量（字节）。
+     */
     public long getDiskUsedBytes() {
         DiskImageCache disk = awaitDiskCache();
         return disk == null ? 0L : disk.payloadBytes();
@@ -438,7 +448,9 @@ public class ImageCache {
         }
     }
 
-    /** 系统内存压力只释放热层，保留可重启恢复的冷层。 */
+    /**
+     * 系统内存压力只释放热层，保留可重启恢复的冷层。
+     */
     public void clearMemory() {
         writeLock.lock();
         try {
@@ -630,7 +642,9 @@ public class ImageCache {
         }
     }
 
-    /** 删除指定键的磁盘冷层条目，用于覆盖重试结果。 */
+    /**
+     * 删除指定键的磁盘冷层条目，用于覆盖重试结果。
+     */
     public void removeDisk(String key) {
         DiskImageCache disk = awaitDiskCache();
         if (disk != null) {
@@ -872,11 +886,17 @@ public class ImageCache {
 
     public static final class CacheStats {
         public final long requestedMb;
-        /** 冷热两层合计的有效容量（MiB）。 */
+        /**
+         * 冷热两层合计的有效容量（MiB）。
+         */
         public final long effectiveMb;
-        /** 冷热两层合计的图片 payload 使用量（字节）。 */
+        /**
+         * 冷热两层合计的图片 payload 使用量（字节）。
+         */
         public final long currentBytes;
-        /** 内存热层当前图片 payload 使用量（字节）。 */
+        /**
+         * 内存热层当前图片 payload 使用量（字节）。
+         */
         public final long memoryBytes;
         public final long reservedBytes;
         public final long maxHeapMb;
@@ -884,11 +904,17 @@ public class ImageCache {
         public final String pressureLevel;
         public final boolean temporaryClamp;
         public final String reason;
-        /** 内存热层容量（MiB）。 */
+        /**
+         * 内存热层容量（MiB）。
+         */
         public final long memoryCapacityMb;
-        /** 磁盘冷层容量（MiB）。 */
+        /**
+         * 磁盘冷层容量（MiB）。
+         */
         public final long diskCapacityMb;
-        /** 磁盘冷层图片 payload 使用量（字节）。 */
+        /**
+         * 磁盘冷层图片 payload 使用量（字节）。
+         */
         public final long diskUsedBytes;
         public final long diskReserveMb;
         public final String diskState;

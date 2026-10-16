@@ -55,4 +55,9 @@ public record NetworkProbeEvent(
             "network_restored", "网络恢复并完成线路探测", System.currentTimeMillis(),
             state.domains(), state.alive(), state.total(), state.allDeadFallback());
     }
+
+    public static NetworkProbeEvent routeAuth(String phase, String message) {
+        return new NetworkProbeEvent(
+            phase, message, System.currentTimeMillis(), null, null, null, null);
+    }
 }

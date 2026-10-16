@@ -13,6 +13,9 @@ import java.nio.file.attribute.FileTime;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -82,6 +85,34 @@ public final class ApplicationLogging {
             return readTail(file, modifiedAt.toMillis());
         }
         return readFrom(file, modifiedAt.toMillis(), fromLine, fromOffset);
+    }
+
+    public static List<LogFile> listFiles(Paths paths) throws IOException {
+        if (!Files.isDirectory(paths.logsDirectory())) return List.of();
+        List<LogFile> result = new ArrayList<>();
+        try (DirectoryStream<Path> files = Files.newDirectoryStream(paths.logsDirectory(), FILE_PREFIX + "*" + FILE_SUFFIX)) {
+            for (Path file : files) {
+                if (!Files.isRegularFile(file)) continue;
+                result.add(new LogFile(file.getFileName().toString(),
+                    Files.getLastModifiedTime(file).toMillis(), Files.size(file),
+                    file.equals(currentLogFile(paths))));
+            }
+        }
+        result.sort(Comparator.comparingLong(LogFile::updatedAt).reversed()
+            .thenComparing(LogFile::fileName));
+        return result;
+    }
+
+    public static Path resolveLogFile(Paths paths, String fileName) {
+        if (fileName == null || fileName.isBlank() || fileName.contains("/")
+            || fileName.contains("\\") || !fileName.startsWith(FILE_PREFIX)
+            || !fileName.endsWith(FILE_SUFFIX)) {
+            throw new IllegalArgumentException("日志文件名无效");
+        }
+        Path directory = paths.logsDirectory().toAbsolutePath().normalize();
+        Path file = directory.resolve(fileName).normalize();
+        if (!file.getParent().equals(directory)) throw new IllegalArgumentException("日志文件名无效");
+        return file;
     }
 
     private static LogSnapshot readTail(Path file, long updatedAt) throws IOException {
@@ -237,5 +268,8 @@ public final class ApplicationLogging {
         String content,
         boolean reset
     ) {
+    }
+
+    public record LogFile(String fileName, long updatedAt, long sizeBytes, boolean current) {
     }
 }

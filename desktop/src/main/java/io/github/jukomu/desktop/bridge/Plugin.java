@@ -94,6 +94,16 @@ public final class Plugin {
     }
 
     @PluginMethod
+    public void listLogFiles(Context context) {
+        system.listLogFiles(context);
+    }
+
+    @PluginMethod
+    public void exportLogFiles(Context context) {
+        system.exportLogFiles(context);
+    }
+
+    @PluginMethod
     public void checkUpdate(Context context) {
         updates.checkUpdate(context);
     }

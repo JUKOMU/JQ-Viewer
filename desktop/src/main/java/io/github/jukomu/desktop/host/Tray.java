@@ -152,7 +152,9 @@ public final class Tray implements AutoCloseable {
             icon.addActionListener(event -> {
                 Tray current = trayReference.get();
                 Runnable action = current == null ? null : current.notificationClick.getAndSet(null);
-                runSafely(action == null ? openHome : action);
+                if (action != null) {
+                    runSafely(action);
+                }
             });
 
             icon.addMouseListener(new MouseAdapter() {
@@ -160,6 +162,8 @@ public final class Tray implements AutoCloseable {
                 public void mouseReleased(MouseEvent e) {
                     if (e.isPopupTrigger() || SwingUtilities.isRightMouseButton(e)) {
                         showMenu(menu, hiddenDialog, e);
+                    } else if (SwingUtilities.isLeftMouseButton(e) && e.getClickCount() == 1) {
+                        runSafely(openHome);
                     }
                 }
 

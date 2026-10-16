@@ -13,12 +13,16 @@ import io.github.jukomu.bridge.handler.SystemPluginHandler;
 import io.github.jukomu.feature.localfile.data.LocalFileRef;
 import io.github.jukomu.platform.permission.PermissionService;
 import io.github.jukomu.platform.permission.PermissionState;
+import io.github.jukomu.platform.logging.ApplicationLogging;
 import org.json.JSONArray;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
 import java.io.File;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.lang.reflect.Field;
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -407,6 +411,59 @@ public class SystemPluginContractInstrumentedTest {
             assertSynchronous(externalPath);
         } finally {
             assertTrue(existingFile.delete() || !existingFile.exists());
+        }
+    }
+
+    @Test
+    public void logFilesCanBeListedExportedAndSkippedWhenTargetIsSourceDirectory() throws Exception {
+        Path logsDirectory = ApplicationLogging.logsDirectory(context);
+        Files.createDirectories(logsDirectory);
+        String fixtureFileName = "contract-fixture.log";
+        Path source = logsDirectory.resolve(fixtureFileName);
+        Files.write(source, "android log\n".getBytes(StandardCharsets.UTF_8));
+        File targetDirectory = new File(context.getCacheDir(), "log-export-contract");
+        assertTrue(targetDirectory.mkdirs() || targetDirectory.isDirectory());
+        try {
+            RecordingPluginCall listed = call("listLogFiles");
+            plugin.listLogFiles(listed);
+            assertTrue(listed.awaitCompletion(1, TimeUnit.SECONDS));
+            JSONArray listedFiles = listed.resolvedData.getJSONArray("files");
+            assertTrue(listedFiles.toString(), listedFiles.length() > 0);
+            boolean fixtureListed = false;
+            for (int index = 0; index < listedFiles.length(); index++) {
+                if (fixtureFileName.equals(listedFiles.getJSONObject(index).getString("fileName"))) {
+                    fixtureListed = true;
+                    break;
+                }
+            }
+            assertTrue(listedFiles.toString(), fixtureListed);
+
+            JSArray names = new JSArray();
+            names.put(fixtureFileName);
+            RecordingPluginCall exported = call(
+                "exportLogFiles",
+                "folderRef", LocalFileRef.createPathFolderRef(targetDirectory.getAbsolutePath()),
+                "fileNames", names);
+            plugin.exportLogFiles(exported);
+            assertTrue(exported.awaitCompletion(1, TimeUnit.SECONDS));
+            JSONArray exportedFiles = exported.resolvedData.getJSONArray("exported");
+            assertEquals(exported.resolvedData.toString(), 1, exportedFiles.length());
+            assertEquals(fixtureFileName, exportedFiles.getString(0));
+            assertTrue(new File(targetDirectory, fixtureFileName).isFile());
+
+            RecordingPluginCall skipped = call(
+                "exportLogFiles",
+                "folderRef", LocalFileRef.createPathFolderRef(logsDirectory.toString()),
+                "fileNames", names);
+            plugin.exportLogFiles(skipped);
+            assertTrue(skipped.awaitCompletion(1, TimeUnit.SECONDS));
+            JSONArray skippedFiles = skipped.resolvedData.getJSONArray("skipped");
+            assertEquals(skipped.resolvedData.toString(), 1, skippedFiles.length());
+            assertEquals(fixtureFileName, skippedFiles.getString(0));
+        } finally {
+            Files.deleteIfExists(source);
+            Files.deleteIfExists(new File(targetDirectory, fixtureFileName).toPath());
+            assertTrue(targetDirectory.delete() || !targetDirectory.exists());
         }
     }
 

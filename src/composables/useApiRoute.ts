@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import { JmcomicService } from '@/services/JmcomicService'
+import { JmcomicService, showToast } from '@/services/JmcomicService'
 import { SettingsStore } from '@/services/SettingsService'
 import type { DomainStates } from '@/services/JmcomicTypes'
 
@@ -45,7 +45,15 @@ export function useApiRoute() {
   async function select(nextMode: ApiRouteMode, domain = '') {
     if (loading.value) return
     loading.value = true
+    let statusToast: Awaited<ReturnType<typeof showToast>> | null = null
+
+    const dismissStatusToast = async () => {
+      await statusToast?.dismiss()
+      statusToast = null
+    }
+
     try {
+      statusToast = await showToast('正在切换线路', 'medium')
       const result = await applyRoutePreference(nextMode, domain)
       await JmcomicService.setApiRoutePreference({
         mode: nextMode,
@@ -56,9 +64,15 @@ export function useApiRoute() {
       selectedDomain.value = nextMode === 'manual' ? domain : ''
       currentDomain.value = result.domain || null
       await refresh().catch(() => undefined)
+      await dismissStatusToast()
+    } catch (error) {
+      await dismissStatusToast()
+      await showToast('线路切换失败', 'danger')
+      throw error
     } finally {
       loading.value = false
     }
+    await showToast('线路切换成功', 'success')
   }
 
   return {

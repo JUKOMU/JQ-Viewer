@@ -543,6 +543,12 @@ async function onConfirm() {
   animation: slideUp 0.25s ease-out;
 }
 
+@media (min-width: 1264px) {
+  .sheet-panel {
+    max-width: min(960px, calc(100% - clamp(150px, 15cqw, 300px) - 24px));
+  }
+}
+
 @keyframes slideUp {
   from {
     transform: translateY(100%);

@@ -87,6 +87,13 @@ function startNetworkProbeStore(resetRetries: boolean) {
 
   const probeRegistration = JmcomicService.addNetworkProbeListener((data: NetworkProbeEvent) => {
     if (!initiated || generation !== currentGeneration) return
+    if (
+      data.phase === 'route_auth_started' ||
+      data.phase === 'route_auth_succeeded' ||
+      data.phase === 'route_auth_failed'
+    ) {
+      return
+    }
     if (data.domains) {
       refreshSequence++
       loading.value = false

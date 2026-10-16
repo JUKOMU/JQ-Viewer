@@ -889,10 +889,12 @@ onActivated(() => {
   const transitionId = beginTabTransition()
   void (async () => {
     try {
+      const tab = activeTab.value
+      await restoreTabScrollPosition(tab)
       if (shouldRefreshTotals) {
         await Promise.all([refreshTabOnActivation('browse'), refreshTabOnActivation('parse')])
+        await restoreTabScrollPosition(tab)
       }
-      await restoreTabScrollPosition(activeTab.value)
     } finally {
       endTabTransition(transitionId)
     }

@@ -3,6 +3,7 @@ import { createIdempotentListenerHandle } from '../BackendEvents'
 import { RuntimeError } from '../errors'
 
 type EventHandler = (event: unknown) => void
+const SOURCE_OPEN_TIMEOUT_MS = 5_000
 
 /** 通过一个共享 SSE 连接订阅具名 JSON 事件。 */
 export function createBackendEvents(): BackendEvents {
@@ -13,25 +14,48 @@ export function createBackendEvents(): BackendEvents {
   let hasOpened = false
   let sourceReady: Promise<void> | null = null
   let resolveSourceReady: (() => void) | null = null
+  let rejectSourceReady: ((error: RuntimeError) => void) | null = null
+  let sourceReadyTimer: ReturnType<typeof setTimeout> | null = null
 
   function ensureSource(): EventSource {
     if (source) return source
     if (typeof globalThis.EventSource === 'undefined') {
       throw new RuntimeError('unavailable', '事件流不可用')
     }
-    sourceReady = new Promise<void>((resolve) => {
+    const ready = new Promise<void>((resolve, reject) => {
       resolveSourceReady = resolve
+      rejectSourceReady = reject
     })
+    sourceReady = ready
+    void ready.catch(() => undefined)
     source = new globalThis.EventSource('/events')
     source.addEventListener('open', handleOpen)
+    sourceReadyTimer = setTimeout(() => {
+      if (hasOpened) return
+      const error = new RuntimeError('unavailable', '事件流连接超时')
+      rejectSourceReady?.(error)
+      resolveSourceReady = null
+      rejectSourceReady = null
+      sourceReady = null
+      sourceReadyTimer = null
+      source?.removeEventListener('open', handleOpen)
+      source?.close()
+      source = null
+      sourceListeners.clear()
+      handlers.clear()
+      invalidationHandlers.clear()
+    }, SOURCE_OPEN_TIMEOUT_MS)
     return source
   }
 
   function handleOpen() {
     if (!hasOpened) {
       hasOpened = true
+      if (sourceReadyTimer) clearTimeout(sourceReadyTimer)
+      sourceReadyTimer = null
       resolveSourceReady?.()
       resolveSourceReady = null
+      rejectSourceReady = null
       return
     }
     for (const handler of invalidationHandlers) {
@@ -66,8 +90,11 @@ export function createBackendEvents(): BackendEvents {
     source?.close()
     source = null
     hasOpened = false
+    if (sourceReadyTimer) clearTimeout(sourceReadyTimer)
+    sourceReadyTimer = null
     sourceReady = null
     resolveSourceReady = null
+    rejectSourceReady = null
     sourceListeners.clear()
   }
 

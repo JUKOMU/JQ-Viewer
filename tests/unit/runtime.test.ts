@@ -40,6 +40,7 @@ class FakeEventSource {
 }
 
 afterEach(() => {
+  vi.useRealTimers()
   vi.unstubAllGlobals()
   FakeEventSource.instances = []
 })
@@ -822,6 +823,28 @@ describe('runtime', () => {
     expect(FakeEventSource.instances[0].close).not.toHaveBeenCalled()
     await invalidationHandle?.remove()
     expect(FakeEventSource.instances[0].close).toHaveBeenCalledOnce()
+  })
+
+  test('首次 SSE 连接超时后结束订阅并允许重新连接', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('EventSource', FakeEventSource)
+    const events = createRuntime('linux').events
+    const registration = events.onImageReady(vi.fn())
+    const timeoutAssertion = expect(registration).rejects.toMatchObject({
+      code: 'unavailable',
+      message: '事件流连接超时',
+    })
+
+    await vi.advanceTimersByTimeAsync(5_000)
+
+    await timeoutAssertion
+    expect(FakeEventSource.instances[0].close).toHaveBeenCalledOnce()
+
+    const secondRegistration = events.onImageReady(vi.fn())
+    expect(FakeEventSource.instances).toHaveLength(2)
+    FakeEventSource.instances[1].emit('open', null)
+    await expect(secondRegistration).resolves.toBeDefined()
+    await (await secondRegistration).remove()
   })
 
   test('preserves structured backend error responses', async () => {

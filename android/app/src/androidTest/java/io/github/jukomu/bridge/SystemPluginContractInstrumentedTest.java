@@ -427,8 +427,16 @@ public class SystemPluginContractInstrumentedTest {
             RecordingPluginCall listed = call("listLogFiles");
             plugin.listLogFiles(listed);
             assertTrue(listed.awaitCompletion(1, TimeUnit.SECONDS));
-            assertEquals(fixtureFileName, listed.resolvedData.getJSONArray("files")
-                .getJSONObject(0).getString("fileName"));
+            JSONArray listedFiles = listed.resolvedData.getJSONArray("files");
+            assertTrue(listedFiles.toString(), listedFiles.length() > 0);
+            boolean fixtureListed = false;
+            for (int index = 0; index < listedFiles.length(); index++) {
+                if (fixtureFileName.equals(listedFiles.getJSONObject(index).getString("fileName"))) {
+                    fixtureListed = true;
+                    break;
+                }
+            }
+            assertTrue(listedFiles.toString(), fixtureListed);
 
             JSArray names = new JSArray();
             names.put(fixtureFileName);
@@ -438,7 +446,9 @@ public class SystemPluginContractInstrumentedTest {
                 "fileNames", names);
             plugin.exportLogFiles(exported);
             assertTrue(exported.awaitCompletion(1, TimeUnit.SECONDS));
-            assertEquals(fixtureFileName, exported.resolvedData.getJSONArray("exported").getString(0));
+            JSONArray exportedFiles = exported.resolvedData.getJSONArray("exported");
+            assertEquals(exported.resolvedData.toString(), 1, exportedFiles.length());
+            assertEquals(fixtureFileName, exportedFiles.getString(0));
             assertTrue(new File(targetDirectory, fixtureFileName).isFile());
 
             RecordingPluginCall skipped = call(
@@ -447,7 +457,9 @@ public class SystemPluginContractInstrumentedTest {
                 "fileNames", names);
             plugin.exportLogFiles(skipped);
             assertTrue(skipped.awaitCompletion(1, TimeUnit.SECONDS));
-            assertEquals(fixtureFileName, skipped.resolvedData.getJSONArray("skipped").getString(0));
+            JSONArray skippedFiles = skipped.resolvedData.getJSONArray("skipped");
+            assertEquals(skipped.resolvedData.toString(), 1, skippedFiles.length());
+            assertEquals(fixtureFileName, skippedFiles.getString(0));
         } finally {
             Files.deleteIfExists(source);
             Files.deleteIfExists(new File(targetDirectory, fixtureFileName).toPath());

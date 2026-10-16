@@ -418,7 +418,8 @@ public class SystemPluginContractInstrumentedTest {
     public void logFilesCanBeListedExportedAndSkippedWhenTargetIsSourceDirectory() throws Exception {
         Path logsDirectory = ApplicationLogging.logsDirectory(context);
         Files.createDirectories(logsDirectory);
-        Path source = logsDirectory.resolve("current.log");
+        String fixtureFileName = "contract-fixture.log";
+        Path source = logsDirectory.resolve(fixtureFileName);
         Files.write(source, "android log\n".getBytes(StandardCharsets.UTF_8));
         File targetDirectory = new File(context.getCacheDir(), "log-export-contract");
         assertTrue(targetDirectory.mkdirs() || targetDirectory.isDirectory());
@@ -426,19 +427,19 @@ public class SystemPluginContractInstrumentedTest {
             RecordingPluginCall listed = call("listLogFiles");
             plugin.listLogFiles(listed);
             assertTrue(listed.awaitCompletion(1, TimeUnit.SECONDS));
-            assertEquals("current.log", listed.resolvedData.getJSONArray("files")
+            assertEquals(fixtureFileName, listed.resolvedData.getJSONArray("files")
                 .getJSONObject(0).getString("fileName"));
 
             JSArray names = new JSArray();
-            names.put("current.log");
+            names.put(fixtureFileName);
             RecordingPluginCall exported = call(
                 "exportLogFiles",
                 "folderRef", LocalFileRef.createPathFolderRef(targetDirectory.getAbsolutePath()),
                 "fileNames", names);
             plugin.exportLogFiles(exported);
             assertTrue(exported.awaitCompletion(1, TimeUnit.SECONDS));
-            assertEquals("current.log", exported.resolvedData.getJSONArray("exported").getString(0));
-            assertTrue(new File(targetDirectory, "current.log").isFile());
+            assertEquals(fixtureFileName, exported.resolvedData.getJSONArray("exported").getString(0));
+            assertTrue(new File(targetDirectory, fixtureFileName).isFile());
 
             RecordingPluginCall skipped = call(
                 "exportLogFiles",
@@ -446,10 +447,10 @@ public class SystemPluginContractInstrumentedTest {
                 "fileNames", names);
             plugin.exportLogFiles(skipped);
             assertTrue(skipped.awaitCompletion(1, TimeUnit.SECONDS));
-            assertEquals("current.log", skipped.resolvedData.getJSONArray("skipped").getString(0));
+            assertEquals(fixtureFileName, skipped.resolvedData.getJSONArray("skipped").getString(0));
         } finally {
             Files.deleteIfExists(source);
-            Files.deleteIfExists(new File(targetDirectory, "current.log").toPath());
+            Files.deleteIfExists(new File(targetDirectory, fixtureFileName).toPath());
             assertTrue(targetDirectory.delete() || !targetDirectory.exists());
         }
     }

@@ -617,9 +617,10 @@ public final class SystemPluginHandler {
                 JSArray exported = new JSArray();
                 JSArray skipped = new JSArray();
                 JSArray failed = new JSArray();
-                Path sourceDirectory = ApplicationLogging.logsDirectory(context).toAbsolutePath().normalize();
+                Path sourceDirectory = ApplicationLogging.logsDirectory(context).toFile()
+                    .getCanonicalFile().toPath();
                 boolean sameDirectory = pathFolder != null
-                    && Files.isSameFile(sourceDirectory, pathFolder);
+                    && sourceDirectory.equals(pathFolder.toFile().getCanonicalFile().toPath());
                 for (int index = 0; index < fileNames.length(); index++) {
                     String fileName = fileNames.getString(index);
                     try {

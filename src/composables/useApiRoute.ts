@@ -65,7 +65,6 @@ export function useApiRoute() {
       currentDomain.value = result.domain || null
       await refresh().catch(() => undefined)
       await dismissStatusToast()
-      await showToast('线路切换成功', 'success')
     } catch (error) {
       await dismissStatusToast()
       await showToast('线路切换失败', 'danger')
@@ -73,6 +72,7 @@ export function useApiRoute() {
     } finally {
       loading.value = false
     }
+    await showToast('线路切换成功', 'success')
   }
 
   return {

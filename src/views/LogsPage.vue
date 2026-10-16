@@ -225,12 +225,10 @@ async function openExportModal() {
   if (exporting.value || !logs.value.available) return
   exportMessage.value = ''
   exportModalOpen.value = true
-  if (!logFiles.value.length) {
-    try {
-      await loadLogFiles()
-    } catch (error) {
-      errorMessage.value = error instanceof Error ? error.message : '读取日志文件失败'
-    }
+  try {
+    await loadLogFiles()
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : '读取日志文件失败'
   }
 }
 

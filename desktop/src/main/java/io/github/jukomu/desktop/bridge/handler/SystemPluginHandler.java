@@ -209,7 +209,7 @@ public final class SystemPluginHandler {
                     }
                 } catch (Exception error) {
                     failed.add(java.util.Map.of(
-                        "fileName", fileName,
+                        "fileName", fileName == null ? "" : fileName,
                         "message", error.getMessage() == null ? "导出失败" : error.getMessage()));
                 }
             }

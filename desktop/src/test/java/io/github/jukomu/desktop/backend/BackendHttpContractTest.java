@@ -504,6 +504,13 @@ class BackendHttpContractTest {
             assertEquals(List.of(logFileName), MAPPER.convertValue(
                     partialLogs.path("exported"), MAPPER.getTypeFactory().constructCollectionType(List.class, String.class)));
             assertEquals("jq-viewer-missing.log", partialLogs.path("failed").get(0).path("fileName").asText());
+            List<Object> nullFileNames = new ArrayList<>();
+            nullFileNames.add(null);
+            ObjectNode nullNameLogs = body(post(http, base, requestedMethods, "exportLogFiles",
+                    MAPPER.writeValueAsString(Map.of(
+                            "folder", logTarget.path("ref").asText(),
+                            "fileNames", nullFileNames))));
+            assertEquals("", nullNameLogs.path("failed").get(0).path("fileName").asText());
             assertOk(post(http, base, requestedMethods, "clearImageCache", "{}"));
             ObjectNode clearedCacheContents = body(post(
                     http, base, requestedMethods, "getImageCacheContents", "{}"));

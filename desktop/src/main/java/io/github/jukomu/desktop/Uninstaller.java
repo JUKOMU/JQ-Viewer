@@ -4,7 +4,9 @@ import javax.swing.*;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
+import java.net.URISyntaxException;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -74,13 +76,27 @@ public final class Uninstaller {
         String scriptContent = """
             $ErrorActionPreference = 'SilentlyContinue'
             $result = Start-Process -FilePath 'msiexec.exe' -ArgumentList @('/x', '%s', '/passive') -Wait -PassThru
-            if ($result.ExitCode -eq 0 -and %s) {
+            $removeData = %s
+            $success = $null -ne $result -and ($result.ExitCode -eq 0 -or $result.ExitCode -eq 3010)
+            $warningMessage = $null
+            if ($success -and $removeData) {
               Remove-Item -LiteralPath '%s' -Recurse -Force -ErrorAction SilentlyContinue
+              if (Test-Path -LiteralPath '%s') {
+                $warningMessage = '卸载完成，但用户数据删除失败。'
+              }
+            } elseif (-not $success -and $removeData) {
+              $warningMessage = '卸载未完成，用户数据未删除。'
+            }
+            if ($warningMessage) {
+              Add-Type -AssemblyName System.Windows.Forms
+              [System.Windows.Forms.MessageBox]::Show(
+                $warningMessage, 'JQ Viewer', 'OK', 'Warning') | Out-Null
             }
             Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue
             """.formatted(
             escapePowerShell(productCode),
             removeData ? "$true" : "$false",
+            escapePowerShell(dataDirectory),
             escapePowerShell(dataDirectory));
         Files.writeString(script, scriptContent, StandardCharsets.UTF_8);
         new ProcessBuilder(
@@ -98,9 +114,11 @@ public final class Uninstaller {
     }
 
     private static String findProductCode() {
+        Path installationDirectory = installationDirectory();
+        if (installationDirectory == null) return null;
         for (Path root : List.of(USER_UNINSTALL_ROOT, MACHINE_UNINSTALL_ROOT)) {
             String result = queryRegistry(root);
-            String productCode = parseProductCode(result);
+            String productCode = parseProductCode(result, installationDirectory);
             if (productCode != null) return productCode;
         }
         return null;
@@ -122,34 +140,80 @@ public final class Uninstaller {
         }
     }
 
-    private static String parseProductCode(String output) {
+    static String parseProductCode(String output, Path installationDirectory) {
         String currentKey = null;
         String displayName = null;
         String uninstallString = null;
+        String installLocation = null;
         for (String line : output.split("\\R")) {
             if (KEY_PATTERN.matcher(line.trim()).matches()) {
-                String productCode = productCode(displayName, uninstallString, currentKey);
+                String productCode = productCode(
+                    displayName, installLocation, uninstallString, currentKey, installationDirectory);
                 if (productCode != null) return productCode;
                 currentKey = line.trim();
                 displayName = null;
                 uninstallString = null;
+                installLocation = null;
                 continue;
             }
             String value = value(line, "DisplayName");
             if (value != null) displayName = value;
             value = value(line, "UninstallString");
             if (value != null) uninstallString = value;
+            value = value(line, "InstallLocation");
+            if (value != null) installLocation = value;
         }
-        return productCode(displayName, uninstallString, currentKey);
+        return productCode(
+            displayName, installLocation, uninstallString, currentKey, installationDirectory);
     }
 
-    private static String productCode(String displayName, String uninstallString, String key) {
+    private static String productCode(
+        String displayName,
+        String installLocation,
+        String uninstallString,
+        String key,
+        Path installationDirectory
+    ) {
         if (displayName == null || !displayName.trim().replace("-", " ")
             .equalsIgnoreCase(APPLICATION_NAME)) return null;
+        if (!sameInstallationDirectory(installLocation, installationDirectory)) return null;
         Matcher matcher = GUID_PATTERN.matcher(uninstallString == null ? "" : uninstallString);
         if (matcher.find()) return matcher.group();
         matcher = GUID_PATTERN.matcher(key == null ? "" : key);
         return matcher.find() ? matcher.group() : null;
+    }
+
+    private static boolean sameInstallationDirectory(String value, Path installationDirectory) {
+        if (value == null || value.isBlank() || installationDirectory == null) return false;
+        try {
+            Path candidate = Path.of(value.trim()).toAbsolutePath().normalize();
+            Path expected = installationDirectory.toAbsolutePath().normalize();
+            return candidate.toString().equalsIgnoreCase(expected.toString());
+        } catch (InvalidPathException exception) {
+            return false;
+        }
+    }
+
+    private static Path installationDirectory() {
+        String launcherPathValue = System.getProperty("jpackage.app-path", "").trim();
+        if (!launcherPathValue.isEmpty()) {
+            Path launcherPath = Path.of(launcherPathValue).toAbsolutePath().normalize();
+            Path parent = launcherPath.getParent();
+            if (parent != null) return parent;
+        }
+        try {
+            Path codeLocation = Path.of(
+                Uninstaller.class.getProtectionDomain().getCodeSource().getLocation().toURI())
+                .toAbsolutePath().normalize();
+            Path appDirectory = Files.isDirectory(codeLocation) ? codeLocation : codeLocation.getParent();
+            if (appDirectory != null && appDirectory.getFileName() != null
+                && "app".equalsIgnoreCase(appDirectory.getFileName().toString())) {
+                return appDirectory.getParent();
+            }
+            return appDirectory;
+        } catch (URISyntaxException exception) {
+            throw new IllegalStateException("无法定位卸载器安装目录", exception);
+        }
     }
 
     private static String value(String line, String name) {

@@ -11,12 +11,17 @@ export function createBackendEvents(): BackendEvents {
   const sourceListeners = new Map<string, EventListener>()
   let source: EventSource | null = null
   let hasOpened = false
+  let sourceReady: Promise<void> | null = null
+  let resolveSourceReady: (() => void) | null = null
 
   function ensureSource(): EventSource {
     if (source) return source
     if (typeof globalThis.EventSource === 'undefined') {
       throw new RuntimeError('unavailable', '事件流不可用')
     }
+    sourceReady = new Promise<void>((resolve) => {
+      resolveSourceReady = resolve
+    })
     source = new globalThis.EventSource('/events')
     source.addEventListener('open', handleOpen)
     return source
@@ -25,6 +30,8 @@ export function createBackendEvents(): BackendEvents {
   function handleOpen() {
     if (!hasOpened) {
       hasOpened = true
+      resolveSourceReady?.()
+      resolveSourceReady = null
       return
     }
     for (const handler of invalidationHandlers) {
@@ -59,12 +66,19 @@ export function createBackendEvents(): BackendEvents {
     source?.close()
     source = null
     hasOpened = false
+    sourceReady = null
+    resolveSourceReady = null
     sourceListeners.clear()
+  }
+
+  function waitForSourceOpen() {
+    return hasOpened ? Promise.resolve() : sourceReady
   }
 
   async function subscribeInvalidation(handler: () => void): Promise<ListenerHandle> {
     ensureSource()
     invalidationHandlers.add(handler)
+    await waitForSourceOpen()
     return createIdempotentListenerHandle(async () => {
       invalidationHandlers.delete(handler)
       closeSourceIfUnused()
@@ -87,6 +101,7 @@ export function createBackendEvents(): BackendEvents {
       eventSource.addEventListener(name, listener)
     }
 
+    await waitForSourceOpen()
     return createIdempotentListenerHandle(async () => {
       const currentHandlers = handlers.get(name)
       currentHandlers?.delete(callback)

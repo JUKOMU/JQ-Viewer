@@ -122,6 +122,11 @@ describe('LogsPage 日志文件选择与导出', () => {
 
     await selectAll.click()
     expect(checkboxes.every((input) => !input.checked)).toBe(true)
+
+    await (document.body.querySelector('button.btn-cancel') as HTMLButtonElement).click()
+    await exportButton.trigger('click')
+    await flushPromises()
+    expect(mocks.listFiles).toHaveBeenCalledTimes(2)
     wrapper.unmount()
   })
 

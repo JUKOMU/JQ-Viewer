@@ -328,6 +328,7 @@ const showOnlineRecoveryFailure = () => {
 
 const waitForOnlineProbe = () => {
   let finishProbe: ((success: boolean) => void) | null = null
+  let ready: Promise<unknown> = Promise.resolve()
   const promise = new Promise<boolean>((resolve) => {
     let handle: Awaited<ReturnType<typeof JmcomicService.addNetworkProbeListener>> | null = null
     let timer: ReturnType<typeof setTimeout> | null = null
@@ -342,9 +343,9 @@ const waitForOnlineProbe = () => {
     }
     timer = setTimeout(() => finish(false), 5_000)
     finishProbe = finish
-    void JmcomicService.addNetworkProbeListener((event) => {
+    ready = JmcomicService.addNetworkProbeListener((event) => {
       if (event.phase === 'error') finish(false)
-      if (event.phase === 'result') {
+      if (event.phase === 'result' || event.phase === 'network_restored') {
         finish(Boolean(event.domains?.some((domain) => domain.reachable)))
       }
     })
@@ -352,9 +353,13 @@ const waitForOnlineProbe = () => {
         handle = registered
         if (settled) void registered.remove()
       })
-      .catch(() => finish(false))
+    void ready.catch(() => finish(false))
   })
-  return { promise, cancel: () => finishProbe?.(false) }
+  return {
+    promise,
+    ready: Promise.race([ready, promise.then(() => undefined)]),
+    cancel: () => finishProbe?.(false),
+  }
 }
 
 const toggleOnlineCapability = async () => {
@@ -369,6 +374,7 @@ const toggleOnlineCapability = async () => {
   onlineStatusBusy.value = true
   const probe = waitForOnlineProbe()
   try {
+    await probe.ready
     await JmcomicService.reprobeDomains()
     if (await probe.promise) {
       clearOnlineRecoveryFailure()

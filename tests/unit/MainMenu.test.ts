@@ -26,6 +26,7 @@ const mocks = vi.hoisted(() => ({
   addNetworkProbeListener: vi.fn(),
   reprobeDomains: vi.fn(),
   getClientState: vi.fn(),
+  showToast: vi.fn(),
   downloadHandler: undefined as ((event: any) => void) | undefined,
   pdfHandler: undefined as ((event: any) => void) | undefined,
   stateInvalidatedHandler: undefined as (() => void) | undefined,
@@ -48,6 +49,7 @@ vi.mock('@/services/JmcomicService', () => ({
     reprobeDomains: mocks.reprobeDomains,
     getClientState: mocks.getClientState,
   },
+  showToast: mocks.showToast,
 }))
 
 vi.mock('@/composables/useAuth', () => ({
@@ -111,6 +113,7 @@ beforeEach(() => {
   mocks.addNetworkProbeListener.mockReset()
   mocks.reprobeDomains.mockReset()
   mocks.getClientState.mockReset()
+  mocks.showToast.mockReset()
   mocks.downloadHandler = undefined
   mocks.pdfHandler = undefined
   mocks.stateInvalidatedHandler = undefined
@@ -131,6 +134,7 @@ beforeEach(() => {
   })
   mocks.reprobeDomains.mockResolvedValue(undefined)
   mocks.getClientState.mockResolvedValue({ state: 'ready', timestamp: 1 })
+  mocks.showToast.mockResolvedValue(undefined)
   mocks.addNetworkProbeListener.mockImplementation(async (handler: (event: any) => void) => {
     mocks.networkProbeHandler = handler
     return { remove: vi.fn() }
@@ -446,6 +450,7 @@ describe('MainMenu 在线能力状态', () => {
       domains: [{ domain: 'https://example.invalid', reachable: true }],
     })
     await restoring
+    await flushPromises()
     await nextTick()
 
     expect(manualOffline.value).toBe(false)

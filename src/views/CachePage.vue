@@ -527,8 +527,7 @@ function zoomPreviewAtPoint(target: EventTarget | null, clientX: number, clientY
 
 function handlePreviewTap(target: EventTarget | null, clientX: number, clientY: number) {
   const now = Date.now()
-  const tapDistance =
-    Math.abs(clientX - previewLastTapX) + Math.abs(clientY - previewLastTapY)
+  const tapDistance = Math.abs(clientX - previewLastTapX) + Math.abs(clientY - previewLastTapY)
   if (
     previewLastTapAt > 0 &&
     now - previewLastTapAt < PREVIEW_DOUBLE_TAP_MS &&

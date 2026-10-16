@@ -18,9 +18,9 @@ import io.javalin.http.Context;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.concurrent.Executor;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.Executor;
 import java.util.function.Consumer;
 
 /**
@@ -48,7 +48,8 @@ public final class SystemPluginHandler {
         DiagnosticsService diagnostics
     ) {
         this(networkRequests, diagnosticsRequests, clientSession, network, launchRoutes,
-            diagnostics, null, null, Runnable::run, ignored -> {});
+            diagnostics, null, null, Runnable::run, ignored -> {
+            });
     }
 
     public SystemPluginHandler(

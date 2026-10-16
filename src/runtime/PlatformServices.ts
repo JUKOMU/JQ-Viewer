@@ -57,8 +57,12 @@ export type NotificationPolicy =
 
 /** 文件系统平台能力：目录选择、默认目录、存在性检查、打开文件/目录与可导入文件扫描。 */
 export interface FileService {
-  pickFolder(purpose: 'local-file-root' | 'export' | 'download' | 'logs'): Promise<FolderDescriptor | null>
-  getDefaultFolder(purpose: 'local-file-root' | 'export' | 'download' | 'logs'): Promise<FolderDescriptor>
+  pickFolder(
+    purpose: 'local-file-root' | 'export' | 'download' | 'logs',
+  ): Promise<FolderDescriptor | null>
+  getDefaultFolder(
+    purpose: 'local-file-root' | 'export' | 'download' | 'logs',
+  ): Promise<FolderDescriptor>
   checkFilesExist(files: FileRef[]): Promise<{ existing: FileRef[] }>
   openFile(file: FileRef): Promise<void>
   openContainingFolder(file: FileRef): Promise<void>

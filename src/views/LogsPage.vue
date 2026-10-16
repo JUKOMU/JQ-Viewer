@@ -7,11 +7,7 @@
         </IonButtons>
         <IonTitle class="toolbar-title">应用日志</IonTitle>
         <IonButtons slot="end">
-          <IonButton
-            :disabled="exporting"
-            aria-label="导出日志"
-            @click="openExportModal"
-          >
+          <IonButton :disabled="exporting" aria-label="导出日志" @click="openExportModal">
             <IonIcon :icon="downloadOutline" aria-hidden="true" />
             <span>导出日志</span>
           </IonButton>
@@ -72,7 +68,8 @@
                   <span class="log-file-info">
                     <span class="log-file-name">{{ file.fileName }}</span>
                     <span class="log-file-meta">
-                      {{ formatBytes(file.sizeBytes) }}<template v-if="file.current"> · 当前日志</template>
+                      {{ formatBytes(file.sizeBytes)
+                      }}<template v-if="file.current"> · 当前日志</template>
                     </span>
                   </span>
                 </label>
@@ -134,7 +131,9 @@ const exportMessage = ref('')
 const exporting = ref(false)
 const exportModalOpen = ref(false)
 const loadingFiles = ref(false)
-const logFiles = ref<Array<{ fileName: string; updatedAt: number; sizeBytes: number; current: boolean }>>([])
+const logFiles = ref<
+  Array<{ fileName: string; updatedAt: number; sizeBytes: number; current: boolean }>
+>([])
 const selectedFileNames = ref<Set<string>>(new Set())
 let nextLine = 0
 let nextOffset = 0
@@ -193,7 +192,9 @@ async function loadLogFiles() {
   try {
     logFiles.value = await logs.value.api.listFiles()
     selectedFileNames.value = new Set(
-      [...selectedFileNames.value].filter((name) => logFiles.value.some((file) => file.fileName === name)),
+      [...selectedFileNames.value].filter((name) =>
+        logFiles.value.some((file) => file.fileName === name),
+      ),
     )
   } finally {
     loadingFiles.value = false
@@ -246,7 +247,8 @@ async function exportSelectedLogs() {
     })
     const parts: string[] = []
     if (result.exported.length) parts.push(`已导出 ${result.exported.length} 个`)
-    if (result.skipped.length) parts.push(`跳过 ${result.skipped.length} 个（目标目录已是日志目录）`)
+    if (result.skipped.length)
+      parts.push(`跳过 ${result.skipped.length} 个（目标目录已是日志目录）`)
     if (result.failed.length) {
       const failedNames = result.failed.map((item) => item.fileName).join('、')
       parts.push(`失败 ${result.failed.length} 个：${failedNames}`)
@@ -372,7 +374,11 @@ onUnmounted(() => {
 
 .log-file-meta {
   color: #b89a84;
-  font: 11px ui-monospace, SFMono-Regular, Consolas, monospace;
+  font:
+    11px ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    monospace;
 }
 
 .logs-export-message {

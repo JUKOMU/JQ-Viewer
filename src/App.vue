@@ -414,7 +414,10 @@ onMounted(async () => {
         : await auth.initAuth(canCommitAuth)
       await apiRoute.refresh().catch(() => undefined)
     } catch (error) {
-      showToast(`线路设置应用失败：${normalizeRuntimeError(error, '无法应用线路').message}`, 'danger')
+      showToast(
+        `线路设置应用失败：${normalizeRuntimeError(error, '无法应用线路').message}`,
+        'danger',
+      )
       result = 'retryable-error'
     }
     await loginToast?.dismiss()

@@ -1,6 +1,6 @@
 package io.github.jukomu.desktop;
 
-import javax.swing.JOptionPane;
+import javax.swing.*;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;

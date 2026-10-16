@@ -48,7 +48,8 @@ public final class AuthPluginHandler {
     public AuthPluginHandler(Context context, ApiService apiService,
                              Supplier<List<Cookie>> cookieSupplier,
                              PluginCallSession callSession) {
-        this(context, apiService, cookieSupplier, callSession, ignored -> {});
+        this(context, apiService, cookieSupplier, callSession, ignored -> {
+        });
     }
 
     public AuthPluginHandler(Context context, ApiService apiService,

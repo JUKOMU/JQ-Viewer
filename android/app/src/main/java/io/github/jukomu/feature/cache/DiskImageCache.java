@@ -57,7 +57,9 @@ public final class DiskImageCache extends SQLiteOpenHelper {
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
     }
 
-    /** 设置磁盘冷层容量（字节）。 */
+    /**
+     * 设置磁盘冷层容量（字节）。
+     */
     synchronized void setCapacity(long bytes) {
         capacityBytes = Math.max(0L, bytes);
         policyApplied = true;
@@ -69,7 +71,9 @@ public final class DiskImageCache extends SQLiteOpenHelper {
     /**
      * 对外图片 payload，不包含索引及已失效修订。
      */
-    /** 获取磁盘冷层已提交图片 payload 使用量（字节）。 */
+    /**
+     * 获取磁盘冷层已提交图片 payload 使用量（字节）。
+     */
     synchronized long payloadBytes() {
         long total = 0L;
         for (StoredEntry entry : entries.values()) {
@@ -81,7 +85,9 @@ public final class DiskImageCache extends SQLiteOpenHelper {
     /**
      * 实际目录占用：索引、journal、临时文件、孤儿及延迟回收文件均计入。
      */
-    /** 获取冷层目录实际占用（字节），包含索引、临时文件和残留文件。 */
+    /**
+     * 获取冷层目录实际占用（字节），包含索引、临时文件和残留文件。
+     */
     synchronized long usedBytes() {
         return directoryBytes(false);
     }

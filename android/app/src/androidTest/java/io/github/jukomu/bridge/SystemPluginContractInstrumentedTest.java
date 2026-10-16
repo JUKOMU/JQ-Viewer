@@ -419,7 +419,7 @@ public class SystemPluginContractInstrumentedTest {
         Path logsDirectory = ApplicationLogging.logsDirectory(context);
         Files.createDirectories(logsDirectory);
         Path source = logsDirectory.resolve("current.log");
-        Files.writeString(source, "android log\n", StandardCharsets.UTF_8);
+        Files.write(source, "android log\n".getBytes(StandardCharsets.UTF_8));
         File targetDirectory = new File(context.getCacheDir(), "log-export-contract");
         assertTrue(targetDirectory.mkdirs() || targetDirectory.isDirectory());
         try {

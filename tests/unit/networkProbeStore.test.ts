@@ -37,6 +37,35 @@ afterEach(async () => {
 })
 
 describe('networkProbeStore', () => {
+  test('线路认证事件只供 Toast 消费，不进入网络事件日志', async () => {
+    let probeListener: ((event: Record<string, unknown>) => void) | undefined
+    mocks.addNetworkProbeListener.mockImplementation(async (listener) => {
+      probeListener = listener
+      return { remove: mocks.removeProbe }
+    })
+    mocks.addStateInvalidatedListener.mockResolvedValue(null)
+    mocks.getDomainStates.mockResolvedValue({
+      domains: [],
+      alive: 0,
+      total: 0,
+      allDeadFallback: false,
+    })
+    const { initNetworkProbeStore, useNetworkProbeStore } =
+      await import('@/composables/networkProbeStore')
+
+    initNetworkProbeStore()
+    await vi.waitFor(() => expect(probeListener).toBeTypeOf('function'))
+    probeListener?.({
+      phase: 'route_auth_succeeded',
+      message: '线路切换后登录已恢复',
+      timestamp: 1,
+    })
+    expect(useNetworkProbeStore().events.value).toEqual([])
+
+    probeListener?.({ phase: 'result', message: '探活完成', timestamp: 2 })
+    expect(useNetworkProbeStore().events.value).toHaveLength(1)
+  })
+
   test('初始化读取快照、消费事件并在重连后恢复权威状态', async () => {
     let probeListener: ((event: Record<string, unknown>) => void) | undefined
     let invalidationListener: (() => void) | undefined

@@ -91,7 +91,8 @@ public class JmcomicPlugin extends Plugin {
         PluginCallSession callSession = apiSession.getCallSession();
         apiHandler = new ApiPluginHandler(apiService, callSession);
         authHandler = new AuthPluginHandler(
-            getContext(), apiService, client::getCookies, callSession);
+            getContext(), apiService, client::getCookies, callSession,
+            event -> notifyListeners("networkProbe", event));
         authHandler.clearAuthState(SettingsStore.getInstance(getContext()));
         boundClient = client;
     }

@@ -11,6 +11,7 @@ import io.github.jukomu.desktop.feature.auth.AuthService;
 import io.github.jukomu.desktop.feature.client.JmcomicSessionManager;
 import io.github.jukomu.desktop.feature.diagnostics.DiagnosticsService;
 import io.github.jukomu.desktop.feature.network.NetworkService;
+import io.github.jukomu.desktop.feature.network.model.NetworkProbeEvent;
 import io.github.jukomu.desktop.feature.notification.LaunchRouteService;
 import io.github.jukomu.desktop.logging.ApplicationLogging;
 import io.javalin.http.Context;
@@ -20,6 +21,7 @@ import org.slf4j.LoggerFactory;
 import java.util.concurrent.Executor;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.function.Consumer;
 
 /**
  * 提供服务状态查询。
@@ -35,6 +37,7 @@ public final class SystemPluginHandler {
     private final Paths paths;
     private final AuthService auth;
     private final Executor authExecutor;
+    private final Consumer<NetworkProbeEvent> authEventPublisher;
 
     public SystemPluginHandler(
         RequestExecutor networkRequests,
@@ -44,7 +47,8 @@ public final class SystemPluginHandler {
         LaunchRouteService launchRoutes,
         DiagnosticsService diagnostics
     ) {
-        this(networkRequests, diagnosticsRequests, clientSession, network, launchRoutes, diagnostics, null, null, Runnable::run);
+        this(networkRequests, diagnosticsRequests, clientSession, network, launchRoutes,
+            diagnostics, null, null, Runnable::run, ignored -> {});
     }
 
     public SystemPluginHandler(
@@ -56,7 +60,8 @@ public final class SystemPluginHandler {
         DiagnosticsService diagnostics,
         Paths paths,
         AuthService auth,
-        Executor authExecutor
+        Executor authExecutor,
+        Consumer<NetworkProbeEvent> authEventPublisher
     ) {
         this.networkRequests = networkRequests;
         this.diagnosticsRequests = diagnosticsRequests;
@@ -67,6 +72,7 @@ public final class SystemPluginHandler {
         this.paths = paths;
         this.auth = auth;
         this.authExecutor = authExecutor;
+        this.authEventPublisher = authEventPublisher;
     }
 
     public void getInitStatus(Context context) {
@@ -109,15 +115,23 @@ public final class SystemPluginHandler {
             String domain = apiClient.getUsedDomain();
             if (auth != null && !java.util.Objects.equals(beforeDomain, domain)) {
                 try {
+                    authEventPublisher.accept(NetworkProbeEvent.routeAuth(
+                        "route_auth_started", "线路切换后正在恢复登录"));
                     authExecutor.execute(() -> {
                         try {
                             auth.reauthenticateAfterRouteChange();
+                            authEventPublisher.accept(NetworkProbeEvent.routeAuth(
+                                "route_auth_succeeded", "线路切换后登录已恢复"));
                         } catch (RuntimeException error) {
                             LOGGER.warn("线路切换后自动登录失败", error);
+                            authEventPublisher.accept(NetworkProbeEvent.routeAuth(
+                                "route_auth_failed", "线路切换后登录恢复失败"));
                         }
                     });
                 } catch (RuntimeException error) {
                     LOGGER.warn("无法提交线路切换后的自动登录", error);
+                    authEventPublisher.accept(NetworkProbeEvent.routeAuth(
+                        "route_auth_failed", "线路切换后登录恢复失败"));
                 }
             }
             return java.util.Map.of("domain", domain == null ? "" : domain);

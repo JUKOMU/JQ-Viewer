@@ -422,7 +422,9 @@ onMounted(async () => {
     recoveringAuth = false
     if (!canCommitAuth()) return
     authState = result === 'retryable-error' ? 'idle' : 'complete'
-    if (!recovering && result === 'authenticated') showToast('登录成功', 'success')
+    if (result === 'authenticated') {
+      showToast(recovering ? '登录状态已恢复' : '登录成功', 'success')
+    }
     if (recovering && result === 'retryable-error') {
       showToast('网络恢复后登录失败，请稍后重试', 'danger')
     }
@@ -446,7 +448,10 @@ onMounted(async () => {
       currentGeneration === authGeneration
     try {
       await apiRoute.applySavedPreference()
-      if ((await auth.reauthenticate(canCommit)) === 'retryable-error') {
+      const result = await auth.reauthenticate(canCommit)
+      if (result === 'authenticated') {
+        showToast('登录状态已恢复', 'success')
+      } else if (result === 'retryable-error') {
         showToast('网络恢复后登录失败，请稍后重试', 'danger')
       }
       await apiRoute.refresh().catch(() => undefined)
@@ -464,6 +469,18 @@ onMounted(async () => {
 
   try {
     networkRecoveryHandle = await JmcomicService.addNetworkProbeListener((event) => {
+      if (event.phase === 'route_auth_started') {
+        void showToast('线路切换后正在恢复登录', 'medium')
+        return
+      }
+      if (event.phase === 'route_auth_succeeded') {
+        void showToast('线路切换后登录已恢复', 'success')
+        return
+      }
+      if (event.phase === 'route_auth_failed') {
+        void showToast('线路已切换，但登录恢复失败，请稍后重试', 'danger')
+        return
+      }
       if (event.phase === 'network_changed' || event.phase === 'network_lost') {
         networkRecoveryPending = true
         if (event.phase === 'network_changed') {

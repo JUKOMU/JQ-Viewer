@@ -37,6 +37,7 @@ public final class AuthPluginHandler {
     private final ApiService apiService;
     private final Supplier<List<Cookie>> cookieSupplier;
     private final PluginCallSession callSession;
+    private final Consumer<JSObject> authEventConsumer;
     private volatile String memoryUsername;
     private volatile String memoryPassword;
     private volatile boolean credentialsLoaded;
@@ -47,10 +48,18 @@ public final class AuthPluginHandler {
     public AuthPluginHandler(Context context, ApiService apiService,
                              Supplier<List<Cookie>> cookieSupplier,
                              PluginCallSession callSession) {
+        this(context, apiService, cookieSupplier, callSession, ignored -> {});
+    }
+
+    public AuthPluginHandler(Context context, ApiService apiService,
+                             Supplier<List<Cookie>> cookieSupplier,
+                             PluginCallSession callSession,
+                             Consumer<JSObject> authEventConsumer) {
         this.context = context;
         this.apiService = apiService;
         this.cookieSupplier = cookieSupplier;
         this.callSession = callSession;
+        this.authEventConsumer = authEventConsumer;
     }
 
     /**
@@ -373,6 +382,7 @@ public final class AuthPluginHandler {
         final String loginUsername = username;
         final String loginPassword = password;
         final long attemptId = authAttemptSequence.incrementAndGet();
+        publishRouteAuthEvent("route_auth_started", "线路切换后正在恢复登录");
         LOGGER.info("线路切换后认证恢复开始 attemptId={} generation={}",
             attemptId, routeGeneration);
         try {
@@ -417,10 +427,18 @@ public final class AuthPluginHandler {
                             saveAuthState(SettingsStore.getInstance(context), userInfo);
                             memoryUsername = username;
                             memoryPassword = password;
-                            LOGGER.info("线路切换后认证恢复成功 attemptId={}", attemptId);
                         }
                     } catch (Exception error) {
                         LOGGER.warn("线路切换后保存认证态失败 errorType={}", errorType(error));
+                        publishRouteAuthEvent("route_auth_failed", "线路切换后登录恢复失败");
+                        return;
+                    }
+                    LOGGER.info("线路切换后认证恢复成功 attemptId={}", attemptId);
+                    try {
+                        publishRouteAuthEvent("route_auth_succeeded", "线路切换后登录已恢复");
+                    } catch (RuntimeException error) {
+                        LOGGER.warn("线路切换后认证成功事件发布失败 errorType={}",
+                            errorType(error));
                     }
                 }
 
@@ -428,6 +446,7 @@ public final class AuthPluginHandler {
                 public void onError(String message, Exception error) {
                     LOGGER.warn("线路切换后认证恢复失败 attemptId={} errorType={}",
                         attemptId, errorType(error));
+                    publishRouteAuthEvent("route_auth_failed", "线路切换后登录恢复失败");
                     if (error instanceof ResponseException responseError
                         && isAuthenticationFailure(responseError)) {
                         synchronized (AuthPluginHandler.this) {
@@ -453,7 +472,16 @@ public final class AuthPluginHandler {
             });
         } catch (RuntimeException error) {
             LOGGER.warn("线路切换后自动登录启动失败 errorType={}", errorType(error));
+            publishRouteAuthEvent("route_auth_failed", "线路切换后登录恢复失败");
         }
+    }
+
+    private void publishRouteAuthEvent(String phase, String message) {
+        JSObject event = new JSObject();
+        event.put("phase", phase);
+        event.put("message", message);
+        event.put("timestamp", System.currentTimeMillis());
+        authEventConsumer.accept(event);
     }
 
     private static boolean isAuthenticationFailure(ResponseException error) {

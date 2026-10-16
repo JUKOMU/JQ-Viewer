@@ -373,12 +373,22 @@ export interface ClientStateSnapshot {
 }
 
 /**
- * 网络探活事件。由 Android 侧 notifyListeners("networkProbe") 推送。
- * - phase=network_changed|network_lost|probing|error: 仅含 message + timestamp
- * - phase=result|network_restored: 额外含 domains (域名+可达性) + alive (可达数) + total (总数) + allDeadFallback (全死回退标记)
+ * 网络与线路恢复事件。由 Android/Desktop 通过 networkProbe 通道推送。
+ * - 网络探活阶段：network_changed|network_lost|probing|error 仅含 message + timestamp；
+ *   result|network_restored 额外含 domains、alive、total、allDeadFallback。
+ * - 线路认证恢复阶段：route_auth_started|route_auth_succeeded|route_auth_failed 仅含 message + timestamp。
  */
 export interface NetworkProbeEvent {
-  phase: 'network_changed' | 'network_lost' | 'network_restored' | 'probing' | 'result' | 'error'
+  phase:
+    | 'network_changed'
+    | 'network_lost'
+    | 'network_restored'
+    | 'route_auth_started'
+    | 'route_auth_succeeded'
+    | 'route_auth_failed'
+    | 'probing'
+    | 'result'
+    | 'error'
   message: string
   timestamp: number
   domains?: { domain: string; reachable: boolean }[]

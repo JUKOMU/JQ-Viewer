@@ -1,7 +1,9 @@
 import type { SearchQuery, SearchResult, SearchResultItem } from '@/services/JmcomicTypes'
 
-export const SEARCH_PAGE_WINDOW_SIZE = 5
-export const SEARCH_PAGE_CONTEXT_CACHE_LIMIT = 3
+// 单次搜索的结果页缓存窗口大小
+export const SEARCH_PAGE_WINDOW_SIZE = 3
+// 搜索页面上下文缓存的最大数量
+export const SEARCH_PAGE_CONTEXT_CACHE_LIMIT = 5
 
 export type SearchPageContextQuery = {
   keyword: string

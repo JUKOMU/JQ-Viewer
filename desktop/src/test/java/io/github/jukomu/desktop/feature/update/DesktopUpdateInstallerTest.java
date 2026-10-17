@@ -1,13 +1,16 @@
 package io.github.jukomu.desktop.feature.update;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import io.github.jukomu.desktop.data.Paths;
 
+import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DesktopUpdateInstallerTest {
@@ -44,5 +47,45 @@ class DesktopUpdateInstallerTest {
         DesktopUpdateInstaller.confirmStarted(paths, ready.toString());
 
         assertTrue(Files.isRegularFile(ready));
+    }
+
+    @Test
+    void updateHelperRunsFromUpdateDirectory(@TempDir Path root) throws Exception {
+        Path applicationRoot = root.resolve("JQ-Viewer");
+        Path launcher = applicationRoot.resolve("JQ-Viewer.exe");
+        Files.createDirectories(applicationRoot);
+        Files.writeString(launcher, "launcher");
+
+        Path localAppData = root.resolve("local-app-data");
+        Paths paths = new Paths(
+            applicationRoot,
+            root.resolve("home"),
+            Map.of("LOCALAPPDATA", localAppData.toString()),
+            "Windows");
+        Path updateDirectory = paths.stateDirectory().resolve("update");
+        Files.createDirectories(updateDirectory);
+
+        DesktopUpdateConfiguration configuration = new DesktopUpdateConfiguration(
+            "2.1.0",
+            "windows",
+            "x64",
+            "portable",
+            "zip",
+            "test-key",
+            new byte[] {1},
+            launcher,
+            applicationRoot);
+        DesktopUpdateInstaller installer = new DesktopUpdateInstaller(configuration, paths);
+        Method builderMethod = DesktopUpdateInstaller.class.getDeclaredMethod(
+            "windowsBuilder", Path.class, Path.class, Path.class);
+        builderMethod.setAccessible(true);
+
+        ProcessBuilder builder = (ProcessBuilder) builderMethod.invoke(
+            installer,
+            root.resolve("update.zip"),
+            updateDirectory.resolve("install.log"),
+            updateDirectory.resolve("startup.ready"));
+
+        assertEquals(updateDirectory.toFile(), builder.directory());
     }
 }

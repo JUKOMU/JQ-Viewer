@@ -84,7 +84,7 @@ public final class DesktopUpdateInstaller {
             swap.backup().toString(),
             logPath.toString(),
             readyPath.toString()
-        ));
+        )).directory(updateDirectory.toFile());
     }
 
     private ProcessBuilder linuxBuilder(

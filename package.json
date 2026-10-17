@@ -1,7 +1,7 @@
 {
   "name": "jq-viewer",
   "private": true,
-  "version": "1.4.6",
+  "version": "2.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,6 +11,8 @@
     "test:e2e": "cypress run",
     "test:unit": "vitest run",
     "test:unit:watch": "vitest",
+    "desktop:sync": "node scripts/desktop-sync.mjs",
+    "desktop:package": "node scripts/desktop-package.mjs",
     "lint": "eslint .",
     "lint:fix": "eslint --fix .",
     "format": "prettier --write \"src/**/*.{vue,ts,css}\"",

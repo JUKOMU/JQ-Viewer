@@ -4,7 +4,9 @@ import type {
   BrowseHistoryOverview,
   BrowseHistoryItem,
   BrowseHistoryRange,
+  CbzDocumentInfo,
   CacheCapacityInfo,
+  ClientStateSnapshot,
   CommentList,
   DomainStates,
   DownloadProgressEvent,
@@ -15,23 +17,23 @@ import type {
   HistoryPageResult,
   ImageInfo,
   ImageCacheEntry,
-  ImportedPdfsResult,
-  ImportedPdf,
-  ImportPdfItem,
-  ImportPdfsResult,
+  LocalFileRecord,
+  ImportLocalFileItem,
+  ImportLocalFilesResult,
   LatencyResult,
   NetworkProbeEvent,
   OfflineFavoritesResult,
   OfflineFolderInfo,
   ParseHistoryItem,
-  PdfExportTask,
-  PdfExportBatchResult,
-  PdfExportProgressEvent,
-  PdfExportStatus,
-  PdfExportTaskRecord,
-  PdfManagementState,
-  PdfStorageDeleteResult,
-  PdfScanItem,
+  ExportTask,
+  ExportFormat,
+  ExportProgressEvent,
+  ExportStatus,
+  ExportTaskRecord,
+  ExportSubmissionTaskResult,
+  LocalFileManagementState,
+  LocalFileStorageDeleteResult,
+  LocalFileScanItem,
   PhotoDetail,
   PreloadResult,
   RelocationProgress,
@@ -54,6 +56,48 @@ export type ImageFailedEvent = ImageReadyEvent
 
 export interface JmcomicListenerHandle {
   remove: () => Promise<void>
+}
+
+/** Android Plugin 的原生 DTO；文件位置只以 opaque ref 传输。 */
+export type AndroidExportTask = Omit<ExportTask, 'target' | 'displayPath'> & {
+  targetFolderRef: string
+  targetName: string
+  displayPath: string
+}
+export type AndroidExportTaskRecord = Omit<ExportTaskRecord, 'outputFile' | 'displayPath'> & {
+  targetFolderRef: string
+  targetName: string
+  outputFileRef?: string
+  displayPath?: string
+}
+export type AndroidExportSubmissionTaskResult = Partial<AndroidExportTaskRecord> &
+  Pick<ExportSubmissionTaskResult, 'accepted' | 'errorCode' | 'errorMessage'>
+export type AndroidLocalFileScanItem = Omit<LocalFileScanItem, 'ref'> & { fileRef: string }
+export type AndroidLocalFileRecord = Omit<LocalFileRecord, 'fileRef' | 'displayPath'> & {
+  fileRef: string
+  displayPath: string
+}
+export type AndroidLocalFileStorageDeleteResult = Omit<LocalFileStorageDeleteResult, 'file'> & {
+  fileRef: string
+  displayPath: string
+  fileName: string
+}
+export type AndroidImportLocalFileItem = Omit<ImportLocalFileItem, 'fileRef' | 'displayPath'> & {
+  fileRef: string
+  displayPath: string
+}
+export type AndroidExportBatchResult = {
+  tasks: AndroidExportSubmissionTaskResult[]
+}
+export type AndroidImportedLocalFilesResult = { files: AndroidLocalFileRecord[] }
+export type AndroidImportLocalFilesResult = Omit<ImportLocalFilesResult, 'results'> & {
+  results?: Array<{
+    result: string
+    fileRef?: string
+    displayPath?: string
+    fileName?: string
+    id?: number
+  }>
 }
 
 export interface JmcomicClient {
@@ -103,13 +147,42 @@ export interface JmcomicClient {
 
   setOcrEnabled(options: { enabled: boolean }): Promise<{ success: boolean }>
 
-  setDownloadPublic(options: {
-    open: boolean
-  }): Promise<{ success: boolean; downloadPublic: boolean; moved: number }>
+  setDownloadPublic(options: { open: boolean }): Promise<{
+    success: boolean
+    downloadPublic: boolean
+    moved: number
+    displayPath?: string
+    cleanupPending?: boolean
+    cleanupMessage?: string
+  }>
 
-  getDownloadPublic(): Promise<{ downloadPublic: boolean }>
+  getDownloadPublic(): Promise<{
+    downloadPublic: boolean
+    displayPath?: string
+    cleanupPending?: boolean
+    cleanupMessage?: string
+  }>
 
   requestManageStorage(): Promise<{ granted: boolean; permissionType: string; apiLevel: number }>
+
+  getLogs(options: { fromLine: number; fromOffset: number }): Promise<{
+    fileName: string
+    updatedAt: number
+    nextLine: number
+    nextOffset: number
+    content: string
+    reset: boolean
+  }>
+
+  listLogFiles(): Promise<{
+    files: Array<{ fileName: string; updatedAt: number; sizeBytes: number; current: boolean }>
+  }>
+
+  exportLogFiles(options: { folderRef: string; fileNames: string[] }): Promise<{
+    exported: string[]
+    skipped: string[]
+    failed: Array<{ fileName: string; message: string }>
+  }>
 
   getAllSettings(): Promise<AllSettings>
 
@@ -161,6 +234,11 @@ export interface JmcomicClient {
   ): Promise<JmcomicListenerHandle>
 
   addListener(
+    event: 'clientStateChanged',
+    handler: (data: ClientStateSnapshot) => void,
+  ): Promise<JmcomicListenerHandle>
+
+  addListener(
     event: 'launchRoute',
     handler: (data: { route: string }) => void,
   ): Promise<JmcomicListenerHandle>
@@ -172,11 +250,25 @@ export interface JmcomicClient {
 
   getDomainStates(): Promise<DomainStates>
 
+  getUsedDomain(): Promise<{ domain: string | null }>
+
+  applyApiRoute(options: {
+    mode: 'auto' | 'manual'
+    domain?: string
+  }): Promise<{ domain: string | null }>
+
+  setApiRoutePreference(options: {
+    mode: 'auto' | 'manual'
+    domain?: string
+  }): Promise<{ success: boolean }>
+
   reprobeDomains(): Promise<void>
 
   measureLatency(): Promise<{ results: LatencyResult[] }>
 
   getInitStatus(): Promise<{ complete: boolean }>
+
+  getClientState(): Promise<ClientStateSnapshot>
 
   login(options: { username: string; password: string }): Promise<UserInfo>
 
@@ -206,6 +298,7 @@ export interface JmcomicClient {
     authors: string
     chapterId: string
     chapterTitle: string
+    fileId?: number
   }): Promise<{ success: boolean }>
 
   clearBrowseHistory(): Promise<{ success: boolean }>
@@ -281,13 +374,22 @@ export interface JmcomicClient {
 
   pickImageAndOcr(): Promise<{ text: string; error?: string }>
 
-  exportPdfBatch(options: { tasks: PdfExportTask[] }): Promise<PdfExportBatchResult>
+  exportBatch(options: { tasks: AndroidExportTask[] }): Promise<AndroidExportBatchResult>
 
-  pickFolder(): Promise<{ path: string; treeUri?: string; cancelled: boolean }>
+  pickFolder(): Promise<{
+    folderRef: string
+    displayPath: string
+    provider: 'path' | 'saf'
+    cancelled: boolean
+  }>
 
-  checkFilesExist(options: { paths: string[] }): Promise<{ existing: string[] }>
+  checkFilesExist(options: { fileRefs: string[] }): Promise<{ existingFileRefs: string[] }>
 
-  getExternalStoragePath(): Promise<{ path: string }>
+  getExternalStoragePath(): Promise<{
+    folderRef: string
+    displayPath: string
+    provider: 'path' | 'saf'
+  }>
 
   checkNotificationPermission(): Promise<{ granted: boolean }>
 
@@ -309,72 +411,88 @@ export interface JmcomicClient {
 
   consumeLaunchRoute(): Promise<{ route?: string }>
 
-  scanPdfFiles(options: { path: string; treeUri?: string }): Promise<{ files: PdfScanItem[] }>
+  scanImportableFiles(options: {
+    folderRef: string
+    formats: ExportFormat[]
+  }): Promise<{ files: AndroidLocalFileScanItem[] }>
 
-  importPdfs(options: { items: ImportPdfItem[] }): Promise<ImportPdfsResult>
+  importLocalFiles(options: {
+    items: AndroidImportLocalFileItem[]
+  }): Promise<AndroidImportLocalFilesResult>
 
-  getImportedPdfs(): Promise<ImportedPdfsResult>
+  getImportedLocalFiles(): Promise<AndroidImportedLocalFilesResult>
 
-  getPdfFiles(options: {
+  getLocalFiles(options: {
+    formats?: ExportFormat[]
     sourceType?: 'imported' | 'exported'
-    availability?: ImportedPdf['availability'] | 'problem'
+    availability?: LocalFileRecord['availability'] | 'problem'
+    fileId?: number
+    albumId?: string
+    chapterId?: string
     folderId?: string
     query?: string
     cursor?: string
     limit: number
-  }): Promise<{ files: ImportedPdf[]; nextCursor?: string }>
+  }): Promise<{ files: AndroidLocalFileRecord[]; nextCursor?: string }>
 
-  refreshPdfFileAvailability(options: { ids: number[] }): Promise<{ files: ImportedPdf[] }>
+  refreshLocalFileAvailability(options: {
+    ids: number[]
+  }): Promise<{ files: AndroidLocalFileRecord[] }>
 
-  inspectPdfFileForDeletion(options: { id: number }): Promise<ImportedPdf>
+  inspectLocalFileForDeletion(options: { id: number }): Promise<AndroidLocalFileRecord>
 
-  verifyPdfFile(options: { id: number }): Promise<ImportedPdf>
+  verifyLocalFile(options: { id: number }): Promise<AndroidLocalFileRecord>
 
-  removePdfFromLibrary(options: { id: number }): Promise<{ success: boolean }>
+  removeLocalFileFromLibrary(options: { id: number }): Promise<{ success: boolean }>
 
-  deletePdfFile(options: { id: number }): Promise<PdfStorageDeleteResult>
+  deleteLocalFile(options: { id: number }): Promise<AndroidLocalFileStorageDeleteResult>
 
-  getPdfManagementState(): Promise<PdfManagementState>
+  getLocalFileManagementState(): Promise<LocalFileManagementState>
 
-  acknowledgePdfDatabaseReset(): Promise<{ acknowledged: boolean }>
+  acknowledgeLocalFileDatabaseReset(): Promise<{ acknowledged: boolean }>
 
-  getPdfExportTasks(options: {
-    status?: PdfExportStatus
+  getExportTasks(options: {
+    format?: ExportFormat
+    status?: ExportStatus
     cursor?: string
     limit: number
-  }): Promise<{ tasks: PdfExportTaskRecord[]; nextCursor?: string }>
+  }): Promise<{ tasks: AndroidExportTaskRecord[]; nextCursor?: string }>
 
-  getPdfExportTask(options: { exportId: string }): Promise<PdfExportTaskRecord>
+  getExportTask(options: { exportId: string }): Promise<AndroidExportTaskRecord>
 
-  cancelPdfExport(options: { exportId: string }): Promise<PdfExportTaskRecord>
+  cancelExport(options: { exportId: string }): Promise<AndroidExportTaskRecord>
 
-  retryPdfExport(options: {
+  retryExport(options: {
     exportId: string
     allowOverwrite?: boolean
-  }): Promise<PdfExportTaskRecord>
+  }): Promise<AndroidExportTaskRecord>
 
-  deletePdfExportTask(options: { exportId: string }): Promise<{ success: boolean }>
+  deleteExportTask(options: { exportId: string }): Promise<{ success: boolean }>
 
   updateLocalEpisodeType(options: {
     albumId: string
     isSingleEpisode: boolean
-  }): Promise<{ success: boolean; updatedDownloads: number; updatedPdfs: number }>
+  }): Promise<{ success: boolean; updatedDownloads: number; updatedLocalFiles: number }>
 
-  deleteImportedPdf(options: { id: number }): Promise<{ success: boolean }>
+  deleteImportedLocalFile(options: { id: number }): Promise<{ success: boolean }>
 
-  openPdf(options: { filePath: string }): Promise<{ success: boolean }>
+  openLocalFile(options: { fileRef: string }): Promise<{ success: boolean }>
 
-  openPdfFolder(options: { filePath: string }): Promise<{ success: boolean }>
+  openLocalFileFolder(options: { fileRef: string }): Promise<{ success: boolean }>
 
-  getPdfInfo(options: { filePath: string }): Promise<{ pageCount: number }>
+  getPdfInfo(options: { fileRef: string }): Promise<{ pageCount: number }>
+
+  getCbzInfo(options: { fileRef: string }): Promise<CbzDocumentInfo>
 
   renderPdfPage(options: {
-    filePath: string
+    fileRef: string
     page: number
     targetWidth: number
-  }): Promise<{ imageUrl: string }>
+  }): Promise<{ resourceUrl: string }>
 
   setReaderDisplayMode(options: { mode: string }): Promise<{ success: boolean }>
+
+  setReaderWidthPercent(options: { value: number | null }): Promise<{ success: boolean }>
 
   setReaderScreenOrientation(options: { orientation: string }): Promise<{ success: boolean }>
 
@@ -391,8 +509,8 @@ export interface JmcomicClient {
   setReaderState(options: { isActive: boolean; isVertical: boolean }): Promise<{ success: boolean }>
 
   addListener(
-    event: 'pdfExportProgress',
-    handler: (data: PdfExportProgressEvent) => void,
+    event: 'exportProgress',
+    handler: (data: ExportProgressEvent) => void,
   ): Promise<JmcomicListenerHandle>
 
   addListener(

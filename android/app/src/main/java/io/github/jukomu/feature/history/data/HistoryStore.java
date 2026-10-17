@@ -7,6 +7,8 @@ import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
 import org.json.JSONArray;
 import org.json.JSONObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -19,9 +21,10 @@ import java.util.Set;
  * 均为追加写入、无上限。
  */
 public class HistoryStore extends SQLiteOpenHelper {
+    private static final Logger LOGGER = LoggerFactory.getLogger(HistoryStore.class);
 
     private static final String DB_NAME = "jq_history.db";
-    private static final int DB_VERSION = 3;
+    private static final int DB_VERSION = 4;
 
     private static final String TABLE_BROWSE = "browse_history";
     private static final String COL_ID = "id";
@@ -31,6 +34,7 @@ public class HistoryStore extends SQLiteOpenHelper {
     private static final String COL_AUTHORS = "authors";
     private static final String COL_CHAPTER_ID = "chapter_id";
     private static final String COL_CHAPTER_TITLE = "chapter_title";
+    private static final String COL_FILE_ID = "file_id";
     private static final String COL_TIMESTAMP = "timestamp";
 
     private static final String TABLE_PARSE = "parse_history";
@@ -66,6 +70,7 @@ public class HistoryStore extends SQLiteOpenHelper {
             + COL_AUTHORS + " TEXT NOT NULL DEFAULT '',"
             + COL_CHAPTER_ID + " TEXT NOT NULL DEFAULT '',"
             + COL_CHAPTER_TITLE + " TEXT NOT NULL DEFAULT '',"
+            + COL_FILE_ID + " INTEGER,"
             + COL_TIMESTAMP + " INTEGER NOT NULL"
             + ")");
 
@@ -87,6 +92,10 @@ public class HistoryStore extends SQLiteOpenHelper {
         if (oldVersion < 3) {
             createBrowseHistoryIndex(db);
         }
+        if (oldVersion < 4) {
+            db.execSQL("ALTER TABLE " + TABLE_BROWSE + " ADD COLUMN "
+                + COL_FILE_ID + " INTEGER");
+        }
     }
 
     // ==================== 浏览历史 ====================
@@ -95,7 +104,8 @@ public class HistoryStore extends SQLiteOpenHelper {
      * 条件去重写入：最新记录相同 albumId → 更新全部字段，否则新增。
      */
     public boolean recordBrowse(String albumId, String albumTitle, String coverUrl,
-                                String authors, String chapterId, String chapterTitle) {
+                                String authors, String chapterId, String chapterTitle,
+                                Long fileId) {
         SQLiteDatabase db = getWritableDatabase();
         long now = System.currentTimeMillis();
 
@@ -114,6 +124,8 @@ public class HistoryStore extends SQLiteOpenHelper {
                     cv.put(COL_AUTHORS, authors != null ? authors : "");
                     cv.put(COL_CHAPTER_ID, chapterId != null ? chapterId : "");
                     cv.put(COL_CHAPTER_TITLE, chapterTitle != null ? chapterTitle : "");
+                    if (fileId == null) cv.putNull(COL_FILE_ID);
+                    else cv.put(COL_FILE_ID, fileId);
                     cv.put(COL_TIMESTAMP, now);
                     db.update(TABLE_BROWSE, cv, COL_ID + "=?", new String[]{String.valueOf(c.getLong(0))});
                     matched = true;
@@ -128,13 +140,15 @@ public class HistoryStore extends SQLiteOpenHelper {
                 cv.put(COL_AUTHORS, authors != null ? authors : "");
                 cv.put(COL_CHAPTER_ID, chapterId != null ? chapterId : "");
                 cv.put(COL_CHAPTER_TITLE, chapterTitle != null ? chapterTitle : "");
+                if (fileId == null) cv.putNull(COL_FILE_ID);
+                else cv.put(COL_FILE_ID, fileId);
                 cv.put(COL_TIMESTAMP, now);
                 db.insert(TABLE_BROWSE, null, cv);
             }
             db.setTransactionSuccessful();
             return !matched;
         } catch (Exception e) {
-            android.util.Log.w("HistoryStore", "recordBrowse failed", e);
+            LOGGER.warn("recordBrowse failed", e);
             return false;
         } finally {
             if (c != null) c.close();
@@ -166,7 +180,7 @@ public class HistoryStore extends SQLiteOpenHelper {
                 : null;
             dataCursor = db.query(TABLE_BROWSE,
                 new String[]{COL_ID, COL_ALBUM_ID, COL_ALBUM_TITLE, COL_COVER_URL, COL_AUTHORS,
-                    COL_CHAPTER_ID, COL_CHAPTER_TITLE, COL_TIMESTAMP},
+                    COL_CHAPTER_ID, COL_CHAPTER_TITLE, COL_FILE_ID, COL_TIMESTAMP},
                 range.selection, range.args, null, null,
                 COL_TIMESTAMP + " DESC, " + COL_ID + " DESC",
                 limitClause);
@@ -179,18 +193,19 @@ public class HistoryStore extends SQLiteOpenHelper {
                 obj.put("authors", dataCursor.getString(4));
                 obj.put("chapterId", dataCursor.getString(5));
                 obj.put("chapterTitle", dataCursor.getString(6));
-                obj.put("timestamp", dataCursor.getLong(7));
+                if (!dataCursor.isNull(7)) obj.put("fileId", dataCursor.getLong(7));
+                obj.put("timestamp", dataCursor.getLong(8));
                 arr.put(obj);
             }
             result.put("items", arr);
             result.put("totalCount", totalCount);
         } catch (Exception e) {
-            android.util.Log.w("HistoryStore", "getBrowseHistory failed", e);
+            LOGGER.warn("getBrowseHistory failed", e);
             try {
                 result.put("items", new JSONArray());
                 result.put("totalCount", 0L);
             } catch (Exception ignored) {
-                android.util.Log.w("HistoryStore", "构建浏览历史默认返回值失败", ignored);
+                LOGGER.warn("构建浏览历史默认返回值失败", ignored);
             }
         } finally {
             if (dataCursor != null) dataCursor.close();
@@ -252,7 +267,7 @@ public class HistoryStore extends SQLiteOpenHelper {
                 groupCounts.put(parsedRanges.get(index).key, cursor.getLong(index + 1));
             }
         } catch (Exception error) {
-            android.util.Log.w("HistoryStore", "getBrowseHistoryOverview failed", error);
+            LOGGER.warn("getBrowseHistoryOverview failed", error);
             throw error;
         }
         result.put("groupCounts", groupCounts);
@@ -266,7 +281,7 @@ public class HistoryStore extends SQLiteOpenHelper {
         try {
             getWritableDatabase().delete(TABLE_BROWSE, null, null);
         } catch (Exception e) {
-            android.util.Log.w("HistoryStore", "clearBrowseHistory failed", e);
+            LOGGER.warn("clearBrowseHistory failed", e);
         }
     }
 
@@ -274,7 +289,7 @@ public class HistoryStore extends SQLiteOpenHelper {
         try {
             getWritableDatabase().delete(TABLE_BROWSE, COL_ID + "=?", new String[]{String.valueOf(id)});
         } catch (Exception e) {
-            android.util.Log.w("HistoryStore", "deleteBrowseItem failed", e);
+            LOGGER.warn("deleteBrowseItem failed", e);
         }
     }
 
@@ -299,7 +314,7 @@ public class HistoryStore extends SQLiteOpenHelper {
             db.insert(TABLE_PARSE, null, cv);
             db.setTransactionSuccessful();
         } catch (Exception e) {
-            android.util.Log.w("HistoryStore", "addParseHistory failed", e);
+            LOGGER.warn("addParseHistory failed", e);
         } finally {
             db.endTransaction();
         }
@@ -331,12 +346,12 @@ public class HistoryStore extends SQLiteOpenHelper {
             result.put("items", arr);
             result.put("totalCount", totalCount);
         } catch (Exception e) {
-            android.util.Log.w("HistoryStore", "getParseHistory failed", e);
+            LOGGER.warn("getParseHistory failed", e);
             try {
                 result.put("items", new JSONArray());
                 result.put("totalCount", 0L);
             } catch (Exception ignored) {
-                android.util.Log.w("HistoryStore", "构建解析历史默认返回值失败", ignored);
+                LOGGER.warn("构建解析历史默认返回值失败", ignored);
             }
         } finally {
             if (dataCursor != null) dataCursor.close();
@@ -348,7 +363,7 @@ public class HistoryStore extends SQLiteOpenHelper {
         try {
             getWritableDatabase().delete(TABLE_PARSE, null, null);
         } catch (Exception e) {
-            android.util.Log.w("HistoryStore", "clearParseHistory failed", e);
+            LOGGER.warn("clearParseHistory failed", e);
         }
     }
 
@@ -356,7 +371,7 @@ public class HistoryStore extends SQLiteOpenHelper {
         try {
             return getWritableDatabase().delete(TABLE_PARSE, COL_ID + "=?", new String[]{String.valueOf(id)}) > 0;
         } catch (Exception e) {
-            android.util.Log.w("HistoryStore", "deleteParseItem failed", e);
+            LOGGER.warn("deleteParseItem failed", e);
             return false;
         }
     }
@@ -371,7 +386,7 @@ public class HistoryStore extends SQLiteOpenHelper {
                 + (selection == null ? "" : " WHERE " + selection), selectionArgs)) {
             return cursor.moveToFirst() ? cursor.getLong(0) : 0L;
         } catch (Exception e) {
-            android.util.Log.w("HistoryStore", "countRows failed for " + table, e);
+            LOGGER.warn("countRows failed for " + table, e);
             return 0L;
         }
     }

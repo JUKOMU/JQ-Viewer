@@ -42,7 +42,7 @@
       android:foregroundServiceType="dataSync"/>
 
     <service
-      android:name=".feature.pdf.export.PdfExportForegroundService"
+      android:name=".feature.export.ExportForegroundService"
       android:exported="false"
       android:foregroundServiceType="dataSync"/>
 

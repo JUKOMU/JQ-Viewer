@@ -1,30 +1,35 @@
 <!-- 区域 A：封面头部 -->
 <template>
-  <div ref="rootRef" class="header-area">
+  <header ref="rootRef" class="header-area">
     <div class="header-bg">
       <img v-if="coverUrl" :src="coverUrl" class="header-bg-img" alt="" />
       <div class="header-bg-mask" />
     </div>
     <div class="header-content">
-      <button type="button" class="back-btn" @click="$emit('back')">
+      <button type="button" class="back-btn" aria-label="返回" @click="$emit('back')">
         <ion-icon :icon="arrowBack" />
       </button>
       <div class="header-body">
-        <div class="cover-col">
-          <img
-            v-if="coverUrl"
-            :src="coverUrl"
-            class="cover-img"
-            :alt="title"
-            @click="showPreview = true"
-          />
+        <button
+          type="button"
+          class="cover-col"
+          :disabled="!coverUrl"
+          aria-label="预览封面"
+          @click="openPreview"
+        >
+          <img v-if="coverUrl" :src="coverUrl" class="cover-img" :alt="title" />
           <div v-else class="cover-placeholder" />
-        </div>
+        </button>
         <div class="info-col">
-          <h1 class="album-title">{{ title || '加载中...' }}</h1>
-          <p v-if="authors" class="album-authors">{{ authors }}</p>
-          <p v-if="!loading && !chapterLoading" class="album-pages">{{ pageCount }} 页</p>
-          <div v-else class="pages-skeleton" />
+          <div class="header-copy">
+            <h1 class="album-title">{{ title || '加载中...' }}</h1>
+            <div class="album-meta">
+              <p v-if="authors" class="album-authors">{{ authors }}</p>
+              <p v-if="!loading && !chapterLoading" class="album-pages">{{ pageCount }} 页</p>
+              <div v-else class="pages-skeleton" />
+            </div>
+            <p v-if="description" class="album-description">{{ description }}</p>
+          </div>
           <div class="read-actions">
             <div class="read-main-row">
               <button type="button" class="read-btn" @click="$emit('start-reading')">
@@ -42,6 +47,16 @@
             </div>
             <Transition name="source-menu">
               <div v-if="sourceMenuOpen" class="source-menu">
+                <button
+                  type="button"
+                  class="source-btn source-cbz"
+                  :class="{ available: cbzAvailable }"
+                  :disabled="!cbzAvailable"
+                  aria-label="CBZ 阅读"
+                  @click="$emit('select-source', 'cbz')"
+                >
+                  <ion-icon :icon="archiveOutline" />
+                </button>
                 <button
                   type="button"
                   class="source-btn source-network available"
@@ -78,17 +93,36 @@
     </div>
     <!-- 封面预览遮罩 -->
     <Teleport to="body">
-      <div v-if="showPreview" class="cover-preview-overlay" @click="showPreview = false">
-        <img :src="coverUrl" class="cover-preview-img" :alt="title" />
+      <div
+        v-if="showPreview"
+        ref="previewOverlayRef"
+        class="cover-preview-overlay"
+        role="dialog"
+        aria-modal="true"
+        :aria-label="`${title || '封面'}预览`"
+        :style="previewOverlayStyle"
+        @pointerdown="onPreviewPointerDown"
+        @pointermove="onPreviewPointerMove"
+        @pointerup="onPreviewPointerUp"
+        @pointercancel="onPreviewPointerCancel"
+      >
+        <img
+          :src="coverUrl"
+          class="cover-preview-img"
+          :alt="title"
+          :style="previewImageStyle"
+          draggable="false"
+        />
       </div>
     </Teleport>
-  </div>
+  </header>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
-import { IonIcon } from '@ionic/vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
+import { IonIcon, useBackButton } from '@ionic/vue'
 import {
+  archiveOutline,
   arrowBack,
   documentOutline,
   ellipsisVertical,
@@ -102,21 +136,315 @@ defineProps<{
   coverUrl: string
   title: string
   authors: string
+  description: string
   pageCount: number
   loading: boolean
   chapterLoading?: boolean
   sourceMenuOpen: boolean
   imageAvailable: boolean
+  cbzAvailable: boolean
   pdfAvailable: boolean
 }>()
 defineEmits<{
   'start-reading': []
   'toggle-source-menu': []
-  'select-source': [source: 'network' | 'download' | 'pdf']
+  'select-source': [source: 'network' | 'download' | 'cbz' | 'pdf']
   back: []
 }>()
 
+const PREVIEW_ZOOM_MAX = 5
+const PREVIEW_ZOOM_MIN = 1
+const PREVIEW_DOUBLE_TAP_MS = 280
+const PREVIEW_DOUBLE_TAP_DIST = 30
+const PREVIEW_DISMISS_THRESHOLD = 120
+
 const showPreview = ref(false)
+const previewOverlayRef = ref<HTMLElement | null>(null)
+const previewScale = ref(PREVIEW_ZOOM_MIN)
+const previewTx = ref(0)
+const previewTy = ref(0)
+const previewTransition = ref(false)
+
+const previewDragProgress = computed(() => {
+  if (previewScale.value > PREVIEW_ZOOM_MIN) return 0
+  return Math.min(1, Math.hypot(previewTx.value, previewTy.value) / PREVIEW_DISMISS_THRESHOLD)
+})
+
+const previewOverlayStyle = computed(() => ({
+  opacity: 1 - previewDragProgress.value,
+  transition: previewTransition.value ? 'opacity 220ms ease' : 'none',
+}))
+
+const previewImageStyle = computed(() => ({
+  transform: `translate3d(${previewTx.value}px, ${previewTy.value}px, 0) scale(${previewScale.value})`,
+  transformOrigin: 'center center',
+  transition: previewTransition.value ? 'transform 220ms ease' : 'none',
+}))
+
+let previewTapTimer: ReturnType<typeof setTimeout> | null = null
+let previewTransitionTimer: ReturnType<typeof setTimeout> | null = null
+let startX = 0
+let startY = 0
+let startTx = 0
+let startTy = 0
+let startScale = PREVIEW_ZOOM_MIN
+let pinchDistance = 0
+let pinchCenterX = 0
+let pinchCenterY = 0
+let previewMoved = false
+let previewLastTapAt = 0
+let previewLastTapX = 0
+let previewLastTapY = 0
+let isPinching = false
+const previewPointers = new Map<number, { x: number; y: number }>()
+
+function clearPreviewTapTimer() {
+  if (!previewTapTimer) return
+  clearTimeout(previewTapTimer)
+  previewTapTimer = null
+}
+
+function clearPreviewTransitionTimer() {
+  if (!previewTransitionTimer) return
+  clearTimeout(previewTransitionTimer)
+  previewTransitionTimer = null
+}
+
+function resetPreviewTransform(animate = false) {
+  clearPreviewTransitionTimer()
+  previewTransition.value = animate
+  previewScale.value = PREVIEW_ZOOM_MIN
+  previewTx.value = 0
+  previewTy.value = 0
+  if (animate) {
+    previewTransitionTimer = setTimeout(() => {
+      previewTransition.value = false
+      previewTransitionTimer = null
+    }, 220)
+  }
+}
+
+function openPreview() {
+  clearPreviewTapTimer()
+  previewLastTapAt = 0
+  previewTransition.value = false
+  resetPreviewTransform()
+  showPreview.value = true
+}
+
+function closePreview() {
+  clearPreviewTapTimer()
+  previewLastTapAt = 0
+  previewMoved = false
+  previewPointers.clear()
+  isPinching = false
+  showPreview.value = false
+  resetPreviewTransform()
+}
+
+useBackButton(10, (processNextHandler) => {
+  if (showPreview.value) {
+    closePreview()
+  } else {
+    processNextHandler()
+  }
+})
+
+function clampOffset(tx: number, ty: number, scale: number) {
+  const rect = previewOverlayRef.value?.getBoundingClientRect()
+  const width = rect?.width || window.innerWidth
+  const height = rect?.height || window.innerHeight
+  const minTx = width - width * scale
+  const minTy = height - height * scale
+  return {
+    x: Math.max(minTx, Math.min(0, tx)),
+    y: Math.max(minTy, Math.min(0, ty)),
+  }
+}
+
+function cyclePreviewZoom(clientX: number, clientY: number) {
+  const nextScale =
+    previewScale.value < 2 ? 2 : previewScale.value < 3 ? 3 : previewScale.value < 5 ? 5 : 1
+  if (nextScale === PREVIEW_ZOOM_MIN) {
+    resetPreviewTransform(true)
+    return
+  }
+  const rect = previewOverlayRef.value?.getBoundingClientRect()
+  const x = clientX - (rect?.left ?? 0) - (rect?.width ?? window.innerWidth) / 2
+  const y = clientY - (rect?.top ?? 0) - (rect?.height ?? window.innerHeight) / 2
+  const ratio = nextScale / previewScale.value
+  const offset = clampOffset(
+    x * (1 - ratio) + previewTx.value * ratio,
+    y * (1 - ratio) + previewTy.value * ratio,
+    nextScale,
+  )
+  previewScale.value = nextScale
+  previewTx.value = offset.x
+  previewTy.value = offset.y
+}
+
+function onPreviewPointerDown(event: PointerEvent) {
+  if (!showPreview.value || (event.pointerType === 'mouse' && event.button !== 0)) return
+  clearPreviewTapTimer()
+  previewTransition.value = false
+  previewMoved = false
+  previewPointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
+  previewOverlayRef.value?.setPointerCapture?.(event.pointerId)
+
+  if (previewPointers.size >= 2) {
+    isPinching = true
+    event.preventDefault()
+    const points = [...previewPointers.values()]
+    pinchDistance = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y)
+    const rect = previewOverlayRef.value?.getBoundingClientRect()
+    pinchCenterX =
+      (points[0].x + points[1].x) / 2 - (rect?.left ?? 0) - (rect?.width ?? window.innerWidth) / 2
+    pinchCenterY =
+      (points[0].y + points[1].y) / 2 - (rect?.top ?? 0) - (rect?.height ?? window.innerHeight) / 2
+    startScale = previewScale.value
+    startTx = previewTx.value
+    startTy = previewTy.value
+    return
+  }
+
+  startX = event.clientX
+  startY = event.clientY
+  startTx = previewTx.value
+  startTy = previewTy.value
+  startScale = previewScale.value
+}
+
+function onPreviewPointerMove(event: PointerEvent) {
+  const pointer = previewPointers.get(event.pointerId)
+  if (!pointer) return
+  pointer.x = event.clientX
+  pointer.y = event.clientY
+
+  if (previewPointers.size >= 2) {
+    isPinching = true
+    event.preventDefault()
+    const points = [...previewPointers.values()]
+    const distance = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y)
+    if (!pinchDistance) return
+    const scale = Math.max(
+      PREVIEW_ZOOM_MIN,
+      Math.min(PREVIEW_ZOOM_MAX, (startScale * distance) / pinchDistance),
+    )
+    const rect = previewOverlayRef.value?.getBoundingClientRect()
+    const x =
+      (points[0].x + points[1].x) / 2 - (rect?.left ?? 0) - (rect?.width ?? window.innerWidth) / 2
+    const y =
+      (points[0].y + points[1].y) / 2 - (rect?.top ?? 0) - (rect?.height ?? window.innerHeight) / 2
+    const ratio = scale / startScale
+    const offset = clampOffset(
+      x - pinchCenterX * ratio + startTx * ratio,
+      y - pinchCenterY * ratio + startTy * ratio,
+      scale,
+    )
+    previewScale.value = scale
+    previewTx.value = offset.x
+    previewTy.value = offset.y
+    previewMoved = true
+    return
+  }
+
+  if (previewPointers.size !== 1) return
+  const dx = event.clientX - startX
+  const dy = event.clientY - startY
+  if (Math.abs(dx) > 4 || Math.abs(dy) > 4) previewMoved = true
+
+  if (previewScale.value > PREVIEW_ZOOM_MIN) {
+    event.preventDefault()
+    const offset = clampOffset(startTx + dx, startTy + dy, previewScale.value)
+    previewTx.value = offset.x
+    previewTy.value = offset.y
+  } else if (previewMoved) {
+    event.preventDefault()
+    previewTx.value = startTx + dx
+    previewTy.value = startTy + dy
+  }
+}
+
+function onPreviewPointerUp(event: PointerEvent) {
+  const wasPinching = isPinching
+  previewPointers.delete(event.pointerId)
+  if (previewOverlayRef.value?.hasPointerCapture?.(event.pointerId)) {
+    previewOverlayRef.value.releasePointerCapture(event.pointerId)
+  }
+
+  if (previewPointers.size > 0) {
+    if (wasPinching && previewPointers.size === 1) {
+      const remaining = [...previewPointers.values()][0]
+      startX = remaining.x
+      startY = remaining.y
+      startTx = previewTx.value
+      startTy = previewTy.value
+    }
+    return
+  }
+
+  if (wasPinching) {
+    isPinching = false
+    previewLastTapAt = 0
+    if (previewScale.value < 1.05) resetPreviewTransform(true)
+    return
+  }
+
+  const endX = event.clientX
+  const endY = event.clientY
+
+  if (previewMoved) {
+    previewLastTapAt = 0
+    if (previewScale.value <= PREVIEW_ZOOM_MIN) {
+      if (Math.hypot(previewTx.value, previewTy.value) >= PREVIEW_DISMISS_THRESHOLD) {
+        closePreview()
+      } else {
+        resetPreviewTransform(true)
+      }
+    }
+    previewMoved = false
+    return
+  }
+
+  const now = Date.now()
+  const tapDistance = Math.abs(endX - previewLastTapX) + Math.abs(endY - previewLastTapY)
+  if (
+    previewLastTapAt > 0 &&
+    now - previewLastTapAt < PREVIEW_DOUBLE_TAP_MS &&
+    tapDistance < PREVIEW_DOUBLE_TAP_DIST
+  ) {
+    clearPreviewTapTimer()
+    cyclePreviewZoom(endX, endY)
+    previewLastTapAt = 0
+    return
+  }
+
+  previewLastTapAt = now
+  previewLastTapX = endX
+  previewLastTapY = endY
+  previewTapTimer = setTimeout(() => {
+    previewTapTimer = null
+    closePreview()
+  }, PREVIEW_DOUBLE_TAP_MS)
+}
+
+function onPreviewPointerCancel(event: PointerEvent) {
+  previewPointers.delete(event.pointerId)
+  if (previewOverlayRef.value?.hasPointerCapture?.(event.pointerId)) {
+    previewOverlayRef.value.releasePointerCapture(event.pointerId)
+  }
+  clearPreviewTapTimer()
+  previewLastTapAt = 0
+  previewMoved = false
+  previewPointers.clear()
+  isPinching = false
+  resetPreviewTransform(true)
+}
+
+onBeforeUnmount(() => {
+  clearPreviewTapTimer()
+  clearPreviewTransitionTimer()
+})
 </script>
 
 <style scoped>
@@ -174,9 +502,16 @@ const showPreview = ref(false)
 .cover-col {
   flex-shrink: 0;
   width: 120px;
+  padding: 0;
+  border: 0;
   border-radius: 10px;
   overflow: hidden;
+  background: transparent;
   box-shadow: 0 8px 30px rgb(0 0 0 / 0.4);
+}
+
+.cover-col:disabled {
+  opacity: 1;
 }
 
 .cover-img {
@@ -215,6 +550,13 @@ const showPreview = ref(false)
   overflow: hidden;
 }
 
+.album-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+
 .album-authors {
   margin: 0;
   color: rgb(255 255 255 / 0.7);
@@ -226,6 +568,11 @@ const showPreview = ref(false)
   margin: 0;
   color: rgb(255 255 255 / 0.55);
   font-size: 11px;
+}
+
+.album-description {
+  display: none;
+  margin: 0;
 }
 
 .pages-skeleton {
@@ -395,44 +742,114 @@ const showPreview = ref(false)
 
 @container (min-width: 960px) {
   .header-area {
-    position: sticky;
-    top: 0;
-    z-index: 11;
+    position: relative;
+    isolation: isolate;
     overflow: visible;
   }
 
+  .header-bg {
+    inset: 0 auto 0 calc(-1 * var(--detail-page-inset));
+    z-index: 0;
+    width: 100cqw;
+    transform: none;
+    background: #f7f8f6;
+    border-top: 1px solid rgb(92 75 65 / 0.08);
+  }
+
+  .header-bg-img {
+    filter: blur(8px) saturate(0.78) brightness(1.08);
+    opacity: 0.6;
+    transform: scale(1.16);
+  }
+
+  .header-bg-mask {
+    background: linear-gradient(90deg, rgb(250 249 247 / 0.46), rgb(247 248 246 / 0.72));
+  }
+
   .header-content {
-    max-width: none;
+    max-width: 1180px;
+    margin-inline: auto;
+    padding: 28px 32px 30px 80px;
+  }
+
+  .back-btn {
+    position: absolute;
+    top: 28px;
+    left: 28px;
+    width: 40px;
+    height: 40px;
     margin: 0;
-    padding-left: 16px;
-    padding-right: 16px;
+    border: 1px solid rgb(92 75 65 / 0.14);
+    background: rgb(255 255 255 / 0.72);
+    color: #5a4539;
+    box-shadow: 0 4px 14px rgb(76 42 24 / 0.08);
   }
 
   .header-body {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 16px;
+    display: grid;
+    grid-template-columns: 180px minmax(0, 1fr);
+    align-items: center;
+    gap: 36px;
   }
 
   .cover-col {
-    align-self: center;
-    width: min(100%, 220px);
+    width: 180px;
+    border-radius: 8px;
+    box-shadow: 0 14px 32px rgb(57 43 35 / 0.18);
   }
 
   .info-col {
     width: 100%;
-    justify-content: flex-start;
+    min-height: 240px;
+    justify-content: center;
     padding-bottom: 0;
-    gap: 8px;
+    gap: 20px;
+  }
+
+  .header-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-width: 76ch;
   }
 
   .album-title {
-    font-size: 20px;
+    color: #30251f;
+    font-size: 28px;
+    line-height: 1.3;
+    -webkit-line-clamp: 3;
+  }
+
+  .album-authors {
+    color: #775f52;
+    font-size: 13px;
+  }
+
+  .album-pages {
+    color: #8d786c;
+    font-size: 12px;
+  }
+
+  .album-description {
+    display: -webkit-box;
+    color: #5d4c43;
+    font-size: 13px;
+    line-height: 1.65;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    overflow: hidden;
+  }
+
+  .pages-skeleton {
+    width: 88px;
+    background: linear-gradient(90deg, #e9e2dc 25%, #f6f2ee 50%, #e9e2dc 75%);
+    background-size: 200% 100%;
   }
 
   .read-actions {
-    align-self: stretch;
-    width: 100%;
+    align-self: flex-start;
+    width: min(100%, 360px);
+    margin-top: 0;
   }
 
   .read-main-row {
@@ -441,10 +858,35 @@ const showPreview = ref(false)
 
   .read-btn {
     flex: 1;
+    height: 42px;
+    box-shadow: 0 6px 16px rgb(240 126 73 / 0.24);
+  }
+
+  .source-toggle-btn {
+    width: 42px;
+    height: 42px;
+    border-color: rgb(92 75 65 / 0.18);
+    background: rgb(255 255 255 / 0.74);
+    color: #72594b;
+    backdrop-filter: none;
+  }
+
+  .source-toggle-btn.active {
+    background: #fff0e7;
+    color: #d86932;
   }
 
   .source-menu {
     z-index: 30;
+    border: 1px solid rgb(92 75 65 / 0.12);
+    background: rgb(255 255 255 / 0.94);
+    box-shadow: 0 10px 24px rgb(76 42 24 / 0.12);
+  }
+}
+
+@media (min-width: 1264px) {
+  .header-content {
+    margin-inline: 0 auto;
   }
 }
 
@@ -456,15 +898,23 @@ const showPreview = ref(false)
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
   background: rgb(0 0 0 / 0.85);
   backdrop-filter: blur(12px);
+  touch-action: none;
+  user-select: none;
 }
 
 .cover-preview-img {
-  max-width: 98vw;
-  max-height: 98vh;
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  max-width: 100vw;
+  max-height: 100vh;
   border-radius: 0px;
-  box-shadow: 0 8px 40px rgb(0 0 0 / 0.5);
   object-fit: contain;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-drag: none;
 }
 </style>

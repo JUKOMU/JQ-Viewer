@@ -2,6 +2,9 @@ import { nextTick, ref } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import MainMenu from '@/components/menu/MainMenu.vue'
+import { useNetworkProbeStore } from '@/composables/networkProbeStore'
+import { manualOffline } from '@/runtime/onlineCapability'
+import { refresh } from 'ionicons/icons'
 import {
   isWideMenu,
   isMenuNavigation,
@@ -16,11 +19,18 @@ const mocks = vi.hoisted(() => ({
   routerPush: vi.fn(),
   route: { path: '/home' },
   getDownloadTasks: vi.fn(),
-  getPdfExportTasks: vi.fn(),
+  getExportTasks: vi.fn(),
   addDownloadProgressListener: vi.fn(),
-  addPdfExportProgressListener: vi.fn(),
+  addExportProgressListener: vi.fn(),
+  addStateInvalidatedListener: vi.fn(),
+  addNetworkProbeListener: vi.fn(),
+  reprobeDomains: vi.fn(),
+  getClientState: vi.fn(),
+  showToast: vi.fn(),
   downloadHandler: undefined as ((event: any) => void) | undefined,
   pdfHandler: undefined as ((event: any) => void) | undefined,
+  stateInvalidatedHandler: undefined as (() => void) | undefined,
+  networkProbeHandler: undefined as ((event: any) => void) | undefined,
 }))
 
 vi.mock('vue-router', () => ({
@@ -31,10 +41,15 @@ vi.mock('vue-router', () => ({
 vi.mock('@/services/JmcomicService', () => ({
   JmcomicService: {
     getDownloadTasks: mocks.getDownloadTasks,
-    getPdfExportTasks: mocks.getPdfExportTasks,
+    getExportTasks: mocks.getExportTasks,
     addDownloadProgressListener: mocks.addDownloadProgressListener,
-    addPdfExportProgressListener: mocks.addPdfExportProgressListener,
+    addExportProgressListener: mocks.addExportProgressListener,
+    addStateInvalidatedListener: mocks.addStateInvalidatedListener,
+    addNetworkProbeListener: mocks.addNetworkProbeListener,
+    reprobeDomains: mocks.reprobeDomains,
+    getClientState: mocks.getClientState,
   },
+  showToast: mocks.showToast,
 }))
 
 vi.mock('@/composables/useAuth', () => ({
@@ -57,6 +72,7 @@ vi.mock('@ionic/vue', async () => {
       mocks.gestureConfig = config
       return { destroy: vi.fn(), enable: vi.fn() }
     }),
+    useBackButton: vi.fn(),
     IonContent: withSlot('IonContent'),
     IonHeader: withSlot('IonHeader'),
     IonIcon: withSlot('IonIcon'),
@@ -90,21 +106,41 @@ beforeEach(() => {
   mocks.routerPush.mockClear()
   mocks.route.path = '/home'
   mocks.getDownloadTasks.mockReset()
-  mocks.getPdfExportTasks.mockReset()
+  mocks.getExportTasks.mockReset()
   mocks.addDownloadProgressListener.mockReset()
-  mocks.addPdfExportProgressListener.mockReset()
+  mocks.addExportProgressListener.mockReset()
+  mocks.addStateInvalidatedListener.mockReset()
+  mocks.addNetworkProbeListener.mockReset()
+  mocks.reprobeDomains.mockReset()
+  mocks.getClientState.mockReset()
+  mocks.showToast.mockReset()
   mocks.downloadHandler = undefined
   mocks.pdfHandler = undefined
+  mocks.stateInvalidatedHandler = undefined
+  mocks.networkProbeHandler = undefined
   mocks.getDownloadTasks.mockResolvedValue({ tasks: [] })
-  mocks.getPdfExportTasks.mockResolvedValue({ tasks: [] })
+  mocks.getExportTasks.mockResolvedValue({ tasks: [] })
   mocks.addDownloadProgressListener.mockImplementation(async (handler: (event: any) => void) => {
     mocks.downloadHandler = handler
     return { remove: vi.fn() }
   })
-  mocks.addPdfExportProgressListener.mockImplementation(async (handler: (event: any) => void) => {
+  mocks.addExportProgressListener.mockImplementation(async (handler: (event: any) => void) => {
     mocks.pdfHandler = handler
     return { remove: vi.fn() }
   })
+  mocks.addStateInvalidatedListener.mockImplementation(async (handler: () => void) => {
+    mocks.stateInvalidatedHandler = handler
+    return { remove: vi.fn() }
+  })
+  mocks.reprobeDomains.mockResolvedValue(undefined)
+  mocks.getClientState.mockResolvedValue({ state: 'ready', timestamp: 1 })
+  mocks.showToast.mockResolvedValue(undefined)
+  mocks.addNetworkProbeListener.mockImplementation(async (handler: (event: any) => void) => {
+    mocks.networkProbeHandler = handler
+    return { remove: vi.fn() }
+  })
+  manualOffline.value = false
+  useNetworkProbeStore().clientState.value = { state: 'ready', timestamp: 1 }
 })
 
 afterEach(() => {
@@ -115,6 +151,7 @@ afterEach(() => {
   leftMenuGestureEnabled.value = true
   rightMenuOpen.value = false
   isMenuNavigation.value = false
+  manualOffline.value = false
 })
 
 const downloadTask = (downloadedPages = 0, totalPages = 100) => ({
@@ -165,7 +202,7 @@ const pdfTask = (currentPage = 0, totalPages = 100, status = 'running') => ({
   coverUrl: '',
   authors: '',
   displayTitle: '第一话',
-  savePath: '/tmp/export.pdf',
+  displayPath: '/tmp/export.pdf',
   allowOverwrite: false,
   useOriginal: true,
   compressionRatio: 1,
@@ -387,6 +424,71 @@ describe('MainMenu 宽屏三态布局', () => {
   })
 })
 
+describe('MainMenu 在线能力状态', () => {
+  test('在线状态点击后切换为离线', async () => {
+    const wrapper = mountMenu()
+    const status = wrapper.find('.online-status-button')
+
+    await status.trigger('click')
+    expect(manualOffline.value).toBe(true)
+    expect(status.classes()).toContain('online-status-button--offline')
+    wrapper.unmount()
+  })
+
+  test('探活结果可达后恢复在线', async () => {
+    const wrapper = mountMenu()
+    manualOffline.value = true
+    await nextTick()
+
+    const status = wrapper.find('.online-status-button')
+    const restoring = status.trigger('click')
+    await flushPromises()
+    mocks.networkProbeHandler?.({
+      phase: 'result',
+      message: '探活完成',
+      timestamp: 1,
+      domains: [{ domain: 'https://example.invalid', reachable: true }],
+    })
+    await restoring
+    await flushPromises()
+    await nextTick()
+
+    expect(manualOffline.value).toBe(false)
+    expect(status.classes()).toContain('online-status-button--online')
+    wrapper.unmount()
+  })
+
+  test('恢复失败显示刷新图标，五秒后回到离线且再次失败会重新计时', async () => {
+    vi.useFakeTimers()
+    mocks.reprobeDomains.mockRejectedValue(new Error('offline'))
+    const wrapper = mountMenu()
+    manualOffline.value = true
+    await nextTick()
+
+    const status = wrapper.find('.online-status-button')
+    await status.trigger('click')
+    await flushPromises()
+    expect(status.classes()).toContain('online-status-button--failed')
+    expect(status.findComponent({ name: 'IonIcon' }).attributes('icon')).toBe(refresh)
+
+    await vi.advanceTimersByTimeAsync(4_999)
+    await nextTick()
+    expect(status.classes()).toContain('online-status-button--failed')
+
+    await status.trigger('click')
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(1)
+    await nextTick()
+    expect(status.classes()).toContain('online-status-button--failed')
+
+    await vi.advanceTimersByTimeAsync(4_999)
+    await nextTick()
+    expect(status.classes()).toContain('online-status-button--offline')
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+})
+
 describe('MainMenu 任务进度', () => {
   beforeEach(() => {
     vi.useFakeTimers()
@@ -426,7 +528,7 @@ describe('MainMenu 任务进度', () => {
     mocks.pdfHandler?.(pdfEvent(30))
     await nextTick()
     expect(wrapper.find('.task-progress-copy').text()).toContain('下载10%')
-    expect(wrapper.find('.task-progress-copy').text()).not.toContain('PDF')
+    expect(wrapper.find('.task-progress-copy').text()).not.toContain('导出')
 
     await vi.advanceTimersByTimeAsync(499)
     await nextTick()
@@ -435,7 +537,7 @@ describe('MainMenu 任务进度', () => {
     await vi.advanceTimersByTimeAsync(1)
     await nextTick()
     expect(wrapper.find('.task-progress-copy').text()).toContain('下载30%')
-    expect(wrapper.find('.task-progress-copy').text()).toContain('PDF30%')
+    expect(wrapper.find('.task-progress-copy').text()).toContain('导出30%')
     wrapper.unmount()
   })
 
@@ -459,6 +561,7 @@ describe('MainMenu 任务进度', () => {
         resolveSnapshot = resolve
       }),
     )
+    mocks.getDownloadTasks.mockResolvedValueOnce({ tasks: [downloadTask(20, 100)] })
     const wrapper = mountMenu()
     await vi.waitFor(() => expect(mocks.getDownloadTasks).toHaveBeenCalled())
     mocks.downloadHandler?.(downloadEvent(20))
@@ -467,6 +570,7 @@ describe('MainMenu 任务进度', () => {
     await flushTaskProgress()
 
     expect(wrapper.find('.task-progress-copy').text()).toContain('下载20%')
+    expect(mocks.getDownloadTasks).toHaveBeenCalledTimes(2)
     wrapper.unmount()
   })
 
@@ -483,6 +587,21 @@ describe('MainMenu 任务进度', () => {
     resolveSnapshot?.({ tasks: [downloadTask(10, 100)] })
     await flushPromises()
 
+    expect(wrapper.find('.task-progress-copy').exists()).toBe(false)
+    expect(mocks.getDownloadTasks).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+  })
+
+  test('事件流重连后用权威快照清除已不存在的活动任务', async () => {
+    mocks.getDownloadTasks.mockResolvedValueOnce({ tasks: [downloadTask(40, 100)] })
+    const wrapper = mountMenu()
+    await flushPromises()
+    expect(wrapper.find('.task-progress-copy').text()).toContain('下载40%')
+
+    mocks.stateInvalidatedHandler?.()
+    await flushPromises()
+
+    expect(mocks.getDownloadTasks).toHaveBeenCalledTimes(2)
     expect(wrapper.find('.task-progress-copy').exists()).toBe(false)
     wrapper.unmount()
   })
@@ -507,7 +626,7 @@ describe('MainMenu 任务进度', () => {
 
     const progressText = wrapper.find('.task-progress-copy').text()
     expect(progressText).toContain('下载40%')
-    expect(progressText).toContain('PDF20%')
+    expect(progressText).toContain('导出20%')
     expect(wrapper.findAll('.task-progress-band')).toHaveLength(2)
     wrapper.unmount()
   })
@@ -520,7 +639,7 @@ describe('MainMenu 任务进度', () => {
     await flushTaskProgress()
 
     expect(wrapper.find('.task-progress-copy').text()).toContain('下载99%')
-    expect(wrapper.find('.task-progress-copy').text()).toContain('PDF99%')
+    expect(wrapper.find('.task-progress-copy').text()).toContain('导出99%')
     expect(wrapper.findAll('.task-progress-spinner')).toHaveLength(0)
 
     mocks.downloadHandler?.(downloadEvent(100))
@@ -533,7 +652,7 @@ describe('MainMenu 任务进度', () => {
   })
 
   test('PDF 初始化按 queued、running、cancelling 分别完整分页查询', async () => {
-    mocks.getPdfExportTasks.mockImplementation(
+    mocks.getExportTasks.mockImplementation(
       async ({ status, cursor }: { status: string; cursor?: string }) => {
         if (status === 'queued' && !cursor) {
           return { tasks: [pdfTask(10, 100, 'queued')], nextCursor: 'queued-next' }
@@ -548,25 +667,25 @@ describe('MainMenu 任务进度', () => {
     const wrapper = mountMenu()
     await flushPromises()
 
-    expect(mocks.getPdfExportTasks.mock.calls.map(([options]) => options)).toEqual([
+    expect(mocks.getExportTasks.mock.calls.map(([options]) => options)).toEqual([
       { status: 'queued', cursor: undefined, limit: 100 },
       { status: 'queued', cursor: 'queued-next', limit: 100 },
       { status: 'running', cursor: undefined, limit: 100 },
       { status: 'cancelling', cursor: undefined, limit: 100 },
     ])
-    expect(wrapper.find('.task-progress-copy').text()).toContain('PDF40%')
+    expect(wrapper.find('.task-progress-copy').text()).toContain('导出40%')
     wrapper.unmount()
   })
 
   test('初始化查询期间收到的 PDF 终态事件不会重新显示旧快照', async () => {
     let resolveSnapshot: ((value: { tasks: ReturnType<typeof pdfTask>[] }) => void) | undefined
-    mocks.getPdfExportTasks.mockReturnValueOnce(
+    mocks.getExportTasks.mockReturnValueOnce(
       new Promise((resolve) => {
         resolveSnapshot = resolve
       }),
     )
     const wrapper = mountMenu()
-    await vi.waitFor(() => expect(mocks.getPdfExportTasks).toHaveBeenCalled())
+    await vi.waitFor(() => expect(mocks.getExportTasks).toHaveBeenCalled())
     mocks.pdfHandler?.(pdfEvent(100, 100, 'completed', 11))
     resolveSnapshot?.({ tasks: [pdfTask(10, 100, 'running')] })
     await flushPromises()

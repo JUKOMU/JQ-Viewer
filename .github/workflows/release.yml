@@ -27,11 +27,16 @@ concurrency:
 jobs:
   validate-release-input:
     runs-on: ubuntu-latest
+    outputs:
+      release_commit: ${{ steps.release_commit.outputs.sha }}
+      is_prerelease: ${{ steps.release_mode.outputs.is_prerelease }}
+
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.tag || github.ref }}
           persist-credentials: false
+          fetch-depth: 0
 
       - uses: actions/setup-node@v5
         with:
@@ -44,35 +49,6 @@ jobs:
         env:
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
         run: node scripts/check-release-tag.mjs "$RELEASE_TAG"
-
-  frontend:
-    needs: validate-release-input
-    uses: ./.github/workflows/ci-frontend.yml
-
-  android-jvm:
-    needs: validate-release-input
-    uses: ./.github/workflows/ci-android-jvm.yml
-
-  instrumentation:
-    needs: validate-release-input
-    uses: ./.github/workflows/ci-android-instrumentation.yml
-
-  build-release:
-    needs: [validate-release-input, frontend, android-jvm, instrumentation]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    outputs:
-      release_commit: ${{ steps.release_commit.outputs.sha }}
-      is_prerelease: ${{ steps.release_mode.outputs.is_prerelease }}
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.tag || github.ref }}
-          submodules: true
-          persist-credentials: false
-          fetch-depth: 0
 
       - name: Verify release commit
         id: release_commit
@@ -107,6 +83,41 @@ jobs:
           else
             echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
           fi
+
+  frontend:
+    needs: validate-release-input
+    uses: ./.github/workflows/ci-frontend.yml
+
+  android-jvm:
+    needs: validate-release-input
+    uses: ./.github/workflows/ci-android-jvm.yml
+
+  instrumentation:
+    needs: validate-release-input
+    uses: ./.github/workflows/ci-android-instrumentation.yml
+
+  desktop:
+    needs: validate-release-input
+    uses: ./.github/workflows/ci-desktop.yml
+    with:
+      package: true
+      release_tag: ${{ inputs.tag || github.ref_name }}
+      release_ed25519_key_id: ${{ vars.RELEASE_ED25519_KEY_ID }}
+      release_ed25519_public_key_spki_base64: ${{ vars.RELEASE_ED25519_PUBLIC_KEY_SPKI_BASE64 }}
+      require_release_trust_root: true
+
+  build-android-release:
+    name: Build Android release
+    needs: [validate-release-input, frontend, android-jvm, instrumentation]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          submodules: true
+          persist-credentials: false
+          fetch-depth: 0
 
       - uses: actions/setup-node@v5
         with:
@@ -297,20 +308,6 @@ jobs:
           overwrite: true
           retention-days: 7
 
-      - name: Attach APK to draft GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ inputs.tag || github.ref_name }}
-          target_commitish: ${{ steps.release_commit.outputs.sha }}
-          draft: true
-          prerelease: ${{ steps.release_mode.outputs.is_prerelease == 'true' }}
-          body_path: .github/release-notes.md
-          generate_release_notes: false
-          overwrite_files: true
-          files: JQ-Viewer-*.apk
-        env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-
       - name: Cleanup signing secrets and build artifacts
         if: ${{ always() }}
         run: |
@@ -321,9 +318,108 @@ jobs:
           rm -f JQ-Viewer-*.apk
           rm -f JQ-Viewer-*.apk.sha256
 
+  prepare-desktop-release:
+    name: Prepare Desktop release
+    needs: [validate-release-input, desktop]
+    runs-on: ubuntu-24.04
+    environment: release
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Install release signing tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes gnupg rpm
+
+      - name: Download native Desktop packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-package-*
+          path: ${{ runner.temp }}/desktop-release
+          merge-multiple: true
+
+      - name: Validate Desktop release configuration
+        env:
+          RPM_GPG_PRIVATE_KEY_BASE64: ${{ secrets.RPM_GPG_PRIVATE_KEY_BASE64 }}
+          RPM_GPG_PASSPHRASE: ${{ secrets.RPM_GPG_PASSPHRASE }}
+          RPM_GPG_FINGERPRINT: ${{ vars.RPM_GPG_FINGERPRINT }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in \
+            RPM_GPG_PRIVATE_KEY_BASE64 \
+            RPM_GPG_PASSPHRASE \
+            RPM_GPG_FINGERPRINT; do
+            if [ -z "$(printenv "$name" || true)" ]; then
+              echo "::error::Missing required release environment value: $name"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Validate Desktop package matrix
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          artifact_dir="$RUNNER_TEMP/desktop-release"
+          mapfile -d '' assets < <(find "$artifact_dir" -maxdepth 1 -type f -name 'JQ-Viewer-*' -print0 | sort -z)
+          args=()
+          for asset in "${assets[@]}"; do
+            args+=(--asset "$asset")
+          done
+          node scripts/desktop-release-assets.mjs check \
+            --tag "$RELEASE_TAG" \
+            "${args[@]}"
+
+      - name: Sign and verify RPM packages
+        env:
+          RPM_GPG_PRIVATE_KEY_BASE64: ${{ secrets.RPM_GPG_PRIVATE_KEY_BASE64 }}
+          RPM_GPG_PASSPHRASE: ${{ secrets.RPM_GPG_PASSPHRASE }}
+          RPM_GPG_FINGERPRINT: ${{ vars.RPM_GPG_FINGERPRINT }}
+        run: scripts/sign-rpm-release.sh "$RUNNER_TEMP/desktop-release"
+
+      - name: Build Desktop package checksums
+        run: |
+          set -euo pipefail
+          artifact_dir="$RUNNER_TEMP/desktop-release"
+          (
+            cd "$artifact_dir"
+            sha256sum JQ-Viewer-* > SHA256SUMS
+          )
+
+      - name: Upload Desktop release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-desktop
+          path: |
+            ${{ runner.temp }}/desktop-release/JQ-Viewer-*
+            ${{ runner.temp }}/desktop-release/SHA256SUMS
+          if-no-files-found: error
+          compression-level: 0
+          overwrite: true
+          retention-days: 7
+
+      - name: Cleanup Desktop signing material and artifacts
+        if: ${{ always() }}
+        run: rm -rf "$RUNNER_TEMP/desktop-release"
+
   publish-release:
-    needs: build-release
-    runs-on: [self-hosted, Linux, X64, jqviewer-release]
+    name: Publish unified release
+    needs: [validate-release-input, build-android-release, prepare-desktop-release]
+    runs-on: ubuntu-latest
+    environment: release
     permissions:
       contents: write
 
@@ -337,7 +433,7 @@ jobs:
       - name: Verify release commit
         env:
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
-          EXPECTED_RELEASE_COMMIT: ${{ needs.build-release.outputs.release_commit }}
+          EXPECTED_RELEASE_COMMIT: ${{ needs.validate-release-input.outputs.release_commit }}
         run: |
           set -euo pipefail
 
@@ -365,6 +461,12 @@ jobs:
           name: release-apk
           path: ${{ runner.temp }}/release-artifact
 
+      - name: Download signed Desktop release artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: release-desktop
+          path: ${{ runner.temp }}/desktop-release
+
       - name: Verify release APK artifacts
         run: |
           set -euo pipefail
@@ -382,11 +484,34 @@ jobs:
           done
           (cd "$artifact_dir" && sha256sum --check JQ-Viewer-*.apk.sha256)
 
+      - name: Validate release manifest signing configuration
+        if: ${{ needs.validate-release-input.outputs.is_prerelease != 'true' }}
+        env:
+          RELEASE_ED25519_PRIVATE_KEY_BASE64: ${{ secrets.RELEASE_ED25519_PRIVATE_KEY_BASE64 }}
+          RELEASE_ED25519_KEY_ID: ${{ vars.RELEASE_ED25519_KEY_ID }}
+          RELEASE_ED25519_PUBLIC_KEY_SPKI_BASE64: ${{ vars.RELEASE_ED25519_PUBLIC_KEY_SPKI_BASE64 }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in \
+            RELEASE_ED25519_PRIVATE_KEY_BASE64 \
+            RELEASE_ED25519_KEY_ID \
+            RELEASE_ED25519_PUBLIC_KEY_SPKI_BASE64; do
+            if [ -z "$(printenv "$name" || true)" ]; then
+              echo "::error::Missing required release environment value: $name"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
       - name: Wait for mirrored Gitee tag
+        if: ${{ needs.validate-release-input.outputs.is_prerelease != 'true' }}
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
-          RELEASE_COMMIT: ${{ needs.build-release.outputs.release_commit }}
+          RELEASE_COMMIT: ${{ needs.validate-release-input.outputs.release_commit }}
         run: |
           set -euo pipefail
 
@@ -418,145 +543,154 @@ jobs:
           echo "::error::Gitee tag was not mirrored to the expected commit"
           exit 1
 
-      - name: Prepare release metadata
-        if: ${{ needs.build-release.outputs.is_prerelease != 'true' }}
+      - name: Prepare shared release metadata and signature
+        if: ${{ needs.validate-release-input.outputs.is_prerelease != 'true' }}
         env:
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
           EXPECTED_RELEASE_CERT_SHA256: '6667B73DA7322E56626D82CA0EFCF03386E0B5560E14DF48C6025142FF4197EA'
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITEE_REPOSITORY: jukomu/jq-viewer
+          RELEASE_ED25519_PRIVATE_KEY_BASE64: ${{ secrets.RELEASE_ED25519_PRIVATE_KEY_BASE64 }}
+          RELEASE_ED25519_KEY_ID: ${{ vars.RELEASE_ED25519_KEY_ID }}
+          RELEASE_ED25519_PUBLIC_KEY_SPKI_BASE64: ${{ vars.RELEASE_ED25519_PUBLIC_KEY_SPKI_BASE64 }}
         run: |
           set -euo pipefail
           artifact_dir="$RUNNER_TEMP/release-artifact"
+          desktop_dir="$RUNNER_TEMP/desktop-release"
+          mapfile -d '' desktop_assets < <(find "$desktop_dir" -maxdepth 1 -type f -name 'JQ-Viewer-*' -print0 | sort -z)
+          desktop_args=()
+          for asset in "${desktop_assets[@]}"; do
+            desktop_args+=(--desktop-asset "$asset")
+          done
           node scripts/release-assets.mjs \
             "$RELEASE_TAG" \
             "$RUNNER_TEMP/latest.json" \
-            "$artifact_dir"/JQ-Viewer-*.apk
+            "$artifact_dir"/JQ-Viewer-*.apk \
+            "${desktop_args[@]}"
+          node scripts/release-signature.mjs sign \
+            --manifest "$RUNNER_TEMP/latest.json" \
+            --signature "$desktop_dir/latest.json.sig"
+          node scripts/release-signature.mjs verify \
+            --manifest "$RUNNER_TEMP/latest.json" \
+            --signature "$desktop_dir/latest.json.sig"
+          verify_args=()
+          for asset in "${desktop_assets[@]}"; do
+            verify_args+=(--asset "$asset")
+          done
+          node scripts/desktop-release-assets.mjs verify \
+            --tag "$RELEASE_TAG" \
+            --manifest "$RUNNER_TEMP/latest.json" \
+            "${verify_args[@]}"
+          (
+            cd "$desktop_dir"
+            sha256sum JQ-Viewer-* latest.json.sig > SHA256SUMS
+            manifest_sha="$(sha256sum "$RUNNER_TEMP/latest.json" | awk '{print $1}')"
+            printf '%s  latest.json\n' "$manifest_sha" >> SHA256SUMS
+          )
 
-      - name: Publish APK and latest.json to Gitee Release
+      - name: Create or update stable GitHub draft
+        if: ${{ needs.validate-release-input.outputs.is_prerelease != 'true' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          target_commitish: ${{ needs.validate-release-input.outputs.release_commit }}
+          draft: true
+          prerelease: false
+          body_path: .github/release-notes.md
+          generate_release_notes: false
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Create or update prerelease GitHub Release
+        if: ${{ needs.validate-release-input.outputs.is_prerelease == 'true' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          target_commitish: ${{ needs.validate-release-input.outputs.release_commit }}
+          draft: false
+          prerelease: true
+          generate_release_notes: false
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Upload GitHub Release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+          IS_PRERELEASE: ${{ needs.validate-release-input.outputs.is_prerelease }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          artifact_dir="$RUNNER_TEMP/release-artifact"
+          desktop_dir="$RUNNER_TEMP/desktop-release"
+          assets=(
+            "$artifact_dir"/JQ-Viewer-*.apk
+            "$desktop_dir"/JQ-Viewer-*
+            "$desktop_dir"/SHA256SUMS
+          )
+          if [ "$IS_PRERELEASE" != "true" ]; then
+            assets+=(
+              "$RUNNER_TEMP/latest.json"
+              "$desktop_dir/latest.json.sig"
+            )
+          fi
+
+          bash scripts/upload-github-release-assets.sh "$RELEASE_TAG" "${assets[@]}"
+
+      - name: Publish stable release metadata to Gitee
+        if: ${{ needs.validate-release-input.outputs.is_prerelease != 'true' }}
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
           GITEE_REPOSITORY: jukomu/jq-viewer
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
-          RELEASE_PRERELEASE: ${{ needs.build-release.outputs.is_prerelease }}
-          RELEASE_COMMIT: ${{ needs.build-release.outputs.release_commit }}
+          RELEASE_COMMIT: ${{ needs.validate-release-input.outputs.release_commit }}
         run: |
           set -euo pipefail
           artifact_dir="$RUNNER_TEMP/release-artifact"
-          latest_json="-"
-          if [ "$RELEASE_PRERELEASE" != "true" ]; then
-            latest_json="$RUNNER_TEMP/latest.json"
-          fi
+          desktop_dir="$RUNNER_TEMP/desktop-release"
           args=(
             "$RELEASE_TAG"
             ".github/release-notes.md"
             "$RELEASE_COMMIT"
-            "$latest_json"
-            "$artifact_dir"/JQ-Viewer-*.apk
+            "$RUNNER_TEMP/latest.json"
+            "$artifact_dir"/JQ-Viewer-*.apk.sha256
+            "$desktop_dir/latest.json.sig"
+            "$desktop_dir/SHA256SUMS"
           )
           node scripts/publish-gitee-release.mjs "${args[@]}"
 
-      - name: Publish stable GitHub Release
-        if: ${{ needs.build-release.outputs.is_prerelease != 'true' }}
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ inputs.tag || github.ref_name }}
-          target_commitish: ${{ needs.build-release.outputs.release_commit }}
-          draft: false
-          prerelease: false
-          body_path: .github/release-notes.md
-          generate_release_notes: false
-          overwrite_files: true
-          files: ${{ runner.temp }}/latest.json
-        env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-
-      - name: Publish prerelease GitHub Release
-        if: ${{ needs.build-release.outputs.is_prerelease == 'true' }}
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ inputs.tag || github.ref_name }}
-          target_commitish: ${{ needs.build-release.outputs.release_commit }}
-          draft: false
-          prerelease: true
-          body_path: .github/release-notes.md
-          generate_release_notes: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-
-      - name: Verify public release assets
-        if: ${{ needs.build-release.outputs.is_prerelease != 'true' }}
+      - name: Verify Gitee release metadata
+        if: ${{ needs.validate-release-input.outputs.is_prerelease != 'true' }}
         env:
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
-          github_base="https://github.com/$GITHUB_REPOSITORY/releases/download/$RELEASE_TAG"
           gitee_base="https://gitee.com/jukomu/jq-viewer/releases/download/$RELEASE_TAG"
-
           temp_dir="$(mktemp -d)"
           trap 'rm -rf "$temp_dir"' EXIT
-          github_manifest="$temp_dir/github-latest.json"
-          gitee_manifest="$temp_dir/gitee-latest.json"
-
-          curl --fail --silent --show-error --location --retry 3 \
-            "$github_base/latest.json" -o "$github_manifest"
-          curl --fail --silent --show-error --location --retry 3 \
-            "$gitee_base/latest.json" -o "$gitee_manifest"
-
-          if ! cmp --silent "$github_manifest" "$gitee_manifest"; then
-            echo "::error::GitHub/Gitee latest.json bytes are different"
-            exit 1
-          fi
-
-          if [ "$(jq -r '.tag' "$github_manifest")" != "$RELEASE_TAG" ] || \
-             [ "$(jq -r '.schemaVersion' "$github_manifest")" != "1" ] || \
-             [ "$(jq '.variants | length' "$github_manifest")" != "4" ]; then
-            echo "::error::latest.json release identity or variant count is invalid"
-            exit 1
-          fi
-
-          mapfile -t manifest_abis < <(jq -r '.variants[].abi' "$github_manifest" | sort)
-          expected_abis=(arm64-v8a armeabi-v7a x86 x86_64)
-          if [ "${manifest_abis[*]}" != "${expected_abis[*]}" ]; then
-            echo "::error::latest.json ABI variants are incomplete"
-            exit 1
-          fi
-
-          jq -c '[{abi: "universal", apkName, sizeBytes, sha256, sources}] + .variants | .[]' \
-            "$github_manifest" | while IFS= read -r artifact; do
-            abi="$(jq -r '.abi' <<<"$artifact")"
-            apk_name="$(jq -r '.apkName' <<<"$artifact")"
-            expected_size="$(jq -r '.sizeBytes' <<<"$artifact")"
-            expected_sha="$(jq -r '.sha256' <<<"$artifact" | tr '[:lower:]' '[:upper:]')"
-            expected_github_url="$(jq -r '.sources.github' <<<"$artifact")"
-            expected_gitee_url="$(jq -r '.sources.gitee' <<<"$artifact")"
-            github_apk="$temp_dir/github-$abi.apk"
-            gitee_apk="$temp_dir/gitee-$abi.apk"
-
+          artifact_dir="$RUNNER_TEMP/release-artifact"
+          desktop_dir="$RUNNER_TEMP/desktop-release"
+          for local_path in \
+            "$RUNNER_TEMP/latest.json" \
+            "$desktop_dir/latest.json.sig" \
+            "$desktop_dir/SHA256SUMS" \
+            "$artifact_dir"/JQ-Viewer-*.apk.sha256; do
+            name="$(basename "$local_path")"
+            remote_path="$temp_dir/$name"
             curl --fail --silent --show-error --location --retry 3 \
-              "$github_base/$apk_name" -o "$github_apk"
-            curl --fail --silent --show-error --location --retry 3 \
-              "$gitee_base/$apk_name" -o "$gitee_apk"
-            if ! cmp --silent "$github_apk" "$gitee_apk"; then
-              echo "::error::GitHub/Gitee APK bytes differ for $abi"
-              exit 1
-            fi
-            actual_size="$(stat -c '%s' "$github_apk")"
-            actual_sha="$(sha256sum "$github_apk" | awk '{print toupper($1)}')"
-            if [ "$actual_size" != "$expected_size" ] || [ "$actual_sha" != "$expected_sha" ] || \
-               [ "$expected_github_url" != "$github_base/$apk_name" ] || \
-               [ "$expected_gitee_url" != "$gitee_base/$apk_name" ]; then
-              echo "::error::latest.json does not match public APK for $abi"
+              "$gitee_base/$name" -o "$remote_path"
+            if ! cmp --silent "$local_path" "$remote_path"; then
+              echo "::error::Gitee release metadata differs for $name"
               exit 1
             fi
           done
-
-          echo "Public release assets verified: five identical APKs and latest.json"
+          echo "Gitee release metadata verified; large packages remain for manual upload"
 
       - name: Cleanup downloaded release artifacts
         if: ${{ always() }}
         run: |
           set -euo pipefail
           rm -rf "$RUNNER_TEMP/release-artifact"
+          rm -rf "$RUNNER_TEMP/desktop-release"
           rm -f "$RUNNER_TEMP/latest.json"

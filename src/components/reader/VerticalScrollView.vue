@@ -2,8 +2,13 @@
   <div
     ref="containerRef"
     class="vertical-container"
-    :class="{ noscroll: zoomScale > 1 }"
+    :class="{
+      noscroll: zoomScale > 1,
+      'custom-width': widthPercent !== null,
+      'images-hidden': widthPercent === 0,
+    }"
     @scroll="onScroll"
+    @click="onMouseClick"
   >
     <div class="virtual-inner" :style="{ height: innerHeight + 'px' }">
       <div ref="wrapperRef" class="zoom-wrapper" :style="wrapperStyle">
@@ -18,8 +23,9 @@
         >
           <template v-if="failedSortOrders.has(item.index + 1)">
             <div class="image-error-state">
-              <span>图片加载失败</span>
+              <span>{{ failedMessages.get(item.index + 1) || '图片加载失败' }}</span>
               <button
+                v-if="allowRetry"
                 type="button"
                 class="image-retry-button"
                 :disabled="retryingSortOrders.size > 0"
@@ -39,6 +45,8 @@
               :src="item.dataUrl"
               class="reader-image"
               alt=""
+              draggable="false"
+              @dragstart.prevent
               @load="onImageLoad(item.index, $event)"
               @error="emit('image-error', item.index + 1, item.dataUrl)"
             />
@@ -70,13 +78,21 @@ const props = withDefaults(
   defineProps<{
     imageMap: Map<number, string>
     failedSortOrders?: Set<number>
+    failedMessages?: Map<number, string>
+    allowRetry?: boolean
     retryingSortOrders?: Set<number>
     totalCount: number
     currentIndex: number
+    widthPercent?: number | null
+    enableMouseControls?: boolean
   }>(),
   {
     failedSortOrders: () => new Set<number>(),
+    failedMessages: () => new Map<number, string>(),
+    allowRetry: true,
     retryingSortOrders: () => new Set<number>(),
+    enableMouseControls: false,
+    widthPercent: null,
   },
 )
 
@@ -130,18 +146,27 @@ const zoomScale = ref(1)
 const zoomTx = ref(0)
 const zoomTy = ref(0)
 
+function resolveContentWidth(viewportWidth: number) {
+  // 0% 只隐藏图片，保留高度模型和阅读位置，避免虚拟列表跳到末页。
+  if (props.widthPercent === 0)
+    return containerWidth.value || Math.min(viewportWidth, READER_CONTENT_MAX_WIDTH)
+  return props.widthPercent === null
+    ? Math.min(viewportWidth, READER_CONTENT_MAX_WIDTH)
+    : (viewportWidth * props.widthPercent) / 100
+}
+
 function getFallbackContentWidth() {
   const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 0
-  return Math.min(viewportWidth || 360, READER_CONTENT_MAX_WIDTH)
+  return resolveContentWidth(viewportWidth || 360)
 }
 
 const contentWidth = computed(() => containerWidth.value || getFallbackContentWidth())
 
 const wrapperStyle = computed(() => {
   const style: Record<string, string> = {
-    width: `${contentWidth.value}px`,
+    width: `${props.widthPercent === 0 ? 0 : contentWidth.value}px`,
     left: '50%',
-    marginLeft: `${-contentWidth.value / 2}px`,
+    marginLeft: `${props.widthPercent === 0 ? 0 : -contentWidth.value / 2}px`,
   }
 
   if (zoomScale.value > 1 || zoomTx.value !== 0 || zoomTy.value !== 0) {
@@ -323,9 +348,7 @@ function updateContainerSize() {
   if (!el) return false
   const nextHeight = el.clientHeight
   const nextWidth =
-    el.clientWidth > 0
-      ? Math.min(el.clientWidth, READER_CONTENT_MAX_WIDTH)
-      : getFallbackContentWidth()
+    el.clientWidth > 0 ? resolveContentWidth(el.clientWidth) : getFallbackContentWidth()
   const changed = nextHeight !== containerHeight.value || nextWidth !== containerWidth.value
   containerHeight.value = nextHeight
   containerWidth.value = nextWidth
@@ -464,6 +487,14 @@ function refreshAfterResize() {
   }
 }
 
+watch(
+  () => props.widthPercent,
+  () => {
+    resetZoom(true)
+    refreshAfterResize()
+  },
+)
+
 let resizeObserver: ResizeObserver | null = null
 
 // ---- 手势临时变量 ----
@@ -482,6 +513,13 @@ let moved = false
 let lastTapT = 0
 let lastTapX = 0
 let lastTapY = 0
+let mousePointerId: number | null = null
+let mouseStartX = 0
+let mouseStartY = 0
+let mouseStartTx = 0
+let mouseStartTy = 0
+let mouseStartScrollTop = 0
+let mouseDragged = false
 
 function dist(t: TouchList) {
   if (t.length < 2) return 0
@@ -529,6 +567,39 @@ function nextDoubleTapScale() {
   if (zoomScale.value < 3) return 3
   if (zoomScale.value < ZOOM_MAX) return ZOOM_MAX
   return ZOOM_MIN
+}
+
+function nextZoomScale() {
+  if (zoomScale.value < 2) return 2
+  if (zoomScale.value < 3) return 3
+  return ZOOM_MAX
+}
+
+function previousZoomScale() {
+  if (zoomScale.value <= 1) return ZOOM_MIN
+  if (zoomScale.value <= 2) return ZOOM_MIN
+  if (zoomScale.value <= 3) return 2
+  return 3
+}
+
+function zoomAtViewportCenter(scale: number) {
+  const rect = containerRef.value?.getBoundingClientRect()
+  const relX = (rect?.width ?? containerWidth.value ?? window.innerWidth) / 2
+  const relY = (rect?.height ?? containerHeight.value ?? window.innerHeight) / 2
+  zoomAtViewportPoint(relX, relY, scale)
+}
+
+function zoomIn() {
+  zoomAtViewportCenter(nextZoomScale())
+}
+
+function zoomOut() {
+  const next = previousZoomScale()
+  if (next === ZOOM_MIN) {
+    resetZoom(true)
+    return
+  }
+  zoomAtViewportCenter(next)
 }
 
 function cycleDoubleTapZoom(clientX: number, clientY: number) {
@@ -657,6 +728,61 @@ function onTE(ev: TouchEvent) {
   }
 }
 
+function onMousePointerDown(ev: PointerEvent) {
+  if (!props.enableMouseControls || ev.pointerType !== 'mouse' || ev.button !== 0) {
+    return
+  }
+  const el = containerRef.value
+  if (!el) return
+  ev.preventDefault()
+  mousePointerId = ev.pointerId
+  mouseStartX = ev.clientX
+  mouseStartY = ev.clientY
+  mouseStartTx = zoomTx.value
+  mouseStartTy = zoomTy.value
+  mouseStartScrollTop = el.scrollTop
+  mouseDragged = false
+  el.setPointerCapture(ev.pointerId)
+}
+
+function onMousePointerMove(ev: PointerEvent) {
+  if (mousePointerId !== ev.pointerId) return
+  const dx = ev.clientX - mouseStartX
+  const dy = ev.clientY - mouseStartY
+  if (Math.abs(dx) > 3 || Math.abs(dy) > 3) mouseDragged = true
+  if (!mouseDragged) return
+  ev.preventDefault()
+  const el = containerRef.value
+  if (!el) return
+  if (zoomScale.value <= 1) {
+    el.scrollTop = mouseStartScrollTop - dy
+    onScroll()
+    return
+  }
+  const width = containerWidth.value || el.clientWidth || window.innerWidth
+  const height = containerHeight.value || el.clientHeight || window.innerHeight
+  const contentHeight = Math.max(innerHeight.value, height)
+  const minTx = width - width * zoomScale.value
+  const minTy = mouseStartScrollTop + height - contentHeight * zoomScale.value
+  const maxTy = mouseStartScrollTop
+  zoomTx.value = Math.max(minTx, Math.min(0, mouseStartTx + dx))
+  zoomTy.value = Math.max(minTy, Math.min(maxTy, mouseStartTy + dy))
+  updateZoomCurrentIndex()
+}
+
+function onMousePointerUp(ev: PointerEvent) {
+  if (mousePointerId !== ev.pointerId) return
+  containerRef.value?.releasePointerCapture(ev.pointerId)
+  mousePointerId = null
+}
+
+function onMouseClick(ev: MouseEvent) {
+  if (!props.enableMouseControls || ev.button !== 0 || !mouseDragged) return
+  mouseDragged = false
+  ev.preventDefault()
+  ev.stopPropagation()
+}
+
 watch(
   () => props.totalCount,
   () => {
@@ -691,6 +817,12 @@ onMounted(() => {
   el.addEventListener('touchmove', onTouch, { passive: false })
   el.addEventListener('touchend', onTouch)
   el.addEventListener('touchcancel', onTouch)
+  if (props.enableMouseControls) {
+    el.addEventListener('pointerdown', onMousePointerDown)
+    el.addEventListener('pointermove', onMousePointerMove)
+    el.addEventListener('pointerup', onMousePointerUp)
+    el.addEventListener('pointercancel', onMousePointerUp)
+  }
 
   resizeObserver = new ResizeObserver(() => refreshAfterResize())
   resizeObserver.observe(el)
@@ -707,9 +839,13 @@ onUnmounted(() => {
   el.removeEventListener('touchmove', onTouch)
   el.removeEventListener('touchend', onTouch)
   el.removeEventListener('touchcancel', onTouch)
+  el.removeEventListener('pointerdown', onMousePointerDown)
+  el.removeEventListener('pointermove', onMousePointerMove)
+  el.removeEventListener('pointerup', onMousePointerUp)
+  el.removeEventListener('pointercancel', onMousePointerUp)
 })
 
-defineExpose({ scrollToIndex, containerRef, isAtBottom })
+defineExpose({ scrollToIndex, containerRef, isAtBottom, zoomIn, zoomOut, resetZoom })
 </script>
 
 <style scoped>
@@ -760,6 +896,14 @@ defineExpose({ scrollToIndex, containerRef, isAtBottom })
   pointer-events: none;
   user-select: none;
   -webkit-user-drag: none;
+}
+
+.custom-width .reader-image {
+  min-height: 0;
+}
+
+.images-hidden .image-wrapper {
+  visibility: hidden;
 }
 
 .skeleton-image {

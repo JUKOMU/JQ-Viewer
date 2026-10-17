@@ -13,6 +13,8 @@ import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
 import io.github.jukomu.feature.settings.SettingsService;
 
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -23,7 +25,8 @@ import java.util.function.Supplier;
  */
 public final class ReaderPluginHandler {
 
-    private static volatile String pendingLaunchRoute;
+    private static final Object launchRouteLock = new Object();
+    private static final Deque<String> pendingLaunchRoutes = new ArrayDeque<>();
 
     private final Supplier<Activity> activitySupplier;
     private final Supplier<WebView> webViewSupplier;
@@ -55,7 +58,15 @@ public final class ReaderPluginHandler {
      * 保存后续可由前端消费的启动路由。
      */
     public static void setPendingLaunchRoute(String route) {
-        pendingLaunchRoute = route;
+        synchronized (launchRouteLock) {
+            if (route == null || route.isEmpty()) {
+                pendingLaunchRoutes.clear();
+                return;
+            }
+            if (!route.equals(pendingLaunchRoutes.peekLast())) {
+                pendingLaunchRoutes.addLast(route);
+            }
+        }
     }
 
     /**
@@ -201,8 +212,10 @@ public final class ReaderPluginHandler {
      */
     public void consumeLaunchRoute(PluginCall call) {
         JSObject result = new JSObject();
-        String route = pendingLaunchRoute;
-        pendingLaunchRoute = null;
+        String route;
+        synchronized (launchRouteLock) {
+            route = pendingLaunchRoutes.pollFirst();
+        }
         if (route != null && !route.isEmpty()) {
             result.put("route", route);
         }

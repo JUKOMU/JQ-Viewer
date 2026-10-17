@@ -90,8 +90,13 @@ const routes: Array<RouteRecordRaw> = [
     component: () => import('@/views/AboutPage.vue'),
   },
   {
+    path: '/logs',
+    name: 'LogsPage',
+    component: () => import('@/views/LogsPage.vue'),
+  },
+  {
     path: '/pdf-template-help',
-    component: () => import('@/views/PdfTemplateHelpPage.vue'),
+    component: () => import('@/views/ExportTemplateHelpPage.vue'),
   },
   {
     path: '/batch-parse',
@@ -101,14 +106,20 @@ const routes: Array<RouteRecordRaw> = [
   },
   {
     path: '/import-review',
-    name: 'PdfImportPage',
-    component: () => import('@/views/PdfImportPage.vue'),
+    name: 'LocalFileImportPage',
+    component: () => import('@/views/LocalFileImportPage.vue'),
     meta: { menu: false, keepAlive: false },
   },
   {
     path: '/pdf-reader',
     name: 'PdfReaderPage',
     component: () => import('@/views/PdfReaderPage.vue'),
+    meta: { menu: false, keepAlive: true },
+  },
+  {
+    path: '/cbz-reader',
+    name: 'CbzReaderPage',
+    component: () => import('@/views/CbzReaderPage.vue'),
     meta: { menu: false, keepAlive: true },
   },
 ]

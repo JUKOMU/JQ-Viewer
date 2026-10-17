@@ -10,7 +10,7 @@
           <IonRefresherContent />
         </IonRefresher>
 
-        <div class="favorite-page-top">
+        <div class="favorite-page-top desktop-page-content">
           <div class="favorite-page-toolbar" :class="{ pinned: pullHeaderPinned }">
             <MenuToggleButton />
             <div class="toolbar-favorite">
@@ -38,6 +38,7 @@
 
         <SearchResultContainer
           ref="resultContainerRef"
+          class="desktop-page-content"
           :result="resultMeta"
           :items="displayItems"
           :loading="initialLoading"
@@ -74,7 +75,7 @@
         <QuickActionFab
           slot="fixed"
           @search="openRightMenu"
-          @jump="scrollToTop"
+          @jump="jumpToPage"
           @top="scrollToTop"
           @back="goBack"
         />
@@ -158,7 +159,7 @@ import {
   IonRefresherContent,
 } from '@ionic/vue'
 import { createAppAlert } from '@/services/AppAlertService'
-import type { PluginListenerHandle } from '@capacitor/core'
+import type { ListenerHandle } from '@/runtime/BackendEvents'
 import {
   bookOutline,
   downloadOutline,
@@ -318,7 +319,7 @@ const matchesKeyword = (item: SearchResultItem, kw: string): boolean => {
 
 // ---- 下载状态 ----
 const downloadedAlbumIds = ref<Set<string>>(new Set())
-let downloadProgressHandle: PluginListenerHandle | null = null
+let downloadProgressHandle: ListenerHandle | null = null
 
 const refreshDownloadStatuses = async () => {
   try {
@@ -331,9 +332,9 @@ const refreshDownloadStatuses = async () => {
         }
       }
       try {
-        const pdfsResult = await JmcomicService.getImportedPdfs()
-        if (pdfsResult?.pdfs) {
-          for (const pdf of pdfsResult.pdfs) {
+        const pdfsResult = await JmcomicService.getImportedLocalFiles()
+        if (pdfsResult?.files) {
+          for (const pdf of pdfsResult.files) {
             if (pdf.albumId) set.add(pdf.albumId)
           }
         }
@@ -957,6 +958,40 @@ const handleItemClick = (item: SearchResultItem) => {
 
 const scrollToTop = () => {
   void contentRef.value?.$el?.scrollToTop?.(300)
+}
+
+const jumpToPage = async () => {
+  if (!resultMeta.value) return
+
+  const totalPages = resultMeta.value.totalPages
+  const alert = await createAppAlert({
+    header: '跳转页码',
+    message: `请输入 1 - ${totalPages} 的页码`,
+    inputs: [
+      {
+        name: 'page',
+        type: 'number',
+        min: 1,
+        max: totalPages,
+        value: String(resultMeta.value.currentPage),
+        placeholder: '页码',
+      },
+    ],
+    buttons: [
+      { text: '取消', role: 'cancel' },
+      {
+        text: '跳转',
+        handler: (data: { page?: string }) => {
+          const page = Number(data.page)
+          if (!Number.isInteger(page) || page < 1 || page > totalPages) return false
+          void resetWithPage(page)
+          return true
+        },
+      },
+    ],
+  })
+
+  await alert.present()
 }
 
 const goBack = () => {
@@ -2059,10 +2094,13 @@ onActivated(async () => {
 }
 
 .favorite-page-toolbar {
-  display: grid;
-  grid-template-columns: 44px minmax(0, 1fr);
+  display: flex;
   align-items: start;
   gap: 10px;
+}
+
+.favorite-page-toolbar > :deep(.menu-toggle-btn) {
+  flex: 0 0 auto;
 }
 
 .favorite-page-toolbar.pinned {
@@ -2074,6 +2112,7 @@ onActivated(async () => {
 }
 
 .toolbar-favorite {
+  flex: 1 1 auto;
   min-width: 0;
 }
 

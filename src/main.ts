@@ -3,6 +3,8 @@ import App from './App.vue'
 import router from './router'
 
 import { IonicVue } from '@ionic/vue'
+import { configureRuntime } from './runtime/runtimeContext'
+import { ExportService } from './services/ExportService'
 
 /* Core CSS required for Ionic components to work properly */
 import '@ionic/vue/css/core.css'
@@ -33,8 +35,24 @@ import '@ionic/vue/css/palettes/dark.system.css'
 /* Theme variables */
 import './theme/variables.css'
 
-const app = createApp(App).use(IonicVue).use(router)
+const app = createApp(App).use(IonicVue, { hardwareBackButton: true }).use(router)
 
-router.isReady().then(() => {
-  app.mount('#app')
-})
+const runtimePromise =
+  import.meta.env.MODE === 'desktop'
+    ? import('./runtime/desktop/createRuntime').then(({ createRuntime }) =>
+        createRuntime(__JQ_RUNTIME_PLATFORM__),
+      )
+    : import('./runtime/android/createAndroidRuntime').then(({ createAndroidRuntime }) =>
+        createAndroidRuntime(),
+      )
+
+runtimePromise
+  .then(async (runtime) => {
+    document.documentElement.dataset.runtimePlatform = runtime.platform
+    await ExportService.initialize(runtime.services.exportPreferences)
+    configureRuntime(runtime)
+    return router.isReady()
+  })
+  .then(() => {
+    app.mount('#app')
+  })

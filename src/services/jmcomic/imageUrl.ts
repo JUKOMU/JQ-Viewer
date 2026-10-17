@@ -1,5 +1,4 @@
-/** 虚拟 URL 基地址，与 Android 侧 ImageRegistry.VIRTUAL_HOST 一致 */
-const VIRTUAL_BASE = 'https://jqviewer.local'
+import { getRuntime } from '@/runtime/runtimeContext'
 
 /** 根据 photoId、sortOrder、type 构建虚拟图片 URL */
 export function getImageUrl(
@@ -7,5 +6,5 @@ export function getImageUrl(
   sortOrder: number,
   type: 'image' | 'thumb' = 'image',
 ): string {
-  return `${VIRTUAL_BASE}/${type}/${photoId}/${sortOrder}`
+  return getRuntime().resources.imageUrl({ photoId, sortOrder, type })
 }

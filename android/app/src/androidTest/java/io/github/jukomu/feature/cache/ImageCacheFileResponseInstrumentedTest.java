@@ -29,7 +29,8 @@ public class ImageCacheFileResponseInstrumentedTest {
             ImageCache cache = ImageCache.createIsolated();
             cache.applyPolicy(new CacheCapacityPolicy().calculate(
                 16L, 64L * CacheCapacityPolicy.MIB, false,
-                CacheCapacityPolicy.PressureLevel.NORMAL));
+                CacheCapacityPolicy.PressureLevel.NORMAL,
+                CacheCapacityPolicy.SpaceSnapshot.unavailable()));
             assertNull(cache.prepareForIncomingBytes(image.length()));
 
             WebResourceResponse response = ImageCache.createFileResponse(image);

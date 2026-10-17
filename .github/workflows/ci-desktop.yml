@@ -1,0 +1,312 @@
+name: CI · Desktop
+
+on:
+  push:
+    branches: [master, main, desktop-dev]
+  pull_request:
+    branches: [master, main, desktop-dev]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Release tag used to derive an ordered Windows installer version
+        required: false
+        type: string
+        default: ''
+  workflow_call:
+    inputs:
+      package:
+        description: Build and validate native Desktop release packages
+        required: false
+        type: boolean
+        default: false
+      release_tag:
+        description: Release tag used to derive an ordered Windows installer version
+        required: false
+        type: string
+        default: ''
+      release_ed25519_key_id:
+        description: Ed25519 key ID embedded into Desktop packages
+        required: false
+        type: string
+        default: ''
+      release_ed25519_public_key_spki_base64:
+        description: Ed25519 SPKI public key embedded into Desktop packages
+        required: false
+        type: string
+        default: ''
+      require_release_trust_root:
+        description: Fail instead of generating a CI-only updater trust root
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    name: Desktop JVM and HTTP
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+
+      - run: npm ci
+      - run: npm run desktop:sync -- --platform linux
+      - run: mvn --batch-mode test -f desktop/pom.xml
+
+  package:
+    name: Package ${{ matrix.target }}
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || inputs.package }}
+    needs: desktop
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: windows-x64
+            runner: windows-2022
+            platform: windows
+            architecture: x64
+          - target: linux-x64
+            runner: ubuntu-24.04
+            platform: linux
+            architecture: x64
+          - target: linux-arm64
+            runner: ubuntu-24.04-arm
+            platform: linux
+            architecture: arm64
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+
+      - name: Install Linux packaging tools
+        if: ${{ matrix.platform == 'linux' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes fakeroot rpm
+
+      - name: Install Windows packaging tools
+        if: ${{ matrix.platform == 'windows' }}
+        shell: pwsh
+        run: |
+          choco install wixtoolset --no-progress --yes
+          $wixBin = Get-ChildItem "${env:ProgramFiles(x86)}\WiX Toolset v3.*\bin" -Directory |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+          if (-not $wixBin) {
+            throw 'WiX Toolset v3 installation directory was not found'
+          }
+          $wixBin.FullName | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - run: npm ci
+
+      - name: Resolve Desktop updater trust root
+        shell: bash
+        env:
+          CONFIGURED_KEY_ID: ${{ inputs.release_ed25519_key_id }}
+          CONFIGURED_PUBLIC_KEY: ${{ inputs.release_ed25519_public_key_spki_base64 }}
+          REQUIRE_RELEASE_TRUST_ROOT: ${{ inputs.require_release_trust_root }}
+        run: |
+          set -euo pipefail
+          if [ -n "$CONFIGURED_KEY_ID" ] && [ -n "$CONFIGURED_PUBLIC_KEY" ]; then
+            {
+              echo "RELEASE_ED25519_KEY_ID=$CONFIGURED_KEY_ID"
+              echo "RELEASE_ED25519_PUBLIC_KEY_SPKI_BASE64=$CONFIGURED_PUBLIC_KEY"
+            } >> "$GITHUB_ENV"
+          elif [ "$REQUIRE_RELEASE_TRUST_ROOT" = "true" ]; then
+            echo "::error::Desktop release updater trust root is not configured"
+            exit 1
+          else
+            node <<'NODE'
+          const { generateKeyPairSync } = require('node:crypto')
+          const { appendFileSync } = require('node:fs')
+          const { publicKey } = generateKeyPairSync('ed25519')
+          const publicSpki = publicKey.export({ type: 'spki', format: 'der' })
+          appendFileSync(process.env.GITHUB_ENV, 'RELEASE_ED25519_KEY_ID=jq-viewer-ci-package\n')
+          appendFileSync(
+            process.env.GITHUB_ENV,
+            'RELEASE_ED25519_PUBLIC_KEY_SPKI_BASE64=' + publicSpki.toString('base64') + '\n',
+          )
+          NODE
+          fi
+
+      - name: Build native Desktop packages (Linux)
+        if: ${{ matrix.platform == 'linux' }}
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: >-
+          npm run desktop:package --
+          --platform "${{ matrix.platform }}"
+          --arch "${{ matrix.architecture }}"
+          --output "${{ runner.temp }}/desktop-package"
+          --release-tag "$RELEASE_TAG"
+
+      - name: Build native Desktop packages (Windows)
+        if: ${{ matrix.platform == 'windows' }}
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: >-
+          npm run desktop:package --
+          --platform "${{ matrix.platform }}"
+          --arch "${{ matrix.architecture }}"
+          --output "${{ runner.temp }}/desktop-package"
+          --release-tag "$env:RELEASE_TAG"
+
+      - name: Upload Desktop packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-package-${{ matrix.target }}
+          path: ${{ runner.temp }}/desktop-package/*
+          if-no-files-found: error
+          compression-level: 0
+          overwrite: true
+          retention-days: 7
+
+  release-contract:
+    name: Desktop release contract
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || inputs.package }}
+    needs: package
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Install signing tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes gnupg rpm
+
+      - name: Download native Desktop packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-package-*
+          path: ${{ runner.temp }}/desktop-release
+          merge-multiple: true
+
+      - name: Generate isolated CI signing keys
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          node <<'NODE'
+          const { generateKeyPairSync } = require('node:crypto')
+          const { appendFileSync } = require('node:fs')
+          const { privateKey, publicKey } = generateKeyPairSync('ed25519')
+          const privatePem = privateKey.export({ type: 'pkcs8', format: 'pem' })
+          const publicSpki = publicKey.export({ type: 'spki', format: 'der' })
+          appendFileSync(process.env.GITHUB_ENV, 'RELEASE_ED25519_KEY_ID=jq-viewer-ci-test\n')
+          appendFileSync(
+            process.env.GITHUB_ENV,
+            'RELEASE_ED25519_PRIVATE_KEY_BASE64=' + Buffer.from(privatePem).toString('base64') + '\n',
+          )
+          appendFileSync(
+            process.env.GITHUB_ENV,
+            'RELEASE_ED25519_PUBLIC_KEY_SPKI_BASE64=' + publicSpki.toString('base64') + '\n',
+          )
+          NODE
+
+          test_gnupg="$(mktemp -d)"
+          chmod 700 "$test_gnupg"
+          cat > "$test_gnupg/key-params" <<'EOF'
+          Key-Type: RSA
+          Key-Length: 3072
+          Key-Usage: sign
+          Name-Real: JQ Viewer CI Test
+          Name-Email: jq-viewer-ci-test@example.invalid
+          Expire-Date: 0
+          Passphrase: jq-viewer-ci-test-only
+          %commit
+          EOF
+          GNUPGHOME="$test_gnupg" gpg --batch --pinentry-mode loopback --generate-key "$test_gnupg/key-params"
+          fingerprint="$(GNUPGHOME="$test_gnupg" gpg --batch --with-colons --list-secret-keys |
+            awk -F: '$1 == "fpr" { print toupper($10); exit }')"
+          private_key="$(GNUPGHOME="$test_gnupg" gpg --batch --pinentry-mode loopback \
+            --passphrase jq-viewer-ci-test-only --armor --export-secret-keys "$fingerprint" |
+            base64 --wrap=0)"
+          {
+            echo "RPM_GPG_PRIVATE_KEY_BASE64=$private_key"
+            echo "RPM_GPG_PASSPHRASE=jq-viewer-ci-test-only"
+            echo "RPM_GPG_FINGERPRINT=$fingerprint"
+          } >> "$GITHUB_ENV"
+          rm -rf "$test_gnupg"
+
+      - name: Sign test RPM packages
+        run: scripts/sign-rpm-release.sh "$RUNNER_TEMP/desktop-release"
+
+      - name: Build and verify shared release manifest contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifact_dir="$RUNNER_TEMP/desktop-release"
+          version="$(node -p "require('./package.json').version")"
+          RELEASE_TAG="v$version" ARTIFACT_DIR="$artifact_dir" node --input-type=module <<'NODE'
+          import fs from 'node:fs'
+          import path from 'node:path'
+          import { buildDesktopReleaseFromPaths } from './scripts/desktop-release-assets.mjs'
+
+          const assetPaths = fs.readdirSync(process.env.ARTIFACT_DIR)
+            .filter((name) => name.startsWith('JQ-Viewer-'))
+            .map((name) => path.join(process.env.ARTIFACT_DIR, name))
+          const manifest = {
+            schemaVersion: 1,
+            tag: process.env.RELEASE_TAG,
+            desktop: buildDesktopReleaseFromPaths({
+              releaseTag: process.env.RELEASE_TAG,
+              assetPaths,
+              githubRepository: process.env.GITHUB_REPOSITORY,
+              giteeRepository: 'jukomu/jq-viewer',
+            }),
+          }
+          fs.writeFileSync(
+            path.join(process.env.ARTIFACT_DIR, 'latest.json'),
+            JSON.stringify(manifest, null, 2) + '\n',
+          )
+          NODE
+          mapfile -d '' assets < <(find "$artifact_dir" -maxdepth 1 -type f -name 'JQ-Viewer-*' -print0 | sort -z)
+          args=()
+          for asset in "${assets[@]}"; do
+            args+=(--asset "$asset")
+          done
+          node scripts/desktop-release-assets.mjs verify \
+            --tag "v$version" \
+            --manifest "$artifact_dir/latest.json" \
+            "${args[@]}"
+          node scripts/release-signature.mjs sign \
+            --manifest "$artifact_dir/latest.json" \
+            --signature "$artifact_dir/latest.json.sig"
+          node scripts/release-signature.mjs verify \
+            --manifest "$artifact_dir/latest.json" \
+            --signature "$artifact_dir/latest.json.sig"

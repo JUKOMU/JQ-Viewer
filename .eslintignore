@@ -5,6 +5,8 @@ node_modules
 /ios
 /android
 /desktop-server/target
+/desktop/target
+/desktop/src/main/resources/static
 JMComic-Api-Java
 
 
@@ -26,4 +28,3 @@ pnpm-debug.log*
 *.njsproj
 *.sln
 *.sw?
-

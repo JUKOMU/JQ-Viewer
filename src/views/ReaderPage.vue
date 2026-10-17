@@ -1,9 +1,25 @@
 <template>
   <IonPage>
-    <div class="reader-root" @click="onRootClick">
+    <div
+      ref="readerRoot"
+      class="reader-root"
+      :tabindex="isDesktopRuntime ? -1 : undefined"
+      @click="onRootClick"
+    >
       <!-- 顶部工具栏 -->
       <Transition name="toolbar-slide">
-        <ReaderTopToolbar v-if="toolbarVisible" :title="chapterTitle" @click.stop @back="goBack" />
+        <ReaderTopToolbar
+          v-if="toolbarVisible"
+          :title="chapterTitle"
+          :show-desktop-controls="isDesktopRuntime"
+          :is-fullscreen="isFullscreen"
+          @click.stop="restoreReaderFocus"
+          @back="goBack"
+          @zoom-in="zoomIn"
+          @zoom-out="zoomOut"
+          @reset-zoom="resetZoom"
+          @toggle-fullscreen="toggleFullscreen"
+        />
       </Transition>
 
       <!-- 图片视图 -->
@@ -15,6 +31,8 @@
         :retrying-sort-orders="retryingSortOrders"
         :total-count="totalCount"
         :current-index="currentIndex"
+        :enable-mouse-controls="isDesktopRuntime"
+        :width-percent="readerWidthPercent"
         @update:current-index="onPageChange"
         @request-range="onVerticalRequestRange"
         @reached-bottom="scheduleToolbarAtReaderEnd"
@@ -29,6 +47,8 @@
         :retrying-sort-orders="retryingSortOrders"
         :total-count="totalCount"
         :current-index="currentIndex"
+        :enable-mouse-controls="isDesktopRuntime"
+        :width-percent="readerWidthPercent"
         @update:current-index="onPageChange"
         @toggle-toolbar="toggleToolbar"
         @image-error="onImageError"
@@ -57,6 +77,9 @@
       <ReaderSettingsPanel
         v-if="settingsPanelVisible"
         :is-vertical="isVertical"
+        :show-width-control="isDesktopRuntime"
+        :width-percent="readerWidthPercent"
+        @update:width-percent="readerWidthPercent = $event"
         @close="settingsPanelVisible = false"
         @update:display-mode="onDisplayModeChange"
       />
@@ -79,8 +102,9 @@ import {
 } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { IonPage } from '@ionic/vue'
-import type { PluginListenerHandle } from '@capacitor/core'
-import { getImageUrl, JmcomicService, showToast } from '@/services/JmcomicService'
+import type { ListenerHandle } from '@/runtime/BackendEvents'
+import { getRuntime } from '@/runtime/runtimeContext'
+import { getImageUrl, JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
 import type { ImageInfo, PhotoDetail, PhotoMeta, PreloadResult } from '@/services/JmcomicTypes'
 import { SettingsStore } from '@/services/SettingsService'
 import { HistoryService } from '@/services/HistoryService'
@@ -90,6 +114,7 @@ import ReaderBottomToolbar from '@/components/reader/ReaderBottomToolbar.vue'
 import VerticalScrollView from '@/components/reader/VerticalScrollView.vue'
 import HorizontalPageView from '@/components/reader/HorizontalPageView.vue'
 import ReaderSettingsPanel from '@/components/reader/ReaderSettingsPanel.vue'
+import { useDesktopReaderControls } from '@/composables/useDesktopReaderControls'
 
 defineOptions({ name: 'ReaderPage' })
 
@@ -105,6 +130,9 @@ const DRAG_PREVIEW_DELAY_MS = 500
 
 const route = useRoute()
 const router = useRouter()
+const runtime = getRuntime()
+const readerCapabilities = runtime.services.reader
+const isDesktopRuntime = runtime.platform !== 'android'
 
 const updateReaderCurrentPage = inject<(page: number) => void>('updateReaderCurrentPage', () => {})
 
@@ -116,6 +144,7 @@ const isOffline = ref(route.query.source === 'download')
 
 // ---- 核心状态 ----
 const isVertical = ref(SettingsStore.getReaderDisplayMode() === 'vertical')
+const readerWidthPercent = ref(isDesktopRuntime ? SettingsStore.getReaderWidthPercent() : null)
 const currentIndex = ref(0)
 const totalCount = ref(0)
 const imageMap = shallowRef<Map<number, string>>(new Map())
@@ -125,6 +154,7 @@ const chapters = ref<PhotoMeta[]>([])
 const toolbarVisible = ref(true)
 const isDragProgress = ref(false)
 const settingsPanelVisible = ref(false)
+const readerRoot = ref<HTMLElement | null>(null)
 const TOOLBAR_TAP_DELAY_MS = 280
 const TOOLBAR_DOUBLE_TAP_DIST = 30
 const AUTO_SHOW_TOOLBAR_DELAY_MS = 1000
@@ -137,11 +167,11 @@ let photoDetail: PhotoDetail | null = null
 let chapterLoadVersion = 0
 let chapterStateKey = ''
 let chapterStateAlbumId = ''
-let imageReadyListenerHandle: PluginListenerHandle | null = null
-let imageFailedListenerHandle: PluginListenerHandle | null = null
+let imageReadyListenerHandle: ListenerHandle | null = null
+let imageFailedListenerHandle: ListenerHandle | null = null
 let imageReadyListenerSetupPromise: Promise<void> | null = null
 let imageReadyListenerSetupId = 0
-let volumeKeyListenerHandle: PluginListenerHandle | null = null
+let volumeKeyListenerHandle: ListenerHandle | null = null
 let readerRuntimeActive = false
 let loadedSortOrders = new Set<number>()
 let requestedSortOrders = new Map<number, number>()
@@ -202,15 +232,20 @@ const switchChapter = (targetChapterId: string) => {
 }
 
 // ---- 工具栏 ----
-// 工具栏显示时仅恢复系统栏；阅读内容始终保持 edge-to-edge，不随系统栏改变尺寸。
-const syncReaderFullscreen = () => {
-  if (!readerRuntimeActive) return
-  JmcomicService.setReaderFullscreen(!toolbarVisible.value).catch(() => {})
+const syncReaderFullscreen = (reportFailure = false) => {
+  if (isDesktopRuntime || !readerRuntimeActive || !readerCapabilities.fullscreen.available) {
+    return
+  }
+  JmcomicService.setReaderFullscreen(!toolbarVisible.value).catch((error) => {
+    if (reportFailure) {
+      void showToast(sanitizeError(error, '切换全屏失败'), 'danger')
+    }
+  })
 }
 
-const setToolbarVisible = (visible: boolean) => {
+const setToolbarVisible = (visible: boolean, reportFullscreenFailure = false) => {
   toolbarVisible.value = visible
-  syncReaderFullscreen()
+  syncReaderFullscreen(reportFullscreenFailure)
 }
 
 const clearAutoShowToolbarTimer = () => {
@@ -227,7 +262,12 @@ const isAtReaderEnd = () => {
 
 const toggleToolbar = () => {
   clearAutoShowToolbarTimer()
-  setToolbarVisible(!toolbarVisible.value)
+  setToolbarVisible(!toolbarVisible.value, true)
+}
+
+const restoreReaderFocus = (event: MouseEvent) => {
+  if (event.detail === 0) return
+  if (isDesktopRuntime) readerRoot.value?.focus({ preventScroll: true })
 }
 
 const scheduleToolbarAtReaderEnd = () => {
@@ -305,58 +345,85 @@ const onDisplayModeChange = (vertical: boolean) => {
 }
 
 const syncReaderState = () => {
-  JmcomicService.setReaderState(true, isVertical.value).catch(() => {})
+  if (!readerCapabilities.hostState.available) return
+  JmcomicService.setReaderState(true, isVertical.value).catch((error) => {
+    void showToast(sanitizeError(error, '同步阅读器宿主状态失败'), 'danger')
+  })
 }
 
 // ---- 阅读器设置应用 / 恢复 ----
 
 const applyReaderSettings = () => {
   const orientation = SettingsStore.getReaderScreenOrientation()
-  if (orientation !== 'auto') {
-    JmcomicService.setReaderScreenOrientation(orientation).catch(() => {})
+  if (readerCapabilities.orientation.available && orientation !== 'auto') {
+    JmcomicService.setReaderScreenOrientation(orientation).catch((error) => {
+      void showToast(sanitizeError(error, '应用屏幕方向失败'), 'danger')
+    })
   }
   const brightness = SettingsStore.getReaderBrightness()
-  if (brightness >= 0) {
-    JmcomicService.setReaderBrightness(brightness).catch(() => {})
+  if (readerCapabilities.brightness.available && brightness >= 0) {
+    JmcomicService.setReaderBrightness(brightness).catch((error) => {
+      void showToast(sanitizeError(error, '应用阅读亮度失败'), 'danger')
+    })
   }
-  if (SettingsStore.getReaderKeepScreenOn()) {
-    JmcomicService.setReaderKeepScreenOn(true).catch(() => {})
+  if (readerCapabilities.keepAwake.available && SettingsStore.getReaderKeepScreenOn()) {
+    JmcomicService.setReaderKeepScreenOn(true).catch((error) => {
+      void showToast(sanitizeError(error, '启用屏幕常亮失败'), 'danger')
+    })
   }
   syncReaderFullscreen()
 }
 
 const restoreSystemState = () => {
-  JmcomicService.setReaderBrightness(-1).catch(() => {})
-  JmcomicService.setReaderScreenOrientation('auto').catch(() => {})
-  JmcomicService.setReaderKeepScreenOn(false).catch(() => {})
-  JmcomicService.setReaderFullscreen(false).catch(() => {})
-  JmcomicService.setReaderState(false, false).catch(() => {})
+  if (readerCapabilities.brightness.available) {
+    JmcomicService.setReaderBrightness(-1).catch(() => {})
+  }
+  if (readerCapabilities.orientation.available) {
+    JmcomicService.setReaderScreenOrientation('auto').catch(() => {})
+  }
+  if (readerCapabilities.keepAwake.available) {
+    JmcomicService.setReaderKeepScreenOn(false).catch(() => {})
+  }
+  if (readerCapabilities.fullscreen.available) {
+    JmcomicService.setReaderFullscreen(false).catch(() => {})
+  }
+  if (readerCapabilities.hostState.available) {
+    JmcomicService.setReaderState(false, false).catch(() => {})
+  }
 }
 
-// ---- 音量键 ----
-const setupVolumeKeyListener = async () => {
-  if (volumeKeyListenerHandle) return
-  volumeKeyListenerHandle = await JmcomicService.addVolumeKeyListener((direction) => {
-    if (isVertical.value) {
-      const scrollAmount = window.innerHeight / 3
-      const el = verticalViewRef.value
-      if (el && 'containerRef' in el) {
-        const container = (el as any).containerRef as HTMLElement | null
-        if (container) {
-          container.scrollBy({
-            top: direction === 'up' ? -scrollAmount : scrollAmount,
-            behavior: 'smooth',
-          })
-        }
-      }
-    } else {
-      if (direction === 'up' && currentIndex.value > 0) {
-        goToIndex(currentIndex.value - 1, 'volume')
-      } else if (direction === 'down' && currentIndex.value < totalCount.value - 1) {
-        goToIndex(currentIndex.value + 1, 'volume')
+// ---- 音量键与桌面方向键共用动作 ----
+const handleVolumeDirection = (direction: 'up' | 'down') => {
+  if (isVertical.value) {
+    const scrollAmount = window.innerHeight / 3
+    const el = verticalViewRef.value
+    if (el && 'containerRef' in el) {
+      const container = (el as { containerRef: HTMLElement | null }).containerRef
+      if (container) {
+        container.scrollBy({
+          top: direction === 'up' ? -scrollAmount : scrollAmount,
+          behavior: 'smooth',
+        })
+        return true
       }
     }
-  })
+    return false
+  }
+
+  if (direction === 'up' && currentIndex.value > 0) {
+    goToIndex(currentIndex.value - 1, 'volume')
+    return true
+  }
+  if (direction === 'down' && currentIndex.value < totalCount.value - 1) {
+    goToIndex(currentIndex.value + 1, 'volume')
+    return true
+  }
+  return false
+}
+
+const setupVolumeKeyListener = async () => {
+  if (volumeKeyListenerHandle || !readerCapabilities.volumeKeys.available) return
+  volumeKeyListenerHandle = await JmcomicService.addVolumeKeyListener(handleVolumeDirection)
 }
 
 // ---- 滑动窗口预加载 ----
@@ -767,7 +834,7 @@ const goToIndex = (index: number, source: PageChangeSource) => {
   if (!isVertical.value && previous !== next && next === totalCount.value - 1) {
     scheduleToolbarAtReaderEnd()
   }
-  ReadingProgressService.record(albumId.value, chapterId.value, next + 1, totalCount.value)
+  ReadingProgressService.recordChapter(albumId.value, chapterId.value, next + 1, totalCount.value)
 
   if (source === 'slider-input') {
     scheduleDragPreviewLoad(next)
@@ -804,6 +871,37 @@ const goToIndex = (index: number, source: PageChangeSource) => {
   moveReaderViewToIndex(next)
 }
 
+const { isFullscreen, toggleFullscreen } = useDesktopReaderControls({
+  enabled: isDesktopRuntime,
+  isActive: () => readerRuntimeActive,
+  isVertical,
+  currentIndex,
+  totalCount,
+  fullscreenAvailable: readerCapabilities.fullscreen.available,
+  onPreviousPage: () => goToIndex(currentIndex.value - 1, 'volume'),
+  onNextPage: () => goToIndex(currentIndex.value + 1, 'volume'),
+  onVolumeDirection: handleVolumeDirection,
+  setFullscreen: (enabled) => JmcomicService.setReaderFullscreen(enabled),
+  onFullscreenError: (error) => {
+    void showToast(sanitizeError(error, '切换全屏失败'), 'danger')
+  },
+})
+
+const zoomIn = () => {
+  if (isVertical.value) verticalViewRef.value?.zoomIn()
+  else horizontalViewRef.value?.zoomIn()
+}
+
+const zoomOut = () => {
+  if (isVertical.value) verticalViewRef.value?.zoomOut()
+  else horizontalViewRef.value?.zoomOut()
+}
+
+const resetZoom = () => {
+  if (isVertical.value) verticalViewRef.value?.resetZoom(true)
+  else horizontalViewRef.value?.resetZoom()
+}
+
 const onPageChange = (index: number) => {
   goToIndex(index, 'scroll')
 }
@@ -818,7 +916,7 @@ const onProgressInput = (page1Based: number) => {
 }
 
 // ---- 图片就绪监听 ----
-const removeListenerSafely = (handle: PluginListenerHandle | null) => {
+const removeListenerSafely = (handle: ListenerHandle | null) => {
   if (!handle) return
   void handle.remove().catch(() => {})
 }
@@ -831,8 +929,8 @@ const setupImageReadyListener = async () => {
 
   const setupId = ++imageReadyListenerSetupId
   const setupPromise = (async () => {
-    let readyHandle: PluginListenerHandle | null = null
-    let failedHandle: PluginListenerHandle | null = null
+    let readyHandle: ListenerHandle | null = null
+    let failedHandle: ListenerHandle | null = null
     const isCurrentSetup = () =>
       setupId === imageReadyListenerSetupId &&
       readerRuntimeActive &&
@@ -881,8 +979,12 @@ const setupImageReadyListener = async () => {
 const activateReaderRuntime = (): Promise<void> => {
   if (!readerRuntimeActive) {
     readerRuntimeActive = true
+    if (readerCapabilities.hostState.available) {
+      JmcomicService.setReaderState(true, isVertical.value).catch((error) => {
+        void showToast(sanitizeError(error, '同步阅读器宿主状态失败'), 'danger')
+      })
+    }
     applyReaderSettings()
-    JmcomicService.setReaderState(true, isVertical.value).catch(() => {})
     setupVolumeKeyListener().catch(() => {})
   }
   if (!photoDetail) return Promise.resolve()
@@ -943,7 +1045,7 @@ const applyPhotoBaseState = (pd: PhotoDetail) => {
   ensureCurrentChapterMeta(pd)
 
   const total = pd.images.length
-  const initialPage = ReadingProgressService.getInitialPage(
+  const initialPage = ReadingProgressService.getInitialChapterPage(
     route.query.page,
     albumId.value,
     chapterId.value,
@@ -952,7 +1054,12 @@ const applyPhotoBaseState = (pd: PhotoDetail) => {
   currentIndex.value = Math.min(Math.max(initialPage - 1, 0), Math.max(0, total - 1))
   totalCount.value = total
   updateReaderCurrentPage(currentIndex.value + 1)
-  ReadingProgressService.record(albumId.value, chapterId.value, currentIndex.value + 1, total)
+  ReadingProgressService.recordChapter(
+    albumId.value,
+    chapterId.value,
+    currentIndex.value + 1,
+    total,
+  )
   setToolbarVisible(true)
 }
 

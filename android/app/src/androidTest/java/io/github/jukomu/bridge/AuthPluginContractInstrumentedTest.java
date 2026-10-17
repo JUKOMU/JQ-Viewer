@@ -27,6 +27,7 @@ public class AuthPluginContractInstrumentedTest {
     private JmcomicPlugin plugin;
     private FakeApiService apiService;
     private AuthPluginHandler authHandler;
+    private PluginCallSession callSession;
     private SettingsStore settingsStore;
     private CredentialStore credentialStore;
 
@@ -46,10 +47,12 @@ public class AuthPluginContractInstrumentedTest {
             .domain("example.com")
             .path("/")
             .build();
+        callSession = new PluginCallSession();
         authHandler = new AuthPluginHandler(
             context,
             apiService,
-            () -> Collections.singletonList(cookie)
+            () -> Collections.singletonList(cookie),
+            callSession
         );
         injectAuthHandler(plugin, authHandler);
         settingsStore = SettingsStore.getInstance(context);
@@ -59,6 +62,7 @@ public class AuthPluginContractInstrumentedTest {
 
     @After
     public void tearDown() throws Exception {
+        callSession.close();
         credentialStore.clear();
         resetSingleton(CredentialStore.class, "instance");
         settingsStore.close();
@@ -137,6 +141,24 @@ public class AuthPluginContractInstrumentedTest {
     }
 
     @Test
+    public void failedRemoteLogoutStillClearsCredentialsAndDisablesAutoLogin() {
+        saveCurrentAuthState();
+        apiService.failWith("network unavailable", new IOException("network unavailable"));
+        RecordingPluginCall logout = call("logout");
+
+        plugin.logout(logout);
+
+        assertTrue(logout.resolvedData.optBoolean("success"));
+        assertEquals(1, logout.completionCount);
+        assertTrue(logout.isKeptAlive());
+        assertAuthStateCleared();
+
+        RecordingPluginCall autoLogin = call("autoLogin");
+        plugin.autoLogin(autoLogin);
+        assertRejected(autoLogin, "自动登录失败：无保存的凭据", false);
+    }
+
+    @Test
     public void damagedUserInfoIsTreatedAsLoggedOutAndCleared() throws Exception {
         settingsStore.putString("auth_cookies_json", "[]");
         settingsStore.putString("auth_username", "alice");
@@ -191,13 +213,143 @@ public class AuthPluginContractInstrumentedTest {
         apiService.failWith("network unavailable", new IOException("network unavailable"));
         RecordingPluginCall networkFailure = call("autoLogin");
         plugin.autoLogin(networkFailure);
-        assertRejected(networkFailure, "自动登录失败：凭据无效或已过期", true);
+        assertRejected(networkFailure, "network unavailable", true);
+        assertEquals("network", networkFailure.rejectionCode);
         assertEquals("alice", credentialStore.getUsername());
 
-        apiService.failWith("unauthorized", new ResponseException("unauthorized"));
+        apiService.failWith("unauthorized", new ResponseException("unauthorized", 401));
         RecordingPluginCall authFailure = call("autoLogin");
         plugin.autoLogin(authFailure);
         assertRejected(authFailure, "自动登录失败：凭据无效或已过期", true);
+        assertEquals("permission-denied", authFailure.rejectionCode);
+        assertEquals("alice", credentialStore.getUsername());
+        assertEquals("secret", credentialStore.getPassword());
+
+        credentialStore.save("alice", "secret");
+        apiService.failWith(
+            "service unavailable", new ResponseException("service unavailable", 503));
+        RecordingPluginCall serverFailure = call("autoLogin");
+        plugin.autoLogin(serverFailure);
+        assertRejected(serverFailure, "service unavailable", true);
+        assertEquals("network", serverFailure.rejectionCode);
+        assertEquals("alice", credentialStore.getUsername());
+
+        credentialStore.save("alice", "secret");
+        apiService.failWith(
+            "invalid request", new ResponseException("invalid request", 400));
+        RecordingPluginCall businessFailure = call("autoLogin");
+        plugin.autoLogin(businessFailure);
+        assertRejected(businessFailure, "invalid request", true);
+        assertEquals("internal", businessFailure.rejectionCode);
+        assertEquals("alice", credentialStore.getUsername());
+    }
+
+    @Test
+    public void closedSessionSkipsLateLoginStateChanges() throws Exception {
+        saveCurrentAuthState();
+        apiService.autoComplete = false;
+        apiService.succeedWith(new JSONObject()
+            .put("username", "stale")
+            .put("uid", "stale-user"));
+        RecordingPluginCall login = call(
+            "login", "username", "stale", "password", "stale-secret");
+
+        plugin.login(login);
+        callSession.close();
+        apiService.completeSuccess();
+
+        assertRejected(login, PluginCallSession.SESSION_ENDED_MESSAGE, false);
+        assertCurrentAuthState();
+    }
+
+    @Test
+    public void logoutCompletesLocallyBeforeLateRemoteCallback() throws Exception {
+        saveCurrentAuthState();
+        apiService.autoComplete = false;
+        apiService.succeedWith(new JSONObject().put("success", true));
+        RecordingPluginCall logout = call("logout");
+
+        plugin.logout(logout);
+        assertTrue(logout.resolvedData.getBoolean("success"));
+        assertEquals(1, logout.completionCount);
+        assertAuthStateCleared();
+        callSession.close();
+        apiService.completeSuccess();
+
+        assertEquals(1, logout.completionCount);
+        assertAuthStateCleared();
+    }
+
+    @Test
+    public void closedSessionSkipsLateAutoLoginSuccessStateChanges() throws Exception {
+        saveCurrentAuthState();
+        apiService.autoComplete = false;
+        apiService.succeedWith(new JSONObject()
+            .put("username", "stale")
+            .put("uid", "stale-user"));
+        RecordingPluginCall autoLogin = call("autoLogin");
+
+        plugin.autoLogin(autoLogin);
+        callSession.close();
+        apiService.completeSuccess();
+
+        assertRejected(autoLogin, PluginCallSession.SESSION_ENDED_MESSAGE, false);
+        assertCurrentAuthState();
+    }
+
+    @Test
+    public void closedSessionSkipsLateAutoLoginCredentialClear() throws Exception {
+        saveCurrentAuthState();
+        apiService.autoComplete = false;
+        apiService.failWith("unauthorized", new ResponseException("unauthorized", 401));
+        RecordingPluginCall autoLogin = call("autoLogin");
+
+        plugin.autoLogin(autoLogin);
+        callSession.close();
+        apiService.completeError();
+
+        assertRejected(autoLogin, PluginCallSession.SESSION_ENDED_MESSAGE, false);
+        assertCurrentAuthState();
+    }
+
+    @Test
+    public void routeReauthenticationCannotRestoreStateAfterSessionInvalidation() throws Exception {
+        credentialStore.save("current", "current-secret");
+        apiService.autoComplete = false;
+
+        authHandler.reauthenticateAfterRouteChange();
+        apiService.completeSuccess();
+        authHandler.invalidateSession();
+        apiService.completeSuccess();
+
+        assertNull(settingsStore.getString("auth_cookies_json"));
+        assertNull(settingsStore.getString("auth_username"));
+        assertNull(settingsStore.getString("auth_user_info_json"));
+        assertEquals("current", credentialStore.getUsername());
+        assertEquals("current-secret", credentialStore.getPassword());
+    }
+
+    private void saveCurrentAuthState() {
+        settingsStore.putString("auth_cookies_json", "[]");
+        settingsStore.putString("auth_username", "current");
+        settingsStore.putString(
+            "auth_user_info_json", "{\"username\":\"current\",\"uid\":\"current-user\"}");
+        credentialStore.save("current", "current-secret");
+    }
+
+    private void assertCurrentAuthState() {
+        assertEquals("[]", settingsStore.getString("auth_cookies_json"));
+        assertEquals("current", settingsStore.getString("auth_username"));
+        assertEquals("{\"username\":\"current\",\"uid\":\"current-user\"}",
+            settingsStore.getString("auth_user_info_json"));
+        assertEquals("current", credentialStore.getUsername());
+        assertEquals("current-secret", credentialStore.getPassword());
+    }
+
+    private void assertAuthStateCleared() {
+        assertNull(settingsStore.getString("auth_cookies_json"));
+        assertNull(settingsStore.getString("auth_username"));
+        assertNull(settingsStore.getString("auth_user_info_json"));
         assertNull(credentialStore.getUsername());
         assertNull(credentialStore.getPassword());
     }

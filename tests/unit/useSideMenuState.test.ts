@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import {
   collapseWideMenu,
+  EXPANDED_WIDE_MENU_MEDIA_QUERY,
   expandWideMenu,
   leftMenuOpen,
   isWideMenu,
@@ -70,32 +71,62 @@ describe('useSideMenuState', () => {
     state.setLeftMenuGestureEnabled(true)
   })
 
-  test('宽屏断点在 992px 边界动态切换并关闭窄屏 overlay', () => {
-    let changeListener: ((event: MediaQueryListEvent) => void) | undefined
-    const mediaQuery = {
-      matches: false,
-      addEventListener: vi.fn((_type: string, listener: (event: MediaQueryListEvent) => void) => {
-        changeListener = listener
-      }),
-      removeEventListener: vi.fn(),
-    } as unknown as MediaQueryList
-    const matchMedia = vi.fn(() => mediaQuery)
+  test('桌面侧栏在 960px 启用，中等宽度自动收起并在 1264px 展开', () => {
+    let wideChangeListener: ((event: MediaQueryListEvent) => void) | undefined
+    let expandedChangeListener: ((event: MediaQueryListEvent) => void) | undefined
+    const makeMediaQuery = (
+      matches: boolean,
+      assign: (listener: (event: MediaQueryListEvent) => void) => void,
+    ) =>
+      ({
+        matches,
+        addEventListener: vi.fn((_type: string, listener: (event: MediaQueryListEvent) => void) => {
+          assign(listener)
+        }),
+        removeEventListener: vi.fn(),
+      }) as unknown as MediaQueryList
+    const wideMediaQuery = makeMediaQuery(false, (listener) => {
+      wideChangeListener = listener
+    })
+    const expandedMediaQuery = makeMediaQuery(false, (listener) => {
+      expandedChangeListener = listener
+    })
+    const matchMedia = vi.fn((query: string) =>
+      query === WIDE_MENU_MEDIA_QUERY ? wideMediaQuery : expandedMediaQuery,
+    )
     vi.stubGlobal('matchMedia', matchMedia)
 
     startWideMenuTracking()
     expect(matchMedia).toHaveBeenCalledWith(WIDE_MENU_MEDIA_QUERY)
+    expect(matchMedia).toHaveBeenCalledWith(EXPANDED_WIDE_MENU_MEDIA_QUERY)
     expect(isWideMenu.value).toBe(false)
 
     leftMenuOpen.value = true
-    changeListener?.({ matches: true } as MediaQueryListEvent)
+    wideMediaQuery.matches = true
+    wideChangeListener?.({ matches: true } as MediaQueryListEvent)
     expect(isWideMenu.value).toBe(true)
+    expect(wideMenuCollapsed.value).toBe(true)
     expect(leftMenuOpen.value).toBe(false)
 
-    changeListener?.({ matches: false } as MediaQueryListEvent)
+    expandedMediaQuery.matches = true
+    expandedChangeListener?.({ matches: true } as MediaQueryListEvent)
+    expect(wideMenuCollapsed.value).toBe(false)
+
+    expandedMediaQuery.matches = false
+    expandedChangeListener?.({ matches: false } as MediaQueryListEvent)
+    expect(wideMenuCollapsed.value).toBe(true)
+
+    wideMediaQuery.matches = false
+    wideChangeListener?.({ matches: false } as MediaQueryListEvent)
     expect(isWideMenu.value).toBe(false)
+    expect(wideMenuCollapsed.value).toBe(false)
     expect(leftMenuOpen.value).toBe(false)
     stopWideMenuTracking()
-    expect(mediaQuery.removeEventListener).toHaveBeenCalledWith('change', changeListener)
+    expect(wideMediaQuery.removeEventListener).toHaveBeenCalledWith('change', wideChangeListener)
+    expect(expandedMediaQuery.removeEventListener).toHaveBeenCalledWith(
+      'change',
+      expandedChangeListener,
+    )
   })
 
   test('宽屏打开操作展开 rail，收起状态在运行期间保留', () => {

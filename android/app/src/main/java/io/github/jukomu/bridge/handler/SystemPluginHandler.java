@@ -2,11 +2,9 @@ package io.github.jukomu.bridge.handler;
 
 import android.Manifest;
 import android.app.Activity;
-import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.database.Cursor;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.Uri;
@@ -14,8 +12,8 @@ import android.os.Build;
 import android.os.Environment;
 import android.provider.DocumentsContract;
 import android.provider.MediaStore;
-import android.util.Log;
 import androidx.annotation.NonNull;
+import androidx.documentfile.provider.DocumentFile;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
@@ -24,13 +22,23 @@ import com.google.mlkit.vision.text.Text;
 import com.google.mlkit.vision.text.TextRecognition;
 import com.google.mlkit.vision.text.TextRecognizer;
 import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions;
+import io.github.jukomu.bridge.PluginCallSession;
+import io.github.jukomu.feature.localfile.data.LocalFileRef;
+import io.github.jukomu.feature.localfile.data.LocalFileRefResolver;
 import io.github.jukomu.jmcomic.core.client.impl.JmApiClient;
+import io.github.jukomu.platform.logging.ApplicationLogging;
 import io.github.jukomu.platform.permission.PermissionService;
 import io.github.jukomu.platform.permission.PermissionState;
+import io.github.jukomu.runtime.ServiceExecutors;
 import org.json.JSONArray;
 import org.json.JSONObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import java.io.File;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Map;
 import java.util.concurrent.*;
 import java.util.function.BiConsumer;
@@ -45,12 +53,21 @@ import static android.app.Activity.RESULT_OK;
  * <p>网络监听和 OCR 线程属于当前插件会话，调用 {@link #destroy()} 后停止接收新任务。
  */
 public final class SystemPluginHandler {
+    private static final Logger LOGGER = LoggerFactory.getLogger(SystemPluginHandler.class);
 
-    private static final String TAG = "SystemPluginHandler";
+    /**
+     * 封装可持久化 URI 权限操作，默认实现直接调用 ContentResolver。
+     */
+    @FunctionalInterface
+    public interface PersistableUriPermission {
+        void take(Uri uri, int flags);
+    }
+
     private static final long PROBE_DEBOUNCE_MS = 2000;
     private static final int REQUEST_PICK_IMAGE = 1001;
     private static final int REQUEST_PICK_FOLDER = 1002;
-    private static final String SESSION_ENDED_MESSAGE = "插件会话已结束";
+    private static final String SESSION_ENDED_MESSAGE =
+        PluginCallSession.SESSION_ENDED_MESSAGE;
 
     private final Context context;
     private final Supplier<Activity> activitySupplier;
@@ -58,7 +75,10 @@ public final class SystemPluginHandler {
     private final Supplier<JmApiClient> clientSupplier;
     private final Consumer<JSObject> networkProbeConsumer;
     private final BiConsumer<String, Integer> permissionRequester;
-    private final ExecutorService ocrExecutor;
+    private final PersistableUriPermission persistableUriPermission;
+    private final Executor ocrExecutor;
+    private final Executor fileOperationExecutor;
+    private final PluginCallSession backgroundCallSession = new PluginCallSession();
     private final Object probeLock = new Object();
     private final Object permissionLock = new Object();
     private final Object ocrLock = new Object();
@@ -79,13 +99,43 @@ public final class SystemPluginHandler {
                                Supplier<JmApiClient> clientSupplier,
                                Consumer<JSObject> networkProbeConsumer,
                                BiConsumer<String, Integer> permissionRequester) {
+        this(context, activitySupplier, permissionService, clientSupplier,
+            networkProbeConsumer, permissionRequester,
+            (uri, flags) -> context.getContentResolver()
+                .takePersistableUriPermission(uri, flags),
+            ServiceExecutors.fixed("ocr", 1),
+            ServiceExecutors.fixed("file-operation", 1));
+    }
+
+    public SystemPluginHandler(Context context, Supplier<Activity> activitySupplier,
+                               PermissionService permissionService,
+                               Supplier<JmApiClient> clientSupplier,
+                               Consumer<JSObject> networkProbeConsumer,
+                               BiConsumer<String, Integer> permissionRequester,
+                               PersistableUriPermission persistableUriPermission) {
+        this(context, activitySupplier, permissionService, clientSupplier,
+            networkProbeConsumer, permissionRequester, persistableUriPermission,
+            ServiceExecutors.fixed("ocr", 1),
+            ServiceExecutors.fixed("file-operation", 1));
+    }
+
+    public SystemPluginHandler(Context context, Supplier<Activity> activitySupplier,
+                               PermissionService permissionService,
+                               Supplier<JmApiClient> clientSupplier,
+                               Consumer<JSObject> networkProbeConsumer,
+                               BiConsumer<String, Integer> permissionRequester,
+                               PersistableUriPermission persistableUriPermission,
+                               Executor ocrExecutor,
+                               Executor fileOperationExecutor) {
         this.context = context;
         this.activitySupplier = activitySupplier;
         this.permissionService = permissionService;
         this.clientSupplier = clientSupplier;
         this.networkProbeConsumer = networkProbeConsumer;
         this.permissionRequester = permissionRequester;
-        this.ocrExecutor = Executors.newSingleThreadExecutor();
+        this.persistableUriPermission = persistableUriPermission;
+        this.ocrExecutor = ocrExecutor;
+        this.fileOperationExecutor = fileOperationExecutor;
     }
 
     /**
@@ -100,15 +150,11 @@ public final class SystemPluginHandler {
         connectivityManager = (ConnectivityManager) context.getSystemService(
             Context.CONNECTIVITY_SERVICE);
         if (connectivityManager == null) {
-            Log.w(TAG, "ConnectivityManager 不可用，跳过网络监听");
+            LOGGER.warn("ConnectivityManager 不可用，跳过网络监听");
             return;
         }
 
-        domainProbeExecutor = Executors.newSingleThreadScheduledExecutor(runnable -> {
-            Thread thread = new Thread(runnable, "domain-probe-debounce");
-            thread.setDaemon(true);
-            return thread;
-        });
+        domainProbeExecutor = ServiceExecutors.scheduled("domain-probe", 1);
 
         networkCallback = new ConnectivityManager.NetworkCallback() {
             @Override
@@ -118,7 +164,7 @@ public final class SystemPluginHandler {
                 event.put("message", "网络已切换，即将重新探活");
                 event.put("timestamp", System.currentTimeMillis());
                 publishNetworkEvent(event);
-                scheduleDomainProbe();
+                scheduleDomainProbe("网络变化");
             }
 
             @Override
@@ -133,11 +179,11 @@ public final class SystemPluginHandler {
 
         synchronized (probeLock) {
             if (destroyed) {
-                shutdownGracefully(domainProbeExecutor);
+                domainProbeExecutor.shutdownNow();
                 return;
             }
             connectivityManager.registerDefaultNetworkCallback(networkCallback);
-            Log.i(TAG, "网络变化监听已注册");
+            LOGGER.info("网络变化监听已注册");
         }
     }
 
@@ -178,16 +224,20 @@ public final class SystemPluginHandler {
         rejectPendingCall(notificationPermissionCall);
         rejectPendingCall(ocrCall);
         rejectPendingCall(folderCall);
+        backgroundCallSession.close();
 
         if (connectivityManager != null && networkCallback != null) {
             try {
                 connectivityManager.unregisterNetworkCallback(networkCallback);
             } catch (IllegalArgumentException error) {
-                Log.d(TAG, "取消注册网络回调失败", error);
+                LOGGER.debug("取消注册网络回调失败", error);
             }
         }
-        shutdownGracefully(domainProbeExecutor);
-        shutdownGracefully(ocrExecutor);
+        if (domainProbeExecutor != null) {
+            domainProbeExecutor.shutdownNow();
+        }
+        shutdownExecutor(ocrExecutor);
+        shutdownExecutor(fileOperationExecutor);
     }
 
     /**
@@ -208,7 +258,7 @@ public final class SystemPluginHandler {
             for (Map.Entry<String, Integer> entry : states.entrySet()) {
                 JSONObject domain = new JSONObject();
                 domain.put("domain", entry.getKey());
-                boolean reachable = entry.getValue() < (Integer.MAX_VALUE / 2);
+                boolean reachable = isDomainReachable(entry.getValue());
                 domain.put("reachable", reachable);
                 if (reachable) {
                     alive++;
@@ -216,7 +266,7 @@ public final class SystemPluginHandler {
                 domains.put(domain);
             }
             boolean allDeadFallback = !states.isEmpty()
-                && states.values().stream().allMatch(value -> value == -1);
+                && states.values().stream().allMatch(value -> value != null && value == -1);
 
             result.put("domains", domains);
             result.put("alive", alive);
@@ -224,7 +274,7 @@ public final class SystemPluginHandler {
             result.put("allDeadFallback", allDeadFallback);
             call.resolve(result);
         } catch (Exception error) {
-            Log.e(TAG, "获取域名状态失败", error);
+            LOGGER.error("获取域名状态失败", error);
             call.reject("获取域名状态失败，请稍后重试");
         }
     }
@@ -233,7 +283,7 @@ public final class SystemPluginHandler {
      * 将一次域名重新探活任务加入去抖调度队列。
      */
     public void reprobeDomains(PluginCall call) {
-        scheduleDomainProbe();
+        scheduleDomainProbe("手动请求");
         call.resolve();
     }
 
@@ -262,7 +312,7 @@ public final class SystemPluginHandler {
             result.put("results", items);
             call.resolve(result);
         } catch (Exception error) {
-            Log.e(TAG, "测速失败", error);
+            LOGGER.error("测速失败", error);
             call.reject("测速失败，请稍后重试");
         }
     }
@@ -344,7 +394,7 @@ public final class SystemPluginHandler {
             } else {
                 boolean granted = grantResults.length > 0
                     && grantResults[0] == PackageManager.PERMISSION_GRANTED;
-                Log.i(TAG, "启动时存储权限请求结果: granted=" + granted);
+                LOGGER.info("启动时存储权限请求结果: granted=" + granted);
             }
         } else if (requestCode == PermissionService.REQUEST_POST_NOTIFICATIONS) {
             boolean granted = permissionService.interpretNotificationResult(grantResults);
@@ -358,7 +408,7 @@ public final class SystemPluginHandler {
                 result.put("granted", granted);
                 call.resolve(result);
             } else {
-                Log.i(TAG, "通知权限请求结果: granted=" + granted);
+                LOGGER.info("通知权限请求结果: granted=" + granted);
             }
         }
     }
@@ -445,11 +495,8 @@ public final class SystemPluginHandler {
             return;
         }
 
-        try {
-            ocrExecutor.execute(() -> recognizeText(call, data));
-        } catch (RejectedExecutionException error) {
-            call.reject(SESSION_ENDED_MESSAGE);
-        }
+        backgroundCallSession.submit(
+            ocrExecutor, call, trackedCall -> recognizeText(trackedCall, data));
     }
 
     /**
@@ -511,43 +558,127 @@ public final class SystemPluginHandler {
             result.put("opened", true);
             call.resolve(result);
         } catch (RuntimeException error) {
-            Log.w(TAG, "打开通知设置失败", error);
+            LOGGER.warn("打开通知设置失败", error);
             call.reject("无法打开通知设置页: " + error.getMessage());
         }
     }
 
     /**
-     * 返回给定文件路径和 content URI 中当前可访问的条目。
+     * 返回给定文件引用中当前可访问的条目。
      */
     public void checkFilesExist(PluginCall call) {
+        JSArray fileRefs = call.getArray("fileRefs");
+        if (fileRefs == null) {
+            call.reject("fileRefs is required");
+            return;
+        }
+        backgroundCallSession.submit(fileOperationExecutor, call,
+            trackedCall -> checkFilesExistOnExecutor(trackedCall, fileRefs));
+    }
+
+    public void listLogFiles(PluginCall call) {
+        backgroundCallSession.submit(fileOperationExecutor, call, trackedCall -> {
+            try {
+                JSArray files = new JSArray();
+                for (ApplicationLogging.LogFile file : ApplicationLogging.listFiles(context)) {
+                    JSObject item = new JSObject();
+                    item.put("fileName", file.fileName());
+                    item.put("updatedAt", file.updatedAt());
+                    item.put("sizeBytes", file.sizeBytes());
+                    item.put("current", file.current());
+                    files.put(item);
+                }
+                JSObject result = new JSObject();
+                result.put("files", files);
+                trackedCall.resolve(result);
+            } catch (Exception error) {
+                trackedCall.reject("列出日志文件失败", error);
+            }
+        });
+    }
+
+    public void exportLogFiles(PluginCall call) {
+        String folderRef = call.getString("folderRef");
+        JSArray fileNames = call.getArray("fileNames");
+        if (folderRef == null || fileNames == null || fileNames.length() == 0) {
+            call.reject("folderRef和fileNames不能为空");
+            return;
+        }
+        backgroundCallSession.submit(fileOperationExecutor, call, trackedCall -> {
+            try {
+                LocalFileRef.Parsed folder = LocalFileRef.parse(folderRef);
+                if (folder.kind != LocalFileRef.Kind.FOLDER) throw new IllegalArgumentException("导出目标必须是目录");
+                DocumentFile documentFolder = LocalFileRefResolver.documentFile(context, folderRef);
+                Path pathFolder = LocalFileRefResolver.pathFile(folderRef) == null
+                    ? null : LocalFileRefResolver.pathFile(folderRef).toPath();
+                if (documentFolder == null && (pathFolder == null || !Files.isDirectory(pathFolder))) {
+                    throw new IllegalArgumentException("导出目录不存在");
+                }
+                JSArray exported = new JSArray();
+                JSArray skipped = new JSArray();
+                JSArray failed = new JSArray();
+                Path sourceDirectory = ApplicationLogging.logsDirectory(context).toFile()
+                    .getCanonicalFile().toPath();
+                boolean sameDirectory = pathFolder != null
+                    && sourceDirectory.equals(pathFolder.toFile().getCanonicalFile().toPath());
+                for (int index = 0; index < fileNames.length(); index++) {
+                    String fileName = fileNames.getString(index);
+                    try {
+                        Path source = ApplicationLogging.resolveLogFile(context, fileName);
+                        if (!Files.isRegularFile(source)) throw new java.io.FileNotFoundException(fileName);
+                        if (sameDirectory) {
+                            skipped.put(fileName);
+                        } else if (documentFolder != null) {
+                            DocumentFile target = documentFolder.findFile(fileName);
+                            if (target != null) target.delete();
+                            target = documentFolder.createFile("text/plain", fileName);
+                            if (target == null) throw new java.io.IOException("无法创建导出文件");
+                            try (InputStream input = Files.newInputStream(source);
+                                 OutputStream output = context.getContentResolver().openOutputStream(target.getUri())) {
+                                if (output == null) throw new java.io.IOException("无法写入导出文件");
+                                input.transferTo(output);
+                            }
+                            exported.put(fileName);
+                        } else if (pathFolder != null) {
+                            Files.copy(source, pathFolder.resolve(fileName), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                            exported.put(fileName);
+                        } else {
+                            throw new IllegalArgumentException("导出目录引用无效");
+                        }
+                    } catch (Exception error) {
+                        JSObject item = new JSObject();
+                        item.put("fileName", fileName);
+                        item.put("message", error.getMessage() == null ? "导出失败" : error.getMessage());
+                        failed.put(item);
+                    }
+                }
+                JSObject result = new JSObject();
+                result.put("exported", exported);
+                result.put("skipped", skipped);
+                result.put("failed", failed);
+                trackedCall.resolve(result);
+            } catch (Exception error) {
+                trackedCall.reject("导出日志失败", error);
+            }
+        });
+    }
+
+    private void checkFilesExistOnExecutor(PluginCall call, JSArray fileRefs) {
         try {
-            JSArray paths = call.getArray("paths");
-            if (paths == null) {
-                call.reject("paths is required");
+            if (destroyed) {
+                call.reject(SESSION_ENDED_MESSAGE);
                 return;
             }
-            ContentResolver resolver = context.getContentResolver();
-            File externalRoot = Environment.getExternalStorageDirectory();
             JSArray existing = new JSArray();
-            for (int index = 0; index < paths.length(); index++) {
-                String path = paths.getString(index);
-                if (path == null) {
-                    continue;
-                }
-                boolean exists;
-                if (path.startsWith("content://")) {
-                    exists = checkContentUriExists(resolver, path);
-                } else if (path.startsWith("/")) {
-                    exists = new File(path).exists();
-                } else {
-                    exists = new File(externalRoot, path).exists();
-                }
-                if (exists) {
-                    existing.put(path);
+            for (int index = 0; index < fileRefs.length(); index++) {
+                String fileRef = fileRefs.getString(index);
+                if (fileRef != null && LocalFileRef.parse(fileRef).kind == LocalFileRef.Kind.FILE
+                    && LocalFileRefResolver.exists(context, fileRef)) {
+                    existing.put(fileRef);
                 }
             }
             JSObject result = new JSObject();
-            result.put("existing", existing);
+            result.put("existingFileRefs", existing);
             call.resolve(result);
         } catch (Exception error) {
             call.reject(error.getMessage(), error);
@@ -555,15 +686,23 @@ public final class SystemPluginHandler {
     }
 
     /**
-     * 返回外部存储根目录的绝对路径。
+     * 返回默认外部存储目录的 folder:path ref 与展示路径。
      */
     public void getExternalStoragePath(PluginCall call) {
         JSObject result = new JSObject();
-        result.put("path", Environment.getExternalStorageDirectory().getAbsolutePath());
+        String path = Environment.getExternalStorageDirectory().getAbsolutePath();
+        try {
+            result.put("folderRef", LocalFileRef.createPathFolderRef(path));
+        } catch (Exception error) {
+            call.reject("无法创建默认 PDF 文件夹引用", error);
+            return;
+        }
+        result.put("displayPath", path);
+        result.put("provider", "path");
         call.resolve(result);
     }
 
-    private void scheduleDomainProbe() {
+    private void scheduleDomainProbe(String trigger) {
         synchronized (probeLock) {
             if (destroyed || domainProbeExecutor == null) {
                 return;
@@ -573,16 +712,32 @@ public final class SystemPluginHandler {
                 return;
             }
             if (pendingProbe != null) {
-                pendingProbe.cancel(false);
+                boolean cancelled = pendingProbe.cancel(false);
+                if (cancelled) {
+                    LOGGER.info("{}触发域名探活，已覆盖上一轮待执行任务", trigger);
+                } else {
+                    LOGGER.info("{}触发域名探活，上一轮任务已开始执行，已加入新任务", trigger);
+                }
+            } else {
+                LOGGER.info("{}触发域名探活，已加入去抖队列", trigger);
             }
-            pendingProbe = domainProbeExecutor.schedule(
-                () -> probeDomains(client),
+            ScheduledFuture<?>[] scheduledTask = new ScheduledFuture<?>[1];
+            scheduledTask[0] = domainProbeExecutor.schedule(
+                () -> {
+                    synchronized (probeLock) {
+                        if (pendingProbe == scheduledTask[0]) {
+                            pendingProbe = null;
+                        }
+                    }
+                    probeDomains(client, trigger);
+                },
                 PROBE_DEBOUNCE_MS,
                 TimeUnit.MILLISECONDS);
+            pendingProbe = scheduledTask[0];
         }
     }
 
-    private void probeDomains(JmApiClient client) {
+    private void probeDomains(JmApiClient client, String trigger) {
         try {
             JSObject startEvent = new JSObject();
             startEvent.put("phase", "probing");
@@ -590,13 +745,12 @@ public final class SystemPluginHandler {
             startEvent.put("timestamp", System.currentTimeMillis());
             publishNetworkEvent(startEvent);
 
-            Log.i(TAG, "重新探活域名...");
+            LOGGER.info("开始域名探活，触发来源={}", trigger);
             client.reprobeDomains();
-            Log.i(TAG, "域名重新探活完成");
 
             publishDomainProbeResult(client);
         } catch (Exception error) {
-            Log.w(TAG, "域名重新探活失败", error);
+            LOGGER.warn("域名重新探活失败", error);
             JSObject errorEvent = new JSObject();
             errorEvent.put("phase", "error");
             String message = error.getMessage();
@@ -616,14 +770,14 @@ public final class SystemPluginHandler {
             for (Map.Entry<String, Integer> entry : states.entrySet()) {
                 JSONObject domain = new JSONObject();
                 domain.put("domain", entry.getKey());
-                domain.put("reachable", entry.getValue() < (Integer.MAX_VALUE / 2));
+                domain.put("reachable", isDomainReachable(entry.getValue()));
                 if (domain.getBoolean("reachable")) {
                     alive++;
                 }
                 domains.put(domain);
             }
             boolean allDeadFallback = !states.isEmpty()
-                && states.values().stream().allMatch(value -> value == -1);
+                && states.values().stream().allMatch(value -> value != null && value == -1);
             result.put("allDeadFallback", allDeadFallback);
             result.put("domains", domains);
             result.put("alive", alive);
@@ -634,6 +788,7 @@ public final class SystemPluginHandler {
                 allDeadFallback
                     ? "探活完成 · 全部不可达"
                     : "探活完成 · " + alive + "/" + states.size() + " 可达");
+            LOGGER.info("域名探活完成: {}/{} 个域名可达", alive, states.size());
             publishNetworkEvent(JSObject.fromJSONObject(result));
         } catch (Exception ignored) {
             JSObject result = new JSObject();
@@ -650,6 +805,10 @@ public final class SystemPluginHandler {
                 networkProbeConsumer.accept(event);
             }
         }
+    }
+
+    private static boolean isDomainReachable(Integer state) {
+        return state != null && state >= 0 && state < (Integer.MAX_VALUE / 2);
     }
 
     private void recognizeText(PluginCall call, Intent data) {
@@ -681,7 +840,7 @@ public final class SystemPluginHandler {
                 result.put("error", "识别超时，请重试");
             } else if (errorHolder[0] != null) {
                 result.put("text", "");
-                Log.e(TAG, "OCR识别失败", errorHolder[0]);
+                LOGGER.error("OCR识别失败", errorHolder[0]);
                 result.put("error", "识别失败，请重试");
             } else if (resultHolder[0] != null) {
                 result.put("text", resultHolder[0].getText());
@@ -694,7 +853,7 @@ public final class SystemPluginHandler {
         } catch (Exception error) {
             JSObject result = new JSObject();
             result.put("text", "");
-            Log.e(TAG, "OCR调用失败", error);
+            LOGGER.error("OCR调用失败", error);
             result.put("error", "识别失败，请重试");
             call.resolve(result);
         }
@@ -712,7 +871,9 @@ public final class SystemPluginHandler {
 
         JSObject result = new JSObject();
         if (resultCode != RESULT_OK || data == null || data.getData() == null) {
-            result.put("path", "");
+            result.put("folderRef", "");
+            result.put("displayPath", "");
+            result.put("provider", "saf");
             result.put("cancelled", true);
             call.resolve(result);
             return;
@@ -720,17 +881,20 @@ public final class SystemPluginHandler {
 
         Uri treeUri = data.getData();
         try {
-            context.getContentResolver().takePersistableUriPermission(
+            persistableUriPermission.take(
                 treeUri,
                 Intent.FLAG_GRANT_READ_URI_PERMISSION
                     | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
         } catch (Exception error) {
-            Log.w(TAG, "takePersistableUriPermission failed", error);
+            LOGGER.warn("takePersistableUriPermission failed", error);
+            call.reject("无法持久化文件夹权限", error);
+            return;
         }
 
         String path = treeUriToPath(treeUri);
-        result.put("path", path != null ? path : "");
-        result.put("treeUri", treeUri.toString());
+        result.put("folderRef", LocalFileRef.createSafFolderRef(treeUri.toString()));
+        result.put("displayPath", path != null ? path : treeUri.toString());
+        result.put("provider", "saf");
         result.put("cancelled", false);
         call.resolve(result);
     }
@@ -774,21 +938,6 @@ public final class SystemPluginHandler {
         return "/storage/" + volume + "/" + subPath;
     }
 
-    private static boolean checkContentUriExists(ContentResolver resolver, String uriValue) {
-        Uri uri = Uri.parse(uriValue);
-        Cursor cursor = null;
-        try {
-            cursor = resolver.query(uri, null, null, null, null);
-            return cursor != null && cursor.getCount() > 0;
-        } catch (Exception error) {
-            return false;
-        } finally {
-            if (cursor != null) {
-                cursor.close();
-            }
-        }
-    }
-
     private static JSObject permissionResult(PermissionState state) {
         JSObject result = new JSObject();
         result.put("apiLevel", state.apiLevel);
@@ -805,17 +954,10 @@ public final class SystemPluginHandler {
         call.reject(SESSION_ENDED_MESSAGE);
     }
 
-    private static void shutdownGracefully(ExecutorService executor) {
-        if (executor == null) {
-            return;
-        }
-        executor.shutdown();
-        try {
-            if (!executor.awaitTermination(2, TimeUnit.SECONDS)) {
-                executor.shutdownNow();
-            }
-        } catch (InterruptedException error) {
-            executor.shutdownNow();
+    private static void shutdownExecutor(Executor executor) {
+        if (executor instanceof ExecutorService) {
+            ((ExecutorService) executor).shutdownNow();
         }
     }
+
 }

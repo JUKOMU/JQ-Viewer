@@ -1,0 +1,359 @@
+package io.github.jukomu.desktop.feature.auth;
+
+import io.github.jukomu.desktop.bridge.ApiException;
+import io.github.jukomu.jmcomic.api.client.JmClient;
+import io.github.jukomu.jmcomic.api.exception.NetworkException;
+import io.github.jukomu.jmcomic.api.exception.ResponseException;
+import io.github.jukomu.jmcomic.api.model.JmUserInfo;
+import org.junit.jupiter.api.Test;
+
+import java.lang.reflect.Proxy;
+import java.util.ArrayDeque;
+import java.util.Queue;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class AuthServiceTest {
+    @Test
+    void restoresSessionFromSavedCredentialsAfterRestart() {
+        MemoryCredentialStore credentials = new MemoryCredentialStore(true);
+        AuthService firstProcess = new AuthService(client(null), credentials);
+        firstProcess.login("alice", "secret");
+
+        AuthService restartedProcess = new AuthService(client(null), credentials);
+
+        assertFalse(restartedProcess.state().loggedIn());
+        assertTrue(restartedProcess.autoLogin().success());
+        assertTrue(restartedProcess.state().loggedIn());
+        assertEquals("alice", restartedProcess.state().username());
+    }
+
+    @Test
+    void reusesInMemoryCredentialsWithoutReloadingSecureStorage() {
+        MemoryCredentialStore credentials = new MemoryCredentialStore(true);
+        credentials.save("alice", "secret");
+        AuthService service = new AuthService(client(null), credentials);
+
+        assertTrue(service.autoLogin().success());
+        assertTrue(service.autoLogin().success());
+
+        assertEquals(1, credentials.loadCalls());
+    }
+
+    @Test
+    void keepsManualLoginAvailableWhenSecureStorageIsUnavailable() {
+        MemoryCredentialStore credentials = new MemoryCredentialStore(false);
+        AuthService service = new AuthService(client(null), credentials);
+
+        assertEquals("alice", service.login("alice", "secret").username());
+        assertTrue(service.autoLogin().success());
+        assertNull(credentials.loadDirectly());
+    }
+
+    @Test
+    void clearsOnlyConfirmedInvalidCredentials() {
+        MemoryCredentialStore credentials = new MemoryCredentialStore(true);
+        credentials.save("alice", "secret");
+
+        AuthService networkFailure = new AuthService(
+                client(new NetworkException("network unavailable")), credentials);
+        ApiException network = assertThrows(ApiException.class, networkFailure::autoLogin);
+        assertEquals("network", network.code());
+        assertEquals("alice", credentials.loadDirectly().username());
+
+        AuthService authFailure = new AuthService(
+                client(new ResponseException("unauthorized", 401)), credentials);
+        ApiException denied = assertThrows(ApiException.class, authFailure::autoLogin);
+        assertEquals("permission-denied", denied.code());
+        assertEquals("alice", credentials.loadDirectly().username());
+
+        credentials.save("alice", "secret");
+        AuthService serverFailure = new AuthService(
+                client(new ResponseException("service unavailable", 503)), credentials);
+        ApiException unavailable = assertThrows(ApiException.class, serverFailure::autoLogin);
+        assertEquals("network", unavailable.code());
+        assertEquals("alice", credentials.loadDirectly().username());
+
+        AuthService businessFailure = new AuthService(
+                client(new ResponseException("invalid request", 400)), credentials);
+        ApiException business = assertThrows(ApiException.class, businessFailure::autoLogin);
+        assertEquals("internal", business.code());
+        assertEquals(400, business.status());
+        assertEquals("alice", credentials.loadDirectly().username());
+    }
+
+    @Test
+    void failedManualLoginKeepsApplicationCredentials() {
+        MemoryCredentialStore credentials = new MemoryCredentialStore(true);
+        credentials.save("alice", "secret");
+        AuthService service = new AuthService(
+                client(new ResponseException("unauthorized", 401)), credentials);
+
+        assertThrows(ApiException.class, () -> service.login("alice", "wrong"));
+        assertEquals("alice", credentials.loadDirectly().username());
+        assertEquals("secret", credentials.loadDirectly().password());
+    }
+
+    @Test
+    void logoutClearsSessionAndSavedCredentials() {
+        MemoryCredentialStore credentials = new MemoryCredentialStore(true);
+        AuthService service = new AuthService(client(null), credentials);
+        service.login("alice", "secret");
+
+        service.logout();
+
+        assertFalse(service.state().loggedIn());
+        assertNull(credentials.loadDirectly());
+    }
+
+    @Test
+    void logoutClearsSavedCredentialsWhenOnlineClientIsUnavailable() {
+        MemoryCredentialStore credentials = new MemoryCredentialStore(true);
+        credentials.save("alice", "secret");
+        AuthService service = new AuthService(() -> null, credentials);
+
+        service.logout();
+
+        assertNull(credentials.loadDirectly());
+    }
+
+    @Test
+    void logoutClearsLocalStateWhenRemoteLogoutFails() {
+        MemoryCredentialStore networkCredentials = new MemoryCredentialStore(true);
+        AuthService networkFailure = new AuthService(
+                client(null, new NetworkException("network unavailable")), networkCredentials);
+        networkFailure.login("alice", "secret");
+
+        networkFailure.logout();
+
+        assertFalse(networkFailure.state().loggedIn());
+        assertNull(networkCredentials.loadDirectly());
+
+        MemoryCredentialStore responseCredentials = new MemoryCredentialStore(true);
+        AuthService responseFailure = new AuthService(
+                client(null, new ResponseException("logout rejected", 403)), responseCredentials);
+        responseFailure.login("alice", "secret");
+
+        responseFailure.logout();
+
+        assertFalse(responseFailure.state().loggedIn());
+        assertNull(responseCredentials.loadDirectly());
+    }
+
+    @Test
+    void logoutReturnsBeforeRemoteRequestRuns() {
+        MemoryCredentialStore credentials = new MemoryCredentialStore(true);
+        Queue<Runnable> remoteTasks = new ArrayDeque<>();
+        AtomicBoolean remoteLogoutCalled = new AtomicBoolean();
+        JmClient client = client(null, null, () -> remoteLogoutCalled.set(true));
+        AuthService service = new AuthService(() -> client, credentials, remoteTasks::add);
+        service.login("alice", "secret");
+
+        service.logout();
+
+        assertFalse(service.state().loggedIn());
+        assertNull(credentials.loadDirectly());
+        assertFalse(remoteLogoutCalled.get());
+        assertEquals(1, remoteTasks.size());
+
+        remoteTasks.remove().run();
+        assertTrue(remoteLogoutCalled.get());
+    }
+
+    @Test
+    void delayedRemoteLogoutDoesNotTerminateNewLoginSession() {
+        MemoryCredentialStore credentials = new MemoryCredentialStore(true);
+        Queue<Runnable> remoteTasks = new ArrayDeque<>();
+        AtomicBoolean remoteLogoutCalled = new AtomicBoolean();
+        JmClient client = client(null, null, () -> remoteLogoutCalled.set(true));
+        AuthService service = new AuthService(() -> client, credentials, remoteTasks::add);
+        service.login("alice", "old-secret");
+        service.logout();
+
+        service.login("alice", "new-secret");
+        remoteTasks.remove().run();
+
+        assertFalse(remoteLogoutCalled.get());
+        assertTrue(service.state().loggedIn());
+        assertEquals("new-secret", credentials.loadDirectly().password());
+    }
+
+    @Test
+    void logoutInvalidatesAutoLoginBeforeCredentialsAreLoaded() throws Exception {
+        MemoryCredentialStore credentials = new MemoryCredentialStore(true);
+        credentials.save("alice", "secret");
+        CountDownLatch loginEntered = new CountDownLatch(1);
+        CountDownLatch releaseLogin = new CountDownLatch(1);
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        AuthService service = new AuthService(
+                client(null, null, () -> { }, () -> {
+                    loginEntered.countDown();
+                    try {
+                        assertTrue(releaseLogin.await(5, TimeUnit.SECONDS));
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        throw new AssertionError(interrupted);
+                    }
+                }), credentials);
+        credentials.blockNextLoad();
+
+        Thread autoLogin = new Thread(() -> {
+            try {
+                service.autoLogin();
+            } catch (Throwable error) {
+                failure.set(error);
+            }
+        });
+        autoLogin.start();
+        assertTrue(credentials.loadEntered.await(5, TimeUnit.SECONDS));
+
+        Thread logout = new Thread(service::logout);
+        logout.start();
+        credentials.releaseLoad.countDown();
+        assertTrue(loginEntered.await(5, TimeUnit.SECONDS));
+        long logoutDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (credentials.loadDirectly() != null && System.nanoTime() < logoutDeadline) {
+            Thread.sleep(10);
+        }
+        assertNull(credentials.loadDirectly());
+        releaseLogin.countDown();
+
+        autoLogin.join(5000);
+        logout.join(5000);
+        assertTrue(failure.get() instanceof ApiException);
+        assertEquals("cancelled", ((ApiException) failure.get()).code());
+        assertFalse(service.state().loggedIn());
+        assertNull(credentials.loadDirectly());
+    }
+
+    private static JmClient client(RuntimeException loginFailure) {
+        return client(loginFailure, null);
+    }
+
+    private static JmClient client(RuntimeException loginFailure, RuntimeException logoutFailure) {
+        return client(loginFailure, logoutFailure, () -> {
+        }, () -> {
+        });
+    }
+
+    private static JmClient client(
+            RuntimeException loginFailure,
+            RuntimeException logoutFailure,
+            Runnable logoutAction
+    ) {
+        return client(loginFailure, logoutFailure, logoutAction, () -> {
+        });
+    }
+
+    private static JmClient client(
+            RuntimeException loginFailure,
+            RuntimeException logoutFailure,
+            Runnable logoutAction,
+            Runnable loginAction
+    ) {
+        return (JmClient) Proxy.newProxyInstance(
+                JmClient.class.getClassLoader(),
+                new Class<?>[]{JmClient.class},
+                (proxy, method, arguments) -> {
+                    if (method.getDeclaringClass() == Object.class) {
+                        return switch (method.getName()) {
+                            case "toString" -> "AuthTestJmClient";
+                            case "hashCode" -> System.identityHashCode(proxy);
+                            case "equals" -> proxy == arguments[0];
+                            default -> throw new AssertionError(method.getName());
+                        };
+                    }
+                    return switch (method.getName()) {
+                        case "login" -> {
+                            loginAction.run();
+                            if (loginFailure != null) throw loginFailure;
+                            yield userInfo();
+                        }
+                        case "logout" -> {
+                            logoutAction.run();
+                            if (logoutFailure != null) throw logoutFailure;
+                            yield null;
+                        }
+                        default -> throw new AssertionError("未预期的客户端调用: " + method.getName());
+                    };
+                }
+        );
+    }
+
+    private static JmUserInfo userInfo() {
+        return new JmUserInfo(
+                "user-1", "alice", "alice@example.invalid", true, "avatar.jpg", "Alice",
+                "", "", 10, 2, 3, "Level 3", 100, 50, 0.5, 100);
+    }
+
+    private static final class MemoryCredentialStore implements CredentialStore {
+        private final boolean available;
+        private LoginCredentials credentials;
+        private int loadCalls;
+        private CountDownLatch loadEntered;
+        private CountDownLatch releaseLoad;
+
+        private MemoryCredentialStore(boolean available) {
+            this.available = available;
+        }
+
+        @Override
+        public boolean isAvailable() {
+            return available;
+        }
+
+        @Override
+        public LoginCredentials load() {
+            if (!available) throw new IllegalStateException("unavailable");
+            loadCalls++;
+            LoginCredentials loaded = credentials;
+            CountDownLatch entered = loadEntered;
+            CountDownLatch release = releaseLoad;
+            if (entered != null && release != null) {
+                entered.countDown();
+                try {
+                    if (!release.await(5, TimeUnit.SECONDS)) {
+                        throw new AssertionError("凭据加载未及时释放");
+                    }
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new AssertionError(interrupted);
+                }
+            }
+            return loaded;
+        }
+
+        private void blockNextLoad() {
+            loadEntered = new CountDownLatch(1);
+            releaseLoad = new CountDownLatch(1);
+        }
+
+        @Override
+        public void save(String username, String password) {
+            if (!available) throw new IllegalStateException("unavailable");
+            credentials = new LoginCredentials(username, password);
+        }
+
+        @Override
+        public void clear() {
+            if (!available) throw new IllegalStateException("unavailable");
+            credentials = null;
+        }
+
+        private LoginCredentials loadDirectly() {
+            return credentials;
+        }
+
+        private int loadCalls() {
+            return loadCalls;
+        }
+    }
+}

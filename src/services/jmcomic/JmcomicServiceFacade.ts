@@ -1,15 +1,18 @@
-import { createAppAlert } from '@/services/AppAlertService'
 import type {
   BrowseHistoryRange,
   BrowseHistoryItem,
+  ClientStateSnapshot,
   DownloadProgressEvent,
   FavoriteQuery,
   ForumQuery,
   ImageInfo,
-  ImportPdfItem,
+  ImportLocalFileItem,
   NetworkProbeEvent,
-  PdfExportTask,
-  PdfExportProgressEvent,
+  ExportTask,
+  ExportFormat,
+  ExportProgressEvent,
+  ExportStatus,
+  LocalFileRecord,
   RelocationProgress,
   SearchQuery,
   SearchResultItem,
@@ -21,52 +24,21 @@ import type {
   JmcomicClient,
   JmcomicListenerHandle,
 } from './JmcomicClient'
-import { jmcomicNativeClient } from './JmcomicNativeClient'
+import { createActiveFacadeClient } from '@/runtime/facadeClient'
+import type { FileRef, FolderRef } from '@/runtime/FileReferences'
+import { getRuntime } from '@/runtime/runtimeContext'
+import { NotificationPermissionService } from '@/services/NotificationPermissionService'
 
-const native: JmcomicClient = jmcomicNativeClient
-
-let downloadNotificationPrompted = false
-let downloadNotificationPromptPromise: Promise<void> | null = null
-
-async function ensureDownloadNotificationPermission(): Promise<void> {
-  if (downloadNotificationPrompted) return
-  if (downloadNotificationPromptPromise) return downloadNotificationPromptPromise
-
-  downloadNotificationPromptPromise = (async () => {
-    try {
-      const check = await native.checkNotificationPermission()
-      if (check.granted) {
-        downloadNotificationPrompted = true
-        return
-      }
-
-      const alert = await createAppAlert({
-        tone: 'info',
-        header: '需要通知权限',
-        message:
-          '章节下载将在后台进行，需要通过通知查看进度。拒绝后仍会继续下载，但不会显示系统通知。',
-        buttons: [
-          { text: '暂不授权', role: 'cancel' },
-          { text: '允许通知', role: 'confirm' },
-        ],
-      })
-      await alert.present()
-      const dismissed = await alert.onDidDismiss()
-      if (dismissed.role === 'confirm') {
-        await native.requestNotificationPermission()
-      }
-    } catch {
-      // Web 调试或旧系统异常时不阻塞下载提交。
-    } finally {
-      downloadNotificationPrompted = true
-      downloadNotificationPromptPromise = null
-    }
-  })()
-
-  return downloadNotificationPromptPromise
-}
+/** 惰性 facade client：页面沿用旧 JmcomicClient 接口，底层由当前 runtime 端口动态提供。 */
+const native: JmcomicClient = createActiveFacadeClient(getRuntime)
 
 export const JmcomicService = {
+  /** Desktop 事件流重连后重新读取页面权威状态；Android 无需提供该能力。 */
+  addStateInvalidatedListener(handler: () => void): Promise<JmcomicListenerHandle | null> {
+    const subscribe = getRuntime().events.onStateInvalidated
+    return subscribe ? subscribe(handler) : Promise.resolve(null)
+  },
+
   search(query: SearchQuery) {
     return native.search({ query })
   },
@@ -201,12 +173,12 @@ export const JmcomicService = {
     return native.setDownloadConcurrency({ n })
   },
 
-  /** 设置下载内容是否公开（系统相册可见） */
+  /** 切换平台下载位置：Android 公开目录或 Desktop 自定义目录 */
   setDownloadPublic(open: boolean) {
     return native.setDownloadPublic({ open })
   },
 
-  /** 查询下载内容是否公开 */
+  /** 查询当前下载位置状态 */
   getDownloadPublic() {
     return native.getDownloadPublic()
   },
@@ -276,9 +248,27 @@ export const JmcomicService = {
     return native.addListener('networkProbe', handler)
   },
 
+  addClientStateListener(
+    handler: (data: ClientStateSnapshot) => void,
+  ): Promise<JmcomicListenerHandle> {
+    return Promise.resolve().then(() => native.addListener('clientStateChanged', handler))
+  },
+
   /** 读取 domainManager 中已有的域名连通性状态（同步返回，不触发探活） */
   getDomainStates() {
     return native.getDomainStates()
+  },
+
+  getUsedDomain() {
+    return native.getUsedDomain()
+  },
+
+  applyApiRoute(options: { mode: 'auto' | 'manual'; domain?: string }) {
+    return native.applyApiRoute(options)
+  },
+
+  setApiRoutePreference(options: { mode: 'auto' | 'manual'; domain?: string }) {
+    return native.setApiRoutePreference(options)
   },
 
   /** 手动触发域名重新探活（结果通过 networkProbe 事件推送） */
@@ -296,6 +286,10 @@ export const JmcomicService = {
     return native.getInitStatus()
   },
 
+  getClientState() {
+    return native.getClientState()
+  },
+
   // ---- 下载相关 ----
 
   /**
@@ -309,7 +303,7 @@ export const JmcomicService = {
     chapterTitle: string,
     coverUrl: string,
   ) {
-    await ensureDownloadNotificationPermission()
+    await NotificationPermissionService.ensureDownloadPermission()
     return native.downloadChapter({ albumId, chapterId, albumTitle, chapterTitle, coverUrl })
   },
 
@@ -482,116 +476,140 @@ export const JmcomicService = {
     return native.pickImageAndOcr()
   },
 
-  // ========== PDF 导出 ==========
+  // ========== 文件导出 ==========
 
-  exportPdfBatch(tasks: PdfExportTask[]) {
-    return native.exportPdfBatch({ tasks })
+  exportBatch(tasks: ExportTask[]) {
+    return getRuntime().services.localFiles.exportBatch({ tasks })
   },
 
-  pickFolder() {
-    return native.pickFolder()
+  pickFolder(purpose: 'local-file-root' | 'export' | 'download' = 'local-file-root') {
+    return getRuntime().services.files.pickFolder(purpose)
   },
 
   // ========== PDF 导入 ==========
 
-  scanPdfFiles(path: string, treeUri?: string) {
-    return native.scanPdfFiles({ path, treeUri })
+  scanImportableFiles(folder: FolderRef, formats: ExportFormat[] = ['pdf']) {
+    return getRuntime().services.files.scanImportableFiles(folder, formats)
   },
 
-  importPdfs(items: ImportPdfItem[]) {
-    return native.importPdfs({ items })
+  importLocalFiles(items: ImportLocalFileItem[]) {
+    return getRuntime().services.localFiles.importLocalFiles(items)
   },
 
-  getImportedPdfs() {
-    return native.getImportedPdfs()
+  getImportedLocalFiles() {
+    return getRuntime().services.localFiles.getImportedLocalFiles()
   },
 
-  getPdfFiles(options: Parameters<JmcomicClient['getPdfFiles']>[0]) {
-    return native.getPdfFiles(options)
+  getLocalFiles(options: {
+    formats?: ExportFormat[]
+    sourceType?: 'imported' | 'exported'
+    availability?: LocalFileRecord['availability'] | 'problem'
+    fileId?: number
+    albumId?: string
+    chapterId?: string
+    folderId?: string
+    query?: string
+    cursor?: string
+    limit: number
+  }) {
+    return getRuntime().services.localFiles.getLocalFiles(options)
   },
 
-  refreshPdfFileAvailability(ids: number[]) {
-    return native.refreshPdfFileAvailability({ ids })
+  refreshLocalFileAvailability(ids: number[]) {
+    return getRuntime().services.localFiles.refreshLocalFileAvailability(ids)
   },
 
-  inspectPdfFileForDeletion(id: number) {
-    return native.inspectPdfFileForDeletion({ id })
+  inspectLocalFileForDeletion(id: number) {
+    return getRuntime().services.localFiles.inspectLocalFileForDeletion(id)
   },
 
-  verifyPdfFile(id: number) {
-    return native.verifyPdfFile({ id })
+  verifyLocalFile(id: number) {
+    return getRuntime().services.localFiles.verifyLocalFile(id)
   },
 
-  removePdfFromLibrary(id: number) {
-    return native.removePdfFromLibrary({ id })
+  removeLocalFileFromLibrary(id: number) {
+    return getRuntime().services.localFiles.removeLocalFileFromLibrary(id)
   },
 
-  deletePdfFile(id: number) {
-    return native.deletePdfFile({ id })
+  deleteLocalFile(id: number) {
+    return getRuntime().services.localFiles.deleteLocalFile(id)
   },
 
-  getPdfManagementState() {
-    return native.getPdfManagementState()
+  getLocalFileManagementState() {
+    return getRuntime().services.localFiles.getLocalFileManagementState()
   },
 
-  acknowledgePdfDatabaseReset() {
-    return native.acknowledgePdfDatabaseReset()
+  acknowledgeLocalFileDatabaseReset() {
+    return getRuntime().services.localFiles.acknowledgeLocalFileDatabaseReset()
   },
 
-  getPdfExportTasks(options: Parameters<JmcomicClient['getPdfExportTasks']>[0]) {
-    return native.getPdfExportTasks(options)
+  getExportTasks(options: {
+    format?: ExportFormat
+    status?: ExportStatus
+    cursor?: string
+    limit: number
+  }) {
+    return getRuntime().services.localFiles.getExportTasks(options)
   },
 
-  getPdfExportTask(exportId: string) {
-    return native.getPdfExportTask({ exportId })
+  getExportTask(exportId: string) {
+    return getRuntime().services.localFiles.getExportTask(exportId)
   },
 
-  cancelPdfExport(exportId: string) {
-    return native.cancelPdfExport({ exportId })
+  cancelExport(exportId: string) {
+    return getRuntime().services.localFiles.cancelExport(exportId)
   },
 
-  retryPdfExport(exportId: string, allowOverwrite = false) {
-    return native.retryPdfExport({ exportId, allowOverwrite })
+  retryExport(exportId: string, allowOverwrite = false) {
+    return getRuntime().services.localFiles.retryExport(exportId, allowOverwrite)
   },
 
-  deletePdfExportTask(exportId: string) {
-    return native.deletePdfExportTask({ exportId })
+  deleteExportTask(exportId: string) {
+    return getRuntime().services.localFiles.deleteExportTask(exportId)
   },
 
-  addPdfExportProgressListener(handler: (event: PdfExportProgressEvent) => void) {
-    return native.addListener('pdfExportProgress', handler)
+  addExportProgressListener(handler: (event: ExportProgressEvent) => void) {
+    return getRuntime().services.localFiles.onProgress(handler)
   },
 
   updateLocalEpisodeType(albumId: string, isSingleEpisode: boolean) {
-    return native.updateLocalEpisodeType({ albumId, isSingleEpisode })
+    return getRuntime().services.localFiles.updateLocalEpisodeType(albumId, isSingleEpisode)
   },
 
-  deleteImportedPdf(id: number) {
-    return native.deleteImportedPdf({ id })
+  deleteImportedLocalFile(id: number) {
+    return getRuntime().services.localFiles.deleteImportedLocalFile(id)
   },
 
-  openPdf(filePath: string) {
-    return native.openPdf({ filePath })
+  openLocalFile(file: FileRef) {
+    return getRuntime().services.localFiles.openLocalFile(file)
   },
 
-  openPdfFolder(filePath: string) {
-    return native.openPdfFolder({ filePath })
+  openLocalFileFolder(file: FileRef) {
+    return getRuntime().services.localFiles.openLocalFileFolder(file)
   },
 
-  getPdfInfo(filePath: string) {
-    return native.getPdfInfo({ filePath })
+  getPdfInfo(file: FileRef) {
+    return getRuntime().services.localFiles.getPdfInfo(file)
   },
 
-  renderPdfPage(filePath: string, page: number, targetWidth: number) {
-    return native.renderPdfPage({ filePath, page, targetWidth })
+  getCbzInfo(file: FileRef) {
+    return getRuntime().services.localFiles.getCbzInfo(file)
   },
 
-  checkFilesExist(paths: string[]) {
-    return native.checkFilesExist({ paths })
+  checkFilesExist(files: FileRef[]) {
+    return getRuntime().services.files.checkFilesExist(files)
   },
 
   getExternalStoragePath() {
-    return native.getExternalStoragePath()
+    return getRuntime()
+      .services.files.getDefaultFolder('export')
+      .then((folder) => ({
+        folderRef: String(folder.ref),
+        displayPath: folder.displayPath,
+        provider: String(folder.ref).startsWith('folder:saf:')
+          ? ('saf' as const)
+          : ('path' as const),
+      }))
   },
 
   checkNotificationPermission() {
@@ -640,6 +658,10 @@ export const JmcomicService = {
 
   setReaderDisplayMode(mode: string) {
     return native.setReaderDisplayMode({ mode })
+  },
+
+  setReaderWidthPercent(value: number | null) {
+    return native.setReaderWidthPercent({ value })
   },
   setReaderScreenOrientation(orientation: string) {
     return native.setReaderScreenOrientation({ orientation })

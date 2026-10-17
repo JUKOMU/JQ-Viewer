@@ -14,7 +14,10 @@
       </Transition>
 
       <div class="category-page-top">
-        <div class="category-page-toolbar" :class="{ pinned: pullHeaderPinned }">
+        <div
+          class="category-page-toolbar desktop-page-content"
+          :class="{ pinned: pullHeaderPinned }"
+        >
           <MenuToggleButton />
           <div class="toolbar-category">
             <CategorySearchToolbar @search="resetWithPage" />
@@ -24,6 +27,7 @@
 
       <SearchResultContainer
         ref="resultContainerRef"
+        class="desktop-page-content"
         :result="resultMeta"
         :items="displayItems"
         :loading="initialLoading"
@@ -672,6 +676,13 @@ onMounted(() => {
   padding: calc(var(--ion-safe-area-top) + 2px) 14px 0;
 }
 
+@media (min-width: 1264px) {
+  .category-page-top {
+    padding-right: 0;
+    padding-left: 0;
+  }
+}
+
 .category-overlay {
   position: fixed;
   inset: 0;
@@ -688,12 +699,15 @@ onMounted(() => {
 }
 
 .category-page-toolbar {
-  display: grid;
-  grid-template-columns: 44px minmax(0, 1fr);
+  display: flex;
   align-items: start;
   gap: 5px;
   max-width: 1000px;
   margin-inline: auto;
+}
+
+.category-page-toolbar > :deep(.menu-toggle-btn) {
+  flex: 0 0 auto;
 }
 
 .category-page-toolbar.pinned {
@@ -705,6 +719,7 @@ onMounted(() => {
 }
 
 .toolbar-category {
+  flex: 1 1 auto;
   min-width: 0;
 }
 

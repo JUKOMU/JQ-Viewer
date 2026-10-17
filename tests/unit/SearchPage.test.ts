@@ -35,6 +35,7 @@ vi.mock('vue-router', () => ({
 }))
 
 vi.mock('@ionic/vue', () => ({
+  useBackButton: vi.fn(),
   alertController: { create: vi.fn() },
   IonContent: defineComponent({
     name: 'IonContent',

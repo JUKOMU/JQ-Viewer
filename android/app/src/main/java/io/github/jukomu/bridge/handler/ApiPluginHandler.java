@@ -2,6 +2,7 @@ package io.github.jukomu.bridge.handler;
 
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
+import io.github.jukomu.bridge.PluginCallSession;
 import io.github.jukomu.feature.catalog.ApiCallback;
 import io.github.jukomu.feature.catalog.ApiService;
 import io.github.jukomu.jmcomic.api.enums.Category;
@@ -9,6 +10,8 @@ import io.github.jukomu.jmcomic.api.enums.OrderBy;
 import io.github.jukomu.jmcomic.api.enums.SearchMainTag;
 import io.github.jukomu.jmcomic.api.enums.TimeOption;
 import org.json.JSONObject;
+
+import java.util.function.Consumer;
 
 /**
  * 负责在线内容 API Bridge 的参数校验、异步调用和响应适配。
@@ -18,9 +21,11 @@ import org.json.JSONObject;
 public final class ApiPluginHandler {
 
     private final ApiService apiService;
+    private final PluginCallSession callSession;
 
-    public ApiPluginHandler(ApiService apiService) {
+    public ApiPluginHandler(ApiService apiService, PluginCallSession callSession) {
         this.apiService = apiService;
+        this.callSession = callSession;
     }
 
     /**
@@ -33,16 +38,13 @@ public final class ApiPluginHandler {
                 call.reject("query is required");
                 return;
             }
-            call.setKeepAlive(true);
-            apiService.search(
+            startAsync(call, trackedCall -> apiService.search(
                 query.getString("keyword", ""),
                 query.getString("category", Category.ALL.getValue()),
                 query.getString("orderBy", OrderBy.LATEST.getValue()),
                 query.getString("time", TimeOption.ALL.getValue()),
                 query.getInteger("searchMainTag", SearchMainTag.SITE_SEARCH.getValue()),
-                query.getInteger("page", 1),
-                bridgeCallback(call)
-            );
+                query.getInteger("page", 1), bridgeCallback(trackedCall)));
         } catch (Exception error) {
             call.reject(error.getMessage(), error);
         }
@@ -58,16 +60,14 @@ public final class ApiPluginHandler {
                 call.reject("query is required");
                 return;
             }
-            call.setKeepAlive(true);
-            apiService.categories(
+            startAsync(call, trackedCall -> apiService.categories(
                 query.getString("keyword", ""),
                 query.getString("category", Category.ALL.getValue()),
                 query.getString("orderBy", OrderBy.LATEST.getValue()),
                 query.getString("time", TimeOption.ALL.getValue()),
                 query.getInteger("searchMainTag", SearchMainTag.SITE_SEARCH.getValue()),
                 query.getInteger("page", 1),
-                bridgeCallback(call)
-            );
+                bridgeCallback(trackedCall)));
         } catch (Exception error) {
             call.reject(error.getMessage(), error);
         }
@@ -83,8 +83,8 @@ public final class ApiPluginHandler {
                 call.reject("id is required");
                 return;
             }
-            call.setKeepAlive(true);
-            apiService.getAlbum(id, bridgeCallback(call));
+            startAsync(call,
+                trackedCall -> apiService.getAlbum(id, bridgeCallback(trackedCall)));
         } catch (Exception error) {
             call.reject(error.getMessage(), error);
         }
@@ -100,8 +100,8 @@ public final class ApiPluginHandler {
                 call.reject("id is required");
                 return;
             }
-            call.setKeepAlive(true);
-            apiService.getPhoto(id, bridgeCallback(call));
+            startAsync(call,
+                trackedCall -> apiService.getPhoto(id, bridgeCallback(trackedCall)));
         } catch (Exception error) {
             call.reject(error.getMessage(), error);
         }
@@ -117,12 +117,8 @@ public final class ApiPluginHandler {
                 call.reject("albumId is required");
                 return;
             }
-            call.setKeepAlive(true);
-            apiService.getComments(
-                albumId,
-                call.getInt("page", 1),
-                bridgeCallback(call)
-            );
+            startAsync(call, trackedCall -> apiService.getComments(
+                albumId, call.getInt("page", 1), bridgeCallback(trackedCall)));
         } catch (Exception error) {
             call.reject(error.getMessage(), error);
         }
@@ -138,8 +134,8 @@ public final class ApiPluginHandler {
                 call.reject("id is required");
                 return;
             }
-            call.setKeepAlive(true);
-            apiService.toggleAlbumLike(id, bridgeCallback(call));
+            startAsync(call,
+                trackedCall -> apiService.toggleAlbumLike(id, bridgeCallback(trackedCall)));
         } catch (Exception error) {
             call.reject(error.getMessage(), error);
         }
@@ -155,13 +151,9 @@ public final class ApiPluginHandler {
                 call.reject("query is required");
                 return;
             }
-            call.setKeepAlive(true);
             int folderId = Integer.parseInt(query.getString("folderId", "0"));
-            apiService.getFavorites(
-                folderId,
-                query.getInteger("page", 1),
-                bridgeCallback(call)
-            );
+            startAsync(call, trackedCall -> apiService.getFavorites(
+                folderId, query.getInteger("page", 1), bridgeCallback(trackedCall)));
         } catch (Exception error) {
             call.reject(error.getMessage(), error);
         }
@@ -186,14 +178,13 @@ public final class ApiPluginHandler {
             } else if (folderId.isEmpty()) {
                 folderId = "0";
             }
-            call.setKeepAlive(true);
-            apiService.manageFavoriteFolder(
+            String normalizedFolderId = folderId;
+            startAsync(call, trackedCall -> apiService.manageFavoriteFolder(
                 type,
-                folderId,
+                normalizedFolderId,
                 call.getString("folderName", ""),
                 call.getString("albumId", ""),
-                bridgeCallback(call)
-            );
+                bridgeCallback(trackedCall)));
         } catch (Exception error) {
             call.reject(error.getMessage(), error);
         }
@@ -209,12 +200,10 @@ public final class ApiPluginHandler {
                 call.reject("id is required");
                 return;
             }
-            call.setKeepAlive(true);
-            apiService.toggleAlbumFavorite(
+            startAsync(call, trackedCall -> apiService.toggleAlbumFavorite(
                 id,
                 call.getString("folderId", "0"),
-                bridgeCallback(call)
-            );
+                bridgeCallback(trackedCall)));
         } catch (Exception error) {
             call.reject(error.getMessage(), error);
         }
@@ -236,5 +225,18 @@ public final class ApiPluginHandler {
                 call.reject(message, error);
             }
         };
+    }
+
+    private void startAsync(PluginCall call, Consumer<PluginCall> starter) {
+        PluginCall trackedCall = callSession.register(call);
+        if (trackedCall == null) {
+            return;
+        }
+        try {
+            trackedCall.setKeepAlive(true);
+            starter.accept(trackedCall);
+        } catch (RuntimeException error) {
+            trackedCall.reject(error.getMessage(), error);
+        }
     }
 }

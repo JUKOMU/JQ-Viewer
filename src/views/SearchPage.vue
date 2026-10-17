@@ -15,7 +15,7 @@
       </Transition>
 
       <div class="search-page-top">
-        <div class="search-page-toolbar" :class="{ pinned: pullHeaderPinned }">
+        <div class="search-page-toolbar desktop-page-content" :class="{ pinned: pullHeaderPinned }">
           <MenuToggleButton />
           <div class="toolbar-search">
             <SearchHeaderBar
@@ -30,6 +30,7 @@
 
       <SearchResultContainer
         ref="resultContainerRef"
+        class="desktop-page-content"
         :result="resultMeta"
         :items="displayItems"
         :loading="initialLoading"
@@ -962,6 +963,13 @@ onMounted(async () => {
   padding: calc(var(--ion-safe-area-top) + 2px) 14px 0;
 }
 
+@media (min-width: 1264px) {
+  .search-page-top {
+    padding-right: 0;
+    padding-left: 0;
+  }
+}
+
 .search-overlay {
   position: fixed;
   inset: 0;
@@ -980,10 +988,13 @@ onMounted(async () => {
 .search-page-toolbar {
   max-width: 1000px;
   margin-inline: auto;
-  display: grid;
-  grid-template-columns: 44px minmax(0, 1fr);
+  display: flex;
   align-items: start;
   gap: 10px;
+}
+
+.search-page-toolbar > :deep(.menu-toggle-btn) {
+  flex: 0 0 auto;
 }
 
 .search-page-toolbar.pinned {
@@ -995,6 +1006,7 @@ onMounted(async () => {
 }
 
 .toolbar-search {
+  flex: 1 1 auto;
   min-width: 0;
 }
 

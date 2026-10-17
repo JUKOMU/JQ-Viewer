@@ -2,31 +2,40 @@ package io.github.jukomu.feature.preload;
 
 import android.app.ActivityManager;
 import android.content.Context;
-import android.util.Log;
+import android.os.SystemClock;
 import io.github.jukomu.feature.cache.CacheCapacityPolicy;
+import io.github.jukomu.feature.cache.DiskImageCache;
 import io.github.jukomu.feature.cache.ImageCache;
 import io.github.jukomu.feature.download.storage.FileStore;
 import io.github.jukomu.feature.download.validation.ImageFileValidator;
+import io.github.jukomu.feature.pdf.render.PdfPageCache;
 import io.github.jukomu.jmcomic.api.model.JmImage;
 import io.github.jukomu.jmcomic.core.client.impl.JmApiClient;
 import io.github.jukomu.jmcomic.core.crypto.JmImageTool;
 import io.github.jukomu.platform.persistence.SettingsStore;
 import org.json.JSONArray;
 import org.json.JSONObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Supplier;
 
 /**
  * 图片预加载与缓存管理——预加载、缩略图生成、缓存容量/清理。
  * 纯业务逻辑，不依赖 Capacitor API。
  */
 public class PreloadService {
+    private static final Logger LOGGER = LoggerFactory.getLogger(PreloadService.class);
+    private static final long SLOW_IMAGE_LOG_MS = 500L;
 
     @FunctionalInterface
     interface ImageFetcher {
@@ -39,13 +48,12 @@ public class PreloadService {
         void onError(Exception error);
     }
 
-    private static final String TAG = "PreloadService";
-
     private final ImageCache imageCache;
     private final FileStore fileStore;
     private final SettingsStore settingsDb;
     private final ImageFetcher imageFetcher;
     private final ExecutorService imageExecutor;
+    private final ExecutorService fileExecutor;
     private volatile PreloadEventSink eventSink;
     private final Context context;
     private final CacheCapacityPolicy cacheCapacityPolicy;
@@ -58,27 +66,27 @@ public class PreloadService {
         CacheCapacityPolicy.PressureLevel.NORMAL;
 
     public PreloadService(ImageCache imageCache, FileStore fileStore,
-                          SettingsStore settingsDb, JmApiClient client,
-                          ExecutorService imageExecutor, PreloadEventSink eventSink,
-                          Context context, CacheCapacityPolicy cacheCapacityPolicy) {
-        this(imageCache, fileStore, settingsDb, client, imageExecutor, imageExecutor,
-            eventSink, context, cacheCapacityPolicy, 6,
-            client == null ? null : client::fetchImageBytes);
-    }
-
-    public PreloadService(ImageCache imageCache, FileStore fileStore,
-                          SettingsStore settingsDb, JmApiClient client,
-                          ExecutorService imageExecutor, ExecutorService networkExecutor,
+                          SettingsStore settingsDb, Supplier<JmApiClient> clientSupplier,
+                          ExecutorService imageExecutor, ExecutorService fileExecutor,
+                          ExecutorService networkExecutor,
                           PreloadEventSink eventSink, Context context,
                           CacheCapacityPolicy cacheCapacityPolicy, int networkConcurrency) {
-        this(imageCache, fileStore, settingsDb, client, imageExecutor, networkExecutor,
+        this(imageCache, fileStore, settingsDb, imageExecutor, fileExecutor,
+            networkExecutor,
             eventSink, context, cacheCapacityPolicy, networkConcurrency,
-            client == null ? null : client::fetchImageBytes);
+            image -> {
+                JmApiClient client = clientSupplier.get();
+                if (client == null) {
+                    throw new IllegalStateException("在线客户端不可用");
+                }
+                return client.fetchImageBytes(image);
+            });
     }
 
     PreloadService(ImageCache imageCache, FileStore fileStore,
-                   SettingsStore settingsDb, JmApiClient client,
-                   ExecutorService imageExecutor, ExecutorService networkExecutor,
+                   SettingsStore settingsDb, ExecutorService imageExecutor,
+                   ExecutorService fileExecutor,
+                   ExecutorService networkExecutor,
                    PreloadEventSink eventSink, Context context,
                    CacheCapacityPolicy cacheCapacityPolicy, int networkConcurrency,
                    ImageFetcher imageFetcher) {
@@ -87,6 +95,7 @@ public class PreloadService {
         this.settingsDb = settingsDb;
         this.imageFetcher = imageFetcher;
         this.imageExecutor = imageExecutor;
+        this.fileExecutor = fileExecutor;
         this.networkExecutor = networkExecutor;
         this.eventSink = eventSink;
         this.context = context;
@@ -101,18 +110,21 @@ public class PreloadService {
     }
 
     public JSONObject preloadImages(String photoId, String type, JSONArray imagesArray, boolean replacePending) {
+        final long startedNanos = SystemClock.elapsedRealtimeNanos();
         JSONObject ret = new JSONObject();
         if (imagesArray == null || imagesArray.length() == 0) {
             try {
                 ret.put("cached", new JSONArray());
             } catch (Exception e) {
-                Log.d(TAG, "构建空缓存列表失败", e);
+                LOGGER.debug("构建空缓存列表失败", e);
             }
             try {
                 ret.put("pending", new JSONArray());
             } catch (Exception e) {
-                Log.d(TAG, "构建空待处理列表失败", e);
+                LOGGER.debug("构建空待处理列表失败", e);
             }
+            LOGGER.debug("预加载任务结束: event=empty, photoId={}, type={}, durationMs={}",
+                photoId, type, elapsedMs(startedNanos));
             return ret;
         }
 
@@ -127,11 +139,17 @@ public class PreloadService {
             activeGenerations.put(scopeKey, generation);
         }
 
+        LOGGER.info("预加载任务开始: photoId={}, type={}, requested={}, replacePending={}",
+            photoId, type, imagesArray.length(), replacePending);
+        int invalidEntries = 0;
+        int skippedPending = 0;
+
         for (int i = 0; i < imagesArray.length(); i++) {
             JSONObject imgObj;
             try {
                 imgObj = imagesArray.getJSONObject(i);
             } catch (Exception e) {
+                invalidEntries++;
                 continue;
             }
 
@@ -149,81 +167,20 @@ public class PreloadService {
             if (isThumb) {
                 ImageCache.ImageEntry original = imageCache.get(imageKey);
                 if (original != null) {
-                    byte[] thumbBytes = ImageCache.createThumbnail(original.data);
-                    if (imageCache.put(cacheKey, thumbBytes, "image/jpeg")) {
-                        cached.add(sortOrder);
-                        notifyImageReady(photoId, sortOrder, type);
+                    pending.add(sortOrder);
+                    if (!markPending(cacheKey, generation, replacePending)) {
+                        skippedPending++;
+                        continue;
                     }
+                    generateThumbnailFromCachedImage(
+                        photoId, sortOrder, type, scopeKey, cacheKey, generation, original);
                     continue;
                 }
             }
 
-            // 本地文件命中（已下载图片）
-            File localFile = fileStore.getImageFileByPhotoId(photoId, sortOrder);
-            if (ImageFileValidator.validateQuick(localFile)) {
-                if (isThumb) {
-                    // 缩略图：提交到线程池生成
-                    pending.add(sortOrder);
-                    if (!markPending(cacheKey, generation, replacePending)) {
-                        continue;
-                    }
-                    imageExecutor.submit(() -> {
-                        try (ImageCache.IncomingReservation reservation =
-                                 imageCache.prepareForIncomingBytes(localFile.length())) {
-                            if (reservation == null) {
-                                throw new IOException("本地图片无法写入内存缓存");
-                            }
-                            if (isStale(scopeKey, generation)) return;
-                            byte[] localBytes = fileStore.readImageBytes(localFile);
-                            byte[] thumbBytes = ImageCache.createThumbnail(localBytes);
-                            if (isStale(scopeKey, generation)) return;
-                            String mime = "image/" + ImageCache.guessFormatName(localBytes);
-                            boolean originalCached = imageCache.put(
-                                imageKey, localBytes, mime, reservation);
-                            if (imageCache.put(cacheKey, thumbBytes, "image/jpeg")) {
-                                if (originalCached && imageCache.has(imageKey)) {
-                                    notifyImageReady(photoId, sortOrder, "image");
-                                }
-                                notifyImageReady(photoId, sortOrder, type);
-                            } else {
-                                throw new IOException("本地缩略图无法写入内存缓存");
-                            }
-                        } catch (Exception e) {
-                            Log.d(TAG, "缩略图生成失败", e);
-                            if (!isStale(scopeKey, generation)) {
-                                notifyImageFailed(photoId, sortOrder, type);
-                            }
-                        } finally {
-                            pendingKeys.remove(cacheKey, generation);
-                        }
-                    });
-                } else {
-                    // 原图：直接缓存，同步通知
-                    boolean cachedLocally = false;
-                    try (ImageCache.IncomingReservation reservation =
-                             imageCache.prepareForIncomingBytes(localFile.length())) {
-                        if (reservation != null) {
-                            byte[] localBytes = fileStore.readImageBytes(localFile);
-                            String mime = "image/" + ImageCache.guessFormatName(localBytes);
-                            cachedLocally = imageCache.put(cacheKey, localBytes, mime, reservation);
-                            if (cachedLocally) {
-                                cached.add(sortOrder);
-                                notifyImageReady(photoId, sortOrder, type);
-                            }
-                        }
-                    } catch (Exception e) {
-                        Log.d(TAG, "本地图片读取失败", e);
-                    }
-                    if (!cachedLocally) {
-                        notifyImageFailed(photoId, sortOrder, type);
-                    }
-                }
-                continue;
-            }
-
-            // 本地未命中 → 网络下载
             pending.add(sortOrder);
             if (!markPending(cacheKey, generation, replacePending)) {
+                skippedPending++;
                 continue;
             }
 
@@ -232,77 +189,247 @@ public class PreloadService {
             final String url = imgObj.optString("url");
             final String queryParams = imgObj.optString("queryParams", "");
 
-            networkExecutor.submit(() -> {
-                NetworkLoadGate.Permit permit = null;
-                try {
-                    permit = networkLoadGate.acquire(() -> isStale(scopeKey, generation));
-                    if (permit == null) {
-                        if (isStale(scopeKey, generation)) return;
-                        throw new IOException("当前内存压力过高，暂时无法加载图片");
-                    }
-                    if (isStale(scopeKey, generation)) return;
-                    JmImage jmImage = new JmImage(photoId, scrambleId, filename, url, queryParams, sortOrder);
-                    if (imageFetcher == null) {
-                        throw new IllegalStateException("图片获取器未初始化");
-                    }
-                    byte[] decrypted = imageFetcher.fetch(jmImage);
-                    if (isStale(scopeKey, generation)) return;
-                    if (!ImageFileValidator.validateQuick(decrypted)) {
-                        throw new IOException("获取的图片无法解析");
-                    }
-                    if (networkLoadGate.isCompletePressure()) {
-                        throw new IOException("当前内存压力过高，已丢弃图片加载结果");
-                    }
-                    String formatName = JmImageTool.getFormatName(filename);
-                    String mimeType = "image/" + formatName;
-
-                    try (ImageCache.IncomingReservation reservation =
-                             imageCache.prepareForIncomingBytes(decrypted.length)) {
-                        if (reservation == null) {
-                            throw new IOException("图片无法写入内存缓存");
-                        }
-                        if (isThumb) {
-                            byte[] thumbBytes = ImageCache.createThumbnail(decrypted);
-                            boolean originalCached = imageCache.put(
-                                imageKey, decrypted, mimeType, reservation);
-                            if (!imageCache.put(cacheKey, thumbBytes, "image/jpeg")) {
-                                throw new IOException("缩略图无法写入内存缓存");
-                            }
-                            if (originalCached && imageCache.has(imageKey)) {
-                                notifyImageReady(photoId, sortOrder, "image");
-                            }
-                        } else {
-                            if (!imageCache.put(cacheKey, decrypted, mimeType, reservation)) {
-                                throw new IOException("图片无法写入内存缓存");
-                            }
-                        }
-                    }
-
-                    notifyImageReady(photoId, sortOrder, type);
-                } catch (Exception e) {
-                    if (e instanceof InterruptedException) Thread.currentThread().interrupt();
-                    Log.d(TAG, "图片下载或解密失败", e);
-                    if (!isStale(scopeKey, generation)) {
-                        notifyImageFailed(photoId, sortOrder, type);
-                    }
-                } finally {
-                    if (permit != null) permit.close();
-                    pendingKeys.remove(cacheKey, generation);
+            try {
+                fileExecutor.execute(() -> resolveImageSource(
+                    photoId, sortOrder, type, scopeKey, imageKey, cacheKey, generation,
+                    isThumb, scrambleId, filename, url, queryParams));
+            } catch (RuntimeException error) {
+                pendingKeys.remove(cacheKey, generation);
+                logImageFailure("queue-file", photoId, sortOrder, type, error, 0L);
+                if (!isStale(scopeKey, generation)) {
+                    notifyImageFailed(photoId, sortOrder, type);
                 }
-            });
+            }
         }
 
         try {
             ret.put("cached", new JSONArray(cached));
         } catch (Exception e) {
-            Log.d(TAG, "构建缓存列表失败", e);
+            LOGGER.debug("构建缓存列表失败", e);
         }
         try {
             ret.put("pending", new JSONArray(pending));
         } catch (Exception e) {
-            Log.d(TAG, "构建待处理列表失败", e);
+            LOGGER.debug("构建待处理列表失败", e);
         }
+        LOGGER.info("预加载任务排队完成: photoId={}, type={}, cached={}, pending={}, skippedPending={}, invalid={}, durationMs={}",
+            photoId, type, cached.size(), pending.size(), skippedPending, invalidEntries,
+            elapsedMs(startedNanos));
         return ret;
+    }
+
+    private void generateThumbnailFromCachedImage(
+        String photoId, int sortOrder, String type, String scopeKey,
+        String cacheKey, long generation, ImageCache.ImageEntry original
+    ) {
+        try {
+            imageExecutor.execute(() -> {
+                long startedNanos = SystemClock.elapsedRealtimeNanos();
+                try {
+                    if (isStale(scopeKey, generation)) {
+                        logImageCancelled("thumbnail-cache", photoId, sortOrder, type, startedNanos);
+                        return;
+                    }
+                    byte[] thumbBytes = ImageCache.createThumbnail(original.data);
+                    if (isStale(scopeKey, generation)) {
+                        logImageCancelled("thumbnail-cache", photoId, sortOrder, type, startedNanos);
+                        return;
+                    }
+                    if (!imageCache.put(cacheKey, thumbBytes, "image/jpeg")) {
+                        throw new IOException("缓存缩略图无法写入内存缓存");
+                    }
+                    notifyImageReady(photoId, sortOrder, type);
+                    logImageCompleted("thumbnail-cache", photoId, sortOrder, type, startedNanos);
+                } catch (Exception error) {
+                    logImageFailure("thumbnail-cache", photoId, sortOrder, type, error, startedNanos);
+                    if (!isStale(scopeKey, generation)) {
+                        notifyImageFailed(photoId, sortOrder, type);
+                    }
+                } finally {
+                    pendingKeys.remove(cacheKey, generation);
+                }
+            });
+        } catch (RuntimeException error) {
+            pendingKeys.remove(cacheKey, generation);
+            logImageFailure("queue-thumbnail", photoId, sortOrder, type, error, 0L);
+            if (!isStale(scopeKey, generation)) {
+                notifyImageFailed(photoId, sortOrder, type);
+            }
+        }
+    }
+
+    private void resolveImageSource(
+        String photoId, int sortOrder, String type, String scopeKey,
+        String imageKey, String cacheKey, long generation, boolean createThumbnail,
+        String scrambleId, String filename, String url, String queryParams
+    ) {
+        long startedNanos = SystemClock.elapsedRealtimeNanos();
+        ImageCache.IncomingReservation reservation = null;
+        boolean handedOff = false;
+        try {
+            if (isStale(scopeKey, generation)) {
+                logImageCancelled("resolve-source", photoId, sortOrder, type, startedNanos);
+                return;
+            }
+            File localFile = fileStore.getImageFileByPhotoId(photoId, sortOrder);
+            if (ImageFileValidator.validateQuick(localFile)) {
+                reservation = imageCache.prepareForIncomingBytes(localFile.length());
+                if (reservation == null) {
+                    throw new IOException("本地图片无法写入内存缓存");
+                }
+                byte[] localBytes = fileStore.readImageBytes(localFile);
+                if (isStale(scopeKey, generation)) {
+                    logImageCancelled("read-local", photoId, sortOrder, type, startedNanos);
+                    return;
+                }
+                String mimeType = "image/" + ImageCache.guessFormatName(localBytes);
+                ImageCache.IncomingReservation transferredReservation = reservation;
+                imageExecutor.execute(() -> cacheImageBytes(
+                    photoId, sortOrder, type, scopeKey, imageKey, cacheKey,
+                    generation, createThumbnail, localBytes, mimeType,
+                    transferredReservation, false));
+                reservation = null;
+                handedOff = true;
+            } else {
+                networkExecutor.execute(() -> fetchNetworkImage(
+                    photoId, sortOrder, type, scopeKey, imageKey, cacheKey,
+                    generation, createThumbnail, scrambleId, filename, url, queryParams));
+                handedOff = true;
+            }
+        } catch (Exception error) {
+            logImageFailure("resolve-source", photoId, sortOrder, type, error, startedNanos);
+            if (!isStale(scopeKey, generation)) {
+                notifyImageFailed(photoId, sortOrder, type);
+            }
+        } finally {
+            if (reservation != null) {
+                reservation.close();
+            }
+            if (!handedOff) {
+                pendingKeys.remove(cacheKey, generation);
+            }
+        }
+    }
+
+    private void fetchNetworkImage(
+        String photoId, int sortOrder, String type, String scopeKey,
+        String imageKey, String cacheKey, long generation, boolean createThumbnail,
+        String scrambleId, String filename, String url, String queryParams
+    ) {
+        long startedNanos = SystemClock.elapsedRealtimeNanos();
+        NetworkLoadGate.Permit permit = null;
+        ImageCache.IncomingReservation reservation = null;
+        boolean handedOff = false;
+        try {
+            permit = networkLoadGate.acquire(() -> isStale(scopeKey, generation));
+            if (permit == null) {
+                if (isStale(scopeKey, generation)) {
+                    logImageCancelled("network-wait", photoId, sortOrder, type, startedNanos);
+                    return;
+                }
+                throw new IOException("当前内存压力过高，暂时无法加载图片");
+            }
+            if (isStale(scopeKey, generation)) {
+                logImageCancelled("network-fetch", photoId, sortOrder, type, startedNanos);
+                return;
+            }
+            if (imageFetcher == null) {
+                throw new IllegalStateException("图片获取器未初始化");
+            }
+            JmImage image = new JmImage(
+                photoId, scrambleId, filename, url, queryParams, sortOrder);
+            byte[] imageBytes = imageFetcher.fetch(image);
+            if (isStale(scopeKey, generation)) {
+                logImageCancelled("network-fetch", photoId, sortOrder, type, startedNanos);
+                return;
+            }
+            if (networkLoadGate.isCompletePressure()) {
+                throw new IOException("当前内存压力过高，已丢弃图片加载结果");
+            }
+            reservation = imageCache.prepareForIncomingBytes(imageBytes.length);
+            if (reservation == null) {
+                throw new IOException("网络图片无法写入内存缓存");
+            }
+            String mimeType = "image/" + JmImageTool.getFormatName(filename);
+            ImageCache.IncomingReservation transferredReservation = reservation;
+            imageExecutor.execute(() -> cacheImageBytes(
+                photoId, sortOrder, type, scopeKey, imageKey, cacheKey,
+                generation, createThumbnail, imageBytes, mimeType,
+                transferredReservation, true));
+            reservation = null;
+            handedOff = true;
+        } catch (Exception error) {
+            if (error instanceof InterruptedException) Thread.currentThread().interrupt();
+            logImageFailure("network-fetch", photoId, sortOrder, type, error, startedNanos);
+            if (!isStale(scopeKey, generation)) {
+                notifyImageFailed(photoId, sortOrder, type);
+            }
+        } finally {
+            if (reservation != null) reservation.close();
+            if (permit != null) permit.close();
+            if (!handedOff) {
+                pendingKeys.remove(cacheKey, generation);
+            }
+        }
+    }
+
+    private void cacheImageBytes(
+        String photoId, int sortOrder, String type, String scopeKey,
+        String imageKey, String cacheKey, long generation, boolean createThumbnail,
+        byte[] imageBytes, String mimeType,
+        ImageCache.IncomingReservation existingReservation, boolean networkSource
+    ) {
+        long startedNanos = SystemClock.elapsedRealtimeNanos();
+        ImageCache.IncomingReservation reservation = existingReservation;
+        try {
+            if (isStale(scopeKey, generation)) {
+                logImageCancelled("cache-write", photoId, sortOrder, type, startedNanos);
+                return;
+            }
+            if (networkSource && networkLoadGate.isCompletePressure()) {
+                throw new IOException("当前内存压力过高，已丢弃图片加载结果");
+            }
+            if (!ImageFileValidator.validateQuick(imageBytes)) {
+                throw new IOException("获取的图片无法解析");
+            }
+            if (reservation == null) {
+                reservation = imageCache.prepareForIncomingBytes(imageBytes.length);
+                if (reservation == null) {
+                    throw new IOException("图片无法写入内存缓存");
+                }
+            }
+            if (createThumbnail) {
+                byte[] thumbBytes = ImageCache.createThumbnail(imageBytes);
+                if (isStale(scopeKey, generation)) {
+                    logImageCancelled("thumbnail-write", photoId, sortOrder, type, startedNanos);
+                    return;
+                }
+                boolean originalCached = imageCache.put(
+                    imageKey, imageBytes, mimeType, reservation);
+                if (!imageCache.put(cacheKey, thumbBytes, "image/jpeg")) {
+                    throw new IOException("缩略图无法写入内存缓存");
+                }
+                if (originalCached && imageCache.has(imageKey)) {
+                    notifyImageReady(photoId, sortOrder, "image");
+                }
+            } else if (!imageCache.put(cacheKey, imageBytes, mimeType, reservation)) {
+                throw new IOException("图片无法写入内存缓存");
+            }
+            notifyImageReady(photoId, sortOrder, type);
+            logImageCompleted(networkSource ? "network-cache" : "local-cache",
+                photoId, sortOrder, type, startedNanos);
+        } catch (Exception error) {
+            logImageFailure(networkSource ? "network-cache" : "local-cache",
+                photoId, sortOrder, type, error, startedNanos);
+            if (!isStale(scopeKey, generation)) {
+                notifyImageFailed(photoId, sortOrder, type);
+            }
+        } finally {
+            if (reservation != null) {
+                reservation.close();
+            }
+            pendingKeys.remove(cacheKey, generation);
+        }
     }
 
     /**
@@ -332,9 +459,10 @@ public class PreloadService {
         final String queryParams = imageObject.optString("queryParams", "");
 
         try {
-            networkExecutor.submit(() -> {
+            networkExecutor.execute(() -> {
+                long startedNanos = SystemClock.elapsedRealtimeNanos();
                 NetworkLoadGate.Permit permit = null;
-                Exception failure = null;
+                ImageCache.IncomingReservation reservation = null;
                 try {
                     permit = networkLoadGate.acquire(null);
                     if (permit == null) {
@@ -347,36 +475,66 @@ public class PreloadService {
                     JmImage image = new JmImage(
                         photoId, scrambleId, filename, url, queryParams, sortOrder);
                     byte[] imageBytes = imageFetcher.fetch(image);
-                    if (!ImageFileValidator.validateQuick(imageBytes)) {
-                        throw new IOException("重新获取的图片无法解析");
-                    }
                     if (networkLoadGate.isCompletePressure()) {
                         throw new IOException("当前内存压力过高，已丢弃重试结果");
                     }
 
-                    String mimeType = "image/" + JmImageTool.getFormatName(filename);
-                    if (!imageCache.put(photoId + "/" + sortOrder, imageBytes, mimeType)) {
+                    reservation = imageCache.prepareForIncomingBytes(imageBytes.length);
+                    if (reservation == null) {
                         throw new IOException("重试图片无法写入内存缓存");
                     }
+
+                    String mimeType = "image/" + JmImageTool.getFormatName(filename);
+                    ImageCache.IncomingReservation transferredReservation = reservation;
+                    imageExecutor.execute(() -> cacheRetryImage(
+                        photoId, sortOrder, imageBytes, mimeType,
+                        transferredReservation, callback));
+                    reservation = null;
                 } catch (Exception error) {
                     if (error instanceof InterruptedException) {
                         Thread.currentThread().interrupt();
                     }
-                    failure = error;
+                    logImageFailure("retry", photoId, sortOrder, "image", error, startedNanos);
+                    callback.onError(error);
                 } finally {
+                    if (reservation != null) {
+                        reservation.close();
+                    }
                     if (permit != null) {
                         permit.close();
                     }
                 }
-
-                if (failure == null) {
-                    callback.onSuccess();
-                } else {
-                    callback.onError(failure);
-                }
             });
         } catch (RuntimeException error) {
+            logImageFailure("queue-retry", photoId, sortOrder, "image", error, 0L);
             callback.onError(error);
+        }
+    }
+
+    private void cacheRetryImage(
+        String photoId, int sortOrder, byte[] imageBytes, String mimeType,
+        ImageCache.IncomingReservation reservation, ImageRetryCallback callback
+    ) {
+        long startedNanos = SystemClock.elapsedRealtimeNanos();
+        try {
+            if (networkLoadGate.isCompletePressure()) {
+                throw new IOException("当前内存压力过高，已丢弃重试结果");
+            }
+            if (!ImageFileValidator.validateQuick(imageBytes)) {
+                throw new IOException("重新获取的图片无法解析");
+            }
+            if (!imageCache.put(
+                photoId + "/" + sortOrder, imageBytes, mimeType, reservation)) {
+                throw new IOException("重试图片无法写入内存缓存");
+            }
+            imageCache.removeDisk(photoId + "/" + sortOrder);
+            callback.onSuccess();
+            logImageCompleted("retry-cache", photoId, sortOrder, "image", startedNanos);
+        } catch (Exception error) {
+            logImageFailure("retry-cache", photoId, sortOrder, "image", error, startedNanos);
+            callback.onError(error);
+        } finally {
+            reservation.close();
         }
     }
 
@@ -417,7 +575,7 @@ public class PreloadService {
                                                                         .getSystemService(Context.ACTIVITY_SERVICE);
         boolean lowRam = am != null && am.isLowRamDevice();
         return cacheCapacityPolicy.calculate(requestedMb, Runtime.getRuntime().maxMemory(),
-            lowRam, pressureLevel);
+            lowRam, pressureLevel, imageCache.getSpaceSnapshot());
     }
 
     public void setMemoryPressureLevel(CacheCapacityPolicy.PressureLevel level) {
@@ -442,8 +600,14 @@ public class PreloadService {
             ret.put("pressureLevel", stats.pressureLevel);
             ret.put("temporaryClamp", stats.temporaryClamp);
             ret.put("limitReason", stats.reason);
+            ret.put("memoryCapacityMb", stats.memoryCapacityMb);
+            ret.put("memoryUsedMb", Math.round(stats.memoryBytes / (1024.0 * 1024.0)));
+            ret.put("diskCapacityMb", stats.diskCapacityMb);
+            ret.put("diskUsedMb", Math.round(stats.diskUsedBytes / (1024.0 * 1024.0)));
+            ret.put("diskReserveMb", stats.diskReserveMb);
+            ret.put("diskState", stats.diskState);
         } catch (Exception e) {
-            Log.d(TAG, "构建缓存容量信息失败", e);
+            LOGGER.debug("构建缓存容量信息失败", e);
         }
         return ret;
     }
@@ -451,6 +615,7 @@ public class PreloadService {
     public JSONObject getImageCacheContents() {
         JSONObject ret = new JSONObject();
         JSONArray entries = new JSONArray();
+        Map<String, JSONObject> byKey = new LinkedHashMap<>();
         try {
             for (ImageCache.CacheEntryInfo entry : imageCache.getEntriesSnapshot()) {
                 String[] parts = entry.key.split("/", -1);
@@ -478,22 +643,47 @@ public class PreloadService {
                 item.put("type", type);
                 item.put("sizeBytes", entry.sizeBytes);
                 item.put("mimeType", entry.mimeType == null ? "" : entry.mimeType);
-                entries.put(item);
+                byKey.put(parts[0] + "/" + parts[1] + "/" + type, item);
             }
+            for (DiskImageCache.Info entry : imageCache.getDiskEntries()) {
+                String[] parts = entry.key().split("/", -1);
+                if (parts.length < 2 || parts.length > 3 || parts[0].isEmpty()) continue;
+                int sortOrder;
+                try {
+                    sortOrder = Integer.parseInt(parts[1]);
+                } catch (NumberFormatException ignored) {
+                    continue;
+                }
+                String type = parts.length == 2 ? "image" : "thumb";
+                JSONObject item = new JSONObject();
+                item.put("photoId", parts[0]);
+                item.put("sortOrder", sortOrder);
+                item.put("type", type);
+                item.put("sizeBytes", entry.sizeBytes());
+                item.put("mimeType", entry.mimeType() == null ? "" : entry.mimeType());
+                byKey.put(parts[0] + "/" + parts[1] + "/" + type, item);
+            }
+            for (JSONObject item : byKey.values()) entries.put(item);
             ret.put("entries", entries);
         } catch (Exception e) {
-            Log.d(TAG, "构建图片缓存内容失败", e);
+            LOGGER.debug("构建图片缓存内容失败", e);
         }
         return ret;
     }
 
     public void clearImageCache() {
         imageCache.clear();
+        if (context == null) return;
+        try {
+            PdfPageCache.getInstance(context).clear();
+        } catch (RuntimeException error) {
+            LOGGER.warn("清理 PDF 页面缓存失败，已完成内存缓存清理", error);
+        }
     }
 
     private void logCapacity(String reason) {
         ImageCache.CacheStats stats = imageCache.getStats();
-        Log.i(TAG, "缓存策略: requestedMb=" + stats.requestedMb
+        LOGGER.info("缓存策略: requestedMb=" + stats.requestedMb
             + ", effectiveMb=" + stats.effectiveMb
             + ", currentMb=" + Math.round(stats.currentBytes / (1024.0 * 1024.0))
             + ", maxHeapMb=" + stats.maxHeapMb
@@ -517,5 +707,35 @@ public class PreloadService {
         if (current != null) {
             current.onImageFailed(photoId, sortOrder, type);
         }
+    }
+
+    private void logImageCompleted(String stage, String photoId, int sortOrder,
+                                   String type, long startedNanos) {
+        long durationMs = elapsedMs(startedNanos);
+        if (durationMs >= SLOW_IMAGE_LOG_MS) {
+            LOGGER.warn("图片预加载慢操作: event=completed, stage={}, photoId={}, sortOrder={}, type={}, durationMs={}",
+                stage, photoId, sortOrder, type, durationMs);
+        } else {
+            LOGGER.debug("图片预加载完成: stage={}, photoId={}, sortOrder={}, type={}, durationMs={}",
+                stage, photoId, sortOrder, type, durationMs);
+        }
+    }
+
+    private void logImageCancelled(String stage, String photoId, int sortOrder,
+                                   String type, long startedNanos) {
+        LOGGER.debug("图片预加载取消: event=cancelled, stage={}, photoId={}, sortOrder={}, type={}, durationMs={}",
+            stage, photoId, sortOrder, type, elapsedMs(startedNanos));
+    }
+
+    private void logImageFailure(String stage, String photoId, int sortOrder,
+                                 String type, Throwable error, long startedNanos) {
+        LOGGER.warn("图片预加载失败: event=failed, stage={}, photoId={}, sortOrder={}, type={}, errorClass={}, durationMs={}",
+            stage, photoId, sortOrder, type, error == null ? "unknown" : error.getClass().getSimpleName(),
+            elapsedMs(startedNanos));
+    }
+
+    private static long elapsedMs(long startedNanos) {
+        return startedNanos <= 0L ? 0L
+            : (SystemClock.elapsedRealtimeNanos() - startedNanos) / 1_000_000L;
     }
 }

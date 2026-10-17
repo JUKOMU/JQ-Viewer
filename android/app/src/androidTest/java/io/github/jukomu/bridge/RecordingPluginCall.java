@@ -3,6 +3,9 @@ package io.github.jukomu.bridge;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
 
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+
 class RecordingPluginCall extends PluginCall {
 
     JSObject resolvedData;
@@ -12,6 +15,7 @@ class RecordingPluginCall extends PluginCall {
     Exception rejectionException;
     JSObject rejectionData;
     int completionCount;
+    private final CountDownLatch completion = new CountDownLatch(1);
 
     RecordingPluginCall(String methodName, JSObject data) {
         super(null, "Jmcomic", "test-callback", methodName,
@@ -22,12 +26,14 @@ class RecordingPluginCall extends PluginCall {
     public void resolve(JSObject data) {
         resolvedData = data;
         completionCount++;
+        completion.countDown();
     }
 
     @Override
     public void resolve() {
         resolvedWithoutData = true;
         completionCount++;
+        completion.countDown();
     }
 
     @Override
@@ -37,5 +43,10 @@ class RecordingPluginCall extends PluginCall {
         rejectionException = exception;
         rejectionData = data;
         completionCount++;
+        completion.countDown();
+    }
+
+    boolean awaitCompletion(long timeout, TimeUnit unit) throws InterruptedException {
+        return completion.await(timeout, unit);
     }
 }

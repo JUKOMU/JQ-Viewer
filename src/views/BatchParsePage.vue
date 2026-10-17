@@ -2,7 +2,7 @@
   <IonPage>
     <IonHeader class="ion-no-border">
       <IonToolbar>
-        <div class="toolbar-content">
+        <div class="toolbar-content desktop-page-content">
           <div class="header-row">
             <div class="toolbar-start">
               <MenuToggleButton />
@@ -125,7 +125,7 @@
       @keydown="releaseHighlightLock"
       @click="releaseHighlightLock"
     >
-      <div class="page-shell">
+      <div class="page-shell desktop-page-content">
         <div class="fav-legend">
           <span class="fav-legend-item"><span class="fav-legend-dot online" /> 在线收藏</span>
           <span class="fav-legend-item"><span class="fav-legend-dot offline" /> 离线收藏</span>
@@ -583,7 +583,8 @@ async function doParse() {
 async function resolveScrollElement() {
   if (scrollElementRef.value) return scrollElementRef.value
   const contentEl = contentRef.value?.$el as
-    { getScrollElement?: () => Promise<HTMLElement> } | undefined
+    | { getScrollElement?: () => Promise<HTMLElement> }
+    | undefined
   if (!contentEl?.getScrollElement) return null
   scrollElementRef.value = await contentEl.getScrollElement()
   return scrollElementRef.value

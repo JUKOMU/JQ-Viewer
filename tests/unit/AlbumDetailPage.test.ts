@@ -6,7 +6,7 @@ import type {
   AlbumDetail,
   CommentItem,
   DownloadTask,
-  ImportedPdf,
+  LocalFileRecord,
   PhotoDetail,
   PreloadResult,
 } from '@/services/JmcomicTypes'
@@ -28,7 +28,7 @@ const mocks = vi.hoisted(() => ({
   downloadChapter: vi.fn(),
   getDownloadedPhoto: vi.fn(),
   getDownloadTasks: vi.fn(),
-  getImportedPdfs: vi.fn(),
+  getImportedLocalFiles: vi.fn(),
   addDownloadProgressListener: vi.fn(),
   addImageReadyListener: vi.fn(),
   preloadImages: vi.fn(),
@@ -40,6 +40,9 @@ const mocks = vi.hoisted(() => ({
   buildPdfDocumentParams: vi.fn(),
   pdfGetDocument: vi.fn(),
   menuSwipeGesture: vi.fn(() => Promise.resolve()),
+  getAlbumSources: vi.fn(),
+  resolveChapterSource: vi.fn(),
+  readerLocation: vi.fn(),
 }))
 
 vi.mock('vue-router', async () => {
@@ -108,7 +111,7 @@ vi.mock('@/services/JmcomicService', () => ({
     downloadChapter: mocks.downloadChapter,
     getDownloadedPhoto: mocks.getDownloadedPhoto,
     getDownloadTasks: mocks.getDownloadTasks,
-    getImportedPdfs: mocks.getImportedPdfs,
+    getImportedLocalFiles: mocks.getImportedLocalFiles,
     addDownloadProgressListener: mocks.addDownloadProgressListener,
     addImageReadyListener: mocks.addImageReadyListener,
     preloadImages: mocks.preloadImages,
@@ -118,6 +121,18 @@ vi.mock('@/services/JmcomicService', () => ({
 vi.mock('@/services/PdfReaderService', () => ({
   buildPdfDocumentParams: mocks.buildPdfDocumentParams,
   fetchPdfArrayBuffer: mocks.fetchPdfArrayBuffer,
+}))
+
+vi.mock('@/runtime/runtimeContext', () => ({
+  getRuntime: () => ({ resources: { cbzPageUrl: vi.fn() } }),
+}))
+
+vi.mock('@/services/ChapterSourceService', () => ({
+  ChapterSourceService: {
+    getAlbumSources: mocks.getAlbumSources,
+    resolve: mocks.resolveChapterSource,
+    readerLocation: mocks.readerLocation,
+  },
 }))
 
 vi.mock('@/services/OfflineDownloadService', () => ({
@@ -144,6 +159,7 @@ vi.mock('@/components/album/AlbumHeader.vue', () => ({
   default: {
     name: 'AlbumHeader',
     props: {
+      description: { type: String, default: '' },
       pageCount: { type: Number, default: 0 },
       loading: { type: Boolean, default: false },
     },
@@ -314,9 +330,10 @@ const makeDownloadTask = (): DownloadTask => ({
   createdAt: 1,
 })
 
-const makeImportedPdf = (): ImportedPdf => ({
+const makeLocalFileRecord = (): LocalFileRecord => ({
   id: 1,
-  filePath: '/imports/chapter-1.pdf',
+  fileRef: '/imports/chapter-1.pdf' as LocalFileRecord['fileRef'],
+  displayPath: '/imports/chapter-1.pdf',
   fileName: 'chapter-1.pdf',
   albumId: '123',
   albumTitle: '测试本子',
@@ -363,7 +380,40 @@ const mountLoadedPage = async ({ downloaded = false, pdf = false, album = makeAl
     usedBytes: 0,
     availableBytes: 0,
   })
-  mocks.getImportedPdfs.mockResolvedValue({ pdfs: pdf ? [makeImportedPdf()] : [] })
+  mocks.getImportedLocalFiles.mockResolvedValue({ files: pdf ? [makeLocalFileRecord()] : [] })
+  const summary: Record<string, unknown> = {}
+  if (downloaded) summary.download = makeDownloadTask()
+  if (pdf) {
+    const file = makeLocalFileRecord()
+    summary.pdf = {
+      kind: 'pdf',
+      file,
+      chapter: {
+        sequence: 0,
+        albumId: '123',
+        chapterId: 'chapter-1',
+        chapterTitle: '第一章',
+        sortOrder: 1,
+        startPage: 1,
+        endPage: 2,
+        pageCount: 2,
+      },
+    }
+  }
+  mocks.getAlbumSources.mockResolvedValue(
+    Object.keys(summary).length ? new Map([['chapter-1', summary]]) : new Map(),
+  )
+  mocks.resolveChapterSource.mockImplementation(
+    async (_albumId: string, _chapterId: string, requested = 'preferred') => {
+      if (requested === 'network') return { kind: 'network' }
+      if ((requested === 'preferred' || requested === 'download') && summary.download) {
+        return { kind: 'download', task: summary.download }
+      }
+      if ((requested === 'preferred' || requested === 'cbz') && summary.cbz) return summary.cbz
+      if ((requested === 'preferred' || requested === 'pdf') && summary.pdf) return summary.pdf
+      return requested === 'preferred' ? { kind: 'network' } : null
+    },
+  )
 
   const wrapper = mount(AlbumDetailPage)
   await settle()
@@ -396,7 +446,13 @@ beforeEach(() => {
   mocks.downloadChapter.mockResolvedValue({ taskId: '123_chapter-1' })
   mocks.getDownloadedPhoto.mockResolvedValue(makePhoto())
   mocks.getDownloadTasks.mockResolvedValue({ tasks: [], usedBytes: 0, availableBytes: 0 })
-  mocks.getImportedPdfs.mockResolvedValue({ pdfs: [] })
+  mocks.getImportedLocalFiles.mockResolvedValue({ files: [] })
+  mocks.getAlbumSources.mockResolvedValue(new Map())
+  mocks.resolveChapterSource.mockResolvedValue({ kind: 'network' })
+  mocks.readerLocation.mockImplementation((_source, metadata) => ({
+    path: `/album/${metadata.albumId}/read/${metadata.chapterId}`,
+    query: { title: metadata.albumTitle, total: String(metadata.totalPages ?? 0) },
+  }))
   mocks.listenerRemove.mockResolvedValue(undefined)
   mocks.addDownloadProgressListener.mockResolvedValue({ remove: mocks.listenerRemove })
   mocks.addImageReadyListener.mockImplementation(
@@ -704,6 +760,26 @@ describe('AlbumDetailPage tab 状态', () => {
     wrapper.unmount()
   })
 
+  test('离开带 chapterId 的详情页时不触发空 albumId 重载', async () => {
+    mocks.setRouteChapterId?.('chapter-1')
+    mocks.getAlbum.mockResolvedValue(makeAlbum())
+    mocks.getPhoto.mockResolvedValue(makePhoto())
+
+    const wrapper = mount(AlbumDetailPage)
+    await settle()
+    mocks.getAlbum.mockClear()
+    mocks.getPhoto.mockClear()
+
+    mocks.setRouteId?.(undefined)
+    mocks.setRouteChapterId?.(undefined)
+    await settle()
+
+    expect(mocks.getAlbum).not.toHaveBeenCalled()
+    expect(mocks.getPhoto).not.toHaveBeenCalled()
+    expect(wrapper.findComponent({ name: 'AlbumHeader' }).props('loading')).toBe(false)
+    wrapper.unmount()
+  })
+
   test('详情加载未完成时返回页面会强制重新加载', async () => {
     const firstAlbum = deferred<AlbumDetail>()
     const firstPhoto = deferred<PhotoDetail>()
@@ -719,7 +795,7 @@ describe('AlbumDetailPage tab 状态', () => {
     mocks.getAlbum.mockReturnValueOnce(firstAlbum.promise).mockResolvedValueOnce(reloadedAlbum)
     mocks.getPhoto.mockReturnValueOnce(firstPhoto.promise).mockResolvedValueOnce(reloadedPhoto)
     mocks.getDownloadTasks.mockResolvedValue({ tasks: [], usedBytes: 0, availableBytes: 0 })
-    mocks.getImportedPdfs.mockResolvedValue({ pdfs: [] })
+    mocks.getImportedLocalFiles.mockResolvedValue({ files: [] })
 
     const showDetail = ref(true)
     const Host = defineComponent({

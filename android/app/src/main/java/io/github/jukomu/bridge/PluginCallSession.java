@@ -1,0 +1,234 @@
+package io.github.jukomu.bridge;
+
+import com.getcapacitor.JSObject;
+import com.getcapacitor.PluginCall;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.concurrent.Executor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
+
+/**
+ * 追踪属于插件会话的异步桥接调用。
+ *
+ * <p>销毁会话时将对所有未完成的调用执行精确一次拒绝操作。
+ * 后续到达的任务结果将被忽略，从而确保执行器关闭时不会遗留未解决的调用，   * 或发布重复的结果。</p>
+ */
+public final class PluginCallSession implements AutoCloseable {
+
+    public static final String SESSION_ENDED_MESSAGE = "插件会话已结束";
+    private static final String SUBMISSION_FAILED_MESSAGE = "后台任务提交失败";
+    private static final Logger LOGGER = LoggerFactory.getLogger(PluginCallSession.class);
+    private static final AtomicLong OPERATION_SEQUENCE = new AtomicLong();
+
+    private final Object lock = new Object();
+    private final Set<GuardedPluginCall> activeCalls = new HashSet<>();
+    private boolean closed;
+
+    /**
+     * 注册异步调用，若会话已结束则立即拒绝。
+     */
+    public PluginCall register(PluginCall call) {
+        if (call == null) {
+            throw new IllegalArgumentException("call is required");
+        }
+        GuardedPluginCall guarded = new GuardedPluginCall(this, call);
+        synchronized (lock) {
+            if (!closed) {
+                activeCalls.add(guarded);
+                LOGGER.info("bridge_call event=register phase=start operationId={} method={} activeCalls={}",
+                    guarded.operationId, guarded.methodName, activeCalls.size());
+                return guarded;
+            }
+        }
+        LOGGER.warn("bridge_call event=register phase=complete operationId={} method={} "
+                + "result=rejected reason=session_closed",
+            guarded.operationId, guarded.methodName);
+        guarded.rejectSessionEnded();
+        return null;
+    }
+
+    /**
+     * Registers and dispatches a task while keeping its bridge call lifecycle-safe.
+     */
+    public void submit(Executor executor, PluginCall call, Consumer<PluginCall> task) {
+        if (executor == null) {
+            LOGGER.warn("bridge_call event=submit phase=complete method={} result=failed "
+                + "reason=executor_missing", call.getMethodName());
+            call.reject(SUBMISSION_FAILED_MESSAGE,
+                new IllegalStateException("executor is required"));
+            return;
+        }
+        if (task == null) {
+            LOGGER.warn("bridge_call event=submit phase=complete method={} result=failed "
+                + "reason=task_missing", call.getMethodName());
+            call.reject(SUBMISSION_FAILED_MESSAGE,
+                new IllegalArgumentException("task is required"));
+            return;
+        }
+
+        PluginCall guarded = register(call);
+        if (guarded == null) {
+            return;
+        }
+        GuardedPluginCall trackedCall = (GuardedPluginCall) guarded;
+        LOGGER.info("bridge_call event=submit phase=start operationId={} method={}",
+            trackedCall.operationId, trackedCall.methodName);
+        try {
+            executor.execute(() -> {
+                try {
+                    task.accept(guarded);
+                } catch (RuntimeException error) {
+                    LOGGER.warn("bridge_call event=task phase=complete operationId={} method={} "
+                            + "result=failed errorClass={}",
+                        trackedCall.operationId, trackedCall.methodName,
+                        error.getClass().getSimpleName());
+                    guarded.reject(error.getMessage() == null
+                        ? SUBMISSION_FAILED_MESSAGE : error.getMessage(), error);
+                }
+            });
+        } catch (RuntimeException error) {
+            LOGGER.warn("bridge_call event=submit phase=complete operationId={} method={} "
+                    + "result=failed errorClass={}", trackedCall.operationId,
+                trackedCall.methodName, error.getClass().getSimpleName());
+            guarded.reject(isClosed() ? SESSION_ENDED_MESSAGE : SUBMISSION_FAILED_MESSAGE, error);
+        }
+    }
+
+    public boolean isClosed() {
+        synchronized (lock) {
+            return closed;
+        }
+    }
+
+    /**
+     * Atomically completes a tracked call while it still belongs to this session.
+     *
+     * <p>The completion action may update session-owned state before resolving or rejecting the
+     * supplied delegate. If session shutdown wins first, the action is skipped entirely. If this
+     * action wins first, {@link #close()} waits until it returns.</p>
+     */
+    public boolean completeIfActive(PluginCall call, Consumer<PluginCall> completion) {
+        if (!(call instanceof GuardedPluginCall guarded) || guarded.owner != this) {
+            throw new IllegalArgumentException("call is not tracked by this session");
+        }
+        if (completion == null) {
+            throw new IllegalArgumentException("completion is required");
+        }
+        return guarded.complete(completion, false);
+    }
+
+    @Override
+    public void close() {
+        ArrayList<GuardedPluginCall> calls;
+        synchronized (lock) {
+            if (closed) {
+                LOGGER.debug("bridge_call_session event=close result=already_closed");
+                return;
+            }
+            closed = true;
+            calls = new ArrayList<>(activeCalls);
+        }
+        LOGGER.info("bridge_call_session event=close phase=start pendingCalls={}", calls.size());
+        for (GuardedPluginCall call : calls) {
+            call.rejectSessionEnded();
+        }
+        LOGGER.info("bridge_call_session event=close phase=complete pendingCalls={} "
+            + "result=completed", activeCallCount());
+    }
+
+    private int activeCallCount() {
+        synchronized (lock) {
+            return activeCalls.size();
+        }
+    }
+
+    private void remove(GuardedPluginCall call) {
+        synchronized (lock) {
+            activeCalls.remove(call);
+        }
+    }
+
+    private static final class GuardedPluginCall extends PluginCall {
+        private final PluginCallSession owner;
+        private final PluginCall delegate;
+        private final long operationId = OPERATION_SEQUENCE.incrementAndGet();
+        private final String methodName;
+        private final long startedAt = System.nanoTime();
+        private final Object completionLock = new Object();
+        private boolean completed;
+
+        private GuardedPluginCall(PluginCallSession owner, PluginCall delegate) {
+            super(null, delegate.getPluginId(), delegate.getCallbackId(),
+                delegate.getMethodName(), delegate.getData());
+            this.owner = owner;
+            this.delegate = delegate;
+            this.methodName = delegate.getMethodName();
+        }
+
+        @Override
+        public void resolve(JSObject data) {
+            complete(call -> call.resolve(data), false);
+        }
+
+        @Override
+        public void resolve() {
+            complete(PluginCall::resolve, false);
+        }
+
+        @Override
+        public void reject(String message, String code, Exception exception, JSObject data) {
+            complete(call -> call.reject(message, code, exception, data), false);
+        }
+
+        @Override
+        public void setKeepAlive(Boolean keepAlive) {
+            synchronized (completionLock) {
+                if (completed || owner.isClosed()) {
+                    return;
+                }
+                delegate.setKeepAlive(keepAlive);
+            }
+        }
+
+        @Override
+        public boolean isKeptAlive() {
+            return delegate.isKeptAlive();
+        }
+
+        private void rejectSessionEnded() {
+            complete(call -> {
+                call.setKeepAlive(false);
+                call.reject(SESSION_ENDED_MESSAGE);
+            }, true);
+        }
+
+        private boolean complete(Consumer<PluginCall> terminalAction, boolean allowClosedSession) {
+            synchronized (completionLock) {
+                if (completed || (!allowClosedSession && owner.isClosed())) {
+                    return false;
+                }
+                completed = true;
+                try {
+                    terminalAction.accept(delegate);
+                } finally {
+                    owner.remove(this);
+                    LOGGER.info("bridge_call event=complete operationId={} method={} "
+                            + "result={} durationMs={}", operationId, methodName,
+                        allowClosedSession ? "session_closed" : "completed",
+                        elapsedMs(startedAt));
+                }
+                return true;
+            }
+        }
+
+        private static long elapsedMs(long startedAt) {
+            return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
+        }
+    }
+}

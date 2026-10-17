@@ -35,6 +35,7 @@ const legacySettings: AllSettings = {
   readerBrightness: -1,
   readerKeepScreenOn: true,
   readerVolumeNavigation: false,
+  readerWidthPercent: 42,
 }
 
 describe('SettingsService', () => {
@@ -168,4 +169,15 @@ describe('SettingsService', () => {
 
     expect(SettingsStore.getDownloadConcurrency()).toBe(10)
   })
+})
+
+test('宽度设置由原生设置快照初始化并区分自动和 0%', async () => {
+  getAllSettings.mockResolvedValue({ ...legacySettings, readerWidthPercent: 42 })
+  const { SettingsStore } = await import('@/services/SettingsService')
+  await (await import('@/services/SettingsService')).initSettings()
+  expect(SettingsStore.getReaderWidthPercent()).toBe(42)
+  SettingsStore.setReaderWidthPercent(0)
+  expect(SettingsStore.getReaderWidthPercent()).toBe(0)
+  SettingsStore.setReaderWidthPercent(null)
+  expect(SettingsStore.getReaderWidthPercent()).toBeNull()
 })

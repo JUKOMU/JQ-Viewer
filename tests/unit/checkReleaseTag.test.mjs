@@ -39,6 +39,13 @@ describe('check-release-tag', () => {
     expect(result.stdout).toContain(`Release tag check passed: v${projectVersion}-beta.1`)
   })
 
+  it('rejects a prerelease tag without an ordered Desktop sequence', () => {
+    const result = runTagCheck(`v${projectVersion}-beta`)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('must end with a numeric sequence')
+  })
+
   it('rejects a missing tag', () => {
     const result = runTagCheck(undefined)
 

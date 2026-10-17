@@ -8,7 +8,7 @@
       </IonToolbar>
     </IonHeader>
     <IonContent>
-      <div class="home-content">
+      <div class="home-content desktop-page-content">
         <div class="home-title" @click="reDisplay">
           <span class="title-text">{{ displayText }}</span>
           <span v-if="cursorVisible" class="title-cursor">|</span>

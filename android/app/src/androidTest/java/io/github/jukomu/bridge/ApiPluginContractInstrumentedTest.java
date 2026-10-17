@@ -71,6 +71,16 @@ public class ApiPluginContractInstrumentedTest {
     }
 
     @Test
+    public void unavailableClientRejectsOnlineCallsWithoutStartingWork() {
+        JmcomicPlugin unavailablePlugin = new JmcomicPlugin();
+        RecordingPluginCall search = call("search", "query", new JSObject());
+
+        unavailablePlugin.search(search);
+
+        assertRejected(search, "在线客户端不可用");
+    }
+
+    @Test
     public void validCallsForwardDefaultsAndResolveServicePayloads() throws Exception {
         JSObject query = new JSObject();
         RecordingPluginCall search = call("search", "query", query);
@@ -133,6 +143,25 @@ public class ApiPluginContractInstrumentedTest {
     }
 
     @Test
+    public void sessionCloseRejectsPendingCallAndSuppressesLateCallback() throws Exception {
+        PluginCallSession callSession = new PluginCallSession();
+        injectApiHandler(plugin, apiService, callSession);
+        apiService.autoComplete = false;
+        RecordingPluginCall call = call("getAlbum", "id", "album-1");
+
+        plugin.getAlbum(call);
+        callSession.close();
+
+        assertEquals(PluginCallSession.SESSION_ENDED_MESSAGE, call.rejectionMessage);
+        assertEquals(1, call.completionCount);
+        assertFalse(call.isKeptAlive());
+
+        apiService.completeSuccess();
+        assertEquals(1, call.completionCount);
+        assertNull(call.resolvedData);
+    }
+
+    @Test
     public void asynchronousErrorsPreserveMessageAndThrowable() {
         IllegalStateException error = new IllegalStateException("remote failed");
         apiService.failWith("remote failed", error);
@@ -171,8 +200,14 @@ public class ApiPluginContractInstrumentedTest {
 
     private static void injectApiHandler(JmcomicPlugin plugin,
                                          FakeApiService apiService) throws Exception {
+        injectApiHandler(plugin, apiService, new PluginCallSession());
+    }
+
+    private static void injectApiHandler(JmcomicPlugin plugin,
+                                         FakeApiService apiService,
+                                         PluginCallSession callSession) throws Exception {
         Field field = JmcomicPlugin.class.getDeclaredField("apiHandler");
         field.setAccessible(true);
-        field.set(plugin, new ApiPluginHandler(apiService));
+        field.set(plugin, new ApiPluginHandler(apiService, callSession));
     }
 }

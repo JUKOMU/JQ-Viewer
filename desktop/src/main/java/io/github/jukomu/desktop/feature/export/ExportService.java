@@ -1,0 +1,877 @@
+package io.github.jukomu.desktop.feature.export;
+
+import io.github.jukomu.desktop.bridge.ApiException;
+import io.github.jukomu.desktop.bridge.EventHub;
+import io.github.jukomu.desktop.feature.download.DownloadFiles;
+import io.github.jukomu.desktop.feature.download.data.DownloadStore;
+import io.github.jukomu.desktop.feature.download.data.StoredDownloadTask;
+import io.github.jukomu.desktop.feature.download.validation.ChapterManifestValidator;
+import io.github.jukomu.desktop.feature.export.archive.ArchiveExportPlanner;
+import io.github.jukomu.desktop.feature.export.archive.ArchiveVolumeWriter;
+import io.github.jukomu.desktop.feature.files.ExportTargetResolver;
+import io.github.jukomu.desktop.feature.files.FileReferences;
+import io.github.jukomu.desktop.feature.localfile.management.PdfFileValidator;
+import io.github.jukomu.desktop.feature.localfile.model.*;
+import io.github.jukomu.desktop.util.JsonUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.nio.file.*;
+import java.util.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+import static io.github.jukomu.desktop.util.LogFields.clean;
+import static io.github.jukomu.desktop.util.RequestValidation.requiredTrimmedText;
+
+/**
+ * Desktop 持久化单线程通用导出队列。
+ */
+public final class ExportService implements AutoCloseable {
+    private static final Logger LOGGER = LoggerFactory.getLogger(ExportService.class);
+    private static final long LOG_HEARTBEAT_NANOS = java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+    private final ExportStore store;
+    private final DownloadStore downloads;
+    private final DownloadFiles downloadFiles;
+    private final ExecutorService executor;
+    private final EventHub events;
+    private final PdfVolumeWriter pdfWriter;
+    private final ArchiveVolumeWriter archiveWriter;
+    private final AtomicBoolean startupReconciled = new AtomicBoolean();
+    private boolean closed;
+    private java.util.function.Function<StoredDownloadTask, StoredDownloadTask> metadataResolver;
+
+    public ExportService(
+        ExportStore store,
+        DownloadStore downloads,
+        DownloadFiles downloadFiles,
+        ExecutorService executor,
+        EventHub events
+    ) {
+        this(store, downloads, downloadFiles, executor, events,
+            new PdfBoxVolumeWriter(), new ArchiveVolumeWriter());
+    }
+
+    ExportService(
+        ExportStore store,
+        DownloadStore downloads,
+        DownloadFiles downloadFiles,
+        ExecutorService executor,
+        EventHub events,
+        PdfVolumeWriter writer
+    ) {
+        this(store, downloads, downloadFiles, executor, events, writer, new ArchiveVolumeWriter());
+    }
+
+    ExportService(
+        ExportStore store,
+        DownloadStore downloads,
+        DownloadFiles downloadFiles,
+        ExecutorService executor,
+        EventHub events,
+        PdfVolumeWriter pdfWriter,
+        ArchiveVolumeWriter archiveWriter
+    ) {
+        this.store = Objects.requireNonNull(store, "store");
+        this.downloads = Objects.requireNonNull(downloads, "downloads");
+        this.downloadFiles = Objects.requireNonNull(downloadFiles, "downloadFiles");
+        this.metadataResolver = downloads::completeMetadata;
+        this.executor = Objects.requireNonNull(executor, "executor");
+        this.events = Objects.requireNonNull(events, "events");
+        this.pdfWriter = Objects.requireNonNull(pdfWriter, "pdfWriter");
+        this.archiveWriter = Objects.requireNonNull(archiveWriter, "archiveWriter");
+    }
+
+    /**
+     * 将上次进程遗留的活动任务标为 interrupted，并清理已知临时文件。
+     */
+    public void reconcileOnStartup() {
+        if (!startupReconciled.compareAndSet(false, true)) return;
+        for (String tempPath : store.markActiveInterrupted()) deleteQuietly(Path.of(tempPath));
+    }
+
+    public synchronized ExportBatchResponse submit(List<ExportTaskRequest> requestedTasks) {
+        synchronized (downloadFiles) {
+            return submitWhileRootStable(requestedTasks);
+        }
+    }
+
+    public void setMetadataResolver(java.util.function.Function<StoredDownloadTask, StoredDownloadTask> resolver) {
+        this.metadataResolver = Objects.requireNonNull(resolver, "resolver");
+    }
+
+    private ExportBatchResponse submitWhileRootStable(List<ExportTaskRequest> requestedTasks) {
+        requireOpen();
+        if (requestedTasks == null || requestedTasks.isEmpty()) {
+            throw ApiException.invalidRequest("tasks不能为空");
+        }
+        String batchId = UUID.randomUUID().toString();
+        logEvent("submit", null, batchId, null, "submit", "queued", 0, 0, 0,
+            requestedTasks.size(), null, null, false, null);
+        List<ExportTaskResponse> results = new ArrayList<>();
+        List<Plan> acceptedPlans = new ArrayList<>();
+        for (ExportTaskRequest request : requestedTasks) {
+            NormalizedTask task = normalize(request);
+            String exportId = UUID.randomUUID().toString();
+            try {
+                long preflightStarted = System.nanoTime();
+                Plan plan = preflight(exportId, batchId, task, task.allowOverwrite());
+                logEvent("preflight", plan, "preflight", "queued", elapsed(preflightStarted),
+                    0, plan.images().size(), plan.volumes().size(), null, null, false, null);
+                if (store.hasActiveChapterConflict(plan.chapters())) {
+                    results.add(ExportTaskResponse.rejected(task.format(),
+                        "TASK_CONFLICT", "相同章节已有导出任务正在排队或运行",
+                        task.displayPath()));
+                    continue;
+                }
+                reserve(plan, "queued", "queued", null, null);
+                ExportTaskResponse snapshot = requireTask(exportId).withAccepted(true);
+                results.add(snapshot);
+                acceptedPlans.add(plan);
+                publish(snapshot);
+            } catch (OutputExistsException exception) {
+                logEvent("failed", exportId, batchId, task.format(), "preflight", "failed", 0,
+                    0, 0, 0, exception.code(), exception.getMessage(), false, null);
+                results.add(ExportTaskResponse.rejected(task.format(),
+                    exception.code(), exception.getMessage(), task.displayPath()));
+            } catch (ExportException exception) {
+                logEvent("failed", exportId, batchId, task.format(), "preflight", "failed", 0,
+                    0, 0, 0, exception.code(), exception.getMessage(), false, exception);
+                Plan failed = failedPlan(exportId, batchId, task);
+                if ("DOWNLOAD_METADATA_INCOMPLETE".equals(exception.code())) {
+                    results.add(ExportTaskResponse.rejected(task.format(), exception.code(), exception.getMessage(), task.displayPath()));
+                    continue;
+                }
+                reserve(failed, "failed", "failed", exception.code(), exception.getMessage());
+                ExportTaskResponse snapshot = requireTask(exportId).withAccepted(false);
+                results.add(snapshot);
+                publish(snapshot);
+            }
+        }
+        for (Plan plan : acceptedPlans) schedule(plan);
+        logEvent("submitted", null, batchId, null, "submit", "queued", 0, 0, 0,
+            acceptedPlans.size(), null, null, false, null);
+        return new ExportBatchResponse(List.copyOf(results));
+    }
+
+    public ExportTasksResponse getTasks(String format, String status, String cursor, int limit) {
+        if (format != null && !format.isBlank() && !isFormat(format)) {
+            throw ApiException.invalidRequest("format必须是pdf、cbz或zip");
+        }
+        ExportStore.Page page = store.list(format, status, cursor, limit);
+        return new ExportTasksResponse(page.tasks(), page.nextCursor());
+    }
+
+    public ExportTaskResponse getTask(String exportId) {
+        return requireTask(requireText(exportId, "exportId"));
+    }
+
+    public ExportTaskResponse cancel(String exportId) {
+        ExportTaskResponse task = store.requestCancel(requireText(exportId, "exportId"));
+        if (task == null) throw ApiException.notFound("导出任务不存在");
+        if ("cancelled".equals(task.status())) cleanupQueuedCancellation(task.exportId());
+        logEvent("cancelled", task.exportId(), task.batchId(), task.format(), "cancelled",
+            task.status(), elapsedSince(task.createdAt()), task.currentPage(), task.totalPages(),
+            task.currentVolume(), null, null, false, null);
+        publish(task);
+        return task;
+    }
+
+    public synchronized ExportTaskResponse retry(String exportId, boolean allowOverwrite) {
+        synchronized (downloadFiles) {
+            return retryWhileRootStable(exportId, allowOverwrite);
+        }
+    }
+
+    private ExportTaskResponse retryWhileRootStable(String exportId, boolean allowOverwrite) {
+        requireOpen();
+        ExportTaskResponse persisted = requireTask(requireText(exportId, "exportId"));
+        if (!ExportStore.isTerminal(persisted.status())) {
+            throw ApiException.conflict("当前导出任务不能重试");
+        }
+        NormalizedTask task = taskFromPersisted(persisted, store.chapters(exportId));
+        final Plan plan;
+        try {
+            plan = preflight(exportId, persisted.batchId(), task, allowOverwrite);
+            ensureRetryLayoutUnchanged(store.chapters(exportId), store.volumes(exportId), plan);
+        } catch (OutputExistsException exception) {
+            throw ApiException.conflict(exception.getMessage());
+        } catch (ExportException exception) {
+            throw new ApiException("internal", 409, exception.getMessage());
+        }
+        if (store.hasActiveChapterConflict(plan.chapters())) {
+            throw ApiException.conflict("相同章节已有导出任务正在排队或运行");
+        }
+        if (!store.prepareRetry(exportId, allowOverwrite)) {
+            throw ApiException.conflict("当前导出任务不能重试");
+        }
+        ExportTaskResponse queued = requireTask(exportId);
+        logEvent("retry", queued.exportId(), queued.batchId(), queued.format(), "submit", "queued",
+            0, 0, queued.totalPages(), queued.totalVolumes(), null, null, true, null);
+        publish(queued);
+        schedule(plan);
+        return queued;
+    }
+
+    public synchronized boolean deleteTask(String exportId) {
+        ExportTaskResponse task = requireTask(requireText(exportId, "exportId"));
+        if (!ExportStore.isTerminal(task.status())) {
+            throw ApiException.conflict("活动导出任务不能删除");
+        }
+        for (ExportStore.Volume volume : store.volumes(exportId)) {
+            deleteQuietly(Path.of(volume.tempPath()));
+        }
+        return store.delete(exportId);
+    }
+
+    private void schedule(Plan plan) {
+        try {
+            executor.execute(() -> execute(plan));
+        } catch (RejectedExecutionException exception) {
+            ExportTaskResponse failed = store.updateProgress(
+                plan.exportId(), "failed", "failed", 0, plan.images().size(),
+                0, plan.volumes().size(), "QUEUE_REJECTED", "导出队列已关闭");
+            cleanupTemporaryFiles(plan);
+            logEvent("failed", plan, "submit", "failed", 0, 0, plan.images().size(),
+                plan.volumes().size(), "QUEUE_REJECTED", "导出队列已关闭", false, exception);
+            publish(failed);
+        }
+    }
+
+    private void execute(Plan plan) {
+        long startedNanos = System.nanoTime();
+        ExportTaskResponse claimed = store.claim(plan.exportId());
+        if (claimed == null) return;
+        logEvent("started", plan, "prepare", "running", 0, 0, plan.images().size(),
+            plan.volumes().size(), null, null, false, null);
+        publish(claimed);
+        try {
+            for (VolumePlan volume : plan.volumes()) {
+                checkCancelled(plan.exportId());
+                long volumeStarted = System.nanoTime();
+                store.markVolumeStatus(plan.exportId(), volume.record().volumeIndex(), "writing");
+                logEvent("started", plan, "writing", "running", elapsed(startedNanos),
+                    volume.record().startPage(), plan.images().size(), volume.record().volumeIndex(),
+                    null, null, false, null);
+                publish(store.updateProgress(
+                    plan.exportId(), "running", "writing", volume.record().startPage(),
+                    plan.images().size(), volume.record().volumeIndex(), plan.volumes().size(),
+                    null, null));
+
+                VolumeReport report = writeTemporary(plan, volume);
+                checkCancelled(plan.exportId());
+                logEvent("validated", plan, "validating", "running", elapsed(volumeStarted),
+                    volume.record().endPage(), plan.images().size(), volume.record().volumeIndex(),
+                    null, null, false, null);
+                long publishStarted = System.nanoTime();
+                publishTemporary(plan, volume);
+                logEvent("published", plan, "publishing", "running", elapsed(publishStarted),
+                    volume.record().endPage(), plan.images().size(), volume.record().volumeIndex(),
+                    null, null, false, null);
+                String fileRef = FileReferences.fileRef(volume.outputFile());
+                store.completeVolumeAndRegisterFile(
+                    plan.exportId(), volume.record().volumeIndex(), fileRef,
+                    volume.record().displayPath(), volume.outputFile().getFileName().toString(),
+                    report.fileSize(), report.pageCount());
+                logEvent("volume_completed", plan, "completed", "running", elapsed(volumeStarted),
+                    volume.record().endPage(), plan.images().size(), volume.record().volumeIndex(),
+                    null, null, false, null);
+            }
+            publish(store.updateProgress(
+                plan.exportId(), "completed", "completed", plan.images().size(),
+                plan.images().size(), plan.volumes().size(), plan.volumes().size(),
+                null, null));
+            logEvent("completed", plan, "completed", "completed", elapsed(startedNanos),
+                plan.images().size(), plan.images().size(), plan.volumes().size(), null, null, false, null);
+        } catch (CancelledException | InterruptedException exception) {
+            if (exception instanceof InterruptedException) Thread.currentThread().interrupt();
+            String status = store.completedVolumeCount(plan.exportId()) > 0 ? "partial" : "cancelled";
+            finishFailure(plan, status,
+                "CANCELLED", "导出已取消");
+            logEvent("cancelled", plan, "cancelled", status, elapsed(startedNanos),
+                0, plan.images().size(), plan.volumes().size(), "CANCELLED", "导出已取消", false, exception);
+        } catch (Exception exception) {
+            ExportFailure failure = describe(exception, plan.task().format());
+            String status = store.completedVolumeCount(plan.exportId()) > 0 ? "partial" : "failed";
+            finishFailure(plan, status,
+                failure.code(), failure.message());
+            logEvent("failed", plan, "failed", status, elapsed(startedNanos),
+                0, plan.images().size(), plan.volumes().size(), failure.code(), failure.message(), false, exception);
+        }
+    }
+
+    private VolumeReport writeTemporary(Plan plan, VolumePlan volume) throws Exception {
+        long startedNanos = System.nanoTime();
+        long[] lastLogNanos = {0};
+        int[] lastLoggedPage = {0};
+        PdfVolumeWriter.Progress progress = pageCount -> {
+            checkCancelled(plan.exportId());
+            int taskPage = volume.record().startPage() + pageCount;
+            long now = System.nanoTime();
+            boolean due = shouldLogProgress(now, pageCount, lastLogNanos[0], lastLoggedPage[0],
+                volume.record().expectedPageCount());
+            if (due) {
+                lastLogNanos[0] = now;
+                lastLoggedPage[0] = pageCount;
+                logEvent("progress", plan, "writing", "running", elapsed(startedNanos), taskPage,
+                    plan.images().size(), volume.record().volumeIndex(), null, null, false, null);
+            }
+            publish(store.updateProgress(
+                plan.exportId(), "running", "writing", taskPage,
+                plan.images().size(), volume.record().volumeIndex(),
+                plan.volumes().size(), null, null));
+        };
+        if ("pdf".equals(plan.task().format())) {
+            List<Path> volumeImages = plan.images().subList(
+                volume.record().startPage(), volume.record().endPage());
+            pdfWriter.write(volumeImages, volume.temporaryFile(), plan.task().useOriginal(),
+                plan.task().compressionRatio(), progress);
+            PdfFileValidator.Report report = validateTemporary(volume);
+            logEvent("validated", plan, "validating", "running", 0, volume.record().endPage(),
+                plan.images().size(), volume.record().volumeIndex(), null, null, false, null);
+            return new VolumeReport(report.fileSize(), report.pageCount());
+        }
+
+        ArchiveExportPlanner.Plan archivePlan = ArchiveExportPlanner.plan(
+            plan.task().format(), plan.task().mode(), plan.task().albumId(),
+            plan.task().albumTitle(), plan.task().authors(),
+            plan.chapters().stream().map(chapter -> new ArchiveExportPlanner.Chapter(
+                chapter.chapterId(), chapter.chapterTitle(), chapter.sortOrder(),
+                chapter.expectedPageCount())).toList(),
+            plan.images(), volume.record().startPage(), volume.record().endPage(),
+            volume.record().volumeIndex(), plan.volumes().size());
+        ArchiveVolumeWriter.Report report = archiveWriter.write(
+            archivePlan, volume.temporaryFile(), progress::pageWritten);
+        return new VolumeReport(report.fileSize(), report.pageCount());
+    }
+
+    private void finishFailure(Plan plan, String status, String code, String message) {
+        cleanupTemporaryFiles(plan);
+        for (ExportStore.Volume volume : store.volumes(plan.exportId())) {
+            store.markVolumeStatus(plan.exportId(), volume.volumeIndex(), status);
+        }
+        ExportTaskResponse current = requireTask(plan.exportId());
+        publish(store.updateProgress(
+            plan.exportId(), status, status, current.currentPage(), plan.images().size(),
+            store.completedVolumeCount(plan.exportId()), plan.volumes().size(), code, message));
+    }
+
+    private Plan preflight(
+        String exportId,
+        String batchId,
+        NormalizedTask task,
+        boolean allowOverwrite
+    ) throws ExportException {
+        List<ExportStore.Chapter> chapters = new ArrayList<>();
+        List<Path> images = new ArrayList<>();
+        List<RequestedChapter> requested = task.chapters();
+        String albumTitle = task.albumTitle();
+        String coverUrl = task.coverUrl();
+        String authors = task.authors();
+        Boolean singleEpisode = task.singleEpisode();
+        for (int index = 0; index < requested.size(); index++) {
+            RequestedChapter chapter = requested.get(index);
+            StoredDownloadTask download = downloads.findTask(chapter.albumId(), chapter.chapterId());
+            if (download == null || !"completed".equals(download.status())) {
+                throw new ExportException("DOWNLOAD_NOT_COMPLETED",
+                    "章节“" + chapter.title() + "”尚未完成下载");
+            }
+            try {
+                download = metadataResolver.apply(download);
+                if (download.chapterTitle() == null || download.chapterTitle().isBlank()
+                    || download.albumTitle() == null || download.albumTitle().isBlank()
+                    || download.isSingleEpisode() == null) {
+                    throw new IllegalStateException("DOWNLOAD_METADATA_INCOMPLETE");
+                }
+            } catch (RuntimeException exception) {
+                throw new ExportException("DOWNLOAD_METADATA_INCOMPLETE", "无法补全下载元数据", exception);
+            }
+            if (index == 0) {
+                albumTitle = value(download.albumTitle());
+                coverUrl = value(download.coverUrl());
+                authors = authorText(download.author(), download.authorsJson());
+                singleEpisode = download.isSingleEpisode();
+            }
+            chapter = new RequestedChapter(chapter.albumId(), chapter.chapterId(),
+                value(download.chapterTitle()), download.chapterSortOrder());
+            var pages = downloads.pages(download.taskId());
+            if (pages.stream().anyMatch(page -> !page.completed())) {
+                throw new ExportException("DOWNLOAD_MANIFEST_INVALID",
+                    "章节“" + chapter.title() + "”下载清单不完整");
+            }
+            ChapterManifestValidator.Report manifest;
+            try {
+                manifest = ChapterManifestValidator.validate(
+                    downloads, downloadFiles, chapter.albumId(), chapter.chapterId());
+            } catch (ChapterManifestValidator.ValidationException exception) {
+                throw new ExportException(exportValidationCode(exception.code()),
+                    "章节“" + chapter.title() + "”" + exception.getMessage(), exception);
+            }
+            images.addAll(manifest.expectedFiles());
+            int sortOrder = chapter.sortOrder() != null
+                ? chapter.sortOrder() : download.chapterSortOrder();
+            chapters.add(new ExportStore.Chapter(
+                index, chapter.albumId(), chapter.chapterId(), chapter.title(),
+                sortOrder, manifest.totalPages()));
+        }
+        if (images.isEmpty()) throw new ExportException("DOWNLOAD_MANIFEST_INVALID", "没有可导出的图片");
+
+        Path root;
+        try {
+            root = io.github.jukomu.desktop.feature.files.FileReferences.parseFolder(task.folderRef());
+        } catch (RuntimeException exception) {
+            throw new ExportException(code(task.format(), "TARGET_INVALID"), "导出目录引用无效", exception);
+        }
+        if (!Files.isDirectory(root) || !Files.isWritable(root)) {
+            throw new ExportException(code(task.format(), "TARGET_INACCESSIBLE"),
+                "导出目录不存在或不可写");
+        }
+        String resolvedDisplayTitle = "merged".equals(task.mode()) ? albumTitle
+            : chapters.get(0).chapterTitle();
+        NormalizedTask resolved = new NormalizedTask(task.format(), task.mode(), task.albumId(),
+            albumTitle, coverUrl, authors, singleEpisode, resolvedDisplayTitle,
+            chapters.stream().map(c -> new RequestedChapter(c.albumId(), c.chapterId(),
+                c.chapterTitle(), c.sortOrder())).toList(), task.folderRef(), task.targetName(),
+            task.displayPath(), task.useOriginal(), task.compressionRatio(), task.splitPages(),
+            allowOverwrite);
+        // 元数据补全后再构造目标卷，确保后续目标布局使用已固定的任务快照。
+        List<VolumePlan> volumes = buildVolumes(
+            exportId, resolved, images.size(), allowOverwrite);
+        return new Plan(exportId, batchId, resolved,
+            List.copyOf(chapters), List.copyOf(images), List.copyOf(volumes));
+    }
+
+    private List<VolumePlan> buildVolumes(
+        String exportId,
+        NormalizedTask task,
+        int totalPages,
+        boolean allowOverwrite
+    ) throws ExportException {
+        int pagesPerVolume = task.splitPages() > 0 ? task.splitPages() : totalPages;
+        int volumeCount = (totalPages + pagesPerVolume - 1) / pagesPerVolume;
+        List<VolumePlan> volumes = new ArrayList<>(volumeCount);
+        for (int index = 0; index < volumeCount; index++) {
+            int start = index * pagesPerVolume;
+            int end = Math.min(totalPages, start + pagesPerVolume);
+            String targetName = volumeCount == 1 ? task.targetName()
+                : withVolumeSuffix(task.targetName(), start + 1, end);
+            Path output;
+            try {
+                output = ExportTargetResolver.resolve(task.folderRef(), targetName);
+                Files.createDirectories(output.getParent());
+            } catch (RuntimeException | IOException exception) {
+                throw new ExportException(code(task.format(), "TARGET_INVALID"),
+                    "导出目标路径无效", exception);
+            }
+            if (Files.exists(output)) {
+                if (!Files.isRegularFile(output)) {
+                    throw new ExportException(code(task.format(), "TARGET_INVALID"),
+                        "导出目标不是普通文件");
+                }
+                if (!allowOverwrite) {
+                    throw new OutputExistsException(code(task.format(), "OUTPUT_EXISTS"),
+                        "目标文件已存在，请确认覆盖后重试: " + output);
+                }
+            }
+            String displayPath = volumeCount == 1 ? task.displayPath()
+                : withVolumeSuffix(task.displayPath(), start + 1, end);
+            Path temporary = output.resolveSibling("." + output.getFileName() + "."
+                + exportId + ".tmp." + task.format());
+            ExportStore.Volume record = new ExportStore.Volume(
+                index + 1, start, end, end - start, targetName,
+                displayPath == null || displayPath.isBlank() ? output.toString() : displayPath,
+                temporary.toString());
+            volumes.add(new VolumePlan(record, output, temporary));
+        }
+        return volumes;
+    }
+
+    private void reserve(Plan plan, String status, String phase, String code, String message) {
+        long now = System.currentTimeMillis();
+        NormalizedTask task = plan.task();
+        store.reserve(new ExportStore.ReserveTask(
+                plan.exportId(), plan.batchId(), task.format(), task.mode(), task.albumId(),
+                task.albumTitle(), task.coverUrl(), task.authors(), task.singleEpisode(),
+                "merged".equals(task.mode()) ? null : task.chapters().get(0).chapterId(),
+                task.displayTitle(), task.folderRef(), task.targetName(), task.displayPath(),
+                task.allowOverwrite(), task.useOriginal(), task.compressionRatio(),
+                task.splitPages(), status, phase, plan.images().size(), code, message, now),
+            plan.chapters(), plan.volumes().stream().map(VolumePlan::record).toList());
+    }
+
+    private static Plan failedPlan(String exportId, String batchId, NormalizedTask task) {
+        List<ExportStore.Chapter> chapters = new ArrayList<>();
+        for (int index = 0; index < task.chapters().size(); index++) {
+            RequestedChapter chapter = task.chapters().get(index);
+            chapters.add(new ExportStore.Chapter(index, chapter.albumId(), chapter.chapterId(),
+                chapter.title(), chapter.sortOrder() == null ? 0 : chapter.sortOrder(), 0));
+        }
+        return new Plan(exportId, batchId, task, List.copyOf(chapters), List.of(), List.of());
+    }
+
+    private static NormalizedTask normalize(ExportTaskRequest request) {
+        if (request == null) throw ApiException.invalidRequest("tasks包含空任务");
+        String format = request.format() == null || request.format().isBlank()
+            ? "pdf" : request.format().trim().toLowerCase(Locale.ROOT);
+        if (!isFormat(format)) {
+            throw ApiException.invalidRequest("format必须是pdf、cbz或zip");
+        }
+        String mode = request.mode() == null || request.mode().isBlank() ? "chapter" : request.mode();
+        if (!"chapter".equals(mode) && !"merged".equals(mode)) {
+            throw ApiException.invalidRequest("mode必须是chapter或merged");
+        }
+        String albumId = requireText(request.albumId(), "albumId");
+        if (request.target() == null) throw ApiException.invalidRequest("target不能为空");
+        String folderRef = requireText(request.target().folder(), "target.folder");
+        String targetName = requireText(request.target().relativePath(), "target.relativePath")
+            .replace('\\', '/');
+        String extension = "." + format;
+        if (!targetName.toLowerCase(Locale.ROOT).endsWith(extension)) {
+            throw ApiException.invalidRequest("target.relativePath必须以" + extension + "结尾");
+        }
+        List<RequestedChapter> chapters = new ArrayList<>();
+        if ("merged".equals(mode)) {
+            if (request.chapters() == null || request.chapters().isEmpty()) {
+                throw ApiException.invalidRequest("merged任务的chapters不能为空");
+            }
+            for (ExportTaskChapterRequest chapter : request.chapters()) {
+                if (chapter == null) throw ApiException.invalidRequest("chapters包含空章节");
+                chapters.add(new RequestedChapter(
+                    requireText(chapter.albumId(), "chapters.albumId"),
+                    requireText(chapter.chapterId(), "chapters.chapterId"),
+                    "", null));
+            }
+        } else {
+            chapters.add(new RequestedChapter(albumId,
+                requireText(request.chapterId(), "chapterId"),
+                "", null));
+        }
+        String displayTitle = request.chapterTitle();
+        if (displayTitle == null || displayTitle.isBlank()) displayTitle = request.albumTitle();
+        if (displayTitle == null || displayTitle.isBlank()) displayTitle = albumId;
+        double compressionRatio = request.compressionRatio() == null ? 1D
+            : Math.max(0.1D, Math.min(1D, request.compressionRatio()));
+        int splitPages = Math.max(0, request.splitPages() == null ? 0 : request.splitPages());
+        return new NormalizedTask(
+            format, mode, albumId, "", "", "", null, albumId,
+            List.copyOf(chapters), folderRef, targetName, value(request.displayPath()),
+            !"pdf".equals(format) || request.useOriginal() == null || request.useOriginal(),
+            compressionRatio,
+            splitPages, request.allowOverwrite() != null && request.allowOverwrite());
+    }
+
+    private static NormalizedTask taskFromPersisted(
+        ExportTaskResponse task,
+        List<ExportStore.Chapter> chapters
+    ) {
+        List<RequestedChapter> requested = chapters.stream()
+            .map(chapter -> new RequestedChapter(chapter.albumId(), chapter.chapterId(),
+                chapter.chapterTitle(), chapter.sortOrder()))
+            .toList();
+        String displayPath = ExportTargetResolver.resolve(
+            task.targetFolderRef(), task.targetName()).toString();
+        return new NormalizedTask(
+            task.format(), task.mode(), task.albumId(), task.albumTitle(), task.coverUrl(), task.authors(),
+            task.isSingleEpisode(), task.displayTitle(), requested, task.targetFolderRef(),
+            task.targetName(), displayPath, task.useOriginal(), task.compressionRatio(),
+            task.splitPages(), task.allowOverwrite());
+    }
+
+    private static void ensureRetryLayoutUnchanged(
+        List<ExportStore.Chapter> persistedChapters,
+        List<ExportStore.Volume> persistedVolumes,
+        Plan plan
+    ) throws ExportException {
+        if (persistedChapters.size() != plan.chapters().size()
+            || persistedVolumes.size() != plan.volumes().size()) {
+            throw retryInputChanged(plan);
+        }
+        for (int index = 0; index < persistedChapters.size(); index++) {
+            ExportStore.Chapter before = persistedChapters.get(index);
+            ExportStore.Chapter after = plan.chapters().get(index);
+            if (!before.albumId().equals(after.albumId())
+                || !before.chapterId().equals(after.chapterId())
+                || before.expectedPageCount() != after.expectedPageCount()) {
+                throw retryInputChanged(plan);
+            }
+        }
+        for (int index = 0; index < persistedVolumes.size(); index++) {
+            ExportStore.Volume before = persistedVolumes.get(index);
+            ExportStore.Volume after = plan.volumes().get(index).record();
+            if (before.startPage() != after.startPage() || before.endPage() != after.endPage()
+                || !before.targetName().equals(after.targetName())) {
+                throw retryInputChanged(plan);
+            }
+        }
+    }
+
+    private static PdfFileValidator.Report validateTemporary(VolumePlan volume) throws ExportException {
+        try {
+            return PdfFileValidator.validate(FileReferences.fileRef(volume.temporaryFile()),
+                volume.record().expectedPageCount());
+        } catch (PdfFileValidator.ValidationException exception) {
+            throw new ExportException(exception.code(), exception.getMessage(), exception);
+        }
+    }
+
+    private static void publishTemporary(Plan plan, VolumePlan volume) throws Exception {
+        try {
+            if (plan.task().allowOverwrite()) {
+                try {
+                    Files.move(volume.temporaryFile(), volume.outputFile(),
+                        StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+                } catch (AtomicMoveNotSupportedException exception) {
+                    Files.move(volume.temporaryFile(), volume.outputFile(),
+                        StandardCopyOption.REPLACE_EXISTING);
+                }
+            } else {
+                try {
+                    Files.move(volume.temporaryFile(), volume.outputFile(),
+                        StandardCopyOption.ATOMIC_MOVE);
+                } catch (AtomicMoveNotSupportedException exception) {
+                    Files.move(volume.temporaryFile(), volume.outputFile());
+                }
+            }
+        } catch (FileAlreadyExistsException exception) {
+            throw new OutputExistsException(code(plan.task().format(), "OUTPUT_EXISTS"),
+                "目标文件已存在，请确认覆盖后重试: " + volume.outputFile());
+        }
+    }
+
+    private void checkCancelled(String exportId) throws CancelledException, InterruptedException {
+        if (Thread.currentThread().isInterrupted()) throw new InterruptedException();
+        if (store.isCancellationRequested(exportId)) throw new CancelledException();
+    }
+
+    private ExportTaskResponse requireTask(String exportId) {
+        ExportTaskResponse task = store.find(exportId);
+        if (task == null) throw ApiException.notFound("导出任务不存在");
+        return task;
+    }
+
+    private void publish(ExportTaskResponse task) {
+        if (task != null) events.publish("exportProgress", task);
+    }
+
+    private static ExportFailure describe(Exception exception, String format) {
+        if (exception instanceof OutputExistsException exists) {
+            return new ExportFailure(exists.code(), exists.getMessage());
+        }
+        if (exception instanceof ExportException export) {
+            return new ExportFailure(export.code(), export.getMessage());
+        }
+        String message = exception.getMessage();
+        if (message != null) {
+            int separator = message.indexOf(':');
+            if (separator > 0 && separator < 40) {
+                return new ExportFailure(message.substring(0, separator),
+                    message.substring(separator + 1).trim());
+            }
+        }
+        return new ExportFailure(code(format, "EXPORT_FAILED"),
+            message == null || message.isBlank() ? "导出失败" : message);
+    }
+
+    private static String withVolumeSuffix(String value, int start, int end) {
+        int separator = value == null ? -1 : value.lastIndexOf('.');
+        String extension = separator >= 0 ? value.substring(separator) : "";
+        String suffix = String.format(Locale.ROOT, "_%03d-%03d%s", start, end, extension);
+        if (value == null || value.isBlank()) return suffix.substring(1);
+        return separator >= 0 ? value.substring(0, separator) + suffix : value + suffix;
+    }
+
+    private static boolean isFormat(String format) {
+        return "pdf".equals(format) || "cbz".equals(format) || "zip".equals(format);
+    }
+
+    private static String code(String format, String suffix) {
+        return format.toUpperCase(Locale.ROOT) + "_" + suffix;
+    }
+
+    private static String exportValidationCode(String validationCode) {
+        return validationCode.startsWith("IMAGE_MANIFEST") || "IMAGE_EXTRA".equals(validationCode)
+            ? "DOWNLOAD_MANIFEST_INVALID" : "DOWNLOAD_FILE_INVALID";
+    }
+
+    private static ExportException retryInputChanged(Plan plan) {
+        return new ExportException(code(plan.task().format(), "RETRY_INPUT_CHANGED"),
+            "下载内容已变化，请新建导出任务");
+    }
+
+    private static String requireText(String value, String name) {
+        return requiredTrimmedText(value, name);
+    }
+
+    private synchronized void requireOpen() {
+        if (closed) throw ApiException.unavailable("导出服务已关闭");
+    }
+
+    private static String value(String value) {
+        return value == null ? "" : value;
+    }
+
+    private String authorText(String author, String authorsJson) {
+        try {
+            List<String> authors = JsonUtils.parseJsonStringList(
+                authorsJson == null ? "[]" : authorsJson);
+            if (authors != null && !authors.isEmpty()) return String.join("、", authors);
+        } catch (Exception ignored) {
+            // 历史记录中的作者 JSON 损坏时降级到兼容字段。
+        }
+        return value(author);
+    }
+
+    private static void deleteQuietly(Path file) {
+        try {
+            Files.deleteIfExists(file);
+        } catch (IOException ignored) {
+            // 后续重试或启动恢复仍会再次尝试清理同一个持久化临时路径。
+        }
+    }
+
+    private static void cleanupTemporaryFiles(Plan plan) {
+        for (VolumePlan volume : plan.volumes()) deleteQuietly(volume.temporaryFile());
+    }
+
+    private static long elapsed(long startedNanos) {
+        return java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNanos);
+    }
+
+    private static long elapsedSince(long createdAtMillis) {
+        return Math.max(0, System.currentTimeMillis() - createdAtMillis);
+    }
+
+    static boolean shouldLogProgress(long nowNanos, int page, long lastLogNanos,
+                                     int lastPage, int totalPages) {
+        return page == 1 || page == totalPages || lastLogNanos == 0
+            || page - lastPage >= 25 || nowNanos - lastLogNanos >= LOG_HEARTBEAT_NANOS;
+    }
+
+    private void logEvent(String event, Plan plan, String phase, String status, long elapsedMs,
+                          int page, int totalPages, int volume, String code, String message,
+                          boolean retry, Throwable failure) {
+        logEvent(event, plan.exportId(), plan.batchId(), plan.task().format(), phase, status,
+            elapsedMs, page, totalPages, volume, code, message, retry, failure);
+    }
+
+    private void logEvent(String event, String exportId, String batchId, String format,
+                          String phase, String status, long elapsedMs, int page, int totalPages,
+                          int volume, String code, String message, boolean retry, Throwable failure) {
+        StringBuilder line = new StringBuilder("export event=").append(clean(event))
+            .append(" exportId=").append(clean(exportId)).append(" batchId=").append(clean(batchId))
+            .append(" format=").append(clean(format)).append(" phase=").append(clean(phase))
+            .append(" status=").append(clean(status)).append(" elapsedMs=").append(elapsedMs)
+            .append(" page=").append(page).append(" totalPages=").append(totalPages)
+            .append(" volume=").append(volume);
+        append(line, "retry", retry ? "true" : null);
+        append(line, "errorCode", code);
+        boolean outputExists = code != null && code.endsWith("_OUTPUT_EXISTS");
+        if (!outputExists) append(line, "message", message);
+        if (failure == null || outputExists) {
+            if ("failed".equals(status)) LOGGER.error(line.toString());
+            else LOGGER.info(line.toString());
+        } else {
+            LOGGER.error(line.toString(), failure);
+        }
+    }
+
+    private static void append(StringBuilder line, String key, String value) {
+        if (value != null && !value.isBlank()) line.append(' ').append(key).append('=').append(clean(value));
+    }
+
+    private void cleanupQueuedCancellation(String exportId) {
+        for (ExportStore.Volume volume : store.volumes(exportId)) {
+            deleteQuietly(Path.of(volume.tempPath()));
+            store.markVolumeStatus(exportId, volume.volumeIndex(), "cancelled");
+        }
+    }
+
+    @Override
+    public synchronized void close() {
+        if (closed) return;
+        closed = true;
+        for (String exportId : store.activeExportIds()) {
+            ExportTaskResponse task = store.requestCancel(exportId);
+            if (task != null && "cancelled".equals(task.status())) {
+                cleanupQueuedCancellation(exportId);
+            }
+            publish(task);
+        }
+    }
+
+    private record RequestedChapter(String albumId, String chapterId, String title, Integer sortOrder) {
+    }
+
+    private record NormalizedTask(
+        String format,
+        String mode,
+        String albumId,
+        String albumTitle,
+        String coverUrl,
+        String authors,
+        Boolean singleEpisode,
+        String displayTitle,
+        List<RequestedChapter> chapters,
+        String folderRef,
+        String targetName,
+        String displayPath,
+        boolean useOriginal,
+        double compressionRatio,
+        int splitPages,
+        boolean allowOverwrite
+    ) {
+        NormalizedTask withAllowOverwrite(boolean value) {
+            return new NormalizedTask(format, mode, albumId, albumTitle, coverUrl, authors, singleEpisode,
+                displayTitle, chapters, folderRef, targetName, displayPath, useOriginal,
+                compressionRatio, splitPages, value);
+        }
+    }
+
+    private record Plan(
+        String exportId,
+        String batchId,
+        NormalizedTask task,
+        List<ExportStore.Chapter> chapters,
+        List<Path> images,
+        List<VolumePlan> volumes
+    ) {
+    }
+
+    private record VolumePlan(ExportStore.Volume record, Path outputFile, Path temporaryFile) {
+    }
+
+    private record ExportFailure(String code, String message) {
+    }
+
+    private record VolumeReport(long fileSize, int pageCount) {
+    }
+
+    private static class ExportException extends Exception {
+        private final String code;
+
+        ExportException(String code, String message) {
+            super(message);
+            this.code = code;
+        }
+
+        ExportException(String code, String message, Throwable cause) {
+            super(message, cause);
+            this.code = code;
+        }
+
+        String code() {
+            return code;
+        }
+    }
+
+    private static final class OutputExistsException extends ExportException {
+        OutputExistsException(String code, String message) {
+            super(code, message);
+        }
+    }
+
+    private static final class CancelledException extends Exception {
+    }
+}

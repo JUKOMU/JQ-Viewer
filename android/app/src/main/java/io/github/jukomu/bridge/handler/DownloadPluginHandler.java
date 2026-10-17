@@ -1,23 +1,19 @@
 package io.github.jukomu.bridge.handler;
 
-import android.util.Log;
-
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
-
 import io.github.jukomu.feature.download.DownloadService;
-
 import org.json.JSONArray;
 import org.json.JSONObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * 负责下载任务 Bridge 的参数校验、服务调用和响应适配。
  */
 public final class DownloadPluginHandler {
-
-    private static final String TAG = "DownloadPluginHandler";
-
+    private static final Logger LOGGER = LoggerFactory.getLogger(DownloadPluginHandler.class);
     private final DownloadService downloadService;
 
     public DownloadPluginHandler(DownloadService downloadService) {
@@ -62,7 +58,7 @@ public final class DownloadPluginHandler {
                 try {
                     taskArray.put(JSObject.fromJSONObject(tasks.getJSONObject(index)));
                 } catch (Exception error) {
-                    Log.d(TAG, "跳过无效下载任务条目", error);
+                    LOGGER.debug("跳过无效下载任务条目", error);
                 }
             }
             JSObject result = new JSObject();

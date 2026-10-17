@@ -10,35 +10,25 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.SystemClock;
 import android.provider.Settings;
-import android.util.Log;
-
-import com.getcapacitor.JSObject;
-
 import androidx.core.content.FileProvider;
-
+import com.getcapacitor.JSObject;
+import io.github.jukomu.runtime.ServiceExecutors;
+import io.github.jukomu.util.JsonUtils;
 import org.json.JSONArray;
 import org.json.JSONObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
+import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.security.MessageDigest;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
-import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
@@ -46,8 +36,7 @@ import java.util.function.Consumer;
  * Android 原生应用内更新服务。
  */
 public final class UpdateService {
-
-    private static final String TAG = "UpdateService";
+    private static final Logger LOGGER = LoggerFactory.getLogger(UpdateService.class);
     private static final String GITHUB_MANIFEST_URL =
         "https://github.com/JUKOMU/JQ-Viewer/releases/latest/download/latest.json";
     // Gitee 没有稳定的 releases/latest/download/latest.json 路径，先取正式 Release API，
@@ -65,8 +54,8 @@ public final class UpdateService {
 
     private final Context context;
     private final File updateDirectory;
-    private final ThreadPoolExecutor executor;
-    private final ThreadPoolExecutor manifestExecutor;
+    private final ExecutorService executor;
+    private final ExecutorService manifestExecutor;
     private final Object stateLock = new Object();
     private final AtomicInteger revision = new AtomicInteger();
     private volatile Consumer<Snapshot> progressSink;
@@ -83,8 +72,8 @@ public final class UpdateService {
     public UpdateService(Context context) {
         this.context = context.getApplicationContext();
         this.updateDirectory = new File(this.context.getFilesDir(), UPDATE_DIRECTORY);
-        this.executor = createExecutor(3, "app-update-");
-        this.manifestExecutor = createExecutor(2, "app-update-manifest-");
+        this.executor = ServiceExecutors.fixed("app-update", 3);
+        this.manifestExecutor = ServiceExecutors.fixed("app-update-manifest", 2);
     }
 
     /**
@@ -112,6 +101,8 @@ public final class UpdateService {
      */
     public void checkUpdate(Consumer<CheckResult> callback) {
         currentManifest = null;
+        long startedAt = SystemClock.elapsedRealtime();
+        LOGGER.info("应用更新检查开始: event=check_started, sources=github,gitee");
         executor.execute(() -> {
             try {
                 Future<ManifestAttempt> githubFuture = manifestExecutor.submit(
@@ -121,6 +112,8 @@ public final class UpdateService {
                 ManifestResolution resolution = resolveManifests(
                     githubFuture.get(), giteeFuture.get());
                 if (!resolution.success) {
+                    LOGGER.warn("应用更新检查失败: event=check_failed, stage=resolve, elapsedMs={}, errorType=manifest_unavailable",
+                        elapsedMs(startedAt));
                     publish("failed", "", 0L, 0L, 0L, resolution.error);
                     callback.accept(CheckResult.failure(resolution.error));
                     return;
@@ -128,26 +121,37 @@ public final class UpdateService {
                 UpdateManifest manifest = resolution.manifest.selectForAbis(Build.SUPPORTED_ABIS);
                 if (!isNewerThanInstalled(manifest)) {
                     currentManifest = manifest;
+                    LOGGER.info("应用更新检查完成: event=check_completed, result=up_to_date, versionCode={}, sizeBytes={}, elapsedMs={}",
+                        manifest.getVersionCode(), manifest.getSizeBytes(), elapsedMs(startedAt));
                     publish("up_to_date", "", 0L, 0L, manifest.getSizeBytes());
                     callback.accept(CheckResult.upToDate(manifest));
                     return;
                 }
                 currentManifest = manifest;
+                LOGGER.info("应用更新检查完成: event=check_completed, result=available, versionCode={}, sizeBytes={}, elapsedMs={}",
+                    manifest.getVersionCode(), manifest.getSizeBytes(), elapsedMs(startedAt));
                 publish("update_available", "", 0L, 0L, manifest.getSizeBytes());
                 callback.accept(CheckResult.available(manifest));
             } catch (InterruptedException error) {
                 Thread.currentThread().interrupt();
                 currentManifest = null;
+                LOGGER.warn("应用更新检查取消: event=check_cancelled, elapsedMs={}, errorType={}",
+                    elapsedMs(startedAt), error.getClass().getSimpleName());
                 publish("failed", "", 0L, 0L, 0L, "更新检查已取消");
                 callback.accept(CheckResult.failure("更新检查已取消"));
             } catch (ExecutionException error) {
                 currentManifest = null;
                 String message = userMessage(error);
+                LOGGER.warn("应用更新检查失败: event=check_failed, stage=fetch, elapsedMs={}, errorType={}",
+                    elapsedMs(startedAt), error.getCause() == null
+                        ? error.getClass().getSimpleName() : error.getCause().getClass().getSimpleName());
                 publish("failed", "", 0L, 0L, 0L, message);
                 callback.accept(CheckResult.failure(message));
             } catch (Exception error) {
                 currentManifest = null;
                 String message = userMessage(error);
+                LOGGER.warn("应用更新检查失败: event=check_failed, stage=resolve, elapsedMs={}, errorType={}",
+                    elapsedMs(startedAt), error.getClass().getSimpleName());
                 publish("failed", "", 0L, 0L, 0L, message);
                 callback.accept(CheckResult.failure(message));
             }
@@ -160,17 +164,22 @@ public final class UpdateService {
     public boolean startUpdate() {
         synchronized (stateLock) {
             if (activeSession != null) {
+                LOGGER.info("应用更新下载拒绝: event=start_rejected, reason=already_active");
                 return false;
             }
             UpdateManifest manifest = currentManifest;
             if (manifest == null || !isNewerThanInstalled(manifest)) {
+                LOGGER.info("应用更新下载拒绝: event=start_rejected, reason=manifest_unavailable");
                 return false;
             }
             if (!isNotificationAvailable()) {
+                LOGGER.warn("应用更新下载拒绝: event=start_rejected, reason=notification_unavailable, versionCode={}",
+                    manifest.getVersionCode());
                 publish("failed", "", 0L, 0L, manifest.getSizeBytes(), "通知不可用");
                 return false;
             }
             if (!updateDirectory.exists() && !updateDirectory.mkdirs()) {
+                LOGGER.warn("应用更新下载拒绝: event=start_rejected, reason=directory_unavailable");
                 publish("failed", "", 0L, 0L, manifest.getSizeBytes(), "无法创建更新目录");
                 return false;
             }
@@ -182,6 +191,8 @@ public final class UpdateService {
             UpdateSession session = new UpdateSession(manifest, updateDirectory,
                 revision.incrementAndGet());
             activeSession = session;
+            LOGGER.info("应用更新下载开始: event=download_started, revision={}, versionCode={}, sizeBytes={}",
+                session.revision, manifest.getVersionCode(), manifest.getSizeBytes());
             publish("racing", "racing", 0L, 0L, manifest.getSizeBytes());
             executor.execute(() -> downloadSource(
                 session, UpdateRaceState.Source.GITHUB, manifest.getGithubUrl()));
@@ -200,9 +211,12 @@ public final class UpdateService {
         synchronized (stateLock) {
             session = activeSession;
             if (session == null) {
+                LOGGER.debug("应用更新取消忽略: event=cancel_ignored, reason=idle");
                 return;
             }
             if (!session.completionGate.cancel()) {
+                LOGGER.debug("应用更新取消忽略: event=cancel_ignored, reason=terminal_or_committing, revision={}",
+                    session.revision);
                 return;
             }
             session.raceState.cancel();
@@ -210,6 +224,8 @@ public final class UpdateService {
         closeConnections(session);
         publish("cancelled", "", session.githubBytes, session.giteeBytes,
             session.manifest.getSizeBytes());
+        LOGGER.info("应用更新下载取消: event=download_cancelled, revision={}, githubBytes={}, giteeBytes={}",
+            session.revision, session.githubBytes, session.giteeBytes);
         cleanupSession(session);
     }
 
@@ -224,21 +240,26 @@ public final class UpdateService {
         if (apkFile == null || manifest == null || !apkFile.isFile()) {
             String message = "没有可安装的更新包";
             publish("failed", "", 0L, 0L, 0L, message);
+            LOGGER.warn("应用更新安装失败: event=install_failed, reason=package_missing");
             return InstallResult.failure(message);
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
             && !context.getPackageManager().canRequestPackageInstalls()) {
             installPermissionPending = false;
+            LOGGER.info("应用更新安装等待权限: event=install_permission_required, sizeBytes={}",
+                manifest.getSizeBytes());
             publish("install_permission_required", "", apkFile.length(), apkFile.length(),
                 manifest.getSizeBytes());
             return InstallResult.permissionRequired();
         }
         try {
             launchInstaller(activity, apkFile, manifest);
+            LOGGER.info("应用更新安装器已启动: event=installer_started, sizeBytes={}", apkFile.length());
             return InstallResult.started();
         } catch (Exception error) {
             installerPending = false;
-            Log.w(TAG, "启动更新安装器失败", error);
+            LOGGER.warn("启动更新安装器失败: event=install_failed, errorType={}",
+                error.getClass().getSimpleName());
             String message = userMessage(error);
             publish("failed", "", apkFile.length(), apkFile.length(), manifest.getSizeBytes(), message);
             return InstallResult.failure(message);
@@ -259,11 +280,13 @@ public final class UpdateService {
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             getActivityContext(activity).startActivity(intent);
             installPermissionPending = true;
+            LOGGER.info("应用更新权限设置已打开: event=permission_settings_opened");
             publish("install_permission_required", "", 0L, 0L,
                 readyManifest == null ? 0L : readyManifest.getSizeBytes());
             return true;
         } catch (Exception error) {
-            Log.w(TAG, "打开安装来源设置失败", error);
+            LOGGER.warn("打开安装来源设置失败: event=install_failed, errorType={}",
+                error.getClass().getSimpleName());
             publish("failed", "", 0L, 0L,
                 readyManifest == null ? 0L : readyManifest.getSizeBytes(),
                 "无法打开安装来源设置");
@@ -283,6 +306,7 @@ public final class UpdateService {
                 && !context.getPackageManager().canRequestPackageInstalls()) {
                 publish("failed", "", 0L, 0L, manifest == null ? 0L : manifest.getSizeBytes(),
                     "安装来源权限未授予");
+                LOGGER.warn("应用更新安装失败: event=install_failed, reason=permission_denied");
                 return;
             }
             if (apkFile == null || manifest == null || !apkFile.isFile()) {
@@ -293,7 +317,8 @@ public final class UpdateService {
                 launchInstaller(activity, apkFile, manifest);
             } catch (Exception error) {
                 installerPending = false;
-                Log.w(TAG, "权限返回后启动更新安装器失败", error);
+                LOGGER.warn("权限返回后启动更新安装器失败: event=install_failed, errorType={}",
+                    error.getClass().getSimpleName());
                 publish("failed", "", apkFile.length(), apkFile.length(), manifest.getSizeBytes(),
                     userMessage(error));
             }
@@ -320,6 +345,7 @@ public final class UpdateService {
         }
         installerPending = true;
         activityContext.startActivity(intent);
+        LOGGER.info("应用更新安装器启动: event=install_started, sizeBytes={}", apkFile.length());
         publish("installing", "", apkFile.length(), apkFile.length(), manifest.getSizeBytes());
         UpdateForegroundService.stop(context, revision.incrementAndGet());
     }
@@ -329,6 +355,7 @@ public final class UpdateService {
         UpdateManifest manifest = readyManifest;
         if (apkFile == null || manifest == null || !apkFile.isFile()) {
             publish("failed", "", 0L, 0L, 0L, "没有可安装的更新包");
+            LOGGER.warn("应用更新安装结果失败: event=install_result_failed, reason=package_missing");
             return;
         }
         if (isInstalledVersionAtLeast(manifest)) {
@@ -336,10 +363,13 @@ public final class UpdateService {
             readyManifest = null;
             deleteFile(apkFile);
             publish("up_to_date", "", 0L, 0L, manifest.getSizeBytes());
+            LOGGER.info("应用更新安装完成: event=install_completed, versionCode={}", manifest.getVersionCode());
             return;
         }
         publish("ready_to_install", "", apkFile.length(), apkFile.length(),
             manifest.getSizeBytes());
+        LOGGER.info("应用更新安装待确认: event=install_result_pending, versionCode={}",
+            manifest.getVersionCode());
     }
 
     private Context getActivityContext(Activity activity) {
@@ -357,6 +387,7 @@ public final class UpdateService {
      * 关闭更新线程池。
      */
     public void destroy() {
+        LOGGER.info("应用更新服务关闭: event=service_destroyed, active={}", activeSession != null);
         cancelUpdate();
         executor.shutdownNow();
         manifestExecutor.shutdownNow();
@@ -384,9 +415,17 @@ public final class UpdateService {
     }
 
     private ManifestAttempt fetchManifestAttempt(String endpoint, boolean gitee) {
+        long startedAt = SystemClock.elapsedRealtime();
+        String source = gitee ? "Gitee" : "GitHub";
+        LOGGER.debug("应用更新清单获取开始: event=manifest_started, source={}", source);
         try {
-            return ManifestAttempt.success(fetchManifest(endpoint, gitee));
+            UpdateManifest manifest = fetchManifest(endpoint, gitee);
+            LOGGER.info("应用更新清单获取完成: event=manifest_completed, source={}, versionCode={}, sizeBytes={}, elapsedMs={}",
+                source, manifest.getVersionCode(), manifest.getSizeBytes(), elapsedMs(startedAt));
+            return ManifestAttempt.success(manifest);
         } catch (Exception error) {
+            LOGGER.warn("应用更新清单获取失败: event=manifest_failed, source={}, elapsedMs={}, errorType={}",
+                source, elapsedMs(startedAt), error.getClass().getSimpleName());
             return ManifestAttempt.failure(userMessage(error));
         }
     }
@@ -412,7 +451,7 @@ public final class UpdateService {
                 throw new IOException("HTTP " + status);
             }
             byte[] body = readLimited(connection.getInputStream(), MANIFEST_MAX_BYTES);
-            return new JSONObject(new String(body, java.nio.charset.StandardCharsets.UTF_8));
+            return JsonUtils.parseJsonObject(body);
         } finally {
             if (connection != null) {
                 connection.disconnect();
@@ -429,7 +468,7 @@ public final class UpdateService {
                 throw new IOException("HTTP " + status);
             }
             byte[] body = readLimited(connection.getInputStream(), MANIFEST_MAX_BYTES);
-            return new JSONArray(new String(body, java.nio.charset.StandardCharsets.UTF_8));
+            return JsonUtils.parseJsonArray(body);
         } finally {
             if (connection != null) {
                 connection.disconnect();
@@ -506,6 +545,9 @@ public final class UpdateService {
 
     private void downloadSource(UpdateSession session, UpdateRaceState.Source source,
                                 String url) {
+        long startedAt = SystemClock.elapsedRealtime();
+        LOGGER.info("应用更新下载源开始: event=source_started, revision={}, source={}",
+            session.revision, sourceName(source));
         File partFile = source == UpdateRaceState.Source.GITHUB
             ? session.githubPart : session.giteePart;
         HttpURLConnection connection = null;
@@ -513,7 +555,9 @@ public final class UpdateService {
         try {
             if (session.completionGate.isCancelled() || session.raceState.isCancelled()
                 || (session.raceState.getWinner() != null
-                    && session.raceState.getWinner() != source)) {
+                && session.raceState.getWinner() != source)) {
+                LOGGER.debug("应用更新下载源跳过: event=source_skipped, revision={}, source={}, reason=cancelled_or_lost",
+                    session.revision, sourceName(source));
                 return;
             }
             connection = openConnection(url);
@@ -555,10 +599,16 @@ public final class UpdateService {
                 }
             }
             successful = true;
+            LOGGER.info("应用更新下载源完成: event=source_completed, revision={}, source={}, bytes={}, elapsedMs={}",
+                session.revision, sourceName(source), sourceBytes(session, source), elapsedMs(startedAt));
         } catch (InterruptedException error) {
             Thread.currentThread().interrupt();
+            LOGGER.debug("应用更新下载源取消: event=source_cancelled, revision={}, source={}, bytes={}",
+                session.revision, sourceName(source), sourceBytes(session, source));
         } catch (IOException error) {
-            Log.w(TAG, sourceName(source) + " 更新下载失败", error);
+            LOGGER.warn("应用更新下载源失败: event=source_failed, revision={}, source={}, bytes={}, elapsedMs={}, errorType={}",
+                session.revision, sourceName(source), sourceBytes(session, source), elapsedMs(startedAt),
+                error.getClass().getSimpleName());
         } finally {
             if (connection != null) {
                 connection.disconnect();
@@ -573,6 +623,7 @@ public final class UpdateService {
     }
 
     private void finishSession(UpdateSession session) {
+        long startedAt = SystemClock.elapsedRealtime();
         try {
             session.finishedLatch.await();
             if (session.completionGate.isCancelled() || session.raceState.isCancelled()) {
@@ -580,6 +631,8 @@ public final class UpdateService {
             }
             UpdateRaceState.Source winner = session.raceState.getWinner();
             if (winner == null) {
+                LOGGER.warn("应用更新下载失败: event=download_failed, revision={}, reason=no_winner, elapsedMs={}",
+                    session.revision, elapsedMs(startedAt));
                 failSession(session, "两个下载源均未完成");
                 return;
             }
@@ -592,7 +645,16 @@ public final class UpdateService {
             }
             File winnerFile = winner == UpdateRaceState.Source.GITHUB
                 ? session.githubPart : session.giteePart;
-            validateApk(session.manifest, winnerFile);
+            try {
+                validateApk(session.manifest, winnerFile);
+            } catch (Exception error) {
+                LOGGER.warn("应用更新包校验失败: event=verify_failed, revision={}, source={}, elapsedMs={}, errorType={}",
+                    session.revision, sourceName(winner), elapsedMs(startedAt),
+                    error.getClass().getSimpleName());
+                throw error;
+            }
+            LOGGER.info("应用更新包校验完成: event=verify_completed, revision={}, source={}, sizeBytes={}, elapsedMs={}",
+                session.revision, sourceName(winner), winnerFile.length(), elapsedMs(startedAt));
             synchronized (stateLock) {
                 if (activeSession != session || !session.completionGate.beginCommit()) {
                     return;
@@ -608,10 +670,14 @@ public final class UpdateService {
             readyManifest = session.manifest;
             publish("ready_to_install", sourceName(winner), session.githubBytes,
                 session.giteeBytes, session.manifest.getSizeBytes());
+            LOGGER.info("应用更新下载完成: event=download_completed, revision={}, source={}, elapsedMs={}",
+                session.revision, sourceName(winner), elapsedMs(startedAt));
         } catch (InterruptedException error) {
             Thread.currentThread().interrupt();
         } catch (Exception error) {
             if (!session.completionGate.isCancelled()) {
+                LOGGER.warn("应用更新下载失败: event=download_failed, revision={}, elapsedMs={}, errorType={}",
+                    session.revision, elapsedMs(startedAt), error.getClass().getSimpleName());
                 failSession(session, userMessage(error));
             }
         } finally {
@@ -624,6 +690,8 @@ public final class UpdateService {
     }
 
     private void validateApk(UpdateManifest manifest, File apkFile) throws Exception {
+        LOGGER.debug("应用更新包校验开始: event=verify_started, sizeBytes={}, expectedBytes={}",
+            apkFile.isFile() ? apkFile.length() : 0L, manifest.getSizeBytes());
         if (!apkFile.isFile() || apkFile.length() != manifest.getSizeBytes()) {
             throw new IOException("更新包大小不一致");
         }
@@ -716,6 +784,12 @@ public final class UpdateService {
         }
         UpdateRaceState.Source winner = session.raceState.getWinner();
         long speedBytesPerSecond = updateSpeed(session, winner);
+        if (shouldLogProgress(session, winner)) {
+            LOGGER.info("应用更新下载进度: event=download_progress, revision={}, source={}, githubBytes={}, giteeBytes={}, totalBytes={}, speedBytesPerSecond={}",
+                session.revision, winner == null ? "racing" : sourceName(winner),
+                session.githubBytes, session.giteeBytes, session.manifest.getSizeBytes(),
+                speedBytesPerSecond);
+        }
         publish(winner == null ? "racing" : "selected",
             winner == null ? "racing" : sourceName(winner), session.githubBytes,
             session.giteeBytes, session.manifest.getSizeBytes(), speedBytesPerSecond, "");
@@ -725,7 +799,7 @@ public final class UpdateService {
         long displayedBytes = winner == null
             ? Math.max(session.githubBytes, session.giteeBytes)
             : winner == UpdateRaceState.Source.GITHUB
-                ? session.githubBytes : session.giteeBytes;
+              ? session.githubBytes : session.giteeBytes;
         long now = SystemClock.elapsedRealtime();
         synchronized (session) {
             if (session.lastSpeedAtMs == 0L) {
@@ -790,6 +864,8 @@ public final class UpdateService {
         deleteFile(staleReadyFile);
         publish("failed", "", session.githubBytes, session.giteeBytes,
             session.manifest.getSizeBytes(), message);
+        LOGGER.warn("应用更新会话失败: event=session_failed, revision={}, githubBytes={}, giteeBytes={}",
+            session.revision, session.githubBytes, session.giteeBytes);
         cleanupSession(session, false);
     }
 
@@ -808,6 +884,36 @@ public final class UpdateService {
                 activeSession = null;
             }
         }
+        LOGGER.debug("应用更新会话清理完成: event=session_cleaned, revision={}, stopNotification={}",
+            session.revision, stopNotification);
+    }
+
+    private boolean shouldLogProgress(UpdateSession session, UpdateRaceState.Source winner) {
+        long displayedBytes = winner == null
+            ? Math.max(session.githubBytes, session.giteeBytes)
+            : sourceBytes(session, winner);
+        long now = SystemClock.elapsedRealtime();
+        synchronized (session) {
+            if (session.lastProgressLogAtMs != 0L
+                && now - session.lastProgressLogAtMs < NOTIFICATION_UPDATE_INTERVAL_MS) {
+                return false;
+            }
+            if (displayedBytes == session.lastProgressLogBytes
+                && session.lastProgressLogAtMs != 0L) {
+                return false;
+            }
+            session.lastProgressLogAtMs = now;
+            session.lastProgressLogBytes = displayedBytes;
+            return true;
+        }
+    }
+
+    private long sourceBytes(UpdateSession session, UpdateRaceState.Source source) {
+        return source == UpdateRaceState.Source.GITHUB ? session.githubBytes : session.giteeBytes;
+    }
+
+    private static long elapsedMs(long startedAt) {
+        return Math.max(0L, SystemClock.elapsedRealtime() - startedAt);
     }
 
     private void publish(String phase, String source, long githubBytes, long giteeBytes,
@@ -841,7 +947,8 @@ public final class UpdateService {
             try {
                 sink.accept(snapshot);
             } catch (RuntimeException sinkError) {
-                Log.w(TAG, "发布更新进度失败", sinkError);
+                LOGGER.warn("发布更新进度失败: event=progress_sink_failed, errorType={}",
+                    sinkError.getClass().getSimpleName());
             }
         }
     }
@@ -879,29 +986,15 @@ public final class UpdateService {
         }
         for (File file : files) {
             if (file.isFile() && !file.delete()) {
-                Log.w(TAG, "更新临时文件删除失败: " + file.getName());
+                LOGGER.warn("更新临时文件删除失败: " + file.getName());
             }
         }
     }
 
     private void deleteFile(File file) {
         if (file != null && file.isFile() && !file.delete()) {
-            Log.w(TAG, "更新临时文件删除失败: " + file.getName());
+            LOGGER.warn("更新临时文件删除失败: " + file.getName());
         }
-    }
-
-    private static ThreadPoolExecutor createExecutor(int size, String threadNamePrefix) {
-        ThreadFactory factory = new ThreadFactory() {
-            private final AtomicInteger sequence = new AtomicInteger();
-
-            @Override
-            public Thread newThread(Runnable runnable) {
-                return new Thread(runnable, threadNamePrefix + sequence.incrementAndGet());
-            }
-        };
-        BlockingQueue<Runnable> queue = new LinkedBlockingQueue<>(size * 4);
-        return new ThreadPoolExecutor(size, size, 0L, TimeUnit.MILLISECONDS, queue, factory,
-            new ThreadPoolExecutor.AbortPolicy());
     }
 
     private static String bytesToHex(byte[] bytes) {
@@ -914,6 +1007,7 @@ public final class UpdateService {
 
     private static final class UpdateSession {
         private final UpdateManifest manifest;
+        private final int revision;
         private final UpdateRaceState raceState = new UpdateRaceState();
         private final CompletionGate completionGate = new CompletionGate();
         private final CountDownLatch finishedLatch = new CountDownLatch(2);
@@ -926,8 +1020,12 @@ public final class UpdateService {
         private long lastSpeedBytes;
         private long lastSpeedAtMs;
         private volatile long speedBytesPerSecond;
+        private long lastProgressLogBytes;
+        private long lastProgressLogAtMs;
+
         private UpdateSession(UpdateManifest manifest, File updateDirectory, int sessionId) {
             this.manifest = manifest;
+            this.revision = sessionId;
             this.githubPart = new File(updateDirectory, "github-" + sessionId + ".part");
             this.giteePart = new File(updateDirectory, "gitee-" + sessionId + ".part");
         }

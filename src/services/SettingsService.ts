@@ -1,5 +1,5 @@
 /**
- * 应用设置服务（Android SQLite 持久化 + 内存缓存）。
+ * 应用设置服务（平台后端持久化 + 内存缓存）。
  * 启动时由 App.vue 调用 initSettings() 从 DB 加载到缓存，
  * 之后所有读写走同步缓存，持久化由 SettingPage handler 调用 JmcomicService 完成。
  */
@@ -20,6 +20,9 @@ let cachedReaderBrightness = -1
 let cachedReaderKeepScreenOn = true
 let cachedReaderVolumeNavigation = false
 let cachedReaderAutoShowToolbarAtEnd = true
+let cachedReaderWidthPercent: number | null = null
+let cachedApiRouteMode: 'auto' | 'manual' = 'auto'
+let cachedApiRouteDomain = ''
 let confirmedPreloadConcurrency = 6
 let confirmedDownloadConcurrency = 6
 let preloadConcurrencySaveVersion = 0
@@ -46,6 +49,9 @@ export async function initSettings(): Promise<void> {
     cachedReaderKeepScreenOn = all.readerKeepScreenOn ?? true
     cachedReaderVolumeNavigation = all.readerVolumeNavigation ?? false
     cachedReaderAutoShowToolbarAtEnd = all.readerAutoShowToolbarAtEnd ?? true
+    cachedReaderWidthPercent = normalizeReaderWidthPercent(all.readerWidthPercent)
+    cachedApiRouteMode = all.apiRouteMode === 'manual' ? 'manual' : 'auto'
+    cachedApiRouteDomain = all.apiRouteDomain ?? ''
     settingsLoaded = true
   } catch (e) {
     // 使用默认值（已在缓存变量中预设）
@@ -54,6 +60,23 @@ export async function initSettings(): Promise<void> {
 }
 
 export const SettingsStore = {
+  getReaderWidthPercent(): number | null {
+    return cachedReaderWidthPercent
+  },
+  setReaderWidthPercent(value: number | null) {
+    cachedReaderWidthPercent = normalizeReaderWidthPercent(value)
+  },
+  getApiRouteMode(): 'auto' | 'manual' {
+    return cachedApiRouteMode
+  },
+  getApiRouteDomain(): string {
+    return cachedApiRouteDomain
+  },
+  setApiRoute(mode: 'auto' | 'manual', domain: string) {
+    cachedApiRouteMode = mode
+    cachedApiRouteDomain = domain
+  },
+
   // ---- 阅读：预加载页数 ----
   getReaderPreloadPages(): number {
     return cachedReaderPreloadPages
@@ -149,6 +172,12 @@ export const SettingsStore = {
   setReaderAutoShowToolbarAtEnd(enabled: boolean) {
     cachedReaderAutoShowToolbarAtEnd = enabled
   },
+}
+
+function normalizeReaderWidthPercent(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null
+  const normalized = Number(value)
+  return Number.isFinite(normalized) && normalized >= 0 && normalized <= 100 ? normalized : null
 }
 
 export function persistPreloadConcurrency(n: number): Promise<void> {

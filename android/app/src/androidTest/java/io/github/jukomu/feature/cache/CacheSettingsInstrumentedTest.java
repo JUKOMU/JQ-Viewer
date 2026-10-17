@@ -23,7 +23,8 @@ public class CacheSettingsInstrumentedTest {
         CacheCapacityPolicy policy = new CacheCapacityPolicy();
         CacheCapacityPolicy.Result result = policy.calculate(
             requestedMb, 512L * CacheCapacityPolicy.MIB, false,
-            CacheCapacityPolicy.PressureLevel.NORMAL);
+            CacheCapacityPolicy.PressureLevel.NORMAL,
+            CacheCapacityPolicy.SpaceSnapshot.unavailable());
         ImageCache imageCache = ImageCache.createIsolated();
         imageCache.applyPolicy(result);
 
@@ -32,7 +33,8 @@ public class CacheSettingsInstrumentedTest {
         JSONObject allSettings = settingsService.getAllSettings();
 
         PreloadService preloadService = new PreloadService(
-            imageCache, null, settingsStore, null, null, null, context, policy);
+            imageCache, null, settingsStore, null,
+            null, null, null, null, context, policy, 1);
         JSONObject capacityInfo = preloadService.getCacheCapacityInfo();
 
         assertEquals(requestedMb, allSettings.getLong("cacheRequestedMb"));

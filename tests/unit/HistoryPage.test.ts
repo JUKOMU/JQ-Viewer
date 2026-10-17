@@ -345,12 +345,13 @@ describe('HistoryPage 分组分页', () => {
 })
 
 describe('HistoryPage 详情和生命周期', () => {
-  test('历史记录有章节 ID 时定位到对应章节', async () => {
+  test('历史记录卡片始终进入漫画详情并定位章节', async () => {
     const wrapper = await mountHistory([
       makeBrowseItem(1, Date.now(), { albumId: '100', chapterId: '200', chapterTitle: '第二话' }),
     ])
     await wrapper.get('.browse-card').trigger('click')
 
+    await settle()
     expect(mocks.routerPush).toHaveBeenCalledWith({
       path: '/album/100',
       query: {

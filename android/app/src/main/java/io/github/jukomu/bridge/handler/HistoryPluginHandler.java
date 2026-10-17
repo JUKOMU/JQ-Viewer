@@ -2,10 +2,9 @@ package io.github.jukomu.bridge.handler;
 
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
+import io.github.jukomu.feature.history.data.HistoryStore;
 import org.json.JSONArray;
 import org.json.JSONObject;
-
-import io.github.jukomu.feature.history.data.HistoryStore;
 
 /**
  * 负责历史记录 Bridge 的参数解析、Store 调用和 Capacitor 响应封装。
@@ -68,7 +67,8 @@ public final class HistoryPluginHandler {
                 call.getString("coverUrl", ""),
                 call.getString("authors", ""),
                 call.getString("chapterId", ""),
-                call.getString("chapterTitle", "")
+                call.getString("chapterTitle", ""),
+                optionalLong(call, "fileId")
             );
             resolveSuccess(call);
         } catch (Exception error) {

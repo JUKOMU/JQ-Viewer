@@ -18,7 +18,8 @@ public class ImageCacheTest {
     @Before
     public void setUp() {
         CacheCapacityPolicy.Result result = new CacheCapacityPolicy().calculate(
-            16, 64L * MIB, false, CacheCapacityPolicy.PressureLevel.NORMAL);
+            16, 64L * MIB, false, CacheCapacityPolicy.PressureLevel.NORMAL,
+            CacheCapacityPolicy.SpaceSnapshot.unavailable());
         cache.applyPolicy(result);
         cache.clear();
     }
@@ -73,7 +74,7 @@ public class ImageCacheTest {
         second.join();
 
         if (failure.get() != null) throw new AssertionError(failure.get());
-        assertTrue(cache.getCurrentSize() <= cache.getCapacity());
+        assertTrue(cache.getCurrentSize() <= cache.getMemoryCapacity());
         assertTrue(cache.getStats().reservedBytes == 0L);
     }
 
@@ -86,7 +87,7 @@ public class ImageCacheTest {
         cache.trimToFraction(0.5);
 
         assertTrue(cache.getCurrentSize() <= 8L * MIB);
-        assertTrue(cache.getCapacity() == 16L * MIB);
+        assertTrue(cache.getMemoryCapacity() == 16L * MIB);
     }
 
     @Test
@@ -101,6 +102,18 @@ public class ImageCacheTest {
         assertEquals(2L, entries.get(0).sizeBytes);
         assertEquals("image/jpeg", entries.get(0).mimeType);
         assertEquals("20/2/thumb", entries.get(1).key);
+    }
+
+    @Test
+    public void exposesSeparateMemoryAndDiskCapacity() {
+        CacheCapacityPolicy.Result result = new CacheCapacityPolicy().calculate(
+            256, 256L * MIB, false, CacheCapacityPolicy.PressureLevel.NORMAL,
+            new CacheCapacityPolicy.SpaceSnapshot(1024L * MIB, 0L, true));
+        cache.applyPolicy(result);
+
+        assertEquals(result.memoryCapacityMb * MIB, cache.getMemoryCapacity());
+        assertEquals(result.diskCapacityMb * MIB, cache.getDiskCapacity());
+        assertEquals(result.effectiveMb, cache.getStats().effectiveMb);
     }
 
     private Thread writer(String key, CountDownLatch start, AtomicReference<Throwable> failure) {

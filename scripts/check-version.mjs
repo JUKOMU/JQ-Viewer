@@ -4,6 +4,7 @@ const files = {
   packageJson: 'package.json',
   packageLock: 'package-lock.json',
   androidBuildGradle: 'android/app/build.gradle',
+  desktopPom: 'desktop/pom.xml',
   readme: 'README.md',
 };
 
@@ -23,14 +24,17 @@ function fail(message) {
 const packageJson = readJson(files.packageJson);
 const packageLock = readJson(files.packageLock);
 const buildGradle = readText(files.androidBuildGradle);
+const desktopPom = readText(files.desktopPom);
 const readme = readText(files.readme);
 
 const expectedVersion = packageJson.version;
 const gradleVersionName = buildGradle.match(/versionName\s+["']([^"']+)["']/)?.[1];
+const desktopPomVersion = desktopPom.match(/<artifactId>jq-viewer-desktop<\/artifactId>\s*<version>([^<]+)<\/version>/)?.[1];
 const readmeBadgeVersion = readme.match(/img\.shields\.io\/badge\/Version-([^-]+)-brightgreen\.svg/)?.[1];
 
 const checks = [
   ['android/app/build.gradle versionName', gradleVersionName],
+  ['desktop/pom.xml version', desktopPomVersion],
   ['package-lock.json top-level version', packageLock.version],
   ['package-lock.json root package version', packageLock.packages?.['']?.version],
   ['README Version badge', readmeBadgeVersion],

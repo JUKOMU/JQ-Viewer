@@ -23,5 +23,6 @@ public class ApiSessionTest {
 
         assertTrue(apiExecutor.isShutdown());
         assertTrue(timeoutExecutor.isShutdown());
+        assertTrue(session.getCallSession().isClosed());
     }
 }

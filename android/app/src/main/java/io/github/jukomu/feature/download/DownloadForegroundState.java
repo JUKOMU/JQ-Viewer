@@ -4,7 +4,7 @@ import java.util.HashSet;
 import java.util.Set;
 
 /**
- * Serializes download foreground membership and revision publication.
+ * 对下载前台成员信息和版本发布进行序列化处理。
  */
 final class DownloadForegroundState {
 

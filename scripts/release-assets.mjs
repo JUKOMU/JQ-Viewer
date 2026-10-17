@@ -3,6 +3,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { buildDesktopReleaseFromPaths } from './desktop-release-assets.mjs'
+
 const releaseTagPattern = /^v([0-9]+\.[0-9]+\.[0-9]+)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/
 const certificateDigestPattern = /^[0-9A-Fa-f]{64}$/
 export const releaseAbis = ['arm64-v8a', 'armeabi-v7a', 'x86_64', 'x86']
@@ -53,6 +55,7 @@ export function buildReleaseManifest({
   versionCode,
   versionName,
   variants = [],
+  desktop,
 }) {
   const match = releaseTag.match(releaseTagPattern)
   if (!match) {
@@ -111,6 +114,7 @@ export function buildReleaseManifest({
     releaseNotes,
     sources: universal.sources,
     ...(variants.length > 0 ? { variants: variants.map(buildArtifact) } : {}),
+    ...(desktop ? { desktop } : {}),
   }
 }
 
@@ -125,10 +129,21 @@ export function sha256File(filePath) {
 }
 
 async function main() {
-  const [releaseTag, outputPath, ...apkPaths] = process.argv.slice(2)
+  const [releaseTag, outputPath, ...artifactArguments] = process.argv.slice(2)
+  const apkPaths = []
+  const desktopAssetPaths = []
+  for (let index = 0; index < artifactArguments.length; index += 1) {
+    if (artifactArguments[index] === '--desktop-asset') {
+      const assetPath = artifactArguments[++index]
+      if (!assetPath) throw new Error('--desktop-asset requires a path')
+      desktopAssetPaths.push(assetPath)
+    } else {
+      apkPaths.push(artifactArguments[index])
+    }
+  }
   if (!releaseTag || !outputPath || apkPaths.length !== releaseAbis.length + 1) {
     throw new Error(
-      'usage: node scripts/release-assets.mjs <tag> <output> <universal-apk> <four-abi-apks>',
+      'usage: node scripts/release-assets.mjs <tag> <output> <universal-apk> <four-abi-apks> [--desktop-asset <path>...]',
     )
   }
 
@@ -180,17 +195,29 @@ async function main() {
   const variants = await Promise.all(
     releaseAbis.map((abi) => artifactFor(variantPaths.get(abi), abi)),
   )
+  const githubRepository = process.env.GITHUB_REPOSITORY || 'JUKOMU/JQ-Viewer'
+  const giteeRepository = process.env.GITEE_REPOSITORY || 'jukomu/jq-viewer'
+  const desktop =
+    desktopAssetPaths.length > 0
+      ? buildDesktopReleaseFromPaths({
+          releaseTag,
+          assetPaths: desktopAssetPaths,
+          githubRepository,
+          giteeRepository,
+        })
+      : undefined
   const manifest = buildReleaseManifest({
     releaseTag,
     ...universal,
     signingCertificateSha256: expectedCertificate,
     releaseNotes,
-    githubRepository: process.env.GITHUB_REPOSITORY || 'JUKOMU/JQ-Viewer',
-    giteeRepository: process.env.GITEE_REPOSITORY || 'jukomu/jq-viewer',
+    githubRepository,
+    giteeRepository,
     packageName: metadata.applicationId,
     versionCode: metadata.versionCode,
     versionName: metadata.versionName,
     variants,
+    desktop,
   })
 
   fs.writeFileSync(outputPath, JSON.stringify(manifest, null, 2) + '\n')

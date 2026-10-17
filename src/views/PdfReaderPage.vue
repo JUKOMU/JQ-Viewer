@@ -1,27 +1,57 @@
 <template>
   <IonPage>
-    <div class="reader-root" @click="onRootClick">
+    <div
+      ref="readerRoot"
+      class="reader-root"
+      :tabindex="isDesktopRuntime ? -1 : undefined"
+      @click="onRootClick"
+    >
       <Transition name="toolbar-slide">
-        <ReaderTopToolbar v-if="toolbarVisible" :title="displayTitle" @click.stop @back="goBack" />
+        <ReaderTopToolbar
+          v-if="toolbarVisible"
+          :title="displayTitle"
+          :show-desktop-controls="isDesktopRuntime"
+          :is-fullscreen="isFullscreen"
+          @click.stop="restoreReaderFocus"
+          @back="goBack"
+          @zoom-in="zoomIn"
+          @zoom-out="zoomOut"
+          @reset-zoom="resetZoom"
+          @toggle-fullscreen="toggleFullscreen"
+        />
       </Transition>
 
       <VerticalScrollView
         v-if="isVertical"
         ref="verticalViewRef"
         :image-map="imageMap"
+        :failed-sort-orders="failedSortOrders"
+        :failed-messages="failedMessages"
+        :allow-retry="false"
+        :retrying-sort-orders="retryingSortOrders"
         :total-count="totalCount"
         :current-index="currentIndex"
+        :enable-mouse-controls="isDesktopRuntime"
+        :width-percent="readerWidthPercent"
         @update:current-index="onPageChange"
         @request-range="onVerticalRequestRange"
+        @image-error="onImageError"
       />
       <HorizontalPageView
         v-else
         ref="horizontalViewRef"
         :image-map="imageMap"
+        :failed-sort-orders="failedSortOrders"
+        :failed-messages="failedMessages"
+        :allow-retry="false"
+        :retrying-sort-orders="retryingSortOrders"
         :total-count="totalCount"
         :current-index="currentIndex"
+        :enable-mouse-controls="isDesktopRuntime"
+        :width-percent="readerWidthPercent"
         @update:current-index="onPageChange"
         @toggle-toolbar="toggleToolbar"
+        @image-error="onImageError"
       />
 
       <Transition name="toolbar-slide">
@@ -41,6 +71,9 @@
       <ReaderSettingsPanel
         v-if="settingsPanelVisible"
         :is-vertical="isVertical"
+        :show-width-control="isDesktopRuntime"
+        :width-percent="readerWidthPercent"
+        @update:width-percent="readerWidthPercent = $event"
         @close="settingsPanelVisible = false"
         @update:display-mode="onDisplayModeChange"
       />
@@ -51,6 +84,7 @@
 <script setup lang="ts">
 import {
   computed,
+  watch,
   inject,
   nextTick,
   onActivated,
@@ -61,11 +95,14 @@ import {
 } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { IonPage } from '@ionic/vue'
-import type { PluginListenerHandle } from '@capacitor/core'
-import { JmcomicService, showToast } from '@/services/JmcomicService'
+import type { ListenerHandle } from '@/runtime/BackendEvents'
+import { asFileRef } from '@/runtime/FileReferences'
+import { normalizeRuntimeError, RuntimeError } from '@/runtime/errors'
+import { getRuntime } from '@/runtime/runtimeContext'
+import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
 import { SettingsStore } from '@/services/SettingsService'
 import { HistoryService } from '@/services/HistoryService'
-import { ReadingProgressService } from '@/services/ReadingProgressService'
+import { createLocalReaderSession, type LocalReaderSession } from '@/services/LocalReaderSession'
 import * as pdfjsLib from 'pdfjs-dist'
 import {
   buildPdfDocumentParams,
@@ -77,6 +114,7 @@ import ReaderBottomToolbar from '@/components/reader/ReaderBottomToolbar.vue'
 import VerticalScrollView from '@/components/reader/VerticalScrollView.vue'
 import HorizontalPageView from '@/components/reader/HorizontalPageView.vue'
 import ReaderSettingsPanel from '@/components/reader/ReaderSettingsPanel.vue'
+import { useDesktopReaderControls } from '@/composables/useDesktopReaderControls'
 
 defineOptions({ name: 'PdfReaderPage' })
 
@@ -102,26 +140,39 @@ const READER_CONTENT_MAX_WIDTH = 720
 
 const route = useRoute()
 const router = useRouter()
+const runtime = getRuntime()
+const readerCapabilities = runtime.services.reader
+const isDesktopRuntime = runtime.platform !== 'android'
 
 const updateReaderCurrentPage = inject<(page: number) => void>('updateReaderCurrentPage', () => {})
 
 // ---- 路由参数 ----
-const filePath = route.query.path as string
+// 路由通过 fileRef 传入平台文件引用，而不是可直接拼接的绝对路径。
+const fileRef = asFileRef((route.query.fileRef as string) || '')
 const displayTitle = computed(() => (route.query.title as string) || 'PDF')
 const albumId = computed(() => (route.query.albumId as string) || '')
 const chapterId = computed(() => (route.query.chapterId as string) || albumId.value)
+const historyChapterId = computed(() =>
+  route.query.readingContext === 'file' ? (route.query.chapterId as string) || '' : chapterId.value,
+)
 const albumTitle = computed(() => (route.query.albumTitle as string) || '')
 const authors = computed(() => (route.query.authors as string) || '')
 const coverUrl = computed(() => (route.query.coverUrl as string) || '')
+const fileId = computed(() => Number(route.query.fileId) || 0)
 
 // ---- 核心状态 ----
 const isVertical = ref(SettingsStore.getReaderDisplayMode() === 'vertical')
+const readerWidthPercent = ref(isDesktopRuntime ? SettingsStore.getReaderWidthPercent() : null)
 const currentIndex = ref(0)
 const totalCount = ref(0)
 const imageMap = ref<Map<number, string>>(new Map())
+const failedSortOrders = ref<Set<number>>(new Set())
+const failedMessages = ref<Map<number, string>>(new Map())
+const retryingSortOrders = ref<Set<number>>(new Set())
 const toolbarVisible = ref(false)
 const isDragProgress = ref(false)
 const settingsPanelVisible = ref(false)
+const readerRoot = ref<HTMLElement | null>(null)
 const TOOLBAR_TAP_DELAY_MS = 280
 const TOOLBAR_DOUBLE_TAP_DIST = 30
 let toolbarTapTimer: ReturnType<typeof setTimeout> | null = null
@@ -129,11 +180,13 @@ let lastToolbarTapTime = 0
 let lastToolbarTapX = 0
 let lastToolbarTapY = 0
 
-let volumeKeyListenerHandle: PluginListenerHandle | null = null
+let volumeKeyListenerHandle: ListenerHandle | null = null
 let readerRuntimeActive = false
 let pdfDoc: pdfjsLib.PDFDocumentProxy | null = null
 let nativePdfMode = false
 const renderedPages = new Map<number, string>()
+const renderedPageGenerations = new Map<number, number>()
+const nativeImageFailureStates = new Map<number, { generation: number; attempts: number }>()
 const renderTasks = new Map<number, pdfjsLib.RenderTask>()
 const pendingRenderQueue = new Set<number>()
 const pageRenderGenerations = new Map<number, number>()
@@ -145,12 +198,14 @@ let lastScrollTime = 0
 let lastScrollIndex = -1
 let revertTimer: ReturnType<typeof setTimeout> | null = null
 let renderGeneration = 0
+let lastNativeRenderFailureToastGeneration: number | null = null
 let activeRenderRange: { start: number; end: number; center: number } | null = null
 let pendingSeekIndex: number | null = null
 let dragPreviewTimer: ReturnType<typeof setTimeout> | null = null
 let activeRenderCount = 0
 let renderTargetWidth = 0
 let renderResizeObserver: ResizeObserver | null = null
+let readerSession: LocalReaderSession | null = null
 
 const verticalViewRef = ref<InstanceType<typeof VerticalScrollView> | null>(null)
 const horizontalViewRef = ref<InstanceType<typeof HorizontalPageView> | null>(null)
@@ -168,6 +223,9 @@ const getReaderContentWidth = (vertical = isVertical.value): number => {
   const measuredWidth = getRenderContainer(vertical)?.clientWidth ?? 0
   const viewportWidth = typeof window !== 'undefined' ? window.innerWidth || 360 : 360
   const width = measuredWidth > 0 ? measuredWidth : viewportWidth
+  if (readerWidthPercent.value !== null && readerWidthPercent.value > 0) {
+    return Math.max(1, (width * readerWidthPercent.value) / 100)
+  }
   return Math.max(1, vertical ? Math.min(width, READER_CONTENT_MAX_WIDTH) : width)
 }
 
@@ -186,19 +244,29 @@ const getRenderTargetWidth = (
 }
 
 // ---- 工具栏 ----
-// 工具栏显示时仅恢复系统栏；阅读内容始终保持 edge-to-edge，不随系统栏改变尺寸。
-const syncReaderFullscreen = () => {
-  if (!readerRuntimeActive) return
-  JmcomicService.setReaderFullscreen(!toolbarVisible.value).catch(() => {})
+const syncReaderFullscreen = (reportFailure = false) => {
+  if (isDesktopRuntime || !readerRuntimeActive || !readerCapabilities.fullscreen.available) {
+    return
+  }
+  JmcomicService.setReaderFullscreen(!toolbarVisible.value).catch((error) => {
+    if (reportFailure) {
+      void showToast(sanitizeError(error, '切换全屏失败'), 'danger')
+    }
+  })
 }
 
-const setToolbarVisible = (visible: boolean) => {
+const setToolbarVisible = (visible: boolean, reportFullscreenFailure = false) => {
   toolbarVisible.value = visible
-  syncReaderFullscreen()
+  syncReaderFullscreen(reportFullscreenFailure)
 }
 
 const toggleToolbar = () => {
-  setToolbarVisible(!toolbarVisible.value)
+  setToolbarVisible(!toolbarVisible.value, true)
+}
+
+const restoreReaderFocus = (event: MouseEvent) => {
+  if (event.detail === 0) return
+  if (isDesktopRuntime) readerRoot.value?.focus({ preventScroll: true })
 }
 
 const onDragStart = () => {
@@ -268,64 +336,95 @@ const onDisplayModeChange = (vertical: boolean) => {
 }
 
 const syncReaderState = () => {
-  JmcomicService.setReaderState(true, isVertical.value).catch(() => {})
+  if (!readerCapabilities.hostState.available) return
+  JmcomicService.setReaderState(true, isVertical.value).catch((error) => {
+    void showToast(sanitizeError(error, '同步阅读器宿主状态失败'), 'danger')
+  })
 }
 
 // ---- 阅读器设置 ----
 const applyReaderSettings = () => {
   const orientation = SettingsStore.getReaderScreenOrientation()
-  if (orientation !== 'auto') {
-    JmcomicService.setReaderScreenOrientation(orientation).catch(() => {})
+  if (readerCapabilities.orientation.available && orientation !== 'auto') {
+    JmcomicService.setReaderScreenOrientation(orientation).catch((error) => {
+      void showToast(sanitizeError(error, '应用屏幕方向失败'), 'danger')
+    })
   }
   const brightness = SettingsStore.getReaderBrightness()
-  if (brightness >= 0) {
-    JmcomicService.setReaderBrightness(brightness).catch(() => {})
+  if (readerCapabilities.brightness.available && brightness >= 0) {
+    JmcomicService.setReaderBrightness(brightness).catch((error) => {
+      void showToast(sanitizeError(error, '应用阅读亮度失败'), 'danger')
+    })
   }
-  if (SettingsStore.getReaderKeepScreenOn()) {
-    JmcomicService.setReaderKeepScreenOn(true).catch(() => {})
+  if (readerCapabilities.keepAwake.available && SettingsStore.getReaderKeepScreenOn()) {
+    JmcomicService.setReaderKeepScreenOn(true).catch((error) => {
+      void showToast(sanitizeError(error, '启用屏幕常亮失败'), 'danger')
+    })
   }
   syncReaderFullscreen()
 }
 
 const restoreSystemState = () => {
-  JmcomicService.setReaderBrightness(-1).catch(() => {})
-  JmcomicService.setReaderScreenOrientation('auto').catch(() => {})
-  JmcomicService.setReaderKeepScreenOn(false).catch(() => {})
-  JmcomicService.setReaderFullscreen(false).catch(() => {})
-  JmcomicService.setReaderState(false, false).catch(() => {})
+  if (readerCapabilities.brightness.available) {
+    JmcomicService.setReaderBrightness(-1).catch(() => {})
+  }
+  if (readerCapabilities.orientation.available) {
+    JmcomicService.setReaderScreenOrientation('auto').catch(() => {})
+  }
+  if (readerCapabilities.keepAwake.available) {
+    JmcomicService.setReaderKeepScreenOn(false).catch(() => {})
+  }
+  if (readerCapabilities.fullscreen.available) {
+    JmcomicService.setReaderFullscreen(false).catch(() => {})
+  }
+  if (readerCapabilities.hostState.available) {
+    JmcomicService.setReaderState(false, false).catch(() => {})
+  }
 }
 
-// ---- 音量键 ----
-const setupVolumeKeyListener = async () => {
-  if (volumeKeyListenerHandle) return
-  volumeKeyListenerHandle = await JmcomicService.addVolumeKeyListener((direction) => {
-    if (isVertical.value) {
-      const scrollAmount = window.innerHeight / 3
-      const el = verticalViewRef.value
-      if (el && 'containerRef' in el) {
-        const container = (el as any).containerRef as HTMLElement | null
-        if (container) {
-          container.scrollBy({
-            top: direction === 'up' ? -scrollAmount : scrollAmount,
-            behavior: 'smooth',
-          })
-        }
-      }
-    } else {
-      if (direction === 'up' && currentIndex.value > 0) {
-        goToIndex(currentIndex.value - 1, 'volume')
-      } else if (direction === 'down' && currentIndex.value < totalCount.value - 1) {
-        goToIndex(currentIndex.value + 1, 'volume')
+// ---- 音量键与桌面方向键共用动作 ----
+const handleVolumeDirection = (direction: 'up' | 'down') => {
+  if (isVertical.value) {
+    const scrollAmount = window.innerHeight / 3
+    const el = verticalViewRef.value
+    if (el && 'containerRef' in el) {
+      const container = (el as { containerRef: HTMLElement | null }).containerRef
+      if (container) {
+        container.scrollBy({
+          top: direction === 'up' ? -scrollAmount : scrollAmount,
+          behavior: 'smooth',
+        })
+        return true
       }
     }
-  })
+    return false
+  }
+
+  if (direction === 'up' && currentIndex.value > 0) {
+    goToIndex(currentIndex.value - 1, 'volume')
+    return true
+  }
+  if (direction === 'down' && currentIndex.value < totalCount.value - 1) {
+    goToIndex(currentIndex.value + 1, 'volume')
+    return true
+  }
+  return false
+}
+
+const setupVolumeKeyListener = async () => {
+  if (volumeKeyListenerHandle || !readerCapabilities.volumeKeys.available) return
+  volumeKeyListenerHandle = await JmcomicService.addVolumeKeyListener(handleVolumeDirection)
 }
 
 const activateReaderRuntime = () => {
   if (readerRuntimeActive) return
   readerRuntimeActive = true
+  if (readerCapabilities.hostState.available) {
+    JmcomicService.setReaderState(true, isVertical.value).catch((error) => {
+      void showToast(sanitizeError(error, '同步阅读器宿主状态失败'), 'danger')
+    })
+  }
   applyReaderSettings()
-  JmcomicService.setReaderState(true, isVertical.value).catch(() => {})
   setupVolumeKeyListener().catch(() => {})
 }
 
@@ -351,20 +450,20 @@ const calcBaseScale = (
 
 // ---- PDF 页面渲染 ----
 const renderPageToBlob = async (pageNum: number): Promise<string | null> => {
+  const physicalPage = readerSession?.physicalPage(pageNum) ?? pageNum
   if (nativePdfMode) {
-    try {
-      const targetWidth = getRenderTargetWidth(isVertical.value, true)
-      const result = await JmcomicService.renderPdfPage(filePath, pageNum, targetWidth)
-      return result.imageUrl
-    } catch {
-      return null
+    const renderer = getRuntime().resources.renderPdfPage
+    if (!renderer.available) {
+      throw new RuntimeError('unavailable', '当前平台不支持原生 PDF 页面渲染')
     }
+    const targetWidth = getRenderTargetWidth(isVertical.value, true)
+    return await renderer.api.getUrl({ file: fileRef, page: physicalPage, targetWidth })
   }
 
   if (!pdfDoc) return null
   let page: pdfjsLib.PDFPageProxy | null = null
   try {
-    page = await pdfDoc.getPage(pageNum)
+    page = await pdfDoc.getPage(physicalPage)
     const scale = calcBaseScale(page.getViewport({ scale: 1 }), getReaderContentWidth())
     const viewport = page.getViewport({ scale })
 
@@ -396,10 +495,111 @@ const releaseRenderedUrl = (url: string) => {
   if (url.startsWith('blob:')) URL.revokeObjectURL(url)
 }
 
+const setFailedSortOrder = (sortOrder: number, failed: boolean, message = '') => {
+  const nextFailed = new Set(failedSortOrders.value)
+  const nextMessages = new Map(failedMessages.value)
+  if (failed) {
+    nextFailed.add(sortOrder)
+    nextMessages.set(sortOrder, message || '图片加载失败')
+  } else {
+    nextFailed.delete(sortOrder)
+    nextMessages.delete(sortOrder)
+  }
+  failedSortOrders.value = nextFailed
+  failedMessages.value = nextMessages
+}
+
+const setRetryingSortOrder = (sortOrder: number, retrying: boolean) => {
+  const next = new Set(retryingSortOrders.value)
+  if (retrying) next.add(sortOrder)
+  else next.delete(sortOrder)
+  retryingSortOrders.value = next
+}
+
+const markNativeRenderFailure = (pageNum: number, generation: number, error: unknown) => {
+  if (!nativePdfMode || generation !== pageRenderGenerations.get(pageNum)) return
+
+  const runtimeError = normalizeRuntimeError(error, 'PDF 页面渲染失败')
+  const message =
+    runtimeError.code === 'not-found' || runtimeError.code === 'permission-denied'
+      ? runtimeError.message || 'PDF 文件读取失败'
+      : 'PDF 页面渲染失败'
+
+  pageRenderGenerations.delete(pageNum)
+  renderedPageGenerations.delete(pageNum)
+  if (renderedPages.get(pageNum) === '') {
+    renderedPages.delete(pageNum)
+    imageMap.value.delete(pageNum)
+  }
+  setRetryingSortOrder(pageNum, false)
+  setFailedSortOrder(pageNum, true, message)
+  applyImageMap()
+
+  if (lastNativeRenderFailureToastGeneration !== generation) {
+    lastNativeRenderFailureToastGeneration = generation
+    void showToast(message, 'danger')
+  }
+}
+
+const clearNativeImageFailures = () => {
+  nativeImageFailureStates.clear()
+  lastNativeRenderFailureToastGeneration = null
+  failedSortOrders.value = new Set()
+  failedMessages.value = new Map()
+  retryingSortOrders.value = new Set()
+}
+
+const isNativePdfPageUrl = (url: string): boolean => {
+  try {
+    const parsed = new URL(url)
+    return (
+      parsed.protocol === 'https:' &&
+      parsed.host === 'jqviewer.local' &&
+      /^\/pdf-page\/[0-9a-f]{64}\.png$/.test(parsed.pathname)
+    )
+  } catch {
+    return false
+  }
+}
+
+const onImageError = (sortOrder: number, failedUrl: string) => {
+  if (!nativePdfMode || !isNativePdfPageUrl(failedUrl)) return
+  if (
+    sortOrder < 1 ||
+    sortOrder > totalCount.value ||
+    imageMap.value.get(sortOrder) !== failedUrl ||
+    renderedPages.get(sortOrder) !== failedUrl
+  )
+    return
+
+  const generation = renderedPageGenerations.get(sortOrder) ?? renderGeneration
+  const previous = nativeImageFailureStates.get(sortOrder)
+  const attempts = previous?.generation === generation ? previous.attempts + 1 : 1
+  nativeImageFailureStates.set(sortOrder, { generation, attempts })
+  renderedPageGenerations.delete(sortOrder)
+  renderedPages.delete(sortOrder)
+  imageMap.value.delete(sortOrder)
+
+  if (attempts >= 2) {
+    setRetryingSortOrder(sortOrder, false)
+    setFailedSortOrder(sortOrder, true, 'PDF 页面渲染失败')
+    applyImageMap()
+    void showToast('PDF 页面渲染失败', 'danger')
+    return
+  }
+
+  setFailedSortOrder(sortOrder, false)
+  setRetryingSortOrder(sortOrder, true)
+  renderedPages.set(sortOrder, '')
+  applyImageMap()
+  startRenderPage(sortOrder, generation, 0)
+}
+
 const cancelRenderTasksOutside = (keepSet: Set<number>) => {
   for (const pageNum of activeRenderingPages) {
     if (keepSet.has(pageNum)) continue
     pageRenderGenerations.delete(pageNum)
+    renderedPageGenerations.delete(pageNum)
     pendingRenderPriorities.delete(pageNum)
     if (renderedPages.get(pageNum) === '') {
       renderedPages.delete(pageNum)
@@ -411,6 +611,7 @@ const cancelRenderTasksOutside = (keepSet: Set<number>) => {
     if (keepSet.has(pageNum)) continue
     pendingRenderQueue.delete(pageNum)
     pageRenderGenerations.delete(pageNum)
+    renderedPageGenerations.delete(pageNum)
     pendingRenderPriorities.delete(pageNum)
     if (renderedPages.get(pageNum) === '') {
       renderedPages.delete(pageNum)
@@ -423,6 +624,7 @@ const cancelRenderTasksOutside = (keepSet: Set<number>) => {
     task.cancel()
     renderTasks.delete(pageNum)
     pageRenderGenerations.delete(pageNum)
+    renderedPageGenerations.delete(pageNum)
     if (renderedPages.get(pageNum) === '') {
       renderedPages.delete(pageNum)
       imageMap.value.delete(pageNum)
@@ -433,6 +635,7 @@ const cancelRenderTasksOutside = (keepSet: Set<number>) => {
 const cancelAllRenderTasks = () => {
   pendingRenderQueue.clear()
   pageRenderGenerations.clear()
+  renderedPageGenerations.clear()
   pendingRenderPriorities.clear()
   for (const [pageNum, task] of renderTasks) {
     task.cancel()
@@ -505,6 +708,7 @@ const scheduleRenderQueue = () => {
       .then((url) => {
         if (generation !== pageRenderGenerations.get(pageNum)) {
           if (url) releaseRenderedUrl(url)
+          setRetryingSortOrder(pageNum, false)
           if (renderedPages.get(pageNum) === '' && pageRenderGenerations.has(pageNum)) {
             pendingRenderQueue.add(pageNum)
             if (!pendingRenderPriorities.has(pageNum)) {
@@ -516,16 +720,23 @@ const scheduleRenderQueue = () => {
 
         pageRenderGenerations.delete(pageNum)
         if (url) {
+          renderedPageGenerations.set(pageNum, generation)
           renderedPages.set(pageNum, url)
           imageMap.value.set(pageNum, url)
+          setRetryingSortOrder(pageNum, false)
           applyImageMap()
           return
         }
         if (renderedPages.get(pageNum) === '') {
+          renderedPageGenerations.delete(pageNum)
           renderedPages.delete(pageNum)
           imageMap.value.delete(pageNum)
           applyImageMap()
         }
+        setRetryingSortOrder(pageNum, false)
+      })
+      .catch((error) => {
+        markNativeRenderFailure(pageNum, generation, error)
       })
       .finally(() => {
         activeRenderingPages.delete(pageNum)
@@ -582,12 +793,14 @@ const getActiveRenderWindow = (center: number) => {
 }
 
 const invalidateActiveRenderWindow = () => {
+  clearNativeImageFailures()
   const activePages = getActiveRenderWindow(currentIndex.value)
   for (const pageNum of activePages) {
     // 让已在途的旧 renderer 结果只能走过期分支，不能覆盖新的尺寸批次。
     pageRenderGenerations.delete(pageNum)
     pendingRenderPriorities.delete(pageNum)
     pendingRenderQueue.delete(pageNum)
+    renderedPageGenerations.delete(pageNum)
 
     const url = renderedPages.get(pageNum)
     if (url) releaseRenderedUrl(url)
@@ -596,6 +809,13 @@ const invalidateActiveRenderWindow = () => {
   }
   applyImageMap()
 }
+
+watch(readerWidthPercent, () => {
+  const { increased } = updateRenderTargetWidth()
+  if (!increased || (!pdfDoc && !nativePdfMode)) return
+  invalidateActiveRenderWindow()
+  updateWindow(currentIndex.value)
+})
 
 const bindRenderResizeObserver = () => {
   renderResizeObserver?.disconnect()
@@ -632,6 +852,8 @@ const hasPendingInRange = (center: number, dir: 'forward' | 'backward'): boolean
 const updateWindow = (center: number) => {
   if (!pdfDoc && !nativePdfMode) return
   const generation = ++renderGeneration
+  // 每个新的页面批次都重新开始资源失败计数，避免旧 URL 的失败状态污染新批次。
+  clearNativeImageFailures()
   const windowOrders = getActiveRenderWindow(center)
 
   // 清理窗口外页面
@@ -670,6 +892,7 @@ const updateWindow = (center: number) => {
   for (const [so, url] of renderedPages) {
     if (!cacheSet.has(so)) {
       if (url) releaseRenderedUrl(url)
+      renderedPageGenerations.delete(so)
       renderedPages.delete(so)
       imageMap.value.delete(so)
     }
@@ -745,7 +968,7 @@ const goToIndex = (index: number, source: PageChangeSource) => {
   const next = clampIndex(index)
   currentIndex.value = next
   updateReaderCurrentPage(next + 1)
-  ReadingProgressService.record(albumId.value, chapterId.value, next + 1, totalCount.value)
+  readerSession?.recordPage(next + 1)
 
   if (source === 'slider-input') {
     scheduleDragPreviewRender(next)
@@ -784,6 +1007,37 @@ const goToIndex = (index: number, source: PageChangeSource) => {
   moveReaderViewToIndex(next)
 }
 
+const { isFullscreen, toggleFullscreen } = useDesktopReaderControls({
+  enabled: isDesktopRuntime,
+  isActive: () => readerRuntimeActive,
+  isVertical,
+  currentIndex,
+  totalCount,
+  fullscreenAvailable: readerCapabilities.fullscreen.available,
+  onPreviousPage: () => goToIndex(currentIndex.value - 1, 'volume'),
+  onNextPage: () => goToIndex(currentIndex.value + 1, 'volume'),
+  onVolumeDirection: handleVolumeDirection,
+  setFullscreen: (enabled) => JmcomicService.setReaderFullscreen(enabled),
+  onFullscreenError: (error) => {
+    void showToast(sanitizeError(error, '切换全屏失败'), 'danger')
+  },
+})
+
+const zoomIn = () => {
+  if (isVertical.value) verticalViewRef.value?.zoomIn()
+  else horizontalViewRef.value?.zoomIn()
+}
+
+const zoomOut = () => {
+  if (isVertical.value) verticalViewRef.value?.zoomOut()
+  else horizontalViewRef.value?.zoomOut()
+}
+
+const resetZoom = () => {
+  if (isVertical.value) verticalViewRef.value?.resetZoom(true)
+  else horizontalViewRef.value?.resetZoom()
+}
+
 const onPageChange = (index: number) => {
   goToIndex(index, 'scroll')
 }
@@ -801,7 +1055,7 @@ const onProgressInput = (page1Based: number) => {
 const recordBrowseHistory = () => {
   const aId = albumId.value
   if (!aId) return
-  const cId = chapterId.value
+  const cId = historyChapterId.value
   const aTitle = albumTitle.value
   const aCover = coverUrl.value
   const aAuthors = authors.value
@@ -816,6 +1070,7 @@ const recordBrowseHistory = () => {
         authors: (album.authors ?? []).join(' / ') || aAuthors,
         chapterId: cId,
         chapterTitle: cTitle,
+        ...(fileId.value > 0 ? { fileId: fileId.value } : {}),
       })
     })
     .catch(() => {
@@ -826,12 +1081,14 @@ const recordBrowseHistory = () => {
         authors: aAuthors,
         chapterId: cId,
         chapterTitle: cTitle,
+        ...(fileId.value > 0 ? { fileId: fileId.value } : {}),
       })
     })
 }
 
 const loadPdfDocument = async () => {
-  const arrayBuffer = await fetchPdfArrayBuffer(filePath)
+  clearNativeImageFailures()
+  const arrayBuffer = await fetchPdfArrayBuffer(fileRef)
   try {
     pdfDoc = await pdfjsLib.getDocument(buildPdfDocumentParams(arrayBuffer)).promise
     nativePdfMode = false
@@ -842,7 +1099,11 @@ const loadPdfDocument = async () => {
       pdfDoc.destroy()
       pdfDoc = null
     }
-    const info = await JmcomicService.getPdfInfo(filePath)
+    const renderer = getRuntime().resources.renderPdfPage
+    if (!renderer.available) {
+      throw new RuntimeError('unavailable', '当前平台不支持原生 PDF 页面渲染')
+    }
+    const info = await JmcomicService.getPdfInfo(fileRef)
     nativePdfMode = true
     return info.pageCount
   }
@@ -859,13 +1120,14 @@ const goBack = () => {
 
 // ---- 生命周期 ----
 onMounted(async () => {
-  if (!filePath) {
+  if (!fileRef) {
     await showToast('缺少文件路径', 'danger')
     router.back()
     return
   }
 
   activateReaderRuntime()
+  clearNativeImageFailures()
   bindRenderResizeObserver()
   activeRenderRange = null
   pendingSeekIndex = null
@@ -879,17 +1141,16 @@ onMounted(async () => {
     if (total <= 0) throw new Error('PDF 页数异常')
     // pdf.js 失败后可能切换到 native renderer；以实际 renderer 的限制重新建立基线。
     renderTargetWidth = getRenderTargetWidth()
-    const initialPage = ReadingProgressService.getInitialPage(
-      route.query.page,
-      albumId.value,
-      chapterId.value,
-      total,
+    readerSession = createLocalReaderSession(route.query, total)
+    const initialPage = readerSession.initialPage(route.query.page)
+    const initIndex = Math.min(
+      Math.max(initialPage - 1, 0),
+      Math.max(0, readerSession.totalPages - 1),
     )
-    const initIndex = Math.min(Math.max(initialPage - 1, 0), Math.max(0, total - 1))
     currentIndex.value = initIndex
-    totalCount.value = total
+    totalCount.value = readerSession.totalPages
     updateReaderCurrentPage(initIndex + 1)
-    ReadingProgressService.record(albumId.value, chapterId.value, initIndex + 1, total)
+    readerSession.recordPage(initIndex + 1)
     setToolbarVisible(true)
 
     updateWindow(initIndex)
@@ -907,8 +1168,14 @@ onMounted(async () => {
     } else if (e instanceof TypeError && e.message === 'Failed to fetch') {
       await showToast('PDF 文件读取失败，请重新导入', 'danger')
     } else {
-      const msg = e?.message || ''
-      if (/password/i.test(msg)) {
+      const runtimeError = normalizeRuntimeError(e)
+      if (runtimeError.code === 'unavailable') {
+        await showToast(runtimeError.message || '当前平台不支持原生 PDF 页面渲染', 'danger')
+      } else if (runtimeError.code === 'not-found') {
+        await showToast(runtimeError.message || 'PDF 文件不存在或已移动', 'danger')
+      } else if (runtimeError.code === 'permission-denied') {
+        await showToast(runtimeError.message || 'PDF 文件读取权限已失效，请重新导入', 'danger')
+      } else if (/password/i.test(runtimeError.message)) {
         await showToast('此 PDF 已加密，无法打开', 'danger')
       } else {
         await showToast('PDF 文件无法打开，可能已损坏', 'danger')
@@ -920,6 +1187,7 @@ onMounted(async () => {
 
 onActivated(() => {
   activateReaderRuntime()
+  clearNativeImageFailures()
   nextTick(() => {
     goToIndex(currentIndex.value, 'route')
   })
@@ -937,6 +1205,7 @@ onUnmounted(() => {
   if (revertTimer) clearTimeout(revertTimer)
   if (dragPreviewTimer) clearTimeout(dragPreviewTimer)
   cancelAllRenderTasks()
+  clearNativeImageFailures()
 
   for (const url of renderedPages.values()) {
     if (url) releaseRenderedUrl(url)

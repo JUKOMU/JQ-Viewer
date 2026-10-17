@@ -38,6 +38,9 @@
             <span class="source-state-chip source-chip-image" :class="{ active: imageAvailable }">
               <ion-icon :icon="imageOutline" />
             </span>
+            <span class="source-state-chip source-chip-cbz" :class="{ active: cbzAvailable }">
+              <ion-icon :icon="archiveOutline" />
+            </span>
             <span class="source-state-chip source-chip-pdf" :class="{ active: pdfAvailable }">
               <ion-icon :icon="documentOutline" />
             </span>
@@ -49,29 +52,39 @@
       <div class="info-list">
         <div class="info-row">
           <span class="info-label">ID</span>
-          <span class="info-value clickable" @click="copyText(String(album.id))">
+          <button type="button" class="info-value clickable" @click="copyText(String(album.id))">
             {{ album.id }}
             <ion-icon class="copy-icon" :icon="copyOutline" />
-          </span>
+          </button>
         </div>
         <div class="info-row">
           <span class="info-label">标题</span>
-          <span class="info-value clickable" @click="copyText(album.title)">
+          <button type="button" class="info-value clickable" @click="copyText(album.title)">
             {{ album.title }}
             <ion-icon class="copy-icon" :icon="copyOutline" />
-          </span>
+          </button>
         </div>
         <div v-if="album.description" class="info-row">
           <span class="info-label">描述</span>
           <div class="info-value">
-            <p ref="descTextRef" class="desc-text" :class="{ expanded: descExpanded }">
-              {{ album.description }}
-            </p>
+            <div
+              class="copy-control clickable"
+              role="button"
+              tabindex="0"
+              @click="copyText(album.description)"
+              @keydown.enter.prevent="copyText(album.description)"
+              @keydown.space.prevent="copyText(album.description)"
+            >
+              <p ref="descTextRef" class="desc-text" :class="{ expanded: descExpanded }">
+                {{ album.description }}
+              </p>
+              <ion-icon class="copy-icon" :icon="copyOutline" />
+            </div>
             <button
               v-if="descOverflows"
               type="button"
               class="desc-toggle"
-              @click="descExpanded = !descExpanded"
+              @click.stop="descExpanded = !descExpanded"
             >
               {{ descExpanded ? '收起' : '展开' }}
             </button>
@@ -134,11 +147,21 @@
         </div>
         <div v-if="album.addTime" class="info-row">
           <span class="info-label">发布日期</span>
-          <span class="info-value">{{ formatDate(album.addTime) }}</span>
+          <button
+            type="button"
+            class="info-value clickable"
+            @click="copyText(formatDate(album.addTime))"
+          >
+            {{ formatDate(album.addTime) }}
+            <ion-icon class="copy-icon" :icon="copyOutline" />
+          </button>
         </div>
         <div v-if="album.views" class="info-row">
           <span class="info-label">浏览</span>
-          <span class="info-value">{{ album.views }}</span>
+          <button type="button" class="info-value clickable" @click="copyText(String(album.views))">
+            {{ album.views }}
+            <ion-icon class="copy-icon" :icon="copyOutline" />
+          </button>
         </div>
       </div>
 
@@ -176,6 +199,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { IonIcon } from '@ionic/vue'
 import {
+  archiveOutline,
   bookmark,
   checkmarkCircleOutline,
   cloudDownloadOutline,
@@ -197,6 +221,7 @@ const props = defineProps<{
   actionBusy: { like: boolean; favorite: boolean }
   downloadStatus?: string
   imageAvailable: boolean
+  cbzAvailable: boolean
   pdfAvailable: boolean
 }>()
 
@@ -426,6 +451,12 @@ const downloadIcon = computed(() => {
   color: #c03939;
 }
 
+.source-chip-cbz.active {
+  border-color: #397d54;
+  background: #edf8f1;
+  color: #2f7049;
+}
+
 /* 信息列表 */
 .info-list {
   display: flex;
@@ -468,7 +499,15 @@ const downloadIcon = computed(() => {
   cursor: pointer;
   position: relative;
   padding-right: 18px;
+  border: 0;
+  background: transparent;
+  text-align: left;
   transition: color 0.15s ease;
+}
+
+.copy-control {
+  position: relative;
+  padding-right: 18px;
 }
 
 .info-value.clickable:hover {
@@ -620,16 +659,41 @@ const downloadIcon = computed(() => {
 }
 
 @container (min-width: 960px) {
+  .info-section {
+    width: min(100%, 960px);
+    margin-inline: auto;
+  }
+
+  .action-bar {
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+
+  .info-row {
+    align-items: flex-start;
+    gap: 14px;
+    padding: 11px 16px;
+  }
+
+  .info-label {
+    width: 72px;
+  }
+
   .related-scroll {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
     align-items: start;
+    gap: 12px;
     overflow: visible;
   }
 
   .related-card {
     width: auto;
     min-width: 0;
+  }
+
+  .related-title {
+    font-size: 11px;
   }
 }
 </style>

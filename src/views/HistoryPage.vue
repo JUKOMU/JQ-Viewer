@@ -5,7 +5,7 @@
         <div class="toolbar-start">
           <MenuToggleButton />
         </div>
-        <div class="tab-bar">
+        <div class="tab-bar desktop-page-content">
           <button
             type="button"
             class="tab-btn"
@@ -26,7 +26,7 @@
       </IonToolbar>
     </IonHeader>
     <IonContent ref="contentRef" :scroll-events="true" @ion-scroll="onScroll">
-      <div class="page-shell">
+      <div class="page-shell desktop-page-content">
         <div v-show="activeTab === 'browse'" class="tab-content">
           <div v-if="!browseOverviewLoaded && browseOverviewError" class="history-error">
             <IonIcon :icon="timeOutline" class="empty-icon" />
@@ -83,7 +83,7 @@
                         v-for="item in group.items"
                         :key="item.id"
                         class="browse-card"
-                        @click="openAlbum(item)"
+                        @click="openAlbumDetail(item)"
                       >
                         <div class="card-cover-wrap">
                           <img :src="item.coverUrl" class="card-cover" alt="" loading="lazy" />
@@ -889,10 +889,12 @@ onActivated(() => {
   const transitionId = beginTabTransition()
   void (async () => {
     try {
+      const tab = activeTab.value
+      await restoreTabScrollPosition(tab)
       if (shouldRefreshTotals) {
         await Promise.all([refreshTabOnActivation('browse'), refreshTabOnActivation('parse')])
+        await restoreTabScrollPosition(tab)
       }
-      await restoreTabScrollPosition(activeTab.value)
     } finally {
       endTabTransition(transitionId)
     }
@@ -904,7 +906,7 @@ onDeactivated(() => {
   saveActiveTabScrollPosition()
 })
 
-function openAlbum(item: BrowseHistoryItem) {
+function openAlbumDetail(item: BrowseHistoryItem) {
   const authorsParam = item.authors.replace(/\s*\/\s*/g, ',')
   const chapterId = item.chapterId.trim()
   void router.push({
@@ -977,7 +979,7 @@ function handleContextMenuAction(action: string) {
 function handleMenuDetail() {
   const item = contextMenu.value?.item as BrowseHistoryItem
   closeContextMenu()
-  if (item) openAlbum(item)
+  if (item) openAlbumDetail(item)
 }
 
 async function handleMenuCopy() {

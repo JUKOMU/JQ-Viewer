@@ -30,7 +30,7 @@
 
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { IonIcon, IonSpinner } from '@ionic/vue'
+import { IonIcon, IonSpinner, useBackButton } from '@ionic/vue'
 
 interface CardContextMenuAction {
   id: string
@@ -92,9 +92,10 @@ function handlePointerDown(event: PointerEvent) {
   if (props.visible && !isInsideMenuOrAnchor(event.target)) emit('close')
 }
 
-function handleKeyDown(event: KeyboardEvent) {
-  if (props.visible && event.key === 'Escape') emit('close')
-}
+useBackButton(10, (processNextHandler) => {
+  if (props.visible) emit('close')
+  else processNextHandler()
+})
 
 watch([() => props.visible, () => props.anchor], () => {
   void updatePosition()
@@ -102,12 +103,10 @@ watch([() => props.visible, () => props.anchor], () => {
 
 onMounted(() => {
   document.addEventListener('pointerdown', handlePointerDown, true)
-  document.addEventListener('keydown', handleKeyDown)
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', handlePointerDown, true)
-  document.removeEventListener('keydown', handleKeyDown)
 })
 </script>
 

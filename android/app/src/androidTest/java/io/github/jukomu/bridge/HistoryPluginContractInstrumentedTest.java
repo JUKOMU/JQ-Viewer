@@ -20,7 +20,7 @@ import static org.junit.Assert.*;
 public class HistoryPluginContractInstrumentedTest {
 
     private IsolatedDatabaseContext context;
-    private JmcomicPlugin plugin;
+    private JqViewerPlugin plugin;
 
     @Before
     public void setUp() throws Exception {
@@ -87,6 +87,18 @@ public class HistoryPluginContractInstrumentedTest {
         assertEquals(1, parseRead.resolvedData.getJSONArray("items").length());
 
         assertNotKeptAlive(browseRead, parseRead);
+    }
+
+    @Test
+    public void browseHistoryPersistsOptionalFileId() throws Exception {
+        plugin.recordBrowse(call(
+            "recordBrowse", "albumId", "album-1", "chapterId", "chapter-1", "fileId", 42L));
+
+        RecordingPluginCall browseRead = call("getBrowseHistory", "limit", 1);
+        plugin.getBrowseHistory(browseRead);
+
+        JSONObject item = browseRead.resolvedData.getJSONArray("items").getJSONObject(0);
+        assertEquals(42L, item.getLong("fileId"));
     }
 
     @Test
@@ -300,14 +312,14 @@ public class HistoryPluginContractInstrumentedTest {
         field.set(null, null);
     }
 
-    private static void injectHistoryHandler(JmcomicPlugin plugin,
+    private static void injectHistoryHandler(JqViewerPlugin plugin,
                                              HistoryStore historyStore) throws Exception {
-        Field field = JmcomicPlugin.class.getDeclaredField("historyHandler");
+        Field field = JqViewerPlugin.class.getDeclaredField("historyHandler");
         field.setAccessible(true);
         field.set(plugin, new HistoryPluginHandler(historyStore));
     }
 
-    private static final class ContextPlugin extends JmcomicPlugin {
+    private static final class ContextPlugin extends JqViewerPlugin {
 
         private final Context context;
 

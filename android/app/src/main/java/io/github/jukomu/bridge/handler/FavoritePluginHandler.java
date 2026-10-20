@@ -91,7 +91,7 @@ public final class FavoritePluginHandler {
     }
 
     /**
-     * 按文件夹 ID 和专辑 ID 删除一个收藏项。
+     * 按文件夹 ID 和本子 ID 删除一个收藏项。
      */
     public void removeOfflineFavorite(PluginCall call) {
         try {
@@ -154,7 +154,7 @@ public final class FavoritePluginHandler {
     }
 
     /**
-     * 查询全部文件夹合并并按专辑去重后的收藏项。
+     * 查询全部文件夹合并并按本子去重后的收藏项。
      */
     public void getAllOfflineFavoritesMerged(PluginCall call) {
         try {
@@ -216,7 +216,7 @@ public final class FavoritePluginHandler {
     }
 
     /**
-     * 将全部文件夹的收藏合并到目标文件夹并按专辑去重。
+     * 将全部文件夹的收藏合并到目标文件夹并按本子去重。
      */
     public void mergeOfflineAllToFolder(PluginCall call) {
         try {

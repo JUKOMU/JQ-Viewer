@@ -653,7 +653,7 @@ describe('AlbumDetailPage 阅读入口', () => {
 })
 
 describe('AlbumDetailPage 批量下载', () => {
-  test('离开详情页后继续使用提交时的专辑上下文', async () => {
+  test('离开详情页后继续使用提交时的本子上下文', async () => {
     const firstSubmit = deferred<{ taskId: string }>()
     mocks.downloadChapter
       .mockReturnValueOnce(firstSubmit.promise)

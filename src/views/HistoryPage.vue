@@ -1337,11 +1337,6 @@ function formatRelativeTime(timestamp: number): string {
   border-radius: 12px;
   box-shadow: 5px 12px 28px rgb(76 42 24 / 0.2);
   cursor: pointer;
-  transition: transform 0.16s ease;
-}
-
-.browse-card:active {
-  transform: scale(0.98);
 }
 
 .card-cover-wrap {
@@ -1430,12 +1425,7 @@ function formatRelativeTime(timestamp: number): string {
   border-radius: 12px;
   box-shadow: 5px 12px 28px rgb(76 42 24 / 0.2);
   cursor: pointer;
-  transition: transform 0.16s ease;
   margin-bottom: 6px;
-}
-
-.parse-card:active {
-  transform: scale(0.98);
 }
 
 .parse-icon-wrap {

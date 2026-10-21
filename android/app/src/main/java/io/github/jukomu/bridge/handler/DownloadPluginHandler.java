@@ -4,16 +4,12 @@ import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
 import io.github.jukomu.feature.download.DownloadService;
-import org.json.JSONArray;
 import org.json.JSONObject;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * 负责下载任务 Bridge 的参数校验、服务调用和响应适配。
  */
 public final class DownloadPluginHandler {
-    private static final Logger LOGGER = LoggerFactory.getLogger(DownloadPluginHandler.class);
     private final DownloadService downloadService;
 
     public DownloadPluginHandler(DownloadService downloadService) {
@@ -47,25 +43,88 @@ public final class DownloadPluginHandler {
         }
     }
 
-    /**
-     * 返回任务列表和下载目录空间统计。
-     */
-    public void getDownloadTasks(PluginCall call) {
+    public void getDownloadTasksPage(PluginCall call) {
         try {
-            JSONArray tasks = downloadService.getDownloadTasks();
-            JSArray taskArray = new JSArray();
-            for (int index = 0; index < tasks.length(); index++) {
-                try {
-                    taskArray.put(JSObject.fromJSONObject(tasks.getJSONObject(index)));
-                } catch (Exception error) {
-                    LOGGER.debug("跳过无效下载任务条目", error);
-                }
+            call.resolve(JSObject.fromJSONObject(downloadService.getDownloadTasksPage(
+                call.getString("status", "active"), call.getString("sort", "time"),
+                call.getString("direction", "desc"), call.getString("cursor"),
+                call.getInt("limit", 50))));
+        } catch (Exception error) {
+            call.reject(error.getMessage(), error);
+        }
+    }
+
+    public void getCompletedDownloadAlbumIds(PluginCall call) {
+        try {
+            JSArray input = call.getArray("albumIds");
+            java.util.List<String> ids = new java.util.ArrayList<>();
+            for (int i = 0; i < input.length(); i++) ids.add(input.getString(i));
+            JSObject result = new JSObject();
+            result.put("albumIds", new org.json.JSONArray(downloadService.getCompletedDownloadAlbumIds(ids)));
+            call.resolve(result);
+        } catch (Exception error) {
+            call.reject(error.getMessage(), error);
+        }
+    }
+
+    public void getDownloadTaskStatuses(PluginCall call) {
+        try {
+            JSObject result = new JSObject();
+            org.json.JSONArray statuses = new org.json.JSONArray();
+            for (JSONObject task : downloadService.getDownloadTaskStatuses(call.getString("albumId"))) {
+                statuses.put(new JSONObject().put("chapterId", task.optString("chapterId"))
+                    .put("status", task.optString("status")));
+            }
+            result.put("statuses", statuses);
+            call.resolve(result);
+        } catch (Exception error) {
+            call.reject(error.getMessage(), error);
+        }
+    }
+
+    public void getCompletedDownloadChapters(PluginCall call) {
+        try {
+            JSObject result = new JSObject();
+            result.put("tasks", new org.json.JSONArray(downloadService.getCompletedDownloadChapters(
+                call.getString("albumId"))));
+            call.resolve(result);
+        } catch (Exception error) {
+            call.reject(error.getMessage(), error);
+        }
+    }
+
+    public void getActiveDownloadProgress(PluginCall call) {
+        try {
+            JSObject result = new JSObject();
+            result.put("tasks", new org.json.JSONArray(downloadService.getActiveDownloadProgress()));
+            call.resolve(result);
+        } catch (Exception error) {
+            call.reject(error.getMessage(), error);
+        }
+    }
+
+    public void getDownloadedResourceKeys(PluginCall call) {
+        try {
+            JSArray input = call.getArray("items");
+            java.util.List<String> albums = new java.util.ArrayList<>();
+            java.util.List<String> chapters = new java.util.ArrayList<>();
+            for (int i = 0; i < input.length(); i++) {
+                JSONObject item = input.getJSONObject(i);
+                albums.add(item.getString("albumId"));
+                chapters.add(item.getString("chapterId"));
             }
             JSObject result = new JSObject();
-            result.put("tasks", taskArray);
-            result.put("usedBytes", downloadService.getUsedBytes());
-            result.put("availableBytes", downloadService.getAvailableBytes());
+            result.put("keys", new org.json.JSONArray(downloadService.getDownloadedResourceKeys(albums, chapters)));
             call.resolve(result);
+        } catch (Exception error) {
+            call.reject(error.getMessage(), error);
+        }
+    }
+
+    public void clearDownloadTasks(PluginCall call) {
+        try {
+            call.resolve(JSObject.fromJSONObject(downloadService.clearDownloadTasks(
+                call.getString("status"))));
         } catch (Exception error) {
             call.reject(error.getMessage(), error);
         }

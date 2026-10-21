@@ -34,15 +34,15 @@ const makeSnapshot = (keyword: string, generation: number): SearchPageContextSna
 describe('searchPageContextCache', () => {
   beforeEach(() => clearSearchPageContextCache())
 
-  test('窗口追加时只保留五页并淘汰最早页', () => {
+  test('窗口追加时只保留三页并淘汰最早页', () => {
     let pageCache: Record<number, SearchPageContextSnapshot['pageCache'][number]> = {}
     for (let page = 1; page <= 5; page += 1) {
       pageCache = commitSearchPageWindow(pageCache, page, [], 'append').pageCache
     }
     const result = commitSearchPageWindow(pageCache, 6, [], 'append')
 
-    expect(Object.keys(result.pageCache).map(Number)).toEqual([2, 3, 4, 5, 6])
-    expect(result.evictedPages).toEqual([1])
+    expect(Object.keys(result.pageCache).map(Number)).toEqual([4, 5, 6])
+    expect(result.evictedPages).toEqual([3])
   })
 
   test('窗口前插时淘汰最晚页并拒绝重复页覆盖', () => {
@@ -58,8 +58,8 @@ describe('searchPageContextCache', () => {
       'prepend',
     )
 
-    expect(Object.keys(result.pageCache).map(Number)).toEqual([0, 1, 2, 3, 4])
-    expect(result.evictedPages).toEqual([5])
+    expect(Object.keys(result.pageCache).map(Number)).toEqual([0, 1, 2])
+    expect(result.evictedPages).toEqual([3])
     expect(duplicate.pageCache[1]).toEqual([])
     expect(duplicate.evictedPages).toEqual([])
   })
@@ -90,7 +90,7 @@ describe('searchPageContextCache', () => {
     ).toEqual({ keyword: 'A', orderBy: 'mr', time: 'a', searchMainTag: 0 })
   })
 
-  test('最多保留三个上下文并按最近访问淘汰', () => {
+  test('最多保留五个上下文并按最近访问淘汰', () => {
     saveSearchPageContext(makeSnapshot('A', 1))
     saveSearchPageContext(makeSnapshot('B', 2))
     saveSearchPageContext(makeSnapshot('C', 3))
@@ -105,8 +105,8 @@ describe('searchPageContextCache', () => {
     ).not.toBeNull()
     expect(
       getSearchPageContext({ keyword: 'B', orderBy: 'mr', time: 'a', searchMainTag: 0 }),
-    ).toBeNull()
-    expect(getSearchPageContextCacheSize()).toBe(3)
+    ).not.toBeNull()
+    expect(getSearchPageContextCacheSize()).toBe(4)
   })
 
   test('读取快照返回深拷贝，不共享页数组和条目数组', () => {

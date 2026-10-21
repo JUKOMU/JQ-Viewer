@@ -41,7 +41,8 @@ class BackendHttpTest {
             HttpResponse<String> state = send(client, post(base, "/api/getClientState", "{}"));
             HttpResponse<String> init = send(client, post(base, "/api/getInitStatus", "{}"));
             HttpResponse<String> settings = send(client, post(base, "/api/getAllSettings", "{}"));
-            HttpResponse<String> downloads = send(client, post(base, "/api/getDownloadTasks", "{}"));
+            HttpResponse<String> downloads = send(client, post(base, "/api/getDownloadTasksPage",
+                    "{\"status\":\"active\",\"sort\":\"time\",\"direction\":\"desc\",\"limit\":50}"));
             HttpResponse<String> search = send(client, post(base, "/api/search", "{}"));
             HttpResponse<String> retry = send(client, post(base, "/api/reprobeDomains", "{}"));
             HttpResponse<String> retriedState = send(
@@ -55,7 +56,7 @@ class BackendHttpTest {
             assertEquals("{\"complete\":false}", init.body());
             assertEquals(200, settings.statusCode());
             assertEquals(200, downloads.statusCode());
-            assertTrue(downloads.body().contains("\"tasks\":[]"));
+            assertTrue(downloads.body().contains("\"items\":[]"));
             assertEquals(503, search.statusCode());
             assertTrue(search.body().contains("\"code\":\"unavailable\""));
             assertEquals(200, retry.statusCode());

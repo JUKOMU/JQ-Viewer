@@ -57,7 +57,7 @@ public final class HistoryPluginHandler {
     }
 
     /**
-     * 记录浏览历史；缺失的专辑和章节字段按空字符串传给 Store。
+     * 记录浏览历史；缺失的本子和章节字段按空字符串传给 Store。
      */
     public void recordBrowse(PluginCall call) {
         try {

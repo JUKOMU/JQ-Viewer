@@ -331,14 +331,56 @@ export interface CompletedGroup {
   albumId: string
   albumTitle: string
   coverUrl: string
-  chapters: CompletedEntry[] // 按 chapterSortOrder 升序
+  chapters: CompletedEntry[]
   totalSize: number
 }
 
-export interface DownloadTasksResult {
-  tasks: DownloadTask[]
+export interface CompletedDownloadGroup {
+  type: 'single' | 'multi'
+  albumId: string
+  albumTitle: string
+  coverUrl: string
+  author?: string
+  isSingleEpisode?: boolean
+  chapters: DownloadTask[]
+  totalSize: number
+  completedAt?: number
+}
+
+export type DownloadTaskPageStatus = 'active' | 'completed' | 'failed'
+export type DownloadTaskSort = 'time' | 'title' | 'id' | 'author'
+export type DownloadTaskSortDirection = 'asc' | 'desc'
+
+export interface DownloadTaskPageQuery {
+  status: DownloadTaskPageStatus
+  sort: DownloadTaskSort
+  direction: DownloadTaskSortDirection
+  cursor?: string
+  limit?: number
+}
+
+export interface DownloadTasksPageResult<T = DownloadTask | CompletedDownloadGroup> {
+  items: T[]
+  nextCursor: string | null
+  previousCursor: string | null
+  totalCount: number
   usedBytes: number
   availableBytes: number
+}
+
+export interface DownloadTaskStatusResult {
+  statuses: Array<{ chapterId: string; status: DownloadStatus }>
+}
+
+export interface DownloadActiveProgress {
+  taskId: string
+  albumId: string
+  chapterId: string
+  downloadedPages: number
+  totalPages: number
+  status: DownloadStatus
+  downloadedBytes?: number
+  totalSize?: number
 }
 
 export interface DownloadProgressEvent {

@@ -349,8 +349,38 @@ public final class Plugin {
     }
 
     @PluginMethod
-    public void getDownloadTasks(Context context) {
-        downloads.getDownloadTasks(context);
+    public void getDownloadTasksPage(Context context) {
+        downloads.getDownloadTasksPage(context);
+    }
+
+    @PluginMethod
+    public void getCompletedDownloadAlbumIds(Context context) {
+        downloads.getCompletedDownloadAlbumIds(context);
+    }
+
+    @PluginMethod
+    public void getDownloadTaskStatuses(Context context) {
+        downloads.getDownloadTaskStatuses(context);
+    }
+
+    @PluginMethod
+    public void getCompletedDownloadChapters(Context context) {
+        downloads.getCompletedDownloadChapters(context);
+    }
+
+    @PluginMethod
+    public void getActiveDownloadProgress(Context context) {
+        downloads.getActiveDownloadProgress(context);
+    }
+
+    @PluginMethod
+    public void getDownloadedResourceKeys(Context context) {
+        downloads.getDownloadedResourceKeys(context);
+    }
+
+    @PluginMethod
+    public void clearDownloadTasks(Context context) {
+        downloads.clearDownloadTasks(context);
     }
 
     @PluginMethod

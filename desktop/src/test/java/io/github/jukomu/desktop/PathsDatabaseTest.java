@@ -99,7 +99,7 @@ class PathsDatabaseTest {
                     .createStatement()
                     .executeQuery("SELECT version FROM desktop_schema_version")) {
                 assertTrue(result.next());
-                assertEquals(11, result.getInt(1));
+                assertEquals(12, result.getInt(1));
             }
             try (ResultSet result = database.connection().getMetaData()
                     .getTables(null, null, "browse_history", null)) {
@@ -111,6 +111,13 @@ class PathsDatabaseTest {
             }
             try (ResultSet result = database.connection().getMetaData()
                     .getTables(null, null, "download_tasks", null)) {
+                assertTrue(result.next());
+            }
+            try (ResultSet result = database.connection().createStatement()
+                    .executeQuery("SELECT name FROM sqlite_master WHERE type='index' "
+                            + "AND name IN ('idx_download_tasks_status_created',"
+                            + "'idx_download_tasks_status_album')")) {
+                assertTrue(result.next());
                 assertTrue(result.next());
             }
             try (ResultSet result = database.connection().getMetaData()
@@ -197,7 +204,7 @@ class PathsDatabaseTest {
             try (ResultSet result = database.connection().createStatement()
                     .executeQuery("SELECT version FROM desktop_schema_version")) {
                 assertTrue(result.next());
-                assertEquals(11, result.getInt(1));
+                assertEquals(12, result.getInt(1));
             }
             try (ResultSet result = database.connection().createStatement()
                     .executeQuery("SELECT format,chapter_link_status FROM local_files "

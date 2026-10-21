@@ -171,7 +171,8 @@ public class JqViewerPlugin extends Plugin {
         boolean runtimeExists = AppRuntime.exists();
         if (!runtimeExists) {
             // 仅进程首次初始化时清理上次进程遗留的下载任务。
-            List<JSONObject> zombieTasks = downloadDb.getAllTasks();
+            // 启动恢复使用全部活动任务，不能受页面分页窗口限制。
+            List<JSONObject> zombieTasks = downloadDb.getActiveTasks();
             for (JSONObject t : zombieTasks) {
                 String s = t.optString("status");
                 if ("queued".equals(s) || "downloading".equals(s)
@@ -677,8 +678,38 @@ public class JqViewerPlugin extends Plugin {
     }
 
     @PluginMethod
-    public void getDownloadTasks(PluginCall call) {
-        downloadHandler.getDownloadTasks(call);
+    public void getDownloadTasksPage(PluginCall call) {
+        downloadHandler.getDownloadTasksPage(call);
+    }
+
+    @PluginMethod
+    public void getCompletedDownloadAlbumIds(PluginCall call) {
+        downloadHandler.getCompletedDownloadAlbumIds(call);
+    }
+
+    @PluginMethod
+    public void getDownloadTaskStatuses(PluginCall call) {
+        downloadHandler.getDownloadTaskStatuses(call);
+    }
+
+    @PluginMethod
+    public void getCompletedDownloadChapters(PluginCall call) {
+        downloadHandler.getCompletedDownloadChapters(call);
+    }
+
+    @PluginMethod
+    public void getActiveDownloadProgress(PluginCall call) {
+        downloadHandler.getActiveDownloadProgress(call);
+    }
+
+    @PluginMethod
+    public void getDownloadedResourceKeys(PluginCall call) {
+        downloadHandler.getDownloadedResourceKeys(call);
+    }
+
+    @PluginMethod
+    public void clearDownloadTasks(PluginCall call) {
+        downloadHandler.clearDownloadTasks(call);
     }
 
     @PluginMethod

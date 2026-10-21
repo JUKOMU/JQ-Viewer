@@ -116,7 +116,23 @@ export function createBackendClient(
     ) => call<'setReaderAutoShowToolbarAtEnd'>('setReaderAutoShowToolbarAtEnd', options),
     downloadChapter: (options: Parameters<JmcomicClient['downloadChapter']>[0]) =>
       call<'downloadChapter'>('downloadChapter', options),
-    getDownloadTasks: () => call<'getDownloadTasks'>('getDownloadTasks', {}),
+    getDownloadTasksPage: (options: Parameters<JmcomicClient['getDownloadTasksPage']>[0]) =>
+      call<'getDownloadTasksPage'>('getDownloadTasksPage', options),
+    getCompletedDownloadAlbumIds: (
+      options: Parameters<JmcomicClient['getCompletedDownloadAlbumIds']>[0],
+    ) => call<'getCompletedDownloadAlbumIds'>('getCompletedDownloadAlbumIds', options),
+    getDownloadTaskStatuses: (options: Parameters<JmcomicClient['getDownloadTaskStatuses']>[0]) =>
+      call<'getDownloadTaskStatuses'>('getDownloadTaskStatuses', options),
+    getCompletedDownloadChapters: (
+      options: Parameters<JmcomicClient['getCompletedDownloadChapters']>[0],
+    ) => call<'getCompletedDownloadChapters'>('getCompletedDownloadChapters', options),
+    getActiveDownloadProgress: () =>
+      call<'getActiveDownloadProgress'>('getActiveDownloadProgress', {}),
+    getDownloadedResourceKeys: (
+      options: Parameters<JmcomicClient['getDownloadedResourceKeys']>[0],
+    ) => call<'getDownloadedResourceKeys'>('getDownloadedResourceKeys', options),
+    clearDownloadTasks: (options: Parameters<JmcomicClient['clearDownloadTasks']>[0]) =>
+      call<'clearDownloadTasks'>('clearDownloadTasks', options),
     cancelDownload: (options: Parameters<JmcomicClient['cancelDownload']>[0]) =>
       call<'cancelDownload'>('cancelDownload', options),
     pauseDownload: (options: Parameters<JmcomicClient['pauseDownload']>[0]) =>

@@ -3,9 +3,9 @@ package io.github.jukomu.desktop.feature.download.data;
 import io.github.jukomu.desktop.data.Database;
 import io.github.jukomu.desktop.util.JsonUtils;
 
+import java.nio.charset.StandardCharsets;
 import java.sql.*;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
 
 /**
  * 事务化保存下载任务、图片清单和启动恢复状态。
@@ -95,6 +95,150 @@ public final class DownloadStore {
     public synchronized List<StoredDownloadTask> listActiveTasks() {
         return list("SELECT * FROM download_tasks WHERE status IN (" + ACTIVE_STATUSES
             + ") ORDER BY created_at");
+    }
+
+    public synchronized TaskPage page(String status, String sort, String direction,
+                                      String cursor, int requestedLimit) {
+        String normalizedStatus = normalizeStatus(status);
+        String normalizedSort = normalizeSort(sort);
+        String normalizedDirection = "desc".equalsIgnoreCase(direction) ? "desc" : "asc";
+        int limit = Math.max(1, Math.min(50, requestedLimit));
+        CursorValue boundary = CursorValue.decode(cursor, normalizedStatus, normalizedSort,
+            normalizedDirection);
+        String queryDirection = boundary != null && boundary.previous()
+            ? flip(normalizedDirection) : normalizedDirection;
+        // completed 先按 album 聚合并分页，再展开本页章节，避免分页边界拆开本子。
+        if ("completed".equals(normalizedStatus)) {
+            return completedPage(normalizedSort, normalizedDirection, queryDirection, boundary, limit);
+        }
+        String statusSql = "active".equals(normalizedStatus)
+            ? "status IN (" + ACTIVE_STATUSES + ")" : "status='failed'";
+        String orderValue = orderValue(normalizedSort, "album_title", "author");
+        String order = orderClause(orderValue, queryDirection, "task_id", boundary != null && boundary.previous());
+        String boundarySql = boundary == null ? "" : " AND " + keysetClause(orderValue,
+            queryDirection, "task_id", boundary.previous());
+        String sql = "SELECT * FROM download_tasks WHERE " + statusSql + boundarySql
+            + " ORDER BY " + order + " LIMIT ?";
+        List<StoredDownloadTask> tasks = new ArrayList<>();
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            int index = bindBoundary(statement, boundary, orderValue, queryDirection, 1);
+            statement.setInt(index, limit + 1);
+            try (ResultSet rows = statement.executeQuery()) {
+                while (rows.next()) tasks.add(task(rows));
+            }
+        } catch (SQLException exception) {
+            throw failure("读取下载任务分页失败", exception);
+        }
+        boolean hasNext = tasks.size() > limit;
+        if (hasNext) tasks = new ArrayList<>(tasks.subList(0, limit));
+        if (boundary != null && boundary.previous()) java.util.Collections.reverse(tasks);
+        String next = (boundary != null && boundary.previous() || hasNext) && !tasks.isEmpty()
+            ? CursorValue.from(tasks.get(tasks.size() - 1), normalizedSort)
+              .encode(false, normalizedStatus, normalizedSort, normalizedDirection) : null;
+        String previous = boundary != null && (!boundary.previous() || hasNext) && !tasks.isEmpty()
+            ? CursorValue.from(tasks.get(0), normalizedSort)
+              .encode(true, normalizedStatus, normalizedSort, normalizedDirection) : null;
+        return new TaskPage(tasks, List.of(), next, previous, count(statusSql));
+    }
+
+    public synchronized List<StoredDownloadTask> completedChapters(String albumId) {
+        return list("SELECT * FROM download_tasks WHERE album_id='" + quote(albumId)
+            + "' AND status='completed' ORDER BY chapter_id ASC");
+    }
+
+    private Map<String, List<StoredDownloadTask>> completedChaptersByAlbum(List<String> albumIds) {
+        Map<String, List<StoredDownloadTask>> result = new LinkedHashMap<>();
+        if (albumIds.isEmpty()) return result;
+        String placeholders = String.join(",", java.util.Collections.nCopies(albumIds.size(), "?"));
+        try (PreparedStatement statement = connection.prepareStatement(
+            "SELECT * FROM download_tasks WHERE status='completed' AND album_id IN ("
+                + placeholders + ") ORDER BY chapter_id ASC")) {
+            for (int index = 0; index < albumIds.size(); index++) {
+                statement.setString(index + 1, albumIds.get(index));
+            }
+            try (ResultSet rows = statement.executeQuery()) {
+                while (rows.next()) {
+                    StoredDownloadTask task = task(rows);
+                    result.computeIfAbsent(task.albumId(), ignored -> new ArrayList<>()).add(task);
+                }
+            }
+            return result;
+        } catch (SQLException exception) {
+            throw failure("读取已完成章节失败", exception);
+        }
+    }
+
+    public synchronized List<String> completedAlbumIds(List<String> albumIds) {
+        if (albumIds == null || albumIds.isEmpty()) return List.of();
+        String placeholders = String.join(",", java.util.Collections.nCopies(albumIds.size(), "?"));
+        List<String> result = new ArrayList<>();
+        try (PreparedStatement statement = connection.prepareStatement(
+            "SELECT DISTINCT album_id FROM download_tasks WHERE status='completed' AND album_id IN ("
+                + placeholders + ")")) {
+            for (int i = 0; i < albumIds.size(); i++) statement.setString(i + 1, albumIds.get(i));
+            try (ResultSet rows = statement.executeQuery()) {
+                while (rows.next()) result.add(rows.getString(1));
+            }
+            return List.copyOf(result);
+        } catch (SQLException exception) {
+            throw failure("读取已完成本子 ID 失败", exception);
+        }
+    }
+
+    public synchronized List<StoredDownloadTask> taskStatuses(String albumId) {
+        return list("SELECT * FROM download_tasks WHERE album_id='" + quote(albumId)
+            + "' ORDER BY chapter_id ASC");
+    }
+
+    public synchronized List<StoredDownloadTask> activeProgress() {
+        return list("SELECT * FROM download_tasks WHERE status IN (" + ACTIVE_STATUSES
+            + ") ORDER BY created_at ASC, task_id ASC");
+    }
+
+    public synchronized List<String> completedResourceKeys(List<String> albumIds, List<String> chapterIds) {
+        if (albumIds == null || chapterIds == null || albumIds.size() != chapterIds.size()) return List.of();
+        if (albumIds.isEmpty()) return List.of();
+        String predicate = String.join(" OR ", java.util.Collections.nCopies(albumIds.size(),
+            "(album_id=? AND chapter_id=?)"));
+        Set<String> completed = new java.util.HashSet<>();
+        try (PreparedStatement statement = connection.prepareStatement(
+            "SELECT album_id,chapter_id FROM download_tasks WHERE status='completed' AND ("
+                + predicate + ")")) {
+            for (int index = 0; index < albumIds.size(); index++) {
+                statement.setString(index * 2 + 1, albumIds.get(index));
+                statement.setString(index * 2 + 2, chapterIds.get(index));
+            }
+            try (ResultSet rows = statement.executeQuery()) {
+                while (rows.next()) completed.add(rows.getString(1) + "|" + rows.getString(2));
+            }
+        } catch (SQLException exception) {
+            throw failure("查询已下载资源键失败", exception);
+        }
+        List<String> result = new ArrayList<>();
+        for (int i = 0; i < albumIds.size(); i++) {
+            String key = albumIds.get(i) + "|" + chapterIds.get(i);
+            if (completed.contains(key)) result.add(key);
+        }
+        return List.copyOf(result);
+    }
+
+    public synchronized int countByStatus(String status) {
+        if ("completed".equals(status)) {
+            try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT COUNT(DISTINCT album_id) FROM download_tasks WHERE status='completed'");
+                 ResultSet rows = statement.executeQuery()) {
+                return rows.next() ? rows.getInt(1) : 0;
+            } catch (SQLException exception) {
+                throw failure("统计已完成本子失败", exception);
+            }
+        }
+        return count("active".equals(status) ? "status IN (" + ACTIVE_STATUSES + ")" : "status='failed'");
+    }
+
+    public synchronized List<StoredDownloadTask> tasksByStatus(String status) {
+        String where = "completed".equals(status) ? "status='completed'" : "failed".equals(status)
+                                                                           ? "status='failed'" : "status IN (" + ACTIVE_STATUSES + ")";
+        return list("SELECT * FROM download_tasks WHERE " + where + " ORDER BY task_id ASC");
     }
 
     public synchronized DiagnosticSnapshot diagnosticSnapshot(int requestedFailureLimit) {
@@ -359,6 +503,28 @@ public final class DownloadStore {
         }, "删除下载任务失败");
     }
 
+    public synchronized int deleteTasksByStatus(List<String> taskIds, String status) {
+        return transaction(connection -> {
+            int deleted = 0;
+            try (PreparedStatement pages = connection.prepareStatement(
+                "DELETE FROM download_pages WHERE task_id=? AND EXISTS ("
+                    + "SELECT 1 FROM download_tasks WHERE task_id=? AND status=?)");
+                 PreparedStatement statement = connection.prepareStatement(
+                "DELETE FROM download_tasks WHERE task_id=? AND status=?")) {
+                for (String taskId : taskIds) {
+                    pages.setString(1, taskId);
+                    pages.setString(2, taskId);
+                    pages.setString(3, status);
+                    pages.executeUpdate();
+                    statement.setString(1, taskId);
+                    statement.setString(2, status);
+                    deleted += statement.executeUpdate();
+                }
+            }
+            return deleted;
+        }, "批量删除下载任务失败");
+    }
+
     public synchronized void deletePages(String taskId) {
         try {
             deletePages(connection, taskId);
@@ -375,6 +541,187 @@ public final class DownloadStore {
             return statement.executeUpdate();
         } catch (SQLException exception) {
             throw failure("更新下载章节类型失败", exception);
+        }
+    }
+
+    private TaskPage completedPage(String sort, String direction, String queryDirection,
+                                   CursorValue boundary, int limit) {
+        String value = switch (sort) {
+            case "title" -> "g.album_title";
+            case "id" -> "g.album_id";
+            case "author" -> "r.author";
+            default -> "g.latest_completed_at";
+        };
+        String order = orderClause(value, queryDirection, "g.album_id", boundary != null && boundary.previous);
+        String boundarySql = boundary == null ? "" : " AND " + keysetClause(value,
+            queryDirection, "g.album_id", boundary.previous())
+                                                               .replace("task_id", "g.album_id");
+        // 代表章节使用最小 chapter_id；author、封面和单章节标记来自同一行。
+        String sql = "SELECT g.album_id,g.album_title,g.latest_completed_at,g.total_size,g.rep_chapter_id,"
+            + "r.cover_url,r.author,r.authors_json,r.is_single_episode "
+            + "FROM (SELECT album_id,MIN(album_title) AS album_title,"
+            + "CAST(MAX(completed_at) AS INTEGER) AS latest_completed_at,SUM(total_size) AS total_size,"
+            + "MIN(chapter_id) AS rep_chapter_id FROM download_tasks "
+            + "WHERE status='completed' GROUP BY album_id) g "
+            + "JOIN download_tasks r ON r.album_id=g.album_id AND r.chapter_id=g.rep_chapter_id "
+            + "AND r.status='completed' WHERE 1=1" + boundarySql
+            + " ORDER BY " + order.replace("task_id", "g.album_id") + " LIMIT ?";
+        List<AlbumRow> rows = new ArrayList<>();
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            int index = bindBoundary(statement, boundary, value, queryDirection, 1);
+            statement.setInt(index, limit + 1);
+            try (ResultSet result = statement.executeQuery()) {
+                while (result.next()) rows.add(new AlbumRow(
+                    result.getString("album_id"), result.getString("album_title"),
+                    result.getLong("latest_completed_at"), result.getLong("total_size"),
+                    result.getString("rep_chapter_id"), result.getString("cover_url"),
+                    result.getString("author"), result.getString("authors_json"),
+                    nullableInt(result, "is_single_episode")));
+            }
+        } catch (SQLException exception) {
+            throw failure("读取已完成本子分页失败", exception);
+        }
+        boolean hasNext = rows.size() > limit;
+        if (hasNext) rows = new ArrayList<>(rows.subList(0, limit));
+        if (boundary != null && boundary.previous()) java.util.Collections.reverse(rows);
+        Map<String, List<StoredDownloadTask>> chaptersByAlbum = completedChaptersByAlbum(
+            rows.stream().map(AlbumRow::albumId).toList());
+        List<CompletedAlbum> albums = new ArrayList<>();
+        for (AlbumRow row : rows) {
+            List<StoredDownloadTask> chapters = chaptersByAlbum.getOrDefault(row.albumId(), List.of());
+            albums.add(new CompletedAlbum(row.albumId(), row.albumTitle(), row.coverUrl(),
+                row.author(), row.singleEpisode() == null ? null : row.singleEpisode() == 1,
+                chapters, row.totalSize(), row.latestCompletedAt()));
+        }
+        String next = (boundary != null && boundary.previous() || hasNext) && !rows.isEmpty()
+            ? rows.get(rows.size() - 1).cursor(sort)
+              .encode(false, "completed", sort, direction) : null;
+        String previous = boundary != null && (!boundary.previous() || hasNext) && !rows.isEmpty()
+            ? rows.get(0).cursor(sort).encode(true, "completed", sort, direction) : null;
+        return new TaskPage(List.of(), albums, next, previous, countByStatus("completed"));
+    }
+
+    private int count(String where) {
+        try (PreparedStatement statement = connection.prepareStatement("SELECT COUNT(*) FROM download_tasks WHERE " + where);
+             ResultSet rows = statement.executeQuery()) {
+            return rows.next() ? rows.getInt(1) : 0;
+        } catch (SQLException exception) {
+            throw failure("统计下载任务失败", exception);
+        }
+    }
+
+    private static String normalizeStatus(String status) {
+        if ("completed".equals(status) || "failed".equals(status) || "active".equals(status)) return status;
+        throw new IllegalArgumentException("status 无效");
+    }
+
+    private static String normalizeSort(String sort) {
+        if ("title".equals(sort) || "id".equals(sort) || "author".equals(sort) || "time".equals(sort)) return sort;
+        throw new IllegalArgumentException("sort 无效");
+    }
+
+    private static String orderValue(String sort, String titleColumn, String authorColumn) {
+        return switch (sort) {
+            case "title" -> titleColumn;
+            case "id" -> "album_id";
+            case "author" -> authorColumn;
+            default -> "created_at";
+        };
+    }
+
+    private static String orderClause(String value, String direction, String stable, boolean reverseNullRank) {
+        String nulls = "CASE WHEN " + value + " IS NULL OR TRIM(" + value + ")='' THEN 1 ELSE 0 END ASC";
+        if (reverseNullRank) nulls = nulls.replace(" ASC", " DESC");
+        String nonEmptyValue = "CASE WHEN " + value + " IS NULL OR TRIM(" + value + ")='' THEN NULL ELSE " + value + " END";
+        String valueOrder = nonEmptyValue + ("desc".equals(direction) ? " DESC" : " ASC");
+        return nulls + "," + valueOrder + "," + stable + ("desc".equals(direction) ? " DESC" : " ASC");
+    }
+
+    private static String keysetClause(String value, String direction, String stable,
+                                       boolean reverseNullRank) {
+        String comparison = "desc".equals(direction) ? "<" : ">";
+        String nullComparison = reverseNullRank ? "<" : ">";
+        // NULL 与空字符串共享 null-rank；NULL 没有可比较值时，直接使用稳定键继续分页。
+        String rank = "CASE WHEN " + value + " IS NULL OR TRIM(" + value + ")='' THEN 1 ELSE 0 END";
+        return "(" + rank + " " + nullComparison + " ? OR (" + rank + "=? AND "
+            + "((" + rank + "=0 AND (" + value + " " + comparison + " ? OR ("
+            + value + "=? AND " + stable + " " + comparison + " ?)))"
+            + " OR (" + rank + "=1 AND " + stable + " " + comparison + " ?))))";
+    }
+
+    private static int bindBoundary(PreparedStatement statement, CursorValue boundary, String value,
+                                    String direction, int index) throws SQLException {
+        if (boundary == null) return index;
+        int nullFlag = boundary.value() == null || boundary.value().isBlank() ? 1 : 0;
+        statement.setInt(index++, nullFlag);
+        statement.setInt(index++, nullFlag);
+        statement.setString(index++, boundary.value());
+        statement.setString(index++, boundary.value());
+        statement.setString(index++, boundary.stable());
+        statement.setString(index++, boundary.stable());
+        return index;
+    }
+
+    private static String quote(String value) {
+        return value == null ? "" : value.replace("'", "''");
+    }
+
+    private static String flip(String direction) {
+        return "desc".equals(direction) ? "asc" : "desc";
+    }
+
+    public record TaskPage(List<StoredDownloadTask> tasks, List<CompletedAlbum> albums,
+                           String nextCursor, String previousCursor, int totalCount) {
+    }
+
+    public record CompletedAlbum(String albumId, String albumTitle, String coverUrl, String author,
+                                 Boolean singleEpisode, List<StoredDownloadTask> chapters,
+                                 long totalSize, long completedAt) {
+    }
+
+    private record AlbumRow(String albumId, String albumTitle, long latestCompletedAt, long totalSize,
+                            String repChapterId, String coverUrl, String author, String authorsJson,
+                            Integer singleEpisode) {
+        CursorValue cursor(String sort) {
+            String value = switch (sort) {
+                case "title" -> albumTitle;
+                case "id" -> albumId;
+                case "author" -> author;
+                default -> Long.toString(latestCompletedAt);
+            };
+            return new CursorValue(value, albumId);
+        }
+    }
+
+    private record CursorValue(String value, String stable, boolean previous) {
+        CursorValue(String value, String stable) {
+            this(value, stable, false);
+        }
+
+        String encode(boolean previous, String status, String sort, String direction) {
+            String raw = status + "\u001f" + sort + "\u001f" + direction + "\u001f"
+                + (previous ? "prev" : "next") + "\u001f" + (value == null ? "" : value) + "\u001f" + stable;
+            return Base64.getUrlEncoder().withoutPadding().encodeToString(raw.getBytes(StandardCharsets.UTF_8));
+        }
+
+        // cursor 绑定查询条件；prev 查询反转数据库方向后再恢复返回顺序。
+        static CursorValue decode(String cursor, String status, String sort, String direction) {
+            if (cursor == null || cursor.isBlank()) return null;
+            String raw = new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8);
+            String[] parts = raw.split("\u001f", -1);
+            if (parts.length != 6 || !status.equals(parts[0]) || !sort.equals(parts[1])
+                || !direction.equals(parts[2])) throw new IllegalArgumentException("cursor 无效");
+            return new CursorValue(parts[4], parts[5], "prev".equals(parts[3]));
+        }
+
+        static CursorValue from(StoredDownloadTask task, String sort) {
+            String value = switch (sort) {
+                case "title" -> task.albumTitle();
+                case "id" -> task.albumId();
+                case "author" -> task.author();
+                default -> Long.toString(task.createdAt());
+            };
+            return new CursorValue(value, task.taskId());
         }
     }
 

@@ -10,6 +10,10 @@ import java.util.List;
 public interface DownloadTaskReader {
     List<JSONObject> getAllTasks();
 
+    List<JSONObject> getCompletedTasks();
+
+    boolean hasActiveTasks();
+
     JSONObject getTask(String taskId);
 
     List<JSONObject> getImages(String taskId);

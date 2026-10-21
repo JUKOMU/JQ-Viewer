@@ -466,6 +466,7 @@ ion-button ion-icon {
 
 .log-export-header {
   flex-shrink: 0;
+  padding-top: 16px;
   padding-bottom: 10px;
 }
 

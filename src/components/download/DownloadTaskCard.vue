@@ -254,10 +254,6 @@ const onCardClick = () => {
   cursor: pointer;
 }
 
-.card.clickable:active {
-  transform: scale(0.98);
-}
-
 .cover-wrap {
   width: 64px;
   height: 85px;

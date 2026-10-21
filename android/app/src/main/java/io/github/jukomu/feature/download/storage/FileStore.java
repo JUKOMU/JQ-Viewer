@@ -83,7 +83,8 @@ public class FileStore {
         chapterIdToAlbumId.clear();
         sortOrderToFilename.clear();
 
-        List<JSONObject> tasks = db.getAllTasks();
+        // 文件索引需要全部已完成任务，不能使用页面的 50 条分页结果。
+        List<JSONObject> tasks = db.getCompletedTasks();
         for (JSONObject task : tasks) {
             try {
                 String taskId = task.getString("taskId");
@@ -362,12 +363,14 @@ public class FileStore {
             for (File f : files) {
                 if (f.isDirectory()) {
                     deleteRecursive(f);
-                } else {
-                    f.delete();
+                } else if (!f.delete() && f.exists()) {
+                    throw new IllegalStateException("删除下载文件失败: " + f);
                 }
             }
         }
-        dir.delete();
+        if (!dir.delete() && dir.exists()) {
+            throw new IllegalStateException("删除下载目录失败: " + dir);
+        }
     }
 
     private static void validatePathSegment(String fieldName, String value) {

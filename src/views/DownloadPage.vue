@@ -31,15 +31,21 @@
         </div>
       </IonToolbar>
     </IonHeader>
-    <IonContent v-show="activeMainView === 'downloads'">
+    <IonContent
+      v-show="activeMainView === 'downloads'"
+      ref="downloadContentRef"
+      @ionScroll="onDownloadScroll"
+    >
       <!-- 下拉刷新 -->
       <IonRefresher slot="fixed" @ion-refresh="onRefresh($event)">
         <IonRefresherContent />
       </IonRefresher>
 
       <div class="download-page-shell desktop-page-content">
-        <!-- 空状态 -->
-        <div v-if="!hasTasks" class="empty-state">
+        <div v-if="initialLoading" class="download-list-loader">
+          <IonSpinner name="dots" />
+        </div>
+        <div v-else-if="!hasTasks" class="empty-state">
           <IonIcon :icon="cloudDownloadOutline" class="empty-icon" />
           <p>暂无下载内容</p>
         </div>
@@ -51,65 +57,112 @@
             <span>已用 {{ spaceUsedMb }}MB / 可用 {{ spaceAvailMb }}MB</span>
           </div>
           <div v-if="hasTasks" class="sort-label-row">
-            <span class="toolbar-action-label">{{ sortLabel }}</span>
+            <button
+              type="button"
+              class="sort-btn sort-direction-btn"
+              :aria-label="sortDirection === 'asc' ? '升序' : '降序'"
+              :title="sortDirection === 'asc' ? '升序' : '降序'"
+              @click="toggleSortDirection"
+            >
+              <IonIcon :icon="sortDirection === 'asc' ? arrowUpOutline : arrowDownOutline" />
+            </button>
             <button type="button" class="sort-btn" :aria-label="sortLabel" @click="toggleSort">
               <IonIcon :icon="sortIcon" />
             </button>
+            <span class="toolbar-action-label">{{ sortLabel }}</span>
           </div>
 
-          <!-- 下载中 -->
-          <div v-if="sortedActiveTasks.length" class="section">
-            <div class="section-header">
-              <span class="section-title">下载中 ({{ sortedActiveTasks.length }})</span>
-            </div>
-            <div v-for="task in sortedActiveTasks" :key="task.taskId" class="task-card">
-              <DownloadTaskCard
-                :task="task"
-                :show-progress="true"
-                :menu-open="isTaskMenuOpen(task)"
-                @more="openActions(task, $event)"
-              />
-            </div>
-          </div>
-
-          <!-- 已完成 -->
-          <div v-if="completedGroups.length" class="section">
-            <div class="section-header">
-              <span class="section-title">已完成 ({{ completedGroups.length }})</span>
-              <button class="clear-btn" @click="requestClear('completed')">清空</button>
-            </div>
+          <section
+            v-for="group in downloadGroups"
+            :key="group.key"
+            v-memo="[group.items, group.loading, group.error, group.collapsed, group.totalCount, group.previousCursor, group.nextCursor, isActionMenuOpen, selectedTask]"
+            class="download-group section"
+          >
+            <h2 class="section-header">
+              <button
+                type="button"
+                class="section-toggle"
+                :aria-expanded="!group.collapsed"
+                :aria-controls="`download-group-${group.key}`"
+                :aria-label="`${group.collapsed ? '展开' : '收起'}${group.label}`"
+                @click="toggleGroup(group.key)"
+              >
+                <span class="section-title">{{ group.label }} ({{ group.totalCount }})</span>
+                <IonIcon
+                  :icon="chevronDownOutline"
+                  class="section-toggle-icon"
+                  :class="{ collapsed: group.collapsed }"
+                  aria-hidden="true"
+                />
+              </button>
+              <button
+                v-if="group.clearable"
+                type="button"
+                class="clear-btn"
+                @click="requestClear(group.status as 'completed' | 'failed')"
+              >
+                清空
+              </button>
+            </h2>
             <div
-              v-for="group in completedGroups"
-              :key="group.albumId + '|' + group.chapters[0].source"
-              class="task-card"
+              v-if="!group.collapsed"
+              :id="`download-group-${group.key}`"
+              class="section-content"
             >
-              <DownloadTaskCard
-                :task="group.chapters[0]"
-                :show-progress="false"
-                :total-size="group.totalSize"
-                :downloaded-chapters="group.type === 'multi' ? group.chapters : undefined"
-                :menu-open="isTaskMenuOpen(group.chapters[0])"
-                @click="onReadGroup(group)"
-                @more="openGroupActions(group, $event)"
-              />
+              <button
+                v-if="group.previousCursor"
+                type="button"
+                class="group-previous"
+                @click="loadGroup(group.key, 'previous')"
+              >
+                加载上一页
+              </button>
+              <div
+                v-for="item in group.items"
+                :key="itemKey(item)"
+                :data-download-key="itemKey(item)"
+                class="task-card"
+              >
+                <DownloadTaskCard
+                  v-if="group.status !== 'completed'"
+                  :task="item as DownloadTask"
+                  :show-progress="group.status === 'active'"
+                  :menu-open="isTaskMenuOpen(item as DownloadTask)"
+                  @more="openActions(item as DownloadTask, $event)"
+                />
+                <DownloadTaskCard
+                  v-else
+                  :task="groupEntry(item as CompletedDownloadGroup)"
+                  :show-progress="false"
+                  :total-size="(item as CompletedDownloadGroup).totalSize"
+                  :downloaded-chapters="
+                    (item as CompletedDownloadGroup).type === 'multi'
+                      ? (item as CompletedDownloadGroup).chapters.map((chapter) =>
+                          toCompletedEntry(chapter, item as CompletedDownloadGroup),
+                        )
+                      : undefined
+                  "
+                  :menu-open="isTaskMenuOpen(groupEntry(item as CompletedDownloadGroup))"
+                  @click="onReadGroup(item as CompletedDownloadGroup)"
+                  @more="openGroupActions(item as CompletedDownloadGroup, $event)"
+                />
+              </div>
+              <div v-if="group.loading" class="browse-group-loader"><IonSpinner name="dots" /></div>
+              <button
+                v-else-if="group.error"
+                type="button"
+                class="browse-group-retry"
+                @click="loadGroup(group.key, group.loadDirection)"
+              >
+                加载失败，点击重试
+              </button>
+              <div
+                v-if="group.nextCursor"
+                class="group-sentinel"
+                :data-download-sentinel="group.key"
+              ></div>
             </div>
-          </div>
-
-          <!-- 下载失败 -->
-          <div v-if="sortedFailedTasks.length" class="section">
-            <div class="section-header">
-              <span class="section-title">下载失败 ({{ sortedFailedTasks.length }})</span>
-              <button class="clear-btn" @click="requestClear('failed')">清空</button>
-            </div>
-            <div v-for="task in sortedFailedTasks" :key="task.taskId" class="task-card">
-              <DownloadTaskCard
-                :task="task"
-                :show-progress="false"
-                :menu-open="isTaskMenuOpen(task)"
-                @more="openActions(task, $event)"
-              />
-            </div>
-          </div>
+          </section>
           <div class="bottom-spacer" />
         </template>
       </div>
@@ -144,7 +197,7 @@
     <DeleteChaptersBottomSheet
       v-model="showDeleteSheet"
       :album-title="deleteGroup?.albumTitle ?? ''"
-      :chapters="deleteGroup?.chapters ?? []"
+      :chapters="deleteGroupChapters"
       @confirm="onDeleteSheetConfirm"
     />
   </IonPage>
@@ -153,7 +206,7 @@
 <script setup lang="ts">
 defineOptions({ name: 'DownloadPage' })
 
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   IonContent,
@@ -162,11 +215,15 @@ import {
   IonPage,
   IonRefresher,
   IonRefresherContent,
+  IonSpinner,
   IonToolbar,
   onIonViewWillEnter,
 } from '@ionic/vue'
 import {
   bookOutline,
+  arrowDownOutline,
+  arrowUpOutline,
+  chevronDownOutline,
   closeCircleOutline,
   cloudDownloadOutline,
   documentLockOutline,
@@ -190,11 +247,18 @@ import { createAppAlert } from '@/services/AppAlertService'
 import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
 import { OfflineDownloadService } from '@/services/OfflineDownloadService'
 import { ExportService, type ExportPlan } from '@/services/ExportService'
+import {
+  downloadRefreshGroupForStatus,
+  shouldLoadDownloadNextPage,
+  shouldLoadDownloadPreviousPage,
+} from '@/utils/downloadPagination'
 import type {
-  AlbumDetail,
   CompletedEntry,
-  CompletedGroup,
+  CompletedDownloadGroup,
   DownloadTask,
+  DownloadTaskPageStatus,
+  DownloadTaskSort,
+  DownloadTaskSortDirection,
   ExportMode,
   ExportFormat,
 } from '@/services/JmcomicTypes'
@@ -224,7 +288,69 @@ watch(
   },
 )
 
+type DownloadGroupKey = 'active' | 'completed' | 'failed'
+type DownloadPageItem = DownloadTask | CompletedDownloadGroup
+
+interface DownloadGroupPage {
+  items: DownloadPageItem[]
+  nextCursor: string | null
+  previousCursor: string | null
+}
+
+interface DownloadGroupState {
+  key: DownloadGroupKey
+  status: DownloadTaskPageStatus
+  label: string
+  clearable: boolean
+  items: DownloadPageItem[]
+  pages: DownloadGroupPage[]
+  nextCursor: string | null
+  previousCursor: string | null
+  totalCount: number
+  loading: boolean
+  error: boolean
+  collapsed: boolean
+  initialized: boolean
+  requestId: number
+  loadDirection: 'next' | 'previous'
+}
+
+const createDownloadGroup = (
+  key: DownloadGroupKey,
+  label: string,
+  clearable = false,
+): DownloadGroupState => ({
+  key,
+  status: key,
+  label,
+  clearable,
+  items: [],
+  pages: [],
+  nextCursor: null,
+  previousCursor: null,
+  totalCount: 0,
+  loading: false,
+  error: false,
+  collapsed: false,
+  initialized: false,
+  requestId: 0,
+  loadDirection: 'next',
+})
+
+const downloadGroupStates = reactive<Record<DownloadGroupKey, DownloadGroupState>>({
+  active: createDownloadGroup('active', '下载中'),
+  completed: createDownloadGroup('completed', '已完成', true),
+  failed: createDownloadGroup('failed', '下载失败', true),
+})
+const downloadGroups = computed(() => Object.values(downloadGroupStates))
+const downloadContentRef = ref<any>(null)
 const tasks = ref<DownloadTask[]>([])
+const initialLoading = computed(() =>
+  !hasTasks.value && downloadGroups.value.some((group) => group.loading && !group.initialized),
+)
+const hasTasks = computed(() =>
+  downloadGroups.value.some((group) => group.totalCount > 0 || group.items.length > 0),
+)
 const spaceUsedMb = ref(0)
 const spaceAvailMb = ref(0)
 const hasStorageInfo = ref(false)
@@ -232,12 +358,10 @@ let downloadProgressHandle: ListenerHandle | null = null
 let stateInvalidatedHandle: ListenerHandle | null = null
 let syncPromise: Promise<void> | null = null
 let syncRequested = false
+let syncCollapsedRequested = false
 let downloadStateSequence = 0
 let speedTimer: ReturnType<typeof setInterval> | null = null
 let isUnmounted = false
-let episodeTypeBackfillPromise: Promise<void> | null = null
-const backfilledAlbumIds = new Set<string>()
-const EPISODE_TYPE_BACKFILL_DELAY_MS = 500
 
 interface SpeedSample {
   latestBytes: number
@@ -247,27 +371,40 @@ interface SpeedSample {
 }
 
 const speedSamples = new Map<string, SpeedSample>()
+const unseenActiveTaskIds = new Set<string>()
 
 // 排序
-type SortMode = 'time' | 'title'
+type SortMode = DownloadTaskSort
 const sortMode = ref<SortMode>('time')
-const sortIcon = computed(() => (sortMode.value === 'time' ? timeOutline : textOutline))
-const sortLabel = computed(() => (sortMode.value === 'time' ? '时间排序' : '标题排序'))
+const sortDirection = ref<DownloadTaskSortDirection>('desc')
+const sortIcon = computed(() => {
+  if (sortMode.value === 'time') return timeOutline
+  if (sortMode.value === 'author') return textOutline
+  if (sortMode.value === 'id') return textOutline
+  return textOutline
+})
+const sortLabel = computed(
+  () => ({ time: '时间排序', title: '标题排序', id: 'ID排序', author: '作者排序' })[sortMode.value],
+)
+const defaultDirection = (mode: SortMode): DownloadTaskSortDirection =>
+  mode === 'time' ? 'desc' : 'asc'
 
 const toggleSort = () => {
-  sortMode.value = sortMode.value === 'time' ? 'title' : 'time'
+  const modes: SortMode[] = ['time', 'title', 'id', 'author']
+  sortMode.value = modes[(modes.indexOf(sortMode.value) + 1) % modes.length]
+  sortDirection.value = defaultDirection(sortMode.value)
+  void downloadContentRef.value?.$el?.scrollToTop?.(0)
+  void resetDownloadGroups(true, false)
 }
-
-const sortTasks = (list: DownloadTask[]) => {
-  if (sortMode.value === 'title') {
-    return [...list].sort((a, b) => a.albumTitle.localeCompare(b.albumTitle, 'zh'))
-  }
-  return [...list].sort((a, b) => b.createdAt - a.createdAt)
+const toggleSortDirection = () => {
+  sortDirection.value = sortDirection.value === 'asc' ? 'desc' : 'asc'
+  void downloadContentRef.value?.$el?.scrollToTop?.(0)
+  void resetDownloadGroups(true, false)
 }
 
 // 操作菜单
 const selectedTask = ref<DownloadTask | CompletedEntry | null>(null)
-const selectedGroup = ref<CompletedGroup | null>(null)
+const selectedGroup = ref<CompletedDownloadGroup | null>(null)
 const isActionMenuOpen = ref(false)
 const actionMenuAnchor = ref<HTMLElement | null>(null)
 
@@ -348,7 +485,7 @@ const openActions = (task: DownloadTask, event: Event) => {
   isActionMenuOpen.value = true
 }
 
-const openGroupActions = (group: CompletedGroup, event: Event) => {
+const openGroupActions = (group: CompletedDownloadGroup, event: Event) => {
   const anchor = event.currentTarget as HTMLElement
   if (actionMenuAnchor.value === anchor) {
     closeActions()
@@ -444,17 +581,23 @@ const requestDeleteConfirm = async () => {
 }
 
 const showDeleteSheet = ref(false)
-const deleteGroup = ref<CompletedGroup | null>(null)
+const deleteGroup = ref<CompletedDownloadGroup | null>(null)
 
-const requestDeleteGroupConfirm = (group: CompletedGroup) => {
+const requestDeleteGroupConfirm = (group: CompletedDownloadGroup) => {
   deleteGroup.value = group
   showDeleteSheet.value = true
 }
 
+const deleteGroupChapters = computed<CompletedEntry[]>(
+  () =>
+    deleteGroup.value?.chapters.map((chapter) => toCompletedEntry(chapter, deleteGroup.value!)) ??
+    [],
+)
+
 const confirmDelete = () => {
   const g = selectedGroup.value
   if (g?.type === 'multi') {
-    void deleteChapters(g.chapters)
+    void deleteChapters(g.chapters.map((chapter) => toCompletedEntry(chapter, g)))
   } else if (selectedTask.value) {
     onDelete(selectedTask.value as DownloadTask)
   }
@@ -463,26 +606,6 @@ const confirmDelete = () => {
   actionMenuAnchor.value = null
 }
 
-const hasTasks = computed(() => tasks.value.length > 0)
-
-const activeTasks = computed(() =>
-  tasks.value.filter(
-    (t) =>
-      t.status === 'queued' ||
-      t.status === 'downloading' ||
-      t.status === 'paused' ||
-      t.status === 'verifying',
-  ),
-)
-
-const completedTasks = computed(() => tasks.value.filter((t) => t.status === 'completed'))
-
-const failedTasks = computed(() => tasks.value.filter((t) => t.status === 'failed'))
-
-const sortedActiveTasks = computed(() => sortTasks(activeTasks.value))
-const sortedFailedTasks = computed(() => sortTasks(failedTasks.value))
-
-// 将下载任务映射为统一的 CompletedEntry
 const mapDownloadTaskToEntry = (t: DownloadTask): CompletedEntry => ({
   albumId: t.albumId,
   albumTitle: t.albumTitle,
@@ -499,125 +622,286 @@ const mapDownloadTaskToEntry = (t: DownloadTask): CompletedEntry => ({
   downloadTask: t,
 })
 
-const completedEntries = computed<CompletedEntry[]>(() =>
-  completedTasks.value.map(mapDownloadTaskToEntry),
-)
+const toCompletedEntry = (task: DownloadTask, group?: CompletedDownloadGroup): CompletedEntry => {
+  return mapDownloadTaskToEntry({
+    ...task,
+    ...(group
+      ? {
+          albumTitle: group.albumTitle,
+          coverUrl: group.coverUrl,
+          author: group.author,
+          isSingleEpisode: group.isSingleEpisode,
+          totalSize: group.totalSize,
+          completedAt: group.completedAt,
+        }
+      : {}),
+  })
+}
 
-const completedGroups = computed<CompletedGroup[]>(() => {
-  const byAlbum = new Map<string, CompletedEntry[]>()
-  for (const t of completedEntries.value) {
-    const key = t.albumId + '|' + t.source
-    const list = byAlbum.get(key)
-    if (list) {
-      list.push(t)
-    } else {
-      byAlbum.set(key, [t])
+const groupEntry = (group: CompletedDownloadGroup) => toCompletedEntry(group.chapters[0], group)
+
+const itemKey = (item: DownloadPageItem) =>
+  'chapters' in item ? `album-${item.albumId}` : `task-${item.taskId}`
+
+const rebuildVisibleTasks = () => {
+  const next: DownloadTask[] = []
+  for (const group of downloadGroups.value) {
+    for (const item of group.items) {
+      if ('chapters' in item) next.push(...item.chapters)
+      else next.push(item)
     }
   }
-  const groups: CompletedGroup[] = []
-  for (const chapters of byAlbum.values()) {
-    chapters.sort((a, b) => (a.chapterSortOrder ?? 0) - (b.chapterSortOrder ?? 0))
-    groups.push({
-      type: chapters.length > 1 ? 'multi' : 'single',
-      albumId: chapters[0].albumId,
-      albumTitle: chapters[0].albumTitle,
-      coverUrl: chapters[0].coverUrl,
-      chapters,
-      totalSize: chapters.reduce((s, c) => s + (c.totalSize ?? 0), 0),
+  tasks.value = next
+}
+
+const setGroupPages = (group: DownloadGroupState, pages: DownloadGroupPage[]) => {
+  group.pages = pages
+  group.items = pages.flatMap((page) => page.items)
+  group.previousCursor = pages[0]?.previousCursor ?? null
+  group.nextCursor = pages[pages.length - 1]?.nextCursor ?? null
+}
+
+const resetGroup = (group: DownloadGroupState, keepWindow = false) => {
+  group.requestId += 1
+  group.loading = false
+  if (!keepWindow) {
+    setGroupPages(group, [])
+    group.totalCount = 0
+  }
+  group.nextCursor = null
+  group.previousCursor = null
+  group.initialized = false
+  group.error = false
+}
+
+let restoredDownloadScrollTop: number | null = null
+
+const loadGroup = async (key: DownloadGroupKey, direction: 'next' | 'previous' = 'next') => {
+  const group = downloadGroupStates[key]
+  if (group.loading || (group.collapsed && group.initialized)) return
+  if (group.error && !group.nextCursor && !group.previousCursor) resetGroup(group, true)
+  group.loadDirection = direction
+  const cursor = direction === 'previous' ? group.previousCursor : group.nextCursor
+  if (group.initialized && !cursor) return
+  group.loading = true
+  group.error = false
+  const requestId = ++group.requestId
+  try {
+    const scrollElement = await downloadContentRef.value?.$el?.getScrollElement?.()
+    if (requestId !== group.requestId || isUnmounted) return
+    const result = await JmcomicService.getDownloadTasksPage({
+      status: group.status,
+      sort: sortMode.value,
+      direction: sortDirection.value,
+      ...(cursor ? { cursor } : {}),
+      limit: 50,
     })
-  }
-  return sortMode.value === 'title'
-    ? groups.sort((a, b) => a.albumTitle.localeCompare(b.albumTitle, 'zh'))
-    : groups.sort(
-        (a, b) =>
-          Math.max(...b.chapters.map((c) => c.createdAt)) -
-          Math.max(...a.chapters.map((c) => c.createdAt)),
-      )
-})
-
-const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms))
-
-const resolveAlbumSingleEpisode = (album: AlbumDetail): boolean =>
-  album.isSingleEpisode ?? (album.seriesId === '0' || (album.photoMetas?.length ?? 0) <= 1)
-
-const collectEpisodeTypeBackfillAlbumIds = () => {
-  const ids = new Set<string>()
-  for (const task of tasks.value) {
-    if (
-      task.albumId &&
-      task.isSingleEpisode === undefined &&
-      !backfilledAlbumIds.has(task.albumId)
-    ) {
-      ids.add(task.albumId)
+    if (requestId !== group.requestId || isUnmounted) return
+    const viewport = scrollElement?.getBoundingClientRect()
+    const anchor = viewport
+      ? Array.from(document.querySelectorAll<HTMLElement>('[data-download-key]')).find(
+          (element) => element.getBoundingClientRect().bottom > viewport.top,
+        )
+      : undefined
+    const anchorTop = anchor?.getBoundingClientRect().top
+    const page: DownloadGroupPage = {
+      items: result.items as DownloadPageItem[],
+      nextCursor: result.nextCursor,
+      previousCursor: result.previousCursor,
     }
-  }
-  return [...ids]
-}
-
-const applyEpisodeTypeToLocalState = (albumId: string, isSingleEpisode: boolean) => {
-  tasks.value = tasks.value.map((task) =>
-    task.albumId === albumId ? { ...task, isSingleEpisode } : task,
-  )
-}
-
-const backfillMissingEpisodeTypes = async () => {
-  if (episodeTypeBackfillPromise) return episodeTypeBackfillPromise
-  episodeTypeBackfillPromise = (async () => {
-    while (!isUnmounted) {
-      const albumIds = collectEpisodeTypeBackfillAlbumIds()
-      if (albumIds.length === 0) return
-      for (const albumId of albumIds) {
-        if (isUnmounted) return
-        try {
-          const album = await JmcomicService.getAlbum(albumId)
-          const isSingleEpisode = resolveAlbumSingleEpisode(album)
-          await JmcomicService.updateLocalEpisodeType(albumId, isSingleEpisode)
-          backfilledAlbumIds.add(albumId)
-          applyEpisodeTypeToLocalState(albumId, isSingleEpisode)
-        } catch {
-          // 回填失败不影响下载页显示，后续进入页面会再尝试。
-        }
-        if (!isUnmounted) {
-          await sleep(EPISODE_TYPE_BACKFILL_DELAY_MS)
-        }
+    const pages = !group.initialized ? [page]
+      : direction === 'previous' ? [page, ...group.pages] : [...group.pages, page]
+    setGroupPages(group, direction === 'previous' ? pages.slice(0, 3) : pages.slice(-3))
+    group.totalCount = result.totalCount
+    group.initialized = true
+    spaceUsedMb.value = Math.round(result.usedBytes / (1024 * 1024))
+    spaceAvailMb.value = Math.round(result.availableBytes / (1024 * 1024))
+    hasStorageInfo.value = true
+    rebuildVisibleTasks()
+    await nextTick()
+    if (scrollElement && anchor?.isConnected && anchorTop !== undefined) {
+      const offset = anchor.getBoundingClientRect().top - anchorTop
+      if (offset) {
+        scrollElement.scrollTop += offset
+        restoredDownloadScrollTop = scrollElement.scrollTop
       }
     }
-  })()
-  try {
-    await episodeTypeBackfillPromise
+  } catch {
+    if (requestId === group.requestId) group.error = true
   } finally {
-    episodeTypeBackfillPromise = null
+    if (requestId === group.requestId) group.loading = false
   }
 }
 
-const syncDownloadState = async (): Promise<void> => {
+const resetDownloadGroups = async (includeCollapsed = false, keepWindow = true) => {
+  const groups = downloadGroups.value.filter((group) => includeCollapsed || !group.collapsed)
+  for (const group of groups) resetGroup(group, keepWindow)
+  await Promise.all(groups.map((group) => loadGroup(group.key)))
+}
+
+const refreshGroupFirstPage = async (key: DownloadGroupKey) => {
+  const group = downloadGroupStates[key]
+  resetGroup(group, true)
+  await loadGroup(key)
+}
+
+const refreshGroupsFirstPage = async (keys: DownloadGroupKey[]) => {
+  await Promise.all(keys.map(refreshGroupFirstPage))
+}
+
+const toggleGroup = (key: DownloadGroupKey) => {
+  const group = downloadGroupStates[key]
+  group.collapsed = !group.collapsed
+  if (!group.collapsed && !group.initialized) void loadGroup(key)
+}
+
+const onDownloadScroll = async (event: CustomEvent<{ scrollTop?: number }>) => {
+  const scrollTop = event.detail?.scrollTop ?? 0
+  if (restoredDownloadScrollTop !== null) {
+    const restored = restoredDownloadScrollTop
+    restoredDownloadScrollTop = null
+    if (Math.abs(scrollTop - restored) < 1) return
+  }
+  const scrollElement = await downloadContentRef.value?.$el?.getScrollElement?.()
+  if (!scrollElement) return
+
+  if (shouldLoadDownloadPreviousPage(scrollTop)) {
+    const previousGroup = downloadGroups.value.find(
+      (candidate) => !candidate.collapsed && candidate.previousCursor,
+    )
+    if (previousGroup) {
+      await loadGroup(previousGroup.key, 'previous')
+      return
+    }
+  }
+
+  for (const group of downloadGroups.value) {
+    if (group.collapsed || group.loading || !group.nextCursor) continue
+    const sentinel = document.querySelector<HTMLElement>(`[data-download-sentinel="${group.key}"]`)
+    if (!sentinel) continue
+    const containerRect = scrollElement.getBoundingClientRect()
+    const sentinelRect = sentinel.getBoundingClientRect()
+    const offset = sentinelRect.top - containerRect.top
+    if (
+      shouldLoadDownloadNextPage(
+        offset,
+        sentinelRect.bottom - containerRect.top,
+        scrollElement.clientHeight,
+      )
+    ) {
+      void loadGroup(group.key)
+    }
+  }
+}
+
+const removeVisibleTask = (taskId: string) => {
+  for (const group of downloadGroups.value) {
+    setGroupPages(group, group.pages.map((page) => ({
+      ...page,
+      items: page.items.flatMap<DownloadPageItem>((item): DownloadPageItem[] => {
+        if (!('chapters' in item)) return item.taskId === taskId ? [] : [item]
+        if (!item.chapters.some((chapter) => chapter.taskId === taskId)) return [item]
+        const chapters = item.chapters.filter((chapter) => chapter.taskId !== taskId)
+        return chapters.length
+          ? [{ ...item, chapters, type: chapters.length > 1 ? 'multi' : 'single' }]
+          : []
+      }),
+    })))
+  }
+  rebuildVisibleTasks()
+}
+
+const updateVisibleTask = (taskId: string, update: (task: DownloadTask) => DownloadTask) => {
+  for (const group of downloadGroups.value) {
+    let changed = false
+    const pages = group.pages.map((page) => {
+      const items = page.items.map((item) => {
+        if (!('chapters' in item)) {
+          if (item.taskId !== taskId) return item
+          changed = true
+          return update(item)
+        }
+        if (!item.chapters.some((chapter) => chapter.taskId === taskId)) return item
+        changed = true
+        return { ...item, chapters: item.chapters.map((chapter) =>
+          chapter.taskId === taskId ? update(chapter) : chapter,
+        ) }
+      })
+      return changed ? { ...page, items } : page
+    })
+    if (changed) setGroupPages(group, pages)
+  }
+  rebuildVisibleTasks()
+}
+
+const syncDownloadState = async (includeCollapsed = false): Promise<void> => {
+  syncCollapsedRequested ||= includeCollapsed
   syncRequested = true
   if (syncPromise) return syncPromise
 
   syncPromise = (async () => {
     while (syncRequested && !isUnmounted) {
       syncRequested = false
+      const readCollapsed = syncCollapsedRequested
+      syncCollapsedRequested = false
       const requestSequence = downloadStateSequence
       try {
-        const result = await JmcomicService.getDownloadTasks()
-        if (isUnmounted) return
+        await resetDownloadGroups(readCollapsed)
         if (requestSequence !== downloadStateSequence) {
           syncRequested = true
+          syncCollapsedRequested ||= readCollapsed
           continue
         }
-        tasks.value = result.tasks
-        spaceUsedMb.value = Math.round(result.usedBytes / (1024 * 1024))
-        spaceAvailMb.value = Math.round(result.availableBytes / (1024 * 1024))
-        hasStorageInfo.value = true
-        OfflineDownloadService.setAll(result.tasks)
-        void backfillMissingEpisodeTypes()
+        const failedGroups = downloadGroups.value.filter((group) => (readCollapsed || !group.collapsed) && group.error)
+        if (failedGroups.length) {
+          const cached = OfflineDownloadService.getAll()
+          const cachedCompleted = OfflineDownloadService.getCompletedGroups()
+          for (const group of failedGroups) {
+            if (group.key === 'active') {
+              group.items = cached.filter((task) =>
+                ['queued', 'downloading', 'paused', 'verifying'].includes(task.status),
+              )
+            } else if (group.key === 'failed') {
+              group.items = cached.filter((task) => task.status === 'failed')
+            } else {
+              group.items = cachedCompleted
+            }
+            setGroupPages(group, [{ items: group.items.slice(0, 150), nextCursor: null, previousCursor: null }])
+            group.totalCount = group.items.length
+            group.initialized = true
+          }
+          rebuildVisibleTasks()
+          hasStorageInfo.value = false
+        } else {
+          OfflineDownloadService.setAll(tasks.value)
+          const completed = downloadGroupStates.completed.items.filter(
+            (item): item is CompletedDownloadGroup => 'chapters' in item,
+          )
+          OfflineDownloadService.setCompletedGroups(completed)
+        }
       } catch {
         if (isUnmounted) return
         if (requestSequence !== downloadStateSequence) {
           syncRequested = true
+          syncCollapsedRequested ||= readCollapsed
           continue
         }
-        tasks.value = OfflineDownloadService.getAll()
+        const cached = OfflineDownloadService.getAll()
+        downloadGroupStates.active.items = cached.filter((task) =>
+          ['queued', 'downloading', 'paused', 'verifying'].includes(task.status),
+        )
+        downloadGroupStates.failed.items = cached.filter((task) => task.status === 'failed')
+        downloadGroupStates.completed.items = OfflineDownloadService.getCompletedGroups()
+        for (const group of downloadGroups.value) {
+          setGroupPages(group, [{ items: group.items.slice(0, 150), nextCursor: null, previousCursor: null }])
+        }
+        downloadGroupStates.active.totalCount = downloadGroupStates.active.items.length
+        downloadGroupStates.failed.totalCount = downloadGroupStates.failed.items.length
+        downloadGroupStates.completed.totalCount = downloadGroupStates.completed.items.length
+        downloadGroupStates.active.initialized = true
+        downloadGroupStates.failed.initialized = true
+        downloadGroupStates.completed.initialized = true
+        rebuildVisibleTasks()
         hasStorageInfo.value = false
       }
     }
@@ -718,7 +1002,7 @@ const updateSpeedSample = (
 
 const onRefresh = async (event: CustomEvent) => {
   if (activeMainView.value === 'export') await exportManagementRef.value?.refresh()
-  else await syncDownloadState()
+  else await syncDownloadState(true)
   ;(event.target as HTMLIonRefresherElement).complete()
 }
 
@@ -729,21 +1013,45 @@ onMounted(async () => {
     downloadStateSequence++
     const task = tasks.value.find((t) => t.taskId === data.taskId)
     if (!task) {
-      void syncDownloadState()
+      if (['queued', 'downloading', 'paused', 'verifying'].includes(data.status)) {
+        if (!unseenActiveTaskIds.has(data.taskId)) {
+          unseenActiveTaskIds.add(data.taskId)
+          void refreshGroupFirstPage('active')
+        }
+      } else if (data.status === 'completed') {
+        unseenActiveTaskIds.delete(data.taskId)
+        void refreshGroupsFirstPage(['active', 'completed'])
+      } else if (data.status === 'failed') {
+        unseenActiveTaskIds.delete(data.taskId)
+        void refreshGroupsFirstPage(['active', 'failed'])
+      } else if (data.status === 'cancelled') {
+        unseenActiveTaskIds.delete(data.taskId)
+        void refreshGroupFirstPage('active')
+      }
       return
     }
+    unseenActiveTaskIds.delete(data.taskId)
 
     if (data.status === 'downloading') {
-      task.downloadedPages = data.downloadedPages
-      task.totalPages = data.totalPages
-      task.status = 'downloading'
-      updateSpeedSample(task, data.downloadedBytes, data.speed)
+      updateVisibleTask(data.taskId, (current) => {
+        const next = {
+          ...current,
+          downloadedPages: data.downloadedPages,
+          totalPages: data.totalPages,
+          status: 'downloading' as const,
+        }
+        updateSpeedSample(next, data.downloadedBytes, data.speed)
+        return next
+      })
       OfflineDownloadService.updateProgress(data.taskId, data.downloadedPages, data.totalPages)
     } else if (data.status === 'verifying') {
-      task.downloadedPages = data.downloadedPages
-      task.totalPages = data.totalPages || task.totalPages
-      task.status = 'verifying'
-      task.speed = 0
+      updateVisibleTask(data.taskId, (current) => ({
+        ...current,
+        downloadedPages: data.downloadedPages,
+        totalPages: data.totalPages || current.totalPages,
+        status: 'verifying',
+        speed: 0,
+      }))
       speedSamples.delete(data.taskId)
       OfflineDownloadService.updateStatus(
         data.taskId,
@@ -752,10 +1060,13 @@ onMounted(async () => {
         task.totalPages,
       )
     } else if (data.status === 'paused') {
-      task.downloadedPages = data.downloadedPages
-      task.totalPages = data.totalPages || task.totalPages
-      task.status = 'paused'
-      task.speed = 0
+      updateVisibleTask(data.taskId, (current) => ({
+        ...current,
+        downloadedPages: data.downloadedPages,
+        totalPages: data.totalPages || current.totalPages,
+        status: 'paused',
+        speed: 0,
+      }))
       speedSamples.delete(data.taskId)
       OfflineDownloadService.updateStatus(
         data.taskId,
@@ -763,19 +1074,13 @@ onMounted(async () => {
         data.downloadedPages,
         task.totalPages,
       )
-      void syncDownloadState()
     } else if (data.status === 'cancelled') {
-      tasks.value = tasks.value.filter((t) => t.taskId !== data.taskId)
+      removeVisibleTask(data.taskId)
       speedSamples.delete(data.taskId)
       OfflineDownloadService.removeTask(data.taskId)
-      void syncDownloadState()
+      void refreshGroupFirstPage('active')
     } else if (data.status === 'completed') {
-      task.status = 'completed'
-      task.downloadedPages = data.downloadedPages
-      task.totalPages = data.totalPages
-      task.totalSize = data.totalSize
-      task.completedAt = Date.now()
-      task.speed = 0
+      removeVisibleTask(data.taskId)
       speedSamples.delete(data.taskId)
       OfflineDownloadService.updateStatus(
         data.taskId,
@@ -783,15 +1088,10 @@ onMounted(async () => {
         data.downloadedPages,
         data.totalPages,
       )
-      void syncDownloadState()
+      void refreshGroupsFirstPage(['active', 'completed'])
     } else if (data.status === 'failed') {
-      task.downloadedPages = data.downloadedPages
-      task.totalPages = data.totalPages
-      task.totalSize = data.totalSize
-      task.speed = 0
       speedSamples.delete(data.taskId)
-      task.status = 'failed'
-      task.error = data.error
+      removeVisibleTask(data.taskId)
       OfflineDownloadService.updateStatus(
         data.taskId,
         'failed',
@@ -799,6 +1099,7 @@ onMounted(async () => {
         data.totalPages,
         data.error,
       )
+      void refreshGroupsFirstPage(['active', 'failed'])
     }
   })
     .then((handle) => {
@@ -812,7 +1113,7 @@ onMounted(async () => {
 
   const invalidationRegistration = JmcomicService.addStateInvalidatedListener?.(() => {
     downloadStateSequence++
-    void syncDownloadState()
+    void syncDownloadState(true)
   })
     .then((handle) => {
       if (!handle) return
@@ -848,6 +1149,7 @@ onUnmounted(() => {
   syncRequested = false
   stopSpeedTimer()
   speedSamples.clear()
+  unseenActiveTaskIds.clear()
 })
 
 // ---- 文件导出 ----
@@ -855,15 +1157,9 @@ const onOpenExportSheet = () => {
   const g = selectedGroup.value
   if (g?.type === 'multi') {
     chaptersForExport.value = g.chapters
-      .filter((c) => c.source === 'download')
-      .map((c) => c.downloadTask!)
   } else if (selectedTask.value) {
     const t = selectedTask.value
-    if (!('source' in t)) {
-      chaptersForExport.value = [t as DownloadTask]
-    } else if (t.source === 'download' && t.downloadTask) {
-      chaptersForExport.value = [t.downloadTask]
-    }
+    chaptersForExport.value = ['source' in t ? t.downloadTask! : t]
   }
   showExportSheet.value = true
 }
@@ -1042,7 +1338,7 @@ async function ensureNotificationPermission(): Promise<boolean> {
 const onCancel = async (task: DownloadTask) => {
   try {
     await JmcomicService.cancelDownload(task.taskId)
-    tasks.value = tasks.value.filter((t) => t.taskId !== task.taskId)
+    removeVisibleTask(task.taskId)
     OfflineDownloadService.removeTask(task.taskId)
     void syncDownloadState()
   } catch (e: any) {
@@ -1086,7 +1382,9 @@ const onRetry = async (task: DownloadTask) => {
       createdAt: Date.now(),
       completedAt: undefined,
     }
-    tasks.value = [newTask, ...tasks.value.filter((t) => t.taskId !== task.taskId)]
+    removeVisibleTask(task.taskId)
+    // 重试后的排序与游标由受控刷新恢复，不向当前窗口强插记录。
+    rebuildVisibleTasks()
     OfflineDownloadService.removeTask(task.taskId)
     OfflineDownloadService.addTask(newTask)
     void syncDownloadState()
@@ -1108,7 +1406,7 @@ const onRead = (entry: CompletedEntry | DownloadTask) => {
   })
 }
 
-const onReadGroup = (group: CompletedGroup) => {
+const onReadGroup = (group: CompletedDownloadGroup) => {
   if (group.type === 'multi') {
     onOpenChapterSelect(group)
   } else {
@@ -1116,7 +1414,7 @@ const onReadGroup = (group: CompletedGroup) => {
   }
 }
 
-const onOpenChapterSelect = (group: CompletedGroup) => {
+const onOpenChapterSelect = (group: CompletedDownloadGroup) => {
   void router.push(`/album/${group.albumId}/download-chapters`)
 }
 
@@ -1127,9 +1425,9 @@ const onGoToAlbumDetail = (entry: CompletedEntry | DownloadTask) => {
 const onDelete = async (task: DownloadTask) => {
   try {
     await JmcomicService.deleteDownloaded(task.albumId, task.chapterId)
-    tasks.value = tasks.value.filter((t) => t.taskId !== task.taskId)
+    removeVisibleTask(task.taskId)
     OfflineDownloadService.removeTask(task.taskId)
-    void syncDownloadState()
+    await refreshGroupFirstPage(downloadRefreshGroupForStatus(task.status))
   } catch (e: any) {
     await showToast(sanitizeError(e, '删除失败'), 'danger')
   }
@@ -1166,12 +1464,17 @@ const deleteChapters = async (chapters: CompletedEntry[]) => {
         .map((ch) => ch.downloadTask?.taskId)
         .filter((taskId): taskId is string => !!taskId),
     )
-    tasks.value = tasks.value.filter((t) => !taskIds.has(t.taskId))
+    for (const taskId of taskIds) removeVisibleTask(taskId)
     for (const taskId of taskIds) {
       OfflineDownloadService.removeTask(taskId)
     }
 
-    void syncDownloadState()
+    const refreshGroups = new Set(
+      deletedDownloadChapters.map((chapter) =>
+        downloadRefreshGroupForStatus(chapter.downloadTask?.status ?? 'completed'),
+      ),
+    )
+    await Promise.all([...refreshGroups].map((group) => refreshGroupFirstPage(group)))
     const deletedCount = deletedDownloadChapters.length
     const failedCount = chapters.length - deletedCount
     if (failedCount > 0 && deletedCount > 0) {
@@ -1191,9 +1494,9 @@ const clearTarget = ref<'completed' | 'failed'>('completed')
 
 const clearAlertMessage = computed(() => {
   if (clearTarget.value === 'completed') {
-    return `将删除所有已完成下载的文件和记录（${completedTasks.value.length} 个），此操作不可恢复。`
+    return `将删除所有已完成下载的文件和记录（${downloadGroupStates.completed.totalCount} 个本子），此操作不可恢复。`
   }
-  return `将删除所有失败任务的文件和记录（${failedTasks.value.length} 个），此操作不可恢复。`
+  return `将删除所有失败任务的文件和记录（${downloadGroupStates.failed.totalCount} 个），此操作不可恢复。`
 })
 
 const requestClear = async (target: 'completed' | 'failed') => {
@@ -1215,29 +1518,19 @@ const executeClear = async () => {
 }
 
 const clearCompleted = async () => {
-  const list = completedTasks.value
-  if (!list.length) return
-  await Promise.all(
-    list.map((task) =>
-      JmcomicService.deleteDownloaded(task.albumId, task.chapterId).catch(() => {}),
-    ),
-  )
-  tasks.value = tasks.value.filter((t) => t.status !== 'completed')
-  OfflineDownloadService.setAll(tasks.value)
-  await syncDownloadState()
+  if (!downloadGroupStates.completed.totalCount) return
+  const result = await JmcomicService.clearDownloadTasks('completed')
+  resetGroup(downloadGroupStates.completed)
+  await loadGroup('completed')
+  if (result.failedCount) await showToast(`${result.failedCount} 个任务清理失败，已保留记录，可重试`, 'medium')
 }
 
 const clearFailed = async () => {
-  const list = failedTasks.value
-  if (!list.length) return
-  await Promise.all(
-    list.map((task) =>
-      JmcomicService.deleteDownloaded(task.albumId, task.chapterId).catch(() => {}),
-    ),
-  )
-  tasks.value = tasks.value.filter((t) => t.status !== 'failed')
-  OfflineDownloadService.setAll(tasks.value)
-  await syncDownloadState()
+  if (!downloadGroupStates.failed.totalCount) return
+  const result = await JmcomicService.clearDownloadTasks('failed')
+  resetGroup(downloadGroupStates.failed)
+  await loadGroup('failed')
+  if (result.failedCount) await showToast(`${result.failedCount} 个任务清理失败，已保留记录，可重试`, 'medium')
 }
 </script>
 
@@ -1289,10 +1582,12 @@ const clearFailed = async () => {
 }
 
 .sort-btn {
+  width: 34px;
+  height: 34px;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 8px;
+  padding: 0;
   border: 0;
   border-radius: 10px;
   background: #fffbf8;
@@ -1355,7 +1650,7 @@ const clearFailed = async () => {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 3px;
+  gap: 4px;
   margin: -2px 18px 4px;
 }
 
@@ -1367,15 +1662,97 @@ const clearFailed = async () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 4px 10px;
+  margin: 0;
+  min-height: 44px;
+  gap: 8px;
+  padding: 0 4px;
+}
+
+.section-toggle {
+  display: flex;
+  min-width: 0;
+  min-height: 44px;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border: 0;
+  background: transparent;
+  color: #8a6048;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.section-toggle:focus-visible {
+  outline: 2px solid #e8843c;
+  outline-offset: 1px;
+  border-radius: 6px;
+}
+
+.section-toggle-icon {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-size: 16px;
+  transition: transform 0.24s ease;
+}
+
+.section-toggle-icon.collapsed {
+  transform: rotate(-90deg);
+}
+
+.section-content {
+  overflow: visible;
+}
+
+.download-list-loader,
+.browse-group-loader,
+.browse-group-retry,
+.group-previous {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  color: #fa9c69;
+}
+
+.download-list-loader {
+  padding-top: 30vh;
+}
+
+.browse-group-retry,
+.group-previous {
+  width: 100%;
+  padding: 10px;
+  border: 0;
+  background: transparent;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.browse-group-retry {
+  border-radius: 6px;
+  background: #fff0e8;
+  color: #c96d3a;
+}
+
+.browse-group-retry:focus-visible,
+.group-previous:focus-visible {
+  outline: 2px solid #e8843c;
+  outline-offset: 1px;
+  border-radius: 6px;
+}
+
+.group-sentinel {
+  min-height: 12px;
+  pointer-events: none;
 }
 
 .section-title {
   font-size: 13px;
   font-weight: 600;
   color: #8a6048;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
 }
 
 .clear-btn {
@@ -1404,5 +1781,21 @@ const clearFailed = async () => {
 .clear-btn:focus-visible {
   outline: 2px solid #c06f45;
   outline-offset: 2px;
+}
+
+@media (max-width: 600px) {
+  .sort-label-row {
+    margin-inline: 14px;
+  }
+
+  .section {
+    padding-inline: 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .section-toggle-icon {
+    transition-duration: 0.01ms;
+  }
 }
 </style>

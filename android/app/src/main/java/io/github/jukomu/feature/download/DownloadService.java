@@ -246,17 +246,75 @@ public class DownloadService {
         return taskId;
     }
 
-    public JSONArray getDownloadTasks() {
-        JSONArray arr = new JSONArray();
-        List<JSONObject> tasks = downloadDb.getAllTasks();
-        for (JSONObject task : tasks) {
+    public JSONObject getDownloadTasksPage(String status, String sort, String direction,
+                                           String cursor, int limit) throws org.json.JSONException {
+        JSONObject result = downloadDb.getTasksPage(status, sort, direction, cursor, limit);
+        result.put("usedBytes", getUsedBytes());
+        result.put("availableBytes", getAvailableBytes());
+        return result;
+    }
+
+    public List<JSONObject> getCompletedDownloadChapters(String albumId) {
+        return downloadDb.getCompletedChapters(albumId);
+    }
+
+    public List<JSONObject> getDownloadTaskStatuses(String albumId) {
+        return downloadDb.getAlbumTaskStatuses(albumId);
+    }
+
+    public List<JSONObject> getActiveDownloadProgress() {
+        List<JSONObject> progress = new ArrayList<>();
+        for (JSONObject task : downloadDb.getActiveProgress()) {
+            JSONObject item = new JSONObject();
             try {
-                arr.put(task);
-            } catch (Exception e) {
-                LOGGER.debug("跳过无效下载任务条目", e);
+                item.put("taskId", task.optString("taskId"));
+                item.put("albumId", task.optString("albumId"));
+                item.put("chapterId", task.optString("chapterId"));
+                item.put("downloadedPages", task.optInt("downloadedPages"));
+                item.put("totalPages", task.optInt("totalPages"));
+                item.put("status", task.optString("status"));
+                item.put("downloadedBytes", task.optLong("downloadedBytes"));
+                item.put("totalSize", task.optLong("totalSize"));
+            } catch (org.json.JSONException error) {
+                throw new IllegalStateException("构建活动下载进度失败", error);
+            }
+            progress.add(item);
+        }
+        return progress;
+    }
+
+    public List<String> getCompletedDownloadAlbumIds(List<String> albumIds) {
+        return downloadDb.getCompletedAlbumIds(albumIds);
+    }
+
+    public List<String> getDownloadedResourceKeys(List<String> albumIds, List<String> chapterIds) {
+        return downloadDb.getCompletedResourceKeys(albumIds, chapterIds);
+    }
+
+    public JSONObject clearDownloadTasks(String status) throws org.json.JSONException {
+        if (!STATUS_COMPLETED.equals(status) && !STATUS_FAILED.equals(status)) {
+            throw new IllegalArgumentException("status 必须是 completed 或 failed");
+        }
+        List<JSONObject> tasks = downloadDb.getTasksByStatus(status);
+        List<String> taskIds = new java.util.ArrayList<>();
+        int failedCount = 0;
+        for (JSONObject task : tasks) {
+            String albumId = task.optString("albumId");
+            String chapterId = task.optString("chapterId");
+            try {
+                fileStore.deleteChapter(albumId, chapterId);
+                taskIds.add(task.optString("taskId"));
+            } catch (RuntimeException error) {
+                failedCount++;
+                LOGGER.warn("清理下载目录失败 taskId={}", task.optString("taskId"), error);
             }
         }
-        return arr;
+        int deleted = downloadDb.deleteTasksByStatus(taskIds, status);
+        JSONObject result = new JSONObject();
+        result.put("success", true);
+        result.put("deletedCount", deleted);
+        result.put("failedCount", failedCount);
+        return result;
     }
 
     public JSONObject prepareExportMetadata(String taskId) {

@@ -369,7 +369,7 @@ beforeEach(() => {
     ({ page, targetWidth }: { file: string; page: number; targetWidth: number }) =>
       Promise.resolve(`native:${page}:${targetWidth}`),
   )
-  mocks.getAlbum.mockResolvedValue({ title: '测试专辑', image: '', authors: [] })
+  mocks.getAlbum.mockResolvedValue({ title: '测试本子', image: '', authors: [] })
   mocks.getInitialPage.mockImplementation((page: string | undefined) => Number(page) || 1)
   mocks.addVolumeKeyListener.mockResolvedValue({ remove: vi.fn(() => Promise.resolve()) })
   mocks.showToast.mockResolvedValue(undefined)

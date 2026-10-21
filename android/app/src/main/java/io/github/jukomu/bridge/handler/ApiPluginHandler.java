@@ -29,7 +29,7 @@ public final class ApiPluginHandler {
     }
 
     /**
-     * 按查询对象搜索专辑；查询对象为必填参数。
+     * 按查询对象搜索本子；查询对象为必填参数。
      */
     public void search(PluginCall call) {
         try {
@@ -74,7 +74,7 @@ public final class ApiPluginHandler {
     }
 
     /**
-     * 按非空专辑 ID 查询专辑详情。
+     * 按非空本子 ID 查询本子详情。
      */
     public void getAlbum(PluginCall call) {
         try {
@@ -108,7 +108,7 @@ public final class ApiPluginHandler {
     }
 
     /**
-     * 查询专辑评论；专辑 ID 必填，页码缺省值为 1。
+     * 查询本子评论；本子 ID 必填，页码缺省值为 1。
      */
     public void getComments(PluginCall call) {
         try {
@@ -125,7 +125,7 @@ public final class ApiPluginHandler {
     }
 
     /**
-     * 切换指定专辑的点赞状态。
+     * 切换指定本子的点赞状态。
      */
     public void toggleAlbumLike(PluginCall call) {
         try {
@@ -191,7 +191,7 @@ public final class ApiPluginHandler {
     }
 
     /**
-     * 切换专辑在线收藏状态；文件夹 ID 缺省值为 0。
+     * 切换本子在线收藏状态；文件夹 ID 缺省值为 0。
      */
     public void toggleAlbumFavorite(PluginCall call) {
         try {

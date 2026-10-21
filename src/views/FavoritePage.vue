@@ -321,30 +321,34 @@ const matchesKeyword = (item: SearchResultItem, kw: string): boolean => {
 const downloadedAlbumIds = ref<Set<string>>(new Set())
 let downloadProgressHandle: ListenerHandle | null = null
 
+let downloadStatusRequest = 0
+let favoriteUnmounted = false
 const refreshDownloadStatuses = async () => {
+  const request = ++downloadStatusRequest
+  const context = captureViewContext()
+  const albumIds = displayItems.value.map((entry) => entry.item.id)
+  if (!albumIds.length) {
+    downloadedAlbumIds.value = new Set()
+    return
+  }
   try {
-    const result = await JmcomicService.getDownloadTasks()
-    if (result?.tasks) {
-      const set = new Set<string>()
-      for (const task of result.tasks) {
-        if (task.status === 'completed') {
-          set.add(task.albumId)
-        }
+    const result = await JmcomicService.getCompletedDownloadAlbumIds(albumIds)
+    if (request !== downloadStatusRequest || !isCurrentViewContext(context)) return
+    const set = new Set<string>(result.albumIds)
+    try {
+      const imported = await JmcomicService.getImportedLocalFiles()
+      for (const file of imported.files) {
+        if (file.albumId && albumIds.includes(file.albumId)) set.add(file.albumId)
       }
-      try {
-        const pdfsResult = await JmcomicService.getImportedLocalFiles()
-        if (pdfsResult?.files) {
-          for (const pdf of pdfsResult.files) {
-            if (pdf.albumId) set.add(pdf.albumId)
-          }
-        }
-      } catch {
-        /* ignore */
-      }
-      downloadedAlbumIds.value = set
+    } catch (error) {
+      console.warn('读取收藏导入文件标记失败', error)
     }
-  } catch {
-    // ignore
+    if (request !== downloadStatusRequest || !isCurrentViewContext(context)) return
+    downloadedAlbumIds.value = set
+  } catch (error) {
+    if (request === downloadStatusRequest && isCurrentViewContext(context)) {
+      console.warn('读取收藏下载标记失败', error)
+    }
   }
 }
 
@@ -468,6 +472,12 @@ const displayItems = computed<SearchResultDisplayItem[]>(() =>
       indexInPage,
     })),
   ),
+)
+
+watch(
+  [() => accountId.value, () => displayItems.value.map((entry) => entry.item.id).join('\u001f')],
+  () => void refreshDownloadStatuses(),
+  { immediate: true, flush: 'post' },
 )
 
 const canLoadPrevious = computed(
@@ -1094,6 +1104,8 @@ function handleCardMenuAction(action: string) {
 
 // 组件卸载时清理
 onBeforeUnmount(() => {
+  favoriteUnmounted = true
+  downloadStatusRequest++
   downloadProgressHandle?.remove()
   stopPageResizeObserver()
 })
@@ -2027,16 +2039,16 @@ onMounted(async () => {
   nextTick(() => {
     void resolveScrollElement()
   })
-  await refreshDownloadStatuses()
-  downloadProgressHandle = await JmcomicService.addDownloadProgressListener((data) => {
-    const set = new Set(downloadedAlbumIds.value)
-    if (data.status === 'completed') {
-      set.add(data.albumId)
-    } else if (data.status !== 'downloading' && data.status !== 'queued') {
-      set.delete(data.albumId)
+  const handle = await JmcomicService.addDownloadProgressListener((data) => {
+    if (
+      ['completed', 'failed', 'cancelled'].includes(data.status) &&
+      displayItems.value.some((entry) => entry.item.id === data.albumId)
+    ) {
+      void refreshDownloadStatuses()
     }
-    downloadedAlbumIds.value = set
   })
+  if (favoriteUnmounted) void handle.remove()
+  else downloadProgressHandle = handle
 })
 
 // --- keepAlive 状态保存 ---
@@ -2057,6 +2069,7 @@ onDeactivated(() => {
 onActivated(async () => {
   await nextTick()
   startPageResizeObserver()
+  void refreshDownloadStatuses()
   void refreshOnlineFolderData()
   if (cachedState.value?.stale && resultMeta.value) void silentRefresh()
   if (isWideLayout.value) {

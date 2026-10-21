@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test, vi } from 'vitest'
 import type { LocalFileRecord } from '@/services/JmcomicTypes'
 
 const mocks = vi.hoisted(() => ({
-  getDownloadTasks: vi.fn(),
+  getCompletedDownloadChapters: vi.fn(),
   getLocalFiles: vi.fn(),
   getDownloadedPhoto: vi.fn(),
   verifyLocalFile: vi.fn(),
@@ -54,14 +54,14 @@ function file(id: number, format: 'pdf' | 'cbz', updatedAt: number): LocalFileRe
 describe('ChapterSourceService', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mocks.getDownloadTasks.mockResolvedValue({ tasks: [], usedBytes: 0, availableBytes: 0 })
+    mocks.getCompletedDownloadChapters.mockResolvedValue({ tasks: [] })
     mocks.getDownloadedPhoto.mockRejectedValue(new Error('missing'))
     mocks.getCbzInfo.mockResolvedValue({ pageCount: 20, coverPage: 1 })
     mocks.getPdfInfo.mockResolvedValue({ pageCount: 20 })
   })
 
   test('uses completed downloads before archive files', async () => {
-    mocks.getDownloadTasks.mockResolvedValue({
+    mocks.getCompletedDownloadChapters.mockResolvedValue({
       tasks: [
         {
           taskId: 'download-1',
@@ -76,8 +76,6 @@ describe('ChapterSourceService', () => {
           createdAt: 1,
         },
       ],
-      usedBytes: 0,
-      availableBytes: 0,
     })
     mocks.getLocalFiles.mockResolvedValue({ files: [file(1, 'pdf', 1), file(2, 'cbz', 2)] })
     mocks.getDownloadedPhoto.mockResolvedValue({ images: [{ sortOrder: 1 }] })
@@ -141,7 +139,7 @@ describe('ChapterSourceService', () => {
 
   test('falls back from a missing download to CBZ', async () => {
     const cbz = file(2, 'cbz', 20)
-    mocks.getDownloadTasks.mockResolvedValue({
+    mocks.getCompletedDownloadChapters.mockResolvedValue({
       tasks: [
         {
           taskId: 'download-1',
@@ -156,8 +154,6 @@ describe('ChapterSourceService', () => {
           createdAt: 1,
         },
       ],
-      usedBytes: 0,
-      availableBytes: 0,
     })
     mocks.getLocalFiles.mockResolvedValue({ files: [cbz] })
     mocks.verifyLocalFile.mockResolvedValue(cbz)

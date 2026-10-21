@@ -1,12 +1,10 @@
 package io.github.jukomu.bridge.handler;
 
-import com.getcapacitor.JSObject;
 import com.getcapacitor.JSArray;
+import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
 import io.github.jukomu.feature.download.DownloadService;
 import org.json.JSONObject;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * 负责下载任务 Bridge 的参数校验、服务调用和响应适配。
@@ -64,7 +62,9 @@ public final class DownloadPluginHandler {
             JSObject result = new JSObject();
             result.put("albumIds", new org.json.JSONArray(downloadService.getCompletedDownloadAlbumIds(ids)));
             call.resolve(result);
-        } catch (Exception error) { call.reject(error.getMessage(), error); }
+        } catch (Exception error) {
+            call.reject(error.getMessage(), error);
+        }
     }
 
     public void getDownloadTaskStatuses(PluginCall call) {
@@ -77,7 +77,9 @@ public final class DownloadPluginHandler {
             }
             result.put("statuses", statuses);
             call.resolve(result);
-        } catch (Exception error) { call.reject(error.getMessage(), error); }
+        } catch (Exception error) {
+            call.reject(error.getMessage(), error);
+        }
     }
 
     public void getCompletedDownloadChapters(PluginCall call) {
@@ -86,7 +88,9 @@ public final class DownloadPluginHandler {
             result.put("tasks", new org.json.JSONArray(downloadService.getCompletedDownloadChapters(
                 call.getString("albumId"))));
             call.resolve(result);
-        } catch (Exception error) { call.reject(error.getMessage(), error); }
+        } catch (Exception error) {
+            call.reject(error.getMessage(), error);
+        }
     }
 
     public void getActiveDownloadProgress(PluginCall call) {
@@ -94,7 +98,9 @@ public final class DownloadPluginHandler {
             JSObject result = new JSObject();
             result.put("tasks", new org.json.JSONArray(downloadService.getActiveDownloadProgress()));
             call.resolve(result);
-        } catch (Exception error) { call.reject(error.getMessage(), error); }
+        } catch (Exception error) {
+            call.reject(error.getMessage(), error);
+        }
     }
 
     public void getDownloadedResourceKeys(PluginCall call) {
@@ -110,14 +116,18 @@ public final class DownloadPluginHandler {
             JSObject result = new JSObject();
             result.put("keys", new org.json.JSONArray(downloadService.getDownloadedResourceKeys(albums, chapters)));
             call.resolve(result);
-        } catch (Exception error) { call.reject(error.getMessage(), error); }
+        } catch (Exception error) {
+            call.reject(error.getMessage(), error);
+        }
     }
 
     public void clearDownloadTasks(PluginCall call) {
         try {
             call.resolve(JSObject.fromJSONObject(downloadService.clearDownloadTasks(
                 call.getString("status"))));
-        } catch (Exception error) { call.reject(error.getMessage(), error); }
+        } catch (Exception error) {
+            call.reject(error.getMessage(), error);
+        }
     }
 
     /**

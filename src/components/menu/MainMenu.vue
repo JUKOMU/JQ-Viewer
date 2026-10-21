@@ -348,11 +348,10 @@ const waitForOnlineProbe = () => {
       if (event.phase === 'result' || event.phase === 'network_restored') {
         finish(Boolean(event.domains?.some((domain) => domain.reachable)))
       }
+    }).then((registered) => {
+      handle = registered
+      if (settled) void registered.remove()
     })
-      .then((registered) => {
-        handle = registered
-        if (settled) void registered.remove()
-      })
     void ready.catch(() => finish(false))
   })
   return {
@@ -734,13 +733,15 @@ const refreshDownloadProgress = async (): Promise<void> => {
           downloadRefreshRequested = true
           continue
         }
-        seedDownloadProgress(result.tasks.map((task) => ({
-          ...task,
-          albumTitle: '',
-          chapterTitle: '',
-          coverUrl: '',
-          createdAt: 0,
-        })))
+        seedDownloadProgress(
+          result.tasks.map((task) => ({
+            ...task,
+            albumTitle: '',
+            chapterTitle: '',
+            coverUrl: '',
+            createdAt: 0,
+          })),
+        )
       } catch {
         if (requestSequence !== downloadEventSequence) {
           downloadRefreshRequested = true

@@ -31,7 +31,11 @@
         </div>
       </IonToolbar>
     </IonHeader>
-    <IonContent v-show="activeMainView === 'downloads'" ref="downloadContentRef" @ionScroll="onDownloadScroll">
+    <IonContent
+      v-show="activeMainView === 'downloads'"
+      ref="downloadContentRef"
+      @ionScroll="onDownloadScroll"
+    >
       <!-- 下拉刷新 -->
       <IonRefresher slot="fixed" @ion-refresh="onRefresh($event)">
         <IonRefresherContent />
@@ -86,7 +90,12 @@
                   aria-hidden="true"
                 />
               </button>
-              <button v-if="group.clearable" type="button" class="clear-btn" @click="requestClear(group.status as 'completed' | 'failed')">
+              <button
+                v-if="group.clearable"
+                type="button"
+                class="clear-btn"
+                @click="requestClear(group.status as 'completed' | 'failed')"
+              >
                 清空
               </button>
             </h2>
@@ -103,7 +112,12 @@
               >
                 加载上一页
               </button>
-              <div v-for="item in group.items" :key="itemKey(item)" :data-download-key="itemKey(item)" class="task-card">
+              <div
+                v-for="item in group.items"
+                :key="itemKey(item)"
+                :data-download-key="itemKey(item)"
+                class="task-card"
+              >
                 <DownloadTaskCard
                   v-if="group.status !== 'completed'"
                   :task="item as DownloadTask"
@@ -116,14 +130,25 @@
                   :task="groupEntry(item as CompletedDownloadGroup)"
                   :show-progress="false"
                   :total-size="(item as CompletedDownloadGroup).totalSize"
-                  :downloaded-chapters="(item as CompletedDownloadGroup).type === 'multi' ? (item as CompletedDownloadGroup).chapters.map((chapter) => toCompletedEntry(chapter, item as CompletedDownloadGroup)) : undefined"
+                  :downloaded-chapters="
+                    (item as CompletedDownloadGroup).type === 'multi'
+                      ? (item as CompletedDownloadGroup).chapters.map((chapter) =>
+                          toCompletedEntry(chapter, item as CompletedDownloadGroup),
+                        )
+                      : undefined
+                  "
                   :menu-open="isTaskMenuOpen(groupEntry(item as CompletedDownloadGroup))"
                   @click="onReadGroup(item as CompletedDownloadGroup)"
                   @more="openGroupActions(item as CompletedDownloadGroup, $event)"
                 />
               </div>
               <div v-if="group.loading" class="browse-group-loader"><IonSpinner name="dots" /></div>
-              <button v-else-if="group.error" type="button" class="browse-group-retry" @click="loadGroup(group.key)">
+              <button
+                v-else-if="group.error"
+                type="button"
+                class="browse-group-retry"
+                @click="loadGroup(group.key)"
+              >
                 加载失败，点击重试
               </button>
               <div
@@ -305,8 +330,12 @@ const downloadGroupStates = reactive<Record<DownloadGroupKey, DownloadGroupState
 const downloadGroups = computed(() => Object.values(downloadGroupStates))
 const downloadContentRef = ref<any>(null)
 const tasks = ref<DownloadTask[]>([])
-const initialLoading = computed(() => downloadGroups.value.some((group) => group.loading && !group.initialized))
-const hasTasks = computed(() => downloadGroups.value.some((group) => group.totalCount > 0 || group.items.length > 0))
+const initialLoading = computed(() =>
+  downloadGroups.value.some((group) => group.loading && !group.initialized),
+)
+const hasTasks = computed(() =>
+  downloadGroups.value.some((group) => group.totalCount > 0 || group.items.length > 0),
+)
 const spaceUsedMb = ref(0)
 const spaceAvailMb = ref(0)
 const hasStorageInfo = ref(false)
@@ -338,8 +367,11 @@ const sortIcon = computed(() => {
   if (sortMode.value === 'id') return textOutline
   return textOutline
 })
-const sortLabel = computed(() => ({ time: '时间排序', title: '标题排序', id: 'ID排序', author: '作者排序' })[sortMode.value])
-const defaultDirection = (mode: SortMode): DownloadTaskSortDirection => (mode === 'time' ? 'desc' : 'asc')
+const sortLabel = computed(
+  () => ({ time: '时间排序', title: '标题排序', id: 'ID排序', author: '作者排序' })[sortMode.value],
+)
+const defaultDirection = (mode: SortMode): DownloadTaskSortDirection =>
+  mode === 'time' ? 'desc' : 'asc'
 
 const toggleSort = () => {
   const modes: SortMode[] = ['time', 'title', 'id', 'author']
@@ -538,8 +570,10 @@ const requestDeleteGroupConfirm = (group: CompletedDownloadGroup) => {
   showDeleteSheet.value = true
 }
 
-const deleteGroupChapters = computed<CompletedEntry[]>(() =>
-  deleteGroup.value?.chapters.map((chapter) => toCompletedEntry(chapter, deleteGroup.value!)) ?? [],
+const deleteGroupChapters = computed<CompletedEntry[]>(
+  () =>
+    deleteGroup.value?.chapters.map((chapter) => toCompletedEntry(chapter, deleteGroup.value!)) ??
+    [],
 )
 
 const confirmDelete = () => {
@@ -620,7 +654,9 @@ const loadGroup = async (key: DownloadGroupKey, direction: 'next' | 'previous' =
   if (group.initialized && !cursor) return
   const scrollElement = await downloadContentRef.value?.$el?.getScrollElement?.()
   const anchorKey = direction === 'previous' && group.items[0] ? itemKey(group.items[0]) : null
-  const anchor = anchorKey ? document.querySelector<HTMLElement>(`[data-download-key="${anchorKey}"]`) : null
+  const anchor = anchorKey
+    ? document.querySelector<HTMLElement>(`[data-download-key="${anchorKey}"]`)
+    : null
   const anchorTop = anchor?.getBoundingClientRect().top ?? null
   group.loading = true
   group.error = false
@@ -635,7 +671,8 @@ const loadGroup = async (key: DownloadGroupKey, direction: 'next' | 'previous' =
     })
     if (requestId !== group.requestId || isUnmounted) return
     const incoming = result.items as DownloadPageItem[]
-    group.items = direction === 'previous' ? [...incoming, ...group.items] : [...group.items, ...incoming]
+    group.items =
+      direction === 'previous' ? [...incoming, ...group.items] : [...group.items, ...incoming]
     if (group.items.length > 150) {
       if (direction === 'previous') group.items.splice(-50)
       else group.items.splice(0, 50)
@@ -651,7 +688,9 @@ const loadGroup = async (key: DownloadGroupKey, direction: 'next' | 'previous' =
     if (direction === 'previous' && scrollElement && anchorTop !== null) {
       await nextTick()
       const nextTop = anchorKey
-        ? document.querySelector<HTMLElement>(`[data-download-key="${anchorKey}"]`)?.getBoundingClientRect().top
+        ? document
+            .querySelector<HTMLElement>(`[data-download-key="${anchorKey}"]`)
+            ?.getBoundingClientRect().top
         : null
       if (nextTop !== undefined && nextTop !== null) scrollElement.scrollTop += nextTop - anchorTop
     }
@@ -664,7 +703,9 @@ const loadGroup = async (key: DownloadGroupKey, direction: 'next' | 'previous' =
 
 const resetDownloadGroups = async () => {
   for (const group of downloadGroups.value) resetGroup(group)
-  await Promise.all(downloadGroups.value.filter((group) => !group.collapsed).map((group) => loadGroup(group.key)))
+  await Promise.all(
+    downloadGroups.value.filter((group) => !group.collapsed).map((group) => loadGroup(group.key)),
+  )
 }
 
 const refreshGroupFirstPage = async (key: DownloadGroupKey) => {
@@ -700,9 +741,7 @@ const onDownloadScroll = async (event: CustomEvent<{ scrollTop?: number }>) => {
 
   for (const group of downloadGroups.value) {
     if (group.collapsed || group.loading || !group.nextCursor) continue
-    const sentinel = document.querySelector<HTMLElement>(
-      `[data-download-sentinel="${group.key}"]`,
-    )
+    const sentinel = document.querySelector<HTMLElement>(`[data-download-sentinel="${group.key}"]`)
     if (!sentinel) continue
     const containerRect = scrollElement.getBoundingClientRect()
     const sentinelRect = sentinel.getBoundingClientRect()
@@ -724,7 +763,9 @@ const removeVisibleTask = (taskId: string) => {
     group.items = group.items.flatMap<DownloadPageItem>((item): DownloadPageItem[] => {
       if (!('chapters' in item)) return item.taskId === taskId ? [] : [item]
       const chapters = item.chapters.filter((chapter) => chapter.taskId !== taskId)
-      return chapters.length ? [{ ...item, chapters, type: chapters.length > 1 ? 'multi' : 'single' }] : []
+      return chapters.length
+        ? [{ ...item, chapters, type: chapters.length > 1 ? 'multi' : 'single' }]
+        : []
     })
   }
   rebuildVisibleTasks()
@@ -734,7 +775,9 @@ const updateVisibleTask = (taskId: string, update: (task: DownloadTask) => Downl
   for (const group of downloadGroups.value) {
     group.items = group.items.map((item) => {
       if (!('chapters' in item)) return item.taskId === taskId ? update(item) : item
-      const chapters = item.chapters.map((chapter) => (chapter.taskId === taskId ? update(chapter) : chapter))
+      const chapters = item.chapters.map((chapter) =>
+        chapter.taskId === taskId ? update(chapter) : chapter,
+      )
       return chapters === item.chapters ? item : { ...item, chapters }
     })
   }
@@ -761,7 +804,9 @@ const syncDownloadState = async (): Promise<void> => {
           const cachedCompleted = OfflineDownloadService.getCompletedGroups()
           for (const group of failedGroups) {
             if (group.key === 'active') {
-              group.items = cached.filter((task) => ['queued', 'downloading', 'paused', 'verifying'].includes(task.status))
+              group.items = cached.filter((task) =>
+                ['queued', 'downloading', 'paused', 'verifying'].includes(task.status),
+              )
             } else if (group.key === 'failed') {
               group.items = cached.filter((task) => task.status === 'failed')
             } else {
@@ -786,7 +831,9 @@ const syncDownloadState = async (): Promise<void> => {
           continue
         }
         const cached = OfflineDownloadService.getAll()
-        downloadGroupStates.active.items = cached.filter((task) => ['queued', 'downloading', 'paused', 'verifying'].includes(task.status))
+        downloadGroupStates.active.items = cached.filter((task) =>
+          ['queued', 'downloading', 'paused', 'verifying'].includes(task.status),
+        )
         downloadGroupStates.failed.items = cached.filter((task) => task.status === 'failed')
         downloadGroupStates.completed.items = OfflineDownloadService.getCompletedGroups()
         downloadGroupStates.active.totalCount = downloadGroupStates.active.items.length
@@ -915,12 +962,10 @@ onMounted(async () => {
       } else if (data.status === 'completed') {
         unseenActiveTaskIds.delete(data.taskId)
         void refreshGroupsFirstPage(['active', 'completed'])
-      }
-      else if (data.status === 'failed') {
+      } else if (data.status === 'failed') {
         unseenActiveTaskIds.delete(data.taskId)
         void refreshGroupsFirstPage(['active', 'failed'])
-      }
-      else if (data.status === 'cancelled') {
+      } else if (data.status === 'cancelled') {
         unseenActiveTaskIds.delete(data.taskId)
         void refreshGroupFirstPage('active')
       }
@@ -930,13 +975,24 @@ onMounted(async () => {
 
     if (data.status === 'downloading') {
       updateVisibleTask(data.taskId, (current) => {
-        const next = { ...current, downloadedPages: data.downloadedPages, totalPages: data.totalPages, status: 'downloading' as const }
+        const next = {
+          ...current,
+          downloadedPages: data.downloadedPages,
+          totalPages: data.totalPages,
+          status: 'downloading' as const,
+        }
         updateSpeedSample(next, data.downloadedBytes, data.speed)
         return next
       })
       OfflineDownloadService.updateProgress(data.taskId, data.downloadedPages, data.totalPages)
     } else if (data.status === 'verifying') {
-      updateVisibleTask(data.taskId, (current) => ({ ...current, downloadedPages: data.downloadedPages, totalPages: data.totalPages || current.totalPages, status: 'verifying', speed: 0 }))
+      updateVisibleTask(data.taskId, (current) => ({
+        ...current,
+        downloadedPages: data.downloadedPages,
+        totalPages: data.totalPages || current.totalPages,
+        status: 'verifying',
+        speed: 0,
+      }))
       speedSamples.delete(data.taskId)
       OfflineDownloadService.updateStatus(
         data.taskId,
@@ -945,7 +1001,13 @@ onMounted(async () => {
         task.totalPages,
       )
     } else if (data.status === 'paused') {
-      updateVisibleTask(data.taskId, (current) => ({ ...current, downloadedPages: data.downloadedPages, totalPages: data.totalPages || current.totalPages, status: 'paused', speed: 0 }))
+      updateVisibleTask(data.taskId, (current) => ({
+        ...current,
+        downloadedPages: data.downloadedPages,
+        totalPages: data.totalPages || current.totalPages,
+        status: 'paused',
+        speed: 0,
+      }))
       speedSamples.delete(data.taskId)
       OfflineDownloadService.updateStatus(
         data.taskId,

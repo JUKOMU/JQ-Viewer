@@ -344,10 +344,10 @@ public class DownloadStore extends SQLiteOpenHelper implements DownloadTaskReade
         result.put("items", items);
         result.put("nextCursor", (boundary != null && boundary.previous || hasNext) && !tasks.isEmpty()
             ? CursorBoundary.from(tasks.get(tasks.size() - 1), normalizedSort)
-                .encode(false, normalizedStatus, normalizedSort, normalizedDirection) : JSONObject.NULL);
+              .encode(false, normalizedStatus, normalizedSort, normalizedDirection) : JSONObject.NULL);
         result.put("previousCursor", boundary != null && (!boundary.previous || hasNext) && !tasks.isEmpty()
             ? CursorBoundary.from(tasks.get(0), normalizedSort)
-                .encode(true, normalizedStatus, normalizedSort, normalizedDirection) : JSONObject.NULL);
+              .encode(true, normalizedStatus, normalizedSort, normalizedDirection) : JSONObject.NULL);
         result.put("totalCount", "completed".equals(normalizedStatus)
             ? countCompletedAlbums() : countTasks(normalizedStatus));
         return result;
@@ -447,7 +447,7 @@ public class DownloadStore extends SQLiteOpenHelper implements DownloadTaskReade
         };
         String selection = boundary == null ? "" : " AND " + keysetClause(value, queryDirection,
             "g.album_id", boundary.previous)
-            .replace("task_id", "g.album_id");
+                                                             .replace("task_id", "g.album_id");
         String order = orderClause(value, queryDirection, "g.album_id", boundary != null && boundary.previous);
         // 代表章节使用最小 chapter_id；author/cover/isSingleEpisode 均从同一条记录读取。
         String sql = "SELECT g.album_id,g.album_title,g.latest_completed_at,g.total_size,g.rep_chapter_id,"
@@ -459,7 +459,7 @@ public class DownloadStore extends SQLiteOpenHelper implements DownloadTaskReade
         List<JSONObject> rows = new ArrayList<>();
         String[] args = boundary == null ? new String[0]
             : new String[]{Integer.toString(boundary.nullFlag()), Integer.toString(boundary.nullFlag()),
-                boundary.value, boundary.stable};
+            boundary.value, boundary.stable};
         try {
             try (Cursor c = getReadableDatabase().rawQuery(sql, append(args, Integer.toString(limit + 1)))) {
                 while (c.moveToNext()) {
@@ -518,10 +518,10 @@ public class DownloadStore extends SQLiteOpenHelper implements DownloadTaskReade
         result.put("items", items);
         result.put("nextCursor", (boundary != null && boundary.previous || hasNext) && !rows.isEmpty()
             ? CursorBoundary.from(rows.get(rows.size() - 1), sort)
-                .encode(false, "completed", sort, direction) : JSONObject.NULL);
+              .encode(false, "completed", sort, direction) : JSONObject.NULL);
         result.put("previousCursor", boundary != null && (!boundary.previous || hasNext) && !rows.isEmpty()
             ? CursorBoundary.from(rows.get(0), sort)
-                .encode(true, "completed", sort, direction) : JSONObject.NULL);
+              .encode(true, "completed", sort, direction) : JSONObject.NULL);
         result.put("totalCount", countCompletedAlbums());
         return result;
     }
@@ -553,7 +553,7 @@ public class DownloadStore extends SQLiteOpenHelper implements DownloadTaskReade
     }
 
     private static String keysetClause(String value, String direction, String stable,
-                                      boolean reverseNullRank) {
+                                       boolean reverseNullRank) {
         String op = "desc".equals(direction) ? "<" : ">";
         String nullOp = reverseNullRank ? "<" : ">";
         String nullFlag = "CASE WHEN " + value + " IS NULL OR TRIM(" + value + ")='' THEN 1 ELSE 0 END";
@@ -608,17 +608,23 @@ public class DownloadStore extends SQLiteOpenHelper implements DownloadTaskReade
         final String value;
         final String stable;
         final boolean previous;
+
         CursorBoundary(String value, String stable, boolean previous) {
             this.value = value;
             this.stable = stable;
             this.previous = previous;
         }
-        int nullFlag() { return value == null || value.isBlank() ? 1 : 0; }
+
+        int nullFlag() {
+            return value == null || value.isBlank() ? 1 : 0;
+        }
+
         String encode(boolean previous, String status, String sort, String direction) {
             String raw = status + "\u001f" + sort + "\u001f" + direction + "\u001f"
                 + (previous ? "prev" : "next") + "\u001f" + value + "\u001f" + stable;
             return android.util.Base64.encodeToString(raw.getBytes(java.nio.charset.StandardCharsets.UTF_8), android.util.Base64.URL_SAFE | android.util.Base64.NO_WRAP);
         }
+
         // cursor 绑定查询条件，避免切换状态/排序后误用旧边界；prev 由查询层反转方向。
         static CursorBoundary decode(String cursor, String status, String sort, String direction) {
             if (cursor == null || cursor.isBlank()) return null;
@@ -628,11 +634,12 @@ public class DownloadStore extends SQLiteOpenHelper implements DownloadTaskReade
                 || !direction.equals(parts[2])) throw new IllegalArgumentException("cursor 无效");
             return new CursorBoundary(parts[4], parts[5], "prev".equals(parts[3]));
         }
+
         static CursorBoundary from(JSONObject task, String sort) {
             String value = "time".equals(sort) ? Long.toString(task.has("completedAt")
-                    ? task.optLong("completedAt") : task.optLong("createdAt"))
+                                                               ? task.optLong("completedAt") : task.optLong("createdAt"))
                 : "title".equals(sort) ? task.optString("albumTitle")
-                : "author".equals(sort) ? task.optString("author") : task.optString("albumId");
+                  : "author".equals(sort) ? task.optString("author") : task.optString("albumId");
             String stable = task.has("albumId") ? task.optString("albumId") : task.optString("taskId");
             return new CursorBoundary(value, stable, false);
         }

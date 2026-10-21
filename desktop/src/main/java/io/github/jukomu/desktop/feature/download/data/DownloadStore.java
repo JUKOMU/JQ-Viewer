@@ -3,14 +3,9 @@ package io.github.jukomu.desktop.feature.download.data;
 import io.github.jukomu.desktop.data.Database;
 import io.github.jukomu.desktop.util.JsonUtils;
 
-import java.sql.*;
 import java.nio.charset.StandardCharsets;
-import java.util.Base64;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.sql.*;
+import java.util.*;
 
 /**
  * 事务化保存下载任务、图片清单和启动恢复状态。
@@ -139,10 +134,10 @@ public final class DownloadStore {
         if (boundary != null && boundary.previous()) java.util.Collections.reverse(tasks);
         String next = (boundary != null && boundary.previous() || hasNext) && !tasks.isEmpty()
             ? CursorValue.from(tasks.get(tasks.size() - 1), normalizedSort)
-                .encode(false, normalizedStatus, normalizedSort, normalizedDirection) : null;
+              .encode(false, normalizedStatus, normalizedSort, normalizedDirection) : null;
         String previous = boundary != null && (!boundary.previous() || hasNext) && !tasks.isEmpty()
             ? CursorValue.from(tasks.get(0), normalizedSort)
-                .encode(true, normalizedStatus, normalizedSort, normalizedDirection) : null;
+              .encode(true, normalizedStatus, normalizedSort, normalizedDirection) : null;
         return new TaskPage(tasks, List.of(), next, previous, count(statusSql));
     }
 
@@ -230,7 +225,7 @@ public final class DownloadStore {
     public synchronized int countByStatus(String status) {
         if ("completed".equals(status)) {
             try (PreparedStatement statement = connection.prepareStatement(
-                "SELECT COUNT(DISTINCT album_id) FROM download_tasks WHERE status='completed'" );
+                "SELECT COUNT(DISTINCT album_id) FROM download_tasks WHERE status='completed'");
                  ResultSet rows = statement.executeQuery()) {
                 return rows.next() ? rows.getInt(1) : 0;
             } catch (SQLException exception) {
@@ -242,7 +237,7 @@ public final class DownloadStore {
 
     public synchronized List<StoredDownloadTask> tasksByStatus(String status) {
         String where = "completed".equals(status) ? "status='completed'" : "failed".equals(status)
-            ? "status='failed'" : "status IN (" + ACTIVE_STATUSES + ")";
+                                                                           ? "status='failed'" : "status IN (" + ACTIVE_STATUSES + ")";
         return list("SELECT * FROM download_tasks WHERE " + where + " ORDER BY task_id ASC");
     }
 
@@ -554,7 +549,7 @@ public final class DownloadStore {
         String order = orderClause(value, queryDirection, "g.album_id", boundary != null && boundary.previous);
         String boundarySql = boundary == null ? "" : " AND " + keysetClause(value,
             queryDirection, "g.album_id", boundary.previous())
-            .replace("task_id", "g.album_id");
+                                                               .replace("task_id", "g.album_id");
         // 代表章节使用最小 chapter_id；author、封面和单章节标记来自同一行。
         String sql = "SELECT g.album_id,g.album_title,g.latest_completed_at,g.total_size,g.rep_chapter_id,"
             + "r.cover_url,r.author,r.authors_json,r.is_single_episode "
@@ -594,7 +589,7 @@ public final class DownloadStore {
         }
         String next = (boundary != null && boundary.previous() || hasNext) && !rows.isEmpty()
             ? rows.get(rows.size() - 1).cursor(sort)
-                .encode(false, "completed", sort, direction) : null;
+              .encode(false, "completed", sort, direction) : null;
         String previous = boundary != null && (!boundary.previous() || hasNext) && !rows.isEmpty()
             ? rows.get(0).cursor(sort).encode(true, "completed", sort, direction) : null;
         return new TaskPage(List.of(), albums, next, previous, countByStatus("completed"));
@@ -689,12 +684,16 @@ public final class DownloadStore {
     }
 
     private record CursorValue(String value, String stable, boolean previous) {
-        CursorValue(String value, String stable) { this(value, stable, false); }
+        CursorValue(String value, String stable) {
+            this(value, stable, false);
+        }
+
         String encode(boolean previous, String status, String sort, String direction) {
             String raw = status + "\u001f" + sort + "\u001f" + direction + "\u001f"
                 + (previous ? "prev" : "next") + "\u001f" + value + "\u001f" + stable;
             return Base64.getUrlEncoder().withoutPadding().encodeToString(raw.getBytes(StandardCharsets.UTF_8));
         }
+
         // cursor 绑定查询条件；prev 查询反转数据库方向后再恢复返回顺序。
         static CursorValue decode(String cursor, String status, String sort, String direction) {
             if (cursor == null || cursor.isBlank()) return null;
@@ -704,6 +703,7 @@ public final class DownloadStore {
                 || !direction.equals(parts[2])) throw new IllegalArgumentException("cursor 无效");
             return new CursorValue(parts[4], parts[5], "prev".equals(parts[3]));
         }
+
         static CursorValue from(StoredDownloadTask task, String sort) {
             String value = switch (sort) {
                 case "title" -> task.albumTitle();

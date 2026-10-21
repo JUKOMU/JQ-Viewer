@@ -2,11 +2,11 @@ package io.github.jukomu.desktop;
 
 import javax.swing.*;
 import java.io.IOException;
+import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
-import java.net.URISyntaxException;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -203,7 +203,7 @@ public final class Uninstaller {
         }
         try {
             Path codeLocation = Path.of(
-                Uninstaller.class.getProtectionDomain().getCodeSource().getLocation().toURI())
+                    Uninstaller.class.getProtectionDomain().getCodeSource().getLocation().toURI())
                 .toAbsolutePath().normalize();
             Path appDirectory = Files.isDirectory(codeLocation) ? codeLocation : codeLocation.getParent();
             if (appDirectory != null && appDirectory.getFileName() != null

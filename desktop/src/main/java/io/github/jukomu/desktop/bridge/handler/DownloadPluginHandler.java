@@ -3,12 +3,7 @@ package io.github.jukomu.desktop.bridge.handler;
 import io.github.jukomu.desktop.bridge.RequestExecutor;
 import io.github.jukomu.desktop.bridge.model.SuccessResponse;
 import io.github.jukomu.desktop.feature.download.DownloadService;
-import io.github.jukomu.desktop.feature.download.model.DownloadChapterRequest;
-import io.github.jukomu.desktop.feature.download.model.DownloadTaskIdRequest;
-import io.github.jukomu.desktop.feature.download.model.DownloadedChapterRequest;
-import io.github.jukomu.desktop.feature.download.model.DownloadTasksPageRequest;
-import io.github.jukomu.desktop.feature.download.model.DownloadResourceKeysRequest;
-import io.github.jukomu.desktop.feature.download.model.ClearDownloadTasksRequest;
+import io.github.jukomu.desktop.feature.download.model.*;
 import io.javalin.http.Context;
 
 import java.util.List;

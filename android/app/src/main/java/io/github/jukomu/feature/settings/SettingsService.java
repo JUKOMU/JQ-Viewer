@@ -2,7 +2,6 @@ package io.github.jukomu.feature.settings;
 
 import android.content.Context;
 import io.github.jukomu.feature.cache.ImageCache;
-import io.github.jukomu.feature.download.DownloadService;
 import io.github.jukomu.feature.download.api.DownloadTaskReader;
 import io.github.jukomu.feature.settings.relocation.DownloadRelocationService;
 import io.github.jukomu.feature.settings.relocation.RelocationEventSink;
@@ -12,8 +11,6 @@ import io.github.jukomu.platform.persistence.SettingsStore;
 import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.List;
 
 /**
  * 设置管理——读写应用设置并协调公开/私有下载目录切换。

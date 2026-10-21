@@ -121,9 +121,8 @@ export function createBackendClient(
     getCompletedDownloadAlbumIds: (
       options: Parameters<JmcomicClient['getCompletedDownloadAlbumIds']>[0],
     ) => call<'getCompletedDownloadAlbumIds'>('getCompletedDownloadAlbumIds', options),
-    getDownloadTaskStatuses: (
-      options: Parameters<JmcomicClient['getDownloadTaskStatuses']>[0],
-    ) => call<'getDownloadTaskStatuses'>('getDownloadTaskStatuses', options),
+    getDownloadTaskStatuses: (options: Parameters<JmcomicClient['getDownloadTaskStatuses']>[0]) =>
+      call<'getDownloadTaskStatuses'>('getDownloadTaskStatuses', options),
     getCompletedDownloadChapters: (
       options: Parameters<JmcomicClient['getCompletedDownloadChapters']>[0],
     ) => call<'getCompletedDownloadChapters'>('getCompletedDownloadChapters', options),

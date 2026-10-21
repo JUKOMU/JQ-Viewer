@@ -126,7 +126,14 @@
         </div>
         <div ref="filesSentinel" class="list-sentinel" aria-hidden="true"></div>
         <div v-if="loadingMore && fileCursor" class="list-loader"><IonSpinner name="dots" /></div>
-        <button v-else-if="fileLoadError" type="button" class="load-more-btn" @click="loadMoreFiles">加载失败，点击重试</button>
+        <button
+          v-else-if="fileLoadError"
+          type="button"
+          class="load-more-btn"
+          @click="loadMoreFiles"
+        >
+          加载失败，点击重试
+        </button>
       </template>
       <div v-else class="state">暂无文件</div>
     </div>
@@ -149,7 +156,14 @@
         </div>
         <div ref="tasksSentinel" class="list-sentinel" aria-hidden="true"></div>
         <div v-if="loadingMore && taskCursor" class="list-loader"><IonSpinner name="dots" /></div>
-        <button v-else-if="taskLoadError" type="button" class="load-more-btn" @click="loadMoreTasks">加载失败，点击重试</button>
+        <button
+          v-else-if="taskLoadError"
+          type="button"
+          class="load-more-btn"
+          @click="loadMoreTasks"
+        >
+          加载失败，点击重试
+        </button>
       </template>
       <div v-else class="state">暂无导出任务</div>
     </div>
@@ -188,9 +202,7 @@ import CardContextMenu from '@/components/common/CardContextMenu.vue'
 import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
 import { LocalFileImportService } from '@/services/LocalFileImportService'
 import { normalizeRuntimeError } from '@/runtime/errors'
-import {
-  LocalFileManagementService,
-} from '@/services/LocalFileManagementService'
+import { LocalFileManagementService } from '@/services/LocalFileManagementService'
 import type {
   LocalFileRecord,
   ExportTaskRecord,
@@ -438,9 +450,7 @@ const loadFiles = async (reset: boolean) => {
     if (!fileReloadPromise) void requestFilesReload()
     return
   }
-  filePages.value = reset
-    ? [page.items]
-    : [...filePages.value, page.items].slice(-3)
+  filePages.value = reset ? [page.items] : [...filePages.value, page.items].slice(-3)
   files.value = filePages.value.flat()
   fileCursor.value = page.nextCursor
   fileLoadError.value = false
@@ -481,9 +491,7 @@ const loadTasks = async (reset: boolean) => {
     if (!taskReloadPromise) void requestTasksReload()
     return
   }
-  taskPages.value = reset
-    ? [page.items]
-    : [...taskPages.value, page.items].slice(-3)
+  taskPages.value = reset ? [page.items] : [...taskPages.value, page.items].slice(-3)
   tasks.value = taskPages.value.flat()
   taskCursor.value = page.nextCursor
   taskLoadError.value = false
@@ -543,9 +551,7 @@ const loadImageResourceKeys = async () => {
     ) {
       return
     }
-    imageResourceKeys.value = new Set(
-      result.keys,
-    )
+    imageResourceKeys.value = new Set(result.keys)
   } catch {
     if (
       isUnmounted ||
@@ -573,7 +579,10 @@ const focusTask = async (exportId: string) => {
     }
     if (!mergeTaskIntoWindow(task)) {
       // 单项定位不应把历史页全部加载回来；把目标作为当前窗口的临时首项，后续刷新会恢复后端顺序。
-      taskPages.value = [[task, ...taskPages.value.flat().filter((item) => item.exportId !== exportId)].slice(0, 50), ...taskPages.value].slice(0, 3)
+      taskPages.value = [
+        [task, ...taskPages.value.flat().filter((item) => item.exportId !== exportId)].slice(0, 50),
+        ...taskPages.value,
+      ].slice(0, 3)
       tasks.value = taskPages.value.flat().slice(0, 150)
     }
     highlightedExportId.value = exportId
@@ -929,13 +938,18 @@ watch(
 
 onMounted(async () => {
   isUnmounted = false
-  listObserver = new IntersectionObserver((entries) => {
-    for (const entry of entries) {
-      if (!entry.isIntersecting || loadingMore.value) continue
-      if (entry.target === filesSentinel.value && activeView.value === 'files') void loadMoreFiles()
-      if (entry.target === tasksSentinel.value && activeView.value === 'tasks') void loadMoreTasks()
-    }
-  }, { rootMargin: '240px' })
+  listObserver = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting || loadingMore.value) continue
+        if (entry.target === filesSentinel.value && activeView.value === 'files')
+          void loadMoreFiles()
+        if (entry.target === tasksSentinel.value && activeView.value === 'tasks')
+          void loadMoreTasks()
+      }
+    },
+    { rootMargin: '240px' },
+  )
   if (filesSentinel.value) listObserver.observe(filesSentinel.value)
   if (tasksSentinel.value) listObserver.observe(tasksSentinel.value)
   const progressRegistration = (async () => {
@@ -951,7 +965,9 @@ onMounted(async () => {
           const current = tasks.value.find((task) => task.exportId === event.exportId)
           if (!current) void reloadTasksWithFeedback()
           else if (event.snapshotRevision >= current.snapshotRevision) {
-            updateTaskWindow((task) => task.exportId === event.exportId ? { ...task, ...event } : task)
+            updateTaskWindow((task) =>
+              task.exportId === event.exportId ? { ...task, ...event } : task,
+            )
           }
         }
         if (['completed', 'partial'].includes(event.status)) void reloadFilesWithFeedback()

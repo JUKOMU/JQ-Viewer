@@ -506,10 +506,16 @@ public final class DownloadStore {
     public synchronized int deleteTasksByStatus(List<String> taskIds, String status) {
         return transaction(connection -> {
             int deleted = 0;
-            try (PreparedStatement statement = connection.prepareStatement(
+            try (PreparedStatement pages = connection.prepareStatement(
+                "DELETE FROM download_pages WHERE task_id=? AND EXISTS ("
+                    + "SELECT 1 FROM download_tasks WHERE task_id=? AND status=?)");
+                 PreparedStatement statement = connection.prepareStatement(
                 "DELETE FROM download_tasks WHERE task_id=? AND status=?")) {
                 for (String taskId : taskIds) {
-                    deletePages(connection, taskId);
+                    pages.setString(1, taskId);
+                    pages.setString(2, taskId);
+                    pages.setString(3, status);
+                    pages.executeUpdate();
                     statement.setString(1, taskId);
                     statement.setString(2, status);
                     deleted += statement.executeUpdate();
@@ -554,7 +560,7 @@ public final class DownloadStore {
         String sql = "SELECT g.album_id,g.album_title,g.latest_completed_at,g.total_size,g.rep_chapter_id,"
             + "r.cover_url,r.author,r.authors_json,r.is_single_episode "
             + "FROM (SELECT album_id,MIN(album_title) AS album_title,"
-            + "MAX(completed_at) AS latest_completed_at,SUM(total_size) AS total_size,"
+            + "CAST(MAX(completed_at) AS INTEGER) AS latest_completed_at,SUM(total_size) AS total_size,"
             + "MIN(chapter_id) AS rep_chapter_id FROM download_tasks "
             + "WHERE status='completed' GROUP BY album_id) g "
             + "JOIN download_tasks r ON r.album_id=g.album_id AND r.chapter_id=g.rep_chapter_id "
@@ -626,7 +632,8 @@ public final class DownloadStore {
     private static String orderClause(String value, String direction, String stable, boolean reverseNullRank) {
         String nulls = "CASE WHEN " + value + " IS NULL OR TRIM(" + value + ")='' THEN 1 ELSE 0 END ASC";
         if (reverseNullRank) nulls = nulls.replace(" ASC", " DESC");
-        String valueOrder = "desc".equals(direction) ? value + " DESC" : value + " ASC";
+        String nonEmptyValue = "CASE WHEN " + value + " IS NULL OR TRIM(" + value + ")='' THEN NULL ELSE " + value + " END";
+        String valueOrder = nonEmptyValue + ("desc".equals(direction) ? " DESC" : " ASC");
         return nulls + "," + valueOrder + "," + stable + ("desc".equals(direction) ? " DESC" : " ASC");
     }
 
@@ -637,7 +644,8 @@ public final class DownloadStore {
         // NULL 与空字符串共享 null-rank；NULL 没有可比较值时，直接使用稳定键继续分页。
         String rank = "CASE WHEN " + value + " IS NULL OR TRIM(" + value + ")='' THEN 1 ELSE 0 END";
         return "(" + rank + " " + nullComparison + " ? OR (" + rank + "=? AND "
-            + "((" + rank + "=0 AND " + value + " " + comparison + " ?)"
+            + "((" + rank + "=0 AND (" + value + " " + comparison + " ? OR ("
+            + value + "=? AND " + stable + " " + comparison + " ?)))"
             + " OR (" + rank + "=1 AND " + stable + " " + comparison + " ?))))";
     }
 
@@ -648,6 +656,8 @@ public final class DownloadStore {
         statement.setInt(index++, nullFlag);
         statement.setInt(index++, nullFlag);
         statement.setString(index++, boundary.value());
+        statement.setString(index++, boundary.value());
+        statement.setString(index++, boundary.stable());
         statement.setString(index++, boundary.stable());
         return index;
     }
@@ -690,7 +700,7 @@ public final class DownloadStore {
 
         String encode(boolean previous, String status, String sort, String direction) {
             String raw = status + "\u001f" + sort + "\u001f" + direction + "\u001f"
-                + (previous ? "prev" : "next") + "\u001f" + value + "\u001f" + stable;
+                + (previous ? "prev" : "next") + "\u001f" + (value == null ? "" : value) + "\u001f" + stable;
             return Base64.getUrlEncoder().withoutPadding().encodeToString(raw.getBytes(StandardCharsets.UTF_8));
         }
 

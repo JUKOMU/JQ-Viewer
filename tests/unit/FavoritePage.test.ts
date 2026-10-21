@@ -1,6 +1,6 @@
 /* eslint-disable vue/one-component-per-file -- test-only Ionic and child-component fixtures */
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
-import { defineComponent, h, onMounted, ref } from 'vue'
+import { defineComponent, h, KeepAlive, onMounted, ref } from 'vue'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
@@ -102,6 +102,7 @@ vi.mock('@/components/search/SearchResultContainer.vue', () => ({
       result: { type: Object, default: null },
       items: { type: Array, default: () => [] },
       loading: Boolean,
+      downloadedAlbumIds: { type: Set, default: () => new Set() },
     },
     setup(_, { expose }) {
       expose({
@@ -306,4 +307,76 @@ describe('FavoritePage 账号切换', () => {
     ])
     expect(cachedState.value?.stale).toBe(true)
   })
+})
+
+
+describe('收藏下载标记按可见窗口刷新', () => {
+  test('首次异步加载及追加页面后查询当前本子 ID', async () => {
+    const second = { ...item, id: 'album-2', title: 'Second' }
+    mocks.favorites.mockImplementation(async ({ page }: any) => ({ ...onlineResult,
+      totalItems: 40, totalPages: 2, currentPage: page, content: page === 2 ? [second] : [item] }))
+    mocks.getCompletedDownloadAlbumIds.mockImplementation(async (ids: string[]) => ({ albumIds: ids }))
+    wrapper = mount(FavoritePage)
+    await flushPromises()
+    expect(mocks.getCompletedDownloadAlbumIds).toHaveBeenCalledWith(['album-1'])
+    const state = (wrapper.vm as any).$.setupState
+    await state.appendPage(2)
+    await flushPromises()
+    expect(mocks.getCompletedDownloadAlbumIds).toHaveBeenLastCalledWith(['album-1', 'album-2'])
+    expect(Array.from(state.downloadedAlbumIds)).toEqual(['album-1', 'album-2'])
+  })
+
+  test('旧窗口的标记响应不能覆盖翻页后的结果', async () => {
+    let finishOld: ((value: { albumIds: string[] }) => void) | undefined
+    const second = { ...item, id: 'album-2', title: 'Second' }
+    mocks.favorites.mockImplementation(async ({ page }: any) => ({ ...onlineResult,
+      totalItems: 40, totalPages: 2, currentPage: page, content: page === 2 ? [second] : [item] }))
+    mocks.getCompletedDownloadAlbumIds.mockImplementationOnce(() => new Promise((resolve) => { finishOld = resolve }))
+    wrapper = mount(FavoritePage)
+    await flushPromises()
+    const state = (wrapper.vm as any).$.setupState
+    mocks.getCompletedDownloadAlbumIds.mockResolvedValue({ albumIds: ['album-2'] })
+    await state.appendPage(2)
+    await flushPromises()
+    finishOld?.({ albumIds: ['album-1'] })
+    await flushPromises()
+    expect(Array.from(state.downloadedAlbumIds)).toEqual(['album-2'])
+  })
+
+  test('同一本子的其他章节暂停不移除已完成标记，终态按后端重新核对', async () => {
+    let progress: ((event: any) => void) | undefined
+    mocks.addDownloadProgressListener.mockImplementation(async (handler: (event: any) => void) => {
+      progress = handler
+      return { remove: vi.fn() }
+    })
+    mocks.getCompletedDownloadAlbumIds.mockResolvedValue({ albumIds: ['album-1'] })
+    wrapper = mount(FavoritePage)
+    await flushPromises()
+    const state = (wrapper.vm as any).$.setupState
+    progress?.({ albumId: 'album-1', status: 'paused' })
+    await flushPromises()
+    expect(state.downloadedAlbumIds.has('album-1')).toBe(true)
+    progress?.({ albumId: 'album-1', status: 'failed' })
+    await flushPromises()
+    expect(mocks.getCompletedDownloadAlbumIds).toHaveBeenCalledTimes(2)
+    expect(state.downloadedAlbumIds.has('album-1')).toBe(true)
+  })
+
+  test('重新激活时即使 ID 未变也会重新核对下载标记', async () => {
+    const show = ref(true)
+    mocks.getCompletedDownloadAlbumIds.mockResolvedValue({ albumIds: ['album-1'] })
+    const host = defineComponent({
+      setup: () => () => h(KeepAlive, () => show.value ? h(FavoritePage) : null),
+    })
+    wrapper = mount(host)
+    await flushPromises()
+    expect((wrapper.findComponent(FavoritePage).vm as any).$.setupState.downloadedAlbumIds.has('album-1')).toBe(true)
+    show.value = false
+    await flushPromises()
+    mocks.getCompletedDownloadAlbumIds.mockResolvedValue({ albumIds: [] })
+    show.value = true
+    await flushPromises()
+    expect((wrapper.findComponent(FavoritePage).vm as any).$.setupState.downloadedAlbumIds.size).toBe(0)
+  })
+
 })

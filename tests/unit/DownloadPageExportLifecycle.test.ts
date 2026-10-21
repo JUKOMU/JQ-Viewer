@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, test, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   ionViewWillEnter: undefined as (() => void) | undefined,
   refreshPdf: vi.fn(),
+  cardRender: vi.fn(),
   getDownloadTasksPage: vi.fn(),
   clearDownloadTasks: vi.fn(),
   getLocalFileManagementState: vi.fn(),
@@ -23,7 +24,8 @@ const mocks = vi.hoisted(() => ({
   downloadHandler: undefined as ((event: any) => void) | undefined,
   stateInvalidatedHandler: undefined as (() => void) | undefined,
   offlineSetAll: vi.fn(),
-  offlineGetAll: vi.fn(() => []),
+  offlineGetAll: vi.fn((): any[] => []),
+  offlineGetCompletedGroups: vi.fn((): any[] => []),
   route: { query: { view: 'pdf' } } as { query: Record<string, string> },
 }))
 
@@ -116,7 +118,8 @@ vi.mock('@/services/OfflineDownloadService', () => ({
     updateStatus: vi.fn(),
     removeTask: vi.fn(),
     addTask: vi.fn(),
-    getCompletedGroups: vi.fn(() => []),
+    getCompletedGroups: mocks.offlineGetCompletedGroups,
+    setCompletedGroups: vi.fn(),
   },
 }))
 
@@ -138,7 +141,7 @@ vi.mock('@/components/download/DownloadTaskCard.vue', () => ({
   default: defineComponent({
     name: 'DownloadTaskCard',
     props: { task: { type: Object, required: false, default: () => ({}) } },
-    render: () => null,
+    render() { mocks.cardRender(this.task); return null },
   }),
 }))
 vi.mock('@/components/download/ExportBottomSheet.vue', () => ({
@@ -171,6 +174,7 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
       return { remove: vi.fn() }
     })
     mocks.offlineGetAll.mockReturnValue([])
+    mocks.offlineGetCompletedGroups.mockReturnValue([])
     mocks.refreshPdf.mockResolvedValue(undefined)
     mocks.checkFilesExist.mockResolvedValue({ existing: [] })
     mocks.checkNotificationPermission.mockResolvedValue({ granted: true })
@@ -179,6 +183,148 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
       present: vi.fn(),
       onDidDismiss: vi.fn().mockResolvedValue({}),
     })
+  })
+
+  const taskAt = (id: number) => ({
+    taskId: 'task-' + id, albumId: 'album-' + id, chapterId: 'chapter-' + id,
+    albumTitle: 'Album ' + id, chapterTitle: 'Chapter', coverUrl: '',
+    status: 'downloading', createdAt: id, totalPages: 100, downloadedPages: 0,
+  })
+  const emptyPage = () => ({ items: [], nextCursor: null, previousCursor: null,
+    totalCount: 0, usedBytes: 0, availableBytes: 1000 })
+  const groupAt = (id: number) => ({ ...taskAt(id), chapters: [{ ...taskAt(id), status: 'completed' }],
+    type: 'single', totalSize: 1, completedAt: id })
+
+  test('三页窗口双向往返使用整个窗口的两端游标且不重复', async () => {
+    mocks.getDownloadTasksPage.mockImplementation(async ({ status, cursor }: any) => {
+      if (status !== 'active') return emptyPage()
+      const [direction, value] = (cursor || 'next:0').split(':')
+      const first = direction === 'previous' ? Number(value) - 50 : Number(value) + 1
+      return { ...emptyPage(), items: Array.from({ length: 50 }, (_, offset) => taskAt(first + offset)),
+        totalCount: 250, nextCursor: first + 49 < 250 ? 'next:' + (first + 49) : null,
+        previousCursor: first > 1 ? 'previous:' + first : null }
+    })
+    const wrapper = mount(DownloadPage)
+    await flushPromises()
+    const state = (wrapper.vm as any).$.setupState
+    for (let i = 0; i < 3; i++) await state.loadGroup('active')
+    const group = state.downloadGroupStates.active
+    expect(group.items).toHaveLength(150)
+    expect(group.previousCursor).toBe('previous:51')
+    expect(group.nextCursor).toBe('next:200')
+    await state.loadGroup('active', 'previous')
+    expect(group.items.map((item: any) => item.taskId)).toEqual(
+      Array.from({ length: 150 }, (_, i) => 'task-' + (i + 1)),
+    )
+    expect(group.nextCursor).toBe('next:150')
+    await state.loadGroup('active')
+    expect(new Set(group.items.map((item: any) => item.taskId)).size).toBe(150)
+    expect(group.items[0].taskId).toBe('task-51')
+    wrapper.unmount()
+  })
+
+  test('折叠组保留窗口和数量，重新进入可展开，排序才重置其窗口', async () => {
+    mocks.getDownloadTasksPage.mockImplementation(async ({ status }: any) => status === 'completed'
+      ? { ...emptyPage(), items: [groupAt(1)], totalCount: 1 } : emptyPage())
+    const wrapper = mount(DownloadPage)
+    await flushPromises()
+    const state = (wrapper.vm as any).$.setupState
+    const group = state.downloadGroupStates.completed
+    const pages = group.pages
+    state.toggleGroup('completed')
+    await flushPromises()
+    expect(wrapper.findAll('.section-content')).toHaveLength(2)
+    mocks.ionViewWillEnter!()
+    await flushPromises()
+    expect(group.pages).toBe(pages)
+    expect(group.totalCount).toBe(1)
+    expect(wrapper.text()).not.toContain('暂无下载内容')
+    state.toggleGroup('completed')
+    await flushPromises()
+    expect(mocks.getDownloadTasksPage.mock.calls.filter(([query]) => query.status === 'completed')).toHaveLength(1)
+    state.toggleGroup('completed')
+    state.toggleSortDirection()
+    await flushPromises()
+    expect(group.collapsed).toBe(true)
+    expect(group.totalCount).toBe(1)
+    expect(mocks.getDownloadTasksPage.mock.calls.filter(([query]) => query.status === 'completed')).toHaveLength(2)
+    wrapper.unmount()
+  })
+
+  test('明确的状态失效会刷新折叠组，而不是保留过期计数', async () => {
+    let count = 1
+    mocks.getDownloadTasksPage.mockImplementation(async ({ status }: any) => status === 'completed'
+      ? { ...emptyPage(), items: Array.from({ length: count }, (_, i) => groupAt(i + 1)), totalCount: count }
+      : emptyPage())
+    const wrapper = mount(DownloadPage)
+    await flushPromises()
+    const state = (wrapper.vm as any).$.setupState
+    state.toggleGroup('completed')
+    count = 2
+    mocks.stateInvalidatedHandler?.()
+    await flushPromises()
+    expect(state.downloadGroupStates.completed.collapsed).toBe(true)
+    expect(state.downloadGroupStates.completed.totalCount).toBe(2)
+    expect(state.downloadGroupStates.completed.items).toHaveLength(2)
+    wrapper.unmount()
+  })
+
+  test('无关活动进度不重建已完成对象', async () => {
+    mocks.getDownloadTasksPage.mockImplementation(async ({ status }: any) => ({ ...emptyPage(),
+      items: status === 'active' ? [taskAt(1)] : status === 'completed' ? [groupAt(2), groupAt(3)] : [],
+      totalCount: status === 'active' ? 1 : status === 'completed' ? 2 : 0 }))
+    const wrapper = mount(DownloadPage)
+    await flushPromises()
+    const state = (wrapper.vm as any).$.setupState
+    const before = [...state.downloadGroupStates.completed.items]
+    const completedRenders = () => mocks.cardRender.mock.calls.filter(
+      ([entry]) => ['album-2', 'album-3'].includes(entry.albumId),
+    ).length
+    const rendersBefore = completedRenders()
+    mocks.downloadHandler?.({ taskId: 'task-1', albumId: 'album-1', status: 'downloading',
+      totalPages: 100, downloadedPages: 10 })
+    await flushPromises()
+    expect(state.downloadGroupStates.active.items[0].downloadedPages).toBe(10)
+    expect(state.downloadGroupStates.completed.items[0]).toBe(before[0])
+    expect(state.downloadGroupStates.completed.items[1]).toBe(before[1])
+    expect(completedRenders()).toBe(rendersBefore)
+    state.selectedTask = state.groupEntry(state.downloadGroupStates.completed.items[0])
+    state.isActionMenuOpen = true
+    await flushPromises()
+    expect(completedRenders()).toBeGreaterThan(rendersBefore)
+    wrapper.unmount()
+  })
+
+  test('有限缓存展示失败后仍能重试首屏，不追加旧快照', async () => {
+    mocks.offlineGetAll.mockReturnValue([taskAt(9)])
+    let fail = true
+    mocks.getDownloadTasksPage.mockImplementation(async ({ status }: any) => {
+      if (status === 'active' && fail) throw new Error('offline')
+      return status === 'active' ? { ...emptyPage(), items: [taskAt(1)], totalCount: 1 } : emptyPage()
+    })
+    const wrapper = mount(DownloadPage)
+    await flushPromises()
+    const state = (wrapper.vm as any).$.setupState
+    expect(state.downloadGroupStates.active.error).toBe(true)
+    expect(state.downloadGroupStates.active.items[0].taskId).toBe('task-9')
+    fail = false
+    await state.loadGroup('active')
+    expect(state.downloadGroupStates.active.error).toBe(false)
+    expect(state.downloadGroupStates.active.items.map((item: any) => item.taskId)).toEqual(['task-1'])
+    wrapper.unmount()
+  })
+
+  test('部分清理失败刷新实际剩余记录并提示失败数量', async () => {
+    mocks.getDownloadTasksPage.mockImplementation(async ({ status }: any) => status === 'failed'
+      ? { ...emptyPage(), items: [{ ...taskAt(1), status: 'failed' }], totalCount: 1 } : emptyPage())
+    mocks.clearDownloadTasks.mockResolvedValue({ deletedCount: 1, failedCount: 1 })
+    const wrapper = mount(DownloadPage)
+    await flushPromises()
+    const state = (wrapper.vm as any).$.setupState
+    await state.clearFailed()
+    expect(state.downloadGroupStates.failed.totalCount).toBe(1)
+    expect(mocks.showToast).toHaveBeenCalledWith('1 个任务清理失败，已保留记录，可重试', 'medium')
+    wrapper.unmount()
   })
 
   test('首次进入不重复刷新，keepAlive 重新进入时同步 PDF 子视图', async () => {
@@ -239,7 +385,7 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
 
   test('下载快照请求期间收到事件时丢弃旧响应并串行补读', async () => {
     let finishInitial:
-      | ((value: { tasks: any[]; usedBytes: number; availableBytes: number }) => void)
+      | ((value: any) => void)
       | undefined
     const currentTask = {
       taskId: 'album_chapter',

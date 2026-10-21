@@ -332,7 +332,7 @@ public class DownloadStore extends SQLiteOpenHelper implements DownloadTaskReade
             selection += " AND " + keysetClause(value, queryDirection, COL_TASK_ID,
                 boundary.previous);
             args = append(args, boundary.nullFlag(), boundary.nullFlag(), boundary.value,
-                boundary.stable);
+                boundary.value, boundary.stable, boundary.stable);
         }
         List<JSONObject> tasks = queryTasks(selection, args, order, Integer.toString(limit + 1));
         boolean hasNext = tasks.size() > limit;
@@ -452,14 +452,14 @@ public class DownloadStore extends SQLiteOpenHelper implements DownloadTaskReade
         // 代表章节使用最小 chapter_id；author/cover/isSingleEpisode 均从同一条记录读取。
         String sql = "SELECT g.album_id,g.album_title,g.latest_completed_at,g.total_size,g.rep_chapter_id,"
             + "r.cover_url,r.author,r.authors_json,r.is_single_episode FROM (SELECT album_id,"
-            + "MIN(album_title) album_title,MAX(completed_at) latest_completed_at,SUM(total_size) total_size,"
+            + "MIN(album_title) album_title,CAST(MAX(completed_at) AS INTEGER) latest_completed_at,SUM(total_size) total_size,"
             + "MIN(chapter_id) rep_chapter_id FROM download_tasks WHERE status='completed' GROUP BY album_id) g "
             + "JOIN download_tasks r ON r.album_id=g.album_id AND r.chapter_id=g.rep_chapter_id "
             + "AND r.status='completed' WHERE 1=1" + selection + " ORDER BY " + order + " LIMIT ?";
         List<JSONObject> rows = new ArrayList<>();
         String[] args = boundary == null ? new String[0]
             : new String[]{Integer.toString(boundary.nullFlag()), Integer.toString(boundary.nullFlag()),
-            boundary.value, boundary.stable};
+            boundary.value, boundary.value, boundary.stable, boundary.stable};
         try {
             try (Cursor c = getReadableDatabase().rawQuery(sql, append(args, Integer.toString(limit + 1)))) {
                 while (c.moveToNext()) {
@@ -546,7 +546,8 @@ public class DownloadStore extends SQLiteOpenHelper implements DownloadTaskReade
     }
 
     private static String orderClause(String value, String direction, String stable, boolean reverseNullRank) {
-        String valueOrder = "desc".equals(direction) ? value + " DESC" : value + " ASC";
+        String nonEmptyValue = "CASE WHEN " + value + " IS NULL OR TRIM(" + value + ")='' THEN NULL ELSE " + value + " END";
+        String valueOrder = nonEmptyValue + ("desc".equals(direction) ? " DESC" : " ASC");
         return "CASE WHEN " + value + " IS NULL OR TRIM(" + value + ")='' THEN 1 ELSE 0 END "
             + (reverseNullRank ? "DESC," : "ASC,")
             + valueOrder + "," + stable + ("desc".equals(direction) ? " DESC" : " ASC");
@@ -558,8 +559,10 @@ public class DownloadStore extends SQLiteOpenHelper implements DownloadTaskReade
         String nullOp = reverseNullRank ? "<" : ">";
         String nullFlag = "CASE WHEN " + value + " IS NULL OR TRIM(" + value + ")='' THEN 1 ELSE 0 END";
         // NULL 与空字符串共享 null-rank；NULL 没有可比较值时，直接使用稳定键继续分页。
-        return "(" + nullFlag + " " + nullOp + " ? OR (" + nullFlag + "=? AND "
-            + "((" + nullFlag + "=0 AND " + value + " " + op + " ?)"
+        return "(" + nullFlag + " " + nullOp + " CAST(? AS INTEGER) OR ("
+            + nullFlag + "=CAST(? AS INTEGER) AND "
+            + "((" + nullFlag + "=0 AND (" + value + " " + op + " ? OR ("
+            + value + "=? AND " + stable + " " + op + " ?)))"
             + " OR (" + nullFlag + "=1 AND " + stable + " " + op + " ?))))";
     }
 
@@ -636,11 +639,12 @@ public class DownloadStore extends SQLiteOpenHelper implements DownloadTaskReade
         }
 
         static CursorBoundary from(JSONObject task, String sort) {
-            String value = "time".equals(sort) ? Long.toString(task.has("completedAt")
+            boolean group = task.has("chapters");
+            String value = "time".equals(sort) ? Long.toString(group
                                                                ? task.optLong("completedAt") : task.optLong("createdAt"))
                 : "title".equals(sort) ? task.optString("albumTitle")
                   : "author".equals(sort) ? task.optString("author") : task.optString("albumId");
-            String stable = task.has("albumId") ? task.optString("albumId") : task.optString("taskId");
+            String stable = group ? task.optString("albumId") : task.optString("taskId");
             return new CursorBoundary(value, stable, false);
         }
     }

@@ -72,7 +72,12 @@
             <span class="toolbar-action-label">{{ sortLabel }}</span>
           </div>
 
-          <section v-for="group in downloadGroups" :key="group.key" class="download-group section">
+          <section
+            v-for="group in downloadGroups"
+            :key="group.key"
+            v-memo="[group.items, group.loading, group.error, group.collapsed, group.totalCount, group.previousCursor, group.nextCursor, isActionMenuOpen, selectedTask]"
+            class="download-group section"
+          >
             <h2 class="section-header">
               <button
                 type="button"
@@ -100,7 +105,7 @@
               </button>
             </h2>
             <div
-              v-show="!group.collapsed"
+              v-if="!group.collapsed"
               :id="`download-group-${group.key}`"
               class="section-content"
             >
@@ -147,7 +152,7 @@
                 v-else-if="group.error"
                 type="button"
                 class="browse-group-retry"
-                @click="loadGroup(group.key)"
+                @click="loadGroup(group.key, group.loadDirection)"
               >
                 加载失败，点击重试
               </button>
@@ -286,12 +291,19 @@ watch(
 type DownloadGroupKey = 'active' | 'completed' | 'failed'
 type DownloadPageItem = DownloadTask | CompletedDownloadGroup
 
+interface DownloadGroupPage {
+  items: DownloadPageItem[]
+  nextCursor: string | null
+  previousCursor: string | null
+}
+
 interface DownloadGroupState {
   key: DownloadGroupKey
   status: DownloadTaskPageStatus
   label: string
   clearable: boolean
   items: DownloadPageItem[]
+  pages: DownloadGroupPage[]
   nextCursor: string | null
   previousCursor: string | null
   totalCount: number
@@ -300,6 +312,7 @@ interface DownloadGroupState {
   collapsed: boolean
   initialized: boolean
   requestId: number
+  loadDirection: 'next' | 'previous'
 }
 
 const createDownloadGroup = (
@@ -312,6 +325,7 @@ const createDownloadGroup = (
   label,
   clearable,
   items: [],
+  pages: [],
   nextCursor: null,
   previousCursor: null,
   totalCount: 0,
@@ -320,6 +334,7 @@ const createDownloadGroup = (
   collapsed: false,
   initialized: false,
   requestId: 0,
+  loadDirection: 'next',
 })
 
 const downloadGroupStates = reactive<Record<DownloadGroupKey, DownloadGroupState>>({
@@ -331,7 +346,7 @@ const downloadGroups = computed(() => Object.values(downloadGroupStates))
 const downloadContentRef = ref<any>(null)
 const tasks = ref<DownloadTask[]>([])
 const initialLoading = computed(() =>
-  downloadGroups.value.some((group) => group.loading && !group.initialized),
+  !hasTasks.value && downloadGroups.value.some((group) => group.loading && !group.initialized),
 )
 const hasTasks = computed(() =>
   downloadGroups.value.some((group) => group.totalCount > 0 || group.items.length > 0),
@@ -343,6 +358,7 @@ let downloadProgressHandle: ListenerHandle | null = null
 let stateInvalidatedHandle: ListenerHandle | null = null
 let syncPromise: Promise<void> | null = null
 let syncRequested = false
+let syncCollapsedRequested = false
 let downloadStateSequence = 0
 let speedTimer: ReturnType<typeof setInterval> | null = null
 let isUnmounted = false
@@ -377,11 +393,13 @@ const toggleSort = () => {
   const modes: SortMode[] = ['time', 'title', 'id', 'author']
   sortMode.value = modes[(modes.indexOf(sortMode.value) + 1) % modes.length]
   sortDirection.value = defaultDirection(sortMode.value)
-  void resetDownloadGroups()
+  void downloadContentRef.value?.$el?.scrollToTop?.(0)
+  void resetDownloadGroups(true, false)
 }
 const toggleSortDirection = () => {
   sortDirection.value = sortDirection.value === 'asc' ? 'desc' : 'asc'
-  void resetDownloadGroups()
+  void downloadContentRef.value?.$el?.scrollToTop?.(0)
+  void resetDownloadGroups(true, false)
 }
 
 // 操作菜单
@@ -636,32 +654,41 @@ const rebuildVisibleTasks = () => {
   tasks.value = next
 }
 
-const resetGroup = (group: DownloadGroupState) => {
+const setGroupPages = (group: DownloadGroupState, pages: DownloadGroupPage[]) => {
+  group.pages = pages
+  group.items = pages.flatMap((page) => page.items)
+  group.previousCursor = pages[0]?.previousCursor ?? null
+  group.nextCursor = pages[pages.length - 1]?.nextCursor ?? null
+}
+
+const resetGroup = (group: DownloadGroupState, keepWindow = false) => {
   group.requestId += 1
   group.loading = false
-  group.items = []
+  if (!keepWindow) {
+    setGroupPages(group, [])
+    group.totalCount = 0
+  }
   group.nextCursor = null
   group.previousCursor = null
-  group.totalCount = 0
   group.initialized = false
   group.error = false
 }
 
+let restoredDownloadScrollTop: number | null = null
+
 const loadGroup = async (key: DownloadGroupKey, direction: 'next' | 'previous' = 'next') => {
   const group = downloadGroupStates[key]
-  if (group.loading || group.collapsed) return
+  if (group.loading || (group.collapsed && group.initialized)) return
+  if (group.error && !group.nextCursor && !group.previousCursor) resetGroup(group, true)
+  group.loadDirection = direction
   const cursor = direction === 'previous' ? group.previousCursor : group.nextCursor
   if (group.initialized && !cursor) return
-  const scrollElement = await downloadContentRef.value?.$el?.getScrollElement?.()
-  const anchorKey = direction === 'previous' && group.items[0] ? itemKey(group.items[0]) : null
-  const anchor = anchorKey
-    ? document.querySelector<HTMLElement>(`[data-download-key="${anchorKey}"]`)
-    : null
-  const anchorTop = anchor?.getBoundingClientRect().top ?? null
   group.loading = true
   group.error = false
   const requestId = ++group.requestId
   try {
+    const scrollElement = await downloadContentRef.value?.$el?.getScrollElement?.()
+    if (requestId !== group.requestId || isUnmounted) return
     const result = await JmcomicService.getDownloadTasksPage({
       status: group.status,
       sort: sortMode.value,
@@ -670,29 +697,34 @@ const loadGroup = async (key: DownloadGroupKey, direction: 'next' | 'previous' =
       limit: 50,
     })
     if (requestId !== group.requestId || isUnmounted) return
-    const incoming = result.items as DownloadPageItem[]
-    group.items =
-      direction === 'previous' ? [...incoming, ...group.items] : [...group.items, ...incoming]
-    if (group.items.length > 150) {
-      if (direction === 'previous') group.items.splice(-50)
-      else group.items.splice(0, 50)
+    const viewport = scrollElement?.getBoundingClientRect()
+    const anchor = viewport
+      ? Array.from(document.querySelectorAll<HTMLElement>('[data-download-key]')).find(
+          (element) => element.getBoundingClientRect().bottom > viewport.top,
+        )
+      : undefined
+    const anchorTop = anchor?.getBoundingClientRect().top
+    const page: DownloadGroupPage = {
+      items: result.items as DownloadPageItem[],
+      nextCursor: result.nextCursor,
+      previousCursor: result.previousCursor,
     }
-    group.nextCursor = result.nextCursor
-    group.previousCursor = result.previousCursor
+    const pages = !group.initialized ? [page]
+      : direction === 'previous' ? [page, ...group.pages] : [...group.pages, page]
+    setGroupPages(group, direction === 'previous' ? pages.slice(0, 3) : pages.slice(-3))
     group.totalCount = result.totalCount
     group.initialized = true
     spaceUsedMb.value = Math.round(result.usedBytes / (1024 * 1024))
     spaceAvailMb.value = Math.round(result.availableBytes / (1024 * 1024))
     hasStorageInfo.value = true
     rebuildVisibleTasks()
-    if (direction === 'previous' && scrollElement && anchorTop !== null) {
-      await nextTick()
-      const nextTop = anchorKey
-        ? document
-            .querySelector<HTMLElement>(`[data-download-key="${anchorKey}"]`)
-            ?.getBoundingClientRect().top
-        : null
-      if (nextTop !== undefined && nextTop !== null) scrollElement.scrollTop += nextTop - anchorTop
+    await nextTick()
+    if (scrollElement && anchor?.isConnected && anchorTop !== undefined) {
+      const offset = anchor.getBoundingClientRect().top - anchorTop
+      if (offset) {
+        scrollElement.scrollTop += offset
+        restoredDownloadScrollTop = scrollElement.scrollTop
+      }
     }
   } catch {
     if (requestId === group.requestId) group.error = true
@@ -701,16 +733,15 @@ const loadGroup = async (key: DownloadGroupKey, direction: 'next' | 'previous' =
   }
 }
 
-const resetDownloadGroups = async () => {
-  for (const group of downloadGroups.value) resetGroup(group)
-  await Promise.all(
-    downloadGroups.value.filter((group) => !group.collapsed).map((group) => loadGroup(group.key)),
-  )
+const resetDownloadGroups = async (includeCollapsed = false, keepWindow = true) => {
+  const groups = downloadGroups.value.filter((group) => includeCollapsed || !group.collapsed)
+  for (const group of groups) resetGroup(group, keepWindow)
+  await Promise.all(groups.map((group) => loadGroup(group.key)))
 }
 
 const refreshGroupFirstPage = async (key: DownloadGroupKey) => {
   const group = downloadGroupStates[key]
-  resetGroup(group)
+  resetGroup(group, true)
   await loadGroup(key)
 }
 
@@ -726,6 +757,11 @@ const toggleGroup = (key: DownloadGroupKey) => {
 
 const onDownloadScroll = async (event: CustomEvent<{ scrollTop?: number }>) => {
   const scrollTop = event.detail?.scrollTop ?? 0
+  if (restoredDownloadScrollTop !== null) {
+    const restored = restoredDownloadScrollTop
+    restoredDownloadScrollTop = null
+    if (Math.abs(scrollTop - restored) < 1) return
+  }
   const scrollElement = await downloadContentRef.value?.$el?.getScrollElement?.()
   if (!scrollElement) return
 
@@ -760,45 +796,63 @@ const onDownloadScroll = async (event: CustomEvent<{ scrollTop?: number }>) => {
 
 const removeVisibleTask = (taskId: string) => {
   for (const group of downloadGroups.value) {
-    group.items = group.items.flatMap<DownloadPageItem>((item): DownloadPageItem[] => {
-      if (!('chapters' in item)) return item.taskId === taskId ? [] : [item]
-      const chapters = item.chapters.filter((chapter) => chapter.taskId !== taskId)
-      return chapters.length
-        ? [{ ...item, chapters, type: chapters.length > 1 ? 'multi' : 'single' }]
-        : []
-    })
+    setGroupPages(group, group.pages.map((page) => ({
+      ...page,
+      items: page.items.flatMap<DownloadPageItem>((item): DownloadPageItem[] => {
+        if (!('chapters' in item)) return item.taskId === taskId ? [] : [item]
+        if (!item.chapters.some((chapter) => chapter.taskId === taskId)) return [item]
+        const chapters = item.chapters.filter((chapter) => chapter.taskId !== taskId)
+        return chapters.length
+          ? [{ ...item, chapters, type: chapters.length > 1 ? 'multi' : 'single' }]
+          : []
+      }),
+    })))
   }
   rebuildVisibleTasks()
 }
 
 const updateVisibleTask = (taskId: string, update: (task: DownloadTask) => DownloadTask) => {
   for (const group of downloadGroups.value) {
-    group.items = group.items.map((item) => {
-      if (!('chapters' in item)) return item.taskId === taskId ? update(item) : item
-      const chapters = item.chapters.map((chapter) =>
-        chapter.taskId === taskId ? update(chapter) : chapter,
-      )
-      return chapters === item.chapters ? item : { ...item, chapters }
+    let changed = false
+    const pages = group.pages.map((page) => {
+      const items = page.items.map((item) => {
+        if (!('chapters' in item)) {
+          if (item.taskId !== taskId) return item
+          changed = true
+          return update(item)
+        }
+        if (!item.chapters.some((chapter) => chapter.taskId === taskId)) return item
+        changed = true
+        return { ...item, chapters: item.chapters.map((chapter) =>
+          chapter.taskId === taskId ? update(chapter) : chapter,
+        ) }
+      })
+      return changed ? { ...page, items } : page
     })
+    if (changed) setGroupPages(group, pages)
   }
   rebuildVisibleTasks()
 }
 
-const syncDownloadState = async (): Promise<void> => {
+const syncDownloadState = async (includeCollapsed = false): Promise<void> => {
+  syncCollapsedRequested ||= includeCollapsed
   syncRequested = true
   if (syncPromise) return syncPromise
 
   syncPromise = (async () => {
     while (syncRequested && !isUnmounted) {
       syncRequested = false
+      const readCollapsed = syncCollapsedRequested
+      syncCollapsedRequested = false
       const requestSequence = downloadStateSequence
       try {
-        await resetDownloadGroups()
+        await resetDownloadGroups(readCollapsed)
         if (requestSequence !== downloadStateSequence) {
           syncRequested = true
+          syncCollapsedRequested ||= readCollapsed
           continue
         }
-        const failedGroups = downloadGroups.value.filter((group) => group.error)
+        const failedGroups = downloadGroups.value.filter((group) => (readCollapsed || !group.collapsed) && group.error)
         if (failedGroups.length) {
           const cached = OfflineDownloadService.getAll()
           const cachedCompleted = OfflineDownloadService.getCompletedGroups()
@@ -812,6 +866,7 @@ const syncDownloadState = async (): Promise<void> => {
             } else {
               group.items = cachedCompleted
             }
+            setGroupPages(group, [{ items: group.items.slice(0, 150), nextCursor: null, previousCursor: null }])
             group.totalCount = group.items.length
             group.initialized = true
           }
@@ -828,6 +883,7 @@ const syncDownloadState = async (): Promise<void> => {
         if (isUnmounted) return
         if (requestSequence !== downloadStateSequence) {
           syncRequested = true
+          syncCollapsedRequested ||= readCollapsed
           continue
         }
         const cached = OfflineDownloadService.getAll()
@@ -836,6 +892,9 @@ const syncDownloadState = async (): Promise<void> => {
         )
         downloadGroupStates.failed.items = cached.filter((task) => task.status === 'failed')
         downloadGroupStates.completed.items = OfflineDownloadService.getCompletedGroups()
+        for (const group of downloadGroups.value) {
+          setGroupPages(group, [{ items: group.items.slice(0, 150), nextCursor: null, previousCursor: null }])
+        }
         downloadGroupStates.active.totalCount = downloadGroupStates.active.items.length
         downloadGroupStates.failed.totalCount = downloadGroupStates.failed.items.length
         downloadGroupStates.completed.totalCount = downloadGroupStates.completed.items.length
@@ -943,7 +1002,7 @@ const updateSpeedSample = (
 
 const onRefresh = async (event: CustomEvent) => {
   if (activeMainView.value === 'export') await exportManagementRef.value?.refresh()
-  else await syncDownloadState()
+  else await syncDownloadState(true)
   ;(event.target as HTMLIonRefresherElement).complete()
 }
 
@@ -1054,7 +1113,7 @@ onMounted(async () => {
 
   const invalidationRegistration = JmcomicService.addStateInvalidatedListener?.(() => {
     downloadStateSequence++
-    void syncDownloadState()
+    void syncDownloadState(true)
   })
     .then((handle) => {
       if (!handle) return
@@ -1324,8 +1383,7 @@ const onRetry = async (task: DownloadTask) => {
       completedAt: undefined,
     }
     removeVisibleTask(task.taskId)
-    downloadGroupStates.active.items.unshift(newTask)
-    downloadGroupStates.active.totalCount += 1
+    // 重试后的排序与游标由受控刷新恢复，不向当前窗口强插记录。
     rebuildVisibleTasks()
     OfflineDownloadService.removeTask(task.taskId)
     OfflineDownloadService.addTask(newTask)
@@ -1461,16 +1519,18 @@ const executeClear = async () => {
 
 const clearCompleted = async () => {
   if (!downloadGroupStates.completed.totalCount) return
-  await JmcomicService.clearDownloadTasks('completed')
+  const result = await JmcomicService.clearDownloadTasks('completed')
   resetGroup(downloadGroupStates.completed)
   await loadGroup('completed')
+  if (result.failedCount) await showToast(`${result.failedCount} 个任务清理失败，已保留记录，可重试`, 'medium')
 }
 
 const clearFailed = async () => {
   if (!downloadGroupStates.failed.totalCount) return
-  await JmcomicService.clearDownloadTasks('failed')
+  const result = await JmcomicService.clearDownloadTasks('failed')
   resetGroup(downloadGroupStates.failed)
   await loadGroup('failed')
+  if (result.failedCount) await showToast(`${result.failedCount} 个任务清理失败，已保留记录，可重试`, 'medium')
 }
 </script>
 

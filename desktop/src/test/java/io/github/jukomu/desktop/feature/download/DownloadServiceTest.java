@@ -182,6 +182,39 @@ class DownloadServiceTest {
         }
     }
 
+    @Test
+    void clearRetainsFailedDirectoryAndContinuesOtherTasks() throws Exception {
+        try (Fixture fixture = fixture(Mode.COMPLETE)) {
+            fixture.service.downloadChapter(request());
+            Path directory = fixture.files.chapterDirectory("bad/chapter");
+            Files.createDirectories(directory);
+            Files.writeString(directory.resolve("page.jpg"), "image");
+            org.junit.jupiter.api.Assumptions.assumeTrue(
+                Files.getFileStore(directory).supportsFileAttributeView("posix"));
+            var permissions = Files.getPosixFilePermissions(directory);
+            fixture.store.createOrResetTask("bad_chapter", "bad", "chapter", "Bad", "Chapter",
+                "", "bad/chapter", 1);
+            fixture.store.complete("bad_chapter", 1, 1, 5, 1);
+            try {
+                Files.setPosixFilePermissions(directory, java.util.Set.of(
+                    java.nio.file.attribute.PosixFilePermission.OWNER_READ,
+                    java.nio.file.attribute.PosixFilePermission.OWNER_EXECUTE));
+                org.junit.jupiter.api.Assumptions.assumeFalse(Files.isWritable(directory));
+                assertEquals(Map.of("deletedCount", 1, "failedCount", 1),
+                    fixture.service.clearDownloadTasks("completed"));
+                assertNull(fixture.store.findTask("album-1_photo-1"));
+                assertNotNull(fixture.store.findTask("bad_chapter"));
+                assertTrue(Files.exists(directory.resolve("page.jpg")));
+                assertFalse(Files.exists(fixture.files.chapterDirectory("album-1/photo-1")));
+            } finally {
+                Files.setPosixFilePermissions(directory, permissions);
+            }
+            assertEquals(Map.of("deletedCount", 1, "failedCount", 0),
+                fixture.service.clearDownloadTasks("completed"));
+            assertNull(fixture.store.findTask("bad_chapter"));
+        }
+    }
+
     private static Fixture fixture(Mode mode) throws Exception {
         Path root = Files.createTempDirectory("jq-viewer-download-");
         Paths paths = new Paths(root.resolve("program"), root.resolve("home"), Map.of(), "Linux");

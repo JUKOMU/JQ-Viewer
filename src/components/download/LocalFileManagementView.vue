@@ -1,5 +1,5 @@
 <template>
-  <div class="manager">
+  <div ref="managerRef" class="manager">
     <div class="manager-actions">
       <button type="button" class="action-btn" aria-label="导入文件" @click="importFiles">
         <IonIcon :icon="cloudUploadOutline" />
@@ -112,8 +112,9 @@
     </div>
 
     <div v-else-if="activeView === 'files'" class="list">
+      <button v-if="canLoadPreviousFiles" type="button" class="load-more-btn" :disabled="fileLoadingMore" @click="loadMoreFiles('previous')">加载上一页</button>
       <template v-if="files.length">
-        <div v-for="file in files" :key="file.id" class="item-wrap">
+        <div v-for="file in files" :key="file.id" :data-file-id="file.id" class="item-wrap">
           <LocalFileCard
             :file="file"
             :has-image-resource="hasImageResource(file)"
@@ -125,12 +126,12 @@
           />
         </div>
         <div ref="filesSentinel" class="list-sentinel" aria-hidden="true"></div>
-        <div v-if="loadingMore && fileCursor" class="list-loader"><IonSpinner name="dots" /></div>
+        <div v-if="fileLoadingMore" class="list-loader"><IonSpinner name="dots" /></div>
         <button
           v-else-if="fileLoadError"
           type="button"
           class="load-more-btn"
-          @click="loadMoreFiles"
+          @click="loadMoreFiles(fileLoadDirection)"
         >
           加载失败，点击重试
         </button>
@@ -139,6 +140,7 @@
     </div>
 
     <div v-else class="list">
+      <button v-if="canLoadPreviousTasks" type="button" class="load-more-btn" :disabled="taskLoadingMore" @click="loadMoreTasks('previous')">加载上一页</button>
       <template v-if="tasks.length">
         <div
           v-for="task in tasks"
@@ -155,12 +157,12 @@
           />
         </div>
         <div ref="tasksSentinel" class="list-sentinel" aria-hidden="true"></div>
-        <div v-if="loadingMore && taskCursor" class="list-loader"><IonSpinner name="dots" /></div>
+        <div v-if="taskLoadingMore" class="list-loader"><IonSpinner name="dots" /></div>
         <button
           v-else-if="taskLoadError"
           type="button"
           class="load-more-btn"
-          @click="loadMoreTasks"
+          @click="loadMoreTasks(taskLoadDirection)"
         >
           加载失败，点击重试
         </button>
@@ -214,14 +216,29 @@ const props = defineProps<{
   initialExportId?: string
 }>()
 const router = useRouter()
+const managerRef = ref<HTMLElement | null>(null)
 const files = ref<LocalFileRecord[]>([])
 const tasks = ref<ExportTaskRecord[]>([])
-// 页面只保留最近三页；files/tasks 是当前窗口的扁平展示快照。
-const filePages = ref<LocalFileRecord[][]>([])
-const taskPages = ref<ExportTaskRecord[][]>([])
+interface WindowPage<T> {
+  items: T[]
+  cursor: string | undefined
+  nextCursor: string | null
+  index: number
+}
+
+// 只保留三页记录；历史仅保存不透明请求游标，以便重新读取窗口前的页。
+const filePages = ref<WindowPage<LocalFileRecord>[]>([])
+const taskPages = ref<WindowPage<ExportTaskRecord>[]>([])
+let filePageCursors: (string | undefined)[] = []
+let taskPageCursors: (string | undefined)[] = []
+const canLoadPreviousFiles = computed(() => (filePages.value[0]?.index ?? 0) > 0)
+const canLoadPreviousTasks = computed(() => (taskPages.value.find((page) => page.index >= 0)?.index ?? 0) > 0)
 const managementState = ref<LocalFileManagementState>({ recoveryState: 'ready' })
 const loading = ref(false)
-const loadingMore = ref(false)
+const fileLoadingMore = ref(false)
+const taskLoadingMore = ref(false)
+const fileLoadDirection = ref<'next' | 'previous'>('next')
+const taskLoadDirection = ref<'next' | 'previous'>('next')
 const fileLoadError = ref(false)
 const taskLoadError = ref(false)
 const errorMessage = ref('')
@@ -247,47 +264,76 @@ const observeListSentinels = async () => {
   if (tasksSentinel.value) listObserver.observe(tasksSentinel.value)
 }
 
+const rebuildFileWindow = () => {
+  files.value = filePages.value.flatMap((page) => page.items)
+  fileCursor.value = filePages.value[filePages.value.length - 1]?.nextCursor ?? null
+}
+const rebuildTaskWindow = () => {
+  tasks.value = taskPages.value.flatMap((page) => page.items)
+  taskCursor.value = taskPages.value[taskPages.value.length - 1]?.nextCursor ?? null
+}
 const updateTaskWindow = (update: (task: ExportTaskRecord) => ExportTaskRecord | null) => {
-  taskPages.value = taskPages.value
-    .map((page) => page.map(update).filter((task): task is ExportTaskRecord => task !== null))
-    .filter((page) => page.length > 0)
-  tasks.value = taskPages.value.flat()
+  taskPages.value = taskPages.value.map((page) => ({
+    ...page,
+    items: page.items.map(update).filter((task): task is ExportTaskRecord => task !== null),
+  }))
+  rebuildTaskWindow()
 }
 
 const updateFileWindow = (update: (file: LocalFileRecord) => LocalFileRecord | null) => {
-  filePages.value = filePages.value
-    .map((page) => page.map(update).filter((file): file is LocalFileRecord => file !== null))
-    .filter((page) => page.length > 0)
-  files.value = filePages.value.flat()
+  filePages.value = filePages.value.map((page) => ({
+    ...page,
+    items: page.items.map(update).filter((file): file is LocalFileRecord => file !== null),
+  }))
+  rebuildFileWindow()
+}
+
+const captureWindowAnchor = async (view: 'files' | 'tasks') => {
+  const content = managerRef.value?.closest<HTMLIonContentElement>('ion-content')
+  const scroll = await content?.getScrollElement()
+  const top = scroll?.getBoundingClientRect().top
+  const selector = view === 'files' ? '[data-file-id]' : '.task-anchor'
+  const anchor = top === undefined ? undefined : Array.from(
+    managerRef.value?.querySelectorAll<HTMLElement>(selector) ?? [],
+  ).find((element) => element.getBoundingClientRect().bottom > top)
+  const anchorTop = anchor?.getBoundingClientRect().top
+  return async () => {
+    await nextTick()
+    if (scroll && anchor?.isConnected && anchorTop !== undefined) {
+      scroll.scrollTop += anchor.getBoundingClientRect().top - anchorTop
+    }
+  }
 }
 
 const updateVisibleFiles = (updated: LocalFileRecord[]) => {
   const byId = new Map(updated.map((file) => [file.id, file]))
-  updateFileWindow((file) => byId.get(file.id) || file)
+  updateFileWindow((file) => {
+    const updatedFile = byId.get(file.id)
+    return updatedFile && updatedFile.updatedAt >= file.updatedAt ? updatedFile : file
+  })
 }
 
 const removeFileAndFill = async (id: number) => {
+  fileRequestSequence++
   updateFileWindow((file) => (file.id === id ? null : file))
-  if (fileCursor.value && files.value.length < 150) await loadMoreFiles()
   void loadImageResourceKeys()
+  if (fileCursor.value) await loadFiles(false, 'refresh')
 }
 
 const removeTaskAndFill = async (exportId: string) => {
+  taskRequestSequence++
   updateTaskWindow((task) => (task.exportId === exportId ? null : task))
-  if (taskCursor.value && tasks.value.length < 150) await loadMoreTasks()
+  if (taskCursor.value) await loadTasks(false, 'refresh')
 }
 
 const mergeTaskIntoWindow = (task: ExportTaskRecord) => {
   let found = false
-  taskPages.value = taskPages.value.map((page) =>
-    page.map((current) => {
-      if (current.exportId !== task.exportId) return current
-      found = true
-      return task.snapshotRevision >= current.snapshotRevision ? task : current
-    }),
-  )
+  updateTaskWindow((current) => {
+    if (current.exportId !== task.exportId) return current
+    found = true
+    return task.snapshotRevision >= current.snapshotRevision ? task : current
+  })
   if (!found) return false
-  tasks.value = taskPages.value.flat()
   return true
 }
 const highlightedExportId = ref<string | null>(null)
@@ -298,6 +344,7 @@ let stateInvalidatedHandle: { remove: () => Promise<void> } | null = null
 let fileRequestSequence = 0
 let taskRequestSequence = 0
 let imageResourceRequestSequence = 0
+let focusTaskRequestSequence = 0
 let stateChangeSequence = 0
 let fileReloadPromise: Promise<void> | null = null
 let taskReloadPromise: Promise<void> | null = null
@@ -406,8 +453,10 @@ const refreshFilesInBackground = async (pageFiles: LocalFileRecord[]) => {
   if (!ids.length) return
 
   setVerifying(ids, true)
+  const changeSequence = stateChangeSequence
   try {
-    updateVisibleFiles(await LocalFileManagementService.refreshFiles(ids))
+    const updated = await LocalFileManagementService.refreshFiles(ids)
+    if (!isUnmounted && changeSequence === stateChangeSequence) updateVisibleFiles(updated)
   } catch (error) {
     await showToast(sanitizeError(error, '文件状态刷新失败'), 'danger')
   } finally {
@@ -415,16 +464,25 @@ const refreshFilesInBackground = async (pageFiles: LocalFileRecord[]) => {
   }
 }
 
-const loadFiles = async (reset: boolean) => {
+const loadFiles = async (reset: boolean, direction: 'next' | 'previous' | 'refresh' = 'next') => {
   const requestSequence = ++fileRequestSequence
   const changeSequence = stateChangeSequence
   const filters = currentFileFilters()
-  let page: Awaited<ReturnType<typeof LocalFileManagementService.getFiles>>
+  const first = filePages.value[0]
+  const last = filePages.value[filePages.value.length - 1]
+  const index = reset ? 0 : direction === 'previous' ? first.index - 1
+    : direction === 'refresh' ? first.index : (last?.index ?? -1) + 1
+  let cursor = reset ? undefined : direction === 'next' ? fileCursor.value || undefined
+    : direction === 'refresh' ? first.cursor : filePageCursors[index]
+  const incoming: WindowPage<LocalFileRecord>[] = []
   try {
-    page = await LocalFileManagementService.getFiles(
-      filters,
-      reset ? undefined : fileCursor.value || undefined,
-    )
+    const count = direction === 'refresh' ? Math.max(1, filePages.value.length) : 1
+    for (let offset = 0; offset < count; offset++) {
+      const page = await LocalFileManagementService.getFiles(filters, cursor)
+      incoming.push({ ...page, cursor, index: index + offset })
+      if (!page.nextCursor) break
+      cursor = page.nextCursor
+    }
   } catch (error) {
     const currentFilters = currentFileFilters()
     if (
@@ -438,6 +496,7 @@ const loadFiles = async (reset: boolean) => {
     }
     throw error
   }
+  const restoreAnchor = await captureWindowAnchor('files')
   if (isUnmounted || requestSequence !== fileRequestSequence) return
   const currentFilters = currentFileFilters()
   if (
@@ -450,24 +509,42 @@ const loadFiles = async (reset: boolean) => {
     if (!fileReloadPromise) void requestFilesReload()
     return
   }
-  filePages.value = reset ? [page.items] : [...filePages.value, page.items].slice(-3)
-  files.value = filePages.value.flat()
-  fileCursor.value = page.nextCursor
+  if (reset) filePageCursors = []
+  for (const page of incoming) {
+    filePageCursors[page.index] = page.cursor
+    if (page.nextCursor) filePageCursors[page.index + 1] = page.nextCursor
+  }
+  const ids = new Set(incoming.flatMap((page) => page.items.map((file) => file.id)))
+  const kept = filePages.value.map((page) => ({ ...page, items: page.items.filter((file) => !ids.has(file.id)) }))
+  filePages.value = reset || direction === 'refresh' ? incoming
+    : direction === 'previous' ? [...incoming, ...kept].slice(0, 3) : [...kept, ...incoming].slice(-3)
+  rebuildFileWindow()
   fileLoadError.value = false
+  void loadImageResourceKeys()
+  await restoreAnchor()
   void observeListSentinels()
-  void refreshFilesInBackground(page.items)
+  for (const page of incoming) void refreshFilesInBackground(page.items)
 }
 
-const loadTasks = async (reset: boolean) => {
+const loadTasks = async (reset: boolean, direction: 'next' | 'previous' | 'refresh' = 'next') => {
   const requestSequence = ++taskRequestSequence
   const changeSequence = stateChangeSequence
   const filters = currentTaskFilters()
-  let page: Awaited<ReturnType<typeof LocalFileManagementService.getTasks>>
+  const first = taskPages.value.find((page) => page.index >= 0)
+  const last = taskPages.value[taskPages.value.length - 1]
+  const index = reset ? 0 : direction === 'previous' ? (first?.index ?? 0) - 1
+    : direction === 'refresh' ? first?.index ?? 0 : (last?.index ?? -1) + 1
+  let cursor = reset ? undefined : direction === 'next' ? taskCursor.value || undefined
+    : direction === 'refresh' ? first?.cursor : taskPageCursors[index]
+  const incoming: WindowPage<ExportTaskRecord>[] = []
   try {
-    page = await LocalFileManagementService.getTasks(
-      filters,
-      reset ? undefined : taskCursor.value || undefined,
-    )
+    const count = direction === 'refresh' ? Math.max(1, taskPages.value.filter((page) => page.index >= 0).length) : 1
+    for (let offset = 0; offset < count; offset++) {
+      const page = await LocalFileManagementService.getTasks(filters, cursor)
+      incoming.push({ ...page, cursor, index: index + offset })
+      if (!page.nextCursor) break
+      cursor = page.nextCursor
+    }
   } catch (error) {
     const currentFilters = currentTaskFilters()
     if (
@@ -480,6 +557,7 @@ const loadTasks = async (reset: boolean) => {
     }
     throw error
   }
+  const restoreAnchor = await captureWindowAnchor('tasks')
   if (isUnmounted || requestSequence !== taskRequestSequence) return
   const currentFilters = currentTaskFilters()
   if (
@@ -491,10 +569,18 @@ const loadTasks = async (reset: boolean) => {
     if (!taskReloadPromise) void requestTasksReload()
     return
   }
-  taskPages.value = reset ? [page.items] : [...taskPages.value, page.items].slice(-3)
-  tasks.value = taskPages.value.flat()
-  taskCursor.value = page.nextCursor
+  if (reset) taskPageCursors = []
+  for (const page of incoming) {
+    taskPageCursors[page.index] = page.cursor
+    if (page.nextCursor) taskPageCursors[page.index + 1] = page.nextCursor
+  }
+  const ids = new Set(incoming.flatMap((page) => page.items.map((task) => task.exportId)))
+  const kept = taskPages.value.map((page) => ({ ...page, items: page.items.filter((task) => !ids.has(task.exportId)) }))
+  taskPages.value = reset || direction === 'refresh' ? incoming
+    : direction === 'previous' ? [...incoming, ...kept].slice(0, 3) : [...kept, ...incoming].slice(-3)
+  rebuildTaskWindow()
   taskLoadError.value = false
+  await restoreAnchor()
   void observeListSentinels()
 }
 
@@ -538,29 +624,22 @@ const requestTasksReload = async (): Promise<void> => {
 
 const loadImageResourceKeys = async () => {
   const requestSequence = ++imageResourceRequestSequence
-  const changeSequence = stateChangeSequence
-  try {
-    const items = files.value
-      .filter((file) => file.albumId && file.chapterId)
-      .map((file) => ({ albumId: file.albumId!, chapterId: file.chapterId! }))
-    const result = await JmcomicService.getDownloadedResourceKeys(items)
-    if (
-      isUnmounted ||
-      requestSequence !== imageResourceRequestSequence ||
-      changeSequence !== stateChangeSequence
-    ) {
-      return
-    }
-    imageResourceKeys.value = new Set(result.keys)
-  } catch {
-    if (
-      isUnmounted ||
-      requestSequence !== imageResourceRequestSequence ||
-      changeSequence !== stateChangeSequence
-    ) {
-      return
-    }
+  const fileSequence = fileRequestSequence
+  const items = files.value
+    .filter((file) => file.albumId && file.chapterId)
+    .map((file) => ({ albumId: file.albumId!, chapterId: file.chapterId! }))
+  if (!items.length) {
     imageResourceKeys.value = new Set()
+    return
+  }
+  try {
+    const result = await JmcomicService.getDownloadedResourceKeys(items)
+    if (isUnmounted || requestSequence !== imageResourceRequestSequence || fileSequence !== fileRequestSequence) return
+    imageResourceKeys.value = new Set(result.keys)
+  } catch (error) {
+    if (isUnmounted || requestSequence !== imageResourceRequestSequence || fileSequence !== fileRequestSequence) return
+    imageResourceKeys.value = new Set()
+    console.warn('读取文件图片资源标记失败', error)
   }
 }
 
@@ -569,26 +648,30 @@ const hasImageResource = (file: LocalFileRecord) =>
 
 const focusTask = async (exportId: string) => {
   activeView.value = 'tasks'
+  const requestSequence = ++focusTaskRequestSequence
   const changeSequence = stateChangeSequence
   try {
     const task = await LocalFileManagementService.getTask(exportId)
-    if (isUnmounted) return
+    if (isUnmounted || requestSequence !== focusTaskRequestSequence) return
     if (changeSequence !== stateChangeSequence) {
       await requestTasksReload()
       return
     }
     if (!mergeTaskIntoWindow(task)) {
-      // 单项定位不应把历史页全部加载回来；把目标作为当前窗口的临时首项，后续刷新会恢复后端顺序。
+      // 定位项独占临时页；被移出的末页保留在尾游标之后，可继续加载。
+      taskRequestSequence++
+      const kept = taskPages.value.filter((page) => page.index >= 0).slice(0, 2)
       taskPages.value = [
-        [task, ...taskPages.value.flat().filter((item) => item.exportId !== exportId)].slice(0, 50),
-        ...taskPages.value,
-      ].slice(0, 3)
-      tasks.value = taskPages.value.flat().slice(0, 150)
+        { items: [task], index: -1, cursor: undefined, nextCursor: kept[0]?.cursor ?? null },
+        ...kept,
+      ]
+      rebuildTaskWindow()
     }
     highlightedExportId.value = exportId
     await nextTick()
     document.getElementById(`export-task-${exportId}`)?.scrollIntoView?.({ block: 'center' })
   } catch (error) {
+    if (isUnmounted || requestSequence !== focusTaskRequestSequence) return
     const runtimeError = normalizeRuntimeError(error)
     if (runtimeError.code !== 'not-found') throw error
     highlightedExportId.value = null
@@ -614,7 +697,7 @@ const load = async (): Promise<void> => {
           continue
         }
         managementState.value = stateResult
-        await Promise.all([requestFilesReload(), requestTasksReload(), loadImageResourceKeys()])
+        await Promise.all([requestFilesReload(), requestTasksReload()])
         if (props.initialExportId) await focusTask(props.initialExportId)
       }
     } catch (error) {
@@ -632,30 +715,32 @@ const load = async (): Promise<void> => {
   }
 }
 
-const loadMoreFiles = async () => {
-  if (loadingMore.value || !fileCursor.value) return
-  loadingMore.value = true
+const loadMoreFiles = async (direction: 'next' | 'previous' = 'next') => {
+  if (fileLoadingMore.value || (direction === 'next' ? !fileCursor.value : !canLoadPreviousFiles.value)) return
+  fileLoadingMore.value = true
+  fileLoadDirection.value = direction
   try {
-    await loadFiles(false)
+    await loadFiles(false, direction)
     fileLoadError.value = false
   } catch (error) {
     fileLoadError.value = true
-    await showToast(sanitizeError(error, '继续加载文件失败'), 'danger')
+    await showToast(sanitizeError(error, '加载文件失败'), 'danger')
   } finally {
-    loadingMore.value = false
+    fileLoadingMore.value = false
   }
 }
-const loadMoreTasks = async () => {
-  if (loadingMore.value || !taskCursor.value) return
-  loadingMore.value = true
+const loadMoreTasks = async (direction: 'next' | 'previous' = 'next') => {
+  if (taskLoadingMore.value || (direction === 'next' ? !taskCursor.value : !canLoadPreviousTasks.value)) return
+  taskLoadingMore.value = true
+  taskLoadDirection.value = direction
   try {
-    await loadTasks(false)
+    await loadTasks(false, direction)
     taskLoadError.value = false
   } catch (error) {
     taskLoadError.value = true
-    await showToast(sanitizeError(error, '继续加载导出任务失败'), 'danger')
+    await showToast(sanitizeError(error, '加载导出任务失败'), 'danger')
   } finally {
-    loadingMore.value = false
+    taskLoadingMore.value = false
   }
 }
 
@@ -941,7 +1026,7 @@ onMounted(async () => {
   listObserver = new IntersectionObserver(
     (entries) => {
       for (const entry of entries) {
-        if (!entry.isIntersecting || loadingMore.value) continue
+        if (!entry.isIntersecting) continue
         if (entry.target === filesSentinel.value && activeView.value === 'files')
           void loadMoreFiles()
         if (entry.target === tasksSentinel.value && activeView.value === 'tasks')

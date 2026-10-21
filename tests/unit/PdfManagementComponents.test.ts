@@ -655,3 +655,104 @@ describe('LocalFileManagementView', () => {
     wrapper.unmount()
   })
 })
+
+
+describe('导出管理三页窗口回归', () => {
+  const fileAt = (id: number) => ({ ...file, id, albumId: 'album-' + id, chapterId: 'chapter-' + id })
+  const taskAt = (id: number) => ({ ...task('completed'), exportId: 'export-' + id })
+  const serveFiles = (records: LocalFileRecord[]) => ({ cursor }: any) => {
+    const after = cursor ? Number(cursor.slice(1)) : 0
+    const remaining = records.filter((entry) => entry.id > after)
+    const items = remaining.slice(0, 50)
+    return Promise.resolve({ files: items, nextCursor: remaining.length > 50 ? 'f' + items[items.length - 1].id : null })
+  }
+
+  test('第四页裁剪后可回看旧页，前后往返不重复且资源查询仅覆盖当前窗口', async () => {
+    mocks.getLocalFiles.mockImplementation(serveFiles(Array.from({ length: 260 }, (_, i) => fileAt(i + 1))))
+    const wrapper = mount(LocalFileManagementView)
+    await flushPromises()
+    const state = (wrapper.vm as any).$.setupState
+    for (let i = 0; i < 3; i++) await state.loadMoreFiles()
+    expect(state.files.map((entry: any) => entry.id)).toEqual(Array.from({ length: 150 }, (_, i) => i + 51))
+    expect(state.filePages).toHaveLength(3)
+    await state.loadMoreFiles('previous')
+    expect(state.files.map((entry: any) => entry.id)).toEqual(Array.from({ length: 150 }, (_, i) => i + 1))
+    expect(state.fileCursor).toBe('f150')
+    await state.loadMoreFiles()
+    await flushPromises()
+    expect(new Set(state.files.map((entry: any) => entry.id)).size).toBe(150)
+    expect(mocks.getDownloadedResourceKeys).toHaveBeenLastCalledWith(
+      Array.from({ length: 150 }, (_, i) => ({ albumId: 'album-' + (i + 51), chapterId: 'chapter-' + (i + 51) })),
+    )
+    wrapper.unmount()
+  })
+
+  test('删除窗口头部后按当前首游标补齐，不额外丢弃剩余首页', async () => {
+    const records = Array.from({ length: 260 }, (_, i) => fileAt(i + 1))
+    mocks.getLocalFiles.mockImplementation(serveFiles(records))
+    const wrapper = mount(LocalFileManagementView)
+    await flushPromises()
+    const state = (wrapper.vm as any).$.setupState
+    for (let i = 0; i < 3; i++) await state.loadMoreFiles()
+    records.splice(records.findIndex((entry) => entry.id === 51), 1)
+    await state.removeFileAndFill(51)
+    expect(state.files.map((entry: any) => entry.id)).toEqual(Array.from({ length: 150 }, (_, i) => i + 52))
+    expect(state.fileCursor).toBe('f201')
+    expect(state.filePages).toHaveLength(3)
+    wrapper.unmount()
+  })
+
+  test('定位窗口外任务不复制旧记录，移出的末页仍可按游标读取', async () => {
+    mocks.getExportTasks.mockImplementation(async ({ cursor }: any) => {
+      const start = cursor ? Number(cursor.slice(1)) : 0
+      return { tasks: Array.from({ length: 50 }, (_, i) => taskAt(start + i + 1)), nextCursor: 't' + (start + 50) }
+    })
+    const wrapper = mount(LocalFileManagementView, { props: { initialView: 'tasks' } })
+    await flushPromises()
+    const state = (wrapper.vm as any).$.setupState
+    await state.loadMoreTasks()
+    await state.loadMoreTasks()
+    mocks.getExportTask.mockResolvedValue(taskAt(999))
+    await state.focusTask('export-999')
+    expect(state.tasks).toHaveLength(101)
+    expect(new Set(state.tasks.map((entry: any) => entry.exportId)).size).toBe(101)
+    expect(state.taskCursor).toBe('t100')
+    await state.loadMoreTasks()
+    expect(state.tasks.map((entry: any) => entry.exportId)).toEqual(Array.from({ length: 150 }, (_, i) => 'export-' + (i + 1)))
+    wrapper.unmount()
+  })
+
+  test('资源查询在文件加载后发起，较旧窗口响应不能覆盖新标记', async () => {
+    let finishOld: ((result: { keys: string[] }) => void) | undefined
+    mocks.getDownloadedResourceKeys.mockImplementationOnce(() => new Promise((resolve) => { finishOld = resolve }))
+    const wrapper = mount(LocalFileManagementView)
+    await flushPromises()
+    expect(mocks.getDownloadedResourceKeys).toHaveBeenCalledWith([{ albumId: 'album-1', chapterId: 'chapter-1' }])
+    mocks.getLocalFiles.mockResolvedValue({ files: [fileAt(2)], nextCursor: null })
+    mocks.getDownloadedResourceKeys.mockResolvedValue({ keys: ['album-2|chapter-2'] })
+    const state = (wrapper.vm as any).$.setupState
+    await state.requestFilesReload()
+    await flushPromises()
+    finishOld?.({ keys: ['album-1|chapter-1'] })
+    await flushPromises()
+    expect(Array.from(state.imageResourceKeys)).toEqual(['album-2|chapter-2'])
+    wrapper.unmount()
+  })
+
+  test('较早定位响应不能覆盖新的目标，也不累计临时定位页', async () => {
+    let finishOld: ((value: ExportTaskRecord) => void) | undefined
+    const wrapper = mount(LocalFileManagementView)
+    await flushPromises()
+    mocks.getExportTask.mockImplementationOnce(() => new Promise((resolve) => { finishOld = resolve }))
+    mocks.getExportTask.mockResolvedValue(taskAt(3))
+    const state = (wrapper.vm as any).$.setupState
+    const old = state.focusTask('export-2')
+    await state.focusTask('export-3')
+    finishOld?.(taskAt(2))
+    await old
+    expect(state.highlightedExportId).toBe('export-3')
+    expect(state.tasks.some((entry: any) => entry.exportId === 'export-2')).toBe(false)
+    expect(state.taskPages.filter((page: any) => page.index === -1)).toHaveLength(1)
+    wrapper.unmount()
+  })
+})

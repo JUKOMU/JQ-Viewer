@@ -196,12 +196,18 @@ public final class DownloadService implements AutoCloseable {
         }
         List<StoredDownloadTask> tasks = store.tasksByStatus(status);
         List<String> taskIds = new ArrayList<>();
+        int failedCount = 0;
         for (StoredDownloadTask task : tasks) {
-            files.cleanup(task.relativeDirectory());
-            taskIds.add(task.taskId());
+            try {
+                files.cleanup(task.relativeDirectory());
+                taskIds.add(task.taskId());
+            } catch (RuntimeException error) {
+                failedCount++;
+                LOGGER.warn("清理下载目录失败 taskId={}", task.taskId(), error);
+            }
         }
         int deleted = store.deleteTasksByStatus(taskIds, status);
-        return Map.of("deletedCount", deleted, "failedCount", 0);
+        return Map.of("deletedCount", deleted, "failedCount", failedCount);
     }
 
     public void pauseDownload(String taskId) {

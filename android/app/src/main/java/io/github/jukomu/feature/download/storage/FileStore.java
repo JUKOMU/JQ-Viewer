@@ -363,12 +363,14 @@ public class FileStore {
             for (File f : files) {
                 if (f.isDirectory()) {
                     deleteRecursive(f);
-                } else {
-                    f.delete();
+                } else if (!f.delete() && f.exists()) {
+                    throw new IllegalStateException("删除下载文件失败: " + f);
                 }
             }
         }
-        dir.delete();
+        if (!dir.delete() && dir.exists()) {
+            throw new IllegalStateException("删除下载目录失败: " + dir);
+        }
     }
 
     private static void validatePathSegment(String fieldName, String value) {

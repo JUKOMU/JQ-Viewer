@@ -297,17 +297,23 @@ public class DownloadService {
         }
         List<JSONObject> tasks = downloadDb.getTasksByStatus(status);
         List<String> taskIds = new java.util.ArrayList<>();
+        int failedCount = 0;
         for (JSONObject task : tasks) {
             String albumId = task.optString("albumId");
             String chapterId = task.optString("chapterId");
-            fileStore.deleteChapter(albumId, chapterId);
-            taskIds.add(task.optString("taskId"));
+            try {
+                fileStore.deleteChapter(albumId, chapterId);
+                taskIds.add(task.optString("taskId"));
+            } catch (RuntimeException error) {
+                failedCount++;
+                LOGGER.warn("清理下载目录失败 taskId={}", task.optString("taskId"), error);
+            }
         }
         int deleted = downloadDb.deleteTasksByStatus(taskIds, status);
         JSONObject result = new JSONObject();
         result.put("success", true);
         result.put("deletedCount", deleted);
-        result.put("failedCount", 0);
+        result.put("failedCount", failedCount);
         return result;
     }
 

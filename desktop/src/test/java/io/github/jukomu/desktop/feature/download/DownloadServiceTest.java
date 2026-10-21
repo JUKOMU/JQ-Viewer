@@ -8,6 +8,7 @@ import io.github.jukomu.desktop.data.Paths;
 import io.github.jukomu.desktop.feature.download.data.DownloadStore;
 import io.github.jukomu.desktop.feature.download.data.StoredDownloadTask;
 import io.github.jukomu.desktop.feature.download.model.DownloadChapterRequest;
+import io.github.jukomu.desktop.feature.download.model.DownloadTasksPageRequest;
 import io.github.jukomu.jmcomic.api.client.JmClient;
 import io.github.jukomu.jmcomic.api.client.JmDownloadClient;
 import io.github.jukomu.jmcomic.api.download.DownloadProgress;
@@ -49,9 +50,13 @@ class DownloadServiceTest {
             assertEquals(DownloadService.STATUS_COMPLETED, task.status());
             assertEquals(1, task.downloadedPages());
             assertEquals("[\"Alice\",\"Bob\"]", task.authorsJson());
-            assertEquals(List.of("Alice", "Bob"), fixture.service.getDownloadTasks().tasks().get(0).authors());
+            var page = fixture.service.getDownloadTasksPage(
+                    new DownloadTasksPageRequest("completed", "time", "desc", null, 50));
+            assertEquals(List.of("Alice", "Bob"),
+                    ((io.github.jukomu.desktop.feature.download.model.CompletedDownloadGroupResponse)
+                            page.items().get(0)).chapters().get(0).authors());
             assertTrue(task.totalSize() > 0);
-            assertEquals(1, fixture.service.getDownloadTasks().tasks().size());
+            assertEquals(1, page.items().size());
             assertTrue(fixture.service.findCompletedImage("photo-1", 1).isPresent());
             assertEquals("photo-1",
                     fixture.service.getDownloadedPhoto("album-1", "photo-1").id());

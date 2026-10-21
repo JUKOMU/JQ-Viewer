@@ -10,7 +10,11 @@ import type {
   CommentList,
   DomainStates,
   DownloadProgressEvent,
-  DownloadTasksResult,
+  DownloadActiveProgress,
+  DownloadTask,
+  DownloadTaskPageQuery,
+  DownloadTaskStatusResult,
+  DownloadTasksPageResult,
   FavoriteQuery,
   FavoriteResult,
   ForumQuery,
@@ -196,7 +200,23 @@ export interface JmcomicClient {
     coverUrl: string
   }): Promise<{ taskId: string }>
 
-  getDownloadTasks(): Promise<DownloadTasksResult>
+  getDownloadTasksPage(options: DownloadTaskPageQuery): Promise<DownloadTasksPageResult>
+
+  getCompletedDownloadAlbumIds(options: { albumIds: string[] }): Promise<{ albumIds: string[] }>
+
+  getDownloadTaskStatuses(options: { albumId: string }): Promise<DownloadTaskStatusResult>
+
+  getCompletedDownloadChapters(options: { albumId: string }): Promise<{ tasks: DownloadTask[] }>
+
+  getActiveDownloadProgress(): Promise<{ tasks: DownloadActiveProgress[] }>
+
+  getDownloadedResourceKeys(options: {
+    items: Array<{ albumId: string; chapterId: string }>
+  }): Promise<{ keys: string[] }>
+
+  clearDownloadTasks(options: {
+    status: Extract<DownloadTaskPageQuery['status'], 'completed' | 'failed'>
+  }): Promise<{ success: boolean; deletedCount: number; failedCount: number }>
 
   cancelDownload(options: { taskId: string }): Promise<{ success: boolean }>
 

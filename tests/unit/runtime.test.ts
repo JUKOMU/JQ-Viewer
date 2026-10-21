@@ -90,7 +90,13 @@ describe('runtime', () => {
       'setReaderWidthPercent',
       'setReaderAutoShowToolbarAtEnd',
       'downloadChapter',
-      'getDownloadTasks',
+      'getDownloadTasksPage',
+      'getCompletedDownloadAlbumIds',
+      'getDownloadTaskStatuses',
+      'getCompletedDownloadChapters',
+      'getActiveDownloadProgress',
+      'getDownloadedResourceKeys',
+      'clearDownloadTasks',
       'cancelDownload',
       'pauseDownload',
       'resumeDownload',
@@ -300,7 +306,13 @@ describe('runtime', () => {
       chapterTitle: 'Photo',
       coverUrl: 'cover.jpg',
     })
-    await backend.getDownloadTasks()
+    await backend.getDownloadTasksPage({ status: 'active', sort: 'time', direction: 'desc', limit: 50 })
+    await backend.getCompletedDownloadAlbumIds({ albumIds: ['album-1'] })
+    await backend.getDownloadTaskStatuses({ albumId: 'album-1' })
+    await backend.getCompletedDownloadChapters({ albumId: 'album-1' })
+    await backend.getActiveDownloadProgress()
+    await backend.getDownloadedResourceKeys({ items: [{ albumId: 'album-1', chapterId: 'photo-1' }] })
+    await backend.clearDownloadTasks({ status: 'completed' })
     await backend.cancelDownload({ taskId: 'album-1_photo-1' })
     await backend.pauseDownload({ taskId: 'album-1_photo-1' })
     await backend.resumeDownload({ taskId: 'album-1_photo-1' })
@@ -309,7 +321,13 @@ describe('runtime', () => {
 
     expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
       '/api/downloadChapter',
-      '/api/getDownloadTasks',
+      '/api/getDownloadTasksPage',
+      '/api/getCompletedDownloadAlbumIds',
+      '/api/getDownloadTaskStatuses',
+      '/api/getCompletedDownloadChapters',
+      '/api/getActiveDownloadProgress',
+      '/api/getDownloadedResourceKeys',
+      '/api/clearDownloadTasks',
       '/api/cancelDownload',
       '/api/pauseDownload',
       '/api/resumeDownload',

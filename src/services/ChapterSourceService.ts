@@ -105,9 +105,9 @@ async function listChapterCandidates(
 }
 
 async function listCompletedDownloads(albumId: string): Promise<DownloadTask[]> {
-  const result = await JmcomicService.getDownloadTasks()
+  const result = await JmcomicService.getCompletedDownloadChapters(albumId)
   return result.tasks
-    .filter((task) => task.albumId === albumId && task.status === 'completed')
+    .filter((task) => task.status === 'completed')
     .sort(
       (left, right) =>
         (right.completedAt ?? right.createdAt) - (left.completedAt ?? left.createdAt),

@@ -27,7 +27,7 @@ const mocks = vi.hoisted(() => ({
   getComments: vi.fn(),
   downloadChapter: vi.fn(),
   getDownloadedPhoto: vi.fn(),
-  getDownloadTasks: vi.fn(),
+  getDownloadTaskStatuses: vi.fn(),
   getImportedLocalFiles: vi.fn(),
   addDownloadProgressListener: vi.fn(),
   addImageReadyListener: vi.fn(),
@@ -110,7 +110,7 @@ vi.mock('@/services/JmcomicService', () => ({
     getComments: mocks.getComments,
     downloadChapter: mocks.downloadChapter,
     getDownloadedPhoto: mocks.getDownloadedPhoto,
-    getDownloadTasks: mocks.getDownloadTasks,
+    getDownloadTaskStatuses: mocks.getDownloadTaskStatuses,
     getImportedLocalFiles: mocks.getImportedLocalFiles,
     addDownloadProgressListener: mocks.addDownloadProgressListener,
     addImageReadyListener: mocks.addImageReadyListener,
@@ -375,10 +375,8 @@ const clickTab = async (wrapper: VueWrapper, label: string) => {
 const mountLoadedPage = async ({ downloaded = false, pdf = false, album = makeAlbum() } = {}) => {
   mocks.getAlbum.mockResolvedValue(album)
   mocks.getPhoto.mockResolvedValue(makePhoto())
-  mocks.getDownloadTasks.mockResolvedValue({
-    tasks: downloaded ? [makeDownloadTask()] : [],
-    usedBytes: 0,
-    availableBytes: 0,
+  mocks.getDownloadTaskStatuses.mockResolvedValue({
+    statuses: downloaded ? [{ chapterId: 'chapter-1', status: 'completed' }] : [],
   })
   mocks.getImportedLocalFiles.mockResolvedValue({ files: pdf ? [makeLocalFileRecord()] : [] })
   const summary: Record<string, unknown> = {}
@@ -445,7 +443,7 @@ beforeEach(() => {
   mocks.getComments.mockResolvedValue({ total: 0, list: [] })
   mocks.downloadChapter.mockResolvedValue({ taskId: '123_chapter-1' })
   mocks.getDownloadedPhoto.mockResolvedValue(makePhoto())
-  mocks.getDownloadTasks.mockResolvedValue({ tasks: [], usedBytes: 0, availableBytes: 0 })
+  mocks.getDownloadTaskStatuses.mockResolvedValue({ statuses: [] })
   mocks.getImportedLocalFiles.mockResolvedValue({ files: [] })
   mocks.getAlbumSources.mockResolvedValue(new Map())
   mocks.resolveChapterSource.mockResolvedValue({ kind: 'network' })
@@ -794,7 +792,7 @@ describe('AlbumDetailPage tab 状态', () => {
     }
     mocks.getAlbum.mockReturnValueOnce(firstAlbum.promise).mockResolvedValueOnce(reloadedAlbum)
     mocks.getPhoto.mockReturnValueOnce(firstPhoto.promise).mockResolvedValueOnce(reloadedPhoto)
-    mocks.getDownloadTasks.mockResolvedValue({ tasks: [], usedBytes: 0, availableBytes: 0 })
+    mocks.getDownloadTaskStatuses.mockResolvedValue({ statuses: [] })
     mocks.getImportedLocalFiles.mockResolvedValue({ files: [] })
 
     const showDetail = ref(true)

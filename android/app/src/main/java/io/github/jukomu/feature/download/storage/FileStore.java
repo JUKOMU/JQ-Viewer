@@ -83,7 +83,8 @@ public class FileStore {
         chapterIdToAlbumId.clear();
         sortOrderToFilename.clear();
 
-        List<JSONObject> tasks = db.getAllTasks();
+        // 文件索引需要全部已完成任务，不能使用页面的 50 条分页结果。
+        List<JSONObject> tasks = db.getCompletedTasks();
         for (JSONObject task : tasks) {
             try {
                 String taskId = task.getString("taskId");

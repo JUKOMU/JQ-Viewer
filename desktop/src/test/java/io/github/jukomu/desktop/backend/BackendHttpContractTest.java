@@ -321,6 +321,26 @@ class BackendHttpContractTest {
             assertEquals("album-1_download-photo", submission.path("taskId").asText());
             ObjectNode downloads = waitForDownload(
                     http, base, requestedMethods, "album-1_download-photo", "completed");
+            ObjectNode completedAlbumIds = body(post(http, base, requestedMethods,
+                    "getCompletedDownloadAlbumIds", "{\"albumIds\":[\"album-1\"]}"));
+            assertEquals("album-1", completedAlbumIds.path("albumIds").get(0).asText());
+            ObjectNode taskStatuses = body(post(http, base, requestedMethods,
+                    "getDownloadTaskStatuses", "{\"albumId\":\"album-1\"}"));
+            assertEquals("completed", taskStatuses.path("statuses").get(0).path("status").asText());
+            ObjectNode completedChapters = body(post(http, base, requestedMethods,
+                    "getCompletedDownloadChapters", "{\"albumId\":\"album-1\"}"));
+            assertEquals("download-photo", completedChapters.path("tasks").get(0)
+                    .path("chapterId").asText());
+            ObjectNode activeProgress = body(post(http, base, requestedMethods,
+                    "getActiveDownloadProgress", "{}"));
+            assertTrue(activeProgress.path("tasks").isArray());
+            ObjectNode resourceKeys = body(post(http, base, requestedMethods,
+                    "getDownloadedResourceKeys",
+                    "{\"items\":[{\"albumId\":\"album-1\",\"chapterId\":\"download-photo\"}]}"));
+            assertEquals("album-1|download-photo", resourceKeys.path("keys").get(0).asText());
+            ObjectNode clearedFailed = body(post(http, base, requestedMethods,
+                    "clearDownloadTasks", "{\"status\":\"failed\"}"));
+            assertTrue(clearedFailed.path("success").asBoolean());
             ObjectNode downloadedPhoto = body(post(http, base, requestedMethods,
                     "getDownloadedPhoto",
                     "{\"albumId\":\"album-1\",\"chapterId\":\"download-photo\"}"));
@@ -576,7 +596,8 @@ class BackendHttpContractTest {
             assertEquals(folderRef, pdfPreferences.path("exportFolder").path("folderRef").asText());
             assertEquals("{author}/{id}", pdfPreferences.path("directoryTemplate").asText());
             assertEquals("{title}", pdfPreferences.path("fileNameTemplate").asText());
-            assertEquals("completed", downloads.path("tasks").get(0).path("status").asText());
+            assertEquals("completed", downloads.path("items").get(0)
+                    .path("chapters").get(0).path("status").asText());
             assertEquals("download-photo", downloadedPhoto.path("id").asText());
             assertEquals(200, downloadedImage.statusCode());
             assertEquals("image/webp",
@@ -851,11 +872,14 @@ class BackendHttpContractTest {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
         ObjectNode latest = null;
         while (System.nanoTime() < deadline) {
-            latest = body(post(client, base, requestedMethods, "getDownloadTasks", "{}"));
-            for (var task : latest.path("tasks")) {
-                if (taskId.equals(task.path("taskId").asText())
-                        && status.equals(task.path("status").asText())) {
-                    return latest;
+            latest = body(post(client, base, requestedMethods, "getDownloadTasksPage",
+                    "{\"status\":\"completed\",\"sort\":\"time\",\"direction\":\"desc\",\"limit\":50}"));
+            for (var group : latest.path("items")) {
+                for (var task : group.path("chapters")) {
+                    if (taskId.equals(task.path("taskId").asText())
+                            && status.equals(task.path("status").asText())) {
+                        return latest;
+                    }
                 }
             }
             Thread.sleep(10);

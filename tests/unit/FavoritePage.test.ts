@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   auth: null as null | { isLoggedIn: ReturnType<typeof ref>; userInfo: ReturnType<typeof ref> },
   favorites: vi.fn(),
-  getDownloadTasks: vi.fn(),
+  getCompletedDownloadAlbumIds: vi.fn(),
   getImportedLocalFiles: vi.fn(),
   addDownloadProgressListener: vi.fn(),
   showToast: vi.fn(() => Promise.resolve()),
@@ -120,7 +120,7 @@ vi.mock('@/services/AppAlertService', () => ({
 vi.mock('@/services/JmcomicService', () => ({
   JmcomicService: {
     favorites: mocks.favorites,
-    getDownloadTasks: mocks.getDownloadTasks,
+    getCompletedDownloadAlbumIds: mocks.getCompletedDownloadAlbumIds,
     getImportedLocalFiles: mocks.getImportedLocalFiles,
     addDownloadProgressListener: mocks.addDownloadProgressListener,
   },
@@ -197,8 +197,8 @@ beforeEach(() => {
   mocks.auth!.userInfo.value = { uid: 'account-a' }
   mocks.favorites.mockReset()
   mocks.favorites.mockResolvedValue(onlineResult)
-  mocks.getDownloadTasks.mockReset()
-  mocks.getDownloadTasks.mockResolvedValue({ tasks: [] })
+  mocks.getCompletedDownloadAlbumIds.mockReset()
+  mocks.getCompletedDownloadAlbumIds.mockResolvedValue({ albumIds: [] })
   mocks.getImportedLocalFiles.mockReset()
   mocks.getImportedLocalFiles.mockResolvedValue({ files: [] })
   mocks.addDownloadProgressListener.mockReset()

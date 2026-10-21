@@ -18,7 +18,7 @@ const mocks = vi.hoisted(() => ({
   gestureConfig: undefined as Record<string, any> | undefined,
   routerPush: vi.fn(),
   route: { path: '/home' },
-  getDownloadTasks: vi.fn(),
+  getActiveDownloadProgress: vi.fn(),
   getExportTasks: vi.fn(),
   addDownloadProgressListener: vi.fn(),
   addExportProgressListener: vi.fn(),
@@ -40,7 +40,7 @@ vi.mock('vue-router', () => ({
 
 vi.mock('@/services/JmcomicService', () => ({
   JmcomicService: {
-    getDownloadTasks: mocks.getDownloadTasks,
+    getActiveDownloadProgress: mocks.getActiveDownloadProgress,
     getExportTasks: mocks.getExportTasks,
     addDownloadProgressListener: mocks.addDownloadProgressListener,
     addExportProgressListener: mocks.addExportProgressListener,
@@ -105,7 +105,7 @@ beforeEach(() => {
   mocks.gestureConfig = undefined
   mocks.routerPush.mockClear()
   mocks.route.path = '/home'
-  mocks.getDownloadTasks.mockReset()
+  mocks.getActiveDownloadProgress.mockReset()
   mocks.getExportTasks.mockReset()
   mocks.addDownloadProgressListener.mockReset()
   mocks.addExportProgressListener.mockReset()
@@ -118,7 +118,7 @@ beforeEach(() => {
   mocks.pdfHandler = undefined
   mocks.stateInvalidatedHandler = undefined
   mocks.networkProbeHandler = undefined
-  mocks.getDownloadTasks.mockResolvedValue({ tasks: [] })
+  mocks.getActiveDownloadProgress.mockResolvedValue({ tasks: [] })
   mocks.getExportTasks.mockResolvedValue({ tasks: [] })
   mocks.addDownloadProgressListener.mockImplementation(async (handler: (event: any) => void) => {
     mocks.downloadHandler = handler
@@ -504,7 +504,7 @@ describe('MainMenu 任务进度', () => {
   }
 
   test('初始快照显示下载页数进度', async () => {
-    mocks.getDownloadTasks.mockResolvedValue({ tasks: [downloadTask(40, 100)] })
+    mocks.getActiveDownloadProgress.mockResolvedValue({ tasks: [downloadTask(40, 100)] })
     const wrapper = mountMenu()
     await flushPromises()
 
@@ -518,7 +518,7 @@ describe('MainMenu 任务进度', () => {
   })
 
   test('常规进度每 500ms 合并一次并显示周期内的最新值', async () => {
-    mocks.getDownloadTasks.mockResolvedValue({ tasks: [downloadTask(10, 100)] })
+    mocks.getActiveDownloadProgress.mockResolvedValue({ tasks: [downloadTask(10, 100)] })
     const wrapper = mountMenu()
     await flushPromises()
 
@@ -556,44 +556,44 @@ describe('MainMenu 任务进度', () => {
 
   test('初始化查询期间收到的实时事件不会被旧快照覆盖', async () => {
     let resolveSnapshot: ((value: { tasks: ReturnType<typeof downloadTask>[] }) => void) | undefined
-    mocks.getDownloadTasks.mockReturnValueOnce(
+    mocks.getActiveDownloadProgress.mockReturnValueOnce(
       new Promise((resolve) => {
         resolveSnapshot = resolve
       }),
     )
-    mocks.getDownloadTasks.mockResolvedValueOnce({ tasks: [downloadTask(20, 100)] })
+    mocks.getActiveDownloadProgress.mockResolvedValueOnce({ tasks: [downloadTask(20, 100)] })
     const wrapper = mountMenu()
-    await vi.waitFor(() => expect(mocks.getDownloadTasks).toHaveBeenCalled())
+    await vi.waitFor(() => expect(mocks.getActiveDownloadProgress).toHaveBeenCalled())
     mocks.downloadHandler?.(downloadEvent(20))
     resolveSnapshot?.({ tasks: [downloadTask(10, 100)] })
     await flushPromises()
     await flushTaskProgress()
 
     expect(wrapper.find('.task-progress-copy').text()).toContain('下载20%')
-    expect(mocks.getDownloadTasks).toHaveBeenCalledTimes(2)
+    expect(mocks.getActiveDownloadProgress).toHaveBeenCalledTimes(2)
     wrapper.unmount()
   })
 
   test('初始化查询期间收到的下载终态事件不会重新显示旧快照', async () => {
     let resolveSnapshot: ((value: { tasks: ReturnType<typeof downloadTask>[] }) => void) | undefined
-    mocks.getDownloadTasks.mockReturnValueOnce(
+    mocks.getActiveDownloadProgress.mockReturnValueOnce(
       new Promise((resolve) => {
         resolveSnapshot = resolve
       }),
     )
     const wrapper = mountMenu()
-    await vi.waitFor(() => expect(mocks.getDownloadTasks).toHaveBeenCalled())
+    await vi.waitFor(() => expect(mocks.getActiveDownloadProgress).toHaveBeenCalled())
     mocks.downloadHandler?.(downloadEvent(100, 100, 'completed'))
     resolveSnapshot?.({ tasks: [downloadTask(10, 100)] })
     await flushPromises()
 
     expect(wrapper.find('.task-progress-copy').exists()).toBe(false)
-    expect(mocks.getDownloadTasks).toHaveBeenCalledTimes(2)
+    expect(mocks.getActiveDownloadProgress).toHaveBeenCalledTimes(2)
     wrapper.unmount()
   })
 
   test('事件流重连后用权威快照清除已不存在的活动任务', async () => {
-    mocks.getDownloadTasks.mockResolvedValueOnce({ tasks: [downloadTask(40, 100)] })
+    mocks.getActiveDownloadProgress.mockResolvedValueOnce({ tasks: [downloadTask(40, 100)] })
     const wrapper = mountMenu()
     await flushPromises()
     expect(wrapper.find('.task-progress-copy').text()).toContain('下载40%')
@@ -601,14 +601,14 @@ describe('MainMenu 任务进度', () => {
     mocks.stateInvalidatedHandler?.()
     await flushPromises()
 
-    expect(mocks.getDownloadTasks).toHaveBeenCalledTimes(2)
+    expect(mocks.getActiveDownloadProgress).toHaveBeenCalledTimes(2)
     expect(wrapper.find('.task-progress-copy').exists()).toBe(false)
     wrapper.unmount()
   })
 
   test('选中下载菜单项时隐藏进度背景和进度文字', async () => {
     mocks.route.path = '/download'
-    mocks.getDownloadTasks.mockResolvedValue({ tasks: [downloadTask(40, 100)] })
+    mocks.getActiveDownloadProgress.mockResolvedValue({ tasks: [downloadTask(40, 100)] })
     const wrapper = mountMenu()
     await flushPromises()
 

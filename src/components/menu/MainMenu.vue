@@ -728,13 +728,19 @@ const refreshDownloadProgress = async (): Promise<void> => {
       flushPendingTaskProgress()
       const requestSequence = downloadEventSequence
       try {
-        const result = await JmcomicService.getDownloadTasks()
+        const result = await JmcomicService.getActiveDownloadProgress()
         if (progressUnmounted) return
         if (requestSequence !== downloadEventSequence) {
           downloadRefreshRequested = true
           continue
         }
-        seedDownloadProgress(result.tasks)
+        seedDownloadProgress(result.tasks.map((task) => ({
+          ...task,
+          albumTitle: '',
+          chapterTitle: '',
+          coverUrl: '',
+          createdAt: 0,
+        })))
       } catch {
         if (requestSequence !== downloadEventSequence) {
           downloadRefreshRequested = true

@@ -1,6 +1,8 @@
-import type { DownloadTask } from './JmcomicTypes'
+import type { CompletedDownloadGroup, DownloadTask } from './JmcomicTypes'
 
 const STORAGE_KEY = 'jq-download-tasks'
+const COMPLETED_GROUPS_KEY = 'jq-download-completed-groups'
+const MAX_ITEMS_PER_STATUS = 150
 
 const readTasks = (): DownloadTask[] => {
   try {
@@ -11,23 +13,51 @@ const readTasks = (): DownloadTask[] => {
   }
 }
 
+const readCompletedGroups = (): CompletedDownloadGroup[] => {
+  try {
+    const raw = localStorage.getItem(COMPLETED_GROUPS_KEY)
+    return raw ? JSON.parse(raw) : []
+  } catch {
+    return []
+  }
+}
+
 const writeTasks = (tasks: DownloadTask[]) => {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks))
+    const counts = new Map<DownloadTask['status'], number>()
+    const bounded = tasks.filter((task) => {
+      const count = counts.get(task.status) ?? 0
+      if (count >= MAX_ITEMS_PER_STATUS) return false
+      counts.set(task.status, count + 1)
+      return true
+    })
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(bounded))
   } catch {
     // localStorage 满或不可用，静默丢弃
   }
 }
 
 export const OfflineDownloadService = {
-  /** 全量覆盖（onMounted 时从 Android 同步） */
+  /** 保存当前有限窗口快照，供后端暂不可用时展示 */
   setAll(tasks: DownloadTask[]) {
     writeTasks(tasks)
   },
 
-  /** 获取全部任务 */
+  /** 获取有限窗口快照 */
   getAll(): DownloadTask[] {
     return readTasks()
+  },
+
+  setCompletedGroups(groups: CompletedDownloadGroup[]) {
+    try {
+      localStorage.setItem(COMPLETED_GROUPS_KEY, JSON.stringify(groups.slice(0, 150)))
+    } catch {
+      // localStorage 满或不可用，静默丢弃
+    }
+  },
+
+  getCompletedGroups(): CompletedDownloadGroup[] {
+    return readCompletedGroups()
   },
 
   /** 添加任务（乐观写入，状态 queued） */

@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   getLocalFiles: vi.fn(),
   refreshLocalFileAvailability: vi.fn(),
   getDownloadTasks: vi.fn(),
+  getDownloadedResourceKeys: vi.fn(),
   getExportTasks: vi.fn(),
   getLocalFileManagementState: vi.fn(),
   getOfflineFolders: vi.fn(),
@@ -84,6 +85,7 @@ vi.mock('@/services/JmcomicService', () => ({
     getLocalFiles: mocks.getLocalFiles,
     refreshLocalFileAvailability: mocks.refreshLocalFileAvailability,
     getDownloadTasks: mocks.getDownloadTasks,
+    getDownloadedResourceKeys: mocks.getDownloadedResourceKeys,
     getExportTasks: mocks.getExportTasks,
     getLocalFileManagementState: mocks.getLocalFileManagementState,
     acknowledgeLocalFileDatabaseReset: vi.fn(),
@@ -179,11 +181,15 @@ const task = (status: ExportTaskRecord['status']): ExportTaskRecord => ({
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // jsdom 不提供 IntersectionObserver，列表自动加载测试使用最小可控替身。
+  vi.stubGlobal('IntersectionObserver', class {
+    observe() {}
+    disconnect() {}
+    unobserve() {}
+  })
   mocks.getLocalFiles.mockResolvedValue({ files: [file], nextCursor: null })
   mocks.refreshLocalFileAvailability.mockResolvedValue({ files: [file] })
-  mocks.getDownloadTasks.mockResolvedValue({
-    tasks: [{ albumId: 'album-1', chapterId: 'chapter-1', status: 'completed' }],
-  })
+  mocks.getDownloadedResourceKeys.mockResolvedValue({ keys: ['album-1|chapter-1'] })
   mocks.getExportTasks.mockResolvedValue({ tasks: [task('completed')], nextCursor: null })
   mocks.getLocalFileManagementState.mockResolvedValue({ recoveryState: 'ready' })
   mocks.getOfflineFolders.mockResolvedValue({ folders: [] })
@@ -557,7 +563,7 @@ describe('LocalFileManagementView', () => {
     mocks.getLocalFiles.mockResolvedValue({ files: [reloadedFile], nextCursor: null })
     mocks.refreshLocalFileAvailability.mockResolvedValue({ files: [reloadedFile] })
     mocks.getExportTasks.mockResolvedValue({ tasks: [], nextCursor: null })
-    mocks.getDownloadTasks.mockResolvedValue({ tasks: [] })
+  mocks.getDownloadedResourceKeys.mockResolvedValue({ keys: [] })
     mocks.stateInvalidatedHandler?.()
     await flushPromises()
 

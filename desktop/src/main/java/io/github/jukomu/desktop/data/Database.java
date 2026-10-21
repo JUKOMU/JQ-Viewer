@@ -11,7 +11,7 @@ import java.util.List;
  * 管理本地 SQLite 连接，并提供版本化 schema 迁移入口。
  */
 public final class Database implements AutoCloseable {
-    private static final int SCHEMA_VERSION = 11;
+    private static final int SCHEMA_VERSION = 12;
     private static final int BUSY_TIMEOUT_MILLIS = 5_000;
 
     private final Path databasePath;
@@ -145,6 +145,10 @@ public final class Database implements AutoCloseable {
                 + "ON download_tasks(created_at DESC)");
             statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_download_tasks_chapter "
                 + "ON download_tasks(album_id, chapter_id)");
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_download_tasks_status_created "
+                + "ON download_tasks(status, created_at DESC, task_id)");
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_download_tasks_status_album "
+                + "ON download_tasks(status, album_id, chapter_id)");
             statement.executeUpdate("CREATE TABLE IF NOT EXISTS download_pages ("
                 + "task_id TEXT NOT NULL,"
                 + " sort_order INTEGER NOT NULL,"
@@ -180,6 +184,7 @@ public final class Database implements AutoCloseable {
                 migrateV8ToV9(connection);
                 migrateV9ToV10(connection);
                 migrateV10ToV11(connection);
+                migrateV11ToV12(connection);
             });
             return;
         }
@@ -187,11 +192,19 @@ public final class Database implements AutoCloseable {
             transaction(connection, () -> {
                 migrateV9ToV10(connection);
                 migrateV10ToV11(connection);
+                migrateV11ToV12(connection);
             });
             return;
         }
         if (currentVersion == 10) {
-            transaction(connection, () -> migrateV10ToV11(connection));
+            transaction(connection, () -> {
+                migrateV10ToV11(connection);
+                migrateV11ToV12(connection);
+            });
+            return;
+        }
+        if (currentVersion == 11) {
+            transaction(connection, () -> migrateV11ToV12(connection));
             return;
         }
         if (currentVersion != SCHEMA_VERSION) {
@@ -379,6 +392,16 @@ public final class Database implements AutoCloseable {
         }
         try (Statement statement = connection.createStatement()) {
             statement.executeUpdate("UPDATE desktop_schema_version SET version=11");
+        }
+    }
+
+    private static void migrateV11ToV12(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_download_tasks_status_created "
+                + "ON download_tasks(status, created_at DESC, task_id)");
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_download_tasks_status_album "
+                + "ON download_tasks(status, album_id, chapter_id)");
+            statement.executeUpdate("UPDATE desktop_schema_version SET version=12");
         }
     }
 

@@ -22,7 +22,9 @@ import org.slf4j.LoggerFactory;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -155,12 +157,56 @@ public final class DownloadService implements AutoCloseable {
         return new DownloadSubmissionResponse(taskId);
     }
 
-    public DownloadTasksResponse getDownloadTasks() {
-        return new DownloadTasksResponse(
-            store.listTasks().stream().map(this::response).toList(),
-            files.usedBytes(),
-            files.availableBytes()
-        );
+    public DownloadTasksPageResponse getDownloadTasksPage(DownloadTasksPageRequest request) {
+        DownloadTasksPageRequest query = request == null
+            ? new DownloadTasksPageRequest("active", "time", "desc", null, 50) : request;
+        DownloadStore.TaskPage page = store.page(query.status(), query.sort(), query.direction(),
+            query.cursor(), query.effectiveLimit());
+        List<?> items = "completed".equals(query.status())
+            ? page.albums().stream().map(this::completedResponse).toList()
+            : page.tasks().stream().map(this::response).toList();
+        return new DownloadTasksPageResponse(items, page.nextCursor(), page.previousCursor(),
+            page.totalCount(), files.usedBytes(), files.availableBytes());
+    }
+
+    public List<String> getCompletedDownloadAlbumIds(List<String> albumIds) {
+        return store.completedAlbumIds(albumIds);
+    }
+
+    public List<DownloadTaskResponse> getCompletedDownloadChapters(String albumId) {
+        return store.completedChapters(requiredText(albumId, "albumId")).stream()
+            .map(this::response).toList();
+    }
+
+    public List<DownloadTaskResponse> getDownloadTaskStatuses(String albumId) {
+        return store.taskStatuses(requiredText(albumId, "albumId")).stream()
+            .map(this::response).toList();
+    }
+
+    public List<DownloadProgressResponse> getActiveDownloadProgress() {
+        return store.activeProgress().stream().map(task -> new DownloadProgressResponse(
+            task.taskId(), task.albumId(), task.chapterId(), task.downloadedPages(),
+            task.totalPages(), task.status(), task.downloadedBytes(), task.totalSize())).toList();
+    }
+
+    public List<String> getDownloadedResourceKeys(List<DownloadResourceKeysRequest.Item> items) {
+        List<String> albums = items == null ? List.of() : items.stream().map(DownloadResourceKeysRequest.Item::albumId).toList();
+        List<String> chapters = items == null ? List.of() : items.stream().map(DownloadResourceKeysRequest.Item::chapterId).toList();
+        return store.completedResourceKeys(albums, chapters);
+    }
+
+    public Map<String, Integer> clearDownloadTasks(String status) {
+        if (!STATUS_COMPLETED.equals(status) && !STATUS_FAILED.equals(status)) {
+            throw ApiException.invalidRequest("status 必须是 completed 或 failed");
+        }
+        List<StoredDownloadTask> tasks = store.tasksByStatus(status);
+        List<String> taskIds = new ArrayList<>();
+        for (StoredDownloadTask task : tasks) {
+            files.cleanup(task.relativeDirectory());
+            taskIds.add(task.taskId());
+        }
+        int deleted = store.deleteTasksByStatus(taskIds, status);
+        return Map.of("deletedCount", deleted, "failedCount", 0);
     }
 
     public void pauseDownload(String taskId) {
@@ -585,6 +631,14 @@ public final class DownloadService implements AutoCloseable {
             task.totalPages(), task.downloadedPages(), task.status(), task.createdAt(), task.completedAt(),
             task.error(), task.downloadedBytes(), task.totalSize()
         );
+    }
+
+    private CompletedDownloadGroupResponse completedResponse(DownloadStore.CompletedAlbum album) {
+        List<DownloadTaskResponse> chapters = album.chapters().stream().map(this::response).toList();
+        return new CompletedDownloadGroupResponse(
+            chapters.size() == 1 ? "single" : "multi", album.albumId(), album.albumTitle(),
+            album.coverUrl(), album.author(), album.singleEpisode(), chapters,
+            album.totalSize(), album.completedAt());
     }
 
     private static boolean isActive(String status) {

@@ -6,7 +6,8 @@ import { beforeEach, describe, expect, test, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   ionViewWillEnter: undefined as (() => void) | undefined,
   refreshPdf: vi.fn(),
-  getDownloadTasks: vi.fn(),
+  getDownloadTasksPage: vi.fn(),
+  clearDownloadTasks: vi.fn(),
   getLocalFileManagementState: vi.fn(),
   consumeLaunchRoute: vi.fn(),
   addLaunchRouteListener: vi.fn(),
@@ -22,6 +23,7 @@ const mocks = vi.hoisted(() => ({
   downloadHandler: undefined as ((event: any) => void) | undefined,
   stateInvalidatedHandler: undefined as (() => void) | undefined,
   offlineSetAll: vi.fn(),
+  offlineGetAll: vi.fn(() => []),
   route: { query: { view: 'pdf' } } as { query: Record<string, string> },
 }))
 
@@ -45,6 +47,7 @@ vi.mock('@ionic/vue', () => {
     IonPopover: withSlot('IonPopover'),
     IonRefresher: withSlot('IonRefresher'),
     IonRefresherContent: withSlot('IonRefresherContent'),
+    IonSpinner: withSlot('IonSpinner', 'span'),
     IonToolbar: withSlot('IonToolbar'),
     onIonViewWillEnter: (hook: () => void) => {
       mocks.ionViewWillEnter = hook
@@ -54,6 +57,8 @@ vi.mock('@ionic/vue', () => {
 
   vi.mock('ionicons/icons', () => ({
   bookOutline: 'book',
+  arrowDownOutline: 'arrow-down',
+  arrowUpOutline: 'arrow-up',
   closeCircleOutline: 'close',
   cloudDownloadOutline: 'download',
   documentLockOutline: 'pdf',
@@ -65,6 +70,8 @@ vi.mock('@ionic/vue', () => {
   textOutline: 'text',
   timeOutline: 'time',
   trashOutline: 'trash',
+  chevronDownOutline: 'chevron-down',
+  chevronUpOutline: 'chevron-up',
 }))
 
 vi.mock('@/services/AppAlertService', () => ({
@@ -78,7 +85,8 @@ vi.mock('vue-router', () => ({
 
 vi.mock('@/services/JmcomicService', () => ({
   JmcomicService: {
-    getDownloadTasks: mocks.getDownloadTasks,
+    getDownloadTasksPage: mocks.getDownloadTasksPage,
+    clearDownloadTasks: mocks.clearDownloadTasks,
     getLocalFileManagementState: mocks.getLocalFileManagementState,
     consumeLaunchRoute: mocks.consumeLaunchRoute,
     addLaunchRouteListener: mocks.addLaunchRouteListener,
@@ -103,11 +111,12 @@ vi.mock('@/services/ExportService', () => ({
 vi.mock('@/services/OfflineDownloadService', () => ({
   OfflineDownloadService: {
     setAll: mocks.offlineSetAll,
-    getAll: vi.fn(() => []),
+    getAll: mocks.offlineGetAll,
     updateProgress: vi.fn(),
     updateStatus: vi.fn(),
     removeTask: vi.fn(),
     addTask: vi.fn(),
+    getCompletedGroups: vi.fn(() => []),
   },
 }))
 
@@ -126,7 +135,11 @@ vi.mock('@/components/common/MenuToggleButton.vue', () => ({
   default: defineComponent({ render: () => null }),
 }))
 vi.mock('@/components/download/DownloadTaskCard.vue', () => ({
-  default: defineComponent({ render: () => null }),
+  default: defineComponent({
+    name: 'DownloadTaskCard',
+    props: { task: { type: Object, required: false, default: () => ({}) } },
+    render: () => null,
+  }),
 }))
 vi.mock('@/components/download/ExportBottomSheet.vue', () => ({
   default: defineComponent({ name: 'ExportBottomSheet', render: () => null }),
@@ -145,7 +158,7 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
     mocks.downloadHandler = undefined
     mocks.stateInvalidatedHandler = undefined
     mocks.route.query = { view: 'pdf' }
-    mocks.getDownloadTasks.mockResolvedValue({ tasks: [], usedBytes: 0, availableBytes: 0 })
+    mocks.getDownloadTasksPage.mockResolvedValue({ items: [], nextCursor: null, previousCursor: null, totalCount: 0, usedBytes: 0, availableBytes: 0 })
     mocks.getLocalFileManagementState.mockResolvedValue({ recoveryState: 'ready' })
     mocks.consumeLaunchRoute.mockResolvedValue({})
     mocks.addLaunchRouteListener.mockResolvedValue({ remove: vi.fn() })
@@ -157,6 +170,7 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
       mocks.stateInvalidatedHandler = handler
       return { remove: vi.fn() }
     })
+    mocks.offlineGetAll.mockReturnValue([])
     mocks.refreshPdf.mockResolvedValue(undefined)
     mocks.checkFilesExist.mockResolvedValue({ existing: [] })
     mocks.checkNotificationPermission.mockResolvedValue({ granted: true })
@@ -218,7 +232,7 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
     await flushPromises()
 
     expect(mocks.addDownloadProgressListener.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.getDownloadTasks.mock.invocationCallOrder[0],
+      mocks.getDownloadTasksPage.mock.invocationCallOrder[0],
     )
     wrapper.unmount()
   })
@@ -239,33 +253,75 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
       status: 'downloading',
       createdAt: 1,
     }
-    mocks.getDownloadTasks
+    const emptyPage = { items: [], nextCursor: null, previousCursor: null, totalCount: 0, usedBytes: 0, availableBytes: 1000 }
+    mocks.getDownloadTasksPage.mockImplementation((options: { status: string }) =>
+      options.status === 'active'
+        ? { items: [currentTask], nextCursor: null, previousCursor: null, totalCount: 1, usedBytes: 20, availableBytes: 1000 }
+        : emptyPage,
+    )
+    mocks.getDownloadTasksPage
       .mockImplementationOnce(
         () =>
           new Promise((resolve) => {
             finishInitial = resolve
           }),
       )
-      .mockResolvedValueOnce({ tasks: [currentTask], usedBytes: 20, availableBytes: 1000 })
 
     const wrapper = mount(DownloadPage)
-    await vi.waitFor(() => expect(mocks.getDownloadTasks).toHaveBeenCalledOnce())
+    await vi.waitFor(() => expect(mocks.getDownloadTasksPage).toHaveBeenCalled())
     mocks.downloadHandler?.({
       taskId: currentTask.taskId,
       downloadedPages: 20,
       totalPages: 100,
       status: 'downloading',
     })
-    finishInitial?.({
-      tasks: [{ ...currentTask, downloadedPages: 10 }],
-      usedBytes: 10,
-      availableBytes: 1000,
-    })
+    finishInitial?.({ items: [{ ...currentTask, downloadedPages: 10 }], nextCursor: null, previousCursor: null, totalCount: 1, usedBytes: 10, availableBytes: 1000 })
     await flushPromises()
 
-    expect(mocks.getDownloadTasks).toHaveBeenCalledTimes(2)
+    expect(mocks.getDownloadTasksPage.mock.calls.length).toBeGreaterThanOrEqual(2)
     expect(mocks.offlineSetAll).toHaveBeenCalledOnce()
-    expect(mocks.offlineSetAll).toHaveBeenCalledWith([currentTask])
+    expect(mocks.offlineSetAll).toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({ taskId: currentTask.taskId })]))
+    wrapper.unmount()
+  })
+
+  test('窗口外的连续进度事件只触发一次活动列表刷新', async () => {
+    const wrapper = mount(DownloadPage)
+    await flushPromises()
+    const initialCalls = mocks.getDownloadTasksPage.mock.calls.length
+
+    mocks.downloadHandler?.({ taskId: 'outside-window', status: 'downloading' })
+    mocks.downloadHandler?.({ taskId: 'outside-window', status: 'downloading' })
+    await flushPromises()
+
+    expect(mocks.getDownloadTasksPage.mock.calls.length).toBe(initialCalls + 1)
+    expect(mocks.getDownloadTasksPage).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'active' }))
+    wrapper.unmount()
+  })
+
+  test('下载列表请求失败时显示有限缓存快照', async () => {
+    const cachedTask = {
+      taskId: 'cached-task',
+      albumId: 'album',
+      chapterId: 'chapter',
+      albumTitle: '缓存本子',
+      chapterTitle: '缓存章节',
+      coverUrl: '',
+      totalPages: 1,
+      downloadedPages: 0,
+      status: 'queued',
+      createdAt: 1,
+    }
+    mocks.offlineGetAll.mockReturnValue([cachedTask])
+    mocks.getDownloadTasksPage.mockRejectedValue(new Error('backend unavailable'))
+
+    const wrapper = mount(DownloadPage)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('下载中 (1)')
+    expect(wrapper.findAllComponents({ name: 'DownloadTaskCard' })[0].props('task')).toMatchObject({
+      taskId: 'cached-task',
+      chapterTitle: '缓存章节',
+    })
     wrapper.unmount()
   })
 

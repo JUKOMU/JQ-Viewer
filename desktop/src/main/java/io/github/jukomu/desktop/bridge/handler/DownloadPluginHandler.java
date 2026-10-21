@@ -6,7 +6,13 @@ import io.github.jukomu.desktop.feature.download.DownloadService;
 import io.github.jukomu.desktop.feature.download.model.DownloadChapterRequest;
 import io.github.jukomu.desktop.feature.download.model.DownloadTaskIdRequest;
 import io.github.jukomu.desktop.feature.download.model.DownloadedChapterRequest;
+import io.github.jukomu.desktop.feature.download.model.DownloadTasksPageRequest;
+import io.github.jukomu.desktop.feature.download.model.DownloadResourceKeysRequest;
+import io.github.jukomu.desktop.feature.download.model.ClearDownloadTasksRequest;
 import io.javalin.http.Context;
+
+import java.util.List;
+import java.util.Map;
 
 import static io.github.jukomu.desktop.util.RequestValidation.requiredText;
 
@@ -26,8 +32,44 @@ public final class DownloadPluginHandler {
         requests.runLongOperation(context, DownloadChapterRequest.class, downloads::downloadChapter);
     }
 
-    public void getDownloadTasks(Context context) {
-        requests.runLongOperation(context, downloads::getDownloadTasks);
+    public void getDownloadTasksPage(Context context) {
+        requests.runLongOperation(context, DownloadTasksPageRequest.class,
+            downloads::getDownloadTasksPage);
+    }
+
+    public void getCompletedDownloadAlbumIds(Context context) {
+        requests.run(context, AlbumIdsRequest.class,
+            request -> Map.of("albumIds", downloads.getCompletedDownloadAlbumIds(request.albumIds())));
+    }
+
+    public void getDownloadTaskStatuses(Context context) {
+        requests.run(context, DownloadedChapterRequest.class, request -> Map.of(
+            "statuses", downloads.getDownloadTaskStatuses(requiredText(request.albumId(), "albumId"))
+                .stream().map(task -> Map.of("chapterId", task.chapterId(), "status", task.status())).toList()));
+    }
+
+    public void getCompletedDownloadChapters(Context context) {
+        requests.run(context, DownloadedChapterRequest.class, request -> Map.of(
+            "tasks", downloads.getCompletedDownloadChapters(requiredText(request.albumId(), "albumId"))));
+    }
+
+    public void getActiveDownloadProgress(Context context) {
+        requests.runLongOperation(context, () -> Map.of(
+            "tasks", downloads.getActiveDownloadProgress()));
+    }
+
+    public void getDownloadedResourceKeys(Context context) {
+        requests.run(context, DownloadResourceKeysRequest.class, request -> Map.of(
+            "keys", downloads.getDownloadedResourceKeys(request.items())));
+    }
+
+    public void clearDownloadTasks(Context context) {
+        requests.runLongOperation(context, ClearDownloadTasksRequest.class, request -> {
+            Map<String, Integer> result = downloads.clearDownloadTasks(
+                requiredText(request.status(), "status"));
+            return Map.of("success", true, "deletedCount", result.get("deletedCount"),
+                "failedCount", result.get("failedCount"));
+        });
     }
 
     public void cancelDownload(Context context) {
@@ -65,5 +107,8 @@ public final class DownloadPluginHandler {
             request -> downloads.getDownloadedPhoto(
                 requiredText(request.albumId(), "albumId"),
                 requiredText(request.chapterId(), "chapterId")));
+    }
+
+    public record AlbumIdsRequest(List<String> albumIds) {
     }
 }

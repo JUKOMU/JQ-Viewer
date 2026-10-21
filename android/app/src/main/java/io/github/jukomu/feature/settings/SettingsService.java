@@ -232,13 +232,7 @@ public class SettingsService {
             return "需要存储权限。请先调用 requestManageStorage 授权。";
         }
 
-        List<JSONObject> tasks = downloadDb.getAllTasks();
-        for (JSONObject t : tasks) {
-            String s = t.optString("status");
-            if (!DownloadService.STATUS_COMPLETED.equals(s) && !DownloadService.STATUS_FAILED.equals(s)) {
-                return "有下载任务未完成，请等待全部完成或取消后再切换";
-            }
-        }
+        if (downloadDb.hasActiveTasks()) return "有下载任务未完成，请等待全部完成或取消后再切换";
         return null;
     }
 

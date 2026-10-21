@@ -307,9 +307,32 @@ export const JmcomicService = {
     return native.downloadChapter({ albumId, chapterId, albumTitle, chapterTitle, coverUrl })
   },
 
-  /** 获取全部下载任务列表 */
-  getDownloadTasks() {
-    return native.getDownloadTasks()
+  getDownloadTasksPage(options: Parameters<typeof native.getDownloadTasksPage>[0]) {
+    return native.getDownloadTasksPage(options)
+  },
+
+  getCompletedDownloadAlbumIds(albumIds: string[]) {
+    return native.getCompletedDownloadAlbumIds({ albumIds })
+  },
+
+  getDownloadTaskStatuses(albumId: string) {
+    return native.getDownloadTaskStatuses({ albumId })
+  },
+
+  getCompletedDownloadChapters(albumId: string) {
+    return native.getCompletedDownloadChapters({ albumId })
+  },
+
+  getActiveDownloadProgress() {
+    return native.getActiveDownloadProgress()
+  },
+
+  getDownloadedResourceKeys(items: Array<{ albumId: string; chapterId: string }>) {
+    return native.getDownloadedResourceKeys({ items })
+  },
+
+  clearDownloadTasks(status: 'completed' | 'failed') {
+    return native.clearDownloadTasks({ status })
   },
 
   /** 取消/删除下载任务 */

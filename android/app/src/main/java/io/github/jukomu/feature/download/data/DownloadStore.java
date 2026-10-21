@@ -13,7 +13,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 下载任务 SQLite 数据库（权威数据源）。
@@ -25,7 +27,7 @@ import java.util.List;
 public class DownloadStore extends SQLiteOpenHelper implements DownloadTaskReader {
     private static final Logger LOGGER = LoggerFactory.getLogger(DownloadStore.class);
     private static final String DB_NAME = "jq_download.db";
-    private static final int DB_VERSION = 5;
+    private static final int DB_VERSION = 6;
 
     // ---- 表名 ----
     static final String TABLE_TASKS = "download_tasks";
@@ -108,6 +110,7 @@ public class DownloadStore extends SQLiteOpenHelper implements DownloadTaskReade
             + "PRIMARY KEY (" + COL_TASK_ID + ", " + COL_SORT_ORDER + "),"
             + "FOREIGN KEY (" + COL_TASK_ID + ") REFERENCES " + TABLE_TASKS + "(" + COL_TASK_ID + ")"
             + ")");
+        createQueryIndexes(db);
     }
 
     @Override
@@ -123,6 +126,9 @@ public class DownloadStore extends SQLiteOpenHelper implements DownloadTaskReade
         }
         if (oldVersion < 5) {
             db.execSQL("ALTER TABLE " + TABLE_TASKS + " ADD COLUMN " + COL_AUTHORS + " TEXT DEFAULT '[]'");
+        }
+        if (oldVersion < 6) {
+            createQueryIndexes(db);
         }
     }
 
@@ -252,6 +258,384 @@ public class DownloadStore extends SQLiteOpenHelper implements DownloadTaskReade
             }
         }
         return list;
+    }
+
+    public List<JSONObject> getActiveTasks() {
+        return queryTasks(COL_STATUS + " IN (?, ?, ?, ?)",
+            new String[]{"queued", "downloading", "paused", "verifying"},
+            COL_CREATED_AT + " ASC, " + COL_TASK_ID + " ASC", null);
+    }
+
+    public List<JSONObject> getCompletedTasks() {
+        return queryTasks(COL_STATUS + " = ?", new String[]{"completed"},
+            COL_ALBUM_ID + " ASC, " + COL_CHAPTER_ID + " ASC", null);
+    }
+
+    public List<JSONObject> getTasksByStatus(String status) {
+        if (!"completed".equals(status) && !"failed".equals(status)) {
+            throw new IllegalArgumentException("status 必须是 completed 或 failed");
+        }
+        return queryTasks(COL_STATUS + " = ?", new String[]{status}, COL_TASK_ID + " ASC", null);
+    }
+
+    public int deleteTasksByStatus(List<String> taskIds, String status) {
+        SQLiteDatabase db = getWritableDatabase();
+        int deleted = 0;
+        db.beginTransaction();
+        try {
+            for (String taskId : taskIds) {
+                int taskDeleted = db.delete(TABLE_TASKS,
+                    COL_TASK_ID + " = ? AND " + COL_STATUS + " = ?",
+                    new String[]{taskId, status});
+                if (taskDeleted > 0) {
+                    db.delete(TABLE_IMAGES, COL_TASK_ID + " = ?", new String[]{taskId});
+                    deleted += taskDeleted;
+                }
+            }
+            db.setTransactionSuccessful();
+        } finally {
+            db.endTransaction();
+        }
+        return deleted;
+    }
+
+    public boolean hasActiveTasks() {
+        try (Cursor c = getReadableDatabase().query(TABLE_TASKS, new String[]{COL_TASK_ID},
+            COL_STATUS + " IN (?, ?, ?, ?)",
+            new String[]{"queued", "downloading", "paused", "verifying"}, null, null, null, "1")) {
+            return c.moveToFirst();
+        }
+    }
+
+    public JSONObject getTasksPage(String status, String sort, String direction,
+                                   String cursor, int requestedLimit) throws org.json.JSONException {
+        String normalizedStatus = normalizeStatus(status);
+        String normalizedSort = normalizeSort(sort);
+        String normalizedDirection = "desc".equalsIgnoreCase(direction) ? "desc" : "asc";
+        int limit = Math.max(1, Math.min(50, requestedLimit));
+        CursorBoundary boundary = CursorBoundary.decode(cursor, normalizedStatus, normalizedSort,
+            normalizedDirection);
+        String queryDirection = boundary != null && boundary.previous
+            ? flip(normalizedDirection) : normalizedDirection;
+        // completed 先按 album 聚合并分页，再批量展开章节，保证同一本子不会跨页。
+        if ("completed".equals(normalizedStatus)) {
+            return completedPage(normalizedSort, normalizedDirection, queryDirection, boundary, limit);
+        }
+        String selection = "active".equals(normalizedStatus)
+            ? COL_STATUS + " IN (?, ?, ?, ?)" : COL_STATUS + " = ?";
+        String[] args = "active".equals(normalizedStatus)
+            ? new String[]{"queued", "downloading", "paused", "verifying"}
+            : new String[]{"failed"};
+        String value = sortColumn(normalizedSort);
+        String order = orderClause(value, queryDirection, COL_TASK_ID, boundary != null && boundary.previous);
+        if (boundary != null) {
+            selection += " AND " + keysetClause(value, queryDirection, COL_TASK_ID,
+                boundary.previous);
+            args = append(args, boundary.nullFlag(), boundary.nullFlag(), boundary.value,
+                boundary.stable);
+        }
+        List<JSONObject> tasks = queryTasks(selection, args, order, Integer.toString(limit + 1));
+        boolean hasNext = tasks.size() > limit;
+        if (hasNext) tasks = new ArrayList<>(tasks.subList(0, limit));
+        if (boundary != null && boundary.previous) java.util.Collections.reverse(tasks);
+        JSONArray items = new JSONArray();
+        for (JSONObject task : tasks) items.put(task);
+        JSONObject result = new JSONObject();
+        result.put("items", items);
+        result.put("nextCursor", (boundary != null && boundary.previous || hasNext) && !tasks.isEmpty()
+            ? CursorBoundary.from(tasks.get(tasks.size() - 1), normalizedSort)
+                .encode(false, normalizedStatus, normalizedSort, normalizedDirection) : JSONObject.NULL);
+        result.put("previousCursor", boundary != null && (!boundary.previous || hasNext) && !tasks.isEmpty()
+            ? CursorBoundary.from(tasks.get(0), normalizedSort)
+                .encode(true, normalizedStatus, normalizedSort, normalizedDirection) : JSONObject.NULL);
+        result.put("totalCount", "completed".equals(normalizedStatus)
+            ? countCompletedAlbums() : countTasks(normalizedStatus));
+        return result;
+    }
+
+    public List<JSONObject> getCompletedChapters(String albumId) {
+        return queryTasks(COL_ALBUM_ID + " = ? AND " + COL_STATUS + " = ?",
+            new String[]{albumId, "completed"}, COL_CHAPTER_ID + " ASC", null);
+    }
+
+    public List<String> getCompletedAlbumIds(List<String> albumIds) {
+        if (albumIds == null || albumIds.isEmpty()) return List.of();
+        String[] args = albumIds.toArray(new String[0]);
+        String placeholders = String.join(",", java.util.Collections.nCopies(args.length, "?"));
+        List<String> result = new ArrayList<>();
+        try (Cursor c = getReadableDatabase().rawQuery(
+            "SELECT DISTINCT " + COL_ALBUM_ID + " FROM " + TABLE_TASKS + " WHERE " + COL_STATUS
+                + "='completed' AND " + COL_ALBUM_ID + " IN (" + placeholders + ")", args)) {
+            while (c.moveToNext()) result.add(c.getString(0));
+        }
+        return result;
+    }
+
+    public List<JSONObject> getAlbumTaskStatuses(String albumId) {
+        return queryTasks(COL_ALBUM_ID + " = ?", new String[]{albumId},
+            COL_CHAPTER_ID + " ASC", null);
+    }
+
+    public List<JSONObject> getActiveProgress() {
+        return getActiveTasks();
+    }
+
+    public List<String> getCompletedResourceKeys(List<String> albumIds, List<String> chapterIds) {
+        if (albumIds == null || chapterIds == null || albumIds.size() != chapterIds.size()) return List.of();
+        if (albumIds.isEmpty()) return List.of();
+        String predicate = String.join(" OR ", java.util.Collections.nCopies(albumIds.size(),
+            "(" + COL_ALBUM_ID + "=? AND " + COL_CHAPTER_ID + "=?)"));
+        String[] args = new String[albumIds.size() * 2];
+        for (int i = 0; i < albumIds.size(); i++) {
+            args[i * 2] = albumIds.get(i);
+            args[i * 2 + 1] = chapterIds.get(i);
+        }
+        java.util.Set<String> completed = new java.util.HashSet<>();
+        try (Cursor c = getReadableDatabase().rawQuery(
+            "SELECT " + COL_ALBUM_ID + "," + COL_CHAPTER_ID + " FROM " + TABLE_TASKS
+                + " WHERE " + COL_STATUS + "='completed' AND (" + predicate + ")", args)) {
+            while (c.moveToNext()) completed.add(c.getString(0) + "|" + c.getString(1));
+        }
+        List<String> result = new ArrayList<>();
+        for (int i = 0; i < albumIds.size(); i++) {
+            String key = albumIds.get(i) + "|" + chapterIds.get(i);
+            if (completed.contains(key)) result.add(key);
+        }
+        return result;
+    }
+
+    public int countTasks(String status) {
+        String selection = "active".equals(status)
+            ? COL_STATUS + " IN (?, ?, ?, ?)" : COL_STATUS + " = ?";
+        String[] args = "active".equals(status)
+            ? new String[]{"queued", "downloading", "paused", "verifying"}
+            : new String[]{status};
+        if ("completed".equals(status)) selection = COL_STATUS + " = ?";
+        try (Cursor c = getReadableDatabase().query(TABLE_TASKS,
+            new String[]{"COUNT(*)"}, selection, args, null, null, null)) {
+            return c.moveToFirst() ? c.getInt(0) : 0;
+        }
+    }
+
+    public int countCompletedAlbums() {
+        try (Cursor c = getReadableDatabase().rawQuery(
+            "SELECT COUNT(DISTINCT " + COL_ALBUM_ID + ") FROM " + TABLE_TASKS
+                + " WHERE " + COL_STATUS + "='completed'", null)) {
+            return c.moveToFirst() ? c.getInt(0) : 0;
+        }
+    }
+
+    private List<JSONObject> queryTasks(String selection, String[] args, String order, String limit) {
+        List<JSONObject> list = new ArrayList<>();
+        try (Cursor c = getReadableDatabase().query(TABLE_TASKS, null, selection, args,
+            null, null, order, limit)) {
+            while (c.moveToNext()) {
+                JSONObject task = cursorToTaskJson(c);
+                if (task != null) list.add(task);
+            }
+        }
+        return list;
+    }
+
+    private JSONObject completedPage(String sort, String direction, String queryDirection,
+                                     CursorBoundary boundary, int limit) throws org.json.JSONException {
+        String value = switch (sort) {
+            case "title" -> "g.album_title";
+            case "id" -> "g.album_id";
+            case "author" -> "r.author";
+            default -> "g.latest_completed_at";
+        };
+        String selection = boundary == null ? "" : " AND " + keysetClause(value, queryDirection,
+            "g.album_id", boundary.previous)
+            .replace("task_id", "g.album_id");
+        String order = orderClause(value, queryDirection, "g.album_id", boundary != null && boundary.previous);
+        // 代表章节使用最小 chapter_id；author/cover/isSingleEpisode 均从同一条记录读取。
+        String sql = "SELECT g.album_id,g.album_title,g.latest_completed_at,g.total_size,g.rep_chapter_id,"
+            + "r.cover_url,r.author,r.authors_json,r.is_single_episode FROM (SELECT album_id,"
+            + "MIN(album_title) album_title,MAX(completed_at) latest_completed_at,SUM(total_size) total_size,"
+            + "MIN(chapter_id) rep_chapter_id FROM download_tasks WHERE status='completed' GROUP BY album_id) g "
+            + "JOIN download_tasks r ON r.album_id=g.album_id AND r.chapter_id=g.rep_chapter_id "
+            + "AND r.status='completed' WHERE 1=1" + selection + " ORDER BY " + order + " LIMIT ?";
+        List<JSONObject> rows = new ArrayList<>();
+        String[] args = boundary == null ? new String[0]
+            : new String[]{Integer.toString(boundary.nullFlag()), Integer.toString(boundary.nullFlag()),
+                boundary.value, boundary.stable};
+        try {
+            try (Cursor c = getReadableDatabase().rawQuery(sql, append(args, Integer.toString(limit + 1)))) {
+                while (c.moveToNext()) {
+                    JSONObject group = new JSONObject();
+                    group.put("albumId", c.getString(0));
+                    group.put("albumTitle", c.getString(1));
+                    group.put("coverUrl", c.getString(5));
+                    group.put("author", c.getString(6));
+                    group.put("completedAt", c.getLong(2));
+                    group.put("totalSize", c.getLong(3));
+                    if (!c.isNull(8) && c.getInt(8) >= 0) {
+                        group.put("isSingleEpisode", c.getInt(8) == 1);
+                    }
+                    rows.add(group);
+                }
+            }
+
+            Map<String, List<JSONObject>> chaptersByAlbum = new HashMap<>();
+            if (!rows.isEmpty()) {
+                List<String> albumIds = new ArrayList<>();
+                for (JSONObject row : rows) albumIds.add(row.optString("albumId"));
+                String placeholders = String.join(",",
+                    java.util.Collections.nCopies(albumIds.size(), "?"));
+                try (Cursor chapters = getReadableDatabase().rawQuery(
+                    "SELECT * FROM " + TABLE_TASKS + " WHERE " + COL_STATUS + "='completed' AND "
+                        + COL_ALBUM_ID + " IN (" + placeholders + ") ORDER BY " + COL_CHAPTER_ID
+                        + " ASC", albumIds.toArray(new String[0]))) {
+                    while (chapters.moveToNext()) {
+                        JSONObject chapter = cursorToTaskJson(chapters);
+                        if (chapter != null) {
+                            chaptersByAlbum.computeIfAbsent(chapter.optString("albumId"),
+                                ignored -> new ArrayList<>()).add(chapter);
+                        }
+                    }
+                }
+            }
+
+            for (JSONObject group : rows) {
+                JSONArray chapters = new JSONArray();
+                List<JSONObject> albumChapters = chaptersByAlbum.get(group.optString("albumId"));
+                if (albumChapters != null) {
+                    for (JSONObject chapter : albumChapters) chapters.put(chapter);
+                }
+                group.put("chapters", chapters);
+                group.put("type", chapters.length() == 1 ? "single" : "multi");
+            }
+        } catch (Exception error) {
+            throw new IllegalStateException("读取已完成本子分页失败", error);
+        }
+        boolean hasNext = rows.size() > limit;
+        if (hasNext) rows = new ArrayList<>(rows.subList(0, limit));
+        if (boundary != null && boundary.previous) java.util.Collections.reverse(rows);
+        JSONArray items = new JSONArray();
+        for (JSONObject row : rows) items.put(row);
+        JSONObject result = new JSONObject();
+        result.put("items", items);
+        result.put("nextCursor", (boundary != null && boundary.previous || hasNext) && !rows.isEmpty()
+            ? CursorBoundary.from(rows.get(rows.size() - 1), sort)
+                .encode(false, "completed", sort, direction) : JSONObject.NULL);
+        result.put("previousCursor", boundary != null && (!boundary.previous || hasNext) && !rows.isEmpty()
+            ? CursorBoundary.from(rows.get(0), sort)
+                .encode(true, "completed", sort, direction) : JSONObject.NULL);
+        result.put("totalCount", countCompletedAlbums());
+        return result;
+    }
+
+    private static String normalizeStatus(String status) {
+        if ("active".equals(status) || "completed".equals(status) || "failed".equals(status)) return status;
+        throw new IllegalArgumentException("status 无效");
+    }
+
+    private static String normalizeSort(String sort) {
+        if ("time".equals(sort) || "title".equals(sort) || "id".equals(sort) || "author".equals(sort)) return sort;
+        throw new IllegalArgumentException("sort 无效");
+    }
+
+    private static String sortColumn(String sort) {
+        return switch (sort) {
+            case "title" -> COL_ALBUM_TITLE;
+            case "id" -> COL_ALBUM_ID;
+            case "author" -> COL_AUTHOR;
+            default -> COL_CREATED_AT;
+        };
+    }
+
+    private static String orderClause(String value, String direction, String stable, boolean reverseNullRank) {
+        String valueOrder = "desc".equals(direction) ? value + " DESC" : value + " ASC";
+        return "CASE WHEN " + value + " IS NULL OR TRIM(" + value + ")='' THEN 1 ELSE 0 END "
+            + (reverseNullRank ? "DESC," : "ASC,")
+            + valueOrder + "," + stable + ("desc".equals(direction) ? " DESC" : " ASC");
+    }
+
+    private static String keysetClause(String value, String direction, String stable,
+                                      boolean reverseNullRank) {
+        String op = "desc".equals(direction) ? "<" : ">";
+        String nullOp = reverseNullRank ? "<" : ">";
+        String nullFlag = "CASE WHEN " + value + " IS NULL OR TRIM(" + value + ")='' THEN 1 ELSE 0 END";
+        // NULL 与空字符串共享 null-rank；NULL 没有可比较值时，直接使用稳定键继续分页。
+        return "(" + nullFlag + " " + nullOp + " ? OR (" + nullFlag + "=? AND "
+            + "((" + nullFlag + "=0 AND " + value + " " + op + " ?)"
+            + " OR (" + nullFlag + "=1 AND " + stable + " " + op + " ?))))";
+    }
+
+    private static String[] append(String[] values, Object... suffix) {
+        String[] result = java.util.Arrays.copyOf(values, values.length + suffix.length);
+        for (int i = 0; i < suffix.length; i++) result[values.length + i] = String.valueOf(suffix[i]);
+        return result;
+    }
+
+    private static String[] append(String[] values, String value) {
+        return append(values, (Object) value);
+    }
+
+    private static void createQueryIndexes(SQLiteDatabase db) {
+        // 旧版本测试库/用户库可能只有最小任务字段；仅在列齐全时创建对应索引，
+        // 避免升级因 no such column 失败，完整 v5 schema 仍会创建两个索引。
+        if (hasColumn(db, TABLE_TASKS, COL_STATUS)
+            && hasColumn(db, TABLE_TASKS, COL_CREATED_AT)
+            && hasColumn(db, TABLE_TASKS, COL_TASK_ID)) {
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_download_tasks_status_created ON "
+                + TABLE_TASKS + "(status, created_at DESC, task_id)");
+        }
+        if (hasColumn(db, TABLE_TASKS, COL_STATUS)
+            && hasColumn(db, TABLE_TASKS, COL_ALBUM_ID)
+            && hasColumn(db, TABLE_TASKS, COL_CHAPTER_ID)) {
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_download_tasks_status_album ON "
+                + TABLE_TASKS + "(status, album_id, chapter_id)");
+        }
+    }
+
+    private static boolean hasColumn(SQLiteDatabase db, String table, String column) {
+        try (Cursor cursor = db.rawQuery("PRAGMA table_info(" + table + ")", null)) {
+            int nameIndex = cursor.getColumnIndexOrThrow("name");
+            while (cursor.moveToNext()) {
+                if (column.equals(cursor.getString(nameIndex))) return true;
+            }
+            return false;
+        }
+    }
+
+    private static String flip(String direction) {
+        return "desc".equals(direction) ? "asc" : "desc";
+    }
+
+    private static final class CursorBoundary {
+        final String value;
+        final String stable;
+        final boolean previous;
+        CursorBoundary(String value, String stable, boolean previous) {
+            this.value = value;
+            this.stable = stable;
+            this.previous = previous;
+        }
+        int nullFlag() { return value == null || value.isBlank() ? 1 : 0; }
+        String encode(boolean previous, String status, String sort, String direction) {
+            String raw = status + "\u001f" + sort + "\u001f" + direction + "\u001f"
+                + (previous ? "prev" : "next") + "\u001f" + value + "\u001f" + stable;
+            return android.util.Base64.encodeToString(raw.getBytes(java.nio.charset.StandardCharsets.UTF_8), android.util.Base64.URL_SAFE | android.util.Base64.NO_WRAP);
+        }
+        // cursor 绑定查询条件，避免切换状态/排序后误用旧边界；prev 由查询层反转方向。
+        static CursorBoundary decode(String cursor, String status, String sort, String direction) {
+            if (cursor == null || cursor.isBlank()) return null;
+            String raw = new String(android.util.Base64.decode(cursor, android.util.Base64.URL_SAFE), java.nio.charset.StandardCharsets.UTF_8);
+            String[] parts = raw.split("\u001f", -1);
+            if (parts.length != 6 || !status.equals(parts[0]) || !sort.equals(parts[1])
+                || !direction.equals(parts[2])) throw new IllegalArgumentException("cursor 无效");
+            return new CursorBoundary(parts[4], parts[5], "prev".equals(parts[3]));
+        }
+        static CursorBoundary from(JSONObject task, String sort) {
+            String value = "time".equals(sort) ? Long.toString(task.has("completedAt")
+                    ? task.optLong("completedAt") : task.optLong("createdAt"))
+                : "title".equals(sort) ? task.optString("albumTitle")
+                : "author".equals(sort) ? task.optString("author") : task.optString("albumId");
+            String stable = task.has("albumId") ? task.optString("albumId") : task.optString("taskId");
+            return new CursorBoundary(value, stable, false);
+        }
     }
 
     public JSONObject getTask(String taskId) {

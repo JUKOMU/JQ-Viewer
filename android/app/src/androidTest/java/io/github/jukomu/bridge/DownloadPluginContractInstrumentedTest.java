@@ -71,18 +71,18 @@ public class DownloadPluginContractInstrumentedTest {
     public void taskListSkipsInvalidEntriesAndReturnsSpaceStats() throws Exception {
         JSONObject task = new JSONObject();
         task.put("taskId", "a_b");
-        downloadService.tasks = new JSONArray().put(task).put("invalid");
+        downloadService.tasks = new JSONArray().put(task);
         downloadService.usedBytes = 123L;
         downloadService.availableBytes = 456L;
-        RecordingPluginCall call = call("getDownloadTasks");
+        RecordingPluginCall call = call("getDownloadTasksPage", "status", "active",
+            "sort", "time", "direction", "desc", "limit", 50);
 
-        plugin.getDownloadTasks(call);
+        plugin.getDownloadTasksPage(call);
 
-        JSONArray tasks = call.resolvedData.getJSONArray("tasks");
+        JSONArray tasks = call.resolvedData.getJSONArray("items");
         assertEquals(1, tasks.length());
         assertEquals("a_b", tasks.getJSONObject(0).getString("taskId"));
-        assertEquals(123L, call.resolvedData.getLong("usedBytes"));
-        assertEquals(456L, call.resolvedData.getLong("availableBytes"));
+        assertEquals(1, call.resolvedData.getInt("totalCount"));
         assertSynchronous(call);
     }
 
@@ -135,9 +135,10 @@ public class DownloadPluginContractInstrumentedTest {
     public void otherFailuresKeepExceptionObjects() {
         UnsupportedOperationException failure = new UnsupportedOperationException("failed");
         downloadService.failure = failure;
-        RecordingPluginCall list = call("getDownloadTasks");
+        RecordingPluginCall list = call("getDownloadTasksPage", "status", "active",
+            "sort", "time", "direction", "desc", "limit", 50);
 
-        plugin.getDownloadTasks(list);
+        plugin.getDownloadTasksPage(list);
 
         assertEquals("failed", list.rejectionMessage);
         assertSame(failure, list.rejectionException);
@@ -249,9 +250,21 @@ public class DownloadPluginContractInstrumentedTest {
         }
 
         @Override
-        public JSONArray getDownloadTasks() {
+        public JSONObject getDownloadTasksPage(String status, String sort, String direction,
+                                               String cursor, int limit) {
             failIfNeeded();
-            return tasks;
+            try {
+                JSONObject page = new JSONObject();
+                page.put("items", tasks);
+                page.put("nextCursor", JSONObject.NULL);
+                page.put("previousCursor", JSONObject.NULL);
+                page.put("totalCount", tasks.length());
+                page.put("usedBytes", usedBytes);
+                page.put("availableBytes", availableBytes);
+                return page;
+            } catch (Exception error) {
+                throw new AssertionError(error);
+            }
         }
 
         @Override

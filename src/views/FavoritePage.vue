@@ -323,14 +323,10 @@ let downloadProgressHandle: ListenerHandle | null = null
 
 const refreshDownloadStatuses = async () => {
   try {
-    const result = await JmcomicService.getDownloadTasks()
-    if (result?.tasks) {
-      const set = new Set<string>()
-      for (const task of result.tasks) {
-        if (task.status === 'completed') {
-          set.add(task.albumId)
-        }
-      }
+    const albumIds = displayItems.value.map((entry) => entry.item.id)
+    const result = await JmcomicService.getCompletedDownloadAlbumIds(albumIds)
+    if (result?.albumIds) {
+      const set = new Set<string>(result.albumIds)
       try {
         const pdfsResult = await JmcomicService.getImportedLocalFiles()
         if (pdfsResult?.files) {

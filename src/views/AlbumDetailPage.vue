@@ -281,16 +281,8 @@ const previewObjectUrls = new Set<string>()
 
 const refreshDownloadStatuses = async () => {
   try {
-    const result = await JmcomicService.getDownloadTasks()
-    if (result?.tasks) {
-      const map = new Map<string, string>()
-      for (const task of result.tasks) {
-        if (task.albumId === albumId.value) {
-          map.set(task.chapterId, task.status)
-        }
-      }
-      chapterDownloadStatuses.value = map
-    }
+    const result = await JmcomicService.getDownloadTaskStatuses(albumId.value)
+    chapterDownloadStatuses.value = new Map(result.statuses.map((item) => [item.chapterId, item.status]))
   } catch {
     // ignore
   }

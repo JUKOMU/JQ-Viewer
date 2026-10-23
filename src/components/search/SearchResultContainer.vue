@@ -91,6 +91,7 @@
               { 'entry-removing': removingIds?.has(entry.item.id) },
               { 'multi-selected': selectedIds?.has(entry.item.id) },
               { 'multi-unselected': multiSelect && !selectedIds?.has(entry.item.id) },
+              { 'long-pressing': longPressItemId === entry.item.id },
               favBorderClassMap?.[entry.item.id],
             ]"
             @pointerdown="startLongPress(entry.item, $event)"
@@ -270,6 +271,7 @@ const touchStartY = ref<number | null>(null)
 let longPressTimer: ReturnType<typeof setTimeout> | null = null
 let suppressNextClick = false
 let longPressStartPoint: { x: number; y: number } | null = null
+const longPressItemId = ref<string | null>(null)
 
 const startLongPress = (item: SearchResultItem, event: PointerEvent) => {
   if (event.button !== 0 || !event.isPrimary) return
@@ -277,6 +279,7 @@ const startLongPress = (item: SearchResultItem, event: PointerEvent) => {
   longPressStartPoint = { x: event.clientX, y: event.clientY }
   longPressTimer = setTimeout(() => {
     suppressNextClick = true
+    longPressItemId.value = item.id
     emit('long-press', item)
     longPressTimer = null
   }, 500)
@@ -286,6 +289,7 @@ const cancelLongPress = () => {
   if (longPressTimer !== null) clearTimeout(longPressTimer)
   longPressTimer = null
   longPressStartPoint = null
+  longPressItemId.value = null
 }
 
 const handlePointerMove = (event: PointerEvent) => {
@@ -670,6 +674,12 @@ defineExpose<SearchResultContainerExposed>({
   border-radius: 12px;
   background: #fffaf6;
   box-shadow: 5px 12px 28px rgb(76 42 24 / 0.2);
+  transition: transform 0.16s ease;
+}
+
+.list-card.long-pressing:not(.entry-removing),
+.grid-card.long-pressing:not(.entry-removing) {
+  transform: scale(0.98);
 }
 
 .list-card.multi-unselected,
@@ -718,6 +728,7 @@ defineExpose<SearchResultContainerExposed>({
   border-radius: 12px;
   background: #fffaf6;
   box-shadow: 5px 12px 28px rgb(76 42 24 / 0.2);
+  transition: transform 0.16s ease;
 }
 
 .list-card.downloaded,

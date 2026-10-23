@@ -1,7 +1,11 @@
 <template>
   <article
     class="card"
-    :class="{ 'multi-unselected': selectionMode && !selected, 'multi-selected': selected }"
+    :class="{
+      'multi-unselected': selectionMode && !selected,
+      'multi-selected': selected,
+      'long-pressing': longPressActive,
+    }"
     @pointerdown="startLongPress"
     @pointermove="handlePointerMove"
     @pointerup="cancelLongPress"
@@ -76,7 +80,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { IonIcon } from '@ionic/vue'
 import { closeCircleOutline, documentOutline, refreshOutline, trashOutline } from 'ionicons/icons'
 import type { ExportTaskRecord } from '@/services/JmcomicTypes'
@@ -89,6 +93,7 @@ const emit = defineEmits<{
   select: []
   'long-press': []
 }>()
+const longPressActive = ref(false)
 let longPressTimer: ReturnType<typeof setTimeout> | null = null
 let suppressClick = false
 let longPressStartPoint: { x: number; y: number } | null = null
@@ -98,6 +103,7 @@ const startLongPress = (event: PointerEvent) => {
   longPressStartPoint = { x: event.clientX, y: event.clientY }
   longPressTimer = setTimeout(() => {
     suppressClick = true
+    longPressActive.value = true
     emit('long-press')
     longPressTimer = null
   }, 500)
@@ -106,6 +112,7 @@ const cancelLongPress = () => {
   if (longPressTimer !== null) clearTimeout(longPressTimer)
   longPressTimer = null
   longPressStartPoint = null
+  longPressActive.value = false
 }
 const handlePointerMove = (event: PointerEvent) => {
   if (
@@ -158,6 +165,10 @@ const statusLabel = computed(() => {
   background: #fffaf6;
   border: 1px solid rgb(245 210 188 / 0.5);
   border-radius: 8px;
+  transition: transform 0.16s ease;
+}
+.card.long-pressing {
+  transform: scale(0.98);
 }
 .multi-unselected {
   opacity: 0.5;

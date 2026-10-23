@@ -5,6 +5,7 @@
       clickable: cardStatus === 'completed' && !selectionMode,
       'multi-unselected': selectionMode && !selected,
       'multi-selected': selected,
+      'long-pressing': longPressActive,
     }"
     @pointerdown="startLongPress"
     @pointermove="handlePointerMove"
@@ -145,6 +146,7 @@ import { IonIcon } from '@ionic/vue'
 import { documentOutline, ellipsisVertical } from 'ionicons/icons'
 import { getImageUrl, sanitizeError } from '@/services/JmcomicService'
 import type { CompletedEntry, DownloadTask } from '@/services/JmcomicTypes'
+const longPressActive = ref(false)
 let longPressTimer: ReturnType<typeof setTimeout> | null = null
 let suppressClick = false
 let longPressStartPoint: { x: number; y: number } | null = null
@@ -154,6 +156,7 @@ const startLongPress = (event: PointerEvent) => {
   longPressStartPoint = { x: event.clientX, y: event.clientY }
   longPressTimer = setTimeout(() => {
     suppressClick = true
+    longPressActive.value = true
     emit('long-press')
     longPressTimer = null
   }, 500)
@@ -162,6 +165,7 @@ const cancelLongPress = () => {
   if (longPressTimer !== null) clearTimeout(longPressTimer)
   longPressTimer = null
   longPressStartPoint = null
+  longPressActive.value = false
 }
 const handlePointerMove = (event: PointerEvent) => {
   if (
@@ -313,6 +317,10 @@ const onCardClick = () => {
   border: 1px solid rgb(245 210 188 / 0.5);
   position: relative;
   user-select: none;
+  transition: transform 0.16s ease;
+}
+.card.long-pressing {
+  transform: scale(0.98);
 }
 .multi-unselected {
   opacity: 0.5;

@@ -104,6 +104,7 @@
                         :key="item.id"
                         class="browse-card"
                         :class="{
+                          'long-pressing': historyPressedCard === `browse:${item.id}`,
                           'multi-unselected':
                             browseSelection.active.value &&
                             !browseSelection.selected.value.has(item.id),
@@ -201,6 +202,7 @@
                 :key="item.id"
                 class="parse-card"
                 :class="{
+                  'long-pressing': historyPressedCard === `parse:${item.id}`,
                   'multi-unselected':
                     parseSelection.active.value && !parseSelection.selected.value.has(item.id),
                   'multi-selected': parseSelection.selected.value.has(item.id),
@@ -335,6 +337,7 @@ const historySelectionTotal = ref(0)
 let historyLongPressTimer: ReturnType<typeof setTimeout> | null = null
 let historyLongPressSuppressClick = false
 let historyLongPressStartPoint: { x: number; y: number } | null = null
+const historyPressedCard = ref<string | null>(null)
 const parseItems = ref<ParseHistoryItem[]>([])
 const browseTotalCount = ref(0)
 const parseTotalCount = ref(0)
@@ -1134,6 +1137,7 @@ function startHistoryLongPress(tab: HistoryTab, id: number, event: PointerEvent)
   historyLongPressStartPoint = { x: event.clientX, y: event.clientY }
   historyLongPressTimer = setTimeout(() => {
     historyLongPressSuppressClick = true
+    historyPressedCard.value = `${tab}:${id}`
     enterHistorySelection(tab, id)
     historyLongPressTimer = null
   }, 500)
@@ -1143,6 +1147,7 @@ function cancelHistoryLongPress() {
   if (historyLongPressTimer !== null) clearTimeout(historyLongPressTimer)
   historyLongPressTimer = null
   historyLongPressStartPoint = null
+  historyPressedCard.value = null
 }
 
 function handleHistoryPointerMove(event: PointerEvent) {
@@ -1679,6 +1684,11 @@ function formatRelativeTime(timestamp: number): string {
   border-radius: 12px;
   box-shadow: 5px 12px 28px rgb(76 42 24 / 0.2);
   cursor: pointer;
+  transition: transform 0.16s ease;
+}
+
+.browse-card.long-pressing {
+  transform: scale(0.98);
 }
 
 .card-cover-wrap {
@@ -1767,7 +1777,12 @@ function formatRelativeTime(timestamp: number): string {
   border-radius: 12px;
   box-shadow: 5px 12px 28px rgb(76 42 24 / 0.2);
   cursor: pointer;
+  transition: transform 0.16s ease;
   margin-bottom: 6px;
+}
+
+.parse-card.long-pressing {
+  transform: scale(0.98);
 }
 
 .parse-icon-wrap {

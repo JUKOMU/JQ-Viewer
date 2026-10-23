@@ -1139,7 +1139,7 @@ onMounted(async () => {
 <style scoped>
 .multi-select-overlay {
   position: fixed;
-  inset: calc(var(--ion-safe-area-top) + 8px) 0 calc(var(--ion-safe-area-bottom) + 8px);
+  inset: 0;
   z-index: 30;
   display: flex;
   flex-direction: column;

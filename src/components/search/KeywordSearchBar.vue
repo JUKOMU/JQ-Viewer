@@ -433,7 +433,7 @@ ion-searchbar.custom {
   margin-top: 12px;
   padding: 10px 16px 15px 16px;
   border-radius: 16px;
-  background: rgb(255 235 223 / 0.6);
+  background: #fffbf8;
   box-shadow: 0 4px 6px 0 rgb(62 39 26 / 0.2);
 }
 

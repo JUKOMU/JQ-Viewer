@@ -224,8 +224,9 @@
       <MultiSelectInfoBar
         :count="managementSelection.count.value"
         :preparing="managementSelectionPreparing"
+        :preparing-action="managementSelectionPreparingAction"
+        :all-selected="managementSelection.allSelected.value"
         @cancel="exitManagementSelection"
-        @cancel-preparation="cancelManagementPreparation"
         @select-all="prepareManagementSelection(false)"
         @invert="prepareManagementSelection(true)"
       />
@@ -290,6 +291,7 @@ const router = useRouter()
 const managementSelection = useMultiSelect<string>()
 const { active: managementSelectionActive } = managementSelection
 const managementSelectionPreparing = ref(false)
+const managementSelectionPreparingAction = ref<'select-all' | 'invert' | null>(null)
 const managementSelectionExecuting = ref(false)
 const managementProgressCurrent = ref(0)
 const managementProgressTotal = ref(0)
@@ -1124,12 +1126,8 @@ function exitManagementSelection() {
   managementSelectionToken++
   managementSelection.exit()
   managementSelectionPreparing.value = false
+  managementSelectionPreparingAction.value = null
   managementRecords.value = new Map()
-}
-
-function cancelManagementPreparation() {
-  managementSelectionToken++
-  managementSelectionPreparing.value = false
 }
 
 useBackButton(5, (processNextHandler) => {
@@ -1168,6 +1166,7 @@ async function prepareManagementSelection(invert: boolean) {
   const view = activeView.value
   const records = new Map<string, LocalFileRecord | ExportTaskRecord>()
   managementSelectionPreparing.value = true
+  managementSelectionPreparingAction.value = invert ? 'invert' : 'select-all'
   try {
     let cursor: string | undefined
     if (view === 'files') {
@@ -1191,12 +1190,15 @@ async function prepareManagementSelection(invert: boolean) {
     managementRecords.value = records
     const ids = [...records.keys()]
     if (invert) managementSelection.invert(ids)
-    else managementSelection.select(ids)
+    else managementSelection.selectAll(ids)
   } catch {
     if (token === managementSelectionToken)
       await showToast('读取完整管理列表失败，本次选择未生效', 'danger')
   } finally {
-    if (token === managementSelectionToken) managementSelectionPreparing.value = false
+    if (token === managementSelectionToken) {
+      managementSelectionPreparing.value = false
+      managementSelectionPreparingAction.value = null
+    }
   }
 }
 

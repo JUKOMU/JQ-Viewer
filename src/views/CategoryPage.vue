@@ -67,8 +67,9 @@
       <div v-if="multiSelectActive" class="multi-select-overlay">
         <MultiSelectInfoBar
           :count="multiSelectCount"
+          :all-selected="multiSelectAllSelected"
           @cancel="exitMultiSelect"
-          @select-all="selectMultiItems(displayItems.map(({ item }) => item.id))"
+          @select-all="selectAllMultiItems(displayItems.map(({ item }) => item.id))"
           @invert="invertMultiItems(displayItems.map(({ item }) => item.id))"
         />
         <MultiSelectActionBar
@@ -175,9 +176,10 @@ const {
   active: multiSelectActive,
   selected: multiSelectedIds,
   count: multiSelectCount,
+  allSelected: multiSelectAllSelected,
   enter: enterMultiSelect,
   toggle: toggleMultiSelect,
-  select: selectMultiItems,
+  selectAll: selectAllMultiItems,
   invert: invertMultiItems,
   exit: exitMultiSelect,
 } = selection

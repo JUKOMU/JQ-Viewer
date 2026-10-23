@@ -277,8 +277,9 @@
       <MultiSelectInfoBar
         :count="activeHistorySelection.count.value"
         :preparing="historySelectionPreparing"
+        :preparing-action="historySelectionPreparingAction"
+        :all-selected="activeHistorySelection.allSelected.value"
         @cancel="exitHistorySelection"
-        @cancel-preparation="cancelHistorySelectionPreparation"
         @select-all="prepareHistorySelection(false)"
         @invert="prepareHistorySelection(true)"
       />
@@ -345,6 +346,7 @@ const activeHistorySelection = computed(() =>
   activeTab.value === 'browse' ? browseSelection : parseSelection,
 )
 const historySelectionPreparing = ref(false)
+const historySelectionPreparingAction = ref<'select-all' | 'invert' | null>(null)
 const historySelectionExecuting = ref(false)
 const historySelectionCurrent = ref(0)
 const historySelectionTotal = ref(0)
@@ -1129,12 +1131,8 @@ function enterHistorySelection(tab: HistoryTab, id?: number) {
 function exitHistorySelection() {
   activeHistorySelection.value.exit()
   historySelectionPreparing.value = false
+  historySelectionPreparingAction.value = null
   selectionRequestToken++
-}
-
-function cancelHistorySelectionPreparation() {
-  selectionRequestToken++
-  historySelectionPreparing.value = false
 }
 
 useBackButton(5, (processNextHandler) => {
@@ -1202,6 +1200,7 @@ async function prepareHistorySelection(invert: boolean) {
   const token = ++selectionRequestToken
   const tab = activeTab.value
   historySelectionPreparing.value = true
+  historySelectionPreparingAction.value = invert ? 'invert' : 'select-all'
   try {
     let ids: number[]
     if (tab === 'browse') {
@@ -1232,12 +1231,16 @@ async function prepareHistorySelection(invert: boolean) {
     }
     if (token !== selectionRequestToken) return
     const selection = activeHistorySelection.value
-    selection[invert ? 'invert' : 'select'](ids)
+    if (invert) selection.invert(ids)
+    else selection.selectAll(ids)
   } catch {
     if (token === selectionRequestToken)
       await showToast('读取完整历史失败，本次选择未生效', 'danger')
   } finally {
-    if (token === selectionRequestToken) historySelectionPreparing.value = false
+    if (token === selectionRequestToken) {
+      historySelectionPreparing.value = false
+      historySelectionPreparingAction.value = null
+    }
   }
 }
 

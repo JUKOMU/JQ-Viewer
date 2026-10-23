@@ -16,4 +16,20 @@ describe('useMultiSelect', () => {
     expect(selection.active.value).toBe(false)
     expect(selection.count.value).toBe(0)
   })
+
+  test('全选后锁定全选按钮，已选数量变化后解除锁定', () => {
+    const selection = useMultiSelect<string>()
+    selection.selectAll(['a', 'b'])
+
+    expect(selection.allSelected.value).toBe(true)
+
+    selection.select(['c', 'd'])
+
+    expect(selection.allSelected.value).toBe(true)
+
+    selection.toggle('c')
+
+    expect(selection.count.value).toBe(1)
+    expect(selection.allSelected.value).toBe(false)
+  })
 })

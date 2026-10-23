@@ -228,8 +228,9 @@
       <MultiSelectInfoBar
         :count="downloadSelectionCount"
         :preparing="downloadSelectionPreparing"
+        :preparing-action="downloadSelectionPreparingAction"
+        :all-selected="downloadSelectionAllSelected"
         @cancel="cancelDownloadSelection"
-        @cancel-preparation="cancelDownloadPreparation"
         @select-all="prepareDownloadSelection(false)"
         @invert="prepareDownloadSelection(true)"
       />
@@ -364,13 +365,15 @@ const {
   active: downloadSelectionActive,
   selected: downloadSelectedIds,
   count: downloadSelectionCount,
+  allSelected: downloadSelectionAllSelected,
   enter: enterDownloadSelection,
   toggle: toggleDownloadSelection,
-  select: selectDownloadItems,
+  selectAll: selectAllDownloadItems,
   invert: invertDownloadItems,
   exit: exitDownloadSelection,
 } = downloadSelection
 const downloadSelectionPreparing = ref(false)
+const downloadSelectionPreparingAction = ref<'select-all' | 'invert' | null>(null)
 const downloadSelectionExecuting = ref(false)
 const downloadBatchRunning = ref(false)
 const downloadBatchActionLabel = ref('正在处理')
@@ -816,17 +819,14 @@ function cancelDownloadSelection() {
   completedSelectionDomain.value = false
   downloadSelectionRecords.value = new Map()
   downloadSelectionPreparing.value = false
-}
-
-function cancelDownloadPreparation() {
-  downloadSelectionToken++
-  downloadSelectionPreparing.value = false
+  downloadSelectionPreparingAction.value = null
 }
 
 async function prepareDownloadSelection(invert: boolean) {
   if (downloadSelectionPreparing.value || downloadSelectionExecuting.value) return
   const token = ++downloadSelectionToken
   downloadSelectionPreparing.value = true
+  downloadSelectionPreparingAction.value = invert ? 'invert' : 'select-all'
   try {
     const ids: string[] = []
     const records = new Map<string, DownloadTask>()
@@ -864,12 +864,15 @@ async function prepareDownloadSelection(invert: boolean) {
     if (token !== downloadSelectionToken) return
     downloadSelectionRecords.value = records
     if (invert) invertDownloadItems(ids)
-    else selectDownloadItems(ids)
+    else selectAllDownloadItems(ids)
   } catch {
     if (token === downloadSelectionToken)
       await showToast('读取下载任务失败，本次选择未生效', 'danger')
   } finally {
-    if (token === downloadSelectionToken) downloadSelectionPreparing.value = false
+    if (token === downloadSelectionToken) {
+      downloadSelectionPreparing.value = false
+      downloadSelectionPreparingAction.value = null
+    }
   }
 }
 

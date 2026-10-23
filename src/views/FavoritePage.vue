@@ -81,8 +81,9 @@
           <MultiSelectInfoBar
             :count="multiSelectCount"
             :preparing="multiSelectPreparing"
+            :preparing-action="multiSelectPreparingAction"
+            :all-selected="multiSelectAllSelected"
             @cancel="exitMultiSelect"
-            @cancel-preparation="cancelFavoriteSelectionPreparation"
             @select-all="prepareFavoriteSelection(false)"
             @invert="prepareFavoriteSelection(true)"
           />
@@ -285,15 +286,23 @@ const {
   active: multiSelectActive,
   selected: multiSelectedIds,
   count: multiSelectCount,
+  allSelected: multiSelectAllSelected,
   enter: enterMultiSelect,
   toggle: toggleMultiSelect,
-  select: selectMultiItems,
+  selectAll: selectAllMultiItems,
   invert: invertMultiItems,
-  exit: exitMultiSelect,
+  exit: clearMultiSelect,
 } = selection
 const multiSelectPreparing = ref(false)
+const multiSelectPreparingAction = ref<'select-all' | 'invert' | null>(null)
 const multiSelectExecuting = ref(false)
 let multiSelectRequestToken = 0
+function exitMultiSelect() {
+  multiSelectRequestToken++
+  multiSelectPreparing.value = false
+  multiSelectPreparingAction.value = null
+  clearMultiSelect()
+}
 useBackButton(5, (processNextHandler) => {
   if (multiSelectExecuting.value || showProgressModal.value) return
   if (multiSelectActive.value) exitMultiSelect()
@@ -1184,6 +1193,7 @@ async function prepareFavoriteSelection(invert: boolean) {
   const token = ++multiSelectRequestToken
   const context = captureViewContext()
   multiSelectPreparing.value = true
+  multiSelectPreparingAction.value = invert ? 'invert' : 'select-all'
   try {
     const first = await fetchPage(1, context)
     if (token !== multiSelectRequestToken) return
@@ -1195,18 +1205,16 @@ async function prepareFavoriteSelection(invert: boolean) {
     if (token !== multiSelectRequestToken || !isCurrentViewContext(context)) return
     const ids = [...new Set(items.map((item) => item.id))]
     if (invert) invertMultiItems(ids)
-    else selectMultiItems(ids)
+    else selectAllMultiItems(ids)
   } catch {
     if (token === multiSelectRequestToken)
       await showToast('读取完整收藏夹失败，本次选择未生效', 'danger')
   } finally {
-    if (token === multiSelectRequestToken) multiSelectPreparing.value = false
+    if (token === multiSelectRequestToken) {
+      multiSelectPreparing.value = false
+      multiSelectPreparingAction.value = null
+    }
   }
-}
-
-function cancelFavoriteSelectionPreparation() {
-  multiSelectRequestToken++
-  multiSelectPreparing.value = false
 }
 
 async function executeFavoriteMultiAction(action: string) {

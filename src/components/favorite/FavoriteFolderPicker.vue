@@ -112,7 +112,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { IonIcon, IonSpinner } from '@ionic/vue'
+import { IonIcon, IonSpinner, useBackButton } from '@ionic/vue'
 import { addCircleOutline, closeOutline, folderOpenOutline } from 'ionicons/icons'
 import type { FolderEntry } from '@/services/JmcomicTypes'
 
@@ -152,6 +152,11 @@ const hasOnlineData = computed(
 const close = () => {
   emit('update:modelValue', false)
 }
+
+useBackButton(10, (processNextHandler) => {
+  if (props.modelValue) close()
+  else processNextHandler()
+})
 
 const select = (folderId: string, source: 'online' | 'offline') => {
   emit('select', { folderId, source })

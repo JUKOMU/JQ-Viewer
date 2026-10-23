@@ -61,6 +61,7 @@ vi.mock('@ionic/vue', () => {
       },
     }),
     IonToolbar: withSlot('IonToolbar'),
+    useBackButton: vi.fn(),
   }
 })
 
@@ -73,6 +74,7 @@ vi.mock('ionicons/icons', () => ({
   informationCircleOutline: 'information-circle',
   timeOutline: 'time',
   trashOutline: 'trash',
+  listOutline: 'list',
 }))
 
 vi.mock('@/services/AppAlertService', () => ({

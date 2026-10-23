@@ -1,7 +1,13 @@
 <template>
   <div ref="managerRef" class="manager">
-    <div class="manager-actions">
-      <button type="button" class="action-btn" aria-label="导入文件" @click="importFiles">
+    <div class="manager-actions" :inert="managementSelectionActive">
+      <button
+        type="button"
+        class="action-btn"
+        aria-label="导入文件"
+        :disabled="managementSelectionActive"
+        @click="importFiles"
+      >
         <IonIcon :icon="cloudUploadOutline" />
         <span>导入文件</span>
       </button>
@@ -10,21 +16,29 @@
         class="icon-btn"
         aria-label="刷新导出管理数据"
         title="刷新"
+        :disabled="managementSelectionActive"
         @click="load"
       >
         <IonIcon :icon="refreshOutline" />
       </button>
+      <button type="button" class="action-btn" @click="enterManagementSelection()">多选</button>
     </div>
 
-    <div class="subtabs" role="tablist" aria-label="导出管理视图">
+    <div
+      class="subtabs"
+      role="tablist"
+      aria-label="导出管理视图"
+      :inert="managementSelectionActive"
+    >
       <button
         v-for="item in views"
         :key="item.key"
         type="button"
         role="tab"
         :aria-selected="activeView === item.key"
+        :disabled="managementSelectionActive"
         :class="{ active: activeView === item.key }"
-        @click="activeView = item.key"
+        @click="selectManagementView(item.key)"
       >
         {{ item.label }}<span v-if="item.count > 0" class="count">{{ item.count }}</span>
       </button>
@@ -35,7 +49,7 @@
       <button type="button" @click="acknowledgeDatabaseReset">知道了</button>
     </div>
 
-    <div v-if="activeView === 'files'" class="file-filters">
+    <div v-if="activeView === 'files'" class="file-filters" :inert="managementSelectionActive">
       <label class="search-field">
         <span>搜索文件</span>
         <input v-model="searchText" type="search" placeholder="标题、文件名或漫画 ID" />
@@ -67,7 +81,11 @@
       </div>
     </div>
 
-    <div v-if="activeView === 'tasks'" class="filters task-filters">
+    <div
+      v-if="activeView === 'tasks'"
+      class="filters task-filters"
+      :inert="managementSelectionActive"
+    >
       <div class="task-status-group">
         <span class="filter-label">任务状态</span>
         <div class="filter-buttons task-filter-buttons" aria-label="导出任务状态筛选">
@@ -112,7 +130,15 @@
     </div>
 
     <div v-else-if="activeView === 'files'" class="list">
-      <button v-if="canLoadPreviousFiles" type="button" class="load-more-btn" :disabled="fileLoadingMore" @click="loadMoreFiles('previous')">加载上一页</button>
+      <button
+        v-if="canLoadPreviousFiles"
+        type="button"
+        class="load-more-btn"
+        :disabled="fileLoadingMore"
+        @click="loadMoreFiles('previous')"
+      >
+        加载上一页
+      </button>
       <template v-if="files.length">
         <div v-for="file in files" :key="file.id" :data-file-id="file.id" class="item-wrap">
           <LocalFileCard
@@ -120,9 +146,13 @@
             :has-image-resource="hasImageResource(file)"
             :readable="file.format !== 'zip'"
             :verifying="verifyingIds.has(file.id)"
+            :selection-mode="managementSelectionActive && activeView === 'files'"
+            :selected="managementSelection.selected.value.has(`f:${file.id}`)"
             :menu-open="isFileActionMenuOpen && selectedFile === file"
             @open="readFile(file)"
             @more="openFileActions(file, $event)"
+            @select="selectFileFromCard(file.id)"
+            @long-press="enterFileFromCard(file.id)"
           />
         </div>
         <div ref="filesSentinel" class="list-sentinel" aria-hidden="true"></div>
@@ -140,7 +170,15 @@
     </div>
 
     <div v-else class="list">
-      <button v-if="canLoadPreviousTasks" type="button" class="load-more-btn" :disabled="taskLoadingMore" @click="loadMoreTasks('previous')">加载上一页</button>
+      <button
+        v-if="canLoadPreviousTasks"
+        type="button"
+        class="load-more-btn"
+        :disabled="taskLoadingMore"
+        @click="loadMoreTasks('previous')"
+      >
+        加载上一页
+      </button>
       <template v-if="tasks.length">
         <div
           v-for="task in tasks"
@@ -151,9 +189,13 @@
         >
           <ExportTaskCard
             :task="task"
+            :selection-mode="managementSelectionActive && activeView === 'tasks'"
+            :selected="managementSelection.selected.value.has(`t:${task.exportId}`)"
             @cancel="cancelTask(task)"
             @retry="retryTask(task)"
             @delete="deleteTask(task)"
+            @select="selectTaskFromCard(task.exportId)"
+            @long-press="enterTaskFromCard(task.exportId)"
           />
         </div>
         <div ref="tasksSentinel" class="list-sentinel" aria-hidden="true"></div>
@@ -178,12 +220,37 @@
       @close="closeFileActions"
       @select="fileAction"
     />
+    <div v-if="managementSelectionActive" class="multi-select-overlay">
+      <MultiSelectInfoBar
+        :count="managementSelection.count.value"
+        :preparing="managementSelectionPreparing"
+        @cancel="exitManagementSelection"
+        @cancel-preparation="cancelManagementPreparation"
+        @select-all="prepareManagementSelection(false)"
+        @invert="prepareManagementSelection(true)"
+      />
+      <MultiSelectActionBar
+        :actions="[
+          { id: 'delete', label: activeView === 'files' ? '删除实际文件' : '删除任务记录' },
+        ]"
+        :disabled="
+          !managementSelection.count.value ||
+          managementSelectionPreparing ||
+          managementSelectionExecuting
+        "
+        @action="executeManagementDelete"
+      />
+    </div>
+    <div v-if="managementSelectionExecuting" class="management-batch-progress" role="status">
+      正在删除：{{ managementProgressCurrent }} / {{ managementProgressTotal }}
+      <div>{{ managementProgressTitle }}</div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { IonIcon, IonSpinner } from '@ionic/vue'
+import { IonIcon, IonSpinner, useBackButton } from '@ionic/vue'
 import { createAppAlert } from '@/services/AppAlertService'
 import {
   bookOutline,
@@ -192,6 +259,7 @@ import {
   copyOutline,
   folderOpenOutline,
   informationCircleOutline,
+  listOutline,
   refreshOutline,
   removeCircleOutline,
   trashOutline,
@@ -201,6 +269,9 @@ import LocalFileCard from './LocalFileCard.vue'
 import { ChapterSourceService } from '@/services/ChapterSourceService'
 import ExportTaskCard from './ExportTaskCard.vue'
 import CardContextMenu from '@/components/common/CardContextMenu.vue'
+import MultiSelectInfoBar from '@/components/common/MultiSelectInfoBar.vue'
+import MultiSelectActionBar from '@/components/common/MultiSelectActionBar.vue'
+import { useMultiSelect } from '@/composables/useMultiSelect'
 import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
 import { LocalFileImportService } from '@/services/LocalFileImportService'
 import { normalizeRuntimeError } from '@/runtime/errors'
@@ -216,6 +287,14 @@ const props = defineProps<{
   initialExportId?: string
 }>()
 const router = useRouter()
+const managementSelection = useMultiSelect<string>()
+const { active: managementSelectionActive } = managementSelection
+const managementSelectionPreparing = ref(false)
+const managementSelectionExecuting = ref(false)
+const managementProgressCurrent = ref(0)
+const managementProgressTotal = ref(0)
+const managementProgressTitle = ref('')
+let managementSelectionToken = 0
 const managerRef = ref<HTMLElement | null>(null)
 const files = ref<LocalFileRecord[]>([])
 const tasks = ref<ExportTaskRecord[]>([])
@@ -232,7 +311,9 @@ const taskPages = ref<WindowPage<ExportTaskRecord>[]>([])
 let filePageCursors: (string | undefined)[] = []
 let taskPageCursors: (string | undefined)[] = []
 const canLoadPreviousFiles = computed(() => (filePages.value[0]?.index ?? 0) > 0)
-const canLoadPreviousTasks = computed(() => (taskPages.value.find((page) => page.index >= 0)?.index ?? 0) > 0)
+const canLoadPreviousTasks = computed(
+  () => (taskPages.value.find((page) => page.index >= 0)?.index ?? 0) > 0,
+)
 const managementState = ref<LocalFileManagementState>({ recoveryState: 'ready' })
 const loading = ref(false)
 const fileLoadingMore = ref(false)
@@ -293,9 +374,12 @@ const captureWindowAnchor = async (view: 'files' | 'tasks') => {
   const scroll = await content?.getScrollElement()
   const top = scroll?.getBoundingClientRect().top
   const selector = view === 'files' ? '[data-file-id]' : '.task-anchor'
-  const anchor = top === undefined ? undefined : Array.from(
-    managerRef.value?.querySelectorAll<HTMLElement>(selector) ?? [],
-  ).find((element) => element.getBoundingClientRect().bottom > top)
+  const anchor =
+    top === undefined
+      ? undefined
+      : Array.from(managerRef.value?.querySelectorAll<HTMLElement>(selector) ?? []).find(
+          (element) => element.getBoundingClientRect().bottom > top,
+        )
   const anchorTop = anchor?.getBoundingClientRect().top
   return async () => {
     await nextTick()
@@ -406,6 +490,7 @@ const fileActionMenuActions = computed(() => {
     { id: 'open-folder', label: '打开文件夹', icon: folderOpenOutline },
     { id: 'remove', label: '移除', icon: removeCircleOutline },
     { id: 'delete', label: '删除', icon: trashOutline, danger: true },
+    { id: 'multi-select', label: '多选', icon: listOutline },
   )
   return actions
 })
@@ -470,10 +555,20 @@ const loadFiles = async (reset: boolean, direction: 'next' | 'previous' | 'refre
   const filters = currentFileFilters()
   const first = filePages.value[0]
   const last = filePages.value[filePages.value.length - 1]
-  const index = reset ? 0 : direction === 'previous' ? first.index - 1
-    : direction === 'refresh' ? first.index : (last?.index ?? -1) + 1
-  let cursor = reset ? undefined : direction === 'next' ? fileCursor.value || undefined
-    : direction === 'refresh' ? first.cursor : filePageCursors[index]
+  const index = reset
+    ? 0
+    : direction === 'previous'
+      ? first.index - 1
+      : direction === 'refresh'
+        ? first.index
+        : (last?.index ?? -1) + 1
+  let cursor = reset
+    ? undefined
+    : direction === 'next'
+      ? fileCursor.value || undefined
+      : direction === 'refresh'
+        ? first.cursor
+        : filePageCursors[index]
   const incoming: WindowPage<LocalFileRecord>[] = []
   try {
     const count = direction === 'refresh' ? Math.max(1, filePages.value.length) : 1
@@ -515,9 +610,16 @@ const loadFiles = async (reset: boolean, direction: 'next' | 'previous' | 'refre
     if (page.nextCursor) filePageCursors[page.index + 1] = page.nextCursor
   }
   const ids = new Set(incoming.flatMap((page) => page.items.map((file) => file.id)))
-  const kept = filePages.value.map((page) => ({ ...page, items: page.items.filter((file) => !ids.has(file.id)) }))
-  filePages.value = reset || direction === 'refresh' ? incoming
-    : direction === 'previous' ? [...incoming, ...kept].slice(0, 3) : [...kept, ...incoming].slice(-3)
+  const kept = filePages.value.map((page) => ({
+    ...page,
+    items: page.items.filter((file) => !ids.has(file.id)),
+  }))
+  filePages.value =
+    reset || direction === 'refresh'
+      ? incoming
+      : direction === 'previous'
+        ? [...incoming, ...kept].slice(0, 3)
+        : [...kept, ...incoming].slice(-3)
   rebuildFileWindow()
   fileLoadError.value = false
   void loadImageResourceKeys()
@@ -532,13 +634,26 @@ const loadTasks = async (reset: boolean, direction: 'next' | 'previous' | 'refre
   const filters = currentTaskFilters()
   const first = taskPages.value.find((page) => page.index >= 0)
   const last = taskPages.value[taskPages.value.length - 1]
-  const index = reset ? 0 : direction === 'previous' ? (first?.index ?? 0) - 1
-    : direction === 'refresh' ? first?.index ?? 0 : (last?.index ?? -1) + 1
-  let cursor = reset ? undefined : direction === 'next' ? taskCursor.value || undefined
-    : direction === 'refresh' ? first?.cursor : taskPageCursors[index]
+  const index = reset
+    ? 0
+    : direction === 'previous'
+      ? (first?.index ?? 0) - 1
+      : direction === 'refresh'
+        ? (first?.index ?? 0)
+        : (last?.index ?? -1) + 1
+  let cursor = reset
+    ? undefined
+    : direction === 'next'
+      ? taskCursor.value || undefined
+      : direction === 'refresh'
+        ? first?.cursor
+        : taskPageCursors[index]
   const incoming: WindowPage<ExportTaskRecord>[] = []
   try {
-    const count = direction === 'refresh' ? Math.max(1, taskPages.value.filter((page) => page.index >= 0).length) : 1
+    const count =
+      direction === 'refresh'
+        ? Math.max(1, taskPages.value.filter((page) => page.index >= 0).length)
+        : 1
     for (let offset = 0; offset < count; offset++) {
       const page = await LocalFileManagementService.getTasks(filters, cursor)
       incoming.push({ ...page, cursor, index: index + offset })
@@ -575,9 +690,16 @@ const loadTasks = async (reset: boolean, direction: 'next' | 'previous' | 'refre
     if (page.nextCursor) taskPageCursors[page.index + 1] = page.nextCursor
   }
   const ids = new Set(incoming.flatMap((page) => page.items.map((task) => task.exportId)))
-  const kept = taskPages.value.map((page) => ({ ...page, items: page.items.filter((task) => !ids.has(task.exportId)) }))
-  taskPages.value = reset || direction === 'refresh' ? incoming
-    : direction === 'previous' ? [...incoming, ...kept].slice(0, 3) : [...kept, ...incoming].slice(-3)
+  const kept = taskPages.value.map((page) => ({
+    ...page,
+    items: page.items.filter((task) => !ids.has(task.exportId)),
+  }))
+  taskPages.value =
+    reset || direction === 'refresh'
+      ? incoming
+      : direction === 'previous'
+        ? [...incoming, ...kept].slice(0, 3)
+        : [...kept, ...incoming].slice(-3)
   rebuildTaskWindow()
   taskLoadError.value = false
   await restoreAnchor()
@@ -634,10 +756,20 @@ const loadImageResourceKeys = async () => {
   }
   try {
     const result = await JmcomicService.getDownloadedResourceKeys(items)
-    if (isUnmounted || requestSequence !== imageResourceRequestSequence || fileSequence !== fileRequestSequence) return
+    if (
+      isUnmounted ||
+      requestSequence !== imageResourceRequestSequence ||
+      fileSequence !== fileRequestSequence
+    )
+      return
     imageResourceKeys.value = new Set(result.keys)
   } catch (error) {
-    if (isUnmounted || requestSequence !== imageResourceRequestSequence || fileSequence !== fileRequestSequence) return
+    if (
+      isUnmounted ||
+      requestSequence !== imageResourceRequestSequence ||
+      fileSequence !== fileRequestSequence
+    )
+      return
     imageResourceKeys.value = new Set()
     console.warn('读取文件图片资源标记失败', error)
   }
@@ -716,7 +848,11 @@ const load = async (): Promise<void> => {
 }
 
 const loadMoreFiles = async (direction: 'next' | 'previous' = 'next') => {
-  if (fileLoadingMore.value || (direction === 'next' ? !fileCursor.value : !canLoadPreviousFiles.value)) return
+  if (
+    fileLoadingMore.value ||
+    (direction === 'next' ? !fileCursor.value : !canLoadPreviousFiles.value)
+  )
+    return
   fileLoadingMore.value = true
   fileLoadDirection.value = direction
   try {
@@ -730,7 +866,11 @@ const loadMoreFiles = async (direction: 'next' | 'previous' = 'next') => {
   }
 }
 const loadMoreTasks = async (direction: 'next' | 'previous' = 'next') => {
-  if (taskLoadingMore.value || (direction === 'next' ? !taskCursor.value : !canLoadPreviousTasks.value)) return
+  if (
+    taskLoadingMore.value ||
+    (direction === 'next' ? !taskCursor.value : !canLoadPreviousTasks.value)
+  )
+    return
   taskLoadingMore.value = true
   taskLoadDirection.value = direction
   try {
@@ -800,7 +940,8 @@ const fileAction = (action: string) => {
   closeFileActions()
   if (!file) return
 
-  if (action === 'read' && file.format !== 'zip') readFile(file)
+  if (action === 'multi-select') enterManagementSelection(`f:${file.id}`)
+  else if (action === 'read' && file.format !== 'zip') readFile(file)
   else if (action === 'detail') {
     if (file.albumId) void router.push(`/album/${file.albumId}`)
     else void showToast('该文件没有关联漫画，无法进入详情页', 'medium')
@@ -945,7 +1086,8 @@ const deleteTask = async (task: ExportTaskRecord) => {
         handler: () => {
           void (async () => {
             try {
-              await LocalFileManagementService.deleteTaskRecord(task.exportId)
+              const result = await LocalFileManagementService.deleteTaskRecord(task.exportId)
+              if (!result.success) throw new Error('删除任务记录失败')
               await removeTaskAndFill(task.exportId)
             } catch (error) {
               await showToast(sanitizeError(error, '删除任务记录失败'), 'danger')
@@ -962,6 +1104,174 @@ const acknowledgeDatabaseReset = async () => {
   await LocalFileManagementService.acknowledgeDatabaseReset()
   managementState.value = { ...managementState.value, databaseResetInfo: { pending: false } }
 }
+
+const managementRecords = ref(new Map<string, LocalFileRecord | ExportTaskRecord>())
+
+function selectManagementView(view: 'files' | 'tasks') {
+  if (managementSelectionActive.value) return
+  activeView.value = view
+}
+
+function enterManagementSelection(id?: string) {
+  if (id?.startsWith('t:')) {
+    const task = tasks.value.find((item) => `t:${item.exportId}` === id)
+    if (task && ['queued', 'running', 'cancelling'].includes(task.status)) return
+  }
+  managementSelection.enter(id)
+}
+
+function exitManagementSelection() {
+  managementSelectionToken++
+  managementSelection.exit()
+  managementSelectionPreparing.value = false
+  managementRecords.value = new Map()
+}
+
+function cancelManagementPreparation() {
+  managementSelectionToken++
+  managementSelectionPreparing.value = false
+}
+
+useBackButton(5, (processNextHandler) => {
+  if (managementSelectionExecuting.value) return
+  if (managementSelectionActive.value) exitManagementSelection()
+  else processNextHandler()
+})
+
+const managementLongPressSuppressed = ref(false)
+const selectFileFromCard = (id: number) => {
+  if (managementLongPressSuppressed.value) {
+    managementLongPressSuppressed.value = false
+    return
+  }
+  managementSelection.toggle(`f:${id}`)
+}
+const enterFileFromCard = (id: number) => {
+  managementLongPressSuppressed.value = true
+  enterManagementSelection(`f:${id}`)
+}
+const selectTaskFromCard = (id: string) => {
+  if (managementLongPressSuppressed.value) {
+    managementLongPressSuppressed.value = false
+    return
+  }
+  managementSelection.toggle(`t:${id}`)
+}
+const enterTaskFromCard = (id: string) => {
+  managementLongPressSuppressed.value = true
+  enterManagementSelection(`t:${id}`)
+}
+
+async function prepareManagementSelection(invert: boolean) {
+  if (managementSelectionPreparing.value || managementSelectionExecuting.value) return
+  const token = ++managementSelectionToken
+  const view = activeView.value
+  const records = new Map<string, LocalFileRecord | ExportTaskRecord>()
+  managementSelectionPreparing.value = true
+  try {
+    let cursor: string | undefined
+    if (view === 'files') {
+      do {
+        const page = await LocalFileManagementService.getFiles(currentFileFilters(), cursor)
+        if (token !== managementSelectionToken) return
+        for (const file of page.items) records.set(`f:${file.id}`, file)
+        cursor = page.nextCursor ?? undefined
+      } while (cursor)
+    } else {
+      do {
+        const page = await LocalFileManagementService.getTasks(currentTaskFilters(), cursor)
+        if (token !== managementSelectionToken) return
+        for (const task of page.items)
+          if (!['queued', 'running', 'cancelling'].includes(task.status))
+            records.set(`t:${task.exportId}`, task)
+        cursor = page.nextCursor ?? undefined
+      } while (cursor)
+    }
+    if (token !== managementSelectionToken || view !== activeView.value) return
+    managementRecords.value = records
+    const ids = [...records.keys()]
+    if (invert) managementSelection.invert(ids)
+    else managementSelection.select(ids)
+  } catch {
+    if (token === managementSelectionToken)
+      await showToast('读取完整管理列表失败，本次选择未生效', 'danger')
+  } finally {
+    if (token === managementSelectionToken) managementSelectionPreparing.value = false
+  }
+}
+
+async function executeManagementDelete() {
+  if (managementSelectionExecuting.value || managementSelectionPreparing.value) return
+  const records = [...managementSelection.selected.value]
+    .map(
+      (id) =>
+        managementRecords.value.get(id) ??
+        (id.startsWith('f:')
+          ? files.value.find((file) => `f:${file.id}` === id)
+          : tasks.value.find((task) => `t:${task.exportId}` === id)),
+    )
+    .filter((record): record is LocalFileRecord | ExportTaskRecord => !!record)
+  if (!records.length) return
+  const isFiles = activeView.value === 'files'
+  const details = isFiles
+    ? (records as LocalFileRecord[])
+        .map((file) => `${file.fileName}\n${file.displayPath}`)
+        .join('\n\n')
+    : `只删除 ${records.length} 条已结束的导出任务记录，最终文件不会被删除。`
+  const alert = await createAppAlert({
+    header: isFiles ? '确认删除实际文件' : '确认删除任务记录',
+    message: isFiles
+      ? `${details}\n\n将删除定位符当前指向的实际文件并移出文件库；若文件已被替换，替换后的当前文件也会被删除。此操作不可恢复。`
+      : details,
+    buttons: [
+      { text: '取消', role: 'cancel' },
+      {
+        text: isFiles ? '删除文件' : '删除记录',
+        role: 'destructive',
+        handler: async () => {
+          managementSelectionExecuting.value = true
+          managementProgressCurrent.value = 0
+          managementProgressTotal.value = records.length
+          let succeeded = 0
+          let failed = 0
+          try {
+            for (const record of records) {
+              managementProgressTitle.value = isFiles
+                ? (record as LocalFileRecord).fileName
+                : (record as ExportTaskRecord).displayTitle
+              try {
+                if (isFiles) {
+                  const file = record as LocalFileRecord
+                  const current = await LocalFileManagementService.inspectFileForDeletion(file.id)
+                  if (!current) throw new Error('文件不可定位')
+                  await LocalFileManagementService.deleteFile(file.id)
+                  await removeFileAndFill(file.id)
+                } else {
+                  const task = record as ExportTaskRecord
+                  await LocalFileManagementService.deleteTaskRecord(task.exportId)
+                  await removeTaskAndFill(task.exportId)
+                }
+                succeeded++
+              } catch {
+                failed++
+              }
+              managementProgressCurrent.value++
+            }
+          } finally {
+            managementSelectionExecuting.value = false
+            exitManagementSelection()
+            await showToast(
+              `删除完成：成功 ${succeeded} 项，失败 ${failed} 项`,
+              failed ? 'medium' : 'success',
+            )
+          }
+        },
+      },
+    ],
+  })
+  await alert.present()
+}
+
 const importFiles = async () => {
   try {
     const result = await LocalFileManagementService.pickFolder()
@@ -1088,6 +1398,10 @@ onMounted(async () => {
   await Promise.all([progressRegistration, invalidationRegistration])
   if (isUnmounted) return
   await load()
+})
+
+watch([fileFilter, fileFormat, searchText, taskFilter, taskFormat, activeView], () => {
+  if (managementSelectionActive.value) exitManagementSelection()
 })
 onUnmounted(() => {
   isUnmounted = true
@@ -1367,5 +1681,32 @@ select:focus-visible {
   .list :deep(*) {
     transition: none !important;
   }
+}
+.multi-select-overlay {
+  position: fixed;
+  inset: calc(var(--ion-safe-area-top) + 8px) 0 calc(var(--ion-safe-area-bottom) + 8px);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  pointer-events: none;
+}
+.multi-select-overlay > * {
+  pointer-events: auto;
+}
+.management-batch-progress {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  display: grid;
+  place-content: center;
+  gap: 12px;
+  padding: 24px;
+  background: rgb(24 20 18 / 0.32);
+  color: #30201a;
+  text-align: center;
+  font-size: 16px;
+  font-weight: 600;
 }
 </style>

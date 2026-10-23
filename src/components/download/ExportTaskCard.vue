@@ -1,5 +1,13 @@
 <template>
-  <article class="card">
+  <article
+    class="card"
+    :class="{ 'multi-unselected': selectionMode && !selected, 'multi-selected': selected }"
+    @pointerdown="startLongPress"
+    @pointermove="handlePointerMove"
+    @pointerup="cancelLongPress"
+    @pointercancel="cancelLongPress"
+    @click="handleCardClick"
+  >
     <div class="icon-wrap"><IonIcon :icon="documentOutline" /></div>
     <div class="info">
       <div class="title">{{ task.displayTitle }}</div>
@@ -21,12 +29,24 @@
       </div>
       <div v-if="task.errorMessage" class="error">{{ task.errorMessage }}</div>
     </div>
-    <div class="actions">
+    <button
+      v-if="selectionMode && selectable"
+      class="multi-select-checkbox"
+      type="button"
+      :aria-label="`${selected ? '取消选择' : '选择'}${task.displayTitle}`"
+      :aria-pressed="selected"
+      @pointerdown.stop
+      @click.stop="$emit('select')"
+    >
+      {{ selected ? '✓' : '' }}
+    </button>
+    <div v-else class="actions">
       <button
         v-if="cancelable"
         type="button"
         :aria-label="`取消 ${task.format.toUpperCase()} 导出`"
         title="取消"
+        @pointerdown.stop
         @click.stop="$emit('cancel')"
       >
         <IonIcon :icon="closeCircleOutline" />
@@ -36,6 +56,7 @@
         type="button"
         :aria-label="`重试整个 ${task.format.toUpperCase()} 导出任务`"
         title="重试整个任务"
+        @pointerdown.stop
         @click.stop="$emit('retry')"
       >
         <IonIcon :icon="refreshOutline" />
@@ -45,6 +66,7 @@
         type="button"
         :aria-label="`删除 ${task.format.toUpperCase()} 导出任务记录`"
         title="删除任务记录"
+        @pointerdown.stop
         @click.stop="$emit('delete')"
       >
         <IonIcon :icon="trashOutline" />
@@ -54,17 +76,52 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount } from 'vue'
 import { IonIcon } from '@ionic/vue'
 import { closeCircleOutline, documentOutline, refreshOutline, trashOutline } from 'ionicons/icons'
 import type { ExportTaskRecord } from '@/services/JmcomicTypes'
 
-const props = defineProps<{ task: ExportTaskRecord }>()
-defineEmits<{
+const props = defineProps<{ task: ExportTaskRecord; selectionMode?: boolean; selected?: boolean }>()
+const emit = defineEmits<{
   cancel: []
   retry: []
   delete: []
+  select: []
+  'long-press': []
 }>()
+let longPressTimer: ReturnType<typeof setTimeout> | null = null
+let suppressClick = false
+let longPressStartPoint: { x: number; y: number } | null = null
+const startLongPress = (event: PointerEvent) => {
+  if (event.button !== 0 || !event.isPrimary) return
+  cancelLongPress()
+  longPressStartPoint = { x: event.clientX, y: event.clientY }
+  longPressTimer = setTimeout(() => {
+    suppressClick = true
+    emit('long-press')
+    longPressTimer = null
+  }, 500)
+}
+const cancelLongPress = () => {
+  if (longPressTimer !== null) clearTimeout(longPressTimer)
+  longPressTimer = null
+  longPressStartPoint = null
+}
+const handlePointerMove = (event: PointerEvent) => {
+  if (
+    longPressStartPoint &&
+    Math.hypot(event.clientX - longPressStartPoint.x, event.clientY - longPressStartPoint.y) > 10
+  )
+    cancelLongPress()
+}
+const handleCardClick = () => {
+  if (suppressClick) {
+    suppressClick = false
+    return
+  }
+  if (props.selectionMode && selectable.value) emit('select')
+}
+onBeforeUnmount(cancelLongPress)
 
 const showProgress = computed(() => ['queued', 'running', 'cancelling'].includes(props.task.status))
 const cancelable = computed(() => ['queued', 'running'].includes(props.task.status))
@@ -72,6 +129,7 @@ const retryable = computed(() =>
   ['failed', 'partial', 'interrupted', 'cancelled'].includes(props.task.status),
 )
 const deletable = computed(() => !['queued', 'running', 'cancelling'].includes(props.task.status))
+const selectable = computed(() => deletable.value)
 const progressPercent = computed(() => {
   if (props.task.totalPages <= 0) return 0
   return Math.min(100, Math.round((props.task.currentPage / props.task.totalPages) * 100))
@@ -100,6 +158,23 @@ const statusLabel = computed(() => {
   background: #fffaf6;
   border: 1px solid rgb(245 210 188 / 0.5);
   border-radius: 8px;
+}
+.multi-unselected {
+  opacity: 0.5;
+}
+.multi-selected {
+  opacity: 1;
+}
+.multi-select-checkbox {
+  align-self: center;
+  margin-left: auto;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  border: 1px solid #b67755;
+  border-radius: 50%;
+  background: #fff;
+  color: #a6532b;
 }
 .icon-wrap {
   display: grid;

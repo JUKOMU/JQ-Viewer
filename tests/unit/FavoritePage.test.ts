@@ -21,6 +21,7 @@ vi.mock('vue-router', () => ({
 }))
 
 vi.mock('@ionic/vue', () => ({
+  useBackButton: vi.fn(),
   IonContent: defineComponent({
     name: 'IonContent',
     setup(_, { slots }) {
@@ -63,6 +64,7 @@ vi.mock('ionicons/icons', () => ({
   folderOpenOutline: 'folder',
   swapHorizontalOutline: 'swap',
   trashOutline: 'trash',
+  listOutline: 'list',
 }))
 
 vi.mock('@/components/common/MenuToggleButton.vue', () => ({

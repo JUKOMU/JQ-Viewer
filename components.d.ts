@@ -36,6 +36,8 @@ declare module 'vue' {
     LocalFileManagementView: typeof import('./src/components/download/LocalFileManagementView.vue')['default']
     MainMenu: typeof import('./src/components/menu/MainMenu.vue')['default']
     MenuToggleButton: typeof import('./src/components/common/MenuToggleButton.vue')['default']
+    MultiSelectActionBar: typeof import('./src/components/common/MultiSelectActionBar.vue')['default']
+    MultiSelectInfoBar: typeof import('./src/components/common/MultiSelectInfoBar.vue')['default']
     QuickActionFab: typeof import('./src/components/common/QuickActionFab.vue')['default']
     ReaderBottomToolbar: typeof import('./src/components/reader/ReaderBottomToolbar.vue')['default']
     ReaderSettingsPanel: typeof import('./src/components/reader/ReaderSettingsPanel.vue')['default']

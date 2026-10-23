@@ -66,6 +66,7 @@ vi.mock('ionicons/icons', () => ({
   ellipsisVertical: 'ellipsis',
   heartOutline: 'heart',
   informationCircleOutline: 'information',
+  listOutline: 'list',
 }))
 
 vi.mock('@/components/search/SearchHeaderBar.vue', () => ({

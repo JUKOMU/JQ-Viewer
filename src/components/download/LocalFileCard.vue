@@ -1,5 +1,12 @@
 <template>
-  <article class="card">
+  <article
+    class="card"
+    :class="{ 'multi-unselected': selectionMode && !selected, 'multi-selected': selected }"
+    @pointerdown="startLongPress"
+    @pointermove="handlePointerMove"
+    @pointerup="cancelLongPress"
+    @pointercancel="cancelLongPress"
+  >
     <div class="cover-wrap">
       <img
         v-if="file.coverUrl"
@@ -16,8 +23,10 @@
       class="info open-btn"
       type="button"
       :aria-label="readable ? `阅读 ${formatLabel}` : `${formatLabel} 文件信息`"
-      :disabled="!readable"
-      @click="$emit('open')"
+      :disabled="!selectionMode && !readable"
+      @click="
+        suppressClick ? (suppressClick = false) : selectionMode ? emit('select') : emit('open')
+      "
     >
       <div class="title">{{ file.albumTitle || file.fileName }}</div>
       <div class="subtitle">{{ file.chapterTitle || file.fileName }}</div>
@@ -39,11 +48,24 @@
       </div>
     </button>
     <button
+      v-if="selectionMode"
+      class="multi-select-checkbox"
+      type="button"
+      :aria-label="`${selected ? '取消选择' : '选择'}${file.fileName}`"
+      :aria-pressed="selected"
+      @pointerdown.stop
+      @click.stop="emit('select')"
+    >
+      {{ selected ? '✓' : '' }}
+    </button>
+    <button
+      v-else
       class="more-btn"
       :class="{ active: menuOpen }"
       type="button"
       aria-label="更多操作"
       :aria-expanded="menuOpen"
+      @pointerdown.stop
       @click.stop="$emit('more', $event)"
     >
       <IonIcon :icon="ellipsisVertical" />
@@ -52,7 +74,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount } from 'vue'
 import { IonIcon, IonSpinner } from '@ionic/vue'
 import { documentOutline, ellipsisVertical, imagesOutline } from 'ionicons/icons'
 import type { LocalFileRecord } from '@/services/JmcomicTypes'
@@ -63,12 +85,42 @@ const props = defineProps<{
   verifying?: boolean
   menuOpen?: boolean
   readable?: boolean
+  selectionMode?: boolean
+  selected?: boolean
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   open: []
   more: [event: Event]
+  select: []
+  'long-press': []
 }>()
+let longPressTimer: ReturnType<typeof setTimeout> | null = null
+let suppressClick = false
+let longPressStartPoint: { x: number; y: number } | null = null
+const startLongPress = (event: PointerEvent) => {
+  if (event.button !== 0 || !event.isPrimary) return
+  cancelLongPress()
+  longPressStartPoint = { x: event.clientX, y: event.clientY }
+  longPressTimer = setTimeout(() => {
+    suppressClick = true
+    emit('long-press')
+    longPressTimer = null
+  }, 500)
+}
+const cancelLongPress = () => {
+  if (longPressTimer !== null) clearTimeout(longPressTimer)
+  longPressTimer = null
+  longPressStartPoint = null
+}
+const handlePointerMove = (event: PointerEvent) => {
+  if (
+    longPressStartPoint &&
+    Math.hypot(event.clientX - longPressStartPoint.x, event.clientY - longPressStartPoint.y) > 10
+  )
+    cancelLongPress()
+}
+onBeforeUnmount(cancelLongPress)
 
 const formatLabel = computed(() => props.file.format.toUpperCase())
 const resourceLabel = computed(() =>
@@ -108,6 +160,25 @@ const availabilityLabel = computed(() => {
   border-radius: 12px;
   position: relative;
   cursor: pointer;
+}
+.multi-unselected {
+  opacity: 0.5;
+}
+.multi-selected {
+  opacity: 1;
+}
+.multi-select-checkbox {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  right: 5px;
+  width: 28px;
+  height: 28px;
+  transform: translateY(-50%);
+  border: 1px solid #b67755;
+  border-radius: 50%;
+  background: #fff;
+  color: #a6532b;
 }
 
 .cover-wrap {

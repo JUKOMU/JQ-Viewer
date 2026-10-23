@@ -51,17 +51,16 @@
         <span v-if="sizeText" class="size-text">{{ sizeText }}</span>
       </div>
     </button>
-    <button
+    <input
       v-if="selectionMode"
       class="multi-select-checkbox"
-      type="button"
+      type="checkbox"
+      :checked="selected"
       :aria-label="`${selected ? '取消选择' : '选择'}${file.fileName}`"
-      :aria-pressed="selected"
       @pointerdown.stop
-      @click.stop="emit('select')"
-    >
-      {{ selected ? '✓' : '' }}
-    </button>
+      @click.stop
+      @change.stop="emit('select')"
+    />
     <button
       v-else
       class="more-btn"
@@ -183,13 +182,11 @@ const availabilityLabel = computed(() => {
   z-index: 2;
   top: 50%;
   right: 5px;
-  width: 28px;
-  height: 28px;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
   transform: translateY(-50%);
-  border: 1px solid #b67755;
-  border-radius: 50%;
-  background: #fff;
-  color: #a6532b;
+  accent-color: #bf8350;
 }
 
 .cover-wrap {

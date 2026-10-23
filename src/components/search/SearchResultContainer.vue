@@ -137,17 +137,16 @@
               />
             </div>
             <div class="item-serial">{{ getItemSerial(entry.page, entry.indexInPage) }}</div>
-            <button
+            <input
               v-if="multiSelect && !isGridMode"
-              type="button"
               class="multi-select-checkbox"
+              type="checkbox"
+              :checked="selectedIds?.has(entry.item.id)"
               :aria-label="`${selectedIds?.has(entry.item.id) ? '取消选择' : '选择'}${entry.item.title}`"
-              :aria-pressed="selectedIds?.has(entry.item.id)"
               @pointerdown.stop
-              @click.stop="emit('selection-toggle', entry.item)"
-            >
-              {{ selectedIds?.has(entry.item.id) ? '✓' : '' }}
-            </button>
+              @click.stop
+              @change.stop="emit('selection-toggle', entry.item)"
+            />
             <slot
               name="item-extra"
               :item="entry.item"
@@ -691,13 +690,11 @@ defineExpose<SearchResultContainerExposed>({
   z-index: 3;
   top: 50%;
   right: 5px;
-  width: 28px;
-  height: 28px;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
   transform: translateY(-50%);
-  border: 1px solid #b67755;
-  border-radius: 50%;
-  background: #fff;
-  color: #a6532b;
+  accent-color: #bf8350;
 }
 .multi-selected {
   opacity: 1 !important;

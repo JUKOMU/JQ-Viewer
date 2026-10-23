@@ -33,17 +33,16 @@
       </div>
       <div v-if="task.errorMessage" class="error">{{ task.errorMessage }}</div>
     </div>
-    <button
+    <input
       v-if="selectionMode && selectable"
       class="multi-select-checkbox"
-      type="button"
+      type="checkbox"
+      :checked="selected"
       :aria-label="`${selected ? '取消选择' : '选择'}${task.displayTitle}`"
-      :aria-pressed="selected"
       @pointerdown.stop
-      @click.stop="$emit('select')"
-    >
-      {{ selected ? '✓' : '' }}
-    </button>
+      @click.stop
+      @change.stop="$emit('select')"
+    />
     <div v-else class="actions">
       <button
         v-if="cancelable"
@@ -179,13 +178,10 @@ const statusLabel = computed(() => {
 .multi-select-checkbox {
   align-self: center;
   margin-left: auto;
-  width: 28px;
-  height: 28px;
-  flex: 0 0 28px;
-  border: 1px solid #b67755;
-  border-radius: 50%;
-  background: #fff;
-  color: #a6532b;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  accent-color: #bf8350;
 }
 .icon-wrap {
   display: grid;

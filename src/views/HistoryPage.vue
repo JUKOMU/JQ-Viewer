@@ -140,9 +140,16 @@
                         >
                           <IonIcon :icon="ellipsisVertical" />
                         </button>
-                        <span v-else class="history-select-mark" aria-hidden="true">{{
-                          browseSelection.selected.value.has(item.id) ? '✓' : ''
-                        }}</span>
+                        <input
+                          v-else
+                          type="checkbox"
+                          class="history-select-mark"
+                          :checked="browseSelection.selected.value.has(item.id)"
+                          :aria-label="`${browseSelection.selected.value.has(item.id) ? '取消选择' : '选择'}${item.albumTitle}`"
+                          @pointerdown.stop
+                          @click.stop
+                          @change.stop="browseSelection.toggle(item.id)"
+                        />
                       </div>
                     </div>
                     <div
@@ -239,9 +246,16 @@
                 >
                   <IonIcon :icon="ellipsisVertical" />
                 </button>
-                <span v-else class="history-select-mark" aria-hidden="true">{{
-                  parseSelection.selected.value.has(item.id) ? '✓' : ''
-                }}</span>
+                <input
+                  v-else
+                  type="checkbox"
+                  class="history-select-mark"
+                  :checked="parseSelection.selected.value.has(item.id)"
+                  :aria-label="`${parseSelection.selected.value.has(item.id) ? '取消选择' : '选择'}${item.text}`"
+                  @pointerdown.stop
+                  @click.stop
+                  @change.stop="parseSelection.toggle(item.id)"
+                />
               </div>
             </TransitionGroup>
           </template>
@@ -1547,15 +1561,11 @@ function formatRelativeTime(timestamp: number): string {
   position: absolute;
   right: 12px;
   top: 50%;
-  display: grid;
-  place-items: center;
-  width: 26px;
-  height: 26px;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
   transform: translateY(-50%);
-  border: 1px solid #b67755;
-  border-radius: 50%;
-  color: #a6532b;
-  background: #fff;
+  accent-color: #bf8350;
 }
 .history-batch-progress {
   position: fixed;

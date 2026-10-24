@@ -715,9 +715,9 @@ async function loadParse(generation = tabRequestGeneration.parse): Promise<boole
 
 function loadMoreParse(allowDuringDelete = false): Promise<void> {
   if (
-    parseSelection.active.value ||
+    (!allowDuringDelete && parseSelection.active.value) ||
     historySelectionPreparing.value ||
-    historySelectionExecuting.value
+    (!allowDuringDelete && historySelectionExecuting.value)
   )
     return parseMorePromise ?? Promise.resolve()
   if (parseDeleteInProgress && !allowDuringDelete) return parseMorePromise ?? Promise.resolve()

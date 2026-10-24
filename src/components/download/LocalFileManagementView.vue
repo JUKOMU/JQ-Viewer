@@ -1136,27 +1136,16 @@ useBackButton(5, (processNextHandler) => {
   else processNextHandler()
 })
 
-const managementLongPressSuppressed = ref(false)
 const selectFileFromCard = (id: number) => {
-  if (managementLongPressSuppressed.value) {
-    managementLongPressSuppressed.value = false
-    return
-  }
   managementSelection.toggle(`f:${id}`)
 }
 const enterFileFromCard = (id: number) => {
-  managementLongPressSuppressed.value = true
   enterManagementSelection(`f:${id}`)
 }
 const selectTaskFromCard = (id: string) => {
-  if (managementLongPressSuppressed.value) {
-    managementLongPressSuppressed.value = false
-    return
-  }
   managementSelection.toggle(`t:${id}`)
 }
 const enterTaskFromCard = (id: string) => {
-  managementLongPressSuppressed.value = true
   enterManagementSelection(`t:${id}`)
 }
 
@@ -1250,7 +1239,8 @@ async function executeManagementDelete() {
                   await removeFileAndFill(file.id)
                 } else {
                   const task = record as ExportTaskRecord
-                  await LocalFileManagementService.deleteTaskRecord(task.exportId)
+                  const result = await LocalFileManagementService.deleteTaskRecord(task.exportId)
+                  if (!result.success) throw new Error('删除任务记录失败')
                   await removeTaskAndFill(task.exportId)
                 }
                 succeeded++

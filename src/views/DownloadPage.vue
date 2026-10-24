@@ -816,6 +816,7 @@ function enterGroupDownloadSelection(group: DownloadGroupKey) {
 function cancelDownloadSelection() {
   downloadSelectionToken++
   exitDownloadSelection()
+  void syncDownloadState(true)
   completedSelectionDomain.value = false
   downloadSelectionRecords.value = new Map()
   downloadSelectionPreparing.value = false
@@ -1680,6 +1681,7 @@ const onExportConfirm = async (payload: {
     if (downloadBatchExport.value) {
       downloadBatchExport.value = false
       exitDownloadSelection()
+      void syncDownloadState(true)
     }
   } catch (e: any) {
     await showToast(sanitizeError(e, '导出启动失败'), 'danger')

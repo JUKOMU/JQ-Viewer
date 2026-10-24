@@ -275,6 +275,7 @@ const longPressItemId = ref<string | null>(null)
 const startLongPress = (item: SearchResultItem, event: PointerEvent) => {
   if (event.button !== 0 || !event.isPrimary) return
   cancelLongPress()
+  suppressNextClick = false
   longPressStartPoint = { x: event.clientX, y: event.clientY }
   longPressTimer = setTimeout(() => {
     suppressNextClick = true

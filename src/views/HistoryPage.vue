@@ -943,24 +943,21 @@ function browseGroupKeyForItem(
 
 async function reloadTabFromFirstPage(
   tab: HistoryTab,
-  removedId: number,
-  preferredBrowseGroupKey?: BrowseGroupKey,
+  removedIds: number[],
 ) {
   if (tab === 'browse') {
-    const groupKey = browseGroupKeyForItem(removedId, preferredBrowseGroupKey)
-    const group = groupKey ? browseGroupStates[groupKey] : null
-    const previousLength = group?.items.length ?? 0
-    const removed = group ? group.items.some((item) => item.id === removedId) : false
-    if (group && removed) {
-      group.items = group.items.filter((item) => item.id !== removedId)
-      group.offset = Math.max(0, group.offset - 1)
-      group.totalCount = Math.max(0, group.totalCount - 1)
-      group.hasMore = group.offset < group.totalCount
-      browseTotalCount.value = Math.max(0, browseTotalCount.value - 1)
-    }
+    const removedIdSet = new Set(removedIds)
     const reloadGroupCounts = new Map<BrowseGroupKey, number>()
-    if (group?.loaded && previousLength > 0 && groupKey) {
-      reloadGroupCounts.set(groupKey, previousLength)
+    for (const definition of BROWSE_GROUP_DEFINITIONS) {
+      const group = browseGroupStates[definition.key]
+      const previousLength = group.items.length
+      const remainingItems = group.items.filter((item) => !removedIdSet.has(item.id))
+      if (remainingItems.length === previousLength) continue
+      group.items = remainingItems
+      group.offset = Math.max(0, group.offset - (previousLength - remainingItems.length))
+      if (group.loaded && previousLength > 0) {
+        reloadGroupCounts.set(definition.key, previousLength)
+      }
     }
     invalidateTab('browse')
     await ensureTabLoaded('browse', { browseGroupCounts: reloadGroupCounts })
@@ -969,17 +966,17 @@ async function reloadTabFromFirstPage(
 
   if (!tabHasSnapshotMetadata[tab]) {
     const previousLength = parseItems.value.length
-    parseItems.value = parseItems.value.filter((item) => item.id !== removedId)
+    const removedIdSet = new Set(removedIds)
+    parseItems.value = parseItems.value.filter((item) => !removedIdSet.has(item.id))
     if (parseItems.value.length !== previousLength) {
-      updateParseTotalCount(Math.max(0, parseTotalCount.value - 1))
+      updateParseTotalCount(Math.max(0, parseTotalCount.value - (previousLength - parseItems.value.length)))
     }
     return
   }
 
-  const previousLength = parseItems.value.length
-  parseItems.value = parseItems.value.filter((item) => item.id !== removedId)
-  if (parseItems.value.length === previousLength) return
-  updateParseTotalCount(Math.max(0, parseTotalCount.value - 1))
+  const removedIdSet = new Set(removedIds)
+  parseItems.value = parseItems.value.filter((item) => !removedIdSet.has(item.id))
+  updateParseTotalCount(Math.max(0, parseTotalCount.value - removedIds.length))
   if (parseHasMore.value) await loadMoreParse(true)
 }
 
@@ -993,7 +990,7 @@ async function deleteParseHistoryItem(id: number) {
       await showToast('删除解析记录失败，请重试', 'danger')
       return
     }
-    await reloadTabFromFirstPage('parse', id)
+    await reloadTabFromFirstPage('parse', [id])
   } finally {
     parseDeleteInProgress = false
   }
@@ -1260,6 +1257,7 @@ async function executeHistoryDelete() {
           historySelectionExecuting.value = true
           historySelectionCurrent.value = 0
           historySelectionTotal.value = ids.length
+          const deletedIds: number[] = []
           let succeeded = 0
           let failed = 0
           for (const id of ids) {
@@ -1268,15 +1266,18 @@ async function executeHistoryDelete() {
                 tab === 'browse'
                   ? await JmcomicService.deleteBrowseItem(id)
                   : await JmcomicService.deleteParseItem(id)
-              if (result.success) succeeded++
-              else failed++
+              if (result.success) {
+                succeeded++
+                deletedIds.push(id)
+              } else {
+                failed++
+              }
             } catch {
               failed++
             }
             historySelectionCurrent.value++
           }
-          if (tab === 'browse') await reloadTabFromFirstPage('browse', ids[0])
-          else await reloadTabFromFirstPage('parse', ids[0])
+          if (deletedIds.length) await reloadTabFromFirstPage(tab, deletedIds)
           historySelectionExecuting.value = false
           exitHistorySelection()
           await showToast(
@@ -1326,7 +1327,7 @@ async function handleMenuDelete() {
         handler: async () => {
           if (isBrowse) {
             await HistoryService.deleteBrowseItem(m.item.id)
-            await reloadTabFromFirstPage('browse', m.item.id, m.browseGroupKey)
+            await reloadTabFromFirstPage('browse', [m.item.id])
           } else {
             await deleteParseHistoryItem(m.item.id)
           }

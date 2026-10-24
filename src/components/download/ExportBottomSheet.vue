@@ -64,7 +64,7 @@
           </div>
 
           <!-- 导出模式（多章节时显示） -->
-          <fieldset v-if="chapters.length > 1" class="section mode-section">
+          <fieldset v-if="chapters.length > 1 && allowMerge !== false" class="section mode-section">
             <legend class="section-label">导出模式</legend>
             <div class="quality-row">
               <label class="radio-label" :class="{ active: mode === 'chapter' }">
@@ -239,10 +239,14 @@ import { JmcomicService, showToast } from '@/services/JmcomicService'
 
 defineOptions({ name: 'ExportBottomSheet' })
 
-const props = defineProps<{
-  modelValue: boolean
-  chapters: DownloadTask[]
-}>()
+const props = withDefaults(
+  defineProps<{
+    modelValue: boolean
+    chapters: DownloadTask[]
+    allowMerge?: boolean
+  }>(),
+  { allowMerge: true },
+)
 
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]

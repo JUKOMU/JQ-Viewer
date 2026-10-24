@@ -12,6 +12,7 @@
               role="tab"
               class="tab-btn"
               :aria-selected="activeMainView === 'downloads'"
+              :disabled="downloadSelectionActive"
               :class="{ active: activeMainView === 'downloads' }"
               @click="selectMainView('downloads')"
             >
@@ -22,6 +23,7 @@
               role="tab"
               class="tab-btn"
               :aria-selected="activeMainView === 'export'"
+              :disabled="downloadSelectionActive"
               :class="{ active: activeMainView === 'export' }"
               @click="selectMainView('export')"
             >
@@ -37,7 +39,11 @@
       @ionScroll="onDownloadScroll"
     >
       <!-- 下拉刷新 -->
-      <IonRefresher slot="fixed" @ion-refresh="onRefresh($event)">
+      <IonRefresher
+        slot="fixed"
+        :disabled="downloadSelectionActive"
+        @ion-refresh="onRefresh($event)"
+      >
         <IonRefresherContent />
       </IonRefresher>
 
@@ -60,13 +66,20 @@
             <button
               type="button"
               class="sort-btn sort-direction-btn"
+              :disabled="downloadSelectionActive"
               :aria-label="sortDirection === 'asc' ? '升序' : '降序'"
               :title="sortDirection === 'asc' ? '升序' : '降序'"
               @click="toggleSortDirection"
             >
               <IonIcon :icon="sortDirection === 'asc' ? arrowUpOutline : arrowDownOutline" />
             </button>
-            <button type="button" class="sort-btn" :aria-label="sortLabel" @click="toggleSort">
+            <button
+              type="button"
+              class="sort-btn"
+              :aria-label="sortLabel"
+              :disabled="downloadSelectionActive"
+              @click="toggleSort"
+            >
               <IonIcon :icon="sortIcon" />
             </button>
             <span class="toolbar-action-label">{{ sortLabel }}</span>
@@ -75,7 +88,19 @@
           <section
             v-for="group in downloadGroups"
             :key="group.key"
-            v-memo="[group.items, group.loading, group.error, group.collapsed, group.totalCount, group.previousCursor, group.nextCursor, isActionMenuOpen, selectedTask]"
+            v-memo="[
+              group.items,
+              group.loading,
+              group.error,
+              group.collapsed,
+              group.totalCount,
+              group.previousCursor,
+              group.nextCursor,
+              isActionMenuOpen,
+              selectedTask,
+              downloadSelectionActive,
+              downloadSelectedIds,
+            ]"
             class="download-group section"
           >
             <h2 class="section-header">
@@ -83,6 +108,7 @@
                 type="button"
                 class="section-toggle"
                 :aria-expanded="!group.collapsed"
+                :disabled="downloadSelectionActive"
                 :aria-controls="`download-group-${group.key}`"
                 :aria-label="`${group.collapsed ? '展开' : '收起'}${group.label}`"
                 @click="toggleGroup(group.key)"
@@ -99,9 +125,19 @@
                 v-if="group.clearable"
                 type="button"
                 class="clear-btn"
+                :disabled="downloadSelectionActive"
                 @click="requestClear(group.status as 'completed' | 'failed')"
               >
                 清空
+              </button>
+              <button
+                v-if="group.clearable"
+                type="button"
+                class="clear-btn"
+                :disabled="downloadSelectionActive"
+                @click="enterGroupDownloadSelection(group.key)"
+              >
+                多选
               </button>
             </h2>
             <div
@@ -128,7 +164,12 @@
                   :task="item as DownloadTask"
                   :show-progress="group.status === 'active'"
                   :menu-open="isTaskMenuOpen(item as DownloadTask)"
+                  :selection-mode="downloadSelectionActive"
+                  :selection-eligible="(item as DownloadTask).status !== 'verifying'"
+                  :selected="downloadSelectedIds.has((item as DownloadTask).taskId)"
                   @more="openActions(item as DownloadTask, $event)"
+                  @select="toggleDownloadSelection((item as DownloadTask).taskId)"
+                  @long-press="enterEligibleDownloadSelection(item as DownloadTask)"
                 />
                 <DownloadTaskCard
                   v-else
@@ -143,8 +184,21 @@
                       : undefined
                   "
                   :menu-open="isTaskMenuOpen(groupEntry(item as CompletedDownloadGroup))"
+                  :selection-mode="downloadSelectionActive"
+                  :selection-eligible="(item as CompletedDownloadGroup).type === 'single'"
+                  :selected="
+                    downloadSelectedIds.has(
+                      (item as CompletedDownloadGroup).chapters[0]?.taskId ?? '',
+                    )
+                  "
                   @click="onReadGroup(item as CompletedDownloadGroup)"
                   @more="openGroupActions(item as CompletedDownloadGroup, $event)"
+                  @select="
+                    toggleDownloadSelection(
+                      (item as CompletedDownloadGroup).chapters[0]?.taskId ?? '',
+                    )
+                  "
+                  @long-press="enterCompletedDownloadSelection(item as CompletedDownloadGroup)"
                 />
               </div>
               <div v-if="group.loading" class="browse-group-loader"><IonSpinner name="dots" /></div>
@@ -167,6 +221,31 @@
         </template>
       </div>
     </IonContent>
+    <div
+      v-if="activeMainView === 'downloads' && downloadSelectionActive"
+      class="multi-select-overlay"
+    >
+      <MultiSelectInfoBar
+        :count="downloadSelectionCount"
+        :preparing="downloadSelectionPreparing"
+        :preparing-action="downloadSelectionPreparingAction"
+        :all-selected="downloadSelectionAllSelected"
+        @cancel="cancelDownloadSelection"
+        @select-all="prepareDownloadSelection(false)"
+        @invert="prepareDownloadSelection(true)"
+      />
+      <MultiSelectActionBar
+        :actions="downloadSelectionActions"
+        :disabled="
+          !downloadSelectionCount || downloadSelectionPreparing || downloadSelectionExecuting
+        "
+        @action="executeDownloadSelection"
+      />
+    </div>
+    <div v-if="downloadBatchRunning" class="download-batch-progress" role="status">
+      {{ downloadBatchActionLabel }}：{{ downloadBatchCurrent }} / {{ downloadBatchTotal }}
+      <div>{{ downloadBatchCurrentTitle }}</div>
+    </div>
     <IonContent v-show="activeMainView === 'export'">
       <div class="download-page-shell desktop-page-content">
         <LocalFileManagementView
@@ -190,6 +269,7 @@
     <ExportBottomSheet
       v-model="showExportSheet"
       :chapters="chaptersForExport"
+      :allow-merge="!downloadBatchExport"
       @confirm="onExportConfirm"
     />
 
@@ -218,6 +298,7 @@ import {
   IonSpinner,
   IonToolbar,
   onIonViewWillEnter,
+  useBackButton,
 } from '@ionic/vue'
 import {
   bookOutline,
@@ -228,6 +309,7 @@ import {
   cloudDownloadOutline,
   documentLockOutline,
   informationCircleOutline,
+  listOutline,
   pauseOutline,
   playOutline,
   refreshOutline,
@@ -243,6 +325,9 @@ import ExportBottomSheet from '@/components/download/ExportBottomSheet.vue'
 import DeleteChaptersBottomSheet from '@/components/download/DeleteChaptersBottomSheet.vue'
 import LocalFileManagementView from '@/components/download/LocalFileManagementView.vue'
 import CardContextMenu from '@/components/common/CardContextMenu.vue'
+import MultiSelectInfoBar from '@/components/common/MultiSelectInfoBar.vue'
+import MultiSelectActionBar from '@/components/common/MultiSelectActionBar.vue'
+import { useMultiSelect } from '@/composables/useMultiSelect'
 import { createAppAlert } from '@/services/AppAlertService'
 import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
 import { OfflineDownloadService } from '@/services/OfflineDownloadService'
@@ -275,9 +360,36 @@ const exportInitialExportId = computed(() =>
   typeof route.query.exportId === 'string' ? route.query.exportId : undefined,
 )
 const exportManagementRef = ref<InstanceType<typeof LocalFileManagementView> | null>(null)
+const downloadSelection = useMultiSelect<string>()
+const {
+  active: downloadSelectionActive,
+  selected: downloadSelectedIds,
+  count: downloadSelectionCount,
+  allSelected: downloadSelectionAllSelected,
+  enter: enterDownloadSelection,
+  toggle: toggleDownloadSelection,
+  selectAll: selectAllDownloadItems,
+  invert: invertDownloadItems,
+  exit: exitDownloadSelection,
+} = downloadSelection
+const downloadSelectionPreparing = ref(false)
+const downloadSelectionPreparingAction = ref<'select-all' | 'invert' | null>(null)
+const downloadSelectionExecuting = ref(false)
+const downloadBatchRunning = ref(false)
+const downloadBatchActionLabel = ref('正在处理')
+const downloadBatchCurrent = ref(0)
+const downloadBatchTotal = ref(0)
+const downloadBatchCurrentTitle = ref('')
+let downloadSelectionToken = 0
+useBackButton(5, (processNextHandler) => {
+  if (downloadSelectionExecuting.value || downloadBatchRunning.value) return
+  if (downloadSelectionActive.value) cancelDownloadSelection()
+  else processNextHandler()
+})
 let ionEnterCount = 0
 
 const selectMainView = (view: 'downloads' | 'export') => {
+  if (downloadSelectionActive.value) return
   activeMainView.value = view
 }
 
@@ -345,8 +457,9 @@ const downloadGroupStates = reactive<Record<DownloadGroupKey, DownloadGroupState
 const downloadGroups = computed(() => Object.values(downloadGroupStates))
 const downloadContentRef = ref<any>(null)
 const tasks = ref<DownloadTask[]>([])
-const initialLoading = computed(() =>
-  !hasTasks.value && downloadGroups.value.some((group) => group.loading && !group.initialized),
+const initialLoading = computed(
+  () =>
+    !hasTasks.value && downloadGroups.value.some((group) => group.loading && !group.initialized),
 )
 const hasTasks = computed(() =>
   downloadGroups.value.some((group) => group.totalCount > 0 || group.items.length > 0),
@@ -390,6 +503,7 @@ const defaultDirection = (mode: SortMode): DownloadTaskSortDirection =>
   mode === 'time' ? 'desc' : 'asc'
 
 const toggleSort = () => {
+  if (downloadSelectionActive.value) return
   const modes: SortMode[] = ['time', 'title', 'id', 'author']
   sortMode.value = modes[(modes.indexOf(sortMode.value) + 1) % modes.length]
   sortDirection.value = defaultDirection(sortMode.value)
@@ -397,6 +511,7 @@ const toggleSort = () => {
   void resetDownloadGroups(true, false)
 }
 const toggleSortDirection = () => {
+  if (downloadSelectionActive.value) return
   sortDirection.value = sortDirection.value === 'asc' ? 'desc' : 'asc'
   void downloadContentRef.value?.$el?.scrollToTop?.(0)
   void resetDownloadGroups(true, false)
@@ -430,6 +545,7 @@ const isTaskMenuOpen = (task: DownloadTask | CompletedEntry) =>
 // 文件导出
 const showExportSheet = ref(false)
 const chaptersForExport = ref<DownloadTask[]>([])
+const downloadBatchExport = ref(false)
 
 const popoverTitle = computed(() => {
   if (selectedGroup.value?.type === 'multi') {
@@ -470,6 +586,8 @@ const actionMenuActions = computed(() => {
   if (deletableStatuses.includes(selectedStatus.value ?? '')) {
     actions.push({ id: 'delete', label: '删除', icon: trashOutline, danger: true })
   }
+  if (selectedStatus.value !== 'verifying' && selectedGroup.value?.type !== 'multi')
+    actions.push({ id: 'multi-select', label: '多选', icon: listOutline })
   return actions
 })
 
@@ -506,6 +624,15 @@ const popoverAction = (action: string) => {
   }
 
   switch (action) {
+    case 'multi-select':
+      if (selectedGroup.value?.type === 'single')
+        enterCompletedDownloadSelection(selectedGroup.value)
+      else if (selectedGroup.value?.type !== 'multi' && !('source' in t)) {
+        completedSelectionDomain.value = t.status === 'completed'
+        enterDownloadSelection(t.taskId)
+      }
+      closeActions()
+      break
     case 'read':
       if (selectedGroup.value?.type === 'multi') {
         onOpenChapterSelect(selectedGroup.value)
@@ -643,6 +770,226 @@ const groupEntry = (group: CompletedDownloadGroup) => toCompletedEntry(group.cha
 const itemKey = (item: DownloadPageItem) =>
   'chapters' in item ? `album-${item.albumId}` : `task-${item.taskId}`
 
+const completedSelectionDomain = ref(false)
+const downloadSelectionRecords = ref(new Map<string, DownloadTask>())
+const downloadSelectionActions = computed(() => {
+  const selected = [...downloadSelectedIds.value]
+  const tasks = [
+    ...downloadGroupStates.active.items,
+    ...downloadGroupStates.failed.items,
+    ...downloadGroupStates.completed.items,
+  ]
+    .flatMap((item) => ('chapters' in item ? item.chapters : [item]))
+    .filter((task) => selected.includes(task.taskId))
+  for (const task of downloadSelectionRecords.value.values())
+    if (selected.includes(task.taskId) && !tasks.some((item) => item.taskId === task.taskId))
+      tasks.push(task)
+  const actions: { id: string; label: string }[] = []
+  if (tasks.some((task) => task.status === 'queued' || task.status === 'downloading'))
+    actions.push({ id: 'pause', label: '暂停' })
+  if (tasks.some((task) => task.status === 'paused')) actions.push({ id: 'resume', label: '继续' })
+  if (tasks.some((task) => task.status === 'failed')) actions.push({ id: 'retry', label: '重试' })
+  if (tasks.some((task) => task.status === 'completed' || task.status === 'failed'))
+    actions.push({ id: 'delete', label: '删除' })
+  if (tasks.some((task) => task.status === 'completed'))
+    actions.push({ id: 'export', label: '导出' })
+  return actions
+})
+
+const enterCompletedDownloadSelection = (group: CompletedDownloadGroup) => {
+  if (group.type !== 'single') return
+  completedSelectionDomain.value = true
+  enterDownloadSelection(group.chapters[0]?.taskId)
+}
+
+const enterEligibleDownloadSelection = (task: DownloadTask) => {
+  if (task.status === 'verifying') return
+  completedSelectionDomain.value = false
+  enterDownloadSelection(task.taskId)
+}
+
+function enterGroupDownloadSelection(group: DownloadGroupKey) {
+  completedSelectionDomain.value = group === 'completed'
+  enterDownloadSelection()
+}
+
+function cancelDownloadSelection() {
+  downloadSelectionToken++
+  exitDownloadSelection()
+  void syncDownloadState(true)
+  completedSelectionDomain.value = false
+  downloadSelectionRecords.value = new Map()
+  downloadSelectionPreparing.value = false
+  downloadSelectionPreparingAction.value = null
+}
+
+async function prepareDownloadSelection(invert: boolean) {
+  if (downloadSelectionPreparing.value || downloadSelectionExecuting.value) return
+  const token = ++downloadSelectionToken
+  downloadSelectionPreparing.value = true
+  downloadSelectionPreparingAction.value = invert ? 'invert' : 'select-all'
+  try {
+    const ids: string[] = []
+    const records = new Map<string, DownloadTask>()
+    for (const status of completedSelectionDomain.value
+      ? (['completed'] as const)
+      : (['active', 'failed'] as const)) {
+      let cursor: string | undefined
+      do {
+        const page = await JmcomicService.getDownloadTasksPage({
+          status,
+          sort: sortMode.value,
+          direction: sortDirection.value,
+          cursor,
+          limit: 50,
+        })
+        if (token !== downloadSelectionToken) return
+        for (const item of page.items) {
+          if (status === 'completed') {
+            const group = item as CompletedDownloadGroup
+            if (group.type === 'single' && group.chapters.length === 1) {
+              ids.push(group.chapters[0].taskId)
+              records.set(group.chapters[0].taskId, group.chapters[0])
+            }
+          } else {
+            const task = item as DownloadTask
+            if (task.status !== 'verifying') {
+              ids.push(task.taskId)
+              records.set(task.taskId, task)
+            }
+          }
+        }
+        cursor = page.nextCursor ?? undefined
+      } while (cursor)
+    }
+    if (token !== downloadSelectionToken) return
+    downloadSelectionRecords.value = records
+    if (invert) invertDownloadItems(ids)
+    else selectAllDownloadItems(ids)
+  } catch {
+    if (token === downloadSelectionToken)
+      await showToast('读取下载任务失败，本次选择未生效', 'danger')
+  } finally {
+    if (token === downloadSelectionToken) {
+      downloadSelectionPreparing.value = false
+      downloadSelectionPreparingAction.value = null
+    }
+  }
+}
+
+async function executeDownloadSelection(action: string) {
+  const selected = [...downloadSelectedIds.value]
+  const tasks = [
+    ...downloadGroupStates.active.items,
+    ...downloadGroupStates.failed.items,
+    ...downloadGroupStates.completed.items,
+  ]
+    .flatMap((item) => ('chapters' in item ? item.chapters : [item]))
+    .filter((task) => selected.includes(task.taskId))
+  for (const task of downloadSelectionRecords.value.values())
+    if (selected.includes(task.taskId) && !tasks.some((item) => item.taskId === task.taskId))
+      tasks.push(task)
+  const eligible = tasks.filter((task) =>
+    action === 'pause'
+      ? ['queued', 'downloading'].includes(task.status)
+      : action === 'resume'
+        ? task.status === 'paused'
+        : action === 'retry'
+          ? task.status === 'failed'
+          : action === 'delete'
+            ? ['completed', 'failed'].includes(task.status)
+            : false,
+  )
+  if (action === 'export') {
+    openBatchExportSheet(tasks.filter((task) => task.status === 'completed'))
+    return
+  }
+  if (!eligible.length) return
+  if (action === 'delete') {
+    const alert = await createAppAlert({
+      header: '确认删除',
+      message: `确定删除选中的 ${eligible.length} 个章节文件吗？此操作不可恢复。`,
+      buttons: [
+        { text: '取消', role: 'cancel' },
+        {
+          text: '删除',
+          role: 'destructive',
+          handler: async () => runDownloadBatch(action, eligible),
+        },
+      ],
+    })
+    await alert.present()
+    return
+  }
+  await runDownloadBatch(action, eligible)
+}
+
+async function runDownloadBatch(action: string, tasks: DownloadTask[]) {
+  downloadSelectionExecuting.value = true
+  downloadBatchRunning.value = true
+  downloadBatchActionLabel.value =
+    {
+      pause: '正在暂停下载',
+      resume: '正在继续下载',
+      retry: '正在重试下载',
+      delete: '正在删除章节',
+    }[action] ?? '正在处理'
+  downloadBatchCurrent.value = 0
+  downloadBatchTotal.value = tasks.length
+  let succeeded = 0
+  let failed = 0
+  try {
+    for (const task of tasks) {
+      downloadBatchCurrentTitle.value = task.chapterTitle || task.albumTitle
+      try {
+        if (action === 'pause') {
+          if (!(await JmcomicService.pauseDownload(task.taskId)).success)
+            throw new Error('暂停失败')
+        } else if (action === 'resume') {
+          if (!(await JmcomicService.resumeDownload(task.taskId)).success)
+            throw new Error('继续失败')
+        } else if (action === 'retry') {
+          const result = await JmcomicService.downloadChapter(
+            task.albumId,
+            task.chapterId,
+            task.albumTitle,
+            task.chapterTitle,
+            task.coverUrl,
+          )
+          if (!result.taskId) throw new Error('重试未提交')
+          OfflineDownloadService.removeTask(task.taskId)
+          OfflineDownloadService.addTask({
+            ...task,
+            taskId: result.taskId,
+            status: 'queued',
+            downloadedPages: 0,
+            totalPages: 0,
+            createdAt: Date.now(),
+          })
+        } else {
+          await JmcomicService.deleteDownloaded(task.albumId, task.chapterId)
+          OfflineDownloadService.removeTask(task.taskId)
+        }
+        succeeded++
+      } catch {
+        failed++
+      }
+      downloadBatchCurrent.value++
+    }
+  } finally {
+    downloadSelectionExecuting.value = false
+    downloadBatchRunning.value = false
+    exitDownloadSelection()
+    completedSelectionDomain.value = false
+    downloadSelectionRecords.value = new Map()
+    await syncDownloadState()
+    await showToast(
+      `操作完成：成功 ${succeeded} 项，失败 ${failed} 项`,
+      failed ? 'medium' : 'success',
+    )
+  }
+}
+
 const rebuildVisibleTasks = () => {
   const next: DownloadTask[] = []
   for (const group of downloadGroups.value) {
@@ -677,6 +1024,7 @@ const resetGroup = (group: DownloadGroupState, keepWindow = false) => {
 let restoredDownloadScrollTop: number | null = null
 
 const loadGroup = async (key: DownloadGroupKey, direction: 'next' | 'previous' = 'next') => {
+  if (downloadSelectionActive.value) return
   const group = downloadGroupStates[key]
   if (group.loading || (group.collapsed && group.initialized)) return
   if (group.error && !group.nextCursor && !group.previousCursor) resetGroup(group, true)
@@ -709,8 +1057,11 @@ const loadGroup = async (key: DownloadGroupKey, direction: 'next' | 'previous' =
       nextCursor: result.nextCursor,
       previousCursor: result.previousCursor,
     }
-    const pages = !group.initialized ? [page]
-      : direction === 'previous' ? [page, ...group.pages] : [...group.pages, page]
+    const pages = !group.initialized
+      ? [page]
+      : direction === 'previous'
+        ? [page, ...group.pages]
+        : [...group.pages, page]
     setGroupPages(group, direction === 'previous' ? pages.slice(0, 3) : pages.slice(-3))
     group.totalCount = result.totalCount
     group.initialized = true
@@ -750,6 +1101,7 @@ const refreshGroupsFirstPage = async (keys: DownloadGroupKey[]) => {
 }
 
 const toggleGroup = (key: DownloadGroupKey) => {
+  if (downloadSelectionActive.value) return
   const group = downloadGroupStates[key]
   group.collapsed = !group.collapsed
   if (!group.collapsed && !group.initialized) void loadGroup(key)
@@ -796,17 +1148,20 @@ const onDownloadScroll = async (event: CustomEvent<{ scrollTop?: number }>) => {
 
 const removeVisibleTask = (taskId: string) => {
   for (const group of downloadGroups.value) {
-    setGroupPages(group, group.pages.map((page) => ({
-      ...page,
-      items: page.items.flatMap<DownloadPageItem>((item): DownloadPageItem[] => {
-        if (!('chapters' in item)) return item.taskId === taskId ? [] : [item]
-        if (!item.chapters.some((chapter) => chapter.taskId === taskId)) return [item]
-        const chapters = item.chapters.filter((chapter) => chapter.taskId !== taskId)
-        return chapters.length
-          ? [{ ...item, chapters, type: chapters.length > 1 ? 'multi' : 'single' }]
-          : []
-      }),
-    })))
+    setGroupPages(
+      group,
+      group.pages.map((page) => ({
+        ...page,
+        items: page.items.flatMap<DownloadPageItem>((item): DownloadPageItem[] => {
+          if (!('chapters' in item)) return item.taskId === taskId ? [] : [item]
+          if (!item.chapters.some((chapter) => chapter.taskId === taskId)) return [item]
+          const chapters = item.chapters.filter((chapter) => chapter.taskId !== taskId)
+          return chapters.length
+            ? [{ ...item, chapters, type: chapters.length > 1 ? 'multi' : 'single' }]
+            : []
+        }),
+      })),
+    )
   }
   rebuildVisibleTasks()
 }
@@ -823,9 +1178,12 @@ const updateVisibleTask = (taskId: string, update: (task: DownloadTask) => Downl
         }
         if (!item.chapters.some((chapter) => chapter.taskId === taskId)) return item
         changed = true
-        return { ...item, chapters: item.chapters.map((chapter) =>
-          chapter.taskId === taskId ? update(chapter) : chapter,
-        ) }
+        return {
+          ...item,
+          chapters: item.chapters.map((chapter) =>
+            chapter.taskId === taskId ? update(chapter) : chapter,
+          ),
+        }
       })
       return changed ? { ...page, items } : page
     })
@@ -852,7 +1210,9 @@ const syncDownloadState = async (includeCollapsed = false): Promise<void> => {
           syncCollapsedRequested ||= readCollapsed
           continue
         }
-        const failedGroups = downloadGroups.value.filter((group) => (readCollapsed || !group.collapsed) && group.error)
+        const failedGroups = downloadGroups.value.filter(
+          (group) => (readCollapsed || !group.collapsed) && group.error,
+        )
         if (failedGroups.length) {
           const cached = OfflineDownloadService.getAll()
           const cachedCompleted = OfflineDownloadService.getCompletedGroups()
@@ -866,7 +1226,9 @@ const syncDownloadState = async (includeCollapsed = false): Promise<void> => {
             } else {
               group.items = cachedCompleted
             }
-            setGroupPages(group, [{ items: group.items.slice(0, 150), nextCursor: null, previousCursor: null }])
+            setGroupPages(group, [
+              { items: group.items.slice(0, 150), nextCursor: null, previousCursor: null },
+            ])
             group.totalCount = group.items.length
             group.initialized = true
           }
@@ -893,7 +1255,9 @@ const syncDownloadState = async (includeCollapsed = false): Promise<void> => {
         downloadGroupStates.failed.items = cached.filter((task) => task.status === 'failed')
         downloadGroupStates.completed.items = OfflineDownloadService.getCompletedGroups()
         for (const group of downloadGroups.value) {
-          setGroupPages(group, [{ items: group.items.slice(0, 150), nextCursor: null, previousCursor: null }])
+          setGroupPages(group, [
+            { items: group.items.slice(0, 150), nextCursor: null, previousCursor: null },
+          ])
         }
         downloadGroupStates.active.totalCount = downloadGroupStates.active.items.length
         downloadGroupStates.failed.totalCount = downloadGroupStates.failed.items.length
@@ -1001,6 +1365,10 @@ const updateSpeedSample = (
 }
 
 const onRefresh = async (event: CustomEvent) => {
+  if (downloadSelectionActive.value) {
+    ;(event.target as HTMLIonRefresherElement).complete()
+    return
+  }
   if (activeMainView.value === 'export') await exportManagementRef.value?.refresh()
   else await syncDownloadState(true)
   ;(event.target as HTMLIonRefresherElement).complete()
@@ -1154,6 +1522,7 @@ onUnmounted(() => {
 
 // ---- 文件导出 ----
 const onOpenExportSheet = () => {
+  downloadBatchExport.value = false
   const g = selectedGroup.value
   if (g?.type === 'multi') {
     chaptersForExport.value = g.chapters
@@ -1161,6 +1530,14 @@ const onOpenExportSheet = () => {
     const t = selectedTask.value
     chaptersForExport.value = ['source' in t ? t.downloadTask! : t]
   }
+  showExportSheet.value = true
+}
+
+const openBatchExportSheet = (tasks: DownloadTask[]) => {
+  downloadBatchExport.value = true
+  chaptersForExport.value = tasks
+  selectedGroup.value = null
+  selectedTask.value = null
   showExportSheet.value = true
 }
 
@@ -1300,6 +1677,11 @@ const onExportConfirm = async (payload: {
       await showToast(`已开始 ${accepted} 个，${rejected} 个未进入队列，请查看导出任务`, 'medium')
     } else {
       await showToast(`${payload.format.toUpperCase()} 导出已开始，请查看通知`, 'success')
+    }
+    if (downloadBatchExport.value) {
+      downloadBatchExport.value = false
+      exitDownloadSelection()
+      void syncDownloadState(true)
     }
   } catch (e: any) {
     await showToast(sanitizeError(e, '导出启动失败'), 'danger')
@@ -1522,7 +1904,8 @@ const clearCompleted = async () => {
   const result = await JmcomicService.clearDownloadTasks('completed')
   resetGroup(downloadGroupStates.completed)
   await loadGroup('completed')
-  if (result.failedCount) await showToast(`${result.failedCount} 个任务清理失败，已保留记录，可重试`, 'medium')
+  if (result.failedCount)
+    await showToast(`${result.failedCount} 个任务清理失败，已保留记录，可重试`, 'medium')
 }
 
 const clearFailed = async () => {
@@ -1530,7 +1913,8 @@ const clearFailed = async () => {
   const result = await JmcomicService.clearDownloadTasks('failed')
   resetGroup(downloadGroupStates.failed)
   await loadGroup('failed')
-  if (result.failedCount) await showToast(`${result.failedCount} 个任务清理失败，已保留记录，可重试`, 'medium')
+  if (result.failedCount)
+    await showToast(`${result.failedCount} 个任务清理失败，已保留记录，可重试`, 'medium')
 }
 </script>
 
@@ -1797,5 +2181,32 @@ const clearFailed = async () => {
   .section-toggle-icon {
     transition-duration: 0.01ms;
   }
+}
+.multi-select-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  pointer-events: none;
+}
+.multi-select-overlay > * {
+  pointer-events: auto;
+}
+.download-batch-progress {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  display: grid;
+  place-content: center;
+  gap: 12px;
+  padding: 24px;
+  background: rgb(24 20 18 / 0.32);
+  color: #30201a;
+  text-align: center;
+  font-size: 16px;
+  font-weight: 600;
 }
 </style>

@@ -72,6 +72,7 @@ vi.mock('@ionic/vue', () => {
   textOutline: 'text',
   timeOutline: 'time',
   trashOutline: 'trash',
+  listOutline: 'list',
   chevronDownOutline: 'chevron-down',
   chevronUpOutline: 'chevron-up',
 }))

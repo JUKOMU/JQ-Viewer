@@ -13,7 +13,7 @@
         </div>
       </Transition>
 
-      <div class="category-page-top">
+      <div class="category-page-top" :inert="multiSelectActive">
         <div
           class="category-page-toolbar desktop-page-content"
           :class="{ pinned: pullHeaderPinned }"
@@ -37,11 +37,15 @@
         :page-at-top="pageAtTop"
         :error-message="errorMessage"
         :mode="displayMode"
+        :multi-select="multiSelectActive"
+        :selected-ids="multiSelectedIds"
         :loaded-page-start="loadedPageStart"
         :loaded-page-end="loadedPageEnd"
         idle-text="分类搜索结果将在这里显示"
         @mode-change="displayMode = $event"
         @item-click="handleItemClick"
+        @long-press="enterMultiSelect($event.id)"
+        @selection-toggle="toggleMultiSelect($event.id)"
         @load-previous="handleLoadPrevious"
         @pull-state-change="pullGestureActive = $event"
         @retry="retrySearch"
@@ -52,12 +56,36 @@
             class="card-more-btn"
             :class="{ active: cardMenu?.item.id === item.id }"
             aria-label="更多操作"
+            @pointerdown.stop
             @click.stop="openCardMenu(item, $event)"
           >
             <IonIcon :icon="ellipsisVertical" />
           </button>
         </template>
       </SearchResultContainer>
+
+      <div v-if="multiSelectActive" class="multi-select-overlay">
+        <MultiSelectInfoBar
+          :count="multiSelectCount"
+          :all-selected="multiSelectAllSelected"
+          @cancel="exitMultiSelect"
+          @select-all="selectAllMultiItems(displayItems.map(({ item }) => item.id))"
+          @invert="invertMultiItems(displayItems.map(({ item }) => item.id))"
+        />
+        <MultiSelectActionBar
+          :actions="[
+            { id: 'favorite', label: '收藏' },
+            { id: 'download', label: '下载' },
+          ]"
+          :disabled="!multiSelectCount || multiSelectExecuting"
+          @action="handleMultiSelectAction"
+        />
+      </div>
+      <div v-if="multiSelectExecuting" class="multi-select-progress" role="status">
+        {{ multiSelectProgressLabel }}：{{ multiSelectProgressCurrent }} /
+        {{ multiSelectProgressTotal }}
+        <div>{{ multiSelectProgressTitle }}</div>
+      </div>
 
       <CardContextMenu
         :visible="Boolean(cardMenu)"
@@ -79,6 +107,7 @@
         :online-error-message="onlineFolderErrorMessage"
         :hide-online="!isLoggedIn"
         @select="onPickerSelect"
+        @update:model-value="onFavoritePickerVisibilityChange"
         @add-folder="onPickerAddFolder"
         @retry-online="refreshOnlineFolderData"
       />
@@ -98,7 +127,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onActivated, onDeactivated, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { IonContent, IonIcon, IonPage } from '@ionic/vue'
+import { IonContent, IonIcon, IonPage, useBackButton } from '@ionic/vue'
 import { createAppAlert } from '@/services/AppAlertService'
 import {
   bookOutline,
@@ -106,10 +135,14 @@ import {
   ellipsisVertical,
   heartOutline,
   informationCircleOutline,
+  listOutline,
 } from 'ionicons/icons'
 import type { ScrollCustomEvent } from '@ionic/core'
 import CategorySearchToolbar from '@/components/search/CategorySearchToolbar.vue'
 import CardContextMenu from '@/components/common/CardContextMenu.vue'
+import MultiSelectInfoBar from '@/components/common/MultiSelectInfoBar.vue'
+import MultiSelectActionBar from '@/components/common/MultiSelectActionBar.vue'
+import { useMultiSelect } from '@/composables/useMultiSelect'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import QuickActionFab from '@/components/common/QuickActionFab.vue'
 import FavoriteFolderPicker from '@/components/favorite/FavoriteFolderPicker.vue'
@@ -138,6 +171,28 @@ const router = useRouter()
 const NEXT_PAGE_THRESHOLD = 220
 
 const resultMeta = ref<SearchResult | null>(null)
+const selection = useMultiSelect<string>()
+const {
+  active: multiSelectActive,
+  selected: multiSelectedIds,
+  count: multiSelectCount,
+  allSelected: multiSelectAllSelected,
+  enter: enterMultiSelect,
+  toggle: toggleMultiSelect,
+  selectAll: selectAllMultiItems,
+  invert: invertMultiItems,
+  exit: exitMultiSelect,
+} = selection
+const multiSelectExecuting = ref(false)
+const multiSelectProgressLabel = ref('正在处理')
+const multiSelectProgressCurrent = ref(0)
+const multiSelectProgressTotal = ref(0)
+const multiSelectProgressTitle = ref('')
+useBackButton(5, (processNextHandler) => {
+  if (multiSelectExecuting.value) return
+  if (multiSelectActive.value) exitMultiSelect()
+  else processNextHandler()
+})
 const initialLoading = ref(false)
 const loadingPrevious = ref(false)
 const loadingNext = ref(false)
@@ -224,6 +279,7 @@ const fetchPage = async (query: SearchQuery, page: number) => {
 }
 
 const resetWithPage = async (query: SearchQuery) => {
+  if (multiSelectActive.value) return
   const targetQuery = { ...query, page: query.page ?? 1 }
   lastQuery.value = targetQuery
   initialLoading.value = true
@@ -255,6 +311,7 @@ const retrySearch = () => {
 }
 
 const openSearch = () => {
+  if (multiSelectActive.value) return
   categoryOverlayVisible.value = true
 }
 
@@ -272,7 +329,13 @@ const scrollToTop = () => {
 }
 
 const appendPage = async (page: number) => {
-  if (!lastQuery.value || loadingNext.value || initialLoading.value || !canLoadNext.value) {
+  if (
+    multiSelectActive.value ||
+    !lastQuery.value ||
+    loadingNext.value ||
+    initialLoading.value ||
+    !canLoadNext.value
+  ) {
     return
   }
 
@@ -294,7 +357,13 @@ const appendPage = async (page: number) => {
 }
 
 const prependPage = async (page: number) => {
-  if (!lastQuery.value || loadingPrevious.value || initialLoading.value || !canLoadPrevious.value) {
+  if (
+    multiSelectActive.value ||
+    !lastQuery.value ||
+    loadingPrevious.value ||
+    initialLoading.value ||
+    !canLoadPrevious.value
+  ) {
     return
   }
 
@@ -380,6 +449,70 @@ const handleItemClick = (item: SearchResultItem) => {
   })
 }
 
+const handleMultiSelectAction = async (action: string) => {
+  const selectedItems = displayItems.value.filter(({ item }) =>
+    selection.selected.value.has(item.id),
+  )
+  if (action === 'favorite') {
+    pendingFavoriteItems.value = selectedItems.map(({ item }) => item)
+    pickerTargetItem.value = selectedItems[0]?.item ?? null
+    if (pickerTargetItem.value) void openFolderPicker()
+    return
+  }
+  if (action === 'download') {
+    multiSelectExecuting.value = true
+    multiSelectProgressLabel.value = '正在提交下载'
+    multiSelectProgressCurrent.value = 0
+    multiSelectProgressTotal.value = selectedItems.length
+    let succeeded = 0
+    let failed = 0
+    for (const { item } of selectedItems) {
+      multiSelectProgressTitle.value = item.title
+      try {
+        const photo = await JmcomicService.getPhoto(item.id)
+        const taskId = `${item.id}_${photo.id}`
+        if (
+          OfflineDownloadService.getAll().some(
+            (task) => task.taskId === taskId && task.status !== 'failed',
+          )
+        )
+          throw new Error('章节已在下载队列中')
+        const result = await JmcomicService.downloadChapter(
+          item.id,
+          photo.id,
+          item.title,
+          photo.title,
+          item.coverUrl,
+        )
+        if (!result.taskId) throw new Error('下载任务未提交')
+        OfflineDownloadService.addTask({
+          taskId: result.taskId,
+          albumId: item.id,
+          chapterId: photo.id,
+          albumTitle: item.title,
+          chapterTitle: photo.title,
+          coverUrl: item.coverUrl,
+          isSingleEpisode: photo.isSingleEpisode,
+          totalPages: 0,
+          downloadedPages: 0,
+          status: 'queued',
+          createdAt: Date.now(),
+        })
+        succeeded++
+      } catch {
+        failed++
+      }
+      multiSelectProgressCurrent.value++
+    }
+    multiSelectExecuting.value = false
+    await showToast(
+      `已加入下载队列：成功 ${succeeded} 项，失败 ${failed} 项`,
+      failed ? 'medium' : 'success',
+    )
+    selection.exit()
+  }
+}
+
 // ========== 卡片操作菜单 ==========
 
 const auth = useAuth()
@@ -413,6 +546,7 @@ const cardMenuActions = computed(() => [
   { id: 'read', label: '阅读', icon: bookOutline },
   { id: 'download', label: '下载', icon: downloadOutline },
   { id: 'favorite', label: '收藏', icon: heartOutline },
+  { id: 'multi-select', label: '多选', icon: listOutline },
 ])
 
 function openCardMenu(item: SearchResultItem, event: MouseEvent) {
@@ -431,6 +565,11 @@ function closeCardMenu() {
 function handleCardMenuAction(action: string) {
   const item = cardMenu.value?.item
   if (!item) return
+  if (action === 'multi-select') {
+    closeCardMenu()
+    selection.enter(item.id)
+    return
+  }
   if (action === 'detail') handleCardDetail(item)
   else if (action === 'read') void handleCardRead(item)
   else if (action === 'download') void handleCardDownload(item)
@@ -500,6 +639,7 @@ function handleCardFavorite(item: SearchResultItem) {
 
 const showFolderPicker = ref(false)
 const pickerTargetItem = ref<SearchResultItem | null>(null)
+const pendingFavoriteItems = ref<SearchResultItem[]>([])
 const pickerOfflineFolders = ref<FolderEntry[]>([])
 
 async function refreshOnlineFolderData() {
@@ -529,7 +669,52 @@ async function onPickerSelect(payload: { folderId: string; source: 'online' | 'o
   const item = pickerTargetItem.value
   pickerTargetItem.value = null
   if (!item) return
+  if (pendingFavoriteItems.value.length) {
+    const items = pendingFavoriteItems.value
+    pendingFavoriteItems.value = []
+    let succeeded = 0
+    let failed = 0
+    multiSelectExecuting.value = true
+    multiSelectProgressLabel.value = '正在收藏'
+    multiSelectProgressCurrent.value = 0
+    multiSelectProgressTotal.value = items.length
+    for (const favoriteItem of items) {
+      multiSelectProgressTitle.value = favoriteItem.title
+      try {
+        if (payload.source === 'online') {
+          const result = await JmcomicService.favoriteToFolder(favoriteItem.id, payload.folderId)
+          if (!result.success) throw new Error('收藏失败')
+        } else {
+          const result = await JmcomicService.addOfflineFavorite(payload.folderId, favoriteItem)
+          if (!result.success) throw new Error('收藏失败')
+        }
+        succeeded++
+      } catch {
+        failed++
+      }
+      multiSelectProgressCurrent.value++
+    }
+    multiSelectExecuting.value = false
+    invalidateFavoritePageCache()
+    if (payload.source === 'online') {
+      invalidateFavoriteFolders()
+      void refreshOnlineFolderData()
+    } else await OfflineFavoriteService.refreshCache()
+    await showToast(
+      `收藏完成：成功 ${succeeded} 项，失败 ${failed} 项`,
+      failed ? 'medium' : 'success',
+    )
+    exitMultiSelect()
+    return
+  }
   void executeFavorite(item, payload)
+}
+
+function onFavoritePickerVisibilityChange(visible: boolean) {
+  if (!visible && pendingFavoriteItems.value.length) {
+    pendingFavoriteItems.value = []
+    pickerTargetItem.value = null
+  }
 }
 
 async function executeFavorite(
@@ -596,6 +781,7 @@ async function onPickerAddFolder(source: 'online' | 'offline') {
 }
 
 const clearResult = () => {
+  if (multiSelectActive.value) return
   resultMeta.value = null
   pageCache.value = {}
   errorMessage.value = ''
@@ -603,6 +789,7 @@ const clearResult = () => {
 }
 
 const jumpToPage = async () => {
+  if (multiSelectActive.value) return
   if (!resultMeta.value || !lastQuery.value) {
     return
   }
@@ -642,6 +829,7 @@ const jumpToPage = async () => {
 const savedScrollTop = ref(0)
 
 onDeactivated(() => {
+  exitMultiSelect()
   savedScrollTop.value = scrollElementRef.value?.scrollTop ?? 0
 })
 
@@ -657,6 +845,36 @@ onMounted(() => {
   void resolveScrollElement()
 })
 </script>
+
+<style scoped>
+.multi-select-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  pointer-events: none;
+}
+.multi-select-overlay > * {
+  pointer-events: auto;
+}
+.multi-select-progress {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  display: grid;
+  place-content: center;
+  gap: 12px;
+  padding: 24px;
+  background: rgb(24 20 18 / 0.32);
+  color: #30201a;
+  text-align: center;
+  font-size: 16px;
+  font-weight: 600;
+}
+</style>
 
 <style scoped>
 .toolbar-start {

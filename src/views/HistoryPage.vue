@@ -10,6 +10,7 @@
             type="button"
             class="tab-btn"
             :class="{ active: activeTab === 'browse' }"
+            :disabled="browseSelection.active.value || parseSelection.active.value"
             @click="switchTab('browse')"
           >
             浏览历史
@@ -18,6 +19,7 @@
             type="button"
             class="tab-btn"
             :class="{ active: activeTab === 'parse' }"
+            :disabled="browseSelection.active.value || parseSelection.active.value"
             @click="switchTab('parse')"
           >
             解析历史
@@ -44,7 +46,24 @@
           <template v-else>
             <div class="section-header">
               <span class="section-title">共 {{ browseTotalCount }} 条记录</span>
-              <button type="button" class="clear-btn" @click="confirmClearBrowse">清空</button>
+              <div class="section-actions">
+                <button
+                  type="button"
+                  class="clear-btn"
+                  :disabled="browseSelection.active.value"
+                  @click="confirmClearBrowse"
+                >
+                  清空
+                </button>
+                <button
+                  type="button"
+                  class="clear-btn"
+                  :disabled="browseSelection.active.value"
+                  @click="enterHistorySelection('browse')"
+                >
+                  多选
+                </button>
+              </div>
             </div>
             <div class="card-list">
               <section v-for="group in browseGroups" :key="group.key" class="date-group">
@@ -54,6 +73,7 @@
                     type="button"
                     class="date-group-toggle"
                     :aria-expanded="!isBrowseGroupCollapsed(group.key)"
+                    :disabled="browseSelection.active.value || historySelectionExecuting"
                     :aria-controls="browseGroupContentId(group.key)"
                     :aria-label="`${isBrowseGroupCollapsed(group.key) ? '展开' : '收起'}${group.label}`"
                     @click="toggleBrowseGroup(group.key)"
@@ -83,7 +103,18 @@
                         v-for="item in group.items"
                         :key="item.id"
                         class="browse-card"
-                        @click="openAlbumDetail(item)"
+                        :class="{
+                          'long-pressing': historyPressedCard === `browse:${item.id}`,
+                          'multi-unselected':
+                            browseSelection.active.value &&
+                            !browseSelection.selected.value.has(item.id),
+                          'multi-selected': browseSelection.selected.value.has(item.id),
+                        }"
+                        @pointerdown="startHistoryLongPress('browse', item.id, $event)"
+                        @pointermove="handleHistoryPointerMove"
+                        @pointerup="endHistoryLongPress"
+                        @pointercancel="endHistoryLongPress"
+                        @click="handleBrowseCardClick(item)"
                       >
                         <div class="card-cover-wrap">
                           <img :src="item.coverUrl" class="card-cover" alt="" loading="lazy" />
@@ -99,14 +130,26 @@
                           </div>
                         </div>
                         <button
+                          v-if="!browseSelection.active.value"
                           type="button"
                           class="card-more-btn"
                           :class="{ active: contextMenu?.item.id === item.id }"
                           aria-label="更多操作"
+                          @pointerdown.stop
                           @click.stop="openContextMenu(item, $event)"
                         >
                           <IonIcon :icon="ellipsisVertical" />
                         </button>
+                        <input
+                          v-else
+                          type="checkbox"
+                          class="history-select-mark"
+                          :checked="browseSelection.selected.value.has(item.id)"
+                          :aria-label="`${browseSelection.selected.value.has(item.id) ? '取消选择' : '选择'}${item.albumTitle}`"
+                          @pointerdown.stop
+                          @click.stop
+                          @change.stop="browseSelection.toggle(item.id)"
+                        />
                       </div>
                     </div>
                     <div
@@ -141,14 +184,41 @@
           <template v-else>
             <div class="section-header">
               <span class="section-title">共 {{ parseTotalCount }} 条记录</span>
-              <button type="button" class="clear-btn" @click="confirmClearParse">清空</button>
+              <div class="section-actions">
+                <button
+                  type="button"
+                  class="clear-btn"
+                  :disabled="parseSelection.active.value"
+                  @click="confirmClearParse"
+                >
+                  清空
+                </button>
+                <button
+                  type="button"
+                  class="clear-btn"
+                  :disabled="parseSelection.active.value"
+                  @click="enterHistorySelection('parse')"
+                >
+                  多选
+                </button>
+              </div>
             </div>
             <TransitionGroup name="parse-history-list" tag="div" class="card-list">
               <div
                 v-for="item in parseItems"
                 :key="item.id"
                 class="parse-card"
-                @click="openParseItem(item)"
+                :class="{
+                  'long-pressing': historyPressedCard === `parse:${item.id}`,
+                  'multi-unselected':
+                    parseSelection.active.value && !parseSelection.selected.value.has(item.id),
+                  'multi-selected': parseSelection.selected.value.has(item.id),
+                }"
+                @pointerdown="startHistoryLongPress('parse', item.id, $event)"
+                @pointermove="handleHistoryPointerMove"
+                @pointerup="endHistoryLongPress"
+                @pointercancel="endHistoryLongPress"
+                @click="handleParseCardClick(item)"
               >
                 <div class="parse-icon-wrap">
                   <IonIcon :icon="documentTextOutline" />
@@ -166,14 +236,26 @@
                   </div>
                 </div>
                 <button
+                  v-if="!parseSelection.active.value"
                   type="button"
                   class="card-more-btn"
                   :class="{ active: contextMenu?.item.id === item.id }"
                   aria-label="更多操作"
+                  @pointerdown.stop
                   @click.stop="openContextMenu(item, $event)"
                 >
                   <IonIcon :icon="ellipsisVertical" />
                 </button>
+                <input
+                  v-else
+                  type="checkbox"
+                  class="history-select-mark"
+                  :checked="parseSelection.selected.value.has(item.id)"
+                  :aria-label="`${parseSelection.selected.value.has(item.id) ? '取消选择' : '选择'}${item.text}`"
+                  @pointerdown.stop
+                  @click.stop
+                  @change.stop="parseSelection.toggle(item.id)"
+                />
               </div>
             </TransitionGroup>
           </template>
@@ -191,6 +273,29 @@
       @close="closeContextMenu"
       @select="handleContextMenuAction"
     />
+    <div v-if="activeHistorySelection.active.value" class="multi-select-overlay">
+      <MultiSelectInfoBar
+        :count="activeHistorySelection.count.value"
+        :preparing="historySelectionPreparing"
+        :preparing-action="historySelectionPreparingAction"
+        :all-selected="activeHistorySelection.allSelected.value"
+        @cancel="exitHistorySelection"
+        @select-all="prepareHistorySelection(false)"
+        @invert="prepareHistorySelection(true)"
+      />
+      <MultiSelectActionBar
+        :actions="[{ id: 'delete', label: '删除' }]"
+        :disabled="
+          !activeHistorySelection.count.value ||
+          historySelectionPreparing ||
+          historySelectionExecuting
+        "
+        @action="executeHistoryDelete"
+      />
+    </div>
+    <div v-if="historySelectionExecuting" class="history-batch-progress" role="status">
+      正在删除历史记录：{{ historySelectionCurrent }} / {{ historySelectionTotal }}
+    </div>
   </IonPage>
 </template>
 
@@ -200,9 +305,9 @@ defineOptions({ name: 'HistoryPage' })
 import { computed, nextTick, onActivated, onDeactivated, onMounted, reactive, ref } from 'vue'
 import type { ComponentPublicInstance } from 'vue'
 import { useRouter } from 'vue-router'
-import { IonContent, IonIcon, IonPage, IonSpinner } from '@ionic/vue'
+import { IonContent, IonIcon, IonPage, IonSpinner, useBackButton } from '@ionic/vue'
 import { createAppAlert } from '@/services/AppAlertService'
-import { showToast } from '@/services/JmcomicService'
+import { JmcomicService, showToast } from '@/services/JmcomicService'
 import {
   bookOutline,
   chevronDownOutline,
@@ -212,6 +317,7 @@ import {
   informationCircleOutline,
   timeOutline,
   trashOutline,
+  listOutline,
 } from 'ionicons/icons'
 import { HistoryService } from '@/services/HistoryService'
 import type {
@@ -223,6 +329,9 @@ import { BROWSE_GROUP_DEFINITIONS, createBrowseHistorySnapshot } from '@/utils/h
 import type { BrowseGroupKey, BrowseHistoryGroupSnapshot } from '@/utils/historyDateGroups'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import CardContextMenu from '@/components/common/CardContextMenu.vue'
+import MultiSelectInfoBar from '@/components/common/MultiSelectInfoBar.vue'
+import MultiSelectActionBar from '@/components/common/MultiSelectActionBar.vue'
+import { useMultiSelect } from '@/composables/useMultiSelect'
 
 const PAGE_SIZE = 50
 const router = useRouter()
@@ -231,6 +340,20 @@ const scrollEl = ref<HTMLElement | null>(null)
 type HistoryTab = 'browse' | 'parse'
 
 const activeTab = ref<HistoryTab>('browse')
+const browseSelection = useMultiSelect<number>()
+const parseSelection = useMultiSelect<number>()
+const activeHistorySelection = computed(() =>
+  activeTab.value === 'browse' ? browseSelection : parseSelection,
+)
+const historySelectionPreparing = ref(false)
+const historySelectionPreparingAction = ref<'select-all' | 'invert' | null>(null)
+const historySelectionExecuting = ref(false)
+const historySelectionCurrent = ref(0)
+const historySelectionTotal = ref(0)
+let historyLongPressTimer: ReturnType<typeof setTimeout> | null = null
+let historyLongPressSuppressClick = false
+let historyLongPressStartPoint: { x: number; y: number } | null = null
+const historyPressedCard = ref<string | null>(null)
 const parseItems = ref<ParseHistoryItem[]>([])
 const browseTotalCount = ref(0)
 const parseTotalCount = ref(0)
@@ -325,6 +448,7 @@ function isContextMenuInBrowseGroup(key: BrowseGroupKey): boolean {
 }
 
 async function toggleBrowseGroup(key: BrowseGroupKey) {
+  if (browseSelection.active.value) return
   const next = new Set(collapsedBrowseGroups.value)
   if (next.has(key)) next.delete(key)
   else {
@@ -541,6 +665,12 @@ function isSentinelNearViewport(sentinel: HTMLElement, scrollElement: HTMLElemen
 }
 
 async function checkBrowseGroupSentinels() {
+  if (
+    browseSelection.active.value ||
+    historySelectionPreparing.value ||
+    historySelectionExecuting.value
+  )
+    return
   if (activeTab.value !== 'browse' || isTabTransitioning.value || !tabLoaded.browse) return
   const scrollElement = await resolveScrollElement()
   if (!scrollElement) return
@@ -584,6 +714,12 @@ async function loadParse(generation = tabRequestGeneration.parse): Promise<boole
 }
 
 function loadMoreParse(allowDuringDelete = false): Promise<void> {
+  if (
+    (!allowDuringDelete && parseSelection.active.value) ||
+    historySelectionPreparing.value ||
+    (!allowDuringDelete && historySelectionExecuting.value)
+  )
+    return parseMorePromise ?? Promise.resolve()
   if (parseDeleteInProgress && !allowDuringDelete) return parseMorePromise ?? Promise.resolve()
   if (!isTabReadyForPagination('parse') || loadingMoreByTab.parse || !parseHasMore.value) {
     return parseMorePromise ?? Promise.resolve()
@@ -807,24 +943,21 @@ function browseGroupKeyForItem(
 
 async function reloadTabFromFirstPage(
   tab: HistoryTab,
-  removedId: number,
-  preferredBrowseGroupKey?: BrowseGroupKey,
+  removedIds: number[],
 ) {
   if (tab === 'browse') {
-    const groupKey = browseGroupKeyForItem(removedId, preferredBrowseGroupKey)
-    const group = groupKey ? browseGroupStates[groupKey] : null
-    const previousLength = group?.items.length ?? 0
-    const removed = group ? group.items.some((item) => item.id === removedId) : false
-    if (group && removed) {
-      group.items = group.items.filter((item) => item.id !== removedId)
-      group.offset = Math.max(0, group.offset - 1)
-      group.totalCount = Math.max(0, group.totalCount - 1)
-      group.hasMore = group.offset < group.totalCount
-      browseTotalCount.value = Math.max(0, browseTotalCount.value - 1)
-    }
+    const removedIdSet = new Set(removedIds)
     const reloadGroupCounts = new Map<BrowseGroupKey, number>()
-    if (group?.loaded && previousLength > 0 && groupKey) {
-      reloadGroupCounts.set(groupKey, previousLength)
+    for (const definition of BROWSE_GROUP_DEFINITIONS) {
+      const group = browseGroupStates[definition.key]
+      const previousLength = group.items.length
+      const remainingItems = group.items.filter((item) => !removedIdSet.has(item.id))
+      if (remainingItems.length === previousLength) continue
+      group.items = remainingItems
+      group.offset = Math.max(0, group.offset - (previousLength - remainingItems.length))
+      if (group.loaded && previousLength > 0) {
+        reloadGroupCounts.set(definition.key, previousLength)
+      }
     }
     invalidateTab('browse')
     await ensureTabLoaded('browse', { browseGroupCounts: reloadGroupCounts })
@@ -833,17 +966,17 @@ async function reloadTabFromFirstPage(
 
   if (!tabHasSnapshotMetadata[tab]) {
     const previousLength = parseItems.value.length
-    parseItems.value = parseItems.value.filter((item) => item.id !== removedId)
+    const removedIdSet = new Set(removedIds)
+    parseItems.value = parseItems.value.filter((item) => !removedIdSet.has(item.id))
     if (parseItems.value.length !== previousLength) {
-      updateParseTotalCount(Math.max(0, parseTotalCount.value - 1))
+      updateParseTotalCount(Math.max(0, parseTotalCount.value - (previousLength - parseItems.value.length)))
     }
     return
   }
 
-  const previousLength = parseItems.value.length
-  parseItems.value = parseItems.value.filter((item) => item.id !== removedId)
-  if (parseItems.value.length === previousLength) return
-  updateParseTotalCount(Math.max(0, parseTotalCount.value - 1))
+  const removedIdSet = new Set(removedIds)
+  parseItems.value = parseItems.value.filter((item) => !removedIdSet.has(item.id))
+  updateParseTotalCount(Math.max(0, parseTotalCount.value - removedIds.length))
   if (parseHasMore.value) await loadMoreParse(true)
 }
 
@@ -857,13 +990,14 @@ async function deleteParseHistoryItem(id: number) {
       await showToast('删除解析记录失败，请重试', 'danger')
       return
     }
-    await reloadTabFromFirstPage('parse', id)
+    await reloadTabFromFirstPage('parse', [id])
   } finally {
     parseDeleteInProgress = false
   }
 }
 
 async function switchTab(tab: HistoryTab) {
+  if (browseSelection.active.value || parseSelection.active.value) return
   if (activeTab.value === tab) return
   const wasTransitioning = isTabTransitioning.value
   const transitionId = beginTabTransition()
@@ -902,6 +1036,8 @@ onActivated(() => {
 })
 
 onDeactivated(() => {
+  exitHistorySelection()
+  cancelHistoryLongPress()
   wasDeactivated = true
   saveActiveTabScrollPosition()
 })
@@ -946,11 +1082,13 @@ const contextMenuActions = computed(() => {
     return [
       { id: 'detail', label: '进入详情页', icon: informationCircleOutline },
       { id: 'delete', label: '删除此记录', icon: trashOutline, danger: true },
+      { id: 'multi-select', label: '多选', icon: listOutline },
     ]
   }
   return [
     { id: 'copy', label: '复制文本', icon: copyOutline },
     { id: 'delete', label: '删除此记录', icon: trashOutline, danger: true },
+    { id: 'multi-select', label: '多选', icon: listOutline },
   ]
 })
 
@@ -971,9 +1109,186 @@ function closeContextMenu() {
 }
 
 function handleContextMenuAction(action: string) {
+  if (action === 'multi-select') {
+    const menu = contextMenu.value
+    closeContextMenu()
+    if (menu) enterHistorySelection(menu.type, menu.item.id)
+    return
+  }
   if (action === 'detail') handleMenuDetail()
   else if (action === 'copy') void handleMenuCopy()
   else if (action === 'delete') void handleMenuDelete()
+}
+
+function enterHistorySelection(tab: HistoryTab, id?: number) {
+  if (tab === 'browse') browseSelection.enter(id)
+  else parseSelection.enter(id)
+}
+
+function exitHistorySelection() {
+  activeHistorySelection.value.exit()
+  historySelectionPreparing.value = false
+  historySelectionPreparingAction.value = null
+  selectionRequestToken++
+}
+
+useBackButton(5, (processNextHandler) => {
+  if (historySelectionExecuting.value) return
+  if (browseSelection.active.value || parseSelection.active.value) exitHistorySelection()
+  else processNextHandler()
+})
+
+let selectionRequestToken = 0
+
+function startHistoryLongPress(tab: HistoryTab, id: number, event: PointerEvent) {
+  if (event.button !== 0 || !event.isPrimary) return
+  cancelHistoryLongPress()
+  historyLongPressStartPoint = { x: event.clientX, y: event.clientY }
+  historyLongPressTimer = setTimeout(() => {
+    historyLongPressSuppressClick = true
+    historyPressedCard.value = `${tab}:${id}`
+    enterHistorySelection(tab, id)
+    historyLongPressTimer = null
+  }, 500)
+}
+
+function cancelHistoryLongPress() {
+  if (historyLongPressTimer !== null) clearTimeout(historyLongPressTimer)
+  historyLongPressTimer = null
+  historyLongPressStartPoint = null
+  historyPressedCard.value = null
+}
+
+function handleHistoryPointerMove(event: PointerEvent) {
+  if (
+    historyLongPressStartPoint &&
+    Math.hypot(
+      event.clientX - historyLongPressStartPoint.x,
+      event.clientY - historyLongPressStartPoint.y,
+    ) > 10
+  )
+    cancelHistoryLongPress()
+}
+
+function endHistoryLongPress() {
+  cancelHistoryLongPress()
+}
+
+function handleBrowseCardClick(item: BrowseHistoryItem) {
+  if (historyLongPressSuppressClick) {
+    historyLongPressSuppressClick = false
+    return
+  }
+  if (browseSelection.active.value) browseSelection.toggle(item.id)
+  else openAlbumDetail(item)
+}
+
+function handleParseCardClick(item: ParseHistoryItem) {
+  if (historyLongPressSuppressClick) {
+    historyLongPressSuppressClick = false
+    return
+  }
+  if (parseSelection.active.value) parseSelection.toggle(item.id)
+  else openParseItem(item)
+}
+
+async function prepareHistorySelection(invert: boolean) {
+  if (historySelectionPreparing.value || historySelectionExecuting.value) return
+  const token = ++selectionRequestToken
+  const tab = activeTab.value
+  historySelectionPreparing.value = true
+  historySelectionPreparingAction.value = invert ? 'invert' : 'select-all'
+  try {
+    let ids: number[]
+    if (tab === 'browse') {
+      const ranges = browseSnapshot.value?.ranges ?? []
+      const items: BrowseHistoryItem[] = []
+      for (const range of ranges) {
+        let offset = 0
+        while (offset < browseGroupStates[range.key].totalCount) {
+          const page = await JmcomicService.getBrowseHistory(PAGE_SIZE, offset, range)
+          if (token !== selectionRequestToken) return
+          items.push(...page.items)
+          offset += page.items.length
+          if (!page.items.length) break
+        }
+      }
+      ids = items.map((item) => item.id)
+    } else {
+      const all: ParseHistoryItem[] = []
+      let offset = 0
+      while (offset < parseTotalCount.value) {
+        const page = await JmcomicService.getParseHistory(PAGE_SIZE, offset)
+        if (token !== selectionRequestToken) return
+        all.push(...page.items)
+        offset += page.items.length
+        if (!page.items.length) break
+      }
+      ids = all.map((item) => item.id)
+    }
+    if (token !== selectionRequestToken) return
+    const selection = activeHistorySelection.value
+    if (invert) selection.invert(ids)
+    else selection.selectAll(ids)
+  } catch {
+    if (token === selectionRequestToken)
+      await showToast('读取完整历史失败，本次选择未生效', 'danger')
+  } finally {
+    if (token === selectionRequestToken) {
+      historySelectionPreparing.value = false
+      historySelectionPreparingAction.value = null
+    }
+  }
+}
+
+async function executeHistoryDelete() {
+  const ids = [...activeHistorySelection.value.selected.value]
+  if (!ids.length || historySelectionExecuting.value) return
+  const tab = activeTab.value
+  const alert = await createAppAlert({
+    header: '确认删除',
+    message: `确定删除选中的 ${ids.length} 条${tab === 'browse' ? '浏览' : '解析'}记录吗？此操作不可撤销。`,
+    buttons: [
+      { text: '取消', role: 'cancel' },
+      {
+        text: '删除',
+        role: 'destructive',
+        handler: async () => {
+          historySelectionExecuting.value = true
+          historySelectionCurrent.value = 0
+          historySelectionTotal.value = ids.length
+          const deletedIds: number[] = []
+          let succeeded = 0
+          let failed = 0
+          for (const id of ids) {
+            try {
+              const result =
+                tab === 'browse'
+                  ? await JmcomicService.deleteBrowseItem(id)
+                  : await JmcomicService.deleteParseItem(id)
+              if (result.success) {
+                succeeded++
+                deletedIds.push(id)
+              } else {
+                failed++
+              }
+            } catch {
+              failed++
+            }
+            historySelectionCurrent.value++
+          }
+          if (deletedIds.length) await reloadTabFromFirstPage(tab, deletedIds)
+          historySelectionExecuting.value = false
+          exitHistorySelection()
+          await showToast(
+            `删除完成：成功 ${succeeded} 条，失败 ${failed} 条`,
+            failed ? 'medium' : 'success',
+          )
+        },
+      },
+    ],
+  })
+  await alert.present()
 }
 
 function handleMenuDetail() {
@@ -1012,7 +1327,7 @@ async function handleMenuDelete() {
         handler: async () => {
           if (isBrowse) {
             await HistoryService.deleteBrowseItem(m.item.id)
-            await reloadTabFromFirstPage('browse', m.item.id, m.browseGroupKey)
+            await reloadTabFromFirstPage('browse', [m.item.id])
           } else {
             await deleteParseHistoryItem(m.item.id)
           }
@@ -1223,6 +1538,52 @@ function formatRelativeTime(timestamp: number): string {
   border-radius: 4px;
 }
 
+.section-actions {
+  display: flex;
+  gap: 8px;
+}
+.multi-select-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  pointer-events: none;
+}
+.multi-select-overlay > * {
+  pointer-events: auto;
+}
+.multi-unselected {
+  opacity: 0.5;
+}
+.multi-selected {
+  opacity: 1 !important;
+}
+.history-select-mark {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  transform: translateY(-50%);
+  accent-color: #bf8350;
+}
+.history-batch-progress {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  background: rgb(24 20 18 / 0.28);
+  color: #30201a;
+  font-size: 16px;
+  font-weight: 600;
+  pointer-events: auto;
+}
+
 .clear-btn:active {
   background: #ffeaea;
 }
@@ -1337,6 +1698,11 @@ function formatRelativeTime(timestamp: number): string {
   border-radius: 12px;
   box-shadow: 5px 12px 28px rgb(76 42 24 / 0.2);
   cursor: pointer;
+  transition: transform 0.16s ease;
+}
+
+.browse-card.long-pressing {
+  transform: scale(0.98);
 }
 
 .card-cover-wrap {
@@ -1425,7 +1791,12 @@ function formatRelativeTime(timestamp: number): string {
   border-radius: 12px;
   box-shadow: 5px 12px 28px rgb(76 42 24 / 0.2);
   cursor: pointer;
+  transition: transform 0.16s ease;
   margin-bottom: 6px;
+}
+
+.parse-card.long-pressing {
+  transform: scale(0.98);
 }
 
 .parse-icon-wrap {

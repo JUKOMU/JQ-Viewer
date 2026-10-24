@@ -10,7 +10,7 @@
           <IonRefresherContent />
         </IonRefresher>
 
-        <div class="favorite-page-top desktop-page-content">
+        <div class="favorite-page-top desktop-page-content" :inert="multiSelectActive">
           <div class="favorite-page-toolbar" :class="{ pinned: pullHeaderPinned }">
             <MenuToggleButton />
             <div class="toolbar-favorite">
@@ -48,6 +48,8 @@
           :page-at-top="pageAtTop"
           :error-message="errorMessage"
           :mode="displayMode"
+          :multi-select="multiSelectActive"
+          :selected-ids="multiSelectedIds"
           :loaded-page-start="loadedPageStart"
           :loaded-page-end="loadedPageEnd"
           :downloaded-album-ids="downloadedAlbumIds"
@@ -55,6 +57,8 @@
           idle-text="请在右侧收藏夹菜单中选择文件夹"
           @mode-change="displayMode = $event"
           @item-click="handleItemClick"
+          @long-press="enterMultiSelect($event.id)"
+          @selection-toggle="toggleMultiSelect($event.id)"
           @load-previous="handleLoadPrevious"
           @pull-state-change="pullGestureActive = $event"
           @retry="retrySearch"
@@ -65,12 +69,30 @@
               class="card-more-btn"
               :class="{ active: cardMenu?.item.id === item.id }"
               aria-label="更多操作"
+              @pointerdown.stop
               @click.stop="openCardMenu(item, $event)"
             >
               <IonIcon :icon="ellipsisVertical" />
             </button>
           </template>
         </SearchResultContainer>
+
+        <div v-if="multiSelectActive" class="multi-select-overlay">
+          <MultiSelectInfoBar
+            :count="multiSelectCount"
+            :preparing="multiSelectPreparing"
+            :preparing-action="multiSelectPreparingAction"
+            :all-selected="multiSelectAllSelected"
+            @cancel="exitMultiSelect"
+            @select-all="prepareFavoriteSelection(false)"
+            @invert="prepareFavoriteSelection(true)"
+          />
+          <MultiSelectActionBar
+            :actions="favoriteMultiActions"
+            :disabled="!multiSelectCount || multiSelectPreparing || multiSelectExecuting"
+            @action="executeFavoriteMultiAction"
+          />
+        </div>
 
         <QuickActionFab
           slot="fixed"
@@ -85,6 +107,7 @@
         ref="sideMenuRef"
         v-model="rightMenuOpen"
         v-model:pane-open="widePaneOpen"
+        :inert="multiSelectActive"
         :display-mode="isWideLayout ? 'pane' : 'overlay'"
         :online-folders="onlineFolderEntries"
         :offline-folders="offlineFolderEntries"
@@ -157,6 +180,7 @@ import {
   IonPage,
   IonRefresher,
   IonRefresherContent,
+  useBackButton,
 } from '@ionic/vue'
 import { createAppAlert } from '@/services/AppAlertService'
 import type { ListenerHandle } from '@/runtime/BackendEvents'
@@ -165,6 +189,7 @@ import {
   downloadOutline,
   ellipsisVertical,
   folderOpenOutline,
+  listOutline,
   swapHorizontalOutline,
   trashOutline,
 } from 'ionicons/icons'
@@ -174,6 +199,9 @@ import QuickActionFab from '@/components/common/QuickActionFab.vue'
 import FavoriteSearchBar from '@/components/favorite/FavoriteSearchBar.vue'
 import FavoriteSideMenu from '@/components/favorite/FavoriteSideMenu.vue'
 import CardContextMenu from '@/components/common/CardContextMenu.vue'
+import MultiSelectInfoBar from '@/components/common/MultiSelectInfoBar.vue'
+import MultiSelectActionBar from '@/components/common/MultiSelectActionBar.vue'
+import { useMultiSelect } from '@/composables/useMultiSelect'
 import type {
   SearchResultContainerExposed,
   SearchResultDisplayItem,
@@ -253,6 +281,33 @@ computed(() => {
 })
 // --- 搜索结果 ---
 const resultMeta = ref<SearchResult | null>(null)
+const selection = useMultiSelect<string>()
+const {
+  active: multiSelectActive,
+  selected: multiSelectedIds,
+  count: multiSelectCount,
+  allSelected: multiSelectAllSelected,
+  enter: enterMultiSelect,
+  toggle: toggleMultiSelect,
+  selectAll: selectAllMultiItems,
+  invert: invertMultiItems,
+  exit: clearMultiSelect,
+} = selection
+const multiSelectPreparing = ref(false)
+const multiSelectPreparingAction = ref<'select-all' | 'invert' | null>(null)
+const multiSelectExecuting = ref(false)
+let multiSelectRequestToken = 0
+function exitMultiSelect() {
+  multiSelectRequestToken++
+  multiSelectPreparing.value = false
+  multiSelectPreparingAction.value = null
+  clearMultiSelect()
+}
+useBackButton(5, (processNextHandler) => {
+  if (multiSelectExecuting.value || showProgressModal.value) return
+  if (multiSelectActive.value) exitMultiSelect()
+  else processNextHandler()
+})
 const initialLoading = ref(false)
 const loadingPrevious = ref(false)
 const loadingNext = ref(false)
@@ -645,6 +700,7 @@ const fetchPage = async (page: number, context = captureViewContext()): Promise<
 }
 
 const resetWithPage = async (page: number = 1) => {
+  if (multiSelectActive.value) return
   const context = beginViewContext()
   onlineSearchCache.value = null
   initialLoading.value = true
@@ -820,6 +876,7 @@ const animateRemoveFromView = async (itemId: string, context: FavoriteViewContex
 }
 
 const submitSearch = (query: FavoriteQuery) => {
+  if (multiSelectActive.value) return
   currentKeyword.value = query.keyword ?? ''
   void resetWithPage(1)
 }
@@ -829,6 +886,10 @@ const retrySearch = () => {
 }
 
 const handleRefresh = async (event: CustomEvent) => {
+  if (multiSelectActive.value) {
+    ;(event.target as HTMLIonRefresherElement).complete()
+    return
+  }
   const refresher = event.target as HTMLIonRefresherElement
   const context = captureViewContext()
   try {
@@ -856,7 +917,8 @@ const handleRefresh = async (event: CustomEvent) => {
 
 // --- 分页 ---
 const appendPage = async (page: number) => {
-  if (loadingNext.value || initialLoading.value || !canLoadNext.value) return
+  if (multiSelectActive.value || loadingNext.value || initialLoading.value || !canLoadNext.value)
+    return
   const context = captureViewContext()
   loadingNext.value = true
   try {
@@ -877,7 +939,13 @@ const appendPage = async (page: number) => {
 }
 
 const prependPage = async (page: number) => {
-  if (loadingPrevious.value || initialLoading.value || !canLoadPrevious.value) return
+  if (
+    multiSelectActive.value ||
+    loadingPrevious.value ||
+    initialLoading.value ||
+    !canLoadPrevious.value
+  )
+    return
   const context = captureViewContext()
 
   const contentScrollElement = await resolveScrollElement()
@@ -1038,6 +1106,8 @@ const openRightMenu = async () => {
 }
 
 const onSelectOnlineFolder = (folderId: string) => {
+  if (multiSelectActive.value) return
+  if (multiSelectActive.value) return
   folderSource.value = 'online'
   currentFolderId.value = folderId
   currentKeyword.value = ''
@@ -1045,6 +1115,8 @@ const onSelectOnlineFolder = (folderId: string) => {
 }
 
 const onSelectOfflineFolder = (folderId: string) => {
+  if (multiSelectActive.value) return
+  if (multiSelectActive.value) return
   folderSource.value = 'offline'
   currentFolderId.value = folderId
   currentKeyword.value = ''
@@ -1078,7 +1150,16 @@ const cardMenuActions = computed(() => [
   { id: 'move', label: '移动', icon: swapHorizontalOutline },
   { id: 'download', label: '下载', icon: downloadOutline },
   { id: 'remove', label: '取消收藏', icon: trashOutline, danger: true },
+  { id: 'multi-select', label: '多选', icon: listOutline },
 ])
+
+const favoriteMultiActions = computed(() => {
+  const actions = [{ id: 'download', label: '下载' }]
+  if (!(folderSource.value === 'offline' && currentFolderId.value === OFFLINE_ALL_FOLDER_ID))
+    actions.push({ id: 'remove', label: '取消收藏' })
+  if (currentFolderId.value !== OFFLINE_ALL_FOLDER_ID) actions.push({ id: 'move', label: '移动' })
+  return actions
+})
 
 function openCardMenu(item: SearchResultItem, event: MouseEvent) {
   const anchor = event.currentTarget as HTMLElement
@@ -1096,10 +1177,229 @@ function closeCardMenu() {
 function handleCardMenuAction(action: string) {
   const item = cardMenu.value?.item
   if (!item) return
+  if (action === 'multi-select') {
+    closeCardMenu()
+    enterMultiSelect(item.id)
+    return
+  }
   if (action === 'read') void handleCardRead(item)
   else if (action === 'move') void handleCardMove(item)
   else if (action === 'download') void handleCardDownload(item)
   else if (action === 'remove') void handleCardRemove(item)
+}
+
+async function prepareFavoriteSelection(invert: boolean) {
+  if (multiSelectPreparing.value || multiSelectExecuting.value) return
+  const token = ++multiSelectRequestToken
+  const context = captureViewContext()
+  multiSelectPreparing.value = true
+  multiSelectPreparingAction.value = invert ? 'invert' : 'select-all'
+  try {
+    const first = await fetchPage(1, context)
+    if (token !== multiSelectRequestToken) return
+    const items = [...first.content]
+    for (let page = 2; page <= first.totalPages; page++) {
+      items.push(...(await fetchPage(page, context)).content)
+      if (token !== multiSelectRequestToken) return
+    }
+    if (token !== multiSelectRequestToken || !isCurrentViewContext(context)) return
+    const ids = [...new Set(items.map((item) => item.id))]
+    if (invert) invertMultiItems(ids)
+    else selectAllMultiItems(ids)
+  } catch {
+    if (token === multiSelectRequestToken)
+      await showToast('读取完整收藏夹失败，本次选择未生效', 'danger')
+  } finally {
+    if (token === multiSelectRequestToken) {
+      multiSelectPreparing.value = false
+      multiSelectPreparingAction.value = null
+    }
+  }
+}
+
+async function executeFavoriteMultiAction(action: string) {
+  if (multiSelectExecuting.value || multiSelectPreparing.value) return
+  const context = captureViewContext()
+  const token = ++multiSelectRequestToken
+  const selected = [...multiSelectedIds.value]
+  const visibleItems = displayItems.value.map(({ item }) => item)
+  const itemMap = new Map(visibleItems.map((item) => [item.id, item]))
+  if (selected.some((id) => !itemMap.has(id))) {
+    multiSelectPreparing.value = true
+    try {
+      const first = await fetchPage(1, context)
+      if (token !== multiSelectRequestToken || !isCurrentViewContext(context)) return
+      const all = [...first.content]
+      for (let page = 2; page <= first.totalPages; page++) {
+        all.push(...(await fetchPage(page, context)).content)
+        if (token !== multiSelectRequestToken || !isCurrentViewContext(context)) return
+      }
+      for (const item of all) itemMap.set(item.id, item)
+    } catch {
+      if (token === multiSelectRequestToken)
+        await showToast('读取所选收藏内容失败，操作未执行', 'danger')
+      return
+    } finally {
+      if (token === multiSelectRequestToken) multiSelectPreparing.value = false
+    }
+  }
+  if (token !== multiSelectRequestToken || !multiSelectActive.value) return
+  const items = selected
+    .map((id) => itemMap.get(id))
+    .filter((item): item is SearchResultItem => !!item)
+  if (action === 'move') {
+    const isOnline = context.source === 'online'
+    const folders = isOnline
+      ? Object.entries(onlineFolderMap.value)
+          .filter(([id]) => id !== context.folderId)
+          .map(([id, name]) => ({ id, name }))
+      : OfflineFavoriteService.getFolders().filter((folder) => folder.id !== context.folderId)
+    if (!folders.length) {
+      await showToast('没有其他收藏夹', 'medium')
+      return
+    }
+    const alert = await createAppAlert({
+      header: '移动到',
+      inputs: folders.map((folder) => ({
+        type: 'radio' as const,
+        label: folder.name,
+        value: folder.id,
+      })),
+      buttons: [
+        { text: '取消', role: 'cancel' },
+        {
+          text: '确定',
+          handler: async (targetId: string) => {
+            if (targetId && token === multiSelectRequestToken && multiSelectActive.value)
+              await performMultiFavoriteAction('move', items, context, targetId)
+          },
+        },
+      ],
+    })
+    await alert.present()
+    return
+  }
+  await performMultiFavoriteAction(action, items, context)
+}
+
+async function performMultiFavoriteAction(
+  action: string,
+  items: SearchResultItem[],
+  context: FavoriteViewContext,
+  targetFolderId?: string,
+) {
+  multiSelectExecuting.value = true
+  progressTitle.value =
+    action === 'download' ? '批量下载' : action === 'move' ? '批量移动收藏' : '批量取消收藏'
+  progressCurrent.value = 0
+  progressTotal.value = items.length
+  showProgressModal.value = true
+  let succeeded = 0
+  let failed = 0
+  const backupKey = `multi-favorite-move-${Date.now()}`
+  let backupRetained = false
+  try {
+    if (action === 'move' && context.source === 'offline') {
+      try {
+        const result = await JmcomicService.saveOfflineBackup(backupKey, items)
+        if (!result.success) throw new Error('移动备份未保存')
+      } catch {
+        await showToast('移动前备份失败，未执行移动', 'danger')
+        return
+      }
+    }
+    for (const item of items) {
+      progressCurrentItem.value = item.title
+      try {
+        if (action === 'remove') {
+          if (context.source === 'online') {
+            const result = await JmcomicService.toggleAlbumFavorite(item.id, context.folderId)
+            if (!result.success) throw new Error('取消收藏失败')
+          } else {
+            const result = await JmcomicService.removeOfflineFavorite(context.folderId, item.id)
+            if (!result.success) throw new Error('取消收藏失败')
+          }
+        } else if (action === 'move' && targetFolderId) {
+          if (context.source === 'online') {
+            if (targetFolderId === '0') {
+              const removed = await JmcomicService.toggleAlbumFavorite(item.id, context.folderId)
+              if (!removed.success) throw new Error('移出源收藏夹失败')
+              const added = await JmcomicService.toggleAlbumFavorite(item.id, '0')
+              if (!added.success) throw new Error('加入默认收藏夹失败')
+            } else {
+              const result = await JmcomicService.manageFavoriteFolder(
+                'move',
+                targetFolderId,
+                '',
+                item.id,
+              )
+              if (result.status !== 'ok') throw new Error(result.msg || '移动失败')
+            }
+          } else {
+            const removed = await JmcomicService.removeOfflineFavorite(context.folderId, item.id)
+            if (!removed.success) throw new Error('移出源收藏夹失败')
+            const added = await JmcomicService.addOfflineFavorite(targetFolderId, item)
+            if (!added.success) throw new Error('加入目标收藏夹失败')
+          }
+        } else if (action === 'download') {
+          const photo = await JmcomicService.getPhoto(item.id)
+          const taskId = `${item.id}_${photo.id}`
+          if (
+            OfflineDownloadService.getAll().some(
+              (task) => task.taskId === taskId && task.status !== 'failed',
+            )
+          )
+            throw new Error('章节已在下载队列中')
+          const result = await JmcomicService.downloadChapter(
+            item.id,
+            photo.id,
+            item.title,
+            photo.title,
+            item.coverUrl,
+          )
+          if (!result.taskId) throw new Error('下载任务未提交')
+          OfflineDownloadService.addTask({
+            taskId: result.taskId,
+            albumId: item.id,
+            chapterId: photo.id,
+            albumTitle: item.title,
+            chapterTitle: photo.title,
+            coverUrl: item.coverUrl,
+            isSingleEpisode: photo.isSingleEpisode,
+            totalPages: 0,
+            downloadedPages: 0,
+            status: 'queued',
+            createdAt: Date.now(),
+          })
+        }
+        succeeded++
+      } catch {
+        failed++
+      }
+      progressCurrent.value++
+    }
+    if (action === 'move' && context.source === 'offline' && failed === 0) {
+      try {
+        const result = await JmcomicService.deleteOfflineBackup(backupKey)
+        backupRetained = !result.success
+      } catch {
+        backupRetained = true
+      }
+    }
+    exitMultiSelect()
+    await resetWithPage(1)
+    if (action === 'move' && context.source === 'offline' && failed > 0)
+      await showToast(`移动部分失败，选中项备份已保留（${backupKey}）`, 'medium')
+    if (backupRetained) await showToast(`移动已完成，但临时备份未能删除：${backupKey}`, 'medium')
+    await showToast(
+      `操作完成：成功 ${succeeded} 项，失败 ${failed} 项`,
+      failed ? 'medium' : 'success',
+    )
+  } finally {
+    showProgressModal.value = false
+    multiSelectExecuting.value = false
+    exitMultiSelect()
+  }
 }
 
 // 组件卸载时清理
@@ -2055,6 +2355,7 @@ onMounted(async () => {
 const savedScrollTop = ref(0)
 
 onDeactivated(() => {
+  exitMultiSelect()
   savedScrollTop.value = scrollElementRef.value?.scrollTop ?? 0
   stopPageResizeObserver()
   menuCloseGesture?.destroy()
@@ -2268,5 +2569,18 @@ onActivated(async () => {
   font-size: 12px;
   color: #d4a08a;
   margin-top: 8px;
+}
+.multi-select-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  pointer-events: none;
+}
+.multi-select-overlay > * {
+  pointer-events: auto;
 }
 </style>

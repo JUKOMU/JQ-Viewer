@@ -89,9 +89,16 @@
               { downloaded: downloadedAlbumIds?.has(entry.item.id) },
               { 'entry-highlighted': activeEntryKey === getEntryKey(entry) },
               { 'entry-removing': removingIds?.has(entry.item.id) },
+              { 'multi-selected': selectedIds?.has(entry.item.id) },
+              { 'multi-unselected': multiSelect && !selectedIds?.has(entry.item.id) },
+              { 'long-pressing': longPressItemId === entry.item.id },
               favBorderClassMap?.[entry.item.id],
             ]"
-            @click="emit('item-click', entry.item)"
+            @pointerdown="startLongPress(entry.item, $event)"
+            @pointermove="handlePointerMove"
+            @pointerup="endLongPress"
+            @pointercancel="endLongPress"
+            @click="handleItemClick(entry.item)"
           >
             <div class="cover-wrap">
               <img
@@ -102,6 +109,7 @@
               />
             </div>
             <slot
+              v-if="!multiSelect"
               name="item-actions"
               :item="entry.item"
               :page="entry.page"
@@ -129,6 +137,16 @@
               />
             </div>
             <div class="item-serial">{{ getItemSerial(entry.page, entry.indexInPage) }}</div>
+            <input
+              v-if="multiSelect && !isGridMode"
+              class="multi-select-checkbox"
+              type="checkbox"
+              :checked="selectedIds?.has(entry.item.id)"
+              :aria-label="`${selectedIds?.has(entry.item.id) ? '取消选择' : '选择'}${entry.item.title}`"
+              @pointerdown.stop
+              @click.stop
+              @change.stop="emit('selection-toggle', entry.item)"
+            />
             <slot
               name="item-extra"
               :item="entry.item"
@@ -166,6 +184,8 @@ const props = withDefaults(
     favBorderClassMap?: Record<string, string>
     removingIds?: Set<string>
     activeEntryKey?: string | null
+    multiSelect?: boolean
+    selectedIds?: Set<string>
     idleText?: string
     emptyText?: string
   }>(),
@@ -181,6 +201,8 @@ const props = withDefaults(
     favBorderClassMap: () => ({}),
     removingIds: () => new Set(),
     activeEntryKey: null,
+    multiSelect: false,
+    selectedIds: () => new Set(),
     idleText: '搜索结果将在这里显示',
     emptyText: '没有搜索结果',
   },
@@ -191,8 +213,10 @@ const emit = defineEmits<{
   'load-previous': []
   'pull-state-change': [active: boolean]
   retry: []
+  'long-press': [item: SearchResultItem]
+  'selection-toggle': [item: SearchResultItem]
 }>()
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { IonSpinner } from '@ionic/vue'
 import type { SearchResult, SearchResultItem } from '@/services/JmcomicTypes'
 
@@ -243,6 +267,52 @@ const rootRef = ref<HTMLElement | null>(null)
 const gridColumns = ref<GridColumnCount>(readInitialGridColumns())
 const pullDistance = ref(0)
 const touchStartY = ref<number | null>(null)
+let longPressTimer: ReturnType<typeof setTimeout> | null = null
+let suppressNextClick = false
+let longPressStartPoint: { x: number; y: number } | null = null
+const longPressItemId = ref<string | null>(null)
+
+const startLongPress = (item: SearchResultItem, event: PointerEvent) => {
+  if (event.button !== 0 || !event.isPrimary) return
+  cancelLongPress()
+  suppressNextClick = false
+  longPressStartPoint = { x: event.clientX, y: event.clientY }
+  longPressTimer = setTimeout(() => {
+    suppressNextClick = true
+    longPressItemId.value = item.id
+    emit('long-press', item)
+    longPressTimer = null
+  }, 500)
+}
+
+const cancelLongPress = () => {
+  if (longPressTimer !== null) clearTimeout(longPressTimer)
+  longPressTimer = null
+  longPressStartPoint = null
+  longPressItemId.value = null
+}
+
+const handlePointerMove = (event: PointerEvent) => {
+  if (!longPressStartPoint) return
+  if (
+    Math.hypot(event.clientX - longPressStartPoint.x, event.clientY - longPressStartPoint.y) > 10
+  ) {
+    cancelLongPress()
+  }
+}
+
+const endLongPress = () => {
+  cancelLongPress()
+}
+
+const handleItemClick = (item: SearchResultItem) => {
+  if (suppressNextClick) {
+    suppressNextClick = false
+    return
+  }
+  if (props.multiSelect) emit('selection-toggle', item)
+  else emit('item-click', item)
+}
 
 const hasItems = computed(() => props.items.length > 0)
 const isGridMode = computed(() => props.mode === 'grid')
@@ -372,6 +442,8 @@ watch(
     }
   },
 )
+
+onBeforeUnmount(cancelLongPress)
 
 watch(
   () => props.pageAtTop,
@@ -602,6 +674,31 @@ defineExpose<SearchResultContainerExposed>({
   border-radius: 12px;
   background: #fffaf6;
   box-shadow: 5px 12px 28px rgb(76 42 24 / 0.2);
+  transition: transform 0.16s ease;
+}
+
+.list-card.long-pressing:not(.entry-removing),
+.grid-card.long-pressing:not(.entry-removing) {
+  transform: scale(0.98);
+}
+
+.list-card.multi-unselected,
+.grid-card.multi-unselected {
+  opacity: 0.5;
+}
+.multi-select-checkbox {
+  position: absolute;
+  z-index: 3;
+  top: 50%;
+  right: 5px;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  transform: translateY(-50%);
+  accent-color: #bf8350;
+}
+.multi-selected {
+  opacity: 1 !important;
 }
 
 .result-grid {
@@ -629,6 +726,7 @@ defineExpose<SearchResultContainerExposed>({
   border-radius: 12px;
   background: #fffaf6;
   box-shadow: 5px 12px 28px rgb(76 42 24 / 0.2);
+  transition: transform 0.16s ease;
 }
 
 .list-card.downloaded,

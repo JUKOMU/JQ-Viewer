@@ -1,5 +1,18 @@
 <template>
-  <div class="card" :class="{ clickable: cardStatus === 'completed' }" @click="onCardClick">
+  <div
+    class="card"
+    :class="{
+      clickable: cardStatus === 'completed' && !selectionMode,
+      'multi-unselected': selectionMode && !selected,
+      'multi-selected': selected,
+      'long-pressing': longPressActive,
+    }"
+    @pointerdown="startLongPress"
+    @pointermove="handlePointerMove"
+    @pointerup="endLongPress"
+    @pointercancel="endLongPress"
+    @click="onCardClick"
+  >
     <div class="cover-wrap">
       <img
         v-if="coverSrc"
@@ -83,12 +96,24 @@
       </div>
     </div>
 
+    <input
+      v-if="selectionMode && selectionEligible"
+      class="multi-select-checkbox"
+      type="checkbox"
+      :checked="selected"
+      :aria-label="`${selected ? '取消选择' : '选择'}${displayTitle}`"
+      @pointerdown.stop
+      @click.stop
+      @change.stop="$emit('select')"
+    />
     <button
+      v-else
       type="button"
       class="more-btn"
       :class="{ active: menuOpen }"
       aria-label="更多操作"
       :aria-expanded="menuOpen"
+      @pointerdown.stop
       @click.stop="$emit('more', $event)"
     >
       <IonIcon :icon="ellipsisVertical" />
@@ -105,16 +130,51 @@ const props = defineProps<{
   downloadedChapters?: CompletedEntry[]
   totalSize?: number
   menuOpen?: boolean
+  selectionMode?: boolean
+  selected?: boolean
+  selectionEligible?: boolean
 }>()
 const emit = defineEmits<{
   more: [event: Event]
   click: []
+  select: []
+  'long-press': []
 }>()
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { IonIcon } from '@ionic/vue'
 import { documentOutline, ellipsisVertical } from 'ionicons/icons'
 import { getImageUrl, sanitizeError } from '@/services/JmcomicService'
 import type { CompletedEntry, DownloadTask } from '@/services/JmcomicTypes'
+const longPressActive = ref(false)
+let longPressTimer: ReturnType<typeof setTimeout> | null = null
+let suppressClick = false
+let longPressStartPoint: { x: number; y: number } | null = null
+const startLongPress = (event: PointerEvent) => {
+  if (event.button !== 0 || !event.isPrimary) return
+  cancelLongPress()
+  longPressStartPoint = { x: event.clientX, y: event.clientY }
+  longPressTimer = setTimeout(() => {
+    suppressClick = true
+    longPressActive.value = true
+    emit('long-press')
+    longPressTimer = null
+  }, 500)
+}
+const cancelLongPress = () => {
+  if (longPressTimer !== null) clearTimeout(longPressTimer)
+  longPressTimer = null
+  longPressStartPoint = null
+  longPressActive.value = false
+}
+const handlePointerMove = (event: PointerEvent) => {
+  if (
+    longPressStartPoint &&
+    Math.hypot(event.clientX - longPressStartPoint.x, event.clientY - longPressStartPoint.y) > 10
+  )
+    cancelLongPress()
+}
+const endLongPress = () => cancelLongPress()
+onBeforeUnmount(cancelLongPress)
 
 const isLocalFileEntry = computed(
   () => 'source' in props.task && props.task.source === 'local-file',
@@ -232,6 +292,14 @@ const sizeText = computed(() => {
 })
 
 const onCardClick = () => {
+  if (suppressClick) {
+    suppressClick = false
+    return
+  }
+  if (props.selectionMode) {
+    if (props.selectionEligible !== false) emit('select')
+    return
+  }
   if (cardStatus.value === 'completed') {
     emit('click')
   }
@@ -248,6 +316,27 @@ const onCardClick = () => {
   border: 1px solid rgb(245 210 188 / 0.5);
   position: relative;
   user-select: none;
+  transition: transform 0.16s ease;
+}
+.card.long-pressing {
+  transform: scale(0.98);
+}
+.multi-unselected {
+  opacity: 0.5;
+}
+.multi-selected {
+  opacity: 1;
+}
+.multi-select-checkbox {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  right: 5px;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  transform: translateY(-50%);
+  accent-color: #bf8350;
 }
 
 .card.clickable {

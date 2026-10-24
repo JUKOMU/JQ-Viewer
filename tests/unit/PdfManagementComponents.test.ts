@@ -75,6 +75,7 @@ vi.mock('ionicons/icons', () => ({
   folderOpenOutline: 'folder-open',
   imagesOutline: 'images',
   informationCircleOutline: 'information',
+  listOutline: 'list',
   refreshOutline: 'refresh',
   removeCircleOutline: 'remove',
   trashOutline: 'trash',
@@ -344,7 +345,7 @@ describe('LocalFileManagementView', () => {
       Array.from(document.body.querySelectorAll('.card-menu-item')).map(
         (button) => button.textContent,
       ),
-    ).toEqual(['进入详情页', '校验', '复制路径', '打开文件夹', '移除', '删除'])
+    ).toEqual(['进入详情页', '校验', '复制路径', '打开文件夹', '移除', '删除', '多选'])
     wrapper.unmount()
   })
 
@@ -368,7 +369,7 @@ describe('LocalFileManagementView', () => {
     wrapper.unmount()
   })
 
-  test('更多菜单按下载页样式提供七项文件操作', async () => {
+  test('更多菜单按下载页样式提供八项文件操作', async () => {
     const wrapper = mount(LocalFileManagementView)
     await flushPromises()
     await wrapper.get('button[aria-label="更多操作"]').trigger('click')
@@ -377,7 +378,7 @@ describe('LocalFileManagementView', () => {
       Array.from(document.body.querySelectorAll('.card-menu-item')).map(
         (button) => button.textContent,
       ),
-    ).toEqual(['阅读', '进入详情页', '校验', '复制路径', '打开文件夹', '移除', '删除'])
+    ).toEqual(['阅读', '进入详情页', '校验', '复制路径', '打开文件夹', '移除', '删除', '多选'])
     wrapper.unmount()
   })
 

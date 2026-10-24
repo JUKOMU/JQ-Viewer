@@ -4,6 +4,7 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, test, vi } from 'vitest'
 
 vi.mock('@ionic/vue', () => ({
+  useBackButton: vi.fn(),
   IonIcon: defineComponent({
     name: 'IonIcon',
     setup: () => () => h('span'),

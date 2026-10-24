@@ -21,6 +21,7 @@ vi.mock('vue-router', () => ({
 }))
 
 vi.mock('@ionic/vue', () => ({
+  useBackButton: vi.fn(),
   IonContent: defineComponent({
     name: 'IonContent',
     setup(_, { slots }) {
@@ -37,6 +38,7 @@ vi.mock('@ionic/vue', () => ({
     },
   }),
   IonIcon: defineComponent({ name: 'IonIcon', setup: () => () => h('span') }),
+  IonSpinner: defineComponent({ name: 'IonSpinner', setup: () => () => h('span') }),
   IonPage: defineComponent({
     name: 'IonPage',
     setup(_, { slots }) {
@@ -58,11 +60,21 @@ vi.mock('@ionic/vue', () => ({
 
 vi.mock('ionicons/icons', () => ({
   bookOutline: 'book',
+  checkmarkDoneOutline: 'checkmark-done',
+  closeCircleOutline: 'close-circle',
+  closeOutline: 'close',
+  documentLockOutline: 'document-lock',
   downloadOutline: 'download',
   ellipsisVertical: 'ellipsis',
   folderOpenOutline: 'folder',
+  heartOutline: 'heart',
+  pauseOutline: 'pause',
+  playOutline: 'play',
+  refreshOutline: 'refresh',
   swapHorizontalOutline: 'swap',
+  swapVerticalOutline: 'swap-vertical',
   trashOutline: 'trash',
+  listOutline: 'list',
 }))
 
 vi.mock('@/components/common/MenuToggleButton.vue', () => ({
@@ -306,6 +318,39 @@ describe('FavoritePage 账号切换', () => {
       'album-2',
     ])
     expect(cachedState.value?.stale).toBe(true)
+  })
+})
+
+describe('FavoritePage 全选取消', () => {
+  test('退出多选后停止发起后续收藏页请求', async () => {
+    wrapper = mount(FavoritePage)
+    await flushPromises()
+
+    const requestedPages: number[] = []
+    const pageOne = { ...onlineResult, totalItems: 50, totalPages: 50 }
+    let finishPageTwo: ((result: typeof pageOne) => void) | undefined
+    mocks.favorites.mockReset()
+    mocks.favorites.mockImplementation(({ page }: { page: number }) => {
+      requestedPages.push(page)
+      if (page === 1) return Promise.resolve(pageOne)
+      return new Promise((resolve) => {
+        finishPageTwo = resolve
+      })
+    })
+
+    const state = (wrapper.vm as any).$.setupState
+    state.enterMultiSelect('album-1')
+    const preparation = state.prepareFavoriteSelection(false)
+    await flushPromises()
+
+    expect(requestedPages).toEqual([1, 2])
+    state.exitMultiSelect()
+    finishPageTwo?.({ ...pageOne, currentPage: 2, content: [secondItem] })
+    await preparation
+    await flushPromises()
+
+    expect(requestedPages).toEqual([1, 2])
+    expect(state.multiSelectActive).toBe(false)
   })
 })
 

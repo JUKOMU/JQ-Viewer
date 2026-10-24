@@ -85,7 +85,9 @@ public final class RequestExecutor {
             sendError(context, new ApiException("internal", 503, "当前请求过多，请稍后重试"), trace);
             return;
         }
-        LOGGER.debug("bridge request submitted route={} requestType={}", trace.route, trace.requestType);
+        if (!trace.quiet) {
+            LOGGER.debug("bridge request submitted route={} requestType={}", trace.route, trace.requestType);
+        }
 
         try {
             context.future(() -> response.handle((value, failure) -> {
@@ -124,8 +126,10 @@ public final class RequestExecutor {
                     sendError(context, unwrap(failure), trace);
                 }
             });
-            LOGGER.debug("bridge long request submitted route={} requestType={}",
-                trace.route, trace.requestType);
+            if (!trace.quiet) {
+                LOGGER.debug("bridge long request submitted route={} requestType={}",
+                    trace.route, trace.requestType);
+            }
         } catch (RejectedExecutionException exception) {
             sendError(context, new ApiException("internal", 503, "当前请求过多，请稍后重试"), trace);
         } catch (RuntimeException schedulingFailure) {
@@ -153,12 +157,15 @@ public final class RequestExecutor {
         RequestTrace trace = new RequestTrace(
             safePath(context), String.valueOf(context.method()), requestType.getSimpleName(),
             System.nanoTime());
-        LOGGER.debug("bridge request started method={} route={} requestType={} bodyBytes={}",
-            trace.method, trace.route, trace.requestType, bodyLength(context));
+        if (!trace.quiet) {
+            LOGGER.debug("bridge request started method={} route={} requestType={} bodyBytes={}",
+                trace.method, trace.route, trace.requestType, bodyLength(context));
+        }
         return trace;
     }
 
     private void logCompleted(RequestTrace trace) {
+        if (trace.quiet) return;
         LOGGER.info("bridge request completed method={} route={} requestType={} status=success elapsedMs={}",
             trace.method, trace.route, trace.requestType, elapsedMs(trace.startedAtNanos));
     }
@@ -194,12 +201,14 @@ public final class RequestExecutor {
         private final String method;
         private final String requestType;
         private final long startedAtNanos;
+        private final boolean quiet;
 
         private RequestTrace(String route, String method, String requestType, long startedAtNanos) {
             this.route = route;
             this.method = method;
             this.requestType = requestType;
             this.startedAtNanos = startedAtNanos;
+            this.quiet = "/api/getLogs".equals(route);
         }
     }
 

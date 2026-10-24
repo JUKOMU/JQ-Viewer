@@ -69,7 +69,10 @@ public final class PluginMethodRoutes {
 
     private static void invoke(DiscoveredMethod discovered, Context context) throws Exception {
         long startedAtNanos = System.nanoTime();
-        LOGGER.debug("bridge route dispatched method=POST route={}", discovered.path());
+        boolean quiet = "/api/getLogs".equals(discovered.path());
+        if (!quiet) {
+            LOGGER.debug("bridge route dispatched method=POST route={}", discovered.path());
+        }
         try {
             discovered.method().invoke(discovered.plugin(), context);
         } catch (InvocationTargetException exception) {
@@ -85,9 +88,11 @@ public final class PluginMethodRoutes {
             }
             throw new RuntimeException(cause);
         } finally {
-            LOGGER.debug("bridge route handler returned method=POST route={} elapsedMs={}",
-                discovered.path(), java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(
-                    System.nanoTime() - startedAtNanos));
+            if (!quiet) {
+                LOGGER.debug("bridge route handler returned method=POST route={} elapsedMs={}",
+                    discovered.path(), java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(
+                        System.nanoTime() - startedAtNanos));
+            }
         }
     }
 

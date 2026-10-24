@@ -561,7 +561,7 @@ describe('PdfReaderPage PDF 专属渲染尺寸', () => {
     loadFailure.reject(new Error('unsupported'))
     await settle()
 
-    expect(mocks.showToast).toHaveBeenCalledWith('PDF 信息读取失败: 没有权限读取 PDF', 'danger')
+    expect(mocks.showToast).toHaveBeenCalledWith('PDF 文件读取权限已失效，请重新导入', 'danger')
     expect(mocks.router.back).toHaveBeenCalled()
     wrapper.unmount()
   })

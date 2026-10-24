@@ -94,7 +94,7 @@ import type { ListenerHandle } from '@/runtime/BackendEvents'
 import { asFileRef } from '@/runtime/FileReferences'
 import { getRuntime } from '@/runtime/runtimeContext'
 import { normalizeRuntimeError } from '@/runtime/errors'
-import { JmcomicService, showToast } from '@/services/JmcomicService'
+import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
 import { SettingsStore } from '@/services/SettingsService'
 import { createLocalReaderSession, type LocalReaderSession } from '@/services/LocalReaderSession'
 import { HistoryService } from '@/services/HistoryService'
@@ -360,7 +360,7 @@ onMounted(async () => {
     recordHistory()
   } catch (error) {
     const failure = normalizeRuntimeError(error)
-    await showToast(failure.message || 'CBZ 文件无法打开', 'danger')
+    await showToast(sanitizeError(failure, 'CBZ 文件无法打开'), 'danger')
     router.back()
   }
 })

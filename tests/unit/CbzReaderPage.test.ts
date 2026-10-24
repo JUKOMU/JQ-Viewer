@@ -16,6 +16,9 @@ const mocks = vi.hoisted(() => ({
   router: { back: vi.fn(), push: vi.fn() },
   getCbzInfo: vi.fn(),
   cbzPageUrl: vi.fn(),
+  sanitizeError: vi.fn((error: unknown, fallback: string) =>
+    error instanceof Error ? `${fallback}：${error.message}` : fallback,
+  ),
   showToast: vi.fn(),
   getInitialPage: vi.fn(),
   recordProgress: vi.fn(),
@@ -53,6 +56,7 @@ vi.mock('@/runtime/runtimeContext', () => ({
 }))
 
 vi.mock('@/services/JmcomicService', () => ({
+  sanitizeError: mocks.sanitizeError,
   showToast: mocks.showToast,
   JmcomicService: { getCbzInfo: mocks.getCbzInfo },
 }))
@@ -182,7 +186,7 @@ describe('CbzReaderPage', () => {
     const wrapper = mountPage()
     await settle()
 
-    expect(mocks.showToast).toHaveBeenCalledWith('CBZ 已损坏', 'danger')
+    expect(mocks.showToast).toHaveBeenCalledWith('CBZ 文件无法打开：CBZ 已损坏', 'danger')
     expect(mocks.router.back).toHaveBeenCalled()
     wrapper.unmount()
   })

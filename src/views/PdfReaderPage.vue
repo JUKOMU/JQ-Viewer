@@ -1164,17 +1164,20 @@ onMounted(async () => {
     recordBrowseHistory()
   } catch (e: any) {
     if (e instanceof PdfLoadError) {
-      await showToast(e.message, 'danger')
+      await showToast(sanitizeError(e, 'PDF 文件读取失败'), 'danger')
     } else if (e instanceof TypeError && e.message === 'Failed to fetch') {
       await showToast('PDF 文件读取失败，请重新导入', 'danger')
     } else {
       const runtimeError = normalizeRuntimeError(e)
       if (runtimeError.code === 'unavailable') {
-        await showToast(runtimeError.message || '当前平台不支持原生 PDF 页面渲染', 'danger')
+        await showToast(sanitizeError(runtimeError, '当前平台不支持原生 PDF 页面渲染'), 'danger')
       } else if (runtimeError.code === 'not-found') {
-        await showToast(runtimeError.message || 'PDF 文件不存在或已移动', 'danger')
+        await showToast(sanitizeError(runtimeError, 'PDF 文件不存在或已移动'), 'danger')
       } else if (runtimeError.code === 'permission-denied') {
-        await showToast(runtimeError.message || 'PDF 文件读取权限已失效，请重新导入', 'danger')
+        await showToast(
+          sanitizeError(runtimeError, 'PDF 文件读取权限已失效，请重新导入'),
+          'danger',
+        )
       } else if (/password/i.test(runtimeError.message)) {
         await showToast('此 PDF 已加密，无法打开', 'danger')
       } else {

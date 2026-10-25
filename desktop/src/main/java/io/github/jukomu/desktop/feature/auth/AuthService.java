@@ -34,6 +34,7 @@ public final class AuthService {
     private volatile UserInfoResponse userInfo;
     private volatile LoginCredentials memoryCredentials;
     private volatile boolean credentialsLoaded;
+    private volatile boolean credentialsReadFailed;
     private volatile long authGeneration;
 
     public AuthService(JmClient client, CredentialStore credentials) {
@@ -221,6 +222,11 @@ public final class AuthService {
     /** 返回可用于自动登录的凭据状态；安全存储读取失败时返回 null 表示未知。 */
     private Boolean hasSavedCredentials() {
         LoginCredentials saved = memoryCredentials;
+        if (saved != null) {
+            return saved.username() != null && !saved.username().isBlank()
+                && saved.password() != null && !saved.password().isEmpty();
+        }
+        if (credentialsReadFailed) return null;
         if (saved == null && !credentialsLoaded && credentials.isAvailable()) {
             try {
                 saved = loadCredentialsOnce();
@@ -280,6 +286,7 @@ public final class AuthService {
                 credentialsLoaded = true;
                 return loaded;
             } catch (RuntimeException failure) {
+                credentialsReadFailed = true;
                 throw ApiException.unavailable("无法读取操作系统安全凭据，自动登录不可用");
             }
         }
@@ -301,6 +308,7 @@ public final class AuthService {
         // 关闭记住我或登出时，内存凭据必须与安全存储同时失效。
         memoryCredentials = null;
         credentialsLoaded = true;
+        credentialsReadFailed = false;
     }
 
     private void clearCredentialsQuietly() {

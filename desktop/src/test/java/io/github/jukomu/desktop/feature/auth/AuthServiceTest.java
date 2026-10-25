@@ -56,6 +56,8 @@ class AuthServiceTest {
         AuthService service = new AuthService(client(null), credentials);
 
         assertNull(service.state().hasSavedCredentials());
+        assertNull(service.state().hasSavedCredentials());
+        assertEquals(1, credentials.loadCalls());
     }
 
     @Test
@@ -341,9 +343,9 @@ class AuthServiceTest {
 
         @Override
         public LoginCredentials load() {
+            loadCalls++;
             if (!available) throw new IllegalStateException("unavailable");
             if (loadFailure != null) throw loadFailure;
-            loadCalls++;
             LoginCredentials loaded = credentials;
             CountDownLatch entered = loadEntered;
             CountDownLatch release = releaseLoad;

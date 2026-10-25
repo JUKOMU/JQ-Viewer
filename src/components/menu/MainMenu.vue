@@ -30,7 +30,12 @@
     >
       <IonHeader class="ion-no-border menu-header">
         <div class="menu-header-row">
-          <button type="button" class="menu-hero" :aria-label="accountButtonLabel" @click="goUser">
+          <button
+            type="button"
+            class="menu-hero"
+            :aria-label="accountButtonLabel"
+            @click="handleAccountClick"
+          >
             <span class="menu-avatar-wrap">
               <img
                 v-if="isLoggedIn && userInfo"
@@ -38,17 +43,41 @@
                 class="user-avatar"
                 alt="头像"
               />
+              <img
+                v-else-if="pendingProfile"
+                :src="pendingProfile.avatarUrl"
+                class="user-avatar user-avatar--pending"
+                alt="头像"
+              />
               <IonIcon v-else :icon="personCircleOutline" class="user-avatar-placeholder" />
+              <!-- 缓存头像只表示待确认的账号，灰化和状态图标避免误认为已登录。 -->
+              <span v-if="pendingProfile" class="auth-avatar-state" aria-hidden="true">
+                <IonSpinner v-if="authStatus === 'loading'" name="crescent" />
+                <IonIcon
+                  v-else-if="authStatus === 'retryable-error' || authStatus === 'state-check-error'"
+                  :icon="refresh"
+                />
+              </span>
             </span>
             <div class="hero-copy">
               <div class="hero-title">
-                {{ isLoggedIn && userInfo ? userInfo.username : '未登录' }}
+                {{
+                  isLoggedIn && userInfo ? userInfo.username : pendingProfile?.username || '未登录'
+                }}
               </div>
               <div class="hero-subtitle">
                 {{
                   isLoggedIn && userInfo
                     ? 'Lv.' + userInfo.level + ' ' + userInfo.levelName
-                    : '点击查看账号信息'
+                    : authStatus === 'loading'
+                      ? '正在登录'
+                      : authStatus === 'retryable-error' || authStatus === 'state-check-error'
+                        ? '登录失败，点击重试'
+                        : authStatus === 'credentials-invalid'
+                          ? '凭据已失效，点击登录'
+                          : authStatus === 'no-credentials'
+                            ? '没有可用的自动登录凭据，点击登录'
+                            : '点击查看账号信息'
                 }}
               </div>
             </div>
@@ -248,7 +277,7 @@ import {
   timeOutline,
 } from 'ionicons/icons'
 import { useRoute, useRouter } from 'vue-router'
-import { useAuth } from '@/composables/useAuth'
+import { useAuth, type AuthStatus } from '@/composables/useAuth'
 import { useNetworkProbeStore } from '@/composables/networkProbeStore'
 import { manualOffline } from '@/runtime/onlineCapability'
 import {
@@ -285,7 +314,7 @@ const props = defineProps<{
 
 const route = useRoute()
 const router = useRouter()
-const { userInfo, isLoggedIn } = useAuth()
+const { userInfo, isLoggedIn, savedProfile, authStatus, retryLogin } = useAuth()
 const { clientState } = useNetworkProbeStore()
 const panelRef = ref<HTMLElement | null>(null)
 const dragProgress = ref(0)
@@ -861,7 +890,18 @@ const menuAriaHidden = computed(
 const accountButtonLabel = computed(() =>
   isLoggedIn.value && userInfo.value
     ? `查看账号信息（${userInfo.value.username}）`
-    : '查看账号信息',
+    : authStatus.value === 'retryable-error' || authStatus.value === 'state-check-error'
+      ? savedProfile.value
+        ? `重试登录（${savedProfile.value.username}）`
+        : '重试登录'
+      : savedProfile.value
+        ? `查看登录状态（${savedProfile.value.username}）`
+        : '查看账号信息',
+)
+const pendingProfile = computed(() =>
+  !isLoggedIn.value && savedProfile.value && authStatus.value !== 'idle'
+    ? savedProfile.value
+    : null,
 )
 const currentProgress = computed(() =>
   isInteractive.value ? (isDragging.value ? dragProgress.value : leftMenuOpen.value ? 1 : 0) : 0,
@@ -981,10 +1021,32 @@ useBackButton(10, (processNextHandler) => {
   else processNextHandler()
 })
 
-function goUser() {
+async function handleAccountClick() {
   isMenuNavigation.value = true
   closeMenu()
-  void router.push('/user')
+  if (isLoggedIn.value) {
+    await router.push('/user')
+    return
+  }
+  // 只有一次重试已经确认凭据不可用后，点击才进入登录页。
+  if (authStatus.value === 'credentials-invalid' || authStatus.value === 'no-credentials') {
+    await router.push('/login')
+    return
+  }
+  if (authStatus.value !== 'retryable-error' && authStatus.value !== 'state-check-error') return
+  const result = await retryLogin()
+  const retryStatus = authStatus.value as AuthStatus
+  if (result === 'authenticated') {
+    void showToast('登录状态已恢复', 'success')
+  } else if (retryStatus === 'credentials-invalid') {
+    void showToast('用户名或密码已失效，请重新登录', 'danger')
+  } else if (retryStatus === 'no-credentials') {
+    void showToast('没有可用的自动登录凭据', 'medium')
+  } else if (retryStatus === 'state-check-error') {
+    void showToast('检查登录状态失败，请稍后点击头像重试', 'danger')
+  } else if (retryStatus === 'retryable-error') {
+    void showToast('登录失败，请稍后点击头像重试', 'danger')
+  }
 }
 
 function isActive(path: string) {
@@ -1201,6 +1263,11 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 
+.user-avatar--pending {
+  filter: grayscale(1);
+  opacity: 0.56;
+}
+
 .user-avatar-placeholder {
   font-size: 48px;
   color: #e0b694;
@@ -1211,6 +1278,26 @@ onUnmounted(() => {
   position: relative;
   display: flex;
   flex: 0 0 auto;
+}
+
+.auth-avatar-state {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 2px solid #fff8f3;
+  border-radius: 50%;
+  background: #8c8c8c;
+  color: #fff;
+}
+
+.auth-avatar-state ion-spinner,
+.auth-avatar-state ion-icon {
+  width: 14px;
+  height: 14px;
 }
 
 .online-status-button {

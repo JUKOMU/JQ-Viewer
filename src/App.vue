@@ -626,11 +626,7 @@ onBeforeUnmount(() => {
   .ion-page-container .ion-page .desktop-page-content,
   .ion-page ion-header.ion-no-border ion-toolbar.desktop-page-content {
     --desktop-page-offset: clamp(150px, 15cqw, 300px);
-    --desktop-page-width: min(
-      100%,
-      960px,
-      calc(100% - var(--desktop-page-offset) - 24px)
-    );
+    --desktop-page-width: min(100%, 960px, calc(100% - var(--desktop-page-offset) - 24px));
     box-sizing: border-box;
     width: var(--desktop-page-width);
     margin-left: min(var(--desktop-page-offset), calc((100% - var(--desktop-page-width)) / 2));

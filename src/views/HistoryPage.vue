@@ -941,10 +941,7 @@ function browseGroupKeyForItem(
   )
 }
 
-async function reloadTabFromFirstPage(
-  tab: HistoryTab,
-  removedIds: number[],
-) {
+async function reloadTabFromFirstPage(tab: HistoryTab, removedIds: number[]) {
   if (tab === 'browse') {
     const removedIdSet = new Set(removedIds)
     const reloadGroupCounts = new Map<BrowseGroupKey, number>()
@@ -969,7 +966,9 @@ async function reloadTabFromFirstPage(
     const removedIdSet = new Set(removedIds)
     parseItems.value = parseItems.value.filter((item) => !removedIdSet.has(item.id))
     if (parseItems.value.length !== previousLength) {
-      updateParseTotalCount(Math.max(0, parseTotalCount.value - (previousLength - parseItems.value.length)))
+      updateParseTotalCount(
+        Math.max(0, parseTotalCount.value - (previousLength - parseItems.value.length)),
+      )
     }
     return
   }

@@ -9,6 +9,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 public record LoginStateResponse(
     boolean loggedIn,
     String username,
-    UserInfoResponse userInfo
+    UserInfoResponse userInfo,
+    boolean hasSavedCredentials
 ) {
 }

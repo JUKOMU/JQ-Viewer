@@ -23,7 +23,8 @@ public final class AuthPluginHandler {
     public void login(Context context) {
         requests.run(context, LoginRequest.class, request -> auth.login(
             requiredText(request.username(), "username"),
-            requiredText(request.password(), "password")));
+            requiredText(request.password(), "password"),
+            request.rememberMe() == null || request.rememberMe()));
     }
 
     public void logout(Context context) {

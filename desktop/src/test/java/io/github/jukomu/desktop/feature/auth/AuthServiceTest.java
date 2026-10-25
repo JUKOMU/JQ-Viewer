@@ -26,11 +26,12 @@ class AuthServiceTest {
     void restoresSessionFromSavedCredentialsAfterRestart() {
         MemoryCredentialStore credentials = new MemoryCredentialStore(true);
         AuthService firstProcess = new AuthService(client(null), credentials);
-        firstProcess.login("alice", "secret");
+        firstProcess.login("alice", "secret", true);
 
         AuthService restartedProcess = new AuthService(client(null), credentials);
 
         assertFalse(restartedProcess.state().loggedIn());
+        assertTrue(restartedProcess.state().hasSavedCredentials());
         assertTrue(restartedProcess.autoLogin().success());
         assertTrue(restartedProcess.state().loggedIn());
         assertEquals("alice", restartedProcess.state().username());
@@ -53,8 +54,21 @@ class AuthServiceTest {
         MemoryCredentialStore credentials = new MemoryCredentialStore(false);
         AuthService service = new AuthService(client(null), credentials);
 
-        assertEquals("alice", service.login("alice", "secret").username());
+        assertEquals("alice", service.login("alice", "secret", true).username());
         assertTrue(service.autoLogin().success());
+        assertNull(credentials.loadDirectly());
+    }
+
+    @Test
+    void uncheckedRememberMeClearsOldCredentialsAfterSuccessfulLogin() {
+        MemoryCredentialStore credentials = new MemoryCredentialStore(true);
+        credentials.save("old-account", "old-secret");
+        AuthService service = new AuthService(client(null), credentials);
+
+        assertEquals("alice", service.login("alice", "secret", false).username());
+
+        assertTrue(service.state().loggedIn());
+        assertFalse(service.state().hasSavedCredentials());
         assertNull(credentials.loadDirectly());
     }
 
@@ -97,7 +111,7 @@ class AuthServiceTest {
         AuthService service = new AuthService(
                 client(new ResponseException("unauthorized", 401)), credentials);
 
-        assertThrows(ApiException.class, () -> service.login("alice", "wrong"));
+        assertThrows(ApiException.class, () -> service.login("alice", "wrong", true));
         assertEquals("alice", credentials.loadDirectly().username());
         assertEquals("secret", credentials.loadDirectly().password());
     }
@@ -106,7 +120,7 @@ class AuthServiceTest {
     void logoutClearsSessionAndSavedCredentials() {
         MemoryCredentialStore credentials = new MemoryCredentialStore(true);
         AuthService service = new AuthService(client(null), credentials);
-        service.login("alice", "secret");
+        service.login("alice", "secret", true);
 
         service.logout();
 
@@ -130,7 +144,7 @@ class AuthServiceTest {
         MemoryCredentialStore networkCredentials = new MemoryCredentialStore(true);
         AuthService networkFailure = new AuthService(
                 client(null, new NetworkException("network unavailable")), networkCredentials);
-        networkFailure.login("alice", "secret");
+        networkFailure.login("alice", "secret", true);
 
         networkFailure.logout();
 
@@ -140,7 +154,7 @@ class AuthServiceTest {
         MemoryCredentialStore responseCredentials = new MemoryCredentialStore(true);
         AuthService responseFailure = new AuthService(
                 client(null, new ResponseException("logout rejected", 403)), responseCredentials);
-        responseFailure.login("alice", "secret");
+        responseFailure.login("alice", "secret", true);
 
         responseFailure.logout();
 
@@ -155,7 +169,7 @@ class AuthServiceTest {
         AtomicBoolean remoteLogoutCalled = new AtomicBoolean();
         JmClient client = client(null, null, () -> remoteLogoutCalled.set(true));
         AuthService service = new AuthService(() -> client, credentials, remoteTasks::add);
-        service.login("alice", "secret");
+        service.login("alice", "secret", true);
 
         service.logout();
 
@@ -175,10 +189,10 @@ class AuthServiceTest {
         AtomicBoolean remoteLogoutCalled = new AtomicBoolean();
         JmClient client = client(null, null, () -> remoteLogoutCalled.set(true));
         AuthService service = new AuthService(() -> client, credentials, remoteTasks::add);
-        service.login("alice", "old-secret");
+        service.login("alice", "old-secret", true);
         service.logout();
 
-        service.login("alice", "new-secret");
+        service.login("alice", "new-secret", true);
         remoteTasks.remove().run();
 
         assertFalse(remoteLogoutCalled.get());

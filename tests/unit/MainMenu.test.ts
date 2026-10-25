@@ -27,6 +27,9 @@ const mocks = vi.hoisted(() => ({
   reprobeDomains: vi.fn(),
   getClientState: vi.fn(),
   showToast: vi.fn(),
+  retryLogin: vi.fn(),
+  authStatus: 'idle',
+  savedProfile: null as { uid: string; username: string; avatarUrl: string } | null,
   downloadHandler: undefined as ((event: any) => void) | undefined,
   pdfHandler: undefined as ((event: any) => void) | undefined,
   stateInvalidatedHandler: undefined as (() => void) | undefined,
@@ -53,7 +56,13 @@ vi.mock('@/services/JmcomicService', () => ({
 }))
 
 vi.mock('@/composables/useAuth', () => ({
-  useAuth: () => ({ userInfo: ref(null), isLoggedIn: ref(false) }),
+  useAuth: () => ({
+    userInfo: ref(null),
+    isLoggedIn: ref(false),
+    savedProfile: ref(mocks.savedProfile),
+    authStatus: ref(mocks.authStatus),
+    retryLogin: mocks.retryLogin,
+  }),
 }))
 
 vi.mock('@ionic/vue', async () => {
@@ -114,6 +123,10 @@ beforeEach(() => {
   mocks.reprobeDomains.mockReset()
   mocks.getClientState.mockReset()
   mocks.showToast.mockReset()
+  mocks.retryLogin.mockReset()
+  mocks.retryLogin.mockResolvedValue('authenticated')
+  mocks.authStatus = 'idle'
+  mocks.savedProfile = null
   mocks.downloadHandler = undefined
   mocks.pdfHandler = undefined
   mocks.stateInvalidatedHandler = undefined
@@ -213,6 +226,18 @@ const pdfTask = (currentPage = 0, totalPages = 100, status = 'running') => ({
 })
 
 describe('MainMenu 自定义左侧手势', () => {
+  test('没有缓存头像时仍可从可重试状态触发登录恢复', async () => {
+    mocks.authStatus = 'retryable-error'
+    const wrapper = mountMenu()
+
+    await wrapper.find('button.menu-hero').trigger('click')
+    await flushPromises()
+
+    expect(mocks.retryLogin).toHaveBeenCalledOnce()
+    expect(mocks.routerPush).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   test('遮罩瞬时切换，不跟随面板拖拽进度变化', async () => {
     const wrapper = mountMenu()
     const backdrop = wrapper.find('.main-menu-backdrop').element as HTMLElement

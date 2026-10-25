@@ -123,6 +123,7 @@ public class AuthPluginContractInstrumentedTest {
         RecordingPluginCall state = call("checkLoginState");
         plugin.checkLoginState(state);
         assertTrue(state.resolvedData.getBoolean("loggedIn"));
+        assertTrue(state.resolvedData.getBoolean("hasSavedCredentials"));
         assertEquals("alice", state.resolvedData.getString("username"));
         assertEquals("1", state.resolvedData.getJSONObject("userInfo").getString("uid"));
         assertFalse(state.isKeptAlive());
@@ -138,6 +139,24 @@ public class AuthPluginContractInstrumentedTest {
         assertNull(settingsStore.getString("auth_user_info_json"));
         assertNull(credentialStore.getUsername());
         assertNull(credentialStore.getPassword());
+    }
+
+    @Test
+    public void uncheckedRememberMeClearsOldCredentialsAfterSuccessfulLogin() throws Exception {
+        credentialStore.save("old-account", "old-secret");
+        apiService.succeedWith(new JSONObject().put("username", "alice").put("uid", "1"));
+        RecordingPluginCall login = call(
+            "login", "username", "alice", "password", "secret", "rememberMe", false);
+
+        plugin.login(login);
+
+        assertEquals("alice", login.resolvedData.getString("username"));
+        RecordingPluginCall state = call("checkLoginState");
+        plugin.checkLoginState(state);
+        assertFalse(state.resolvedData.getBoolean("hasSavedCredentials"));
+        assertNull(credentialStore.getUsername());
+        assertNull(credentialStore.getPassword());
+        assertEquals("alice", settingsStore.getString("auth_username"));
     }
 
     @Test

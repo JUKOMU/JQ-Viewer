@@ -72,6 +72,7 @@ export function useAuth() {
     canCommit: () => boolean = () => true,
   ): Promise<AuthInitializationResult> {
     if (canCommit()) authStatus.value = 'loading'
+    let noSavedCredentials = false
     try {
       const result = await JmcomicService.checkLoginState()
       if (result.loggedIn && result.userInfo) {
@@ -100,8 +101,9 @@ export function useAuth() {
       }
     } catch (error) {
       const normalized = normalizeRuntimeError(error, '自动登录失败')
-      // 启动阶段的首次失败统一保留为可重试；只有用户再次点击并确认失败原因后才细分提示。
-      if (canCommit()) authStatus.value = 'retryable-error'
+      // 没有保存凭据时保持默认未登录；已有账号资料则保留侧栏重试入口。
+      noSavedCredentials = normalized.code === 'not-found' && !savedProfile.value
+      if (canCommit()) authStatus.value = noSavedCredentials ? 'idle' : 'retryable-error'
       if (normalized.code !== 'not-found' && normalized.code !== 'permission-denied') {
         return 'retryable-error'
       }
@@ -111,7 +113,7 @@ export function useAuth() {
       updateUserInfo(null)
       clearFavoriteFolderStore()
       clearFavoritePageCache()
-      authStatus.value = 'retryable-error'
+      authStatus.value = noSavedCredentials ? 'idle' : 'retryable-error'
     }
     return 'unauthenticated'
   }

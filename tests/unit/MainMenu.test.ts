@@ -226,6 +226,17 @@ const pdfTask = (currentPage = 0, totalPages = 100, status = 'running') => ({
 })
 
 describe('MainMenu 自定义左侧手势', () => {
+  test('idle 状态点击账号入口进入用户页', async () => {
+    const wrapper = mountMenu()
+
+    await wrapper.find('button.menu-hero').trigger('click')
+    await flushPromises()
+
+    expect(mocks.routerPush).toHaveBeenCalledWith('/user')
+    expect(mocks.retryLogin).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   test('没有缓存头像时仍可从可重试状态触发登录恢复', async () => {
     mocks.authStatus = 'retryable-error'
     const wrapper = mountMenu()

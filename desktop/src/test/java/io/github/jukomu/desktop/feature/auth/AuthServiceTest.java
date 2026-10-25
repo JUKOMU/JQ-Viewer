@@ -50,6 +50,15 @@ class AuthServiceTest {
     }
 
     @Test
+    void reportsUnknownCredentialStateWhenSecureStorageReadFails() {
+        MemoryCredentialStore credentials = new MemoryCredentialStore(
+                true, new IllegalStateException("secure storage unavailable"));
+        AuthService service = new AuthService(client(null), credentials);
+
+        assertNull(service.state().hasSavedCredentials());
+    }
+
+    @Test
     void keepsManualLoginAvailableWhenSecureStorageIsUnavailable() {
         MemoryCredentialStore credentials = new MemoryCredentialStore(false);
         AuthService service = new AuthService(client(null), credentials);
@@ -310,13 +319,19 @@ class AuthServiceTest {
 
     private static final class MemoryCredentialStore implements CredentialStore {
         private final boolean available;
+        private final RuntimeException loadFailure;
         private LoginCredentials credentials;
         private int loadCalls;
         private CountDownLatch loadEntered;
         private CountDownLatch releaseLoad;
 
         private MemoryCredentialStore(boolean available) {
+            this(available, null);
+        }
+
+        private MemoryCredentialStore(boolean available, RuntimeException loadFailure) {
             this.available = available;
+            this.loadFailure = loadFailure;
         }
 
         @Override
@@ -327,6 +342,7 @@ class AuthServiceTest {
         @Override
         public LoginCredentials load() {
             if (!available) throw new IllegalStateException("unavailable");
+            if (loadFailure != null) throw loadFailure;
             loadCalls++;
             LoginCredentials loaded = credentials;
             CountDownLatch entered = loadEntered;

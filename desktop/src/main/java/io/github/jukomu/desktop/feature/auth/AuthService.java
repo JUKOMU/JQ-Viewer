@@ -218,11 +218,15 @@ public final class AuthService {
                 hasSavedCredentials());
     }
 
-    /** 返回当前是否存在可用于自动登录的安全凭据，不暴露凭据内容。 */
-    private boolean hasSavedCredentials() {
+    /** 返回可用于自动登录的凭据状态；安全存储读取失败时返回 null 表示未知。 */
+    private Boolean hasSavedCredentials() {
         LoginCredentials saved = memoryCredentials;
         if (saved == null && !credentialsLoaded && credentials.isAvailable()) {
-            saved = loadCredentialsOnce();
+            try {
+                saved = loadCredentialsOnce();
+            } catch (ApiException failure) {
+                return null;
+            }
         }
         return saved != null
             && saved.username() != null && !saved.username().isBlank()

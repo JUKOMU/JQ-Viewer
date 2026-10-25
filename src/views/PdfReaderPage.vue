@@ -1174,7 +1174,7 @@ onMounted(async () => {
       } else if (runtimeError.code === 'not-found') {
         await showToast(sanitizeError(runtimeError, 'PDF 文件不存在或已移动'), 'danger')
       } else if (runtimeError.code === 'permission-denied') {
-        await showToast(sanitizeError(runtimeError, 'PDF 文件读取权限已失效，请重新导入'), 'danger')
+        await showToast('PDF 文件读取权限已失效，请重新导入', 'danger')
       } else if (/password/i.test(runtimeError.message)) {
         await showToast('此 PDF 已加密，无法打开', 'danger')
       } else {

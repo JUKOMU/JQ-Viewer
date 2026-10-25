@@ -139,6 +139,7 @@ describe('useAuth', () => {
       await expect(useAuth().initAuth()).resolves.toBe('unauthenticated')
       expect(mocks.clearFavoriteFolderStore).toHaveBeenCalledOnce()
       expect(mocks.clearFavoritePageCache).toHaveBeenCalledOnce()
+      expect(useAuth().authStatus.value).toBe(code === 'not-found' ? 'idle' : 'retryable-error')
     },
   )
 

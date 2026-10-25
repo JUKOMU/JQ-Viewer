@@ -1033,6 +1033,10 @@ async function handleAccountClick() {
     await router.push('/login')
     return
   }
+  if (authStatus.value === 'idle') {
+    await router.push('/user')
+    return
+  }
   if (authStatus.value !== 'retryable-error' && authStatus.value !== 'state-check-error') return
   const result = await retryLogin()
   const retryStatus = authStatus.value as AuthStatus

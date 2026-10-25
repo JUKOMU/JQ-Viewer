@@ -1,7 +1,7 @@
 import { createAppAlert } from './AppAlertService'
 import { shallowRef } from 'vue'
 import type { UpdateManifest, UpdateProgressEvent } from './JmcomicTypes'
-import { JmcomicService, showToast } from './JmcomicService'
+import { JmcomicService, sanitizeError, showToast } from './JmcomicService'
 import { getRuntime } from '@/runtime/runtimeContext'
 
 const IDLE_STATE: UpdateProgressEvent = {
@@ -195,7 +195,7 @@ async function installReadyUpdate(): Promise<InstallResult> {
       }
       return result
     } catch (error) {
-      await showToast(error instanceof Error ? error.message : '无法启动安装器', 'danger', 2500)
+      await showToast(sanitizeError(error, '无法启动安装器'), 'danger', 2500)
       throw error
     } finally {
       installPromise = null

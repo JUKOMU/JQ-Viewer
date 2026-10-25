@@ -30,6 +30,7 @@
             :disabled="loading"
             @keyup.enter="doLogin"
           />
+          <IonCheckbox v-model="rememberMe" label-placement="end">下次自动登录</IonCheckbox>
           <div v-if="errorMsg" class="error-msg">{{ errorMsg }}</div>
           <IonButton
             expand="block"
@@ -54,6 +55,7 @@ import { useRouter } from 'vue-router'
 import {
   IonBackButton,
   IonButton,
+  IonCheckbox,
   IonButtons,
   IonContent,
   IonHeader,
@@ -67,10 +69,12 @@ import { useAuth } from '@/composables/useAuth'
 import { sanitizeError } from '@/services/JmcomicService'
 
 const router = useRouter()
-const { login } = useAuth()
+const { login, savedProfile } = useAuth()
 
-const username = ref('')
+const username = ref(savedProfile.value?.username ?? '')
 const password = ref('')
+// 默认勾选以延续旧版登录成功后的自动登录行为。
+const rememberMe = ref(true)
 const loading = ref(false)
 const errorMsg = ref('')
 const passwordRef = ref<InstanceType<typeof IonInput> | null>(null)
@@ -88,7 +92,7 @@ async function doLogin() {
   loading.value = true
   errorMsg.value = ''
   try {
-    await login(username.value.trim(), password.value)
+    await login(username.value.trim(), password.value, rememberMe.value)
     router.replace('/user')
   } catch (e: any) {
     errorMsg.value = sanitizeError(e, '登录失败，请检查用户名和密码')
@@ -151,6 +155,12 @@ async function doLogin() {
   color: #d44;
   font-size: 13px;
   padding: 0 4px;
+}
+
+.login-card ion-checkbox {
+  align-self: flex-start;
+  font-size: 13px;
+  color: #8d634a;
 }
 
 .login-btn {

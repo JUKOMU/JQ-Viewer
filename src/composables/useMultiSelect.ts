@@ -40,5 +40,17 @@ export function useMultiSelect<T extends string | number>() {
     active.value = false
   }
 
-  return { active, selected, count, allSelected, enter, toggle, select, selectAll, invert, clear, exit }
+  return {
+    active,
+    selected,
+    count,
+    allSelected,
+    enter,
+    toggle,
+    select,
+    selectAll,
+    invert,
+    clear,
+    exit,
+  }
 }

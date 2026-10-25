@@ -261,7 +261,7 @@ import {
   IonToolbar,
 } from '@ionic/vue'
 import { chevronForwardOutline, logoGithub, refreshOutline, trashOutline } from 'ionicons/icons'
-import { JmcomicService, showToast } from '@/services/JmcomicService'
+import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
 import { getRuntime } from '@/runtime/runtimeContext'
 import type {
   DiagnosticsService,
@@ -457,7 +457,7 @@ async function clearDiagnosticCaches() {
     await loadDiagnostics()
     await showToast('缓存已清理', 'success')
   } catch (error) {
-    await showToast(error instanceof Error ? error.message : '缓存清理失败', 'danger', 2500)
+    await showToast(sanitizeError(error, '缓存清理失败'), 'danger', 2500)
   } finally {
     diagnosticsClearing.value = false
   }

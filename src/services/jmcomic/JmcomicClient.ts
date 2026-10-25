@@ -290,11 +290,18 @@ export interface JmcomicClient {
 
   getClientState(): Promise<ClientStateSnapshot>
 
-  login(options: { username: string; password: string }): Promise<UserInfo>
+  /** rememberMe 缺省为 true，兼容未携带新字段的旧前端。 */
+  login(options: { username: string; password: string; rememberMe?: boolean }): Promise<UserInfo>
 
   logout(): Promise<{ success: boolean }>
 
-  checkLoginState(): Promise<{ loggedIn: boolean; username?: string; userInfo?: UserInfo }>
+  checkLoginState(): Promise<{
+    loggedIn: boolean
+    username?: string
+    userInfo?: UserInfo
+    /** 只有明确为 false 时，才表示当前会话未选择保存自动登录凭据。 */
+    hasSavedCredentials?: boolean
+  }>
 
   autoLogin(): Promise<{ success: boolean; userInfo?: UserInfo }>
 

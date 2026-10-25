@@ -114,7 +114,10 @@ vi.mock('@/runtime/runtimeContext', () => ({
 }))
 
 vi.mock('@/services/JmcomicService', () => ({
-  sanitizeError: (_error: unknown, fallback: string) => fallback,
+  sanitizeError: (error: unknown, fallback: string) =>
+    error instanceof Error && error.message.includes('PDF 信息读取失败')
+      ? `${fallback}：${error.message}`
+      : fallback,
   showToast: mocks.showToast,
   JmcomicService: {
     addVolumeKeyListener: mocks.addVolumeKeyListener,
@@ -561,7 +564,11 @@ describe('PdfReaderPage PDF 专属渲染尺寸', () => {
     loadFailure.reject(new Error('unsupported'))
     await settle()
 
-    expect(mocks.showToast).toHaveBeenCalledWith('PDF 信息读取失败: 没有权限读取 PDF', 'danger')
+    expect(mocks.showToast).toHaveBeenCalledWith('PDF 文件读取权限已失效，请重新导入', 'danger')
+    expect(mocks.showToast).not.toHaveBeenCalledWith(
+      expect.stringContaining('PDF 信息读取失败'),
+      'danger',
+    )
     expect(mocks.router.back).toHaveBeenCalled()
     wrapper.unmount()
   })

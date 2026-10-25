@@ -17,11 +17,7 @@
             全选
           </button>
           <button type="button" :disabled="preparing" @click="$emit('invert')">
-            <IonSpinner
-              v-if="preparingAction === 'invert'"
-              name="crescent"
-              aria-hidden="true"
-            />
+            <IonSpinner v-if="preparingAction === 'invert'" name="crescent" aria-hidden="true" />
             <IonIcon v-else :icon="swapVerticalOutline" aria-hidden="true" />
             反选
           </button>

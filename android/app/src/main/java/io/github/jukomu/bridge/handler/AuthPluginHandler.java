@@ -81,12 +81,14 @@ public final class AuthPluginHandler {
     }
 
     /**
-     * 使用非空用户名和密码登录，并持久化登录态与加密凭据。
+     * 使用非空用户名和密码登录。
+     * rememberMe 缺省为 true，以兼容旧版前端；关闭时只保留当前会话，不保存安全凭据。
      */
     public void login(PluginCall call) {
         try {
             String username = call.getString("username");
             String password = call.getString("password");
+            boolean rememberMe = call.getBoolean("rememberMe", true);
             if (username == null || username.isEmpty()
                 || password == null || password.isEmpty()) {
                 call.reject("username and password are required");
@@ -114,9 +116,17 @@ public final class AuthPluginHandler {
                                     }
                                     SettingsStore settingsStore = SettingsStore.getInstance(context);
                                     saveAuthState(settingsStore, userInfo);
-                                    memoryUsername = username;
-                                    memoryPassword = password;
-                                    CredentialStore.getInstance(context).save(username, password);
+                                    if (rememberMe) {
+                                        memoryUsername = username;
+                                        memoryPassword = password;
+                                        credentialsLoaded = true;
+                                        CredentialStore.getInstance(context).save(username, password);
+                                    } else {
+                                        memoryUsername = null;
+                                        memoryPassword = null;
+                                        credentialsLoaded = true;
+                                        CredentialStore.getInstance(context).clear();
+                                    }
                                 }
                                 LOGGER.info("认证登录成功 attemptId={}", attemptId);
                                 activeCall.resolve(JSObject.fromJSONObject(userInfo));
@@ -241,7 +251,7 @@ public final class AuthPluginHandler {
     }
 
     /**
-     * 读取本地登录态；用户信息损坏时清除三项登录缓存并返回未登录。
+     * 读取本地登录态和自动登录凭据状态；用户信息损坏时清除三项登录缓存并返回未登录。
      */
     public void checkLoginState(PluginCall call) {
         SettingsStore settingsStore = SettingsStore.getInstance(context);
@@ -249,6 +259,10 @@ public final class AuthPluginHandler {
         String userInfoJson = settingsStore.getString(AUTH_USER_INFO_KEY);
 
         JSObject result = new JSObject();
+        String[] credentials = loadCredentialsIfNeeded();
+        result.put("hasSavedCredentials",
+            credentials[0] != null && !credentials[0].isEmpty()
+                && credentials[1] != null && !credentials[1].isEmpty());
         if (username != null && !username.isEmpty()
             && userInfoJson != null && !userInfoJson.isEmpty()) {
             try {
@@ -266,7 +280,7 @@ public final class AuthPluginHandler {
     }
 
     /**
-     * 使用加密凭据自动登录；认证失败时删除凭据，网络错误时保留凭据。
+     * 使用已保存的加密凭据自动登录；任何失败都保留凭据，凭据只由手动登出或新的手动登录成功处理。
      */
     public void autoLogin(PluginCall call) {
         String[] credentials = loadCredentialsIfNeeded();

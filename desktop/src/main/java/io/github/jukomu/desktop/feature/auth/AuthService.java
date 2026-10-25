@@ -34,6 +34,7 @@ public final class AuthService {
     private volatile UserInfoResponse userInfo;
     private volatile LoginCredentials memoryCredentials;
     private volatile boolean credentialsLoaded;
+    private volatile boolean credentialsReadFailed;
     private volatile long authGeneration;
 
     public AuthService(JmClient client, CredentialStore credentials) {
@@ -55,7 +56,14 @@ public final class AuthService {
             remoteLogoutExecutor, "remoteLogoutExecutor");
     }
 
+    /**
+     * 完成一次手动登录；rememberMe 只控制安全凭据，当前会话始终建立。
+     */
     public UserInfoResponse login(String username, String password) {
+        return login(username, password, true);
+    }
+
+    public UserInfoResponse login(String username, String password, boolean rememberMe) {
         long started = System.nanoTime();
         long expectedGeneration = nextAuthGeneration();
         UserInfoResponse result;
@@ -80,8 +88,14 @@ public final class AuthService {
                 throw ApiException.cancelled("认证状态已变化");
             }
             userInfo = result;
-            memoryCredentials = new LoginCredentials(username, password);
-            saveCredentials(username, password);
+            if (rememberMe) {
+                memoryCredentials = new LoginCredentials(username, password);
+                credentialsLoaded = true;
+                saveCredentials(username, password);
+            } else {
+                clearMemoryCredentials();
+                clearCredentials("未勾选自动登录时无法清除旧凭据");
+            }
         }
         LOGGER.info("auth_request operation=login status=success elapsedMs={}", elapsedMs(started));
         return result;
@@ -101,6 +115,7 @@ public final class AuthService {
         return SuccessResponse.ok();
     }
 
+    /** 自动登录失败只报告认证结果，不修改安全存储中的凭据。 */
     public AutoLoginResponse autoLogin() {
         long started = System.nanoTime();
         long expectedGeneration = currentAuthGeneration();
@@ -199,8 +214,29 @@ public final class AuthService {
     public LoginStateResponse state() {
         UserInfoResponse currentUserInfo = userInfo;
         return currentUserInfo == null
-            ? new LoginStateResponse(false, null, null)
-            : new LoginStateResponse(true, currentUserInfo.username(), currentUserInfo);
+            ? new LoginStateResponse(false, null, null, hasSavedCredentials())
+            : new LoginStateResponse(true, currentUserInfo.username(), currentUserInfo,
+                hasSavedCredentials());
+    }
+
+    /** 返回可用于自动登录的凭据状态；安全存储读取失败时返回 null 表示未知。 */
+    private Boolean hasSavedCredentials() {
+        LoginCredentials saved = memoryCredentials;
+        if (saved != null) {
+            return saved.username() != null && !saved.username().isBlank()
+                && saved.password() != null && !saved.password().isEmpty();
+        }
+        if (credentialsReadFailed) return null;
+        if (saved == null && !credentialsLoaded && credentials.isAvailable()) {
+            try {
+                saved = loadCredentialsOnce();
+            } catch (ApiException failure) {
+                return null;
+            }
+        }
+        return saved != null
+            && saved.username() != null && !saved.username().isBlank()
+            && saved.password() != null && !saved.password().isEmpty();
     }
 
     public UserProfileResponse profile(String uid) {
@@ -250,6 +286,7 @@ public final class AuthService {
                 credentialsLoaded = true;
                 return loaded;
             } catch (RuntimeException failure) {
+                credentialsReadFailed = true;
                 throw ApiException.unavailable("无法读取操作系统安全凭据，自动登录不可用");
             }
         }
@@ -268,8 +305,10 @@ public final class AuthService {
     }
 
     private void clearMemoryCredentials() {
+        // 关闭记住我或登出时，内存凭据必须与安全存储同时失效。
         memoryCredentials = null;
         credentialsLoaded = true;
+        credentialsReadFailed = false;
     }
 
     private void clearCredentialsQuietly() {

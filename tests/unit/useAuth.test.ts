@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { RuntimeError } from '@/runtime/errors'
 
 const mocks = vi.hoisted(() => ({
@@ -32,7 +32,10 @@ beforeEach(() => {
   vi.resetAllMocks()
   mocks.login.mockResolvedValue({ uid: 'user-1', username: 'alice' })
   mocks.logout.mockRejectedValue(new Error('remote logout failed'))
+  localStorage.clear()
 })
+
+afterEach(() => localStorage.clear())
 
 describe('useAuth', () => {
   test('isLoggedIn 初始为 false', async () => {
@@ -64,6 +67,40 @@ describe('useAuth', () => {
     expect(auth.userInfo.value).toBeNull()
   })
 
+  test('未勾选自动登录时不保留头像资料，且向后端传递选择', async () => {
+    mocks.login.mockResolvedValue({ uid: 'user-1', username: 'alice', avatarUrl: 'avatar.jpg' })
+    const { useAuth } = await import('@/composables/useAuth')
+
+    await useAuth().login('alice', 'secret', false)
+
+    expect(mocks.login).toHaveBeenCalledWith('alice', 'secret', false)
+    expect(useAuth().userInfo.value?.username).toBe('alice')
+    expect(useAuth().savedProfile.value).toBeNull()
+    expect(localStorage.getItem('jq_auth_profile')).toBeNull()
+  })
+
+  test('重试先检查权威登录态，已登录时不再次调用自动登录', async () => {
+    const userInfo = { uid: 'user-1', username: 'alice', avatarUrl: 'avatar.jpg' }
+    mocks.checkLoginState.mockResolvedValue({ loggedIn: true, userInfo })
+    const { useAuth } = await import('@/composables/useAuth')
+
+    await expect(useAuth().retryLogin()).resolves.toBe('authenticated')
+
+    expect(mocks.checkLoginState).toHaveBeenCalledOnce()
+    expect(mocks.autoLogin).not.toHaveBeenCalled()
+    expect(useAuth().userInfo.value).toEqual(userInfo)
+  })
+
+  test('登录态检查失败时不发起自动登录', async () => {
+    mocks.checkLoginState.mockRejectedValue(new RuntimeError('network', 'offline'))
+    const { useAuth } = await import('@/composables/useAuth')
+
+    await expect(useAuth().retryLogin()).resolves.toBe('retryable-error')
+
+    expect(mocks.autoLogin).not.toHaveBeenCalled()
+    expect(useAuth().authStatus.value).toBe('state-check-error')
+  })
+
   test('本地登录态读取失败时保留为可重试错误', async () => {
     mocks.checkLoginState.mockRejectedValue(new RuntimeError('network', 'offline'))
     const { useAuth } = await import('@/composables/useAuth')
@@ -82,6 +119,16 @@ describe('useAuth', () => {
     expect(mocks.clearFavoriteFolderStore).not.toHaveBeenCalled()
   })
 
+  test('启动阶段凭据错误也先保留为可重试状态', async () => {
+    mocks.checkLoginState.mockResolvedValue({ loggedIn: false })
+    mocks.autoLogin.mockRejectedValue(new RuntimeError('permission-denied', 'expired'))
+    const { useAuth } = await import('@/composables/useAuth')
+
+    await expect(useAuth().initAuth()).resolves.toBe('unauthenticated')
+
+    expect(useAuth().authStatus.value).toBe('retryable-error')
+  })
+
   test.each(['not-found', 'permission-denied'] as const)(
     '%s 表示已确认未登录并清理用户缓存',
     async (code) => {
@@ -92,6 +139,7 @@ describe('useAuth', () => {
       await expect(useAuth().initAuth()).resolves.toBe('unauthenticated')
       expect(mocks.clearFavoriteFolderStore).toHaveBeenCalledOnce()
       expect(mocks.clearFavoritePageCache).toHaveBeenCalledOnce()
+      expect(useAuth().authStatus.value).toBe(code === 'not-found' ? 'idle' : 'retryable-error')
     },
   )
 
@@ -104,6 +152,42 @@ describe('useAuth', () => {
     await expect(auth.initAuth()).resolves.toBe('authenticated')
     expect(auth.userInfo.value).toEqual(userInfo)
     expect(mocks.autoLogin).not.toHaveBeenCalled()
+  })
+
+  test('升级后从已登录状态补存有凭据用户资料', async () => {
+    const userInfo = { uid: '1', username: 'alice', avatarUrl: 'avatar.jpg' }
+    mocks.checkLoginState.mockResolvedValue({
+      loggedIn: true,
+      userInfo,
+      hasSavedCredentials: true,
+    })
+    const { useAuth } = await import('@/composables/useAuth')
+    const auth = useAuth()
+
+    await auth.initAuth()
+
+    expect(auth.savedProfile.value).toEqual(userInfo)
+    expect(JSON.parse(localStorage.getItem('jq_auth_profile')!)).toEqual(userInfo)
+  })
+
+  test('已登录但未保存凭据时不持久化用户资料', async () => {
+    localStorage.setItem(
+      'jq_auth_profile',
+      JSON.stringify({ uid: 'old', username: 'old-user', avatarUrl: 'old.jpg' }),
+    )
+    const userInfo = { uid: '1', username: 'alice', avatarUrl: 'avatar.jpg' }
+    mocks.checkLoginState.mockResolvedValue({
+      loggedIn: true,
+      userInfo,
+      hasSavedCredentials: false,
+    })
+    const { useAuth } = await import('@/composables/useAuth')
+    const auth = useAuth()
+
+    await auth.initAuth()
+
+    expect(auth.savedProfile.value).toBeNull()
+    expect(localStorage.getItem('jq_auth_profile')).toBeNull()
   })
 
   test('后续认证确认凭据失效时清除已有用户状态', async () => {

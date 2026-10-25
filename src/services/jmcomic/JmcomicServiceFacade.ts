@@ -102,9 +102,9 @@ export const JmcomicService = {
     return native.manageFavoriteFolder({ type, folderId, folderName, albumId })
   },
 
-  /** 登录 */
-  login(username: string, password: string) {
-    return native.login({ username, password })
+  /** 登录；rememberMe 控制安全凭据是否在成功后保存。 */
+  login(username: string, password: string, rememberMe = true) {
+    return native.login({ username, password, rememberMe })
   },
 
   /** 登出 */

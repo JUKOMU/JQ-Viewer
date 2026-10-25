@@ -57,6 +57,7 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.*;
 import java.util.function.Consumer;
@@ -270,11 +271,7 @@ public final class Backend implements AutoCloseable {
                 JmcomicSessionManager.Factory clientFactory = providedClientFactory == null
                     ? () -> JmComic.newApiClientAsync(configuration).thenApply(client -> {
                     try {
-                        var route = settingsService.all();
-                        if ("manual".equals(route.apiRouteMode())) {
-                            client.useDomain(route.apiRouteDomain());
-                        }
-                        return client;
+                        return applySavedRoute(client, settingsService);
                     } catch (RuntimeException error) {
                         client.close();
                         throw error;
@@ -489,6 +486,26 @@ public final class Backend implements AutoCloseable {
             );
             throw exception;
         }
+    }
+
+    static JmApiClient applySavedRoute(JmApiClient client, SettingsService settingsService) {
+        var route = settingsService.all();
+        if (!"manual".equals(route.apiRouteMode())) return client;
+
+        String domain = route.apiRouteDomain();
+        if (isSavedDomainCurrent(domain, client.getDomainStates())) {
+            client.useDomain(domain);
+            return client;
+        }
+
+        client.useAutoDomain();
+        settingsService.setApiRoute("auto", "");
+        LOGGER.warn("保存的手动线路已失效，已回退自动线路 route={}", domain);
+        return client;
+    }
+
+    static boolean isSavedDomainCurrent(String domain, Map<String, Integer> domainStates) {
+        return domain != null && !domain.isBlank() && domainStates.containsKey(domain);
     }
 
     private void configureApplication(

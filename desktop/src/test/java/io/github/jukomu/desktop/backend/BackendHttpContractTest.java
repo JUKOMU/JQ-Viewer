@@ -554,8 +554,8 @@ class BackendHttpContractTest {
             assertTrue(autoLogin.path("success").asBoolean());
             assertEquals("alice", autoLogin.path("userInfo").path("username").asText());
             assertTrue(loginState.path("loggedIn").asBoolean());
-            assertEquals(1, loggedOutState.size());
             assertTrue(!loggedOutState.path("loggedIn").asBoolean());
+            assertTrue(!loggedOutState.path("hasSavedCredentials").asBoolean());
             assertEquals("Alice", profile.path("nickname").asText());
             assertEquals(4, settings.path("preloadConcurrency").asInt());
             assertEquals(5, settings.path("downloadConcurrency").asInt());

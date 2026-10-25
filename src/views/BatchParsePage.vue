@@ -1189,6 +1189,7 @@ const progressPercent = computed(() => {
 }
 
 .toolbar-content {
+  --desktop-page-max-width: 1000px;
   width: 100%;
   max-width: 1000px;
   margin-inline: auto;
@@ -1550,6 +1551,7 @@ const progressPercent = computed(() => {
 
 @media (min-width: 680px) {
   .page-shell {
+    --desktop-page-max-width: 1000px;
     max-width: 1000px;
     margin-right: auto;
     margin-left: auto;

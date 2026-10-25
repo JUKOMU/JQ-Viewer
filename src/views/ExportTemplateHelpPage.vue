@@ -143,6 +143,7 @@ const templateExamples = [
 }
 
 .pdf-template-help-toolbar {
+  --desktop-page-max-width: 920px;
   width: 100%;
   max-width: 920px;
   margin-inline: auto;
@@ -150,6 +151,7 @@ const templateExamples = [
 }
 
 .help-container {
+  --desktop-page-max-width: 920px;
   width: 100%;
   max-width: 920px;
   margin-inline: auto;

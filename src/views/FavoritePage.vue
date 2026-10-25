@@ -2400,6 +2400,7 @@ onActivated(async () => {
 }
 
 .favorite-page-top {
+  --desktop-page-max-width: 1000px;
   padding: calc(var(--ion-safe-area-top) + 2px) 14px 0;
   box-sizing: border-box;
   width: 100%;

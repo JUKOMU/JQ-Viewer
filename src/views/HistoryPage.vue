@@ -1419,16 +1419,18 @@ function formatRelativeTime(timestamp: number): string {
 
 /* 页面容器 */
 .page-shell {
+  --desktop-page-max-width: 960px;
   width: calc(100% - 28px);
-  max-width: 720px;
+  max-width: 960px;
   margin: 0 auto 86px;
 }
 
 /* Tab 栏 */
 .tab-bar {
+  --desktop-page-max-width: 960px;
   display: flex;
   width: 100%;
-  max-width: 720px;
+  max-width: 960px;
   box-sizing: border-box;
   gap: 2px;
   margin-inline: auto;

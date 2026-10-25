@@ -471,6 +471,7 @@ defineExpose<SearchResultContainerExposed>({
 
 <style scoped>
 .result-shell {
+  --desktop-page-max-width: 1000px;
   margin: 12px 14px 86px;
   color: #31251f;
 }

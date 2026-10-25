@@ -1196,6 +1196,7 @@ onMounted(async () => {
 }
 
 .search-page-toolbar {
+  --desktop-page-max-width: 1000px;
   max-width: 1000px;
   margin-inline: auto;
   display: flex;

@@ -1920,6 +1920,7 @@ const clearFailed = async () => {
 
 <style scoped>
 .download-page-shell {
+  --desktop-page-max-width: 1000px;
   width: 100%;
   max-width: 1000px;
   margin-inline: auto;

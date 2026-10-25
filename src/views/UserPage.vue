@@ -182,6 +182,7 @@ async function confirmLogout() {
 
 <style scoped>
 .toolbar {
+  --desktop-page-max-width: 920px;
   width: 100%;
   max-width: 920px;
   margin-inline: auto;
@@ -189,6 +190,7 @@ async function confirmLogout() {
 }
 
 .user-container {
+  --desktop-page-max-width: 960px;
   padding: 24px 20px 0;
   display: flex;
   flex-direction: column;
@@ -403,6 +405,7 @@ async function confirmLogout() {
 
 @media (min-width: 768px) {
   .user-container--logged-in {
+    --desktop-page-max-width: 900px;
     width: min(100%, 900px);
     margin-inline: auto;
     display: grid;

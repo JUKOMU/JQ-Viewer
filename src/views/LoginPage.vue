@@ -104,6 +104,7 @@ async function doLogin() {
 
 <style scoped>
 .toolbar {
+  --desktop-page-max-width: 1000px;
   width: 100%;
   max-width: 1000px;
   margin-inline: auto;
@@ -117,6 +118,7 @@ async function doLogin() {
 }
 
 .login-container {
+  --desktop-page-max-width: 960px;
   display: flex;
   justify-content: center;
   padding: 32px 20px 0;

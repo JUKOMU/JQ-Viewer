@@ -304,6 +304,7 @@ function formatTime(ts: number): string {
 
 <style scoped>
 .toolbar {
+  --desktop-page-max-width: 1000px;
   width: 100%;
   max-width: 1000px;
   margin-inline: auto;
@@ -321,6 +322,7 @@ function formatTime(ts: number): string {
 }
 
 .page-content {
+  --desktop-page-max-width: 1000px;
   box-sizing: border-box;
   width: 100%;
   max-width: 1000px;

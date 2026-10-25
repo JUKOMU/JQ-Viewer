@@ -1310,9 +1310,10 @@ function onAutoShowToolbarAtEndChange(e: CustomEvent) {
 }
 
 .settings-list {
+  --desktop-page-max-width: 960px;
   box-sizing: border-box;
   width: 100%;
-  max-width: 720px;
+  max-width: 960px;
   margin-inline: auto;
   padding: 8px 16px 32px;
 }

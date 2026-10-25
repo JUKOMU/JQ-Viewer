@@ -1286,8 +1286,6 @@ function onAutoShowToolbarAtEndChange(e: CustomEvent) {
 .toolbar-start {
   box-sizing: border-box;
   width: 100%;
-  max-width: 720px;
-  margin-inline: auto;
   padding: 0 0 8px 14px;
 }
 

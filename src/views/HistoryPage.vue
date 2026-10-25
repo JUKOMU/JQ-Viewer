@@ -1411,9 +1411,7 @@ function formatRelativeTime(timestamp: number): string {
 <style scoped>
 .toolbar-start {
   width: 100%;
-  max-width: 720px;
   box-sizing: border-box;
-  margin-inline: auto;
   padding: 0 0 8px 14px;
 }
 

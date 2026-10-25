@@ -1252,37 +1252,39 @@ async function executeHistoryDelete() {
       {
         text: '删除',
         role: 'destructive',
-        handler: async () => {
-          historySelectionExecuting.value = true
-          historySelectionCurrent.value = 0
-          historySelectionTotal.value = ids.length
-          const deletedIds: number[] = []
-          let succeeded = 0
-          let failed = 0
-          for (const id of ids) {
-            try {
-              const result =
-                tab === 'browse'
-                  ? await JmcomicService.deleteBrowseItem(id)
-                  : await JmcomicService.deleteParseItem(id)
-              if (result.success) {
-                succeeded++
-                deletedIds.push(id)
-              } else {
+        handler: () => {
+          void (async () => {
+            historySelectionExecuting.value = true
+            historySelectionCurrent.value = 0
+            historySelectionTotal.value = ids.length
+            const deletedIds: number[] = []
+            let succeeded = 0
+            let failed = 0
+            for (const id of ids) {
+              try {
+                const result =
+                  tab === 'browse'
+                    ? await JmcomicService.deleteBrowseItem(id)
+                    : await JmcomicService.deleteParseItem(id)
+                if (result.success) {
+                  succeeded++
+                  deletedIds.push(id)
+                } else {
+                  failed++
+                }
+              } catch {
                 failed++
               }
-            } catch {
-              failed++
+              historySelectionCurrent.value++
             }
-            historySelectionCurrent.value++
-          }
-          if (deletedIds.length) await reloadTabFromFirstPage(tab, deletedIds)
-          historySelectionExecuting.value = false
-          exitHistorySelection()
-          await showToast(
-            `删除完成：成功 ${succeeded} 条，失败 ${failed} 条`,
-            failed ? 'medium' : 'success',
-          )
+            if (deletedIds.length) await reloadTabFromFirstPage(tab, deletedIds)
+            historySelectionExecuting.value = false
+            exitHistorySelection()
+            await showToast(
+              `删除完成：成功 ${succeeded} 条，失败 ${failed} 条`,
+              failed ? 'medium' : 'success',
+            )
+          })()
         },
       },
     ],

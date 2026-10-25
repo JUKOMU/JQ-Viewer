@@ -914,7 +914,9 @@ async function executeDownloadSelection(action: string) {
         {
           text: '删除',
           role: 'destructive',
-          handler: async () => runDownloadBatch(action, eligible),
+          handler: () => {
+            void runDownloadBatch(action, eligible)
+          },
         },
       ],
     })

@@ -1269,9 +1269,9 @@ async function executeFavoriteMultiAction(action: string) {
         { text: '取消', role: 'cancel' },
         {
           text: '确定',
-          handler: async (targetId: string) => {
+          handler: (targetId: string) => {
             if (targetId && token === multiSelectRequestToken && multiSelectActive.value)
-              await performMultiFavoriteAction('move', items, context, targetId)
+              void performMultiFavoriteAction('move', items, context, targetId)
           },
         },
       ],

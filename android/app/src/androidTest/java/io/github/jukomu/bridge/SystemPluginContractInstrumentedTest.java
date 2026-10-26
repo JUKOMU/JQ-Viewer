@@ -394,7 +394,10 @@ public class SystemPluginContractInstrumentedTest {
             JSArray fileRefs = new JSArray();
             fileRefs.put(LocalFileRef.createPathFileRef(existingFile.getAbsolutePath()));
             fileRefs.put(LocalFileRef.createPathFileRef(existingFile.getAbsolutePath() + ".missing"));
-            fileRefs.put("file:saf:content://io.github.jukomu.test.pdf/document/missing");
+            String safRef = "file:saf:content://" + FixtureDocumentsProvider.AUTHORITY
+                + "/document/query-existing";
+            fileRefs.put(safRef);
+            fileRefs.put("file:saf:content://" + FixtureDocumentsProvider.AUTHORITY + "/document/missing");
             RecordingPluginCall files = call("checkFilesExist", "fileRefs", fileRefs);
             RecordingPluginCall externalPath = call("getExternalStoragePath");
 
@@ -402,15 +405,36 @@ public class SystemPluginContractInstrumentedTest {
             plugin.getExternalStoragePath(externalPath);
 
             assertTrue(files.awaitCompletion(1, TimeUnit.SECONDS));
+            assertNull(files.rejectionMessage);
+            assertNotNull(files.resolvedData);
             JSONArray existing = files.resolvedData.getJSONArray("existingFileRefs");
             assertNotNull(existing);
-            assertEquals(1, existing.length());
+            assertEquals(2, existing.length());
             assertEquals(LocalFileRef.createPathFileRef(existingFile.getAbsolutePath()), existing.getString(0));
+            assertEquals(safRef, existing.getString(1));
             assertFalse(externalPath.resolvedData.getString("folderRef").isEmpty());
             assertCompleted(files);
             assertSynchronous(externalPath);
         } finally {
             assertTrue(existingFile.delete() || !existingFile.exists());
+        }
+    }
+
+    @Test
+    public void fileQueriesRejectProviderFailureInsteadOfReportingMissing() throws Exception {
+        for (String id : new String[]{"null-query", "query-failed"}) {
+            JSArray fileRefs = new JSArray();
+            fileRefs.put("file:saf:content://" + FixtureDocumentsProvider.AUTHORITY + "/document/" + id);
+            RecordingPluginCall files = call("checkFilesExist", "fileRefs", fileRefs);
+
+            plugin.checkFilesExist(files);
+
+            assertTrue(files.awaitCompletion(1, TimeUnit.SECONDS));
+            assertNotNull(files.rejectionMessage);
+            assertTrue(files.rejectionException instanceof java.io.IOException);
+            assertNull(files.resolvedData);
+            assertFalse(files.resolvedWithoutData);
+            assertCompleted(files);
         }
     }
 

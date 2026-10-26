@@ -3,6 +3,9 @@ package io.github.jukomu.feature.download.storage;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.os.Environment;
+import android.system.ErrnoException;
+import android.system.Os;
+import android.system.OsConstants;
 import io.github.jukomu.feature.download.data.DownloadStore;
 import io.github.jukomu.util.JsonUtils;
 import org.json.JSONException;
@@ -365,14 +368,13 @@ public class FileStore {
                 for (File f : files) {
                     deleteRecursive(f);
                 }
-                android.system.Os.rmdir(dir.getAbsolutePath());
-            } else {
-                android.system.Os.unlink(dir.getAbsolutePath());
             }
+            // 使用系统 errno，避免旧 Android 的 desugared Files.delete 静默失败。
+            Os.remove(dir.getAbsolutePath());
         } catch (java.io.FileNotFoundException missing) {
             // 只有系统明确报告缺失才允许继续清理记录。
-        } catch (android.system.ErrnoException error) {
-            if (error.errno != android.system.OsConstants.ENOENT) {
+        } catch (ErrnoException error) {
+            if (error.errno != OsConstants.ENOENT && error.errno != OsConstants.ENOTDIR) {
                 throw new IllegalStateException("删除下载文件失败: " + dir, error);
             }
         } catch (IOException error) {

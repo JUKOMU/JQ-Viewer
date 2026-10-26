@@ -320,19 +320,22 @@ public final class LocalFileManagementService {
             if (!OsConstants.S_ISREG(LocalFileRefResolver.stat(file).st_mode)) {
                 throw new IOException("FILE_DELETE_FAILED: 引用不是普通文件");
             }
-            Os.unlink(file.getAbsolutePath());
+            // desugared Files.delete 在旧 Android 上会忽略 File.delete() 的失败结果。
+            Os.remove(file.getAbsolutePath());
         } catch (java.io.FileNotFoundException missing) {
             return DeleteOutcome.ALREADY_MISSING;
-        } catch (ErrnoException error) {
-            if (error.errno == OsConstants.ENOENT) return DeleteOutcome.ALREADY_MISSING;
-            if (error.errno != OsConstants.EACCES && error.errno != OsConstants.EPERM) {
-                throw error.rethrowAsIOException();
-            }
-            throw LocalFileOperationException.permissionDenied(
-                "FILE_INACCESSIBLE: 没有权限删除文件", error);
         } catch (SecurityException error) {
             throw LocalFileOperationException.permissionDenied(
                 "FILE_INACCESSIBLE: 没有权限删除文件", error);
+        } catch (ErrnoException error) {
+            if (error.errno == OsConstants.ENOENT || error.errno == OsConstants.ENOTDIR) {
+                return DeleteOutcome.ALREADY_MISSING;
+            }
+            if (error.errno == OsConstants.EACCES || error.errno == OsConstants.EPERM) {
+                throw LocalFileOperationException.permissionDenied(
+                    "FILE_INACCESSIBLE: 没有权限删除文件", error);
+            }
+            throw new IOException(error.getMessage(), error);
         }
         return DeleteOutcome.DELETED;
     }

@@ -20,7 +20,7 @@ public final class OutputFilePublisher {
             try {
                 Os.rename(temporary.getAbsolutePath(), target.getAbsolutePath());
             } catch (ErrnoException error) {
-                throw error.rethrowAsIOException();
+                throw new IOException(error.getMessage(), error);
             }
             return;
         }

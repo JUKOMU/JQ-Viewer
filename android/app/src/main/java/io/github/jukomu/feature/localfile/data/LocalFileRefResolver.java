@@ -129,7 +129,7 @@ public final class LocalFileRefResolver {
                 missing.initCause(error);
                 throw missing;
             }
-            throw error.rethrowAsIOException();
+            throw new IOException(error.getMessage(), error);
         }
     }
 

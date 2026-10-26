@@ -85,6 +85,18 @@ public class PdfManagementImportInstrumentedTest {
     }
 
     @Test
+    public void readOnlyFileCanBeDeletedFromWritableDirectory() throws Exception {
+        File pdf = createPdf("read-only.pdf");
+        LocalFileManagementService service = LocalFileManagementService.getInstance(context);
+        long id = service.importLocalFile(item(pdf)).getLong("id");
+        android.system.Os.chmod(pdf.getAbsolutePath(), 0444);
+        assertFalse(pdf.canWrite());
+        assertEquals("deleted", service.deleteFile(id).getString("result"));
+        assertFalse(pdf.exists());
+        assertNull(LocalFileStore.getInstance(context).getFile(id));
+    }
+
+    @Test
     public void missingFileDeletionRemovesOnlyTheRecord() throws Exception {
         File pdf = createPdf("missing.pdf");
         LocalFileManagementService service = LocalFileManagementService.getInstance(context);

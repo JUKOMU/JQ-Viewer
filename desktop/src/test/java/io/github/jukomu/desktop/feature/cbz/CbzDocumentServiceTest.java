@@ -20,6 +20,35 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class CbzDocumentServiceTest {
     @Test
+    void rejectsStoredImageWithIncorrectCrc() throws Exception {
+        Path file = Files.createTempFile("jq-cbz-crc-", ".cbz");
+        byte[] image = "original-image".getBytes(StandardCharsets.UTF_8);
+        java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+        crc.update(image);
+        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(file))) {
+            ZipEntry entry = new ZipEntry("001.jpg");
+            entry.setMethod(ZipEntry.STORED);
+            entry.setSize(image.length);
+            entry.setCompressedSize(image.length);
+            entry.setCrc(crc.getValue());
+            zip.putNextEntry(entry);
+            zip.write(image);
+            zip.closeEntry();
+        }
+        assertEquals(1, new CbzDocumentService().getInfo(FileReferences.fileRef(file)).pageCount());
+        byte[] archive = Files.readAllBytes(file);
+        var header = java.nio.ByteBuffer.wrap(archive).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+        int offset = 30 + Short.toUnsignedInt(header.getShort(26))
+            + Short.toUnsignedInt(header.getShort(28));
+        archive[offset] ^= 1;
+        Files.write(file, archive);
+        CbzDocumentService.CbzException error = assertThrows(
+            CbzDocumentService.CbzException.class,
+            () -> new CbzDocumentService().getInfo(FileReferences.fileRef(file)));
+        assertEquals("CBZ_INVALID", error.code());
+    }
+
+    @Test
     void indexesNestedImagesNaturallyAndReadsComicInfoCover() throws Exception {
         Path file = Files.createTempFile("jq-cbz-index-", ".cbz");
         byte[] comicInfo = ComicInfoCodec.serialize(new ComicInfo(

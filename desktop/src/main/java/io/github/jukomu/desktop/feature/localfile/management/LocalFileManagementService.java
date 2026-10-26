@@ -294,15 +294,12 @@ public final class LocalFileManagementService {
             clean(operationId), id, clean(record.format()), clean(record.fileName()));
         String result;
         try {
-            if (!Files.exists(file)) {
-                result = "already_missing";
-            } else {
-                if (!Files.isRegularFile(file)) {
-                    throw new IOException("定位符未指向普通文件");
-                }
-                Files.delete(file);
-                result = "deleted";
+            if (!Files.readAttributes(file, java.nio.file.attribute.BasicFileAttributes.class)
+                .isRegularFile()) {
+                throw new IOException("定位符未指向普通文件");
             }
+            Files.delete(file);
+            result = "deleted";
         } catch (NoSuchFileException exception) {
             result = "already_missing";
         } catch (AccessDeniedException | SecurityException exception) {

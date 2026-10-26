@@ -293,9 +293,7 @@ public class FileStore {
 
     public void deleteChapter(String albumId, String chapterId) {
         File dir = getChapterDir(albumId, chapterId);
-        if (dir.isDirectory()) {
-            deleteRecursive(dir);
-        }
+        deleteRecursive(dir);
         // 清理内存索引
         chapterIdToAlbumId.remove(chapterId);
         String prefix = albumId + "_" + chapterId + "_";
@@ -358,18 +356,27 @@ public class FileStore {
     }
 
     private static void deleteRecursive(File dir) {
-        File[] files = dir.listFiles();
-        if (files != null) {
-            for (File f : files) {
-                if (f.isDirectory()) {
+        try {
+            android.system.StructStat stat =
+                io.github.jukomu.feature.localfile.data.LocalFileRefResolver.stat(dir);
+            if (android.system.OsConstants.S_ISDIR(stat.st_mode)) {
+                File[] files = dir.listFiles();
+                if (files == null) throw new IOException("无法读取下载目录: " + dir);
+                for (File f : files) {
                     deleteRecursive(f);
-                } else if (!f.delete() && f.exists()) {
-                    throw new IllegalStateException("删除下载文件失败: " + f);
                 }
+                android.system.Os.rmdir(dir.getAbsolutePath());
+            } else {
+                android.system.Os.unlink(dir.getAbsolutePath());
             }
-        }
-        if (!dir.delete() && dir.exists()) {
-            throw new IllegalStateException("删除下载目录失败: " + dir);
+        } catch (java.io.FileNotFoundException missing) {
+            // 只有系统明确报告缺失才允许继续清理记录。
+        } catch (android.system.ErrnoException error) {
+            if (error.errno != android.system.OsConstants.ENOENT) {
+                throw new IllegalStateException("删除下载文件失败: " + dir, error);
+            }
+        } catch (IOException error) {
+            throw new IllegalStateException("删除下载文件失败: " + dir, error);
         }
     }
 

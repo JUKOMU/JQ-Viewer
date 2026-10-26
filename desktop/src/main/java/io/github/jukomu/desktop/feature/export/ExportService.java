@@ -627,12 +627,20 @@ public final class ExportService implements AutoCloseable {
                         StandardCopyOption.REPLACE_EXISTING);
                 }
             } else {
-                try {
-                    Files.move(volume.temporaryFile(), volume.outputFile(),
-                        StandardCopyOption.ATOMIC_MOVE);
-                } catch (AtomicMoveNotSupportedException exception) {
-                    Files.move(volume.temporaryFile(), volume.outputFile());
+                java.io.OutputStream created = Files.newOutputStream(volume.outputFile(),
+                    java.nio.file.StandardOpenOption.CREATE_NEW,
+                    java.nio.file.StandardOpenOption.WRITE);
+                try (java.io.OutputStream output = created) {
+                    Files.copy(volume.temporaryFile(), output);
+                } catch (IOException | RuntimeException failure) {
+                    try {
+                        Files.delete(volume.outputFile());
+                    } catch (IOException | RuntimeException cleanupFailure) {
+                        failure.addSuppressed(cleanupFailure);
+                    }
+                    throw failure;
                 }
+                Files.delete(volume.temporaryFile());
             }
         } catch (FileAlreadyExistsException exception) {
             throw new OutputExistsException(code(plan.task().format(), "OUTPUT_EXISTS"),

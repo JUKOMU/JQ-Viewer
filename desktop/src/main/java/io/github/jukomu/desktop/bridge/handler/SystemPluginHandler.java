@@ -190,7 +190,16 @@ public final class SystemPluginHandler {
                 throw ApiException.invalidRequest("folder和fileNames不能为空");
             }
             Path targetDirectory = io.github.jukomu.desktop.feature.files.FileReferences.parseFolder(request.folder());
-            if (!Files.isDirectory(targetDirectory)) throw ApiException.notFound("导出目录不存在");
+            try {
+                if (!Files.readAttributes(targetDirectory, java.nio.file.attribute.BasicFileAttributes.class)
+                    .isDirectory()) throw ApiException.invalidRequest("日志导出目标不是目录");
+            } catch (java.nio.file.NoSuchFileException missing) {
+                throw ApiException.notFound("导出目录不存在");
+            } catch (java.nio.file.AccessDeniedException | SecurityException denied) {
+                throw ApiException.permissionDenied("没有权限访问导出目录");
+            } catch (java.io.IOException failure) {
+                throw new ApiException("internal", 500, "查询导出目录失败: " + failure.getMessage());
+            }
             java.util.List<String> exported = new java.util.ArrayList<>();
             java.util.List<String> skipped = new java.util.ArrayList<>();
             java.util.List<java.util.Map<String, String>> failed = new java.util.ArrayList<>();
@@ -199,18 +208,48 @@ public final class SystemPluginHandler {
             for (String fileName : request.fileNames()) {
                 try {
                     Path source = ApplicationLogging.resolveLogFile(paths, fileName);
-                    if (!Files.isRegularFile(source)) throw ApiException.notFound("日志文件不存在");
+                    if (!Files.readAttributes(source, java.nio.file.attribute.BasicFileAttributes.class)
+                        .isRegularFile()) throw ApiException.invalidRequest("日志源不是普通文件");
                     if (sameDirectory) {
                         skipped.add(fileName);
                     } else {
-                        Files.copy(source, targetDirectory.resolve(fileName),
-                            java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                        Path target = targetDirectory.resolve(fileName);
+                        try {
+                            if (!Files.readAttributes(target,
+                                java.nio.file.attribute.BasicFileAttributes.class,
+                                java.nio.file.LinkOption.NOFOLLOW_LINKS).isRegularFile()) {
+                                throw new java.io.IOException("日志导出目标不是普通文件");
+                            }
+                        } catch (java.nio.file.NoSuchFileException missing) {
+                            // 目标尚未创建。
+                        }
+                        try (java.io.InputStream input = Files.newInputStream(source)) {
+                            java.io.OutputStream created = Files.newOutputStream(target,
+                                java.nio.file.StandardOpenOption.CREATE,
+                                java.nio.file.StandardOpenOption.TRUNCATE_EXISTING,
+                                java.nio.file.StandardOpenOption.WRITE,
+                                java.nio.file.LinkOption.NOFOLLOW_LINKS);
+                            try (java.io.OutputStream output = created) {
+                                input.transferTo(output);
+                            } catch (Exception failure) {
+                                try {
+                                    Files.deleteIfExists(target);
+                                } catch (Exception cleanupFailure) {
+                                    failure.addSuppressed(cleanupFailure);
+                                }
+                                throw failure;
+                            }
+                        }
                         exported.add(fileName);
                     }
                 } catch (Exception error) {
+                    String message = error.getMessage() == null ? "导出失败" : error.getMessage();
+                    for (Throwable cleanupFailure : error.getSuppressed()) {
+                        message += "; 清理失败: " + cleanupFailure.getMessage();
+                    }
                     failed.add(java.util.Map.of(
                         "fileName", fileName == null ? "" : fileName,
-                        "message", error.getMessage() == null ? "导出失败" : error.getMessage()));
+                        "message", message));
                 }
             }
             return java.util.Map.of("exported", exported, "skipped", skipped, "failed", failed);

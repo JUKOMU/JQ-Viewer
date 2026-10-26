@@ -2,7 +2,7 @@ package io.github.jukomu.feature.export.archive;
 
 import java.io.*;
 import java.nio.file.Files;
-import java.nio.file.StandardCopyOption;
+import io.github.jukomu.feature.export.OutputFilePublisher;
 import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
@@ -16,6 +16,11 @@ public final class ArchiveVolumeWriter {
 
     public Report write(ArchiveExportPlanner.Plan plan, File finalFile, Progress progress)
         throws Exception {
+        return write(plan, finalFile, progress, true);
+    }
+
+    public Report write(ArchiveExportPlanner.Plan plan, File finalFile, Progress progress,
+                        boolean allowOverwrite) throws Exception {
         File tempFile = getTempFile(finalFile);
         File parent = tempFile.getParentFile();
         if (parent != null && !parent.exists() && !parent.mkdirs()) {
@@ -41,12 +46,7 @@ public final class ArchiveVolumeWriter {
         }
         try {
             validate(tempFile, plan);
-            try {
-                Files.move(tempFile.toPath(), finalFile.toPath(), StandardCopyOption.ATOMIC_MOVE,
-                    StandardCopyOption.REPLACE_EXISTING);
-            } catch (java.nio.file.AtomicMoveNotSupportedException ignored) {
-                Files.move(tempFile.toPath(), finalFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
-            }
+            OutputFilePublisher.publish(tempFile, finalFile, allowOverwrite);
         } catch (Exception | Error failure) {
             try {
                 Files.deleteIfExists(tempFile.toPath());

@@ -31,6 +31,31 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class LocalFileManagementServiceTest {
     @Test
+    void inaccessibleParentDoesNotMakeDeletionRemoveTheRecord() throws Exception {
+        Fixture fixture = fixture();
+        try (Database ignored = fixture.database()) {
+            Path folder = fixture.paths().pdfDirectory().resolve("private");
+            Path pdf = writePdf(folder.resolve("keep.pdf"), 1);
+            fixture.service().importLocalFiles(List.of(item(pdf)));
+            long id = fixture.service().getImportedLocalFiles().files().get(0).id();
+            org.junit.jupiter.api.Assumptions.assumeTrue(
+                Files.getFileStore(folder).supportsFileAttributeView("posix"));
+            var original = Files.getPosixFilePermissions(folder);
+            try {
+                Files.setPosixFilePermissions(folder, java.util.Set.of());
+                org.junit.jupiter.api.Assumptions.assumeFalse(Files.exists(pdf), "特权用户不受目录权限限制");
+                var failure = assertThrows(io.github.jukomu.desktop.bridge.ApiException.class,
+                    () -> fixture.service().deleteFile(id));
+                assertEquals("permission-denied", failure.code());
+                assertEquals(1, fixture.service().getImportedLocalFiles().files().size());
+            } finally {
+                Files.setPosixFilePermissions(folder, original);
+            }
+            assertTrue(Files.isRegularFile(pdf));
+        }
+    }
+
+    @Test
     void scansOnlyDirectChildrenAndImportsWithoutCopying() throws Exception {
         Fixture fixture = fixture();
         try (Database ignored = fixture.database()) {

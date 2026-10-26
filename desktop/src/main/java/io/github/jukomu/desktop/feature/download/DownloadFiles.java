@@ -58,7 +58,7 @@ public final class DownloadFiles {
 
     public synchronized void cleanup(String relativeDirectory) {
         Path directory = chapterDirectory(relativeDirectory);
-        if (!Files.exists(directory)) return;
+        if (Files.notExists(directory)) return;
         try (var paths = Files.walk(directory)) {
             for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) {
                 Files.deleteIfExists(path);
@@ -74,7 +74,7 @@ public final class DownloadFiles {
 
     public synchronized long directorySize(String relativeDirectory) {
         Path directory = chapterDirectory(relativeDirectory);
-        if (!Files.exists(directory)) return 0;
+        if (Files.notExists(directory)) return 0;
         try (var paths = Files.walk(directory)) {
             return paths.filter(Files::isRegularFile)
                 .mapToLong(path -> {

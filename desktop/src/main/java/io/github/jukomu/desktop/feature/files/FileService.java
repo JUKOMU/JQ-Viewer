@@ -56,7 +56,19 @@ public final class FileService {
     public FileRefsResponse checkFilesExist(List<String> references) {
         if (references == null) throw ApiException.invalidRequest("files必须是数组");
         List<String> existing = references.stream()
-            .filter(reference -> Files.isRegularFile(FileReferences.parseFile(reference)))
+            .filter(reference -> {
+                Path file = FileReferences.parseFile(reference);
+                try {
+                    return Files.readAttributes(file, java.nio.file.attribute.BasicFileAttributes.class)
+                        .isRegularFile();
+                } catch (java.nio.file.NoSuchFileException missing) {
+                    return false;
+                } catch (java.nio.file.AccessDeniedException | SecurityException denied) {
+                    throw ApiException.permissionDenied("没有权限访问文件");
+                } catch (IOException failure) {
+                    throw new ApiException("internal", 500, "查询文件失败: " + failure.getMessage());
+                }
+            })
             .toList();
         return new FileRefsResponse(existing);
     }
@@ -71,7 +83,7 @@ public final class FileService {
         try {
             Path file = FileReferences.parseFile(reference);
             Path parent = file.getParent();
-            if (parent == null || !Files.isDirectory(parent)) {
+            if (parent == null || !attributes(parent).isDirectory()) {
                 throw ApiException.notFound("文件所在目录不存在");
             }
             fileOpener.accept(parent);
@@ -98,9 +110,9 @@ public final class FileService {
             }
             Set<String> requestedFormats = Set.copyOf(requested);
             Path folder = FileReferences.parseFolder(reference);
-            if (!Files.isDirectory(folder)) throw ApiException.notFound("目录不存在");
+            if (!attributes(folder).isDirectory()) throw ApiException.invalidRequest("引用不是目录");
             try (var files = Files.list(folder)) {
-                List<Path> candidates = files.filter(Files::isRegularFile).toList();
+                List<Path> candidates = files.filter(path -> attributes(path).isRegularFile()).toList();
                 candidateCount = candidates.size();
                 List<FileDescriptorResponse> results = candidates.stream()
                     .filter(path -> requestedFormats.contains(format(path)))
@@ -112,6 +124,12 @@ public final class FileService {
                     candidateCount, results.size(), null, null, null);
                 return new LocalFilesResponse(results);
             }
+        } catch (java.nio.file.AccessDeniedException | SecurityException exception) {
+            logEvent("local_file.scan", operationId, reference, "failed", elapsed(startedNanos),
+                candidateCount, 0, "permission-denied", exception.getMessage(), exception);
+            throw ApiException.permissionDenied("没有权限读取目录");
+        } catch (java.nio.file.NoSuchFileException exception) {
+            throw ApiException.notFound("目录不存在");
         } catch (IOException exception) {
             logEvent("local_file.scan", operationId, reference, "failed", elapsed(startedNanos),
                 candidateCount, 0, "SCAN_IO_FAILED", exception.getMessage(), exception);
@@ -128,7 +146,7 @@ public final class FileService {
         String operationId = operationId();
         try {
             Path file = FileReferences.parseFile(reference);
-            if (!Files.isRegularFile(file)) throw ApiException.notFound("文件不存在");
+            if (!attributes(file).isRegularFile()) throw ApiException.invalidRequest("引用不是普通文件");
             fileOpener.accept(file);
             logEvent("local_file.open", operationId, operation, file, "completed",
                 elapsed(startedNanos), null, null, null);
@@ -137,6 +155,18 @@ public final class FileService {
             logEvent("local_file.open", operationId, operation, reference, "failed",
                 elapsed(startedNanos), errorCode(exception), exception.getMessage(), exception);
             throw exception;
+        }
+    }
+
+    private static java.nio.file.attribute.BasicFileAttributes attributes(Path file) {
+        try {
+            return Files.readAttributes(file, java.nio.file.attribute.BasicFileAttributes.class);
+        } catch (java.nio.file.NoSuchFileException missing) {
+            throw ApiException.notFound("文件或目录不存在");
+        } catch (java.nio.file.AccessDeniedException | SecurityException denied) {
+            throw ApiException.permissionDenied("没有权限访问文件或目录");
+        } catch (IOException failure) {
+            throw new ApiException("internal", 500, "查询文件失败: " + failure.getMessage());
         }
     }
 

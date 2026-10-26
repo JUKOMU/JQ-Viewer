@@ -136,6 +136,29 @@ class ExportServiceTest {
     }
 
     @Test
+    void targetCreatedAfterPreflightIsNotOverwritten() throws Exception {
+        TrackingWriter writer = new TrackingWriter() {
+            @Override
+            public void write(List<Path> images, Path temporaryFile, boolean useOriginal,
+                              double compressionRatio, Progress progress) throws Exception {
+                super.write(images, temporaryFile, useOriginal, compressionRatio, progress);
+                Files.writeString(temporaryFile.getParent().resolve("raced.pdf"), "external-file");
+            }
+        };
+        try (Fixture fixture = fixture(writer)) {
+            fixture.addDownload("album-1", "chapter-1", 1);
+            ExportTaskResponse submitted = fixture.service.submit(List.of(
+                fixture.task("chapter-1", "raced.pdf", 0, false))).tasks().get(0);
+            assertTrue(submitted.accepted());
+            ExportTaskResponse failed = fixture.awaitTerminal(submitted.exportId());
+            assertEquals("failed", failed.status());
+            assertEquals("PDF_OUTPUT_EXISTS", failed.errorCode());
+            assertEquals("external-file", Files.readString(fixture.output.resolve("raced.pdf")));
+            assertTrue(new LocalFileStore(fixture.database).listAll().isEmpty());
+        }
+    }
+
+    @Test
     void cancellationAfterOneVolumeProducesPartialAndCleansIncompleteArtifacts() throws Exception {
         BlockingSecondVolumeWriter writer = new BlockingSecondVolumeWriter();
         try (Fixture fixture = fixture(writer)) {

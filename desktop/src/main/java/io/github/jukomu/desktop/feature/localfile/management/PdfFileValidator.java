@@ -27,39 +27,37 @@ public final class PdfFileValidator {
         if (!file.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".pdf")) {
             throw new ValidationException("PDF_PATH_INVALID", "文件扩展名不是 PDF");
         }
-        if (!Files.exists(file)) {
-            throw new ValidationException("PDF_MISSING", "PDF 文件不存在");
-        }
-        if (!Files.isRegularFile(file) || !Files.isReadable(file)) {
-            throw new ValidationException("PDF_INACCESSIBLE", "没有权限读取 PDF");
-        }
-
-        try (PDDocument document = Loader.loadPDF(
-            file.toFile(), IOUtils.createTempFileOnlyStreamCache())) {
-            int pageCount = document.getNumberOfPages();
-            if (pageCount <= 0) {
-                throw new ValidationException("PDF_INVALID", "PDF 没有可读取页面");
+        try {
+            if (!Files.readAttributes(file, java.nio.file.attribute.BasicFileAttributes.class)
+                .isRegularFile() || !Files.isReadable(file)) {
+                throw new ValidationException("PDF_INACCESSIBLE", "没有权限读取 PDF");
             }
-            if (expectedPages >= 0 && expectedPages != pageCount) {
-                throw new ValidationException(
-                    "PDF_PAGE_MISMATCH",
-                    "PDF 页数不符，预期 " + expectedPages + " 页，实际 " + pageCount + " 页"
-                );
-            }
-            for (int index = 0; index < pageCount; index++) {
-                if (document.getPage(index) == null) {
-                    throw new ValidationException("PDF_INVALID", "PDF 包含无法读取的页面");
+            try (PDDocument document = Loader.loadPDF(
+                file.toFile(), IOUtils.createTempFileOnlyStreamCache())) {
+                int pageCount = document.getNumberOfPages();
+                if (pageCount <= 0) {
+                    throw new ValidationException("PDF_INVALID", "PDF 没有可读取页面");
                 }
+                if (expectedPages >= 0 && expectedPages != pageCount) {
+                    throw new ValidationException(
+                        "PDF_PAGE_MISMATCH",
+                        "PDF 页数不符，预期 " + expectedPages + " 页，实际 " + pageCount + " 页"
+                    );
+                }
+                for (int index = 0; index < pageCount; index++) {
+                    if (document.getPage(index) == null) {
+                        throw new ValidationException("PDF_INVALID", "PDF 包含无法读取的页面");
+                    }
+                }
+                return new Report(Files.size(file), pageCount);
             }
-            return new Report(Files.size(file), pageCount);
         } catch (ValidationException exception) {
             throw exception;
-        } catch (SecurityException exception) {
+        } catch (java.nio.file.NoSuchFileException exception) {
+            throw new ValidationException("PDF_MISSING", "PDF 文件不存在", exception);
+        } catch (java.nio.file.AccessDeniedException | SecurityException exception) {
             throw new ValidationException("PDF_INACCESSIBLE", "没有权限读取 PDF", exception);
         } catch (IOException exception) {
-            if (!Files.exists(file)) {
-                throw new ValidationException("PDF_MISSING", "PDF 文件不存在", exception);
-            }
             throw new ValidationException("PDF_INVALID", "PDF 文件无法读取", exception);
         }
     }

@@ -2,7 +2,8 @@ package io.github.jukomu.feature.pdf.render;
 
 import android.content.Context;
 import android.graphics.Bitmap;
-import androidx.documentfile.provider.DocumentFile;
+import android.database.Cursor;
+import android.provider.DocumentsContract;
 import io.github.jukomu.feature.localfile.data.LocalFileRef;
 import io.github.jukomu.feature.localfile.data.LocalFileRefResolver;
 import org.slf4j.Logger;
@@ -103,23 +104,28 @@ public final class PdfPageCache {
         }
         if (parsed.provider == LocalFileRef.Provider.PATH) {
             File file = new File(parsed.payload);
-            if (!file.exists() || !file.isFile()) {
-                throw new FileNotFoundException(parsed.payload);
+            android.system.StructStat stat = LocalFileRefResolver.stat(file);
+            if (!android.system.OsConstants.S_ISREG(stat.st_mode)) {
+                throw new IOException("引用不是普通文件");
             }
-            if (!file.canRead()) throw new SecurityException(parsed.payload);
-            SourceStamp stamp = new SourceStamp(file.length(), file.lastModified());
+            SourceStamp stamp = new SourceStamp(stat.st_size, file.lastModified());
             LOGGER.debug("PDF 源文件元数据读取完成: event=source_stamp, provider=path, sizeBytes={}, elapsedMs={}",
                 stamp.length, elapsedMs(startedNanos));
             return stamp;
         }
 
-        DocumentFile document = LocalFileRefResolver.documentFile(context, fileRef);
-        if (document == null || !document.exists() || !document.isFile()) {
-            throw new FileNotFoundException(parsed.payload);
+        long length;
+        long lastModified;
+        try (Cursor cursor = LocalFileRefResolver.queryDocument(context,
+            LocalFileRefResolver.uri(fileRef), DocumentsContract.Document.COLUMN_MIME_TYPE,
+            DocumentsContract.Document.COLUMN_SIZE, DocumentsContract.Document.COLUMN_LAST_MODIFIED)) {
+            if (!cursor.moveToFirst()) throw new FileNotFoundException(parsed.payload);
+            if (DocumentsContract.Document.MIME_TYPE_DIR.equals(cursor.getString(0))) {
+                throw new IOException("引用不是普通文件");
+            }
+            length = cursor.isNull(1) ? 0 : cursor.getLong(1);
+            lastModified = cursor.isNull(2) ? 0 : cursor.getLong(2);
         }
-        if (!document.canRead()) throw new SecurityException(parsed.payload);
-        long length = document.length();
-        long lastModified = document.lastModified();
         SourceStamp stamp = new SourceStamp(Math.max(0L, length), Math.max(0L, lastModified));
         LOGGER.debug("PDF 源文件元数据读取完成: event=source_stamp, provider=saf, sizeBytes={}, elapsedMs={}",
             stamp.length, elapsedMs(startedNanos));

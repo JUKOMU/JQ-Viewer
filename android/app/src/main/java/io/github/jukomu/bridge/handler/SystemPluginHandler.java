@@ -611,7 +611,8 @@ public final class SystemPluginHandler {
                 DocumentFile documentFolder = LocalFileRefResolver.documentFile(context, folderRef);
                 Path pathFolder = LocalFileRefResolver.pathFile(folderRef) == null
                     ? null : LocalFileRefResolver.pathFile(folderRef).toPath();
-                if (documentFolder == null && (pathFolder == null || !Files.isDirectory(pathFolder))) {
+                if (documentFolder == null && (pathFolder == null || !Files.readAttributes(
+                    pathFolder, java.nio.file.attribute.BasicFileAttributes.class).isDirectory())) {
                     throw new IllegalArgumentException("导出目录不存在");
                 }
                 JSArray exported = new JSArray();
@@ -625,22 +626,71 @@ public final class SystemPluginHandler {
                     String fileName = fileNames.getString(index);
                     try {
                         Path source = ApplicationLogging.resolveLogFile(context, fileName);
-                        if (!Files.isRegularFile(source)) throw new java.io.FileNotFoundException(fileName);
+                        if (!Files.readAttributes(source, java.nio.file.attribute.BasicFileAttributes.class)
+                            .isRegularFile()) throw new java.io.IOException("日志源不是普通文件");
                         if (sameDirectory) {
                             skipped.put(fileName);
                         } else if (documentFolder != null) {
-                            DocumentFile target = documentFolder.findFile(fileName);
-                            if (target != null) target.delete();
+                            DocumentFile target = LocalFileRefResolver.findChild(context, documentFolder, fileName);
+                            if (target != null) {
+                                try (android.database.Cursor cursor = LocalFileRefResolver.queryDocument(
+                                    context, target.getUri(), android.provider.DocumentsContract.Document.COLUMN_MIME_TYPE)) {
+                                    if (!cursor.moveToFirst() || cursor.isNull(0)
+                                        || cursor.getString(0).isEmpty()
+                                        || android.provider.DocumentsContract.Document.MIME_TYPE_DIR.equals(cursor.getString(0))) {
+                                        throw new java.io.IOException("日志导出目标不是普通文件");
+                                    }
+                                }
+                                if (!android.provider.DocumentsContract.deleteDocument(
+                                    context.getContentResolver(), target.getUri())) {
+                                    throw new java.io.IOException("无法删除已有日志文件");
+                                }
+                            }
                             target = documentFolder.createFile("text/plain", fileName);
                             if (target == null) throw new java.io.IOException("无法创建导出文件");
                             try (InputStream input = Files.newInputStream(source);
                                  OutputStream output = context.getContentResolver().openOutputStream(target.getUri())) {
                                 if (output == null) throw new java.io.IOException("无法写入导出文件");
                                 input.transferTo(output);
+                            } catch (Exception failure) {
+                                try {
+                                    if (!android.provider.DocumentsContract.deleteDocument(
+                                        context.getContentResolver(), target.getUri())) {
+                                        throw new java.io.IOException("无法清理未完成的日志文件");
+                                    }
+                                } catch (Exception cleanupFailure) {
+                                    failure.addSuppressed(cleanupFailure);
+                                }
+                                throw failure;
                             }
                             exported.put(fileName);
                         } else if (pathFolder != null) {
-                            Files.copy(source, pathFolder.resolve(fileName), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                            Path target = pathFolder.resolve(fileName);
+                            try {
+                                if (!Files.readAttributes(target, java.nio.file.attribute.BasicFileAttributes.class,
+                                    java.nio.file.LinkOption.NOFOLLOW_LINKS).isRegularFile()) {
+                                    throw new java.io.IOException("日志导出目标不是普通文件");
+                                }
+                            } catch (java.nio.file.NoSuchFileException missing) {
+                                // 目标尚未创建。
+                            }
+                            try (InputStream input = Files.newInputStream(source)) {
+                                OutputStream created = Files.newOutputStream(target,
+                                    java.nio.file.StandardOpenOption.CREATE,
+                                    java.nio.file.StandardOpenOption.TRUNCATE_EXISTING,
+                                    java.nio.file.StandardOpenOption.WRITE,
+                                    java.nio.file.LinkOption.NOFOLLOW_LINKS);
+                                try (OutputStream output = created) {
+                                    input.transferTo(output);
+                                } catch (Exception failure) {
+                                    try {
+                                        Files.deleteIfExists(target);
+                                    } catch (Exception cleanupFailure) {
+                                        failure.addSuppressed(cleanupFailure);
+                                    }
+                                    throw failure;
+                                }
+                            }
                             exported.put(fileName);
                         } else {
                             throw new IllegalArgumentException("导出目录引用无效");
@@ -648,7 +698,11 @@ public final class SystemPluginHandler {
                     } catch (Exception error) {
                         JSObject item = new JSObject();
                         item.put("fileName", fileName);
-                        item.put("message", error.getMessage() == null ? "导出失败" : error.getMessage());
+                        String message = error.getMessage() == null ? "导出失败" : error.getMessage();
+                        for (Throwable cleanupFailure : error.getSuppressed()) {
+                            message += "; 清理失败: " + cleanupFailure.getMessage();
+                        }
+                        item.put("message", message);
                         failed.put(item);
                     }
                 }

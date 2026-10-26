@@ -1,6 +1,11 @@
 package io.github.jukomu.feature.localfile.management;
 
 import android.content.Context;
+import android.database.Cursor;
+import android.provider.DocumentsContract;
+import android.system.ErrnoException;
+import android.system.Os;
+import android.system.OsConstants;
 import io.github.jukomu.feature.cbz.CbzDocumentService;
 import io.github.jukomu.feature.localfile.LocalFileOperationException;
 import io.github.jukomu.feature.localfile.data.LocalFileRef;
@@ -287,7 +292,16 @@ public final class LocalFileManagementService {
         LocalFileRef.Parsed parsed = LocalFileRef.parse(fileRef);
         if (parsed.provider == LocalFileRef.Provider.SAF) {
             try {
-                if (context.getContentResolver().delete(LocalFileRefResolver.uri(fileRef), null, null) > 0) {
+                try (Cursor cursor = LocalFileRefResolver.queryDocument(context,
+                    LocalFileRefResolver.uri(fileRef), DocumentsContract.Document.COLUMN_MIME_TYPE)) {
+                    if (!cursor.moveToFirst()) return DeleteOutcome.ALREADY_MISSING;
+                    if (cursor.isNull(0) || cursor.getString(0).isEmpty()
+                        || DocumentsContract.Document.MIME_TYPE_DIR.equals(cursor.getString(0))) {
+                        throw new IOException("FILE_DELETE_FAILED: 引用指向目录而非文件");
+                    }
+                }
+                if (DocumentsContract.deleteDocument(context.getContentResolver(),
+                    LocalFileRefResolver.uri(fileRef))) {
                     return DeleteOutcome.DELETED;
                 }
                 if (!LocalFileRefResolver.exists(context, fileRef)) return DeleteOutcome.ALREADY_MISSING;
@@ -302,13 +316,23 @@ public final class LocalFileManagementService {
             }
         }
         java.io.File file = LocalFileRefResolver.pathFile(fileRef);
-        if (!file.exists()) return DeleteOutcome.ALREADY_MISSING;
-        if (!file.canWrite()) {
+        try {
+            if (!OsConstants.S_ISREG(LocalFileRefResolver.stat(file).st_mode)) {
+                throw new IOException("FILE_DELETE_FAILED: 引用不是普通文件");
+            }
+            Os.unlink(file.getAbsolutePath());
+        } catch (java.io.FileNotFoundException missing) {
+            return DeleteOutcome.ALREADY_MISSING;
+        } catch (ErrnoException error) {
+            if (error.errno == OsConstants.ENOENT) return DeleteOutcome.ALREADY_MISSING;
+            if (error.errno != OsConstants.EACCES && error.errno != OsConstants.EPERM) {
+                throw error.rethrowAsIOException();
+            }
             throw LocalFileOperationException.permissionDenied(
-                "FILE_INACCESSIBLE: 没有权限删除文件", null);
-        }
-        if (!file.isFile() || !file.delete()) {
-            throw new IOException("FILE_DELETE_FAILED: 文件删除失败");
+                "FILE_INACCESSIBLE: 没有权限删除文件", error);
+        } catch (SecurityException error) {
+            throw LocalFileOperationException.permissionDenied(
+                "FILE_INACCESSIBLE: 没有权限删除文件", error);
         }
         return DeleteOutcome.DELETED;
     }

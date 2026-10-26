@@ -565,6 +565,7 @@ const reDisplay = async () => {
 
 <style scoped>
 .toolbar {
+  --desktop-page-max-width: 920px;
   width: 100%;
   max-width: 920px;
   margin-inline: auto;
@@ -572,6 +573,7 @@ const reDisplay = async () => {
 }
 
 .about-container {
+  --desktop-page-max-width: 960px;
   padding: 24px 20px 0;
   display: flex;
   flex-direction: column;

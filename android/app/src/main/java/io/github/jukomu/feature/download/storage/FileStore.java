@@ -3,6 +3,9 @@ package io.github.jukomu.feature.download.storage;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.os.Environment;
+import android.system.ErrnoException;
+import android.system.Os;
+import android.system.OsConstants;
 import io.github.jukomu.feature.download.data.DownloadStore;
 import io.github.jukomu.util.JsonUtils;
 import org.json.JSONException;
@@ -293,9 +296,7 @@ public class FileStore {
 
     public void deleteChapter(String albumId, String chapterId) {
         File dir = getChapterDir(albumId, chapterId);
-        if (dir.isDirectory()) {
-            deleteRecursive(dir);
-        }
+        deleteRecursive(dir);
         // 清理内存索引
         chapterIdToAlbumId.remove(chapterId);
         String prefix = albumId + "_" + chapterId + "_";
@@ -358,18 +359,26 @@ public class FileStore {
     }
 
     private static void deleteRecursive(File dir) {
-        File[] files = dir.listFiles();
-        if (files != null) {
-            for (File f : files) {
-                if (f.isDirectory()) {
+        try {
+            android.system.StructStat stat =
+                io.github.jukomu.feature.localfile.data.LocalFileRefResolver.lstat(dir);
+            if (android.system.OsConstants.S_ISDIR(stat.st_mode)) {
+                File[] files = dir.listFiles();
+                if (files == null) throw new IOException("无法读取下载目录: " + dir);
+                for (File f : files) {
                     deleteRecursive(f);
-                } else if (!f.delete() && f.exists()) {
-                    throw new IllegalStateException("删除下载文件失败: " + f);
                 }
             }
-        }
-        if (!dir.delete() && dir.exists()) {
-            throw new IllegalStateException("删除下载目录失败: " + dir);
+            // 使用系统 errno，避免旧 Android 的 desugared Files.delete 静默失败。
+            Os.remove(dir.getAbsolutePath());
+        } catch (java.io.FileNotFoundException missing) {
+            // 只有系统明确报告缺失才允许继续清理记录。
+        } catch (ErrnoException error) {
+            if (error.errno != OsConstants.ENOENT && error.errno != OsConstants.ENOTDIR) {
+                throw new IllegalStateException("删除下载文件失败: " + dir, error);
+            }
+        } catch (IOException error) {
+            throw new IllegalStateException("删除下载文件失败: " + dir, error);
         }
     }
 

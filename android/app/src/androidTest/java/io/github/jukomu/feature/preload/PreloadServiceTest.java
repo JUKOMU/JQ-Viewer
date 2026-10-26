@@ -18,6 +18,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -124,6 +125,24 @@ public class PreloadServiceTest {
         assertTrue(fetched.await(1, TimeUnit.SECONDS));
         awaitPreloadPipeline();
         assertEquals(1, fetchCount.get());
+    }
+
+    @Test
+    public void deleteChapterRemovesSymlinkWithoutTouchingTarget() throws Exception {
+        File chapterDir = new File(testBaseDir, "album/chapter");
+        assertTrue(chapterDir.mkdirs());
+        File target = new File(testBaseDir, "outside.jpg");
+        try (FileOutputStream output = new FileOutputStream(target)) {
+            output.write(new byte[]{1, 2, 3});
+        }
+        File link = new File(chapterDir, "page.jpg");
+        android.system.Os.symlink(target.getAbsolutePath(), link.getAbsolutePath());
+
+        fileStore.deleteChapter("album", "chapter");
+
+        assertFalse(chapterDir.exists());
+        assertTrue(target.isFile());
+        assertArrayEquals(new byte[]{1, 2, 3}, Files.readAllBytes(target.toPath()));
     }
 
     @Test

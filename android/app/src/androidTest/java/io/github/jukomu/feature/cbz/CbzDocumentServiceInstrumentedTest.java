@@ -49,6 +49,37 @@ public class CbzDocumentServiceInstrumentedTest {
     }
 
     @Test
+    public void rejectsStoredImageWithIncorrectCrc() throws Exception {
+        File file = File.createTempFile("bad-crc-", ".cbz", context.getCacheDir());
+        createdFiles.add(file);
+        byte[] image = "original-image".getBytes(StandardCharsets.UTF_8);
+        java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+        crc.update(image);
+        try (ZipOutputStream zip = new ZipOutputStream(new FileOutputStream(file))) {
+            ZipEntry entry = new ZipEntry("001.jpg");
+            entry.setMethod(ZipEntry.STORED);
+            entry.setSize(image.length);
+            entry.setCompressedSize(image.length);
+            entry.setCrc(crc.getValue());
+            zip.putNextEntry(entry);
+            zip.write(image);
+            zip.closeEntry();
+        }
+        byte[] archive = java.nio.file.Files.readAllBytes(file.toPath());
+        java.nio.ByteBuffer header = java.nio.ByteBuffer.wrap(archive).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+        int offset = 30 + (header.getShort(26) & 0xffff) + (header.getShort(28) & 0xffff);
+        archive[offset] ^= 1;
+        java.nio.file.Files.write(file.toPath(), archive);
+        try {
+            CbzDocumentService.getInstance(context).validate(
+                LocalFileRef.createPathFileRef(file.getCanonicalPath()), 1);
+            fail("损坏 CRC 的 CBZ 不应校验成功");
+        } catch (CbzDocumentService.CbzException expected) {
+            assertEquals("CBZ_INVALID", expected.code);
+        }
+    }
+
+    @Test
     public void indexesImagesNaturallyAndReadsComicInfoCover() throws Exception {
         File cbz = createArchive("chapter.cbz", false);
         String fileRef = LocalFileRef.createPathFileRef(cbz.getCanonicalPath());

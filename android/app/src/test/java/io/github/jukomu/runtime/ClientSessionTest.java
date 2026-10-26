@@ -4,6 +4,7 @@ import org.junit.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -16,6 +17,16 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 
 public class ClientSessionTest {
+
+    @Test
+    public void savedDomainMustBePresentInCurrentDomainList() {
+        assertEquals(false, JmcomicSessionManager.isSavedDomainCurrent(
+            "www.expired.example", Map.of("www.current.example", -1)));
+        assertEquals(false, JmcomicSessionManager.isSavedDomainCurrent(
+            "", Map.of("www.current.example", 0)));
+        assertEquals(true, JmcomicSessionManager.isSavedDomainCurrent(
+            "www.current.example", Map.of("www.current.example", -1)));
+    }
 
     @Test
     public void unavailableNetworkDoesNotCreateClient() {

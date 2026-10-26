@@ -53,9 +53,9 @@ public class ExportNotificationHelper {
         }
     }
 
-    public void showComplete(int notificationId, String format, String chapterTitle,
+    public void showComplete(int notificationId, String exportId, String format, String chapterTitle,
                              String fileName, String outputFileRef, String detail) {
-        PendingIntent pendingIntent = createOpenIntent(notificationId, format, outputFileRef);
+        PendingIntent pendingIntent = createOpenIntent(notificationId, exportId, format, outputFileRef);
 
         String message = fileName;
         if (detail != null && !detail.isEmpty()) {
@@ -77,16 +77,26 @@ public class ExportNotificationHelper {
         notify(notificationId, builder.build());
     }
 
-    private PendingIntent createOpenIntent(int notificationId, String format, String outputFileRef) {
+    private PendingIntent createOpenIntent(int notificationId, String exportId, String format,
+                                         String outputFileRef) {
         try {
             Intent openIntent;
             if ("zip".equals(format)) {
-                Uri folderUri = resolveFolderUri(outputFileRef);
-                openIntent = new Intent(Intent.ACTION_VIEW);
-                openIntent.setDataAndType(folderUri, DocumentsContract.Document.MIME_TYPE_DIR);
-                openIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
-                    | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION
-                    | Intent.FLAG_ACTIVITY_NEW_TASK);
+                try {
+                    Uri folderUri = resolveFolderUri(outputFileRef);
+                    openIntent = new Intent(Intent.ACTION_VIEW);
+                    openIntent.setDataAndType(folderUri, DocumentsContract.Document.MIME_TYPE_DIR);
+                    openIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION
+                        | Intent.FLAG_ACTIVITY_NEW_TASK);
+                } catch (Exception error) {
+                    LOGGER.warn("无法打开导出目录，完成通知进入任务页", error);
+                    openIntent = new Intent(context, MainActivity.class);
+                    openIntent.setAction(MainActivity.ACTION_OPEN_ROUTE);
+                    openIntent.putExtra(MainActivity.EXTRA_ROUTE,
+                        "/download?view=export&tab=tasks&exportId=" + Uri.encode(exportId));
+                    openIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                }
             } else {
                 String reader = "cbz".equals(format) ? "/cbz-reader" : "/pdf-reader";
                 String route = reader + "?fileRef=" + Uri.encode(outputFileRef);
@@ -102,7 +112,7 @@ public class ExportNotificationHelper {
                 PendingIntent.FLAG_IMMUTABLE
             );
         } catch (Exception e) {
-            LOGGER.debug("导出完成通知打开入口创建失败", e);
+            LOGGER.warn("导出完成通知打开入口创建失败", e);
             return null;
         }
     }
@@ -112,20 +122,7 @@ public class ExportNotificationHelper {
         if (parsed.kind != LocalFileRef.Kind.FILE) throw new IllegalArgumentException("需要文件引用");
         if (parsed.provider == LocalFileRef.Provider.SAF) {
             Uri fileUri = LocalFileRefResolver.uri(fileRef);
-            String documentId = DocumentsContract.getDocumentId(fileUri);
-            int separator = documentId.lastIndexOf('/');
-            String parentDocumentId;
-            if (separator >= 0) {
-                parentDocumentId = documentId.substring(0, separator);
-            } else {
-                int volumeSeparator = documentId.indexOf(':');
-                if (volumeSeparator < 0) throw new IllegalArgumentException("无法确定文档所在文件夹");
-                parentDocumentId = documentId.substring(0, volumeSeparator + 1);
-            }
-            if (fileUri.getPath() != null && fileUri.getPath().contains("/tree/")) {
-                return DocumentsContract.buildDocumentUriUsingTree(fileUri, parentDocumentId);
-            }
-            return DocumentsContract.buildDocumentUri(fileUri.getAuthority(), parentDocumentId);
+            return LocalFileRefResolver.parentDocumentUri(context, fileUri);
         }
 
         File file = LocalFileRefResolver.pathFile(fileRef);

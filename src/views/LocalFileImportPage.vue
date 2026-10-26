@@ -1106,6 +1106,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .toolbar {
+  --desktop-page-max-width: 920px;
   width: 100%;
   max-width: 920px;
   margin-inline: auto;

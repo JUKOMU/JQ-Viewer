@@ -744,26 +744,33 @@ public class ExportService {
                 }
             };
             OutputReport report;
-            if ("pdf".equals(job.format)) {
-                writer.writeVolume(volumeImages, volume.file, job.useOriginal,
-                    job.compressionRatio, progress);
-                try {
-                    logExportEvent(job, batchId, "phase", "validating", "running", volume.end,
-                        total, null, "volume=" + volumeNumber + "/" + volumeCount, null);
-                    PdfFileValidator.Report pdfReport = PdfFileValidator.validate(
-                        context, LocalFileRef.createPathFileRef(volume.file.getAbsolutePath()),
-                        volume.end - volume.start);
-                    report = new OutputReport(pdfReport.fileSize, pdfReport.pageCount);
-                } catch (PdfFileValidator.ValidationException error) {
-                    throw new IOException(error.code + ": " + error.getMessage(), error);
+            boolean overwriteWorkFile = job.allowOverwrite
+                || LocalFileRef.parse(job.targetFolderRef).provider == LocalFileRef.Provider.SAF;
+            try {
+                if ("pdf".equals(job.format)) {
+                    writer.writeVolume(volumeImages, volume.file, job.useOriginal,
+                        job.compressionRatio, progress, overwriteWorkFile);
+                    try {
+                        logExportEvent(job, batchId, "phase", "validating", "running", volume.end,
+                            total, null, "volume=" + volumeNumber + "/" + volumeCount, null);
+                        PdfFileValidator.Report pdfReport = PdfFileValidator.validate(
+                            context, LocalFileRef.createPathFileRef(volume.file.getAbsolutePath()),
+                            volume.end - volume.start);
+                        report = new OutputReport(pdfReport.fileSize, pdfReport.pageCount);
+                    } catch (PdfFileValidator.ValidationException error) {
+                        throw new IOException(error.code + ": " + error.getMessage(), error);
+                    }
+                } else {
+                    ArchiveExportPlanner.Plan archivePlan = archivePlan(job, preflight, volume,
+                        volumeNumber, volumeCount);
+                    ArchiveVolumeWriter.Report archiveReport = archiveWriter.write(
+                        archivePlan, volume.file, progress::onPageWritten, overwriteWorkFile);
+                    progress.onFinalizing();
+                    report = new OutputReport(archiveReport.fileSize, archiveReport.pageCount);
                 }
-            } else {
-                ArchiveExportPlanner.Plan archivePlan = archivePlan(job, preflight, volume,
-                    volumeNumber, volumeCount);
-                ArchiveVolumeWriter.Report archiveReport = archiveWriter.write(
-                    archivePlan, volume.file, progress::onPageWritten);
-                progress.onFinalizing();
-                report = new OutputReport(archiveReport.fileSize, archiveReport.pageCount);
+            } catch (java.nio.file.FileAlreadyExistsException conflict) {
+                throw new PdfOutputExistsException(formatCode(job.format, "OUTPUT_EXISTS")
+                    + ": 目标文件已存在，请确认覆盖后重试");
             }
             long pathOutputLength = volume.file.length();
             long pathOutputLastModified = volume.file.lastModified();
@@ -803,6 +810,7 @@ public class ExportService {
             : null;
         notif.showComplete(
             baseNotificationId,
+            job.exportId,
             job.format,
             job.chapterTitle,
             firstOutputFileName == null
@@ -835,7 +843,7 @@ public class ExportService {
         DocumentFile current = folder;
         for (int index = 0; index < segments.size() - 1; index++) {
             String segment = segments.get(index);
-            DocumentFile child = current.findFile(segment);
+            DocumentFile child = LocalFileRefResolver.findChild(context, current, segment);
             if (child == null) child = current.createDirectory(segment);
             if (child == null || !child.isDirectory()) {
                 throw new IOException("无法创建导出子目录");
@@ -843,8 +851,8 @@ public class ExportService {
             current = child;
         }
         String fileName = segments.get(segments.size() - 1);
-        DocumentFile destination = current.findFile(fileName);
-        if (destination != null && destination.exists()) {
+        DocumentFile destination = LocalFileRefResolver.findChild(context, current, fileName);
+        if (destination != null) {
             checkExportCancelled(job.exportId);
             if (destination.isDirectory()) {
                 throw new IOException("目标路径指向文件夹");
@@ -852,10 +860,14 @@ public class ExportService {
             if (!destination.isFile()) {
                 throw new IOException("目标文件类型无效");
             }
-            if (!job.allowOverwrite || !destination.delete()) {
+            if (!job.allowOverwrite) {
                 throw new PdfOutputExistsException(
                     formatCode(job.format, "OUTPUT_EXISTS")
                         + ": 目标文件已存在，请确认覆盖后重试");
+            }
+            if (!android.provider.DocumentsContract.deleteDocument(
+                context.getContentResolver(), destination.getUri())) {
+                throw new IOException("目标文件删除失败，无法覆盖");
             }
         }
         checkExportCancelled(job.exportId);

@@ -917,6 +917,7 @@ onMounted(() => {
 }
 
 .category-page-toolbar {
+  --desktop-page-max-width: 1000px;
   display: flex;
   align-items: start;
   gap: 5px;

@@ -2,6 +2,7 @@ package io.github.jukomu.bridge.handler;
 
 import android.content.Context;
 import android.content.Intent;
+import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -10,7 +11,6 @@ import android.net.Uri;
 import android.os.ParcelFileDescriptor;
 import android.provider.DocumentsContract;
 import androidx.core.content.FileProvider;
-import androidx.documentfile.provider.DocumentFile;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
@@ -130,36 +130,41 @@ public final class LocalFilePluginHandler {
                                            Set<String> requestedFormats, String operationId,
                                            long startedAt) {
         try {
-            DocumentFile root = DocumentFile.fromTreeUri(context, treeUri);
-            if (root == null || !root.exists() || !root.isDirectory()) {
-                rejectWithCode(call, PDF_FOLDER_NOT_FOUND_MESSAGE,
-                    LocalFileOperationException.NOT_FOUND, null);
-                logScan(operationId, "saf", "not_found", 0, startedAt, null);
-                return;
-            }
-            if (!root.canRead()) {
-                rejectWithCode(call, PDF_FOLDER_PERMISSION_MESSAGE,
-                    LocalFileOperationException.PERMISSION_DENIED, null);
-                logScan(operationId, "saf", "permission_denied", 0, startedAt, null);
-                return;
-            }
-            DocumentFile[] children = root.listFiles();
-            if (children == null) {
-                rejectWithCode(call, PDF_FOLDER_PERMISSION_MESSAGE,
-                    LocalFileOperationException.PERMISSION_DENIED, null);
-                logScan(operationId, "saf", "permission_denied", 0, startedAt, null);
-                return;
+            String rootId = DocumentsContract.isDocumentUri(context, treeUri)
+                ? DocumentsContract.getDocumentId(treeUri) : DocumentsContract.getTreeDocumentId(treeUri);
+            Uri root = DocumentsContract.buildDocumentUriUsingTree(treeUri, rootId);
+            try (Cursor cursor = LocalFileRefResolver.queryDocument(context, root,
+                DocumentsContract.Document.COLUMN_MIME_TYPE)) {
+                if (!cursor.moveToFirst()) {
+                    rejectWithCode(call, PDF_FOLDER_NOT_FOUND_MESSAGE,
+                        LocalFileOperationException.NOT_FOUND, null);
+                    logScan(operationId, "saf", "not_found", 0, startedAt, null);
+                    return;
+                }
+                if (!DocumentsContract.Document.MIME_TYPE_DIR.equals(cursor.getString(0))) {
+                    throw new java.io.IOException("引用不是目录");
+                }
             }
             JSArray arr = new JSArray();
-            for (DocumentFile child : children) {
-                String format = child.getName() == null ? "" : importFormat(child.getName());
-                if (child.isFile() && requestedFormats.contains(format)) {
-                    JSObject obj = new JSObject();
-                    obj.put("format", format);
-                    obj.put("fileName", child.getName());
-                    obj.put("fileRef", LocalFileRef.createSafFileRef(child.getUri().toString()));
-                    obj.put("displayPath", child.getName());
-                    arr.put(obj);
+            Uri children = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, rootId);
+            try (Cursor cursor = LocalFileRefResolver.queryDocument(context, children,
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                DocumentsContract.Document.COLUMN_MIME_TYPE)) {
+                while (cursor.moveToNext()) {
+                    String name = cursor.getString(1);
+                    String format = importFormat(name);
+                    if (!DocumentsContract.Document.MIME_TYPE_DIR.equals(cursor.getString(2))
+                        && requestedFormats.contains(format)) {
+                        JSObject obj = new JSObject();
+                        obj.put("format", format);
+                        obj.put("fileName", name);
+                        obj.put("fileRef", LocalFileRef.createSafFileRef(
+                            DocumentsContract.buildDocumentUriUsingTree(treeUri,
+                                cursor.getString(0)).toString()));
+                        obj.put("displayPath", name);
+                        arr.put(obj);
+                    }
                 }
             }
             JSObject ret = new JSObject();
@@ -170,6 +175,9 @@ public final class LocalFilePluginHandler {
             rejectWithCode(call, PDF_FOLDER_PERMISSION_MESSAGE,
                 LocalFileOperationException.PERMISSION_DENIED, error);
             logScan(operationId, "saf", "permission_denied", 0, startedAt, error);
+        } catch (java.io.IOException | RuntimeException error) {
+            call.reject("无法读取导入目录: " + error.getMessage(), error);
+            logScan(operationId, "saf", "failed", 0, startedAt, error);
         }
     }
 
@@ -177,10 +185,23 @@ public final class LocalFilePluginHandler {
                                             Set<String> requestedFormats, String operationId,
                                             long startedAt) {
         File dir = new File(path);
-        if (!dir.isDirectory()) {
+        try {
+            if (!android.system.OsConstants.S_ISDIR(LocalFileRefResolver.stat(dir).st_mode)) {
+                throw new java.io.IOException("引用不是目录");
+            }
+        } catch (java.io.FileNotFoundException missing) {
             rejectWithCode(call, PDF_FOLDER_NOT_FOUND_MESSAGE,
                 LocalFileOperationException.NOT_FOUND, null);
             logScan(operationId, "path", "not_found", 0, startedAt, null);
+            return;
+        } catch (SecurityException denied) {
+            rejectWithCode(call, PDF_FOLDER_PERMISSION_MESSAGE,
+                LocalFileOperationException.PERMISSION_DENIED, denied);
+            logScan(operationId, "path", "permission_denied", 0, startedAt, denied);
+            return;
+        } catch (java.io.IOException failure) {
+            call.reject("无法读取导入目录: " + failure.getMessage(), failure);
+            logScan(operationId, "path", "failed", 0, startedAt, failure);
             return;
         }
         if (!dir.canRead()) {
@@ -501,13 +522,8 @@ public final class LocalFilePluginHandler {
                 uri = LocalFileRefResolver.uri(fileRef);
             } else {
                 File file = LocalFileRefResolver.pathFile(fileRef);
-                if (!file.exists()) {
-                    call.reject("File not found: " + parsed.payload);
-                    LOGGER.info("event=local_file_open phase=complete operationId={} provider={} "
-                            + "fileRefHash={} result=missing errorCode=NOT_FOUND durationMs={}",
-                        operationId, parsed.provider.name().toLowerCase(), refHash(fileRef),
-                        elapsedMs(startedAt));
-                    return;
+                if (!android.system.OsConstants.S_ISREG(LocalFileRefResolver.stat(file).st_mode)) {
+                    throw new java.io.IOException("引用不是普通文件");
                 }
                 uri = FileProvider.getUriForFile(
                     context,
@@ -552,7 +568,8 @@ public final class LocalFilePluginHandler {
             call.resolve(result);
         } catch (Exception error) {
             LOGGER.error("打开 PDF 所在文件夹失败", error);
-            call.reject("系统文件管理器无法打开该目录");
+            call.reject(error instanceof java.io.IOException
+                ? "无法定位所在目录" : "系统文件管理器无法打开该目录", error);
         }
     }
 
@@ -575,22 +592,7 @@ public final class LocalFilePluginHandler {
         if (parsed.kind != LocalFileRef.Kind.FILE) throw new IllegalArgumentException("需要文件引用");
         if (parsed.provider == LocalFileRef.Provider.SAF) {
             Uri fileUri = LocalFileRefResolver.uri(fileRef);
-            String documentId = DocumentsContract.getDocumentId(fileUri);
-            int separator = documentId.lastIndexOf('/');
-            String parentDocumentId;
-            if (separator >= 0) {
-                parentDocumentId = documentId.substring(0, separator);
-            } else {
-                int volumeSeparator = documentId.indexOf(':');
-                if (volumeSeparator < 0) {
-                    throw new IllegalArgumentException("无法确定文档所在文件夹");
-                }
-                parentDocumentId = documentId.substring(0, volumeSeparator + 1);
-            }
-            if (fileUri.getPath() != null && fileUri.getPath().contains("/tree/")) {
-                return DocumentsContract.buildDocumentUriUsingTree(fileUri, parentDocumentId);
-            }
-            return DocumentsContract.buildDocumentUri(fileUri.getAuthority(), parentDocumentId);
+            return LocalFileRefResolver.parentDocumentUri(context, fileUri);
         }
 
         File file = LocalFileRefResolver.pathFile(fileRef);

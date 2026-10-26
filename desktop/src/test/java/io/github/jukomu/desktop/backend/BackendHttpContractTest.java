@@ -531,6 +531,15 @@ class BackendHttpContractTest {
                             "folder", logTarget.path("ref").asText(),
                             "fileNames", nullFileNames))));
             assertEquals("", nullNameLogs.path("failed").get(0).path("fileName").asText());
+            Path protectedLogDirectory = FileReferences.parseFolder(logTarget.path("ref").asText())
+                .resolve(logFileName);
+            Files.delete(protectedLogDirectory);
+            Files.createDirectory(protectedLogDirectory);
+            ObjectNode directoryLog = body(post(http, base, requestedMethods, "exportLogFiles",
+                MAPPER.writeValueAsString(Map.of(
+                    "folder", logTarget.path("ref").asText(), "fileNames", List.of(logFileName)))));
+            assertEquals(1, directoryLog.path("failed").size());
+            assertTrue(Files.isDirectory(protectedLogDirectory));
             assertOk(post(http, base, requestedMethods, "clearImageCache", "{}"));
             ObjectNode clearedCacheContents = body(post(
                     http, base, requestedMethods, "getImageCacheContents", "{}"));

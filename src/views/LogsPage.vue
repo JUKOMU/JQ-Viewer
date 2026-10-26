@@ -285,6 +285,7 @@ onUnmounted(() => {
 
 <style scoped>
 .toolbar {
+  --desktop-page-max-width: 920px;
   width: 100%;
   max-width: 920px;
   margin-inline: auto;
@@ -297,6 +298,7 @@ onUnmounted(() => {
 }
 
 .logs-page {
+  --desktop-page-max-width: 960px;
   padding: 18px 20px 24px;
 }
 

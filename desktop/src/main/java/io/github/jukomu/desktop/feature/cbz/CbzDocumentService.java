@@ -131,10 +131,18 @@ public final class CbzDocumentService {
             }
             byte[] buffer = new byte[8192];
             for (String name : entries) {
-                try (InputStream input = zip.getInputStream(zip.getEntry(name))) {
-                    while (input.read(buffer) != -1) {
-                        // Consume every image so ZipFile verifies CRC and truncation.
+                ZipEntry entry = zip.getEntry(name);
+                java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+                long length = 0;
+                try (InputStream input = zip.getInputStream(entry)) {
+                    int count;
+                    while ((count = input.read(buffer)) != -1) {
+                        crc.update(buffer, 0, count);
+                        length += count;
                     }
+                }
+                if (length != entry.getSize() || crc.getValue() != entry.getCrc()) {
+                    throw new java.util.zip.ZipException("CBZ 图片条目校验失败: " + name);
                 }
             }
             if (comicInfoEntry != null) {

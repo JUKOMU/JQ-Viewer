@@ -625,11 +625,20 @@ onBeforeUnmount(() => {
 @media (min-width: 1264px) {
   .ion-page-container .ion-page .desktop-page-content,
   .ion-page ion-header.ion-no-border ion-toolbar.desktop-page-content {
+    --desktop-page-min-gap: 24px;
     --desktop-page-offset: clamp(150px, 15cqw, 300px);
-    --desktop-page-width: min(100%, 960px, calc(100% - var(--desktop-page-offset) - 24px));
     box-sizing: border-box;
-    width: var(--desktop-page-width);
-    margin-left: min(var(--desktop-page-offset), calc((100% - var(--desktop-page-width)) / 2));
+    width: min(
+      var(--desktop-page-max-width, 960px),
+      calc(100% - var(--desktop-page-min-gap) * 2)
+    );
+    margin-left: max(
+      var(--desktop-page-min-gap),
+      min(
+        var(--desktop-page-offset),
+        calc((100% - var(--desktop-page-max-width, 960px)) / 2)
+      )
+    );
     margin-right: auto;
   }
 }

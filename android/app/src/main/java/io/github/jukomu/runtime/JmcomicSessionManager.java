@@ -73,7 +73,7 @@ public final class JmcomicSessionManager {
             () -> JmComic.newApiClientAsync(new JmConfiguration.Builder()
                 .downloadThreadPoolSize(downloadConcurrency)
                 .retryTimes(3)
-                .build()).thenApply(this::applySavedRoute),
+                .build()).thenApply(client -> applySavedRoute(client, settingsStore)),
             new ClientSession.Observer<>() {
                 @Override
                 public void onStateChanged(ClientSession.Snapshot snapshot, JmApiClient client) {
@@ -109,22 +109,29 @@ public final class JmcomicSessionManager {
         scheduleNetworkEvaluation();
     }
 
-    private JmApiClient applySavedRoute(JmApiClient client) {
-        if (!"manual".equals(settingsStore.getString("api_route_mode"))) return client;
-        String domain = settingsStore.getString("api_route_domain");
+    static JmApiClient applySavedRoute(JmApiClient client, SettingsStore settingsStore) {
         try {
-            if (domain == null || domain.isBlank()) {
-                throw new IllegalStateException("保存的手动线路为空");
+            if (!"manual".equals(settingsStore.getString("api_route_mode"))) return client;
+            String domain = settingsStore.getString("api_route_domain");
+            if (isSavedDomainCurrent(domain, client.getDomainStates())) {
+                client.useDomain(domain);
+                LOGGER.info("应用保存的手动线路 routeHash={}", stableHash(domain));
+                return client;
             }
-            client.useDomain(domain);
-            LOGGER.info("应用保存的手动线路 routeHash={}", stableHash(domain));
+
+            client.useAutoDomain();
+            settingsStore.putString("api_route_mode", "auto");
+            settingsStore.putString("api_route_domain", "");
+            LOGGER.warn("保存的手动线路已失效，已回退自动线路 routeHash={}", stableHash(domain));
             return client;
         } catch (RuntimeException error) {
-            LOGGER.warn("应用保存的手动线路失败 routeHash={} errorType={}",
-                stableHash(domain), error.getClass().getSimpleName());
             client.close();
             throw error;
         }
+    }
+
+    static boolean isSavedDomainCurrent(String domain, Map<String, Integer> domainStates) {
+        return domain != null && !domain.isBlank() && domainStates.containsKey(domain);
     }
 
     public static synchronized JmcomicSessionManager getOrCreate(

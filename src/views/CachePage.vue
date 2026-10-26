@@ -725,6 +725,7 @@ function formatBytes(bytes: number): string {
 
 .cache-content,
 :deep(ion-toolbar.cache-toolbar) {
+  --desktop-page-max-width: 1000px;
   width: 100%;
   max-width: 1000px;
   margin-inline: auto;

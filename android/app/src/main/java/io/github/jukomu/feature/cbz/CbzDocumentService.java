@@ -136,12 +136,19 @@ public final class CbzDocumentService {
         if (parsed.provider == LocalFileRef.Provider.PATH) {
             try {
                 File file = LocalFileRefResolver.pathFile(fileRef);
-                if (!file.isFile()) {
-                    throw new CbzException("CBZ_MISSING", 404, "CBZ 文件不存在或已移动");
+                if (!android.system.OsConstants.S_ISREG(LocalFileRefResolver.stat(file).st_mode)) {
+                    throw new CbzException("CBZ_INVALID_REF", 400, "引用不是普通文件");
                 }
+                if (!file.canRead()) throw new SecurityException("没有权限读取 CBZ");
                 return file;
             } catch (CbzException error) {
                 throw error;
+            } catch (FileNotFoundException error) {
+                throw new CbzException("CBZ_MISSING", 404, "CBZ 文件不存在或已移动", error);
+            } catch (SecurityException error) {
+                throw new CbzException("CBZ_INACCESSIBLE", 403, "没有权限读取 CBZ", error);
+            } catch (IOException error) {
+                throw translate(error);
             } catch (Exception error) {
                 throw new CbzException("CBZ_INVALID_REF", 400, "CBZ 文件引用无效", error);
             }
@@ -231,10 +238,18 @@ public final class CbzDocumentService {
             }
             byte[] buffer = new byte[8192];
             for (String name : entries) {
-                try (InputStream input = zip.getInputStream(zip.getEntry(name))) {
-                    while (input.read(buffer) != -1) {
-                        // Consume every image so ZipFile verifies CRC and truncation.
+                ZipEntry entry = zip.getEntry(name);
+                java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+                long length = 0;
+                try (InputStream input = zip.getInputStream(entry)) {
+                    int count;
+                    while ((count = input.read(buffer)) != -1) {
+                        crc.update(buffer, 0, count);
+                        length += count;
                     }
+                }
+                if (length != entry.getSize() || crc.getValue() != entry.getCrc()) {
+                    throw new java.util.zip.ZipException("CBZ 图片条目校验失败: " + name);
                 }
             }
             if (comicInfoEntry != null) {

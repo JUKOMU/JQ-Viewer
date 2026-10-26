@@ -914,7 +914,9 @@ async function executeDownloadSelection(action: string) {
         {
           text: '删除',
           role: 'destructive',
-          handler: async () => runDownloadBatch(action, eligible),
+          handler: () => {
+            void runDownloadBatch(action, eligible)
+          },
         },
       ],
     })
@@ -1920,6 +1922,7 @@ const clearFailed = async () => {
 
 <style scoped>
 .download-page-shell {
+  --desktop-page-max-width: 1000px;
   width: 100%;
   max-width: 1000px;
   margin-inline: auto;

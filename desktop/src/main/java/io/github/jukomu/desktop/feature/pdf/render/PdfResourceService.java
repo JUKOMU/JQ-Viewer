@@ -29,25 +29,31 @@ public final class PdfResourceService {
         if (!file.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".pdf")) {
             throw new ResourceException(400, "invalid-path", "文件扩展名不是 PDF", null);
         }
-        if (!Files.exists(file)) {
-            throw new ResourceException(404, "file-missing", "PDF 文件不存在", null);
-        }
-        if (!Files.isRegularFile(file) || !Files.isReadable(file)) {
-            throw new ResourceException(403, "permission-denied", "没有权限读取 PDF", null);
-        }
         try {
-            BufferedInputStream input = new BufferedInputStream(Files.newInputStream(file));
-            input.mark(1024);
-            byte[] header = input.readNBytes(1024);
-            input.reset();
-            if (!new String(header, StandardCharsets.ISO_8859_1).contains("%PDF-")) {
-                input.close();
-                throw new ResourceException(400, "invalid-content", "PDF 文件内容无效", null);
+            if (!Files.readAttributes(file, java.nio.file.attribute.BasicFileAttributes.class)
+                .isRegularFile()) {
+                throw new ResourceException(400, "invalid-path", "引用不是普通文件", null);
             }
-            return new Resource(input, Files.size(file));
+            BufferedInputStream input = new BufferedInputStream(Files.newInputStream(file));
+            try {
+                input.mark(1024);
+                byte[] header = input.readNBytes(1024);
+                input.reset();
+                if (!new String(header, StandardCharsets.ISO_8859_1).contains("%PDF-")) {
+                    throw new ResourceException(400, "invalid-content", "PDF 文件内容无效", null);
+                }
+                return new Resource(input, Files.size(file));
+            } catch (IOException | ResourceException | RuntimeException failure) {
+                try {
+                    input.close();
+                } catch (IOException cleanupFailure) {
+                    failure.addSuppressed(cleanupFailure);
+                }
+                throw failure;
+            }
         } catch (NoSuchFileException exception) {
             throw new ResourceException(404, "file-missing", "PDF 文件不存在", exception);
-        } catch (AccessDeniedException exception) {
+        } catch (AccessDeniedException | SecurityException exception) {
             throw new ResourceException(403, "permission-denied", "没有权限读取 PDF", exception);
         } catch (ResourceException exception) {
             throw exception;

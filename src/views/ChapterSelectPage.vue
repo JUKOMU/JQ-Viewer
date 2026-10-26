@@ -243,6 +243,7 @@ onMounted(async () => {
 }
 
 .chapter-content {
+  --desktop-page-max-width: 1280px;
   width: 100%;
   max-width: 1280px;
   margin-inline: auto;

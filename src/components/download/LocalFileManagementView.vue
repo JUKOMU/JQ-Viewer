@@ -1219,44 +1219,46 @@ async function executeManagementDelete() {
       {
         text: isFiles ? '删除文件' : '删除记录',
         role: 'destructive',
-        handler: async () => {
-          managementSelectionExecuting.value = true
-          managementProgressCurrent.value = 0
-          managementProgressTotal.value = records.length
-          let succeeded = 0
-          let failed = 0
-          try {
-            for (const record of records) {
-              managementProgressTitle.value = isFiles
-                ? (record as LocalFileRecord).fileName
-                : (record as ExportTaskRecord).displayTitle
-              try {
-                if (isFiles) {
-                  const file = record as LocalFileRecord
-                  const current = await LocalFileManagementService.inspectFileForDeletion(file.id)
-                  if (!current) throw new Error('文件不可定位')
-                  await LocalFileManagementService.deleteFile(file.id)
-                  await removeFileAndFill(file.id)
-                } else {
-                  const task = record as ExportTaskRecord
-                  const result = await LocalFileManagementService.deleteTaskRecord(task.exportId)
-                  if (!result.success) throw new Error('删除任务记录失败')
-                  await removeTaskAndFill(task.exportId)
+        handler: () => {
+          void (async () => {
+            managementSelectionExecuting.value = true
+            managementProgressCurrent.value = 0
+            managementProgressTotal.value = records.length
+            let succeeded = 0
+            let failed = 0
+            try {
+              for (const record of records) {
+                managementProgressTitle.value = isFiles
+                  ? (record as LocalFileRecord).fileName
+                  : (record as ExportTaskRecord).displayTitle
+                try {
+                  if (isFiles) {
+                    const file = record as LocalFileRecord
+                    const current = await LocalFileManagementService.inspectFileForDeletion(file.id)
+                    if (!current) throw new Error('文件不可定位')
+                    await LocalFileManagementService.deleteFile(file.id)
+                    await removeFileAndFill(file.id)
+                  } else {
+                    const task = record as ExportTaskRecord
+                    const result = await LocalFileManagementService.deleteTaskRecord(task.exportId)
+                    if (!result.success) throw new Error('删除任务记录失败')
+                    await removeTaskAndFill(task.exportId)
+                  }
+                  succeeded++
+                } catch {
+                  failed++
                 }
-                succeeded++
-              } catch {
-                failed++
+                managementProgressCurrent.value++
               }
-              managementProgressCurrent.value++
+            } finally {
+              managementSelectionExecuting.value = false
+              exitManagementSelection()
+              await showToast(
+                `删除完成：成功 ${succeeded} 项，失败 ${failed} 项`,
+                failed ? 'medium' : 'success',
+              )
             }
-          } finally {
-            managementSelectionExecuting.value = false
-            exitManagementSelection()
-            await showToast(
-              `删除完成：成功 ${succeeded} 项，失败 ${failed} 项`,
-              failed ? 'medium' : 'success',
-            )
-          }
+          })()
         },
       },
     ],

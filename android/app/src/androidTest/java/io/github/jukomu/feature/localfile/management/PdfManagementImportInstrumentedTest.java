@@ -6,6 +6,7 @@ import android.database.sqlite.SQLiteException;
 import android.graphics.pdf.PdfDocument;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
+import io.github.jukomu.feature.localfile.LocalFileOperationException;
 import io.github.jukomu.feature.localfile.data.LocalFileStore;
 import io.github.jukomu.feature.localfile.data.LocalFileRef;
 import org.json.JSONArray;
@@ -82,6 +83,41 @@ public class PdfManagementImportInstrumentedTest {
         assertEquals("deleted", deleted.getString("result"));
         assertTrue(!pdf.exists());
         assertNull(LocalFileStore.getInstance(context).getFile(id));
+    }
+
+    @Test
+    public void readOnlyFileCanBeDeletedFromWritableDirectory() throws Exception {
+        File pdf = createPdf("read-only.pdf");
+        LocalFileManagementService service = LocalFileManagementService.getInstance(context);
+        long id = service.importLocalFile(item(pdf)).getLong("id");
+        android.system.Os.chmod(pdf.getAbsolutePath(), 0444);
+        assertFalse(pdf.canWrite());
+        assertEquals("deleted", service.deleteFile(id).getString("result"));
+        assertFalse(pdf.exists());
+        assertNull(LocalFileStore.getInstance(context).getFile(id));
+    }
+
+    @Test
+    public void deletionFromReadOnlyDirectoryRetainsFileAndLibraryRecord() throws Exception {
+        File directory = new File(context.getCacheDir(), "delete-denied-" + System.nanoTime());
+        assertTrue(directory.mkdir());
+        File pdf = createPdf(directory.getName() + "/book.pdf");
+        createdFiles.add(directory);
+        LocalFileManagementService service = LocalFileManagementService.getInstance(context);
+        long id = service.importLocalFile(item(pdf)).getLong("id");
+        try {
+            android.system.Os.chmod(directory.getAbsolutePath(), 0500);
+            assertFalse(directory.canWrite());
+
+            LocalFileOperationException error = assertThrows(LocalFileOperationException.class,
+                () -> service.deleteFile(id));
+
+            assertEquals(LocalFileOperationException.PERMISSION_DENIED, error.code);
+            assertTrue(pdf.isFile());
+            assertNotNull(LocalFileStore.getInstance(context).getFile(id));
+        } finally {
+            android.system.Os.chmod(directory.getAbsolutePath(), 0700);
+        }
     }
 
     @Test

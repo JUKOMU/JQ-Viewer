@@ -146,18 +146,24 @@ public final class PdfDocumentService {
         if (!file.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".pdf")) {
             throw ApiException.invalidRequest("文件扩展名不是 PDF");
         }
-        if (!Files.exists(file)) throw ApiException.notFound("PDF 文件不存在");
-        if (!Files.isRegularFile(file) || !Files.isReadable(file)) {
+        try {
+            if (!Files.readAttributes(file, java.nio.file.attribute.BasicFileAttributes.class)
+                .isRegularFile() || !Files.isReadable(file)) {
+                throw ApiException.permissionDenied("没有权限读取 PDF");
+            }
+        } catch (IOException exception) {
+            throw loadFailure(file, "PDF 文件无法访问", exception);
+        } catch (SecurityException exception) {
             throw ApiException.permissionDenied("没有权限读取 PDF");
         }
         return file;
     }
 
     private static ApiException loadFailure(Path file, String message, IOException exception) {
-        if (exception instanceof NoSuchFileException || !Files.exists(file)) {
+        if (exception instanceof NoSuchFileException) {
             return ApiException.notFound("PDF 文件不存在");
         }
-        if (exception instanceof AccessDeniedException || !Files.isReadable(file)) {
+        if (exception instanceof AccessDeniedException) {
             return ApiException.permissionDenied("没有权限读取 PDF");
         }
         return new ApiException("internal", 500, message + ": " + exception.getMessage());

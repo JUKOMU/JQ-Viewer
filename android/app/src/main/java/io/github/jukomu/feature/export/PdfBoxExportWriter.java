@@ -65,6 +65,19 @@ final class PdfBoxExportWriter {
     WriteReport writeVolume(List<ExportImageDescriptor> images, File finalFile, boolean useOriginal,
                             float compressionRatio, WriteStrategy strategy,
                             ProgressListener listener) throws IOException {
+        return writeVolume(images, finalFile, useOriginal, compressionRatio, strategy, listener, true);
+    }
+
+    WriteReport writeVolume(List<ExportImageDescriptor> images, File finalFile, boolean useOriginal,
+                            float compressionRatio, ProgressListener listener,
+                            boolean allowOverwrite) throws IOException {
+        return writeVolume(images, finalFile, useOriginal, compressionRatio,
+            DEFAULT_WRITE_STRATEGY, listener, allowOverwrite);
+    }
+
+    private WriteReport writeVolume(List<ExportImageDescriptor> images, File finalFile, boolean useOriginal,
+                            float compressionRatio, WriteStrategy strategy,
+                            ProgressListener listener, boolean allowOverwrite) throws IOException {
         if (images.isEmpty()) {
             throw new IOException("没有可写入 PDF 的图片");
         }
@@ -119,7 +132,7 @@ final class PdfBoxExportWriter {
             syncFile(tempFile);
             metrics.fsyncNanos += SystemClock.elapsedRealtimeNanos() - syncStartedAt;
             long replaceStartedAt = SystemClock.elapsedRealtimeNanos();
-            replaceAtomically(tempFile, finalFile);
+            OutputFilePublisher.publish(tempFile, finalFile, allowOverwrite);
             metrics.replaceNanos += SystemClock.elapsedRealtimeNanos() - replaceStartedAt;
             metrics.finalBytes = finalFile.length();
             completed = true;

@@ -24,8 +24,14 @@ public class PluginCallSessionInstrumentedTest {
         PluginCall trackedCall = session.register(call);
         CountDownLatch completionEntered = new CountDownLatch(1);
         CountDownLatch releaseCompletion = new CountDownLatch(1);
+        CountDownLatch closeStarted = new CountDownLatch(1);
+        CountDownLatch closeFinished = new CountDownLatch(1);
         ExecutorService completionExecutor = Executors.newSingleThreadExecutor();
-        Thread closeThread = new Thread(session::close, "plugin-call-session-close-test");
+        Thread closeThread = new Thread(() -> {
+            closeStarted.countDown();
+            session.close();
+            closeFinished.countDown();
+        }, "plugin-call-session-close-test");
         try {
             Future<Boolean> completion = completionExecutor.submit(() ->
                 session.completeIfActive(trackedCall, activeCall -> {
@@ -38,10 +44,12 @@ public class PluginCallSessionInstrumentedTest {
             assertTrue(completionEntered.await(1, TimeUnit.SECONDS));
 
             closeThread.start();
-            assertThreadBlocked(closeThread);
+            assertTrue(closeStarted.await(1, TimeUnit.SECONDS));
+            assertFalse(closeFinished.await(100, TimeUnit.MILLISECONDS));
             releaseCompletion.countDown();
 
             assertTrue(completion.get(1, TimeUnit.SECONDS));
+            assertTrue(closeFinished.await(1, TimeUnit.SECONDS));
             closeThread.join(TimeUnit.SECONDS.toMillis(1));
             assertFalse(closeThread.isAlive());
             assertEquals(1, call.completionCount);
@@ -52,16 +60,6 @@ public class PluginCallSessionInstrumentedTest {
             completionExecutor.shutdownNow();
             closeThread.join(TimeUnit.SECONDS.toMillis(1));
         }
-    }
-
-    private static void assertThreadBlocked(Thread thread) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1);
-        while (thread.getState() != Thread.State.BLOCKED
-            && thread.getState() != Thread.State.TERMINATED
-            && System.nanoTime() < deadline) {
-            Thread.yield();
-        }
-        assertEquals(Thread.State.BLOCKED, thread.getState());
     }
 
     private static void await(CountDownLatch latch) {

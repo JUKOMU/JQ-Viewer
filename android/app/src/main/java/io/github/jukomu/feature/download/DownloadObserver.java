@@ -120,36 +120,32 @@ class DownloadObserver implements TaskObserver {
     public void onProgressUpdate(BaseDownloadTask task, DownloadProgress progress) {
         if (service.isCancelled(ourTaskId)) return;
         int completed = progress.completedImages();
-        if (completed > 0) {
-            long now = System.currentTimeMillis();
-            long currentBytes = progress.downloadedBytes();
-            long speed = 0;
-            if (lastBytes > 0 && now > lastTimestamp) {
-                speed = (currentBytes - lastBytes) * 1000 / (now - lastTimestamp);
-            }
-            lastBytes = currentBytes;
-            lastTimestamp = now;
-
-            long nowNanos = SystemClock.elapsedRealtimeNanos();
-            if (completed == totalImages || completed - lastLogPage >= 25
-                || nowNanos - lastLogAtNanos >= 5_000_000_000L) {
-                long logSpeed = speed;
-                service.logDownloadEvent(ourTaskId, albumId, chapterId, "heartbeat",
-                    "downloading", DownloadService.STATUS_DOWNLOADING, completed, totalImages,
-                    currentBytes, logSpeed, task.getTaskId(), null, null);
-                lastLogPage = completed;
-                lastLogAtNanos = nowNanos;
-            }
-
-            downloadDb.updateProgress(ourTaskId, completed);
-            notifyProgress(completed, totalImages,
-                DownloadService.STATUS_DOWNLOADING, null, speed, 0, currentBytes);
-            service.updateDownloadNotification(ourTaskId, completed, totalImages,
-                DownloadService.STATUS_DOWNLOADING, null);
-        } else {
-            lastBytes = progress.downloadedBytes();
-            lastTimestamp = System.currentTimeMillis();
+        long now = System.currentTimeMillis();
+        long currentBytes = Math.max(0, progress.downloadedBytes());
+        long speed = 0;
+        if (lastBytes > 0 && now > lastTimestamp) {
+            speed = Math.max(0, (currentBytes - lastBytes) * 1000 / (now - lastTimestamp));
         }
+        lastBytes = currentBytes;
+        lastTimestamp = now;
+
+        long nowNanos = SystemClock.elapsedRealtimeNanos();
+        if (completed == totalImages || completed - lastLogPage >= 25
+            || nowNanos - lastLogAtNanos >= 5_000_000_000L) {
+            service.logDownloadEvent(ourTaskId, albumId, chapterId, "heartbeat",
+                "downloading", DownloadService.STATUS_DOWNLOADING, completed, totalImages,
+                currentBytes, speed, task.getTaskId(), null, null);
+            lastLogPage = completed;
+            lastLogAtNanos = nowNanos;
+        }
+
+        if (completed > 0) {
+            downloadDb.updateProgress(ourTaskId, completed);
+        }
+        notifyProgress(completed, totalImages,
+            DownloadService.STATUS_DOWNLOADING, null, speed, 0, currentBytes);
+        service.updateDownloadNotification(ourTaskId, completed, totalImages,
+            DownloadService.STATUS_DOWNLOADING, null);
     }
 
     @Override

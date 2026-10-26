@@ -56,6 +56,7 @@ import org.slf4j.LoggerFactory;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -266,6 +267,7 @@ public final class Backend implements AutoCloseable {
             if (providedClient == null) {
                 JmConfiguration configuration = new JmConfiguration.Builder()
                     .downloadThreadPoolSize(settingsService.downloadConcurrency())
+                    .imageTimeout(Duration.ofSeconds(30))
                     .retryTimes(3)
                     .build();
                 JmcomicSessionManager.Factory clientFactory = providedClientFactory == null

@@ -10,6 +10,7 @@ import io.github.jukomu.platform.persistence.SettingsStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
@@ -72,6 +73,7 @@ public final class JmcomicSessionManager {
         session = new ClientSession<>(
             () -> JmComic.newApiClientAsync(new JmConfiguration.Builder()
                 .downloadThreadPoolSize(downloadConcurrency)
+                .imageTimeout(Duration.ofSeconds(30))
                 .retryTimes(3)
                 .build()).thenApply(client -> applySavedRoute(client, settingsStore)),
             new ClientSession.Observer<>() {

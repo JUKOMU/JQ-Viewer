@@ -110,19 +110,24 @@ public final class JmcomicSessionManager {
     }
 
     static JmApiClient applySavedRoute(JmApiClient client, SettingsStore settingsStore) {
-        if (!"manual".equals(settingsStore.getString("api_route_mode"))) return client;
-        String domain = settingsStore.getString("api_route_domain");
-        if (isSavedDomainCurrent(domain, client.getDomainStates())) {
-            client.useDomain(domain);
-            LOGGER.info("应用保存的手动线路 routeHash={}", stableHash(domain));
-            return client;
-        }
+        try {
+            if (!"manual".equals(settingsStore.getString("api_route_mode"))) return client;
+            String domain = settingsStore.getString("api_route_domain");
+            if (isSavedDomainCurrent(domain, client.getDomainStates())) {
+                client.useDomain(domain);
+                LOGGER.info("应用保存的手动线路 routeHash={}", stableHash(domain));
+                return client;
+            }
 
-        client.useAutoDomain();
-        settingsStore.putString("api_route_mode", "auto");
-        settingsStore.putString("api_route_domain", "");
-        LOGGER.warn("保存的手动线路已失效，已回退自动线路 routeHash={}", stableHash(domain));
-        return client;
+            client.useAutoDomain();
+            settingsStore.putString("api_route_mode", "auto");
+            settingsStore.putString("api_route_domain", "");
+            LOGGER.warn("保存的手动线路已失效，已回退自动线路 routeHash={}", stableHash(domain));
+            return client;
+        } catch (RuntimeException error) {
+            client.close();
+            throw error;
+        }
     }
 
     static boolean isSavedDomainCurrent(String domain, Map<String, Integer> domainStates) {

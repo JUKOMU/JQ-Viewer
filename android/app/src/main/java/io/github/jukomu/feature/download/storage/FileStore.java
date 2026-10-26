@@ -361,7 +361,7 @@ public class FileStore {
     private static void deleteRecursive(File dir) {
         try {
             android.system.StructStat stat =
-                io.github.jukomu.feature.localfile.data.LocalFileRefResolver.stat(dir);
+                io.github.jukomu.feature.localfile.data.LocalFileRefResolver.lstat(dir);
             if (android.system.OsConstants.S_ISDIR(stat.st_mode)) {
                 File[] files = dir.listFiles();
                 if (files == null) throw new IOException("无法读取下载目录: " + dir);

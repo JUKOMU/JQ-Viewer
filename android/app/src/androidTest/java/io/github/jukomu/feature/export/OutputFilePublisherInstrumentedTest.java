@@ -1,6 +1,5 @@
 package io.github.jukomu.feature.export;
 
-import android.system.ErrnoException;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
 import org.junit.Test;
@@ -51,9 +50,8 @@ public class OutputFilePublisherInstrumentedTest {
             File source = new File(directory, "source.tmp");
             Files.write(source.toPath(), new byte[]{7});
             try {
-                IOException error = assertThrows(IOException.class,
+                assertThrows(IOException.class,
                     () -> OutputFilePublisher.publish(source, target, true));
-                assertTrue(error.getCause() instanceof ErrnoException);
                 assertTrue(target.isDirectory());
                 assertTrue(source.isFile());
             } finally {

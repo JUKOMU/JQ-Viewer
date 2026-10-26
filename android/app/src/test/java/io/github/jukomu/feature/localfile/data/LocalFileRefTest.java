@@ -12,14 +12,18 @@ public class LocalFileRefTest {
 
     @Test
     public void parsesAllFourReferencePrefixesWithoutChangingPayload() {
-        LocalFileRef.Parsed filePath = LocalFileRef.parse("file:path:/storage/emulated/0/a.pdf");
+        String filePathValue = new File(System.getProperty("java.io.tmpdir"), "a.pdf")
+            .getAbsolutePath();
+        String folderPathValue = new File(System.getProperty("java.io.tmpdir"), "Download")
+            .getAbsolutePath();
+        LocalFileRef.Parsed filePath = LocalFileRef.parse("file:path:" + filePathValue);
         LocalFileRef.Parsed fileSaf = LocalFileRef.parse("file:saf:content://provider/document/1:pdf");
-        LocalFileRef.Parsed folderPath = LocalFileRef.parse("folder:path:/storage/emulated/0/Download");
+        LocalFileRef.Parsed folderPath = LocalFileRef.parse("folder:path:" + folderPathValue);
         LocalFileRef.Parsed folderSaf = LocalFileRef.parse("folder:saf:content://provider/tree/1:root");
 
         assertEquals(LocalFileRef.Kind.FILE, filePath.kind);
         assertEquals(LocalFileRef.Provider.PATH, filePath.provider);
-        assertEquals("/storage/emulated/0/a.pdf", filePath.payload);
+        assertEquals(filePathValue, filePath.payload);
         assertEquals(LocalFileRef.Kind.FILE, fileSaf.kind);
         assertEquals("content://provider/document/1:pdf", fileSaf.payload);
         assertEquals(LocalFileRef.Kind.FOLDER, folderPath.kind);
@@ -29,7 +33,8 @@ public class LocalFileRefTest {
     @Test
     public void rejectsEmptyPayloadAndKindMismatchAtConsumerBoundary() throws Exception {
         assertThrows(IllegalArgumentException.class, () -> LocalFileRef.parse("file:path:"));
-        String folderRef = LocalFileRef.createPathFolderRef("/tmp");
+        String folderRef = LocalFileRef.createPathFolderRef(
+            new File(System.getProperty("java.io.tmpdir"), "folder").getAbsolutePath());
         assertThrows(IllegalArgumentException.class, () -> LocalFileRef.fileName(folderRef));
     }
 

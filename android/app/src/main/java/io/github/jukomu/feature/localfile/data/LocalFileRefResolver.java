@@ -133,6 +133,22 @@ public final class LocalFileRefResolver {
         }
     }
 
+    public static StructStat lstat(File file) throws IOException {
+        try {
+            return Os.lstat(file.getAbsolutePath());
+        } catch (ErrnoException error) {
+            if (error.errno == OsConstants.EACCES || error.errno == OsConstants.EPERM) {
+                throw new SecurityException("没有权限访问文件", error);
+            }
+            if (error.errno == OsConstants.ENOENT || error.errno == OsConstants.ENOTDIR) {
+                FileNotFoundException missing = new FileNotFoundException(file.getAbsolutePath());
+                missing.initCause(error);
+                throw missing;
+            }
+            throw new IOException(error.getMessage(), error);
+        }
+    }
+
     public static DocumentFile findChild(Context context, DocumentFile folder, String name)
         throws IOException {
         Uri parent = folder.getUri();

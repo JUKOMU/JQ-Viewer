@@ -3,6 +3,7 @@ package io.github.jukomu.feature.export;
 import io.github.jukomu.feature.localfile.data.LocalFileRef;
 import org.junit.Test;
 
+import java.io.File;
 import java.util.Arrays;
 
 import static org.junit.Assert.assertEquals;
@@ -109,7 +110,8 @@ public class ExportJobValidatorTest {
     @Test
     public void rejectsFileReferenceAsExportFolder() throws Exception {
         ExportService.ExportJob job = chapterJob("101");
-        job.targetFolderRef = LocalFileRef.createPathFileRef("/exports/book.pdf");
+        job.targetFolderRef = LocalFileRef.createPathFileRef(
+            new File(System.getProperty("java.io.tmpdir"), "exports/book.pdf").getAbsolutePath());
 
         assertThrows(IllegalArgumentException.class,
             () -> ExportJobValidator.validate(job));
@@ -187,7 +189,8 @@ public class ExportJobValidatorTest {
         job.albumId = "100";
         job.chapterId = chapterId;
         job.chapterTitle = chapterId;
-        job.targetFolderRef = "folder:path:/exports";
+        job.targetFolderRef = "folder:path:"
+            + new File(System.getProperty("java.io.tmpdir"), "exports").getAbsolutePath();
         job.targetName = "chapter.pdf";
         job.displayPath = "/exports/chapter.pdf";
         return job;
@@ -199,7 +202,8 @@ public class ExportJobValidatorTest {
         job.albumId = "100";
         job.chapterTitle = "merged";
         job.chapters = Arrays.asList(chapters);
-        job.targetFolderRef = "folder:path:/exports";
+        job.targetFolderRef = "folder:path:"
+            + new File(System.getProperty("java.io.tmpdir"), "exports").getAbsolutePath();
         job.targetName = "merged.pdf";
         job.displayPath = "/exports/merged.pdf";
         return job;

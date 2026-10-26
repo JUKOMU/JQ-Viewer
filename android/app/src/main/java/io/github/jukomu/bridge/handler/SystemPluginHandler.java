@@ -671,8 +671,10 @@ public final class SystemPluginHandler {
                                     java.nio.file.LinkOption.NOFOLLOW_LINKS).isRegularFile()) {
                                     throw new java.io.IOException("日志导出目标不是普通文件");
                                 }
-                            } catch (java.nio.file.NoSuchFileException missing) {
-                                // 目标尚未创建。
+                            } catch (java.io.IOException missing) {
+                                if (!Files.notExists(target, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                                    throw missing;
+                                }
                             }
                             try (InputStream input = Files.newInputStream(source)) {
                                 OutputStream created = Files.newOutputStream(target,

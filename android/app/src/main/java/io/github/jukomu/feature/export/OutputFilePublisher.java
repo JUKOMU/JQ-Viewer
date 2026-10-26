@@ -12,6 +12,9 @@ public final class OutputFilePublisher {
 
     public static void publish(File temporary, File target, boolean allowOverwrite)
         throws IOException {
+        if (!temporary.isFile()) {
+            throw new IOException("导出临时文件不存在: " + temporary.getAbsolutePath());
+        }
         if (target.isDirectory()) {
             throw new IOException("导出目标是目录: " + target.getAbsolutePath());
         }

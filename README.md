@@ -2,7 +2,7 @@
 
 JMComic 第三方漫画阅读器，支持 Android 移动端和 Windows、Linux 桌面端。它把搜索、收藏、下载、本地阅读、PDF 导入导出和批量解析放在同一套界面里，方便整理和阅读漫画。
 
-[![Version](https://img.shields.io/badge/Version-2.1.0-brightgreen.svg)](https://github.com/JUKOMU/JQ-Viewer/releases)
+[![Version](https://img.shields.io/badge/Version-2.2.0-brightgreen.svg)](https://github.com/JUKOMU/JQ-Viewer/releases)
 [![Android](https://img.shields.io/badge/Android-7.0%2B-3DDC84?logo=android&logoColor=white)](https://github.com/JUKOMU/JQ-Viewer/releases)
 [![Windows](https://img.shields.io/badge/Desktop-Windows-0078D4?logo=windows&logoColor=white)](https://github.com/JUKOMU/JQ-Viewer/releases)
 [![Linux](https://img.shields.io/badge/Desktop-Linux-FCC624?logo=linux&logoColor=black)](https://github.com/JUKOMU/JQ-Viewer/releases)

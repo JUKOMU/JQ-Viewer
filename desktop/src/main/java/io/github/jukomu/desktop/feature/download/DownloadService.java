@@ -252,21 +252,11 @@ public final class DownloadService implements AutoCloseable {
             } catch (Exception exception) {
                 throw new IllegalStateException("等待下载任务取消失败", exception);
             }
+            completeCancellation(taskId, runtime);
+            return;
         }
 
-        try {
-            long cancelElapsed = elapsed(taskId);
-            files.cleanup(task.relativeDirectory());
-            store.deleteTask(taskId);
-            if (runtime == null) runtimes.remove(taskId);
-            else runtimes.remove(taskId, runtime);
-            publishCancelled(task);
-            logInfo("cancelled", task.taskId(), task.albumId(), task.chapterId(), "downloading", null,
-                runtime == null ? null : runtime.libraryTaskId, task.downloadedPages(),
-                task.downloadedBytes(), "cancelled", task, cancelElapsed);
-        } finally {
-            cancelledTaskIds.remove(taskId);
-        }
+        completeCancellation(taskId, null);
     }
 
     public void deleteDownloaded(String albumId, String chapterId) {
@@ -415,6 +405,10 @@ public final class DownloadService implements AutoCloseable {
         if (runtime != null) runtime.stopped.complete(null);
     }
 
+    void finishCancellation(String taskId) {
+        completeCancellation(taskId, runtimes.get(taskId));
+    }
+
     @Override
     public void close() {
         closing = true;
@@ -481,7 +475,43 @@ public final class DownloadService implements AutoCloseable {
                 failDownload(taskId, 0, 0, messageOf(exception));
             }
         } finally {
-            if (cancelledTaskIds.contains(taskId) || closing) runtime.stopped.complete(null);
+            if (cancelledTaskIds.contains(taskId) && runtime.libraryTaskId == null) {
+                completeCancellation(taskId, runtime);
+            } else if (closing) {
+                runtime.stopped.complete(null);
+            }
+        }
+    }
+
+    private void completeCancellation(String taskId, RuntimeTask runtime) {
+        if (runtime != null) {
+            synchronized (runtime) {
+                if (runtime.cancellationFinalized) return;
+                finishCancellation(taskId, runtime);
+                runtime.cancellationFinalized = true;
+            }
+        } else {
+            finishCancellation(taskId, null);
+        }
+    }
+
+    private void finishCancellation(String taskId, RuntimeTask runtime) {
+        StoredDownloadTask task = store.findTask(taskId);
+        if (task != null) {
+            long cancelElapsed = elapsed(taskId);
+            files.cleanup(task.relativeDirectory());
+            store.deleteTask(taskId);
+            publishCancelled(task);
+            logInfo("cancelled", task.taskId(), task.albumId(), task.chapterId(), "downloading", null,
+                runtime == null ? null : runtime.libraryTaskId, task.downloadedPages(),
+                task.downloadedBytes(), "cancelled", task, cancelElapsed);
+        }
+        cancelledTaskIds.remove(taskId);
+        if (runtime != null) {
+            runtimes.remove(taskId, runtime);
+            runtime.stopped.complete(null);
+        } else {
+            runtimes.remove(taskId);
         }
     }
 
@@ -775,6 +805,7 @@ public final class DownloadService implements AutoCloseable {
     private static final class RuntimeTask {
         private final CompletableFuture<Void> stopped = new CompletableFuture<>();
         private final long startedNanos = System.nanoTime();
+        private boolean cancellationFinalized;
         private long lastLogNanos;
         private int lastLoggedPage;
         private volatile String libraryTaskId;

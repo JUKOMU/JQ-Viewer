@@ -90,6 +90,24 @@ class DownloadServiceTest {
     }
 
     @Test
+    void lateCancellationAfterTimeoutCleansUpAfterTerminalCallback() throws Exception {
+        try (Fixture fixture = fixture(Mode.STALLED_CANCEL)) {
+            fixture.service.downloadChapter(request());
+            assertEquals(1, fixture.store.findTask("album-1_photo-1").downloadedPages());
+
+            ApiException failure = assertThrows(ApiException.class,
+                    () -> fixture.service.cancelDownload("album-1_photo-1"));
+            assertEquals("底层下载任务仍在取消，请稍后重试", failure.getMessage());
+
+            fixture.client.completeCancellation();
+
+            StoredDownloadTask task = fixture.store.findTask("album-1_photo-1");
+            assertNull(task);
+            assertFalse(Files.exists(fixture.files.chapterDirectory("album-1/photo-1")));
+        }
+    }
+
+    @Test
     void persistsLibraryFailureWithoutPublishingCompletedFiles() throws Exception {
         try (Fixture fixture = fixture(Mode.FAIL)) {
             fixture.service.downloadChapter(request());
@@ -227,6 +245,7 @@ class DownloadServiceTest {
     private enum Mode {
         COMPLETE,
         RUNNING,
+        STALLED_CANCEL,
         FAIL
     }
 
@@ -292,6 +311,10 @@ class DownloadServiceTest {
             return (JmDownloadClient) proxy;
         }
 
+        private void completeCancellation() {
+            manager.completeCancellation();
+        }
+
         private Object invoke(Object proxy, Method method, Object[] arguments) {
             if (method.getDeclaringClass() == Object.class) {
                 return switch (method.getName()) {
@@ -339,6 +362,7 @@ class DownloadServiceTest {
 
     private static final class TestDownloadManager implements IDownloadManager {
         private final Map<String, BaseDownloadTask> tasks = new HashMap<>();
+        private BaseDownloadTask lastTask;
 
         @Override
         public BaseDownloadTask getTask(String taskId) {
@@ -360,6 +384,7 @@ class DownloadServiceTest {
             if (task.transitState(TaskState.PENDING, TaskState.QUEUED)
                     || task.transitState(TaskState.PAUSED, TaskState.QUEUED)) {
                 tasks.put(task.getTaskId(), task);
+                lastTask = task;
                 task.notifyStateChanged(TaskState.QUEUED);
                 task.run();
             }
@@ -386,6 +411,11 @@ class DownloadServiceTest {
         @Override
         public void close() {
             for (BaseDownloadTask task : List.copyOf(tasks.values())) task.cancel();
+        }
+
+        private void completeCancellation() {
+            lastTask.transitState(TaskState.CANCELLING, TaskState.CANCELLED);
+            lastTask.notifyStateChanged(TaskState.CANCELLED);
         }
     }
 
@@ -417,8 +447,16 @@ class DownloadServiceTest {
             notifyStateChanged(TaskState.RUNNING);
             try {
                 Files.createDirectories(directory);
-                if (mode == Mode.RUNNING) {
+                if (mode == Mode.RUNNING || mode == Mode.STALLED_CANCEL) {
                     Files.write(directory.resolve("001.png.tmp"), new byte[]{1, 2, 3});
+                    if (mode == Mode.STALLED_CANCEL) {
+                        completedCount = 1;
+                        downloadedBytes = 3;
+                        notifyProgressUpdate(new DownloadProgress(
+                                photo.getAlbumId(), null, photo.getId(), photo.getTitle(),
+                                1, 0, 1, 0, 0, 0, false, downloadedBytes,
+                                String.valueOf(System.currentTimeMillis())));
+                    }
                     return;
                 }
                 if (mode == Mode.FAIL) {
@@ -463,6 +501,10 @@ class DownloadServiceTest {
 
         @Override
         public void cancel() {
+            if (mode == Mode.STALLED_CANCEL) {
+                transitState(TaskState.RUNNING, TaskState.CANCELLING);
+                return;
+            }
             boolean cancelling = transitState(TaskState.RUNNING, TaskState.CANCELLING);
             boolean cancelled = transitState(TaskState.PENDING, TaskState.CANCELLED)
                     || transitState(TaskState.QUEUED, TaskState.CANCELLED)

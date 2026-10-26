@@ -27,12 +27,12 @@ final class DownloadObserver implements TaskObserver {
 
     @Override
     public void onStateChanged(BaseDownloadTask task, TaskState state) {
-        if (service.isClosing()) {
-            if (state.isTerminal()) service.signalStopped(taskId);
-            return;
-        }
         if (service.isCancelled(taskId)) {
             if (state.isTerminal()) service.finishCancellation(taskId);
+            return;
+        }
+        if (service.isClosing()) {
+            if (state.isTerminal()) service.signalStopped(taskId);
             return;
         }
         if (state.isTerminal() && !finalized.compareAndSet(false, true)) return;

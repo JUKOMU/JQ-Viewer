@@ -510,8 +510,6 @@ public final class DownloadService implements AutoCloseable {
         if (runtime != null) {
             runtimes.remove(taskId, runtime);
             runtime.stopped.complete(null);
-        } else {
-            runtimes.remove(taskId);
         }
     }
 

@@ -8,6 +8,7 @@ import io.github.jukomu.desktop.data.Paths;
 import io.github.jukomu.desktop.feature.download.data.DownloadStore;
 import io.github.jukomu.desktop.feature.download.data.StoredDownloadTask;
 import io.github.jukomu.desktop.feature.download.model.DownloadChapterRequest;
+import io.github.jukomu.desktop.feature.download.model.DownloadProgressEvent;
 import io.github.jukomu.desktop.feature.download.model.DownloadTasksPageRequest;
 import io.github.jukomu.jmcomic.api.client.JmClient;
 import io.github.jukomu.jmcomic.api.client.JmDownloadClient;
@@ -31,6 +32,7 @@ import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -104,6 +106,54 @@ class DownloadServiceTest {
             StoredDownloadTask task = fixture.store.findTask("album-1_photo-1");
             assertNull(task);
             assertFalse(Files.exists(fixture.files.chapterDirectory("album-1/photo-1")));
+        }
+    }
+
+    @Test
+    void lateCancellationDuringCloseStillCleansUp() throws Exception {
+        try (Fixture fixture = fixture(Mode.STALLED_CANCEL)) {
+            fixture.service.downloadChapter(request());
+            assertThrows(ApiException.class,
+                    () -> fixture.service.cancelDownload("album-1_photo-1"));
+
+            fixture.service.close();
+            fixture.client.completeCancellation();
+
+            assertNull(fixture.store.findTask("album-1_photo-1"));
+            assertFalse(Files.exists(fixture.files.chapterDirectory("album-1/photo-1")));
+        }
+    }
+
+    @Test
+    void lateCancellationDoesNotRemoveRuntimeOfResubmittedTask() throws Exception {
+        try (Fixture fixture = fixture(Mode.STALLED_CANCEL)) {
+            fixture.service.downloadChapter(request());
+            assertThrows(ApiException.class,
+                    () -> fixture.service.cancelDownload("album-1_photo-1"));
+
+            var runtimes = DownloadService.class.getDeclaredField("runtimes");
+            runtimes.setAccessible(true);
+            ((Map<?, ?>) runtimes.get(fixture.service)).remove("album-1_photo-1");
+
+            AtomicBoolean resubmitted = new AtomicBoolean();
+            AutoCloseable subscription = fixture.events.subscribe("downloadProgress", value -> {
+                DownloadProgressEvent event = (DownloadProgressEvent) value;
+                if ("cancelled".equals(event.status()) && resubmitted.compareAndSet(false, true)) {
+                    fixture.service.downloadChapter(request());
+                }
+            });
+            try {
+                fixture.service.finishCancellation("album-1_photo-1");
+            } finally {
+                subscription.close();
+            }
+
+            assertTrue(resubmitted.get());
+            assertEquals(DownloadService.STATUS_DOWNLOADING,
+                    fixture.store.findTask("album-1_photo-1").status());
+            fixture.service.pauseDownload("album-1_photo-1");
+            assertEquals(DownloadService.STATUS_PAUSED,
+                    fixture.store.findTask("album-1_photo-1").status());
         }
     }
 

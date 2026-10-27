@@ -273,7 +273,10 @@
       @close="closeContextMenu"
       @select="handleContextMenuAction"
     />
-    <div v-if="activeHistorySelection.active.value" class="multi-select-overlay">
+    <div
+      v-if="activeHistorySelection.active.value"
+      class="multi-select-overlay multi-select-overlay--flush"
+    >
       <MultiSelectInfoBar
         :count="activeHistorySelection.count.value"
         :preparing="historySelectionPreparing"
@@ -1544,6 +1547,7 @@ function formatRelativeTime(timestamp: number): string {
   gap: 8px;
 }
 .multi-select-overlay {
+  --desktop-page-max-width: 960px;
   position: fixed;
   inset: 0;
   z-index: 30;

@@ -64,29 +64,6 @@
         </template>
       </SearchResultContainer>
 
-      <div v-if="multiSelectActive" class="multi-select-overlay">
-        <MultiSelectInfoBar
-          :count="multiSelectCount"
-          :all-selected="multiSelectAllSelected"
-          @cancel="exitMultiSelect"
-          @select-all="selectAllMultiItems(displayItems.map(({ item }) => item.id))"
-          @invert="invertMultiItems(displayItems.map(({ item }) => item.id))"
-        />
-        <MultiSelectActionBar
-          :actions="[
-            { id: 'favorite', label: '收藏' },
-            { id: 'download', label: '下载' },
-          ]"
-          :disabled="!multiSelectCount || multiSelectExecuting"
-          @action="handleMultiSelectAction"
-        />
-      </div>
-      <div v-if="multiSelectExecuting" class="multi-select-progress" role="status">
-        {{ multiSelectProgressLabel }}：{{ multiSelectProgressCurrent }} /
-        {{ multiSelectProgressTotal }}
-        <div>{{ multiSelectProgressTitle }}</div>
-      </div>
-
       <CardContextMenu
         :visible="Boolean(cardMenu)"
         :anchor="cardMenu?.anchor ?? null"
@@ -121,6 +98,29 @@
         @back="clearResult"
       />
     </IonContent>
+
+    <div v-if="multiSelectActive" class="multi-select-overlay multi-select-overlay--flush">
+      <MultiSelectInfoBar
+        :count="multiSelectCount"
+        :all-selected="multiSelectAllSelected"
+        @cancel="exitMultiSelect"
+        @select-all="selectAllMultiItems(displayItems.map(({ item }) => item.id))"
+        @invert="invertMultiItems(displayItems.map(({ item }) => item.id))"
+      />
+      <MultiSelectActionBar
+        :actions="[
+          { id: 'favorite', label: '收藏' },
+          { id: 'download', label: '下载' },
+        ]"
+        :disabled="!multiSelectCount || multiSelectExecuting"
+        @action="handleMultiSelectAction"
+      />
+    </div>
+    <div v-if="multiSelectExecuting" class="multi-select-progress" role="status">
+      {{ multiSelectProgressLabel }}：{{ multiSelectProgressCurrent }} /
+      {{ multiSelectProgressTotal }}
+      <div>{{ multiSelectProgressTitle }}</div>
+    </div>
   </IonPage>
 </template>
 
@@ -848,6 +848,7 @@ onMounted(() => {
 
 <style scoped>
 .multi-select-overlay {
+  --desktop-page-max-width: 1000px;
   position: fixed;
   inset: 0;
   z-index: 30;

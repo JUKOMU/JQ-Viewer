@@ -1,6 +1,6 @@
 <template>
   <div class="multi-select-info" role="toolbar" aria-label="多选信息栏">
-    <div class="multi-select-info-content">
+    <div class="multi-select-info-content desktop-page-content">
       <div class="selection-toolbar">
         <button type="button" @click="$emit('cancel')">
           <IonIcon :icon="closeOutline" aria-hidden="true" />

@@ -641,6 +641,13 @@ onBeforeUnmount(() => {
     );
     margin-right: auto;
   }
+
+  .ion-page-container .ion-page .multi-select-overlay--flush .multi-select-info,
+  .ion-page-container .ion-page .multi-select-overlay--flush .multi-select-actions {
+    padding-right: 0;
+    padding-left: 0;
+  }
+
 }
 
 /* 页面过渡动画 */

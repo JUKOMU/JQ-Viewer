@@ -2183,6 +2183,7 @@ const clearFailed = async () => {
   }
 }
 .multi-select-overlay {
+  --desktop-page-max-width: 1000px;
   position: fixed;
   inset: 0;
   z-index: 30;

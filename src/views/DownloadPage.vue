@@ -530,19 +530,19 @@ const sortLabel = computed(
 const defaultDirection = (mode: SortMode): DownloadTaskSortDirection =>
   mode === 'time' ? 'desc' : 'asc'
 
-const toggleSort = () => {
+const toggleSort = async () => {
   if (downloadSelectionActive.value) return
   const modes: SortMode[] = ['time', 'title', 'id', 'author']
   sortMode.value = modes[(modes.indexOf(sortMode.value) + 1) % modes.length]
   sortDirection.value = defaultDirection(sortMode.value)
-  void downloadContentRef.value?.$el?.scrollToTop?.(0)
-  void resetDownloadGroups(true, false)
+  await resetDownloadGroups(true, true)
+  await downloadContentRef.value?.$el?.scrollToTop?.(0)
 }
-const toggleSortDirection = () => {
+const toggleSortDirection = async () => {
   if (downloadSelectionActive.value) return
   sortDirection.value = sortDirection.value === 'asc' ? 'desc' : 'asc'
-  void downloadContentRef.value?.$el?.scrollToTop?.(0)
-  void resetDownloadGroups(true, false)
+  await resetDownloadGroups(true, true)
+  await downloadContentRef.value?.$el?.scrollToTop?.(0)
 }
 
 // 操作菜单

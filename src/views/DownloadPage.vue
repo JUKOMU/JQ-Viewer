@@ -2175,9 +2175,6 @@ const clearFailed = async () => {
     margin-inline: 14px;
   }
 
-  .section {
-    padding-inline: 10px;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {

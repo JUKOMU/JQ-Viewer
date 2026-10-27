@@ -40,18 +40,28 @@
             <div class="section-header domain-header">
               <span class="section-label">线路探测</span>
               <div class="header-actions">
-                <IonIcon
-                  :icon="speedometerOutline"
-                  class="speed-btn"
+                <button
+                  class="icon-action speed-btn"
                   :class="{ spinning: measuring }"
+                  type="button"
+                  :disabled="measuring"
+                  aria-label="测量线路延迟"
+                  title="测量线路延迟"
                   @click="handleMeasureLatency"
-                />
-                <IonIcon
-                  :icon="refreshOutline"
-                  class="refresh-btn"
+                >
+                  <IonIcon :icon="speedometerOutline" aria-hidden="true" />
+                </button>
+                <button
+                  class="icon-action refresh-btn"
                   :class="{ spinning: refreshing }"
+                  type="button"
+                  :disabled="refreshing"
+                  aria-label="刷新线路状态"
+                  title="刷新线路状态"
                   @click="handleRefresh"
-                />
+                >
+                  <IonIcon :icon="refreshOutline" aria-hidden="true" />
+                </button>
               </div>
             </div>
             <div class="card domain-card">
@@ -263,7 +273,7 @@ function clearRefreshTimer() {
 }
 
 function latencyText(domain: string, reachable: boolean): string {
-  if (!reachable) return '9999 ms'
+  if (!reachable) return '不可达'
   const r = latencyMap.value[domain]
   if (!r) return '/ ms'
   if (r.timedOut) return '超时'
@@ -327,7 +337,7 @@ function formatTime(ts: number): string {
   width: 100%;
   max-width: 1000px;
   margin: 0 auto;
-  padding: 18px 20px 40px;
+  padding: 8px 16px 32px;
 }
 
 .status-grid {
@@ -342,13 +352,14 @@ function formatTime(ts: number): string {
 }
 
 .section-title {
-  margin: 8px 0 8px 6px;
+  margin: 20px 0 8px 6px;
 }
 
 .section-label {
-  font-size: 14px;
-  font-weight: 700;
-  color: #8f6245;
+  margin: 20px 0 8px 6px;
+  color: #b89a84;
+  font-size: 12px;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -357,7 +368,11 @@ function formatTime(ts: number): string {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin: 16px 0 10px 2px;
+  margin: 20px 0 8px 6px;
+}
+
+.section-header .section-label {
+  margin: 0;
 }
 
 .header-actions {
@@ -366,23 +381,41 @@ function formatTime(ts: number): string {
   gap: 10px;
 }
 
-.refresh-btn,
-.speed-btn {
-  font-size: 16px;
+.icon-action {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
   color: #b89a84;
   cursor: pointer;
-  transition: color 0.2s;
+  font-size: 18px;
+  transition:
+    background-color 0.2s,
+    color 0.2s;
 }
 
-.refresh-btn:active,
-.speed-btn:active {
-  color: #4c2a18;
+.icon-action:hover,
+.icon-action:focus-visible {
+  background: #fff0e7;
+  color: #e8843c;
 }
 
-.refresh-btn.spinning,
-.speed-btn.spinning {
+.icon-action:focus-visible {
+  outline: 2px solid #e8843c;
+  outline-offset: 1px;
+}
+
+.icon-action:disabled {
+  cursor: default;
+  opacity: 0.58;
+}
+
+.icon-action.spinning {
   animation: spin 0.8s linear infinite;
-  color: #89b4fa;
   pointer-events: none;
 }
 
@@ -396,10 +429,9 @@ function formatTime(ts: number): string {
 }
 
 .card {
-  background: #fffbf8;
-  border: 1px solid #f1e4dc;
-  border-radius: 12px;
-  box-shadow: 0 3px 14px rgba(115, 67, 38, 0.055);
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 2px 12px rgba(115, 67, 38, 0.06);
   min-width: 0;
   overflow: hidden;
 }
@@ -414,10 +446,12 @@ function formatTime(ts: number): string {
 
 /* 域名列表 */
 .domain-row {
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
+  min-height: 48px;
   padding: 10px 16px;
 }
 
@@ -470,11 +504,11 @@ function formatTime(ts: number): string {
 }
 
 .domain-dot.alive {
-  background: #6dbf87;
+  background: #5cb85c;
 }
 
 .domain-dot.dead {
-  background: #e05555;
+  background: #d4533e;
 }
 
 .domain-name {
@@ -493,23 +527,25 @@ function formatTime(ts: number): string {
 }
 
 .latency.lat-green {
-  color: #6dbf87;
+  color: #4eaa73;
 }
 
 .latency.lat-yellow {
-  color: #e0b040;
+  color: #bd652a;
 }
 
 .latency.lat-red {
-  color: #e05555;
+  color: #d15d55;
 }
 
 /* 事件日志 */
 .log-row {
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
+  min-height: 48px;
   padding: 10px 18px;
 }
 
@@ -518,8 +554,12 @@ function formatTime(ts: number): string {
 }
 
 .log-time {
-  font-size: 12px;
   color: #b89a84;
+  font:
+    11px ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    monospace;
   flex-shrink: 0;
   width: 52px;
 }
@@ -532,19 +572,19 @@ function formatTime(ts: number): string {
 }
 
 .log-dot.phase-warn {
-  background: #f9e2af;
+  background: #d4b870;
 }
 
 .log-dot.phase-active {
-  background: #89b4fa;
+  background: #5b9bd5;
 }
 
 .log-dot.phase-ok {
-  background: #6dbf87;
+  background: #5cb85c;
 }
 
 .log-dot.phase-err {
-  background: #e05555;
+  background: #d4533e;
 }
 
 .log-msg {
@@ -567,7 +607,7 @@ function formatTime(ts: number): string {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 20px;
+  padding: 16px;
   border-bottom: 1px solid #f1e8e2;
 }
 .route-summary > div {
@@ -590,11 +630,13 @@ function formatTime(ts: number): string {
   text-align: right;
 }
 .route-mode-row {
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   gap: 12px;
   width: 100%;
-  padding: 15px 18px;
+  min-height: 56px;
+  padding: 12px 16px;
   border: 0;
   background: #fff;
   color: #4c2a18;
@@ -629,10 +671,10 @@ function formatTime(ts: number): string {
   color: #de713d;
 }
 .domain-header {
-  margin-top: 22px;
+  margin-top: 20px;
 }
 .domain-card .route-row[aria-pressed='true'] {
-  background: #fff3eb;
+  background: #fff0e7;
 }
 .domain-card .route-choice {
   min-width: 48px;
@@ -643,6 +685,12 @@ function formatTime(ts: number): string {
   .status-grid {
     grid-template-columns: minmax(320px, 0.9fr) minmax(360px, 1.1fr);
     column-gap: 24px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .icon-action.spinning {
+    animation: none;
   }
 }
 </style>

@@ -30,7 +30,15 @@
       <div class="title-row">
         <div class="titles">
           <div class="album-title">{{ displayTitle }}</div>
-          <div class="chapter-title">{{ displayId }}</div>
+          <div class="chapter-meta">
+            <div class="chapter-title">{{ displayId }}</div>
+            <div v-if="displayAuthor" class="chapter-title author-title">
+              {{ displayAuthor }}
+            </div>
+          </div>
+          <div v-if="displayTags.length > 0" class="tag-row">
+            <span v-for="tag in displayTags" :key="tag" class="tag-chip">{{ tag }}</span>
+          </div>
           <div v-if="chapterBubbleItems.length > 0" class="chapter-bubbles">
             <span v-for="ch in chapterBubbleItems" :key="ch.chapterId" class="bubble">
               {{ ch.chapterSortOrder }}
@@ -209,6 +217,14 @@ const displayId = computed(() => {
   }
   return props.task.chapterId
 })
+
+const sourceDownloadTask = computed(() => {
+  if ('source' in props.task) return props.task.downloadTask
+  return props.task
+})
+
+const displayAuthor = computed(() => sourceDownloadTask.value?.author ?? '')
+const displayTags = computed(() => sourceDownloadTask.value?.tags ?? [])
 
 const displayTitle = computed(() => props.task.albumTitle || displayId.value)
 
@@ -392,6 +408,9 @@ const onCardClick = () => {
 .titles {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .album-title {
@@ -415,12 +434,50 @@ const onCardClick = () => {
   background: #f0ede8;
   padding: 2px 8px;
   border-radius: 4px;
-  margin-top: 4px;
+  margin-top: 0;
   max-width: 100%;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   font-family: monospace;
+}
+
+.chapter-meta {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+}
+
+.author-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+.tag-row {
+  display: flex;
+  max-width: 100%;
+  gap: 5px;
+  overflow: hidden;
+  flex-wrap: nowrap;
+}
+
+.tag-chip {
+  max-width: 120px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #fff0e7;
+  color: #9b5a35;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .pdf-icon {
@@ -437,7 +494,6 @@ const onCardClick = () => {
 .chapter-bubbles {
   display: flex;
   gap: 4px;
-  margin-top: 4px;
   max-width: 100%;
   overflow: hidden;
 }
@@ -482,7 +538,7 @@ const onCardClick = () => {
   height: 5px;
   background: #e8d5c4;
   border-radius: 3px;
-  margin-top: 8px;
+  margin-top: 0;
   overflow: hidden;
 }
 
@@ -500,7 +556,7 @@ const onCardClick = () => {
 .progress-text {
   font-size: 11px;
   color: #8a6048;
-  margin-top: 3px;
+  margin-top: 0;
 }
 
 .progress-pct {
@@ -517,12 +573,12 @@ const onCardClick = () => {
 .speed-text {
   font-size: 11px;
   color: #b89a84;
-  margin-top: 2px;
+  margin-top: 0;
 }
 
 .status-tag {
   font-size: 11px;
-  margin-top: 6px;
+  margin-top: 0;
   padding: 2px 8px;
   border-radius: 4px;
   align-self: flex-start;
@@ -547,7 +603,7 @@ const onCardClick = () => {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-top: 6px;
+  margin-top: 0;
 }
 
 .tag {
@@ -572,6 +628,6 @@ const onCardClick = () => {
 }
 
 .size-standalone {
-  margin-top: 4px;
+  margin-top: 0;
 }
 </style>

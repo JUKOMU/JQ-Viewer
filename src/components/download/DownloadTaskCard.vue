@@ -309,11 +309,13 @@ const onCardClick = () => {
 <style scoped>
 .card {
   display: flex;
-  gap: 12px;
-  padding: 0 36px 0 0;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 108px;
+  padding: 0 10px 0 0;
   background: #fffaf6;
   border-radius: 12px;
-  border: 1px solid rgb(245 210 188 / 0.5);
+  box-shadow: 5px 12px 28px rgb(76 42 24 / 0.2);
   position: relative;
   user-select: none;
   transition: transform 0.16s ease;
@@ -344,25 +346,25 @@ const onCardClick = () => {
 }
 
 .cover-wrap {
-  width: 64px;
-  height: 85px;
+  width: 80px;
+  aspect-ratio: 3 / 4;
   flex-shrink: 0;
+  align-self: flex-start;
   border-radius: 6px;
   overflow: hidden;
-  background: #ece1d8;
-  box-shadow: 2px 0 2px rgba(0, 0, 0, 0.2);
+  background: linear-gradient(145deg, #f3ded0, #ffece0);
 }
 
 .cover {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .cover-placeholder {
   width: 100%;
   height: 100%;
-  background: #ece1d8;
+  background: linear-gradient(145deg, #f3ded0, #ffece0);
   color: #b89a84;
   display: flex;
   align-items: center;
@@ -375,7 +377,10 @@ const onCardClick = () => {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;
+  gap: 4px;
+  overflow: hidden;
+  padding: 0 2px 0 4px;
 }
 
 .title-row {
@@ -390,12 +395,15 @@ const onCardClick = () => {
 }
 
 .album-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #4c2a18;
-  white-space: nowrap;
+  display: -webkit-box;
   overflow: hidden;
-  text-overflow: ellipsis;
+  margin: 0;
+  color: #30201a;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
 }
 
 .chapter-title {
@@ -450,9 +458,9 @@ const onCardClick = () => {
   position: absolute;
   right: 2px;
   top: 50%;
-  transform: translateY(-50%);
   width: 28px;
   height: 28px;
+  transform: translateY(-50%);
   border: 0;
   background: transparent;
   color: #8a6048;

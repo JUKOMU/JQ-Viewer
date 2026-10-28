@@ -278,7 +278,8 @@ public final class Backend implements AutoCloseable {
                     try {
                         applySavedRoute(client, settingsService);
                         applySavedImageRoute(settingsService);
-                        scheduleImageHostOptimization(client, settingsService, imageRouteEvents);
+                        scheduleImageHostOptimization(
+                            client, settingsService, imageRouteEvents, executors.imageRoute());
                         return client;
                     } catch (RuntimeException error) {
                         client.close();
@@ -355,6 +356,8 @@ public final class Backend implements AutoCloseable {
             RequestExecutor pdfRequests = new RequestExecutor(executors.pdfCommand(), mapper);
             RequestExecutor networkRequests = new RequestExecutor(
                 executors.networkCommand(), mapper);
+            RequestExecutor imageRouteRequests = new RequestExecutor(
+                executors.imageRoute(), mapper);
             RequestExecutor ocrRequests = new RequestExecutor(executors.ocr(), mapper);
             RequestExecutor updateRequests = new RequestExecutor(executors.updateCommand(), mapper);
             CredentialStore credentialStore = providedCredentialStore == null
@@ -398,7 +401,7 @@ public final class Backend implements AutoCloseable {
                 new DownloadPluginHandler(downloadRequests, downloadService),
                 new LocalFilePluginHandler(pdfRequests, pdfManagementService, startedExportService),
                 new SystemPluginHandler(
-                    networkRequests, diagnosticsRequests,
+                    networkRequests, imageRouteRequests, diagnosticsRequests,
                     clientSession,
                     startedNetworkService, startedLaunchRoutes, diagnosticsService, paths,
                     authService, executors.api(),
@@ -525,7 +528,8 @@ public final class Backend implements AutoCloseable {
     private static void scheduleImageHostOptimization(
         JmApiClient client,
         SettingsService settingsService,
-        EventHub eventHub
+        EventHub eventHub,
+        java.util.concurrent.Executor executor
     ) {
         String host = settingsService.imageRouteHost();
         if (ImageHostOptimizer.contains(host)) return;
@@ -561,7 +565,7 @@ public final class Backend implements AutoCloseable {
                     "image_route_error", "图片线路优选失败，请稍后重试",
                     ImageHostOptimizer.status(), "图片线路优选失败，请稍后重试"));
             }
-        });
+        }, executor);
     }
 
     private static List<NetworkProbeEvent.ImageHostResult> toImageHostResults(

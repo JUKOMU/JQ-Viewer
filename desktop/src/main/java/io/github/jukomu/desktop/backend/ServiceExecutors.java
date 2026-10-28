@@ -29,6 +29,8 @@ final class ServiceExecutors implements AutoCloseable {
     private final ExecutorService pdfCommand;
     private final ExecutorService exportJobs;
     private final ExecutorService networkCommand;
+    /** 承载长时间图片线路测速，与普通线路请求隔离。 */
+    private final ExecutorService imageRoute;
     private final ExecutorService networkProbe;
     private final ExecutorService ocr;
     private final ExecutorService updateCommand;
@@ -56,6 +58,7 @@ final class ServiceExecutors implements AutoCloseable {
         pdfCommand = create("jq-viewer-pdf-command", 1);
         exportJobs = create("jq-viewer-file-export", 1);
         networkCommand = create("jq-viewer-network-command", 1);
+        imageRoute = create("jq-viewer-image-route", 1);
         networkProbe = create("jq-viewer-network-probe", 1);
         ocr = create("jq-viewer-ocr", 1);
         updateCommand = create("jq-viewer-update-command", 1);
@@ -77,6 +80,7 @@ final class ServiceExecutors implements AutoCloseable {
             pdfCommand,
             exportJobs,
             networkCommand,
+            imageRoute,
             networkProbe,
             ocr,
             updateCommand,
@@ -139,6 +143,10 @@ final class ServiceExecutors implements AutoCloseable {
 
     ExecutorService networkCommand() {
         return networkCommand;
+    }
+
+    ExecutorService imageRoute() {
+        return imageRoute;
     }
 
     ExecutorService networkProbe() {

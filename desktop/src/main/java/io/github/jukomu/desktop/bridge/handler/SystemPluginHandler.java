@@ -31,6 +31,7 @@ import java.util.function.Consumer;
 public final class SystemPluginHandler {
     private static final Logger LOGGER = LoggerFactory.getLogger(SystemPluginHandler.class);
     private final RequestExecutor networkRequests;
+    private final RequestExecutor imageRouteRequests;
     private final RequestExecutor diagnosticsRequests;
     private final JmcomicSessionManager clientSession;
     private final NetworkService network;
@@ -43,19 +44,21 @@ public final class SystemPluginHandler {
 
     public SystemPluginHandler(
         RequestExecutor networkRequests,
+        RequestExecutor imageRouteRequests,
         RequestExecutor diagnosticsRequests,
         JmcomicSessionManager clientSession,
         NetworkService network,
         LaunchRouteService launchRoutes,
         DiagnosticsService diagnostics
     ) {
-        this(networkRequests, diagnosticsRequests, clientSession, network, launchRoutes,
+        this(networkRequests, imageRouteRequests, diagnosticsRequests, clientSession, network, launchRoutes,
             diagnostics, null, null, Runnable::run, ignored -> {
             });
     }
 
     public SystemPluginHandler(
         RequestExecutor networkRequests,
+        RequestExecutor imageRouteRequests,
         RequestExecutor diagnosticsRequests,
         JmcomicSessionManager clientSession,
         NetworkService network,
@@ -67,6 +70,7 @@ public final class SystemPluginHandler {
         Consumer<NetworkProbeEvent> eventPublisher
     ) {
         this.networkRequests = networkRequests;
+        this.imageRouteRequests = imageRouteRequests;
         this.diagnosticsRequests = diagnosticsRequests;
         this.clientSession = clientSession;
         this.network = network;
@@ -166,7 +170,7 @@ public final class SystemPluginHandler {
 
     /** 后台下载固定章节样本，测量并验证各图片 Host。 */
     public void measureImageHosts(Context context) {
-        networkRequests.runLongOperation(context, () -> {
+        imageRouteRequests.runLongOperation(context, () -> {
             var client = clientSession.requireClient();
             if (!(client instanceof io.github.jukomu.jmcomic.core.client.impl.JmApiClient apiClient)) {
                 throw ApiException.unavailable("当前 JMComic 客户端不支持图片线路优选");

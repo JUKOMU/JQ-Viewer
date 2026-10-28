@@ -4,6 +4,8 @@ import io.github.jukomu.jmcomic.api.model.JmImage;
 import io.github.jukomu.jmcomic.api.model.JmPhoto;
 import io.github.jukomu.jmcomic.core.client.impl.JmApiClient;
 import io.github.jukomu.jmcomic.core.constant.JmConstants;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.URI;
@@ -20,6 +22,8 @@ import java.util.function.Consumer;
 
 /** 在不改变 JM 库实现的前提下测量并应用图片 CDN Host。 */
 public final class ImageHostOptimizer {
+    private static final Logger LOGGER = LoggerFactory.getLogger(ImageHostOptimizer.class);
+
     public record HostResult(String host, boolean available, long elapsedMs,
                              long bytes, long bytesPerSecond, String error) {
     }
@@ -40,6 +44,7 @@ public final class ImageHostOptimizer {
     private static final int SAMPLE_IMAGE_COUNT = 5;
     private static final int SAMPLE_ROUNDS = 2;
     private static final long IMAGE_PROBE_TIMEOUT_SECONDS = 3;
+    private static final long HOST_PROBE_TIMEOUT_SECONDS = 32;
     private static final HttpClient IMAGE_PROBE_CLIENT = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(IMAGE_PROBE_TIMEOUT_SECONDS))
         .followRedirects(HttpClient.Redirect.NORMAL)
@@ -85,10 +90,24 @@ public final class ImageHostOptimizer {
     public static synchronized Result optimize(
         JmApiClient client, Consumer<Progress> progressListener) {
         long runId = RUN_IDS.incrementAndGet();
+        long runStarted = System.nanoTime();
         List<HostResult> results = new ArrayList<>();
+        List<String> hostCandidates = candidates();
+        LOGGER.info("image_route operation=optimize status=started runId={} hosts={} hostCount={}",
+            runId, hostCandidates, hostCandidates.size());
         publishProgress(runId, true, null, results, null, progressListener);
         try {
-            JmPhoto photo = client.getPhoto(SAMPLE_CHAPTER_ID);
+            long chapterStarted = System.nanoTime();
+            JmPhoto photo;
+            try {
+                photo = client.getPhoto(SAMPLE_CHAPTER_ID);
+            } catch (RuntimeException error) {
+                LOGGER.warn("image_route operation=sample_chapter status=failed runId={} chapterId={} elapsedMs={} errorType={}",
+                    runId, SAMPLE_CHAPTER_ID, elapsedMs(chapterStarted), error.getClass().getSimpleName());
+                throw error;
+            }
+            LOGGER.info("image_route operation=sample_chapter status=success runId={} chapterId={} elapsedMs={}",
+                runId, SAMPLE_CHAPTER_ID, elapsedMs(chapterStarted));
             if (photo.getImages() == null || photo.getImages().size() < SAMPLE_IMAGE_COUNT) {
                 throw new IllegalStateException("固定测速章节不足五张图片");
             }
@@ -96,60 +115,122 @@ public final class ImageHostOptimizer {
             String selectedHost = null;
             long selectedSpeed = -1;
 
-            for (String host : candidates()) {
+            for (int hostIndex = 0; hostIndex < hostCandidates.size(); hostIndex++) {
+                String host = hostCandidates.get(hostIndex);
+                long hostStarted = System.nanoTime();
+                long hostDeadline = hostStarted + Duration.ofSeconds(HOST_PROBE_TIMEOUT_SECONDS).toNanos();
+                LOGGER.info("image_route operation=host_probe status=started runId={} host={} index={} total={}",
+                    runId, host, hostIndex + 1, hostCandidates.size());
                 publishProgress(runId, true, host, results, null, progressListener);
                 List<RoundResult> rounds = new ArrayList<>();
                 String errorMessage = null;
+                boolean hostTimedOut = false;
+                int timedOutRound = 0;
+                int timedOutImage = 0;
                 for (int round = 0; round < SAMPLE_ROUNDS; round++) {
+                    if (System.nanoTime() >= hostDeadline) {
+                        hostTimedOut = true;
+                        timedOutRound = round + 1;
+                        timedOutImage = 1;
+                        break;
+                    }
                     long started = System.nanoTime();
                     long bytes = 0;
+                    int imageIndex = 0;
+                    boolean requestLimitedByHostDeadline = false;
                     try {
-                        for (JmImage sample : samples) {
-                            byte[] content = fetchImageBytesWithTimeout(withHost(sample, host));
+                        for (; imageIndex < samples.size(); imageIndex++) {
+                            long remainingNanos = hostDeadline - System.nanoTime();
+                            if (remainingNanos <= 0) {
+                                hostTimedOut = true;
+                                timedOutRound = round + 1;
+                                timedOutImage = imageIndex + 1;
+                                break;
+                            }
+                            requestLimitedByHostDeadline = remainingNanos
+                                <= Duration.ofSeconds(IMAGE_PROBE_TIMEOUT_SECONDS).toNanos();
+                            byte[] content = fetchImageBytesWithTimeout(
+                                withHost(samples.get(imageIndex), host), remainingNanos);
+                            requestLimitedByHostDeadline = false;
                             bytes += content.length;
                         }
+                        if (hostTimedOut) break;
                         long elapsedMs = Math.max(1,
                             Duration.ofNanos(System.nanoTime() - started).toMillis());
                         rounds.add(new RoundResult(elapsedMs, bytes, bytes * 1000 / elapsedMs));
                     } catch (IOException | RuntimeException error) {
+                        if (requestLimitedByHostDeadline || System.nanoTime() >= hostDeadline) {
+                            hostTimedOut = true;
+                            timedOutRound = round + 1;
+                            timedOutImage = imageIndex + 1;
+                            break;
+                        }
                         if (errorMessage == null) {
                             errorMessage = error.getMessage() == null
                                 ? error.getClass().getSimpleName() : error.getMessage();
                         }
                     }
                 }
+                long hostElapsedMs = elapsedMs(hostStarted);
                 long elapsedMs = 0;
                 long bytes = 0;
                 long speed = 0;
-                if (!rounds.isEmpty()) {
+                boolean available = !hostTimedOut && !rounds.isEmpty();
+                if (available) {
                     elapsedMs = rounds.stream().mapToLong(RoundResult::elapsedMs).sum()
                         / rounds.size();
                     bytes = rounds.stream().mapToLong(RoundResult::bytes).sum() / rounds.size();
                     speed = rounds.stream().mapToLong(RoundResult::bytesPerSecond).sum()
                         / rounds.size();
                 }
-                results.add(new HostResult(host, !rounds.isEmpty(), elapsedMs, bytes, speed,
-                    rounds.isEmpty() ? errorMessage : null));
+                String resultError = hostTimedOut
+                    ? "图片 Host 测速超时：" + HOST_PROBE_TIMEOUT_SECONDS + "s"
+                    : (rounds.isEmpty() ? errorMessage : null);
+                results.add(new HostResult(host, available, available ? elapsedMs : hostElapsedMs,
+                    available ? bytes : 0, available ? speed : 0, resultError));
+                if (hostTimedOut) {
+                    LOGGER.warn("image_route operation=host_probe status=timeout runId={} host={} "
+                            + "index={} total={} elapsedMs={} rounds={} round={} image={}",
+                        runId, host, hostIndex + 1, hostCandidates.size(), hostElapsedMs, rounds.size(),
+                        timedOutRound, timedOutImage);
+                } else if (!available) {
+                    LOGGER.warn("image_route operation=host_probe status=failed runId={} host={} "
+                            + "index={} total={} elapsedMs={} rounds={} error={}",
+                        runId, host, hostIndex + 1, hostCandidates.size(), hostElapsedMs,
+                        rounds.size(), resultError);
+                } else {
+                    LOGGER.info("image_route operation=host_probe status=success runId={} host={} "
+                            + "index={} total={} elapsedMs={} rounds={} bytes={} bytesPerSecond={}",
+                        runId, host, hostIndex + 1, hostCandidates.size(), hostElapsedMs,
+                        rounds.size(), bytes, speed);
+                }
                 publishProgress(runId, true, null, results, null, progressListener);
-                if (!rounds.isEmpty() && speed > selectedSpeed) {
+                if (available && speed > selectedSpeed) {
                     selectedHost = host;
                     selectedSpeed = speed;
                 }
             }
             Progress completed = publishProgress(
                 runId, false, null, results, null, progressListener);
+            LOGGER.info("image_route operation=optimize status=completed runId={} hosts={} selectedHost={} elapsedMs={}",
+                runId, hostCandidates.size(), selectedHost, elapsedMs(runStarted));
             return new Result(selectedHost, List.copyOf(results), runId, completed.revision());
         } catch (RuntimeException error) {
+            LOGGER.warn("image_route operation=optimize status=failed runId={} elapsedMs={} errorType={}",
+                runId, elapsedMs(runStarted), error.getClass().getSimpleName(), error);
             publishProgress(runId, false, null, results, error.getMessage(), progressListener);
             throw error;
         }
     }
 
     /** 图片测速使用短时限请求，避免 JM 正常下载策略延长单张图片的等待。 */
-    private static byte[] fetchImageBytesWithTimeout(JmImage image) throws IOException {
+    private static byte[] fetchImageBytesWithTimeout(JmImage image, long remainingNanos)
+        throws IOException {
+        long timeoutNanos = Math.min(
+            Duration.ofSeconds(IMAGE_PROBE_TIMEOUT_SECONDS).toNanos(), remainingNanos);
         HttpRequest.Builder request = HttpRequest.newBuilder()
             .uri(URI.create(image.getDownloadUrl()))
-            .timeout(Duration.ofSeconds(IMAGE_PROBE_TIMEOUT_SECONDS))
+            .timeout(Duration.ofNanos(Math.max(1, timeoutNanos)))
             .header("user-agent", JmConstants.DEFAULT_API_HEADERS.get("user-agent"))
             .GET();
         try {
@@ -167,6 +248,10 @@ public final class ImageHostOptimizer {
             Thread.currentThread().interrupt();
             throw new IOException("图片测速被中断", error);
         }
+    }
+
+    private static long elapsedMs(long started) {
+        return Duration.ofNanos(System.nanoTime() - started).toMillis();
     }
 
     private static Progress publishProgress(

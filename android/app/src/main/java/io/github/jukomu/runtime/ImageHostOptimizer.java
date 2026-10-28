@@ -156,7 +156,11 @@ public final class ImageHostOptimizer {
             if (!response.isSuccessful()) {
                 throw new IOException("图片测速请求失败：HTTP " + response.code());
             }
-            return response.body().bytes();
+            byte[] content = response.body().bytes();
+            if (content.length == 0) {
+                throw new IOException("图片测速响应为空");
+            }
+            return content;
         }
     }
 

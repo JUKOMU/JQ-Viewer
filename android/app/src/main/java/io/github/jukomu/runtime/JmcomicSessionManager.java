@@ -175,9 +175,9 @@ public final class JmcomicSessionManager {
                             : progress.currentHost() == null && progress.hosts().isEmpty()
                                 ? "image_route_probing"
                                 : "image_route_progress",
-                        progress.currentHost() == null
-                            ? "图片线路测速完成一项"
-                            : "正在测速图片线路：" + progress.currentHost(),
+                        progress.running() && progress.currentHost() == null && progress.hosts().isEmpty()
+                            ? "开始图片线路测速"
+                            : "",
                         progress, null));
                 if (result.selectedHost() != null
                     && "auto".equals(settingsStore.getString("image_route_mode"))) {

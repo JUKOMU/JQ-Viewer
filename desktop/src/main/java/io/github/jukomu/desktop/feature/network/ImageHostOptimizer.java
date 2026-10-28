@@ -158,7 +158,11 @@ public final class ImageHostOptimizer {
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 throw new IOException("图片测速请求失败：HTTP " + response.statusCode());
             }
-            return response.body();
+            byte[] content = response.body();
+            if (content.length == 0) {
+                throw new IOException("图片测速响应为空");
+            }
+            return content;
         } catch (InterruptedException error) {
             Thread.currentThread().interrupt();
             throw new IOException("图片测速被中断", error);

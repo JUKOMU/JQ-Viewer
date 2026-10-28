@@ -120,7 +120,7 @@
                 class="route-mode-row"
                 type="button"
                 :aria-pressed="imageRouteMode === 'auto'"
-                :disabled="imageMeasuring"
+                :disabled="!imageRouteSettingsReady || imageMeasuring"
                 @click="selectImageRoute('auto')"
               >
                 <span class="mode-mark" :class="{ selected: imageRouteMode === 'auto' }">A</span>
@@ -136,7 +136,7 @@
                   class="icon-action speed-btn"
                   :class="{ spinning: imageMeasuring }"
                   type="button"
-                  :disabled="imageMeasuring"
+                  :disabled="!imageRouteSettingsReady || imageMeasuring"
                   aria-label="测量图片线路"
                   title="测量图片线路"
                   @click="handleMeasureImageHosts()"
@@ -146,8 +146,8 @@
               </div>
             </div>
             <div class="card domain-card image-route-card">
-              <div v-if="imageApplyError || imageRouteError" class="operation-error">
-                {{ imageApplyError || imageRouteError }}
+              <div v-if="imageApplyError || imageRouteSettingsError || imageRouteError" class="operation-error">
+                {{ imageApplyError || imageRouteSettingsError || imageRouteError }}
               </div>
               <div v-if="imageHostCandidates.length" class="domain-list">
                 <button
@@ -155,7 +155,7 @@
                   :key="host"
                   class="domain-row route-row"
                   :aria-pressed="imageRouteMode === 'manual' && imageRouteHost === host"
-                  :disabled="imageMeasuring"
+                  :disabled="!imageRouteSettingsReady || imageMeasuring"
                   type="button"
                   @click="selectImageRoute('manual', host)"
                 >
@@ -250,6 +250,8 @@ const imageRevision = ref(0)
 const imageMeasureRequestPending = ref(false)
 const imageRouteError = ref('')
 const imageApplyError = ref('')
+const imageRouteSettingsReady = ref(false)
+const imageRouteSettingsError = ref('')
 const clientUnavailableText = computed(() =>
   store.clientState.value.reason === 'no_network'
     ? '当前网络不可用，离线功能仍可使用'
@@ -293,9 +295,12 @@ onMounted(() => {
       imageRouteMode.value = all.imageRouteMode === 'manual' ? 'manual' : 'auto'
       imageRouteHost.value = all.imageRouteHost ?? ''
       SettingsStore.setImageRoute(imageRouteMode.value, imageRouteHost.value)
+      imageRouteSettingsError.value = ''
+      imageRouteSettingsReady.value = true
     })
     .catch((error) => {
-      imageRouteError.value = normalizeRuntimeError(error, '获取图片线路设置失败').message
+      imageRouteSettingsReady.value = false
+      imageRouteSettingsError.value = normalizeRuntimeError(error, '获取图片线路设置失败').message
     })
   void JmcomicService.getImageRouteCandidates()
     .then((result) => {
@@ -430,7 +435,7 @@ async function selectImageRoute(mode: 'auto' | 'manual', host = '') {
 }
 
 async function handleMeasureImageHosts(applySelectedHost = imageRouteMode.value === 'auto') {
-  if (imageMeasuring.value) return
+  if (!imageRouteSettingsReady.value || imageMeasuring.value) return
   imageStatusQuerySequence++
   imageMeasureRequestPending.value = true
   imageMeasuring.value = true
@@ -453,7 +458,7 @@ async function handleMeasureImageHosts(applySelectedHost = imageRouteMode.value 
       imageRouteError.value = '没有可用的图片线路'
       return
     }
-    if (!applySelectedHost) return
+    if (!applySelectedHost || !imageRouteSettingsReady.value) return
     try {
       await JmcomicService.applyImageRoute({ mode: 'auto', host: result.selectedHost })
     } catch (error) {

@@ -198,7 +198,24 @@ describe('图片线路手动模式', () => {
 
     expect(mocks.measureImageHosts).toHaveBeenCalledTimes(1)
     expect(mocks.applyImageRoute).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('fixed.example')
+    expect(wrapper.find('.image-route-card .summary-domain').text()).toBe('fixed.example')
+    expect(wrapper.find('.image-route-card button.domain-row[aria-pressed="true"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  test('设置读取失败时保留错误并禁用图片线路操作', async () => {
+    mocks.getAllSettings.mockRejectedValue(new Error('设置读取失败'))
+    mocks.getImageRouteCandidates.mockResolvedValue({ hosts: ['fast.example'] })
+    const wrapper = mount(NetworkStatusPage)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('设置读取失败')
+    expect(wrapper.find('button[aria-label="测量图片线路"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('.image-route-card button.route-mode-row').attributes('disabled')).toBeDefined()
+
+    await wrapper.find('button[aria-label="测量图片线路"]').trigger('click')
+    expect(mocks.measureImageHosts).not.toHaveBeenCalled()
+    expect(mocks.applyImageRoute).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 })

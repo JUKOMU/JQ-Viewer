@@ -10,6 +10,7 @@ import io.github.jukomu.feature.settings.SettingsService;
 import io.github.jukomu.jmcomic.core.client.impl.JmApiClient;
 import io.github.jukomu.platform.persistence.SettingsStore;
 import io.github.jukomu.runtime.JmcomicSessionManager;
+import io.github.jukomu.runtime.ImageHostOptimizer;
 
 import java.util.Map;
 
@@ -48,6 +49,31 @@ public class JmcomicPlugin extends Plugin {
             @Override
             public void onNetworkEvent(JmcomicSessionManager.NetworkEvent event) {
                 notifyListeners("networkProbe", networkEventJson(event));
+            }
+
+            @Override
+            public void onImageRouteEvent(String phase, String message,
+                                          ImageHostOptimizer.Result result) {
+                JSObject event = new JSObject();
+                event.put("phase", phase);
+                event.put("message", message);
+                event.put("timestamp", System.currentTimeMillis());
+                if (result != null) {
+                    event.put("selectedHost", result.selectedHost());
+                    JSArray hosts = new JSArray();
+                    for (ImageHostOptimizer.HostResult host : result.hosts()) {
+                        JSObject item = new JSObject();
+                        item.put("host", host.host());
+                        item.put("available", host.available());
+                        item.put("elapsedMs", host.elapsedMs());
+                        item.put("bytes", host.bytes());
+                        item.put("bytesPerSecond", host.bytesPerSecond());
+                        item.put("error", host.error());
+                        hosts.put(item);
+                    }
+                    event.put("hosts", hosts);
+                }
+                notifyListeners("networkProbe", event);
             }
         };
         sessionManager.attachListener(sessionListener);
@@ -190,6 +216,47 @@ public class JmcomicPlugin extends Plugin {
         } catch (RuntimeException error) {
             call.reject("测速失败，请稍后重试", error);
         }
+    }
+
+    /** 返回当前客户端的图片 Host 候选。 */
+    @PluginMethod
+    public void getImageRouteCandidates(PluginCall call) {
+        JSObject result = new JSObject();
+        JSArray hosts = new JSArray();
+        for (String host : ImageHostOptimizer.candidates()) hosts.put(host);
+        result.put("hosts", hosts);
+        call.resolve(result);
+    }
+
+    /** 测试固定样本图片并返回各 Host 的有效性与吞吐量。 */
+    @PluginMethod
+    public void measureImageHosts(PluginCall call) {
+        JmApiClient client = requireClient(call);
+        if (client == null) return;
+        call.setKeepAlive(true);
+        java.util.concurrent.CompletableFuture.supplyAsync(() -> ImageHostOptimizer.optimize(client))
+            .whenComplete((result, failure) -> {
+                if (failure != null) {
+                    android.util.Log.e(TAG, "图片线路测速失败", failure);
+                    call.reject("图片线路测速失败");
+                    return;
+                }
+                JSObject response = new JSObject();
+                JSArray items = new JSArray();
+                for (ImageHostOptimizer.HostResult host : result.hosts()) {
+                    JSObject item = new JSObject();
+                    item.put("host", host.host());
+                    item.put("available", host.available());
+                    item.put("elapsedMs", host.elapsedMs());
+                    item.put("bytes", host.bytes());
+                    item.put("bytesPerSecond", host.bytesPerSecond());
+                    item.put("error", host.error());
+                    items.put(item);
+                }
+                response.put("selectedHost", result.selectedHost());
+                response.put("hosts", items);
+                call.resolve(response);
+            });
     }
 
     @PluginMethod

@@ -593,6 +593,11 @@ public class JqViewerPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void setImageRoutePreference(PluginCall call) {
+        settingsHandler.setImageRoutePreference(call);
+    }
+
+    @PluginMethod
     public void setReaderPreloadPages(PluginCall call) {
         settingsHandler.setReaderPreloadPages(call);
     }

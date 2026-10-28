@@ -11,6 +11,7 @@ import io.github.jukomu.desktop.feature.auth.AuthService;
 import io.github.jukomu.desktop.feature.client.JmcomicSessionManager;
 import io.github.jukomu.desktop.feature.diagnostics.DiagnosticsService;
 import io.github.jukomu.desktop.feature.network.NetworkService;
+import io.github.jukomu.desktop.feature.network.ImageHostOptimizer;
 import io.github.jukomu.desktop.feature.network.model.NetworkProbeEvent;
 import io.github.jukomu.desktop.feature.notification.LaunchRouteService;
 import io.github.jukomu.desktop.logging.ApplicationLogging;
@@ -149,6 +150,23 @@ public final class SystemPluginHandler {
 
     public void measureLatency(Context context) {
         networkRequests.run(context, () -> requireNetwork().measureLatency());
+    }
+
+    /** 返回 jm 默认列表与当前配置合并后的图片 Host 候选。 */
+    public void getImageRouteCandidates(Context context) {
+        respond(context, "getImageRouteCandidates",
+            java.util.Map.of("hosts", ImageHostOptimizer.candidates()));
+    }
+
+    /** 后台下载固定章节样本，测量并验证各图片 Host。 */
+    public void measureImageHosts(Context context) {
+        networkRequests.runLongOperation(context, () -> {
+            var client = clientSession.requireClient();
+            if (!(client instanceof io.github.jukomu.jmcomic.core.client.impl.JmApiClient apiClient)) {
+                throw ApiException.unavailable("当前 JMComic 客户端不支持图片线路优选");
+            }
+            return ImageHostOptimizer.optimize(apiClient);
+        });
     }
 
     public void consumeLaunchRoute(Context context) {

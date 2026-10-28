@@ -38,6 +38,63 @@
             </div>
 
             <div class="section-header domain-header">
+              <span class="section-label">图片线路</span>
+              <div class="header-actions">
+                <button
+                  class="icon-action speed-btn"
+                  :class="{ spinning: imageMeasuring }"
+                  type="button"
+                  :disabled="imageMeasuring"
+                  aria-label="测量图片线路"
+                  title="测量图片线路"
+                  @click="handleMeasureImageHosts"
+                >
+                  <IonIcon :icon="speedometerOutline" aria-hidden="true" />
+                </button>
+              </div>
+            </div>
+            <div class="card route-card image-route-card">
+              <div class="route-summary">
+                <div>
+                  <span class="summary-caption">图片线路模式</span>
+                  <strong>{{ imageRouteMode === 'auto' ? '自动优选' : '手动固定' }}</strong>
+                </div>
+                <span class="summary-domain">{{ imageRouteHost || '尚未优选' }}</span>
+              </div>
+              <div v-if="imageRouteError" class="operation-error">{{ imageRouteError }}</div>
+              <button
+                class="route-mode-row"
+                type="button"
+                :aria-pressed="imageRouteMode === 'auto'"
+                :disabled="imageMeasuring"
+                @click="selectImageRoute('auto')"
+              >
+                <span class="mode-mark" :class="{ selected: imageRouteMode === 'auto' }">A</span>
+                <span><strong>自动优选</strong><small>启动后沿用有效 Host，失效时后台重选</small></span>
+                <span class="route-choice">{{ imageRouteMode === 'auto' ? '当前' : '切换' }}</span>
+              </button>
+              <button
+                v-for="host in imageHostCandidates"
+                :key="host"
+                class="route-mode-row"
+                type="button"
+                :aria-pressed="imageRouteMode === 'manual' && imageRouteHost === host"
+                :disabled="imageMeasuring"
+                @click="selectImageRoute('manual', host)"
+              >
+                <span class="mode-mark" :class="{ selected: imageRouteMode === 'manual' && imageRouteHost === host }">M</span>
+                <span><strong>{{ host }}</strong><small>{{ imageHostLabel(host) }}</small></span>
+                <span class="route-choice">{{ imageRouteMode === 'manual' && imageRouteHost === host ? '当前' : '选择' }}</span>
+              </button>
+              <div v-if="imageHostResults.length" class="image-host-results">
+                <div v-for="result in imageHostResults" :key="result.host" class="image-host-result">
+                  <span>{{ result.host }}</span>
+                  <span>{{ result.available ? `${result.bytesPerSecond} B/s` : '不可用' }}</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="section-header domain-header">
               <span class="section-label">线路探测</span>
               <div class="header-actions">
                 <button
@@ -146,6 +203,7 @@ import type { ListenerHandle } from '@/runtime/BackendEvents'
 import { normalizeRuntimeError } from '@/runtime/errors'
 import { initNetworkProbeStore, useNetworkProbeStore } from '@/composables/networkProbeStore'
 import { useApiRoute } from '@/composables/useApiRoute'
+import { SettingsStore } from '@/services/SettingsService'
 
 const store = useNetworkProbeStore()
 const route = useApiRoute()
@@ -155,6 +213,19 @@ const latencyMap = ref<Record<string, { latencyMs: number; timedOut: boolean }>>
 const operationError = ref('')
 const visibleError = computed(() => operationError.value || store.errorMessage.value)
 const routeError = ref('')
+const imageRouteMode = ref<'auto' | 'manual'>(SettingsStore.getImageRouteMode())
+const imageRouteHost = ref(SettingsStore.getImageRouteHost())
+const imageHostCandidates = ref<string[]>([])
+const imageHostResults = ref<Array<{
+  host: string
+  available: boolean
+  elapsedMs: number
+  bytes: number
+  bytesPerSecond: number
+  error?: string
+}>>([])
+const imageMeasuring = ref(false)
+const imageRouteError = ref('')
 const clientUnavailableText = computed(() =>
   store.clientState.value.reason === 'no_network'
     ? '当前网络不可用，离线功能仍可使用'
@@ -192,7 +263,34 @@ onMounted(() => {
   disposed = false
   initNetworkProbeStore()
   void refreshRoute()
+  void JmcomicService.getAllSettings().then((all) => {
+    imageRouteMode.value = all.imageRouteMode === 'manual' ? 'manual' : 'auto'
+    imageRouteHost.value = all.imageRouteHost ?? ''
+    SettingsStore.setImageRoute(imageRouteMode.value, imageRouteHost.value)
+  })
+  void JmcomicService.getImageRouteCandidates()
+    .then((result) => {
+      imageHostCandidates.value = result.hosts
+    })
+    .catch((error) => {
+      imageRouteError.value = normalizeRuntimeError(error, '获取图片线路失败').message
+    })
   JmcomicService.addNetworkProbeListener((data) => {
+    if (data.phase === 'image_route_probing') imageMeasuring.value = true
+    if (data.phase === 'image_route_result') {
+      imageMeasuring.value = false
+      imageHostResults.value = data.hosts ?? []
+      if (SettingsStore.getImageRouteMode() === 'auto') {
+        imageRouteMode.value = 'auto'
+        imageRouteHost.value = data.selectedHost ?? ''
+        SettingsStore.setImageRoute(imageRouteMode.value, imageRouteHost.value)
+      }
+    }
+    if (data.phase === 'image_route_error') {
+      imageMeasuring.value = false
+      imageHostResults.value = data.hosts ?? imageHostResults.value
+      imageRouteError.value = data.message
+    }
     if (data.phase === 'probing' || data.phase === 'result') operationError.value = ''
     if (data.phase === 'error') operationError.value = data.message
     if (data.phase === 'result' || data.phase === 'error' || data.phase === 'network_restored') {
@@ -211,6 +309,57 @@ onMounted(() => {
       operationError.value = normalizeRuntimeError(error, '网络事件监听失败').message
     })
 })
+
+function imageHostLabel(host: string) {
+  const result = imageHostResults.value.find((item) => item.host === host)
+  if (!result) return '未测速'
+  return result.available ? `${result.elapsedMs} ms` : '不可用'
+}
+
+async function selectImageRoute(mode: 'auto' | 'manual', host = '') {
+  imageRouteError.value = ''
+  if (mode === 'auto') {
+    if (imageRouteHost.value && imageHostCandidates.value.includes(imageRouteHost.value)) {
+      try {
+        await JmcomicService.applyImageRoute({ mode: 'auto', host: imageRouteHost.value })
+        imageRouteMode.value = 'auto'
+        SettingsStore.setImageRoute('auto', imageRouteHost.value)
+      } catch (error) {
+        imageRouteError.value = normalizeRuntimeError(error, '应用图片线路失败').message
+      }
+    } else {
+      await handleMeasureImageHosts()
+    }
+    return
+  }
+  try {
+    await JmcomicService.applyImageRoute({ mode, host: mode === 'manual' ? host : imageRouteHost.value })
+    imageRouteMode.value = mode
+    imageRouteHost.value = mode === 'manual' ? host : imageRouteHost.value
+    SettingsStore.setImageRoute(imageRouteMode.value, imageRouteHost.value)
+  } catch (error) {
+    imageRouteError.value = normalizeRuntimeError(error, '应用图片线路失败').message
+  }
+}
+
+async function handleMeasureImageHosts() {
+  if (imageMeasuring.value) return
+  imageMeasuring.value = true
+  imageRouteError.value = ''
+  try {
+    const result = await JmcomicService.measureImageHosts()
+    imageHostResults.value = result.hosts
+    if (!result.selectedHost) throw new Error('没有可用的图片线路')
+    await JmcomicService.applyImageRoute({ mode: 'auto', host: result.selectedHost })
+    imageRouteMode.value = 'auto'
+    imageRouteHost.value = result.selectedHost
+    SettingsStore.setImageRoute('auto', result.selectedHost)
+  } catch (error) {
+    imageRouteError.value = normalizeRuntimeError(error, '图片线路测速失败').message
+  } finally {
+    imageMeasuring.value = false
+  }
+}
 
 async function selectRoute(mode: 'auto' | 'manual', domain = '') {
   routeError.value = ''
@@ -679,6 +828,19 @@ function formatTime(ts: number): string {
 .domain-card .route-choice {
   min-width: 48px;
   text-align: right;
+}
+.image-route-card {
+  overflow: hidden;
+}
+.image-host-results {
+  border-top: 1px solid #f1e8e2;
+}
+.image-host-result {
+  display: flex;
+  justify-content: space-between;
+  padding: 9px 16px;
+  color: #80695b;
+  font-size: 12px;
 }
 
 @media (min-width: 1264px) {

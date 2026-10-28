@@ -19,6 +19,8 @@ const ONLINE_METHODS = new Set<keyof JmcomicClient>([
   'applyApiRoute',
   'reprobeDomains',
   'measureLatency',
+  'measureImageHosts',
+  'getImageRouteCandidates',
   'getInitStatus',
   'getClientState',
   'login',

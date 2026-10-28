@@ -216,6 +216,8 @@ export interface AllSettings {
   readerWidthPercent?: number
   apiRouteMode?: 'auto' | 'manual'
   apiRouteDomain?: string
+  imageRouteMode?: 'auto' | 'manual'
+  imageRouteHost?: string
 }
 
 // --- 设置页：文件搬迁 ---
@@ -428,6 +430,9 @@ export interface NetworkProbeEvent {
     | 'route_auth_started'
     | 'route_auth_succeeded'
     | 'route_auth_failed'
+      | 'image_route_probing'
+      | 'image_route_result'
+      | 'image_route_error'
     | 'probing'
     | 'result'
     | 'error'
@@ -437,6 +442,15 @@ export interface NetworkProbeEvent {
   alive?: number
   total?: number
   allDeadFallback?: boolean
+    selectedHost?: string | null
+    hosts?: {
+      host: string
+      available: boolean
+      elapsedMs: number
+      bytes: number
+      bytesPerSecond: number
+      error?: string
+    }[]
 }
 
 // --- 应用内更新 ---

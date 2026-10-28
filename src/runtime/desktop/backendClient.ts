@@ -201,6 +201,10 @@ export function createBackendClient(
       call<'setApiRoutePreference'>('setApiRoutePreference', options),
     reprobeDomains: () => call<'reprobeDomains'>('reprobeDomains', {}),
     measureLatency: () => call<'measureLatency'>('measureLatency', {}),
+    measureImageHosts: () => call<'measureImageHosts'>('measureImageHosts', {}),
+    getImageRouteCandidates: () => call<'getImageRouteCandidates'>('getImageRouteCandidates', {}),
+    setImageRoutePreference: (options: Parameters<JmcomicClient['setImageRoutePreference']>[0]) =>
+      call<'setImageRoutePreference'>('setImageRoutePreference', options),
     getInitStatus: async () => {
       const result = await requestBackend<{ complete?: unknown }>(fetcher, 'getInitStatus', {})
       if (!result || typeof result.complete !== 'boolean') {

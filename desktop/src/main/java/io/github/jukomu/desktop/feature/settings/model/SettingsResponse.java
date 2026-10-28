@@ -23,6 +23,8 @@ public record SettingsResponse(
     boolean readerAutoShowToolbarAtEnd,
     Integer readerWidthPercent,
     String apiRouteMode,
-    String apiRouteDomain
+    String apiRouteDomain,
+    String imageRouteMode,
+    String imageRouteHost
 ) {
 }

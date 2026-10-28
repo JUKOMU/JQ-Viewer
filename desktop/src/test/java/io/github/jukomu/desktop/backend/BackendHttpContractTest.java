@@ -120,6 +120,12 @@ class BackendHttpContractTest {
                     "{\"mode\":\"manual\",\"domain\":\"api.example\"}").statusCode());
             ObjectNode latency = body(post(
                     http, base, requestedMethods, "measureLatency", "{}"));
+            ObjectNode imageHosts = body(post(
+                    http, base, requestedMethods, "getImageRouteCandidates", "{}"));
+            assertTrue(imageHosts.path("hosts").size() > 0);
+            assertEquals(503, post(http, base, requestedMethods, "measureImageHosts", "{}").statusCode());
+            assertEquals(400, post(http, base, requestedMethods, "setImageRoutePreference",
+                    "{\"mode\":\"manual\",\"host\":\"missing.invalid\"}").statusCode());
             assertOk(post(http, base, requestedMethods, "reprobeDomains", "{}"));
             ObjectNode search = body(post(http, base, requestedMethods, "search",
                     "{\"keyword\":\"needle\",\"category\":\"0\",\"orderBy\":\"mr\","

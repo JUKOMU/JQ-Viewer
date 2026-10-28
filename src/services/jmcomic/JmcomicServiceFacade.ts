@@ -281,6 +281,18 @@ export const JmcomicService = {
     return native.measureLatency()
   },
 
+  measureImageHosts() {
+    return native.measureImageHosts()
+  },
+
+  getImageRouteCandidates() {
+    return native.getImageRouteCandidates()
+  },
+
+  applyImageRoute(options: { mode: 'auto' | 'manual'; host: string }) {
+    return native.setImageRoutePreference(options)
+  },
+
   /** 查询客户端预热是否完成 */
   getInitStatus() {
     return native.getInitStatus()

@@ -15,12 +15,18 @@ public record NetworkProbeEvent(
     List<DomainStateResponse> domains,
     Integer alive,
     Integer total,
-    Boolean allDeadFallback
+    Boolean allDeadFallback,
+    String selectedHost,
+    List<ImageHostResult> hosts
 ) {
+    public record ImageHostResult(String host, boolean available, long elapsedMs,
+                                  long bytes, long bytesPerSecond, String error) {
+    }
+
     public static NetworkProbeEvent probing() {
         return new NetworkProbeEvent(
             "probing", "正在探测域名连通性...", System.currentTimeMillis(),
-            null, null, null, null);
+            null, null, null, null, null, null);
     }
 
     public static NetworkProbeEvent result(DomainStatesResponse state) {
@@ -29,35 +35,42 @@ public record NetworkProbeEvent(
             : "探活完成 · " + state.alive() + "/" + state.total() + " 可达";
         return new NetworkProbeEvent(
             "result", message, System.currentTimeMillis(), state.domains(),
-            state.alive(), state.total(), state.allDeadFallback());
+            state.alive(), state.total(), state.allDeadFallback(), null, null);
     }
 
     public static NetworkProbeEvent error(String message) {
         return new NetworkProbeEvent(
             "error", message, System.currentTimeMillis(),
-            null, null, null, null);
+            null, null, null, null, null, null);
     }
 
     public static NetworkProbeEvent networkChanged() {
         return new NetworkProbeEvent(
             "network_changed", "网络环境已变化", System.currentTimeMillis(),
-            null, null, null, null);
+            null, null, null, null, null, null);
     }
 
     public static NetworkProbeEvent networkLost() {
         return new NetworkProbeEvent(
             "network_lost", "网络不可用", System.currentTimeMillis(),
-            null, null, null, null);
+            null, null, null, null, null, null);
     }
 
     public static NetworkProbeEvent networkRestored(DomainStatesResponse state) {
         return new NetworkProbeEvent(
             "network_restored", "网络恢复并完成线路探测", System.currentTimeMillis(),
-            state.domains(), state.alive(), state.total(), state.allDeadFallback());
+            state.domains(), state.alive(), state.total(), state.allDeadFallback(), null, null);
     }
 
     public static NetworkProbeEvent routeAuth(String phase, String message) {
         return new NetworkProbeEvent(
-            phase, message, System.currentTimeMillis(), null, null, null, null);
+            phase, message, System.currentTimeMillis(), null, null, null, null, null, null);
+    }
+
+    public static NetworkProbeEvent imageRoute(String phase, String message,
+                                               String selectedHost,
+                                               List<ImageHostResult> hosts) {
+        return new NetworkProbeEvent(phase, message, System.currentTimeMillis(), null,
+            null, null, null, selectedHost, hosts);
     }
 }

@@ -31,6 +31,10 @@ public final class JmcomicSessionManager {
         void onClientStateChanged(ClientStateSnapshot snapshot, JmApiClient client);
 
         void onNetworkEvent(NetworkEvent event);
+
+        default void onImageRouteEvent(String phase, String message,
+                                       ImageHostOptimizer.Result result) {
+        }
     }
 
     public record ClientStateSnapshot(String state, String reason, long timestamp) {
@@ -55,6 +59,7 @@ public final class JmcomicSessionManager {
     private final AtomicLong manualRetrySequence = new AtomicLong();
     private final AtomicLong probeSequence = new AtomicLong();
     private final AtomicBoolean networkRecoveryPending = new AtomicBoolean();
+    private final AtomicBoolean imageHostOptimizationStarted = new AtomicBoolean();
     private final ClientSession<JmApiClient> session;
     private final Object networkLock = new Object();
     private final Object stateDispatchLock = new Object();
@@ -75,7 +80,11 @@ public final class JmcomicSessionManager {
                 .downloadThreadPoolSize(downloadConcurrency)
                 .imageTimeout(Duration.ofSeconds(30))
                 .retryTimes(3)
-                .build()).thenApply(client -> applySavedRoute(client, settingsStore)),
+                .build()).thenApply(client -> {
+                    applySavedRoute(client, settingsStore);
+                    applySavedImageRoute(settingsStore);
+                    return client;
+                }),
             new ClientSession.Observer<>() {
                 @Override
                 public void onStateChanged(ClientSession.Snapshot snapshot, JmApiClient client) {
@@ -90,6 +99,7 @@ public final class JmcomicSessionManager {
                 public void onReady(JmApiClient client) {
                     LOGGER.info("JMComic 客户端初始化完成，开始恢复后的线路探测");
                     scheduleDomainProbe(client, "客户端初始化完成");
+                    scheduleImageHostOptimization(client);
                 }
 
                 @Override
@@ -134,6 +144,60 @@ public final class JmcomicSessionManager {
 
     static boolean isSavedDomainCurrent(String domain, Map<String, Integer> domainStates) {
         return domain != null && !domain.isBlank() && domainStates.containsKey(domain);
+    }
+
+    /** 启动时应用仍有效的图片 Host，并将失效偏好归一为自动模式。 */
+    static void applySavedImageRoute(SettingsStore settingsStore) {
+        String host = settingsStore.getString("image_route_host");
+        String mode = settingsStore.getString("image_route_mode");
+        if (host != null && ImageHostOptimizer.contains(host)) {
+            ImageHostOptimizer.apply(host);
+            return;
+        }
+        if (!"auto".equals(mode)) {
+            settingsStore.putString("image_route_mode", "auto");
+        }
+        settingsStore.putString("image_route_host", "");
+    }
+
+    private void scheduleImageHostOptimization(JmApiClient client) {
+        String mode = settingsStore.getString("image_route_mode");
+        if (mode != null && !"auto".equals(mode)
+            || ImageHostOptimizer.contains(settingsStore.getString("image_route_host"))) return;
+        if (!imageHostOptimizationStarted.compareAndSet(false, true)) return;
+        publishImageRouteEvent("image_route_probing", "正在后台优选图片线路", null);
+        java.util.concurrent.CompletableFuture.runAsync(() -> {
+            try {
+                ImageHostOptimizer.Result result = ImageHostOptimizer.optimize(client);
+                if (result.selectedHost() != null
+                    && "auto".equals(settingsStore.getString("image_route_mode"))) {
+                    ImageHostOptimizer.apply(result.selectedHost());
+                    settingsStore.putString("image_route_host", result.selectedHost());
+                    LOGGER.info("图片线路优选完成 host={} candidates={}",
+                        result.selectedHost(), result.hosts().size());
+                    publishImageRouteEvent("image_route_result",
+                        "图片线路优选完成：" + result.selectedHost(), result);
+                } else if (result.selectedHost() == null) {
+                    publishImageRouteEvent("image_route_error", "没有可用的图片线路", result);
+                } else {
+                    publishImageRouteEvent("image_route_result",
+                        "图片线路测速完成，保留手动选择", result);
+                }
+            } catch (RuntimeException error) {
+                LOGGER.warn("图片线路优选失败", error);
+                publishImageRouteEvent("image_route_error", "图片线路优选失败，请稍后重试", null);
+            }
+        });
+    }
+
+    private void publishImageRouteEvent(
+        String phase, String message, ImageHostOptimizer.Result result
+    ) {
+        synchronized (stateDispatchLock) {
+            for (Listener listener : listeners) {
+                listener.onImageRouteEvent(phase, message, result);
+            }
+        }
     }
 
     public static synchronized JmcomicSessionManager getOrCreate(

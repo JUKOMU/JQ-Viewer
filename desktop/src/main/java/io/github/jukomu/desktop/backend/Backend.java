@@ -32,6 +32,8 @@ import io.github.jukomu.desktop.feature.image.ImageService;
 import io.github.jukomu.desktop.feature.localfile.data.LocalFileStore;
 import io.github.jukomu.desktop.feature.localfile.management.LocalFileManagementService;
 import io.github.jukomu.desktop.feature.network.NetworkService;
+import io.github.jukomu.desktop.feature.network.ImageHostOptimizer;
+import io.github.jukomu.desktop.feature.network.model.NetworkProbeEvent;
 import io.github.jukomu.desktop.feature.notification.DesktopNotificationSink;
 import io.github.jukomu.desktop.feature.notification.DesktopTaskNotificationService;
 import io.github.jukomu.desktop.feature.notification.LaunchRouteService;
@@ -265,6 +267,7 @@ public final class Backend implements AutoCloseable {
             final Function<String, String> albumCoverUrl;
             final NetworkService.Operations networkOperations;
             if (providedClient == null) {
+                EventHub imageRouteEvents = startedEventHub;
                 JmConfiguration configuration = new JmConfiguration.Builder()
                     .downloadThreadPoolSize(settingsService.downloadConcurrency())
                     .imageTimeout(Duration.ofSeconds(30))
@@ -273,7 +276,10 @@ public final class Backend implements AutoCloseable {
                 JmcomicSessionManager.Factory clientFactory = providedClientFactory == null
                     ? () -> JmComic.newApiClientAsync(configuration).thenApply(client -> {
                     try {
-                        return applySavedRoute(client, settingsService);
+                        applySavedRoute(client, settingsService);
+                        applySavedImageRoute(settingsService);
+                        scheduleImageHostOptimization(client, settingsService, imageRouteEvents);
+                        return client;
                     } catch (RuntimeException error) {
                         client.close();
                         throw error;
@@ -504,6 +510,60 @@ public final class Backend implements AutoCloseable {
         settingsService.setApiRoute("auto", "");
         LOGGER.warn("保存的手动线路已失效，已回退自动线路 route={}", domain);
         return client;
+    }
+
+    /** 启动时应用仍有效的图片 Host，并将失效偏好归一为自动模式。 */
+    static void applySavedImageRoute(SettingsService settingsService) {
+        String host = settingsService.imageRouteHost();
+        if (ImageHostOptimizer.contains(host)) {
+            ImageHostOptimizer.apply(host);
+            return;
+        }
+        settingsService.setImageRoute("auto", "");
+    }
+
+    private static void scheduleImageHostOptimization(
+        JmApiClient client,
+        SettingsService settingsService,
+        EventHub eventHub
+    ) {
+        String host = settingsService.imageRouteHost();
+        if (ImageHostOptimizer.contains(host)) return;
+        eventHub.publish("networkProbe", NetworkProbeEvent.imageRoute(
+            "image_route_probing", "正在后台优选图片线路", null, null));
+        CompletableFuture.runAsync(() -> {
+            try {
+                ImageHostOptimizer.Result result = ImageHostOptimizer.optimize(client);
+                if (result.selectedHost() != null
+                    && "auto".equals(settingsService.imageRouteMode())) {
+                    ImageHostOptimizer.apply(result.selectedHost());
+                    settingsService.setImageRoute("auto", result.selectedHost());
+                    eventHub.publish("networkProbe", NetworkProbeEvent.imageRoute(
+                        "image_route_result", "图片线路优选完成：" + result.selectedHost(),
+                        result.selectedHost(), toImageHostResults(result)));
+                } else if (result.selectedHost() == null) {
+                    eventHub.publish("networkProbe", NetworkProbeEvent.imageRoute(
+                        "image_route_error", "没有可用的图片线路", null,
+                        toImageHostResults(result)));
+                } else {
+                    eventHub.publish("networkProbe", NetworkProbeEvent.imageRoute(
+                        "image_route_result", "图片线路测速完成，保留手动选择",
+                        settingsService.imageRouteHost(), toImageHostResults(result)));
+                }
+            } catch (RuntimeException error) {
+                LOGGER.warn("image_route operation=optimize status=failed", error);
+                eventHub.publish("networkProbe", NetworkProbeEvent.imageRoute(
+                    "image_route_error", "图片线路优选失败，请稍后重试", null, null));
+            }
+        });
+    }
+
+    private static List<NetworkProbeEvent.ImageHostResult> toImageHostResults(
+        ImageHostOptimizer.Result result
+    ) {
+        return result.hosts().stream().map(host -> new NetworkProbeEvent.ImageHostResult(
+            host.host(), host.available(), host.elapsedMs(), host.bytes(),
+            host.bytesPerSecond(), host.error())).toList();
     }
 
     static boolean isSavedDomainCurrent(String domain, Map<String, Integer> domainStates) {

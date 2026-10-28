@@ -162,7 +162,7 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
     mocks.downloadHandler = undefined
     mocks.stateInvalidatedHandler = undefined
     mocks.route.query = { view: 'pdf' }
-    mocks.getDownloadTasksPage.mockResolvedValue({ items: [], nextCursor: null, previousCursor: null, totalCount: 0, usedBytes: 0, availableBytes: 0 })
+    mocks.getDownloadTasksPage.mockResolvedValue({ items: [], nextCursor: null, previousCursor: null, totalCount: 0, usedBytes: 0, availableBytes: 0, totalBytes: 0 })
     mocks.getLocalFileManagementState.mockResolvedValue({ recoveryState: 'ready' })
     mocks.consumeLaunchRoute.mockResolvedValue({})
     mocks.addLaunchRouteListener.mockResolvedValue({ remove: vi.fn() })
@@ -192,7 +192,7 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
     status: 'downloading', createdAt: id, totalPages: 100, downloadedPages: 0,
   })
   const emptyPage = () => ({ items: [], nextCursor: null, previousCursor: null,
-    totalCount: 0, usedBytes: 0, availableBytes: 1000 })
+    totalCount: 0, usedBytes: 0, availableBytes: 1000, totalBytes: 2000 })
   const groupAt = (id: number) => ({ ...taskAt(id), chapters: [{ ...taskAt(id), status: 'completed' }],
     type: 'single', totalSize: 1, completedAt: id })
 
@@ -249,6 +249,30 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
     expect(group.collapsed).toBe(true)
     expect(group.totalCount).toBe(1)
     expect(mocks.getDownloadTasksPage.mock.calls.filter(([query]) => query.status === 'completed')).toHaveLength(2)
+    wrapper.unmount()
+  })
+
+  test('存储概览区分其他占用、下载占用和可用空间', async () => {
+    mocks.route.query = { view: 'downloads' }
+    mocks.getDownloadTasksPage.mockImplementation(async ({ status }: any) => ({
+      ...emptyPage(),
+      items: status === 'active' ? [taskAt(1)] : [],
+      totalCount: status === 'active' ? 1 : 0,
+      usedBytes: 20 * 1024 * 1024,
+      availableBytes: 50 * 1024 * 1024,
+      totalBytes: 100 * 1024 * 1024,
+    }))
+
+    const wrapper = mount(DownloadPage)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('20 MB/ 100 MB')
+    expect(wrapper.text()).toContain('其他占用 30 MB')
+    expect(wrapper.text()).toContain('下载占用 20 MB')
+    expect(wrapper.text()).toContain('可用 50 MB')
+    expect(wrapper.find('.storage-progress-other').attributes('style')).toContain('width: 30%')
+    expect(wrapper.find('.storage-progress-download').attributes('style')).toContain('width: 20%')
+    expect(wrapper.find('.storage-progress-available').attributes('style')).toContain('width: 50%')
     wrapper.unmount()
   })
 
@@ -400,10 +424,10 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
       status: 'downloading',
       createdAt: 1,
     }
-    const emptyPage = { items: [], nextCursor: null, previousCursor: null, totalCount: 0, usedBytes: 0, availableBytes: 1000 }
+    const emptyPage = { items: [], nextCursor: null, previousCursor: null, totalCount: 0, usedBytes: 0, availableBytes: 1000, totalBytes: 2000 }
     mocks.getDownloadTasksPage.mockImplementation((options: { status: string }) =>
       options.status === 'active'
-        ? { items: [currentTask], nextCursor: null, previousCursor: null, totalCount: 1, usedBytes: 20, availableBytes: 1000 }
+        ? { items: [currentTask], nextCursor: null, previousCursor: null, totalCount: 1, usedBytes: 20, availableBytes: 1000, totalBytes: 2000 }
         : emptyPage,
     )
     mocks.getDownloadTasksPage
@@ -422,7 +446,7 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
       totalPages: 100,
       status: 'downloading',
     })
-    finishInitial?.({ items: [{ ...currentTask, downloadedPages: 10 }], nextCursor: null, previousCursor: null, totalCount: 1, usedBytes: 10, availableBytes: 1000 })
+    finishInitial?.({ items: [{ ...currentTask, downloadedPages: 10 }], nextCursor: null, previousCursor: null, totalCount: 1, usedBytes: 10, availableBytes: 1000, totalBytes: 2000 })
     await flushPromises()
 
     expect(mocks.getDownloadTasksPage.mock.calls.length).toBeGreaterThanOrEqual(2)

@@ -368,6 +368,7 @@ export interface DownloadTasksPageResult<T = DownloadTask | CompletedDownloadGro
   totalCount: number
   usedBytes: number
   availableBytes: number
+  totalBytes: number
 }
 
 export interface DownloadTaskStatusResult {

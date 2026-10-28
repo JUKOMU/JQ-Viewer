@@ -337,6 +337,10 @@ public class FileStore {
         return baseDir.getFreeSpace();
     }
 
+    public long getTotalBytes() {
+        return baseDir.getTotalSpace();
+    }
+
     // ---- 工具方法 ----
 
     private static String makeSortKey(String albumId, String chapterId, int sortOrder) {

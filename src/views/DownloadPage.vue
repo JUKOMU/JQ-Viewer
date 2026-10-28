@@ -74,12 +74,21 @@
             </div>
             <div class="storage-progress" aria-hidden="true">
               <div
-                class="storage-progress-fill"
-                :style="{ width: `${storageUsagePercent}%` }"
+                class="storage-progress-other"
+                :style="{ width: `${storageOtherPercent}%` }"
+              />
+              <div
+                class="storage-progress-download"
+                :style="{ width: `${storageDownloadPercent}%` }"
+              />
+              <div
+                class="storage-progress-available"
+                :style="{ width: `${storageAvailablePercent}%` }"
               />
             </div>
             <div class="storage-meta">
-              <span>已用 {{ spaceUsedMb }} MB</span>
+              <span>其他占用 {{ storageOtherMb }} MB</span>
+              <span>下载占用 {{ spaceUsedMb }} MB</span>
               <span>可用 {{ spaceAvailMb }} MB</span>
             </div>
           </div>
@@ -487,13 +496,31 @@ const initialLoading = computed(
 const hasTasks = computed(() =>
   downloadGroups.value.some((group) => group.totalCount > 0 || group.items.length > 0),
 )
-const spaceUsedMb = ref(0)
-const spaceAvailMb = ref(0)
+const spaceUsedBytes = ref(0)
+const spaceAvailBytes = ref(0)
+const spaceTotalBytes = ref(0)
 const hasStorageInfo = ref(false)
-const storageTotalMb = computed(() => spaceUsedMb.value + spaceAvailMb.value)
+const spaceUsedMb = computed(() => Math.round(spaceUsedBytes.value / (1024 * 1024)))
+const spaceAvailMb = computed(() => Math.round(spaceAvailBytes.value / (1024 * 1024)))
+const storageTotalMb = computed(() => Math.round(spaceTotalBytes.value / (1024 * 1024)))
+const storageOtherMb = computed(() => Math.round(
+  (spaceTotalBytes.value - spaceUsedBytes.value - spaceAvailBytes.value) / (1024 * 1024),
+))
 const storageUsagePercent = computed(() => {
-  if (!storageTotalMb.value) return 0
-  return Math.min(100, Math.round((spaceUsedMb.value / storageTotalMb.value) * 100))
+  if (!spaceTotalBytes.value) return 0
+  return Math.round((spaceUsedBytes.value / spaceTotalBytes.value) * 100)
+})
+const storageOtherPercent = computed(() => {
+  if (!spaceTotalBytes.value) return 0
+  return ((spaceTotalBytes.value - spaceUsedBytes.value - spaceAvailBytes.value) / spaceTotalBytes.value) * 100
+})
+const storageDownloadPercent = computed(() => {
+  if (!spaceTotalBytes.value) return 0
+  return (spaceUsedBytes.value / spaceTotalBytes.value) * 100
+})
+const storageAvailablePercent = computed(() => {
+  if (!spaceTotalBytes.value) return 0
+  return (spaceAvailBytes.value / spaceTotalBytes.value) * 100
 })
 let downloadProgressHandle: ListenerHandle | null = null
 let stateInvalidatedHandle: ListenerHandle | null = null
@@ -1095,8 +1122,9 @@ const loadGroup = async (key: DownloadGroupKey, direction: 'next' | 'previous' =
     setGroupPages(group, direction === 'previous' ? pages.slice(0, 3) : pages.slice(-3))
     group.totalCount = result.totalCount
     group.initialized = true
-    spaceUsedMb.value = Math.round(result.usedBytes / (1024 * 1024))
-    spaceAvailMb.value = Math.round(result.availableBytes / (1024 * 1024))
+    spaceUsedBytes.value = result.usedBytes
+    spaceAvailBytes.value = result.availableBytes
+    spaceTotalBytes.value = result.totalBytes
     hasStorageInfo.value = true
     rebuildVisibleTasks()
     await nextTick()
@@ -2119,17 +2147,31 @@ const clearFailed = async () => {
   background: #f0e4db;
 }
 
-.storage-progress-fill {
+.storage-progress-other,
+.storage-progress-download,
+.storage-progress-available {
   height: 100%;
-  border-radius: 3px;
-  background: #e8843c;
+  flex: 0 0 auto;
   transition: width 0.3s ease;
+}
+
+.storage-progress-other {
+  background: #c7c7c7;
+}
+
+.storage-progress-download {
+  background: #e8843c;
+}
+
+.storage-progress-available {
+  background: #f8dfcd;
 }
 
 .storage-meta {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 4px 12px;
   margin-top: 6px;
   color: #b89a84;
   font-size: 11px;
@@ -2292,7 +2334,9 @@ const clearFailed = async () => {
   .section-toggle-icon {
     transition-duration: 0.01ms;
   }
-  .storage-progress-fill {
+  .storage-progress-other,
+  .storage-progress-download,
+  .storage-progress-available {
     transition: none;
   }
 }

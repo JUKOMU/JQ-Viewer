@@ -161,7 +161,7 @@ public final class DownloadService implements AutoCloseable {
             ? page.albums().stream().map(this::completedResponse).toList()
             : page.tasks().stream().map(this::response).toList();
         return new DownloadTasksPageResponse(items, page.nextCursor(), page.previousCursor(),
-            page.totalCount(), files.usedBytes(), files.availableBytes());
+            page.totalCount(), files.usedBytes(), files.availableBytes(), files.totalBytes());
     }
 
     public List<String> getCompletedDownloadAlbumIds(List<String> albumIds) {

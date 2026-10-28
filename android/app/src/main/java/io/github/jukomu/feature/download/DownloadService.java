@@ -251,6 +251,7 @@ public class DownloadService {
         JSONObject result = downloadDb.getTasksPage(status, sort, direction, cursor, limit);
         result.put("usedBytes", getUsedBytes());
         result.put("availableBytes", getAvailableBytes());
+        result.put("totalBytes", fileStore.getTotalBytes());
         return result;
     }
 
@@ -389,6 +390,10 @@ public class DownloadService {
 
     public long getAvailableBytes() {
         return fileStore.getAvailableBytes();
+    }
+
+    public long getTotalBytes() {
+        return fileStore.getTotalBytes();
     }
 
     public void cancelDownload(String taskId) {

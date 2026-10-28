@@ -52,6 +52,25 @@ class ServiceExecutorsTest {
             assertUnbounded(executors.fileIo());
             assertUnbounded(executors.pdfCommand());
             assertUnbounded(executors.networkCommand());
+            assertUnbounded(executors.imageRoute());
+        }
+    }
+
+    @Test
+    void imageRouteWorkDoesNotBlockNetworkCommand() throws Exception {
+        CountDownLatch imageRouteStarted = new CountDownLatch(1);
+        CountDownLatch releaseImageRoute = new CountDownLatch(1);
+        try (ServiceExecutors executors = new ServiceExecutors()) {
+            executors.imageRoute().execute(() -> {
+                imageRouteStarted.countDown();
+                await(releaseImageRoute);
+            });
+
+            assertTrue(imageRouteStarted.await(1, TimeUnit.SECONDS));
+            assertEquals("network-ready", executors.networkCommand()
+                .submit(() -> "network-ready").get(1, TimeUnit.SECONDS));
+        } finally {
+            releaseImageRoute.countDown();
         }
     }
 

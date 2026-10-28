@@ -4,6 +4,7 @@ import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
 
 import io.github.jukomu.feature.settings.SettingsService;
+import io.github.jukomu.runtime.ImageHostOptimizer;
 
 import org.json.JSONObject;
 
@@ -107,6 +108,23 @@ public final class SettingsPluginHandler {
             String mode = call.getString("mode");
             String domain = call.getString("domain", "");
             settingsService.setApiRoute(mode, domain);
+            call.resolve(successResult());
+        } catch (Exception error) {
+            call.reject(error.getMessage(), error);
+        }
+    }
+
+    /** 校验并立即应用用户手动选择的图片 Host。 */
+    public void setImageRoutePreference(PluginCall call) {
+        try {
+            String mode = call.getString("mode");
+            String host = call.getString("host");
+            if (!ImageHostOptimizer.contains(host)) {
+                call.reject("图片 Host 不在当前候选列表中");
+                return;
+            }
+            settingsService.setImageRoute(mode, host);
+            ImageHostOptimizer.apply(host);
             call.resolve(successResult());
         } catch (Exception error) {
             call.reject(error.getMessage(), error);

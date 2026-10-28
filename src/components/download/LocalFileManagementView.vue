@@ -1423,14 +1423,14 @@ defineExpose({ refresh: load })
   max-width: 1000px;
   box-sizing: border-box;
   margin-inline: auto;
-  padding: 0 14px 86px;
+  padding: 8px 16px 86px;
 }
 
 .manager-actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 
 .action-btn,
@@ -1445,7 +1445,8 @@ defineExpose({ refresh: load })
   border-radius: 8px;
   padding: 0 10px;
   color: #704631;
-  background: #fffbf8;
+  background: #fff;
+  box-shadow: 0 2px 10px rgba(115, 67, 38, 0.06);
 }
 
 .action-btn:active,
@@ -1463,16 +1464,18 @@ defineExpose({ refresh: load })
 .subtabs {
   display: flex;
   gap: 2px;
+  margin-bottom: 14px;
   padding: 4px 14px;
-  border-radius: 18px;
-  background: #fffbf8;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 2px 10px rgba(115, 67, 38, 0.06);
 }
 
 .subtabs button {
   flex: 1;
   height: 34px;
   border: 0;
-  border-radius: 14px;
+  border-radius: 8px;
   background: transparent;
   color: #8a6048;
   font-size: 12px;
@@ -1480,8 +1483,8 @@ defineExpose({ refresh: load })
 }
 
 .subtabs button.active {
-  background: linear-gradient(145deg, #fa9c69, #f28752);
-  color: #fff;
+  background: #fff0e7;
+  color: #e8843c;
 }
 
 .count {
@@ -1515,7 +1518,11 @@ defineExpose({ refresh: load })
   display: flex;
   flex-direction: column;
   gap: 10px;
-  margin: 8px 0 10px;
+  margin: 0 0 14px;
+  padding: 12px;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 2px 10px rgba(115, 67, 38, 0.06);
 }
 
 .search-field {
@@ -1540,10 +1547,10 @@ defineExpose({ refresh: load })
 .search-field input {
   min-height: 36px;
   border: 1px solid #ead1c1;
-  border-radius: 16px;
+  border-radius: 8px;
   padding: 0 10px;
   color: #4c2a18;
-  background: #fffaf6;
+  background: #fff;
   font-size: 13px;
 }
 
@@ -1557,7 +1564,7 @@ defineExpose({ refresh: load })
   flex: 1;
   min-height: 36px;
   border: 0;
-  border-radius: 18px;
+  border-radius: 8px;
   padding: 0 14px;
   background: transparent;
   color: #8a6048;
@@ -1566,7 +1573,7 @@ defineExpose({ refresh: load })
 
 .filter-buttons button.selected {
   background: #fff1e7;
-  color: #c06f45;
+  color: #e8843c;
   font-weight: 600;
 }
 
@@ -1604,7 +1611,7 @@ defineExpose({ refresh: load })
   display: flex;
   flex-direction: column;
   gap: 6px;
-  margin-top: 10px;
+  margin-top: 0;
 }
 
 .item-wrap {
@@ -1614,7 +1621,7 @@ defineExpose({ refresh: load })
 }
 
 .task-anchor {
-  border-radius: 8px;
+  border-radius: 12px;
 }
 
 .task-anchor.highlighted {
@@ -1643,7 +1650,7 @@ defineExpose({ refresh: load })
 .list .load-more-btn {
   min-height: 44px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 8px;
   background: #fff0e8;
   color: #c96d3a;
   font-size: 12px;
@@ -1677,6 +1684,7 @@ select:focus-visible {
   }
 }
 .multi-select-overlay {
+  --desktop-page-max-width: 1000px;
   position: fixed;
   inset: 0;
   z-index: 30;

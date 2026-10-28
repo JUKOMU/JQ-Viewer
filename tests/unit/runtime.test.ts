@@ -135,6 +135,10 @@ describe('runtime', () => {
       'setApiRoutePreference',
       'reprobeDomains',
       'measureLatency',
+      'measureImageHosts',
+      'getImageRouteCandidates',
+      'getImageRouteStatus',
+      'setImageRoutePreference',
       'getInitStatus',
       'getClientState',
     ])

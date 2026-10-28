@@ -386,9 +386,9 @@ defineExpose({ panelRef })
 .fav-menu-pane {
   position: relative;
   inset: auto;
-  flex: 0 0 280px;
-  width: 280px;
-  min-width: 280px;
+  flex: 0 0 var(--favorite-pane-width, 280px);
+  width: var(--favorite-pane-width, 280px);
+  min-width: var(--favorite-pane-width, 280px);
   height: 100%;
   overflow: hidden;
   background: linear-gradient(180deg, #fffaf6 0%, #fff3eb 100%);

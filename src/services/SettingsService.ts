@@ -23,6 +23,8 @@ let cachedReaderAutoShowToolbarAtEnd = true
 let cachedReaderWidthPercent: number | null = null
 let cachedApiRouteMode: 'auto' | 'manual' = 'auto'
 let cachedApiRouteDomain = ''
+let cachedImageRouteMode: 'auto' | 'manual' = 'auto'
+let cachedImageRouteHost = ''
 let confirmedPreloadConcurrency = 6
 let confirmedDownloadConcurrency = 6
 let preloadConcurrencySaveVersion = 0
@@ -52,6 +54,8 @@ export async function initSettings(): Promise<void> {
     cachedReaderWidthPercent = normalizeReaderWidthPercent(all.readerWidthPercent)
     cachedApiRouteMode = all.apiRouteMode === 'manual' ? 'manual' : 'auto'
     cachedApiRouteDomain = all.apiRouteDomain ?? ''
+    cachedImageRouteMode = all.imageRouteMode === 'manual' ? 'manual' : 'auto'
+    cachedImageRouteHost = all.imageRouteHost ?? ''
     settingsLoaded = true
   } catch (e) {
     // 使用默认值（已在缓存变量中预设）
@@ -75,6 +79,16 @@ export const SettingsStore = {
   setApiRoute(mode: 'auto' | 'manual', domain: string) {
     cachedApiRouteMode = mode
     cachedApiRouteDomain = domain
+  },
+  getImageRouteMode(): 'auto' | 'manual' {
+    return cachedImageRouteMode
+  },
+  getImageRouteHost(): string {
+    return cachedImageRouteHost
+  },
+  setImageRoute(mode: 'auto' | 'manual', host: string) {
+    cachedImageRouteMode = mode
+    cachedImageRouteHost = host
   },
 
   // ---- 阅读：预加载页数 ----

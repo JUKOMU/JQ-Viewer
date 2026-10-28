@@ -286,6 +286,45 @@ export interface JmcomicClient {
 
   measureLatency(): Promise<{ results: LatencyResult[] }>
 
+  /** 测量当前图片 Host 候选的有效下载吞吐量。 */
+  measureImageHosts(): Promise<{
+    runId: number
+    revision: number
+    selectedHost: string | null
+    hosts: {
+      host: string
+      available: boolean
+      elapsedMs: number
+      bytes: number
+      bytesPerSecond: number
+      error?: string
+    }[]
+  }>
+
+  /** 查询当前图片线路测速任务及最近结果。 */
+  getImageRouteStatus(): Promise<{
+    runId: number
+    revision: number
+    running: boolean
+    currentHost?: string
+    selectedHost?: string | null
+    hosts: {
+      host: string
+      available: boolean
+      elapsedMs: number
+      bytes: number
+      bytesPerSecond: number
+      error?: string
+    }[]
+    error?: string
+  }>
+
+  /** 读取当前图片 Host 候选列表。 */
+  getImageRouteCandidates(): Promise<{ hosts: string[] }>
+
+  /** 保存并立即应用自动或手动图片 Host。 */
+  setImageRoutePreference(options: { mode: 'auto' | 'manual'; host: string }): Promise<{ success: boolean }>
+
   getInitStatus(): Promise<{ complete: boolean }>
 
   getClientState(): Promise<ClientStateSnapshot>

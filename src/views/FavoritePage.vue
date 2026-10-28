@@ -77,23 +77,6 @@
           </template>
         </SearchResultContainer>
 
-        <div v-if="multiSelectActive" class="multi-select-overlay">
-          <MultiSelectInfoBar
-            :count="multiSelectCount"
-            :preparing="multiSelectPreparing"
-            :preparing-action="multiSelectPreparingAction"
-            :all-selected="multiSelectAllSelected"
-            @cancel="exitMultiSelect"
-            @select-all="prepareFavoriteSelection(false)"
-            @invert="prepareFavoriteSelection(true)"
-          />
-          <MultiSelectActionBar
-            :actions="favoriteMultiActions"
-            :disabled="!multiSelectCount || multiSelectPreparing || multiSelectExecuting"
-            @action="executeFavoriteMultiAction"
-          />
-        </div>
-
         <QuickActionFab
           slot="fixed"
           @search="openRightMenu"
@@ -102,6 +85,27 @@
           @back="goBack"
         />
       </IonContent>
+
+      <div
+        v-if="multiSelectActive"
+        class="multi-select-overlay multi-select-overlay--flush"
+        :class="{ 'multi-select-overlay--folder-pane-open': isWideLayout && widePaneOpen }"
+      >
+        <MultiSelectInfoBar
+          :count="multiSelectCount"
+          :preparing="multiSelectPreparing"
+          :preparing-action="multiSelectPreparingAction"
+          :all-selected="multiSelectAllSelected"
+          @cancel="exitMultiSelect"
+          @select-all="prepareFavoriteSelection(false)"
+          @invert="prepareFavoriteSelection(true)"
+        />
+        <MultiSelectActionBar
+          :actions="favoriteMultiActions"
+          :disabled="!multiSelectCount || multiSelectPreparing || multiSelectExecuting"
+          @action="executeFavoriteMultiAction"
+        />
+      </div>
 
       <FavoriteSideMenu
         ref="sideMenuRef"
@@ -2385,6 +2389,7 @@ onActivated(async () => {
 
 <style scoped>
 .favorite-page-layout {
+  --favorite-pane-width: 280px;
   display: flex;
   flex: 1 1 auto;
   width: 100%;
@@ -2572,6 +2577,7 @@ onActivated(async () => {
   margin-top: 8px;
 }
 .multi-select-overlay {
+  --desktop-page-max-width: 1000px;
   position: fixed;
   inset: 0;
   z-index: 30;
@@ -2580,6 +2586,9 @@ onActivated(async () => {
   align-items: center;
   justify-content: space-between;
   pointer-events: none;
+}
+.multi-select-overlay--folder-pane-open {
+  right: var(--favorite-pane-width);
 }
 .multi-select-overlay > * {
   pointer-events: auto;

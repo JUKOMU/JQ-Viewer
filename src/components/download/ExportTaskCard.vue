@@ -162,8 +162,8 @@ const statusLabel = computed(() => {
   min-height: 86px;
   padding: 12px 8px 12px 12px;
   background: #fffaf6;
-  border: 1px solid rgb(245 210 188 / 0.5);
-  border-radius: 8px;
+  border-radius: 12px;
+  box-shadow: 5px 12px 28px rgb(76 42 24 / 0.2);
   transition: transform 0.16s ease;
 }
 .card.long-pressing {
@@ -188,9 +188,9 @@ const statusLabel = computed(() => {
   flex: 0 0 42px;
   place-items: center;
   height: 42px;
-  border-radius: 8px;
-  background: #f5e2d6;
-  color: #9f5f3e;
+  border-radius: 10px;
+  background: #fff0e7;
+  color: #e8843c;
   font-size: 24px;
 }
 .info {
@@ -267,10 +267,10 @@ const statusLabel = computed(() => {
   gap: 3px;
 }
 .actions button {
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   border: 0;
-  border-radius: 7px;
+  border-radius: 8px;
   background: transparent;
   color: #8a6048;
   font-size: 18px;

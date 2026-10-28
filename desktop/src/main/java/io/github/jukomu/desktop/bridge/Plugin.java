@@ -79,6 +79,21 @@ public final class Plugin {
     }
 
     @PluginMethod
+    public void getImageRouteCandidates(Context context) {
+        system.getImageRouteCandidates(context);
+    }
+
+    @PluginMethod
+    public void getImageRouteStatus(Context context) {
+        system.getImageRouteStatus(context);
+    }
+
+    @PluginMethod
+    public void measureImageHosts(Context context) {
+        system.measureImageHosts(context);
+    }
+
+    @PluginMethod
     public void consumeLaunchRoute(Context context) {
         system.consumeLaunchRoute(context);
     }
@@ -246,6 +261,11 @@ public final class Plugin {
     @PluginMethod
     public void setApiRoutePreference(Context context) {
         settings.setApiRoutePreference(context);
+    }
+
+    @PluginMethod
+    public void setImageRoutePreference(Context context) {
+        settings.setImageRoutePreference(context);
     }
 
     @PluginMethod

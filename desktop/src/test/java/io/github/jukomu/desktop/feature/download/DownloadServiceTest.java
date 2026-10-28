@@ -59,6 +59,8 @@ class DownloadServiceTest {
                             page.items().get(0)).chapters().get(0).authors());
             assertTrue(task.totalSize() > 0);
             assertEquals(1, page.items().size());
+            assertTrue(page.availableBytes() >= 0);
+            assertTrue(page.totalBytes() >= page.availableBytes());
             assertTrue(fixture.service.findCompletedImage("photo-1", 1).isPresent());
             assertEquals("photo-1",
                     fixture.service.getDownloadedPhoto("album-1", "photo-1").id());

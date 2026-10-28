@@ -120,6 +120,15 @@ public final class DownloadFiles {
         }
     }
 
+    public synchronized long totalBytes() {
+        try {
+            Files.createDirectories(root);
+            return Files.getFileStore(root).getTotalSpace();
+        } catch (IOException exception) {
+            throw failure("读取下载目录总空间失败", exception);
+        }
+    }
+
     private Path resolve(String relativePath) {
         Path relative = relativePath(relativePath);
         Path resolved = root.resolve(relative).normalize();

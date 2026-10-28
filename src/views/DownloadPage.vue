@@ -47,7 +47,7 @@
         <IonRefresherContent />
       </IonRefresher>
 
-      <div class="download-page-shell desktop-page-content">
+      <div class="download-page-shell desktop-page-content download-content-shell">
         <div v-if="initialLoading" class="download-list-loader">
           <IonSpinner name="dots" />
         </div>
@@ -58,9 +58,34 @@
 
         <template v-else>
           <!-- 存储信息 -->
-          <div v-if="hasStorageInfo" class="storage-bar">
-            <IonIcon :icon="saveOutline" class="storage-icon" />
-            <span>已用 {{ spaceUsedMb }}MB / 可用 {{ spaceAvailMb }}MB</span>
+          <div v-if="hasStorageInfo" class="storage-card">
+            <div class="storage-heading">
+              <div class="storage-icon-wrap">
+                <IonIcon :icon="saveOutline" class="storage-icon" aria-hidden="true" />
+              </div>
+              <div class="storage-copy">
+                <span class="storage-label">存储空间</span>
+                <div class="storage-value-row">
+                  <strong>{{ formatBytes(spaceUsedBytes) }}</strong>
+                  <span>/ {{ formatBytes(spaceTotalBytes) }}</span>
+                </div>
+              </div>
+              <span class="storage-percent">{{ storageUsagePercent }}%</span>
+            </div>
+            <div class="storage-progress" aria-hidden="true">
+              <div
+                class="storage-progress-download"
+                :style="{ width: `${storageDownloadPercent}%` }"
+              />
+              <div
+                class="storage-progress-available"
+                :style="{ width: `${storageAvailablePercent}%` }"
+              />
+            </div>
+            <div class="storage-meta">
+              <span>下载占用 {{ formatBytes(spaceUsedBytes) }}</span>
+              <span>可用 {{ formatBytes(spaceAvailBytes) }}</span>
+            </div>
           </div>
           <div v-if="hasTasks" class="sort-label-row">
             <button
@@ -113,7 +138,9 @@
                 :aria-label="`${group.collapsed ? '展开' : '收起'}${group.label}`"
                 @click="toggleGroup(group.key)"
               >
-                <span class="section-title">{{ group.label }} ({{ group.totalCount }})</span>
+                <span class="section-title">
+                  {{ group.label }} <span class="section-count">({{ group.totalCount }})</span>
+                </span>
                 <IonIcon
                   :icon="chevronDownOutline"
                   class="section-toggle-icon"
@@ -464,9 +491,36 @@ const initialLoading = computed(
 const hasTasks = computed(() =>
   downloadGroups.value.some((group) => group.totalCount > 0 || group.items.length > 0),
 )
-const spaceUsedMb = ref(0)
-const spaceAvailMb = ref(0)
+const spaceUsedBytes = ref(0)
+const spaceAvailBytes = ref(0)
+const spaceTotalBytes = ref(0)
 const hasStorageInfo = ref(false)
+const storageUsagePercent = computed(() => {
+  if (!spaceTotalBytes.value) return 0
+  return Math.round((spaceUsedBytes.value / spaceTotalBytes.value) * 100)
+})
+const storageDownloadPercent = computed(() => {
+  const total = spaceUsedBytes.value + spaceAvailBytes.value
+  if (!total) return 0
+  return (spaceUsedBytes.value / total) * 100
+})
+const storageAvailablePercent = computed(() => {
+  const total = spaceUsedBytes.value + spaceAvailBytes.value
+  if (!total) return 0
+  return (spaceAvailBytes.value / total) * 100
+})
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  const kb = bytes / 1024
+  if (kb < 1024) return `${kb < 10 ? kb.toFixed(1) : Math.round(kb)} KB`
+  const mb = kb / 1024
+  if (mb < 1024) return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB`
+  const gb = mb / 1024
+  if (gb < 1024) return `${gb < 10 ? gb.toFixed(1) : Math.round(gb)} GB`
+  const tb = gb / 1024
+  return `${tb < 10 ? tb.toFixed(1) : Math.round(tb)} TB`
+}
 let downloadProgressHandle: ListenerHandle | null = null
 let stateInvalidatedHandle: ListenerHandle | null = null
 let syncPromise: Promise<void> | null = null
@@ -502,19 +556,19 @@ const sortLabel = computed(
 const defaultDirection = (mode: SortMode): DownloadTaskSortDirection =>
   mode === 'time' ? 'desc' : 'asc'
 
-const toggleSort = () => {
+const toggleSort = async () => {
   if (downloadSelectionActive.value) return
   const modes: SortMode[] = ['time', 'title', 'id', 'author']
   sortMode.value = modes[(modes.indexOf(sortMode.value) + 1) % modes.length]
   sortDirection.value = defaultDirection(sortMode.value)
-  void downloadContentRef.value?.$el?.scrollToTop?.(0)
-  void resetDownloadGroups(true, false)
+  await resetDownloadGroups(true, true)
+  await downloadContentRef.value?.$el?.scrollToTop?.(0)
 }
-const toggleSortDirection = () => {
+const toggleSortDirection = async () => {
   if (downloadSelectionActive.value) return
   sortDirection.value = sortDirection.value === 'asc' ? 'desc' : 'asc'
-  void downloadContentRef.value?.$el?.scrollToTop?.(0)
-  void resetDownloadGroups(true, false)
+  await resetDownloadGroups(true, true)
+  await downloadContentRef.value?.$el?.scrollToTop?.(0)
 }
 
 // 操作菜单
@@ -1067,8 +1121,9 @@ const loadGroup = async (key: DownloadGroupKey, direction: 'next' | 'previous' =
     setGroupPages(group, direction === 'previous' ? pages.slice(0, 3) : pages.slice(-3))
     group.totalCount = result.totalCount
     group.initialized = true
-    spaceUsedMb.value = Math.round(result.usedBytes / (1024 * 1024))
-    spaceAvailMb.value = Math.round(result.availableBytes / (1024 * 1024))
+    spaceUsedBytes.value = result.usedBytes
+    spaceAvailBytes.value = result.availableBytes
+    spaceTotalBytes.value = result.totalBytes
     hasStorageInfo.value = true
     rebuildVisibleTasks()
     await nextTick()
@@ -1929,6 +1984,10 @@ const clearFailed = async () => {
   box-sizing: border-box;
 }
 
+.download-content-shell {
+  padding: 8px 16px 32px;
+}
+
 .toolbar-start {
   padding: 0 0 8px 14px;
 }
@@ -1977,10 +2036,11 @@ const clearFailed = async () => {
   padding: 0;
   border: 0;
   border-radius: 10px;
-  background: #fffbf8;
+  background: #fff;
   color: #8a6048;
   font-size: 16px;
   cursor: pointer;
+  box-shadow: 0 2px 10px rgba(115, 67, 38, 0.06);
 }
 
 .sort-btn:active {
@@ -2015,22 +2075,100 @@ const clearFailed = async () => {
   font-size: 14px;
 }
 
-.storage-bar {
+.storage-card {
+  margin: 0 0 14px;
+  padding: 14px 16px 12px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 2px 12px rgba(115, 67, 38, 0.06);
+}
+
+.storage-heading {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin: 0 14px 10px;
-  padding: 10px 14px;
-  border: 1px solid rgb(245 210 188 / 0.5);
-  border-radius: 8px;
-  background: #fffbf8;
-  font-size: 13px;
-  color: #8a6048;
+  gap: 10px;
+}
+
+.storage-icon-wrap {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  place-items: center;
+  border-radius: 10px;
+  background: #fff0e7;
 }
 
 .storage-icon {
+  color: #e8843c;
   font-size: 18px;
-  color: #fa9c69;
+}
+
+.storage-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.storage-label {
+  display: block;
+  color: #b89a84;
+  font-size: 12px;
+}
+
+.storage-value-row {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  margin-top: 2px;
+  color: #b89a84;
+  font-size: 12px;
+}
+
+.storage-value-row strong {
+  color: #4c2a18;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.storage-percent {
+  flex: 0 0 auto;
+  color: #e8843c;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.storage-progress {
+  width: 100%;
+  height: 6px;
+  margin-top: 12px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: #f0e4db;
+}
+
+.storage-progress-download,
+.storage-progress-available {
+  height: 100%;
+  flex: 0 0 auto;
+  transition: width 0.3s ease;
+}
+
+.storage-progress-download {
+  background: #e8843c;
+}
+
+.storage-progress-available {
+  background: #f8dfcd;
+}
+
+.storage-meta {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 6px;
+  color: #b89a84;
+  font-size: 11px;
 }
 
 .sort-label-row {
@@ -2038,11 +2176,15 @@ const clearFailed = async () => {
   align-items: center;
   justify-content: flex-end;
   gap: 4px;
-  margin: -2px 18px 4px;
+  margin: -2px 2px 6px;
 }
 
 .section {
-  padding: 0 14px;
+  padding: 0;
+}
+
+.download-group + .download-group {
+  margin-top: 10px;
 }
 
 .section-header {
@@ -2052,7 +2194,7 @@ const clearFailed = async () => {
   margin: 0;
   min-height: 44px;
   gap: 8px;
-  padding: 0 4px;
+  padding: 0 2px;
 }
 
 .section-toggle {
@@ -2142,6 +2284,12 @@ const clearFailed = async () => {
   color: #8a6048;
 }
 
+.section-count {
+  color: #b89078;
+  font-size: 13px;
+  font-weight: 500;
+}
+
 .clear-btn {
   font-size: 12px;
   border: 0;
@@ -2172,11 +2320,7 @@ const clearFailed = async () => {
 
 @media (max-width: 600px) {
   .sort-label-row {
-    margin-inline: 14px;
-  }
-
-  .section {
-    padding-inline: 10px;
+    margin-inline: 2px;
   }
 }
 
@@ -2184,8 +2328,13 @@ const clearFailed = async () => {
   .section-toggle-icon {
     transition-duration: 0.01ms;
   }
+  .storage-progress-download,
+  .storage-progress-available {
+    transition: none;
+  }
 }
 .multi-select-overlay {
+  --desktop-page-max-width: 1000px;
   position: fixed;
   inset: 0;
   z-index: 30;

@@ -74,6 +74,7 @@ public class DownloadPluginContractInstrumentedTest {
         downloadService.tasks = new JSONArray().put(task);
         downloadService.usedBytes = 123L;
         downloadService.availableBytes = 456L;
+        downloadService.totalBytes = 789L;
         RecordingPluginCall call = call("getDownloadTasksPage", "status", "active",
             "sort", "time", "direction", "desc", "limit", 50);
 
@@ -83,6 +84,9 @@ public class DownloadPluginContractInstrumentedTest {
         assertEquals(1, tasks.length());
         assertEquals("a_b", tasks.getJSONObject(0).getString("taskId"));
         assertEquals(1, call.resolvedData.getInt("totalCount"));
+        assertEquals(123L, call.resolvedData.getLong("usedBytes"));
+        assertEquals(456L, call.resolvedData.getLong("availableBytes"));
+        assertEquals(789L, call.resolvedData.getLong("totalBytes"));
         assertSynchronous(call);
     }
 
@@ -218,6 +222,7 @@ public class DownloadPluginContractInstrumentedTest {
         private JSONObject photo = new JSONObject();
         private long usedBytes;
         private long availableBytes;
+        private long totalBytes;
         private RuntimeException failure;
         private String albumId;
         private String chapterId;
@@ -261,6 +266,7 @@ public class DownloadPluginContractInstrumentedTest {
                 page.put("totalCount", tasks.length());
                 page.put("usedBytes", usedBytes);
                 page.put("availableBytes", availableBytes);
+                page.put("totalBytes", totalBytes);
                 return page;
             } catch (Exception error) {
                 throw new AssertionError(error);
@@ -275,6 +281,11 @@ public class DownloadPluginContractInstrumentedTest {
         @Override
         public long getAvailableBytes() {
             return availableBytes;
+        }
+
+        @Override
+        public long getTotalBytes() {
+            return totalBytes;
         }
 
         @Override

@@ -11,6 +11,7 @@ public record DownloadTasksPageResponse(
     String previousCursor,
     int totalCount,
     long usedBytes,
-    long availableBytes
+    long availableBytes,
+    long totalBytes
 ) {
 }

@@ -158,13 +158,14 @@ const availabilityLabel = computed(() => {
 <style scoped>
 .card {
   display: flex;
-  gap: 12px;
-  min-height: 85px;
-  padding: 0 36px 0 0;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 108px;
+  padding: 0 10px 0 0;
   background: #fffaf6;
-  border: 1px solid rgb(245 210 188 / 0.5);
   border-radius: 12px;
   position: relative;
+  box-shadow: 5px 12px 28px rgb(76 42 24 / 0.2);
   cursor: pointer;
   transition: transform 0.16s ease;
 }
@@ -190,25 +191,26 @@ const availabilityLabel = computed(() => {
 }
 
 .cover-wrap {
-  width: 64px;
-  height: 85px;
-  flex: 0 0 64px;
+  width: 80px;
+  aspect-ratio: 3 / 4;
+  flex: 0 0 80px;
+  align-self: flex-start;
   overflow: hidden;
   border-radius: 6px;
-  background: #ece1d8;
-  box-shadow: 2px 0 2px rgba(0, 0, 0, 0.2);
+  background: linear-gradient(145deg, #f3ded0, #ffece0);
 }
 
 .cover,
 .cover-placeholder {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .cover-placeholder {
   display: grid;
   place-items: center;
+  background: linear-gradient(145deg, #f3ded0, #ffece0);
   color: #9f785f;
   font-size: 28px;
 }
@@ -218,20 +220,20 @@ const availabilityLabel = computed(() => {
   width: 0;
   min-width: 0;
   overflow: hidden;
-  padding: 0;
+  padding: 0 2px 0 4px;
 }
 
 .open-btn {
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;
+  gap: 4px;
   border: 0;
   background: transparent;
   text-align: left;
   cursor: pointer;
 }
 
-.title,
 .subtitle {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -239,12 +241,17 @@ const availabilityLabel = computed(() => {
 }
 
 .title {
-  display: block;
+  display: -webkit-box;
   width: 100%;
   max-width: 100%;
-  color: #4c2a18;
-  font-size: 14px;
-  font-weight: 600;
+  margin: 0;
+  overflow: hidden;
+  color: #30201a;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
 }
 
 .subtitle {

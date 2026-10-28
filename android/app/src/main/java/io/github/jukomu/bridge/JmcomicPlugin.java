@@ -10,6 +10,7 @@ import io.github.jukomu.feature.settings.SettingsService;
 import io.github.jukomu.jmcomic.core.client.impl.JmApiClient;
 import io.github.jukomu.platform.persistence.SettingsStore;
 import io.github.jukomu.runtime.JmcomicSessionManager;
+import io.github.jukomu.runtime.ImageHostOptimizer;
 
 import java.util.Map;
 
@@ -49,6 +50,14 @@ public class JmcomicPlugin extends Plugin {
             public void onNetworkEvent(JmcomicSessionManager.NetworkEvent event) {
                 notifyListeners("networkProbe", networkEventJson(event));
             }
+
+            @Override
+            public void onImageRouteEvent(String phase, String message,
+                                          ImageHostOptimizer.Progress progress,
+                                          ImageHostOptimizer.Result result) {
+                notifyListeners("networkProbe",
+                    imageRouteEventJson(phase, message, progress, result));
+            }
         };
         sessionManager.attachListener(sessionListener);
     }
@@ -70,6 +79,60 @@ public class JmcomicPlugin extends Plugin {
             authHandler = null;
             boundClient = null;
         }
+    }
+
+    /** 将图片线路测速进度转换为前端网络探测事件。 */
+    private JSObject imageRouteEventJson(
+        String phase, String message, ImageHostOptimizer.Progress progress,
+        ImageHostOptimizer.Result result
+    ) {
+        JSObject event = new JSObject();
+        event.put("phase", phase);
+        event.put("message", message);
+        event.put("timestamp", System.currentTimeMillis());
+        if (progress != null) {
+            event.put("runId", progress.runId());
+            event.put("revision", progress.revision());
+            event.put("running", progress.running());
+            if (progress.currentHost() != null) {
+                event.put("currentHost", progress.currentHost());
+            }
+            if (progress.error() != null) event.put("error", progress.error());
+            event.put("hosts", imageHostResultsJson(progress.hosts()));
+        }
+        if (result != null) {
+            event.put("runId", result.runId());
+            event.put("revision", result.revision());
+            event.put("running", false);
+            event.put("selectedHost", result.selectedHost());
+            event.put("hosts", imageHostResultsJson(result.hosts()));
+        }
+        return event;
+    }
+
+    private JSArray imageHostResultsJson(java.util.List<ImageHostOptimizer.HostResult> results) {
+        JSArray hosts = new JSArray();
+        for (ImageHostOptimizer.HostResult host : results) {
+            JSObject item = new JSObject();
+            item.put("host", host.host());
+            item.put("available", host.available());
+            item.put("elapsedMs", host.elapsedMs());
+            item.put("bytes", host.bytes());
+            item.put("bytesPerSecond", host.bytesPerSecond());
+            item.put("error", host.error());
+            hosts.put(item);
+        }
+        return hosts;
+    }
+
+    /** 返回当前图片线路测速快照，供页面重新打开时恢复进度。 */
+    @PluginMethod
+    public void getImageRouteStatus(PluginCall call) {
+        call.resolve(imageRouteStatusJson(ImageHostOptimizer.status()));
+    }
+
+    private JSObject imageRouteStatusJson(ImageHostOptimizer.Progress progress) {
+        return imageRouteEventJson("image_route_status", "", progress, null);
     }
 
     private synchronized void bindClient(JmApiClient client) {
@@ -190,6 +253,66 @@ public class JmcomicPlugin extends Plugin {
         } catch (RuntimeException error) {
             call.reject("测速失败，请稍后重试", error);
         }
+    }
+
+    /** 返回当前客户端的图片 Host 候选。 */
+    @PluginMethod
+    public void getImageRouteCandidates(PluginCall call) {
+        JSObject result = new JSObject();
+        JSArray hosts = new JSArray();
+        for (String host : ImageHostOptimizer.candidates()) hosts.put(host);
+        result.put("hosts", hosts);
+        call.resolve(result);
+    }
+
+    /** 测试固定样本图片并返回各 Host 的有效性与吞吐量。 */
+    @PluginMethod
+    public void measureImageHosts(PluginCall call) {
+        JmApiClient client = requireClient(call);
+        if (client == null) return;
+        call.setKeepAlive(true);
+        java.util.concurrent.CompletableFuture.supplyAsync(() -> ImageHostOptimizer.optimize(
+            client,
+                progress -> notifyListeners("networkProbe", imageRouteEventJson(
+                !progress.running() && progress.error() != null
+                    ? "image_route_error"
+                    : progress.currentHost() == null && progress.hosts().isEmpty()
+                        ? "image_route_probing"
+                        : "image_route_progress",
+                progress.running() && progress.currentHost() == null && progress.hosts().isEmpty()
+                    ? "开始图片线路测速"
+                    : "",
+                progress,
+                null))))
+            .whenComplete((result, failure) -> {
+                if (failure != null) {
+                    android.util.Log.e(TAG, "图片线路测速失败", failure);
+                    notifyListeners("networkProbe", imageRouteStatusJson(ImageHostOptimizer.status()));
+                    call.reject("图片线路测速失败");
+                    return;
+                }
+                JSObject response = new JSObject();
+                JSArray items = new JSArray();
+                for (ImageHostOptimizer.HostResult host : result.hosts()) {
+                    JSObject item = new JSObject();
+                    item.put("host", host.host());
+                    item.put("available", host.available());
+                    item.put("elapsedMs", host.elapsedMs());
+                    item.put("bytes", host.bytes());
+                    item.put("bytesPerSecond", host.bytesPerSecond());
+                    item.put("error", host.error());
+                    items.put(item);
+                }
+                response.put("selectedHost", result.selectedHost());
+                response.put("runId", result.runId());
+                response.put("revision", result.revision());
+                response.put("hosts", items);
+                notifyListeners("networkProbe", imageRouteEventJson(
+                    result.selectedHost() == null ? "image_route_error" : "image_route_result",
+                    result.selectedHost() == null ? "没有可用的图片线路" : "图片线路测速完成",
+                    null, result));
+                call.resolve(response);
+            });
     }
 
     @PluginMethod

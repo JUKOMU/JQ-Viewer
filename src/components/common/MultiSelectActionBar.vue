@@ -1,6 +1,6 @@
 <template>
   <div class="multi-select-actions" role="toolbar" aria-label="批量操作栏">
-    <div class="multi-select-actions-content">
+    <div class="multi-select-actions-content desktop-page-content">
       <button
         v-for="action in actions"
         :key="action.id"

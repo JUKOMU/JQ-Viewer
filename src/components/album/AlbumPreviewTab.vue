@@ -22,7 +22,10 @@
       <div v-if="totalCount > 0" class="preview-footer">
         <button
           class="load-more-btn"
-          :class="{ 'load-more-status': loadingMore || autoLoad || allVisible }"
+          :class="{
+            'load-more-status': loadingMore || autoLoad || allVisible,
+            'load-more-progress-status': loadingMore || (autoLoad && loadedCount < visibleCount),
+          }"
           :aria-disabled="loadingMore || autoLoad || allVisible"
           @click="onLoadMore"
         >
@@ -192,6 +195,10 @@ const onLoadMore = () => {
   border-color: transparent;
   color: #8a6048;
   cursor: default;
+}
+
+.load-more-btn.load-more-progress-status {
+  min-height: 48px;
 }
 
 .load-more-btn:not([aria-disabled='true']):active {

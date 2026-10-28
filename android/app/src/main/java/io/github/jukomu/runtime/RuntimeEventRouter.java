@@ -47,17 +47,27 @@ final class RuntimeEventRouter implements DownloadEventSink, PreloadEventSink,
 
     @Override
     public void onImageReady(String photoId, int sortOrder, String type) {
+        onImageReady(photoId, sortOrder, type, "legacy");
+    }
+
+    @Override
+    public void onImageReady(String photoId, int sortOrder, String type, String sessionId) {
         PreloadEventSink current = preloadDelegate;
         if (current != null) {
-            current.onImageReady(photoId, sortOrder, type);
+            current.onImageReady(photoId, sortOrder, type, sessionId);
         }
     }
 
     @Override
     public void onImageFailed(String photoId, int sortOrder, String type) {
+        onImageFailed(photoId, sortOrder, type, "legacy");
+    }
+
+    @Override
+    public void onImageFailed(String photoId, int sortOrder, String type, String sessionId) {
         PreloadEventSink current = preloadDelegate;
         if (current != null) {
-            current.onImageFailed(photoId, sortOrder, type);
+            current.onImageFailed(photoId, sortOrder, type, sessionId);
         }
     }
 

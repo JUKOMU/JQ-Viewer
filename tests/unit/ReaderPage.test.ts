@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   getAlbum: vi.fn(),
   preloadImages: vi.fn(),
   retryImage: vi.fn(),
+  cancelPreload: vi.fn(() => Promise.resolve({ success: true })),
   showToast: vi.fn(() => Promise.resolve()),
   addImageReadyListener: vi.fn(),
   addImageFailedListener: vi.fn(),
@@ -82,6 +83,7 @@ vi.mock('@/services/JmcomicService', () => ({
     getAlbum: mocks.getAlbum,
     preloadImages: mocks.preloadImages,
     retryImage: mocks.retryImage,
+    cancelPreload: mocks.cancelPreload,
     addImageReadyListener: mocks.addImageReadyListener,
     addImageFailedListener: mocks.addImageFailedListener,
     addVolumeKeyListener: mocks.addVolumeKeyListener,
@@ -303,6 +305,7 @@ describe('ReaderPage 在线/离线统一图片加载', () => {
 
     expect(mocks.addImageReadyListener).toHaveBeenCalledWith('chapter-1', expect.any(Function), {
       type: 'image',
+      sessionId: expect.any(String),
     })
     expect(mocks.preloadImages).not.toHaveBeenCalled()
     expect(currentImageMap(wrapper).size).toBe(0)
@@ -310,14 +313,20 @@ describe('ReaderPage 在线/离线统一图片加载', () => {
     listener.resolve({ remove: mocks.listenerRemove })
     await settle()
 
-    expect(mocks.preloadImages).toHaveBeenCalledWith(
+    expect(mocks.preloadImages).toHaveBeenCalledTimes(2)
+    expect(mocks.preloadImages).toHaveBeenNthCalledWith(
+      1,
       'chapter-1',
-      expect.arrayContaining([
-        expect.objectContaining({ sortOrder: 1 }),
-        expect.objectContaining({ sortOrder: 2 }),
-      ]),
+      [expect.objectContaining({ sortOrder: 1 })],
       'image',
-      { replacePending: false },
+      { replacePending: false, priority: 300, sessionId: expect.any(String) },
+    )
+    expect(mocks.preloadImages).toHaveBeenNthCalledWith(
+      2,
+      'chapter-1',
+      [expect.objectContaining({ sortOrder: 2 })],
+      'image',
+      { replacePending: false, priority: 200, sessionId: expect.any(String) },
     )
     expect(currentImageMap(wrapper).get(1)).toBe('jqviewer.local/chapter-1/image/1')
 
@@ -333,9 +342,13 @@ describe('ReaderPage 在线/离线统一图片加载', () => {
     await settle()
 
     expect(mocks.getPhoto).toHaveBeenCalledWith('chapter-1')
-    expect(mocks.preloadImages).toHaveBeenCalledWith('chapter-1', expect.any(Array), 'image', {
-      replacePending: false,
-    })
+    expect(mocks.preloadImages).toHaveBeenCalledTimes(2)
+    expect(mocks.preloadImages).toHaveBeenCalledWith(
+      'chapter-1',
+      expect.any(Array),
+      'image',
+      expect.objectContaining({ replacePending: false, sessionId: expect.any(String) }),
+    )
     expect(currentImageMap(wrapper).has(1)).toBe(true)
 
     wrapper.unmount()
@@ -349,11 +362,7 @@ describe('ReaderPage 在线/离线统一图片加载', () => {
     const wrapper = mountReader()
     await settle()
 
-    expect(mocks.preloadImages).toHaveBeenCalledTimes(1)
-    const initialSortOrders = (mocks.preloadImages.mock.calls[0][1] as ImageInfo[]).map(
-      (image) => image.sortOrder,
-    )
-
+    expect(mocks.preloadImages).toHaveBeenCalledTimes(2)
     wrapper.findComponent(VerticalScrollViewStub).vm.$emit('request-range', {
       start: 0,
       end: 2,
@@ -361,11 +370,13 @@ describe('ReaderPage 在线/离线统一图片加载', () => {
     })
     await settle()
 
-    expect(mocks.preloadImages).toHaveBeenCalledTimes(2)
-    expect(mocks.preloadImages.mock.calls[1][3]).toEqual({ replacePending: false })
+    expect(mocks.preloadImages).toHaveBeenCalledTimes(3)
+    expect(mocks.preloadImages.mock.calls[2][3]).toEqual(
+      expect.objectContaining({ replacePending: false, priority: 300 }),
+    )
     expect(
-      (mocks.preloadImages.mock.calls[1][1] as ImageInfo[]).map((image) => image.sortOrder),
-    ).toEqual(initialSortOrders)
+      (mocks.preloadImages.mock.calls[2][1] as ImageInfo[]).map((image) => image.sortOrder),
+    ).toEqual([1])
 
     wrapper.unmount()
   })
@@ -378,12 +389,14 @@ describe('ReaderPage 在线/离线统一图片加载', () => {
 
     const wrapper = mountReader()
     await settle()
-    expect(mocks.preloadImages).toHaveBeenCalledTimes(1)
+    expect(mocks.preloadImages).toHaveBeenCalledTimes(2)
 
     wrapper.findComponent(ReaderBottomToolbarStub).vm.$emit('update:current', 1)
     await settle()
-    expect(mocks.preloadImages).toHaveBeenCalledTimes(2)
-    expect(mocks.preloadImages.mock.calls[1][3]).toEqual({ replacePending: true })
+    expect(mocks.preloadImages).toHaveBeenCalledTimes(4)
+    expect(mocks.preloadImages.mock.calls[2][3]).toEqual(
+      expect.objectContaining({ replacePending: true, priority: 300 }),
+    )
 
     initialPreload.reject(new Error('stale batch failure'))
     await settle()
@@ -395,7 +408,7 @@ describe('ReaderPage 在线/离线统一图片加载', () => {
     })
     await settle()
 
-    expect(mocks.preloadImages).toHaveBeenCalledTimes(2)
+    expect(mocks.preloadImages).toHaveBeenCalledTimes(4)
 
     wrapper.unmount()
   })
@@ -428,11 +441,11 @@ describe('ReaderPage 在线/离线统一图片加载', () => {
 
     const wrapper = mountReader()
     await settle()
-    expect(mocks.preloadImages).toHaveBeenCalledTimes(1)
+    expect(mocks.preloadImages).toHaveBeenCalledTimes(2)
 
     wrapper.findComponent(VerticalScrollViewStub).vm.$emit('update:current-index', 60)
     await settle()
-    expect(mocks.preloadImages).toHaveBeenCalledTimes(2)
+    expect(mocks.preloadImages).toHaveBeenCalledTimes(4)
 
     initialPreload.resolve({ cached: [1], pending: [2] })
     await settle()
@@ -444,9 +457,11 @@ describe('ReaderPage 在线/离线统一图片加载', () => {
     wrapper.findComponent(VerticalScrollViewStub).vm.$emit('update:current-index', 0)
     await settle()
 
-    expect(mocks.preloadImages).toHaveBeenCalledTimes(3)
-    const returnImages = mocks.preloadImages.mock.calls[2][1] as ImageInfo[]
-    expect(returnImages.map((image) => image.sortOrder)).toEqual([1, 2])
+    expect(mocks.preloadImages).toHaveBeenCalledTimes(6)
+    const returnOrders = mocks.preloadImages.mock.calls.slice(4, 6).flatMap((call) =>
+      (call[1] as ImageInfo[]).map((image) => image.sortOrder),
+    )
+    expect(returnOrders).toEqual([1, 2])
 
     wrapper.unmount()
   })
@@ -464,11 +479,13 @@ describe('ReaderPage 在线/离线统一图片加载', () => {
     vi.advanceTimersByTime(500)
     await settle()
 
-    expect(mocks.preloadImages).toHaveBeenCalledTimes(2)
-    expect(mocks.preloadImages.mock.calls[1][1]).toEqual([
+    expect(mocks.preloadImages).toHaveBeenCalledTimes(3)
+    expect(mocks.preloadImages.mock.calls[2][1]).toEqual([
       expect.objectContaining({ sortOrder: 2 }),
     ])
-    expect(mocks.preloadImages.mock.calls[1][3]).toEqual({ replacePending: true })
+    expect(mocks.preloadImages.mock.calls[2][3]).toEqual(
+      expect.objectContaining({ replacePending: true, priority: 300 }),
+    )
 
     toolbar.vm.$emit('update:current-input', 50)
     await nextTick()
@@ -512,8 +529,16 @@ describe('ReaderPage 在线/离线统一图片加载', () => {
     expect(mocks.getPhoto).toHaveBeenCalledTimes(2)
     expect(mocks.getPhoto).toHaveBeenLastCalledWith('chapter-1')
     expect(mocks.retryImage.mock.calls).toEqual([
-      ['chapter-1', expect.objectContaining({ sortOrder: 1, url: latestPhoto.images[0].url })],
-      ['chapter-1', expect.objectContaining({ sortOrder: 2, url: latestPhoto.images[1].url })],
+      [
+        'chapter-1',
+        expect.objectContaining({ sortOrder: 1, url: latestPhoto.images[0].url }),
+        { sessionId: expect.any(String), priority: 300 },
+      ],
+      [
+        'chapter-1',
+        expect.objectContaining({ sortOrder: 2, url: latestPhoto.images[1].url }),
+        { sessionId: expect.any(String), priority: 300 },
+      ],
     ])
     expect(currentImageMap(wrapper).get(1)).toContain('?retry=')
     expect(currentImageMap(wrapper).has(2)).toBe(false)
@@ -540,8 +565,8 @@ describe('ReaderPage 在线/离线统一图片加载', () => {
 
     expect(mocks.getPhoto).toHaveBeenCalledWith('chapter-1')
     expect(mocks.retryImage.mock.calls).toEqual([
-      ['chapter-1', expect.objectContaining({ sortOrder: 1 })],
-      ['chapter-1', expect.objectContaining({ sortOrder: 2 })],
+      ['chapter-1', expect.objectContaining({ sortOrder: 1 }), expect.objectContaining({ priority: 300 })],
+      ['chapter-1', expect.objectContaining({ sortOrder: 2 }), expect.objectContaining({ priority: 300 })],
     ])
     expect(view.props('failedSortOrders')).toEqual(new Set())
     wrapper.unmount()

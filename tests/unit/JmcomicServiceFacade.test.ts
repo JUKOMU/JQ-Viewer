@@ -52,20 +52,34 @@ describe('JmcomicService.addImageReadyListener', () => {
     const handler = vi.fn()
     await JmcomicService.addImageReadyListener('chapter-1', handler, { type: 'image' })
 
-    imageReadyHandler?.({ photoId: 'chapter-1', sortOrder: 1, type: 'thumb' })
-    imageReadyHandler?.({ photoId: 'chapter-2', sortOrder: 2, type: 'image' })
-    imageReadyHandler?.({ photoId: 'chapter-1', sortOrder: 3, type: 'image' })
+    imageReadyHandler?.({ photoId: 'chapter-1', sortOrder: 1, type: 'thumb', sessionId: 'old' })
+    imageReadyHandler?.({ photoId: 'chapter-2', sortOrder: 2, type: 'image', sessionId: 'current' })
+    imageReadyHandler?.({ photoId: 'chapter-1', sortOrder: 3, type: 'image', sessionId: 'current' })
 
     expect(handler).toHaveBeenCalledTimes(1)
     expect(handler).toHaveBeenCalledWith(3)
+  })
+
+  test('按会话过滤过期事件', async () => {
+    const handler = vi.fn()
+    await JmcomicService.addImageReadyListener('chapter-1', handler, {
+      type: 'image',
+      sessionId: 'current',
+    })
+
+    imageReadyHandler?.({ photoId: 'chapter-1', sortOrder: 1, type: 'image', sessionId: 'old' })
+    imageReadyHandler?.({ photoId: 'chapter-1', sortOrder: 2, type: 'image', sessionId: 'current' })
+
+    expect(handler).toHaveBeenCalledTimes(1)
+    expect(handler).toHaveBeenCalledWith(2)
   })
 
   test('未传类型时保持原有兼容行为', async () => {
     const handler = vi.fn()
     await JmcomicService.addImageReadyListener('chapter-1', handler)
 
-    imageReadyHandler?.({ photoId: 'chapter-1', sortOrder: 1, type: 'thumb' })
-    imageReadyHandler?.({ photoId: 'chapter-1', sortOrder: 2, type: 'image' })
+    imageReadyHandler?.({ photoId: 'chapter-1', sortOrder: 1, type: 'thumb', sessionId: 'old' })
+    imageReadyHandler?.({ photoId: 'chapter-1', sortOrder: 2, type: 'image', sessionId: 'current' })
 
     expect(handler.mock.calls).toEqual([[1], [2]])
   })
@@ -85,9 +99,9 @@ describe('JmcomicService.addImageFailedListener', () => {
 
     await JmcomicService.addImageFailedListener('chapter-1', handler, { type: 'image' })
 
-    imageFailedHandler?.({ photoId: 'chapter-1', sortOrder: 1, type: 'thumb' })
-    imageFailedHandler?.({ photoId: 'chapter-2', sortOrder: 2, type: 'image' })
-    imageFailedHandler?.({ photoId: 'chapter-1', sortOrder: 3, type: 'image' })
+    imageFailedHandler?.({ photoId: 'chapter-1', sortOrder: 1, type: 'thumb', sessionId: 'old' })
+    imageFailedHandler?.({ photoId: 'chapter-2', sortOrder: 2, type: 'image', sessionId: 'current' })
+    imageFailedHandler?.({ photoId: 'chapter-1', sortOrder: 3, type: 'image', sessionId: 'current' })
 
     expect(mocks.addListener).toHaveBeenCalledWith('imageFailed', expect.any(Function))
     expect(handler).toHaveBeenCalledTimes(1)

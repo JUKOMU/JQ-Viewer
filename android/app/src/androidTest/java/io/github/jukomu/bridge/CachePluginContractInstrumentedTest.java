@@ -29,7 +29,8 @@ public class CachePluginContractInstrumentedTest {
 
     @Test
     public void preloadImagesForwardsDefaultsAndSkipsInvalidEntries() throws Exception {
-        RecordingPluginCall emptyCall = call("preloadImages");
+        RecordingPluginCall emptyCall = call(
+            "preloadImages", "sessionId", "session-empty", "priority", 200);
 
         plugin.preloadImages(emptyCall);
 
@@ -46,6 +47,8 @@ public class CachePluginContractInstrumentedTest {
             "preloadImages",
             "photoId", "photo-1",
             "type", "thumb",
+            "sessionId", "session-preview",
+            "priority", 100,
             "replacePending", true,
             "images", images);
 
@@ -54,10 +57,26 @@ public class CachePluginContractInstrumentedTest {
         assertEquals("photo-1", preloadService.photoId);
         assertEquals("thumb", preloadService.type);
         assertTrue(preloadService.replacePending);
+        assertEquals("session-preview", preloadService.sessionId);
+        assertEquals(100, preloadService.priority);
         assertEquals(1, preloadService.images.length());
         assertEquals(7, preloadService.images.getJSONObject(0).getInt("sortOrder"));
         assertEquals(1, populatedCall.resolvedData.getJSONArray("pending").length());
         assertSynchronous(emptyCall, populatedCall);
+    }
+
+    @Test
+    public void cancelPreloadRequiresSessionAndForwardsIt() {
+        RecordingPluginCall missing = call("cancelPreload");
+        RecordingPluginCall valid = call("cancelPreload", "sessionId", "reader-session");
+
+        plugin.cancelPreload(missing);
+        plugin.cancelPreload(valid);
+
+        assertRejected(missing, "sessionId is required");
+        assertEquals("reader-session", preloadService.cancelledSessionId);
+        assertTrue(valid.resolvedData.getBool("success"));
+        assertSynchronous(valid);
     }
 
     @Test
@@ -117,7 +136,8 @@ public class CachePluginContractInstrumentedTest {
     @Test
     public void retryImageValidatesAndForwardsLatestMetadata() throws Exception {
         RecordingPluginCall missingPhotoId = call(
-            "retryImage", "image", new JSObject().put("sortOrder", 1));
+            "retryImage", "image", new JSObject().put("sortOrder", 1),
+            "sessionId", "reader-session", "priority", 300);
         RecordingPluginCall missingImage = call("retryImage", "photoId", "photo-1");
 
         plugin.retryImage(missingPhotoId);
@@ -130,12 +150,15 @@ public class CachePluginContractInstrumentedTest {
             .put("sortOrder", 1)
             .put("url", "https://latest.example.com/1.jpg");
         RecordingPluginCall valid = call(
-            "retryImage", "photoId", "photo-1", "image", image);
+            "retryImage", "photoId", "photo-1", "image", image,
+            "sessionId", "reader-session", "priority", 300);
         plugin.retryImage(valid);
 
         assertEquals("photo-1", preloadService.retryPhotoId);
         assertEquals("https://latest.example.com/1.jpg",
             preloadService.retryImage.getString("url"));
+        assertEquals("reader-session", preloadService.retrySessionId);
+        assertEquals(300, preloadService.retryPriority);
         assertTrue(valid.resolvedData.getBool("success"));
         assertSynchronous(valid);
     }
@@ -185,10 +208,15 @@ public class CachePluginContractInstrumentedTest {
         private String type;
         private JSONArray images;
         private boolean replacePending;
+        private String sessionId;
+        private int priority;
+        private String cancelledSessionId;
         private long capacityMb;
         private boolean cleared;
         private RuntimeException failure;
         private String retryPhotoId;
+        private String retrySessionId;
+        private int retryPriority;
         private JSONObject retryImage;
 
         private FakePreloadService() {
@@ -198,21 +226,30 @@ public class CachePluginContractInstrumentedTest {
 
         @Override
         public JSONObject preloadImages(String photoId, String type, JSONArray images,
-                                        boolean replacePending) {
+                                        boolean replacePending, String sessionId, int priority) {
             this.photoId = photoId;
             this.type = type;
             this.images = images;
             this.replacePending = replacePending;
+            this.sessionId = sessionId;
+            this.priority = priority;
             return jsonObject(
                 "cached", new JSONArray(),
                 "pending", new JSONArray().put(7));
         }
 
         @Override
-        public void retryImage(String photoId, JSONObject image,
+        public void cancelPreload(String sessionId) {
+            cancelledSessionId = sessionId;
+        }
+
+        @Override
+        public void retryImage(String photoId, JSONObject image, String sessionId, int priority,
                                ImageRetryCallback callback) {
             this.retryPhotoId = photoId;
             this.retryImage = image;
+            this.retrySessionId = sessionId;
+            this.retryPriority = priority;
             callback.onSuccess();
         }
 

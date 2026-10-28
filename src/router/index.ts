@@ -60,10 +60,6 @@ const routes: Array<RouteRecordRaw> = [
     meta: { menu: true, keepAlive: true },
   },
   {
-    path: '/album/:albumId/preview/:chapterId',
-    component: () => import('@/views/PreviewAllPage.vue'),
-  },
-  {
     path: '/album/:albumId/download-chapters',
     component: () => import('@/views/ChapterSelectPage.vue'),
   },

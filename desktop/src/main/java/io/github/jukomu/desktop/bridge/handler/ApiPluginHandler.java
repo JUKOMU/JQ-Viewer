@@ -8,6 +8,7 @@ import io.github.jukomu.desktop.feature.catalog.model.*;
 import io.github.jukomu.desktop.feature.image.ImageService;
 import io.github.jukomu.desktop.feature.image.model.PreloadImagesRequest;
 import io.github.jukomu.desktop.feature.image.model.RetryImageRequest;
+import io.github.jukomu.desktop.feature.image.model.CancelPreloadRequest;
 import io.github.jukomu.jmcomic.api.enums.FavoriteFolderType;
 import io.javalin.http.Context;
 
@@ -97,12 +98,21 @@ public final class ApiPluginHandler {
             requiredText(request.photoId(), "photoId"),
             request.type() == null ? "image" : request.type(),
             request.images(),
-            Request.bool(request.replacePending(), false)));
+            Request.bool(request.replacePending(), false),
+            requiredText(request.sessionId(), "sessionId"),
+            positive(request.priority(), "priority", 0)));
+    }
+
+    public void cancelPreload(Context context) {
+        imageRequests.run(context, CancelPreloadRequest.class, request ->
+            images.cancelPreload(requiredText(request.sessionId(), "sessionId")));
     }
 
     public void retryImage(Context context) {
         imageRequests.run(context, RetryImageRequest.class, request -> images.retry(
-            requiredText(request.photoId(), "photoId"), request.image()));
+            requiredText(request.photoId(), "photoId"), request.image(),
+            requiredText(request.sessionId(), "sessionId"),
+            positive(request.priority(), "priority", 0)));
     }
 
     private static int positive(Integer candidate, String name, int fallback) {

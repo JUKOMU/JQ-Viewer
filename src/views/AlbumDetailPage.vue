@@ -432,6 +432,7 @@ interface PreviewLoadContext {
 
 let previewRequestGeneration = 0
 let previewLoadContext: PreviewLoadContext | null = null
+let previewSessionId: string | null = null
 
 const removePreviewImageReadyListener = (handle = imageReadyListenerHandle) => {
   if (!handle) return
@@ -452,6 +453,12 @@ const isCurrentPreviewRequest = (requestGeneration: number) =>
   requestGeneration === previewRequestGeneration
 
 const invalidatePreviewRequest = () => {
+  if (previewSessionId) {
+    void JmcomicService.cancelPreload(previewSessionId).catch((error) => {
+      console.warn('取消预览图片预载失败', error)
+    })
+    previewSessionId = null
+  }
   previewRequestGeneration += 1
   previewLoadContext = null
   previewBatches.reset()
@@ -829,7 +836,8 @@ const setupTabSwipeGesture = () => {
   tabSwipeGesture.enable(true)
 }
 
-watch(activeTab, () => {
+watch(activeTab, (newTab, oldTab) => {
+  if (oldTab === 'preview' && newTab !== 'preview') invalidatePreviewRequest()
   nextTick(() => observeActiveTabPanel())
 })
 
@@ -926,7 +934,7 @@ const setupPreviewImageReadyListener = async (
     (sortOrder) => {
       setImageSlot(sortOrder, getImageUrl(chapterId, sortOrder, 'thumb'))
     },
-    { type: 'thumb' },
+    { type: 'thumb', sessionId: previewSessionId ?? undefined },
   )
   if (!isCurrentPreviewRequest(requestGeneration)) {
     removePreviewImageReadyListener(listenerHandle)
@@ -1092,10 +1100,13 @@ const loadPreviewBatch = async (
   if (!photo) return
 
   const batch = photo.images.slice(start, end)
+  const sessionId = previewSessionId
+  if (!sessionId) return
   const result: PreloadResult = await JmcomicService.preloadImages(
     context.chapterId,
     batch,
     'thumb',
+    { sessionId, priority: 100 },
   )
   if (!isCurrentPreviewRequest(context.requestGeneration)) return
   for (const sortOrder of result.cached) {
@@ -1140,6 +1151,7 @@ const loadPreview = async () => {
   const targetAlbumId = albumId.value
   invalidatePreviewRequest()
   const requestGeneration = previewRequestGeneration
+  previewSessionId = crypto.randomUUID()
   previewLoading.value = true
 
   try {
@@ -1299,10 +1311,12 @@ onActivated(() => {
   if (wasDeactivated && loading.value) void loadAlbumData(true)
   wasDeactivated = false
   void restoreTabScrollPosition(activeTab.value)
+  if (activeTab.value === 'preview' && !previewLoadContext && !loading.value) void loadPreview()
 })
 
 onDeactivated(() => {
   wasDeactivated = true
+  if (activeTab.value === 'preview') invalidatePreviewRequest()
   void saveActiveTabScrollPosition()
   setLeftMenuGestureEnabled(true)
 })

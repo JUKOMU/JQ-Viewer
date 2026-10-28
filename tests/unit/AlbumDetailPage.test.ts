@@ -32,6 +32,7 @@ const mocks = vi.hoisted(() => ({
   addDownloadProgressListener: vi.fn(),
   addImageReadyListener: vi.fn(),
   preloadImages: vi.fn(),
+  cancelPreload: vi.fn(() => Promise.resolve({ success: true })),
   listenerRemove: vi.fn(),
   imageReadyHandler: undefined as undefined | ((sortOrder: number) => void),
   getImageUrl: vi.fn(),
@@ -115,6 +116,7 @@ vi.mock('@/services/JmcomicService', () => ({
     addDownloadProgressListener: mocks.addDownloadProgressListener,
     addImageReadyListener: mocks.addImageReadyListener,
     preloadImages: mocks.preloadImages,
+    cancelPreload: mocks.cancelPreload,
   },
 }))
 
@@ -897,8 +899,14 @@ describe('AlbumDetailPage 预览来源', () => {
     expect(mocks.fetchPdfArrayBuffer).not.toHaveBeenCalled()
     expect(mocks.addImageReadyListener).toHaveBeenCalledWith('chapter-1', expect.any(Function), {
       type: 'thumb',
+      sessionId: expect.any(String),
     })
-    expect(mocks.preloadImages).toHaveBeenCalledWith('chapter-1', makePhoto().images, 'thumb')
+    expect(mocks.preloadImages).toHaveBeenCalledWith(
+      'chapter-1',
+      makePhoto().images,
+      'thumb',
+      { sessionId: expect.any(String), priority: 100 },
+    )
 
     const preview = wrapper.findComponent({ name: 'AlbumPreviewTab' })
     expect(preview.props('loadedCount')).toBe(1)
@@ -931,7 +939,9 @@ describe('AlbumDetailPage 预览来源', () => {
     expect(mocks.getPhoto).toHaveBeenCalledWith('chapter-1')
     expect(mocks.getDownloadedPhoto).not.toHaveBeenCalled()
     expect(mocks.fetchPdfArrayBuffer).not.toHaveBeenCalled()
-    expect(mocks.preloadImages).toHaveBeenCalledWith('chapter-1', makePhoto().images, 'thumb')
+    expect(mocks.preloadImages).toHaveBeenCalledWith(
+      'chapter-1', makePhoto().images, 'thumb', expect.objectContaining({ priority: 100 }),
+    )
 
     wrapper.unmount()
   })
@@ -944,7 +954,9 @@ describe('AlbumDetailPage 预览来源', () => {
 
     expect(mocks.getDownloadedPhoto).toHaveBeenCalledWith('123', 'chapter-1')
     expect(mocks.fetchPdfArrayBuffer).not.toHaveBeenCalled()
-    expect(mocks.preloadImages).toHaveBeenCalledWith('chapter-1', makePhoto().images, 'thumb')
+    expect(mocks.preloadImages).toHaveBeenCalledWith(
+      'chapter-1', makePhoto().images, 'thumb', expect.objectContaining({ priority: 100 }),
+    )
 
     wrapper.unmount()
   })

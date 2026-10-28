@@ -60,7 +60,6 @@ public class PreloadServiceTest {
         imageExecutor = Executors.newSingleThreadExecutor();
         fileExecutor = Executors.newSingleThreadExecutor();
         networkExecutor = Executors.newSingleThreadExecutor();
-
         testBaseDir = new File(
             InstrumentationRegistry.getInstrumentation().getTargetContext().getCacheDir(),
             "preload-service-test-" + System.nanoTime());
@@ -105,8 +104,7 @@ public class PreloadServiceTest {
         AtomicInteger fetchCount = new AtomicInteger();
         CacheCapacityPolicy policy = new CacheCapacityPolicy();
         PreloadService service = new PreloadService(
-            imageCache, FileStore.getInstance(), null,
-            imageExecutor, fileExecutor, networkExecutor, null, null, policy, 2,
+            imageCache, FileStore.getInstance(), null, null, null, policy, 2,
             image -> {
                 fetchCount.incrementAndGet();
                 fetched.countDown();
@@ -123,7 +121,6 @@ public class PreloadServiceTest {
 
         assertEquals(1, result.getJSONArray("pending").length());
         assertTrue(fetched.await(1, TimeUnit.SECONDS));
-        awaitPreloadPipeline();
         assertEquals(1, fetchCount.get());
     }
 
@@ -151,8 +148,7 @@ public class PreloadServiceTest {
         AtomicInteger fetchCount = new AtomicInteger();
         CacheCapacityPolicy policy = new CacheCapacityPolicy();
         PreloadService service = new PreloadService(
-            imageCache, FileStore.getInstance(), null,
-            imageExecutor, fileExecutor, networkExecutor, null, null, policy, 2,
+            imageCache, FileStore.getInstance(), null, null, null, policy, 2,
             image -> {
                 fetchCount.incrementAndGet();
                 fetched.countDown();
@@ -168,14 +164,12 @@ public class PreloadServiceTest {
         JSONObject result = service.preloadImages("complete-photo", "image", images);
 
         assertEquals(1, result.getJSONArray("pending").length());
-        awaitPreloadPipeline();
-        assertEquals(0, fetchCount.get());
         assertFalse(fetched.await(100, TimeUnit.MILLISECONDS));
+        assertEquals(0, fetchCount.get());
 
         service.setMemoryPressureLevel(CacheCapacityPolicy.PressureLevel.NORMAL);
         service.preloadImages("complete-photo", "image", images);
         assertTrue(fetched.await(1, TimeUnit.SECONDS));
-        awaitPreloadPipeline();
         assertEquals(1, fetchCount.get());
     }
 
@@ -183,10 +177,19 @@ public class PreloadServiceTest {
     public void completePressureDiscardsResultOfInFlightRequest() throws Exception {
         CountDownLatch fetchStarted = new CountDownLatch(1);
         CountDownLatch allowFetchFinish = new CountDownLatch(1);
+        CountDownLatch failed = new CountDownLatch(1);
         CacheCapacityPolicy policy = new CacheCapacityPolicy();
         PreloadService service = new PreloadService(
-            imageCache, FileStore.getInstance(), null,
-            imageExecutor, fileExecutor, networkExecutor, null, null, policy, 2,
+            imageCache, FileStore.getInstance(), null, new PreloadEventSink() {
+                @Override
+                public void onImageReady(String photoId, int sortOrder, String type) {
+                }
+
+                @Override
+                public void onImageFailed(String photoId, int sortOrder, String type) {
+                    failed.countDown();
+                }
+            }, null, policy, 2,
             image -> {
                 fetchStarted.countDown();
                 allowFetchFinish.await(1, TimeUnit.SECONDS);
@@ -203,7 +206,7 @@ public class PreloadServiceTest {
 
         service.setMemoryPressureLevel(CacheCapacityPolicy.PressureLevel.COMPLETE);
         allowFetchFinish.countDown();
-        awaitPreloadPipeline();
+        assertTrue(failed.await(1, TimeUnit.SECONDS));
 
         assertFalse(imageCache.has("in-flight-complete-photo/1"));
     }
@@ -211,8 +214,7 @@ public class PreloadServiceTest {
     @Test
     public void imageCacheContentsReturnsStructuredEntries() throws Exception {
         PreloadService service = new PreloadService(
-            imageCache, FileStore.getInstance(), null,
-            imageExecutor, fileExecutor, networkExecutor, null, null,
+            imageCache, FileStore.getInstance(), null, null, null,
             new CacheCapacityPolicy(), 2,
             image -> new byte[]{1, 2, 3});
         imageCache.put("20/49", new byte[]{1, 2}, "image/jpeg");
@@ -263,35 +265,29 @@ public class PreloadServiceTest {
     }
 
     @Test
-    public void cachedOriginalThumbnailGenerationRunsOnImageExecutor() throws Exception {
+    public void cachedOriginalThumbnailGenerationUsesPreloadScheduler() throws Exception {
         imageCache.put("cached-original/1", createPng(), "image/png");
+        CountDownLatch thumbnailReady = new CountDownLatch(1);
         PreloadService service = createService(image -> {
             fail("已有原图生成缩略图不应发起网络请求");
             return createPng();
-        });
-        CountDownLatch releaseImageExecutor = new CountDownLatch(1);
-        CountDownLatch imageExecutorBlocked = new CountDownLatch(1);
-        imageExecutor.execute(() -> {
-            imageExecutorBlocked.countDown();
-            try {
-                releaseImageExecutor.await();
-            } catch (InterruptedException error) {
-                Thread.currentThread().interrupt();
+        }, new PreloadEventSink() {
+            @Override
+            public void onImageReady(String photoId, int sortOrder, String type) {
+                if ("thumb".equals(type)) thumbnailReady.countDown();
+            }
+
+            @Override
+            public void onImageFailed(String photoId, int sortOrder, String type) {
+                fail("有效缓存原图不应发送 imageFailed");
             }
         });
-        assertTrue(imageExecutorBlocked.await(1, TimeUnit.SECONDS));
 
-        try {
-            JSONObject result = service.preloadImages(
-                "cached-original", "thumb", imageArray());
+        JSONObject result = service.preloadImages("cached-original", "thumb", imageArray());
 
-            assertEquals(0, result.getJSONArray("cached").length());
-            assertEquals(1, result.getJSONArray("pending").length());
-            assertFalse(imageCache.has("cached-original/1/thumb"));
-        } finally {
-            releaseImageExecutor.countDown();
-        }
-        awaitPreloadPipeline();
+        assertEquals(0, result.getJSONArray("cached").length());
+        assertEquals(1, result.getJSONArray("pending").length());
+        assertTrue(thumbnailReady.await(1, TimeUnit.SECONDS));
         assertTrue(imageCache.has("cached-original/1/thumb"));
     }
 
@@ -346,42 +342,21 @@ public class PreloadServiceTest {
     public void networkResultsReserveCapacityBeforeImageProcessingQueue() throws Exception {
         byte[] imageBytes = createPng();
         CountDownLatch fetched = new CountDownLatch(2);
-        CountDownLatch releaseImageExecutor = new CountDownLatch(1);
-        CountDownLatch imageExecutorBlocked = new CountDownLatch(1);
-        imageExecutor.execute(() -> {
-            imageExecutorBlocked.countDown();
-            try {
-                releaseImageExecutor.await();
-            } catch (InterruptedException error) {
-                Thread.currentThread().interrupt();
-            }
-        });
-        assertTrue(imageExecutorBlocked.await(1, TimeUnit.SECONDS));
 
         PreloadService service = createService(image -> {
             fetched.countDown();
             return imageBytes;
         });
-        try {
-            service.preloadImages("network-reserved", "image", imageArray(1, 2));
-            assertTrue(fetched.await(1, TimeUnit.SECONDS));
-            fileExecutor.submit(() -> {
-            }).get(1, TimeUnit.SECONDS);
-            networkExecutor.submit(() -> {
-            }).get(1, TimeUnit.SECONDS);
-
-            ImageCache.CacheStats stats = imageCache.getStats();
-            assertEquals(0, stats.currentBytes);
-            assertEquals(imageBytes.length * 2L, stats.reservedBytes);
-        } finally {
-            releaseImageExecutor.countDown();
-        }
+        service.preloadImages("network-reserved", "image", imageArray(1, 2));
+        assertTrue(fetched.await(1, TimeUnit.SECONDS));
         awaitPreloadPipeline();
+        ImageCache.CacheStats stats = imageCache.getStats();
+        assertEquals(imageBytes.length * 2L, stats.currentBytes);
         assertEquals(0, imageCache.getStats().reservedBytes);
     }
 
     @Test
-    public void retryReservesCapacityBeforeImageProcessingQueue() throws Exception {
+    public void retryDoesNotWaitForImageExecutorQueue() throws Exception {
         byte[] imageBytes = createPng();
         CountDownLatch releaseImageExecutor = new CountDownLatch(1);
         CountDownLatch imageExecutorBlocked = new CountDownLatch(1);
@@ -412,17 +387,13 @@ public class PreloadServiceTest {
                         completed.countDown();
                     }
                 });
-            networkExecutor.submit(() -> {
-            }).get(1, TimeUnit.SECONDS);
-
-            assertEquals(1, completed.getCount());
-            assertEquals(imageBytes.length, imageCache.getStats().reservedBytes);
+            assertTrue(completed.await(1, TimeUnit.SECONDS));
+            assertNull(error.get());
+            assertEquals(imageBytes.length, imageCache.getStats().currentBytes);
+            assertEquals(0, imageCache.getStats().reservedBytes);
         } finally {
             releaseImageExecutor.countDown();
         }
-        assertTrue(completed.await(1, TimeUnit.SECONDS));
-        assertNull(error.get());
-        assertEquals(0, imageCache.getStats().reservedBytes);
     }
 
     @Test

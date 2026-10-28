@@ -175,10 +175,8 @@ export function createFacadeClient(runtime: FrontendRuntime): JmcomicClient {
           return Promise.reject(new RuntimeError('unavailable', '在线能力已关闭'))
         }
         const operation = () => Promise.resolve(Reflect.apply(value, target, args))
-        const replacesPendingImages =
-          property === 'preloadImages' &&
-          (args[0] as { replacePending?: boolean } | undefined)?.replacePending === true
-        return replacesPendingImages ? operation() : retryAfterNetworkRestore(runtime, operation)
+        const isImagePreload = property === 'preloadImages'
+        return isImagePreload ? operation() : retryAfterNetworkRestore(runtime, operation)
       }
     },
   })

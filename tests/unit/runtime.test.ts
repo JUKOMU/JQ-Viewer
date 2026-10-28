@@ -72,6 +72,7 @@ describe('runtime', () => {
       'toggleAlbumFavorite',
       'manageFavoriteFolder',
       'preloadImages',
+      'cancelPreload',
       'retryImage',
       'setCacheCapacity',
       'getCacheCapacityInfo',
@@ -192,6 +193,20 @@ describe('runtime', () => {
       ['/api/clearParseHistory', '{}'],
       ['/api/deleteParseItem', '{"id":7}'],
     ])
+  })
+
+  test('按共享契约转发预载会话取消', async () => {
+    const fetcher = vi.fn().mockResolvedValue(response({ success: true }))
+    const backend = createBackendClient(fetcher)
+
+    await expect(backend.cancelPreload({ sessionId: 'reader-session' })).resolves.toEqual({
+      success: true,
+    })
+    expect(fetcher).toHaveBeenCalledWith('/api/cancelPreload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{"sessionId":"reader-session"}',
+    })
   })
 
   test('按共享契约转发在线点赞、收藏和收藏夹方法', async () => {
@@ -829,13 +844,22 @@ describe('runtime', () => {
     expect(invalidated).not.toHaveBeenCalled()
     FakeEventSource.instances[0].emit('open', null)
     expect(invalidated).toHaveBeenCalledOnce()
-    FakeEventSource.instances[0].emit('imageReady', { photoId: 'p1', sortOrder: 2, type: 'image' })
+    FakeEventSource.instances[0].emit('imageReady', {
+      photoId: 'p1',
+      sortOrder: 2,
+      type: 'image',
+      sessionId: 'reader-1',
+    })
     FakeEventSource.instances[0].emit('clientStateChanged', {
       state: 'ready',
       timestamp: 123,
     })
-    expect(first).toHaveBeenCalledWith({ photoId: 'p1', sortOrder: 2, type: 'image' })
-    expect(second).toHaveBeenCalledWith({ photoId: 'p1', sortOrder: 2, type: 'image' })
+    expect(first).toHaveBeenCalledWith({
+      photoId: 'p1', sortOrder: 2, type: 'image', sessionId: 'reader-1',
+    })
+    expect(second).toHaveBeenCalledWith({
+      photoId: 'p1', sortOrder: 2, type: 'image', sessionId: 'reader-1',
+    })
     expect(clientState).toHaveBeenCalledWith({ state: 'ready', timestamp: 123 })
 
     await firstHandle.remove()

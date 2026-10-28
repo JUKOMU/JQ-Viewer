@@ -45,19 +45,31 @@ final class FeatureEventAdapter implements DownloadEventSink, PreloadEventSink,
 
     @Override
     public void onImageReady(String photoId, int sortOrder, String type) {
+        onImageReady(photoId, sortOrder, type, "legacy");
+    }
+
+    @Override
+    public void onImageReady(String photoId, int sortOrder, String type, String sessionId) {
         JSObject event = new JSObject();
         event.put("photoId", photoId);
         event.put("sortOrder", sortOrder);
         event.put("type", type);
+        event.put("sessionId", sessionId);
         eventPublisher.accept("imageReady", event);
     }
 
     @Override
     public void onImageFailed(String photoId, int sortOrder, String type) {
+        onImageFailed(photoId, sortOrder, type, "legacy");
+    }
+
+    @Override
+    public void onImageFailed(String photoId, int sortOrder, String type, String sessionId) {
         JSObject event = new JSObject();
         event.put("photoId", photoId);
         event.put("sortOrder", sortOrder);
         event.put("type", type);
+        event.put("sessionId", sessionId);
         eventPublisher.accept("imageFailed", event);
     }
 

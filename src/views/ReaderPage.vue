@@ -173,6 +173,7 @@ let imageReadyListenerSetupPromise: Promise<void> | null = null
 let imageReadyListenerSetupId = 0
 let volumeKeyListenerHandle: ListenerHandle | null = null
 let readerRuntimeActive = false
+let readerSessionId: string | null = null
 let loadedSortOrders = new Set<number>()
 let requestedSortOrders = new Map<number, number>()
 let preloadRequestSequence = 0
@@ -494,15 +495,18 @@ interface ImageExposureContext {
   albumId: string
   chapterId: string
   photoId: string
+  sessionId: string
 }
 
 const createImageExposureContext = (): ImageExposureContext | null => {
   if (!photoDetail) return null
+  if (!readerSessionId) return null
   return {
     version: chapterLoadVersion,
     albumId: albumId.value,
     chapterId: chapterId.value,
     photoId: photoDetail.id,
+    sessionId: readerSessionId,
   }
 }
 
@@ -510,7 +514,8 @@ const isCurrentImageExposureContext = (context: ImageExposureContext) =>
   context.version === chapterLoadVersion &&
   context.albumId === albumId.value &&
   context.chapterId === chapterId.value &&
-  context.photoId === photoDetail?.id
+  context.photoId === photoDetail?.id &&
+  context.sessionId === readerSessionId
 
 const retryFailedImages = () => {
   const context = createImageExposureContext()
@@ -550,7 +555,10 @@ const retryFailedImages = () => {
             return { sortOrder, image: null, success: false }
           }
           try {
-            await JmcomicService.retryImage(context.photoId, image)
+            await JmcomicService.retryImage(context.photoId, image, {
+              sessionId: context.sessionId,
+              priority: 300,
+            })
             return { sortOrder, image, success: true }
           } catch {
             return { sortOrder, image, success: false }
@@ -678,15 +686,36 @@ const preloadSortOrders = (sortOrders: number[], replacePending = false) => {
   }
 
   if (images.length === 0) return
-  const requestRegistry = requestedSortOrders
-  const requestBatchId = ++preloadRequestSequence
-  const submittedSortOrders = images.map((image) => image.sortOrder)
-  for (const sortOrder of submittedSortOrders) {
-    requestRegistry.set(sortOrder, requestBatchId)
-  }
+  const highPrioritySortOrders = new Set(
+    [currentIndex.value + 1, activeDragPreviewSortOrder].filter(
+      (sortOrder): sortOrder is number => sortOrder !== null,
+    ),
+  )
+  const groups = [
+    {
+      images: images.filter((image) => highPrioritySortOrders.has(image.sortOrder)),
+      priority: 300,
+      replacePending,
+    },
+    {
+      images: images.filter((image) => !highPrioritySortOrders.has(image.sortOrder)),
+      priority: 200,
+      replacePending: false,
+    },
+  ]
 
-  void JmcomicService.preloadImages(context.photoId, images, 'image', { replacePending })
-    .then(
+  for (const group of groups) {
+    if (group.images.length === 0) continue
+    const requestRegistry = requestedSortOrders
+    const requestBatchId = ++preloadRequestSequence
+    const submittedSortOrders = group.images.map((image) => image.sortOrder)
+    for (const sortOrder of submittedSortOrders) requestRegistry.set(sortOrder, requestBatchId)
+
+    void JmcomicService.preloadImages(context.photoId, group.images, 'image', {
+      sessionId: context.sessionId,
+      priority: group.priority,
+      replacePending: group.replacePending,
+    }).then(
       (result: PreloadResult) => {
         exposeImagesIfAllowed(context, result.cached, 'image')
       },
@@ -701,8 +730,8 @@ const preloadSortOrders = (sortOrders: number[], replacePending = false) => {
           }
         }
       },
-    )
-    .catch(() => {})
+    ).catch(() => {})
+  }
 }
 
 const clampIndex = (index: number) => {
@@ -940,7 +969,7 @@ const setupImageReadyListener = async () => {
       readyHandle = await JmcomicService.addImageReadyListener(
         context.photoId,
         (sortOrder) => onPreloadImageReady(context, sortOrder),
-        { type: 'image' },
+        { type: 'image', sessionId: context.sessionId },
       )
       if (!isCurrentSetup()) {
         removeListenerSafely(readyHandle)
@@ -950,7 +979,7 @@ const setupImageReadyListener = async () => {
       failedHandle = await JmcomicService.addImageFailedListener(
         context.photoId,
         (sortOrder) => onPreloadImageFailed(context, sortOrder),
-        { type: 'image' },
+        { type: 'image', sessionId: context.sessionId },
       )
       if (!isCurrentSetup()) {
         removeListenerSafely(readyHandle)
@@ -977,6 +1006,7 @@ const setupImageReadyListener = async () => {
 }
 
 const activateReaderRuntime = (): Promise<void> => {
+  if (!readerSessionId) readerSessionId = crypto.randomUUID()
   if (!readerRuntimeActive) {
     readerRuntimeActive = true
     if (readerCapabilities.hostState.available) {
@@ -994,6 +1024,13 @@ const activateReaderRuntime = (): Promise<void> => {
 const deactivateReaderRuntime = () => {
   if (!readerRuntimeActive) return
   readerRuntimeActive = false
+  if (readerSessionId) {
+    void JmcomicService.cancelPreload(readerSessionId).catch((error) => {
+      console.warn('取消阅读图片预载失败', error)
+    })
+    readerSessionId = null
+  }
+  requestedSortOrders.clear()
   imageReadyListenerSetupId++
   imageReadyListenerSetupPromise = null
   clearToolbarTapTimer()
@@ -1157,6 +1194,12 @@ const loadChapter = async () => {
 }
 
 const resetChapterState = () => {
+  if (readerSessionId) {
+    void JmcomicService.cancelPreload(readerSessionId).catch((error) => {
+      console.warn('取消阅读图片预载失败', error)
+    })
+    readerSessionId = readerRuntimeActive ? crypto.randomUUID() : null
+  }
   chapterLoadVersion++
   imageReadyListenerSetupId++
   imageReadyListenerSetupPromise = null

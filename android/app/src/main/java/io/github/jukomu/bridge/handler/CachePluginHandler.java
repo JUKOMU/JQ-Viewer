@@ -28,6 +28,16 @@ public final class CachePluginHandler {
             String photoId = call.getString("photoId");
             String type = call.getString("type", "image");
             boolean replacePending = call.getBoolean("replacePending", false);
+            String sessionId = call.getString("sessionId");
+            Integer priority = call.getInt("priority");
+            if (sessionId == null || sessionId.isEmpty()) {
+                call.reject("sessionId is required");
+                return;
+            }
+            if (priority == null) {
+                call.reject("priority is required");
+                return;
+            }
             JSArray imagesArray = call.getArray("images");
             JSONArray jsonImages = new JSONArray();
             if (imagesArray != null) {
@@ -40,11 +50,23 @@ public final class CachePluginHandler {
                 }
             }
             JSONObject result = preloadService.preloadImages(
-                photoId, type, jsonImages, replacePending);
+                photoId, type, jsonImages, replacePending, sessionId, priority);
             call.resolve(JSObject.fromJSONObject(result));
         } catch (Exception error) {
             call.reject(error.getMessage(), error);
         }
+    }
+
+    public void cancelPreload(PluginCall call) {
+        String sessionId = call.getString("sessionId");
+        if (sessionId == null || sessionId.isEmpty()) {
+            call.reject("sessionId is required");
+            return;
+        }
+        preloadService.cancelPreload(sessionId);
+        JSObject result = new JSObject();
+        result.put("success", true);
+        call.resolve(result);
     }
 
     /**
@@ -53,6 +75,8 @@ public final class CachePluginHandler {
     public void retryImage(PluginCall call) {
         String photoId = call.getString("photoId");
         JSObject image = call.getObject("image");
+        String sessionId = call.getString("sessionId");
+        Integer priority = call.getInt("priority");
         if (photoId == null || photoId.isEmpty()) {
             call.reject("photoId is required");
             return;
@@ -61,8 +85,15 @@ public final class CachePluginHandler {
             call.reject("image is required");
             return;
         }
-
-        preloadService.retryImage(photoId, image, new PreloadService.ImageRetryCallback() {
+        if (sessionId == null || sessionId.isEmpty()) {
+            call.reject("sessionId is required");
+            return;
+        }
+        if (priority == null) {
+            call.reject("priority is required");
+            return;
+        }
+        PreloadService.ImageRetryCallback callback = new PreloadService.ImageRetryCallback() {
             @Override
             public void onSuccess() {
                 JSObject result = new JSObject();
@@ -75,7 +106,8 @@ public final class CachePluginHandler {
                 LOGGER.warn("图片重试失败", error);
                 call.reject(error.getMessage(), error);
             }
-        });
+        };
+        preloadService.retryImage(photoId, image, sessionId, priority, callback);
     }
 
     /**

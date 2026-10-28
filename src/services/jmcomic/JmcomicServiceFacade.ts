@@ -138,14 +138,29 @@ export const JmcomicService = {
     photoId: string,
     images: ImageInfo[],
     type: 'image' | 'thumb' = 'image',
-    options: { replacePending?: boolean } = {},
+    options: { sessionId?: string; priority?: number; replacePending?: boolean } = {},
   ) {
-    return native.preloadImages({ photoId, images, type, replacePending: options.replacePending })
+    return native.preloadImages({
+      photoId,
+      images,
+      type,
+      sessionId: options.sessionId,
+      priority: options.priority,
+      replacePending: options.replacePending,
+    })
+  },
+
+  cancelPreload(sessionId: string) {
+    return native.cancelPreload({ sessionId })
   },
 
   /** 使用最新图片元数据绕过本地来源和旧缓存重试单页。 */
-  retryImage(photoId: string, image: ImageInfo) {
-    return native.retryImage({ photoId, image })
+  retryImage(
+    photoId: string,
+    image: ImageInfo,
+    options: { sessionId?: string; priority?: number } = {},
+  ) {
+    return native.retryImage({ photoId, image, ...options })
   },
 
   /** 设置图片缓存容量（MB），供设置页调用 */
@@ -217,10 +232,14 @@ export const JmcomicService = {
   addImageReadyListener(
     photoId: string,
     handler: (sortOrder: number) => void,
-    options: { type?: 'image' | 'thumb' } = {},
+    options: { type?: 'image' | 'thumb'; sessionId?: string } = {},
   ): Promise<JmcomicListenerHandle> {
     return native.addListener('imageReady', (data: ImageReadyEvent) => {
-      if (data.photoId === photoId && (!options.type || data.type === options.type)) {
+      if (
+        data.photoId === photoId &&
+        (!options.type || data.type === options.type) &&
+        (!options.sessionId || data.sessionId === options.sessionId)
+      ) {
         handler(data.sortOrder)
       }
     })
@@ -230,10 +249,14 @@ export const JmcomicService = {
   addImageFailedListener(
     photoId: string,
     handler: (sortOrder: number) => void,
-    options: { type?: 'image' | 'thumb' } = {},
+    options: { type?: 'image' | 'thumb'; sessionId?: string } = {},
   ): Promise<JmcomicListenerHandle> {
     return native.addListener('imageFailed', (data: ImageFailedEvent) => {
-      if (data.photoId === photoId && (!options.type || data.type === options.type)) {
+      if (
+        data.photoId === photoId &&
+        (!options.type || data.type === options.type) &&
+        (!options.sessionId || data.sessionId === options.sessionId)
+      ) {
         handler(data.sortOrder)
       }
     })

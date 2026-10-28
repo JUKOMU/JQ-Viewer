@@ -204,6 +204,11 @@ public final class Plugin {
     }
 
     @PluginMethod
+    public void cancelPreload(Context context) {
+        api.cancelPreload(context);
+    }
+
+    @PluginMethod
     public void retryImage(Context context) {
         api.retryImage(context);
     }

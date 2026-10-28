@@ -203,6 +203,7 @@ export function createBackendClient(
     measureLatency: () => call<'measureLatency'>('measureLatency', {}),
     measureImageHosts: () => call<'measureImageHosts'>('measureImageHosts', {}),
     getImageRouteCandidates: () => call<'getImageRouteCandidates'>('getImageRouteCandidates', {}),
+    getImageRouteStatus: () => call<'getImageRouteStatus'>('getImageRouteStatus', {}),
     setImageRoutePreference: (options: Parameters<JmcomicClient['setImageRoutePreference']>[0]) =>
       call<'setImageRoutePreference'>('setImageRoutePreference', options),
     getInitStatus: async () => {

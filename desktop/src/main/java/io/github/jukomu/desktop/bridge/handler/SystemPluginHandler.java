@@ -21,6 +21,7 @@ import org.slf4j.LoggerFactory;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.concurrent.Executor;
 import java.util.function.Consumer;
 
@@ -38,7 +39,7 @@ public final class SystemPluginHandler {
     private final Paths paths;
     private final AuthService auth;
     private final Executor authExecutor;
-    private final Consumer<NetworkProbeEvent> authEventPublisher;
+    private final Consumer<NetworkProbeEvent> eventPublisher;
 
     public SystemPluginHandler(
         RequestExecutor networkRequests,
@@ -63,7 +64,7 @@ public final class SystemPluginHandler {
         Paths paths,
         AuthService auth,
         Executor authExecutor,
-        Consumer<NetworkProbeEvent> authEventPublisher
+        Consumer<NetworkProbeEvent> eventPublisher
     ) {
         this.networkRequests = networkRequests;
         this.diagnosticsRequests = diagnosticsRequests;
@@ -74,7 +75,7 @@ public final class SystemPluginHandler {
         this.paths = paths;
         this.auth = auth;
         this.authExecutor = authExecutor;
-        this.authEventPublisher = authEventPublisher;
+        this.eventPublisher = eventPublisher;
     }
 
     public void getInitStatus(Context context) {
@@ -117,22 +118,22 @@ public final class SystemPluginHandler {
             String domain = apiClient.getUsedDomain();
             if (auth != null && !java.util.Objects.equals(beforeDomain, domain)) {
                 try {
-                    authEventPublisher.accept(NetworkProbeEvent.routeAuth(
+                    eventPublisher.accept(NetworkProbeEvent.routeAuth(
                         "route_auth_started", "线路切换后正在恢复登录"));
                     authExecutor.execute(() -> {
                         try {
                             auth.reauthenticateAfterRouteChange();
-                            authEventPublisher.accept(NetworkProbeEvent.routeAuth(
+                            eventPublisher.accept(NetworkProbeEvent.routeAuth(
                                 "route_auth_succeeded", "线路切换后登录已恢复"));
                         } catch (RuntimeException error) {
                             LOGGER.warn("线路切换后自动登录失败", error);
-                            authEventPublisher.accept(NetworkProbeEvent.routeAuth(
+                            eventPublisher.accept(NetworkProbeEvent.routeAuth(
                                 "route_auth_failed", "线路切换后登录恢复失败"));
                         }
                     });
                 } catch (RuntimeException error) {
                     LOGGER.warn("无法提交线路切换后的自动登录", error);
-                    authEventPublisher.accept(NetworkProbeEvent.routeAuth(
+                    eventPublisher.accept(NetworkProbeEvent.routeAuth(
                         "route_auth_failed", "线路切换后登录恢复失败"));
                 }
             }
@@ -158,6 +159,11 @@ public final class SystemPluginHandler {
             java.util.Map.of("hosts", ImageHostOptimizer.candidates()));
     }
 
+    /** 返回最近一次图片线路测速状态。 */
+    public void getImageRouteStatus(Context context) {
+        respond(context, "getImageRouteStatus", ImageHostOptimizer.status());
+    }
+
     /** 后台下载固定章节样本，测量并验证各图片 Host。 */
     public void measureImageHosts(Context context) {
         networkRequests.runLongOperation(context, () -> {
@@ -165,7 +171,27 @@ public final class SystemPluginHandler {
             if (!(client instanceof io.github.jukomu.jmcomic.core.client.impl.JmApiClient apiClient)) {
                 throw ApiException.unavailable("当前 JMComic 客户端不支持图片线路优选");
             }
-            return ImageHostOptimizer.optimize(apiClient);
+            ImageHostOptimizer.Result result;
+            try {
+                result = ImageHostOptimizer.optimize(apiClient, progress ->
+                    eventPublisher.accept(NetworkProbeEvent.imageRouteProgress(
+                        progress.currentHost() == null && progress.hosts().isEmpty()
+                            ? "image_route_probing"
+                            : "image_route_progress",
+                        progress.currentHost() == null
+                            ? "图片线路测速进行中"
+                            : "正在测速图片线路：" + progress.currentHost(), progress)));
+            } catch (RuntimeException error) {
+                eventPublisher.accept(NetworkProbeEvent.imageRoute(
+                    "image_route_error", "图片线路测速失败，请稍后重试",
+                    ImageHostOptimizer.status(), error.getMessage()));
+                throw error;
+            }
+            eventPublisher.accept(NetworkProbeEvent.imageRoute(
+                result.selectedHost() == null ? "image_route_error" : "image_route_result",
+                result.selectedHost() == null ? "没有可用的图片线路" : "图片线路测速完成",
+                result, result.selectedHost() == null ? "没有可用的图片线路" : null));
+            return result;
         });
     }
 
@@ -287,6 +313,14 @@ public final class SystemPluginHandler {
     private DiagnosticsService requireDiagnostics() {
         if (diagnostics == null) throw ApiException.unavailable("诊断服务尚未初始化");
         return diagnostics;
+    }
+
+    private static List<NetworkProbeEvent.ImageHostResult> toImageHostResults(
+        List<ImageHostOptimizer.HostResult> hosts
+    ) {
+        return hosts.stream().map(host -> new NetworkProbeEvent.ImageHostResult(
+            host.host(), host.available(), host.elapsedMs(), host.bytes(),
+            host.bytesPerSecond(), host.error())).toList();
     }
 
     private static void respond(Context context, String operation, Object value) {

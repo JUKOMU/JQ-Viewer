@@ -48,6 +48,7 @@ export const COMMON_BACKEND_METHODS = [
   'measureLatency',
   'measureImageHosts',
   'getImageRouteCandidates',
+  'getImageRouteStatus',
   'setImageRoutePreference',
   'getInitStatus',
   'getClientState',

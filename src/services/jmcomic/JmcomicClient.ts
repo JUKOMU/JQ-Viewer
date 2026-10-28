@@ -288,6 +288,8 @@ export interface JmcomicClient {
 
   /** 测量当前图片 Host 候选的有效下载吞吐量。 */
   measureImageHosts(): Promise<{
+    runId: number
+    revision: number
     selectedHost: string | null
     hosts: {
       host: string
@@ -297,6 +299,24 @@ export interface JmcomicClient {
       bytesPerSecond: number
       error?: string
     }[]
+  }>
+
+  /** 查询当前图片线路测速任务及最近结果。 */
+  getImageRouteStatus(): Promise<{
+    runId: number
+    revision: number
+    running: boolean
+    currentHost?: string
+    selectedHost?: string | null
+    hosts: {
+      host: string
+      available: boolean
+      elapsedMs: number
+      bytes: number
+      bytesPerSecond: number
+      error?: string
+    }[]
+    error?: string
   }>
 
   /** 读取当前图片 Host 候选列表。 */

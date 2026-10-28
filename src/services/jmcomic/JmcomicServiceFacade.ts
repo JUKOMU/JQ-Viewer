@@ -289,6 +289,10 @@ export const JmcomicService = {
     return native.getImageRouteCandidates()
   },
 
+  getImageRouteStatus() {
+    return native.getImageRouteStatus()
+  },
+
   applyImageRoute(options: { mode: 'auto' | 'manual'; host: string }) {
     return native.setImageRoutePreference(options)
   },

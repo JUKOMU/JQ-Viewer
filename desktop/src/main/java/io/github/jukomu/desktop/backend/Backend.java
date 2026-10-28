@@ -529,31 +529,37 @@ public final class Backend implements AutoCloseable {
     ) {
         String host = settingsService.imageRouteHost();
         if (ImageHostOptimizer.contains(host)) return;
-        eventHub.publish("networkProbe", NetworkProbeEvent.imageRoute(
-            "image_route_probing", "正在后台优选图片线路", null, null));
         CompletableFuture.runAsync(() -> {
             try {
-                ImageHostOptimizer.Result result = ImageHostOptimizer.optimize(client);
+                ImageHostOptimizer.Result result = ImageHostOptimizer.optimize(client, progress ->
+                    eventHub.publish("networkProbe", NetworkProbeEvent.imageRouteProgress(
+                        progress.currentHost() == null && progress.hosts().isEmpty()
+                            ? "image_route_probing"
+                            : "image_route_progress",
+                        progress.currentHost() == null
+                            ? "图片线路测速进行中"
+                            : "正在测速图片线路：" + progress.currentHost(), progress)));
                 if (result.selectedHost() != null
                     && "auto".equals(settingsService.imageRouteMode())) {
                     ImageHostOptimizer.apply(result.selectedHost());
                     settingsService.setImageRoute("auto", result.selectedHost());
                     eventHub.publish("networkProbe", NetworkProbeEvent.imageRoute(
                         "image_route_result", "图片线路优选完成：" + result.selectedHost(),
-                        result.selectedHost(), toImageHostResults(result)));
+                        result, null));
                 } else if (result.selectedHost() == null) {
                     eventHub.publish("networkProbe", NetworkProbeEvent.imageRoute(
-                        "image_route_error", "没有可用的图片线路", null,
-                        toImageHostResults(result)));
+                        "image_route_error", "没有可用的图片线路",
+                        result, "没有可用的图片线路"));
                 } else {
                     eventHub.publish("networkProbe", NetworkProbeEvent.imageRoute(
                         "image_route_result", "图片线路测速完成，保留手动选择",
-                        settingsService.imageRouteHost(), toImageHostResults(result)));
+                        result, null));
                 }
             } catch (RuntimeException error) {
                 LOGGER.warn("image_route operation=optimize status=failed", error);
                 eventHub.publish("networkProbe", NetworkProbeEvent.imageRoute(
-                    "image_route_error", "图片线路优选失败，请稍后重试", null, null));
+                    "image_route_error", "图片线路优选失败，请稍后重试",
+                    ImageHostOptimizer.status(), "图片线路优选失败，请稍后重试"));
             }
         });
     }
@@ -561,7 +567,13 @@ public final class Backend implements AutoCloseable {
     private static List<NetworkProbeEvent.ImageHostResult> toImageHostResults(
         ImageHostOptimizer.Result result
     ) {
-        return result.hosts().stream().map(host -> new NetworkProbeEvent.ImageHostResult(
+        return toImageHostResults(result.hosts());
+    }
+
+    private static List<NetworkProbeEvent.ImageHostResult> toImageHostResults(
+        List<ImageHostOptimizer.HostResult> hosts
+    ) {
+        return hosts.stream().map(host -> new NetworkProbeEvent.ImageHostResult(
             host.host(), host.available(), host.elapsedMs(), host.bytes(),
             host.bytesPerSecond(), host.error())).toList();
     }

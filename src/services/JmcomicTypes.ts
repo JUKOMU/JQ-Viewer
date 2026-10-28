@@ -420,7 +420,9 @@ export interface ClientStateSnapshot {
  * 网络与线路恢复事件。由 Android/Desktop 通过 networkProbe 通道推送。
  * - 网络探活阶段：network_changed|network_lost|probing|error 仅含 message + timestamp；
  *   result|network_restored 额外含 domains、alive、total、allDeadFallback。
- * - 线路认证恢复阶段：route_auth_started|route_auth_succeeded|route_auth_failed 仅含 message + timestamp。
+ * - 线路认证恢复阶段：route_auth_started|route_auth_succeeded|route_auth_failed 仅含 message + timestamp；
+ * - 图片线路阶段：image_route_probing|image_route_progress|image_route_result|image_route_error，
+ *   progress 携带当前 Host 和已完成 Host 结果。
  */
 export interface NetworkProbeEvent {
   phase:
@@ -431,8 +433,10 @@ export interface NetworkProbeEvent {
     | 'route_auth_succeeded'
     | 'route_auth_failed'
       | 'image_route_probing'
+      | 'image_route_progress'
       | 'image_route_result'
       | 'image_route_error'
+      | 'image_route_status'
     | 'probing'
     | 'result'
     | 'error'
@@ -442,7 +446,12 @@ export interface NetworkProbeEvent {
   alive?: number
   total?: number
   allDeadFallback?: boolean
+  runId?: number
+  revision?: number
+  running?: boolean
+    currentHost?: string
     selectedHost?: string | null
+  error?: string
     hosts?: {
       host: string
       available: boolean

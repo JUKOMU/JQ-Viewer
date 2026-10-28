@@ -84,6 +84,11 @@ public final class Plugin {
     }
 
     @PluginMethod
+    public void getImageRouteStatus(Context context) {
+        system.getImageRouteStatus(context);
+    }
+
+    @PluginMethod
     public void measureImageHosts(Context context) {
         system.measureImageHosts(context);
     }

@@ -12,7 +12,7 @@
       <div class="page-content desktop-page-content">
         <div class="status-grid">
           <section class="status-section">
-            <div class="section-header"><span class="section-label">当前线路</span></div>
+            <div class="section-header"><span class="section-label">当前 API 线路</span></div>
             <div class="card route-card">
               <div class="route-summary">
                 <div>
@@ -38,64 +38,7 @@
             </div>
 
             <div class="section-header domain-header">
-              <span class="section-label">图片线路</span>
-              <div class="header-actions">
-                <button
-                  class="icon-action speed-btn"
-                  :class="{ spinning: imageMeasuring }"
-                  type="button"
-                  :disabled="imageMeasuring"
-                  aria-label="测量图片线路"
-                  title="测量图片线路"
-                  @click="handleMeasureImageHosts"
-                >
-                  <IonIcon :icon="speedometerOutline" aria-hidden="true" />
-                </button>
-              </div>
-            </div>
-            <div class="card route-card image-route-card">
-              <div class="route-summary">
-                <div>
-                  <span class="summary-caption">图片线路模式</span>
-                  <strong>{{ imageRouteMode === 'auto' ? '自动优选' : '手动固定' }}</strong>
-                </div>
-                <span class="summary-domain">{{ imageRouteHost || '尚未优选' }}</span>
-              </div>
-              <div v-if="imageRouteError" class="operation-error">{{ imageRouteError }}</div>
-              <button
-                class="route-mode-row"
-                type="button"
-                :aria-pressed="imageRouteMode === 'auto'"
-                :disabled="imageMeasuring"
-                @click="selectImageRoute('auto')"
-              >
-                <span class="mode-mark" :class="{ selected: imageRouteMode === 'auto' }">A</span>
-                <span><strong>自动优选</strong><small>启动后沿用有效 Host，失效时后台重选</small></span>
-                <span class="route-choice">{{ imageRouteMode === 'auto' ? '当前' : '切换' }}</span>
-              </button>
-              <button
-                v-for="host in imageHostCandidates"
-                :key="host"
-                class="route-mode-row"
-                type="button"
-                :aria-pressed="imageRouteMode === 'manual' && imageRouteHost === host"
-                :disabled="imageMeasuring"
-                @click="selectImageRoute('manual', host)"
-              >
-                <span class="mode-mark" :class="{ selected: imageRouteMode === 'manual' && imageRouteHost === host }">M</span>
-                <span><strong>{{ host }}</strong><small>{{ imageHostLabel(host) }}</small></span>
-                <span class="route-choice">{{ imageRouteMode === 'manual' && imageRouteHost === host ? '当前' : '选择' }}</span>
-              </button>
-              <div v-if="imageHostResults.length" class="image-host-results">
-                <div v-for="result in imageHostResults" :key="result.host" class="image-host-result">
-                  <span>{{ result.host }}</span>
-                  <span>{{ result.available ? `${result.bytesPerSecond} B/s` : '不可用' }}</span>
-                </div>
-              </div>
-            </div>
-
-            <div class="section-header domain-header">
-              <span class="section-label">线路探测</span>
+              <span class="section-label">API 线路探测</span>
               <div class="header-actions">
                 <button
                   class="icon-action speed-btn"
@@ -161,6 +104,81 @@
               </div>
               <div v-else-if="!visibleError" class="empty-state">暂无域名状态</div>
             </div>
+
+            <div class="section-header domain-header">
+              <span class="section-label">当前图片线路</span>
+            </div>
+            <div class="card route-card image-route-card">
+              <div class="route-summary">
+                <div>
+                  <span class="summary-caption">图片线路模式</span>
+                  <strong>{{ imageRouteMode === 'auto' ? '自动优选' : '手动固定' }}</strong>
+                </div>
+                <span class="summary-domain">{{ imageRouteHost || '尚未优选' }}</span>
+              </div>
+              <button
+                class="route-mode-row"
+                type="button"
+                :aria-pressed="imageRouteMode === 'auto'"
+                :disabled="imageMeasuring"
+                @click="selectImageRoute('auto')"
+              >
+                <span class="mode-mark" :class="{ selected: imageRouteMode === 'auto' }">A</span>
+                <span><strong>自动优选</strong><small>启动后沿用有效 Host，失效时后台重选</small></span>
+                <span class="route-choice">{{ imageRouteMode === 'auto' ? '当前' : '切换' }}</span>
+              </button>
+            </div>
+
+            <div class="section-header domain-header">
+              <span class="section-label">图片线路探测</span>
+              <div class="header-actions">
+                <button
+                  class="icon-action speed-btn"
+                  :class="{ spinning: imageMeasuring }"
+                  type="button"
+                  :disabled="imageMeasuring"
+                  aria-label="测量图片线路"
+                  title="测量图片线路"
+                  @click="handleMeasureImageHosts"
+                >
+                  <IonIcon :icon="speedometerOutline" aria-hidden="true" />
+                </button>
+              </div>
+            </div>
+            <div class="card domain-card image-route-card">
+              <div v-if="imageApplyError || imageRouteError" class="operation-error">
+                {{ imageApplyError || imageRouteError }}
+              </div>
+              <div v-if="imageHostCandidates.length" class="domain-list">
+                <button
+                  v-for="host in imageHostCandidates"
+                  :key="host"
+                  class="domain-row route-row"
+                  :aria-pressed="imageRouteMode === 'manual' && imageRouteHost === host"
+                  :disabled="imageMeasuring"
+                  type="button"
+                  @click="selectImageRoute('manual', host)"
+                >
+                  <span class="domain-dot" :class="imageHostStatusClass(host)" />
+                  <span class="domain-name">{{ host }}</span>
+                  <IonSpinner
+                    v-if="imageHostIsMeasuring(host)"
+                    class="host-spinner"
+                    name="crescent"
+                    role="status"
+                    aria-label="图片线路测速中"
+                  />
+                  <span v-else class="latency" :class="imageHostLatencyClass(host)">
+                    {{ imageHostLatencyText(host) }}
+                  </span>
+                  <span class="route-choice">
+                    {{ imageRouteMode === 'manual' && imageRouteHost === host ? '已选择' : '选择' }}
+                  </span>
+                </button>
+              </div>
+              <div v-else-if="imageMeasuring" class="empty-state">正在测量图片线路...</div>
+              <div v-else-if="!imageRouteError" class="empty-state">暂无图片线路</div>
+            </div>
           </section>
 
           <section class="status-section">
@@ -194,6 +212,7 @@ import {
   IonHeader,
   IonIcon,
   IonPage,
+  IonSpinner,
   IonTitle,
   IonToolbar,
 } from '@ionic/vue'
@@ -225,7 +244,12 @@ const imageHostResults = ref<Array<{
   error?: string
 }>>([])
 const imageMeasuring = ref(false)
+const imageCurrentHost = ref<string | null>(null)
+const imageRunId = ref(0)
+const imageRevision = ref(0)
+const imageMeasureRequestPending = ref(false)
 const imageRouteError = ref('')
+const imageApplyError = ref('')
 const clientUnavailableText = computed(() =>
   store.clientState.value.reason === 'no_network'
     ? '当前网络不可用，离线功能仍可使用'
@@ -235,6 +259,7 @@ let probeHandle: ListenerHandle | null = null
 let refreshTimer: ReturnType<typeof setTimeout> | null = null
 let disposed = false
 let routeRefreshSequence = 0
+let imageStatusQuerySequence = 0
 const PROBE_EVENT_TIMEOUT_MS = 30_000
 
 function refreshRoute() {
@@ -276,21 +301,7 @@ onMounted(() => {
       imageRouteError.value = normalizeRuntimeError(error, '获取图片线路失败').message
     })
   JmcomicService.addNetworkProbeListener((data) => {
-    if (data.phase === 'image_route_probing') imageMeasuring.value = true
-    if (data.phase === 'image_route_result') {
-      imageMeasuring.value = false
-      imageHostResults.value = data.hosts ?? []
-      if (SettingsStore.getImageRouteMode() === 'auto') {
-        imageRouteMode.value = 'auto'
-        imageRouteHost.value = data.selectedHost ?? ''
-        SettingsStore.setImageRoute(imageRouteMode.value, imageRouteHost.value)
-      }
-    }
-    if (data.phase === 'image_route_error') {
-      imageMeasuring.value = false
-      imageHostResults.value = data.hosts ?? imageHostResults.value
-      imageRouteError.value = data.message
-    }
+    applyImageRouteEvent(data)
     if (data.phase === 'probing' || data.phase === 'result') operationError.value = ''
     if (data.phase === 'error') operationError.value = data.message
     if (data.phase === 'result' || data.phase === 'error' || data.phase === 'network_restored') {
@@ -304,20 +315,92 @@ onMounted(() => {
         return
       }
       probeHandle = h
+      void syncImageRouteStatus()
     })
     .catch((error) => {
       operationError.value = normalizeRuntimeError(error, '网络事件监听失败').message
     })
 })
 
-function imageHostLabel(host: string) {
-  const result = imageHostResults.value.find((item) => item.host === host)
-  if (!result) return '未测速'
-  return result.available ? `${result.elapsedMs} ms` : '不可用'
+function applyImageRouteEvent(data: {
+  phase: string
+  message: string
+  runId?: number
+  revision?: number
+  running?: boolean
+  currentHost?: string
+  selectedHost?: string | null
+  hosts?: typeof imageHostResults.value
+  error?: string
+}) {
+  if (data.phase === 'image_route_status' && imageMeasureRequestPending.value) return
+  if (data.runId === undefined || data.revision === undefined) return
+  if (data.runId < imageRunId.value) return
+  if (data.runId === imageRunId.value && data.revision < imageRevision.value) return
+  imageRunId.value = data.runId
+  imageRevision.value = data.revision
+  imageMeasuring.value = data.running === true
+  imageCurrentHost.value = data.running ? data.currentHost ?? null : null
+  if (data.hosts) imageHostResults.value = data.hosts
+  if (data.error) imageRouteError.value = data.error
+  else if (!data.running) imageRouteError.value = ''
+  if (data.phase === 'image_route_result' && SettingsStore.getImageRouteMode() === 'auto') {
+    imageRouteMode.value = 'auto'
+    imageRouteHost.value = data.selectedHost ?? ''
+    SettingsStore.setImageRoute(imageRouteMode.value, imageRouteHost.value)
+  }
+}
+
+async function syncImageRouteStatus(clearLocalMeasurementOnError = false) {
+  const sequence = ++imageStatusQuerySequence
+  try {
+    const status = await JmcomicService.getImageRouteStatus()
+    if (sequence !== imageStatusQuerySequence) return
+    applyImageRouteEvent({ phase: 'image_route_status', message: '', ...status })
+  } catch (error) {
+    if (sequence !== imageStatusQuerySequence) return
+    if (clearLocalMeasurementOnError) {
+      imageMeasuring.value = false
+      imageCurrentHost.value = null
+    }
+    imageRouteError.value = normalizeRuntimeError(error, '获取图片线路状态失败').message
+  }
+}
+
+function imageHostResult(host: string) {
+  return imageHostResults.value.find((item) => item.host === host)
+}
+
+function imageHostStatusClass(host: string): string {
+  const result = imageHostResult(host)
+  if (!result) return ''
+  return result.available ? 'alive' : 'dead'
+}
+
+function imageHostIsMeasuring(host: string): boolean {
+  return imageMeasuring.value && imageCurrentHost.value === host
+}
+
+/** 将图片线路测速返回的字节吞吐量转换为便于阅读的速率文本。 */
+function imageHostLatencyText(host: string): string {
+  const result = imageHostResult(host)
+  if (!result) return '/'
+  if (!result.available) return '不可用'
+  const speed = result.bytesPerSecond
+  if (speed >= 1024 * 1024) return `${(speed / (1024 * 1024)).toFixed(1)} MB/s`
+  if (speed >= 1024) return `${(speed / 1024).toFixed(1)} KB/s`
+  return `${speed} B/s`
+}
+
+function imageHostLatencyClass(host: string): string {
+  const result = imageHostResult(host)
+  if (!result) return 'lat-yellow'
+  return result.available ? 'lat-green' : 'lat-red'
 }
 
 async function selectImageRoute(mode: 'auto' | 'manual', host = '') {
   imageRouteError.value = ''
+  imageApplyError.value = ''
   if (mode === 'auto') {
     if (imageRouteHost.value && imageHostCandidates.value.includes(imageRouteHost.value)) {
       try {
@@ -325,7 +408,7 @@ async function selectImageRoute(mode: 'auto' | 'manual', host = '') {
         imageRouteMode.value = 'auto'
         SettingsStore.setImageRoute('auto', imageRouteHost.value)
       } catch (error) {
-        imageRouteError.value = normalizeRuntimeError(error, '应用图片线路失败').message
+        imageApplyError.value = normalizeRuntimeError(error, '应用图片线路失败').message
       }
     } else {
       await handleMeasureImageHosts()
@@ -338,26 +421,50 @@ async function selectImageRoute(mode: 'auto' | 'manual', host = '') {
     imageRouteHost.value = mode === 'manual' ? host : imageRouteHost.value
     SettingsStore.setImageRoute(imageRouteMode.value, imageRouteHost.value)
   } catch (error) {
-    imageRouteError.value = normalizeRuntimeError(error, '应用图片线路失败').message
+    imageApplyError.value = normalizeRuntimeError(error, '应用图片线路失败').message
   }
 }
 
 async function handleMeasureImageHosts() {
   if (imageMeasuring.value) return
+  imageStatusQuerySequence++
+  imageMeasureRequestPending.value = true
   imageMeasuring.value = true
+  imageCurrentHost.value = null
+  imageHostResults.value = []
   imageRouteError.value = ''
+  imageApplyError.value = ''
   try {
     const result = await JmcomicService.measureImageHosts()
-    imageHostResults.value = result.hosts
-    if (!result.selectedHost) throw new Error('没有可用的图片线路')
-    await JmcomicService.applyImageRoute({ mode: 'auto', host: result.selectedHost })
+    applyImageRouteEvent({
+      phase: result.selectedHost ? 'image_route_result' : 'image_route_error',
+      message: result.selectedHost ? '图片线路测速完成' : '没有可用的图片线路',
+      runId: result.runId,
+      revision: result.revision,
+      running: false,
+      selectedHost: result.selectedHost,
+      hosts: result.hosts,
+    })
+    if (!result.selectedHost) {
+      imageRouteError.value = '没有可用的图片线路'
+      return
+    }
+    try {
+      await JmcomicService.applyImageRoute({ mode: 'auto', host: result.selectedHost })
+    } catch (error) {
+      imageApplyError.value = normalizeRuntimeError(error, '应用图片线路失败').message
+      return
+    }
     imageRouteMode.value = 'auto'
     imageRouteHost.value = result.selectedHost
     SettingsStore.setImageRoute('auto', result.selectedHost)
   } catch (error) {
+    imageMeasuring.value = false
+    imageCurrentHost.value = null
     imageRouteError.value = normalizeRuntimeError(error, '图片线路测速失败').message
   } finally {
-    imageMeasuring.value = false
+    imageMeasureRequestPending.value = false
+    void syncImageRouteStatus(true)
   }
 }
 
@@ -449,6 +556,13 @@ function phaseClass(phase: string): string {
       return 'phase-active'
     case 'result':
       return 'phase-ok'
+    case 'image_route_result':
+      return 'phase-ok'
+    case 'image_route_probing':
+      return 'phase-active'
+    case 'image_route_progress':
+      return 'phase-active'
+    case 'image_route_error':
     case 'error':
       return 'phase-err'
     default:
@@ -566,6 +680,13 @@ function formatTime(ts: number): string {
 .icon-action.spinning {
   animation: spin 0.8s linear infinite;
   pointer-events: none;
+}
+
+.host-spinner {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  color: #e8843c;
 }
 
 @keyframes spin {
@@ -831,23 +952,6 @@ function formatTime(ts: number): string {
 }
 .image-route-card {
   overflow: hidden;
-}
-.image-host-results {
-  border-top: 1px solid #f1e8e2;
-}
-.image-host-result {
-  display: flex;
-  justify-content: space-between;
-  padding: 9px 16px;
-  color: #80695b;
-  font-size: 12px;
-}
-
-@media (min-width: 1264px) {
-  .status-grid {
-    grid-template-columns: minmax(320px, 0.9fr) minmax(360px, 1.1fr);
-    column-gap: 24px;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -33,6 +33,7 @@ public final class JmcomicSessionManager {
         void onNetworkEvent(NetworkEvent event);
 
         default void onImageRouteEvent(String phase, String message,
+                                       ImageHostOptimizer.Progress progress,
                                        ImageHostOptimizer.Result result) {
         }
     }
@@ -165,10 +166,19 @@ public final class JmcomicSessionManager {
         if (mode != null && !"auto".equals(mode)
             || ImageHostOptimizer.contains(settingsStore.getString("image_route_host"))) return;
         if (!imageHostOptimizationStarted.compareAndSet(false, true)) return;
-        publishImageRouteEvent("image_route_probing", "正在后台优选图片线路", null);
         java.util.concurrent.CompletableFuture.runAsync(() -> {
             try {
-                ImageHostOptimizer.Result result = ImageHostOptimizer.optimize(client);
+                ImageHostOptimizer.Result result = ImageHostOptimizer.optimize(client, progress ->
+                    publishImageRouteEvent(
+                        !progress.running() && progress.error() != null
+                            ? "image_route_error"
+                            : progress.currentHost() == null && progress.hosts().isEmpty()
+                                ? "image_route_probing"
+                                : "image_route_progress",
+                        progress.currentHost() == null
+                            ? "图片线路测速完成一项"
+                            : "正在测速图片线路：" + progress.currentHost(),
+                        progress, null));
                 if (result.selectedHost() != null
                     && "auto".equals(settingsStore.getString("image_route_mode"))) {
                     ImageHostOptimizer.apply(result.selectedHost());
@@ -176,26 +186,29 @@ public final class JmcomicSessionManager {
                     LOGGER.info("图片线路优选完成 host={} candidates={}",
                         result.selectedHost(), result.hosts().size());
                     publishImageRouteEvent("image_route_result",
-                        "图片线路优选完成：" + result.selectedHost(), result);
+                        "图片线路优选完成：" + result.selectedHost(), null, result);
                 } else if (result.selectedHost() == null) {
-                    publishImageRouteEvent("image_route_error", "没有可用的图片线路", result);
+                    publishImageRouteEvent("image_route_error", "没有可用的图片线路", null, result);
                 } else {
                     publishImageRouteEvent("image_route_result",
-                        "图片线路测速完成，保留手动选择", result);
+                        "图片线路测速完成，保留手动选择", null, result);
                 }
             } catch (RuntimeException error) {
                 LOGGER.warn("图片线路优选失败", error);
-                publishImageRouteEvent("image_route_error", "图片线路优选失败，请稍后重试", null);
+                publishImageRouteEvent(
+                    "image_route_error", "图片线路优选失败，请稍后重试",
+                    ImageHostOptimizer.status(), null);
             }
         });
     }
 
     private void publishImageRouteEvent(
-        String phase, String message, ImageHostOptimizer.Result result
+        String phase, String message, ImageHostOptimizer.Progress progress,
+        ImageHostOptimizer.Result result
     ) {
         synchronized (stateDispatchLock) {
             for (Listener listener : listeners) {
-                listener.onImageRouteEvent(phase, message, result);
+                listener.onImageRouteEvent(phase, message, progress, result);
             }
         }
     }

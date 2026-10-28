@@ -94,6 +94,7 @@ function startNetworkProbeStore(resetRetries: boolean) {
     ) {
       return
     }
+    if (data.phase === 'image_route_progress' || data.phase === 'image_route_status') return
     if (data.domains) {
       refreshSequence++
       loading.value = false

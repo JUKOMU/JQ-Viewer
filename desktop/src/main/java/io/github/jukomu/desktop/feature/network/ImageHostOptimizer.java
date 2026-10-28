@@ -5,9 +5,11 @@ import io.github.jukomu.jmcomic.api.model.JmPhoto;
 import io.github.jukomu.jmcomic.core.client.impl.JmApiClient;
 import io.github.jukomu.jmcomic.core.constant.JmConstants;
 
-import javax.imageio.ImageIO;
-import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -22,6 +24,9 @@ public final class ImageHostOptimizer {
                              long bytes, long bytesPerSecond, String error) {
     }
 
+    private record RoundResult(long elapsedMs, long bytes, long bytesPerSecond) {
+    }
+
     /** 完整测速结果；未选出 Host 时 selectedHost 为 null。 */
     public record Result(String selectedHost, List<HostResult> hosts, long runId, long revision) {
     }
@@ -34,6 +39,11 @@ public final class ImageHostOptimizer {
     private static final String SAMPLE_CHAPTER_ID = "1064001";
     private static final int SAMPLE_IMAGE_COUNT = 5;
     private static final int SAMPLE_ROUNDS = 2;
+    private static final long IMAGE_PROBE_TIMEOUT_SECONDS = 3;
+    private static final HttpClient IMAGE_PROBE_CLIENT = HttpClient.newBuilder()
+        .connectTimeout(Duration.ofSeconds(IMAGE_PROBE_TIMEOUT_SECONDS))
+        .followRedirects(HttpClient.Redirect.NORMAL)
+        .build();
     private static final List<String> INITIAL_HOSTS = List.copyOf(JmConstants.DEFAULT_IMAGE_DOMAINS);
     private static final AtomicLong RUN_IDS = new AtomicLong();
     private static final AtomicLong REVISIONS = new AtomicLong();
@@ -88,29 +98,37 @@ public final class ImageHostOptimizer {
 
             for (String host : candidates()) {
                 publishProgress(runId, true, host, results, null, progressListener);
-                long started = System.nanoTime();
-                long bytes = 0;
+                List<RoundResult> rounds = new ArrayList<>();
                 String errorMessage = null;
-                try {
-                    for (int round = 0; round < SAMPLE_ROUNDS; round++) {
+                for (int round = 0; round < SAMPLE_ROUNDS; round++) {
+                    long started = System.nanoTime();
+                    long bytes = 0;
+                    try {
                         for (JmImage sample : samples) {
-                            byte[] content = client.fetchImageBytes(withHost(sample, host));
-                            if (ImageIO.read(new ByteArrayInputStream(content)) == null) {
-                                throw new IllegalStateException("图片解码失败");
-                            }
+                            byte[] content = fetchImageBytesWithTimeout(withHost(sample, host));
                             bytes += content.length;
                         }
+                        long elapsedMs = Math.max(1,
+                            Duration.ofNanos(System.nanoTime() - started).toMillis());
+                        rounds.add(new RoundResult(elapsedMs, bytes, bytes * 1000 / elapsedMs));
+                    } catch (IOException error) {
+                        if (errorMessage == null) errorMessage = error.getMessage();
                     }
-                } catch (RuntimeException | java.io.IOException error) {
-                    errorMessage = error.getMessage();
                 }
-                long elapsedMs = Math.max(1,
-                    Duration.ofNanos(System.nanoTime() - started).toMillis());
-                boolean available = errorMessage == null;
-                long speed = available ? bytes * 1000 / elapsedMs : 0;
-                results.add(new HostResult(host, available, elapsedMs, bytes, speed, errorMessage));
+                long elapsedMs = 0;
+                long bytes = 0;
+                long speed = 0;
+                if (!rounds.isEmpty()) {
+                    elapsedMs = rounds.stream().mapToLong(RoundResult::elapsedMs).sum()
+                        / rounds.size();
+                    bytes = rounds.stream().mapToLong(RoundResult::bytes).sum() / rounds.size();
+                    speed = rounds.stream().mapToLong(RoundResult::bytesPerSecond).sum()
+                        / rounds.size();
+                }
+                results.add(new HostResult(host, !rounds.isEmpty(), elapsedMs, bytes, speed,
+                    rounds.isEmpty() ? errorMessage : null));
                 publishProgress(runId, true, null, results, null, progressListener);
-                if (available && speed > selectedSpeed) {
+                if (!rounds.isEmpty() && speed > selectedSpeed) {
                     selectedHost = host;
                     selectedSpeed = speed;
                 }
@@ -121,6 +139,26 @@ public final class ImageHostOptimizer {
         } catch (RuntimeException error) {
             publishProgress(runId, false, null, results, error.getMessage(), progressListener);
             throw error;
+        }
+    }
+
+    /** 图片测速使用短时限请求，避免 JM 正常下载策略延长单张图片的等待。 */
+    private static byte[] fetchImageBytesWithTimeout(JmImage image) throws IOException {
+        HttpRequest.Builder request = HttpRequest.newBuilder()
+            .uri(URI.create(image.getDownloadUrl()))
+            .timeout(Duration.ofSeconds(IMAGE_PROBE_TIMEOUT_SECONDS))
+            .header("user-agent", JmConstants.DEFAULT_API_HEADERS.get("user-agent"))
+            .GET();
+        try {
+            HttpResponse<byte[]> response = IMAGE_PROBE_CLIENT.send(
+                request.build(), HttpResponse.BodyHandlers.ofByteArray());
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                throw new IOException("图片测速请求失败：HTTP " + response.statusCode());
+            }
+            return response.body();
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            throw new IOException("图片测速被中断", error);
         }
     }
 

@@ -12,6 +12,9 @@ const mocks = vi.hoisted(() => ({
   getUsedDomain: vi.fn(),
   reprobeDomains: vi.fn(),
   measureLatency: vi.fn(),
+  getAllSettings: vi.fn(),
+  getImageRouteCandidates: vi.fn(),
+  getImageRouteStatus: vi.fn(),
   routeRefresh: vi.fn(),
   routeSelect: vi.fn(),
   routeState: null as null | {
@@ -69,6 +72,9 @@ vi.mock('@/services/JmcomicService', () => ({
     getUsedDomain: mocks.getUsedDomain,
     reprobeDomains: mocks.reprobeDomains,
     measureLatency: mocks.measureLatency,
+    getAllSettings: mocks.getAllSettings,
+    getImageRouteCandidates: mocks.getImageRouteCandidates,
+    getImageRouteStatus: mocks.getImageRouteStatus,
   },
 }))
 
@@ -115,6 +121,14 @@ beforeEach(() => {
   mocks.getUsedDomain.mockResolvedValue({ domain: 'api.example' })
   mocks.reprobeDomains.mockResolvedValue({ success: true })
   mocks.measureLatency.mockResolvedValue({ results: [] })
+  mocks.getAllSettings.mockResolvedValue({ imageRouteMode: 'auto', imageRouteHost: '' })
+  mocks.getImageRouteCandidates.mockResolvedValue({ hosts: [] })
+  mocks.getImageRouteStatus.mockResolvedValue({
+    runId: 0,
+    revision: 0,
+    running: false,
+    hosts: [],
+  })
   mocks.routeState = {
     mode: ref('auto'),
     selectedDomain: ref(''),
@@ -151,11 +165,12 @@ describe('在线客户端初始化后的线路状态恢复', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('在线客户端不可用')
+    const refreshCallsBeforeReady = mocks.routeRefresh.mock.calls.length
     mocks.routeRefresh.mockResolvedValue(undefined)
     clientStateListener?.({ state: 'ready', timestamp: 2 })
     await flushPromises()
 
-    expect(mocks.routeRefresh).toHaveBeenCalledTimes(3)
+    expect(mocks.routeRefresh).toHaveBeenCalledTimes(refreshCallsBeforeReady + 1)
     expect(wrapper.text()).not.toContain('在线客户端不可用')
     wrapper.unmount()
   })

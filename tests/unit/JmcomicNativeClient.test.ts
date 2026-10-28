@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
     addListener: vi.fn(),
     getDownloadedPhoto: vi.fn(),
     setApiRoutePreference: vi.fn(),
+    setImageRoutePreference: vi.fn(),
   },
   registerPlugin: vi.fn(),
 }))
@@ -56,11 +57,14 @@ describe('JmcomicNativeClient', () => {
   test('将运行时线路操作路由到在线客户端、线路偏好路由到本地设置', async () => {
     const { jmcomicNativeClient } = await import('@/services/jmcomic/JmcomicNativeClient')
     const route = { mode: 'manual' as const, domain: 'api.example' }
+    const imageRoute = { mode: 'manual' as const, host: 'cdn.example' }
 
     await jmcomicNativeClient.applyApiRoute(route)
     await jmcomicNativeClient.setApiRoutePreference(route)
+    await jmcomicNativeClient.setImageRoutePreference(imageRoute)
 
     expect(mocks.online.applyApiRoute).toHaveBeenCalledWith(route)
     expect(mocks.local.setApiRoutePreference).toHaveBeenCalledWith(route)
+    expect(mocks.local.setImageRoutePreference).toHaveBeenCalledWith(imageRoute)
   })
 })

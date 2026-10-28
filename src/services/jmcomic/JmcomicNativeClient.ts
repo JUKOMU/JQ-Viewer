@@ -22,7 +22,6 @@ const ONLINE_METHODS = new Set<keyof JmcomicClient>([
   'measureImageHosts',
   'getImageRouteCandidates',
   'getImageRouteStatus',
-  'setImageRoutePreference',
   'getInitStatus',
   'getClientState',
   'login',

@@ -252,7 +252,7 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
     wrapper.unmount()
   })
 
-  test('存储概览区分其他占用、下载占用和可用空间', async () => {
+  test('存储概览按大小显示单位并区分下载占用和可用空间', async () => {
     mocks.route.query = { view: 'downloads' }
     mocks.getDownloadTasksPage.mockImplementation(async ({ status }: any) => ({
       ...emptyPage(),
@@ -267,12 +267,12 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('20 MB/ 100 MB')
-    expect(wrapper.text()).toContain('其他占用 30 MB')
     expect(wrapper.text()).toContain('下载占用 20 MB')
     expect(wrapper.text()).toContain('可用 50 MB')
-    expect(wrapper.find('.storage-progress-other').attributes('style')).toContain('width: 30%')
-    expect(wrapper.find('.storage-progress-download').attributes('style')).toContain('width: 20%')
-    expect(wrapper.find('.storage-progress-available').attributes('style')).toContain('width: 50%')
+    expect(wrapper.findAll('.storage-progress-download')).toHaveLength(1)
+    expect(wrapper.findAll('.storage-progress-available')).toHaveLength(1)
+    expect(wrapper.find('.storage-progress-download').attributes('style')).toContain('width: 28.57142857142857%')
+    expect(wrapper.find('.storage-progress-available').attributes('style')).toContain('width: 71.42857142857143%')
     wrapper.unmount()
   })
 

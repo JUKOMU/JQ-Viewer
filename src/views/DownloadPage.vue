@@ -66,17 +66,13 @@
               <div class="storage-copy">
                 <span class="storage-label">存储空间</span>
                 <div class="storage-value-row">
-                  <strong>{{ spaceUsedMb }} MB</strong>
-                  <span>/ {{ storageTotalMb }} MB</span>
+                  <strong>{{ formatBytes(spaceUsedBytes) }}</strong>
+                  <span>/ {{ formatBytes(spaceTotalBytes) }}</span>
                 </div>
               </div>
               <span class="storage-percent">{{ storageUsagePercent }}%</span>
             </div>
             <div class="storage-progress" aria-hidden="true">
-              <div
-                class="storage-progress-other"
-                :style="{ width: `${storageOtherPercent}%` }"
-              />
               <div
                 class="storage-progress-download"
                 :style="{ width: `${storageDownloadPercent}%` }"
@@ -87,9 +83,8 @@
               />
             </div>
             <div class="storage-meta">
-              <span>其他占用 {{ storageOtherMb }} MB</span>
-              <span>下载占用 {{ spaceUsedMb }} MB</span>
-              <span>可用 {{ spaceAvailMb }} MB</span>
+              <span>下载占用 {{ formatBytes(spaceUsedBytes) }}</span>
+              <span>可用 {{ formatBytes(spaceAvailBytes) }}</span>
             </div>
           </div>
           <div v-if="hasTasks" class="sort-label-row">
@@ -500,28 +495,32 @@ const spaceUsedBytes = ref(0)
 const spaceAvailBytes = ref(0)
 const spaceTotalBytes = ref(0)
 const hasStorageInfo = ref(false)
-const spaceUsedMb = computed(() => Math.round(spaceUsedBytes.value / (1024 * 1024)))
-const spaceAvailMb = computed(() => Math.round(spaceAvailBytes.value / (1024 * 1024)))
-const storageTotalMb = computed(() => Math.round(spaceTotalBytes.value / (1024 * 1024)))
-const storageOtherMb = computed(() => Math.round(
-  (spaceTotalBytes.value - spaceUsedBytes.value - spaceAvailBytes.value) / (1024 * 1024),
-))
 const storageUsagePercent = computed(() => {
   if (!spaceTotalBytes.value) return 0
   return Math.round((spaceUsedBytes.value / spaceTotalBytes.value) * 100)
 })
-const storageOtherPercent = computed(() => {
-  if (!spaceTotalBytes.value) return 0
-  return ((spaceTotalBytes.value - spaceUsedBytes.value - spaceAvailBytes.value) / spaceTotalBytes.value) * 100
-})
 const storageDownloadPercent = computed(() => {
-  if (!spaceTotalBytes.value) return 0
-  return (spaceUsedBytes.value / spaceTotalBytes.value) * 100
+  const total = spaceUsedBytes.value + spaceAvailBytes.value
+  if (!total) return 0
+  return (spaceUsedBytes.value / total) * 100
 })
 const storageAvailablePercent = computed(() => {
-  if (!spaceTotalBytes.value) return 0
-  return (spaceAvailBytes.value / spaceTotalBytes.value) * 100
+  const total = spaceUsedBytes.value + spaceAvailBytes.value
+  if (!total) return 0
+  return (spaceAvailBytes.value / total) * 100
 })
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  const kb = bytes / 1024
+  if (kb < 1024) return `${kb < 10 ? kb.toFixed(1) : Math.round(kb)} KB`
+  const mb = kb / 1024
+  if (mb < 1024) return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB`
+  const gb = mb / 1024
+  if (gb < 1024) return `${gb < 10 ? gb.toFixed(1) : Math.round(gb)} GB`
+  const tb = gb / 1024
+  return `${tb < 10 ? tb.toFixed(1) : Math.round(tb)} TB`
+}
 let downloadProgressHandle: ListenerHandle | null = null
 let stateInvalidatedHandle: ListenerHandle | null = null
 let syncPromise: Promise<void> | null = null
@@ -2147,16 +2146,11 @@ const clearFailed = async () => {
   background: #f0e4db;
 }
 
-.storage-progress-other,
 .storage-progress-download,
 .storage-progress-available {
   height: 100%;
   flex: 0 0 auto;
   transition: width 0.3s ease;
-}
-
-.storage-progress-other {
-  background: #c7c7c7;
 }
 
 .storage-progress-download {
@@ -2334,7 +2328,6 @@ const clearFailed = async () => {
   .section-toggle-icon {
     transition-duration: 0.01ms;
   }
-  .storage-progress-other,
   .storage-progress-download,
   .storage-progress-available {
     transition: none;

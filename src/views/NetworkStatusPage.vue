@@ -139,7 +139,7 @@
                   :disabled="imageMeasuring"
                   aria-label="测量图片线路"
                   title="测量图片线路"
-                  @click="handleMeasureImageHosts"
+                  @click="handleMeasureImageHosts()"
                 >
                   <IonIcon :icon="speedometerOutline" aria-hidden="true" />
                 </button>
@@ -288,11 +288,15 @@ onMounted(() => {
   disposed = false
   initNetworkProbeStore()
   void refreshRoute()
-  void JmcomicService.getAllSettings().then((all) => {
-    imageRouteMode.value = all.imageRouteMode === 'manual' ? 'manual' : 'auto'
-    imageRouteHost.value = all.imageRouteHost ?? ''
-    SettingsStore.setImageRoute(imageRouteMode.value, imageRouteHost.value)
-  })
+  void JmcomicService.getAllSettings()
+    .then((all) => {
+      imageRouteMode.value = all.imageRouteMode === 'manual' ? 'manual' : 'auto'
+      imageRouteHost.value = all.imageRouteHost ?? ''
+      SettingsStore.setImageRoute(imageRouteMode.value, imageRouteHost.value)
+    })
+    .catch((error) => {
+      imageRouteError.value = normalizeRuntimeError(error, '获取图片线路设置失败').message
+    })
   void JmcomicService.getImageRouteCandidates()
     .then((result) => {
       imageHostCandidates.value = result.hosts
@@ -411,7 +415,7 @@ async function selectImageRoute(mode: 'auto' | 'manual', host = '') {
         imageApplyError.value = normalizeRuntimeError(error, '应用图片线路失败').message
       }
     } else {
-      await handleMeasureImageHosts()
+      await handleMeasureImageHosts(true)
     }
     return
   }
@@ -425,7 +429,7 @@ async function selectImageRoute(mode: 'auto' | 'manual', host = '') {
   }
 }
 
-async function handleMeasureImageHosts() {
+async function handleMeasureImageHosts(applySelectedHost = imageRouteMode.value === 'auto') {
   if (imageMeasuring.value) return
   imageStatusQuerySequence++
   imageMeasureRequestPending.value = true
@@ -449,6 +453,7 @@ async function handleMeasureImageHosts() {
       imageRouteError.value = '没有可用的图片线路'
       return
     }
+    if (!applySelectedHost) return
     try {
       await JmcomicService.applyImageRoute({ mode: 'auto', host: result.selectedHost })
     } catch (error) {

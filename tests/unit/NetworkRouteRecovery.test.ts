@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => ({
   getAllSettings: vi.fn(),
   getImageRouteCandidates: vi.fn(),
   getImageRouteStatus: vi.fn(),
+  measureImageHosts: vi.fn(),
+  applyImageRoute: vi.fn(),
   routeRefresh: vi.fn(),
   routeSelect: vi.fn(),
   routeState: null as null | {
@@ -75,6 +77,8 @@ vi.mock('@/services/JmcomicService', () => ({
     getAllSettings: mocks.getAllSettings,
     getImageRouteCandidates: mocks.getImageRouteCandidates,
     getImageRouteStatus: mocks.getImageRouteStatus,
+    measureImageHosts: mocks.measureImageHosts,
+    applyImageRoute: mocks.applyImageRoute,
   },
 }))
 
@@ -129,6 +133,12 @@ beforeEach(() => {
     running: false,
     hosts: [],
   })
+  mocks.measureImageHosts.mockResolvedValue({
+    selectedHost: 'fast.example',
+    hosts: [{ host: 'fast.example', available: true, elapsedMs: 100, bytes: 1000, bytesPerSecond: 10000 }],
+    runId: 1,
+    revision: 1,
+  })
   mocks.routeState = {
     mode: ref('auto'),
     selectedDomain: ref(''),
@@ -172,6 +182,23 @@ describe('在线客户端初始化后的线路状态恢复', () => {
 
     expect(mocks.routeRefresh).toHaveBeenCalledTimes(refreshCallsBeforeReady + 1)
     expect(wrapper.text()).not.toContain('在线客户端不可用')
+    wrapper.unmount()
+  })
+})
+
+describe('图片线路手动模式', () => {
+  test('手动模式点击测速只展示结果，不应用测速选出的 Host', async () => {
+    mocks.getAllSettings.mockResolvedValue({ imageRouteMode: 'manual', imageRouteHost: 'fixed.example' })
+    mocks.getImageRouteCandidates.mockResolvedValue({ hosts: ['fixed.example', 'fast.example'] })
+    const wrapper = mount(NetworkStatusPage)
+    await flushPromises()
+
+    await wrapper.find('button[aria-label="测量图片线路"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.measureImageHosts).toHaveBeenCalledTimes(1)
+    expect(mocks.applyImageRoute).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('fixed.example')
     wrapper.unmount()
   })
 })

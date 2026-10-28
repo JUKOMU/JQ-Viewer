@@ -142,8 +142,11 @@ public class SettingsService {
         if ("manual".equals(mode) && (host == null || host.isBlank())) {
             throw new IllegalArgumentException("image host is required");
         }
-        settingsDb.putString("image_route_mode", mode);
-        settingsDb.putString("image_route_host", host == null ? "" : host);
+        boolean modeSaved = settingsDb.putString("image_route_mode", mode);
+        boolean hostSaved = settingsDb.putString("image_route_host", host == null ? "" : host);
+        if (!modeSaved || !hostSaved) {
+            throw new IllegalStateException("保存图片线路设置失败");
+        }
     }
 
     public static int normalizeConcurrency(int value) {

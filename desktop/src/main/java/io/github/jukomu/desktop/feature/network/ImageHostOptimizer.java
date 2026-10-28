@@ -111,8 +111,11 @@ public final class ImageHostOptimizer {
                         long elapsedMs = Math.max(1,
                             Duration.ofNanos(System.nanoTime() - started).toMillis());
                         rounds.add(new RoundResult(elapsedMs, bytes, bytes * 1000 / elapsedMs));
-                    } catch (IOException error) {
-                        if (errorMessage == null) errorMessage = error.getMessage();
+                    } catch (IOException | RuntimeException error) {
+                        if (errorMessage == null) {
+                            errorMessage = error.getMessage() == null
+                                ? error.getClass().getSimpleName() : error.getMessage();
+                        }
                     }
                 }
                 long elapsedMs = 0;

@@ -57,7 +57,8 @@ vi.mock('@ionic/vue', () => {
   }
 })
 
-  vi.mock('ionicons/icons', () => ({
+  vi.mock(import('ionicons/icons'), async (importOriginal) => ({
+  ...(await importOriginal()),
   bookOutline: 'book',
   arrowDownOutline: 'arrow-down',
   arrowUpOutline: 'arrow-up',
@@ -546,6 +547,65 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
     })
     wrapper.unmount()
   })
+
+  test.each(['accepted', 'failed', 'overwrite-cancelled'] as const)(
+    '多选导出 %s 在权限和提交完成前退出，且不清理后续新选择',
+    async (outcome) => {
+      let finishPermission: ((permission: { granted: boolean }) => void) | undefined
+      mocks.checkNotificationPermission.mockReturnValueOnce(
+        new Promise((resolve) => { finishPermission = resolve }),
+      )
+      if (outcome === 'failed') {
+        mocks.exportBatch.mockRejectedValueOnce(new Error('submit failed'))
+      } else {
+        mocks.exportBatch.mockResolvedValueOnce({
+          tasks: outcome === 'accepted'
+            ? [{ accepted: true }]
+            : [{ accepted: false, errorCode: 'PDF_OUTPUT_EXISTS', displayPath: '/pdf/existing.pdf' }],
+        })
+      }
+      mocks.route.query = { view: 'downloads' }
+      const wrapper = mount(DownloadPage)
+      await flushPromises()
+      const state = (wrapper.vm as any).$.setupState
+      const chapter = { ...taskAt(1), status: 'completed' }
+      state.enterDownloadSelection(chapter.taskId)
+      state.openBatchExportSheet([chapter])
+
+      const submission = state.onExportConfirm({
+        selectedChapters: [chapter], format: 'pdf', mode: 'chapter', useOriginal: true,
+        compressionRatio: 1, editedPath: '/pdf/test.pdf', splitPages: 0,
+      })
+      expect(state.downloadSelectionActive).toBe(false)
+      expect(state.downloadSelectedIds.size).toBe(0)
+      expect(state.showExportSheet).toBe(false)
+      expect(state.downloadBatchExport).toBe(false)
+      expect(mocks.showToast).toHaveBeenCalledWith('批量导出已开始', 'success')
+      await flushPromises()
+      expect(mocks.exportBatch).not.toHaveBeenCalled()
+      expect(wrapper.find('.batch-progress-overlay').exists()).toBe(false)
+
+      const nextChapter = { ...taskAt(2), status: 'completed' }
+      state.enterDownloadSelection(nextChapter.taskId)
+      state.openBatchExportSheet([nextChapter])
+      finishPermission?.({ granted: true })
+      await submission
+      await flushPromises()
+
+      expect(state.downloadSelectionActive).toBe(true)
+      expect(state.downloadSelectedIds.has(nextChapter.taskId)).toBe(true)
+      expect(state.showExportSheet).toBe(true)
+      expect(state.downloadBatchExport).toBe(true)
+      expect(wrapper.find('.batch-progress-overlay').exists()).toBe(false)
+      expect(mocks.showToast).not.toHaveBeenCalledWith('PDF 导出已开始，请查看通知', 'success')
+      if (outcome === 'failed') {
+        expect(mocks.showToast).toHaveBeenCalledWith('导出启动失败', 'danger')
+      } else if (outcome === 'overwrite-cancelled') {
+        expect(mocks.showToast).toHaveBeenCalledWith('检测到已有同名 PDF，已取消覆盖', 'medium')
+      }
+      wrapper.unmount()
+    },
+  )
 
   test.each([
     {

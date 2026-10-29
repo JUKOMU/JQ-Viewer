@@ -21,6 +21,9 @@ const mocks = vi.hoisted(() => ({
   search: vi.fn(),
   categories: vi.fn(),
   getAlbum: vi.fn(),
+  getPhoto: vi.fn(),
+  downloadChapter: vi.fn(),
+  addDownloadTask: vi.fn(),
   showToast: vi.fn(() => Promise.resolve()),
   scrollElement: { scrollTop: 0, scrollHeight: 5000, clientHeight: 800 },
   anchorElement: { getBoundingClientRect: vi.fn(() => ({ top: 100 })) },
@@ -52,6 +55,7 @@ vi.mock('@ionic/vue', () => ({
     },
   }),
   IonIcon: defineComponent({ name: 'IonIcon', setup: () => () => h('span') }),
+  IonSpinner: defineComponent({ name: 'IonSpinner', setup: () => () => h('span') }),
   IonPage: defineComponent({
     name: 'IonPage',
     setup(_, { slots }) {
@@ -60,7 +64,8 @@ vi.mock('@ionic/vue', () => ({
   }),
 }))
 
-vi.mock('ionicons/icons', () => ({
+vi.mock(import('ionicons/icons'), async (importOriginal) => ({
+  ...(await importOriginal()),
   bookOutline: 'book',
   downloadOutline: 'download',
   ellipsisVertical: 'ellipsis',
@@ -78,6 +83,10 @@ vi.mock('@/components/search/SearchHeaderBar.vue', () => ({
       return () => h('div')
     },
   }),
+}))
+
+vi.mock('@/components/search/CategorySearchToolbar.vue', () => ({
+  default: defineComponent({ name: 'CategorySearchToolbar', emits: ['search'], render: () => null }),
 }))
 
 vi.mock('@/components/search/SearchResultContainer.vue', () => ({
@@ -116,8 +125,8 @@ vi.mock('@/services/JmcomicService', () => ({
     search: mocks.search,
     categories: mocks.categories,
     getAlbum: mocks.getAlbum,
-    getPhoto: vi.fn(),
-    downloadChapter: vi.fn(),
+    getPhoto: mocks.getPhoto,
+    downloadChapter: mocks.downloadChapter,
     toggleAlbumFavorite: vi.fn(),
     favoriteToFolder: vi.fn(),
   },
@@ -126,7 +135,7 @@ vi.mock('@/services/JmcomicService', () => ({
 }))
 
 vi.mock('@/services/OfflineDownloadService', () => ({
-  OfflineDownloadService: { getAll: vi.fn(() => []), addTask: vi.fn() },
+  OfflineDownloadService: { getAll: vi.fn(() => []), addTask: mocks.addDownloadTask },
 }))
 
 vi.mock('@/services/OfflineFavoriteService', () => ({
@@ -143,6 +152,7 @@ vi.mock('@/composables/useAuth', () => ({
 }))
 
 import SearchPage from '@/views/SearchPage.vue'
+import CategoryPage from '@/views/CategoryPage.vue'
 
 const mountedWrappers: Array<{ unmount: () => void }> = []
 
@@ -170,6 +180,57 @@ const numericQuery = {
   searchMainTag: 0,
   page: 1,
 }
+
+describe('搜索和分类的多选下载', () => {
+  beforeEach(() => {
+    clearSearchPageContextCache()
+    mocks.route.name = 'SearchPage'
+    mocks.route.query = { keyword: 'old', orderBy: 'mr', time: 'a', searchMainTag: '0', page: '1' }
+    mocks.search.mockResolvedValue(oldResult)
+    mocks.categories.mockResolvedValue(oldResult)
+    mocks.getPhoto.mockReset()
+    mocks.downloadChapter.mockReset()
+    mocks.downloadChapter.mockResolvedValue({ taskId: 'download-1' })
+    mocks.addDownloadTask.mockClear()
+    mocks.showToast.mockClear()
+  })
+
+  test.each([
+    { name: '搜索页', component: SearchPage },
+    { name: '分类页', component: CategoryPage },
+  ])('$name 在提交完成前退出多选，且不影响后续新选择', async ({ component }) => {
+    let finishPhoto: ((photo: { id: string; title: string }) => void) | undefined
+    mocks.getPhoto.mockReturnValue(new Promise((resolve) => { finishPhoto = resolve }))
+    const wrapper = track(mount(component))
+    await flushPromises()
+    const state = (wrapper.vm as any).$.setupState
+    await state.resetWithPage({ keyword: 'old', orderBy: 'mr', time: 'a', searchMainTag: 0, page: 1 })
+
+    state.enterMultiSelect('1')
+    const submission = state.handleMultiSelectAction('download')
+    expect(state.multiSelectActive).toBe(false)
+    expect(mocks.showToast).toHaveBeenCalledWith('批量下载已开始', 'success')
+    await flushPromises()
+    expect(state.downloadSubmitting).toBe(true)
+    expect(wrapper.find('.batch-progress-overlay').exists()).toBe(false)
+
+    state.enterMultiSelect('next-selection')
+    await flushPromises()
+    expect(wrapper.find('.batch-progress-overlay').exists()).toBe(false)
+    await state.handleMultiSelectAction('download')
+    expect(mocks.getPhoto).toHaveBeenCalledTimes(1)
+
+    finishPhoto?.({ id: 'chapter-1', title: '第一话' })
+    await submission
+    await flushPromises()
+    expect(state.multiSelectActive).toBe(true)
+    expect(state.multiSelectedIds.has('next-selection')).toBe(true)
+    expect(state.downloadSubmitting).toBe(false)
+    expect(mocks.addDownloadTask).toHaveBeenCalledWith(expect.objectContaining({
+      taskId: 'download-1', albumId: '1', chapterId: 'chapter-1', status: 'queued',
+    }))
+  })
+})
 
 describe('SearchPage 数字 ID 搜索', () => {
   beforeEach(() => {

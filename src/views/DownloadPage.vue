@@ -1660,7 +1660,13 @@ const onExportConfirm = async (payload: {
   editedPath: string
   splitPages: number
 }) => {
+  const isBatchExport = downloadBatchExport.value
   showExportSheet.value = false
+  if (isBatchExport) {
+    // 导出参数已由确认事件快照，权限和队列提交不再占用多选状态。
+    downloadBatchExport.value = false
+    cancelDownloadSelection()
+  }
 
   let exportPlan: ExportPlan
   try {
@@ -1685,6 +1691,7 @@ const onExportConfirm = async (payload: {
   // 输出文件 ref 只在原生创建目标文档后产生，提交前不能把展示路径冒充 fileRef。
   const allowOverwrite = false
 
+  if (isBatchExport) await showToast('批量导出已开始', 'success')
   await ensureNotificationPermission()
 
   try {
@@ -1753,13 +1760,8 @@ const onExportConfirm = async (payload: {
       await showToast(`${payload.format.toUpperCase()} 导出未开始，请查看任务失败原因`, 'danger')
     } else if (rejected > 0) {
       await showToast(`已开始 ${accepted} 个，${rejected} 个未进入队列，请查看导出任务`, 'medium')
-    } else {
+    } else if (!isBatchExport) {
       await showToast(`${payload.format.toUpperCase()} 导出已开始，请查看通知`, 'success')
-    }
-    if (downloadBatchExport.value) {
-      downloadBatchExport.value = false
-      exitDownloadSelection()
-      void syncDownloadState(true)
     }
   } catch (e: any) {
     await showToast(sanitizeError(e, '导出启动失败'), 'danger')

@@ -65,7 +65,7 @@ vi.mock('@ionic/vue', () => ({
 vi.mock('@/services/AppAlertService', () => ({ createAppAlert: mocks.alertCreate }))
 vi.mock('ionicons/icons', async (importOriginal) => ({
   // 保留真实导出，供多选工具栏等子组件使用未替换的图标。
-  ...(await importOriginal<typeof import('ionicons/icons')>()),
+  ...(await importOriginal()),
   bookOutline: 'book',
   checkmarkCircleOutline: 'check',
   chevronDownOutline: 'chevron-down',

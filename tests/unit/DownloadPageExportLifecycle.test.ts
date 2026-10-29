@@ -127,6 +127,8 @@ vi.mock('@/services/OfflineDownloadService', () => ({
 vi.mock('@/components/download/LocalFileManagementView.vue', () => ({
   default: defineComponent({
     name: 'LocalFileManagementView',
+    props: { overlayTarget: { type: Object, required: true } },
+    emits: ['selection-change'],
     setup(_, { expose }) {
       mocks.pdfMountCount++
       expose({ refresh: mocks.refreshPdf })
@@ -375,6 +377,45 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
     mocks.ionViewWillEnter!()
     await flushPromises()
     expect(mocks.refreshPdf).toHaveBeenCalledOnce()
+    wrapper.unmount()
+  })
+
+  test('导出覆盖层位于内容区外，多选时锁定主视图切换', async () => {
+    mocks.route.query = { view: 'export' }
+    const wrapper = mount(DownloadPage)
+    await flushPromises()
+    const manager = wrapper.findComponent({ name: 'LocalFileManagementView' })
+    const target = manager.props('overlayTarget') as HTMLElement
+    const state = (wrapper.vm as any).$.setupState
+
+    expect(target).toBe(wrapper.get('.export-overlay-host').element)
+    expect(wrapper.findAllComponents({ name: 'IonContent' })).toHaveLength(2)
+    expect(
+      wrapper.findAllComponents({ name: 'IonContent' }).some((content) =>
+        content.element.contains(target),
+      ),
+    ).toBe(false)
+
+    manager.vm.$emit('selection-change', true)
+    await flushPromises()
+    expect(wrapper.findAll('.tab-btn').every((button) =>
+      button.attributes('disabled') !== undefined,
+    )).toBe(true)
+    state.selectMainView('downloads')
+    expect(state.activeMainView).toBe('export')
+
+    reactive(mocks.route).query = { view: 'downloads' }
+    await flushPromises()
+    expect(target.style.display).toBe('none')
+    reactive(mocks.route).query = { view: 'export' }
+    await flushPromises()
+    expect(target.style.display).not.toBe('none')
+
+    manager.vm.$emit('selection-change', false)
+    await flushPromises()
+    await wrapper.findAll('.tab-btn')[0].trigger('click')
+    expect(state.activeMainView).toBe('downloads')
+    expect(target.style.display).toBe('none')
     wrapper.unmount()
   })
 

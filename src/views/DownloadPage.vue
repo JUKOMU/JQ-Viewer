@@ -12,7 +12,7 @@
               role="tab"
               class="tab-btn"
               :aria-selected="activeMainView === 'downloads'"
-              :disabled="downloadSelectionActive"
+              :disabled="mainViewSelectionActive"
               :class="{ active: activeMainView === 'downloads' }"
               @click="selectMainView('downloads')"
             >
@@ -23,7 +23,7 @@
               role="tab"
               class="tab-btn"
               :aria-selected="activeMainView === 'export'"
-              :disabled="downloadSelectionActive"
+              :disabled="mainViewSelectionActive"
               :class="{ active: activeMainView === 'export' }"
               @click="selectMainView('export')"
             >
@@ -33,6 +33,12 @@
         </div>
       </IonToolbar>
     </IonHeader>
+    <!-- 覆盖层与页头同级挂载，并随导出视图隐藏。 -->
+    <div
+      v-show="activeMainView === 'export'"
+      ref="exportOverlayTarget"
+      class="export-overlay-host"
+    ></div>
     <IonContent
       v-show="activeMainView === 'downloads'"
       ref="downloadContentRef"
@@ -280,9 +286,12 @@
     <IonContent v-show="activeMainView === 'export'">
       <div class="download-page-shell desktop-page-content">
         <LocalFileManagementView
+          v-if="exportOverlayTarget"
           ref="exportManagementRef"
+          :overlay-target="exportOverlayTarget"
           :initial-view="exportInitialView"
           :initial-export-id="exportInitialExportId"
+          @selection-change="exportSelectionActive = $event"
         />
       </div>
     </IonContent>
@@ -392,6 +401,8 @@ const exportInitialExportId = computed(() =>
   typeof route.query.exportId === 'string' ? route.query.exportId : undefined,
 )
 const exportManagementRef = ref<InstanceType<typeof LocalFileManagementView> | null>(null)
+const exportOverlayTarget = ref<HTMLElement | null>(null)
+const exportSelectionActive = ref(false)
 const downloadSelection = useMultiSelect<string>()
 const {
   active: downloadSelectionActive,
@@ -404,6 +415,11 @@ const {
   invert: invertDownloadItems,
   exit: exitDownloadSelection,
 } = downloadSelection
+const mainViewSelectionActive = computed(() =>
+  activeMainView.value === 'downloads'
+    ? downloadSelectionActive.value
+    : exportSelectionActive.value,
+)
 const downloadSelectionPreparing = ref(false)
 const downloadSelectionPreparingAction = ref<'select-all' | 'invert' | null>(null)
 const downloadSelectionExecuting = ref(false)
@@ -421,7 +437,7 @@ useBackButton(5, (processNextHandler) => {
 let ionEnterCount = 0
 
 const selectMainView = (view: 'downloads' | 'export') => {
-  if (downloadSelectionActive.value) return
+  if (mainViewSelectionActive.value) return
   activeMainView.value = view
 }
 

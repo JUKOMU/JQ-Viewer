@@ -548,7 +548,7 @@ public final class DownloadStore {
                                    CursorValue boundary, int limit) {
         String value = switch (sort) {
             case "title" -> "g.album_title";
-            case "id" -> "g.album_id";
+            case "id" -> "CAST(g.album_id AS INTEGER)";
             case "author" -> "r.author";
             default -> "g.latest_completed_at";
         };
@@ -623,7 +623,8 @@ public final class DownloadStore {
     private static String orderValue(String sort, String titleColumn, String authorColumn) {
         return switch (sort) {
             case "title" -> titleColumn;
-            case "id" -> "album_id";
+            // ID 保持字符串存储，排序和游标比较统一使用整数值。
+            case "id" -> "CAST(album_id AS INTEGER)";
             case "author" -> authorColumn;
             default -> "created_at";
         };
@@ -652,7 +653,8 @@ public final class DownloadStore {
     private static int bindBoundary(PreparedStatement statement, CursorValue boundary, String value,
                                     String direction, int index) throws SQLException {
         if (boundary == null) return index;
-        int nullFlag = boundary.value() == null || boundary.value().isBlank() ? 1 : 0;
+        // 与 SQLite TRIM 的默认规则一致，只将普通空格视为空值。
+        int nullFlag = boundary.value() == null || boundary.value().replace(" ", "").isEmpty() ? 1 : 0;
         statement.setInt(index++, nullFlag);
         statement.setInt(index++, nullFlag);
         statement.setString(index++, boundary.value());

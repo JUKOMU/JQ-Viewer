@@ -24,19 +24,19 @@ class DownloadStorePaginationTest {
         try (Database database = new Database(paths)) {
             database.open();
             DownloadStore store = new DownloadStore(database);
-            createCompleted(store, "album-1", "chapter-1", 1);
-            createCompleted(store, "album-1", "chapter-2", 2);
-            createCompleted(store, "album-2", "chapter-1", 3);
+            createCompleted(store, "56", "chapter-1", 1);
+            createCompleted(store, "56", "chapter-2", 2);
+            createCompleted(store, "123456", "chapter-1", 3);
 
             DownloadStore.TaskPage first = store.page("completed", "id", "asc", null, 1);
             assertEquals(1, first.albums().size());
-            assertEquals("album-1", first.albums().get(0).albumId());
+            assertEquals("56", first.albums().get(0).albumId());
             assertEquals(2, first.albums().get(0).chapters().size());
             assertEquals(2, first.totalCount());
             assertNotNull(first.nextCursor());
 
             DownloadStore.TaskPage second = store.page("completed", "id", "asc", first.nextCursor(), 1);
-            assertEquals(List.of("album-2"), second.albums().stream()
+            assertEquals(List.of("123456"), second.albums().stream()
                     .map(DownloadStore.CompletedAlbum::albumId).toList());
             assertEquals("chapter-1", first.albums().get(0).chapters().get(0).chapterId());
             assertEquals("chapter-2", first.albums().get(0).chapters().get(1).chapterId());
@@ -106,10 +106,12 @@ class DownloadStorePaginationTest {
                     try (Database database = new Database(root.resolve("test.db"))) {
                         database.open();
                         DownloadStore store = new DownloadStore(database);
-                        for (int i = 1; i <= 3; i++) {
-                            if ("completed".equals(status)) createCompleted(store, "album-" + i, "chapter-1", 1);
-                            else createFailed(store, "album-1", "chapter-" + i, "Alice");
+                        // 不同位数 ID 检查数值排序，同一本子的多个任务检查稳定键。
+                        for (String albumId : List.of("56", "123456", "2")) {
+                            if ("completed".equals(status)) createCompleted(store, albumId, "chapter-1", 1);
+                            else createFailed(store, albumId, "chapter-1", "Alice");
                         }
+                        if (!"completed".equals(status)) createFailed(store, "56", "chapter-2", "Alice");
                         database.connection().createStatement().executeUpdate(
                             "UPDATE download_tasks SET created_at=1,album_title='Same',completed_at=1"
                                 + ("active".equals(status) ? ",status='queued'" : ""));
@@ -121,11 +123,14 @@ class DownloadStorePaginationTest {
                             pages.add(page);
                             ids.addAll(pageIds(page));
                             cursor = page.nextCursor();
-                            org.junit.jupiter.api.Assertions.assertTrue(pages.size() <= 3, "cursor must advance");
+                            org.junit.jupiter.api.Assertions.assertTrue(pages.size() <= 4, "cursor must advance");
                         } while (cursor != null);
                         List<String> expected = "completed".equals(status)
-                            ? List.of("album-1", "album-2", "album-3")
-                            : List.of("album-1_chapter-1", "album-1_chapter-2", "album-1_chapter-3");
+                            ? ("id".equals(sort) ? List.of("2", "56", "123456")
+                                : List.of("123456", "2", "56"))
+                            : ("id".equals(sort)
+                                ? List.of("2_chapter-1", "56_chapter-1", "56_chapter-2", "123456_chapter-1")
+                                : List.of("123456_chapter-1", "2_chapter-1", "56_chapter-1", "56_chapter-2"));
                         if ("desc".equals(direction)) {
                             expected = new java.util.ArrayList<>(expected);
                             java.util.Collections.reverse(expected);
@@ -142,7 +147,7 @@ class DownloadStorePaginationTest {
     }
 
     @Test
-    void emptyAndWhitespaceAuthorsShareStableNullRank() throws Exception {
+    void authorPagesMatchSqlNullRankForSpacesAndTabs() throws Exception {
         Path root = Files.createTempDirectory("jq-viewer-empty-author-");
         try (Database database = new Database(root.resolve("test.db"))) {
             database.open();
@@ -150,6 +155,7 @@ class DownloadStorePaginationTest {
             createFailed(store, "album-1", "chapter-1", " ");
             createFailed(store, "album-2", "chapter-1", "");
             createFailed(store, "album-3", "chapter-1", "Alice");
+            createFailed(store, "album-4", "chapter-1", "\t");
             for (String direction : List.of("asc", "desc")) {
                 List<String> ids = new java.util.ArrayList<>();
                 String cursor = null;
@@ -157,10 +163,10 @@ class DownloadStorePaginationTest {
                     var page = store.page("failed", "author", direction, cursor, 1);
                     ids.addAll(page.tasks().stream().map(task -> task.albumId()).toList());
                     cursor = page.nextCursor();
-                    org.junit.jupiter.api.Assertions.assertTrue(ids.size() <= 3);
+                    org.junit.jupiter.api.Assertions.assertTrue(ids.size() <= 4);
                 } while (cursor != null);
-                assertEquals("asc".equals(direction) ? List.of("album-3", "album-1", "album-2")
-                    : List.of("album-3", "album-2", "album-1"), ids);
+                assertEquals("asc".equals(direction) ? List.of("album-4", "album-3", "album-1", "album-2")
+                    : List.of("album-3", "album-4", "album-2", "album-1"), ids);
             }
         }
     }

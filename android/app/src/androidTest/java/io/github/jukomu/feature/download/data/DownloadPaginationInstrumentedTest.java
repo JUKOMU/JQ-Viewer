@@ -31,10 +31,11 @@ public class DownloadPaginationInstrumentedTest {
             for (String sort : Arrays.asList("time", "id", "title", "author")) {
                 for (String direction : Arrays.asList("asc", "desc")) {
                     try (Fixture fixture = new Fixture()) {
-                        for (int i = 1; i <= 3; i++) {
-                            fixture.add("completed".equals(status) ? "album" + i : "album1",
-                                "completed".equals(status) ? "chapter1" : "chapter" + i, status, i);
+                        // 不同位数 ID 检查数值排序，同一本子的多个任务检查稳定键。
+                        for (String albumId : Arrays.asList("56", "123456", "2")) {
+                            fixture.add(albumId, "chapter1", status, 1);
                         }
+                        if (!"completed".equals(status)) fixture.add("56", "chapter2", status, 1);
                         fixture.store.getWritableDatabase().execSQL(
                             "UPDATE download_tasks SET created_at=1,completed_at=100");
                         List<String> actual = new ArrayList<>();
@@ -45,11 +46,14 @@ public class DownloadPaginationInstrumentedTest {
                             pages.add(page);
                             actual.addAll(ids(page, status));
                             cursor = page.isNull("nextCursor") ? null : page.getString("nextCursor");
-                            assertTrue("cursor must advance", pages.size() <= 3);
+                            assertTrue("cursor must advance", pages.size() <= 4);
                         } while (cursor != null);
                         List<String> expected = new ArrayList<>("completed".equals(status)
-                            ? Arrays.asList("album1", "album2", "album3")
-                            : Arrays.asList("album1_chapter1", "album1_chapter2", "album1_chapter3"));
+                            ? ("id".equals(sort) ? Arrays.asList("2", "56", "123456")
+                                : Arrays.asList("123456", "2", "56"))
+                            : ("id".equals(sort)
+                                ? Arrays.asList("2_chapter1", "56_chapter1", "56_chapter2", "123456_chapter1")
+                                : Arrays.asList("123456_chapter1", "2_chapter1", "56_chapter1", "56_chapter2")));
                         if ("desc".equals(direction)) Collections.reverse(expected);
                         assertEquals(status + "/" + sort + "/" + direction, expected, actual);
                         for (int i = 1; i < pages.size(); i++) {
@@ -83,7 +87,7 @@ public class DownloadPaginationInstrumentedTest {
     }
 
     @Test
-    public void nullAndBlankAuthorsRemainLastAndUseTaskIds() throws Exception {
+    public void authorPagesMatchSqlNullRankForSpacesAndTabs() throws Exception {
         try (Fixture fixture = new Fixture()) {
             fixture.add("album1", "chapter1", "failed", 1);
             fixture.add("album1", "chapter2", "failed", 1);
@@ -92,6 +96,8 @@ public class DownloadPaginationInstrumentedTest {
                 "UPDATE download_tasks SET author=NULL WHERE task_id='album1_chapter1'");
             fixture.store.getWritableDatabase().execSQL(
                 "UPDATE download_tasks SET author=' ' WHERE task_id='album1_chapter2'");
+            fixture.add("album3", "chapter1", "failed", 1);
+            fixture.store.updateTaskDetail("album3_chapter1", 1, "\t", "[]", "[]", 1, true);
             for (String direction : Arrays.asList("asc", "desc")) {
                 List<String> actual = new ArrayList<>();
                 String cursor = null;
@@ -100,11 +106,11 @@ public class DownloadPaginationInstrumentedTest {
                     JSONObject page = fixture.store.getTasksPage("failed", "author", direction, cursor, 1);
                     actual.addAll(ids(page, "failed"));
                     cursor = page.isNull("nextCursor") ? null : page.getString("nextCursor");
-                    assertTrue(++requests <= 3);
+                    assertTrue(++requests <= 4);
                 } while (cursor != null);
                 assertEquals("asc".equals(direction)
-                    ? Arrays.asList("album2_chapter1", "album1_chapter1", "album1_chapter2")
-                    : Arrays.asList("album2_chapter1", "album1_chapter2", "album1_chapter1"), actual);
+                    ? Arrays.asList("album3_chapter1", "album2_chapter1", "album1_chapter1", "album1_chapter2")
+                    : Arrays.asList("album2_chapter1", "album3_chapter1", "album1_chapter2", "album1_chapter1"), actual);
             }
         }
     }

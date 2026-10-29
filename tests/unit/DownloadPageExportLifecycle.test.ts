@@ -196,6 +196,16 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
   const groupAt = (id: number) => ({ ...taskAt(id), chapters: [{ ...taskAt(id), status: 'completed' }],
     type: 'single', totalSize: 1, completedAt: id })
 
+  test('下载列表开启 Ionic 滚动事件以支持自动分页', async () => {
+    mocks.route.query = { view: 'downloads' }
+    const wrapper = mount(DownloadPage)
+    await flushPromises()
+
+    const content = wrapper.findAllComponents({ name: 'IonContent' })[0]
+    expect(content.attributes('scroll-events')).toBe('true')
+    wrapper.unmount()
+  })
+
   test('三页窗口双向往返使用整个窗口的两端游标且不重复', async () => {
     mocks.getDownloadTasksPage.mockImplementation(async ({ status, cursor }: any) => {
       if (status !== 'active') return emptyPage()

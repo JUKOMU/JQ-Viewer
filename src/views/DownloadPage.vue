@@ -36,6 +36,7 @@
     <IonContent
       v-show="activeMainView === 'downloads'"
       ref="downloadContentRef"
+      :scroll-events="true"
       @ionScroll="onDownloadScroll"
     >
       <!-- 下拉刷新 -->

@@ -270,10 +270,13 @@
         @action="executeDownloadSelection"
       />
     </div>
-    <div v-if="downloadBatchRunning" class="download-batch-progress" role="status">
-      {{ downloadBatchActionLabel }}：{{ downloadBatchCurrent }} / {{ downloadBatchTotal }}
-      <div>{{ downloadBatchCurrentTitle }}</div>
-    </div>
+    <BatchProgressOverlay
+      v-if="downloadBatchRunning"
+      :title="downloadBatchActionLabel"
+      :current="downloadBatchCurrent"
+      :total="downloadBatchTotal"
+      :current-item="downloadBatchCurrentTitle"
+    />
     <IonContent v-show="activeMainView === 'export'">
       <div class="download-page-shell desktop-page-content">
         <LocalFileManagementView
@@ -355,6 +358,7 @@ import LocalFileManagementView from '@/components/download/LocalFileManagementVi
 import CardContextMenu from '@/components/common/CardContextMenu.vue'
 import MultiSelectInfoBar from '@/components/common/MultiSelectInfoBar.vue'
 import MultiSelectActionBar from '@/components/common/MultiSelectActionBar.vue'
+import BatchProgressOverlay from '@/components/common/BatchProgressOverlay.vue'
 import { useMultiSelect } from '@/composables/useMultiSelect'
 import { createAppAlert } from '@/services/AppAlertService'
 import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
@@ -2347,19 +2351,5 @@ const clearFailed = async () => {
 }
 .multi-select-overlay > * {
   pointer-events: auto;
-}
-.download-batch-progress {
-  position: fixed;
-  inset: 0;
-  z-index: 55;
-  display: grid;
-  place-content: center;
-  gap: 12px;
-  padding: 24px;
-  background: rgb(24 20 18 / 0.32);
-  color: #30201a;
-  text-align: center;
-  font-size: 16px;
-  font-weight: 600;
 }
 </style>

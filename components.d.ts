@@ -17,6 +17,7 @@ declare module 'vue' {
     AlbumInfoTab: typeof import('./src/components/album/AlbumInfoTab.vue')['default']
     AlbumPreviewTab: typeof import('./src/components/album/AlbumPreviewTab.vue')['default']
     AppAlert: typeof import('./src/components/common/AppAlert.vue')['default']
+    BatchProgressOverlay: typeof import('./src/components/common/BatchProgressOverlay.vue')['default']
     CardContextMenu: typeof import('./src/components/common/CardContextMenu.vue')['default']
     CategorySearchToolbar: typeof import('./src/components/search/CategorySearchToolbar.vue')['default']
     DeleteChaptersBottomSheet: typeof import('./src/components/download/DeleteChaptersBottomSheet.vue')['default']

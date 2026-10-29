@@ -242,10 +242,13 @@
         @action="executeManagementDelete"
       />
     </div>
-    <div v-if="managementSelectionExecuting" class="management-batch-progress" role="status">
-      正在删除：{{ managementProgressCurrent }} / {{ managementProgressTotal }}
-      <div>{{ managementProgressTitle }}</div>
-    </div>
+    <BatchProgressOverlay
+      v-if="managementSelectionExecuting"
+      title="正在删除"
+      :current="managementProgressCurrent"
+      :total="managementProgressTotal"
+      :current-item="managementProgressTitle"
+    />
   </div>
 </template>
 
@@ -272,6 +275,7 @@ import ExportTaskCard from './ExportTaskCard.vue'
 import CardContextMenu from '@/components/common/CardContextMenu.vue'
 import MultiSelectInfoBar from '@/components/common/MultiSelectInfoBar.vue'
 import MultiSelectActionBar from '@/components/common/MultiSelectActionBar.vue'
+import BatchProgressOverlay from '@/components/common/BatchProgressOverlay.vue'
 import { useMultiSelect } from '@/composables/useMultiSelect'
 import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
 import { LocalFileImportService } from '@/services/LocalFileImportService'
@@ -1696,19 +1700,5 @@ select:focus-visible {
 }
 .multi-select-overlay > * {
   pointer-events: auto;
-}
-.management-batch-progress {
-  position: fixed;
-  inset: 0;
-  z-index: 55;
-  display: grid;
-  place-content: center;
-  gap: 12px;
-  padding: 24px;
-  background: rgb(24 20 18 / 0.32);
-  color: #30201a;
-  text-align: center;
-  font-size: 16px;
-  font-weight: 600;
 }
 </style>

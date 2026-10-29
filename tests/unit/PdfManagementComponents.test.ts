@@ -63,7 +63,9 @@ vi.mock('@ionic/vue', () => ({
   alertController: { create: mocks.alertCreate },
 }))
 vi.mock('@/services/AppAlertService', () => ({ createAppAlert: mocks.alertCreate }))
-vi.mock('ionicons/icons', () => ({
+vi.mock('ionicons/icons', async (importOriginal) => ({
+  // 保留真实导出，供多选工具栏等子组件使用未替换的图标。
+  ...(await importOriginal()),
   bookOutline: 'book',
   checkmarkCircleOutline: 'check',
   chevronDownOutline: 'chevron-down',
@@ -116,6 +118,19 @@ vi.mock('@/services/LocalFileImportService', () => ({
 import ExportTaskCard from '@/components/download/ExportTaskCard.vue'
 import LocalFileCard from '@/components/download/LocalFileCard.vue'
 import LocalFileManagementView from '@/components/download/LocalFileManagementView.vue'
+
+function mountManagement(options: {
+  attachTo?: HTMLElement
+  props?: { initialView?: 'files' | 'tasks'; overlayTarget?: HTMLElement }
+} = {}) {
+  return mount(LocalFileManagementView, {
+    ...options,
+    props: {
+      ...options.props,
+      overlayTarget: options.props?.overlayTarget ?? document.createElement('div'),
+    },
+  })
+}
 
 const file: LocalFileRecord = {
   id: 1,
@@ -238,6 +253,42 @@ describe('ExportTaskCard', () => {
 })
 
 describe('LocalFileManagementView', () => {
+  test.each(['files', 'tasks'] as const)('%s 多选栏和进度层挂到页面目标，退出或卸载后移除', async (initialView) => {
+    const target = document.createElement('div')
+    const wrapper = mountManagement({ props: { initialView, overlayTarget: target } })
+    await flushPromises()
+    const state = (wrapper.vm as any).$.setupState
+    const selectButton = wrapper.findAll('.manager-actions button').find((button) =>
+      button.text() === '多选',
+    )!
+
+    await selectButton.trigger('click')
+    await flushPromises()
+    expect(target.querySelector('.multi-select-info')).not.toBeNull()
+    expect(target.querySelector('.multi-select-actions')).not.toBeNull()
+    expect(wrapper.find('.multi-select-overlay').exists()).toBe(false)
+    expect(wrapper.emitted('selection-change')?.slice(-1)).toEqual([[true]])
+
+    state.managementSelectionExecuting = true
+    await flushPromises()
+    expect(target.querySelector('.batch-progress-overlay')).not.toBeNull()
+    expect(wrapper.find('.batch-progress-overlay').exists()).toBe(false)
+
+    state.managementSelectionExecuting = false
+    await flushPromises()
+    target.querySelector<HTMLButtonElement>('.selection-toolbar > button')!.click()
+    await flushPromises()
+    expect(target.querySelector('.multi-select-overlay')).toBeNull()
+    expect(target.querySelector('.batch-progress-overlay')).toBeNull()
+    expect(wrapper.emitted('selection-change')?.slice(-1)).toEqual([[false]])
+
+    await selectButton.trigger('click')
+    await flushPromises()
+    expect(target.querySelector('.multi-select-info')).not.toBeNull()
+    wrapper.unmount()
+    expect(target.querySelector('.multi-select-overlay')).toBeNull()
+  })
+
   test('先显示卡片并在后台校验当前页', async () => {
     let finishRefresh: ((value: { files: LocalFileRecord[] }) => void) | undefined
     mocks.refreshLocalFileAvailability.mockReturnValue(
@@ -246,7 +297,7 @@ describe('LocalFileManagementView', () => {
       }),
     )
 
-    const wrapper = mount(LocalFileManagementView)
+    const wrapper = mountManagement()
     await flushPromises()
 
     expect(wrapper.text()).toContain('测试漫画')
@@ -259,7 +310,7 @@ describe('LocalFileManagementView', () => {
   })
 
   test('同章节存在已完成下载时显示图片和 PDF 资源', async () => {
-    const wrapper = mount(LocalFileManagementView)
+    const wrapper = mountManagement()
     await flushPromises()
 
     expect(wrapper.get('.resource-icons').attributes('aria-label')).toBe('图片和 PDF')
@@ -267,7 +318,7 @@ describe('LocalFileManagementView', () => {
   })
 
   test('文件筛选默认排除 ZIP，ZIP 独立筛选且隐藏 PDF/CBZ 选项', async () => {
-    const wrapper = mount(LocalFileManagementView)
+    const wrapper = mountManagement()
     await flushPromises()
 
     expect(mocks.getLocalFiles).toHaveBeenCalledWith(
@@ -293,7 +344,7 @@ describe('LocalFileManagementView', () => {
   })
 
   test('格式选项分别筛选 CBZ 文件和 ZIP 任务', async () => {
-    const wrapper = mount(LocalFileManagementView, { attachTo: document.body })
+    const wrapper = mountManagement({ attachTo: document.body })
     await flushPromises()
 
     const fileFormatButtons = wrapper.findAll('.file-filters [aria-label="文件格式筛选"] button')
@@ -332,7 +383,7 @@ describe('LocalFileManagementView', () => {
       ownership: 'app_created',
     }
     mocks.getLocalFiles.mockResolvedValue({ files: [zipFile], nextCursor: null })
-    const wrapper = mount(LocalFileManagementView)
+    const wrapper = mountManagement()
     await flushPromises()
 
     const infoButton = wrapper.get<HTMLButtonElement>('.open-btn')
@@ -350,7 +401,7 @@ describe('LocalFileManagementView', () => {
   })
 
   test('物理删除前刷新资源并展示完整定位符和路径复用警告', async () => {
-    const wrapper = mount(LocalFileManagementView)
+    const wrapper = mountManagement()
     await flushPromises()
     await wrapper.get('button[aria-label="更多操作"]').trigger('click')
     document.body.querySelector<HTMLButtonElement>('.card-menu-item--danger')?.click()
@@ -370,7 +421,7 @@ describe('LocalFileManagementView', () => {
   })
 
   test('更多菜单按下载页样式提供八项文件操作', async () => {
-    const wrapper = mount(LocalFileManagementView)
+    const wrapper = mountManagement()
     await flushPromises()
     await wrapper.get('button[aria-label="更多操作"]').trigger('click')
 
@@ -400,7 +451,7 @@ describe('LocalFileManagementView', () => {
         chapterPageCount: '12',
       },
     }
-    const wrapper = mount(LocalFileManagementView)
+    const wrapper = mountManagement()
     await flushPromises()
 
     await wrapper.get('button[aria-label="阅读 PDF"]').trigger('click')
@@ -422,7 +473,7 @@ describe('LocalFileManagementView', () => {
         finishVerification = resolve
       }),
     )
-    const wrapper = mount(LocalFileManagementView)
+    const wrapper = mountManagement()
     await flushPromises()
 
     await wrapper.get('button[aria-label="更多操作"]').trigger('click')
@@ -439,7 +490,7 @@ describe('LocalFileManagementView', () => {
   })
 
   test('详情和打开文件夹操作调用对应能力', async () => {
-    const wrapper = mount(LocalFileManagementView)
+    const wrapper = mountManagement()
     await flushPromises()
 
     await wrapper.get('button[aria-label="更多操作"]').trigger('click')
@@ -455,7 +506,7 @@ describe('LocalFileManagementView', () => {
   })
 
   test('删除任务记录的确认不再请求影响 token', async () => {
-    const wrapper = mount(LocalFileManagementView, { props: { initialView: 'tasks' } })
+    const wrapper = mountManagement({ props: { initialView: 'tasks' } })
     await flushPromises()
     await wrapper.get('button[aria-label="删除 PDF 导出任务记录"]').trigger('click')
 
@@ -481,7 +532,7 @@ describe('LocalFileManagementView', () => {
       .mockResolvedValueOnce({ files: [newerFile], nextCursor: null })
     mocks.refreshLocalFileAvailability.mockResolvedValue({ files: [] })
 
-    const wrapper = mount(LocalFileManagementView)
+    const wrapper = mountManagement()
     await flushPromises()
     await wrapper.findAll('.filter-buttons button')[1].trigger('click')
     await flushPromises()
@@ -512,7 +563,7 @@ describe('LocalFileManagementView', () => {
       )
       .mockResolvedValueOnce({ tasks: [newerTask], nextCursor: null })
 
-    const wrapper = mount(LocalFileManagementView, { props: { initialView: 'tasks' } })
+    const wrapper = mountManagement({ props: { initialView: 'tasks' } })
     await flushPromises()
     await wrapper.findAll('.task-filter-buttons button')[5].trigger('click')
     await flushPromises()
@@ -539,7 +590,7 @@ describe('LocalFileManagementView', () => {
       )
       .mockResolvedValueOnce({ tasks: [currentTask], nextCursor: null })
 
-    const wrapper = mount(LocalFileManagementView, { props: { initialView: 'tasks' } })
+    const wrapper = mountManagement({ props: { initialView: 'tasks' } })
     await vi.waitFor(() => expect(mocks.getExportTasks).toHaveBeenCalledOnce())
     mocks.pdfProgressHandler?.({
       ...currentTask,
@@ -555,7 +606,7 @@ describe('LocalFileManagementView', () => {
   })
 
   test('事件流重连后刷新管理状态、筛选页和下载资源索引', async () => {
-    const wrapper = mount(LocalFileManagementView)
+    const wrapper = mountManagement()
     await flushPromises()
     expect(wrapper.text()).toContain('测试漫画')
     expect(wrapper.get('.resource-icons').attributes('aria-label')).toBe('图片和 PDF')
@@ -584,7 +635,7 @@ describe('LocalFileManagementView', () => {
       }),
     )
 
-    const wrapper = mount(LocalFileManagementView)
+    const wrapper = mountManagement()
     await flushPromises()
     expect(mocks.addExportProgressListener).toHaveBeenCalledOnce()
     wrapper.unmount()
@@ -604,7 +655,7 @@ describe('LocalFileManagementView', () => {
       )
       .mockResolvedValueOnce(undefined)
 
-    const wrapper = mount(LocalFileManagementView)
+    const wrapper = mountManagement()
     await flushPromises()
     await wrapper.get('button[aria-label="导入文件"]').trigger('click')
     await flushPromises()
@@ -620,7 +671,7 @@ describe('LocalFileManagementView', () => {
     mocks.inspectLocalFileForDeletion.mockRejectedValueOnce(
       new RuntimeError('not-found', 'PDF 文件记录不存在'),
     )
-    const wrapper = mount(LocalFileManagementView)
+    const wrapper = mountManagement()
     await flushPromises()
     const initialCalls = mocks.getLocalFiles.mock.calls.length
 
@@ -644,7 +695,7 @@ describe('LocalFileManagementView', () => {
       return { present: vi.fn() }
     })
 
-    const wrapper = mount(LocalFileManagementView, { props: { initialView: 'tasks' } })
+    const wrapper = mountManagement({ props: { initialView: 'tasks' } })
     await flushPromises()
     const initialCalls = mocks.getExportTasks.mock.calls.length
 
@@ -670,7 +721,7 @@ describe('导出管理三页窗口回归', () => {
 
   test('第四页裁剪后可回看旧页，前后往返不重复且资源查询仅覆盖当前窗口', async () => {
     mocks.getLocalFiles.mockImplementation(serveFiles(Array.from({ length: 260 }, (_, i) => fileAt(i + 1))))
-    const wrapper = mount(LocalFileManagementView)
+    const wrapper = mountManagement()
     await flushPromises()
     const state = (wrapper.vm as any).$.setupState
     for (let i = 0; i < 3; i++) await state.loadMoreFiles()
@@ -691,7 +742,7 @@ describe('导出管理三页窗口回归', () => {
   test('删除窗口头部后按当前首游标补齐，不额外丢弃剩余首页', async () => {
     const records = Array.from({ length: 260 }, (_, i) => fileAt(i + 1))
     mocks.getLocalFiles.mockImplementation(serveFiles(records))
-    const wrapper = mount(LocalFileManagementView)
+    const wrapper = mountManagement()
     await flushPromises()
     const state = (wrapper.vm as any).$.setupState
     for (let i = 0; i < 3; i++) await state.loadMoreFiles()
@@ -708,7 +759,7 @@ describe('导出管理三页窗口回归', () => {
       const start = cursor ? Number(cursor.slice(1)) : 0
       return { tasks: Array.from({ length: 50 }, (_, i) => taskAt(start + i + 1)), nextCursor: 't' + (start + 50) }
     })
-    const wrapper = mount(LocalFileManagementView, { props: { initialView: 'tasks' } })
+    const wrapper = mountManagement({ props: { initialView: 'tasks' } })
     await flushPromises()
     const state = (wrapper.vm as any).$.setupState
     await state.loadMoreTasks()
@@ -726,7 +777,7 @@ describe('导出管理三页窗口回归', () => {
   test('资源查询在文件加载后发起，较旧窗口响应不能覆盖新标记', async () => {
     let finishOld: ((result: { keys: string[] }) => void) | undefined
     mocks.getDownloadedResourceKeys.mockImplementationOnce(() => new Promise((resolve) => { finishOld = resolve }))
-    const wrapper = mount(LocalFileManagementView)
+    const wrapper = mountManagement()
     await flushPromises()
     expect(mocks.getDownloadedResourceKeys).toHaveBeenCalledWith([{ albumId: 'album-1', chapterId: 'chapter-1' }])
     mocks.getLocalFiles.mockResolvedValue({ files: [fileAt(2)], nextCursor: null })
@@ -742,7 +793,7 @@ describe('导出管理三页窗口回归', () => {
 
   test('较早定位响应不能覆盖新的目标，也不累计临时定位页', async () => {
     let finishOld: ((value: ExportTaskRecord) => void) | undefined
-    const wrapper = mount(LocalFileManagementView)
+    const wrapper = mountManagement()
     await flushPromises()
     mocks.getExportTask.mockImplementationOnce(() => new Promise((resolve) => { finishOld = resolve }))
     mocks.getExportTask.mockResolvedValue(taskAt(3))

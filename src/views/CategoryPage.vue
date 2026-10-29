@@ -110,17 +110,20 @@
       <MultiSelectActionBar
         :actions="[
           { id: 'favorite', label: '收藏' },
-          { id: 'download', label: '下载' },
+          { id: 'download', label: '下载', disabled: downloadSubmitting },
         ]"
         :disabled="!multiSelectCount || multiSelectExecuting"
         @action="handleMultiSelectAction"
       />
     </div>
-    <div v-if="multiSelectExecuting" class="multi-select-progress" role="status">
-      {{ multiSelectProgressLabel }}：{{ multiSelectProgressCurrent }} /
-      {{ multiSelectProgressTotal }}
-      <div>{{ multiSelectProgressTitle }}</div>
-    </div>
+    <BatchProgressOverlay
+      v-if="multiSelectExecuting"
+      :title="multiSelectProgressLabel"
+      :current="multiSelectProgressCurrent"
+      :total="multiSelectProgressTotal"
+      :current-item="multiSelectProgressTitle"
+      unit="个本子"
+    />
   </IonPage>
 </template>
 
@@ -142,6 +145,7 @@ import CategorySearchToolbar from '@/components/search/CategorySearchToolbar.vue
 import CardContextMenu from '@/components/common/CardContextMenu.vue'
 import MultiSelectInfoBar from '@/components/common/MultiSelectInfoBar.vue'
 import MultiSelectActionBar from '@/components/common/MultiSelectActionBar.vue'
+import BatchProgressOverlay from '@/components/common/BatchProgressOverlay.vue'
 import { useMultiSelect } from '@/composables/useMultiSelect'
 import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import QuickActionFab from '@/components/common/QuickActionFab.vue'
@@ -184,6 +188,7 @@ const {
   exit: exitMultiSelect,
 } = selection
 const multiSelectExecuting = ref(false)
+const downloadSubmitting = ref(false)
 const multiSelectProgressLabel = ref('正在处理')
 const multiSelectProgressCurrent = ref(0)
 const multiSelectProgressTotal = ref(0)
@@ -460,56 +465,56 @@ const handleMultiSelectAction = async (action: string) => {
     return
   }
   if (action === 'download') {
-    multiSelectExecuting.value = true
-    multiSelectProgressLabel.value = '正在提交下载'
-    multiSelectProgressCurrent.value = 0
-    multiSelectProgressTotal.value = selectedItems.length
+    if (downloadSubmitting.value) return
+    downloadSubmitting.value = true
+    // 本批条目已快照，提交过程不再占用或清理页面的多选状态。
+    selection.exit()
     let succeeded = 0
     let failed = 0
-    for (const { item } of selectedItems) {
-      multiSelectProgressTitle.value = item.title
-      try {
-        const photo = await JmcomicService.getPhoto(item.id)
-        const taskId = `${item.id}_${photo.id}`
-        if (
-          OfflineDownloadService.getAll().some(
-            (task) => task.taskId === taskId && task.status !== 'failed',
+    try {
+      await showToast('批量下载已开始', 'success')
+      for (const { item } of selectedItems) {
+        try {
+          const photo = await JmcomicService.getPhoto(item.id)
+          const taskId = `${item.id}_${photo.id}`
+          if (
+            OfflineDownloadService.getAll().some(
+              (task) => task.taskId === taskId && task.status !== 'failed',
+            )
           )
-        )
-          throw new Error('章节已在下载队列中')
-        const result = await JmcomicService.downloadChapter(
-          item.id,
-          photo.id,
-          item.title,
-          photo.title,
-          item.coverUrl,
-        )
-        if (!result.taskId) throw new Error('下载任务未提交')
-        OfflineDownloadService.addTask({
-          taskId: result.taskId,
-          albumId: item.id,
-          chapterId: photo.id,
-          albumTitle: item.title,
-          chapterTitle: photo.title,
-          coverUrl: item.coverUrl,
-          isSingleEpisode: photo.isSingleEpisode,
-          totalPages: 0,
-          downloadedPages: 0,
-          status: 'queued',
-          createdAt: Date.now(),
-        })
-        succeeded++
-      } catch {
-        failed++
+            throw new Error('章节已在下载队列中')
+          const result = await JmcomicService.downloadChapter(
+            item.id,
+            photo.id,
+            item.title,
+            photo.title,
+            item.coverUrl,
+          )
+          if (!result.taskId) throw new Error('下载任务未提交')
+          OfflineDownloadService.addTask({
+            taskId: result.taskId,
+            albumId: item.id,
+            chapterId: photo.id,
+            albumTitle: item.title,
+            chapterTitle: photo.title,
+            coverUrl: item.coverUrl,
+            isSingleEpisode: photo.isSingleEpisode,
+            totalPages: 0,
+            downloadedPages: 0,
+            status: 'queued',
+            createdAt: Date.now(),
+          })
+          succeeded++
+        } catch {
+          failed++
+        }
       }
-      multiSelectProgressCurrent.value++
+      if (failed) {
+        await showToast(`已加入下载队列：成功 ${succeeded} 项，失败 ${failed} 项`, 'medium')
+      }
+    } finally {
+      downloadSubmitting.value = false
     }
-    multiSelectExecuting.value = false
-    await showToast(
-      `已加入下载队列：成功 ${succeeded} 项，失败 ${failed} 项`,
-      failed ? 'medium' : 'success',
-    )
-    selection.exit()
   }
 }
 
@@ -860,20 +865,6 @@ onMounted(() => {
 }
 .multi-select-overlay > * {
   pointer-events: auto;
-}
-.multi-select-progress {
-  position: fixed;
-  inset: 0;
-  z-index: 55;
-  display: grid;
-  place-content: center;
-  gap: 12px;
-  padding: 24px;
-  background: rgb(24 20 18 / 0.32);
-  color: #30201a;
-  text-align: center;
-  font-size: 16px;
-  font-weight: 600;
 }
 </style>
 

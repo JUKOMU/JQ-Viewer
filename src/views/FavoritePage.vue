@@ -300,6 +300,7 @@ const {
 const multiSelectPreparing = ref(false)
 const multiSelectPreparingAction = ref<'select-all' | 'invert' | null>(null)
 const multiSelectExecuting = ref(false)
+const downloadSubmitting = ref(false)
 let multiSelectRequestToken = 0
 function exitMultiSelect() {
   multiSelectRequestToken++
@@ -1158,7 +1159,9 @@ const cardMenuActions = computed(() => [
 ])
 
 const favoriteMultiActions = computed(() => {
-  const actions = [{ id: 'download', label: '下载' }]
+  const actions: { id: string; label: string; disabled?: boolean }[] = [
+    { id: 'download', label: '下载', disabled: downloadSubmitting.value },
+  ]
   if (!(folderSource.value === 'offline' && currentFolderId.value === OFFLINE_ALL_FOLDER_ID))
     actions.push({ id: 'remove', label: '取消收藏' })
   if (currentFolderId.value !== OFFLINE_ALL_FOLDER_ID) actions.push({ id: 'move', label: '移动' })
@@ -1223,67 +1226,81 @@ async function prepareFavoriteSelection(invert: boolean) {
 
 async function executeFavoriteMultiAction(action: string) {
   if (multiSelectExecuting.value || multiSelectPreparing.value) return
+  const isDownload = action === 'download'
+  if (isDownload && downloadSubmitting.value) return
   const context = captureViewContext()
   const token = ++multiSelectRequestToken
   const selected = [...multiSelectedIds.value]
   const visibleItems = displayItems.value.map(({ item }) => item)
   const itemMap = new Map(visibleItems.map((item) => [item.id, item]))
-  if (selected.some((id) => !itemMap.has(id))) {
-    multiSelectPreparing.value = true
-    try {
-      const first = await fetchPage(1, context)
-      if (token !== multiSelectRequestToken || !isCurrentViewContext(context)) return
-      const all = [...first.content]
-      for (let page = 2; page <= first.totalPages; page++) {
-        all.push(...(await fetchPage(page, context)).content)
-        if (token !== multiSelectRequestToken || !isCurrentViewContext(context)) return
+  if (isDownload) {
+    downloadSubmitting.value = true
+    // 下载使用本次选择和文件夹快照，补读分页也不占用页面的多选状态。
+    exitMultiSelect()
+  }
+  try {
+    if (isDownload) await showToast('批量下载已开始', 'success')
+    if (selected.some((id) => !itemMap.has(id))) {
+      if (!isDownload) multiSelectPreparing.value = true
+      try {
+        const first = await fetchPage(1, context)
+        if (!isDownload && (token !== multiSelectRequestToken || !isCurrentViewContext(context)))
+          return
+        const all = [...first.content]
+        for (let page = 2; page <= first.totalPages; page++) {
+          all.push(...(await fetchPage(page, context)).content)
+          if (!isDownload && (token !== multiSelectRequestToken || !isCurrentViewContext(context)))
+            return
+        }
+        for (const item of all) itemMap.set(item.id, item)
+      } catch {
+        if (isDownload || token === multiSelectRequestToken)
+          await showToast('读取所选收藏内容失败，操作未执行', 'danger')
+        return
+      } finally {
+        if (!isDownload && token === multiSelectRequestToken) multiSelectPreparing.value = false
       }
-      for (const item of all) itemMap.set(item.id, item)
-    } catch {
-      if (token === multiSelectRequestToken)
-        await showToast('读取所选收藏内容失败，操作未执行', 'danger')
-      return
-    } finally {
-      if (token === multiSelectRequestToken) multiSelectPreparing.value = false
     }
-  }
-  if (token !== multiSelectRequestToken || !multiSelectActive.value) return
-  const items = selected
-    .map((id) => itemMap.get(id))
-    .filter((item): item is SearchResultItem => !!item)
-  if (action === 'move') {
-    const isOnline = context.source === 'online'
-    const folders = isOnline
-      ? Object.entries(onlineFolderMap.value)
-          .filter(([id]) => id !== context.folderId)
-          .map(([id, name]) => ({ id, name }))
-      : OfflineFavoriteService.getFolders().filter((folder) => folder.id !== context.folderId)
-    if (!folders.length) {
-      await showToast('没有其他收藏夹', 'medium')
-      return
-    }
-    const alert = await createAppAlert({
-      header: '移动到',
-      inputs: folders.map((folder) => ({
-        type: 'radio' as const,
-        label: folder.name,
-        value: folder.id,
-      })),
-      buttons: [
-        { text: '取消', role: 'cancel' },
-        {
-          text: '确定',
-          handler: (targetId: string) => {
-            if (targetId && token === multiSelectRequestToken && multiSelectActive.value)
-              void performMultiFavoriteAction('move', items, context, targetId)
+    if (!isDownload && (token !== multiSelectRequestToken || !multiSelectActive.value)) return
+    const items = selected
+      .map((id) => itemMap.get(id))
+      .filter((item): item is SearchResultItem => !!item)
+    if (action === 'move') {
+      const isOnline = context.source === 'online'
+      const folders = isOnline
+        ? Object.entries(onlineFolderMap.value)
+            .filter(([id]) => id !== context.folderId)
+            .map(([id, name]) => ({ id, name }))
+        : OfflineFavoriteService.getFolders().filter((folder) => folder.id !== context.folderId)
+      if (!folders.length) {
+        await showToast('没有其他收藏夹', 'medium')
+        return
+      }
+      const alert = await createAppAlert({
+        header: '移动到',
+        inputs: folders.map((folder) => ({
+          type: 'radio' as const,
+          label: folder.name,
+          value: folder.id,
+        })),
+        buttons: [
+          { text: '取消', role: 'cancel' },
+          {
+            text: '确定',
+            handler: (targetId: string) => {
+              if (targetId && token === multiSelectRequestToken && multiSelectActive.value)
+                void performMultiFavoriteAction('move', items, context, targetId)
+            },
           },
-        },
-      ],
-    })
-    await alert.present()
-    return
+        ],
+      })
+      await alert.present()
+      return
+    }
+    await performMultiFavoriteAction(action, items, context)
+  } finally {
+    if (isDownload) downloadSubmitting.value = false
   }
-  await performMultiFavoriteAction(action, items, context)
 }
 
 async function performMultiFavoriteAction(
@@ -1292,12 +1309,14 @@ async function performMultiFavoriteAction(
   context: FavoriteViewContext,
   targetFolderId?: string,
 ) {
-  multiSelectExecuting.value = true
-  progressTitle.value =
-    action === 'download' ? '批量下载' : action === 'move' ? '批量移动收藏' : '批量取消收藏'
-  progressCurrent.value = 0
-  progressTotal.value = items.length
-  showProgressModal.value = true
+  const isDownload = action === 'download'
+  if (!isDownload) {
+    multiSelectExecuting.value = true
+    progressTitle.value = action === 'move' ? '批量移动收藏' : '批量取消收藏'
+    progressCurrent.value = 0
+    progressTotal.value = items.length
+    showProgressModal.value = true
+  }
   let succeeded = 0
   let failed = 0
   const backupKey = `multi-favorite-move-${Date.now()}`
@@ -1313,7 +1332,7 @@ async function performMultiFavoriteAction(
       }
     }
     for (const item of items) {
-      progressCurrentItem.value = item.title
+      if (!isDownload) progressCurrentItem.value = item.title
       try {
         if (action === 'remove') {
           if (context.source === 'online') {
@@ -1380,7 +1399,13 @@ async function performMultiFavoriteAction(
       } catch {
         failed++
       }
-      progressCurrent.value++
+      if (!isDownload) progressCurrent.value++
+    }
+    if (isDownload) {
+      if (failed) {
+        await showToast(`已加入下载队列：成功 ${succeeded} 项，失败 ${failed} 项`, 'medium')
+      }
+      return
     }
     if (action === 'move' && context.source === 'offline' && failed === 0) {
       try {
@@ -1400,9 +1425,11 @@ async function performMultiFavoriteAction(
       failed ? 'medium' : 'success',
     )
   } finally {
-    showProgressModal.value = false
-    multiSelectExecuting.value = false
-    exitMultiSelect()
+    if (!isDownload) {
+      showProgressModal.value = false
+      multiSelectExecuting.value = false
+      exitMultiSelect()
+    }
   }
 }
 

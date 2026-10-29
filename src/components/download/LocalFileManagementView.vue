@@ -220,32 +220,38 @@
       @close="closeFileActions"
       @select="fileAction"
     />
-    <div v-if="managementSelectionActive" class="multi-select-overlay">
-      <MultiSelectInfoBar
-        :count="managementSelection.count.value"
-        :preparing="managementSelectionPreparing"
-        :preparing-action="managementSelectionPreparingAction"
-        :all-selected="managementSelection.allSelected.value"
-        @cancel="exitManagementSelection"
-        @select-all="prepareManagementSelection(false)"
-        @invert="prepareManagementSelection(true)"
+    <!-- 工具栏和进度层使用宿主页的覆盖层，不进入内容滚动层。 -->
+    <Teleport :to="overlayTarget">
+      <div v-if="managementSelectionActive" class="multi-select-overlay">
+        <MultiSelectInfoBar
+          :count="managementSelection.count.value"
+          :preparing="managementSelectionPreparing"
+          :preparing-action="managementSelectionPreparingAction"
+          :all-selected="managementSelection.allSelected.value"
+          @cancel="exitManagementSelection"
+          @select-all="prepareManagementSelection(false)"
+          @invert="prepareManagementSelection(true)"
+        />
+        <MultiSelectActionBar
+          :actions="[
+            { id: 'delete', label: activeView === 'files' ? '删除实际文件' : '删除任务记录' },
+          ]"
+          :disabled="
+            !managementSelection.count.value ||
+            managementSelectionPreparing ||
+            managementSelectionExecuting
+          "
+          @action="executeManagementDelete"
+        />
+      </div>
+      <BatchProgressOverlay
+        v-if="managementSelectionExecuting"
+        title="正在删除"
+        :current="managementProgressCurrent"
+        :total="managementProgressTotal"
+        :current-item="managementProgressTitle"
       />
-      <MultiSelectActionBar
-        :actions="[
-          { id: 'delete', label: activeView === 'files' ? '删除实际文件' : '删除任务记录' },
-        ]"
-        :disabled="
-          !managementSelection.count.value ||
-          managementSelectionPreparing ||
-          managementSelectionExecuting
-        "
-        @action="executeManagementDelete"
-      />
-    </div>
-    <div v-if="managementSelectionExecuting" class="management-batch-progress" role="status">
-      正在删除：{{ managementProgressCurrent }} / {{ managementProgressTotal }}
-      <div>{{ managementProgressTitle }}</div>
-    </div>
+    </Teleport>
   </div>
 </template>
 
@@ -272,6 +278,7 @@ import ExportTaskCard from './ExportTaskCard.vue'
 import CardContextMenu from '@/components/common/CardContextMenu.vue'
 import MultiSelectInfoBar from '@/components/common/MultiSelectInfoBar.vue'
 import MultiSelectActionBar from '@/components/common/MultiSelectActionBar.vue'
+import BatchProgressOverlay from '@/components/common/BatchProgressOverlay.vue'
 import { useMultiSelect } from '@/composables/useMultiSelect'
 import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
 import { LocalFileImportService } from '@/services/LocalFileImportService'
@@ -284,15 +291,23 @@ import type {
 } from '@/services/JmcomicTypes'
 
 const props = defineProps<{
+  // 页面级挂载点，必须位于 IonContent 外。
+  overlayTarget: HTMLElement
   initialView?: 'files' | 'tasks'
   initialExportId?: string
 }>()
+const emit = defineEmits<{ 'selection-change': [active: boolean] }>()
 const router = useRouter()
 const managementSelection = useMultiSelect<string>()
 const { active: managementSelectionActive } = managementSelection
 const managementSelectionPreparing = ref(false)
 const managementSelectionPreparingAction = ref<'select-all' | 'invert' | null>(null)
 const managementSelectionExecuting = ref(false)
+watch(
+  [managementSelectionActive, managementSelectionExecuting],
+  ([active, executing]) => emit('selection-change', active || executing),
+  { immediate: true },
+)
 const managementProgressCurrent = ref(0)
 const managementProgressTotal = ref(0)
 const managementProgressTitle = ref('')
@@ -1696,19 +1711,5 @@ select:focus-visible {
 }
 .multi-select-overlay > * {
   pointer-events: auto;
-}
-.management-batch-progress {
-  position: fixed;
-  inset: 0;
-  z-index: 55;
-  display: grid;
-  place-content: center;
-  gap: 12px;
-  padding: 24px;
-  background: rgb(24 20 18 / 0.32);
-  color: #30201a;
-  text-align: center;
-  font-size: 16px;
-  font-weight: 600;
 }
 </style>

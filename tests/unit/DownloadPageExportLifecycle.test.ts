@@ -57,7 +57,8 @@ vi.mock('@ionic/vue', () => {
   }
 })
 
-  vi.mock('ionicons/icons', () => ({
+  vi.mock(import('ionicons/icons'), async (importOriginal) => ({
+  ...(await importOriginal()),
   bookOutline: 'book',
   arrowDownOutline: 'arrow-down',
   arrowUpOutline: 'arrow-up',
@@ -127,6 +128,8 @@ vi.mock('@/services/OfflineDownloadService', () => ({
 vi.mock('@/components/download/LocalFileManagementView.vue', () => ({
   default: defineComponent({
     name: 'LocalFileManagementView',
+    props: { overlayTarget: { type: Object, required: true } },
+    emits: ['selection-change'],
     setup(_, { expose }) {
       mocks.pdfMountCount++
       expose({ refresh: mocks.refreshPdf })
@@ -195,6 +198,16 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
     totalCount: 0, usedBytes: 0, availableBytes: 1000, totalBytes: 2000 })
   const groupAt = (id: number) => ({ ...taskAt(id), chapters: [{ ...taskAt(id), status: 'completed' }],
     type: 'single', totalSize: 1, completedAt: id })
+
+  test('下载列表开启 Ionic 滚动事件以支持自动分页', async () => {
+    mocks.route.query = { view: 'downloads' }
+    const wrapper = mount(DownloadPage)
+    await flushPromises()
+
+    const content = wrapper.findAllComponents({ name: 'IonContent' })[0]
+    expect(content.attributes('scroll-events')).toBe('true')
+    wrapper.unmount()
+  })
 
   test('三页窗口双向往返使用整个窗口的两端游标且不重复', async () => {
     mocks.getDownloadTasksPage.mockImplementation(async ({ status, cursor }: any) => {
@@ -368,6 +381,45 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
     wrapper.unmount()
   })
 
+  test('导出覆盖层位于内容区外，多选时锁定主视图切换', async () => {
+    mocks.route.query = { view: 'export' }
+    const wrapper = mount(DownloadPage)
+    await flushPromises()
+    const manager = wrapper.findComponent({ name: 'LocalFileManagementView' })
+    const target = manager.props('overlayTarget') as HTMLElement
+    const state = (wrapper.vm as any).$.setupState
+
+    expect(target).toBe(wrapper.get('.export-overlay-host').element)
+    expect(wrapper.findAllComponents({ name: 'IonContent' })).toHaveLength(2)
+    expect(
+      wrapper.findAllComponents({ name: 'IonContent' }).some((content) =>
+        content.element.contains(target),
+      ),
+    ).toBe(false)
+
+    manager.vm.$emit('selection-change', true)
+    await flushPromises()
+    expect(wrapper.findAll('.tab-btn').every((button) =>
+      button.attributes('disabled') !== undefined,
+    )).toBe(true)
+    state.selectMainView('downloads')
+    expect(state.activeMainView).toBe('export')
+
+    reactive(mocks.route).query = { view: 'downloads' }
+    await flushPromises()
+    expect(target.style.display).toBe('none')
+    reactive(mocks.route).query = { view: 'export' }
+    await flushPromises()
+    expect(target.style.display).not.toBe('none')
+
+    manager.vm.$emit('selection-change', false)
+    await flushPromises()
+    await wrapper.findAll('.tab-btn')[0].trigger('click')
+    expect(state.activeMainView).toBe('downloads')
+    expect(target.style.display).toBe('none')
+    wrapper.unmount()
+  })
+
   test('下载与 PDF 视图切换时不重新挂载 PDF 管理视图', async () => {
     const wrapper = mount(DownloadPage)
     await flushPromises()
@@ -495,6 +547,65 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
     })
     wrapper.unmount()
   })
+
+  test.each(['accepted', 'failed', 'overwrite-cancelled'] as const)(
+    '多选导出 %s 在权限和提交完成前退出，且不清理后续新选择',
+    async (outcome) => {
+      let finishPermission: ((permission: { granted: boolean }) => void) | undefined
+      mocks.checkNotificationPermission.mockReturnValueOnce(
+        new Promise((resolve) => { finishPermission = resolve }),
+      )
+      if (outcome === 'failed') {
+        mocks.exportBatch.mockRejectedValueOnce(new Error('submit failed'))
+      } else {
+        mocks.exportBatch.mockResolvedValueOnce({
+          tasks: outcome === 'accepted'
+            ? [{ accepted: true }]
+            : [{ accepted: false, errorCode: 'PDF_OUTPUT_EXISTS', displayPath: '/pdf/existing.pdf' }],
+        })
+      }
+      mocks.route.query = { view: 'downloads' }
+      const wrapper = mount(DownloadPage)
+      await flushPromises()
+      const state = (wrapper.vm as any).$.setupState
+      const chapter = { ...taskAt(1), status: 'completed' }
+      state.enterDownloadSelection(chapter.taskId)
+      state.openBatchExportSheet([chapter])
+
+      const submission = state.onExportConfirm({
+        selectedChapters: [chapter], format: 'pdf', mode: 'chapter', useOriginal: true,
+        compressionRatio: 1, editedPath: '/pdf/test.pdf', splitPages: 0,
+      })
+      expect(state.downloadSelectionActive).toBe(false)
+      expect(state.downloadSelectedIds.size).toBe(0)
+      expect(state.showExportSheet).toBe(false)
+      expect(state.downloadBatchExport).toBe(false)
+      expect(mocks.showToast).toHaveBeenCalledWith('批量导出已开始', 'success')
+      await flushPromises()
+      expect(mocks.exportBatch).not.toHaveBeenCalled()
+      expect(wrapper.find('.batch-progress-overlay').exists()).toBe(false)
+
+      const nextChapter = { ...taskAt(2), status: 'completed' }
+      state.enterDownloadSelection(nextChapter.taskId)
+      state.openBatchExportSheet([nextChapter])
+      finishPermission?.({ granted: true })
+      await submission
+      await flushPromises()
+
+      expect(state.downloadSelectionActive).toBe(true)
+      expect(state.downloadSelectedIds.has(nextChapter.taskId)).toBe(true)
+      expect(state.showExportSheet).toBe(true)
+      expect(state.downloadBatchExport).toBe(true)
+      expect(wrapper.find('.batch-progress-overlay').exists()).toBe(false)
+      expect(mocks.showToast).not.toHaveBeenCalledWith('PDF 导出已开始，请查看通知', 'success')
+      if (outcome === 'failed') {
+        expect(mocks.showToast).toHaveBeenCalledWith('导出启动失败', 'danger')
+      } else if (outcome === 'overwrite-cancelled') {
+        expect(mocks.showToast).toHaveBeenCalledWith('检测到已有同名 PDF，已取消覆盖', 'medium')
+      }
+      wrapper.unmount()
+    },
+  )
 
   test.each([
     {

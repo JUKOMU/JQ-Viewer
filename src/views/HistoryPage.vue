@@ -296,9 +296,13 @@
         @action="executeHistoryDelete"
       />
     </div>
-    <div v-if="historySelectionExecuting" class="history-batch-progress" role="status">
-      正在删除历史记录：{{ historySelectionCurrent }} / {{ historySelectionTotal }}
-    </div>
+    <BatchProgressOverlay
+      v-if="historySelectionExecuting"
+      title="正在删除历史记录"
+      :current="historySelectionCurrent"
+      :total="historySelectionTotal"
+      unit="条记录"
+    />
   </IonPage>
 </template>
 
@@ -334,6 +338,7 @@ import MenuToggleButton from '@/components/common/MenuToggleButton.vue'
 import CardContextMenu from '@/components/common/CardContextMenu.vue'
 import MultiSelectInfoBar from '@/components/common/MultiSelectInfoBar.vue'
 import MultiSelectActionBar from '@/components/common/MultiSelectActionBar.vue'
+import BatchProgressOverlay from '@/components/common/BatchProgressOverlay.vue'
 import { useMultiSelect } from '@/composables/useMultiSelect'
 
 const PAGE_SIZE = 50
@@ -1576,19 +1581,6 @@ function formatRelativeTime(timestamp: number): string {
   transform: translateY(-50%);
   accent-color: #bf8350;
 }
-.history-batch-progress {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-  display: grid;
-  place-items: center;
-  background: rgb(24 20 18 / 0.28);
-  color: #30201a;
-  font-size: 16px;
-  font-weight: 600;
-  pointer-events: auto;
-}
-
 .clear-btn:active {
   background: #ffeaea;
 }

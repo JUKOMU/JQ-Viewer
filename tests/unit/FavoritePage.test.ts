@@ -9,6 +9,9 @@ const mocks = vi.hoisted(() => ({
   getCompletedDownloadAlbumIds: vi.fn(),
   getImportedLocalFiles: vi.fn(),
   addDownloadProgressListener: vi.fn(),
+  getPhoto: vi.fn(),
+  downloadChapter: vi.fn(),
+  addDownloadTask: vi.fn(),
   showToast: vi.fn(() => Promise.resolve()),
   router: {
     push: vi.fn(() => Promise.resolve()),
@@ -136,6 +139,8 @@ vi.mock('@/services/JmcomicService', () => ({
     getCompletedDownloadAlbumIds: mocks.getCompletedDownloadAlbumIds,
     getImportedLocalFiles: mocks.getImportedLocalFiles,
     addDownloadProgressListener: mocks.addDownloadProgressListener,
+    getPhoto: mocks.getPhoto,
+    downloadChapter: mocks.downloadChapter,
   },
   sanitizeError: (_error: unknown, fallback: string) => fallback,
   showToast: mocks.showToast,
@@ -151,7 +156,7 @@ vi.mock('@/services/OfflineFavoriteService', () => ({
 }))
 
 vi.mock('@/services/OfflineDownloadService', () => ({
-  OfflineDownloadService: { getAll: vi.fn(() => []) },
+  OfflineDownloadService: { getAll: vi.fn(() => []), addTask: mocks.addDownloadTask },
 }))
 
 vi.mock('@/services/ExportFormatService', () => ({
@@ -216,6 +221,12 @@ beforeEach(() => {
   mocks.getImportedLocalFiles.mockResolvedValue({ files: [] })
   mocks.addDownloadProgressListener.mockReset()
   mocks.addDownloadProgressListener.mockResolvedValue({ remove: vi.fn(() => Promise.resolve()) })
+  mocks.getPhoto.mockReset()
+  mocks.getPhoto.mockResolvedValue({ id: 'chapter-1', title: '第一话' })
+  mocks.downloadChapter.mockReset()
+  mocks.downloadChapter.mockResolvedValue({ taskId: 'download-1' })
+  mocks.addDownloadTask.mockClear()
+  mocks.showToast.mockClear()
 })
 
 afterEach(() => {
@@ -318,6 +329,67 @@ describe('FavoritePage 账号切换', () => {
       'album-2',
     ])
     expect(cachedState.value?.stale).toBe(true)
+  })
+})
+
+describe('FavoritePage 多选下载', () => {
+  test('立即退出多选且无遮罩，提交结束不清理新选择或重置收藏列表', async () => {
+    let finishPhoto: ((photo: { id: string; title: string }) => void) | undefined
+    mocks.getPhoto.mockReturnValue(new Promise((resolve) => { finishPhoto = resolve }))
+    wrapper = mount(FavoritePage)
+    await flushPromises()
+    const state = (wrapper.vm as any).$.setupState
+    const requestsBeforeDownload = mocks.favorites.mock.calls.length
+
+    state.enterMultiSelect(item.id)
+    const submission = state.executeFavoriteMultiAction('download')
+    expect(state.multiSelectActive).toBe(false)
+    expect(mocks.showToast).toHaveBeenCalledWith('批量下载已开始', 'success')
+    await flushPromises()
+    expect(state.downloadSubmitting).toBe(true)
+    expect(wrapper.find('.progress-overlay').exists()).toBe(false)
+
+    state.enterMultiSelect(secondItem.id)
+    await flushPromises()
+    finishPhoto?.({ id: 'chapter-1', title: '第一话' })
+    await submission
+    await flushPromises()
+    expect(state.multiSelectActive).toBe(true)
+    expect(state.multiSelectedIds.has(secondItem.id)).toBe(true)
+    expect(state.downloadSubmitting).toBe(false)
+    expect(wrapper.find('.progress-overlay').exists()).toBe(false)
+    expect(mocks.favorites).toHaveBeenCalledTimes(requestsBeforeDownload)
+    expect(mocks.addDownloadTask).toHaveBeenCalledWith(expect.objectContaining({
+      albumId: item.id, chapterId: 'chapter-1', status: 'queued',
+    }))
+  })
+
+  test('跨页选择在补读条目前就退出，仍按原选择提交且不影响新多选', async () => {
+    wrapper = mount(FavoritePage)
+    await flushPromises()
+    const state = (wrapper.vm as any).$.setupState
+    let finishPage: ((page: typeof onlineResult) => void) | undefined
+    mocks.favorites.mockImplementation(({ page }: { page: number }) => {
+      if (page === 1) return new Promise((resolve) => { finishPage = resolve })
+      return Promise.resolve({ ...onlineResult, currentPage: 2, totalPages: 2, content: [secondItem] })
+    })
+
+    state.enterMultiSelect(secondItem.id)
+    const submission = state.executeFavoriteMultiAction('download')
+    expect(state.multiSelectActive).toBe(false)
+    await flushPromises()
+    expect(mocks.getPhoto).not.toHaveBeenCalled()
+    expect(state.multiSelectPreparing).toBe(false)
+
+    state.enterMultiSelect(item.id)
+    finishPage?.({ ...onlineResult, totalItems: 2, totalPages: 2 })
+    await submission
+    await flushPromises()
+    expect(mocks.getPhoto).toHaveBeenCalledWith(secondItem.id)
+    expect(state.multiSelectActive).toBe(true)
+    expect(state.multiSelectedIds.has(item.id)).toBe(true)
+    expect(state.downloadSubmitting).toBe(false)
+    expect(wrapper.find('.progress-overlay').exists()).toBe(false)
   })
 })
 

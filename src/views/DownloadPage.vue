@@ -12,7 +12,7 @@
               role="tab"
               class="tab-btn"
               :aria-selected="activeMainView === 'downloads'"
-              :disabled="downloadSelectionActive"
+              :disabled="mainViewSelectionActive"
               :class="{ active: activeMainView === 'downloads' }"
               @click="selectMainView('downloads')"
             >
@@ -23,7 +23,7 @@
               role="tab"
               class="tab-btn"
               :aria-selected="activeMainView === 'export'"
-              :disabled="downloadSelectionActive"
+              :disabled="mainViewSelectionActive"
               :class="{ active: activeMainView === 'export' }"
               @click="selectMainView('export')"
             >
@@ -33,9 +33,16 @@
         </div>
       </IonToolbar>
     </IonHeader>
+    <!-- 覆盖层与页头同级挂载，并随导出视图隐藏。 -->
+    <div
+      v-show="activeMainView === 'export'"
+      ref="exportOverlayTarget"
+      class="export-overlay-host"
+    ></div>
     <IonContent
       v-show="activeMainView === 'downloads'"
       ref="downloadContentRef"
+      :scroll-events="true"
       @ionScroll="onDownloadScroll"
     >
       <!-- 下拉刷新 -->
@@ -269,16 +276,22 @@
         @action="executeDownloadSelection"
       />
     </div>
-    <div v-if="downloadBatchRunning" class="download-batch-progress" role="status">
-      {{ downloadBatchActionLabel }}：{{ downloadBatchCurrent }} / {{ downloadBatchTotal }}
-      <div>{{ downloadBatchCurrentTitle }}</div>
-    </div>
+    <BatchProgressOverlay
+      v-if="downloadBatchRunning"
+      :title="downloadBatchActionLabel"
+      :current="downloadBatchCurrent"
+      :total="downloadBatchTotal"
+      :current-item="downloadBatchCurrentTitle"
+    />
     <IonContent v-show="activeMainView === 'export'">
       <div class="download-page-shell desktop-page-content">
         <LocalFileManagementView
+          v-if="exportOverlayTarget"
           ref="exportManagementRef"
+          :overlay-target="exportOverlayTarget"
           :initial-view="exportInitialView"
           :initial-export-id="exportInitialExportId"
+          @selection-change="exportSelectionActive = $event"
         />
       </div>
     </IonContent>
@@ -354,6 +367,7 @@ import LocalFileManagementView from '@/components/download/LocalFileManagementVi
 import CardContextMenu from '@/components/common/CardContextMenu.vue'
 import MultiSelectInfoBar from '@/components/common/MultiSelectInfoBar.vue'
 import MultiSelectActionBar from '@/components/common/MultiSelectActionBar.vue'
+import BatchProgressOverlay from '@/components/common/BatchProgressOverlay.vue'
 import { useMultiSelect } from '@/composables/useMultiSelect'
 import { createAppAlert } from '@/services/AppAlertService'
 import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
@@ -387,6 +401,8 @@ const exportInitialExportId = computed(() =>
   typeof route.query.exportId === 'string' ? route.query.exportId : undefined,
 )
 const exportManagementRef = ref<InstanceType<typeof LocalFileManagementView> | null>(null)
+const exportOverlayTarget = ref<HTMLElement | null>(null)
+const exportSelectionActive = ref(false)
 const downloadSelection = useMultiSelect<string>()
 const {
   active: downloadSelectionActive,
@@ -399,6 +415,11 @@ const {
   invert: invertDownloadItems,
   exit: exitDownloadSelection,
 } = downloadSelection
+const mainViewSelectionActive = computed(() =>
+  activeMainView.value === 'downloads'
+    ? downloadSelectionActive.value
+    : exportSelectionActive.value,
+)
 const downloadSelectionPreparing = ref(false)
 const downloadSelectionPreparingAction = ref<'select-all' | 'invert' | null>(null)
 const downloadSelectionExecuting = ref(false)
@@ -416,7 +437,7 @@ useBackButton(5, (processNextHandler) => {
 let ionEnterCount = 0
 
 const selectMainView = (view: 'downloads' | 'export') => {
-  if (downloadSelectionActive.value) return
+  if (mainViewSelectionActive.value) return
   activeMainView.value = view
 }
 
@@ -1639,7 +1660,13 @@ const onExportConfirm = async (payload: {
   editedPath: string
   splitPages: number
 }) => {
+  const isBatchExport = downloadBatchExport.value
   showExportSheet.value = false
+  if (isBatchExport) {
+    // 导出参数已由确认事件快照，权限和队列提交不再占用多选状态。
+    downloadBatchExport.value = false
+    cancelDownloadSelection()
+  }
 
   let exportPlan: ExportPlan
   try {
@@ -1664,6 +1691,7 @@ const onExportConfirm = async (payload: {
   // 输出文件 ref 只在原生创建目标文档后产生，提交前不能把展示路径冒充 fileRef。
   const allowOverwrite = false
 
+  if (isBatchExport) await showToast('批量导出已开始', 'success')
   await ensureNotificationPermission()
 
   try {
@@ -1732,13 +1760,8 @@ const onExportConfirm = async (payload: {
       await showToast(`${payload.format.toUpperCase()} 导出未开始，请查看任务失败原因`, 'danger')
     } else if (rejected > 0) {
       await showToast(`已开始 ${accepted} 个，${rejected} 个未进入队列，请查看导出任务`, 'medium')
-    } else {
+    } else if (!isBatchExport) {
       await showToast(`${payload.format.toUpperCase()} 导出已开始，请查看通知`, 'success')
-    }
-    if (downloadBatchExport.value) {
-      downloadBatchExport.value = false
-      exitDownloadSelection()
-      void syncDownloadState(true)
     }
   } catch (e: any) {
     await showToast(sanitizeError(e, '导出启动失败'), 'danger')
@@ -2346,19 +2369,5 @@ const clearFailed = async () => {
 }
 .multi-select-overlay > * {
   pointer-events: auto;
-}
-.download-batch-progress {
-  position: fixed;
-  inset: 0;
-  z-index: 55;
-  display: grid;
-  place-content: center;
-  gap: 12px;
-  padding: 24px;
-  background: rgb(24 20 18 / 0.32);
-  color: #30201a;
-  text-align: center;
-  font-size: 16px;
-  font-weight: 600;
 }
 </style>

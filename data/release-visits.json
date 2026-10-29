@@ -30651,6 +30651,697 @@
           "assets": []
         }
       ]
+    },
+    {
+      "date": "2026-10-30",
+      "releases": [
+        {
+          "id": "427877409",
+          "tagName": "v2.2.1",
+          "assets": [
+            {
+              "id": "688596764",
+              "name": "JQ-Viewer-2_2_1-arm64-v8a.apk",
+              "downloadCount": 91
+            },
+            {
+              "id": "688596891",
+              "name": "JQ-Viewer-2_2_1-armeabi-v7a.apk",
+              "downloadCount": 3
+            },
+            {
+              "id": "688597387",
+              "name": "JQ-Viewer-2_2_1-linux-arm64.deb",
+              "downloadCount": 3
+            },
+            {
+              "id": "688597582",
+              "name": "JQ-Viewer-2_2_1-linux-arm64.rpm",
+              "downloadCount": 2
+            },
+            {
+              "id": "688597816",
+              "name": "JQ-Viewer-2_2_1-linux-arm64.tar.gz",
+              "downloadCount": 2
+            },
+            {
+              "id": "688598028",
+              "name": "JQ-Viewer-2_2_1-linux-x64.deb",
+              "downloadCount": 4
+            },
+            {
+              "id": "688598320",
+              "name": "JQ-Viewer-2_2_1-linux-x64.rpm",
+              "downloadCount": 2
+            },
+            {
+              "id": "688598655",
+              "name": "JQ-Viewer-2_2_1-linux-x64.tar.gz",
+              "downloadCount": 2
+            },
+            {
+              "id": "688596969",
+              "name": "JQ-Viewer-2_2_1-universal.apk",
+              "downloadCount": 10
+            },
+            {
+              "id": "688598939",
+              "name": "JQ-Viewer-2_2_1-windows-x64-installer.exe",
+              "downloadCount": 6
+            },
+            {
+              "id": "688599182",
+              "name": "JQ-Viewer-2_2_1-windows-x64.zip",
+              "downloadCount": 2
+            },
+            {
+              "id": "688597143",
+              "name": "JQ-Viewer-2_2_1-x86.apk",
+              "downloadCount": 3
+            },
+            {
+              "id": "688597267",
+              "name": "JQ-Viewer-2_2_1-x86_64.apk",
+              "downloadCount": 3
+            },
+            {
+              "id": "688599388",
+              "name": "latest.json",
+              "downloadCount": 377
+            },
+            {
+              "id": "688599450",
+              "name": "latest.json.sig",
+              "downloadCount": 6
+            },
+            {
+              "id": "688599369",
+              "name": "SHA256SUMS",
+              "downloadCount": 1
+            }
+          ]
+        },
+        {
+          "id": "424561188",
+          "tagName": "v2.2.0",
+          "assets": [
+            {
+              "id": "678929689",
+              "name": "JQ-Viewer-2_2_0-arm64-v8a.apk",
+              "downloadCount": 325
+            },
+            {
+              "id": "678929825",
+              "name": "JQ-Viewer-2_2_0-armeabi-v7a.apk",
+              "downloadCount": 11
+            },
+            {
+              "id": "678930245",
+              "name": "JQ-Viewer-2_2_0-linux-arm64.deb",
+              "downloadCount": 4
+            },
+            {
+              "id": "678930465",
+              "name": "JQ-Viewer-2_2_0-linux-arm64.rpm",
+              "downloadCount": 3
+            },
+            {
+              "id": "678930698",
+              "name": "JQ-Viewer-2_2_0-linux-arm64.tar.gz",
+              "downloadCount": 5
+            },
+            {
+              "id": "678930854",
+              "name": "JQ-Viewer-2_2_0-linux-x64.deb",
+              "downloadCount": 2
+            },
+            {
+              "id": "678931163",
+              "name": "JQ-Viewer-2_2_0-linux-x64.rpm",
+              "downloadCount": 3
+            },
+            {
+              "id": "678931442",
+              "name": "JQ-Viewer-2_2_0-linux-x64.tar.gz",
+              "downloadCount": 3
+            },
+            {
+              "id": "678929907",
+              "name": "JQ-Viewer-2_2_0-universal.apk",
+              "downloadCount": 32
+            },
+            {
+              "id": "678931690",
+              "name": "JQ-Viewer-2_2_0-windows-x64-installer.exe",
+              "downloadCount": 9
+            },
+            {
+              "id": "678931925",
+              "name": "JQ-Viewer-2_2_0-windows-x64.zip",
+              "downloadCount": 3
+            },
+            {
+              "id": "678930048",
+              "name": "JQ-Viewer-2_2_0-x86.apk",
+              "downloadCount": 11
+            },
+            {
+              "id": "678930147",
+              "name": "JQ-Viewer-2_2_0-x86_64.apk",
+              "downloadCount": 8
+            },
+            {
+              "id": "678932213",
+              "name": "latest.json",
+              "downloadCount": 2375
+            },
+            {
+              "id": "678932265",
+              "name": "latest.json.sig",
+              "downloadCount": 10
+            },
+            {
+              "id": "678932164",
+              "name": "SHA256SUMS",
+              "downloadCount": 2
+            }
+          ]
+        },
+        {
+          "id": "415230520",
+          "tagName": "v2.1.0",
+          "assets": [
+            {
+              "id": "648130064",
+              "name": "JQ-Viewer-2_1_0-arm64-v8a.apk",
+              "downloadCount": 648
+            },
+            {
+              "id": "648130132",
+              "name": "JQ-Viewer-2_1_0-armeabi-v7a.apk",
+              "downloadCount": 15
+            },
+            {
+              "id": "648130546",
+              "name": "JQ-Viewer-2_1_0-linux-arm64.deb",
+              "downloadCount": 4
+            },
+            {
+              "id": "648130818",
+              "name": "JQ-Viewer-2_1_0-linux-arm64.rpm",
+              "downloadCount": 2
+            },
+            {
+              "id": "648130997",
+              "name": "JQ-Viewer-2_1_0-linux-arm64.tar.gz",
+              "downloadCount": 6
+            },
+            {
+              "id": "648131164",
+              "name": "JQ-Viewer-2_1_0-linux-x64.deb",
+              "downloadCount": 4
+            },
+            {
+              "id": "648131434",
+              "name": "JQ-Viewer-2_1_0-linux-x64.rpm",
+              "downloadCount": 4
+            },
+            {
+              "id": "648131634",
+              "name": "JQ-Viewer-2_1_0-linux-x64.tar.gz",
+              "downloadCount": 4
+            },
+            {
+              "id": "648130238",
+              "name": "JQ-Viewer-2_1_0-universal.apk",
+              "downloadCount": 216
+            },
+            {
+              "id": "648131817",
+              "name": "JQ-Viewer-2_1_0-windows-x64-installer.exe",
+              "downloadCount": 14
+            },
+            {
+              "id": "648131966",
+              "name": "JQ-Viewer-2_1_0-windows-x64.zip",
+              "downloadCount": 11
+            },
+            {
+              "id": "648130363",
+              "name": "JQ-Viewer-2_1_0-x86.apk",
+              "downloadCount": 3
+            },
+            {
+              "id": "648130456",
+              "name": "JQ-Viewer-2_1_0-x86_64.apk",
+              "downloadCount": 4
+            },
+            {
+              "id": "648132164",
+              "name": "latest.json",
+              "downloadCount": 8342
+            },
+            {
+              "id": "648132193",
+              "name": "latest.json.sig",
+              "downloadCount": 22
+            },
+            {
+              "id": "648132132",
+              "name": "SHA256SUMS",
+              "downloadCount": 5
+            }
+          ]
+        },
+        {
+          "id": "398811798",
+          "tagName": "v2.0.0",
+          "assets": [
+            {
+              "id": "597393739",
+              "name": "JQ-Viewer-2_0_0-arm64-v8a.apk",
+              "downloadCount": 884
+            },
+            {
+              "id": "597393801",
+              "name": "JQ-Viewer-2_0_0-armeabi-v7a.apk",
+              "downloadCount": 37
+            },
+            {
+              "id": "597394124",
+              "name": "JQ-Viewer-2_0_0-linux-arm64.deb",
+              "downloadCount": 7
+            },
+            {
+              "id": "597394267",
+              "name": "JQ-Viewer-2_0_0-linux-arm64.rpm",
+              "downloadCount": 3
+            },
+            {
+              "id": "597394432",
+              "name": "JQ-Viewer-2_0_0-linux-arm64.tar.gz",
+              "downloadCount": 4
+            },
+            {
+              "id": "597394572",
+              "name": "JQ-Viewer-2_0_0-linux-x64.deb",
+              "downloadCount": 3
+            },
+            {
+              "id": "597394683",
+              "name": "JQ-Viewer-2_0_0-linux-x64.rpm",
+              "downloadCount": 3
+            },
+            {
+              "id": "597394855",
+              "name": "JQ-Viewer-2_0_0-linux-x64.tar.gz",
+              "downloadCount": 6
+            },
+            {
+              "id": "597393895",
+              "name": "JQ-Viewer-2_0_0-universal.apk",
+              "downloadCount": 415
+            },
+            {
+              "id": "597395050",
+              "name": "JQ-Viewer-2_0_0-windows-x64-installer.exe",
+              "downloadCount": 27
+            },
+            {
+              "id": "597395160",
+              "name": "JQ-Viewer-2_0_0-windows-x64.zip",
+              "downloadCount": 13
+            },
+            {
+              "id": "597393983",
+              "name": "JQ-Viewer-2_0_0-x86.apk",
+              "downloadCount": 11
+            },
+            {
+              "id": "597394040",
+              "name": "JQ-Viewer-2_0_0-x86_64.apk",
+              "downloadCount": 13
+            },
+            {
+              "id": "597395329",
+              "name": "latest.json",
+              "downloadCount": 15284
+            },
+            {
+              "id": "597395363",
+              "name": "latest.json.sig",
+              "downloadCount": 54
+            },
+            {
+              "id": "597395299",
+              "name": "SHA256SUMS",
+              "downloadCount": 2
+            }
+          ]
+        },
+        {
+          "id": "383137718",
+          "tagName": "v1.4.6",
+          "assets": [
+            {
+              "id": "545377876",
+              "name": "JQ-Viewer-1_4_6-arm64-v8a.apk",
+              "downloadCount": 621
+            },
+            {
+              "id": "545377873",
+              "name": "JQ-Viewer-1_4_6-armeabi-v7a.apk",
+              "downloadCount": 22
+            },
+            {
+              "id": "545377874",
+              "name": "JQ-Viewer-1_4_6-universal.apk",
+              "downloadCount": 435
+            },
+            {
+              "id": "545377877",
+              "name": "JQ-Viewer-1_4_6-x86.apk",
+              "downloadCount": 14
+            },
+            {
+              "id": "545377875",
+              "name": "JQ-Viewer-1_4_6-x86_64.apk",
+              "downloadCount": 20
+            },
+            {
+              "id": "545509915",
+              "name": "latest.json",
+              "downloadCount": 12943
+            }
+          ]
+        },
+        {
+          "id": "378872922",
+          "tagName": "v1.4.5",
+          "assets": [
+            {
+              "id": "534742430",
+              "name": "JQ-Viewer-1_4_5-arm64-v8a.apk",
+              "downloadCount": 234
+            },
+            {
+              "id": "534742431",
+              "name": "JQ-Viewer-1_4_5-armeabi-v7a.apk",
+              "downloadCount": 8
+            },
+            {
+              "id": "534742433",
+              "name": "JQ-Viewer-1_4_5-universal.apk",
+              "downloadCount": 206
+            },
+            {
+              "id": "534742429",
+              "name": "JQ-Viewer-1_4_5-x86.apk",
+              "downloadCount": 5
+            },
+            {
+              "id": "534742432",
+              "name": "JQ-Viewer-1_4_5-x86_64.apk",
+              "downloadCount": 7
+            },
+            {
+              "id": "534872320",
+              "name": "latest.json",
+              "downloadCount": 3748
+            }
+          ]
+        },
+        {
+          "id": "373805188",
+          "tagName": "v1.4.4",
+          "assets": [
+            {
+              "id": "522370413",
+              "name": "JQ-Viewer-1_4_4-arm64-v8a.apk",
+              "downloadCount": 118
+            },
+            {
+              "id": "522370415",
+              "name": "JQ-Viewer-1_4_4-armeabi-v7a.apk",
+              "downloadCount": 12
+            },
+            {
+              "id": "522370414",
+              "name": "JQ-Viewer-1_4_4-universal.apk",
+              "downloadCount": 552
+            },
+            {
+              "id": "522370410",
+              "name": "JQ-Viewer-1_4_4-x86.apk",
+              "downloadCount": 6
+            },
+            {
+              "id": "522370411",
+              "name": "JQ-Viewer-1_4_4-x86_64.apk",
+              "downloadCount": 5
+            },
+            {
+              "id": "522513049",
+              "name": "latest.json",
+              "downloadCount": 5849
+            }
+          ]
+        },
+        {
+          "id": "371961063",
+          "tagName": "v1.4.3",
+          "assets": [
+            {
+              "id": "518526545",
+              "name": "JQ-Viewer-1_4_3.apk",
+              "downloadCount": 477
+            },
+            {
+              "id": "518527640",
+              "name": "latest.json",
+              "downloadCount": 2493
+            }
+          ]
+        },
+        {
+          "id": "371819847",
+          "tagName": "v1.4.2",
+          "assets": [
+            {
+              "id": "518297756",
+              "name": "JQ-Viewer-1_4_2.apk",
+              "downloadCount": 26
+            },
+            {
+              "id": "518301098",
+              "name": "latest.json",
+              "downloadCount": 110
+            }
+          ]
+        },
+        {
+          "id": "371287914",
+          "tagName": "v1.4.1",
+          "assets": [
+            {
+              "id": "516669377",
+              "name": "JQ-Viewer-1_4_1.apk",
+              "downloadCount": 137
+            },
+            {
+              "id": "516675012",
+              "name": "latest.json",
+              "downloadCount": 493
+            }
+          ]
+        },
+        {
+          "id": "371196424",
+          "tagName": "v1.4.0",
+          "assets": [
+            {
+              "id": "516247475",
+              "name": "JQ-Viewer-1_4_0.apk",
+              "downloadCount": 50
+            },
+            {
+              "id": "516251056",
+              "name": "latest.json",
+              "downloadCount": 73
+            }
+          ]
+        },
+        {
+          "id": "370372533",
+          "tagName": "v1.3.0",
+          "assets": [
+            {
+              "id": "513983667",
+              "name": "JQ-Viewer-1_3_0.apk",
+              "downloadCount": 75
+            }
+          ]
+        },
+        {
+          "id": "363988023",
+          "tagName": "v1.2.0",
+          "assets": [
+            {
+              "id": "499613252",
+              "name": "JQ-Viewer-1_2_0.apk",
+              "downloadCount": 38
+            }
+          ]
+        },
+        {
+          "id": "356008596",
+          "tagName": "v1.1.10",
+          "assets": [
+            {
+              "id": "481104749",
+              "name": "JQ-Viewer-1_1_10.apk",
+              "downloadCount": 29
+            }
+          ]
+        },
+        {
+          "id": "355408434",
+          "tagName": "v1.1.9",
+          "assets": [
+            {
+              "id": "480126679",
+              "name": "JQ-Viewer-1_1_9.apk",
+              "downloadCount": 4
+            }
+          ]
+        },
+        {
+          "id": "355387205",
+          "tagName": "v1.1.8",
+          "assets": [
+            {
+              "id": "479725829",
+              "name": "JQ-Viewer-1_1_8.apk",
+              "downloadCount": 3
+            }
+          ]
+        },
+        {
+          "id": "352521032",
+          "tagName": "v1.1.7",
+          "assets": [
+            {
+              "id": "473521239",
+              "name": "app-release.apk",
+              "downloadCount": 16
+            }
+          ]
+        },
+        {
+          "id": "352514027",
+          "tagName": "v1.1.6",
+          "assets": [
+            {
+              "id": "473497680",
+              "name": "app-release.apk",
+              "downloadCount": 6
+            }
+          ]
+        },
+        {
+          "id": "345756551",
+          "tagName": "v1.1.5",
+          "assets": [
+            {
+              "id": "459640838",
+              "name": "app-release.apk",
+              "downloadCount": 22
+            }
+          ]
+        },
+        {
+          "id": "333984787",
+          "tagName": "v1.1.4",
+          "assets": [
+            {
+              "id": "437604618",
+              "name": "app-release.apk",
+              "downloadCount": 46
+            }
+          ]
+        },
+        {
+          "id": "333719379",
+          "tagName": "v1.1.3",
+          "assets": [
+            {
+              "id": "437278171",
+              "name": "app-release.apk",
+              "downloadCount": 5
+            }
+          ]
+        },
+        {
+          "id": "333688033",
+          "tagName": "v1.1.2",
+          "assets": [
+            {
+              "id": "437236700",
+              "name": "app-release.apk",
+              "downloadCount": 1
+            }
+          ]
+        },
+        {
+          "id": "333399199",
+          "tagName": "v1.1.1",
+          "assets": [
+            {
+              "id": "436662467",
+              "name": "app-release.apk",
+              "downloadCount": 3
+            }
+          ]
+        },
+        {
+          "id": "333341729",
+          "tagName": "v1.1.0",
+          "assets": [
+            {
+              "id": "436535189",
+              "name": "app-release.apk",
+              "downloadCount": 2
+            }
+          ]
+        },
+        {
+          "id": "331457492",
+          "tagName": "v1.0.1",
+          "assets": [
+            {
+              "id": "433128390",
+              "name": "app-release.apk",
+              "downloadCount": 9
+            }
+          ]
+        },
+        {
+          "id": "331222911",
+          "tagName": "v1.0.0",
+          "assets": [
+            {
+              "id": "432591373",
+              "name": "app-release.apk",
+              "downloadCount": 3
+            }
+          ]
+        },
+        {
+          "id": "331082442",
+          "tagName": "v0.0.1",
+          "assets": []
+        }
+      ]
     }
   ]
 }

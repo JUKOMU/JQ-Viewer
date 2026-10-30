@@ -58,9 +58,11 @@ public class PreloadService {
     private final Context context;
     private final CacheCapacityPolicy cacheCapacityPolicy;
     private final ExecutorService networkExecutor;
+    private final NetworkImageTaskScheduler networkTasks;
     private final ConcurrentHashMap<String, Long> pendingKeys = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Long> activeGenerations = new ConcurrentHashMap<>();
     private final AtomicLong generationCounter = new AtomicLong();
+    private final AtomicLong legacySessionCounter = new AtomicLong();
     private final NetworkLoadGate networkLoadGate;
     private volatile CacheCapacityPolicy.PressureLevel pressureLevel =
         CacheCapacityPolicy.PressureLevel.NORMAL;
@@ -101,15 +103,23 @@ public class PreloadService {
         this.context = context;
         this.cacheCapacityPolicy = cacheCapacityPolicy;
         this.networkLoadGate = new NetworkLoadGate(networkConcurrency);
+        this.networkTasks = new NetworkImageTaskScheduler(networkConcurrency);
     }
 
     // ---- 图片预加载 ----
 
     public JSONObject preloadImages(String photoId, String type, JSONArray imagesArray) {
-        return preloadImages(photoId, type, imagesArray, false);
+        return preloadImages(photoId, type, imagesArray, false,
+            "legacy-" + legacySessionCounter.incrementAndGet(), "thumb".equals(type) ? 100 : 200);
     }
 
     public JSONObject preloadImages(String photoId, String type, JSONArray imagesArray, boolean replacePending) {
+        return preloadImages(photoId, type, imagesArray, replacePending,
+            "legacy-" + legacySessionCounter.incrementAndGet(), "thumb".equals(type) ? 100 : 200);
+    }
+
+    public JSONObject preloadImages(String photoId, String type, JSONArray imagesArray,
+                                    boolean replacePending, String sessionId, int priority) {
         final long startedNanos = SystemClock.elapsedRealtimeNanos();
         JSONObject ret = new JSONObject();
         if (imagesArray == null || imagesArray.length() == 0) {
@@ -131,7 +141,8 @@ public class PreloadService {
         List<Integer> cached = new ArrayList<>();
         List<Integer> pending = new ArrayList<>();
         final boolean isThumb = "thumb".equals(type);
-        final String scopeKey = photoId + "/" + type;
+        final String requiredSession = requiredSession(sessionId);
+        final String scopeKey = requiredSession + "/" + photoId + "/" + type;
         final long generation = replacePending
             ? generationCounter.incrementAndGet()
             : activeGenerations.getOrDefault(scopeKey, 0L);
@@ -156,6 +167,7 @@ public class PreloadService {
             final int sortOrder = imgObj.optInt("sortOrder");
             final String imageKey = photoId + "/" + sortOrder;
             final String cacheKey = imageKey + (isThumb ? "/thumb" : "");
+            final String taskPendingKey = requiredSession + "/" + cacheKey;
 
             // 目标缓存命中
             if (imageCache.has(cacheKey)) {
@@ -168,18 +180,18 @@ public class PreloadService {
                 ImageCache.ImageEntry original = imageCache.get(imageKey);
                 if (original != null) {
                     pending.add(sortOrder);
-                    if (!markPending(cacheKey, generation, replacePending)) {
+                    if (!markPending(taskPendingKey, generation, replacePending)) {
                         skippedPending++;
                         continue;
                     }
                     generateThumbnailFromCachedImage(
-                        photoId, sortOrder, type, scopeKey, cacheKey, generation, original);
+                        photoId, sortOrder, type, scopeKey, cacheKey, taskPendingKey, generation, original);
                     continue;
                 }
             }
 
             pending.add(sortOrder);
-            if (!markPending(cacheKey, generation, replacePending)) {
+            if (!markPending(taskPendingKey, generation, replacePending)) {
                 skippedPending++;
                 continue;
             }
@@ -191,10 +203,11 @@ public class PreloadService {
 
             try {
                 fileExecutor.execute(() -> resolveImageSource(
-                    photoId, sortOrder, type, scopeKey, imageKey, cacheKey, generation,
-                    isThumb, scrambleId, filename, url, queryParams));
+                    photoId, sortOrder, type, scopeKey, imageKey, cacheKey, taskPendingKey,
+                    generation, requiredSession, priority, isThumb, scrambleId, filename,
+                    url, queryParams));
             } catch (RuntimeException error) {
-                pendingKeys.remove(cacheKey, generation);
+                pendingKeys.remove(taskPendingKey, generation);
                 logImageFailure("queue-file", photoId, sortOrder, type, error, 0L);
                 if (!isStale(scopeKey, generation)) {
                     notifyImageFailed(photoId, sortOrder, type);
@@ -218,9 +231,13 @@ public class PreloadService {
         return ret;
     }
 
+    public void cancelPreload(String sessionId) {
+        networkTasks.cancelSession(requiredSession(sessionId));
+    }
+
     private void generateThumbnailFromCachedImage(
         String photoId, int sortOrder, String type, String scopeKey,
-        String cacheKey, long generation, ImageCache.ImageEntry original
+        String cacheKey, String taskPendingKey, long generation, ImageCache.ImageEntry original
     ) {
         try {
             imageExecutor.execute(() -> {
@@ -246,11 +263,11 @@ public class PreloadService {
                         notifyImageFailed(photoId, sortOrder, type);
                     }
                 } finally {
-                    pendingKeys.remove(cacheKey, generation);
+                    pendingKeys.remove(taskPendingKey, generation);
                 }
             });
         } catch (RuntimeException error) {
-            pendingKeys.remove(cacheKey, generation);
+            pendingKeys.remove(taskPendingKey, generation);
             logImageFailure("queue-thumbnail", photoId, sortOrder, type, error, 0L);
             if (!isStale(scopeKey, generation)) {
                 notifyImageFailed(photoId, sortOrder, type);
@@ -260,7 +277,8 @@ public class PreloadService {
 
     private void resolveImageSource(
         String photoId, int sortOrder, String type, String scopeKey,
-        String imageKey, String cacheKey, long generation, boolean createThumbnail,
+        String imageKey, String cacheKey, String taskPendingKey, long generation,
+        String sessionId, int priority, boolean createThumbnail,
         String scrambleId, String filename, String url, String queryParams
     ) {
         long startedNanos = SystemClock.elapsedRealtimeNanos();
@@ -285,15 +303,19 @@ public class PreloadService {
                 String mimeType = "image/" + ImageCache.guessFormatName(localBytes);
                 ImageCache.IncomingReservation transferredReservation = reservation;
                 imageExecutor.execute(() -> cacheImageBytes(
-                    photoId, sortOrder, type, scopeKey, imageKey, cacheKey,
+                    photoId, sortOrder, type, scopeKey, imageKey, cacheKey, taskPendingKey,
                     generation, createThumbnail, localBytes, mimeType,
                     transferredReservation, false));
                 reservation = null;
                 handedOff = true;
             } else {
-                networkExecutor.execute(() -> fetchNetworkImage(
-                    photoId, sortOrder, type, scopeKey, imageKey, cacheKey,
-                    generation, createThumbnail, scrambleId, filename, url, queryParams));
+                if (imageCache.has(cacheKey)) {
+                    notifyImageReady(photoId, sortOrder, type);
+                    return;
+                }
+                submitNetworkImage(photoId, sortOrder, type, scopeKey, imageKey, cacheKey,
+                    taskPendingKey, generation, sessionId, priority, createThumbnail,
+                    scrambleId, filename, url, queryParams);
                 handedOff = true;
             }
         } catch (Exception error) {
@@ -306,9 +328,83 @@ public class PreloadService {
                 reservation.close();
             }
             if (!handedOff) {
-                pendingKeys.remove(cacheKey, generation);
+                pendingKeys.remove(taskPendingKey, generation);
             }
         }
+    }
+
+    private void submitNetworkImage(
+        String photoId, int sortOrder, String type, String scopeKey,
+        String imageKey, String cacheKey, String taskPendingKey, long generation,
+        String sessionId, int priority, boolean createThumbnail,
+        String scrambleId, String filename, String url, String queryParams
+    ) {
+        JmImage image = new JmImage(photoId, scrambleId, filename, url, queryParams, sortOrder);
+        String demandId = sessionId + "/" + cacheKey;
+        boolean accepted = networkTasks.submit(image, demandId, sessionId, priority,
+            taskImage -> {
+                ImageCache.ImageEntry cached = imageCache.get(imageKey);
+                if (cached != null) return cached.data;
+                NetworkLoadGate.Permit permit = null;
+                try {
+                    permit = networkLoadGate.acquire(null);
+                    if (permit == null) {
+                        throw new IOException("当前内存压力过高，暂时无法加载图片");
+                    }
+                    ImageCache.ImageEntry latest = imageCache.get(imageKey);
+                    if (latest != null) return latest.data;
+                    if (imageFetcher == null) {
+                        throw new IllegalStateException("图片获取器未初始化");
+                    }
+                    return imageFetcher.fetch(taskImage);
+                } finally {
+                    if (permit != null) permit.close();
+                }
+            },
+            imageBytes -> {
+                try {
+                    if (isStale(scopeKey, generation)) return;
+                    if (!ImageFileValidator.validateQuick(imageBytes)) {
+                        throw new IOException("获取的图片无法解析");
+                    }
+                    ImageCache.IncomingReservation reservation =
+                        imageCache.prepareForIncomingBytes(imageBytes.length);
+                    if (reservation == null) {
+                        throw new IOException("网络图片无法写入内存缓存");
+                    }
+                    try {
+                        String mimeType = "image/" + JmImageTool.getFormatName(filename);
+                        if (!imageCache.put(imageKey, imageBytes, mimeType, reservation)) {
+                            throw new IOException("原图无法写入内存缓存");
+                        }
+                        if (createThumbnail) {
+                            byte[] thumbBytes = ImageCache.createThumbnail(imageBytes);
+                            if (!imageCache.put(cacheKey, thumbBytes, "image/jpeg")) {
+                                throw new IOException("缩略图无法写入内存缓存");
+                            }
+                        }
+                    } finally {
+                        reservation.close();
+                    }
+                    if (createThumbnail) notifyImageReady(photoId, sortOrder, "image");
+                    notifyImageReady(photoId, sortOrder, type);
+                } catch (Exception error) {
+                    logImageFailure("network-cache", photoId, sortOrder, type, error, 0L);
+                    if (!isStale(scopeKey, generation)) {
+                        notifyImageFailed(photoId, sortOrder, type);
+                    }
+                } finally {
+                    pendingKeys.remove(taskPendingKey, generation);
+                }
+            },
+            error -> {
+                pendingKeys.remove(taskPendingKey, generation);
+                logImageFailure("network-fetch", photoId, sortOrder, type, error, 0L);
+                if (!isStale(scopeKey, generation)) {
+                    notifyImageFailed(photoId, sortOrder, type);
+                }
+            });
+        if (!accepted) pendingKeys.remove(taskPendingKey, generation);
     }
 
     private void fetchNetworkImage(
@@ -353,7 +449,7 @@ public class PreloadService {
             String mimeType = "image/" + JmImageTool.getFormatName(filename);
             ImageCache.IncomingReservation transferredReservation = reservation;
             imageExecutor.execute(() -> cacheImageBytes(
-                photoId, sortOrder, type, scopeKey, imageKey, cacheKey,
+                photoId, sortOrder, type, scopeKey, imageKey, cacheKey, cacheKey,
                 generation, createThumbnail, imageBytes, mimeType,
                 transferredReservation, true));
             reservation = null;
@@ -375,7 +471,8 @@ public class PreloadService {
 
     private void cacheImageBytes(
         String photoId, int sortOrder, String type, String scopeKey,
-        String imageKey, String cacheKey, long generation, boolean createThumbnail,
+        String imageKey, String cacheKey, String taskPendingKey, long generation,
+        boolean createThumbnail,
         byte[] imageBytes, String mimeType,
         ImageCache.IncomingReservation existingReservation, boolean networkSource
     ) {
@@ -428,7 +525,7 @@ public class PreloadService {
             if (reservation != null) {
                 reservation.close();
             }
-            pendingKeys.remove(cacheKey, generation);
+            pendingKeys.remove(taskPendingKey, generation);
         }
     }
 
@@ -540,6 +637,13 @@ public class PreloadService {
 
     private boolean isStale(String scopeKey, long generation) {
         return activeGenerations.getOrDefault(scopeKey, 0L) != generation;
+    }
+
+    private static String requiredSession(String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            throw new IllegalArgumentException("sessionId must not be blank");
+        }
+        return sessionId;
     }
 
     private boolean markPending(String cacheKey, long generation, boolean replacePending) {

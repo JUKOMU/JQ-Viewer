@@ -135,13 +135,16 @@ public final class ImageService {
             waiting.add(image.getSortOrder());
             schedule(photoId, type, image, currentGeneration, requiredSession, priority, true, true);
         }
-        LOGGER.info("image.preload event=scheduled photoId={} type={} requested={} cached={} pending={} replacePending={}",
-            clean(photoId), type, input.size(), cached.size(), waiting.size(), replacePending);
+        LOGGER.info("image.preload event=scheduled session={} photoId={} type={} requested={} cached={} pending={} replacePending={}",
+            sessionFingerprint(requiredSession), clean(photoId), type, input.size(), cached.size(), waiting.size(),
+            replacePending);
         return new PreloadImagesResponse(List.copyOf(cached), List.copyOf(waiting));
     }
 
     public SuccessResponse cancelPreload(String sessionId) {
-        networkTasks.cancelSession(requiredSession(sessionId));
+        String requiredSession = requiredSession(sessionId);
+        LOGGER.debug("image.preload event=cancelled session={}", sessionFingerprint(requiredSession));
+        networkTasks.cancelSession(requiredSession);
         return SuccessResponse.ok();
     }
 
@@ -299,7 +302,8 @@ public final class ImageService {
                                 if (publishEvents) {
                                     publishLoaded(photoId, image.getSortOrder(), type, sessionId);
                                 }
-                                logSlowPreload(photoId, image.getSortOrder(), type, startedNanos, "local");
+                                logSlowPreload(photoId, image.getSortOrder(), type, sessionId,
+                                    startedNanos, "local");
                                 return;
                             } catch (Exception ignored) {
                                 // 本地文件不可读时按 Android 语义回退到网络来源。
@@ -319,10 +323,11 @@ public final class ImageService {
                                     ensureThumbnail(photoId, image.getSortOrder(), bytes);
                                 }
                                 if (publishEvents) publishLoaded(photoId, image.getSortOrder(), type, sessionId);
-                                logSlowPreload(photoId, image.getSortOrder(), type, startedNanos, "remote");
+                                logSlowPreload(photoId, image.getSortOrder(), type, sessionId,
+                                    startedNanos, "remote");
                             } catch (Exception error) {
-                                LOGGER.warn("image.preload event=failed photoId={} sortOrder={} type={} errorType={}",
-                                    clean(photoId), image.getSortOrder(), type,
+                                LOGGER.warn("image.preload event=failed session={} photoId={} sortOrder={} type={} errorType={}",
+                                    sessionFingerprint(sessionId), clean(photoId), image.getSortOrder(), type,
                                     error.getClass().getSimpleName());
                                 if (publishEvents) {
                                     events.publish("imageFailed", new ImageEvent(
@@ -334,8 +339,8 @@ public final class ImageService {
                         },
                         error -> {
                             pending.remove(pendingKey, currentGeneration);
-                            LOGGER.warn("image.preload event=failed photoId={} sortOrder={} type={} errorType={}",
-                                clean(photoId), image.getSortOrder(), type,
+                            LOGGER.warn("image.preload event=failed session={} photoId={} sortOrder={} type={} errorType={}",
+                                sessionFingerprint(sessionId), clean(photoId), image.getSortOrder(), type,
                                 error.getClass().getSimpleName());
                             if (!closed && publishEvents
                                 && generations.getOrDefault(scope, currentGeneration) == currentGeneration) {
@@ -347,8 +352,9 @@ public final class ImageService {
                     delegated = true;
                     return;
                 } catch (Exception exception) {
-                    LOGGER.warn("image.preload event=failed photoId={} sortOrder={} type={} elapsedMs={} errorClass={}",
-                        clean(photoId), image.getSortOrder(), type, elapsed(startedNanos),
+                    LOGGER.warn("image.preload event=failed session={} photoId={} sortOrder={} type={} elapsedMs={} errorClass={}",
+                        sessionFingerprint(sessionId), clean(photoId), image.getSortOrder(), type,
+                        elapsed(startedNanos),
                         exception.getClass().getSimpleName());
                     if (!closed && publishEvents
                         && generations.getOrDefault(scope, currentGeneration) == currentGeneration) {
@@ -389,10 +395,11 @@ public final class ImageService {
                     if (generations.getOrDefault(scope, currentGeneration) != currentGeneration) return;
                     ensureThumbnail(photoId, sortOrder, original.bytes());
                     publish(photoId, sortOrder, "thumb", sessionId);
-                    logSlowPreload(photoId, sortOrder, "thumb", startedNanos, "cached-image");
+                    logSlowPreload(photoId, sortOrder, "thumb", sessionId, startedNanos, "cached-image");
                 } catch (Exception exception) {
-                    LOGGER.warn("image.preload event=failed photoId={} sortOrder={} type=thumb elapsedMs={} errorClass={}",
-                        clean(photoId), sortOrder, elapsed(startedNanos), exception.getClass().getSimpleName());
+                    LOGGER.warn("image.preload event=failed session={} photoId={} sortOrder={} type=thumb elapsedMs={} errorClass={}",
+                        sessionFingerprint(sessionId), clean(photoId), sortOrder, elapsed(startedNanos),
+                        exception.getClass().getSimpleName());
                     if (!closed && generations.getOrDefault(scope, currentGeneration) == currentGeneration) {
                         events.publish("imageFailed", new ImageEvent(
                             photoId, sortOrder, "thumb", sessionId));
@@ -592,12 +599,17 @@ public final class ImageService {
     }
 
     private static void logSlowPreload(
-        String photoId, int sortOrder, String type, long startedNanos, String source
+        String photoId,
+        int sortOrder,
+        String type,
+        String sessionId,
+        long startedNanos,
+        String source
     ) {
         long elapsedMs = elapsed(startedNanos);
         if (elapsedMs >= SLOW_OPERATION_MS) {
-            LOGGER.warn("image.preload event=slow photoId={} sortOrder={} type={} source={} elapsedMs={}",
-                clean(photoId), sortOrder, type, source, elapsedMs);
+            LOGGER.warn("image.preload event=slow session={} photoId={} sortOrder={} type={} source={} elapsedMs={}",
+                sessionFingerprint(sessionId), clean(photoId), sortOrder, type, source, elapsedMs);
         }
     }
 
@@ -608,5 +620,9 @@ public final class ImageService {
 
     private static String clean(String value) {
         return value == null || value.isBlank() ? "empty" : "present";
+    }
+
+    private static String sessionFingerprint(String sessionId) {
+        return Integer.toHexString(sessionId.hashCode());
     }
 }

@@ -146,8 +146,8 @@ public class PreloadService {
             activeGenerations.put(scopeKey, generation);
         }
 
-        LOGGER.info("预加载任务开始: photoId={}, type={}, requested={}, replacePending={}",
-            photoId, type, imagesArray.length(), replacePending);
+        LOGGER.info("预加载任务开始: session={}, photoId={}, type={}, requested={}, replacePending={}",
+            sessionFingerprint(requiredSession), photoId, type, imagesArray.length(), replacePending);
         int invalidEntries = 0;
         int skippedPending = 0;
 
@@ -205,7 +205,7 @@ public class PreloadService {
                     url, queryParams));
             } catch (RuntimeException error) {
                 pendingKeys.remove(taskPendingKey, generation);
-                logImageFailure("queue-file", photoId, sortOrder, type, error, 0L);
+                logImageFailure("queue-file", photoId, sortOrder, type, requiredSession, error, 0L);
                 if (!isStale(scopeKey, generation)) {
                     notifyImageFailed(photoId, sortOrder, type, requiredSession);
                 }
@@ -222,14 +222,16 @@ public class PreloadService {
         } catch (Exception e) {
             LOGGER.debug("构建待处理列表失败", e);
         }
-        LOGGER.info("预加载任务排队完成: photoId={}, type={}, cached={}, pending={}, skippedPending={}, invalid={}, durationMs={}",
-            photoId, type, cached.size(), pending.size(), skippedPending, invalidEntries,
+        LOGGER.info("预加载任务排队完成: session={}, photoId={}, type={}, cached={}, pending={}, skippedPending={}, invalid={}, durationMs={}",
+            sessionFingerprint(requiredSession), photoId, type, cached.size(), pending.size(), skippedPending, invalidEntries,
             elapsedMs(startedNanos));
         return ret;
     }
 
     public void cancelPreload(String sessionId) {
-        networkTasks.cancelSession(requiredSession(sessionId));
+        String requiredSession = requiredSession(sessionId);
+        LOGGER.debug("预加载需求取消: session={}", sessionFingerprint(requiredSession));
+        networkTasks.cancelSession(requiredSession);
     }
 
     private void generateThumbnailFromCachedImage(
@@ -242,21 +244,21 @@ public class PreloadService {
                 long startedNanos = SystemClock.elapsedRealtimeNanos();
                 try {
                     if (isStale(scopeKey, generation)) {
-                        logImageCancelled("thumbnail-cache", photoId, sortOrder, type, startedNanos);
+                        logImageCancelled("thumbnail-cache", photoId, sortOrder, type, sessionId, startedNanos);
                         return;
                     }
                     byte[] thumbBytes = ImageCache.createThumbnail(original.data);
                     if (isStale(scopeKey, generation)) {
-                        logImageCancelled("thumbnail-cache", photoId, sortOrder, type, startedNanos);
+                        logImageCancelled("thumbnail-cache", photoId, sortOrder, type, sessionId, startedNanos);
                         return;
                     }
                     if (!imageCache.put(cacheKey, thumbBytes, "image/jpeg")) {
                         throw new IOException("缓存缩略图无法写入内存缓存");
                     }
                     notifyImageReady(photoId, sortOrder, type, sessionId);
-                    logImageCompleted("thumbnail-cache", photoId, sortOrder, type, startedNanos);
+                    logImageCompleted("thumbnail-cache", photoId, sortOrder, type, sessionId, startedNanos);
                 } catch (Exception error) {
-                    logImageFailure("thumbnail-cache", photoId, sortOrder, type, error, startedNanos);
+                    logImageFailure("thumbnail-cache", photoId, sortOrder, type, sessionId, error, startedNanos);
                     if (!isStale(scopeKey, generation)) {
                         notifyImageFailed(photoId, sortOrder, type, sessionId);
                     }
@@ -266,7 +268,7 @@ public class PreloadService {
             });
         } catch (RuntimeException error) {
             pendingKeys.remove(taskPendingKey, generation);
-            logImageFailure("queue-thumbnail", photoId, sortOrder, type, error, 0L);
+            logImageFailure("queue-thumbnail", photoId, sortOrder, type, sessionId, error, 0L);
             if (!isStale(scopeKey, generation)) {
                 notifyImageFailed(photoId, sortOrder, type, sessionId);
             }
@@ -284,7 +286,7 @@ public class PreloadService {
         boolean handedOff = false;
         try {
             if (isStale(scopeKey, generation)) {
-                logImageCancelled("resolve-source", photoId, sortOrder, type, startedNanos);
+                logImageCancelled("resolve-source", photoId, sortOrder, type, sessionId, startedNanos);
                 return;
             }
             File localFile = fileStore.getImageFileByPhotoId(photoId, sortOrder);
@@ -295,7 +297,7 @@ public class PreloadService {
                 }
                 byte[] localBytes = fileStore.readImageBytes(localFile);
                 if (isStale(scopeKey, generation)) {
-                    logImageCancelled("read-local", photoId, sortOrder, type, startedNanos);
+                    logImageCancelled("read-local", photoId, sortOrder, type, sessionId, startedNanos);
                     return;
                 }
                 String mimeType = "image/" + ImageCache.guessFormatName(localBytes);
@@ -317,7 +319,7 @@ public class PreloadService {
                 handedOff = true;
             }
         } catch (Exception error) {
-            logImageFailure("resolve-source", photoId, sortOrder, type, error, startedNanos);
+            logImageFailure("resolve-source", photoId, sortOrder, type, sessionId, error, startedNanos);
             if (!isStale(scopeKey, generation)) {
                 notifyImageFailed(photoId, sortOrder, type, sessionId);
             }
@@ -424,7 +426,7 @@ public class PreloadService {
                         notifyImageReady(photoId, sortOrder, type, sessionId);
                     }
                 } catch (Exception error) {
-                    logImageFailure("network-result", photoId, sortOrder, type, error, 0L);
+                    logImageFailure("network-result", photoId, sortOrder, type, sessionId, error, 0L);
                     if (retryCallback != null) {
                         retryCallback.onError(error);
                     } else if (!isStale(scopeKey, generation)) {
@@ -436,7 +438,7 @@ public class PreloadService {
             },
             error -> {
                 if (taskPendingKey != null) pendingKeys.remove(taskPendingKey, generation);
-                logImageFailure("network-fetch", photoId, sortOrder, type, error, 0L);
+                logImageFailure("network-fetch", photoId, sortOrder, type, sessionId, error, 0L);
                 if (retryCallback != null) {
                     retryCallback.onError(error);
                 } else if (!isStale(scopeKey, generation)) {
@@ -472,7 +474,7 @@ public class PreloadService {
         ImageCache.IncomingReservation reservation = existingReservation;
         try {
             if (isStale(scopeKey, generation)) {
-                logImageCancelled("cache-write", photoId, sortOrder, type, startedNanos);
+                logImageCancelled("cache-write", photoId, sortOrder, type, sessionId, startedNanos);
                 return;
             }
             if (!ImageFileValidator.validateQuick(imageBytes)) {
@@ -487,7 +489,7 @@ public class PreloadService {
             if (createThumbnail) {
                 byte[] thumbBytes = ImageCache.createThumbnail(imageBytes);
                 if (isStale(scopeKey, generation)) {
-                    logImageCancelled("thumbnail-write", photoId, sortOrder, type, startedNanos);
+                    logImageCancelled("thumbnail-write", photoId, sortOrder, type, sessionId, startedNanos);
                     return;
                 }
                 boolean originalCached = imageCache.put(
@@ -502,9 +504,9 @@ public class PreloadService {
                 throw new IOException("图片无法写入内存缓存");
             }
             notifyImageReady(photoId, sortOrder, type, sessionId);
-            logImageCompleted("local-cache", photoId, sortOrder, type, startedNanos);
+            logImageCompleted("local-cache", photoId, sortOrder, type, sessionId, startedNanos);
         } catch (Exception error) {
-            logImageFailure("local-cache", photoId, sortOrder, type, error, startedNanos);
+            logImageFailure("local-cache", photoId, sortOrder, type, sessionId, error, startedNanos);
             if (!isStale(scopeKey, generation)) {
                 notifyImageFailed(photoId, sortOrder, type, sessionId);
             }
@@ -549,7 +551,7 @@ public class PreloadService {
                 retrySession, 300, false, true, callback,
                 scrambleId, filename, url, queryParams);
         } catch (RuntimeException error) {
-            logImageFailure("queue-retry", photoId, sortOrder, "image", error, 0L);
+            logImageFailure("queue-retry", photoId, sortOrder, "image", retrySession, error, 0L);
             callback.onError(error);
         }
     }
@@ -733,11 +735,11 @@ public class PreloadService {
     }
 
     private void logImageCompleted(String stage, String photoId, int sortOrder,
-                                   String type, long startedNanos) {
+                                   String type, String sessionId, long startedNanos) {
         long durationMs = elapsedMs(startedNanos);
         if (durationMs >= SLOW_IMAGE_LOG_MS) {
-            LOGGER.warn("图片预加载慢操作: event=completed, stage={}, photoId={}, sortOrder={}, type={}, durationMs={}",
-                stage, photoId, sortOrder, type, durationMs);
+            LOGGER.warn("图片预加载慢操作: event=completed, stage={}, session={}, photoId={}, sortOrder={}, type={}, durationMs={}",
+                stage, sessionFingerprint(sessionId), photoId, sortOrder, type, durationMs);
         } else {
             LOGGER.debug("图片预加载完成: stage={}, photoId={}, sortOrder={}, type={}, durationMs={}",
                 stage, photoId, sortOrder, type, durationMs);
@@ -745,16 +747,21 @@ public class PreloadService {
     }
 
     private void logImageCancelled(String stage, String photoId, int sortOrder,
-                                   String type, long startedNanos) {
-        LOGGER.debug("图片预加载取消: event=cancelled, stage={}, photoId={}, sortOrder={}, type={}, durationMs={}",
-            stage, photoId, sortOrder, type, elapsedMs(startedNanos));
+                                   String type, String sessionId, long startedNanos) {
+        LOGGER.debug("图片预加载取消: event=cancelled, stage={}, session={}, photoId={}, sortOrder={}, type={}, durationMs={}",
+            stage, sessionFingerprint(sessionId), photoId, sortOrder, type, elapsedMs(startedNanos));
     }
 
     private void logImageFailure(String stage, String photoId, int sortOrder,
-                                 String type, Throwable error, long startedNanos) {
-        LOGGER.warn("图片预加载失败: event=failed, stage={}, photoId={}, sortOrder={}, type={}, errorClass={}, durationMs={}",
-            stage, photoId, sortOrder, type, error == null ? "unknown" : error.getClass().getSimpleName(),
+                                 String type, String sessionId, Throwable error, long startedNanos) {
+        LOGGER.warn("图片预加载失败: event=failed, stage={}, session={}, photoId={}, sortOrder={}, type={}, errorClass={}, durationMs={}",
+            stage, sessionFingerprint(sessionId), photoId, sortOrder, type,
+            error == null ? "unknown" : error.getClass().getSimpleName(),
             elapsedMs(startedNanos));
+    }
+
+    private static String sessionFingerprint(String sessionId) {
+        return Integer.toHexString(sessionId.hashCode());
     }
 
     private static long elapsedMs(long startedNanos) {

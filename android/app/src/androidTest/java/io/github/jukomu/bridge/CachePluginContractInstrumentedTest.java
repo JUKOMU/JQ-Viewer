@@ -192,7 +192,7 @@ public class CachePluginContractInstrumentedTest {
         private JSONObject retryImage;
 
         private FakePreloadService() {
-            super(null, null, null, null, null, null, null, null, null,
+            super(null, null, null, null, null, null, null, null,
                 new CacheCapacityPolicy(), 1);
         }
 

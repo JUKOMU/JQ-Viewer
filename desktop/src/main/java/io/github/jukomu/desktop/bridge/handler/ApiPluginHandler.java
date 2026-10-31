@@ -1,15 +1,19 @@
 package io.github.jukomu.desktop.bridge.handler;
 
+import java.util.UUID;
+
 import io.github.jukomu.desktop.bridge.ApiException;
 import io.github.jukomu.desktop.bridge.Request;
 import io.github.jukomu.desktop.bridge.RequestExecutor;
 import io.github.jukomu.desktop.feature.catalog.CatalogService;
 import io.github.jukomu.desktop.feature.catalog.model.*;
 import io.github.jukomu.desktop.feature.image.ImageService;
+import io.github.jukomu.desktop.feature.image.model.CancelPreloadRequest;
 import io.github.jukomu.desktop.feature.image.model.PreloadImagesRequest;
 import io.github.jukomu.desktop.feature.image.model.RetryImageRequest;
 import io.github.jukomu.jmcomic.api.enums.FavoriteFolderType;
 import io.javalin.http.Context;
+
 
 import static io.github.jukomu.desktop.util.RequestValidation.requiredText;
 
@@ -93,11 +97,24 @@ public final class ApiPluginHandler {
     }
 
     public void preloadImages(Context context) {
-        imageRequests.run(context, PreloadImagesRequest.class, request -> images.preload(
-            requiredText(request.photoId(), "photoId"),
-            request.type() == null ? "image" : request.type(),
-            request.images(),
-            Request.bool(request.replacePending(), false)));
+        imageRequests.run(context, PreloadImagesRequest.class, request -> {
+            String photoId = requiredText(request.photoId(), "photoId");
+            String type = request.type() == null ? "image" : request.type();
+            boolean replacePending = Request.bool(request.replacePending(), false);
+            if (request.sessionId() == null && request.priority() == null) {
+                return images.preload(photoId, type, request.images(), replacePending);
+            }
+            return images.preload(photoId, type, request.images(), replacePending,
+                request.sessionId() == null ? "legacy-" + UUID.randomUUID()
+                    : requiredText(request.sessionId(), "sessionId"),
+                Request.integer(request.priority(), "thumb".equals(type) ? 100 : 200));
+        });
+    }
+
+    /** 取消指定图片预载会话的需求，不会中断已开始的网络请求。 */
+    public void cancelPreload(Context context) {
+        imageRequests.run(context, CancelPreloadRequest.class, request ->
+            images.cancelPreload(requiredText(request.sessionId(), "sessionId")));
     }
 
     public void retryImage(Context context) {

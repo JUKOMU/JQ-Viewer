@@ -72,6 +72,7 @@ describe('runtime', () => {
       'toggleAlbumFavorite',
       'manageFavoriteFolder',
       'preloadImages',
+      'cancelPreload',
       'retryImage',
       'setCacheCapacity',
       'getCacheCapacityInfo',

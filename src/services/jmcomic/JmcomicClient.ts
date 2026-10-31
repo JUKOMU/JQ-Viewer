@@ -133,7 +133,11 @@ export interface JmcomicClient {
     images: ImageInfo[]
     type: string
     replacePending?: boolean
+    sessionId?: string
+    priority?: number
   }): Promise<PreloadResult>
+
+  cancelPreload(options: { sessionId: string }): Promise<{ success: boolean }>
 
   retryImage(options: { photoId: string; image: ImageInfo }): Promise<{ success: boolean }>
 

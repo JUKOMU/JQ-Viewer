@@ -6,6 +6,7 @@ import type { ImageInfo, PhotoDetail, PreloadResult } from '@/services/JmcomicTy
 
 const mocks = vi.hoisted(() => ({
   setRouteSource: undefined as undefined | ((source?: string) => void),
+  setRouteChapterId: undefined as undefined | ((chapterId: string) => void),
   router: {
     back: vi.fn(),
     push: vi.fn(),
@@ -15,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   getPhoto: vi.fn(),
   getAlbum: vi.fn(),
   preloadImages: vi.fn(),
+  cancelPreload: vi.fn(),
   retryImage: vi.fn(),
   showToast: vi.fn(() => Promise.resolve()),
   addImageReadyListener: vi.fn(),
@@ -38,6 +40,9 @@ vi.mock('vue-router', async () => {
   })
   mocks.setRouteSource = (source) => {
     route.query = source ? { source } : {}
+  }
+  mocks.setRouteChapterId = (chapterId) => {
+    route.params = { ...route.params, chapterId }
   }
   return {
     useRoute: () => route,
@@ -81,6 +86,7 @@ vi.mock('@/services/JmcomicService', () => ({
     getPhoto: mocks.getPhoto,
     getAlbum: mocks.getAlbum,
     preloadImages: mocks.preloadImages,
+    cancelPreload: mocks.cancelPreload,
     retryImage: mocks.retryImage,
     addImageReadyListener: mocks.addImageReadyListener,
     addImageFailedListener: mocks.addImageFailedListener,
@@ -189,8 +195,8 @@ const EmptyStub = defineComponent({
   },
 })
 
-const makePhoto = (count = 100): PhotoDetail => ({
-  id: 'chapter-1',
+const makePhoto = (count = 100, id = 'chapter-1'): PhotoDetail => ({
+  id,
   title: '章节 1',
   albumId: 'album-1',
   sortOrder: 1,
@@ -199,7 +205,7 @@ const makePhoto = (count = 100): PhotoDetail => ({
   images: Array.from({ length: count }, (_, index): ImageInfo => {
     const sortOrder = index + 1
     return {
-      photoId: 'chapter-1',
+      photoId: id,
       scrambleId: '0',
       filename: `${sortOrder}.jpg`,
       url: `https://example.com/${sortOrder}.jpg`,
@@ -240,17 +246,24 @@ const settle = async () => {
 const currentImageMap = (wrapper: ReturnType<typeof mountReader>) =>
   wrapper.findComponent(VerticalScrollViewStub).props('imageMap') as Map<number, string>
 
+const preloadCallsFor = (sortOrder: number) =>
+  mocks.preloadImages.mock.calls.filter((call) =>
+    (call[1] as ImageInfo[]).some((image) => image.sortOrder === sortOrder),
+  )
+
 describe('ReaderPage 在线/离线统一图片加载', () => {
   beforeEach(() => {
     vi.useRealTimers()
     vi.clearAllMocks()
     mocks.setRouteSource?.('download')
+    mocks.setRouteChapterId?.('chapter-1')
     mocks.imageReadyHandler = null
     mocks.imageFailedHandler = null
     mocks.getDownloadedPhoto.mockResolvedValue(makePhoto())
     mocks.getPhoto.mockResolvedValue(makePhoto())
     mocks.getAlbum.mockRejectedValue(new Error('skip history metadata'))
     mocks.preloadImages.mockResolvedValue({ cached: [], pending: [] } satisfies PreloadResult)
+    mocks.cancelPreload.mockResolvedValue({ success: true })
     mocks.retryImage.mockResolvedValue({ success: true })
     mocks.addImageReadyListener.mockImplementation(
       (_photoId: string, handler: (sortOrder: number) => void) => {
@@ -294,7 +307,7 @@ describe('ReaderPage 在线/离线统一图片加载', () => {
         return listener.promise
       },
     )
-    mocks.preloadImages.mockResolvedValue({ cached: [1], pending: [2] } satisfies PreloadResult)
+    mocks.preloadImages.mockResolvedValue({ cached: [1, 2], pending: [] } satisfies PreloadResult)
 
     const wrapper = mountReader()
     await nextTick()
@@ -310,15 +323,14 @@ describe('ReaderPage 在线/离线统一图片加载', () => {
     listener.resolve({ remove: mocks.listenerRemove })
     await settle()
 
-    expect(mocks.preloadImages).toHaveBeenCalledWith(
-      'chapter-1',
-      expect.arrayContaining([
-        expect.objectContaining({ sortOrder: 1 }),
-        expect.objectContaining({ sortOrder: 2 }),
-      ]),
-      'image',
-      { replacePending: false },
-    )
+    expect(preloadCallsFor(1)[0][3]).toMatchObject({
+      priority: 300,
+      sessionId: expect.any(String),
+    })
+    expect(preloadCallsFor(2)[0][3]).toMatchObject({
+      priority: 200,
+      sessionId: expect.any(String),
+    })
     expect(currentImageMap(wrapper).get(1)).toBe('jqviewer.local/chapter-1/image/1')
 
     wrapper.unmount()
@@ -333,9 +345,7 @@ describe('ReaderPage 在线/离线统一图片加载', () => {
     await settle()
 
     expect(mocks.getPhoto).toHaveBeenCalledWith('chapter-1')
-    expect(mocks.preloadImages).toHaveBeenCalledWith('chapter-1', expect.any(Array), 'image', {
-      replacePending: false,
-    })
+    expect(mocks.preloadImages.mock.calls.every((call) => call[3].sessionId)).toBe(true)
     expect(currentImageMap(wrapper).has(1)).toBe(true)
 
     wrapper.unmount()
@@ -349,10 +359,7 @@ describe('ReaderPage 在线/离线统一图片加载', () => {
     const wrapper = mountReader()
     await settle()
 
-    expect(mocks.preloadImages).toHaveBeenCalledTimes(1)
-    const initialSortOrders = (mocks.preloadImages.mock.calls[0][1] as ImageInfo[]).map(
-      (image) => image.sortOrder,
-    )
+    expect(preloadCallsFor(1)).toHaveLength(1)
 
     wrapper.findComponent(VerticalScrollViewStub).vm.$emit('request-range', {
       start: 0,
@@ -361,11 +368,7 @@ describe('ReaderPage 在线/离线统一图片加载', () => {
     })
     await settle()
 
-    expect(mocks.preloadImages).toHaveBeenCalledTimes(2)
-    expect(mocks.preloadImages.mock.calls[1][3]).toEqual({ replacePending: false })
-    expect(
-      (mocks.preloadImages.mock.calls[1][1] as ImageInfo[]).map((image) => image.sortOrder),
-    ).toEqual(initialSortOrders)
+    expect(preloadCallsFor(1)).toHaveLength(2)
 
     wrapper.unmount()
   })
@@ -378,12 +381,14 @@ describe('ReaderPage 在线/离线统一图片加载', () => {
 
     const wrapper = mountReader()
     await settle()
-    expect(mocks.preloadImages).toHaveBeenCalledTimes(1)
+    expect(preloadCallsFor(1)).toHaveLength(1)
 
-    wrapper.findComponent(ReaderBottomToolbarStub).vm.$emit('update:current', 1)
+    wrapper.findComponent(ReaderBottomToolbarStub).vm.$emit('update:current', 2)
     await settle()
-    expect(mocks.preloadImages).toHaveBeenCalledTimes(2)
-    expect(mocks.preloadImages.mock.calls[1][3]).toEqual({ replacePending: true })
+    expect(preloadCallsFor(1)).toHaveLength(2)
+    expect(preloadCallsFor(1)[1][3].priority).toBe(200)
+    expect(preloadCallsFor(2)).toHaveLength(2)
+    expect(preloadCallsFor(2)[1][3].priority).toBe(300)
 
     initialPreload.reject(new Error('stale batch failure'))
     await settle()
@@ -391,11 +396,12 @@ describe('ReaderPage 在线/离线统一图片加载', () => {
     wrapper.findComponent(VerticalScrollViewStub).vm.$emit('request-range', {
       start: 0,
       end: 2,
-      center: 0,
+      center: 1,
     })
     await settle()
 
-    expect(mocks.preloadImages).toHaveBeenCalledTimes(2)
+    expect(preloadCallsFor(1)).toHaveLength(2)
+    expect(preloadCallsFor(2)).toHaveLength(2)
 
     wrapper.unmount()
   })
@@ -428,11 +434,12 @@ describe('ReaderPage 在线/离线统一图片加载', () => {
 
     const wrapper = mountReader()
     await settle()
-    expect(mocks.preloadImages).toHaveBeenCalledTimes(1)
+    const initialCallCount = mocks.preloadImages.mock.calls.length
 
     wrapper.findComponent(VerticalScrollViewStub).vm.$emit('update:current-index', 60)
     await settle()
-    expect(mocks.preloadImages).toHaveBeenCalledTimes(2)
+    expect(mocks.preloadImages.mock.calls.length).toBeGreaterThan(initialCallCount)
+    expect(mocks.cancelPreload).toHaveBeenCalledWith(expect.any(String))
 
     initialPreload.resolve({ cached: [1], pending: [2] })
     await settle()
@@ -444,14 +451,13 @@ describe('ReaderPage 在线/离线统一图片加载', () => {
     wrapper.findComponent(VerticalScrollViewStub).vm.$emit('update:current-index', 0)
     await settle()
 
-    expect(mocks.preloadImages).toHaveBeenCalledTimes(3)
-    const returnImages = mocks.preloadImages.mock.calls[2][1] as ImageInfo[]
-    expect(returnImages.map((image) => image.sortOrder)).toEqual([1, 2])
+    expect(preloadCallsFor(1).length).toBeGreaterThan(1)
+    expect(preloadCallsFor(2).length).toBeGreaterThan(1)
 
     wrapper.unmount()
   })
 
-  test('拖动预览可绕过 requested 标记，旧目标晚到事件被拒绝', async () => {
+  test('拖动预览替换时保留阅读窗口需求，旧目标晚到事件被拒绝', async () => {
     mocks.preloadImages.mockResolvedValue({ cached: [], pending: [1, 2] } satisfies PreloadResult)
     const wrapper = mountReader()
     await settle()
@@ -464,11 +470,7 @@ describe('ReaderPage 在线/离线统一图片加载', () => {
     vi.advanceTimersByTime(500)
     await settle()
 
-    expect(mocks.preloadImages).toHaveBeenCalledTimes(2)
-    expect(mocks.preloadImages.mock.calls[1][1]).toEqual([
-      expect.objectContaining({ sortOrder: 2 }),
-    ])
-    expect(mocks.preloadImages.mock.calls[1][3]).toEqual({ replacePending: true })
+    expect(preloadCallsFor(2).some((call) => call[3].priority === 300)).toBe(true)
 
     toolbar.vm.$emit('update:current-input', 50)
     await nextTick()
@@ -490,7 +492,7 @@ describe('ReaderPage 在线/离线统一图片加载', () => {
     latestPhoto.images[0].url = 'https://latest.example.com/1.jpg'
     latestPhoto.images[1].url = 'https://latest.example.com/2.jpg'
     mocks.getPhoto.mockResolvedValueOnce(initialPhoto).mockResolvedValueOnce(latestPhoto)
-    mocks.preloadImages.mockResolvedValue({ cached: [1, 2], pending: [] } satisfies PreloadResult)
+    mocks.preloadImages.mockResolvedValue({ cached: [1], pending: [2] } satisfies PreloadResult)
     mocks.retryImage
       .mockResolvedValueOnce({ success: true })
       .mockRejectedValueOnce(new Error('retry failed'))
@@ -521,6 +523,101 @@ describe('ReaderPage 在线/离线统一图片加载', () => {
     expect(mocks.showToast).toHaveBeenCalledWith('1 张图片重试失败', 'danger')
 
     wrapper.unmount()
+  })
+
+  test('重试图片逐张显示，不等待同批其他图片完成', async () => {
+    mocks.setRouteSource?.()
+    mocks.getDownloadedPhoto.mockRejectedValue(new Error('not downloaded'))
+    mocks.getPhoto
+      .mockResolvedValueOnce(makePhoto(2))
+      .mockResolvedValueOnce(makePhoto(2))
+    mocks.preloadImages.mockResolvedValue({ cached: [1, 2], pending: [] } satisfies PreloadResult)
+    const secondRetry = deferred<{ success: boolean }>()
+    mocks.retryImage
+      .mockResolvedValueOnce({ success: true })
+      .mockReturnValueOnce(secondRetry.promise)
+
+    const wrapper = mountReader()
+    await settle()
+    const view = wrapper.findComponent(VerticalScrollViewStub)
+    const firstUrl = currentImageMap(wrapper).get(1)!
+    const secondUrl = currentImageMap(wrapper).get(2)!
+    view.vm.$emit('image-error', 1, firstUrl)
+    view.vm.$emit('image-error', 2, secondUrl)
+    await nextTick()
+
+    view.vm.$emit('retry-images')
+    await flushPromises()
+    await nextTick()
+
+    expect(currentImageMap(wrapper).get(1)).toContain('?retry=')
+    expect(currentImageMap(wrapper).has(2)).toBe(false)
+    expect(view.props('failedSortOrders')).toEqual(new Set([2]))
+    expect(view.props('retryingSortOrders')).toEqual(new Set([2]))
+    expect(mocks.showToast).not.toHaveBeenCalled()
+
+    secondRetry.reject(new Error('retry failed'))
+    await settle()
+    expect(view.props('failedSortOrders')).toEqual(new Set([2]))
+    expect(view.props('retryingSortOrders')).toEqual(new Set())
+    expect(mocks.showToast).toHaveBeenCalledWith('1 张图片重试失败', 'danger')
+
+    wrapper.unmount()
+  })
+
+  test('章节切换后迟到的重试成功不会更新新章节', async () => {
+    mocks.setRouteSource?.()
+    mocks.getDownloadedPhoto.mockRejectedValue(new Error('not downloaded'))
+    mocks.getPhoto
+      .mockResolvedValueOnce(makePhoto(2, 'chapter-1'))
+      .mockResolvedValueOnce(makePhoto(2, 'chapter-1'))
+      .mockResolvedValueOnce(makePhoto(2, 'chapter-2'))
+    mocks.preloadImages.mockResolvedValue({ cached: [1, 2], pending: [] } satisfies PreloadResult)
+    const lateRetry = deferred<{ success: boolean }>()
+    mocks.retryImage.mockReturnValueOnce(lateRetry.promise)
+
+    const wrapper = mountReader()
+    await settle()
+    const view = wrapper.findComponent(VerticalScrollViewStub)
+    view.vm.$emit('image-error', 1, currentImageMap(wrapper).get(1)!)
+    await nextTick()
+    view.vm.$emit('retry-images')
+    await flushPromises()
+
+    mocks.setRouteChapterId?.('chapter-2')
+    await settle()
+    expect(mocks.getPhoto).toHaveBeenLastCalledWith('chapter-2')
+    lateRetry.resolve({ success: true })
+    await settle()
+
+    expect(currentImageMap(wrapper).get(1)).toBe('jqviewer.local/chapter-2/image/1')
+    expect(wrapper.findComponent(VerticalScrollViewStub).props('failedSortOrders')).toEqual(
+      new Set(),
+    )
+
+    wrapper.unmount()
+  })
+
+  test('阅读页停用后迟到的重试结果不会继续更新页面状态', async () => {
+    mocks.getDownloadedPhoto.mockResolvedValue(makePhoto(2))
+    mocks.preloadImages.mockResolvedValue({ cached: [1], pending: [2] } satisfies PreloadResult)
+    const lateRetry = deferred<{ success: boolean }>()
+    mocks.retryImage.mockReturnValueOnce(lateRetry.promise)
+
+    const wrapper = mountReader()
+    await settle()
+    const view = wrapper.findComponent(VerticalScrollViewStub)
+    view.vm.$emit('image-error', 1, currentImageMap(wrapper).get(1)!)
+    await nextTick()
+    view.vm.$emit('retry-images')
+    await flushPromises()
+
+    wrapper.unmount()
+    lateRetry.resolve({ success: true })
+    await settle()
+
+    expect(mocks.cancelPreload).toHaveBeenCalledWith(expect.any(String))
+    expect(mocks.showToast).not.toHaveBeenCalled()
   })
 
   test('普通预载网络失败进入同一失败集合并可直接批量重试', async () => {

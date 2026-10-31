@@ -173,9 +173,14 @@ let imageReadyListenerSetupPromise: Promise<void> | null = null
 let imageReadyListenerSetupId = 0
 let volumeKeyListenerHandle: ListenerHandle | null = null
 let readerRuntimeActive = false
+let readerRuntimeSessionId = 0
 let loadedSortOrders = new Set<number>()
-let requestedSortOrders = new Map<number, number>()
+let requestedSortOrders = new Map<
+  number,
+  { requestId: number; priority: number; sessionId: string; previousSessionId?: string }
+>()
 let preloadRequestSequence = 0
+let activePreloadSessionIds = new Set<string>()
 let sortOrderToImage = new Map<number, ImageInfo>()
 let retryBatchSequence = 0
 let activeRetryBatchId: number | null = null
@@ -491,6 +496,7 @@ const onImageError = (sortOrder: number, failedUrl: string) => {
 
 interface ImageExposureContext {
   version: number
+  sessionId: number
   albumId: string
   chapterId: string
   photoId: string
@@ -500,6 +506,7 @@ const createImageExposureContext = (): ImageExposureContext | null => {
   if (!photoDetail) return null
   return {
     version: chapterLoadVersion,
+    sessionId: readerRuntimeSessionId,
     albumId: albumId.value,
     chapterId: chapterId.value,
     photoId: photoDetail.id,
@@ -508,6 +515,8 @@ const createImageExposureContext = (): ImageExposureContext | null => {
 
 const isCurrentImageExposureContext = (context: ImageExposureContext) =>
   context.version === chapterLoadVersion &&
+  context.sessionId === readerRuntimeSessionId &&
+  readerRuntimeActive &&
   context.albumId === albumId.value &&
   context.chapterId === chapterId.value &&
   context.photoId === photoDetail?.id
@@ -526,15 +535,18 @@ const retryFailedImages = () => {
   retryingSortOrders.value = new Set(failedSnapshot)
 
   void (async () => {
-    let failedCount = failedSnapshot.length
+    let failedCount = 0
     try {
       const latestPhoto = await JmcomicService.getPhoto(context.chapterId)
       if (
         activeRetryBatchId !== batchId ||
-        !isCurrentImageExposureContext(context) ||
-        latestPhoto.id !== context.photoId
+        !isCurrentImageExposureContext(context)
       )
         return
+      if (latestPhoto.id !== context.photoId) {
+        failedCount = failedSnapshot.length
+        return
+      }
 
       const latestImages = new Map<number, ImageInfo>()
       const duplicateSortOrders = new Set<number>()
@@ -543,46 +555,58 @@ const retryFailedImages = () => {
         latestImages.set(image.sortOrder, image)
       }
 
-      const results = await Promise.all(
+      await Promise.all(
         failedSnapshot.map(async (sortOrder) => {
           const image = latestImages.get(sortOrder)
-          if (!image || duplicateSortOrders.has(sortOrder)) {
-            return { sortOrder, image: null, success: false }
+          let success = false
+          if (image && !duplicateSortOrders.has(sortOrder)) {
+            try {
+              await JmcomicService.retryImage(context.photoId, image)
+              success = true
+            } catch {
+              success = false
+            }
           }
-          try {
-            await JmcomicService.retryImage(context.photoId, image)
-            return { sortOrder, image, success: true }
-          } catch {
-            return { sortOrder, image, success: false }
+
+          if (activeRetryBatchId !== batchId || !isCurrentImageExposureContext(context)) return
+
+          const nextRetrying = new Set(retryingSortOrders.value)
+          nextRetrying.delete(sortOrder)
+          retryingSortOrders.value = nextRetrying
+
+          if (!success || !image) {
+            failedCount++
+            return
+          }
+
+          const nextFailed = new Set(failedSortOrders.value)
+          nextFailed.delete(sortOrder)
+          failedSortOrders.value = nextFailed
+          sortOrderToImage.set(sortOrder, image)
+          const request = requestedSortOrders.get(sortOrder)
+          requestedSortOrders.delete(sortOrder)
+          if (request) {
+            cancelPreloadSessions(
+              new Set([
+                request.sessionId,
+                ...(request.previousSessionId ? [request.previousSessionId] : []),
+              ]),
+            )
+          }
+          retryUrlRevision = Math.max(Date.now(), retryUrlRevision + 1)
+          if (activeAllowedSortOrders.has(sortOrder)) {
+            imageMap.value.set(
+              sortOrder,
+              `${getImageUrl(context.photoId, sortOrder, 'image')}?retry=${retryUrlRevision}`,
+            )
+            loadedSortOrders.add(sortOrder)
+            applyImageMap()
           }
         }),
       )
-      if (activeRetryBatchId !== batchId || !isCurrentImageExposureContext(context)) return
-
-      failedCount = 0
-      const nextFailed = new Set(failedSortOrders.value)
-      retryUrlRevision = Math.max(Date.now(), retryUrlRevision + 1)
-      for (const result of results) {
-        if (!result.success) {
-          failedCount++
-          continue
-        }
-
-        nextFailed.delete(result.sortOrder)
-        sortOrderToImage.set(result.sortOrder, result.image!)
-        requestedSortOrders.delete(result.sortOrder)
-        if (activeAllowedSortOrders.has(result.sortOrder)) {
-          imageMap.value.set(
-            result.sortOrder,
-            `${getImageUrl(context.photoId, result.sortOrder, 'image')}?retry=${retryUrlRevision}`,
-          )
-          loadedSortOrders.add(result.sortOrder)
-        }
-      }
-      failedSortOrders.value = nextFailed
-      applyImageMap()
     } catch {
       if (activeRetryBatchId !== batchId || !isCurrentImageExposureContext(context)) return
+      failedCount = failedSnapshot.length
     } finally {
       if (activeRetryBatchId === batchId) {
         activeRetryBatchId = null
@@ -632,6 +656,12 @@ const exposeImagesIfAllowed = (
 
 const onPreloadImageReady = (context: ImageExposureContext, sortOrder: number) => {
   if (!isCurrentImageExposureContext(context)) return
+  const request = requestedSortOrders.get(sortOrder)
+  requestedSortOrders.delete(sortOrder)
+  if (request) {
+    activePreloadSessionIds.delete(request.sessionId)
+    if (request.previousSessionId) activePreloadSessionIds.delete(request.previousSessionId)
+  }
   if (failedSortOrders.value.has(sortOrder)) setFailedSortOrder(sortOrder, false)
   exposeImagesIfAllowed(context, [sortOrder], 'image')
 }
@@ -640,6 +670,12 @@ const onPreloadImageFailed = (context: ImageExposureContext, sortOrder: number) 
   if (!isCurrentImageExposureContext(context) || sortOrder < 1 || sortOrder > totalCount.value)
     return
 
+  const request = requestedSortOrders.get(sortOrder)
+  requestedSortOrders.delete(sortOrder)
+  if (request) {
+    activePreloadSessionIds.delete(request.sessionId)
+    if (request.previousSessionId) activePreloadSessionIds.delete(request.previousSessionId)
+  }
   imageMap.value.delete(sortOrder)
   loadedSortOrders.delete(sortOrder)
   if (!failedSortOrders.value.has(sortOrder)) setFailedSortOrder(sortOrder, true)
@@ -655,54 +691,88 @@ const setActiveAllowedSortOrders = (
 }
 
 const cleanupRequestedSortOrdersOutsideAllowed = () => {
-  for (const sortOrder of requestedSortOrders.keys()) {
+  for (const [sortOrder, request] of requestedSortOrders) {
     if (!activeAllowedSortOrders.has(sortOrder) && !loadedSortOrders.has(sortOrder)) {
       requestedSortOrders.delete(sortOrder)
+      cancelPreloadSessions(
+        new Set([request.sessionId, ...(request.previousSessionId ? [request.previousSessionId] : [])]),
+      )
     }
   }
 }
 
-const preloadSortOrders = (sortOrders: number[], replacePending = false) => {
+const preloadSortOrders = (sortOrders: number[]) => {
   const context = createImageExposureContext()
   if (!context || !readerRuntimeActive || !imageReadyListenerHandle || !imageFailedListenerHandle)
     return
 
-  const images: ImageInfo[] = []
-  for (const sortOrder of new Set(sortOrders)) {
+  const desired = new Map<number, { image: ImageInfo; priority: number }>()
+  const orderedSortOrders = prioritizeSortOrders(sortOrders, currentIndex.value)
+  for (const sortOrder of orderedSortOrders) {
     if (!activeAllowedSortOrders.has(sortOrder) || loadedSortOrders.has(sortOrder)) continue
-    if (!replacePending && requestedSortOrders.has(sortOrder)) continue
-
+    const priority =
+      sortOrder === currentIndex.value + 1 || sortOrder === activeDragPreviewSortOrder ? 300 : 200
     const image = sortOrderToImage.get(sortOrder)
     if (!image) continue
-    images.push(image)
+    desired.set(sortOrder, { image, priority })
   }
 
-  if (images.length === 0) return
-  const requestRegistry = requestedSortOrders
-  const requestBatchId = ++preloadRequestSequence
-  const submittedSortOrders = images.map((image) => image.sortOrder)
-  for (const sortOrder of submittedSortOrders) {
-    requestRegistry.set(sortOrder, requestBatchId)
-  }
+  for (const [sortOrder, { image, priority }] of desired) {
+    const previousRequest = requestedSortOrders.get(sortOrder)
+    if (previousRequest?.priority === priority) continue
 
-  void JmcomicService.preloadImages(context.photoId, images, 'image', { replacePending })
-    .then(
+    const requestId = ++preloadRequestSequence
+    const sessionId = `reader-${context.sessionId}-${requestId}-${crypto.randomUUID()}`
+    requestedSortOrders.set(sortOrder, {
+      requestId,
+      priority,
+      sessionId,
+      previousSessionId: previousRequest?.sessionId,
+    })
+    activePreloadSessionIds.add(sessionId)
+
+    void JmcomicService.preloadImages(context.photoId, [image], 'image', {
+      sessionId,
+      priority,
+    }).then(
       (result: PreloadResult) => {
-        exposeImagesIfAllowed(context, result.cached, 'image')
-      },
-      () => {
-        if (!isCurrentImageExposureContext(context)) return
-        for (const sortOrder of submittedSortOrders) {
-          if (
-            !loadedSortOrders.has(sortOrder) &&
-            requestRegistry.get(sortOrder) === requestBatchId
-          ) {
-            requestRegistry.delete(sortOrder)
-          }
+        if (
+          !isCurrentImageExposureContext(context) ||
+          requestedSortOrders.get(sortOrder)?.requestId !== requestId
+        ) {
+          cancelPreloadSessions(new Set([sessionId]))
+          return
+        }
+
+        if (previousRequest) {
+          cancelPreloadSessions(new Set([previousRequest.sessionId]))
+          requestedSortOrders.set(sortOrder, { requestId, priority, sessionId })
+        }
+        if (result.cached.includes(sortOrder)) {
+          requestedSortOrders.delete(sortOrder)
+          activePreloadSessionIds.delete(sessionId)
+          exposeImagesIfAllowed(context, [sortOrder], 'image')
         }
       },
+      (error: unknown) => {
+        if (requestedSortOrders.get(sortOrder)?.requestId === requestId) {
+          if (previousRequest) requestedSortOrders.set(sortOrder, previousRequest)
+          else requestedSortOrders.delete(sortOrder)
+        }
+        cancelPreloadSessions(new Set([sessionId]))
+        console.warn('阅读页图片预载提交失败', error)
+      },
     )
-    .catch(() => {})
+  }
+}
+
+const cancelPreloadSessions = (sessionIds: Set<string>) => {
+  for (const sessionId of sessionIds) {
+    activePreloadSessionIds.delete(sessionId)
+    void JmcomicService.cancelPreload(sessionId).catch((error: unknown) => {
+      console.warn('取消阅读页图片预载失败', error)
+    })
+  }
 }
 
 const clampIndex = (index: number) => {
@@ -726,7 +796,7 @@ const hasPendingInRange = (center: number, dir: 'forward' | 'backward'): boolean
   return false
 }
 
-const updateWindow = (center: number, replacePending = false) => {
+const updateWindow = (center: number) => {
   if (!photoDetail) return
   const windowOrders = calcPriorityWindow(center)
   const cleanBackward = expandDirection === 'backward' ? N_FAST : Math.floor(M / 2)
@@ -743,6 +813,7 @@ const updateWindow = (center: number, replacePending = false) => {
   for (const so of calcWindow(currentIndex.value)) cacheSet.add(so)
 
   setActiveAllowedSortOrders(cacheSet, activeDragPreviewSortOrder)
+  cleanupRequestedSortOrdersOutsideAllowed()
 
   for (const so of loadedSortOrders) {
     if (!activeAllowedSortOrders.has(so)) {
@@ -750,9 +821,8 @@ const updateWindow = (center: number, replacePending = false) => {
       loadedSortOrders.delete(so)
     }
   }
-  cleanupRequestedSortOrdersOutsideAllowed()
   applyImageMap()
-  preloadSortOrders(windowOrders, replacePending)
+  preloadSortOrders(windowOrders)
 }
 
 const loadDragPreviewImage = (center: number) => {
@@ -764,7 +834,7 @@ const loadDragPreviewImage = (center: number) => {
   setActiveAllowedSortOrders(calcPriorityWindow(currentIndex.value), activeDragPreviewSortOrder)
   cleanupRequestedSortOrdersOutsideAllowed()
   if (loadedSortOrders.has(so)) return
-  preloadSortOrders([so], true)
+  preloadSortOrders([...calcPriorityWindow(currentIndex.value), so])
 }
 
 const scheduleDragPreviewLoad = (index: number) => {
@@ -866,7 +936,7 @@ const goToIndex = (index: number, source: PageChangeSource) => {
   expandDirection = null
 
   lastWindowCenter = next
-  updateWindow(next, source === 'slider' || source === 'route')
+  updateWindow(next)
 
   moveReaderViewToIndex(next)
 }
@@ -978,6 +1048,7 @@ const setupImageReadyListener = async () => {
 
 const activateReaderRuntime = (): Promise<void> => {
   if (!readerRuntimeActive) {
+    readerRuntimeSessionId++
     readerRuntimeActive = true
     if (readerCapabilities.hostState.available) {
       JmcomicService.setReaderState(true, isVertical.value).catch((error) => {
@@ -994,6 +1065,13 @@ const activateReaderRuntime = (): Promise<void> => {
 const deactivateReaderRuntime = () => {
   if (!readerRuntimeActive) return
   readerRuntimeActive = false
+  cancelPreloadSessions(new Set(activePreloadSessionIds))
+  readerRuntimeSessionId++
+  retryBatchSequence++
+  activeRetryBatchId = null
+  retryingSortOrders.value = new Set()
+  requestedSortOrders = new Map()
+  activePreloadSessionIds = new Set()
   imageReadyListenerSetupId++
   imageReadyListenerSetupPromise = null
   clearToolbarTapTimer()
@@ -1158,6 +1236,9 @@ const loadChapter = async () => {
 
 const resetChapterState = () => {
   chapterLoadVersion++
+  cancelPreloadSessions(new Set(activePreloadSessionIds))
+  activePreloadSessionIds = new Set()
+  readerRuntimeSessionId++
   imageReadyListenerSetupId++
   imageReadyListenerSetupPromise = null
   clearAutoShowToolbarTimer()

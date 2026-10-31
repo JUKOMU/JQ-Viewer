@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, test, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   addListener: vi.fn(),
+  preloadImages: vi.fn(),
+  cancelPreload: vi.fn(),
   retryImage: vi.fn(),
   getBrowseHistory: vi.fn(),
   getBrowseHistoryOverview: vi.fn(),
@@ -15,6 +17,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/runtime/facadeClient', () => ({
   createActiveFacadeClient: () => ({
     addListener: mocks.addListener,
+    preloadImages: mocks.preloadImages,
+    cancelPreload: mocks.cancelPreload,
     retryImage: mocks.retryImage,
     getBrowseHistory: mocks.getBrowseHistory,
     getBrowseHistoryOverview: mocks.getBrowseHistoryOverview,
@@ -32,6 +36,7 @@ vi.mock('@/services/NotificationPermissionService', () => ({
 }))
 
 import type { ImageReadyEvent } from '@/services/jmcomic/JmcomicClient'
+import type { ImageInfo } from '@/services/JmcomicTypes'
 import { JmcomicService } from '@/services/jmcomic/JmcomicServiceFacade'
 
 describe('JmcomicService.addImageReadyListener', () => {
@@ -109,6 +114,29 @@ describe('JmcomicService.retryImage', () => {
 
     await expect(JmcomicService.retryImage('chapter-1', image)).resolves.toEqual({ success: true })
     expect(mocks.retryImage).toHaveBeenCalledWith({ photoId: 'chapter-1', image })
+  })
+})
+
+describe('JmcomicService 图片预载会话', () => {
+  test('传递调度优先级和 session，并可取消 session', async () => {
+    mocks.preloadImages.mockResolvedValueOnce({ cached: [], pending: [1] })
+    mocks.cancelPreload.mockResolvedValueOnce({ success: true })
+
+    await JmcomicService.preloadImages('chapter-1', [{ sortOrder: 1 } as ImageInfo], 'image', {
+      sessionId: 'reader-session',
+      priority: 300,
+    })
+    await JmcomicService.cancelPreload('reader-session')
+
+    expect(mocks.preloadImages).toHaveBeenCalledWith({
+      photoId: 'chapter-1',
+      images: [{ sortOrder: 1 }],
+      type: 'image',
+      replacePending: undefined,
+      sessionId: 'reader-session',
+      priority: 300,
+    })
+    expect(mocks.cancelPreload).toHaveBeenCalledWith({ sessionId: 'reader-session' })
   })
 })
 

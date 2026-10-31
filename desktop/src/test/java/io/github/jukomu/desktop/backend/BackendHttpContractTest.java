@@ -164,13 +164,16 @@ class BackendHttpContractTest {
             String imageRequest = "{\"photoId\":\"photo-1\",\"type\":\"image\","
                     + "\"images\":[{\"scrambleId\":\"1\",\"filename\":\"001.webp\","
                     + "\"url\":\"https://example.invalid/001.webp\",\"queryParams\":\"\","
-                    + "\"sortOrder\":1}],\"replacePending\":false}";
+                    + "\"sortOrder\":1}],\"replacePending\":false,"
+                    + "\"sessionId\":\"reader-session\",\"priority\":300}";
             ObjectNode preload = body(post(http, base, requestedMethods, "preloadImages", imageRequest));
             NamedEvent imageReady = event.get(5, TimeUnit.SECONDS);
             assertEquals("imageReady", imageReady.name());
             assertEquals("photo-1", imageReady.data().path("photoId").asText());
             assertEquals(1, imageReady.data().path("sortOrder").asInt());
             assertEquals(1, preload.path("pending").get(0).asInt());
+            assertOk(post(http, base, requestedMethods, "cancelPreload",
+                    "{\"sessionId\":\"reader-session\"}"));
 
             assertOk(post(http, base, requestedMethods, "retryImage",
                     "{\"photoId\":\"photo-1\",\"image\":{\"scrambleId\":\"1\","

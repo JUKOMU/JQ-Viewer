@@ -47,6 +47,8 @@ public class CachePluginContractInstrumentedTest {
             "photoId", "photo-1",
             "type", "thumb",
             "replacePending", true,
+            "sessionId", "reader-session",
+            "priority", 300,
             "images", images);
 
         plugin.preloadImages(populatedCall);
@@ -54,10 +56,23 @@ public class CachePluginContractInstrumentedTest {
         assertEquals("photo-1", preloadService.photoId);
         assertEquals("thumb", preloadService.type);
         assertTrue(preloadService.replacePending);
+        assertEquals("reader-session", preloadService.sessionId);
+        assertEquals(300, preloadService.priority);
         assertEquals(1, preloadService.images.length());
         assertEquals(7, preloadService.images.getJSONObject(0).getInt("sortOrder"));
         assertEquals(1, populatedCall.resolvedData.getJSONArray("pending").length());
         assertSynchronous(emptyCall, populatedCall);
+    }
+
+    @Test
+    public void cancelPreloadForwardsSessionId() {
+        RecordingPluginCall call = call("cancelPreload", "sessionId", "reader-session");
+
+        plugin.cancelPreload(call);
+
+        assertEquals("reader-session", preloadService.cancelledSessionId);
+        assertTrue(call.resolvedData.getBool("success"));
+        assertSynchronous(call);
     }
 
     @Test
@@ -185,6 +200,9 @@ public class CachePluginContractInstrumentedTest {
         private String type;
         private JSONArray images;
         private boolean replacePending;
+        private String sessionId;
+        private int priority;
+        private String cancelledSessionId;
         private long capacityMb;
         private boolean cleared;
         private RuntimeException failure;
@@ -206,6 +224,23 @@ public class CachePluginContractInstrumentedTest {
             return jsonObject(
                 "cached", new JSONArray(),
                 "pending", new JSONArray().put(7));
+        }
+
+        @Override
+        public JSONObject preloadImages(String photoId, String type, JSONArray images,
+                                        boolean replacePending, String sessionId, int priority) {
+            this.photoId = photoId;
+            this.type = type;
+            this.images = images;
+            this.replacePending = replacePending;
+            this.sessionId = sessionId;
+            this.priority = priority;
+            return jsonObject("cached", new JSONArray(), "pending", new JSONArray().put(7));
+        }
+
+        @Override
+        public void cancelPreload(String sessionId) {
+            cancelledSessionId = sessionId;
         }
 
         @Override

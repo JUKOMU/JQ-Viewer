@@ -128,7 +128,7 @@ export const JmcomicService = {
   },
 
   /**
-   * 预加载图片到 Android 侧 ImageRegistry。
+   * 将图片预加载请求提交到平台图片服务。
    * @param photoId 章节 ID
    * @param images 图片元数据列表
    * @param type "image" 加载原图，"thumb" 加载缩略图
@@ -138,9 +138,20 @@ export const JmcomicService = {
     photoId: string,
     images: ImageInfo[],
     type: 'image' | 'thumb' = 'image',
-    options: { replacePending?: boolean } = {},
+    options: { replacePending?: boolean; sessionId?: string; priority?: number } = {},
   ) {
-    return native.preloadImages({ photoId, images, type, replacePending: options.replacePending })
+    return native.preloadImages({
+      photoId,
+      images,
+      type,
+      replacePending: options.replacePending,
+      sessionId: options.sessionId,
+      priority: options.priority,
+    })
+  },
+
+  cancelPreload(sessionId: string) {
+    return native.cancelPreload({ sessionId })
   },
 
   /** 使用最新图片元数据绕过本地来源和旧缓存重试单页。 */

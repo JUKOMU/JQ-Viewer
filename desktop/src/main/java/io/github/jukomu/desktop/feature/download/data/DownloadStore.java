@@ -644,9 +644,10 @@ public final class DownloadStore {
         String nullComparison = reverseNullRank ? "<" : ">";
         // NULL 与空字符串共享 null-rank；NULL 没有可比较值时，直接使用稳定键继续分页。
         String rank = "CASE WHEN " + value + " IS NULL OR TRIM(" + value + ")='' THEN 1 ELSE 0 END";
+        String boundaryValue = value.startsWith("CAST(") ? "CAST(? AS INTEGER)" : "?";
         return "(" + rank + " " + nullComparison + " ? OR (" + rank + "=? AND "
-            + "((" + rank + "=0 AND (" + value + " " + comparison + " ? OR ("
-            + value + "=? AND " + stable + " " + comparison + " ?)))"
+            + "((" + rank + "=0 AND (" + value + " " + comparison + " " + boundaryValue + " OR ("
+            + value + "=" + boundaryValue + " AND " + stable + " " + comparison + " ?)))"
             + " OR (" + rank + "=1 AND " + stable + " " + comparison + " ?))))";
     }
 

@@ -629,7 +629,12 @@ public class PreloadServiceTest {
             service.preloadImages("cancelled-running", "image", imageArray(), false,
                 "reader", 300);
             assertTrue(fetchStarted.await(1, TimeUnit.SECONDS));
+            Field pendingField = PreloadService.class.getDeclaredField("pendingKeys");
+            pendingField.setAccessible(true);
+            Map<String, Long> pending = (Map<String, Long>) pendingField.get(service);
+            assertTrue(pending.containsKey("reader/cancelled-running/1"));
             service.cancelPreload("reader");
+            assertFalse(pending.containsKey("reader/cancelled-running/1"));
             releaseFetch.countDown();
 
             long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1);

@@ -14,6 +14,7 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.lang.reflect.Proxy;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -122,6 +123,36 @@ class ImageServiceTest {
             releaseFetch.countDown();
             service.close();
             subscription.close();
+            events.close();
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void cancelSessionClearsItsPendingEntries() throws Exception {
+        byte[] imageBytes = imageBytes();
+        CountDownLatch fetchStarted = new CountDownLatch(1);
+        CountDownLatch releaseFetch = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(1);
+        EventHub events = new EventHub(new ObjectMapper());
+        ImageService service = new ImageService(
+            client(imageBytes, new AtomicInteger(), fetchStarted, releaseFetch,
+                new CountDownLatch(1), new CountDownLatch(1)), executor, events);
+
+        try {
+            service.preload("photo", "thumb", List.of(IMAGE), false, "preview", 100);
+            assertTrue(fetchStarted.await(1, TimeUnit.SECONDS));
+            var pendingField = ImageService.class.getDeclaredField("pending");
+            pendingField.setAccessible(true);
+            Map<String, Long> pending = (Map<String, Long>) pendingField.get(service);
+            assertTrue(pending.containsKey("preview/photo/1/thumb"));
+
+            service.cancelPreload("preview");
+
+            assertFalse(pending.containsKey("preview/photo/1/thumb"));
+        } finally {
+            releaseFetch.countDown();
+            service.close();
             events.close();
             executor.shutdownNow();
         }

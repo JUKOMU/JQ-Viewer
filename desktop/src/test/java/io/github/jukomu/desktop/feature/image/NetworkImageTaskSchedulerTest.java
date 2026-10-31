@@ -96,6 +96,89 @@ class NetworkImageTaskSchedulerTest {
     }
 
     @Test
+    void replacementThreadsRespectTotalRunningLimit() throws Exception {
+        NetworkImageTaskScheduler scheduler = new NetworkImageTaskScheduler(1);
+        CountDownLatch firstTwelveStarted = new CountDownLatch(12);
+        CountDownLatch releaseFirst = new CountDownLatch(1);
+        CountDownLatch releaseOthers = new CountDownLatch(1);
+        CountDownLatch thirteenthStarted = new CountDownLatch(1);
+
+        for (int index = 0; index < 12; index++) {
+            int taskIndex = index;
+            JmImage image = image(index + 1);
+            scheduler.submit(image, "session-" + index + "/image", "session-" + index,
+                index, false,
+                (taskImage, replaceCache, cacheLookup, networkFetcher) -> {
+                    firstTwelveStarted.countDown();
+                    assertTrue((taskIndex == 0 ? releaseFirst : releaseOthers)
+                        .await(3, TimeUnit.SECONDS));
+                    return new byte[]{1};
+                }, taskImage -> new byte[]{1}, bytes -> { },
+                error -> { throw new AssertionError(error); });
+        }
+        assertTrue(firstTwelveStarted.await(1, TimeUnit.SECONDS));
+
+        scheduler.submit(image(13), "session-13/image", "session-13", 100, false,
+            (taskImage, replaceCache, cacheLookup, networkFetcher) -> {
+                thirteenthStarted.countDown();
+                return new byte[]{1};
+            }, taskImage -> new byte[]{1}, bytes -> { },
+            error -> { throw new AssertionError(error); });
+
+        try {
+            assertFalse(thirteenthStarted.await(100, TimeUnit.MILLISECONDS));
+            releaseFirst.countDown();
+            assertTrue(thirteenthStarted.await(1, TimeUnit.SECONDS));
+        } finally {
+            releaseFirst.countDown();
+            releaseOthers.countDown();
+        }
+    }
+
+    @Test
+    void successCallbackDoesNotHoldSchedulerLock() throws Exception {
+        NetworkImageTaskScheduler scheduler = new NetworkImageTaskScheduler(1);
+        CountDownLatch callbackStarted = new CountDownLatch(1);
+        CountDownLatch releaseCallback = new CountDownLatch(1);
+        CountDownLatch submitFinished = new CountDownLatch(1);
+
+        scheduler.submit(IMAGE, "first/image", "first", 100, false,
+            (image, replaceCache, cacheLookup, networkFetcher) -> new byte[]{1},
+            image -> new byte[]{1}, bytes -> {
+                callbackStarted.countDown();
+                try {
+                    assertTrue(releaseCallback.await(3, TimeUnit.SECONDS));
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new AssertionError(interrupted);
+                }
+            }, error -> { throw new AssertionError(error); });
+        assertTrue(callbackStarted.await(1, TimeUnit.SECONDS));
+
+        Thread submitter = new Thread(() -> {
+            scheduler.submit(image(2), "second/image", "second", 100, false,
+                (image, replaceCache, cacheLookup, networkFetcher) -> new byte[]{2},
+                image -> new byte[]{2}, bytes -> { },
+                error -> { throw new AssertionError(error); });
+            submitFinished.countDown();
+        });
+        submitter.start();
+
+        try {
+            assertTrue(submitFinished.await(1, TimeUnit.SECONDS));
+        } finally {
+            releaseCallback.countDown();
+            submitter.join(1_000L);
+        }
+    }
+
+    private static JmImage image(int sortOrder) {
+        String filename = String.format("%03d.jpg", sortOrder);
+        return new JmImage("photo", "scramble", filename,
+            "https://example.invalid/" + filename, "", sortOrder);
+    }
+
+    @Test
     void retryDoesNotReuseResolvedCacheResult() throws Exception {
         NetworkImageTaskScheduler scheduler = new NetworkImageTaskScheduler(1);
         CountDownLatch cacheResolved = new CountDownLatch(1);

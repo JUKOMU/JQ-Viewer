@@ -559,11 +559,12 @@ public class DownloadStore extends SQLiteOpenHelper implements DownloadTaskReade
         String op = "desc".equals(direction) ? "<" : ">";
         String nullOp = reverseNullRank ? "<" : ">";
         String nullFlag = "CASE WHEN " + value + " IS NULL OR TRIM(" + value + ")='' THEN 1 ELSE 0 END";
+        String boundaryValue = value.startsWith("CAST(") ? "CAST(? AS INTEGER)" : "?";
         // NULL 与空字符串共享 null-rank；NULL 没有可比较值时，直接使用稳定键继续分页。
         return "(" + nullFlag + " " + nullOp + " CAST(? AS INTEGER) OR ("
             + nullFlag + "=CAST(? AS INTEGER) AND "
-            + "((" + nullFlag + "=0 AND (" + value + " " + op + " ? OR ("
-            + value + "=? AND " + stable + " " + op + " ?)))"
+            + "((" + nullFlag + "=0 AND (" + value + " " + op + " " + boundaryValue + " OR ("
+            + value + "=" + boundaryValue + " AND " + stable + " " + op + " ?)))"
             + " OR (" + nullFlag + "=1 AND " + stable + " " + op + " ?))))";
     }
 

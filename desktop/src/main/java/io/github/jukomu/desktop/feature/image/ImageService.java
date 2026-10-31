@@ -145,6 +145,8 @@ public final class ImageService {
         String requiredSession = requiredSession(sessionId);
         LOGGER.debug("image.preload event=cancelled session={}", sessionFingerprint(requiredSession));
         networkTasks.cancelSession(requiredSession);
+        String pendingPrefix = requiredSession + "/";
+        pending.keySet().removeIf(key -> key.startsWith(pendingPrefix));
         return SuccessResponse.ok();
     }
 

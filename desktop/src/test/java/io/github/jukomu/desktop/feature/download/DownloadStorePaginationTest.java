@@ -66,6 +66,35 @@ class DownloadStorePaginationTest {
     }
 
     @Test
+    void idPagesContinueForNonNumericAlbumIds() throws Exception {
+        for (String status : List.of("completed", "failed")) {
+            Path root = Files.createTempDirectory("jq-viewer-nonnumeric-id-pagination-");
+            try (Database database = new Database(root.resolve("test.db"))) {
+                database.open();
+                DownloadStore store = new DownloadStore(database);
+                for (int i = 1; i <= 3; i++) {
+                    String albumId = "album-" + i;
+                    if ("completed".equals(status)) createCompleted(store, albumId, "chapter-1", i);
+                    else createFailed(store, albumId, "chapter-1", "Alice");
+                }
+
+                List<String> ids = new java.util.ArrayList<>();
+                String cursor = null;
+                do {
+                    DownloadStore.TaskPage page = store.page(status, "id", "asc", cursor, 1);
+                    ids.addAll(pageIds(page));
+                    cursor = page.nextCursor();
+                    org.junit.jupiter.api.Assertions.assertTrue(ids.size() <= 3, "cursor must advance");
+                } while (cursor != null);
+
+                assertEquals("completed".equals(status)
+                    ? List.of("album-1", "album-2", "album-3")
+                    : List.of("album-1_chapter-1", "album-2_chapter-1", "album-3_chapter-1"), ids);
+            }
+        }
+    }
+
+    @Test
     void timePagesAndReversePagesUseNumericCompletedTimestamps() throws Exception {
         for (String direction : List.of("asc", "desc")) {
             Path root = Files.createTempDirectory("jq-viewer-time-pages-");

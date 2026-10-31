@@ -22,6 +22,7 @@ import java.util.function.Supplier;
  */
 final class NetworkImageTaskScheduler {
     private static final Logger LOGGER = LoggerFactory.getLogger(NetworkImageTaskScheduler.class);
+    private static final int MAX_TOTAL_RUNNING = 12;
 
     @FunctionalInterface
     interface Fetcher {
@@ -55,6 +56,7 @@ final class NetworkImageTaskScheduler {
     private final Map<JmImage, Task> tasks = new HashMap<>();
     private final Set<String> cancelledSessions = new HashSet<>();
     private final long[] sequence = {0L};
+    private int totalRunning;
 
     NetworkImageTaskScheduler(int concurrency) {
         this.concurrency = Math.max(1, concurrency);
@@ -124,6 +126,7 @@ final class NetworkImageTaskScheduler {
 
     private void pumpLocked() {
         while (!queued.isEmpty()) {
+            if (totalRunning >= MAX_TOTAL_RUNNING) return;
             if (running.size() < concurrency) {
                 startLocked(queued.poll());
                 continue;
@@ -147,6 +150,7 @@ final class NetworkImageTaskScheduler {
         task.state = State.RUNNING;
         task.fetchPhase = FetchPhase.RESOLVING_CACHE;
         running.add(task);
+        totalRunning++;
         Thread worker = new Thread(() -> execute(task),
             "jq-viewer-network-image-" + task.sequence);
         worker.setDaemon(true);
@@ -193,6 +197,7 @@ final class NetworkImageTaskScheduler {
             failure = error;
         }
 
+        List<Demand> completedDemands;
         synchronized (lock) {
             running.remove(task);
             activeTasks.remove(task);
@@ -200,14 +205,21 @@ final class NetworkImageTaskScheduler {
                 LOGGER.warn("无有效需求的网络图片任务失败: sortOrder={}",
                     task.image.getSortOrder(), failure);
             }
-            for (Demand demand : new ArrayList<>(task.demands.values())) {
-                if (failure == null) demand.onSuccess.accept(result);
-                else demand.onFailure.accept(failure);
-            }
+            completedDemands = new ArrayList<>(task.demands.values());
             tasks.remove(task.image, task);
             task.state = State.DONE;
             task.demands.clear();
-            pumpLocked();
+        }
+        try {
+            for (Demand demand : completedDemands) {
+                if (failure == null) demand.onSuccess.accept(result);
+                else demand.onFailure.accept(failure);
+            }
+        } finally {
+            synchronized (lock) {
+                totalRunning--;
+                pumpLocked();
+            }
         }
     }
 

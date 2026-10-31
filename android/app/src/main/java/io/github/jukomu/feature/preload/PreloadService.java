@@ -232,6 +232,8 @@ public class PreloadService {
         String requiredSession = requiredSession(sessionId);
         LOGGER.debug("预加载需求取消: session={}", sessionFingerprint(requiredSession));
         networkTasks.cancelSession(requiredSession);
+        String pendingPrefix = requiredSession + "/";
+        pendingKeys.keySet().removeIf(key -> key.startsWith(pendingPrefix));
     }
 
     private void generateThumbnailFromCachedImage(

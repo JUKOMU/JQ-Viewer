@@ -220,6 +220,8 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
     })
     const wrapper = mount(DownloadPage)
     await flushPromises()
+    mocks.ionViewWillEnter!()
+    await flushPromises()
     const state = (wrapper.vm as any).$.setupState
     for (let i = 0; i < 3; i++) await state.loadGroup('active')
     const group = state.downloadGroupStates.active
@@ -233,6 +235,10 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
     expect(group.nextCursor).toBe('next:150')
     await state.loadGroup('active')
     expect(new Set(group.items.map((item: any) => item.taskId)).size).toBe(150)
+    expect(group.items[0].taskId).toBe('task-51')
+    mocks.ionViewWillEnter!()
+    await flushPromises()
+    expect(group.items).toHaveLength(150)
     expect(group.items[0].taskId).toBe('task-51')
     wrapper.unmount()
   })
